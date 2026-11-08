@@ -49,3 +49,21 @@ export function topShotMomentImage(momentId: string, width = 480): string | null
 export function openedKey(slug: string, packNo: number): string {
   return `rpc_giveaway_opened:${slug}:${packNo}`
 }
+
+/** The tier name the reveal styles key on: "LEGENDARY" → "legendary"; unknown → "common". */
+export function tierKey(tier: string | null | undefined): "common" | "fandom" | "rare" | "legendary" | "ultimate" {
+  const t = (tier ?? "").trim().toLowerCase()
+  if (t === "fandom" || t === "rare" || t === "legendary" || t === "ultimate") return t
+  return "common"
+}
+
+/** The pack's total FMV, or null when any card is unpriced (a total with a hole in it is not the pack's value). */
+export function packTotal(moments: readonly RevealMoment[]): number | null {
+  if (moments.length === 0) return null
+  let sum = 0
+  for (const m of moments) {
+    if (m.fmv_usd == null || !Number.isFinite(m.fmv_usd)) return null
+    sum += m.fmv_usd
+  }
+  return Math.round(sum * 100) / 100
+}

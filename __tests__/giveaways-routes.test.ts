@@ -58,6 +58,7 @@ const DROP = {
   pack_count: 2,
   moments_per_pack: 1,
   seal_hash: commitmentHash("aa", "1:1;2:2"),
+  deal_mode: "random",
   seal_salt: "aa",
   sealed_at: "2026-09-29T19:00:00Z",
   opened_at: null,
@@ -474,7 +475,7 @@ describe("/api/admin/giveaways", () => {
     expect((await adminOne.POST(post("http://x/api/admin/giveaways/bad", { action: "seal" }, auth), idCtx("bad"))).status).toBe(400)
 
     store.sealDrop.mockResolvedValueOnce({ hash: "h", check: { pool_fmv_usd: 12 } })
-    expect(await (await act("seal")).json()).toEqual({ ok: true, seal_hash: "h", pool_fmv_usd: 12 })
+    expect(await (await act("seal")).json()).toEqual({ ok: true, seal_hash: "h", pool_fmv_usd: 12, deal_mode: "random" })
     expect((await act("open")).status).toBe(200)
     expect(store.setStatus).toHaveBeenLastCalledWith({}, DROP, "open")
     expect((await act("close")).status).toBe(200)
@@ -501,6 +502,16 @@ describe("/api/admin/giveaways", () => {
 
     store.getDrop.mockResolvedValueOnce(null)
     expect((await act("seal")).status).toBe(404)
+
+    // the deal mode (2026-11-08): passed through, and an unknown one is refused before any seal
+    store.sealDrop.mockClear()
+    store.sealDrop.mockResolvedValueOnce({ hash: "h", check: { pool_fmv_usd: 12 } })
+    const bal = await adminOne.POST(post(`http://x/api/admin/giveaways/${ID}`, { action: "seal", deal_mode: "balanced" }, auth), idCtx(ID))
+    expect(await bal.json()).toEqual({ ok: true, seal_hash: "h", pool_fmv_usd: 12, deal_mode: "balanced" })
+    expect(store.sealDrop.mock.calls[0][3]).toBe("balanced")
+    const bad = await adminOne.POST(post(`http://x/api/admin/giveaways/${ID}`, { action: "seal", deal_mode: "fair" }, auth), idCtx(ID))
+    expect(bad.status).toBe(400)
+    expect(store.sealDrop).toHaveBeenCalledTimes(1)
   })
 
   it("deliver_plan passes the connected wallet (lowercased) and returns the simulated plan", async () => {

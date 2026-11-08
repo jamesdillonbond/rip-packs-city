@@ -47,6 +47,7 @@ const DROP = (over: Record<string, unknown> = {}) => ({
   pack_count: 1,
   moments_per_pack: 2,
   seal_hash: null,
+  deal_mode: "random",
   seal_salt: null,
   sealed_at: null,
   opened_at: null,
@@ -308,6 +309,66 @@ describe("AdminGiveawaysClient — drops", () => {
     await waitFor(() => expect(posts).toEqual(["verify", "close", "seal", "delete"]))
   })
 
+  it("the pool builder filters, sorts, bulk-picks, suggests shapes and previews the pack spread (2026-11-08)", async () => {
+    stub((url) => (url.startsWith("/api/admin/giveaways?candidates=") ? json(CANDIDATES) : json({ drops: [] })))
+    render(<AdminGiveawaysClient />)
+    await screen.findByText("No drops yet.")
+    fireEvent.change(screen.getByPlaceholderText("username or 0x…"), { target: { value: "0x00000000000000aa" } })
+    fireEvent.click(screen.getByRole("button", { name: /load giftable moments/i }))
+    await screen.findByText("Lillard")
+    const rows = () => screen.getAllByRole("checkbox").filter((c) => c.closest("tbody")).length
+
+    // search, tier, sort and the unpriced toggle narrow the table
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search moments" }), { target: { value: "lill" } })
+    expect(rows()).toBe(1)
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search moments" }), { target: { value: "" } })
+    fireEvent.change(screen.getByRole("combobox", { name: "Tier" }), { target: { value: "Rare" } })
+    expect(rows()).toBe(1)
+    fireEvent.change(screen.getByRole("combobox", { name: "Tier" }), { target: { value: "" } })
+    fireEvent.change(screen.getByRole("combobox", { name: "Sort" }), { target: { value: "player" } })
+    fireEvent.click(screen.getByRole("checkbox", { name: /hide unpriced/i }))
+    expect(rows()).toBe(1)
+    fireEvent.click(screen.getByRole("checkbox", { name: /hide unpriced/i }))
+    expect(rows()).toBe(2)
+
+    // select all shown → shape suggestions; pick one; clear; random fill
+    const numbers = screen.getAllByRole("spinbutton")
+    fireEvent.change(numbers[0], { target: { value: "5" } })
+    fireEvent.change(numbers[1], { target: { value: "1" } })
+    fireEvent.click(screen.getByRole("button", { name: /select all shown \(2\)/i }))
+    expect(screen.getByTestId("tier-mix").textContent).toContain("1 Rare")
+    fireEvent.click(screen.getByRole("button", { name: "1 × 2" }))
+    expect((screen.getAllByRole("spinbutton")[0] as HTMLInputElement).value).toBe("1")
+    // a pool with an unpriced Moment can't be previewed
+    expect(screen.getByText(/needs every picked Moment priced/)).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: /clear picks/i }))
+    fireEvent.change(screen.getAllByRole("spinbutton")[1], { target: { value: "1" } })
+    fireEvent.click(screen.getByRole("checkbox", { name: /hide unpriced/i }))
+    fireEvent.click(screen.getByRole("button", { name: /fill to 1 at random from shown/i }))
+    expect(screen.getByRole("button", { name: /create draft \(1\/1\)/i })).toBeTruthy()
+    const preview = screen.getByTestId("spread-preview")
+    expect(preview.textContent).toContain("Balanced")
+    expect(preview.textContent).toContain("$9.00")
+  })
+
+  it("seal sends the chosen deal mode — balanced by default, random when picked (2026-11-08)", async () => {
+    const bodies: Record<string, unknown>[] = []
+    stub((url, init) => {
+      if (init?.method === "POST") {
+        bodies.push(JSON.parse(init.body as string))
+        return json({ ok: true, seal_hash: "h", pool_fmv_usd: 4 })
+      }
+      return json({ drops: [DROP({ id: "d2", title: "Draft one" }), DROP({ id: "d3", title: "Draft two" })] })
+    })
+    render(<AdminGiveawaysClient />)
+    const one = (await screen.findByText("Draft one")).parentElement!
+    fireEvent.click(within(one).getByRole("button", { name: "Seal" }))
+    const two = screen.getByText("Draft two").parentElement!
+    fireEvent.change(within(two).getByRole("combobox", { name: "Deal mode" }), { target: { value: "random" } })
+    fireEvent.click(within(two).getByRole("button", { name: "Seal" }))
+    await waitFor(() => expect(bodies).toEqual([{ action: "seal", deal_mode: "balanced" }, { action: "seal", deal_mode: "random" }]))
+  })
+
   it("a declined confirm sends nothing", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(false)
     const f = stub(() => json({ drops: [DROP({ id: "d2", title: "Draft one" })] }))
@@ -369,7 +430,7 @@ describe("AdminGiveawaysClient — sign in with Flow Wallet to build a pool (202
     fireEvent.change(numbers[0], { target: { value: "1" } })
     fireEvent.change(numbers[1], { target: { value: "2" } })
     fireEvent.click(screen.getByText("Lillard"))
-    fireEvent.click(screen.getAllByRole("checkbox")[1]) // the unnamed moment's row
+    fireEvent.click(screen.getAllByRole("checkbox").filter((c) => c.closest("tbody"))[1]) // the unnamed moment's row
     fireEvent.click(screen.getByRole("button", { name: /create draft \(2\/2\)/i }))
     await screen.findByText("Draft created.")
     expect(created).toMatchObject({ admin_wallet: "0x00000000000000bb", source_wallets: ["0x00000000000000aa", "0x00000000000000aa"] })

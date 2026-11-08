@@ -10,6 +10,9 @@
 --     recipient, never to the admin's own wallet, and never hands out a pack twice.
 --   * a multi-account pool checks every (moment, source) pair against THAT source's
 --     cache rows, stores the source, and a claim can't target any pool source.
+--   * a BALANCED seal (seal_giveaway_drop_dealt, 20261108205511_audit_20261108_giveaway_balanced_deal.sql)
+--     is refused unless every moment's slot is its FMV value band; a random seal is
+--     the v1 seal; either records the mode, and a refused seal changes nothing.
 -- The function DDL below is a VERBATIM copy of the migration;
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if it drifts.
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -43,6 +46,7 @@ CREATE TABLE IF NOT EXISTS public.giveaway_drops (
   closed_at         timestamptz,
   created_at        timestamptz NOT NULL DEFAULT now(),
   updated_at        timestamptz NOT NULL DEFAULT now(),
+  deal_mode         text NOT NULL DEFAULT 'random' CONSTRAINT giveaway_drops_deal_mode_check CHECK (deal_mode IN ('random', 'balanced')),
   -- a sealed drop always carries both halves of its commitment
   CONSTRAINT giveaway_drops_sealed_has_commitment
     CHECK (status = 'draft' OR (seal_hash IS NOT NULL AND seal_salt IS NOT NULL AND sealed_at IS NOT NULL))
@@ -328,6 +332,51 @@ END;
 $function$;
 -- <<< END verbatim seal_giveaway_drop <<<
 
+-- >>> BEGIN verbatim seal_giveaway_drop_dealt (keep byte-identical to the migration) >>>
+CREATE OR REPLACE FUNCTION public.seal_giveaway_drop_dealt(
+  p_drop_id uuid,
+  p_assignments jsonb,
+  p_hash text,
+  p_salt text,
+  p_deal_mode text
+)
+RETURNS void
+LANGUAGE plpgsql
+SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_packs int;
+  v_bad int;
+BEGIN
+  IF p_deal_mode IS NULL OR p_deal_mode NOT IN ('random', 'balanced') THEN
+    RAISE EXCEPTION 'giveaway: deal mode must be random or balanced' USING ERRCODE = '22023';
+  END IF;
+
+  -- status, exactly-once coverage and the commitment: the v1 seal, unchanged
+  PERFORM public.seal_giveaway_drop(p_drop_id, p_assignments, p_hash, p_salt);
+
+  IF p_deal_mode = 'balanced' THEN
+    SELECT d.pack_count INTO v_packs FROM public.giveaway_drops d WHERE d.id = p_drop_id;
+    IF EXISTS (SELECT 1 FROM public.giveaway_pack_moments m
+                WHERE m.drop_id = p_drop_id AND m.fmv_usd IS NULL) THEN
+      RAISE EXCEPTION 'giveaway: a balanced deal needs every moment priced' USING ERRCODE = '22023';
+    END IF;
+    SELECT count(*) INTO v_bad
+      FROM (SELECT m.slot,
+                   (row_number() OVER (ORDER BY m.fmv_usd DESC, m.moment_id COLLATE "C") - 1) / v_packs + 1 AS band
+              FROM public.giveaway_pack_moments m
+             WHERE m.drop_id = p_drop_id) r
+     WHERE r.slot <> r.band;
+    IF v_bad > 0 THEN
+      RAISE EXCEPTION 'giveaway: not a balanced deal (% moments outside their value band)', v_bad USING ERRCODE = '22023';
+    END IF;
+  END IF;
+
+  UPDATE public.giveaway_drops SET deal_mode = p_deal_mode, updated_at = now() WHERE id = p_drop_id;
+END;
+$function$;
+-- <<< END verbatim seal_giveaway_drop_dealt <<<
+
 -- Admin 0x00000000000000aa holds Top Shot moments 1..5 (5 is LOCKED, 6 lock unknown).
 -- Moment 7 exists under the admin only in ANOTHER collection.
 INSERT INTO wallet_moments_cache (wallet_address, moment_id, collection_id, player_name, fmv_usd, is_locked, last_seen_at) VALUES
@@ -478,6 +527,38 @@ SELECT _assert_eq((SELECT outcome FROM _gw_claims WHERE who = 'srcbb'), 'admin_r
 SELECT _assert_eq((SELECT outcome FROM _gw_claims WHERE who = 'sponsor'), 'admin_recipient', 'M5 nor to the sponsor wallet');
 SELECT _assert_eq((SELECT outcome FROM _gw_claims WHERE who = 'fan'), 'claimed', 'M5 anyone else still claims');
 
-SELECT '✓ giveaways: draft refusals (size, duplicate, locked, unknown lock, other collection, other wallet), seal coverage, claim outcomes, multi-account pools' AS result;
+-- B1..B4: the balanced deal (2026-11-08). Pool 21=$10, 22=$8, 23=$5, 24=$1 in 2 packs of 2:
+-- band 1 = {21, 22} must fill slot 1, band 2 = {23, 24} slot 2.
+INSERT INTO giveaway_drops (slug, title, sponsor_name, collection_id, admin_wallet, pack_count, moments_per_pack)
+VALUES ('bal-one', 'Balanced one', 'Trevor', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '0x00000000000000aa', 2, 2),
+       ('bal-two', 'Balanced two', 'Trevor', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '0x00000000000000aa', 2, 2);
+INSERT INTO giveaway_pack_moments (drop_id, moment_id, fmv_usd, source_wallet)
+SELECT d.id, v.id, v.fmv, '0x00000000000000aa'
+  FROM giveaway_drops d CROSS JOIN (VALUES ('21', 10), ('22', 8), ('23', 5), ('24', 1)) v(id, fmv)
+ WHERE d.slug IN ('bal-one', 'bal-two');
+CREATE OR REPLACE FUNCTION pg_temp._try_dealt(p_label text, p_slug text, p_mode text, p_assign jsonb) RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+  PERFORM seal_giveaway_drop_dealt((SELECT id FROM giveaway_drops WHERE slug = p_slug), p_assign, repeat('c', 64), repeat('d', 64), p_mode);
+  INSERT INTO _gw_raised VALUES (p_label, NULL);
+EXCEPTION WHEN OTHERS THEN
+  INSERT INTO _gw_raised VALUES (p_label, SQLERRM);
+END $$;
+-- both top-band moments in pack 1: valid coverage, NOT balanced
+SELECT pg_temp._try_dealt('b-stacked', 'bal-one', 'balanced', '[{"moment_id":"21","pack_no":1,"slot":1},{"moment_id":"22","pack_no":1,"slot":2},{"moment_id":"23","pack_no":2,"slot":1},{"moment_id":"24","pack_no":2,"slot":2}]');
+SELECT pg_temp._try_dealt('b-mode', 'bal-one', 'fair', '[{"moment_id":"21","pack_no":1,"slot":1},{"moment_id":"22","pack_no":2,"slot":1},{"moment_id":"23","pack_no":2,"slot":2},{"moment_id":"24","pack_no":1,"slot":2}]');
+SELECT _assert((SELECT msg LIKE '%not a balanced deal%' FROM _gw_raised WHERE label = 'b-stacked'), 'B1 a balanced seal that stacks the top band in one pack is refused');
+SELECT _assert((SELECT msg LIKE '%random or balanced%' FROM _gw_raised WHERE label = 'b-mode'), 'B1 an unknown deal mode is refused');
+SELECT _assert_eq((SELECT status || '/' || deal_mode FROM giveaway_drops WHERE slug = 'bal-one'), 'draft/random', 'B2 a refused balanced seal leaves the draft untouched');
+SELECT _assert_eq((SELECT count(*)::text FROM giveaway_pack_moments m JOIN giveaway_drops d ON d.id = m.drop_id
+                    WHERE d.slug = 'bal-one' AND m.pack_no IS NOT NULL), '0', 'B2 and assigns nothing');
+SELECT pg_temp._try_dealt('b-ok', 'bal-one', 'balanced', '[{"moment_id":"21","pack_no":2,"slot":1},{"moment_id":"22","pack_no":1,"slot":1},{"moment_id":"23","pack_no":1,"slot":2},{"moment_id":"24","pack_no":2,"slot":2}]');
+SELECT _assert_eq((SELECT msg FROM _gw_raised WHERE label = 'b-ok'), NULL, 'B3 a balanced deal (one per band per pack) is sealed');
+SELECT _assert_eq((SELECT status || '/' || deal_mode FROM giveaway_drops WHERE slug = 'bal-one'), 'sealed/balanced', 'B3 the drop records the balanced mode');
+-- the same stacked assignment is a legitimate RANDOM deal
+SELECT pg_temp._try_dealt('r-ok', 'bal-two', 'random', '[{"moment_id":"21","pack_no":1,"slot":1},{"moment_id":"22","pack_no":1,"slot":2},{"moment_id":"23","pack_no":2,"slot":1},{"moment_id":"24","pack_no":2,"slot":2}]');
+SELECT _assert_eq((SELECT msg FROM _gw_raised WHERE label = 'r-ok'), NULL, 'B4 a random seal accepts any exactly-once deal');
+SELECT _assert_eq((SELECT status || '/' || deal_mode FROM giveaway_drops WHERE slug = 'bal-two'), 'sealed/random', 'B4 and records the random mode');
+
+SELECT '✓ giveaways: draft refusals (size, duplicate, locked, unknown lock, other collection, other wallet), seal coverage, claim outcomes, multi-account pools, balanced deal' AS result;
 
 ROLLBACK;

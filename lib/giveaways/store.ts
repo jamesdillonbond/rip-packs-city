@@ -13,8 +13,9 @@ import { readTopShotHoldings, type Holding } from "@/lib/giveaways/topshot-holdi
 import {
   PRIZE_VALUE_CAP_USD,
   manifestOf as manifestOfRows,
-  sealPool,
+  sealPoolDealt,
   summarizePackValues,
+  type DealMode,
   type PackValueSummary,
 } from "@/lib/giveaways/seal"
 
@@ -40,6 +41,8 @@ export interface DropRow {
   opened_at: string | null
   closed_at: string | null
   created_at: string
+  /** How the pool was dealt into packs ('random' until sealed; see lib/giveaways/seal.ts DealMode). */
+  deal_mode: DealMode
 }
 
 export interface PoolRow {
@@ -83,7 +86,7 @@ export class GiveawayError extends Error {
 }
 
 const DROP_COLUMNS =
-  "id, slug, title, description, sponsor_name, collection_id, admin_wallet, status, pack_count, moments_per_pack, seal_hash, seal_salt, sealed_at, opened_at, closed_at, created_at"
+  "id, slug, title, description, sponsor_name, collection_id, admin_wallet, status, pack_count, moments_per_pack, seal_hash, seal_salt, sealed_at, opened_at, closed_at, created_at, deal_mode"
 const POOL_COLUMNS =
   "moment_id, pack_no, slot, edition_key, player_name, set_name, team_name, tier, serial_number, fmv_usd, image_url, delivered_at, last_checked_at, last_check_recipient_holds, last_check_admin_holds, source_wallet"
 
@@ -340,6 +343,7 @@ export async function sealDrop(
   db: SupabaseClient,
   drop: DropRow,
   read: (address: string, ids: string[]) => Promise<Record<string, Holding>> = readTopShotHoldings,
+  mode: DealMode = "random",
 ): Promise<{ hash: string; check: SealCheck }> {
   if (drop.status !== "draft") throw new GiveawayError(`Only a draft can be sealed (this drop is ${drop.status}).`, 409, "wrong_status")
   const pool = await getPool(db, drop.id)
@@ -368,12 +372,19 @@ export async function sealDrop(
   if (check.locked.length) {
     throw new GiveawayError(`Locked on chain (a locked Moment can't be gifted): ${check.locked.join(", ")}`, 409, "locked")
   }
-  const sealed = sealPool(ids, drop.pack_count, drop.moments_per_pack)
-  const { error } = await db.rpc("seal_giveaway_drop", {
+  const sealed = sealPoolDealt(
+    pool.map((p) => ({ moment_id: p.moment_id, fmv_usd: p.fmv_usd })),
+    drop.pack_count,
+    drop.moments_per_pack,
+    mode,
+  )
+  // seal + mode in one transaction; for 'balanced' the database re-checks that every slot is its value band
+  const { error } = await db.rpc("seal_giveaway_drop_dealt", {
     p_drop_id: drop.id,
     p_assignments: sealed.assignments,
     p_hash: sealed.hash,
     p_salt: sealed.salt,
+    p_deal_mode: mode,
   })
   if (error) {
     if (isRefusal(error)) throw new GiveawayError(error.message, 409, "refused")
@@ -526,6 +537,7 @@ export interface PublicDropView {
     sealed_at: string
     opened_at: string | null
     closed_at: string | null
+    deal_mode: DealMode
   }
   /** The whole pool, in a fixed order that reveals nothing about pack assignment. */
   pool: PublicPoolMoment[]
@@ -586,6 +598,7 @@ export function buildPublicView(
       sealed_at: drop.sealed_at,
       opened_at: drop.opened_at,
       closed_at: drop.closed_at,
+      deal_mode: drop.deal_mode === "balanced" ? "balanced" : "random",
     },
     pool: sorted.map(publicMoment),
     values: summarizePackValues(pool),

@@ -79,6 +79,7 @@ const DROP: DropRow = {
   pack_count: 2,
   moments_per_pack: 2,
   seal_hash: null,
+  deal_mode: "random",
   seal_salt: null,
   sealed_at: null,
   opened_at: null,
@@ -296,6 +297,23 @@ describe("giveaways/store — sealDrop", () => {
       message: "down",
       code: "PGRST002",
     })
+  })
+
+  it("seals through seal_giveaway_drop_dealt with the mode; a balanced seal keeps the two top moments apart (2026-11-08)", async () => {
+    const priced = [pm("1", { fmv_usd: 50 }), pm("2", { fmv_usd: 40 }), pm("3", { fmv_usd: 2 }), pm("4", { fmv_usd: 1 })]
+    for (let i = 0; i < 20; i++) {
+      const f = dbWithPool(priced)
+      await sealDrop(f.db, DROP, allHeld, "balanced")
+      expect(f.rpcs[0].name).toBe("seal_giveaway_drop_dealt")
+      const args = f.rpcs[0].args as { p_deal_mode: string; p_assignments: Array<{ moment_id: string; pack_no: number; slot: number }> }
+      expect(args.p_deal_mode).toBe("balanced")
+      const packOf = (id: string) => args.p_assignments.find((a) => a.moment_id === id)!.pack_no
+      expect(packOf("1")).not.toBe(packOf("2"))
+      expect(args.p_assignments.filter((a) => a.slot === 1).map((a) => a.moment_id).sort()).toEqual(["1", "2"])
+    }
+    const r = dbWithPool(priced)
+    await sealDrop(r.db, DROP, allHeld)
+    expect((r.rpcs[0].args as { p_deal_mode: string }).p_deal_mode).toBe("random")
   })
 })
 

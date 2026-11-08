@@ -39,6 +39,7 @@ const BASE = {
     sealed_at: "2026-09-29T19:00:00Z",
     opened_at: "2026-09-29T19:05:00Z",
     closed_at: null,
+    deal_mode: "random",
   },
   pool: [
     { moment_id: "1", player_name: "Damian Lillard", set_name: "Base Set", team_name: null, tier: "rare", serial_number: 7, fmv_usd: 9.5, image_url: null },

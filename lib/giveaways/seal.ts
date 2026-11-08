@@ -109,6 +109,151 @@ export function sealPool(
   return { assignments, manifest, salt, hash: commitmentHash(salt, manifest) }
 }
 
+/**
+ * How a sealed pool is dealt into packs (Trevor, 2026-11-08: moments "randomized
+ * and shuffled as they're stuffed into packs for fairness of who receives what").
+ *
+ *   random   — one Fisher–Yates shuffle of the whole pool, dealt in order. Every
+ *              arrangement is equally likely, so one pack CAN hold every top
+ *              Moment while another holds only the cheapest.
+ *   balanced — the pool is ranked by FMV (highest first, ties by moment id in
+ *              code-point order) and cut into `perPack` value bands of
+ *              `packCount` Moments each. Every pack gets exactly ONE Moment from
+ *              each band, chosen by a CSPRNG shuffle inside the band: band 1 (the
+ *              top `packCount` Moments) fills slot 1 of every pack, band 2 slot 2,
+ *              and so on. No pack can hold two top-band Moments, and the gap
+ *              between the best and worst pack is as small as a fixed pool allows.
+ *
+ * Either way the seal fingerprint commits to the result, and the database
+ * re-checks the balanced property at seal (seal_giveaway_drop_dealt), so the
+ * public page's description of the deal is enforced, not just claimed.
+ */
+export type DealMode = "random" | "balanced"
+
+export const DEAL_MODES: readonly DealMode[] = ["random", "balanced"]
+
+export function isDealMode(v: unknown): v is DealMode {
+  return v === "random" || v === "balanced"
+}
+
+/** Highest FMV first; ties broken by moment id in code-point order (Postgres COLLATE "C"). */
+export function rankByValue<T extends PoolMoment>(moments: readonly T[]): T[] {
+  return moments.slice().sort((a, b) => {
+    const av = a.fmv_usd ?? -Infinity
+    const bv = b.fmv_usd ?? -Infinity
+    if (av !== bv) return bv - av
+    return a.moment_id < b.moment_id ? -1 : a.moment_id > b.moment_id ? 1 : 0
+  })
+}
+
+/**
+ * The balanced deal: value bands, one per slot, shuffled within the band.
+ * Refuses an unpriced Moment — a band needs a value to rank by.
+ */
+export function dealBalanced(
+  moments: readonly PoolMoment[],
+  packCount: number,
+  perPack: number,
+  rand: (maxExclusive: number) => number = randomInt,
+): PackAssignment[] {
+  if (!Number.isInteger(packCount) || packCount < 1) throw new Error("packCount must be a positive integer")
+  if (!Number.isInteger(perPack) || perPack < 1) throw new Error("perPack must be a positive integer")
+  if (moments.length !== packCount * perPack) {
+    throw new Error(`pool has ${moments.length} moments; ${packCount} packs of ${perPack} need ${packCount * perPack}`)
+  }
+  if (new Set(moments.map((m) => m.moment_id)).size !== moments.length) throw new Error("pool contains a duplicate moment")
+  if (moments.some((m) => m.fmv_usd == null || !Number.isFinite(m.fmv_usd))) throw new Error("a balanced deal needs every moment priced")
+  const ranked = rankByValue(moments)
+  const out: PackAssignment[] = []
+  for (let band = 0; band < perPack; band++) {
+    const members = shuffle(ranked.slice(band * packCount, (band + 1) * packCount), rand)
+    members.forEach((m, i) => out.push({ moment_id: m.moment_id, pack_no: i + 1, slot: band + 1 }))
+  }
+  return out
+}
+
+/** Deal by mode. `random` is the original v1 deal, unchanged. */
+export function dealByMode(
+  moments: readonly PoolMoment[],
+  packCount: number,
+  perPack: number,
+  mode: DealMode,
+  rand: (maxExclusive: number) => number = randomInt,
+): PackAssignment[] {
+  if (mode === "balanced") return dealBalanced(moments, packCount, perPack, rand)
+  return dealIntoPacks(
+    shuffle(
+      moments.map((m) => m.moment_id),
+      rand,
+    ),
+    packCount,
+    perPack,
+  )
+}
+
+/** Shuffle by mode, deal and commit. `salt` and `rand` are injectable for tests only. */
+export function sealPoolDealt(
+  moments: readonly PoolMoment[],
+  packCount: number,
+  perPack: number,
+  mode: DealMode,
+  opts: { salt?: string; rand?: (maxExclusive: number) => number } = {},
+): SealResult {
+  const assignments = dealByMode(moments, packCount, perPack, mode, opts.rand)
+  const manifest = manifestOf(assignments)
+  const salt = opts.salt ?? randomBytes(32).toString("hex")
+  return { assignments, manifest, salt, hash: commitmentHash(salt, manifest) }
+}
+
+export interface PackSpread {
+  /** Over the simulated deals: the typical (median) value of the WORST and the BEST pack. */
+  typical_low_usd: number
+  typical_high_usd: number
+  /** The most extreme worst and best pack seen across the simulations. */
+  worst_low_usd: number
+  worst_high_usd: number
+  trials: number
+}
+
+/**
+ * How far apart pack values land under a deal mode, by simulation — the admin
+ * preview, not a guarantee. Null when the pool doesn't fit the pack shape or a
+ * moment is unpriced (a spread with a hole in it is not a spread).
+ */
+export function simulatePackSpread(
+  fmvs: readonly (number | null)[],
+  packCount: number,
+  perPack: number,
+  mode: DealMode,
+  trials = 400,
+  rand: (maxExclusive: number) => number = (n) => Math.floor(Math.random() * n),
+): PackSpread | null {
+  if (!(packCount >= 1 && perPack >= 1) || fmvs.length !== packCount * perPack) return null
+  if (fmvs.some((v) => v == null || !Number.isFinite(v))) return null
+  const moments: PoolMoment[] = fmvs.map((v, i) => ({ moment_id: String(i).padStart(6, "0"), fmv_usd: v as number }))
+  const lows: number[] = []
+  const highs: number[] = []
+  for (let t = 0; t < trials; t++) {
+    const totals = new Array<number>(packCount).fill(0)
+    for (const a of dealByMode(moments, packCount, perPack, mode, rand)) totals[a.pack_no - 1] += Number(moments[Number(a.moment_id)].fmv_usd)
+    lows.push(Math.min(...totals))
+    highs.push(Math.max(...totals))
+  }
+  const median = (xs: number[]) => {
+    const s = xs.slice().sort((a, b) => a - b)
+    const mid = Math.floor(s.length / 2)
+    return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2
+  }
+  const round = (n: number) => Math.round(n * 100) / 100
+  return {
+    typical_low_usd: round(median(lows)),
+    typical_high_usd: round(median(highs)),
+    worst_low_usd: round(Math.min(...lows)),
+    worst_high_usd: round(Math.max(...highs)),
+    trials,
+  }
+}
+
 export interface PackValueSummary {
   /** Sum of the FMVs that exist. */
   pool_fmv_usd: number

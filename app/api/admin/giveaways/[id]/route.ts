@@ -3,7 +3,8 @@
 // Trevor-only (RPC_ADMIN_TOKEN). One drop.
 //   GET  -> { drop, pool, claims }   everything, including the pack assignment (the delivery checklist)
 //   POST { action: "seal" | "open" | "close" | "verify" | "delete" }
-//        seal   — on-chain re-check (held + unlocked), shuffle, commit (draft only)
+//        seal   — on-chain re-check (held + unlocked), deal, commit (draft only);
+//               { deal_mode: "random" | "balanced" } (absent = random, the v1 deal)
 //        open   — sealed -> open (claims start)
 //        close  — open -> closed (claims stop; salt + manifest become public)
 //        verify — read the chain for every claimed moment and record delivery
@@ -30,6 +31,7 @@ import {
 } from "@/lib/giveaways/store"
 import { planDelivery } from "@/lib/giveaways/deliver"
 import { FlowScriptError } from "@/lib/giveaways/flow-script"
+import { isDealMode } from "@/lib/giveaways/seal"
 
 export const dynamic = "force-dynamic"
 // seal/verify make Flow script calls (20 s bound each, 50 moments per call)
@@ -59,10 +61,12 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   if (!UUID.test(id)) return NextResponse.json({ error: "not a drop id" }, { status: 400 })
   let action: unknown
   let parent: unknown
+  let dealMode: unknown
   try {
-    const body = (await req.json()) as { action?: unknown; parent?: unknown }
+    const body = (await req.json()) as { action?: unknown; parent?: unknown; deal_mode?: unknown }
     action = body?.action
     parent = body?.parent
+    dealMode = body?.deal_mode
   } catch {
     return NextResponse.json({ error: "body must be JSON" }, { status: 400 })
   }
@@ -81,8 +85,10 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     if (!drop) return NextResponse.json({ error: "no such drop" }, { status: 404 })
     switch (action) {
       case "seal": {
-        const { hash, check } = await sealDrop(supabaseAdmin, drop)
-        return NextResponse.json({ ok: true, seal_hash: hash, pool_fmv_usd: check.pool_fmv_usd })
+        const mode = dealMode === undefined ? "random" : dealMode
+        if (!isDealMode(mode)) return NextResponse.json({ error: "deal_mode must be random or balanced" }, { status: 400 })
+        const { hash, check } = await sealDrop(supabaseAdmin, drop, undefined, mode)
+        return NextResponse.json({ ok: true, seal_hash: hash, pool_fmv_usd: check.pool_fmv_usd, deal_mode: mode })
       }
       case "open":
         await setStatus(supabaseAdmin, drop, "open")

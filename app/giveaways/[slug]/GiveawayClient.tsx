@@ -380,8 +380,16 @@ export default function GiveawayClient({ slug }: { slug: string }) {
       <section style={card}>
         <h2 style={h2}>Provably fair</h2>
         <p style={muted}>
-          Before claims opened, the Moments were shuffled into packs and this fingerprint of that assignment was published. It can&apos;t be changed afterwards
-          without the fingerprint changing.
+          {drop.deal_mode === "balanced" ? (
+            <>
+              <strong>Balanced packs.</strong> The Moments were ranked by value and split into {drop.moments_per_pack} value{" "}
+              {drop.moments_per_pack === 1 ? "band" : "bands"} of {drop.pack_count}. Every pack got exactly one Moment from each band, picked at random
+              within the band, so no pack can hold two of the top {drop.pack_count}. The database refused the seal unless this was true.{" "}
+            </>
+          ) : (
+            <>The Moments were shuffled at random into packs. </>
+          )}
+          Before claims opened, this fingerprint of the pack assignment was published. It can&apos;t be changed afterwards without the fingerprint changing.
         </p>
         <code style={{ display: "block", fontFamily: MONO, fontSize: 12, wordBreak: "break-all", padding: 8, background: "var(--rpc-bg)", borderRadius: 6 }}>
           sha256 {drop.seal_hash}
@@ -426,7 +434,7 @@ export default function GiveawayClient({ slug }: { slug: string }) {
           <li>
             <strong>Prizes and odds:</strong> {drop.pack_count} packs of {drop.moments_per_pack}, total approximate value {usd(values.pool_fmv_usd)} (Rip Packs
             City FMV at sealing). Each claim receives one pack drawn uniformly at random from the packs still unclaimed. Pack contents were fixed before claims
-            opened (see Provably fair).
+            opened{drop.deal_mode === "balanced" ? ", with one Moment from each value band in every pack" : ""} (see Provably fair).
           </li>
           <li>
             <strong>Delivery:</strong> the sponsor sends each Moment to the account you chose when claiming: the Top Shot account for the username you entered, or your Flow Wallet or an account linked to it. Prizes can&apos;t be exchanged

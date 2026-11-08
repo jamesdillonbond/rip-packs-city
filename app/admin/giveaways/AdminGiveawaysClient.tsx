@@ -15,6 +15,8 @@ import { checklistRows, type ChecklistRow } from "@/lib/giveaways/checklist"
 import type { Candidate, ClaimRow, DropRow, PoolRow } from "@/lib/giveaways/store"
 import type { DeliveryPlan } from "@/lib/giveaways/deliver"
 import { SealUnconfirmedError, connectAdminWallet, disconnectAdminWallet, sendDeliveryBatch } from "@/lib/giveaways/admin-wallet"
+import { DEFAULT_FILTER, filterCandidates, randomFill, shapesFor, tierLabel, tierMix, tiersOf, type BuilderFilter, type BuilderSort } from "@/lib/giveaways/pool-builder"
+import { simulatePackSpread, type DealMode, type PackSpread } from "@/lib/giveaways/seal"
 
 const DISPLAY = "var(--font-display)"
 const MONO = "var(--font-mono)"
@@ -141,6 +143,7 @@ function CreateDraft({ call, onCreated }: { call: Call; onCreated: () => void })
   const [form, setForm] = useState({ slug: "", title: "", sponsor_name: "", description: "", pack_count: 5, moments_per_pack: 2 })
   const [msg, setMsg] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [filter, setFilter] = useState<BuilderFilter>(DEFAULT_FILTER)
 
   // Sign in with Flow Wallet: candidates across the wallet AND every account it has linked (2026-10-03)
   const connectAndLoad = async () => {
@@ -203,10 +206,25 @@ function CreateDraft({ call, onCreated }: { call: Call; onCreated: () => void })
     setPicked(new Set())
   }
 
-  const sorted = useMemo(() => (candidates ?? []).slice().sort((a, b) => (b.fmv_usd ?? -1) - (a.fmv_usd ?? -1)), [candidates])
+  const all = useMemo(() => candidates ?? [], [candidates])
+  const sorted = useMemo(() => filterCandidates(all, filter), [all, filter])
+  const tiers = useMemo(() => tiersOf(all), [all])
   const need = form.pack_count * form.moments_per_pack
-  const pickedFmv = sorted.filter((c) => picked.has(c.moment_id)).reduce((s, c) => s + (c.fmv_usd ?? 0), 0)
-  const pickedUnpriced = sorted.filter((c) => picked.has(c.moment_id) && c.fmv_usd == null).length
+  const pickedRows = all.filter((c) => picked.has(c.moment_id))
+  const pickedFmv = pickedRows.reduce((s, c) => s + (c.fmv_usd ?? 0), 0)
+  const pickedUnpriced = pickedRows.filter((c) => c.fmv_usd == null).length
+  const mix = tierMix(all, picked)
+  const spread = useMemo(() => {
+    if (pickedRows.length !== need || need === 0) return null
+    const fmvs = pickedRows.map((c) => c.fmv_usd)
+    return {
+      random: simulatePackSpread(fmvs, form.pack_count, form.moments_per_pack, "random"),
+      balanced: simulatePackSpread(fmvs, form.pack_count, form.moments_per_pack, "balanced"),
+    }
+    // pickedRows is derived from picked + all; re-simulate only when those or the shape change
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [picked, all, need, form.pack_count, form.moments_per_pack])
+  const shapes = picked.size > 0 && picked.size !== need ? shapesFor(picked.size).slice(0, 6) : []
 
   const toggle = (id: string) =>
     setPicked((prev) => {
@@ -291,6 +309,77 @@ function CreateDraft({ call, onCreated }: { call: Call; onCreated: () => void })
             ). Picked {picked.size} of {need} ·{" "}
             {usd(pickedFmv)} FMV{pickedUnpriced ? ` · ${pickedUnpriced} without FMV (sealing will refuse them)` : ""}
           </p>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", margin: "8px 0" }}>
+            <label style={{ fontSize: 12, color: "var(--rpc-text-muted)", display: "flex", flexDirection: "column", gap: 2 }}>
+              Search
+              <input
+                type="search"
+                aria-label="Search moments"
+                placeholder="player, set or team"
+                value={filter.q}
+                onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))}
+                style={{ ...input, width: 200 }}
+              />
+            </label>
+            <label style={{ fontSize: 12, color: "var(--rpc-text-muted)", display: "flex", flexDirection: "column", gap: 2 }}>
+              Tier
+              <select aria-label="Tier" value={filter.tier} onChange={(e) => setFilter((f) => ({ ...f, tier: e.target.value }))} style={input}>
+                <option value="">All tiers</option>
+                {tiers.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label style={{ fontSize: 12, color: "var(--rpc-text-muted)", display: "flex", flexDirection: "column", gap: 2 }}>
+              Sort
+              <select aria-label="Sort" value={filter.sort} onChange={(e) => setFilter((f) => ({ ...f, sort: e.target.value as BuilderSort }))} style={input}>
+                <option value="fmv_desc">FMV high → low</option>
+                <option value="fmv_asc">FMV low → high</option>
+                <option value="player">Player A → Z</option>
+                <option value="serial">Serial low → high</option>
+              </select>
+            </label>
+            <label style={{ fontSize: 12, color: "var(--rpc-text-muted)", display: "flex", gap: 6, alignItems: "center" }}>
+              <input type="checkbox" checked={filter.pricedOnly} onChange={(e) => setFilter((f) => ({ ...f, pricedOnly: e.target.checked }))} />
+              Hide unpriced (sealing refuses them)
+            </label>
+            <button
+              type="button"
+              style={btn}
+              onClick={() => setPicked((prev) => new Set([...prev, ...sorted.map((c) => c.moment_id)]))}
+              disabled={sorted.length === 0}
+            >
+              Select all shown ({sorted.length})
+            </button>
+            <button type="button" style={btn} onClick={() => setPicked((prev) => randomFill(sorted, prev, need))} disabled={picked.size >= need}>
+              Fill to {need} at random from shown
+            </button>
+            <button type="button" style={btn} onClick={() => setPicked(new Set())} disabled={picked.size === 0}>
+              Clear picks
+            </button>
+          </div>
+          {mix.length ? (
+            <p style={{ fontSize: 12, color: "var(--rpc-text-secondary)", fontFamily: MONO, margin: "0 0 6px" }} data-testid="tier-mix">
+              Pool mix: {mix.map((m) => `${m.count} ${m.tier}`).join(" · ")}
+            </p>
+          ) : null}
+          {shapes.length ? (
+            <p style={{ fontSize: 12, color: "var(--rpc-text-muted)", margin: "0 0 6px" }}>
+              {picked.size} picked fits:{" "}
+              {shapes.map((sh) => (
+                <button
+                  key={`${sh.packs}x${sh.perPack}`}
+                  type="button"
+                  style={{ ...btn, padding: "2px 8px", fontSize: 12, marginRight: 4 }}
+                  onClick={() => setForm((f) => ({ ...f, pack_count: sh.packs, moments_per_pack: sh.perPack }))}
+                >
+                  {sh.packs} × {sh.perPack}
+                </button>
+              ))}
+            </p>
+          ) : null}
           <div style={{ maxHeight: 320, overflow: "auto", border: "1px solid var(--rpc-border-subtle)", borderRadius: 6 }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
@@ -313,7 +402,7 @@ function CreateDraft({ call, onCreated }: { call: Call; onCreated: () => void })
                     </td>
                     <td style={td}>{c.player_name ?? "—"}</td>
                     <td style={td}>{c.set_name ?? "—"}</td>
-                    <td style={td}>{c.tier ?? "—"}</td>
+                    <td style={td}>{c.tier ? tierLabel(c.tier) : "—"}</td>
                     <td style={td}>{c.serial_number ?? "—"}</td>
                     <td style={td}>{c.team_name ?? "—"}</td>
                     <td style={td}>{usd(c.fmv_usd)}</td>
@@ -345,6 +434,7 @@ function CreateDraft({ call, onCreated }: { call: Call; onCreated: () => void })
             Description (optional)
             <textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} rows={2} style={input} />
           </label>
+          {spread ? <SpreadPreview random={spread.random} balanced={spread.balanced} /> : null}
           <button type="button" style={{ ...btn, marginTop: 8 }} disabled={busy || picked.size !== need} onClick={create}>
             {busy ? "Creating…" : `Create draft (${picked.size}/${need})`}
           </button>
@@ -352,6 +442,49 @@ function CreateDraft({ call, onCreated }: { call: Call; onCreated: () => void })
       ) : null}
       {msg ? <p style={{ fontSize: 13, color: msg === "Draft created." ? "var(--rpc-success-text)" : "var(--rpc-danger-text)" }}>{msg}</p> : null}
     </section>
+  )
+}
+
+// How far apart pack values land under each deal, from 400 simulated deals of the
+// picked pool. A preview of the spread, not a promise about any one pack.
+function SpreadPreview({ random, balanced }: { random: PackSpread | null; balanced: PackSpread | null }) {
+  if (!random || !balanced) {
+    return (
+      <p style={{ fontSize: 12, color: "var(--rpc-text-muted)", margin: "8px 0 0" }}>
+        Pack-value preview needs every picked Moment priced.
+      </p>
+    )
+  }
+  const row = (label: string, s: PackSpread) => (
+    <tr>
+      <td style={td}>{label}</td>
+      <td style={td}>
+        {usd(s.typical_low_usd)} – {usd(s.typical_high_usd)}
+      </td>
+      <td style={td}>
+        {usd(s.worst_low_usd)} – {usd(s.worst_high_usd)}
+      </td>
+    </tr>
+  )
+  return (
+    <div style={{ marginTop: 10 }} data-testid="spread-preview">
+      <table style={{ borderCollapse: "collapse" }}>
+        <thead>
+          <tr>
+            <th scope="col" style={th}>Deal</th>
+            <th scope="col" style={th}>Worst – best pack (typical)</th>
+            <th scope="col" style={th}>Extremes seen</th>
+          </tr>
+        </thead>
+        <tbody>
+          {row("Balanced", balanced)}
+          {row("Random", random)}
+        </tbody>
+      </table>
+      <p style={{ fontSize: 11, color: "var(--rpc-text-muted)", margin: "4px 0 0" }}>
+        From {balanced.trials} simulated deals of this pool. You pick the deal when you seal; Balanced is the default.
+      </p>
+    </div>
   )
 }
 
@@ -363,6 +496,7 @@ function DropPanel({ drop, call, onChanged }: { drop: DropRow; call: Call; onCha
   // (a Verify report replaced by "HTTP 500" would hide which recipients failed).
   const [detailError, setDetailError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [dealMode, setDealMode] = useState<DealMode>("balanced")
 
   const load = useCallback(async () => {
     const r = await call(`/api/admin/giveaways/${drop.id}`)
@@ -392,7 +526,8 @@ function DropPanel({ drop, call, onChanged }: { drop: DropRow; call: Call; onCha
     if (action === "close" && !window.confirm("Close claims? The secret and pack list become public.")) return
     setBusy(true)
     setMsg(null)
-    const r = await call(`/api/admin/giveaways/${drop.id}`, { method: "POST", body: JSON.stringify({ action }) })
+    const payload = action === "seal" ? { action, deal_mode: dealMode } : { action }
+    const r = await call(`/api/admin/giveaways/${drop.id}`, { method: "POST", body: JSON.stringify(payload) })
     setBusy(false)
     if (action === "verify" && r.body?.report) {
       const rep = r.body.report as { checked: number; delivered: number; pending: number; missing: number; failed_recipients: string[]; write_error: string | null }
@@ -417,7 +552,8 @@ function DropPanel({ drop, call, onChanged }: { drop: DropRow; call: Call; onCha
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <strong style={{ fontFamily: DISPLAY, textTransform: "uppercase" }}>{drop.title}</strong>
         <span style={{ fontFamily: MONO, fontSize: 12, color: "var(--rpc-text-muted)" }}>
-          {drop.status} · {drop.pack_count}×{drop.moments_per_pack} · created {ptTime(drop.created_at)}
+          {drop.status} · {drop.pack_count}×{drop.moments_per_pack}
+          {drop.status !== "draft" ? ` · ${drop.deal_mode === "balanced" ? "balanced" : "random"} deal` : ""} · created {ptTime(drop.created_at)}
         </span>
         {drop.status !== "draft" ? (
           <Link href={`/giveaways/${drop.slug}`} style={{ fontSize: 12, color: "var(--rpc-red-text)" }}>
@@ -427,6 +563,13 @@ function DropPanel({ drop, call, onChanged }: { drop: DropRow; call: Call; onCha
         <span style={{ flex: 1 }} />
         {drop.status === "draft" ? (
           <>
+            <label style={{ fontSize: 12, color: "var(--rpc-text-muted)", display: "flex", gap: 4, alignItems: "center" }}>
+              Deal
+              <select aria-label="Deal mode" value={dealMode} onChange={(e) => setDealMode(e.target.value as DealMode)} style={input} disabled={busy}>
+                <option value="balanced">Balanced (one per value band)</option>
+                <option value="random">Random (full shuffle)</option>
+              </select>
+            </label>
             <button type="button" style={btn} disabled={busy} onClick={() => act("seal")}>
               Seal
             </button>

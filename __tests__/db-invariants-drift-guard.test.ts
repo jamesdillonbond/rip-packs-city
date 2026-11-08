@@ -286,6 +286,12 @@ const PINS = [
     migration: "supabase/migrations/20260929192842_audit_20260929_community_pack_giveaways.sql",
   },
   {
+    // Added 2026-11-08. The balanced deal: refused unless every slot is its FMV value band.
+    fn: "seal_giveaway_drop_dealt",
+    test: "supabase/tests/giveaways.sql",
+    migration: "supabase/migrations/20261108205511_audit_20261108_giveaway_balanced_deal.sql",
+  },
+  {
     // Added 2026-09-29. Disney Pinnacle pack openers read from the open tx's
     // Pinnacle.Deposit events (90,105 opens held NO opener). Pins the in-tx
     // scope (never a later transfer), spork-clamped windows, re-reads for
