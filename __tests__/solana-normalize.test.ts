@@ -317,4 +317,30 @@ describe("multi-set Candy assets", () => {
     expect(e.badges ?? []).not.toContain("First Mint")
     expect(e.badges).toContain("Insert (Home Run Derby)")
   })
+
+  // 2024 MLB Team Balls (found 2026-11-08): names carry an unassigned serial and no
+  // Player Name / Team trait. One edition per club; the club comes from the name.
+  const BALL = "5ENXADdhd29JgJA1rN7Fhf3CBgLD825LdwngncJgv5ck"
+  it("a 2024 Team Ball is one edition per club, its team read from the name, serial and size unknown", () => {
+    const a = grouped(BALL, "2024 Los Angeles Dodgers Baseball  (TBD/171)", { "Item Type": "Collectible", Rarity: "CORE" })
+    expect(editionKeyFromAsset(a)).toBe("ball24:2024-los-angeles-dodgers-baseball-core")
+    const e = normalizeEdition(a)
+    expect(e).toMatchObject({
+      name: "2024 Los Angeles Dodgers Baseball",
+      team_name: "Los Angeles Dodgers",
+      player_name: null,
+      circulation_count: null,
+      set_id: "362e7419-2983-490d-9165-16d41f12e2ec",
+      set_name: "2024 MLB Team Balls",
+      tier: "COMMON",
+    })
+    // "TBD/171" is not a serial; it must never be read as #171 or as an edition of 171.
+    expect(normalizeSerial(a).serial_number).toBeNull()
+  })
+
+  it("a Team Ball club is spelled the way the Base Series spells it; a ball-shaped name elsewhere gets no team", () => {
+    expect(normalizeEdition(grouped(BALL, "2024 Oakland Athletics Baseball (TBD/40)", { Rarity: "CORE" })).team_name).toBe("Athletics")
+    expect(normalizeEdition(grouped(BALL, "2024 Los Angeles Angels Baseball (TBD/40)", { Rarity: "CORE" })).team_name).toBe("Angels")
+    expect(normalizeEdition(grouped(ASG, "2024 Los Angeles Dodgers Baseball (1/1)", { Rarity: "CORE" })).team_name).toBeNull()
+  })
 })

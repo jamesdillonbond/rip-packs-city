@@ -25,7 +25,7 @@
 // derive both from editionKeyFromAsset so they can never diverge.
 
 import { candyChecklistBadges } from "./candy-checklist"
-import { candySetForAsset, type CandySet } from "./candy-sets"
+import { candySetForAsset, CANDY_TEAM_BALL_SET_KEY, type CandySet } from "./candy-sets"
 import type { DasAsset } from "./das"
 
 // Collection UUID in public.collections (seeded inert 2026-06-08).
@@ -116,6 +116,8 @@ function baseName(asset: DasAsset): string {
   const name = asset.content?.metadata?.name ?? ""
   return name
     .replace(/\s*\(\s*\d+\s*\/\s*\d+\s*\)\s*$/i, "")
+    // 2024 Team Balls carry an unassigned serial: "… Baseball  (TBD/171)".
+    .replace(/\s*\(\s*TBD\s*\/\s*\d+\s*\)\s*$/i, "")
     .replace(/\s*#?\s*\d+\s*\/\s*\d+\s*$/i, "")
     .replace(/\s*#\s*\d+\s*$/i, "")
     .replace(/\s+\d+\s*$/i, "") // bare trailing serial ("... - GREEN 10")
@@ -333,11 +335,27 @@ export function normalizeEdition(asset: DasAsset): NormalizedEdition {
     // Backfilled by audit_20260801_candy_editions_set_name_denorm_backfill.
     // A future drop that introduces a SECOND Candy set needs the same catalog
     // step that assigns set_id; it must not be hardcoded here.
-    team_name: attr(asset, "Team") ?? null,
+    team_name: attr(asset, "Team") ?? teamFromBallName(asset),
     badges: editionBadges(asset),
     jersey_number: jerseyFromAsset(asset),
     ...nonBaseSetFields(asset),
   }
+}
+
+// A 2024 Team Ball has no Team trait; its name is the club ("2024 Los Angeles Dodgers
+// Baseball"). Spelled the way the Base Series' Team trait spells the two clubs that
+// differ ("Angels", "Athletics") so a club resolves to one name across sets. Only the
+// Team Ball set is parsed — any other asset without a Team trait stays NULL.
+const BALL_TEAM_ALIASES: Record<string, string> = {
+  "Los Angeles Angels": "Angels",
+  "Oakland Athletics": "Athletics",
+}
+export function teamFromBallName(asset: DasAsset): string | null {
+  if (candySetForAsset(asset)?.key !== CANDY_TEAM_BALL_SET_KEY) return null
+  const m = baseName(asset).match(/^\d{4}\s+(.+?)\s+Baseball$/i)
+  if (!m) return null
+  const club = m[1].replace(/\s+/g, " ").trim()
+  return BALL_TEAM_ALIASES[club] ?? club
 }
 
 function nonBaseSetFields(asset: DasAsset): Pick<NormalizedEdition, "set_id" | "set_name" | "tier"> {

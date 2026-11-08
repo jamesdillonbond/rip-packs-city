@@ -45,8 +45,14 @@ export interface CandySet {
 // Discovered 2026-11-08 from Magic Eden's public token/collection API (one sample
 // token per set; updateAuthority = the Core collection). The six Gold Series waves
 // (Power, Next Gen, Rookies, Aces, 5 Tool Six, Award Winners) share ONE collection
-// (six `Created` values under one symbol). No separate Rainbow-rewards or team-ball
-// collection exists on Magic Eden.
+// (six `Created` values under one symbol). No separate Rainbow-rewards collection
+// exists on Magic Eden. The 2024 MLB Team Ball (a free 2024 fan claim, one ball per
+// club, migrated to Solana; the 09-29 Postseason Team Ball Quest counts them) was found
+// the same day under the bare symbol `2024_mlb_team_ball` — no `_candy_digital` suffix,
+// which is why the first search missed it. Candy's own: externalUrl candy.io/item/…,
+// media on permaweb.candy.io. Its names carry no serial ("2024 Los Angeles Dodgers
+// Baseball  (TBD/171)") and no Player Name / Team trait: one edition per club, team
+// from the name, serial and edition size unknown (NULL, never parsed from "TBD/171").
 export const CANDY_BASE_SET_ID = "381ae129-7dc7-47f4-9022-dd9e0fc21e39"
 
 export const CANDY_SETS: readonly CandySet[] = [
@@ -86,7 +92,19 @@ export const CANDY_SETS: readonly CandySet[] = [
     editionKeyPrefix: "quest26",
     writesPacks: false,
   },
+  {
+    key: "ball24",
+    name: "2024 MLB Team Balls",
+    setId: "362e7419-2983-490d-9165-16d41f12e2ec",
+    collectionAddress: "5ENXADdhd29JgJA1rN7Fhf3CBgLD825LdwngncJgv5ck",
+    meSymbol: "2024_mlb_team_ball",
+    editionKeyPrefix: "ball24",
+    writesPacks: false,
+  },
 ]
+
+/** The 2024 Team Ball set: a club, not a player — see the note above CANDY_SETS. */
+export const CANDY_TEAM_BALL_SET_KEY = "ball24"
 
 const BY_ADDRESS = new Map(CANDY_SETS.map((s) => [s.collectionAddress, s]))
 
