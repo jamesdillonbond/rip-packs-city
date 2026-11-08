@@ -128,14 +128,23 @@ export function marketMove(g: Pick<RawGame, "mcap_before" | "mcap_after" | "held
   }
   const pct = Math.round(((g.mcap_after / g.mcap_before) - 1) * 1000) / 10
   const supplyDelta = g.held_before != null && g.held_after != null ? g.held_after - g.held_before : null
+  // The note is PROPORTIONAL. Live 2026-11-08: a +17 change on 220,775 held (0.008 %) beside an
+  // −11.9 % move was read out as "part of each move is supply" — true in arithmetic, false in
+  // substance. Supply is named as a driver only when it is a real share of the move.
+  let note: string | undefined
+  if (supplyDelta != null && supplyDelta !== 0 && g.held_before) {
+    const supplyPct = (supplyDelta / g.held_before) * 100
+    const shown = `${supplyDelta > 0 ? "+" : ""}${supplyDelta} of ${g.held_before.toLocaleString("en-US")} held, ${Math.abs(supplyPct) < 0.01 ? "<0.01" : Math.abs(supplyPct).toFixed(2)}%`
+    note = Math.abs(supplyPct) >= Math.max(0.5, Math.abs(pct) * 0.25)
+      ? `Collector-held supply changed by ${shown} over the same two days — a real part of this move is supply (new mints or burns), not price.`
+      : `Collector-held supply barely changed (${shown}), so this move is price, not supply.`
+  }
   return {
     market_cap_before_usd: round2(g.mcap_before),
     market_cap_after_usd: round2(g.mcap_after),
     change_pct: pct,
     collector_held_change: supplyDelta,
-    note: supplyDelta && supplyDelta !== 0
-      ? `Collector-held supply changed by ${supplyDelta > 0 ? "+" : ""}${supplyDelta} over the same two days, so part of this move is supply, not price.`
-      : undefined,
+    note,
   }
 }
 

@@ -139,12 +139,24 @@ describe("get_player_games — four honest states", () => {
     expect(g.vs_season_average).toBe(-1.8)
     expect(g.market.change_pct).toBe(4.9)
     expect(g.market.collector_held_change).toBe(4)
-    expect(g.market.note).toMatch(/part of this move is supply/)
+    // +4 of 220,792 held is noise beside a +4.9 % move: the note must say PRICE, not supply
+    // (live 11-08 the old note read "+17 … part of this move is supply" beside −11.9 %).
+    expect(g.market.note).toMatch(/barely changed/)
+    expect(g.market.note).toMatch(/this move is price, not supply/)
+    expect(g.market.note).not.toMatch(/real part of this move is supply/)
     expect(out.method).toMatch(/single game is not evidence/)
   })
 })
 
 describe("get_player_games — pure helpers", () => {
+  it("names supply as a driver only when it is a real share of the move", () => {
+    const real = marketMove({ mcap_before: 100, mcap_after: 112, held_before: 100, held_after: 110 })
+    expect(real.note).toMatch(/real part of this move is supply/)
+    const tiny = marketMove({ mcap_before: 1311240, mcap_after: 1155175, held_before: 220775, held_after: 220792 })
+    expect(tiny.change_pct).toBe(-11.9)
+    expect(tiny.note).toMatch(/barely changed \(\+17 of 220,775 held, <0\.01%\)/)
+  })
+
   it("no supply note when collector-held is unchanged; no % when a side is missing", () => {
     expect(marketMove({ mcap_before: 100, mcap_after: 110, held_before: 5, held_after: 5 }).note).toBeUndefined()
     const missing = marketMove({ mcap_before: null, mcap_after: 110, held_before: null, held_after: 5 })
