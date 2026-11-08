@@ -148,7 +148,15 @@ const PANINI_MODELED_PRIORITY_CAP = 150;
 // "Racing" added 2026-10-10 PT and VERIFIED the same day: the 4:49 PM PT full run's Racing grid
 // served 4 setIds no other sport serves (NASCAR: 2263, 2226, 2237 + an "NFT Car" set). It is LAST
 // so a tie on grid_items keeps a product's earlier sport.
-const PANINI_DISCOVERY_SPORTS = ["Soccer", "Basketball", "Womens Basketball", "Football", "Baseball", "Racing"];
+// "Entertainment" added 2026-11-08 PT (Trevor, Cowork handoff panini-entertainment-discovery):
+// Panini's non-sport products (Rolling Stones, Bad Eggs) live under that marketplace filter, and no
+// panini_products row has ever been seen under it. DISCOVERY ONLY — this records the setIds its grid
+// serves; new products land walk_cards=false (see the upsert note below), so one is WALKED only after
+// the separate admission step flips walk_cards (the handoff's bar: 50+ listings), like every sport here. VERIFY on the next FULL run's `panini-ingest-enum`
+// marker: Entertainment must serve setIds no other sport serves (if it serves the unfiltered grid or
+// grid_items=0, the value is not recognised — remove it, as "WNBA" was). LAST, so a tie keeps a
+// product's earlier sport.
+const PANINI_DISCOVERY_SPORTS = ["Soccer", "Basketball", "Womens Basketball", "Football", "Baseball", "Racing", "Entertainment"];
 function discoverySports(): string[] {
   const env = (process.env.PANINI_DISCOVERY_SPORTS || "").split(",").map((s) => s.trim()).filter(Boolean);
   return env.length ? env : PANINI_DISCOVERY_SPORTS;
