@@ -1,6 +1,25 @@
 # Candy MLB — collection roadmap (refreshed 2026-10-17, PT)
 > Dated snapshot; every number is a dated sample — re-derive before quoting. Canonical plan: [roadmap-2026-10-17.md](../roadmap-2026-10-17.md). Defects: [known-issues.md](../../reference/known-issues.md) (item text wins over this file).
 
+## ⭐ 2026-11-08 update — the October lock, the reopen, and three uncatalogued sets (read first)
+
+Measured 2026-11-08 ~10:15 AM–12:00 PM PT (Cowork cloud; Candy's blog, Magic Eden's public API, DC3 Wiki, our DB). Ledger entries of that day carry the revert paths.
+
+- **The 10-11 freeze was Candy's security incident.** Candy locked every minted NFT on 10-12 after SOL was drained from its custodial wallets, moved every NFT and SOL to new per-user MoonPay-powered Candy Wallets (10-19 → ~10-24; claims open 10-30), said all marketplace listings were being cancelled, and announced **"Secondary is back" on OpenSea, Magic Eden and Tensor on 11-06**. #58's 10-25 census (trading stopped, no venue move) was right; this is the cause. Since 11-06 Magic Eden shows new Base listings but no Base fills yet.
+- **Shipped: 1,480 phantom Base asks (and 23 pack asks) retired.** Magic Eden kept returning the pre-migration listings with `token.owner = seller`; our on-chain census showed the new owner. `candy_retire_listings_owner_moved()` now retires any ask whose census owner (walked after we first saw it) is not the seller, every listings tick; the 10-26 → 11-08 market history was withdrawn ("—"). After: 18 live asks, 16 floors.
+- **Shipped: a wallet-moved note** on an empty Candy collection search (asks for the new Candy Wallet address only).
+- **RPC catalogued one of Candy's four 2026 collections.** Now registered in `lib/chains/solana/candy-sets.ts` and walked by the census, wallet backfill, sales, listings and offers lanes:
+
+| set | Core collection | ME symbol | notes |
+|---|---|---|---|
+| 2026 MLB Base Series ICONs | `JkJA4yUB…p8n` | `2026_mlb_base_series_icons_candy_digital` | legacy keys (no prefix), packs feed `candy_packs` |
+| 2026 MLB All-Star Game ICONs | `YTAPbbkL…AvX` | `2026_mlb_allstar_game_icons_candy_digital` | ~27k ICONs, Core/Uncommon/Rare/Epic + Rainbow + Home Run Derby inserts; key `asg26:<name>-<rarity>` |
+| 2026 MLB Gold Series ICONs | `8BvHMsQZ…x4K` | `gold_series_auction_1_candy_digital` | all six waves in ONE collection; Rare /25, Epic /10, Legendary 1/1, Momenticon/Pixicon inserts /5; key `gold26:…` |
+| Base Series Collection Quest Rewards | `BYSfa4LY…5G` | `base_series_collection_quests_candy_digital` | Judge /125, Ohtani /91 rewards; key `quest26:…` |
+
+  Rules: only the Base Series writes `candy_packs` (the pack EV model, pack market and treasury label model THAT pack); the pack EV model, Rainbow premium and sealed-supply scarcity board are Base-only (`set_id`); "is_rainbow" on the other boards is the Rainbow-colour badge (`candy_is_rainbow(badges)`), because a Gold Legendary is a 1/1, not a Rainbow; an INSERT or REWARD has no tier (NULL) and says what it is in its badge; Base checklist badges (Rookie / First Mint) are not copied onto later sets; the edition page's printings ladder stays inside one set. A later set's sales walk waits until the census has written its editions (`skipped: catalog_not_ingested`).
+- **Watch (exit + falsifier):** after the 5:10 PM PT census on 11-08, `candy-editions-ingest.extra.sets` should show all four sets with assets > 0 and `catalog_link.editions_linked` > 0; the next sales ticks should backfill All-Star / Gold / Quest sales (`extra.sets.<key>.sales_found`, `census_resolved`). Falsifier: a set reading `assets: 0` (wrong address) or sales parking as `edition_not_ingested` (key mismatch between census and sale resolution). ⓘ Any sale after 10-12 trips `candy_revival_sales_since_recorded_silence` — that is the signal to re-stamp the Candy row of `v_collection_marketplace_status` (lock 10-12 → reopened 11-06).
+
 ## Where it stands
 
 Candy MLB is RPC's only Solana collection: 125 editions, `is_active=true` since 09-06 (#63), with Overview, Market, Collection and Analytics tabs. It has no Packs tab and no Sniper, both by decision. All data comes from Magic Eden. The OpenSea lanes are parked (#58).
