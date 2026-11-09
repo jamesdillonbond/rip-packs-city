@@ -189,6 +189,7 @@ export async function hydrateFromJsonUri(
   }
   out.groups = groups.size
   const queue = [...groups.entries()]
+  const deferred: DasAsset[] = []
   let next = 0
 
   async function fetchJson(a: DasAsset): Promise<{ json: Record<string, unknown> | null; reason: string }> {
@@ -247,7 +248,10 @@ export async function hydrateFromJsonUri(
           && editionKeyFromAsset(repMerged) === editionKeyFromAsset(checkMerged)
         if (!agree) {
           out.unverified_groups++
-          for (const a of members) if (!done.has(a)) await alone(a)
+          // fetched alone in the PARALLEL second pass — not serially in this worker (2026-11-09
+          // 12:57 PM PT: a few unverified comic groups of hundreds of cards each ran one-by-one in
+          // one worker while 47 idled: 2 pages / 781 cards in 10 min)
+          for (const a of members) if (!done.has(a)) deferred.push(a)
           continue
         }
       }
@@ -261,5 +265,11 @@ export async function hydrateFromJsonUri(
     }
   }
   await Promise.all(Array.from({ length: Math.min(concurrency, queue.length) }, worker))
+  // second pass: members of unverified groups, each fetched alone, across the full pool
+  let d = 0
+  async function soloWorker() {
+    while (d < deferred.length) await alone(deferred[d++])
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, deferred.length) }, soloWorker))
   return out
 }

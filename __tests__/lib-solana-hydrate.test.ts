@@ -182,4 +182,21 @@ describe("unhydrated Candy assets", () => {
     expect(keys.get("b")).toMatch(/-rare$/)
     expect(keys.get("c")).toMatch(/-epic$/)
   })
+
+  it("an UNVERIFIED group's members are fetched in PARALLEL, not one by one in a single worker", async () => {
+    const ms = Array.from({ length: 20 }, (_, i) => dc(`m${i}`, i + 1))
+    let inFlight = 0, peak = 0
+    const f = (async (u: string) => {
+      inFlight++; peak = Math.max(peak, inFlight)
+      await new Promise((r) => setTimeout(r, 5))
+      inFlight--
+      const id = u.split("/").pop()!
+      // every member a different rarity: verification fails
+      return new Response(JSON.stringify(dcJson(Number(id.slice(1)) % 2 ? "Core" : "Rare", 1)), { status: 200 })
+    }) as unknown as typeof fetch
+    const r = await hydrateFromJsonUri(ms, { fetchImpl: f, concurrency: 8 })
+    expect(r.unverified_groups).toBe(1)
+    expect(r.hydrated).toHaveLength(20)
+    expect(peak).toBeGreaterThan(1)
+  })
 })
