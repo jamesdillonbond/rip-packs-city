@@ -45,6 +45,7 @@ vi.mock("@/lib/chains/solana/das", () => ({
   },
   solUsd: async () => state.rate,
   solUsdOn: async () => state.rate,
+  primeSolUsdHistory: async () => 0,
 }))
 vi.mock("@/lib/chains/solana/normalize", () => ({
   CANDY_MLB_ME_SYMBOL: "candy-mlb-icons",

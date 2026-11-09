@@ -306,3 +306,54 @@ export async function solUsdOnWithBasis(
 export async function solUsdOn(atMs: number | null | undefined): Promise<number | null> {
   return (await solUsdOnWithBasis(atMs))?.rate ?? null
 }
+
+// ── Prime the per-day cache from ONE range call ─────────────────────────────
+// 2026-11-08: the later-set walks parked 2,273 Candy sales across 48 trade days
+// (08-12 → 10-10), all `no_sol_rate`. solUsdOnWithBasis asks /history once per
+// DAY, so a drain over a multi-week backlog makes dozens of calls per tick and
+// CoinGecko throttles this egress after the first few; every miss is then
+// negative-cached for 15 min and the sale re-parked. One /market_chart/range call
+// returns the whole window.
+//
+// SAME BASIS, measured: /history?date=12-08-2026 answered 76.21620473970299 and
+// the range series' point at 2026-08-12T00:00:00Z is 76.21620473970299 — /history
+// is the 00:00 UTC snapshot. So only a point sitting EXACTLY on a day's 00:00 UTC
+// (within 60 s) primes that day; a day without one is left alone and falls back
+// to the per-day /history call, unchanged. Today is never primed (it has no
+// settled snapshot yet — spot policy above). Returns the number of days primed;
+// any failure returns 0 and changes nothing.
+const DAY_MS = 86_400_000
+
+export async function primeSolUsdHistory(fromMs: number, toMs: number = Date.now()): Promise<number> {
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) return 0
+  const todayStart = Math.floor(Date.now() / DAY_MS) * DAY_MS
+  const from = Math.floor(fromMs / DAY_MS) * DAY_MS
+  const to = Math.min(Math.floor(toMs / DAY_MS) * DAY_MS, todayStart - DAY_MS)
+  if (from > to) return 0
+  try {
+    const resp = await fetch(
+      `https://api.coingecko.com/api/v3/coins/solana/market_chart/range?vs_currency=usd&from=${Math.floor(from / 1000)}&to=${Math.floor((to + 3_600_000) / 1000)}`,
+      { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8000) }
+    )
+    if (!resp.ok) return 0
+    const json = (await resp.json()) as { prices?: unknown }
+    if (!Array.isArray(json.prices)) return 0
+    let primed = 0
+    for (const p of json.prices) {
+      if (!Array.isArray(p) || p.length < 2) continue
+      const ms = Number(p[0])
+      const usd = Number(p[1])
+      if (!Number.isFinite(ms) || !(usd > 0)) continue
+      const dayStart = Math.floor(ms / DAY_MS) * DAY_MS
+      if (ms - dayStart >= 60_000 || dayStart < from || dayStart > to) continue
+      const day = new Date(dayStart).toISOString().slice(0, 10)
+      if (solUsdDayCache.has(day)) continue
+      solUsdDayCache.set(day, usd)
+      solUsdDayMiss.delete(day)
+      primed++
+    }
+    return primed
+  } catch {
+    return 0
+  }
+}

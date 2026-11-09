@@ -27,7 +27,7 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
-import { getAsset, solUsd, solUsdOn } from "@/lib/chains/solana/das"
+import { getAsset, primeSolUsdHistory, solUsd, solUsdOn } from "@/lib/chains/solana/das"
 import {
   CANDY_MLB_ME_SYMBOL,
   CANDY_MLB_SLUG,
@@ -221,6 +221,8 @@ async function handleIndex(req: NextRequest) {
     let skipped = 0
     let assetFetches = 0
     let packSales = 0
+    // Trade days primed into the SOL/USD day cache from one range call before the drain.
+    let solDaysPrimed = 0
     let packWriteErrors = 0
     let cursorAfter: string | null = null
     try {
@@ -694,6 +696,16 @@ async function handleIndex(req: NextRequest) {
       // silently does nothing and the run still reports success. The queue is the
       // whole point of the drain; its absence must not be inferred from a failure.
       if (owedErr) throw new Error(`candy_sales_unresolved read failed: ${owedErr.message}`)
+      // One range call primes every trade day this batch spans, so the drain
+      // does not make one throttled /history call per day (2026-11-08: 2,273
+      // sales over 48 days parked `no_sol_rate`). Days it cannot prime fall back
+      // to the per-day call, unchanged — see primeSolUsdHistory.
+      const owedTimes = (owed ?? [])
+        .map((r: { block_time?: string | null }) => (r.block_time ? new Date(r.block_time).getTime() : NaN))
+        .filter((t: number) => Number.isFinite(t))
+      if (owedTimes.length > 0) {
+        solDaysPrimed = await primeSolUsdHistory(Math.min(...owedTimes), Math.max(...owedTimes))
+      }
       for (const r of owed ?? []) {
         if (assetFetches >= ASSET_FETCH_BUDGET) break
         drainAttempted++
@@ -787,6 +799,7 @@ async function handleIndex(req: NextRequest) {
         budget_exhausted: budgetExhausted,
         parked: parked.length,
         pack_sales_seen: packSales,
+        sol_days_primed: solDaysPrimed,
         pack_sales_write_errors: packWriteErrors,
         drain_attempted: drainAttempted,
         drain_resolved: drainResolved,

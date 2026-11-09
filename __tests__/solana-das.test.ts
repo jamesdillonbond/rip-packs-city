@@ -348,3 +348,51 @@ describe("solUsdOn (per-sale-day historical rate)", () => {
     expect(await das.solUsdOnWithBasis(Date.now())).toEqual({ rate: 152.5, basis: "spot" })
   })
 })
+
+describe("primeSolUsdHistory (one range call instead of one /history call per day)", () => {
+  const DAY = 86_400_000
+  const day0 = Date.UTC(2026, 7, 12) // 2026-08-12T00:00:00Z
+  const day1 = day0 + DAY
+
+  it("primes only points sitting on a day's 00:00 UTC, and those days then make no /history call", async () => {
+    const das = await load()
+    fetchMock.mockResolvedValueOnce(
+      okJson({
+        prices: [
+          [day0 - 3_600_000, 99], // 23:00 the day before: not a 00:00 snapshot
+          [day0 + 3_600_000, 98], // 01:00, listed FIRST: same day, but not the snapshot
+          [day0, 76.21620473970299], // the value /history returns for 12-08-2026
+          [day1, 80.5],
+        ],
+      })
+    )
+    expect(await das.primeSolUsdHistory(day0 + 5 * 3_600_000, day1 + 5 * 3_600_000)).toBe(2)
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/coins/solana/market_chart/range?vs_currency=usd")
+    fetchMock.mockReset()
+    expect(await das.solUsdOnWithBasis(day0 + 12 * 3_600_000)).toEqual({ rate: 76.21620473970299, basis: "historical" })
+    expect(await das.solUsdOnWithBasis(day1 + 1)).toEqual({ rate: 80.5, basis: "historical" })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("never primes today, which has no settled snapshot", async () => {
+    const das = await load()
+    const today = Math.floor(Date.now() / DAY) * DAY
+    expect(await das.primeSolUsdHistory(today, Date.now())).toBe(0)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("a failed range call primes nothing, so the day still falls back to its own /history call", async () => {
+    const das = await load()
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 429, json: async () => ({}) })
+    expect(await das.primeSolUsdHistory(day0, day1)).toBe(0)
+    fetchMock.mockResolvedValueOnce(okJson({ market_data: { current_price: { usd: 76.2 } } }))
+    expect(await das.solUsdOnWithBasis(day0 + 1)).toEqual({ rate: 76.2, basis: "historical" })
+    expect(String(fetchMock.mock.calls[1][0])).toContain("/coins/solana/history?date=12-08-2026")
+  })
+
+  it("a thrown fetch primes nothing and does not throw", async () => {
+    const das = await load()
+    fetchMock.mockRejectedValueOnce(new Error("timeout"))
+    expect(await das.primeSolUsdHistory(day0, day1)).toBe(0)
+  })
+})
