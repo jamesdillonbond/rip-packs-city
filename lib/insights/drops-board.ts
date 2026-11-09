@@ -66,5 +66,6 @@ export function dropStatusLine(d: PackCalendarDrop): string {
   if (d.status === "ended") return d.kind === "rsvp" ? `${word} closed` : "Ended"
   if (d.status === "upcoming") return `${d.kind === "rsvp" ? `${word} open` : "Drops"} ${whenPT(d.start_time)}`
   if (d.kind === "rsvp" && d.end_time) return `${word} close ${whenPT(d.end_time)}`
-  return d.end_time ? `On sale until ${whenPT(d.end_time)}` : "On sale now"
+  const base = d.end_time ? `On sale until ${whenPT(d.end_time)}` : "On sale now"
+  return d.low_stock ? `${base} · almost sold out` : base
 }

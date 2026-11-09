@@ -8,6 +8,8 @@
 //
 //   node scripts/social/x-image.mjs --slot sun --out /tmp/xdraft      # drops this week
 //   ... --exclude 8912,8913   # leave out drops the pre-post check found already over (listed in output)
+//   ... --add extra.json      # add drops the pre-post check confirmed on an official page that no feed
+//                             # lists (e.g. a trade-in-only pack): [{collection,title,price,status,after}]
 //
 // Prints JSON: { slot, images: [paths], items, warnings }. Every item in the post is on an image —
 // a list longer than one image fits is split across images (X allows 4 per post), never cut.
@@ -24,7 +26,7 @@ const SITE = "https://www.rippackscity.com"
 const API = `${SITE}/api/public/insights`
 const RAW = "https://raw.githubusercontent.com/jamesdillonbond/rip-packs-city/main"
 const TZ = "America/Los_Angeles"
-const PER_IMAGE = 8
+const PER_IMAGE = 9
 const W = 1200
 const H = 675
 
@@ -76,7 +78,8 @@ function statusLine(x) {
   const word = x.collection === "disney_pinnacle" ? "Draw requests" : "Pre-orders"
   if (x.status === "upcoming") return `${x.kind === "rsvp" ? `${word} open` : "Drops"} ${whenPT(x.start_time)}`
   if (x.kind === "rsvp" && x.end_time) return `${word} close ${whenPT(x.end_time)}`
-  return x.end_time ? `On sale until ${whenPT(x.end_time)}` : "On sale now"
+  const base = x.end_time ? `On sale until ${whenPT(x.end_time)}` : "On sale now"
+  return x.low_stock ? `${base} · almost sold out` : base
 }
 
 async function dropsItems() {
@@ -96,6 +99,16 @@ async function dropsItems() {
     upcoming: x.status === "upcoming",
   }))
   for (const a of d.announcements ?? []) items.push({ collection: "candy_mlb", title: a.title, price: null, status: "Announced", upcoming: false })
+  // Verified extras go in at the position the post lists them (after the named title, else last).
+  const extraPath = arg("add")
+  if (extraPath) {
+    for (const e of JSON.parse(readFileSync(extraPath, "utf8"))) {
+      const at = e.after ? items.findIndex((i) => i.title === e.after) : -1
+      const it = { collection: e.collection, title: e.title, price: e.price ?? null, status: e.status, upcoming: !!e.upcoming }
+      if (at >= 0) items.splice(at + 1, 0, it)
+      else items.push(it)
+    }
+  }
   return { items, unread }
 }
 
@@ -110,7 +123,7 @@ function card(it, big) {
 
 function page({ items, pageNo, pages, fonts, logo, now }) {
   const n = items.length
-  const cols = n <= 2 ? n : n <= 4 ? 2 : n <= 6 ? 3 : 4
+  const cols = n <= 2 ? n : n <= 4 ? 2 : n <= 6 || n === 9 ? 3 : 4
   const rows = Math.ceil(n / cols)
   const range = `${dayPT(now)} – ${dayPT(new Date(now.getTime() + 7 * 86400000))}`
   return `<!doctype html><html><head><meta charset="utf-8"><style>

@@ -85,6 +85,10 @@ https://www.rippackscity.com/insights/drops
 
 Dates are today to 7 days out, M/D in PT. One line per drop, priciest first: the collection's emoji (🏀 Top Shot, 🏈 All Day, ⚽ Golazos, 📌 Pinnacle, ⚾ Candy MLB; Panini takes its pack's sport — 🎸 entertainment, 🏀/🏈/⚽/⚾ by sport, 🃏 otherwise), then the handle, title, retail price, and when, in PT. The script also emits `thread_fallback` in case long posts are ever unavailable.
 
+**Player packs end with the team's hashtag** (Trevor, 11-08: "use the team's hashtag emoji at the end, like #LakeShow"). On X these hashtags show the team's emoji. Add it to any pack named for one player: Top Shot This, Tip-Off, auction and reward packs. The player's team comes from RPC's editions data (`editions.team_name`). Use the team's official hashtag; if you are not sure of it, leave the line without one and say so. Known, 2026-27: Lakers #LakeShow · Bulls #BullsNation.
+
+**Live this week also means still on sale.** A Panini pack released in the last 60 days that the store still has in stock is listed ("on sale now", plus "almost sold out" under 5 % of supply left). A trade-in-only pack such as Top Shot This is in no feed. When the pre-post check finds one on nbatopshot.com, add it by hand, and to the image with `x-image.mjs --add extra.json`.
+
 ## Images
 
 Every post that has a template ships with an RPC-branded image. On X, a post with an attached image is shown as the image, and posts whose main link card is the content have reached fewer people (Buffer's link study; Nieman Lab). So the image carries the post, and the link rides the last post of a thread.

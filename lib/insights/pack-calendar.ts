@@ -78,6 +78,8 @@ export interface PackCalendarDrop {
   detail_href: string
   /** Panini only: the store's sport ("BASKETBALL", "ENTERTAINMENT", …). */
   sport?: string | null
+  /** Panini only: fewer than LOW_STOCK_SHARE of the pack's supply is left (store counts). */
+  low_stock?: boolean
 }
 
 const COLLECTION: Record<PackCalendarProduct, PackCalendarDrop["collection"]> = {
@@ -177,8 +179,15 @@ export interface PaniniDropSourceRow {
   end_at: string | null
   in_stock: boolean | null
   is_available: boolean | null
+  remaining_qty?: number | string | null
+  total_qty?: number | string | null
   last_seen_at: string
 }
+
+/** A Panini pack started in the last STILL_ON_SALE_DAYS and still in stock is live this week. */
+export const STILL_ON_SALE_DAYS = 60
+/** Under this share of supply left reads "almost sold out". */
+export const LOW_STOCK_SHARE = 0.05
 
 /** Same window rule as buildPackCalendar; a pack Panini no longer has in stock has ENDED (sold out). */
 export function buildPaniniDrops(rows: PaniniDropSourceRow[], now: Date, opts: { daysBack?: number; daysAhead?: number } = {}): PackCalendarDrop[] {
@@ -191,7 +200,13 @@ export function buildPaniniDrops(rows: PaniniDropSourceRow[], now: Date, opts: {
     if (!Number.isFinite(start)) continue
     const end = r.end_at ? Date.parse(r.end_at) : NaN
     const stillOpen = start <= now.getTime() && Number.isFinite(end) && end > now.getTime() && end <= now.getTime() + OPEN_CLOSE_DAYS * DAY_MS && r.in_stock !== false
-    if (!(start >= back && start <= ahead) && !stillOpen) continue
+    // Panini packs have no end date: one released in the last STILL_ON_SALE_DAYS that the store still
+    // has in stock is on sale THIS week (2026 Prizm WNBA, released 9-30, 228 of 23,512 left on 11-08).
+    // Older stock (2022-23 packs the store still lists at $0) is left out.
+    const stillOnSale = start <= now.getTime() && start >= now.getTime() - STILL_ON_SALE_DAYS * DAY_MS && r.in_stock === true && !Number.isFinite(end)
+    if (!(start >= back && start <= ahead) && !stillOpen && !stillOnSale) continue
+    const remaining = r.remaining_qty == null ? NaN : Number(r.remaining_qty)
+    const total = r.total_qty == null ? NaN : Number(r.total_qty)
     const status: DropStatus =
       start > now.getTime() ? "upcoming" : r.in_stock === false || (Number.isFinite(end) && end <= now.getTime()) ? "ended" : "open"
     const price = r.price_usd == null ? null : Number(r.price_usd)
@@ -209,6 +224,7 @@ export function buildPaniniDrops(rows: PaniniDropSourceRow[], now: Date, opts: {
       status,
       detail_href: "/panini-blockchain/packs",
       sport: r.sport ?? null,
+      low_stock: status === "open" && Number.isFinite(remaining) && Number.isFinite(total) && total > 0 && remaining / total < LOW_STOCK_SHARE,
     })
   }
   return out
@@ -388,7 +404,7 @@ export async function fetchPackCalendar(sb: any, now = new Date(), fetchImpl: ty
   const since = new Date(now.getTime() - 60 * DAY_MS).toISOString()
   const { data: pRows, error: pErr } = await sb
     .from("panini_pack_drops")
-    .select("pack_id, name, sport, price_usd, cards_per_pack, start_at, end_at, in_stock, is_available, last_seen_at")
+    .select("pack_id, name, sport, price_usd, cards_per_pack, start_at, end_at, in_stock, is_available, remaining_qty, total_qty, last_seen_at")
     .gte("start_at", since)
     .order("start_at", { ascending: true })
     .limit(1000)

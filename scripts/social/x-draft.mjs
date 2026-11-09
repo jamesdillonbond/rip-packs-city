@@ -364,7 +364,7 @@ function dropLine(x, multiColl) {
   if (x.status === "upcoming") return `• ${tag}${x.title}${price} — ${x.kind === "rsvp" ? `${orderWord(x)} open` : "drops"} ${whenPT(x.start_time)}`
   // open now: a pre-order / draw window closes; a sale has an end time only sometimes
   if (x.kind === "rsvp" && x.end_time) return `• ${tag}${x.title}${price} — ${orderWord(x)} close ${whenPT(x.end_time)}`
-  return `• ${tag}${x.title}${price} — on sale now${x.end_time ? ` until ${whenPT(x.end_time)}` : ""}`
+  return `• ${tag}${x.title}${price} — on sale now${x.end_time ? ` until ${whenPT(x.end_time)}` : ""}${x.low_stock ? ", almost sold out" : ""}`
 }
 async function pageLive(href) {
   try {

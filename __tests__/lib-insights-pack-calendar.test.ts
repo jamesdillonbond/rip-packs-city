@@ -187,13 +187,18 @@ describe("fetchPackCalendar — Panini and Candy MLB", () => {
     expect(r.drops).toEqual([])
   })
 
-  it("a sold-out Panini pack has ENDED; one older than the week and still on sale is not this week's drop", async () => {
+  // Inverted 2026-11-08 (Trevor: "Are there any other drops … live … this week"): a Panini pack
+  // released weeks ago that the store still sells IS live this week — 2026 Prizm WNBA (9-30) was
+  // missing from the report with 228 of 23,512 left. Legacy stock (2022-23 packs still listed) is not.
+  it("a sold-out Panini pack has ENDED; a recent one still on sale is live (and almost sold out); legacy stock is not", async () => {
     const rows = [
       { ...freshPanini[0], pack_id: "1058", name: "2026 Panini NFT Prizm FIFA World Cup Sticker Packs", start_at: "2026-11-03T15:00:00Z", in_stock: false },
-      { ...freshPanini[0], pack_id: "1056", name: "2026 Panini NFT Prizm WNBA Packs", start_at: "2026-09-30T15:00:00Z", in_stock: true },
+      { ...freshPanini[0], pack_id: "1056", name: "2026 Panini NFT Prizm WNBA Packs", start_at: "2026-09-30T15:00:00Z", in_stock: true, remaining_qty: 228, total_qty: 23512 },
+      { ...freshPanini[0], pack_id: "777", name: "2022-23 Panini NFT Score LaLiga Packs", price_usd: 0, start_at: "2023-03-17T15:00:00Z", in_stock: true, remaining_qty: 15302, total_qty: 29306 },
     ]
     const r = await cal(fakeSb({ ...base, panini_pack_drops: { data: rows } }), NOW)
-    expect(r.drops.map((d) => [d.dist_id, d.status])).toEqual([["1058", "ended"]])
+    expect(r.drops.map((d) => [d.dist_id, d.status])).toEqual([["1056", "open"], ["1058", "ended"]])
+    expect(r.drops.find((d) => d.dist_id === "1056")?.low_stock).toBe(true)
   })
 
   it("Candy: only drop-titled posts from the last 7 days, linked — wallet notices and older posts left out", async () => {
