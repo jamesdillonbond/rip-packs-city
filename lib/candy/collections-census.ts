@@ -35,7 +35,7 @@
 import { getAssetsByGroupCursor, type DasAsset } from "@/lib/chains/solana/das"
 import { attributeEscrowHeldToSellers } from "@/lib/chains/solana/escrow"
 import { CANDY_MLB_UUID, isBurnt, isPack, normalizeEdition, normalizeSerial } from "@/lib/chains/solana/normalize"
-import { failureClass, hydrateFromJsonUri, isUnhydrated } from "@/lib/chains/solana/hydrate"
+import { editionGroupKey, failureClass, hydrateFromJsonUri, isUnhydrated } from "@/lib/chains/solana/hydrate"
 import { candySetForAsset } from "@/lib/chains/solana/candy-sets"
 import { loadCandyCollections } from "@/lib/candy/collections"
 import { purgeCandyGhostsFor } from "@/lib/candy/ghost-purge"
@@ -129,6 +129,10 @@ export interface CollectionsCensusResult {
   wmc_repointed: number
   hydrate_fail_reasons: Record<string, number>
   hydrate_fetches: number
+  // 2026-11-09 10:20 AM PT: one fetch per edition did NOT group in production (7,121 requests
+  // for 6,491 cards). A small sample of what DAS actually returns for an unhydrated asset, so
+  // the grouping key can be fixed from evidence, not from the on-chain name we expected.
+  unhydrated_sample: Array<{ id: string; name: string | null; json_uri: string | null; group: string; content_keys: string[] }>
   completed: number
   escrow_remapped: number
   ghosts_purged: number | null
@@ -143,7 +147,7 @@ export async function runCollectionsCensus(
   const deadline = now() + opts.budgetMs
   const out: CollectionsCensusResult = {
     ok: false, collections: [], pages: 0, cards: 0, wmc_inserted: 0, editions_inserted: 0,
-    hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, hydrate_fail_reasons: {}, hydrate_fetches: 0,
+    hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, hydrate_fail_reasons: {}, hydrate_fetches: 0, unhydrated_sample: [],
     completed: 0, escrow_remapped: 0, ghosts_purged: null, error: null,
   }
 
@@ -218,6 +222,16 @@ export async function runCollectionsCensus(
         const known = (ex.rows.get(a.id) ?? []).find((r) => ex.complete.has(r.edition_key))
         if (known) reused.push({ asset: a, ed: ex.complete.get(known.edition_key)!, serial: known.serial })
         else toFetch.push(a)
+      }
+      for (const a of toFetch) {
+        if (out.unhydrated_sample.length >= 5) break
+        out.unhydrated_sample.push({
+          id: a.id,
+          name: a.content?.metadata?.name ?? null,
+          json_uri: a.content?.json_uri ?? null,
+          group: editionGroupKey(a),
+          content_keys: Object.keys(a.content ?? {}),
+        })
       }
       const fetched = !toFetch.length
         ? { hydrated: [] as DasAsset[], failed: [] as Array<{ id: string; reason: string }> }

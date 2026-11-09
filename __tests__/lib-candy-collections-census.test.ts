@@ -37,6 +37,7 @@ vi.mock("@/lib/chains/solana/das", () => ({
 vi.mock("@/lib/chains/solana/hydrate", () => ({
   isUnhydrated: (a: any) => a.bare === true,
   failureClass: (r: string) => r,
+  editionGroupKey: (a: any) => `g|${a.id}`,
   hydrateFromJsonUri: async (assets: any[]) => {
     state.hydrateCalls.push(assets)
     if (typeof state.hydrate === "function") return state.hydrate(assets)
