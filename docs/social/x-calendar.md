@@ -61,13 +61,31 @@ A source that could not be read is named in `warnings` and `facts.collections_un
 - **Pinnacle assets are characters**, not players.
 - **UFC Strike is excluded** — its market is closed.
 - **A collection with no sales in the window is left out**, never posted as "$0".
-- **Collectors are never named or tagged** — not buyers, not sellers, not trophy-case owners — unless that person has said yes for that post. **One exception (Trevor, 11-09): the Monday top-sales post and image name each sale's buyer by marketplace username** (never @-tagged, never a wallet address — a buyer known only by address is left unnamed).
+- **Collectors are never named or tagged** — not buyers, not sellers, not trophy-case owners — unless that person has said yes for that post. **One exception (Trevor, 11-09): the Monday top-sales post and image name each sale's buyer** — tagged only when Trevor has confirmed the X handle (`X_HANDLES`), otherwise by marketplace username; never a wallet address.
 - **Never lead with the Team Captain designation.**
 - **No hype the data can't back**: no "best deal on Flow", "guaranteed", "can't lose", price predictions, or advice to buy.
 - **Under 280 characters by X's count** (every link counts as 23), except the long-form drops report (`long_form: true`). The script measures it.
 - **A list is never cut to "+N more"** (Trevor, 2026-11-08: "These posts need to name all the drops"). When every item will not fit one post, the script returns `thread[]`: numbered posts (`1/3`…), each under 280, that together name every item; the link rides the last one. Trevor posts 1, then replies to it with 2, and so on (X's post link cannot thread). The same rule covers every image and the `/insights/drops` link card (Trevor, 11-08: "always name them all. Never do the + 2 more thing"): the card sizes its grid to the count and falls back to one line per drop past 16.
 - **Plain voice**: the number first, one line of context, the link. One emoji at most, except in the drops report, which uses one per line (below).
 - **Official accounts may be tagged** — the collections' own handles, read from each app's site footer 11-08: @NBATopShot, @NFLAllDay, @LaLigaGolazos, @DisneyPinnacle, @PaniniAmerica (as "@PaniniAmerica Blockchain"), @CandyDigital. Never a collector.
+
+### The week's top 10 sales (Monday) — Trevor's format, 11-09
+
+One long post with the top-10 image attached and no link, then the link as a reply (`reply[]`), as on Sunday.
+
+```
+This past week's top 10 sales, 11/2-11/9 📈
+
+1. Lamine Yamal, Manga #20/25 — $2,500 on @PaniniAmerica · bought by arbrevert
+4. LeBron James, Run It Back: Origins (Animated) #1/17 — $2,250 on @NBATopShot · bought by @THEMECCA212
+…
+
+💰20 sales cleared $1,000 in the last 7 days.
+```
+
+- The collection is named by its official X account (`BRAND` in `x-draft.mjs`; Panini as plain `@PaniniAmerica` here).
+- **Buyers are tagged only from `X_HANDLES`** (marketplace username → X handle) in `x-draft.mjs` and `x-image.mjs`, each one confirmed by Trevor. Anyone else is named by marketplace username, untagged; `buyers_untagged` lists them. Confirmed 11-09: THEMECCA → @THEMECCA212, hichi → @chrisschlei, Lions_For_Breakfast → @FollowJay.
+- A buyer the API returns only as a wallet address is looked up on Pinnacle's public GQL (one Dapper username per wallet); never post the address.
 
 ### The RPC Weekly Pack Drop Report (Sunday) — Trevor's format, 11-08
 

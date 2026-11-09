@@ -209,7 +209,12 @@ function topSaleSubject(r) {
 // one confirmed by Trevor (or by the collector) as that person's account. A marketplace username is
 // not an X handle — "@arbrevert" could be a stranger — so an unlisted buyer is named, not tagged.
 // Keep in step with the same map in x-image.mjs.
-export const X_HANDLES = {}
+export const X_HANDLES = {
+  // Trevor, 11-09 (from the first top-10 post he finalized):
+  themecca: "THEMECCA212",
+  hichi: "chrisschlei",
+  lions_for_breakfast: "FollowJay",
+}
 function buyerLabel(name) {
   const h = X_HANDLES[String(name).toLowerCase()]
   return h ? `@${h.replace(/^@/, "")}` : name
@@ -240,7 +245,7 @@ async function mon() {
   }
   const lines = top.map((r, i) => {
     const b = buyerOf(r)
-    return `${i + 1}. ${topSaleSubject(r)} — ${usd(r.price_usd)} on ${coll(r.collection)}${b ? ` · bought by ${buyerLabel(b)}` : ""}`
+    return `${i + 1}. ${topSaleSubject(r)} — ${usd(r.price_usd)} on ${BRAND[r.collection]?.handle.split(" ")[0] ?? coll(r.collection)}${b ? ` · bought by ${buyerLabel(b)}` : ""}`
   })
   // The API returns the week's top 200 by price. If even the 200th cleared the threshold, the
   // count is a floor, not a total — say nothing rather than under-count.
@@ -248,8 +253,10 @@ async function mon() {
   const truncatedAbove = (raw.rows ?? []).length >= 200 && Math.min(...raw.rows.map((r) => r.price_usd)) >= BIG_SALE_USD
   const over = truncatedAbove ? 0 : rows.filter((r) => r.price_usd >= BIG_SALE_USD).length
   const now = new Date()
-  const head = `The week's top ${top.length} sales, ${mdPT(new Date(now.getTime() - 7 * 86400000))}-${mdPT(now)} 📈`
-  const tail = over > top.length ? [``, `${over} sales cleared ${usd(BIG_SALE_USD)} in the last 7 days.`] : []
+  // Trevor's format, 11-09: "This past week's top 10 sales, 11/2-11/9 📈"; each line names the collection by its
+  // official X account (Panini as plain @PaniniAmerica here); the count line leads with 💰.
+  const head = `This past week's top ${top.length} sales, ${mdPT(new Date(now.getTime() - 7 * 86400000))}-${mdPT(now)} 📈`
+  const tail = over > top.length ? [``, `💰${over} sales cleared ${usd(BIG_SALE_USD)} in the last 7 days.`] : []
   const unnamed = top.map((r, i) => (buyerOf(r) ? null : i + 1)).filter(Boolean)
   return {
     title: "The week's top sales",
