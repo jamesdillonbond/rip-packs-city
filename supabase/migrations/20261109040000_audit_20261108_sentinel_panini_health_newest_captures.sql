@@ -1,5 +1,8 @@
 -- audit_20261108_sentinel_panini_health_newest_captures
 --
+-- anon-exec: not granted (sentinel_panini_health) — CREATE OR REPLACE keeps the live ACL,
+--   read 11-08 8:00 PM PT as {postgres=X, service_role=X}: anon cannot execute, so no revoke here.
+--
 -- 2026-11-08 ~7:50 PM PT (Claude Code cloud; Trevor: "Keep going").
 --
 -- WHY. The Sentinel's "Panini Ingest" arm read INCONCLUSIVE (db saturated) at 6:04 and 7:04 PM PT:
