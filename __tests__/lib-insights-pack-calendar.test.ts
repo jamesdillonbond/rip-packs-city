@@ -269,26 +269,31 @@ describe("a delivered pre-order or draw is over", () => {
     { product: "disney", last_complete_pass_started_at: "2026-11-08T19:45:00Z", last_complete_at: "2026-11-08T19:46:00Z" },
   ]
   // Pinnacle "Stitch in Costume Vol.1": draw requests closed 11-06 9 AM PT and it sold out, yet Atlas's
-  // end_time is the leftover waiting room's (11-13). Its packs were minted to winners on 11-06.
+  // end_time is the leftover waiting room's (11-13). Winners opened their packs from 11-06.
   const stitch = row({ product: "disney", dist_id: "8912", title: "Stitch in Costume Vol.1", start_time: "2026-10-30T18:00:00Z", end_time: "2026-11-13T17:00:00Z" })
+  const caseRow = row({ dist_id: "8916" })
+  const base = { atlas_pack_market_state: { data: state }, atlas_pack_market: { data: [stitch, caseRow] }, panini_pack_drops: { data: freshPanini } }
 
-  it("packs already minted to collectors → ended, with the first mint as its end; none minted → still open", async () => {
-    const sb = fakeSb({
-      atlas_pack_market_state: { data: state },
-      atlas_pack_market: { data: [stitch] },
-      panini_pack_drops: { data: freshPanini },
-      pack_nft_mints: { data: [{ minted_at: "2026-11-06T17:20:00Z" }] },
-    })
-    const r = await cal(sb, NOW)
+  it("packs already being opened → ended, Pinnacle's end = first open; none opened → still open", async () => {
+    const r = await cal(fakeSb({ ...base, pinnacle_pack_opens: { data: [{ opened_at: "2026-11-06T17:20:00Z" }] } }), NOW)
     expect(r.drops.find((d) => d.dist_id === "8912")).toMatchObject({ status: "ended", end_time: "2026-11-06T17:20:00.000Z" })
+    expect(r.drops.find((d) => d.dist_id === "8916")?.status).toBe("open")
 
-    const r2 = await cal(fakeSb({ atlas_pack_market_state: { data: state }, atlas_pack_market: { data: [stitch] }, panini_pack_drops: { data: freshPanini } }), NOW)
+    const r2 = await cal(fakeSb(base), NOW)
     expect(r2.drops.find((d) => d.dist_id === "8912")?.status).toBe("open")
   })
 
-  it("a failed mint read throws — never posts a possibly-over draw as open", async () => {
-    await expect(
-      cal(fakeSb({ atlas_pack_market_state: { data: state }, atlas_pack_market: { data: [stitch] }, panini_pack_drops: { data: freshPanini }, pack_nft_mints: { error: { message: "timeout" } } }), NOW),
-    ).rejects.toThrow(/pack_nft_mints\(8912\): timeout/)
+  it("pack MINTS do not end a draw — Pinnacle mints a release's whole supply on day one", async () => {
+    const r = await cal(fakeSb({ ...base, pack_nft_mints: { data: [{ minted_at: "2026-10-30T18:59:31Z" }] } }), NOW)
+    expect(r.drops.find((d) => d.dist_id === "8912")?.status).toBe("open")
+  })
+
+  it("a Top Shot pre-order whose packs are being ripped is over, keeping Dapper's close time", async () => {
+    const r = await cal(fakeSb({ ...base, pack_rips: { data: [{ dist_id: "8916" }] } }), NOW)
+    expect(r.drops.find((d) => d.dist_id === "8916")).toMatchObject({ status: "ended", end_time: "2026-11-11T20:00:00.000Z" })
+  })
+
+  it("a failed opens read throws — never posts a possibly-over draw as open", async () => {
+    await expect(cal(fakeSb({ ...base, pinnacle_pack_opens: { error: { message: "timeout" } } }), NOW)).rejects.toThrow(/pinnacle_pack_opens\(8912\): timeout/)
   })
 })

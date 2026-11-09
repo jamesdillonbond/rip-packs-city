@@ -296,33 +296,46 @@ async function readCandy(fetchImpl: typeof fetch, now: Date): Promise<{ ok: bool
 }
 
 // ── Delivered pre-orders / draws ──────────────────────────────────────────────────────
-// A pre-order (Top Shot) or timed draw (Pinnacle) is OVER once Dapper has minted its packs into
-// collectors' wallets — PackNFT.Minted, in pack_nft_mints. Atlas's end_time does not say so: for
+// A pre-order (Top Shot) or timed draw (Pinnacle) is OVER once its packs are being OPENED: only
+// collectors who were delivered a pack can open one. Atlas's end_time does not say so — for
 // Pinnacle it is the leftover WAITING ROOM's end (Stitch in Costume Vol.1: requests closed 11-06
-// 9 AM PT, sold out, yet end_time read 11-13 — verified on disneypinnacle.com/releases 2026-11-08).
-const PACK_MINT_COLLECTION: Partial<Record<PackCalendarDrop["collection"], string>> = {
-  nba_top_shot: "95f28a17-224a-4025-96ad-adf8a4c63bfd",
-  disney_pinnacle: "7dd9dd11-e8b6-45c4-ac99-71331f959714",
+// 9 AM PT and it sold out, yet end_time read 11-13; verified on disneypinnacle.com/releases
+// 2026-11-08). ⛔ NOT pack MINTS: Pinnacle mints a release's whole supply when it OPENS
+// (Stitch / Villains Vol.2: 614 PackNFT.Minted on 10-30 18:59 UTC, the first hour of the draw), so
+// "minted" would end every draw on its first day.
+//   Top Shot: pack_rips (opens) for the dist.   Pinnacle: pinnacle_pack_opens for the dist.
+const TOP_SHOT_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function firstOpen(sb: any, d: PackCalendarDrop): Promise<{ any: boolean; at: string | null }> {
+  if (d.collection === "disney_pinnacle") {
+    const { data, error } = await sb
+      .from("pinnacle_pack_opens")
+      .select("opened_at")
+      .eq("dist_id", d.dist_id)
+      .order("opened_at", { ascending: true })
+      .limit(1)
+    if (error) throw new Error(`pinnacle_pack_opens(${d.dist_id}): ${error.message}`)
+    const at = (data ?? [])[0]?.opened_at ?? null
+    return { any: (data ?? []).length > 0, at }
+  }
+  if (d.collection === "nba_top_shot") {
+    const { data, error } = await sb.from("pack_rips").select("dist_id").eq("collection_id", TOP_SHOT_UUID).eq("dist_id", d.dist_id).limit(1)
+    if (error) throw new Error(`pack_rips(${d.dist_id}): ${error.message}`)
+    return { any: (data ?? []).length > 0, at: null }
+  }
+  return { any: false, at: null }
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function markDeliveredDraws(sb: any, drops: PackCalendarDrop[]): Promise<void> {
   for (const d of drops) {
-    const coll = PACK_MINT_COLLECTION[d.collection]
-    if (d.kind !== "rsvp" || d.status !== "open" || !coll) continue
-    const { data, error } = await sb
-      .from("pack_nft_mints")
-      .select("minted_at")
-      .eq("collection_id", coll)
-      .eq("dist_id", d.dist_id)
-      .order("minted_at", { ascending: true })
-      .limit(1)
-    if (error) throw new Error(`pack_nft_mints(${d.dist_id}): ${error.message}`)
-    const first = (data ?? [])[0]?.minted_at
-    if (first) {
-      d.status = "ended"
-      d.end_time = new Date(first).toISOString()
-    }
+    if (d.kind !== "rsvp" || d.status !== "open") continue
+    const o = await firstOpen(sb, d)
+    if (!o.any) continue
+    d.status = "ended"
+    // Pinnacle: the first open is when it was demonstrably over. Top Shot: keep Dapper's own close.
+    if (o.at) d.end_time = new Date(o.at).toISOString()
   }
 }
 
