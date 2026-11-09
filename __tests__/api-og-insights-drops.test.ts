@@ -53,6 +53,20 @@ describe("GET /api/og/insights/drops", () => {
     expect(text).not.toMatch(/RSVP|confidence|DUC/i)
   })
 
+  it("names EVERY live drop, never '+N more' (Trevor 11-08: always name them all)", async () => {
+    const many = Array.from({ length: 11 }, (_, i) => ({ collection: "nba_top_shot", dist_id: String(9000 + i), title: `Drop Number ${i + 1}`, kind: "sale", retail_usd: 100 - i, start_time: "2026-11-05T20:00:00Z", end_time: null, status: "open" }))
+    for (const n of [9, 11, 20]) {
+      resetOgCapture()
+      capture.c = installOgCapture()
+      vi.resetModules()
+      const drops = n <= 11 ? many.slice(0, n) : [...many, ...many.slice(0, n - 11).map((d, i) => ({ ...d, dist_id: String(9100 + i), title: `Extra Drop ${i + 1}` }))]
+      mockFetch(json({ meta: { complete: true }, drops }))
+      const { text } = await render()
+      for (const d of drops) expect(text).toContain(d.title.toUpperCase())
+      expect(text).not.toMatch(/\bmore on the page\b|\+\s*\d+\s*more/i)
+    }
+  })
+
   it("an unreachable calendar renders the generic line, never 'no drops'", async () => {
     mockFetch("throw")
     const { res, text } = await render()

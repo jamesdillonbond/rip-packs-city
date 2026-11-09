@@ -65,7 +65,7 @@ A source that could not be read is named in `warnings` and `facts.collections_un
 - **Never lead with the Team Captain designation.**
 - **No hype the data can't back**: no "best deal on Flow", "guaranteed", "can't lose", price predictions, or advice to buy.
 - **Under 280 characters by X's count** (every link counts as 23), except the long-form drops report (`long_form: true`). The script measures it.
-- **A list is never cut to "+N more"** (Trevor, 2026-11-08: "These posts need to name all the drops"). When every item will not fit one post, the script returns `thread[]`: numbered posts (`1/3`…), each under 280, that together name every item; the link rides the last one. Trevor posts 1, then replies to it with 2, and so on (X's post link cannot thread).
+- **A list is never cut to "+N more"** (Trevor, 2026-11-08: "These posts need to name all the drops"). When every item will not fit one post, the script returns `thread[]`: numbered posts (`1/3`…), each under 280, that together name every item; the link rides the last one. Trevor posts 1, then replies to it with 2, and so on (X's post link cannot thread). The same rule covers every image and the `/insights/drops` link card (Trevor, 11-08: "always name them all. Never do the + 2 more thing"): the card sizes its grid to the count and falls back to one line per drop past 16.
 - **Plain voice**: the number first, one line of context, the link. One emoji at most, except in the drops report, which uses one per line (below).
 - **Official accounts may be tagged** — the collections' own handles, read from each app's site footer 11-08: @NBATopShot, @NFLAllDay, @LaLigaGolazos, @DisneyPinnacle, @PaniniAmerica (as "@PaniniAmerica Blockchain"), @CandyDigital. Never a collector.
 
