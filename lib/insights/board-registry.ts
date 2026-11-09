@@ -341,7 +341,7 @@ export const INSIGHTS_BOARDS: readonly InsightsBoard[] = [
     kind: "dataset",
     name: "Top Sales — Whale Watch",
     description:
-      "Ranks the biggest recent sales across NBA Top Shot, NFL All Day, Panini and Candy MLB, with the buyer and seller resolved to their marketplace username where known.",
+      "Ranks the biggest recent sales across NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos, Panini and Candy MLB, with the buyer and seller resolved to their marketplace username where known.",
     publicApi: true,
   },
   {
