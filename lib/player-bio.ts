@@ -32,6 +32,8 @@ export interface PlayerBioResult {
     url: string | null
     date_of_birth: string | null
     birth_place: string | null
+    /** MLB's register names colleges (20261109001623); league / club pages do not. */
+    college?: string | null
     verified_by: string | null
     fetched_at: string | null
   } | null
@@ -51,7 +53,7 @@ export interface PlayerBioView {
 export const PLAYER_BIO_COLLECTIONS = new Set(["nba_top_shot", "nfl_all_day", "candy_mlb", "laliga_golazos", "panini_blockchain", "ufc_strike"])
 
 const OFFICIAL_LABEL: Record<string, string> = {
-  "ufc.com": "UFC.com", "laliga.com": "LALIGA", "realmadrid.com": "Real Madrid", "fcbarcelona.com": "FC Barcelona",
+  "ufc.com": "UFC.com", "laliga.com": "LALIGA", "realmadrid.com": "Real Madrid", "fcbarcelona.com": "FC Barcelona", "mlb.com": "MLB",
 }
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}/
@@ -126,8 +128,11 @@ export function buildPlayerBio(r: PlayerBioResult | null): PlayerBioView | null 
   else if (chainPlace) { birthplace = chainPlace; sources.add("Top Shot on-chain") }
 
   const citizenship = clean(espn?.citizenship)
-  const college = clean(espn?.college)
-  if (citizenship || college) sources.add("ESPN")
+  const espnCollege = clean(espn?.college)
+  const officialCollege = clean(official?.college)
+  const college = espnCollege ?? officialCollege
+  if (citizenship || espnCollege) sources.add("ESPN")
+  if (!espnCollege && officialCollege && officialLabel) sources.add(officialLabel)
 
   const view: PlayerBioView = { dateOfBirth: formatBirthDate(dob), dateOfBirthConflict, birthplace, citizenship, college, sources: Array.from(sources) }
   return view.dateOfBirth || view.birthplace || view.citizenship || view.college ? view : null

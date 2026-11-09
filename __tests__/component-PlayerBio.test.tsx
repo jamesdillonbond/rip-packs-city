@@ -103,6 +103,22 @@ describe("buildPlayerBio", () => {
     expect(b.sources).toEqual(["FC Barcelona"])
   })
 
+  it("MLB's register fills date, birthplace and college where ESPN has none, labelled MLB", () => {
+    const v = buildPlayerBio({ linked: 0, espn: null, onchain: null, nflverse_date_of_birth: null,
+      official: { source: "mlb.com", url: null, date_of_birth: "1991-03-18", birth_place: "Del City, OK, USA",
+                  college: "North Carolina State", verified_by: "mlb-team", fetched_at: null } })!
+    expect(v.dateOfBirth).toBe("March 18, 1991")
+    expect(v.birthplace).toBe("Del City, OK, USA")
+    expect(v.college).toBe("North Carolina State")
+    expect(v.sources).toEqual(["MLB"])
+  })
+
+  it("an ESPN college wins over MLB's; MLB is not named when it supplied nothing shown", () => {
+    const v = buildPlayerBio({ ...TATUM, official: { source: "mlb.com", url: null, date_of_birth: "1998-03-03", birth_place: "Elsewhere", college: "Other U", verified_by: "mlb-dob-espn", fetched_at: null } })!
+    expect(v.college).toBe("Duke")
+    expect(v.sources).toEqual(["ESPN"])
+  })
+
   it("an ESPN birthplace still wins over the league page; a disagreeing league DOB is named", () => {
     const v = buildPlayerBio({ ...TATUM, official: { source: "ufc.com", url: null, date_of_birth: "1998-03-04", birth_place: "Elsewhere", verified_by: "ufc-event-confirmed", fetched_at: null } })!
     expect(v.birthplace).toBe("Saint Louis, MO, USA")
