@@ -97,7 +97,8 @@ const RSS = `<rss><channel>
 const candyOk = (async () => new Response(RSS, { status: 200 })) as unknown as typeof fetch
 const candyDown = (async () => { throw new Error("ENOTFOUND") }) as unknown as typeof fetch
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const cal = (sb: any, now: Date, f: typeof fetch = candyOk) => fetchPackCalendar(sb, now, f)
+// Hand-entered drops are pinned in lib-insights-manual-drops.test.ts; these feed tests pass none.
+const cal = (sb: any, now: Date, f: typeof fetch = candyOk) => fetchPackCalendar(sb, now, f, [])
 const freshPanini = [
   { pack_id: "1060", name: "2026 Panini NFT Prizm The Rolling Stones Packs", price_usd: 25, cards_per_pack: 5, start_at: "2026-11-06T16:00:00Z", end_at: null, in_stock: true, is_available: true, last_seen_at: "2026-11-08T19:00:00Z" },
 ]

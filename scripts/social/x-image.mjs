@@ -75,6 +75,7 @@ function dayPT(d) {
 // The same wording as x-draft.mjs's dropLine, split into a status line.
 function statusLine(x) {
   if (x.kind === "open_edition") return "Minting now"
+  if (x.kind === "trade_in") return x.status === "upcoming" ? `Trade-ins open ${whenPT(x.start_time)}` : x.end_time ? `Trade-ins close ${whenPT(x.end_time)}` : "Trade-ins open now"
   const word = x.collection === "disney_pinnacle" ? "Draw requests" : "Pre-orders"
   if (x.status === "upcoming") return `${x.kind === "rsvp" ? `${word} open` : "Drops"} ${whenPT(x.start_time)}`
   if (x.kind === "rsvp" && x.end_time) return `${word} close ${whenPT(x.end_time)}`

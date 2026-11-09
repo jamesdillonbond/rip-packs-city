@@ -35,10 +35,25 @@ describe("fetchDropsBoard", () => {
       fakeSb({ atlas_pack_market_state: { data: state }, atlas_pack_market: { data: atlas }, panini_pack_drops: { data: panini }, pack_distributions: { data: [{ dist_id: "8916" }] } }),
       NOW,
       candyOk,
+      [],
     )
     const by = Object.fromEntries(b.drops.map((d) => [d.dist_id, d.page_live]))
     expect(by).toEqual({ "8916": true, "8918": false, "1060": false })
     expect(b.complete).toBe(true)
+  })
+
+  it("a hand-entered trade-in (no feed carries it) is on the board, linked to the trade-in finder", async () => {
+    const tst = { id: "manual-t", collection: "nba_top_shot" as const, title: "Top Shot This: Test", kind: "trade_in" as const, detail: "trade in $10 of Test Moments per pack", retail_usd: null, start_time: new Date(NOW.getTime() - 3_600_000).toISOString(), end_time: new Date(NOW.getTime() + 86_400_000).toISOString(), detail_href: "/insights/trade-in", source: "test", verified_at: "2026-11-08" }
+    const b = await fetchDropsBoard(
+      fakeSb({ atlas_pack_market_state: { data: state }, atlas_pack_market: { data: atlas }, panini_pack_drops: { data: panini }, pack_distributions: { data: [{ dist_id: "8916" }] } }),
+      NOW,
+      candyOk,
+      [tst],
+    )
+    const d = b.drops.find((x) => x.dist_id === "manual-t")
+    expect(d?.status).toBe("open")
+    expect(d?.page_live).toBe(true)
+    expect(d?.detail_href).toBe("/insights/trade-in")
   })
 
   it("a failed pack-page read throws (the page shows its degraded notice), never an unlinked list", async () => {
@@ -47,6 +62,7 @@ describe("fetchDropsBoard", () => {
         fakeSb({ atlas_pack_market_state: { data: state }, atlas_pack_market: { data: atlas }, panini_pack_drops: { data: panini }, pack_distributions: { error: { message: "timeout" } } }),
         NOW,
         candyOk,
+        [],
       ),
     ).rejects.toThrow(/pack_distributions: timeout/)
   })

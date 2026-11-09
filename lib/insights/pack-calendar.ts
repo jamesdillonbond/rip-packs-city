@@ -40,6 +40,8 @@
 //
 // UFC STRIKE: market closed; not read. Say so; never imply it had no drops.
 
+import { buildManualDrops, MANUAL_DROPS, type ManualDrop } from "@/lib/insights/manual-drops"
+
 export type PackCalendarProduct = "nba" | "nfl" | "laliga" | "disney"
 
 export interface PackCalendarSourceRow {
@@ -66,9 +68,10 @@ export interface PackCalendarDrop {
   pack_type: string | null
   /**
    * "rsvp" when Dapper sells it by reservation (the window is the RSVP), "open_edition" for a Pinnacle
-   * Open Edition seen minting (no price, no announced end), else "sale".
+   * Open Edition seen minting (no price, no announced end), "trade_in" for a pack you trade Moments
+   * in for (Top Shot This; hand-entered in lib/insights/manual-drops.ts), else "sale".
    */
-  kind: "rsvp" | "sale" | "open_edition"
+  kind: "rsvp" | "sale" | "open_edition" | "trade_in"
   slots: number | null
   retail_usd: number | null
   start_time: string
@@ -80,6 +83,8 @@ export interface PackCalendarDrop {
   sport?: string | null
   /** Panini only: fewer than LOW_STOCK_SHARE of the pack's supply is left (store counts). */
   low_stock?: boolean
+  /** Hand-entered drops only: what you give for a pack ("trade in $10 of Luka Moments per pack"). */
+  detail?: string
 }
 
 const COLLECTION: Record<PackCalendarProduct, PackCalendarDrop["collection"]> = {
@@ -363,7 +368,12 @@ async function markDeliveredDraws(sb: any, drops: PackCalendarDrop[]): Promise<v
 const REQUIRED: PackCalendarProduct[] = ["nba", "nfl"]
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function fetchPackCalendar(sb: any, now = new Date(), fetchImpl: typeof fetch = fetch): Promise<PackCalendarResult> {
+export async function fetchPackCalendar(
+  sb: any,
+  now = new Date(),
+  fetchImpl: typeof fetch = fetch,
+  manual: ManualDrop[] = MANUAL_DROPS,
+): Promise<PackCalendarResult> {
   const { data: state, error: stateErr } = await sb
     .from("atlas_pack_market_state")
     .select("product, last_complete_pass_started_at, last_complete_at")
@@ -436,6 +446,8 @@ export async function fetchPackCalendar(sb: any, now = new Date(), fetchImpl: ty
   if (!candy.ok) complete = false
 
   await markDeliveredDraws(sb, drops)
+  // Drops no feed carries (Top Shot This trade-ins), hand-entered from the official page.
+  drops.push(...buildManualDrops(now, manual))
 
   drops.sort((a, b) => a.start_time.localeCompare(b.start_time) || a.dist_id.localeCompare(b.dist_id))
   return { complete, complete_at, drops, announcements: candy.announcements }
