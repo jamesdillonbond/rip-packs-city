@@ -19,7 +19,7 @@ Every post links one insights page. Each page carries a `summary_large_image` ca
 
 | Day | Slot | Source API | Link | What it says |
 |---|---|---|---|---|
-| Mon | Weekend recap | `top-sales?window=7d&sort=price` filtered to Fri 00:00 → Mon 00:00 PT | `/insights/top-sales` | Top 3–5 sales of the weekend, with how many cleared $1,000 |
+| Mon | Week's top sales | `top-sales?window=7d&sort=price` (trailing 7 days; weekend-only until 11-09, Trevor: "We should have it be top sales from a week") | `/insights/top-sales` | Top 3–5 sales of the last 7 days, with how many cleared $1,000 |
 | Tue | Top Shot pack check | `pack-sniper` | `/insights/pack-sniper` | Packs listed below the expected value of what's still inside. Qualifies only if EV × 0.95 (Top Shot's 5% selling fee) beats the ask, EV covers ≥ 90% of the pool, and the pack isn't high-variance. None qualifying is posted as "none today", not skipped |
 | Wed | Rookie spotlight | `rookies?class=2025&sort=gmv` | `/insights/rookies` | 30-day sales for the 2025 class and its top three |
 | Thu | Deal of the week | `deals?sort=discount` | `/insights/deals` | Up to three listings $10+ **and** 15%+ under value. Falls back to Saturday's trade-in post when none qualify |

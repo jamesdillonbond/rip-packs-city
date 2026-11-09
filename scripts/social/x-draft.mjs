@@ -68,17 +68,6 @@ function ptParts(d) {
   return { date: `${p.year}-${p.month}-${p.day}`, weekday: p.weekday.toLowerCase().slice(0, 3), hm: `${p.hour}:${p.minute}` }
 }
 
-// Midnight PT of a PT calendar date, as a UTC Date (handles PST/PDT by probing the offset).
-function ptMidnight(dateStr) {
-  const guess = new Date(`${dateStr}T08:00:00Z`) // 00:00 PST
-  const { hm } = ptParts(guess)
-  return hm === "00:00" ? guess : new Date(`${dateStr}T07:00:00Z`) // 00:00 PDT
-}
-function addDays(dateStr, n) {
-  const d = new Date(`${dateStr}T12:00:00Z`)
-  d.setUTCDate(d.getUTCDate() + n)
-  return d.toISOString().slice(0, 10)
-}
 function isoWeek(dateStr) {
   const d = new Date(`${dateStr}T12:00:00Z`)
   const day = (d.getUTCDay() + 6) % 7
@@ -173,17 +162,12 @@ async function topSales7d() {
   return (d.rows ?? []).filter((r) => !EXCLUDED.has(r.collection) && r.price_usd > 0)
 }
 
-async function mon(ctx) {
-  // Weekend = Friday 00:00 PT up to Monday 00:00 PT (or now, if run before Monday).
-  const fri = addDays(ctx.date, -((ctx.dow + 2) % 7)) // the most recent Friday on/before today
-  const start = ptMidnight(fri)
-  const end = ptMidnight(addDays(fri, 3))
-  const rows = (await topSales7d()).filter((r) => {
-    const t = new Date(r.sold_at)
-    return t >= start && t < end
-  })
+async function mon() {
+  // Trailing 7 days (Trevor, 11-09: "We should have it be top sales from a week"). The weekend-only
+  // window dropped a $2,130 sale made four hours after it closed and a $2,500 one from Wednesday.
+  const rows = await topSales7d()
   const link = `${SITE}/insights/top-sales`
-  if (rows.length < 3) return { skip_reason: `only ${rows.length} weekend sales on the top-sales board`, link }
+  if (rows.length < 3) return { skip_reason: `only ${rows.length} sales on the 7-day top-sales board`, link }
   const top = rows.slice(0, 5)
   const lines = top.map((r, i) => `${i + 1}. ${saleSubject(r)} — ${usd(r.price_usd)} (${coll(r.collection)})`)
   // The API returns the week's top 200 by price. If even the 200th cleared the threshold, the
@@ -191,12 +175,12 @@ async function mon(ctx) {
   const raw = await getJson("top-sales?window=7d&sort=price&limit=200")
   const truncatedAbove = (raw.rows ?? []).length >= 200 && Math.min(...raw.rows.map((r) => r.price_usd)) >= BIG_SALE_USD
   const over = truncatedAbove ? 0 : rows.filter((r) => r.price_usd >= BIG_SALE_USD).length
-  const head = "The weekend's biggest sales:\n"
-  const tail = `\n${over > 3 ? `${over} sales cleared ${usd(BIG_SALE_USD)}. ` : ""}Full board 👇\n${link}`
+  const head = "The week's biggest sales:\n"
+  const tail = `\n${over > 3 ? `${over} sales cleared ${usd(BIG_SALE_USD)} in the last 7 days. ` : ""}Full board 👇\n${link}`
   return {
-    title: "Weekend market recap",
+    title: "Week's top sales",
     link,
-    facts: { window_pt: `${fri} 00:00 → ${addDays(fri, 3)} 00:00`, weekend_sales_on_board: rows.length, over_1k: over, top },
+    facts: { window: "trailing 7 days", sales_on_board: rows.length, over_1k: over, top },
     draft: fit(lines, head, tail),
   }
 }
