@@ -266,6 +266,14 @@ async function pinnaclePinImage(r) {
   return null
 }
 
+// A String object can carry a flag and still work everywhere a data-URI string does.
+const padded = (data) => {
+  if (!data) return null
+  const v = new String(data)
+  v.padded = true
+  return v
+}
+
 async function topSalesItems(warnings) {
   const d = await getJson("top-sales?window=7d&sort=price&limit=200")
   const rows = (d.rows ?? []).filter((r) => r.collection !== "ufc_strike" && r.price_usd > 0).slice(0, 10)
@@ -281,7 +289,16 @@ async function topSalesItems(warnings) {
     if (u) r.buyer_name = u
   }
   const imgs = await Promise.all(
-    rows.map(async (r) => (await imageData(r.thumbnail_url)) ?? (r.collection === "disney_pinnacle" ? await pinnaclePinImage(r) : null)),
+    // Top Shot: the moment's TRANSPARENT render, so every card sits on the card's own glow. The
+    // stored thumbnail is a mix — a CDN JPEG on black, or an IPFS PNG that may or may not be
+    // transparent (11-09: LeBron and Kawhi on black slabs, Iverson clean) — and is only the fallback.
+    rows.map(async (r) =>
+      (r.collection === "nba_top_shot" && /^\d+$/.test(String(r.nft_id ?? ""))
+        ? padded(await imageData(`https://assets.nbatopshot.com/media/${r.nft_id}/transparent/image?width=600`))
+        : null) ??
+      (await imageData(r.thumbnail_url)) ??
+      (r.collection === "disney_pinnacle" ? await pinnaclePinImage(r) : null),
+    ),
   )
   return rows.map((r, i) => {
     if (!imgs[i]) warnings.push(`no image for #${i + 1} ${r.player_name} — its card shows a blank tile`)
@@ -293,7 +310,8 @@ async function topSalesItems(warnings) {
       set: [shortSet(r.set_name), r.subedition_name, serial].filter(Boolean).join(" · "),
       price: usd(r.price_usd),
       buyer: buyerOf(r) && (X_HANDLES[buyerOf(r).toLowerCase()] ? `@${X_HANDLES[buyerOf(r).toLowerCase()].replace(/^@/, "")}` : buyerOf(r)),
-      img: imgs[i],
+      img: imgs[i] ? String(imgs[i]) : null,
+      padded: !!imgs[i]?.padded,
     }
   })
 }
@@ -305,7 +323,7 @@ function salesPage({ items, fonts, logo, now }) {
     const c = COLL[it.collection] ?? { label: it.collection, accent: "#E03A2F" }
     return `<div class="card" style="--acc:${c.accent}">
       <div class="top"><span class="rank">${it.rank}</span><span class="coll">${esc(SITE_NAMES[it.collection] ?? c.label)}</span></div>
-      <div class="art">${it.img ? `<img src="${it.img}">` : `<span class="noimg">${esc(it.title)}</span>`}</div>
+      <div class="art">${it.img ? `<img${it.padded ? ' class="padded"' : ""} src="${it.img}">` : `<span class="noimg">${esc(it.title)}</span>`}</div>
       <div class="name">${esc(it.title)}</div>
       <div class="set">${esc(it.set)}</div>
       <div class="price">${esc(it.price)}</div>
@@ -328,7 +346,10 @@ h1 em{font-style:normal;color:#E03A2F}
 .grid{flex:1;display:grid;grid-template-columns:repeat(5,1fr);grid-template-rows:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0 8px;min-height:0}
 .card{background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.12);border-top:3px solid var(--acc);border-radius:10px;padding:6px 10px 7px;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}
 .art{position:relative;flex:1;min-height:0;border-radius:6px;background:radial-gradient(closest-side,color-mix(in srgb,var(--acc) 22%,transparent),transparent);display:flex;align-items:center;justify-content:center}
+.art{overflow:hidden}
 .art img{max-width:100%;max-height:100%;object-fit:contain;display:block}
+/* Top Shot's transparent render sits inside ~20% empty margin on each side: scale it up to match the cards. */
+.art img.padded{transform:scale(1.3)}
 .noimg{font-size:30px;line-height:1;text-transform:uppercase;text-align:center;color:color-mix(in srgb,var(--acc) 70%,#fff);opacity:.55;padding:0 8px}
 .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}
 .rank{font-size:22px;line-height:1;color:#fff;background:#E03A2F;border-radius:6px;padding:3px 7px 2px;min-width:30px;text-align:center}
