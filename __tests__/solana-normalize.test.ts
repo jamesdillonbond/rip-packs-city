@@ -370,3 +370,16 @@ describe("registered Candy collections (candy_collections)", () => {
     expect(editionKeyFromAsset(base)).toBe("shohei-ohtani")
   })
 })
+
+describe("fitEditionKey — editions.external_id is varchar(100)", () => {
+  it("leaves a key that fits untouched and shortens a long one to exactly 100, stably and uniquely", async () => {
+    const { fitEditionKey } = await import("@/lib/chains/solana/normalize")
+    expect(fitEditionKey("asg26:shohei-ohtani-core")).toBe("asg26:shohei-ohtani-core")
+    const a = "c:dc3-super-power-packs-series-justice-league-vs-suicide-squad:" + "harley-quinn-and-the-joker-epic-artist-edition-variant-a-legendary"
+    const b = a.replace("variant-a", "variant-b")
+    expect(fitEditionKey(a).length).toBe(100)
+    expect(fitEditionKey(a)).toBe(fitEditionKey(a))
+    expect(fitEditionKey(a)).not.toBe(fitEditionKey(b))
+    expect(fitEditionKey(a).startsWith(a.slice(0, 91))).toBe(true)
+  })
+})

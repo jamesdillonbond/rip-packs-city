@@ -172,9 +172,26 @@ export function editionKeyFromAsset(asset: DasAsset): string {
   const set = candySetForAsset(asset)
   if (set?.editionKeyPrefix) {
     const rarity = (attr(asset, "Rarity") ?? "").toLowerCase().replace(/[^a-z0-9]/g, "")
-    return `${set.editionKeyPrefix}:${slug || asset.id}${rarity ? `-${rarity}` : ""}`
+    return fitEditionKey(`${set.editionKeyPrefix}:${slug || asset.id}${rarity ? `-${rarity}` : ""}`)
   }
   return slug || asset.id
+}
+
+// editions.external_id is varchar(100) — and ~80 views depend on it, so it is not widened.
+// The full-inventory census (2026-11-08) met DC titles whose prefix + name + rarity runs
+// past 100 ("c:dc3-super-power-packs-series-justice-league-vs-suicide-squad:…"), and every
+// page of those collections failed its editions write. A key over the limit keeps its first
+// 91 characters and a stable 8-hex FNV-1a hash of the WHOLE key, so it stays unique and
+// deterministic; every key that already fits is unchanged.
+export const EDITION_KEY_MAX = 100
+export function fitEditionKey(key: string): string {
+  if (key.length <= EDITION_KEY_MAX) return key
+  let h = 0x811c9dc5
+  for (let i = 0; i < key.length; i++) {
+    h ^= key.charCodeAt(i)
+    h = Math.imul(h, 0x01000193) >>> 0
+  }
+  return `${key.slice(0, EDITION_KEY_MAX - 9)}-${h.toString(16).padStart(8, "0")}`
 }
 
 /** The Candy set this asset belongs to (null = unknown grouping, treated as Base). */
