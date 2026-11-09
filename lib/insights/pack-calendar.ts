@@ -254,6 +254,47 @@ export function openEditionTitle(setName: string | null, editionType: string | n
   return `${name} (${(editionType ?? "").trim() || "Open Edition"})`
 }
 
+// A brand-new Open Edition mints before RPC's catalog (pinnacle_catalog) has its set name — the
+// 11-08 "Walt Disney Mugs Vol.1" showed as its raw key "OEV1-WDMG". Read the name from the Pinnacle
+// contract itself: one edition of the set (from pinnacle_mint_events) → its shape → its set.
+const PINNACLE_CONTRACT = "0xedf9df96c92f4595"
+const FLOW_REST = "https://rest-mainnet.onflow.org/v1/scripts"
+const SET_NAME_SCRIPT = `import Pinnacle from ${PINNACLE_CONTRACT}
+access(all) fun main(id: Int): [String] {
+  let e = Pinnacle.getEdition(id: id)!
+  let shape = Pinnacle.getShape(id: e.shapeID)!
+  return [Pinnacle.getSet(id: shape.setID)!.name, Pinnacle.getEditionType(id: e.editionTypeID)!.name]
+}`
+/** Fills set_name / edition_type for sets the catalog has not named yet. A failed read leaves them null. */
+export async function resolveUnnamedOpenEditionSets(
+  sb: any, // eslint-disable-line @typescript-eslint/no-explicit-any
+  sets: PinnacleOpenEditionSet[],
+  fetchImpl: typeof fetch,
+): Promise<void> {
+  for (const s of sets) {
+    if (s.set_name || !s.set_key) continue
+    try {
+      const { data } = await sb.from("pinnacle_mint_events").select("edition_id").like("render_id", `${s.set_key}-%`).not("edition_id", "is", null).limit(1)
+      const id = (data ?? [])[0]?.edition_id
+      if (id == null) continue
+      const arg = Buffer.from(JSON.stringify({ type: "Int", value: String(id) })).toString("base64")
+      const r = await fetchImpl(FLOW_REST, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ script: Buffer.from(SET_NAME_SCRIPT).toString("base64"), arguments: [arg] }),
+        signal: AbortSignal.timeout(5000),
+      })
+      if (!r.ok) continue
+      const v = JSON.parse(Buffer.from(JSON.parse(await r.text()), "base64").toString())
+      const [setName, editionType] = (v?.value ?? []).map((x: { value?: unknown }) => (typeof x?.value === "string" ? x.value : null))
+      if (setName) s.set_name = setName
+      if (editionType && !s.edition_type) s.edition_type = editionType
+    } catch {
+      /* the key stays the title; never block the calendar on this read */
+    }
+  }
+}
+
 /** Open Edition sets minting now, or that started minting this week and have stopped (ended). */
 export function buildPinnacleOpenEditionDrops(sets: PinnacleOpenEditionSet[], now: Date, opts: { daysBack?: number } = {}): PackCalendarDrop[] {
   const back = now.getTime() - (opts.daysBack ?? 7) * DAY_MS
@@ -435,6 +476,7 @@ export async function fetchPackCalendar(
   const oeAsOf = oe && typeof oe === "object" && typeof oe.lane_as_of === "string" ? oe.lane_as_of : null
   if (oeAsOf && Array.isArray(oe.sets)) {
     complete_at.pinnacle_oe = oeAsOf
+    await resolveUnnamedOpenEditionSets(sb, oe.sets as PinnacleOpenEditionSet[], fetchImpl)
     drops.push(...buildPinnacleOpenEditionDrops(oe.sets as PinnacleOpenEditionSet[], now))
   } else {
     complete_at.pinnacle_oe = null

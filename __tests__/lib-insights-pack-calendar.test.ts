@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { buildPackCalendar, buildPinnacleOpenEditionDrops, fetchPackCalendar, openEditionTitle, type PackCalendarSourceRow } from "@/lib/insights/pack-calendar"
+import { buildPackCalendar, buildPinnacleOpenEditionDrops, fetchPackCalendar, openEditionTitle, type PackCalendarSourceRow, resolveUnnamedOpenEditionSets } from "@/lib/insights/pack-calendar"
 
 // 2026-11-08 12:00 PT
 const NOW = new Date("2026-11-08T20:00:00Z")
@@ -96,8 +96,8 @@ const RSS = `<rss><channel>
 </channel></rss>`
 const candyOk = (async () => new Response(RSS, { status: 200 })) as unknown as typeof fetch
 const candyDown = (async () => { throw new Error("ENOTFOUND") }) as unknown as typeof fetch
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 // Hand-entered drops are pinned in lib-insights-manual-drops.test.ts; these feed tests pass none.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const cal = (sb: any, now: Date, f: typeof fetch = candyOk) => fetchPackCalendar(sb, now, f, [])
 const freshPanini = [
   { pack_id: "1060", name: "2026 Panini NFT Prizm The Rolling Stones Packs", price_usd: 25, cards_per_pack: 5, start_at: "2026-11-06T16:00:00Z", end_at: null, in_stock: true, is_available: true, last_seen_at: "2026-11-08T19:00:00Z" },
@@ -301,5 +301,30 @@ describe("a delivered pre-order or draw is over", () => {
 
   it("a failed opens read throws — never posts a possibly-over draw as open", async () => {
     await expect(cal(fakeSb({ ...base, pinnacle_pack_opens: { error: { message: "timeout" } } }), NOW)).rejects.toThrow(/pinnacle_pack_opens\(8912\): timeout/)
+  })
+})
+
+describe("resolveUnnamedOpenEditionSets — a brand-new Open Edition the catalog has not named", () => {
+  const set = () => ({ set_key: "OEV1-WDMG", set_name: null as string | null, edition_type: null as string | null, pins: 1980, first_mint_at: "2026-11-09T03:14:16Z", last_mint_at: "2026-11-09T03:21:21Z" })
+  const sb = (rows: unknown[]) => ({
+    from() {
+      const b: Record<string, unknown> = {}
+      for (const m of ["select", "like", "not", "limit"]) b[m] = () => b
+      b.then = (ok: (v: unknown) => unknown) => Promise.resolve({ data: rows, error: null }).then(ok)
+      return b
+    },
+  })
+  const cadence = (vals: string[]) =>
+    (async () => new Response(JSON.stringify(Buffer.from(JSON.stringify({ type: "Array", value: vals.map((v) => ({ type: "String", value: v })) })).toString("base64")), { status: 200 })) as unknown as typeof fetch
+
+  it("reads the set name from the Pinnacle contract, so the title is never the raw key", async () => {
+    const s = set()
+    await resolveUnnamedOpenEditionSets(sb([{ edition_id: 2940 }]), [s], cadence(["Walt Disney Animation Studios • Walt Disney Mugs Vol.1", "Open Edition"]))
+    expect(openEditionTitle(s.set_name, s.edition_type, s.set_key)).toBe("Walt Disney Mugs Vol.1 (Open Edition)")
+  })
+  it("a failed chain read leaves the set unnamed and never throws", async () => {
+    const s = set()
+    await resolveUnnamedOpenEditionSets(sb([{ edition_id: 2940 }]), [s], (async () => { throw new Error("ECONNRESET") }) as unknown as typeof fetch)
+    expect(s.set_name).toBeNull()
   })
 })
