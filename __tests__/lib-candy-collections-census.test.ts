@@ -14,12 +14,17 @@ const state: {
   dasNoCursor: boolean
   dasCalls: Array<string | null>
   wmcError: any
+  existingWmc: any[]
+  existingEds: any[]
+  readError: any
+  hydrate: { hydrated: any[]; failed: any[] } | null
+  hydrateCalls: any[][]
   updates: Array<{ address: string; patch: any }>
   wmcUpserts: Array<{ rows: any[]; opts: any }>
   edUpserts: Array<{ rows: any[]; opts: any }>
   rpcs: string[]
   rpcArgs: any[]
-} = { queue: [], pages: {}, dasThrows: new Set(), dasNoCursor: false, dasCalls: [], wmcError: null, updates: [], wmcUpserts: [], edUpserts: [], rpcs: [], rpcArgs: [] }
+} = { queue: [], pages: {}, dasThrows: new Set(), dasNoCursor: false, dasCalls: [], wmcError: null, existingWmc: [], existingEds: [], readError: null, hydrate: null, hydrateCalls: [], updates: [], wmcUpserts: [], edUpserts: [], rpcs: [], rpcArgs: [] }
 
 vi.mock("@/lib/chains/solana/das", () => ({
   getAssetsByGroupCursor: async (addr: string, cursor: string | null) => {
@@ -29,12 +34,20 @@ vi.mock("@/lib/chains/solana/das", () => ({
     return { items: state.pages[addr]?.[idx] ?? [], total: 0, limit: 1000, page: 0, cursor: state.dasNoCursor ? undefined : `${addr}#${idx + 1}` }
   },
 }))
+vi.mock("@/lib/chains/solana/hydrate", () => ({
+  isUnhydrated: (a: any) => a.bare === true,
+  hydrateFromJsonUri: async (assets: any[]) => {
+    state.hydrateCalls.push(assets)
+    return state.hydrate ?? { hydrated: assets.map((a) => ({ ...a, bare: false, ed: a.realEd ?? a.ed })), failed: [] }
+  },
+}))
 vi.mock("@/lib/chains/solana/escrow", () => ({
   attributeEscrowHeldToSellers: async (_db: any, rows: any[]) => ({ rows, remapped: 0, unmatched: 0, error: null }),
 }))
 vi.mock("@/lib/chains/solana/normalize", () => ({
   isBurnt: (a: any) => a.kind === "burnt",
   isPack: (a: any) => a.kind === "pack",
+  CANDY_MLB_UUID: "c1",
   normalizeEdition: (a: any) => ({ external_id: "ed-" + a.ed, collection_id: "c1", player_name: "Seth Brown", team_name: "Athletics", set_name: "2022 Leadoff ICONs", tier: "COMMON", circulation_count: 850 }),
   normalizeSerial: (a: any) => ({ moment_id: a.id, wallet_address: a.owner, collection_id: "c1", edition_key: "ed-" + a.ed, serial_number: 1, image_url: null }),
 }))
@@ -64,6 +77,15 @@ function db() {
       }
       const t = table
       return {
+        // existing-row reads (REUSE / REPOINT)
+        select: () => {
+          const q: any = { eq: () => q, in: async (_c: string, vals: string[]) => {
+            if (state.readError) return { data: null, error: state.readError }
+            if (t === "wallet_moments_cache") return { data: state.existingWmc.filter((r) => vals.includes(r.moment_id)), error: null }
+            return { data: state.existingEds.filter((e) => vals.includes(e.external_id)), error: null }
+          } }
+          return q
+        },
         upsert: (rows: any[], opts: any) => {
           if (t === "wallet_moments_cache") state.wmcUpserts.push({ rows, opts })
           else state.edUpserts.push({ rows, opts })
@@ -76,6 +98,7 @@ function db() {
 
 beforeEach(() => {
   state.queue = []; state.pages = {}; state.dasThrows = new Set(); state.dasNoCursor = false; state.dasCalls = []; state.wmcError = null
+  state.existingWmc = []; state.existingEds = []; state.readError = null; state.hydrate = null; state.hydrateCalls = []
   state.updates = []; state.wmcUpserts = []; state.edUpserts = []; state.rpcs = []; state.rpcArgs = []
 })
 
@@ -155,6 +178,74 @@ describe("runCollectionsCensus", () => {
     // no completion stamp, no advanced position
     expect(state.updates.some((u) => u.patch.last_census_at !== undefined)).toBe(false)
     expect(state.updates.some((u) => typeof u.patch.census_cursor === "string")).toBe(false)
+  })
+
+  // ── unhydrated assets (2026-11-09: 4,844 fabricated editions, 328,317 cards) ──
+
+  it("REUSE: an unhydrated card whose existing row names a COMPLETE edition takes it, with no fetch", async () => {
+    state.queue = [{ address: "A", name: "A", census_page: 1, census_cursor: null, census_walk_started_at: null }]
+    state.pages.A = [[{ id: "m1", owner: "W2", ownership: { owner: "W2" }, ed: "ignored", bare: true }]]
+    state.existingWmc = [{ moment_id: "m1", wallet_address: "W1", edition_key: "ed-good", serial_number: 7 }]
+    state.existingEds = [{ external_id: "ed-good", tier: "RARE", player_name: "Josh VanMeter", team_name: "Pirates", set_name: "S", circulation_count: 50, thumbnail_url: "https://img" }]
+    const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+    expect(r.ok).toBe(true)
+    expect(state.hydrateCalls).toEqual([])
+    expect(r.hydrated_reused).toBe(1)
+    const row = state.wmcUpserts.flatMap((u) => u.rows).find((x) => x.moment_id === "m1")
+    // new owner, the card's real edition and labels
+    expect(row).toMatchObject({ wallet_address: "W2", edition_key: "ed-good", serial_number: 7, tier: "RARE", player_name: "Josh VanMeter", image_url: "https://img" })
+    expect(r.cards).toBe(1)
+  })
+
+  it("FETCH + REPOINT: an unhydrated card on a FABRICATED edition is fetched and its row overwritten", async () => {
+    state.queue = [{ address: "A", name: "A", census_page: 1, census_cursor: null, census_walk_started_at: null }]
+    state.pages.A = [[{ id: "m1", owner: "W", ed: "name-only", realEd: "real", bare: true }]]
+    // existing row points at the fabricated edition (no thumbnail -> not complete -> no reuse)
+    state.existingWmc = [{ moment_id: "m1", wallet_address: "W", edition_key: "ed-name-only", serial_number: null }]
+    state.existingEds = [{ external_id: "ed-name-only", tier: null, player_name: null, team_name: null, set_name: null, circulation_count: null, thumbnail_url: null }]
+    const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+    expect(r.ok).toBe(true)
+    expect(state.hydrateCalls.flat().map((a) => a.id)).toEqual(["m1"])
+    expect(r.hydrated_fetched).toBe(1)
+    const overwrite = state.wmcUpserts.find((u) => u.opts.ignoreDuplicates === false)!
+    expect(overwrite.rows).toHaveLength(1)
+    expect(overwrite.rows[0]).toMatchObject({ moment_id: "m1", wallet_address: "W", edition_key: "ed-real" })
+    expect(r.wmc_repointed).toBe(1)
+    // the repointed row is NOT also offered insert-only
+    expect(state.wmcUpserts.filter((u) => u.opts.ignoreDuplicates === true).flatMap((u) => u.rows).some((x) => x.moment_id === "m1")).toBe(false)
+  })
+
+  it("SKIP: a card whose metadata fetch fails is never written, is counted, and makes the walk count unknown", async () => {
+    state.queue = [{ address: "A", name: "A", census_page: 1, census_cursor: null, census_walk_started_at: null }]
+    state.pages.A = [[{ id: "m1", owner: "W", ed: "name-only", bare: true }, { id: "m2", owner: "W", ed: "a" }]]
+    state.hydrate = { hydrated: [], failed: [{ id: "m1", reason: "HTTP 404" }] }
+    const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+    expect(r.unhydrated_skipped).toBe(1)
+    const written = state.wmcUpserts.flatMap((u) => u.rows).map((x) => x.moment_id)
+    expect(written).toEqual(["m2"])
+    // no edition was written under the name-only key
+    expect(state.edUpserts.flatMap((u) => u.rows).map((e) => e.external_id)).not.toContain("ed-name-only")
+    expect(state.updates.at(-1)!.patch).toMatchObject({ last_census_items: null })
+  })
+
+  it("a hydrated card already on the RIGHT edition is not rewritten", async () => {
+    state.queue = [{ address: "A", name: "A", census_page: 1, census_cursor: null, census_walk_started_at: null }]
+    state.pages.A = [[{ id: "m1", owner: "W", ed: "a" }]]
+    state.existingWmc = [{ moment_id: "m1", wallet_address: "W", edition_key: "ed-a", serial_number: 1 }]
+    const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+    expect(r.wmc_repointed).toBe(0)
+    expect(state.wmcUpserts.every((u) => u.opts.ignoreDuplicates === true)).toBe(true)
+  })
+
+  it("a failed existing-row read fails the page and does not advance the cursor", async () => {
+    state.queue = [{ address: "A", name: "A", census_page: 2, census_cursor: "A#1", census_walk_started_at: "2026-11-08T00:00:00Z" }]
+    state.pages.A = [full(1000, "x"), full(5, "y")]
+    state.readError = { message: "statement timeout" }
+    const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+    expect(r.ok).toBe(false)
+    expect(r.error).toMatch(/wmc read: statement timeout/)
+    expect(state.updates.some((u) => u.patch.census_page !== undefined)).toBe(false)
+    expect(state.wmcUpserts).toEqual([])
   })
 
   it("a spent budget walks nothing and claims nothing", async () => {

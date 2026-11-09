@@ -34,7 +34,8 @@
 
 import { getAssetsByGroupCursor, type DasAsset } from "@/lib/chains/solana/das"
 import { attributeEscrowHeldToSellers } from "@/lib/chains/solana/escrow"
-import { isBurnt, isPack, normalizeEdition, normalizeSerial } from "@/lib/chains/solana/normalize"
+import { CANDY_MLB_UUID, isBurnt, isPack, normalizeEdition, normalizeSerial } from "@/lib/chains/solana/normalize"
+import { hydrateFromJsonUri, isUnhydrated } from "@/lib/chains/solana/hydrate"
 import { candySetForAsset } from "@/lib/chains/solana/candy-sets"
 import { loadCandyCollections } from "@/lib/candy/collections"
 import { purgeCandyGhostsFor } from "@/lib/candy/ghost-purge"
@@ -44,6 +45,21 @@ type Db = any
 
 const PAGE_LIMIT = 1000
 const WRITE_CHUNK = 500
+// PostgREST carries .in() in the URL; ~44-char base58 ids x 150 keeps it well under limits.
+const READ_CHUNK = 150
+
+// Unhydrated assets (2026-11-09, Trevor: "Fetch it. We want data accuracy"). DAS sometimes
+// returns an asset without its off-chain JSON (no traits, no image); normalized as-is it
+// FABRICATED a name-only edition (4,844 editions, 328,317 cards). Now, per page:
+//   1. REUSE — the card's edition never changes with its owner, so an unhydrated card whose
+//      existing holdings row points at a COMPLETE edition (thumbnail present) takes that
+//      edition from the DB, no fetch;
+//   2. FETCH — otherwise its content.json_uri is fetched and merged (lib/chains/solana/hydrate);
+//   3. SKIP — a card whose fetch fails is NOT written (never under a name-only key) and is
+//      counted in unhydrated_skipped; the walk's item count is then unknown (NULL);
+//   4. REPOINT — where the owner's existing row names a different edition than the one now
+//      computed (e.g. a fabricated key from before), that row is overwritten with the right
+//      edition and labels. Every other holding stays insert-only.
 
 export interface CollectionCensusReport {
   address: string
@@ -52,8 +68,43 @@ export interface CollectionCensusReport {
   cards: number
   wmc_inserted: number
   editions_inserted: number
+  hydrated_fetched: number
+  hydrated_reused: number
+  unhydrated_skipped: number
+  wmc_repointed: number
   completed: boolean
   error: string | null
+}
+
+type EditionLabels = { external_id: string; tier: string | null; player_name: string | null; team_name: string | null; set_name: string | null; circulation_count: number | null; thumbnail_url: string | null }
+
+/** Existing holdings rows for these cards, and the COMPLETE editions they point at. */
+async function readExisting(db: Db, ids: string[]): Promise<{ rows: Map<string, Array<{ wallet: string; edition_key: string; serial: number | null }>>; complete: Map<string, EditionLabels>; error: string | null }> {
+  const rows = new Map<string, Array<{ wallet: string; edition_key: string; serial: number | null }>>()
+  const complete = new Map<string, EditionLabels>()
+  for (let i = 0; i < ids.length; i += READ_CHUNK) {
+    const { data, error } = await db.from("wallet_moments_cache")
+      .select("moment_id,wallet_address,edition_key,serial_number")
+      .eq("collection_id", CANDY_MLB_UUID)
+      .in("moment_id", ids.slice(i, i + READ_CHUNK))
+    if (error) return { rows, complete, error: `wmc read: ${error.message}` }
+    for (const r of (data ?? []) as Array<{ moment_id: string; wallet_address: string; edition_key: string | null; serial_number: number | null }>) {
+      if (!r.edition_key) continue
+      const list = rows.get(r.moment_id) ?? []
+      list.push({ wallet: r.wallet_address, edition_key: r.edition_key, serial: r.serial_number })
+      rows.set(r.moment_id, list)
+    }
+  }
+  const keys = [...new Set([...rows.values()].flat().map((r) => r.edition_key))]
+  for (let i = 0; i < keys.length; i += READ_CHUNK) {
+    const { data, error } = await db.from("editions")
+      .select("external_id,tier,player_name,team_name,set_name,circulation_count,thumbnail_url")
+      .eq("collection_id", CANDY_MLB_UUID)
+      .in("external_id", keys.slice(i, i + READ_CHUNK))
+    if (error) return { rows, complete, error: `editions read: ${error.message}` }
+    for (const e of (data ?? []) as EditionLabels[]) if (e.thumbnail_url) complete.set(e.external_id, e)
+  }
+  return { rows, complete, error: null }
 }
 
 export interface CollectionsCensusResult {
@@ -63,6 +114,10 @@ export interface CollectionsCensusResult {
   cards: number
   wmc_inserted: number
   editions_inserted: number
+  hydrated_fetched: number
+  hydrated_reused: number
+  unhydrated_skipped: number
+  wmc_repointed: number
   completed: number
   escrow_remapped: number
   ghosts_purged: number | null
@@ -77,6 +132,7 @@ export async function runCollectionsCensus(
   const deadline = now() + opts.budgetMs
   const out: CollectionsCensusResult = {
     ok: false, collections: [], pages: 0, cards: 0, wmc_inserted: 0, editions_inserted: 0,
+    hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0,
     completed: 0, escrow_remapped: 0, ghosts_purged: null, error: null,
   }
 
@@ -107,7 +163,7 @@ export async function runCollectionsCensus(
   const inserted = new Set<string>()
   for (const c of (queue ?? []) as Array<{ address: string; name: string; census_page: number; census_cursor: string | null; census_walk_started_at: string | null }>) {
     if (now() > deadline) break
-    const rep: CollectionCensusReport = { address: c.address, name: c.name, pages: 0, cards: 0, wmc_inserted: 0, editions_inserted: 0, completed: false, error: null }
+    const rep: CollectionCensusReport = { address: c.address, name: c.name, pages: 0, cards: 0, wmc_inserted: 0, editions_inserted: 0, hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, completed: false, error: null }
     out.collections.push(rep)
     let page = Math.max(1, c.census_page || 1)
     let cursor: string | null = c.census_cursor || null
@@ -122,6 +178,7 @@ export async function runCollectionsCensus(
       cursor = null
     }
     let cardsThisWalk = 0
+    let skippedThisWalk = 0
     while (now() <= deadline) {
       let items: DasAsset[]
       let nextCursor: string | null
@@ -136,7 +193,24 @@ export async function runCollectionsCensus(
         rep.error = `page ${page}: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}`
         break
       }
-      const cards = items.filter((a) => !isPack(a) && !isBurnt(a) && candySetForAsset(a) !== null)
+      // Existing holdings for every card on the page: drives REUSE and REPOINT.
+      const ex = await readExisting(db, items.map((a) => a.id).filter(Boolean))
+      if (ex.error) { rep.error = `page ${page}: ${ex.error}`; break }
+      const reused: Array<{ asset: DasAsset; ed: EditionLabels; serial: number | null }> = []
+      const toFetch: DasAsset[] = []
+      const ready: DasAsset[] = []
+      for (const a of items) {
+        if (!isUnhydrated(a) || isBurnt(a)) { ready.push(a); continue }
+        const known = (ex.rows.get(a.id) ?? []).find((r) => ex.complete.has(r.edition_key))
+        if (known) reused.push({ asset: a, ed: ex.complete.get(known.edition_key)!, serial: known.serial })
+        else toFetch.push(a)
+      }
+      const fetched = toFetch.length ? await hydrateFromJsonUri(toFetch) : { hydrated: [], failed: [] }
+      rep.hydrated_reused += reused.length
+      rep.hydrated_fetched += fetched.hydrated.length
+      rep.unhydrated_skipped += fetched.failed.length
+      skippedThisWalk += fetched.failed.length
+      const cards = [...ready, ...fetched.hydrated].filter((a) => !isPack(a) && !isBurnt(a) && candySetForAsset(a) !== null)
       // Editions: insert-only, deduped within the page.
       const eds = new Map<string, Record<string, unknown>>()
       for (const a of cards) {
@@ -174,11 +248,26 @@ export async function runCollectionsCensus(
           }
         })
         .filter((x): x is NonNullable<typeof x> => x !== null)
+      // REUSED cards: edition and labels from the complete edition their card already has.
+      for (const { asset, ed, serial } of reused) {
+        const owner = asset.ownership?.owner ?? ""
+        if (!asset.id || !owner) continue
+        serials.push({
+          wallet_address: owner, collection_id: CANDY_MLB_UUID, moment_id: asset.id, edition_key: ed.external_id,
+          serial_number: serial, image_url: ed.thumbnail_url,
+          tier: ed.tier, player_name: ed.player_name ?? ed.team_name, set_name: ed.set_name,
+          mint_count: ed.circulation_count, team_name: ed.team_name, last_seen_at: nowIso,
+        } as (typeof serials)[number])
+      }
       const attributed = await attributeEscrowHeldToSellers(db, serials)
       out.escrow_remapped += attributed.remapped
-      for (let i = 0; i < attributed.rows.length && !failed; i += WRITE_CHUNK) {
+      // REPOINT the owner's existing row when it names a different edition; the rest stay insert-only.
+      const repoint = attributed.rows.filter((r) => (ex.rows.get(String(r.moment_id)) ?? []).some((e) => e.wallet === r.wallet_address && e.edition_key !== r.edition_key))
+      const repointSet = new Set(repoint)
+      const insertOnly = attributed.rows.filter((r) => !repointSet.has(r))
+      for (let i = 0; i < insertOnly.length && !failed; i += WRITE_CHUNK) {
         const { data, error } = await db.from("wallet_moments_cache")
-          .upsert(attributed.rows.slice(i, i + WRITE_CHUNK), { onConflict: "wallet_address,collection_id,moment_id", ignoreDuplicates: true })
+          .upsert(insertOnly.slice(i, i + WRITE_CHUNK), { onConflict: "wallet_address,collection_id,moment_id", ignoreDuplicates: true })
           .select("moment_id")
         if (error) failed = `wallet_moments_cache: ${error.message}`
         else {
@@ -186,16 +275,23 @@ export async function runCollectionsCensus(
           for (const row of (data ?? []) as Array<{ moment_id: string }>) inserted.add(String(row.moment_id))
         }
       }
+      for (let i = 0; i < repoint.length && !failed; i += WRITE_CHUNK) {
+        const { data, error } = await db.from("wallet_moments_cache")
+          .upsert(repoint.slice(i, i + WRITE_CHUNK), { onConflict: "wallet_address,collection_id,moment_id", ignoreDuplicates: false })
+          .select("moment_id")
+        if (error) failed = `wallet_moments_cache repoint: ${error.message}`
+        else rep.wmc_repointed += data?.length ?? 0
+      }
       if (failed) { rep.error = `page ${page}: ${failed}`; break }
 
       rep.pages++
-      rep.cards += cards.length
-      cardsThisWalk += cards.length
+      rep.cards += cards.length + reused.length
+      cardsThisWalk += cards.length + reused.length
       const done = items.length < PAGE_LIMIT
       // last_census_items is the walk's card count only when the whole walk ran in this
       // run; a walk resumed across runs reports NULL (unknown), never a partial count.
       const patch = done
-        ? { census_page: 1, census_cursor: null, census_walk_started_at: null, last_census_at: nowIso, last_census_items: startedThisRun ? cardsThisWalk : null, last_census_error: null }
+        ? { census_page: 1, census_cursor: null, census_walk_started_at: null, last_census_at: nowIso, last_census_items: startedThisRun && skippedThisWalk === 0 ? cardsThisWalk : null, last_census_error: null }
         : { census_page: page + 1, census_cursor: nextCursor, last_census_error: null }
       const { error: sErr } = await db.from("candy_collections").update(patch).eq("address", c.address)
       if (sErr) { rep.error = `state write: ${sErr.message}`; break }
@@ -212,6 +308,10 @@ export async function runCollectionsCensus(
     out.cards += rep.cards
     out.wmc_inserted += rep.wmc_inserted
     out.editions_inserted += rep.editions_inserted
+    out.hydrated_fetched += rep.hydrated_fetched
+    out.hydrated_reused += rep.hydrated_reused
+    out.unhydrated_skipped += rep.unhydrated_skipped
+    out.wmc_repointed += rep.wmc_repointed
     if (rep.completed) out.completed++
   }
 

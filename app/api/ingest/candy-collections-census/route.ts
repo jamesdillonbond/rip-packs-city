@@ -57,6 +57,11 @@ async function handle(req: NextRequest) {
     cards: result.cards,
     wmc_inserted: result.wmc_inserted,
     editions_inserted: result.editions_inserted,
+    // 2026-11-09: assets DAS returned without their off-chain JSON (lib/chains/solana/hydrate.ts)
+    hydrated_fetched: result.hydrated_fetched,
+    hydrated_reused: result.hydrated_reused,
+    unhydrated_skipped: result.unhydrated_skipped,
+    wmc_repointed: result.wmc_repointed,
     collections_touched: result.collections.length,
     collections_completed: result.completed,
     escrow_remapped: result.escrow_remapped,
