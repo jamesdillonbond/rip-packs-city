@@ -34,6 +34,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "wallet query param is required" }, { status: 400 })
   }
   const wallet = walletRaw.trim()
+  const started = Date.now()
 
   try {
     const { data, error } = await boundedRead(supabase.rpc("get_wallet_collection_snapshot", {
@@ -45,6 +46,13 @@ export async function GET(req: NextRequest) {
       // statement timeout as a retryable 503 instead of burning the hard-5xx
       // budget, and it sets `no-store` so a blip is not pinned at the CDN for
       // the rest of this route's 300s TTL.
+      // 2026-11-09 (#228): name the wallet and the wait. The shared error line
+      // carries neither, so four timeouts on 11-08 could not be attributed to a
+      // wallet (and so to "cold whale" vs "write spell"). A Flow / Solana
+      // address is public chain data, as on the profile routes' log lines.
+      console.warn(
+        `[api/collection-snapshot] read_failed wallet=${wallet.slice(0, 64)} elapsed_ms=${Date.now() - started}`,
+      )
       return apiErrorResponse(error, "api/collection-snapshot", "Failed to fetch wallet data")
     }
 

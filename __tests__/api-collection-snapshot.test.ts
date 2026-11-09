@@ -115,6 +115,21 @@ describe("GET /api/collection-snapshot", () => {
     expect(failed.headers.get("cache-control") ?? "").not.toMatch(/s-maxage|stale-while-revalidate/)
   })
 
+  // #228 (2026-11-09): four 11-08 timeouts could not be tied to a wallet because the
+  // shared error line carries no query string. The failure line now names it.
+  it("a failed read logs WHICH wallet and how long it waited", async () => {
+    rpcState.error = { message: "canceling statement due to statement timeout", code: "57014" }
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    try {
+      const res = await GET(req("https://t/api/collection-snapshot?wallet=0xb7700366fa738a43"))
+      expect(res.status).toBe(503)
+      const line = warn.mock.calls.map((c) => String(c[0])).find((l) => l.includes("read_failed"))
+      expect(line).toMatch(/wallet=0xb7700366fa738a43 elapsed_ms=\d+/)
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
   it("400s when wallet is missing/blank", async () => {
     expect((await GET(req("https://t/api/collection-snapshot"))).status).toBe(400)
     expect((await GET(req("https://t/api/collection-snapshot?wallet=%20%20"))).status).toBe(400)
