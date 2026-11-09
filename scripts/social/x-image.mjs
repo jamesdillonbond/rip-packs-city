@@ -120,7 +120,7 @@ function card(it, big) {
   return `<div class="card${big ? " big" : ""}" style="--acc:${c.accent}">
     <div class="chip"><span class="dot"></span>${esc(c.label)}</div>
     <div class="title">${esc(it.title)}</div>
-    ${big && it.detail ? `<div class="detail">${esc(it.detail)}</div>` : ""}
+    ${big && it.detail ? `<div class="detail">${esc(it.detail).replace(/-/g, "\u2011")}</div>` : ""}
     <div class="row">${it.price ? `<span class="price">${esc(it.price)}</span>` : ""}<span class="when${it.upcoming ? " soon" : ""}">${esc(it.status)}</span></div>
   </div>`
 }
@@ -158,8 +158,8 @@ h1 em{font-style:normal;color:#E03A2F}
 .price{font-family:Mono,monospace;font-size:${cols >= 4 || dense ? 27 : 36}px;color:#fff}
 .when{font-family:Mono,monospace;font-size:${cols >= 4 || dense ? 16 : 18}px;color:#FF4D40}
 .when.soon{color:#FBBF24}
-.spacious .grid{display:flex;flex-wrap:nowrap;align-items:stretch;align-self:center;justify-content:center;gap:28px;margin:18px 0 14px}
-.spacious .card{width:${cardW}px;flex:0 0 auto;min-height:${n <= 2 ? 330 : 300}px;padding:26px 30px 28px;border-radius:18px;border-top-width:5px;
+.spacious .grid{flex:0 0 auto;display:flex;flex-wrap:nowrap;align-items:stretch;justify-content:center;gap:28px;margin:auto 0}
+.spacious .card{width:${cardW}px;flex:0 0 auto;min-height:${n <= 2 ? 300 : 280}px;padding:26px 30px 28px;border-radius:18px;border-top-width:5px;
   background:linear-gradient(165deg,color-mix(in srgb,var(--acc) 20%,transparent),rgba(255,255,255,.03) 55%);
   box-shadow:0 0 0 1px rgba(255,255,255,.04),0 24px 70px -24px color-mix(in srgb,var(--acc) 70%,transparent)}
 .spacious .chip{font-size:15px}
