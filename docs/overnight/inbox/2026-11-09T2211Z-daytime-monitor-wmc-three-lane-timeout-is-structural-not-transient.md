@@ -26,3 +26,11 @@ Internal self-heal lanes only, each self-correcting on its next successful tick:
 - `2026-11-09T1606Z-daytime-monitor-wmc-editions-statement-timeout-cluster.md` (the cluster; this is its diagnosis)
 - ledger 2026-11-09 "candy-census `wallet_moments_cache` lock-contention" (MED, Claude Code)
 - ledger 2026-11-08 Candy full-inventory census ships (the +1.37M wmc rows)
+
+## ↳ 2026-11-09 ~3:30 PM PT — Claude Code cloud re-measure: the "stats NULL" mechanism is REFUTED; the cause is one lane's full-table candidate scan
+
+- **Stats are fresh.** The filing read `last_analyze` (manual ANALYZE only). `last_autoanalyze` = 2:59 PM PT today, `last_autovacuum` = 3:18 PM PT, `n_mod_since_analyze` 36,788 of 3.61M, `relallvisible/relpages` 156,456 / 160,518 (97 %). Running `ANALYZE` (lever 1) would change nothing.
+- **Only ONE of the three lanes failed.** pg_cron 11-09: `rpc-wmc-player-names-follow-catalog-daily` (834) **failed** (statement timeout); `rpc-wmc-metadata-selfheal-daily` (726) and `rpc-topshot-map-atlas-reconcile` (818) report **succeeded** but at exactly 120 s (they catch the timeout internally; read their `pipeline_runs` row, not the cron status).
+- **The cause in 834:** `heal_wmc_player_names_from_catalog` builds its candidates by joining EVERY non-Pinnacle wmc row to editions → players and reading `player_name` from the heap. The Candy census added ~1.4M rows; the Candy slice alone exceeds 55 s (measured, `statement_timeout` 55 s). With few real candidates the `LIMIT` never short-circuits, so the scan is the whole table.
+- **Candy cannot simply be excluded:** 43 Candy editions have `editions.player_name` ≠ the linked `players.name`, so the heal has real Candy work.
+- **The fix is a bounded walk**, not stats: a cursor-paged step over (collection, edition_key) with a row/edition budget on `idx_wmc_coll_ek_serial_cover`, scheduled often enough to finish a pass in a day (the `candy_wmc_label_fill_step` shape). It is a three-file change (migration + verbatim pin `supabase/tests/heal_wmc_player_names_from_catalog.sql` + drift guard). Not shipped in this pass — offered to Trevor. Blast radius unchanged: internal self-heal, ~0–100 rows/day.
