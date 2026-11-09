@@ -76,6 +76,8 @@ export interface PackCalendarDrop {
   status: DropStatus
   /** RPC's own pack page; it 404s until the dist has a pack_distributions row. */
   detail_href: string
+  /** Panini only: the store's sport ("BASKETBALL", "ENTERTAINMENT", …). */
+  sport?: string | null
 }
 
 const COLLECTION: Record<PackCalendarProduct, PackCalendarDrop["collection"]> = {
@@ -168,6 +170,7 @@ export const PANINI_FRESH_HOURS = 36
 export interface PaniniDropSourceRow {
   pack_id: string
   name: string
+  sport?: string | null
   price_usd: number | string | null
   cards_per_pack: number | null
   start_at: string | null
@@ -205,6 +208,7 @@ export function buildPaniniDrops(rows: PaniniDropSourceRow[], now: Date, opts: {
       end_time: Number.isFinite(end) ? new Date(end).toISOString() : null,
       status,
       detail_href: "/panini-blockchain/packs",
+      sport: r.sport ?? null,
     })
   }
   return out
@@ -384,7 +388,7 @@ export async function fetchPackCalendar(sb: any, now = new Date(), fetchImpl: ty
   const since = new Date(now.getTime() - 60 * DAY_MS).toISOString()
   const { data: pRows, error: pErr } = await sb
     .from("panini_pack_drops")
-    .select("pack_id, name, price_usd, cards_per_pack, start_at, end_at, in_stock, is_available, last_seen_at")
+    .select("pack_id, name, sport, price_usd, cards_per_pack, start_at, end_at, in_stock, is_available, last_seen_at")
     .gte("start_at", since)
     .order("start_at", { ascending: true })
     .limit(1000)

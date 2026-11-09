@@ -25,7 +25,7 @@ Every post links one insights page. Each page carries a `summary_large_image` ca
 | Thu | Deal of the week | `deals?sort=discount` | `/insights/deals` | Up to three listings $10+ **and** 15%+ under value. Falls back to Saturday's trade-in post when none qualify |
 | Fri | Board drop | one board a week, rotating by ISO week | `/insights/<board>` | A hook written from the board's live stats/rows. The script's draft is a placeholder (`needs_rewrite`) |
 | Sat | Week in numbers | `market-pulse` | `/insights/market-pulse` | 7-day sales volume per collection and in total |
-| Sun | Drops this week | `pack-calendar` | the lead drop's RPC pack page, or `/<collection>/packs` while that page 404s | Every drop open now or starting in the next 7 days on Top Shot, All Day, Pinnacle, Golazos and Panini, plus every Candy MLB drop announcement: price, and when it drops or its pre-orders / draw requests close, in PT. Priciest first. **Every drop is named** — a long week becomes a numbered thread |
+| Sun | The RPC Weekly Pack Drop Report | `pack-calendar` | `/insights/drops` (its preview card is the live week) | Every drop open now or starting in the next 7 days on Top Shot, All Day, Pinnacle, Golazos and Panini, plus every Candy MLB drop announcement: price, and when it drops or its pre-orders / draw requests close, in PT. Priciest first. **Every drop is named** — a long week becomes a numbered thread |
 
 Friday rotation: squeeze → serial-premiums → market-cap → offer-spread → underpriced-serials → autographs → first-mint → set-completers → trade-in.
 
@@ -64,9 +64,26 @@ A source that could not be read is named in `warnings` and `facts.collections_un
 - **Collectors are never named or tagged** — not buyers, not sellers, not trophy-case owners — unless that person has said yes for that post.
 - **Never lead with the Team Captain designation.**
 - **No hype the data can't back**: no "best deal on Flow", "guaranteed", "can't lose", price predictions, or advice to buy.
-- **Under 280 characters by X's count** (every link counts as 23). The script measures it.
+- **Under 280 characters by X's count** (every link counts as 23), except the long-form drops report (`long_form: true`). The script measures it.
 - **A list is never cut to "+N more"** (Trevor, 2026-11-08: "These posts need to name all the drops"). When every item will not fit one post, the script returns `thread[]`: numbered posts (`1/3`…), each under 280, that together name every item; the link rides the last one. Trevor posts 1, then replies to it with 2, and so on (X's post link cannot thread).
-- **Plain voice**: the number first, one line of context, the link. One emoji at most.
+- **Plain voice**: the number first, one line of context, the link. One emoji at most, except in the drops report, which uses one per line (below).
+- **Official accounts may be tagged** — the collections' own handles, read from each app's site footer 11-08: @NBATopShot, @NFLAllDay, @LaLigaGolazos, @DisneyPinnacle, @PaniniAmerica (as "@PaniniAmerica Blockchain"), @CandyDigital. Never a collector.
+
+### The RPC Weekly Pack Drop Report (Sunday) — Trevor's format, 11-08
+
+One long post (the account posts long-form, so no thread), with the drops image attached:
+
+```
+The RPC Weekly Pack Drop Report, 11/8-11/15 📦
+
+🏀 @NBATopShot: Rookie Debut Case ($2,500) — pre-orders close Wed 12 PM PT
+🎸 @PaniniAmerica Blockchain: Prizm The Rolling Stones Packs ($25) — on sale now
+…
+
+https://www.rippackscity.com/insights/drops
+```
+
+Dates are today to 7 days out, M/D in PT. One line per drop, priciest first: the collection's emoji (🏀 Top Shot, 🏈 All Day, ⚽ Golazos, 📌 Pinnacle, ⚾ Candy MLB; Panini takes its pack's sport — 🎸 entertainment, 🏀/🏈/⚽/⚾ by sport, 🃏 otherwise), then the handle, title, retail price, and when, in PT. The script also emits `thread_fallback` in case long posts are ever unavailable.
 
 ## Images
 

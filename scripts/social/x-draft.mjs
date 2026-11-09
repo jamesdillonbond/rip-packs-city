@@ -391,38 +391,50 @@ async function calendar() {
   return d.drops ?? []
 }
 
+// The Sunday post is "The RPC Weekly Pack Drop Report" (Trevor's format, 11-08): one long post
+// (the account posts long-form), a dated header, then one line per drop — the collection's emoji,
+// its OFFICIAL X handle (read from each app's own site footer 11-08), title, price, and when, in
+// PT — and the drops page link last. The image rides on it (scripts/social/x-image.mjs).
+const BRAND = {
+  nba_top_shot: { emoji: "🏀", handle: "@NBATopShot" },
+  nfl_all_day: { emoji: "🏈", handle: "@NFLAllDay" },
+  laliga_golazos: { emoji: "⚽", handle: "@LaLigaGolazos" },
+  disney_pinnacle: { emoji: "📌", handle: "@DisneyPinnacle" },
+  panini_blockchain: { emoji: "🃏", handle: "@PaniniAmerica Blockchain" },
+  candy_mlb: { emoji: "⚾", handle: "@CandyDigital" },
+}
+// Panini lists a sport per pack; its line takes that sport's emoji.
+const PANINI_SPORT_EMOJI = { BASKETBALL: "🏀", "WOMENS BASKETBALL": "🏀", FOOTBALL: "🏈", SOCCER: "⚽", BASEBALL: "⚾", HOCKEY: "🏒", RACING: "🏁", ENTERTAINMENT: "🎸" }
+function reportLine(x) {
+  const b = BRAND[x.collection] ?? { emoji: "📦", handle: x.collection }
+  const emoji = x.collection === "panini_blockchain" ? PANINI_SPORT_EMOJI[(x.sport ?? "").toUpperCase()] ?? b.emoji : b.emoji
+  return dropLine(x, false).replace(/^• /, `${emoji} ${b.handle}: `)
+}
+function mdPT(d) {
+  return new Intl.DateTimeFormat("en-US", { timeZone: TZ, month: "numeric", day: "numeric" }).format(d)
+}
+
 async function drops() {
   const all = await calendar()
   const ahead = all.filter((x) => x.status !== "ended")
-  if (!ahead.length && !calendarAnnouncements.length) return { skip_reason: "no drop is open or scheduled in the next 7 days on any collection the calendar reads", link: `${SITE}/nba-top-shot/packs` }
-  if (!ahead.length) {
-    const a = calendarAnnouncements[0]
-    return {
-      title: "Drops this week",
-      link: a.url,
-      facts: { drops: [], announcements: calendarAnnouncements },
-      draft: `Drops this week:\n\nCandy MLB: ${a.title}\n\n${a.url}`,
-    }
-  }
-  // Lead with the priciest open/upcoming drop: that's the one collectors are deciding on.
-  const lead = [...ahead].sort((a, b) => (b.retail_usd ?? 0) - (a.retail_usd ?? 0))[0]
-  const fallbackLink = packsIndex(lead)
-  // Our pack page 404s until the dist has a pack_distributions row; never link a 404.
-  const link = (await pageLive(lead.detail_href)) ? `${SITE}${lead.detail_href}` : fallbackLink
-  const multi = new Set(ahead.map((x) => x.collection)).size > 1
-  // Biggest first: with 280 characters the lines that survive should be the drops collectors are deciding on.
+  if (!ahead.length && !calendarAnnouncements.length) return { skip_reason: "no drop is open or scheduled in the next 7 days on any collection the calendar reads", link: `${SITE}/insights/drops` }
+  // The drops page lists the whole week and always exists; its preview card is the live week.
+  const link = `${SITE}/insights/drops`
+  // Priciest first: the drops collectors are deciding on lead.
   const byPrice = [...ahead].sort((a, b) => (b.retail_usd ?? 0) - (a.retail_usd ?? 0) || a.start_time.localeCompare(b.start_time))
-  const lines = byPrice.map((x) => dropLine(x, multi || calendarAnnouncements.length > 0))
+  const lines = byPrice.map(reportLine)
   // Candy MLB has no store listing (its store is offline); a drop it ANNOUNCED this week rides as a line.
-  for (const a of calendarAnnouncements) lines.push(`• Candy MLB: ${a.title}`)
+  for (const a of calendarAnnouncements) lines.push(`${BRAND.candy_mlb.emoji} ${BRAND.candy_mlb.handle}: ${a.title}`)
+  const now = new Date()
+  const head = `The RPC Weekly Pack Drop Report, ${mdPT(now)}-${mdPT(new Date(now.getTime() + 7 * 86400000))} 📦`
   const covered = Object.keys(calendarMeta?.complete_at ?? {}).map((p) => ATLAS_NAMES[p] ?? p).filter((n) => !calendarMeta.unread.includes(n))
   return {
-    title: "Drops this week",
+    title: "The RPC Weekly Pack Drop Report",
     link,
+    long_form: true,
     facts: {
       drops: ahead,
       ended_this_week: all.filter((x) => x.status === "ended").length,
-      lead_page_live: link !== fallbackLink,
       collections_covered: covered,
       collections_unread: calendarMeta?.unread ?? [],
       announcements: calendarAnnouncements,
@@ -430,8 +442,9 @@ async function drops() {
       collections_not_covered: ["UFC Strike (closed)"],
     },
     warnings_extra: calendarMeta?.unread?.length ? [`pack book unread for ${calendarMeta.unread.join(", ")} — their drops are missing from this list`] : [],
-    // Every drop is named: when the list outgrows one post it becomes a numbered thread (thread[]).
-    ...threadOut(thread(lines, "Drops this week:\n", `\n${link}`)),
+    // One long post naming every drop. thread[] is the fallback if long posts are ever unavailable.
+    draft: [head, "", ...lines, "", link].join("\n"),
+    thread_fallback: thread(lines, `${head}\n`, `\n${link}`).map((text, i, all) => ({ n: i + 1, of: all.length, text, len: xLength(text) })),
   }
 }
 
@@ -473,15 +486,6 @@ async function breaking(now) {
   }
 }
 
-// draft = the first post; thread = every post (only when there is more than one), each with its own
-// length and post link. Post 1, then reply to it with 2, and so on — X's post link cannot thread.
-function threadOut(posts) {
-  return {
-    draft: posts[0],
-    thread: posts.length > 1 ? posts.map((text, i) => ({ n: i + 1, of: posts.length, text, len: xLength(text), intent_url: intent(text) })) : undefined,
-  }
-}
-
 // ---------- main ----------
 const now = new Date()
 const today = arg("date") ?? ptParts(now).date
@@ -509,7 +513,9 @@ if (out.draft) {
   if (/confidence|HIGH|MEDIUM|LOW\b/.test(out.draft)) out.warnings.push("draft mentions confidence — remove it")
   if (/ufc/i.test(out.draft)) out.warnings.push("draft mentions UFC — its market is closed")
   out.draft_len = xLength(out.draft)
-  if (out.draft_len > 280) out.warnings.push(`draft is ${out.draft_len} characters; X allows 280`)
+  // Long-form posts (the drops report) go up to X's long-post limit; everything else is a standard post.
+  const limit = out.long_form ? 25000 : 280
+  if (out.draft_len > limit) out.warnings.push(`draft is ${out.draft_len} characters; the limit is ${limit}`)
   out.intent_url = intent(out.draft)
 }
 for (const p of out.thread ?? []) {
