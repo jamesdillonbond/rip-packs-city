@@ -113,6 +113,16 @@ describe("buildPlayerBio", () => {
     expect(v.sources).toEqual(["MLB"])
   })
 
+  it("NFL.com supplies date and college (no birthplace — its hometown is not one), labelled NFL", () => {
+    const v = buildPlayerBio({ linked: 0, espn: null, onchain: null, nflverse_date_of_birth: null,
+      official: { source: "nfl.com", url: "https://www.nfl.com/players/walter-payton/", date_of_birth: "1954-07-25", birth_place: null,
+                  college: "Jackson State", verified_by: "nfl-unique-register", fetched_at: null } })!
+    expect(v.dateOfBirth).toBe("July 25, 1954")
+    expect(v.birthplace).toBeNull()
+    expect(v.college).toBe("Jackson State")
+    expect(v.sources).toEqual(["NFL"])
+  })
+
   it("an ESPN college wins over MLB's; MLB is not named when it supplied nothing shown", () => {
     const v = buildPlayerBio({ ...TATUM, official: { source: "mlb.com", url: null, date_of_birth: "1998-03-03", birth_place: "Elsewhere", college: "Other U", verified_by: "mlb-dob-espn", fetched_at: null } })!
     expect(v.college).toBe("Duke")
