@@ -28,7 +28,7 @@ vi.mock("@/lib/chains/solana/escrow", () => ({
 vi.mock("@/lib/chains/solana/normalize", () => ({
   isBurnt: (a: any) => a.kind === "burnt",
   isPack: (a: any) => a.kind === "pack",
-  normalizeEdition: (a: any) => ({ external_id: "ed-" + a.ed, collection_id: "c1" }),
+  normalizeEdition: (a: any) => ({ external_id: "ed-" + a.ed, collection_id: "c1", player_name: "Seth Brown", team_name: "Athletics", set_name: "2022 Leadoff ICONs", tier: "COMMON", circulation_count: 850 }),
   normalizeSerial: (a: any) => ({ moment_id: a.id, wallet_address: a.owner, collection_id: "c1", edition_key: "ed-" + a.ed, serial_number: 1, image_url: null }),
 }))
 vi.mock("@/lib/chains/solana/candy-sets", () => ({ candySetForAsset: () => ({ key: "c:x" }) }))
@@ -86,6 +86,8 @@ describe("runCollectionsCensus", () => {
     expect(last).toMatchObject({ census_page: 1, census_walk_started_at: null, last_census_items: 1003, last_census_error: null })
     expect(typeof last.last_census_at).toBe("string")
     expect(state.rpcs).toContain("purge_candy_wmc_ghost_rows")
+    // Holdings are born labelled — never left for a whole-collection denorm.
+    expect(state.wmcUpserts[0].rows[0]).toMatchObject({ tier: "COMMON", player_name: "Seth Brown", set_name: "2022 Leadoff ICONs", mint_count: 850, team_name: "Athletics" })
   })
 
   it("a failed DAS page does not advance the cursor and fails the run", async () => {

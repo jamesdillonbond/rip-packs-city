@@ -134,10 +134,23 @@ export async function runCollectionsCensus(
       }
       // Holdings: insert-only; escrow-held listed cards credited to their seller.
       const nowIso = new Date(now()).toISOString()
+      // Rows are born LABELLED (tier / player / set / mint count / team from the edition).
+      // Written without them, 938k rows waited on the registry census' whole-collection
+      // denorm, which then crawled every page and was killed at the wall (2026-11-08).
       const serials = cards
         .map((a) => {
           const s = normalizeSerial(a)
-          return s.moment_id && s.wallet_address ? { ...s, last_seen_at: nowIso } : null
+          if (!s.moment_id || !s.wallet_address) return null
+          const ed = eds.get(String(s.edition_key ?? "")) as Record<string, unknown> | undefined
+          return {
+            ...s,
+            tier: (ed?.tier as string | null | undefined) ?? null,
+            player_name: ((ed?.player_name ?? ed?.team_name) as string | null | undefined) ?? null,
+            set_name: (ed?.set_name as string | null | undefined) ?? null,
+            mint_count: (ed?.circulation_count as number | null | undefined) ?? null,
+            team_name: (ed?.team_name as string | null | undefined) ?? null,
+            last_seen_at: nowIso,
+          }
         })
         .filter((x): x is NonNullable<typeof x> => x !== null)
       const attributed = await attributeEscrowHeldToSellers(db, serials)

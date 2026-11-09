@@ -351,40 +351,51 @@ async function handleIngest(req: NextRequest) {
           }
         }
 
-        // Metadata denorm post-pass (2026-08-02) — the missing half of the
-        // Candy wmc write path.
-        //
-        // normalizeSerial() emits exactly 6 columns (wallet_address,
-        // collection_id, moment_id, edition_key, serial_number, image_url).
-        // tier / set_name / mint_count / player_name / team_name are NOT in
-        // the payload and were therefore NEVER filled by this route — unlike
-        // every Flow wallet backfill, which calls this same RPC as a post-pass
-        // (see runAllDayDetailsBackfill). Result: 18,932 of 25,375 Candy wmc
-        // rows (74.6%) rendered unlabelled on the PUBLIC /insights/candy-mlb
-        // surface. The 6,443 that were fine had been filled by a one-off
-        // 2026-07-19 parity denorm; everything created after that date was
-        // never enriched by anything.
-        //
-        // This is NOT the `set_name` re-NULLing class fixed on 2026-08-01 —
-        // that was on `editions`. Because these columns are absent from the
-        // upsert payload, PostgREST's ON CONFLICT DO UPDATE never touches
-        // them, so a fill here is durable (verified: all 25,375 rows were
-        // re-upserted 2026-08-02 08:40Z and every already-enriched row kept
-        // its tier). The RPC is COALESCE-guarded — it only ever fills a NULL.
-        try {
-          const { error: denormErr } = await (supabaseAdmin as any).rpc(
-            "backfill_wmc_metadata_from_editions",
-            { p_wallet_address: null, p_collection_id: CANDY_MLB_UUID },
-          )
-          if (denormErr) {
-            console.log(`[${PIPELINE_NAME}] wmc metadata denorm err: ${denormErr.message}`)
-          }
-        } catch (e) {
-          console.log(`[${PIPELINE_NAME}] wmc metadata denorm threw: ${e instanceof Error ? e.message : String(e)}`)
-        }
+        // (The metadata denorm post-pass that sat here now runs ONCE after the
+        // walk — see "Metadata denorm, once per run" below.)
       })
       assetsSeen += setAssets
       perSet[candySet.key] = { assets: setAssets, editions: setEditionKeys.size, serials: setMints.size, packs_skipped: setPacks }
+      }
+
+      // Metadata denorm, once per run (moved 2026-11-08 from inside the page callback).
+      // It is a WHOLE-COLLECTION pass (p_wallet_address NULL), so running it per page
+      // was harmless at 25k Candy rows — but the full-inventory census took Candy wmc
+      // past 1M rows on 11-08 and the 5:10 PM PT run spent ~2 minutes per Base page in
+      // it (~900 rows/2 min in wmc last_seen_at, vs the whole walk in ~1 min the night
+      // before), was killed at the 800 s wall after the Base set, and never reached
+      // All-Star / Gold / Quest / Team Balls — heartbeat only, no completion row.
+      // The original rationale, verbatim:
+      // Metadata denorm post-pass (2026-08-02) — the missing half of the
+      // Candy wmc write path.
+      //
+      // normalizeSerial() emits exactly 6 columns (wallet_address,
+      // collection_id, moment_id, edition_key, serial_number, image_url).
+      // tier / set_name / mint_count / player_name / team_name are NOT in
+      // the payload and were therefore NEVER filled by this route — unlike
+      // every Flow wallet backfill, which calls this same RPC as a post-pass
+      // (see runAllDayDetailsBackfill). Result: 18,932 of 25,375 Candy wmc
+      // rows (74.6%) rendered unlabelled on the PUBLIC /insights/candy-mlb
+      // surface. The 6,443 that were fine had been filled by a one-off
+      // 2026-07-19 parity denorm; everything created after that date was
+      // never enriched by anything.
+      //
+      // This is NOT the `set_name` re-NULLing class fixed on 2026-08-01 —
+      // that was on `editions`. Because these columns are absent from the
+      // upsert payload, PostgREST's ON CONFLICT DO UPDATE never touches
+      // them, so a fill here is durable (verified: all 25,375 rows were
+      // re-upserted 2026-08-02 08:40Z and every already-enriched row kept
+      // its tier). The RPC is COALESCE-guarded — it only ever fills a NULL.
+      try {
+        const { error: denormErr } = await (supabaseAdmin as any).rpc(
+          "backfill_wmc_metadata_from_editions",
+          { p_wallet_address: null, p_collection_id: CANDY_MLB_UUID },
+        )
+        if (denormErr) {
+          console.log(`[${PIPELINE_NAME}] wmc metadata denorm err: ${denormErr.message}`)
+        }
+      } catch (e) {
+        console.log(`[${PIPELINE_NAME}] wmc metadata denorm threw: ${e instanceof Error ? e.message : String(e)}`)
       }
 
       // Give every edition a player_id (new sets bring new players). A failure is
