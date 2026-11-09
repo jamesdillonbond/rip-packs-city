@@ -10,6 +10,9 @@
 // the kill switch — nothing here signs, and every drop keeps the sponsor-signed
 // "Deliver all" path exactly as before.
 //
+// Configured in Vercel Production 2026-11-08 (PT): the vault is 0x38300125d58f76d1, key
+// index 0 (secp256k1/SHA2-256, verified on chain); the key itself is a Sensitive env var.
+//
 //   GIVEAWAY_VAULT_ADDR         0x… of the vault (a plain account: no Hybrid Custody, no linking)
 //   GIVEAWAY_VAULT_PRIVATE_KEY  its ECDSA_secp256k1 key (hex) — Vercel "sensitive"
 //   GIVEAWAY_VAULT_KEY_INDEX    the key's index on the account
