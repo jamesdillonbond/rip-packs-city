@@ -116,6 +116,34 @@ export function getAssetsByGroup(
   })
 }
 
+/**
+ * All assets grouped under a collection address, one page, CURSOR-paged (keyset on asset
+ * id). Pass null for the first page, then the `cursor` the previous page returned.
+ *
+ * Why not `page`: DAS serves `page=N` as an OFFSET, so its cost grows with N. On 2026-11-09
+ * the census read "2022 Leadoff ICONs" (~230k items) to page 227 and then failed at page
+ * 228 on four consecutive hourly runs with the provider's own "canceling statement due to
+ * statement timeout" — a page that can never be read, so the walk could never finish.
+ * A cursor read costs the same at any depth.
+ *
+ * `cursor` is absent from the response when the provider did not answer in cursor mode;
+ * a caller must treat a FULL page without one as an error, never as the end of the walk.
+ */
+export function getAssetsByGroupCursor(
+  collection: string,
+  cursor: string | null,
+  limit = 1000
+): Promise<DasPage & { cursor?: string | null }> {
+  const params: Record<string, unknown> = {
+    groupKey: "collection",
+    groupValue: collection,
+    limit,
+    sortBy: { sortBy: "id", sortDirection: "asc" },
+  }
+  if (cursor) params.cursor = cursor
+  return dasCall<DasPage & { cursor?: string | null }>("getAssetsByGroup", params)
+}
+
 /** A wallet's holdings, one page (unfiltered — caller filters to Candy). */
 export function getAssetsByOwner(
   owner: string,

@@ -4,7 +4,16 @@
 // (2026-11-08; Trevor: "we need to track and measure all of this"). 396 collections and
 // ~1.37M items — ~1,400 DAS pages — do not fit the one daily candy-editions walk, so each
 // run reads pages inside a time budget and keeps its place in candy_collections
-// (census_page / census_walk_started_at). A collection's walk may span several runs.
+// (census_cursor / census_page / census_walk_started_at). A collection's walk may span
+// several runs.
+//
+// Paging is by DAS CURSOR (keyset on asset id), never by `page` (2026-11-09): `page=N` is an
+// offset whose cost grows with N, and "2022 Leadoff ICONs" failed at page 228 on four
+// consecutive runs with the provider's own statement timeout — a walk that could never
+// finish. census_page is now only the walk's page COUNTER; census_cursor is its position.
+// A walk left in flight by the old page-mode code (census_page > 1, no cursor) has no
+// position a cursor can resume from, so it restarts from the top (writes are insert-only,
+// so re-reading costs index probes, not rewrites).
 //
 // Writes, per page:
 //   editions              — INSERT-ONLY (a known edition is never rewritten)
@@ -23,7 +32,7 @@
 // last_census_error and fails the run row; the page cursor advances only after the page's
 // writes landed, so a failure re-reads the page next run instead of skipping it.
 
-import { getAssetsByGroup, type DasAsset } from "@/lib/chains/solana/das"
+import { getAssetsByGroupCursor, type DasAsset } from "@/lib/chains/solana/das"
 import { attributeEscrowHeldToSellers } from "@/lib/chains/solana/escrow"
 import { isBurnt, isPack, normalizeEdition, normalizeSerial } from "@/lib/chains/solana/normalize"
 import { candySetForAsset } from "@/lib/chains/solana/candy-sets"
@@ -80,7 +89,7 @@ export async function runCollectionsCensus(
   // In-flight walks first, then the collection whose last completed walk is oldest.
   const { data: queue, error: qErr } = await db
     .from("candy_collections")
-    .select("address,name,census_page,census_walk_started_at,last_census_at")
+    .select("address,name,census_page,census_cursor,census_walk_started_at,last_census_at")
     .neq("kind", "test")
     .eq("census", false)
     .not("set_id", "is", null)
@@ -96,25 +105,33 @@ export async function runCollectionsCensus(
 
   const errors: string[] = []
   const inserted = new Set<string>()
-  for (const c of (queue ?? []) as Array<{ address: string; name: string; census_page: number; census_walk_started_at: string | null }>) {
+  for (const c of (queue ?? []) as Array<{ address: string; name: string; census_page: number; census_cursor: string | null; census_walk_started_at: string | null }>) {
     if (now() > deadline) break
     const rep: CollectionCensusReport = { address: c.address, name: c.name, pages: 0, cards: 0, wmc_inserted: 0, editions_inserted: 0, completed: false, error: null }
     out.collections.push(rep)
     let page = Math.max(1, c.census_page || 1)
+    let cursor: string | null = c.census_cursor || null
     let walkStarted = c.census_walk_started_at
-    const startedThisRun = !walkStarted || page === 1
+    // A page > 1 with no cursor is a walk the old page-mode code left in flight: restart it.
+    const startedThisRun = !walkStarted || page === 1 || cursor === null
     if (startedThisRun) {
       walkStarted = new Date(now()).toISOString()
-      const { error } = await db.from("candy_collections").update({ census_walk_started_at: walkStarted, census_page: 1 }).eq("address", c.address)
+      const { error } = await db.from("candy_collections").update({ census_walk_started_at: walkStarted, census_page: 1, census_cursor: null }).eq("address", c.address)
       if (error) { rep.error = `state write: ${error.message}`; errors.push(`${c.name}: ${rep.error}`); continue }
       page = 1
+      cursor = null
     }
     let cardsThisWalk = 0
     while (now() <= deadline) {
       let items: DasAsset[]
+      let nextCursor: string | null
       try {
-        const res = await getAssetsByGroup(c.address, page, PAGE_LIMIT)
+        const res = await getAssetsByGroupCursor(c.address, cursor, PAGE_LIMIT)
         items = (res?.items ?? []) as DasAsset[]
+        nextCursor = typeof res?.cursor === "string" && res.cursor ? res.cursor : null
+        // A full page with no cursor has no next position: refuse it rather than end the
+        // walk there (that would stamp a PARTIAL walk as complete).
+        if (items.length >= PAGE_LIMIT && !nextCursor) throw new Error("DAS returned a full page without a cursor")
       } catch (e) {
         rep.error = `page ${page}: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}`
         break
@@ -178,12 +195,13 @@ export async function runCollectionsCensus(
       // last_census_items is the walk's card count only when the whole walk ran in this
       // run; a walk resumed across runs reports NULL (unknown), never a partial count.
       const patch = done
-        ? { census_page: 1, census_walk_started_at: null, last_census_at: nowIso, last_census_items: startedThisRun ? cardsThisWalk : null, last_census_error: null }
-        : { census_page: page + 1, last_census_error: null }
+        ? { census_page: 1, census_cursor: null, census_walk_started_at: null, last_census_at: nowIso, last_census_items: startedThisRun ? cardsThisWalk : null, last_census_error: null }
+        : { census_page: page + 1, census_cursor: nextCursor, last_census_error: null }
       const { error: sErr } = await db.from("candy_collections").update(patch).eq("address", c.address)
       if (sErr) { rep.error = `state write: ${sErr.message}`; break }
       if (done) { rep.completed = true; break }
       page++
+      cursor = nextCursor
     }
     if (rep.error) {
       errors.push(`${c.name}: ${rep.error}`)
