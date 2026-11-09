@@ -195,8 +195,24 @@ function buyerOf(r) {
 }
 // "Walt Disney Animation Studios • A Disney Villains Halloween Vol.2" -> "A Disney Villains Halloween Vol.2"
 const shortSet = (s) => String(s ?? "").split(" • ").pop()
+// "Lamine Yamal, Manga #20/25" · "LeBron James, Run It Back: Origins (Animated) #1/17". A serial the
+// sale row does not carry is left off (never "/25" alone).
 function topSaleSubject(r) {
-  return saleSubject({ ...r, set_name: shortSet(r.set_name) })
+  const who = r.player_name || shortSet(r.set_name) || "Unnamed"
+  const set = shortSet(r.set_name)
+  const sub = r.subedition_name ? ` (${r.subedition_name})` : ""
+  const serial = r.serial_number ? ` #${r.serial_number}${r.circulation_count ? `/${int(r.circulation_count)}` : ""}` : ""
+  return `${who}${set && set !== who ? `, ${set}` : ""}${sub}${serial}`
+}
+
+// Buyers are TAGGED only through this list: marketplace username (lowercase) -> X handle, each
+// one confirmed by Trevor (or by the collector) as that person's account. A marketplace username is
+// not an X handle — "@arbrevert" could be a stranger — so an unlisted buyer is named, not tagged.
+// Keep in step with the same map in x-image.mjs.
+export const X_HANDLES = {}
+function buyerLabel(name) {
+  const h = X_HANDLES[String(name).toLowerCase()]
+  return h ? `@${h.replace(/^@/, "")}` : name
 }
 
 async function mon() {
@@ -224,7 +240,7 @@ async function mon() {
   }
   const lines = top.map((r, i) => {
     const b = buyerOf(r)
-    return `${i + 1}. ${topSaleSubject(r)} — ${usd(r.price_usd)} (${coll(r.collection)})${b ? ` · bought by ${b}` : ""}`
+    return `${i + 1}. ${topSaleSubject(r)} — ${usd(r.price_usd)} on ${coll(r.collection)}${b ? ` · bought by ${buyerLabel(b)}` : ""}`
   })
   // The API returns the week's top 200 by price. If even the 200th cleared the threshold, the
   // count is a floor, not a total — say nothing rather than under-count.
@@ -243,6 +259,7 @@ async function mon() {
     draft: [head, "", ...lines, ...tail].join("\n"),
     reply: [{ n: 2, of: 2, text: `Every sale on the board 👇\n${link}` }],
     thread_fallback: thread(lines, `${head}\n`, "").map((text, i, all) => ({ n: i + 1, of: all.length, text, len: xLength(text) })),
+    buyers_untagged: [...new Set(top.map(buyerOf).filter((b) => b && !X_HANDLES[b.toLowerCase()]))],
     warnings_extra: unnamed.length
       ? [`no username for the buyer of #${unnamed.join(", #")} (wallet only) — the line names no buyer; never post the address`]
       : [],

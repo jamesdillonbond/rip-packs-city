@@ -192,6 +192,8 @@ function buyerOf(r) {
   return n && !/^0x[0-9a-f]/i.test(n) && !n.includes("…") ? n : null
 }
 const shortSet = (s) => String(s ?? "").split(" • ").pop()
+// Confirmed X handles for buyers (marketplace username, lowercase -> handle). Same list as x-draft.mjs.
+const X_HANDLES = {}
 
 async function getJson(path) {
   const r = await fetch(`${API}/${path}`, { headers: { "user-agent": "rpc-x-calendar/1.0" } })
@@ -283,14 +285,14 @@ async function topSalesItems(warnings) {
   )
   return rows.map((r, i) => {
     if (!imgs[i]) warnings.push(`no image for #${i + 1} ${r.player_name} — its card shows a blank tile`)
-    const serial = r.serial_number ? `#${r.serial_number}${r.circulation_count ? `/${r.circulation_count}` : ""}` : r.circulation_count ? `/${r.circulation_count}` : ""
+    const serial = r.serial_number ? `#${r.serial_number}${r.circulation_count ? `/${r.circulation_count}` : ""}` : ""
     return {
       rank: i + 1,
       collection: r.collection,
       title: r.player_name || shortSet(r.set_name),
       set: [shortSet(r.set_name), r.subedition_name, serial].filter(Boolean).join(" · "),
       price: usd(r.price_usd),
-      buyer: buyerOf(r),
+      buyer: buyerOf(r) && (X_HANDLES[buyerOf(r).toLowerCase()] ? `@${X_HANDLES[buyerOf(r).toLowerCase()].replace(/^@/, "")}` : buyerOf(r)),
       img: imgs[i],
     }
   })
@@ -302,7 +304,8 @@ function salesPage({ items, fonts, logo, now }) {
   const card = (it) => {
     const c = COLL[it.collection] ?? { label: it.collection, accent: "#E03A2F" }
     return `<div class="card" style="--acc:${c.accent}">
-      <div class="art">${it.img ? `<img src="${it.img}">` : `<span class="noimg">${esc(it.title)}</span>`}<span class="rank">${it.rank}</span><span class="coll">${esc(SITE_NAMES[it.collection] ?? c.label)}</span></div>
+      <div class="top"><span class="rank">${it.rank}</span><span class="coll">${esc(SITE_NAMES[it.collection] ?? c.label)}</span></div>
+      <div class="art">${it.img ? `<img src="${it.img}">` : `<span class="noimg">${esc(it.title)}</span>`}</div>
       <div class="name">${esc(it.title)}</div>
       <div class="set">${esc(it.set)}</div>
       <div class="price">${esc(it.price)}</div>
@@ -327,10 +330,11 @@ h1 em{font-style:normal;color:#E03A2F}
 .art{position:relative;flex:1;min-height:0;border-radius:6px;background:radial-gradient(closest-side,color-mix(in srgb,var(--acc) 22%,transparent),transparent);display:flex;align-items:center;justify-content:center}
 .art img{max-width:100%;max-height:100%;object-fit:contain;display:block}
 .noimg{font-size:30px;line-height:1;text-transform:uppercase;text-align:center;color:color-mix(in srgb,var(--acc) 70%,#fff);opacity:.55;padding:0 8px}
-.rank{position:absolute;left:0;top:0;font-size:26px;line-height:1;color:#fff;background:#E03A2F;border-radius:6px;padding:3px 7px 2px}
-.coll{position:absolute;right:0;top:0;font-family:Mono,monospace;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:#fff;background:rgba(0,0,0,.65);border:1px solid var(--acc);border-radius:999px;padding:2px 7px}
+.top{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}
+.rank{font-size:22px;line-height:1;color:#fff;background:#E03A2F;border-radius:6px;padding:3px 7px 2px;min-width:30px;text-align:center}
+.coll{font-family:Mono,monospace;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:#fff;background:rgba(0,0,0,.65);border:1px solid var(--acc);border-radius:999px;padding:2px 7px}
 .name{font-size:21px;line-height:1;text-transform:uppercase;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.set{font-family:Mono,monospace;font-size:11.5px;color:#BFC0BF;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.set{font-family:Mono,monospace;font-size:11.5px;line-height:1.25;color:#BFC0BF;margin-top:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:2.5em}
 .price{font-family:Mono,monospace;font-size:24px;color:#fff;margin-top:3px;line-height:1}
 .buyer{font-family:Mono,monospace;font-size:12.5px;color:#FF4D40;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .buyer span{color:#8A8A8A}
