@@ -47,6 +47,58 @@ export const MANUAL_DROPS: ManualDrop[] = [
   },
 ]
 
+// CORRECTIONS to a drop a feed DOES carry, read from the official page (Trevor, 11-08: "Double
+// check and confirm the details"). Dapper's pack book (Atlas) marks Pinnacle's "Walt Disney Mugs
+// Vol.1" mystery-capsule sale as a draw (dist_type RSVP), and a Pinnacle draw's end_time there is the
+// waiting room's, not the draw's close (Friends-Giving Vol.2: book says 11/20, the draw closes 11/13).
+// Only the fields given replace the feed's; same sourcing rules as MANUAL_DROPS.
+export interface DropCorrection {
+  dist_id: string
+  title?: string
+  kind?: "capsule" | "rsvp" | "sale"
+  detail?: string
+  end_time?: string
+  source: string
+  verified_at: string
+}
+
+export const DROP_CORRECTIONS: DropCorrection[] = [
+  {
+    dist_id: "8922",
+    title: "Walt Disney Mugs Vol.1",
+    kind: "capsule",
+    detail: "98 Friends-Giving Vol.2 LE pins hidden inside",
+    end_time: "2026-11-23T17:00:00Z",
+    source: "disneypinnacle.com/releases",
+    verified_at: "2026-11-08",
+  },
+  {
+    dist_id: "8923",
+    title: "Disney Mickey & Friends: Friends-Giving Vol.2",
+    kind: "rsvp",
+    // Timed draw: requests Thu 11/12 9 AM PT → Fri 11/13 9 AM PT.
+    end_time: "2026-11-13T17:00:00Z",
+    source: "disneypinnacle.com/releases",
+    verified_at: "2026-11-08",
+  },
+]
+
+/** Applies DROP_CORRECTIONS in place (matched by dist_id within the collection's feed). */
+export function applyDropCorrections(drops: PackCalendarDrop[], now: Date, corrections: DropCorrection[] = DROP_CORRECTIONS): void {
+  const t = now.getTime()
+  for (const d of drops) {
+    const c = corrections.find((x) => x.dist_id === d.dist_id)
+    if (!c) continue
+    if (c.title) d.title = c.title
+    if (c.kind) d.kind = c.kind
+    if (c.detail) d.detail = c.detail
+    if (c.end_time) d.end_time = new Date(c.end_time).toISOString()
+    const start = Date.parse(d.start_time)
+    const end = d.end_time ? Date.parse(d.end_time) : NaN
+    d.status = start > t ? "upcoming" : Number.isFinite(end) && end <= t ? "ended" : "open"
+  }
+}
+
 const DAY_MS = 86_400_000
 
 /** The manual entries that belong on this week's calendar: open, upcoming within 7 days, or closed in the last 7. */

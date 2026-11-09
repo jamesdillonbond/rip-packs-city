@@ -7,7 +7,7 @@
 // drops"; a delivered pre-order / draw is ended; no price or time is invented.
 
 import { fetchPackCalendar, type PackCalendarDrop, type PackCalendarResult } from "@/lib/insights/pack-calendar"
-import { MANUAL_DROPS, type ManualDrop } from "@/lib/insights/manual-drops"
+import { DROP_CORRECTIONS, MANUAL_DROPS, type DropCorrection, type ManualDrop } from "@/lib/insights/manual-drops"
 
 export interface DropsBoardItem extends PackCalendarDrop {
   /** RPC's pack page for this drop exists (pack_distributions row). Atlas drops only. */
@@ -25,8 +25,8 @@ const ATLAS_COLLECTIONS = new Set<PackCalendarDrop["collection"]>(["nba_top_shot
 const onPackBook = (d: PackCalendarDrop) => ATLAS_COLLECTIONS.has(d.collection) && d.kind !== "open_edition" && d.kind !== "trade_in"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function fetchDropsBoard(sb: any, now = new Date(), fetchImpl: typeof fetch = fetch, manual: ManualDrop[] = MANUAL_DROPS): Promise<DropsBoard> {
-  const cal = await fetchPackCalendar(sb, now, fetchImpl, manual)
+export async function fetchDropsBoard(sb: any, now = new Date(), fetchImpl: typeof fetch = fetch, manual: ManualDrop[] = MANUAL_DROPS, corrections: DropCorrection[] = DROP_CORRECTIONS): Promise<DropsBoard> {
+  const cal = await fetchPackCalendar(sb, now, fetchImpl, manual, corrections)
   const ids = cal.drops.filter(onPackBook).map((d) => d.dist_id)
   const live = new Set<string>()
   if (ids.length) {
@@ -65,6 +65,11 @@ export function whenPT(iso: string): string {
 export function dropStatusLine(d: PackCalendarDrop): string {
   const word = d.collection === "disney_pinnacle" ? "Draw requests" : "Pre-orders"
   if (d.kind === "open_edition") return d.status === "ended" ? "Stopped minting" : "Minting now"
+  if (d.kind === "capsule") {
+    if (d.status === "ended") return "Capsules sold out or closed"
+    if (d.status === "upcoming") return `Capsules on sale ${whenPT(d.start_time)}`
+    return "Capsules on sale now"
+  }
   if (d.kind === "trade_in") {
     if (d.status === "ended") return "Trade-ins closed"
     if (d.status === "upcoming") return `Trade-ins open ${whenPT(d.start_time)}`

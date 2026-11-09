@@ -40,7 +40,7 @@
 //
 // UFC STRIKE: market closed; not read. Say so; never imply it had no drops.
 
-import { buildManualDrops, MANUAL_DROPS, type ManualDrop } from "@/lib/insights/manual-drops"
+import { applyDropCorrections, buildManualDrops, DROP_CORRECTIONS, MANUAL_DROPS, type DropCorrection, type ManualDrop } from "@/lib/insights/manual-drops"
 
 export type PackCalendarProduct = "nba" | "nfl" | "laliga" | "disney"
 
@@ -69,9 +69,10 @@ export interface PackCalendarDrop {
   /**
    * "rsvp" when Dapper sells it by reservation (the window is the RSVP), "open_edition" for a Pinnacle
    * Open Edition seen minting (no price, no announced end), "trade_in" for a pack you trade Moments
-   * in for (Top Shot This; hand-entered in lib/insights/manual-drops.ts), else "sale".
+   * in for (Top Shot This; hand-entered in lib/insights/manual-drops.ts), "capsule" for a Pinnacle
+   * mystery-capsule sale (set by a DROP_CORRECTIONS entry), else "sale".
    */
-  kind: "rsvp" | "sale" | "open_edition" | "trade_in"
+  kind: "rsvp" | "sale" | "open_edition" | "trade_in" | "capsule"
   slots: number | null
   retail_usd: number | null
   start_time: string
@@ -447,6 +448,7 @@ export async function fetchPackCalendar(
   now = new Date(),
   fetchImpl: typeof fetch = fetch,
   manual: ManualDrop[] = MANUAL_DROPS,
+  corrections: DropCorrection[] = DROP_CORRECTIONS,
 ): Promise<PackCalendarResult> {
   const { data: state, error: stateErr } = await sb
     .from("atlas_pack_market_state")
@@ -521,6 +523,8 @@ export async function fetchPackCalendar(
   complete_at.candy = candy.ok ? now.toISOString() : null
   if (!candy.ok) complete = false
 
+  // Official-page corrections first, so a capsule sale is never "delivered" as a draw.
+  applyDropCorrections(drops, now, corrections)
   await markDeliveredDraws(sb, drops)
   // Drops no feed carries (Top Shot This trade-ins), hand-entered from the official page.
   drops.push(...buildManualDrops(now, manual))

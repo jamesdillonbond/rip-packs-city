@@ -361,6 +361,8 @@ function dropLine(x, multiColl) {
   const tag = multiColl ? `${coll(x.collection)}: ` : ""
   // A Pinnacle Open Edition is seen only while it mints: no price, no announced end.
   if (x.kind === "open_edition") return `• ${tag}${x.title} — minting now`
+  // A Pinnacle mystery-capsule sale: when it opens or that it is on sale, plus what is inside.
+  if (x.kind === "capsule") return `• ${tag}${x.title}${price} mystery capsules — ${x.status === "upcoming" ? `on sale ${whenPT(x.start_time)}` : "on sale now"}${x.detail ? `, ${x.detail}` : ""}`
   // A trade-in pack (Top Shot This): what you give, and when trade-ins close.
   if (x.kind === "trade_in") return `• ${tag}${x.title} — ${x.detail ? `${x.detail}, ` : ""}${x.status === "upcoming" ? `opens ${whenPT(x.start_time)}` : `closes ${whenPT(x.end_time)}`}`
   if (x.status === "upcoming") return `• ${tag}${x.title}${price} — ${x.kind === "rsvp" ? `${orderWord(x)} open` : "drops"} ${whenPT(x.start_time)}`
