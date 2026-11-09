@@ -13,6 +13,8 @@
 --       is not the wallet itself -- sender, tx, block height and time.
 --   W2. No withdraw in the window -> done, saying so (a mint), never a sender.
 --   H1. A 429 is a free retry; any other error counts an attempt, ok=false.
+--   A4. (2026-11-09) Every collected 4xx is kept in chain_arrival_http_4xx (pruned after a
+--       day) so check_edge_fn_http_failures() attributes it to this lane by request id.
 --   E1. Enqueue refuses an interval below the mainnet24 root or inverted.
 --   F1. A 'floor' probe is ONE script at lo: held there -> done ("arrived
 --       before 2023-11-08"), never bisected; not held -> bisect.
@@ -50,7 +52,7 @@
 -- (supabase/migrations/20260929170000_audit_20260929_chain_arrivals_find_when_and_from_whom_a_wallet_got_a_moment.sql;
 -- seed_saved_wallet_chain_arrivals from
 -- 20260930190000_audit_20260930_chain_arrivals_seed_sold_moments.sql;
--- run_chain_arrival_lane from 20261108171928_audit_20261108_run_chain_arrival_lane_floor_at_mainnet27.sql).
+-- run_chain_arrival_lane from 20261109134500_audit_20261109_chain_arrival_lane_4xx_is_attributed_by_the_alert_arm.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -86,6 +88,9 @@ CREATE TABLE public.chain_arrival_probes (
   request_id bigint, attempts int NOT NULL DEFAULT 0, arrived_height bigint, arrived_at timestamptz, tx_id text,
   from_address text, last_error text, created_at timestamptz NOT NULL DEFAULT now(), finished_at timestamptz,
   PRIMARY KEY (wallet, nft_id));
+CREATE TABLE public.chain_arrival_http_4xx (
+  request_id bigint PRIMARY KEY, status_code int NOT NULL, kind text NOT NULL, node text NOT NULL,
+  recorded_at timestamptz NOT NULL DEFAULT now());
 CREATE TABLE public.chain_arrival_dark_nodes (
   node text PRIMARY KEY, dark_until timestamptz NOT NULL, last_error text,
   marked_at timestamptz NOT NULL DEFAULT now(), cleared_at timestamptz);
@@ -161,6 +166,9 @@ BEGIN
     RETURN jsonb_build_object('ok', true, 'skipped', 'another run holds the lock');
   END IF;
 
+  -- 2026-11-09: the 4xx record outlives the alert arm's 12 h window, then goes
+  DELETE FROM public.chain_arrival_http_4xx WHERE recorded_at < now() - interval '1 day';
+
   -- (1) Collect landed calls.
   FOR r IN
     SELECT q.*, h.status_code AS h_status, h.content AS h_content, h.error_msg AS h_error
@@ -227,6 +235,14 @@ BEGIN
                finished_at = CASE WHEN attempts + 1 >= v_max_att THEN now() END
          WHERE request_id = r.request_id;
         v_failed := v_failed + 1;
+      END IF;
+      -- 2026-11-09: a 4xx keeps its request id after the request row goes, so
+      -- check_edge_fn_http_failures() can attribute it to this lane by a join
+      -- (2,666 throttles on 11-09 filed as an unattributed pg_net_http_429)
+      IF r.h_status BETWEEN 400 AND 499 THEN
+        INSERT INTO public.chain_arrival_http_4xx (request_id, status_code, kind, node)
+        VALUES (r.request_id, r.h_status, r.kind, r.node)
+        ON CONFLICT (request_id) DO NOTHING;
       END IF;
       DELETE FROM public.chain_arrival_requests WHERE request_id = r.request_id;
       CONTINUE;
@@ -705,6 +721,16 @@ BEGIN
   PERFORM _assert((SELECT attempts = 1 AND last_error LIKE 'http 400%' FROM public.chain_arrival_probes WHERE nft_id = 3), 'H1: a 400 counts an attempt');
   PERFORM _assert(NOT (v->>'ok')::boolean AND (v->>'throttled')::int = 1 AND (v->>'failed')::int = 1, 'H1: ok=false, one throttled, one failed');
   PERFORM _assert((SELECT request_id IS NOT NULL FROM public.chain_arrival_probes WHERE nft_id = 1), 'H1: the throttled probe is re-dispatched');
+  -- A4 (2026-11-09): both 4xx outlive their deleted request row, so the alert arm can join them
+  PERFORM _assert((SELECT count(*) = 2 FROM public.chain_arrival_http_4xx WHERE status_code IN (429, 400)),
+                  'A4: the 429 and the 400 are recorded for attribution');
+  PERFORM _assert((SELECT count(*) = 0 FROM public.chain_arrival_http_4xx h
+                    JOIN public.chain_arrival_requests q ON q.request_id = h.request_id),
+                  'A4: a recorded 4xx is a collected call, not one in flight');
+  -- and a record past a day is pruned by the next run
+  UPDATE public.chain_arrival_http_4xx SET recorded_at = now() - interval '25 hours' WHERE status_code = 400;
+  v := public.run_chain_arrival_lane();
+  PERFORM _assert((SELECT count(*) = 1 FROM public.chain_arrival_http_4xx), 'A4: a day-old 4xx record is pruned');
 END $$;
 
 -- U2: a handshake that never completed vs a call that connected and then timed out

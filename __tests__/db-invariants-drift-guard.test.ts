@@ -352,7 +352,7 @@ const PINS = [
     // 2026-10-10: no HTTP answer at all (a connect that never completed) is a free retry too;
     // then that failure parks the NODE for an hour (one canary after), known-issues #181.
     // 2026-11-08: floor at the mainnet27 root; Flow retired the mainnet24-26 nodes (#181).
-    migration: "supabase/migrations/20261108171928_audit_20261108_run_chain_arrival_lane_floor_at_mainnet27.sql",
+    migration: "supabase/migrations/20261109134500_audit_20261109_chain_arrival_lane_4xx_is_attributed_by_the_alert_arm.sql",
   },
   {
     // Seeds every saved wallet's unexplained held Top Shot moment at the floor;
