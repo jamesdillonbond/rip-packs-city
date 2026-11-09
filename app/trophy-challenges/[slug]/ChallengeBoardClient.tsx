@@ -161,6 +161,14 @@ export default function ChallengeBoardClient({ slug }: { slug: string }) {
         <p style={{ margin: "0 0 6px", fontSize: 16, color: "var(--rpc-text-primary)" }}>{challenge.tagline}</p>
       )}
       {open && <ChallengeCountdown endsAt={challenge.ends_at} />}
+      {/* 2026-11-08: three collectors filled their MAIN case with Dames and never
+          entered; another asked how to show Panini cards. Say both plainly. */}
+      {open && (
+        <p data-rpc-challenge-howto style={{ margin: "0 0 12px", fontFamily: monoFont, fontSize: 12, lineHeight: 1.6, color: "var(--rpc-text-secondary)", maxWidth: 720 }}>
+          How to enter: on your dashboard, tap <strong>Enter</strong> on {challenge.title} and pick 6 — your main trophy case doesn&rsquo;t count on its own.
+          Panini cards count too: <Link href="/dashboard?tab=overview#panini-username" style={{ color: "var(--rpc-red-text)", textDecoration: "none" }}>add your Panini username</Link> first, then they show up in the picker.
+        </p>
+      )}
       {challenge.description && (
         <p style={{ margin: "0 0 16px", fontFamily: monoFont, fontSize: 12, lineHeight: 1.6, color: "var(--rpc-text-muted)", maxWidth: 720 }}>
           {challenge.description}

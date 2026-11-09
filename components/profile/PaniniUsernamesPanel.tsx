@@ -121,7 +121,7 @@ export default function PaniniUsernamesPanel() {
   )
 
   return (
-    <section className="rpc-section" aria-labelledby="panini-usernames-title">
+    <section className="rpc-section" id="panini-username" aria-labelledby="panini-usernames-title" style={{ scrollMarginTop: 80 }}>
       <div id="panini-usernames-title" className="rpc-section-title">Panini Username</div>
       <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", marginBottom: 10, lineHeight: 1.5 }}>
         Panini collectors are identified by username, not a wallet address. Link yours and RPC reads your public

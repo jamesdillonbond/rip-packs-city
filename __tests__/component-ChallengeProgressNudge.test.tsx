@@ -10,7 +10,7 @@ import { render, cleanup, fireEvent, waitFor } from "@testing-library/react"
 const trackMock = vi.fn()
 vi.mock("@/lib/telemetry/track", () => ({ track: (...a: unknown[]) => trackMock(...a) }))
 
-import ChallengeProgressNudge, { unfinishedEntries } from "@/components/profile/ChallengeProgressNudge"
+import ChallengeProgressNudge, { unfinishedEntries, unenteredChallenges, PANINI_LINK_HREF } from "@/components/profile/ChallengeProgressNudge"
 
 const dame = { slug: "dame-time", title: "Dame Time", rules: { player_names: ["Damian Lillard"] } }
 const body = (pinned: number, challenges: unknown = [dame]) => ({
@@ -36,7 +36,7 @@ afterEach(() => {
 
 describe("unfinishedEntries", () => {
   it("lists an open-challenge entry below 6, never the main case", () => {
-    expect(unfinishedEntries(body(4))).toEqual([{ slug: "dame-time", title: "Dame Time", pinned: 4, shopHref: "/players/damian-lillard" }])
+    expect(unfinishedEntries(body(4))).toEqual([{ slug: "dame-time", title: "Dame Time", pinned: 4, shopHref: "/players/damian-lillard", endsAt: null }])
   })
   it("a complete entry (6) is not unfinished", () => {
     expect(unfinishedEntries(body(6))).toEqual([])
@@ -51,7 +51,35 @@ describe("unfinishedEntries", () => {
   })
 })
 
+describe("unenteredChallenges (hatedjay, 2026-11-08: six Dames in his MAIN case, never entered)", () => {
+  const ends = { ...dame, ends_at: "2026-11-09T08:00:00Z" }
+  it("lists an open challenge with no entry, with its end", () => {
+    expect(unenteredChallenges({ cases: [{ id: "a", challenge: null, slabs: [] }], challenges: [ends] })).toEqual([
+      { slug: "dame-time", title: "Dame Time", endsAt: "2026-11-09T08:00:00Z" },
+    ])
+  })
+  it("an entered challenge is not listed, complete or not", () => {
+    expect(unenteredChallenges(body(2, [ends]))).toEqual([])
+    expect(unenteredChallenges(body(6, [ends]))).toEqual([])
+  })
+  it("⛔ an unknown challenge list or a shapeless body says nothing", () => {
+    expect(unenteredChallenges({ cases: [], challenges: null })).toEqual([])
+    expect(unenteredChallenges(null)).toEqual([])
+  })
+})
+
 describe("ChallengeProgressNudge", () => {
+  it("invites a collector who has not entered, says the main case doesn't count, and points Panini holders at the username field", async () => {
+    mockFetch({ ok: true, body: { cases: [{ id: "a", challenge: null, slabs: [1, 2, 3, 4, 5, 6] }], challenges: [dame] } })
+    const { container } = render(<ChallengeProgressNudge />)
+    await waitFor(() => expect(container.querySelector("[data-rpc-challenge-invite]")).not.toBeNull())
+    expect(container.textContent).toMatch(/haven.t entered yet/)
+    expect(container.textContent).toMatch(/main trophy case doesn.t count/)
+    expect(container.querySelector(`a[href="${PANINI_LINK_HREF}"]`)).not.toBeNull()
+    const enter = Array.from(container.querySelectorAll("a")).find((a) => /Enter Dame Time/.test(a.textContent ?? ""))
+    expect(enter?.getAttribute("href")).toBe("/dashboard?tab=trophy&challenge=dame-time")
+    expect(container.querySelector("[data-rpc-challenge-nudge]")).toBeNull()
+  })
   it("shows how many more to pin and links to the entry with a full navigation", async () => {
     mockFetch({ ok: true, body: body(4) })
     const { container } = render(<ChallengeProgressNudge />)

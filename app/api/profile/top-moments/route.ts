@@ -175,7 +175,9 @@ export async function GET(req: NextRequest) {
   // "no username linked" (go link one) vs "linked, but nothing read under it
   // yet" — so the filtered response says which. null = the count read failed:
   // the picker then says neither, rather than guessing.
-  if (collectionSlug === "panini-blockchain") {
+  // The trophy picker (panini=1) also asks on its FIRST page with no filter, so a
+  // challenge that takes Panini can say where the username goes (2026-11-08).
+  if (collectionSlug === "panini-blockchain" || (includePanini && offset === 0)) {
     const linked = await countLinkedPaniniUsernames(supabase, userId);
     return NextResponse.json({ moments: rows, hasMore, paniniUsernamesLinked: linked });
   }

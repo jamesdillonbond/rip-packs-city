@@ -249,6 +249,15 @@ describe("GET /api/profile/top-moments", () => {
     expect(body.paniniUsernamesLinked).toBe(1)
   })
 
+  it("the trophy picker's unfiltered FIRST page (panini=1) also reports the count; a later page does not re-read it", async () => {
+    state.single = { data: { user_id: "u1" }, error: null, count: 0 } as any
+    state.rpc = { data: mixed, error: null }
+    const first = await (await GET(req("https://t/api/profile/top-moments?ownerKey=trevor&panini=1"))).json()
+    expect(first.paniniUsernamesLinked).toBe(0)
+    const later = await (await GET(req("https://t/api/profile/top-moments?ownerKey=trevor&panini=1&offset=96"))).json()
+    expect(later.paniniUsernamesLinked).toBeUndefined()
+  })
+
   it("an unreadable linked-username count is null, never 0 (0 would say 'you haven't linked one')", async () => {
     state.single = { data: { user_id: "u1" }, error: null } // no count on the head read
     state.rpc = { data: [], error: null }

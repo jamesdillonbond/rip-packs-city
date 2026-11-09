@@ -115,3 +115,28 @@ describe("TrophyPickerModal multi-pick", () => {
     expect(screen.getByText(/This replaces Old Trophy in slot 2/)).toBeTruthy()
   })
 })
+
+describe("challenge picker Panini hint (2026-11-08: 'How do I show off my Panini cards?')", () => {
+  const stubLinked = (linked: unknown) =>
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve({ ok: true, json: async () => ({ moments: ROWS, hasMore: false, paniniUsernamesLinked: linked }) } as Response)),
+    )
+  it("says where the Panini username goes when the route READ that none is linked", async () => {
+    stubLinked(0)
+    render(<TrophyPickerModal slot={1} ownerKey={null} onClose={() => {}} onPinned={() => {}} initialQuery="Damian Lillard" />)
+    await screen.findByText("Dame One")
+    expect(document.querySelector("[data-rpc-picker-panini-hint]")).not.toBeNull()
+  })
+  it("⛔ says nothing when the count is unknown, or a username is linked", async () => {
+    stubLinked(null)
+    const a = render(<TrophyPickerModal slot={1} ownerKey={null} onClose={() => {}} onPinned={() => {}} initialQuery="Damian Lillard" />)
+    await screen.findByText("Dame One")
+    expect(document.querySelector("[data-rpc-picker-panini-hint]")).toBeNull()
+    a.unmount()
+    stubLinked(1)
+    render(<TrophyPickerModal slot={1} ownerKey={null} onClose={() => {}} onPinned={() => {}} initialQuery="Damian Lillard" />)
+    await screen.findByText("Dame One")
+    expect(document.querySelector("[data-rpc-picker-panini-hint]")).toBeNull()
+  })
+})

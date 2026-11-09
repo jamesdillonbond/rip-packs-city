@@ -22,6 +22,7 @@ import { publishedCollections } from "@/lib/collections";
 import { track } from "@/lib/telemetry/track";
 import { getFunnelContext } from "@/lib/track-funnel";
 import { describeSlots, fillTargets, togglePick } from "@/lib/trophy/fill-slots";
+import { PANINI_LINK_HREF } from "@/components/profile/ChallengeProgressNudge";
 import { seriesLabel, isUnmappedSeriesLabel } from "@/lib/analytics/series-labels";
 import {
   type TrophySortKey,
@@ -750,6 +751,20 @@ export default function TrophyPickerModal({
 
         {tab === "grid" && !pending && (
           <>
+            {/* 2026-11-08: "How do I show off my Panini cards?" — a challenge
+                that takes Panini says where the username goes, only when the
+                route has READ that none is linked (null = unknown: say nothing). */}
+            {initialQuery && paniniLinked === 0 && (
+              <div data-rpc-picker-panini-hint style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-secondary)", lineHeight: 1.5, margin: "0 0 8px" }}>
+                Panini cards count too —{" "}
+                {/* A full navigation on purpose: the picker is a modal over the dashboard,
+                    and the hash must scroll to the field after the tab switch. */}
+                <a href={PANINI_LINK_HREF} style={{ color: "var(--rpc-red-text)", textDecoration: "none" }}>
+                  add your Panini username
+                </a>{" "}
+                and they show up here.
+              </div>
+            )}
             <CollectionPicker
               value={collectionFilter}
               onChange={(c) => {
