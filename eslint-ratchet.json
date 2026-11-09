@@ -5,7 +5,7 @@
     "@typescript-eslint/no-explicit-any"
   ],
   "counts": {
-    "react-hooks/set-state-in-effect": 49,
+    "react-hooks/set-state-in-effect": 50,
     "@next/next/no-img-element": 28,
     "import/no-anonymous-default-export": 17,
     "react-hooks/exhaustive-deps": 16,

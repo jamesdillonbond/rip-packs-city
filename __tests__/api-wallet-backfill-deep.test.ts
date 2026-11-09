@@ -280,9 +280,9 @@ describe("wallet-backfill — walk + upsert contract", () => {
 
   it("skip_cached (default) walks only the on-chain diff and counts the cached skips honestly", async () => {
     state.ownedIds = [1, 2, 3]
-    state.metadataById = { "3": meta({ serial: "7" }) } // 1/2 cached — must never be fetched
+    state.metadataById = { "3": meta({ serial: "7" }) } // 1/2 cached + KEYED — must never be fetched
     const spy = install({
-      wallet_moments_cache: { data: [{ moment_id: "1" }, { moment_id: "2" }], error: null },
+      wallet_moments_cache: { data: [{ moment_id: "1", edition_key: "1:1" }, { moment_id: "2", edition_key: "1:2" }], error: null },
       "rpc:upsert_wmc_batch": { data: { written: 1 }, error: null },
     })
 
@@ -300,6 +300,27 @@ describe("wallet-backfill — walk + upsert contract", () => {
     expect(log?.p_extra).toMatchObject({ on_chain_count: 3, skipped_cached: 2, skip_cached: true })
     // recordScan reports the full on-chain holding, not the diff.
     expect(scanCall(spy.rpcCalls)).toMatchObject({ p_found_count: 3 })
+  })
+
+  it("⛔ a cached row WITHOUT an edition_key is walked again, not skipped forever (Dame Time, 2026-11-08)", async () => {
+    // 2,987 Top Shot Moments sat key-less because the skip set was presence-only:
+    // one failed metadata read and the row was never retried.
+    state.ownedIds = [1, 2, 3]
+    state.metadataById = { "2": meta({ serial: "5" }), "3": meta({ serial: "7" }) }
+    const spy = install({
+      wallet_moments_cache: { data: [{ moment_id: "1", edition_key: "1:1" }, { moment_id: "2", edition_key: null }], error: null },
+      "rpc:upsert_wmc_batch": { data: { written: 2 }, error: null },
+    })
+
+    await POST(post({ wallet: WALLET }))
+    await runDeferred()
+
+    expect(state.metadataCalls.sort()).toEqual(["2", "3"])
+    const rows = spy.rpcCalls.find((c) => c.name === "upsert_wmc_batch")?.args?.p_rows as Array<Record<string, unknown>>
+    expect(rows.map((r) => r.moment_id).sort()).toEqual(["2", "3"])
+    // The key-less row is still OWNED: it must never be treated as unseen.
+    expect(spy.deletes["wallet_moments_cache"]).toBeUndefined()
+    expect(walkLog(spy.rpcCalls)?.p_extra).toMatchObject({ skipped_cached: 1, unseen_deleted: 0 })
   })
 
   it("an empty wallet short-circuits: no upsert, stats still stamped, scan records 0", async () => {
@@ -699,7 +720,7 @@ describe("wallet-backfill — delete-not-seen", () => {
     state.ownedIds = [1, 2, 3]
     state.metadataById = { "3": meta() }
     const spy = install({
-      wallet_moments_cache: { data: [{ moment_id: "1" }, { moment_id: "2" }], error: null },
+      wallet_moments_cache: { data: [{ moment_id: "1", edition_key: "1:1" }, { moment_id: "2", edition_key: "1:2" }], error: null },
       "rpc:upsert_wmc_batch": { data: { written: 1 }, error: null },
     })
 

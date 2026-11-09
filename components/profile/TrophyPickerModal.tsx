@@ -21,6 +21,7 @@ import SerialBadge from "@/components/collection/SerialBadge";
 import { publishedCollections } from "@/lib/collections";
 import { track } from "@/lib/telemetry/track";
 import { getFunnelContext } from "@/lib/track-funnel";
+import { describeSlots, fillTargets, togglePick } from "@/lib/trophy/fill-slots";
 import { seriesLabel, isUnmappedSeriesLabel } from "@/lib/analytics/series-labels";
 import {
   type TrophySortKey,
@@ -174,6 +175,14 @@ interface Props {
   initialQuery?: string;
   /** Heading override, e.g. "Pin to Dame Time". */
   title?: string;
+  /**
+   * The case's EMPTY slots (2026-11-08, multi-pick). When the tapped `slot` is
+   * one of them and there is more than one, the grid selects several Moments
+   * at once and pins them into the empty slots in order — tapped slot first.
+   * Absent, or a tapped slot that is occupied: the one-at-a-time flow, where
+   * the confirm step names the trophy a replace displaces.
+   */
+  openSlots?: readonly number[] | null;
 }
 
 export default function TrophyPickerModal({
@@ -187,6 +196,7 @@ export default function TrophyPickerModal({
   caseId = null,
   initialQuery = "",
   title,
+  openSlots = null,
 }: Props) {
   const [tab, setTab] = useState<"grid" | "manual">("grid");
   const [moments, setMoments] = useState<PickerMoment[] | null>(null);
@@ -217,6 +227,23 @@ export default function TrophyPickerModal({
   // grid pinned on the first tap, which on a phone is a 72px target in a dense
   // scrolling list, and the pin overwrites the slot with no undo.
   const [pending, setPending] = useState<PickerMoment | null>(null);
+
+  // Multi-pick (2026-11-08). `targets` is fixed for the modal's life; `filled`
+  // grows as pins land, so a partial failure leaves the remaining empty slots
+  // (and the remaining picks) exactly where they were.
+  const targets = useMemo(() => fillTargets(slot, openSlots), [slot, openSlots]);
+  const multi = targets.length > 1;
+  const [filled, setFilled] = useState<number[]>([]);
+  const remaining = useMemo(() => targets.filter((s) => !filled.includes(s)), [targets, filled]);
+  const [picked, setPicked] = useState<PickerMoment[]>([]);
+  const [pinnedHere, setPinnedHere] = useState<string[]>([]);
+  // Anything pinned in this session means the case behind the modal is stale:
+  // closing then goes through onPinned (the parent refreshes), never bare onClose.
+  const pinnedAny = useRef(false);
+  const close = useCallback(() => {
+    if (pinnedAny.current) onPinned();
+    else onClose();
+  }, [onPinned, onClose]);
 
   const [sort, setSort] = useState<SortKey>("fmv_desc");
   const [query, setQuery] = useState(initialQuery);
@@ -253,7 +280,7 @@ export default function TrophyPickerModal({
 
   // Escape-to-close + focus trap + focus restore. The modal is always "open"
   // while mounted (parent controls mount), so isOpen is a constant true.
-  const contentRef = useModalA11y<HTMLDivElement>(true, onClose);
+  const contentRef = useModalA11y<HTMLDivElement>(true, close);
 
   // panini=1: the trophy case is the one picker that can pin a Panini card
   // (the route leaves them out for the hero/avatar pickers).
@@ -357,8 +384,8 @@ export default function TrophyPickerModal({
   // perceives ("that Moment is already up"), not the composite the grid uses
   // for React keys.
   const pinnedIds = useMemo(
-    () => new Set((pinnedMomentIds ?? []).filter(Boolean)),
-    [pinnedMomentIds]
+    () => new Set([...(pinnedMomentIds ?? []), ...pinnedHere].filter(Boolean)),
+    [pinnedMomentIds, pinnedHere]
   );
 
   // The route says more rows exist past what is loaded — the grid, and
@@ -385,16 +412,16 @@ export default function TrophyPickerModal({
     [moments, sort, tierFilter, clientQuery]
   );
 
-  const pin = useCallback(
-    async (m: PickerMoment) => {
-      setSaving(true);
-      setPickError(null);
+  // One pin into one slot. Returns null on success, else the reason — the
+  // server's own words when it gave them (a challenge rule, say).
+  const postPin = useCallback(
+    async (m: PickerMoment, targetSlot: number): Promise<string | null> => {
       try {
         const res = await fetch("/api/profile/trophy", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            slot,
+            slot: targetSlot,
             momentId: m.moment_id,
             collectionId: m.collection_id,
             editionId: m.edition_key,
@@ -412,18 +439,62 @@ export default function TrophyPickerModal({
         });
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
-          throw new Error(data.error || `HTTP ${res.status}`);
+          return data.error || `HTTP ${res.status}`;
         }
-        onPinned();
+        return null;
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "Failed to pin";
-        setPickError(msg);
-      } finally {
-        setSaving(false);
+        return err instanceof Error ? err.message : "Failed to pin";
       }
     },
-    [slot, onPinned, caseId]
+    [caseId]
   );
+
+  const pin = useCallback(
+    async (m: PickerMoment) => {
+      setSaving(true);
+      setPickError(null);
+      const err = await postPin(m, slot);
+      setSaving(false);
+      if (err) setPickError(err);
+      else onPinned();
+    },
+    [postPin, slot, onPinned]
+  );
+
+  // Pin every pick, in order, into the remaining empty slots. Sequential, so a
+  // failure stops at a known point: what landed stays landed (and leaves the
+  // list as already-in-case), the rest stay selected, and the reason is shown.
+  const pinMany = useCallback(async () => {
+    const queue = picked.slice(0, remaining.length);
+    if (queue.length === 0) return;
+    setSaving(true);
+    setPickError(null);
+    const landedSlots: number[] = [];
+    const landedIds: string[] = [];
+    let failure: string | null = null;
+    for (let i = 0; i < queue.length; i++) {
+      const err = await postPin(queue[i], remaining[i]);
+      if (err) {
+        failure = `${queue[i].player_name ?? queue[i].character_name ?? "That pick"}: ${err}`;
+        break;
+      }
+      landedSlots.push(remaining[i]);
+      landedIds.push(queue[i].moment_id);
+    }
+    if (landedIds.length > 0) pinnedAny.current = true;
+    track("trophy-multi-pin", { picked: queue.length, landed: landedIds.length, case: caseId ? "extra" : "main" });
+    setSaving(false);
+    if (!failure) {
+      onPinned();
+      return;
+    }
+    setFilled((f) => [...f, ...landedSlots]);
+    setPinnedHere((p) => [...p, ...landedIds]);
+    setPicked((p) => p.filter((m) => !landedIds.includes(m.moment_id)));
+    setPickError(
+      landedIds.length > 0 ? `Pinned ${landedIds.length} of ${queue.length}. ${failure}` : failure
+    );
+  }, [picked, remaining, postPin, caseId, onPinned]);
 
   // Resolve the pasted id against the real moment resolver (get_moment_detail
   // via /api/moment/<id>) rather than searching your top-96. On a miss we show
@@ -487,7 +558,7 @@ export default function TrophyPickerModal({
   return (
     <div
       role="presentation"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+      onClick={(e) => { if (e.target === e.currentTarget) close() }}
       style={{
         position: "fixed",
         inset: 0,
@@ -504,7 +575,7 @@ export default function TrophyPickerModal({
         ref={contentRef}
         role="dialog"
         aria-modal="true"
-        aria-label={`Pin to slot ${slot}`}
+        aria-label={multi ? `Fill ${describeSlots(remaining)}` : `Pin to slot ${slot}`}
         className="bg-[var(--rpc-surface)] border border-[color:var(--rpc-border)] rounded-xl shadow-2xl"
         style={{
           width: "100%",
@@ -532,10 +603,14 @@ export default function TrophyPickerModal({
               textTransform: "uppercase",
             }}
           >
-            {title ? `${title} · slot ${slot}` : `Pin to slot ${slot}`}
+            {multi
+              ? `${title ?? "Trophy case"} · ${remaining.length} empty slot${remaining.length === 1 ? "" : "s"}`
+              : title
+              ? `${title} · slot ${slot}`
+              : `Pin to slot ${slot}`}
           </div>
           <button
-            onClick={onClose}
+            onClick={close}
             aria-label="Close"
             style={{
               background: "transparent",
@@ -619,6 +694,56 @@ export default function TrophyPickerModal({
 
             {pickError && (
               <div style={{ color: "var(--rpc-danger-text)", fontFamily: monoFont, fontSize: 11 }}>{pickError}</div>
+            )}
+          </div>
+        )}
+
+        {tab === "grid" && !pending && multi && (
+          <div
+            data-testid="multi-pick-bar"
+            style={{
+              position: "sticky",
+              top: -20,
+              zIndex: 2,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 10,
+              flexWrap: "wrap",
+              padding: "10px 12px",
+              margin: "0 0 10px",
+              borderRadius: 8,
+              border: "1px solid var(--rpc-border)",
+              background: "var(--rpc-surface-raised)",
+            }}
+          >
+            <div role="status" style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.4 }}>
+              {picked.length === 0
+                ? `Tap up to ${remaining.length} — they fill your empty slots in order.`
+                : `${picked.length} of ${remaining.length} picked → ${describeSlots(remaining.slice(0, picked.length))}`}
+            </div>
+            {picked.length > 0 && (
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPicked([]);
+                    setPickError(null);
+                  }}
+                  disabled={saving}
+                  style={{ ...primaryBtnStyle, background: "transparent", border: "1px solid var(--rpc-border)", color: "var(--rpc-text-primary)" }}
+                >
+                  Clear
+                </button>
+                <button type="button" onClick={() => void pinMany()} disabled={saving} style={primaryBtnStyle}>
+                  {saving ? "Pinning…" : `Pin ${picked.length}`}
+                </button>
+              </div>
+            )}
+            {pickError && (
+              <div role="alert" style={{ flexBasis: "100%", color: "var(--rpc-danger-text)", fontFamily: monoFont, fontSize: 11 }}>
+                {pickError}
+              </div>
             )}
           </div>
         )}
@@ -784,9 +909,25 @@ export default function TrophyPickerModal({
                     m={m}
                     disabled={saving}
                     alreadyPinned={pinnedIds.has(m.moment_id)}
+                    pickedAs={
+                      multi
+                        ? (() => {
+                            const i = picked.findIndex(
+                              (p) => p.moment_id === m.moment_id && p.collection_id === m.collection_id
+                            );
+                            return i >= 0 ? remaining[i] ?? null : null;
+                          })()
+                        : null
+                    }
                     onClick={() => {
                       setPickError(null);
-                      setPending(m);
+                      if (multi) {
+                        setPicked((p) =>
+                          togglePick(p, m, remaining.length, (x) => `${x.collection_id}-${x.moment_id}`)
+                        );
+                      } else {
+                        setPending(m);
+                      }
                     }}
                   />
                 ))}
@@ -829,7 +970,8 @@ export default function TrophyPickerModal({
                 )}
               </div>
             )}
-            {pickError && (
+            {/* Multi-pick shows its error in the sticky bar, beside the button. */}
+            {pickError && !multi && (
               <div
                 style={{
                   color: "var(--rpc-danger-text)",
@@ -984,12 +1126,15 @@ function MomentRow({
   m,
   disabled,
   alreadyPinned,
+  pickedAs = null,
   onClick,
 }: {
   m: PickerMoment;
   disabled: boolean;
   /** Already in another slot — shown as taken, and not clickable. */
   alreadyPinned?: boolean;
+  /** Multi-pick: the slot this pick will land in, or null when not picked. */
+  pickedAs?: number | null;
   onClick: () => void;
 }) {
   const tier = normalizeTier(m.tier);
@@ -1018,6 +1163,7 @@ function MomentRow({
     <button
       onClick={alreadyPinned ? undefined : onClick}
       disabled={inert}
+      aria-pressed={pickedAs != null ? true : undefined}
       title={alreadyPinned ? "Already in your trophy case" : undefined}
       style={{
         display: "flex",
@@ -1027,7 +1173,8 @@ function MomentRow({
         minHeight: 72,
         padding: "8px 10px",
         background: "var(--rpc-surface-raised)",
-        border: "1px solid var(--rpc-border)",
+        border: pickedAs != null ? "1px solid var(--rpc-red-border)" : "1px solid var(--rpc-border)",
+        boxShadow: pickedAs != null ? "0 0 0 1px var(--rpc-red-border)" : undefined,
         borderRadius: 8,
         color: "var(--rpc-text-primary)",
         textAlign: "left",
@@ -1039,9 +1186,31 @@ function MomentRow({
         if (!inert) (e.currentTarget as HTMLButtonElement).style.borderColor = tc;
       }}
       onMouseLeave={(e) => {
-        (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--rpc-border)";
+        (e.currentTarget as HTMLButtonElement).style.borderColor =
+          pickedAs != null ? "var(--rpc-red-border)" : "var(--rpc-border)";
       }}
     >
+      {pickedAs != null && (
+        <span
+          data-testid="picked-slot"
+          style={{
+            position: "absolute",
+            top: 6,
+            right: 8,
+            fontFamily: monoFont,
+            fontSize: 9,
+            fontWeight: 700,
+            letterSpacing: "0.1em",
+            color: "var(--rpc-red-text)",
+            border: "1px solid var(--rpc-red-border)",
+            borderRadius: 999,
+            padding: "1px 7px",
+            background: "var(--rpc-black)",
+          }}
+        >
+          SLOT {pickedAs}
+        </span>
+      )}
       {alreadyPinned && (
         <span
           style={{

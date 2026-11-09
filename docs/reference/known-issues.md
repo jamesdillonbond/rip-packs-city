@@ -413,6 +413,7 @@ File size is #14's subject, not this one's. ⓘ Earlier opening follows. — **O
     |---|---|---|
     | `app/api/fmv-recalc/route.ts` | **2,334** | CLAUDE.md discusses the *route's cost*; the FILE was in no monolith entry |
     | `app/api/sniper-feed/route.ts` | **2,029** | — |
+    | `components/profile/TrophyPickerModal.tsx` | **1,632** (2026-11-08) | crossed 1,500 with the multi-pick change (Dame Time feedback); acknowledged, not scheduled |
     | `app/moment/[id]/page.tsx` | **1,953** | ⚠ **a SERVER page, larger than two of the three tracked above, and — exactly like the pack-dist page — measured by NEITHER coverage gate.** The identical shape, missed the identical way. |
 
     ⚠ **AND ALL THREE TRACKED FILES GREW AGAIN since the 08-24 re-derivation** — `CollectionTabClient` 1,347 → **1,416**, `SniperClient` 1,804 → **1,849**, `CollectionAnalyticsClient` 1,840 → **1,875**. ⭐ That is the second consecutive re-measurement in which every number moved UP, against an entry that once recorded them shrinking. **The trend is the finding; the individual numbers are dated samples.** ⓘ The largest file in the repo, `app/api/support-chat/route.ts` (**4,526**), and `DashboardClient.tsx` (**2,836**, item #10) were already named and are unchanged in status.

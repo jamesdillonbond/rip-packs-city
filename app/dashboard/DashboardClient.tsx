@@ -30,6 +30,7 @@ import TrophyPickerModal from "@/components/profile/TrophyPickerModal";
 import TrophyNoteEditor from "@/components/profile/TrophyNoteEditor";
 import TrophyCasesPanel from "@/components/profile/TrophyCasesPanel";
 import { occupantOfSlot, reorderByDelta, reorderByTarget } from "@/lib/trophy/reorder";
+import { openSlotsOf } from "@/lib/trophy/fill-slots";
 import { savedWalletChains } from "@/lib/trophy-picker-format";
 import { challengeFocusFromUrl } from "@/lib/trophy/challenge-link";
 import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
@@ -1446,6 +1447,10 @@ function ProfilePageInner() {
           // Resolved by the slab's OWN `slot`, never by array position — see
           // occupantOfSlot for why the index form names the wrong trophy.
           replacingName={occupantOfSlot(slabs, pinSlot)?.player_name ?? null}
+          // Multi-pick fills the main case's empty slots too — but only when
+          // the slab read succeeded; on a failed/loading read we cannot say
+          // which slots are empty, so it stays one-at-a-time.
+          openSlots={loading || slabsFailed ? null : openSlotsOf(slabs.map((s) => s?.slot))}
           // null while the wallet read is unknown: the picker says "you haven't
           // added a wallet" only when the list was actually read.
           savedChains={loading || walletsFailed ? null : savedWalletChains(wallets.map((w) => w.wallet_addr), detectAddressChain)}

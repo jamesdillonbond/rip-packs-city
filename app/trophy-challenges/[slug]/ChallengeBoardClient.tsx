@@ -7,6 +7,7 @@
 // challenge) · unknown challenge (404) · loaded, where an empty entry list is
 // genuinely "be the first".
 
+import ChallengeCountdown from "@/components/profile/ChallengeCountdown"
 import Link from "next/link"
 import { useEffect, useState } from "react"
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab"
@@ -159,6 +160,7 @@ export default function ChallengeBoardClient({ slug }: { slug: string }) {
       {challenge.tagline && (
         <p style={{ margin: "0 0 6px", fontSize: 16, color: "var(--rpc-text-primary)" }}>{challenge.tagline}</p>
       )}
+      {open && <ChallengeCountdown endsAt={challenge.ends_at} />}
       {challenge.description && (
         <p style={{ margin: "0 0 16px", fontFamily: monoFont, fontSize: 12, lineHeight: 1.6, color: "var(--rpc-text-muted)", maxWidth: 720 }}>
           {challenge.description}

@@ -20,8 +20,10 @@ import TrophyNoteEditor from "@/components/profile/TrophyNoteEditor";
 import { apiErrorMessage } from "@/lib/api-error-message";
 import { MAX_CASE_NAME_LEN, MAX_EXTRA_CASES } from "@/lib/trophy/cases";
 import { mainCaseCandidates, parseChallengeRules } from "@/lib/trophy/challenge-rules";
+import { openSlotsOf } from "@/lib/trophy/fill-slots";
 import { challengeAnchorId, challengeCaseSharePath, challengeFocusFromUrl } from "@/lib/trophy/challenge-link";
 import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
+import ChallengeCountdown from "@/components/profile/ChallengeCountdown";
 import { pinsToken } from "@/lib/og/card-url";
 
 const condensedFont = "var(--font-display)";
@@ -139,22 +141,27 @@ export default function TrophyCasesPanel({
   const [startingCase, setStartingCase] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const refresh = useCallback(async () => {
+  // Returns the cases it read (null on a failed read), so a caller that just
+  // created one can open its picker without a second fetch.
+  const refresh = useCallback(async (): Promise<TrophyCaseData[] | null> => {
     try {
       const res = await fetch("/api/profile/trophy-cases", { cache: "no-store" });
       if (!res.ok) throw new Error(String(res.status));
       const d = await res.json();
+      const cases: TrophyCaseData[] = Array.isArray(d?.cases) ? d.cases : [];
       setLoad({
         state: "ok",
-        cases: Array.isArray(d?.cases) ? d.cases : [],
+        cases,
         challenges: Array.isArray(d?.challenges) ? d.challenges : null,
         board: boardListingOf(d),
         // The owner's public handle — the share link is /profile/<it>/… — or
         // null (none set, or unknown): then no share link is offered.
         username: typeof d?.board_username === "string" && d.board_username ? d.board_username : null,
       });
+      return cases;
     } catch {
       setLoad((prev) => (prev.state === "ok" ? prev : { state: "failed" }));
+      return null;
     }
   }, []);
 
@@ -265,6 +272,42 @@ export default function TrophyCasesPanel({
     [copyFromMain, onToast, refresh]
   );
 
+  // "Enter" (2026-11-08): entering used to create an EMPTY case and stop there.
+  // Both outside entrants that evening skipped it, filled their MAIN case one
+  // modal per slot with the search box reset each time, then copied it over —
+  // and said so ("I had to search each time", "only let me select one at a
+  // time"). Entering now opens the challenge's picker straight away:
+  // pre-searched for its player, every empty slot fillable in one go.
+  const enterAndPick = useCallback(
+    async (ch: TrophyChallengeInfo) => {
+      setBusy(true);
+      let created = false;
+      try {
+        const res = await fetch("/api/profile/trophy-cases", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ challengeSlug: ch.slug }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          onToast(apiErrorMessage(data, res.status), "info");
+          return;
+        }
+        created = true;
+        onToast(`Entered ${ch.title}`, "success");
+      } catch {
+        onToast("Couldn't reach the server — try again.", "info");
+      } finally {
+        setBusy(false);
+      }
+      if (!created) return;
+      const cases = await refresh();
+      const entry = cases?.find((c) => c.challenge?.slug === ch.slug);
+      if (entry) setPick({ c: entry, slot: 1 });
+    },
+    [onToast, refresh]
+  );
+
   const send = useCallback(
     async (url: string, method: string, body: unknown, okText: string): Promise<boolean> => {
       setBusy(true);
@@ -361,6 +404,9 @@ export default function TrophyCasesPanel({
             {ch.tagline && (
               <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", marginTop: 2 }}>{ch.tagline}</div>
             )}
+            <div style={{ marginTop: 4 }}>
+              <ChallengeCountdown endsAt={ch.ends_at} compact />
+            </div>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {(() => {
@@ -383,7 +429,7 @@ export default function TrophyCasesPanel({
             <button
               type="button"
               disabled={busy || atCap}
-              onClick={() => send("/api/profile/trophy-cases", "POST", { challengeSlug: ch.slug }, `Entered ${ch.title}`)}
+              onClick={() => void enterAndPick(ch)}
               style={{ ...btn, borderColor: "var(--rpc-red-border)", color: "var(--rpc-red-text)" }}
             >
               Enter
@@ -483,6 +529,7 @@ export default function TrophyCasesPanel({
           }}
           pinnedMomentIds={pick.c.slabs.map((s) => s.moment_id)}
           replacingName={slotsOf(pick.c.slabs)[pick.slot - 1]?.player_name ?? null}
+          openSlots={openSlotsOf(pick.c.slabs.map((s) => s.slot))}
           savedChains={savedChains}
         />
       )}
@@ -577,6 +624,7 @@ function CaseBlock({
               {entryStatusCopy(filled, board)}
             </Link>
           )}
+          {ch && filled < 6 && <ChallengeCountdown endsAt={ch.ends_at} compact />}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontFamily: monoFont, fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.15em" }}>{filled} / 6</span>

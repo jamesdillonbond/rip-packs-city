@@ -119,6 +119,24 @@ describe("TrophyCasesPanel (owner dashboard)", () => {
     expect(JSON.parse(post.init.body)).toEqual({ challengeSlug: "dame-time" })
   })
 
+  it("Enter opens the challenge's picker right away — pre-searched, every slot fillable at once", async () => {
+    let entered = false
+    routes["GET /api/profile/trophy-cases"] = () =>
+      ok(entered ? { cases: [{ id: CASE, name: "Dame Time", challenge: DAME, slabs: [] }], challenges: [DAME] } : { cases: [], challenges: [DAME] })
+    routes["POST /api/profile/trophy-cases"] = () => {
+      entered = true
+      return ok({ case: { id: CASE } })
+    }
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} />)
+    fireEvent.click(await screen.findByText("Enter"))
+    await screen.findByTestId("picker")
+    const p = picker.mock.calls.at(-1)![0]
+    expect(p.caseId).toBe(CASE)
+    expect(p.slot).toBe(1)
+    expect(p.initialQuery).toBe("Damian Lillard")
+    expect(p.openSlots).toEqual([1, 2, 3, 4, 5, 6])
+  })
+
   it("⚠ deep link: ?challenge=<slug> (survives the login bounce, unlike a hash) scrolls to the row, highlights it, and the challenge row is the target — not the panel top", async () => {
     const scrolled: string[] = []
     const orig = (Element.prototype as any).scrollIntoView

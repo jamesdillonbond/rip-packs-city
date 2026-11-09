@@ -144,8 +144,20 @@ async function logRun(args: {
   }
 }
 
-async function loadCachedMomentIds(wallet: string): Promise<Set<string>> {
+// Returns EVERY cached id (`all` — the unseen-delete's presence snapshot) and
+// the subset already ENRICHED with an edition_key (`enriched` — what the skip
+// may skip).
+//
+// ⛔ 2026-11-08 (Dame Time): this was a presence-only Set, so a Moment whose
+// metadata read failed once kept edition_key NULL FOREVER — the row existed, so
+// every later skip_cached walk skipped it. 2,987 Top Shot Moments in saved
+// wallets sat unnamed and unsearchable; collectors could not find their own
+// Dame commons in the challenge picker. The multi-collection walkers were
+// fixed for exactly this class on 2026-08-02 (loadCachedMomentIdsAndKeys in
+// lib/chains/flow/wallet-backfill-helpers.ts); the Top Shot route never was.
+async function loadCachedMomentIds(wallet: string): Promise<{ all: Set<string>; enriched: Set<string> }> {
   const ids = new Set<string>()
+  const enriched = new Set<string>()
   const PAGE = 1000
   // Keyset paging on moment_id over the unique (wallet, collection, moment_id)
   // index — LIMIT/OFFSET re-walked the prefix on every page (O(n²) on whales).
@@ -154,21 +166,24 @@ async function loadCachedMomentIds(wallet: string): Promise<Set<string>> {
   while (true) {
     let q = (supabaseAdmin as any)
       .from("wallet_moments_cache")
-      .select("moment_id")
+      .select("moment_id, edition_key")
       .eq("wallet_address", wallet)
       .eq("collection_id", NBA_TOP_SHOT_UUID)
     if (after != null) q = q.gt("moment_id", after)
     const { data, error } = await q.order("moment_id", { ascending: true }).limit(PAGE)
     if (error) {
       console.warn(`[wallet-backfill] cached-id read failed: ${error.message}`)
-      return ids
+      return { all: ids, enriched }
     }
-    const rows = (data ?? []) as Array<{ moment_id: string }>
-    for (const r of rows) ids.add(String(r.moment_id))
+    const rows = (data ?? []) as Array<{ moment_id: string; edition_key: string | null }>
+    for (const r of rows) {
+      ids.add(String(r.moment_id))
+      if (r.edition_key) enriched.add(String(r.moment_id))
+    }
     if (rows.length < PAGE) break
     after = String(rows[rows.length - 1].moment_id)
   }
-  return ids
+  return { all: ids, enriched }
 }
 
 // How stale a wallet's cross-collection stats may get when a run changed
@@ -370,9 +385,12 @@ async function runBackfill(
     // written every run: wallet_backfill_state.last_scanned_at, per wallet +
     // collection (record_wallet_backfill_scan below). Read ownership freshness
     // with check_wmc_ownership_freshness() — set-returning, 0 rows = clean.
-    const cachedIds = skipCached ? await loadCachedMomentIds(wallet) : new Set<string>()
+    const cached = skipCached ? await loadCachedMomentIds(wallet) : { all: new Set<string>(), enriched: new Set<string>() }
+    const cachedIds = cached.all
+    // Skip only rows that already HAVE an edition_key; a key-less row is walked
+    // again until its metadata lands (see loadCachedMomentIds).
     const idsToWalk = skipCached
-      ? onChainIds.filter((id) => !cachedIds.has(String(id)))
+      ? onChainIds.filter((id) => !cached.enriched.has(String(id)))
       : onChainIds
     totalSkippedCached = onChainIds.length - idsToWalk.length
 
