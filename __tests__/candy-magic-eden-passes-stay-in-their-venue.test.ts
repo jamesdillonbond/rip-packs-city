@@ -49,10 +49,17 @@ describe("Magic Eden Candy passes stay in their venue", () => {
     expect(src("app/api/candy-listings-indexer/route.ts")).toMatch(/is_active: true,\s*venue: "magic_eden"/)
   })
 
+  // Re-pinned 2026-11-08: the Base walk's cursor moved from an inline max(sold_at) read to
+  // candy_sales_high_water(<Base set>) — the per-set read the later sets already used — so a
+  // newer All-Star / Gold / legacy-collection sale cannot jump it either. The venue scope
+  // now lives in that function's body; both halves are pinned.
   it("candy-sales: the high-water cursor read is marketplace='magic_eden'", () => {
     const code = src("app/api/candy-sales-indexer/route.ts")
-    const hw = chainAround(code, '.select("sold_at")')
-    expect(hw).toContain('.eq("marketplace", "magic_eden")')
+    expect(code).toMatch(/rpc\("candy_sales_high_water", \{\s*p_set_id: CANDY_BASE_SET_ID,?\s*\}\)/)
+    expect(code).not.toContain('.select("sold_at")')
+    const fn = readFileSync(join(process.cwd(), "supabase/migrations/20261108190334_audit_20261108_candy_multi_set_catalog.sql"), "utf8")
+    const body = fn.slice(fn.indexOf("FUNCTION public.candy_sales_high_water"))
+    expect(body.slice(0, 800)).toContain("s.marketplace = 'magic_eden'")
   })
 
   it("pack asks and pack sales: ME pack retirement scoped, every writer pins its venue", () => {

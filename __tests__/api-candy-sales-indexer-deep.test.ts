@@ -41,6 +41,7 @@ vi.mock("next/server", async (importOriginal) => {
 })
 // Base set only by default: the later-set walks (2026-11-08) have their own tests.
 vi.mock("@/lib/chains/solana/candy-sets", () => ({
+  CANDY_BASE_SET_ID: "base-set",
   CANDY_SETS: [{ key: "base26", setId: "base-set", meSymbol: "candy-mlb-icons", editionKeyPrefix: null }],
 }))
 vi.mock("@/lib/supabase", () => ({
@@ -157,7 +158,7 @@ describe("candy-sales-indexer — the Magic Eden walk is time-bounded", () => {
   // satisfied by the comment you are reading.
   it("passes an abort signal on every Magic Eden request", async () => {
     fetchMock = installFetchMock([jsonRoute("magiceden.dev", [])])
-    install({ sales: [{ data: [], error: null }] })
+    install({ sales: [] })
 
     await POST(req())
     await runDeferred()
@@ -184,8 +185,8 @@ describe("candy-sales-indexer — ingest ladder", () => {
     state.assets = { mintA: { key: "mlb-icons:trout", serial: 12 } }
     fetchMock = installFetchMock([jsonRoute("magiceden.dev", acts)])
     const spy = install({
+      "rpc:candy_sales_high_water": { data: "2023-06-01T00:00:00Z", error: null }, // high-water read (older than the sale)
       sales: [
-        { data: [{ sold_at: "2023-06-01T00:00:00Z" }], error: null }, // high-water read (older than the sale)
         { data: null, error: null }, // insert
       ],
       editions: { data: [{ id: "ed-trout" }], error: null },
@@ -237,7 +238,7 @@ describe("candy-sales-indexer — ingest ladder", () => {
       { signature: "x3", type: "delist", tokenMint: "m3", blockTime: 1_700_000_100 },
     ]
     fetchMock = installFetchMock([jsonRoute("magiceden.dev", acts)])
-    const spy = install({ sales: [{ data: [{ sold_at: "2023-06-01T00:00:00Z" }], error: null }] })
+    const spy = install({ "rpc:candy_sales_high_water": { data: "2023-06-01T00:00:00Z", error: null } })
 
     await POST(req())
     await runDeferred()
@@ -260,7 +261,7 @@ describe("candy-sales-indexer — ingest ladder", () => {
     fetchMock = installFetchMock([jsonRoute("magiceden.dev", acts)])
     const cutoffIso = new Date(1_700_000_200 * 1000).toISOString()
     const spy = install({
-      sales: [{ data: [{ sold_at: cutoffIso }], error: null }, { data: null, error: null }],
+      "rpc:candy_sales_high_water": { data: cutoffIso, error: null }, sales: [{ data: null, error: null }],
       editions: { data: [{ id: "ed-judge" }], error: null },
     })
 
@@ -286,7 +287,7 @@ describe("candy-sales-indexer — ingest ladder", () => {
     }
     fetchMock = installFetchMock([jsonRoute("magiceden.dev", acts)])
     const spy = install({
-      sales: [{ data: [], error: null }, { data: null, error: null }],
+      sales: [{ data: null, error: null }],
       editions: { data: [], error: null }, // m3 edition lookup miss
     })
 
@@ -306,7 +307,7 @@ describe("candy-sales-indexer — ingest ladder", () => {
       { signature: "sr", type: "acceptBid", tokenMint: "mr", price: 0.3, blockTime: 1_700_000_100 },
     ]
     fetchMock = installFetchMock([jsonRoute("magiceden.dev", acts)])
-    const spy = install({ sales: [{ data: [], error: null }] })
+    const spy = install({ sales: [] })
 
     await POST(req())
     await runDeferred()
@@ -325,7 +326,6 @@ describe("candy-sales-indexer — ingest ladder", () => {
     fetchMock = installFetchMock([jsonRoute("magiceden.dev", acts)])
     const spy = install({
       sales: [
-        { data: [], error: null }, // high-water read
         // batch insert 23505; the per-row retry re-hits it (last entry repeats)
         { error: { code: "23505", message: "dupe tx" } },
       ],
@@ -354,7 +354,6 @@ describe("candy-sales-indexer — ingest ladder", () => {
     fetchMock = installFetchMock([jsonRoute("magiceden.dev", acts)])
     const spy = install({
       sales: [
-        { data: [], error: null }, // high-water read
         { error: { code: "23505", message: "dupe tx" } }, // batch insert fails on the dupe
         { error: { code: "23505", message: "dupe tx" } }, // per-row: the dupe, skipped
         { data: null, error: null }, // per-row: the NEW sale, lands
@@ -375,7 +374,7 @@ describe("candy-sales-indexer — ingest ladder", () => {
 
   it("a fatal ME activities error logs ok=false with the message", async () => {
     fetchMock = installFetchMock([jsonRoute("magiceden.dev", { error: "rate limited" }, { status: 429, ok: false })])
-    const spy = install({ sales: [{ data: [], error: null }] })
+    const spy = install({ sales: [] })
 
     await POST(req())
     await runDeferred()
@@ -403,7 +402,7 @@ describe("candy-sales-indexer — dead letter", () => {
     state.assets = { mMiss: { key: "mlb-icons:notyet", serial: 9 } }
     fetchMock = installFetchMock([jsonRoute("magiceden.dev", acts)])
     const spy = install({
-      sales: [{ data: [], error: null }],
+      sales: [],
       editions: { data: [], error: null }, // edition not ingested yet
     })
 
@@ -440,7 +439,7 @@ describe("candy-sales-indexer — dead letter", () => {
     state.assets = { mDust: { key: "mlb-icons:trout", serial: 7 } }
     fetchMock = installFetchMock([jsonRoute("magiceden.dev", acts)])
     const spy = install({
-      sales: [{ data: [], error: null }],
+      sales: [],
       editions: { data: [{ id: "ed-trout" }], error: null },
       candy_sales_unresolved: [
         { data: null, error: null }, // the terminal close-out UPDATE
@@ -476,7 +475,7 @@ describe("candy-sales-indexer — dead letter", () => {
     state.assets = { mOld: { key: "mlb-icons:judge", serial: 44 } }
     fetchMock = installFetchMock([jsonRoute("magiceden.dev", acts)])
     const spy = install({
-      sales: [{ data: [], error: null }, { data: null, error: null }],
+      sales: [{ data: null, error: null }],
       editions: { data: [{ id: "ed-judge" }], error: null },
       candy_sales_unresolved: [
         {
@@ -526,7 +525,7 @@ describe("candy-sales-indexer — dead letter", () => {
     state.assets = { mDupe: { key: "mlb-icons:judge", serial: 7 } }
     fetchMock = installFetchMock([jsonRoute("magiceden.dev", acts)])
     const spy = install({
-      sales: [{ data: [], error: null }, { data: null, error: { code: "23505", message: "dupe" } }],
+      sales: [{ data: null, error: { code: "23505", message: "dupe" } }],
       editions: { data: [{ id: "ed-judge" }], error: null },
       candy_sales_unresolved: [
         {
@@ -550,7 +549,7 @@ describe("candy-sales-indexer — dead letter", () => {
 
   it("reports ok=false when ME returns an entirely empty activities feed", async () => {
     fetchMock = installFetchMock([jsonRoute("magiceden.dev", [])])
-    const spy = install({ sales: [{ data: [], error: null }] })
+    const spy = install({ sales: [] })
 
     await POST(req())
     await runDeferred()
@@ -577,7 +576,7 @@ describe("candy-sales-indexer — sealed-pack sales", () => {
     state.assets = { mPack: { key: "", serial: null, pack: true } }
     fetchMock = installFetchMock([jsonRoute("magiceden.dev", acts)])
     const spy = install({
-      sales: [{ data: [], error: null }],
+      sales: [],
       candy_sales_unresolved: [{ data: [], error: null }, { data: null, error: null, count: 0 }],
     })
 
@@ -616,7 +615,7 @@ describe("candy-sales-indexer — sealed-pack sales", () => {
     state.assets = { mPackF: { key: "", serial: null, pack: true } }
     fetchMock = installFetchMock([jsonRoute("magiceden.dev", acts)])
     const spy = install({
-      sales: [{ data: [], error: null }],
+      sales: [],
       candy_pack_sales: [{ data: null, error: { message: "permission denied" } }],
       candy_sales_unresolved: [{ data: [], error: null }, { data: null, error: null, count: 0 }],
     })
@@ -657,7 +656,7 @@ describe("candy-sales-indexer — a failed backlog count reports null, never 0",
     state.assets = { mCnt: { key: "mlb-icons:trout", serial: 7 } }
     fetchMock = installFetchMock([jsonRoute("magiceden.dev", acts)])
     const spy = install({
-      sales: [{ data: [], error: null }],
+      sales: [],
       editions: { data: [{ id: "ed-trout" }], error: null },
       candy_sales_unresolved: [
         { data: [], error: null }, // drain read — nothing parked
@@ -690,7 +689,7 @@ describe("candy-sales-indexer — a failed backlog count reports null, never 0",
     state.assets = { mEd: { key: "mlb-icons:trout", serial: 11 } }
     fetchMock = installFetchMock([jsonRoute("magiceden.dev", acts)])
     const spy = install({
-      sales: [{ data: [], error: null }],
+      sales: [],
       editions: { data: null, error: { message: "editions boom" } },
       candy_sales_unresolved: [{ data: [], error: null }],
     })
@@ -705,7 +704,7 @@ describe("candy-sales-indexer — a failed backlog count reports null, never 0",
   })
 
   it("a failed HIGH-WATER read fails the run instead of restarting the walk from zero", async () => {
-    // ⛔ This read IS the cursor: `max(sold_at)` over Candy sales. A failure fell
+    // ⛔ This read IS the cursor: the Base set's high water (candy_sales_high_water). A failure fell
     // through to `cursorBeforeMs = 0`, indistinguishable from "we have no Candy
     // sales yet", and the sweep would then walk the entire ME activities feed
     // from the beginning against a bounded page budget — spending the whole tick
@@ -716,7 +715,7 @@ describe("candy-sales-indexer — a failed backlog count reports null, never 0",
     state.assets = { mHw: { key: "mlb-icons:trout", serial: 10 } }
     fetchMock = installFetchMock([jsonRoute("magiceden.dev", acts)])
     const spy = install({
-      sales: [{ data: null, error: { message: "high-water boom" } }],
+      "rpc:candy_sales_high_water": { data: null, error: { message: "high-water boom" } },
       editions: { data: [{ id: "ed-trout" }], error: null },
       candy_sales_unresolved: [{ data: [], error: null }],
     })
@@ -741,7 +740,7 @@ describe("candy-sales-indexer — a failed backlog count reports null, never 0",
     state.assets = { mDrain: { key: "mlb-icons:trout", serial: 9 } }
     fetchMock = installFetchMock([jsonRoute("magiceden.dev", acts)])
     const spy = install({
-      sales: [{ data: [], error: null }],
+      sales: [],
       editions: { data: [{ id: "ed-trout" }], error: null },
       candy_sales_unresolved: [{ data: null, error: { message: "park queue boom" } }],
     })
@@ -763,7 +762,7 @@ describe("candy-sales-indexer — a failed backlog count reports null, never 0",
     state.assets = { mCnt2: { key: "mlb-icons:trout", serial: 8 } }
     fetchMock = installFetchMock([jsonRoute("magiceden.dev", acts)])
     const spy = install({
-      sales: [{ data: [], error: null }],
+      sales: [],
       editions: { data: [{ id: "ed-trout" }], error: null },
       candy_sales_unresolved: [
         { data: [], error: null },

@@ -9,6 +9,11 @@ import { makeReq } from "./cron-req-helper"
 // walk deferred to after() (stubbed no-op). candyDiscoveryReady is mocked via a
 // hoisted flag so both 202 shapes are covered. Mocks supabaseAdmin + the Solana
 // DAS/normalize libs.
+//
+// 2026-11-08: the route now delegates to lib/candy/refresh-wallet.ts (the shared walk). These
+// tests deliberately run THROUGH it — only the data sources are mocked — so every property
+// below (collection filter, burnt/pack skip, owner stamping, write and listings honesty, the
+// 429 retry) is still proven at the route, and retirement runs only behind a complete walk.
 
 // The real Base Series address: membership is decided by lib/chains/solana/candy-sets.ts (2026-11-08).
 const COLL = "JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n"
@@ -23,6 +28,7 @@ const state = vi.hoisted(() => ({
   assets: {} as Record<string, any>,
   upserted: [] as any[][],
   throttleOnce: new Set<string>(),
+  otherRpcs: [] as string[],
 }))
 
 vi.mock("next/server", async (importOriginal) => {
@@ -31,10 +37,21 @@ vi.mock("next/server", async (importOriginal) => {
 })
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
-    rpc: async (_n: string, args: any) => { state.runs.push(args); return { data: null, error: null } },
+    rpc: async (n: string, args: any) => {
+      if (n === "log_pipeline_run") state.runs.push(args)
+      else state.otherRpcs.push(n)
+      return { data: null, error: null }
+    },
     from: (table: string) => {
       if (table === "candy_listings") {
         const b: any = { select: () => b, eq: () => b, order: () => b, limit: async () => state.listings }
+        return b
+      }
+      if (table === "editions") {
+        const b: any = {
+          select: () => b, eq: () => b, in: async () => ({ data: [], error: null }),
+          upsert: (rows: any[]) => ({ select: async () => ({ data: rows.map((r) => ({ external_id: r.external_id })), error: null }) }),
+        }
         return b
       }
       return { upsert: (rows: any[]) => { state.upserted.push(rows); return { select: async () => state.upsert } } }
@@ -42,10 +59,11 @@ vi.mock("@/lib/supabase", () => ({
   },
 }))
 vi.mock("@/lib/chains/solana/das", () => ({
-  paginateOwner: async (_w: string, cb: (items: any[]) => Promise<void>) => {
+  getAssetsByOwner: async (_w: string, page: number) => {
     if (state.paginateThrows) throw new Error("DAS down")
-    for (const page of state.pages) await cb(page)
+    return { items: state.pages[page - 1] ?? [], total: 0, limit: 1000, page }
   },
+  getAssetBatch: async () => [],
   getAsset: async (id: string) => {
     if (state.throttleOnce.has(id)) { state.throttleOnce.delete(id); throw new Error("DAS getAsset HTTP 429: Too Many Requests") }
     if (!(id in state.assets)) throw new Error("no asset " + id)
@@ -59,7 +77,10 @@ vi.mock("@/lib/chains/solana/normalize", () => ({
   isBurnt: (a: any) => a.kind === "burnt",
   isPack: (a: any) => a.kind === "pack",
   normalizeSerial: (a: any) => ({ moment_id: a.m ?? null, wallet_address: a.owner ?? null, collection_id: "c1" }),
+  normalizeEdition: (a: any) => ({ external_id: "k-" + (a.m ?? "x"), collection_id: "c1" }),
+  CANDY_MLB_UUID: "c1",
 }))
+vi.mock("@/lib/candy/collections", () => ({ loadCandyCollections: async () => ({ sets: [], error: null }) }))
 
 import { POST } from "@/app/api/wallet-backfill-candy/route"
 
@@ -143,6 +164,7 @@ describe("POST /api/wallet-backfill-candy — deferred DAS walk", () => {
     state.paginateThrows = false
     state.upsert = { data: [{ moment_id: "m1" }], error: null }
     state.runs = []
+    state.otherRpcs = []
     state.listings = { data: [], error: null }
     state.assets = {}
     state.upserted = []
@@ -222,6 +244,25 @@ describe("POST /api/wallet-backfill-candy — deferred DAS walk", () => {
     const run = state.runs.at(-1)
     expect(run.p_ok).toBe(false)
     expect(run.p_error).toContain("DAS down")
+  })
+
+  // 2026-11-08: via the shared walk, a saved wallet's sold cards are retired — but ONLY
+  // behind a complete walk; a failed DAS walk retires nothing.
+  it("retires the wallet's unseen rows after a complete walk, and never after a failed one", async () => {
+    state.pages = [[asset({ m: "m1" })]]
+    await accept()
+    await state.captured!()
+    expect(state.otherRpcs).toContain("candy_retire_wallet_unseen")
+    expect(state.otherRpcs).toContain("purge_candy_wmc_ghost_rows_for")
+    expect(state.runs.at(-1).p_ok).toBe(true)
+
+    state.otherRpcs = []
+    state.paginateThrows = true
+    await accept()
+    await state.captured!()
+    expect(state.otherRpcs).not.toContain("candy_retire_wallet_unseen")
+    expect(state.runs.at(-1).p_ok).toBe(false)
+    expect(state.runs.at(-1).p_error).toMatch(/walk incomplete: DAS down/)
   })
 
   it("carries the force flag from the body and from ?force=true", async () => {

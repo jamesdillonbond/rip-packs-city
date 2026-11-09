@@ -38,7 +38,7 @@ import {
   normalizeSerial,
 } from "@/lib/chains/solana/normalize"
 import { bearerMatches } from "@/lib/auth/bearer-secret"
-import { CANDY_SETS } from "@/lib/chains/solana/candy-sets"
+import { CANDY_BASE_SET_ID, CANDY_SETS } from "@/lib/chains/solana/candy-sets"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -67,7 +67,14 @@ const ASSET_FETCH_BUDGET = 400
 // Dead-letter drain: rows re-attempted per tick, and the attempt ceiling after
 // which a row stops consuming budget (it stays open and countable, it just
 // stops being retried).
-const DRAIN_LIMIT = 60
+//
+// 300 since 2026-11-08 (was 60): the census now holds every Candy card, so a drained row
+// resolves from wallet_moments_cache + one editions read with NO DAS call, and 60 rows
+// per 3-hourly tick put a 2,267-sale backlog ~5 days from the board. DAS-resolved rows
+// stay bounded by ASSET_FETCH_BUDGET, and the drain stops at DRAIN_DEADLINE_MS so it
+// cannot carry the run past maxDuration (a kill writes no terminal row).
+const DRAIN_LIMIT = 300
+const DRAIN_DEADLINE_MS = 270_000
 const MAX_PARK_ATTEMPTS = 25
 // A sealed-pack sale is permanently unresolvable as an EDITION sale (packs are
 // not editions). Parked and closed in the same breath: the row is kept as the
@@ -230,13 +237,17 @@ async function handleIndex(req: NextRequest) {
       // ⛔ SCOPED TO magic_eden (2026-10-10). /api/candy-opensea-sales-indexer
       // writes Candy sales too; an unscoped max(sold_at) would let a newer
       // OpenSea sale jump this cursor past Magic Eden trades it has not read yet.
-      const { data: latest, error: latestErr } = await (supabaseAdmin as any)
-        .from("sales")
-        .select("sold_at")
-        .eq("collection_id", CANDY_MLB_UUID)
-        .eq("marketplace", "magic_eden")
-        .order("sold_at", { ascending: false })
-        .limit(1)
+      // ⛔ AND SCOPED TO THE BASE SET (2026-11-08). This walk reads the Base Series feed
+      // only, but max(sold_at) over every Candy Magic Eden sale let the later sets move it:
+      // on 11-08 the newest Base sale was 10-11 8:21 PM PT and the cursor stood on an
+      // All-Star sale at 10-12 7:57 AM PT, so a Base sale between the two was skipped for
+      // good — and the non-registry collections lane (candy-collections-market) now feeds
+      // sales of ~400 more collections through the drain. Same per-set high water the
+      // later-set walks below use.
+      const { data: latestHw, error: latestErr } = await (supabaseAdmin as any).rpc("candy_sales_high_water", {
+        p_set_id: CANDY_BASE_SET_ID,
+      })
+      const latest = typeof latestHw === "string" && latestHw ? [{ sold_at: latestHw }] : []
       // ⛔ THIS READ IS THE CURSOR. supabase-js RETURNS its errors, so a failed
       // read fell through to `cursorBeforeMs = 0` — indistinguishable from "we
       // have no Candy sales yet" — and the sweep would then walk the WHOLE
@@ -714,6 +725,7 @@ async function handleIndex(req: NextRequest) {
       }
       for (const r of owed ?? []) {
         if (assetFetches >= ASSET_FETCH_BUDGET) break
+        if (Date.now() - startedMs > DRAIN_DEADLINE_MS) break
         drainAttempted++
         const tMs = r.block_time ? new Date(r.block_time).getTime() : 0
         const price = r.price_sol == null ? null : Number(r.price_sol)

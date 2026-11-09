@@ -8,10 +8,9 @@
 // this route, a card bought or pulled today was missing, a card sold today was still
 // shown, and a wallet created since the last census showed nothing at all.
 //
-// The walk is lib/candy/refresh-wallet.ts — the same steps as the bearer-gated
-// /api/wallet-backfill-candy (fired when a signed-in user saves a wallet), which still
-// carries its own copy; moving that route onto this lib is a follow-up. This route adds
-// retirement: only after a COMPLETE walk
+// The walk is lib/candy/refresh-wallet.ts — shared since 2026-11-08 with the bearer-gated
+// /api/wallet-backfill-candy (fired when a signed-in user saves a wallet). Both retire:
+// only after a COMPLETE walk
 // are the wallet's untouched rows (cards it no longer holds) retired. An incomplete
 // walk retires nothing and says so (`complete: false`), and the tab then tells the
 // reader it is showing the last daily read.

@@ -31,7 +31,7 @@ vi.mock("next/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("next/server")>()
   return { ...actual, after: (cb: () => unknown) => void state.afterCbs.push(cb) }
 })
-vi.mock("@/lib/chains/solana/candy-sets", () => ({ get CANDY_SETS() { return state.sets } }))
+vi.mock("@/lib/chains/solana/candy-sets", () => ({ CANDY_BASE_SET_ID: "base-set", get CANDY_SETS() { return state.sets } }))
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: new Proxy(
     {},
@@ -99,8 +99,9 @@ describe("candy-sales-indexer — later Candy sets", () => {
     fetchMock = installFetchMock([jsonRoute("asg-symbol", asgActs), jsonRoute("candy-mlb-icons", [{ signature: "b1", type: "list", tokenMint: "m", blockTime: 1 }])])
     const spy = install({
       sales: [{ data: [], error: null }, { data: null, error: null }],
-      // The set's own high-water: sigOld is at/under it and must stop the walk.
-      "rpc:candy_sales_high_water": { data: new Date(1_800_000_000 * 1000).toISOString(), error: null },
+      // 1) the Base walk's own high-water (none) 2) the set's own high-water: sigOld is
+      // at/under it and must stop the walk.
+      "rpc:candy_sales_high_water": [{ data: null, error: null }, { data: new Date(1_800_000_000 * 1000).toISOString(), error: null }],
       wallet_moments_cache: { data: [{ edition_key: "asg26:shohei-ohtani-rare", serial_number: 17 }], error: null },
       // 1) the set's catalog exists (count) 2) the edition lookup
       editions: [{ data: null, error: null, count: 40 }, { data: [{ id: "ed-asg" }], error: null }],
@@ -109,7 +110,9 @@ describe("candy-sales-indexer — later Candy sets", () => {
     await runDeferred()
 
     expect(fetchMock.calls.some((c) => c.url.includes("/collections/asg-symbol/activities"))).toBe(true)
-    expect(spy.rpcCalls.find((c) => c.name === "candy_sales_high_water")?.args).toEqual({ p_set_id: "asg-set" })
+    // Each walk reads ITS OWN set's high water — the Base walk too (2026-11-08: a shared
+    // max(sold_at) let a later set's newer sale skip Base sales).
+    expect(spy.rpcCalls.filter((c) => c.name === "candy_sales_high_water").map((c) => c.args)).toEqual([{ p_set_id: "base-set" }, { p_set_id: "asg-set" }])
     const rows = (spy.writes.sales ?? []).flatMap((w) => w.rows)
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({ transaction_hash: "sigNew", edition_id: "ed-asg", serial_number: 17, price_usd: 300 })
@@ -124,7 +127,7 @@ describe("candy-sales-indexer — later Candy sets", () => {
     fetchMock = installFetchMock([jsonRoute("magiceden.dev", [{ signature: "x", type: "list", blockTime: 1 }])])
     const spy = install({
       sales: [{ data: [], error: null }],
-      "rpc:candy_sales_high_water": { data: null, error: { message: "hw boom" } },
+      "rpc:candy_sales_high_water": [{ data: null, error: null }, { data: null, error: { message: "hw boom" } }],
       editions: [{ data: null, error: null, count: 40 }],
     })
     await POST(req())

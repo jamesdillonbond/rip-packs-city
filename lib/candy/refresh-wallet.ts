@@ -6,9 +6,9 @@
 // Why: the Collection tab answers a Candy search from wallet_moments_cache, which
 // only the DAILY census (5:10 PM PT) refreshes. A collector who bought, opened a
 // pack or moved cards since then searched their own address and saw the
-// yesterday-shaped answer — or nothing at all for a wallet created since. The
-// only per-wallet walk (app/api/wallet-backfill-candy) is bearer-gated and fired
-// only when a signed-in user SAVES a wallet.
+// yesterday-shaped answer — or nothing at all for a wallet created since. Two callers
+// (2026-11-08): the anonymous /api/candy/wallet-refresh (a pasted address) and the
+// bearer-gated /api/wallet-backfill-candy (a signed-in user SAVES a wallet).
 //
 // What it does, in order:
 //   1. getAssetsByOwner, every page, filtered to the Candy sets we track
