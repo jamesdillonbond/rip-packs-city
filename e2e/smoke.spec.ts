@@ -93,6 +93,7 @@ const PAGES: PageCheck[] = [
   { path: "/insights/cross-collection", name: "insights · cross collection" },
   { path: "/insights/first-mint", name: "insights · first mint" },
   { path: "/insights/market-pulse", name: "insights · market pulse" },
+  { path: "/insights/drops", name: "insights · pack drops this week" },
   { path: "/insights/new-collectors", name: "insights · new collectors" },
   { path: "/insights/offer-spread", name: "insights · offer spread" },
   { path: "/insights/pack-drops", name: "insights · pack drops" },

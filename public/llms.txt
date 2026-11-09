@@ -17,6 +17,7 @@ Each board is a schema.org Dataset (or WebApplication for the wallet tools); mos
 - /insights/squeeze-check — What's Liquid In Your Bag? Paste a Flow wallet and see how much of its Top Shot collection is liquid vs challenge-locked or burned.
 - /insights/market-cap — Market Cap. FMV times collector-held supply for each Flow collection and its players, teams, sets, series, tiers and badges.
 - /insights/market — The RPC Index. A tier-segmented daily market index for NBA Top Shot built from real secondary-market sales.
+- /insights/drops — Pack Drops This Week. Every pack drop open now or starting in the next 7 days across NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos, Panini and Candy MLB, with retail price and closing times in Pacific Time.
 - /insights/market-pulse — Market Pulse. Per-collection Flow secondary-market volume, sales, buyers and sellers across 24h/7d/30d.
 - /insights/deals — Below FMV. Top Shot, All Day and Pinnacle editions listed below a fair value priced from recent corroborated sales, ranked by discount.
 - /insights/offer-spread — Bid vs Floor. NBA Top Shot editions ranked by how tightly the top standing offer meets the floor ask.

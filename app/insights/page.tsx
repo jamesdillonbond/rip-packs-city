@@ -361,6 +361,15 @@ const CARDS: Card[] = [
     available: true,
   },
   {
+    slug: "/insights/drops",
+    eyebrow: "Live",
+    title: "Pack Drops This Week",
+    blurb:
+      "Every pack drop open now or starting in the next 7 days across Top Shot, All Day, Pinnacle, Golazos, Panini and Candy MLB — retail price and when pre-orders close or the drop opens, in Pacific Time. Drops whose packs are already delivered move to 'ended'.",
+    cta: "See this week's drops",
+    available: true,
+  },
+  {
     slug: "/insights/market-pulse",
     eyebrow: "Live",
     title: "Market Pulse",

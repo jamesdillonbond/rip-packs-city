@@ -73,6 +73,7 @@ export const IA_GROUPS: readonly IaGroup[] = [
     page: "packs",
     items: [
       { label: "Pack EV", href: "/{collection}/packs", page: "packs", hint: "Expected value per pack, by drop" },
+      { label: "Drops this week", href: "/insights/drops", hint: "Every pack drop open now or starting this week" },
       { label: "Pack Sniper", href: "/{collection}/pack-sniper", page: "pack-sniper" },
       { label: "Pack drops", href: "/insights/pack-drops" },
       { label: "Pack reality", href: "/insights/pack-reality" },

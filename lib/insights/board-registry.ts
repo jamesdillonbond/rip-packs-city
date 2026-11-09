@@ -184,6 +184,15 @@ export const INSIGHTS_BOARDS: readonly InsightsBoard[] = [
     publicApi: true,
   },
   {
+    slug: "drops",
+    kind: "dataset",
+    name: "Pack Drops This Week",
+    description:
+      "Every pack drop open now or starting in the next 7 days across NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos, Panini and Candy MLB — retail price and when pre-orders close or the drop opens, in Pacific Time.",
+    // Its JSON is /api/public/insights/pack-calendar (a different slug), so no DataDownload here.
+    publicApi: false,
+  },
+  {
     slug: "market-pulse",
     kind: "dataset",
     name: "Market Pulse",
