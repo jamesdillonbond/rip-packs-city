@@ -38,6 +38,14 @@
 // order kept), so a newly admitted product gets a fresh slot every cycle. Ids that name no product
 // (`packcard-<set>_…` absent) share one bucket, so their order is exactly what it was.
 //
+// ⚠ 2026-11-08 (evening): HELD-PRIORITY AND FRESH ALTERNATE 1:1. The round-robin above never ran: a
+// FULL run spends ~85 min of its 2 h slot on the seven grids and walks only ~260 cards, and the
+// held-priority list (2,153 → 1,807 across 6 h) is always longer than that — so the 6:00 PM run walked
+// 260 priority cards and 0 of 9,221 fresh. Priority-first was decided 09-29 because held cards got 0
+// of ~660 slots behind fresh; 1:1 still gives them half of every full run and ALL of a walk run (walk
+// runs enumerate nothing, so fresh is empty there and priority stays strictly first). Once priority
+// runs out, the remaining fresh and the known list alternate 1:1 as before.
+//
 // Each psku appears once, at its earliest position.
 
 /** `packcard-2130_415500_32` → "2130"; anything else → "" (one shared bucket). */
@@ -89,7 +97,16 @@ export function buildWalkOrder({ priority = [], known: knownIn = [], knownComple
   const pskus = [];
   let priorityCount = 0;
   let freshCount = 0;
-  for (const p of priority) if (!seen.has(p)) { seen.add(p); pskus.push(p); priorityCount++; }
+  // Priority and fresh alternate 1:1 while priority lasts (2026-11-08, see the header).
+  const prioritySet = new Set(priority);
+  const freshQ = fresh.filter((p) => !prioritySet.has(p));
+  let fi = 0;
+  for (const p of priority) {
+    if (seen.has(p)) continue;
+    seen.add(p); pskus.push(p); priorityCount++;
+    while (fi < freshQ.length && seen.has(freshQ[fi])) fi++;
+    if (fi < freshQ.length) { const f = freshQ[fi++]; seen.add(f); pskus.push(f); freshCount++; }
+  }
   const freshLeft = fresh.filter((p) => !seen.has(p));
   const knownLeft = known.filter((p) => !seen.has(p));
   for (let i = 0; i < Math.max(freshLeft.length, knownLeft.length); i++) {

@@ -13,11 +13,13 @@ describe("buildWalkOrder", () => {
   const known = ["held-1", "k-stale", "k-fresh"]          // route prepends held pskus to `pskus`
   const discovered = ["new-1", "k-fresh", "new-2"]
 
-  it("walks held priority pskus BEFORE brand-new discoveries, each psku once", () => {
+  it("walks a held priority psku FIRST, each psku once", () => {
     const { pskus, priorityCount, freshCount, orderMode } =
       buildWalkOrder({ priority: ["held-1"], known, knownComplete: true, discovered })
     // Re-pinned 2026-10-02: after the priority list, new and stalest-known alternate 1:1.
-    expect(pskus).toEqual(["held-1", "new-1", "k-stale", "new-2", "k-fresh"])
+    // Re-pinned 2026-11-08: priority and new alternate while priority lasts (held-1, new-1), then the
+    // remaining new and the stalest known alternate (new-2, k-stale, k-fresh).
+    expect(pskus).toEqual(["held-1", "new-1", "new-2", "k-stale", "k-fresh"])
     expect(priorityCount).toBe(1)
     expect(freshCount).toBe(2)
     expect(orderMode).toBe("stalest-first, interleaved (1 held-priority + 2 new + 3 known)")
@@ -96,9 +98,44 @@ describe("buildWalkOrder — fresh round-robin across products", () => {
     expect(roundRobinByProduct(["new-2", "new-1", "x"])).toEqual(["new-2", "new-1", "x"])
     expect(roundRobinByProduct([])).toEqual([])
   })
-  it("the held-priority list still goes first, untouched by the round-robin", () => {
+  it("the held-priority list is not reordered by the round-robin", () => {
     const r = buildWalkOrder({ priority: [soccer(9), soccer(8)], known: [], knownComplete: true, discovered: [soccer(1), stones(1)] })
-    expect(r.pskus).toEqual([soccer(9), soccer(8), soccer(1), stones(1)])
+    expect(r.pskus.filter((p) => p === soccer(9) || p === soccer(8))).toEqual([soccer(9), soccer(8)])
+  })
+})
+
+// 2026-11-08 (evening) — a full run walks ~260 cards and the held-priority list was 1,807, so the 6:00 PM
+// run walked 0 of 9,221 fresh pskus. Priority and fresh now alternate 1:1 while priority lasts.
+describe("buildWalkOrder — held-priority and fresh alternate", () => {
+  const held = Array.from({ length: 1807 }, (_, i) => `packcard-2332_9_${i}_1`)
+  const fresh = [...Array.from({ length: 9000 }, (_, i) => `packcard-2333_1_${i}_1`), "packcard-2130_1_1", "packcard-850178_1_1"]
+  const cat = Array.from({ length: 42505 }, (_, i) => `known-${i}`)
+
+  it("a 260-card full run walks fresh cards — including the last grid's products — not only priority", () => {
+    const { pskus } = buildWalkOrder({ priority: held, known: cat, knownComplete: true, discovered: fresh })
+    const run = pskus.slice(0, 260)
+    expect(run.filter((p) => p.startsWith("packcard-2332_9_")).length).toBe(130)
+    expect(run.filter((p) => !p.startsWith("packcard-2332_9_") && !p.startsWith("known-")).length).toBe(130)
+    expect(run).toContain("packcard-2130_1_1")
+    expect(run).toContain("packcard-850178_1_1")
+    // and the priority cards still come in their own order, starting at the head
+    expect(run[0]).toBe(held[0])
+    expect(run.filter((p) => p.startsWith("packcard-2332_9_")).slice(0, 3)).toEqual(held.slice(0, 3))
+  })
+  it("a WALK run (nothing enumerated) still walks priority strictly first", () => {
+    const { pskus } = buildWalkOrder({ priority: held.slice(0, 5), known: cat.slice(0, 5), knownComplete: true, discovered: [] })
+    expect(pskus.slice(0, 5)).toEqual(held.slice(0, 5))
+    expect(pskus.slice(5)).toEqual(cat.slice(0, 5))
+  })
+  it("a psku in both priority and fresh is walked once, at its priority slot", () => {
+    const { pskus, priorityCount, freshCount } = buildWalkOrder({ priority: ["a", "b"], known: [], knownComplete: true, discovered: ["b", "c", "d"] })
+    expect(pskus).toEqual(["a", "c", "b", "d"])
+    expect([priorityCount, freshCount]).toEqual([2, 2])
+  })
+  it("every psku is queued exactly once", () => {
+    const { pskus } = buildWalkOrder({ priority: held, known: cat, knownComplete: true, discovered: fresh })
+    expect(new Set(pskus).size).toBe(pskus.length)
+    expect(pskus.length).toBe(held.length + fresh.length + cat.length)
   })
 })
 
