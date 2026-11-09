@@ -49,7 +49,7 @@ function db() {
   return {
     rpc: async (name: string, args: any) => {
       state.rpcs.push({ name, args })
-      return { data: name === "candy_retire_wallet_unseen" ? 3 : name === "purge_candy_wmc_ghost_rows" ? 2 : null, error: null }
+      return { data: name === "candy_retire_wallet_unseen" ? 3 : name === "purge_candy_wmc_ghost_rows_for" ? 2 : null, error: null }
     },
     from: (table: string) => {
       if (table === "editions") {
@@ -106,7 +106,10 @@ describe("refreshCandyWallet", () => {
     expect(state.upserted.flat()[0].wallet_address).toBe(W)
     const names = state.rpcs.map((x) => x.name)
     expect(names).toContain("candy_retire_wallet_unseen")
-    expect(names).toContain("purge_candy_wmc_ghost_rows")
+    expect(names).toContain("purge_candy_wmc_ghost_rows_for")
+    expect(names).not.toContain("purge_candy_wmc_ghost_rows")
+    // Scoped to the cards this walk wrote.
+    expect(state.rpcs.find((x) => x.name === "purge_candy_wmc_ghost_rows_for")!.args).toEqual({ p_moment_ids: ["a"] })
     expect(r.retired).toBe(3)
     expect(r.ghosts_purged).toBe(2)
   })

@@ -14,7 +14,8 @@ const state: {
   wmcUpserts: Array<{ rows: any[]; opts: any }>
   edUpserts: Array<{ rows: any[]; opts: any }>
   rpcs: string[]
-} = { queue: [], pages: {}, dasThrows: new Set(), wmcError: null, updates: [], wmcUpserts: [], edUpserts: [], rpcs: [] }
+  rpcArgs: any[]
+} = { queue: [], pages: {}, dasThrows: new Set(), wmcError: null, updates: [], wmcUpserts: [], edUpserts: [], rpcs: [], rpcArgs: [] }
 
 vi.mock("@/lib/chains/solana/das", () => ({
   getAssetsByGroup: async (addr: string, page: number) => {
@@ -40,7 +41,7 @@ const full = (n: number, prefix: string) => Array.from({ length: n }, (_, i) => 
 
 function db() {
   return {
-    rpc: async (name: string) => { state.rpcs.push(name); return { data: 4, error: null } },
+    rpc: async (name: string, args: any) => { state.rpcs.push(name); state.rpcArgs.push(args); return { data: 4, error: null } },
     from: (table: string) => {
       if (table === "candy_collections") {
         const b: any = {
@@ -69,7 +70,7 @@ function db() {
 
 beforeEach(() => {
   state.queue = []; state.pages = {}; state.dasThrows = new Set(); state.wmcError = null
-  state.updates = []; state.wmcUpserts = []; state.edUpserts = []; state.rpcs = []
+  state.updates = []; state.wmcUpserts = []; state.edUpserts = []; state.rpcs = []; state.rpcArgs = []
 })
 
 describe("runCollectionsCensus", () => {
@@ -85,7 +86,10 @@ describe("runCollectionsCensus", () => {
     const last = state.updates.filter((u) => u.address === "A").at(-1)!.patch
     expect(last).toMatchObject({ census_page: 1, census_walk_started_at: null, last_census_items: 1003, last_census_error: null })
     expect(typeof last.last_census_at).toBe("string")
-    expect(state.rpcs).toContain("purge_candy_wmc_ghost_rows")
+    // The ghost purge is SCOPED to the moments this run inserted — never the unscoped
+    // whole-collection rank that timed out at 120 s on 1.4M rows.
+    expect(state.rpcs).toEqual(["purge_candy_wmc_ghost_rows_for"])
+    expect(new Set(state.rpcArgs[0].p_moment_ids)).toEqual(new Set([...full(1000, "p1-"), ...full(3, "p2-")].map((x) => x.id)))
     // Holdings are born labelled — never left for a whole-collection denorm.
     expect(state.wmcUpserts[0].rows[0]).toMatchObject({ tier: "COMMON", player_name: "Seth Brown", set_name: "2022 Leadoff ICONs", mint_count: 850, team_name: "Athletics" })
   })

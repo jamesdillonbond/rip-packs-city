@@ -24,8 +24,8 @@
 //   4. Only when the walk is COMPLETE (every page read, every escrow card read,
 //      every write landed) and `retire` is set: the wallet's Candy rows this walk
 //      did not touch are cards it no longer holds — retired by
-//      candy_retire_wallet_unseen(); then purge_candy_wmc_ghost_rows() drops the
-//      previous owner's row of any card this wallet now holds. An incomplete walk
+//      candy_retire_wallet_unseen(); then purge_candy_wmc_ghost_rows_for() drops the
+//      previous owner's row of any card this wallet now holds (only the cards written). An incomplete walk
 //      retires NOTHING: it fails open (CLAUDE.md, "an ADD-ONLY refresh never
 //      retires what its source stopped returning … fail OPEN with no clean walk").
 
@@ -34,6 +34,7 @@ import { MAGIC_EDEN_SOLANA_ESCROW, listedMintsInEscrowForSeller } from "@/lib/ch
 import { isBurnt, isPack, normalizeSerial, normalizeEdition, CANDY_MLB_UUID } from "@/lib/chains/solana/normalize"
 import { isCandySetAsset, CANDY_COLLECTION_AUTHORITIES } from "@/lib/chains/solana/candy-sets"
 import { loadCandyCollections } from "@/lib/candy/collections"
+import { purgeCandyGhostsFor } from "@/lib/candy/ghost-purge"
 
 const UPSERT_CHUNK = 500
 const PAGE_LIMIT = 1000
@@ -206,6 +207,7 @@ export async function refreshCandyWallet(
         const s = normalizeSerial(a)
         if (!s.moment_id) continue
         escrowRows.push({ ...s, wallet_address: wallet, last_seen_at: now })
+        seen.add(String(s.moment_id))
       }
     }
     await Promise.all(Array.from({ length: ESCROW_READ_CONCURRENCY }, worker))
@@ -297,9 +299,9 @@ export async function refreshCandyWallet(
       if (error) r.retire_error = error.message
       else r.retired = typeof data === "number" ? data : Number(data ?? 0)
       if (!error) {
-        const g = await db.rpc("purge_candy_wmc_ghost_rows")
-        if (g.error) r.retire_error = g.error.message
-        else r.ghosts_purged = typeof g.data === "number" ? g.data : Number(g.data ?? 0)
+        const g = await purgeCandyGhostsFor(db, seen)
+        if (g.error) r.retire_error = g.error
+        else r.ghosts_purged = g.purged
       }
     } catch (e) {
       r.retire_error = e instanceof Error ? e.message : String(e)

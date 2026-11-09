@@ -12,8 +12,10 @@
 //                           holding costs one index probe, not a row rewrite (1.4M daily
 //                           rewrites would be the wmc write-amplification class). A card
 //                           that moved gets its new owner's row; the end-of-run
-//                           purge_candy_wmc_ghost_rows() keeps the newest row per card,
-//                           which retires the previous owner's.
+//                           purge_candy_wmc_ghost_rows_for(<the moments INSERTED this run>)
+//                           keeps the newest row per card, which retires the previous
+//                           owner's. (The unscoped purge ranks all ~1.4M Candy rows and hit
+//                           its 120 s timeout on the 7:57 PM PT 11-08 run.)
 // Escrow-held listed cards are attributed to their listing's seller, as in the registry
 // census.
 //
@@ -26,6 +28,7 @@ import { attributeEscrowHeldToSellers } from "@/lib/chains/solana/escrow"
 import { isBurnt, isPack, normalizeEdition, normalizeSerial } from "@/lib/chains/solana/normalize"
 import { candySetForAsset } from "@/lib/chains/solana/candy-sets"
 import { loadCandyCollections } from "@/lib/candy/collections"
+import { purgeCandyGhostsFor } from "@/lib/candy/ghost-purge"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
@@ -92,6 +95,7 @@ export async function runCollectionsCensus(
   }
 
   const errors: string[] = []
+  const inserted = new Set<string>()
   for (const c of (queue ?? []) as Array<{ address: string; name: string; census_page: number; census_walk_started_at: string | null }>) {
     if (now() > deadline) break
     const rep: CollectionCensusReport = { address: c.address, name: c.name, pages: 0, cards: 0, wmc_inserted: 0, editions_inserted: 0, completed: false, error: null }
@@ -160,7 +164,10 @@ export async function runCollectionsCensus(
           .upsert(attributed.rows.slice(i, i + WRITE_CHUNK), { onConflict: "wallet_address,collection_id,moment_id", ignoreDuplicates: true })
           .select("moment_id")
         if (error) failed = `wallet_moments_cache: ${error.message}`
-        else rep.wmc_inserted += data?.length ?? 0
+        else {
+          rep.wmc_inserted += data?.length ?? 0
+          for (const row of (data ?? []) as Array<{ moment_id: string }>) inserted.add(String(row.moment_id))
+        }
       }
       if (failed) { rep.error = `page ${page}: ${failed}`; break }
 
@@ -190,14 +197,10 @@ export async function runCollectionsCensus(
     if (rep.completed) out.completed++
   }
 
-  if (out.wmc_inserted > 0) {
-    try {
-      const { data, error } = await db.rpc("purge_candy_wmc_ghost_rows")
-      if (error) errors.push(`ghost purge: ${error.message}`)
-      else out.ghosts_purged = typeof data === "number" ? data : Number(data ?? 0)
-    } catch (e) {
-      errors.push(`ghost purge: ${e instanceof Error ? e.message : String(e)}`)
-    }
+  if (inserted.size > 0) {
+    const g = await purgeCandyGhostsFor(db, inserted)
+    if (g.error) errors.push(`ghost purge: ${g.error}`)
+    else out.ghosts_purged = g.purged
   } else {
     out.ghosts_purged = 0
   }
