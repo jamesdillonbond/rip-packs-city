@@ -162,26 +162,59 @@ async function topSales7d() {
   return (d.rows ?? []).filter((r) => !EXCLUDED.has(r.collection) && r.price_usd > 0)
 }
 
+// A sale's buyer as the post names it: the marketplace username, never a wallet address. A buyer the
+// API could only resolve to an address (it abbreviates those as 0x1234…abcd) is left unnamed.
+function buyerOf(r) {
+  const n = String(r.buyer_name ?? "").trim()
+  return n && !/^0x[0-9a-f]/i.test(n) && !n.includes("…") ? n : null
+}
+// "Walt Disney Animation Studios • A Disney Villains Halloween Vol.2" -> "A Disney Villains Halloween Vol.2"
+const shortSet = (s) => String(s ?? "").split(" • ").pop()
+function topSaleSubject(r) {
+  return saleSubject({ ...r, set_name: shortSet(r.set_name) })
+}
+
 async function mon() {
-  // Trailing 7 days (Trevor, 11-09: "We should have it be top sales from a week"). The weekend-only
-  // window dropped a $2,130 sale made four hours after it closed and a $2,500 one from Wednesday.
+  // The week's top 10 sales, trailing 7 days, each with its buyer (Trevor, 11-09: "We should have it
+  // be top sales from a week" → "include the full top 10 in the text, with an accompanying graphic
+  // ... that has the images of the assets, the sale price, and the buyer"). One long post with the
+  // image and no link; the link rides the reply, as on Sunday.
   const rows = await topSales7d()
   const link = `${SITE}/insights/top-sales`
   if (rows.length < 3) return { skip_reason: `only ${rows.length} sales on the 7-day top-sales board`, link }
-  const top = rows.slice(0, 5)
-  const lines = top.map((r, i) => `${i + 1}. ${saleSubject(r)} — ${usd(r.price_usd)} (${coll(r.collection)})`)
+  const top = rows.slice(0, 10)
+  // The API resolves buyer usernames best-effort; a slow lookup returns the address instead (11-09:
+  // the same LeBron sale came back as THEMECCA and as 0xfb33…e3f3 a minute apart). Re-ask a short
+  // list for any buyer still unnamed and keep the first username seen.
+  for (let tries = 0; tries < 2 && top.some((r) => !buyerOf(r)); tries++) {
+    const again = await getJson("top-sales?window=7d&sort=price&limit=25")
+    const byId = new Map((again.rows ?? []).map((r) => [r.sale_id, r]))
+    for (const r of top) if (!buyerOf(r) && byId.get(r.sale_id) && buyerOf(byId.get(r.sale_id))) r.buyer_name = byId.get(r.sale_id).buyer_name
+  }
+  const lines = top.map((r, i) => {
+    const b = buyerOf(r)
+    return `${i + 1}. ${topSaleSubject(r)} — ${usd(r.price_usd)} (${coll(r.collection)})${b ? ` · bought by ${b}` : ""}`
+  })
   // The API returns the week's top 200 by price. If even the 200th cleared the threshold, the
   // count is a floor, not a total — say nothing rather than under-count.
   const raw = await getJson("top-sales?window=7d&sort=price&limit=200")
   const truncatedAbove = (raw.rows ?? []).length >= 200 && Math.min(...raw.rows.map((r) => r.price_usd)) >= BIG_SALE_USD
   const over = truncatedAbove ? 0 : rows.filter((r) => r.price_usd >= BIG_SALE_USD).length
-  const head = "The week's biggest sales:\n"
-  const tail = `\n${over > 3 ? `${over} sales cleared ${usd(BIG_SALE_USD)} in the last 7 days. ` : ""}Full board 👇\n${link}`
+  const now = new Date()
+  const head = `The week's top ${top.length} sales, ${mdPT(new Date(now.getTime() - 7 * 86400000))}-${mdPT(now)} 📈`
+  const tail = over > top.length ? [``, `${over} sales cleared ${usd(BIG_SALE_USD)} in the last 7 days.`] : []
+  const unnamed = top.map((r, i) => (buyerOf(r) ? null : i + 1)).filter(Boolean)
   return {
-    title: "Week's top sales",
+    title: "The week's top sales",
     link,
+    long_form: true,
     facts: { window: "trailing 7 days", sales_on_board: rows.length, over_1k: over, top },
-    draft: fit(lines, head, tail),
+    draft: [head, "", ...lines, ...tail].join("\n"),
+    reply: [{ n: 2, of: 2, text: `Every sale on the board 👇\n${link}` }],
+    thread_fallback: thread(lines, `${head}\n`, "").map((text, i, all) => ({ n: i + 1, of: all.length, text, len: xLength(text) })),
+    warnings_extra: unnamed.length
+      ? [`no username for the buyer of #${unnamed.join(", #")} (wallet only) — the line names no buyer; never post the address`]
+      : [],
   }
 }
 

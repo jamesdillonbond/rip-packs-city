@@ -14,9 +14,12 @@
 // Prints JSON: { slot, images: [paths], items, warnings }. Every item in the post is on an image —
 // a list longer than one image fits is split across images (X allows 4 per post), never cut.
 //
+//   node scripts/social/x-image.mjs --slot mon --out /tmp/xdraft      # the week's top 10 sales
+//
 // House rules (same as the text): dollars only, never "DUC"; no FMV confidence; Pinnacle assets
-// are characters; no collector names; no UFC. Brand art only: no pack art, player photos or
-// partner artwork is ever composited in (those belong to their owners) — the image is RPC's own.
+// are characters; no UFC. Drops (sun): brand art only — no pack art or partner artwork.
+// Top sales (mon): each sale shows its asset's own image, price and buyer username (Trevor, 11-09);
+// a buyer known only by wallet address is left blank, never printed as the address.
 
 import { mkdirSync, readFileSync, existsSync, writeFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
@@ -181,6 +184,113 @@ footer b{color:#fff;font-weight:400}
 </div></body></html>`
 }
 
+// ---------- mon: the week's top 10 sales ----------
+const SITE_NAMES = { nba_top_shot: "Top Shot", nfl_all_day: "All Day", disney_pinnacle: "Pinnacle", laliga_golazos: "Golazos", panini_blockchain: "Panini", candy_mlb: "Candy MLB" }
+// Same rules as x-draft.mjs's buyerOf / shortSet (kept in step by hand: this file is fetched alone).
+function buyerOf(r) {
+  const n = String(r.buyer_name ?? "").trim()
+  return n && !/^0x[0-9a-f]/i.test(n) && !n.includes("…") ? n : null
+}
+const shortSet = (s) => String(s ?? "").split(" • ").pop()
+
+async function getJson(path) {
+  const r = await fetch(`${API}/${path}`, { headers: { "user-agent": "rpc-x-calendar/1.0" } })
+  if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`)
+  return r.json()
+}
+
+// The asset's image as a data URI (Playwright then needs no network). A Pinnacle thumbnail is our
+// own resolver route, which redirects to a freshly signed Dapper URL.
+async function imageData(url) {
+  if (!url) return null
+  const abs = url.startsWith("/") ? `${SITE}${url}${url.includes("pinnacle-image") ? "?v=thumb" : ""}` : url
+  try {
+    const r = await fetch(abs, { redirect: "follow", signal: AbortSignal.timeout(25_000) })
+    if (!r.ok) return null
+    const buf = Buffer.from(await r.arrayBuffer())
+    // Panini's CDN serves its PNGs as application/octet-stream: trust the bytes, not the header.
+    const sniff = buf.subarray(0, 4).toString("hex")
+    const type = sniff === "89504e47" ? "image/png" : sniff.startsWith("ffd8ff") ? "image/jpeg"
+      : buf.subarray(8, 12).toString() === "WEBP" ? "image/webp" : (r.headers.get("content-type") ?? "").split(";")[0]
+    if (!type.startsWith("image/")) return null
+    return `data:${type};base64,${buf.toString("base64")}`
+  } catch {
+    return null
+  }
+}
+
+async function topSalesItems(warnings) {
+  const d = await getJson("top-sales?window=7d&sort=price&limit=200")
+  const rows = (d.rows ?? []).filter((r) => r.collection !== "ufc_strike" && r.price_usd > 0).slice(0, 10)
+  for (let tries = 0; tries < 2 && rows.some((r) => !buyerOf(r)); tries++) {
+    const again = await getJson("top-sales?window=7d&sort=price&limit=25")
+    const byId = new Map((again.rows ?? []).map((r) => [r.sale_id, r]))
+    for (const r of rows) if (!buyerOf(r) && byId.get(r.sale_id) && buyerOf(byId.get(r.sale_id))) r.buyer_name = byId.get(r.sale_id).buyer_name
+  }
+  const imgs = await Promise.all(rows.map((r) => imageData(r.thumbnail_url)))
+  return rows.map((r, i) => {
+    if (!imgs[i]) warnings.push(`no image for #${i + 1} ${r.player_name} — its card shows a blank tile`)
+    const serial = r.serial_number ? `#${r.serial_number}${r.circulation_count ? `/${r.circulation_count}` : ""}` : r.circulation_count ? `/${r.circulation_count}` : ""
+    return {
+      rank: i + 1,
+      collection: r.collection,
+      title: r.player_name || shortSet(r.set_name),
+      set: [shortSet(r.set_name), r.subedition_name, serial].filter(Boolean).join(" · "),
+      price: usd(r.price_usd),
+      buyer: buyerOf(r),
+      img: imgs[i],
+    }
+  })
+}
+
+function salesPage({ items, fonts, logo, now }) {
+  const from = new Date(now.getTime() - 7 * 86400000)
+  const md = (d) => new Intl.DateTimeFormat("en-US", { timeZone: TZ, month: "numeric", day: "numeric" }).format(d)
+  const card = (it) => {
+    const c = COLL[it.collection] ?? { label: it.collection, accent: "#E03A2F" }
+    return `<div class="card" style="--acc:${c.accent}">
+      <div class="art">${it.img ? `<img src="${it.img}">` : `<span class="noimg">${esc(it.title)}</span>`}<span class="rank">${it.rank}</span><span class="coll">${esc(SITE_NAMES[it.collection] ?? c.label)}</span></div>
+      <div class="name">${esc(it.title)}</div>
+      <div class="set">${esc(it.set)}</div>
+      <div class="price">${esc(it.price)}</div>
+      <div class="buyer">${it.buyer ? `<span>Buyer</span> ${esc(it.buyer)}` : "&nbsp;"}</div>
+    </div>`
+  }
+  return `<!doctype html><html><head><meta charset="utf-8"><style>
+@font-face{font-family:Barlow;src:url(data:font/ttf;base64,${fonts.barlow}) format("truetype")}
+@font-face{font-family:Mono;src:url(data:font/ttf;base64,${fonts.mono}) format("truetype")}
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:${W}px;height:${H}px;background:#080808;color:#F2F2F2;font-family:Barlow,sans-serif;overflow:hidden;position:relative}
+.bg{position:absolute;inset:0;background:radial-gradient(900px 500px at 100% 0%,rgba(224,58,47,.22),transparent 60%),radial-gradient(700px 400px at 0% 100%,rgba(224,58,47,.10),transparent 60%)}
+.stripe{position:absolute;left:0;top:0;bottom:0;width:10px;background:#E03A2F}
+.wrap{position:absolute;inset:0;padding:22px 40px 18px 50px;display:flex;flex-direction:column}
+header{display:flex;align-items:center;justify-content:space-between}
+h1{font-size:54px;line-height:.9;letter-spacing:.5px;text-transform:uppercase}
+h1 em{font-style:normal;color:#E03A2F}
+.sub{font-family:Mono,monospace;font-size:17px;color:#BFC0BF;margin-top:6px}
+.logo{width:80px;height:80px}
+.grid{flex:1;display:grid;grid-template-columns:repeat(5,1fr);grid-template-rows:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0 8px;min-height:0}
+.card{background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.12);border-top:3px solid var(--acc);border-radius:10px;padding:6px 10px 7px;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}
+.art{position:relative;flex:1;min-height:0;border-radius:6px;background:radial-gradient(closest-side,color-mix(in srgb,var(--acc) 22%,transparent),transparent);display:flex;align-items:center;justify-content:center}
+.art img{max-width:100%;max-height:100%;object-fit:contain;display:block}
+.noimg{font-size:30px;line-height:1;text-transform:uppercase;text-align:center;color:color-mix(in srgb,var(--acc) 70%,#fff);opacity:.55;padding:0 8px}
+.rank{position:absolute;left:0;top:0;font-size:26px;line-height:1;color:#fff;background:#E03A2F;border-radius:6px;padding:3px 7px 2px}
+.coll{position:absolute;right:0;top:0;font-family:Mono,monospace;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:#fff;background:rgba(0,0,0,.65);border:1px solid var(--acc);border-radius:999px;padding:2px 7px}
+.name{font-size:21px;line-height:1;text-transform:uppercase;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.set{font-family:Mono,monospace;font-size:11.5px;color:#BFC0BF;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.price{font-family:Mono,monospace;font-size:24px;color:#fff;margin-top:3px;line-height:1}
+.buyer{font-family:Mono,monospace;font-size:12.5px;color:#FF4D40;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.buyer span{color:#8A8A8A}
+footer{display:flex;justify-content:space-between;font-family:Mono,monospace;font-size:16px;color:#BFC0BF}
+footer b{color:#fff;font-weight:400}
+</style></head><body><div class="bg"></div><div class="stripe"></div><div class="wrap">
+<header><div><h1>Top sales <em>this week</em></h1><div class="sub">${md(from)} – ${md(now)} · the 10 biggest sales of the last 7 days · USD</div></div>
+<img class="logo" src="data:image/png;base64,${logo}"></header>
+<div class="grid">${items.map(card).join("")}</div>
+<footer><span><b>rippackscity.com/insights/top-sales</b></span><span>@RipPacksCity</span></footer>
+</div></body></html>`
+}
+
 // The sandbox ships one Chromium with a global Playwright; a repo checkout may carry a different
 // Playwright whose browser build is not installed. Try the nearest one, then the global one.
 async function launchChromium() {
@@ -208,6 +318,7 @@ async function main() {
   const outDir = resolve(arg("out") ?? ".")
   mkdirSync(outDir, { recursive: true })
   const out = { slot, images: [], items: [], warnings: [] }
+  if (slot === "mon") return monMain(out, outDir)
   if (slot !== "sun") {
     out.warnings.push(`no image template for slot ${slot} yet — post the text with its link card`)
     console.log(JSON.stringify(out, null, 2))
@@ -253,6 +364,48 @@ async function main() {
       out.images.push(file)
       writeFileSync(join(outDir, `rpc-${slot}-${i + 1}.html`), html)
     }
+  } finally {
+    await browser.close()
+  }
+  console.log(JSON.stringify(out, null, 2))
+}
+
+// One image, 10 cards. A name or set too long for its card is ellipsized; a card pushed off the
+// canvas fails loudly as on Sunday.
+async function monMain(out, outDir) {
+  const items = await topSalesItems(out.warnings)
+  out.items = items.map(({ img, ...it }) => it)
+  if (!items.length) {
+    out.warnings.push("no sales on the 7-day board — no image")
+    console.log(JSON.stringify(out, null, 2))
+    return
+  }
+  const fonts = {
+    barlow: (await asset("public/fonts/BarlowCondensed-Black.ttf")).toString("base64"),
+    mono: (await asset("public/fonts/ShareTechMono-Regular.ttf")).toString("base64"),
+  }
+  const logo = (await asset("public/rip-packs-city-logo-320.png")).toString("base64")
+  const browser = await launchChromium()
+  try {
+    const ctx = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 2 })
+    const pg = await ctx.newPage()
+    const html = salesPage({ items, fonts, logo, now: new Date() })
+    await pg.setContent(html, { waitUntil: "load" })
+    await pg.evaluate(() => document.fonts.ready)
+    const bad = await pg.evaluate((h) => {
+      const foot = document.querySelector("footer")?.getBoundingClientRect().top ?? h
+      const off = [...document.querySelectorAll(".card")].filter((c) => c.getBoundingClientRect().bottom > Math.min(foot, h) + 1)
+      const cut = [...document.querySelectorAll(".name")].filter((n) => n.scrollWidth > n.clientWidth + 1)
+      const tiny = [...document.querySelectorAll(".art")].filter((a) => a.getBoundingClientRect().height < 60)
+      return { off: off.map((c) => c.querySelector(".name")?.textContent), cut: cut.map((n) => n.textContent), tiny: tiny.length }
+    }, H)
+    if (bad.off.length) out.warnings.push(`card pushed off the canvas for ${bad.off.join("; ")}`)
+    if (bad.cut.length) out.warnings.push(`name ellipsized on the image: ${bad.cut.join("; ")}`)
+    if (bad.tiny) out.warnings.push(`${bad.tiny} card image(s) squeezed under 60px`)
+    const file = join(outDir, "rpc-mon-1.png")
+    await pg.screenshot({ path: file, type: "png" })
+    writeFileSync(join(outDir, "rpc-mon-1.html"), html)
+    out.images.push(file)
   } finally {
     await browser.close()
   }

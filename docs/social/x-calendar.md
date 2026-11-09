@@ -19,7 +19,7 @@ Every post links one insights page. Each page carries a `summary_large_image` ca
 
 | Day | Slot | Source API | Link | What it says |
 |---|---|---|---|---|
-| Mon | Week's top sales | `top-sales?window=7d&sort=price` (trailing 7 days; weekend-only until 11-09, Trevor: "We should have it be top sales from a week") | `/insights/top-sales` | Top 3–5 sales of the last 7 days, with how many cleared $1,000 |
+| Mon | The week's top sales | `top-sales?window=7d&sort=price` (trailing 7 days) | `/insights/top-sales` (rides the 2/2 reply) | **One long post naming the top 10 sales** — asset, serial, price, collection and the buyer's username — with a top-10 image, then the link as a reply. Weekend-only until 11-09; Trevor, 11-09: "We should have it be top sales from a week" → "include the full top 10 in the text, with an accompanying graphic to use, that has the images of the assets, the sale price, and the buyer" |
 | Tue | Top Shot pack check | `pack-sniper` | `/insights/pack-sniper` | Packs listed below the expected value of what's still inside. Qualifies only if EV × 0.95 (Top Shot's 5% selling fee) beats the ask, EV covers ≥ 90% of the pool, and the pack isn't high-variance. None qualifying is posted as "none today", not skipped |
 | Wed | Rookie spotlight | `rookies?class=2025&sort=gmv` | `/insights/rookies` | 30-day sales for the 2025 class and its top three |
 | Thu | Deal of the week | `deals?sort=discount` | `/insights/deals` | Up to three listings $10+ **and** 15%+ under value. Falls back to Saturday's trade-in post when none qualify |
@@ -61,7 +61,7 @@ A source that could not be read is named in `warnings` and `facts.collections_un
 - **Pinnacle assets are characters**, not players.
 - **UFC Strike is excluded** — its market is closed.
 - **A collection with no sales in the window is left out**, never posted as "$0".
-- **Collectors are never named or tagged** — not buyers, not sellers, not trophy-case owners — unless that person has said yes for that post.
+- **Collectors are never named or tagged** — not buyers, not sellers, not trophy-case owners — unless that person has said yes for that post. **One exception (Trevor, 11-09): the Monday top-sales post and image name each sale's buyer by marketplace username** (never @-tagged, never a wallet address — a buyer known only by address is left unnamed).
 - **Never lead with the Team Captain designation.**
 - **No hype the data can't back**: no "best deal on Flow", "guaranteed", "can't lose", price predictions, or advice to buy.
 - **Under 280 characters by X's count** (every link counts as 23), except the long-form drops report (`long_form: true`). The script measures it.
@@ -104,9 +104,9 @@ Dates are today to 7 days out, M/D in PT. One line per drop, priciest first: the
 Every post that has a template ships with an RPC-branded image. On X, a post with an attached image is shown as the image, and posts whose main link card is the content have reached fewer people (Buffer's link study; Nieman Lab). So the image carries the post, and the link rides the last post of a thread.
 
 - `node scripts/social/x-image.mjs --slot <slot> --out <dir>` renders `rpc-<slot>-<n>.png` (2400×1350, 16:9) with Playwright from the same public API the text uses. Every item in the post is on an image. Up to 9 fit one image (a 3×3 grid with tighter type; a card pushed below the footer is a warning, 11-08); a longer list is split across images (X allows 4 per post), never cut. A card whose text overflows is reported in `warnings`.
-- **Brand art only.** No pack art, player photos or partner artwork is composited in: those belong to their owners, and pack art often carries real players' photos. Fonts and colours are RPC's (`public/fonts`, collection accents from `lib/collections.ts`).
+- **Brand art only on the drops image.** No pack art, player photos or partner artwork is composited in: those belong to their owners, and pack art often carries real players' photos. Fonts and colours are RPC's (`public/fonts`, collection accents from `lib/collections.ts`). **The Monday top-sales image is the exception (Trevor, 11-09):** each card shows the sold asset's own image (its `thumbnail_url`; a Pinnacle pin through `/api/public/pinnacle-image/<render_id>?v=thumb`), embedded as a data URI. An image that cannot be fetched leaves the card's tile with the name only, and a warning.
 - Layout: up to 9 drops per image (3×3 at 4+); **one to three drops render as centred, equal-height cards** with the collection's colour glow, a large price, the status as a pill and a detail line (the drop's `detail`, e.g. capsule contents and odds) — Trevor, 11-08: "center and make the graphic a little more visually appealing". Use `--exclude <dist_ids>` to make a follow-up image for just the new drops.
-- Templates: **Sun — drops this week** (live 11-08). Other slots post with their link card until they get one.
+- Templates: **Sun — drops this week** (live 11-08); **Mon — top sales this week** (live 11-09: 10 cards, 5×2, each with rank, collection, asset image, name, set · serial, price and buyer). Other slots post with their link card until they get one.
 - The daily task sends the image as a file with the draft. Trevor saves it and attaches it to post 1 (the one-tap post link cannot carry an image).
 
 ## When the data isn't there
