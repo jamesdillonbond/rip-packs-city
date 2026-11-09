@@ -784,7 +784,12 @@ export async function POST(req: NextRequest) {
     })
     const { rowsFound, scanned, continueWalk } = await runBackfill(startedAtIso, startedMs, wallet, skipCached)
     const depth = Number.isInteger(body.continuation) && (body.continuation as number) > 0 ? (body.continuation as number) : 0
-    if (continueWalk && skipCached && depth < MAX_CONTINUATIONS) {
+    // ⛔ NOT gated on `skipCached` (2026-11-09): a new user's FIRST walk is sent
+    // with skip_cached=false, so that gate stopped geds' 9,112-Moment signup walk
+    // at 900 named and left 7,027 unnamed — his Dame Moments unsearchable in the
+    // picker. A continuation always walks with skip_cached=true, so it starts
+    // where this walk stopped whatever this walk's own mode was.
+    if (continueWalk && depth < MAX_CONTINUATIONS) {
       await dispatchContinuation(req, wallet, depth + 1)
     }
     // A failed walk must not record a scan: it would stamp the wallet freshly verified

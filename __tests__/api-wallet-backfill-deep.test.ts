@@ -345,6 +345,16 @@ describe("wallet-backfill — walk + upsert contract", () => {
       expect(self.length).toBe(1)
       expect(JSON.parse(String(self[0][1]?.body))).toEqual({ wallet: WALLET, skip_cached: true, continuation: 3 })
 
+      // A first walk sent with skip_cached=false (the signup walk) continues too,
+      // and its continuation skips what it already named (geds, 2026-11-09).
+      fetchSpy.mockClear()
+      calls = 0
+      await POST(post({ wallet: WALLET, skip_cached: false }))
+      await runDeferred()
+      const fromFull = fetchSpy.mock.calls.filter((c) => String(c[0]).endsWith("/api/wallet-backfill"))
+      expect(fromFull.length).toBe(1)
+      expect(JSON.parse(String(fromFull[0][1]?.body))).toEqual({ wallet: WALLET, skip_cached: true, continuation: 1 })
+
       fetchSpy.mockClear()
       calls = 0
       await POST(post({ wallet: WALLET, continuation: 8 }))
