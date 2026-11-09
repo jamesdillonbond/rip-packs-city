@@ -525,6 +525,20 @@ describe("POST /api/sentinel — full battery", () => {
       expect(check(await (await POST(post())).json(), "Panini Ingest").status).toBe("critical")
     })
 
+    it("reads the newest-captures key when the function provides it, and says so", async () => {
+      install(panini({ max_serials_per_edition_26h: undefined, max_serials_per_edition_newest_captures: 390 }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Panini Ingest")
+      expect(c.status).toBe("ok")
+      expect(c.detail).toContain("max serials/edition in the newest 20k captures 390")
+      expect(c.detail).not.toContain("in 26h")
+      install(panini({ max_serials_per_edition_26h: undefined, max_serials_per_edition_newest_captures: 30 }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const r = check(await (await POST(post())).json(), "Panini Ingest")
+      expect(r.status).toBe("warn")
+      expect(r.detail).toMatch(/serial paging regressed/)
+    })
+
     it("names a serial-paging regression (one 30-row page) as a warn", async () => {
       install(panini({ max_serials_per_edition_26h: 30 }))
       stubFetch([sniperOk, telegramOk, resendOk])

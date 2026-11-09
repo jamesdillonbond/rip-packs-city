@@ -1101,7 +1101,14 @@ async function runSentinelWithin(clock: WallBudgetClock) {
       const walkH = hAgo(data.newest_walk_at) as number;
       const saleH = hAgo(data.newest_sale_at);
       const tailH = Number(data.edition_age_max_h);
-      const maxSerials = Number(data.max_serials_per_edition_26h);
+      // 2026-11-08: the leg now counts the NEWEST 20,000 captures (within 26 h) under a new key.
+      // The full-26 h count had grown to ~470k rows, nearly all heap fetches (fresh pages are never
+      // all-visible), and timed the whole arm out as INCONCLUSIVE. A working pager writes an
+      // edition's serials together, so the newest captures still show > 30 for some edition.
+      // Falls back to the old key while an older function body is live.
+      const recentSerials = data.max_serials_per_edition_newest_captures;
+      const maxSerials = Number(recentSerials ?? data.max_serials_per_edition_26h);
+      const serialScope = recentSerials != null ? "the newest 20k captures" : "26h";
       const walkWarn = thr("Panini Ingest", "warn_at", 14);
       const walkCrit = thr("Panini Ingest", "crit_at", 26);
       const legs: Array<{ s: "ok" | "warn" | "critical"; why: string }> = [];
@@ -1128,7 +1135,7 @@ async function runSentinelWithin(clock: WallBudgetClock) {
         legs.push({ s: stall, why: `stalest edition ${tailH.toFixed(0)}h vs rotation ${rotationH.toFixed(0)}h (${refreshed}/24h of ${editions})${stall === "ok" ? "" : " — tail not being reached"}` });
         if (rotationH >= 336) legs.push({ s: "warn", why: `rotation ${(rotationH / 24).toFixed(1)}d ≥ 14d — walk capacity below catalogue size` });
       }
-      if (walkH < 26) legs.push({ s: maxSerials <= 30 ? "warn" : "ok", why: `max serials/edition in 26h ${maxSerials}${maxSerials <= 30 ? " (serial paging regressed to one 30-row page)" : ""}` });
+      if (walkH < 26) legs.push({ s: maxSerials <= 30 ? "warn" : "ok", why: `max serials/edition in ${serialScope} ${maxSerials}${maxSerials <= 30 ? " (serial paging regressed to one 30-row page)" : ""}` });
       legs.push(saleH === null
         ? { s: "warn", why: "no recorded sale at all" }
         : { s: saleH >= 168 ? "critical" : saleH >= 72 ? "warn" : "ok", why: `newest recorded sale ${saleH.toFixed(0)}h ago` });
