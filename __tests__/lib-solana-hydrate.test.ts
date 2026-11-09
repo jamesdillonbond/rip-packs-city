@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
-import { failureClass, gatewayAlternates, hydrateFromJsonUri, isUnhydrated, mergeOffChainJson } from "@/lib/chains/solana/hydrate"
-import { editionKeyFromAsset, normalizeEdition } from "@/lib/chains/solana/normalize"
+import { editionGroupKey, failureClass, gatewayAlternates, hydrateFromJsonUri, isUnhydrated, mergeOffChainJson } from "@/lib/chains/solana/hydrate"
+import { editionKeyFromAsset, normalizeEdition, normalizeSerial } from "@/lib/chains/solana/normalize"
 import { registerCandySets } from "@/lib/chains/solana/candy-sets"
 import type { DasAsset } from "@/lib/chains/solana/das"
 
@@ -24,6 +24,7 @@ const offChain = {
     { trait_type: "Player Name", value: "Phil Bickford" },
     { trait_type: "Team", value: "Los Angeles Dodgers" },
     { trait_type: "Rarity", value: "Core" },
+    { trait_type: "Serial Number", value: "376/850" },
   ],
   properties: { files: [{ uri: "https://arweave.net/qPwTGHlLNINM30wdCyznHT_DmU6eed4j7e-oBC2OM7g", type: "image/png" }] },
 }
@@ -96,5 +97,49 @@ describe("unhydrated Candy assets", () => {
     const r = await hydrateFromJsonUri([bare], { fetchImpl: flaky })
     expect(r.hydrated).toHaveLength(1)
     expect(seen).toEqual([bare.content!.json_uri, "https://arweave.net/4J8W5OW1SwBqKrUgHvKYp5vdpZ6DIhu6mKpNZ1_Wwio"])
+  })
+
+  // ── one fetch per edition group (2026-11-09 8:57 AM PT: per-card fetching read 15 pages in 10 min) ──
+  const card = (id: string, name: string, uri = `https://arweave.net/${id}`): DasAsset =>
+    ({ ...bare, id, content: { json_uri: uri, metadata: { name } } })
+
+  it("cards of one edition share ONE fetch, and each keeps its own name and serial", async () => {
+    const a = card("a", "Phil Bickford (376/850)"), b = card("b", "Phil Bickford (12/850)"), c = card("c", "Phil Bickford (850/850)")
+    expect(editionGroupKey(a)).toBe(editionGroupKey(b))
+    const seen: string[] = []
+    const f = (async (u: string) => { seen.push(u); return new Response(JSON.stringify(offChain), { status: 200 }) }) as unknown as typeof fetch
+    const r = await hydrateFromJsonUri([a, b, c], { fetchImpl: f })
+    expect(r.failed).toEqual([])
+    expect(seen).toHaveLength(1)
+    expect(r.fetches).toBe(1)
+    const byId = new Map(r.hydrated.map((x) => [x.id, x]))
+    expect(normalizeSerial(byId.get("a")!).serial_number).toBe(376)
+    expect(normalizeSerial(byId.get("b")!).serial_number).toBe(12)
+    expect(normalizeSerial(byId.get("c")!).serial_number).toBe(850)
+    expect(byId.get("b")!.content?.metadata?.name).toBe("Phil Bickford (12/850)")
+    // one edition for all three
+    expect(new Set([...byId.values()].map((x) => normalizeEdition(x).external_id))).toEqual(new Set(["c:2022-leadoff-icons:phil-bickford-core"]))
+  })
+
+  it("a different edition size, another player, or a name without (n/m) is a separate fetch", async () => {
+    const a = card("a", "Phil Bickford (376/850)"), rare = card("r", "Phil Bickford (3/50)"), other = card("o", "Josh VanMeter (1/850)"), solo = card("s", "Phil Bickford")
+    expect(new Set([a, rare, other, solo].map(editionGroupKey)).size).toBe(4)
+    let n = 0
+    const f = (async () => { n++; return new Response(JSON.stringify(offChain), { status: 200 }) }) as unknown as typeof fetch
+    const r = await hydrateFromJsonUri([a, rare, other, solo], { fetchImpl: f })
+    expect(n).toBe(4)
+    expect(r.groups).toBe(4)
+  })
+
+  it("if the first card's fetch fails, a second card of the group is tried; a group that fails fails every member", async () => {
+    const a = card("a", "Phil Bickford (1/850)"), b = card("b", "Phil Bickford (2/850)")
+    const f = (async (u: string) => u.includes("/a") ? new Response("x", { status: 404 }) : new Response(JSON.stringify(offChain), { status: 200 })) as unknown as typeof fetch
+    const r = await hydrateFromJsonUri([a, b], { fetchImpl: f })
+    expect(r.hydrated.map((x) => x.id).sort()).toEqual(["a", "b"])
+    const dead = (async () => new Response("x", { status: 404 })) as unknown as typeof fetch
+    const r2 = await hydrateFromJsonUri([a, b, card("c", "Phil Bickford (3/850)")], { fetchImpl: dead })
+    expect(r2.failed.map((x) => x.id).sort()).toEqual(["a", "b", "c"])
+    // only the first two members were tried, each on both gateways
+    expect(r2.fetches).toBe(4)
   })
 })

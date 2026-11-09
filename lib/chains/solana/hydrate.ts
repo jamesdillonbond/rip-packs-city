@@ -96,44 +96,106 @@ export function failureClass(reason: string): string {
   return reason.slice(0, 40)
 }
 
+// Every card of an edition carries the same off-chain JSON except its name and serial
+// ("Phil Bickford (376/850)" vs "(377/850)"). One fetch per edition GROUP — (collection,
+// base name, edition size) — is applied to every card in the group with that card's own name
+// and serial. Measured 2026-11-09 8:57 AM PT: fetching one file per card ran ~7/s and the
+// census read 15 pages in 10 min (vs ~300); grouping cuts the fetches by ~the edition size.
+// A card whose name carries no "(n/m)" is its own group (fetched alone, never guessed).
+const SERIAL_IN_NAME = /^(.*?)\s*\(\s*(\d+)\s*\/\s*(\d+)\s*\)\s*$/
+
+export function editionGroupKey(asset: DasAsset): string {
+  const name = asset.content?.metadata?.name ?? ""
+  const m = name.match(SERIAL_IN_NAME)
+  const coll = asset.grouping?.find((g) => g.group_key === "collection")?.group_value ?? ""
+  return m ? `${coll}|${m[1].trim().toLowerCase()}|${m[3]}` : `solo|${asset.id}`
+}
+
+/** The group's JSON, re-addressed to one member: its own name and serial. */
+export function jsonForMember(json: Record<string, unknown>, member: DasAsset): Record<string, unknown> | null {
+  const name = member.content?.metadata?.name ?? ""
+  const m = name.match(SERIAL_IN_NAME)
+  if (!m) return null
+  const serial = Number(m[2])
+  const size = m[3]
+  const attrs = Array.isArray(json.attributes) ? (json.attributes as Array<Record<string, unknown>>) : []
+  return {
+    ...json,
+    name,
+    serial_number: serial,
+    attributes: attrs.map((a) => {
+      const t = String(a?.trait_type ?? "")
+      if (t === "Serial Number") return { ...a, value: `${serial}/${size}` }
+      if (t === "serial_number") return { ...a, value: serial }
+      return a
+    }),
+  }
+}
+
 /**
- * Fetch each asset's content.json_uri (https only) and merge it. Bounded concurrency and a
- * per-request timeout; never throws. Order of `hydrated` is not significant.
+ * Fetch each edition GROUP's content.json_uri once (https only; the other Arweave gateway on
+ * failure; a second member tried as representative if the first fails) and merge it into every
+ * member. Bounded concurrency and a per-request timeout; never throws. `fetches` counts HTTP
+ * requests made. Order of `hydrated` is not significant.
  */
 export async function hydrateFromJsonUri(
   assets: DasAsset[],
   opts: { concurrency?: number; timeoutMs?: number; fetchImpl?: typeof fetch } = {},
-): Promise<HydrateResult> {
+): Promise<HydrateResult & { fetches: number; groups: number }> {
   const concurrency = Math.max(1, opts.concurrency ?? 16)
   const timeoutMs = opts.timeoutMs ?? 8000
   const doFetch = opts.fetchImpl ?? fetch
-  const out: HydrateResult = { hydrated: [], failed: [] }
+  const out: HydrateResult & { fetches: number; groups: number } = { hydrated: [], failed: [], fetches: 0, groups: 0 }
+  const groups = new Map<string, DasAsset[]>()
+  for (const a of assets) {
+    const k = editionGroupKey(a)
+    const g = groups.get(k)
+    if (g) g.push(a)
+    else groups.set(k, [a])
+  }
+  out.groups = groups.size
+  const queue = [...groups.values()]
   let next = 0
+
+  async function fetchJson(a: DasAsset): Promise<{ json: Record<string, unknown> | null; reason: string }> {
+    const uri = a.content?.json_uri
+    if (typeof uri !== "string" || !/^https:\/\//i.test(uri)) return { json: null, reason: "no https json_uri" }
+    let reason = "no attempt"
+    for (const url of gatewayAlternates(uri)) {
+      out.fetches++
+      try {
+        const resp = await doFetch(url, { signal: AbortSignal.timeout(timeoutMs) })
+        if (!resp.ok) { reason = `HTTP ${resp.status}`; continue }
+        const parsed = JSON.parse(await resp.text())
+        if (mergeOffChainJson(a, parsed)) return { json: parsed as Record<string, unknown>, reason: "" }
+        reason = "json carried no traits or image"
+      } catch (e) {
+        reason = (e instanceof Error ? `${e.name}: ${e.message}` : String(e)).slice(0, 120)
+      }
+    }
+    return { json: null, reason }
+  }
+
   async function worker() {
-    while (next < assets.length) {
-      const a = assets[next++]
-      const uri = a.content?.json_uri
-      if (typeof uri !== "string" || !/^https:\/\//i.test(uri)) {
-        out.failed.push({ id: a.id, reason: "no https json_uri" })
-        continue
+    while (next < queue.length) {
+      const members = queue[next++]
+      let got: { json: Record<string, unknown> | null; reason: string } = { json: null, reason: "no attempt" }
+      let rep: DasAsset | null = null
+      for (const candidate of members.slice(0, 2)) {
+        got = await fetchJson(candidate)
+        if (got.json) { rep = candidate; break }
       }
-      let lastReason = "no attempt"
-      let merged: DasAsset | null = null
-      for (const url of gatewayAlternates(uri)) {
-        try {
-          const resp = await doFetch(url, { signal: AbortSignal.timeout(timeoutMs) })
-          if (!resp.ok) { lastReason = `HTTP ${resp.status}`; continue }
-          merged = mergeOffChainJson(a, JSON.parse(await resp.text()))
-          if (merged) break
-          lastReason = "json carried no traits or image"
-        } catch (e) {
-          lastReason = (e instanceof Error ? `${e.name}: ${e.message}` : String(e)).slice(0, 120)
-        }
+      for (const a of members) {
+        if (!got.json || !rep) { out.failed.push({ id: a.id, reason: got.reason }); continue }
+        const merged = a === rep ? mergeOffChainJson(a, got.json) : (() => {
+          const j = jsonForMember(got.json!, a)
+          return j ? mergeOffChainJson(a, j) : null
+        })()
+        if (merged) out.hydrated.push(merged)
+        else out.failed.push({ id: a.id, reason: "could not re-address group json" })
       }
-      if (merged) out.hydrated.push(merged)
-      else out.failed.push({ id: a.id, reason: lastReason })
     }
   }
-  await Promise.all(Array.from({ length: Math.min(concurrency, assets.length) }, worker))
+  await Promise.all(Array.from({ length: Math.min(concurrency, queue.length) }, worker))
   return out
 }

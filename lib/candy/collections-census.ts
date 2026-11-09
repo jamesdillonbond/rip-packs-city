@@ -128,6 +128,7 @@ export interface CollectionsCensusResult {
   unhydrated_skipped: number
   wmc_repointed: number
   hydrate_fail_reasons: Record<string, number>
+  hydrate_fetches: number
   completed: number
   escrow_remapped: number
   ghosts_purged: number | null
@@ -142,7 +143,7 @@ export async function runCollectionsCensus(
   const deadline = now() + opts.budgetMs
   const out: CollectionsCensusResult = {
     ok: false, collections: [], pages: 0, cards: 0, wmc_inserted: 0, editions_inserted: 0,
-    hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, hydrate_fail_reasons: {},
+    hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, hydrate_fail_reasons: {}, hydrate_fetches: 0,
     completed: 0, escrow_remapped: 0, ghosts_purged: null, error: null,
   }
 
@@ -227,6 +228,7 @@ export async function runCollectionsCensus(
         const k = failureClass(f.reason)
         out.hydrate_fail_reasons[k] = (out.hydrate_fail_reasons[k] ?? 0) + 1
       }
+      if ("fetches" in fetched) out.hydrate_fetches += fetched.fetches
       if (!(fetched.failed[0]?.reason === "breaker open")) {
         fetchAttempts += toFetch.length
         fetchFailures += fetched.failed.length
