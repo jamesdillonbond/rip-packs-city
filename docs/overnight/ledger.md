@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-08 20:20 PT — pack calendar: a Pinnacle Open Edition staged in the contract is not a drop
+
+The 7:55 PM PT fix surfaced "Walt Disney Mugs Vol.1 (Open Edition) — Minting now", but all 1,980 pins were minted to the Pinnacle contract's own account (0xedf9df96c92f4595): staged supply, no collector has one (a real OE reaches hundreds of wallets — Gargoyles 939). `deliveredOpenEditionSets` lists a set only once a pin reached another wallet (bounded by the set's mint window on idx_pinnacle_mint_events_minted_at, ~1 ms; a failed read throws). The unnamed-set lookup is now window-bounded too (was a 12.9k-buffer table scan). Also seen: "Disney Mickey & Friends: Friends-Giving Vol.2" Limited Edition staged the same way (996 pins, 6:59 PM PT); no pack dist in the Atlas book yet. Revert: `git revert` the commit "calendar: staged Pinnacle supply is not a drop".
+
 ### 2026-11-08 20:02 PT — main green again: anon-exec marker on the sentinel_panini_health migration
 
 CI red on 4a36368 (`migration-new-function-states-its-anon-exec-decision`): migration 20261109040000 re-creates `public.sentinel_panini_health` with no anon decision. Live ACL read first: `{postgres=X, service_role=X}`, anon cannot execute (CREATE OR REPLACE keeps it), so a comment marker states that; no SQL changed. Revert: drop the two comment lines.
