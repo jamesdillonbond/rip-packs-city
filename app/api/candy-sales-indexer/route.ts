@@ -690,6 +690,12 @@ async function handleIndex(req: NextRequest) {
         .select("signature, token_mint, block_time, price_sol, buyer, seller")
         .is("resolved_at", null)
         .lt("attempts", MAX_PARK_ATTEMPTS)
+        // Fewest attempts first (2026-11-08): `attempts` is the column this drain
+        // WRITES, so a row that keeps failing steps behind rows not yet retried.
+        // Ordered on block_time alone, 43 `edition_not_ingested` rows from 08-12
+        // held the head of every 60-row batch while 2,200 priceable sales waited
+        // until those 43 hit the attempt ceiling (~3 days at the 3-hourly cadence).
+        .order("attempts", { ascending: true })
         .order("block_time", { ascending: true })
         .limit(DRAIN_LIMIT)
       // ⛔ A failed read of the park queue reads as "nothing owed", so the drain
