@@ -323,6 +323,39 @@ describe("wallet-backfill — walk + upsert contract", () => {
     expect(walkLog(spy.rpcCalls)?.p_extra).toMatchObject({ skipped_cached: 1, unseen_deleted: 0 })
   })
 
+  it("a walk cut at the soft deadline with progress re-dispatches itself, depth-bounded (Dame Time, 2026-11-08)", async () => {
+    const fetchSpy = vi.fn(async (_url: string, _init?: RequestInit) => new Response("{}", { status: 202 }))
+    vi.stubGlobal("fetch", fetchSpy)
+    const realNow = Date.now
+    let calls = 0
+    // Each clock read moves 100 s, so a batch or two lands before the 260 s soft
+    // deadline cuts the walk: progress made, walk unfinished.
+    vi.spyOn(Date, "now").mockImplementation(() => realNow() + calls++ * 100_000)
+    try {
+      state.ownedIds = Array.from({ length: 45 }, (_, i) => i + 1)
+      state.metadataById = Object.fromEntries(state.ownedIds.map((id) => [String(id), meta({ serial: String(id) })]))
+      const spy = install({
+        wallet_moments_cache: { data: [], error: null },
+        "rpc:upsert_wmc_batch": { data: { written: 20 }, error: null },
+      })
+      await POST(post({ wallet: WALLET, continuation: 2 }))
+      await runDeferred()
+      expect((walkLog(spy.rpcCalls)?.p_extra as Record<string, unknown>).terminated_reason).toBe("timeout")
+      const self = fetchSpy.mock.calls.filter((c) => String(c[0]).endsWith("/api/wallet-backfill"))
+      expect(self.length).toBe(1)
+      expect(JSON.parse(String(self[0][1]?.body))).toEqual({ wallet: WALLET, skip_cached: true, continuation: 3 })
+
+      fetchSpy.mockClear()
+      calls = 0
+      await POST(post({ wallet: WALLET, continuation: 8 }))
+      await runDeferred()
+      expect(fetchSpy.mock.calls.filter((c) => String(c[0]).endsWith("/api/wallet-backfill")).length).toBe(0)
+    } finally {
+      vi.restoreAllMocks()
+      vi.unstubAllGlobals()
+    }
+  })
+
   it("an empty wallet short-circuits: no upsert, stats still stamped, scan records 0", async () => {
     state.ownedIds = []
     const spy = install({})

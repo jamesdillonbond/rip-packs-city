@@ -43,6 +43,12 @@ const SOFT_DEADLINE_MS = 260_000
 // also short-circuits any pathological response. Beyond this we mark the
 // run safety_ceiling and stop walking.
 const MAX_MOMENTS_PER_RUN = 200_000
+// A walk cut at the soft deadline that still made progress re-dispatches itself
+// (2026-11-08, Dame Time): rrx69's 3,884-Moment wallet needs ~4 walks of ~850
+// metadata reads each, and nothing else re-walks a wallet sooner than the next
+// 6 h sweep. With the key-aware skip set each continuation starts where the last
+// stopped. Bounded: a chain stops at this depth, or when a walk adds nothing.
+const MAX_CONTINUATIONS = 8
 
 async function getOwnedMomentIds(wallet: string): Promise<number[]> {
   const cadence = `
@@ -255,7 +261,7 @@ async function runBackfill(
   startedMs: number,
   wallet: string,
   skipCached: boolean
-): Promise<{ rowsFound: number; scanned: boolean }> {
+): Promise<{ rowsFound: number; scanned: boolean; continueWalk?: boolean }> {
   let totalFetched = 0
   let totalUpserted = 0
   let postPassUpdated = 0
@@ -562,6 +568,9 @@ async function runBackfill(
     return {
       rowsFound: onChainIds.length,
       scanned: terminatedReason === "no_more_moments" && totalFetched === idsToWalk.length && chunkTally.chunkErrors === 0,
+      // Cut by the clock, but it named Moments and wrote them: there is more to do
+      // and the next walk will start past what this one wrote.
+      continueWalk: terminatedReason === "timeout" && totalFetched > 0 && totalUpserted > 0 && chunkTally.chunkErrors === 0,
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -676,6 +685,24 @@ async function recordScan(wallet: string, foundCount: number) {
   }
 }
 
+/** Re-dispatch this route for the same wallet. Bounded wait; never throws. */
+async function dispatchContinuation(req: NextRequest, wallet: string, depth: number): Promise<void> {
+  const token = process.env.INGEST_SECRET_TOKEN
+  if (!token) return
+  let origin: string
+  try {
+    origin = new URL(req.url).origin
+  } catch {
+    return
+  }
+  await fetch(`${origin}/api/wallet-backfill`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ wallet, skip_cached: true, continuation: depth }),
+    signal: AbortSignal.timeout(10_000),
+  }).catch(() => {})
+}
+
 export async function POST(req: NextRequest) {
   const authHeader = req.headers.get("authorization")
   const expectedToken = process.env.INGEST_SECRET_TOKEN
@@ -683,7 +710,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  let body: { wallet?: string; skip_cached?: boolean }
+  let body: { wallet?: string; skip_cached?: boolean; continuation?: number }
   try {
     body = await req.json()
   } catch {
@@ -755,7 +782,11 @@ export async function POST(req: NextRequest) {
       collectionSlug: "nba_top_shot",
       extra: { wallet, skip_cached: skipCached, soft_deadline_ms: SOFT_DEADLINE_MS },
     })
-    const { rowsFound, scanned } = await runBackfill(startedAtIso, startedMs, wallet, skipCached)
+    const { rowsFound, scanned, continueWalk } = await runBackfill(startedAtIso, startedMs, wallet, skipCached)
+    const depth = Number.isInteger(body.continuation) && (body.continuation as number) > 0 ? (body.continuation as number) : 0
+    if (continueWalk && skipCached && depth < MAX_CONTINUATIONS) {
+      await dispatchContinuation(req, wallet, depth + 1)
+    }
     // A failed walk must not record a scan: it would stamp the wallet freshly verified
     // (BackfillRunResult.scanned in lib/chains/flow/wallet-backfill-helpers.ts, 2026-10-27).
     if (scanned) await recordScan(wallet, rowsFound)
