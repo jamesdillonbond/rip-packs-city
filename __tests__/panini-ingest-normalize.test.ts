@@ -451,3 +451,38 @@ describe("toFmvRowV14 (panini-1.4.0)", () => {
     expect(_v131(noData as any, now, null, null, null, null)).toBeNull()
   })
 })
+
+// panini-1.4.2 (2026-11-09, signup-wave P1): HIGH needs ≥ 3 sales in the 30-day feed, else MEDIUM. Measured:
+// thin HIGH scored ~47.6 % within ±25 % / WAPE ~50 vs deep HIGH 59.6 / 26.4 and MEDIUM 38.7 / 53.8.
+import { toFmvRowV142 as _v142 } from "@/lib/chains/panini/ingest-normalize"
+describe("toFmvRowV142 (panini-1.4.2)", () => {
+  const now = "2026-11-09T15:00:00.000Z"
+  const card = { sku: "p1", market_stats: { volume_txns: 4, recent_sale: 10, avg_sale: 12, floor_price: 9, for_sale_count: 2 } }
+  const tight = { n_sales: 3, min_usd: 10, max_usd: 12 }
+  it("keeps HIGH when the 30-day feed holds 3+ sales", () => {
+    const r = _v142(card as any, now, { fmv_usd: 11, n_recent: 3 }, null, tight, null)!
+    expect(r.confidence).toBe("HIGH")
+    expect(r.algo_version).toBe("panini-1.4.2")
+  })
+  it("⚠ demotes a TIGHT but THIN HIGH to MEDIUM — 1 or 2 recent sales, or none (any-age last sales)", () => {
+    const thin: Array<[any, any]> = [
+      [{ fmv_usd: 11, n_recent: 2 }, null],
+      [{ fmv_usd: 11, n_recent: 1 }, null],
+      [null, { fmv_usd: 11, n_sales: 3 }],
+    ]
+    for (const [recent, last] of thin) {
+      const before = _v14(card as any, now, recent, last, { n_sales: 2, min_usd: 10, max_usd: 12 }, null)!
+      expect(before.confidence).toBe("HIGH") // the 1.4.0 grade this rule exists to change
+      const after = _v142(card as any, now, recent, last, { n_sales: 2, min_usd: 10, max_usd: 12 }, null)!
+      expect(after.confidence).toBe("MEDIUM")
+      // the PRICE is untouched — only the label moves
+      expect(after.fmv_usd).toBe(before.fmv_usd)
+    }
+  })
+  it("never touches a non-HIGH label, and returns null exactly when 1.4.0 does", () => {
+    const low = _v142(card as any, now, null, null, null, null)!
+    expect(low.confidence).toBe(_v14(card as any, now, null, null, null, null)!.confidence)
+    const noData = { sku: "p2", market_stats: { volume_txns: 0 } }
+    expect(_v142(noData as any, now, null, null, null, null)).toBeNull()
+  })
+})

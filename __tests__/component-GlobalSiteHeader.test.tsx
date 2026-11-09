@@ -106,4 +106,20 @@ describe("tablet-landscape fit (2026-10-03): the nav must not wrap its own label
     expect(block).toMatch(/\.rpc-gsh-row \{ gap: 8px !important; \}/) // 10 → 8 on 2026-10-03 PM (TopNav.tsx note)
     expect(block).toContain(".rpc-gsh-label { display: none !important; }")
   })
+
+  // 2026-11-09 (signup wave): the row was overflow:hidden, which clipped every
+  // TopNav hover menu (absolutely positioned at top:100%) to the 56 px row —
+  // most menu items were invisible and unclickable on every page. The row may
+  // clip HORIZONTALLY (the 09-25 phone-width fix) but must never clip
+  // VERTICALLY: hidden on either axis forces the other to auto/hidden.
+  it("does not clip the nav dropdowns vertically", () => {
+    const { container } = render(<GlobalSiteHeader />)
+    const row = container.querySelector(".rpc-gsh-row") as HTMLElement
+    expect(row).not.toBeNull()
+    expect(row.style.overflow).not.toBe("hidden")
+    expect(["hidden", "auto", "scroll", "clip"]).not.toContain(row.style.overflowY)
+    expect(row.style.overflowY).toBe("visible")
+    // hidden on X would compute Y to auto (spec) — only clip leaves Y visible.
+    expect(row.style.overflowX).toBe("clip")
+  })
 })

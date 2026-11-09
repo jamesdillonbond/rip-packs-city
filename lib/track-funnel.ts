@@ -189,6 +189,20 @@ export function getVisitorId(): string | null {
 }
 
 /**
+ * The session's resolved campaign attribution (utm_* / share_ref / ref=<external
+ * origin+path>), or null when there is none or it cannot be read. Exported for
+ * the first-touch capture (components/FirstTouchCapture.tsx, 2026-11-09).
+ */
+export function getCampaignAttribution(): string | null {
+  return getAttribution()
+}
+
+/** GPC / DNT is set: no persistent identifier and no first-touch record. */
+export function hasPrivacySignal(): boolean {
+  return privacySignalSet()
+}
+
+/**
  * Just the two join keys (visit + returning visitor), for stamping onto every
  * usage_events beacon (lib/telemetry/track.ts). Never throws.
  */

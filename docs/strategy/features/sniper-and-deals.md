@@ -77,6 +77,7 @@ Surfaces:
 
 **Later**
 4. **Candy listings**, if Trevor sets `OPENSEA_API_KEY` (#58). Re-schedule the three lanes and add watchlist rows in the same turn.
+5. **Filter live listings by one serial number across every edition** (user request, `beta_feedback_inbox` 12359, 2026-11-09; signup-wave roll-up P3). "Every #23 listed right now", across all Top Shot editions, not just chase serials. LiveToken has it under Listings; the requester finds theirs clunky. The Sniper is already serial-level, so this is a serial filter over its rows, not a new source. Size it against the Sniper's loaded population first: a filter over a capped page answers "none" for serials outside the page, which is the window-is-not-a-census defect (CLAUDE.md, #149), so it must either read the full listing set or say what it covered.
 
 ## Decisions on record (do not re-litigate)
 

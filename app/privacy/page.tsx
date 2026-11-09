@@ -175,7 +175,12 @@ export default function PrivacyPage() {
             as one visitor. Neither is derived from your device, shared with
             anyone, or used for advertising. If your browser sends Global
             Privacy Control or Do Not Track, we don&apos;t create or send the
-            visitor id; clearing your site data removes both. We do not use
+            visitor id; clearing your site data removes both. We also note, in
+            localStorage, how this browser first found us (the campaign tag or
+            referring page and the page you landed on); if you create an
+            account it is saved to your account once, so we can tell which
+            channels bring collectors in. It is skipped under Global Privacy
+            Control or Do Not Track. We do not use
             third-party tracking cookies.
           </Section>
 

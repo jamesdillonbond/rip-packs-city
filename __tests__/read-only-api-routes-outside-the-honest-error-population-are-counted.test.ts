@@ -158,7 +158,12 @@ const UNBOUNDED = POPULATION.filter((r) => !r.bounded)
  */
 // 19 → 18 on 2026-10-24: /api/subscribe/unsubscribe gained a POST (RFC 8058 one-click),
 // so it is no longer a read-only route and leaves this population.
-const BUDGET = 18
+// 18 → 17 on 2026-11-09: /api/profile/collection-stats bounds every read it
+// makes (signup-wave P0). Per-route reading of its failed-read answer: the live
+// RPC's overrun maps to the same retryable 503 `stats_timeout` as its 57014 —
+// no zero, no `stats` key — and a failed cache/owners/stamp read degrades to the
+// next source, never to an answer (pinned in api-profile-collection-stats.test.ts).
+const BUDGET = 17
 
 describe("read-only API routes outside the honest-error population are counted", () => {
   it("is not vacuous — the walk found a real tree and a real complement", () => {

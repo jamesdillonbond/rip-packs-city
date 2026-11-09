@@ -40,6 +40,7 @@ import {
   type PaniniCardSort,
 } from "@/lib/panini/collection-view"
 import { paniniSportLabel } from "@/lib/panini/sport-label"
+import { PANINI_FMV_SOURCE_NOTE } from "@/lib/panini/fmv-source-note"
 
 const STORAGE_KEY = "rpc.panini.collection.username"
 const mono = "var(--font-mono)"
@@ -281,6 +282,7 @@ function ProfileBody({ username, profile, valueHistory }: { username: string; pr
           {unpriced > 0
             ? ` ${count(unpriced)} card${unpriced === 1 ? "" : "s"} ${unpriced === 1 ? "has" : "have"} no RPC price yet — a card is priced once RPC has walked its edition and seen a sale or a live ask; until then it is left unpriced rather than counted as $0.`
             : ""}
+          {` ${PANINI_FMV_SOURCE_NOTE}`}
         </Note>
       </div>
       {valueHistory !== undefined ? <ValueHistory rows={valueHistory} /> : null}
@@ -369,6 +371,7 @@ function SeenBody({ data }: { data: PaniniCollectionResponse }) {
           Last read {ptDate(data.lastSeenAt)}. These are the cards RPC read under this username in the Panini products it walks, not the whole
           collection — products RPC doesn&apos;t walk yet aren&apos;t covered. A card sold since RPC last read its edition can still appear here.
           {linkNote()}
+          {` ${PANINI_FMV_SOURCE_NOTE}`}
         </Note>
       </div>
       <CardBrowser cards={data.cards} total={data.cardsSeen} username={data.username} />

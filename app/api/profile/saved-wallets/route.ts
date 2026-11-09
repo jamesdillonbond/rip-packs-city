@@ -375,6 +375,27 @@ export async function POST(req: NextRequest) {
           walletAddr,
           "saved-wallets POST after"
         );
+        // 2026-11-09 (signup-wave P0): stamp the dashboard cache NOW. Until
+        // this, a new row had no `cache_updated_at` until pg_cron 833 (15 min)
+        // reached it, so a whale's first dashboard load fell to the slow live
+        // stats RPC (~41 s with the retry). When the wallet's Moments are
+        // already indexed (a whale seen before) this makes the first load a
+        // cache hit; when they are not, it updates 0 rows and the 15-min lane
+        // plus /api/profile/collection-stats's own stamp-on-miss take over.
+        // AFTER the warm dispatch, and never thrown: it must not cost the warm.
+        try {
+          const { data: n, error: stampErr } = await supabase.rpc("aggregate_saved_wallet_stats", {
+            p_user_id: user.id,
+            p_wallet_addr: walletAddr,
+          });
+          if (stampErr) {
+            console.warn("[saved-wallets POST] cache stamp failed:", stampErr.message);
+          } else {
+            console.log("[saved-wallets POST] cache stamped rows=" + String(n ?? 0));
+          }
+        } catch (err) {
+          console.warn("[saved-wallets POST] cache stamp threw:", err instanceof Error ? err.message : String(err));
+        }
       });
     }
 

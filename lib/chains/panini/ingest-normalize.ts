@@ -378,3 +378,35 @@ export function toFmvRowV14(
   if (!row) return null
   return { ...row, algo_version: "panini-1.4.0" }
 }
+
+// panini-1.4.2 (2026-11-09, signup-wave remediation P1) — 1.4.0 with ONE rule added: HIGH needs DEPTH, not
+// just agreement. 1.3.0's HIGH is "≥ 2 sales whose max/min ≤ 1.5, at any age", so two matching sales from
+// August graded the same as a card trading daily. Measured on 1.4.x HIGH snapshots vs the next real sale
+// (sales from 10-24 9 AM PT, covered editions, non-special; paired-read method), split by the edition's
+// sales in the 30 days before the snapshot:
+//     HIGH, 3+ in 30 d ..... n 3,504  within ±25 % 59.6  WAPE 26.4
+//     HIGH, 2 in 30 d ...... n    94           51.1       33.9
+//     HIGH, 1 in 30 d ...... n   131           48.1       61.2
+//     HIGH, 0 in 30 d ...... n   410   35.0–60.9 by age   49.0–59.6
+//     MEDIUM (all 3+) ...... n 1,210           38.7       53.8
+// Thin HIGH (pooled ~47.6 / WAPE ~50) is a MEDIUM on dollar error, not a HIGH. So HIGH → MEDIUM unless the
+// 30-day sales feed holds ≥ 3 sales. PRICES ARE UNCHANGED, and so is the HIGH+MEDIUM gate share — only the
+// split moves. 1.4.1 (the LOW ask cap) is a DB trigger that appends `_askcap`; it is untouched.
+// PANINI_FMV_ENGINE=1.4.0 is the kill switch.
+export const PANINI_HIGH_MIN_RECENT = 3
+export function toFmvRowV142(
+  c: PaniniCardStats,
+  nowIso: string,
+  recent?: { fmv_usd: number; n_recent: number } | null,
+  last?: { fmv_usd: number; n_sales: number } | null,
+  spread?: { n_sales: number; min_usd: number; max_usd: number } | null,
+  prior?: { prior_median_usd: number; n_prior: number } | null,
+) {
+  const row = toFmvRowV14(c, nowIso, recent, last, spread, prior)
+  if (!row) return null
+  const nRecent = Number(recent?.n_recent)
+  if (row.confidence === "HIGH" && !(Number.isFinite(nRecent) && nRecent >= PANINI_HIGH_MIN_RECENT)) {
+    row.confidence = "MEDIUM"
+  }
+  return { ...row, algo_version: "panini-1.4.2" }
+}

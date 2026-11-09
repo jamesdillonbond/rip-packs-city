@@ -79,6 +79,7 @@ There is no wallet verification. It was removed by decision (#0, 08-08).
 **Later**
 6. **Widen achievements** to every `profile_bio` user with saved wallets: a one-line change, ~16 cheap probes per user. Only when the achievements UI is mounted or the accuracy gate is declared passed.
 7. **The 2026 rookie class**, on or after 11-11, from Series 9 rookie sets. The rookie collector leaderboard is then repointed.
+8. **Track my own outgoing Top Shot offers** (user request, `beta_feedback_inbox` 12361, 2026-11-09; signup-wave roll-up P3): each offer I have out vs the edition's floor and top bid, flagged outbid or stale. READ-ONLY, so it fits concierge rule 1 (tracking an offer is not making one). Today RPC has only the offer-spread board (`/insights/offer-spread`) and incoming standing offers on held Moments via wallet check. First question: whether any source we already read exposes offers BY OFFERER; if none does, this needs a new indexer and is sized as one.
 
 ## Decisions on record (do not re-litigate)
 

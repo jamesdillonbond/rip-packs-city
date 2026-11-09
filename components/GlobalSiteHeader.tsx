@@ -12,7 +12,7 @@ import GlobalSearch from "@/components/search/GlobalSearch"
 export default function GlobalSiteHeader() {
   return (
     <header style={{ background: "var(--rpc-header-bg)", borderBottom: "1px solid var(--rpc-border-subtle)", position: "sticky", top: 0, zIndex: 100 }}>
-      <div className="rpc-gsh-row" style={{ maxWidth: 1440, margin: "0 auto", padding: "0 20px", height: 56, display: "flex", alignItems: "center", gap: 16, overflow: "hidden" }}>
+      <div className="rpc-gsh-row" style={{ maxWidth: 1440, margin: "0 auto", padding: "0 20px", height: 56, display: "flex", alignItems: "center", gap: 16, overflowX: "clip", overflowY: "visible" }}>
         <Link href="/" className="rpc-tap44" style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0, textDecoration: "none" }}>
           <RpcLogo size={36} />
           <div className="rpc-gsh-label">
@@ -25,6 +25,15 @@ export default function GlobalSiteHeader() {
         <ThemeToggle />
         <SignOutButton />
       </div>
+      {/* 2026-11-09: the row was overflow:hidden (07-05), and the TopNav hover
+          menus are absolutely positioned BELOW it (top:100%), so every menu
+          was cut at the 56 px row edge on every page: only the first item or
+          two showed and the rest could not be clicked (signup-wave nav clip).
+          overflow-x:clip keeps the phone-width horizontal clip the 09-25 note
+          below relies on; unlike hidden, clip does not force the other axis to
+          auto, so overflow-y:visible lets the menus drop. Reproduced and fixed
+          in a Chromium harness of this structure before shipping; pinned in
+          __tests__/component-GlobalSiteHeader.test.tsx. */}
       {/* 2026-09-25: at a phone width the row (logo + handle + search ≥ 110 px +
           theme + SIGN IN, 16 px gaps, 20 px gutters) overflowed its
           overflow:hidden box, so the SIGN IN button was cut to "SIGN" at 390 px

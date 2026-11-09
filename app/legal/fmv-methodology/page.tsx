@@ -198,8 +198,10 @@ export default async function FmvMethodologyPage() {
       </p>
       <p style={P}>
         <strong style={STRONG}>Panini cards</strong> are priced from their own
-        sales on Panini&rsquo;s marketplace, on the same principle &mdash; the
-        latest sales of that card edition.
+        sales on Panini&rsquo;s own platform (marketplace, auction, gallery and
+        crypto sales), on the same principle &mdash; the latest sales of that card
+        edition. Trades made anywhere else aren&rsquo;t counted, and a new sale can
+        take a few days to reach us.
       </p>
 
       <h2 id="accuracy" style={H2}>How Much of Our Pricing Rests on Sales</h2>

@@ -10,6 +10,7 @@ import WalletPreloader from "@/components/WalletPreloader"
 import ConsoleGreeting from "@/components/visual/ConsoleGreeting"
 import TelemetryPageView from "@/components/TelemetryPageView"
 import RefCapture from "@/components/RefCapture"
+import FirstTouchCapture from "@/components/FirstTouchCapture"
 import DeadImageGuard from "@/components/media/DeadImageGuard"
 import ClientErrorBeacon from "@/components/telemetry/ClientErrorBeacon"
 import SkipToContent, { MainContentAnchor } from "@/components/SkipToContent"
@@ -94,6 +95,7 @@ export default function RootLayout({
         <ConsoleGreeting />
         <TelemetryPageView />
         <RefCapture />
+        <FirstTouchCapture />
         <DeadImageGuard />
         <ClientErrorBeacon />
         <style href="rpc-focus-ring" precedence="default">{FOCUS_RING_CSS}</style>

@@ -26,6 +26,7 @@ import type { DegradedSummary } from "@/lib/insights/board-status"
 import { paniniEditionUrl } from "@/lib/panini/edition-url"
 import { trackOutboundClick } from "@/lib/track-click"
 import { textIncludes } from "@/lib/filter-match"
+import { PANINI_FMV_SOURCE_NOTE } from "@/lib/panini/fmv-source-note"
 
 type Num = number | null
 
@@ -164,7 +165,8 @@ export default function PaniniSniper({ data, degraded }: { data: PaniniSniperDat
           ? "Listed Panini Prizm World Cup serials (this snapshot predates the all-product board; it refreshes within the hour)"
           : "Listed Panini serials across every product RPC walks — soccer, NBA, NFL, WNBA, MLB and NASCAR —"}{" "}
         asking at least 15% under FMV (with #1 / jersey-number / perfect-mint premiums applied), each ask re-read
-        in the last 7 days, on editions with an FMV of $25 or more. Cards whose edition FMV rests on asks alone are left out.
+        in the last 7 days, on editions with an FMV of $25 or more. Cards whose edition FMV rests on asks alone are left out.{" "}
+        {PANINI_FMV_SOURCE_NOTE}
       </Note>
       <div role="note" style={{ padding: "10px 14px", background: "var(--rpc-red-bg)", border: "1px solid var(--rpc-red-border)", borderRadius: 6, margin: "12px 0" }}>
         <Note>

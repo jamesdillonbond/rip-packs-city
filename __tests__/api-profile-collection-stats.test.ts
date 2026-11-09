@@ -16,20 +16,35 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // The live path keeps its old contract: 57014 → 503 with retry, anything else
 // → 500.
 
-const rpc: { data: any; error: any; calls: number } = { data: [], error: null, calls: 0 }
+const rpc: { data: any; error: any; calls: number; hang: boolean } = { data: [], error: null, calls: 0, hang: false }
 const cache: { rows: any[] | null; error: any; throws: boolean } = { rows: null, error: null, throws: false }
+// 2026-11-09: on a cache miss the route first runs the reconciler's own writer
+// (`aggregate_saved_wallet_stats`) for each account that saved the wallet.
+const owners: { rows: any[]; error: any } = { rows: [], error: null }
+const stamp: { calls: { p_user_id: string; p_wallet_addr: string }[]; updated: number; error: any; writes: any[] | null } = {
+  calls: [], updated: 0, error: null, writes: null,
+}
 
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
-    rpc: async () => {
+    rpc: (name: string, args: any) => {
+      if (name === "aggregate_saved_wallet_stats") {
+        stamp.calls.push(args)
+        // Simulate the write landing: the next cache read sees the rows.
+        if (!stamp.error && stamp.updated > 0 && stamp.writes) cache.rows = stamp.writes
+        return Promise.resolve({ data: stamp.error ? null : stamp.updated, error: stamp.error })
+      }
       rpc.calls += 1
-      return { data: rpc.data, error: rpc.error }
+      if (rpc.hang) return new Promise(() => {})
+      return Promise.resolve({ data: rpc.data, error: rpc.error })
     },
     from: () => {
       if (cache.throws) throw new Error("cache read exploded")
       const chain: any = {
         select: () => chain,
         eq: () => chain,
+        // `.limit(50)` is the terminal call of the owners read.
+        limit: async () => ({ data: owners.rows, error: owners.error }),
         // `.not("cache_updated_at", "is", null)` is the terminal call the route
         // awaits, so this is where the fixture is handed back.
         not: async () => ({ data: cache.rows, error: cache.error }),
@@ -62,6 +77,14 @@ beforeEach(() => {
   cache.rows = null
   cache.error = null
   cache.throws = false
+  rpc.hang = false
+  owners.rows = []
+  owners.error = null
+  stamp.calls = []
+  stamp.updated = 0
+  stamp.error = null
+  stamp.writes = null
+  delete process.env.API_DB_READ_TIMEOUT_MS
 })
 
 describe("GET /api/profile/collection-stats", () => {
@@ -170,5 +193,71 @@ describe("GET /api/profile/collection-stats", () => {
     rpc.error = { code: "12345", message: "boom" }
     const res = await GET(req("https://t/api/profile/collection-stats?wallet_addr=0xabc"))
     expect(res.status).toBe(500)
+  })
+
+  // ── 2026-11-09: a cache miss stamps the cache instead of stalling ─────────
+  // Signup-wave P0: a whale's FIRST dashboard load fell to the live RPC (up to
+  // 20 s, then a 20 s retry). The reconciler's writer is cheap (469 ms on the
+  // largest wallet), so the miss stamps the cache and answers from it.
+
+  it("⚠ on a miss, stamps the cache for every saver and answers from it WITHOUT the live RPC", async () => {
+    cache.rows = []
+    owners.rows = [{ user_id: "u1" }, { user_id: "u2" }, { user_id: "u1" }]
+    stamp.updated = 2
+    stamp.writes = [CACHED({ cache_updated_at: new Date().toISOString() })]
+    const res = await GET(req("https://t/api/profile/collection-stats?wallet_addr=0xABC"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.source).toBe("cache")
+    expect(body.stamped_now).toBe(true)
+    expect(body.stats[0].moment_count).toBe(15335)
+    // de-duplicated owners, normalized wallet
+    expect(stamp.calls).toEqual([
+      { p_user_id: "u1", p_wallet_addr: "0xabc" },
+      { p_user_id: "u2", p_wallet_addr: "0xabc" },
+    ])
+    expect(rpc.calls).toBe(0)
+  })
+
+  it("a stamp that UPDATED NOTHING (Moments not indexed yet) falls to the live RPC, not to a re-read zero", async () => {
+    cache.rows = []
+    owners.rows = [{ user_id: "u1" }]
+    stamp.updated = 0
+    rpc.data = [{ collection_id: "c1", moment_count: 3 }]
+    const body = await (await GET(req("https://t/api/profile/collection-stats?wallet_addr=0xabc"))).json()
+    expect(stamp.calls).toHaveLength(1)
+    expect(body.source).toBe("live")
+    expect(rpc.calls).toBe(1)
+  })
+
+  it("a FAILED stamp degrades to the live RPC rather than failing the request", async () => {
+    cache.rows = []
+    owners.rows = [{ user_id: "u1" }]
+    stamp.error = { code: "42501", message: "nope" }
+    rpc.data = [{ collection_id: "c1", moment_count: 3 }]
+    const res = await GET(req("https://t/api/profile/collection-stats?wallet_addr=0xabc"))
+    expect(res.status).toBe(200)
+    expect((await res.json()).source).toBe("live")
+  })
+
+  it("a wallet NO account saved never calls the writer", async () => {
+    cache.rows = []
+    rpc.data = []
+    await GET(req("https://t/api/profile/collection-stats?wallet_addr=0xabc"))
+    expect(stamp.calls).toHaveLength(0)
+    expect(rpc.calls).toBe(1)
+  })
+
+  it("⚠ FAILS FAST: a live RPC that never settles answers a retryable 503 within the budget, never a zero", async () => {
+    process.env.API_DB_READ_TIMEOUT_MS = "50"
+    cache.rows = []
+    rpc.hang = true
+    const t0 = Date.now()
+    const res = await GET(req("https://t/api/profile/collection-stats?wallet_addr=0xabc"))
+    expect(Date.now() - t0).toBeLessThan(2_000)
+    expect(res.status).toBe(503)
+    const body = await res.json()
+    expect(body.retry).toBe(true)
+    expect(body.stats).toBeUndefined()
   })
 })

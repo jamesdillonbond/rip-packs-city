@@ -388,6 +388,34 @@ describe("POST /api/profile/saved-wallets — deep cross-collection warm", () =>
     })
   })
 
+  // 2026-11-09 (signup-wave P0): a new wallet's dashboard cache is stamped in
+  // the same after() as the warm, so a whale's first load is a cache hit
+  // instead of the ~41 s live-RPC stall.
+  it("stamps the dashboard cache for the NEW wallet, after the warm, and a failed stamp does not throw", async () => {
+    state.user = { id: "u1" }
+    install({
+      saved_wallets: [
+        { data: [], error: null },
+        { count: 0, error: null },
+        { data: { id: "w1", wallet_addr: "0xabcdef0123456789" }, error: null },
+      ],
+    })
+    const calls: { name: string; args: unknown }[] = []
+    const sb = state.sb as Record<string, unknown>
+    sb.rpc = async (name: string, args: unknown) => {
+      calls.push({ name, args })
+      return { data: null, error: { message: "stamp boom" } }
+    }
+    expect((await POST(req("https://t/api/profile/saved-wallets", { walletAddr: "0xABCDEF0123456789" }))).status).toBe(200)
+    await expect(captured.fn!()).resolves.toBeUndefined()
+    expect(calls).toContainEqual({
+      name: "aggregate_saved_wallet_stats",
+      args: { p_user_id: "u1", p_wallet_addr: "0xabcdef0123456789" },
+    })
+    // the warm still went out
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("wallet-backfill-multicollection"))).toBe(true)
+  })
+
   it("does NOT re-warm a wallet the user already has saved", async () => {
     state.user = { id: "u1" }
     install({
