@@ -442,9 +442,8 @@ async function markDeliveredDraws(sb: any, drops: PackCalendarDrop[]): Promise<v
 // Top Shot and All Day are always expected; a missing state row for them is an unread book.
 const REQUIRED: PackCalendarProduct[] = ["nba", "nfl"]
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function fetchPackCalendar(
-  sb: any,
+  sb: any, // eslint-disable-line @typescript-eslint/no-explicit-any
   now = new Date(),
   fetchImpl: typeof fetch = fetch,
   manual: ManualDrop[] = MANUAL_DROPS,
