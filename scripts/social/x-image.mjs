@@ -219,6 +219,51 @@ async function imageData(url) {
   }
 }
 
+// A Dapper wallet's username from Disney Pinnacle's public GQL (one Dapper username per wallet across
+// every Dapper app): the owner of any pin the wallet holds carries it. Used only when the insights API
+// returned an address (11-09: the week's two Pinnacle sales went to 0x6de0…cade, which no RPC table
+// had named). null when the wallet holds no Pinnacle pin or the call fails. Same as x-draft.mjs.
+const DAPPER_GQL = "https://api.production.studio-platform.dapperlabs.com/graphql"
+async function dapperUsername(addr) {
+  const bare = String(addr ?? "").toLowerCase().replace(/^0x/, "")
+  if (!/^[0-9a-f]{16}$/.test(bare)) return null
+  try {
+    const r = await fetch(DAPPER_GQL, {
+      method: "POST",
+      headers: { "content-type": "application/json", Origin: "https://disneypinnacle.com" },
+      body: JSON.stringify({
+        query: `query($a:String!){ searchPinnacleNft(searchInput:{first:1, filters:[{owner_address:{in:[$a]}}]}){ edges{ node{ user{ username } } } } }`,
+        variables: { a: bare },
+      }),
+      signal: AbortSignal.timeout(15_000),
+    })
+    const j = await r.json()
+    const u = j?.data?.searchPinnacleNft?.edges?.[0]?.node?.user?.username
+    return typeof u === "string" && u.trim() ? u.trim() : null
+  } catch {
+    return null
+  }
+}
+
+// Our Pinnacle image route asks Dapper's search index for a signed URL, and that index is missing
+// some Legendary pins (11-09: every LGEV2-DVHA render 404s). The pin's own public page,
+// disneypinnacle.com/pin/<nft_id>, carries signed render URLs for it: take the cropped front.
+async function pinnaclePinImage(r) {
+  const render = String(r.external_id ?? "")
+  if (!r.nft_id || !/^[A-Z0-9-]{3,64}$/.test(render)) return null
+  try {
+    const res = await fetch(`https://disneypinnacle.com/pin/${encodeURIComponent(r.nft_id)}`, { signal: AbortSignal.timeout(20_000) })
+    const html = (await res.text()).replace(/\\u0026|&amp;/g, "&")
+    for (const file of ["front_cropped", "front", "idle_cropped"]) {
+      const re = new RegExp(`https://assets\\.disneypinnacle\\.com/render/${render}/${file}\\.png\\?exp=\\d+&sig=[0-9a-f]+`)
+      const m = html.match(re)
+      const img = m ? await imageData(m[0]) : null
+      if (img) return img
+    }
+  } catch {}
+  return null
+}
+
 async function topSalesItems(warnings) {
   const d = await getJson("top-sales?window=7d&sort=price&limit=200")
   const rows = (d.rows ?? []).filter((r) => r.collection !== "ufc_strike" && r.price_usd > 0).slice(0, 10)
@@ -227,7 +272,15 @@ async function topSalesItems(warnings) {
     const byId = new Map((again.rows ?? []).map((r) => [r.sale_id, r]))
     for (const r of rows) if (!buyerOf(r) && byId.get(r.sale_id) && buyerOf(byId.get(r.sale_id))) r.buyer_name = byId.get(r.sale_id).buyer_name
   }
-  const imgs = await Promise.all(rows.map((r) => imageData(r.thumbnail_url)))
+  // Still an address: ask Dapper directly (same as x-draft.mjs).
+  for (const r of rows) {
+    if (buyerOf(r)) continue
+    const u = await dapperUsername(r.buyer_address)
+    if (u) r.buyer_name = u
+  }
+  const imgs = await Promise.all(
+    rows.map(async (r) => (await imageData(r.thumbnail_url)) ?? (r.collection === "disney_pinnacle" ? await pinnaclePinImage(r) : null)),
+  )
   return rows.map((r, i) => {
     if (!imgs[i]) warnings.push(`no image for #${i + 1} ${r.player_name} — its card shows a blank tile`)
     const serial = r.serial_number ? `#${r.serial_number}${r.circulation_count ? `/${r.circulation_count}` : ""}` : r.circulation_count ? `/${r.circulation_count}` : ""

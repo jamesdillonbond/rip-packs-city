@@ -162,6 +162,31 @@ async function topSales7d() {
   return (d.rows ?? []).filter((r) => !EXCLUDED.has(r.collection) && r.price_usd > 0)
 }
 
+// A Dapper wallet's username from Disney Pinnacle's public GQL (one Dapper username per wallet across
+// every Dapper app): the owner of any pin the wallet holds carries it. Used only when the insights API
+// returned an address (11-09: the week's two Pinnacle sales went to 0x6de0…cade, which no RPC
+// table had named). null when the wallet holds no Pinnacle pin or the call fails.
+const DAPPER_GQL = "https://api.production.studio-platform.dapperlabs.com/graphql"
+async function dapperUsername(addr) {
+  const bare = String(addr ?? "").toLowerCase().replace(/^0x/, "")
+  if (!/^[0-9a-f]{16}$/.test(bare)) return null
+  try {
+    const r = await fetch(DAPPER_GQL, {
+      method: "POST",
+      headers: { "content-type": "application/json", Origin: "https://disneypinnacle.com" },
+      body: JSON.stringify({
+        query: `query($a:String!){ searchPinnacleNft(searchInput:{first:1, filters:[{owner_address:{in:[$a]}}]}){ edges{ node{ user{ username } } } } }`,
+        variables: { a: bare },
+      }),
+      signal: AbortSignal.timeout(15_000),
+    })
+    const j = await r.json()
+    const u = j?.data?.searchPinnacleNft?.edges?.[0]?.node?.user?.username
+    return typeof u === "string" && u.trim() ? u.trim() : null
+  } catch {
+    return null
+  }
+}
 // A sale's buyer as the post names it: the marketplace username, never a wallet address. A buyer the
 // API could only resolve to an address (it abbreviates those as 0x1234…abcd) is left unnamed.
 function buyerOf(r) {
@@ -190,6 +215,12 @@ async function mon() {
     const again = await getJson("top-sales?window=7d&sort=price&limit=25")
     const byId = new Map((again.rows ?? []).map((r) => [r.sale_id, r]))
     for (const r of top) if (!buyerOf(r) && byId.get(r.sale_id) && buyerOf(byId.get(r.sale_id))) r.buyer_name = byId.get(r.sale_id).buyer_name
+  }
+  // Still an address: ask Dapper directly (Flow addresses only; Panini/Candy buyers are names already).
+  for (const r of top) {
+    if (buyerOf(r)) continue
+    const u = await dapperUsername(r.buyer_address)
+    if (u) r.buyer_name = u
   }
   const lines = top.map((r, i) => {
     const b = buyerOf(r)
