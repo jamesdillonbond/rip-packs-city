@@ -21,6 +21,7 @@ import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
 import { accentFill, accentText, labelOn } from "@/lib/accent-text"
 import { challengeEntryHref } from "@/lib/trophy/challenge-link"
 import { pinsToken } from "@/lib/og/card-url"
+import { track } from "@/lib/telemetry/track"
 
 const MONO = "var(--font-mono)";
 const DISPLAY = "var(--font-display)";
@@ -260,6 +261,10 @@ export default function TrophyCaseShareClient({
           )}
           <Link
             href={challenge ? challengeEntryHref(challenge.slug) : "/dashboard"}
+            // 2026-11-08 weekend review: 8 visitors saw ONLY a shared Dame case and
+            // none reached /login — but nothing recorded whether this was clicked,
+            // so "nobody clicked" and "the click didn't convert" read the same.
+            onClick={() => track("trophy-share-cta-click", { surface: challenge ? "challenge-case" : "main-case", challenge: challenge?.slug ?? null, owner: isOwner })}
             className="rpc-btn-primary"
             style={{
               textDecoration: "none",

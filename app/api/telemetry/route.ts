@@ -20,7 +20,7 @@ import { NextRequest, NextResponse, after } from "next/server"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
 import { anonTelemetryAllowed } from "@/lib/abuse/anon-rate"
 import { supabaseAdmin } from "@/lib/supabase"
-import { automatedReason, automatedStackReason } from "@/lib/telemetry/automated"
+import { automatedReason, automatedStackReason, countOnlyAutomatedPageView } from "@/lib/telemetry/automated"
 
 export const dynamic = "force-dynamic"
 
@@ -100,6 +100,17 @@ export async function POST(req: NextRequest) {
     automatedReason(ua) ?? (metadata?.webdriver === true ? "webdriver" : null) ?? automatedStackReason(metadata?.stack)
   if (metadata) { delete metadata.automated; delete metadata.automated_by }
   if (automatedBy) metadata = { ...(metadata ?? {}), automated: true, automated_by: automatedBy }
+
+  // Our own sweeps' page views are an hourly COUNT, not a row each (2026-11-09 —
+  // see countOnlyAutomatedPageView). Deferred like the insert below, and a failed
+  // bump costs one count, never a 5xx.
+  if (countOnlyAutomatedPageView(feature, automatedBy)) {
+    after(async () => {
+      const { error } = await (supabaseAdmin as any).rpc("bump_automated_pageview", { p_by: automatedBy })
+      if (error) console.log("[telemetry] automated page-view count", error.message)
+    })
+    return new NextResponse(null, { status: 204 })
+  }
 
   // Fire-and-forget insert. We deliberately swallow errors here — telemetry
   // must never surface as a 5xx in the UI.

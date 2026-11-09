@@ -40,3 +40,16 @@ const DRIVER_STACK = /\beval at evaluate \(/
 export function automatedStackReason(stack: unknown): string | null {
   return typeof stack === "string" && DRIVER_STACK.test(stack) ? "page-evaluate" : null
 }
+
+// 2026-11-09 (weekend activity review): OUR OWN sweeps — the post-deploy E2E DOM
+// smoke and the hourly QA runs — wrote 21,943 of the weekend's 22,548 page-view
+// rows (Playwright 21,239 · headless Chrome 704). Those page views are COUNTED per
+// hour (public.automated_pageview_hourly) instead of stored as rows. Only these two
+// matches, and only page views: a third-party scraper (Lightpanda, crawlers, HTTP
+// clients) and any automated client_error are still written as tagged rows, which
+// is what the 09-29 tag above exists to keep visible.
+const COUNT_ONLY = new Set(["playwright", "headlesschrome"])
+
+export function countOnlyAutomatedPageView(feature: string, automatedBy: string | null): boolean {
+  return feature === "page-view" && automatedBy != null && COUNT_ONLY.has(automatedBy)
+}

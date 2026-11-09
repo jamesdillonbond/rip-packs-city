@@ -333,6 +333,11 @@ function ProfilePageInner() {
 
   // Pin flow: which slot is being filled, and whether the modal is open.
   const [pinSlot, setPinSlot] = useState<number | null>(null);
+  // The live challenge the owner hasn't finished, reported by TrophyCasesPanel —
+  // the main-case picker offers it ("this is your MAIN case"); 6 of 22 Dame Time
+  // entrants filled the main case by mistake (2026-11-08 weekend review).
+  const [liveChallenge, setLiveChallenge] = useState<{ slug: string; title: string } | null>(null);
+  const [challengeOpenRequest, setChallengeOpenRequest] = useState<{ slug: string; n: number } | null>(null);
   // Hero edit flow: open the same picker but write to profile_bio instead of trophy_moments.
   const [heroEditOpen, setHeroEditOpen] = useState(false);
   // Verification: which wallet is currently in the verify-by-listing modal.
@@ -1363,6 +1368,8 @@ function ProfilePageInner() {
             ownerKey={null}
             savedChains={loading || walletsFailed ? null : savedWalletChains(wallets.map((w) => w.wallet_addr), detectAddressChain)}
             onToast={pushToast}
+            onLiveChallenge={setLiveChallenge}
+            openRequest={challengeOpenRequest}
           />
           </div>
         )}
@@ -1454,6 +1461,17 @@ function ProfilePageInner() {
           // null while the wallet read is unknown: the picker says "you haven't
           // added a wallet" only when the list was actually read.
           savedChains={loading || walletsFailed ? null : savedWalletChains(wallets.map((w) => w.wallet_addr), detectAddressChain)}
+          challengeOffer={
+            userId && liveChallenge
+              ? {
+                  title: liveChallenge.title,
+                  onUse: () => {
+                    setPinSlot(null);
+                    setChallengeOpenRequest((r) => ({ slug: liveChallenge.slug, n: (r?.n ?? 0) + 1 }));
+                  },
+                }
+              : null
+          }
         />
       )}
       {heroEditOpen && (

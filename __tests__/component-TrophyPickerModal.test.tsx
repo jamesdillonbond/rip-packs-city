@@ -98,6 +98,36 @@ const TS_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 
 // The manual-entry tab (moment-ID lookup), the grid filter/sort controls, the
 // pin POST, and the MomentRow variant branches were all dark. These drive them.
+// 2026-11-08 weekend review: 6 of 22 Dame Time entrants filled the MAIN case with
+// Dame pieces (10–13 picker opens each). The main-case picker now says it is the
+// main case and offers the challenge entry instead.
+describe("TrophyPickerModal — main case vs a live challenge", () => {
+  it("the MAIN-case picker names the main case and offers the challenge entry", async () => {
+    const onUse = vi.fn()
+    const { findByTestId, getByText } = render(
+      <TrophyPickerModal {...baseProps} challengeOffer={{ title: "Dame Time", onUse }} />,
+    )
+    const note = await findByTestId("picker-challenge-offer")
+    expect(note.textContent).toMatch(/This is your main trophy case\. Building your Dame Time entry\?/)
+    fireEvent.click(getByText("Use my Dame Time case"))
+    expect(onUse).toHaveBeenCalledTimes(1)
+  })
+
+  it("a CHALLENGE-case picker never shows the offer, even if one is passed", async () => {
+    const { queryByTestId, findAllByText } = render(
+      <TrophyPickerModal {...baseProps} caseId="11111111-1111-4111-8111-111111111111" challengeOffer={{ title: "Dame Time", onUse: () => {} }} />,
+    )
+    await findAllByText(/Wembanyama/)
+    expect(queryByTestId("picker-challenge-offer")).toBeNull()
+  })
+
+  it("CONTROL: no live challenge, no offer", async () => {
+    const { queryByTestId, findAllByText } = render(<TrophyPickerModal {...baseProps} />)
+    await findAllByText(/Wembanyama/)
+    expect(queryByTestId("picker-challenge-offer")).toBeNull()
+  })
+})
+
 describe("TrophyPickerModal — manual lookup + grid pin + row variants", () => {
   it("looks up a moment ID and renders the preview card (image, serial/mint, fmv)", async () => {
     vi.stubGlobal(

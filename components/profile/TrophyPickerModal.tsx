@@ -184,6 +184,15 @@ interface Props {
    * the confirm step names the trophy a replace displaces.
    */
   openSlots?: readonly number[] | null;
+  /** The challenge this case belongs to — its SLUG goes on the pick events (a case id never leaves). */
+  challengeSlug?: string | null;
+  /**
+   * MAIN-case picker only (2026-11-08 weekend review): a live challenge the owner
+   * has not finished. 6 of 22 Dame Time entrants pinned all-Dame sets into the
+   * main case instead (10–13 picker opens each). The picker now says which case
+   * it is filling and offers the entry instead.
+   */
+  challengeOffer?: { title: string; onUse: () => void } | null;
 }
 
 export default function TrophyPickerModal({
@@ -198,6 +207,8 @@ export default function TrophyPickerModal({
   initialQuery = "",
   title,
   openSlots = null,
+  challengeSlug = null,
+  challengeOffer = null,
 }: Props) {
   const [tab, setTab] = useState<"grid" | "manual">("grid");
   const [moments, setMoments] = useState<PickerMoment[] | null>(null);
@@ -272,12 +283,19 @@ export default function TrophyPickerModal({
   const [manualPreview, setManualPreview] = useState<PickerMoment | null>(null);
   const [manualError, setManualError] = useState<string | null>(null);
 
+  const offered = !!challengeOffer;
   useEffect(() => {
     // 2026-11-08: which CASE. Juiceshack opened the picker 19 times on 11-07 —
     // the main case, then the Dame Time case, slot by slot — and the events could
     // not say which was which. `case` is "main" or "extra" (an id never leaves).
-    track("trophy-modal-open", { slot, case: caseId ? "extra" : "main", challenge: initialQuery ? true : false });
-  }, [slot, caseId, initialQuery]);
+    track("trophy-modal-open", {
+      slot,
+      case: caseId ? "extra" : "main",
+      challenge: initialQuery ? true : false,
+      ...(challengeSlug ? { challenge_slug: challengeSlug } : {}),
+      ...(offered ? { challenge_offered: true } : {}),
+    });
+  }, [slot, caseId, initialQuery, challengeSlug, offered]);
 
   // Escape-to-close + focus trap + focus restore. The modal is always "open"
   // while mounted (parent controls mount), so isOpen is a constant true.
@@ -483,7 +501,12 @@ export default function TrophyPickerModal({
       landedIds.push(queue[i].moment_id);
     }
     if (landedIds.length > 0) pinnedAny.current = true;
-    track("trophy-multi-pin", { picked: queue.length, landed: landedIds.length, case: caseId ? "extra" : "main" });
+    track("trophy-multi-pin", {
+      picked: queue.length,
+      landed: landedIds.length,
+      case: caseId ? "extra" : "main",
+      ...(challengeSlug ? { challenge_slug: challengeSlug } : {}),
+    });
     setSaving(false);
     if (!failure) {
       onPinned();
@@ -495,7 +518,7 @@ export default function TrophyPickerModal({
     setPickError(
       landedIds.length > 0 ? `Pinned ${landedIds.length} of ${queue.length}. ${failure}` : failure
     );
-  }, [picked, remaining, postPin, caseId, onPinned]);
+  }, [picked, remaining, postPin, caseId, challengeSlug, onPinned]);
 
   // Resolve the pasted id against the real moment resolver (get_moment_detail
   // via /api/moment/<id>) rather than searching your top-96. On a miss we show
@@ -605,7 +628,7 @@ export default function TrophyPickerModal({
             }}
           >
             {multi
-              ? `${title ?? "Trophy case"} · ${remaining.length} empty slot${remaining.length === 1 ? "" : "s"}`
+              ? `${title ?? (caseId ? "Trophy case" : "Main trophy case")} · ${remaining.length} empty slot${remaining.length === 1 ? "" : "s"}`
               : title
               ? `${title} · slot ${slot}`
               : `Pin to slot ${slot}`}
@@ -751,6 +774,51 @@ export default function TrophyPickerModal({
 
         {tab === "grid" && !pending && (
           <>
+            {challengeOffer && !caseId && (
+              <div
+                data-testid="picker-challenge-offer"
+                role="note"
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  flexWrap: "wrap",
+                  padding: "10px 12px",
+                  margin: "0 0 10px",
+                  borderRadius: 8,
+                  border: "1px solid var(--rpc-red-border)",
+                  fontFamily: monoFont,
+                  fontSize: 11,
+                  lineHeight: 1.5,
+                  color: "var(--rpc-text-secondary)",
+                }}
+              >
+                <span>
+                  This is your <strong>main</strong> trophy case. Building your {challengeOffer.title} entry? It has its own case.
+                </span>
+                <button
+                  type="button"
+                  onClick={challengeOffer.onUse}
+                  style={{
+                    fontFamily: condensedFont,
+                    fontWeight: 700,
+                    fontSize: 11,
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    borderRadius: 8,
+                    padding: "6px 12px",
+                    cursor: "pointer",
+                    background: "var(--rpc-red-fill)",
+                    border: "1px solid var(--rpc-red-fill)",
+                    color: "#fff", // brand-exception: white label on the --rpc-red-fill button (4.68:1)
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  Use my {challengeOffer.title} case
+                </button>
+              </div>
+            )}
             {/* 2026-11-08: "How do I show off my Panini cards?" — a challenge
                 that takes Panini says where the username goes, only when the
                 route has READ that none is linked (null = unknown: say nothing). */}

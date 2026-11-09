@@ -21,7 +21,7 @@ import { apiErrorMessage } from "@/lib/api-error-message";
 import { MAX_CASE_NAME_LEN, MAX_EXTRA_CASES } from "@/lib/trophy/cases";
 import { mainCaseCandidates, parseChallengeRules } from "@/lib/trophy/challenge-rules";
 import { openSlotsOf } from "@/lib/trophy/fill-slots";
-import { challengeAnchorId, challengeCaseSharePath, challengeFocusFromUrl } from "@/lib/trophy/challenge-link";
+import { challengeAnchorId, challengeCaseSharePath, challengeFocusFromUrl, challengeShopHref } from "@/lib/trophy/challenge-link";
 import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
 import ChallengeCountdown from "@/components/profile/ChallengeCountdown";
 import { pinsToken } from "@/lib/og/card-url";
@@ -80,6 +80,20 @@ export function copyMainToast(title: string, res: { copied?: unknown; skipped?: 
   return `${lead} with ${n} piece${n === 1 ? "" : "s"} from your main case${why}`;
 }
 
+/** One proposed piece from the fill route. */
+export type FillPick = { slot: number; player_name: string | null; set_name: string | null; serial_number: number | null; fmv: number | null };
+
+/** The confirm text for "Fill my case". Pure, so every outcome is pinned. */
+export function fillConfirmCopy(title: string, picks: FillPick[], short: number): string {
+  const lines = picks.map((p) => {
+    const price = typeof p.fmv === "number" ? ` · $${p.fmv.toFixed(2)}` : "";
+    const serial = typeof p.serial_number === "number" ? ` #${p.serial_number}` : "";
+    return `Slot ${p.slot}: ${p.set_name ?? p.player_name ?? "Moment"}${serial}${price}`;
+  });
+  const tail = short > 0 ? `\n\nThat still leaves ${short} slot${short === 1 ? "" : "s"} empty — ${title} completes at 6.` : "";
+  return `Pin these ${picks.length} to your ${title} entry?\n\n${lines.join("\n")}${tail}`;
+}
+
 export function boardListingOf(d: { board_username?: unknown; board_username_known?: unknown } | null | undefined): BoardListing {
   if (d?.board_username_known !== true) return "unknown";
   return typeof d.board_username === "string" && d.board_username.length > 0 ? "listed" : "needs_username";
@@ -91,6 +105,26 @@ export function entryStatusCopy(filled: number, board: BoardListing): string {
   if (board === "listed") return `✓ Entry saved · ${filled} of 6 on the board →`;
   if (board === "needs_username") return `✓ Entry saved · ${filled} of 6 — set a username to appear on the board →`;
   return `✓ Entry saved · ${filled} of 6 →`;
+}
+
+/**
+ * The live challenge the owner has NOT finished (entered below 6, or not entered),
+ * for the main-case picker's "this is your main case" offer. Null on none. Pure.
+ * "Live" is the challenge's `is_active` flag (flipped at close by
+ * expire_ended_challenges), not a wall-clock read during render — a pin into a
+ * closed challenge is refused server-side (409) either way.
+ */
+export function unfinishedLiveChallenge(
+  cases: TrophyCaseData[],
+  challenges: TrophyChallengeInfo[] | null
+): { slug: string; title: string } | null {
+  const live = (ch: TrophyChallengeInfo) => ch.is_active;
+  for (const c of cases) {
+    if (c.challenge && live(c.challenge) && c.slabs.length < 6) return { slug: c.challenge.slug, title: c.challenge.title };
+  }
+  const entered = new Set(cases.map((c) => c.challenge?.slug).filter(Boolean) as string[]);
+  const open = (challenges ?? []).find((ch) => live(ch) && !entered.has(ch.slug));
+  return open ? { slug: open.slug, title: open.title } : null;
 }
 
 /** Six fixed cells keyed by the slab's OWN slot (never array position). */
@@ -121,7 +155,13 @@ export default function TrophyCasesPanel({
   onToast,
   focusChallenge,
   mainPins = null,
+  onLiveChallenge,
+  openRequest = null,
 }: {
+  /** Reports the unfinished live challenge (or null) whenever the cases read lands. */
+  onLiveChallenge?: (c: { slug: string; title: string } | null) => void;
+  /** Open this challenge's picker (entering it first if needed). `n` re-triggers. */
+  openRequest?: { slug: string; n: number } | null;
   /** The owner's MAIN-case pins (null = unknown/failed read: no offer is made). */
   mainPins?: MainPin[] | null;
   /** Challenge slug to land on (the dashboard captures it at mount); falls back to the URL. */
@@ -168,6 +208,11 @@ export default function TrophyCasesPanel({
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (load.state !== "ok" || !onLiveChallenge) return;
+    onLiveChallenge(unfinishedLiveChallenge(load.cases, load.challenges));
+  }, [load, onLiveChallenge]);
 
   // Deep link (challengeEntryHref). The dashboard renders this panel FIRST on
   // such a visit, so the challenge is already near the top; this pins its row
@@ -272,6 +317,59 @@ export default function TrophyCasesPanel({
     [copyFromMain, onToast, refresh]
   );
 
+  // "Fill my case" (2026-11-08 weekend review): propose the pieces for the empty
+  // slots (highest FMV, new editions first), confirm, then pin. The server gates
+  // every piece exactly like a hand pin.
+  const [shortBy, setShortBy] = useState<Record<string, number>>({});
+  const fillCase = useCallback(
+    async (c: TrophyCaseData) => {
+      if (!c.challenge) return;
+      const title = c.challenge.title;
+      setBusy(true);
+      try {
+        const post = (confirm: boolean) =>
+          fetch("/api/profile/trophy-cases/fill", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ caseId: c.id, confirm }),
+          });
+        const res = await post(false);
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          onToast(apiErrorMessage(d, res.status), "info");
+          return;
+        }
+        const picks: FillPick[] = Array.isArray(d?.picks) ? d.picks : [];
+        const short = typeof d?.short === "number" ? d.short : 0;
+        setShortBy((m) => ({ ...m, [c.id]: short }));
+        if (picks.length === 0) {
+          onToast(`None of your held pieces fit the empty slots — ${title} needs ${short} more.`, "info");
+          return;
+        }
+        if (!window.confirm(fillConfirmCopy(title, picks, short))) return;
+        const done = await post(true);
+        const dd = await done.json().catch(() => ({}));
+        if (!done.ok) {
+          onToast(apiErrorMessage(dd, done.status), "info");
+          return;
+        }
+        const pinned = typeof dd?.pinned === "number" ? dd.pinned : 0;
+        const left = typeof dd?.short === "number" ? dd.short : short;
+        setShortBy((m) => ({ ...m, [c.id]: left }));
+        onToast(
+          left > 0 ? `Pinned ${pinned} — ${left} slot${left === 1 ? "" : "s"} still empty` : `Pinned ${pinned} — your ${title} entry is complete`,
+          pinned > 0 ? "success" : "info"
+        );
+      } catch {
+        onToast("Couldn't reach the server — try again.", "info");
+      } finally {
+        setBusy(false);
+        await refresh();
+      }
+    },
+    [onToast, refresh]
+  );
+
   // "Enter" (2026-11-08): entering used to create an EMPTY case and stop there.
   // Both outside entrants that evening skipped it, filled their MAIN case one
   // modal per slot with the search box reset each time, then copied it over —
@@ -307,6 +405,24 @@ export default function TrophyCasesPanel({
     },
     [onToast, refresh]
   );
+
+  // "Use my Dame Time case" from the MAIN-case picker (2026-11-08 weekend review):
+  // open the entry's picker on its first empty slot, entering the challenge first
+  // when the owner hasn't yet. Once per request (`n`).
+  const handledRequest = useRef<number | null>(null);
+  useEffect(() => {
+    if (!openRequest || load.state !== "ok" || handledRequest.current === openRequest.n) return;
+    handledRequest.current = openRequest.n;
+    const entry = load.cases.find((c) => c.challenge?.slug === openRequest.slug);
+    if (entry) {
+      const free = openSlotsOf(entry.slabs.map((s) => s.slot));
+      if (free.length > 0) setPick({ c: entry, slot: free[0] });
+      document.getElementById(challengeAnchorId(openRequest.slug))?.scrollIntoView?.({ block: "start" });
+      return;
+    }
+    const ch = (load.challenges ?? []).find((x) => x.slug === openRequest.slug);
+    if (ch) void enterAndPick(ch);
+  }, [openRequest, load, enterAndPick]);
 
   const send = useCallback(
     async (url: string, method: string, body: unknown, okText: string): Promise<boolean> => {
@@ -459,6 +575,8 @@ export default function TrophyCasesPanel({
               : 0
           }
           onFillFromMain={() => void fillFromMain(c)}
+          onFillCase={() => void fillCase(c)}
+          shortBy={shortBy[c.id] ?? 0}
         />
       ))}
 
@@ -519,6 +637,7 @@ export default function TrophyCasesPanel({
           slot={pick.slot}
           ownerKey={ownerKey}
           caseId={pick.c.id}
+          challengeSlug={pick.c.challenge?.slug ?? null}
           title={pick.c.challenge ? pick.c.challenge.title : pick.c.name}
           initialQuery={pick.c.challenge ? (parseChallengeRules(pick.c.challenge.rules).playerNames[0] ?? "") : ""}
           onClose={() => setPick(null)}
@@ -550,7 +669,13 @@ function CaseBlock({
   onRename,
   onDelete,
   onNoteSaved,
+  onFillCase,
+  shortBy = 0,
 }: {
+  /** "Fill my case" — propose, confirm, pin (challenge entries only). */
+  onFillCase?: () => void;
+  /** Slots the last fill attempt could not cover from the owner's holdings. */
+  shortBy?: number;
   c: TrophyCaseData;
   board: BoardListing;
   username: string | null;
@@ -663,6 +788,35 @@ function CaseBlock({
         >
           Add {Math.min(mainCandidates, 6 - filled)} from my main case
         </button>
+      )}
+      {ch && filled < 6 && onFillCase && (
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
+          <button
+            type="button"
+            data-testid="fill-my-case"
+            disabled={busy}
+            onClick={onFillCase}
+            style={{ ...btn, background: "var(--rpc-red-fill)", borderColor: "var(--rpc-red-fill)", color: "#fff" }}
+          >
+            Fill my case ({6 - filled} left)
+          </button>
+          {shortBy > 0 && (
+            <span data-testid="fill-short" style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-secondary)" }}>
+              You&rsquo;re {shortBy} short of 6
+              {(() => {
+                const href = challengeShopHref(ch.rules);
+                return href ? (
+                  <>
+                    {" "}·{" "}
+                    <Link href={href} style={{ color: "var(--rpc-red-text)", textDecoration: "none" }}>
+                      find more pieces →
+                    </Link>
+                  </>
+                ) : null;
+              })()}
+            </span>
+          )}
+        </div>
       )}
       {/* Share THIS entry: its own page + card (/profile/<u>/trophy-case/<slug>).
           Only with something pinned and a public handle to build the URL on —

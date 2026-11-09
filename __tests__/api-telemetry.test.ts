@@ -19,12 +19,14 @@ const state: {
   userThrows: boolean
   allowRow: any
   insert: any
+  rpc: { fn: string; args: any } | null
   afterWork: Promise<unknown> | null
 } = {
   user: null,
   userThrows: false,
   allowRow: null,
   insert: null,
+  rpc: null,
   afterWork: null,
 }
 
@@ -62,6 +64,10 @@ vi.mock("@/lib/supabase", () => {
   }
   return {
     supabaseAdmin: {
+      rpc: async (fn: string, args: any) => {
+        state.rpc = { fn, args }
+        return { error: null }
+      },
       from: (t: string) => {
         if (t === "usage_events") {
           return {
@@ -259,6 +265,9 @@ describe("POST /api/telemetry", () => {
       expect(state.insert.metadata).toEqual({ path: "/insights", automated: true, automated_by: "lightpanda" })
     })
 
+    // `view`, not `page-view`: our own sweeps' PAGE VIEWS (headless Chrome, Playwright)
+    // are counted instead of stored since 2026-11-09 (pinned below). The tag itself
+    // still applies to every other beacon from these agents.
     it("tags headless Chrome, crawlers and HTTP clients", async () => {
       for (const ua of [
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/140.0.0.0 Safari/537.36",
@@ -268,7 +277,7 @@ describe("POST /api/telemetry", () => {
         "curl/8.5.0",
       ]) {
         state.insert = null
-        await post(req({ feature: "page-view" }, false, ua))
+        await post(req({ feature: "view" }, false, ua))
         expect(state.insert.metadata.automated, ua).toBe(true)
         expect(typeof state.insert.metadata.automated_by, ua).toBe("string")
       }
@@ -303,6 +312,60 @@ describe("POST /api/telemetry", () => {
     it("CONTROL: an ordinary client_error stack from our bundle stays untagged", async () => {
       await post(req({ feature: "client_error", metadata: { path: "/", stack: "TypeError: x is undefined\n    at Board (https://www.rippackscity.com/_next/static/chunks/app.js:1:200)" } }))
       expect(state.insert.metadata.automated).toBeUndefined()
+    })
+
+    // 2026-11-09 weekend review: Playwright + headless Chrome page views were 97 % of
+    // all page-view rows (21,943 of 22,548). They become an hourly count.
+    describe("our own sweeps' page views are counted, not stored", () => {
+      const PLAYWRIGHT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36 Playwright/1.56"
+      const HEADLESS = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/140.0.0.0 Safari/537.36"
+
+      it("a Playwright page view bumps the hourly count and writes NO usage_events row", async () => {
+        state.insert = null
+        state.rpc = null
+        await post(req({ feature: "page-view", metadata: { path: "/insights" } }, false, PLAYWRIGHT))
+        expect(state.insert).toBeNull()
+        expect(state.rpc).toEqual({ fn: "bump_automated_pageview", args: { p_by: "playwright" } })
+      })
+
+      it("a headless Chrome page view is counted too", async () => {
+        state.insert = null
+        state.rpc = null
+        await post(req({ feature: "page-view" }, false, HEADLESS))
+        expect(state.insert).toBeNull()
+        expect(state.rpc).toEqual({ fn: "bump_automated_pageview", args: { p_by: "headlesschrome" } })
+      })
+
+      it("the count is DEFERRED work, like the insert it replaces", async () => {
+        state.afterWork = null
+        await post(req({ feature: "page-view" }, false, PLAYWRIGHT))
+        expect(state.afterWork).not.toBeNull()
+      })
+
+      it("a third-party scraper's page view is still a tagged ROW (forensics)", async () => {
+        state.insert = null
+        state.rpc = null
+        await post(req({ feature: "page-view", metadata: { path: "/" } }, false, "Lightpanda/1.0"))
+        expect(state.rpc).toBeNull()
+        expect(state.insert.metadata).toEqual({ path: "/", automated: true, automated_by: "lightpanda" })
+      })
+
+      it("a Playwright client_error is still a ROW — only page views are counted", async () => {
+        state.insert = null
+        state.rpc = null
+        await post(req({ feature: "client_error", metadata: { path: "/" } }, false, PLAYWRIGHT))
+        expect(state.rpc).toBeNull()
+        expect(state.insert.feature_name).toBe("client_error")
+        expect(state.insert.metadata.automated_by).toBe("playwright")
+      })
+
+      it("CONTROL: a human page view is still stored", async () => {
+        state.insert = null
+        state.rpc = null
+        await post(req({ feature: "page-view", metadata: { path: "/" } }))
+        expect(state.rpc).toBeNull()
+        expect(state.insert.metadata).toEqual({ path: "/" })
+      })
     })
 
     it("a client cannot claim to be human: its own `automated` key is discarded", async () => {
