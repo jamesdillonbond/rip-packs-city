@@ -414,6 +414,11 @@ function mdPT(d) {
   return new Intl.DateTimeFormat("en-US", { timeZone: TZ, month: "numeric", day: "numeric" }).format(d)
 }
 
+// Packs named for one player: Top Shot This, Tip-Off, auction and reward packs.
+function isPlayerPack(x) {
+  return x.collection === "nba_top_shot" && /tip-off|top shot this|auction|reward/i.test(x.title)
+}
+
 async function drops() {
   const all = await calendar()
   const ahead = all.filter((x) => x.status !== "ended")
@@ -441,10 +446,18 @@ async function drops() {
       // UFC Strike's market is closed (docs/social/x-calendar.md): never say it had no drops.
       collections_not_covered: ["UFC Strike (closed)"],
     },
-    warnings_extra: calendarMeta?.unread?.length ? [`pack book unread for ${calendarMeta.unread.join(", ")} — their drops are missing from this list`] : [],
-    // One long post naming every drop. thread[] is the fallback if long posts are ever unavailable.
-    draft: [head, "", ...lines, "", link].join("\n"),
-    thread_fallback: thread(lines, `${head}\n`, `\n${link}`).map((text, i, all) => ({ n: i + 1, of: all.length, text, len: xLength(text) })),
+    // One long post naming every drop, with NO link in it (Trevor, 11-08: a link holds the main
+    // post back in X's ranking); the link rides in reply[], posted as a reply so its preview card
+    // shows there. thread_fallback is for when long posts are unavailable.
+    draft: [head, "", ...lines].join("\n"),
+    reply: [{ n: 2, of: 2, text: `Learn more about this week's drops here 👇\n${link}` }],
+    thread_fallback: thread(lines, `${head}\n`, "").map((text, i, all) => ({ n: i + 1, of: all.length, text, len: xLength(text) })),
+    // A pack named for one player ends with that player's team hashtag (docs/social/x-calendar.md).
+    // The calendar does not carry the team, so the drafter flags the lines to finish by hand.
+    warnings_extra: [
+      ...(calendarMeta?.unread?.length ? [`pack book unread for ${calendarMeta.unread.join(", ")} — their drops are missing from this list`] : []),
+      ...byPrice.filter(isPlayerPack).map((x) => `"${x.title}" is a player pack — end its line with the team's hashtag (docs/social/x-calendar.md)`),
+    ],
   }
 }
 

@@ -71,21 +71,31 @@ A source that could not be read is named in `warnings` and `facts.collections_un
 
 ### The RPC Weekly Pack Drop Report (Sunday) — Trevor's format, 11-08
 
-One long post (the account posts long-form, so no thread), with the drops image attached:
+One long post (the account posts long-form, so no thread) with the drops image attached and **no link**, then the link as a reply (Trevor, 11-08: "split the link into a 2/2 off this post so the link doesn't bring down the algo on the first main post of it, and then the 2/2 uses the link preview image"). First one posted: https://x.com/rippackscity/status/2119601226279272741 (Sun 11-08 evening PT).
+
+Post 1:
 
 ```
 The RPC Weekly Pack Drop Report, 11/8-11/15 📦
 
 🏀 @NBATopShot: Rookie Debut Case ($2,500) — pre-orders close Wed 12 PM PT
 🎸 @PaniniAmerica Blockchain: Prizm The Rolling Stones Packs ($25) — on sale now
+🏀 @NBATopShot: Caleb Wilson Tip-Off Pack ($10) — pre-orders close Mon 12 PM PT #SeeRed
 …
+```
 
+Post 2/2, a reply to post 1 (the script's `reply[]`):
+
+```
+Learn more about this week's drops here 👇
 https://www.rippackscity.com/insights/drops
 ```
 
+**X caches a link's preview card for about 7 days** from the first time the URL is shared, and there is no longer a way to force a refresh. The drops page's card is the live week, so a URL X first saw last week can show last week's card. Check the preview in the composer; if it is stale, post the link with a query string (`?v=2`, `?w=1115`…), which X treats as a new URL.
+
 Dates are today to 7 days out, M/D in PT. One line per drop, priciest first: the collection's emoji (🏀 Top Shot, 🏈 All Day, ⚽ Golazos, 📌 Pinnacle, ⚾ Candy MLB; Panini takes its pack's sport — 🎸 entertainment, 🏀/🏈/⚽/⚾ by sport, 🃏 otherwise), then the handle, title, retail price, and when, in PT. The script also emits `thread_fallback` in case long posts are ever unavailable.
 
-**Player packs end with the team's hashtag** (Trevor, 11-08: "use the team's hashtag emoji at the end, like #LakeShow"). On X these hashtags show the team's emoji. Add it to any pack named for one player: Top Shot This, Tip-Off, auction and reward packs. The player's team comes from RPC's editions data (`editions.team_name`). Use the team's official hashtag; if you are not sure of it, leave the line without one and say so. Known, 2026-27: Lakers #LakeShow · Bulls #SeeRed (Trevor, 11-08).
+**Player packs end with the team's hashtag** (Trevor, 11-08: "use the team's hashtag emoji at the end, like #LakeShow"). On X these hashtags show the team's emoji. Add it to any pack named for one player: Top Shot This, Tip-Off, auction and reward packs. The player's team comes from RPC's editions data (`editions.team_name`). Use the team's official hashtag; if you are not sure of it, leave the line without one and say so. Known, 2026-27: Lakers #LakeShow · Bulls #SeeRed (Trevor, 11-08). The calendar does not carry a pack's team, so the script adds a warning for each Top Shot player pack (title matches Tip-Off / Top Shot This / auction / reward) and the hashtag is finished by hand.
 
 **Live this week also means still on sale.** A Panini pack released in the last 60 days that the store still has in stock is listed ("on sale now", plus "almost sold out" under 5 % of supply left). A trade-in-only pack such as Top Shot This is in no feed. When the pre-post check finds one on nbatopshot.com, add it by hand, and to the image with `x-image.mjs --add extra.json`.
 
@@ -93,7 +103,7 @@ Dates are today to 7 days out, M/D in PT. One line per drop, priciest first: the
 
 Every post that has a template ships with an RPC-branded image. On X, a post with an attached image is shown as the image, and posts whose main link card is the content have reached fewer people (Buffer's link study; Nieman Lab). So the image carries the post, and the link rides the last post of a thread.
 
-- `node scripts/social/x-image.mjs --slot <slot> --out <dir>` renders `rpc-<slot>-<n>.png` (2400×1350, 16:9) with Playwright from the same public API the text uses. Every item in the post is on an image. A list longer than 8 is split across images (X allows 4 per post), never cut. A card whose text overflows is reported in `warnings`.
+- `node scripts/social/x-image.mjs --slot <slot> --out <dir>` renders `rpc-<slot>-<n>.png` (2400×1350, 16:9) with Playwright from the same public API the text uses. Every item in the post is on an image. Up to 9 fit one image (a 3×3 grid with tighter type; a card pushed below the footer is a warning, 11-08); a longer list is split across images (X allows 4 per post), never cut. A card whose text overflows is reported in `warnings`.
 - **Brand art only.** No pack art, player photos or partner artwork is composited in: those belong to their owners, and pack art often carries real players' photos. Fonts and colours are RPC's (`public/fonts`, collection accents from `lib/collections.ts`).
 - Templates: **Sun — drops this week** (live 11-08). Other slots post with their link card until they get one.
 - The daily task sends the image as a file with the draft. Trevor saves it and attaches it to post 1 (the one-tap post link cannot carry an image).
