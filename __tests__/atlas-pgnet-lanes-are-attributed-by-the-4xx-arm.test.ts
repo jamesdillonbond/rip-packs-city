@@ -17,10 +17,22 @@ import { stripSqlComments } from "../scripts/lib/strip-sql-comments.mjs"
 // (`JOIN public.<table> <alias> ON <alias>.request_id = r.id` in a migration that touches
 // check_edge_fn_http_failures), or carry a reason in SUPPRESSED.
 
-const ATLAS_HOST = /api\.production\.atlas\.dapperlabs\.com/
+// 2026-11-09: widened from the Atlas host to every Cloudflare-fronted Dapper API host. The
+// studio-platform GraphQL host is challenged the same way, and four of its lanes (pack pulls,
+// All Day drop windows, pack-index mints, Pinnacle sale serials) had never been taught to the arm
+// (20261109150000) -- each would have filed its first challenge as an unattributed CRITICAL.
+const ATLAS_HOST = /api\.production\.(?:atlas|studio-platform)\.dapperlabs\.com/
 const ARM = /check_edge_fn_http_failures/
 
-const SUPPRESSED: Record<string, string> = {}
+const SUPPRESSED: Record<string, string> = {
+  // A RESULTS table that carries the request id as provenance; the dispatch identity is
+  // pack_nft_identity_requests, which the arm joins.
+  pack_nft_identity: "results table; its dispatch record pack_nft_identity_requests is joined",
+  // The lane CLEARS request_id on collect (0 of 325 rows held one, 2026-11-09), so a join could
+  // never attribute a landed response -- a join here would read as coverage it cannot give.
+  // 3-7 reads a day. To attribute it, the lane must keep the id after collect first.
+  pinnacle_sale_serial_reads: "request_id is cleared on collect; a join could never attribute it",
+}
 
 function lanes() {
   const files = migrationFiles().map((f) => ({ ...f, code: stripSqlComments(f.src) as string }))
