@@ -67,7 +67,8 @@ export async function GET(req: NextRequest) {
   const L = layout(live.length)
   // List fallback (more than GRID_MAX drops): two columns of one line each, sized to fit.
   const perCol = Math.ceil(live.length / 2)
-  const lineFont = Math.max(10, Math.min(20, Math.floor(AREA_H / Math.max(perCol, 1) / 1.3)))
+  // perCol is 0 only with no drops, where the list is not rendered: no divisor to guard.
+  const lineFont = perCol > 0 ? Math.max(10, Math.min(20, Math.floor(AREA_H / perCol / 1.3))) : 20
 
   return new ImageResponse(
     (
