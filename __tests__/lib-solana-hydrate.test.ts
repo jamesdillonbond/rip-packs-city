@@ -89,6 +89,10 @@ describe("unhydrated Candy assets", () => {
     expect(gatewayAlternates("https://permaweb.candy.io/TX")).toEqual(["https://permaweb.candy.io/TX", "https://arweave.net/TX"])
     expect(gatewayAlternates("https://arweave.net/TX")).toEqual(["https://arweave.net/TX", "https://permaweb.candy.io/TX"])
     expect(gatewayAlternates("https://other.host/TX")).toEqual(["https://other.host/TX"])
+    // rotation splits load: an odd rotation tries the OTHER main gateway first
+    expect(gatewayAlternates("https://permaweb.candy.io/TX", 1)).toEqual(["https://arweave.net/TX", "https://permaweb.candy.io/TX"])
+    // the third Candy gateway falls back to both main ones
+    expect(gatewayAlternates("https://candy.permaweb.services/TX")).toEqual(["https://candy.permaweb.services/TX", "https://permaweb.candy.io/TX", "https://arweave.net/TX"])
     const seen: string[] = []
     const flaky = (async (u: string) => {
       seen.push(u)

@@ -76,12 +76,21 @@ export interface HydrateResult {
 // The same Arweave transaction is served by Candy's gateway and by arweave.net (verified
 // 2026-11-09: both answered 20/20 concurrent reads for one card). A failure on one is retried
 // on the other.
+// candy.permaweb.services is a third Candy gateway seen in on-chain URIs (2026-11-09); it is
+// recognised (so a failure there falls back) but never chosen as an alternate.
 const GATEWAYS = ["https://permaweb.candy.io/", "https://arweave.net/"]
-export function gatewayAlternates(uri: string): string[] {
-  for (const g of GATEWAYS) {
+const KNOWN_GATEWAYS = [...GATEWAYS, "https://candy.permaweb.services/"]
+/**
+ * The URI first, then the same transaction on the other gateways. With `rotate` odd, a URI on
+ * one of the two main gateways is tried on the OTHER one first, so a batch splits its load
+ * across both (2026-11-09: ~1 request per card for comic sets, so throughput is latency-bound).
+ */
+export function gatewayAlternates(uri: string, rotate = 0): string[] {
+  for (const g of KNOWN_GATEWAYS) {
     if (uri.startsWith(g)) {
       const tx = uri.slice(g.length)
-      return [uri, ...GATEWAYS.filter((o) => o !== g).map((o) => o + tx)]
+      const all = [uri, ...GATEWAYS.filter((o) => o !== g).map((o) => o + tx)]
+      return rotate % 2 === 1 && GATEWAYS.includes(g) && all.length > 1 ? [all[1], all[0], ...all.slice(2)] : all
     }
   }
   return [uri]
@@ -164,7 +173,10 @@ export async function hydrateFromJsonUri(
   assets: DasAsset[],
   opts: { concurrency?: number; timeoutMs?: number; fetchImpl?: typeof fetch } = {},
 ): Promise<HydrateResult & { fetches: number; groups: number; unverified_groups: number }> {
-  const concurrency = Math.max(1, opts.concurrency ?? 16)
+  // 48 (was 16): throughput is latency-bound, not rate-limited — 68 HTTP 429 in 4,761 requests
+  // on the 11:57 AM PT run — and the breaker still stops a run whose fetches mostly fail.
+  const concurrency = Math.max(1, opts.concurrency ?? 48)
+  let rotation = 0
   const timeoutMs = opts.timeoutMs ?? 8000
   const doFetch = opts.fetchImpl ?? fetch
   const out: HydrateResult & { fetches: number; groups: number; unverified_groups: number } = { hydrated: [], failed: [], fetches: 0, groups: 0, unverified_groups: 0 }
@@ -183,7 +195,7 @@ export async function hydrateFromJsonUri(
     const uri = a.content?.json_uri
     if (typeof uri !== "string" || !/^https:\/\//i.test(uri)) return { json: null, reason: "no https json_uri" }
     let reason = "no attempt"
-    for (const url of gatewayAlternates(uri)) {
+    for (const url of gatewayAlternates(uri, rotation++)) {
       out.fetches++
       try {
         const resp = await doFetch(url, { signal: AbortSignal.timeout(timeoutMs) })
