@@ -13,6 +13,7 @@
 // asset UNHYDRATED and reports it — the caller must not write it under a name-only key.
 
 import type { DasAsset } from "@/lib/chains/solana/das"
+import { editionKeyFromAsset } from "@/lib/chains/solana/normalize"
 
 /** No traits and no image: DAS did not load this asset's off-chain JSON. */
 export function isUnhydrated(asset: DasAsset): boolean {
@@ -96,56 +97,77 @@ export function failureClass(reason: string): string {
   return reason.slice(0, 40)
 }
 
-// Every card of an edition carries the same off-chain JSON except its name and serial
-// ("Phil Bickford (376/850)" vs "(377/850)"). One fetch per edition GROUP — (collection,
-// base name, edition size) — is applied to every card in the group with that card's own name
-// and serial. Measured 2026-11-09 8:57 AM PT: fetching one file per card ran ~7/s and the
-// census read 15 pages in 10 min (vs ~300); grouping cuts the fetches by ~the edition size.
-// A card whose name carries no "(n/m)" is its own group (fetched alone, never guessed).
+// Every card of an edition carries the same off-chain JSON except its name and serial. One
+// fetch per edition GROUP is applied to every member with that member's own name and serial.
+// Measured 2026-11-09: per-card fetching ran ~7/s (15 pages in 10 min vs ~300).
+//
+// DAS's name for these assets is the ON-CHAIN name, in two formats (run sample, 10:57 AM PT):
+//   MLB  "Phil Bickford (376/850)"            -> base + edition size: the size separates rarities
+//   DC   "Justice League vs Suicid 1 2292"    -> 32-char title + card number + trailing SERIAL;
+//                                               nothing in the name says the rarity
+// So a "(n/m)" group is trusted on the size, while a trailing-serial ("t:") group is VERIFIED:
+// two members are fetched and must resolve to the same edition key before the rest share the
+// JSON; if they disagree, every member is fetched alone. A name with neither shape is fetched
+// alone (never guessed).
 const SERIAL_IN_NAME = /^(.*?)\s*\(\s*(\d+)\s*\/\s*(\d+)\s*\)\s*$/
+const TRAILING_SERIAL = /^(.*\S)\s+(\d+)\s*$/
+
+function collectionOf(asset: DasAsset): string {
+  return asset.grouping?.find((g) => g.group_key === "collection")?.group_value ?? ""
+}
 
 export function editionGroupKey(asset: DasAsset): string {
   const name = asset.content?.metadata?.name ?? ""
   const m = name.match(SERIAL_IN_NAME)
-  const coll = asset.grouping?.find((g) => g.group_key === "collection")?.group_value ?? ""
-  return m ? `${coll}|${m[1].trim().toLowerCase()}|${m[3]}` : `solo|${asset.id}`
+  if (m) return `${collectionOf(asset)}|${m[1].trim().toLowerCase()}|${m[3]}`
+  const t = name.match(TRAILING_SERIAL)
+  if (t) return `${collectionOf(asset)}|t:${t[1].trim().toLowerCase()}`
+  return `solo|${asset.id}`
 }
 
-/** The group's JSON, re-addressed to one member: its own name and serial. */
+/** This member's own serial, from its name. */
+function memberSerial(asset: DasAsset): number | null {
+  const name = asset.content?.metadata?.name ?? ""
+  const m = name.match(SERIAL_IN_NAME) ?? name.match(TRAILING_SERIAL)
+  return m ? Number(m[2]) : null
+}
+
+/** The group's JSON, re-addressed to one member: its own name and serial (size kept from the JSON). */
 export function jsonForMember(json: Record<string, unknown>, member: DasAsset): Record<string, unknown> | null {
   const name = member.content?.metadata?.name ?? ""
-  const m = name.match(SERIAL_IN_NAME)
-  if (!m) return null
-  const serial = Number(m[2])
-  const size = m[3]
+  const serial = memberSerial(member)
+  if (serial == null) return null
   const attrs = Array.isArray(json.attributes) ? (json.attributes as Array<Record<string, unknown>>) : []
+  const sizeFromName = name.match(SERIAL_IN_NAME)?.[3]
+  const disp = attrs.find((a) => String(a?.trait_type ?? "") === "Serial Number")?.value
+  const size = sizeFromName ?? (typeof disp === "string" && disp.includes("/") ? disp.split("/")[1].trim() : null)
   return {
     ...json,
     name,
     serial_number: serial,
     attributes: attrs.map((a) => {
-      const t = String(a?.trait_type ?? "")
-      if (t === "Serial Number") return { ...a, value: `${serial}/${size}` }
-      if (t === "serial_number") return { ...a, value: serial }
+      const k = String(a?.trait_type ?? "")
+      if (k === "Serial Number") return { ...a, value: size ? `${serial}/${size}` : String(serial) }
+      if (k === "serial_number") return { ...a, value: serial }
       return a
     }),
   }
 }
 
 /**
- * Fetch each edition GROUP's content.json_uri once (https only; the other Arweave gateway on
- * failure; a second member tried as representative if the first fails) and merge it into every
- * member. Bounded concurrency and a per-request timeout; never throws. `fetches` counts HTTP
- * requests made. Order of `hydrated` is not significant.
+ * Fetch each edition GROUP's content.json_uri (https only; the other Arweave gateway on failure;
+ * a second member if the first fails; trailing-serial groups verified on two members) and merge
+ * it into every member. Bounded concurrency and a per-request timeout; never throws. `fetches`
+ * counts HTTP requests made. Order of `hydrated` is not significant.
  */
 export async function hydrateFromJsonUri(
   assets: DasAsset[],
   opts: { concurrency?: number; timeoutMs?: number; fetchImpl?: typeof fetch } = {},
-): Promise<HydrateResult & { fetches: number; groups: number }> {
+): Promise<HydrateResult & { fetches: number; groups: number; unverified_groups: number }> {
   const concurrency = Math.max(1, opts.concurrency ?? 16)
   const timeoutMs = opts.timeoutMs ?? 8000
   const doFetch = opts.fetchImpl ?? fetch
-  const out: HydrateResult & { fetches: number; groups: number } = { hydrated: [], failed: [], fetches: 0, groups: 0 }
+  const out: HydrateResult & { fetches: number; groups: number; unverified_groups: number } = { hydrated: [], failed: [], fetches: 0, groups: 0, unverified_groups: 0 }
   const groups = new Map<string, DasAsset[]>()
   for (const a of assets) {
     const k = editionGroupKey(a)
@@ -154,7 +176,7 @@ export async function hydrateFromJsonUri(
     else groups.set(k, [a])
   }
   out.groups = groups.size
-  const queue = [...groups.values()]
+  const queue = [...groups.entries()]
   let next = 0
 
   async function fetchJson(a: DasAsset): Promise<{ json: Record<string, unknown> | null; reason: string }> {
@@ -176,21 +198,51 @@ export async function hydrateFromJsonUri(
     return { json: null, reason }
   }
 
+  async function alone(a: DasAsset) {
+    const got = await fetchJson(a)
+    const merged = got.json ? mergeOffChainJson(a, got.json) : null
+    if (merged) out.hydrated.push(merged)
+    else out.failed.push({ id: a.id, reason: got.reason || "merge failed" })
+  }
+
   async function worker() {
     while (next < queue.length) {
-      const members = queue[next++]
-      let got: { json: Record<string, unknown> | null; reason: string } = { json: null, reason: "no attempt" }
+      const [key, members] = queue[next++]
+      if (members.length === 1) { await alone(members[0]); continue }
+      // representative: the first member that answers (at most two tried)
       let rep: DasAsset | null = null
-      for (const candidate of members.slice(0, 2)) {
-        got = await fetchJson(candidate)
-        if (got.json) { rep = candidate; break }
+      let repJson: Record<string, unknown> | null = null
+      let reason = "no attempt"
+      for (const c of members.slice(0, 2)) {
+        const got = await fetchJson(c)
+        if (got.json) { rep = c; repJson = got.json; break }
+        reason = got.reason
+      }
+      if (!rep || !repJson) { for (const a of members) out.failed.push({ id: a.id, reason }); continue }
+      const done = new Set<DasAsset>([rep])
+      const repMerged = mergeOffChainJson(rep, repJson)!
+      out.hydrated.push(repMerged)
+      if (key.includes("|t:")) {
+        // VERIFY: a second member's own JSON must give the same edition key
+        const check = members.find((m) => m !== rep)!
+        done.add(check)
+        const got = await fetchJson(check)
+        const checkMerged = got.json ? mergeOffChainJson(check, got.json) : null
+        if (checkMerged) out.hydrated.push(checkMerged)
+        else out.failed.push({ id: check.id, reason: got.reason || "merge failed" })
+        const reAddressed = checkMerged ? jsonForMember(repJson, check) : null
+        const agree = checkMerged && reAddressed && editionKeyFromAsset(mergeOffChainJson(check, reAddressed)!) === editionKeyFromAsset(checkMerged)
+          && editionKeyFromAsset(repMerged) === editionKeyFromAsset(checkMerged)
+        if (!agree) {
+          out.unverified_groups++
+          for (const a of members) if (!done.has(a)) await alone(a)
+          continue
+        }
       }
       for (const a of members) {
-        if (!got.json || !rep) { out.failed.push({ id: a.id, reason: got.reason }); continue }
-        const merged = a === rep ? mergeOffChainJson(a, got.json) : (() => {
-          const j = jsonForMember(got.json!, a)
-          return j ? mergeOffChainJson(a, j) : null
-        })()
+        if (done.has(a)) continue
+        const j = jsonForMember(repJson, a)
+        const merged = j ? mergeOffChainJson(a, j) : null
         if (merged) out.hydrated.push(merged)
         else out.failed.push({ id: a.id, reason: "could not re-address group json" })
       }

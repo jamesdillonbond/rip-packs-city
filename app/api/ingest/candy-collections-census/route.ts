@@ -64,6 +64,7 @@ async function handle(req: NextRequest) {
     wmc_repointed: result.wmc_repointed,
     hydrate_fail_reasons: result.hydrate_fail_reasons,
     hydrate_fetches: result.hydrate_fetches,
+    hydrate_unverified_groups: result.hydrate_unverified_groups,
     unhydrated_sample: result.unhydrated_sample,
     collections_touched: result.collections.length,
     collections_completed: result.completed,

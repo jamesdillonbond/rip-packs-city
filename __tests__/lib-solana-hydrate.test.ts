@@ -142,4 +142,40 @@ describe("unhydrated Candy assets", () => {
     // only the first two members were tried, each on both gateways
     expect(r2.fetches).toBe(4)
   })
+
+  // ── DC on-chain names: "<32-char title> <card #> <serial>", no edition size (run sample 10:57 AM PT) ──
+  const dc = (id: string, serial: number) => card(id, `Justice League vs Suicid 1 ${serial}`)
+  const dcJson = (rarity: string, serial: number) => ({
+    ...offChain,
+    attributes: [{ trait_type: "Rarity", value: rarity }, { trait_type: "Serial Number", value: `${serial}/5000` }],
+  })
+
+  it("DC names group by title + card number, VERIFIED on two members before the rest share the JSON", async () => {
+    const ms = [dc("a", 2292), dc("b", 305), dc("c", 12), dc("d", 4999)]
+    expect(new Set(ms.map(editionGroupKey)).size).toBe(1)
+    let n = 0
+    const f = (async (u: string) => { n++; const id = u.split("/").pop()!; return new Response(JSON.stringify(dcJson("Core", { a: 2292, b: 305 }[id as "a"] ?? 0)), { status: 200 }) }) as unknown as typeof fetch
+    const r = await hydrateFromJsonUri(ms, { fetchImpl: f })
+    expect(r.failed).toEqual([])
+    expect(n).toBe(2) // representative + verifier; c and d share
+    expect(r.unverified_groups).toBe(0)
+    const byId = new Map(r.hydrated.map((x) => [x.id, x]))
+    expect(normalizeSerial(byId.get("c")!).serial_number).toBe(12)
+    expect(normalizeSerial(byId.get("d")!).serial_number).toBe(4999)
+    expect(new Set([...byId.values()].map((x) => editionKeyFromAsset(x))).size).toBe(1)
+  })
+
+  it("if the two DC members DISAGREE on the edition, every member is fetched alone and keyed by its own JSON", async () => {
+    const ms = [dc("a", 1), dc("b", 2), dc("c", 3)]
+    const rarity: Record<string, string> = { a: "Core", b: "Rare", c: "Epic" }
+    let n = 0
+    const f = (async (u: string) => { n++; const id = u.split("/").pop()!; return new Response(JSON.stringify(dcJson(rarity[id], 1)), { status: 200 }) }) as unknown as typeof fetch
+    const r = await hydrateFromJsonUri(ms, { fetchImpl: f })
+    expect(r.unverified_groups).toBe(1)
+    expect(n).toBe(3)
+    const keys = new Map(r.hydrated.map((x) => [x.id, editionKeyFromAsset(x)]))
+    expect(keys.get("a")).toMatch(/-core$/)
+    expect(keys.get("b")).toMatch(/-rare$/)
+    expect(keys.get("c")).toMatch(/-epic$/)
+  })
 })
