@@ -44,7 +44,7 @@ export default async function ChallengeCasePage(props: {
       accentColor={data?.bio?.accent_color ?? null}
       trophies={entry?.slabs ?? []}
       readFailed={!entryRead.ok}
-      challenge={{ slug, title: entry?.challenge.title ?? titleFromSlug(slug) }}
+      challenge={{ slug, title: entry?.challenge.title ?? titleFromSlug(slug), endsAt: entry?.challenge.endsAt ?? null }}
     />
   )
 }

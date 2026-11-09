@@ -20,7 +20,8 @@ import { isChallengeSlug } from "@/lib/trophy/challenge-link"
 
 export interface PublicChallengeEntry {
   caseId: string
-  challenge: { slug: string; title: string; tagline: string | null }
+  /** `endsAt` (ISO or null) feeds the share page's countdown — the RPC always returned it; 2026-11-09. */
+  challenge: { slug: string; title: string; tagline: string | null; endsAt: string | null }
   /** Slabs in SLOT order (the order the owner arranged). */
   slabs: Array<Record<string, unknown>>
 }
@@ -42,6 +43,7 @@ export function pickChallengeEntry(cases: unknown, slug: string): PublicChalleng
         slug: ch.slug,
         title: typeof ch.title === "string" && ch.title.trim() ? ch.title.trim() : slug,
         tagline: typeof ch.tagline === "string" ? ch.tagline : null,
+        endsAt: typeof ch.ends_at === "string" && Number.isFinite(Date.parse(ch.ends_at)) ? ch.ends_at : null,
       },
       slabs,
     }

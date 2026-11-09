@@ -22,6 +22,7 @@ import { accentFill, accentText, labelOn } from "@/lib/accent-text"
 import { challengeEntryHref } from "@/lib/trophy/challenge-link"
 import { pinsToken } from "@/lib/og/card-url"
 import { track } from "@/lib/telemetry/track"
+import ChallengeCountdown from "@/components/profile/ChallengeCountdown"
 
 const MONO = "var(--font-mono)";
 const DISPLAY = "var(--font-display)";
@@ -36,7 +37,8 @@ export default function TrophyCaseShareClient({
 }: {
   /** Set on /profile/<u>/trophy-case/<slug>: this page is ONE challenge entry
    *  (e.g. Dame Time), not the main case — its title, its share link, its CTA. */
-  challenge?: { slug: string; title: string } | null;
+  /** `endsAt` drives the "Closes in …" line beside the entry CTA (2026-11-09). */
+  challenge?: { slug: string; title: string; endsAt?: string | null } | null;
   username: string;
   displayName: string;
   accentColor: string | null;
@@ -251,6 +253,9 @@ export default function TrophyCaseShareClient({
               compact
             />
           )}
+          {/* 2026-11-09 weekend review: the CTA had no reason to act NOW. The countdown
+              is hydration-safe (renders nothing on the server) and says "Closed" after. */}
+          {challenge?.endsAt && <ChallengeCountdown endsAt={challenge.endsAt} compact />}
           {challenge && (
             <Link
               href={`/trophy-challenges/${challenge.slug}`}

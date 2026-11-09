@@ -414,6 +414,58 @@ describe("concierge tools — feedback intake + escalation", () => {
     expect(String(insert?.rows[0].feedback_details)).toContain("Severity: high")
   })
 
+  // 2026-11-09 weekend review: the only human concierge session that weekend was
+  // a SIGNED-OUT visitor filing a real bug, and shipped-notify (which emails
+  // support_conversations.user_email) could never reach them.
+  describe("signed-out 'tell me when it's fixed'", () => {
+    const insertRow = (spy: any) => (spy.writes.support_conversations ?? []).find((w: any) => w.method === "insert" && w.rows?.[0]?.feedback_type)?.rows[0]
+
+    it("a signed-out report carries ONE fix-notice offer and no email", async () => {
+      const spy = install({ support_conversations: { data: { id: 77 }, error: null } })
+      script("log_bug", { summary: "Yan Diomande FMVs look low", details: "user reports $400 /55" })
+      await POST(post("his /55 is at 400 dollars"))
+      const r = toolResult()
+      expect(r).toMatchObject({ status: "logged" })
+      expect(String(r.fix_notice)).toMatch(/SIGNED OUT/)
+      expect(String(r.fix_notice)).toMatch(/ONCE/)
+      expect(insertRow(spy)?.user_email).toBeNull()
+    })
+
+    it("a signed-in report gets NO offer — the account email is already on it", async () => {
+      A.authedEmail = "collector@example.com"
+      const spy = install({ support_conversations: { data: { id: 78 }, error: null } })
+      script("log_bug", { summary: "Chart broken", details: "blank chart", contact_email: "other@example.com" })
+      await POST(post("the chart is broken, other@example.com"))
+      expect(toolResult().fix_notice).toBeUndefined()
+      expect(insertRow(spy)?.user_email).toBe("collector@example.com")
+    })
+
+    it("an address the user TYPED is stored on the report, and no offer is repeated", async () => {
+      const spy = install({ support_conversations: { data: { id: 79 }, error: null } })
+      script("log_bug", { summary: "Chart broken", details: "blank chart", contact_email: "fan@example.com" })
+      await POST(post("chart is broken — email me at fan@example.com when it's fixed"))
+      expect(toolResult().fix_notice).toBeUndefined()
+      expect(insertRow(spy)?.user_email).toBe("fan@example.com")
+    })
+
+    it("⚠ an address the user never typed is NOT stored (the model may relay, never invent)", async () => {
+      const spy = install({ support_conversations: { data: { id: 80 }, error: null } })
+      script("log_bug", { summary: "Chart broken", details: "blank chart", contact_email: "guess@example.com" })
+      await POST(post("the chart is broken"))
+      expect(insertRow(spy)?.user_email).toBeNull()
+    })
+
+    it("the same report again WITH the typed address attaches it to the original — no second row", async () => {
+      const spy = install({ support_conversations: { data: [{ id: 55, feedback_summary: "Yan Diomande FMVs look low" }], error: null } })
+      script("log_bug", { summary: "Yan Diomande FMVs look low", details: "follow-up", contact_email: "fan@example.com" })
+      await POST(post("sure, fan@example.com"))
+      expect(toolResult()).toMatchObject({ status: "already_logged", duplicate_of: 55, email_attached: true })
+      const upd = (spy.writes.support_conversations ?? []).find((w: any) => w.method === "update")
+      expect(upd?.rows[0]).toEqual({ user_email: "fan@example.com" })
+      expect(insertRow(spy)).toBeUndefined()
+    })
+  })
+
   it("log_feedback without details errors instead of logging an empty row", async () => {
     const spy = install({})
     script("log_feedback", { summary: "nice", details: "" })

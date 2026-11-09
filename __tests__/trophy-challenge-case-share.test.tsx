@@ -95,6 +95,14 @@ describe("helpers", () => {
     expect(pickChallengeEntry(cases.slice(0, 2), "dame-time")).toBeNull()
     expect(pickChallengeEntry(null, "dame-time")).toBeNull()
   })
+  // 2026-11-09: the share page's countdown reads endsAt — carried only when it parses.
+  it("pickChallengeEntry carries the challenge's end time, and only a parseable one", () => {
+    const at = "2026-11-09T08:00:00+00:00"
+    const mk = (ends_at: unknown) => [{ id: "c1", challenge: { slug: "dame-time", title: "Dame Time", ends_at }, slabs: [] }]
+    expect(pickChallengeEntry(mk(at), "dame-time")!.challenge.endsAt).toBe(at)
+    expect(pickChallengeEntry(mk(null), "dame-time")!.challenge.endsAt).toBeNull()
+    expect(pickChallengeEntry(mk("not a date"), "dame-time")!.challenge.endsAt).toBeNull()
+  })
   it("the description never publishes a zero", () => {
     expect(challengeCaseDescription({ displayName: "Trev", title: "Dame Time", filled: 3 })).toMatch(/^3 of 6 Dame Time/)
     for (const filled of [0, null]) {
@@ -110,7 +118,7 @@ describe("the share page", () => {
   it("renders the ENTRY's slabs under the challenge's title", async () => {
     const el: any = await ChallengeCasePage(params())
     expect(el.props.trophies.map((t: any) => t.thumbnail_url)).toEqual(["https://img/dame1.png", "https://img/dame3.png"])
-    expect(el.props.challenge).toEqual({ slug: "dame-time", title: "Dame Time" })
+    expect(el.props.challenge).toEqual({ slug: "dame-time", title: "Dame Time", endsAt: null })
     expect(el.props.readFailed).toBe(false)
   })
   it("⚠ a FAILED entry read is a notice — never the main case, never a 404", async () => {
