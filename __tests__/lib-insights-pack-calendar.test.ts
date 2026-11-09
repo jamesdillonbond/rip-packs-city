@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { buildPackCalendar, buildPinnacleOpenEditionDrops, fetchPackCalendar, openEditionTitle, type PackCalendarSourceRow, resolveUnnamedOpenEditionSets } from "@/lib/insights/pack-calendar"
+import { buildPackCalendar, buildPinnacleOpenEditionDrops, fetchPackCalendar, openEditionTitle, type PackCalendarSourceRow, resolveUnnamedOpenEditionSets, deliveredOpenEditionSets } from "@/lib/insights/pack-calendar"
 
 // 2026-11-08 12:00 PT
 const NOW = new Date("2026-11-08T20:00:00Z")
@@ -80,9 +80,10 @@ function fakeSb(tables: Record<string, { data?: unknown; error?: { message: stri
       return { data: res.data ?? null, error: res.error ?? null }
     },
     from(table: string) {
-      const res = tables[table] ?? { data: [], error: null }
+      // pinnacle_mint_events defaults to "a pin reached a collector" (a delivered Open Edition).
+      const res = tables[table] ?? { data: table === "pinnacle_mint_events" ? [{ nft_id: "1", edition_id: 1 }] : [], error: null }
       const b: Record<string, unknown> = {}
-      for (const m of ["select", "eq", "gte", "order", "limit"]) b[m] = () => b
+      for (const m of ["select", "eq", "gte", "lte", "like", "neq", "not", "order", "limit"]) b[m] = () => b
       b.then = (ok: (v: unknown) => unknown) => Promise.resolve({ data: res.data ?? null, error: res.error ?? null }).then(ok)
       return b
     },
@@ -309,7 +310,7 @@ describe("resolveUnnamedOpenEditionSets — a brand-new Open Edition the catalog
   const sb = (rows: unknown[]) => ({
     from() {
       const b: Record<string, unknown> = {}
-      for (const m of ["select", "like", "not", "limit"]) b[m] = () => b
+      for (const m of ["select", "gte", "lte", "like", "not", "limit"]) b[m] = () => b
       b.then = (ok: (v: unknown) => unknown) => Promise.resolve({ data: rows, error: null }).then(ok)
       return b
     },
@@ -326,5 +327,29 @@ describe("resolveUnnamedOpenEditionSets — a brand-new Open Edition the catalog
     const s = set()
     await resolveUnnamedOpenEditionSets(sb([{ edition_id: 2940 }]), [s], (async () => { throw new Error("ECONNRESET") }) as unknown as typeof fetch)
     expect(s.set_name).toBeNull()
+  })
+})
+
+describe("deliveredOpenEditionSets — supply staged in the Pinnacle contract is not a drop", () => {
+  const sets = [
+    { set_key: "OEV1-GARG", set_name: "Disney • Gargoyles Vol.1", edition_type: "Open Edition", pins: 7197, first_mint_at: "2026-10-27T00:54:18Z", last_mint_at: "2026-11-06T17:00:02Z" },
+    { set_key: "OEV1-WDMG", set_name: null, edition_type: null, pins: 1980, first_mint_at: "2026-11-09T03:14:16Z", last_mint_at: "2026-11-09T03:21:21Z" },
+  ]
+  const sb = (deliveredKeys: string[], error: { message: string } | null = null) => ({
+    from() {
+      let key = ""
+      const b: Record<string, unknown> = {}
+      for (const m of ["select", "gte", "lte", "neq", "limit"]) b[m] = () => b
+      b.like = (_c: string, v: string) => ((key = v.replace(/-%$/, "")), b)
+      b.then = (ok: (v: unknown) => unknown) => Promise.resolve({ data: deliveredKeys.includes(key) ? [{ nft_id: "1" }] : [], error }).then(ok)
+      return b
+    },
+  })
+  it("keeps a set whose pins reached collectors and drops one minted only to the contract", async () => {
+    const out = await deliveredOpenEditionSets(sb(["OEV1-GARG"]), sets)
+    expect(out.map((s) => s.set_key)).toEqual(["OEV1-GARG"])
+  })
+  it("a failed read throws — never a guess either way", async () => {
+    await expect(deliveredOpenEditionSets(sb([], { message: "timeout" }), sets)).rejects.toThrow(/timeout/)
   })
 })

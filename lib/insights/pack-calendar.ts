@@ -274,7 +274,15 @@ export async function resolveUnnamedOpenEditionSets(
   for (const s of sets) {
     if (s.set_name || !s.set_key) continue
     try {
-      const { data } = await sb.from("pinnacle_mint_events").select("edition_id").like("render_id", `${s.set_key}-%`).not("edition_id", "is", null).limit(1)
+      // Bounded by the set's own mint window (idx_pinnacle_mint_events_minted_at): ~1 ms, not a table scan.
+      const { data } = await sb
+        .from("pinnacle_mint_events")
+        .select("edition_id")
+        .gte("minted_at", s.first_mint_at)
+        .lte("minted_at", s.last_mint_at)
+        .like("render_id", `${s.set_key}-%`)
+        .not("edition_id", "is", null)
+        .limit(1)
       const id = (data ?? [])[0]?.edition_id
       if (id == null) continue
       const arg = Buffer.from(JSON.stringify({ type: "Int", value: String(id) })).toString("base64")
@@ -293,6 +301,32 @@ export async function resolveUnnamedOpenEditionSets(
       /* the key stays the title; never block the calendar on this read */
     }
   }
+}
+
+// Pinnacle sometimes mints an Open Edition's supply into its OWN contract account first (11-08:
+// "Walt Disney Mugs Vol.1", 1,980 pins, all to 0xedf9df96c92f4595). Nobody has received a pin, so
+// it is staged supply, not a drop — "Minting now" would be false. A real Open Edition reaches
+// collectors' wallets (Gargoyles Vol.1: 939 wallets). A set is listed only once one pin has.
+/** The sets with at least one pin minted to a wallet other than the Pinnacle contract. A failed read throws. */
+export async function deliveredOpenEditionSets(
+  sb: any, // eslint-disable-line @typescript-eslint/no-explicit-any
+  sets: PinnacleOpenEditionSet[],
+): Promise<PinnacleOpenEditionSet[]> {
+  const out: PinnacleOpenEditionSet[] = []
+  for (const s of sets) {
+    if (!s.set_key || !s.first_mint_at || !s.last_mint_at) continue
+    const { data, error } = await sb
+      .from("pinnacle_mint_events")
+      .select("nft_id")
+      .gte("minted_at", s.first_mint_at)
+      .lte("minted_at", s.last_mint_at)
+      .like("render_id", `${s.set_key}-%`)
+      .neq("to_wallet", PINNACLE_CONTRACT)
+      .limit(1)
+    if (error) throw new Error(`pinnacle_mint_events(${s.set_key}): ${error.message}`)
+    if ((data ?? []).length) out.push(s)
+  }
+  return out
 }
 
 /** Open Edition sets minting now, or that started minting this week and have stopped (ended). */
@@ -476,8 +510,9 @@ export async function fetchPackCalendar(
   const oeAsOf = oe && typeof oe === "object" && typeof oe.lane_as_of === "string" ? oe.lane_as_of : null
   if (oeAsOf && Array.isArray(oe.sets)) {
     complete_at.pinnacle_oe = oeAsOf
-    await resolveUnnamedOpenEditionSets(sb, oe.sets as PinnacleOpenEditionSet[], fetchImpl)
-    drops.push(...buildPinnacleOpenEditionDrops(oe.sets as PinnacleOpenEditionSet[], now))
+    const delivered = await deliveredOpenEditionSets(sb, oe.sets as PinnacleOpenEditionSet[])
+    await resolveUnnamedOpenEditionSets(sb, delivered, fetchImpl)
+    drops.push(...buildPinnacleOpenEditionDrops(delivered, now))
   } else {
     complete_at.pinnacle_oe = null
     complete = false

@@ -21,7 +21,7 @@ function fakeSb(tables: Record<string, { data?: unknown; error?: { message: stri
     from(table: string) {
       const res = tables[table] ?? { data: [], error: null }
       const b: Record<string, unknown> = {}
-      for (const m of ["select", "eq", "gte", "order", "limit", "in"]) b[m] = () => b
+      for (const m of ["select", "eq", "gte", "lte", "like", "neq", "not", "order", "limit", "in"]) b[m] = () => b
       b.then = (ok: (v: unknown) => unknown) => Promise.resolve({ data: res.data ?? null, error: res.error ?? null }).then(ok)
       return b
     },
