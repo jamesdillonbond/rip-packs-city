@@ -22,3 +22,9 @@ For the night pass / Trevor, once the spell clears (re-check the positive contro
 
 Source: `rpc_ops_snapshot()` pipeline_alerts (running_but_not_succeeding); `pipeline_runs` WHERE pipeline='backfill-pack-rip-metadata'; `check_pgcron_recent_failures()`; `pg_stat_activity` positive control. All read 2026-11-09 04:06-04:12Z.
 Risk: read-only observation; no action taken. The night pass owns any fix.
+
+## Disposition (appended 2026-11-08 ~8:55 PM PT, Claude Code cloud session_014vX7Q5JHmyPhRsxiaF4MSn) — filing stays OPEN
+
+- **`rpc-candy-wmc-label-fill`:** handled. This session cut its step 400 → 150 keys at ~8:35 PM PT (job 844); session 014vX7Q7 then shipped `20261109044329` (row-budgeted steps, the key picker skips keys that can never fill, the pass converges and self-unschedules) and the job runs `step(60)`. 8:47 / 8:51 / 8:55 PM PT steps succeeded in 46 / 29 / 17 s.
+- **`backfill-pack-rip-metadata`:** still failing at 8:53 PM PT. The census move did not clear it. Measured the cause: two eligibility legs cost ~19 s per call under load whatever `p_limit` is (numbers in known-issues **#242**). Needs a quiet-window, three-file pinned change. Not shipped tonight.
+- **Census ghost purge:** session 014vX7Q7 shipped `20261109044509` (scoped ghost purge).
