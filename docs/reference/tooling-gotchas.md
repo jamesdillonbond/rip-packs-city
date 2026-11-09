@@ -26,6 +26,10 @@ the six #187/#188 migrations on 2026-10-10, every body md5-equal to its file on 
 sessions apply migrations within minutes: if one lands with a LATER version before you push, rename
 yours past it (replay order must match apply order).
 
+## ⚠ On Trevor's Windows box the LOCAL Supabase MCP is PROJECT-SCOPED — its tools take NO `project_id` (2026-11-08)
+
+The local server (`mcp__supabase__*`, from `.mcp.json` + the project entry in `~/.claude.json`) now runs with `--project-ref=bxcqstmqfzmuolpuynti` and a project-scoped, 90-day token (`claude-code-mcp-2026-11-08`: Project Settings / Advisors / Logs read, Database + Migrations read-write, Edge Functions read, everything else none; expires ~2027-02-06). Consequences: **passing `project_id` fails** (`ZodError: Unrecognized key: "project_id"`), the account tools (`list_projects`, `get_project`, `create_project`, `pause_project`, `get_cost` …) are gone, and anything outside those scopes (secrets, API keys, branching, edge-fn WRITE — deploys go through `edge-fn-deploy.yml`) answers with a permission error, which is the scope, not a wrong project. The claude.ai `mcp__claude_ai_Supabase__*` connector is separate OAuth and still takes `project_id`, so CLAUDE.md's "required on every tool call" holds there. ⛔ The token is passed in argv, so a node.exe command-line listing prints it — select the runner by path, or redact `sbp_[A-Za-z0-9]+` first (this is how the previous token leaked).
+
 ## ⚠ Supabase MCP `apply_migration` ASSIGNS ITS OWN VERSION — your filename timestamp is not what prod records (2026-09-19)
 
 The `name` you pass becomes the migration's name. **The version is the APPLY time, chosen by the
