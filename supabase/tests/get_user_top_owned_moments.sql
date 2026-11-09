@@ -214,39 +214,57 @@ BEGIN
     FROM panini_seen ps
     ORDER BY ps.sku, ps.seen_at DESC NULLS LAST
   ),
-  panini_rows AS (
+  -- NAME FILTER FIRST (2026-11-08, Dame Time): the words are matched on the
+  -- cheap edition joins BEFORE the per-card latest-FMV lateral and
+  -- serial_fmv_estimate run. Filtering after them made a 6,023-card Panini
+  -- profile (rigged) run 22-31 s for "Damian Lillard" -- past the route's 8 s
+  -- read budget and this function's own 8 s statement_timeout -- so the picker
+  -- answered "Couldn't load your Moments". MATERIALIZED keeps the filter from
+  -- being planned after the lateral again.
+  panini_named AS MATERIALIZED (
     SELECT
-      d.sku AS o_moment_id, v_panini AS o_collection_id, c.slug::TEXT AS o_collection_slug,
-      NULL::text AS o_wallet_address,
-      COALESCE(e.player_name, pe.player_name, d.athlete) AS o_player_name,
-      COALESCE(e.set_name, pe.set_name, d.cardset) AS o_set_name,
-      COALESCE(e.tier::text, pe.tier::text) AS o_tier,
-      d.serial AS o_serial_number,
-      COALESCE(d.cap, e.circulation_count) AS o_mint_count,
-      sf.fmv_usd AS o_fmv_usd,
-      COALESCE(public.panini_asset_url(d.img), e.thumbnail_url, public.panini_asset_url(pe.thumbnail_url)) AS o_image_url,
-      false AS o_is_locked, NULL::integer AS o_series_number, d.ed_key AS o_edition_key,
-      NULL::text AS o_character_name, NULL::text AS o_edition_name, NULL::text AS o_league,
-      public.serial_fmv_estimate(v_panini, d.serial, COALESCE(d.cap, e.circulation_count), e.tier::text, sf.fmv_usd, sf.confidence::text, e.id) AS o_serial_fmv,
-      e.team_name AS o_team_name,
-      e.jersey_number::integer AS o_jersey_number
+      d.sku, d.ed_key, d.serial, d.cap, d.img,
+      e.id AS e_id, e.tier::text AS e_tier, e.circulation_count AS e_circ,
+      e.thumbnail_url AS e_thumb, e.team_name AS e_team, e.jersey_number AS e_jersey,
+      COALESCE(e.player_name, pe.player_name, d.athlete) AS n_player,
+      COALESCE(e.set_name, pe.set_name, d.cardset) AS n_set,
+      COALESCE(e.tier::text, pe.tier::text) AS n_tier,
+      pe.thumbnail_url AS pe_thumb
     FROM panini_dedup d
-    LEFT JOIN collections c ON c.id = v_panini
     LEFT JOIN editions e
       ON e.collection_id = v_panini
      AND e.external_id = d.ed_key
     LEFT JOIN panini_editions pe ON pe.external_id = d.ed_key
-    LEFT JOIN LATERAL (
-      SELECT fs.fmv_usd, fs.confidence
-      FROM fmv_snapshots fs
-      WHERE fs.edition_id = e.id
-      ORDER BY fs.computed_at DESC
-      LIMIT 1
-    ) sf ON true
     WHERE (v_words IS NULL
            OR concat_ws(' ', COALESCE(e.player_name, pe.player_name, d.athlete),
                              COALESCE(e.set_name, pe.set_name, d.cardset),
                              e.team_name) ILIKE ALL (v_words))
+  ),
+  panini_rows AS (
+    SELECT
+      n.sku AS o_moment_id, v_panini AS o_collection_id, c.slug::TEXT AS o_collection_slug,
+      NULL::text AS o_wallet_address,
+      n.n_player AS o_player_name,
+      n.n_set AS o_set_name,
+      n.n_tier AS o_tier,
+      n.serial AS o_serial_number,
+      COALESCE(n.cap, n.e_circ) AS o_mint_count,
+      sf.fmv_usd AS o_fmv_usd,
+      COALESCE(public.panini_asset_url(n.img), n.e_thumb, public.panini_asset_url(n.pe_thumb)) AS o_image_url,
+      false AS o_is_locked, NULL::integer AS o_series_number, n.ed_key AS o_edition_key,
+      NULL::text AS o_character_name, NULL::text AS o_edition_name, NULL::text AS o_league,
+      public.serial_fmv_estimate(v_panini, n.serial, COALESCE(n.cap, n.e_circ), n.e_tier, sf.fmv_usd, sf.confidence::text, n.e_id) AS o_serial_fmv,
+      n.e_team AS o_team_name,
+      n.e_jersey::integer AS o_jersey_number
+    FROM panini_named n
+    LEFT JOIN collections c ON c.id = v_panini
+    LEFT JOIN LATERAL (
+      SELECT fs.fmv_usd, fs.confidence
+      FROM fmv_snapshots fs
+      WHERE fs.edition_id = n.e_id
+      ORDER BY fs.computed_at DESC
+      LIMIT 1
+    ) sf ON true
   ),
   all_rows AS (
     SELECT * FROM wallet_rows
