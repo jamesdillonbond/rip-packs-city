@@ -72,6 +72,30 @@ export interface HydrateResult {
   failed: Array<{ id: string; reason: string }>
 }
 
+// The same Arweave transaction is served by Candy's gateway and by arweave.net (verified
+// 2026-11-09: both answered 20/20 concurrent reads for one card). A failure on one is retried
+// on the other.
+const GATEWAYS = ["https://permaweb.candy.io/", "https://arweave.net/"]
+export function gatewayAlternates(uri: string): string[] {
+  for (const g of GATEWAYS) {
+    if (uri.startsWith(g)) {
+      const tx = uri.slice(g.length)
+      return [uri, ...GATEWAYS.filter((o) => o !== g).map((o) => o + tx)]
+    }
+  }
+  return [uri]
+}
+
+/** A short, stable class for a failure, so a run can report WHY in a histogram. */
+export function failureClass(reason: string): string {
+  if (/^HTTP \d+/.test(reason)) return reason.slice(0, 8)
+  if (/timeout|aborted/i.test(reason)) return "timeout"
+  if (/json carried no/.test(reason)) return "no traits or image"
+  if (/no https json_uri/.test(reason)) return "no https json_uri"
+  if (/JSON|Unexpected token/i.test(reason)) return "not json"
+  return reason.slice(0, 40)
+}
+
 /**
  * Fetch each asset's content.json_uri (https only) and merge it. Bounded concurrency and a
  * per-request timeout; never throws. Order of `hydrated` is not significant.
@@ -93,15 +117,21 @@ export async function hydrateFromJsonUri(
         out.failed.push({ id: a.id, reason: "no https json_uri" })
         continue
       }
-      try {
-        const resp = await doFetch(uri, { signal: AbortSignal.timeout(timeoutMs) })
-        if (!resp.ok) { out.failed.push({ id: a.id, reason: `HTTP ${resp.status}` }); continue }
-        const merged = mergeOffChainJson(a, await resp.json())
-        if (merged) out.hydrated.push(merged)
-        else out.failed.push({ id: a.id, reason: "json carried no traits or image" })
-      } catch (e) {
-        out.failed.push({ id: a.id, reason: (e instanceof Error ? e.message : String(e)).slice(0, 120) })
+      let lastReason = "no attempt"
+      let merged: DasAsset | null = null
+      for (const url of gatewayAlternates(uri)) {
+        try {
+          const resp = await doFetch(url, { signal: AbortSignal.timeout(timeoutMs) })
+          if (!resp.ok) { lastReason = `HTTP ${resp.status}`; continue }
+          merged = mergeOffChainJson(a, JSON.parse(await resp.text()))
+          if (merged) break
+          lastReason = "json carried no traits or image"
+        } catch (e) {
+          lastReason = (e instanceof Error ? `${e.name}: ${e.message}` : String(e)).slice(0, 120)
+        }
       }
+      if (merged) out.hydrated.push(merged)
+      else out.failed.push({ id: a.id, reason: lastReason })
     }
   }
   await Promise.all(Array.from({ length: Math.min(concurrency, assets.length) }, worker))

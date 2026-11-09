@@ -62,6 +62,7 @@ async function handle(req: NextRequest) {
     hydrated_reused: result.hydrated_reused,
     unhydrated_skipped: result.unhydrated_skipped,
     wmc_repointed: result.wmc_repointed,
+    hydrate_fail_reasons: result.hydrate_fail_reasons,
     collections_touched: result.collections.length,
     collections_completed: result.completed,
     escrow_remapped: result.escrow_remapped,

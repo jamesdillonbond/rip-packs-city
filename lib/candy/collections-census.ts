@@ -35,7 +35,7 @@
 import { getAssetsByGroupCursor, type DasAsset } from "@/lib/chains/solana/das"
 import { attributeEscrowHeldToSellers } from "@/lib/chains/solana/escrow"
 import { CANDY_MLB_UUID, isBurnt, isPack, normalizeEdition, normalizeSerial } from "@/lib/chains/solana/normalize"
-import { hydrateFromJsonUri, isUnhydrated } from "@/lib/chains/solana/hydrate"
+import { failureClass, hydrateFromJsonUri, isUnhydrated } from "@/lib/chains/solana/hydrate"
 import { candySetForAsset } from "@/lib/chains/solana/candy-sets"
 import { loadCandyCollections } from "@/lib/candy/collections"
 import { purgeCandyGhostsFor } from "@/lib/candy/ghost-purge"
@@ -60,6 +60,15 @@ const READ_CHUNK = 150
 //   4. REPOINT — where the owner's existing row names a different edition than the one now
 //      computed (e.g. a fabricated key from before), that row is overwritten with the right
 //      edition and labels. Every other holding stays insert-only.
+// 2026-11-09 8:15 AM PT: the first production run fetched 275 and SKIPPED 18,404 in 92 pages
+// (vs 314 pages before) with no record of why. Now the run reports a failure-reason histogram
+// (hydrate_fail_reasons), retries the other Arweave gateway, stops fetching for the rest of the
+// run once failures dominate (BREAKER: >= 200 attempts and > 80 % failed — the walk keeps moving;
+// the rest are skipped as "breaker open"), and FAILS the run when > 10 % of fetches failed, so a
+// systemic fetch failure surfaces in the sentinel instead of hiding in a count.
+const BREAKER_MIN_ATTEMPTS = 200
+const BREAKER_FAIL_SHARE = 0.8
+const RUN_FAIL_SHARE = 0.1
 
 export interface CollectionCensusReport {
   address: string
@@ -118,6 +127,7 @@ export interface CollectionsCensusResult {
   hydrated_reused: number
   unhydrated_skipped: number
   wmc_repointed: number
+  hydrate_fail_reasons: Record<string, number>
   completed: number
   escrow_remapped: number
   ghosts_purged: number | null
@@ -132,7 +142,7 @@ export async function runCollectionsCensus(
   const deadline = now() + opts.budgetMs
   const out: CollectionsCensusResult = {
     ok: false, collections: [], pages: 0, cards: 0, wmc_inserted: 0, editions_inserted: 0,
-    hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0,
+    hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, hydrate_fail_reasons: {},
     completed: 0, escrow_remapped: 0, ghosts_purged: null, error: null,
   }
 
@@ -161,6 +171,9 @@ export async function runCollectionsCensus(
 
   const errors: string[] = []
   const inserted = new Set<string>()
+  let fetchAttempts = 0
+  let fetchFailures = 0
+  const breakerOpen = () => fetchAttempts >= BREAKER_MIN_ATTEMPTS && fetchFailures / fetchAttempts > BREAKER_FAIL_SHARE
   for (const c of (queue ?? []) as Array<{ address: string; name: string; census_page: number; census_cursor: string | null; census_walk_started_at: string | null }>) {
     if (now() > deadline) break
     const rep: CollectionCensusReport = { address: c.address, name: c.name, pages: 0, cards: 0, wmc_inserted: 0, editions_inserted: 0, hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, completed: false, error: null }
@@ -205,7 +218,19 @@ export async function runCollectionsCensus(
         if (known) reused.push({ asset: a, ed: ex.complete.get(known.edition_key)!, serial: known.serial })
         else toFetch.push(a)
       }
-      const fetched = toFetch.length ? await hydrateFromJsonUri(toFetch) : { hydrated: [], failed: [] }
+      const fetched = !toFetch.length
+        ? { hydrated: [] as DasAsset[], failed: [] as Array<{ id: string; reason: string }> }
+        : breakerOpen()
+          ? { hydrated: [] as DasAsset[], failed: toFetch.map((a) => ({ id: a.id, reason: "breaker open" })) }
+          : await hydrateFromJsonUri(toFetch)
+      for (const f of fetched.failed) {
+        const k = failureClass(f.reason)
+        out.hydrate_fail_reasons[k] = (out.hydrate_fail_reasons[k] ?? 0) + 1
+      }
+      if (!(fetched.failed[0]?.reason === "breaker open")) {
+        fetchAttempts += toFetch.length
+        fetchFailures += fetched.failed.length
+      }
       rep.hydrated_reused += reused.length
       rep.hydrated_fetched += fetched.hydrated.length
       rep.unhydrated_skipped += fetched.failed.length
@@ -323,6 +348,10 @@ export async function runCollectionsCensus(
     out.ghosts_purged = 0
   }
 
+  if (fetchAttempts > 0 && fetchFailures / fetchAttempts > RUN_FAIL_SHARE) {
+    const top = Object.entries(out.hydrate_fail_reasons).sort((x, y) => y[1] - x[1]).slice(0, 3).map(([k, n]) => `${k} ${n}`).join(", ")
+    errors.unshift(`metadata fetch failed for ${fetchFailures} of ${fetchAttempts} unhydrated cards (${top})`)
+  }
   out.error = errors.length ? errors.slice(0, 5).join(" | ").slice(0, 900) : null
   out.ok = errors.length === 0
   return out

@@ -17,7 +17,7 @@ const state: {
   existingWmc: any[]
   existingEds: any[]
   readError: any
-  hydrate: { hydrated: any[]; failed: any[] } | null
+  hydrate: { hydrated: any[]; failed: any[] } | ((assets: any[]) => { hydrated: any[]; failed: any[] }) | null
   hydrateCalls: any[][]
   updates: Array<{ address: string; patch: any }>
   wmcUpserts: Array<{ rows: any[]; opts: any }>
@@ -36,8 +36,10 @@ vi.mock("@/lib/chains/solana/das", () => ({
 }))
 vi.mock("@/lib/chains/solana/hydrate", () => ({
   isUnhydrated: (a: any) => a.bare === true,
+  failureClass: (r: string) => r,
   hydrateFromJsonUri: async (assets: any[]) => {
     state.hydrateCalls.push(assets)
+    if (typeof state.hydrate === "function") return state.hydrate(assets)
     return state.hydrate ?? { hydrated: assets.map((a) => ({ ...a, bare: false, ed: a.realEd ?? a.ed })), failed: [] }
   },
 }))
@@ -226,6 +228,23 @@ describe("runCollectionsCensus", () => {
     // no edition was written under the name-only key
     expect(state.edUpserts.flatMap((u) => u.rows).map((e) => e.external_id)).not.toContain("ed-name-only")
     expect(state.updates.at(-1)!.patch).toMatchObject({ last_census_items: null })
+    // WHY is reported, and 1 failed of 1 attempted (> 10 %) FAILS the run
+    expect(r.hydrate_fail_reasons).toEqual({ "HTTP 404": 1 })
+    expect(r.ok).toBe(false)
+    expect(r.error).toMatch(/metadata fetch failed for 1 of 1 unhydrated cards \(HTTP 404 1\)/)
+  })
+
+  it("BREAKER: once >= 200 fetches ran and > 80 % failed, the rest of the run fetches nothing and keeps walking", async () => {
+    state.queue = [{ address: "A", name: "A", census_page: 1, census_cursor: null, census_walk_started_at: null }]
+    const bare = (p: string) => Array.from({ length: 1000 }, (_, i) => ({ id: `${p}${i}`, owner: "W", ed: "n", bare: true }))
+    state.pages.A = [bare("a"), bare("b"), full(3, "c")]
+    // every fetch fails
+    state.hydrate = (assets) => ({ hydrated: [], failed: assets.map((a) => ({ id: a.id, reason: "HTTP 403" })) })
+    const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+    expect(state.hydrateCalls).toHaveLength(1) // page 2 was not fetched: breaker open
+    expect(r.hydrate_fail_reasons).toEqual({ "HTTP 403": 1000, "breaker open": 1000 })
+    expect(r.completed).toBe(1) // the walk still reached its end
+    expect(r.ok).toBe(false)
   })
 
   it("a hydrated card already on the RIGHT edition is not rewritten", async () => {
