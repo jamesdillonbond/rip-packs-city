@@ -99,6 +99,7 @@ async function dropsItems() {
     price: x.retail_usd != null ? usd(x.retail_usd) : null,
     status: statusLine(x),
     upcoming: x.status === "upcoming",
+    detail: x.detail ?? null,
   }))
   for (const a of d.announcements ?? []) items.push({ collection: "candy_mlb", title: a.title, price: null, status: "Announced", upcoming: false })
   // Verified extras go in at the position the post lists them (after the named title, else last).
@@ -106,7 +107,7 @@ async function dropsItems() {
   if (extraPath) {
     for (const e of JSON.parse(readFileSync(extraPath, "utf8"))) {
       const at = e.after ? items.findIndex((i) => i.title === e.after) : -1
-      const it = { collection: e.collection, title: e.title, price: e.price ?? null, status: e.status, upcoming: !!e.upcoming }
+      const it = { collection: e.collection, title: e.title, price: e.price ?? null, status: e.status, upcoming: !!e.upcoming, detail: e.detail ?? null }
       if (at >= 0) items.splice(at + 1, 0, it)
       else items.push(it)
     }
@@ -119,6 +120,7 @@ function card(it, big) {
   return `<div class="card${big ? " big" : ""}" style="--acc:${c.accent}">
     <div class="chip"><span class="dot"></span>${esc(c.label)}</div>
     <div class="title">${esc(it.title)}</div>
+    ${big && it.detail ? `<div class="detail">${esc(it.detail)}</div>` : ""}
     <div class="row">${it.price ? `<span class="price">${esc(it.price)}</span>` : ""}<span class="when${it.upcoming ? " soon" : ""}">${esc(it.status)}</span></div>
   </div>`
 }
@@ -129,6 +131,10 @@ function page({ items, pageNo, pages, fonts, logo, now }) {
   const rows = Math.ceil(n / cols)
   // Three rows only fit the 675px canvas with tighter type; the page check below catches a miss.
   const dense = rows >= 3
+  // One to three drops: centred cards sized to their content, with room for a detail line
+  // (Trevor, 11-08: "center and make the graphic a little more visually appealing").
+  const spacious = n <= 3
+  const cardW = n === 1 ? 640 : n === 2 ? 500 : 340
   const range = `${dayPT(now)} – ${dayPT(new Date(now.getTime() + 7 * 86400000))}`
   return `<!doctype html><html><head><meta charset="utf-8"><style>
 @font-face{font-family:Barlow;src:url(data:font/ttf;base64,${fonts.barlow}) format("truetype")}
@@ -152,12 +158,25 @@ h1 em{font-style:normal;color:#E03A2F}
 .price{font-family:Mono,monospace;font-size:${cols >= 4 || dense ? 27 : 36}px;color:#fff}
 .when{font-family:Mono,monospace;font-size:${cols >= 4 || dense ? 16 : 18}px;color:#FF4D40}
 .when.soon{color:#FBBF24}
+.spacious .grid{display:flex;flex-wrap:nowrap;align-items:stretch;align-self:center;justify-content:center;gap:28px;margin:18px 0 14px}
+.spacious .card{width:${cardW}px;flex:0 0 auto;min-height:${n <= 2 ? 330 : 300}px;padding:26px 30px 28px;border-radius:18px;border-top-width:5px;
+  background:linear-gradient(165deg,color-mix(in srgb,var(--acc) 20%,transparent),rgba(255,255,255,.03) 55%);
+  box-shadow:0 0 0 1px rgba(255,255,255,.04),0 24px 70px -24px color-mix(in srgb,var(--acc) 70%,transparent)}
+.spacious .chip{font-size:15px}
+.spacious .title{font-size:${n <= 2 ? 42 : 34}px;line-height:1;margin:14px 0 0}
+.spacious .detail{font-family:Mono,monospace;font-size:15px;line-height:1.35;color:#D4D4D4;margin-top:14px}
+.spacious .row{margin-top:auto;padding-top:22px;gap:12px}
+.spacious .price{font-size:${n <= 2 ? 58 : 46}px;line-height:1}
+.spacious .when{align-self:flex-start;font-size:16px;padding:7px 12px;border-radius:999px;background:rgba(255,77,64,.12);border:1px solid rgba(255,77,64,.35)}
+.spacious .when.soon{background:rgba(251,191,36,.10);border-color:rgba(251,191,36,.35)}
+.spacious .glow{position:absolute;left:50%;top:58%;width:900px;height:420px;transform:translate(-50%,-50%);
+  background:radial-gradient(closest-side,color-mix(in srgb,${COLL[items[0]?.collection]?.accent ?? "#E03A2F"} 22%,transparent),transparent);pointer-events:none}
 footer{display:flex;justify-content:space-between;font-family:Mono,monospace;font-size:17px;color:#BFC0BF}
 footer b{color:#fff;font-weight:400}
-</style></head><body><div class="bg"></div><div class="stripe"></div><div class="wrap">
+</style></head><body class="${spacious ? "spacious" : ""}"><div class="bg"></div>${spacious ? '<div class="glow"></div>' : ""}<div class="stripe"></div><div class="wrap">
 <header><div><h1>Drops <em>this week</em></h1><div class="sub">${esc(range)} · every drop open now or starting soon · times PT · retail prices${pages > 1 ? ` · ${pageNo}/${pages}` : ""}</div></div>
 <img class="logo" src="data:image/png;base64,${logo}"></header>
-<div class="grid">${items.map((it) => card(it)).join("")}</div>
+<div class="grid">${items.map((it) => card(it, spacious)).join("")}</div>
 <footer><span><b>rippackscity.com</b></span><span>@RipPacksCity</span></footer>
 </div></body></html>`
 }

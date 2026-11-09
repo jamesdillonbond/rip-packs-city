@@ -67,7 +67,7 @@ export const DROP_CORRECTIONS: DropCorrection[] = [
     dist_id: "8922",
     title: "Walt Disney Mugs Vol.1",
     kind: "capsule",
-    detail: "98 Friends-Giving Vol.2 LE pins hidden inside",
+    detail: "6 Mickey & Friends mugs, 4 variants each · 98 Friends-Giving Vol.2 LE pins hidden inside (~1 in 18)",
     end_time: "2026-11-23T17:00:00Z",
     source: "disneypinnacle.com/releases",
     verified_at: "2026-11-08",
@@ -76,6 +76,7 @@ export const DROP_CORRECTIONS: DropCorrection[] = [
     dist_id: "8923",
     title: "Disney Mickey & Friends: Friends-Giving Vol.2",
     kind: "rsvp",
+    detail: "Timed draw · requests close Fri 11/13 9 AM PT",
     // Timed draw: requests Thu 11/12 9 AM PT → Fri 11/13 9 AM PT.
     end_time: "2026-11-13T17:00:00Z",
     source: "disneypinnacle.com/releases",
