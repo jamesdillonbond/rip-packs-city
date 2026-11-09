@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-08 17:08 PT — x calendar: Bulls hashtag is #SeeRed
+
+`docs/social/x-calendar.md` team-hashtag list: Bulls #BullsNation → #SeeRed (Trevor). Docs only. Revert: edit the line back.
+
 ### 2026-11-08 17:05 PT — x-image: 9-card (3-row) layout fits the canvas
 
 `scripts/social/x-image.mjs`: three-row grids use tighter type/padding and put price beside status; new page-level check warns when any card sits below the footer (the per-card overflow check could not see a card pushed off the canvas). Script-only, nothing deployed. Revert: `git revert` the x-image commit (find by message "x-image: 3-row").
