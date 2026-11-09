@@ -125,6 +125,8 @@ function page({ items, pageNo, pages, fonts, logo, now }) {
   const n = items.length
   const cols = n <= 2 ? n : n <= 4 ? 2 : n <= 6 || n === 9 ? 3 : 4
   const rows = Math.ceil(n / cols)
+  // Three rows only fit the 675px canvas with tighter type; the page check below catches a miss.
+  const dense = rows >= 3
   const range = `${dayPT(now)} – ${dayPT(new Date(now.getTime() + 7 * 86400000))}`
   return `<!doctype html><html><head><meta charset="utf-8"><style>
 @font-face{font-family:Barlow;src:url(data:font/ttf;base64,${fonts.barlow}) format("truetype")}
@@ -133,20 +135,20 @@ function page({ items, pageNo, pages, fonts, logo, now }) {
 body{width:${W}px;height:${H}px;background:#080808;color:#F2F2F2;font-family:Barlow,sans-serif;overflow:hidden;position:relative}
 .bg{position:absolute;inset:0;background:radial-gradient(900px 500px at 100% 0%,rgba(224,58,47,.22),transparent 60%),radial-gradient(700px 400px at 0% 100%,rgba(224,58,47,.10),transparent 60%)}
 .stripe{position:absolute;left:0;top:0;bottom:0;width:10px;background:#E03A2F}
-.wrap{position:absolute;inset:0;padding:34px 44px 30px 54px;display:flex;flex-direction:column}
+.wrap{position:absolute;inset:0;padding:${dense ? '26px 44px 22px 54px' : '34px 44px 30px 54px'};display:flex;flex-direction:column}
 header{display:flex;align-items:center;justify-content:space-between}
-h1{font-size:70px;line-height:.9;letter-spacing:.5px;text-transform:uppercase}
+h1{font-size:${dense ? 56 : 70}px;line-height:.9;letter-spacing:.5px;text-transform:uppercase}
 h1 em{font-style:normal;color:#E03A2F}
 .sub{font-family:Mono,monospace;font-size:19px;color:#BFC0BF;margin-top:8px}
 .logo{width:104px;height:104px}
-.grid{flex:1;display:grid;grid-template-columns:repeat(${cols},1fr);grid-template-rows:repeat(${rows},1fr);gap:14px;margin:22px 0 16px}
-.card{background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.12);border-top:4px solid var(--acc);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;min-width:0}
+.grid{flex:1;display:grid;grid-template-columns:repeat(${cols},1fr);grid-template-rows:repeat(${rows},minmax(0,1fr));gap:${dense ? 10 : 14}px;margin:${dense ? '14px 0 10px' : '22px 0 16px'};min-height:0}
+.card{background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.12);border-top:4px solid var(--acc);border-radius:12px;padding:${dense ? '9px 14px' : '14px 16px'};display:flex;flex-direction:column;min-width:0;min-height:0}
 .chip{font-family:Mono,monospace;font-size:14px;color:#BFC0BF;text-transform:uppercase;letter-spacing:1px;display:flex;align-items:center;gap:8px}
 .dot{width:9px;height:9px;border-radius:50%;background:var(--acc)}
-.title{font-size:${cols >= 4 ? 30 : 36}px;line-height:1.02;text-transform:uppercase;margin:8px 0 auto;overflow-wrap:anywhere}
-.row{display:flex;flex-direction:column;gap:4px;margin-top:10px}
-.price{font-family:Mono,monospace;font-size:${cols >= 4 ? 30 : 36}px;color:#fff}
-.when{font-family:Mono,monospace;font-size:${cols >= 4 ? 15 : 18}px;color:#FF4D40}
+.title{font-size:${cols >= 4 || dense ? 27 : 36}px;line-height:1.02;text-transform:uppercase;margin:${dense ? 4 : 8}px 0 auto;overflow-wrap:anywhere}
+.row{display:flex;flex-direction:${dense ? 'row' : 'column'};${dense ? 'align-items:baseline;flex-wrap:wrap;column-gap:14px;' : ''}gap:4px;margin-top:${dense ? 6 : 10}px}
+.price{font-family:Mono,monospace;font-size:${cols >= 4 || dense ? 27 : 36}px;color:#fff}
+.when{font-family:Mono,monospace;font-size:${cols >= 4 || dense ? 16 : 18}px;color:#FF4D40}
 .when.soon{color:#FBBF24}
 footer{display:flex;justify-content:space-between;font-family:Mono,monospace;font-size:17px;color:#BFC0BF}
 footer b{color:#fff;font-weight:400}
@@ -218,6 +220,13 @@ async function main() {
         [...document.querySelectorAll(".card")].filter((c) => c.scrollHeight > c.clientHeight + 1).map((c) => c.querySelector(".title")?.textContent),
       )
       if (clipped.length) out.warnings.push(`image ${i + 1}: text overflows its card for ${clipped.join("; ")}`)
+      // And every card must sit inside the canvas, above the footer: a card can fit its own text
+      // yet be pushed off the bottom (09-card grid, 11-08), which the per-card check cannot see.
+      const offCanvas = await pg.evaluate((h) => {
+        const foot = document.querySelector("footer")?.getBoundingClientRect().top ?? h
+        return [...document.querySelectorAll(".card")].filter((c) => c.getBoundingClientRect().bottom > Math.min(foot, h) + 1).map((c) => c.querySelector(".title")?.textContent)
+      }, H)
+      if (offCanvas.length) out.warnings.push(`image ${i + 1}: card pushed off the canvas for ${offCanvas.join("; ")}`)
       const file = join(outDir, `rpc-${slot}-${i + 1}.png`)
       await pg.screenshot({ path: file, type: "png" })
       out.images.push(file)
