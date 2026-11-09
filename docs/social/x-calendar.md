@@ -71,7 +71,7 @@ A source that could not be read is named in `warnings` and `facts.collections_un
 
 ### The week's top 10 sales (Monday) — Trevor's format, 11-09
 
-One long post with the top-10 image attached and no link, then the link as a reply (`reply[]`), as on Sunday.
+One long post with the top-10 image attached and no link, then the link as a reply (`reply[]`), as on Sunday. First one posted: https://x.com/rippackscity/status/2119935610509222119 (Mon 11-09 afternoon PT).
 
 ```
 This past week's top 10 sales, 11/2-11/9 📈
