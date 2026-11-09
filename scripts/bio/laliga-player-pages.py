@@ -100,6 +100,29 @@ def sl(s):
     s=unicodedata.normalize('NFKD',s or '').encode('ascii','ignore').decode().lower()
     return re.sub(r'[^a-z0-9]+','-',s).strip('-')
 plays=json.load(open('plays.json')); cands=json.load(open('ll_cands.json'))
+
+# Step 1b (2026-11-08): widen each player's candidates with EVERY cached page of the full players
+# sitemap whose name or nickname equals a chain name form, or whose first name + a last-name token match
+# (ll_pages/ filled for every sitemap slug by the same fetcher). The guessed-slug crawl had missed 43
+# pages — Balde, Sørloth, Kang-In Lee, En-Nesyri, Nianzou, Cömert … — and one page it never saw
+# (LALIGA's "Sergio Rodríguez García") exposed a false positive in the strict rule below, now closed.
+import os as _os
+_pages=[json.load(open('ll_pages/'+f)) for f in _os.listdir('ll_pages')]
+_idx=collections.defaultdict(list)
+for _p in _pages:
+    if not _p.get('id'): continue
+    for _k in {sl(_p.get('name')), sl(_p.get('nickname'))}:
+        if _k: _idx[('f', _k)].append(_p)
+    if _p.get('firstname') and _p.get('lastname'):
+        for _t in sl(_p['lastname']).split('-'): _idx[('fl', sl(_p['firstname']).split('-')[0], _t)].append(_p)
+for _r in {r[1]: r for r in plays}.values():
+    _forms={sl(x) for x in [_r[4], _r[5], f'{_r[2]} {_r[3]}'] if x}
+    _ft=sl(_r[2]).split('-')[0] if _r[2] else ''
+    _found=[q for f in _forms for q in _idx.get(('f', f), [])]
+    if _ft and _r[3]: _found+=[q for t in sl(_r[3]).split('-') for q in _idx.get(('fl', _ft, t), [])]
+    _have={q['slug'] for q in cands.get(_r[1], [])}
+    for q in _found:
+        if q['slug'] not in _have: cands.setdefault(_r[1], []).append(q); _have.add(q['slug'])
 byp=collections.defaultdict(list)
 for r in plays: byp[r[1]].append(int(r[0]))
 info={r[1]:r for r in plays}
@@ -136,7 +159,17 @@ for pid,pages in cands.items():
             toks=set(sl(p.get('name')).split('-'))|set(sl(p.get('lastname')).split('-'))
             given=(ftok and ftok==(sl(p.get('firstname')).split('-')[0] if p.get('firstname') else '')) or \
                   (known and sl(known) in {sl(p.get('nickname')), sl(p.get('name'))})
-            return bool(given) and bool(sur & toks)
+            if not (bool(given) and bool(sur & toks)): return False
+            # No foreign token may sit BEFORE the chain's surname in the page's full name (2026-11-08):
+            # "Sergio García de la Fuente" shares "garcia" with LALIGA's "Sergio Rodríguez García" — a
+            # different person, whose paternal surname comes first. Tokens AFTER the chain's surname are a
+            # maternal surname LALIGA adds (Víctor Valdés Arribas, Carles Puyol Saforcada) and are allowed.
+            # A middle name the chain lacks only withholds here (Xavier Hernández Creus, Javier Alejandro
+            # Mascherano); the name + ESPN DOB rule may still publish those.
+            chain=set(sl(f'{first} {last} {known} {jersey}').split('-')) | PART
+            nt=[t for t in sl(p.get('name')).split('-') if t]
+            last_hit=max((i for i,t in enumerate(nt) if t in sur), default=-1)
+            return last_hit >= 0 and all(t in chain for t in nt[:last_hit + 1])
         dates=sorted(r2[7][:10] for r2 in plays if r2[1]==pid and r2[7])
         def era(p):
             d=(p.get('dob') or '')[:10]
