@@ -5,7 +5,7 @@
 -- counts rows actually deleted.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/2026111XXXXXXX_audit_20261109_candy_trophies_mlb_only_and_orphan_one_of_one_cleanup.sql);
+-- (supabase/migrations/20261110041400_audit_20261109_candy_trophies_mlb_only_and_orphan_one_of_one_cleanup.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.

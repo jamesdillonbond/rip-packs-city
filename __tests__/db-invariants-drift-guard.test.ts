@@ -1694,6 +1694,12 @@ const PINS = [
     migration: "supabase/migrations/20261108181134_audit_20261108_pinnacle_minted_renders_missing_from_catalog.sql",
   },
   {
+    // Added 2026-11-09: deletes Candy 1/1 editions no card holds (after the 1-of-1 re-key); hourly pg_cron.
+    fn: "candy_delete_orphan_one_of_one_editions",
+    test: "supabase/tests/candy_delete_orphan_one_of_one_editions.sql",
+    migration: "supabase/migrations/20261110041400_audit_20261109_candy_trophies_mlb_only_and_orphan_one_of_one_cleanup.sql",
+  },
+  {
     // Added 2026-11-08 (#221). wmc player names follow the catalog where the cached spelling is a
     // registered alias or a case/space variant; accent-only variants are never rewritten.
     fn: "heal_wmc_player_names_from_catalog",
