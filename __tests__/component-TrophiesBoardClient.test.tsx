@@ -62,3 +62,35 @@ describe("TrophiesBoardClient", () => {
     expect(hrefs.some((h) => h?.startsWith("/ufc-strike/"))).toBe(false)
   })
 })
+
+// 2026-11-09: v_insights_trophies no longer flags a circulation-1 edition held by more than one
+// card as 1-of-1 (183 Candy editions). Such a row can still appear as top tier; its badge must not
+// restate the single-copy claim as "1 OF 1" or "/1".
+describe("TrophiesBoardClient — a contradicted circulation of 1", () => {
+  const candyRow = {
+    ...ufcRow,
+    edition_id: "c1",
+    external_id: "c:2022-all-star-tricons:x",
+    collection: "candy_mlb",
+    collection_id: "209ade70-32c5-4470-bc7c-4793d660f713",
+    tier: "LEGENDARY",
+    circulation_count: 1,
+    is_one_of_one: false,
+    is_top_tier: true,
+  } as Row
+  it("shows the tier word, never '1 OF 1' or '/1'", () => {
+    const { container } = render(<TrophiesBoardClient initialRows={[candyRow]} initialFetchedAt="2026-08-02T00:00:00Z" />)
+    const text = container.textContent ?? ""
+    expect(text).toContain("LEGENDARY")
+    expect(text).not.toContain("1 OF 1")
+    expect(text).not.toMatch(/\/1 LEGENDARY/)
+  })
+  it("no-change control: a genuine 1-of-1 still says 1 OF 1, a /10 top tier still shows /10", () => {
+    const real = { ...candyRow, edition_id: "c2", is_one_of_one: true } as Row
+    const ten = { ...candyRow, edition_id: "c3", circulation_count: 10 } as Row
+    const { container } = render(<TrophiesBoardClient initialRows={[real, ten]} initialFetchedAt="2026-08-02T00:00:00Z" />)
+    const text = container.textContent ?? ""
+    expect(text).toContain("1 OF 1")
+    expect(text).toMatch(/\/10 LEGENDARY/)
+  })
+})

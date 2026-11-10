@@ -118,7 +118,11 @@ function trophyBadge(r: Row): string {
     // The collection's own top-tier word: ULTIMATE, or LEGENDARY (Golazos, Candy),
     // or Pinnacle's edition type.
     const label = r.is_ultimate ? "ULTIMATE" : (normalizeTier(r.tier) ?? "TOP TIER").toUpperCase()
-    return r.circulation_count != null ? `/${r.circulation_count} ${label}` : label
+    // A circulation of 1 that the view did NOT flag 1-of-1 is a contradiction (the edition
+    // is held by more than one card — v_insights_trophies, 2026-11-09): "/1" would restate
+    // the false single-copy claim, so show the tier word alone.
+    const contradicted = r.circulation_count === 1 && r.is_one_of_one === false
+    return r.circulation_count != null && !contradicted ? `/${r.circulation_count} ${label}` : label
   }
   const t = normalizeTier(r.tier)
   return t ?? "GRAIL"
