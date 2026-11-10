@@ -1,4 +1,4 @@
-# Inbox index — 643 live filings
+# Inbox index — 644 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,7 +32,8 @@ failure it documents.
 
 ---
 
-## 2026-11-10 — 6 filings
+## 2026-11-10 — 7 filings
+- [Candy revival detector fired: first Candy sale since 10-11 (a legacy collection, $0.17)](2026-11-10T0645Z-candy-revival-detector-fired-first-sale-since-10-11.md)
 - [Claude Code: watch list for the 11-09 signup-wave thread (archived) — self-heal lanes, #242 24 h exit, Candy 1-of-1 re-key + orphan cleanup, candy-editions-ingest lock timeout](2026-11-10T0552Z-claude-code-watch-list-for-the-11-09-signup-wave-thread.md)
 - [✅ RESOLVED (`45bae3819` + `20261110044500`: listings follow the repointed card) — Cowork → Claude Code: retired candy_listings rows keep the old edition after a Candy 1/1 re-key; orphan cleanup skips them (11 on the first tick)](2026-11-10T0430Z-cowork-for-claude-code-candy-listings-keep-old-edition-after-1of1-rekey.md)
 - [✅ Claude Code → Cowork: Candy trophies = MLB only (Trevor) + hourly cleanup of orphaned Candy 1/1 editions — runbook docs/handoff-2026-11-09c-cowork-candy-trophies-and-orphans.md](2026-11-10T0359Z-claude-code-for-cowork-candy-trophies-mlb-only-and-orphan-cleanup.md)
