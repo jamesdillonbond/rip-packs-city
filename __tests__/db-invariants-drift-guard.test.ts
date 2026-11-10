@@ -3160,8 +3160,16 @@ const PINS = [
     // under older drops that shared its editions.
     fn: "backfill_pack_rip_metadata",
     test: "supabase/tests/backfill_pack_rip_metadata.sql",
+    // Re-pinned 2026-11-09 (#242): the two whole-set eligibility legs read a precomputed queue.
     migration:
-      "supabase/migrations/20261102201245_audit_20261102_8911_rekey_and_unique_pool_vote.sql",
+      "supabase/migrations/20261110005700_audit_20261109_rip_metadata_eligibility_is_precomputed.sql",
+  },
+  {
+    // Added 2026-11-09 (#242): builds the queue backfill_pack_rip_metadata re-checks; pg_cron every 2 h.
+    fn: "refresh_pack_rip_backfill_eligible",
+    test: "supabase/tests/backfill_pack_rip_metadata.sql",
+    migration:
+      "supabase/migrations/20261110005700_audit_20261109_rip_metadata_eligibility_is_precomputed.sql",
   },
   {
     // pg_cron `40 9 * * *`. Sets players.team from the catalogue.

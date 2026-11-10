@@ -128,7 +128,11 @@
 -- and concludes it is vacuous.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261102201245_audit_20261102_8911_rekey_and_unique_pool_vote.sql; before it 20261016162203,
+-- (supabase/migrations/20261110005700_audit_20261109_rip_metadata_eligibility_is_precomputed.sql — #242:
+-- the allday_repair / unpriced_retry eligibility sets are precomputed by
+-- refresh_pack_rip_backfill_eligible(), embedded verbatim too, and every queued row is re-checked;
+-- the fixtures call the refresh before each backfill call. Before it
+-- 20261102201245_audit_20261102_8911_rekey_and_unique_pool_vote.sql; before that 20261016162203,
 -- whose description follows),
 -- itself byte-identical to production: prosrc md5 89c4d224259048322b652d0f76ace7e7,
 -- length 14274, read back after the apply on 2026-10-16. That body's allday_repair and
@@ -182,6 +186,91 @@ CREATE TABLE public.pack_drop_pool (
   edition_id    uuid,
   dist_id       text
 );
+
+-- 2026-11-09 (#242): the allday_repair / unpriced_retry eligibility sets are precomputed here.
+CREATE TABLE public.pack_rip_backfill_eligible (
+  leg          text NOT NULL CHECK (leg IN ('allday', 'unpriced')),
+  rip_id       uuid NOT NULL,
+  refreshed_at timestamptz NOT NULL,
+  PRIMARY KEY (leg, rip_id)
+);
+CREATE TABLE public.pipeline_runs_stub (pipeline text, rows_written int, ok boolean, extra jsonb);
+CREATE FUNCTION public.log_pipeline_run(p_pipeline text, p_started_at timestamptz, p_rows_found int, p_rows_written int,
+  p_rows_skipped int, p_ok boolean, p_error text, p_collection_slug text, p_cursor_before text, p_cursor_after text, p_extra jsonb)
+RETURNS bigint LANGUAGE sql AS $$ INSERT INTO public.pipeline_runs_stub VALUES (p_pipeline, p_rows_written, p_ok, p_extra) RETURNING 1::bigint $$;
+
+-- >>> BEGIN verbatim refresh_pack_rip_backfill_eligible (byte-identical to the migration/prod) >>>
+CREATE OR REPLACE FUNCTION public.refresh_pack_rip_backfill_eligible()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+ SET plan_cache_mode TO 'force_custom_plan'
+AS $function$
+DECLARE
+  v_started timestamptz := clock_timestamp();
+  v_allday  uuid := 'dee28451-5d62-409e-a1ad-a83f763ac070';
+  v_allday_n int := 0;
+  v_unpriced_n int := 0;
+  v_removed int := 0;
+BEGIN
+  -- The two eligibility sets backfill_pack_rip_metadata's allday_repair and unpriced_retry legs
+  -- used to build on EVERY call (#242). Same predicates as those legs had inline (2026-10-16
+  -- set form). WRITE FIRST, then delete only what this refresh did not write: a reader never
+  -- sees an empty queue mid-refresh.
+  WITH allday_unresolved AS MATERIALIZED (
+    SELECT DISTINCT ap.pack_nft_id
+    FROM public.allday_pack_pull ap
+    WHERE ap.edition_id IS NULL
+  ),
+  allday_set AS (
+    SELECT pr.id
+    FROM public.pack_rips pr
+    WHERE pr.collection_id = v_allday
+      AND pr.pull_value_usd IS NULL
+      AND pr.metadata_updated_at IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM allday_unresolved u WHERE u.pack_nft_id = pr.pack_nft_id)
+      AND EXISTS (SELECT 1 FROM public.allday_pack_pull ap WHERE ap.pack_nft_id = pr.pack_nft_id)
+  ),
+  ins AS (
+    INSERT INTO public.pack_rip_backfill_eligible (leg, rip_id, refreshed_at)
+    SELECT 'allday', id, v_started FROM allday_set
+    ON CONFLICT (leg, rip_id) DO UPDATE SET refreshed_at = EXCLUDED.refreshed_at
+    RETURNING 1
+  )
+  SELECT count(*) INTO v_allday_n FROM ins;
+
+  WITH unpriced_set AS (
+    SELECT pr.id
+    FROM (SELECT DISTINCT ma.source_pack_rip_id AS rid
+            FROM public.moment_acquisitions ma
+           WHERE ma.source_pack_rip_id IS NOT NULL) r
+    JOIN public.pack_rips pr ON pr.id = r.rid
+    WHERE pr.pull_value_usd IS NULL
+      AND pr.metadata_updated_at IS NOT NULL
+      AND pr.collection_id IS DISTINCT FROM v_allday
+  ),
+  ins AS (
+    INSERT INTO public.pack_rip_backfill_eligible (leg, rip_id, refreshed_at)
+    SELECT 'unpriced', id, v_started FROM unpriced_set
+    ON CONFLICT (leg, rip_id) DO UPDATE SET refreshed_at = EXCLUDED.refreshed_at
+    RETURNING 1
+  )
+  SELECT count(*) INTO v_unpriced_n FROM ins;
+
+  DELETE FROM public.pack_rip_backfill_eligible WHERE refreshed_at < v_started;
+  GET DIAGNOSTICS v_removed = ROW_COUNT;
+
+  PERFORM public.log_pipeline_run(
+    'pack-rip-backfill-eligible-refresh', v_started,
+    v_allday_n + v_unpriced_n, v_allday_n + v_unpriced_n, 0,
+    true, NULL, NULL, NULL, NULL,
+    jsonb_build_object('allday', v_allday_n, 'unpriced', v_unpriced_n, 'removed', v_removed));
+
+  RETURN jsonb_build_object('ok', true, 'allday', v_allday_n, 'unpriced', v_unpriced_n, 'removed', v_removed);
+END
+$function$;
+-- <<< END verbatim refresh_pack_rip_backfill_eligible <<<
 
 -- >>> BEGIN verbatim backfill_pack_rip_metadata (byte-identical to the migration/prod) >>>
 CREATE OR REPLACE FUNCTION public.backfill_pack_rip_metadata(p_limit integer DEFAULT 500)
@@ -260,25 +349,26 @@ BEGIN
   -- Through the function (rolled-back EXPLAIN, p_limit 1500, 10-16): 4.28 M -> 453 k buffers,
   -- 6.4 s -> 3.7 s warm. The 10-04 attempt (reverted, 20261004172500) ran slower INSIDE the
   -- function; force_custom_plan has been set since, and this one was timed there first.
-  allday_unresolved AS MATERIALIZED (
-    SELECT DISTINCT ap.pack_nft_id
-    FROM public.allday_pack_pull ap
-    WHERE ap.edition_id IS NULL
-  ),
-  allday_unvalued AS MATERIALIZED (
+  -- 2026-11-09 (#242): the eligibility SET is precomputed. Built inline it cost ~7 s / 247 k
+  -- buffers per call regardless of p_limit (the WHOLE set before a LIMIT of 150), and with the
+  -- unpriced leg below it was ~19 s of fixed cost inside a 50 s budget: 40 % of hours timed out
+  -- on 11-09. refresh_pack_rip_backfill_eligible() (pg_cron, every 2 h) writes the set into
+  -- pack_rip_backfill_eligible; here every queued row is RE-CHECKED against the same predicate
+  -- (index probes on a few hundred rows), so a row that stopped qualifying is never taken. Same
+  -- ORDER BY and LIMIT. A row that STARTS qualifying waits for the next refresh (<= 2 h).
+  allday_repair AS MATERIALIZED (
     SELECT pr.id, pr.pack_nft_id, pr.collection_id, pr.dist_id AS cur_dist,
-           pr.pull_value_usd AS cur_value, pr.moments_pulled, pr.metadata_updated_at
-    FROM public.pack_rips pr
-    WHERE pr.collection_id = v_allday
+           pr.pull_value_usd AS cur_value, pr.moments_pulled
+    FROM public.pack_rip_backfill_eligible q
+    JOIN public.pack_rips pr ON pr.id = q.rip_id
+    WHERE q.leg = 'allday'
+      AND pr.collection_id = v_allday
       AND pr.pull_value_usd IS NULL
       AND pr.metadata_updated_at IS NOT NULL
-      AND NOT EXISTS (SELECT 1 FROM allday_unresolved u WHERE u.pack_nft_id = pr.pack_nft_id)
-  ),
-  allday_repair AS MATERIALIZED (
-    SELECT c.id, c.pack_nft_id, c.collection_id, c.cur_dist, c.cur_value, c.moments_pulled
-    FROM allday_unvalued c
-    WHERE EXISTS (SELECT 1 FROM public.allday_pack_pull ap WHERE ap.pack_nft_id = c.pack_nft_id)
-    ORDER BY c.metadata_updated_at ASC
+      AND NOT EXISTS (SELECT 1 FROM public.allday_pack_pull u
+                       WHERE u.pack_nft_id = pr.pack_nft_id AND u.edition_id IS NULL)
+      AND EXISTS (SELECT 1 FROM public.allday_pack_pull ap WHERE ap.pack_nft_id = pr.pack_nft_id)
+    ORDER BY pr.metadata_updated_at ASC
     LIMIT v_allday_share
   ),
   -- The stamped-but-unvalued population (#93). It is reachable ONLY here: the
@@ -292,21 +382,20 @@ BEGIN
   -- never selected, so never re-stamped: the per-row EXISTS walk passed 167,274 of them
   -- (977 k buffers / 14.4 s) for 75 picks. The eligible set is built from the acquisitions
   -- side once (33 k rows, 168 k buffers / 1.7 s standalone); same predicate, ORDER BY, LIMIT.
-  unpriced_eligible AS MATERIALIZED (
+  -- 2026-11-09 (#242): precomputed, same as allday_repair above. Built inline this set cost
+  -- ~12 s / 233 k buffers per call (348 k distinct acquisition rip ids hashed against 451 k
+  -- stamped-unvalued rips) for a share of 75. Queued rows are re-checked here.
+  unpriced_retry AS MATERIALIZED (
     SELECT pr.id, pr.pack_nft_id, pr.collection_id, pr.dist_id AS cur_dist,
-           pr.pull_value_usd AS cur_value, pr.moments_pulled, pr.metadata_updated_at
-    FROM (SELECT DISTINCT ma.source_pack_rip_id AS rid
-            FROM public.moment_acquisitions ma
-           WHERE ma.source_pack_rip_id IS NOT NULL) r
-    JOIN public.pack_rips pr ON pr.id = r.rid
-    WHERE pr.pull_value_usd IS NULL
+           pr.pull_value_usd AS cur_value, pr.moments_pulled
+    FROM public.pack_rip_backfill_eligible q
+    JOIN public.pack_rips pr ON pr.id = q.rip_id
+    WHERE q.leg = 'unpriced'
+      AND pr.pull_value_usd IS NULL
       AND pr.metadata_updated_at IS NOT NULL
       AND pr.collection_id IS DISTINCT FROM v_allday
-  ),
-  unpriced_retry AS MATERIALIZED (
-    SELECT e.id, e.pack_nft_id, e.collection_id, e.cur_dist, e.cur_value, e.moments_pulled
-    FROM unpriced_eligible e
-    ORDER BY e.metadata_updated_at ASC
+      AND EXISTS (SELECT 1 FROM public.moment_acquisitions ma WHERE ma.source_pack_rip_id = pr.id)
+    ORDER BY pr.metadata_updated_at ASC
     LIMIT v_unpriced_share
   ),
   null_drain AS MATERIALIZED (
@@ -568,6 +657,7 @@ INSERT INTO public.moment_acquisitions (source_pack_rip_id, nft_id) VALUES
 
 -- p_limit 5000 puts every leg's share far above the fixture count, so all eight
 -- rows are candidates in one call and each assertion is about the WRITE RULE.
+SELECT public.refresh_pack_rip_backfill_eligible();
 SELECT public.backfill_pack_rip_metadata(5000);
 
 -- ── Property 1a: THE FABRICATION. This is the assertion the file exists for.
@@ -669,6 +759,7 @@ INSERT INTO public.allday_pack_pull (pack_nft_id, edition_id, fmv_usd, updated_a
   ('P-AD-OLD',   :E1::uuid,  1000.00, '2026-06-01T00:00:00Z'),
   ('P-AD-OLD',   :E2::uuid,  1000.00, '2026-06-01T00:00:00Z');
 
+SELECT public.refresh_pack_rip_backfill_eligible();
 SELECT public.backfill_pack_rip_metadata(10);
 
 SELECT _assert_eq(
@@ -717,6 +808,7 @@ INSERT INTO public.allday_pack_pull (pack_nft_id, edition_id, fmv_usd, updated_a
   ('P-AD-SHORT', :E1::uuid, 1000.00, '2026-06-01T00:00:00Z'),
   ('P-AD-SHORT', :E2::uuid, 1000.00, '2026-06-01T00:00:00Z');
 
+SELECT public.refresh_pack_rip_backfill_eligible();
 SELECT public.backfill_pack_rip_metadata(5000);
 
 SELECT _assert_eq(
@@ -748,6 +840,7 @@ INSERT INTO public.moment_acquisitions (source_pack_rip_id, nft_id) VALUES
   ('ddddddd1-0000-0000-0000-000000000001'::uuid, 'm1'),
   ('ddddddd1-0000-0000-0000-000000000002'::uuid, 'm1');
 
+SELECT public.refresh_pack_rip_backfill_eligible();
 SELECT public.backfill_pack_rip_metadata(5000);
 
 SELECT _assert_eq(
@@ -787,6 +880,7 @@ INSERT INTO public.moment_acquisitions (source_pack_rip_id, nft_id) VALUES
   ('ddddddd2-0000-0000-0000-000000000001'::uuid, 'm1'),
   ('ddddddd2-0000-0000-0000-000000000002'::uuid, 'm2');
 
+SELECT public.refresh_pack_rip_backfill_eligible();
 SELECT public.backfill_pack_rip_metadata(5000);
 
 SELECT _assert_eq(
@@ -804,10 +898,57 @@ SELECT _assert_eq(
 -- ── The negative-LIMIT guard (20260920204628). Every other share has a
 -- GREATEST(1, ...) floor, so at p_limit 1 the null_drain remainder is -3 and
 -- `LIMIT -3` RAISES 22023. Nothing in production passes 1; this pin does.
+SELECT public.refresh_pack_rip_backfill_eligible();
 SELECT _assert_eq(
   (public.backfill_pack_rip_metadata(1) IS NOT NULL)::text,
   'true',
   'p_limit 1 does not raise 22023 -- the drain remainder is clamped at 0, not negative'
+);
+
+-- ── Property 10 (#242, 2026-11-09): THE QUEUE IS RE-CHECKED, AND A NEW ROW WAITS FOR A REFRESH ──
+DELETE FROM public.pack_rips;
+DELETE FROM public.moment_acquisitions;
+DELETE FROM public.allday_pack_pull;
+DELETE FROM public.pack_rip_backfill_eligible;
+
+INSERT INTO public.pack_rips
+  (id, collection_id, pack_nft_id, dist_id, pull_value_usd, moments_pulled, sealed_at, metadata_updated_at) VALUES
+  ('eeeeeee1-0000-0000-0000-000000000001'::uuid, :TS::uuid, 'P-Q-GONE', NULL, NULL, 1, '2026-06-01T00:00:00Z', '2026-01-01T00:00:00Z');
+INSERT INTO public.moment_acquisitions (source_pack_rip_id, nft_id) VALUES
+  ('eeeeeee1-0000-0000-0000-000000000001'::uuid, 'm1');
+SELECT public.refresh_pack_rip_backfill_eligible();
+SELECT _assert_eq((SELECT count(*)::text FROM public.pack_rip_backfill_eligible WHERE leg = 'unpriced'), '1',
+  'the refresh queues a stamped NULL rip that has acquisitions');
+
+-- It stops qualifying AFTER the refresh: its acquisitions go away.
+DELETE FROM public.moment_acquisitions;
+SELECT public.backfill_pack_rip_metadata(5000);
+SELECT _assert_eq(
+  (SELECT metadata_updated_at::text FROM public.pack_rips WHERE pack_nft_id = 'P-Q-GONE'),
+  '2026-01-01 00:00:00+00',
+  '⚠ a QUEUED row that no longer qualifies is not taken -- the queue is re-checked, never trusted'
+);
+
+-- A row that STARTS qualifying after the refresh waits for the next one, then is valued.
+INSERT INTO public.pack_rips
+  (id, collection_id, pack_nft_id, dist_id, pull_value_usd, moments_pulled, sealed_at, metadata_updated_at) VALUES
+  ('eeeeeee1-0000-0000-0000-000000000002'::uuid, :TS::uuid, 'P-Q-NEW', NULL, NULL, 1, '2026-06-01T00:00:00Z', '2026-01-01T00:00:00Z');
+INSERT INTO public.moment_acquisitions (source_pack_rip_id, nft_id) VALUES
+  ('eeeeeee1-0000-0000-0000-000000000002'::uuid, 'm1');
+SELECT public.backfill_pack_rip_metadata(5000);
+SELECT _assert_eq(
+  (SELECT coalesce(pull_value_usd::text, 'NULL') FROM public.pack_rips WHERE pack_nft_id = 'P-Q-NEW'),
+  'NULL',
+  'a newly eligible row is not seen before the next refresh (the stated <= 2 h wait)'
+);
+SELECT public.refresh_pack_rip_backfill_eligible();
+SELECT _assert_eq((SELECT count(*)::text FROM public.pack_rip_backfill_eligible), '1',
+  'the refresh drops the row that stopped qualifying and keeps only the current set');
+SELECT public.backfill_pack_rip_metadata(5000);
+SELECT _assert_eq(
+  (SELECT pull_value_usd::text FROM public.pack_rips WHERE pack_nft_id = 'P-Q-NEW'),
+  '10.00',
+  'after the refresh the new row is reached and valued'
 );
 
 ROLLBACK;
