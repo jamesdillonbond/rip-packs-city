@@ -215,6 +215,25 @@ Done 10-15 → 10-17 (Claude Code cloud, session_014vWuubmVKLyyyMQAwWzT2W; Trevo
 - ❓ **Needs Trevor:** how the 2026-27 Yearbook / Blue Chip / Squad Goals leaderboards are scored. RPC will not publish its own rank as Top Shot's. The board worth building is "cost to climb into the top N", and it needs the official scoring.
 - **Tracked since 2026-10-19:** `editions.autographed_at` (from Atlas `autographedAt`, swept daily by pg_cron `rpc-autograph-sweep`; 236 Top Shot + 226 All Day signed editions at the census). Partner-athlete status itself is still not stored: Atlas's `activePartnerAthlete` flag marks only 4 players and is not the signer list. Research: [autographs-topshot-allday-2026-10-19.md](../research/autographs-topshot-allday-2026-10-19.md). **Not tracked yet:** Constellations trade-ins burn older-season Rares that the index does not walk (Dune-era sets), so holder counts there lag.
 
+## ⭐ NEW 2026-11-10 — OFF-CYCLE ACTIVITY REVIEW, 11-03..11-09 PT (by `scripts/demand-read.sql`, params 11-03 08:00 UTC → 11-10 08:00 UTC; Claude Code cloud, ~1:45 PM PT; full report: Project doc `claude/activity-review-2026-11-10-week.md`)
+
+Not the regular Thursday week (that one is 11-05..11-11, owed on/after 11-12 — see the 11-07 block). Compared with the 10-27..11-02 window by the same file.
+
+| | 10-27..11-02 | **11-03..11-09** |
+|---|---:|---:|
+| human browsers / visits (crawler rule below) | 70 / 134 | **184 / 419** (580 crawler visits excluded) |
+| external signed-in users | 5 | **33** |
+| signups (minus internal) | 1 | **17** (19 counting 11-10 to 1:40 PM PT) |
+| Dame Time cases created / complete | — | **26 / 26** (27 / 27 by 11-10 noon) |
+| sign-in clicks (human) | home_pricing 3 · home_header 1 · share_cta 1 | **challenge_board_signup 8** · site_header 5 · site_header_signup 5 · home_hero_signup 4 · home_pricing 2 · home_header_signup 2 · share_cta 2 |
+| concierge human messages (sessions) | 9 (4) | **10 (2)** |
+
+**Read:**
+- ⭐ **Dame Time (11-06 → locked 11-10) is the first thing that moved acquisition AND activation together:** X 81 visits (5 the week before), its board the top sign-up surface; of the 19 who signed up through 11-10 1:40 PM PT, 9 came back on a second day. 6 of 19 never made a trophy case (5 of them hold Dames).
+- ⚠ **New instrument rule — crawler bursts.** A JS-running crawler (11-09 4–7 AM PT, ~580 single-page `/panini-blockchain/*` visits, a fresh vid each) passed the human-visit rule and read as 772 browsers. `demand-read.sql` now drops lone, no-ref, never-seen-again visits in an hour × section bucket of ≥ 8 and reports them as their own row; over 10-13..11-10 only this crawler hit it.
+- **Shipped against it (11-10):** feedback loop for relayed feedback + new-member concierge identity, closed-board next step, alert card waits for a second visit, dashboard concierge pills, 14,214 stale Panini HIGH labels re-labelled (ledger 11-10).
+- 🔜 **The 11-12 regular re-read** runs with the crawler rule; compare script against script (re-run 10-29..11-04 with the new file first — it should match the 11-07 block, since no crawler burst fell in it).
+
 ## ⭐ NEW 2026-11-07 — DEMAND RE-READ, WEEK OF 10-29..11-04 PT (by `scripts/demand-read.sql`, params 10-29 07:00 UTC → 11-05 08:00 UTC — 169 h, PDT ended 11-01; Claude Code cloud, ~10:40 AM PT)
 
 Baseline re-run with the SAME file (script against script, never the prose block): 10-22..10-28 reproduces the 10-29 block on every row.
