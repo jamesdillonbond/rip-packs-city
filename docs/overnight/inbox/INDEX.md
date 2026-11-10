@@ -33,7 +33,7 @@ failure it documents.
 ---
 
 ## 2026-11-10 — 12 filings
-- [`panini-set-progress-products` read-timeout — Panini sibling of the All Day set-progress full-FMV read (1715Z)](2026-11-10T1910Z-daytime-monitor-panini-set-progress-read-timeout-same-class-as-allday.md)
+- [✅ RESOLVED (`20261110195805` + `20261110200203`: picker skips asks, sets read scoped to one product, covering owner index — 84 s → 0.17 s for the largest holder) — `panini-set-progress-products` read-timeout — Panini sibling of the All Day set-progress full-FMV read (1715Z)](2026-11-10T1910Z-daytime-monitor-panini-set-progress-read-timeout-same-class-as-allday.md)
 - [Withdrawn prices — population sweep: UFC tracker fix staged (latent), seven cached-price readers left as a recorded choice, the rest clean](2026-11-10T1840Z-withdrawn-prices-population-sweep-ufc-tracker-staged-seven-cache-readers.md) — *(Cowork cloud, read-only.)* Checklists, platform stats, tier pulse, the three deal boards and Panini's views read clean; 8 moments / $442 among signed-up users' wallets still show a last-known price unmarked.
 - [daytime monitor — rpc-chain-arrivals-seed newly timing out (flow_height_estimate DISTINCT over growing puller wallets); green the prior 5 days](2026-11-10T1607Z-daytime-monitor-chain-arrivals-seed-timeout.md)
 - [Wallet caches keep prices the engine has withdrawn — $89,860 across 474 moments in 79 wallets; no writer can carry a NULL](2026-11-10T1800Z-wallet-caches-keep-prices-the-engine-withdrew.md) — *(Cowork cloud, read-only.)* All Day 432 rows / 48 wallets / $69,987; Top Shot 42 / 31 / $19,873; every row still priced. Needs a decision: re-label as stale, or clear the price.
