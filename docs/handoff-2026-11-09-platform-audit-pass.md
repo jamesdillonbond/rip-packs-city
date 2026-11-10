@@ -194,7 +194,7 @@ Each runs as one paste in the Supabase SQL editor; each carries its pre-check, p
 - All Day set tracker fix: applied as `20261110173413` through the SQL editor in Trevor's Chrome ("Use chrome and do it"). His wallet's cost to complete went from $423,045.11 to $344,638.00 — down by exactly the $78,407 of withdrawn prices — and the read from 3.7 s to 0.26 s.
 - Candy board floor: already applied by another session as `20261110154319`; the floor reads 5.
 
-## Seventh pass — 9:43 AM → ~10:50 AM PT 11-10 (Trevor: "Keep going"; then "don't stop until … nothing is left unresolved from this thread")
+## Seventh pass — 9:43 AM → ~10:35 AM PT 11-10 (Trevor: "Keep going"; then "don't stop until … nothing is left unresolved from this thread")
 
 ### Withdrawn prices in wallets — fixed by another session, verified here
 

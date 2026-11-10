@@ -1,8 +1,8 @@
 # Withdrawn prices — the population sweep that closes the thread: one tracker fix staged (UFC, latent), seven readers of the cached price left as a recorded choice, everything else read clean
 
-Filed 2026-11-10 ~10:40 AM PT by Cowork cloud (platform audit pass, closing round). Follows `2026-11-10T1715Z` (All Day set tracker, fixed `20261110173413`) and `2026-11-10T1800Z` (wallet totals, fixed `20261110181426`). Nothing was changed in production by this filing.
+Filed 2026-11-10 ~10:32 AM PT by Cowork cloud (platform audit pass, closing round). Follows `2026-11-10T1715Z` (All Day set tracker, fixed `20261110173413`) and `2026-11-10T1800Z` (wallet totals, fixed `20261110181426`). Nothing was changed in production by this filing.
 
-"Withdrawn" = `edition_fmv_current.fmv_usd IS NULL` while an older `fmv_snapshots` row has a price. Population at 10:30 AM PT: All Day 196 editions ($78,407.10), Top Shot 88 ($38,410.40), Golazos 29 ($203.01), UFC 0 of 45 NULL rows, Candy 0. Panini (own table, `panini_fmv_snapshots`): 274 latest-NULL, 156 with an older price.
+"Withdrawn" = `edition_fmv_current.fmv_usd IS NULL` while an older `fmv_snapshots` row has a price. Population at ~10:27 AM PT: All Day 196 editions ($78,407.10), Top Shot 88 ($38,410.40), Golazos 29 ($203.01), UFC 0 of 45 NULL rows, Candy 0. Panini (own table, `panini_fmv_snapshots`): 274 latest-NULL, 156 with an older price.
 
 ## The sweep
 
@@ -33,7 +33,7 @@ To apply: move the file to `supabase/migrations/<version>_audit_20261110_ufc_set
 
 `get_user_top_owned_moments` (trophy picker ranking), `get_user_hero_moment` (profile hero), `export_wallet_csv`, `concierge_wallet_breakdown`, `get_wallet_tc_report`, `get_wallet_total_fmv`, `snapshot_all_user_portfolios` (daily portfolio history).
 
-Measured 10:35 AM PT: 492 cached moments / $93,506.96 across 77 wallets carry a withdrawn price; among wallets saved by a signed-up user, **8 moments / $442.01 across 4 wallets**.
+Measured ~10:30 AM PT: 492 cached moments / $93,506.96 across 77 wallets carry a withdrawn price; among wallets saved by a signed-up user, **8 moments / $442.01 across 4 wallets**.
 
 This is consistent with the decision taken at 10:15 AM PT (keep the last known price, call it stale): these seven already sum prices the engine labels STALE without marking them, so a withdrawn price is treated like any other old price there. It leaves one visible seam: the binder ROW for such a moment shows no price while the wallet's stale line and these seven readers still count its last known one. Closing that seam is the other reading of the decision ("a withdrawn price is no price"): clear the cached price and teach the four cache writers to carry a NULL. Not done — it changes what 77 collectors see, and it is a decision, not a repair.
 

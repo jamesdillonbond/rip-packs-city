@@ -62,7 +62,7 @@ Proved on the most affected All Day wallet: 33 moments, $16,559.69 of withdrawn 
 
 One SQL helper that all five call, so the rule lives once: e.g. `wallet_moment_confidence(lf_has_row boolean, lf_fmv numeric, lf_conf fmv_confidence, wmc_fmv numeric, wmc_conf fmv_confidence) RETURNS fmv_confidence` = `CASE WHEN lf_has_row AND lf_fmv IS NULL AND wmc_fmv IS NOT NULL THEN 'STALE' ELSE COALESCE(lf_conf, wmc_conf) END` (IMMUTABLE, so it inlines). `get_wallet_collection_stats` reads the newest snapshot directly and needs the price beside the label. Acceptance: the 474-row / 79-wallet / $89,860 figure above moves from headline to stale and nothing else moves.
 
-## ↳ ✅ CLOSED — applied by another session at 10:14 AM PT as `20261110181426`; verified independently 10:50 AM PT
+## ↳ ✅ CLOSED — applied by another session at 10:14 AM PT as `20261110181426`; verified independently ~10:18 AM PT (first stamped 10:50 AM in error; corrected 10:35 AM)
 
 A Claude Code session picked this filing up and put the rule in all five readers (commit `72d7a75`). Found when a second, staged copy of the same fix failed its own pre-check: all five `md5(prosrc)` had moved. That copy was discarded, not applied.
 

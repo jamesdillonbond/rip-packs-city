@@ -5,7 +5,7 @@
 --    WHERE collection_id = p_collection_id AND fmv_usd IS NOT NULL ORDER BY edition_id, computed_at DESC
 -- — the same CTE the All Day tracker carried until 20261110173413, where it summed
 -- $78,407 of prices the engine had withdrawn into "cost to complete".
--- On UFC it is LATENT, not live: measured 2026-11-10 ~11:00 AM PT over the whole UFC
+-- On UFC it is LATENT, not live: measured 2026-11-10 ~10:28 AM PT over the whole UFC
 -- population, old CTE 572 priced editions / $18,647.80, edition_fmv_current 572 /
 -- $18,647.80, 0 differing; 45 UFC editions are withdrawn today and none has an older
 -- priced snapshot. The first withdrawal of a once-priced UFC edition would have put its
