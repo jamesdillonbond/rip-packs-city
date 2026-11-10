@@ -50,3 +50,14 @@ This file is written as the pass goes (draft at 1:55 PM PT, updated 3:00 PM PT);
 | `candy_revival_sales_since_recorded_silence` (breach 1) | 1 | One $0.17 ME sale 11-09 (+4 dust sales parked): a trickle | View re-date to `silent_since_2026_11_10` **staged for Cowork** (part B), tested on scratch PG |
 | `candy_ask_book_drop_pct` (breach 60) | 91.2 | False positive: 208 ghost ME asks ingested + deactivated in the 11-09 7:35 PM PT pass sit in the "seen 24 h" denominator; real book is 20 | Clears ~7:35 PM PT 11-10 by itself; optional arm fix: drop `owner_moved_at` rows from the denominator |
 | `edition_integrity_flags` (breach 250) | 9,581 | 9,559 Candy name-only editions (#246); census repoints ~7k cards/h, ~110k left | Drains on its own (~16 h); do NOT raise the threshold or exclude Candy. Remainder: 8 TS thumbnails, 14 UFC tiers |
+
+## 3:30 PM PT sweep
+
+- **Vercel runtime errors since 12:15 PM PT: none.**
+- **`pg_net_http_401` (critical) is self-inflicted:** the 2:29 PM PT CoinGecko probe from this session used 2025 epoch timestamps ("exceeds the allowed time range"). Not an edge-function fault; ages out of the 2 h window ~4:29 PM PT. `sol_usd_daily` (applied by Cowork, `20261110230100`) asks for 100 days, inside the limit — its fill answered 200.
+- **`pinnacle-catalog-backfill` failure_rate (medium) pools across a recovery:** 1:37 PM PT run reads 0 missing renders (was 29 on 11-09).
+- **`candy-collections-census` failure_rate (medium):** Candy metadata host 429s during the #246 re-hydration; the census still repoints ~7k cards/h. Known.
+- **`refresh_wmc_fmv_changed`:** one statement timeout at 3:08 PM PT in ~150 runs over 12 h (avg 3–7 s, max 30 s). Watch at 7:05 PM PT; not acted on.
+- **Pipeline failures otherwise:** wallet-backfill 508 continuation (recovered by the #245 resume), Atlas/Candy upstream 403/429/timeouts, one Panini walk for a wallet whose username Panini no longer has — all known classes.
+- **Inbox:** 1607Z (chain-arrivals seed) and 0645Z (Candy revival) marked resolved; 1840Z's UFC fix was already applied (`20261110184532`), its seven-reader item stays a recorded choice.
+- **Candy trust arms:** revival 1 → 0 (`20261110225146`); `sol_usd_daily` live (Cowork) — 2,528 parked sales all fall on covered days; the 4:20 PM PT indexer run is the first to price them (check-in 4:26 PM PT).
