@@ -34,6 +34,7 @@ import {
   pinnacleNotApplicable,
   readPinnacleSetCompletionForConcierge, readPinnacleHotFloorsForConcierge,
 } from "@/lib/concierge/pinnacle-router";
+import { feedbackOwnerFilter, profileUsernameFor } from "@/lib/concierge/identity";
 import {
   fetchUnifiedFmvDistribution,
   fetchPinnacleFmvDistribution,
@@ -259,11 +260,18 @@ async function deriveIdentity(): Promise<AuthedIdentity> {
       .ilike("email", email)
       .limit(1)
       .maybeSingle();
+    const userId = data?.user?.id ?? null;
+    // 2026-11-10: new members have no allow_list row — fall back to their own
+    // profile username (lib/concierge/identity.ts). The wallet stays
+    // allow_list-only: a profile/saved wallet is not verified as the user's,
+    // and userWallet is the watchlist + quota key.
+    let ownerKey: string | null = row?.username ?? null;
+    if (!ownerKey && userId) ownerKey = await profileUsernameFor(supabase, userId);
     return {
       email,
-      ownerKey: row?.username ?? null,
+      ownerKey,
       userWallet: row?.wallet_addr ?? null,
-      userId: data?.user?.id ?? null,
+      userId,
     };
   } catch (err: any) {
     console.log("[support-chat] deriveIdentity threw:", err?.message ?? String(err));
@@ -2327,7 +2335,7 @@ async function executeToolInner(
   // the caller's own log_* entries (support_conversations.feedback_type set),
   // newest first, with the triage status the admin inbox writes.
   if (toolName === "get_my_feedback_status") {
-    if (!ctx.ownerKey) {
+    if (!ctx.ownerKey && !ctx.userEmail) {
       return JSON.stringify({
         status: "no_results",
         signed_in: false,
@@ -2339,7 +2347,7 @@ async function executeToolInner(
       const { data, error } = await supabase
         .from("support_conversations")
         .select("id, feedback_type, feedback_summary, feedback_status, shipped_at, created_at")
-        .eq("owner_key", ctx.ownerKey)
+        .or(feedbackOwnerFilter(ctx.ownerKey, ctx.userEmail))
         .not("feedback_type", "is", null)
         .order("created_at", { ascending: false })
         .limit(limit);

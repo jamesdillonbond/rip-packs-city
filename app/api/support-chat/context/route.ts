@@ -16,6 +16,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getSupabaseServer } from "@/lib/auth/supabase-server";
 import { isWellFormedSessionId, isBotSessionId } from "@/lib/concierge/request-guards";
+import { profileUsernameFor } from "@/lib/concierge/identity";
 import { anonTelemetryAllowed } from "@/lib/abuse/anon-rate";
 
 export const maxDuration = 10;
@@ -53,9 +54,15 @@ async function deriveIdentity(): Promise<AuthedIdentity> {
       .ilike("email", email)
       .limit(1)
       .maybeSingle();
+    // 2026-11-10: new members have no allow_list row — fall back to their own
+    // profile username so "welcome back" and "your feedback shipped" reach them
+    // (lib/concierge/identity.ts). The wallet stays allow_list-only.
+    let ownerKey: string | null = row?.username ?? null;
+    const uid = data?.user?.id ?? null;
+    if (!ownerKey && uid) ownerKey = await profileUsernameFor(supabase, uid);
     return {
       email,
-      ownerKey: row?.username ?? null,
+      ownerKey,
       userWallet: row?.wallet_addr ?? null,
     };
   } catch {

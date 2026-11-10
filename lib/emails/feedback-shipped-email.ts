@@ -28,6 +28,16 @@ export interface FeedbackShippedOpts {
   note?: string | null
   /** A page to look at, when the team supplied one; absolute URL. */
   link?: string | null
+  /** True when the reader told the team directly (Discord, X, a text) rather
+   *  than through the concierge — the footer must not claim the concierge. */
+  relayed?: boolean
+}
+
+/** Why the reader is getting this email — true to how they reached us. */
+export function shippedEmailReason(relayed: boolean | undefined): string {
+  return relayed
+    ? "You\u2019re getting this once because you told us about it. Reply to this email if it isn\u2019t right."
+    : "You\u2019re getting this once because you asked for it through the RPC concierge. Reply to this email if it isn\u2019t right."
 }
 
 function esc(s: string): string {
@@ -45,7 +55,9 @@ export function feedbackTypeLabel(t: string | null | undefined): string {
 
 export function buildFeedbackShippedSubject(opts: FeedbackShippedOpts): string {
   const head = opts.feedbackType === "bug" ? "Fixed" : "Shipped"
-  const summary = opts.summary.trim().slice(0, 90)
+  const full = opts.summary.trim()
+  // Cut a long summary at a word boundary, never mid-word ("…the sticky ").
+  const summary = full.length <= 90 ? full : `${full.slice(0, 89).replace(/\s+\S*$/, "")}…`
   return `${head}: ${summary}`
 }
 
@@ -58,7 +70,7 @@ export function buildFeedbackShippedText(opts: FeedbackShippedOpts): string {
   ]
   if (opts.note?.trim()) lines.push(``, `From the team: ${opts.note.trim()}`)
   if (opts.link) lines.push(``, `Have a look: ${opts.link}`)
-  lines.push(``, `You're getting this once because you asked for it through the RPC concierge. Reply to this email if it isn't right.`, ``, SITE_URL)
+  lines.push(``, shippedEmailReason(opts.relayed).replace(/\u2019/g, "'"), ``, SITE_URL)
   return lines.join("\n")
 }
 
@@ -85,7 +97,7 @@ export function buildFeedbackShippedHtml(opts: FeedbackShippedOpts): string {
             ${link ? `<div style="margin-top:18px;"><a href="${esc(link)}" style="display:inline-block;background:${ACCENT};color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:10px 16px;border-radius:8px;">Have a look &rarr;</a></div>` : ""}
           </td></tr>
           <tr><td style="padding:18px 4px 0;font-size:12px;line-height:1.5;color:${TEXT_SUBTLE};">
-            You&rsquo;re getting this once because you asked for it through the RPC concierge. Reply to this email if it isn&rsquo;t right.
+            ${esc(shippedEmailReason(opts.relayed))}
             <br/><a href="${SITE_URL}" style="color:${TEXT_MUTED};">rippackscity.com</a>
           </td></tr>
         </table>
@@ -118,10 +130,10 @@ export function buildFeedbackShippedDigestSubject(opts: FeedbackShippedDigestOpt
 }
 
 export function buildFeedbackShippedDigestText(opts: FeedbackShippedDigestOpts): string {
-  const lines = [`${opts.items.length} things you asked for through the RPC concierge have shipped:`, ``]
+  const lines = [`${opts.items.length} things you asked us for have shipped:`, ``]
   for (const it of opts.items) lines.push(`- [${feedbackTypeLabel(it.feedbackType)}] ${it.summary.trim()}`)
   if (opts.note?.trim()) lines.push(``, `From the team: ${opts.note.trim()}`)
-  lines.push(``, `You're getting this once because you asked for these through the RPC concierge. Reply to this email if anything isn't right.`, ``, SITE_URL)
+  lines.push(``, `You're getting this once because you asked for these. Reply to this email if anything isn't right.`, ``, SITE_URL)
   return lines.join("\n")
 }
 
@@ -144,14 +156,14 @@ export function buildFeedbackShippedDigestHtml(opts: FeedbackShippedDigestOpts):
           <tr><td style="padding:0 0 16px;">
             <div style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:${ACCENT};font-weight:700;">Shipped</div>
             <div style="font-size:22px;font-weight:700;line-height:1.25;margin-top:6px;">${opts.items.length} things you asked for just shipped</div>
-            <div style="font-size:14px;line-height:1.5;color:${TEXT_MUTED};margin-top:8px;">Every one of these came in through the concierge. Thank you &mdash; this is what the beta is for.</div>
+            <div style="font-size:14px;line-height:1.5;color:${TEXT_MUTED};margin-top:8px;">Thank you for telling us &mdash; this is what the beta is for.</div>
           </td></tr>
           <tr><td style="background:${PANEL};border:1px solid ${PANEL_BORDER};border-radius:12px;padding:10px 20px 14px;">
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table>
             ${note ? `<div style="font-size:14px;line-height:1.5;margin-top:14px;color:${TEXT_MUTED};"><span style="color:${TEXT};font-weight:600;">From the team:</span> ${esc(note)}</div>` : ""}
           </td></tr>
           <tr><td style="padding:18px 4px 0;font-size:12px;line-height:1.5;color:${TEXT_SUBTLE};">
-            You&rsquo;re getting this once because you asked for these through the RPC concierge. Reply to this email if anything isn&rsquo;t right.
+            You&rsquo;re getting this once because you asked for these. Reply to this email if anything isn&rsquo;t right.
             <br/><a href="${SITE_URL}" style="color:${TEXT_MUTED};">rippackscity.com</a>
           </td></tr>
         </table>

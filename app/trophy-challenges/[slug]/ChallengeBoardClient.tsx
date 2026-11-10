@@ -81,6 +81,25 @@ export function challengeSigninHref(slug: string): string {
   return `/login?next=${encodeURIComponent(challengeEntryHref(slug))}`
 }
 
+/** Where a CLOSED board sends its viewer (2026-11-10): a completed entrant to
+ *  their case; anyone signed in to their own trophy case; signed out to sign-up
+ *  with the trophy tab as the return path. */
+export function closedChallengeHref(
+  viewer: "signed-in" | "signed-out" | "unknown",
+  own: { username: string; complete: boolean } | null,
+  slug: string,
+): string {
+  if (viewer === "signed-in" && own?.complete) return challengeCaseSharePath(own.username, slug)
+  if (viewer === "signed-in") return "/dashboard?tab=trophy"
+  return `/login?intent=signup&next=${encodeURIComponent("/dashboard?tab=trophy")}`
+}
+
+export function closedChallengeLabel(viewer: "signed-in" | "signed-out" | "unknown", complete: boolean): string {
+  if (viewer === "signed-in" && complete) return "See your case"
+  if (viewer === "signed-in") return "Build your trophy case"
+  return "Create a free account"
+}
+
 export default function ChallengeBoardClient({ slug }: { slug: string }) {
   const [state, setState] = useState<State>({ kind: "loading" })
   const [viewer, setViewer] = useState<Viewer>("unknown")
@@ -235,7 +254,26 @@ export default function ChallengeBoardClient({ slug }: { slug: string }) {
             Enter from your dashboard
           </Link>
         ) : (
-          <span style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)" }}>This challenge has closed.</span>
+          // 2026-11-10: a closed board was a dead end. Dame Time locked 11-10
+          // while its X post kept sending people here; one signed up from it and
+          // left 14 s later with nothing to do. Closed now says so AND offers the
+          // next step: a finished entrant shares their case, anyone else builds
+          // their own trophy case (signed out: creates the account first).
+          <span data-rpc-challenge-closed style={{ display: "inline-flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)" }}>This challenge has closed.</span>
+            <Link
+              href={closedChallengeHref(viewer, ownEntry ? { username: ownEntry.username, complete: ownEntry.slab_count >= 6 } : null, slug)}
+              onClick={viewer === "signed-out" ? () => trackFunnelEvent({ eventType: "signin_click", surface: "challenge_closed_signup" }) : undefined}
+              style={{
+                fontFamily: condensedFont, fontWeight: 800, fontSize: 13, letterSpacing: "0.08em", textTransform: "uppercase",
+                padding: "10px 16px", borderRadius: 8, textDecoration: "none",
+                // brand-exception: white label on the red CTA button
+                background: "var(--rpc-red-fill)", color: "#fff",
+              }}
+            >
+              {closedChallengeLabel(viewer, ownEntry ? ownEntry.slab_count >= 6 : false)}
+            </Link>
+          </span>
         )}
         <span style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", letterSpacing: "0.08em" }}>
           {entry_count} {entry_count === 1 ? "entry" : "entries"}

@@ -91,6 +91,17 @@ export function unfinishedEntries(body: unknown): UnfinishedEntry[] {
   return out
 }
 
+// 2026-11-10: the dashboard mounts this card twice per load, so every "shown"
+// event was logged twice (both within seconds, on every new account). Module
+// state survives a re-mount within one page load and resets on a reload.
+const shownThisLoad = new Set<string>()
+function trackOncePerLoad(event: string, props: { challenges: string }): void {
+  const key = `${event}|${props.challenges}`
+  if (shownThisLoad.has(key)) return
+  shownThisLoad.add(key)
+  track(event, props)
+}
+
 export default function ChallengeProgressNudge() {
   const [entries, setEntries] = useState<UnfinishedEntry[]>([])
   const [unentered, setUnentered] = useState<UnenteredChallenge[]>([])
@@ -104,10 +115,10 @@ export default function ChallengeProgressNudge() {
         if (!active) return
         const list = unfinishedEntries(body)
         setEntries(list)
-        if (list.length) track("challenge-nudge-shown", { challenges: list.map((e) => e.slug).join(",") })
+        if (list.length) trackOncePerLoad("challenge-nudge-shown", { challenges: list.map((e) => e.slug).join(",") })
         const fresh = unenteredChallenges(body)
         setUnentered(fresh)
-        if (fresh.length) track("challenge-invite-shown", { challenges: fresh.map((e) => e.slug).join(",") })
+        if (fresh.length) trackOncePerLoad("challenge-invite-shown", { challenges: fresh.map((e) => e.slug).join(",") })
       })
     return () => {
       active = false

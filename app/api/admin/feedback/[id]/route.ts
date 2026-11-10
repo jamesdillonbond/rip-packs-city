@@ -13,6 +13,7 @@ import {
   buildFeedbackShippedHtml,
   buildFeedbackShippedText,
 } from "@/lib/emails/feedback-shipped-email";
+import { isRelayedSession } from "@/lib/feedback/relayed";
 
 // ── "Your request shipped" (2026-10-03) ──────────────────────────────────────
 // On the FIRST transition to `shipped`, the reader who logged the row is
@@ -34,6 +35,7 @@ async function notifyShipped(row: {
   admin_note: string | null;
   is_smoke_test: boolean | null;
   shipped_notified_at: string | null;
+  session_id?: string | null;
 }): Promise<NotifyResult> {
   if (row.shipped_notified_at) return { attempted: false, sent: false, reason: "already notified" };
   if (row.is_smoke_test) return { attempted: false, sent: false, reason: "smoke/probe row" };
@@ -43,7 +45,7 @@ async function notifyShipped(row: {
   if (!summary) return { attempted: false, sent: false, reason: "no summary on the row" };
   const key = process.env.RESEND_API_KEY;
   if (!key) return { attempted: true, sent: false, reason: "RESEND_API_KEY missing" };
-  const opts = { feedbackType: row.feedback_type, summary, pageContext: row.page_context, note: row.admin_note, link: null };
+  const opts = { feedbackType: row.feedback_type, summary, pageContext: row.page_context, note: row.admin_note, link: null, relayed: isRelayedSession(row.session_id) };
   try {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",

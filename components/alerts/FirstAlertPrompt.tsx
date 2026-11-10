@@ -42,6 +42,45 @@ export function firstAlertCapped(shows: number): boolean {
   return shows >= FIRST_ALERT_MAX_SHOWS
 }
 
+// 2026-11-10: two more rules, from the 11-03..11-10 week (84 shows, 2 clicks).
+// (1) Not on a new member's first visit: the card sat beside the challenge
+//     invite on every brand-new dashboard, and new members acted on the
+//     challenge (27 entries) and not on this. It waits until FIRST_ALERT_DELAY_MS
+//     after this browser first saw the dashboard.
+// (2) One count per page load: the dashboard mounts the card twice per load
+//     (both logged within seconds on every new account), so the 3-show cap was
+//     spent in under two visits and the shown count was doubled.
+export const FIRST_ALERT_DELAY_MS = 12 * 60 * 60 * 1000
+const FIRST_SEEN_KEY = "rpc_first_alert_first_seen"
+
+/** True while the card should wait: this browser has not seen the dashboard
+ *  before (null) or saw it less than FIRST_ALERT_DELAY_MS ago. */
+export function firstAlertTooSoon(firstSeenMs: number | null, nowMs: number): boolean {
+  if (firstSeenMs == null || !Number.isFinite(firstSeenMs)) return true
+  return nowMs - firstSeenMs < FIRST_ALERT_DELAY_MS
+}
+
+function readFirstSeen(nowMs: number): number | null {
+  try {
+    const raw = localStorage.getItem(FIRST_SEEN_KEY)
+    const n = raw == null ? NaN : Number(raw)
+    if (Number.isFinite(n) && n > 0) return n
+    localStorage.setItem(FIRST_SEEN_KEY, String(nowMs))
+    return null
+  } catch {
+    // storage unavailable: no way to know it is a later visit, so never wait —
+    // the 3-show cap is equally unavailable, which is the pre-11-10 behaviour.
+    return 0
+  }
+}
+
+// Module state survives a re-mount within one page load and resets on a reload.
+let decidedThisLoad: FirstAlertState | null = null
+/** Test seam: start a fresh "page load". */
+export function resetFirstAlertPageLoad(): void {
+  decidedThisLoad = null
+}
+
 function readShows(): number {
   try {
     const n = Number(localStorage.getItem(SHOWS_KEY) ?? "0")
@@ -69,12 +108,22 @@ export default function FirstAlertPrompt() {
       fetchJson<unknown>("/api/alerts/subscriptions", { cache: "no-store" }),
     ]).then(([moment, subs]) => {
       if (!active) return
+      // A second mount in the same page load reuses the first decision: no new
+      // count, no second "shown" event.
+      if (decidedThisLoad !== null) {
+        setState(decidedThisLoad === "show" ? firstAlertState(moment, subs) : "hide")
+        return
+      }
       let next = firstAlertState(moment, subs)
+      // hydration-safe: inside a fetch callback in useEffect — never during render, nothing server-rendered reads it
+      const nowMs = Date.now()
+      if (next === "show" && firstAlertTooSoon(readFirstSeen(nowMs), nowMs)) next = "hide"
       if (next === "show") {
         const shows = readShows()
         if (firstAlertCapped(shows)) next = "hide"
         else writeShows(shows + 1)
       }
+      if (next !== "unknown") decidedThisLoad = next
       setState(next)
       if (next === "show") track("first-alert-prompt-shown", { surface: "dashboard" })
     })
@@ -113,6 +162,7 @@ export default function FirstAlertPrompt() {
         aria-label="Hide the alert suggestion"
         onClick={() => {
           writeShows(FIRST_ALERT_MAX_SHOWS)
+          decidedThisLoad = "hide"
           setState("hide")
           track("first-alert-prompt-dismissed", { surface: "dashboard" })
         }}

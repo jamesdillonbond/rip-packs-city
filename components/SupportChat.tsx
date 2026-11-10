@@ -371,6 +371,12 @@ const INSIGHTS_BOARD_DEFAULTS: Record<string, string[]> = {
 };
 
 const PUBLIC_PAGE_DEFAULTS: Record<string, string[]> = {
+  // 2026-11-10: the signed-in dashboard fell through to DEFAULT_SUGGESTIONS
+  // ("Report a bug", "Suggest a feature", …). In the 11-03..11-10 week three of
+  // six concierge opens closed without a message, all on the dashboard or home
+  // with those pills showing. A member on their dashboard is looking at their
+  // own collection — lead with that.
+  dashboard: ["What's my collection worth?", "My most valuable moments", "Sets I'm close to completing?", "How is FMV calculated?"],
   home: ["What is Rip Packs City?", "What's my collection worth?", "Biggest sales this week", "Show me deals under $10"],
   about: ["How is FMV calculated?", "Which collections do you cover?", "Where does the data come from?", "Is it free?"],
   blog: ["What is Rip Packs City?", "How is FMV calculated?", "Biggest sales this week", "What's my collection worth?"],

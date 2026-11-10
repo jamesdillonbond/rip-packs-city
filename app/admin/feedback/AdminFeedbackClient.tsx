@@ -15,6 +15,7 @@ import {
   upgradeStoredAdminToken,
 } from "@/lib/admin-token";
 import { accentText } from "@/lib/accent-text";
+import LogRelayedFeedback from "./LogRelayedFeedback";
 
 const condensedFont = "var(--font-display)";
 const monoFont = "var(--font-mono)";
@@ -712,6 +713,8 @@ function Dashboard({
             {backlogMsg}
           </div>
         )}
+
+        <LogRelayedFeedback onLogged={fetchRows} onUnauthorized={handleUnauthorized} />
 
         {/* Filters + search */}
         <section className="rpc-section" style={{ display: "flex", flexDirection: "column", gap: 10 }}>

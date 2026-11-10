@@ -105,11 +105,15 @@ describe("deal legs never fabricate an FMV of zero", () => {
 })
 
 describe("the feedback loop can be read back by its author", () => {
-  it("binds get_my_feedback_status to the cookie-derived ownerKey", () => {
+  // Re-pinned 2026-11-10: the read now matches the cookie-derived username OR
+  // the cookie-derived email (new members have no allow_list row). Both values
+  // still come only from ctx — never from the tool input.
+  it("binds get_my_feedback_status to the cookie-derived ownerKey and email", () => {
     const start = ROUTE.indexOf('if (toolName === "get_my_feedback_status") {')
     expect(start).toBeGreaterThan(0)
     const body = ROUTE.slice(start, start + 2500)
-    expect(body).toContain('.eq("owner_key", ctx.ownerKey)')
+    expect(body).toContain(".or(feedbackOwnerFilter(ctx.ownerKey, ctx.userEmail))")
+    expect(body).not.toContain("toolInput.email")
     expect(body).not.toContain("toolInput.ownerKey")
     expect(body).not.toContain("toolInput.username")
     expect(body).not.toContain("toolInput.wallet")

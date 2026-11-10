@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { verifyAdminRequest, adminUnauthorizedResponse } from "@/lib/admin-auth";
+import { buildRelayedRow, type RelayedInput } from "@/lib/feedback/relayed";
 
 export const dynamic = "force-dynamic";
 
@@ -197,4 +198,62 @@ export async function GET(req: NextRequest) {
   const shipped_unnotified_error = unnotified.error ? unnotified.error.message : shipped_unnotified == null ? "count unavailable" : null;
 
   return NextResponse.json({ rows, stats: { ...stats, shipped_unnotified, shipped_unnotified_error } });
+}
+
+// POST — log feedback that reached the team OUTSIDE the site (Discord, X, a
+// text, email) into the same queue, so it gets a status and its reader hears
+// when it ships (2026-11-10; lib/feedback/relayed.ts has why). Bearer-gated
+// like GET. Body: { summary, message?, feedback_type, channel, username?,
+// page_context?, status?, admin_note?, reported_at? }.
+//
+// The reader's email is resolved from THEIR account (user_profiles.username →
+// auth user), never typed in: a username with no account logs the row with no
+// email, and the response says so — the team then replies in the channel the
+// feedback came from. `ok` is whether the INSERT returned a row.
+export async function POST(req: NextRequest) {
+  if (!verifyAdminRequest(req)) return adminUnauthorizedResponse();
+  let body: RelayedInput;
+  try {
+    body = (await req.json()) as RelayedInput;
+  } catch {
+    return NextResponse.json({ error: "JSON body required" }, { status: 400 });
+  }
+  const built = buildRelayedRow(body);
+  if (!built.ok) return NextResponse.json({ error: built.error }, { status: 400 });
+
+  let user_email: string | null = null;
+  let email_reason: string | null = built.row.owner_key ? null : "no username given";
+  if (built.row.owner_key) {
+    const { data: prof, error: profErr } = await supabaseAdmin
+      .from("user_profiles")
+      .select("id")
+      .eq("username", built.row.owner_key)
+      .limit(1)
+      .maybeSingle();
+    if (profErr) {
+      email_reason = `profile read failed: ${profErr.message}`;
+    } else if (!prof?.id) {
+      email_reason = "no RPC account with that username";
+    } else {
+      const { data: au, error: auErr } = await supabaseAdmin.auth.admin.getUserById(prof.id as string);
+      if (auErr) email_reason = `account read failed: ${auErr.message}`;
+      else user_email = au?.user?.email ?? null;
+      if (!auErr && !user_email) email_reason = "account has no email";
+    }
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("support_conversations")
+    .insert({ ...built.row, user_email })
+    .select("id, feedback_status, feedback_summary")
+    .maybeSingle();
+  if (error || !data) {
+    return NextResponse.json({ ok: false, error: error?.message ?? "insert returned no row" }, { status: 500 });
+  }
+  return NextResponse.json({
+    ok: true,
+    row: data,
+    reader_emailable: !!user_email,
+    ...(user_email ? {} : { email_reason }),
+  });
 }

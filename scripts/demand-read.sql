@@ -31,23 +31,40 @@
 --   challenge    = (2026-11-08) magic links whose return path named a challenge (metadata.challenge, logged
 --                  from 11-08 on — earlier links logged a query-stripped `next` and cannot be told apart),
 --                  and trophy_cases with a challenge_id created in the window (internal excluded).
+--   crawler burst = (2026-11-10) a JS-running crawler passes the HUMAN VISIT rule: on 11-09 4–7 AM PT one
+--                  walked ~590 /panini-blockchain/edition pages, a fresh vid per page, no ref, nothing but the
+--                  page-view — 772 "browsers" for 11-03..11-10, 184 with this rule (580 visits). Excluded: visits with exactly
+--                  one page-view, no other event, no ref, a vid seen in no other visit, in an hour × first-two-
+--                  path-segments bucket holding ≥ 8 such visits. Over 10-13..11-10 only the 11-09 crawler hit it;
+--                  a burst of real visitors (a post going viral) would carry refs or a second event. Reported as
+--                  its own row so a change in the rule is visible.
 --   concierge    = (2026-11-08) support_conversations not flagged smoke, WITH a visit_session_id (the site
 --                  widget always sends one; direct-API probes do not — 11-07's unflagged probes had none),
 --                  minus the log_* rows (feedback_type set) that the bot writes beside an answer.
 WITH params AS (
-  SELECT timestamptz '2026-10-15 07:00+00' AS s, timestamptz '2026-10-22 07:00+00' AS e
+  SELECT timestamptz '2026-11-03 08:00+00' AS s, timestamptz '2026-11-10 08:00+00' AS e
 ), ev AS (
   SELECT u.* FROM usage_events u, params p
   WHERE u.occurred_at >= p.s AND u.occurred_at < p.e
     AND coalesce(u.metadata->>'automated', 'false') <> 'true'
-), visits AS (
-  SELECT metadata->>'sid' AS sid, min(metadata->>'vid') AS vid,
+), visits_all AS (
+  SELECT metadata->>'sid' AS sid, min(metadata->>'vid') AS vid, min(occurred_at) AS t0,
+         count(*) FILTER (WHERE feature_name <> 'page-view') AS other_ev,
          count(*) FILTER (WHERE feature_name = 'page-view') AS pv,
          (array_agg(metadata->>'ref' ORDER BY occurred_at) FILTER (WHERE feature_name = 'page-view'))[1] AS ref,
          (array_agg(metadata->>'path' ORDER BY occurred_at) FILTER (WHERE feature_name = 'page-view'))[1] AS landing
   FROM ev WHERE metadata ? 'sid'
   GROUP BY 1
   HAVING min(metadata->>'vid') IS NOT NULL AND count(*) FILTER (WHERE feature_name = 'page-view') > 0
+), lone AS (
+  SELECT va.sid, date_trunc('hour', va.t0) AS hr, split_part(va.landing, '/', 2) || '/' || split_part(va.landing, '/', 3) AS pfx
+  FROM visits_all va
+  WHERE va.pv = 1 AND va.other_ev = 0 AND va.ref IS NULL
+    AND NOT EXISTS (SELECT 1 FROM visits_all o WHERE o.vid = va.vid AND o.sid <> va.sid)
+), crawler AS (
+  SELECT l.sid FROM lone l JOIN (SELECT hr, pfx FROM lone GROUP BY 1, 2 HAVING count(*) >= 8) b USING (hr, pfx)
+), visits AS (
+  SELECT * FROM visits_all WHERE sid NOT IN (SELECT sid FROM crawler)
 ), src AS (
   SELECT v.*, CASE
       WHEN ref IS NULL THEN 'direct'
@@ -64,6 +81,7 @@ WITH params AS (
 SELECT 'human events' AS metric, count(*)::text AS value FROM ev
 UNION ALL SELECT 'browsers', count(DISTINCT vid)::text FROM visits
 UNION ALL SELECT 'visits', count(*)::text FROM visits
+UNION ALL SELECT 'excluded: crawler-burst visits', count(*)::text FROM crawler
 UNION ALL SELECT 'external signed-in users', count(*)::text FROM signed
 UNION ALL SELECT 'source: ' || source, count(*)::text || ' visits (' || count(*) FILTER (WHERE pv = 1) || ' one-page)' FROM src GROUP BY source
 UNION ALL SELECT 'funnel: wallet pastes', count(*)::text || ' (' || count(DISTINCT metadata->>'vid') || ' browsers)' FROM ev WHERE feature_name = 'search-executed' AND metadata->>'input_kind' IN ('address', 'username')
