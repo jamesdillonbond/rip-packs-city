@@ -94,6 +94,7 @@ CREATE OR REPLACE FUNCTION public.get_user_top_owned_moments(p_user_id uuid, p_l
  STABLE SECURITY DEFINER
  SET search_path TO 'public'
  SET statement_timeout TO '8s'
+ SET plan_cache_mode TO 'force_custom_plan'
 AS $function$
 DECLARE
   v_panini constant uuid := 'd1a0a7f5-609a-49f4-a1a7-4eaac55b020b';
@@ -186,13 +187,32 @@ BEGIN
       AND p_league IS NULL
       AND (p_collection_id IS NULL OR p_collection_id = v_panini)
   ),
+  -- HOLDINGS NAMED FIRST (2026-11-09, #243): a held card's edition is its own psku
+  -- (measured over all 43,182 holdings: psku never NULL, and panini_card_serials'
+  -- edition_external_id never differs from it), so the words are matched on the
+  -- psku's edition joins BEFORE the per-card panini_card_serials lookup — the
+  -- cold cost of a big profile (6,023 index probes into a 9.3 GB table, ~10k
+  -- blocks, ~14 s of rigged's 16 s "Damian Lillard" read). panini_named still
+  -- applies the same filter on the final key, so a survivor's row is unchanged.
+  panini_held AS MATERIALIZED (
+    SELECT h.*
+    FROM panini_names pn
+    JOIN panini_user_holdings h ON h.username = pn.username
+    LEFT JOIN editions e0
+      ON e0.collection_id = v_panini
+     AND e0.external_id = h.psku
+    LEFT JOIN panini_editions pe0 ON pe0.external_id = h.psku
+    WHERE (v_words IS NULL
+           OR concat_ws(' ', COALESCE(e0.player_name, pe0.player_name, h.athlete),
+                             COALESCE(e0.set_name, pe0.set_name, h.cardset),
+                             e0.team_name) ILIKE ALL (v_words))
+  ),
   panini_seen AS (
     -- (a) the walked public profile
     SELECT h.url_key AS sku, COALESCE(s.edition_external_id, h.psku) AS ed_key,
            COALESCE(h.serial_number, s.serial_number) AS serial, COALESCE(h.mint_cap, s.mint_cap) AS cap,
            h.athlete, h.cardset, h.image_url AS img, h.last_seen_at AS seen_at
-    FROM panini_names pn
-    JOIN panini_user_holdings h ON h.username = pn.username
+    FROM panini_held h
     LEFT JOIN panini_card_serials s ON s.sku = h.url_key
     WHERE COALESCE(s.serial_state, '') <> 'BURNT'
     UNION ALL

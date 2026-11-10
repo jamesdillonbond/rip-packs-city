@@ -1538,7 +1538,9 @@ const PINS = [
     // (the cached Series-1 edition hero assets are dead).
     // Repointed 2026-11-08: every typed word must match some field (player +
     // set across fields), so "Damian Lillard Extra Spice" finds the Moment.
-    migration: "supabase/migrations/20261109050827_audit_20261108_trophy_picker_panini_name_filter_first.sql",
+    // Repointed 2026-11-09 (#243): Panini holdings are name-filtered on their own
+    // psku edition BEFORE the per-card panini_card_serials lookup (cold cost).
+    migration: "supabase/migrations/20261110025023_audit_20261109_trophy_picker_panini_holdings_named_before_serial_lookup.sql",
   },
   {
     fn: "get_trophy_slab_data",
