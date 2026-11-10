@@ -12,6 +12,17 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+// #228 lever (b′) for this route, 2026-11-10 — the same one /api/collection-snapshot took 11-04.
+// 8 `RPC_READ_TIMEOUT` at the 8 s default in 24 h (10:57 AM – 4:29 PM PT 11-09). pg_stat_statements
+// holds PostgREST calls of `get_wallet_summary` up to 24.3 s that COMPLETED after this route had
+// already answered 503 — boundedRead abandons the wait, not the query — so the 8 s bound turned a slow
+// success into an error. Measured on the largest Top Shot wallet (61,617 rows): 25.0 s cold / 1.37 s warm.
+// 20 s sits under the service_role 30 s statement_timeout and this route's maxDuration, so a read that is
+// genuinely stuck is still reported by us as a retryable 503. Sole caller: the Collection tab's
+// client fetch, which carries no deadline of its own.
+export const WALLET_SUMMARY_READ_BUDGET_MS = 20_000
+export const maxDuration = 30
+
 // ⚠ `get_wallet_summary` takes a Flow ADDRESS. The Collection tab calls this
 // route with whatever the reader typed — and the front door tells them to
 // "paste a Top Shot username". Measured 2026-09-06 on the founder's own wallet
@@ -97,7 +108,7 @@ export async function GET(req: NextRequest) {
   const { data, error } = await boundedRead(supabase.rpc("get_wallet_summary", {
     p_wallet: address,
     p_collection_id: collectionId,
-  }), "api/wallet-summary/get_wallet_summary")
+  }), "api/wallet-summary/get_wallet_summary", WALLET_SUMMARY_READ_BUDGET_MS)
 
   if (error) {
     // 2026-11-09: name the wallet, collection and wait — the shared error line carried none,

@@ -7,9 +7,15 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // 15,284-Moment wallet under HTTP 200. A username now resolves through the
 // cached ladder; an unresolved one is a 404, never a row of zeros.
 
-const rpc: { data: any; error: any; lastArgs: any } = { data: null, error: null, lastArgs: null }
+const rpc: { data: any; error: any; lastArgs: any; delayMs: number } = { data: null, error: null, lastArgs: null, delayMs: 0 }
 vi.mock("@supabase/supabase-js", () => ({
-  createClient: () => ({ rpc: async (_n: string, args: any) => { rpc.lastArgs = args; return { data: rpc.data, error: rpc.error } } }),
+  createClient: () => ({
+    rpc: async (_n: string, args: any) => {
+      rpc.lastArgs = args
+      if (rpc.delayMs > 0) await new Promise((r) => setTimeout(r, rpc.delayMs))
+      return { data: rpc.data, error: rpc.error }
+    },
+  }),
 }))
 const resolver = { result: null as string | null, calls: [] as string[], down: false }
 // 2026-09-29: the route resolves usernames through the shared ladder
@@ -32,7 +38,7 @@ vi.mock("@/lib/chains/flow/topshot-username-resolve", async (orig) => {
 import { GET } from "@/app/api/wallet-summary/route"
 const req = (u: string) => ({ nextUrl: new URL(u) }) as any
 
-beforeEach(() => { rpc.data = null; rpc.error = null; rpc.lastArgs = null; resolver.result = null; resolver.calls = []; resolver.down = false })
+beforeEach(() => { rpc.data = null; rpc.error = null; rpc.lastArgs = null; rpc.delayMs = 0; resolver.result = null; resolver.calls = []; resolver.down = false })
 
 describe("GET /api/wallet-summary", () => {
   it("400s without a wallet", async () => {
@@ -62,6 +68,37 @@ describe("GET /api/wallet-summary", () => {
       expect(line).toMatch(/wallet=0x3795d42c0fc3a373 collection=[0-9a-f-]{36} elapsed_ms=\d+/)
     } finally {
       warn.mockRestore()
+    }
+  })
+
+  it("waits past the 8 s default for a slow read that completes — a cold whale is an answer, not a 503 (#228, 2026-11-10)", async () => {
+    vi.useFakeTimers()
+    try {
+      rpc.delayMs = 12_000
+      rpc.data = { total_moments: 61617 }
+      const pending = GET(req("https://t/api/wallet-summary?wallet=0xb5081692483c2336"))
+      await vi.advanceTimersByTimeAsync(12_500)
+      const res = await pending
+      expect(res.status).toBe(200)
+      expect((await res.json()).total_moments).toBe(61617)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+  it("a read still running at the 20 s budget is an honest retryable error, never a summary (#228 control)", async () => {
+    vi.useFakeTimers()
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    try {
+      rpc.delayMs = 60_000
+      rpc.data = { total_moments: 61617 }
+      const pending = GET(req("https://t/api/wallet-summary?wallet=0xb5081692483c2336"))
+      await vi.advanceTimersByTimeAsync(20_500)
+      const res = await pending
+      expect(res.status).toBeGreaterThanOrEqual(500)
+      expect(JSON.stringify(await res.json())).not.toContain("61617")
+    } finally {
+      warn.mockRestore()
+      vi.useRealTimers()
     }
   })
 
