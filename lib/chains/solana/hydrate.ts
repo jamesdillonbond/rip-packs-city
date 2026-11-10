@@ -196,8 +196,12 @@ export async function hydrateFromJsonUri(
     sleep?: (ms: number) => Promise<void>
     /** floor for the adaptive in-flight limit (default 4) */
     minConcurrency?: number
+    /** first step of the adaptive gap between request STARTS, once the width is at its floor (default 50 ms; 0 = no pacing) */
+    gapStepMs?: number
+    /** ceiling for that gap (default 2000 ms) */
+    maxGapMs?: number
   } = {},
-): Promise<HydrateResult & { fetches: number; groups: number; unverified_groups: number; rate_limit_retries: number; min_concurrency: number }> {
+): Promise<HydrateResult & { fetches: number; groups: number; unverified_groups: number; rate_limit_retries: number; min_concurrency: number; max_gap_ms: number }> {
   // 48 (was 16): throughput is latency-bound, not rate-limited — 68 HTTP 429 in 4,761 requests
   // on the 11:57 AM PT run — and the breaker still stops a run whose fetches mostly fail.
   // 2026-11-09 4:57 PM PT: that stopped holding — 2,069 HTTP 429 in 13,240 requests (15.6 %, run
@@ -214,12 +218,23 @@ export async function hydrateFromJsonUri(
   // old width: it neither cuts again nor uses up the card's retry rounds (at most
   // STALE_RETRY_CAP such free retries per card). Workers stay at `concurrency`; the limit gates
   // their requests. The run log reports the lowest limit reached.
+  // 2026-11-10 (later): three runs on the width limit lost 469 / 332 / 814 cards to 429 with the
+  // limit AT its floor of 4 — the gateways limit request RATE, not width. Once the width cannot
+  // fall further, an all-429 round instead widens a minimum GAP between request starts (first
+  // `gapStepMs`, then doubling to `maxGapMs`); clean windows relax the gap before they widen the
+  // limit. A gap change counts as a narrowing for the stale-signal rule above. The run log
+  // reports the widest gap reached.
   const concurrency = Math.max(1, opts.concurrency ?? 48)
   const minConcurrency = Math.max(1, Math.min(concurrency, opts.minConcurrency ?? 4))
   let limit = concurrency
   let inFlight = 0
   let cleanSinceRaise = 0
   let cuts = 0
+  const pacing = (opts.gapStepMs ?? 50) > 0   // gapStepMs: 0 turns pacing off
+  const gapStep = Math.max(1, opts.gapStepMs ?? 50)
+  const maxGap = Math.max(gapStep, opts.maxGapMs ?? 2000)
+  let gapMs = 0
+  let nextStartAt = 0
   const waiters: Array<() => void> = []
   const acquire = (): Promise<void> => {
     if (inFlight < limit) { inFlight++; return Promise.resolve() }
@@ -236,7 +251,7 @@ export async function hydrateFromJsonUri(
   let rotation = 0
   const timeoutMs = opts.timeoutMs ?? 8000
   const doFetch = opts.fetchImpl ?? fetch
-  const out: HydrateResult & { fetches: number; groups: number; unverified_groups: number; rate_limit_retries: number; min_concurrency: number } = { hydrated: [], failed: [], fetches: 0, groups: 0, unverified_groups: 0, rate_limit_retries: 0, min_concurrency: concurrency }
+  const out: HydrateResult & { fetches: number; groups: number; unverified_groups: number; rate_limit_retries: number; min_concurrency: number; max_gap_ms: number } = { hydrated: [], failed: [], fetches: 0, groups: 0, unverified_groups: 0, rate_limit_retries: 0, min_concurrency: concurrency, max_gap_ms: 0 }
   const groups = new Map<string, DasAsset[]>()
   for (const a of assets) {
     const k = editionGroupKey(a)
@@ -266,6 +281,13 @@ export async function hydrateFromJsonUri(
       try {
         for (const url of gatewayAlternates(uri, rotation++)) {
           out.fetches++
+          if (gapMs > 0) {
+            // pace request STARTS across the whole pool
+            const now = Date.now()
+            const at = Math.max(now, nextStartAt)
+            nextStartAt = at + gapMs
+            if (at > now) await sleep(at - now)
+          }
           try {
             const resp = await doFetch(url, { signal: AbortSignal.timeout(timeoutMs) })
             if (!resp.ok) {
@@ -290,11 +312,17 @@ export async function hydrateFromJsonUri(
             limit = Math.max(minConcurrency, Math.floor(limit / 2))
             out.min_concurrency = Math.min(out.min_concurrency, limit)
             cuts++
+          } else if (pacing && gapMs < maxGap) {
+            // width already at its floor: slow the rate instead
+            gapMs = gapMs > 0 ? Math.min(maxGap, gapMs * 2) : gapStep
+            out.max_gap_ms = Math.max(out.max_gap_ms, gapMs)
+            cuts++
           }
           cleanSinceRaise = 0
-        } else if (++cleanSinceRaise >= limit && limit < concurrency) {
-          // additive increase — one per full window of clean rounds
-          limit++
+        } else if (++cleanSinceRaise >= limit && (gapMs > 0 || limit < concurrency)) {
+          // a full window of clean rounds relaxes the gap first, then widens by one
+          if (gapMs > 0) gapMs = gapMs >= 2 * gapStep ? Math.floor(gapMs / 2) : 0
+          else limit++
           cleanSinceRaise = 0
         }
       } finally {

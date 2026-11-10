@@ -316,9 +316,36 @@ describe("adaptive in-flight limit under a gateway that rate-limits by concurren
     expect(adaptive.min_concurrency).toBeLessThanOrEqual(6)
     expect(adaptive.min_concurrency).toBeGreaterThanOrEqual(4) // the floor
     // control: the same gateway with the limit pinned at full width (the pre-11-10 behaviour)
-    const fixed = await hydrateFromJsonUri(many, { fetchImpl: cappedGateway(6).f, sleep: quickSleep, rateLimitBackoffMs: 5, concurrency: 48, minConcurrency: 48 })
+    const fixed = await hydrateFromJsonUri(many, { fetchImpl: cappedGateway(6).f, sleep: quickSleep, rateLimitBackoffMs: 5, concurrency: 48, minConcurrency: 48, gapStepMs: 0 })
     expect(fixed.min_concurrency).toBe(48)
     expect(fixed.failed.length).toBeGreaterThanOrEqual(30)
+  })
+
+  // 2026-11-10 (later): three production runs lost 469 / 332 / 814 cards with the width AT its floor —
+  // the gateways limit RATE. Once the width cannot fall, an all-429 round widens a gap between
+  // request starts.
+  function ratedGateway(minSpacingMs: number) {
+    let lastAccepted = -Infinity
+    const f = (async () => {
+      const now = Date.now()
+      await new Promise((r) => setTimeout(r, 1))
+      if (now - lastAccepted < minSpacingMs) return new Response("slow down", { status: 429 })
+      lastAccepted = now
+      return new Response(JSON.stringify(offChain), { status: 200 })
+    }) as unknown as typeof fetch
+    return f
+  }
+  const realSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
+  const few = many.slice(0, 40)
+
+  it("a RATE-limited gateway: once the width is at its floor, pacing request starts recovers the cards", async () => {
+    const paced = await hydrateFromJsonUri(few, { fetchImpl: ratedGateway(4), sleep: realSleep, rateLimitBackoffMs: 5, concurrency: 8, minConcurrency: 4, gapStepMs: 2, maxGapMs: 40 })
+    expect(paced.max_gap_ms).toBeGreaterThanOrEqual(4)
+    // control: same gateway, width adaptive but no pacing (the 7:57–9:57 AM PT production shape)
+    const unpaced = await hydrateFromJsonUri(few, { fetchImpl: ratedGateway(4), sleep: realSleep, rateLimitBackoffMs: 5, concurrency: 8, minConcurrency: 4, gapStepMs: 0 })
+    expect(unpaced.max_gap_ms).toBe(0)
+    expect(paced.failed.length).toBeLessThan(unpaced.failed.length)
+    expect(paced.failed.length).toBeLessThanOrEqual(4)
   })
 
   it("no-change control: a gateway that never rate-limits keeps the full width", async () => {
@@ -326,6 +353,7 @@ describe("adaptive in-flight limit under a gateway that rate-limits by concurren
     const r = await hydrateFromJsonUri(many, { fetchImpl: g.f, sleep: quickSleep, rateLimitBackoffMs: 5, concurrency: 48 })
     expect(r.failed).toEqual([])
     expect(r.min_concurrency).toBe(48)
+    expect(r.max_gap_ms).toBe(0) // never paced
     expect(g.peak()).toBeGreaterThan(24) // throughput is not throttled when nothing pushes back
   })
 })
