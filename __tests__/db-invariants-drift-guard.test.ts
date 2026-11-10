@@ -1875,7 +1875,8 @@ const PINS = [
   {
     fn: "detect_new_edition_early_buyers",
     test: "supabase/tests/detect_new_edition_early_buyers.sql",
-    migration: "supabase/migrations/20261004004247_audit_20261003_buyer_signals_exclude_buyback_wallets.sql",
+    // Re-pointed 2026-11-10: edition_first_sale AS MATERIALIZED (plan only; > 55 s -> 0.19 s on All Day).
+    migration: "supabase/migrations/20261110215349_audit_20261110_insider_early_buyer_detector_materializes_first_sales.sql",
   },
   {
     fn: "detect_topshot_sweeps",

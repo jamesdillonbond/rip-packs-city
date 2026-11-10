@@ -6,7 +6,8 @@
 -- on (edition, buyer). Severity bands on early copies (>10 → 3, >5 → 2).
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260802201500_audit_20260802_snapshot_detect_new_edition_early_buyers.sql);
+-- (supabase/migrations/20261110215349_audit_20261110_insider_early_buyer_detector_materializes_first_sales.sql;
+-- earlier: 20260802201500_audit_20260802_snapshot_detect_new_edition_early_buyers.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -76,7 +77,10 @@ BEGIN
     WHERE collection_id = v_collection_id AND edition_id IS NOT NULL
       AND sold_at > NOW() - INTERVAL '7 days'
   ),
-  edition_first_sale AS (
+  -- 2026-11-10: MATERIALIZED. Inlined, the per-edition min() became a SubPlan re-run inside the join filter and the
+  -- planner walked sales_2020/2021's whole buyer_address index per edition: > 55 s on All Day, the
+  -- run_all_insider_detectors('nfl_all_day') call past the ~120 s gateway cap on 5 of 48 runs. Fenced: 2.7 s.
+  edition_first_sale AS MATERIALIZED (
     -- first-ever sale < 7d old == has a recent sale AND no older sale.
     -- Avoids the full-history GROUP BY (parity-verified 2026-07-16).
     SELECT r.edition_id,
