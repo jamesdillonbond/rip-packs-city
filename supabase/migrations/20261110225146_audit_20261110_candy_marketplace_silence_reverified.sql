@@ -1,6 +1,6 @@
 -- audit_20261110_candy_marketplace_silence_reverified
 --
--- Cowork applies this (dashboard SQL editor); Claude Code's apply_migration prompt times out unanswered.
+-- Applied by Claude Code cloud (apply_migration) 11-10 ~2:55 PM PT.
 -- WHY: trust arm candy_revival_sales_since_recorded_silence = 1 (breach 1) since a $0.17 Magic Eden sale on 11-09. The arm
 -- asks for exactly this: re-look at Candy trading and update the candy_mlb row of v_collection_marketplace_status. Measured
 -- 2:50 PM PT 11-10: sales since 10-13 = 1 recorded ($0.17, 11-09) + 4 parked dust (11-07, 11-08; 0.034 SOL). A trickle,
@@ -42,7 +42,7 @@ UNION ALL
     'silent_since_2026_11_10'::text AS secondary_status,
     NULL::text AS pack_secondary_venue,
     '2026-11-10 22:55:00+00'::timestamp with time zone AS last_verified_at,
-    'Candy MLB (Solana, Metaplex Core). Primary = Candy Digital drops; secondary = Magic Eden (registry marketplaceMomentUrl). Re-verified 2026-10-28 (PT): candy-sales-indexer 8 of 8 runs ok in 24 h, 0 unresolved. Secondary trading STOPPED rather than moving venues (2026-10-25 Solana collection census, #58), so no OpenSea feed is needed. RE-DATED 2026-11-08 (PT): the newest indexed sale is 2026-10-12 7:57 AM PT (three sales 10-12 5:22 / 5:29 / 7:57 AM PT, before Candy''s 10-12 NFT lock, found late by the 11-08 later-set walk), so the silence starts 10-12, not 10-11; last_verified_at is NOT advanced by that correction. A new sale trips v_rpc_trust_health.candy_revival_sales_since_recorded_silence; re-verify this row then. RE-VERIFIED + RE-DATED 2026-11-10 (PT, Claude Code cloud; applied by Cowork): the revival arm fired on ONE Magic Eden sale of $0.17 on 11-09; with it, 4 dust sales (11-07 x3, 11-08; 0.034 SOL, ~$3 total) were parked no_sol_rate. 5 sales / ~$3 in 4 weeks is a trickle, not a revived market, so the silence is re-dated to 11-10 and last_verified_at advanced; a sale on 11-11 or later trips the arm again. Facts live in this view, not collection_config (Flow-shaped). buy_ctas_enabled=false: RPC is read-only.'::text AS notes
+    'Candy MLB (Solana, Metaplex Core). Primary = Candy Digital drops; secondary = Magic Eden (registry marketplaceMomentUrl). Re-verified 2026-10-28 (PT): candy-sales-indexer 8 of 8 runs ok in 24 h, 0 unresolved. Secondary trading STOPPED rather than moving venues (2026-10-25 Solana collection census, #58), so no OpenSea feed is needed. RE-DATED 2026-11-08 (PT): the newest indexed sale is 2026-10-12 7:57 AM PT (three sales 10-12 5:22 / 5:29 / 7:57 AM PT, before Candy''s 10-12 NFT lock, found late by the 11-08 later-set walk), so the silence starts 10-12, not 10-11; last_verified_at is NOT advanced by that correction. A new sale trips v_rpc_trust_health.candy_revival_sales_since_recorded_silence; re-verify this row then. RE-VERIFIED + RE-DATED 2026-11-10 (PT, Claude Code cloud): the revival arm fired on ONE Magic Eden sale of $0.17 on 11-09; with it, 4 dust sales (11-07 x3, 11-08; 0.034 SOL, ~$3 total) were parked no_sol_rate. 5 sales / ~$3 in 4 weeks is a trickle, not a revived market, so the silence is re-dated to 11-10 and last_verified_at advanced; a sale on 11-11 or later trips the arm again. Facts live in this view, not collection_config (Flow-shaped). buy_ctas_enabled=false: RPC is read-only.'::text AS notes
    FROM collections c
   WHERE c.slug::text = 'candy_mlb'::text
 UNION ALL

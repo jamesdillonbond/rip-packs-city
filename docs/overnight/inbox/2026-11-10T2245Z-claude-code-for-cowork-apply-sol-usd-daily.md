@@ -7,3 +7,5 @@
 **Runbook:** `docs/handoff-2026-11-10d-cowork-apply-sol-usd-daily.md`. Staged file: `docs/proposals/audit_20261110_sol_usd_daily_from_db_egress-STAGED.sql` (SHA-256 `1ab2006a…0b92`).
 
 **↳ Part B added (~2:55 PM PT):** re-verify the Candy marketplace silence (revival arm fired on one $0.17 sale) — `docs/proposals/audit_20261110_candy_marketplace_silence_reverified-STAGED.sql` (SHA-256 `66e201e7…1403`), same runbook. Part C: the ask-book arm is a false positive that clears ~7:35 PM PT.
+
+**↳ Part B done by Claude Code (~2:55 PM PT, `20261110225146`):** `apply_migration` went through without a prompt; revival arm reads 0. Only part A remains for Cowork.

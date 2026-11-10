@@ -1,6 +1,6 @@
 # Handoff → Cowork: apply `sol_usd_daily` + re-verify the Candy marketplace silence (2026-11-10, Claude Code cloud)
 
-**Why Cowork:** Claude Code's `apply_migration` raised the Supabase confirmation prompt twice (2:35 and ~2:50 PM PT
+**Why Cowork (part A only):** Claude Code's `apply_migration` raised the Supabase confirmation prompt twice (2:35 and ~2:50 PM PT
 11-10) and it never reached Trevor; Trevor: "Do it. If it's something you can't do here, hand it off to cowork."
 Use the **dashboard SQL editor in Trevor's Chrome** (the 11-08 / 11-09 route). Nothing below is in production yet.
 
@@ -87,6 +87,10 @@ The app half then reports `sol_db_error` and prices from CoinGecko only, as befo
 
 ---
 
+# Part B — ✅ DONE by Claude Code 11-10 ~2:55 PM PT (`20261110225146`; arm now 0). Nothing for Cowork here.
+
+<details><summary>original runbook (kept for the record)</summary>
+
 # Part B — re-verify the Candy marketplace silence (trust arm `candy_revival_sales_since_recorded_silence` = 1)
 
 **Why:** the arm fired on one Magic Eden sale of **$0.17 on 11-09**; with it, 4 dust sales (11-07 ×3, 11-08; 0.034 SOL,
@@ -110,6 +114,8 @@ SELECT reloptions FROM pg_class WHERE relname = 'v_collection_marketplace_status
 SELECT metric, value, status FROM v_rpc_trust_health WHERE metric = 'candy_revival_sales_since_recorded_silence';  -- 0, OK
 ```
 4. Repo: `git mv docs/proposals/audit_20261110_candy_marketplace_silence_reverified-STAGED.sql supabase/migrations/<VERSION_B>_audit_20261110_candy_marketplace_silence_reverified.sql`; ledger entry; commit; push.
+
+</details>
 
 # Part C — no action: `candy_ask_book_drop_pct` 91.2 is a false positive and clears itself ~7:35 PM PT 11-10
 
