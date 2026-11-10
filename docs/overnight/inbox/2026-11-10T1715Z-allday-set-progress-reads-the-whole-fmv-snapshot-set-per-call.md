@@ -39,3 +39,7 @@ All 196 editions have a NEWER snapshot than the one the tracker uses, written 11
 **Staged, not applied:** `docs/proposals/audit_20261110_allday_set_tracker_reads_current_fmv_cache-STAGED.sql` rewrites both functions from their live bodies under md5 guards (`074174a9…`, `1ed93d19…`). `apply_migration` was refused for this session ("Modify Shared Resources"). Before-reading for the post-check: wallet `0xbd94cade097e50ac` total cost to complete $423,045.11 over 258 sets at 9:35 AM PT.
 
 `get_ufc_set_progress` has the same CTE shape (closed market, prices frozen; not examined).
+
+## ↳ ✅ CLOSED 9:33 AM PT — applied as `20261110173413`
+
+Run through the dashboard SQL editor on Trevor's instruction. Same wallet after: total cost to complete $344,638.00 (was $423,045.11, −$78,407.11), 26,255 buffers and 257 ms (was 63,233 and 3,691 ms). Ledger 11-10.

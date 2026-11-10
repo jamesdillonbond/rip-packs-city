@@ -188,3 +188,8 @@ This session's database writes were refused three times today, so both of these 
 2. `docs/proposals/audit_20261110_candy_offer_spread_board_liveness_floor_recalibrated-STAGED.sql` — the Candy board alarm floor, 30 → 5.
 
 Each runs as one paste in the Supabase SQL editor; each carries its pre-check, post-check and revert.
+
+### ✅ Both applied (9:33 AM PT)
+
+- All Day set tracker fix: applied as `20261110173413` through the SQL editor in Trevor's Chrome ("Use chrome and do it"). His wallet's cost to complete went from $423,045.11 to $344,638.00 — down by exactly the $78,407 of withdrawn prices — and the read from 3.7 s to 0.26 s.
+- Candy board floor: already applied by another session as `20261110154319`; the floor reads 5.

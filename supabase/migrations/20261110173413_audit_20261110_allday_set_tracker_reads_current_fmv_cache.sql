@@ -1,10 +1,13 @@
 -- anon-exec: intentional — get_allday_set_progress / get_allday_set_detail keep their ACL (CREATE OR REPLACE, same signatures; service_role only, asserted at the end).
 --
--- STAGED 2026-11-10 ~9:45 AM PT (Cowork cloud audit pass). NOT APPLIED: `apply_migration`
--- was refused for this session. Apply from the dashboard SQL editor or a Claude Code
--- session, then commit this body as
--- supabase/migrations/<recorded version>_audit_20261110_allday_set_tracker_reads_current_fmv_cache.sql
--- and delete this file.
+-- APPLIED 2026-11-10 9:33 AM PT through the dashboard SQL editor in Trevor's Chrome
+-- (Trevor: "Use chrome and do it"), loaded from the committed file at 9615f39 with a
+-- SHA-256 check; `apply_migration` had been refused for the session. Version row
+-- 20261110173413 inserted by hand.
+-- MEASURED AFTER, same wallet: total cost to complete $423,045.11 -> $344,638.00
+-- (-$78,407.11, the withdrawn prices), 258 -> 251 sets with a cost, 363 sets returned;
+-- 63,233 -> 26,255 buffers, 3,691 ms -> 257 ms. New md5(prosrc): progress fc280b24...,
+-- detail 3708021b...
 --
 -- WHY. Both All Day set-tracker functions priced a MISSING edition from
 --   SELECT DISTINCT ON (edition_id) ... FROM fmv_snapshots
