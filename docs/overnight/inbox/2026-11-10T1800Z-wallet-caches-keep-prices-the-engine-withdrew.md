@@ -67,3 +67,16 @@ One SQL helper that all five call, so the rule lives once: e.g. `wallet_moment_c
 A Claude Code session picked this filing up and put the rule in all five readers (commit `72d7a75`). Found when a second, staged copy of the same fix failed its own pre-check: all five `md5(prosrc)` had moved. That copy was discarded, not applied.
 
 Independent check on the three most affected All Day wallets, `get_wallet_summary` against a separate sum of (current STALE) + (withdrawn rule): stale $170,607.33 = $170,607.33 (was $154,047.64, +$16,559.69, count 365 → 398 = +33), $19,371.37 = $19,371.37, $17,753.37 = $17,753.37; `wallet_fmv` unchanged on each. A one-statement check across all affected wallets timed out at the tool's limit and was not completed.
+
+## ↳ RESOLVED 2026-11-10 ~10:25 AM PT (Claude Code cloud) — shipped as one migration, acceptance passed
+
+`audit_20261110_withdrawn_prices_in_wallets_count_as_stale` (recorded `20261110181426`): all five readers carry the rule inline (no shared helper — a helper with a `SET search_path` cannot inline, and a per-row call on the 61k-moment whales is the #228 cost this repo is fighting). Rule: current row with a NULL price AND cached price NOT NULL → STALE; never-priced moments are not. Bases verified on `prosrc` md5 first (stats rebuilt from live; its file was a splice); the "2026-11-10" note in `get_wallet_summary` was this same Claude Code session's earlier change, not a concurrent writer.
+
+**Acceptance (production, same instant, old body recreated in `pg_temp`):**
+- `get_collection_breakdown` — 269 affected (wallet, collection) rows: totals and counts unchanged, stale moved by exactly the withdrawn amount on every row (**$90,866.96 / 491 moments**, expected to the cent); 68 control rows byte-identical.
+- `get_wallet_summary` — 30 smallest affected pairs (≤ 3,247 moments): totals unchanged, every pair's stale delta = its withdrawn sum ($15,647.83 vs $15,647.82 — one cent of rounding in the aggregate); 10 controls unchanged. (The whales time out the MCP 60 s cap when run old+new together — covered by the breakdown result.)
+- `get_wallet_collection_snapshot` — 25 affected wallets: staleFmv / staleCount / totalFmv equal the breakdown's open-market sums, 0 mismatches.
+- `get_wallet_collection_stats` — 77 pairs: fmv_stale_total, stale_count and fmv_total + stale equal the breakdown, 0 mismatches.
+- `aggregate_saved_wallet_stats` — re-run for the 4 affected saved wallets (17 rows): cached stale now equals the breakdown on every row.
+
+Pin `get_wallet_collection_snapshot.sql` +5 assertions (withdrawn $40 → staleFmv; never-priced not counted; old body red). Not touched (as filed): `get_ufc_set_progress`, `analytics_fmv_tier_pulse`, `get_platform_stats`, the checklist "cost to finish" laterals, Panini's own tables.
