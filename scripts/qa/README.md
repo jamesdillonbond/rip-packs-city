@@ -248,3 +248,16 @@ and "never arrived" stop being the same record).
 ⚠ `vh100` **v1 was wrong** — it scanned stylesheet TEXT and matched Tailwind's
 `@layer utilities` blob (the `.h-screen` *definition*) on 56 of 56 pages: a 100%
 hit rate that measured nothing. Quote no v1 number.
+
+## Looking at the giveaway pack opening without claiming a pack (2026-11-10)
+
+The opening (`app/giveaways/[slug]/PackRevealClient.tsx`) only renders for an account that has claimed a pack, so no anonymous sweep reaches it. Two routes:
+
+1. **Admin "Preview opening"** on `/admin/giveaways` — the real component with a real pack, nothing saved. Needs the admin token.
+2. **A harness bundle in the cloud sandbox** — the real component and the real stylesheet, no app server:
+   - an entry file that renders `<PackRevealClient preview … />` (and `<PackWall />`) with three hand-written cards (one common, one rare, one legendary so every tier path and the chase run);
+   - `npx esbuild entry.tsx --bundle --outfile=bundle.js --alias:@=<repo> --alias:react=<repo>/node_modules/react --alias:react-dom=<repo>/node_modules/react-dom --jsx=automatic --tsconfig-raw='{}'` — ⚠ without the two React aliases an entry outside the repo bundles a second React and the page dies on `Cannot read properties of null (reading 'useState')`;
+   - an `index.html` linking a copy of `app/rpc-tokens.css` and defining `--font-display` / `--font-mono` from `public/fonts`, served with `python3 -m http.server` **in the same Bash call** as the browser run (a background server dies with the call);
+   - Playwright's chromium-headless-shell (`npx playwright install chromium` works here).
+
+Traps met: the sealed pack floats, so `locator.click()` waits forever on "element is not stable" — click with `{ force: true }`. Run it **four ways**, because the first pass shipped a defect two of them would have caught: dark, `data-theme="light"` on `<html>`, `reducedMotion: "reduce"`, and with `assets.nbatopshot.com` blocked (art that fails to load). Capture frames **during** the flip, not only after it: a mirrored face mid-flip is invisible in a settled screenshot.

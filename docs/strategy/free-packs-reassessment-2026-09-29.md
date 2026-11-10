@@ -381,3 +381,17 @@ Trevor (11-08): "improve the pack opening visuals, along with how I can assign m
 - **Preview opening** on `/admin/giveaways`: plays a real pack of a sealed drop (or random pool Moments for a draft) in a dialog; it never reads or writes the claimer's opened flag.
 - **Instant delivery** (later 11-08, "Is there a way for the moments to instantly flow to the pack openers upon opening the pack?" → "Do what makes sense and proceed with it all the way through"). Not at OPEN but at CLAIM: a claimer who never opens still gets their Moments. A sealed or open drop can be **funded** — one sponsor signature per batch moves the WHOLE pool into the giveaway vault (refused if any Moment is locked or missing), the server confirms on chain, and every later claim is sent from the vault seconds after it lands; the claim page polls every 6 s for 2 minutes so "Delivered" appears without a reload, and each page view re-triggers an undelivered send (the lock makes it a no-op). After close, "Return unclaimed to sponsor" sends the rest back where each came from. Funding also closes the old trust gap: a sponsor can no longer sell a pool Moment after sealing. Mechanics, bounds and the custody note: docs/reference/concierge.md (exceptions). Needs Trevor's one-time setup: a dedicated Flow account, its key in Vercel env, `RPC_GIVEAWAY_INSTANT_DELIVERY=1`, then "Set up the vault's Top Shot collection" on /admin/giveaways.
 
+
+## Addendum 2026-11-10 — pack opening v3
+
+Trevor (11-10): "Opening packs is such a core collecting experience, this needs to look visually appealing as a process, and the packs themselves need to look cool." Presentation only; the deal, the draw, the reveal order (lowest value first, chase last) and every button are as the 11-08 addendum describes.
+
+- **The pack:** a crimped foil wrapper (saw-tooth seals, a "tear here" strip, holographic film and glare) with the RPC logo, the drop's name (`title` prop), the pack number and the Moment count. It tilts toward the pointer.
+- **The tear** (`TEAR_MS` 1400): shake → the strip peels off → light along the tear line → flash. Card art is preloaded during it.
+- **The stage:** a dark arena in both themes; its glow takes the tier colour of the card just flipped (`data-tier` on `.rpc-gw-stage`).
+- **The cards:** new card backs; a glare sweep after each flip; a holo film on rare / legendary / ultimate; sparks on every tier above common; the flipped card tilts toward the pointer. The card face keeps theme colours (its text is `--rpc-text-primary`, not the stage's white).
+- **The chase:** rings close on the stack in the chase's tier colour during the charge, then a flash, a stage shake and the largest spark burst.
+- **The pack wall:** mini packs in the same crimped foil.
+- **Reduced motion:** every animation off, flash / sparks / rings not rendered, timers wait 0 ms.
+- **Where:** `app/giveaways/[slug]/PackRevealClient.tsx`, `PackWall.tsx`, the `rpc-gw-*` block in `app/rpc-tokens.css`. How to look at it without claiming a pack: admin "Preview opening", or the harness in `scripts/qa/README.md` (end).
+- **Not done, by choice:** no sound, no per-drop pack art, no change to what the summary states.
