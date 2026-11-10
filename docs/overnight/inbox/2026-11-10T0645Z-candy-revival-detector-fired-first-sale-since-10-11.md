@@ -20,3 +20,8 @@ Its own `catches` text: re-look at Candy trading, then update the `candy_mlb` ro
 ## Suggested next read
 
 Count Candy sales by `sold_at` day and by set over the next 2–3 days (`candy-sales-indexer`, `candy-collections-market`). If Base-set sales return, the Candy FMV share and the frozen-book caveats in `docs/strategy/collections/candy-mlb.md` ("Open issues") start moving again and the 10-11 relabel can finally be scored.
+
+
+## Resolution — 2026-11-10 ~2:55 PM PT (Claude Code cloud)
+
+Re-looked at Candy trading: since 10-13, the $0.17 Magic Eden sale on 11-09 plus 4 dust sales (11-07 ×3, 11-08; 0.034 SOL, ~$3) parked `no_sol_rate`. A trickle, not a revival. `v_collection_marketplace_status` candy_mlb row re-dated to `silent_since_2026_11_10`, `last_verified_at` advanced (`20261110225146`, md5-guarded, `security_invoker` kept). `candy_revival_sales_since_recorded_silence` reads 0. A sale on 11-11 or later trips it again.
