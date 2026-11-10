@@ -32,7 +32,7 @@ afterEach(() => {
 
 const renderPack = (cards = CARDS) =>
   render(
-    <PackRevealClient slug="fall-drop" packNo={4} moments={cards}>
+    <PackRevealClient slug="fall-drop" packNo={4} moments={cards} title="Fall Drop">
       <div>delivery grid</div>
     </PackRevealClient>,
   )
@@ -48,6 +48,9 @@ describe("PackRevealClient", () => {
       "/rip-packs-city-logo-320.png",
     )
 
+    // opening v3 (2026-11-10): the drop name is printed on the pack
+    expect(within(screen.getByTestId("sealed-pack")).getByText("Fall Drop")).toBeTruthy()
+
     fireEvent.click(screen.getByRole("button", { name: "Open pack" }))
     // mid-tear: the pack is animating out, no card yet
     expect(screen.getByTestId("sealed-pack").className).toContain("rpc-gw-pack--tear")
@@ -60,18 +63,32 @@ describe("PackRevealClient", () => {
     fireEvent.click(screen.getByRole("button", { name: "Flip the first card" }))
     expect(screen.getByTestId("revealed-card").getAttribute("data-tier")).toBe("common")
     expect(within(screen.getByTestId("revealed-card")).getByText("Anfernee Simons")).toBeTruthy()
+    // v3: the stage glow takes the tier of the card just flipped; a common throws no sparks
+    const stage = () => screen.getByTestId("pack-reveal").querySelector(".rpc-gw-stage") as HTMLElement
+    expect(stage().getAttribute("data-tier")).toBe("common")
+    expect(screen.getByTestId("revealed-card").querySelector(".rpc-gw-sparks")).toBeNull()
 
     fireEvent.click(screen.getByRole("button", { name: /next card \(2 of 3\)/i }))
     expect(within(screen.getByTestId("revealed-card")).getByText("Damian Lillard")).toBeTruthy()
+    expect(stage().getAttribute("data-tier")).toBe("rare")
+    expect(screen.getByTestId("revealed-card").querySelectorAll(".rpc-gw-sparks > i").length).toBe(10)
+    expect(stage().className).not.toContain("is-slam")
 
     // the chase: the stack charges first, nothing is revealed until the charge ends
     const last = screen.getAllByRole("button", { name: "Reveal the last card" })
     fireEvent.click(last[last.length - 1])
     expect(screen.getByTestId("card-stack").className).toContain("rpc-gw-stack--charge")
+    // the charge glows in the colour of the card about to land
+    expect(screen.getByTestId("card-stack").getAttribute("data-tier")).toBe("legendary")
+    expect(stage().className).toContain("is-charging")
     expect(screen.queryByText("Luka Doncic")).toBeNull()
     act(() => vi.advanceTimersByTime(CHARGE_MS))
     // the chase stays centre stage, face up, before the summary
     expect(screen.getByTestId("revealed-card").className).toContain("is-chase")
+    // the chase lands with a flash, a stage shake and the big spark burst
+    expect(stage().className).toContain("is-slam")
+    expect(stage().querySelector(".rpc-gw-flash")).toBeTruthy()
+    expect(screen.getByTestId("revealed-card").querySelectorAll(".rpc-gw-sparks > i").length).toBe(26)
     expect(within(screen.getByTestId("revealed-card")).getByText("Chase card")).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: "See the whole pack" }))
 
@@ -255,5 +272,31 @@ describe("PackRevealClient — preview mode and the chase buzz (2026-11-08)", ()
     playThrough()
     expect(vibrate).toHaveBeenCalledTimes(1)
     expect(screen.getByRole("button", { name: "See the whole pack" })).toBeTruthy()
+  })
+})
+
+// Opening v3 (2026-11-10): the pack and the flipped card tilt toward the pointer.
+describe("PackRevealClient — pointer tilt", () => {
+  const box = { left: 0, top: 0, width: 200, height: 300, right: 200, bottom: 300, x: 0, y: 0, toJSON() {} }
+
+  it("tilts the sealed pack toward the pointer and settles when it leaves", () => {
+    renderPack()
+    const pack = screen.getByTestId("sealed-pack")
+    pack.getBoundingClientRect = () => box as DOMRect
+    fireEvent.pointerMove(pack, { clientX: 200, clientY: 0 })
+    expect(pack.style.getPropertyValue("--gw-ry")).toBe("11.0deg")
+    expect(pack.style.getPropertyValue("--gw-rx")).toBe("9.0deg")
+    expect(pack.style.getPropertyValue("--gw-mx")).toBe("100%")
+    fireEvent.pointerLeave(pack)
+    expect(pack.style.getPropertyValue("--gw-ry")).toBe("")
+  })
+
+  it("does not tilt under reduced motion", () => {
+    reduceMotion(true)
+    renderPack()
+    const pack = screen.getByTestId("sealed-pack")
+    pack.getBoundingClientRect = () => box as DOMRect
+    fireEvent.pointerMove(pack, { clientX: 200, clientY: 0 })
+    expect(pack.style.getPropertyValue("--gw-ry")).toBe("")
   })
 })

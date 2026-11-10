@@ -281,7 +281,7 @@ export default function GiveawayClient({ slug }: { slug: string }) {
               ? "This giveaway's Moments are held in Rip Packs City's giveaway vault and sent to that account seconds after you claim; this page marks each one delivered once it shows up there on chain."
               : "The sponsor sends each Moment to that account; this page marks it delivered once it shows up there on chain."}
           </p>
-          <PackRevealClient slug={slug} packNo={me.pack_no} moments={me.moments}>
+          <PackRevealClient slug={slug} packNo={me.pack_no} moments={me.moments} title={drop.title}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
               {me.moments.map((m) => (
                 <div key={m.moment_id} style={{ ...card, background: "var(--rpc-surface-raised)" }}>

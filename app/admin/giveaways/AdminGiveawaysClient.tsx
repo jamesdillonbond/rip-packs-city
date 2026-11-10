@@ -651,6 +651,7 @@ function DropPanel({ drop, call, onChanged }: { drop: DropRow; call: Call; onCha
               slug={`admin-preview-${drop.id}`}
               packNo={preview.packNo ?? 0}
               moments={preview.moments}
+              title={drop.title}
               preview
               onDone={() => setPreview(null)}
             >

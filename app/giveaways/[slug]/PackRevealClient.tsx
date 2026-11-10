@@ -7,7 +7,14 @@
 // pack opening visuals"). A claimer's pack starts SEALED as a foil pack; they
 // tear it open, then flip the cards one at a time from a face-down stack,
 // lowest value first. The chase card (when there is one) charges up before it
-// flips. A summary of the whole pack follows. Once finished (or skipped with
+// flips. A summary of the whole pack follows.
+//
+// Opening v3 (Trevor, 2026-11-10: "this needs to look visually appealing as a
+// process, and the packs themselves need to look cool"): the pack is a crimped
+// foil wrapper with a holographic sheen that tilts under the pointer; the tear
+// shakes, peels the strip, leaks light and flashes; the stage is a dark arena
+// whose glow takes the colour of the card just flipped; rare-and-up cards carry
+// a holo sheen and throw sparks, and the chase lands with a flash and a shake. Once finished (or skipped with
 // "Show all"), this browser remembers it and the page shows the plain pack grid
 // passed in as `children`.
 //
@@ -37,7 +44,7 @@ const LOGO = "/rip-packs-city-logo-320.png"
 const MONO = "var(--font-mono)"
 
 /** ms each animation runs; 0 under reduced motion. Exported for the component test. */
-export const TEAR_MS = 700
+export const TEAR_MS = 1400
 export const CHARGE_MS = 1100
 
 type Phase = "sealed" | "tearing" | "ripping" | "summary"
@@ -91,9 +98,12 @@ export default function PackRevealClient({
   children,
   preview = false,
   onDone,
+  title,
 }: {
   slug: string
   packNo: number
+  /** The drop's name, printed on the pack. */
+  title?: string
   moments: RevealCard[]
   children: ReactNode
   preview?: boolean
@@ -137,6 +147,7 @@ export default function PackRevealClient({
   const tear = () => {
     if (phase !== "sealed") return
     setPhase("tearing")
+    preloadArt(order)
     later(TEAR_MS, () => setPhase("ripping"))
   }
 
@@ -169,57 +180,64 @@ export default function PackRevealClient({
       </div>
 
       {phase === "sealed" || phase === "tearing" ? (
-        <div className="rpc-gw-stage">
-          <button
-            type="button"
-            onClick={tear}
-            className={`rpc-gw-pack${phase === "tearing" ? " rpc-gw-pack--tear" : ""}`}
-            aria-label={`Tear open pack #${packNo}`}
-            data-testid="sealed-pack"
-          >
-            <span className="rpc-gw-pack-strip" aria-hidden="true" />
-            <span className="rpc-gw-pack-foil" aria-hidden="true" />
-            <span className="rpc-gw-pack-body">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={LOGO} alt="Rip Packs City" width={320} height={320} className="rpc-gw-pack-logo" />
-              <span
-                style={{
-                  fontFamily: DISPLAY,
-                  fontSize: 40,
-                  lineHeight: 1,
-                  textTransform: "uppercase",
-                  margin: "10px 0 6px",
-                }}
-              >
-                Pack #{packNo}
+        <div className="rpc-gw-stage" data-phase={phase}>
+          <span className="rpc-gw-pack-float">
+            <button
+              type="button"
+              onClick={tear}
+              onPointerMove={phase === "sealed" ? tiltMove : undefined}
+              onPointerLeave={tiltReset}
+              className={`rpc-gw-pack${phase === "tearing" ? " rpc-gw-pack--tear" : ""}`}
+              aria-label={`Tear open pack #${packNo}`}
+              data-testid="sealed-pack"
+            >
+              <span className="rpc-gw-pack-strip" aria-hidden="true">
+                <span>Tear here</span>
               </span>
-              <span style={{ fontFamily: MONO, fontSize: 13, opacity: 0.9 }}>
-                {order.length} {order.length === 1 ? "Moment" : "Moments"} inside
+              <span className="rpc-gw-pack-light" aria-hidden="true" />
+              <span className="rpc-gw-pack-wrap">
+                <span className="rpc-gw-pack-holo" aria-hidden="true" />
+                <span className="rpc-gw-pack-foil" aria-hidden="true" />
+                <span className="rpc-gw-pack-body">
+                  <span className="rpc-gw-pack-badge">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={LOGO} alt="Rip Packs City" width={320} height={320} className="rpc-gw-pack-logo" />
+                  </span>
+                  {title ? <span className="rpc-gw-pack-title">{title}</span> : null}
+                  <span className="rpc-gw-pack-no" style={{ fontFamily: DISPLAY }}>
+                    Pack #{packNo}
+                  </span>
+                  <span className="rpc-gw-pack-plate" style={{ fontFamily: MONO }}>
+                    {order.length} {order.length === 1 ? "Moment" : "Moments"} inside
+                  </span>
+                  <span className="rpc-gw-pack-hint" style={{ fontFamily: MONO }}>
+                    Tap to tear open
+                  </span>
+                </span>
               </span>
-              <span
-                style={{
-                  fontFamily: MONO,
-                  fontSize: 11,
-                  marginTop: 18,
-                  opacity: 0.75,
-                }}
-              >
-                Tap to tear open
-              </span>
-            </span>
-          </button>
+              {phase === "tearing" ? <Sparks n={14} spread={120} /> : null}
+            </button>
+          </span>
+          {phase === "tearing" ? <span className="rpc-gw-flash rpc-gw-flash--tear" aria-hidden="true" /> : null}
         </div>
       ) : null}
 
       {phase === "ripping" ? (
-        <div className="rpc-gw-stage">
-          <div className="rpc-gw-table">
+        <div
+          className={`rpc-gw-stage${charging ? " is-charging" : ""}${current && current.moment_id === chase ? " is-slam" : ""}`}
+          data-phase="ripping"
+          data-tier={current ? tierKey(current.tier) : undefined}
+        >
+          {current ? <span key={current.moment_id} className="rpc-gw-amb" aria-hidden="true" /> : null}
+          {current && current.moment_id === chase ? <span className="rpc-gw-flash" aria-hidden="true" /> : null}
+          <div className={`rpc-gw-table${current ? " has-card" : ""}`}>
             {current ? <FlipCard key={current.moment_id} m={current} isChase={current.moment_id === chase} faceUp /> : null}
             {!allShown ? (
               <button
                 type="button"
                 onClick={flip}
                 className={`rpc-gw-stack${charging ? " rpc-gw-stack--charge" : ""}`}
+                data-tier={charging && next ? tierKey(next.tier) : undefined}
                 aria-label={nextIsChase ? "Reveal the last card" : `Flip card ${shown + 1} of ${order.length}`}
                 data-testid="card-stack"
               >
@@ -227,7 +245,7 @@ export default function PackRevealClient({
                   <span
                     key={i}
                     className={`rpc-gw-stack-card${i === all.length - 1 ? " is-top" : ""}`}
-                    style={{ transform: `translate(${i * 3}px, ${i * -3}px)` }}
+                    style={{ transform: `translate(${i * 3}px, ${i * -3}px) rotate(${(i - (all.length - 1)) * 2.5}deg)` }}
                     aria-hidden="true"
                   >
                     <CardBack />
@@ -275,7 +293,7 @@ export default function PackRevealClient({
           </div>
           <div className="rpc-gw-summary-grid">
             {order.map((m, i) => (
-              <div key={m.moment_id} className="rpc-gw-summary-item" style={{ animationDelay: `${i * 70}ms` }}>
+              <div key={m.moment_id} className={`rpc-gw-summary-item${m.moment_id === chase ? " is-chase" : ""}`} style={{ animationDelay: `${i * 90}ms` }}>
                 <CardFace m={m} isChase={m.moment_id === chase} compact />
               </div>
             ))}
@@ -338,18 +356,71 @@ function CardBack() {
   )
 }
 
-function FlipCard({ m, isChase, faceUp }: { m: RevealCard; isChase: boolean; faceUp: boolean }) {
+/** Warm the browser's image cache while the pack tears, so no card flips to a blank frame. */
+function preloadArt(cards: readonly RevealCard[]): void {
+  try {
+    if (typeof Image === "undefined") return
+    for (const c of cards) {
+      const src = topShotMomentImage(c.moment_id, 480)
+      if (src) new Image().src = src
+    }
+  } catch {
+    // a failed preload only means the art loads at flip time, as before
+  }
+}
+
+/** Tilt an element toward the pointer and move its glare (CSS reads the four variables). Off under reduced motion. */
+function tiltMove(e: React.PointerEvent<HTMLElement>): void {
+  if (reducedMotion()) return
+  const el = e.currentTarget
+  const r = el.getBoundingClientRect()
+  if (r.width === 0 || r.height === 0) return
+  const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))
+  const y = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))
+  el.style.setProperty("--gw-rx", `${((0.5 - y) * 18).toFixed(1)}deg`)
+  el.style.setProperty("--gw-ry", `${((x - 0.5) * 22).toFixed(1)}deg`)
+  el.style.setProperty("--gw-mx", `${(x * 100).toFixed(0)}%`)
+  el.style.setProperty("--gw-my", `${(y * 100).toFixed(0)}%`)
+}
+
+function tiltReset(e: React.PointerEvent<HTMLElement>): void {
+  const el = e.currentTarget
+  for (const v of ["--gw-rx", "--gw-ry", "--gw-mx", "--gw-my"]) el.style.removeProperty(v)
+}
+
+/** Sparks thrown from the centre of their parent: fixed angles (golden-angle spread), so no randomness to hydrate. */
+function Sparks({ n, spread }: { n: number; spread: number }) {
   return (
-    <div className={`rpc-gw-flip${faceUp ? " is-up" : ""}${isChase ? " is-chase" : ""}`} data-testid="revealed-card" data-tier={tierKey(m.tier)}>
-      <div className="rpc-gw-flip-inner">
-        <div className="rpc-gw-flip-back" aria-hidden="true">
-          <CardBack />
-        </div>
-        <div className="rpc-gw-flip-front">
-          <CardFace m={m} isChase={isChase} />
+    <span className="rpc-gw-sparks" aria-hidden="true">
+      {Array.from({ length: n }, (_, i) => {
+        const style = {
+          "--a": `${Math.round((i * 137.5) % 360)}deg`,
+          "--d": `${Math.round(spread * (0.55 + ((i * 53) % 45) / 100))}px`,
+          "--s": `${(i % 5) * 45}ms`,
+        } as React.CSSProperties
+        return <i key={i} style={style} data-alt={i % 3 === 0 ? "1" : undefined} />
+      })}
+    </span>
+  )
+}
+
+function FlipCard({ m, isChase, faceUp }: { m: RevealCard; isChase: boolean; faceUp: boolean }) {
+  const tier = tierKey(m.tier)
+  const big = tier === "legendary" || tier === "ultimate"
+  return (
+    <div className={`rpc-gw-flip${faceUp ? " is-up" : ""}${isChase ? " is-chase" : ""}`} data-testid="revealed-card" data-tier={tier}>
+      <div className="rpc-gw-tilt" onPointerMove={tiltMove} onPointerLeave={tiltReset}>
+        <div className="rpc-gw-flip-inner">
+          <div className="rpc-gw-flip-back" aria-hidden="true">
+            <CardBack />
+          </div>
+          <div className="rpc-gw-flip-front">
+            <CardFace m={m} isChase={isChase} />
+          </div>
         </div>
       </div>
-      {isChase ? <span className="rpc-gw-burst" aria-hidden="true" /> : null}
+      {isChase || big ? <span className="rpc-gw-burst" aria-hidden="true" /> : null}
+      {isChase ? <Sparks n={26} spread={230} /> : tier !== "common" ? <Sparks n={big ? 18 : 10} spread={big ? 200 : 160} /> : null}
     </div>
   )
 }
