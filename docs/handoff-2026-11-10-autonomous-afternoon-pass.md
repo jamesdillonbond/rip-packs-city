@@ -1,12 +1,14 @@
 # Handoff — 2026-11-10 autonomous afternoon pass (Claude Code cloud)
 
 Trevor: "Can you work autonomously for the next 10 hours? … Fix any issues you encounter." Started ~11:50 AM PT.
-This file is written as the pass goes (draft at 1:55 PM PT, updated 2:35 PM PT); the ledger has every entry with its revert path.
+This file is written as the pass goes (draft at 1:55 PM PT, updated 3:00 PM PT); the ledger has every entry with its revert path.
 
 ## Shipped (all on `main`, all in the ledger, newest first)
 
 | PT | What | Measured effect |
 |---|---|---|
+| ~2:55 PM | **Sentinel trust arms (WARN 2:04 PM PT)** — see the section below | 2 staged for Cowork, 2 explained |
+| ~2:45 PM | Candy sales indexers price past-day sales from `public.sol_usd_daily` before CoinGecko (`primeSolUsdFromTable`; table staged for Cowork) | Fails soft until applied; then 2,528 `no_sol_rate` sales (667.7 SOL) drain ~300/run |
 | ~2:27 PM | Panini sale-feed status refresh hourly; view window 75 → 135 min (`20261110222110`) | Half of a 5.2M-row index scan every 30 min (22–30 s/run) |
 | ~2:30 PM | #246 progress read: 109,757 cards left on name-only editions, ~7k/h, integrity flags 9,581 (breach 250; corrected — "6" was the view's row count) | docs |
 | ~2:20 PM | `get_user_top_owned_moments` estimates only the returned page (`20261110221809`, pinned) | Whale default first load 2.3 s → 0.9 s warm; 240-row parity across 6 shapes |
@@ -39,3 +41,12 @@ This file is written as the pass goes (draft at 1:55 PM PT, updated 2:35 PM PT);
 - ✅ #245 closed 2:25 PM PT (resume proven end to end).
 - **Watch `/api/profile/top-moments`** after `20261110221809`: the first call after the replace read 23.7 s cold for the 47k-row account (1.1 s right after). A real budget miss in Vercel logs is the signal to look at the cold path (wallet leg `editions` probes, 190k buffers).
 - **Read the 2:05 → 4:05 PM pgss window**: one buyer-backfill `sales` count (HIST window, payer NOT NULL) read 51,756 blocks at ~2:10 PM although the same statement under a generic plan is 102 buffers — confirm per-call cost there is now ~100.
+
+## Sentinel trust arms (WARN 11-10 2:04 PM PT)
+
+| Arm | Reading | Cause | State |
+|---|---|---|---|
+| `candy_sales_stale_hours` (breach 0) | 24.7 | 2,528 Candy sales parked `no_sol_rate`: CoinGecko SOL/USD history fails from Vercel egress, works from pg_net | App half live; `sol_usd_daily` table + 6-hourly pg_net tick **staged for Cowork** (`docs/handoff-2026-11-10d-…` part A) — `apply_migration` approval prompt timed out twice |
+| `candy_revival_sales_since_recorded_silence` (breach 1) | 1 | One $0.17 ME sale 11-09 (+4 dust sales parked): a trickle | View re-date to `silent_since_2026_11_10` **staged for Cowork** (part B), tested on scratch PG |
+| `candy_ask_book_drop_pct` (breach 60) | 91.2 | False positive: 208 ghost ME asks ingested + deactivated in the 11-09 7:35 PM PT pass sit in the "seen 24 h" denominator; real book is 20 | Clears ~7:35 PM PT 11-10 by itself; optional arm fix: drop `owner_moved_at` rows from the denominator |
+| `edition_integrity_flags` (breach 250) | 9,581 | 9,559 Candy name-only editions (#246); census repoints ~7k cards/h, ~110k left | Drains on its own (~16 h); do NOT raise the threshold or exclude Candy. Remainder: 8 TS thumbnails, 14 UFC tiers |
