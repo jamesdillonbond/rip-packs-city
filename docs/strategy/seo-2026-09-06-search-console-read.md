@@ -165,3 +165,22 @@ The owed two-week re-read. Each figure is a dated sample.
 - **Not read:** the 35 unread Search Console messages — the panel does not render through the extension (screenshot capture times out on GSC, as on 10-20); they are also emailed to the owner, and every report they point to was read directly above.
 - **Still Trevor's, by decision:** external links (accuracy gate).
 
+
+## 2026-11-09 read (Cowork via Trevor's Chrome, ~11:35 PM PT) — index chart through 10/25/26; performance 28 d to 11-08
+
+| | 10-03 | 10-20 | 11-09 |
+|---|---|---|---|
+| Clicks / impressions (28 d) | 9 / 1.4K | 41 / — | **58 / 2.01K** (CTR 2.9 %, position 12.4) |
+| Indexed | 31.8K | 43.6K | 41.3K |
+| Not indexed | 17.6K | 28.8K | **62.5K** |
+| Crawled – currently not indexed | 5,033 | 13,785 | 31,742 |
+| Discovered – currently not indexed | 3,171 | — | 21,370 |
+| Blocked by robots.txt | 1,472 | — | 4,715 |
+| Not found (404) | 326 | — | 539 |
+| Server error (5xx) | 23 | 18 | 19 |
+
+Other buckets 11-09: alternate canonical 2,800 · noindex 862 · page with redirect 349 · duplicate without canonical 56 · Google chose a different canonical 17 · indexed though blocked 0. Top queries by impressions are player-name + "buy" / "purchase" / "sell" (Joan Beringer, Adem Bona, Ketlen Souza), then "nba top shot", "optic nft".
+
+**Reading.** Clicks keep rising (9 → 41 → 58). The not-indexed total more than doubled because the sitemap grew: it lists 111,866 URLs today (counted from the nine children at ~11:40 PM PT), of which 42,946 are Panini editions and **21,961 are Candy editions — about 21.7k of them the legacy collections catalogued on 11-08, with no price**. Blocked-by-robots rising to 4,715 is the 10-21 `?_rsc=` disallow doing its job.
+
+**Decision recorded (#66, not changed tonight):** no sitemap prune for the legacy Candy editions. It is the obvious crawl-budget lever, but the 10-20 read found that Panini's "crawled, not indexed" editions were also the top organic surface, so the same shape is not evidence of waste. Re-read around 11-23: if `candy-mlb/edition` pages have earned no impressions by then while the crawled-not-indexed bucket keeps growing, list a Candy edition only once it has a price (`edition_fmv_current`) or belongs to a 2026 set.

@@ -16,7 +16,7 @@
 
 - **Surface / SEO:** 303-page stratified sitemap sweep (111,866 URLs in 9 shards): 303 / 303 HTTP 200, every page with a self-canonical, description, og:image, branded title; none `noindex`; no duplicate titles; slowest 2.75 s.
 - **Security:** `rpc_ops_snapshot().security` all `[]`; secdef-anon drift 0; response headers carry CSP, HSTS preload, `frame-ancestors 'none'`, nosniff, referrer and permissions policies; `npm audit --omit=dev` 0 high / 0 critical (7 low, all `@onflow/*`, no fix published).
-- **Compliance:** commercial email is blocked in code until `RPC_SENDER_POSTAL_ADDRESS` is set (`lib/emails/sender-identity.ts`).
+- **Compliance:** ⛔ CORRECTED in the second pass (below): I wrote that commercial email "is blocked until the postal address is set" from reading the gate, not the runs. Both weekly emails are LIVE and sending (11-09: `weekly-digest` sent 8, `send-digest` sent 1), which means the gate's two conditions are met; the gate itself is as described (`lib/emails/sender-identity.ts`).
 - **Price accuracy, 7 d:** Top Shot published ratio 1.00, 14.2 % median error, 69.2 % within ±25 % (n 18,253); All Day 0.92, 20.0 %, 59.0 % (n 3,811).
 - **Concierge (4 anon probes, `probe-…` sessions):** FMV answer names its basis without a confidence tier; buying refused, trade room described; prompt-injection refused.
 - **Pipelines:** `detect_stalled_pipelines()` `[]`; `check_zero_yield_lanes()` 0 offenders; the two `running_but_not_succeeding` rows (`wmc-metadata-selfheal`, `topshot-map-atlas-reconcile`) are fixed-awaiting-next-run (2:31 / 4:47 AM PT 11-10; a verification task is already scheduled).
@@ -43,3 +43,36 @@
 - `metrics-latest.json` not rewritten — the 1 AM nightly pass owns it and runs in ~2 h.
 - No signed-in Chrome walk and no mobile screenshot sweep this pass (both were run 11-06/07).
 - The Supabase security advisors returned four lint families (RLS-no-policy INFO; search_path, anon and authenticated SECDEF-executable WARN); the repo's own invariant checks cover the same ground and read clean, so the 150 KB advisor list was summarised by family, not read row by row.
+
+---
+
+## Second pass — 11:14 PM → ~11:50 PM PT (Trevor: "Keep going and do all you can … use chrome … make your own decisions")
+
+**Did the things the first pass skipped:** a signed-in walk in Trevor's Chrome (dashboard and its four tabs, email settings, alerts, pack history, transaction history, trophy cases, trades, trade block, public profile, API keys, Top Shot Collection tab, three signed-in concierge questions); the 390 px and 320 px mobile sweeps (83 + 83 pages: every tab of every collection, one page per entity family, the main insights boards); the 13 live dashboard artifacts' queries; Search Console.
+
+### Shipped (ledger entry 11-09 "second audit pass")
+
+1. **Cost basis count** — the Top Shot Collection tab said "27 moments with a known cost" beside a $113,123 cost basis that `get_wallet_summary` had summed over 6,628 moments. The count was taken from the rows loaded on screen. It now uses the RPC's own `moments_with_cost`.
+2. **Email settings said "RPC isn't sending it yet"** about a digest that has been sending since 11-02/03. Now: Monday morning, only in a week the value moved 5 % or more.
+3. **Locked + Unlocked FMV exceeded Wallet FMV** ($54,437 + $2,981 vs $52,275) with nothing saying why: the split counts stale-priced moments, the headline leaves them out. A caption now says so when stale-priced moments exist.
+4. **Candy ticker** claimed "every edition priced" and "FMV on every card" — false since the 11-08 catalogue widening (190 of ~22.8k priced). Reworded; a guard bans both phrases.
+5. **Concierge** sent a cost-basis question to the dashboard Overview (it is on the Collection tab) and had nothing on the weekly email. Two `explain_ui_field` dictionary entries added with tests.
+6. **Sentinel Edition Coverage (decided: option b)** — legacy Candy collections are their own scope (`sentinel_edition_coverage`, `20261110072431`), printed beside the headline. Live coverage reads 99.5 % (65,358 / 65,708); Candy legacy catalogue 1 / 21,736. Keyed on the SET, not on "has no price". A per-edition "never sold" scope was measured and rejected: 34.7 s, 464,805 buffers.
+7. **Terms page** — Flowty replaced as the example third-party marketplace (decided).
+
+### Decided, not changed
+
+- **Candy "silent" status stays** on one $0.17 legacy sale; the revival arm stays breached as the reminder. A check is scheduled for 11-12 to count Candy sales by day and set.
+- **No sitemap prune for legacy Candy editions** (21,961 `candy-mlb/edition` URLs, ~21.7k unpriced). It would be a real crawl-budget lever, but the 10-20 read found Panini's "thin" editions were the top organic surface, so pruning on a hunch is the wrong way round. Filed under #66 with the numbers below.
+
+### Measured, clean
+
+- **Mobile:** 0 horizontal overflow, 0 broken images, 0 console errors, 0 iOS-zoom inputs at either width. `/nba-top-shot/set/freshman-gems` served "Recent sales couldn't be loaded — refresh to try again" (an honest degraded panel).
+- **Artifacts:** all 78 tables, views and functions the 13 live dashboards query exist.
+- **Search Console (index data through 10-25; 28 d to 11-08):** 58 clicks / 2.01K impressions / position 12.4 (10-20: 41 clicks; 10-03: 9). Indexed 41.3K (43.6K on 10-20); not indexed 62.5K (28.8K): crawled-not-indexed 31,742, discovered-not-indexed 21,370, blocked by robots 4,715, alternate canonical 2,800, noindex 862, 404 539, redirect 349, dup-no-canonical 56, 5xx 19. The not-indexed growth is Google working through a sitemap that went from ~105K to 111,866 URLs.
+
+### Queued for Trevor / Claude Code (additions)
+
+8. **[P3, Trevor, new] The collection label "Candy MLB"** now sits over DC, Netflix, NASCAR and college-football pages (e.g. `/candy-mlb/team/university-of-maryland`, a "TEAM" page for a college). Renaming the label (the slug can stay) touches titles, the registry and many pinned tests; not done at midnight.
+9. **[P4, Trevor] Two spent scheduled tasks could not be deleted from this session** ("Dapper + Flowty recovery check", "R133: retire ?token= admin arms") — the session's permission check refused those two; five others were deleted.
+10. **[P4, Claude Code] `/trades` lists cancelled rooms with an "Open →" link and no way to clear them** (two cancelled, empty rooms on Trevor's list). Cosmetic.

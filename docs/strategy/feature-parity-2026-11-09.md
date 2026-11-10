@@ -82,5 +82,7 @@ A gap is listed only where the data exists or could exist; "—" cells above are
 
 ## Needs Trevor
 
+> ✅ **Candy coverage DECIDED 11-09 ~11:24 PM PT (under Trevor's "make your own decisions"): option (b).** `sentinel_edition_coverage` reports legacy Candy collections as their own scope beside the headline (`20261110072431`); live coverage 99.5 %. Option (c), pricing from collection floors, was not taken.
+
 - **Candy coverage (gap 1).** Three ways to make the Sentinel line honest: (a) leave it — the warn stays until Candy trades again; (b) count coverage only over collections with an open market, and report Candy beside it the way sales ingest already says "silent by decision"; (c) price legacy Candy editions from Magic Eden's per-collection floor, labelled as a collection floor. (c) is a pricing-method decision and the least defensible number.
 - **Dune spend for All Day ownership (gap 2)** — only if All Day owner boards are worth a paid plan before revenue.
