@@ -26,6 +26,7 @@ import {
 import { claimPipelineLockDetailed, releasePipelineLock, skippedReasonFor, walletBackfillLockKey } from "@/lib/wallet-backfill-lock"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { bearerMatches } from "@/lib/auth/bearer-secret"
+import { dispatchContinuation, type ContinuationDispatch } from "@/lib/chains/flow/wallet-backfill-continuation"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -685,22 +686,26 @@ async function recordScan(wallet: string, foundCount: number) {
   }
 }
 
-/** Re-dispatch this route for the same wallet. Bounded wait; never throws. */
-async function dispatchContinuation(req: NextRequest, wallet: string, depth: number): Promise<void> {
-  const token = process.env.INGEST_SECRET_TOKEN
-  if (!token) return
-  let origin: string
+/** A FAILED continuation is a broken chain: record it where the failure instruments read. */
+async function logContinuationFailure(startedAt: string, wallet: string, d: ContinuationDispatch) {
   try {
-    origin = new URL(req.url).origin
-  } catch {
-    return
+    const { error } = await (supabaseAdmin as any).rpc("log_pipeline_run", {
+      p_pipeline: "wallet-backfill-continuation",
+      p_started_at: startedAt,
+      p_rows_found: 0,
+      p_rows_written: 0,
+      p_rows_skipped: 0,
+      p_ok: false,
+      p_error: `continuation ${d.depth} not dispatched after ${d.attempts} attempt(s): ${d.error}`,
+      p_collection_slug: "nba_top_shot",
+      p_cursor_before: null,
+      p_cursor_after: null,
+      p_extra: { wallet, depth: d.depth, attempts: d.attempts, status: d.status },
+    })
+    if (error) console.warn(`[wallet-backfill] continuation failure row not written: ${error.message}`)
+  } catch (err) {
+    console.warn(`[wallet-backfill] continuation failure row threw: ${err instanceof Error ? err.message : String(err)}`)
   }
-  await fetch(`${origin}/api/wallet-backfill`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ wallet, skip_cached: true, continuation: depth }),
-    signal: AbortSignal.timeout(10_000),
-  }).catch(() => {})
 }
 
 export async function POST(req: NextRequest) {
@@ -789,12 +794,17 @@ export async function POST(req: NextRequest) {
     // at 900 named and left 7,027 unnamed — his Dame Moments unsearchable in the
     // picker. A continuation always walks with skip_cached=true, so it starts
     // where this walk stopped whatever this walk's own mode was.
-    if (continueWalk && depth < MAX_CONTINUATIONS) {
-      await dispatchContinuation(req, wallet, depth + 1)
-    }
     // A failed walk must not record a scan: it would stamp the wallet freshly verified
     // (BackfillRunResult.scanned in lib/chains/flow/wallet-backfill-helpers.ts, 2026-10-27).
+    // Recorded BEFORE the dispatch (2026-11-09) so a dispatch near the wall cannot take it down.
     if (scanned) await recordScan(wallet, rowsFound)
+    if (continueWalk && depth < MAX_CONTINUATIONS) {
+      const d = await dispatchContinuation(req.url, wallet, depth + 1)
+      console.log(
+        `[wallet-backfill] continuation wallet=${wallet} depth=${d.depth} ok=${d.ok} attempts=${d.attempts} status=${d.status ?? "none"}${d.error ? ` error=${d.error}` : ""}`,
+      )
+      if (!d.ok) await logContinuationFailure(new Date().toISOString(), wallet, d)
+    }
   })
 
   return NextResponse.json(
