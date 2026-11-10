@@ -120,6 +120,12 @@ The display was awake at 4:25 AM, so the signed-in walk the second pass could no
 4. **The cost-basis count from the second pass never rendered.** The route and the compute helper carried it; the tab's hand-written mapping dropped it, so the line read "moments with a known cost" with no number. Mapped, with a guard that reads the field list from the type. The same mapping had been dropping the "N not checked" lock fields.
 5. **`/dashboard` had no `<h1>`.** The collector's name is now the page heading.
 
+### Verified live (5:12 – 5:20 AM PT)
+
+- Headless, anonymous, Trevor's address in `?wallet=`, the old shared filter key seeded: Golazos shows its own sales under "Recent LaLiga Golazos sales · whole market, not this wallet", 45 binder rows (the same load read "No moments match your current filters" before the deploy), "1 moment with a known cost"; All Day "256 moments with a known cost"; Top Shot "6,628 moments with a known cost".
+- `/dashboard` in Trevor's signed-in Chrome: one `<h1>`, his username.
+- CI, Smoke Tests and E2E DOM Smoke green on both code commits.
+
 ### Staged for one step by Trevor or Claude Code
 
 - **`candy_offer_spread_board` liveness floor 30 → 5.** The overnight pass queued this as a decision; under the delegation I chose to lower rather than retire it: the board still serves 22 rows (20 active asks, 7 offers), and the original rule was 25 % of the population. `apply_migration` was refused for this session, so the statement, pre-check and revert are in `docs/proposals/audit_20261110_candy_offer_spread_board_liveness_floor_recalibrated-STAGED.sql`. Until it runs, the Sentinel's `public_board_empty_count` stays at 1.
