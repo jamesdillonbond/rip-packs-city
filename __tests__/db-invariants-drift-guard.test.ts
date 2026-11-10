@@ -1543,7 +1543,9 @@ const PINS = [
     // set across fields), so "Damian Lillard Extra Spice" finds the Moment.
     // Repointed 2026-11-09 (#243): Panini holdings are name-filtered on their own
     // psku edition BEFORE the per-card panini_card_serials lookup (cold cost).
-    migration: "supabase/migrations/20261110025023_audit_20261109_trophy_picker_panini_holdings_named_before_serial_lookup.sql",
+    // Repointed 2026-11-10: serial_fmv_estimate + the wallet rows' latest-snapshot read run only for the
+    // returned page (MATERIALIZED page CTE); rows and order unchanged.
+    migration: "supabase/migrations/20261110221809_audit_20261110_top_owned_moments_estimates_only_the_returned_page.sql",
   },
   {
     fn: "get_trophy_slab_data",
