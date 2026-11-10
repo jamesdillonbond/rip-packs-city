@@ -1,10 +1,8 @@
 -- anon-exec: none (no function touched; one watchlist row re-calibrated)
 --
--- STAGED 2026-11-10 4:40 AM PT (Cowork cloud audit pass). NOT APPLIED: `apply_migration`
--- was refused for this session (a value write). Apply from the dashboard SQL editor or a
--- Claude Code session, then commit this body as
--- supabase/migrations/<recorded version>_audit_20261110_candy_offer_spread_board_liveness_floor_recalibrated.sql
--- and delete this file.
+-- APPLIED 2026-11-10 ~7:45 AM PT (Claude Code cloud, apply_migration; recorded version 20261110154319).
+-- Staged 4:40 AM PT by the Cowork audit pass, whose apply_migration was refused. Re-derived before
+-- apply: board 22 rows, flat at 22 since the 11-09 7:35 PM PT owner-moved sweep (95 -> 22 in one step).
 --
 -- WHY. candy_offer_spread_board's liveness floor (min_rows = 30) was calibrated 2026-08-01
 -- as 25% of a 122-row population. The Candy book has contracted with the wind-down.
