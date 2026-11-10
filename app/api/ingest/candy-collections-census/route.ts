@@ -65,6 +65,7 @@ async function handle(req: NextRequest) {
     hydrate_fail_reasons: result.hydrate_fail_reasons,
     hydrate_fetches: result.hydrate_fetches,
     hydrate_unverified_groups: result.hydrate_unverified_groups,
+    hydrate_rate_limit_retries: result.hydrate_rate_limit_retries,
     unhydrated_sample: result.unhydrated_sample,
     collections_touched: result.collections.length,
     collections_completed: result.completed,

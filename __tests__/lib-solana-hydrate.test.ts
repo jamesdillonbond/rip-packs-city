@@ -200,3 +200,68 @@ describe("unhydrated Candy assets", () => {
     expect(peak).toBeGreaterThan(1)
   })
 })
+
+// 2026-11-09 4:57 PM PT: 2,069 of 13,240 requests answered HTTP 429 on BOTH gateways and those
+// cards were skipped until the walk's next lap (run FAILED). A pure rate-limit failure now backs
+// off (shared across the pool) and retries.
+describe("HTTP 429 on every gateway", () => {
+  const sleeps: number[] = []
+  const sleep = async (ms: number) => { sleeps.push(ms) }
+
+  it("is retried after a back-off and then hydrates — the card is NOT skipped", async () => {
+    sleeps.length = 0
+    let calls = 0
+    const f = (async () => {
+      calls++
+      return calls <= 2 ? new Response("slow down", { status: 429 }) : new Response(JSON.stringify(offChain), { status: 200 })
+    }) as unknown as typeof fetch
+    const r = await hydrateFromJsonUri([bare], { fetchImpl: f, sleep, rateLimitBackoffMs: 50 })
+    expect(r.failed).toHaveLength(0)
+    expect(r.hydrated).toHaveLength(1)
+    expect(r.rate_limit_retries).toBe(1)
+    expect(sleeps.length).toBe(1)
+    expect(sleeps[0]).toBeGreaterThan(0)
+  })
+
+  it("gives up after the configured rounds and reports HTTP 429 (never hydrated)", async () => {
+    sleeps.length = 0
+    let calls = 0
+    const f = (async () => { calls++; return new Response("no", { status: 429 }) }) as unknown as typeof fetch
+    const r = await hydrateFromJsonUri([bare], { fetchImpl: f, sleep, rateLimitBackoffMs: 50, rateLimitRetries: 2 })
+    expect(r.hydrated).toHaveLength(0)
+    expect(r0(r)).toBe("HTTP 429")
+    expect(calls).toBe(6) // 3 rounds x 2 gateways
+    expect(r.rate_limit_retries).toBe(2)
+  })
+
+  it("a non-429 failure is NOT retried (no-change control)", async () => {
+    sleeps.length = 0
+    let calls = 0
+    const f = (async () => { calls++; return new Response("gone", { status: 404 }) }) as unknown as typeof fetch
+    const r = await hydrateFromJsonUri([bare], { fetchImpl: f, sleep })
+    expect(r0(r)).toBe("HTTP 404")
+    expect(calls).toBe(2)
+    expect(r.rate_limit_retries).toBe(0)
+    expect(sleeps).toHaveLength(0)
+  })
+
+  it("a 429 on one gateway with a 404 on the other is not a pure rate-limit — not retried", async () => {
+    let calls = 0
+    const f = (async (u: string) => { calls++; return new Response("x", { status: u.includes("permaweb") ? 429 : 404 }) }) as unknown as typeof fetch
+    const r = await hydrateFromJsonUri([bare], { fetchImpl: f, sleep })
+    expect(calls).toBe(2)
+    expect(r.rate_limit_retries).toBe(0)
+  })
+
+  it("Retry-After is honoured (capped at 5 s)", async () => {
+    sleeps.length = 0
+    let calls = 0
+    const f = (async () => {
+      calls++
+      return calls <= 2 ? new Response("x", { status: 429, headers: { "retry-after": "3" } }) : new Response(JSON.stringify(offChain), { status: 200 })
+    }) as unknown as typeof fetch
+    await hydrateFromJsonUri([bare], { fetchImpl: f, sleep, rateLimitBackoffMs: 10 })
+    expect(sleeps[0]).toBeGreaterThan(2500)
+    expect(sleeps[0]).toBeLessThanOrEqual(3000)
+  })
+})

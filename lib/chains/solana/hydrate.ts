@@ -169,17 +169,41 @@ export function jsonForMember(json: Record<string, unknown>, member: DasAsset): 
  * it into every member. Bounded concurrency and a per-request timeout; never throws. `fetches`
  * counts HTTP requests made. Order of `hydrated` is not significant.
  */
+/** Seconds from a Retry-After header (delta-seconds form only), as ms; null if absent/unusable. */
+export function retryAfterMs(header: string | null): number | null {
+  if (!header) return null
+  const s = Number(header.trim())
+  return Number.isFinite(s) && s >= 0 ? s * 1000 : null
+}
+
 export async function hydrateFromJsonUri(
   assets: DasAsset[],
-  opts: { concurrency?: number; timeoutMs?: number; fetchImpl?: typeof fetch } = {},
-): Promise<HydrateResult & { fetches: number; groups: number; unverified_groups: number }> {
+  opts: {
+    concurrency?: number
+    timeoutMs?: number
+    fetchImpl?: typeof fetch
+    /** extra rounds when EVERY gateway answered 429 (default 2) */
+    rateLimitRetries?: number
+    /** base back-off before a 429 retry round, doubled per round (default 1000 ms) */
+    rateLimitBackoffMs?: number
+    sleep?: (ms: number) => Promise<void>
+  } = {},
+): Promise<HydrateResult & { fetches: number; groups: number; unverified_groups: number; rate_limit_retries: number }> {
   // 48 (was 16): throughput is latency-bound, not rate-limited — 68 HTTP 429 in 4,761 requests
   // on the 11:57 AM PT run — and the breaker still stops a run whose fetches mostly fail.
+  // 2026-11-09 4:57 PM PT: that stopped holding — 2,069 HTTP 429 in 13,240 requests (15.6 %, run
+  // FAILED), concentrated on two collections. A card whose every gateway answered 429 was
+  // skipped until the walk's next lap. Now a 429 round sets a SHARED cool-down (the whole pool
+  // pauses, so the pool's rate actually falls) and the card is retried, up to 2 more rounds.
   const concurrency = Math.max(1, opts.concurrency ?? 48)
+  const rateLimitRetries = Math.max(0, opts.rateLimitRetries ?? 2)
+  const backoffBase = opts.rateLimitBackoffMs ?? 1000
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
+  let coolUntil = 0
   let rotation = 0
   const timeoutMs = opts.timeoutMs ?? 8000
   const doFetch = opts.fetchImpl ?? fetch
-  const out: HydrateResult & { fetches: number; groups: number; unverified_groups: number } = { hydrated: [], failed: [], fetches: 0, groups: 0, unverified_groups: 0 }
+  const out: HydrateResult & { fetches: number; groups: number; unverified_groups: number; rate_limit_retries: number } = { hydrated: [], failed: [], fetches: 0, groups: 0, unverified_groups: 0, rate_limit_retries: 0 }
   const groups = new Map<string, DasAsset[]>()
   for (const a of assets) {
     const k = editionGroupKey(a)
@@ -196,17 +220,35 @@ export async function hydrateFromJsonUri(
     const uri = a.content?.json_uri
     if (typeof uri !== "string" || !/^https:\/\//i.test(uri)) return { json: null, reason: "no https json_uri" }
     let reason = "no attempt"
-    for (const url of gatewayAlternates(uri, rotation++)) {
-      out.fetches++
-      try {
-        const resp = await doFetch(url, { signal: AbortSignal.timeout(timeoutMs) })
-        if (!resp.ok) { reason = `HTTP ${resp.status}`; continue }
-        const parsed = JSON.parse(await resp.text())
-        if (mergeOffChainJson(a, parsed)) return { json: parsed as Record<string, unknown>, reason: "" }
-        reason = "json carried no traits or image"
-      } catch (e) {
-        reason = (e instanceof Error ? `${e.name}: ${e.message}` : String(e)).slice(0, 120)
+    for (let round = 0; round <= rateLimitRetries; round++) {
+      const wait = coolUntil - Date.now()
+      if (wait > 0) await sleep(wait)
+      let all429 = true
+      let hinted: number | null = null
+      for (const url of gatewayAlternates(uri, rotation++)) {
+        out.fetches++
+        try {
+          const resp = await doFetch(url, { signal: AbortSignal.timeout(timeoutMs) })
+          if (!resp.ok) {
+            reason = `HTTP ${resp.status}`
+            if (resp.status === 429) hinted = Math.max(hinted ?? 0, retryAfterMs(resp.headers?.get?.("retry-after") ?? null) ?? 0)
+            else all429 = false
+            continue
+          }
+          all429 = false
+          const parsed = JSON.parse(await resp.text())
+          if (mergeOffChainJson(a, parsed)) return { json: parsed as Record<string, unknown>, reason: "" }
+          reason = "json carried no traits or image"
+        } catch (e) {
+          all429 = false
+          reason = (e instanceof Error ? `${e.name}: ${e.message}` : String(e)).slice(0, 120)
+        }
       }
+      // only a pure rate-limit failure is retried; any other failure is reported as before
+      if (!all429 || round === rateLimitRetries) break
+      out.rate_limit_retries++
+      const backoff = Math.min(5000, Math.max(hinted ?? 0, backoffBase * 2 ** round))
+      coolUntil = Math.max(coolUntil, Date.now() + backoff)
     }
     return { json: null, reason }
   }
