@@ -1,5 +1,11 @@
 -- anon-exec: intentional — get_ufc_set_progress keeps its ACL (CREATE OR REPLACE, same signature; service_role only, asserted at the end).
 --
+-- APPLIED 2026-11-10 ~11:15 AM PT by Claude Code (apply_migration; recorded 20261110184532), unchanged from
+-- Cowork's staged file. Post-check: over the 15 largest UFC wallets the output is IDENTICAL to the old
+-- body (recreated in pg_temp) per set — setId, plays, completion, estimatedCostToComplete. ⚠ The
+-- whole-output md5 baselines below are NOT a valid comparator: sets tied on completion/cost come back
+-- in a different order between statements (stable within one), so the hash moves with no data change.
+--
 -- WHY. The UFC set tracker priced a MISSING piece from the latest NON-NULL snapshot
 --   SELECT DISTINCT ON (edition_id) ... FROM fmv_snapshots
 --    WHERE collection_id = p_collection_id AND fmv_usd IS NOT NULL ORDER BY edition_id, computed_at DESC
