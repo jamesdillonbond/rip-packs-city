@@ -108,6 +108,13 @@ WAU); its *measurements* were superseded five times over. **For any number, scro
 
 ---
 
+## ⭐ NEW 2026-11-09 — GIVEAWAY INSTANT DELIVERY: SHIPPED, CONFIGURED, NOT YET EXERCISED (read live 2026-11-09 ~9:10 PM PT)
+
+- **Shipped 11-08** (migration `20261108231643`, code `9a8eed2`): a funded drop's Moments are sent from the giveaway vault by the server seconds after each claim. Mechanics and bounds: [concierge.md](concierge.md) (exceptions); design notes: the 11-08 addendum in [free-packs-reassessment-2026-09-29.md](../strategy/free-packs-reassessment-2026-09-29.md).
+- **Configured 11-08 ~4:05 PM PT:** vault `0x38300125d58f76d1` (fresh Flow Wallet account "RPC Vault", one key, index 0, ECDSA_secp256k1/SHA2_256); `GIVEAWAY_VAULT_ADDR`, `GIVEAWAY_VAULT_KEY_INDEX`, `RPC_GIVEAWAY_INSTANT_DELIVERY=1` added by Claude, `GIVEAWAY_VAULT_PRIVATE_KEY` (Sensitive) by Trevor; Production build `8e4facc` picked them up.
+- **Not yet exercised (on-chain read 11-09):** the vault holds **no Top Shot collection** (status script `-1`) and its balance is unchanged at 4.001 FLOW, so "Set up the vault's Top Shot collection" has not been pressed; no drop has `vault_address` set and no `delivery_attempted_at` exists. **Next, Trevor's (admin token + his wallet):** press setup on `/admin/giveaways` → seal a 1-pack × 1-Moment drop with a common → "Fund for instant delivery" → claim to a Dapper account → confirm Delivered within ~1 min. Until then the path is proven only by tests and simulations, not by a live send.
+- **Re-derive before quoting:** vault state is one Flow script (`VAULT_STATUS_SCRIPT`, `lib/giveaways/vault-cadence.ts`) plus `select slug, vault_address from giveaway_drops`.
+
 ## ⭐ PRICE ACCURACY — the second number, measured 2026-11-04 evening (Claude Code cloud; Trevor: "pricing is the anchor of everything we do")
 
 The M1/M2 metric below is a confidence SHARE: a count of labels, not a measured accuracy. Since 11-04 there is an instrument for accuracy itself: **`fmv_accuracy_weekly`**. It stores each market sale against the price published ≥ 1 day before it, with one row per collection × PT week × confidence × last-sale age × depth × price band. It is filled every Monday at 3:37 AM PT (Top Shot only for now). Full record: known-issues **#234**.
