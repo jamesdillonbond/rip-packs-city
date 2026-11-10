@@ -108,6 +108,7 @@ import {
 import { slugifyName, slugifyPlayerName } from "@/lib/entity-labels";
 import { isExhibitionTeamSlug } from "@/lib/team-denylist";
 import { sanitizeVisitSessionId, sanitizeVisitReferrer, isInternalCheckSessionId } from "@/lib/concierge/visit-link";
+import { resolveConciergeEffort } from "@/lib/concierge/effort";
 import {
   isBotSessionId,
   isWellFormedSessionId,
@@ -144,6 +145,8 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 // pipeline_runs as `concierge-model-error` — the generic "unknown" fallback hid
 // the 2026-06-15 sonnet-4 retirement for ~7 days.
 const CONCIERGE_MODEL = "claude-sonnet-5-5";
+
+// Effort: lib/concierge/effort.ts (explicit since 2026-11-09).
 
 // GREETING_RE, ConciergeErrorMode, classifyAnthropicError, and
 // CONCIERGE_ERROR_MESSAGES now live in @/lib/concierge/errors (imported above)
@@ -7148,6 +7151,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ response: greetText, escalated: false, category: greetCategory });
     }
 
+    const effort = resolveConciergeEffort(req.headers.get("x-rpc-concierge-effort"));
     const testErrMode = req.headers.get("x-rpc-test-error-mode");
     const testErrSecret = req.headers.get("x-rpc-test-secret");
     if (testErrMode && secretEquals(testErrSecret, process.env.INGEST_SECRET_TOKEN)) {
@@ -7267,6 +7271,7 @@ export async function POST(req: NextRequest) {
       // iteration 2+ of a request is the proof the prefix is stable.
       cache_read: number | null;
       cache_write: number | null;
+      output_tokens: number | null;
     };
     const iterationTraces: IterationTrace[] = [];
     const requestStartedMs = Date.now();
@@ -7312,6 +7317,7 @@ export async function POST(req: NextRequest) {
           system: systemBlocks,
           tools: TOOLS,
           ...(finalHop ? { tool_choice: { type: "none" as const } } : {}),
+          output_config: { effort },
           messages: currentMessages,
         },
         { timeout: Math.max(5_000, remainingMs()) },
@@ -7339,6 +7345,7 @@ export async function POST(req: NextRequest) {
           tool_total_ms: 0,
           cache_read: null,
           cache_write: null,
+          output_tokens: null,
         };
         // Too little time left for a tool hop AND an answer after it: answer now.
         const finalHop = forceAnswerHop || (iterations > 1 && (iterations >= MAX_ITERATIONS || remainingMs() < MIN_MODEL_MS * 2));
@@ -7353,6 +7360,7 @@ export async function POST(req: NextRequest) {
                 system: systemBlocks,
                 tools: TOOLS,
                 ...(finalHop ? { tool_choice: { type: "none" as const } } : {}),
+                output_config: { effort },
                 messages: currentMessages,
               },
               { timeout: Math.max(5_000, remainingMs()) },
@@ -7362,6 +7370,7 @@ export async function POST(req: NextRequest) {
         const usage: any = (response as any).usage ?? null;
         trace.cache_read = typeof usage?.cache_read_input_tokens === "number" ? usage.cache_read_input_tokens : null;
         trace.cache_write = typeof usage?.cache_creation_input_tokens === "number" ? usage.cache_creation_input_tokens : null;
+        trace.output_tokens = typeof usage?.output_tokens === "number" ? usage.output_tokens : null;
         trace.stop_reason = response.stop_reason ?? null;
 
         if (response.stop_reason === "end_turn") {
@@ -7572,6 +7581,9 @@ export async function POST(req: NextRequest) {
             JSON.stringify({
               session: sessionId,
               total_ms: totalMs,
+              model: CONCIERGE_MODEL,
+              effort,
+              output_tokens_total: iterationTraces.reduce((n, t) => n + (t.output_tokens ?? 0), 0),
               iterations: iterationTraces.length,
               anthropic_ms_total: anthropicTotal,
               tool_ms_total: toolTotal,

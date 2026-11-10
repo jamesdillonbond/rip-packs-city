@@ -51,6 +51,11 @@ tsconfig.*.json
 # Claude / AI tooling — ignore local state, but track the shared session-sync hook
 .claude/*
 !.claude/settings.json
+# Project subagents (2026-11-09): read-only helpers pinned to Haiku.
+!.claude/agents/
+.claude/agents/*
+!.claude/agents/Explore.md
+!.claude/agents/log-reader.md
 !.claude/hooks/
 .claude/hooks/*
 !.claude/hooks/session-start.sh
