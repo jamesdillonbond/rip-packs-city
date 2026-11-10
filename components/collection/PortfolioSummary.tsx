@@ -227,7 +227,7 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
               <div><span className="text-[color:var(--rpc-text-muted)]">Current FMV:</span> <span className="text-[color:var(--rpc-text-primary)]">{fmtUsd2(totalFmv)}</span></div>
               <div><span className="text-[color:var(--rpc-text-muted)]">P&amp;L:</span> <span className={plColor}>{totalPl >= 0 ? "+" : "-"}{fmtUsd2(Math.abs(totalPl))} ({fmtSignedFixed(plPct, 0)}%)</span></div>
               {walletWide
-                ? <div className="text-[color:var(--rpc-text-muted)] text-xs">{count > 0 ? `${count.toLocaleString("en-US")} moments with a known cost` : "moments with a known cost"} — FMV here is theirs, not the whole wallet</div>
+                ? <div className="text-[color:var(--rpc-text-muted)] text-xs">{count > 0 ? `${count.toLocaleString("en-US")} ${count === 1 ? "moment" : "moments"} with a known cost` : "moments with a known cost"} — FMV here is theirs, not the whole wallet</div>
                 : <div className="text-[color:var(--rpc-text-muted)] text-xs">{count} moments with cost data</div>}
             </div>
           )
