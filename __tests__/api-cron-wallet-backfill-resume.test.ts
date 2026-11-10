@@ -34,6 +34,7 @@ vi.mock("@/lib/pipeline/heartbeat", () => ({
   },
 }))
 vi.mock("@/lib/chains/flow/wallet-backfill-resume", () => ({
+  RESUME_DISPATCH_ORIGIN: "https://www.rippackscity.com",
   drainResumeQueue: async (_db: unknown, url: string) => {
     h.state.order.push("drain")
     h.state.drainUrls.push(url)
@@ -43,8 +44,11 @@ vi.mock("@/lib/chains/flow/wallet-backfill-resume", () => ({
 
 import { GET } from "@/app/api/cron/wallet-backfill-resume/route"
 
-const req = (auth?: string) =>
-  ({ url: "https://www.rippackscity.com/api/cron/wallet-backfill-resume", headers: new Headers(auth ? { authorization: auth } : {}) }) as any
+// The PRODUCTION shape: Vercel Cron calls the deployment url, which SSO protection covers. A test
+// whose request arrived on www passed while every real resume 401'd (2026-11-10).
+const DEPLOYMENT_URL = "https://rip-packs-city-abc123-rippackscity-projects.vercel.app/api/cron/wallet-backfill-resume"
+const req = (auth?: string, url: string = DEPLOYMENT_URL) =>
+  ({ url, headers: new Headers(auth ? { authorization: auth } : {}) }) as any
 
 beforeEach(() => {
   h.state.order = []
@@ -63,12 +67,13 @@ describe("GET /api/cron/wallet-backfill-resume", () => {
     expect(h.state.pending.length).toBe(0)
   })
 
-  it("202 with CRON_SECRET; heartbeat BEFORE the drain; the drain gets this request's URL", async () => {
+  it("202 with CRON_SECRET; heartbeat BEFORE the drain; the drain dispatches to the canonical origin, never the request's", async () => {
     const res = await GET(req("Bearer cron-secret"))
     expect(res.status).toBe(202)
     await Promise.all(h.state.pending)
     expect(h.state.order).toEqual(["heartbeat", "drain", "rpc:log_pipeline_run"])
     expect(h.state.drainUrls).toEqual(["https://www.rippackscity.com/api/cron/wallet-backfill-resume"])
+    expect(h.state.drainUrls.some((u) => u.includes(".vercel.app"))).toBe(false)
     expect(h.state.rpcCalls[0].args).toMatchObject({ p_pipeline: "wallet-backfill-resume", p_ok: true })
   })
 

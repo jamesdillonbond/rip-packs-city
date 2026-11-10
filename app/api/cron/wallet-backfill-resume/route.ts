@@ -12,7 +12,7 @@ import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
-import { drainResumeQueue } from "@/lib/chains/flow/wallet-backfill-resume"
+import { drainResumeQueue, RESUME_DISPATCH_ORIGIN } from "@/lib/chains/flow/wallet-backfill-resume"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -31,7 +31,9 @@ async function run(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
   const invokedAt = Date.now()
-  const url = request.url
+  // ⚠ NOT request.url: Vercel Cron arrives on the SSO-protected deployment url, and a dispatch
+  // back to that origin is a Vercel 401 (see RESUME_DISPATCH_ORIGIN).
+  const url = `${RESUME_DISPATCH_ORIGIN}/api/cron/wallet-backfill-resume`
   after(async () => {
     // Heartbeat BEFORE the work: a maxDuration kill is otherwise invisible.
     await writeInvocationHeartbeat({ pipeline: PIPELINE_NAME, startedAtMs: invokedAt }, supabaseAdmin)

@@ -16,6 +16,14 @@
 import { dispatchContinuation, type ContinuationDispatch } from "@/lib/chains/flow/wallet-backfill-continuation"
 
 export const RESUME_TABLE = "wallet_backfill_resume_queue"
+/**
+ * Where a resumed continuation is POSTed. NOT the cron request's own origin: Vercel Cron calls the
+ * production DEPLOYMENT url (rip-packs-city-<hash>-….vercel.app), which this project's SSO protection
+ * covers (`prod_deployment_urls_and_all_previews`), so a POST back to that origin is answered HTTP 401
+ * by Vercel before our route runs — every resume 401'd from 1:23 PM PT 11-10 (3 wallets requeued).
+ * The canonical domain is unprotected and is where cron-job.org reaches the walk itself.
+ */
+export const RESUME_DISPATCH_ORIGIN = "https://www.rippackscity.com"
 /** a queued row is retried at most this many times by the cron, then dropped (and named in the run log) */
 export const MAX_RESUME_ATTEMPTS = 5
 /** rows per cron tick — each dispatch waits up to ~17 s (two 8 s attempts) */
