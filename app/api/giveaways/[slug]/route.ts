@@ -6,6 +6,9 @@
 //           the viewer's own pack. `signed_in` says which case `me: null` is.
 //   GET  ?claim_nonce=1 -> { nonce, issuedAt } for Flow Wallet's account proof,
 //           bound to the signed-in user (lib/giveaways/claim-proof.ts). Signed in.
+//   POST { account: true, agree: true } -> claim with the Top Shot wallet already
+//           saved on the signed-in account (lib/giveaways/account-wallet.ts;
+//           Trevor 2026-11-10). GET then carries `account_wallet` for the button.
 //   POST { username, agree: true } -> claim one pack (signed in; any account —
 //           claims do not need allow-list approval, see proxy.ts).
 //   POST { intent: "accounts", proof } -> { accounts }: where a winner who
@@ -33,6 +36,7 @@ import { discoverAccounts } from "@/lib/giveaways/linked-accounts"
 import { issueClaimNonce, verifyClaimProof, type ClaimProofInput } from "@/lib/giveaways/claim-proof"
 import { instantDeliveryEnabled, sendFromVault } from "@/lib/giveaways/vault"
 import type { DropRow } from "@/lib/giveaways/store"
+import { accountTopShotWallet, type AccountWallet } from "@/lib/giveaways/account-wallet"
 
 // The vault send runs after the response (a claim answers in ~1 s; the send waits for a seal).
 export const maxDuration = 120
@@ -146,7 +150,20 @@ export async function GET(req: NextRequest, ctx: Ctx) {
     if (!view) return NextResponse.json({ error: "No such giveaway.", code: "not_found" }, { status: 404, headers: NO_STORE })
     // a claimer looking at an undelivered pack from a funded drop: (re)try the vault send
     if (view.me && view.me.moments.some((m) => !m.delivered)) sendPackSoon(drop, view.me.pack_no)
-    return NextResponse.json({ ...view, signed_in: user != null }, { headers: NO_STORE })
+    // the one-click claim: the wallet already on this account. A failed read is
+    // `account_wallet_error`, never "no wallet" — the page then offers the other paths.
+    let account_wallet: AccountWallet | null = null
+    let account_wallet_error = false
+    if (user && !view.me && drop.status === "open") {
+      try {
+        const r = await accountTopShotWallet(supabaseAdmin as never, user.id, drop.collection_id)
+        account_wallet = r.wallet
+      } catch (e) {
+        account_wallet_error = true
+        console.warn(`[giveaways] account wallet read: ${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
+    return NextResponse.json({ ...view, signed_in: user != null, account_wallet, account_wallet_error }, { headers: NO_STORE })
   } catch (err) {
     return apiErrorResponse(err, "api/giveaways/[slug] GET", "We couldn't load this giveaway. Try again in a moment.")
   }
@@ -158,7 +175,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   const user = await getCurrentUser()
   if (!user) return NextResponse.json({ error: "Sign in to claim a pack.", code: "sign_in" }, { status: 401, headers: NO_STORE })
 
-  let body: { username?: unknown; agree?: unknown; wallet?: unknown; destination?: unknown; intent?: unknown; proof?: unknown }
+  let body: { username?: unknown; agree?: unknown; wallet?: unknown; destination?: unknown; intent?: unknown; proof?: unknown; account?: unknown }
   try {
     body = (await req.json()) as typeof body
   } catch {
@@ -171,6 +188,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   if (body?.agree !== true) {
     return NextResponse.json({ error: "Confirm you are 18 or older and agree to the official rules.", code: "bad_request" }, { status: 400, headers: NO_STORE })
   }
+  if (body.account === true) return claimWithAccountWallet(slug, user.id)
   if (body.proof !== undefined || body.wallet !== undefined) return claimWithWallet(req, slug, user.id, body)
   const username = typeof body.username === "string" ? body.username.trim() : ""
   if (!USERNAME.test(username)) {
@@ -200,6 +218,40 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       return NextResponse.json({ error: "That username doesn't map to a Top Shot wallet we can deliver to.", code: "bad_request" }, { status: 400, headers: NO_STORE })
     }
     const { outcome, pack_no } = await claimPack(supabaseAdmin, drop.id, user.id, resolved.username, recipient)
+    if (outcome === "claimed") sendPackSoon(drop, pack_no)
+    return claimOutcomeResponse(outcome, pack_no)
+  } catch (err) {
+    return apiErrorResponse(err, "api/giveaways/[slug] POST", "We couldn't record your claim. Try again in a moment.")
+  }
+}
+
+/**
+ * Claim with the Top Shot wallet already saved on this account — no username to
+ * type, no wallet to connect. The address comes ONLY from the account's own
+ * saved_wallets row for the drop's collection; the body names nothing.
+ */
+async function claimWithAccountWallet(slug: string, userId: string) {
+  try {
+    const drop = await getDrop(supabaseAdmin, { slug })
+    if (!drop || drop.status === "draft") {
+      return NextResponse.json({ error: "No such giveaway.", code: "not_found" }, { status: 404, headers: NO_STORE })
+    }
+    if (drop.status !== "open") return claimOutcomeResponse("not_open", null)
+    const r = await accountTopShotWallet(supabaseAdmin as never, userId, drop.collection_id)
+    if (!r.wallet) {
+      return NextResponse.json(
+        {
+          error:
+            r.reason === "ambiguous"
+              ? "Your account has more than one Top Shot wallet saved. Enter the Top Shot username your pack should go to."
+              : "Your account doesn't have a Top Shot wallet saved. Enter your Top Shot username instead.",
+          code: "no_account_wallet",
+        },
+        { status: 400, headers: NO_STORE },
+      )
+    }
+    const label = r.wallet.username ?? (await usernameForWallet(supabaseAdmin, r.wallet.address)) ?? r.wallet.address
+    const { outcome, pack_no } = await claimPack(supabaseAdmin, drop.id, userId, label, r.wallet.address)
     if (outcome === "claimed") sendPackSoon(drop, pack_no)
     return claimOutcomeResponse(outcome, pack_no)
   } catch (err) {

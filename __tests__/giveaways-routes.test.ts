@@ -40,6 +40,8 @@ vi.mock("next/server", async (orig) => {
   const real = await orig<typeof import("next/server")>()
   return { ...real, after: (fn: () => Promise<void>) => void afterFns.push(fn) }
 })
+const { acctWallet } = vi.hoisted(() => ({ acctWallet: vi.fn() }))
+vi.mock("@/lib/giveaways/account-wallet", () => ({ accountTopShotWallet: (...a: unknown[]) => acctWallet(...a) }))
 const { discover } = vi.hoisted(() => ({ discover: vi.fn() }))
 const { verifyProof } = vi.hoisted(() => ({ verifyProof: vi.fn() }))
 vi.mock("@/lib/giveaways/claim-proof", async (orig) => {
@@ -94,6 +96,8 @@ beforeEach(() => {
   getCurrentUser.mockReset()
   resolve.mockReset()
   discover.mockReset()
+  acctWallet.mockReset()
+  acctWallet.mockResolvedValue({ wallet: null, reason: "none" })
   verifyProof.mockReset()
   planFunding.mockReset()
   for (const f of Object.values(vault)) f.mockReset()
@@ -207,6 +211,87 @@ describe("POST /api/giveaways/[slug] (claim)", () => {
     const res = await publicRoute.POST(post(url, { username: "alice", agree: true }), slugCtx("test-drop"))
     expect(res.status).toBe(500)
     expect(JSON.stringify(await res.json())).not.toContain("boom")
+  })
+})
+
+describe("one-click claim with the wallet already on the account (Trevor, 2026-11-10)", () => {
+  const url = "http://x/api/giveaways/test-drop"
+  beforeEach(() => {
+    store.getDrop.mockResolvedValue(DROP)
+    getCurrentUser.mockResolvedValue({ id: "u1" })
+    store.claimPack.mockResolvedValue({ outcome: "claimed", pack_no: 2 })
+    store.getPool.mockResolvedValue([{ moment_id: "1", pack_no: 1, slot: 1, fmv_usd: 2, delivered_at: null, last_checked_at: null }])
+    store.getClaims.mockResolvedValue([])
+  })
+
+  it("GET carries the account's wallet for a signed-in viewer who has not claimed", async () => {
+    acctWallet.mockResolvedValue({ wallet: { address: "0x00000000000000cc", username: "Carol" } })
+    const body = await (await publicRoute.GET(new NextRequest(url), slugCtx("test-drop"))).json()
+    expect(body.account_wallet).toEqual({ address: "0x00000000000000cc", username: "Carol" })
+    expect(body.account_wallet_error).toBe(false)
+    expect(acctWallet).toHaveBeenCalledWith({}, "u1", "c")
+  })
+
+  it("GET: a failed wallet read is account_wallet_error, never a missing wallet — and the view still loads", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {})
+    acctWallet.mockRejectedValue(new Error("saved_wallets read failed: timeout"))
+    const res = await publicRoute.GET(new NextRequest(url), slugCtx("test-drop"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.account_wallet).toBeNull()
+    expect(body.account_wallet_error).toBe(true)
+  })
+
+  it("GET: signed out, or already claimed, reads no wallet", async () => {
+    getCurrentUser.mockResolvedValue(null)
+    await publicRoute.GET(new NextRequest(url), slugCtx("test-drop"))
+    getCurrentUser.mockResolvedValue({ id: "u1" })
+    store.getClaims.mockResolvedValue([{ pack_no: 1, user_id: "u1", topshot_username: "x", recipient_address: "0x01", claimed_at: "t" }])
+    await publicRoute.GET(new NextRequest(url), slugCtx("test-drop"))
+    expect(acctWallet).not.toHaveBeenCalled()
+  })
+
+  it("POST { account: true } claims to the account's own wallet, labelled with its saved username", async () => {
+    acctWallet.mockResolvedValue({ wallet: { address: "0x00000000000000cc", username: "Carol" } })
+    const res = await publicRoute.POST(post(url, { account: true, agree: true }), slugCtx("test-drop"))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ ok: true, outcome: "claimed", pack_no: 2 })
+    expect(store.claimPack).toHaveBeenCalledWith({}, ID, "u1", "Carol", "0x00000000000000cc")
+    expect(resolve).not.toHaveBeenCalled()
+  })
+
+  it("POST { account: true }: the body cannot name the wallet — a smuggled address or username is ignored", async () => {
+    acctWallet.mockResolvedValue({ wallet: { address: "0x00000000000000cc", username: null } })
+    store.usernameForWallet.mockResolvedValue(null)
+    await publicRoute.POST(post(url, { account: true, agree: true, username: "mallory", destination: "0x00000000000000ee" }), slugCtx("test-drop"))
+    expect(store.claimPack).toHaveBeenCalledWith({}, ID, "u1", "0x00000000000000cc", "0x00000000000000cc")
+  })
+
+  it("POST { account: true }: no wallet or an ambiguous one is a 400 that names the other path; nothing is claimed", async () => {
+    const a = await publicRoute.POST(post(url, { account: true, agree: true }), slugCtx("test-drop"))
+    expect(a.status).toBe(400)
+    expect((await a.json()).code).toBe("no_account_wallet")
+    acctWallet.mockResolvedValue({ wallet: null, reason: "ambiguous" })
+    const b = await publicRoute.POST(post(url, { account: true, agree: true }), slugCtx("test-drop"))
+    expect((await b.json()).error).toMatch(/more than one/)
+    expect(store.claimPack).not.toHaveBeenCalled()
+  })
+
+  it("POST { account: true }: a failed wallet read is a classified error, never 'no wallet'", async () => {
+    acctWallet.mockRejectedValue({ message: "canceling statement due to statement timeout", code: "57014" })
+    const res = await publicRoute.POST(post(url, { account: true, agree: true }), slugCtx("test-drop"))
+    expect(res.status).toBe(503)
+    expect((await res.json()).code).not.toBe("no_account_wallet")
+    expect(store.claimPack).not.toHaveBeenCalled()
+  })
+
+  it("POST { account: true }: needs the agreement, a signed-in user and an open drop", async () => {
+    expect((await publicRoute.POST(post(url, { account: true }), slugCtx("test-drop"))).status).toBe(400)
+    store.getDrop.mockResolvedValueOnce({ ...DROP, status: "closed" })
+    expect((await publicRoute.POST(post(url, { account: true, agree: true }), slugCtx("test-drop"))).status).toBe(409)
+    getCurrentUser.mockResolvedValue(null)
+    expect((await publicRoute.POST(post(url, { account: true, agree: true }), slugCtx("test-drop"))).status).toBe(401)
+    expect(store.claimPack).not.toHaveBeenCalled()
   })
 })
 

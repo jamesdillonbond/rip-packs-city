@@ -14,7 +14,12 @@ import PackWall from "./PackWall"
 import { valueBands } from "@/lib/giveaways/seal"
 import { momentSubjectName } from "@/lib/entity-href"
 
-type View = PublicDropView & { signed_in: boolean }
+type View = PublicDropView & {
+  signed_in: boolean
+  /** The Top Shot wallet already on the signed-in account: the one-click claim (2026-11-10). */
+  account_wallet?: { address: string; username: string | null } | null
+  account_wallet_error?: boolean
+}
 type ClaimAccount = { address: string; role: "flow_wallet" | "linked"; name?: string | null; dapper?: boolean; can_receive: boolean }
 type ClaimNonce = { nonce: string; issuedAt: string }
 /** The wallet's FCL account proof plus the issue time of its nonce (the server re-derives the nonce from it). */
@@ -87,6 +92,8 @@ export default function GiveawayClient({ slug }: { slug: string }) {
   const [destination, setDestination] = useState<string | null>(null)
   const [connecting, setConnecting] = useState(false)
   const [proof, setProof] = useState<ClaimProof | null>(null)
+  // the claimer chose "send it somewhere else" over the wallet already on their account
+  const [otherDestination, setOtherDestination] = useState(false)
   // prefetched so the click opens the wallet picker with no network wait in between
   const nonceRef = useRef<ClaimNonce | null>(null)
 
@@ -188,6 +195,9 @@ export default function GiveawayClient({ slug }: { slug: string }) {
       .catch(() => undefined)
   }, [forgetWallet])
 
+  const accountWallet = load.kind === "ok" ? (load.view.account_wallet ?? null) : null
+  const useAccountWallet = accountWallet != null && !otherDestination && !flowWallet
+
   const claim = useCallback(async () => {
     setClaiming(true)
     setClaimError(null)
@@ -195,7 +205,9 @@ export default function GiveawayClient({ slug }: { slug: string }) {
       const res = await fetch(`/api/giveaways/${encodeURIComponent(slug)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(flowWallet ? { proof, destination, agree } : { username, agree }),
+        body: JSON.stringify(
+          useAccountWallet ? { account: true, agree } : flowWallet ? { proof, destination, agree } : { username, agree },
+        ),
       })
       if (res.ok) {
         let packNo: number | null = null
@@ -224,7 +236,7 @@ export default function GiveawayClient({ slug }: { slug: string }) {
     } finally {
       setClaiming(false)
     }
-  }, [slug, username, agree, refresh, flowWallet, destination, proof, forgetWallet])
+  }, [slug, username, agree, refresh, flowWallet, destination, proof, forgetWallet, useAccountWallet])
 
   if (load.kind === "loading") return <p style={muted}>Loading the giveaway…</p>
   if (load.kind === "not_found") {
@@ -302,7 +314,18 @@ export default function GiveawayClient({ slug }: { slug: string }) {
           </div>
           {signed_in ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 440 }}>
-              {flowWallet && accounts ? (
+              {useAccountWallet && accountWallet ? (
+                <div style={{ border: "1px solid var(--rpc-border)", borderRadius: 6, padding: "10px 12px" }} data-testid="account-wallet-claim">
+                  <div style={muted}>Your pack goes to your Top Shot account</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, margin: "2px 0" }}>
+                    {accountWallet.username ? `@${accountWallet.username}` : "Your saved wallet"}
+                  </div>
+                  <div style={{ ...muted, fontFamily: MONO, wordBreak: "break-all" }}>{accountWallet.address}</div>
+                  <button type="button" onClick={() => setOtherDestination(true)} style={{ ...linkButton, marginTop: 6 }}>
+                    Send it somewhere else
+                  </button>
+                </div>
+              ) : flowWallet && accounts ? (
                 <fieldset style={{ border: "1px solid var(--rpc-border)", borderRadius: 6, padding: "8px 10px", margin: 0 }}>
                   <legend style={muted}>Where should your pack go?</legend>
                   <p style={{ ...muted, margin: "0 0 8px" }}>
@@ -340,7 +363,7 @@ export default function GiveawayClient({ slug }: { slug: string }) {
                   <span style={muted}>or enter your Top Shot username:</span>
                 </>
               )}
-              {flowWallet ? null : (
+              {flowWallet || useAccountWallet ? null : (
               <label style={muted}>
                 Your Top Shot username (the account the sponsor gifts to)
                 <input
@@ -367,7 +390,7 @@ export default function GiveawayClient({ slug }: { slug: string }) {
                 <span>I am 18 or older and I agree to the official rules below.</span>
               </label>
               {(() => {
-                const ready = flowWallet ? destination != null : username.trim().length >= 2
+                const ready = useAccountWallet ? true : flowWallet ? destination != null : username.trim().length >= 2
                 const off = claiming || drawn != null || !agree || !ready
                 return (
                   <button type="button" disabled={off} onClick={claim} style={buttonStyle(off)}>

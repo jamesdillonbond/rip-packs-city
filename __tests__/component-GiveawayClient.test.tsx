@@ -122,6 +122,36 @@ describe("GiveawayClient — claiming", () => {
     expect(button.disabled).toBe(false)
   })
 
+  it("the wallet already on the account: one click — no username box, no Flow Wallet; posts { account: true }", async () => {
+    const view = { ...BASE, account_wallet: { address: "0x00000000000000cc", username: "Carol" }, account_wallet_error: false }
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) =>
+      init?.method === "POST" ? json({ ok: true, outcome: "claimed", pack_no: 2 }) : json(view),
+    )
+    vi.stubGlobal("fetch", fetchMock)
+    render(<GiveawayClient slug="fall-drop" />)
+    expect(await screen.findByText("@Carol")).toBeTruthy()
+    expect(screen.getByText("0x00000000000000cc")).toBeTruthy()
+    expect(screen.queryByPlaceholderText("username")).toBeNull()
+    expect(screen.queryByRole("button", { name: /claim with flow wallet/i })).toBeNull()
+    const button = screen.getByRole("button", { name: /claim my pack/i }) as HTMLButtonElement
+    expect(button.disabled).toBe(true)
+    fireEvent.click(screen.getByRole("checkbox"))
+    expect(button.disabled).toBe(false)
+    fireEvent.click(button)
+    await screen.findByText("Drawing your pack…")
+    const post = fetchMock.mock.calls.find((c) => (c[1] as RequestInit | undefined)?.method === "POST")!
+    expect(JSON.parse((post[1] as RequestInit).body as string)).toEqual({ account: true, agree: true })
+  })
+
+  it("'Send it somewhere else' brings back the username and Flow Wallet paths", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json({ ...BASE, account_wallet: { address: "0x00000000000000cc", username: null } })))
+    render(<GiveawayClient slug="fall-drop" />)
+    expect(await screen.findByText("Your saved wallet")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: /send it somewhere else/i }))
+    expect(screen.getByPlaceholderText("username")).toBeTruthy()
+    expect(screen.getByRole("button", { name: /claim with flow wallet/i })).toBeTruthy()
+  })
+
   it("a successful claim posts the username + agreement and reloads into 'Your pack'", async () => {
     const mine = {
       ...BASE,
