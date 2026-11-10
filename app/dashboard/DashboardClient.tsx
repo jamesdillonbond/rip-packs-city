@@ -32,7 +32,7 @@ import TrophyCasesPanel from "@/components/profile/TrophyCasesPanel";
 import { occupantOfSlot, reorderByDelta, reorderByTarget } from "@/lib/trophy/reorder";
 import { openSlotsOf } from "@/lib/trophy/fill-slots";
 import { savedWalletChains } from "@/lib/trophy-picker-format";
-import { challengeFocusFromUrl } from "@/lib/trophy/challenge-link";
+import { challengeEntryRequestFrom, challengeFocusFromUrl } from "@/lib/trophy/challenge-link";
 import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media";
@@ -337,7 +337,19 @@ function ProfilePageInner() {
   // the main-case picker offers it ("this is your MAIN case"); 6 of 22 Dame Time
   // entrants filled the main case by mistake (2026-11-08 weekend review).
   const [liveChallenge, setLiveChallenge] = useState<{ slug: string; title: string } | null>(null);
-  const [challengeOpenRequest, setChallengeOpenRequest] = useState<{ slug: string; n: number } | null>(null);
+  // 2026-11-10: a `?challenge=<slug>` link (challengeEntryHref — the dashboard
+  // invite's "Enter", the board's "Enter from your dashboard" / "Finish your
+  // case", the nudge, the sign-up return path) IS an enter-or-finish intent, so
+  // it now makes the same request as "Use my <challenge> case": enter when not
+  // yet entered, then open the entry's picker on its first empty slot. Before,
+  // the link only scrolled to the challenge row; 1 of 7 invite clicks on 11-09
+  // (ahmadscientist, no cases yet) tapped the empty MAIN case instead and left.
+  // A closed challenge is not in the panel's list, so the request does nothing.
+  // The `#challenge-<slug>` hash form stays scroll-only. Read from
+  // useSearchParams, so server and client agree.
+  const [challengeOpenRequest, setChallengeOpenRequest] = useState<{ slug: string; n: number } | null>(() =>
+    challengeEntryRequestFrom(challengeParam)
+  );
   // Hero edit flow: open the same picker but write to profile_bio instead of trophy_moments.
   const [heroEditOpen, setHeroEditOpen] = useState(false);
   // Verification: which wallet is currently in the verify-by-listing modal.

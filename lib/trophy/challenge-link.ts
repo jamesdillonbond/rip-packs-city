@@ -24,6 +24,13 @@ export function challengeEntryHref(slug: string): string {
   return `/dashboard?tab=trophy&challenge=${encodeURIComponent(slug)}`
 }
 
+/** The open-picker request a `?challenge=<slug>` query asks for on arrival
+ *  (2026-11-10): enter if needed, then open the entry's picker. Null for a
+ *  missing or malformed slug. */
+export function challengeEntryRequestFrom(queryChallenge: string | null | undefined): { slug: string; n: number } | null {
+  return queryChallenge && /^[a-z0-9-]{1,80}$/.test(queryChallenge) ? { slug: queryChallenge, n: 1 } : null
+}
+
 /** The challenge slug a dashboard URL asks to land on, or null. */
 export function challengeFocusFromUrl(search: string, hash: string): string | null {
   const q = new URLSearchParams(search).get("challenge")
