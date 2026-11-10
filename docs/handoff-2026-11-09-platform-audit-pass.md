@@ -105,3 +105,34 @@
 - **Renaming the "Candy MLB" label:** 243 lines in 125 source files and 83 test files name it, and the new name is a brand choice. Waiting on Trevor's answer.
 - **cron-job.org console:** not opened. Its job pages carry gate keys in URLs, Trevor's display was asleep (no screenshots, streamed pages do not render), and every lane it drives read healthy from `pipeline_runs`.
 - **Two spent scheduled tasks** the session may not delete (item 9).
+
+---
+
+## Fourth pass — 4:19 AM → ~5:15 AM PT 11-10 (Trevor: "Keep going … make sure you've done all you can … use chrome in the laptop")
+
+The display was awake at 4:25 AM, so the signed-in walk the second pass could not finish ran first: the Collection tab of Top Shot, All Day, Pinnacle, Golazos and UFC, the dashboard, Trades, Alerts, the public profile, Pack History and Transaction History. It stopped painting again at ~4:45 AM (`requestAnimationFrame` silent), which ended the walk at the Sets and Analytics tabs.
+
+### Shipped (ledger entry 11-10 "fourth audit pass")
+
+1. **"Recent Sales" on the Collection tab showed Top Shot's sales on every collection.** The panel asked `/api/recent-sales` for no collection and the route defaults that to Top Shot. It now asks for the tab's collection and its heading says whose sales they are and that they are the market's, not the wallet's.
+2. **"No recent sales" in the expanded row of every non-Top-Shot moment**, including an All Day edition with five sales that hour. Same cause, one parameter over. Fixed; and an edition the route cannot find at all (a Pinnacle pin) now reads "—" instead of a conclusion.
+3. **Filters leaked between collections.** A player filter saved on Top Shot was restored on Golazos and emptied the binder. Filters are stored per collection; the sort preference stays shared.
+4. **The cost-basis count from the second pass never rendered.** The route and the compute helper carried it; the tab's hand-written mapping dropped it, so the line read "moments with a known cost" with no number. Mapped, with a guard that reads the field list from the type. The same mapping had been dropping the "N not checked" lock fields.
+5. **`/dashboard` had no `<h1>`.** The collector's name is now the page heading.
+
+### Staged for one step by Trevor or Claude Code
+
+- **`candy_offer_spread_board` liveness floor 30 → 5.** The overnight pass queued this as a decision; under the delegation I chose to lower rather than retire it: the board still serves 22 rows (20 active asks, 7 offers), and the original rule was 25 % of the population. `apply_migration` was refused for this session, so the statement, pre-check and revert are in `docs/proposals/audit_20261110_candy_offer_spread_board_liveness_floor_recalibrated-STAGED.sql`. Until it runs, the Sentinel's `public_board_empty_count` stays at 1.
+
+### Re-derived, withdrawn
+
+- **Pack Sniper cold reads** (third pass, "queued for Claude Code"): withdrawn. Five budget misses in 48 h; the latest was 8:36:58 AM PT 11-09, three seconds before an unrelated trophy-challenge probe also missed, and there have been none in the 20 h since. A cold read today took 3.9 s and a warm one 0.7 s against an 8 s budget. That is a busy database at one moment, not the market-pulse shape (which missed on every cold render). The other four events' times could not be read: the log query timed out.
+
+### Verified on their first scheduled run
+
+- `wmc-metadata-selfheal` 2:31 AM PT: ok, 39 s (the 11-09 run was killed at 120 s).
+- `topshot-map-atlas-reconcile` 4:47 AM PT: ok, 175.5 s under its 300 s limit, 31 map rows (the 11-09 run was killed at 120 s). Both lanes behind the Sentinel's Pipeline Success Coverage warn have now passed on a scheduled tick.
+
+### Still open (unchanged from the third pass)
+
+- "Candy MLB" label rename (Trevor's choice of name), `GITHUB_ACTIONS_READ_TOKEN` renewal (~11-14), two spent scheduled tasks this session may not delete, cron-job.org console not opened.
