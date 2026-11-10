@@ -119,6 +119,38 @@ describe("CollectionHeading — never competes with a page that owns its h1", ()
   })
 })
 
+// 2026-11-09: the tab segment alone was not enough. Served HTML showed two h1s on Panini's
+// Collection / Analytics / Product index (their own components carry one) and none on the
+// Packs tab of Panini and Candy (their bespoke packs views carry none, unlike the shared
+// Top Shot packs page).
+describe("CollectionHeading — per-collection departures from the tab rule", () => {
+  const PANINI = getCollection("panini-blockchain")!
+  const CANDY = getCollection("candy-mlb")!
+
+  it.each(["collection", "analytics", "product"])("leaves Panini /%s to the page's own h1", (tab) => {
+    state.pathname = `/panini-blockchain/${tab}`
+    const { container } = render(<CollectionHeading collection={PANINI} />)
+    expect(headingIn(container)).toBeNull()
+  })
+
+  it("gives the Packs tab of Panini and Candy the h1 their views lack", () => {
+    for (const c of [PANINI, CANDY]) {
+      state.pathname = `/${c.id}/packs`
+      const { container } = render(<CollectionHeading collection={c} />)
+      expect(headingIn(container)).not.toBeNull()
+      cleanup()
+    }
+  })
+
+  it("does not leak either departure onto another collection", () => {
+    state.pathname = "/nba-top-shot/packs"
+    expect(headingIn(render(<CollectionHeading collection={COLLECTION} />).container)).toBeNull()
+    cleanup()
+    state.pathname = "/nba-top-shot/collection"
+    expect(headingIn(render(<CollectionHeading collection={COLLECTION} />).container)).not.toBeNull()
+  })
+})
+
 describe("CollectionHeading — visual parity between the two branches", () => {
   // The whole premise is that promoting the tag changes nothing on screen. An <h1>
   // carries a UA margin the <div> did not, so margin:0 must be pinned explicitly.

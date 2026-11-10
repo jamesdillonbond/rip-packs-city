@@ -145,8 +145,8 @@ export default async function FmvMethodologyPage() {
 
       <h3 style={H3}>Active asks (secondary signal)</h3>
       <p style={P}>
-        We snapshot the lowest active listing price across NBA Top Shot&apos;s native
-        marketplace and Flowty&apos;s secondary market. The lowest ask sets a soft
+        We snapshot the lowest active listing on each collection&apos;s own
+        marketplace. The lowest ask sets a soft
         ceiling — if no one will pay above this, FMV shouldn&apos;t either.
       </p>
 
@@ -168,10 +168,12 @@ export default async function FmvMethodologyPage() {
         </li>
         <li>
           <strong style={STRONG}>Priced from a listing.</strong> When an edition
-          has no sales to price from, its estimate is based on the lowest active
-          ask, and it is marked <em>from asks</em>. That is what one seller is
+          has no recent sales to price from, its estimate is based on the lowest
+          active ask, and it is marked <em>from asks</em>. That is what one seller is
           asking, not a completed sale &mdash; check recent sales before acting
-          on it.
+          on it. On NBA Top Shot, NFL All Day and LaLiga Golazos, where the edition
+          has sold before, an ask-based estimate is capped at its most recent sale
+          prices, so a single high listing cannot set the price.
         </li>
         <li>
           <strong style={STRONG}>No price.</strong> When we have too little data
@@ -300,7 +302,7 @@ export default async function FmvMethodologyPage() {
       </p>
 
       <div style={FOOTNOTE}>
-        Last updated: October 2026. ·{" "}
+        Last updated: November 2026. ·{" "}
         <Link href="/" style={{ color: "var(--rpc-text-muted)" }}>
           Back to home
         </Link>

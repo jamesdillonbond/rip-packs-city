@@ -1,5 +1,7 @@
-# Feature roadmaps — index (refreshed 2026-10-17, PT)
+# Feature roadmaps — index (refreshed 2026-10-17, PT; cross-collection parity matrix 2026-11-09)
 > Each file below covers one feature area across every collection. They are dated snapshots, so re-derive any number before quoting it. Canonical plan: [roadmap-2026-10-17.md](../roadmap-2026-10-17.md). Per-collection detail: [collections/](../collections/). Defects: [known-issues.md](../../reference/known-issues.md).
+
+**Every feature against every collection, in one table: [feature-parity-2026-11-09.md](../feature-parity-2026-11-09.md)** (read 11-09 ~10:15 PM PT from the registry, the live routes and the per-collection matrices; it ranks the parity gaps still open and names the two that need Trevor). ⚠ The status column below is the 10-17 read with dated addenda — each feature file's own newest dated entry wins over its row here.
 
 **Binding rules** (all seven files):
 - read-only product: no cart or gifting; trading only as the no-custody trade room, signing gated until the live swap test seals ([trading.md](trading.md), 10-31);

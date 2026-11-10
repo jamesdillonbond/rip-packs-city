@@ -51,6 +51,30 @@ const TABS_WITH_OWN_H1 = new Set<string>([
   "pack-sniper",
 ])
 
+// Per-collection departures from the tab rule above. The tab SEGMENT decides for most
+// collections, but two collections render a tab from their own component, and that
+// component's heading differs from the shared page's. Measured against served HTML
+// 2026-11-09 (`curl -s <url> | grep -o '<h1[ >]' | wc -l` over every registry tab of every
+// collection): Panini's Collection, Analytics and Product index each shipped TWO h1s (the
+// banner's + the component's own), and the Packs tab of Panini and Candy shipped NONE (the
+// shared Top Shot packs page owns an h1; their bespoke packs views do not).
+// Re-measure the served HTML before adding to either list, as above.
+const COLLECTION_TABS_WITH_OWN_H1: Record<string, ReadonlySet<string>> = {
+  "panini-blockchain": new Set(["collection", "analytics", "product"]),
+}
+const COLLECTION_TABS_WITHOUT_OWN_H1: Record<string, ReadonlySet<string>> = {
+  "panini-blockchain": new Set(["packs"]),
+  "candy-mlb": new Set(["packs"]),
+}
+
+/** Does the page behind this tab render its own <h1> for this collection? */
+export function tabOwnsItsH1(collectionId: string, tab: string | null): boolean {
+  if (!tab) return false
+  if (COLLECTION_TABS_WITH_OWN_H1[collectionId]?.has(tab)) return true
+  if (COLLECTION_TABS_WITHOUT_OWN_H1[collectionId]?.has(tab)) return false
+  return TABS_WITH_OWN_H1.has(tab)
+}
+
 const TITLE_STYLE: React.CSSProperties = {
   fontFamily: "var(--font-display)",
   fontWeight: 900,
@@ -67,7 +91,7 @@ export default function CollectionHeading({ collection }: { collection: Collecti
   const segments = pathname.split("/").filter(Boolean)
   const tab = segments[1] ?? null
 
-  const isTabRoute = segments.length <= 2 && !(tab && TABS_WITH_OWN_H1.has(tab))
+  const isTabRoute = segments.length <= 2 && !tabOwnsItsH1(collection.id, tab)
 
   if (!isTabRoute) {
     return <div style={TITLE_STYLE}>{collection.label}</div>
