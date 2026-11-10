@@ -1,12 +1,17 @@
--- DB invariant: public.heal_wmc_player_names_from_catalog(int) — #221 (2026-11-08, second pass).
+-- DB invariant: public.heal_wmc_player_names_from_catalog(int) — #221 (2026-11-08; walk 2026-11-09).
 -- The property: a wallet_moments_cache row's player_name becomes the name of the PERSON its edition
 -- is linked to (players.name via editions.player_id, same collection) — never the edition's LABEL
 -- text when the two differ. A Team Moment (player_id NULL), a Pinnacle row, a moment whose edition
 -- key belongs to another collection, and a link into another collection are never touched;
--- p_limit bounds a run; the run log counts rows actually written; a second run writes nothing.
+-- p_limit bounds a call's writes and a CAPPED call does not advance the cursor; the run log counts
+-- rows actually written; a full pass ends with the cursor reset and `passes` + 1; a second pass
+-- writes nothing.
+--
+-- 2026-11-09: one call reads a bounded slice of editions behind wmc_player_name_heal_cursor (the
+-- whole-table candidate scan timed out after the Candy census grew the table to 3.6M rows).
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261108191632_audit_20261108_wmc_player_names_follow_the_linked_person.sql);
+-- (supabase/migrations/20261110000023_audit_20261109_wmc_player_names_heal_walks_a_bounded_slice.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -20,6 +25,28 @@ CREATE TABLE public.pipeline_runs_stub (pipeline text, rows_written int, ok bool
 CREATE FUNCTION public.log_pipeline_run(p_pipeline text, p_started_at timestamptz, p_rows_found int, p_rows_written int,
   p_rows_skipped int, p_ok boolean, p_error text, p_collection_slug text, p_cursor_before text, p_cursor_after text, p_extra jsonb)
 RETURNS bigint LANGUAGE sql AS $$ INSERT INTO public.pipeline_runs_stub VALUES (p_pipeline, p_rows_written, p_ok, p_extra) RETURNING 1::bigint $$;
+CREATE TABLE public.wmc_player_name_heal_cursor (
+  id         integer PRIMARY KEY CHECK (id = 1),
+  last_key   text NOT NULL DEFAULT '',
+  last_coll  uuid,
+  passes     integer NOT NULL DEFAULT 0,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+INSERT INTO public.wmc_player_name_heal_cursor (id) VALUES (1);
+
+-- A full pass: call until the walk restarts; returns total rewrites.
+CREATE FUNCTION pg_temp.drain(p_limit int) RETURNS int LANGUAGE plpgsql AS $$
+DECLARE v jsonb; t int := 0; i int := 0;
+BEGIN
+  LOOP
+    i := i + 1;
+    IF i > 100 THEN RAISE EXCEPTION 'the walk never restarted'; END IF;
+    v := public.heal_wmc_player_names_from_catalog(p_limit);
+    t := t + coalesce((v->>'rewrites')::int, 0);
+    EXIT WHEN (v->>'pass_restarted')::boolean IS TRUE;
+  END LOOP;
+  RETURN t;
+END $$;
 
 -- >>> BEGIN verbatim heal_wmc_player_names_from_catalog (keep byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.heal_wmc_player_names_from_catalog(p_limit integer DEFAULT 50000)
@@ -29,21 +56,69 @@ SECURITY DEFINER
 SET search_path TO 'public', 'pg_temp'
 AS $function$
 DECLARE
-  v_started timestamptz := clock_timestamp();
-  v_pin     constant uuid := '7dd9dd11-e8b6-45c4-ac99-71331f959714';
-  v_n       int := 0;
+  v_started    timestamptz := clock_timestamp();
+  v_pin        constant uuid := '7dd9dd11-e8b6-45c4-ac99-71331f959714';
+  v_row_budget constant integer := 20000;
+  v_cap        integer := greatest(coalesce(p_limit, 50000), 0);
+  v_from_key   text;
+  v_from_coll  uuid;
+  v_keys       text[];
+  v_colls      uuid[];
+  v_rows_seen  bigint;
+  v_n          int := 0;
 BEGIN
-  WITH cand AS (
+  SELECT last_key, last_coll INTO v_from_key, v_from_coll
+    FROM public.wmc_player_name_heal_cursor WHERE id = 1 FOR UPDATE;
+  IF NOT FOUND THEN
+    INSERT INTO public.wmc_player_name_heal_cursor (id) VALUES (1);
+    v_from_key := ''; v_from_coll := NULL;
+  END IF;
+
+  -- The next keys in (external_id, collection_id) order, taken while the running wmc row count
+  -- stays under the budget. The first key is always taken, however many rows it holds.
+  SELECT array_agg(k ORDER BY k, c), array_agg(c ORDER BY k, c), max(cum)
+    INTO v_keys, v_colls, v_rows_seen
+    FROM (
+      SELECT k, c, n, sum(n) OVER (ORDER BY k, c) AS cum
+        FROM (
+          SELECT e.external_id::text AS k, e.collection_id AS c,
+                 (SELECT count(*) FROM public.wallet_moments_cache w
+                   WHERE w.collection_id = e.collection_id AND w.edition_key = e.external_id) AS n
+            FROM public.editions e
+            JOIN public.players p ON p.id = e.player_id AND p.collection_id = e.collection_id
+           WHERE e.collection_id <> v_pin
+             AND p.name IS NOT NULL AND btrim(p.name) <> ''
+             AND (v_from_coll IS NULL AND e.external_id::text > v_from_key
+                  OR (e.external_id::text, e.collection_id) > (v_from_key, v_from_coll))
+           ORDER BY e.external_id, e.collection_id
+           LIMIT 500
+        ) a
+    ) q
+   WHERE q.cum - q.n < v_row_budget;
+
+  IF v_keys IS NULL THEN
+    -- End of a pass: start again from the top on the next call.
+    UPDATE public.wmc_player_name_heal_cursor
+       SET last_key = '', last_coll = NULL, passes = passes + 1, updated_at = now()
+     WHERE id = 1;
+    PERFORM public.log_pipeline_run(
+      'wmc-player-names-follow-catalog', v_started,
+      0, 0, 0,
+      true, NULL, NULL, v_from_key, '',
+      jsonb_build_object('rewrites', 0, 'target', 'linked_person', 'limit', p_limit, 'pass_restarted', true));
+    RETURN jsonb_build_object('ok', true, 'rewrites', 0, 'pass_restarted', true);
+  END IF;
+
+  WITH k AS (
+    SELECT unnest(v_keys) AS k, unnest(v_colls) AS c
+  ), cand AS (
     SELECT w.id, p.name AS person_name
-      FROM public.wallet_moments_cache w
-      JOIN public.editions e
-        ON e.collection_id = w.collection_id AND e.external_id = w.edition_key
-      JOIN public.players p
-        ON p.id = e.player_id AND p.collection_id = w.collection_id
-     WHERE w.collection_id <> v_pin
-       AND p.name IS NOT NULL AND btrim(p.name) <> ''
-       AND w.player_name IS DISTINCT FROM p.name
-     LIMIT greatest(coalesce(p_limit, 50000), 0)
+      FROM k
+      JOIN public.editions e ON e.external_id = k.k AND e.collection_id = k.c
+      JOIN public.players p ON p.id = e.player_id AND p.collection_id = e.collection_id
+      JOIN public.wallet_moments_cache w ON w.collection_id = k.c AND w.edition_key = k.k
+     WHERE w.player_name IS DISTINCT FROM p.name
+     LIMIT v_cap
   ), upd AS (
     UPDATE public.wallet_moments_cache w
        SET player_name = c.person_name
@@ -53,14 +128,26 @@ BEGIN
   )
   SELECT count(*) INTO v_n FROM upd;
 
+  -- A call that hit p_limit leaves the cursor where it was: the same keys are re-read next call
+  -- and finished. Otherwise the cursor moves past the last key read.
+  IF v_n < v_cap THEN
+    UPDATE public.wmc_player_name_heal_cursor
+       SET last_key = v_keys[array_length(v_keys, 1)],
+           last_coll = v_colls[array_length(v_colls, 1)],
+           updated_at = now()
+     WHERE id = 1;
+  END IF;
+
   -- rows_written = rows actually updated (RETURNING), never the candidate count.
   PERFORM public.log_pipeline_run(
     'wmc-player-names-follow-catalog', v_started,
     v_n, v_n, 0,
-    true, NULL, NULL, NULL, NULL,
-    jsonb_build_object('rewrites', v_n, 'target', 'linked_person', 'limit', p_limit));
+    true, NULL, NULL, v_from_key, v_keys[array_length(v_keys, 1)],
+    jsonb_build_object('rewrites', v_n, 'target', 'linked_person', 'limit', p_limit,
+                       'keys', array_length(v_keys, 1), 'rows_read', v_rows_seen,
+                       'capped', v_n >= v_cap));
 
-  RETURN jsonb_build_object('ok', true, 'rewrites', v_n);
+  RETURN jsonb_build_object('ok', true, 'rewrites', v_n, 'keys', array_length(v_keys, 1));
 END
 $function$;
 -- <<< END verbatim heal_wmc_player_names_from_catalog <<<
@@ -96,13 +183,18 @@ INSERT INTO public.wallet_moments_cache (collection_id, edition_key, player_name
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '1:2', 'Jimmy Butler III');                   -- already right: not a candidate
 
 DO $$
-DECLARE v jsonb;
+DECLARE v jsonb; c record;
 BEGIN
+  -- A capped call writes p_limit rows and leaves the cursor where it was.
   v := public.heal_wmc_player_names_from_catalog(1);
   PERFORM _assert_eq(v->>'rewrites', '1', 'p_limit 1 writes one row');
+  SELECT * INTO c FROM public.wmc_player_name_heal_cursor WHERE id = 1;
+  PERFORM _assert(c.last_key = '' AND c.last_coll IS NULL, '⚠ a CAPPED call does not advance the cursor');
 
-  v := public.heal_wmc_player_names_from_catalog(50000);
-  PERFORM _assert_eq(v->>'rewrites', '5', 'the remaining five rewrites');
+  PERFORM _assert_eq(pg_temp.drain(50000)::text, '5', 'the rest of the pass rewrites the remaining five');
+  SELECT * INTO c FROM public.wmc_player_name_heal_cursor WHERE id = 1;
+  PERFORM _assert(c.passes = 1 AND c.last_key = '' AND c.last_coll IS NULL, 'a finished pass resets the cursor and counts the pass');
+
   PERFORM _assert((SELECT count(*) = 2 FROM public.wallet_moments_cache WHERE collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd' AND player_name = 'Nic Claxton'),
                   'an old spelling takes the person''s name (both rows)');
   PERFORM _assert((SELECT count(*) = 2 FROM public.wallet_moments_cache WHERE edition_key = '1:2' AND player_name = 'Jimmy Butler III'),
@@ -115,10 +207,11 @@ BEGIN
   PERFORM _assert((SELECT player_name = 'Cross Link' FROM public.wallet_moments_cache WHERE edition_key = '1:5'), 'a link into another collection is ignored');
   PERFORM _assert((SELECT player_name = 'Nicolas Claxton' FROM public.wallet_moments_cache WHERE collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070' AND edition_key = '1:1'),
                   'an edition_key matches only WITHIN its collection');
-  PERFORM _assert((SELECT rows_written = 5 AND ok FROM public.pipeline_runs_stub ORDER BY ctid DESC LIMIT 1), 'the run log counts rows WRITTEN');
+  PERFORM _assert((SELECT bool_and(ok) FROM public.pipeline_runs_stub), 'every call logged ok');
+  PERFORM _assert((SELECT sum(rows_written) = 6 FROM public.pipeline_runs_stub), 'the run log counts rows WRITTEN (1 + 5)');
 
-  v := public.heal_wmc_player_names_from_catalog(50000);
-  PERFORM _assert_eq(v->>'rewrites', '0', 'a second run writes nothing');
+  PERFORM _assert_eq(pg_temp.drain(50000)::text, '0', 'a second pass writes nothing');
+  PERFORM _assert((SELECT passes = 2 FROM public.wmc_player_name_heal_cursor WHERE id = 1), 'the second pass is counted');
 END $$;
 
 ROLLBACK;

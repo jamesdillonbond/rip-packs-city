@@ -1697,7 +1697,9 @@ const PINS = [
     fn: "heal_wmc_player_names_from_catalog",
     test: "supabase/tests/heal_wmc_player_names_from_catalog.sql",
     // Re-pinned 2026-11-08 (second pass): the target is the LINKED PERSON, not the edition label.
-    migration: "supabase/migrations/20261108191632_audit_20261108_wmc_player_names_follow_the_linked_person.sql",
+    // Re-pinned 2026-11-09: one call walks a bounded slice behind a cursor (the whole-table scan
+    // timed out once the Candy census grew wmc to 3.6M rows).
+    migration: "supabase/migrations/20261110000023_audit_20261109_wmc_player_names_heal_walks_a_bounded_slice.sql",
   },
   {
     fn: "upsert_player_canonical",
