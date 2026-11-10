@@ -128,6 +128,10 @@ function collectionOf(asset: DasAsset): string {
 export function editionGroupKey(asset: DasAsset): string {
   const name = asset.content?.metadata?.name ?? ""
   const m = name.match(SERIAL_IN_NAME)
+  // 2026-11-09: an "(n/1)" card is a 1-of-1 — no other card shares its JSON. Grouped by its
+  // (32-char cut) name, different 1/1s ("2022 Tricon Hendriks McClanah…") would share ONE
+  // fetched image and traits. Fetched alone.
+  if (m && m[3] === "1") return `solo|${asset.id}`
   if (m) return `${collectionOf(asset)}|${m[1].trim().toLowerCase()}|${m[3]}`
   const t = name.match(TRAILING_SERIAL)
   if (t) return `${collectionOf(asset)}|t:${t[1].trim().toLowerCase()}`

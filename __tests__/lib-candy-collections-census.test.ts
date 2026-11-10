@@ -200,6 +200,30 @@ describe("runCollectionsCensus", () => {
     expect(r.cards).toBe(1)
   })
 
+  // 2026-11-09: a name-keyed 1/1 edition merged different cards (Tricons; Bat Cowl 4,404).
+  it("⚠ NO REUSE of a 1-of-1 edition that is not this card's own key — the card is fetched and re-keyed", async () => {
+    state.queue = [{ address: "A", name: "A", census_page: 1, census_cursor: null, census_walk_started_at: null }]
+    state.pages.A = [[{ id: "m1", owner: "W", ed: "merged", realEd: "own", bare: true }]]
+    state.existingWmc = [{ moment_id: "m1", wallet_address: "W", edition_key: "ed-merged", serial_number: 1 }]
+    state.existingEds = [{ external_id: "ed-merged", tier: null, player_name: null, team_name: null, set_name: "Tricons", circulation_count: 1, thumbnail_url: "https://img" }]
+    const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+    expect(r.ok).toBe(true)
+    expect(r.hydrated_reused).toBe(0)
+    expect(state.hydrateCalls.flat().map((a) => a.id)).toEqual(["m1"])
+    const overwrite = state.wmcUpserts.find((u) => u.opts.ignoreDuplicates === false)!
+    expect(overwrite.rows[0]).toMatchObject({ moment_id: "m1", edition_key: "ed-own" })
+  })
+
+  it("a 1-of-1 edition that IS this card's own key is still reused, with no fetch", async () => {
+    state.queue = [{ address: "A", name: "A", census_page: 1, census_cursor: null, census_walk_started_at: null }]
+    state.pages.A = [[{ id: "m1234567890123", owner: "W", ed: "x", bare: true }]]
+    state.existingWmc = [{ moment_id: "m1234567890123", wallet_address: "W", edition_key: "ed-tricon-m12345678901", serial_number: 1 }]
+    state.existingEds = [{ external_id: "ed-tricon-m12345678901", tier: null, player_name: null, team_name: null, set_name: "Tricons", circulation_count: 1, thumbnail_url: "https://img" }]
+    const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+    expect(r.hydrated_reused).toBe(1)
+    expect(state.hydrateCalls).toEqual([])
+  })
+
   it("FETCH + REPOINT: an unhydrated card on a FABRICATED edition is fetched and its row overwritten", async () => {
     state.queue = [{ address: "A", name: "A", census_page: 1, census_cursor: null, census_walk_started_at: null }]
     state.pages.A = [[{ id: "m1", owner: "W", ed: "name-only", realEd: "real", bare: true }]]

@@ -125,6 +125,18 @@ describe("unhydrated Candy assets", () => {
     expect(new Set([...byId.values()].map((x) => normalizeEdition(x).external_id))).toEqual(new Set(["c:2022-leadoff-icons:phil-bickford-core"]))
   })
 
+  // 2026-11-09: "(n/1)" cards are 1-of-1s — their names are cut at 32 chars, so a shared group
+  // would copy ONE card's image and traits onto different cards.
+  it("⚠ two 1/1 cards with the same cut name are NEVER grouped — each is fetched alone", async () => {
+    const a = card("x1", "2022 Tricon Hendriks McClanah (1/1)"), b = card("x2", "2022 Tricon Hendriks McClanah (1/1)")
+    expect(editionGroupKey(a)).not.toBe(editionGroupKey(b))
+    let n = 0
+    const f = (async () => { n++; return new Response(JSON.stringify(offChain), { status: 200 }) }) as unknown as typeof fetch
+    const r = await hydrateFromJsonUri([a, b], { fetchImpl: f })
+    expect(n).toBe(2)
+    expect(r.hydrated).toHaveLength(2)
+  })
+
   it("a different edition size, another player, or a name without (n/m) is a separate fetch", async () => {
     const a = card("a", "Phil Bickford (376/850)"), rare = card("r", "Phil Bickford (3/50)"), other = card("o", "Josh VanMeter (1/850)"), solo = card("s", "Phil Bickford")
     expect(new Set([a, rare, other, solo].map(editionGroupKey)).size).toBe(4)

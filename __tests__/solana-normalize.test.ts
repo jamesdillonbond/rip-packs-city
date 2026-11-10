@@ -371,6 +371,40 @@ describe("registered Candy collections (candy_collections)", () => {
   })
 })
 
+// 2026-11-09 — a 1-of-1 card is its own edition. Keyed by its 32-char-cut name, three
+// different "2022 Tricon Hendriks McClanah…" cards (each "1/1") were ONE edition, and The
+// Bat Cowl Collection (every card "1/1") collapsed into one edition of 4,404 cards; both
+// were published as single 1-of-1 trophies.
+describe("1-of-1 Candy cards are keyed by their own asset", () => {
+  it("⚠ two different 1/1 cards with the same cut name are different editions; one card keys stably", async () => {
+    const { registerCandySets } = await import("@/lib/chains/solana/candy-sets")
+    const TRICONS = "TriConsCollectionAddr1111111111111111111111"
+    registerCandySets([
+      { key: "c:2022-all-star-tricons", name: "2022 All-Star Tricons", setId: "33333333-3333-5333-8333-333333333333", collectionAddress: TRICONS, meSymbol: "", editionKeyPrefix: "c:2022-all-star-tricons", writesPacks: false },
+    ])
+    const tri = (id: string) => asset({
+      id, grouping: [{ group_key: "collection", group_value: TRICONS }], ownership: { owner: "W" },
+      content: { metadata: { name: "2022 Tricon Hendriks McClanah", attributes: [{ trait_type: "Serial Number", value: "1/1" }] } },
+    })
+    const a = tri("J8trGBmsLPPr7qJTxM6Qjx9FgUo6T7wvNF6tW7FPi41V"), b = tri("9PokWBnGjxzFADNrWt2L6dAhXZX5LYc4NbkBdWTAoDGk")
+    expect(editionKeyFromAsset(a)).toBe("c:2022-all-star-tricons:2022-tricon-hendriks-mcclanah-J8trGBmsLPPr")
+    expect(editionKeyFromAsset(b)).not.toBe(editionKeyFromAsset(a))
+    expect(editionKeyFromAsset(tri("J8trGBmsLPPr7qJTxM6Qjx9FgUo6T7wvNF6tW7FPi41V"))).toBe(editionKeyFromAsset(a))
+    expect(normalizeEdition(a).circulation_count).toBe(1)
+  })
+
+  it("a card of a larger edition is untouched, and the Base Series (no prefix) is never re-keyed", () => {
+    const ASG = "YTAPbbkLY6cqskMCtBfQXtN1x1a8smiKiM99svzQAvX"
+    const BASE = "JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n"
+    const g = (addr: string, name: string, serial: string) => asset({
+      id: "mint-z", grouping: [{ group_key: "collection", group_value: addr }], ownership: { owner: "W" },
+      content: { metadata: { name, attributes: [{ trait_type: "Rarity", value: "RARE" }, { trait_type: "Serial Number", value: serial }] } },
+    })
+    expect(editionKeyFromAsset(g(ASG, "Shohei Ohtani (17/50)", "17/50"))).toBe("asg26:shohei-ohtani-rare")
+    expect(editionKeyFromAsset(g(BASE, "Shohei Ohtani (1/1)", "1/1"))).toBe("shohei-ohtani")
+  })
+})
+
 describe("fitEditionKey — editions.external_id is varchar(100)", () => {
   it("leaves a key that fits untouched and shortens a long one to exactly 100, stably and uniquely", async () => {
     const { fitEditionKey } = await import("@/lib/chains/solana/normalize")

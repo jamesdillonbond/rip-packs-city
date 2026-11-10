@@ -172,7 +172,14 @@ export function editionKeyFromAsset(asset: DasAsset): string {
   const set = candySetForAsset(asset)
   if (set?.editionKeyPrefix) {
     const rarity = (attr(asset, "Rarity") ?? "").toLowerCase().replace(/[^a-z0-9]/g, "")
-    return fitEditionKey(`${set.editionKeyPrefix}:${slug || asset.id}${rarity ? `-${rarity}` : ""}`)
+    // 2026-11-09 — A 1-of-1 card IS its own edition, so it is keyed by its own asset id.
+    // Keyed by name alone, different 1/1s merged: the on-chain name is cut at 32 chars, so
+    // "2022 Tricon Hendriks McClanah…" was ONE edition holding 3 different cards (180 such
+    // Tricons editions, up to 4 cards each), and a whole collection whose every card is
+    // "1/1" collapsed into one edition (The Bat Cowl Collection: 4,404 cards). Those were
+    // published as single 1-of-1 trophies. Base Series keys (no prefix) are untouched.
+    const oneOfOne = editionSizeFromAsset(asset) === 1 ? `-${asset.id.slice(0, 12)}` : ""
+    return fitEditionKey(`${set.editionKeyPrefix}:${slug || asset.id}${rarity ? `-${rarity}` : ""}${oneOfOne}`)
   }
   return slug || asset.id
 }

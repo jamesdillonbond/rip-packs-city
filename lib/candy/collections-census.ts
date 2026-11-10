@@ -222,7 +222,14 @@ export async function runCollectionsCensus(
       const ready: DasAsset[] = []
       for (const a of items) {
         if (!isUnhydrated(a) || isBurnt(a)) { ready.push(a); continue }
-        const known = (ex.rows.get(a.id) ?? []).find((r) => ex.complete.has(r.edition_key))
+        // 2026-11-09: a 1-of-1 edition is reusable only when it is THIS card's own (keyed by
+        // its asset id, lib/chains/solana/normalize.ts). A name-keyed 1/1 merged different cards
+        // (2022 All-Star Tricons; The Bat Cowl Collection), so reusing it would pin the card to
+        // the wrong edition forever: fetch instead, and the card is re-keyed and repointed.
+        const known = (ex.rows.get(a.id) ?? []).find((r) => {
+          const ed = ex.complete.get(r.edition_key)
+          return !!ed && !(ed.circulation_count === 1 && !r.edition_key.endsWith(`-${a.id.slice(0, 12)}`))
+        })
         if (known) reused.push({ asset: a, ed: ex.complete.get(known.edition_key)!, serial: known.serial })
         else toFetch.push(a)
       }
