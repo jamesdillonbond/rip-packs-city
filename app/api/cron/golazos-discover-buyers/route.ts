@@ -59,6 +59,7 @@
 // what made /api/cron/pinnacle-sync 401 on every tick for months.
 
 import { NextRequest, NextResponse, after } from "next/server"
+import { CANONICAL_ORIGIN } from "@/lib/canonical-origin"
 import { supabaseAdmin } from "@/lib/supabase"
 import { bearerMatches } from "@/lib/auth/bearer-secret"
 import {
@@ -117,7 +118,9 @@ function handle(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const origin = new URL(req.url).origin
+  // ⚠ Not new URL(req.url).origin: Vercel Cron arrives on the SSO-protected deployment url and a
+  // POST back to it is a Vercel 401 (lib/canonical-origin.ts).
+  const origin = CANONICAL_ORIGIN
   const startedAtIso = new Date().toISOString()
 
   after(async () => {

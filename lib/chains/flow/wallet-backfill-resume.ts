@@ -14,6 +14,7 @@
 // the drain not-ok, and every count means rows actually written/deleted.
 
 import { dispatchContinuation, type ContinuationDispatch } from "@/lib/chains/flow/wallet-backfill-continuation"
+import { CANONICAL_ORIGIN } from "@/lib/canonical-origin"
 
 export const RESUME_TABLE = "wallet_backfill_resume_queue"
 /**
@@ -23,7 +24,7 @@ export const RESUME_TABLE = "wallet_backfill_resume_queue"
  * by Vercel before our route runs — every resume 401'd from 1:23 PM PT 11-10 (3 wallets requeued).
  * The canonical domain is unprotected and is where cron-job.org reaches the walk itself.
  */
-export const RESUME_DISPATCH_ORIGIN = "https://www.rippackscity.com"
+export const RESUME_DISPATCH_ORIGIN = CANONICAL_ORIGIN
 /** a queued row is retried at most this many times by the cron, then dropped (and named in the run log) */
 export const MAX_RESUME_ATTEMPTS = 5
 /** rows per cron tick — each dispatch waits up to ~17 s (two 8 s attempts) */
