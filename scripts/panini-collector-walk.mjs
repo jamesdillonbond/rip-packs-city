@@ -699,7 +699,7 @@ async function main() {
   try {
     for (const [i, nickname] of targets.entries()) {
       if (!mayStartWalk(runStartedMs, Date.now(), budgetMin)) {
-        log(`budget of ${budgetMin} min reached — not starting: ${targets.slice(i).join(", ")} (the rotation picks them up next run)`)
+        log(`budget of ${budgetMin} min reached — not starting: ${targets.slice(i).join(", ")} (the plan puts the least recently walked first, so they lead the next run)`)
         break
       }
       const walkStartedAt = new Date().toISOString()
