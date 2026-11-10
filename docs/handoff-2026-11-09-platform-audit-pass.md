@@ -76,3 +76,10 @@
 8. **[P3, Trevor, new] The collection label "Candy MLB"** now sits over DC, Netflix, NASCAR and college-football pages (e.g. `/candy-mlb/team/university-of-maryland`, a "TEAM" page for a college). Renaming the label (the slug can stay) touches titles, the registry and many pinned tests; not done at midnight.
 9. **[P4, Trevor] Two spent scheduled tasks could not be deleted from this session** ("Dapper + Flowty recovery check", "R133: retire ?token= admin arms") — the session's permission check refused those two; five others were deleted.
 10. **[P4, Claude Code] `/trades` lists cancelled rooms with an "Open →" link and no way to clear them** (two cancelled, empty rooms on Trevor's list). Cosmetic.
+
+### Post-deploy verification (11:48 PM – 11:58 PM PT)
+
+- Live, by request: Terms (Magic Eden present, Flowty absent), Candy ticker, Email settings copy, and the concierge answering both new questions correctly from Trevor's signed-in session.
+- The stale-priced caption renders on `/nba-top-shot/collection` for his wallet (headless, anonymous: Wallet FMV $52,274.62 · Unlocked $2,981.10 · Locked $54,437.02 · "locked + unlocked include the stale-priced").
+- ⚠ **The cost-basis count was NOT seen on the rendered page.** It is an owner-only strip, and by 11:50 PM Trevor's Chrome had stopped painting (`requestAnimationFrame` did not fire in 4 s; display asleep), so every streamed Suspense page stayed on "Loading…" there — on Top Shot and All Day alike, which is what ruled out a regression. What was verified instead: `/api/wallet-summary` returns `moments_with_cost: 6628` for his wallet from his session, and the unit tests pin the count to that field. Worth one look at the Collection tab when he is next on the site: it should read "6,628 moments with a known cost".
+- Small thing seen on the way: for the first ~3 s of an anonymous load the Locked FMV tile reads "n/a for this collection" on Top Shot before the summary arrives. Cosmetic, not fixed.
