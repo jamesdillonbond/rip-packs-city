@@ -13,6 +13,7 @@ import {
   PAGE_SIZE,
   UNOPENED_PACKS_URL,
   answerIsFor,
+  namesNoUser,
   collectionDetailsUrl,
   profileUrlCandidates,
   readClubPacks,
@@ -286,5 +287,22 @@ describe("ingestPayloads", () => {
     expect(parts).toHaveLength(3)
     expect(parts.map((p) => p.complete)).toEqual([false, false, false])
     for (const p of parts) expect(p.error).toMatch(/retires nothing/)
+  })
+})
+
+// #244 (2026-11-09): the owner’s own profile page sends collectionList with NO nickname; the
+// walk credits such an answer only when the signed-in account IS the walked username.
+describe("namesNoUser — an answer for the signed-in viewer, never for a named other user", () => {
+  const body = (query: string, variables?: unknown) => JSON.stringify({ query, variables })
+  it("a query naming no user at all is the viewer’s own", () => {
+    expect(namesNoUser(body("query collectionList { collectionList(p:1,l:30,sport:\"All\") { total } }", {}))).toBe(true)
+  })
+  it("any nickname or full_name — even empty — is NOT unnamed (stays on answerIsFor)", () => {
+    expect(namesNoUser(body("query collectionList { collectionList(nickname:\"blazers\") { total } }"))).toBe(false)
+    expect(namesNoUser(body("query userCollectedNftsV2 { userCollectedNftsV2(nickname:\"\") { x } }"))).toBe(false)
+    expect(namesNoUser(body("query q { q { x } }", { full_name: "crottykid" }))).toBe(false)
+  })
+  it("an unparseable body is not credited", () => {
+    expect(namesNoUser("not json")).toBe(false)
   })
 })

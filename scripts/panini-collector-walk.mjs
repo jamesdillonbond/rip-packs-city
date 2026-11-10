@@ -178,6 +178,24 @@ export function answerIsFor(postData, nickname) {
   return false
 }
 
+/**
+ * True when a GraphQL request names NO user at all (no nickname / full_name anywhere in its
+ * query or variables) — Panini then answers for the SIGNED-IN viewer.
+ * ⛔ 2026-11-09 (#244): since ~9:28 PM PT 11-08 the owner’s own profile page sends
+ * collectionList WITHOUT the nickname (Panini’s new "View options" release), so every walk of
+ * the runner’s own account dropped its list as a foreign answer ("no collection list").
+ * Such an answer is credited only when the signed-in account IS the walked username.
+ */
+export function namesNoUser(postData) {
+  try {
+    const b = JSON.parse(postData || "{}")
+    const q = (typeof b.query === "string" ? b.query : "") + " " + (b.variables && typeof b.variables === "object" ? JSON.stringify(b.variables) : "")
+    return !/nickname|full_name/i.test(q)
+  } catch {
+    return false
+  }
+}
+
 /** "a, b;c" -> ["a","b","c"] (valid usernames, first spelling of each folded name kept). */
 export function parseTargets(raw) {
   const out = []
@@ -407,6 +425,9 @@ async function walkProfile(ctx, nickname, { maxPages, log, capMin = null }) {
   const shortfalls = []
   let error = null
 
+  // Answers that name no user, held until the signed-in viewer is known (namesNoUser).
+  const unnamed = []
+  const isSelf = () => signedIn != null && signedIn.toLowerCase() === nickname.toLowerCase()
   page.on("response", async (r) => {
     const op = operationOf(r.url(), r.request().postData())
     if (!op) return
@@ -420,10 +441,20 @@ async function walkProfile(ctx, nickname, { maxPages, log, capMin = null }) {
       return
     }
     if ((op === "userCollectedNftsV2" || op === "collectionList" || op === "UnopenedPacksStats") && !answerIsFor(r.request().postData(), nickname)) {
-      foreign += 1
-      if (foreign <= 3) log(`  ${nickname}: ignored a ${op} answer whose request does not name ${nickname}`)
-      return
+      if (namesNoUser(r.request().postData()) && signedIn == null) {
+        unnamed.push([op, json])
+        return
+      }
+      if (!(namesNoUser(r.request().postData()) && isSelf())) {
+        foreign += 1
+        if (foreign <= 3) log(`  ${nickname}: ignored a ${op} answer whose request does not name ${nickname}`)
+        return
+      }
     }
+    handle(op, json)
+  })
+
+  function handle(op, json) {
     if (op === "collectionList") {
       const got = readCollectionList(json)
       if (!got.collections) {
@@ -461,10 +492,20 @@ async function walkProfile(ctx, nickname, { maxPages, log, capMin = null }) {
     } else if (op === "profileInfo") {
       signedIn = signedInNickname(json) ?? signedIn
       if (!profileInfo) profileInfo = json
+      if (signedIn != null && unnamed.length) {
+        const held = unnamed.splice(0)
+        for (const [hop, hjson] of held) {
+          if (isSelf()) handle(hop, hjson)
+          else {
+            foreign += 1
+            if (foreign <= 3) log(`  ${nickname}: ignored a ${hop} answer whose request does not name ${nickname} (signed in as ${signedIn})`)
+          }
+        }
+      }
     } else if (op === "bcProfileInfo") {
       profileInfo = json
     }
-  })
+  }
 
   const nextAnswer = (kind, ms) =>
     new Promise((resolve) => {
