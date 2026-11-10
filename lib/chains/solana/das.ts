@@ -352,6 +352,50 @@ export async function solUsdOn(atMs: number | null | undefined): Promise<number 
 // any failure returns 0 and changes nothing.
 const DAY_MS = 86_400_000
 
+// ── Prime the per-day cache from public.sol_usd_daily (DB egress) ───────────
+// 2026-11-10: CoinGecko's /history and /market_chart/range both FAIL from Vercel's
+// egress (sol_days_primed = 0 on every drain; 2,528 Candy sales parked no_sol_rate
+// from 08-16). The same range call from the DATABASE's egress answers, so a pg_cron
+// tick (sol_usd_daily_tick) stores the 00:00 UTC point per day — the exact basis
+// /history serves (see primeSolUsdHistory) — and this loads it before any CoinGecko
+// call. Never today (no settled close; spot policy). Fails SOFT: a failed read (or
+// the table not existing yet) primes nothing and returns the error, so the callers
+// fall back to CoinGecko exactly as before — never "no rate" from a read failure.
+export async function primeSolUsdFromTable(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  fromMs: number,
+  toMs: number = Date.now(),
+): Promise<{ primed: number; error: string | null }> {
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) return { primed: 0, error: null }
+  const todayStart = Math.floor(Date.now() / DAY_MS) * DAY_MS
+  const from = new Date(Math.floor(fromMs / DAY_MS) * DAY_MS).toISOString().slice(0, 10)
+  const toDay = Math.min(Math.floor(toMs / DAY_MS) * DAY_MS, todayStart - DAY_MS)
+  if (toDay < Math.floor(fromMs / DAY_MS) * DAY_MS) return { primed: 0, error: null }
+  const to = new Date(toDay).toISOString().slice(0, 10)
+  try {
+    const { data, error } = await db
+      .from("sol_usd_daily")
+      .select("day, usd")
+      .gte("day", from)
+      .lte("day", to)
+      .order("day", { ascending: true })
+      .limit(1000)
+    if (error) return { primed: 0, error: error.message ?? String(error) }
+    let primed = 0
+    for (const r of (data ?? []) as Array<{ day: string; usd: number | string }>) {
+      const usd = Number(r.usd)
+      if (!r.day || !(usd > 0) || solUsdDayCache.has(r.day)) continue
+      solUsdDayCache.set(r.day, usd)
+      solUsdDayMiss.delete(r.day)
+      primed++
+    }
+    return { primed, error: null }
+  } catch (e) {
+    return { primed: 0, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
 export async function primeSolUsdHistory(fromMs: number, toMs: number = Date.now()): Promise<number> {
   if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) return 0
   const todayStart = Math.floor(Date.now() / DAY_MS) * DAY_MS

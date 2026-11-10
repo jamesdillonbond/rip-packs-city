@@ -27,7 +27,7 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
-import { getAsset, primeSolUsdHistory, solUsd, solUsdOn } from "@/lib/chains/solana/das"
+import { getAsset, primeSolUsdFromTable, primeSolUsdHistory, solUsd, solUsdOn } from "@/lib/chains/solana/das"
 import {
   CANDY_MLB_ME_SYMBOL,
   CANDY_MLB_SLUG,
@@ -230,9 +230,20 @@ async function handleIndex(req: NextRequest) {
     let packSales = 0
     // Trade days primed into the SOL/USD day cache from one range call before the drain.
     let solDaysPrimed = 0
+    // Trade days primed from public.sol_usd_daily (DB egress), and that read's error if it failed.
+    let solDaysPrimedDb = 0
+    let solDbError: string | null = null
     let packWriteErrors = 0
     let cursorAfter: string | null = null
     try {
+      // 2026-11-10: CoinGecko history fails from this egress (sol_days_primed = 0 on every
+      // drain); the DB's daily table carries the same 00:00 UTC basis. One cheap read
+      // covers the live walk's past-day sales too. Fails soft (see primeSolUsdFromTable).
+      {
+        const p0 = await primeSolUsdFromTable(supabaseAdmin, Date.now() - 120 * 86_400_000)
+        solDaysPrimedDb += p0.primed
+        solDbError = p0.error
+      }
       // Incremental high-water mark: the most recent Candy sale we already have.
       // ⛔ SCOPED TO magic_eden (2026-10-10). /api/candy-opensea-sales-indexer
       // writes Candy sales too; an unscoped max(sold_at) would let a newer
@@ -721,6 +732,9 @@ async function handleIndex(req: NextRequest) {
         .map((r: { block_time?: string | null }) => (r.block_time ? new Date(r.block_time).getTime() : NaN))
         .filter((t: number) => Number.isFinite(t))
       if (owedTimes.length > 0) {
+        const pDb = await primeSolUsdFromTable(supabaseAdmin, Math.min(...owedTimes), Math.max(...owedTimes))
+        solDaysPrimedDb += pDb.primed
+        if (pDb.error) solDbError = pDb.error
         solDaysPrimed = await primeSolUsdHistory(Math.min(...owedTimes), Math.max(...owedTimes))
       }
       for (const r of owed ?? []) {
@@ -818,6 +832,8 @@ async function handleIndex(req: NextRequest) {
         parked: parked.length,
         pack_sales_seen: packSales,
         sol_days_primed: solDaysPrimed,
+        sol_days_primed_db: solDaysPrimedDb,
+        sol_db_error: solDbError,
         pack_sales_write_errors: packWriteErrors,
         drain_attempted: drainAttempted,
         drain_resolved: drainResolved,

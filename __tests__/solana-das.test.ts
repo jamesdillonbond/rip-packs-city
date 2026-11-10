@@ -396,3 +396,48 @@ describe("primeSolUsdHistory (one range call instead of one /history call per da
     expect(await das.primeSolUsdHistory(day0, day1)).toBe(0)
   })
 })
+
+describe("primeSolUsdFromTable (2026-11-10: CoinGecko history fails from Vercel's egress; the DB's daily table carries the same basis)", () => {
+  const DAY = 86_400_000
+  const day0 = Date.UTC(2026, 7, 16) // 2026-08-16
+  function db(rows: Array<{ day: string; usd: number | string }> | null, error: { message: string } | null = null) {
+    const calls: Array<[string, unknown]> = []
+    const b: Record<string, unknown> = {}
+    for (const m of ["select", "order", "limit"]) b[m] = (...a: unknown[]) => { calls.push([m, a[0]]); return b }
+    b.gte = (c: string, v: unknown) => { calls.push(["gte", v]); return b }
+    b.lte = (c: string, v: unknown) => { calls.push(["lte", v]); return b }
+    b.then = (ok: (v: unknown) => unknown) => Promise.resolve({ data: rows, error }).then(ok)
+    return { from: (t: string) => { calls.push(["from", t]); return b }, calls }
+  }
+
+  it("primes stored days, so a past-day sale prices from the table with no CoinGecko call", async () => {
+    const das = await load()
+    const d = db([{ day: "2026-08-16", usd: "75.27983398665542" }, { day: "2026-08-17", usd: 76 }])
+    expect(await das.primeSolUsdFromTable(d, day0, day0 + DAY)).toEqual({ primed: 2, error: null })
+    expect(d.calls).toContainEqual(["from", "sol_usd_daily"])
+    expect(await das.solUsdOnWithBasis(day0 + 5 * 3_600_000)).toEqual({ rate: 75.27983398665542, basis: "historical" })
+    expect(await das.solUsdOnWithBasis(day0 + DAY + 1)).toEqual({ rate: 76, basis: "historical" })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("never asks for today (no settled close)", async () => {
+    const das = await load()
+    const today = Math.floor(Date.now() / DAY) * DAY
+    const d = db([])
+    expect(await das.primeSolUsdFromTable(d, today, Date.now())).toEqual({ primed: 0, error: null })
+    expect(d.calls.length).toBe(0)
+  })
+
+  it("a failed read primes nothing and REPORTS the error, so the day falls back to its own CoinGecko call", async () => {
+    const das = await load()
+    const d = db(null, { message: 'relation "sol_usd_daily" does not exist' })
+    expect(await das.primeSolUsdFromTable(d, day0, day0 + DAY)).toEqual({ primed: 0, error: 'relation "sol_usd_daily" does not exist' })
+    fetchMock.mockResolvedValueOnce(okJson({ market_data: { current_price: { usd: 75.3 } } }))
+    expect(await das.solUsdOnWithBasis(day0 + 1)).toEqual({ rate: 75.3, basis: "historical" })
+  })
+
+  it("a non-positive stored value is never primed", async () => {
+    const das = await load()
+    expect(await das.primeSolUsdFromTable(db([{ day: "2026-08-16", usd: 0 }]), day0, day0 + DAY)).toEqual({ primed: 0, error: null })
+  })
+})

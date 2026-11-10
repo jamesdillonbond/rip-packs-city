@@ -36,6 +36,7 @@ vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: new Proxy({}, { get: (_t, prop) => (state.sb as Record<PropertyKey, unknown>)[prop] }),
 }))
 vi.mock("@/lib/chains/solana/das", () => ({
+  primeSolUsdFromTable: async () => ({ primed: 0, error: null }),
   solUsdOn: async () => state.rate,
   getAsset: async () => {
     if (!state.asset) throw new Error("das down")

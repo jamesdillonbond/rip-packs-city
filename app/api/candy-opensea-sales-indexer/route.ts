@@ -43,7 +43,7 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
-import { getAsset, solUsdOn } from "@/lib/chains/solana/das"
+import { getAsset, primeSolUsdFromTable, solUsdOn } from "@/lib/chains/solana/das"
 import {
   CANDY_MLB_SLUG,
   CANDY_MLB_UUID,
@@ -207,6 +207,9 @@ async function handleIndex(req: NextRequest) {
     let assetFetches = 0
     let meCeilingSec: number | null = null
     try {
+      // 2026-11-10: past-day SOL/USD from public.sol_usd_daily (DB egress) before any CoinGecko
+      // call; fails soft, so a missing table leaves the CoinGecko path exactly as before.
+      await primeSolUsdFromTable(supabaseAdmin, Date.now() - 120 * 86_400_000)
       const d = await discoverCandyOpenSeaSlug(supabaseAdmin, apiKey)
       slug = d.slug
       if (!slug) {
