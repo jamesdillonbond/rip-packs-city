@@ -18,6 +18,17 @@ import { requireUser } from "@/lib/auth/supabase-server"
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const sb: any = supabaseAdmin
 
+// #228 lever (b′) for this route, 2026-11-10 — the one /api/wallet-summary and /api/collection-snapshot took.
+// Two `RPC_READ_TIMEOUT` at the 8 s default (latest 11:49 AM PT 11-10, pack-summary and pack-history
+// together for one reader). pg_stat_statements holds PostgREST calls of `get_wallet_pack_summary` up to
+// 14.9 s (120 calls since 08-12, mean 2.2 s) that COMPLETED after this route had already answered 503 —
+// boundedRead abandons the wait, not the query — so the 8 s bound turned a slow success into an error.
+// 20 s sits under the service_role 30 s statement_timeout and this route's maxDuration, so a read that is
+// genuinely stuck is still reported by us as a retryable 503. Callers (PackHistoryClient, WalletPacksView)
+// carry no deadline of their own.
+export const PACK_SUMMARY_READ_BUDGET_MS = 20_000
+export const maxDuration = 30
+
 export async function GET(req: NextRequest) {
   let user
   try {
@@ -64,7 +75,7 @@ export async function GET(req: NextRequest) {
   try {
     const { data, error } = await boundedRead(sb.rpc("get_wallet_pack_summary", {
       p_wallet: wallet,
-    }), "api/wallet/pack-summary/get_wallet_pack_summary")
+    }), "api/wallet/pack-summary/get_wallet_pack_summary", PACK_SUMMARY_READ_BUDGET_MS)
     if (error) {
       console.error("[wallet/pack-summary]", error.message)
       return apiErrorResponse(error, "api/wallet/pack-summary");

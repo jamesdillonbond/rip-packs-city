@@ -31,6 +31,17 @@ const sb: any = supabaseAdmin
 // meaning for existing callers (app/dashboard/packs).
 const VALID_STATUSES = new Set(["ripped", "flipped", "sold", "sold_any", "held", "transferred", "other"])
 
+// #228 lever (b′) for this route, 2026-11-10 — the one /api/wallet-summary and /api/collection-snapshot took.
+// Two `RPC_READ_TIMEOUT` at the 8 s default (latest 11:49 AM PT 11-10, pack-summary and pack-history
+// together for one reader). pg_stat_statements holds PostgREST calls of `get_wallet_pack_history` up to
+// 17.9 s (230 calls since 08-12, mean 2.0 s) that COMPLETED after this route had already answered 503 —
+// boundedRead abandons the wait, not the query — so the 8 s bound turned a slow success into an error.
+// 20 s sits under the service_role 30 s statement_timeout and this route's maxDuration, so a read that is
+// genuinely stuck is still reported by us as a retryable 503. Callers (PackHistoryClient, WalletPacksView)
+// carry no deadline of their own.
+export const PACK_HISTORY_READ_BUDGET_MS = 20_000
+export const maxDuration = 30
+
 export async function GET(req: NextRequest) {
   let user
   try {
@@ -133,7 +144,7 @@ export async function GET(req: NextRequest) {
       p_status: status,
       p_limit: limit,
       p_offset: offset,
-    }), "api/wallet/pack-history/get_wallet_pack_history")
+    }), "api/wallet/pack-history/get_wallet_pack_history", PACK_HISTORY_READ_BUDGET_MS)
     if (error) {
       console.error("[wallet/pack-history]", error.message)
       return apiErrorResponse(error, "api/wallet/pack-history");

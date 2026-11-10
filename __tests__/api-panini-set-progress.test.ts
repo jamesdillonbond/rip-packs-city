@@ -14,8 +14,11 @@ const state: { rpc: Res; products: Res; coverage: Res } = {
   products: { data: [], error: null },
   coverage: { data: [], error: null },
 }
-// Args of the per-product SETS read only (panini_set_progress_all), with the product filter it applied.
+// Args of the per-product SETS read only (panini_set_progress_for_product since 2026-11-10), the
+// function it called, and any post-hoc filter applied to it (there must be none: a filter on a
+// non-inlinable SQL function runs AFTER every product was computed — inbox 2026-11-10T1910Z).
 const rpcArgs: unknown[] = []
+const rpcFns: string[] = []
 const productArgs: unknown[] = []
 const eqs: [string, unknown][] = []
 
@@ -34,6 +37,7 @@ vi.mock("@/lib/supabase", () => {
           return { then: (resolve: any) => resolve(state.products) }
         }
         rpcArgs.push(args)
+        rpcFns.push(fn)
         const q: any = {
           eq: (col: string, v: unknown) => {
             eqs.push([col, v])
@@ -63,6 +67,7 @@ const NFL = { product_set_id: 1940, product_name: "2023 Panini NFT Prizm Footbal
 
 beforeEach(() => {
   rpcArgs.length = 0
+  rpcFns.length = 0
   productArgs.length = 0
   eqs.length = 0
   state.rpc = { data: [ROW], error: null }
@@ -79,9 +84,11 @@ describe("GET /api/panini-set-progress", () => {
   it("serves every set with the cost split into priced + unpriced and the largest ask", async () => {
     const { status, json } = await body()
     expect(status).toBe(200)
-    expect(rpcArgs[0]).toEqual({ p_username: null })
-    // No product asked for and no username → the World Cup product, filtered in the read.
-    expect(eqs).toEqual([["product_set_id", 2332]])
+    // No product asked for and no username → the World Cup product, scoped INSIDE the read
+    // (an argument), never a filter on a function that already computed every product.
+    expect(rpcFns).toEqual(["panini_set_progress_for_product"])
+    expect(rpcArgs[0]).toEqual({ p_username: null, p_product_set_id: 2332 })
+    expect(eqs).toEqual([])
     expect(json.product).toMatchObject({ setId: 2332, sport: "Soccer" })
     expect(json.products.map((p: any) => p.setId)).toEqual([2332, 1940])
     expect(json.username).toBeNull()
@@ -93,10 +100,10 @@ describe("GET /api/panini-set-progress", () => {
     state.rpc = { data: [{ ...ROW, owned: 5, missing: 307, owner_last_seen_at: "2026-09-27 14:24:49+00" }], error: null }
     state.products = { data: [WC, { ...NFL, owned: 5, owner_last_seen_at: "2026-09-27 14:24:49+00" }], error: null }
     const { json } = await body("?username=@AdlCards")
-    expect(rpcArgs[0]).toEqual({ p_username: "adlcards" })
+    expect(rpcArgs[0]).toEqual({ p_username: "adlcards", p_product_set_id: 1940 })
     expect(productArgs[0]).toEqual({ p_username: "adlcards" })
     // With a username, the default product is the one RPC has seen them hold most of.
-    expect(eqs).toEqual([["product_set_id", 1940]])
+    expect(eqs).toEqual([])
     expect(json.userSeen).toBe(true)
     expect(json.userLastSeenAt).toBe("2026-09-27 14:24:49+00")
   })
@@ -132,7 +139,8 @@ describe("GET /api/panini-set-progress", () => {
   it("serves the product asked for, and only that product's sets", async () => {
     const { status, json } = await body("?product=1940")
     expect(status).toBe(200)
-    expect(eqs).toEqual([["product_set_id", 1940]])
+    expect(rpcArgs[0]).toEqual({ p_username: null, p_product_set_id: 1940 })
+    expect(eqs).toEqual([])
     expect(json.product.setId).toBe(1940)
   })
 

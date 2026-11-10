@@ -2,9 +2,11 @@
 //
 // Panini Sets tab backend (2026-09-27). Since 2026-10-10 it covers EVERY walked
 // Panini product, ONE PRODUCT PER READ (?product=<setId>): the sets of that product
-// from `panini_set_progress_all(p_username)` filtered on product_set_id, plus the
+// from `panini_set_progress_for_product(p_username, p_product_set_id)`, plus the
 // product picker from `panini_set_progress_products(p_username)` (migrations
-// 20261010223402 + 20261010223446). The all-product list is ~1,900 rows — past
+// 20261010223402 + 20261010223446; 20261110195805 scoped the sets read to the product
+// BEFORE the work — filtering `panini_set_progress_all` after it returned computed every
+// product's asks first and missed the 8 s read budget, inbox 2026-11-10T1910Z). The all-product list is ~1,900 rows — past
 // PostgREST's 1,000-row clamp — so it is never read whole: a clamped read would be a
 // silently PARTIAL list. Each read here is asserted to sit under the clamp.
 // Default product: with a username, the product RPC has seen them hold most of;
@@ -92,19 +94,19 @@ export async function GET(req: NextRequest) {
     let sets: NonNullable<ReturnType<typeof parsePaniniSetRow>>[] = []
     if (product) {
       const res = await boundedRead(
-        db.rpc("panini_set_progress_all", { p_username: username }).eq("product_set_id", product.setId),
+        db.rpc("panini_set_progress_for_product", { p_username: username, p_product_set_id: product.setId }),
         "panini-set-progress",
       )
       if (res.error) return apiErrorResponse(res.error, "api/panini-set-progress", FAIL)
       if (!Array.isArray(res.data) || res.data.length >= ROW_CLAMP) {
-        return apiErrorResponse(new Error("panini_set_progress_all returned a non-array or a clamped list"), "api/panini-set-progress", FAIL)
+        return apiErrorResponse(new Error("panini_set_progress_for_product returned a non-array or a clamped list"), "api/panini-set-progress", FAIL)
       }
       sets = (res.data as unknown[]).map(parsePaniniSetRow).filter((s): s is NonNullable<typeof s> => s !== null)
       // A malformed row is dropped by the parser; if ANY was, the list is not the
       // complete set list and must not be served as one.
       if (sets.length !== res.data.length) {
         return apiErrorResponse(
-          new Error(`panini_set_progress_all: ${res.data.length - sets.length} malformed row(s)`),
+          new Error(`panini_set_progress_for_product: ${res.data.length - sets.length} malformed row(s)`),
           "api/panini-set-progress",
           FAIL,
         )
@@ -112,7 +114,7 @@ export async function GET(req: NextRequest) {
       // The picker and the table come from the same function; a disagreement means one read is stale or partial.
       if (sets.length !== product.sets) {
         return apiErrorResponse(
-          new Error(`panini_set_progress_all: ${sets.length} sets vs ${product.sets} in the product summary`),
+          new Error(`panini_set_progress_for_product: ${sets.length} sets vs ${product.sets} in the product summary`),
           "api/panini-set-progress",
           FAIL,
         )
