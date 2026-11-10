@@ -80,3 +80,11 @@ Independent check on the three most affected All Day wallets, `get_wallet_summar
 - `aggregate_saved_wallet_stats` — re-run for the 4 affected saved wallets (17 rows): cached stale now equals the breakdown on every row.
 
 Pin `get_wallet_collection_snapshot.sql` +5 assertions (withdrawn $40 → staleFmv; never-priced not counted; old body red). Not touched (as filed): `get_ufc_set_progress`, `analytics_fmv_tier_pulse`, `get_platform_stats`, the checklist "cost to finish" laterals, Panini's own tables.
+
+## ↳ 11:10 AM PT — the "same shape, not examined" list, examined (Claude Code cloud): no other surface publishes a wrong number
+
+- `get_team_checklist` / `get_player_checklist` ("cost to finish"): the `fmv` lateral takes the NEWEST snapshot **including NULL** (`ORDER BY computed_at DESC LIMIT 1`, no `fmv_usd IS NOT NULL`), so a withdrawn edition already reads as no price. Not affected.
+- `get_platform_stats`: coverage counts editions whose newest snapshot is not `NO_DATA` — a withdrawn edition is already uncovered. Not affected.
+- `analytics_fmv_tier_pulse`: reads only prices computed in the last 24 h with a price; a withdrawal (a NULL newest snapshot) drops out. Not affected.
+- `get_ufc_set_progress`: latest NON-NULL price per edition for "estimated cost" — keeps the last price, which is the decision taken here (keep, don't zero); UFC has 0 withdrawn editions and a closed market. Left as is.
+- Panini (`panini_profile_holdings`): reads `edition_fmv_current.fmv_usd` directly, so its 70 withdrawn editions show no price and are in no total — stricter than wallets' "keep it, label it stale", but no wrong number. A deliberate difference, recorded; aligning it is a product choice (Panini owners are usernames, not wallets).
