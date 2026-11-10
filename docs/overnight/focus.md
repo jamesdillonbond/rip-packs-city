@@ -4,6 +4,12 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-11-10 4:45 AM PT (Claude Code cloud) — wallet-summary budget watch + one new lane finding
+
+- **`/api/wallet-summary` now waits 20 s (#228 b′).** Read Vercel for `RPC_READ_TIMEOUT` on this route: a hit now means a read past 20 s — read its `read_failed wallet=… elapsed_ms=…` line and that hour's wmc write volume before anything else. 0 hits for 30 days closes the arm.
+- **`wmc-fmv-stuck-resync` (hourly :33) deadlocks — 6 of 48 runs, `40P01`.** Harmless per run (full rollback, next hour retries) but it inflates the lane's failure rate. Only act if it climbs past ~1 in 4 or a whole PT day fails; the fix is ordered row locking in `resync_stuck_wmc_fmv` (3-file pin discipline).
+- `wmc-metadata-selfheal` post-fix run 11-10 = ok (39 s). `topshot-map-atlas-reconcile` (818, 4:47 AM PT 11-10) — read its 11-10 `pipeline_runs` row if not already recorded in the ledger.
+
 ## STEER — added 2026-11-09 9:15 PM PT (Claude Code cloud) — Candy name-only edition repair (#246): watch, do not "fix" the gate
 
 - **`edition_integrity_flags` is EXPECTED to stay in breach for ~1–2 days and fall.** Its bulk is 4,844 Candy name-only editions (DAS returned assets without metadata). The census repoints their cards (328,317 → 242,768 by 8:40 PM PT 11-09, ~5–11k per hourly run) and `candy_delete_orphan_name_only_editions` (pg_cron `:37`) deletes each once unheld. ⛔ Do NOT exclude them from the view or raise the 250 threshold.
