@@ -140,6 +140,8 @@ Read from the registry (`lib/collections.ts` `pages` / switches), the shared `[c
 - **10-21:** a set page is ONE `sets` row (product-scoped slug; #204).
 - **Product rules:** read-only; accuracy is the gate; no paid tier until 100 WAU; no infra spend before revenue.
 
+- **11-09 (signup-wave remediation):** `panini-1.4.2` — HIGH needs ≥ 3 sales in the 30-day feed, else MEDIUM; prices and the HIGH+MEDIUM gate share unchanged. Measured on 1.4.x HIGH vs the next sale since 10-24: 3+ in 30 d 59.6 % within ±25 % / WAPE 26.4 (n 3,504) vs thin HIGH ~47.6 % / WAPE 34–61 (n 635) vs MEDIUM 38.7 / 53.8. Kill switch `PANINI_FMV_ENGINE=1.4.0`. Every Panini FMV surface carries `lib/panini/fmv-source-note.ts` ("comes only from sales on Panini's own platform … a few days to reach RPC"); `panini_sales` is 100 % Panini-platform sale kinds.
+
 ## Needs Trevor
 
 - **`OPENSEA_API_KEY` (#58):** only Trevor can create the account and secret.
