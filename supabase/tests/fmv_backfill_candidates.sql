@@ -30,10 +30,13 @@
 -- those (441 ms). Same set, same FK dependency, so every assertion below is
 -- unchanged and still meaningful -- the CTE is exercised by each of them.
 --
+-- RE-PINNED 2026-11-10: the sales probe is a per-edition LATERAL ... LIMIT 1 (the EXISTS
+-- became a hash semi-join over all 7.55M sales rows once the unpriced set reached 21k).
+-- Same set, so every assertion below is unchanged.
+--
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261005001848_audit_20261004_fmv_backfill_candidates_materialize_unpriced_first.sql),
--- verified identical to the live prod definition by md5 of the
--- whitespace-normalised `prosrc` on 2026-10-04.
+-- (supabase/migrations/20261110173219_audit_20261110_fmv_backfill_candidates_probes_sales_per_edition.sql),
+-- verified against the live prod body by md5 of `prosrc` on 2026-11-10.
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -59,12 +62,18 @@ AS $$
         SELECT 1 FROM public.fmv_snapshots f WHERE f.edition_id = e.id
       )
   )
+  -- 2026-11-10: the sales probe is a per-edition LATERAL ... LIMIT 1, not EXISTS. With the
+  -- unpriced set at 21,326 (all Candy census editions) the planner turned EXISTS into a hash
+  -- semi-join over all 7.55M sales rows (2.9M buffers, 23 s idle; two 60 s timeouts) for an
+  -- answer of ZERO. A LATERAL with LIMIT 1 cannot be flattened into a join, so each unpriced
+  -- edition is one index probe per partition: 610k buffers / 1.6 s. Same set.
   SELECT u.id
   FROM unpriced u
-  WHERE EXISTS (
+  CROSS JOIN LATERAL (
       SELECT 1 FROM public.sales s
       WHERE s.edition_id = u.id AND s.price_usd > 0
-    )
+      LIMIT 1
+    ) has_sale
   LIMIT GREATEST(1, LEAST(p_limit, 500));
 $$;
 -- <<< END verbatim fmv_backfill_candidates <<<
