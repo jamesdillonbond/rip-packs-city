@@ -1590,7 +1590,9 @@ const PINS = [
     // re-pointed 2026-10-26: badgeCount adds Candy MLB's editions.badges designations (+1 assertion).
     // re-pointed 2026-11-03 (#228): aggregates from index-covered columns; display rows per edition key (+5 assertions).
     // re-pointed 2026-11-03 (#228 follow-up): conf reads only STALE rows (byte-identical over 34 wallets).
-    migration: "supabase/migrations/20261104042335_audit_20261103_collection_snapshot_reads_only_stale_confidence.sql",
+    // re-pointed 2026-11-10: a withdrawn price (current row, NULL price) still cached counts as stale (+5 assertions).
+    migration:
+      "supabase/migrations/20261110175500_audit_20261110_withdrawn_prices_in_wallets_count_as_stale.sql",
   },
   {
     fn: "get_pack_detail_bundle",

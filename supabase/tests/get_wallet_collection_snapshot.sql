@@ -42,7 +42,7 @@ CREATE TABLE public.collections (id uuid PRIMARY KEY, slug text, name text, mark
 -- 2026-09-04/06 (20260904045817, 20260906174634): the stale split reads each
 -- holding's CURRENT FMV confidence through editions → edition_fmv_current.
 CREATE TABLE public.editions (id uuid PRIMARY KEY, external_id text, collection_id uuid, badges text[]);
-CREATE TABLE public.edition_fmv_current (edition_id uuid, confidence text);
+CREATE TABLE public.edition_fmv_current (edition_id uuid, confidence text, fmv_usd numeric);
 CREATE TABLE public.collection_series (id int, collection_id uuid, series_number int, display_label text, season text);
 
 -- series_display_label: VERBATIM from production (pg_get_functiondef, 2026-09-25,
@@ -215,11 +215,14 @@ BEGIN
   -- so the LEFT JOIN cannot multiply rows — dropping the non-STALE rows changes no output. It
   -- replaces a full `editions` scan plus one edition_fmv_current probe per held edition
   -- (11.5k probes, ~52k buffers on a 63k-moment wallet) with the ~3k STALE rows (~14k).
+  -- 2026-11-10: and the rows whose price the engine WITHDREW (NULL price, ~1.8k): a moment
+  -- still cached at its last price on such an edition is stale, not part of the headline.
+  -- `withdrawn` is only read with w.fmv_usd IS NOT NULL (a never-priced moment stays out).
   conf AS (
-    SELECT e.external_id AS edition_key, e.collection_id, l.confidence
+    SELECT e.external_id AS edition_key, e.collection_id, l.confidence, (l.fmv_usd IS NULL) AS withdrawn
     FROM edition_fmv_current l
     JOIN editions e ON e.id = l.edition_id
-    WHERE l.confidence = 'STALE'
+    WHERE (l.confidence = 'STALE' OR l.fmv_usd IS NULL)
       AND (e.external_id, e.collection_id) IN (
         SELECT DISTINCT w.edition_key, w.collection_id FROM w WHERE w.edition_key IS NOT NULL
       )
@@ -236,8 +239,8 @@ BEGIN
                'fmv', round(COALESCE(sum(w.fmv_usd), 0)::numeric, 2),
                -- 2026-09-06: same basis as the headline (total − stale). The card
                -- printed NBA Top Shot $87,785 raw beside a $50,223 headline.
-               'stale_fmv', round(COALESCE(sum(w.fmv_usd) FILTER (WHERE l.confidence = 'STALE'), 0)::numeric, 2),
-               'stale_count', count(*) FILTER (WHERE l.confidence = 'STALE'),
+               'stale_fmv', round(COALESCE(sum(w.fmv_usd) FILTER (WHERE l.confidence = 'STALE' OR (l.withdrawn AND w.fmv_usd IS NOT NULL)), 0)::numeric, 2),
+               'stale_count', count(*) FILTER (WHERE l.confidence = 'STALE' OR (l.withdrawn AND w.fmv_usd IS NOT NULL)),
                'market_closed_at', c.market_closed_at
              ) AS pc
       FROM w JOIN collections c ON c.id = w.collection_id
@@ -259,7 +262,7 @@ BEGIN
       )::int AS stale_count
     FROM w
     JOIN conf l ON l.edition_key = w.edition_key AND l.collection_id = w.collection_id
-    WHERE l.confidence = 'STALE'
+    WHERE (l.confidence = 'STALE' OR (l.withdrawn AND w.fmv_usd IS NOT NULL))
   ),
   -- The rarest moment's sort key (smallest positive mint, FMV-desc tiebreak) is read
   -- from `w`; its display row is then fetched from that one edition.
@@ -343,9 +346,9 @@ INSERT INTO public.editions (id, external_id, collection_id) VALUES
   ('00000000-0000-0000-0000-0000000000e1', 'k1', :TS::uuid),
   ('00000000-0000-0000-0000-0000000000e2', 'k2', :TS::uuid),
   ('00000000-0000-0000-0000-0000000000e4', 'k4', :TS::uuid);
-INSERT INTO public.edition_fmv_current (edition_id, confidence) VALUES
-  ('00000000-0000-0000-0000-0000000000e1', 'HIGH'),
-  ('00000000-0000-0000-0000-0000000000e2', 'STALE');
+INSERT INTO public.edition_fmv_current (edition_id, confidence, fmv_usd) VALUES
+  ('00000000-0000-0000-0000-0000000000e1', 'HIGH', 100),
+  ('00000000-0000-0000-0000-0000000000e2', 'STALE', 50);
 
 -- ── 1. totals ────────────────────────────────────────────────────────────────
 SELECT _assert_eq((public.get_wallet_collection_snapshot('W') ->> 'totalMoments'), '4', 'totalMoments = 4');
@@ -441,6 +444,28 @@ SELECT _assert_eq(jsonb_array_length(public.get_wallet_collection_snapshot('N') 
 SELECT _assert_eq((public.get_wallet_collection_snapshot('N') -> 'topMoments' -> 1 ->> 'playerName'), 'Keyed2', 'copies of one edition ordered by their own FMV');
 SELECT _assert_eq((public.get_wallet_collection_snapshot('N') -> 'rarest' ->> 'playerName'), 'Nokey', 'a NULL-edition_key moment can be the rarest');
 SELECT _assert_eq((public.get_wallet_collection_snapshot('N') -> 'rarest' ->> 'thumbnailUrl'), 'n1', 'the rarest row carries its own display columns');
+
+-- ── 10. (2026-11-10) a WITHDRAWN price — the edition's current row has a NULL price — still cached
+--       on a moment is STALE: it stays in totalFmv and moves into staleFmv / staleCount and the
+--       per-collection stale split. A moment that never had a price (cached NULL) on a withdrawn
+--       edition is NOT counted stale (it would inflate staleCount). Inbox 2026-11-10T1800Z.
+INSERT INTO public.editions (id, external_id, collection_id) VALUES
+  ('00000000-0000-0000-0000-0000000000f1', 'r1', :PIN::uuid),
+  ('00000000-0000-0000-0000-0000000000f2', 'r2', :PIN::uuid),
+  ('00000000-0000-0000-0000-0000000000f3', 'r3', :PIN::uuid);
+INSERT INTO public.edition_fmv_current (edition_id, confidence, fmv_usd) VALUES
+  ('00000000-0000-0000-0000-0000000000f1', 'NO_DATA', NULL),   -- withdrawn
+  ('00000000-0000-0000-0000-0000000000f2', 'NO_DATA', NULL),   -- withdrawn, never cached
+  ('00000000-0000-0000-0000-0000000000f3', 'LOW', 7);          -- priced
+INSERT INTO public.wallet_moments_cache (wallet_address, player_name, set_name, tier, serial_number, edition_key, image_url, series_number, fmv_usd, mint_count, collection_id) VALUES
+  ('R','Gone',  'Base','RARE',  1, 'r1','w1', 1,   40, 50, :PIN::uuid),
+  ('R','Never', 'Base','COMMON',2, 'r2','w2', 1, NULL, 50, :PIN::uuid),
+  ('R','Live',  'Base','COMMON',3, 'r3','w3', 1,    7, 50, :PIN::uuid);
+SELECT _assert_eq((public.get_wallet_collection_snapshot('R') ->> 'totalFmv'), '47.00', 'withdrawn: the total keeps the last cached price (40 + 7)');
+SELECT _assert_eq((public.get_wallet_collection_snapshot('R') ->> 'staleFmv'), '40.00', 'withdrawn: the cached $40 moves to staleFmv (headline = 47 - 40 = 7)');
+SELECT _assert_eq((public.get_wallet_collection_snapshot('R') ->> 'staleCount'), '1', 'withdrawn: one stale moment — the never-priced one is not counted');
+SELECT _assert_eq((SELECT pc ->> 'stale_fmv' FROM jsonb_array_elements(public.get_wallet_collection_snapshot('R') -> 'perCollection') pc WHERE pc ->> 'slug' = 'disney_pinnacle'), '40.00', 'withdrawn: perCollection stale_fmv = 40.00');
+SELECT _assert_eq((SELECT pc ->> 'stale_count' FROM jsonb_array_elements(public.get_wallet_collection_snapshot('R') -> 'perCollection') pc WHERE pc ->> 'slug' = 'disney_pinnacle'), '1', 'withdrawn: perCollection stale_count = 1');
 
 SELECT '✓ get_wallet_collection_snapshot: all assertions passed' AS result;
 
