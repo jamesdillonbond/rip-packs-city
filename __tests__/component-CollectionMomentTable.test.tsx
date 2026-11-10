@@ -231,6 +231,16 @@ describe("CollectionMomentTable", () => {
     expect(container.textContent).not.toContain("No moments found for this wallet")
   })
 
+  it("Candy's prompt asks for a Solana address and calls them cards (2026-11-10)", () => {
+    const { queryByTestId } = render(
+      <CollectionMomentTable {...baseProps({ collectionSlug: "candy-mlb", filteredRows: [], rowsCount: 0, hasSearched: false, input: "" })} />
+    )
+    const txt = queryByTestId("binder-not-searched")?.textContent ?? ""
+    expect(txt).toContain("Enter a Solana wallet address above to load its cards here")
+    expect(txt).not.toContain("username")
+    expect(txt).not.toContain("moments")
+  })
+
   it("after a search that found nothing, the post-search claim shows and the pre-search prompt does not", () => {
     const { container, queryByTestId } = render(
       <CollectionMomentTable {...baseProps({ filteredRows: [], rowsCount: 0, hasSearched: true })} />

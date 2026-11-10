@@ -233,6 +233,33 @@ describe("CollectionSetsClient — the tracker", () => {
     })
   })
 
+  it("⚠ two sets with one name are told apart in WORDS: rarity and series on each card", async () => {
+    // 2026-11-10: All Day issues a set per (name, rarity, series); the rarity was a stripe colour only.
+    mount(() => json(200, RESP({
+      sets: [
+        SET({ setId: "a", setName: "Base", setTier: "COMMON", series: 1 }),
+        SET({ setId: "b", setName: "Base", setTier: "RARE", series: 6 }),
+      ],
+    })), "nfl-all-day")
+    await waitFor(() => expect(document.body.textContent).toMatch(/Base/))
+    const txt = document.body.textContent ?? ""
+    expect(txt).toMatch(/COMMON/)
+    expect(txt).toMatch(/RARE/)
+    expect(txt).toMatch(/S1/)
+    expect(txt).toMatch(/S6/)
+  })
+
+  it("⚠ the Top Shot 'Completed Sets' caveat appears on Top Shot only", async () => {
+    mount(() => json(200, RESP()), "nfl-all-day")
+    await waitFor(() => expect(document.body.textContent).toMatch(/Archive Set/))
+    expect(document.body.textContent).toMatch(/RPC counts a set complete/)
+    expect(document.body.textContent).not.toMatch(/Top Shot/)
+    cleanup()
+    mount(() => json(200, RESP()))
+    await waitFor(() => expect(document.body.textContent).toMatch(/Archive Set/))
+    expect(document.body.textContent).toMatch(/Top Shot.s .Completed Sets./)
+  })
+
   it("filters to complete sets and says so honestly when none match", async () => {
     mount(() => json(200, RESP()))
     await waitFor(() => expect(document.body.textContent).toMatch(/Archive Set/))

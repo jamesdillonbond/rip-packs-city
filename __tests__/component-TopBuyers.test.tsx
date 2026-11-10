@@ -68,10 +68,10 @@ describe("TopBuyers (Top Accumulators)", () => {
   it("shows the empty state when no rows come back", async () => {
     fetchMock.mockReturnValue(okJson({ rows: [] }))
     const { container } = render(<TopBuyers collection="nba_top_shot" />)
-    await waitFor(() => expect(container.textContent).toContain("No buyer-resolved accumulation"))
+    await waitFor(() => expect(container.textContent).toContain("No collector purchases"))
   })
 
-  // Both of these used to assert "No buyer-resolved accumulation" — the two
+  // Both of these used to assert "No collector purchases" — the two
   // failure paths (!r.ok and the catch) each called setRows([]), so a failure
   // was indistinguishable from a real absence BY CONSTRUCTION. The no-crash
   // intent is kept and the finding is now what gets ruled out.
@@ -79,14 +79,14 @@ describe("TopBuyers (Top Accumulators)", () => {
     fetchMock.mockReturnValue(Promise.resolve({ ok: false, json: () => Promise.resolve(null) } as Response))
     const { container } = render(<TopBuyers collection="nba_top_shot" />)
     await waitFor(() => expect(container.textContent).toContain("Couldn't load buyer accumulation"))
-    expect(container.textContent).not.toContain("No buyer-resolved accumulation")
+    expect(container.textContent).not.toContain("No collector purchases")
   })
 
   it("does not report an absence of accumulation when fetch rejects", async () => {
     fetchMock.mockReturnValue(Promise.reject(new Error("network")))
     const { container } = render(<TopBuyers collection="nba_top_shot" />)
     await waitFor(() => expect(container.textContent).toContain("Couldn't load buyer accumulation"))
-    expect(container.textContent).not.toContain("No buyer-resolved accumulation")
+    expect(container.textContent).not.toContain("No collector purchases")
   })
 
   it("requests the given collection and default 7d window", async () => {

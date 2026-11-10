@@ -525,7 +525,14 @@ export default function CollectionSetsClient({ collection }: { collection: strin
                 isPinnacle ? (
                   <>RPC counts a set complete when you own every pin in it.</>
                 ) : (
-                  <>RPC counts a set complete when you own every play in it. Top Shot&apos;s &ldquo;Completed Sets&rdquo; may include per-set criteria (challenges, badges, parallel collections) this tracker doesn&apos;t model &mdash; gaps are expected.</>
+                  // The "Completed Sets" caveat describes Top Shot's own tracker. It printed on
+                  // All Day, Golazos and UFC too (signed-in walk, 2026-11-10), naming a product
+                  // the collector was not looking at.
+                  collectionSlug === "nba-top-shot" ? (
+                    <>RPC counts a set complete when you own every play in it. Top Shot&apos;s &ldquo;Completed Sets&rdquo; may include per-set criteria (challenges, badges, parallel collections) this tracker doesn&apos;t model &mdash; gaps are expected.</>
+                  ) : (
+                    <>RPC counts a set complete when you own every play in it.</>
+                  )
                 )
               )}
             </div>
@@ -914,6 +921,19 @@ function SetCard({
             // rather than a link that resolves to a 404.
             <span style={setTitleStyle(c)}>{set.setName}</span>
           )}
+          {/* 2026-11-10: the rarity was a 2px stripe colour only. All Day issues one set per
+              (name, rarity, series), so "49ers Vintage" appeared four times with nothing
+              in words to tell them apart. */}
+          {set.setTier ? (
+            <span style={{
+              fontFamily: monoFont, fontSize: 9, color: c.muted, letterSpacing: "0.08em",
+              padding: "2px 8px", borderRadius: 999, textTransform: "uppercase",
+              border: "1px solid " + c.cardBorder, background: "var(--rpc-surface-raised)",
+              flexShrink: 0,
+            }}>
+              {set.setTier}
+            </span>
+          ) : null}
           {set.series != null && (
             <span style={{
               fontFamily: monoFont, fontSize: 9, color: c.muted, letterSpacing: "0.08em",

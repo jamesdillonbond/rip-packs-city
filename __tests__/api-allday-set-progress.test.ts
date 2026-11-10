@@ -7,9 +7,19 @@ import { NextRequest } from "next/server"
 // RPC-error 500, and the mapped happy shape.
 
 const rpc: { data: any; error: any; throw: any } = { data: null, error: null, throw: null }
+// The series lookup beside the RPC (2026-11-10): `sets` rows for the All Day collection.
+const seriesRead: { data: any; error: any; throw: any } = { data: [], error: null, throw: null }
 
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
+    from: () => {
+      const chain: any = {
+        select: () => chain, eq: () => chain, order: () => chain, limit: () => chain,
+        then: (res: any, rej: any) =>
+          (seriesRead.throw ? Promise.reject(seriesRead.throw) : Promise.resolve({ data: seriesRead.data, error: seriesRead.error })).then(res, rej),
+      }
+      return chain
+    },
     rpc: async () => {
       if (rpc.throw) throw rpc.throw
       return { data: rpc.data, error: rpc.error }
@@ -25,6 +35,9 @@ beforeEach(() => {
   rpc.data = null
   rpc.error = null
   rpc.throw = null
+  seriesRead.data = []
+  seriesRead.error = null
+  seriesRead.throw = null
 })
 
 describe("GET /api/allday-set-progress", () => {
@@ -54,6 +67,35 @@ describe("GET /api/allday-set-progress", () => {
     expect(body.totalSets).toBe(1)
     expect(body.sets[0].setName).toBe("Set One")
     expect(body.sets[0].completionPct).toBe(30)
+  })
+
+  it("⚠ tells same-named sets apart: each row carries its rarity AND its series", async () => {
+    // 2026-11-10: 363 All Day sets under 281 name+rarity pairs; "49ers Vintage" listed four times.
+    rpc.data = {
+      sets: [
+        { setId: "a", setName: "Base", setTier: "COMMON", ownedPlays: 1, totalPlays: 2, missingPlays: 1, completionPct: 50 },
+        { setId: "b", setName: "Base", setTier: "COMMON", ownedPlays: 2, totalPlays: 2, missingPlays: 0, completionPct: 100 },
+      ],
+    }
+    seriesRead.data = [{ id: "a", series: 1 }, { id: "b", series: 6 }]
+    const body = await (await GET(req("?wallet=0xabc"))).json()
+    expect(body.sets.map((s: any) => [s.setName, s.setTier, s.series])).toEqual([
+      ["Base", "COMMON", 1],
+      ["Base", "COMMON", 6],
+    ])
+  })
+
+  it("a failed series read does not fail the tracker — the rows just carry no series", async () => {
+    rpc.data = { sets: [{ setId: "a", setName: "Base", ownedPlays: 1, totalPlays: 2, missingPlays: 1, completionPct: 50 }] }
+    seriesRead.error = { message: "boom" }
+    const res = await GET(req("?wallet=0xabc"))
+    expect(res.status).toBe(200)
+    expect((await res.json()).sets[0].series).toBeNull()
+    seriesRead.error = null
+    seriesRead.throw = new Error("net")
+    const res2 = await GET(req("?wallet=0xabc"))
+    expect(res2.status).toBe(200)
+    expect((await res2.json()).sets[0].series).toBeNull()
   })
 
   // ── per-set detail (?set=<setId>) ──────────────────────────────────────────

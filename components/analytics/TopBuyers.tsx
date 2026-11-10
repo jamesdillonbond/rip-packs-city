@@ -125,8 +125,10 @@ export default function TopBuyers({ collection = "nba_top_shot" }: { collection?
         className="mb-3 text-[11px]"
         style={{ color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)" }}
       >
-        On-chain buyers ranked by spend, with the edition each is sweeping. Buyer
-        coverage is filling in — meaningful for roughly the last ~48h.
+        {/* 2026-11-10: this read "Buyer coverage is filling in — meaningful for roughly
+            the last ~48h", written the week buyer capture started (10-11). Measured today:
+            100% of 30-day sales carry a buyer on every collection in `sales`. */}
+        On-chain buyers ranked by spend, with the edition each is sweeping.
       </div>
 
       {loading && !rows ? (
@@ -137,7 +139,7 @@ export default function TopBuyers({ collection = "nba_top_shot" }: { collection?
         </div>
       ) : list.length === 0 ? (
         <div className="py-6 text-center text-sm text-[color:var(--rpc-text-muted)]">
-          No buyer-resolved accumulation in the last {days}d yet.
+          No collector purchases in the last {days} days.
         </div>
       ) : (
         <div style={{ overflowX: "auto" }}>

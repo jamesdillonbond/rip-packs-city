@@ -101,7 +101,7 @@ describe("collection analytics — a failed section read is not an empty market"
   it.each([
     ["OrderBookCard", "No live listings.", "Couldn&apos;t load the order book."],
     ["PackEvCard", "Pack analytics not yet available", "Couldn&apos;t load pack analytics."],
-    ["WhaleLeaderboard", "No data.", "Couldn&apos;t load this leaderboard."],
+    ["WhaleLeaderboard", "No wallet reached $100 in the last 30 days.", "Couldn&apos;t load this leaderboard."],
   ])("%s renders DIFFERENT copy for failed vs empty, failure first", (name, emptyCopy, failCopy) => {
     const body = componentBody(name)
 

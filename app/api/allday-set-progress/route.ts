@@ -17,6 +17,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { apiErrorResponse } from "@/lib/api-error";
 import { boundedRead } from "@/lib/api/bounded-read";
+import { ALLDAY_COLLECTION_ID } from "@/lib/allday-lock";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -242,6 +243,26 @@ export async function GET(req: NextRequest) {
     const rpc = (data ?? {}) as RpcResponse;
     const rpcSets = Array.isArray(rpc.sets) ? rpc.sets : [];
 
+    // 2026-11-10: an All Day set NAME is not a set. The catalogue holds one set per
+    // (name, rarity, series) — 363 sets under 281 name+rarity pairs, "Base" five times,
+    // "49ers Vintage" four — and the RPC returns the rarity but not the series, so the
+    // tracker listed identical rows a collector could not tell apart. Read the series
+    // beside it. FAIL-SOFT: a failed read leaves `series` undefined and the row simply
+    // carries no series chip — smaller, never wrong.
+    const seriesBySet = new Map<string, number>();
+    try {
+      const sr = await boundedRead(
+        supabaseAdmin.from("sets").select("id, series").eq("collection_id", ALLDAY_COLLECTION_ID).order("id").limit(1000),
+        "api/allday-set-progress/sets-series",
+      );
+      if (sr.error) console.log(`[allday-set-progress] series read: ${sr.error.message}`);
+      for (const r of (sr.data ?? []) as Array<{ id: string; series: number | null }>) {
+        if (typeof r.series === "number") seriesBySet.set(r.id, r.series);
+      }
+    } catch (e) {
+      console.log(`[allday-set-progress] series read threw: ${e instanceof Error ? e.message : String(e)}`);
+    }
+
     const sets: SetProgress[] = rpcSets.map((s) => {
       const missing: MissingPiece[] = (s.missingPreview ?? []).map((m, i) => ({
         playId: `${s.setId}:preview:${i}`,
@@ -259,6 +280,7 @@ export async function GET(req: NextRequest) {
       return {
         setId: s.setId,
         setName: s.setName,
+        series: seriesBySet.get(s.setId) ?? null,
         setTier: s.setTier ?? null,
         totalEditions: s.totalPlays,
         ownedCount: s.ownedPlays,

@@ -12,7 +12,7 @@ import { render, cleanup, screen } from "@testing-library/react"
 //
 //   "No recent whale trades."
 //   "No Flowty marketplace activity in this window."
-//   "No buyer-resolved accumulation in the last 7d yet."
+//   "No collector purchases in the last 7 days."
 //   "No positive-EV packs in this filter."
 //   "No new pack listings in the last 24 hours."
 //   "Pack analytics not yet available for this collection."   (x5 at once)
@@ -149,13 +149,13 @@ describe("TopBuyers", () => {
     stubAllFail()
     render(<TopBuyers />)
     expect(await screen.findByText(/Couldn't load buyer accumulation/)).toBeTruthy()
-    expect(text()).not.toMatch(/No buyer-resolved accumulation/)
+    expect(text()).not.toMatch(/No collector purchases/)
   })
 
   it("still reports genuinely absent accumulation", async () => {
     stubAllEmpty()
     render(<TopBuyers />)
-    expect(await screen.findByText(/No buyer-resolved accumulation/)).toBeTruthy()
+    expect(await screen.findByText(/No collector purchases/)).toBeTruthy()
   })
 })
 

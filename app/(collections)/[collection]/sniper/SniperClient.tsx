@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useWarmCache } from "@/lib/warmup/WarmupContext";
@@ -48,6 +48,7 @@ import {
 } from "@/lib/sniper/listing-suggestions";
 import {
   filterSniperDeals,
+  sniperOwnedEditionKeys,
   sniperClientTeamFilter,
   sniperTeamOptions,
   readSniperUrlFilters,
@@ -443,6 +444,13 @@ function SniperMomentsBody() {
   //
   // ownedIds is a Set<string> of edition keys ("218:8238"), not flowIds.
   // A deal matches when deal.editionKey is in the set.
+  //
+  // ⛔ 2026-11-10 — TOP SHOT ONLY. /api/owned-flow-ids answers an absent collection
+  // with the wallet's TOP SHOT edition keys, and this effect ran on every collection's
+  // sniper: the Golazos board read "6744 owned editions tracked" (Top Shot's count, on
+  // a wallet holding 45 Golazos moments) and its OWNED / NOT OWNED filter compared
+  // Golazos deals against Top Shot keys. Other collections take ownership from the
+  // collection-scoped /api/wallet/edition-counts read below (`ownedForBoard`).
   useEffect(() => {
     const TEN_MINUTES_MS = 10 * 60 * 1000;
     (async () => {
@@ -453,6 +461,10 @@ function SniperMomentsBody() {
           return;
         }
         setOwnerKey(key);
+        if (collectionSlug !== "nba-top-shot") {
+          setOwnedIds(new Set());
+          return;
+        }
 
         // Username can't be used directly — depend on collection page /
         // WalletPreloader to resolve and rewrite rpc_owner_key as 0x.
@@ -511,7 +523,7 @@ function SniperMomentsBody() {
         // Silent — empty ownedIds is the safe fallback
       }
     })();
-  }, [ownWallet]);
+  }, [ownWallet, collectionSlug]);
 
   // Edition-level owned/locked counts for the "Edition Owned/Locked" column.
   // Reads wallet_moments_cache (the same source the Collection page uses)
@@ -558,6 +570,13 @@ function SniperMomentsBody() {
     })();
     return () => { cancelled = true };
   }, [collectionSlug, isPinnacle, ownWallet]);
+
+  // The owned-edition set this board filters and counts with: Top Shot's on-chain walk,
+  // or — for every other collection — the editions its own edition-counts read holds.
+  const ownedForBoard = useMemo(
+    () => sniperOwnedEditionKeys(collectionSlug, ownedIds, editionStats),
+    [collectionSlug, ownedIds, editionStats],
+  );
 
   const buildFeedUrl = useCallback(() => {
     const params = new URLSearchParams();
@@ -868,7 +887,7 @@ function SniperMomentsBody() {
   const hasChasers = sniperHasChasers(data?.deals ?? []) || chaserOnly;
   const boardFilterOpts = { team: sniperClientTeamFilter(teamFilter, data?.teamApplied), studio: studioFilter, chaserOnly };
   const visibleDeals = sortByVerifiedFirst(
-    filterSniperDeals(data?.deals ?? [], { search, showVerifiedOnly, afterFeesOnly, ownedFilter, ownedIds, ...boardFilterOpts }),
+    filterSniperDeals(data?.deals ?? [], { search, showVerifiedOnly, afterFeesOnly, ownedFilter, ownedIds: ownedForBoard, ...boardFilterOpts }),
   );
   const stats = computeSniperStats(visibleDeals);
 
@@ -898,7 +917,7 @@ function SniperMomentsBody() {
     showVerifiedOnly,
     afterFeesOnly,
     ownedFilter,
-    ownedIds,
+    ownedIds: ownedForBoard,
     ...boardFilterOpts,
   });
   // What the deals-after-fees gate alone is hiding (0 when it is off).
@@ -907,7 +926,7 @@ function SniperMomentsBody() {
     showVerifiedOnly,
     afterFeesOnly,
     ownedFilter,
-    ownedIds,
+    ownedIds: ownedForBoard,
     ...boardFilterOpts,
   });
 
@@ -1129,7 +1148,7 @@ function SniperMomentsBody() {
             onAfterFeesChange={setAfterFeesOnly}
             ownedFilter={ownedFilter}
             onOwnedFilterChange={setOwnedFilter}
-            ownedCount={ownedIds.size}
+            ownedCount={ownedForBoard.size}
             leagueFilter={leagueFilter}
             onLeagueChange={setLeagueFilter}
             copyLinkMsg={copyLinkMsg}
@@ -1143,7 +1162,7 @@ function SniperMomentsBody() {
         stats={stats}
         isPinnacle={isPinnacle}
         isAllDay={isAllDay}
-        ownedCount={ownedIds.size}
+        ownedCount={ownedForBoard.size}
         lastRefreshed={data?.lastRefreshed}
         feedState={data ? "ok" : error ? "failed" : "loading"}
       />

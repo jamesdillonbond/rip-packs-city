@@ -248,13 +248,16 @@ export default function CollectionMomentTable(props: {
   // name opens the pin itself, as it does on the Market tab.
   const subjectHref = (row: MomentRow): string =>
     isPinnacle ? momentRowHref(collectionSlug, row) : (momentSubjectHref(collectionSlug, row.playerName, row.team) ?? "#")
-  const unitNoun = isPinnacle ? "pins" : "moments"
+  // 2026-11-10: Candy holds CARDS on Solana and is looked up by wallet address only — its
+  // binder said "Enter a username or wallet … to load its moments".
+  const isCandy = collectionSlug === "candy-mlb"
+  const unitNoun = isPinnacle ? "pins" : isCandy ? "cards" : "moments"
   // 2026-11-06 (390 px + desktop QA): before any wallet is loaded the table was
   // a header row over NOTHING — fifteen column labels and a blank. A first-time
   // visitor (the Binder tab is anonymous-public) got no sentence saying what to
   // do. Not an error state and not the post-search "nothing here" claim above;
   // a third, honest state: nothing has been asked for yet.
-  const notSearchedCopy = "Enter a username or wallet above to load its " + unitNoun + " here \u2014 free, no sign-in."
+  const notSearchedCopy = "Enter " + (isCandy ? "a Solana wallet address" : "a username or wallet") + " above to load its " + unitNoun + " here \u2014 free, no sign-in."
 
   // Task 2: FMV Alert UI state
   const [alertOpenMomentId, setAlertOpenMomentId] = useState<string | null>(null)

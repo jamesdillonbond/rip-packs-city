@@ -66,6 +66,27 @@ export function isUnderWaterAfterFees(d: SniperDeal): boolean {
 }
 
 /** Does the viewer own the edition this deal is for? Checks both key forms. */
+/**
+ * The set of owned edition keys a collection's sniper board may use (2026-11-10).
+ *
+ * `topShotOwned` comes from /api/owned-flow-ids, which only ever holds TOP SHOT keys;
+ * `editionStats` comes from /api/wallet/edition-counts for THIS collection. A board for
+ * any other collection must never be handed the Top Shot set: it would count another
+ * collection's editions as "owned editions tracked" and filter this one's deals by them.
+ */
+export function sniperOwnedEditionKeys(
+  collectionSlug: string,
+  topShotOwned: Set<string>,
+  editionStats: Map<string, { owned: number; locked: number }>,
+): Set<string> {
+  if (collectionSlug === "nba-top-shot") return topShotOwned;
+  const out = new Set<string>();
+  for (const [key, v] of editionStats) {
+    if (v.owned > 0) out.add(key);
+  }
+  return out;
+}
+
 export function isDealOwned(d: SniperDeal, ownedIds: Set<string>): boolean {
   return (
     (!!d.intEditionKey && ownedIds.has(d.intEditionKey)) ||

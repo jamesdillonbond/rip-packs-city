@@ -876,7 +876,10 @@ function WhaleLeaderboard({ short, urlSlug }: { short: string; urlSlug: string }
       ) : failed ? (
         <div className="py-4 text-center text-sm text-[color:var(--rpc-text-muted)]">Couldn&apos;t load this leaderboard.</div>
       ) : !rows || rows.length === 0 ? (
-        <div className="py-4 text-center text-sm text-[color:var(--rpc-text-muted)]">No data.</div>
+        // 2026-11-10: this list is filtered to wallets with $100+ of volume (`min_volume=100`
+        // above). It said "No data." on Golazos while its top buyer had spent $95.35 across
+        // 85 buys that month — the floor was real and unstated. Say what the empty list means.
+        <div className="py-4 text-center text-sm text-[color:var(--rpc-text-muted)]">No wallet reached $100 in the last 30 days.</div>
       ) : (
         <div className="overflow-x-auto" {...scrollRegion(title)}>
         <table className="w-full text-sm" style={{ fontFamily: "var(--font-mono)" }}>

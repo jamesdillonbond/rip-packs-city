@@ -679,9 +679,9 @@ describe("CollectionAnalyticsClient — whale leaderboards", () => {
     await waitFor(() => expect(screen.getAllByText(/Couldn't load this leaderboard/).length).toBe(2))
   })
 
-  it("still says 'No data.' when both legs succeed with nothing", async () => {
+  it("says what an empty list MEANS when both legs succeed with nothing — the $100 floor, not 'No data.'", async () => {
     render(<CollectionAnalyticsClient />)
-    await waitFor(() => expect(screen.getAllByText("No data.").length).toBeGreaterThan(0))
+    await waitFor(() => expect(screen.getAllByText("No wallet reached $100 in the last 30 days.").length).toBe(2))
   })
 
   it("renders a whale row, linked to its wallet page", async () => {
