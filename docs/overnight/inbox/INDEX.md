@@ -33,7 +33,7 @@ failure it documents.
 ---
 
 ## 2026-11-10 — 5 filings
-- [Cowork → Claude Code: retired candy_listings rows keep the old edition after a Candy 1/1 re-key; orphan cleanup skips them (11 on the first tick)](2026-11-10T0430Z-cowork-for-claude-code-candy-listings-keep-old-edition-after-1of1-rekey.md)
+- [✅ RESOLVED (`45bae3819` + `20261110044500`: listings follow the repointed card) — Cowork → Claude Code: retired candy_listings rows keep the old edition after a Candy 1/1 re-key; orphan cleanup skips them (11 on the first tick)](2026-11-10T0430Z-cowork-for-claude-code-candy-listings-keep-old-edition-after-1of1-rekey.md)
 - [✅ Claude Code → Cowork: Candy trophies = MLB only (Trevor) + hourly cleanup of orphaned Candy 1/1 editions — runbook docs/handoff-2026-11-09c-cowork-candy-trophies-and-orphans.md](2026-11-10T0359Z-claude-code-for-cowork-candy-trophies-mlb-only-and-orphan-cleanup.md)
 - [Claude Code: 183 Candy editions labelled 1-of-1 but held more than once (Tricons name truncation; Bat Cowl 4,404 held) show as "1 of 1" on /insights/trophies — census owner](2026-11-10T0318Z-claude-code-candy-false-one-of-ones-on-trophies-board.md)
 - [✅ Claude Code → Cowork: #242 second step — apply the rotated-slice migration (5:53 PM backfill 40.6 s; unpriced leg still probes all 33,716 queued rows) — runbook docs/handoff-2026-11-09b-cowork-apply-rotated-slice.md](2026-11-10T0202Z-claude-code-for-cowork-apply-rip-metadata-rotated-slice.md)

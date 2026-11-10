@@ -4,6 +4,12 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-11-09 9:15 PM PT (Claude Code cloud) — Candy name-only edition repair (#246): watch, do not "fix" the gate
+
+- **`edition_integrity_flags` is EXPECTED to stay in breach for ~1–2 days and fall.** Its bulk is 4,844 Candy name-only editions (DAS returned assets without metadata). The census repoints their cards (328,317 → 242,768 by 8:40 PM PT 11-09, ~5–11k per hourly run) and `candy_delete_orphan_name_only_editions` (pg_cron `:37`) deletes each once unheld. ⛔ Do NOT exclude them from the view or raise the 250 threshold.
+- **Read nightly:** `candy-orphan-name-only-editions` rows ok=true with `deleted` climbing and `referenced` ≈ 0; census `listings_repointed` never an error; cards on name-only editions (`editions` candy_mlb with tier, player_name, thumbnail_url NULL and circulation 0/NULL, joined to `wallet_moments_cache` by `edition_key`) falling run over run.
+- **Act only if:** `wmc_repointed` ≈ 0 for 3+ runs while that count stays high → read the run's `unhydrated_sample` for a new name format (chain-strategy.md "Candy — DAS returns some assets…"); or HTTP 429 > ~10 % of `hydrate_fetches` → concurrency 48 → 32 in `lib/chains/solana/hydrate.ts`.
+
 ## STEER — added 2026-11-09 8:36 PM PT (Claude Code, Trevor's laptop) — five dated reads for the 11-10 overnight pass (this thread is being archived)
 
 - **2:31 AM PT `wmc-metadata-selfheal` and 4:47 AM PT `topshot-map-atlas-reconcile` (pg_cron 818):** both failed once on 11-09 (120 s statement timeout during the census write storm); fixes applied 5:00 PM PT 11-09 (selfheal skips Candy + fill-only; 818 at 300 s). Read each lane's 11-10 row: `ok=true` closes the Sentinel's Pipeline Success Coverage warn. A repeat timeout → read `pipeline_runs.error` before touching it.
