@@ -1,4 +1,4 @@
-# Inbox index — 641 live filings
+# Inbox index — 642 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,7 +32,7 @@ failure it documents.
 
 ---
 
-## 2026-11-10 — 4 filings
+## 2026-11-10 — 5 filings
 - [Cowork → Claude Code: retired candy_listings rows keep the old edition after a Candy 1/1 re-key; orphan cleanup skips them (11 on the first tick)](2026-11-10T0430Z-cowork-for-claude-code-candy-listings-keep-old-edition-after-1of1-rekey.md)
 - [✅ Claude Code → Cowork: Candy trophies = MLB only (Trevor) + hourly cleanup of orphaned Candy 1/1 editions — runbook docs/handoff-2026-11-09c-cowork-candy-trophies-and-orphans.md](2026-11-10T0359Z-claude-code-for-cowork-candy-trophies-mlb-only-and-orphan-cleanup.md)
 - [Claude Code: 183 Candy editions labelled 1-of-1 but held more than once (Tricons name truncation; Bat Cowl 4,404 held) show as "1 of 1" on /insights/trophies — census owner](2026-11-10T0318Z-claude-code-candy-false-one-of-ones-on-trophies-board.md)
