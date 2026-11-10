@@ -39,3 +39,25 @@ Reading 1 is the smaller change and matches how wallets treat stale prices today
 - `refresh_wmc_fmv_changed` is the platform's largest writer, and another session edited `resync_stuck_wmc_fmv` today (a "2026-11-10: lock" note is in its body). A second session rewriting the same family the same morning is the collision CLAUDE.md warns about.
 - Same shape, not examined: `get_ufc_set_progress` (0 withdrawn editions today, so no wrong number now), `analytics_fmv_tier_pulse`, `get_platform_stats`, and the `fmv` lateral inside `get_team_checklist*` / `get_player_checklist*` ("cost to finish").
 - Panini's 70 withdrawn editions ($76,889) live in Panini's own tables; whether its collector views keep them was not read.
+
+## ↳ 10:15 AM PT — CORRECTION to "reading 1", and the decision (Trevor: "Do what you think is best")
+
+**Decision: keep the last known price and show it as stale.** It matches how wallets already treat an old price and it does not zero anyone's moment.
+
+**But the fix is not a re-label of the cache, as written above — that was wrong.** The readers do not use `wallet_moments_cache.fmv_confidence` when the edition has a row in `edition_fmv_current`; they take the CURRENT label and fall back to the CACHED price:
+
+- `get_wallet_summary` (md5 `268b8e82…`): `COALESCE(lf.fmv_usd, wmc.fmv_usd)` and `COALESCE(lf.confidence, wmc.fmv_confidence)`. For a withdrawn edition `lf.fmv_usd` is NULL and `lf.confidence` is `NO_DATA`, so the moment carries its withdrawn price under the label `NO_DATA` — not `STALE` — and stays in the headline.
+- `get_wallet_collection_stats` (md5 `5cc5e0ec…`): label from the newest snapshot (`NO_DATA`), summed under `IS DISTINCT FROM 'STALE'`.
+
+Proved on the most affected All Day wallet: 33 moments, $16,559.69 of withdrawn prices, all inside `wallet_fmv` ($234,451.88) and none inside `stale_fmv` ($154,047.64) — about a fifth of that collector's headline ($80,404).
+
+**So the change is in the READERS, and there are five that each define the stale split on their own:** `get_wallet_summary`, `get_wallet_collection_stats`, `get_wallet_collection_snapshot` (`bc7d6341…`), `get_collection_breakdown` (`a56d4756…`), `aggregate_saved_wallet_stats` (`426b8e69…`). The rule each needs: *a moment whose edition has a current row with a NULL price, and whose cached price is not NULL, is STALE.* An edition that never had a price (cached price NULL) must NOT become stale — it would inflate `stale_count`.
+
+## Why it was not shipped this session
+
+- Five full-body rewrites of the wallet-total readers, through a SQL editor, at the end of a long session, with another session having edited `get_wallet_summary` today (its body carries a 2026-11-10 note). Changing two of the five would make the dashboard, the Collection tab, the public profile and the daily snapshot disagree about one wallet — worse than the defect.
+- It wants its own test: for a sample of wallets, `headline_after = headline_before − withdrawn` and `stale_after = stale_before + withdrawn`, with `total` and every unaffected wallet byte-identical.
+
+## Proposed shape for whoever picks it up (Claude Code, one migration)
+
+One SQL helper that all five call, so the rule lives once: e.g. `wallet_moment_confidence(lf_has_row boolean, lf_fmv numeric, lf_conf fmv_confidence, wmc_fmv numeric, wmc_conf fmv_confidence) RETURNS fmv_confidence` = `CASE WHEN lf_has_row AND lf_fmv IS NULL AND wmc_fmv IS NOT NULL THEN 'STALE' ELSE COALESCE(lf_conf, wmc_conf) END` (IMMUTABLE, so it inlines). `get_wallet_collection_stats` reads the newest snapshot directly and needs the price beside the label. Acceptance: the 474-row / 79-wallet / $89,860 figure above moves from headline to stale and nothing else moves.
