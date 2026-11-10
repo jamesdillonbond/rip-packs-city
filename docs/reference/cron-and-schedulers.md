@@ -1570,6 +1570,11 @@ three-state on purpose (**0** nothing failing · **1** failing now · **2** coul
 1 and 2 would let a read failure render as a finding, in the instrument built to detect that. And
 `intermittent`/`recovered` deliberately do **not** exit non-zero — a check that goes red on history
 stays red forever and stops being read.
+⛔ **IN FLIGHT IS NOT KILLED (2026-11-09, `b92bfec41`).** A marker whose terminal row has not landed YET is
+unmatched too, so a tick younger than its wall read as killed — and, being the most recent, called
+`topshot-circulation-onchain` **FAILING** at 8:07 PM PT, 3 min into a tick that landed `ok` at 8:09:21.
+`correlateRuns` now leaves out any marker younger than `MAX_WALL_S` (800, the Pro cap) + 60 s — the CAP,
+not the mapped wall, because a mapped wall can be wrong (the report's own "wall UNMAPPABLE" rows).
 
 ### 0c. ⛔ `pipeline_runs.duration_ms` IS NOT EXECUTION TIME — do not rank kill risk on it
 

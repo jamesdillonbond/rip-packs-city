@@ -4,6 +4,14 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-11-09 8:36 PM PT (Claude Code, Trevor's laptop) — five dated reads for the 11-10 overnight pass (this thread is being archived)
+
+- **2:31 AM PT `wmc-metadata-selfheal` and 4:47 AM PT `topshot-map-atlas-reconcile` (pg_cron 818):** both failed once on 11-09 (120 s statement timeout during the census write storm); fixes applied 5:00 PM PT 11-09 (selfheal skips Candy + fill-only; 818 at 300 s). Read each lane's 11-10 row: `ok=true` closes the Sentinel's Pipeline Success Coverage warn. A repeat timeout → read `pipeline_runs.error` before touching it.
+- **10:28 PM PT 11-09 trophies liveness probe (`public_board_liveness_history`, `v_insights_trophies`, max_ms 7,000):** already 7,587 ms at 4:28 PM PT, BEFORE the 1-of-1 guard. A partly-cold read at 8:30 PM PT took **9.8 s**: latest-FMV lateral 5,031 reads / ~6.4 s (pre-existing), held-card probe (`20261110034117`) 1,987 / ~2.3 s, editions scan ~1.4 s. The view now carries the MLB-only filter (`20261110041400`, another session). If the probe breaches, the lever is the FMV lateral, not the threshold — and re-baseline `max_ms` only after the Candy population settles (filing 2026-11-10T0318Z item 3).
+- **Candy census (`candy-collections-census`):** the 429 back-off (`5afb9e8b6`) shows as `hydrate_rate_limit_retries`; 3 clean runs after it (repoints 5.4k / 9.2k / 11.5k). Only act if `HTTP 429` > ~10 % of `hydrate_fetches` again — then the lever is concurrency 48 → 32, not more retries.
+- **#245 wallet-backfill continuation:** any `wallet-backfill-continuation` row (ok=false) names a broken chain's status/error — read it and update #245. None yet since the 6:40 PM PT deploy.
+- **#243 trophy picker:** a cold Panini search for a big profile was not directly measured after `20261110025023` (warm 165 ms; ~2 s estimated cold). A `top-moments` read-budget miss in runtime errors reopens it.
+
 ## STEER — added 2026-11-04 10:40 PM PT (Cowork cloud) — three dated reads from the 11-04 evening pass + one unapplied migration
 
 - ✅ **DONE — `20261105050000_audit_20261104_allday_low_haircut_075` applied 11-04 10:26 PM PT (recorded `20261105062649`; ledger `34151ff`).** Read back 10:45 PM PT: the version row exists and both haircut writers carry the All Day LOW arm. (A parallel Cowork session's attempt at ~10:30 PM PT was refused by its auto-mode classifier — moot.) Post-check from the handoff still applies after the next All Day fmv-recalc tick: new LOW `_haircut` rows with 0 sales in 30 d sit at 0.75 × floor.
