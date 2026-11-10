@@ -443,6 +443,7 @@ function CardFace({ m, isChase, compact = false }: { m: RevealCard; isChase: boo
           height={compact ? 240 : 480}
           loading="eager"
           style={{
+            display: "block", // a failed image keeps its square frame instead of collapsing to alt text
             width: "100%",
             height: "auto",
             aspectRatio: "1 / 1",

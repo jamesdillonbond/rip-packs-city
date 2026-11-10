@@ -638,7 +638,7 @@ tr[class*="rpc-holo-"]::after { content: none !important; }
 .rpc-gw-flip-back { position: absolute; inset: 0; transform: rotateY(180deg); }
 
 .rpc-gw-face {
-  position: relative; overflow: hidden;
+  position: relative; overflow: hidden; color: var(--rpc-text-primary); /* not the stage’s white: the face is theme-coloured */
   background: linear-gradient(180deg, var(--gw-tier-bg), var(--rpc-surface-raised) 40%), var(--rpc-bg);
   border: 2px solid var(--gw-tier); border-radius: 12px; padding: 10px;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2), 0 14px 34px rgba(0, 0, 0, 0.5), 0 0 30px color-mix(in srgb, var(--gw-tier) 34%, transparent);
