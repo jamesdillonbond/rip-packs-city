@@ -1,3 +1,4 @@
+
 -- DB invariant: community pack giveaways — create_giveaway_draft, seal_giveaway_drop,
 -- claim_giveaway_pack (supabase/migrations/20260929192842_audit_20260929_community_pack_giveaways.sql;
 -- create_giveaway_draft (now a pass-through) + claim_giveaway_pack redefined and create_giveaway_draft_multi added by
@@ -28,6 +29,10 @@ CREATE TABLE wallet_moments_cache (
   is_locked boolean, last_seen_at timestamptz
 );
 
+-- trophy challenges, as far as claim eligibility reads them (2026-11-10)
+CREATE TABLE trophy_challenges (id uuid PRIMARY KEY);
+CREATE TABLE trophy_cases (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid, challenge_id uuid, completed_at timestamptz);
+
 CREATE TABLE IF NOT EXISTS public.giveaway_drops (
   id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   slug              text NOT NULL UNIQUE CHECK (slug ~ '^[a-z0-9][a-z0-9-]{2,59}$'),
@@ -48,6 +53,7 @@ CREATE TABLE IF NOT EXISTS public.giveaway_drops (
   updated_at        timestamptz NOT NULL DEFAULT now(),
   deal_mode         text NOT NULL DEFAULT 'random' CONSTRAINT giveaway_drops_deal_mode_check CHECK (deal_mode IN ('random', 'balanced')),
   vault_address     text,
+  eligible_challenge_id uuid REFERENCES trophy_challenges(id),
   -- a sealed drop always carries both halves of its commitment
   CONSTRAINT giveaway_drops_sealed_has_commitment
     CHECK (status = 'draft' OR (seal_hash IS NOT NULL AND seal_salt IS NOT NULL AND sealed_at IS NOT NULL))
@@ -123,6 +129,16 @@ BEGIN
 
   IF v_drop.status <> 'open' THEN
     RETURN QUERY SELECT NULL::int, 'not_open'::text; RETURN;
+  END IF;
+
+  -- a reward drop for one trophy challenge: only a collector with a COMPLETED case
+  -- in that challenge may claim (2026-11-10, Dame Time finisher packs)
+  IF v_drop.eligible_challenge_id IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM public.trophy_cases tc
+                      WHERE tc.challenge_id = v_drop.eligible_challenge_id
+                        AND tc.user_id = p_user_id
+                        AND tc.completed_at IS NOT NULL) THEN
+    RETURN QUERY SELECT NULL::int, 'not_eligible'::text; RETURN;
   END IF;
 
   -- the sponsor's own wallet, or any account the pool is drawn from — including,
@@ -731,6 +747,27 @@ SELECT _assert_eq((SELECT string_agg(s.moment_id || '>' || s.recipient, ',') FRO
 -- V5: an unfunded drop hands out nothing
 INSERT INTO _gw_sends SELECT 'unfunded', r.moment_id, r.recipient FROM reserve_giveaway_vault_send((SELECT id FROM giveaway_drops WHERE slug = 'bal-one'), NULL, false) r;
 SELECT _assert_eq((SELECT count(*)::text FROM _gw_sends WHERE label = 'unfunded'), '0', 'V5 an unfunded drop has nothing to send from a vault');
+
+-- E1..E5: a drop limited to one trophy challenge's finishers (2026-11-10)
+INSERT INTO trophy_challenges VALUES ('00000000-0000-0000-0000-0000000000c1'), ('00000000-0000-0000-0000-0000000000c2');
+INSERT INTO trophy_cases (user_id, challenge_id, completed_at) VALUES
+  ('00000000-0000-0000-0000-000000000031', '00000000-0000-0000-0000-0000000000c1', now()),
+  ('00000000-0000-0000-0000-000000000032', '00000000-0000-0000-0000-0000000000c1', NULL),
+  ('00000000-0000-0000-0000-000000000033', '00000000-0000-0000-0000-0000000000c2', now());
+INSERT INTO giveaway_drops (slug, title, sponsor_name, collection_id, admin_wallet, status, pack_count, moments_per_pack,
+                            seal_hash, seal_salt, sealed_at, opened_at, eligible_challenge_id)
+VALUES ('finishers-only', 'Finishers only', 'Sponsor', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '0x00000000000000f1', 'open', 3, 1,
+        repeat('b', 64), repeat('c', 64), now(), now(), '00000000-0000-0000-0000-0000000000c1');
+SELECT pg_temp._claim_slug('e-unfinished', 'finishers-only', '00000000-0000-0000-0000-000000000032', '0x00000000000000e2');
+SELECT pg_temp._claim_slug('e-nocase', 'finishers-only', '00000000-0000-0000-0000-000000000034', '0x00000000000000e4');
+SELECT pg_temp._claim_slug('e-otherchallenge', 'finishers-only', '00000000-0000-0000-0000-000000000033', '0x00000000000000e3');
+SELECT pg_temp._claim_slug('e-finisher', 'finishers-only', '00000000-0000-0000-0000-000000000031', '0x00000000000000e1');
+SELECT _assert_eq((SELECT outcome FROM _gw_claims WHERE who = 'e-unfinished'), 'not_eligible', 'E1 an UNFINISHED case in the challenge cannot claim');
+SELECT _assert_eq((SELECT outcome FROM _gw_claims WHERE who = 'e-nocase'), 'not_eligible', 'E2 a user with no case cannot claim');
+SELECT _assert_eq((SELECT outcome FROM _gw_claims WHERE who = 'e-otherchallenge'), 'not_eligible', 'E3 a case completed in ANOTHER challenge does not qualify');
+SELECT _assert((SELECT outcome = 'claimed' AND pack_no BETWEEN 1 AND 3 FROM _gw_claims WHERE who = 'e-finisher'), 'E4 a finisher claims a pack');
+SELECT _assert_eq((SELECT count(*)::text FROM giveaway_claims c JOIN giveaway_drops d ON d.id = c.drop_id WHERE d.slug = 'finishers-only'), '1',
+                  'E5 the refused claims wrote nothing');
 
 SELECT '✓ giveaways: draft refusals (size, duplicate, locked, unknown lock, other collection, other wallet), seal coverage, claim outcomes, multi-account pools, balanced deal, vault funding + send lock + returns' AS result;
 

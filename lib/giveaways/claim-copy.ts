@@ -14,6 +14,7 @@ const COPY: Record<ClaimOutcome, { status: number; message: string }> = {
   admin_recipient: { status: 400, message: "The sponsor can't claim a pack from their own giveaway." },
   recipient_taken: { status: 409, message: "That Top Shot account has already claimed a pack from this giveaway." },
   all_claimed: { status: 409, message: "Every pack has been claimed." },
+  not_eligible: { status: 403, message: "These packs are for collectors who completed the challenge." },
 }
 
 export function claimOutcomeResponse(outcome: ClaimOutcome, packNo: number | null): NextResponse {

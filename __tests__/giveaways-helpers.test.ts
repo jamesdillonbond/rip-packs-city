@@ -66,6 +66,7 @@ describe("giveaways/claim-copy", () => {
       ["admin_recipient", 400],
       ["recipient_taken", 409],
       ["all_claimed", 409],
+      ["not_eligible", 403],
     ] as const) {
       const r = claimOutcomeResponse(o, null)
       expect(r.status).toBe(s)

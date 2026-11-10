@@ -269,7 +269,8 @@ const PINS = [
     fn: "claim_giveaway_pack",
     test: "supabase/tests/giveaways.sql",
     // 2026-11-08: also refuses a pool Moment's funded_from (the giveaway vault).
-    migration: "supabase/migrations/20261108231643_audit_20261108_giveaway_vault_instant_delivery.sql",
+    // 2026-11-10: a drop linked to a trophy challenge refuses non-finishers (not_eligible).
+    migration: "supabase/migrations/20261110214259_audit_20261110_giveaway_drop_limited_to_challenge_finishers.sql",
   },
   {
     fn: "create_giveaway_draft",

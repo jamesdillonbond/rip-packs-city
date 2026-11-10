@@ -640,6 +640,8 @@ export type ClaimOutcome =
   | "admin_recipient"
   | "recipient_taken"
   | "all_claimed"
+  // 2026-11-10: the drop is a reward for one trophy challenge and this user has no completed case in it
+  | "not_eligible"
 
 export async function claimPack(
   db: SupabaseClient,
