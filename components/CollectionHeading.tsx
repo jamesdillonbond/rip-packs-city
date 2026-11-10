@@ -59,6 +59,7 @@ const TABS_WITH_OWN_H1 = new Set<string>([
 // banner's + the component's own), and the Packs tab of Panini and Candy shipped NONE (the
 // shared Top Shot packs page owns an h1; their bespoke packs views do not).
 // Re-measure the served HTML before adding to either list, as above.
+// (Both lists are pinned per route in __tests__/component-CollectionHeading.test.tsx.)
 const COLLECTION_TABS_WITH_OWN_H1: Record<string, ReadonlySet<string>> = {
   "panini-blockchain": new Set(["collection", "analytics", "product"]),
 }
