@@ -310,7 +310,9 @@ describe("giveaways/store — sealDrop", () => {
       expect(args.p_deal_mode).toBe("balanced")
       const packOf = (id: string) => args.p_assignments.find((a) => a.moment_id === id)!.pack_no
       expect(packOf("1")).not.toBe(packOf("2"))
-      expect(args.p_assignments.filter((a) => a.slot === 1).map((a) => a.moment_id).sort()).toEqual(["1", "2"])
+      // 2026-11-10: the top band fills the LAST slot, the floor band slot 1
+      expect(args.p_assignments.filter((a) => a.slot === 2).map((a) => a.moment_id).sort()).toEqual(["1", "2"])
+      expect(args.p_assignments.filter((a) => a.slot === 1).map((a) => a.moment_id).sort()).toEqual(["3", "4"])
     }
     const r = dbWithPool(priced)
     await sealDrop(r.db, DROP, allHeld)

@@ -119,9 +119,12 @@ export function sealPool(
  *   balanced — the pool is ranked by FMV (highest first, ties by moment id in
  *              code-point order) and cut into `perPack` value bands of
  *              `packCount` Moments each. Every pack gets exactly ONE Moment from
- *              each band, chosen by a CSPRNG shuffle inside the band: band 1 (the
- *              top `packCount` Moments) fills slot 1 of every pack, band 2 slot 2,
- *              and so on. No pack can hold two top-band Moments, and the gap
+ *              each band, chosen by a CSPRNG shuffle inside the band. Band 1 (the
+ *              top `packCount` Moments) fills the LAST slot of every pack and the
+ *              cheapest band slot 1 — band k fills slot (perPack - k + 1) — so a
+ *              pack opens floor-first and ends on its best Moment (Trevor
+ *              2026-11-10: "Slot 1 should be the floor"; until then band k filled
+ *              slot k). No pack can hold two top-band Moments, and the gap
  *              between the best and worst pack is as small as a fixed pool allows.
  *
  * Either way the seal fingerprint commits to the result, and the database
@@ -167,7 +170,8 @@ export function dealBalanced(
   const out: PackAssignment[] = []
   for (let band = 0; band < perPack; band++) {
     const members = shuffle(ranked.slice(band * packCount, (band + 1) * packCount), rand)
-    members.forEach((m, i) => out.push({ moment_id: m.moment_id, pack_no: i + 1, slot: band + 1 }))
+    // band 0 (the top) → the last slot; the cheapest band → slot 1
+    members.forEach((m, i) => out.push({ moment_id: m.moment_id, pack_no: i + 1, slot: perPack - band }))
   }
   return out
 }

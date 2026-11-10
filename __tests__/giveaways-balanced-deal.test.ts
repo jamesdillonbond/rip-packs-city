@@ -30,14 +30,19 @@ const POOL: PoolMoment[] = [
   { moment_id: "12", fmv_usd: 0.5 },
 ]
 
-/** The property the database enforces (seal_giveaway_drop_dealt): slot k holds exactly band k. */
+/**
+ * The property the database enforces (seal_giveaway_drop_dealt): band k (1 = the top
+ * Moments) fills slot (perPack - k + 1) — the top band the LAST slot, the floor band
+ * slot 1 (2026-11-10).
+ */
 function bandsHold(assignments: { moment_id: string; pack_no: number; slot: number }[], pool: PoolMoment[], packs: number): boolean {
   const ranked = rankByValue(pool)
-  return assignments.every((a) => Math.floor(ranked.findIndex((m) => m.moment_id === a.moment_id) / packs) + 1 === a.slot)
+  const perPack = pool.length / packs
+  return assignments.every((a) => perPack - Math.floor(ranked.findIndex((m) => m.moment_id === a.moment_id) / packs) === a.slot)
 }
 
 describe("giveaways — the balanced deal", () => {
-  it("every pack gets exactly one moment from each value band, slot k = band k", () => {
+  it("every pack gets exactly one moment from each value band, the top band in the last slot", () => {
     for (let i = 0; i < 50; i++) {
       const a = dealBalanced(POOL, 4, 3)
       expect(a).toHaveLength(12)
@@ -48,6 +53,19 @@ describe("giveaways — the balanced deal", () => {
       const p2 = a.find((x) => x.moment_id === "2")!.pack_no
       expect(p1).not.toBe(p2)
     }
+  })
+
+  it("slot 1 holds the floor band and the last slot the top band (Trevor 2026-11-10)", () => {
+    for (let i = 0; i < 20; i++) {
+      const a = dealBalanced(POOL, 4, 3)
+      expect(a.filter((x) => x.slot === 1).map((x) => x.moment_id).sort()).toEqual(["10", "11", "12", "9"])
+      expect(a.filter((x) => x.slot === 3).map((x) => x.moment_id).sort()).toEqual(["1", "2", "3", "4"])
+    }
+  })
+
+  it("the pre-2026-11-10 order (top band in slot 1) fails the property the database checks (planted)", () => {
+    const topFirst = dealBalanced(POOL, 4, 3).map((x) => ({ ...x, slot: 3 - x.slot + 1 }))
+    expect(bandsHold(topFirst, POOL, 4)).toBe(false)
   })
 
   it("a stacked deal fails the band property the database checks (planted)", () => {
@@ -200,9 +218,9 @@ describe("giveaways — valueBands (public page, balanced drops)", () => {
       ["5", "6", "7", "8"],
       ["9", "10", "11", "12"],
     ])
-    // and every sealed balanced deal puts slot k in band k
+    // and every sealed balanced deal puts band k in slot (perPack - k + 1): the top band last
     const a = dealBalanced(POOL, 4, 3)
-    for (const x of a) expect(bands[x.slot - 1].some((m) => m.moment_id === x.moment_id)).toBe(true)
+    for (const x of a) expect(bands[3 - x.slot].some((m) => m.moment_id === x.moment_id)).toBe(true)
     expect(valueBands(POOL.slice(0, 11), 4, 3)).toBeNull()
   })
 })

@@ -369,6 +369,7 @@ SET search_path TO 'public'
 AS $function$
 DECLARE
   v_packs int;
+  v_per int;
   v_bad int;
 BEGIN
   IF p_deal_mode IS NULL OR p_deal_mode NOT IN ('random', 'balanced') THEN
@@ -379,7 +380,7 @@ BEGIN
   PERFORM public.seal_giveaway_drop(p_drop_id, p_assignments, p_hash, p_salt);
 
   IF p_deal_mode = 'balanced' THEN
-    SELECT d.pack_count INTO v_packs FROM public.giveaway_drops d WHERE d.id = p_drop_id;
+    SELECT d.pack_count, d.moments_per_pack INTO v_packs, v_per FROM public.giveaway_drops d WHERE d.id = p_drop_id;
     IF EXISTS (SELECT 1 FROM public.giveaway_pack_moments m
                 WHERE m.drop_id = p_drop_id AND m.fmv_usd IS NULL) THEN
       RAISE EXCEPTION 'giveaway: a balanced deal needs every moment priced' USING ERRCODE = '22023';
@@ -389,7 +390,9 @@ BEGIN
                    (row_number() OVER (ORDER BY m.fmv_usd DESC, m.moment_id COLLATE "C") - 1) / v_packs + 1 AS band
               FROM public.giveaway_pack_moments m
              WHERE m.drop_id = p_drop_id) r
-     WHERE r.slot <> r.band;
+     -- band 1 (the top Moments) fills the LAST slot, the cheapest band slot 1, so a pack
+     -- opens floor-first and ends on its best Moment (Trevor 2026-11-10: "Slot 1 should be the floor")
+     WHERE r.slot <> v_per - r.band + 1;
     IF v_bad > 0 THEN
       RAISE EXCEPTION 'giveaway: not a balanced deal (% moments outside their value band)', v_bad USING ERRCODE = '22023';
     END IF;
@@ -641,7 +644,8 @@ SELECT _assert_eq((SELECT outcome FROM _gw_claims WHERE who = 'sponsor'), 'admin
 SELECT _assert_eq((SELECT outcome FROM _gw_claims WHERE who = 'fan'), 'claimed', 'M5 anyone else still claims');
 
 -- B1..B4: the balanced deal (2026-11-08). Pool 21=$10, 22=$8, 23=$5, 24=$1 in 2 packs of 2:
--- band 1 = {21, 22} must fill slot 1, band 2 = {23, 24} slot 2.
+-- band 1 = {21, 22} (the top) must fill the LAST slot (2), band 2 = {23, 24} slot 1
+-- (2026-11-10: a pack opens floor-first and ends on its best Moment).
 INSERT INTO giveaway_drops (slug, title, sponsor_name, collection_id, admin_wallet, pack_count, moments_per_pack)
 VALUES ('bal-one', 'Balanced one', 'Trevor', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '0x00000000000000aa', 2, 2),
        ('bal-two', 'Balanced two', 'Trevor', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '0x00000000000000aa', 2, 2);
@@ -664,7 +668,10 @@ SELECT _assert((SELECT msg LIKE '%random or balanced%' FROM _gw_raised WHERE lab
 SELECT _assert_eq((SELECT status || '/' || deal_mode FROM giveaway_drops WHERE slug = 'bal-one'), 'draft/random', 'B2 a refused balanced seal leaves the draft untouched');
 SELECT _assert_eq((SELECT count(*)::text FROM giveaway_pack_moments m JOIN giveaway_drops d ON d.id = m.drop_id
                     WHERE d.slug = 'bal-one' AND m.pack_no IS NOT NULL), '0', 'B2 and assigns nothing');
-SELECT pg_temp._try_dealt('b-ok', 'bal-one', 'balanced', '[{"moment_id":"21","pack_no":2,"slot":1},{"moment_id":"22","pack_no":1,"slot":1},{"moment_id":"23","pack_no":1,"slot":2},{"moment_id":"24","pack_no":2,"slot":2}]');
+-- one per band per pack, but the top band in slot 1 (the pre-2026-11-10 order): refused
+SELECT pg_temp._try_dealt('b-topfirst', 'bal-one', 'balanced', '[{"moment_id":"21","pack_no":2,"slot":1},{"moment_id":"22","pack_no":1,"slot":1},{"moment_id":"23","pack_no":1,"slot":2},{"moment_id":"24","pack_no":2,"slot":2}]');
+SELECT _assert((SELECT msg LIKE '%not a balanced deal%' FROM _gw_raised WHERE label = 'b-topfirst'), 'B1 the top band in slot 1 is refused — slot 1 holds the floor band');
+SELECT pg_temp._try_dealt('b-ok', 'bal-one', 'balanced', '[{"moment_id":"21","pack_no":2,"slot":2},{"moment_id":"22","pack_no":1,"slot":2},{"moment_id":"23","pack_no":1,"slot":1},{"moment_id":"24","pack_no":2,"slot":1}]');
 SELECT _assert_eq((SELECT msg FROM _gw_raised WHERE label = 'b-ok'), NULL, 'B3 a balanced deal (one per band per pack) is sealed');
 SELECT _assert_eq((SELECT status || '/' || deal_mode FROM giveaway_drops WHERE slug = 'bal-one'), 'sealed/balanced', 'B3 the drop records the balanced mode');
 -- the same stacked assignment is a legitimate RANDOM deal

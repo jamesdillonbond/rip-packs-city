@@ -303,7 +303,8 @@ const PINS = [
   {
     fn: "seal_giveaway_drop_dealt",
     test: "supabase/tests/giveaways.sql",
-    migration: "supabase/migrations/20261108205511_audit_20261108_giveaway_balanced_deal.sql",
+    // 2026-11-10: the top band fills the LAST slot (floor first).
+    migration: "supabase/migrations/20261110220815_audit_20261110_giveaway_balanced_deal_floor_first.sql",
   },
   {
     // Added 2026-09-29. Disney Pinnacle pack openers read from the open tx's
