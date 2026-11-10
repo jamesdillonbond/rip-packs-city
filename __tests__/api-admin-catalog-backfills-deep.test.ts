@@ -957,6 +957,106 @@ describe("/api/admin/backfill-pinnacle-catalog — catalog vs minted pins", () =
     expect(String((log.p_extra as Record<string, unknown>).mint_gap_error)).toBe("statement timeout")
   })
 
+  // 2026-11-09: the 11-08 Mugs drop sat outside Dapper's search for a day. A missing render is now
+  // read from the Pinnacle contract (JSON-Cadence below = what rest-mainnet returns) and inserted
+  // fill-only; the run fails only on what is still missing after that.
+  const cdcStr = (v: string | null) => (v == null ? { type: "Optional", value: null } : { type: "String", value: v })
+  const cdcStruct = (id: string, fields: Record<string, unknown>) => ({
+    type: "Struct",
+    value: { id, fields: Object.entries(fields).map(([name, value]) => ({ name, value })) },
+  })
+  const cdcDict = (o: Record<string, unknown>) => ({
+    type: "Dictionary",
+    value: Object.entries(o).map(([k, v]) => ({ key: { type: "String", value: k }, value: v })),
+  })
+  const cdcArr = (xs: string[]) => ({ type: "Array", value: xs.map((x) => ({ type: "String", value: x })) })
+  const CHAIN_MUG = {
+    type: "Array",
+    value: [
+      cdcDict({
+        edition: cdcStruct("A.edf9df96c92f4595.Pinnacle.Edition", {
+          id: { type: "Int", value: "2932" },
+          renderID: cdcStr("NEW-1"),
+          variant: cdcStr("Standard"),
+          printing: { type: "Int", value: "1" },
+          numberMinted: { type: "UInt64", value: "347" },
+          isChaser: { type: "Bool", value: false },
+          traits: cdcDict({ Materials: cdcArr(["SILVER"]), Color: cdcStr("FULL COLOR"), Size: cdcStr("MEDIUM"), Thickness: cdcStr("THIN") }),
+        }),
+        shape: cdcStruct("A.edf9df96c92f4595.Pinnacle.Shape", {
+          renderID: cdcStr("NEW"),
+          name: cdcStr("Mickey Mouse"),
+          metadata: cdcDict({ RoyaltyCodes: cdcArr(["WDAS-OEV1-WDMG"]), Characters: cdcArr(["Mickey Mouse"]), Franchises: cdcArr(["Mickey & Friends"]) }),
+        }),
+        set: cdcStruct("A.edf9df96c92f4595.Pinnacle.Set", { renderID: cdcStr("OEV1-WDMG"), name: cdcStr("Walt Disney Mugs Vol.1") }),
+        series: cdcStruct("A.edf9df96c92f4595.Pinnacle.Series", { name: cdcStr("2026") }),
+        editionType: cdcStruct("A.edf9df96c92f4595.Pinnacle.EditionType", { name: cdcStr("Open Edition"), isLimited: { type: "Bool", value: false } }),
+      }),
+    ],
+  }
+  const RECENT_GAP = {
+    data: {
+      missing_renders: 1,
+      missing_pins: 347,
+      missing_recent_renders: 1,
+      sample: [{ render_id: "NEW-1", pins: 347, first_minted_at: new Date(Date.now() - 86_400_000).toISOString() }],
+    },
+    error: null,
+  }
+  async function chainRun(flow: { status?: number; json: unknown }, inserted: unknown) {
+    const spy = install({
+      pinnacle_catalog: { data: null, error: null },
+      "pinnacle_catalog:upsert": [{ data: null, error: null }, { data: inserted, error: null }],
+      pinnacle_mint_events: { data: { edition_id: 2932 }, error: null },
+      "rpc:pinnacle_catalog_set_floor_asks": { data: 1, error: null },
+      "rpc:log_pipeline_run": { data: null, error: null },
+      "rpc:pinnacle_minted_renders_missing_from_catalog": RECENT_GAP,
+    })
+    fetchMock = installFetchMock([
+      gqlRoute("CatalogBackfill", [pinPage([MICKEY_NODE], false, null)]),
+      gqlRoute("FloorAsks", floorPage([])),
+      { match: (url) => url.includes("rest-mainnet.onflow.org"), respond: () => ({ status: flow.status ?? 200, json: flow.json }) },
+    ])
+    await pinCatalog.POST(adminReq("https://t/api/admin/backfill-pinnacle-catalog", { authorization: "Bearer admin-token" }))
+    await runDeferred()
+    return { spy, log: spy.rpcCalls.find((c) => c.name === "log_pipeline_run")!.args! }
+  }
+
+  it("a render the search lacks is read from the chain, inserted fill-only, and the run passes", async () => {
+    const b64 = Buffer.from(JSON.stringify(CHAIN_MUG)).toString("base64")
+    const { spy, log } = await chainRun({ json: b64 }, [{ render_id: "NEW-1" }])
+    expect(log.p_ok).toBe(true)
+    expect(log.p_extra).toMatchObject({ chain_filled: 1, chain_filled_recent: 1, minted_renders_missing_recent: 1 })
+    const chainWrite = spy.writes.pinnacle_catalog!.find((w) => w.rows.some((r) => r.source === "flow-chain"))!
+    // Fill-only: an existing (Dapper) row is never overwritten by a chain row.
+    expect(chainWrite.options).toMatchObject({ onConflict: "render_id", ignoreDuplicates: true })
+    expect(chainWrite.rows).toHaveLength(1)
+    expect(chainWrite.rows[0]).toMatchObject({
+      render_id: "NEW-1",
+      edition_id: "2932",
+      character_name: "Mickey Mouse",
+      set_name: "Walt Disney Mugs Vol.1",
+      set_render_id: "OEV1-WDMG",
+      variant: "Standard",
+      printing: 1,
+      total_minted: 347,
+      edition_type: "Open Edition",
+      limited_edition: false,
+      series_name: "2026",
+      materials: '["SILVER"]',
+      effects: null,
+      legacy_edition_key: "WDAS-OEV1-WDMG:Standard:1",
+      source: "flow-chain",
+    })
+  })
+
+  it("⚠ a failed chain read leaves the gap, and the run still fails naming why", async () => {
+    const { log } = await chainRun({ status: 500, json: { message: "boom" } }, null)
+    expect(log.p_ok).toBe(false)
+    expect(String(log.p_error)).toMatch(/catalog behind mints: 1 render\(s\).*0 filled from chain; chain: flow script HTTP 500/)
+    expect(log.p_extra).toMatchObject({ chain_filled: 0 })
+  })
+
   it("a floors-only refresh does not run the check", async () => {
     const spy = install({
       "rpc:pinnacle_catalog_set_floor_asks": { data: 1, error: null },

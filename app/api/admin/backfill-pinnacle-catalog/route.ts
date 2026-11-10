@@ -18,6 +18,7 @@ import { NextRequest, NextResponse, after as scheduleAfter } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { verifyAdminRequest, adminUnauthorizedResponse } from "@/lib/admin-auth";
 import { bearerMatches } from "@/lib/auth/bearer-secret";
+import { fetchChainCatalogRows } from "@/lib/pinnacle/chain-catalog";
 
 export const maxDuration = 120;
 export const dynamic = "force-dynamic";
@@ -26,6 +27,8 @@ const PIPELINE_NAME = "pinnacle-catalog-backfill";
 const GQL = "https://api.production.studio-platform.dapperlabs.com/graphql";
 const PAGE_SIZE = 100;
 const PER_REQUEST_TIMEOUT_MS = 20_000;
+// Renders read from the chain per run when the search lacks them (newest first).
+const CHAIN_FILL_MAX = 60;
 
 const QUERY = `
 query CatalogBackfill($first: Int!, $after: String) {
@@ -234,18 +237,73 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   // 14 days) fails the run, because that is the source falling behind, not a standing orphan.
   let mintGap: { missing_renders?: number; missing_pins?: number; missing_recent_renders?: number; sample?: unknown[] } | null = null;
   let mintGapError: string | null = null;
+  // Phase 1c (2026-11-09): a render the search lacks is read from the Pinnacle contract itself
+  // (lib/pinnacle/chain-catalog.ts) and inserted FILL-ONLY, tagged source 'flow-chain'. Dapper's
+  // row replaces it on the first sweep that returns it. The run fails only on what is STILL
+  // missing after that — e.g. the chain read failed, or a render has no on-chain edition id.
+  let chainFilled = 0;
+  let chainFilledRecent = 0;
+  const chainErrors: string[] = [];
   if (!floorsOnly) {
     try {
-      const { data: gap, error: gapErr } = await supabase.rpc("pinnacle_minted_renders_missing_from_catalog", { p_sample: 10, p_recent_days: 14 });
+      const { data: gap, error: gapErr } = await supabase.rpc("pinnacle_minted_renders_missing_from_catalog", { p_sample: CHAIN_FILL_MAX, p_recent_days: 14 });
       if (gapErr) mintGapError = gapErr.message;
       else mintGap = gap && typeof gap === "object" ? gap : null;
     } catch (e) {
       mintGapError = e instanceof Error ? e.message : String(e);
     }
+    const missingSample = (Array.isArray(mintGap?.sample) ? mintGap!.sample : []) as Array<{ render_id?: string; first_minted_at?: string }>;
+    if (!mintGapError && missingSample.length > 0) {
+      try {
+        const editionByRender = new Map<string, number>();
+        const renderIds = missingSample.map((s) => s.render_id).filter((r): r is string => !!r);
+        for (let i = 0; i < renderIds.length; i += 10) {
+          await Promise.all(
+            renderIds.slice(i, i + 10).map(async (rid) => {
+              const { data, error } = await supabase
+                .from("pinnacle_mint_events")
+                .select("edition_id")
+                .eq("render_id", rid)
+                .not("edition_id", "is", null)
+                .limit(1)
+                .maybeSingle();
+              if (error) chainErrors.push(`edition id for ${rid}: ${error.message}`);
+              const ed = Number((data as { edition_id?: unknown } | null)?.edition_id);
+              if (Number.isInteger(ed) && ed > 0) editionByRender.set(rid, ed);
+            }),
+          );
+        }
+        if (editionByRender.size > 0) {
+          const { rows: chainRows, errors: readErrors } = await fetchChainCatalogRows([...editionByRender.values()]);
+          chainErrors.push(...readErrors);
+          // Only rows for renders that were actually missing — never a render the search already wrote.
+          const wanted = chainRows.filter((r) => editionByRender.has(r.render_id));
+          if (wanted.length > 0) {
+            const { data: ins, error: insErr } = await supabase
+              .from("pinnacle_catalog")
+              .upsert(wanted, { onConflict: "render_id", ignoreDuplicates: true })
+              .select("render_id");
+            if (insErr) chainErrors.push(`chain rows insert: ${insErr.message}`);
+            else {
+              const filled = new Set(((ins as Array<{ render_id: string }> | null) ?? []).map((r) => r.render_id));
+              chainFilled = filled.size;
+              const recentCut = Date.now() - 14 * 86_400_000;
+              chainFilledRecent = missingSample.filter(
+                (s) => s.render_id && filled.has(s.render_id) && s.first_minted_at && Date.parse(s.first_minted_at) > recentCut,
+              ).length;
+            }
+          }
+        }
+      } catch (e) {
+        chainErrors.push(e instanceof Error ? e.message : String(e));
+      }
+      if (chainFilled > 0) console.warn(`[${PIPELINE_NAME}] filled ${chainFilled} catalog row(s) from the chain`);
+    }
+    const recentStillMissing = Math.max(0, Number(mintGap?.missing_recent_renders ?? 0) - chainFilledRecent);
     if (mintGapError) errors.push(`mint gap check: ${mintGapError}`);
-    else if (mintGap && Number(mintGap.missing_recent_renders ?? 0) > 0) {
+    else if (mintGap && recentStillMissing > 0) {
       errors.push(
-        `catalog behind mints: ${mintGap.missing_recent_renders} render(s) minted in the last 14 days have no catalog row (${mintGap.missing_renders} all-time, ${mintGap.missing_pins} pins)`,
+        `catalog behind mints: ${recentStillMissing} render(s) minted in the last 14 days have no catalog row (${mintGap.missing_renders} all-time, ${mintGap.missing_pins} pins; ${chainFilled} filled from chain${chainErrors.length ? `; chain: ${chainErrors[0]}` : ""})`,
       );
     }
     if (mintGap && Number(mintGap.missing_renders ?? 0) > 0) {
@@ -338,7 +396,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
       p_collection_slug: "disney_pinnacle",
       p_cursor_before: null,
       p_cursor_after: null,
-      p_extra: { floors_only: floorsOnly, pages, total_count: total, upserted, floor_listed: floorListed, floor_rows: floorRows, floor_pages: floorPages, floor_total: floorTotal, floor_complete: floorComplete, live_listings_seen: liveListings.length, live_written: liveWritten, live_deleted: liveDeleted, minted_renders_missing: mintGap?.missing_renders ?? null, minted_pins_missing: mintGap?.missing_pins ?? null, minted_renders_missing_recent: mintGap?.missing_recent_renders ?? null, minted_missing_sample: mintGap?.sample ?? null, mint_gap_error: mintGapError, duration_ms: durationMs, errors: errors.slice(0, 3) },
+      p_extra: { floors_only: floorsOnly, pages, total_count: total, upserted, floor_listed: floorListed, floor_rows: floorRows, floor_pages: floorPages, floor_total: floorTotal, floor_complete: floorComplete, live_listings_seen: liveListings.length, live_written: liveWritten, live_deleted: liveDeleted, minted_renders_missing: mintGap?.missing_renders ?? null, minted_pins_missing: mintGap?.missing_pins ?? null, minted_renders_missing_recent: mintGap?.missing_recent_renders ?? null, minted_missing_sample: Array.isArray(mintGap?.sample) ? mintGap!.sample.slice(0, 10) : null, mint_gap_error: mintGapError, chain_filled: chainFilled, chain_filled_recent: chainFilledRecent, chain_errors: chainErrors.slice(0, 3), duration_ms: durationMs, errors: errors.slice(0, 3) },
     });
   } catch {
     // best-effort observability
