@@ -64,8 +64,11 @@ const TICKER_ITEMS: Record<string, string[]> = {
   "candy-mlb": [
     // 2026-10-22: was "every edition priced from real secondary sales" — Candy also prices from a
     // confirmed live ask, and no Candy sale has been indexed since 10-11 (#58).
-    "⚾ CANDY MLB ON SOLANA — every edition priced from its secondary sales or a confirmed ask",
-    "⚾ COLLECTION ANALYZER — paste a Solana wallet for FMV on every card",
+    // 2026-11-09: "every edition priced" and "FMV on every card" went false on 11-08, when every
+    // legacy Candy collection was catalogued: 190 of ~22.8k Candy editions carry a price (a Candy
+    // edition is priced once it has a sale). The lines now say what a price is built from.
+    "⚾ CANDY MLB ON SOLANA — prices come from each edition's own secondary sales or a confirmed ask",
+    "⚾ COLLECTION ANALYZER — paste a Solana wallet to see every card, with FMV where one exists",
     "⚾ SET TRACKER — 100-player checklist + cost to finish from live asks",
     "⚾ PACK MARKET — confirmed floor, recent pack sales and pull value",
     "⚾ LIVE BOARD — floors, asks and 24h sales on the Candy MLB insights board",

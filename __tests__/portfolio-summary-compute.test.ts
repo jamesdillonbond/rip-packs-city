@@ -258,21 +258,30 @@ describe("computeLoanDefaults", () => {
 describe("computeCostBasisSummary", () => {
   const emptyMap = new Map<string, { buyPrice: number }>()
 
-  it("uses authoritative wallet-wide totals and counts rows with cost data", () => {
+  // 2026-11-09 RE-PIN: the wallet-wide branch used to count the LOADED rows, which printed
+  // "27 moments with a known cost" under a total summed over 6,628. The count is the RPC's.
+  it("uses authoritative wallet-wide totals and the RPC's own count, never the loaded rows", () => {
     const rows: PortfolioMomentRow[] = [
       { flowId: "a", costBasis: 10 },
       { flowId: "b", costBasis: 0 }, // no cost → not counted
       { flowId: "c" }, // no cost → not counted
     ]
     const map = new Map([["a", { buyPrice: 25 }]])
-    const s = computeCostBasisSummary(fullSummary, rows, map)
+    const s = computeCostBasisSummary({ ...fullSummary!, moments_with_cost: 6628 }, rows, map)
     expect(s).not.toBeNull()
     expect(s!.walletWide).toBe(true)
     expect(s!.totalCost).toBe(500)
     expect(s!.totalFmv).toBe(1000)
     expect(s!.totalPl).toBe(500)
     expect(s!.plPct).toBe(100)
-    expect(s!.count).toBe(1) // only flowId "a" has a positive basis
+    expect(s!.count).toBe(6628) // the wallet's, not the 1 loaded row that carries a basis
+  })
+
+  it("reports no count when the RPC does not send one (rendered without a number)", () => {
+    const rows: PortfolioMomentRow[] = [{ flowId: "a", costBasis: 10 }]
+    const s = computeCostBasisSummary(fullSummary, rows, new Map([["a", { buyPrice: 25 }]]))
+    expect(s!.walletWide).toBe(true)
+    expect(s!.count).toBe(0)
   })
 
   it("sums per-row basis and fmv when no wallet-wide cost basis", () => {

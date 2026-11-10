@@ -180,6 +180,27 @@ export const UI_FIELD_DICTIONARY: readonly UiFieldEntry[] = [
       `How often one deal alert repeats for the same moment. ${NOTIFY_MODE_LABEL.new_listing} (the default): ${NOTIFY_MODE_HINT.new_listing} ${NOTIFY_MODE_LABEL.once}: ${NOTIFY_MODE_HINT.once} ${NOTIFY_MODE_LABEL.daily}: ${NOTIFY_MODE_HINT.daily} There is no daily or weekly DIGEST — before 2026-10-14 the form offered one and nothing implemented it; it was replaced by this setting.`,
     source: "app/alerts/AlertsClient.tsx (alert-notify-mode) + lib/alerts/notify-mode.ts + dispatch_due_deal_alerts (20261015002500)",
   },
+  {
+    // 2026-11-09 (signed-in production probe): asked "what is my Top Shot cost basis", the
+    // concierge sent the collector to the dashboard Overview, which has no cost basis on it.
+    id: "collection.cost-basis",
+    surface: "Collection tab (/[collection]/collection), the strip under the wallet stats; signed-in owner of the wallet only",
+    field: "Cost Basis · Current FMV · P&L · \"N moments with a known cost\"",
+    aliases: ["cost basis", "p&l", "pnl", "profit and loss", "what i paid", "how much i spent", "moments with a known cost", "known cost", "am i up or down"],
+    meaning:
+      "Shown on a collection's Collection tab (for example /nba-top-shot/collection) for the signed-in owner of the wallet — NOT on the dashboard Overview. Cost Basis is the sum of what was paid for the moments whose purchase price is on record (marketplace buys, loan defaults); pack pulls, gifts and rewards have no per-moment price and are left out. Current FMV in that strip is the FMV of THOSE moments only, so it is smaller than the Wallet FMV tile above it. P&L is that FMV minus that cost. The count beside it is how many moments the three figures cover. The concierge has no tool that reads a wallet's cost basis: say where the strip is and what it covers, never a figure.",
+    source: "components/collection/PortfolioSummary.tsx + lib/portfolio-summary-compute.ts (computeCostBasisSummary) + get_wallet_summary (cost_basis, current_fmv, pnl, moments_with_cost)",
+  },
+  {
+    // 2026-11-09: the same probe asked when the weekly digest sends; the concierge had nothing.
+    id: "email.weekly-portfolio-email",
+    surface: "Email settings (/dashboard/notifications), \"Weekly digest\" switch",
+    field: "Weekly digest (the weekly portfolio email)",
+    aliases: ["digest email", "weekly email", "portfolio email", "email settings", "when does the digest", "monday email", "email me weekly", "unsubscribe"],
+    meaning:
+      "One email on Monday morning (Pacific) saying how the value of the collector's saved wallets moved over the week. It goes only to a signed-in collector who has left the switch on, and only in a week the value moved by 5% or more — a quiet week sends nothing, which is not a failure. Every email has an unsubscribe link, and the switch on /dashboard/notifications turns it off. It is separate from listing alerts (the Alerts page), which have no digest mode. The concierge cannot see whether a particular collector is opted in or was sent one: point to the page.",
+    source: "app/dashboard/notifications/NotificationsClient.tsx + app/api/cron/weekly-digest/route.ts (DEFAULT_MIN_ABS_PCT 5; vercel.json Mondays 16:33 UTC)",
+  },
 ];
 
 function norm(s: string): string {

@@ -199,8 +199,8 @@ export default function NotificationsClient() {
             <div>
               <label htmlFor="pref-digest-weekly" style={{ display: "block", fontWeight: 600, cursor: "pointer" }}>Weekly digest</label>
               <div style={{ fontSize: 13, color: "var(--rpc-text-secondary)", lineHeight: 1.45 }}>
-                One email a week with how your saved wallets&apos; value moved. RPC isn&apos;t sending it yet — this switch
-                decides whether you&apos;re in from the first send.
+                One email on Monday morning with how your saved wallets&apos; value moved over the week. It is only
+                sent in a week your collection&apos;s value moved by 5% or more.
               </div>
             </div>
           </div>

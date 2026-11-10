@@ -1802,6 +1802,12 @@ async function runSentinelWithin(clock: WallBudgetClock) {
     const rows: any[] = covRows || [];
     const live = rows.find((r) => r.scope === "live");
     const inert = rows.find((r) => r.scope === "inert_ts_uuid");
+    // 2026-11-09: legacy Candy collections catalogued by the census (11-08) are their own scope
+    // (migration audit_20261109_sentinel_coverage_scopes_candy_legacy_catalog). The FMV writer
+    // prices a Candy edition only once it sells, so ~21.7k never-sold catalogue rows held this arm
+    // at 74 % WARN and it could no longer report a real writer gap. Printed beside the headline,
+    // never dropped; absent on an older RPC, in which case nothing is said about it.
+    const candyLegacy = rows.find((r) => r.scope === "candy_legacy_catalog");
     const liveEditions = Number(live?.editions || 0);
     const liveWithFmv = Number(live?.with_fmv || 0);
     // Same rule as the confidence arm: a zero DENOMINATOR is not 0% coverage.
@@ -1832,6 +1838,9 @@ async function runSentinelWithin(clock: WallBudgetClock) {
           ? `${isSaturationError(covErr.message) ? INCONCLUSIVE : ""}Coverage RPC error: ${covErr.message}`
           : `${liveWithFmv} of ${liveEditions} live editions have an FMV snapshot (${coverage}%)` +
             ` — excludes ${Number(inert?.editions || 0)} inert UUID-keyed TS rows` +
+            (candyLegacy
+              ? ` · Candy legacy catalogue counted separately: ${Number(candyLegacy.with_fmv || 0)} of ${Number(candyLegacy.editions || 0)} priced (a Candy edition is priced once it has a sale)`
+              : "") +
             ` (lower bound: read from edition_fmv_current, refreshed hourly — a first snapshot younger than the last refresh counts as uncovered)`,
         value: `${coverage}%`,
       });

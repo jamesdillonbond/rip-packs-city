@@ -47,6 +47,9 @@ describe("collection ticker names each collection's real mechanism", () => {
   })
   it("no ticker claims every edition is priced from sales alone, or that Golazos coverage is growing", () => {
     expect(chrome).not.toMatch(/every edition priced from real secondary sales/i)
+    // 2026-11-09: no ticker line may claim a price on EVERY edition or card — the Candy catalogue
+    // widened on 11-08 and most of its editions have never sold.
+    expect(chrome).not.toMatch(/every edition priced|FMV on every card/i)
     expect(chrome).not.toMatch(/COVERAGE — growing/)
   })
 })

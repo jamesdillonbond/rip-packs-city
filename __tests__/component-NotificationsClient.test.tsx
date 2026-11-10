@@ -261,11 +261,16 @@ describe("NotificationsClient — only switches a sender honours are offered (20
     expect(screen.queryByRole("button", { name: "RARE" })).toBeNull()
   })
 
-  it("says the digest is not sending yet, and routes listing alerts to /alerts", async () => {
+  // 2026-11-09 RE-PIN (premise changed): both weekly emails have been LIVE since 11-02 / 11-03
+  // (pipeline_runs 11-09: weekly-digest sent 8, send-digest sent 1), so "RPC isn't sending it yet"
+  // had become a false claim on a signed-in settings page. The page must not say it, and must
+  // say when the email goes out.
+  it("does not claim the digest is unsent, says when it goes out, and routes listing alerts to /alerts", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => ok({ subscriber: SUB }) as any))
     render(<NotificationsClient />)
     await waitFor(() => expect(screen.getByText("collector@example.com")).toBeTruthy())
-    expect(screen.getByText(/isn.t sending it yet/)).toBeTruthy()
+    expect(screen.queryByText(/isn.t sending it yet|first send/)).toBeNull()
+    expect(screen.getByText(/Monday morning/)).toBeTruthy()
     const alertsLinks = screen.getAllByRole("link", { name: "Alerts" })
     expect(alertsLinks.length).toBeGreaterThanOrEqual(1)
     expect(alertsLinks[0].getAttribute("href")).toBe("/alerts")

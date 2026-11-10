@@ -158,7 +158,7 @@ export default function TermsPage() {
           </Section>
 
           <Section title="Third-Party Marketplaces">
-            Links from Rip Packs City to NBA Top Shot, Flowty, or other
+            Links from Rip Packs City to NBA Top Shot, NFL All Day, Magic Eden, or other
             third-party marketplaces transfer you to those platforms, which have
             their own terms. We are not responsible for transactions, listings,
             or actions you take on those platforms.

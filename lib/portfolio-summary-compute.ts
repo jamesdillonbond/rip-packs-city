@@ -22,6 +22,9 @@ export type WalletSummary = {
   cost_basis: number
   current_fmv: number
   pnl: number
+  // How many moments the wallet-wide cost_basis / current_fmv / pnl cover (get_wallet_summary).
+  // Optional: an older deployment does not send it.
+  moments_with_cost?: number
 } | null
 
 // Client-computed page totals (fallback when walletSummary hasn't loaded).
@@ -237,11 +240,13 @@ export function computeCostBasisSummary(
     totalCost = walletSummary.cost_basis
     totalFmv = walletSummary.current_fmv
     totalPl = walletSummary.pnl
-    for (const row of rows) {
-      const cb = costBasis.get(row.flowId ?? "")
-      const rowBasis = cb ? cb.buyPrice : row.costBasis ?? 0
-      if (rowBasis > 0) count++
-    }
+    // 2026-11-09: the count beside a WALLET-WIDE total must be wallet-wide too. Counting the
+    // LOADED rows printed "27 moments with a known cost" beside a $113,123 cost basis that
+    // get_wallet_summary had summed over 6,628 moments (the grid had loaded its first page).
+    // Unknown (an older RPC without the field) is 0, which the panel renders with no number —
+    // never a count taken from whichever page happens to be on screen.
+    const n = walletSummary.moments_with_cost
+    count = typeof n === "number" && Number.isFinite(n) && n > 0 ? n : 0
   } else {
     totalCost = 0
     totalFmv = 0

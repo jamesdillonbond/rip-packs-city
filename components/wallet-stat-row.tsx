@@ -218,6 +218,12 @@ export default function WalletStatRow(props: WalletStatRowProps) {
         </div>
         <div className="rpc-stat-value">{formatCurrency(lockedFmv)}</div>
         <div className="rpc-stat-caption">{lockedCaption(lockedCount)}</div>
+        {/* 2026-11-09: Wallet FMV leaves stale-priced moments out and names them beside it; the
+            locked / unlocked split counts them. On a real wallet that read Locked $54,437 above
+            a Wallet FMV of $52,275 with nothing saying why. Say it where the sum is visible. */}
+        {typeof staleFmv === "number" && staleFmv > 0 && (
+          <div className="rpc-stat-caption">locked + unlocked include the stale-priced</div>
+        )}
       </div>
       </>)}
 

@@ -435,6 +435,25 @@ describe("sentinel — confidence / coverage / leak arms", () => {
     const r = await run({ "rpc:sentinel_edition_coverage": { data: [{ scope: "live", editions: 1000, with_fmv: 500 }], error: null } as never })
     expect(chk(r, "Edition Coverage").status).toBe("warn")
   })
+  // 2026-11-09: the Candy legacy catalogue is its own scope — reported beside the headline, and it
+  // can neither lift a low live share nor sink a healthy one.
+  it("reports the Candy legacy catalogue beside the headline without letting it move the verdict", async () => {
+    const healthy = await run({ "rpc:sentinel_edition_coverage": { data: [
+      { scope: "live", editions: 1000, with_fmv: 990 },
+      { scope: "candy_legacy_catalog", editions: 20000, with_fmv: 1 },
+    ], error: null } as never })
+    expect(chk(healthy, "Edition Coverage").status).toBe("ok")
+    expect(chk(healthy, "Edition Coverage").detail).toMatch(/Candy legacy catalogue counted separately: 1 of 20000 priced/)
+    const low = await run({ "rpc:sentinel_edition_coverage": { data: [
+      { scope: "live", editions: 1000, with_fmv: 500 },
+      { scope: "candy_legacy_catalog", editions: 20000, with_fmv: 20000 },
+    ], error: null } as never })
+    expect(chk(low, "Edition Coverage").status).toBe("warn")
+  })
+  it("says nothing about a Candy legacy scope the RPC did not return", async () => {
+    const r = await run({ "rpc:sentinel_edition_coverage": { data: [{ scope: "live", editions: 1000, with_fmv: 990 }], error: null } as never })
+    expect(chk(r, "Edition Coverage").detail).not.toMatch(/Candy legacy/)
+  })
   it("warns on an edition-coverage RPC error", async () => {
     const r = await run({ "rpc:sentinel_edition_coverage": { data: null, error: { message: "boom" } } as never })
     expect(chk(r, "Edition Coverage").status).toBe("warn")

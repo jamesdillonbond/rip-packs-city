@@ -104,3 +104,17 @@ describe("ui field dictionary — squeeze board (2026-10-25 replay)", () => {
     expect(hit?.meaning).toMatch(/MIN MINT/)
   })
 })
+
+// 2026-11-09 — two questions a signed-in production probe could not answer.
+describe("ui field dictionary — cost basis and the weekly email (2026-11-09)", () => {
+  it("'what is my cost basis' reaches the Collection-tab entry, which names the tab and not the dashboard", () => {
+    const hit = lookupUiField("what is my Top Shot cost basis and how many moments have a known cost", "dashboard")[0]
+    expect(hit?.id).toBe("collection.cost-basis")
+    expect(hit?.meaning).toMatch(/NOT on the dashboard Overview/)
+  })
+  it("'when does the weekly email send' reaches the weekly email entry", () => {
+    const hit = lookupUiField("when does the weekly portfolio email go out", "email settings")[0]
+    expect(hit?.id).toBe("email.weekly-portfolio-email")
+    expect(hit?.meaning).toMatch(/Monday morning/)
+  })
+})
