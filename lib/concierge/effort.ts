@@ -6,7 +6,11 @@
 // `CONCIERGE_EFFORT` env var overrides this default without a deploy of code.
 export const EFFORT_LEVELS = ["low", "medium", "high"] as const;
 export type ConciergeEffort = (typeof EFFORT_LEVELS)[number];
-export const DEFAULT_CONCIERGE_EFFORT: ConciergeEffort = "high";
+// 2026-11-09 replay (8 real user questions, high vs medium, prod): same tools on
+// 7 of 8, answers equivalent in substance, model time -20 % (56.3 s -> 45.3 s
+// summed) and output tokens -23 % (6,322 -> 4,846). Medium also asked before
+// logging feedback where high logged it unasked. Flip back with CONCIERGE_EFFORT=high.
+export const DEFAULT_CONCIERGE_EFFORT: ConciergeEffort = "medium";
 export function conciergeEffort(): ConciergeEffort {
   const env = (process.env.CONCIERGE_EFFORT ?? "").trim().toLowerCase();
   return (EFFORT_LEVELS as readonly string[]).includes(env) ? (env as ConciergeEffort) : DEFAULT_CONCIERGE_EFFORT;

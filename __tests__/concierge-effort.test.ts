@@ -25,6 +25,12 @@ describe("concierge effort", () => {
     expect(resolveConciergeEffort(null, "high")).toBe("high")
   })
 
+  it("defaults to medium (2026-11-09 replay decision)", () => {
+    delete process.env.CONCIERGE_EFFORT
+    expect(DEFAULT_CONCIERGE_EFFORT).toBe("medium")
+    expect(conciergeEffort()).toBe("medium")
+  })
+
   it("env override accepts only known levels", () => {
     process.env.CONCIERGE_EFFORT = "low"
     expect(conciergeEffort()).toBe("low")
