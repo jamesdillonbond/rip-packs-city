@@ -7,7 +7,8 @@
 ## STEER — added 2026-11-10 4:45 AM PT (Claude Code cloud) — wallet-summary budget watch + one new lane finding
 
 - **`/api/wallet-summary` now waits 20 s (#228 b′).** Read Vercel for `RPC_READ_TIMEOUT` on this route: a hit now means a read past 20 s — read its `read_failed wallet=… elapsed_ms=…` line and that hour's wmc write volume before anything else. 0 hits for 30 days closes the arm.
-- **`wmc-fmv-stuck-resync` (hourly :33) deadlocks — 6 of 48 runs, `40P01`.** Harmless per run (full rollback, next hour retries) but it inflates the lane's failure rate. Only act if it climbs past ~1 in 4 or a whole PT day fails; the fix is ordered row locking in `resync_stuck_wmc_fmv` (3-file pin discipline).
+- **`wmc-fmv-stuck-resync` deadlocks — FIXED 11-10 ~7:15 AM PT** (`audit_20261110_stuck_wmc_fmv_resync_skips_rows_another_writer_holds`): it now locks with `FOR UPDATE … SKIP LOCKED` so it never waits on the :36 `reconcile_saved_wallets_wmc_fmv`. Read: 0 `40P01` rows over the next 48 runs. Falsifier: a `40P01` on this lane (then the partner is a new writer — read the postgres log's `Process holding the lock`).
+- **Candy census 429s — adaptive concurrency shipped 11-10.** Read `hydrate_fail_reasons."HTTP 429"` (was 450–660/run) and the new `hydrate_min_concurrency`. Expect 429 failures to drop toward 0 while `hydrated_fetched` stays roughly level; falsifier: 429s unchanged with `hydrate_min_concurrency` at the floor 4 (then the gateways limit by RATE, not width — add spacing between requests).
 - `wmc-metadata-selfheal` post-fix run 11-10 = ok (39 s). `topshot-map-atlas-reconcile` 11-10 = ok (175.5 s, 31 rows) — but ~3× its 57–62 s history; if it approaches the 300 s cap, read what grew (candidates vs map rows) before raising the cap.
 
 ## STEER — added 2026-11-09 9:15 PM PT (Claude Code cloud) — Candy name-only edition repair (#246): watch, do not "fix" the gate
