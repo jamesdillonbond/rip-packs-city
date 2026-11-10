@@ -26,6 +26,13 @@ the six #187/#188 migrations on 2026-10-10, every body md5-equal to its file on 
 sessions apply migrations within minutes: if one lands with a LATER version before you push, rename
 yours past it (replay order must match apply order).
 
+## Cowork cloud session — four facts from 2026-11-09 evening
+
+- **Bash's `$HOME` is `/root`, not `/home/claude`.** A clone made with `cd ~` lives at `/root/rpc`; a `Write` to `/home/claude/rpc/...` silently creates a stray tree beside it (nothing errors — a typecheck/test then runs without the new file). Use the absolute `/root/...` path for `Read`/`Write`/`Edit`.
+- **Pushing from the cloud clone needs the repo in the session first:** the git proxy answers 403 "not in this session's authorized repository set" until `add_repo(jamesdillonbond, rip-packs-city, access: push)`; after that the existing clone pushes as-is (no re-clone).
+- **A held write needs an explicit approval word.** The auto-mode classifier ("Modify Shared Resources" / "Production Deploy") let the same UPDATE / editor Run through only after Trevor wrote "Approve" / "Yes I approve"; "Keep going" right after the question was NOT accepted. Ask for an explicit yes and do not retry in between.
+- **Large data payload into prod without transcribing:** commit the JSON, `net.http_get` its raw URL at the pinned sha, and put `md5(content) = '<md5>'` in the INSERT's source CTE (the 11-09 30-row `pinnacle_catalog` chain fill). Same principle as the migration recipe above, for data.
+
 ## Project subagents run on Haiku — `.claude/agents/` (2026-11-09)
 
 - `Explore.md` overrides Claude Code's built-in Explore, which now runs on the SESSION's model (Opus-priced here) instead of Haiku. `log-reader.md` reads test / CI / pipeline logs and reports each failure's first error line. Both are read-only (`Read, Grep, Glob, Bash`) on `model: haiku`.

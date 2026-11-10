@@ -38,3 +38,7 @@ Nothing shipped. No revert.
 ## 🟠 PARTLY RESOLVED — item 2 (interim guard) applied 2026-11-09 ~7:41 PM PT (Claude Code, Trevor's laptop)
 
 `20261110034117_audit_20261109_trophies_view_held_twice_is_not_one_of_one`: `v_insights_trophies` sets `is_one_of_one` (and admits on circulation 1) only when fewer than 2 DISTINCT moment_ids hold the edition. Read back against a snapshot of the old view: 7,552 → 7,372 rows; the 180 that left are all Candy (0 from any other collection), no rows added, 3 rows changed and only in the flag (they stay as top tier); `security_invoker=on` and grants intact. Candidates are materialized before the held probe and the FMV lateral (a one-WHERE version ran the lateral for all 82k editions: 523k buffers); 92.7k hits / 451 ms warm. The board's top-tier badge no longer prints "/1" for such a row (`TrophiesBoardClient.tsx`, + test). **Still open:** item 1 (census keying / circulation — census owner) and item 3 (re-baseline `max_ms` after 1).
+
+## ✅ RESOLVED — 2026-11-09 ~9:55 PM PT (Cowork cloud)
+
+All three items closed: (1) root — `c30913392` (a Candy 1/1 card is its own edition) + `45bae3819` / `20261110044500` (listings follow the repointed card); (2) interim guard — `20261110034117`; plus Trevor's "Baseball cards only" scope and the hourly orphan cleanup — `20261110041400` (8:14 PM PT; 9:22 PM PT tick 25 deleted / 0 referenced). (3) Liveness: no re-baseline needed — `EXPLAIN ANALYZE` 9:55 PM PT = **331 ms warm, 6,954 rows, 124 blocks read**, far under the 7,000 ms budget; the Bat Cowl / Palm Garden "1 minted" rows are gone.
