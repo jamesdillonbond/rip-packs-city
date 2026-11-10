@@ -179,3 +179,12 @@ The display was awake, so the walk finished: Sets, Analytics, Market, Packs and 
 - **Filed, not changed** (inbox `2026-11-10T1715Z`): `get_allday_set_progress` re-reads every All Day FMV snapshot per call (63,233 buffers; missed its 8 s budget cold at 8:08 AM PT). The cached price table is not a drop-in — it differs on 196 editions — so the fix is a pricing-semantics choice first.
 - **Noted:** Fast Break is still a "Coming soon" tile although its projections lane has been live since 10-23; un-parking it is a launch decision that wants an in-season QA.
 - **Runtime errors since the morning deploys:** 10 single-occurrence read timeouts in 5 h, none on a surface changed today except the All Day sets read above (the RPC, not the new series lookup).
+
+### Sixth pass, later (9:45 AM PT) — two staged database changes waiting
+
+This session's database writes were refused three times today, so both of these are files, not changes:
+
+1. `docs/proposals/audit_20261110_allday_set_tracker_reads_current_fmv_cache-STAGED.sql` — **the one that matters.** The All Day Sets tab prices missing pieces from prices the engine has since withdrawn: $78,407 of stale figures across 196 editions, one of $4,999.50. The file points both tracker functions at the current-price table, which also takes the read from about 63,000 buffers to a few thousand.
+2. `docs/proposals/audit_20261110_candy_offer_spread_board_liveness_floor_recalibrated-STAGED.sql` — the Candy board alarm floor, 30 → 5.
+
+Each runs as one paste in the Supabase SQL editor; each carries its pre-check, post-check and revert.
