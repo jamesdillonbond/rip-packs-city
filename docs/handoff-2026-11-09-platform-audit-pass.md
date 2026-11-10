@@ -166,4 +166,16 @@ The display was awake, so the walk finished: Sets, Analytics, Market, Packs and 
 
 - **`candy_offer_spread_board` floor 30 → 5:** refused a second time by the session's permission check after Trevor's go-ahead. Still staged in `docs/proposals/`. One paste in the Supabase SQL editor applies it.
 - **Two spent scheduled tasks:** left in place deliberately. Deleting a scheduled task deletes the sessions it started, which are their run records.
-- **"Candy MLB" label:** recommendation is "Candy" (the collection now includes DC, Netflix and Getty sets). 105 code lines in 125 files name it; it needs Trevor's word because it is the public name on titles, cards and emails.
+- **"Candy MLB" label: DECIDED 11-10 ~9:10 AM PT — keep it** (Trevor: "Do what you think is best"). My earlier "Candy" recommendation is withdrawn: read line by line, 30+ of the 105 code lines that print the label are true statements about the MLB product (ICONs board, MLB pack market, team and player pages, ESPN stats, the published checklist); the live market and the search term are MLB; the non-MLB legacy collections hold 1 priced edition of about 21,000. A blanket rename would make more copy wrong than right.
+
+
+---
+
+## Sixth pass — 8:55 AM → ~9:25 AM PT 11-10 (Trevor: "Do what you think is best and keep going")
+
+- **Decided:** keep the "Candy MLB" label (reasoning above).
+- **Swept, clean:** every shared `[collection]` component and lib helper that defaults a collection to Top Shot — no remaining caller reaches one without naming its collection.
+- **Walked, coherent:** Top Shot Play and Challenges, My Teams, Trade Block.
+- **Filed, not changed** (inbox `2026-11-10T1715Z`): `get_allday_set_progress` re-reads every All Day FMV snapshot per call (63,233 buffers; missed its 8 s budget cold at 8:08 AM PT). The cached price table is not a drop-in — it differs on 196 editions — so the fix is a pricing-semantics choice first.
+- **Noted:** Fast Break is still a "Coming soon" tile although its projections lane has been live since 10-23; un-parking it is a launch decision that wants an in-season QA.
+- **Runtime errors since the morning deploys:** 10 single-occurrence read timeouts in 5 h, none on a surface changed today except the All Day sets read above (the RPC, not the new series lookup).
