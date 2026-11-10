@@ -45,12 +45,16 @@ describe("WalletStatRow", () => {
     expect(container.textContent).toContain("12 pins")
   })
 
-  it("shows an em-dash for null FMV (not $0) and 'n/a for this collection' for null locked count", () => {
+  // 2026-11-09 INVERTED: this pinned "n/a for this collection" for a null locked count. The Locked
+  // tile only renders on a collection that HAS locking, so that phrase was false wherever it showed
+  // (Top Shot, for the first seconds of every load). A null count is unknown, not inapplicable.
+  it("shows an em-dash for a null FMV and a null locked count, never 'n/a for this collection'", () => {
     const { container } = render(
       <WalletStatRow {...props({ lockedFmv: null, lockedCount: null })} />
     )
     expect(container.textContent).toContain("—")
-    expect(container.textContent).toContain("n/a for this collection")
+    expect(container.textContent).not.toContain("n/a for this collection")
+    expect(container.textContent).not.toContain("null locked")
   })
 
   it("distinguishes a real computed $0 from missing data", () => {

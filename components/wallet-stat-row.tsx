@@ -72,8 +72,12 @@ function unitNoun(slug: string): string {
   return slug === "disney-pinnacle" ? "pins" : "moments"
 }
 
+// 2026-11-09: a null count read "n/a for this collection" — but this tile only renders when the
+// collection HAS locking (`hasLocking`), so the phrase was never true where it showed. It printed
+// on Top Shot for the first seconds of every load, before the summary arrived. Null is "not known
+// yet", the same em dash the Unlocked tile uses.
 function lockedCaption(count: number | null): string {
-  if (count === null) return "n/a for this collection"
+  if (count === null) return "—"
   return formatCount(count) + " locked"
 }
 

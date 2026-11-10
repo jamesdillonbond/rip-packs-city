@@ -2159,6 +2159,25 @@ const UNSCOPED_WHEN_NULL_TOOLS = new Set([
   "get_top_sales",
 ]);
 
+/**
+ * The sweep tools read NBA Top Shot's Quick-Buy sales. Pinnacle, All Day and Candy have their own
+ * arms above each call site; any other NAMED collection (Golazos, UFC Strike, Panini) has no sweep
+ * read in the concierge, so the answer is a refusal that names no Top Shot row.
+ */
+function sweepNotApplicable(tool: string, collectionId: string): string {
+  const where = collectionId === "panini-blockchain"
+    ? " Panini's sweeps are on its own page, /panini-blockchain/hot-floors: point there."
+    : collectionId === "ufc"
+      ? " UFC Strike's market on Flow is closed, so there is nothing being swept."
+      : "";
+  return JSON.stringify({
+    status: "not_applicable",
+    collection: collectionId,
+    tool,
+    message: `RPC has no sweep read for this collection in the concierge.${where} Do not answer with Top Shot data unless the collector asks for Top Shot by name; if they do, call this tool again with collectionId "nba-top-shot".`,
+  });
+}
+
 async function executeToolInner(
   toolName: string,
   toolInput: any,
@@ -4891,6 +4910,13 @@ async function executeToolInner(
     if (isAllDaySlug(effectiveCollectionId)) {
       return readAllDayHotFloorsForConcierge(supabase, base, { days: Number(toolInput.days ?? 7), limit: Number(toolInput.limit ?? 15) });
     }
+    // 2026-11-09: every OTHER named collection fell through to Top Shot's board. On a Golazos page the
+    // production concierge answered "hot floors" with Top Shot's sweeps (it said so, but a substituted
+    // subject is refused, not labelled — CLAUDE.md, Honesty). An absent collection still reads Top Shot's,
+    // and so does an explicit "nba-top-shot".
+    if (effectiveCollectionId && effectiveCollectionId !== "nba-top-shot") {
+      return sweepNotApplicable("get_hot_floors", effectiveCollectionId);
+    }
     try {
       const days = Math.min(Math.max(Math.trunc(Number(toolInput.days ?? 3)) || 3, 1), 7);
       const limit = Math.min(Math.max(Math.trunc(Number(toolInput.limit ?? 15)) || 15, 1), 40);
@@ -4922,6 +4948,9 @@ async function executeToolInner(
     }
     if (isAllDaySlug(effectiveCollectionId)) {
       return allDayNotApplicable("get_edition_sweep", "The per-edition sweep signal reads Top Shot's Quick-Buy sales; All Day sales record no Quick-Buy path.", "Call get_hot_floors on All Day: it lists the editions collectors are buying in bulk (3+ copies in a row) over the last 7 days.");
+    }
+    if (effectiveCollectionId && effectiveCollectionId !== "nba-top-shot") {
+      return sweepNotApplicable("get_edition_sweep", effectiveCollectionId);
     }
     try {
       const key = String(toolInput.editionKey ?? "").trim();
