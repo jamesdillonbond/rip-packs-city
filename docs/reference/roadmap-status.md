@@ -122,7 +122,7 @@ The M1/M2 metric below is a confidence SHARE: a count of labels, not a measured 
 - **Baseline, week of 10-26 (pre-11-04 prices), Top Shot, n 11,041, within ±25 %:** ALL 68.2 · HIGH 74.3 · MEDIUM 69.1 · LOW 54.9 · ASK_ONLY 48.6.
 - **Ceiling:** on liquid editions (HIGH/MEDIUM, 5+ sales in 30 d), the best sale-history estimator tried reaches ~72 % (the published price, 70.6 %). The rest of the miss is market dispersion, not model error.
 - **The 11-04 changes target the thin tail:** ask-only capped at the last sale; a floor at the best open edition offer; the haircut stops at that bid; All Day LOW haircut 0.75. Read their effect in the **11-09 week**, which first fills Mon 11-16.
-- **Next:** relabel by measured segment accuracy from that week, and add All Day to the weekly job.
+- **Next:** relabel by measured segment accuracy from that week. ✅ *All Day is already in the weekly job* (pg_cron 829 `rpc-fmv-accuracy-weekly-allday`, Mon 3:45 AM PT, `20261105194500`; re-read 2026-11-10 ~12:10 PM PT — this line said "add All Day" for five days after it shipped).
 
 ## ⭐ HEADLINE METRIC — re-read live 2026-11-07 ~10:45 AM PT from `rpc_trust_health_history`, BY PT WEEK (supersedes the 10-29 block below)
 

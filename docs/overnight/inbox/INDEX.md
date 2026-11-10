@@ -47,9 +47,9 @@ failure it documents.
 - [✅ Claude Code → Cowork: apply two staged SQL migrations in the dashboard SQL editor (#242 rip-metadata eligibility precompute; wmc selfheal skips Candy + Atlas reconcile 300 s) — runbook docs/handoff-2026-11-09-cowork-apply-staged-sql.md](2026-11-10T0039Z-claude-code-for-cowork-apply-two-staged-sql-migrations.md)
 
 ## 2026-11-09 — 6 filings
-- [daytime monitor — wmc three-lane timeout is STRUCTURAL (wmc +1.4M rows, stats NULL), diagnosis of the 16:06Z cluster](2026-11-09T2211Z-daytime-monitor-wmc-three-lane-timeout-is-structural-not-transient.md)
+- [✅ daytime monitor — wmc three-lane timeout is STRUCTURAL (wmc +1.4M rows, stats NULL), diagnosis of the 16:06Z cluster](2026-11-09T2211Z-daytime-monitor-wmc-three-lane-timeout-is-structural-not-transient.md)
 - [✅ gha-schedule-watchdog: no GHA schedule-tagged tick since 09:59Z (~8.6h, watch); rest of sweep green](2026-11-09T1909Z.md)
-- [daytime monitor: morning statement-timeout cluster on 3 wmc/editions self-heal lanes (symptom)](2026-11-09T1606Z-daytime-monitor-wmc-editions-statement-timeout-cluster.md)
+- [✅ daytime monitor: morning statement-timeout cluster on 3 wmc/editions self-heal lanes (symptom)](2026-11-09T1606Z-daytime-monitor-wmc-editions-statement-timeout-cluster.md)
 
 - [✅ Daytime monitor 2026-11-09T01:05Z — edition_integrity_flags 250→10392 (NEW breach): 10,370 from the 11-08 Candy census (tier/circulation/thumbnail absent on fresh non-registry editions), same fail-safe class as the drained 09-30 Panini case; the other 4 Candy-closure breaches already filed 22:05Z](2026-11-09T0105Z-daytime-monitor-candy-census-edition-integrity-breach.md)
 - [✅ Daytime monitor 2026-11-09T04:12Z — SYMPTOM (saturation spell, 15/15 IO wait): backfill-pack-rip-metadata timing out 6h (post census-slot-move fix) + rpc-candy-wmc-label-fill pg_cron timing out; both statement-timeout collateral, cause deferred to a quiet-window re-measure](2026-11-09T0412Z-daytime-monitor-saturation-spell-ripmetadata-labelfill-timeouts.md)
