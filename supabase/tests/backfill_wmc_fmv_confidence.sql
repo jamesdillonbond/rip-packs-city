@@ -32,15 +32,17 @@
 --     every keyless row consumes a batch slot on every tick forever, joining the
 --     permanent floor described below.
 --   • ⚠ `CROSS JOIN LATERAL`, not LEFT. An edition with no priced snapshot is
---     DROPPED, so its wmc rows keep a NULL confidence and are re-selected on
---     every tick, forever. Asserted, because that is a permanent floor on the
---     backlog rather than a transient one — and the reason a "drained" queue can
---     still be non-empty.
+--     DROPPED, so its wmc rows keep a NULL confidence — a permanent floor on the
+--     backlog, and the reason a "drained" queue can still be non-empty.
+--   • ⚠ SINCE 2026-11-10 THE LIMIT IS TAKEN AFTER THAT JOIN. Until then it sat in a
+--     `targets` CTE before it, so the floor did not just persist — it CONSUMED the
+--     batch: an unresolvable row spent a slot on every tick, and a resolvable row
+--     behind enough of them was never reached (Top Shot: 1,090 resolvable of 4,216
+--     unlabelled, the oldest since April). The last block below pins the new order.
 --
--- The function DDL below is VERBATIM from the committed snapshot migration
--- (supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql),
--- pulled from live prod via pg_get_functiondef on 2026-08-16
--- (md5 731012fa08c138028f425e43598fddb8).
+-- The function DDL below is VERBATIM from the newest defining migration
+-- (supabase/migrations/20261110211850_audit_20261110_backfill_wmc_fmv_confidence_limits_after_the_priced_join.sql),
+-- which replaced the 2026-08-16 snapshot body (20260816080000, live prosrc md5 03d0bbeb867ef0c499d5214588762d85).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -82,36 +84,48 @@ AS $function$
 DECLARE
   v_updated integer;
 BEGIN
-  WITH targets AS (
-    SELECT wmc.id, wmc.collection_id, wmc.edition_key
-    FROM public.wallet_moments_cache wmc
-    WHERE wmc.fmv_confidence IS NULL
-      AND wmc.edition_key IS NOT NULL
-      AND (p_collection_id IS NULL OR wmc.collection_id = p_collection_id)
-    LIMIT p_limit
-    FOR UPDATE SKIP LOCKED
-  ),
-  snapped AS (
-    SELECT t.id AS wmc_id, fs.fmv_usd, fs.confidence
-    FROM targets t
+  -- 2026-11-10: the batch LIMIT is taken over rows that CAN be labelled (an edition in the same collection
+  -- with a priced snapshot), not over every unlabelled row. Taken before that join, an unresolvable row spent
+  -- a batch slot on every tick forever, so a resolvable row behind enough of them was never reached (Top Shot:
+  -- 1,090 resolvable of 4,216 unlabelled, the oldest since April). Value and label still come from ONE snapshot
+  -- row; the job always passes a collection (pg_cron 302 rotates four), so `cand` stays small.
+  WITH cand AS MATERIALIZED (
+    SELECT w.id, e.id AS edition_id
+    FROM public.wallet_moments_cache w
     JOIN public.editions e
-      ON e.collection_id = t.collection_id
-     AND e.external_id   = t.edition_key
+      ON e.collection_id = w.collection_id
+     AND e.external_id   = w.edition_key
+    WHERE w.fmv_confidence IS NULL
+      AND w.edition_key IS NOT NULL
+      AND (p_collection_id IS NULL OR w.collection_id = p_collection_id)
+  ),
+  priced AS MATERIALIZED (
+    SELECT c.id AS wmc_id, fs.fmv_usd, fs.confidence
+    FROM cand c
     CROSS JOIN LATERAL (
       SELECT fmv_usd, confidence
       FROM public.fmv_snapshots
-      WHERE edition_id = e.id
+      WHERE edition_id = c.edition_id
         AND fmv_usd IS NOT NULL
       ORDER BY computed_at DESC
       LIMIT 1
     ) fs
+    LIMIT p_limit
+  ),
+  targets AS (
+    SELECT w.id
+    FROM public.wallet_moments_cache w
+    JOIN priced p ON p.wmc_id = w.id
+    WHERE w.fmv_confidence IS NULL
+    FOR UPDATE OF w SKIP LOCKED
   ),
   updated AS (
     UPDATE public.wallet_moments_cache wmc
-       SET fmv_usd        = s.fmv_usd,
-           fmv_confidence = s.confidence
-      FROM snapped s
-     WHERE wmc.id = s.wmc_id
+       SET fmv_usd        = p.fmv_usd,
+           fmv_confidence = p.confidence
+      FROM priced p
+      JOIN targets t ON t.id = p.wmc_id
+     WHERE wmc.id = p.wmc_id
      RETURNING 1
   )
   SELECT COUNT(*)::int INTO v_updated FROM updated;
@@ -242,27 +256,38 @@ SELECT _assert_eq(
   'a zero limit takes no rows — the batch size is honoured, not ignored'
 );
 
--- ⚠ THE LIMIT BOUNDS ROWS **EXAMINED**, NOT ROWS WRITTEN, and that is the whole
--- mechanism behind the permanent backlog floor above. `LIMIT p_limit` sits in
--- the `targets` CTE, BEFORE the join to a priced snapshot — so an unresolvable
--- row consumes a batch slot and writes nothing. Every tick draws the same
--- unresolvable rows again, and once they are all that remain, a 25,000-row batch
--- does 25,000 rows of work and zero writes, forever.
---
--- ⚠ I found this by writing the assertion the other way round and having it
--- fail: with two candidates and a LIMIT of 1, the run returned 0 because it drew
--- the unresolvable one. The code was right and the expectation was wrong. Made
--- deterministic below by leaving ONLY the unresolvable row.
+-- ⚠ INVERTED 2026-11-10. Until then this block pinned "THE LIMIT BOUNDS ROWS
+-- EXAMINED, NOT ROWS WRITTEN": `LIMIT p_limit` sat BEFORE the join to a priced
+-- snapshot, so an unresolvable row consumed a batch slot and wrote nothing, every
+-- tick, and a resolvable row behind enough of them was never reached. The limit
+-- now bounds rows that CAN be labelled. With ONLY unresolvable rows left the
+-- answer is still 0 and they stay unlabelled (the floor itself is unchanged):
 DELETE FROM public.wallet_moments_cache WHERE id = 1;
 
 SELECT _assert_eq(
   public.backfill_wmc_fmv_confidence(NULL, 1)::text, '0',
-  'a batch slot spent on an unresolvable row writes NOTHING — the limit bounds EXAMINED, not written'
+  'with only unresolvable rows left, a batch writes nothing'
 );
 SELECT _assert_eq(
   (SELECT coalesce(fmv_confidence::text,'NULL') FROM public.wallet_moments_cache WHERE id = 2),
   'NULL',
-  '...and that row is still unlabelled, so the next tick draws it again'
+  '...and the unresolvable row stays unlabelled — the floor is unchanged'
+);
+
+-- ⚠ THE DISCRIMINATING CASE. A resolvable row inserted AFTER the unresolvable ones
+-- (rows 2 and 6 sit ahead of it in the heap) and a batch of ONE: the old order drew
+-- row 2, wrote 0, and would have done so on every tick; the new order labels row 7.
+INSERT INTO public.wallet_moments_cache (id, collection_id, edition_key, fmv_usd, fmv_confidence) VALUES
+  (7, :TS::uuid, '10:1', NULL, NULL);
+
+SELECT _assert_eq(
+  public.backfill_wmc_fmv_confidence(NULL, 1)::text, '1',
+  'a batch of one reaches a resolvable row behind unresolvable ones — the limit bounds rows that CAN be labelled'
+);
+SELECT _assert_eq(
+  (SELECT fmv_usd::text || '/' || fmv_confidence::text FROM public.wallet_moments_cache WHERE id = 7),
+  '25.00/HIGH',
+  '...labelled from the same snapshot row as before'
 );
 
 ROLLBACK;

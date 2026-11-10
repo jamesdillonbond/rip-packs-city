@@ -3245,7 +3245,7 @@ const PINS = [
     fn: "backfill_wmc_fmv_confidence",
     test: "supabase/tests/backfill_wmc_fmv_confidence.sql",
     migration:
-      "supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql",
+      "supabase/migrations/20261110211850_audit_20261110_backfill_wmc_fmv_confidence_limits_after_the_priced_join.sql",
   },
   {
     // pg_cron `13 4,16 * * *`.
