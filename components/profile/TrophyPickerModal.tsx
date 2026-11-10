@@ -316,6 +316,25 @@ export default function TrophyPickerModal({
     [ownerKey, leagueFilter, collectionFilter, serverQuery]
   );
 
+  // 2026-11-10: on a CHALLENGE case, pull purchases made since the wallet's last
+  // walk into the cache (verified on-chain) and reload the list if any landed —
+  // spitehouse stopped Dame Time at 5 of 6 holding a sixth this list could not
+  // show. Once per open; a failed sync keeps the list as it is.
+  const [syncGen, setSyncGen] = useState(0);
+  const syncedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!caseId || !challengeSlug || syncedFor.current === caseId) return;
+    // No cancel on cleanup: the once-per-case guard would then drop the reload
+    // under StrictMode's double effect, and a setState after unmount is a no-op.
+    syncedFor.current = caseId;
+    fetchJson<{ ok?: boolean; added?: number }>("/api/profile/trophy-cases/sync-buys", {
+      method: "POST",
+      cache: "no-store",
+    }).then(({ ok, json }) => {
+      if (ok && typeof json?.added === "number" && json.added > 0) setSyncGen((n) => n + 1);
+    });
+  }, [caseId, challengeSlug]);
+
   useEffect(() => {
     let cancelled = false;
     const gen = ++loadGen.current;
@@ -353,7 +372,7 @@ export default function TrophyPickerModal({
     return () => {
       cancelled = true;
     };
-  }, [pageParams]);
+  }, [pageParams, syncGen]);
 
   const loadMore = useCallback(() => {
     if (loadingMore) return;

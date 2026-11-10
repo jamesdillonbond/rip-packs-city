@@ -26,6 +26,7 @@ import { checkChallengePin, parseChallengeRules } from "@/lib/trophy/challenge-r
 import { PANINI_COLLECTION_ID } from "@/lib/trophy/slab-href";
 import { rankFillCandidates, topShotThumbnail, type FillCandidateRow } from "@/lib/trophy/fill-case";
 import { sanitizeTrophyThumbnail } from "@/lib/profile/trophy-thumbnail";
+import { syncRecentTopShotBuysForWallets } from "@/lib/trophy/recent-buys";
 
 export const dynamic = "force-dynamic";
 
@@ -86,6 +87,13 @@ export async function POST(req: NextRequest) {
   if (wallets.length === 0) {
     return NextResponse.json({ error: `${challenge.title} only takes pieces you hold — add your wallet to your profile first.` }, { status: 403 });
   }
+  // 2026-11-10: a piece bought after the wallet's last walk is not in the cache
+  // the candidates (and checkChallengePin) read — spitehouse stopped at 5 of 6
+  // holding a sixth. Pull purchases since the last walk in, verified on-chain,
+  // first. A failed sync leaves the cache as it was (stricter, never looser).
+  const synced = await syncRecentTopShotBuysForWallets(supabase, wallets);
+  for (const r of synced) if (r.error) console.warn(`[trophy-cases fill] recent-buys sync ${r.wallet}: ${r.error}`);
+
   const ruledCols = colsRes.data
     ? ((colsRes.data as { id: string }[]).map((c) => c.id))
     : null;
