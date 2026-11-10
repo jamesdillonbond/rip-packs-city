@@ -1,4 +1,4 @@
-# Inbox index — 646 live filings
+# Inbox index — 647 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,8 +32,9 @@ failure it documents.
 
 ---
 
-## 2026-11-10 — 9 filings
+## 2026-11-10 — 10 filings
 - [daytime monitor — rpc-chain-arrivals-seed newly timing out (flow_height_estimate DISTINCT over growing puller wallets); green the prior 5 days](2026-11-10T1607Z-daytime-monitor-chain-arrivals-seed-timeout.md)
+- [Wallet caches keep prices the engine has withdrawn — $89,860 across 474 moments in 79 wallets; no writer can carry a NULL](2026-11-10T1800Z-wallet-caches-keep-prices-the-engine-withdrew.md) — *(Cowork cloud, read-only.)* All Day 432 rows / 48 wallets / $69,987; Top Shot 42 / 31 / $19,873; every row still priced. Needs a decision: re-label as stale, or clear the price.
 - [`get_allday_set_progress` streams every All Day FMV snapshot on each call — 8 s read budget missed cold; the cached table is NOT a drop-in](2026-11-10T1715Z-allday-set-progress-reads-the-whole-fmv-snapshot-set-per-call.md) — *(Cowork cloud, read-only.)* 63,233 buffers per call; `edition_fmv_current` differs on 196 editions (latest non-null vs latest). Also: Fast Break still parked; "Candy MLB" label kept.
 - [Candy revival detector fired: first Candy sale since 10-11 (a legacy collection, $0.17)](2026-11-10T0645Z-candy-revival-detector-fired-first-sale-since-10-11.md)
 - [Claude Code: watch list for the 11-09 signup-wave thread (archived) — self-heal lanes, #242 24 h exit, Candy 1-of-1 re-key + orphan cleanup, candy-editions-ingest lock timeout](2026-11-10T0552Z-claude-code-watch-list-for-the-11-09-signup-wave-thread.md)
