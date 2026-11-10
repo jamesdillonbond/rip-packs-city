@@ -545,7 +545,7 @@ export default function CollectionMomentTable(props: {
                       </div>
                       <div className="rpc-expand-section">
                         <div className="rpc-expand-section-eyebrow">Recent sales for this edition</div>
-                        <EditionRecentSales editionKey={row.editionKey ?? null} mintCount={getMint(row)} />
+                        <EditionRecentSales editionKey={row.editionKey ?? null} mintCount={getMint(row)} collectionSlug={collectionSlug} />
                       </div>
                     </div>
                   )}
@@ -1155,7 +1155,7 @@ export default function CollectionMomentTable(props: {
                             ) : null}
                             <div className="rpc-expand-section">
                               <div className="rpc-expand-section-eyebrow">Recent sales for this edition</div>
-                              <EditionRecentSales editionKey={row.editionKey ?? null} mintCount={getMint(row)} />
+                              <EditionRecentSales editionKey={row.editionKey ?? null} mintCount={getMint(row)} collectionSlug={collectionSlug} />
                             </div>
                           </div>
                         </td>

@@ -48,20 +48,20 @@ const text = () => document.body.textContent ?? ""
 describe("EditionRecentSales", () => {
   it("does not report an absence of sales when the read fails", async () => {
     stubFail()
-    render(<EditionRecentSales editionKey="73:2785" mintCount={1000} />)
+    render(<EditionRecentSales collectionSlug="nba-top-shot" editionKey="73:2785" mintCount={1000} />)
     expect(await screen.findByText(/Couldn't load recent sales/)).toBeTruthy()
     expect(text()).not.toContain("No recent sales")
   })
 
   it("still reports a genuinely unsold edition", async () => {
     stubEmpty({ sales: [] })
-    render(<EditionRecentSales editionKey="73:2785" mintCount={1000} />)
+    render(<EditionRecentSales collectionSlug="nba-top-shot" editionKey="73:2785" mintCount={1000} />)
     expect(await screen.findByText("No recent sales")).toBeTruthy()
   })
 
   it("renders sales when they load", async () => {
     stubEmpty({ sales: [{ serialNumber: 5, price: 42, soldAt: new Date().toISOString() }] })
-    render(<EditionRecentSales editionKey="73:2785" mintCount={1000} />)
+    render(<EditionRecentSales collectionSlug="nba-top-shot" editionKey="73:2785" mintCount={1000} />)
     expect(await screen.findByText(/\$42\.00/)).toBeTruthy()
   })
 })

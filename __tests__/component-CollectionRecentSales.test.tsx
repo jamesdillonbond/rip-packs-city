@@ -34,16 +34,16 @@ beforeEach(() => { vi.unstubAllGlobals() })
 describe("CollectionRecentSales", () => {
   it("renders nothing and does not fetch before a search has run", () => {
     const f = mockFetchOnce([SALE])
-    const { container } = render(<CollectionRecentSales searchNonce={0} visible={true} />)
+    const { container } = render(<CollectionRecentSales collectionSlug="nba-top-shot" collectionLabel="NBA Top Shot" searchNonce={0} visible={true} />)
     expect(container.innerHTML).toBe("")
     expect(f).not.toHaveBeenCalled()
   })
 
   it("fetches on the first nonce bump and renders the sale rows", async () => {
     const f = mockFetchOnce([SALE])
-    render(<CollectionRecentSales searchNonce={1} visible={true} />)
+    render(<CollectionRecentSales collectionSlug="nba-top-shot" collectionLabel="NBA Top Shot" searchNonce={1} visible={true} />)
     await waitFor(() => expect(screen.getByText("Nikola Jokic")).toBeTruthy())
-    expect(f).toHaveBeenCalledWith("/api/recent-sales?limit=15")
+    expect(f).toHaveBeenCalledWith("/api/recent-sales?limit=15&collectionId=nba-top-shot")
     expect(screen.getByText("1 sales")).toBeTruthy()
     expect(screen.getByText("#412")).toBeTruthy()
     expect(screen.getByText("$55.00")).toBeTruthy()
@@ -54,7 +54,7 @@ describe("CollectionRecentSales", () => {
 
   it("stays hidden when the parent has not flipped hasSearched, even with rows loaded", async () => {
     mockFetchOnce([SALE])
-    const { container } = render(<CollectionRecentSales searchNonce={1} visible={false} />)
+    const { container } = render(<CollectionRecentSales collectionSlug="nba-top-shot" collectionLabel="NBA Top Shot" searchNonce={1} visible={false} />)
     await waitFor(() => expect((globalThis.fetch as any)).toHaveBeenCalled())
     expect(container.innerHTML).toBe("")
   })
@@ -62,7 +62,7 @@ describe("CollectionRecentSales", () => {
   it("renders the loading state, then replaces it with the table", async () => {
     let resolve: (v: any) => void = () => {}
     vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise((r) => { resolve = r })))
-    render(<CollectionRecentSales searchNonce={1} visible={true} />)
+    render(<CollectionRecentSales collectionSlug="nba-top-shot" collectionLabel="NBA Top Shot" searchNonce={1} visible={true} />)
     await waitFor(() => expect(screen.getByText("Loading sales history…")).toBeTruthy())
     resolve({ ok: true, json: async () => ({ sales: [SALE] }) })
     await waitFor(() => expect(screen.getByText("Nikola Jokic")).toBeTruthy())
@@ -71,11 +71,11 @@ describe("CollectionRecentSales", () => {
 
   it("re-fetches once per searchNonce bump", async () => {
     const f = mockFetchOnce([SALE])
-    const { rerender } = render(<CollectionRecentSales searchNonce={1} visible={true} />)
+    const { rerender } = render(<CollectionRecentSales collectionSlug="nba-top-shot" collectionLabel="NBA Top Shot" searchNonce={1} visible={true} />)
     await waitFor(() => expect(f).toHaveBeenCalledTimes(1))
-    rerender(<CollectionRecentSales searchNonce={1} visible={true} />)
+    rerender(<CollectionRecentSales collectionSlug="nba-top-shot" collectionLabel="NBA Top Shot" searchNonce={1} visible={true} />)
     expect(f).toHaveBeenCalledTimes(1) // same nonce → no refetch
-    rerender(<CollectionRecentSales searchNonce={2} visible={true} />)
+    rerender(<CollectionRecentSales collectionSlug="nba-top-shot" collectionLabel="NBA Top Shot" searchNonce={2} visible={true} />)
     await waitFor(() => expect(f).toHaveBeenCalledTimes(2))
   })
 
@@ -84,9 +84,9 @@ describe("CollectionRecentSales", () => {
     vi.stubGlobal("fetch", vi.fn().mockImplementation(
       () => new Promise((r) => { resolvers.push(r) })
     ))
-    const { rerender } = render(<CollectionRecentSales searchNonce={1} visible={true} />)
+    const { rerender } = render(<CollectionRecentSales collectionSlug="nba-top-shot" collectionLabel="NBA Top Shot" searchNonce={1} visible={true} />)
     await waitFor(() => expect(resolvers.length).toBe(1))
-    rerender(<CollectionRecentSales searchNonce={2} visible={true} />)
+    rerender(<CollectionRecentSales collectionSlug="nba-top-shot" collectionLabel="NBA Top Shot" searchNonce={2} visible={true} />)
     await waitFor(() => expect(resolvers.length).toBe(2))
 
     // Second (current) search lands first, then the stale first search resolves.
@@ -101,18 +101,29 @@ describe("CollectionRecentSales", () => {
 
   it("survives a non-ok response and a rejected fetch without rendering a broken table", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, json: async () => ({}) }))
-    const { container, rerender } = render(<CollectionRecentSales searchNonce={1} visible={true} />)
+    const { container, rerender } = render(<CollectionRecentSales collectionSlug="nba-top-shot" collectionLabel="NBA Top Shot" searchNonce={1} visible={true} />)
     await waitFor(() => expect(container.innerHTML).toBe(""))
 
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network")))
-    rerender(<CollectionRecentSales searchNonce={2} visible={true} />)
+    rerender(<CollectionRecentSales collectionSlug="nba-top-shot" collectionLabel="NBA Top Shot" searchNonce={2} visible={true} />)
     await waitFor(() => expect(container.innerHTML).toBe(""))
   })
 
   it("formats a missing fmv as an em dash rather than a percentage", async () => {
     mockFetchOnce([{ ...SALE, fmv: null }])
-    render(<CollectionRecentSales searchNonce={1} visible={true} />)
+    render(<CollectionRecentSales collectionSlug="nba-top-shot" collectionLabel="NBA Top Shot" searchNonce={1} visible={true} />)
     await waitFor(() => expect(screen.getByText("Nikola Jokic")).toBeTruthy())
     expect(screen.queryByText("+10%")).toBeNull()
+  })
+
+  it("⚠ asks for ITS collection's sales and names it — never a bare request that the route answers with Top Shot", async () => {
+    // 2026-11-10: the Golazos binder showed Top Shot sales under "Recent Sales".
+    const f = mockFetchOnce([SALE])
+    render(<CollectionRecentSales collectionSlug="laliga-golazos" collectionLabel="LaLiga Golazos" searchNonce={1} visible={true} />)
+    await waitFor(() => expect(screen.getByText("Nikola Jokic")).toBeTruthy())
+    const url = String(f.mock.calls[0][0])
+    expect(url).toContain("collectionId=laliga-golazos")
+    expect(document.body.textContent).toMatch(/Recent LaLiga Golazos sales/)
+    expect(document.body.textContent).toMatch(/not this wallet/)
   })
 })

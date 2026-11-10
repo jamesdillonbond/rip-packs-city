@@ -22,7 +22,7 @@ afterEach(() => {
 
 describe("EditionRecentSales", () => {
   it("short-circuits with a dash and no fetch when editionKey is null", () => {
-    const { getByText } = render(<EditionRecentSales editionKey={null} />)
+    const { getByText } = render(<EditionRecentSales collectionSlug="nba-top-shot" editionKey={null} />)
     expect(getByText("Recent Sales")).toBeTruthy()
     expect(getByText("—")).toBeTruthy()
     expect(fetchMock).not.toHaveBeenCalled()
@@ -30,7 +30,7 @@ describe("EditionRecentSales", () => {
 
   it("shows the loading placeholder before data arrives", () => {
     fetchMock.mockReturnValueOnce(new Promise(() => {})) // never resolves
-    const { getByText } = render(<EditionRecentSales editionKey="1:2" />)
+    const { getByText } = render(<EditionRecentSales collectionSlug="nba-top-shot" editionKey="1:2" />)
     expect(getByText("Loading sales...")).toBeTruthy()
   })
 
@@ -42,7 +42,7 @@ describe("EditionRecentSales", () => {
         ],
       }),
     )
-    const { getByText } = render(<EditionRecentSales editionKey="1:2" mintCount={100} />)
+    const { getByText } = render(<EditionRecentSales collectionSlug="nba-top-shot" editionKey="1:2" mintCount={100} />)
     await waitFor(() => expect(getByText("#7 / 100")).toBeTruthy()) // serial + mint
     expect(getByText("$42.50")).toBeTruthy()
     expect(getByText("→ whale")).toBeTruthy()
@@ -50,8 +50,23 @@ describe("EditionRecentSales", () => {
 
   it("shows the no-sales state when the edition has none", async () => {
     fetchMock.mockReturnValueOnce(okJson({ sales: [] }))
-    const { getByText } = render(<EditionRecentSales editionKey="1:2" />)
+    const { getByText } = render(<EditionRecentSales collectionSlug="nba-top-shot" editionKey="1:2" />)
     await waitFor(() => expect(getByText("No recent sales")).toBeTruthy())
+  })
+
+  it("⚠ asks for the row's OWN collection — a bare editionKey is looked up as Top Shot and reads 'No recent sales'", async () => {
+    // 2026-11-10, measured live: an All Day edition with 5 sales that hour answered 0 without collectionId.
+    fetchMock.mockReturnValueOnce(okJson({ sales: [] }))
+    render(<EditionRecentSales collectionSlug="nfl-all-day" editionKey="4461" />)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    expect(String(fetchMock.mock.calls[0][0])).toContain("collectionId=nfl-all-day")
+  })
+
+  it("⚠ does NOT conclude 'No recent sales' for an edition the route could not find", async () => {
+    fetchMock.mockReturnValueOnce(okJson({ sales: [], editionKnown: false }))
+    const { getByText, queryByText } = render(<EditionRecentSales collectionSlug="disney-pinnacle" editionKey="render-1" />)
+    await waitFor(() => expect(getByText("—")).toBeTruthy())
+    expect(queryByText("No recent sales")).toBeNull()
   })
 
   it("ignores a stale response when editionKey changes mid-flight", async () => {
@@ -64,9 +79,9 @@ describe("EditionRecentSales", () => {
         okJson({ sales: [{ serialNumber: 222, price: 2, soldAt: "2026-04-15T00:00:00Z" }] }),
       ) // editionKey B — resolves immediately
     const { rerender, getByText, queryByText } = render(
-      <EditionRecentSales editionKey="1:AAAA" mintCount={100} />,
+      <EditionRecentSales collectionSlug="nba-top-shot" editionKey="1:AAAA" mintCount={100} />,
     )
-    rerender(<EditionRecentSales editionKey="1:BBBB" mintCount={100} />)
+    rerender(<EditionRecentSales collectionSlug="nba-top-shot" editionKey="1:BBBB" mintCount={100} />)
     await waitFor(() => expect(getByText("#222 / 100")).toBeTruthy()) // newer data painted
 
     // The stale (first) response now lands — it must NOT overwrite the newer edition.

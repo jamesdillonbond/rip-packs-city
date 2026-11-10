@@ -31,6 +31,7 @@ import { fetchSavedWalletForCollection } from "@/lib/profile/saved-wallet-for-co
 import PortfolioSummary from "@/components/collection/PortfolioSummary"
 import SaveWalletToProfileButton from "@/components/collection/SaveWalletToProfileButton"
 import CollectionRecentSales from "@/components/collection/CollectionRecentSales"
+import { collectionViewStorageKey, legacySharedFilterKey, SCOPED_VIEW_FIELDS, type ViewField } from "@/lib/collection-view-storage"
 import DealWatchCapture from "@/components/DealWatchCapture"
 import { useMobile } from "@/components/collection/use-mobile"
 import {
@@ -204,6 +205,12 @@ function WalletMomentsBody() {
     cost_basis: number
     current_fmv: number
     pnl: number
+    // 2026-11-10: how many moments the cost basis above is summed over. The 11-09 fix
+    // taught computeCostBasisSummary to read it, but this mapping dropped the field, so
+    // the line rendered with no number. Absent → undefined, never 0.
+    moments_with_cost?: number
+    lock_unknown_fmv?: number
+    lock_unknown_count?: number
     // 2026-09-06: the stale split get_wallet_summary now carries, so the headline
     // tile can read total − stale like the dashboard and the share card.
     stale_fmv?: number
@@ -232,10 +239,11 @@ function WalletMomentsBody() {
   const [collectionSeriesMap, setCollectionSeriesMap] = useState<Map<number, CollectionSeriesEntry>>(new Map())
   const [collectionSeriesOptions, setCollectionSeriesOptions] = useState<{ label: string; seriesNumber: number }[]>([])
 
-  // Hydrate filter state from localStorage on mount
+  // Hydrate the saved view from localStorage on mount. Filters are stored PER COLLECTION
+  // (lib/collection-view-storage.ts): a player or set filter names rows of one collection.
   useEffect(function() {
     try {
-      const stored = function(key: string) { return localStorage.getItem("rpc_collection_" + key) }
+      const stored = function(field: ViewField) { return localStorage.getItem(collectionViewStorageKey(collectionSlug, field)) }
       const sk = stored("sortKey")
       if (sk) dispatchView({ type: "SET", field: "sortKey", value: JSON.parse(sk) as SortKey })
       const sd = stored("sortDirection")
@@ -253,21 +261,25 @@ function WalletMomentsBody() {
       const bf = stored("badgeFilter")
       if (bf) dispatchView({ type: "SET", field: "badgeFilter", value: JSON.parse(bf) === true })
     } catch {}
-  }, [])
+    try {
+      for (const f of SCOPED_VIEW_FIELDS) localStorage.removeItem(legacySharedFilterKey(f))
+    } catch {}
+  }, [collectionSlug])
 
-  // Persist filter state to localStorage on every change
+  // Persist the view to localStorage on every change
   useEffect(function() {
     try {
-      localStorage.setItem("rpc_collection_sortKey", JSON.stringify(view.sortKey))
-      localStorage.setItem("rpc_collection_sortDirection", JSON.stringify(view.sortDirection))
-      localStorage.setItem("rpc_collection_playerFilter", JSON.stringify(view.playerFilter))
-      localStorage.setItem("rpc_collection_setFilter", JSON.stringify(view.setFilter))
-      localStorage.setItem("rpc_collection_seriesFilter", JSON.stringify(view.seriesFilter))
-      localStorage.setItem("rpc_collection_rarityFilter", JSON.stringify(view.rarityFilter))
-      localStorage.setItem("rpc_collection_lockedFilter", JSON.stringify(view.lockedFilter))
-      localStorage.setItem("rpc_collection_badgeFilter", JSON.stringify(view.badgeFilter))
+      const save = function(field: ViewField, value: unknown) { localStorage.setItem(collectionViewStorageKey(collectionSlug, field), JSON.stringify(value)) }
+      save("sortKey", view.sortKey)
+      save("sortDirection", view.sortDirection)
+      save("playerFilter", view.playerFilter)
+      save("setFilter", view.setFilter)
+      save("seriesFilter", view.seriesFilter)
+      save("rarityFilter", view.rarityFilter)
+      save("lockedFilter", view.lockedFilter)
+      save("badgeFilter", view.badgeFilter)
     } catch {}
-  }, [view.sortKey, view.sortDirection, view.playerFilter, view.setFilter, view.seriesFilter, view.rarityFilter, view.lockedFilter, view.badgeFilter])
+  }, [collectionSlug, view.sortKey, view.sortDirection, view.playerFilter, view.setFilter, view.seriesFilter, view.rarityFilter, view.lockedFilter, view.badgeFilter])
 
   // Fetch collection_series for the current collection
   useEffect(function() {
@@ -937,6 +949,11 @@ function WalletMomentsBody() {
             cost_basis: Number(json.cost_basis) || 0,
             current_fmv: Number(json.current_fmv) || 0,
             pnl: Number(json.pnl) || 0,
+            moments_with_cost: typeof json.moments_with_cost === "number" ? json.moments_with_cost : undefined,
+            // Same class: the "N not checked" lock line never rendered here because these two
+            // were dropped. null from the route (older function) stays undefined, never 0.
+            lock_unknown_fmv: typeof json.lock_unknown_fmv === "number" ? json.lock_unknown_fmv : undefined,
+            lock_unknown_count: typeof json.lock_unknown_count === "number" ? json.lock_unknown_count : undefined,
           })
           if (typeof json.wallet_fmv === "number" && json.wallet_fmv > 0) {
             setWalletTotalFmv(json.wallet_fmv)
@@ -1701,7 +1718,7 @@ function WalletMomentsBody() {
         ) : null}
 
         {/* Recent Sales */}
-        <CollectionRecentSales searchNonce={salesSearchNonce} visible={hasSearched} />
+        <CollectionRecentSales searchNonce={salesSearchNonce} visible={hasSearched} collectionSlug={collectionSlug} collectionLabel={collectionObj?.label ?? null} />
       </div>
       <MomentDetailModal
         moment={view.selectedMoment ? {

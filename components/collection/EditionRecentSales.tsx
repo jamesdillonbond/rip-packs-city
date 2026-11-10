@@ -5,12 +5,21 @@ import { fetchJson } from "@/lib/analytics/fetch-json"
 
 // Recent-sales strip rendered inside a moment row's expand panel.
 // Extracted verbatim from the collection page in the Phase 1 refactor.
-export default function EditionRecentSales({ editionKey, mintCount }: { editionKey: string | null; mintCount?: number | null }) {
+//
+// ⛔ 2026-11-10 — the request MUST carry the row's collection. It was sent with `editionKey`
+// alone; the route defaults an ABSENT collection to Top Shot and looks the key up there, so
+// every All Day / Golazos / UFC / Candy row answered "No recent sales" — measured live on an
+// All Day edition with 5 sales that hour (0 without `collectionId`, 5 with). And an edition
+// the route cannot find at all (`editionKnown: false`, e.g. a Pinnacle pin, whose sales are
+// in another table) renders "—": this panel does not know, so it does not conclude.
+export default function EditionRecentSales({ editionKey, mintCount, collectionSlug }: { editionKey: string | null; mintCount?: number | null; collectionSlug: string }) {
   const [sales, setSales] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   // "No recent sales" is a market fact a collector prices against. It may only
   // be stated off a response we actually received.
   const [failed, setFailed] = useState(false)
+  // false = the route could not find this edition for this collection, so it cannot see its sales.
+  const [known, setKnown] = useState(true)
 
   useEffect(function() {
     if (!editionKey) { setSales([]); setLoading(false); return }
@@ -19,19 +28,23 @@ export default function EditionRecentSales({ editionKey, mintCount }: { editionK
     let cancelled = false
     setSales([])
     setFailed(false)
+    setKnown(true)
     setLoading(true)
-    fetchJson<{ sales?: any[] }>("/api/recent-sales?editionKey=" + encodeURIComponent(editionKey) + "&limit=5")
+    fetchJson<{ sales?: any[]; editionKnown?: boolean }>("/api/recent-sales?editionKey=" + encodeURIComponent(editionKey) + "&limit=5&collectionId=" + encodeURIComponent(collectionSlug))
       .then(function(res) {
         if (cancelled) return
         setFailed(!res.ok)
-        if (res.ok) setSales(res.json?.sales ?? [])
+        if (res.ok) {
+          setSales(res.json?.sales ?? [])
+          setKnown(res.json?.editionKnown !== false)
+        }
       })
       .catch(function() {})
       .finally(function() { if (!cancelled) setLoading(false) })
     return function() { cancelled = true }
-  }, [editionKey])
+  }, [editionKey, collectionSlug])
 
-  if (!editionKey) return (
+  if (!editionKey || (!loading && !failed && !known)) return (
     <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3">
       <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--rpc-text-muted)]">Recent Sales</div>
       <div className="text-xs text-[color:var(--rpc-text-muted)]">—</div>

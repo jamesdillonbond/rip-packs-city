@@ -9,12 +9,19 @@ import { useEffect, useState } from "react"
 // isolated useState cluster in that component: `recentSales` + `salesLoading`
 // were read by nothing except their own fetch and their own JSX block.
 //
-// NOTE the feed is NOT wallet-scoped — `/api/recent-sales?limit=15` takes no
-// wallet argument, so this is the platform's recent-sales tape, refreshed as a
-// side effect of the user running a wallet search. That is the pre-existing
-// behaviour and is preserved exactly; `searchNonce` is simply the parent
-// re-firing signal (it increments once per runSearch, where the parent used to
-// call setRecentSales([]) + setSalesLoading(true) inline).
+// NOTE the feed is NOT wallet-scoped — `/api/recent-sales` takes no wallet
+// argument, so this is the COLLECTION's recent-sales tape, refreshed as a side
+// effect of the user running a wallet search; `searchNonce` is the parent's
+// re-firing signal (it increments once per runSearch).
+//
+// ⛔ 2026-11-10 — it MUST name its collection. The fetch was `?limit=15` with no
+// `collectionId`, and the route defaults an ABSENT collection to Top Shot, so the
+// Golazos / All Day / UFC / Candy binder showed Top Shot's sales under a bare
+// "Recent Sales" heading (seen on the signed-in Golazos tab: Alanna Smith,
+// Max Christie, Luka Dončić). The route already scopes by `collectionId`; a
+// collection whose sales are not in `sales` (Pinnacle, Panini) answers empty and
+// the panel hides. The heading says whose sales these are and that they are the
+// market's, not this wallet's.
 
 export interface RecentSaleRow {
   playerName?: string | null
@@ -28,7 +35,13 @@ export interface RecentSaleRow {
 export default function CollectionRecentSales({
   searchNonce,
   visible,
+  collectionSlug,
+  collectionLabel,
 }: {
+  /** Registry slug of the collection this binder is showing — scopes the feed. */
+  collectionSlug: string
+  /** Display name for the heading, e.g. "LaLiga Golazos". */
+  collectionLabel?: string | null
   /** Increments once per wallet search. 0 = no search has run yet. */
   searchNonce: number
   /** Parent's `hasSearched` — the panel stays hidden until results land. */
@@ -45,13 +58,13 @@ export default function CollectionRecentSales({
     let cancelled = false
     setRecentSales([])
     setSalesLoading(true)
-    fetch("/api/recent-sales?limit=15")
+    fetch("/api/recent-sales?limit=15&collectionId=" + encodeURIComponent(collectionSlug))
       .then(function (r) { return r.ok ? r.json() : null })
       .then(function (d) { if (!cancelled && d && d.sales) setRecentSales(d.sales) })
       .catch(function () {})
       .finally(function () { if (!cancelled) setSalesLoading(false) })
     return function () { cancelled = true }
-  }, [searchNonce])
+  }, [searchNonce, collectionSlug])
 
   // Same gate as the inline block: hasSearched && (recentSales.length > 0 || salesLoading)
   if (!visible || (recentSales.length === 0 && !salesLoading)) return null
@@ -59,7 +72,7 @@ export default function CollectionRecentSales({
   return (
     <div className="mb-5 rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
       <div className="flex items-center justify-between mb-3">
-        <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Recent Sales</div>
+        <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Recent {collectionLabel ? collectionLabel + " " : ""}sales · whole market, not this wallet</div>
         <div className="text-[10px] text-[color:var(--rpc-text-muted)]">{recentSales.length} sales</div>
       </div>
       {salesLoading ? (

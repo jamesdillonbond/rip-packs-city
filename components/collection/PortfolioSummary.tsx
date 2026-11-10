@@ -47,6 +47,9 @@ type WalletSummary = {
   cost_basis: number
   current_fmv: number
   pnl: number
+  moments_with_cost?: number
+  lock_unknown_fmv?: number
+  lock_unknown_count?: number
 } | null
 
 type AcquisitionStats = {

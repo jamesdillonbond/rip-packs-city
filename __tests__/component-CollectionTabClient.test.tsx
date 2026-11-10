@@ -1163,16 +1163,37 @@ describe("CollectionTabClient — persisted view state and operator affordances"
     withStorage({
       "rpc_collection_sortKey": JSON.stringify("fmv"),
       "rpc_collection_sortDirection": JSON.stringify("asc"),
-      "rpc_collection_playerFilter": JSON.stringify("Damian Lillard"),
-      "rpc_collection_setFilter": JSON.stringify("Archive Set"),
-      "rpc_collection_seriesFilter": JSON.stringify("Series 1"),
-      "rpc_collection_rarityFilter": JSON.stringify("RARE"),
-      "rpc_collection_lockedFilter": JSON.stringify("all"),
-      "rpc_collection_badgeFilter": JSON.stringify(true),
+      "rpc_collection_playerFilter:nba-top-shot": JSON.stringify("Damian Lillard"),
+      "rpc_collection_setFilter:nba-top-shot": JSON.stringify("Archive Set"),
+      "rpc_collection_seriesFilter:nba-top-shot": JSON.stringify("Series 1"),
+      "rpc_collection_rarityFilter:nba-top-shot": JSON.stringify("RARE"),
+      "rpc_collection_lockedFilter:nba-top-shot": JSON.stringify("all"),
+      "rpc_collection_badgeFilter:nba-top-shot": JSON.stringify(true),
     })
     searchParams = new URLSearchParams("wallet=0xmine")
     render(<CollectionTabClient />)
     await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-has-searched")).toBe("true"))
+  })
+
+  it("⚠ a filter saved on one collection is NOT restored on another, and the old shared key is dropped", async () => {
+    // 2026-11-10: `rpc_collection_playerFilter` was one key for all seven collections, so a
+    // Top Shot player filter emptied the Golazos binder ("No moments match your current filters").
+    const store: Record<string, string> = {
+      "rpc_collection_playerFilter:nba-top-shot": JSON.stringify("Damian Lillard"),
+      "rpc_collection_playerFilter": JSON.stringify("Luka Dončić"),
+    }
+    withStorage(store)
+    const before = PARAMS.collection
+    PARAMS.collection = "laliga-golazos"
+    try {
+      searchParams = new URLSearchParams("wallet=0xmine")
+      render(<CollectionTabClient />)
+      await waitFor(() => expect(store["rpc_collection_playerFilter:laliga-golazos"]).toBe(JSON.stringify("all")))
+      expect(store["rpc_collection_playerFilter:nba-top-shot"]).toBe(JSON.stringify("Damian Lillard"))
+      expect("rpc_collection_playerFilter" in store).toBe(false)
+    } finally {
+      PARAMS.collection = before
+    }
   })
 
   it("survives unparseable stored view state rather than blanking the page", async () => {

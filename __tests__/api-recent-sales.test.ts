@@ -278,6 +278,9 @@ describe("GET /api/recent-sales — an editionKey that does not resolve", () => 
     expect(body.sales).toEqual([])
     expect(body.collectionId).toBe("nba-top-shot")
     expect(state.table).toBe("editions")
+    // 2026-11-10: and it SAYS the edition was not found, so the panel can show "—"
+    // instead of concluding "No recent sales" about sales this route cannot see.
+    expect(body.editionKnown).toBe(false)
   })
 
   it("still filters on edition_id when the lookup DOES resolve", async () => {

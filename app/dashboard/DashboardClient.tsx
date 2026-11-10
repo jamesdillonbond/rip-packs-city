@@ -951,12 +951,14 @@ function ProfilePageInner() {
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <RpcLogo size={40} />
             <div>
-              <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 16, letterSpacing: "0.04em", textTransform: "uppercase" }}>
+              {/* 2026-11-10: the page's h1. The dashboard served none (signed-in walk), so a screen
+                  reader had no page heading to land on. Same element, same styles. */}
+              <h1 style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 16, letterSpacing: "0.04em", textTransform: "uppercase", margin: 0, lineHeight: "normal" }}>
                 {/* Server-side resolver chain: user_profiles → profile_bio → allow_list.username
                     → email-local → short wallet. Profanity-guarded.
                     See lib/user/resolveDisplayName.ts. */}
                 {resolvedDisplayName ?? bio?.display_name ?? (email?.split("@")[0] ?? "Profile")}
-              </div>
+              </h1>
               <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", letterSpacing: "0.04em", marginTop: 2 }}>
                 {/* Three states, not two: an address, a read we could not make,
                     and a genuinely absent session. Only the last may say so. */}

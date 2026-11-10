@@ -215,6 +215,13 @@ describe("DashboardClient — a failed /me must not say 'Not signed in'", () => 
     await waitFor(() => expect(document.body.textContent).toMatch(/collector/i))
   })
 
+  it("has exactly one page heading, and it is the collector's name", async () => {
+    // 2026-11-10: the signed-in dashboard served zero <h1>.
+    render(<DashboardClient />)
+    await waitFor(() => expect(document.querySelectorAll("h1").length).toBe(1))
+    expect((document.querySelector("h1")?.textContent ?? "").trim().length).toBeGreaterThan(0)
+  })
+
   it("survives a /me body with no user at all", async () => {
     routes["/api/profile/me"] = () => json(200, { user: null })
     render(<DashboardClient />)

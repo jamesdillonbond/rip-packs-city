@@ -75,8 +75,12 @@ export async function GET(req: NextRequest) {
     );
     if (editionErr) return apiErrorResponse(editionErr, "api/recent-sales/edition_lookup");
     if (!editionRow) {
+      // `editionKnown: false` (2026-11-10): this route reads `sales`, and an edition it cannot
+      // find in `editions` for this collection is one whose sales it CANNOT see (a Pinnacle
+      // pin, whose sales live in their own table; a key sent under the wrong collection). The
+      // caller must not turn that into "No recent sales" — see EditionRecentSales.
       return NextResponse.json(
-        { sales: [], collectionId },
+        { sales: [], collectionId, editionKnown: false },
         { headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=30" } }
       );
     }
