@@ -1,45 +1,117 @@
 ---
-name: rpc-edge-fn-deploy
-description: Deploy or rotate keys on a Rip Packs City Supabase edge function. Triggers on "deploy an edge function", "rotate a gate key", "the cron is 403ing", "set a GATE_KEY secret", or any change to supabase/functions/**. Encodes the mandatory CLI flags, the MCP fallback, the zero-downtime _OLD pattern, the pipeline_runs positive control, and the secret-safety rules for ?key=-gated functions.
+name: "rpc-edge-fn-deploy"
+description: "Deploy or rotate keys on a Rip Packs City Supabase edge function. Triggers on \"deploy an edge function\", \"rotate a gate key\", \"the cron is 403ing\", \"set a GATE_KEY secret\", or any change to supabase/functions/**."
 ---
 
 # RPC edge-function deploy & gate-key rotation
 
-Project `bxcqstmqfzmuolpuynti`. Edge functions under `supabase/functions/**` are gated by
-`?key=` and run `verify_jwt=false`. They are called by pg_cron via `net.http_get`.
+Project `bxcqstmqfzmuolpuynti`. Edge functions under `supabase/functions/**` run `verify_jwt=false`
+and are called by pg_cron via `net.http_get`. Since 2026-10-13/14 **every pg_cron-dispatched
+function is gated by the shared Vault gate** (§0); the env-secret and literal gates below are
+LEGACY, kept for the few uncronned functions that still carry them and for the history.
 
 **This skill exists because a single half-done deploy caused a ~40-hour silent outage.**
-Read §1 before touching anything.
+Read §0 and §1 before touching anything.
 
 ---
 
-## 0. ⭐ READ FIRST — the rotation mechanism changed 2026-09-20/21, and §2's copy-out step is SUPERSEDED
+## 0. ⭐ READ FIRST — the Vault gate (2026-10-13/14). §2–§3 are LEGACY.
 
-**The operator only ever WRITES a fresh secret; nothing ever reads one.** `rotate_cron_gate_key(p_jobids int[], p_new_key text)`
-(SECDEF, service_role only, migration `20260921004437`) rewrites only the `?key=` of the named jobs. A short-lived,
-token-gated rotator edge function reads the secret **by an allow-listed name** from its own env, checks it structurally
-(`len ≥ 24`, `^rpc_pls_`, `^[A-Za-z0-9_-]+$` — **refuses on failure**), and hands it straight to that function; the
-caller gets back only a SHA-256 prefix. Tombstone the rotator (410) immediately after use. Full recipe:
-Project doc `claude/handoff-2026-09-21-golazos-rotation-closed.md` / ledger 2026-09-20 entries.
+**One secret, read by both sides.** pg_cron sends `public.cron_gate_key('<fn>')` (SECURITY DEFINER,
+reads Vault secret `cron_gate_key__<fn>`; service_role/postgres only) in the **`x-rpc-gate-key`
+header**, and the function checks it with `supabase/functions/_shared/cron-gate.ts`:
 
-- ⛔ **§2's "set the secret to the value cron already sends" / "operator copies it out of `cron.job`" is the leak
-  vector** — it is how nine keys leaked at once on 2026-08-18. Use it only if the rotator path is unavailable AND
-  service is down, and treat the result as a burned key to rotate immediately.
-- ⛔ **A gate key is `rpc_pls_` + 32 hex** — PowerShell `"rpc_pls_" + [guid]::NewGuid().ToString("N")`. **Never a
-  password-manager generator:** characters outside `[A-Za-z0-9_-]` break the `?key=` URL (`&` ends it, `#` truncates it)
-  — that caused the 6 h 38 m Pinnacle outage on 09-20.
+```ts
+import { cronGate } from "../_shared/cron-gate.ts"
+const gateDenied = await cronGate(req, sb, "<own-slug>")   // header first, then ?key=
+if (gateDenied) return gateDenied                           // 403 forbidden · 503 gate_unavailable
+```
+
+- **Three outcomes, never two:** `ok` · `denied` (no key / wrong key → 403) · `unavailable` (the Vault
+  read FAILED → 503 + `retry-after`). A DB blip must not look like a rotation mistake.
+- **Each function passes its OWN slug** (pinned by `__tests__/edge-fn-no-hardcoded-gate-keys.test.ts`).
+  No env `*_GATE_KEY` is read; there is no dashboard step.
+- **An operator script can use the gate too:** it POSTs `rest/v1/rpc/cron_gate_key` with the service-role
+  key it already has and sends the result in the header — nobody copies a key (see
+  `scripts/refresh-ipfs-catalog.mjs`). A new secret is created in SQL with `vault.create_secret(...)`
+  (migration `20261014155620`); take any digest ONCE into a variable — calling `cron_gate_key()` inside a
+  counting subquery raised "no vault secret" in the same transaction and rolled the apply back.
+- **State 2026-10-14 ~10 AM PT (re-derive before quoting):** 16 functions on the Vault gate (15 cron lanes +
+  `ipfs-catalog-loader`, whose operator script reads its key at run time via `cron_gate_key()` with the
+  service-role key); **20 pg_cron jobs send the header, 0 send `?key=`**; all Vault gate keys generated in SQL
+  and distinct (migrations `20261013143723`, `20261013144028`, `20261014135331`, `20261014155620`). **No
+  function with a caller holds a credential literal.** Seven 410 tombstones (`sync-nba-games` + the six R21
+  retirements; sources archived redacted in `supabase/retired-functions/`). Still legacy, uncalled:
+  `backfill-allday-pack-supply` and `backfill-pack-opens-api` (env gate, no cron, no Vault secret). The old
+  env `*_GATE_KEY` secrets are unread; deleting them in the dashboard is optional hygiene.
+
+### Retiring a function nobody calls (proven 2026-10-14 on six)
+1. **Census every caller source** — pg_cron (`cron.job.command ILIKE`), repo (`git grep` app/lib/scripts/
+   .github/vercel.json/workers), and `function_edge_logs` by `request.pathname` (never `request.url` — it
+   holds keys) over 24 h, **with a positive control** (a known-active slug in the same query). cron-job.org
+   and anything slower than daily are invisible to that window — the 410 is what surfaces them.
+2. Recover the deployed source through the redacted subagent; archive it as
+   `supabase/retired-functions/<slug>/index.ts.txt` (`.txt`: no walker, type-checker or deploy picks it up)
+   with a header that is the revival recipe.
+3. Replace `supabase/functions/<slug>/index.ts` with a stub that imports nothing, reads no env and answers
+   `410 {"error":"retired", ...}` (copy `sync-nba-games`). The reachable-tests ratchet exempts it by property
+   (`isRetiredTombstone`); the drift checker's tier-1 `inapplicable` list is a dated pin — re-pin it.
+4. Full suite, deploy, anonymous probe → 410, and note those probe hits so a later 410 watch can tell them
+   from a real caller.
+
+### Rotating a Vault-gated lane — ONE in-database step, nothing ever read out
+```sql
+SELECT vault.update_secret(id, 'rpc_pls_' || encode(extensions.gen_random_bytes(16), 'hex'))
+FROM vault.secrets WHERE name = 'cron_gate_key__<fn>';
+```
+Cron and function move together, so there is no window. In a migration, mirror `20261013144028`:
+assert by digest + shape (`^rpc_pls_[0-9a-f]{32}$`) only, then a **negative control** — capture the
+OLD value into a plpgsql variable before the update, replay it via `net.http_get` with the header,
+store ONLY the request id (`audit_20261013_rotation_control`), and confirm `403 {"error":"forbidden"}`.
+Then the **positive control**: fire each job's own command (below) and read `pipeline_runs` /
+`net._http_response`. ⚠ `apply_migration` assigns its OWN version timestamp — read
+`supabase_migrations.schema_migrations` afterwards and rename the committed file to match.
+
+### Moving a legacy function onto the Vault gate (the R21 recipe, proven 10-13/14)
+1. **No committed source?** Recover it through a **redacted subagent**: it `get_edge_function`s the slug,
+   writes the files to the scratchpad with the gate literal replaced by `__REDACTED_GATE_LITERAL__`, and
+   reports only lengths / first-4 chars / env NAMES / imports. The value never enters the transcript.
+   ⚠ The subagent copies by hand — **read every line** before trusting it.
+2. Replace the gate with `cronGate(req, sb, "<slug>")`; use the bare `@supabase/supabase-js` specifier
+   (an `esm.sh` URL leaves `edge-fn-drift` unable to classify the function). Fix honesty defects you
+   find while there (unread `error`s, `?? 0`, a failed read answered as "done").
+3. **Run the FULL vitest suite, not a targeted set** — a NEW function file joins every tree-walking guard's
+   population (10-14: `get-fmv-for-editions-is-chunked-under-max-rows` red-CI'd a push a targeted run
+   passed). Plus `deno check`/`deno lint` and the Deno harness (§4) — it auto-discovers the new function,
+   and its failed-run rule wants a non-2xx or an ok=false row when everything failed.
+4. Commit, push, deploy via `edge-fn-deploy.yml` (§4). The cron already sends `cron_gate_key('<fn>')`,
+   whose value equals what the old build accepted, so the deploy needs no secret step.
+5. Verify as the real caller, then a migration moves the job to the header and rotates (as above).
+
 - 🔎 **The 403 instrument is `net._http_response.status_code` + `content`** — a 403'd function writes NO
-  `pipeline_runs` row and `cron.job_run_details` still says `succeeded`.
-- 📌 **Deploy the lane with the FASTEST tick first** (e.g. a `*/2` job): the feedback loop is the cost of being wrong.
+  `pipeline_runs` row and `cron.job_run_details` still says `succeeded`. ⚠ **Read `content`:** a
+  `<!DOCTYPE html>…Just a moment` 403 is a third party's Cloudflare challenge (e.g. Atlas), not our gate —
+  our gate answers `{"error":"forbidden"}`.
+- 📌 **Deploy the lane with the FASTEST tick first**: the feedback loop is the cost of being wrong.
 - ✅ **Verify without waiting for a tick:** fire the job's own command so the key is never echoed —
   `do $$ declare c text; begin select command into c from cron.job where jobid = <j>; execute c; end $$;` — then read
-  `pipeline_runs`.
-- 📋 **State (re-derive before quoting):** 9 of 13 gate-keyed jobs rotated as of 2026-09-21 (15, 16, 42, 26, 20, 56, 83,
-  84, 44). Jobs **22 / 25 / 27 / 29** hold LITERAL keys in deployed source with no repo source and no matching secret —
-  they need the de-literalise path (redacted source → `_GATE_KEY` + `_OLD` → deploy → operator sets secret → commit).
-  ⚠ **25 and 29 share one key across two functions — they must move together.** Tombstone `zz-gate-diag` when done.
+  `pipeline_runs` (or `net._http_response` for a lane that writes no run row). For a function with no cron
+  job, probe from SQL with the header built there:
+  `net.http_post(url, body, headers := jsonb_build_object('x-rpc-gate-key', public.cron_gate_key('<fn>')))` —
+  send a body the handler rejects (e.g. an empty batch → 400) so the probe proves the gate and writes nothing.
+- ⛔ **A gate key is `rpc_pls_` + 32 hex.** Never a password-manager generator: characters outside
+  `[A-Za-z0-9_-]` break a `?key=` URL (`&` ends it, `#` truncates it) — the 6 h 38 m Pinnacle outage, 09-20.
 
-## 1. ⛔ A deploy of a gate-keyed function is a TWO-PART change
+### Superseded 2026-09-21 → 10-13: the `rotate_cron_gate_key` rotator (kept for history)
+`rotate_cron_gate_key(p_jobids int[], p_new_key text)` (SECDEF, migration `20260921004437`) rewrote the
+`?key=` of named jobs from a token-gated rotator edge function reading an allow-listed env secret. It is
+obsolete for Vault-gated lanes — rotate the Vault secret instead. Its two helper functions,
+`zz-gate-rotate` and `zz-gate-diag`, were confirmed 410 tombstones on 2026-10-14.
+
+## 1. ⛔ (LEGACY env gate) A deploy of a gate-keyed function is a TWO-PART change
+
+⭐ **Does not apply to a Vault-gated function (§0)** — there is no secret to set. It still applies to any
+function that reads `*_GATE_KEY` from env; `edge-fn-deploy.yml` refuses those unless `gate_secret_is_set`.
 
 Shipping the code without the secret **looks like success in the deploy log** and fails
 closed on every subsequent call.
@@ -62,11 +134,11 @@ cadence) — if the deployed build still carries a hardcoded key, the secret is 
 deploy is not yours to make unattended.
 
 **Order, always:**
-1. **Set the secret first** — a FRESH `rpc_pls_` key the operator generates, then rotate cron onto it with §0's rotator (the old "value cron already sends" route is §2's emergency-only fallback). Dashboard →
+1. **Set the secret first** — a FRESH `rpc_pls_` key the operator generates, then rotate cron onto it (the old "value cron already sends" route is §2's emergency-only fallback). Dashboard →
    Edge Functions → Secrets. ⚠ **The Supabase MCP has no secrets verb; this is
    dashboard-only and can never be completed by an agent session.** (Re-verified 2026-09-20:
    the laptop VM has no `SUPABASE_ACCESS_TOKEN` either — `npx supabase secrets list` asks for
-   a login.)
+   a login.) ⭐ Better: move the function onto the Vault gate (§0) and skip all of this.
 2. Then deploy.
 3. Then verify **as the real caller** (§5).
 
@@ -75,7 +147,10 @@ yourself.** A hand-issued request with an operator-supplied key proves the funct
 *that string* — not that the scheduled caller's request passes. Those are different values
 whenever cron has not been repointed yet.
 
-## 2. Restoring a 403ing function — prefer the unconditional instruction
+## 2. (LEGACY env gate) Restoring a 403ing function — prefer the unconditional instruction
+
+⭐ For a Vault-gated function a 403 means cron and function read DIFFERENT secrets — check that the
+function passes its OWN slug and that `cron.job.command` names the same slug; never copy a value.
 
 ### ⛔ PRECONDITION — validate the cron's key STRUCTURALLY before copying it anywhere
 
@@ -117,7 +192,7 @@ truncation and trailing whitespace.
 
 ### The instruction itself
 
-⛔ **EMERGENCY-ONLY since 2026-09-21 — see §0.** This copies a live, usually BURNED key through a human. Prefer §0.
+⛔ **EMERGENCY-ONLY since 2026-09-21.** This copies a live, usually BURNED key through a human. Prefer §0.
 
 **Set `<NAME>_GATE_KEY` to the value cron already sends** (once the precondition passes).
 Works whether or not the deployed build carries the dual-accept code, needs no cron repoint and
@@ -137,9 +212,9 @@ keys burned in public git history. Do **not** let "403s stopped" close the rotat
 **A rotation is done when a request succeeds with a key that was never public** — not when a
 secret is set.
 
-## 3. Zero-downtime rotation — the `_OLD` pattern
+## 3. (LEGACY env gate) Zero-downtime rotation — the `_OLD` pattern
 
-Every gate-keyed function already supports it:
+Every env-gated function supports it (a Vault-gated one needs none of this — §0):
 
 ```ts
 const GATE     = Deno.env.get("<NAME>_GATE_KEY") ?? ""
@@ -165,19 +240,26 @@ have **two** cron callers sharing one key — check before assuming 1:1.
 
 ### ⭐ FIRST CHOICE since 2026-09-25 — the `edge-fn-deploy` GitHub workflow (no transcription, no local credential)
 `.github/workflows/edge-fn-deploy.yml`, `workflow_dispatch` with input `function=<slug>`
-(GitHub MCP: `actions_run_trigger` → `run_workflow`, `ref: main`). It runs the CLI below on
-a GitHub runner with the repo's `SUPABASE_ACCESS_TOKEN` / `SUPABASE_PROJECT_ID` secrets and
-deploys **the bytes committed on `main`** — so commit + push FIRST, then dispatch.
+(`gh workflow run edge-fn-deploy.yml --ref main -f function=<slug> -f gate_secret_is_set=false`, or the
+GitHub MCP's `run_workflow`). It runs the CLI below on a GitHub runner with the repo's
+`SUPABASE_ACCESS_TOKEN` / `SUPABASE_PROJECT_ID` secrets and deploys **the bytes committed on `main`** —
+so commit + push FIRST, then dispatch.
 - Pre-flight: slug must be a real `supabase/functions/<slug>/index.ts`; a function whose
   source reads `*_GATE_KEY` is **refused** unless `gate_secret_is_set` is ticked (§1).
 - Post-conditions read back from production and FAIL the run if false: `verify_jwt=false`,
-  `status=ACTIVE`, and the drift census (`edge:drift:check --json`) calls the slug `clean`.
-- ✅ Proven 2026-09-25: `enrich-ufc-wallet` (twice — the header branch, then the `?token=`
-  removal) and `ingest-topshot-atlas-pool`; `edge-fn-drift` went green for the first time since
-  08-09 on the back of it. It removes the whole MCP-transcription class below (`\uXXXX`
+  `status=ACTIVE`, and the drift census (`edge:drift:check --json`) calls the slug `clean`
+  (the log line reads `<slug> v<N>: clean`).
+- ✅ Proven 2026-09-25 (`enrich-ufc-wallet`, `ingest-topshot-atlas-pool`) and 2026-10-13/14 on 16
+  Vault-gate conversions and 6 retirements. It removes the whole MCP-transcription class below (`\uXXXX`
   decoding, hand-copied Cadence addresses) — use the MCP path only if GitHub is unavailable.
 - Verification still means the real caller (§5) — a green deploy run proves the bytes, not
   the behaviour. Revert = `git revert` the function's commit, push, dispatch again.
+- ⚠ **The workflow's concurrency group CANCELS an in-flight run when another is dispatched** — six
+  back-to-back dispatches on 10-14 deployed two. Dispatch one, wait for `completed`, then the next.
+- ⚠ **A full vitest run proves only the tree it ran on.** Any edit after it (10-14: a local comment
+  stripper added to a test) needs the suite again, or at least every guard that walks `__tests__/`.
+- ⭐ **The Deno harness runs in the cloud sandbox** and auto-discovers every function:
+  `deno test --config supabase/functions/_tests/deno.json --unstable-sloppy-imports --no-lock --allow-read --allow-env supabase/functions/_tests/`
 
 ### CLI (resolves `_shared` deps correctly — what the workflow runs)
 ```
@@ -205,8 +287,8 @@ npx supabase@latest functions deploy <name> \
 ⚠ **Confirmed 2026-08-15: traps 1 AND 2 are both live on Trevor's box, and clearing the env
 var does not rescue the CLI.** The deploy uploaded all four assets correctly and then 401'd —
 and still 401'd with the persistent `SUPABASE_ACCESS_TOKEN` (len 44) cleared via `env -u`.
-**Treat the CLI as unavailable and go straight to the MCP fallback**; do not spend a session
-re-litigating the credential path.
+**Treat the CLI as unavailable and go straight to the workflow (or the MCP fallback)**; do not spend a
+session re-litigating the credential path.
 
 ### MCP fallback (`deploy_edge_function`)
 Works when the CLI does not — different credential path.
@@ -238,6 +320,7 @@ Works when the CLI does not — different credential path.
   `index.ts` md5 against it, then push the commit through whichever push path is up.
 - ⚠ **PostgREST clamps a set-returning RPC's result at 1000 rows silently** — any edge function passing an
   id list to one (e.g. `get_fmv_for_editions`) must slice it (≤500); the tell is a counter at exactly 1000.
+  A tree-walking guard enforces `.slice(` at every call site.
 - ⚠ **Do NOT hand-transcribe large ingest functions.** The three `ingest-*` functions are
   370–514 lines of block-height constants (`SPORK_MAX_HEIGHTS`, `SPORK_FLOOR`) and cursor
   checkpoint arithmetic whose own comments say *"Getting this backwards is silent data loss,
@@ -256,6 +339,10 @@ from pipeline_runs where pipeline = '<name>'
 order by started_at desc limit 5;
 ```
 
+⚠ The pipeline name is often NOT the slug (`ingest-allday-pack-opens` logs `allday-pack-opens-forward`) —
+read it from the function source before concluding a lane is silent. A lane that writes no run row at
+all is verified from `net._http_response` (status + body) after firing its job.
+
 A Postgres error (e.g. `21000 ON CONFLICT…`) in that column means the gate is open and the
 rotation is **not** what is blocking you. On 2026-08-13 this collapsed a believed 8-secret
 rotation window down to two commands — after the docs had said "blocked" and been believed.
@@ -272,13 +359,16 @@ Also confirm the deploy did not flip JWT: `list_edge_functions` → `verify_jwt`
 ⚠⚠ **Supabase edge-function LOGS record full request URLs, including `?key=`.** Reading logs
 is **not** a safer alternative to a secret-bearing console page — it is the same leak. The
 documented cron-job.org incident is the other half of this class: job-edit pages carry live
-`?key=` URLs in the DOM even when the Advanced tab is closed.
+`?key=` URLs in the DOM even when the Advanced tab is closed. Query `function_edge_logs` by
+`log_attributes['request.pathname']` (no query string), never `request.url`.
+
+⭐ Since 10-14 no pg_cron job sends `?key=`, so new log rows no longer carry a key; older rows still do.
 
 **Safe patterns:**
 - Mask in SQL: `regexp_replace(command, 'key=[^&''"[:space:]]+', 'key=***MASKED***', 'g')`
 - Compare by digest: `md5(substring(command from 'key=([^&'']+)'))` — never read the value
 - ⚠ `get_edge_function` returns **deployed source**, which may contain a hardcoded key.
-  Ask for a *fact about* the source, not the source, when you can.
+  Ask for a *fact about* the source, not the source, when you can — or use the redacted subagent (§0).
 
 ## 7. Probe hygiene (every false 403 in the 08-10 session was the probe, not the system)
 
@@ -320,7 +410,8 @@ a missing required param returning **400** still proves the gate accepted the ke
 1. **Read the function file.** Its header comments carry the rotation instructions, the probe
    modes, and the reason each constant exists. Most of the 08-10 evening was spent
    engineering around a window the code was already built to eliminate.
-2. `grep -rn "GATE_KEY" supabase/functions` — confirm the exact secret name.
+2. `grep -n "cronGate\|GATE_KEY\|const GATE" supabase/functions/<slug>/index.ts` — Vault gate (§0),
+   legacy env gate (§1–§3), or a literal (recover + convert, §0)? Each path differs.
 3. Check `cron.job` for **all** callers of that function; some have two.
 4. Note that scope may exceed the documented list: functions outside
    `supabase/functions/**` at HEAD have been found using the same burned keys.
