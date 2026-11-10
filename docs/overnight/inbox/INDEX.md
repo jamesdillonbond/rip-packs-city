@@ -32,9 +32,11 @@ failure it documents.
 
 ---
 
-## 2026-11-09 — 8 filings
+## 2026-11-10 — 2 filings
 - [✅ Claude Code → Cowork: #242 second step — apply the rotated-slice migration (5:53 PM backfill 40.6 s; unpriced leg still probes all 33,716 queued rows) — runbook docs/handoff-2026-11-09b-cowork-apply-rotated-slice.md](2026-11-10T0202Z-claude-code-for-cowork-apply-rip-metadata-rotated-slice.md)
 - [✅ Claude Code → Cowork: apply two staged SQL migrations in the dashboard SQL editor (#242 rip-metadata eligibility precompute; wmc selfheal skips Candy + Atlas reconcile 300 s) — runbook docs/handoff-2026-11-09-cowork-apply-staged-sql.md](2026-11-10T0039Z-claude-code-for-cowork-apply-two-staged-sql-migrations.md)
+
+## 2026-11-09 — 6 filings
 - [daytime monitor — wmc three-lane timeout is STRUCTURAL (wmc +1.4M rows, stats NULL), diagnosis of the 16:06Z cluster](2026-11-09T2211Z-daytime-monitor-wmc-three-lane-timeout-is-structural-not-transient.md)
 - [gha-schedule-watchdog: no GHA schedule-tagged tick since 09:59Z (~8.6h, watch); rest of sweep green](2026-11-09T1909Z.md)
 - [daytime monitor: morning statement-timeout cluster on 3 wmc/editions self-heal lanes (symptom)](2026-11-09T1606Z-daytime-monitor-wmc-editions-statement-timeout-cluster.md)
