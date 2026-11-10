@@ -1,4 +1,4 @@
-# Handoff → Cowork: apply `sol_usd_daily` (2026-11-10, Claude Code cloud)
+# Handoff → Cowork: apply `sol_usd_daily` + re-verify the Candy marketplace silence (2026-11-10, Claude Code cloud)
 
 **Why Cowork:** Claude Code's `apply_migration` raised the Supabase confirmation prompt twice (2:35 and ~2:50 PM PT
 11-10) and it never reached Trevor; Trevor: "Do it. If it's something you can't do here, hand it off to cowork."
@@ -84,3 +84,37 @@ DROP TABLE public.sol_usd_daily_requests;
 DROP TABLE public.sol_usd_daily;
 ```
 The app half then reports `sol_db_error` and prices from CoinGecko only, as before.
+
+---
+
+# Part B — re-verify the Candy marketplace silence (trust arm `candy_revival_sales_since_recorded_silence` = 1)
+
+**Why:** the arm fired on one Magic Eden sale of **$0.17 on 11-09**; with it, 4 dust sales (11-07 ×3, 11-08; 0.034 SOL,
+~$3) sit parked `no_sol_rate`. Five sales / ~$3 in four weeks is a trickle, not a revived market. The arm's own text asks
+for this change: re-look at Candy trading and update the `candy_mlb` row of `v_collection_marketplace_status`. That
+row is a literal inside the view, so it is a `CREATE OR REPLACE VIEW`. Only the three `candy_mlb` literals change
+(`silent_since_2026_11_10`, `last_verified_at` 2026-11-10 22:55 UTC, a dated note); the rest is the live definition
+verbatim, guarded by its md5 (`cb6fa6c9…`, reconstructed and matched locally); `security_invoker` is kept.
+Tested on a scratch Postgres (stub tables): Candy reads `silent_since_2026_11_10`, Panini unchanged, `security_invoker=true`.
+
+| File (fetch from `main`) | SHA-256 |
+|---|---|
+| `docs/proposals/audit_20261110_candy_marketplace_silence_reverified-STAGED.sql` | `66e201e710cbf9b6cabf5d7a76fd1e67653cda3c6dc113aa5e95692fbb961403` |
+
+1. Paste the whole file, Run. If the DO block raises "drifted", stop — another session changed the view; file it back.
+2. Record: `INSERT INTO supabase_migrations.schema_migrations (version, name) VALUES ('<VERSION_B>', 'audit_20261110_candy_marketplace_silence_reverified');`
+3. Post-check:
+```sql
+SELECT secondary_status, last_verified_at FROM v_collection_marketplace_status WHERE slug = 'candy_mlb';  -- silent_since_2026_11_10 | 2026-11-10 22:55+00
+SELECT reloptions FROM pg_class WHERE relname = 'v_collection_marketplace_status';                       -- {security_invoker=true}
+SELECT metric, value, status FROM v_rpc_trust_health WHERE metric = 'candy_revival_sales_since_recorded_silence';  -- 0, OK
+```
+4. Repo: `git mv docs/proposals/audit_20261110_candy_marketplace_silence_reverified-STAGED.sql supabase/migrations/<VERSION_B>_audit_20261110_candy_marketplace_silence_reverified.sql`; ledger entry; commit; push.
+
+# Part C — no action: `candy_ask_book_drop_pct` 91.2 is a false positive and clears itself ~7:35 PM PT 11-10
+
+The 11-09 7:35 PM PT `candy-listings-indexer` pass ingested 228 Magic Eden asks and, in the same run, deactivated 208 whose
+seller no longer owns the card (`owner_moved_cards: 208`, ghost listings). Every pass since finds the same **20** valid
+asks on a complete sweep. The arm divides active asks by asks "seen in the last 24 h", and those 208 carry a 7:35 PM PT
+`last_seen_at`, so they age out of its window at ~7:35 PM PT tonight. Optional follow-up for a later session: exclude
+rows with `owner_moved_at` set in the same pass from the denominator (they were never valid asks).
