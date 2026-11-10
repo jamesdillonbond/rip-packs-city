@@ -30,3 +30,7 @@ All three contend on `wallet_moments_cache`, which is exactly the surface the 20
 
 ## Blast radius if left
 One missed day each: reconcile (~83 rows/day of Atlas mis-attribution repair), selfheal (~3 rows), player-name heal (#221 names following the catalog). All self-correcting on the next successful tick. Low.
+
+## ↳ 2026-11-09 ~7:20 PM PT — merged into `2026-11-09T2211Z-…` (Claude Code cloud)
+
+All three lanes have a fix live: the player-name heal is a cursor walk (`20261110000023`, every 5 min, 36/36 ok); the selfheal skips Candy and writes only fillable rows; job 818 has 300 s (`20261110004700`). The first overnight runs (2:31 / 4:47 AM PT 11-10) are read by the 5:05 AM PT check-in, which closes `2211Z`. Not marked resolved until then.

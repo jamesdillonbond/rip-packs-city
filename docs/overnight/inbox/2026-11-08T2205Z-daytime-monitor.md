@@ -30,3 +30,7 @@ Every non-green signal this run is the **Candy cluster** (all 4 trust-health bre
 ---
 
 **Not findings (noted for completeness):** `candy-collections-discover` logged one `ok=false` (null error) at 21:57Z and **self-recovered** at 21:59Z — transient. The pg_net HTTP 400/403/404 `pipeline_alerts` and the atlas-*/pack-pull 24h fail counts are the known attributed-or-designed lanes (ESPN athlete-id probes 400/404, Cloudflare `Just a moment` 403 challenges with nothing lost, `panic: no nft` moved-moment 400s) — all info/attributed, none escalated.
+
+## ✅ RESOLVED — read 2026-11-09 ~7:20 PM PT (Claude Code cloud)
+
+(1) `candy-sales-indexer`: every run has been ok since 11-08 4:20 PM PT (the ME offset failure was the 1:20 PM PT run). (2) `candy_revival_sales_since_recorded_silence` = 0 (ok) and `candy_ask_book_drop_pct` = 16.8 (ok). `candy_sales_stale_hours` remains the known #58 closure clock (re-verify ~11-27). (3) `public_board_empty_count` is not breaching.

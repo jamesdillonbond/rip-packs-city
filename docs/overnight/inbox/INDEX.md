@@ -1,4 +1,4 @@
-# Inbox index — 639 live filings
+# Inbox index — 640 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,22 +32,23 @@ failure it documents.
 
 ---
 
-## 2026-11-10 — 2 filings
+## 2026-11-10 — 3 filings
+- [Claude Code: 183 Candy editions labelled 1-of-1 but held more than once (Tricons name truncation; Bat Cowl 4,404 held) show as "1 of 1" on /insights/trophies — census owner](2026-11-10T0318Z-claude-code-candy-false-one-of-ones-on-trophies-board.md)
 - [✅ Claude Code → Cowork: #242 second step — apply the rotated-slice migration (5:53 PM backfill 40.6 s; unpriced leg still probes all 33,716 queued rows) — runbook docs/handoff-2026-11-09b-cowork-apply-rotated-slice.md](2026-11-10T0202Z-claude-code-for-cowork-apply-rip-metadata-rotated-slice.md)
 - [✅ Claude Code → Cowork: apply two staged SQL migrations in the dashboard SQL editor (#242 rip-metadata eligibility precompute; wmc selfheal skips Candy + Atlas reconcile 300 s) — runbook docs/handoff-2026-11-09-cowork-apply-staged-sql.md](2026-11-10T0039Z-claude-code-for-cowork-apply-two-staged-sql-migrations.md)
 
 ## 2026-11-09 — 6 filings
 - [daytime monitor — wmc three-lane timeout is STRUCTURAL (wmc +1.4M rows, stats NULL), diagnosis of the 16:06Z cluster](2026-11-09T2211Z-daytime-monitor-wmc-three-lane-timeout-is-structural-not-transient.md)
-- [gha-schedule-watchdog: no GHA schedule-tagged tick since 09:59Z (~8.6h, watch); rest of sweep green](2026-11-09T1909Z.md)
+- [✅ gha-schedule-watchdog: no GHA schedule-tagged tick since 09:59Z (~8.6h, watch); rest of sweep green](2026-11-09T1909Z.md)
 - [daytime monitor: morning statement-timeout cluster on 3 wmc/editions self-heal lanes (symptom)](2026-11-09T1606Z-daytime-monitor-wmc-editions-statement-timeout-cluster.md)
 
-- [Daytime monitor 2026-11-09T01:05Z — edition_integrity_flags 250→10392 (NEW breach): 10,370 from the 11-08 Candy census (tier/circulation/thumbnail absent on fresh non-registry editions), same fail-safe class as the drained 09-30 Panini case; the other 4 Candy-closure breaches already filed 22:05Z](2026-11-09T0105Z-daytime-monitor-candy-census-edition-integrity-breach.md)
-- [Daytime monitor 2026-11-09T04:12Z — SYMPTOM (saturation spell, 15/15 IO wait): backfill-pack-rip-metadata timing out 6h (post census-slot-move fix) + rpc-candy-wmc-label-fill pg_cron timing out; both statement-timeout collateral, cause deferred to a quiet-window re-measure](2026-11-09T0412Z-daytime-monitor-saturation-spell-ripmetadata-labelfill-timeouts.md)
-- [Daytime monitor 2026-11-09T07:08Z — candy-collections-census failed its last 4 runs (3 clean before); ghost-purge timeout fixed overnight (20261109044509) but 2 post-spell fails wedge on "2022 Leadoff ICONs page 66" (local stmt-timeout + upstream DAS); gates the open edition_integrity drain — night pass to confirm it resumes](2026-11-09T0708Z-daytime-monitor-candy-census-recent-run-failures.md)
+- [✅ Daytime monitor 2026-11-09T01:05Z — edition_integrity_flags 250→10392 (NEW breach): 10,370 from the 11-08 Candy census (tier/circulation/thumbnail absent on fresh non-registry editions), same fail-safe class as the drained 09-30 Panini case; the other 4 Candy-closure breaches already filed 22:05Z](2026-11-09T0105Z-daytime-monitor-candy-census-edition-integrity-breach.md)
+- [✅ Daytime monitor 2026-11-09T04:12Z — SYMPTOM (saturation spell, 15/15 IO wait): backfill-pack-rip-metadata timing out 6h (post census-slot-move fix) + rpc-candy-wmc-label-fill pg_cron timing out; both statement-timeout collateral, cause deferred to a quiet-window re-measure](2026-11-09T0412Z-daytime-monitor-saturation-spell-ripmetadata-labelfill-timeouts.md)
+- [✅ Daytime monitor 2026-11-09T07:08Z — candy-collections-census failed its last 4 runs (3 clean before); ghost-purge timeout fixed overnight (20261109044509) but 2 post-spell fails wedge on "2022 Leadoff ICONs page 66" (local stmt-timeout + upstream DAS); gates the open edition_integrity drain — night pass to confirm it resumes](2026-11-09T0708Z-daytime-monitor-candy-census-recent-run-failures.md)
 
 ## 2026-11-08 — 7 filings
 
-- [Daytime monitor candidates — 2026-11-08T22:05Z (≈2:05 PM PT): candy-sales-indexer ME offset-15500 bug, Candy revival re-verify, candy_offer_spread_board calibration](2026-11-08T2205Z-daytime-monitor.md)
+- [✅ Daytime monitor candidates — 2026-11-08T22:05Z (≈2:05 PM PT): candy-sales-indexer ME offset-15500 bug, Candy revival re-verify, candy_offer_spread_board calibration](2026-11-08T2205Z-daytime-monitor.md)
 - [🟠 **FOR TREVOR (later)** — switch the "Entity page sweep" Vercel firewall rule from Log to Challenge (#235; 300 req/60 s per JA4, logging 212/day), and pick a display name for alaskanninja](2026-11-08T1712Z-cowork-for-trevor-firewall-sweep-rule-to-challenge-and-alaskanninja-name.md)
 - [✅ 🟠 **FOR COWORK** — apply the trophy picker "Load more" migration (`20261108155000_audit_20261108_trophy_picker_load_more_offset.sql`, DROPs the 5-arg `get_user_top_owned_moments` → 6-arg with `p_offset`) in the SQL editor, then cherry-pick the parked code commit `b08918dfc` from `claude/epic-carson-7x3ok7` onto `main`; Claude Code's apply was held twice](2026-11-08T1558Z-claude-code-apply-for-cowork-trophy-picker-load-more.md)
 - [✅ 🟠 **FOR CLAUDE CODE / COWORK** — delete the OLD laptop-pull scheduled task `trig_014mdFHh2m4AYTkYLTF7XxSV` before 11-09 5:37 AM PT; its device-bound replacement `trig_015m2ZbNHoNmtT7ExQAQeVJD` exists (the old one stalled 11-08 waiting for folder access)](2026-11-08T1524Z-cowork-for-claude-code-or-cowork-delete-old-laptop-pull-task.md)

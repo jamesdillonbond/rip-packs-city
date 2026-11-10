@@ -28,3 +28,7 @@ Risk: read-only observation; no action taken. The night pass owns any fix.
 - **`rpc-candy-wmc-label-fill`:** handled. This session cut its step 400 → 150 keys at ~8:35 PM PT (job 844); session 014vX7Q7 then shipped `20261109044329` (row-budgeted steps, the key picker skips keys that can never fill, the pass converges and self-unschedules) and the job runs `step(60)`. 8:47 / 8:51 / 8:55 PM PT steps succeeded in 46 / 29 / 17 s.
 - **`backfill-pack-rip-metadata`:** still failing at 8:53 PM PT. The census move did not clear it. Measured the cause: two eligibility legs cost ~19 s per call under load whatever `p_limit` is (numbers in known-issues **#242**). Needs a quiet-window, three-file pinned change. Not shipped tonight.
 - **Census ghost purge:** session 014vX7Q7 shipped `20261109044509` (scoped ghost purge).
+
+## ✅ RESOLVED — 2026-11-09 ~7:20 PM PT (Claude Code cloud + Cowork)
+
+`backfill-pack-rip-metadata` (#242): the eligibility sets are precomputed (`20261110005700`) and read as a rotated slice (`20261110021600`). The 6:53 PM PT run took **9.4 s**, ok (40–50 s before, 6 of 15 hours timed out on 11-09). Register #242 is 🟠 partial with a 24 h exit. `rpc-candy-wmc-label-fill` has been healthy since its 11-08 row-budget fix (`20261109044329`).

@@ -22,3 +22,7 @@ This file adds ONE new signal.
 ---
 
 **Healthy baseline (07:08Z):** security invariants/anon-write/RLS/secdef all `[]`; `detect_stalled_pipelines()` `[]`; `check_pgcron_recent_failures()` `[]` (rpc-candy-wmc-label-fill fixed overnight); sentinel TS-UUID-editions-48h = 0; 17 migrations since 01:00Z all additive (`audit_` prefix, grep of bodies shows DROP/RENAME only inside rollback comments) → the 13/13 dashboard validation from 01:05Z still holds; last production deploy READY (`7f02c1e`, "job 848 first run verified"; the newer production builds are CANCELED supersede-noise from heavy doc/ledger pushing, no ERROR); client_error beacon 0 in 12h (no spike). FMV HIGH+MED by snapshot: nba 6271, panini 18466, nfl 1598, pinnacle 982, candy 2, golazos 1, ufc 0. DB 49,266 MB.
+
+## ✅ RESOLVED — 2026-11-09 ~7:20 PM PT (Claude Code cloud)
+
+The page-228 failures were DAS's own statement timeout on OFFSET paging (fixed 5:20 AM PT: the census pages by DAS cursor, `audit_20261109_candy_census_pages_by_das_cursor`). The `wallet_moments_cache` lock timeouts were 2 in 4 days, both 11-08 night while every run retried the same stuck page; none since the cursor fix. Of the 10 census runs after it, 9 were ok; the other failed on an upstream DAS HTTP 500 (ledger 11-09 "overnight routed items re-derived"). Later census failures are the hydration lane's HTTP 429s, owned by the census session.
