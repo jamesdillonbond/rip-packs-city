@@ -3,6 +3,8 @@
 
 **Every feature against every collection, in one table: [feature-parity-2026-11-09.md](../feature-parity-2026-11-09.md)** (read 11-09 ~10:15 PM PT from the registry, the live routes and the per-collection matrices; it ranks the parity gaps still open and names the two that need Trevor). ⚠ The status column below is the 10-17 read with dated addenda — each feature file's own newest dated entry wins over its row here.
 
+**11-09 night:** `insights-and-seo.md`, `concierge-and-alerts.md` and `wallet-and-portfolio.md` each open with a dated block for the audit pass (market-pulse cache, live weekly emails, cost-basis count); `collections/candy-mlb.md`, `laliga-golazos.md` and `ufc-strike.md` likewise.
+
 **Binding rules** (all seven files):
 - read-only product: no cart or gifting; trading only as the no-custody trade room, signing gated until the live swap test seals ([trading.md](trading.md), 10-31);
 - **accuracy is the GATE**;

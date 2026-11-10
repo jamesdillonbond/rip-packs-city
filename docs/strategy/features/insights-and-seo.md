@@ -1,6 +1,14 @@
 # Insights & SEO — feature roadmap (refreshed 2026-10-17, PT)
 > Dated snapshot; re-derive any number before quoting. Canonical plan: [roadmap-2026-10-17.md](../roadmap-2026-10-17.md). Per-collection detail: [collections/](../collections/). Defects: [known-issues.md](../../reference/known-issues.md).
 
+## ⭐ 2026-11-09 night — audit-pass changes
+
+- **Market Pulse reads a cache.** `/insights/market-pulse` was the largest runtime-error group (27 budget misses in 24 h, one or more per deployment and region). `get_market_pulse_windows()` now returns a row refreshed by pg_cron every 10 minutes (`rpc-market-pulse-cache`, `20261110075950`): 2.6 ms against a 2.5 s mean, with a live fallback past 25 minutes. Judge by the Vercel `[insights/Market pulse]` group from 11-10. `/insights/pack-sniper` (5 misses) has the same shape and is the next candidate.
+- **Page headings:** one `<h1>` on every collection tab (six were wrong: Panini Collection / Analytics / Product had two, the Packs tab of Panini and Candy none).
+- **Search Console, 11-09:** 58 clicks / 2.01K impressions in 28 days (41 on 10-20, 9 on 10-03); indexed 41.3K; not indexed 62.5K as the sitemap reached 111,866 URLs. Full read and the Candy sitemap decision: [seo-2026-09-06-search-console-read.md](../seo-2026-09-06-search-console-read.md).
+- **Sweep, 11-09:** 303 sampled sitemap pages, all 200 with canonical, description, social image and branded title; mobile 390 px and 320 px clean on 83 pages.
+- **Methodology page** no longer names Flowty and states the recent-sales cap on ask-based prices.
+
 ## What it is today
 
 **`/insights` is the public, anonymous face of the product.** It has ~32 live boards (the hub's ItemList JSON-LD, 10-14):

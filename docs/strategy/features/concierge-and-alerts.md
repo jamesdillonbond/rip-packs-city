@@ -1,6 +1,13 @@
 # Concierge & alerts — feature roadmap (refreshed 2026-10-17, PT)
 > Dated snapshot; re-derive any number before quoting. Canonical plan: [roadmap-2026-10-17.md](../roadmap-2026-10-17.md). Per-collection detail: [collections/](../collections/). Defects: [known-issues.md](../../reference/known-issues.md).
 
+## ⭐ 2026-11-09 night — audit-pass changes
+
+- **Both weekly emails are live** (they were "flag-off" in the 10-17 text below): 11-09 runs sent 8 weekly portfolio emails and 1 subscriber digest. The Email settings page said the digest "isn't sending yet"; it now says Monday morning, only in a week the value moved 5 % or more.
+- **Two `explain_ui_field` entries** added from a signed-in production probe: where cost basis lives (the Collection tab, not the dashboard) and when the weekly email sends.
+- **Sweep tools refuse** a named collection they do not cover (Golazos, UFC, Panini) instead of answering with Top Shot's board.
+- The other production probes that night (anonymous and signed in) answered correctly: no confidence tier, buying refused, trade room described, prompt injection refused.
+
 ## What it is today
 
 **The concierge** is `app/api/support-chat/route.ts` plus `SupportChat`, with ~42 tools as of the 10-03 pass. It is on the site, and on Telegram via `BOT_BRIDGE_SECRET`. The Discord asymmetry is permanent (concierge.md).

@@ -1,6 +1,14 @@
 # Candy MLB — collection roadmap (refreshed 2026-10-17, PT)
 > Dated snapshot; every number is a dated sample — re-derive before quoting. Canonical plan: [roadmap-2026-10-17.md](../roadmap-2026-10-17.md). Defects: [known-issues.md](../../reference/known-issues.md) (item text wins over this file).
 
+## ⭐ 2026-11-09 night — audit-pass changes (read with the 11-08 block below)
+
+- **A Candy sale arrived:** 11-09 1:23 PM PT, $0.17, "2022 Uncut Diamond ICONs" on Magic Eden — the first since 10-12. `candy_revival_sales_since_recorded_silence` = 1. The public status stays `silent_since_2026_10_12` on one print (decided 11-09); a scheduled check on 11-12 counts sales by day and set.
+- **Coverage is reported in two parts.** The Sentinel's Edition Coverage counts legacy Candy collections as their own scope (`sentinel_edition_coverage`, `20261110072431`): 1 of 21,736 priced, shown beside the headline. A legacy edition is priced once it sells; no floor-derived price was introduced.
+- **The ask book shrank honestly:** the 11-09 7:35 PM PT listings sweep retired 208 of 228 Magic Eden asks as owner-moved (the October wallet migration reaching listings first seen 11-08).
+- **Copy:** the collection ticker no longer claims a price on every edition or card.
+- **Open, Trevor's:** the label "Candy MLB" now covers DC, Netflix, NASCAR and college collections (e.g. a "Team" page for the University of Maryland). 21,961 `candy-mlb/edition` URLs are in the sitemap, ~21.7k unpriced — not pruned; re-read Search Console ~11-23 ([seo read](../seo-2026-09-06-search-console-read.md), 11-09 section).
+
 ## ⭐ 2026-11-08 evening — every Candy collection is catalogued, censused and market-tracked (read first)
 
 Trevor, 11-08: "we need to track and measure all of this"; scope chosen: **all MLB + non-MLB Candy collections, no test collections**. Built ~2:00–9:30 PM PT; each ledger entry of that day carries its revert path. Every number is a dated sample.

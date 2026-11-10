@@ -1,6 +1,10 @@
 # UFC Strike — collection roadmap (refreshed 2026-10-17, PT)
 > Dated snapshot; every number is a dated sample — re-derive before quoting. Canonical plan: [roadmap-2026-10-17.md](../roadmap-2026-10-17.md). Defects: [known-issues.md](../../reference/known-issues.md) (item text wins over this file).
 
+## 2026-11-09 night — audit-pass note
+
+- Unchanged archive: 617 / 617 editions with an FMV row, 0.0 % HIGH/MEDIUM, 0 sales. Concierge probes on a UFC page declined challenges and offers with the closed-market fact; the sweep tools now refuse UFC outright. The Terms page no longer names Flowty.
+
 ## Where it stands
 **A closed-market archive, published on purpose.** The Flow market is closed: the native studio feed ended 2025-08-07, and the last Flow sale of any kind was **2026-05-13 10:06 AM PT** ([lib/market-closed.ts](../../../lib/market-closed.ts); `v_collection_marketplace_status` = `shutdown`, buy CTAs off). UFC itself moved to Aptos.
 

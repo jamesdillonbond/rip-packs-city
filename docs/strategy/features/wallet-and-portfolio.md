@@ -1,6 +1,13 @@
 # Wallet & portfolio — feature roadmap (refreshed 2026-10-17, PT)
 > Dated snapshot; re-derive any number before quoting. Canonical plan: [roadmap-2026-10-17.md](../roadmap-2026-10-17.md). Per-collection detail: [collections/](../collections/). Defects: [known-issues.md](../../reference/known-issues.md).
 
+## ⭐ 2026-11-09 night — audit-pass changes (found by walking production signed in)
+
+- **Cost basis count:** the Collection tab printed "27 moments with a known cost" beside a cost basis summed over 6,628 moments; the count came from the rows on screen. It now uses `get_wallet_summary.moments_with_cost`.
+- **Locked + Unlocked vs Wallet FMV:** the split includes stale-priced moments and the headline does not ($54,437 + $2,981 vs $52,275 on one wallet); a caption says so when stale-priced moments exist.
+- **Locked tile** no longer reads "n/a for this collection" while loading on a collection that has locking.
+- Dashboard, trophy cases, pack history, transaction history, public profile, trades, trade block and API keys were walked and read correctly.
+
 ## What it is today
 
 **Wallet and collection analytics.** Paste any wallet, or sign in and have your own wallet ASSUMED (never requested, never announced; routes-and-surfaces 09-28). You then get:

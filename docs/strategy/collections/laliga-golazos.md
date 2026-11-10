@@ -1,6 +1,11 @@
 # LaLiga Golazos — collection roadmap (refreshed 2026-10-17, PT)
 > Dated snapshot; every number is a dated sample — re-derive before quoting. Canonical plan: [roadmap-2026-10-17.md](../roadmap-2026-10-17.md). Defects: [known-issues.md](../../reference/known-issues.md) (item text wins over this file).
 
+## 2026-11-09 night — audit-pass note
+
+- 0 sales in 7 days, 575 / 575 editions carry an FMV row, HIGH/MEDIUM share 0.2 % (read 10:10 PM PT). No Hot Floors or Pack Sniper board: both would be empty ([feature-parity-2026-11-09.md](../feature-parity-2026-11-09.md), gap 3).
+- **Concierge:** a "hot floors" question on a Golazos page was answered with Top Shot's sweep board. The sweep tools now refuse a named collection they do not cover (ledger 11-09, third audit pass). Trophies and special-serial questions already answered from Golazos rows or declined.
+
 ## Where it stands
 
 **The verdict: the pipelines are healthy and the market shows no activity. The honest product answer is a label, not more pricing.** Live reads were taken 2026-10-17, ~6:00 PM PT.
