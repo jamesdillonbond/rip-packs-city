@@ -8,7 +8,7 @@ This file is written as the pass goes (draft at 1:55 PM PT, updated 2:35 PM PT);
 | PT | What | Measured effect |
 |---|---|---|
 | ~2:27 PM | Panini sale-feed status refresh hourly; view window 75 → 135 min (`20261110222110`) | Half of a 5.2M-row index scan every 30 min (22–30 s/run) |
-| ~2:30 PM | #246 progress read: 109,757 cards left on name-only editions, ~7k/h, integrity flags 6 (under 250) | docs |
+| ~2:30 PM | #246 progress read: 109,757 cards left on name-only editions, ~7k/h, integrity flags 9,581 (breach 250; corrected — "6" was the view's row count) | docs |
 | ~2:20 PM | `get_user_top_owned_moments` estimates only the returned page (`20261110221809`, pinned) | Whale default first load 2.3 s → 0.9 s warm; 240-row parity across 6 shapes |
 | ~2:12 PM | #243 closed (exit met: cold 6k-card Panini search 4.4 s); inbox 1715Z + 1800Z marked resolved | docs |
 | ~1:55 PM | `detect_new_edition_early_buyers` fences its first-sale CTE (`20261110215349`, pinned: pin + registry re-pointed) | All Day > 55 s → 0.19 s; was pushing `run_all_insider_detectors('nfl_all_day')` past the ~120 s gateway cap on 5 of 48 runs |
