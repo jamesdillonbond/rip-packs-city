@@ -83,3 +83,25 @@
 - The stale-priced caption renders on `/nba-top-shot/collection` for his wallet (headless, anonymous: Wallet FMV $52,274.62 · Unlocked $2,981.10 · Locked $54,437.02 · "locked + unlocked include the stale-priced").
 - ⚠ **The cost-basis count was NOT seen on the rendered page.** It is an owner-only strip, and by 11:50 PM Trevor's Chrome had stopped painting (`requestAnimationFrame` did not fire in 4 s; display asleep), so every streamed Suspense page stayed on "Loading…" there — on Top Shot and All Day alike, which is what ruled out a regression. What was verified instead: `/api/wallet-summary` returns `moments_with_cost: 6628` for his wallet from his session, and the unit tests pin the count to that field. Worth one look at the Collection tab when he is next on the site: it should read "6,628 moments with a known cost".
 - Small thing seen on the way: for the first ~3 s of an anonymous load the Locked FMV tile reads "n/a for this collection" on Top Shot before the summary arrives. Cosmetic, not fixed.
+
+---
+
+## Third pass — 11:57 PM 11-09 → ~12:30 AM PT 11-10 (Trevor: "Keep going and work through the rest")
+
+### Shipped (ledger entry 11-09 "third audit pass")
+
+1. **`/insights/market-pulse` no longer computes its 30-day aggregate on every cold render.** It was the largest runtime-error group (27 "read exceeded 8000ms" in 24 h, at least one per deployment and edge region; `pg_stat_statements` over 8,979 calls: mean 2.5 s, max 30 s, 2,831 blocks read per call). The aggregate now sits behind a one-row cache refreshed by pg_cron every 10 minutes (`rpc-market-pulse-cache`, migration `20261110075950`); `get_market_pulse_windows()` reads it in 2.6 ms / 245 buffers and falls back to the live computation if the row is older than 25 minutes, so a stopped refresh degrades to the old behaviour, never to a stale board. Cached payload = live payload at apply.
+2. **Concierge sweep tools refuse a named collection they do not cover** (the Golazos probe above); test proven with a planted defect.
+3. **Locked FMV tile** no longer says "n/a for this collection" on a collection that has locking (it showed on Top Shot for the first seconds of every load); a null count is an em dash.
+
+### Checked, no change
+
+- **Trophies board:** the 10:28 PM PT probe read 3,911 ms against its 7,000 ms limit, so `public_board_slow_count` clears at the next trust refresh. The 4:28 PM breach was one slow read.
+- **`/trades` "Open →" on cancelled rooms** (item 10 above): withdrawn. "Open →" is the row's link, the rooms are history, and `prune_trade_rooms` removes them after 7 days.
+- **`/insights/pack-sniper`** (5 budget misses in 24 h) has the same cold-render shape as market pulse, but its read (`getPackDeals`) is a multi-source composite; not changed tonight. Queued for Claude Code with the market-pulse cache as the pattern.
+
+### Not attempted, and why
+
+- **Renaming the "Candy MLB" label:** 243 lines in 125 source files and 83 test files name it, and the new name is a brand choice. Waiting on Trevor's answer.
+- **cron-job.org console:** not opened. Its job pages carry gate keys in URLs, Trevor's display was asleep (no screenshots, streamed pages do not render), and every lane it drives read healthy from `pipeline_runs`.
+- **Two spent scheduled tasks** the session may not delete (item 9).

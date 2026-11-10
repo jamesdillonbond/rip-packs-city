@@ -77,7 +77,7 @@ A gap is listed only where the data exists or could exist; "—" cells above are
 3. **Golazos Hot Floors and Pack Sniper.** Both would be empty boards today (0 sales in 7 days; 0 priced pack rows). Build only if the market wakes — the 10-20/21 burst (87 sales) is the kind of event to re-check on.
 4. **Golazos / UFC Top Owners.** `wallet_moments_cache` holds ~155 wallets each: a lower bound too thin to rank honestly. Same class as All Day's.
 5. **Pinnacle in the trade room.** Trevor's 11-03 rule holds assets in the Dapper account; whether a Flow Wallet can move a Pinnacle pin held there is untested.
-6. **Golazos and UFC concierge substitution check.** All Day, Pinnacle and Candy were probed on 10-26 for tools answering with Top Shot rows; Golazos and UFC were not re-probed after those fixes.
+6. ✅ **Golazos and UFC concierge substitution check — probed and fixed 11-10 ~12:05 AM PT.** On a Golazos page "hot floors" was answered with Top Shot's sweep board; `get_hot_floors` and `get_edition_sweep` now refuse any named collection other than Top Shot (Pinnacle, All Day and Candy keep their own arms). The other three probes were clean: Golazos trophies answered from Golazos rows and declined holders; UFC challenges and offers were declined with the closed-market fact. On a UFC page a "best deals" question was answered with Top Shot deals by the model's own choice, stated up front — left as is.
 7. **Two h1 defects (fixed tonight).** Panini Collection / Analytics / Product shipped two `<h1>`; the Packs tab of Panini and Candy shipped none.
 
 ## Needs Trevor
