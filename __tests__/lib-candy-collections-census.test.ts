@@ -63,7 +63,11 @@ const full = (n: number, prefix: string) => Array.from({ length: n }, (_, i) => 
 
 function db() {
   return {
-    rpc: async (name: string, args: any) => { state.rpcs.push(name); state.rpcArgs.push(args); return { data: 4, error: null } },
+    rpc: async (name: string, args: any) => {
+      state.rpcs.push(name); state.rpcArgs.push(args)
+      if (name === "candy_repoint_listings_to_card_edition" && (state as any).listingsError) return { data: null, error: (state as any).listingsError }
+      return { data: 4, error: null }
+    },
     from: (table: string) => {
       if (table === "candy_collections") {
         const b: any = {
@@ -101,6 +105,7 @@ function db() {
 
 beforeEach(() => {
   state.queue = []; state.pages = {}; state.dasThrows = new Set(); state.dasNoCursor = false; state.dasCalls = []; state.wmcError = null
+  ;(state as any).listingsError = null
   state.existingWmc = []; state.existingEds = []; state.readError = null; state.hydrate = null; state.hydrateCalls = []
   state.updates = []; state.wmcUpserts = []; state.edUpserts = []; state.rpcs = []; state.rpcArgs = []
 })
@@ -238,6 +243,11 @@ describe("runCollectionsCensus", () => {
     expect(overwrite.rows).toHaveLength(1)
     expect(overwrite.rows[0]).toMatchObject({ moment_id: "m1", wallet_address: "W", edition_key: "ed-real" })
     expect(r.wmc_repointed).toBe(1)
+    // its listings follow it: one set-based call with the repointed mints
+    const lr = state.rpcs.indexOf("candy_repoint_listings_to_card_edition")
+    expect(lr).toBeGreaterThanOrEqual(0)
+    expect(state.rpcArgs[lr]).toEqual({ p_mints: ["m1"] })
+    expect(r.listings_repointed).toBe(4) // the rpc mock answers 4
     // the repointed row is NOT also offered insert-only
     expect(state.wmcUpserts.filter((u) => u.opts.ignoreDuplicates === true).flatMap((u) => u.rows).some((x) => x.moment_id === "m1")).toBe(false)
   })
@@ -270,6 +280,17 @@ describe("runCollectionsCensus", () => {
     expect(r.hydrate_fail_reasons).toEqual({ "HTTP 403": 1000, "breaker open": 1000 })
     expect(r.completed).toBe(1) // the walk still reached its end
     expect(r.ok).toBe(false)
+  })
+
+  it("a failed LISTINGS repoint fails the page and does not advance the cursor", async () => {
+    state.queue = [{ address: "A", name: "A", census_page: 2, census_cursor: "A#1", census_walk_started_at: "2026-11-08T00:00:00Z" }]
+    state.pages.A = [full(1000, "x"), [{ id: "m1", owner: "W", ed: "name-only", realEd: "real", bare: true }]]
+    state.existingWmc = [{ moment_id: "m1", wallet_address: "W", edition_key: "ed-name-only", serial_number: null }]
+    ;(state as any).listingsError = { message: "statement timeout" }
+    const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+    expect(r.ok).toBe(false)
+    expect(r.error).toMatch(/listings repoint: statement timeout/)
+    expect(state.updates.some((u) => u.patch.census_page !== undefined)).toBe(false)
   })
 
   it("a hydrated card already on the RIGHT edition is not rewritten", async () => {

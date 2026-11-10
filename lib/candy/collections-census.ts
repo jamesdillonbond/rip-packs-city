@@ -81,6 +81,7 @@ export interface CollectionCensusReport {
   hydrated_reused: number
   unhydrated_skipped: number
   wmc_repointed: number
+  listings_repointed: number
   completed: boolean
   error: string | null
 }
@@ -127,6 +128,7 @@ export interface CollectionsCensusResult {
   hydrated_reused: number
   unhydrated_skipped: number
   wmc_repointed: number
+  listings_repointed: number
   hydrate_fail_reasons: Record<string, number>
   hydrate_fetches: number
   hydrate_unverified_groups: number
@@ -150,7 +152,7 @@ export async function runCollectionsCensus(
   const deadline = now() + opts.budgetMs
   const out: CollectionsCensusResult = {
     ok: false, collections: [], pages: 0, cards: 0, wmc_inserted: 0, editions_inserted: 0,
-    hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, hydrate_fail_reasons: {}, hydrate_fetches: 0, hydrate_unverified_groups: 0, hydrate_rate_limit_retries: 0, unhydrated_sample: [],
+    hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, listings_repointed: 0, hydrate_fail_reasons: {}, hydrate_fetches: 0, hydrate_unverified_groups: 0, hydrate_rate_limit_retries: 0, unhydrated_sample: [],
     completed: 0, escrow_remapped: 0, ghosts_purged: null, error: null,
   }
 
@@ -184,7 +186,7 @@ export async function runCollectionsCensus(
   const breakerOpen = () => fetchAttempts >= BREAKER_MIN_ATTEMPTS && fetchFailures / fetchAttempts > BREAKER_FAIL_SHARE
   for (const c of (queue ?? []) as Array<{ address: string; name: string; census_page: number; census_cursor: string | null; census_walk_started_at: string | null }>) {
     if (now() > deadline) break
-    const rep: CollectionCensusReport = { address: c.address, name: c.name, pages: 0, cards: 0, wmc_inserted: 0, editions_inserted: 0, hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, completed: false, error: null }
+    const rep: CollectionCensusReport = { address: c.address, name: c.name, pages: 0, cards: 0, wmc_inserted: 0, editions_inserted: 0, hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, listings_repointed: 0, completed: false, error: null }
     out.collections.push(rep)
     let page = Math.max(1, c.census_page || 1)
     let cursor: string | null = c.census_cursor || null
@@ -335,6 +337,15 @@ export async function runCollectionsCensus(
         if (error) failed = `wallet_moments_cache repoint: ${error.message}`
         else rep.wmc_repointed += data?.length ?? 0
       }
+      // A listing follows its CARD (2026-11-09, inbox 2026-11-10T0430Z): the repointed cards'
+      // candy_listings rows (both venues, active or retired) move to the card's new edition, so
+      // listing history stays on the real edition and the orphan cleanups can retire the old one.
+      // One set-based call per page; a failure fails the page (cursor not advanced, re-read).
+      if (!failed && repoint.length) {
+        const { data, error } = await db.rpc("candy_repoint_listings_to_card_edition", { p_mints: repoint.map((r) => String(r.moment_id)) })
+        if (error) failed = `listings repoint: ${error.message}`
+        else rep.listings_repointed += typeof data === "number" ? data : 0
+      }
       if (failed) { rep.error = `page ${page}: ${failed}`; break }
 
       rep.pages++
@@ -365,6 +376,7 @@ export async function runCollectionsCensus(
     out.hydrated_reused += rep.hydrated_reused
     out.unhydrated_skipped += rep.unhydrated_skipped
     out.wmc_repointed += rep.wmc_repointed
+    out.listings_repointed += rep.listings_repointed
     if (rep.completed) out.completed++
   }
 
