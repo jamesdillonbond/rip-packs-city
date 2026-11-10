@@ -193,3 +193,33 @@ Each runs as one paste in the Supabase SQL editor; each carries its pre-check, p
 
 - All Day set tracker fix: applied as `20261110173413` through the SQL editor in Trevor's Chrome ("Use chrome and do it"). His wallet's cost to complete went from $423,045.11 to $344,638.00 — down by exactly the $78,407 of withdrawn prices — and the read from 3.7 s to 0.26 s.
 - Candy board floor: already applied by another session as `20261110154319`; the floor reads 5.
+
+## Seventh pass — 9:43 AM → ~10:50 AM PT 11-10 (Trevor: "Keep going"; then "don't stop until … nothing is left unresolved from this thread")
+
+### Withdrawn prices in wallets — fixed by another session, verified here
+
+- Filed 10:00 AM PT (inbox `2026-11-10T1800Z`): the wallet cache keeps prices the engine withdrew, and they sat in the headline total. Decision (Trevor: "Do what you think is best"): keep the last known price and show it as stale.
+- A Claude Code session shipped it at 10:14 AM PT as `20261110181426` (commit `72d7a75`), all five total readers. A second, staged copy from this session failed its own pre-check because the functions had already moved; it was discarded unapplied.
+- Checked independently on the three most affected All Day wallets: the stale line matches a separate sum to the cent, headline total unchanged; the largest moved $16,559.69 across 33 moments.
+
+### Closing sweep (inbox `2026-11-10T1840Z`)
+
+Every reader the two filings listed as "not examined" was read:
+
+- **Clean:** team and player checklists ("cost to finish"), platform stats, the analytics tier pulse, the All Day / Golazos / Top Shot deal boards (0 withdrawn editions among 4,486 / 495 / 5,000 rows), Panini's collector views, the binder rows.
+- **Staged, not applied:** the UFC set tracker carries the same query the All Day tracker did. No number is wrong today (572 priced editions, $18,647.80, identical both ways). File: `docs/proposals/audit_20261110_ufc_set_tracker_reads_current_fmv_cache-STAGED.sql`. This session's database write was refused a fifth time; not routed through the dashboard because nothing on the page is wrong.
+- **Recorded, not changed:** seven readers (trophy picker, profile hero moment, CSV export, concierge wallet breakdown, TC report, one wallet total, the daily portfolio history) show the cached last-known price without a stale mark. Among signed-up users' wallets: 8 moments, $442.01, 4 wallets. The binder row for the same moment shows no price. Closing that means clearing the cached price everywhere — a product decision.
+
+### What is left, and whose it is
+
+| item | owner |
+|---|---|
+| Apply the staged UFC tracker file (one step; baselines in the filing) | Claude Code or Trevor |
+| Should a withdrawn price be cleared from wallets entirely (rows, picker, export) or stay as last-known? | Trevor |
+| Fast Break is still "Coming soon"; projections have been live since 10-23 | Trevor (launch call, wants in-season QA) |
+| `GITHUB_ACTIONS_READ_TOKEN` renewal, about 11-14 | Trevor |
+| Two spent scheduled tasks ("Dapper + Flowty recovery check", "R133: retire ?token= admin arms") — deleting them deletes their run records | Trevor |
+| A Supabase SQL editor tab is open in Trevor's Chrome with an unsaved query (the applied All Day migration) — safe to close | Trevor |
+
+Nothing else from this thread is open.
+
