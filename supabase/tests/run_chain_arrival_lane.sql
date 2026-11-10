@@ -51,7 +51,7 @@
 -- The function DDL below is VERBATIM from the committed migration
 -- (supabase/migrations/20260929170000_audit_20260929_chain_arrivals_find_when_and_from_whom_a_wallet_got_a_moment.sql;
 -- seed_saved_wallet_chain_arrivals from
--- 20260930190000_audit_20260930_chain_arrivals_seed_sold_moments.sql;
+-- 20261110165800_audit_20261110_chain_arrivals_seed_estimates_height_only_for_new_sold_moments.sql;
 -- run_chain_arrival_lane from 20261109134500_audit_20261109_chain_arrival_lane_4xx_is_attributed_by_the_alert_arm.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
@@ -575,22 +575,29 @@ BEGIN
     -- 2023-26). Only held moments were seeded before, so a pull flipped
     -- between two seeds was never traced. Same exclusions as held.
     SELECT s.seller_address AS wallet, s.nft_id::bigint AS nft_id,
-           coalesce(min(s.block_height), public.flow_height_estimate(min(s.sold_at))) - 100 AS hi
+           min(s.block_height) AS bh, min(s.sold_at) AS first_sold
       FROM w
       JOIN public.sales s ON s.seller_address = w.wallet
      WHERE s.collection_id = v_ts AND s.nft_id ~ '^[0-9]{1,15}$' AND s.sold_at > timestamptz '2023-11-09'
      GROUP BY 1, 2
-  ), sold_ok AS (
-    SELECT so.wallet, so.nft_id, so.hi
+  ), sold_new AS MATERIALIZED (
+    -- 2026-11-10: the exclusions run BEFORE the height estimate. It was computed for
+    -- every sold group (142,250 over 49 wallets; 44,032 with no block height, ~5 ms a
+    -- call) and then all but 11,658 were dropped by the exclusions; the 11-10 3:13 AM PT
+    -- run hit the 120 s pg_cron timeout. MATERIALIZED keeps `hi > v_floor` from being
+    -- pushed in front of the anti-joins. Same rows inserted.
+    SELECT so.wallet, so.nft_id,
+           coalesce(so.bh, public.flow_height_estimate(so.first_sold)) - 100 AS hi
       FROM sold so
-     WHERE so.hi > v_floor
-       AND NOT EXISTS (SELECT 1 FROM public.chain_arrival_probes p
+     WHERE NOT EXISTS (SELECT 1 FROM public.chain_arrival_probes p
                         WHERE p.wallet = so.wallet AND p.nft_id = so.nft_id)
        AND NOT EXISTS (SELECT 1 FROM public.pack_open_pulls o WHERE o.collection_id = v_ts AND o.nft_id = so.nft_id::text)
        AND NOT EXISTS (SELECT 1 FROM public.moment_acquisitions a
                         WHERE a.wallet = so.wallet AND a.collection_id = v_ts AND a.nft_id = so.nft_id::text
                           AND a.acquisition_method = 'pack_pull')
        AND NOT EXISTS (SELECT 1 FROM bought b WHERE b.wallet = so.wallet AND b.nft_id = so.nft_id::text)
+  ), sold_ok AS (
+    SELECT sn.wallet, sn.nft_id, sn.hi FROM sold_new sn WHERE sn.hi > v_floor
   ), ids AS (
     SELECT wallet, nft_id, hi, false AS is_sold FROM held
     UNION ALL
@@ -1070,6 +1077,32 @@ BEGIN
   PERFORM _assert((SELECT hi = 166000000 FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000cc' AND nft_id = 501),
                   'S2: an existing (held) probe is untouched');
   PERFORM _assert_eq((public.seed_saved_wallet_chain_arrivals())->>'seeded', '0', 'S2: never twice');
+END $$;
+
+-- S3 (2026-11-10): the height estimate runs only for a sold moment that SURVIVES the
+-- exclusions. It ran for every sold group (142,250; 44,032 without a height) before the
+-- already-probed ones were dropped, and the daily seed hit the 120 s pg_cron timeout.
+-- The stub now RAISES for any call, and the only height-less sold rows are an already
+-- probed moment (605), a pack pull and a bought moment — so any call is the defect.
+CREATE OR REPLACE FUNCTION public.flow_height_estimate(p_at timestamptz) RETURNS bigint LANGUAGE plpgsql AS $$
+BEGIN
+  IF p_at < timestamptz '2026-11-01' THEN
+    RAISE EXCEPTION 'S3: flow_height_estimate called for % — a sold moment that is already explained', p_at;
+  END IF;
+  RETURN 166000000;
+END $$;
+INSERT INTO public.sales (collection_id, nft_id, buyer_address, seller_address, sold_at, block_height) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '605', '0x00000000000000ff', '0x00000000000000cc', '2026-02-01', NULL), -- already probed (S2)
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '602', '0x00000000000000ff', '0x00000000000000cc', '2026-02-01', NULL), -- an NFT pack pull
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '603', '0x00000000000000ff', '0x00000000000000cc', '2026-02-01', NULL), -- bought by the wallet
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '701', '0x00000000000000ff', '0x00000000000000cc', '2026-11-05', NULL); -- new: estimated (allowed date)
+DO $$
+DECLARE v jsonb;
+BEGIN
+  v := public.seed_saved_wallet_chain_arrivals();
+  PERFORM _assert_eq(v->>'seeded', '1', 'S3: only the new sold moment is seeded');
+  PERFORM _assert((SELECT hi = 165999900 FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000cc' AND nft_id = 701),
+                  'S3: a new sold moment with no height still gets estimate - 100');
 END $$;
 
 ROLLBACK;

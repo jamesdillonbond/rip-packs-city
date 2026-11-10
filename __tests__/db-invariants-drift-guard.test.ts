@@ -359,8 +359,9 @@ const PINS = [
     // 2026-09-30: and every one it SOLD since the floor (hi = just before the sale).
     fn: "seed_saved_wallet_chain_arrivals",
     test: "supabase/tests/run_chain_arrival_lane.sql",
+    // 2026-11-10: the height estimate runs only for sold moments that survive the exclusions.
     migration:
-      "supabase/migrations/20261004160000_audit_20261004_chain_arrivals_seed_reads_purchases_once_and_skips_probed.sql",
+      "supabase/migrations/20261110165800_audit_20261110_chain_arrivals_seed_estimates_height_only_for_new_sold_moments.sql",
   },
   {
     fn: "enqueue_chain_arrivals",
