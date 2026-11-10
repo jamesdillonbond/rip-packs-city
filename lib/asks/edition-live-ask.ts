@@ -16,7 +16,8 @@
 //   2. edition_offers.low_ask, last SEEN (low_ask_confirmed_at) in the last 7 days;
 //   3. badge_editions.low_ask, updated in the last 7 days;
 //   Candy: candy_listing_floor.confirmed_floor_usd (lib/fmv-candy-ceiling.ts);
-//   Panini: panini_market_board.low_ask_usd — the lowest ask re-confirmed in 7 days,
+//   Panini: panini_market_board.low_ask_usd — the lowest ask re-confirmed in 7 days (read keyed via
+//     panini_confirmed_low_asks, 2026-11-10),
 //     the edition page's own ask (2026-10-19; service-role only, like every panini_*);
 // and an ask is used ONLY when the edition has an FMV and the ask is <= 3x it
 // (the estate's disconnected-ask multiple): a lone ask on an unpriced edition is
@@ -133,11 +134,14 @@ export async function resolveLiveAsks(
     }
   }
 
-  // Panini: its view already keeps only serials re-read in the last 7 days.
+  // Panini: panini_market_board's ask (lowest serial re-confirmed in the last 7 days), read KEYED.
+  // ⚠ Not `.from("panini_market_board").in(...)`: that view groups every listed serial before an
+  // `= ANY` filter can reach it (283k serials / 5-12 s for 3 keys, 2026-11-10). The RPC applies the
+  // view's exact rule per key (migration 20261110213132; 1,990-key EXCEPT both ways = 0 rows).
   if (collectionId === PANINI) {
     for (let i = 0; i < keys.length; i += CHUNK) {
       const slice = keys.slice(i, i + CHUNK)
-      const { data, error } = await db.from("panini_market_board").select("external_id, low_ask_usd").in("external_id", slice)
+      const { data, error } = await db.rpc("panini_confirmed_low_asks", { p_external_ids: slice })
       if (error) {
         errors.push(`panini_market_board: ${error.message}`)
         continue

@@ -1,4 +1,7 @@
 import { describe, it, expect, vi } from "vitest"
+import { readFileSync, readdirSync } from "node:fs"
+import { join } from "node:path"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 import { resolveLiveAsks } from "@/lib/asks/edition-live-ask"
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
 
@@ -20,6 +23,10 @@ function db(rows: Rows) {
       for (const m of ["select", "eq", "in", "gt", "lt", "order", "limit"]) b[m] = () => b
       b.then = (ok: (v: unknown) => unknown) => Promise.resolve({ data: res.data ?? [], error: res.error ?? null }).then(ok)
       return b
+    },
+    rpc(fn: string) {
+      const res = rows[fn] ?? { data: [], error: null }
+      return Promise.resolve({ data: res.data ?? [], error: res.error ?? null })
     },
   }
 }
@@ -87,11 +94,11 @@ describe("resolveLiveAsks", () => {
 describe("resolveLiveAsks — Panini's confirmed ask (2026-10-19)", () => {
   const PN = COLLECTION_UUID_BY_SLUG["panini-blockchain"]
   const PE = [{ id: "p1", external_id: "packcard-1_1_1_1" }, { id: "p2", external_id: "packcard-2_2_2_2" }]
-  it("reads panini_market_board as priority 1, under the 3x FMV gate", async () => {
+  it("reads the board's confirmed ask (keyed RPC) as priority 1, under the 3x FMV gate", async () => {
     const { asks, errors } = await resolveLiveAsks(db({
       editions: { data: PE },
       edition_fmv_current: { data: [{ edition_id: "p1", fmv_usd: 20 }, { edition_id: "p2", fmv_usd: 20 }] },
-      panini_market_board: { data: [{ external_id: "packcard-1_1_1_1", low_ask_usd: 15 }, { external_id: "packcard-2_2_2_2", low_ask_usd: 70 }] },
+      panini_confirmed_low_asks: { data: [{ external_id: "packcard-1_1_1_1", low_ask_usd: 15 }, { external_id: "packcard-2_2_2_2", low_ask_usd: 70 }] },
       edition_offers: { data: [{ external_id: "packcard-1_1_1_1", low_ask: 12 }] },
     }), PN, ["packcard-1_1_1_1", "packcard-2_2_2_2"])
     expect(errors).toEqual([])
@@ -102,7 +109,7 @@ describe("resolveLiveAsks — Panini's confirmed ask (2026-10-19)", () => {
     const { asks } = await resolveLiveAsks(db({
       editions: { data: [EDS[0]] },
       edition_fmv_current: { data: [{ edition_id: "e1", fmv_usd: 10 }] },
-      panini_market_board: { data: [{ external_id: "1:1", low_ask_usd: 5 }] },
+      panini_confirmed_low_asks: { data: [{ external_id: "1:1", low_ask_usd: 5 }] },
     }), TS, ["1:1"])
     expect(asks.has("1:1")).toBe(false)
   })
@@ -110,10 +117,36 @@ describe("resolveLiveAsks — Panini's confirmed ask (2026-10-19)", () => {
     const { asks, errors } = await resolveLiveAsks(db({
       editions: { data: PE },
       edition_fmv_current: { data: [{ edition_id: "p1", fmv_usd: 20 }] },
-      panini_market_board: { error: { message: "boom" } },
+      panini_confirmed_low_asks: { error: { message: "boom" } },
     }), PN, ["packcard-1_1_1_1"])
     expect(asks.size).toBe(0)
     expect(errors.some((e) => e.startsWith("panini_market_board"))).toBe(true)
+  })
+})
+
+describe("panini_confirmed_low_asks keeps panini_market_board's ask rule (2026-11-10)", () => {
+  // The resolver reads Panini asks through a keyed RPC because the view's `.in()` aggregated every
+  // listed serial. The RPC is only honest while it applies the VIEW's rule: listed, priced > 0,
+  // re-confirmed within 7 days, minimum price. Read from the newest migration defining each.
+  const dir = join(process.cwd(), "supabase", "migrations")
+  const newest = (needle: string) => {
+    const f = readdirSync(dir).filter((x) => x.endsWith(".sql")).sort()
+      .filter((x) => readFileSync(join(dir, x), "utf8").includes(needle))
+    return readFileSync(join(dir, f[f.length - 1]), "utf8")
+  }
+  it("the RPC carries the view's four predicates and the min()", () => {
+    const fn = newest("FUNCTION public.panini_confirmed_low_asks")
+    const body = fn.slice(fn.indexOf("AS $$"), fn.lastIndexOf("$$"))
+    expect(body).toContain("s.is_listed")
+    expect(body).toMatch(/s\.price_usd > 0(::numeric)?/)
+    expect(body).toContain("s.captured_at > (now() - '7 days'::interval)")
+    expect(body).toContain("min(s.price_usd)")
+    expect(body).toContain("d1a0a7f5-609a-49f4-a1a7-4eaac55b020b")
+  })
+  it("the resolver calls the RPC, not the view's .in()", () => {
+    const src = stripComments(readFileSync(join(process.cwd(), "lib", "asks", "edition-live-ask.ts"), "utf8"))
+    expect(src).toContain('db.rpc("panini_confirmed_low_asks"')
+    expect(src).not.toMatch(/from\("panini_market_board"\)[^\n]*\.in\(/)
   })
 })
 
