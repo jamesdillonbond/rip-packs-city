@@ -1,12 +1,14 @@
 # Handoff — 2026-11-10 autonomous afternoon pass (Claude Code cloud)
 
 Trevor: "Can you work autonomously for the next 10 hours? … Fix any issues you encounter." Started ~11:50 AM PT.
-This file is written as the pass goes (draft at 1:55 PM PT); the ledger has every entry with its revert path.
+This file is written as the pass goes (draft at 1:55 PM PT, updated 2:22 PM PT); the ledger has every entry with its revert path.
 
 ## Shipped (all on `main`, all in the ledger, newest first)
 
 | PT | What | Measured effect |
 |---|---|---|
+| ~2:20 PM | `get_user_top_owned_moments` estimates only the returned page (`20261110221809`, pinned) | Whale default first load 2.3 s → 0.9 s warm; 240-row parity across 6 shapes |
+| ~2:12 PM | #243 closed (exit met: cold 6k-card Panini search 4.4 s); inbox 1715Z + 1800Z marked resolved | docs |
 | ~1:55 PM | `detect_new_edition_early_buyers` fences its first-sale CTE (`20261110215349`, pinned: pin + registry re-pointed) | All Day > 55 s → 0.19 s; was pushing `run_all_insider_detectors('nfl_all_day')` past the ~120 s gateway cap on 5 of 48 runs |
 | ~1:50 PM | `count_insider_detector_candidates` early-buyer branch reads the recent window (`20261110214948`) | All Day > 55 s → 3 s; its telemetry read "failed" on 4 of 5 sampled runs. Top Shot old = new = 11 |
 | ~1:50 PM | Cron routes self-call `CANONICAL_ORIGIN`; guard bans a request-derived origin (`lib/canonical-origin.ts`, tree-walk test) | `golazos-discover-buyers` had the latent 401 shape |
@@ -33,3 +35,5 @@ This file is written as the pass goes (draft at 1:55 PM PT); the ledger has ever
 - **Confidence-only changes in `refresh_wmc_fmv_changed`** (pinned 10-min lane): drops editions whose price did not move, so a confidence change waits ≥ 6 h for the hourly backstop (1:33 PM run fixed 17,864 rows). Options: carry confidence in the fast lane, or an incremental backstop window + a daily full sweep. Internal field, so low user impact.
 - **`populate_wmc_fmv_from_snapshots` NULL-only path** takes `LIMIT p_limit` before the priced join (same class as the image/confidence fixes). Nothing is stuck today (0 priceable NULL rows in any collection), and the obvious rewrite would probe all 1.33M unpriceable Candy rows per call — revisit when Candy editions start getting `fmv_snapshots`.
 - **#245 close-out** — read the three resumed walks (0x32c6…, 0xc246…, 0x75b5…) to completion, then close the item and regenerate the status index with `docs:issues-index` (diff before `git add`).
+- **`refresh_panini_sale_feed_status` (pg_cron 714, every 30 min)** index-only-scans all 5.2M `panini_card_serials` rows for five counters: 16 s warm, 22–30 s average, up to 102 s; ~2.6M blocks read/day. Halving the cadence is easy but the view falls back to a live (slow) read when the snapshot is > 75 min old, so it needs that window widened in the same change.
+- **Watch `/api/profile/top-moments`** after `20261110221809`: the first call after the replace read 23.7 s cold for the 47k-row account (1.1 s right after). A real budget miss in Vercel logs is the signal to look at the cold path (wallet leg `editions` probes, 190k buffers).
