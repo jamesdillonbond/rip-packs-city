@@ -27,6 +27,7 @@ import { claimPipelineLockDetailed, releasePipelineLock, skippedReasonFor, walle
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { dispatchContinuation, type ContinuationDispatch } from "@/lib/chains/flow/wallet-backfill-continuation"
+import { enqueueResume } from "@/lib/chains/flow/wallet-backfill-resume"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -803,7 +804,14 @@ export async function POST(req: NextRequest) {
       console.log(
         `[wallet-backfill] continuation wallet=${wallet} depth=${d.depth} ok=${d.ok} attempts=${d.attempts} status=${d.status ?? "none"}${d.error ? ` error=${d.error}` : ""}`,
       )
-      if (!d.ok) await logContinuationFailure(new Date().toISOString(), wallet, d)
+      if (!d.ok) {
+        await logContinuationFailure(new Date().toISOString(), wallet, d)
+        // #245 (2026-11-10): Vercel refuses a deep self-dispatch chain with 508; retrying the same
+        // path cannot succeed. Queue it — /api/cron/wallet-backfill-resume dispatches it from a
+        // fresh (cron) request at the same depth.
+        const q = await enqueueResume(supabaseAdmin, wallet, d.depth, d.error)
+        console.log(`[wallet-backfill] continuation queued wallet=${wallet} depth=${d.depth} ok=${q.ok}${q.error ? ` error=${q.error}` : ""}`)
+      }
     }
   })
 

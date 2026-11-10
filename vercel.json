@@ -161,6 +161,10 @@
     {
       "path": "/api/cron/challenge-wallet-refresh",
       "schedule": "17 * * * *"
+    },
+    {
+      "path": "/api/cron/wallet-backfill-resume",
+      "schedule": "3-59/10 * * * *"
     }
   ]
 }
