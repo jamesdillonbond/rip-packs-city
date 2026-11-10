@@ -134,6 +134,8 @@ export interface CollectionsCensusResult {
   hydrate_unverified_groups: number
   /** metadata fetches retried after every gateway answered HTTP 429 (2026-11-09) */
   hydrate_rate_limit_retries: number
+  /** lowest adaptive in-flight limit any hydrate call fell to this run; null when nothing was fetched (2026-11-10) */
+  hydrate_min_concurrency: number | null
   // 2026-11-09 10:20 AM PT: one fetch per edition did NOT group in production (7,121 requests
   // for 6,491 cards). A small sample of what DAS actually returns for an unhydrated asset, so
   // the grouping key can be fixed from evidence, not from the on-chain name we expected.
@@ -152,7 +154,7 @@ export async function runCollectionsCensus(
   const deadline = now() + opts.budgetMs
   const out: CollectionsCensusResult = {
     ok: false, collections: [], pages: 0, cards: 0, wmc_inserted: 0, editions_inserted: 0,
-    hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, listings_repointed: 0, hydrate_fail_reasons: {}, hydrate_fetches: 0, hydrate_unverified_groups: 0, hydrate_rate_limit_retries: 0, unhydrated_sample: [],
+    hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, listings_repointed: 0, hydrate_fail_reasons: {}, hydrate_fetches: 0, hydrate_unverified_groups: 0, hydrate_rate_limit_retries: 0, hydrate_min_concurrency: null, unhydrated_sample: [],
     completed: 0, escrow_remapped: 0, ghosts_purged: null, error: null,
   }
 
@@ -257,6 +259,7 @@ export async function runCollectionsCensus(
       if ("fetches" in fetched) out.hydrate_fetches += fetched.fetches
       if ("unverified_groups" in fetched) out.hydrate_unverified_groups += fetched.unverified_groups
       if ("rate_limit_retries" in fetched) out.hydrate_rate_limit_retries += fetched.rate_limit_retries
+      if ("min_concurrency" in fetched) out.hydrate_min_concurrency = Math.min(out.hydrate_min_concurrency ?? fetched.min_concurrency, fetched.min_concurrency)
       if (!(fetched.failed[0]?.reason === "breaker open")) {
         fetchAttempts += toFetch.length
         fetchFailures += fetched.failed.length

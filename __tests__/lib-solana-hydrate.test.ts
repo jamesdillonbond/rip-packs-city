@@ -277,3 +277,55 @@ describe("HTTP 429 on every gateway", () => {
     expect(sleeps[0]).toBeLessThanOrEqual(3000)
   })
 })
+
+// 2026-11-10: the cool-down paused the pool and resumed it at full width, so every census run
+// since still ended with 454–657 cards failed on HTTP 429 after 700–1,500 retry rounds. The number
+// of gateway rounds IN FLIGHT is now adaptive: an all-429 round halves it, clean rounds raise it.
+describe("adaptive in-flight limit under a gateway that rate-limits by concurrency", () => {
+  // 120 distinct 1-of-1 cards: each is its own group, so each is its own fetch
+  const many: DasAsset[] = Array.from({ length: 120 }, (_, i) => ({
+    id: `asset${i}`,
+    grouping: [{ group_key: "collection", group_value: LEADOFF }],
+    content: { json_uri: `https://permaweb.candy.io/tx${i}`, metadata: { name: `Player ${i} (1/1)` } },
+    ownership: { owner: "GaykGEAY5hmYKe9zhbEuvq56jbH6B1WMYE3uD6x73RWo" },
+  }))
+  // a gateway that answers 429 whenever more than `cap` requests are open at once
+  function cappedGateway(cap: number) {
+    let open = 0
+    let peak = 0
+    const f = (async () => {
+      open++
+      peak = Math.max(peak, open)
+      try {
+        await new Promise((r) => setTimeout(r, 2))
+        return open > cap ? new Response("slow down", { status: 429 }) : new Response(JSON.stringify(offChain), { status: 200 })
+      } finally {
+        open--
+      }
+    }) as unknown as typeof fetch
+    return { f, peak: () => peak }
+  }
+  const quickSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, Math.min(ms, 5)))
+
+  it("narrows to what the gateway accepts — almost no card lost to 429, where a fixed width loses most", async () => {
+    // measured 11-10 on this model: adaptive 0–1 of 120 failed; fixed width (floor = 48) 78–90
+    const adaptive = await hydrateFromJsonUri(many, { fetchImpl: cappedGateway(6).f, sleep: quickSleep, rateLimitBackoffMs: 5, concurrency: 48 })
+    expect(adaptive.failed.length).toBeLessThanOrEqual(6)
+    expect(adaptive.failed.every((x) => x.reason === "HTTP 429")).toBe(true)
+    expect(adaptive.hydrated.length + adaptive.failed.length).toBe(120)
+    expect(adaptive.min_concurrency).toBeLessThanOrEqual(6)
+    expect(adaptive.min_concurrency).toBeGreaterThanOrEqual(4) // the floor
+    // control: the same gateway with the limit pinned at full width (the pre-11-10 behaviour)
+    const fixed = await hydrateFromJsonUri(many, { fetchImpl: cappedGateway(6).f, sleep: quickSleep, rateLimitBackoffMs: 5, concurrency: 48, minConcurrency: 48 })
+    expect(fixed.min_concurrency).toBe(48)
+    expect(fixed.failed.length).toBeGreaterThanOrEqual(30)
+  })
+
+  it("no-change control: a gateway that never rate-limits keeps the full width", async () => {
+    const g = cappedGateway(1000)
+    const r = await hydrateFromJsonUri(many, { fetchImpl: g.f, sleep: quickSleep, rateLimitBackoffMs: 5, concurrency: 48 })
+    expect(r.failed).toEqual([])
+    expect(r.min_concurrency).toBe(48)
+    expect(g.peak()).toBeGreaterThan(24) // throughput is not throttled when nothing pushes back
+  })
+})
