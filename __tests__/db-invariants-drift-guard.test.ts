@@ -1694,6 +1694,19 @@ const PINS = [
     migration: "supabase/migrations/20261108181134_audit_20261108_pinnacle_minted_renders_missing_from_catalog.sql",
   },
   {
+    // Added 2026-11-09: deletes Candy NAME-ONLY editions (DAS returned no metadata) no card holds
+    // after the census repointed their cards to the real edition; hourly pg_cron.
+    fn: "candy_delete_orphan_name_only_editions",
+    test: "supabase/tests/candy_delete_orphan_name_only_editions.sql",
+    migration: "supabase/migrations/20261110044500_audit_20261109_candy_delete_orphan_name_only_editions.sql",
+  },
+  {
+    // Added 2026-11-09: a Candy listing follows its card when the census repoints / re-keys it.
+    fn: "candy_repoint_listings_to_card_edition",
+    test: "supabase/tests/candy_repoint_listings_to_card_edition.sql",
+    migration: "supabase/migrations/20261110044500_audit_20261109_candy_delete_orphan_name_only_editions.sql",
+  },
+  {
     // Added 2026-11-09: deletes Candy 1/1 editions no card holds (after the 1-of-1 re-key); hourly pg_cron.
     fn: "candy_delete_orphan_one_of_one_editions",
     test: "supabase/tests/candy_delete_orphan_one_of_one_editions.sql",
