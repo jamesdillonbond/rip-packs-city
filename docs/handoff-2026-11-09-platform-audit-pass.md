@@ -142,3 +142,28 @@ The display was awake at 4:25 AM, so the signed-in walk the second pass could no
 ### Still open (unchanged from the third pass)
 
 - "Candy MLB" label rename (Trevor's choice of name), `GITHUB_ACTIONS_READ_TOKEN` renewal (~11-14), two spent scheduled tasks this session may not delete, cron-job.org console not opened.
+
+---
+
+## Fifth pass — 7:11 AM → ~8:20 AM PT 11-10 (Trevor: "Keep going and do it all")
+
+The display was awake, so the walk finished: Sets, Analytics, Market, Packs and Sniper on All Day, Golazos, UFC and Pinnacle, the Panini and Candy Collection tabs, and a read-only pass of the cron-job.org console.
+
+### Shipped (ledger entry 11-10 "fifth audit pass")
+
+1. **Sniper ownership on every collection but Top Shot was Top Shot's.** The Golazos board read "6744 owned editions tracked" and filtered by Top Shot edition keys. Each board now uses its own collection's holdings.
+2. **All Day Sets: 363 sets under 281 identical-looking names.** Each card now carries rarity and series in words.
+3. **The Sets caption about "Top Shot's Completed Sets"** now prints on Top Shot only.
+4. **"Top Buyers (30d) — No data."** hid a $100 floor; the empty state now says so.
+5. **Top Accumulators** no longer says buyer coverage is "filling in" (it is 100 % over 30 days).
+6. **Candy binder prompt** asks for a Solana address and says "cards".
+
+### Read, nothing to change
+
+- cron-job.org console: 77 jobs listed, every last run successful; three run 20–25 s against the 30 s cap (`RPC Compute Achievements`, `RPC Recalc Ultimate FMV`, `RPC TopShot Onchain Art Backfill`).
+
+### Not done, and why
+
+- **`candy_offer_spread_board` floor 30 → 5:** refused a second time by the session's permission check after Trevor's go-ahead. Still staged in `docs/proposals/`. One paste in the Supabase SQL editor applies it.
+- **Two spent scheduled tasks:** left in place deliberately. Deleting a scheduled task deletes the sessions it started, which are their run records.
+- **"Candy MLB" label:** recommendation is "Candy" (the collection now includes DC, Netflix and Getty sets). 105 code lines in 125 files name it; it needs Trevor's word because it is the public name on titles, cards and emails.
