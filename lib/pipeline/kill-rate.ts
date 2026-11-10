@@ -453,8 +453,17 @@ export const CORRELATION_WINDOW_MS = 5_000
  * ⚠ Pipelines with NO heartbeat row are absent from the result, and that absence
  * carries no information: un-heartbeated, idle, and never-firing all look the
  * same here. Do not read a short list as a clean bill of health.
+ *
+ * ⛔ IN FLIGHT IS NOT KILLED (2026-11-09). A marker whose terminal row has not landed YET has
+ * no match either, so a tick younger than its route’s wall was scored killed — and, being the
+ * most recent, made the pipeline FAILING (topshot-circulation-onchain, read at 8:07 PM PT, 3 min
+ * into a ~256 s tick). A marker younger than MAX_WALL_S + IN_FLIGHT_MARGIN_MS is left out — neither killed nor clean. `nowMs` is injectable for tests.
  */
-export function correlateRuns(rows: readonly PipelineRunRow[], walls?: WallMap): KillRecord[] {
+export const IN_FLIGHT_MARGIN_MS = 60_000
+/** The Vercel Pro maxDuration cap (CLAUDE.md): no after() body can outlive it. */
+export const MAX_WALL_S = 800
+
+export function correlateRuns(rows: readonly PipelineRunRow[], walls?: WallMap, nowMs: number = Date.now()): KillRecord[] {
   const heartbeats = new Map<string, Date[]>()
   const terminals = new Map<string, Array<{ at: number; durationMs: number | null }>>()
 
@@ -515,6 +524,14 @@ export function correlateRuns(rows: readonly PipelineRunRow[], walls?: WallMap):
   }
 
   return [...heartbeats.entries()]
+    .map(([pipeline, allBeats]) => {
+      // The platform cap, not the route’s mapped wall: a mapped wall can be wrong (the
+      // "wall UNMAPPABLE" case — terminal rows at 2.26x it), and a tick still inside the
+      // cap may yet write its row.
+      const settledBefore = nowMs - (MAX_WALL_S * 1000 + IN_FLIGHT_MARGIN_MS)
+      return [pipeline, allBeats.filter((b) => b.getTime() <= settledBefore)] as const
+    })
+    .filter(([, beats]) => beats.length > 0)
     .map(([pipeline, beats]) => {
       const term = terminals.get(pipeline) ?? []
       const ticks: KillTick[] = beats.map((startedAt) => {

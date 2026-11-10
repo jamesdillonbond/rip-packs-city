@@ -53,6 +53,17 @@ describe("GET /api/wallet-summary", () => {
     // The driver message must NOT be published — lib/api-error.ts classifies it.
     expect((await res.json()).error).not.toContain("nope")
   })
+  it("a failed read logs the wallet, collection and wait so a timeout can be attributed (2026-11-09)", async () => {
+    rpc.error = { message: "canceling statement due to statement timeout", code: "57014" }
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    try {
+      await GET(req("https://t/api/wallet-summary?wallet=0x3795d42c0fc3a373"))
+      const line = warn.mock.calls.map((c) => String(c[0])).find((l) => l.includes("read_failed"))
+      expect(line).toMatch(/wallet=0x3795d42c0fc3a373 collection=[0-9a-f-]{36} elapsed_ms=\d+/)
+    } finally {
+      warn.mockRestore()
+    }
+  })
 
   // ⛔ 2026-09-19 — A CANDY WALLET WENT TO THE TOP SHOT USERNAME LADDER. The
   // is-this-an-address test was the FLOW shape alone, so a Solana base58 wallet

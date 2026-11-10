@@ -568,3 +568,25 @@ describe("classifyKillRecord — the null can never be degenerate (2026-09-20)",
     expect(r.verdict).toBe("intermittent")
   })
 })
+
+// 2026-11-09: a tick still inside the platform cap has no terminal row YET — it is in flight,
+// not killed. topshot-circulation-onchain read FAILING at 8:07 PM PT, 3 min into a ~256 s tick.
+describe("correlateRuns — an in-flight tick is not a kill", () => {
+  const t0 = Date.parse("2026-11-10T04:05:05Z")
+  const iso = (ms: number) => new Date(ms).toISOString()
+  const rows = [
+    { pipeline: "lane-x-heartbeat", started_at: iso(t0 - 6 * 3600_000), duration_ms: 0 },
+    { pipeline: "lane-x", started_at: iso(t0 - 6 * 3600_000), duration_ms: 256_000 },
+    { pipeline: "lane-x-heartbeat", started_at: iso(t0), duration_ms: 0 },
+  ]
+  it("3 min after the newest marker: that tick is left out, the lane is not failing", () => {
+    const [r] = correlateRuns(rows as never, undefined, t0 + 3 * 60_000)
+    expect(r.verdict).not.toBe("failing")
+    expect(r.killed).toBe(0)
+  })
+  it("no-change control: past the 800 s cap + margin with no terminal row, it IS a kill", () => {
+    const [r] = correlateRuns(rows as never, undefined, t0 + 15 * 60_000)
+    expect(r.killed).toBe(1)
+    expect(r.verdict).toBe("failing")
+  })
+})

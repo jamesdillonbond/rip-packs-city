@@ -93,12 +93,22 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(mismatch, { status: 400, headers: { "Cache-Control": "no-store" } })
   }
 
+  const started = Date.now()
   const { data, error } = await boundedRead(supabase.rpc("get_wallet_summary", {
     p_wallet: address,
     p_collection_id: collectionId,
   }), "api/wallet-summary/get_wallet_summary")
 
-  if (error) return apiErrorResponse(error, "api/wallet-summary")
+  if (error) {
+    // 2026-11-09: name the wallet, collection and wait — the shared error line carried none,
+    // so 6 timeouts in 6 h (2:08–4:29 PM PT) could not be told apart as "cold whale" vs "write
+    // spell" (measured: a 61,617-row Top Shot wallet runs 25 s cold / 1.4 s warm). Same line
+    // shape as /api/collection-snapshot (#228). A chain address is public data.
+    console.warn(
+      `[api/wallet-summary] read_failed wallet=${address.slice(0, 64)} collection=${collectionId} elapsed_ms=${Date.now() - started}`,
+    )
+    return apiErrorResponse(error, "api/wallet-summary")
+  }
   return NextResponse.json({ ...withoutLockStateForChainsThatHaveNone(data, collectionId), resolved_wallet: address })
 }
 
