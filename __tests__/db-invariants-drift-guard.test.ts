@@ -3162,14 +3162,14 @@ const PINS = [
     test: "supabase/tests/backfill_pack_rip_metadata.sql",
     // Re-pinned 2026-11-09 (#242): the two whole-set eligibility legs read a precomputed queue.
     migration:
-      "supabase/migrations/20261110005700_audit_20261109_rip_metadata_eligibility_is_precomputed.sql",
+      "supabase/migrations/20261110021600_audit_20261109_rip_metadata_queue_is_read_as_a_rotated_slice.sql",
   },
   {
     // Added 2026-11-09 (#242): builds the queue backfill_pack_rip_metadata re-checks; pg_cron every 2 h.
     fn: "refresh_pack_rip_backfill_eligible",
     test: "supabase/tests/backfill_pack_rip_metadata.sql",
     migration:
-      "supabase/migrations/20261110005700_audit_20261109_rip_metadata_eligibility_is_precomputed.sql",
+      "supabase/migrations/20261110021600_audit_20261109_rip_metadata_queue_is_read_as_a_rotated_slice.sql",
   },
   {
     // pg_cron `40 9 * * *`. Sets players.team from the catalogue.

@@ -128,7 +128,7 @@
 -- and concludes it is vacuous.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261110005700_audit_20261109_rip_metadata_eligibility_is_precomputed.sql — #242:
+-- (supabase/migrations/20261110021600_audit_20261109_rip_metadata_queue_is_read_as_a_rotated_slice.sql (second step: the queue is read as a rotated slice by its stamp), before it 20261110005700_audit_20261109_rip_metadata_eligibility_is_precomputed.sql — #242:
 -- the allday_repair / unpriced_retry eligibility sets are precomputed by
 -- refresh_pack_rip_backfill_eligible(), embedded verbatim too, and every queued row is re-checked;
 -- the fixtures call the refresh before each backfill call. Before it
@@ -192,6 +192,7 @@ CREATE TABLE public.pack_rip_backfill_eligible (
   leg          text NOT NULL CHECK (leg IN ('allday', 'unpriced')),
   rip_id       uuid NOT NULL,
   refreshed_at timestamptz NOT NULL,
+  stamp        timestamptz,
   PRIMARY KEY (leg, rip_id)
 );
 CREATE TABLE public.pipeline_runs_stub (pipeline text, rows_written int, ok boolean, extra jsonb);
@@ -218,13 +219,14 @@ BEGIN
   -- used to build on EVERY call (#242). Same predicates as those legs had inline (2026-10-16
   -- set form). WRITE FIRST, then delete only what this refresh did not write: a reader never
   -- sees an empty queue mid-refresh.
+  -- 2026-11-09 evening: each row carries its pack_rips stamp so the backfill reads an ordered SLICE.
   WITH allday_unresolved AS MATERIALIZED (
     SELECT DISTINCT ap.pack_nft_id
     FROM public.allday_pack_pull ap
     WHERE ap.edition_id IS NULL
   ),
   allday_set AS (
-    SELECT pr.id
+    SELECT pr.id, pr.metadata_updated_at AS stamp
     FROM public.pack_rips pr
     WHERE pr.collection_id = v_allday
       AND pr.pull_value_usd IS NULL
@@ -233,15 +235,15 @@ BEGIN
       AND EXISTS (SELECT 1 FROM public.allday_pack_pull ap WHERE ap.pack_nft_id = pr.pack_nft_id)
   ),
   ins AS (
-    INSERT INTO public.pack_rip_backfill_eligible (leg, rip_id, refreshed_at)
-    SELECT 'allday', id, v_started FROM allday_set
-    ON CONFLICT (leg, rip_id) DO UPDATE SET refreshed_at = EXCLUDED.refreshed_at
+    INSERT INTO public.pack_rip_backfill_eligible (leg, rip_id, refreshed_at, stamp)
+    SELECT 'allday', id, v_started, stamp FROM allday_set
+    ON CONFLICT (leg, rip_id) DO UPDATE SET refreshed_at = EXCLUDED.refreshed_at, stamp = EXCLUDED.stamp
     RETURNING 1
   )
   SELECT count(*) INTO v_allday_n FROM ins;
 
   WITH unpriced_set AS (
-    SELECT pr.id
+    SELECT pr.id, pr.metadata_updated_at AS stamp
     FROM (SELECT DISTINCT ma.source_pack_rip_id AS rid
             FROM public.moment_acquisitions ma
            WHERE ma.source_pack_rip_id IS NOT NULL) r
@@ -251,9 +253,9 @@ BEGIN
       AND pr.collection_id IS DISTINCT FROM v_allday
   ),
   ins AS (
-    INSERT INTO public.pack_rip_backfill_eligible (leg, rip_id, refreshed_at)
-    SELECT 'unpriced', id, v_started FROM unpriced_set
-    ON CONFLICT (leg, rip_id) DO UPDATE SET refreshed_at = EXCLUDED.refreshed_at
+    INSERT INTO public.pack_rip_backfill_eligible (leg, rip_id, refreshed_at, stamp)
+    SELECT 'unpriced', id, v_started, stamp FROM unpriced_set
+    ON CONFLICT (leg, rip_id) DO UPDATE SET refreshed_at = EXCLUDED.refreshed_at, stamp = EXCLUDED.stamp
     RETURNING 1
   )
   SELECT count(*) INTO v_unpriced_n FROM ins;
@@ -356,13 +358,32 @@ BEGIN
   -- pack_rip_backfill_eligible; here every queued row is RE-CHECKED against the same predicate
   -- (index probes on a few hundred rows), so a row that stopped qualifying is never taken. Same
   -- ORDER BY and LIMIT. A row that STARTS qualifying waits for the next refresh (<= 2 h).
+  -- 2026-11-09 evening (#242, second step): re-checking EVERY queued row cost a pack_rips probe
+  -- per row (unpriced: 33,716 probes, 11.5 s / 135 k buffers cold, measured 6 PM PT) to keep the
+  -- oldest 75. The queue now carries each row's stamp: read the oldest SLICE (4 x the share) by it,
+  -- re-check only those, and ROTATE the whole slice (its stamp -> now(), in allday_rotate /
+  -- unpriced_rotate) so a queued row that no longer qualifies cannot hold the head until the next
+  -- refresh. A taken row's queue stamp moves with its pack_rips stamp, so the order is the same
+  -- oldest-stamp-first the legs always had.
+  allday_slice AS MATERIALIZED (
+    SELECT q.rip_id
+    FROM public.pack_rip_backfill_eligible q
+    WHERE q.leg = 'allday'
+    ORDER BY q.stamp ASC NULLS FIRST, q.rip_id
+    LIMIT v_allday_share * 4
+  ),
+  allday_rotate AS (
+    UPDATE public.pack_rip_backfill_eligible q
+       SET stamp = now()
+      FROM allday_slice s
+     WHERE q.leg = 'allday' AND q.rip_id = s.rip_id
+  ),
   allday_repair AS MATERIALIZED (
     SELECT pr.id, pr.pack_nft_id, pr.collection_id, pr.dist_id AS cur_dist,
            pr.pull_value_usd AS cur_value, pr.moments_pulled
-    FROM public.pack_rip_backfill_eligible q
-    JOIN public.pack_rips pr ON pr.id = q.rip_id
-    WHERE q.leg = 'allday'
-      AND pr.collection_id = v_allday
+    FROM allday_slice s
+    JOIN public.pack_rips pr ON pr.id = s.rip_id
+    WHERE pr.collection_id = v_allday
       AND pr.pull_value_usd IS NULL
       AND pr.metadata_updated_at IS NOT NULL
       AND NOT EXISTS (SELECT 1 FROM public.allday_pack_pull u
@@ -385,13 +406,25 @@ BEGIN
   -- 2026-11-09 (#242): precomputed, same as allday_repair above. Built inline this set cost
   -- ~12 s / 233 k buffers per call (348 k distinct acquisition rip ids hashed against 451 k
   -- stamped-unvalued rips) for a share of 75. Queued rows are re-checked here.
+  unpriced_slice AS MATERIALIZED (
+    SELECT q.rip_id
+    FROM public.pack_rip_backfill_eligible q
+    WHERE q.leg = 'unpriced'
+    ORDER BY q.stamp ASC NULLS FIRST, q.rip_id
+    LIMIT v_unpriced_share * 4
+  ),
+  unpriced_rotate AS (
+    UPDATE public.pack_rip_backfill_eligible q
+       SET stamp = now()
+      FROM unpriced_slice s
+     WHERE q.leg = 'unpriced' AND q.rip_id = s.rip_id
+  ),
   unpriced_retry AS MATERIALIZED (
     SELECT pr.id, pr.pack_nft_id, pr.collection_id, pr.dist_id AS cur_dist,
            pr.pull_value_usd AS cur_value, pr.moments_pulled
-    FROM public.pack_rip_backfill_eligible q
-    JOIN public.pack_rips pr ON pr.id = q.rip_id
-    WHERE q.leg = 'unpriced'
-      AND pr.pull_value_usd IS NULL
+    FROM unpriced_slice s
+    JOIN public.pack_rips pr ON pr.id = s.rip_id
+    WHERE pr.pull_value_usd IS NULL
       AND pr.metadata_updated_at IS NOT NULL
       AND pr.collection_id IS DISTINCT FROM v_allday
       AND EXISTS (SELECT 1 FROM public.moment_acquisitions ma WHERE ma.source_pack_rip_id = pr.id)
@@ -949,6 +982,48 @@ SELECT _assert_eq(
   (SELECT pull_value_usd::text FROM public.pack_rips WHERE pack_nft_id = 'P-Q-NEW'),
   '10.00',
   'after the refresh the new row is reached and valued'
+);
+
+-- ── Property 11 (#242 second step, 2026-11-09 evening): THE SLICE ROTATES ─────────────────────────
+-- At p_limit 20 the unpriced share is 1, so the slice is 4 rows. Four queued rows that STOPPED
+-- qualifying sit at the head (oldest stamps); the one row that qualifies is behind them. Call 1 reads
+-- only the dead four and rotates them; call 2 reaches the live row. Without the rotation every call
+-- reads the same dead four and the live row waits for the next refresh.
+DELETE FROM public.pack_rips;
+DELETE FROM public.moment_acquisitions;
+DELETE FROM public.allday_pack_pull;
+DELETE FROM public.pack_rip_backfill_eligible;
+
+INSERT INTO public.pack_rips
+  (id, collection_id, pack_nft_id, dist_id, pull_value_usd, moments_pulled, sealed_at, metadata_updated_at) VALUES
+  ('fffffff1-0000-0000-0000-000000000001'::uuid, :TS::uuid, 'P-DEAD-1', NULL, NULL, 1, '2026-06-01T00:00:00Z', '2026-01-01T00:00:00Z'),
+  ('fffffff1-0000-0000-0000-000000000002'::uuid, :TS::uuid, 'P-DEAD-2', NULL, NULL, 1, '2026-06-01T00:00:00Z', '2026-01-02T00:00:00Z'),
+  ('fffffff1-0000-0000-0000-000000000003'::uuid, :TS::uuid, 'P-DEAD-3', NULL, NULL, 1, '2026-06-01T00:00:00Z', '2026-01-03T00:00:00Z'),
+  ('fffffff1-0000-0000-0000-000000000004'::uuid, :TS::uuid, 'P-DEAD-4', NULL, NULL, 1, '2026-06-01T00:00:00Z', '2026-01-04T00:00:00Z'),
+  ('fffffff1-0000-0000-0000-000000000005'::uuid, :TS::uuid, 'P-LIVE',   NULL, NULL, 1, '2026-06-01T00:00:00Z', '2026-01-05T00:00:00Z');
+INSERT INTO public.moment_acquisitions (source_pack_rip_id, nft_id) VALUES
+  ('fffffff1-0000-0000-0000-000000000001'::uuid, 'm1'),
+  ('fffffff1-0000-0000-0000-000000000002'::uuid, 'm1'),
+  ('fffffff1-0000-0000-0000-000000000003'::uuid, 'm1'),
+  ('fffffff1-0000-0000-0000-000000000004'::uuid, 'm1'),
+  ('fffffff1-0000-0000-0000-000000000005'::uuid, 'm1');
+SELECT public.refresh_pack_rip_backfill_eligible();
+SELECT _assert_eq((SELECT count(*)::text FROM public.pack_rip_backfill_eligible WHERE stamp IS NOT NULL), '5',
+  'the refresh carries each row''s pack_rips stamp into the queue');
+-- The four oldest stop qualifying after the refresh.
+DELETE FROM public.moment_acquisitions WHERE source_pack_rip_id <> 'fffffff1-0000-0000-0000-000000000005'::uuid;
+
+SELECT public.backfill_pack_rip_metadata(20);
+SELECT _assert_eq(
+  (SELECT coalesce(pull_value_usd::text, 'NULL') FROM public.pack_rips WHERE pack_nft_id = 'P-LIVE'),
+  'NULL',
+  'call 1: the slice holds only the four dead rows, so the live row is not read yet'
+);
+SELECT public.backfill_pack_rip_metadata(20);
+SELECT _assert_eq(
+  (SELECT pull_value_usd::text FROM public.pack_rips WHERE pack_nft_id = 'P-LIVE'),
+  '10.00',
+  '⚠ call 2: the dead four were ROTATED away, so the live row behind them is reached and valued'
 );
 
 ROLLBACK;
