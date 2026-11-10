@@ -26,6 +26,12 @@ the six #187/#188 migrations on 2026-10-10, every body md5-equal to its file on 
 sessions apply migrations within minutes: if one lands with a LATER version before you push, rename
 yours past it (replay order must match apply order).
 
+## Project subagents run on Haiku — `.claude/agents/` (2026-11-09)
+
+- `Explore.md` overrides Claude Code's built-in Explore, which now runs on the SESSION's model (Opus-priced here) instead of Haiku. `log-reader.md` reads test / CI / pipeline logs and reports each failure's first error line. Both are read-only (`Read, Grep, Glob, Bash`) on `model: haiku`.
+- Keep code edits and judgement calls on the main model: a small model's misread search result sends the main model to the wrong file. Use these for finding things and reading logs, where a wrong answer is cheap to spot.
+- `.gitignore` ignores `.claude/*` and un-ignores exactly these two files — a new agent file needs its own `!.claude/agents/<name>.md` line or it never reaches the repo.
+
 ## ⚠ On Trevor's Windows box the LOCAL Supabase MCP is PROJECT-SCOPED — its tools take NO `project_id` (2026-11-08)
 
 The local server (`mcp__supabase__*`, from `.mcp.json` + the project entry in `~/.claude.json`) now runs with `--project-ref=bxcqstmqfzmuolpuynti` and a project-scoped, 90-day token (`claude-code-mcp-2026-11-08`: Project Settings / Advisors / Logs read, Database + Migrations read-write, Edge Functions read, everything else none; expires ~2027-02-06). Consequences: **passing `project_id` fails** (`ZodError: Unrecognized key: "project_id"`), the account tools (`list_projects`, `get_project`, `create_project`, `pause_project`, `get_cost` …) are gone, and anything outside those scopes (secrets, API keys, branching, edge-fn WRITE — deploys go through `edge-fn-deploy.yml`) answers with a permission error, which is the scope, not a wrong project. The claude.ai `mcp__claude_ai_Supabase__*` connector is separate OAuth and still takes `project_id`, so CLAUDE.md's "required on every tool call" holds there. ⛔ The token is passed in argv, so a node.exe command-line listing prints it — select the runner by path, or redact `sbp_[A-Za-z0-9]+` first (this is how the previous token leaked).
