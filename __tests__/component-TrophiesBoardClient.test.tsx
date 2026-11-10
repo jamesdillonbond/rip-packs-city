@@ -84,6 +84,8 @@ describe("TrophiesBoardClient — a contradicted circulation of 1", () => {
     expect(text).toContain("LEGENDARY")
     expect(text).not.toContain("1 OF 1")
     expect(text).not.toMatch(/\/1 LEGENDARY/)
+    expect(text).not.toContain("1 minted")
+    expect(text).toContain("count unconfirmed")
   })
   it("no-change control: a genuine 1-of-1 still says 1 OF 1, a /10 top tier still shows /10", () => {
     const real = { ...candyRow, edition_id: "c2", is_one_of_one: true } as Row
@@ -92,5 +94,7 @@ describe("TrophiesBoardClient — a contradicted circulation of 1", () => {
     const text = container.textContent ?? ""
     expect(text).toContain("1 OF 1")
     expect(text).toMatch(/\/10 LEGENDARY/)
+    expect(text).toContain("1 minted")
+    expect(text).toContain("10 minted")
   })
 })

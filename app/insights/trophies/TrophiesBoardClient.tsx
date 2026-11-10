@@ -112,17 +112,20 @@ function fmtInt(n: number | null): string {
 
 // Trophy badge label: a 1-of-1 is the headline; otherwise an Ultimate shows
 // its (tiny) circulation. Distinguishes "/10 Ultimate" from "1 of 1".
+// A circulation of 1 that the view did NOT flag 1-of-1 is a contradiction: the edition is held
+// by more than one card (v_insights_trophies, 2026-11-09). Neither "/1" nor "1 minted" may
+// restate the false single-copy claim.
+function isContradictedOne(r: Row): boolean {
+  return r.circulation_count === 1 && r.is_one_of_one === false
+}
+
 function trophyBadge(r: Row): string {
   if (r.is_one_of_one) return "1 OF 1"
   if (r.is_ultimate || r.is_top_tier) {
     // The collection's own top-tier word: ULTIMATE, or LEGENDARY (Golazos, Candy),
     // or Pinnacle's edition type.
     const label = r.is_ultimate ? "ULTIMATE" : (normalizeTier(r.tier) ?? "TOP TIER").toUpperCase()
-    // A circulation of 1 that the view did NOT flag 1-of-1 is a contradiction (the edition
-    // is held by more than one card — v_insights_trophies, 2026-11-09): "/1" would restate
-    // the false single-copy claim, so show the tier word alone.
-    const contradicted = r.circulation_count === 1 && r.is_one_of_one === false
-    return r.circulation_count != null && !contradicted ? `/${r.circulation_count} ${label}` : label
+    return r.circulation_count != null && !isContradictedOne(r) ? `/${r.circulation_count} ${label}` : label
   }
   const t = normalizeTier(r.tier)
   return t ?? "GRAIL"
@@ -192,7 +195,7 @@ function TrophyTile({ r, hero = false }: { r: Row; hero?: boolean }) {
         <div className="rpc-tr-name">{title}</div>
         {r.set_name ? <div className="rpc-tr-set">{r.set_name}</div> : null}
         <div className="rpc-tr-stats">
-          <span className="rpc-tr-circ">{r.is_one_of_one ? "1 minted" : `${fmtInt(r.circulation_count)} minted`}</span>
+          <span className="rpc-tr-circ">{r.is_one_of_one ? "1 minted" : isContradictedOne(r) ? "count unconfirmed" : `${fmtInt(r.circulation_count)} minted`}</span>
           <span className="rpc-tr-fmv-wrap">
             {priced ? (
               closed ? (
