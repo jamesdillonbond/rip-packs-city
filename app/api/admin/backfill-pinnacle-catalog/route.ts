@@ -243,6 +243,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   // missing after that — e.g. the chain read failed, or a render has no on-chain edition id.
   let chainFilled = 0;
   let chainFilledRecent = 0;
+  let chainDerived = 0;
   const chainErrors: string[] = [];
   if (!floorsOnly) {
     try {
@@ -297,7 +298,19 @@ async function handle(req: NextRequest): Promise<NextResponse> {
       } catch (e) {
         chainErrors.push(e instanceof Error ? e.message : String(e));
       }
-      if (chainFilled > 0) console.warn(`[${PIPELINE_NAME}] filled ${chainFilled} catalog row(s) from the chain`);
+      if (chainFilled > 0) {
+        console.warn(`[${PIPELINE_NAME}] filled ${chainFilled} catalog row(s) from the chain`);
+        // Name the wallet pins now. The wmc render-id lane derives only in an hour that resolved
+        // NEW render ids, so pins whose render_id landed BEFORE their catalog row existed (the
+        // whole 11-08 drop: 961 rows) were never re-derived. The derive is fill/refresh-only.
+        try {
+          const { data: der, error: derErr } = await supabase.rpc("derive_pinnacle_wmc_from_catalog");
+          if (derErr) chainErrors.push(`wmc derive: ${derErr.message}`);
+          else chainDerived = typeof der === "number" ? der : 0;
+        } catch (e) {
+          chainErrors.push(`wmc derive: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
     }
     const recentStillMissing = Math.max(0, Number(mintGap?.missing_recent_renders ?? 0) - chainFilledRecent);
     if (mintGapError) errors.push(`mint gap check: ${mintGapError}`);
@@ -396,7 +409,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
       p_collection_slug: "disney_pinnacle",
       p_cursor_before: null,
       p_cursor_after: null,
-      p_extra: { floors_only: floorsOnly, pages, total_count: total, upserted, floor_listed: floorListed, floor_rows: floorRows, floor_pages: floorPages, floor_total: floorTotal, floor_complete: floorComplete, live_listings_seen: liveListings.length, live_written: liveWritten, live_deleted: liveDeleted, minted_renders_missing: mintGap?.missing_renders ?? null, minted_pins_missing: mintGap?.missing_pins ?? null, minted_renders_missing_recent: mintGap?.missing_recent_renders ?? null, minted_missing_sample: Array.isArray(mintGap?.sample) ? mintGap!.sample.slice(0, 10) : null, mint_gap_error: mintGapError, chain_filled: chainFilled, chain_filled_recent: chainFilledRecent, chain_errors: chainErrors.slice(0, 3), duration_ms: durationMs, errors: errors.slice(0, 3) },
+      p_extra: { floors_only: floorsOnly, pages, total_count: total, upserted, floor_listed: floorListed, floor_rows: floorRows, floor_pages: floorPages, floor_total: floorTotal, floor_complete: floorComplete, live_listings_seen: liveListings.length, live_written: liveWritten, live_deleted: liveDeleted, minted_renders_missing: mintGap?.missing_renders ?? null, minted_pins_missing: mintGap?.missing_pins ?? null, minted_renders_missing_recent: mintGap?.missing_recent_renders ?? null, minted_missing_sample: Array.isArray(mintGap?.sample) ? mintGap!.sample.slice(0, 10) : null, mint_gap_error: mintGapError, chain_filled: chainFilled, chain_filled_recent: chainFilledRecent, chain_wmc_derived: chainDerived, chain_errors: chainErrors.slice(0, 3), duration_ms: durationMs, errors: errors.slice(0, 3) },
     });
   } catch {
     // best-effort observability

@@ -1011,6 +1011,7 @@ describe("/api/admin/backfill-pinnacle-catalog — catalog vs minted pins", () =
       "rpc:pinnacle_catalog_set_floor_asks": { data: 1, error: null },
       "rpc:log_pipeline_run": { data: null, error: null },
       "rpc:pinnacle_minted_renders_missing_from_catalog": RECENT_GAP,
+      "rpc:derive_pinnacle_wmc_from_catalog": { data: 347, error: null },
     })
     fetchMock = installFetchMock([
       gqlRoute("CatalogBackfill", [pinPage([MICKEY_NODE], false, null)]),
@@ -1026,7 +1027,9 @@ describe("/api/admin/backfill-pinnacle-catalog — catalog vs minted pins", () =
     const b64 = Buffer.from(JSON.stringify(CHAIN_MUG)).toString("base64")
     const { spy, log } = await chainRun({ json: b64 }, [{ render_id: "NEW-1" }])
     expect(log.p_ok).toBe(true)
-    expect(log.p_extra).toMatchObject({ chain_filled: 1, chain_filled_recent: 1, minted_renders_missing_recent: 1 })
+    expect(log.p_extra).toMatchObject({ chain_filled: 1, chain_filled_recent: 1, minted_renders_missing_recent: 1, chain_wmc_derived: 347 })
+    // The wallet pins are named in the same run (the render-id lane only derives in hours it resolves new ids).
+    expect(spy.rpcCalls.some((c) => c.name === "derive_pinnacle_wmc_from_catalog")).toBe(true)
     const chainWrite = spy.writes.pinnacle_catalog!.find((w) => w.rows.some((r) => r.source === "flow-chain"))!
     // Fill-only: an existing (Dapper) row is never overwritten by a chain row.
     expect(chainWrite.options).toMatchObject({ onConflict: "render_id", ignoreDuplicates: true })
@@ -1051,10 +1054,11 @@ describe("/api/admin/backfill-pinnacle-catalog — catalog vs minted pins", () =
   })
 
   it("⚠ a failed chain read leaves the gap, and the run still fails naming why", async () => {
-    const { log } = await chainRun({ status: 500, json: { message: "boom" } }, null)
+    const { spy, log } = await chainRun({ status: 500, json: { message: "boom" } }, null)
     expect(log.p_ok).toBe(false)
     expect(String(log.p_error)).toMatch(/catalog behind mints: 1 render\(s\).*0 filled from chain; chain: flow script HTTP 500/)
-    expect(log.p_extra).toMatchObject({ chain_filled: 0 })
+    expect(log.p_extra).toMatchObject({ chain_filled: 0, chain_wmc_derived: 0 })
+    expect(spy.rpcCalls.some((c) => c.name === "derive_pinnacle_wmc_from_catalog")).toBe(false)
   })
 
   it("a floors-only refresh does not run the check", async () => {
