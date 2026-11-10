@@ -19,3 +19,10 @@
 3. **Liveness:** re-baseline `v_insights_trophies.max_ms` only AFTER 1–2. The growth is mostly Candy rows that may not belong on the board.
 
 Nothing shipped. No revert.
+
+## ↳ 2026-11-09 ~7:40 PM PT — interim guard measured; NOT staged (Claude Code cloud)
+
+- **View guard (option 2) costs too much.** Rewriting `v_insights_trophies` so a 1/1 needs < 2 DISTINCT `moment_id`s in `wallet_moments_cache` (distinct, so a stale seller row does not demote a real 1/1) takes the board from 2.65 s to **7.1 s cold** (+7.6k cold index reads; the probe runs for every circulation-1 edition). It would demote **179 rows** (7,551 → 7,372) but trip the 7,000 ms liveness budget routinely. Not worth shipping as the interim.
+- **App-side guard in `lib/insights/trophies-board.ts`** (check only the displayed page) cannot be done honestly with a plain PostgREST read: per-edition counts need a small SQL function because the 1,000-row clamp truncates (Bat Cowl alone has 4,404 rows). So it is another Cowork SQL-editor step for a stopgap.
+- **Exposure today:** Candy IS a trophy collection (`TROPHY_COLLECTIONS` includes `candy_mlb`). The "rarest first" sort (`circulation` asc) and the Candy tab put these rows at the top. The default FMV-desc view mostly does not reach them (the census editions are largely unpriced).
+- **Recommendation:** go straight to the root fix (key Candy editions so the 32-char name cut cannot merge different cards, and write `circulation_count` only from an explicit "/n"). Re-baseline the liveness budget after it.
