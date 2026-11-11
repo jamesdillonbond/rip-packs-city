@@ -83,3 +83,10 @@ This file is written as the pass goes (draft at 1:55 PM PT, updated 3:00 PM PT);
 - `candy_ask_book_drop_pct` 90.8: confirmed the cause — all 208 inactive rows in its 24 h denominator were last seen in the 7 PM PT hour of 11-09 (21 active vs 229 seen). Clears when they age out (~7:35–8:00 PM PT 11-10).
 - `candy_sales_stale_hours` (breach 0 via "> 50 unresolved first seen in 48 h"): 335 open in that window (274 `no_sol_rate`), first seen 11-08 9:48 PM → 11-09 5:51 AM PT. The SOL drain resolves ~290/run (7:20 PM: 284; open 2,578 → 2,278 → 1,979). The arm clears by **~5:51 AM PT 11-11** at the latest (age-out), earlier if the drain reaches them. No action.
 - `edition_integrity_flags` 8,159 (from 9,581 at 2:30 PM PT): #246 census repair, ~1.4k/5 h. No action.
+
+## 7:45 – 8:20 PM PT
+
+- ✅ `candy_ask_book_drop_pct` cleared to 0.0 after the 7:35 PM PT listings run (21 active / 21 seen; the 208 ghost asks aged out and were not re-ingested).
+- ✅ Linked Panini walk skips a `not_found` username for 24 h (`20261111034703`): `mempheattle` had been re-walked and logged ok=false on all 6 linked runs since 7:20 AM PT.
+- ✅ `pack_table_rows` change verified by request: `/api/packs?collection=laliga-golazos` 200 (cache MISS, 223 packs); rows carrying a live ask = listed asks in `pack_ask_state` exactly — Top Shot 2,031/2,031, All Day 951/951, Golazos 1/1.
+- Looked at, no change: `analytics_sales_summary` (7 s mean, but CDN-cached 10 min + 20 min SWR — ~6 refreshes/h); the wmc keyset page in the wallet walk (1.6k buffers / 700 ms, proportional to its 1,000-row page; a covering index on wmc is not worth its size); the THP trust legs (6-hourly, Panini 74 s).
