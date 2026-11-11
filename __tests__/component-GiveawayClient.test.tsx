@@ -122,6 +122,40 @@ describe("GiveawayClient — claiming", () => {
     expect(button.disabled).toBe(false)
   })
 
+  it("a reward drop says whose packs these are; a finisher is told one is theirs and keeps the claim form", async () => {
+    const eligibility = { challenge: { slug: "dame-time", title: "Dame Time" }, viewer: "eligible" }
+    vi.stubGlobal("fetch", vi.fn(async () => json({ ...BASE, account_wallet: { address: "0x00000000000000cc", username: "Carol" }, eligibility })))
+    render(<GiveawayClient slug="fall-drop" />)
+    const note = await screen.findByTestId("claim-eligibility")
+    expect(note.textContent).toContain("completed the Dame Time challenge")
+    expect(note.textContent).toContain("You completed it, so one of these is yours.")
+    expect(note.querySelector("a")?.getAttribute("href")).toBe("/trophy-challenges/dame-time")
+    expect(screen.getByRole("button", { name: "Claim my pack" })).toBeTruthy()
+    expect(screen.queryByTestId("claim-not-eligible")).toBeNull()
+  })
+
+  it("an account without a completed entry is told so up front and gets no claim form; unknown keeps the form and claims nothing about the viewer", async () => {
+    const ch = { slug: "dame-time", title: "Dame Time" }
+    vi.stubGlobal("fetch", vi.fn(async () => json({ ...BASE, eligibility: { challenge: ch, viewer: "not_eligible" } })))
+    render(<GiveawayClient slug="fall-drop" />)
+    expect((await screen.findByTestId("claim-not-eligible")).textContent).toContain("no completed Dame Time entry")
+    expect(screen.queryByRole("button", { name: "Claim my pack" })).toBeNull()
+    cleanup()
+    vi.stubGlobal("fetch", vi.fn(async () => json({ ...BASE, eligibility: { challenge: ch, viewer: "unknown" } })))
+    render(<GiveawayClient slug="fall-drop" />)
+    const note = await screen.findByTestId("claim-eligibility")
+    expect(note.textContent).not.toContain("one of these is yours")
+    expect(screen.queryByTestId("claim-not-eligible")).toBeNull()
+    expect(screen.getByRole("button", { name: "Claim my pack" })).toBeTruthy()
+  })
+
+  it("a drop open to everyone shows no eligibility line", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json({ ...BASE, eligibility: null })))
+    render(<GiveawayClient slug="fall-drop" />)
+    await screen.findByRole("button", { name: "Claim my pack" })
+    expect(screen.queryByTestId("claim-eligibility")).toBeNull()
+  })
+
   it("the wallet already on the account: one click — no username box, no Flow Wallet; posts { account: true }", async () => {
     const view = { ...BASE, account_wallet: { address: "0x00000000000000cc", username: "Carol" }, account_wallet_error: false }
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) =>

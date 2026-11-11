@@ -32,6 +32,16 @@ vi.mock("@/lib/supabase", () => {
   return { supabase: client, supabaseAdmin: client }
 })
 
+// the challenge's open reward drop (2026-11-10)
+const reward: { value: unknown; fail: boolean; lastSlug: string | null } = { value: null, fail: false, lastSlug: null }
+vi.mock("@/lib/giveaways/challenge-reward", () => ({
+  openRewardDropForChallenge: async (_db: unknown, slug: string) => {
+    reward.lastSlug = slug
+    if (reward.fail) throw new Error("giveaway_drops read failed: timeout")
+    return reward.value
+  },
+}))
+
 import { GET as casesGET } from "@/app/api/public/trophy-cases/route"
 import { GET as boardGET } from "@/app/api/public/trophy-challenges/[slug]/route"
 
@@ -113,6 +123,33 @@ describe("GET /api/public/trophy-challenges/[slug]", () => {
     // is_open is decided server-side; an inactive challenge is closed
     expect(body.is_open).toBe(false)
     expect(state.lastRpc.args).toEqual({ p_slug: "dame-time", p_limit: 48 })
+  })
+
+  it("carries the open reward drop for the challenge; none is null", async () => {
+    state.rpc = { data: { challenge: { slug: "dame-time", title: "Dame Time" }, entry_count: 0, entries: [] }, error: null }
+    reward.fail = false
+    reward.value = { slug: "dame-time-challenge-reward-pack", title: "Dame Time Challenge Reward Pack" }
+    const a = await (await boardGET(req("https://x/"), ctx("dame-time"))).json()
+    expect(a.reward).toEqual({ slug: "dame-time-challenge-reward-pack", title: "Dame Time Challenge Reward Pack" })
+    expect(a.reward_error).toBe(false)
+    expect(reward.lastSlug).toBe("dame-time")
+    reward.value = null
+    const b = await (await boardGET(req("https://x/"), ctx("dame-time"))).json()
+    expect(b.reward).toBeNull()
+    expect(b.reward_error).toBe(false)
+  })
+
+  it("a failed reward read never takes the board down and is flagged, not reported as no reward", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {})
+    state.rpc = { data: { challenge: { slug: "dame-time", title: "Dame Time" }, entry_count: 1, entries: [{ username: "sdb" }] }, error: null }
+    reward.fail = true
+    const res = await boardGET(req("https://x/"), ctx("dame-time"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.entries).toHaveLength(1)
+    expect(body.reward).toBeNull()
+    expect(body.reward_error).toBe(true)
+    reward.fail = false
   })
 
   it("an unknown slug (RPC NULL) is a 404", async () => {

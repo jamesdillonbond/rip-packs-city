@@ -31,6 +31,8 @@ interface Board {
   entries: Entry[]
   /** Decided SERVER-side by the route (no wall-clock read on the client). */
   is_open?: boolean
+  /** The open giveaway drop whose packs are for this challenge's finishers (null: none taking claims, or the read failed). */
+  reward?: { slug: string; title: string } | null
 }
 
 type State = { kind: "loading" } | { kind: "failed" } | { kind: "missing" } | { kind: "ok"; board: Board }
@@ -92,6 +94,24 @@ export function closedChallengeHref(
   if (viewer === "signed-in" && own?.complete) return challengeCaseSharePath(own.username, slug)
   if (viewer === "signed-in") return "/dashboard?tab=trophy"
   return `/login?intent=signup&next=${encodeURIComponent("/dashboard?tab=trophy")}`
+}
+
+/** What the reward-pack banner says and where it goes (2026-11-10). A finisher is told
+ *  the pack is theirs; a signed-out visitor is sent through sign-in and back to the packs;
+ *  anyone else is told who the packs are for (the claim page says the same and refuses
+ *  an account without a completed entry). */
+export function rewardBanner(
+  viewer: "signed-in" | "signed-out" | "unknown",
+  ownComplete: boolean,
+  challengeTitle: string,
+  reward: { slug: string; title: string },
+): { text: string; label: string; href: string } {
+  const packs = `/giveaways/${reward.slug}`
+  if (viewer === "signed-in" && ownComplete) return { text: `You completed ${challengeTitle}. Your reward pack is ready.`, label: "Claim your pack", href: packs }
+  if (viewer === "signed-out") {
+    return { text: `Reward packs are out for everyone who completed ${challengeTitle}.`, label: "Sign in to claim yours", href: `/login?next=${encodeURIComponent(packs)}` }
+  }
+  return { text: `Reward packs are out for everyone who completed ${challengeTitle}.`, label: "See the reward packs", href: packs }
 }
 
 export function closedChallengeLabel(viewer: "signed-in" | "signed-out" | "unknown", complete: boolean): string {
@@ -193,6 +213,31 @@ export default function ChallengeBoardClient({ slug }: { slug: string }) {
           {challenge.description}
         </p>
       )}
+      {state.board.reward ? (() => {
+        const b = rewardBanner(viewer, ownEntry ? ownEntry.slab_count >= 6 : false, challenge.title, state.board.reward)
+        return (
+          <div
+            data-rpc-challenge-reward
+            style={{
+              display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", margin: "0 0 18px", padding: "12px 14px",
+              border: "1px solid var(--rpc-red-border)", borderRadius: 10, background: "var(--rpc-red-bg)",
+            }}
+          >
+            <span style={{ fontSize: 14, color: "var(--rpc-text-primary)", flex: "1 1 220px" }}>{b.text}</span>
+            <Link
+              href={b.href}
+              style={{
+                fontFamily: condensedFont, fontWeight: 800, fontSize: 13, letterSpacing: "0.08em", textTransform: "uppercase",
+                padding: "10px 16px", borderRadius: 8, textDecoration: "none",
+                // brand-exception: white label on the red CTA button
+                background: "var(--rpc-red-fill)", color: "#fff",
+              }}
+            >
+              {b.label}
+            </Link>
+          </div>
+        )
+      })() : null}
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 28 }}>
         {open && viewer === "signed-out" ? (
           <>

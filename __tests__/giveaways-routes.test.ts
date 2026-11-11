@@ -43,6 +43,12 @@ vi.mock("next/server", async (orig) => {
 })
 const { acctWallet } = vi.hoisted(() => ({ acctWallet: vi.fn() }))
 vi.mock("@/lib/giveaways/account-wallet", () => ({ accountTopShotWallet: (...a: unknown[]) => acctWallet(...a) }))
+// the drop's challenge and the viewer's eligibility (2026-11-10); default: a drop open to everyone
+const { dropChallenge, completed } = vi.hoisted(() => ({ dropChallenge: vi.fn(), completed: vi.fn() }))
+vi.mock("@/lib/giveaways/challenge-reward", () => ({
+  challengeOfDrop: (...a: unknown[]) => dropChallenge(...a),
+  hasCompletedChallenge: (...a: unknown[]) => completed(...a),
+}))
 const { discover } = vi.hoisted(() => ({ discover: vi.fn() }))
 const { verifyProof } = vi.hoisted(() => ({ verifyProof: vi.fn() }))
 vi.mock("@/lib/giveaways/claim-proof", async (orig) => {
@@ -212,6 +218,60 @@ describe("POST /api/giveaways/[slug] (claim)", () => {
     const res = await publicRoute.POST(post(url, { username: "alice", agree: true }), slugCtx("test-drop"))
     expect(res.status).toBe(500)
     expect(JSON.stringify(await res.json())).not.toContain("boom")
+  })
+})
+
+describe("a reward drop says whose packs these are, and whether this viewer can claim (2026-11-10)", () => {
+  const url = "http://x/api/giveaways/test-drop"
+  const CH = { id: "ch1", slug: "dame-time", title: "Dame Time" }
+  beforeEach(() => {
+    store.getDrop.mockResolvedValue(DROP)
+    store.getPool.mockResolvedValue([{ moment_id: "1", pack_no: 1, slot: 1, fmv_usd: 2, delivered_at: null, last_checked_at: null }])
+    store.getClaims.mockResolvedValue([])
+    acctWallet.mockResolvedValue({ wallet: null, reason: "none" })
+    dropChallenge.mockReset()
+    completed.mockReset()
+    vi.spyOn(console, "warn").mockImplementation(() => {})
+  })
+  const get = async () => (await publicRoute.GET(new NextRequest(url), slugCtx("test-drop"))).json()
+
+  it("a drop open to everyone carries no eligibility and never asks about a case", async () => {
+    dropChallenge.mockResolvedValue(null)
+    getCurrentUser.mockResolvedValue({ id: "u1" })
+    const body = await get()
+    expect(body.eligibility).toBeNull()
+    expect(body.eligibility_error).toBe(false)
+    expect(completed).not.toHaveBeenCalled()
+  })
+
+  it("a finisher is eligible, another account is not_eligible, and a signed-out visitor is unknown (no case read)", async () => {
+    dropChallenge.mockResolvedValue(CH)
+    getCurrentUser.mockResolvedValue({ id: "u1" })
+    completed.mockResolvedValueOnce(true)
+    expect((await get()).eligibility).toEqual({ challenge: { slug: "dame-time", title: "Dame Time" }, viewer: "eligible" })
+    expect(completed).toHaveBeenLastCalledWith({}, "ch1", "u1")
+    completed.mockResolvedValueOnce(false)
+    expect((await get()).eligibility.viewer).toBe("not_eligible")
+    getCurrentUser.mockResolvedValue(null)
+    completed.mockClear()
+    expect((await get()).eligibility.viewer).toBe("unknown")
+    expect(completed).not.toHaveBeenCalled()
+  })
+
+  it("a failed case read is unknown, never not_eligible; a failed challenge read is eligibility_error and the page still loads", async () => {
+    dropChallenge.mockResolvedValue(CH)
+    getCurrentUser.mockResolvedValue({ id: "u1" })
+    completed.mockRejectedValueOnce(new Error("trophy_cases read failed: timeout"))
+    const a = await get()
+    expect(a.eligibility.viewer).toBe("unknown")
+    expect(a.eligibility_error).toBe(false)
+    dropChallenge.mockRejectedValueOnce(new Error("giveaway_drops read failed: timeout"))
+    const res = await publicRoute.GET(new NextRequest(url), slugCtx("test-drop"))
+    expect(res.status).toBe(200)
+    const b = await res.json()
+    expect(b.eligibility).toBeNull()
+    expect(b.eligibility_error).toBe(true)
+    expect(b.drop.slug).toBeTruthy()
   })
 })
 

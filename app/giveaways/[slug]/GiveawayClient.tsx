@@ -19,6 +19,8 @@ type View = PublicDropView & {
   /** The Top Shot wallet already on the signed-in account: the one-click claim (2026-11-10). */
   account_wallet?: { address: string; username: string | null } | null
   account_wallet_error?: boolean
+  /** A reward drop for one trophy challenge: whose packs these are, and whether THIS viewer can claim. */
+  eligibility?: { challenge: { slug: string; title: string }; viewer: "eligible" | "not_eligible" | "unknown" } | null
 }
 type ClaimAccount = { address: string; role: "flow_wallet" | "linked"; name?: string | null; dapper?: boolean; can_receive: boolean }
 type ClaimNonce = { nonce: string; issuedAt: string }
@@ -309,10 +311,25 @@ export default function GiveawayClient({ slug }: { slug: string }) {
       ) : drop.status === "open" && left > 0 ? (
         <section style={card}>
           <h2 style={h2}>Claim a pack</h2>
+          {load.view.eligibility ? (
+            <p style={{ ...muted, margin: "0 0 12px" }} data-testid="claim-eligibility">
+              These packs are for collectors who completed the{" "}
+              <a href={`/trophy-challenges/${load.view.eligibility.challenge.slug}`} style={{ color: "var(--rpc-red-text)" }}>
+                {load.view.eligibility.challenge.title}
+              </a>{" "}
+              challenge, one pack each.
+              {load.view.eligibility.viewer === "eligible" ? " You completed it, so one of these is yours." : ""}
+            </p>
+          ) : null}
           <div style={{ marginBottom: 12 }}>
             <PackWall total={drop.pack_count} claimed={drop.claimed_count} drawn={drawn} onLanded={() => setTimeout(refresh, 900)} theme={drop.pack_theme} />
           </div>
-          {signed_in ? (
+          {signed_in && load.view.eligibility?.viewer === "not_eligible" ? (
+            <p style={{ margin: 0 }} data-testid="claim-not-eligible">
+              This account has no completed {load.view.eligibility.challenge.title} entry, so there is no pack for it to claim here. If you finished the challenge
+              on a different account, sign in with that one.
+            </p>
+          ) : signed_in ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 440 }}>
               {useAccountWallet && accountWallet ? (
                 <div style={{ border: "1px solid var(--rpc-border)", borderRadius: 6, padding: "10px 12px" }} data-testid="account-wallet-claim">

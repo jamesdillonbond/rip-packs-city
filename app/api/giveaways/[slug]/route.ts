@@ -37,6 +37,7 @@ import { issueClaimNonce, verifyClaimProof, type ClaimProofInput } from "@/lib/g
 import { instantDeliveryEnabled, sendFromVault } from "@/lib/giveaways/vault"
 import type { DropRow } from "@/lib/giveaways/store"
 import { accountTopShotWallet, type AccountWallet } from "@/lib/giveaways/account-wallet"
+import { challengeOfDrop, hasCompletedChallenge } from "@/lib/giveaways/challenge-reward"
 
 // The vault send runs after the response (a claim answers in ~1 s; the send waits for a seal).
 export const maxDuration = 120
@@ -163,7 +164,30 @@ export async function GET(req: NextRequest, ctx: Ctx) {
         console.warn(`[giveaways] account wallet read: ${e instanceof Error ? e.message : String(e)}`)
       }
     }
-    return NextResponse.json({ ...view, signed_in: user != null, account_wallet, account_wallet_error }, { headers: NO_STORE })
+    // a reward drop for one trophy challenge (2026-11-10): say whose packs these are, and tell a
+    // signed-in viewer whether THEY can claim before they press the button. A failed read is
+    // `eligibility: null` + `eligibility_error` — the page then shows the form exactly as before,
+    // never "not eligible".
+    let eligibility: { challenge: { slug: string; title: string }; viewer: "eligible" | "not_eligible" | "unknown" } | null = null
+    let eligibility_error = false
+    try {
+      const ch = await challengeOfDrop(supabaseAdmin as never, drop.id)
+      if (ch) {
+        let viewer: "eligible" | "not_eligible" | "unknown" = "unknown"
+        if (user) {
+          try {
+            viewer = (await hasCompletedChallenge(supabaseAdmin as never, ch.id, user.id)) ? "eligible" : "not_eligible"
+          } catch (e) {
+            console.warn(`[giveaways] eligibility read: ${e instanceof Error ? e.message : String(e)}`)
+          }
+        }
+        eligibility = { challenge: { slug: ch.slug, title: ch.title }, viewer }
+      }
+    } catch (e) {
+      eligibility_error = true
+      console.warn(`[giveaways] drop challenge read: ${e instanceof Error ? e.message : String(e)}`)
+    }
+    return NextResponse.json({ ...view, signed_in: user != null, account_wallet, account_wallet_error, eligibility, eligibility_error }, { headers: NO_STORE })
   } catch (err) {
     return apiErrorResponse(err, "api/giveaways/[slug] GET", "We couldn't load this giveaway. Try again in a moment.")
   }
