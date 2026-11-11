@@ -231,7 +231,7 @@ export default function PackRevealClient({
               onPointerMove={phase === "sealed" ? tiltMove : undefined}
               onPointerLeave={tiltReset}
               className={`rpc-gw-pack${phase === "tearing" ? " rpc-gw-pack--tear" : ""}`}
-              aria-label={`Tear open pack #${packNo}`}
+              aria-label="Tear open your pack"
               data-testid="sealed-pack"
             >
               <span className="rpc-gw-pack-strip" aria-hidden="true">
@@ -247,9 +247,6 @@ export default function PackRevealClient({
                     <img src={LOGO} alt="Rip Packs City" width={320} height={320} className="rpc-gw-pack-logo" />
                   </span>
                   {title ? <span className="rpc-gw-pack-title">{title}</span> : null}
-                  <span className="rpc-gw-pack-no" style={{ fontFamily: DISPLAY }}>
-                    Pack #{packNo}
-                  </span>
                   <span className="rpc-gw-pack-plate" style={{ fontFamily: MONO }}>
                     {order.length} {order.length === 1 ? "Moment" : "Moments"} inside
                   </span>
@@ -320,7 +317,7 @@ export default function PackRevealClient({
                 textTransform: "uppercase",
               }}
             >
-              Pack #{packNo}
+              Your pack
             </span>
             {total != null ? (
               <span

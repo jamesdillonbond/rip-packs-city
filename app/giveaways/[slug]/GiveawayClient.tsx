@@ -280,7 +280,7 @@ export default function GiveawayClient({ slug }: { slug: string }) {
 
       {me ? (
         <section style={{ ...card, borderColor: "var(--rpc-red-border)" }}>
-          <h2 style={h2}>Your pack · #{me.pack_no}</h2>
+          <h2 style={h2}>Your pack</h2>
           <p style={muted}>
             Claimed {ptTime(me.claimed_at)} for{" "}
             {/^0x[0-9a-f]{16}$/.test(me.topshot_username) ? (

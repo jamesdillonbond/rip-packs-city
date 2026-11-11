@@ -182,7 +182,7 @@ describe("PackRevealClient — carried-over properties", () => {
     localStorage.setItem("rpc_giveaway_opened:fall-drop:4", "1")
     renderPack()
     expect(screen.getByText("delivery grid")).toBeTruthy()
-    expect(screen.queryByText("Pack #4")).toBeNull()
+    expect(screen.queryByTestId("sealed-pack")).toBeNull()
   })
 
   it("a one-card pack says Moment and has no chase; an empty pack falls through to the grid", () => {
@@ -217,7 +217,7 @@ describe("PackRevealClient — carried-over properties", () => {
     }
     try {
       renderPack()
-      expect(screen.getByText("Pack #4")).toBeTruthy()
+      expect(screen.getByTestId("sealed-pack")).toBeTruthy()
       fireEvent.click(screen.getByRole("button", { name: "Show all" }))
       expect(screen.getByText("delivery grid")).toBeTruthy()
     } finally {

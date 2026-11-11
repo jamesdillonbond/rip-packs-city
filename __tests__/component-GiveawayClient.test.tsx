@@ -212,12 +212,15 @@ describe("GiveawayClient — claiming", () => {
     fireEvent.click(screen.getByRole("button", { name: /claim my pack/i }))
     // the wall shuffles to the pack the database drew, says so, then the page reloads into it (2026-11-08)
     expect(await screen.findByText("Drawing your pack…")).toBeTruthy()
-    expect(await screen.findByText(/Pack #2 is yours — drawn at random from the 2 that were left/, {}, { timeout: 4000 })).toBeTruthy()
-    expect(await screen.findByText(/Your pack · #2/, {}, { timeout: 4000 })).toBeTruthy()
+    expect(await screen.findByText(/Your pack is in — drawn at random from the 2 that were left/, {}, { timeout: 4000 })).toBeTruthy()
+    expect(await screen.findByRole("heading", { name: "Your pack" }, { timeout: 4000 })).toBeTruthy()
     const post = fetchMock.mock.calls.find((c) => (c[1] as RequestInit | undefined)?.method === "POST")!
     expect(JSON.parse((post[1] as RequestInit).body as string)).toEqual({ username: "alice", agree: true })
     // the pack arrives SEALED; "Show all" skips straight to the delivery grid
-    expect(screen.getByText("Pack #2")).toBeTruthy()
+    // ⚠ INVERTED 2026-11-10: no pack number anywhere a claimer looks (Trevor: "just extra noise")
+    expect(screen.getByTestId("sealed-pack")).toBeTruthy()
+    expect(screen.queryByText(/Pack #\d/)).toBeNull()
+    expect(screen.queryByText(/#2\b/)).toBeNull()
     fireEvent.click(screen.getByRole("button", { name: "Show all" }))
     expect(screen.getByText(/Delivered: in your Top Shot account/)).toBeTruthy()
     expect(screen.getByText("Awaiting the sponsor's gift")).toBeTruthy()

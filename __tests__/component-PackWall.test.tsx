@@ -43,7 +43,9 @@ describe("PackWall", () => {
     expect(onLanded).not.toHaveBeenCalled()
     act(() => vi.advanceTimersByTime(DRAW_MS))
     expect(onLanded).toHaveBeenCalledTimes(1)
-    expect(screen.getByText("Pack #4 is yours — drawn at random from the 3 that were left.")).toBeTruthy()
+    expect(screen.getByText("Your pack is in — drawn at random from the 3 that were left.")).toBeTruthy()
+    // ⚠ INVERTED 2026-11-10 (Trevor: the pack number is "just extra noise"): no number is shown
+    expect(screen.queryByText(/Pack #/)).toBeNull()
     const landed = [...states()].filter((el) => el.getAttribute("data-state") === "landed")
     expect(landed).toHaveLength(1)
     expect(landed[0].classList.contains("is-claimed")).toBe(false)
@@ -54,7 +56,7 @@ describe("PackWall", () => {
     const onLanded = vi.fn()
     render(<PackWall total={3} claimed={0} drawn={1} onLanded={onLanded} />)
     expect(onLanded).toHaveBeenCalledTimes(1)
-    expect(screen.getByText(/Pack #1 is yours/)).toBeTruthy()
+    expect(screen.getByText(/Your pack is in/)).toBeTruthy()
   })
 
   it("a very large drop draws at most 60 packs and says so; one pack reads singular; no packs renders nothing", () => {

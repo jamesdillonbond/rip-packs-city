@@ -104,7 +104,7 @@ export default function PackWall({
       </div>
       <p aria-live="polite" style={{ fontFamily: MONO, fontSize: 12, color: "var(--rpc-text-muted)", margin: "6px 0 0" }}>
         {drawn != null && landed
-          ? `Pack #${drawn} is yours — drawn at random from the ${left} that were left.`
+          ? `Your pack is in — drawn at random from the ${left} that were left.`
           : drawn != null
             ? "Drawing your pack…"
             : `${left} of ${total} ${total === 1 ? "pack" : "packs"} left${total > shown ? ` (showing ${shown})` : ""}`}
