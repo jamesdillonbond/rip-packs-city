@@ -56,6 +56,17 @@ describe("a reply to an RPC email reaches a person", () => {
     expect(short).toEqual([])
   })
 
+  it("every edge-function Resend send sets a reply_to too (they cannot import REPLY_TO), and none on our own domain", () => {
+    const fnRoot = join(process.cwd(), "supabase", "functions")
+    const fns = walk(fnRoot)
+      .map((p) => ({ path: relative(process.cwd(), p), src: stripComments(readFileSync(p, "utf8")) as string }))
+      .filter((f) => (f.src.match(RESEND_SEND) ?? []).length > 0)
+    expect(fns.length).toBeGreaterThanOrEqual(1)
+    const short = fns.filter((f) => (f.src.match(/\breply_to:/g) ?? []).length < (f.src.match(RESEND_SEND) ?? []).length).map((f) => f.path)
+    expect(short).toEqual([])
+    expect(fns.filter((f) => OWN_DOMAIN_REPLY.test(f.src)).map((f) => f.path)).toEqual([])
+  })
+
   it("no send names an @rippackscity.com reply-to", () => {
     expect(files.filter((f) => OWN_DOMAIN_REPLY.test(f.src)).map((f) => f.path)).toEqual([])
   })

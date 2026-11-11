@@ -42,6 +42,8 @@ vi.mock("next/server", async (orig) => {
   return { ...real, after: (fn: () => Promise<void>) => void afterFns.push(fn) }
 })
 const { acctWallet } = vi.hoisted(() => ({ acctWallet: vi.fn() }))
+const { poolExtras } = vi.hoisted(() => ({ poolExtras: vi.fn() }))
+vi.mock("@/lib/giveaways/pool-extras", () => ({ readPoolExtras: (...a: unknown[]) => poolExtras(...a) }))
 vi.mock("@/lib/giveaways/account-wallet", () => ({ accountTopShotWallet: (...a: unknown[]) => acctWallet(...a) }))
 // the drop's challenge and the viewer's eligibility (2026-11-10); default: a drop open to everyone
 const { dropChallenge, completed } = vi.hoisted(() => ({ dropChallenge: vi.fn(), completed: vi.fn() }))
@@ -104,6 +106,8 @@ beforeEach(() => {
   resolve.mockReset()
   discover.mockReset()
   acctWallet.mockReset()
+  poolExtras.mockReset()
+  poolExtras.mockResolvedValue(new Map())
   acctWallet.mockResolvedValue({ wallet: null, reason: "none" })
   verifyProof.mockReset()
   planFunding.mockReset()
@@ -641,6 +645,21 @@ describe("/api/admin/giveaways", () => {
 
     discover.mockRejectedValueOnce(new FlowScriptError("Flow script HTTP 503", 503))
     expect((await adminList.POST(post("http://x/api/admin/giveaways", body, auth))).status).toBe(502)
+  })
+
+  it("extras (series set name, badges, special serial) ride on the public pool, the claimer's pack and the admin preview pool", async () => {
+    const row = { moment_id: "1", pack_no: 1, slot: 1, fmv_usd: 15.5, delivered_at: null, last_checked_at: null, set_name: "Run It Back: Origins" }
+    const x = { set_label: "'24-25 Run It Back: Origins", badges: ["Rookie of the Year"], special_serial: [] }
+    poolExtras.mockResolvedValue(new Map([["1", x]]))
+    store.getDrop.mockResolvedValue(DROP)
+    store.getPool.mockResolvedValue([row])
+    store.getClaims.mockResolvedValue([{ pack_no: 1, user_id: "me", topshot_username: "a", recipient_address: "0x01", claimed_at: "t" }])
+    getCurrentUser.mockResolvedValue({ id: "me" })
+    const pub = await (await publicRoute.GET(new NextRequest("http://x/api/giveaways/test-drop"), slugCtx("test-drop"))).json()
+    expect(pub.pool[0]).toMatchObject(x)
+    expect(pub.me.moments[0]).toMatchObject(x)
+    const admin = await (await adminOne.GET(new NextRequest(`http://x/api/admin/giveaways/${ID}`, { headers: { authorization: "Bearer tok" } }), idCtx(ID))).json()
+    expect(admin.pool[0]).toMatchObject({ ...row, ...x })
   })
 
   it("one drop: detail, and each action", async () => {

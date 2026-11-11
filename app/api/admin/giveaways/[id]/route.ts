@@ -40,6 +40,7 @@ import { planDelivery, planFunding } from "@/lib/giveaways/deliver"
 import { confirmFunding, sendFromVault, vaultAddress } from "@/lib/giveaways/vault"
 import { FlowScriptError } from "@/lib/giveaways/flow-script"
 import { isDealMode } from "@/lib/giveaways/seal"
+import { readPoolExtras } from "@/lib/giveaways/pool-extras"
 
 export const dynamic = "force-dynamic"
 // seal/verify make Flow script calls (20 s bound each, 50 moments per call)
@@ -57,7 +58,15 @@ export async function GET(req: NextRequest, ctx: Ctx) {
     const drop = await getDrop(supabaseAdmin, { id })
     if (!drop) return NextResponse.json({ error: "no such drop" }, { status: 404 })
     const [pool, claims] = await Promise.all([getPool(supabaseAdmin, id), getClaims(supabaseAdmin, id)])
-    return NextResponse.json({ drop, pool, claims }, { headers: { "Cache-Control": "no-store" } })
+    // The admin "Preview opening" shows what a claimer sees: series-qualified set
+    // names, edition badges, special serials (2026-11-10). Display only; a failed
+    // read leaves the plain row.
+    const extras = await readPoolExtras(supabaseAdmin, drop.collection_id, pool)
+    const enriched = pool.map((m) => {
+      const x = extras.get(m.moment_id)
+      return x ? { ...m, set_label: x.set_label, badges: x.badges, special_serial: x.special_serial } : m
+    })
+    return NextResponse.json({ drop, pool: enriched, claims }, { headers: { "Cache-Control": "no-store" } })
   } catch (err) {
     return apiErrorResponse(err, "api/admin/giveaways/[id] GET")
   }

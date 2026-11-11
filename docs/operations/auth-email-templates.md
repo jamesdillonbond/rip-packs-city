@@ -11,10 +11,18 @@
 | Confirm signup | `Sign in to Rip Packs City` | `{{ .SiteURL }}/api/auth/callback?token_hash={{ .TokenHash }}&type=signup` |
 | Magic link or OTP | `Sign in to Rip Packs City` | `{{ .SiteURL }}/api/auth/callback?token_hash={{ .TokenHash }}&type=magiclink` |
 
-The two bodies are byte-identical apart from `type=`: dark table layout, RPC logo, "Tap the button below to sign in. This link expires in 1 hour and can only be used once.", red "Sign in to RPC" button, the URL in plain text under it, the "didn't request this?" line, footer with rippackscity.com · @rippackscity. `app/api/auth/callback/route.ts` accepts both `signup` and `magiclink` (`verifyOtp` with `token_hash`) and redirects to `/dashboard`.
+The two bodies are byte-identical apart from `type=`: dark table layout, RPC logo, "Tap the button below to sign in. This link expires in 1 hour and can only be used once.", red "Sign in to RPC" button, the URL in plain text under it, the "didn't request this?" line, then (since 2026-11-10) a "Questions? Email rippackscity@gmail.com — replies to this message aren't received." line, footer with rippackscity.com · @rippackscity. `app/api/auth/callback/route.ts` accepts both `signup` and `magiclink` (`verifyOtp` with `token_hash`) and redirects to `/dashboard`.
 
 **Verified 2026-09-02:** requested a link for a fresh `+tag` address on `/login` → Resend shows subject `Sign in to Rip Packs City`, branded HTML, link on `www.rippackscity.com/api/auth/callback?…&type=signup`; opening it signed the new account in and landed on `/dashboard` (`/api/profile/me` answered the new user).
 
 **Not changed, on purpose.** *Change email / Reset password / Invite / Reauthentication* — not on the sign-in path; the product has no password and no invites. A custom auth domain is not needed: the link is already on our domain via the token-hash flow.
 
 **If a template ever reverts** (the dashboard has a "Reset template" button): copy the *Magic link or OTP* body, replace `type=magiclink` with `type=signup`, paste into *Confirm signup*, set the subject above.
+
+**Reply footer (2026-11-10).** Supabase sends these through Resend from an @rippackscity.com address, and the domain has no MX, so a reply bounces; the dashboard has no Reply-To field for auth email. Both templates therefore carry, right after the "by mistake." paragraph:
+
+```html
+<p style="margin:8px 0 0 0;font-size:12px;line-height:18px;color:#71717a;">Questions? Email <a href="mailto:rippackscity@gmail.com" style="color:#e55a4c;text-decoration:underline;">rippackscity@gmail.com</a> — replies to this message aren't received.</p>
+```
+
+Verified saved on both by reloading the dashboard (Magic link 3,756 → 4,023 chars). Trevor chose this over Cloudflare Email Routing. If a template is reset, re-add it.

@@ -24,6 +24,9 @@ const INGEST_SECRET = Deno.env.get("INGEST_SECRET_TOKEN");
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
 const ALERT_EMAIL_TO = Deno.env.get("ALERT_EMAIL_TO");
 const ALERT_EMAIL_FROM = Deno.env.get("ALERT_EMAIL_FROM") ?? "alerts@resend.dev";
+// rippackscity.com receives no mail (no MX), so a reply to a sender there bounces:
+// replies go to the mailbox a person reads (2026-11-10; lib/emails/sender-identity.ts REPLY_TO).
+const ALERT_EMAIL_REPLY_TO = Deno.env.get("ALERT_EMAIL_REPLY_TO") ?? "rippackscity@gmail.com";
 
 const FAILURE_THRESHOLD = 3;
 const LOOKBACK_MINUTES = 60;
@@ -171,6 +174,7 @@ async function sendEmail(
     },
     body: JSON.stringify({
       from: ALERT_EMAIL_FROM,
+      reply_to: ALERT_EMAIL_REPLY_TO,
       to: [ALERT_EMAIL_TO],
       subject,
       html,

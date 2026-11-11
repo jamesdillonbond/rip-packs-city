@@ -76,6 +76,10 @@ export interface PoolRow {
   delivery_tx_id?: string | null
   delivery_attempted_at?: string | null
   delivery_error?: string | null
+  /** Display extras the admin GET attaches (lib/giveaways/pool-extras.ts); never stored. */
+  set_label?: string | null
+  badges?: string[] | null
+  special_serial?: ("first" | "jersey" | "perfect")[] | null
 }
 
 export interface ClaimRow {
