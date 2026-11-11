@@ -1080,7 +1080,8 @@ const PINS = [
     test: "supabase/tests/populate_wmc_fmv_from_snapshots.sql",
     // Re-pointed 2026-08-12: the function now also denormalizes `confidence`
     // into wmc.fmv_confidence, taken from the SAME snapshot row as the value.
-    migration: "supabase/migrations/20260812042019_audit_20260812_populate_wmc_fmv_carry_confidence.sql",
+    // Re-pointed 2026-11-11: the NULL-only path locks only the rows it writes.
+    migration: "supabase/migrations/20261111172832_audit_20261111_populate_wmc_fmv_locks_only_fillable_rows.sql",
   },
   {
     fn: "refresh_allday_ask_fmv_from_listings",

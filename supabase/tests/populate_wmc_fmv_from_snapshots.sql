@@ -19,10 +19,16 @@
 -- is HIGH and its LATEST is STALE, so an implementation that resolved confidence
 -- separately from the value would fail it.
 --
+-- As of 2026-11-11 the NULL-only path locks only the rows it will WRITE (matched
+-- to a snapshot first); it used to lock p_limit candidates before matching, and
+-- held 5,000 unfillable Candy rows every hour. Locking is not observable from a
+-- single session, so this file pins the fill behaviour; the lock property was
+-- proven with a two-session NOWAIT probe (see the migration header).
+--
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260812042019_audit_20260812_populate_wmc_fmv_carry_confidence.sql),
--- verified byte-identical to the live prod definition via pg_get_functiondef on
--- 2026-08-12. __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
+-- (supabase/migrations/20261111172832_audit_20261111_populate_wmc_fmv_locks_only_fillable_rows.sql),
+-- verified against live md5(prosrc) e88992b0188a4e7b65bf376afde8104b on
+-- 2026-11-11. __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
 
@@ -95,11 +101,24 @@ BEGIN
     -- a row gets a non-NULL fmv_usd it falls out of the candidate set, so
     -- successive cron ticks naturally drain the backlog.
     --
-    -- FOR UPDATE SKIP LOCKED: this path races the wallet-backfill writers on the
-    -- same wmc rows. Locking the target rows up front and skipping any that a
-    -- backfill currently holds means the UPDATE never blocks — skipped rows stay
-    -- NULL and are retried next tick (the same drain semantics as above), so the
-    -- tick no longer fails with lock/deadlock/statement timeouts.
+    -- LOCK ONLY WHAT WILL BE WRITTEN (2026-11-11). This path used to take the
+    -- first p_limit NULL rows FOR UPDATE SKIP LOCKED and only THEN look for an
+    -- FMV to copy. Candy MLB holds 1,293,541 NULL rows and NONE has an FMV
+    -- snapshot (447 of its 24,811 editions are priced, and their rows are
+    -- already filled), so every hourly tick locked 5,000 unfillable Candy rows,
+    -- wrote 0, and held them for 19-42 s. candy-editions-ingest upserts those
+    -- same rows and lost a chunk to the lock timeout at 5:13 PM PT two days
+    -- running. Now the candidates are read WITHOUT a lock, matched to the latest
+    -- snapshot first (MATERIALIZED, so the lock step cannot be planned ahead of
+    -- the match), and only matched rows are locked, with fmv_usd re-checked
+    -- under the lock. Measured on Candy: 57,773 buffers / 54 ms and 0 rows
+    -- locked, against 57,669 buffers for the same read before. Driving from
+    -- editions-with-FMV instead was 3x the buffers (179k Candy, 145k Top Shot)
+    -- and was NOT taken.
+    --
+    -- SKIP LOCKED is kept: this path races the wallet-backfill writers, and a
+    -- matched row a writer holds stays NULL and is retried next tick, so the
+    -- UPDATE never blocks.
     WITH targets AS (
       SELECT wmc.id, wmc.collection_id, wmc.edition_key
       FROM public.wallet_moments_cache wmc
@@ -107,9 +126,8 @@ BEGIN
         AND wmc.edition_key IS NOT NULL
         AND (p_collection_id IS NULL OR wmc.collection_id = p_collection_id)
       LIMIT p_limit
-      FOR UPDATE SKIP LOCKED
     ),
-    snapped AS (
+    snapped AS MATERIALIZED (
       SELECT t.id AS wmc_id, fs.fmv_usd, fs.confidence
       FROM targets t
       JOIN public.editions e
@@ -124,12 +142,19 @@ BEGIN
         LIMIT 1
       ) fs
     ),
+    locked AS (
+      SELECT wmc.id, s.fmv_usd, s.confidence
+      FROM snapped s
+      JOIN public.wallet_moments_cache wmc ON wmc.id = s.wmc_id
+      WHERE wmc.fmv_usd IS NULL
+      FOR UPDATE OF wmc SKIP LOCKED
+    ),
     updated AS (
       UPDATE public.wallet_moments_cache wmc
-         SET fmv_usd        = s.fmv_usd,
-             fmv_confidence = s.confidence
-        FROM snapped s
-       WHERE wmc.id = s.wmc_id
+         SET fmv_usd        = l.fmv_usd,
+             fmv_confidence = l.confidence
+        FROM locked l
+       WHERE wmc.id = l.id
        RETURNING 1
     )
     SELECT COUNT(*)::int INTO v_updated FROM updated;
