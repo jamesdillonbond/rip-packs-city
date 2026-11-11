@@ -61,3 +61,7 @@ This file is written as the pass goes (draft at 1:55 PM PT, updated 3:00 PM PT);
 - **Pipeline failures otherwise:** wallet-backfill 508 continuation (recovered by the #245 resume), Atlas/Candy upstream 403/429/timeouts, one Panini walk for a wallet whose username Panini no longer has — all known classes.
 - **Inbox:** 1607Z (chain-arrivals seed) and 0645Z (Candy revival) marked resolved; 1840Z's UFC fix was already applied (`20261110184532`), its seven-reader item stays a recorded choice.
 - **Candy trust arms:** revival 1 → 0 (`20261110225146`); `sol_usd_daily` live (Cowork) — 2,528 parked sales all fall on covered days; the 4:20 PM PT indexer run is the first to price them (check-in 4:26 PM PT).
+
+## 4:26 PM PT — Candy SOL/USD fix proven in production
+
+4:20 PM PT `candy-sales-indexer`: `sol_days_primed_db` 100, `sol_db_error` null, `drain_resolved` **297 of 300**, `rows_written` 297, `unresolved_open` 2,578 → **2,278** (previous runs: 0 resolved, every 3 h). At 300 a run the backlog clears in ~8 runs (~1 day); `candy_sales_stale_hours` leaves breach once < 50 sales parked in 48 h remain. CI on the code commit (`cfbc1f573`, run 9775) green.
