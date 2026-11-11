@@ -36,6 +36,7 @@ import {
   buildAccountWelcomeSubject,
   buildAccountWelcomeText,
 } from "@/lib/emails/account-welcome-email"
+import { REPLY_TO } from "@/lib/emails/sender-identity"
 
 /** Same literal as lib/allow-list/prewarm.ts FROM_ADDRESS — pinned by test. */
 export const WELCOME_FROM_ADDRESS = "Rip Packs City <noreply@rippackscity.com>"
@@ -84,7 +85,7 @@ export async function sendViaResend(args: SendEmailArgs): Promise<SendResult> {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: args.from, to: [args.to], subject: args.subject, html: args.html, text: args.text }),
+      body: JSON.stringify({ from: args.from, reply_to: REPLY_TO, to: [args.to], subject: args.subject, html: args.html, text: args.text }),
       signal: ctrl.signal,
     })
     if (!res.ok) {

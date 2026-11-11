@@ -10,7 +10,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { normalizeAddress } from "@/lib/address"
 import { supabaseAdmin } from "@/lib/supabase"
 import { usdSignFirst } from "@/lib/usd-format"
-import { commercialSendBlockedReason, commercialSenderLine } from "@/lib/emails/sender-identity"
+import { commercialSendBlockedReason, commercialSenderLine, REPLY_TO } from "@/lib/emails/sender-identity"
 import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { alreadySentEmail, claimEmailDelivery } from "@/lib/email/recipient-guards"
 
@@ -279,7 +279,7 @@ export async function GET(req: NextRequest) {
         body: JSON.stringify({
           from: FROM,
           to: sub.email,
-          reply_to: "rippackscity@gmail.com",
+          reply_to: REPLY_TO,
           subject: composed.subject,
           html: composed.html,
           text: composed.text,

@@ -29,6 +29,7 @@ import {
 } from "@/lib/alerts";
 import { buildEmailMessage, buildTelegramMessage, buildDiscordEmbeds, messageBatches } from "@/lib/alerts/format";
 import { alertEmailPauseUrl } from "@/lib/alerts/email-pause";
+import { REPLY_TO } from "@/lib/emails/sender-identity";
 
 const SITE_URL = "https://www.rippackscity.com";
 
@@ -96,7 +97,7 @@ async function sendEmailGroup(to: string, group: Delivery[]): Promise<void> {
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       from: "Rip Packs City <noreply@rippackscity.com>",
-      reply_to: "rippackscity@gmail.com",
+      reply_to: REPLY_TO,
       to,
       subject,
       html,

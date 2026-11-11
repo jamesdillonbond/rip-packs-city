@@ -23,6 +23,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { normalizeAddress } from "@/lib/address"
 import { safeApiError, errorLogDetail } from "@/lib/api-error"
 import { anonIpKey, bumpAnonRates } from "@/lib/abuse/anon-rate"
+import { REPLY_TO } from "@/lib/emails/sender-identity"
 
 const FROM = "rpc-alerts@rippackscity.com"
 // One verification mail per address per 10 minutes, however often it is POSTed.
@@ -47,6 +48,7 @@ async function sendVerification(origin: string, email: string, token: string): P
     },
     body: JSON.stringify({
       from: FROM,
+      reply_to: REPLY_TO,
       to: email,
       subject: "Confirm your Rip Packs City subscription",
       html: `

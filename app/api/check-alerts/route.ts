@@ -12,6 +12,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import crypto from "crypto";
 import { bearerMatches } from "@/lib/auth/bearer-secret";
+import { REPLY_TO } from "@/lib/emails/sender-identity";
 
 export const maxDuration = 60;
 
@@ -96,7 +97,7 @@ async function sendEmail(to: string, subject: string, html: string): Promise<{ o
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: FROM, to, subject, html }),
+      body: JSON.stringify({ from: FROM, reply_to: REPLY_TO, to, subject, html }),
       signal: AbortSignal.timeout(ALERT_FETCH_TIMEOUT_MS),
     });
     if (!res.ok) {

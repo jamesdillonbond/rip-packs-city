@@ -31,7 +31,7 @@
 // Auth: Bearer ${INGEST_SECRET_TOKEN} or ${CRON_SECRET}. Method: POST or GET.
 
 import { bearerMatches } from "@/lib/auth/bearer-secret"
-import { commercialSendBlockedReason } from "@/lib/emails/sender-identity";
+import { commercialSendBlockedReason, REPLY_TO } from "@/lib/emails/sender-identity";
 import { NextRequest, NextResponse, after } from "next/server";
 import { alreadySentEmail, claimEmailDelivery, ensureUnsubToken } from "@/lib/email/recipient-guards";
 import { supabaseAdmin } from "@/lib/supabase";
@@ -122,7 +122,7 @@ async function sendEmail(to: string, subject: string, html: string, text: string
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from: FROM, to, subject, html, text }),
+    body: JSON.stringify({ from: FROM, reply_to: REPLY_TO, to, subject, html, text }),
     signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`resend ${res.status}: ${(await res.text()).slice(0, 200)}`);

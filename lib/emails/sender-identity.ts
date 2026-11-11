@@ -39,3 +39,10 @@ export function commercialSenderLine(): string {
   if (!postal) throw new Error("commercialSenderLine: RPC_SENDER_POSTAL_ADDRESS is not set")
   return `${SENDER_ENTITY} · ${postal} · ${SENDER_MAILBOX}`
 }
+
+// ── Where a reader's reply goes (2026-11-10) ────────────────────────────────
+// rippackscity.com has NO inbound mail (no MX record; Resend receiving is off),
+// so a reply to any @rippackscity.com sender BOUNCES. Every Resend send sets
+// reply_to to this mailbox, which a person reads. Pinned for every send site
+// by __tests__/email-reply-to-reaches-a-person.test.ts (a tree walk).
+export const REPLY_TO = SENDER_MAILBOX

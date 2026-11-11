@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { createClient } from "@supabase/supabase-js";
 import { tokenMatches } from "@/lib/auth/bearer-secret"
+import { REPLY_TO } from "@/lib/emails/sender-identity";
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -192,6 +193,7 @@ export async function GET(req: NextRequest) {
           },
           body: JSON.stringify({
             from: "RPC Support <noreply@rippackscity.com>",
+            reply_to: REPLY_TO,
             to: [process.env.ALERT_EMAIL],
             subject: `RPC Support Report — Week of ${weekOf}`,
             html,

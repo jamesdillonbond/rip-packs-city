@@ -133,6 +133,7 @@ import { paniniEditionUrl } from "@/lib/panini/edition-url";
 import { isSqueezeCollection, SQUEEZE_LABEL, type SqueezeCollection } from "@/lib/insights/squeeze-collections";
 import { readSqueezeCheck, readWalletScanState } from "@/lib/insights/squeeze-check";
 import { TROPHY_COLLECTIONS } from "@/lib/insights/trophy-collections";
+import { REPLY_TO } from "@/lib/emails/sender-identity";
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -4860,6 +4861,7 @@ async function executeToolInner(
             headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
             body: JSON.stringify({
               from: "rpc-support@rippackscity.com",
+              reply_to: REPLY_TO,
               to: process.env.ALERT_EMAIL,
               subject: `[RPC Support] ${category} — HIGH urgency`,
               text: `Session: ${ctx.sessionId}\nUser: ${ctx.ownerKey ?? "(anon)"}\nCategory: ${category}\nUrgency: high\n\nIssue:\n${reason}`,

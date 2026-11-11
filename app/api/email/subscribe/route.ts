@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
+import { REPLY_TO } from "@/lib/emails/sender-identity";
 
 export const dynamic = "force-dynamic"
 
@@ -147,6 +148,7 @@ export async function POST(req: NextRequest) {
           },
           body: JSON.stringify({
             from: FROM_ADDRESS,
+            reply_to: REPLY_TO,
             to: [email],
             subject: "Confirm your Rip Packs City email subscription",
             html,

@@ -25,6 +25,7 @@ import {
   buildFeedbackShippedDigestHtml,
   buildFeedbackShippedDigestText,
 } from "@/lib/emails/feedback-shipped-email";
+import { REPLY_TO } from "@/lib/emails/sender-identity";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -101,7 +102,7 @@ export async function POST(req: NextRequest) {
       const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ from: FROM, to, reply_to: FROM, subject: buildFeedbackShippedDigestSubject(opts), html: buildFeedbackShippedDigestHtml(opts), text: buildFeedbackShippedDigestText(opts) }),
+        body: JSON.stringify({ from: FROM, to, reply_to: REPLY_TO, subject: buildFeedbackShippedDigestSubject(opts), html: buildFeedbackShippedDigestHtml(opts), text: buildFeedbackShippedDigestText(opts) }),
         signal: AbortSignal.timeout(8000),
       });
       if (!res.ok) {

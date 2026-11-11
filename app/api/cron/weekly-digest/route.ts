@@ -31,7 +31,7 @@ import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { NextRequest, NextResponse, after } from "next/server";
 import { alreadySentEmail, claimEmailDelivery, ensureUnsubToken } from "@/lib/email/recipient-guards";
 import { supabaseAdmin } from "@/lib/supabase";
-import { commercialSendBlockedReason, commercialSenderLine } from "@/lib/emails/sender-identity";
+import { commercialSendBlockedReason, commercialSenderLine, REPLY_TO } from "@/lib/emails/sender-identity";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -184,7 +184,7 @@ async function sendEmail(to: string, subject: string, html: string, text: string
     body: JSON.stringify({
       from: FROM,
       to,
-      reply_to: "rippackscity@gmail.com",
+      reply_to: REPLY_TO,
       subject,
       html,
       text,

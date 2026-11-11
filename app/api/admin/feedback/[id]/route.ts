@@ -14,6 +14,7 @@ import {
   buildFeedbackShippedText,
 } from "@/lib/emails/feedback-shipped-email";
 import { isRelayedSession } from "@/lib/feedback/relayed";
+import { REPLY_TO } from "@/lib/emails/sender-identity";
 
 // ── "Your request shipped" (2026-10-03) ──────────────────────────────────────
 // On the FIRST transition to `shipped`, the reader who logged the row is
@@ -53,7 +54,7 @@ async function notifyShipped(row: {
       body: JSON.stringify({
         from: SHIPPED_FROM,
         to,
-        reply_to: SHIPPED_FROM,
+        reply_to: REPLY_TO,
         subject: buildFeedbackShippedSubject(opts),
         html: buildFeedbackShippedHtml(opts),
         text: buildFeedbackShippedText(opts),

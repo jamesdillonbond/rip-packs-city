@@ -24,6 +24,7 @@ import {
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
 import { createWallBudgetFetch, type WallBudgetClock } from "@/lib/sentinel/wall-budget";
 import { currentSentinelClock, withSentinelClock } from "@/lib/sentinel/clock-store";
+import { REPLY_TO } from "@/lib/emails/sender-identity";
 
 // Named once: the arm pushes it, the threshold/ack rows key on it, and the
 // migration that seeds those rows quotes it verbatim. A typo here is a silently
@@ -531,6 +532,7 @@ async function sendEmail(subject: string, html: string): Promise<Delivery> {
       },
       body: JSON.stringify({
         from: "RPC Sentinel <noreply@rippackscity.com>",
+        reply_to: REPLY_TO,
         to: [ALERT_EMAIL],
         subject,
         html,

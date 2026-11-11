@@ -18,6 +18,7 @@ import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { createChannelLinkCode, isChannel, type Channel } from "@/lib/alerts";
+import { REPLY_TO } from "@/lib/emails/sender-identity";
 
 function maskTarget(channel: Channel, target: string | null): string | null {
   if (!target) return null;
@@ -189,6 +190,7 @@ async function sendVerifyEmail(to: string, verifyUrl: string): Promise<boolean> 
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       from: "Rip Packs City <noreply@rippackscity.com>",
+      reply_to: REPLY_TO,
       to,
       subject: "Confirm email alerts — Rip Packs City",
       html: `

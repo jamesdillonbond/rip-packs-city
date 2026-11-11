@@ -32,6 +32,7 @@ import {
   type PrewarmSummary,
 } from "@/lib/emails/welcome-email"
 import { resolveTopShotUsername } from "@/lib/chains/flow/topshot-username-resolve"
+import { REPLY_TO } from "@/lib/emails/sender-identity"
 
 const TS_SEEDER_TIMEOUT_MS = 90_000
 // Bound on the Telegram page itself. A page that hangs holds the row's lane
@@ -481,6 +482,7 @@ async function sendViaResend(args: SendEmailArgs): Promise<{ ok: true } | { ok: 
       },
       body: JSON.stringify({
         from: FROM_ADDRESS,
+        reply_to: REPLY_TO,
         to: args.to,
         subject: args.subject,
         html: args.html,

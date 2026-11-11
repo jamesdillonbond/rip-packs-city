@@ -19,6 +19,7 @@
 import { supabaseAdmin } from "@/lib/supabase";
 import { redactSecrets } from "@/lib/redact-secrets";
 import { escapeTelegramHtml, fitTelegramText } from "@/lib/telegram-message";
+import { REPLY_TO } from "@/lib/emails/sender-identity";
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? "";
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID ?? "";
@@ -109,7 +110,7 @@ async function sendEmail(subject: string, text: string, html?: string): Promise<
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: OPS_FROM, to: [ALERT_EMAIL], subject, text, ...(html ? { html } : {}) }),
+      body: JSON.stringify({ from: OPS_FROM, reply_to: REPLY_TO, to: [ALERT_EMAIL], subject, text, ...(html ? { html } : {}) }),
     });
     if (!res.ok) {
       const body = redactSecrets((await res.text().catch(() => "")).slice(0, 200));
