@@ -286,7 +286,7 @@ describe("AdminGiveawaysClient — drops", () => {
         const action = JSON.parse(init.body as string).action
         posts.push(action)
         if (action === "verify")
-          return json({ ok: false, report: { checked: 2, delivered: 1, pending: 1, missing: 0, failed_recipients: ["0x02"], write_error: "boom" } }, 207)
+          return json({ ok: false, report: { checked: 2, delivered: 1, pending: 1, missing: 0, moved_on: 2, failed_recipients: ["0x02"], write_error: "boom" } }, 207)
         if (action === "seal") return json({ error: "Locked on chain: 10", code: "locked" }, 409)
         return json({ ok: true })
       }
@@ -297,7 +297,7 @@ describe("AdminGiveawaysClient — drops", () => {
     const open = (await screen.findByText("Open one")).parentElement!
     expect(await screen.findByText("Couldn't load the checklist: nope")).toBeTruthy()
     fireEvent.click(within(open).getByRole("button", { name: /verify deliveries/i }))
-    expect(await screen.findByText(/Checked 2: 1 delivered, 1 awaiting your gift, 0 missing · chain read FAILED for 0x02/)).toBeTruthy()
+    expect(await screen.findByText(/Checked 2: 1 delivered, 1 awaiting your gift, 0 missing · 2 delivered earlier and since moved by the winner · chain read FAILED for 0x02/)).toBeTruthy()
     expect(screen.getByText(/write error: boom/)).toBeTruthy()
     // the detail reload that follows the action failed too — it must not replace the report
     expect(screen.getByText("Couldn't load the checklist: nope")).toBeTruthy()
@@ -503,7 +503,7 @@ describe("AdminGiveawaysClient — deliver all (one signature per batch)", () =>
       { moment_id: "8", reason: "not_held" },
     ],
   }
-  const REPORT = { checked: 3, delivered: 3, pending: 0, missing: 0, failed_recipients: [], written: 3, write_error: null }
+  const REPORT = { checked: 3, delivered: 3, pending: 0, missing: 0, moved_on: 1, failed_recipients: [], written: 3, write_error: null }
 
   beforeEach(() => {
     wallet.connect.mockReset()
@@ -545,7 +545,7 @@ describe("AdminGiveawaysClient — deliver all (one signature per batch)", () =>
     await connected()
     wallet.send.mockResolvedValueOnce({ txId: "tx1" }).mockResolvedValueOnce({ txId: "tx2" })
     fireEvent.click(screen.getByRole("button", { name: /deliver claimed moments/i }))
-    expect(await screen.findByText(/Verified on chain: 3 delivered, 0 still with you, 0 missing/)).toBeTruthy()
+    expect(await screen.findByText(/Verified on chain: 3 delivered, 0 still with you, 0 missing · 1 delivered earlier and since moved by the winner/)).toBeTruthy()
     expect(posts[0]).toEqual({ action: "deliver_plan", parent: "0x00000000000000bb" })
     expect(wallet.send.mock.calls.map((c) => (c[0] as { momentIDs: string[] }).momentIDs)).toEqual([["1", "2"], ["3"]])
     expect(wallet.send.mock.calls[0][0]).toMatchObject({ source: "0x00000000000000aa", kind: "linked", providerControllerID: "70" })

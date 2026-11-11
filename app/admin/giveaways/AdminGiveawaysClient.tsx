@@ -555,9 +555,10 @@ function DropPanel({ drop, call, onChanged }: { drop: DropRow; call: Call; onCha
     const r = await call(`/api/admin/giveaways/${drop.id}`, { method: "POST", body: JSON.stringify(payload) })
     setBusy(false)
     if (action === "verify" && r.body?.report) {
-      const rep = r.body.report as { checked: number; delivered: number; pending: number; missing: number; failed_recipients: string[]; write_error: string | null }
+      const rep = r.body.report as { checked: number; delivered: number; pending: number; missing: number; moved_on?: number; failed_recipients: string[]; write_error: string | null }
       setMsg(
         `Checked ${rep.checked}: ${rep.delivered} delivered, ${rep.pending} awaiting your gift, ${rep.missing} missing` +
+          (rep.moved_on ? ` · ${rep.moved_on} delivered earlier and since moved by the winner` : "") +
           (rep.failed_recipients.length ? ` · chain read FAILED for ${rep.failed_recipients.join(", ")} (those rows unchanged)` : "") +
           (rep.write_error ? ` · write error: ${rep.write_error}` : ""),
       )
@@ -784,10 +785,11 @@ function DeliverAll({ drop, call, onDone }: { drop: DropRow; call: Call; onDone:
         }
       }
       const v = await call(`/api/admin/giveaways/${drop.id}`, { method: "POST", body: JSON.stringify({ action: "verify" }) })
-      const rep = v.body?.report as { delivered: number; pending: number; missing: number; failed_recipients: string[] } | undefined
+      const rep = v.body?.report as { delivered: number; pending: number; missing: number; moved_on?: number; failed_recipients: string[] } | undefined
       note(
         rep
           ? `Verified on chain: ${rep.delivered} delivered, ${rep.pending} still with you, ${rep.missing} missing` +
+              (rep.moved_on ? ` · ${rep.moved_on} delivered earlier and since moved by the winner` : "") +
               (rep.failed_recipients.length ? ` · chain read FAILED for ${rep.failed_recipients.join(", ")}` : "")
           : `Verify: ${String(v.body?.error ?? `HTTP ${v.status}`)}`,
       )

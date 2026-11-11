@@ -399,7 +399,7 @@ describe("giveaways/store — verifyDeliveries", () => {
       return Object.fromEntries(ids.map((id) => [id, { held: id !== "4", locked: false }])) as Record<string, Holding>
     }
     const r = await verifyDeliveries(f.db, OPEN, read)
-    expect(r).toMatchObject({ checked: 4, delivered: 1, pending: 2, missing: 1, failed_recipients: [], written: 4, write_error: null })
+    expect(r).toMatchObject({ checked: 4, delivered: 1, pending: 2, missing: 1, moved_on: 0, failed_recipients: [], written: 4, write_error: null })
     const updates = f.queries.filter((q) => q.op === "update")
     const by = Object.fromEntries(updates.map((u) => [u.eq.moment_id, u.payload as Record<string, unknown>]))
     expect(by["1"]).toMatchObject({ last_check_recipient_holds: true, last_check_admin_holds: false })
@@ -407,6 +407,16 @@ describe("giveaways/store — verifyDeliveries", () => {
     expect(by["2"]).toMatchObject({ last_check_recipient_holds: false, last_check_admin_holds: true })
     expect(by["2"].delivered_at).toBeUndefined()
     expect(by["4"]).toMatchObject({ last_check_recipient_holds: false, last_check_admin_holds: false })
+  })
+
+  it("a Moment confirmed delivered that has since left the winner's account is moved_on, NOT missing", async () => {
+    const f = db([pm("1", { pack_no: 1, slot: 1, delivered_at: "2026-11-11T01:12:50Z" }), pm("2", { pack_no: 1, slot: 2 })], [claims[0]])
+    // neither the winner nor the admin holds either; only #1 was ever confirmed delivered
+    const r = await verifyDeliveries(f.db, OPEN, async (_a, ids) => Object.fromEntries(ids.map((id) => [id, { held: false, locked: null }])) as Record<string, Holding>)
+    expect(r).toMatchObject({ checked: 2, delivered: 0, pending: 0, missing: 1, moved_on: 1 })
+    const upd = f.queries.filter((q) => q.op === "update").find((q) => q.eq.moment_id === "1")!.payload as Record<string, unknown>
+    expect(upd).toMatchObject({ last_check_recipient_holds: false, last_check_admin_holds: false })
+    expect(upd.delivered_at).toBeUndefined() // the delivery record stands
   })
 
   it("never re-stamps an existing delivered_at", async () => {

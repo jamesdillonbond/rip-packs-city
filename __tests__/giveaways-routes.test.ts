@@ -694,12 +694,12 @@ describe("/api/admin/giveaways", () => {
     expect(await pres.json()).toEqual({ ok: true, pack_theme: "gold", opening_sound: true })
     expect(store.setPresentation).toHaveBeenLastCalledWith({}, DROP, { pack_theme: "gold", opening_sound: true })
 
-    store.verifyDeliveries.mockResolvedValueOnce({ checked: 2, delivered: 2, pending: 0, missing: 0, failed_recipients: [], written: 2, write_error: null })
+    store.verifyDeliveries.mockResolvedValueOnce({ checked: 2, delivered: 2, pending: 0, missing: 0, moved_on: 0, failed_recipients: [], written: 2, write_error: null })
     const v = await act("verify")
     expect(v.status).toBe(200)
     expect((await v.json()).ok).toBe(true)
 
-    store.verifyDeliveries.mockResolvedValueOnce({ checked: 1, delivered: 0, pending: 1, missing: 0, failed_recipients: ["0x02"], written: 1, write_error: null })
+    store.verifyDeliveries.mockResolvedValueOnce({ checked: 1, delivered: 0, pending: 1, missing: 0, moved_on: 0, failed_recipients: ["0x02"], written: 1, write_error: null })
     const partial = await act("verify")
     expect(partial.status).toBe(207)
     expect((await partial.json()).ok).toBe(false)

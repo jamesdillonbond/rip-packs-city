@@ -462,8 +462,16 @@ export interface VerifyReport {
   checked: number
   delivered: number
   pending: number
-  /** Neither the recipient nor the admin holds it: moved elsewhere. */
+  /** Never confirmed delivered, and neither the recipient nor the admin holds it now. */
   missing: number
+  /**
+   * Confirmed delivered on an earlier check (`delivered_at` set) and no longer
+   * in the winner's account: the winner sold or moved it, which is theirs to
+   * do. Not a failed delivery, so never counted as `missing` (2026-11-10:
+   * spitehouse's Dame Time pack read "2 missing" an hour after the chain had
+   * confirmed it in his account).
+   */
+  moved_on: number
   /** Recipients whose chain read failed; their rows were NOT touched. */
   failed_recipients: string[]
   written: number
@@ -493,7 +501,7 @@ export async function verifyDeliveries(
     byRecipient.set(r, [...(byRecipient.get(r) ?? []), m])
   }
 
-  const report: VerifyReport = { checked: 0, delivered: 0, pending: 0, missing: 0, failed_recipients: [], written: 0, write_error: null }
+  const report: VerifyReport = { checked: 0, delivered: 0, pending: 0, missing: 0, moved_on: 0, failed_recipients: [], written: 0, write_error: null }
   const undelivered: PoolRow[] = []
   const results: { m: PoolRow; recipientHolds: boolean; recipient: string; locked: boolean | null }[] = []
   for (const [recipient, moments] of byRecipient) {
@@ -529,6 +537,7 @@ export async function verifyDeliveries(
     report.checked += 1
     if (recipientHolds) report.delivered += 1
     else if (adminHolds) report.pending += 1
+    else if (m.delivered_at) report.moved_on += 1
     else report.missing += 1
     const { data, error } = await db
       .from("giveaway_pack_moments")
