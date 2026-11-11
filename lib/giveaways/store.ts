@@ -10,6 +10,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { getCollection } from "@/lib/collections"
 import { readTopShotHoldings, type Holding } from "@/lib/giveaways/topshot-holdings"
+import { recordDeliveredInWalletCache } from "@/lib/giveaways/wallet-cache"
 import { isPackTheme, packTheme, type PackTheme } from "@/lib/giveaways/pack-theme"
 import {
   PRIZE_VALUE_CAP_USD,
@@ -463,6 +464,9 @@ export interface VerifyReport {
   failed_recipients: string[]
   written: number
   write_error: string | null
+  /** Delivered Moments written into their winner's wallet cache (lib/giveaways/wallet-cache.ts). */
+  cache_written?: number
+  cache_error?: string | null
 }
 
 /**
@@ -487,7 +491,7 @@ export async function verifyDeliveries(
 
   const report: VerifyReport = { checked: 0, delivered: 0, pending: 0, missing: 0, failed_recipients: [], written: 0, write_error: null }
   const undelivered: PoolRow[] = []
-  const results: { m: PoolRow; recipientHolds: boolean }[] = []
+  const results: { m: PoolRow; recipientHolds: boolean; recipient: string; locked: boolean | null }[] = []
   for (const [recipient, moments] of byRecipient) {
     let h: Record<string, Holding>
     try {
@@ -498,7 +502,7 @@ export async function verifyDeliveries(
     }
     for (const m of moments) {
       const holds = h[m.moment_id]?.held === true
-      results.push({ m, recipientHolds: holds })
+      results.push({ m, recipientHolds: holds, recipient, locked: h[m.moment_id]?.locked ?? null })
       if (!holds) undelivered.push(m)
     }
   }
@@ -538,6 +542,16 @@ export async function verifyDeliveries(
       continue
     }
     report.written += data?.length ?? 0
+  }
+  // A Moment the chain shows in its winner's account goes into their wallet
+  // cache now, named — a delivery is a transfer, so no sales lane writes it
+  // (2026-11-10: rrx69's Dame Time pack rendered as two "Unknown Set" rows).
+  const held = results.filter((r) => r.recipientHolds).map((r) => ({ recipient: r.recipient, m: r.m, locked: r.locked }))
+  if (held.length) {
+    const cache = await recordDeliveredInWalletCache(db, drop.collection_id, held)
+    report.cache_written = cache.written
+    report.cache_error = cache.error
+    if (cache.error) console.log(`[giveaways] wallet cache after verify drop=${drop.slug}: ${cache.error}`)
   }
   return report
 }
