@@ -77,3 +77,9 @@ This file is written as the pass goes (draft at 1:55 PM PT, updated 3:00 PM PT);
 - **Small, queued:** `lib/insights/panini-more-boards.ts` counts `panini_special_serials_board` twice per hourly render (total + listed); each count pays the view's per-edition newest-FMV LATERAL that a count never reads (30k buffers / 1.3 s for 13,370 rows; ~1.8M blocks/day). Fix = count the base table with the view's own predicates, or a count function next to the view.
 - **Measured, no change — `close_sold_topshot_listings_and_floors` (`ts-sold-floor-clear`, 9×/h, ~24 s):** the floor leg is the cost (one `sales_2026` nft probe per held ask: 13,769 floors, 89k buffers / 7.1 s cold, ~6.5 buffers each); the recent / refill / verify legs are < 200 buffers. Driving it from sales instead needs every sale since the oldest `low_ask_confirmed_at` (09-16), and an incremental window changes the guarantee on a user-visible floor path. Left as is.
 - **Context, not a defect:** `resync_stuck_wmc_fmv` runs 2–5 min hourly and fixes 1.5k–23k rows each time — the cost of the "confidence-only changes miss the fast lane" item above; closing that item is what shrinks it.
+
+## 7:25 PM PT — Sentinel arm timeline (read, nothing to ship)
+
+- `candy_ask_book_drop_pct` 90.8: confirmed the cause — all 208 inactive rows in its 24 h denominator were last seen in the 7 PM PT hour of 11-09 (21 active vs 229 seen). Clears when they age out (~7:35–8:00 PM PT 11-10).
+- `candy_sales_stale_hours` (breach 0 via "> 50 unresolved first seen in 48 h"): 335 open in that window (274 `no_sol_rate`), first seen 11-08 9:48 PM → 11-09 5:51 AM PT. The SOL drain resolves ~290/run (7:20 PM: 284; open 2,578 → 2,278 → 1,979). The arm clears by **~5:51 AM PT 11-11** at the latest (age-out), earlier if the drain reaches them. No action.
+- `edition_integrity_flags` 8,159 (from 9,581 at 2:30 PM PT): #246 census repair, ~1.4k/5 h. No action.
