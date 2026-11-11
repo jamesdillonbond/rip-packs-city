@@ -90,3 +90,9 @@ This file is written as the pass goes (draft at 1:55 PM PT, updated 3:00 PM PT);
 - ✅ Linked Panini walk skips a `not_found` username for 24 h (`20261111034703`): `mempheattle` had been re-walked and logged ok=false on all 6 linked runs since 7:20 AM PT.
 - ✅ `pack_table_rows` change verified by request: `/api/packs?collection=laliga-golazos` 200 (cache MISS, 223 packs); rows carrying a live ask = listed asks in `pack_ask_state` exactly — Top Shot 2,031/2,031, All Day 951/951, Golazos 1/1.
 - Looked at, no change: `analytics_sales_summary` (7 s mean, but CDN-cached 10 min + 20 min SWR — ~6 refreshes/h); the wmc keyset page in the wallet walk (1.6k buffers / 700 ms, proportional to its 1,000-row page; a covering index on wmc is not worth its size); the THP trust legs (6-hourly, Panini 74 s).
+
+## 8:15 – 8:45 PM PT
+
+- `fmv_backfill_candidates` under the production role, cold: **11.6 s / 521k buffers, 0 rows** — inside the new 90 s (the 4:35 PM PT run died at 60 s). The next real `fmv-backfill` run still owes the `ok`.
+- **wmc index bloat, watch only:** the six weekly-reindexed wmc indexes grew 3–4.5× since the 11-07 7:43 PM PT rebuild (e.g. `idx_wmc_wallet_coll_ek_fmv_tier` 190 → 852 MB, the unique key 150 → 460 MB) while rows grew ~1.6× (1.34M Candy rows from the #246 census since the rebuild; 163M updates on the table). Roughly half is census churn bloat. The weekly `REINDEX CONCURRENTLY` jobs (Sat ~6–8 PM PT) reset it; if the census keeps this pace, consider a mid-week reindex of the two largest (`idx_wmc_lock_wallet_coll_cover` 937 MB, `idx_wmc_wallet_coll_ek_fmv_tier` 852 MB).
+- #228's index swap was already done (Cowork 11-04); register note added. #241 note: a single trigger on `net.http_request_queue` could log every pg_net URL — conditions recorded, not built.
