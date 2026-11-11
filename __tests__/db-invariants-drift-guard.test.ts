@@ -1058,7 +1058,7 @@ const PINS = [
     fn: "fmv_backfill_candidates",
     test: "supabase/tests/fmv_backfill_candidates.sql",
     migration:
-      "supabase/migrations/20261110173219_audit_20261110_fmv_backfill_candidates_probes_sales_per_edition.sql",
+      "supabase/migrations/20261111014609_audit_20261110_fmv_backfill_candidates_prefilters_on_edition_fmv_current.sql",
   },
   {
     fn: "topshot_serial_board_candidates",

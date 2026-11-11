@@ -34,8 +34,16 @@
 -- became a hash semi-join over all 7.55M sales rows once the unpriced set reached 21k).
 -- Same set, so every assertion below is unchanged.
 --
+-- RE-PINNED 2026-11-10 (evening): the unpriced set is found through edition_fmv_current first,
+-- each survivor confirmed against fmv_snapshots; statement_timeout 60 s -> 90 s. Every
+-- assertion above the new ones is unchanged (no fixture edition has an edition_fmv_current
+-- row, so the snapshot check alone decides them, exactly as before). Two new cases pin the
+-- prefilter's contract: a LAGGING edition_fmv_current (snapshot written, cache row not yet)
+-- does not resurrect a priced edition, and a STALE-AHEAD row (cache row, no snapshot behind
+-- it) excludes the edition — the deliberate narrowing.
+--
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261110173219_audit_20261110_fmv_backfill_candidates_probes_sales_per_edition.sql),
+-- (supabase/migrations/20261111014609_audit_20261110_fmv_backfill_candidates_prefilters_on_edition_fmv_current.sql),
 -- verified against the live prod body by md5 of `prosrc` on 2026-11-10.
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
@@ -46,6 +54,7 @@ BEGIN;
 CREATE TABLE public.editions (id uuid PRIMARY KEY);
 CREATE TABLE public.sales (edition_id uuid, price_usd numeric);
 CREATE TABLE public.fmv_snapshots (edition_id uuid);
+CREATE TABLE public.edition_fmv_current (edition_id uuid PRIMARY KEY);
 
 -- >>> BEGIN verbatim fmv_backfill_candidates (byte-identical to the migration/prod) >>>
 CREATE OR REPLACE FUNCTION public.fmv_backfill_candidates(p_limit integer DEFAULT 100)
@@ -53,12 +62,21 @@ RETURNS TABLE(ed_id uuid)
 LANGUAGE sql
 SECURITY DEFINER
 SET search_path = public, pg_temp
-SET statement_timeout = '60s'
+SET statement_timeout = '90s'
 AS $$
+  -- 2026-11-10 (evening): the unpriced set is found through edition_fmv_current FIRST (one row
+  -- per priced edition; a hash anti-join over ~67k rows), and only its survivors are confirmed
+  -- against fmv_snapshots. The old NOT EXISTS read the whole fmv_snapshots_2026 edition index
+  -- (2.9M entries, 256k buffers, ~17.6k cold reads = most of a cold run's IO). A lagging
+  -- edition_fmv_current only adds survivors that the snapshot check then removes, so the set is
+  -- unchanged; an edition_fmv_current row with NO snapshot behind it is excluded (pinned).
   WITH unpriced AS MATERIALIZED (
     SELECT e.id
     FROM public.editions e
     WHERE NOT EXISTS (
+        SELECT 1 FROM public.edition_fmv_current c WHERE c.edition_id = e.id
+      )
+      AND NOT EXISTS (
         SELECT 1 FROM public.fmv_snapshots f WHERE f.edition_id = e.id
       )
   )
@@ -120,6 +138,24 @@ SELECT _assert_eq((SELECT count(*)::text FROM public.fmv_backfill_candidates(100
 INSERT INTO public.sales (edition_id, price_usd) VALUES (:orphan::uuid, 42.0);
 SELECT _assert_eq((SELECT count(*)::text FROM public.fmv_backfill_candidates(100)), '0',
   'a sale naming an edition absent from `editions` is NOT a candidate — the rewrite reads the FK as an invariant');
+
+-- ⭐ THE edition_fmv_current PREFILTER (2026-11-10 evening).
+\set lagging   '''55555555-5555-5555-5555-555555555555'''
+\set staleahd  '''66666666-6666-6666-6666-666666666666'''
+\set fresh     '''77777777-7777-7777-7777-777777777777'''
+INSERT INTO public.editions (id) VALUES (:lagging::uuid), (:staleahd::uuid), (:fresh::uuid);
+INSERT INTO public.sales (edition_id, price_usd) VALUES (:lagging::uuid, 5.0), (:staleahd::uuid, 6.0), (:fresh::uuid, 7.0);
+-- lagging: a snapshot exists but edition_fmv_current has no row yet -> the snapshot check excludes it
+INSERT INTO public.fmv_snapshots (edition_id) VALUES (:lagging::uuid);
+-- stale-ahead: edition_fmv_current names it but no snapshot exists -> excluded by design
+INSERT INTO public.edition_fmv_current (edition_id) VALUES (:staleahd::uuid);
+SELECT _assert_eq((SELECT string_agg(ed_id::text, ',') FROM public.fmv_backfill_candidates(100)),
+  '77777777-7777-7777-7777-777777777777',
+  'prefilter: only the truly unpriced sold edition is a candidate — a lagging edition_fmv_current does not resurrect a priced edition, and a stale-ahead row excludes its edition');
+-- CONTROL: the fresh edition drops out once its snapshot lands, with no cache row at all
+INSERT INTO public.fmv_snapshots (edition_id) VALUES (:fresh::uuid);
+SELECT _assert_eq((SELECT count(*)::text FROM public.fmv_backfill_candidates(100)), '0',
+  'prefilter CONTROL: a snapshot alone (no edition_fmv_current row) removes the edition');
 
 SELECT '✓ fmv_backfill_candidates invariants pass' AS result;
 ROLLBACK;
