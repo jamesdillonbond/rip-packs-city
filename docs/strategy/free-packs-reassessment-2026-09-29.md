@@ -405,3 +405,7 @@ Trevor: "Yes do both", then "leave the dame time pack art as is, as that's our b
 - **Defaults:** every drop that existed at the migration keeps classic + silent (asserted in the migration; that includes the open Dame Time beta drop). A drop created afterwards defaults to classic + sound on.
 - **Where the sponsor sets it:** the "Pack" picker and "Sound" tick on each drop in `/admin/giveaways` (`set_presentation` action; allowed at any status because it is presentation only). "Preview opening" plays the drop's own design and sound.
 - **Not done:** uploaded artwork per drop (a picked design only); no sound was auditioned by ear from the build session — it was exercised against a real browser audio engine for errors and node counts, so the first listen is Trevor's via Preview opening.
+
+### Later 11-10 — a challenge's reward drop is reachable and says who can claim
+
+A drop limited to one trophy challenge (`eligible_challenge_id`) is now linked both ways: the challenge board shows a banner to its open reward drop (a finisher: "Your reward pack is ready" → Claim your pack), and the claim page says the packs are for collectors who completed that challenge and tells a signed-in account with no completed entry so before it tries. `lib/giveaways/challenge-reward.ts`; a failed read shows nothing extra, never "no reward" or "not eligible". How to check a reward drop is ready without claiming: the 11-10 readiness entry in the ledger (chain read of the vault, wallets' receive capability, a rolled-back `claim_giveaway_pack` run).
