@@ -394,4 +394,14 @@ Trevor (11-10): "Opening packs is such a core collecting experience, this needs 
 - **The pack wall:** mini packs in the same crimped foil.
 - **Reduced motion:** every animation off, flash / sparks / rings not rendered, timers wait 0 ms.
 - **Where:** `app/giveaways/[slug]/PackRevealClient.tsx`, `PackWall.tsx`, the `rpc-gw-*` block in `app/rpc-tokens.css`. How to look at it without claiming a pack: admin "Preview opening", or the harness in `scripts/qa/README.md` (end).
-- **Not done, by choice:** no sound, no per-drop pack art, no change to what the summary states.
+- **Not done, by choice:** no change to what the summary states.
+
+### Later 11-10 — a pack design per drop, and sound
+
+Trevor: "Yes do both", then "leave the dame time pack art as is, as that's our beta".
+
+- **Pack design** (`giveaway_drops.pack_theme`, migration `20261110234256`): classic (the red pack, unchanged), blackout, gold, ice, emerald, ember, royal. The list is `lib/giveaways/pack-theme.ts`; the database CHECK and the stylesheet rules are pinned to it (`__tests__/giveaway-pack-theme.test.ts`). A design recolours the wrapper, the card backs, the pack wall and the stage's floor glow through two variables (`--gw-pack`, `--gw-pack-glow`); classic sets neither, and was compared pixel-for-pixel against the pack before the change (0 pixels differ, dark and light).
+- **Sound** (`giveaway_drops.opening_sound`): the tear, each flip (more notes the rarer the tier), the chase's rising charge and its hit, the summary. Synthesised in the browser with Web Audio at the moment it plays (`lib/giveaways/reveal-sound.ts`) — no audio files, and no audio device is opened until the claimer tears the pack. The claimer gets a **Sound on / Sound off** button; the choice is remembered per browser. A drop without sound shows no button and opens no audio device.
+- **Defaults:** every drop that existed at the migration keeps classic + silent (asserted in the migration; that includes the open Dame Time beta drop). A drop created afterwards defaults to classic + sound on.
+- **Where the sponsor sets it:** the "Pack" picker and "Sound" tick on each drop in `/admin/giveaways` (`set_presentation` action; allowed at any status because it is presentation only). "Preview opening" plays the drop's own design and sound.
+- **Not done:** uploaded artwork per drop (a picked design only); no sound was auditioned by ear from the build session — it was exercised against a real browser audio engine for errors and node counts, so the first listen is Trevor's via Preview opening.
