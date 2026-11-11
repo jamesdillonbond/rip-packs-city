@@ -49,3 +49,7 @@ predates the 11-10 11:30 AM PT fix → stale pre-fix run, clears on the 11-11 3:
   so a recovered rarely-firing lane stops reading HIGH until a genuinely new failure re-arms it.
   No fix needed to the lane itself. Re-raise only if a NEW continuation 508 lands AND the resume
   queue stops draining (picked > 0 persisting).
+
+## ↳ Item 1 acted on — 2026-11-10 ~6:15 PM PT (Claude Code cloud)
+
+Re-measured: 705k buffers / 13.4 s for 0 rows; the unpriced-set anti-join over `fmv_snapshots` was 256k of it and most of the cold IO. `20261111014609` prefilters on `edition_fmv_current` (then confirms against `fmv_snapshots`; same set, EXCEPT both ways = 0) → 533k / 4.2 s, and lifts `statement_timeout` 60 → 90 s (route `maxDuration` 120). Watch the next `fmv-backfill` runs for `ok` and duration. Item 2 (continuation arm streak-split) not acted on — instrument change, left for the night pass.
