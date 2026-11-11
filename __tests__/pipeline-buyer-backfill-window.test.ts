@@ -121,8 +121,10 @@ describe("buyer backfill cursor — (sold_at, id), never sold_at alone", () => {
     // the defect: a cursor applied as a plain upper bound on sold_at
     expect(route).not.toMatch(/\.lt\("sold_at", cursorBefore/)
     expect(route).not.toMatch(/cursorBefore < HIST_WINDOW_END \? cursorBefore/)
-    // the legitimate bare bounds — the historical window's fixed end, on its select and its exhausted count
-    expect(route.match(/\.lt\("sold_at", HIST_WINDOW_END\)/g)).toHaveLength(2)
+    // the legitimate bare bound — the historical window's fixed end on its select; its exhausted
+    // count reads the same end through topshot_buyer_backfill_window_counts (20261111004919)
+    expect(route.match(/\.lt\("sold_at", HIST_WINDOW_END\)/g)).toHaveLength(1)
+    expect(route).toMatch(/p_hist_end: HIST_WINDOW_END/)
     // the exec-fill phase is a window, not a cursor walk: its order is unchanged
     expect(route).toMatch(/\.order\("sold_at", \{ ascending: false \}\)\s*\.order\("id", \{ ascending: true \}\)\s*\.limit\(EXEC_FILL_BATCH\)/)
   })
@@ -134,20 +136,32 @@ describe("buyer backfill cursor — (sold_at, id), never sold_at alone", () => {
 // run: `rows_found 1 · decode_failed 1` at every :34 tick, 48 decodes a day.
 describe("Top Shot buyer backfill — the two lanes tile at the spork root, and the band below the forward floor is counted", () => {
   const route = readFileSync("app/api/admin/backfill-topshot-buyers/route.ts", "utf8")
+  const countsFn = readFileSync(
+    "supabase/migrations/20261111004919_audit_20261110_topshot_buyer_backfill_window_counts.sql",
+    "utf8",
+  )
   it("forward lane floor = historical lane end = CURRENT_SPORK_START_ISO; no calendar-date floor remains", () => {
     expect(route).toMatch(/const HIST_WINDOW_END = CURRENT_SPORK_START_ISO/)
     expect(route).toMatch(/const FORWARD_WINDOW_START = CURRENT_SPORK_START_ISO/)
     expect(route).not.toMatch(/"2025-01-01T00:00:00Z"/)
-    // the forward select and its exhausted count both read the SAME floor
-    expect(route.match(/\.gte\("sold_at", FORWARD_WINDOW_START\)/g)).toHaveLength(2)
+    // the forward select and its exhausted count both read the SAME floor (the count through
+    // topshot_buyer_backfill_window_counts, whose forward leg is sold_at >= p_forward_start)
+    expect(route.match(/\.gte\("sold_at", FORWARD_WINDOW_START\)/g)).toHaveLength(1)
+    expect(route).toMatch(/p_forward_start: FORWARD_WINDOW_START/)
+    expect(countsFn).toMatch(/payer_address IS NOT NULL\s+AND transaction_hash IS NOT NULL AND sold_at >= p_forward_start;/)
     // nothing in the forward lane still reads the historical end as its own floor
     expect(route).not.toMatch(/\.gte\("sold_at", HIST_WINDOW_END\)/)
   })
   it("the rows the forward lane no longer walks are COUNTED on the wrapping run (below_forward_floor), with the same candidate predicate", () => {
-    expect(route).toMatch(
-      /\.is\("buyer_address", null\)\s*\.is\("payer_address", null\)\s*\.not\("transaction_hash", "is", null\)\s*\.gte\("sold_at", HIST_WINDOW_START\)\s*\.lt\("sold_at", FORWARD_WINDOW_START\)/,
+    // the count moved into topshot_buyer_backfill_window_counts (20261111004919; through PostgREST it
+    // seq-scanned sales_2023..2025). Same candidate predicate as the forward select, over [HIST_START, FORWARD_START):
+    expect(countsFn).toMatch(
+      /buyer_address IS NULL AND payer_address IS NULL\s+AND transaction_hash IS NOT NULL AND sold_at >= p_hist_start AND sold_at < p_forward_start;/,
     )
-    expect(route).toMatch(/belowForwardFloor = belowErr \? -1 : \(belowCount \?\? -1\)/)
+    expect(route).toMatch(/p_hist_start: HIST_WINDOW_START/)
+    expect(route).toMatch(/belowForwardFloor = counts\.below/)
+    // a failed read is -1 for every count, never 0
+    expect(route).toMatch(/if \(error \|\| !data \|\| typeof data !== "object"\) return \{ hist: -1, forward: -1, below: -1 \}/)
     expect(route).toContain("below_forward_floor: belowForwardFloor")
   })
 })

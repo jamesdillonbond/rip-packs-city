@@ -138,6 +138,23 @@ interface NullBuyerRow {
   seller_address: string | null
 }
 
+/**
+ * The three exhausted / below-floor telemetry counts, read in one call to
+ * `topshot_buyer_backfill_window_counts`. A failed read reports -1 for each — never
+ * 0, which would claim "nothing is parked" when the truth is "we could not look".
+ */
+async function readWindowCounts(): Promise<{ hist: number; forward: number; below: number }> {
+  const { data, error } = await (supabaseAdmin as any).rpc("topshot_buyer_backfill_window_counts", {
+    p_hist_start: HIST_WINDOW_START,
+    p_hist_end: HIST_WINDOW_END,
+    p_forward_start: FORWARD_WINDOW_START,
+  })
+  const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : -1)
+  if (error || !data || typeof data !== "object") return { hist: -1, forward: -1, below: -1 }
+  const d = data as Record<string, unknown>
+  return { hist: n(d.hist_exhausted), forward: n(d.forward_exhausted), below: n(d.below_forward_floor) }
+}
+
 export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
@@ -271,16 +288,10 @@ export async function POST(req: NextRequest) {
         // The excluded population, counted rather than assumed. `head: true` so this
         // costs a count and not a page, and the error is NOT swallowed into 0 — a
         // failed count published as a measured zero is the fabricated-number shape.
-        const { count: exhaustedCount, error: exhaustedErr } = await (supabaseAdmin as any)
-          .from("sales")
-          .select("id", { count: "exact", head: true })
-          .eq("collection", "nba_top_shot")
-          .is("buyer_address", null)
-          .not("payer_address", "is", null)
-          .not("transaction_hash", "is", null)
-          .gte("sold_at", HIST_WINDOW_START)
-          .lt("sold_at", HIST_WINDOW_END)
-        exhaustedInWindow = exhaustedErr ? -1 : (exhaustedCount ?? -1)
+        // Read through topshot_buyer_backfill_window_counts (20261111004919): the same
+        // count through PostgREST seq-scanned sales_2023..2025 in production (~73k
+        // blocks / 5-9 s a run), a plan no SQL replica reproduced.
+        exhaustedInWindow = (await readWindowCounts()).hist
 
         let minRow: SaleCursorRow | null = null
         for (const row of rows) {
@@ -533,28 +544,14 @@ export async function POST(req: NextRequest) {
       cursorAfterId = cursorAfter === null ? null : (minRow?.id ?? null)
 
       if (cursorAfter === null) {
-        const { count: exhaustedCount, error: exhaustedErr } = await (supabaseAdmin as any)
-          .from("sales")
-          .select("id", { count: "exact", head: true })
-          .eq("collection", "nba_top_shot")
-          .is("buyer_address", null)
-          .not("payer_address", "is", null)
-          .not("transaction_hash", "is", null)
-          .gte("sold_at", FORWARD_WINDOW_START)
-        exhaustedInWindow = exhaustedErr ? -1 : (exhaustedCount ?? -1)
-
-        // The same candidate predicate as this lane's select, over the band below
+        // Both counts through topshot_buyer_backfill_window_counts (20261111004919).
+        // below_forward_floor = this lane's candidate predicate over the band below
         // its floor: what this lane will never touch and the historical lane owns.
-        const { count: belowCount, error: belowErr } = await (supabaseAdmin as any)
-          .from("sales")
-          .select("id", { count: "exact", head: true })
-          .eq("collection", "nba_top_shot")
-          .is("buyer_address", null)
-          .is("payer_address", null)
-          .not("transaction_hash", "is", null)
-          .gte("sold_at", HIST_WINDOW_START)
-          .lt("sold_at", FORWARD_WINDOW_START)
-        belowForwardFloor = belowErr ? -1 : (belowCount ?? -1)
+        // Through PostgREST that count seq-scanned sales_2023..2025 (176k blocks /
+        // 14 s on the 2026-11-10 4:34 PM PT run).
+        const counts = await readWindowCounts()
+        exhaustedInWindow = counts.forward
+        belowForwardFloor = counts.below
       }
 
       // Exec-account fill (see EXEC_FILL_BATCH). Skipped when the buyer loop

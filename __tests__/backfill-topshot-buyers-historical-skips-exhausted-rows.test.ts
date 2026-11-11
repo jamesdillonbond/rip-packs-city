@@ -83,7 +83,26 @@ vi.mock("@/lib/supabase", () => {
 
   return {
     supabaseAdmin: {
-      rpc: async () => ({ data: null, error: null }),
+      // topshot_buyer_backfill_window_counts (20261111004919), implemented with the
+      // SQL function's own three predicates over state.sales — the counts moved out
+      // of PostgREST head:true reads, and this mock still FILTERS rather than
+      // returning fixed numbers. countErr fails the read.
+      rpc: async (fn: string, args: Record<string, string>) => {
+        if (fn !== "topshot_buyer_backfill_window_counts") return { data: null, error: null }
+        if (state.countErr) return { data: null, error: { message: "count blew up" } }
+        const base = state.sales.filter((r: Row) =>
+          r.collection === "nba_top_shot" && r.buyer_address == null && r.transaction_hash != null)
+        const decoded = base.filter((r: Row) => r.payer_address != null)
+        const fresh = base.filter((r: Row) => r.payer_address == null)
+        return {
+          data: {
+            hist_exhausted: decoded.filter((r: Row) => r.sold_at >= args.p_hist_start && r.sold_at < args.p_hist_end).length,
+            forward_exhausted: decoded.filter((r: Row) => r.sold_at >= args.p_forward_start).length,
+            below_forward_floor: fresh.filter((r: Row) => r.sold_at >= args.p_hist_start && r.sold_at < args.p_forward_start).length,
+          },
+          error: null,
+        }
+      },
       from(table: string) {
         return {
           select: (_cols?: string, opts?: { head?: boolean }) =>

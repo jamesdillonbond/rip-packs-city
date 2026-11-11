@@ -297,14 +297,16 @@ describe("POST /api/admin/backfill-topshot-buyers (forward lane)", () => {
     })
   })
 
+  // 2026-11-10: the exhausted and below-floor counts are read in ONE call to
+  // topshot_buyer_backfill_window_counts (20261111004919) — through PostgREST
+  // head:true they seq-scanned sales_2023..2025 in production (176k blocks / 14 s).
   it("a wrapping run counts the unresolved rows below the forward floor (the historical lane's band) — a failed count is -1, never 0", async () => {
-    const run = async (belowFixture: { data: null; error: unknown; count?: number }) => {
+    const run = async (countsFixture: { data: unknown; error: unknown }) => {
       const spy = install({
         pipeline_runs: { data: null, error: null },
+        "rpc:topshot_buyer_backfill_window_counts": countsFixture,
         sales: [
           { data: [], error: null }, // buyer lane: nothing null-buyer → wraps
-          { data: null, error: null, count: 4987 }, // exhausted count
-          belowFixture, // below-forward-floor count
           { data: [], error: null }, // exec fill select
           { data: null, error: null, count: 0 }, // exec backlog count
         ],
@@ -313,10 +315,23 @@ describe("POST /api/admin/backfill-topshot-buyers (forward lane)", () => {
         adminReq("https://t/api/admin/backfill-topshot-buyers", { authorization: "Bearer ingest-secret" }),
       )
       await runDeferred()
-      return (spy.writes.pipeline_runs ?? []).find((w) => w.method === "insert")!.rows[0].extra as Record<string, unknown>
+      const call = spy.rpcCalls.find((c) => c.name === "topshot_buyer_backfill_window_counts")
+      return {
+        extra: (spy.writes.pipeline_runs ?? []).find((w) => w.method === "insert")!.rows[0].extra as Record<string, unknown>,
+        args: call?.args,
+      }
     }
-    expect(await run({ data: null, error: null, count: 1 })).toMatchObject({ wrapped: true, exhausted_in_window: 4987, below_forward_floor: 1 })
-    expect(await run({ data: null, error: { message: "count boom" } })).toMatchObject({ below_forward_floor: -1 })
+    const okRun = await run({ data: { hist_exhausted: 45, forward_exhausted: 4987, below_forward_floor: 1 }, error: null })
+    expect(okRun.extra).toMatchObject({ wrapped: true, exhausted_in_window: 4987, below_forward_floor: 1 })
+    // the forward lane reads ITS exhausted count (forward_exhausted), not the historical lane's
+    expect(okRun.extra.exhausted_in_window).not.toBe(45)
+    expect(okRun.args).toEqual({
+      p_hist_start: "2023-11-08T16:07:03Z",
+      p_hist_end: "2025-12-29T03:11:27Z",
+      p_forward_start: "2025-12-29T03:11:27Z",
+    })
+    const failed = await run({ data: null, error: { message: "count boom" } })
+    expect(failed.extra).toMatchObject({ below_forward_floor: -1, exhausted_in_window: -1 })
   })
 
   it("still writes an ok=false pipeline_runs row when the select fails (nothing is invisible)", async () => {
@@ -369,8 +384,6 @@ describe("POST /api/admin/backfill-topshot-buyers (forward lane)", () => {
       pipeline_runs: { data: null, error: null },
       sales: [
         { data: [], error: null }, // buyer lane: nothing null-buyer
-        { data: null, error: null, count: 0 }, // exhausted count (the empty batch wraps)
-        { data: null, error: null, count: 0 }, // below-forward-floor count (wrap)
         {
           data: [
             { id: "e1", nft_id: "901", transaction_hash: "txe1", sold_at: "2026-10-09T12:00:00Z" },
@@ -417,8 +430,6 @@ describe("POST /api/admin/backfill-topshot-buyers (forward lane)", () => {
       pipeline_runs: { data: null, error: null },
       sales: [
         { data: [], error: null },
-        { data: null, error: null, count: 0 }, // exhausted count (wrap)
-        { data: null, error: null, count: 0 }, // below-forward-floor count (wrap)
         { data: null, error: { message: "exec boom" } },
         { data: null, error: null, count: 0 },
       ],
@@ -439,8 +450,6 @@ describe("POST /api/admin/backfill-topshot-buyers (forward lane)", () => {
       pipeline_runs: { data: null, error: null },
       sales: [
         { data: [], error: null },
-        { data: null, error: null, count: 0 }, // exhausted count (wrap)
-        { data: null, error: null, count: 0 }, // below-forward-floor count (wrap)
         { data: [], error: null },
         { data: null, error: { message: "count boom" } },
       ],
