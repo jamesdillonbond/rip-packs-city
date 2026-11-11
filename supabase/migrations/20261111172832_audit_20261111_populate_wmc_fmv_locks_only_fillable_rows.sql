@@ -3,7 +3,9 @@
 -- populate_wmc_fmv_from_snapshots, NULL-only path: lock only the rows that will
 -- be written. Before this, it locked the first p_limit NULL rows and then found
 -- an FMV for none of them on Candy MLB (1,293,541 NULL rows, 0 fillable), holding
--- 5,000 Candy rows for 19-42 s every hour at :13 while writing 0. That lock made
+-- 5,000 Candy rows on every run (every 5 minutes, up to 67 s each) while writing 0.
+-- (The body comment below says "hourly"; that is wrong — it is every 5 minutes.
+-- It is left as applied so the file stays byte-identical to live prosrc.) That lock made
 -- candy-editions-ingest lose one wmc chunk at 5:13 PM PT on 11-09 and 11-10
 -- (Postgres logs: the waiter was a PostgREST upsert, the holder a PostgREST
 -- session matching the wmc-fmv-populate candy-mlb step to the second).

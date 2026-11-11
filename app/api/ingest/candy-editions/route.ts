@@ -342,7 +342,7 @@ async function handleIngest(req: NextRequest) {
         const writeRows = attributed.rows
         for (let i = 0; i < writeRows.length; i += UPSERT_CHUNK) {
           const chunk = writeRows.slice(i, i + UPSERT_CHUNK)
-          // Lock-contention retry (2026-11-11): the hourly wmc-fmv-populate Candy
+          // Lock-contention retry (2026-11-11): the every-5-min wmc-fmv-populate Candy
           // step holds these rows for up to ~42 s and cost the 01:10 UTC tick one
           // chunk two days running. See lib/supabase/lock-retry.ts.
           const { data, error } = await withLockRetry<{ moment_id: string }[]>(

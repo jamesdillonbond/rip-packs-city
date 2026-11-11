@@ -21,7 +21,7 @@
 --
 -- As of 2026-11-11 the NULL-only path locks only the rows it will WRITE (matched
 -- to a snapshot first); it used to lock p_limit candidates before matching, and
--- held 5,000 unfillable Candy rows every hour. Locking is not observable from a
+-- held 5,000 unfillable Candy rows on every 5-minute run. Locking is not observable from a
 -- single session, so this file pins the fill behaviour; the lock property was
 -- proven with a two-session NOWAIT probe (see the migration header).
 --

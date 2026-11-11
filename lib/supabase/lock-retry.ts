@@ -8,16 +8,17 @@
 // statement due to lock timeout"), then succeeded at 04:10. Postgres logs show
 // both cancels at ~01:13:24 UTC, each one a PostgREST session waiting on a
 // Candy row held by another PostgREST session. The holder lined up to the second
-// on both days with the hourly `wmc-fmv-populate` route's Candy step, which held
+// on both days with the `wmc-fmv-populate` route's Candy step (it runs every 5 minutes), which held
 // Candy wmc rows for 19 s (11-10, 01:13:22–:41) and 42 s (11-11, 01:13:16–:58).
-// That step runs EVERY hour at :13, and pg_cron wmc writers sit at :04/:07/:24/:44,
-// so moving the 5–6 min walk off :10 would only change which writer it meets.
+// That step runs every 5 minutes, so a 5–6 min walk overlaps it whatever its
+// start minute; moving the cron cannot avoid it. (The step's lock itself was
+// fixed the same day: audit_20261111_populate_wmc_fmv_locks_only_fillable_rows.)
 // The holder lets go within a minute, so the fix is to wait it out.
 //
 // A lock wait is bounded by the `authenticator` role's lock_timeout (8 s on
 // 2026-11-11), so each failed attempt costs ~8 s plus the backoff. The defaults
 // below wait 5 s + 15 s + 30 s between four attempts, which covers a holder of
-// ~75 s (twice the longest one measured). A RUN-LEVEL budget caps the total
+// ~75 s (the longest run seen on 11-10 was 67 s). A RUN-LEVEL budget caps the total
 // extra sleep so a lock storm cannot push a long walk into its maxDuration kill.
 //
 // ⛔ 57014 (statement timeout) is NOT retried. A statement that ran out of time
