@@ -65,3 +65,11 @@ This file is written as the pass goes (draft at 1:55 PM PT, updated 3:00 PM PT);
 ## 4:26 PM PT — Candy SOL/USD fix proven in production
 
 4:20 PM PT `candy-sales-indexer`: `sol_days_primed_db` 100, `sol_db_error` null, `drain_resolved` **297 of 300**, `rows_written` 297, `unresolved_open` 2,578 → **2,278** (previous runs: 0 resolved, every 3 h). At 300 a run the backlog clears in ~8 runs (~1 day); `candy_sales_stale_hours` leaves breach once < 50 sales parked in 48 h remain. CI on the code commit (`cfbc1f573`, run 9775) green.
+
+## Evening (5:40 – 6:35 PM PT)
+
+- ✅ Buyer-backfill counts fix verified: 5:34 PM run 8.7 s (was ~20 s), values unchanged, no seq scan of `sales_2023..2025` since 4:34 PM.
+- ✅ `fmv_backfill_candidates` prefilters on `edition_fmv_current`, timeout 90 s (`20261111014609`, pinned): 705k → 533k buffers, 13.4 s → 4.2 s. **Watch** the next `fmv-backfill` runs for `ok`.
+- ✅ `sales_2026` / `sales_2027` `ingested_at` index (`20261111023056`): the Sentinel's 2 h ingest count 52k blocks / 3.5 s → 62 / 26 ms.
+- **Queued — `pack_table_rows` (the /api/packs board view):** ~90k buffers / 1.4 s per call (page + exact count, ~13 calls/h). One cause found: its `pack_ask_state` LATERAL's OR leg `(collection_slug = 'laliga-golazos')` carries no `dist_id`, so every board row bitmap-reads the Golazos ask slice (24k of 58k buffers on a Top Shot page). Fixing it is a `CREATE OR REPLACE VIEW` of a 14k-char view with dependents (re-specify `security_invoker`); ~100 ms/page — left for a fresh session.
+- **Open question still:** why PostgREST's plan for the buyer-backfill counts differed from every SQL replica.
