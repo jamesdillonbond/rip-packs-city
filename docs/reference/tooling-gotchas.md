@@ -203,12 +203,13 @@ was moved here rather than deleted in favour of a pointer at `.env.example`.
 Rotation surfaces and which worker carries which secret: see the three-rotation-surfaces section of
 [brand-auth-proxy.md](brand-auth-proxy.md) and `RPC_DESIGN_SYSTEM.md` §11.
 
-## ⛔ On the Windows box, `npm run preflight` is the gate — four facts about running it here (2026-10-17)
+## ⛔ On the Windows box, `npm run preflight` is the gate — five facts about running it here (2026-10-17; fifth 11-10)
 
 - **Edge-only tests are not the gate.** On 10-17 two edge commits were pushed after `npx vitest run __tests__/*edge*` alone, and `main` went red on a guard OUTSIDE that glob: `addresses-are-never-folded-and-prefixed` (its "no edge function has a Solana surface" premise; `_shared/achievements.ts` keys base58 wallets). Run `npm run preflight`: it adds the ~145 tree-walking guards, which is where that one lives.
 - **Its tree-walking step could not run here until the 10-17 fix in `scripts/preflight.mjs`.** It spawned `npx.cmd vitest run <145 paths>` with `shell: true`, i.e. through cmd.exe, whose 8,191-char line cap the paths exceed: `The syntax of the command is incorrect.`, exit 255, and the step had run NOTHING. vitest steps now spawn `node node_modules/vitest/vitest.mjs …` with no shell (32,767-char process limit). ⚠ The tell was a step that took 0 s.
 - **A stale `node_modules` reads as "baseline" tsc errors.** The six `e2e/a11y.spec.ts` errors discounted all session as pre-existing were `@axe-core/playwright` missing locally (another session added the devDependency). After pulling a dependency change, run `npm ci` before reading `tsc`.
 - `pre-commit-and-preflight.test.ts`'s executable-bit arm fails on Windows by construction (no POSIX mode bits); git records `.githooks/*` as `100755` (`git ls-files -s .githooks`), so CI is unaffected.
+- **(2026-11-10) From PowerShell, ~88 shell-out tests failed locally while CI passed.** PowerShell's `bash` is `C:\Users\TDill\AppData\Local\Microsoft\WindowsApps\bash.exe` — the WSL stub, not Git Bash — and `sh` / `awk` are not on its PATH at all. `scripts/preflight.mjs` now puts Git's `usr\bin` + `bin` FIRST on PATH for every step (`posixFirstPath`, root derived from `git --exec-path`; this install is `ucrt64`, not `mingw64` — don't hardcode either). Pinned by `__tests__/preflight-puts-git-posix-tools-first-on-windows.test.ts`. ⚠ A BARE `npx vitest` does not get this — prepend `C:\Program Files\Git\usr\bin` by hand. ⚠ And run vitest from PowerShell, not Git Bash: there every file died `Cannot read properties of undefined (reading 'config')` (cause not isolated; a lowercase `c:/` cwd is the suspect).
 
 ## Windows / Git Bash patching rules (CRITICAL)
 

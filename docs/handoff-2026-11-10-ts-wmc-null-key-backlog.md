@@ -3,6 +3,8 @@
 **Source:** weekly data-quality & reconciliation sweep, 2026-11-10 (~9:20 AM PT, Cowork cloud, read-only). Digest: `claude/data-quality-sweep-2026-11-10.md` (project). Ledger: `docs/overnight/ledger.md` 2026-11-10 HEALTH-ONLY entry.
 
 > **STATUS 2026-11-10 3:10 PM PT (Claude Code, laptop):** item 1 — `0xc246d05ba775362e` cleared to 0 by 2:27 PM PT (not by the healer); 604 left, all `0xe68c3edbdc6c9376`, draining at ~20/h — no cap change (the 20 is sized under the access node's burst limit). Item 2 — **DONE 4:23 PM PT**: second slot `rpc-topshot-wmc-null-key-heal-backlog` (job 863, `:57`, same 20-read cap) runs only while > 100 rows are key-less — doubles the drain under a backlog, idle otherwise (migration `20261111002347`). Item 3 — **DONE**: `v_rpc_trust_health.topshot_wmc_null_edition_key_rows` (breach 1000), migration `20261110230853`. Correction: a watcher DID exist — `check_wmc_null_edition_key` in `rpc_ops_snapshot()` (09-29, total > 100) — but it is a session read, not an alarm.
+>
+> **STATUS 2026-11-10 6:14 PM PT:** 520 left (all `0xe68c3edbdc6c9376`); both slots green (`:57` filled 20 at 4:57 and 5:57, `:27` filled 14 at 5:27 — a few reads lost to the `:2x` 429 band). ETA to < 100 ≈ 11–12 h (early morning 11-11 PT), after which job 863 idles. Nothing left to do here; close this handoff once the count reads ~0.
 
 **Severity:** Needs attention — user-visible, contained, resolvable. Not a correctness bug; not a drain regression.
 
