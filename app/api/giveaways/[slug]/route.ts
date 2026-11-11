@@ -37,6 +37,7 @@ import { issueClaimNonce, verifyClaimProof, type ClaimProofInput } from "@/lib/g
 import { instantDeliveryEnabled, sendFromVault } from "@/lib/giveaways/vault"
 import type { DropRow } from "@/lib/giveaways/store"
 import { accountTopShotWallet, type AccountWallet } from "@/lib/giveaways/account-wallet"
+import { readPoolExtras } from "@/lib/giveaways/pool-extras"
 import { challengeOfDrop, hasCompletedChallenge } from "@/lib/giveaways/challenge-reward"
 
 // The vault send runs after the response (a claim answers in ~1 s; the send waits for a seal).
@@ -151,6 +152,15 @@ export async function GET(req: NextRequest, ctx: Ctx) {
     if (!view) return NextResponse.json({ error: "No such giveaway.", code: "not_found" }, { status: 404, headers: NO_STORE })
     // a claimer looking at an undelivered pack from a funded drop: (re)try the vault send
     if (view.me && view.me.moments.some((m) => !m.delivered)) sendPackSoon(drop, view.me.pack_no)
+    // Series-qualified set names, edition badges and special serials (2026-11-10).
+    // Display only: a failed read leaves the plain set name and draws no badge.
+    const extras = await readPoolExtras(supabaseAdmin, drop.collection_id, pool)
+    const extraFields = (id: string) => {
+      const x = extras.get(id)
+      return x ? { set_label: x.set_label, badges: x.badges, special_serial: x.special_serial } : {}
+    }
+    view.pool = view.pool.map((m) => ({ ...m, ...extraFields(m.moment_id) }))
+    if (view.me) view.me = { ...view.me, moments: view.me.moments.map((m) => ({ ...m, ...extraFields(m.moment_id) })) }
     // the one-click claim: the wallet already on this account. A failed read is
     // `account_wallet_error`, never "no wallet" — the page then offers the other paths.
     let account_wallet: AccountWallet | null = null

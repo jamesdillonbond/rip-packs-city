@@ -35,6 +35,8 @@ import { chaseMomentId, openedKey, packTotal, revealOrder, tierKey, topShotMomen
 import { usd } from "@/lib/giveaways/view-format"
 import { momentSubjectName } from "@/lib/entity-href"
 import { packTheme } from "@/lib/giveaways/pack-theme"
+import type { SpecialCat } from "@/lib/badges/glyphs"
+import MomentBadges from "./MomentBadges"
 import { createRevealSound, readSoundMuted, saveSoundMuted, type RevealSound } from "@/lib/giveaways/reveal-sound"
 
 export interface RevealCard {
@@ -44,6 +46,10 @@ export interface RevealCard {
   tier: string | null
   serial_number: number | null
   fmv_usd: number | null
+  /** The set with its series in front when the set recurs ("S1 Base Set"); falls back to set_name. */
+  set_label?: string | null
+  badges?: string[] | null
+  special_serial?: SpecialCat[] | null
 }
 
 const DISPLAY = "var(--font-display)"
@@ -513,7 +519,7 @@ function CardFace({ m, isChase, compact = false }: { m: RevealCard; isChase: boo
       >
         {momentSubjectName(m.player_name, null, m.set_name)}
       </div>
-      <div style={{ fontSize: 12, color: "var(--rpc-text-secondary)" }}>{m.set_name ?? "—"}</div>
+      <div style={{ fontSize: 12, color: "var(--rpc-text-secondary)" }}>{m.set_label ?? m.set_name ?? "—"}</div>
       <div
         style={{
           fontFamily: MONO,
@@ -525,6 +531,7 @@ function CardFace({ m, isChase, compact = false }: { m: RevealCard; isChase: boo
         {m.serial_number != null ? `#${m.serial_number} · ` : ""}
         {usd(m.fmv_usd)}
       </div>
+      <MomentBadges badges={m.badges} special={m.special_serial} compact={compact} />
     </div>
   )
 }

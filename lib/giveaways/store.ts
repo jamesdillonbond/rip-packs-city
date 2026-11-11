@@ -567,6 +567,10 @@ export interface PublicPoolMoment {
   serial_number: number | null
   fmv_usd: number | null
   image_url: string | null
+  /** Filled by the public route (lib/giveaways/pool-extras.ts): the set with its series when the set recurs, edition badges, special serial. Absent/null = not read. */
+  set_label?: string | null
+  badges?: string[] | null
+  special_serial?: ("first" | "jersey" | "perfect")[] | null
 }
 
 export interface MyPackMoment extends PublicPoolMoment {

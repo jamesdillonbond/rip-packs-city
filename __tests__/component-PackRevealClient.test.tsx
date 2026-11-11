@@ -105,6 +105,30 @@ describe("PackRevealClient", () => {
     expect(localStorage.getItem("rpc_giveaway_opened:fall-drop:4")).toBe("1")
   })
 
+  it("a revealed card shows its series-qualified set and badges when they apply (2026-11-10: the Origins' rookie badges)", () => {
+    renderPack([
+      { moment_id: "40", player_name: "Damian Lillard", set_name: "Run It Back: Origins", set_label: "'24-25 Run It Back: Origins", tier: "RARE", serial_number: 389, fmv_usd: 15.5, badges: ["Rookie of the Year", "Rookie Premiere", "Rookie Year"], special_serial: [] },
+    ])
+    fireEvent.click(screen.getByRole("button", { name: "Open pack" }))
+    act(() => vi.advanceTimersByTime(TEAR_MS))
+    fireEvent.click(screen.getByTestId("card-stack"))
+    act(() => vi.advanceTimersByTime(CHARGE_MS))
+    const card = screen.getAllByTestId("revealed-card")[0]
+    expect(within(card).getByText("'24-25 Run It Back: Origins")).toBeTruthy()
+    expect(within(card).getByText("Rookie of the Year")).toBeTruthy()
+    expect(within(card).getByText("Rookie Premiere")).toBeTruthy()
+  })
+
+  it("a card with no badges read draws no badge row", () => {
+    renderPack([{ moment_id: "41", player_name: "Damian Lillard", set_name: "Base Set", tier: "COMMON", serial_number: 9, fmv_usd: 0.2 }])
+    fireEvent.click(screen.getByRole("button", { name: "Open pack" }))
+    act(() => vi.advanceTimersByTime(TEAR_MS))
+    fireEvent.click(screen.getByTestId("card-stack"))
+    act(() => vi.advanceTimersByTime(CHARGE_MS))
+    expect(screen.queryByTestId("moment-badges")).toBeNull()
+    expect(within(screen.getAllByTestId("revealed-card")[0]).getByText("Base Set")).toBeTruthy()
+  })
+
   it("never states a pack total with an unpriced card in it, and a pack of equals has no chase", () => {
     renderPack([
       { moment_id: "1", player_name: "A", set_name: "S", tier: "COMMON", serial_number: 1, fmv_usd: 2 },

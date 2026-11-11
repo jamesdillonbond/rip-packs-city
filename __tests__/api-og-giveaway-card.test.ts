@@ -55,9 +55,12 @@ describe("giveaway link preview", () => {
   })
 
   it("series-qualified labels split one set into its series for the showcase (S1 Base and S4 Base are different pieces)", () => {
-    const labels = new Map([["k1", "S1 Base Set"], ["k2", "S4 Base Set"]])
-    const d = giveawayCardData(DROP, [{ ...P("1", "Base Set", 1), edition_key: "k1" }, { ...P("2", "Base Set", 0.24), edition_key: "k2" }], labels)
+    const x = (set_label: string, badges: string[] = []) => ({ set_label, badges, special_serial: [] as never[] })
+    const extras = new Map([["1", x("S1 Base Set")], ["2", x("S4 Base Set", ["Rookie Year"])]])
+    const d = giveawayCardData(DROP, [P("1", "Base Set", 1), P("2", "Base Set", 0.24)], extras)
     if (d.kind !== "ok") throw new Error("expected ok")
     expect(d.showcase.map((p) => p.label)).toEqual(["S1 Base Set", "S4 Base Set"])
+    // badges ride along to the card; a Moment with no extras read draws none
+    expect(d.showcase.map((p) => p.badges)).toEqual([[], ["Rookie Year"]])
   })
 })

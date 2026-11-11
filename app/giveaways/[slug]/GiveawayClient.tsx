@@ -11,6 +11,8 @@ import type { PublicDropView } from "@/lib/giveaways/store"
 import { accountKind, deliveryLabel, errorText, ptTime, statusLabel, usd, verifyCommand } from "@/lib/giveaways/view-format"
 import PackRevealClient from "./PackRevealClient"
 import PackWall from "./PackWall"
+import MomentBadges from "./MomentBadges"
+import type { SpecialCat } from "@/lib/badges/glyphs"
 import { valueBands } from "@/lib/giveaways/seal"
 import { momentSubjectName } from "@/lib/entity-href"
 
@@ -561,15 +563,29 @@ function Stat({ label, value }: { label: string; value: string }) {
   )
 }
 
-function MomentLine({ m }: { m: { player_name: string | null; set_name: string | null; tier: string | null; serial_number: number | null; fmv_usd: number | null } }) {
+function MomentLine({
+  m,
+}: {
+  m: {
+    player_name: string | null
+    set_name: string | null
+    set_label?: string | null
+    tier: string | null
+    serial_number: number | null
+    fmv_usd: number | null
+    badges?: string[] | null
+    special_serial?: SpecialCat[] | null
+  }
+}) {
   return (
     <>
       <div style={{ fontFamily: DISPLAY, fontSize: 16, textTransform: "uppercase" }}>{momentSubjectName(m.player_name, null, m.set_name)}</div>
-      <div style={{ fontSize: 12, color: "var(--rpc-text-secondary)" }}>{m.set_name ?? "—"}</div>
+      <div style={{ fontSize: 12, color: "var(--rpc-text-secondary)" }}>{m.set_label ?? m.set_name ?? "—"}</div>
       <div style={{ fontFamily: MONO, fontSize: 12, marginTop: 4, color: "var(--rpc-text-secondary)" }}>
         {(m.tier ?? "").toUpperCase()}
         {m.serial_number != null ? ` · #${m.serial_number}` : ""} · {usd(m.fmv_usd)}
       </div>
+      <MomentBadges badges={m.badges} special={m.special_serial} compact />
     </>
   )
 }

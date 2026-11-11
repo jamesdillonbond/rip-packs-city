@@ -21,7 +21,8 @@ import { ogImageDataUriSlots } from "@/lib/og/img-data"
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS, ogCacheHeaders, type OgFont } from "@/lib/og/brand-fonts"
 import { topShotMomentImage } from "@/lib/giveaways/reveal"
 import { tierAccent } from "@/lib/trophy/slab-style"
-import { SERIES_DISPLAY } from "@/lib/series-label"
+import { readPoolExtras, seriesSetLabel, type MomentExtras } from "@/lib/giveaways/pool-extras"
+import { badgeGlyphDataUri, specialGlyphDataUri, GOLD_HEX, type SpecialCat } from "@/lib/badges/glyphs"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -29,28 +30,9 @@ export const dynamic = "force-dynamic"
 const RED = "#E03A2F" // brand-exception: OG images cannot read CSS custom properties
 const SLUG = /^[a-z0-9][a-z0-9-]{2,59}$/
 
-type PoolPiece = { moment_id: string; set_name: string | null; label: string | null; tier: string | null; fmv_usd: number | null }
+type PoolPiece = { moment_id: string; set_name: string | null; label: string | null; tier: string | null; fmv_usd: number | null; badges: string[]; special: SpecialCat[] }
 
-/**
- * A recurring set (one minted in more than one series: Base Set, Metallic Gold
- * LE…) carries its series in front — "S1 Base Set", "S3 Metallic Gold LE"
- * (Trevor, 2026-11-10). A one-series set keeps its plain name. Top Shot series
- * decode through SERIES_DISPLAY (on-chain 0 = Series 1 — the 0↔1 footgun); an
- * unknown series gets no prefix rather than a guessed one.
- */
-export function seriesSetLabel(setName: string | null, series: number | null | undefined, recurring: boolean): string | null {
-  if (!setName) return null
-  if (!recurring || series == null) return setName
-  const disp = SERIES_DISPLAY[series]
-  if (!disp) return setName
-  let m = /^Series (\d{1,2})$/.exec(disp)
-  if (m) return `S${m[1]} ${setName}`
-  m = /^Series \d{2}(\d{2})-(\d{2})$/.exec(disp)
-  if (m) return `'${m[1]}-${m[2]} ${setName}`
-  m = /^Summer \d{2}(\d{2})$/.exec(disp)
-  if (m) return `Summer '${m[1]} ${setName}`
-  return setName
-}
+export { seriesSetLabel }
 export type GiveawayCardData =
   | { kind: "ok"; title: string; gated: boolean; packCount: number; perPack: number; player: string | null; showcase: PoolPiece[] }
   | { kind: "fallback" }
@@ -59,8 +41,8 @@ export type GiveawayCardData =
 export function giveawayCardData(
   drop: Record<string, unknown> | null,
   pool: Record<string, unknown>[],
-  /** edition_key → its series-qualified set label (seriesSetLabel); absent = the plain set name */
-  labels: Map<string, string> = new Map(),
+  /** moment_id → extras (lib/giveaways/pool-extras.ts); absent = plain set name, no badges */
+  extras: Map<string, MomentExtras> = new Map(),
 ): GiveawayCardData {
   if (!drop) return { kind: "fallback" }
   const status = String(drop.status ?? "")
@@ -74,7 +56,9 @@ export function giveawayCardData(
     .map((r) => ({
       moment_id: String(r.moment_id),
       set_name: typeof r.set_name === "string" ? r.set_name : null,
-      label: labels.get(String(r.edition_key ?? "")) ?? (typeof r.set_name === "string" ? r.set_name : null),
+      label: extras.get(String(r.moment_id))?.set_label ?? (typeof r.set_name === "string" ? r.set_name : null),
+      badges: extras.get(String(r.moment_id))?.badges ?? [],
+      special: extras.get(String(r.moment_id))?.special_serial ?? [],
       tier: typeof r.tier === "string" ? r.tier : null,
       fmv_usd: r.fmv_usd == null ? null : Number(r.fmv_usd),
     }))
@@ -133,39 +117,6 @@ function renderFallback(fonts?: OgFont[], display = "sans-serif") {
   )
 }
 
-/**
- * edition_key → series-qualified set label for the pool's editions. Bounded
- * reads; any read that fails leaves that edition on its plain set name (no
- * prefix is better than a guessed one).
- */
-async function seriesLabels(collectionId: string, pool: Record<string, unknown>[]): Promise<Map<string, string>> {
-  const out = new Map<string, string>()
-  const keys = [...new Set(pool.map((r) => String(r.edition_key ?? "")).filter(Boolean))].slice(0, 100)
-  if (!collectionId || keys.length === 0) return out
-  const eds = await boundedRead(
-    supabaseAdmin.from("editions").select("external_id, set_name, series").eq("collection_id", collectionId).in("external_id", keys),
-    "og/giveaway/editions",
-  )
-  if (eds.error) return out
-  const rows = (eds.data ?? []) as { external_id: string; set_name: string | null; series: number | null }[]
-  const recurring = new Map<string, boolean>()
-  for (const r of rows) {
-    if (!r.set_name || r.series == null) continue
-    const k = `${r.set_name}|${r.series}`
-    if (recurring.has(k)) continue
-    const other = await boundedRead(
-      supabaseAdmin.from("editions").select("external_id").eq("collection_id", collectionId).eq("set_name", r.set_name).neq("series", r.series).limit(1),
-      "og/giveaway/recurring-set",
-    )
-    if (!other.error) recurring.set(k, Array.isArray(other.data) && other.data.length > 0)
-  }
-  for (const r of rows) {
-    const label = seriesSetLabel(r.set_name, r.series, recurring.get(`${r.set_name}|${r.series}`) === true)
-    if (label) out.set(r.external_id, label)
-  }
-  return out
-}
-
 export async function renderGiveawayCard(slug: string): Promise<Response> {
   const fonts = await brandFonts()
   const fam = brandFamilies(fonts)
@@ -182,7 +133,7 @@ export async function renderGiveawayCard(slug: string): Promise<Response> {
     const poolRes = await boundedRead(
       supabaseAdmin
         .from("giveaway_pack_moments")
-        .select("moment_id, edition_key, player_name, set_name, tier, fmv_usd")
+        .select("moment_id, edition_key, player_name, set_name, tier, fmv_usd, serial_number")
         .eq("drop_id", (dropRes.data as { id: string }).id)
         .order("moment_id", { ascending: true })
         .limit(1000),
@@ -190,8 +141,17 @@ export async function renderGiveawayCard(slug: string): Promise<Response> {
     )
     if (poolRes.error) return renderFallback(fonts, fam.display)
     const poolRows = (poolRes.data ?? []) as Record<string, unknown>[]
-    const labels = await seriesLabels(String((dropRes.data as { collection_id?: unknown }).collection_id ?? ""), poolRows)
-    const card = giveawayCardData(dropRes.data as Record<string, unknown>, poolRows, labels)
+    const extras = await readPoolExtras(
+      supabaseAdmin,
+      String((dropRes.data as { collection_id?: unknown }).collection_id ?? ""),
+      poolRows.map((r) => ({
+        moment_id: String(r.moment_id ?? ""),
+        edition_key: typeof r.edition_key === "string" ? r.edition_key : null,
+        set_name: typeof r.set_name === "string" ? r.set_name : null,
+        serial_number: r.serial_number == null ? null : Number(r.serial_number),
+      })),
+    )
+    const card = giveawayCardData(dropRes.data as Record<string, unknown>, poolRows, extras)
     if (card.kind !== "ok") return renderFallback(fonts, fam.display)
 
     const uris = await ogImageDataUriSlots(card.showcase.map((p) => topShotMomentImage(p.moment_id, 600)))
@@ -238,7 +198,7 @@ export async function renderGiveawayCard(slug: string): Promise<Response> {
             </div>
           </div>
 
-          <div style={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "center", gap: 16, marginTop: 14 }}>
+          <div style={{ display: "flex", flex: 1, alignItems: "flex-start", justifyContent: "center", gap: 16, marginTop: 34 }}>
             {card.showcase.map((p, i) => (
               <div key={p.moment_id} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
                 <div
@@ -261,9 +221,26 @@ export async function renderGiveawayCard(slug: string): Promise<Response> {
                     <div style={{ display: "flex", color: "rgba(255,255,255,0.4)", fontSize: 16, fontFamily: fam.mono }}>ART UNAVAILABLE</div>
                   )}
                 </div>
-                <div style={{ display: "flex", fontSize: 18, fontFamily: fam.mono, color: i === 0 ? RED : "rgba(255,255,255,0.8)" }}>
-                  {(p.label ?? "").slice(0, 26)}
+                <div style={{ display: "flex", fontSize: (p.label ?? "").length > 22 ? 15 : 18, fontFamily: fam.mono, color: i === 0 ? RED : "rgba(255,255,255,0.8)" }}>
+                  {(p.label ?? "").slice(0, 30)}
                 </div>
+                {p.special.length + p.badges.length > 0 ? (
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {p.special.map((c) => (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img key={c} src={specialGlyphDataUri(c)} alt={c} width={26} height={26} />
+                    ))}
+                    {p.badges.slice(0, 4).map((t) => (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img key={t} src={badgeGlyphDataUri(t, GOLD_HEX)} alt={t} width={26} height={26} />
+                    ))}
+                  </div>
+                ) : null}
+                {p.badges.length > 0 ? (
+                  <div style={{ display: "flex", width: w + 10, justifyContent: "center", textAlign: "center", fontSize: 12, lineHeight: 1.3, fontFamily: fam.mono, color: GOLD_HEX }}>
+                    {p.badges.slice(0, 4).join(" · ").toUpperCase()}
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>

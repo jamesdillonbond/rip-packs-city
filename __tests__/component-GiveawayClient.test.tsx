@@ -240,6 +240,20 @@ describe("GiveawayClient — claiming", () => {
     expect(screen.getByText(/Balanced packs\./)).toBeTruthy()
   })
 
+  it("a Moment shows its series-qualified set and its badges when they apply (2026-11-10); none read draws none", async () => {
+    const pool = [
+      { ...BASE.pool[0], set_name: "Run It Back: Origins", set_label: "'24-25 Run It Back: Origins", badges: ["Rookie of the Year", "Rookie Year"], special_serial: ["first"] },
+      { ...BASE.pool[1], moment_id: "2", set_name: "Base Set", set_label: "S1 Base Set", badges: [], special_serial: [] },
+    ]
+    vi.stubGlobal("fetch", vi.fn(async () => json({ ...BASE, pool })))
+    render(<GiveawayClient slug="fall-drop" />)
+    expect(await screen.findByText("'24-25 Run It Back: Origins")).toBeTruthy()
+    expect(screen.getByText("S1 Base Set")).toBeTruthy()
+    expect(screen.getByText("Rookie of the Year")).toBeTruthy()
+    expect(screen.getByText("First Mint")).toBeTruthy()
+    expect(screen.getAllByTestId("moment-badges")).toHaveLength(1)
+  })
+
   it("a random drop keeps the flat list", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => json(BASE)))
     render(<GiveawayClient slug="fall-drop" />)
