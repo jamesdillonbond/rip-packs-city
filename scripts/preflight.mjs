@@ -148,12 +148,52 @@ export function changedPaths() {
   return [...new Set(lines.filter(Boolean))]
 }
 
+/**
+ * PURE. On Windows, the PATH every step runs with: Git's POSIX tools first.
+ *
+ * ⚠ 2026-11-10: from PowerShell, `bash` resolves to the WSL launcher stub
+ * (`…\WindowsApps\bash.exe`) and `sh`/`awk` resolve to nothing, so every test that
+ * shells out (sentinel/alarm workflow tests, the docs-only classifier, the pre-commit
+ * end-to-end, the giveaways verify command — 88 tests in 12 files) failed locally while
+ * CI was green. With Git's `usr/bin` + `bin` ahead of PATH the full suite passed
+ * (2,160 files). Off Windows, or with no Git root, PATH is returned unchanged.
+ *
+ * @param {string} envPath
+ * @param {{ platform?: string, gitRoot?: string | null, sep?: string }} [opts]
+ * @returns {string}
+ */
+export function posixFirstPath(envPath, { platform = process.platform, gitRoot = null, sep = ";" } = {}) {
+  if (platform !== "win32" || !gitRoot) return envPath
+  const root = gitRoot.replace(/[\\/]+$/, "")
+  const front = [`${root}\\usr\\bin`, `${root}\\bin`]
+  const rest = envPath.split(sep).filter((p) => p && !front.some((f) => f.toLowerCase() === p.replace(/[\\/]+$/, "").toLowerCase()))
+  return [...front, ...rest].join(sep)
+}
+
+/**
+ * Git's install root, from `git --exec-path` (`<root>/<toolchain>/libexec/git-core`); null if not derivable.
+ * The toolchain folder varies by install — `mingw64` on older ones, `ucrt64` on this laptop (11-10).
+ */
+function gitRootOnWindows() {
+  if (process.platform !== "win32") return null
+  try {
+    const exec = git(["--exec-path"]).replace(/\//g, "\\")
+    const m = exec.match(/^(.*)\\[^\\]+\\libexec\\git-core$/i)
+    return m ? m[1] : null
+  } catch {
+    return null
+  }
+}
+
+const GIT_ROOT = gitRootOnWindows()
+
 function step(label, cmd, args, env = {}, opts = {}) {
   const t = Date.now()
   console.log(`\n▶ ${label}`)
+  const pathKey = Object.keys(process.env).find((k) => k.toUpperCase() === "PATH") ?? "PATH"
   const r = spawnSync(cmd, args, {
     stdio: "inherit",
-    env: { ...process.env, ...env },
+    env: { ...process.env, [pathKey]: posixFirstPath(process.env[pathKey] ?? "", { gitRoot: GIT_ROOT }), ...env },
     shell: process.platform === "win32" && !opts.noShell,
   })
   const s = ((Date.now() - t) / 1000).toFixed(0)
