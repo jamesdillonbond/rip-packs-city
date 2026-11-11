@@ -34,11 +34,12 @@ This file is written as the pass goes (draft at 1:55 PM PT, updated 3:00 PM PT);
 ## Queued for Trevor / Claude Code
 
 - **DROP `mv_panini_squeeze_retired_20261110`** — no dependents, no refresher; kept one day as the revert path.
-- **DROP `idx_panini_serials_owner_lower_incl`** (344 MB) once its `idx_scan` stays at 260,777 (frozen since 12:02 PM PT 11-10); the 7:05 PM check-in reads it.
+- ⚠ **Do NOT drop `idx_panini_serials_owner_lower_incl` on the frozen-counter premise — it did not stay frozen:** 7:05 PM PT read 260,820 (+45 since noon, last scan 6:38 PM PT), while the new `_cover` (472 MB, superset INCLUDE) has 6 scans, last 12:12 PM. The planner still prefers the smaller `_incl` for a frequent per-owner read (the 10-15 rotation-targets shape). Dropping it saves 345 MB but sends those reads to a 1.37× larger index — a trade-off to decide, not a cleanup.
 - **#247 Candy census re-key** (census owner): 1,697 keys / 133,366 cards / 8,097 wallets split across four key schemes for one card family.
 - **Confidence-only changes in `refresh_wmc_fmv_changed`** (pinned 10-min lane): drops editions whose price did not move, so a confidence change waits ≥ 6 h for the hourly backstop (1:33 PM run fixed 17,864 rows). Options: carry confidence in the fast lane, or an incremental backstop window + a daily full sweep. Internal field, so low user impact.
 - **`populate_wmc_fmv_from_snapshots` NULL-only path** takes `LIMIT p_limit` before the priced join (same class as the image/confidence fixes). Nothing is stuck today (0 priceable NULL rows in any collection), and the obvious rewrite would probe all 1.33M unpriceable Candy rows per call — revisit when Candy editions start getting `fmv_snapshots`.
 - ✅ #245 closed 2:25 PM PT (resume proven end to end).
+- ✅ #242 closed 7:10 PM PT (25/25 :53 runs ok in its 24 h window, max 23 s).
 - **Watch `/api/profile/top-moments`** after `20261110221809`: the first call after the replace read 23.7 s cold for the 47k-row account (1.1 s right after). A real budget miss in Vercel logs is the signal to look at the cold path (wallet leg `editions` probes, 190k buffers).
 - ✅ **2:05 → 4:05 PM pgss window read (4:50 PM PT):** the buyer-backfill counts were NOT fixed by the 1:25 PM indexes — through PostgREST they still seq-scan `sales_2023..2025` (176k blocks / 14 s; 73k / 5–9 s) although every SQL replica uses the indexes at ~100 buffers. Routed around: `topshot_buyer_backfill_window_counts` (`20261111004919`) + route `readWindowCounts()` (`d63724eea`). Verify at 5:40 PM PT. **Open question for a later session:** why PostgREST's plan differs from `EXPLAIN (GENERIC_PLAN)` on the same text — the same shape may be costing other `head:true` counts on partitioned `sales`.
 

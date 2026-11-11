@@ -17,3 +17,5 @@
 5. **First-touch attribution.** Verified: 2 of 2 signups since the 11-09 deploy have `user_profiles.first_touch_*`. Nothing to watch; listed so nobody re-checks it.
 
 Ledger: the 11-09 entries "signup-wave remediation roll-up", "thread close-out", "a 1-of-1 card is keyed as its own edition".
+
+**↳ Item 2 done — 2026-11-10 ~7:10 PM PT (Claude Code cloud):** #242 exit met (25/25 :53 runs 6:53 PM PT 11-09 → 6:53 PM PT 11-10 ok, 0 timeouts, max 23.0 s); register #242 flipped to ✅ RESOLVED, index regenerated (diff balanced, 8 → 7 partial).
