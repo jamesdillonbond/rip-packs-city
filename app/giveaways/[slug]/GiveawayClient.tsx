@@ -94,8 +94,6 @@ export default function GiveawayClient({ slug }: { slug: string }) {
   const [destination, setDestination] = useState<string | null>(null)
   const [connecting, setConnecting] = useState(false)
   const [proof, setProof] = useState<ClaimProof | null>(null)
-  // the claimer chose "send it somewhere else" over the wallet already on their account
-  const [otherDestination, setOtherDestination] = useState(false)
   // prefetched so the click opens the wallet picker with no network wait in between
   const nonceRef = useRef<ClaimNonce | null>(null)
 
@@ -198,7 +196,9 @@ export default function GiveawayClient({ slug }: { slug: string }) {
   }, [forgetWallet])
 
   const accountWallet = load.kind === "ok" ? (load.view.account_wallet ?? null) : null
-  const useAccountWallet = accountWallet != null && !otherDestination && !flowWallet
+  // ⛔ No "send it somewhere else" (Trevor, 2026-11-10): an account with a Top
+  // Shot wallet claims to THAT wallet only; the route refuses any other path.
+  const useAccountWallet = accountWallet != null
 
   const claim = useCallback(async () => {
     setClaiming(true)
@@ -338,9 +338,6 @@ export default function GiveawayClient({ slug }: { slug: string }) {
                     {accountWallet.username ? `@${accountWallet.username}` : "Your saved wallet"}
                   </div>
                   <div style={{ ...muted, fontFamily: MONO, wordBreak: "break-all" }}>{accountWallet.address}</div>
-                  <button type="button" onClick={() => setOtherDestination(true)} style={{ ...linkButton, marginTop: 6 }}>
-                    Send it somewhere else
-                  </button>
                 </div>
               ) : flowWallet && accounts ? (
                 <fieldset style={{ border: "1px solid var(--rpc-border)", borderRadius: 6, padding: "8px 10px", margin: 0 }}>

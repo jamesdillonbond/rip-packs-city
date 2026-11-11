@@ -346,6 +346,25 @@ describe("one-click claim with the wallet already on the account (Trevor, 2026-1
     expect(store.claimPack).not.toHaveBeenCalled()
   })
 
+  it("an account WITH a Top Shot wallet cannot claim anywhere else — username and Flow Wallet paths are refused, nothing claimed", async () => {
+    acctWallet.mockResolvedValue({ wallet: { address: "0x00000000000000cc", username: "Carol" } })
+    const a = await publicRoute.POST(post(url, { username: "mallory", agree: true }), slugCtx("test-drop"))
+    expect(a.status).toBe(400)
+    expect((await a.json()).code).toBe("use_account_wallet")
+    const b = await publicRoute.POST(post(url, { proof: { address: "0x00000000000000ee" }, destination: "0x00000000000000ee", agree: true }), slugCtx("test-drop"))
+    expect((await b.json()).code).toBe("use_account_wallet")
+    expect(resolve).not.toHaveBeenCalled()
+    expect(verifyProof).not.toHaveBeenCalled()
+    expect(store.claimPack).not.toHaveBeenCalled()
+  })
+
+  it("a failed account-wallet read refuses the other paths too (classified error) — never a pass", async () => {
+    acctWallet.mockRejectedValue({ message: "canceling statement due to statement timeout", code: "57014" })
+    const r = await publicRoute.POST(post(url, { username: "mallory", agree: true }), slugCtx("test-drop"))
+    expect(r.status).toBe(503)
+    expect(store.claimPack).not.toHaveBeenCalled()
+  })
+
   it("POST { account: true }: needs the agreement, a signed-in user and an open drop", async () => {
     expect((await publicRoute.POST(post(url, { account: true }), slugCtx("test-drop"))).status).toBe(400)
     store.getDrop.mockResolvedValueOnce({ ...DROP, status: "closed" })

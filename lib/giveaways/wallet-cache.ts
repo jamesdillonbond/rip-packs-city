@@ -56,7 +56,7 @@ export async function recordDeliveredInWalletCache(
     if (!FLOW_ADDRESS.test(w) || !d.m.edition_key) continue
     byWallet.set(w, [...(byWallet.get(w) ?? []), d])
   }
-  const sb = db as any
+  const sb = db
   for (const [wallet, items] of byWallet) {
     try {
       const ids = items.map((d) => d.m.moment_id)

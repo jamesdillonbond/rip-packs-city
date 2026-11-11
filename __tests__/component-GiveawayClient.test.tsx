@@ -177,13 +177,15 @@ describe("GiveawayClient — claiming", () => {
     expect(JSON.parse((post[1] as RequestInit).body as string)).toEqual({ account: true, agree: true })
   })
 
-  it("'Send it somewhere else' brings back the username and Flow Wallet paths", async () => {
+  // ⚠ INVERTED 2026-11-10 (Trevor: users "should not have this option at all"):
+  // there is no "Send it somewhere else" — the account's own wallet is the only destination.
+  it("an account with a Top Shot wallet gets NO other destination: no 'Send it somewhere else', no username box, no Flow Wallet", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => json({ ...BASE, account_wallet: { address: "0x00000000000000cc", username: null } })))
     render(<GiveawayClient slug="fall-drop" />)
     expect(await screen.findByText("Your saved wallet")).toBeTruthy()
-    fireEvent.click(screen.getByRole("button", { name: /send it somewhere else/i }))
-    expect(screen.getByPlaceholderText("username")).toBeTruthy()
-    expect(screen.getByRole("button", { name: /claim with flow wallet/i })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: /send it somewhere else/i })).toBeNull()
+    expect(screen.queryByPlaceholderText("username")).toBeNull()
+    expect(screen.queryByRole("button", { name: /claim with flow wallet/i })).toBeNull()
   })
 
   it("a successful claim posts the username + agreement and reloads into 'Your pack'", async () => {

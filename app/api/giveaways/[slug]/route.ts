@@ -225,6 +225,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       return NextResponse.json({ error: "No such giveaway.", code: "not_found" }, { status: 404, headers: NO_STORE })
     }
     if (drop.status !== "open") return claimOutcomeResponse("not_open", null)
+    const refused = await refuseOtherDestination(user.id, drop)
+    if (refused) return refused
 
     const resolved = await resolveTopShotUsernameCacheAware(supabaseAdmin, username)
     if (!resolved.found) {
@@ -247,6 +249,21 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   } catch (err) {
     return apiErrorResponse(err, "api/giveaways/[slug] POST", "We couldn't record your claim. Try again in a moment.")
   }
+}
+
+/**
+ * ⛔ No other destination for an account that HAS a Top Shot wallet (Trevor,
+ * 2026-11-10: users "should not have this option at all"): the username and
+ * Flow Wallet paths answer this instead of claiming. A failed read THROWS to
+ * the caller's classified error — never a pass to the other paths.
+ */
+async function refuseOtherDestination(userId: string, drop: DropRow): Promise<NextResponse | null> {
+  const own = await accountTopShotWallet(supabaseAdmin as never, userId, drop.collection_id)
+  if (!own.wallet) return null
+  return NextResponse.json(
+    { error: "Your pack goes to the Top Shot account on your Rip Packs City profile. Reload the page and claim.", code: "use_account_wallet" },
+    { status: 400, headers: NO_STORE },
+  )
 }
 
 /**
@@ -305,6 +322,8 @@ async function claimWithWallet(req: NextRequest, slug: string, userId: string, b
       return NextResponse.json({ error: "No such giveaway.", code: "not_found" }, { status: 404, headers: NO_STORE })
     }
     if (drop.status !== "open") return claimOutcomeResponse("not_open", null)
+    const refused = await refuseOtherDestination(userId, drop)
+    if (refused) return refused
 
     const proven = await provenWallet(req, userId, body.proof)
     if ("res" in proven) return proven.res
