@@ -4,10 +4,11 @@ import { describe, it, expect, vi } from "vitest"
 const h = vi.hoisted(() => ({ drop: null as unknown, pool: [] as unknown[], dropErr: null as unknown, poolErr: null as unknown }))
 vi.mock("@/lib/supabase", () => {
   const q = (table: string) => {
-    const self: any = {
+    type Cb = (v: unknown) => unknown
+    const self: Record<string, unknown> = {
       select: () => self, eq: () => self, order: () => self, limit: () => self,
       maybeSingle: () => Promise.resolve({ data: h.drop, error: h.dropErr }),
-      then: (r: any, j: any) => Promise.resolve({ data: table === "giveaway_pack_moments" ? h.pool : null, error: h.poolErr }).then(r, j),
+      then: (r: Cb, j: Cb) => Promise.resolve({ data: table === "giveaway_pack_moments" ? h.pool : null, error: h.poolErr }).then(r, j),
     }
     return self
   }
@@ -15,7 +16,7 @@ vi.mock("@/lib/supabase", () => {
 })
 vi.mock("@/lib/og/img-data", () => ({ ogImageDataUriSlots: async (u: unknown[]) => u.map(() => null) }))
 
-import { giveawayCardData, packLine, seriesSetLabel } from "@/app/api/og/giveaway/[slug]/route"
+import { giveawayCardData, packLine, seriesSetLabel, GET } from "@/app/api/og/giveaway/[slug]/route"
 
 const DROP = { id: "d", title: "Dame Time Challenge Reward Pack", status: "open", pack_count: 27, moments_per_pack: 2, eligible_challenge_id: "c" }
 const P = (id: string, set: string, fmv: number) => ({ moment_id: id, player_name: "Damian Lillard", set_name: set, tier: "COMMON", fmv_usd: fmv })
@@ -63,4 +64,29 @@ describe("giveaway link preview", () => {
     // badges ride along to the card; a Moment with no extras read draws none
     expect(d.showcase.map((p) => p.badges)).toEqual([[], ["Rookie Year"]])
   })
+
+  it("GET renders a PNG for a live drop, and the neutral card for a bad slug, a missing drop or a failed read — never an error page", async () => {
+    const png = async (slug: string) => {
+      const res = await GET(new Request(`http://x/api/og/giveaway/${slug}`) as never, { params: Promise.resolve({ slug }) })
+      expect(res.status).toBe(200)
+      expect(res.headers.get("content-type")).toContain("image/png")
+      return new Uint8Array(await res.arrayBuffer()).length
+    }
+    h.drop = DROP
+    h.pool = [P("1", "Run It Back: Origins", 15.5), P("2", "Base Set", 0.24)]
+    const full = await png("dame-time-challenge-reward-pack")
+    h.drop = null
+    const missing = await png("dame-time-challenge-reward-pack")
+    const bad = await png("BAD SLUG!")
+    h.drop = DROP
+    h.dropErr = { message: "timeout" }
+    const failed = await png("dame-time-challenge-reward-pack")
+    h.dropErr = null
+    h.poolErr = { message: "timeout" }
+    const poolFailed = await png("dame-time-challenge-reward-pack")
+    h.poolErr = null
+    // the fallback is one image whatever the reason; the live card is a different one
+    expect(new Set([missing, bad, failed, poolFailed]).size).toBe(1)
+    expect(full).not.toBe(missing)
+  }, 60_000)
 })
