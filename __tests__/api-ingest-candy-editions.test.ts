@@ -12,7 +12,10 @@ const st = vi.hoisted(() => ({
   ready: true,
   pages: [] as any[][],
   edUpsert: { data: [{ id: "e1" }] as { id: string }[] | null, error: null as any },
-  wmcUpsert: { data: [{ moment_id: "m1" }], error: null as any },
+  wmcUpsert: { data: [{ moment_id: "m1" }] as { moment_id: string }[] | null, error: null as any },
+  // Answers served BEFORE wmcUpsert, one per call (lock-retry cases).
+  wmcQueue: [] as { data: any; error: any }[],
+  wmcCalls: 0,
   packUpsert: { data: [{ token_mint: "p1" }] as { token_mint: string }[] | null, error: null as any },
   jerseyUpsert: { data: [{ external_id: "ed1" }] as { external_id: string }[] | null, error: null as any },
   paginateThrows: false,
@@ -78,7 +81,11 @@ vi.mock("@/lib/supabase", () => ({
       return {
         upsert: (rows: any[]) => ({
           select: async () => {
-            if (table === "wallet_moments_cache") st.wmcRows.push(...rows)
+            if (table === "wallet_moments_cache") {
+              st.wmcRows.push(...rows)
+              st.wmcCalls++
+              if (st.wmcQueue.length) return st.wmcQueue.shift()!
+            }
             return table === "editions" ? st.edUpsert : table === "candy_packs" ? st.packUpsert : st.wmcUpsert
           },
         }),
@@ -86,6 +93,15 @@ vi.mock("@/lib/supabase", () => ({
     },
   },
 }))
+// Keep the real retry logic but never really sleep between attempts.
+vi.mock("@/lib/supabase/lock-retry", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/supabase/lock-retry")>()
+  return {
+    ...actual,
+    withLockRetry: (op: any, budget: any, opts: any = {}) =>
+      actual.withLockRetry(op, budget, { ...opts, sleep: async () => {} }),
+  }
+})
 vi.mock("@/lib/chains/solana/das", () => ({
   paginateGroup: async (addr: string, cb: (items: any[]) => Promise<void>) => {
     st.walkedAddrs.push(addr)
@@ -129,6 +145,8 @@ beforeEach(() => {
   st.pages = [[{ kind: "icon", ed: "ed1", w: "w1", m: "m1" }, { kind: "burnt" }, { kind: "pack" }]]
   st.edUpsert = { data: [{ id: "e1" }], error: null }
   st.wmcUpsert = { data: [{ moment_id: "m1" }], error: null }
+  st.wmcQueue = []
+  st.wmcCalls = 0
   st.packUpsert = { data: [{ token_mint: "p1" }], error: null }
   st.jerseyUpsert = { data: [{ external_id: "ed1" }], error: null }
   st.paginateThrows = false
@@ -235,6 +253,43 @@ describe("candy-editions — the after() DAS walk", () => {
     // upsert just failed; the serial was dropped before it could be counted.
     expect(run.p_extra.editions_distinct).toBe(1)
     expect(run.p_extra.serials_distinct).toBe(0)
+  })
+
+  // 2026-11-11: the 01:10 UTC tick lost one wmc chunk to a lock timeout two days
+  // running (the hourly wmc-fmv-populate Candy step held the rows). A lock-timeout
+  // chunk is now retried; the run is ok only because the retry LANDED.
+  it("retries a wmc chunk that hit a lock timeout; the run is ok once it lands", async () => {
+    st.wmcQueue = [{ data: null, error: { message: "canceling statement due to lock timeout", code: "55P03" } }]
+    await accept()
+    await st.captured!()
+    const run = terminal()
+    expect(st.wmcCalls).toBe(2)
+    expect(run.p_ok).toBe(true)
+    expect(run.p_error).toBeNull()
+    expect(run.p_extra.write_errors).toBe(0)
+    expect(run.p_extra.serial_rows_touched).toBe(1)
+    expect(run.p_extra.wmc_lock_retries).toBe(1)
+    expect(run.p_extra.wmc_lock_recovered).toBe(1)
+  })
+
+  it("a wmc chunk whose lock never clears still FAILS the run row", async () => {
+    st.wmcUpsert = { data: null, error: { message: "canceling statement due to lock timeout", code: "55P03" } }
+    await accept()
+    await st.captured!()
+    const run = terminal()
+    expect(st.wmcCalls).toBe(4) // first attempt + 3 retries
+    expect(run.p_ok).toBe(false)
+    expect(String(run.p_error)).toContain("wallet_moments_cache: canceling statement due to lock timeout")
+    expect(run.p_extra.wmc_lock_recovered).toBe(0)
+  })
+
+  it("a non-lock wmc error is not retried", async () => {
+    st.wmcUpsert = { data: null, error: { message: "value too long", code: "22001" } }
+    await accept()
+    await st.captured!()
+    expect(st.wmcCalls).toBe(1)
+    expect(terminal().p_ok).toBe(false)
+    expect(terminal().p_extra.wmc_lock_retries).toBe(0)
   })
 
   it("logs an ok:false run when the DAS walk throws", async () => {

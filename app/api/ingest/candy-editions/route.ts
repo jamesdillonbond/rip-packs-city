@@ -27,6 +27,7 @@ import {
   CANDY_MLB_UUID,
 } from "@/lib/chains/solana/normalize"
 import { bearerMatches } from "@/lib/auth/bearer-secret"
+import { newLockRetryBudget, withLockRetry } from "@/lib/supabase/lock-retry"
 
 export const dynamic = "force-dynamic"
 // 800 is the Vercel Pro hard cap — anything above it sends the DEPLOY to ERROR
@@ -206,6 +207,8 @@ async function handleIngest(req: NextRequest) {
     // write is non-fatal to the WALK (later chunks and tables still run) but it
     // is not a success — the run row now says so, naming the table.
     const writeErrors: string[] = []
+    // wmc chunks retried on a row-lock timeout/deadlock, and how many then landed.
+    const wmcLockRetry = newLockRetryBudget()
     // DISTINCT catalog counts. editionsWritten/serialsWritten below are
     // upsert ROWS TOUCHED across DAS page-chunks — the same 125 editions are
     // re-upserted on every page, so that counter read 3,108 for a 125-edition
@@ -339,10 +342,17 @@ async function handleIngest(req: NextRequest) {
         const writeRows = attributed.rows
         for (let i = 0; i < writeRows.length; i += UPSERT_CHUNK) {
           const chunk = writeRows.slice(i, i + UPSERT_CHUNK)
-          const { data, error } = await (supabaseAdmin as any)
-            .from("wallet_moments_cache")
-            .upsert(chunk, { onConflict: "wallet_address,collection_id,moment_id" })
-            .select("moment_id")
+          // Lock-contention retry (2026-11-11): the hourly wmc-fmv-populate Candy
+          // step holds these rows for up to ~42 s and cost the 01:10 UTC tick one
+          // chunk two days running. See lib/supabase/lock-retry.ts.
+          const { data, error } = await withLockRetry<{ moment_id: string }[]>(
+            () =>
+              (supabaseAdmin as any)
+                .from("wallet_moments_cache")
+                .upsert(chunk, { onConflict: "wallet_address,collection_id,moment_id" })
+                .select("moment_id"),
+            wmcLockRetry,
+          )
           if (error) {
             console.log(`[${PIPELINE_NAME}] wmc upsert err: ${error.message}`)
             writeErrors.push(`wallet_moments_cache: ${error.message}`)
@@ -429,6 +439,8 @@ async function handleIngest(req: NextRequest) {
         escrow_remapped: escrowRemapped,
         escrow_unmatched: escrowUnmatched,
         escrow_remap_error: escrowRemapError,
+        wmc_lock_retries: wmcLockRetry.retries,
+        wmc_lock_recovered: wmcLockRetry.recovered,
         sets: perSet,
         other_set_packs_skipped: otherSetPacksSkipped,
         catalog_link: linkResult,
