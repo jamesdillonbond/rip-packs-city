@@ -40,7 +40,7 @@ This file is written as the pass goes (draft at 1:55 PM PT, updated 3:00 PM PT);
 - **`populate_wmc_fmv_from_snapshots` NULL-only path** takes `LIMIT p_limit` before the priced join (same class as the image/confidence fixes). Nothing is stuck today (0 priceable NULL rows in any collection), and the obvious rewrite would probe all 1.33M unpriceable Candy rows per call — revisit when Candy editions start getting `fmv_snapshots`.
 - ✅ #245 closed 2:25 PM PT (resume proven end to end).
 - **Watch `/api/profile/top-moments`** after `20261110221809`: the first call after the replace read 23.7 s cold for the 47k-row account (1.1 s right after). A real budget miss in Vercel logs is the signal to look at the cold path (wallet leg `editions` probes, 190k buffers).
-- **Read the 2:05 → 4:05 PM pgss window**: one buyer-backfill `sales` count (HIST window, payer NOT NULL) read 51,756 blocks at ~2:10 PM although the same statement under a generic plan is 102 buffers — confirm per-call cost there is now ~100.
+- ✅ **2:05 → 4:05 PM pgss window read (4:50 PM PT):** the buyer-backfill counts were NOT fixed by the 1:25 PM indexes — through PostgREST they still seq-scan `sales_2023..2025` (176k blocks / 14 s; 73k / 5–9 s) although every SQL replica uses the indexes at ~100 buffers. Routed around: `topshot_buyer_backfill_window_counts` (`20261111004919`) + route `readWindowCounts()` (`d63724eea`). Verify at 5:40 PM PT. **Open question for a later session:** why PostgREST's plan differs from `EXPLAIN (GENERIC_PLAN)` on the same text — the same shape may be costing other `head:true` counts on partitioned `sales`.
 
 ## Sentinel trust arms (WARN 11-10 2:04 PM PT)
 
