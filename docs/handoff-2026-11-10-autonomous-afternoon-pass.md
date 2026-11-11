@@ -1,12 +1,18 @@
 # Handoff — 2026-11-10 autonomous afternoon pass (Claude Code cloud)
 
 Trevor: "Can you work autonomously for the next 10 hours? … Fix any issues you encounter." Started ~11:50 AM PT.
-This file is written as the pass goes (draft at 1:55 PM PT, updated 3:00 PM PT); the ledger has every entry with its revert path.
+This file is written as the pass goes (draft 1:55 PM PT; CLOSED 9:35 PM PT); the ledger has every entry with its revert path.
 
 ## Shipped (all on `main`, all in the ledger, newest first)
 
 | PT | What | Measured effect |
 |---|---|---|
+| ~7:55 PM | Linked Panini walk skips a `not_found` username for 24 h (`20261111034703`) | `mempheattle` stops failing every 2 h run |
+| ~7:50 PM | `pack_table_rows` live-ask lookup is one key (`20261111032656`) | /api/packs Top Shot page 58k → 28k buffers; live asks reconcile 2,031/951/1 |
+| ~6:30 PM | `sales_2026`/`2027` `ingested_at` index (`20261111023056`) | Sentinel 2 h ingest count 52k blocks / 3.5 s → 62 / 26 ms |
+| ~6:15 PM | `fmv_backfill_candidates` prefilter + 90 s timeout (`20261111014609`, pinned) | 705k → 533k buffers; cold 11.6 s vs the 60 s it died at |
+| ~5:05 PM | Top Shot buyer-backfill counts through `topshot_buyer_backfill_window_counts` (`20261111004919`) | forward run ~20 s → 8.7 s; no more seq scans of `sales_2023..2025` |
+| ~2:55 PM | Candy marketplace silence re-dated (`20261110225146`); `sol_usd_daily` applied by Cowork (`20261110230100`) | revival arm 1 → 0; 581 parked Candy sales priced by 7:20 PM PT |
 | ~2:55 PM | **Sentinel trust arms (WARN 2:04 PM PT)** — see the section below | 2 staged for Cowork, 2 explained |
 | ~2:45 PM | Candy sales indexers price past-day sales from `public.sol_usd_daily` before CoinGecko (`primeSolUsdFromTable`; table staged for Cowork) | Fails soft until applied; then 2,528 `no_sol_rate` sales (667.7 SOL) drain ~300/run |
 | ~2:27 PM | Panini sale-feed status refresh hourly; view window 75 → 135 min (`20261110222110`) | Half of a 5.2M-row index scan every 30 min (22–30 s/run) |
@@ -33,15 +39,20 @@ This file is written as the pass goes (draft at 1:55 PM PT, updated 3:00 PM PT);
 
 ## Queued for Trevor / Claude Code
 
-- **DROP `mv_panini_squeeze_retired_20261110`** — no dependents, no refresher; kept one day as the revert path.
-- ⚠ **Do NOT drop `idx_panini_serials_owner_lower_incl` on the frozen-counter premise — it did not stay frozen:** 7:05 PM PT read 260,820 (+45 since noon, last scan 6:38 PM PT), while the new `_cover` (472 MB, superset INCLUDE) has 6 scans, last 12:12 PM. The planner still prefers the smaller `_incl` for a frequent per-owner read (the 10-15 rotation-targets shape). Dropping it saves 345 MB but sends those reads to a 1.37× larger index — a trade-off to decide, not a cleanup.
-- **#247 Candy census re-key** (census owner): 1,697 keys / 133,366 cards / 8,097 wallets split across four key schemes for one card family.
-- **Confidence-only changes in `refresh_wmc_fmv_changed`** (pinned 10-min lane): drops editions whose price did not move, so a confidence change waits ≥ 6 h for the hourly backstop (1:33 PM run fixed 17,864 rows). Options: carry confidence in the fast lane, or an incremental backstop window + a daily full sweep. Internal field, so low user impact.
-- **`populate_wmc_fmv_from_snapshots` NULL-only path** takes `LIMIT p_limit` before the priced join (same class as the image/confidence fixes). Nothing is stuck today (0 priceable NULL rows in any collection), and the obvious rewrite would probe all 1.33M unpriceable Candy rows per call — revisit when Candy editions start getting `fmv_snapshots`.
-- ✅ #245 closed 2:25 PM PT (resume proven end to end).
-- ✅ #242 closed 7:10 PM PT (25/25 :53 runs ok in its 24 h window, max 23 s).
-- **Watch `/api/profile/top-moments`** after `20261110221809`: the first call after the replace read 23.7 s cold for the 47k-row account (1.1 s right after). A real budget miss in Vercel logs is the signal to look at the cold path (wallet leg `editions` probes, 190k buffers).
-- ✅ **2:05 → 4:05 PM pgss window read (4:50 PM PT):** the buyer-backfill counts were NOT fixed by the 1:25 PM indexes — through PostgREST they still seq-scan `sales_2023..2025` (176k blocks / 14 s; 73k / 5–9 s) although every SQL replica uses the indexes at ~100 buffers. Routed around: `topshot_buyer_backfill_window_counts` (`20261111004919`) + route `readWindowCounts()` (`d63724eea`). Verify at 5:40 PM PT. **Open question for a later session:** why PostgREST's plan differs from `EXPLAIN (GENERIC_PLAN)` on the same text — the same shape may be costing other `head:true` counts on partitioned `sales`.
+1. **[P2, Claude Code, 0 nights] Confirm `fmv-backfill` on its next real run.** The 60 → 90 s change (`20261111014609`) is proven only by a direct call (11.6 s cold); no external run has happened since 4:35 PM PT. Close the 0112Z filing's item 1 when a run reads `ok=true`.
+2. **[P2, census owner (Claude Code/Cowork), 1 night] #246 integrity arm went UP, as expected: 8,159 → 11,548.** The census created 4,126 Candy editions 9:00–9:06 PM PT (real `c:<collection>:<card>` keys, e.g. 2025 MLB Gems, 2022 Football Icons), 4,079 without a tier; orphan cleaners are deleting the old name-only rows (500/run cap hit at 9:22 PM PT). Watch that tier/circulation hydration catches up; a rise that does not fall back within a day is a hydration gap, not churn.
+3. **[P3, Claude Code, 0 nights] #247 Candy census re-key** (census owner): 1,697 keys / 133,366 cards / 8,097 wallets split across four key schemes for one card family.
+4. **[P3, Claude Code, 0 nights] Confidence-only changes in `refresh_wmc_fmv_changed`** (pinned 10-min lane): an edition whose price did not move waits ≥ 1 h for the hourly backstop, which is why `resync_stuck_wmc_fmv` runs 2–5 min and fixes 1.5k–23k rows every hour. Options: carry confidence in the fast lane, or an incremental backstop window + a daily full sweep.
+5. **[P3, Trevor decides, 0 nights] `idx_panini_serials_owner_lower_incl` (345 MB) is NOT idle** (260,820 scans, +45 since noon, last 6:38 PM PT) while the superset `_cover` (472 MB) has 6. Dropping `_incl` saves 345 MB but moves a frequent per-owner read onto a 1.37× larger index — a trade-off, not cleanup.
+6. **[P3, Claude Code, 0 nights] DROP `mv_panini_squeeze_retired_20261110`** — no dependents, no refresher; kept one day as the revert path (safe from 11-11 ~1 PM PT).
+7. **[P3, Claude Code, 0 nights] wmc index bloat from the census:** six weekly-reindexed wmc indexes grew 3–4.5× since 11-07 while rows grew ~1.6× (e.g. `idx_wmc_lock_wallet_coll_cover` 937 MB, `idx_wmc_wallet_coll_ek_fmv_tier` 852 MB). The Saturday reindex resets it; consider a mid-week `REINDEX CONCURRENTLY` of the two largest if the census keeps this pace.
+8. **[P3, Claude Code, 0 nights] #241 pg_net attribution:** one `AFTER INSERT` trigger on `net.http_request_queue` (postgres holds TRIGGER) could log every request URL for all lanes — must swallow its own errors, be checked for existence after a pg_net upgrade, and the 40k-char `check_edge_fn_http_failures` `grp` CTE must carry request ids. Details in the register.
+9. **[P3, Claude Code, 0 nights] Open question — PostgREST plan vs SQL replicas:** the buyer-backfill `head:true` counts seq-scanned `sales_2023..2025` in production while every replica (custom, generic, untyped, `EXPLAIN (GENERIC_PLAN)` on the verbatim text, as service_role) used the indexes at ~100 buffers. Routed around with a function; other `head:true` counts on partitioned `sales` may carry the same cost.
+10. **[P4, Claude Code, 0 nights] Panini special-serials board counts** (`lib/insights/panini-more-boards.ts`): two counts per hourly render pay the view's unused FMV LATERAL (30k buffers / 1.3 s each). Low value.
+11. **[P4, Claude Code, 0 nights] `populate_wmc_fmv_from_snapshots` NULL-only path** takes `LIMIT p_limit` before the priced join; nothing stuck today — revisit when Candy editions start getting snapshots.
+12. **[P4, Claude Code, 0 nights] Optional: `candy_ask_book_drop_pct` denominator** could exclude rows deactivated in the same pass (`owner_moved_at`); the 11-09 ghost-ask false positive cleared on its own at 7:35 PM PT 11-10.
+
+Closed this pass: #245 (2:25 PM PT), #243 (2:12 PM PT), #242 (7:10 PM PT). Watch: `/api/profile/top-moments` cold misses after `20261110221809`.
 
 ## Sentinel trust arms (WARN 11-10 2:04 PM PT)
 
@@ -96,3 +107,11 @@ This file is written as the pass goes (draft at 1:55 PM PT, updated 3:00 PM PT);
 - `fmv_backfill_candidates` under the production role, cold: **11.6 s / 521k buffers, 0 rows** — inside the new 90 s (the 4:35 PM PT run died at 60 s). The next real `fmv-backfill` run still owes the `ok`.
 - **wmc index bloat, watch only:** the six weekly-reindexed wmc indexes grew 3–4.5× since the 11-07 7:43 PM PT rebuild (e.g. `idx_wmc_wallet_coll_ek_fmv_tier` 190 → 852 MB, the unique key 150 → 460 MB) while rows grew ~1.6× (1.34M Candy rows from the #246 census since the rebuild; 163M updates on the table). Roughly half is census churn bloat. The weekly `REINDEX CONCURRENTLY` jobs (Sat ~6–8 PM PT) reset it; if the census keeps this pace, consider a mid-week reindex of the two largest (`idx_wmc_lock_wallet_coll_cover` 937 MB, `idx_wmc_wallet_coll_ek_fmv_tier` 852 MB).
 - #228's index swap was already done (Cowork 11-04); register note added. #241 note: a single trigger on `net.http_request_queue` could log every pg_net URL — conditions recorded, not built.
+
+## Closing sweep — 9:35 PM PT
+
+- Runtime errors since 7:05 PM PT: 2 single hits, both long-standing groups — `get_set_activity` statement timeout on a set page (8:15 PM PT, degraded to empty as designed) and `/insights/squeeze` 8 s read (8:29 PM PT; first seen 08-16). Nothing on `/api/panini-set-progress`, `/api/wallet/pack-*`, `/api/packs`.
+- Failing lanes (2.5 h): only upstream classes (Atlas 403s, one 20 s fetch timeout) plus the 7:41 PM PT `mempheattle` walk that the 7:55 PM PT change now skips.
+- Alerts medium+: `wallet-backfill-continuation` HIGH (pooled 3-day rate over the #245 fix; last failure 2:11 PM PT, resume queue empty), `candy-collections-census` medium (metadata 429s), `fmv-backfill` medium (pooled over the fix; item 1).
+- Trust breaches: `candy_sales_stale_hours` (clears by ~5:51 AM PT 11-11 by age-out; 10:20 PM PT drain run next) and `edition_integrity_flags` 11,548 (item 2). `candy_ask_book_drop_pct` and `candy_revival_sales_since_recorded_silence` are ok.
+- Inbox: one open filing (0112Z) — item 1 acted on (pending item 1 above), item 2 left for the night pass.
