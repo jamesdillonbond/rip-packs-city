@@ -300,3 +300,59 @@ describe("PackRevealClient — pointer tilt", () => {
     expect(pack.style.getPropertyValue("--gw-ry")).toBe("")
   })
 })
+
+// Later 2026-11-10: a drop picks its pack design and may switch sound on. Both default to
+// the opening as it was — classic and silent (the open Dame Time beta drop must not change).
+describe("PackRevealClient — pack design and sound", () => {
+  it("with neither prop the pack is classic and there is no sound control at all", () => {
+    renderPack()
+    expect(screen.getByTestId("pack-reveal").getAttribute("data-pack-theme")).toBe("classic")
+    expect(screen.queryByTestId("sound-toggle")).toBeNull()
+  })
+
+  it("draws the drop's design; a value this build does not know is the classic pack", () => {
+    render(
+      <PackRevealClient slug="fall-drop" packNo={4} moments={CARDS} theme="gold">
+        <div>delivery grid</div>
+      </PackRevealClient>,
+    )
+    expect(screen.getByTestId("pack-reveal").getAttribute("data-pack-theme")).toBe("gold")
+    cleanup()
+    render(
+      <PackRevealClient slug="fall-drop" packNo={4} moments={CARDS} theme="neon">
+        <div>delivery grid</div>
+      </PackRevealClient>,
+    )
+    expect(screen.getByTestId("pack-reveal").getAttribute("data-pack-theme")).toBe("classic")
+  })
+
+  it("a drop with sound shows a Sound on/off button, remembers the choice, and the opening still runs with no audio device", () => {
+    const withSound = () =>
+      render(
+        <PackRevealClient slug="fall-drop" packNo={4} moments={CARDS} sound>
+          <div>delivery grid</div>
+        </PackRevealClient>,
+      )
+    withSound()
+    const toggle = screen.getByTestId("sound-toggle")
+    expect(toggle.textContent).toBe("Sound on")
+    expect(toggle.getAttribute("aria-pressed")).toBe("true")
+    fireEvent.click(toggle)
+    expect(screen.getByTestId("sound-toggle").textContent).toBe("Sound off")
+    expect(localStorage.getItem("rpc_giveaway_sound")).toBe("off")
+    cleanup()
+    withSound()
+    expect(screen.getByTestId("sound-toggle").textContent).toBe("Sound off")
+    fireEvent.click(screen.getByTestId("sound-toggle"))
+    // jsdom has no Web Audio: every sound call is a no-op and the opening completes
+    fireEvent.click(screen.getByRole("button", { name: "Open pack" }))
+    act(() => vi.advanceTimersByTime(TEAR_MS))
+    fireEvent.click(screen.getByRole("button", { name: "Flip the first card" }))
+    fireEvent.click(screen.getByRole("button", { name: /next card/i }))
+    const last = screen.getAllByRole("button", { name: "Reveal the last card" })
+    fireEvent.click(last[last.length - 1])
+    act(() => vi.advanceTimersByTime(CHARGE_MS))
+    fireEvent.click(screen.getByRole("button", { name: "See the whole pack" }))
+    expect(screen.getByTestId("pack-summary")).toBeTruthy()
+  })
+})

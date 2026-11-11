@@ -293,7 +293,7 @@ export default function GiveawayClient({ slug }: { slug: string }) {
               ? "This giveaway's Moments are held in Rip Packs City's giveaway vault and sent to that account seconds after you claim; this page marks each one delivered once it shows up there on chain."
               : "The sponsor sends each Moment to that account; this page marks it delivered once it shows up there on chain."}
           </p>
-          <PackRevealClient slug={slug} packNo={me.pack_no} moments={me.moments} title={drop.title}>
+          <PackRevealClient slug={slug} packNo={me.pack_no} moments={me.moments} title={drop.title} theme={drop.pack_theme} sound={drop.opening_sound}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
               {me.moments.map((m) => (
                 <div key={m.moment_id} style={{ ...card, background: "var(--rpc-surface-raised)" }}>
@@ -310,7 +310,7 @@ export default function GiveawayClient({ slug }: { slug: string }) {
         <section style={card}>
           <h2 style={h2}>Claim a pack</h2>
           <div style={{ marginBottom: 12 }}>
-            <PackWall total={drop.pack_count} claimed={drop.claimed_count} drawn={drawn} onLanded={() => setTimeout(refresh, 900)} />
+            <PackWall total={drop.pack_count} claimed={drop.claimed_count} drawn={drawn} onLanded={() => setTimeout(refresh, 900)} theme={drop.pack_theme} />
           </div>
           {signed_in ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 440 }}>

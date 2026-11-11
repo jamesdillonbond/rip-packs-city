@@ -10,6 +10,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { getCollection } from "@/lib/collections"
 import { readTopShotHoldings, type Holding } from "@/lib/giveaways/topshot-holdings"
+import { isPackTheme, packTheme, type PackTheme } from "@/lib/giveaways/pack-theme"
 import {
   PRIZE_VALUE_CAP_USD,
   manifestOf as manifestOfRows,
@@ -45,6 +46,10 @@ export interface DropRow {
   deal_mode: DealMode
   /** The giveaway vault the pool was moved into for instant delivery; null = not funded (2026-11-08). */
   vault_address: string | null
+  /** The pack design the claim page draws (lib/giveaways/pack-theme.ts); absent or unknown = classic. 2026-11-10. */
+  pack_theme?: string | null
+  /** Whether the opening plays sound for this drop (the claimer can still switch it off). 2026-11-10. */
+  opening_sound?: boolean | null
 }
 
 export interface PoolRow {
@@ -93,7 +98,7 @@ export class GiveawayError extends Error {
 }
 
 const DROP_COLUMNS =
-  "id, slug, title, description, sponsor_name, collection_id, admin_wallet, status, pack_count, moments_per_pack, seal_hash, seal_salt, sealed_at, opened_at, closed_at, created_at, deal_mode, vault_address"
+  "id, slug, title, description, sponsor_name, collection_id, admin_wallet, status, pack_count, moments_per_pack, seal_hash, seal_salt, sealed_at, opened_at, closed_at, created_at, deal_mode, vault_address, pack_theme, opening_sound"
 const POOL_COLUMNS =
   "moment_id, pack_no, slot, edition_key, player_name, set_name, team_name, tier, serial_number, fmv_usd, image_url, delivered_at, last_checked_at, last_check_recipient_holds, last_check_admin_holds, source_wallet, funded_from, delivery_tx_id, delivery_attempted_at, delivery_error"
 
@@ -415,6 +420,32 @@ export async function setStatus(db: SupabaseClient, drop: DropRow, to: "open" | 
   if (!data || data.length !== 1) throw new GiveawayError("The drop changed under you; reload.", 409, "wrong_status")
 }
 
+/**
+ * How a drop's pack LOOKS and SOUNDS on the claim page. Presentation only, so it is
+ * allowed at any status; it never touches the pool, the seal or a claim.
+ */
+export async function setPresentation(db: SupabaseClient, drop: DropRow, to: { pack_theme?: unknown; opening_sound?: unknown }): Promise<{ pack_theme: PackTheme; opening_sound: boolean }> {
+  const patch: { pack_theme?: PackTheme; opening_sound?: boolean } = {}
+  if (to.pack_theme !== undefined) {
+    if (!isPackTheme(to.pack_theme)) throw new GiveawayError("That is not a pack design.", 400, "bad_request")
+    patch.pack_theme = to.pack_theme
+  }
+  if (to.opening_sound !== undefined) {
+    if (typeof to.opening_sound !== "boolean") throw new GiveawayError("opening_sound must be true or false.", 400, "bad_request")
+    patch.opening_sound = to.opening_sound
+  }
+  if (Object.keys(patch).length === 0) throw new GiveawayError("Nothing to change.", 400, "bad_request")
+  const { data, error } = await db
+    .from("giveaway_drops")
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq("id", drop.id)
+    .select("pack_theme, opening_sound")
+  if (error) throw error
+  if (!data || data.length !== 1) throw new GiveawayError("The drop changed under you; reload.", 409, "wrong_status")
+  const row = data[0] as { pack_theme: unknown; opening_sound: unknown }
+  return { pack_theme: packTheme(row.pack_theme), opening_sound: row.opening_sound === true }
+}
+
 export async function deleteDraft(db: SupabaseClient, drop: DropRow): Promise<void> {
   if (drop.status !== "draft") throw new GiveawayError("Only a draft can be deleted.", 409, "wrong_status")
   const { data, error } = await db.from("giveaway_drops").delete().eq("id", drop.id).eq("status", "draft").select("id")
@@ -547,6 +578,9 @@ export interface PublicDropView {
     deal_mode: DealMode
     /** The pool is in the giveaway vault: a claim's Moments are sent within seconds. */
     instant_delivery: boolean
+    /** Presentation only: the pack design and whether the opening has sound. */
+    pack_theme: PackTheme
+    opening_sound: boolean
   }
   /** The whole pool, in a fixed order that reveals nothing about pack assignment. */
   pool: PublicPoolMoment[]
@@ -609,6 +643,8 @@ export function buildPublicView(
       closed_at: drop.closed_at,
       deal_mode: drop.deal_mode === "balanced" ? "balanced" : "random",
       instant_delivery: drop.vault_address != null,
+      pack_theme: packTheme(drop.pack_theme),
+      opening_sound: drop.opening_sound === true,
     },
     pool: sorted.map(publicMoment),
     values: summarizePackValues(pool),

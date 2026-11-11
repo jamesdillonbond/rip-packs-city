@@ -14,7 +14,13 @@
 // foil wrapper with a holographic sheen that tilts under the pointer; the tear
 // shakes, peels the strip, leaks light and flashes; the stage is a dark arena
 // whose glow takes the colour of the card just flipped; rare-and-up cards carry
-// a holo sheen and throw sparks, and the chase lands with a flash and a shake. Once finished (or skipped with
+// a holo sheen and throw sparks, and the chase lands with a flash and a shake.
+//
+// Later 11-10 ("do both"): a drop picks its pack design (`theme`, see
+// lib/giveaways/pack-theme.ts — "classic" is the red pack, unchanged) and may switch
+// on sound (`sound`, lib/giveaways/reveal-sound.ts — synthesised, no files; the
+// claimer gets a Sound on/off button and the choice is remembered). Both default
+// to the opening as it was: classic, silent. Once finished (or skipped with
 // "Show all"), this browser remembers it and the page shows the plain pack grid
 // passed in as `children`.
 //
@@ -28,6 +34,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react"
 import { chaseMomentId, openedKey, packTotal, revealOrder, tierKey, topShotMomentImage } from "@/lib/giveaways/reveal"
 import { usd } from "@/lib/giveaways/view-format"
 import { momentSubjectName } from "@/lib/entity-href"
+import { packTheme } from "@/lib/giveaways/pack-theme"
+import { createRevealSound, readSoundMuted, saveSoundMuted, type RevealSound } from "@/lib/giveaways/reveal-sound"
 
 export interface RevealCard {
   moment_id: string
@@ -99,11 +107,17 @@ export default function PackRevealClient({
   preview = false,
   onDone,
   title,
+  theme,
+  sound = false,
 }: {
   slug: string
   packNo: number
   /** The drop's name, printed on the pack. */
   title?: string
+  /** The drop's pack design; anything unknown or absent draws the classic pack. */
+  theme?: string | null
+  /** Whether this drop's opening has sound at all (the claimer can still mute it). */
+  sound?: boolean
   moments: RevealCard[]
   children: ReactNode
   preview?: boolean
@@ -115,6 +129,20 @@ export default function PackRevealClient({
   const [shown, setShown] = useState(0)
   const [charging, setCharging] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [muted, setMuted] = useState(() => readSoundMuted())
+  const audio = useRef<RevealSound | null>(null)
+  /** The drop's sounds, or null when this drop has none. Created on first use, inside a tap. */
+  const fx = (): RevealSound | null => {
+    if (!sound) return null
+    if (!audio.current) audio.current = createRevealSound(muted)
+    return audio.current
+  }
+  const toggleSound = () => {
+    const next = !muted
+    setMuted(next)
+    saveSoundMuted(next)
+    audio.current?.setMuted(next)
+  }
   const order = revealOrder(moments)
   const chase = chaseMomentId(moments)
   const total = packTotal(moments)
@@ -122,6 +150,8 @@ export default function PackRevealClient({
   useEffect(
     () => () => {
       if (timer.current) clearTimeout(timer.current)
+      audio.current?.close()
+      audio.current = null
     },
     [],
   )
@@ -147,6 +177,7 @@ export default function PackRevealClient({
   const tear = () => {
     if (phase !== "sealed") return
     setPhase("tearing")
+    fx()?.tear(reducedMotion())
     preloadArt(order)
     later(TEAR_MS, () => setPhase("ripping"))
   }
@@ -158,9 +189,15 @@ export default function PackRevealClient({
     const reveal = () => {
       setCharging(false)
       setShown((n) => n + 1)
-      if (nextIsChase) buzz()
+      if (nextIsChase) {
+        buzz()
+        fx()?.chase(tierKey(next.tier))
+      } else {
+        fx()?.flip(tierKey(next.tier))
+      }
     }
     if (nextIsChase) {
+      if (!reducedMotion()) fx()?.charge(CHARGE_MS)
       setCharging(true)
       later(CHARGE_MS, reveal)
     } else {
@@ -174,7 +211,7 @@ export default function PackRevealClient({
   const announce = current ? `${momentSubjectName(current.player_name, null, current.set_name)}${current.moment_id === chase ? ", the chase card" : ""}` : ""
 
   return (
-    <div className="rpc-gw-reveal" data-testid="pack-reveal">
+    <div className="rpc-gw-reveal" data-testid="pack-reveal" data-pack-theme={packTheme(theme)}>
       <div aria-live="polite" style={srOnly}>
         {announce}
       </div>
@@ -328,7 +365,14 @@ export default function PackRevealClient({
           </button>
         ) : null}
         {phase === "ripping" && allShown ? (
-          <button type="button" onClick={() => setPhase("summary")} style={primary}>
+          <button
+            type="button"
+            onClick={() => {
+              fx()?.summary()
+              setPhase("summary")
+            }}
+            style={primary}
+          >
             See the whole pack
           </button>
         ) : null}
@@ -340,6 +384,11 @@ export default function PackRevealClient({
         {phase !== "summary" ? (
           <button type="button" onClick={finish} style={secondary}>
             Show all
+          </button>
+        ) : null}
+        {sound ? (
+          <button type="button" onClick={toggleSound} style={secondary} aria-pressed={!muted} data-testid="sound-toggle">
+            {muted ? "Sound off" : "Sound on"}
           </button>
         ) : null}
       </div>

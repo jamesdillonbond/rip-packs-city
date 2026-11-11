@@ -17,6 +17,7 @@ const { store, getCurrentUser, resolve } = vi.hoisted(() => ({
   sealDrop: vi.fn(),
   setStatus: vi.fn(),
   deleteDraft: vi.fn(),
+  setPresentation: vi.fn(),
   verifyDeliveries: vi.fn(),
   usernameForWallet: vi.fn(),
   },
@@ -588,6 +589,12 @@ describe("/api/admin/giveaways", () => {
     expect((await act("close")).status).toBe(200)
     expect(store.setStatus).toHaveBeenLastCalledWith({}, DROP, "closed")
     expect((await act("delete")).status).toBe(200)
+
+    // the pack design / opening sound (2026-11-10): passed through as sent, at any status
+    store.setPresentation.mockResolvedValueOnce({ pack_theme: "gold", opening_sound: true })
+    const pres = await adminOne.POST(post(`http://x/api/admin/giveaways/${ID}`, { action: "set_presentation", pack_theme: "gold", opening_sound: true }, auth), idCtx(ID))
+    expect(await pres.json()).toEqual({ ok: true, pack_theme: "gold", opening_sound: true })
+    expect(store.setPresentation).toHaveBeenLastCalledWith({}, DROP, { pack_theme: "gold", opening_sound: true })
 
     store.verifyDeliveries.mockResolvedValueOnce({ checked: 2, delivered: 2, pending: 0, missing: 0, failed_recipients: [], written: 2, write_error: null })
     const v = await act("verify")

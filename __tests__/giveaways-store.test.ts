@@ -12,6 +12,7 @@ import {
   listCheckedCandidates,
   listDrops,
   sealDrop,
+  setPresentation,
   setStatus,
   usernameForWallet,
   verifyDeliveries,
@@ -337,6 +338,29 @@ describe("giveaways/store — status changes", () => {
     await expect(setStatus(f.db, { ...DROP, status: "sealed" }, "open")).rejects.toMatchObject({ message: expect.stringContaining("reload") })
     await expect(setStatus(fakeDb(() => ({ data: null, error: { message: "x" } })).db, { ...DROP, status: "open" }, "closed")).rejects.toEqual({ message: "x" })
   })
+  it("setPresentation changes only the pack design and sound, at any status, and refuses anything unknown", async () => {
+    const f = fakeDb(() => ({ data: [{ pack_theme: "gold", opening_sound: true }], error: null }))
+    // an OPEN drop: presentation is not gated on status
+    expect(await setPresentation(f.db, { ...DROP, status: "open" }, { pack_theme: "gold", opening_sound: true })).toEqual({ pack_theme: "gold", opening_sound: true })
+    expect(f.queries[0]).toMatchObject({ table: "giveaway_drops", op: "update", eq: { id: DROP.id } })
+    const payload = f.queries[0].payload as Record<string, unknown>
+    expect(Object.keys(payload).sort()).toEqual(["opening_sound", "pack_theme", "updated_at"])
+    // one field at a time writes only that field
+    await setPresentation(f.db, DROP, { opening_sound: false })
+    expect(Object.keys(f.queries[1].payload as object).sort()).toEqual(["opening_sound", "updated_at"])
+    // refused before any write
+    const none = fakeDb(() => ({ data: [], error: null }))
+    await expect(setPresentation(none.db, DROP, { pack_theme: "neon" })).rejects.toMatchObject({ code: "bad_request" })
+    await expect(setPresentation(none.db, DROP, { opening_sound: "yes" })).rejects.toMatchObject({ code: "bad_request" })
+    await expect(setPresentation(none.db, DROP, {})).rejects.toMatchObject({ code: "bad_request" })
+    expect(none.queries).toHaveLength(0)
+    // a write that matched no row, and a database error, are both failures
+    await expect(setPresentation(none.db, DROP, { pack_theme: "ice" })).rejects.toMatchObject({ code: "wrong_status" })
+    await expect(setPresentation(fakeDb(() => ({ data: null, error: { message: "x" } })).db, DROP, { pack_theme: "ice" })).rejects.toEqual({ message: "x" })
+    // a stored value this build does not know reads back as classic, never as a made-up design
+    const odd = fakeDb(() => ({ data: [{ pack_theme: "neon", opening_sound: null }], error: null }))
+    expect(await setPresentation(odd.db, DROP, { pack_theme: "ice" })).toEqual({ pack_theme: "classic", opening_sound: false })
+  })
   it("deleteDraft deletes only a draft", async () => {
     const f = fakeDb(() => ({ data: [{ id: DROP.id }], error: null }))
     await deleteDraft(f.db, DROP)
@@ -468,6 +492,12 @@ describe("giveaways/store — buildPublicView", () => {
   it("a draft is not public", () => {
     expect(buildPublicView(DROP, [], [], null)).toBeNull()
     expect(buildPublicView({ ...DROP, status: "open" }, [], [], null)).toBeNull()
+  })
+
+  it("an existing drop (no design, no sound stored) is the classic, silent opening; stored values pass through; an unknown design is classic", () => {
+    expect(buildPublicView(SEALED, sealedPool, claims, null)!.drop).toMatchObject({ pack_theme: "classic", opening_sound: false })
+    expect(buildPublicView({ ...SEALED, pack_theme: "ice", opening_sound: true }, sealedPool, claims, null)!.drop).toMatchObject({ pack_theme: "ice", opening_sound: true })
+    expect(buildPublicView({ ...SEALED, pack_theme: "neon", opening_sound: null }, sealedPool, claims, null)!.drop).toMatchObject({ pack_theme: "classic", opening_sound: false })
   })
 
   it("lists the pool by value, never by pack, and hides the salt while open", () => {

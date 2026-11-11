@@ -16,6 +16,7 @@ import type { Candidate, ClaimRow, DropRow, PoolRow } from "@/lib/giveaways/stor
 import type { DeliveryPlan } from "@/lib/giveaways/deliver"
 import { SealUnconfirmedError, connectAdminWallet, disconnectAdminWallet, sendDeliveryBatch } from "@/lib/giveaways/admin-wallet"
 import PackRevealClient from "@/app/giveaways/[slug]/PackRevealClient"
+import { PACK_THEMES, PACK_THEME_LABELS, packTheme } from "@/lib/giveaways/pack-theme"
 import { DEFAULT_FILTER, filterCandidates, previewPack, randomFill, shapesFor, tierLabel, tierMix, tiersOf, type BuilderFilter, type BuilderSort } from "@/lib/giveaways/pool-builder"
 import { simulatePackSpread, type DealMode, type PackSpread } from "@/lib/giveaways/seal"
 import type { VaultStatus } from "@/lib/giveaways/vault"
@@ -569,6 +570,16 @@ function DropPanel({ drop, call, onChanged }: { drop: DropRow; call: Call; onCha
     if (open) void load()
   }
 
+  /** The pack design / opening sound: presentation only, so it can change at any status. */
+  const present = async (patch: { pack_theme?: string; opening_sound?: boolean }) => {
+    setBusy(true)
+    setMsg(null)
+    const r = await call(`/api/admin/giveaways/${drop.id}`, { method: "POST", body: JSON.stringify({ action: "set_presentation", ...patch }) })
+    setBusy(false)
+    setMsg(r.ok ? "Pack design saved. Use Preview opening to see it." : String(r.body?.error ?? `HTTP ${r.status}`))
+    onChanged()
+  }
+
   const rows: ChecklistRow[] = detail ? checklistRows(detail.pool, detail.claims) : []
 
   return (
@@ -617,6 +628,20 @@ function DropPanel({ drop, call, onChanged }: { drop: DropRow; call: Call; onCha
             {busy ? "Working…" : "Verify deliveries"}
           </button>
         ) : null}
+        <label style={{ fontSize: 12, color: "var(--rpc-text-muted)", display: "flex", gap: 4, alignItems: "center" }}>
+          Pack
+          <select aria-label="Pack design" value={packTheme(drop.pack_theme)} onChange={(e) => void present({ pack_theme: e.target.value })} style={input} disabled={busy}>
+            {PACK_THEMES.map((t) => (
+              <option key={t} value={t}>
+                {PACK_THEME_LABELS[t]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label style={{ fontSize: 12, color: "var(--rpc-text-muted)", display: "flex", gap: 4, alignItems: "center" }}>
+          <input type="checkbox" checked={drop.opening_sound === true} onChange={(e) => void present({ opening_sound: e.target.checked })} disabled={busy} />
+          Sound
+        </label>
         <button type="button" style={btn} onClick={openPreview}>
           Preview opening
         </button>
@@ -652,6 +677,8 @@ function DropPanel({ drop, call, onChanged }: { drop: DropRow; call: Call; onCha
               packNo={preview.packNo ?? 0}
               moments={preview.moments}
               title={drop.title}
+              theme={drop.pack_theme}
+              sound={drop.opening_sound === true}
               preview
               onDone={() => setPreview(null)}
             >

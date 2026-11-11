@@ -3,6 +3,7 @@
 // Trevor-only (RPC_ADMIN_TOKEN). One drop.
 //   GET  -> { drop, pool, claims }   everything, including the pack assignment (the delivery checklist)
 //   POST { action: "seal" | "open" | "close" | "verify" | "delete" }
+//        { action: "set_presentation", pack_theme?, opening_sound? } — how the pack looks / sounds; any status
 //        seal   — on-chain re-check (held + unlocked), deal, commit (draft only);
 //               { deal_mode: "random" | "balanced" } (absent = random, the v1 deal)
 //        open   — sealed -> open (claims start)
@@ -26,6 +27,7 @@ import { apiErrorResponse } from "@/lib/api-error"
 import { supabaseAdmin } from "@/lib/supabase"
 import {
   deleteDraft,
+  setPresentation,
   getClaims,
   getDrop,
   getPool,
@@ -68,8 +70,10 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   let action: unknown
   let parent: unknown
   let dealMode: unknown
+  let presentation: { pack_theme?: unknown; opening_sound?: unknown } = {}
   try {
-    const body = (await req.json()) as { action?: unknown; parent?: unknown; deal_mode?: unknown }
+    const body = (await req.json()) as { action?: unknown; parent?: unknown; deal_mode?: unknown; pack_theme?: unknown; opening_sound?: unknown }
+    presentation = { pack_theme: body?.pack_theme, opening_sound: body?.opening_sound }
     action = body?.action
     parent = body?.parent
     dealMode = body?.deal_mode
@@ -84,9 +88,10 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     action !== "close" &&
     action !== "verify" &&
     action !== "delete" &&
+    action !== "set_presentation" &&
     action !== "deliver_plan"
   ) {
-    return NextResponse.json({ error: `action must be seal, open, close, verify, delete, deliver_plan or ${VAULT_ACTIONS.join(", ")}` }, { status: 400 })
+    return NextResponse.json({ error: `action must be seal, open, close, verify, delete, set_presentation, deliver_plan or ${VAULT_ACTIONS.join(", ")}` }, { status: 400 })
   }
   try {
     const drop = await getDrop(supabaseAdmin, { id })
@@ -107,6 +112,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       case "delete":
         await deleteDraft(supabaseAdmin, drop)
         return NextResponse.json({ ok: true })
+      case "set_presentation":
+        // the pack design / opening sound: presentation only, allowed at any status
+        return NextResponse.json({ ok: true, ...(await setPresentation(supabaseAdmin, drop, presentation)) })
       case "deliver_plan": {
         const p = typeof parent === "string" ? parent.trim().toLowerCase() : ""
         return NextResponse.json({ ok: true, plan: await planDelivery(supabaseAdmin, drop, p) })

@@ -14,6 +14,7 @@
 // copy says so. Under reduced motion it lands at once.
 
 import { useEffect, useRef, useState } from "react"
+import { packTheme } from "@/lib/giveaways/pack-theme"
 
 const MONO = "var(--font-mono)"
 const LOGO = "/rip-packs-city-logo-320.png"
@@ -35,6 +36,7 @@ export default function PackWall({
   claimed,
   drawn = null,
   onLanded,
+  theme,
 }: {
   total: number
   claimed: number
@@ -42,6 +44,8 @@ export default function PackWall({
   drawn?: number | null
   /** Called once the shuffle has landed (immediately under reduced motion). */
   onLanded?: () => void
+  /** The drop's pack design (lib/giveaways/pack-theme.ts); absent = classic. */
+  theme?: string | null
 }) {
   const left = Math.max(0, total - claimed)
   const [lit, setLit] = useState<number | null>(null)
@@ -81,7 +85,7 @@ export default function PackWall({
   const shownLeft = Math.min(left, shown)
 
   return (
-    <div data-testid="pack-wall">
+    <div data-testid="pack-wall" data-pack-theme={packTheme(theme)}>
       <div className="rpc-gw-wall" aria-hidden="true">
         {Array.from({ length: shown }, (_, i) => {
           const open = i < shownLeft
