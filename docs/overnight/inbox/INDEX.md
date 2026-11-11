@@ -1,4 +1,4 @@
-# Inbox index — 651 live filings
+# Inbox index — 652 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,7 +32,8 @@ failure it documents.
 
 ---
 
-## 2026-11-11 — 1 filing
+## 2026-11-11 — 2 filings
+- [Daytime monitor — `candy-editions-ingest` fails daily at the 01:10Z tick on a `wallet_moments_cache` lock timeout, self-heals at 04:10Z (otherwise GREEN: security/stalled/sentinel clean, 13/13 dashboards, prod serving latest app code)](2026-11-11T0715Z-daytime-monitor-candy-editions-ingest-0110z-lock-timeout.md)
 - [Daytime monitor — fmv-backfill still tips the 60s statement-timeout on ~1/3 of runs post the 11-10 fix; wallet-backfill-continuation arm reads HIGH on the already-recovered #245 lane](2026-11-11T0112Z-daytime-monitor-fmv-backfill-tips-60s-and-continuation-arm-reads-high.md)
 
 ## 2026-11-10 — 13 filings
