@@ -433,6 +433,11 @@ function SniperMomentsBody() {
       setPlayerFilter(value.trim());
     }, 300);
   }, []);
+  // A pending debounce must not fire after unmount: it set state on a gone component, and in CI it fired
+  // after jsdom was torn down ("window is not defined", shard 3/4 red on 2026-11-10 with every test passing).
+  useEffect(() => () => {
+    if (playerDebounceRef.current) clearTimeout(playerDebounceRef.current);
+  }, []);
 
   const countdownRef = useRef<NodeJS.Timeout | null>(null);
   const prevDataRef = useRef<FeedResult | null>(null);

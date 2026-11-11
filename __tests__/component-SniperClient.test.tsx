@@ -669,6 +669,29 @@ describe("SniperClient — the filter controls reach the feed request", () => {
     await waitFor(() => expect(lastKey()).toMatch(/player=Lillard/i), { timeout: 2000 })
   })
 
+  it("a player keystroke's pending debounce is CLEARED on unmount — it never fires on a gone page", async () => {
+    // 2026-11-10: CI shard 3/4 went red with every test passing — this debounce fired
+    // after jsdom was torn down ("window is not defined" inside setPlayerFilter).
+    render(<SniperClient />)
+    await waitFor(() => expect(warmKeys.length).toBeGreaterThan(0))
+    // Track the debounce's OWN handle (the 300 ms timer the keystroke creates) — a global
+    // timer count also sees unrelated timers other paths leave behind in this file.
+    const setSpy = vi.spyOn(globalThis, "setTimeout")
+    const clearSpy = vi.spyOn(globalThis, "clearTimeout")
+    try {
+      const before = setSpy.mock.calls.length
+      fireEvent.change(screen.getByPlaceholderText("e.g. LeBron"), { target: { value: "Lillard" } })
+      const idx = setSpy.mock.calls.findIndex((c, i) => i >= before && c[1] === 300)
+      expect(idx).toBeGreaterThanOrEqual(0) // the debounce was scheduled (positive control)
+      const handle = setSpy.mock.results[idx].value
+      cleanup()
+      expect(clearSpy.mock.calls.some((c) => c[0] === handle)).toBe(true)
+    } finally {
+      setSpy.mockRestore()
+      clearSpy.mockRestore()
+    }
+  })
+
   it("the free-text search is CLIENT-side and does not re-request", async () => {
     // Recorded because it is the one control that behaves differently, and
     // asserting it at the request would pin the wrong contract.
