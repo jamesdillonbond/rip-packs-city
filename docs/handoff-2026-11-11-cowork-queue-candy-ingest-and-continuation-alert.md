@@ -5,6 +5,8 @@
 
 > **Push note (scope):** This blocker is specific to the Cowork cloud session's autonomy rules, not to pushing. Your machine pushes normally via Git Credential Manager / `gh auth setup-git`. ⛔ Never use a PAT in `remote.origin.pushurl` — that route is DEAD (burned + removed 2026-08-16). Commit directly to `main`, no branches, no PRs. On Windows commit via PowerShell `git` (Git Bash `git commit` can silently no-op); re-verify with `git rev-list --count origin/main..HEAD` (expect 0).
 
+> **STATUS 2026-11-11 ~10:45 PM PT (Claude Code cloud): BOTH ITEMS CLOSED.** Item 1 — Step 0 done from the Postgres log (holder = `wmc-fmv-populate`'s candy step, every 5 min, not the census); Option A rejected (no clear slot exists); Option B shipped (`e30ecd445`) AND the lock source fixed (`20261111172832`, `populate_wmc_fmv_from_snapshots` locks only rows it writes). Verified: 5:10 PM PT run ok, 0 rejected writes, 0 lock timeouts, 0 retries needed. Item 2 — fixed at the record rather than the arm: a 508 the resume queue catches is `ok=true` / `deferred_to: resume_queue` (`b87f40e91`); the 11-10 pre-queue rows age out of the 3-day window ~11-13. Ledger 11-11 entries carry every revert path.
+
 > **Claude Code's direct file inspection wins over this doc and over `project_knowledge_search` on any disagreement — adapt to the actual file shape.**
 
 ---
