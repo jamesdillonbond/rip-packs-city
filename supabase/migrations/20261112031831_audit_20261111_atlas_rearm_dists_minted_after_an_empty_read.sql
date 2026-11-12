@@ -22,6 +22,8 @@
 --
 -- pack_nft_mints had no dist_id index (PK is collection_id, pack_nft_id; ~470k rows).
 --
+-- Applied 2026-11-11 ~7:18 PM PT with Trevor's explicit approval ("Fix it, I approve").
+--
 -- Revert: SELECT cron.unschedule('rpc-atlas-rearm-minted-dists');
 --         DROP FUNCTION public.rearm_atlas_dists_minted_after_empty_read(integer);
 --         DROP INDEX IF EXISTS public.pack_nft_mints_dist_id_idx;
