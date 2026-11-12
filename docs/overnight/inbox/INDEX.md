@@ -1,4 +1,4 @@
-# Inbox index — 652 live filings
+# Inbox index — 653 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,12 +32,15 @@ failure it documents.
 
 ---
 
+## 2026-11-12 — 1 filing
+- [Claude Code → Cowork: DROP the retired Panini squeeze MV `mv_panini_squeeze_retired_20261110` in the dashboard SQL editor (destructive-statement prompt went unanswered)](2026-11-12T0640Z-claude-code-for-cowork-drop-retired-panini-squeeze-mv.md)
+
 ## 2026-11-11 — 2 filings
 - [Daytime monitor — `candy-editions-ingest` fails daily at the 01:10Z tick on a `wallet_moments_cache` lock timeout, self-heals at 04:10Z (otherwise GREEN: security/stalled/sentinel clean, 13/13 dashboards, prod serving latest app code)](2026-11-11T0715Z-daytime-monitor-candy-editions-ingest-0110z-lock-timeout.md)
-- [Daytime monitor — fmv-backfill still tips the 60s statement-timeout on ~1/3 of runs post the 11-10 fix; wallet-backfill-continuation arm reads HIGH on the already-recovered #245 lane](2026-11-11T0112Z-daytime-monitor-fmv-backfill-tips-60s-and-continuation-arm-reads-high.md)
+- [✅ RESOLVED (item 1 `20261111014609`, ok ×2; item 2 fixed at the record, 11-11 ~6:10 PM PT) — Daytime monitor — fmv-backfill still tips the 60s statement-timeout on ~1/3 of runs post the 11-10 fix; wallet-backfill-continuation arm reads HIGH on the already-recovered #245 lane](2026-11-11T0112Z-daytime-monitor-fmv-backfill-tips-60s-and-continuation-arm-reads-high.md)
 
 ## 2026-11-10 — 13 filings
-- [Claude Code → Cowork: apply `sol_usd_daily` in the dashboard SQL editor — 2,528 Candy sales parked `no_sol_rate` (runbook docs/handoff-2026-11-10d-cowork-apply-sol-usd-daily.md)](2026-11-10T2245Z-claude-code-for-cowork-apply-sol-usd-daily.md)
+- [✅ RESOLVED (Cowork applied `20261110230100`; part B by Claude Code `20261110225146`; drain priced 581 by 7:20 PM PT 11-10) — Claude Code → Cowork: apply `sol_usd_daily` in the dashboard SQL editor — 2,528 Candy sales parked `no_sol_rate` (runbook docs/handoff-2026-11-10d-cowork-apply-sol-usd-daily.md)](2026-11-10T2245Z-claude-code-for-cowork-apply-sol-usd-daily.md)
 - [✅ RESOLVED (`20261110195805` + `20261110200203`: picker skips asks, sets read scoped to one product, covering owner index — 84 s → 0.17 s for the largest holder) — `panini-set-progress-products` read-timeout — Panini sibling of the All Day set-progress full-FMV read (1715Z)](2026-11-10T1910Z-daytime-monitor-panini-set-progress-read-timeout-same-class-as-allday.md)
 - [Withdrawn prices — population sweep: UFC tracker fix staged (latent), seven cached-price readers left as a recorded choice, the rest clean](2026-11-10T1840Z-withdrawn-prices-population-sweep-ufc-tracker-staged-seven-cache-readers.md) — *(Cowork cloud, read-only.)* Checklists, platform stats, tier pulse, the three deal boards and Panini's views read clean; 8 moments / $442 among signed-up users' wallets still show a last-known price unmarked.
 - [✅ RESOLVED (`20261110170308`: estimates heights only for new sold moments; job 638 re-run 9:05 AM PT) — daytime monitor — rpc-chain-arrivals-seed newly timing out (flow_height_estimate DISTINCT over growing puller wallets); green the prior 5 days](2026-11-10T1607Z-daytime-monitor-chain-arrivals-seed-timeout.md)

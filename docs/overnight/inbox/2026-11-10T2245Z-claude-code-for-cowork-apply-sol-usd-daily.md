@@ -9,3 +9,5 @@
 **↳ Part B added (~2:55 PM PT):** re-verify the Candy marketplace silence (revival arm fired on one $0.17 sale) — `docs/proposals/audit_20261110_candy_marketplace_silence_reverified-STAGED.sql` (SHA-256 `66e201e7…1403`), same runbook. Part C: the ask-book arm is a false positive that clears ~7:35 PM PT.
 
 **↳ Part B done by Claude Code (~2:55 PM PT, `20261110225146`):** `apply_migration` went through without a prompt; revival arm reads 0. Only part A remains for Cowork.
+
+**↳ RESOLVED (verified 11-10 ~4:26 PM PT and 11-11):** Cowork applied part A as `20261110230100` (100 days, pre/post-checks matched); the 4:20 PM PT and 7:20 PM PT indexer runs priced 297 + 284 parked sales; `candy_sales_stale_hours` cleared by 11-11.
