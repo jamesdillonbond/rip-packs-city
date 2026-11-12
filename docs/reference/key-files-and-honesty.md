@@ -2481,6 +2481,7 @@ COALESCE** — a reviewer reading only the diff would get that backwards.
 
 - ⚠ **A SERVER-SEEDED PROP (`initial={rows}`) is a fifth layer the table misses** — pass `initialFailed`, assert by SSR: key-files-and-honesty.md.
 - ⚠ **ISR CACHES A FAILED READ for the whole `revalidate` window** and self-heals warm, so it is **easy to declare fixed by accident**: test *"does a COLD pass exceed the budget"*, never *"is the page OK now"* (#33).
+- ⚠ **A PREFETCHED LIST OF ISR LINKS IS A COLD-REGENERATION STORM (2026-11-12).** Next prefetches the full RSC payload of every visible `<Link>` to an ISR page. The `/teams` index showed ~100 franchise-hub cards, each hub a fan-out read (every collection's `get_team_detail` + top editions + activity), so one visit regenerated dozens of cold hubs at once: Atlanta, Boston, Brooklyn and Charlotte panels all blew their 10 s budget in the same second (7:53 AM PT), ~1–4 such panel timeouts a day for a week, and each degraded render was then served for the 600 s revalidate window. `get_team_detail` alone is ~0.8 s / ~14k buffers on a big team, so the cause was concurrency, not the function. **Fix: `prefetch={false}` on every hub link** (pinned by `__tests__/franchise-hub-links-do-not-prefetch.test.ts`, tree walk). Any grid of links to a heavy ISR route wants the same.
 
 ## Another PAGED read with a hard stop: /api/wallet/edition-counts truncated three real wallets (2026-09-25, PT)
 
