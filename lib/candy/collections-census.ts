@@ -87,7 +87,7 @@ export interface CollectionCensusReport {
   error: string | null
 }
 
-type EditionLabels = { external_id: string; tier: string | null; player_name: string | null; team_name: string | null; set_name: string | null; circulation_count: number | null; thumbnail_url: string | null; video_url?: string | null }
+type EditionLabels = { external_id: string; tier: string | null; player_name: string | null; team_name: string | null; set_name: string | null; circulation_count: number | null; thumbnail_url: string | null; video_url?: string | null; rarity_label?: string | null }
 
 /**
  * Existing holdings rows for these cards, the COMPLETE editions they point at, and the
@@ -113,7 +113,7 @@ async function readExisting(db: Db, ids: string[]): Promise<{ rows: Map<string, 
   const keys = [...new Set([...rows.values()].flat().map((r) => r.edition_key))]
   for (let i = 0; i < keys.length; i += READ_CHUNK) {
     const { data, error } = await db.from("editions")
-      .select("external_id,tier,player_name,team_name,set_name,circulation_count,thumbnail_url,video_url")
+      .select("external_id,tier,player_name,team_name,set_name,circulation_count,thumbnail_url,video_url,rarity_label")
       .eq("collection_id", CANDY_MLB_UUID)
       .in("external_id", keys.slice(i, i + READ_CHUNK))
     if (error) return { rows, complete, incomplete, error: `editions read: ${error.message}` }
@@ -311,6 +311,7 @@ export async function runCollectionsCensus(
         if (cur.player_name == null && e.player_name != null) patch.player_name = e.player_name
         if (cur.team_name == null && e.team_name != null) patch.team_name = e.team_name
         if (cur.video_url == null && e.video_url != null) patch.video_url = e.video_url
+        if (cur.rarity_label == null && e.rarity_label != null) patch.rarity_label = e.rarity_label
         const { data, error } = await db.from("editions")
           .update(patch)
           .eq("collection_id", CANDY_MLB_UUID)

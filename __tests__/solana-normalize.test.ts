@@ -320,6 +320,20 @@ describe("multi-set Candy assets", () => {
     expect(chaser.tier).toBeNull()
   })
 
+  // 2026-11-12 (Trevor: "Map it out the way the asset class works for this collection itself"):
+  // Candy's own rarity name is kept beside the shared tier, so Titan / Unique / Rainbow read as Candy names them.
+  it("records Candy's NATIVE rarity name (title-cased, matching the DB backfill) beside the shared tier", () => {
+    expect(normalizeEdition(grouped(ASG, "Yordan Alvarez (12/77)", { Rarity: "TITAN", "Serial Number": "12/77" }))).toMatchObject({ tier: "LEGENDARY", rarity_label: "Titan" })
+    expect(normalizeEdition(grouped(ASG, "Shohei Ohtani AllStar Starter (3/40)", { Rarity: "UNIQUE", "Serial Number": "3/40" }))).toMatchObject({ tier: null, rarity_label: "Unique" })
+    expect(normalizeEdition(grouped(ASG, "Aaron Judge (3/50)", { Rarity: "RARE", "Serial Number": "3/50" })).rarity_label).toBe("Rare")
+    expect(normalizeEdition(grouped(ASG, "X (1/1)", { Rarity: "special  edition", "Serial Number": "1/1" })).rarity_label).toBe("Special Edition")
+  })
+
+  it("an asset with NO Rarity trait carries no rarity_label KEY, so the daily upsert never clobbers a stored label", () => {
+    const e = normalizeEdition(grouped(ASG, "Aaron Judge (3/50)", { "Serial Number": "3/50" }))
+    expect(Object.prototype.hasOwnProperty.call(e, "rarity_label")).toBe(false)
+  })
+
   it("Base checklist designations (Rookie / First Mint) are not copied onto a later set's ICONs", () => {
     const e = normalizeEdition(grouped(ASG, "Jac Caglianone - Home Run Derby (1/15)", { "Player Name": "Jac Caglianone", Rarity: "INSERT", "Insert Type": "Home Run Derby" }))
     expect(e.badges ?? []).not.toContain("Rookie")

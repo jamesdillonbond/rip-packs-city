@@ -308,6 +308,11 @@ export interface NormalizedEdition {
   set_id?: string
   set_name?: string
   tier?: string | null
+  // 2026-11-12 (Trevor: "Map it out the way the asset class works for this collection itself") —
+  // the collection's OWN rarity name, from the Rarity trait title-cased (Core, Titan, Unique, Rainbow,
+  // Gold …), beside the shared `tier` ladder. ⛔ Present ONLY when the trait is: an asset DAS returned
+  // without its attributes must never clobber a stored label with NULL on the daily upsert.
+  rarity_label?: string
 }
 
 // editions.badges (text[]) — best-effort from name (Rainbow) + trait probes
@@ -391,10 +396,22 @@ export function teamFromBallName(asset: DasAsset): string | null {
   return BALL_TEAM_ALIASES[club] ?? club
 }
 
-function nonBaseSetFields(asset: DasAsset): Pick<NormalizedEdition, "set_id" | "set_name" | "tier"> {
+function nonBaseSetFields(asset: DasAsset): Pick<NormalizedEdition, "set_id" | "set_name" | "tier" | "rarity_label"> {
   const set = candySetForAsset(asset)
   if (!set || set.editionKeyPrefix === null) return {}
-  return { set_id: set.setId, set_name: set.name, tier: candyTierFromAsset(asset) }
+  const rarity = candyRarityLabel(asset)
+  return { set_id: set.setId, set_name: set.name, tier: candyTierFromAsset(asset), ...(rarity ? { rarity_label: rarity } : {}) }
+}
+
+/**
+ * Candy's own rarity name from the Rarity trait, title-cased ("TITAN" → "Titan", "SPECIAL EDITION" →
+ * "Special Edition") — the same form Postgres initcap() gave the 2026-11-12 backfill, so one label never
+ * has two spellings. null when the trait is absent.
+ */
+export function candyRarityLabel(asset: DasAsset): string | null {
+  const r = (attr(asset, "Rarity") ?? "").trim().replace(/\s+/g, " ")
+  if (!r) return null
+  return r.toLowerCase().replace(/(^|[^a-z0-9])([a-z])/g, (_m, p: string, c: string) => p + c.toUpperCase())
 }
 
 // One wallet_moments_cache row (dedup on wallet_address,collection_id,moment_id).
