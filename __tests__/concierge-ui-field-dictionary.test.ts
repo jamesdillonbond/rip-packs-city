@@ -118,3 +118,18 @@ describe("ui field dictionary — cost basis and the weekly email (2026-11-09)",
     expect(hit?.meaning).toMatch(/Monday morning/)
   })
 })
+
+describe("ui field dictionary — boxes, cases and where the simulator lives (2026-11-12)", () => {
+  it("a box-value question reaches the box/case contents entry, which explains both totals", () => {
+    const hit = lookupUiField("what does rip ev vs sealed value mean on the rookie debut box?", "pack (nba-top-shot)")[0]
+    expect(hit?.id).toBe("pack-detail.box-case-contents")
+    expect(hit?.meaning).toMatch(/Rip EV = /)
+    expect(hit?.meaning).toMatch(/Sealed value = /)
+  })
+  it("a 'where did the simulator go' question reaches the entry that says it is on the pack detail page only", () => {
+    const hit = lookupUiField("where is the pack simulator now? clicking a pack no longer opens it", "packs")[0]
+    expect(hit?.id).toBe("pack-simulator.where")
+    expect(hit?.meaning).toMatch(/Simulate a rip/)
+    expect(hit?.meaning).not.toMatch(/Simulate" button on (the|every) (row|table)/)
+  })
+})

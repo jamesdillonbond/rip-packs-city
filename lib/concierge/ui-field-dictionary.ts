@@ -143,6 +143,25 @@ export const UI_FIELD_DICTIONARY: readonly UiFieldEntry[] = [
     source: "beta-feedback queue 2026-09-30 + app/api/support-chat/route.ts (badges guidance)",
   },
   {
+    // 2026-11-12 (Trevor: "Rip EV on Boxes and Cases"). A box / case holds PACKS, not Moments.
+    id: "pack-detail.box-case-contents",
+    surface: "pack detail page of a Top Shot box or case (/[collection]/pack/dist/[distId]) — \"What's inside this box / case\"",
+    field: "Rip EV — open everything; Sealed value — sell the packs inside; per-pack Qty / EV each / Lowest ask",
+    aliases: ["box ev", "case ev", "rip ev", "sealed value", "what's inside this box", "what's inside this case", "box topper", "case topper", "premium pack", "worth opening the box", "open the case or sell", "sell the packs inside", "priced", "not priced yet", "box", "case"],
+    meaning:
+      "A box or case contains sealed packs (e.g. the 2026-27 Rookie Debut Box = 1 Box Topper + 4 Collector Packs; Case = 1 Case Topper + 1 Premium Pack + 10 Collector Packs). Rip EV = the sum of each inner pack's expected pull value × how many are inside — what opening everything is worth before fees. Sealed value = the sum of each inner pack's lowest live ask × how many — what selling the packs inside unopened would fetch. Each total shows only when EVERY inner pack has a number; \"— (N% priced)\" means only N% of that pack's pool has an FMV yet (under 25% its EV is withheld), which is why a new Case often has no Rip EV until its topper's chase cards sell. The \"from the official description\" note means no box/case has been opened on record yet; the contents come from Top Shot's own description until one is. There is no rip simulator for a box or case (it has no Moment pool) — open an inner pack's page for that.",
+    source: "app/(collections)/[collection]/pack/dist/[distId]/page.tsx (ContainerContentsSection) + lib/pack-dist/container-contents.ts + pack_container_recipes / refresh_container_pack_ev (20261112144751)",
+  },
+  {
+    id: "pack-simulator.where",
+    surface: "pack detail page (/[collection]/pack/dist/[distId])",
+    field: "\"Simulate a rip\" button — the only way into the rip simulator",
+    aliases: ["simulator", "simulate", "rip simulator", "pack simulator", "open simulator", "where is the simulator", "simulate a rip", "run simulator"],
+    meaning:
+      "Clicking a pack anywhere on RPC opens its pack detail page. The rip simulator is linked from there only — the \"Simulate a rip\" button beside \"← All packs\" at the top. It appears only for packs with an indexed Moment pool (Top Shot, All Day, Golazos); boxes, cases and Disney Pinnacle packs have none, so they have no button.",
+    source: "app/(collections)/[collection]/pack/dist/[distId]/page.tsx (data-testid pack-simulator-link; 2026-11-12) + __tests__/pack-clicks-open-the-detail-page-not-the-simulator.test.ts",
+  },
+  {
     id: "pack-simulator.ev-per-slot",
     surface: "pack rip simulator (/[collection]/packs/simulator/[distId])",
     field: "EV / Slot (shown as \"≥ $X\" when coverage is under 100%)",
