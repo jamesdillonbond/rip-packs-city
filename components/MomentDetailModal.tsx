@@ -55,7 +55,7 @@ export interface MomentDetailModalProps {
     bestOffer?: number | null;
     marketConfidence?: string | null;
     /** #215: the ASK_ONLY FMV is capped at the edition's sales (not one seller's ask). */
-    fmvCapped?: boolean | null;
+    fmvCapped?: boolean | "comparables" | null;
     badgeTitles?: string[];
     officialBadges?: string[];
     imageUrlPrefix?: string | null;
@@ -418,7 +418,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
             // "from asks" plain-words marker for an ASK_ONLY FMV (0.9x a single
             // seller's ask, never traded) — the only sanctioned per-value FMV
             // honesty marker (lib/fmv-basis.ts). Never the confidence enum.
-            const askBasis = fmvBasis(moment.marketConfidence, moment.fmvCapped === true);
+            const askBasis = fmvBasis(moment.marketConfidence, moment.fmvCapped ?? null);
             return (
               <div>
                 <div style={{ fontSize: 10, color: "var(--rpc-text-secondary)", letterSpacing: "0.1em" }}>FMV</div>

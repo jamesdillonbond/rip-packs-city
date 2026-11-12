@@ -16,7 +16,7 @@
 
 import { supabaseAdmin } from "@/lib/supabase"
 import { boundedRead } from "@/lib/api/bounded-read"
-import { isSalesCappedAlgo } from "@/lib/fmv-basis"
+import { askCapFlag, type FmvCapFlag } from "@/lib/fmv-basis"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
@@ -45,9 +45,9 @@ function askOnlyFmvByKey(rows: CappedCandidate[]): Map<string, number> {
 }
 
 /** Edition UUID → capped?, for the ASK_ONLY rows. */
-export async function readCappedByEditionId(rows: CappedCandidate[], db: Db = supabaseAdmin): Promise<Map<string, boolean>> {
+export async function readCappedByEditionId(rows: CappedCandidate[], db: Db = supabaseAdmin): Promise<Map<string, FmvCapFlag>> {
   const fmvById = askOnlyFmvByKey(rows)
-  const out = new Map<string, boolean>()
+  const out = new Map<string, FmvCapFlag>()
   const ids = [...fmvById.keys()]
   try {
     for (let i = 0; i < ids.length; i += FMV_CHUNK) {
@@ -61,7 +61,7 @@ export async function readCappedByEditionId(rows: CappedCandidate[], db: Db = su
         const f = fmvById.get(id)
         if (f == null || out.has(id)) continue
         if (Math.abs(Number(snap.fmv_usd) - f) > PRICE_EPSILON) continue
-        out.set(id, isSalesCappedAlgo(snap.algo_version))
+        out.set(id, askCapFlag(snap.algo_version))
       }
     }
   } catch {
@@ -75,7 +75,7 @@ export async function readCappedByExternalId(
   collectionId: string,
   rows: CappedCandidate[],
   db: Db = supabaseAdmin,
-): Promise<Map<string, boolean>> {
+): Promise<Map<string, FmvCapFlag>> {
   const fmvByExt = askOnlyFmvByKey(rows)
   const exts = [...fmvByExt.keys()]
   if (exts.length === 0) return new Map()
@@ -98,7 +98,7 @@ export async function readCappedByExternalId(
     [...idByExt].map(([ext, id]) => ({ key: id, fmv: fmvByExt.get(ext), confidence: "ASK_ONLY" })),
     db,
   )
-  const out = new Map<string, boolean>()
+  const out = new Map<string, FmvCapFlag>()
   for (const [ext, id] of idByExt) {
     const v = byId.get(id)
     if (v != null) out.set(ext, v)

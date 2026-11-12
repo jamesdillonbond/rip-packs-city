@@ -18,7 +18,7 @@ import { awardPoints } from "@/lib/rewards"
 import { serverMomentToRow, type ServerMoment } from "@/lib/collection/server-moment"
 import { bucketAcquisitionCounts, acquisitionMethodLabel } from "@/lib/analytics/shape"
 import { ownLookup } from "@/lib/safe-lookup"
-import { isSalesCappedAlgo } from "@/lib/fmv-basis"
+import { askCapFlag, type FmvCapFlag } from "@/lib/fmv-basis"
 import { anonIpKey, bumpAnonRates } from "@/lib/abuse/anon-rate"
 import { isSeedableRow, seedTier } from "@/lib/wallet-search/seed-edition"
 
@@ -52,7 +52,7 @@ type WalletRow = {
   tssPoints?: number | null
   fmv?: number | null
   marketConfidence?: string | null
-  fmvCapped?: boolean | null
+  fmvCapped?: boolean | "comparables" | null
   fmvComputedAt?: string | null
   acquisitionMethod?: string | null
   buyPrice?: number | null
@@ -829,7 +829,7 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
     // confidence with sales_count_30d >= 3. Guards against known FMV pipeline
     // outliers (12 LaLiga + 11 AllDay editions currently emit $900K-$1M values
     // from low-data fallbacks).
-    const editionFmvMap = new Map<string, { fmv: number; confidence: string; computedAt: string; capped: boolean }>()
+    const editionFmvMap = new Map<string, { fmv: number; confidence: string; computedAt: string; capped: FmvCapFlag }>()
     for (const [extId, intId] of extToId) {
       const snap = fmvMap.get(intId)
       if (!snap) continue
@@ -842,7 +842,7 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
         fmv: raw,
         confidence: (snap.confidence ?? "low").toLowerCase(),
         computedAt: snap.computed_at,
-        capped: isSalesCappedAlgo(snap.algo_version),
+        capped: askCapFlag(snap.algo_version),
       })
     }
 
@@ -934,7 +934,7 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
               fmv: raw,
               confidence: (snap.confidence ?? "low").toLowerCase(),
               computedAt: snap.computed_at,
-              capped: isSalesCappedAlgo(snap.algo_version),
+              capped: askCapFlag(snap.algo_version),
             })
           }
         }

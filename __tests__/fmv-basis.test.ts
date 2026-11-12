@@ -15,7 +15,7 @@
 // "improve" this helper is to start emitting the enum.
 
 import { describe, it, expect } from "vitest"
-import { fmvBasis, isAskDerivedFmv, isSalesCappedAlgo } from "@/lib/fmv-basis"
+import { fmvBasis, isAskDerivedFmv, isSalesCappedAlgo, askCapFlag } from "@/lib/fmv-basis"
 
 describe("fmvBasis", () => {
   it("returns the ask-derived marker for ASK_ONLY, case- and whitespace-insensitively", () => {
@@ -62,6 +62,31 @@ describe("fmvBasis", () => {
     expect(fmvBasis("ASK_ONLY", false)!.label).toBe("from asks")
     expect(fmvBasis("ASK_ONLY", null)!.label).toBe("from asks")
     expect(fmvBasis("ASK_ONLY")!.label).toBe("from asks")
+  })
+
+  // 2026-11-12: the All Day comp cap (`_compcap`) holds an ask-only price to the edition's comparable
+  // estimate. That number is neither one seller's ask nor the edition's own sales, so BOTH older
+  // markers would be false about it.
+  it("⛔ a price held to comparables wears neither 'from asks' nor 'capped at sales'", () => {
+    const b = fmvBasis("ASK_ONLY", "comparables")!
+    expect(b.label).toBe("held to comparables")
+    expect(`${b.label} ${b.title}`).not.toMatch(/from asks|no corroborating sales|capped at sales|its own sales/i)
+    for (const banned of ["HIGH", "MEDIUM", "LOW", "STALE", "ASK_ONLY", "NO_DATA", "confidence"]) {
+      expect(`${b.label} ${b.title}`, banned).not.toContain(banned)
+    }
+    expect(fmvBasis("HIGH", "comparables")).toBeNull()
+  })
+
+  it("askCapFlag: the LAST cap decides — sales wins over comparables, as in get_edition_detail", () => {
+    expect(askCapFlag("allday-listing-ask-v1_compcap")).toBe("comparables")
+    expect(askCapFlag("allday-listing-ask-v1_compcap_bidfloor")).toBe("comparables")
+    // the comp cap fires before the sales cap, so a row both touched ends _salescap → sales
+    expect(askCapFlag("allday-listing-ask-v1_compcap_salescap")).toBe(true)
+    expect(askCapFlag("1.8.3_salescap_bidfloor")).toBe(true)
+    expect(askCapFlag("cold-tail-1.0_bidfloor")).toBe(false)
+    expect(askCapFlag("compcap_v2")).toBe(false)
+    expect(askCapFlag(null)).toBe(false)
+    expect(askCapFlag(undefined)).toBe(false)
   })
 
   it("isSalesCappedAlgo reads the same suffixes as get_edition_detail's basis_capped", () => {

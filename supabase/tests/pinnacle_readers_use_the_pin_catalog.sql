@@ -422,7 +422,8 @@ BEGIN
           'sales_count_30d', fmv.sales_count_30d,
           'days_since_sale', fmv.days_since_sale,
           'cross_market_ask',fmv.cross_market_ask,
-          'basis_capped',    COALESCE(fmv.algo_version ~ '_(salescap|histcap)(_bidfloor)?$', false)
+          'basis_capped',    COALESCE(fmv.algo_version ~ '_(salescap|histcap)(_bidfloor)?$', false),
+          'basis_comparables', COALESCE(fmv.algo_version ~ '_compcap(_bidfloor)?$', false)
         )
       END
     ) INTO result
@@ -813,6 +814,20 @@ UPDATE public.fmv_snapshots SET algo_version = '1.8.3_histcap_salescap_bidfloor'
 SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:146') -> 'fmv' ->> 'basis_capped'), 'true', 'editions arm: _salescap_bidfloor is still basis_capped');
 UPDATE public.fmv_snapshots SET algo_version = 'cold-tail-1.0_bidfloor' WHERE edition_id = '22222222-2222-2222-2222-222222222222';
 SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:146') -> 'fmv' ->> 'basis_capped'), 'false', 'editions arm: a bid-floored UNCAPPED ask is not capped');
+
+-- 2026-11-12: the All Day comp cap stamps _compcap. A row whose LAST cap was the comparable estimate is
+-- basis_comparables (and NOT basis_capped — it is not the edition's sales); a row the sales cap then tightened
+-- ends _salescap and reads as sales; an uncapped row is neither. Never NULL.
+UPDATE public.fmv_snapshots SET algo_version = 'allday-listing-ask-v1_compcap' WHERE edition_id = '22222222-2222-2222-2222-222222222222';
+SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:146') -> 'fmv' ->> 'basis_comparables'), 'true', 'editions arm: a _compcap row is basis_comparables');
+SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:146') -> 'fmv' ->> 'basis_capped'), 'false', 'editions arm: a _compcap row is not capped at sales');
+UPDATE public.fmv_snapshots SET algo_version = 'allday-listing-ask-v1_compcap_bidfloor' WHERE edition_id = '22222222-2222-2222-2222-222222222222';
+SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:146') -> 'fmv' ->> 'basis_comparables'), 'true', 'editions arm: _compcap_bidfloor is still basis_comparables');
+UPDATE public.fmv_snapshots SET algo_version = 'allday-listing-ask-v1_compcap_salescap' WHERE edition_id = '22222222-2222-2222-2222-222222222222';
+SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:146') -> 'fmv' ->> 'basis_comparables'), 'false', 'editions arm: a sales cap after the comp cap reads as sales');
+SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:146') -> 'fmv' ->> 'basis_capped'), 'true', 'editions arm: _compcap_salescap is basis_capped');
+UPDATE public.fmv_snapshots SET algo_version = NULL WHERE edition_id = '22222222-2222-2222-2222-222222222222';
+SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:146') -> 'fmv' ->> 'basis_comparables'), 'false', 'editions arm: a NULL algo_version is not held to comparables (never NULL)');
 
 SELECT '✓ pinnacle readers on the pin catalog: all assertions passed' AS result;
 

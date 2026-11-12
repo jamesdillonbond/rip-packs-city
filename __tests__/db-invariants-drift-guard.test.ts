@@ -470,8 +470,9 @@ const PINS = [
     // Re-pointed 2026-10-21: the editions arm carries play_category/play_type/game_date/subedition_name (SEO titles).
     // Re-pointed 2026-10-29 (#215): the editions arm's fmv carries basis_capped.
     // Re-pointed 2026-11-04: basis_capped survives the Top Shot offer floor's _bidfloor suffix.
+    // Re-pointed 2026-11-12: the editions arm's fmv carries basis_comparables (the All Day _compcap).
     migration:
-      "supabase/migrations/20261105063000_audit_20261104_edition_detail_capped_survives_bid_floor.sql",
+      "supabase/migrations/20261112173500_audit_20261112_edition_detail_says_when_a_price_is_held_to_comparables.sql",
   },
   {
     fn: "get_platform_stats",

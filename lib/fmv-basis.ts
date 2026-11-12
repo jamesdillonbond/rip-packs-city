@@ -53,6 +53,24 @@ const CAPPED_AT_SALES: FmvBasisMarker = {
     "The lowest listed ask is higher than this edition has sold for, so the price is held to its own sales rather than taken from the ask.",
 }
 
+// 2026-11-12: an NFL All Day ASK_ONLY price can instead be held to the edition's COMPARABLE estimate
+// (`_compcap`: the typical price of its set-mates, adjusted for the player). Neither marker above is
+// true of that number — it is below the ask, and it is not the edition's own sales — so it gets its own.
+const HELD_TO_COMPARABLES: FmvBasisMarker = {
+  label: "held to comparables",
+  title:
+    "The lowest listed ask is higher than similar editions in this set sell for, so the price is held to an estimate from those editions rather than taken from the ask.",
+}
+
+/**
+ * How an ask-only price was capped, if at all: `true` = at the edition's own sales (the original
+ * #215 flag, kept as a boolean so every existing carrier still works), `"comparables"` = at its
+ * comparable-edition estimate, `false`/null = not capped. A carrier that only tests `=== true`
+ * degrades a comparables cap to the plain ask marker — the pre-11-12 rendering, never a wrong claim
+ * about sales.
+ */
+export type FmvCapFlag = boolean | "comparables"
+
 /**
  * Marker for an FMV value, keyed off its `fmv_snapshots.confidence`
  * (or `panini_fmv_snapshots.confidence`) value.
@@ -63,10 +81,12 @@ const CAPPED_AT_SALES: FmvBasisMarker = {
  * payload's `basis_capped`) swaps "from asks" for "capped at sales"; a surface that
  * does not carry the flag keeps the ask marker (#215 tracks those).
  */
-export function fmvBasis(confidence: string | null | undefined, capped?: boolean | null): FmvBasisMarker | null {
+export function fmvBasis(confidence: string | null | undefined, capped?: FmvCapFlag | null): FmvBasisMarker | null {
   if (!confidence) return null
   if (String(confidence).trim().toUpperCase() !== "ASK_ONLY") return null
-  return capped === true ? CAPPED_AT_SALES : ASK_DERIVED
+  if (capped === true) return CAPPED_AT_SALES
+  if (capped === "comparables") return HELD_TO_COMPARABLES
+  return ASK_DERIVED
 }
 
 /**
@@ -77,6 +97,18 @@ export function fmvBasis(confidence: string | null | undefined, capped?: boolean
  */
 export function isSalesCappedAlgo(algoVersion: string | null | undefined): boolean {
   return typeof algoVersion === "string" && /_(salescap|histcap)(_bidfloor)?$/.test(algoVersion)
+}
+
+/**
+ * The cap flag for an FMV row's `algo_version`: `true` when the LAST cap applied was the edition's
+ * own sales (`isSalesCappedAlgo`), `"comparables"` when it was the comparable estimate
+ * (`…_compcap`, optionally lifted to a live bid: `…_compcap_bidfloor`), else `false`. The All Day
+ * comp cap fires BEFORE the sales cap on purpose, so a row both caps touched ends `_salescap` and
+ * reads as sales — the tighter, own-edition fact.
+ */
+export function askCapFlag(algoVersion: string | null | undefined): FmvCapFlag {
+  if (isSalesCappedAlgo(algoVersion)) return true
+  return typeof algoVersion === "string" && /_compcap(_bidfloor)?$/.test(algoVersion) ? "comparables" : false
 }
 
 /** True when this FMV is ASK_ONLY (its floor field is an ask, not a sale) — capped or not. */
