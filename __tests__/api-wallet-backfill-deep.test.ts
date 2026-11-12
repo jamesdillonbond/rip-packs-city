@@ -366,6 +366,57 @@ describe("wallet-backfill — walk + upsert contract", () => {
     }
   })
 
+  // 2026-11-11: a 508 the resume queue CATCHES is a deferred continuation, not a broken
+  // chain. Every such row used to be ok=false, so the failure_rate arm read HIGH on chains
+  // the queue had already walked on (0x32c66e…: three 508s, each resumed within 2–4 min).
+  // Both outcomes are pinned: queued → ok, deferred_to resume_queue; NOT queued → ok=false.
+  async function walkThatHits508(queueUpsert: { data: unknown; error: unknown }) {
+    const fetchSpy = vi.fn(async (_url: string, _init?: RequestInit) => new Response("loop", { status: 508 }))
+    vi.stubGlobal("fetch", fetchSpy)
+    const realNow = Date.now
+    let calls = 0
+    vi.spyOn(Date, "now").mockImplementation(() => realNow() + calls++ * 100_000)
+    vi.useFakeTimers({ toFake: ["setTimeout"] })
+    try {
+      state.ownedIds = Array.from({ length: 45 }, (_, i) => i + 1)
+      state.metadataById = Object.fromEntries(state.ownedIds.map((id) => [String(id), meta({ serial: String(id) })]))
+      const spy = install({
+        wallet_moments_cache: { data: [], error: null },
+        "rpc:upsert_wmc_batch": { data: { written: 20 }, error: null },
+        "wallet_backfill_resume_queue:upsert": queueUpsert,
+      } as never)
+      await POST(post({ wallet: WALLET, continuation: 2 }))
+      const run = runDeferred()
+      await vi.runAllTimersAsync()
+      await run
+      const row = spy.rpcCalls.find(
+        (c) => c.name === "log_pipeline_run" && c.args?.p_pipeline === "wallet-backfill-continuation",
+      )?.args
+      return { row, queued: spy.writes["wallet_backfill_resume_queue"] ?? [] }
+    } finally {
+      vi.useRealTimers()
+      vi.restoreAllMocks()
+      vi.unstubAllGlobals()
+    }
+  }
+
+  it("a 508 continuation that the resume queue CATCHES is recorded as deferred, not failed", async () => {
+    const { row, queued } = await walkThatHits508({ data: null, error: null })
+    expect(queued).toHaveLength(1)
+    expect(queued[0].rows[0]).toMatchObject({ wallet: WALLET, depth: 3 })
+    expect(row).toMatchObject({ p_ok: true, p_error: null })
+    expect(row?.p_extra).toMatchObject({ depth: 3, status: 508, deferred_to: "resume_queue", queue_error: null })
+    expect(String((row?.p_extra as Record<string, unknown>).dispatch_error)).toContain("HTTP 508")
+  })
+
+  it("a 508 continuation the queue could NOT take is a broken chain: ok=false, both errors named", async () => {
+    const { row } = await walkThatHits508({ data: null, error: { message: "queue down" } })
+    expect(row?.p_ok).toBe(false)
+    expect(String(row?.p_error)).toContain("HTTP 508")
+    expect(String(row?.p_error)).toContain("resume queue write failed: queue down")
+    expect(row?.p_extra).toMatchObject({ deferred_to: null, queue_error: "queue down" })
+  })
+
   it("an empty wallet short-circuits: no upsert, stats still stamped, scan records 0", async () => {
     state.ownedIds = []
     const spy = install({})

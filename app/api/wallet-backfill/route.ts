@@ -687,8 +687,26 @@ async function recordScan(wallet: string, foundCount: number) {
   }
 }
 
-/** A FAILED continuation is a broken chain: record it where the failure instruments read. */
-async function logContinuationFailure(startedAt: string, wallet: string, d: ContinuationDispatch) {
+/**
+ * Record a continuation that could not be dispatched directly.
+ *
+ * 2026-11-11: a 508 the resume queue CAUGHT is a DEFERRED continuation, not a broken
+ * chain. Before this, every such row was ok=false, so the `wallet-backfill-continuation`
+ * failure_rate arm read HIGH (5/5, then 3/3 on 11-11) on chains the queue had already
+ * re-dispatched within 2–4 min — 0x32c66e4278279976 hit three 508s that afternoon and
+ * walked on each time. The row now says what happened:
+ *   • queued  → ok=true, extra.deferred_to = "resume_queue" (the 508 detail is kept);
+ *   • NOT queued → ok=false: nothing will resume it, the chain IS broken.
+ * A queued continuation that later cannot be dispatched is still loud: the resume cron
+ * marks its own run ok=false on a requeue or a drop (lib/chains/flow/wallet-backfill-resume.ts).
+ */
+async function logContinuationOutcome(
+  startedAt: string,
+  wallet: string,
+  d: ContinuationDispatch,
+  queued: { ok: boolean; error: string | null },
+) {
+  const dispatchError = `continuation ${d.depth} not dispatched after ${d.attempts} attempt(s): ${d.error}`
   try {
     const { error } = await (supabaseAdmin as any).rpc("log_pipeline_run", {
       p_pipeline: "wallet-backfill-continuation",
@@ -696,16 +714,24 @@ async function logContinuationFailure(startedAt: string, wallet: string, d: Cont
       p_rows_found: 0,
       p_rows_written: 0,
       p_rows_skipped: 0,
-      p_ok: false,
-      p_error: `continuation ${d.depth} not dispatched after ${d.attempts} attempt(s): ${d.error}`,
+      p_ok: queued.ok,
+      p_error: queued.ok ? null : `${dispatchError}; resume queue write failed: ${queued.error}`,
       p_collection_slug: "nba_top_shot",
       p_cursor_before: null,
       p_cursor_after: null,
-      p_extra: { wallet, depth: d.depth, attempts: d.attempts, status: d.status },
+      p_extra: {
+        wallet,
+        depth: d.depth,
+        attempts: d.attempts,
+        status: d.status,
+        dispatch_error: dispatchError,
+        deferred_to: queued.ok ? "resume_queue" : null,
+        queue_error: queued.error,
+      },
     })
-    if (error) console.warn(`[wallet-backfill] continuation failure row not written: ${error.message}`)
+    if (error) console.warn(`[wallet-backfill] continuation row not written: ${error.message}`)
   } catch (err) {
-    console.warn(`[wallet-backfill] continuation failure row threw: ${err instanceof Error ? err.message : String(err)}`)
+    console.warn(`[wallet-backfill] continuation row threw: ${err instanceof Error ? err.message : String(err)}`)
   }
 }
 
@@ -805,12 +831,14 @@ export async function POST(req: NextRequest) {
         `[wallet-backfill] continuation wallet=${wallet} depth=${d.depth} ok=${d.ok} attempts=${d.attempts} status=${d.status ?? "none"}${d.error ? ` error=${d.error}` : ""}`,
       )
       if (!d.ok) {
-        await logContinuationFailure(new Date().toISOString(), wallet, d)
         // #245 (2026-11-10): Vercel refuses a deep self-dispatch chain with 508; retrying the same
         // path cannot succeed. Queue it — /api/cron/wallet-backfill-resume dispatches it from a
-        // fresh (cron) request at the same depth.
+        // fresh (cron) request at the same depth. Queued FIRST so the row can say whether the
+        // chain was deferred or broken (2026-11-11).
+        const failedAt = new Date().toISOString()
         const q = await enqueueResume(supabaseAdmin, wallet, d.depth, d.error)
         console.log(`[wallet-backfill] continuation queued wallet=${wallet} depth=${d.depth} ok=${q.ok}${q.error ? ` error=${q.error}` : ""}`)
+        await logContinuationOutcome(failedAt, wallet, d, q)
       }
     }
   })
