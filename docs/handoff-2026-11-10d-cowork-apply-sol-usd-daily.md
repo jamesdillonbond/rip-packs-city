@@ -1,6 +1,6 @@
 # Handoff → Cowork: apply `sol_usd_daily` + re-verify the Candy marketplace silence (2026-11-10, Claude Code cloud)
 
-**Why Cowork (part A only):** Claude Code's `apply_migration` raised the Supabase confirmation prompt three times (2:35, ~2:50 and ~2:55 PM PT — the last right after part B applied with no prompt, so the prompt looks content-triggered: REVOKEs / `cron.schedule`
+**Why Cowork (part A only):** Claude Code's `apply_migration` raised the Supabase confirmation prompt three times (2:35, ~2:50 and ~2:55 PM PT — the last right after part B applied with no prompt, so the prompt is content-triggered — by the `DELETE` prune inside `sol_usd_daily_tick()`, not the REVOKEs / `cron.schedule` (corrected 11-11; tooling-gotchas.md)
 11-10) and it never reached Trevor; Trevor: "Do it. If it's something you can't do here, hand it off to cowork."
 Use the **dashboard SQL editor in Trevor's Chrome** (the 11-08 / 11-09 route). Nothing below is in production yet.
 
