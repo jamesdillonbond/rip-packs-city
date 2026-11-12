@@ -55,3 +55,5 @@ predates the 11-10 11:30 AM PT fix → stale pre-fix run, clears on the 11-11 3:
 Re-measured: 705k buffers / 13.4 s for 0 rows; the unpriced-set anti-join over `fmv_snapshots` was 256k of it and most of the cold IO. `20261111014609` prefilters on `edition_fmv_current` (then confirms against `fmv_snapshots`; same set, EXCEPT both ways = 0) → 533k / 4.2 s, and lifts `statement_timeout` 60 → 90 s (route `maxDuration` 120). Watch the next `fmv-backfill` runs for `ok` and duration. Item 2 (continuation arm streak-split) not acted on — instrument change, left for the night pass.
 
 **↳ Item 1 RESOLVED 11-11 ~1:20 PM PT (Claude Code cloud):** `fmv-backfill` ok on both real runs since `20261111014609` (11:11 PM PT 5.9 s, 7:28 AM PT 0.6 s).
+
+**↳ Item 2 RESOLVED 11-11 ~6:10 PM PT (Claude Code cloud):** fixed at the record, not the arm — a 508 the resume queue catches now writes `ok=true` / `deferred_to: resume_queue`; only an unqueued continuation writes `ok=false` (commit "wallet-backfill: a 508 the resume queue catches is deferred, not failed"). The five 11-10 rows age out of the arm by ~11-13.
