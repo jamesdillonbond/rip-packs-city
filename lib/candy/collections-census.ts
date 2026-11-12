@@ -82,22 +82,27 @@ export interface CollectionCensusReport {
   unhydrated_skipped: number
   wmc_repointed: number
   listings_repointed: number
+  editions_filled: number
   completed: boolean
   error: string | null
 }
 
-type EditionLabels = { external_id: string; tier: string | null; player_name: string | null; team_name: string | null; set_name: string | null; circulation_count: number | null; thumbnail_url: string | null }
+type EditionLabels = { external_id: string; tier: string | null; player_name: string | null; team_name: string | null; set_name: string | null; circulation_count: number | null; thumbnail_url: string | null; video_url?: string | null }
 
-/** Existing holdings rows for these cards, and the COMPLETE editions they point at. */
-async function readExisting(db: Db, ids: string[]): Promise<{ rows: Map<string, Array<{ wallet: string; edition_key: string; serial: number | null }>>; complete: Map<string, EditionLabels>; error: string | null }> {
+/**
+ * Existing holdings rows for these cards, the COMPLETE editions they point at, and the
+ * INCOMPLETE ones (no thumbnail) — the latter drive FILL.
+ */
+async function readExisting(db: Db, ids: string[]): Promise<{ rows: Map<string, Array<{ wallet: string; edition_key: string; serial: number | null }>>; complete: Map<string, EditionLabels>; incomplete: Map<string, EditionLabels>; error: string | null }> {
   const rows = new Map<string, Array<{ wallet: string; edition_key: string; serial: number | null }>>()
   const complete = new Map<string, EditionLabels>()
+  const incomplete = new Map<string, EditionLabels>()
   for (let i = 0; i < ids.length; i += READ_CHUNK) {
     const { data, error } = await db.from("wallet_moments_cache")
       .select("moment_id,wallet_address,edition_key,serial_number")
       .eq("collection_id", CANDY_MLB_UUID)
       .in("moment_id", ids.slice(i, i + READ_CHUNK))
-    if (error) return { rows, complete, error: `wmc read: ${error.message}` }
+    if (error) return { rows, complete, incomplete, error: `wmc read: ${error.message}` }
     for (const r of (data ?? []) as Array<{ moment_id: string; wallet_address: string; edition_key: string | null; serial_number: number | null }>) {
       if (!r.edition_key) continue
       const list = rows.get(r.moment_id) ?? []
@@ -108,13 +113,13 @@ async function readExisting(db: Db, ids: string[]): Promise<{ rows: Map<string, 
   const keys = [...new Set([...rows.values()].flat().map((r) => r.edition_key))]
   for (let i = 0; i < keys.length; i += READ_CHUNK) {
     const { data, error } = await db.from("editions")
-      .select("external_id,tier,player_name,team_name,set_name,circulation_count,thumbnail_url")
+      .select("external_id,tier,player_name,team_name,set_name,circulation_count,thumbnail_url,video_url")
       .eq("collection_id", CANDY_MLB_UUID)
       .in("external_id", keys.slice(i, i + READ_CHUNK))
-    if (error) return { rows, complete, error: `editions read: ${error.message}` }
-    for (const e of (data ?? []) as EditionLabels[]) if (e.thumbnail_url) complete.set(e.external_id, e)
+    if (error) return { rows, complete, incomplete, error: `editions read: ${error.message}` }
+    for (const e of (data ?? []) as EditionLabels[]) (e.thumbnail_url ? complete : incomplete).set(e.external_id, e)
   }
-  return { rows, complete, error: null }
+  return { rows, complete, incomplete, error: null }
 }
 
 export interface CollectionsCensusResult {
@@ -129,6 +134,7 @@ export interface CollectionsCensusResult {
   unhydrated_skipped: number
   wmc_repointed: number
   listings_repointed: number
+  editions_filled: number
   hydrate_fail_reasons: Record<string, number>
   hydrate_fetches: number
   hydrate_unverified_groups: number
@@ -156,7 +162,7 @@ export async function runCollectionsCensus(
   const deadline = now() + opts.budgetMs
   const out: CollectionsCensusResult = {
     ok: false, collections: [], pages: 0, cards: 0, wmc_inserted: 0, editions_inserted: 0,
-    hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, listings_repointed: 0, hydrate_fail_reasons: {}, hydrate_fetches: 0, hydrate_unverified_groups: 0, hydrate_rate_limit_retries: 0, hydrate_min_concurrency: null, hydrate_max_gap_ms: 0, unhydrated_sample: [],
+    hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, listings_repointed: 0, editions_filled: 0, hydrate_fail_reasons: {}, hydrate_fetches: 0, hydrate_unverified_groups: 0, hydrate_rate_limit_retries: 0, hydrate_min_concurrency: null, hydrate_max_gap_ms: 0, unhydrated_sample: [],
     completed: 0, escrow_remapped: 0, ghosts_purged: null, error: null,
   }
 
@@ -190,7 +196,7 @@ export async function runCollectionsCensus(
   const breakerOpen = () => fetchAttempts >= BREAKER_MIN_ATTEMPTS && fetchFailures / fetchAttempts > BREAKER_FAIL_SHARE
   for (const c of (queue ?? []) as Array<{ address: string; name: string; census_page: number; census_cursor: string | null; census_walk_started_at: string | null }>) {
     if (now() > deadline) break
-    const rep: CollectionCensusReport = { address: c.address, name: c.name, pages: 0, cards: 0, wmc_inserted: 0, editions_inserted: 0, hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, listings_repointed: 0, completed: false, error: null }
+    const rep: CollectionCensusReport = { address: c.address, name: c.name, pages: 0, cards: 0, wmc_inserted: 0, editions_inserted: 0, hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, listings_repointed: 0, editions_filled: 0, completed: false, error: null }
     out.collections.push(rep)
     let page = Math.max(1, c.census_page || 1)
     let cursor: string | null = c.census_cursor || null
@@ -288,6 +294,32 @@ export async function runCollectionsCensus(
         if (error) failed = `editions: ${error.message}`
         else rep.editions_inserted += data?.length ?? 0
       }
+      // FILL (2026-11-12, #246 residual). An edition first written from an UNHYDRATED card
+      // (before the 11-09 fix) has no thumbnail / circulation / tier, and the insert-only upsert
+      // above discards the labels a later HYDRATED card computes for the SAME key — so 690
+      // editions (51,318 cards) stayed label-less with 0 repoints for a day: the cards were
+      // keyed right, the edition row was never completed. Fill only NULL labels, only on a row
+      // that still has no thumbnail (the .is guard makes a concurrent fill a no-op), only from a
+      // computed edition that HAS one. Once complete, its unhydrated cards are REUSED, not refetched.
+      for (const [k, cur] of ex.incomplete) {
+        if (failed) break
+        const e = eds.get(k) as Partial<EditionLabels> | undefined
+        if (!e?.thumbnail_url) continue
+        const patch: Record<string, unknown> = { thumbnail_url: e.thumbnail_url }
+        if (!cur.circulation_count && e.circulation_count) patch.circulation_count = e.circulation_count
+        if (cur.tier == null && e.tier != null) patch.tier = e.tier
+        if (cur.player_name == null && e.player_name != null) patch.player_name = e.player_name
+        if (cur.team_name == null && e.team_name != null) patch.team_name = e.team_name
+        if (cur.video_url == null && e.video_url != null) patch.video_url = e.video_url
+        const { data, error } = await db.from("editions")
+          .update(patch)
+          .eq("collection_id", CANDY_MLB_UUID)
+          .eq("external_id", k)
+          .is("thumbnail_url", null)
+          .select("external_id")
+        if (error) failed = `editions fill: ${error.message}`
+        else rep.editions_filled += data?.length ?? 0
+      }
       // Holdings: insert-only; escrow-held listed cards credited to their seller.
       const nowIso = new Date(now()).toISOString()
       // Rows are born LABELLED (tier / player / set / mint count / team from the edition).
@@ -383,6 +415,7 @@ export async function runCollectionsCensus(
     out.unhydrated_skipped += rep.unhydrated_skipped
     out.wmc_repointed += rep.wmc_repointed
     out.listings_repointed += rep.listings_repointed
+    out.editions_filled += rep.editions_filled
     if (rep.completed) out.completed++
   }
 

@@ -51,7 +51,7 @@ vi.mock("@/lib/chains/solana/normalize", () => ({
   isBurnt: (a: any) => a.kind === "burnt",
   isPack: (a: any) => a.kind === "pack",
   CANDY_MLB_UUID: "c1",
-  normalizeEdition: (a: any) => ({ external_id: "ed-" + a.ed, collection_id: "c1", player_name: "Seth Brown", team_name: "Athletics", set_name: "2022 Leadoff ICONs", tier: "COMMON", circulation_count: 850 }),
+  normalizeEdition: (a: any) => ({ external_id: "ed-" + a.ed, collection_id: "c1", player_name: "Seth Brown", team_name: "Athletics", set_name: "2022 Leadoff ICONs", tier: "COMMON", circulation_count: 850, thumbnail_url: a.noThumb ? null : (state as any).thumb }),
   normalizeSerial: (a: any) => ({ moment_id: a.id, wallet_address: a.owner, collection_id: "c1", edition_key: "ed-" + a.ed, serial_number: 1, image_url: null }),
 }))
 vi.mock("@/lib/chains/solana/candy-sets", () => ({ candySetForAsset: () => ({ key: "c:x" }) }))
@@ -93,6 +93,23 @@ function db() {
           } }
           return q
         },
+        update: (patch: any) => {
+          const f: any = { filters: [] as any[] }
+          const u: any = {
+            eq: (c: string, v: any) => { f.filters.push(["eq", c, v]); return u },
+            is: (c: string, v: any) => { f.filters.push(["is", c, v]); return u },
+            select: async () => {
+              ;(state as any).edUpdates.push({ table: t, patch, filters: f.filters })
+              const key = f.filters.find((x: any[]) => x[1] === "external_id")?.[2]
+              const row = state.existingEds.find((e) => e.external_id === key)
+              const guarded = f.filters.some((x: any[]) => x[0] === "is" && x[1] === "thumbnail_url" && x[2] === null)
+              if (!row || !guarded || row.thumbnail_url) return { data: [], error: null }
+              Object.assign(row, patch)
+              return { data: [{ external_id: key }], error: null }
+            },
+          }
+          return u
+        },
         upsert: (rows: any[], opts: any) => {
           if (t === "wallet_moments_cache") state.wmcUpserts.push({ rows, opts })
           else state.edUpserts.push({ rows, opts })
@@ -108,6 +125,7 @@ beforeEach(() => {
   ;(state as any).listingsError = null
   state.existingWmc = []; state.existingEds = []; state.readError = null; state.hydrate = null; state.hydrateCalls = []
   state.updates = []; state.wmcUpserts = []; state.edUpserts = []; state.rpcs = []; state.rpcArgs = []
+  ;(state as any).edUpdates = []; (state as any).thumb = "https://arweave.net/x"
 })
 
 describe("runCollectionsCensus", () => {
@@ -320,5 +338,41 @@ describe("runCollectionsCensus", () => {
     const r = await runCollectionsCensus(db(), { budgetMs: 10, now: () => (t += 100) })
     expect(r.cards).toBe(0)
     expect(r.completed).toBe(0)
+  })
+
+  // 2026-11-12 (#246 residual): 690 editions written label-less from unhydrated cards before
+  // the 11-09 fix kept 51,318 correctly-keyed cards on a thumbnail-less row, because the
+  // insert-only edition upsert discarded the labels every later hydrated card computed.
+  it("FILLS a label-less edition the page's hydrated cards key to — NULL labels only, guarded on thumbnail IS NULL", async () => {
+    state.queue = [{ address: "A", name: "A", census_page: 1, census_walk_started_at: null }]
+    state.pages.A = [[{ id: "m1", owner: "W", ed: "a" }, { id: "m2", owner: "W", ed: "a" }]]
+    state.existingWmc = [{ moment_id: "m1", wallet_address: "W", edition_key: "ed-a", serial_number: 1 }, { moment_id: "m2", wallet_address: "W", edition_key: "ed-a", serial_number: 2 }]
+    state.existingEds = [{ external_id: "ed-a", tier: null, player_name: "Kept Name", team_name: null, set_name: null, circulation_count: null, thumbnail_url: null, video_url: null }]
+    const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+    expect(r.ok).toBe(true)
+    expect(r.editions_filled).toBe(1)
+    expect(r.wmc_repointed).toBe(0)
+    const ups = (state as any).edUpdates
+    expect(ups).toHaveLength(1)
+    // a present label is NEVER overwritten — only NULLs are filled
+    expect(ups[0].patch).toEqual({ thumbnail_url: "https://arweave.net/x", circulation_count: 850, tier: "COMMON", team_name: "Athletics" })
+    expect(ups[0].patch).not.toHaveProperty("player_name")
+    expect(ups[0].filters).toContainEqual(["is", "thumbnail_url", null])
+    expect(state.existingEds[0]).toMatchObject({ thumbnail_url: "https://arweave.net/x", player_name: "Kept Name", circulation_count: 850 })
+  })
+
+  it("does NOT fill from a computed edition that itself has no thumbnail, and never touches a complete edition", async () => {
+    state.queue = [{ address: "A", name: "A", census_page: 1, census_walk_started_at: null }]
+    state.pages.A = [[{ id: "m1", owner: "W", ed: "a", noThumb: true }, { id: "m2", owner: "W", ed: "b" }]]
+    state.existingWmc = [{ moment_id: "m1", wallet_address: "W", edition_key: "ed-a", serial_number: 1 }, { moment_id: "m2", wallet_address: "W", edition_key: "ed-b", serial_number: 1 }]
+    state.existingEds = [
+      { external_id: "ed-a", tier: null, player_name: null, team_name: null, set_name: null, circulation_count: null, thumbnail_url: null, video_url: null },
+      { external_id: "ed-b", tier: null, player_name: null, team_name: null, set_name: null, circulation_count: 10, thumbnail_url: "https://arweave.net/old", video_url: null },
+    ]
+    const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+    expect(r.ok).toBe(true)
+    expect(r.editions_filled).toBe(0)
+    expect((state as any).edUpdates).toHaveLength(0)
+    expect(state.existingEds[1].thumbnail_url).toBe("https://arweave.net/old")
   })
 })
