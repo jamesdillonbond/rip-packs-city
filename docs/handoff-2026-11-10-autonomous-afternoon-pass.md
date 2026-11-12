@@ -126,7 +126,7 @@ Closed this pass: #245 (2:25 PM PT), #243 (2:12 PM PT), #242 (7:10 PM PT). Watch
 
 - ✅ Item 1: `fmv-backfill` ok ×2 since the change. ✅ `candy_sales_stale_hours` cleared (4.2 h). ✅ `edition_integrity_flags` 11,548 → 7,537 (census hydrating the new Candy editions).
 - 🔁 Revival arm tripped again (one $16.62 DC comic sale, 11-11 9:05 AM PT) → re-dated to 11-11 (`20261111211740`), arm 0.
-- 13. **[P3, Claude Code (daytime), 0 nights] Revival arm should need a floor, not one sale.** Six stray Candy sales (~$20) in four weeks have now forced two re-dates; each sale re-arms it. Count a revival only above a floor (e.g. ≥ 10 sales or ≥ $100 in 7 days, both measured from the pre-lock baseline of 86–374/day) — a change to the `candy_revival_sales_since_recorded_silence` arm in `v_rpc_trust_health` (55k chars; use the md5-guarded fragment method).
+- 13. ✅ **DONE 11-11 ~9:20 PM PT (`20261112063348`): breach_at 1 → 10.** Was: **[P3, Claude Code (daytime), 0 nights] Revival arm should need a floor, not one sale.** Six stray Candy sales (~$20) in four weeks have now forced two re-dates; each sale re-arms it. Count a revival only above a floor (e.g. ≥ 10 sales or ≥ $100 in 7 days, both measured from the pre-lock baseline of 86–374/day) — a change to the `candy_revival_sales_since_recorded_silence` arm in `v_rpc_trust_health` (55k chars; use the md5-guarded fragment method).
 
 ## 11-11 ~9:10 PM PT — evening sweep (nothing shipped)
 
