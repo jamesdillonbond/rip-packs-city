@@ -6,7 +6,8 @@
 -- key carries an unmapped rarity (`-titan`), and any non-Candy edition.
 --
 -- The view DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261110000502_audit_20261109_integrity_flags_tier_absent_at_source_is_counted_apart.sql);
+-- (supabase/migrations/20261112051013_audit_20261111_integrity_flags_one_of_one_keys_without_rarity_are_absent_at_source.sql;
+-- 2026-11-11: a 1-of-1 key `:<slug>-<12 base58>` with no rarity segment is absent-at-source too);
 -- __tests__/edition-integrity-flags-pin-matches-migration.test.ts fails CI if it drifts.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -35,7 +36,9 @@ CREATE OR REPLACE VIEW public.v_edition_integrity_flags WITH (security_invoker =
              AND (e.tier IS NULL)
              AND (position(':' in (e.external_id)::text) > 0)
              AND (s.slug <> '')
-             AND (right((e.external_id)::text, length(s.slug) + 1) = (':' || s.slug))) AS tier_absent_at_source
+             AND ((right((e.external_id)::text, length(s.slug) + 1) = (':' || s.slug))
+                  OR ((right((e.external_id)::text, length(s.slug) + 14) = (':' || s.slug || '-' || right((e.external_id)::text, 12)))
+                      AND (right((e.external_id)::text, 12) ~ '^[1-9A-HJ-NP-Za-km-z]{12}$'::text)))) AS tier_absent_at_source
            FROM ((editions e
              JOIN collections c ON ((c.id = e.collection_id)))
              CROSS JOIN LATERAL ( SELECT regexp_replace(regexp_replace(regexp_replace(regexp_replace(lower(COALESCE(e.name, ''::text)), '\s+'::text, '-'::text, 'g'::text), '[^a-z0-9:_-]'::text, ''::text, 'g'::text), '-+'::text, '-'::text, 'g'::text), '^-+|-+$'::text, ''::text, 'g'::text) AS slug) s)
@@ -58,6 +61,12 @@ INSERT INTO public.editions VALUES
   ('209ade70-32c5-4470-bc7c-4793d660f713', 'c:2022-all-star-tricons:2022-tricon-mantiply-musgrove', '2022 Tricon Mantiply Musgrove', NULL, 1, 'https://arweave.net/a', NULL, NULL),
   -- hydrated, accents and punctuation in the name slug the same way the normalizer does
   ('209ade70-32c5-4470-bc7c-4793d660f713', 'c:2022-all-star-tricons:2022-tricon-arraez-lpez', '2022 Tricon Arraez López!', NULL, 1, 'https://arweave.net/b', NULL, NULL),
+  -- 2026-11-11: hydrated 1-of-1, NO rarity segment, asset-id suffix → absent at source
+  ('209ade70-32c5-4470-bc7c-4793d660f713', 'c:2022-all-star-tricons:2022-tricon-anderson-castillo-5GkjPgEJRwjS', '2022 Tricon Anderson Castillo', NULL, 1, 'https://arweave.net/e', NULL, NULL),
+  -- 2026-11-11: hydrated 1-of-1 WITH an unmapped rarity segment → still a defect
+  ('209ade70-32c5-4470-bc7c-4793d660f713', 'c:2023-titans:mike-trout-titan-AWN51rGSk3t2', 'Mike Trout', NULL, 1, 'https://arweave.net/f', NULL, NULL),
+  -- 2026-11-11: hydrated, ordinary rarity suffix of 12 chars containing '-' never reads as an asset id
+  ('209ade70-32c5-4470-bc7c-4793d660f713', 'c:2022-leadoff-icons:mookie-betts-uncommon', 'Mookie Betts', NULL, 125, 'https://arweave.net/g', NULL, NULL),
   -- hydrated, UNMAPPED rarity suffix → still a defect (a product decision, not an absence)
   ('209ade70-32c5-4470-bc7c-4793d660f713', 'c:2023-titans:aaron-judge-titan', 'Aaron Judge', NULL, 10, 'https://arweave.net/c', NULL, NULL),
   -- FABRICATED (no thumbnail) with the same key shape → still a defect
@@ -71,8 +80,8 @@ DO $$
 DECLARE r record;
 BEGIN
   SELECT * INTO r FROM public.v_edition_integrity_flags WHERE collection = 'candy_mlb';
-  PERFORM _assert_eq(r.canonical_tier_absent_at_source::text, '2', 'two hydrated editions whose source had no Rarity are counted apart');
-  PERFORM _assert_eq(r.canonical_missing_tier::text, '2', '⚠ the unmapped-rarity and the FABRICATED edition stay defects');
+  PERFORM _assert_eq(r.canonical_tier_absent_at_source::text, '3', 'three hydrated editions whose source had no Rarity are counted apart (incl. the 1-of-1 asset-id key)');
+  PERFORM _assert_eq(r.canonical_missing_tier::text, '4', '⚠ the unmapped rarities (incl. a 1-of-1 -titan-<asset>), the rarity-but-NULL-tier edition and the FABRICATED edition stay defects');
   PERFORM _assert_eq(r.canonical_missing_thumbnail::text, '1', 'the fabricated edition is still a missing thumbnail');
   PERFORM _assert_eq(r.canonical_bad_circulation::text, '1', 'and still a bad circulation');
   SELECT * INTO r FROM public.v_edition_integrity_flags WHERE collection = 'nfl_all_day';

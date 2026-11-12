@@ -24,7 +24,7 @@ describe("v_edition_integrity_flags pin", () => {
     .filter((f) => f.endsWith(".sql") && body(readFileSync(join(ROOT, "supabase/migrations", f), "utf8")))
     .sort()
   it("the NEWEST migration defining the view is the one this pin tracks", () => {
-    expect(migs.at(-1)).toMatch(/_audit_20261109_integrity_flags_tier_absent_at_source_is_counted_apart\.sql$/)
+    expect(migs.at(-1)).toMatch(/_audit_20261111_integrity_flags_one_of_one_keys_without_rarity_are_absent_at_source\.sql$/)
   })
   it("the pin's view DDL is the migration's, whitespace-normalised", () => {
     const mig = body(readFileSync(join(ROOT, "supabase/migrations", migs.at(-1)!), "utf8"))
