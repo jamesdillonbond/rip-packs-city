@@ -203,7 +203,9 @@ export default async function FmvMethodologyPage() {
         sales on Panini&rsquo;s own platform (marketplace, auction, gallery and
         crypto sales), on the same principle &mdash; the latest sales of that card
         edition. Trades made anywhere else aren&rsquo;t counted, and a new sale can
-        take a few days to reach us.
+        take a few days to reach us. A Panini price is never above the lowest
+        live listing we have re-read in the last week: if you can buy the card
+        for less today, that is the ceiling.
       </p>
 
       <h2 id="accuracy" style={H2}>How Much of Our Pricing Rests on Sales</h2>

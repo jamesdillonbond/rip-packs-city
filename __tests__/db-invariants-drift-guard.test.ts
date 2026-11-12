@@ -2272,7 +2272,8 @@ const PINS = [
     // Forward shadow read 10-21..10-26: on the 82 sales the cap changed, within ±25 % 1.2 % -> 53.7 %; no tier loses.
     fn: "fmv_snapshots_cap_panini_low_to_live_ask",
     test: "supabase/tests/fmv_snapshots_cap_panini_low_to_live_ask.sql",
-    migration: "supabase/migrations/20261027030854_audit_20261026_panini_fmv_low_cap_to_live_ask.sql",
+    // Re-pointed 2026-11-12: the cap covers every sale-derived tier (LOW, MEDIUM, HIGH, STALE).
+    migration: "supabase/migrations/20261112183500_audit_20261112_panini_ask_cap_covers_every_sale_tier.sql",
   },
   {
     // 2026-11-04: panini_fmv_snapshots (the twin the public Panini boards read) withholds FMV > $10,000, as

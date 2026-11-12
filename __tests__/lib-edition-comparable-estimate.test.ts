@@ -5,6 +5,7 @@ vi.mock("@/lib/supabase", () => ({ supabaseAdmin: {} }))
 import {
   parseComparableRow,
   comparableBasisText,
+  comparableForModel,
   COMPARABLE_MIN_SET_MATES,
   COMPARABLE_ESTIMATE_COLLECTIONS,
   ESTIMATE_MAX_AGE_HOURS,
@@ -94,5 +95,26 @@ describe("COMPARABLE_ESTIMATE_COLLECTIONS", () => {
   it("is the three collections the estimate was measured usable on — never Candy", () => {
     expect([...COMPARABLE_ESTIMATE_COLLECTIONS].sort()).toEqual(["laliga-golazos", "nba-top-shot", "nfl-all-day"])
     expect(COMPARABLE_ESTIMATE_COLLECTIONS.has("candy-mlb")).toBe(false)
+  })
+})
+
+describe("comparableForModel (the concierge's view)", () => {
+  const e = parseComparableRow(row(), NOW)!
+  const m = comparableForModel(e)
+
+  it("carries the number, what it rests on, and its own instruction", () => {
+    expect(m.estimate_usd).toBe(12.34)
+    expect(m.set_mates_priced_from_sales).toBe(14)
+    expect(m.player_adjustment_from_other_editions).toBe(6)
+    expect(String(m.how_to_use)).toMatch(/NO FMV/)
+    expect(String(m.how_to_use)).toMatch(/Never call it the FMV/)
+  })
+
+  it("does not claim a player adjustment that was not made", () => {
+    expect(comparableForModel(parseComparableRow(row({ n_player: 0 }), NOW)!).player_adjustment_from_other_editions).toBeNull()
+  })
+
+  it("never hands the model a confidence tier", () => {
+    expect(JSON.stringify(m)).not.toMatch(/\b(HIGH|MEDIUM|LOW|STALE|ASK_ONLY|confidence)\b/)
   })
 })

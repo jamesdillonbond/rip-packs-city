@@ -40,7 +40,7 @@ import {
   fetchPinnacleFmvDistribution,
   type FmvDistributionResult,
 } from "@/lib/concierge/fmv-distribution";
-import { fetchEditionFmvEstimate, estimateForModel } from "@/lib/fmv/edition-estimate";
+import { fetchEditionFmvEstimate, estimateForModel, fetchEditionComparableEstimate, comparableForModel, COMPARABLE_ESTIMATE_COLLECTIONS } from "@/lib/fmv/edition-estimate";
 import { checkFeatureQuota, recordFeatureUsage } from "@/lib/pro-tier";
 import { userQuotaKey } from "@/lib/user-quota-key";
 import { playerPagePath } from "@/lib/player-route";
@@ -1556,7 +1556,30 @@ async function formatDistributionWithMetadata(
   collectionId: string | null,
   collectionUuid: string | null,
 ): Promise<string> {
-  if (result.status === "no_results") return formatDistributionForModel(result, collectionId);
+  if (result.status === "no_results") {
+    const out = formatDistributionForModel(result, collectionId);
+    // 2026-11-12: the edition exists and we publish no price for it — attach the labelled
+    // comparable ESTIMATE where one was measured usable (lib/fmv/edition-estimate.ts). A failed or
+    // absent read attaches nothing, and the "no FMV" message stands as it did.
+    if (result.unpriced_edition && collectionId && COMPARABLE_ESTIMATE_COLLECTIONS.has(collectionId)) {
+      const { estimate } = await fetchEditionComparableEstimate(result.unpriced_edition.edition_id);
+      if (estimate) {
+        try {
+          return JSON.stringify({
+            ...JSON.parse(out),
+            edition: {
+              external_id: result.unpriced_edition.external_id,
+              player_name: result.unpriced_edition.player_name,
+              set_name: result.unpriced_edition.set_name,
+            },
+            value_estimate: comparableForModel(estimate),
+            note: "There is still no FMV for this edition. A separate value_estimate is attached — follow its how_to_use.",
+          });
+        } catch { /* formatter output not JSON — return it unchanged */ }
+      }
+    }
+    return out;
+  }
   if (result.mode === "single") {
     const meta = await fetchEditionMetadata(supabase, collectionUuid, [result.edition.external_id]);
     const out = formatDistributionForModel(result, collectionId, meta);

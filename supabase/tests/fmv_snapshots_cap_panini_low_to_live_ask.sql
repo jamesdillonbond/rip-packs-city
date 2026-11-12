@@ -6,7 +6,8 @@
 -- Claims:
 --   R1. a Panini LOW row above its lowest confirmed ask is capped at it, algo_version gains '_askcap';
 --   R2. a LOW row at or below the ask is untouched (the cap only ever LOWERS);
---   R3. a non-LOW Panini row (HIGH) is untouched even when above the ask;
+--   R3. (inverted 2026-11-12, the all-tier read) a HIGH / MEDIUM / STALE Panini row above the ask is capped too;
+--       an ASK_ONLY row is out of scope (it is already a fraction of the ask);
 --   R4. a non-Panini LOW row is untouched (scope is Panini, by measurement);
 --   R5. only a LISTED serial with price > 0 re-read in the last 7 days sets the cap — an unlisted serial, a
 --       $0 listing and a 10-day-old read do not; an edition with no confirmed ask is untouched.
@@ -34,11 +35,12 @@ SET search_path TO 'public', 'pg_temp'
 AS $function$
 DECLARE
   -- Panini Blockchain (collections.id). Scoped by measurement (2026-10-26, #202).
+  -- 2026-11-12: every sale-derived tier, not LOW alone (the all-tier shadow read; see the migration header).
   c_panini constant uuid := 'd1a0a7f5-609a-49f4-a1a7-4eaac55b020b';
   v_ask numeric;
 BEGIN
   IF NEW.collection_id = c_panini
-     AND NEW.confidence = 'LOW'
+     AND NEW.confidence IN ('LOW', 'MEDIUM', 'HIGH', 'STALE')
      AND NEW.fmv_usd IS NOT NULL
      AND NEW.edition_id IS NOT NULL
   THEN
@@ -85,14 +87,26 @@ INSERT INTO fmv_snapshots VALUES
   ('00000000-0000-0000-0000-000000000002', 'd1a0a7f5-609a-49f4-a1a7-4eaac55b020b',   8, 'LOW',  'panini-1.4.0'),
   ('00000000-0000-0000-0000-000000000001', 'd1a0a7f5-609a-49f4-a1a7-4eaac55b020b', 198, 'HIGH', 'panini-1.4.0'),
   ('00000000-0000-0000-0000-000000000004', '95f28a17-224a-4025-96ad-adf8a4c63bfd',  50, 'LOW',  '1.8.3'),
-  ('00000000-0000-0000-0000-000000000003', 'd1a0a7f5-609a-49f4-a1a7-4eaac55b020b',  40, 'LOW',  'panini-1.4.0');
+  ('00000000-0000-0000-0000-000000000003', 'd1a0a7f5-609a-49f4-a1a7-4eaac55b020b',  40, 'LOW',  'panini-1.4.0'),
+  ('00000000-0000-0000-0000-000000000001', 'd1a0a7f5-609a-49f4-a1a7-4eaac55b020b', 197, 'MEDIUM', 'panini-1.4.0'),
+  ('00000000-0000-0000-0000-000000000001', 'd1a0a7f5-609a-49f4-a1a7-4eaac55b020b', 196, 'STALE', 'panini-1.4.0'),
+  ('00000000-0000-0000-0000-000000000001', 'd1a0a7f5-609a-49f4-a1a7-4eaac55b020b', 195, 'ASK_ONLY', 'panini-1.4.0'),
+  ('00000000-0000-0000-0000-000000000002', 'd1a0a7f5-609a-49f4-a1a7-4eaac55b020b',   9, 'HIGH', 'panini-1.4.0b');
 
 SELECT _assert_eq((SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots WHERE edition_id = '00000000-0000-0000-0000-000000000001' AND confidence = 'LOW'),
                   '3.00|panini-1.4.0_askcap', 'R1+R5: a LOW price above the fresh listed ask (3, not the unlisted 1, the stale 0.5 or the $0) is capped at it and stamped');
-SELECT _assert_eq((SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots WHERE edition_id = '00000000-0000-0000-0000-000000000002'),
+SELECT _assert_eq((SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots WHERE edition_id = '00000000-0000-0000-0000-000000000002' AND confidence = 'LOW'),
                   '8|panini-1.4.0', 'R2: a LOW price below the ask is untouched (the cap only lowers)');
 SELECT _assert_eq((SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots WHERE edition_id = '00000000-0000-0000-0000-000000000001' AND confidence = 'HIGH'),
-                  '198|panini-1.4.0', 'R3: a HIGH row is never capped by this guard');
+                  '3.00|panini-1.4.0_askcap', 'R3: a HIGH price above the live ask is capped at it (all-tier, 2026-11-12)');
+SELECT _assert_eq((SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots WHERE edition_id = '00000000-0000-0000-0000-000000000001' AND confidence = 'MEDIUM'),
+                  '3.00|panini-1.4.0_askcap', 'R3: a MEDIUM price above the live ask is capped at it');
+SELECT _assert_eq((SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots WHERE edition_id = '00000000-0000-0000-0000-000000000001' AND confidence = 'STALE'),
+                  '3.00|panini-1.4.0_askcap', 'R3: a STALE price above the live ask is capped at it');
+SELECT _assert_eq((SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots WHERE edition_id = '00000000-0000-0000-0000-000000000001' AND confidence = 'ASK_ONLY'),
+                  '195|panini-1.4.0', 'R3: an ASK_ONLY row is out of scope');
+SELECT _assert_eq((SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots WHERE edition_id = '00000000-0000-0000-0000-000000000002' AND confidence = 'HIGH'),
+                  '9|panini-1.4.0b', 'R2: a HIGH price below the ask is untouched (the cap only lowers)');
 SELECT _assert_eq((SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots WHERE edition_id = '00000000-0000-0000-0000-000000000004'),
                   '50|1.8.3', 'R4: a Top Shot LOW row is out of scope');
 SELECT _assert_eq((SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots WHERE edition_id = '00000000-0000-0000-0000-000000000003'),

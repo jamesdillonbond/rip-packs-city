@@ -236,6 +236,25 @@ export function comparableBasisText(e: EditionComparableEstimate): string {
     : `the prices of ${mates}`
 }
 
+/**
+ * The concierge's view of a comparable estimate, for an edition RPC publishes no price for.
+ * Carries its own instruction, like `estimateForModel`: state the basis, never call it the FMV.
+ */
+export function comparableForModel(e: EditionComparableEstimate): Record<string, unknown> {
+  return {
+    estimate_usd: e.estimate_usd,
+    basis: "prices_of_other_editions_in_the_same_set_adjusted_for_the_player",
+    set_mates_priced_from_sales: e.n_set,
+    player_adjustment_from_other_editions: e.n_player > 0 ? e.n_player : null,
+    computed_at: e.computed_at,
+    how_to_use:
+      "RPC publishes NO FMV for this edition — it has no sales of its own to price from. This is a VALUE ESTIMATE built only from OTHER editions " +
+      "(what its set-mates sell for, adjusted for how this player's other editions trade). Quote it as 'estimated ~$X', say plainly that the edition " +
+      "itself has not sold and what the estimate rests on, and keep it separate from any FMV. Never call it the FMV, a market price or a floor. " +
+      "It is a rough guide: tested on editions with known prices it lands within 25% about half the time and within 50% about four times in five.",
+  }
+}
+
 export async function fetchEditionComparableEstimate(
   editionId: string | null | undefined,
 ): Promise<{ estimate: EditionComparableEstimate | null; ok: boolean }> {

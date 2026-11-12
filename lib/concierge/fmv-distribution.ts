@@ -49,7 +49,17 @@ export interface SingleEditionShape {
 }
 
 export type FmvDistributionResult =
-  | { status: "no_results"; message: string }
+  | {
+      status: "no_results"
+      message: string
+      /**
+       * 2026-11-12: set ONLY by the editionKey path, when the edition EXISTS and we publish no
+       * price for it. Lets the concierge attach the labelled comparable ESTIMATE
+       * (lib/fmv/edition-estimate.ts) instead of answering "no FMV" and stopping. Never set on a
+       * failed read, an ambiguous key or an unknown edition.
+       */
+      unpriced_edition?: { edition_id: string; external_id: string | null; player_name: string | null; set_name: string | null }
+    }
   | { status: "ok"; mode: "single"; edition: SingleEditionShape }
   | {
       status: "ok"
@@ -279,7 +289,16 @@ export async function fetchUnifiedFmvDistribution(
       }
     }
     if (!snap || snap.fmv_usd == null) {
-      return { status: "no_results", message: `Edition '${input.editionKey}' has no FMV snapshot yet.` }
+      return {
+        status: "no_results",
+        message: `Edition '${input.editionKey}' has no FMV snapshot yet.`,
+        unpriced_edition: {
+          edition_id: edition.id,
+          external_id: edition.external_id ?? null,
+          player_name: edition.player_name ?? null,
+          set_name: edition.set_name ?? null,
+        },
+      }
     }
     return {
       status: "ok",

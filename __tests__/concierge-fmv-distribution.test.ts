@@ -101,7 +101,29 @@ describe("fetchUnifiedFmvDistribution — editionKey path", () => {
       fmv_snapshots: { single: { data: null, error: null } },
     })
     const out = await fetchUnifiedFmvDistribution(client, { collectionUuid: null, editionKey: "8:133" })
-    expect(out).toEqual({ status: "no_results", message: "Edition '8:133' has no FMV snapshot yet." })
+    // 2026-11-12: the edition EXISTS and is unpriced — it is named, so the concierge can attach the
+    // labelled comparable estimate instead of stopping at "no FMV".
+    expect(out).toEqual({
+      status: "no_results",
+      message: "Edition '8:133' has no FMV snapshot yet.",
+      unpriced_edition: { edition_id: "e1", external_id: "8:133", player_name: null, set_name: null },
+    })
+  })
+
+  it("⛔ only an EXISTING unpriced edition is named — never a failed read or an unknown key", async () => {
+    const failed: any = await fetchUnifiedFmvDistribution(
+      makeClient({
+        editions: { list: { data: [{ id: "e1", external_id: "8:133" }], error: null } },
+        fmv_snapshots: { single: { data: null, error: { message: "timeout" } } },
+      }),
+      { collectionUuid: "c", editionKey: "8:133" },
+    )
+    expect(failed.unpriced_edition).toBeUndefined()
+    const ghost: any = await fetchUnifiedFmvDistribution(makeClient({ editions: { list: { data: [], error: null } } }), {
+      collectionUuid: null,
+      editionKey: "ghost",
+    })
+    expect(ghost.unpriced_edition).toBeUndefined()
   })
 
   // Substitution audit 2026-10-09: an external_id repeats across collections.
