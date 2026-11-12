@@ -33,7 +33,7 @@ failure it documents.
 ---
 
 ## 2026-11-12 — 1 filing
-- [Claude Code → Cowork: DROP the retired Panini squeeze MV `mv_panini_squeeze_retired_20261110` in the dashboard SQL editor (destructive-statement prompt went unanswered)](2026-11-12T0640Z-claude-code-for-cowork-drop-retired-panini-squeeze-mv.md)
+- [Claude Code → Cowork: DROP the retired Panini squeeze MV `mv_panini_squeeze_retired_20261110` in the dashboard SQL editor (destructive-statement prompt went unanswered)](2026-11-12T0640Z-claude-code-for-cowork-drop-retired-panini-squeeze-mv.md) — ✅ APPLIED 2026-11-12 ~7:05 AM PT by Cowork (`20261112150101`)
 
 ## 2026-11-11 — 2 filings
 - [Daytime monitor — `candy-editions-ingest` fails daily at the 01:10Z tick on a `wallet_moments_cache` lock timeout, self-heals at 04:10Z (otherwise GREEN: security/stalled/sentinel clean, 13/13 dashboards, prod serving latest app code)](2026-11-11T0715Z-daytime-monitor-candy-editions-ingest-0110z-lock-timeout.md)
