@@ -87,6 +87,13 @@ function LeagueSection({ league }: { league: DirectoryLeague }) {
             <Link
               key={t.slug}
               href={franchiseHubPath(league.league, t.slug)}
+              // 2026-11-12: NO viewport prefetch. Each hub is an ISR page that fans out
+              // to every collection's get_team_detail + extras; prefetching the ~100
+              // cards here regenerated dozens of cold hubs at once, their panels blew
+              // the 10 s budget together (Atlanta, Boston, Brooklyn, Charlotte in the
+              // same second, 7:53 AM PT) and each degraded render was then cached for
+              // the 600 s revalidate window.
+              prefetch={false}
               className="rpc-card"
               style={{
                 display: "flex",

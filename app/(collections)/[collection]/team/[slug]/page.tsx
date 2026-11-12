@@ -287,6 +287,7 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
         <div style={{ marginTop: 8 }}>
           <Link
             href={franchiseHubPath(detail.league, detail.team_short_slug)}
+            prefetch={false}
             className="rpc-mono"
             style={{ fontSize: 12, color: "var(--rpc-red-text)", letterSpacing: "0.04em", textDecoration: "none" }}
           >

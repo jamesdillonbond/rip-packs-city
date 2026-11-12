@@ -1005,6 +1005,7 @@ export default async function EditionPage(
                 <Link
                   key={`${t.league}:${t.slug}`}
                   href={franchiseHubPath(t.league, t.slug)}
+                  prefetch={false}
                   data-testid="panini-edition-team"
                   title="Placed on this team by Panini's marketplace team filter, the team printed on the card, or the same player's other cards in this product (for NFL and MLB, in other products of the same season), or the team the player's NFL All Day / Top Shot WNBA moments show that season"
                   className="rpc-mono"

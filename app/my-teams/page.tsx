@@ -357,7 +357,8 @@ function CardShell({ href, accent, children }: { href: string | null; accent: st
     display: "block",
   }
   return href ? (
-    <Link href={href} className="rpc-card" style={style}>
+    // prefetch off: a franchise hub is an ISR fan-out read (see app/teams/page.tsx)
+    <Link href={href} prefetch={false} className="rpc-card" style={style}>
       {children}
     </Link>
   ) : (

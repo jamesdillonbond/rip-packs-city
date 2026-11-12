@@ -629,7 +629,7 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
                     {paniniTeams.slice(0, PANINI_PLAYER_TEAMS_SHOWN).map((t, i) => (
                       <span key={`${t.league}:${t.slug}`}>
                         {i > 0 ? " · " : ""}
-                        <Link href={franchiseHubPath(t.league, t.slug)} style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}>{t.teamName}</Link>
+                        <Link href={franchiseHubPath(t.league, t.slug)} prefetch={false} style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}>{t.teamName}</Link>
                       </span>
                     ))}
                   </span>
