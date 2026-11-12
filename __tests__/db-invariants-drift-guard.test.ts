@@ -15,6 +15,12 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-11-12. The census RETIRE delete: Candy-only, label-less keys only (re-checked server-side), refused over the cap.
+    fn: "candy_retire_unseen_labelless_wmc",
+    test: "supabase/tests/candy_retire_unseen_labelless_wmc.sql",
+    migration: "supabase/migrations/20261112183358_audit_20261112_candy_retire_unseen_labelless_wmc.sql",
+  },
+  {
     // Added 2026-10-26. Panini ask history: change rows only, one NULL row when an edition leaves the board.
     fn: "refresh_panini_edition_ask_daily",
     test: "supabase/tests/refresh_panini_edition_ask_daily.sql",

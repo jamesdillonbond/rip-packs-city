@@ -173,21 +173,16 @@ async function retireUnseenOnLabelless(db: Db, prefix: string, walkKeys: Set<str
   // LIKE treats `_` in a slug as a wildcard: keep only keys that really start with this prefix.
   const keys = ((eds ?? []) as Array<{ external_id: string }>).map((e) => e.external_id).filter((k) => k.startsWith(`${prefix}:`) && !walkKeys.has(k))
   if (!keys.length) return { retired: 0, error: null }
-  const { count, error: cErr } = await db.from("wallet_moments_cache")
-    .select("moment_id", { count: "exact", head: true })
-    .eq("collection_id", CANDY_MLB_UUID)
-    .in("edition_key", keys)
-  if (cErr) return { retired: 0, error: `count: ${cErr.message}` }
-  if (count == null) return { retired: 0, error: "count: unknown" }
-  if (count === 0) return { retired: 0, error: null }
-  if (count > Math.max(10, walkCards * RETIRE_MAX_SHARE)) return { retired: 0, error: `refused: ${count} rows on unseen label-less editions vs a ${walkCards}-card walk` }
-  const { data, error: dErr } = await db.from("wallet_moments_cache")
-    .delete()
-    .eq("collection_id", CANDY_MLB_UUID)
-    .in("edition_key", keys)
-    .select("moment_id")
-  if (dErr) return { retired: 0, error: `delete: ${dErr.message}` }
-  return { retired: data?.length ?? 0, error: null }
+  // Through a scoped SQL function, never a PostgREST .delete(): rpc_delete_guard blocks a wmc DELETE spanning
+  // > 3 wallets (it did, 9:57 AM PT 11-12). The function re-checks each key is still thumbnail-less and
+  // refuses — deleting nothing — above the cap (pinned: supabase/tests/candy_retire_unseen_labelless_wmc.sql).
+  const cap = Math.floor(Math.max(10, walkCards * RETIRE_MAX_SHARE))
+  const { data, error: rErr } = await db.rpc("candy_retire_unseen_labelless_wmc", { p_edition_keys: keys, p_max_rows: cap })
+  if (rErr) return { retired: 0, error: `rpc: ${rErr.message}` }
+  const res = (data ?? {}) as { retired?: number; rows?: number; refused?: boolean }
+  if (res.refused) return { retired: 0, error: `refused: ${res.rows ?? "?"} rows on unseen label-less editions vs a ${walkCards}-card walk` }
+  if (typeof res.retired !== "number") return { retired: 0, error: "rpc: no retired count" }
+  return { retired: res.retired, error: null }
 }
 
 export async function runCollectionsCensus(

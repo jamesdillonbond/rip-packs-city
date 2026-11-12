@@ -66,6 +66,15 @@ function db() {
     rpc: async (name: string, args: any) => {
       state.rpcs.push(name); state.rpcArgs.push(args)
       if (name === "candy_repoint_listings_to_card_edition" && (state as any).listingsError) return { data: null, error: (state as any).listingsError }
+      if (name === "candy_retire_unseen_labelless_wmc") {
+        // mirrors the SQL function: still-thumbnail-less keys only; refuse (delete nothing) over the cap
+        const live = (args.p_edition_keys as string[]).filter((k) => state.existingEds.some((e) => e.external_id === k && e.thumbnail_url == null))
+        const rows = state.existingWmc.filter((r) => live.includes(r.edition_key))
+        if (rows.length > args.p_max_rows) return { data: { retired: 0, rows: rows.length, refused: true }, error: null }
+        ;(state as any).deleted.push(...rows)
+        state.existingWmc = state.existingWmc.filter((r) => !live.includes(r.edition_key))
+        return { data: { retired: rows.length, rows: rows.length, refused: false }, error: null }
+      }
       return { data: 4, error: null }
     },
     from: (table: string) => {
