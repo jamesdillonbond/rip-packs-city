@@ -103,6 +103,14 @@ export const maxDuration = 300
 const STEP1_RETRY_ATTEMPTS = 3
 const STEP1_RETRY_BASE_MS = 1_500 // → 1.5 s + 6 s of backoff across 3 attempts
 const STEP1A_BUDGET_MS = 90_000
+// 2026-11-12 — the HOT LANE. The sweep order is frozen when a sweep starts, so an edition that sells
+// mid-sweep waits for the whole walk (measured: after 7 quiet days, sale → next snapshot p50 8–9 h, p90
+// ~24 h; one edition published $31 for 23.5 h under 68 sales at $1–3). Each run also re-prices up to this
+// many editions whose newest sale is newer than their latest snapshot and whose price is not already
+// sale-backed with depth (fmv_recalc_hot_editions). They ride the page's own pricing path; the cursor,
+// hasMore and page_size stay the PAGE's.
+const HOT_LANE_LIMIT = 150
+const HOT_LANE_BUDGET_MS = 15_000
 const STEP1B_BUDGET_MS = 120_000
 
 // Disney Pinnacle owns its own FMV table (pinnacle_fmv_snapshots) and edition
@@ -440,6 +448,34 @@ export async function POST(req: NextRequest) {
       return
     }
 
+    // ── Step 1a′: the hot lane (2026-11-12) ──────────────────────────────────
+    // A failed or slow read is "no hot editions this run" — the page prices exactly as before, and
+    // the failure is recorded beside the count (never a silent 0).
+    let hotEditionIds: string[] = []
+    let hotLaneError: string | null = null
+    try {
+      const { data: hotRows, error: hotErr } = await rpcWithRetry<EditionPageRow[]>(
+        supabaseAdmin as never,
+        "fmv_recalc_hot_editions",
+        { p_pinnacle_collection_id: PINNACLE_COLLECTION_ID, p_limit: HOT_LANE_LIMIT },
+        { attempts: 1, baseDelayMs: STEP1_RETRY_BASE_MS, timeoutMs: HOT_LANE_BUDGET_MS }
+      )
+      if (hotErr) {
+        hotLaneError = hotErr.message ?? String(hotErr)
+      } else {
+        const inPage = new Set(pageEditionIds)
+        hotEditionIds = ((hotRows as EditionPageRow[] | null) ?? [])
+          .map((r) => r.edition_id)
+          .filter((id): id is string => !!id && !inPage.has(id))
+          .slice(0, HOT_LANE_LIMIT)
+      }
+    } catch (err) {
+      hotLaneError = err instanceof Error ? err.message : String(err)
+    }
+    if (hotLaneError) console.warn(`[FMV-RECALC] hot lane read failed — page only this run: ${hotLaneError}`)
+    // The set this run PRICES. `pageEditionIds` stays the cursor's unit everywhere below.
+    const runEditionIds: string[] = hotEditionIds.length > 0 ? [...pageEditionIds, ...hotEditionIds] : pageEditionIds
+
     // ── Step 1b: Fetch ALL in-window sales for this edition set ──────────────
     // .in() caps around 1000 elements per PostgREST request, so chunk the IDs.
     type SaleRow = {
@@ -463,8 +499,8 @@ export async function POST(req: NextRequest) {
     // `.order("id")` gives a total order so range pages can't skip/duplicate
     // rows across boundaries (`sold_at` alone ties and is unsafe to paginate on).
     const SALES_PAGE = 1000
-    for (let i = 0; i < pageEditionIds.length; i += IN_CHUNK) {
-      const slice = pageEditionIds.slice(i, i + IN_CHUNK)
+    for (let i = 0; i < runEditionIds.length; i += IN_CHUNK) {
+      const slice = runEditionIds.slice(i, i + IN_CHUNK)
       let from = 0
       for (;;) {
         // 2026-08-16: retried. This single fetch is what took the sweep dark for
@@ -2850,6 +2886,9 @@ export async function POST(req: NextRequest) {
           // the pagination state, so a sweep that never advanced looked healthy
           // for 20 hours. These three are the ones that would have shown it.
           page_size: pageEditionIds.length,
+          // 2026-11-12: editions priced from the hot lane on top of the page (count + its own error).
+          hot_lane_editions: hotEditionIds.length,
+          hot_lane_error: hotLaneError,
           edition_limit: limit,
           has_more: hasMore,
           wash_trade_filtered: washTradeEditionCount,
