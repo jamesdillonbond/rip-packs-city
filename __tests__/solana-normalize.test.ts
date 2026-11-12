@@ -311,6 +311,15 @@ describe("multi-set Candy assets", () => {
     expect(legend.badges ?? []).not.toContain(expect.stringMatching(/^Rainbow/))
   })
 
+  it("TITAN (Candy's special-edition tier above Epic) is LEGENDARY; Unique and Rainbow reward labels stay untiered", () => {
+    const titan = normalizeEdition(grouped(ASG, "Yordan Alvarez (12/77)", { Rarity: "TITAN", "Serial Number": "12/77" }))
+    expect(titan.tier).toBe("LEGENDARY")
+    const unique = normalizeEdition(grouped(ASG, "Shohei Ohtani AllStar Starter (3/40)", { Rarity: "UNIQUE", "Serial Number": "3/40" }))
+    expect(unique.tier).toBeNull()
+    const chaser = normalizeEdition(grouped(ASG, "Mike Trout Home Run Rainbow Chaser (3/30)", { Rarity: "RAINBOW", "Serial Number": "3/30" }))
+    expect(chaser.tier).toBeNull()
+  })
+
   it("Base checklist designations (Rookie / First Mint) are not copied onto a later set's ICONs", () => {
     const e = normalizeEdition(grouped(ASG, "Jac Caglianone - Home Run Derby (1/15)", { "Player Name": "Jac Caglianone", Rarity: "INSERT", "Insert Type": "Home Run Derby" }))
     expect(e.badges ?? []).not.toContain("Rookie")

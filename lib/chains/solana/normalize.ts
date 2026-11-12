@@ -211,13 +211,22 @@ export function candySetOf(asset: DasAsset): CandySet | null {
 // ingest, so this is only called for later sets. A Rainbow colour in the name is
 // LEGENDARY, as on the Base Series; an INSERT (Home Run Derby, Momenticons,
 // Pixicons) or a quest REWARD has no tier of its own — NULL, never a guess; its
-// badge says what it is.
+// badge says what it is. Candy's "Unique" (inserts / variants / chasers) and
+// "Rainbow" (Rainbow Collection chaser rewards) Rarity labels are that class.
+// TITAN (2026-11-12, Trevor: "Do what you think is best") is Candy's one "Special
+// Edition" rarity tier: 200 burn-reward ICONs of the 2022 Leadoff Series, ranked above
+// Epic by Candy (burn points: Epic 40, TITAN 100) and /43–100 against Epic /250 and
+// Legendary 1/1 in that set. tier_type has nothing between EPIC and LEGENDARY, and
+// RPC's Candy LEGENDARY already holds non-1/1 cards (the /15 Rainbow parallels), so
+// TITAN is LEGENDARY. Sources: blog.candy.io/rarity-guide/,
+// blog.candy.io/2022-mlb-vaulted-icon-series-pack-odds-checklist-burning-more.
 const RARITY_TIER: Record<string, string> = {
   core: "COMMON",
   common: "COMMON",
   uncommon: "UNCOMMON",
   rare: "RARE",
   epic: "EPIC",
+  titan: "LEGENDARY",
   legendary: "LEGENDARY",
 }
 export function candyTierFromAsset(asset: DasAsset): string | null {
