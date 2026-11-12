@@ -127,3 +127,10 @@ Closed this pass: #245 (2:25 PM PT), #243 (2:12 PM PT), #242 (7:10 PM PT). Watch
 - ✅ Item 1: `fmv-backfill` ok ×2 since the change. ✅ `candy_sales_stale_hours` cleared (4.2 h). ✅ `edition_integrity_flags` 11,548 → 7,537 (census hydrating the new Candy editions).
 - 🔁 Revival arm tripped again (one $16.62 DC comic sale, 11-11 9:05 AM PT) → re-dated to 11-11 (`20261111211740`), arm 0.
 - 13. **[P3, Claude Code (daytime), 0 nights] Revival arm should need a floor, not one sale.** Six stray Candy sales (~$20) in four weeks have now forced two re-dates; each sale re-arms it. Count a revival only above a floor (e.g. ≥ 10 sales or ≥ $100 in 7 days, both measured from the pre-lock baseline of 86–374/day) — a change to the `candy_revival_sales_since_recorded_silence` arm in `v_rpc_trust_health` (55k chars; use the md5-guarded fragment method).
+
+## 11-11 ~9:10 PM PT — evening sweep (nothing shipped)
+
+- Runtime errors since 1:20 PM PT: 4 single hits, all read budgets — `/insights/parallel-premiums` (4:34 PM PT), `/insights/squeeze` (3:35 PM PT), and at **8:15 PM PT** `/teams/nba/oklahoma-city-thunder` panel (10 s) + `/insights/allday-squeeze` (8 s). The 8:15 PM pair sat inside an overlap of three heavy lanes (topshot-active-listings-ingest 7.4 min from 8:13, candy-editions-ingest 5.0 min from 8:10, topshot-circulation-onchain 4.3 min from 8:05) — the estate-concurrency class, not a new defect. If it recurs at the same minute, stagger those three.
+- `ts-sold-floor-clear` deadlock at 7:25 PM PT: 1 of 688 runs in 7 days; the next tick retries. No action.
+- Trust: only `edition_integrity_flags` 6,793 (falling: 11,548 → 7,537 → 6,793). Alerts: `wallet-backfill-continuation` high and `fmv-backfill` medium are both 3-day pools straddling their fixes.
+- Items 4 (confidence fast lane) and 13 (revival-arm floor) stay for a daytime session; item 6 (DROP the retired squeeze MV) still needs the Supabase prompt answered or the SQL editor.
