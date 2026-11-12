@@ -23,7 +23,7 @@ const deal = (o: Partial<Deal> = {}): Deal => ({
   lowestAsk: 20, grossEV: 40, liveValueRatio: 2, discountPct: 50, fmvCoveragePct: 90,
   evSnapshottedAt: "2026-08-01T00:00:00Z", editionCount: 100, depletionPct: 40,
   highVariance: false, highVarianceReasons: [], buyUrl: "https://buy", dapperUrl: "https://dapper",
-  detailHref: "/x", simulatorHref: "/y", askChangedAt: null, askFirstSeenAt: null, prevAsk: null,
+  detailHref: "/x", askChangedAt: null, askFirstSeenAt: null, prevAsk: null,
   isNew: false, isPriceDrop: false, askDropPct: null, lowAsk24h: null, lowAsk7d: null, atLow24h: false, ...o,
 })
 

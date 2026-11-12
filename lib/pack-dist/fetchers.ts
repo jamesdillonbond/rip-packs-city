@@ -48,6 +48,14 @@ import { collectionHasDropPool } from "@/lib/packs/drop-pool"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import { computeTopPulls, type TopPull } from "@/lib/pack-dist-odds"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
+import {
+  buildContainerContents,
+  type ContainerContents,
+  type ContainerRecipeRow,
+  type InnerAskRow,
+  type InnerEvRow,
+  type InnerTitleRow,
+} from "@/lib/pack-dist/container-contents"
 
 // ── BUDGET ──────────────────────────────────────────────────────────────────
 // ⚠ THIS PAGE IS THE TOP USER-IMPACTING ERROR IN PRODUCTION. Vercel's 24h window
@@ -1006,4 +1014,74 @@ export async function fetchPackSalesHistory(
     return { rows: [], ok: false }
   }
   return { rows: Array.isArray(data) ? (data as PackSaleRow[]) : [], ok: true }
+}
+
+/**
+ * A Top Shot box / case: its recipe (inner dist x count) plus each inner pack's latest EV,
+ * lowest live ask and title — the "What's inside" panel (2026-11-12). `data` is null for a
+ * dist with no recipe (every ordinary pack) and on every collection but Top Shot, the only
+ * one with recipes. `ok:false` only when a read failed — the panel then says so instead of
+ * rendering a total built from the reads that happened to land.
+ */
+export async function fetchContainerContents(
+  collectionId: string,
+  collectionSlug: string,
+  distId: string,
+  db: Db = supabaseAdmin,
+): Promise<RowResult<ContainerContents>> {
+  if (collectionSlug !== "nba-top-shot") return { data: null, ok: true }
+  const { data: recipe, error: recipeErr } = await bounded(
+    db
+      .from("pack_container_recipes")
+      .select("inner_dist_id, inner_count, source")
+      .eq("collection_id", collectionId)
+      .eq("container_dist_id", distId)
+      .order("inner_dist_id", { ascending: true }),
+    "container_recipe",
+  )
+  if (recipeErr) {
+    console.error("[pack-detail] container_recipe error", recipeErr.message)
+    return { data: null, ok: false }
+  }
+  const rows = (Array.isArray(recipe) ? recipe : []) as ContainerRecipeRow[]
+  if (rows.length === 0) return { data: null, ok: true }
+  const inner = rows.map((r) => r.inner_dist_id)
+  const [evRes, askRes, titleRes] = await Promise.all([
+    bounded(
+      db
+        .from("mv_pack_ev_latest")
+        .select("dist_id, gross_ev, fmv_coverage_pct, edition_count, snapshotted_at")
+        .eq("collection_id", collectionId)
+        .in("dist_id", inner),
+      "container_inner_ev",
+    ),
+    bounded(
+      db
+        .from("pack_ask_state")
+        .select("dist_id, lowest_ask")
+        .eq("collection_slug", collectionSlug)
+        .eq("is_listed", true)
+        .gt("lowest_ask", 0)
+        .in("dist_id", inner),
+      "container_inner_ask",
+    ),
+    bounded(
+      db.from("pack_distributions").select("dist_id, title").eq("collection_id", collectionId).in("dist_id", inner),
+      "container_inner_title",
+    ),
+  ])
+  const innerErr = evRes.error ?? askRes.error ?? titleRes.error
+  if (innerErr) {
+    console.error("[pack-detail] container_inner error", innerErr.message)
+    return { data: null, ok: false }
+  }
+  return {
+    data: buildContainerContents(
+      rows,
+      (evRes.data ?? []) as InnerEvRow[],
+      (askRes.data ?? []) as InnerAskRow[],
+      (titleRes.data ?? []) as InnerTitleRow[],
+    ),
+    ok: true,
+  }
 }

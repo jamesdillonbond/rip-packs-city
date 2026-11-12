@@ -137,7 +137,6 @@ const packSniperDeal = {
   buyUrl: "https://example.com/buy",
   dapperUrl: "https://example.com/dapper",
   detailHref: "/x",
-  simulatorHref: "/y",
   askChangedAt: FETCHED,
   askFirstSeenAt: FETCHED,
   prevAsk: 50,

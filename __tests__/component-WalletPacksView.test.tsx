@@ -188,7 +188,9 @@ describe("WalletPacksView", () => {
     expect(link!.getAttribute("href")).toBe("/nba-top-shot/pack/999888777")
   })
 
-  it("links an OPENED pack (dist_id set) to its distribution simulator", async () => {
+  // Re-pinned 2026-11-12 (Trevor): a pack click opens the distribution's DETAIL page; the
+  // simulator is reached only from a link on that page.
+  it("links an OPENED pack (dist_id set) to its distribution detail page, not the simulator", async () => {
     ownerKey = "0xowner"
     fetchMock = routeFetch({
       summary: () => res(200, summaryBody),
@@ -199,7 +201,7 @@ describe("WalletPacksView", () => {
     const { getByText } = render(<WalletPacksView collection="nba-top-shot" />)
     await waitFor(() => expect(getByText("Base Pack")).toBeTruthy())
     expect(getByText("Base Pack").closest("a")!.getAttribute("href")).toBe(
-      "/nba-top-shot/packs/simulator/42"
+      "/nba-top-shot/pack/dist/42"
     )
   })
 

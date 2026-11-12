@@ -24,7 +24,7 @@
 //   1. NEVER score against the cached/stale view ask — always the live ask.
 //   2. Flag high-variance packs (gross_ev > 3 × ask, depletion >= 60,
 //      coverage < 80, single-slot chase). The board hides these by default.
-//   3. Surface the FMV-coverage chip + a simulator link on every row.
+//   3. Surface the FMV-coverage chip + a detail-page link on every row.
 
 import { supabaseAdmin } from "@/lib/supabase"
 import {
@@ -57,7 +57,6 @@ export type PackDeal = {
   buyUrl: string
   dapperUrl: string
   detailHref: string
-  simulatorHref: string
   // ── Recency overlay (from pack_ask_state; null until the snapshot cron runs) ──
   /** When this dist's lowest ask last changed (new listing or price move). Drives "Recently Listed". */
   askChangedAt: string | null
@@ -335,7 +334,6 @@ export async function getPackDeals(
       buyUrl: buyUrlFor(collection, lst.distId, lst.packListingId),
       dapperUrl: dapperMarketPackUrl({ league: leagueFor(collection), distId: lst.distId }),
       detailHref: `/${collection}/pack/dist/${lst.distId}`,
-      simulatorHref: `/${collection}/packs/simulator/${lst.distId}`,
       askChangedAt,
       askFirstSeenAt,
       prevAsk,

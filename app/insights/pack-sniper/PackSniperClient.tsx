@@ -11,7 +11,7 @@
 //
 // RANK, DON'T PRICE: ordering + "ask $X vs EV $Y", never a headline "92x".
 // High-variance (chance-hit / single-chase / depleted) packs are shown flagged by
-// default (showHighVariance defaults true); the toggle hides them. Every row links to the simulator.
+// default (showHighVariance defaults true); the toggle hides them. Every row links to the pack detail page (the simulator is reached from there).
 //
 // Recency note: "Recently Listed" + NEW/▼ come from RPC's own snapshots of the
 // live pack book (every few min), NOT an exact on-chain listing timestamp —
@@ -48,7 +48,6 @@ export type Deal = {
   buyUrl: string
   dapperUrl: string
   detailHref: string
-  simulatorHref: string
   askChangedAt: string | null
   askFirstSeenAt: string | null
   prevAsk: number | null
@@ -752,9 +751,6 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, initi
                   >
                     View Listing ↗
                   </TrackedOutboundLink>
-                  <Link href={d.simulatorHref} className="rpc-ps-act">
-                    Simulate
-                  </Link>
                 </div>
               </div>
             ))}
@@ -858,8 +854,8 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, initi
                         dapper.market ↗
                       </TrackedOutboundLink>
                     ) : null}
-                    <Link href={d.simulatorHref} className="rpc-ps-act">
-                      Simulate
+                    <Link href={d.detailHref} className="rpc-ps-act">
+                      Details
                     </Link>
                   </td>
                 </tr>
@@ -891,8 +887,8 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, initi
             <strong>Variance is huge.</strong> EV is an average, not what you should expect to pull.
             A pack with one rare chase can show a high EV while the <em>typical</em> rip returns far
             less. We flag chance-hit / single-chase / heavily-depleted packs and show them by
-            default; use the toggle above to hide them. The <strong>Simulate</strong> link on every row shows
-            the real outcome distribution — use it before buying.
+            default; use the toggle above to hide them. Every pack&apos;s detail page links a rip
+            simulator that shows the real outcome distribution — use it before buying.
           </p>
           <p>
             Only packs with ≥80% FMV coverage, an EV snapshot from the last 72h, and a live secondary

@@ -29,8 +29,9 @@ describe("anon-public pages can reach the APIs they actually call", () => {
     // is invisible on a spot check and permanent for the Moments that need it.
     ["/nba-top-shot/collection", ["/api/moment-thumbnail", "/api/collection-moments"]],
     // 2026-10-04, fifth instance, one hop further: the PAGE a public board links to was gated.
-    // Every Pack Sniper row and every /packs table row carries "Simulate" →
+    // Every Pack Sniper row and every /packs table row carried "Simulate" →
     // /<collection>/packs/simulator/<distId>; signed out, that was 307 → /login.
+    // (Since 2026-11-12 the simulator is linked from the pack detail page only; it stays public.)
     ["/nba-top-shot/packs/simulator/1427", ["/api/pack-simulator"]],
     ["/nfl-all-day/packs/simulator/1", ["/api/pack-simulator"]],
     // 2026-11-01, sixth instance: the packs board's view modes. "/api/packs" on the exact-path

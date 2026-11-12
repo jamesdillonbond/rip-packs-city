@@ -356,18 +356,20 @@ describe("PackTable — Action column", () => {
     expect(buy?.textContent).toContain("Buy")
   })
 
-  it("renders a Simulate link when only simulatorHref is present", () => {
+  // Inverted 2026-11-12 (Trevor): a pack click opens the DETAIL page; the rip simulator is
+  // linked only from that page, never from the table.
+  it("the Action cell links the pack DETAIL page, never the simulator, when there is no Buy link", () => {
     const { container } = render(
-      <PackTable collection="nba-top-shot" rows={[row({ title: "Sim Pack", simulatorHref: "/nba-top-shot/packs/simulator/1" })]} />,
+      <PackTable collection="nba-top-shot" rows={[row({ title: "Sim Pack", detailHref: "/nba-top-shot/pack/dist/1" })]} />,
     )
-    const sim = Array.from(container.querySelectorAll("a")).find(
-      (a) => a.getAttribute("href") === "/nba-top-shot/packs/simulator/1",
-    )
-    expect(sim).toBeTruthy()
-    expect(sim?.textContent).toContain("Simulate")
+    const hrefs = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href") ?? "")
+    expect(hrefs.some((h) => h.includes("/packs/simulator/"))).toBe(false)
+    const details = Array.from(container.querySelectorAll("a")).filter((a) => a.textContent?.trim() === "Details")
+    expect(details.length).toBeGreaterThan(0)
+    for (const d of details) expect(d.getAttribute("href")).toBe("/nba-top-shot/pack/dist/1")
   })
 
-  it("renders an em-dash Action cell when there is no action, buy, or simulator target", () => {
+  it("renders an em-dash Action cell when there is no action, buy, or detail target", () => {
     const { container } = render(<PackTable collection="nba-top-shot" rows={[row({ title: "Inert Pack" })]} />)
     const cells = container.querySelectorAll("tbody tr td")
     // Action is the last (10th) desktop cell.

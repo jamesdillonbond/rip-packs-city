@@ -87,7 +87,9 @@ import {
   type AllDayCorrectedEvRow,
   type HeroEdition,
   fetchPackDetailBundle,
+  fetchContainerContents,
 } from "@/lib/pack-dist/fetchers"
+import type { ContainerContents } from "@/lib/pack-dist/container-contents"
 import { withAsOf, depletionTileAsOf, packsRemainingTileAsOf } from "@/lib/pack-dist/as-of"
 import { unsoldAtCloseLabel } from "@/lib/pack-dist/unsold-at-close"
 import { collectionHasDropPool } from "@/lib/packs/drop-pool"
@@ -468,7 +470,7 @@ export default async function PackDetailPage(
   // because React does not hydrate a dehydrated boundary's fallback). Both reads
   // are cheap and were MOVED off the streamed group, not added, so total DB work
   // per request is unchanged.
-  const [packContentsRes, exhaustedRes, pinnaclePinsRes, book] = await Promise.all([
+  const [packContentsRes, exhaustedRes, pinnaclePinsRes, book, containerRes] = await Promise.all([
     fetchPackContents(coll.id, distId, PACK_CONTENTS_PAGE_SIZE, 0),
     fetchExhaustedCount(coll.id, distId),
     fetchPinnacleDistPins(collection, distId),
@@ -480,7 +482,10 @@ export default async function PackDetailPage(
     withBoardBudget(getPackBookFreshness(collection), "pack-book-freshness", 3000, "packs/").catch(
       (): BookFreshness => ({ lastChangedAt: null, chainSalesSince: null, frozen: false }),
     ),
+    // 2026-11-12: a box / case holds PACKS — its recipe and each inner pack's EV + ask.
+    fetchContainerContents(coll.id, collection, distId),
   ])
+  const containerContents = containerRes.ok ? containerRes.data : null
   // `null` still means "the read failed" for PackContentsSection, which renders
   // its own explanatory copy; `[]` still means a genuinely unindexed pool.
   const packContents = packContentsRes.ok ? (packContentsRes.rows as EditionTile[]) : null
@@ -492,6 +497,7 @@ export default async function PackDetailPage(
     boardStatus("Exhausted pool count", exhaustedRes.ok),
     boardStatus("Pack EV", pinDropRes.ok),
     boardStatus("Pins in this pack", pinnaclePinsRes.ok),
+    boardStatus("Packs inside this box / case", containerRes.ok),
   ])
   // A Pinnacle dist whose metadata lists its editions is titled "what's in the
   // drop"; one with no list only knows what has been pulled so far.
@@ -533,6 +539,10 @@ export default async function PackDetailPage(
   // it were pool entries on no-pool packs — Pack 1b) and the EV-sentinel
   // honesty path (Pack 1c).
   const hasDropPool = hasPoolFromBundle || (editionCount != null && editionCount > 0)
+  // A box / case (it has a recipe): its EV is per BOX or CASE, never "/pack".
+  const containerUnit: "box" | "case" | null = containerContents
+    ? /\bcase\b/i.test(String(merged.title ?? "")) ? "case" : "box"
+    : null
 
   // 1c — A no-pool pack's latest EV row is a sentinel (edition_count 0 /
   // fmv_coverage null|0). Rendering "$0.00 Gross EV / Net +$0.00" reads as
@@ -1044,6 +1054,32 @@ export default async function PackDetailPage(
                 </TrackedOutboundLink>
               ) : null}
               <PackShareButton url={`${BASE_URL}/${collection}/pack/dist/${encodeURIComponent(distId)}`} />
+              {/* 2026-11-12 (Trevor): the rip simulator is reached ONLY from here — every
+                  pack click elsewhere opens this page. It samples the drop pool, so a
+                  box / case (packs, not Moments) or a pool-less pack gets no link. */}
+              {hasPoolFromBundle && collectionHasDropPool(collection) && !containerContents && (
+                <Link
+                  href={`/${collection}/packs/simulator/${encodeURIComponent(distId)}`}
+                  prefetch={false}
+                  data-testid="pack-simulator-link"
+                  style={{
+                    display: "inline-block",
+                    padding: "8px 16px",
+                    background: "transparent",
+                    color: "var(--rpc-text-primary)",
+                    fontFamily: "var(--font-display)",
+                    fontWeight: 700,
+                    letterSpacing: "0.06em",
+                    textTransform: "uppercase",
+                    fontSize: 12,
+                    borderRadius: 4,
+                    border: "1px solid var(--rpc-border-hover)",
+                    textDecoration: "none",
+                  }}
+                >
+                  Simulate a rip
+                </Link>
+              )}
               <Link
                 href={`/${collection}/packs`}
                 style={{
@@ -1127,7 +1163,7 @@ export default async function PackDetailPage(
             </span>
             <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 22, color: accentText(accent) }}>
               ≈ {fmtUsd(grossEv)}
-              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--rpc-text-muted)" }}>/pack</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--rpc-text-muted)" }}>/{containerUnit ?? "pack"}</span>
             </span>
             <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: accentText(accent) }}>
               {above ? "▲" : "▼"} {pctLabel}% {above ? "above" : "below"} the {fmtUsd(secondaryAskAnchor)} secondary ask
@@ -1382,6 +1418,15 @@ export default async function PackDetailPage(
           streamed group rather than being added (shell 1→2 reads, streamed
           group 4→3). ── */}
       <DegradedDataNotice summary={shellDegraded} />
+      {containerContents && (
+        <ContainerContentsSection
+          collection={collection}
+          contents={containerContents}
+          unit={containerUnit ?? "box"}
+          price={secondaryAskAnchor ?? retailPrice}
+          priceLabel={secondaryAskAnchor != null ? "secondary ask" : "retail"}
+        />
+      )}
       <PackContentsSection
         collection={collection}
         distId={distId}
@@ -2224,6 +2269,100 @@ function PackContentsSection({
         packMode
         exhaustedTotal={exhaustedTotal}
       />
+    </section>
+  )
+}
+
+// A box / case: the packs inside it, what each is worth to open (its latest EV) and to
+// sell sealed (its lowest live ask), and the two totals. Each total is shown only when
+// EVERY line can answer — never a sum of the lines that happened to price (2026-11-12).
+function ContainerContentsSection({
+  collection,
+  contents,
+  unit,
+  price,
+  priceLabel,
+}: {
+  collection: string
+  contents: ContainerContents
+  unit: "box" | "case"
+  price: number | null
+  priceLabel: string
+}) {
+  const sourceNote =
+    contents.source === "observed"
+      ? `from opened ${unit}s`
+      : contents.source === "description"
+        ? `from the official ${unit} description — no ${unit} opened on record yet`
+        : `from minted counts — no ${unit} opened on record yet`
+  const vs = (v: number | null) =>
+    v != null && price != null && price > 0
+      ? `${v >= price ? "▲" : "▼"} ${Math.abs(Math.round((v / price - 1) * 100))}% ${v >= price ? "above" : "below"} the ${fmtUsd(price)} ${priceLabel}`
+      : null
+  const cell: React.CSSProperties = { padding: "8px 10px", borderBottom: "1px solid var(--rpc-border)", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-secondary)" }
+  const numCell: React.CSSProperties = { ...cell, textAlign: "right", whiteSpace: "nowrap" }
+  return (
+    <section data-testid="container-contents" style={{ ...CARD_STYLE, background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)" }}>
+      <div style={{ display: "flex", alignItems: "baseline", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+        <h2 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 18, letterSpacing: "0.06em", color: "var(--rpc-text-primary)", textTransform: "uppercase" }}>
+          What&apos;s inside this {unit}
+        </h2>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)" }}>
+          {contents.packCount} packs · {sourceNote}
+        </span>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10, marginBottom: 12 }}>
+        <div style={{ border: "1px solid var(--rpc-border)", borderRadius: 6, padding: "10px 12px" }}>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>Rip EV — open everything</div>
+          <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 22, color: "var(--rpc-text-primary)" }}>
+            {contents.ripEv != null ? fmtUsd(contents.ripEv) : "—"}
+          </div>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)" }}>
+            {contents.ripEv != null
+              ? vs(contents.ripEv) ?? "sum of each pack's expected pull value"
+              : `${contents.unpricedLines} of ${contents.lines.length} pack types not priced yet — no total until all are`}
+          </div>
+        </div>
+        <div style={{ border: "1px solid var(--rpc-border)", borderRadius: 6, padding: "10px 12px" }}>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>Sealed value — sell the packs inside</div>
+          <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 22, color: "var(--rpc-text-primary)" }}>
+            {contents.sealedValue != null ? fmtUsd(contents.sealedValue) : "—"}
+          </div>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)" }}>
+            {contents.sealedValue != null
+              ? vs(contents.sealedValue) ?? "at today's lowest asks, before fees"
+              : `${contents.unlistedLines} of ${contents.lines.length} pack types have no live ask`}
+          </div>
+        </div>
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              <th scope="col" style={{ ...cell, textAlign: "left", fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>Pack</th>
+              <th scope="col" style={{ ...numCell, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>Qty</th>
+              <th scope="col" style={{ ...numCell, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>EV each</th>
+              <th scope="col" style={{ ...numCell, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>Lowest ask</th>
+            </tr>
+          </thead>
+          <tbody>
+            {contents.lines.map((l) => (
+              <tr key={l.distId}>
+                <td style={cell}>
+                  <Link href={`/${collection}/pack/dist/${encodeURIComponent(l.distId)}`} prefetch={false} style={{ color: "var(--rpc-text-primary)", textDecoration: "none", fontWeight: 700 }}>
+                    {l.title}
+                  </Link>
+                </td>
+                <td style={numCell}>× {l.count}</td>
+                <td style={numCell} title={l.evEach == null && l.coveragePct != null ? `Only ${l.coveragePct}% of this pack's pool has a price yet` : undefined}>
+                  {l.evEach != null ? fmtUsd(l.evEach) : l.coveragePct != null ? `— (${l.coveragePct}% priced)` : "—"}
+                </td>
+                <td style={numCell}>{l.askEach != null ? fmtUsd(l.askEach) : "not listed"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </section>
   )
 }

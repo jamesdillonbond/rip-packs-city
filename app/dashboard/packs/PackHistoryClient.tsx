@@ -11,7 +11,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import DashboardTabs from "@/components/dashboard/DashboardTabs"
-import { collectionHasDropPool } from "@/lib/packs/drop-pool"
 import { fmtUsd, relativeTime } from "@/lib/dashboard/format"
 import { currencySuffix, displayCurrency, isUsdPegged } from "@/lib/usd-format"
 import { packCoverage } from "@/lib/packs-wallet-view-format"
@@ -765,14 +764,12 @@ function ExpandableRow({ row, isOpen, lifecycle, onClick }: { row: HistoryRow; i
   const sc = statusColor(row.status)
   const packNameContent = row.pack_name ?? `Pack #${row.pack_nft_id.slice(-6)}`
   const showLink = row.dist_id != null
-  // The simulator samples the drop pool; a collection with none (Pinnacle) links
-  // the drop's own page instead of an empty simulator (2026-10-19).
+  // 2026-11-12 (Trevor): a pack click opens its detail page; the rip simulator is
+  // reached only from a link on that page.
   const rowUrlSlug = urlSlug(row.collection_slug)
   const packHref = row.dist_id == null
     ? null
-    : collectionHasDropPool(rowUrlSlug)
-      ? `/${rowUrlSlug}/packs/simulator/${encodeURIComponent(row.dist_id)}`
-      : `/${rowUrlSlug}/pack/dist/${encodeURIComponent(row.dist_id)}`
+    : `/${rowUrlSlug}/pack/dist/${encodeURIComponent(row.dist_id)}`
   return (
     <>
       <tr
@@ -921,13 +918,13 @@ function LifecycleDetail({ lifecycle, row }: { lifecycle: any; row: HistoryRow }
           What this pack pulled isn&apos;t identified yet.
         </div>
       )}
-      {row.dist_id && collectionHasDropPool(urlSlug(row.collection_slug)) && (
+      {row.dist_id && (
         <div>
           <Link
-            href={`/${urlSlug(row.collection_slug)}/packs/simulator/${encodeURIComponent(row.dist_id)}`}
+            href={`/${urlSlug(row.collection_slug)}/pack/dist/${encodeURIComponent(row.dist_id)}`}
             style={{ display: "inline-block", padding: "6px 12px", background: "var(--rpc-red-fill)", color: "#fff", borderRadius: 5, fontFamily: condensedFont, fontWeight: 700, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", textDecoration: "none" }}
           >
-            Open simulator for this drop
+            View this drop
           </Link>
         </div>
       )}

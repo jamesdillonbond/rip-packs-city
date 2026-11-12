@@ -140,14 +140,10 @@ export interface PackRow {
   actionLabel?: string
   /** When set, the title cell links here (the pack detail page). */
   detailHref?: string
-  /** Internal href to the rip simulator for this distribution. Set by
-   *  toPackRow for every collection with a `pack_drop_pool` (null for Disney
-   *  Pinnacle); used by the Action cell when no external Buy link is available. */
-  simulatorHref?: string | null
   /** External marketplace URL for this pack. Set only when an active live
    *  secondary listing exists AND the collection has a known marketplace
    *  URL pattern (Top Shot today via nbatopshot.com/listings/p2p). When
-   *  present, the Action cell renders a "Buy" link instead of "Simulate". */
+   *  present, the Action cell renders a "Buy" link instead of "Details". */
   buyUrl?: string | null
 }
 
@@ -664,14 +660,15 @@ export default function PackTable({
                     >
                       Buy ↗
                     </a>
-                  ) : r.simulatorHref ? (
+                  ) : r.detailHref ? (
+                    // 2026-11-12 (Trevor): a pack click opens its detail page; the rip
+                    // simulator is reached only from a link ON that page.
                     <Link
-                      href={r.simulatorHref}
+                      href={r.detailHref}
                       prefetch={false}
                       className="rounded border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] px-3 py-1 text-xs font-semibold text-[color:var(--rpc-text-primary)] hover:bg-[color:var(--rpc-surface-hover)] transition inline-block"
-                      title="Rip simulator — sample pulls weighted by drop probability"
                     >
-                      Simulate
+                      Details
                     </Link>
                   ) : (
                     <span className="text-xs text-[color:var(--rpc-text-muted)]">—</span>
@@ -827,13 +824,13 @@ export default function PackTable({
                 >
                   Buy ↗
                 </a>
-              ) : r.simulatorHref ? (
+              ) : r.detailHref ? (
                 <Link
-                  href={r.simulatorHref}
+                  href={r.detailHref}
                   prefetch={false}
                   className="ml-auto rounded border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] px-2.5 py-1 text-[11px] font-semibold text-[color:var(--rpc-text-primary)] hover:bg-[color:var(--rpc-surface-hover)] transition"
                 >
-                  Simulate
+                  Details
                 </Link>
               ) : null}
             </div>

@@ -414,7 +414,7 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
                           <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
                             {row.dist_id ? (
                               <Link
-                                href={`/${collection}/packs/simulator/${encodeURIComponent(row.dist_id)}`}
+                                href={`/${collection}/pack/dist/${encodeURIComponent(row.dist_id)}`}
                                 style={{ color: "var(--rpc-text-primary)", textDecoration: "none", fontFamily: display, fontWeight: 700, fontSize: 12 }}
                               >
                                 {packName}

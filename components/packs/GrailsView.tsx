@@ -4,7 +4,7 @@
 //
 // "Grails" card grid for the packs page. Pulls /api/packs/grails (joined
 // pack_grail_metrics_mv + pack_table_rows) and renders the chase player, the
-// per-pack at-least-once probability strip, and a CTA to the simulator.
+// per-pack at-least-once probability strip, and a CTA to the pack detail page (2026-11-12: the simulator is linked from there only).
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
@@ -275,7 +275,7 @@ function GrailCard({ row, accent, collection }: { row: GrailRow; accent: string;
             <div style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 800, color: 'var(--rpc-text-primary)' }}>{fmtUsd(price)}</div>
           </div>
           <Link
-            href={`/${collection}/packs/simulator/${encodeURIComponent(row.dist_id)}`}
+            href={`/${collection}/pack/dist/${encodeURIComponent(row.dist_id)}`}
             style={{
               padding: '8px 12px',
               background: accent,
@@ -290,7 +290,7 @@ function GrailCard({ row, accent, collection }: { row: GrailRow; accent: string;
               textDecoration: 'none',
             }}
           >
-            Run Simulator
+            View pack
           </Link>
         </div>
       </div>

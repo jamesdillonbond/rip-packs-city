@@ -315,7 +315,6 @@ const seedDeal = {
   buyUrl: "https://example.test/buy",
   dapperUrl: "https://example.test/dapper",
   detailHref: "/nba-top-shot/pack/dist/5048",
-  simulatorHref: "/nba-top-shot/packs/simulator/5048",
   askChangedAt: null,
 }
 
