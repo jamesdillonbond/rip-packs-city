@@ -44,4 +44,13 @@ describe("edition_fmv_estimates has exactly one reader", () => {
     const hits = files.filter((f) => stripComments(readFileSync(f, "utf8")).includes("edition_fmv_estimates"))
     expect(hits).toEqual([THE_READER])
   })
+
+  // 2026-11-12: the comparable-edition estimate (public.fmv_comparable_estimates, model comp-1.x) is
+  // the same kind of number under the same contract — a labelled guide for an edition with no price,
+  // never an FMV — so it has the same single reader. The All Day `_compcap` guard reads it INSIDE the
+  // database (a BEFORE INSERT trigger), which is not an app reader and is out of this walk by design.
+  it("only lib/fmv/edition-estimate.ts names fmv_comparable_estimates in code", () => {
+    const hits = files.filter((f) => stripComments(readFileSync(f, "utf8")).includes("fmv_comparable_estimates"))
+    expect(hits).toEqual([THE_READER])
+  })
 })

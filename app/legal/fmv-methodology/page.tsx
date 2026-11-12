@@ -260,6 +260,35 @@ export default async function FmvMethodologyPage() {
         </li>
       </ul>
 
+      <h3 style={H3}>Editions with no sales at all</h3>
+      <p style={P}>
+        An NBA Top Shot, NFL All Day or LaLiga Golazos edition that has never
+        sold, and has no usable ask, has no FMV. Where at least three other
+        editions in its set have sold, the edition page shows a separate{" "}
+        <strong style={STRONG}>Estimated value</strong> built only from other
+        editions: the typical price of those set-mates, adjusted for how the
+        same player&rsquo;s other editions trade against their own sets.
+      </p>
+      <ul style={UL}>
+        <li>
+          Tested against editions whose prices we do know (each one priced as
+          if it had never sold), the estimate lands within 25% of the real
+          price about half the time and within 50% about four times in five.
+          It is weakest on the rarest editions.
+        </li>
+        <li>
+          Like the parallel estimate above, it is a guide, not a market price:
+          it is not the FMV, and it is not used in portfolio values, pack
+          values, deal boards or alerts.
+        </li>
+        <li>
+          On NFL All Day, an ask-based or long-unsold price is also held to this
+          estimate when the ask sits above it, and any All Day price is lifted
+          to the best open offer when that offer is higher (up to three times
+          the price) &mdash; a standing offer is money a seller can take today.
+        </li>
+      </ul>
+
       <h2 style={H2}>What FMV Does NOT Account For</h2>
       <ul style={UL}>
         <li>

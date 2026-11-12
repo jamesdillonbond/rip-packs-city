@@ -78,7 +78,15 @@ import { isMarketClosed } from "@/lib/market-closed"
 import { fmvBasis, isAskDerivedFmv } from "@/lib/fmv-basis"
 import { readCappedByExternalId } from "@/lib/fmv-capped"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
-import { fetchEditionFmvEstimate, estimateBasisText, type EditionFmvEstimate } from "@/lib/fmv/edition-estimate"
+import {
+  fetchEditionFmvEstimate,
+  estimateBasisText,
+  fetchEditionComparableEstimate,
+  comparableBasisText,
+  COMPARABLE_ESTIMATE_COLLECTIONS,
+  type EditionFmvEstimate,
+  type EditionComparableEstimate,
+} from "@/lib/fmv/edition-estimate"
 import WatchEditionButton from "@/components/alerts/WatchEditionButton"
 import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 import { dapperMarketEditionUrl } from "@/lib/collections"
@@ -593,6 +601,11 @@ export default async function EditionPage(
   // failed or absent read renders nothing.
   const isTopShotParallel = collection === "nba-top-shot" && typeof detail.external_id === "string" && detail.external_id.includes("::")
   let estimateRes: { estimate: EditionFmvEstimate | null; ok: boolean } = { estimate: null, ok: !isTopShotParallel }
+  // Comparable-edition ESTIMATE (2026-11-12) — for an edition with NO price at all, on the three
+  // collections where it was measured usable. Read here, RENDERED only when the page has no FMV and
+  // no parallel estimate (below). A failed or absent read renders nothing.
+  const wantsComparable = COMPARABLE_ESTIMATE_COLLECTIONS.has(collection)
+  let comparableRes: { estimate: EditionComparableEstimate | null; ok: boolean } = { estimate: null, ok: !wantsComparable }
   // Panini (2026-10-21, #204): the edition's OWN product's set page. Defaults to a failed read, so
   // an unexpected throw leaves the set name unlinked rather than linked to another product's set.
   let paniniSetSlug: PaniniEditionSetSlug = { slug: null, ok: !isPanini }
@@ -604,7 +617,7 @@ export default async function EditionPage(
   // or an unplaced card renders no team chip — never "no team".
   let paniniTeams: { ok: boolean; teams: PaniniEditionTeam[] } = { ok: !isPanini, teams: [] }
   try {
-    ;[history, bundleRes, insightRes, badgeArt, repSales, paniniAskRes, estimateRes, paniniSetSlug, printingAsk, paniniTeams] = await Promise.all([
+    ;[history, bundleRes, insightRes, badgeArt, repSales, paniniAskRes, estimateRes, paniniSetSlug, printingAsk, paniniTeams, comparableRes] = await Promise.all([
     fetchHistory(coll.id, slug, 30),
     // high_offer + subedition (parallel) ladder + IPFS assets in ONE round-trip.
     fetchMarketBundle(detail.id, detail.external_id),
@@ -637,6 +650,9 @@ export default async function EditionPage(
     isPanini && detail.external_id
       ? fetchPaniniEditionTeams(detail.external_id)
       : Promise.resolve({ ok: true, teams: [] as PaniniEditionTeam[] }),
+    wantsComparable
+      ? fetchEditionComparableEstimate(detail.id)
+      : Promise.resolve({ estimate: null, ok: true }),
     ])
   } catch (e) {
     // ⚠ Must NOT return a whole-page view. The declared defaults above are
@@ -1230,6 +1246,31 @@ export default async function EditionPage(
           <span className="rpc-mono" style={{ flexBasis: "100%", fontSize: 11, lineHeight: 1.5, color: "var(--rpc-text-muted)" }}>
             This printing rarely trades, so its own sales say little. Estimate from the{" "}
             {estimateBasisText(estimateRes.estimate, (n) => fmtUsd(n))}. A guide, not a market price.{" "}
+            <Link href="/legal/fmv-methodology#estimates" style={{ color: "var(--rpc-text-muted)" }}>How this works →</Link>
+          </span>
+        </div>
+      )}
+
+      {/* ── Estimate for an edition with NO price (2026-11-12) ───────────────
+          Built only from OTHER editions (set-mates × the player's premium). Same
+          contract as the card above: its own label, its basis in plain words,
+          never the FMV. Only when we publish no price for this edition and the
+          parallel estimate above did not render; never on a closed market. */}
+      {!fmvAvailable && !estimateRes.estimate && comparableRes.estimate && !marketClosed && (
+        <div
+          data-comparable-estimate
+          className="rpc-card"
+          style={{ marginTop: 10, padding: "10px 14px", display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 12px" }}
+        >
+          <span className="rpc-mono" style={{ fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
+            Estimated value
+          </span>
+          <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 20, color: "var(--rpc-text-primary)" }}>
+            ≈ {fmtUsd(comparableRes.estimate.estimate_usd)}
+          </span>
+          <span className="rpc-mono" style={{ flexBasis: "100%", fontSize: 11, lineHeight: 1.5, color: "var(--rpc-text-muted)" }}>
+            We do not publish a price for this edition yet. Estimate from {comparableBasisText(comparableRes.estimate)}. A guide,
+            not a market price.{" "}
             <Link href="/legal/fmv-methodology#estimates" style={{ color: "var(--rpc-text-muted)" }}>How this works →</Link>
           </span>
         </div>

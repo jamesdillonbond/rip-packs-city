@@ -162,3 +162,97 @@ export function estimateForModel(e: EditionFmvEstimate): Record<string, unknown>
       "and keep it separate from the FMV figure. Never call it the FMV or a market price.",
   }
 }
+
+// ── Comparable-edition estimate (2026-11-12) ─────────────────────────────────
+//
+// For an edition with NO price at all (never sold, no usable ask): an estimate
+// built ONLY from other editions — the geometric mean of the sale-backed prices
+// of its set-mates (same set, same parallel), adjusted by how the player's OTHER
+// editions trade against their own sets. Written by
+// public.refresh_fmv_comparable_estimates() (model comp-1.x) every 6 hours.
+//
+// The same contract as the parallel estimate above: NOT an FMV, never written to
+// fmv_snapshots / edition_fmv_current, so it reaches no portfolio total, board,
+// pack EV or alert. Shown on the edition page only, with its basis stated.
+//
+// WHAT IS SHOWN, and why only that (measured 11-12, leave-one-out against the
+// edition's own sale-backed price / its first sales):
+//   set basis, Top Shot first sales (n 775)  ratio 1.00 · 47 % within ±25 % · 82 % within ±50 %
+//   set basis, All Day HIGH/MEDIUM (n 1,775) ratio 1.07 · 59 % · 81 %
+//   bucket / tier fallbacks                  ~41 % median error  → NOT shown
+//   Candy                                    ratio 1.73          → NOT shown (the page never asks)
+// So a row renders only on the SET basis with at least COMPARABLE_MIN_SET_MATES
+// priced set-mates. The table carries the weaker fallbacks for analysis only.
+
+export interface EditionComparableEstimate {
+  edition_id: string
+  estimate_usd: number
+  n_set: number
+  n_player: number
+  computed_at: string
+}
+
+const COMPARABLE_COLUMNS = "edition_id, est_usd, baseline_kind, n_set, n_player, computed_at"
+
+/** Fewer priced set-mates than this and the baseline is one or two editions' noise. */
+export const COMPARABLE_MIN_SET_MATES = 3
+
+/** The collections whose comparable estimate was measured usable (route slugs). */
+export const COMPARABLE_ESTIMATE_COLLECTIONS: ReadonlySet<string> = new Set(["nba-top-shot", "nfl-all-day", "laliga-golazos"])
+
+/**
+ * Coerce a fmv_comparable_estimates row into a displayable estimate, or null when
+ * it is not on the set basis, has too few set-mates, is under the display floor,
+ * or is stale. A half-formed row is dropped rather than rendered.
+ */
+export function parseComparableRow(row: unknown, now: number = Date.now()): EditionComparableEstimate | null {
+  if (!row || typeof row !== "object") return null
+  const r = row as Record<string, unknown>
+  const estimate = num(r.est_usd)
+  const nSet = num(r.n_set)
+  const nPlayer = num(r.n_player)
+  const computedAt = typeof r.computed_at === "string" ? r.computed_at : null
+  if (typeof r.edition_id !== "string") return null
+  if (r.baseline_kind !== "set") return null
+  if (estimate == null || estimate < ESTIMATE_MIN_USD) return null
+  if (nSet == null || nSet < COMPARABLE_MIN_SET_MATES) return null
+  if (!computedAt) return null
+  const age = now - Date.parse(computedAt)
+  if (!Number.isFinite(age) || age > ESTIMATE_MAX_AGE_HOURS * 3_600_000) return null
+  return {
+    edition_id: r.edition_id,
+    estimate_usd: estimate,
+    n_set: nSet,
+    n_player: nPlayer != null && nPlayer > 0 ? nPlayer : 0,
+    computed_at: computedAt,
+  }
+}
+
+/** The basis sentence for a comparable estimate — shown every time the number is. */
+export function comparableBasisText(e: EditionComparableEstimate): string {
+  const mates = `${e.n_set.toLocaleString("en-US")} other edition${e.n_set === 1 ? "" : "s"} in this set that have sold`
+  return e.n_player > 0
+    ? `the prices of ${mates}, adjusted for how this player's other editions trade against their own sets`
+    : `the prices of ${mates}`
+}
+
+export async function fetchEditionComparableEstimate(
+  editionId: string | null | undefined,
+): Promise<{ estimate: EditionComparableEstimate | null; ok: boolean }> {
+  if (!editionId) return { estimate: null, ok: true }
+  try {
+    const { data, error } = await withQueryDeadline(
+      supabaseAdmin.from("fmv_comparable_estimates").select(COMPARABLE_COLUMNS).eq("edition_id", editionId).maybeSingle(),
+      "edition/comparable-estimate",
+      3_000,
+    )
+    if (error) {
+      console.warn("[edition/comparable-estimate] read failed; estimate not shown:", error.message)
+      return { estimate: null, ok: false }
+    }
+    return { estimate: parseComparableRow(data), ok: true }
+  } catch (e) {
+    console.warn("[edition/comparable-estimate] read threw; estimate not shown:", e instanceof Error ? e.message : String(e))
+    return { estimate: null, ok: false }
+  }
+}
