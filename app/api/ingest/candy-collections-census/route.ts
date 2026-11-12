@@ -65,6 +65,8 @@ async function handle(req: NextRequest) {
     listings_repointed: result.listings_repointed,
     // 2026-11-12: label-less editions completed from a hydrated card (#246 residual)
     editions_filled: result.editions_filled,
+    // 2026-11-12: holdings retired from label-less editions after a clean complete walk (#246 residual)
+    wmc_retired: result.wmc_retired,
     hydrate_fail_reasons: result.hydrate_fail_reasons,
     hydrate_fetches: result.hydrate_fetches,
     hydrate_unverified_groups: result.hydrate_unverified_groups,

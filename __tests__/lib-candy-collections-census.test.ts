@@ -85,13 +85,32 @@ function db() {
       const t = table
       return {
         // existing-row reads (REUSE / REPOINT)
-        select: () => {
-          const q: any = { eq: () => q, in: async (_c: string, vals: string[]) => {
-            if (state.readError) return { data: null, error: state.readError }
-            if (t === "wallet_moments_cache") return { data: state.existingWmc.filter((r) => vals.includes(r.moment_id)), error: null }
-            return { data: state.existingEds.filter((e) => vals.includes(e.external_id)), error: null }
-          } }
+        select: (_cols?: string, opts?: any) => {
+          const q: any = {
+            eq: () => q,
+            is: () => q,
+            // RETIRE's editions read: thumbnail-less editions under a prefix
+            like: async (_c: string, pat: string) => {
+              const pre = pat.replace(/%$/, "")
+              return { data: state.existingEds.filter((e) => e.thumbnail_url == null && e.external_id.startsWith(pre)), error: null }
+            },
+            in: async (col: string, vals: string[]) => {
+              if (state.readError) return { data: null, error: state.readError }
+              if (t === "wallet_moments_cache" && opts?.head) return { count: state.existingWmc.filter((r) => vals.includes(r.edition_key)).length, error: null }
+              if (t === "wallet_moments_cache") return { data: state.existingWmc.filter((r) => vals.includes(r.moment_id)), error: null }
+              return { data: state.existingEds.filter((e) => vals.includes(e.external_id)), error: null }
+            },
+          }
           return q
+        },
+        delete: () => {
+          const d: any = { eq: () => d, in: (_c: string, vals: string[]) => ({ select: async () => {
+            const gone = state.existingWmc.filter((r) => vals.includes(r.edition_key))
+            ;(state as any).deleted.push(...gone)
+            state.existingWmc = state.existingWmc.filter((r) => !vals.includes(r.edition_key))
+            return { data: gone.map((r) => ({ moment_id: r.moment_id })), error: null }
+          } }) }
+          return d
         },
         update: (patch: any) => {
           const f: any = { filters: [] as any[] }
@@ -125,7 +144,7 @@ beforeEach(() => {
   ;(state as any).listingsError = null
   state.existingWmc = []; state.existingEds = []; state.readError = null; state.hydrate = null; state.hydrateCalls = []
   state.updates = []; state.wmcUpserts = []; state.edUpserts = []; state.rpcs = []; state.rpcArgs = []
-  ;(state as any).edUpdates = []; (state as any).thumb = "https://arweave.net/x"
+  ;(state as any).edUpdates = []; (state as any).thumb = "https://arweave.net/x"; (state as any).deleted = []
 })
 
 describe("runCollectionsCensus", () => {
@@ -374,5 +393,63 @@ describe("runCollectionsCensus", () => {
     expect(r.editions_filled).toBe(0)
     expect((state as any).edUpdates).toHaveLength(0)
     expect(state.existingEds[1].thumbnail_url).toBe("https://arweave.net/old")
+  })
+
+  // 2026-11-12 (#246 residual): Aquaman (2025-) #3 held 360 rows against a 350-card walk — the 10 extra were
+  // exactly the fabricated label-less edition's, cards DAS no longer returns. The add-only census never retired them.
+  describe("RETIRE — rows on a label-less edition no card of a clean walk resolved to", () => {
+    const setup = () => {
+      state.queue = [{ address: "A", name: "Aquaman", edition_prefix: "c:aq", census_page: 1, census_walk_started_at: null }]
+      state.pages.A = [[{ id: "m1", owner: "W", ed: "c:aq:real" }, { id: "m2", owner: "W", ed: "c:aq:real" }, { id: "m3", owner: "W", ed: "c:aq:real" }, { id: "m4", owner: "W", ed: "c:aq:real" }]]
+      state.existingWmc = [
+        { moment_id: "m1", wallet_address: "W", edition_key: "ed-c:aq:real", serial_number: 1 },
+        { moment_id: "gone1", wallet_address: "X", edition_key: "c:aq:fabricated", serial_number: null },
+        { moment_id: "gone2", wallet_address: "Y", edition_key: "c:aq:fabricated", serial_number: null },
+      ]
+      state.existingEds = [
+        { external_id: "ed-c:aq:real", thumbnail_url: "https://arweave.net/r", circulation_count: 100, tier: "RARE" },
+        { external_id: "c:aq:fabricated", thumbnail_url: null, circulation_count: null, tier: null },
+      ]
+    }
+    it("deletes them after a clean complete walk started in this run, and counts them", async () => {
+      setup()
+      const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+      expect(r.ok).toBe(true)
+      expect(r.wmc_retired).toBe(2)
+      expect((state as any).deleted.map((x: any) => x.moment_id).sort()).toEqual(["gone1", "gone2"])
+      // the walked card's row is untouched
+      expect(state.existingWmc.map((x) => x.moment_id)).toContain("m1")
+    })
+    it("fails OPEN on a walk resumed from an earlier run (it did not see the whole collection)", async () => {
+      setup()
+      state.queue[0] = { ...state.queue[0], census_page: 2, census_cursor: "A#0", census_walk_started_at: "2026-11-12T00:00:00Z" }
+      const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+      expect(r.wmc_retired).toBe(0)
+      expect((state as any).deleted).toHaveLength(0)
+    })
+    it("never retires a label-less edition a card of this walk RESOLVED to (it was seen, just not filled)", async () => {
+      setup()
+      ;(state as any).thumb = null // computed editions carry no thumbnail → no FILL
+      state.pages.A = [[...state.pages.A[0], { id: "seen1", owner: "X", ed: "c:aq:fabricated-x" }]]
+      state.existingEds.push({ external_id: "ed-c:aq:fabricated-x", thumbnail_url: null, circulation_count: null, tier: null })
+      state.existingWmc.push({ moment_id: "seen1", wallet_address: "X", edition_key: "ed-c:aq:fabricated-x", serial_number: null })
+      state.queue[0].edition_prefix = "ed-c:aq"
+      // control: an UNSEEN label-less edition under the same prefix IS retired in the same walk
+      state.existingEds.push({ external_id: "ed-c:aq:unseen", thumbnail_url: null, circulation_count: null, tier: null })
+      state.existingWmc.push({ moment_id: "u1", wallet_address: "Q", edition_key: "ed-c:aq:unseen", serial_number: null })
+      const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+      expect(r.ok).toBe(true)
+      expect((state as any).deleted.map((x: any) => x.edition_key)).toEqual(["ed-c:aq:unseen"])
+      expect(state.existingWmc.find((x) => x.moment_id === "seen1")?.edition_key).toBe("ed-c:aq:fabricated-x")
+    })
+    it("REFUSES (and fails the run) when the unseen rows exceed the cap against the walk", async () => {
+      setup()
+      for (let i = 0; i < 40; i++) state.existingWmc.push({ moment_id: `g${i}`, wallet_address: "Z", edition_key: "c:aq:fabricated", serial_number: null })
+      const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+      expect(r.ok).toBe(false)
+      expect(r.wmc_retired).toBe(0)
+      expect((state as any).deleted).toHaveLength(0)
+      expect(r.error).toMatch(/retire: refused/)
+    })
   })
 })

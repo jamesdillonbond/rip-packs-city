@@ -83,6 +83,7 @@ export interface CollectionCensusReport {
   wmc_repointed: number
   listings_repointed: number
   editions_filled: number
+  wmc_retired: number
   completed: boolean
   error: string | null
 }
@@ -135,6 +136,7 @@ export interface CollectionsCensusResult {
   wmc_repointed: number
   listings_repointed: number
   editions_filled: number
+  wmc_retired: number
   hydrate_fail_reasons: Record<string, number>
   hydrate_fetches: number
   hydrate_unverified_groups: number
@@ -154,6 +156,40 @@ export interface CollectionsCensusResult {
   error: string | null
 }
 
+/** RETIRE refuses when it would delete more than this share of the walk's cards (a sign something else is wrong). */
+export const RETIRE_MAX_SHARE = 0.25
+
+/**
+ * After a clean complete walk: delete holdings rows that sit on a THUMBNAIL-LESS edition of this collection
+ * whose key no card of the walk resolved to. See RETIRE in runCollectionsCensus.
+ */
+async function retireUnseenOnLabelless(db: Db, prefix: string, walkKeys: Set<string>, walkCards: number): Promise<{ retired: number; error: string | null }> {
+  const { data: eds, error } = await db.from("editions")
+    .select("external_id")
+    .eq("collection_id", CANDY_MLB_UUID)
+    .is("thumbnail_url", null)
+    .like("external_id", `${prefix}:%`)
+  if (error) return { retired: 0, error: `editions read: ${error.message}` }
+  // LIKE treats `_` in a slug as a wildcard: keep only keys that really start with this prefix.
+  const keys = ((eds ?? []) as Array<{ external_id: string }>).map((e) => e.external_id).filter((k) => k.startsWith(`${prefix}:`) && !walkKeys.has(k))
+  if (!keys.length) return { retired: 0, error: null }
+  const { count, error: cErr } = await db.from("wallet_moments_cache")
+    .select("moment_id", { count: "exact", head: true })
+    .eq("collection_id", CANDY_MLB_UUID)
+    .in("edition_key", keys)
+  if (cErr) return { retired: 0, error: `count: ${cErr.message}` }
+  if (count == null) return { retired: 0, error: "count: unknown" }
+  if (count === 0) return { retired: 0, error: null }
+  if (count > Math.max(10, walkCards * RETIRE_MAX_SHARE)) return { retired: 0, error: `refused: ${count} rows on unseen label-less editions vs a ${walkCards}-card walk` }
+  const { data, error: dErr } = await db.from("wallet_moments_cache")
+    .delete()
+    .eq("collection_id", CANDY_MLB_UUID)
+    .in("edition_key", keys)
+    .select("moment_id")
+  if (dErr) return { retired: 0, error: `delete: ${dErr.message}` }
+  return { retired: data?.length ?? 0, error: null }
+}
+
 export async function runCollectionsCensus(
   db: Db,
   opts: { budgetMs: number; now?: () => number },
@@ -162,7 +198,7 @@ export async function runCollectionsCensus(
   const deadline = now() + opts.budgetMs
   const out: CollectionsCensusResult = {
     ok: false, collections: [], pages: 0, cards: 0, wmc_inserted: 0, editions_inserted: 0,
-    hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, listings_repointed: 0, editions_filled: 0, hydrate_fail_reasons: {}, hydrate_fetches: 0, hydrate_unverified_groups: 0, hydrate_rate_limit_retries: 0, hydrate_min_concurrency: null, hydrate_max_gap_ms: 0, unhydrated_sample: [],
+    hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, listings_repointed: 0, editions_filled: 0, wmc_retired: 0, hydrate_fail_reasons: {}, hydrate_fetches: 0, hydrate_unverified_groups: 0, hydrate_rate_limit_retries: 0, hydrate_min_concurrency: null, hydrate_max_gap_ms: 0, unhydrated_sample: [],
     completed: 0, escrow_remapped: 0, ghosts_purged: null, error: null,
   }
 
@@ -175,7 +211,7 @@ export async function runCollectionsCensus(
   // In-flight walks first, then the collection whose last completed walk is oldest.
   const { data: queue, error: qErr } = await db
     .from("candy_collections")
-    .select("address,name,census_page,census_cursor,census_walk_started_at,last_census_at")
+    .select("address,name,edition_prefix,census_page,census_cursor,census_walk_started_at,last_census_at")
     .neq("kind", "test")
     .eq("census", false)
     .not("set_id", "is", null)
@@ -194,9 +230,9 @@ export async function runCollectionsCensus(
   let fetchAttempts = 0
   let fetchFailures = 0
   const breakerOpen = () => fetchAttempts >= BREAKER_MIN_ATTEMPTS && fetchFailures / fetchAttempts > BREAKER_FAIL_SHARE
-  for (const c of (queue ?? []) as Array<{ address: string; name: string; census_page: number; census_cursor: string | null; census_walk_started_at: string | null }>) {
+  for (const c of (queue ?? []) as Array<{ address: string; name: string; edition_prefix?: string | null; census_page: number; census_cursor: string | null; census_walk_started_at: string | null }>) {
     if (now() > deadline) break
-    const rep: CollectionCensusReport = { address: c.address, name: c.name, pages: 0, cards: 0, wmc_inserted: 0, editions_inserted: 0, hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, listings_repointed: 0, editions_filled: 0, completed: false, error: null }
+    const rep: CollectionCensusReport = { address: c.address, name: c.name, pages: 0, cards: 0, wmc_inserted: 0, editions_inserted: 0, hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, listings_repointed: 0, editions_filled: 0, wmc_retired: 0, completed: false, error: null }
     out.collections.push(rep)
     let page = Math.max(1, c.census_page || 1)
     let cursor: string | null = c.census_cursor || null
@@ -212,6 +248,8 @@ export async function runCollectionsCensus(
     }
     let cardsThisWalk = 0
     let skippedThisWalk = 0
+    // Every edition key a card of THIS walk resolved to (computed, or reused) — drives RETIRE.
+    const walkKeys = new Set<string>()
     while (now() <= deadline) {
       let items: DasAsset[]
       let nextCursor: string | null
@@ -286,6 +324,8 @@ export async function runCollectionsCensus(
         if (k && !eds.has(k)) eds.set(k, e)
       }
       let failed: string | null = null
+      for (const k of eds.keys()) walkKeys.add(k)
+      for (const r of reused) walkKeys.add(r.ed.external_id)
       const edRows = [...eds.values()]
       for (let i = 0; i < edRows.length && !failed; i += WRITE_CHUNK) {
         const { data, error } = await db.from("editions")
@@ -398,7 +438,23 @@ export async function runCollectionsCensus(
         : { census_page: page + 1, census_cursor: nextCursor, last_census_error: null }
       const { error: sErr } = await db.from("candy_collections").update(patch).eq("address", c.address)
       if (sErr) { rep.error = `state write: ${sErr.message}`; break }
-      if (done) { rep.completed = true; break }
+      if (done) {
+        rep.completed = true
+        // RETIRE (2026-11-12, #246 residual) — only after a CLEAN, COMPLETE walk run start-to-end in
+        // this run (the same condition that lets last_census_items be stated). A card the walk saw
+        // either FILLED its label-less edition, was REPOINTED off it, or REUSED a complete one, so a
+        // row still on a thumbnail-less edition whose key NO card of this walk produced is a card DAS
+        // no longer returns in this collection (burnt / gone) — the add-only census never retires it.
+        // Aquaman (2025-) #3: 360 rows vs a 350-card walk, the 10 extra exactly the fabricated
+        // `…:aquaman-2025` edition's. Fails OPEN: a resumed walk, a skipped card or no prefix retires
+        // nothing; more than RETIRE_MAX_SHARE of the walk refuses (and fails the run) instead.
+        if (startedThisRun && skippedThisWalk === 0 && c.edition_prefix) {
+          const r = await retireUnseenOnLabelless(db, c.edition_prefix, walkKeys, cardsThisWalk)
+          if (r.error) { rep.error = `retire: ${r.error}`; break }
+          rep.wmc_retired += r.retired
+        }
+        break
+      }
       page++
       cursor = nextCursor
     }
@@ -417,6 +473,7 @@ export async function runCollectionsCensus(
     out.wmc_repointed += rep.wmc_repointed
     out.listings_repointed += rep.listings_repointed
     out.editions_filled += rep.editions_filled
+    out.wmc_retired += rep.wmc_retired
     if (rep.completed) out.completed++
   }
 
