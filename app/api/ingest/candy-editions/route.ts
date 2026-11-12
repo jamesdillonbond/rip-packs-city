@@ -14,6 +14,7 @@ import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { paginateGroup, type DasAsset } from "@/lib/chains/solana/das"
+import { hydrateFromJsonUri, isUnhydrated } from "@/lib/chains/solana/hydrate"
 import { attributeEscrowHeldToSellers } from "@/lib/chains/solana/escrow"
 import { CANDY_SETS } from "@/lib/chains/solana/candy-sets"
 import {
@@ -196,6 +197,12 @@ async function handleIngest(req: NextRequest) {
     let serialsWritten = 0
     let burntSkipped = 0
     let packsSkipped = 0
+    // 2026-11-12 (#246 source, still live here): DAS returns some assets without their off-chain JSON; keyed
+    // as-is they FABRICATE a name-only edition (the 30 label-less 2024 Team Ball editions re-seen every run).
+    // The collections census got this fix on 11-09; this registry walk never did. Same rule: hydrate from
+    // json_uri, and a card that cannot be hydrated is SKIPPED — never written under a name-only key.
+    let hydratedFetched = 0
+    let unhydratedSkipped = 0
     let packRowsWritten = 0
     // Listed cards sit in Magic Eden's escrow; they are attributed to their
     // listing's seller before the wmc write (lib/chains/solana/escrow.ts).
@@ -246,8 +253,18 @@ async function handleIngest(req: NextRequest) {
         // opened-pack signal and candy_pack_market deliberately publishes no
         // sealed-vs-opened split. Cards keep the old behaviour — a burnt card
         // never creates or refreshes an editions/wmc row.
+        const raw = items as DasAsset[]
+        const needs = raw.filter((a) => isUnhydrated(a))
+        let pageAssets = raw
+        if (needs.length) {
+          const h = await hydrateFromJsonUri(needs)
+          hydratedFetched += h.hydrated.length
+          unhydratedSkipped += h.failed.length
+          const byId = new Map(h.hydrated.map((a) => [a.id, a]))
+          pageAssets = raw.flatMap((a) => (isUnhydrated(a) ? (byId.has(a.id) ? [byId.get(a.id)!] : []) : [a]))
+        }
         const packAssets: DasAsset[] = []
-        const live = (items as DasAsset[]).filter((a) => {
+        const live = pageAssets.filter((a) => {
           if (isPack(a)) {
             if (candySet.writesPacks) {
               packsSkipped++
@@ -418,6 +435,10 @@ async function handleIngest(req: NextRequest) {
         } else linkResult = data
       }
 
+      const hydrateAttempts = hydratedFetched + unhydratedSkipped
+      if (hydrateAttempts > 0 && unhydratedSkipped / hydrateAttempts > 0.1) {
+        writeErrors.push(`metadata fetch failed for ${unhydratedSkipped} of ${hydrateAttempts} unhydrated cards (skipped, not written)`)
+      }
       await logRun(
         startedAtIso,
         assetsSeen,
@@ -432,6 +453,8 @@ async function handleIngest(req: NextRequest) {
         editions_distinct: distinctEditionKeys.size,
         serials_distinct: distinctMints.size,
         burnt_skipped: burntSkipped,
+        hydrated_fetched: hydratedFetched,
+        unhydrated_skipped: unhydratedSkipped,
         packs_skipped: packsSkipped,
         pack_rows_touched: packRowsWritten,
         packs_distinct: distinctPackMints.size,

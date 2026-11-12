@@ -34,6 +34,9 @@ const st = vi.hoisted(() => ({
   linkResult: { data: { players_created: 0, editions_linked: 0 }, error: null } as { data: unknown; error: any },
   sets: [{ key: "base26", collectionAddress: "col-addr", writesPacks: true, editionKeyPrefix: null }] as any[],
   walkedAddrs: [] as string[],
+  // hydrate: ids that fail to hydrate; hydrated assets take a.realEd as their edition key
+  hydrateFail: [] as string[],
+  hydrateCalls: 0,
 }))
 
 // The census walks every Candy set (lib/chains/solana/candy-sets.ts, 2026-11-08).
@@ -111,6 +114,16 @@ vi.mock("@/lib/chains/solana/das", () => ({
     return seen
   },
 }))
+vi.mock("@/lib/chains/solana/hydrate", () => ({
+  isUnhydrated: (a: any) => a.bare === true,
+  hydrateFromJsonUri: async (assets: any[]) => {
+    st.hydrateCalls++
+    return {
+      hydrated: assets.filter((a) => !st.hydrateFail.includes(a.id)).map((a) => ({ ...a, bare: false, ed: a.realEd ?? a.ed })),
+      failed: assets.filter((a) => st.hydrateFail.includes(a.id)).map((a) => ({ id: a.id, reason: "404" })),
+    }
+  },
+}))
 vi.mock("@/lib/chains/solana/normalize", () => ({
   CANDY_MLB_COLLECTION_ADDRESS: "col-addr",
   CANDY_MLB_SLUG: "candy_mlb",
@@ -120,7 +133,7 @@ vi.mock("@/lib/chains/solana/normalize", () => ({
   isBurnt: (a: any) => a.kind === "burnt" || a.kind === "burntpack",
   isPack: (a: any) => a.kind === "pack" || a.kind === "burntpack",
   normalizeEdition: (a: any) => ({ external_id: a.ed ?? null, collection_id: "c1", jersey_number: a.jersey ?? null }),
-  normalizeSerial: (a: any) => ({ wallet_address: a.w ?? null, moment_id: a.m ?? null, tier: "COMMON" }),
+  normalizeSerial: (a: any) => ({ wallet_address: a.w ?? null, moment_id: a.m ?? null, tier: "COMMON", ...(a.bare === false ? { edition_key: a.ed } : {}) }),
   normalizePack: (a: any) => ({ token_mint: a.m ?? "p1", collection_id: "c1", is_burnt: a.kind === "burntpack" }),
 }))
 
@@ -135,6 +148,8 @@ const terminal = () => st.runs.find((r) => r.p_pipeline === "candy-editions-inge
 const heartbeat = () => st.hbRows.find((r) => r.pipeline === "candy-editions-ingest-heartbeat")
 
 beforeEach(() => {
+  st.hydrateFail = []
+  st.hydrateCalls = 0
   st.linkCalls = 0
   st.linkResult = { data: { players_created: 0, editions_linked: 0 }, error: null }
   st.sets = [{ key: "base26", collectionAddress: "col-addr", writesPacks: true, editionKeyPrefix: null }]
@@ -549,5 +564,38 @@ describe("candy-editions — every Candy set", () => {
     const run = await walk()
     expect(run.p_ok).toBe(false)
     expect(run.p_extra.catalog_link_error).toContain("link boom")
+  })
+})
+
+// 2026-11-12 (#246 source): this registry walk keyed an asset DAS returned WITHOUT its metadata from the bare
+// name, fabricating label-less editions (30 live 2024 Team Ball editions, re-written every run) and upserting
+// the card onto them. Same rule as the collections census: hydrate from json_uri; a card that cannot be
+// hydrated is never written.
+describe("candy-editions — unhydrated assets", () => {
+  async function accept() {
+    vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
+    await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
+  }
+  it("hydrates a bare asset and writes it under the HYDRATED key, never the name-only one", async () => {
+    st.pages = [[{ id: "a1", kind: "icon", bare: true, ed: "ball24:2024-reds-baseball", realEd: "ball24:2024-reds-baseball-core", w: "W", m: "a1" }]]
+    await accept()
+    await st.captured!()
+    expect(st.hydrateCalls).toBe(1)
+    expect(st.wmcRows.find((r: any) => r.moment_id === "a1")?.edition_key).toBe("ball24:2024-reds-baseball-core")
+    const run = terminal()
+    expect(run.p_ok).toBe(true)
+    expect(run.p_extra.hydrated_fetched).toBe(1)
+    expect(run.p_extra.unhydrated_skipped).toBe(0)
+  })
+  it("SKIPS a bare asset whose metadata cannot be fetched — no edition, no holdings row — and a >10% skip rate fails the run", async () => {
+    st.pages = [[{ id: "a2", kind: "icon", bare: true, ed: "ball24:2024-reds-baseball", w: "W", m: "a2" }, { id: "a3", kind: "icon", ed: "ball24:x-core", w: "W", m: "a3" }]]
+    st.hydrateFail = ["a2"]
+    await accept()
+    await st.captured!()
+    expect(st.wmcRows.map((r: any) => r.moment_id)).not.toContain("a2")
+    const run = terminal()
+    expect(run.p_extra.unhydrated_skipped).toBe(1)
+    expect(run.p_ok).toBe(false)
+    expect(String(run.p_error)).toMatch(/metadata fetch failed for 1 of 1/)
   })
 })
