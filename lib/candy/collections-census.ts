@@ -39,6 +39,7 @@ import { editionGroupKey, failureClass, hydrateFromJsonUri, isUnhydrated } from 
 import { candySetForAsset } from "@/lib/chains/solana/candy-sets"
 import { loadCandyCollections } from "@/lib/candy/collections"
 import { purgeCandyGhostsFor } from "@/lib/candy/ghost-purge"
+import { newLockRetryBudget, withLockRetry } from "@/lib/supabase/lock-retry"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
@@ -187,10 +188,12 @@ async function retireUnseenOnLabelless(db: Db, prefix: string, walkKeys: Set<str
 
 export async function runCollectionsCensus(
   db: Db,
-  opts: { budgetMs: number; now?: () => number },
+  opts: { budgetMs: number; now?: () => number; lockSleep?: (ms: number) => Promise<void> },
 ): Promise<CollectionsCensusResult> {
   const now = opts.now ?? Date.now
   const deadline = now() + opts.budgetMs
+  const lockBudget = newLockRetryBudget()
+  const lockOpts = opts.lockSleep ? { sleep: opts.lockSleep } : {}
   const out: CollectionsCensusResult = {
     ok: false, collections: [], pages: 0, cards: 0, wmc_inserted: 0, editions_inserted: 0,
     hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, listings_repointed: 0, editions_filled: 0, wmc_retired: 0, hydrate_fail_reasons: {}, hydrate_fetches: 0, hydrate_unverified_groups: 0, hydrate_rate_limit_retries: 0, hydrate_min_concurrency: null, hydrate_max_gap_ms: 0, unhydrated_sample: [],
@@ -206,7 +209,7 @@ export async function runCollectionsCensus(
   // In-flight walks first, then the collection whose last completed walk is oldest.
   const { data: queue, error: qErr } = await db
     .from("candy_collections")
-    .select("address,name,edition_prefix,census_page,census_cursor,census_walk_started_at,last_census_at")
+    .select("address,name,edition_prefix,census_page,census_cursor,census_walk_started_at,last_census_at,census_walk_tracked,census_walk_labelless_seen,census_walk_skipped,census_walk_cards")
     .neq("kind", "test")
     .eq("census", false)
     .not("set_id", "is", null)
@@ -225,7 +228,7 @@ export async function runCollectionsCensus(
   let fetchAttempts = 0
   let fetchFailures = 0
   const breakerOpen = () => fetchAttempts >= BREAKER_MIN_ATTEMPTS && fetchFailures / fetchAttempts > BREAKER_FAIL_SHARE
-  for (const c of (queue ?? []) as Array<{ address: string; name: string; edition_prefix?: string | null; census_page: number; census_cursor: string | null; census_walk_started_at: string | null }>) {
+  for (const c of (queue ?? []) as Array<{ address: string; name: string; edition_prefix?: string | null; census_page: number; census_cursor: string | null; census_walk_started_at: string | null; census_walk_tracked?: boolean | null; census_walk_labelless_seen?: string[] | null; census_walk_skipped?: number | null; census_walk_cards?: number | null }>) {
     if (now() > deadline) break
     const rep: CollectionCensusReport = { address: c.address, name: c.name, pages: 0, cards: 0, wmc_inserted: 0, editions_inserted: 0, hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, listings_repointed: 0, editions_filled: 0, wmc_retired: 0, completed: false, error: null }
     out.collections.push(rep)
@@ -236,7 +239,7 @@ export async function runCollectionsCensus(
     const startedThisRun = !walkStarted || page === 1 || cursor === null
     if (startedThisRun) {
       walkStarted = new Date(now()).toISOString()
-      const { error } = await db.from("candy_collections").update({ census_walk_started_at: walkStarted, census_page: 1, census_cursor: null }).eq("address", c.address)
+      const { error } = await db.from("candy_collections").update({ census_walk_started_at: walkStarted, census_page: 1, census_cursor: null, census_walk_tracked: true, census_walk_labelless_seen: [], census_walk_skipped: 0, census_walk_cards: 0 }).eq("address", c.address)
       if (error) { rep.error = `state write: ${error.message}`; errors.push(`${c.name}: ${rep.error}`); continue }
       page = 1
       cursor = null
@@ -245,6 +248,26 @@ export async function runCollectionsCensus(
     let skippedThisWalk = 0
     // Every edition key a card of THIS walk resolved to (computed, or reused) — drives RETIRE.
     const walkKeys = new Set<string>()
+    // CROSS-RUN RECORD (2026-11-12): a walk that spans runs (2022 Leadoff ICONs, ~370k cards, 4 runs) keeps
+    // the LABEL-LESS keys its cards resolved to, and its skip count, on candy_collections, so RETIRE can run
+    // at its end too. Only a walk that STARTED under this code is tracked (census_walk_tracked) — a walk
+    // resumed from before it retires nothing. Label-less keys only: the set stays small.
+    const tracked = startedThisRun || c.census_walk_tracked === true
+    const priorSeen = startedThisRun ? [] : (c.census_walk_labelless_seen ?? [])
+    const priorSkipped = startedThisRun ? 0 : (c.census_walk_skipped ?? 0)
+    const priorCards = startedThisRun ? 0 : (c.census_walk_cards ?? 0)
+    for (const k of priorSeen) walkKeys.add(k)
+    let labellessKeys: Set<string> | null = null
+    if (c.edition_prefix) {
+      const { data: le, error: leErr } = await db.from("editions")
+        .select("external_id")
+        .eq("collection_id", CANDY_MLB_UUID)
+        .is("thumbnail_url", null)
+        .like("external_id", `${c.edition_prefix}:%`)
+      // A failed read leaves the record unknown → this walk will not RETIRE (fails open).
+      labellessKeys = leErr ? null : new Set(((le ?? []) as Array<{ external_id: string }>).map((e) => e.external_id))
+    }
+    const recordOk = labellessKeys !== null
     while (now() <= deadline) {
       let items: DasAsset[]
       let nextCursor: string | null
@@ -395,9 +418,15 @@ export async function runCollectionsCensus(
       const repointSet = new Set(repoint)
       const insertOnly = attributed.rows.filter((r) => !repointSet.has(r))
       for (let i = 0; i < insertOnly.length && !failed; i += WRITE_CHUNK) {
-        const { data, error } = await db.from("wallet_moments_cache")
-          .upsert(insertOnly.slice(i, i + WRITE_CHUNK), { onConflict: "wallet_address,collection_id,moment_id", ignoreDuplicates: true })
-          .select("moment_id")
+        // Lock retry (2026-11-12): 3:57 PM PT run failed on "lock timeout" here — the wmc-fmv-populate
+        // Candy step holds rows briefly; the same wrapper fixed candy-editions-ingest on 11-11.
+        const chunk = insertOnly.slice(i, i + WRITE_CHUNK)
+        const { data, error } = await withLockRetry<Array<{ moment_id: string }>>(
+          () => db.from("wallet_moments_cache")
+            .upsert(chunk, { onConflict: "wallet_address,collection_id,moment_id", ignoreDuplicates: true })
+            .select("moment_id"),
+          lockBudget, lockOpts,
+        )
         if (error) failed = `wallet_moments_cache: ${error.message}`
         else {
           rep.wmc_inserted += data?.length ?? 0
@@ -405,9 +434,13 @@ export async function runCollectionsCensus(
         }
       }
       for (let i = 0; i < repoint.length && !failed; i += WRITE_CHUNK) {
-        const { data, error } = await db.from("wallet_moments_cache")
-          .upsert(repoint.slice(i, i + WRITE_CHUNK), { onConflict: "wallet_address,collection_id,moment_id", ignoreDuplicates: false })
-          .select("moment_id")
+        const chunk = repoint.slice(i, i + WRITE_CHUNK)
+        const { data, error } = await withLockRetry<Array<{ moment_id: string }>>(
+          () => db.from("wallet_moments_cache")
+            .upsert(chunk, { onConflict: "wallet_address,collection_id,moment_id", ignoreDuplicates: false })
+            .select("moment_id"),
+          lockBudget, lockOpts,
+        )
         if (error) failed = `wallet_moments_cache repoint: ${error.message}`
         else rep.wmc_repointed += data?.length ?? 0
       }
@@ -429,22 +462,27 @@ export async function runCollectionsCensus(
       // last_census_items is the walk's card count only when the whole walk ran in this
       // run; a walk resumed across runs reports NULL (unknown), never a partial count.
       const patch = done
-        ? { census_page: 1, census_cursor: null, census_walk_started_at: null, last_census_at: nowIso, last_census_items: startedThisRun && skippedThisWalk === 0 ? cardsThisWalk : null, last_census_error: null }
-        : { census_page: page + 1, census_cursor: nextCursor, last_census_error: null }
+        ? { census_page: 1, census_cursor: null, census_walk_started_at: null, last_census_at: nowIso, last_census_items: startedThisRun && skippedThisWalk === 0 ? cardsThisWalk : null, last_census_error: null, census_walk_tracked: false, census_walk_labelless_seen: [], census_walk_skipped: 0, census_walk_cards: 0 }
+        : {
+            census_page: page + 1, census_cursor: nextCursor, last_census_error: null,
+            census_walk_labelless_seen: labellessKeys ? [...walkKeys].filter((k) => labellessKeys!.has(k)) : [],
+            census_walk_skipped: priorSkipped + skippedThisWalk + (recordOk ? 0 : 1),
+            census_walk_cards: priorCards + cardsThisWalk,
+          }
       const { error: sErr } = await db.from("candy_collections").update(patch).eq("address", c.address)
       if (sErr) { rep.error = `state write: ${sErr.message}`; break }
       if (done) {
         rep.completed = true
-        // RETIRE (2026-11-12, #246 residual) — only after a CLEAN, COMPLETE walk run start-to-end in
-        // this run (the same condition that lets last_census_items be stated). A card the walk saw
+        // RETIRE (2026-11-12, #246 residual) — only after a CLEAN, COMPLETE walk that was TRACKED from its
+        // start (one run, or several via the cross-run record above) with no card skipped. A card the walk saw
         // either FILLED its label-less edition, was REPOINTED off it, or REUSED a complete one, so a
         // row still on a thumbnail-less edition whose key NO card of this walk produced is a card DAS
         // no longer returns in this collection (burnt / gone) — the add-only census never retires it.
         // Aquaman (2025-) #3: 360 rows vs a 350-card walk, the 10 extra exactly the fabricated
-        // `…:aquaman-2025` edition's. Fails OPEN: a resumed walk, a skipped card or no prefix retires
-        // nothing; more than RETIRE_MAX_SHARE of the walk refuses (and fails the run) instead.
-        if (startedThisRun && skippedThisWalk === 0 && c.edition_prefix) {
-          const r = await retireUnseenOnLabelless(db, c.edition_prefix, walkKeys, cardsThisWalk)
+        // `…:aquaman-2025` edition's. Fails OPEN: an untracked walk, a skipped card, a failed record read
+        // or no prefix retires nothing; more than RETIRE_MAX_SHARE of the walk refuses (and fails the run).
+        if (tracked && recordOk && priorSkipped + skippedThisWalk === 0 && c.edition_prefix) {
+          const r = await retireUnseenOnLabelless(db, c.edition_prefix, walkKeys, priorCards + cardsThisWalk)
           if (r.error) { rep.error = `retire: ${r.error}`; break }
           rep.wmc_retired += r.retired
         }

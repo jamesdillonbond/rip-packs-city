@@ -141,7 +141,10 @@ function db() {
         upsert: (rows: any[], opts: any) => {
           if (t === "wallet_moments_cache") state.wmcUpserts.push({ rows, opts })
           else state.edUpserts.push({ rows, opts })
-          return { select: async () => (t === "wallet_moments_cache" && state.wmcError ? { data: null, error: state.wmcError } : { data: rows.map((r) => ({ moment_id: r.moment_id, external_id: r.external_id })), error: null }) }
+          return { select: async () => {
+            if (t === "wallet_moments_cache" && (state as any).wmcErrOnce?.length) return { data: null, error: (state as any).wmcErrOnce.shift() }
+            return t === "wallet_moments_cache" && state.wmcError ? { data: null, error: state.wmcError } : { data: rows.map((r) => ({ moment_id: r.moment_id, external_id: r.external_id })), error: null }
+          } }
         },
       }
     },
@@ -153,6 +156,7 @@ beforeEach(() => {
   ;(state as any).listingsError = null
   state.existingWmc = []; state.existingEds = []; state.readError = null; state.hydrate = null; state.hydrateCalls = []
   state.updates = []; state.wmcUpserts = []; state.edUpserts = []; state.rpcs = []; state.rpcArgs = []
+  ;(state as any).wmcErrOnce = []
   ;(state as any).edUpdates = []; (state as any).thumb = "https://arweave.net/x"; (state as any).deleted = []
 })
 
@@ -192,7 +196,7 @@ describe("runCollectionsCensus", () => {
     state.queue = [{ address: "A", name: "A", census_page: 2, census_cursor: "A#1", census_walk_started_at: "2026-11-08T00:00:00Z" }]
     state.pages.A = [full(1000, "x"), full(1000, "y")]
     state.wmcError = { message: "deadlock detected" }
-    const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+    const r = await runCollectionsCensus(db(), { budgetMs: 60_000, lockSleep: async () => {} })
     expect(r.ok).toBe(false)
     expect(state.updates.some((u) => u.patch.census_page !== undefined)).toBe(false)
   })
@@ -459,6 +463,70 @@ describe("runCollectionsCensus", () => {
       expect(r.wmc_retired).toBe(0)
       expect((state as any).deleted).toHaveLength(0)
       expect(r.error).toMatch(/retire: refused/)
+    })
+  })
+
+  // 2026-11-12: the 3:57 PM PT run failed on a wmc "lock timeout" (2022 Play of the Day, page 25).
+  it("a holdings write that hits a lock timeout once is RETRIED and the run stays ok", async () => {
+    state.queue = [{ address: "A", name: "A", census_page: 1, census_walk_started_at: null }]
+    state.pages.A = [full(3, "z")]
+    ;(state as any).wmcErrOnce = [{ message: "canceling statement due to lock timeout", code: "55P03" }]
+    const r = await runCollectionsCensus(db(), { budgetMs: 60_000, lockSleep: async () => {} })
+    expect(r.ok).toBe(true)
+    expect(r.wmc_inserted).toBe(3)
+  })
+
+  // 2026-11-12: a walk spanning runs keeps its label-less seen keys + skip count on candy_collections.
+  describe("CROSS-RUN record — RETIRE at the end of a walk that spanned runs", () => {
+    const base = () => {
+      state.pages.A = [[], [{ id: "m1", owner: "W", ed: "c:aq:real" }]]
+      state.existingWmc = [
+        { moment_id: "m1", wallet_address: "W", edition_key: "ed-c:aq:real", serial_number: 1 },
+        { moment_id: "seenEarlier", wallet_address: "X", edition_key: "c:aq:seen-earlier", serial_number: null },
+        { moment_id: "gone", wallet_address: "Y", edition_key: "c:aq:fabricated", serial_number: null },
+      ]
+      state.existingEds = [
+        { external_id: "ed-c:aq:real", thumbnail_url: "https://arweave.net/r", circulation_count: 100, tier: "RARE" },
+        { external_id: "c:aq:seen-earlier", thumbnail_url: null, circulation_count: null, tier: null },
+        { external_id: "c:aq:fabricated", thumbnail_url: null, circulation_count: null, tier: null },
+      ]
+    }
+    it("a TRACKED resumed walk retires the unseen key and keeps the key an earlier run saw", async () => {
+      base()
+      state.queue = [{ address: "A", name: "A", edition_prefix: "c:aq", census_page: 2, census_cursor: "A#1", census_walk_started_at: "2026-11-12T20:00:00Z",
+        census_walk_tracked: true, census_walk_labelless_seen: ["c:aq:seen-earlier"], census_walk_skipped: 0, census_walk_cards: 40 }]
+      const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+      expect(r.ok).toBe(true)
+      expect((state as any).deleted.map((x: any) => x.edition_key)).toEqual(["c:aq:fabricated"])
+      expect(state.existingWmc.some((x) => x.moment_id === "seenEarlier")).toBe(true)
+      // the finished walk resets its record
+      expect(state.updates.filter((u) => u.address === "A").at(-1)!.patch).toMatchObject({ census_walk_tracked: false, census_walk_labelless_seen: [], census_walk_skipped: 0 })
+    })
+    it("an UNTRACKED resumed walk (begun before this code) retires nothing", async () => {
+      base()
+      state.queue = [{ address: "A", name: "A", edition_prefix: "c:aq", census_page: 2, census_cursor: "A#1", census_walk_started_at: "2026-11-12T20:00:00Z" }]
+      const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+      expect(r.wmc_retired).toBe(0)
+      expect((state as any).deleted).toHaveLength(0)
+    })
+    it("a tracked walk that SKIPPED a card in an earlier run retires nothing", async () => {
+      base()
+      state.queue = [{ address: "A", name: "A", edition_prefix: "c:aq", census_page: 2, census_cursor: "A#1", census_walk_started_at: "2026-11-12T20:00:00Z",
+        census_walk_tracked: true, census_walk_labelless_seen: [], census_walk_skipped: 2, census_walk_cards: 40 }]
+      const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+      expect(r.wmc_retired).toBe(0)
+      expect((state as any).deleted).toHaveLength(0)
+    })
+    it("each unfinished page persists the label-less keys it resolved and the cumulative counts", async () => {
+      state.queue = [{ address: "A", name: "A", edition_prefix: "ed-c:aq", census_page: 1, census_walk_started_at: null }]
+      ;(state as any).thumb = null
+      state.pages.A = [full(1000, "p").map((a: any) => ({ ...a, ed: "c:aq:lab" })), []]
+      state.existingEds = [{ external_id: "ed-c:aq:lab", thumbnail_url: null, circulation_count: null, tier: null }]
+      await runCollectionsCensus(db(), { budgetMs: 60_000 })
+      const mid = state.updates.find((u) => u.address === "A" && u.patch.census_page === 2)!.patch
+      expect(mid.census_walk_labelless_seen).toEqual(["ed-c:aq:lab"])
+      expect(mid.census_walk_cards).toBe(1000)
+      expect(mid.census_walk_skipped).toBe(0)
     })
   })
 })

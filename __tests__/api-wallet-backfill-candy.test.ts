@@ -80,6 +80,9 @@ vi.mock("@/lib/chains/solana/normalize", () => ({
   normalizeEdition: (a: any) => ({ external_id: "k-" + (a.m ?? "x"), collection_id: "c1" }),
   CANDY_MLB_UUID: "c1",
 }))
+// 2026-11-12: refreshCandyWallet keeps (never writes) a card DAS returned without metadata. These fixtures
+// carry no attributes/image, so the real isUnhydrated would read them all as bare; only `bare: true` is.
+vi.mock("@/lib/chains/solana/hydrate", () => ({ isUnhydrated: (a: any) => a.bare === true }))
 vi.mock("@/lib/candy/collections", () => ({ loadCandyCollections: async () => ({ sets: [], error: null }) }))
 
 import { POST } from "@/app/api/wallet-backfill-candy/route"

@@ -32,6 +32,7 @@
 import { getAssetsByOwner, getAsset, getAssetBatch, type DasAsset } from "@/lib/chains/solana/das"
 import { MAGIC_EDEN_SOLANA_ESCROW, listedMintsInEscrowForSeller } from "@/lib/chains/solana/escrow"
 import { isBurnt, isPack, normalizeSerial, normalizeEdition, CANDY_MLB_UUID } from "@/lib/chains/solana/normalize"
+import { isUnhydrated } from "@/lib/chains/solana/hydrate"
 import { isCandySetAsset, CANDY_COLLECTION_AUTHORITIES } from "@/lib/chains/solana/candy-sets"
 import { loadCandyCollections } from "@/lib/candy/collections"
 import { purgeCandyGhostsFor } from "@/lib/candy/ghost-purge"
@@ -74,6 +75,12 @@ export interface CandyWalletRefreshResult {
    */
   other_candy: { items: number; collections: Array<{ name: string | null; items: number }> } | null
   other_candy_error: string | null
+  /**
+   * 2026-11-12 (#246 source): cards DAS returned WITHOUT metadata. Keyed from the bare name they fabricate
+   * a label-less edition, so they are never written: the existing row (if any) only has last_seen_at
+   * touched — keeping it out of retirement under the key it already has — and the census fills it later.
+   */
+  unhydrated_kept: number
   /** Rows retired / ghost rows purged; null when retirement did not run. */
   retired: number | null
   ghosts_purged: number | null
@@ -105,6 +112,7 @@ export async function refreshCandyWallet(
     catalog_error: null,
     other_candy: null,
     other_candy_error: null,
+    unhydrated_kept: 0,
     retired: null,
     ghosts_purged: null,
     retire_error: null,
@@ -132,6 +140,22 @@ export async function refreshCandyWallet(
     }
     return n
   }
+  // An owned card DAS returned without metadata: touch its EXISTING row (any key) so retirement keeps it;
+  // never write it under a name-only key. A failed touch is a write error → the walk is incomplete → no retire.
+  const keepUnhydrated = async (ids: string[], now: string): Promise<void> => {
+    if (!ids.length) return
+    for (const id of ids) seen.add(id)
+    r.unhydrated_kept += ids.length
+    for (let i = 0; i < ids.length; i += UPSERT_CHUNK) {
+      const { error } = await db
+        .from("wallet_moments_cache")
+        .update({ last_seen_at: now })
+        .eq("collection_id", CANDY_MLB_UUID)
+        .eq("wallet_address", wallet)
+        .in("moment_id", ids.slice(i, i + UPSERT_CHUNK))
+      if (error) r.write_errors.push(`wallet_moments_cache (keep unhydrated): ${error.message}`)
+    }
+  }
 
   // 1. Owner walk.
   try {
@@ -142,9 +166,12 @@ export async function refreshCandyWallet(
       const items = (res?.items ?? []) as DasAsset[]
       r.pages = page
       const now = new Date().toISOString()
-      const cards = items
+      const candyLive = items
         .filter(isCandySetAsset)
         .filter((a) => !isBurnt(a))
+      await keepUnhydrated(candyLive.filter((a) => isUnhydrated(a) && a.id).map((a) => a.id), now)
+      const cards = candyLive
+        .filter((a) => !isUnhydrated(a))
         .filter((a) => !isPack(a))
       for (const a of items) {
         if (isCandySetAsset(a) || isBurnt(a)) continue
@@ -203,7 +230,9 @@ export async function refreshCandyWallet(
           continue
         }
         if (a?.ownership?.owner !== MAGIC_EDEN_SOLANA_ESCROW) { r.escrow_listed_stale++; continue }
-        if (!isCandySetAsset(a) || isBurnt(a) || isPack(a)) continue
+        if (!isCandySetAsset(a) || isBurnt(a)) continue
+        if (isUnhydrated(a)) { await keepUnhydrated([mint], now); continue }
+        if (isPack(a)) continue
         const s = normalizeSerial(a)
         if (!s.moment_id) continue
         escrowRows.push({ ...s, wallet_address: wallet, last_seen_at: now })

@@ -38,6 +38,7 @@ vi.mock("@/lib/chains/solana/normalize", () => ({
   normalizeSerial: (a: any) => ({ moment_id: a.id, wallet_address: "DAS-OWNER", collection_id: "c1", edition_key: "k", serial_number: 1, image_url: null }),
 }))
 
+vi.mock("@/lib/chains/solana/hydrate", () => ({ isUnhydrated: (a: any) => a.bare === true }))
 vi.mock("@/lib/candy/collections", () => ({ loadCandyCollections: async () => ({ sets: [{ key: "c:x" }], error: null }) }))
 
 import { refreshCandyWallet } from "@/lib/candy/refresh-wallet"
@@ -68,6 +69,14 @@ function db() {
         return b
       }
       return {
+        update: (patch: any) => {
+          const f: any[] = []
+          const u: any = {
+            eq: (c: string, v: any) => { f.push([c, v]); return u },
+            in: async (_c: string, ids: string[]) => { (state as any).touched.push({ patch, filters: f, ids }); return { error: (state as any).touchError ?? null } },
+          }
+          return u
+        },
         upsert: (rows: any[]) => {
           state.upserted.push(rows)
           return { select: async () => (state.upsertError ? { data: null, error: state.upsertError } : { data: rows.map((r) => ({ moment_id: r.moment_id })), error: null }) }
@@ -78,6 +87,8 @@ function db() {
 }
 
 beforeEach(() => {
+  ;(state as any).touched = []
+  ;(state as any).touchError = null
   state.pages = []
   state.ownerThrows = false
   state.listings = { data: [], error: null }
@@ -198,6 +209,31 @@ describe("refreshCandyWallet", () => {
   it("a spent time budget stops the walk as incomplete", async () => {
     state.pages = [[{ id: "a", candy: true }]]
     const r = await refreshCandyWallet(db(), W, { retire: true, deadlineAt: Date.now() - 1 })
+    expect(r.complete).toBe(false)
+    expect(state.rpcs.map((x) => x.name)).not.toContain("candy_retire_wallet_unseen")
+  })
+
+  // 2026-11-12 (#246 source): a card DAS returns without metadata is never written under a name-only key —
+  // its existing row is only touched (last_seen_at), so retirement keeps it under the key it already has.
+  it("never WRITES a metadata-less card; touches its existing row so retirement keeps it", async () => {
+    state.pages = [[{ id: "a", candy: true }, { id: "bare1", candy: true, bare: true, ed: "c:x:name-only" }]]
+    const r = await refreshCandyWallet(db(), W, { retire: true })
+    expect(state.upserted.flat().map((x) => x.moment_id)).toEqual(["a"])
+    expect(state.editionInserts.flat().map((e: any) => e.external_id)).not.toContain("c:x:name-only")
+    const t = (state as any).touched
+    expect(t).toHaveLength(1)
+    expect(t[0].ids).toEqual(["bare1"])
+    expect(Object.keys(t[0].patch)).toEqual(["last_seen_at"])
+    expect(t[0].filters).toContainEqual(["wallet_address", W])
+    expect(r.unhydrated_kept).toBe(1)
+    expect(r.complete).toBe(true)
+    expect(state.rpcs.map((x) => x.name)).toContain("candy_retire_wallet_unseen")
+  })
+
+  it("a failed touch makes the walk INCOMPLETE, so nothing is retired", async () => {
+    state.pages = [[{ id: "bare1", candy: true, bare: true }]]
+    ;(state as any).touchError = { message: "lock timeout" }
+    const r = await refreshCandyWallet(db(), W, { retire: true })
     expect(r.complete).toBe(false)
     expect(state.rpcs.map((x) => x.name)).not.toContain("candy_retire_wallet_unseen")
   })
