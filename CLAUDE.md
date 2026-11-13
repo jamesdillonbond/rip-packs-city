@@ -165,7 +165,7 @@ Full canon + every instance: [docs/reference/key-files-and-honesty.md](docs/refe
 
 ### Timestamps
 
-🚨 **EVERY TIME YOU REPORT TO TREVOR IS PT — chat, summaries, ledger headings, all of it. NEVER quote a UTC/`Z` time to him** (asked repeatedly; broken again 09-10). ⚠ **READ THE ZONE BEFORE CONVERTING — four incidents came from a plausible timestamp produced by a clock whose zone was assumed.** ⚠ Git Bash lies BOTH ways and the web sandbox is PDT. Clocks + conversion recipe: [tooling-gotchas.md](docs/reference/tooling-gotchas.md).
+🚨 **EVERY TIME YOU REPORT TO TREVOR IS PT — chat, summaries, ledger headings, all of it. NEVER quote a UTC/`Z` time to him** (asked repeatedly; broken again 09-10). ⚠ **READ THE ZONE BEFORE CONVERTING — four incidents came from a plausible timestamp produced by a clock whose zone was assumed.** ⚠ Git Bash lies BOTH ways and the web sandbox is LA time (PDT/PST). Clocks + conversion recipe: [tooling-gotchas.md](docs/reference/tooling-gotchas.md).
 
 ### Windows / Git Bash
 
