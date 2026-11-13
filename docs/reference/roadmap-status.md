@@ -221,6 +221,31 @@ Done 10-15 → 10-17 (Claude Code cloud, session_014vWuubmVKLyyyMQAwWzT2W; Trevo
 - ❓ **Needs Trevor:** how the 2026-27 Yearbook / Blue Chip / Squad Goals leaderboards are scored. RPC will not publish its own rank as Top Shot's. The board worth building is "cost to climb into the top N", and it needs the official scoring.
 - **Tracked since 2026-10-19:** `editions.autographed_at` (from Atlas `autographedAt`, swept daily by pg_cron `rpc-autograph-sweep`; 236 Top Shot + 226 All Day signed editions at the census). Partner-athlete status itself is still not stored: Atlas's `activePartnerAthlete` flag marks only 4 players and is not the signer list. Research: [autographs-topshot-allday-2026-10-19.md](../research/autographs-topshot-allday-2026-10-19.md). **Not tracked yet:** Constellations trade-ins burn older-season Rares that the index does not walk (Dune-era sets), so holder counts there lag.
 
+## ⭐ NEW 2026-11-13 — DEMAND RE-READ, WEEK OF 11-05..11-11 PT (by `scripts/demand-read.sql`, params 11-05 08:00 UTC → 11-12 08:00 UTC; Claude Code cloud, ~10:55 AM PT)
+
+Baseline re-run with the SAME file (crawler rule included): 10-29..11-04 reproduces the 11-07 block on every row (69 / 149, 5 signed-in, 1 signup, direct 105 (72), Google 20 (15), ChatGPT 15 (4), X 5 (3), wallet pastes 37 (6), share views 13, email prompt 29 (17)) — the 11-10 crawler rule removes nothing from that week.
+
+| PT week (Thu 07/08:00 UTC →) | 10-29..11-04 | **11-05..11-11** |
+|---|---:|---:|
+| human browsers / visits | 69 / 149 | **252 / 538** (580 crawler-burst visits excluded) |
+| external signed-in users | 5 | **35** |
+| signups (minus internal) | 1 | **20** |
+| visits by source (one-page) | direct 105 (72) · Google 20 (15) · ChatGPT 15 (4) · X 5 (3) · Bing 3 (2) · other 1 | **direct 424 (297) · X 86 (62) · ChatGPT 13 (4) · Google 12 (9) · Bing 2 (0) · other 1** |
+| wallet pastes (browsers) | 37 (6) | **121 (22)** |
+| share views, browser × page | 13 | **14** (26 raw) |
+| sign-in clicks (`funnel_events`, human) | home_header 1 · share_cta 1 | **challenge_board_signup 10** · site_header 6 · site_header_signup 6 · home_hero_signup 4 · home_header_signup 2 · home_pricing 2 · share_cta 2 |
+| email prompt shown (browsers) | 29 (17) | **133 (43)** |
+| `magic-link-requested` (carrying a challenge) | 2 (0) | **46 (11)** |
+| challenge cases created / complete (minus internal) | 0 / 0 | **27 / 27** |
+| concierge human messages (sessions) | 2 (2) | **16 (3)** |
+
+**Read:**
+- ⭐ **The Dame Time week is the first regular week where acquisition AND activation both moved:** signed-in 5 → 35, signups 1 → 20, 27 challenge cases (all complete), X 5 → 86 visits; the challenge board is the top sign-in surface (10 clicks). This is the same population the 11-10 off-cycle review counted (that window overlaps 11-05..11-09), so it is a confirmation by the regular instrument, not a second wave.
+- ⚠ **`direct` is still an UPPER BOUND, inflated two ways.** (1) A **slow tail of the 11-09 crawler** passes the hour × section ≥ 8 rule: 659 direct one-page `/panini-blockchain/*` landings, every one a fresh browser, only 580 excluded — the other ~79 arrive 1–4 per hour (mostly `/edition/`, no ref, no second event, never seen again), concentrated 11-09 6–7 AM PT and all through 11-11. A real visitor from a Discord/app link also has no ref, so this is a heuristic, NOT a script change. (2) **Two internal browsers** (both load `/admin/*`) carry 63 visits. Taking both out: ~173 browsers / ~396 visits, direct ~282.
+- **Search still did not grow:** Google 20 → 12, ChatGPT 15 → 13. Acquisition this week was X + direct (the challenge), not organic.
+- **Wallet pastes 37 → 121 (6 → 22 browsers)** and email prompt 17 → 43 browsers — new members exploring their own holdings after sign-up; share views flat (14).
+- 🔜 **Next re-read: on/after 2026-11-19** (params 11-12 08:00 UTC → 11-19 08:00 UTC) — the first week AFTER the challenge locked (11-10): the honest test of whether the 20 signups return. Check the `/panini-blockchain` lone-visit tail again before reading `direct`; if it persists, give the crawler rule a per-day bucket in the script (a rule change, so re-run the baseline with it).
+
 ## ⭐ NEW 2026-11-10 — OFF-CYCLE ACTIVITY REVIEW, 11-03..11-09 PT (by `scripts/demand-read.sql`, params 11-03 08:00 UTC → 11-10 08:00 UTC; Claude Code cloud, ~1:45 PM PT; full report: Project doc `claude/activity-review-2026-11-10-week.md`)
 
 Not the regular Thursday week (that one is 11-05..11-11, owed on/after 11-12 — see the 11-07 block). Compared with the 10-27..11-02 window by the same file.
