@@ -17,8 +17,13 @@ export type EditionKeyMismatch = {
   message: string
 }
 
-// TopShot edition keys are `<setID>:<playID>`, both integers.
-const TOPSHOT_KEY_SHAPE = /^\d+:\d+$/
+// TopShot edition keys are `<setID>:<playID>`, both integers — and `<setID>:<playID>::<subID>` for a
+// parallel printing (about one canonical Top Shot edition in six).
+// ⛔ 2026-11-12: the shape was base-only, so every parallel key was refused as `wrong_collection`
+// before any read ran: explain_fmv / get_fmv "didn't run for this edition key" on a parallel's own
+// page, and the concierge explained a $6.18 offer-weighted price as "estimated from asking prices"
+// (support_conversations 12567, 12569; explain_fmv returned in 10 ms both times).
+const TOPSHOT_KEY_SHAPE = /^\d+:\d+(::\d+)?$/
 
 export function editionKeyCollectionMismatch(
   key: unknown,

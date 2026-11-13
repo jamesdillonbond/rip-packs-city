@@ -20,6 +20,16 @@ describe("editionKeyCollectionMismatch", () => {
     expect(editionKeyCollectionMismatch("73:2785", "nba-top-shot")).toBeNull()
   })
 
+  // 2026-11-12, live: asked to explain the price on a parallel's own page (281:9386::17), the tool was
+  // refused here in 10 ms and the concierge said "the detailed breakdown didn't run for this edition key".
+  it("accepts a Top Shot parallel key (setID:playID::subID) on Top Shot, and still refuses a malformed one", () => {
+    expect(editionKeyCollectionMismatch("281:9386::17", "nba-top-shot")).toBeNull()
+    expect(editionKeyCollectionMismatch("281:9386::", "nba-top-shot")?.status).toBe("wrong_collection")
+    expect(editionKeyCollectionMismatch("281:9386:17", "nba-top-shot")?.status).toBe("wrong_collection")
+    // a parallel key is still a Top Shot shape, so Pinnacle refuses it
+    expect(editionKeyCollectionMismatch("281:9386::17", "disney-pinnacle")?.status).toBe("wrong_collection")
+  })
+
   it("flags a non-setID:playID key on Top Shot", () => {
     const r = editionKeyCollectionMismatch("some-opaque-key", "nba-top-shot")
     expect(r).not.toBeNull()
