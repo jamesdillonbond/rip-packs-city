@@ -15,6 +15,12 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-11-13. All Day _compcap: the comparable cut never lands below the best open offer.
+    fn: "fmv_snapshots_cap_allday_thin_to_comparables",
+    test: "supabase/tests/fmv_snapshots_cap_allday_thin_to_comparables.sql",
+    migration: "supabase/migrations/20261113195740_audit_20261113_allday_comparables_cut_stops_at_the_best_offer.sql",
+  },
+  {
     // Added 2026-11-13. Hero card: auto pick from the covering index, then one keyed fetch; override + fallback.
     fn: "get_user_hero_moment",
     test: "supabase/tests/get_user_hero_moment.sql",
