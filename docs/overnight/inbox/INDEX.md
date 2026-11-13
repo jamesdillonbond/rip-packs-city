@@ -1,4 +1,4 @@
-# Inbox index — 657 live filings
+# Inbox index — 658 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,10 +32,11 @@ failure it documents.
 
 ---
 
-## 2026-11-13 — 3 filings
+## 2026-11-13 — 4 filings
 - [Daytime monitor (04:05Z) — `topshot-active-listings-ingest-backstop` hit `egress_blocked` once (1/7d), no freshness impact; otherwise GREEN (security x4, stalled/pg_cron/sentinel clean, 13/13 dashboards, trust 1 known breach edition_integrity_flags falling, prod READY)](2026-11-13T0411Z-daytime-monitor-topshot-active-listings-backstop-egress-blocked-once.md)
 - [Daytime monitor (07:06Z) — weekly `net._http_response` size read is overdue (focus steer scheduled ~11-11, last measured 11-03); LOW read-only re-measure. Otherwise GREEN: security x4 clean, stalled/pg_cron/sentinel clean, 13/13 dashboards OK, trust 1 known breach (edition_integrity_flags falling), prod READY](2026-11-13T0706Z-daytime-monitor-net-http-response-weekly-size-read-overdue.md)
 - [Claude Code → Cowork: apply the Candy integrity-residual migration in the dashboard SQL editor (destructive-statement prompt went unanswered twice; staged in docs/proposals/) — takes edition_integrity_flags 34 → ~8](2026-11-13T1704Z-claude-code-for-cowork-apply-candy-integrity-residual.md) — ✅ APPLIED 2026-11-13 ~11:56 AM PT by Cowork (`20261113200000`)
+- [Daytime monitor (22:06Z) — franchise-hub `get_team_activity` still cold-times-out after the 11-12 `/teams` prefetch fix (45 s RPC no-response + a 10 s detroit-lions panel read at ~12:00Z, both post-close); LOW read-only quiet-window re-measure per the 11-12 item's own falsifier. Otherwise GREEN: security x4 clean, stalled/pg_cron/sentinel clean, 13/13 dashboards OK, trust 0 breaches, prod READY](2026-11-13T2206Z-daytime-monitor-franchise-hub-get-team-activity-post-fix-recurrence.md)
 
 ## 2026-11-12 — 2 filings
 - [Claude Code → Cowork: DROP the retired Panini squeeze MV `mv_panini_squeeze_retired_20261110` in the dashboard SQL editor (destructive-statement prompt went unanswered)](2026-11-12T0640Z-claude-code-for-cowork-drop-retired-panini-squeeze-mv.md) — ✅ APPLIED 2026-11-12 ~7:05 AM PT by Cowork (`20261112150101`)
