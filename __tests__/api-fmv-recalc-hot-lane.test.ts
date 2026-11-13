@@ -26,11 +26,11 @@ const { POST } = await import("@/app/api/fmv-recalc/route")
 
 const TOPSHOT = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 
-function req(): NextRequest {
+function req(body: Record<string, unknown> = {}): NextRequest {
   return new NextRequest("https://t/api/fmv-recalc", {
     method: "POST",
     headers: new Headers({ "content-type": "application/json", authorization: "Bearer ingest-secret" }),
-    body: JSON.stringify({}),
+    body: JSON.stringify(body),
   })
 }
 async function runDeferred() {
@@ -127,6 +127,26 @@ describe("fmv-recalc — the hot lane", () => {
     expect(extra.hot_lane_error).toBeNull()
     // The cursor's unit is the PAGE: one page edition, however many rode the lane.
     expect(extra.page_size).toBe(1)
+  })
+
+  // 2026-11-13: the test above asserts page_size only; its title also promises the CURSOR is left alone.
+  // Discriminating case: limit 2, ONE page edition + ONE hot edition. The cursor advances only when the PAGE
+  // fills the limit (hasMore), so it must stay null; counting the hot edition into the page would fill it
+  // (1 + 1 = 2) and move the cursor to "2", skipping page editions on the next run.
+  it("leaves the sweep cursor where the page alone puts it, however many editions rode the lane", async () => {
+    const { rpcCalls, inserted } = instrument(
+      fixtures({
+        "rpc:fmv_recalc_hot_editions": { data: [{ edition_id: "ed-hot" }], error: null },
+        sales_market: { data: [...fourSales("ed-page"), ...fourSales("ed-hot")], error: null },
+      }),
+    )
+    await POST(req({ limit: 2 }))
+    await runDeferred()
+    expect(inserted()).toContain("ed-hot")
+    const args = rpcCalls.filter((c) => c.name === "log_pipeline_run").at(-1)?.args as Record<string, unknown>
+    expect(args.p_cursor_before).toBe("0")
+    expect(args.p_cursor_after).toBeNull()
+    expect((args.p_extra as Record<string, unknown>).has_more).toBe(false)
   })
 
   it("a failed hot read prices the page only and records the failure, not a zero", async () => {
