@@ -105,3 +105,5 @@ Edition pages too (~11:45 AM PT): "N open Trade Block listings offer or want thi
 - **No escrow contract deployment** (`RPCTradeEscrow` stays undeployed; memo §9.6 of roadmap-2026-08-03 still binds).
 - **No fee, no promotion** until the roadmap's accuracy gate and the 100-WAU rule allow it.
 - **No wallet sign-in for anything else:** the trade room's connect is the fourth and last importer of `flow-wallet-connect.ts` unless Trevor names another.
+
+- ⛔ **(2026-11-13) EVERY way OUT of `signing` must carry the co-signed check, not just `cancel`.** `signing_ended` (back to `accepted`) had none, so after a co-signature a cancel or an item edit could follow it and skip the 11-07 guard — a trade that sealed on chain recorded as cancelled, or unverifiable. Fixed `424a3f0bb` (`assertNotCosigned` guards both). Open, low: `sealed` stores any 64-hex `tx_id` without reading that transaction from the chain.
