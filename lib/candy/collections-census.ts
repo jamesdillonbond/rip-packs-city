@@ -85,6 +85,8 @@ export interface CollectionCensusReport {
   listings_repointed: number
   editions_filled: number
   wmc_retired: number
+  /** Why RETIRE did not run on an otherwise eligible walk (no deletion, not an error). */
+  retire_note?: string
   completed: boolean
   error: string | null
 }
@@ -159,12 +161,24 @@ export interface CollectionsCensusResult {
 
 /** RETIRE refuses when it would delete more than this share of the walk's cards (a sign something else is wrong). */
 export const RETIRE_MAX_SHARE = 0.25
+/**
+ * …UNLESS the walk provably saw the whole collection: it walked at least this share of every holdings row we
+ * keep for the collection OUTSIDE the unseen editions. 2026-11-12, Absolute Batman (2024-) #2: a 718-card walk,
+ * exactly the 718 rows on its other editions, and 267 rows (178 wallets, last seen 11-08) on the fabricated
+ * `…:absolute-batman-2024-2` key — cards burnt for DC Merge Fuel. The share cap refused a correct retire; a walk
+ * that accounts for everything else we hold is complete, so what it did not see is gone. A short walk (DAS
+ * returning part of a collection) fails this test and the cap still applies.
+ */
+export const RETIRE_COMPLETE_WALK_SHARE = 0.98
 
 /**
  * After a clean complete walk: delete holdings rows that sit on a THUMBNAIL-LESS edition of this collection
  * whose key no card of the walk resolved to. See RETIRE in runCollectionsCensus.
  */
-async function retireUnseenOnLabelless(db: Db, prefix: string, walkKeys: Set<string>, walkCards: number): Promise<{ retired: number; error: string | null }> {
+async function retireUnseenOnLabelless(db: Db, prefix: string, walkKeys: Set<string>, walkCards: number): Promise<{ retired: number; error: string | null; note?: string }> {
+  // A walk that returned NO cards confirms nothing (Overdrive Rewards, 11-12: 0-card walk, 24 rows on a
+  // fabricated `…reward-pack-10` key) — fail open WITHOUT failing the run every rotation.
+  if (walkCards === 0) return { retired: 0, error: null, note: "skipped: the walk returned no cards" }
   const { data: eds, error } = await db.from("editions")
     .select("external_id")
     .eq("collection_id", CANDY_MLB_UUID)
@@ -181,7 +195,28 @@ async function retireUnseenOnLabelless(db: Db, prefix: string, walkKeys: Set<str
   const { data, error: rErr } = await db.rpc("candy_retire_unseen_labelless_wmc", { p_edition_keys: keys, p_max_rows: cap })
   if (rErr) return { retired: 0, error: `rpc: ${rErr.message}` }
   const res = (data ?? {}) as { retired?: number; rows?: number; refused?: boolean }
-  if (res.refused) return { retired: 0, error: `refused: ${res.rows ?? "?"} rows on unseen label-less editions vs a ${walkCards}-card walk` }
+  if (res.refused) {
+    const unseenRows = res.rows ?? 0
+    // Completeness test (RETIRE_COMPLETE_WALK_SHARE). LIKE's `_` wildcard can only OVER-count the collection's
+    // rows, which makes the test harder to pass — it fails closed.
+    const { count: total, error: tErr } = await db.from("wallet_moments_cache")
+      .select("moment_id", { count: "exact", head: true })
+      .eq("collection_id", CANDY_MLB_UUID)
+      .like("edition_key", `${prefix}:%`)
+    const refusal = `refused: ${unseenRows} rows on unseen label-less editions vs a ${walkCards}-card walk`
+    if (tErr) return { retired: 0, error: `${refusal}; completeness count: ${tErr.message}` }
+    const otherRows = (total ?? 0) - unseenRows
+    if (!(unseenRows > 0 && otherRows > 0 && walkCards >= otherRows * RETIRE_COMPLETE_WALK_SHARE)) {
+      return { retired: 0, error: `${refusal} (walk saw ${walkCards} of ${otherRows} rows held outside them)` }
+    }
+    // Exactly the rows counted: the function refuses again if more appeared since.
+    const again = await db.rpc("candy_retire_unseen_labelless_wmc", { p_edition_keys: keys, p_max_rows: unseenRows })
+    if (again.error) return { retired: 0, error: `rpc: ${again.error.message}` }
+    const r2 = (again.data ?? {}) as { retired?: number; refused?: boolean; rows?: number }
+    if (r2.refused) return { retired: 0, error: `${refusal}; re-check refused at ${r2.rows ?? "?"} rows` }
+    if (typeof r2.retired !== "number") return { retired: 0, error: "rpc: no retired count" }
+    return { retired: r2.retired, error: null }
+  }
   if (typeof res.retired !== "number") return { retired: 0, error: "rpc: no retired count" }
   return { retired: res.retired, error: null }
 }
@@ -484,6 +519,7 @@ export async function runCollectionsCensus(
         if (tracked && recordOk && priorSkipped + skippedThisWalk === 0 && c.edition_prefix) {
           const r = await retireUnseenOnLabelless(db, c.edition_prefix, walkKeys, priorCards + cardsThisWalk)
           if (r.error) { rep.error = `retire: ${r.error}`; break }
+          if (r.note) rep.retire_note = r.note
           rep.wmc_retired += r.retired
         }
         break

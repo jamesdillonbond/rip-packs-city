@@ -101,6 +101,8 @@ function db() {
             // RETIRE's editions read: thumbnail-less editions under a prefix
             like: async (_c: string, pat: string) => {
               const pre = pat.replace(/%$/, "")
+              // RETIRE's completeness count: holdings rows under the collection's prefix
+              if (t === "wallet_moments_cache" && opts?.head) return { count: state.existingWmc.filter((r) => r.edition_key.startsWith(pre)).length, error: null }
               return { data: state.existingEds.filter((e) => e.thumbnail_url == null && e.external_id.startsWith(pre)), error: null }
             },
             in: async (col: string, vals: string[]) => {
@@ -528,5 +530,48 @@ describe("runCollectionsCensus", () => {
       expect(mid.census_walk_cards).toBe(1000)
       expect(mid.census_walk_skipped).toBe(0)
     })
+  })
+
+  // 2026-11-12, Absolute Batman (2024-) #2: 267 burnt cards on the fabricated key vs a 718-card walk that
+  // matched the 718 rows on every other edition. The 25 % cap refused a correct retire.
+  describe("RETIRE over the share cap — allowed only when the walk saw everything else we hold", () => {
+    const setup = (walked: number, otherHeld: number, unseen: number) => {
+      state.queue = [{ address: "A", name: "AB2", edition_prefix: "c:ab", census_page: 1, census_walk_started_at: null }]
+      state.pages.A = [Array.from({ length: walked }, (_, i) => ({ id: `w${i}`, owner: "W", ed: "c:ab:real" }))]
+      state.existingEds = [
+        { external_id: "ed-c:ab:real", thumbnail_url: "https://arweave.net/r", circulation_count: 100, tier: "RARE" },
+        { external_id: "c:ab:fabricated", thumbnail_url: null, circulation_count: null, tier: null },
+      ]
+      state.existingWmc = [
+        ...Array.from({ length: otherHeld }, (_, i) => ({ moment_id: `w${i}`, wallet_address: "W", edition_key: "c:ab:real-held", serial_number: 1 })),
+        ...Array.from({ length: unseen }, (_, i) => ({ moment_id: `g${i}`, wallet_address: `X${i}`, edition_key: "c:ab:fabricated", serial_number: null })),
+      ]
+    }
+    it("a walk that accounts for every other row it holds retires the unseen rows even above 25 %", async () => {
+      setup(40, 40, 15)
+      const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+      expect(r.ok).toBe(true)
+      expect(r.wmc_retired).toBe(15)
+    })
+    it("a SHORT walk (saw 20 of 40 rows held elsewhere) still refuses — nothing deleted, run fails", async () => {
+      setup(20, 40, 15)
+      const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+      expect(r.ok).toBe(false)
+      expect(r.wmc_retired).toBe(0)
+      expect((state as any).deleted).toHaveLength(0)
+      expect(r.error).toMatch(/walk saw 20 of 40 rows held outside them/)
+    })
+  })
+
+  it("a walk that returned NO cards retires nothing and does not fail the run (it confirms nothing)", async () => {
+    state.queue = [{ address: "A", name: "Overdrive", edition_prefix: "c:od", census_page: 1, census_walk_started_at: null }]
+    state.pages.A = [[]]
+    state.existingEds = [{ external_id: "c:od:reward-pack", thumbnail_url: null, circulation_count: null, tier: null }]
+    state.existingWmc = Array.from({ length: 24 }, (_, i) => ({ moment_id: `o${i}`, wallet_address: `W${i}`, edition_key: "c:od:reward-pack", serial_number: null }))
+    const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+    expect(r.ok).toBe(true)
+    expect(r.wmc_retired).toBe(0)
+    expect((state as any).deleted).toHaveLength(0)
+    expect(r.collections[0].retire_note).toMatch(/no cards/)
   })
 })
