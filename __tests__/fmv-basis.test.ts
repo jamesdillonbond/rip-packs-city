@@ -158,3 +158,19 @@ describe("fmvBasis", () => {
     expect(isAskDerivedFmv(null)).toBe(false)
   })
 })
+
+// 2026-11-13: a never-sold Top Shot hold that the standing offer stopped is tagged `_compcap_bidfloor` (20261113233615),
+// so it reads as "held to comparables" + "lifted to the best open offer", never "between offer and ask".
+describe("a comparables hold stopped at the offer (Top Shot step 2)", () => {
+  it("reads as comparables, with or without the pull before it", () => {
+    expect(askCapFlag("v2_compcap_bidfloor")).toBe("comparables")
+    expect(askCapFlag("v2_bidpull_compcap_bidfloor")).toBe("comparables")
+    expect(fmvBasis("ASK_ONLY", askCapFlag("v2_bidpull_compcap_bidfloor"))?.label).toBe("held to comparables")
+  })
+  it("its notes name the comparables hold and the offer, in order", () => {
+    const n = priceRuleNotes("v2_compcap_bidfloor")
+    expect(n).toHaveLength(2)
+    expect(n[0]).toMatch(/similar editions/)
+    expect(n[1]).toMatch(/best open offer/)
+  })
+})
