@@ -1,6 +1,7 @@
 -- audit_20261112_schedule_allday_best_offer_daily — applied 2026-11-12 6:58 PM PT in the dashboard SQL editor
 -- (Trevor 6:58 PM PT: "You run it in chrome. Keep going"), after the MCP refused cron.schedule from the session.
--- No schema_migrations row for this name. Both statements are idempotent (cron.schedule upserts on jobname; the
+-- No schema_migrations row for this name; the SAME schedule was re-recorded with a history row ~7:05 PM PT as
+-- 20261113030032 (audit_20261112_schedule_allday_best_offer_daily_capture). This file is kept for the watchlist insert. Both statements are idempotent (cron.schedule upserts on jobname; the
 -- watchlist insert is guarded), so re-running this file changes nothing.
 --
 -- pg_cron jobid 871: capture_allday_best_offers() once a day at 13:20 UTC (5:20 AM PT) — one row per NFL All Day
