@@ -1,6 +1,6 @@
 -- audit_20261113_wmc_fmv_stuck_resync_every_two_hours
 --
--- Claude Code cloud, 2026-11-13 ~10:35 AM PT. Schedule only: rpc-wmc-fmv-stuck-resync (job 617, cron_heavy)
+-- Claude Code cloud, 2026-11-13 ~10:20 AM PT. Schedule only: rpc-wmc-fmv-stuck-resync (job 617, cron_heavy)
 -- '33 * * * *' -> '33 */2 * * *'. known-issues #248, lever (a) "or run it less often".
 --
 -- WHY: resync_stuck_wmc_fmv is one of the estate's largest disk readers. Last 24 h (11-12 10:33 AM -> 11-13
@@ -17,7 +17,7 @@
 -- revert bar — left for a session that can watch it 24 h.
 --
 -- COST OF THE CHANGE: drift the backstop catches lives up to ~2 h instead of ~1 h. Sampled 11-13 ~10:20 AM PT
--- (3 % tablesample, eligible Top Shot + All Day editions, ~50 min after a run): 10 price and 16 confidence-only
+-- (3 % tablesample, eligible Top Shot + All Day editions, ~45 min after a run): 10 price and 16 confidence-only
 -- mismatches in 33,731 rows (0.08 %). Price drift on fresh writes is the 10-min refresh_wmc_fmv_changed lane's
 -- job, not this one's; confidence is internal (CLAUDE.md concierge rule 3). Not 3 h: the watchlist allows
 -- 183 min of silence and runs vary 85-305 s (the 11-10 Candy re-time made the same call).

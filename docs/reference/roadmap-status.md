@@ -221,7 +221,7 @@ Done 10-15 → 10-17 (Claude Code cloud, session_014vWuubmVKLyyyMQAwWzT2W; Trevo
 - ❓ **Needs Trevor:** how the 2026-27 Yearbook / Blue Chip / Squad Goals leaderboards are scored. RPC will not publish its own rank as Top Shot's. The board worth building is "cost to climb into the top N", and it needs the official scoring.
 - **Tracked since 2026-10-19:** `editions.autographed_at` (from Atlas `autographedAt`, swept daily by pg_cron `rpc-autograph-sweep`; 236 Top Shot + 226 All Day signed editions at the census). Partner-athlete status itself is still not stored: Atlas's `activePartnerAthlete` flag marks only 4 players and is not the signer list. Research: [autographs-topshot-allday-2026-10-19.md](../research/autographs-topshot-allday-2026-10-19.md). **Not tracked yet:** Constellations trade-ins burn older-season Rares that the index does not walk (Dune-era sets), so holder counts there lag.
 
-## ⭐ NEW 2026-11-13 — DEMAND RE-READ, WEEK OF 11-05..11-11 PT (by `scripts/demand-read.sql`, params 11-05 08:00 UTC → 11-12 08:00 UTC; Claude Code cloud, ~10:55 AM PT)
+## ⭐ NEW 2026-11-13 — DEMAND RE-READ, WEEK OF 11-05..11-11 PT (by `scripts/demand-read.sql`, params 11-05 08:00 UTC → 11-12 08:00 UTC; Claude Code cloud, ~10:30 AM PT)
 
 Baseline re-run with the SAME file (crawler rule included): 10-29..11-04 reproduces the 11-07 block on every row (69 / 149, 5 signed-in, 1 signup, direct 105 (72), Google 20 (15), ChatGPT 15 (4), X 5 (3), wallet pastes 37 (6), share views 13, email prompt 29 (17)) — the 11-10 crawler rule removes nothing from that week.
 

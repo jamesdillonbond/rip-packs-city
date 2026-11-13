@@ -1,6 +1,6 @@
 -- audit_20261113_deal_alert_serial_filters_bind_pass_one
 --
--- Claude Code cloud, 2026-11-13 ~11:45 AM PT. A deal alert's SERIAL filter is now honoured by pass 1
+-- Claude Code cloud, 2026-11-13 ~10:45 AM PT. A deal alert's SERIAL filter is now honoured by pass 1
 -- (edition-grain deals) in both the sender (dispatch_due_deal_alerts) and its preview
 -- (build_deal_alerts_for_subscription). Nothing else in either body changes.
 --
@@ -24,7 +24,7 @@
 --   build_deal_alerts_for_subscription 013d5a703ef26878eb2db318a503b05b (20261011022738)
 -- The DO block refuses if either moved since.
 --
--- ⚠ HOW IT WAS APPLIED (2026-11-13 ~11:45 AM PT, version 20261113184535). Not this file's text: a ~3 KB DO
+-- ⚠ HOW IT WAS APPLIED (2026-11-13 ~10:46 AM PT, version 20261113184535). Not this file's text: a ~3 KB DO
 -- block that read each live prosrc (asserting the two md5s above), inserted the same predicate block before
 -- pass 1's ORDER BY with replace(), ASSERTED the result's md5 equals this file's body, EXECUTEd the rebuilt
 -- pg_get_functiondef and re-checked the stored prosrc. Read back after apply: dispatch_due_deal_alerts
