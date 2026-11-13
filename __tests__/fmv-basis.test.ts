@@ -89,6 +89,32 @@ describe("fmvBasis", () => {
     expect(askCapFlag(undefined)).toBe(false)
   })
 
+  // 2026-11-12 (evening): the Top Shot offer pull (`_bidpull`) moves an ask-only price between the best
+  // open offer and the ask. No older marker is true of it: it is not the seller's ask, not the edition's
+  // sales, not its set-mates.
+  it("⛔ a price moved toward the best offer wears none of the three older markers", () => {
+    const b = fmvBasis("ASK_ONLY", "offers")!
+    expect(b.label).toBe("between offer and ask")
+    expect(b.label).not.toMatch(/from asks|capped at sales|held to comparables/i)
+    expect(b.title).toMatch(/open offer/i)
+    expect(b.title).not.toMatch(/what one seller is asking|held to its own sales|similar editions/i)
+    for (const banned of ["HIGH", "MEDIUM", "LOW", "STALE", "ASK_ONLY", "NO_DATA", "confidence"]) {
+      expect(`${b.label} ${b.title}`, banned).not.toContain(banned)
+    }
+    // a sale-backed price the pull also moved carries no marker at all
+    expect(fmvBasis("LOW", "offers")).toBeNull()
+  })
+
+  it("askCapFlag: _bidpull is always last and wins, as in get_edition_detail's basis_offer", () => {
+    expect(askCapFlag("1.8.3_bidpull")).toBe("offers")
+    expect(askCapFlag("cold-tail-1.0_histcap_bidpull")).toBe("offers")
+    expect(askCapFlag("topshot-gql-v1_stalecap_bidpull")).toBe("offers")
+    // the offer FLOOR (bid above the price) is a different rule and keeps its old reading
+    expect(askCapFlag("1.8.3_histcap_bidfloor")).toBe(true)
+    expect(askCapFlag("cold-tail-1.0_bidfloor")).toBe(false)
+    expect(askCapFlag("bidpull_v2")).toBe(false)
+  })
+
   it("isSalesCappedAlgo reads the same suffixes as get_edition_detail's basis_capped", () => {
     expect(isSalesCappedAlgo("1.8.3_salescap")).toBe(true)
     expect(isSalesCappedAlgo("cold-tail-1.0_histcap")).toBe(true)

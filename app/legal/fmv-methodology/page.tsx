@@ -173,7 +173,11 @@ export default async function FmvMethodologyPage() {
           asking, not a completed sale &mdash; check recent sales before acting
           on it. On NBA Top Shot, NFL All Day and LaLiga Golazos, where the edition
           has sold before, an ask-based estimate is capped at its most recent sale
-          prices, so a single high listing cannot set the price.
+          prices, so a single high listing cannot set the price. On NBA Top
+          Shot, when a thinly traded edition has an open offer below our price,
+          the price is moved between the two, weighted toward the offer, and an
+          ask-based price is then marked <em>between offer and ask</em>: in our
+          testing, editions like that mostly sell at the offer, not at the ask.
         </li>
         <li>
           <strong style={STRONG}>No price.</strong> When we have too little data

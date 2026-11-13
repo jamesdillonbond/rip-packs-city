@@ -52,7 +52,7 @@ type WalletRow = {
   tssPoints?: number | null
   fmv?: number | null
   marketConfidence?: string | null
-  fmvCapped?: boolean | "comparables" | null
+  fmvCapped?: boolean | "comparables" | "offers" | null
   fmvComputedAt?: string | null
   acquisitionMethod?: string | null
   buyPrice?: number | null

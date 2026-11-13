@@ -157,7 +157,7 @@ export interface SniperDeal {
   askPrice: number;
   baseFmv: number;
   /** #215: an ASK_ONLY price capped at the edition's sales. null = not checked. Set once, on the returned page. */
-  fmvCapped?: boolean | "comparables" | null;
+  fmvCapped?: boolean | "comparables" | "offers" | null;
   adjustedFmv: number;
   aspUsd: number | null;
   daysSinceSale: number | null;

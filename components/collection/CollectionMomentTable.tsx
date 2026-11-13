@@ -78,7 +78,7 @@ import { accentFill, accentText, labelOn } from "@/lib/accent-text"
 // dotted-underlined, no "may be inaccurate" — and keeps only the factual
 // "No sales in 30+ days" tooltip.
 // #215: a row capped at its edition's sales reads "capped at sales" instead.
-function AskDerivedMark({ show, capped }: { show: boolean; capped?: boolean | "comparables" }) {
+function AskDerivedMark({ show, capped }: { show: boolean; capped?: boolean | "comparables" | "offers" }) {
   if (!show) return null
   const basis = fmvBasis("ASK_ONLY", capped)!
   return (

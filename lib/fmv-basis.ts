@@ -62,14 +62,24 @@ const HELD_TO_COMPARABLES: FmvBasisMarker = {
     "The lowest listed ask is higher than similar editions in this set sell for, so the price is held to an estimate from those editions rather than taken from the ask.",
 }
 
+// 2026-11-12 (evening): a Top Shot ASK_ONLY price with a standing offer below the ask is moved between
+// the two, weighted to the offer (`_bidpull`) — editions like that mostly sell at the offer. It is not
+// "what one seller is asking" any more, and no cap above describes it.
+const BETWEEN_OFFER_AND_ASK: FmvBasisMarker = {
+  label: "between offer and ask",
+  title:
+    "This edition has no corroborating sales. There is an open offer below the lowest listed ask, and editions like this mostly sell at the offer, so the price sits between the two, weighted toward the offer.",
+}
+
 /**
  * How an ask-only price was capped, if at all: `true` = at the edition's own sales (the original
  * #215 flag, kept as a boolean so every existing carrier still works), `"comparables"` = at its
- * comparable-edition estimate, `false`/null = not capped. A carrier that only tests `=== true`
+ * comparable-edition estimate, `"offers"` = moved between the best open offer and the ask (not a cap on
+ * sales at all), `false`/null = not capped. A carrier that only tests `=== true`
  * degrades a comparables cap to the plain ask marker — the pre-11-12 rendering, never a wrong claim
  * about sales.
  */
-export type FmvCapFlag = boolean | "comparables"
+export type FmvCapFlag = boolean | "comparables" | "offers"
 
 /**
  * Marker for an FMV value, keyed off its `fmv_snapshots.confidence`
@@ -86,6 +96,7 @@ export function fmvBasis(confidence: string | null | undefined, capped?: FmvCapF
   if (String(confidence).trim().toUpperCase() !== "ASK_ONLY") return null
   if (capped === true) return CAPPED_AT_SALES
   if (capped === "comparables") return HELD_TO_COMPARABLES
+  if (capped === "offers") return BETWEEN_OFFER_AND_ASK
   return ASK_DERIVED
 }
 
@@ -104,9 +115,12 @@ export function isSalesCappedAlgo(algoVersion: string | null | undefined): boole
  * own sales (`isSalesCappedAlgo`), `"comparables"` when it was the comparable estimate
  * (`…_compcap`, optionally lifted to a live bid: `…_compcap_bidfloor`), else `false`. The All Day
  * comp cap fires BEFORE the sales cap on purpose, so a row both caps touched ends `_salescap` and
- * reads as sales — the tighter, own-edition fact.
+ * reads as sales — the tighter, own-edition fact. `"offers"` when the Top Shot offer pull set the number
+ * (`…_bidpull`, whatever ran before it).
  */
 export function askCapFlag(algoVersion: string | null | undefined): FmvCapFlag {
+  // `_bidpull` is always the LAST insert-time suffix (SQL twin: get_edition_detail's `basis_offer`).
+  if (typeof algoVersion === "string" && /_bidpull$/.test(algoVersion)) return "offers"
   if (isSalesCappedAlgo(algoVersion)) return true
   return typeof algoVersion === "string" && /_compcap(_bidfloor)?$/.test(algoVersion) ? "comparables" : false
 }

@@ -423,7 +423,8 @@ BEGIN
           'days_since_sale', fmv.days_since_sale,
           'cross_market_ask',fmv.cross_market_ask,
           'basis_capped',    COALESCE(fmv.algo_version ~ '_(salescap|histcap)(_bidfloor)?$', false),
-          'basis_comparables', COALESCE(fmv.algo_version ~ '_compcap(_bidfloor)?$', false)
+          'basis_comparables', COALESCE(fmv.algo_version ~ '_compcap(_bidfloor)?$', false),
+          'basis_offer',     COALESCE(fmv.algo_version ~ '_bidpull$', false)
         )
       END
     ) INTO result
@@ -828,6 +829,19 @@ SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:146') -> 'fmv' ->> 'b
 SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:146') -> 'fmv' ->> 'basis_capped'), 'true', 'editions arm: _compcap_salescap is basis_capped');
 UPDATE public.fmv_snapshots SET algo_version = NULL WHERE edition_id = '22222222-2222-2222-2222-222222222222';
 SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:146') -> 'fmv' ->> 'basis_comparables'), 'false', 'editions arm: a NULL algo_version is not held to comparables (never NULL)');
+
+-- 2026-11-12 (evening): the Top Shot offer pull stamps _bidpull, always LAST. Such a row is basis_offer and
+-- nothing else — including when a sales-history cap ran first.
+UPDATE public.fmv_snapshots SET algo_version = '1.8.3_bidpull' WHERE edition_id = '22222222-2222-2222-2222-222222222222';
+SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:146') -> 'fmv' ->> 'basis_offer'), 'true', 'editions arm: a _bidpull row is basis_offer');
+SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:146') -> 'fmv' ->> 'basis_capped'), 'false', 'editions arm: a _bidpull row is not capped at sales');
+UPDATE public.fmv_snapshots SET algo_version = '1.8.3_histcap_bidpull' WHERE edition_id = '22222222-2222-2222-2222-222222222222';
+SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:146') -> 'fmv' ->> 'basis_offer'), 'true', 'editions arm: _histcap_bidpull is basis_offer (the last thing that set the number)');
+SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:146') -> 'fmv' ->> 'basis_capped'), 'false', 'editions arm: _histcap_bidpull is not basis_capped');
+UPDATE public.fmv_snapshots SET algo_version = '1.8.3_histcap_bidfloor' WHERE edition_id = '22222222-2222-2222-2222-222222222222';
+SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:146') -> 'fmv' ->> 'basis_offer'), 'false', 'editions arm: the offer FLOOR is not the offer pull');
+UPDATE public.fmv_snapshots SET algo_version = NULL WHERE edition_id = '22222222-2222-2222-2222-222222222222';
+SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:146') -> 'fmv' ->> 'basis_offer'), 'false', 'editions arm: a NULL algo_version is not basis_offer (never NULL)');
 
 SELECT '✓ pinnacle readers on the pin catalog: all assertions passed' AS result;
 

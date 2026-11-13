@@ -117,7 +117,7 @@ interface WalletIntelHighlight {
   fmv_usd: number | null
   confidence: string | null
   /** #215: ASK_ONLY price capped at the edition's sales. null/absent = not checked. */
-  fmv_capped?: boolean | "comparables" | null
+  fmv_capped?: boolean | "comparables" | "offers" | null
   thumbnail_url: string | null
 }
 

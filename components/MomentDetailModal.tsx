@@ -55,7 +55,7 @@ export interface MomentDetailModalProps {
     bestOffer?: number | null;
     marketConfidence?: string | null;
     /** #215: the ASK_ONLY FMV is capped at the edition's sales (not one seller's ask). */
-    fmvCapped?: boolean | "comparables" | null;
+    fmvCapped?: boolean | "comparables" | "offers" | null;
     badgeTitles?: string[];
     officialBadges?: string[];
     imageUrlPrefix?: string | null;

@@ -35,7 +35,7 @@ export type Row = {
   fmv_usd: number | null
   fmv_confidence: string | null
   /** #215: the ASK_ONLY price is capped at the edition's sales. null = not checked. */
-  fmv_basis_capped?: boolean | "comparables" | null
+  fmv_basis_capped?: boolean | "comparables" | "offers" | null
   thumbnail_url: string | null
 }
 

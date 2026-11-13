@@ -243,7 +243,7 @@ export function FmvBasis(props: {
   ask: number | null | undefined
   daysSinceSale?: number | null
   /** The payload's `basis_capped` (#215): an ASK_ONLY price held to the edition's sales. */
-  capped?: boolean | "comparables" | null
+  capped?: boolean | "comparables" | "offers" | null
 }) {
   const facts = fmvBasisText(props)
   const d = props.daysSinceSale

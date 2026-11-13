@@ -250,7 +250,7 @@ export function confidenceLabel(conf?: string | null): { label: string; color: s
   }
 }
 
-export function fmvDisplay(row: MomentRow): { text: string; muted: boolean; stale: boolean; askDerived: boolean; askCapped: boolean | "comparables" } {
+export function fmvDisplay(row: MomentRow): { text: string; muted: boolean; stale: boolean; askDerived: boolean; askCapped: boolean | "comparables" | "offers" } {
   const fmv = row.fmv ?? (typeof row.fmvUsd === "number" && row.fmvUsd > 0 ? row.fmvUsd : null)
   if (fmv === null || fmv === undefined || fmv === 0) return { text: "—", muted: true, stale: false, askDerived: false, askCapped: false }
   const stale = String(row.marketConfidence ?? "").toLowerCase() === "stale"
@@ -259,6 +259,9 @@ export function fmvDisplay(row: MomentRow): { text: string; muted: boolean; stal
   const askDerived = isAskDerivedFmv(row.marketConfidence)
   // #215: a capped ASK_ONLY price is held to the edition's sales, so it reads "capped at sales".
   // 2026-11-12: …or to its comparable-edition estimate ("held to comparables"); the flag passes through.
-  const askCapped = askDerived ? (row.fmvCapped === true ? true : row.fmvCapped === "comparables" ? "comparables" : false) : false
+  // 2026-11-12 (evening): …or moved between the best open offer and the ask ("between offer and ask").
+  const askCapped = askDerived
+    ? (row.fmvCapped === true ? true : row.fmvCapped === "comparables" || row.fmvCapped === "offers" ? row.fmvCapped : false)
+    : false
   return { text: "$" + fmv.toFixed(2), muted: stale, stale, askDerived, askCapped }
 }

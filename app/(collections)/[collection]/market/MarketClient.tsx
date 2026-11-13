@@ -136,7 +136,7 @@ type Listing = {
   lowConfidenceFmv?: boolean | null
   confidence: string | null
   /** #215: the ASK_ONLY price is capped at the edition's sales. null = not checked. */
-  fmvCapped?: boolean | "comparables" | null
+  fmvCapped?: boolean | "comparables" | "offers" | null
   source: string | null
   buyUrl: string | null
   thumbnailUrl: string | null

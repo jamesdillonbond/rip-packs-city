@@ -165,6 +165,8 @@ interface EditionDetail {
     basis_capped?: boolean | null
     // 2026-11-12: an ASK_ONLY price held to the edition's comparable estimate (the All Day `_compcap`).
     basis_comparables?: boolean | null
+    /** The Top Shot offer pull set this price (`_bidpull`): between the best open offer and the ask. */
+    basis_offer?: boolean | null
     // PIN-FMV-REKEY Wave 2: per-render spread for Pinnacle set-level keys.
     fmv_min?: number | null
     fmv_max?: number | null
@@ -680,7 +682,7 @@ export default async function EditionPage(
   const hasParallelLadder = subSiblings.length >= 2
   // #215: which ladder cards carry a CAPPED ask-only price ("capped at sales",
   // not "from asks"). Bounded; a slow or failed read leaves every card unchecked.
-  const siblingCapped: Map<string, boolean | "comparables"> = hasParallelLadder
+  const siblingCapped: Map<string, boolean | "comparables" | "offers"> = hasParallelLadder
     ? await withBoardBudget(
         readCappedByExternalId(
           coll.id,
@@ -1100,7 +1102,7 @@ export default async function EditionPage(
                 salesCount30d={fmv?.sales_count_30d ?? null}
                 ask={askValue}
                 daysSinceSale={showLastSaleAge ? daysSinceLastSale : null}
-                capped={fmv?.basis_comparables === true ? "comparables" : (fmv?.basis_capped ?? null)}
+                capped={fmv?.basis_offer === true ? "offers" : fmv?.basis_comparables === true ? "comparables" : (fmv?.basis_capped ?? null)}
               />
               {/* 2026-10-14: "what does the confidence word mean", "does FMV
                   take special serials into account", "how do you handle stale
