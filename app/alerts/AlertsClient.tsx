@@ -593,9 +593,11 @@ export default function AlertsClient() {
             </div>
             {anyLiveListingFilter && (
               <p style={{ fontSize: 12, color: "var(--rpc-text-secondary)", marginTop: 8, lineHeight: 1.5 }}>
-                Serial, jersey, last-mint, never-sold and badge filters apply to the per-serial underpriced-deals
-                feed. The jersey filter matches the number worn in that specific moment (Top Shot&apos;s own
-                jersey-match), indexed for ~6 in 10 editions today.
+                Serial, jersey, last-mint and badge filters apply to every match. On an edition deal the serial
+                tested is that edition&apos;s cheapest listing, so a single-serial alert fires only when that serial
+                is the lowest ask. Never-sold applies to the per-serial underpriced-deals feed only. The jersey
+                filter matches the number worn in that specific moment (Top Shot&apos;s own jersey-match), indexed
+                for ~6 in 10 editions today.
               </p>
             )}
           </div>

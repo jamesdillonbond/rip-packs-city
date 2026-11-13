@@ -89,6 +89,10 @@ export function subscriptionFilterSummary(s: {
   min_discount: number | null
   max_price?: number | null
   min_price?: number | null
+  min_serial?: number | null
+  max_serial?: number | null
+  require_last_mint?: boolean | null
+  require_jersey_serial?: boolean | null
 }): string {
   const money = (n: number) =>
     `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -100,10 +104,35 @@ export function subscriptionFilterSummary(s: {
     const range = hasFloor
       ? `${money(s.min_price as number)}–${money(s.max_price as number)}`
       : `≤${money(s.max_price as number)}`
-    return `price ${range} · FMV ignored`
+    return [`price ${range} · FMV ignored`, ...serialParts(s)].join(" · ")
   }
   const parts = [`≥${s.min_discount ?? 25}% off`]
   if (s.max_price !== null && s.max_price !== undefined) parts.push(`≤${money(s.max_price)}`)
   if (s.min_price !== null && s.min_price !== undefined) parts.push(`≥${money(s.min_price)}`)
-  return parts.join(" · ")
+  return [...parts, ...serialParts(s)].join(" · ")
+}
+
+/**
+ * The serial conditions of a saved alert, as the summary line shows them.
+ *
+ * ⚠ 2026-11-13: the line used to stop at price/discount, so a collector whose
+ * "serial 111" alerts misfired could not see on /alerts that the range WAS saved
+ * (support_conversations 12524) — and the concierge told them it was not. A
+ * condition the alert runs on belongs on the line that describes the alert.
+ */
+function serialParts(s: {
+  min_serial?: number | null
+  max_serial?: number | null
+  require_last_mint?: boolean | null
+  require_jersey_serial?: boolean | null
+}): string[] {
+  const out: string[] = []
+  const lo = s.min_serial ?? null
+  const hi = s.max_serial ?? null
+  if (lo !== null && hi !== null) out.push(lo === hi ? `serial #${lo}` : `serial #${lo}–#${hi}`)
+  else if (lo !== null) out.push(`serial ≥#${lo}`)
+  else if (hi !== null) out.push(`serial ≤#${hi}`)
+  if (s.require_last_mint) out.push("last mint")
+  if (s.require_jersey_serial) out.push("jersey serial")
+  return out
 }

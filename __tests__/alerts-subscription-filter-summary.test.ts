@@ -39,4 +39,21 @@ describe("subscriptionFilterSummary", () => {
   it("a null min_discount reads as the 25 default the scanner applies", () => {
     expect(subscriptionFilterSummary({ min_discount: null, max_price: 0.6 })).toBe("≥25% off · ≤$0.60")
   })
+
+  // 2026-11-13: a saved serial range must be visible on the line that describes
+  // the alert. A collector's "serial 111" alerts misfired, the line showed only
+  // "≥25% off", and nothing on /alerts said the range had been saved at all.
+  it("shows a saved serial condition", () => {
+    expect(subscriptionFilterSummary({ min_discount: 25, min_serial: 111, max_serial: 111 })).toBe("≥25% off · serial #111")
+    expect(subscriptionFilterSummary({ min_discount: 25, min_serial: 1, max_serial: 99 })).toBe("≥25% off · serial #1–#99")
+    expect(subscriptionFilterSummary({ min_discount: 25, min_serial: 500 })).toBe("≥25% off · serial ≥#500")
+    expect(subscriptionFilterSummary({ min_discount: 0, max_price: 5, max_serial: 10, require_last_mint: true })).toBe(
+      "price ≤$5.00 · FMV ignored · serial ≤#10 · last mint"
+    )
+    expect(subscriptionFilterSummary({ min_discount: 25, require_jersey_serial: true })).toBe("≥25% off · jersey serial")
+  })
+
+  it("adds nothing when no serial condition is set (control)", () => {
+    expect(subscriptionFilterSummary({ min_discount: 25, min_serial: null, max_serial: null, require_last_mint: false })).toBe("≥25% off")
+  })
 })
