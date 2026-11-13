@@ -600,6 +600,8 @@ const TOOLS: Anthropic.Tool[] = [
         special_serials_only: { type: "boolean", description: "true = ONLY special-serial listings (#1 / perfect mint) from the underpriced serials board; no edition-grain deals. Set true whenever the user says 'special serials'." },
         require_jersey_serial: { type: "boolean", description: "Only serials matching the player's jersey number." },
         require_last_mint: { type: "boolean", description: "Only perfect mints (serial == circulation)." },
+        min_serial: { type: "integer", description: "Lowest serial number to alert on. For ONE specific serial pass the same number as min_serial and max_serial. On edition deals the serial tested is the edition's CHEAPEST listing, so a single-serial alert fires only when that serial is the lowest ask — say so when you confirm it." },
+        max_serial: { type: "integer", description: "Highest serial number to alert on (see min_serial)." },
         channels: { type: "array", items: { type: "string" }, description: "Delivery channels: telegram, discord, email. Defaults to the chat's own channel on bot DMs, else every linked channel." },
         notify_mode: { type: "string", enum: [...NOTIFY_MODES], description: "How often a match is re-sent. new_listing (default) = once per listing: an unchanged listing is sent once, and a different moment or a new ask on that edition is sent as new. once = only the first time an edition / special serial matches, never again. daily = re-sent every day while it still matches. Pass it only when the user says how often they want to hear about it ('just tell me once', 'remind me daily'); with action='set_notify_mode' plus subscription_id it changes an existing alert." },
       },
@@ -4698,6 +4700,15 @@ async function executeToolInner(
       }
       const notifyMode: NotifyMode = notifyModeOr(toolInput.notify_mode);
 
+      // A serial bound is a positive whole number or absent — never a coerced 0
+      // (Number("") is 0, which would save "serial >= #0" the user never asked for).
+      const serialBound = (v: unknown): number | null => {
+        const n = typeof v === "number" ? v : typeof v === "string" && v.trim() ? Number(v) : NaN;
+        return Number.isInteger(n) && n > 0 ? n : null;
+      };
+      let minSerial = serialBound(toolInput.min_serial);
+      let maxSerial = serialBound(toolInput.max_serial);
+      if (minSerial != null && maxSerial != null && minSerial > maxSerial) [minSerial, maxSerial] = [maxSerial, minSerial];
       const autoLabel = [
         teamNames?.join("/"),
         badgeKeys?.includes("rookieyear") ? "rookie" : badgeKeys?.join("/"),
@@ -4707,6 +4718,7 @@ async function executeToolInner(
         // same lie in the list view.
         minDiscount > 0 ? `${minDiscount}%+ under FMV` : null,
         explicitMaxPrice != null ? `≤ $${explicitMaxPrice}` : null,
+        minSerial != null && minSerial === maxSerial ? `#${minSerial}` : minSerial != null || maxSerial != null ? `#${minSerial ?? 1}–${maxSerial ?? "∞"}` : null,
       ].filter(Boolean).join(" ");
 
       const row: Record<string, unknown> = {
@@ -4727,6 +4739,9 @@ async function executeToolInner(
         serial_only: serialOnly,
         require_jersey_serial: toolInput.require_jersey_serial === true,
         require_last_mint: toolInput.require_last_mint === true,
+        // 2026-11-13: the form could save a serial range; the concierge could not.
+        min_serial: minSerial,
+        max_serial: maxSerial,
         active: true,
       };
 
@@ -4792,6 +4807,11 @@ async function executeToolInner(
         serialOnly ? "chase serials only (#1 / perfect mint)" : null,
         toolInput.require_jersey_serial === true ? "jersey-match serial only" : null,
         toolInput.require_last_mint === true ? "last mint only" : null,
+        minSerial != null || maxSerial != null
+          ? (minSerial != null && minSerial === maxSerial
+              ? `serial #${minSerial} only — on edition deals, only when it is the edition's cheapest listing`
+              : `serial ${minSerial != null ? `#${minSerial}` : "any"}–${maxSerial != null ? `#${maxSerial}` : "any"} — on edition deals, tested on the edition's cheapest listing`)
+          : null,
       ].filter(Boolean) as string[];
 
       return JSON.stringify({

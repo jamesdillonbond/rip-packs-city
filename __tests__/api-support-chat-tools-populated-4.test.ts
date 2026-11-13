@@ -473,6 +473,55 @@ describe("manage_deal_subscriptions", () => {
     expect((r.repeat_policy as Record<string, unknown>).notify_mode).toBe("once")
   })
 
+  // 2026-11-13 (support_conversations 12524): the /alerts form could save a
+  // serial range and the concierge could not, so "alert me when serial 111
+  // lists" had no faithful answer by chat. A single serial is min = max; the
+  // read-back must state that edition deals test the CHEAPEST listing's serial.
+  it("saves a single-serial alert and states its reach back", async () => {
+    A.authedEmail = "t@example.com"
+    A.userId = "user-1"
+    const spy = install({
+      alert_subscriptions: { data: { id: "s30", label: "L", channels: ["telegram"] }, error: null },
+      notification_channels: { data: [{ channel: "telegram" }], error: null },
+    })
+    script("manage_deal_subscriptions", { action: "create", sets: ["Base Set"], min_serial: 111, max_serial: 111 })
+    await POST(post("alert me when serial 111 of a Base Set moment lists"))
+    const written = spy.writes["alert_subscriptions"]?.[0]?.rows?.[0] as Record<string, unknown>
+    expect(written.min_serial).toBe(111)
+    expect(written.max_serial).toBe(111)
+    const applied = (toolResult().applied_filters as string[]).join(" | ")
+    expect(applied).toMatch(/serial #111 only/)
+    expect(applied).toMatch(/cheapest listing/)
+  })
+
+  it("orders swapped bounds and never saves a coerced 0 or junk as a serial", async () => {
+    A.authedEmail = "t@example.com"
+    A.userId = "user-1"
+    const spy = install({
+      alert_subscriptions: { data: { id: "s31", label: "L", channels: ["telegram"] }, error: null },
+      notification_channels: { data: [{ channel: "telegram" }], error: null },
+    })
+    script("manage_deal_subscriptions", { action: "create", sets: ["Base Set"], min_serial: 500, max_serial: 100 })
+    await POST(post("alert me on serials 100 to 500"))
+    const w1 = spy.writes["alert_subscriptions"]?.[0]?.rows?.[0] as Record<string, unknown>
+    expect([w1.min_serial, w1.max_serial]).toEqual([100, 500])
+  })
+
+  it("an empty or non-integer serial is absent, not 0 (control: no serial filter stated)", async () => {
+    A.authedEmail = "t@example.com"
+    A.userId = "user-1"
+    const spy = install({
+      alert_subscriptions: { data: { id: "s32", label: "L", channels: ["telegram"] }, error: null },
+      notification_channels: { data: [{ channel: "telegram" }], error: null },
+    })
+    script("manage_deal_subscriptions", { action: "create", sets: ["Base Set"], min_serial: "", max_serial: 12.5 })
+    await POST(post("alert me on Base Set deals"))
+    const w = spy.writes["alert_subscriptions"]?.[0]?.rows?.[0] as Record<string, unknown>
+    expect(w.min_serial).toBeNull()
+    expect(w.max_serial).toBeNull()
+    expect((toolResult().applied_filters as string[]).join(" | ")).not.toMatch(/serial/)
+  })
+
   it("refuses an unknown notify_mode on create instead of saving the default", async () => {
     A.authedEmail = "t@example.com"
     A.userId = "user-1"
