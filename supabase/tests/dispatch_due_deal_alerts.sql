@@ -86,7 +86,8 @@
 --   • (2026-10-01) the 20260913061500 body, i.e. the pre-filter cap → case 8
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261015002500_audit_20261014_deal_alerts_fire_once_per_listing.sql
+-- (supabase/migrations/20261113184535_audit_20261113_deal_alert_serial_filters_bind_pass_one.sql since
+-- 2026-11-13; before it 20261015002500_audit_20261014_deal_alerts_fire_once_per_listing.sql
 -- since 2026-10-14; before it 20261011022738, 20261001030000; originally
 -- 20260816161500_audit_20260816_price_only_alerts.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from
@@ -464,6 +465,26 @@ BEGIN
             WHERE e.external_id = p.external_id
               AND c.slug = p.collection_slug
               AND lower(e.team_name) = ANY(ARRAY(SELECT lower(x) FROM unnest(v_sub.team_names) x))
+          ))
+          -- audit_20261113: a SERIAL constraint binds pass 1 too. Pass 1 sends the
+          -- edition's lowest ask and labels it with that listing's serial, but it
+          -- never read min_serial / max_serial / require_last_mint /
+          -- require_jersey_serial — so a "serial 111" alert received every
+          -- discounted edition in the collection, each with a random serial
+          -- (support_conversations 12524, 11-11). The listing pass 1 offers is the
+          -- low ask, so the constraint is tested on low_ask_serial; a NULL serial
+          -- (unknown, e.g. most Pinnacle asks) cannot satisfy one, so nothing is
+          -- sent rather than a guess. Same predicates as pass 2.
+          AND (v_sub.min_serial IS NULL OR p.low_ask_serial >= v_sub.min_serial)
+          AND (v_sub.max_serial IS NULL OR p.low_ask_serial <= v_sub.max_serial)
+          AND (NOT COALESCE(v_sub.require_last_mint, false)
+               OR (p.circulation_count > 1 AND p.low_ask_serial = p.circulation_count))
+          AND (NOT COALESCE(v_sub.require_jersey_serial, false) OR EXISTS (
+            SELECT 1 FROM public.editions e
+            JOIN public.collections c ON c.id = e.collection_id
+            WHERE e.external_id = p.external_id
+              AND c.slug = p.collection_slug
+              AND e.jersey_number = p.low_ask_serial
           ))
         ORDER BY p.discount_pct DESC NULLS LAST,
                  (CASE WHEN v_price_only THEN p.low_ask END) ASC
@@ -1196,6 +1217,69 @@ BEGIN
     WHERE owner_key = 'owner-lastmint' AND subject_key = 'nba-top-shot:950:1:#1'),
     'and never the 1-of-1 -- a /1 serial 1 is the #1, not a last mint');
   RAISE NOTICE '✓ dispatch_due_deal_alerts: a 1-of-1 is not a perfect mint';
+END $$;
+
+-- ── A SERIAL FILTER BINDS PASS 1 (audit_20261113) ─────────────────────────
+-- The live miss: "Min serial = Max serial = 111" received every discounted
+-- edition, each labelled with whatever serial was the low ask (support
+-- conversation 12524, 11-11). 73:5111's low ask IS serial 111 (the positive
+-- control — without it this passes against a pass 1 that sends nothing);
+-- 73:5222's is serial 222, and the older rows' serials are NULL (unknown).
+INSERT INTO cross_collection_deals_board
+  (external_id, name, player_name, set_name, tier, circulation_count, fmv_usd,
+   confidence, low_ask, discount_pct, discount_usd, ask_updated_at,
+   collection_slug, collection_name, render_id, detail_url, thumbnail_url,
+   low_ask_serial, low_ask_nft_id, low_confidence_fmv)
+VALUES
+  ('73:5111', 'Serial Hit', 'Serial Test', 'Serial Set', 'COMMON', 4000,
+   40.00, 'HIGH', 20.00, 50.0, 20.00, now(),
+   'nba_top_shot', 'NBA Top Shot', NULL, '/nba-top-shot/edition/73%3A5111', NULL,
+   111, 'nft-s111', false),
+  ('73:5222', 'Serial Miss', 'Serial Test', 'Serial Set', 'COMMON', 4000,
+   40.00, 'HIGH', 20.00, 50.0, 20.00, now(),
+   'nba_top_shot', 'NBA Top Shot', NULL, '/nba-top-shot/edition/73%3A5222', NULL,
+   222, 'nft-s222', false),
+  -- last mint: serial 50 of 50 (hit) vs serial 49 of 50 (miss)
+  ('73:5350', 'Last Mint Hit', 'Last Mint Pass1', 'Serial Set', 'RARE', 50,
+   40.00, 'HIGH', 20.00, 50.0, 20.00, now(),
+   'nba_top_shot', 'NBA Top Shot', NULL, '/nba-top-shot/edition/73%3A5350', NULL,
+   50, 'nft-lm50', false),
+  ('73:5349', 'Last Mint Miss', 'Last Mint Pass1', 'Serial Set', 'RARE', 50,
+   40.00, 'HIGH', 20.00, 50.0, 20.00, now(),
+   'nba_top_shot', 'NBA Top Shot', NULL, '/nba-top-shot/edition/73%3A5349', NULL,
+   49, 'nft-lm49', false);
+
+INSERT INTO notification_channels (owner_key, channel, channel_user_id, verified)
+VALUES ('owner-serial', 'email', 'serial@example.test', true),
+       ('owner-lm-pass1', 'email', 'lm1@example.test', true);
+
+INSERT INTO alert_subscriptions (id, owner_key, channels, collection_ids, min_discount, active, serial_only, min_serial, max_serial)
+VALUES ('99999999-9999-9999-9999-999999999992', 'owner-serial', ARRAY['email'],
+        ARRAY['95f28a17-224a-4025-96ad-adf8a4c63bfd']::uuid[], 25, true, false, 111, 111);
+INSERT INTO alert_subscriptions (id, owner_key, channels, collection_ids, min_discount, active, serial_only, player_names, require_last_mint)
+VALUES ('99999999-9999-9999-9999-999999999993', 'owner-lm-pass1', ARRAY['email'],
+        ARRAY['95f28a17-224a-4025-96ad-adf8a4c63bfd']::uuid[], 25, true, false, ARRAY['Last Mint Pass1'], true);
+
+DO $$
+BEGIN
+  PERFORM public.dispatch_due_deal_alerts();
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-serial' AND subject_key = 'nba_top_shot:73:5111'),
+    'a serial-111 alert receives the edition whose low ask IS serial 111');
+  PERFORM _assert(NOT EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-serial' AND subject_key IN ('nba_top_shot:73:5222', 'nba_top_shot:73:2785', 'nba_top_shot:73:5350')),
+    'and NOT an edition whose low ask is another serial, or an unknown one');
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-lm-pass1' AND subject_key = 'nba_top_shot:73:5350'),
+    'require_last_mint in pass 1 receives #50/50');
+  PERFORM _assert(NOT EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-lm-pass1' AND subject_key = 'nba_top_shot:73:5349'),
+    'and not #49/50');
+  RAISE NOTICE '✓ dispatch_due_deal_alerts: a serial filter binds pass 1';
 END $$;
 
 ROLLBACK;

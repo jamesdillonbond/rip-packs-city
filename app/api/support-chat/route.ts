@@ -4500,7 +4500,13 @@ async function executeToolInner(
       if (action === "list") {
         const { data: subs, error } = await (supabase as any)
           .from("alert_subscriptions")
-          .select("id, label, active, channels, notify_mode, min_discount, max_price, tiers, player_names, set_names, team_names, badges, serial_only, require_jersey_serial, require_last_mint, created_at, last_run_at")
+          // ⚠ 2026-11-13: EVERY column the dispatcher filters on. min_serial /
+          // max_serial (+ min_price, collection_ids, parallel_names,
+          // require_never_sold) were missing, so the model read a saved
+          // "serial 111" alert as having no serial limit and told the collector
+          // so (support_conversations 12524). An omitted field reads as ABSENT.
+          // Pinned by __tests__/concierge-deal-subscription-list-shows-every-filter.test.ts.
+          .select("id, label, active, channels, notify_mode, collection_ids, min_discount, min_price, max_price, tiers, parallel_names, player_names, set_names, team_names, badges, serial_only, min_serial, max_serial, require_jersey_serial, require_last_mint, require_never_sold, require_low_ask, created_at, last_run_at")
           .eq("owner_key", ctx.userId)
           .order("created_at", { ascending: false });
         if (error) return JSON.stringify({ status: "error", message: safeApiError(error).error });
@@ -4511,7 +4517,7 @@ async function executeToolInner(
           // ⚠ 2026-10-14: this said "each match delivers once per day per
           // channel" — true of the old dispatcher, and exactly the repeat a
           // collector complained about. notify_mode is now per subscription.
-          note: "serial_only=true means the sub only fires on special-serial (#1/perfect mint) listings. The scanner runs every ~15 min. notify_mode says how often a match repeats: new_listing = once per listing (an unchanged listing is not re-sent; a different moment or new ask is), once = first match per edition/serial only, daily = re-sent each day while it still matches. Change it with action='set_notify_mode'.",
+          note: "serial_only=true means the sub only fires on special-serial (#1/perfect mint) listings. min_serial/max_serial (when set) limit every match to serials in that range — for edition deals that is the serial of the edition's lowest ask, so a single-serial alert fires only when that serial is the cheapest listing. The scanner runs every ~15 min. notify_mode says how often a match repeats: new_listing = once per listing (an unchanged listing is not re-sent; a different moment or new ask is), once = first match per edition/serial only, daily = re-sent each day while it still matches. Change it with action='set_notify_mode'.",
         });
       }
 

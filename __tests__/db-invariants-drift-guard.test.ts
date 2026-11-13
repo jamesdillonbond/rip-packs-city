@@ -1852,8 +1852,9 @@ const PINS = [
     // sender is gated against is the 2026-08-16 defect one level up.
     fn: "build_deal_alerts_for_subscription",
     test: "supabase/tests/build_deal_alerts_for_subscription.sql",
-    // Re-pointed 2026-10-10: "perfect mints only" no longer matches a 1-of-1.
-    migration: "supabase/migrations/20261011022738_audit_20261010_perfect_mint_alerts_exclude_one_of_ones.sql",
+    // Re-pointed 2026-11-13: a serial filter (min/max serial, last mint, jersey) binds pass 1 too.
+    // Before it, 2026-10-10: "perfect mints only" no longer matches a 1-of-1.
+    migration: "supabase/migrations/20261113184535_audit_20261113_deal_alert_serial_filters_bind_pass_one.sql",
   },
   {
     // The SENDING half of the same pipeline, pinned 2026-08-17. Its preview
@@ -1864,7 +1865,8 @@ const PINS = [
     test: "supabase/tests/dispatch_due_deal_alerts.sql",
     // Re-pointed 2026-10-14: deal alerts fire once per LISTING (notify_mode),
     // not once per UTC day. Before it, 2026-10-10: perfect mints exclude 1-of-1s.
-    migration: "supabase/migrations/20261015002500_audit_20261014_deal_alerts_fire_once_per_listing.sql",
+    // Re-pointed 2026-11-13: a serial filter binds pass 1 too.
+    migration: "supabase/migrations/20261113184535_audit_20261113_deal_alert_serial_filters_bind_pass_one.sql",
   },
   {
     // ⚠ THREE ENTRIES, ONE FUNCTION, AND THAT IS THE POINT. `ask_is_alertable`

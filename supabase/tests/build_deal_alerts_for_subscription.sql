@@ -29,7 +29,8 @@
 -- fixture matches itself. That check belongs against the live catalog, not here.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261001030000_audit_20260930_topshot_alert_asks_are_rechecked_before_they_are_sent.sql
+-- (supabase/migrations/20261113184535_audit_20261113_deal_alert_serial_filters_bind_pass_one.sql since
+-- 2026-11-13; before it 20261011022738, then 20261001030000_audit_20260930_topshot_alert_asks_are_rechecked_before_they_are_sent.sql
 -- since 2026-10-01; originally 20260816161500_audit_20260816_price_only_alerts.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from
 -- it. Verified 2026-08-17 that the migration's body is byte-identical to the
@@ -272,6 +273,26 @@ BEGIN
             WHERE e.external_id = p.external_id
               AND c.slug = p.collection_slug
               AND lower(e.team_name) = ANY(ARRAY(SELECT lower(x) FROM unnest(v_sub.team_names) x))
+          ))
+          -- audit_20261113: a SERIAL constraint binds pass 1 too. Pass 1 sends the
+          -- edition's lowest ask and labels it with that listing's serial, but it
+          -- never read min_serial / max_serial / require_last_mint /
+          -- require_jersey_serial — so a "serial 111" alert received every
+          -- discounted edition in the collection, each with a random serial
+          -- (support_conversations 12524, 11-11). The listing pass 1 offers is the
+          -- low ask, so the constraint is tested on low_ask_serial; a NULL serial
+          -- (unknown, e.g. most Pinnacle asks) cannot satisfy one, so nothing is
+          -- sent rather than a guess. Same predicates as pass 2.
+          AND (v_sub.min_serial IS NULL OR p.low_ask_serial >= v_sub.min_serial)
+          AND (v_sub.max_serial IS NULL OR p.low_ask_serial <= v_sub.max_serial)
+          AND (NOT COALESCE(v_sub.require_last_mint, false)
+               OR (p.circulation_count > 1 AND p.low_ask_serial = p.circulation_count))
+          AND (NOT COALESCE(v_sub.require_jersey_serial, false) OR EXISTS (
+            SELECT 1 FROM public.editions e
+            JOIN public.collections c ON c.id = e.collection_id
+            WHERE e.external_id = p.external_id
+              AND c.slug = p.collection_slug
+              AND e.jersey_number = p.low_ask_serial
           ))
         ORDER BY p.discount_pct DESC NULLS LAST,
                  (CASE WHEN v_price_only THEN p.low_ask END) ASC
@@ -704,6 +725,42 @@ BEGIN
   PERFORM _assert_eq((r->'serial_deals'->0->>'nft_id'), 'nft-perfect',
     'and it is the real perfect mint (#50/50), never the 1-of-1');
   RAISE NOTICE '✓ build_deal_alerts_for_subscription: a 1-of-1 is not a perfect mint';
+END $$;
+
+-- ── A SERIAL FILTER BINDS PASS 1 (audit_20261113) ─────────────────────────
+-- The preview's half: what /alerts shows a "serial 111" alert must be what the
+-- sender would send — the edition whose low ask IS serial 111 (positive
+-- control), never one whose low ask is serial 222 or unknown (73:2785).
+INSERT INTO cross_collection_deals_board
+  (external_id, name, player_name, set_name, tier, circulation_count, fmv_usd,
+   confidence, low_ask, discount_pct, discount_usd, ask_updated_at,
+   collection_slug, collection_name, render_id, detail_url, thumbnail_url,
+   low_ask_serial, low_ask_nft_id, low_confidence_fmv)
+VALUES
+  ('73:5111', 'Serial Hit', 'Serial Test', 'Serial Set', 'COMMON', 4000,
+   40.00, 'HIGH', 20.00, 50.0, 20.00, now(),
+   'nba_top_shot', 'NBA Top Shot', NULL, '/nba-top-shot/edition/73%3A5111', NULL,
+   111, 'nft-s111', false),
+  ('73:5222', 'Serial Miss', 'Serial Test', 'Serial Set', 'COMMON', 4000,
+   40.00, 'HIGH', 20.00, 50.0, 20.00, now(),
+   'nba_top_shot', 'NBA Top Shot', NULL, '/nba-top-shot/edition/73%3A5222', NULL,
+   222, 'nft-s222', false);
+
+INSERT INTO alert_subscriptions (id, owner_key, channels, collection_ids, min_discount, active, serial_only, min_serial, max_serial)
+VALUES ('99999999-9999-9999-9999-999999999992', 'owner-serial', ARRAY['email'],
+        ARRAY['95f28a17-224a-4025-96ad-adf8a4c63bfd']::uuid[], 25, true, false, 111, 111);
+
+DO $$
+DECLARE r jsonb;
+BEGIN
+  r := public.build_deal_alerts_for_subscription('99999999-9999-9999-9999-999999999992');
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM jsonb_array_elements(r->'deals') d WHERE d->>'external_id' = '73:5111'),
+    'the preview shows the edition whose low ask IS serial 111');
+  PERFORM _assert(NOT EXISTS (
+    SELECT 1 FROM jsonb_array_elements(r->'deals') d WHERE d->>'external_id' IN ('73:5222', '73:2785')),
+    'and not one whose low ask is another serial, or an unknown one');
+  RAISE NOTICE '✓ build_deal_alerts_for_subscription: a serial filter binds pass 1';
 END $$;
 
 ROLLBACK;
