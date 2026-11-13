@@ -12,3 +12,8 @@
 **Risk read:** LOW. All occurrences count=1, single user, degrade gracefully to an empty panel. Platform GREEN at read time (security x4 clean, trust 0 breaches, stalled/pg_cron/sentinel clean, 13/13 dashboards OK, prod READY). **Not a spell** (positive control 22:06Z: 3 active sessions / 3 IO-wait — quiet DB, not saturation; `rpc_ops_snapshot()` returned fast).
 
 **Suggested action (night pass):** quiet-window re-measure of `get_team_activity`'s cost on a COLD franchise (e.g. `nfl_all_day` detroit-lions and a big NBA team) — `EXPLAIN (ANALYZE, BUFFERS)` from cold, not warm wall-clock. If a cold read genuinely approaches the 10 s panel / 45 s RPC budgets, the lever is the read itself (a covering index or a bounded/precomputed team-activity path), per the 11-12 item's falsifier — NOT more prefetch. If cold reads come back well inside budget, this was a one-off cold-sweep artifact and can be closed. Do not re-open the 11-12 item; this is its residual read-path tail.
+
+
+## ✅ RESOLVED 2026-11-13 3:25 PM PT (Cowork cloud, Trevor: "Do it all")
+
+Measured the read, per the 11-12 falsifier: `EXPLAIN (ANALYZE, BUFFERS) get_team_activity(<All Day>, 'detroit-lions', 12, 0)` = **43 ms, 5,818 hit + 8 read buffers**; `get_team_activity(<Top Shot>, 'los-angeles-lakers', 12, 0)` = **152 ms, 6,880 hit + 7 read**. Even a fully cold run is ~6k blocks (~50 MB) — nowhere near the 10 s panel / 45 s RPC budgets. So the 4 AM PT (12:00Z) count=1 timeouts were the same cold crawl sweep hitting several entity reads at once (two `get_player_hub` reads timed out in the same minute), not the read's cost. No change; the panel already degrades honestly. Re-open only if a timeout recurs outside a crawl minute.
