@@ -3494,7 +3494,7 @@ const PINS = [
     fn: "sync_topshot_pools_from_atlas",
     test: "supabase/tests/sync_topshot_pools_from_atlas.sql",
     // 2026-10-10 follow-ups: the zeroing arm keeps orig_drop_weight; the size gate counts drawable rows.
-    migration: "supabase/migrations/20261010164143_audit_20261010_topshot_atlas_pool_sync_compares_drawable_editions.sql",
+    migration: "supabase/migrations/20261113195652_audit_20261113_topshot_atlas_pool_fills_new_dists_without_an_ask.sql",
   },
   {
     // Added 2026-10-10 (#85). Picks the editions whose Atlas snapshot is re-fetched next; an

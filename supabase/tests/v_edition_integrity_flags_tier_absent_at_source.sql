@@ -51,6 +51,10 @@ CREATE OR REPLACE VIEW public.v_edition_integrity_flags WITH (security_invoker =
                   OR (right((e.external_id)::text, length(s.slug) + 9) = (':' || s.slug || '-rainbow'))
                   OR ((e.rarity_label IS NOT NULL)
                       AND (lower(e.rarity_label) <> ALL (ARRAY['core'::text, 'common'::text, 'uncommon'::text, 'rare'::text, 'epic'::text, 'titan'::text, 'legendary'::text])))))
+             OR ((e.collection_id = '209ade70-32c5-4470-bc7c-4793d660f713'::uuid)
+                 AND (e.thumbnail_url IS NOT NULL)
+                 AND (e.tier IS NULL)
+                 AND ((e.external_id)::text !~ '-(core|common|uncommon|rare|epic|titan|legendary)(-[1-9A-HJ-NP-Za-km-z]{12})?$'::text))
              OR ((e.collection_id = '9b4824a8-736d-4a96-b450-8dcc0c46b023'::uuid)
                  AND (e.tier IS NULL)
                  AND (EXISTS ( SELECT 1
@@ -102,6 +106,12 @@ INSERT INTO public.editions (collection_id, external_id, name, tier, circulation
   -- non-Candy edition with a NULL tier and a matching-looking key → still a defect
   ('dee28451-5d62-409e-a1ad-a83f763ac070', 'x:patrick-mahomes', 'Patrick Mahomes', NULL, 5, 'https://x/y', '1', '2');
 
+INSERT INTO public.editions (collection_id, external_id, name, tier, circulation_count, thumbnail_url, set_id_onchain, play_id_onchain) VALUES
+  -- 2026-11-13: hydrated, untiered, key length-fitted with a hash (slug test cannot match) → absent at source
+  ('209ade70-32c5-4470-bc7c-4793d660f713', 'c:2022-moment-boxes:rookie-performance:-george-kirby-julio-rodriguez-spen-36b5cfa5', 'Rookie Performance: George Kirby, Julio Rodriguez, Spencer Strider', NULL, 152, 'https://arweave.net/n', NULL, NULL),
+  -- ⚠ hydrated, untiered, key ENDS in a mapped rarity (a failed mapping) → still a defect
+  ('209ade70-32c5-4470-bc7c-4793d660f713', 'c:2023-base:shohei-ohtani-player-of-the-month-rare', 'Shohei Ohtani Player of the Month', NULL, 50, 'https://arweave.net/o', NULL, NULL);
+
 INSERT INTO public.editions (collection_id, external_id, name, tier, circulation_count, thumbnail_url, set_id_onchain, play_id_onchain, rarity_label) VALUES
   -- 2026-11-12 (native rarity_label): a label with NO tier_type equivalent → absent at source
   ('209ade70-32c5-4470-bc7c-4793d660f713', 'c:2022-all-star-tricons:2022-tricon-judge-soto-gold', '2022 Tricon Judge Soto', NULL, 1, 'https://arweave.net/j', NULL, NULL, 'Gold'),
@@ -128,8 +138,8 @@ BEGIN
   PERFORM _assert_eq(r.canonical_tier_absent_at_source::text, '1', 'a UFC edition whose chain set carries no TIER is absent at source');
   PERFORM _assert_eq(r.canonical_missing_tier::text, '2', '⚠ a NULL tier whose chain set HAS a tier, and an unmapped one, stay defects');
   SELECT * INTO r FROM public.v_edition_integrity_flags WHERE collection = 'candy_mlb';
-  PERFORM _assert_eq(r.canonical_tier_absent_at_source::text, '7', 'seven hydrated editions with no tier at source are counted apart (incl. the 1-of-1 asset-id key, the -unique / -rainbow labels, a native Gold label, and the sealed item)');
-  PERFORM _assert_eq(r.canonical_missing_tier::text, '6', '⚠ NULL-tier -titan editions (incl. one carrying a Titan rarity_label), the rarity-but-NULL-tier edition and both FABRICATED editions stay defects');
+  PERFORM _assert_eq(r.canonical_tier_absent_at_source::text, '8', 'eight hydrated editions with no tier at source are counted apart (incl. the 1-of-1 asset-id key, the -unique / -rainbow labels, a native Gold label, the sealed item, and the hash-fitted key)');
+  PERFORM _assert_eq(r.canonical_missing_tier::text, '7', '⚠ NULL-tier editions whose key ends in a MAPPED rarity (-titan ×3 incl. one with a Titan rarity_label, -rare), the rarity-but-NULL-tier edition and both FABRICATED editions stay defects');
   PERFORM _assert_eq(r.canonical_missing_thumbnail::text, '2', 'the fabricated editions are still missing thumbnails');
   PERFORM _assert_eq(r.canonical_bad_circulation::text, '3', 'both fabricated editions (NULL, no thumbnail) and the hydrated circulation 0 are bad circulations');
   PERFORM _assert_eq(r.canonical_circulation_absent_at_source::text, '1', 'the hydrated sealed item with no "/N" is counted apart');

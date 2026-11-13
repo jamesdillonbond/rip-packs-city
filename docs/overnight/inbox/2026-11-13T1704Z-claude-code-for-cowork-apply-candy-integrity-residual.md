@@ -54,3 +54,8 @@ SELECT (SELECT (row_to_json(t)->>'value') FROM v_rpc_trust_health t WHERE row_to
 4. In `__tests__/edition-integrity-flags-pin-matches-migration.test.ts` (line 27) replace `_audit_20261112_ufc_catchphrase_tier_absent_at_source` with `_audit_20261113_candy_integrity_residual`.
 5. Commit "db: Candy integrity residual (name-derived labels, hydrated-untiered absent at source, unheld editions released)", push; mark this filing ✅ in `INDEX.md`.
 6. After the next `:37` orphan run, confirm `edition_integrity_flags` ≈ 8 (the Top Shot thumbnails waiting on Dapper art — documented, nothing to do).
+
+
+## ✅ RESOLVED 2026-11-13 ~11:56 AM PT (Cowork cloud, Trevor: "I approve both")
+
+Pre-check matched (view md5 `de740c0f…`, 11 name labels, 7 unheld, no backup table). Ran the staged file (fetched at `96d8127`, SHA-256 checked) + the history row in the SQL editor; confirmed the destructive-operation dialog. Post-check: `edition_integrity_flags` **26**, Candy `canonical_missing_tier` **6**, backup rows **19**, new view md5 `bc7903c18ba28622de478d43933d6ffa`, `{security_invoker=on}`. Recorded as `20261113200000`; file moved to `supabase/migrations/`, pin installed, pin-matches-migration test repointed. Step 6 (≈ 8 after the next `:37` orphan cleanup) checked in the ledger entry.

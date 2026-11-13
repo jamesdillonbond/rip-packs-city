@@ -4,7 +4,8 @@
 -- Claims:
 --   1. an unpooled dist with a live ask is filled: drop_weight = remaining share (sums to 1),
 --      orig_drop_weight = original count, a parallel maps to <set>:<play>::<subedition>;
---      an unpooled dist with NO live ask is left alone;
+--      an unpooled dist with NO live ask is left alone -- unless it was first seen in the last
+--      7 days (a new pack on primary sale, 2026-11-13), which fills without one;
 --   2. an all-GraphQL pool is upgraded: every row becomes 'atlas', a GraphQL row Atlas does not
 --      list (nothing left to draw) gets drop_weight 0 and is KEPT with its original count;
 --   3. a dist with > 5 % of its original pool unmapped, or nothing left to draw, or fewer editions
@@ -13,7 +14,7 @@
 --   5. a failure is caught, logged ok=false, and the function still returns.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261010164143_audit_20261010_topshot_atlas_pool_sync_compares_drawable_editions.sql).
+-- (supabase/migrations/20261113195652_audit_20261113_topshot_atlas_pool_fills_new_dists_without_an_ask.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 
 BEGIN;
@@ -21,7 +22,7 @@ BEGIN;
 CREATE TABLE public.pack_drop_pool (collection_id uuid, dist_id text, edition_id uuid, edition_flow_id text,
   drop_weight numeric DEFAULT 1, slot_name text, pool_source text DEFAULT 'gql', last_refreshed_at timestamptz DEFAULT now(),
   orig_drop_weight numeric, PRIMARY KEY (collection_id, dist_id, edition_id, slot_name));
-CREATE TABLE public.pack_distributions (collection_id uuid, dist_id text);
+CREATE TABLE public.pack_distributions (collection_id uuid, dist_id text, first_seen_at timestamptz DEFAULT now() - interval '30 days');
 CREATE TABLE public.pack_ask_state (collection_slug text, dist_id text, is_listed boolean, lowest_ask numeric);
 CREATE TABLE public.topshot_atlas_dist_editions (dist_id text, atlas_edition_id text, pass bigint, set_id int, play_id int,
   parallel text, tier text, original_count bigint, remaining_count bigint, hidden_at_fetch bigint, fetched_at timestamptz);
@@ -65,7 +66,7 @@ BEGIN
       SELECT dist_id, max(pass) AS p, max(fetched_at) AS f FROM public.topshot_atlas_dist_editions GROUP BY dist_id
     ), cand AS (
       -- a catalogued dist with a fresh Atlas edition list and EITHER no pool at all and a live
-      -- secondary ask ('fill'), OR a pool written only by the GraphQL lane, dormant since
+      -- secondary ask or a first sighting in the last 7 days ('fill'), OR a pool written only by the GraphQL lane, dormant since
       -- 2026-08-28 and truncated at its 40-row page cap on 433 of 767 dists ('upgrade'), OR an
       -- Atlas pool whose edition list has been re-fetched since it was written ('refresh')
       SELECT lp.dist_id, lp.p,
@@ -76,9 +77,12 @@ BEGIN
         LEFT JOIN pool ON pool.dist_id = lp.dist_id
        WHERE lp.f > now() - interval '7 days'
          AND ((pool.dist_id IS NULL
-               AND EXISTS (SELECT 1 FROM public.pack_ask_state pas
-                            WHERE pas.collection_slug = 'nba-top-shot' AND pas.dist_id = lp.dist_id
-                              AND pas.is_listed IS TRUE AND pas.lowest_ask > 0))
+               AND (EXISTS (SELECT 1 FROM public.pack_ask_state pas
+                             WHERE pas.collection_slug = 'nba-top-shot' AND pas.dist_id = lp.dist_id
+                               AND pas.is_listed IS TRUE AND pas.lowest_ask > 0)
+                    -- 2026-11-13: a NEW dist (on primary sale, nothing listed yet) fills too, so its
+                    -- EV exists while it is on sale; topshot_atlas_seed_new_dists feeds its editions
+                    OR pd.first_seen_at > now() - interval '7 days'))
               OR pool.all_gql
               OR (pool.all_atlas AND lp.f > pool.refreshed))
        ORDER BY (pool.dist_id IS NULL) DESC, coalesce(pool.all_gql, false) DESC, lp.f DESC, lp.dist_id
@@ -171,6 +175,8 @@ INSERT INTO public.editions VALUES
   ('00000000-0000-0000-0000-0000000000e6', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '20:9');
 INSERT INTO public.pack_distributions SELECT '95f28a17-224a-4025-96ad-adf8a4c63bfd', d
   FROM unnest(ARRAY['D_FILL','D_NOASK','D_UP','D_UNMAPPED','D_EMPTY','D_SHRINK']) d;
+-- D_NEW: first seen yesterday, no ask (on primary sale) -> fills anyway
+INSERT INTO public.pack_distributions VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'D_NEW', now() - interval '1 day');
 INSERT INTO public.pack_ask_state SELECT 'nba-top-shot', d, true, 10
   FROM unnest(ARRAY['D_FILL','D_UNMAPPED','D_EMPTY']) d;
 -- D_FILL: 3 editions incl. a Rippled parallel; remaining 6/3/1
@@ -179,6 +185,7 @@ INSERT INTO public.topshot_atlas_dist_editions VALUES
   ('D_FILL','a2',1,10,2,'Standard','COMMON',30,3,0, now() - interval '1 hour'),
   ('D_FILL','a3',1,10,1,'Rippled','RARE',10,1,0, now() - interval '1 hour'),
   ('D_NOASK','a1',1,10,1,'Standard','COMMON',60,6,0, now() - interval '1 hour'),
+  ('D_NEW','n1',1,10,2,'Standard','COMMON',40,40,0, now() - interval '1 hour'),
 -- D_UP: GraphQL pool lists e4, e6; Atlas lists e4, e5 (and not e6)
   ('D_UP','b1',1,20,1,'Standard','COMMON',50,5,0, now() - interval '1 hour'),
   ('D_UP','b2',1,20,2,'Standard','COMMON',50,15,0, now() - interval '1 hour'),
@@ -205,6 +212,7 @@ SELECT _assert_eq((SELECT round(drop_weight, 2)::text FROM pack_drop_pool WHERE 
 SELECT _assert_eq((SELECT orig_drop_weight::text FROM pack_drop_pool WHERE dist_id = 'D_FILL' AND edition_flow_id = '10:1::4'), '10', 'c1 parallel mapped with orig count');
 SELECT _assert_eq((SELECT string_agg(DISTINCT pool_source, ',') FROM pack_drop_pool WHERE dist_id = 'D_FILL'), 'atlas', 'c1 source atlas');
 SELECT _assert_eq((SELECT count(*)::text FROM pack_drop_pool WHERE dist_id = 'D_NOASK'), '0', 'c1 no live ask -> no fill');
+SELECT _assert_eq((SELECT string_agg(pool_source || ':' || round(drop_weight, 2)::text, ',') FROM pack_drop_pool WHERE dist_id = 'D_NEW'), 'atlas:1.00', 'c1 new dist with no ask fills');
 
 -- claim 2
 SELECT _assert_eq((SELECT count(*)::text FROM pack_drop_pool WHERE dist_id = 'D_UP'), '4', 'c2 nothing deleted');
