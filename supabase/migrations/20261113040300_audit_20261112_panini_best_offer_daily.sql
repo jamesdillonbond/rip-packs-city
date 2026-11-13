@@ -10,9 +10,10 @@
 -- It changes no price.
 -- Cost (measured): index-only over idx_panini_serials_offer_edition, ~405k cards, 37k buffers, ~5 s.
 -- First day 2026-11-12, hand-run: 4,812 editions (median offer = 53 % of our price; 333 with an offer ABOVE our price).
--- ⚠ NOT SCHEDULED: cron.schedule was refused from this session (MCP and SQL editor). Until Trevor runs
+-- Scheduled 2026-11-12 9:14 PM PT in the dashboard SQL editor (Trevor 9:13 PM PT: "Use chrome to do it") after
+-- cron.schedule was refused from the session: pg_cron jobid 873,
 --   select cron.schedule('rpc-capture-panini-best-offers', '25 13 * * *', $c$select public.capture_panini_best_offers()$c$);
--- (and adds a pipeline_cadence_watchlist row 'panini-best-offer-daily', 1560 / 3000 min, info) only hand-run days exist.
+-- (5:25 AM PT daily) + pipeline_cadence_watchlist row 'panini-best-offer-daily' (1,560 / 3,000 min, info).
 -- anon-exec: capture_panini_best_offers is NOT anon-executable (EXECUTE revoked from public, anon, authenticated).
 -- Revert: none needed (nothing reads it).
 create table if not exists public.panini_best_offer_daily (
