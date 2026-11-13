@@ -293,6 +293,12 @@ export default async function FmvMethodologyPage() {
           to the best open offer when that offer is higher (up to three times
           the price) &mdash; a standing offer is money a seller can take today.
         </li>
+        <li>
+          On NBA Top Shot, an ask-based price on an edition that has never
+          sold is held to this estimate when the ask sits above it (and never
+          below a standing offer). First sales of such editions land much
+          closer to the estimate than to the first asking price.
+        </li>
       </ul>
 
       <h2 style={H2}>What FMV Does NOT Account For</h2>

@@ -53,7 +53,8 @@ const CAPPED_AT_SALES: FmvBasisMarker = {
     "The lowest listed ask is higher than this edition has sold for, so the price is held to its own sales rather than taken from the ask.",
 }
 
-// 2026-11-12: an NFL All Day ASK_ONLY price can instead be held to the edition's COMPARABLE estimate
+// 2026-11-12: an NFL All Day ASK_ONLY price — and, since that evening, a never-sold NBA Top Shot one —
+// can instead be held to the edition's COMPARABLE estimate
 // (`_compcap`: the typical price of its set-mates, adjusted for the player). Neither marker above is
 // true of that number — it is below the ask, and it is not the edition's own sales — so it gets its own.
 const HELD_TO_COMPARABLES: FmvBasisMarker = {
@@ -119,7 +120,9 @@ export function isSalesCappedAlgo(algoVersion: string | null | undefined): boole
  * (`…_bidpull`, whatever ran before it).
  */
 export function askCapFlag(algoVersion: string | null | undefined): FmvCapFlag {
-  // `_bidpull` is always the LAST insert-time suffix (SQL twin: get_edition_detail's `basis_offer`).
+  // `_bidpull` LAST = the offer pull set the number (SQL twin: get_edition_detail's `basis_offer`). A
+  // never-sold Top Shot edition can then be held to its comparable estimate (`…_bidpull_compcap`),
+  // which the `_compcap` test below reads as "comparables" — the last thing that set the number wins.
   if (typeof algoVersion === "string" && /_bidpull$/.test(algoVersion)) return "offers"
   if (isSalesCappedAlgo(algoVersion)) return true
   return typeof algoVersion === "string" && /_compcap(_bidfloor)?$/.test(algoVersion) ? "comparables" : false

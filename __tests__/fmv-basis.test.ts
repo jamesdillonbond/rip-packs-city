@@ -113,6 +113,9 @@ describe("fmvBasis", () => {
     expect(askCapFlag("1.8.3_histcap_bidfloor")).toBe(true)
     expect(askCapFlag("cold-tail-1.0_bidfloor")).toBe(false)
     expect(askCapFlag("bidpull_v2")).toBe(false)
+    // a never-sold Top Shot edition: pulled, THEN held to its comparable estimate → comparables
+    expect(askCapFlag("1.8.3_bidpull_compcap")).toBe("comparables")
+    expect(askCapFlag("topshot-gql-v1_compcap")).toBe("comparables")
   })
 
   it("isSalesCappedAlgo reads the same suffixes as get_edition_detail's basis_capped", () => {
