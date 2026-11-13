@@ -62,6 +62,7 @@ import {
   type LoadedRoom,
   type SideRow,
 } from "@/lib/trade-room/store"
+import { assertSealTx } from "@/lib/trade-room/seal-tx"
 import { chainUnavailable, checkReceivable, checkRoomPicks, EXECUTE_CLOSED_MESSAGE, executionOpen, planRoom, verifyRoom } from "@/lib/trade-room/execute"
 import { assertSignableMatchesRoom } from "@/lib/trade-room/relay-guard"
 import { pickItems, readChainPicker, readPickedRows, readPicker, withLiveLocks, TOP_SHOT_COLLECTION_ID, type PickerResult } from "@/lib/trade-room/holdings"
@@ -409,6 +410,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         if (landed.length === 0 || !landed.every((m) => m.held === true)) {
           throw new TradeRoomError("The chain doesn't show this trade completed yet. If the transaction just sealed, try again in a moment.", 409, "not_landed")
         }
+        // 2026-11-13: the tx id is read from the chain too — final, error-free, authorized by BOTH
+        // of this room's wallets — so the flowscan link on the room page is this trade, not any 64-hex id.
+        await assertSealTx(txId, loaded.sides.map((s) => s.signer).filter((x): x is string => !!x))
         loaded = await markSealed(supabaseAdmin, loaded, txId, landed)
         notifyLater(loaded, u.id, "sealed")
         return json({ room: await view(loaded, u.id), verified: true })

@@ -25,6 +25,8 @@ const chain = vi.hoisted(() => ({
   run: vi.fn(),
   // Top Shot marketplace listings of an account (2026-11-04)
   listed: vi.fn(),
+  // the sealed transaction id, read from the chain (2026-11-13)
+  sealTx: vi.fn(),
 }))
 
 vi.mock("@/lib/supabase", () => ({
@@ -43,6 +45,7 @@ vi.mock("@/lib/trade-room/topshot-listed", async (orig) => ({ ...(await orig<typ
 vi.mock("@/lib/giveaways/flow-script", async (orig) => ({ ...(await orig<typeof import("@/lib/giveaways/flow-script")>()), runFlowScript: chain.run }))
 vi.mock("@/lib/giveaways/linked-accounts", () => ({ discoverAccounts: chain.accounts }))
 vi.mock("@/lib/giveaways/claim-proof", async (orig) => ({ ...(await orig<typeof import("@/lib/giveaways/claim-proof")>()), verifyClaimProof: chain.proof }))
+vi.mock("@/lib/trade-room/seal-tx", () => ({ assertSealTx: chain.sealTx }))
 vi.mock("@/lib/swap-test/plan", async (orig) => ({ ...(await orig<typeof import("@/lib/swap-test/plan")>()), planSwap: chain.planSwap, verifySwap: chain.verifySwap }))
 // The counterparty notices are fire-and-forget; here they are recorded, never sent.
 const notices = vi.hoisted(() => ({ sent: [] as Array<{ actor: string; notice: string; code: string }> }))
@@ -399,12 +402,22 @@ describe("/api/trade-room — the routes", () => {
     expect(notYet.status).toBe(409)
     expect(await notYet.json()).toMatchObject({ code: "not_landed" })
     expect(mem.current.tables.trade_rooms[0].tx_id).toBeNull()
+    // (b2) every Moment moved, but the tx id is not this trade's → 409, nothing recorded (2026-11-13)
+    chain.verifySwap.mockResolvedValueOnce([{ id: "1", to: WB.source, held: true }])
+    chain.sealTx.mockRejectedValueOnce(new TradeRoomError("That transaction isn't this trade.", 409, "bad_tx"))
+    const wrongTx = await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, { action: "sealed", tx_id: txId }), ctx(code)))
+    expect(wrongTx.status).toBe(409)
+    expect(await wrongTx.json()).toMatchObject({ code: "bad_tx" })
+    expect(mem.current.tables.trade_rooms[0]).toMatchObject({ status: "signing", tx_id: null })
     // (c) the chain confirms every Moment moved → sealed, with the tx id
+    chain.sealTx.mockClear()
     chain.verifySwap.mockResolvedValueOnce([{ id: "1", to: WB.source, held: true }])
     const sealed = await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, { action: "sealed", tx_id: txId }), ctx(code)))
     expect(sealed.status).toBe(200)
     expect(await sealed.json()).toMatchObject({ verified: true })
     expect(mem.current.tables.trade_rooms[0]).toMatchObject({ status: "sealed", tx_id: txId })
+    // …and the id was checked against BOTH of the room's wallets
+    expect(chain.sealTx).toHaveBeenCalledWith(txId, expect.arrayContaining([WA.signer, WB.signer]))
     // (d) a second claim with another tx id never overwrites the first
     const again = await as(BOB, () => room.POST(post(`/api/trade-room/${code}`, { action: "sealed", tx_id: "e".repeat(64) }), ctx(code)))
     expect(again.status).toBe(200)
