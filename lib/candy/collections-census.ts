@@ -168,9 +168,11 @@ export const RETIRE_MAX_SHARE = 0.25
  * …UNLESS the walk provably saw the whole collection: it walked at least this share of every holdings row we
  * keep for the collection OUTSIDE the unseen editions. 2026-11-12, Absolute Batman (2024-) #2: a 718-card walk,
  * exactly the 718 rows on its other editions, and 267 rows (178 wallets, last seen 11-08) on the fabricated
- * `…:absolute-batman-2024-2` key — cards burnt for DC Merge Fuel. The share cap refused a correct retire; a walk
- * that accounts for everything else we hold is complete, so what it did not see is gone. A short walk (DAS
- * returning part of a collection) fails this test and the cap still applies.
+ * `…:absolute-batman-2024-2` key. The share cap refused a correct retire; a walk that accounts for everything
+ * else we hold is complete, so rows it resolved to no card are not card holdings. A short walk (DAS returning
+ * part of a collection) fails this test and the cap still applies. ⚠ CORRECTED 7:30 PM PT: those 267 were NOT
+ * cards DAS stopped returning — the walk fetched all 267 (hydrated_fetched 267) and classified them as packs or
+ * burnt; NON-CARD retire (below) now removes such rows by moment id on that per-asset evidence, first.
  */
 export const RETIRE_COMPLETE_WALK_SHARE = 0.98
 
