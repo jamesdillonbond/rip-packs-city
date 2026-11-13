@@ -227,6 +227,37 @@ describe("giveaways/store — sealDrop", () => {
   const dbWithPool = (p: PoolRow[], rpcResult: Result = { data: null, error: null }) =>
     fakeDb(() => ({ data: p, error: null }), () => rpcResult)
 
+  // 2026-11-13 (review): one Moment must not be promised by two live drops.
+  describe("a Moment already promised by another live drop", () => {
+    const OTHER = "22222222-2222-2222-2222-222222222222"
+    const handler = (otherStatus: string, delivered: string | null, failRead = false) => (q: Q): Result => {
+      if (q.table === "giveaway_drops") return { data: [{ id: OTHER, status: otherStatus }], error: null }
+      if (q.table === "giveaway_pack_moments" && "moment_id" in q.eq) {
+        if (failRead) return { data: null, error: { message: "statement timeout" } }
+        return { data: [{ moment_id: "2", drop_id: OTHER, delivered_at: delivered }, { moment_id: "3", drop_id: DROP.id, delivered_at: null }], error: null }
+      }
+      return { data: pool, error: null }
+    }
+    it("refuses when it sits undelivered in an OPEN or SEALED drop, and seals nothing", async () => {
+      for (const status of ["open", "sealed"]) {
+        const f = fakeDb(handler(status, null))
+        await expect(sealDrop(f.db, DROP, allHeld)).rejects.toMatchObject({ code: "promised_elsewhere", message: expect.stringContaining("2") })
+        expect(f.rpcs).toHaveLength(0)
+      }
+    })
+    it("a failed check refuses too (we can't say it isn't promised)", async () => {
+      const f = fakeDb(handler("open", null, true))
+      await expect(sealDrop(f.db, DROP, allHeld)).rejects.toMatchObject({ code: "unavailable" })
+      expect(f.rpcs).toHaveLength(0)
+    })
+    it("controls: a DRAFT or CLOSED other drop, or an already-delivered row, does not block", async () => {
+      for (const [status, delivered] of [["draft", null], ["closed", null], ["open", "2026-11-01T00:00:00Z"]] as const) {
+        const f = fakeDb(handler(status, delivered))
+        await expect(sealDrop(f.db, DROP, allHeld)).resolves.toBeTruthy()
+      }
+    })
+  })
+
   it("seals: on-chain check, then one atomic RPC carrying an assignment that matches its hash", async () => {
     const f = dbWithPool(pool)
     const read = vi.fn(allHeld)

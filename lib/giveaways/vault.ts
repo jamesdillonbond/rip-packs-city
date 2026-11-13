@@ -254,7 +254,10 @@ export async function sendFromVault(
       }
     }
   }
-  if (opts.returnUnclaimed && report.sent > 0) await markReturned(db, drop, deps)
+  // 2026-11-13 (review): on `reserved`, not `sent` — a return whose seal was not read in time (unknown) skipped
+  // this, and a later retry fails simulation (the vault no longer holds it), so `source_wallet` pointed at the vault
+  // forever. markReturned reads the chain itself, so running it on an unconfirmed send is safe.
+  if (opts.returnUnclaimed && report.reserved > 0) await markReturned(db, drop, deps)
   if (report.reserved > 0 && !opts.returnUnclaimed) {
     // stamp what arrived (and leave the rest for the lock window to retry)
     await verifyDeliveries(db, drop).catch((e) => console.log(`[giveaway-vault] verify after send failed: ${e instanceof Error ? e.message : String(e)}`))

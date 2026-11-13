@@ -344,6 +344,24 @@ export async function createDraft(db: SupabaseClient, input: DraftInput): Promis
   return String(data)
 }
 
+/** Moments of `ids` that sit undelivered in a SEALED or OPEN drop other than `dropId`. Throws on a failed read. */
+async function momentsPromisedElsewhere(db: SupabaseClient, dropId: string, ids: string[]): Promise<string[]> {
+  if (!ids.length) return []
+  const { data: rows, error } = await db
+    .from("giveaway_pack_moments")
+    .select("moment_id, drop_id, delivered_at")
+    .in("moment_id", ids)
+  if (error) throw new GiveawayError("Couldn't check whether these Moments are promised by another drop; nothing was sealed. Try again.", 503, "unavailable")
+  const other = ((rows ?? []) as Array<{ moment_id: string; drop_id: string; delivered_at: string | null }>)
+    .filter((r) => r.drop_id !== dropId && !r.delivered_at)
+  const dropIds = [...new Set(other.map((r) => r.drop_id).filter(Boolean))]
+  if (!dropIds.length) return []
+  const { data: drops, error: dErr } = await db.from("giveaway_drops").select("id, status").in("id", dropIds)
+  if (dErr) throw new GiveawayError("Couldn't check whether these Moments are promised by another drop; nothing was sealed. Try again.", 503, "unavailable")
+  const live = new Set(((drops ?? []) as Array<{ id: string; status: string }>).filter((d) => d.status === "sealed" || d.status === "open").map((d) => d.id))
+  return [...new Set(other.filter((r) => live.has(r.drop_id)).map((r) => r.moment_id))].sort()
+}
+
 export interface SealCheck {
   unpriced: string[]
   not_held: string[]
@@ -388,6 +406,14 @@ export async function sealDrop(
   }
   if (check.locked.length) {
     throw new GiveawayError(`Locked on chain (a locked Moment can't be gifted): ${check.locked.join(", ")}`, 409, "locked")
+  }
+  // 2026-11-13 (review): nothing stopped one Moment from being promised by TWO live drops — the pool key is
+  // (drop_id, moment_id) and the checks above only ask whether the sponsor holds it. Whichever drop's winner claimed
+  // first got it and the other winner's pack came up short for good. Refuse a Moment still undelivered in another
+  // SEALED or OPEN drop. A failed read refuses too: we can't say it isn't promised elsewhere.
+  const promised = await momentsPromisedElsewhere(db, drop.id, ids)
+  if (promised.length) {
+    throw new GiveawayError(`Already promised by another live drop (sealed or open, not yet delivered): ${promised.join(", ")}`, 409, "promised_elsewhere")
   }
   const sealed = sealPoolDealt(
     pool.map((p) => ({ moment_id: p.moment_id, fmv_usd: p.fmv_usd })),

@@ -225,6 +225,23 @@ describe("giveaways/vault — sending", () => {
     ])
   })
 
+  // 2026-11-13 (review): an UNCONFIRMED return (seal not read in time) skipped markReturned, and a retry fails at
+  // simulation (the vault no longer holds it) — so the row pointed at the vault forever. It reads the chain itself.
+  it("a return whose seal wasn't read in time still points each Moment home once the chain shows it there", async () => {
+    const pool = [pm("1"), pm("2", { funded_from: "0x00000000000000bb" })]
+    const f = fakeDb({ pool, rpc: () => ({ data: [{ moment_id: "1", recipient: "0x00000000000000aa" }, { moment_id: "2", recipient: "0x00000000000000bb" }], error: null }) })
+    const read = vi.fn(async (_a: string, ids: string[]) => Object.fromEntries(ids.map((id) => [id, { held: true, locked: false }])))
+    const r = await sendFromVault(f.db, { ...DROP, status: "closed" }, { returnUnclaimed: true }, {
+      env: ENV, run: async () => boolArr(2), read,
+      submit: async () => {
+        throw new VaultSealUnknownError("e".repeat(64))
+      },
+    })
+    expect(r.sent).toBe(0)
+    const homes = f.updates.filter((u) => (u.payload as { source_wallet?: string }).source_wallet)
+    expect(homes.map((u) => (u.payload as { source_wallet: string }).source_wallet).sort()).toEqual(["0x00000000000000aa", "0x00000000000000bb"])
+  })
+
   it("markReturned leaves a Moment that hasn't arrived home pointed at the vault", async () => {
     const f = fakeDb({ pool: [pm("1")] })
     expect(await markReturned(f.db, DROP, { read: async () => ({ "1": { held: false, locked: null } }) })).toEqual({ returned: 0 })
