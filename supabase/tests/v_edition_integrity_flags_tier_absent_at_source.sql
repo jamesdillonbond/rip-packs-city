@@ -16,10 +16,13 @@
 BEGIN;
 
 CREATE TABLE public.collections (id uuid PRIMARY KEY, slug text);
-CREATE TABLE public.editions (collection_id uuid, external_id varchar(100), name text, tier text, circulation_count int,
+CREATE TABLE public.ufc_chain_set_editions (edition_id uuid, set_id int);
+CREATE TABLE public.ufc_chain_set_metadata (set_id int, tier text);
+CREATE TABLE public.editions (id uuid DEFAULT gen_random_uuid(), collection_id uuid, external_id varchar(100), name text, tier text, circulation_count int,
   thumbnail_url text, set_id_onchain text, play_id_onchain text, rarity_label text);
 INSERT INTO public.collections VALUES
   ('209ade70-32c5-4470-bc7c-4793d660f713', 'candy_mlb'),
+  ('9b4824a8-736d-4a96-b450-8dcc0c46b023', 'ufc_strike'),
   ('dee28451-5d62-409e-a1ad-a83f763ac070', 'nfl_all_day');
 
 -- >>> BEGIN verbatim v_edition_integrity_flags (keep identical to the migration) >>>
@@ -36,7 +39,7 @@ CREATE OR REPLACE VIEW public.v_edition_integrity_flags WITH (security_invoker =
             ((e.collection_id = '209ade70-32c5-4470-bc7c-4793d660f713'::uuid)
              AND (e.thumbnail_url IS NOT NULL)
              AND (e.circulation_count IS NULL)) AS circulation_absent_at_source,
-            ((e.collection_id = '209ade70-32c5-4470-bc7c-4793d660f713'::uuid)
+            (((e.collection_id = '209ade70-32c5-4470-bc7c-4793d660f713'::uuid)
              AND (e.thumbnail_url IS NOT NULL)
              AND (e.tier IS NULL)
              AND (position(':' in (e.external_id)::text) > 0)
@@ -47,7 +50,13 @@ CREATE OR REPLACE VIEW public.v_edition_integrity_flags WITH (security_invoker =
                   OR (right((e.external_id)::text, length(s.slug) + 8) = (':' || s.slug || '-unique'))
                   OR (right((e.external_id)::text, length(s.slug) + 9) = (':' || s.slug || '-rainbow'))
                   OR ((e.rarity_label IS NOT NULL)
-                      AND (lower(e.rarity_label) <> ALL (ARRAY['core'::text, 'common'::text, 'uncommon'::text, 'rare'::text, 'epic'::text, 'titan'::text, 'legendary'::text]))))) AS tier_absent_at_source
+                      AND (lower(e.rarity_label) <> ALL (ARRAY['core'::text, 'common'::text, 'uncommon'::text, 'rare'::text, 'epic'::text, 'titan'::text, 'legendary'::text])))))
+             OR ((e.collection_id = '9b4824a8-736d-4a96-b450-8dcc0c46b023'::uuid)
+                 AND (e.tier IS NULL)
+                 AND (EXISTS ( SELECT 1
+                        FROM (ufc_chain_set_editions ce
+                          JOIN ufc_chain_set_metadata cm ON ((cm.set_id = ce.set_id)))
+                       WHERE ((ce.edition_id = e.id) AND (cm.tier IS NULL)))))) AS tier_absent_at_source
            FROM ((editions e
              JOIN collections c ON ((c.id = e.collection_id)))
              CROSS JOIN LATERAL ( SELECT regexp_replace(regexp_replace(regexp_replace(regexp_replace(lower(COALESCE(e.name, ''::text)), '\s+'::text, '-'::text, 'g'::text), '[^a-z0-9:_-]'::text, ''::text, 'g'::text), '-+'::text, '-'::text, 'g'::text), '^-+|-+$'::text, ''::text, 'g'::text) AS slug) s)
@@ -66,7 +75,7 @@ CREATE OR REPLACE VIEW public.v_edition_integrity_flags WITH (security_invoker =
   ORDER BY collection;
 -- <<< END verbatim v_edition_integrity_flags <<<
 
-INSERT INTO public.editions VALUES
+INSERT INTO public.editions (collection_id, external_id, name, tier, circulation_count, thumbnail_url, set_id_onchain, play_id_onchain) VALUES
   -- hydrated, no Rarity in source: key = prefix:slug(name) → NOT a defect, counted apart
   ('209ade70-32c5-4470-bc7c-4793d660f713', 'c:2022-all-star-tricons:2022-tricon-mantiply-musgrove', '2022 Tricon Mantiply Musgrove', NULL, 1, 'https://arweave.net/a', NULL, NULL),
   -- hydrated, accents and punctuation in the name slug the same way the normalizer does
@@ -103,9 +112,21 @@ INSERT INTO public.editions (collection_id, external_id, name, tier, circulation
   -- non-Candy edition with a NULL circulation and a thumbnail → still a defect (never absent)
   ('dee28451-5d62-409e-a1ad-a83f763ac070', 'x:travis-kelce', 'Travis Kelce', 'COMMON', NULL, 'https://x/z', '1', '3', 'Gold');
 
+-- 2026-11-12: UFC catchphrase editions — chain set carries no TIER → absent at source; a chain set WITH a
+-- tier, or an unmapped edition, stays a defect.
+INSERT INTO public.editions (id, collection_id, external_id, name, tier, circulation_count, thumbnail_url, set_id_onchain, play_id_onchain) VALUES
+  ('00000000-0000-0000-0000-000000000001', '9b4824a8-736d-4a96-b450-8dcc0c46b023', 'SHUT-UP-20830', 'Shut Up', NULL, 20830, 'https://ipfs.io/a', '1', '1'),
+  ('00000000-0000-0000-0000-000000000002', '9b4824a8-736d-4a96-b450-8dcc0c46b023', 'X-UFC-1-KO-99', 'X', NULL, 99, 'https://ipfs.io/b', '1', '2'),
+  ('00000000-0000-0000-0000-000000000003', '9b4824a8-736d-4a96-b450-8dcc0c46b023', 'Y-UNMAPPED-10', 'Y', NULL, 10, 'https://ipfs.io/c', '1', '3');
+INSERT INTO public.ufc_chain_set_editions VALUES ('00000000-0000-0000-0000-000000000001', 1), ('00000000-0000-0000-0000-000000000002', 2);
+INSERT INTO public.ufc_chain_set_metadata VALUES (1, NULL), (2, 'Champion');
+
 DO $$
 DECLARE r record;
 BEGIN
+  SELECT * INTO r FROM public.v_edition_integrity_flags WHERE collection = 'ufc_strike';
+  PERFORM _assert_eq(r.canonical_tier_absent_at_source::text, '1', 'a UFC edition whose chain set carries no TIER is absent at source');
+  PERFORM _assert_eq(r.canonical_missing_tier::text, '2', '⚠ a NULL tier whose chain set HAS a tier, and an unmapped one, stay defects');
   SELECT * INTO r FROM public.v_edition_integrity_flags WHERE collection = 'candy_mlb';
   PERFORM _assert_eq(r.canonical_tier_absent_at_source::text, '7', 'seven hydrated editions with no tier at source are counted apart (incl. the 1-of-1 asset-id key, the -unique / -rainbow labels, a native Gold label, and the sealed item)');
   PERFORM _assert_eq(r.canonical_missing_tier::text, '6', '⚠ NULL-tier -titan editions (incl. one carrying a Titan rarity_label), the rarity-but-NULL-tier edition and both FABRICATED editions stay defects');

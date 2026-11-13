@@ -67,6 +67,8 @@ async function handle(req: NextRequest) {
     editions_filled: result.editions_filled,
     // 2026-11-12: holdings retired from label-less editions after a clean complete walk (#246 residual)
     wmc_retired: result.wmc_retired,
+    // 2026-11-12: holdings rows for assets the walk saw as packs / burnt
+    wmc_noncard_retired: result.wmc_noncard_retired,
     hydrate_fail_reasons: result.hydrate_fail_reasons,
     hydrate_fetches: result.hydrate_fetches,
     hydrate_unverified_groups: result.hydrate_unverified_groups,

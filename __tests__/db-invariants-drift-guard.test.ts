@@ -15,6 +15,12 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-11-12. Census deletes holdings rows for assets it SAW as packs/burnt: Candy-scoped, by moment id.
+    fn: "candy_retire_noncard_wmc",
+    test: "supabase/tests/candy_retire_noncard_wmc.sql",
+    migration: "supabase/migrations/20261113032216_audit_20261112_candy_retire_noncard_wmc.sql",
+  },
+  {
     // Added 2026-11-12. The census RETIRE delete: Candy-only, label-less keys only (re-checked server-side), refused over the cap.
     fn: "candy_retire_unseen_labelless_wmc",
     test: "supabase/tests/candy_retire_unseen_labelless_wmc.sql",

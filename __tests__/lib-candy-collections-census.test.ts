@@ -66,6 +66,12 @@ function db() {
     rpc: async (name: string, args: any) => {
       state.rpcs.push(name); state.rpcArgs.push(args)
       if (name === "candy_repoint_listings_to_card_edition" && (state as any).listingsError) return { data: null, error: (state as any).listingsError }
+      if (name === "candy_retire_noncard_wmc") {
+        const gone = state.existingWmc.filter((r) => args.p_moment_ids.includes(r.moment_id))
+        ;(state as any).deleted.push(...gone)
+        state.existingWmc = state.existingWmc.filter((r) => !args.p_moment_ids.includes(r.moment_id))
+        return { data: gone.length, error: null }
+      }
       if (name === "candy_retire_unseen_labelless_wmc") {
         // mirrors the SQL function: still-thumbnail-less keys only; refuse (delete nothing) over the cap
         const live = (args.p_edition_keys as string[]).filter((k) => state.existingEds.some((e) => e.external_id === k && e.thumbnail_url == null))
@@ -573,5 +579,28 @@ describe("runCollectionsCensus", () => {
     expect(r.wmc_retired).toBe(0)
     expect((state as any).deleted).toHaveLength(0)
     expect(r.collections[0].retire_note).toMatch(/no cards/)
+  })
+
+  // 2026-11-12, Overdrive Rewards: 24 reward PACKS stored as cards on 11-08; every walk hydrated them and wrote 0 cards.
+  it("retires the holdings rows of assets the walk SAW as packs or burnt — and only those", async () => {
+    state.queue = [{ address: "A", name: "Overdrive", edition_prefix: "c:od", census_page: 1, census_walk_started_at: null }]
+    state.pages.A = [[
+      { id: "pk1", owner: "W1", ed: "a", kind: "pack" },
+      { id: "bt1", owner: "W2", ed: "a", kind: "burnt" },
+      { id: "pk2", owner: "W3", ed: "a", kind: "pack" }, // no row held → nothing to retire
+      { id: "c1", owner: "W4", ed: "a" },
+      { id: "u1", owner: "W5", ed: "a", kind: "pack", bare: true }, // hydration FAILS → never classified
+    ]]
+    state.hydrate = { hydrated: [], failed: [{ id: "u1", reason: "404" }] }
+    state.existingWmc = [
+      { moment_id: "pk1", wallet_address: "W1", edition_key: "c:od:reward-pack", serial_number: null },
+      { moment_id: "bt1", wallet_address: "W2", edition_key: "ed-a", serial_number: 1 },
+      { moment_id: "c1", wallet_address: "W4", edition_key: "ed-a", serial_number: 2 },
+      { moment_id: "u1", wallet_address: "W5", edition_key: "c:od:reward-pack", serial_number: null },
+    ]
+    const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+    expect(r.wmc_noncard_retired).toBe(2)
+    expect((state as any).deleted.map((x: any) => x.moment_id).sort()).toEqual(["bt1", "pk1"])
+    expect(state.existingWmc.map((x) => x.moment_id)).toEqual(expect.arrayContaining(["c1", "u1"]))
   })
 })
