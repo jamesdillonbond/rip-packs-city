@@ -1447,7 +1447,7 @@ export default async function EditionPage(
                   </div>
                   <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-primary)" }}>
                     {s.fmv_usd != null ? fmtUsd(s.fmv_usd) : <span style={{ color: "var(--rpc-text-muted)" }}>no FMV</span>}
-                    {s.fmv_usd != null && (() => { const b = fmvBasis(s.confidence, siblingCapped.get(s.external_id) === true); return b ? <span title={b.title} style={{ color: "var(--rpc-text-muted)", marginLeft: 4 }}>{b.label}</span> : null })()}
+                    {s.fmv_usd != null && (() => { const b = fmvBasis(s.confidence, siblingCapped.get(s.external_id) ?? null); return b ? <span title={b.title} style={{ color: "var(--rpc-text-muted)", marginLeft: 4 }}>{b.label}</span> : null })()}
                   </div>
                   <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-secondary)", marginTop: 2 }}>
                     {s.circulation_count != null ? `/${fmtCount(s.circulation_count)} mint` : "mint —"}

@@ -6,10 +6,11 @@
 -- not: `allday_open_offers` holds the open book only, so "does a thin All Day edition also sell at its standing offer?"
 -- cannot be answered from history. This keeps one row per edition per PT day (best open bid, number of offers) so the
 -- same backtest can be run on All Day after ~2 weeks. It changes no price.
--- Written by capture_allday_best_offers(); a re-run the same day refreshes that day's rows. ⚠ NOT SCHEDULED YET: the
--- MCP refused cron.schedule from this session. Until Trevor runs
+-- Written by capture_allday_best_offers(); a re-run the same day refreshes that day's rows. Scheduled 2026-11-12 6:58 PM PT in the
+-- dashboard SQL editor (Trevor: "You run it in chrome") after the MCP refused cron.schedule: pg_cron jobid 871,
 --   select cron.schedule('rpc-capture-allday-best-offers', '20 13 * * *', $c$select public.capture_allday_best_offers()$c$);
--- the table holds only hand-run days (first: 2026-11-12, 2,198 editions). ~2,200 rows a day (under 1M a year); no retention job yet.
+-- (5:20 AM PT daily) + a pipeline_cadence_watchlist row 'allday-best-offer-daily' (1,560 / 3,000 min, info).
+-- First day 2026-11-12 was hand-run (2,198 editions).
 -- anon-exec: capture_allday_best_offers is NOT anon-executable (EXECUTE revoked from public, anon, authenticated).
 -- Revert: none needed (nothing reads it); unschedule rpc-capture-allday-best-offers if it was scheduled.
 create table if not exists public.allday_best_offer_daily (

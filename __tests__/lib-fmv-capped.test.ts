@@ -74,6 +74,10 @@ describe("edition page parallel ladder — wired to the shared rule", () => {
   const src = stripComments(readFileSync("app/(collections)/[collection]/edition/[slug]/page.tsx", "utf8"))
   it("bounds the read and passes the flag to fmvBasis on the ladder cards", () => {
     expect(src).toMatch(/withBoardBudget\(\s*readCappedByExternalId\(/)
-    expect(src).toContain("fmvBasis(s.confidence, siblingCapped.get(s.external_id) === true)")
+    // The FLAG, not a boolean: `=== true` (pinned here until 2026-11-12) collapsed "comparables" and
+    // "offers" to the plain ask marker, so the ladder said "from asks" beside a price the hero card
+    // on the same page called "between offer and ask".
+    expect(src).toContain("fmvBasis(s.confidence, siblingCapped.get(s.external_id) ?? null)")
+    expect(src).not.toMatch(/fmvBasis\([^)]*siblingCapped\.get\([^)]*\)\s*===\s*true/)
   })
 })
