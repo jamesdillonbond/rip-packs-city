@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { accountTopShotWallet } from "@/lib/giveaways/account-wallet"
+import { accountTopShotWallet, walletVerifiedElsewhere } from "@/lib/giveaways/account-wallet"
 
 function db(result: { data: unknown; error: { message: string } | null }) {
   const calls: unknown[][] = []
@@ -57,3 +57,30 @@ describe("accountTopShotWallet", () => {
     await expect(accountTopShotWallet(db({ data: null, error: { message: "timeout" } }).api, "u1", "col")).rejects.toThrow(/timeout/)
   })
 })
+
+// 2026-11-13: the typed-username claim path refuses a wallet VERIFIED on another account.
+describe("walletVerifiedElsewhere", () => {
+  function reader(rows: unknown[] | null, error: { message: string } | null = null) {
+    const calls: Record<string, unknown[]> = {}
+    const q = {
+      select: (c: string) => ((calls.select = [c]), q),
+      in: (c: string, v: string[]) => ((calls.in = [c, v]), q),
+      not: (c: string, op: string, v: null) => ((calls.not = [c, op, v]), q),
+      neq: (c: string, v: string) => ((calls.neq = [c, v]), q),
+      limit: async () => ({ data: rows, error }),
+    }
+    return { db: { from: () => q }, calls }
+  }
+  it("true only for a verified row on another account, matched with and without 0x", async () => {
+    const r = reader([{ user_id: "other" }])
+    expect(await walletVerifiedElsewhere(r.db, "me", "0x00000000000000BB")).toBe(true)
+    expect(r.calls.in).toEqual(["wallet_addr", ["0x00000000000000bb", "00000000000000bb"]])
+    expect(r.calls.not).toEqual(["verified_at", "is", null])
+    expect(r.calls.neq).toEqual(["user_id", "me"])
+    expect(await walletVerifiedElsewhere(reader([]).db, "me", "0x00000000000000bb")).toBe(false)
+  })
+  it("a failed read throws", async () => {
+    await expect(walletVerifiedElsewhere(reader(null, { message: "timeout" }).db, "me", "0x00000000000000bb")).rejects.toThrow(/verified read failed/)
+  })
+})
+

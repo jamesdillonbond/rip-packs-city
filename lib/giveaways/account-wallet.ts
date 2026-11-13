@@ -44,3 +44,34 @@ export async function accountTopShotWallet(db: SavedWalletsReader, userId: strin
   const [[address, username]] = [...byAddress.entries()]
   return { wallet: { address, username } }
 }
+
+/**
+ * 2026-11-13 (review): the username path names a wallet by a TYPED username, so a signed-in account
+ * with no saved wallet could claim under someone else's Top Shot username — the pack then goes to that
+ * wallet and its real owner's own claim answers "that account already claimed". Refuse the typed path
+ * when the wallet is VERIFIED (proved, `verified_at`) on ANOTHER RPC account: its owner claims from there.
+ * Only a verified row counts — anyone can save an address unproven, and that must not block the owner.
+ * A failed read throws (the caller answers "try again", never "go ahead").
+ */
+export async function walletVerifiedElsewhere(db: unknown, userId: string, address: string): Promise<boolean> {
+  const bare = address.toLowerCase().replace(/^0x/, "")
+  const { data, error } = await (db as {
+    from(t: "saved_wallets"): {
+      select(c: string): {
+        in(col: string, v: string[]): {
+          not(col: string, op: string, v: null): {
+            neq(col: string, v: string): { limit(n: number): PromiseLike<{ data: unknown; error: { message: string } | null }> }
+          }
+        }
+      }
+    }
+  })
+    .from("saved_wallets")
+    .select("user_id")
+    .in("wallet_addr", [`0x${bare}`, bare])
+    .not("verified_at", "is", null)
+    .neq("user_id", userId)
+    .limit(1)
+  if (error) throw new Error(`saved_wallets verified read failed: ${error.message}`)
+  return Array.isArray(data) && data.length > 0
+}

@@ -41,10 +41,13 @@ vi.mock("next/server", async (orig) => {
   const real = await orig<typeof import("next/server")>()
   return { ...real, after: (fn: () => Promise<void>) => void afterFns.push(fn) }
 })
-const { acctWallet } = vi.hoisted(() => ({ acctWallet: vi.fn() }))
+const { acctWallet, verifiedElsewhere } = vi.hoisted(() => ({ acctWallet: vi.fn(), verifiedElsewhere: vi.fn() }))
 const { poolExtras } = vi.hoisted(() => ({ poolExtras: vi.fn() }))
 vi.mock("@/lib/giveaways/pool-extras", () => ({ readPoolExtras: (...a: unknown[]) => poolExtras(...a) }))
-vi.mock("@/lib/giveaways/account-wallet", () => ({ accountTopShotWallet: (...a: unknown[]) => acctWallet(...a) }))
+vi.mock("@/lib/giveaways/account-wallet", () => ({
+  accountTopShotWallet: (...a: unknown[]) => acctWallet(...a),
+  walletVerifiedElsewhere: (...a: unknown[]) => verifiedElsewhere(...a),
+}))
 // the drop's challenge and the viewer's eligibility (2026-11-10); default: a drop open to everyone
 const { dropChallenge, completed } = vi.hoisted(() => ({ dropChallenge: vi.fn(), completed: vi.fn() }))
 vi.mock("@/lib/giveaways/challenge-reward", () => ({
@@ -159,6 +162,25 @@ describe("POST /api/giveaways/[slug] (claim)", () => {
     getCurrentUser.mockResolvedValue({ id: "u1" })
     resolve.mockResolvedValue({ found: true, walletAddress: "0x00000000000000BB", username: "Alice" })
     store.claimPack.mockResolvedValue({ outcome: "claimed", pack_no: 2 })
+    verifiedElsewhere.mockReset()
+    verifiedElsewhere.mockResolvedValue(false)
+  })
+
+  // 2026-11-13 (review): a typed username must not pre-empt the owner of a wallet VERIFIED on another account.
+  it("refuses a username whose wallet is verified on another RPC account, and claims nothing", async () => {
+    verifiedElsewhere.mockResolvedValueOnce(true)
+    const res = await publicRoute.POST(post(url, { username: "alice", agree: true }), slugCtx("test-drop"))
+    expect(res.status).toBe(409)
+    expect(await res.json()).toMatchObject({ code: "verified_elsewhere" })
+    expect(store.claimPack).not.toHaveBeenCalled()
+    expect(verifiedElsewhere).toHaveBeenCalledWith({}, "u1", "0x00000000000000bb")
+  })
+
+  it("a failed verified-wallet read refuses too (never 'go ahead')", async () => {
+    verifiedElsewhere.mockRejectedValueOnce(new Error("saved_wallets verified read failed: timeout"))
+    const res = await publicRoute.POST(post(url, { username: "alice", agree: true }), slugCtx("test-drop"))
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    expect(store.claimPack).not.toHaveBeenCalled()
   })
 
   it("401 when signed out, before anything else is read", async () => {

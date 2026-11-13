@@ -36,7 +36,7 @@ import { discoverAccounts } from "@/lib/giveaways/linked-accounts"
 import { issueClaimNonce, verifyClaimProof, type ClaimProofInput } from "@/lib/giveaways/claim-proof"
 import { instantDeliveryEnabled, sendFromVault } from "@/lib/giveaways/vault"
 import type { DropRow } from "@/lib/giveaways/store"
-import { accountTopShotWallet, type AccountWallet } from "@/lib/giveaways/account-wallet"
+import { accountTopShotWallet, walletVerifiedElsewhere, type AccountWallet } from "@/lib/giveaways/account-wallet"
 import { readPoolExtras } from "@/lib/giveaways/pool-extras"
 import { challengeOfDrop, hasCompletedChallenge } from "@/lib/giveaways/challenge-reward"
 
@@ -252,6 +252,13 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const recipient = resolved.walletAddress.toLowerCase()
     if (!/^0x[0-9a-f]{16}$/.test(recipient)) {
       return NextResponse.json({ error: "That username doesn't map to a Top Shot wallet we can deliver to.", code: "bad_request" }, { status: 400, headers: NO_STORE })
+    }
+    // 2026-11-13: a typed username must not pre-empt the owner of a wallet verified on another account
+    if (await walletVerifiedElsewhere(supabaseAdmin, user.id, recipient)) {
+      return NextResponse.json(
+        { error: "That Top Shot account is verified on another Rip Packs City account, so its owner claims from there. Enter your own Top Shot username.", code: "verified_elsewhere" },
+        { status: 409, headers: NO_STORE },
+      )
     }
     const { outcome, pack_no } = await claimPack(supabaseAdmin, drop.id, user.id, resolved.username, recipient)
     if (outcome === "claimed") sendPackSoon(drop, pack_no)
