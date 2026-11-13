@@ -123,6 +123,7 @@ All present and live (2026-07-16): `editions`, `pinnacle_editions`, `wallet_mome
 - `editions` has **36 columns** (verified live 2026-08-22; 32 on 2026-07-16 — `description` landed 08-12 and three player-bio columns 08-14) — matches CLAUDE.md's "editions
   table (32 columns)" block, including `jersey_number`, `subedition_id`, `subedition_name`
   and the denormalized `player_name`/`set_name`/`team_name`/`circulation_count`.
+- 📏 **2026-11-12 (Claude Code cloud; a column LIST read live, not this file's regeneration SQL):** `editions` read **37** columns before `20261112161513` (it already included `autographed_at`, past the 36 stamped above) and **38** after it added `rarity_label` (the collection's own rarity name; Candy only so far — chain-strategy.md, Candy). `candy_collections` gained `census_walk_tracked` / `census_walk_labelless_seen` / `census_walk_skipped` / `census_walk_cards` (`20261113011407`, the census's cross-run walk record). Re-derive before quoting either count.
 - `sales` is year-partitioned: **`sales_2020` … `sales_2027`** (8 partitions; `sales_2027`
   is pre-created for next year). `sales_serial_backfill_failures` is a **separate** table
   (a failure log), not a `sales` partition despite the `sales_` name prefix.
