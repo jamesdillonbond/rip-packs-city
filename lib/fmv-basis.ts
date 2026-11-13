@@ -128,6 +128,32 @@ export function askCapFlag(algoVersion: string | null | undefined): FmvCapFlag {
   return typeof algoVersion === "string" && /_compcap(_bidfloor)?$/.test(algoVersion) ? "comparables" : false
 }
 
+/**
+ * Plain-language notes for the rules that moved a price AFTER the model computed it, read from the
+ * row's `algo_version` suffixes in the order they were applied (2026-11-12). For surfaces that explain
+ * a price in words (the concierge's explain_fmv). Empty for an untouched row or an unknown value.
+ * Names no confidence tier and no internal suffix.
+ */
+const PRICE_RULE_NOTES: Array<[RegExp, string]> = [
+  [/_(salescap|histcap)(_|$)/, "held to what this edition has actually sold for, because the lowest ask was higher"],
+  [/_stalecap(_|$)/, "held to this edition's last sale, because it has not sold recently"],
+  [/_askcap(_|$)/, "held to the lowest live ask, because the sales-based price was above it"],
+  [/_bidfloor(_|$)/, "lifted to the best open offer, because that offer was above the price"],
+  [/_bidpull(_|$)/, "moved between the lowest ask and the best open offer, weighted toward the offer, because thinly traded editions mostly sell at the offer"],
+  [/_compcap(_|$)/, "held to an estimate from similar editions in the same set, because the ask was above what those sell for"],
+  [/_haircut(_|$)/, "discounted from the ask because very few sales back it"],
+]
+
+export function priceRuleNotes(algoVersion: string | null | undefined): string[] {
+  if (typeof algoVersion !== "string" || !algoVersion.includes("_")) return []
+  // order of application = order of appearance in the suffix chain
+  return PRICE_RULE_NOTES
+    .map(([re, note]) => ({ at: algoVersion.search(re), note }))
+    .filter((x) => x.at >= 0)
+    .sort((a, b) => a.at - b.at)
+    .map((x) => x.note)
+}
+
 /** True when this FMV is ASK_ONLY (its floor field is an ask, not a sale) — capped or not. */
 export function isAskDerivedFmv(confidence: string | null | undefined): boolean {
   return fmvBasis(confidence) != null

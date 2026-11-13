@@ -15,7 +15,7 @@
 // "improve" this helper is to start emitting the enum.
 
 import { describe, it, expect } from "vitest"
-import { fmvBasis, isAskDerivedFmv, isSalesCappedAlgo, askCapFlag } from "@/lib/fmv-basis"
+import { fmvBasis, isAskDerivedFmv, isSalesCappedAlgo, askCapFlag, priceRuleNotes } from "@/lib/fmv-basis"
 
 describe("fmvBasis", () => {
   it("returns the ask-derived marker for ASK_ONLY, case- and whitespace-insensitively", () => {
@@ -130,6 +130,26 @@ describe("fmvBasis", () => {
     expect(isSalesCappedAlgo("1.8.3_salescap_haircut")).toBe(false)
     expect(isSalesCappedAlgo(null)).toBe(false)
     expect(isSalesCappedAlgo(undefined)).toBe(false)
+  })
+
+  it("priceRuleNotes: plain words for each rule, in the order applied, and nothing internal", () => {
+    expect(priceRuleNotes("1.8.3")).toEqual([])
+    expect(priceRuleNotes(null)).toEqual([])
+    expect(priceRuleNotes("thin-sales-guard-v3")).toEqual([])
+    const pulled = priceRuleNotes("cold-tail-1.0_histcap_bidpull")
+    expect(pulled).toHaveLength(2)
+    expect(pulled[0]).toMatch(/actually sold for/)
+    expect(pulled[1]).toMatch(/best open offer/)
+    const unsold = priceRuleNotes("topshot-gql-v1_bidpull_compcap")
+    expect(unsold.map((n) => /similar editions/.test(n))).toEqual([false, true])
+    expect(priceRuleNotes("1.8.3_haircut_bidfloor").join(" | ")).toMatch(/discounted.*\|.*lifted to the best open offer/)
+    for (const algo of ["1.8.3_salescap_bidfloor", "x_stalecap", "panini-1.4.1_askcap", "a_compcap", "a_bidpull", "a_haircut"]) {
+      const text = priceRuleNotes(algo).join(" ")
+      expect(text.length, algo).toBeGreaterThan(0)
+      for (const banned of ["HIGH", "MEDIUM", "LOW", "STALE", "ASK_ONLY", "confidence", "_bid", "_comp", "cap_", "algo"]) {
+        expect(text, `${algo}: ${banned}`).not.toContain(banned)
+      }
+    }
   })
 
   it("isAskDerivedFmv mirrors fmvBasis as a boolean", () => {

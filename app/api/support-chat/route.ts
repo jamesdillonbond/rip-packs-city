@@ -14,6 +14,7 @@
 export const maxDuration = 60;
 
 import { fetchChallengeFeed } from "@/lib/challenges/hub-fetchers";
+import { priceRuleNotes } from "@/lib/fmv-basis";
 import { isSolanaAddress } from "@/lib/address";
 import { NextRequest, NextResponse, after } from "next/server";
 import { headers } from "next/headers";
@@ -1012,6 +1013,7 @@ const FMV_METHODOLOGY_BLOCK = `## FMV Methodology — stated from the pricing co
   - **MEDIUM** = at least one sale in the last 30 days, AND: at least ${MIN_SALES_30D_MEDIUM} sales in 30 days but not HIGH; or ${MIN_SALES_30D_HIGH}+ sales whose spread lands between ${HIGH_MAX_DISPERSION} and ${MEDIUM_MAX_DISPERSION}; or a LOW edition rescued by a live ask less than a week old that sits within ±${Math.round(ASK_CORROBORATION_BAND * 100)}% of its sales median (needs at least ${MIN_SALES_ASK_CORROBORATION} sales). An ask only ever RAISES confidence; it never lowers a sales-based price.
   - **LOW** = fewer sales than that, plenty of sales that disagree too much to trust (spread over ${MEDIUM_MAX_DISPERSION}), or no sale at all in the last 30 days. Directional only — say so in facts (few or disagreeing sales, no recent sale), never as a tier.
   - Rows can also carry **ASK_ONLY** (a live-ask proxy with no sales behind it — a floor, not a value), **SALES_ONLY**, **STALE** (the last recompute is old) or **NO_DATA** (nothing to price from). Never present any of those as a market value.
+  - **Rules applied after the model** (explain_fmv returns them as \`price_adjustments\`, in order): a thin price can be held to the edition's own sales, held to an estimate from similar editions, lifted to the best open offer, or — on NBA Top Shot, when an open offer sits below the price — moved between the lowest ask and that offer, weighted toward the offer. When \`price_adjustments\` is not empty, explain the price with those sentences, not with "estimated from asking prices".
   - **What tool results carry instead**: tool rows never contain a tier. Each priced row carries \`pricing_basis\` / \`fmv_pricing_basis\` — a plain-language statement of what the price rests on ("priced from very few sales — treat as rough", "estimated from current asking prices, not sales"). That sentence (or the sales count behind it) is what you may tell the user. Never add a "Confidence" column or label to a table or list.
 - **Serials**: a specific serial's FMV = the edition FMV × a serial premium (#1, jersey match, perfect mint, low serial). Quirky serials (palindromes, 420s) carry NO premium.
 - **Guard**: an FMV over $10,000 that is not HIGH with 3+ recent sales is withheld — a null there is deliberate, not a data gap.
@@ -3676,6 +3678,10 @@ async function executeToolInner(
         sales_count_30d: salesCountUnknown ? null : (snapshot.sales_count_30d ?? null),
         days_since_sale: snapshot.days_since_sale ?? null,
         algo_version: snapshot.algo_version ?? null,
+        // 2026-11-12: the rules that moved this price after the model computed it (offer pull, sales /
+        // comparables caps, offer floor), in plain words and in the order applied. Say these instead of
+        // "estimated from asking prices" when the list is not empty; never quote algo_version itself.
+        price_adjustments: priceRuleNotes(snapshot.algo_version),
         wap_usd: snapshot.wap_usd,
         floor_price_usd: snapshot.floor_price_usd,
         computed_at: snapshot.computed_at,
