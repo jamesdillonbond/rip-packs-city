@@ -43,6 +43,12 @@ cd /d "%USERPROFILE%\rip-packs-city"
 echo. >> "%PANINI_LOG%"
 echo ==== %DATE% %TIME% run start ==== >> "%PANINI_LOG%"
 
+REM 2026-11-13: fast-forward this tree to origin/main before every run, so a pushed runner fix
+REM lands within 2 h instead of at the next 5:15 AM daily pull. Native Windows git (no Cowork
+REM mount, no permission prompt). Never fails the run; defers when a launcher (.bat/.cmd/.ps1)
+REM would change, because cmd.exe re-reads THIS file by byte offset as it runs.
+node scripts\laptop-tree-ff.mjs --from-launcher >> "%PANINI_LOG%" 2>&1
+
 REM Hold the PC awake for the whole run: a timer-woken PC re-sleeps after ~2 min otherwise.
 REM scripts\panini-keep-awake.ps1 holds the request while this flag exists, capped at 125 min.
 set "AWAKE_FLAG=%TEMP%\panini-awake-run.flag"
