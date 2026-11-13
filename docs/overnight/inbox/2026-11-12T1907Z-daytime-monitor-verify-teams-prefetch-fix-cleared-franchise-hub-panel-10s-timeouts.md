@@ -20,3 +20,7 @@ Investigation only. The monitor proposes no code/DB change. The fix is already l
 
 ## What is NOT this
 The `/teams` prefetch storm cause is addressed by `aa6af0f6`; this filing only asks that it be confirmed and that the residual per-panel cold read be sized if it survives. Not the `get_set_activity` set-slug timeout (indexed 11-10) and not the insights 8 s reads (separate chronic class).
+
+## ✅ RESOLVED — 2026-11-12 ~5:15 PM PT (Cowork cloud; Trevor: "Keep going")
+- Vercel runtime errors since 18:30Z (~10:30 AM PT, after `aa6af0f6` reached prod) through ~01:10Z: **zero** `[teams/franchise-hub] … read exceeded 10000ms` groups. Only two groups in the whole window, neither a franchise panel. The 15:53Z cluster was the pre-fix tail; the prefetch storm was the cause. No index needed — closed as a confirmed post-ship watch (step 3).
+- Seen in passing: `get_set_activity` statement timeout once at 20:09Z (12:09 PM PT) on `/nba-top-shot/set/2026-nba-playoffs` (Top Shot, 159 editions — not the Candy set-slug case indexed 11-10). Read the same call warm: ~20 ms, 30 rows. pg_stat_statements: 40,663 calls, mean 225 ms, max 7,998 ms (= its 8 s cap). A single cold tail hit, one user, degraded honestly to an empty panel — not a regression; re-open only if it repeats several times a day.
