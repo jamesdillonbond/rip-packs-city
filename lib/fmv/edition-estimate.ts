@@ -190,9 +190,15 @@ export interface EditionComparableEstimate {
   n_set: number
   n_player: number
   computed_at: string
+  /**
+   * True when the number is comp-1.1's BLEND for a Top Shot parallel: sqrt(set-mates estimate x the base edition's
+   * price x the typical premium for that parallel and tier). About half of it then comes from the BASE edition, so a
+   * basis that names only the set-mates misstates it (2026-11-13 review). Read from `parallel_est_usd` being set.
+   */
+  parallel_blend: boolean
 }
 
-const COMPARABLE_COLUMNS = "edition_id, est_usd, baseline_kind, n_set, n_player, computed_at"
+const COMPARABLE_COLUMNS = "edition_id, est_usd, parallel_est_usd, baseline_kind, n_set, n_player, computed_at"
 
 /** Fewer priced set-mates than this and the baseline is one or two editions' noise. */
 export const COMPARABLE_MIN_SET_MATES = 3
@@ -225,15 +231,19 @@ export function parseComparableRow(row: unknown, now: number = Date.now()): Edit
     n_set: nSet,
     n_player: nPlayer != null && nPlayer > 0 ? nPlayer : 0,
     computed_at: computedAt,
+    parallel_blend: (num(r.parallel_est_usd) ?? 0) > 0,
   }
 }
 
 /** The basis sentence for a comparable estimate — shown every time the number is. */
 export function comparableBasisText(e: EditionComparableEstimate): string {
   const mates = `${e.n_set.toLocaleString("en-US")} other edition${e.n_set === 1 ? "" : "s"} in this set that have sold`
-  return e.n_player > 0
+  const base = e.n_player > 0
     ? `the prices of ${mates}, adjusted for how this player's other editions trade against their own sets`
     : `the prices of ${mates}`
+  return e.parallel_blend
+    ? `${base}, blended with this parallel's base edition price times what this parallel typically trades at over its base`
+    : base
 }
 
 /**
@@ -243,13 +253,18 @@ export function comparableBasisText(e: EditionComparableEstimate): string {
 export function comparableForModel(e: EditionComparableEstimate): Record<string, unknown> {
   return {
     estimate_usd: e.estimate_usd,
-    basis: "prices_of_other_editions_in_the_same_set_adjusted_for_the_player",
+    basis: e.parallel_blend
+      ? "blend_of_set_mates_adjusted_for_the_player_and_the_base_edition_price_times_the_typical_parallel_premium"
+      : "prices_of_other_editions_in_the_same_set_adjusted_for_the_player",
     set_mates_priced_from_sales: e.n_set,
+    blended_with_base_edition_and_parallel_premium: e.parallel_blend,
     player_adjustment_from_other_editions: e.n_player > 0 ? e.n_player : null,
     computed_at: e.computed_at,
     how_to_use:
       "RPC publishes NO FMV for this edition — it has no sales of its own to price from. This is a VALUE ESTIMATE built only from OTHER editions " +
-      "(what its set-mates sell for, adjusted for how this player's other editions trade). Quote it as 'estimated ~$X', say plainly that the edition " +
+      "(what its set-mates sell for, adjusted for how this player's other editions trade; for a parallel with " +
+      "blended_with_base_edition_and_parallel_premium true, about half of it comes from the base edition's price times the " +
+      "typical premium for that parallel — say so). Quote it as 'estimated ~$X', say plainly that the edition " +
       "itself has not sold and what the estimate rests on, and keep it separate from any FMV. Never call it the FMV, a market price or a floor. " +
       "It is a rough guide: tested on editions with known prices it lands within 25% about half the time and within 50% about four times in five.",
   }

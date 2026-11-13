@@ -36,7 +36,15 @@ describe("parseComparableRow", () => {
       n_set: 14,
       n_player: 6,
       computed_at: fresh,
+      parallel_blend: false,
     })
+  })
+
+  // 2026-11-13: a Top Shot parallel's comp-1.1 number is a blend with its base edition — flagged so the basis can say so.
+  it("flags a parallel blend from parallel_est_usd, and only then", () => {
+    expect(parseComparableRow(row({ parallel_est_usd: "9.10" }), NOW)?.parallel_blend).toBe(true)
+    expect(parseComparableRow(row({ parallel_est_usd: null }), NOW)?.parallel_blend).toBe(false)
+    expect(parseComparableRow(row({ parallel_est_usd: 0 }), NOW)?.parallel_blend).toBe(false)
   })
 
   it("drops the weaker fallbacks — only the set basis is shown", () => {
@@ -85,6 +93,14 @@ describe("comparableBasisText", () => {
     expect(comparableBasisText(e)).not.toContain("player")
   })
 
+  it("names the base-edition half of a parallel blend instead of claiming set-mates only", () => {
+    const blended = comparableBasisText(parseComparableRow(row({ parallel_est_usd: "9.10" }), NOW)!)
+    expect(blended).toContain("14 other editions in this set that have sold")
+    expect(blended).toMatch(/base edition price/)
+    // control: a non-parallel row never mentions a base edition
+    expect(comparableBasisText(parseComparableRow(row(), NOW)!)).not.toMatch(/base edition/)
+  })
+
   it("never uses the confidence vocabulary", () => {
     const t = comparableBasisText(parseComparableRow(row(), NOW)!)
     expect(t).not.toMatch(/\b(HIGH|MEDIUM|LOW|STALE|confidence)\b/i)
@@ -112,6 +128,14 @@ describe("comparableForModel (the concierge's view)", () => {
 
   it("does not claim a player adjustment that was not made", () => {
     expect(comparableForModel(parseComparableRow(row({ n_player: 0 }), NOW)!).player_adjustment_from_other_editions).toBeNull()
+  })
+
+  it("tells the model when the number is a parallel blend", () => {
+    const b = comparableForModel(parseComparableRow(row({ parallel_est_usd: "9.10" }), NOW)!)
+    expect(b.blended_with_base_edition_and_parallel_premium).toBe(true)
+    expect(String(b.basis)).toMatch(/base_edition/)
+    expect(m.blended_with_base_edition_and_parallel_premium).toBe(false)
+    expect(String(m.basis)).not.toMatch(/base_edition/)
   })
 
   it("never hands the model a confidence tier", () => {
