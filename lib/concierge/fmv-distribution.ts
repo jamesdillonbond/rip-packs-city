@@ -1,3 +1,4 @@
+import { priceRuleNotes } from "@/lib/fmv-basis"
 import { keepCanonicalEditionRows } from "@/lib/concierge/edition-listings"
 import { retryEmptyWithAccentRegex } from "@/lib/search/accent-regex"
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
@@ -46,6 +47,8 @@ export interface SingleEditionShape {
   fmv_usd: number
   confidence: string | null
   computed_at: string | null
+  /** Plain sentences for the rules that moved this price after the model (lib/fmv-basis priceRuleNotes). */
+  price_adjustments?: string[]
 }
 
 export type FmvDistributionResult =
@@ -277,7 +280,7 @@ export async function fetchUnifiedFmvDistribution(
     }
     const { data: snap, error: snapErr } = await supabase
       .from("fmv_snapshots")
-      .select("fmv_usd, confidence, computed_at")
+      .select("fmv_usd, confidence, computed_at, algo_version")
       .eq("edition_id", edition.id)
       .order("computed_at", { ascending: false })
       .limit(1)
@@ -312,6 +315,7 @@ export async function fetchUnifiedFmvDistribution(
         fmv_usd: Number(snap.fmv_usd),
         confidence: snap.confidence ?? null,
         computed_at: snap.computed_at ?? null,
+        price_adjustments: priceRuleNotes(snap.algo_version),
       },
     }
   }

@@ -85,8 +85,23 @@ describe("fetchUnifiedFmvDistribution — editionKey path", () => {
         fmv_usd: 42.5,
         confidence: "HIGH",
         computed_at: "2026-07-01T00:00:00Z",
+        price_adjustments: [],
       },
     })
+  })
+
+  // 2026-11-12: a price a rule moved carries the rule's sentence, so the basis the concierge reads
+  // (lib/concierge/scrub-confidence.ts) can name it instead of "estimated from asking prices".
+  it("carries the rules that moved the price, in plain words, on the single-edition shape", async () => {
+    const client = makeClient({
+      editions: { list: { data: [{ id: "e1", external_id: "281:9386::17", player_name: "Graham Ike", set_name: "Rookie Debut", tier: "COMMON" }], error: null } },
+      fmv_snapshots: { single: { data: { fmv_usd: 6.18, confidence: "ASK_ONLY", computed_at: "2026-11-12T00:00:00Z", algo_version: "topshot-gql-v1_bidpull" }, error: null } },
+    })
+    const out = await fetchUnifiedFmvDistribution(client, { collectionUuid: null, editionKey: "281:9386::17" })
+    if (out.status !== "ok" || out.mode !== "single") throw new Error("expected the single shape")
+    expect(out.edition.price_adjustments).toHaveLength(1)
+    expect(out.edition.price_adjustments?.[0]).toMatch(/best open offer/)
+    expect(JSON.stringify(out)).not.toMatch(/bidpull/)
   })
 
   it("returns no_results when the key does not resolve to an edition", async () => {
