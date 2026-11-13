@@ -28,6 +28,7 @@ import { fetchPackProvenance, fetchOwnerUsernames } from "@/lib/edition/fetchers
 import { fetchCandyFloorListing } from "@/lib/candy/edition-floor-listing"
 import { fetchAllDayScarcityRow, allDayInsightChips } from "@/lib/allday/edition-insight-chips"
 import { fetchCandyPrintings } from "@/lib/candy/edition-printings"
+import { fetchCandyRarityLabel, nativeRarityChipText } from "@/lib/candy/edition-rarity-label"
 import { fetchCandyMarketHistory, fetchCandyScarcityRow } from "@/lib/candy/edition-market-history"
 import CandyMarketHistory from "@/components/entity/CandyMarketHistory"
 import { editionDescriptionText } from "@/lib/edition/description"
@@ -971,6 +972,13 @@ export default async function EditionPage(
 
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
               <TierBadge tier={detail.tier} />
+              {/* 2026-11-13: Candy's OWN rarity name (Titan, Core, Unique …) beside the shared tier — its own
+                  Suspense so the hero never waits; a failed read renders nothing (lib/candy/edition-rarity-label.ts). */}
+              {collection === "candy-mlb" && detail.id && (
+                <Suspense fallback={null}>
+                  <CandyNativeRarityChip editionId={detail.id} tier={detail.tier ?? null} />
+                </Suspense>
+              )}
               {/* Parallel printing chip (Stage B) — names the subedition this
                   page is, e.g. "Hexwave · /24". Standard shows no chip. */}
               {currentSibling?.subedition_name && (
@@ -1960,6 +1968,21 @@ async function AllDayInsightChips({ externalId, bid, floor, playerName }: { exte
 
 // Candy edition → /insights/candy-mlb views. The holder count comes from mv_candy_scarcity_board
 // (the board's own source); a failed or empty read renders the links without the number.
+async function CandyNativeRarityChip({ editionId, tier }: { editionId: string; tier: string | null }) {
+  const { ok, label } = await fetchCandyRarityLabel(editionId).catch(() => ({ ok: false, label: null as string | null }))
+  const text = ok ? nativeRarityChipText(label, tier) : null
+  if (!text) return null
+  return (
+    <span
+      className="rpc-mono"
+      title="Candy's own rarity name for this card"
+      style={{ padding: "2px 8px", borderRadius: 4, fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", fontWeight: 700, color: "var(--rpc-text-secondary)", background: "var(--rpc-surface-raised, transparent)", border: "1px solid var(--rpc-border)" }}
+    >
+      {text}
+    </span>
+  )
+}
+
 async function CandyInsightChips({ externalId }: { externalId: string }) {
   const { row } = await fetchCandyScarcityRow(externalId).catch(() => ({ row: null, ok: false }))
   const holders = row?.holders ?? null
