@@ -15,6 +15,12 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-11-13. Hero card: auto pick from the covering index, then one keyed fetch; override + fallback.
+    fn: "get_user_hero_moment",
+    test: "supabase/tests/get_user_hero_moment.sql",
+    migration: "supabase/migrations/20261113191137_audit_20261113_hero_moment_auto_pick_reads_the_covering_index.sql",
+  },
+  {
     // Added 2026-11-12. A Candy offer follows its card (twin of candy_repoint_listings_to_card_edition).
     fn: "candy_repoint_offers_to_card_edition",
     test: "supabase/tests/candy_repoint_offers_to_card_edition.sql",
