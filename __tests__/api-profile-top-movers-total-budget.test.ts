@@ -107,6 +107,10 @@ describe("/api/profile/top-movers — one TOTAL budget", () => {
     expect(elapsedMs).toBeLessThanOrEqual(TOP_MOVERS_TOTAL_BUDGET_MS + 1_000)
     const body = await res.json()
     expect(body.gainers).toBeUndefined() // never a partial list dressed as the whole
+    // 2026-11-13: a bound firing is TRANSIENT — it was answered `internal`,
+    // retryable:false, because withBoardBudget's rejection carried no code.
+    expect(body.code).toBe("timeout")
+    expect(body.retryable).toBe(true)
   })
 
   it("the deadline is checked BEFORE each call: an exhausted budget refuses even an instant read", async () => {
@@ -119,6 +123,10 @@ describe("/api/profile/top-movers — one TOTAL budget", () => {
     const { res } = await run("https://t/api/profile/top-movers?ownerKey=trevor")
     expect(res.status).toBeGreaterThanOrEqual(500)
     expect(st.calls.length).toBe(2)
+    // The pre-call refusal is the same transient failure (2026-11-13).
+    const body = await res.json()
+    expect(body.code).toBe("timeout")
+    expect(body.retryable).toBe(true)
   })
 
   it("a single read that never answers is cut at the budget with a 5xx, not a platform kill", async () => {

@@ -23,6 +23,7 @@ import { walletQueryKey } from "@/lib/address"
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
 import { apiErrorResponse } from "@/lib/api-error";
+import { RPC_READ_TIMEOUT_CODE } from "@/lib/api/bounded-read";
 import { withBoardBudget } from "@/lib/insights/board-page-fetch";
 
 // ── ONE TOTAL BUDGET, NOT ONE PER READ ───────────────────────────────────────
@@ -189,9 +190,15 @@ export async function GET(req: NextRequest) {
       // ceiling (a read that starts with nothing left is not "bounded by the
       // remainder", it is a read the budget already forbade).
       if (remaining() <= 0) {
-        const err = new Error(
-          `[api/profile/top-movers] total budget of ${TOP_MOVERS_TOTAL_BUDGET_MS}ms exhausted after ` +
-            `${seenWallet.size - 1} of ${wallets.length} wallets`
+        // Coded as a read timeout (2026-11-13): a bare Error here was answered
+        // as a permanent `internal` 500 by apiErrorResponse, though running out
+        // of budget is the most transient failure this route has.
+        const err = Object.assign(
+          new Error(
+            `[api/profile/top-movers] total budget of ${TOP_MOVERS_TOTAL_BUDGET_MS}ms exhausted after ` +
+              `${seenWallet.size - 1} of ${wallets.length} wallets`
+          ),
+          { code: RPC_READ_TIMEOUT_CODE }
         );
         console.log("[top-movers]", err.message);
         return apiErrorResponse(err, "api/profile/top-movers");

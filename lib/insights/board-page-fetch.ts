@@ -41,6 +41,7 @@
 
 import { supabaseAdmin } from "@/lib/supabase"
 import { BOARD_LIVE_TIMEOUT_MS } from "@/lib/insights/board-cache"
+import { RPC_READ_TIMEOUT_CODE } from "@/lib/api/bounded-read"
 
 export interface BoardPageFetch<T> {
   /** The fetched payload, or the caller's `fallback` when the read failed. */
@@ -158,7 +159,20 @@ export async function withBoardBudget<T>(
       p,
       new Promise<never>((_, reject) => {
         timer = setTimeout(
-          () => reject(new Error(`[${prefix}${label}] read exceeded ${timeoutMs}ms`)),
+          () => {
+            // 🚨 Carries `code: RPC_READ_TIMEOUT` (2026-11-13). Without it a bare
+            // Error matched nothing in `lib/api-error.ts`, so every API ROUTE that
+            // bounds a read with this helper (profile/top-movers,
+            // profile/collector-identities, …) answered its own bound firing as
+            // `{ code: "internal", retryable: false }` at 500 — "permanent" for a
+            // transient overrun, the exact defect the 2026-09-04 note in
+            // api-error.ts records for `boundedRead`. Vercel showed both routes
+            // logging `code=internal detail=[…] read exceeded 8000ms`.
+            // Pages are unaffected: they catch and render the degraded notice.
+            const err = new Error(`[${prefix}${label}] read exceeded ${timeoutMs}ms`) as Error & { code: string }
+            err.code = RPC_READ_TIMEOUT_CODE
+            reject(err)
+          },
           timeoutMs,
         )
       }),
