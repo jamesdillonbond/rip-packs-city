@@ -183,8 +183,9 @@ describe("runCollectionsCensus", () => {
     expect(state.edUpserts.every((u) => u.opts.ignoreDuplicates === true)).toBe(true)
     const last = state.updates.filter((u) => u.address === "A").at(-1)!.patch
     expect(last).toMatchObject({ census_page: 1, census_cursor: null, census_walk_started_at: null, last_census_items: 1003, last_census_error: null })
-    // the second page was asked BY CURSOR, not by page number
-    expect(state.dasCalls).toEqual([null, "A#1"])
+    // the second page was asked BY CURSOR, not by page number; DAS handed a cursor on the short page, so it was
+    // followed to an empty page before the walk ended (2026-11-13: a short page alone does not end a walk)
+    expect(state.dasCalls).toEqual([null, "A#1", "A#2"])
     expect(typeof last.last_census_at).toBe("string")
     // The ghost purge is SCOPED to the moments this run inserted — never the unscoped
     // whole-collection rank that timed out at 120 s on 1.4M rows.
@@ -192,6 +193,27 @@ describe("runCollectionsCensus", () => {
     expect(new Set(state.rpcArgs[0].p_moment_ids)).toEqual(new Set([...full(1000, "p1-"), ...full(3, "p2-")].map((x) => x.id)))
     // Holdings are born labelled — never left for a whole-collection denorm.
     expect(state.wmcUpserts[0].rows[0]).toMatchObject({ tier: "COMMON", player_name: "Seth Brown", set_name: "2022 Leadoff ICONs", mint_count: 850, team_name: "Athletics" })
+  })
+
+  // 2026-11-13: ending on any short page would stamp a walk complete (and run RETIRE) when DAS returned a short page
+  // mid-collection with a cursor to more. The walk ends on an empty page, or a short page with no cursor.
+  it("a short page WITH a cursor is followed: the cards after it are walked, not dropped", async () => {
+    state.queue = [{ address: "A", name: "A", census_page: 1, census_walk_started_at: null }]
+    state.pages.A = [full(1000, "p1-"), full(400, "p2-"), full(7, "p3-"), []]
+    const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+    expect(r.cards).toBe(1407)
+    expect(state.dasCalls).toEqual([null, "A#1", "A#2", "A#3"])
+    expect(state.updates.filter((u) => u.address === "A").at(-1)!.patch).toMatchObject({ census_page: 1, census_cursor: null, last_census_items: 1407 })
+  })
+
+  it("a short page with NO cursor ends the walk without an extra call", async () => {
+    state.queue = [{ address: "A", name: "A", census_page: 1, census_walk_started_at: null }]
+    state.pages.A = [full(5, "p1-"), full(9, "never-")]
+    state.dasNoCursor = true
+    const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+    expect(r.cards).toBe(5)
+    expect(state.dasCalls).toEqual([null])
+    expect(r.completed).toBe(1)
   })
 
   it("a failed DAS page does not advance the cursor and fails the run", async () => {
@@ -217,7 +239,7 @@ describe("runCollectionsCensus", () => {
     state.pages.A = [full(1000, "x"), full(5, "y")]
     const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
     expect(r.cards).toBe(5)
-    expect(state.dasCalls).toEqual(["A#1"])
+    expect(state.dasCalls).toEqual(["A#1", "A#2"])
     const last = state.updates.at(-1)!.patch
     expect(last.census_page).toBe(1)
     expect(last.census_cursor).toBeNull()
@@ -230,7 +252,7 @@ describe("runCollectionsCensus", () => {
     state.pages.A = [full(1000, "x"), full(2, "y")]
     const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
     expect(r.ok).toBe(true)
-    expect(state.dasCalls).toEqual([null, "A#1"])
+    expect(state.dasCalls).toEqual([null, "A#1", "A#2"])
     expect(state.updates[0].patch).toMatchObject({ census_page: 1, census_cursor: null })
     // read whole in this run, so its count is known
     expect(state.updates.at(-1)!.patch).toMatchObject({ last_census_items: 1002, census_cursor: null })

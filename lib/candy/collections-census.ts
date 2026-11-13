@@ -541,7 +541,10 @@ export async function runCollectionsCensus(
       rep.pages++
       rep.cards += cards.length + reused.length
       cardsThisWalk += cards.length + reused.length
-      const done = items.length < PAGE_LIMIT
+      // 2026-11-13: a short page ends the walk only when DAS gave NO next cursor (or the page is empty). A short page
+      // WITH a cursor is followed: ending there would stamp a possibly partial walk complete and run RETIRE on it.
+      // The cost when DAS hands a cursor on its last page is one extra, empty page per walk.
+      const done = items.length === 0 || (items.length < PAGE_LIMIT && !nextCursor)
       // last_census_items is the walk's card count only when the whole walk ran in this
       // run; a walk resumed across runs reports NULL (unknown), never a partial count.
       const patch = done
