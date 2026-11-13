@@ -428,16 +428,7 @@ export async function cancelRoom(db: SupabaseClient, loaded: LoadedRoom, userId:
   // "cancelled" and emailed "Nothing moved". Refuse while a signature from the
   // relay window exists; after the window (or when signing ended) cancel works.
   // A failed read refuses too: we cannot say nothing was signed.
-  if (loaded.room.status === "signing") {
-    const { count, error: relayError } = await db
-      .from("trade_room_relay")
-      .select("id", { count: "exact", head: true })
-      .eq("room_id", loaded.room.id)
-      .not("signed_at", "is", null)
-      .gt("created_at", new Date(now - RELAY_TTL_MS).toISOString())
-    if (relayError || count == null) throw new TradeRoomError("Couldn't check whether the trade was already signed. Try again in a moment.", 503, "unavailable")
-    if (count > 0) throw new TradeRoomError("The other wallet already signed — this trade may be sealing on chain now, so it can't be cancelled. Check it in a moment.", 409, "cosigned")
-  }
+  if (loaded.room.status === "signing") await assertNotCosigned(db, loaded, now, "cancelled")
   const r = reason ? reason.replace(/\s+/g, " ").trim().slice(0, 200) : null
   const { error } = await db
     .from("trade_rooms")
@@ -446,6 +437,21 @@ export async function cancelRoom(db: SupabaseClient, loaded: LoadedRoom, userId:
     .neq("status", "sealed")
   if (error) fail(error, "trade_rooms cancel")
   return loadRoom(db, loaded.room.code)
+}
+
+/**
+ * Refuse while a co-signature from the relay window exists: the signed transaction can seal on chain at any moment.
+ * A failed read refuses too — we cannot say nothing was signed.
+ */
+async function assertNotCosigned(db: SupabaseClient, loaded: LoadedRoom, now: number, verb: string): Promise<void> {
+  const { count, error: relayError } = await db
+    .from("trade_room_relay")
+    .select("id", { count: "exact", head: true })
+    .eq("room_id", loaded.room.id)
+    .not("signed_at", "is", null)
+    .gt("created_at", new Date(now - RELAY_TTL_MS).toISOString())
+  if (relayError || count == null) throw new TradeRoomError("Couldn't check whether the trade was already signed. Try again in a moment.", 503, "unavailable")
+  if (count > 0) throw new TradeRoomError(`The other wallet already signed — this trade may be sealing on chain now, so it can't be ${verb}. Check it in a moment.`, 409, "cosigned")
 }
 
 /** A wallet has been asked to sign: freeze the proposal. */
@@ -463,6 +469,11 @@ export async function markSigning(db: SupabaseClient, loaded: LoadedRoom, now: n
 
 /** A signing attempt ended without a seal (wallet refused, relay expired): back to accepted. */
 export async function markSigningEnded(db: SupabaseClient, loaded: LoadedRoom, now: number = Date.now()): Promise<void> {
+  // ⛔ 2026-11-13 review: this was the unguarded way OUT of "signing". After a co-signature, `signing_ended` moved the
+  // room back to "accepted", where cancelRoom's co-signed check (it runs only in "signing") was skipped and the items
+  // were editable again — so a trade that then sealed on chain could be recorded "cancelled" (the counterparty
+  // emailed "nothing moved"), or have its items changed so `sealed` could never verify it. Same guard, same window.
+  if (loaded.room.status === "signing") await assertNotCosigned(db, loaded, now, "reopened")
   const { error } = await db
     .from("trade_rooms")
     .update({ status: "accepted", updated_at: new Date(now).toISOString() })

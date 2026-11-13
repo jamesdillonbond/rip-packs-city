@@ -10,6 +10,7 @@ import {
   loadRoom,
   markSealed,
   markSigning,
+  markSigningEnded,
   newRoomCode,
   roomState,
   setItems,
@@ -370,6 +371,28 @@ describe("trade-room/store — concurrent requests never break the proposal cont
     // control: an UNSIGNED relay leaves cancel available
     m.tables.trade_room_relay = [{ id: "r1", room_id: room.room.id, signed_at: null, created_at: new Date().toISOString() }]
     expect((await cancelRoom(m.db, room, BOB, null)).room.status).toBe("cancelled")
+  })
+
+  // ⛔ 2026-11-13 review: signing_ended was the unguarded way out of "signing" — after it, cancel skipped the co-signed
+  // check and the items were editable again, so an executed trade could be recorded "cancelled" or never verify.
+  it("⛔ signing can't be ENDED (back to accepted) once the co-signer has signed — so cancel can't be laundered through it", async () => {
+    const two = await twoSided()
+    const { m } = two
+    let room = await setItems(m.db, two.room, sideOf(two.room, ALICE)!, [item("1", 10)])
+    const v = room.room.version
+    room = await accept(m.db, room, sideOf(room, ALICE)!, v, true)
+    room = await accept(m.db, room, sideOf(room, BOB)!, v, true)
+    await markSigning(m.db, room)
+    room = await loadRoom(m.db, room.room.code)
+    m.tables.trade_room_relay = [{ id: "r1", room_id: room.room.id, signed_at: new Date().toISOString(), created_at: new Date().toISOString() }]
+    expect(await codeOf(markSigningEnded(m.db, room))).toBe("409:cosigned")
+    expect((await loadRoom(m.db, room.room.code)).room.status).toBe("signing")
+    // and so the cancel that followed it in the attack still refuses
+    expect(await codeOf(cancelRoom(m.db, await loadRoom(m.db, room.room.code), ALICE, null))).toBe("409:cosigned")
+    // control: an UNSIGNED relay (wallet refused) still ends signing normally
+    m.tables.trade_room_relay = [{ id: "r1", room_id: room.room.id, signed_at: null, created_at: new Date().toISOString() }]
+    await markSigningEnded(m.db, room)
+    expect((await loadRoom(m.db, room.room.code)).room.status).toBe("accepted")
   })
 
   it("a seal the chain proved is recorded even over a 'cancelled' row (the chain outranks the cancel)", async () => {
