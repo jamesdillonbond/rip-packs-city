@@ -603,4 +603,17 @@ describe("runCollectionsCensus", () => {
     expect((state as any).deleted.map((x: any) => x.moment_id).sort()).toEqual(["bt1", "pk1"])
     expect(state.existingWmc.map((x) => x.moment_id)).toEqual(expect.arrayContaining(["c1", "u1"]))
   })
+
+  // 2026-11-12: 263 historical offers kept 43 emptied #246 editions "referenced" — offers follow their card too.
+  it("a repointed card moves its OFFERS as well as its listings; a failed offers move fails the page", async () => {
+    state.queue = [{ address: "A", name: "A", census_page: 1, census_walk_started_at: null }]
+    state.pages.A = [[{ id: "m1", owner: "W", ed: "a" }]]
+    state.existingWmc = [{ moment_id: "m1", wallet_address: "W", edition_key: "c:x:fabricated", serial_number: 1 }]
+    const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+    expect(r.ok).toBe(true)
+    const i = state.rpcs.indexOf("candy_repoint_offers_to_card_edition")
+    expect(i).toBeGreaterThan(-1)
+    expect(state.rpcArgs[i]).toEqual({ p_mints: ["m1"] })
+    expect(r.offers_repointed).toBe(4)
+  })
 })

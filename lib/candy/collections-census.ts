@@ -83,6 +83,7 @@ export interface CollectionCensusReport {
   unhydrated_skipped: number
   wmc_repointed: number
   listings_repointed: number
+  offers_repointed: number
   editions_filled: number
   wmc_retired: number
   /** Holdings rows deleted for assets this walk SAW and classified as packs or burnt (2026-11-12). */
@@ -140,6 +141,7 @@ export interface CollectionsCensusResult {
   unhydrated_skipped: number
   wmc_repointed: number
   listings_repointed: number
+  offers_repointed: number
   editions_filled: number
   wmc_retired: number
   wmc_noncard_retired: number
@@ -236,7 +238,7 @@ export async function runCollectionsCensus(
   const lockOpts = opts.lockSleep ? { sleep: opts.lockSleep } : {}
   const out: CollectionsCensusResult = {
     ok: false, collections: [], pages: 0, cards: 0, wmc_inserted: 0, editions_inserted: 0,
-    hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, listings_repointed: 0, editions_filled: 0, wmc_retired: 0, wmc_noncard_retired: 0, hydrate_fail_reasons: {}, hydrate_fetches: 0, hydrate_unverified_groups: 0, hydrate_rate_limit_retries: 0, hydrate_min_concurrency: null, hydrate_max_gap_ms: 0, unhydrated_sample: [],
+    hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, listings_repointed: 0, offers_repointed: 0, editions_filled: 0, wmc_retired: 0, wmc_noncard_retired: 0, hydrate_fail_reasons: {}, hydrate_fetches: 0, hydrate_unverified_groups: 0, hydrate_rate_limit_retries: 0, hydrate_min_concurrency: null, hydrate_max_gap_ms: 0, unhydrated_sample: [],
     completed: 0, escrow_remapped: 0, ghosts_purged: null, error: null,
   }
 
@@ -270,7 +272,7 @@ export async function runCollectionsCensus(
   const breakerOpen = () => fetchAttempts >= BREAKER_MIN_ATTEMPTS && fetchFailures / fetchAttempts > BREAKER_FAIL_SHARE
   for (const c of (queue ?? []) as Array<{ address: string; name: string; edition_prefix?: string | null; census_page: number; census_cursor: string | null; census_walk_started_at: string | null; census_walk_tracked?: boolean | null; census_walk_labelless_seen?: string[] | null; census_walk_skipped?: number | null; census_walk_cards?: number | null }>) {
     if (now() > deadline) break
-    const rep: CollectionCensusReport = { address: c.address, name: c.name, pages: 0, cards: 0, wmc_inserted: 0, editions_inserted: 0, hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, listings_repointed: 0, editions_filled: 0, wmc_retired: 0, wmc_noncard_retired: 0, completed: false, error: null }
+    const rep: CollectionCensusReport = { address: c.address, name: c.name, pages: 0, cards: 0, wmc_inserted: 0, editions_inserted: 0, hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, listings_repointed: 0, offers_repointed: 0, editions_filled: 0, wmc_retired: 0, wmc_noncard_retired: 0, completed: false, error: null }
     out.collections.push(rep)
     let page = Math.max(1, c.census_page || 1)
     let cursor: string | null = c.census_cursor || null
@@ -501,6 +503,13 @@ export async function runCollectionsCensus(
         if (error) failed = `listings repoint: ${error.message}`
         else rep.listings_repointed += typeof data === "number" ? data : 0
       }
+      // …and so does an OFFER (2026-11-12): 263 historical bids left on fabricated editions kept 43 emptied
+      // #246 editions "referenced", so the orphan cleanup could not retire them.
+      if (!failed && repoint.length) {
+        const { data, error } = await db.rpc("candy_repoint_offers_to_card_edition", { p_mints: repoint.map((r) => String(r.moment_id)) })
+        if (error) failed = `offers repoint: ${error.message}`
+        else rep.offers_repointed += typeof data === "number" ? data : 0
+      }
       if (!failed && nonCardIds.length) {
         const { data, error } = await db.rpc("candy_retire_noncard_wmc", { p_moment_ids: nonCardIds })
         if (error) failed = `non-card retire: ${error.message}`
@@ -559,6 +568,7 @@ export async function runCollectionsCensus(
     out.unhydrated_skipped += rep.unhydrated_skipped
     out.wmc_repointed += rep.wmc_repointed
     out.listings_repointed += rep.listings_repointed
+    out.offers_repointed += rep.offers_repointed
     out.editions_filled += rep.editions_filled
     out.wmc_retired += rep.wmc_retired
     out.wmc_noncard_retired += rep.wmc_noncard_retired

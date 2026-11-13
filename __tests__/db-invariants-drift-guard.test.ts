@@ -15,6 +15,12 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-11-12. A Candy offer follows its card (twin of candy_repoint_listings_to_card_edition).
+    fn: "candy_repoint_offers_to_card_edition",
+    test: "supabase/tests/candy_repoint_offers_to_card_edition.sql",
+    migration: "supabase/migrations/20261113044929_audit_20261112_candy_offers_follow_their_card.sql",
+  },
+  {
     // Added 2026-11-12. Census deletes holdings rows for assets it SAW as packs/burnt: Candy-scoped, by moment id.
     fn: "candy_retire_noncard_wmc",
     test: "supabase/tests/candy_retire_noncard_wmc.sql",
