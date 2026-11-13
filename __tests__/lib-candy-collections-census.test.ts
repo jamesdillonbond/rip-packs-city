@@ -45,7 +45,10 @@ vi.mock("@/lib/chains/solana/hydrate", () => ({
   },
 }))
 vi.mock("@/lib/chains/solana/escrow", () => ({
-  attributeEscrowHeldToSellers: async (_db: any, rows: any[]) => ({ rows, remapped: 0, unmatched: 0, error: null }),
+  attributeEscrowHeldToSellers: async (_db: any, rows: any[]) =>
+    (state as any).escrowError
+      ? { rows, remapped: 0, unmatched: 1, error: (state as any).escrowError }
+      : { rows, remapped: 0, unmatched: 0, error: null },
 }))
 vi.mock("@/lib/chains/solana/normalize", () => ({
   isBurnt: (a: any) => a.kind === "burnt",
@@ -165,7 +168,7 @@ beforeEach(() => {
   state.existingWmc = []; state.existingEds = []; state.readError = null; state.hydrate = null; state.hydrateCalls = []
   state.updates = []; state.wmcUpserts = []; state.edUpserts = []; state.rpcs = []; state.rpcArgs = []
   ;(state as any).wmcErrOnce = []
-  ;(state as any).edUpdates = []; (state as any).thumb = "https://arweave.net/x"; (state as any).deleted = []
+  ;(state as any).edUpdates = []; (state as any).thumb = "https://arweave.net/x"; (state as any).deleted = []; (state as any).escrowError = null
 })
 
 describe("runCollectionsCensus", () => {
@@ -538,6 +541,38 @@ describe("runCollectionsCensus", () => {
     })
   })
 
+  // 2026-11-13 (independent review): a multi-run walk must not retire the holdings it wrote itself.
+  describe("the cross-run record covers editions created mid-walk, and a capped read retires nothing", () => {
+    it("a thumbnail-less edition this run CREATES is recorded for the walk's later runs", async () => {
+      state.queue = [{ address: "A", name: "A", edition_prefix: "ed-c:aq", census_page: 1, census_walk_started_at: null }]
+      // page 1 is full (the walk continues next run); its cards resolve to a NEW edition with no image
+      state.pages.A = [full(1000, "p").map((a: any) => ({ ...a, ed: "c:aq:new", noThumb: true })), []]
+      state.existingEds = []
+      await runCollectionsCensus(db(), { budgetMs: 60_000 })
+      const mid = state.updates.find((u) => u.address === "A" && u.patch.census_page === 2)!.patch
+      expect(mid.census_walk_labelless_seen).toContain("ed-c:aq:new")
+    })
+
+    it("a new edition WITH a thumbnail is not recorded (control: the record stays label-less only)", async () => {
+      state.queue = [{ address: "A", name: "A", edition_prefix: "ed-c:aq", census_page: 1, census_walk_started_at: null }]
+      state.pages.A = [full(1000, "p").map((a: any) => ({ ...a, ed: "c:aq:new" })), []]
+      state.existingEds = []
+      await runCollectionsCensus(db(), { budgetMs: 60_000 })
+      const mid = state.updates.find((u) => u.address === "A" && u.patch.census_page === 2)!.patch
+      expect(mid.census_walk_labelless_seen).toEqual([])
+    })
+
+    it("a label-less read that hits the 1,000-row cap is an unknown record: the walk retires nothing", async () => {
+      state.queue = [{ address: "A", name: "A", edition_prefix: "c:cap", census_page: 1, census_walk_started_at: null }]
+      state.pages.A = [Array.from({ length: 5 }, (_, i) => ({ id: `w${i}`, owner: "W", ed: "c:cap:real" }))]
+      state.existingEds = Array.from({ length: 1000 }, (_, i) => ({ external_id: `c:cap:ghost-${i}`, thumbnail_url: null, circulation_count: null, tier: null }))
+      state.existingWmc = [{ moment_id: "g0", wallet_address: "X", edition_key: "c:cap:ghost-0", serial_number: null }]
+      await runCollectionsCensus(db(), { budgetMs: 60_000 })
+      expect(state.rpcs).not.toContain("candy_retire_unseen_labelless_wmc")
+      expect((state as any).deleted).toHaveLength(0)
+    })
+  })
+
   // 2026-11-12, Absolute Batman (2024-) #2: 267 burnt cards on the fabricated key vs a 718-card walk that
   // matched the 718 rows on every other edition. The 25 % cap refused a correct retire.
   describe("RETIRE over the share cap — allowed only when the walk saw everything else we hold", () => {
@@ -558,6 +593,16 @@ describe("runCollectionsCensus", () => {
       const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
       expect(r.ok).toBe(true)
       expect(r.wmc_retired).toBe(15)
+    })
+    // 2026-11-13 (review): a failed escrow-seller lookup leaves listed cards on the escrow address — the walk can
+    // no longer vouch for who holds them, so it must not retire (control: the case above retires 15).
+    it("a walk whose escrow-seller lookup FAILED retires nothing", async () => {
+      setup(40, 40, 15)
+      ;(state as any).escrowError = "candy_listings: statement timeout"
+      const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+      expect(r.wmc_retired).toBe(0)
+      expect((state as any).deleted).toHaveLength(0)
+      expect(state.rpcs).not.toContain("candy_retire_unseen_labelless_wmc")
     })
     it("a SHORT walk (saw 20 of 40 rows held elsewhere) still refuses — nothing deleted, run fails", async () => {
       setup(20, 40, 15)

@@ -178,6 +178,9 @@ export const RETIRE_MAX_SHARE = 0.25
  */
 export const RETIRE_COMPLETE_WALK_SHARE = 0.98
 
+/** PostgREST's per-request row cap. An unpaged read that returns this many rows may be truncated. */
+const POSTGREST_ROW_CAP = 1000
+
 /**
  * After a clean complete walk: delete holdings rows that sit on a THUMBNAIL-LESS edition of this collection
  * whose key no card of the walk resolved to. See RETIRE in runCollectionsCensus.
@@ -192,6 +195,11 @@ async function retireUnseenOnLabelless(db: Db, prefix: string, walkKeys: Set<str
     .is("thumbnail_url", null)
     .like("external_id", `${prefix}:%`)
   if (error) return { retired: 0, error: `editions read: ${error.message}` }
+  // 2026-11-13: PostgREST returns at most POSTGREST_ROW_CAP rows and this read is unpaged, so a full page may be a
+  // PARTIAL, arbitrary list — fail closed rather than retire from it (the record read below does the same).
+  if ((eds ?? []).length >= POSTGREST_ROW_CAP) {
+    return { retired: 0, error: `editions read: ${POSTGREST_ROW_CAP}-row cap reached; not retiring from a possibly partial list` }
+  }
   // LIKE treats `_` in a slug as a wildcard: keep only keys that really start with this prefix.
   const keys = ((eds ?? []) as Array<{ external_id: string }>).map((e) => e.external_id).filter((k) => k.startsWith(`${prefix}:`) && !walkKeys.has(k))
   if (!keys.length) return { retired: 0, error: null }
@@ -307,7 +315,11 @@ export async function runCollectionsCensus(
         .is("thumbnail_url", null)
         .like("external_id", `${c.edition_prefix}:%`)
       // A failed read leaves the record unknown → this walk will not RETIRE (fails open).
-      labellessKeys = leErr ? null : new Set(((le ?? []) as Array<{ external_id: string }>).map((e) => e.external_id))
+      // 2026-11-13: a read that hit the row cap may be partial, and a key missing from it would never be recorded
+      // and could be retired at the end of the walk — an unknown record, the same as a failed read.
+      labellessKeys = leErr || (le ?? []).length >= POSTGREST_ROW_CAP
+        ? null
+        : new Set(((le ?? []) as Array<{ external_id: string }>).map((e) => e.external_id))
     }
     const recordOk = labellessKeys !== null
     while (now() <= deadline) {
@@ -394,6 +406,11 @@ export async function runCollectionsCensus(
       let failed: string | null = null
       for (const k of eds.keys()) walkKeys.add(k)
       for (const r of reused) walkKeys.add(r.ed.external_id)
+      // 2026-11-13 (review): the cross-run record keeps walkKeys ∩ labellessKeys, and labellessKeys is read once at
+      // the start of the run — so a THUMBNAIL-LESS edition this run creates was never recorded, and the last run of
+      // a multi-run walk retired the holdings this same walk wrote onto it. Record every key written without a
+      // thumbnail. Over-recording is safe: a recorded key is only ever protected from RETIRE.
+      if (labellessKeys) for (const [k, e] of eds) if (!e.thumbnail_url) labellessKeys.add(k)
       const edRows = [...eds.values()]
       for (let i = 0; i < edRows.length && !failed; i += WRITE_CHUNK) {
         const { data, error } = await db.from("editions")
@@ -463,6 +480,10 @@ export async function runCollectionsCensus(
       }
       const attributed = await attributeEscrowHeldToSellers(db, serials)
       out.escrow_remapped += attributed.remapped
+      // 2026-11-13 (review): a FAILED seller lookup leaves escrow-held cards on Magic Eden's escrow address, so this
+      // walk cannot vouch for which collector holds them — count them as skipped, which keeps RETIRE off this walk
+      // (the same rule as a card whose metadata fetch failed).
+      if (attributed.error) skippedThisWalk += Math.max(1, attributed.unmatched)
       // REPOINT the owner's existing row when it names a different edition; the rest stay insert-only.
       const repoint = attributed.rows.filter((r) => (ex.rows.get(String(r.moment_id)) ?? []).some((e) => e.wallet === r.wallet_address && e.edition_key !== r.edition_key))
       const repointSet = new Set(repoint)
