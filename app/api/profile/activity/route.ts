@@ -34,18 +34,28 @@ export async function GET() {
   }
 
   // 2) What wallets do they track? (with username for attribution)
-  const [{ data: wallets }, { data: bios }] = await Promise.all([
-    supabase
+  // ⚠ 2026-11-14: both errors were dropped (`{ data }` only), so a failed wallets read answered
+  // 200 `{activity:[]}` and the dashboard told a collector who follows six people to "Follow other
+  // collectors to see their sales here". The wallets read decides the answer: its failure is a
+  // failed request. The bios read only names the rows: logged, non-fatal.
+  const [{ data: wallets, error: wErr }, { data: bios, error: bErr }] = await Promise.all([
+    boundedRead(supabase
       .from("saved_wallets")
       .select("user_id, wallet_addr, collection_id")
-      .in("user_id", followeeIds),
-    supabase
+      .in("user_id", followeeIds), "api/profile/activity/saved_wallets"),
+    boundedRead(supabase
       .from("profile_bio")
       .select("user_id, username, display_name")
-      .in("user_id", followeeIds),
+      .in("user_id", followeeIds), "api/profile/activity/profile_bio"),
   ]);
+  if (wErr) {
+    console.error("[activity wallets]", wErr);
+    return apiErrorResponse(wErr, "api/profile/activity");
+  }
+  if (bErr) console.error("[activity bios] names unavailable:", bErr);
 
-  const walletRows = wallets ?? [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const walletRows = (wallets ?? []) as any[];
   if (walletRows.length === 0) {
     return NextResponse.json({ activity: [] });
   }
@@ -102,12 +112,13 @@ export async function GET() {
 
   // 4) Enrich with edition display fields
   const editionIds = Array.from(new Set(salesRows.map((s: any) => s.edition_id).filter(Boolean)));
-  const { data: editions } = editionIds.length
-    ? await supabase
+  const { data: editions, error: eErr } = editionIds.length
+    ? await boundedRead(supabase
         .from("editions")
         .select("id, player_name, set_name, tier, thumbnail_url")
-        .in("id", editionIds)
-    : { data: [] as any[] };
+        .in("id", editionIds), "api/profile/activity/editions")
+    : { data: [] as any[], error: null };
+  if (eErr) console.error("[activity editions] names unavailable:", eErr);
 
   const editionMap = new Map<string, any>();
   (editions ?? []).forEach((e: any) => editionMap.set(e.id, e));

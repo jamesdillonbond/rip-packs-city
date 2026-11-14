@@ -77,6 +77,18 @@ describe("GET /api/profile/activity", () => {
     expect((await res.json()).error).not.toContain("boom")
   })
 
+  it("a FAILED followee-wallets read fails the request — never an empty feed (2026-11-14)", async () => {
+    // The error was dropped, so the dashboard told a collector following six people to "Follow
+    // other collectors to see their sales here".
+    state.user = { id: "u1" }
+    state.tables.follows = { data: [{ followee_user_id: "u2" }], error: null }
+    state.tables.saved_wallets = { data: null, error: { message: "canceling statement due to statement timeout" } }
+    state.tables.profile_bio = { data: [], error: null }
+    const res = await GET()
+    expect(res.status).not.toBe(200)
+    expect(await res.json()).not.toHaveProperty("activity")
+  })
+
   it("returns an empty feed when followees track no wallets", async () => {
     state.user = { id: "u1" }
     state.tables.follows = { data: [{ followee_user_id: "u2" }], error: null }

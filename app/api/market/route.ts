@@ -32,6 +32,7 @@
 //   eat a 1000-row payload for UI-side paging.
 
 import { pinnacleListThumb } from "@/lib/pinnacle/image-url"
+import { postgrestOrIlike } from "@/lib/postgrest-or-ilike"
 import { paniniAssetUrl } from "@/lib/panini/assets"
 import { fmvCannotAnchorDiscount } from "@/lib/sniper/fmv-staleness";
 import { NextRequest, NextResponse } from "next/server"
@@ -565,6 +566,15 @@ function applyBrowseFilters(
   // A single set can be narrowed in the DB; a multi-select cannot, because
   // PostgREST has no "trim(col) IN (…)". Both are settled by exactSetMatch.
   if (f.sets.length === 1) q = q.ilike(cols.set, `%${f.sets[0]}%`)
+  // ⚠ 2026-11-14: and a MULTI-select is narrowed too — as an OR of the same substring matches.
+  // Unnarrowed, the arm read the board's price-ordered window (500 of ~4.6k Panini editions) and
+  // filtered THAT in memory, so two expensive parallels outside the window answered "No listings
+  // match these filters" (#129's shape). Each value is double-quoted for PostgREST's or() grammar
+  // (a set name can carry commas and parentheses); `"` and `\` are backslash-escaped. Over-matches
+  // ("Vol.1" in "Vol.10") are still dropped by exactSetMatch.
+  else if (f.sets.length > 1) {
+    q = q.or(postgrestOrIlike(cols.set, f.sets))
+  }
   if (f.player) q = q.ilike(cols.player, `%${f.player}%`)
   if (cols.series && f.seriesList.length > 0) q = q.in(cols.series, f.seriesList)
   return q

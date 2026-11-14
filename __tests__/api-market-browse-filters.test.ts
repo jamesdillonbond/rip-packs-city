@@ -41,6 +41,7 @@ vi.mock("@/lib/supabase", () => {
     eq: () => b,
     in: (col: string, v: any) => { calls.filters[`in:${col}`] = v; return b },
     ilike: (col: string, v: any) => { calls.filters[`ilike:${col}`] = v; return b },
+    or: (v: string) => { calls.filters["or"] = v; return b },
     order: () => b,
     limit: () => b,
     // The Pinnacle arm pages with .range() since 2026-09-26 (#146 (1)).
@@ -103,6 +104,9 @@ describe("/api/market — the modern arms honour the filters the UI shows as act
     const res = await GET(req("set=Set%20One,Set%20Two"))
     const body = await res.json()
     expect(body.listings.map((l: any) => l.setName).sort()).toEqual(["Set One", "Set Two"])
+    // 2026-11-14: and the multi-select is narrowed IN THE DB — an OR of the same substring
+    // matches — not applied to a window that was already truncated by price (#129's shape).
+    expect(calls.filters["or"]).toBe('set_name.ilike."*Set One*",set_name.ilike."*Set Two*"')
   })
 
   it("pushes series, character and min-price to the DB", async () => {
