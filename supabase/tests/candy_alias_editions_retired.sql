@@ -5,7 +5,7 @@
 --   2. delete removes an alias edition nothing names (its market-daily and FMV rows first) — and ONLY that: an alias
 --      still holding a card, carrying a sale, a listing, an offer or a wishlist stays; a canonical never goes;
 --   3. a NO ACTION reference (here: a price_snapshots row) is counted as referenced, never forced.
--- The function DDL is VERBATIM from supabase/migrations/<version>_audit_20261113_candy_alias_editions_retired.sql;
+-- The function DDL is VERBATIM from supabase/migrations/20261114013700_audit_20261113_candy_alias_editions_retired.sql;
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift. Runs in a rolled-back transaction.
 
 BEGIN;

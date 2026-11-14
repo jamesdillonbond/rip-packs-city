@@ -15,6 +15,18 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-11-13. #247: an insert of a Candy ALIAS edition key is skipped (no re-creating retired duplicates).
+    fn: "candy_skip_alias_edition_insert",
+    test: "supabase/tests/candy_alias_editions_retired.sql",
+    migration: "supabase/migrations/20261114013700_audit_20261113_candy_alias_editions_retired.sql",
+  },
+  {
+    // Added 2026-11-13. #247: deletes an alias edition nothing references; a NO ACTION reference is counted, never forced.
+    fn: "candy_delete_emptied_alias_editions",
+    test: "supabase/tests/candy_alias_editions_retired.sql",
+    migration: "supabase/migrations/20261114013700_audit_20261113_candy_alias_editions_retired.sql",
+  },
+  {
     // Added 2026-11-13. #247 alias refresh: same art + tier + circulation = one card; stable canonical; no chains.
     fn: "refresh_candy_edition_key_aliases",
     test: "supabase/tests/candy_edition_key_aliases.sql",
