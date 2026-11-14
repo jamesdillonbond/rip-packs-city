@@ -14,7 +14,7 @@ import DashboardTabs from "@/components/dashboard/DashboardTabs"
 import { fmtUsd, relativeTime } from "@/lib/dashboard/format"
 import { currencySuffix, displayCurrency, isUsdPegged } from "@/lib/usd-format"
 import { packCoverage } from "@/lib/packs-wallet-view-format"
-import { heldPacksCaption, packHeldFmvLabel, packHeldPullsLabel, packValueLabel, packBuyLabel, packIdentityNote, packInferredAcquisitionLine, packMarketLabel, packPullLabel, packPullSerialLabel, packsRippedCaption, packsSoldCaption, spentCaption, type HeldPackValue } from "@/lib/packs-wallet-view-format"
+import { heldPacksCaption, pullsHeldLine, packHeldFmvLabel, packHeldPullsLabel, packValueLabel, packBuyLabel, packIdentityNote, packInferredAcquisitionLine, packMarketLabel, packPullLabel, packPullSerialLabel, packsRippedCaption, packsSoldCaption, spentCaption, type HeldPackValue } from "@/lib/packs-wallet-view-format"
 import Link from "next/link"
 import { DB_SLUG_TO_SLUG } from "@/lib/collections"
 import {
@@ -919,10 +919,13 @@ function LifecycleDetail({ lifecycle, row }: { lifecycle: any; row: HistoryRow }
         <div>
           <div style={{ fontFamily: condensedFont, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--rpc-text-secondary)", marginBottom: 6 }}>
             Pulls ({pulls.length}){pullsSourceNote(lifecycle.pulls_source) ? <span style={{ textTransform: "none", letterSpacing: 0, fontFamily: monoFont, color: "var(--rpc-text-muted)" }}> · {pullsSourceNote(lifecycle.pulls_source)}</span> : null}
+            {pullsHeldLine(pulls, lifecycle.holdings_checked) && (
+              <span style={{ textTransform: "none", letterSpacing: 0, fontFamily: monoFont, color: lifecycle.holdings_checked === false ? "var(--rpc-danger-text)" : "var(--rpc-success-text)" }}> · {pullsHeldLine(pulls, lifecycle.holdings_checked)}</span>
+            )}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(90px, 1fr))", gap: 6 }}>
             {pulls.map((p: any, i: number) => (
-              <div key={i} style={{ background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 4, padding: 4 }}>
+              <div key={i} data-still-held={p.still_held === true ? "yes" : p.still_held === false ? "no" : undefined} style={{ background: "var(--rpc-surface)", border: `1px solid ${p.still_held === true ? "var(--rpc-success-text)" : "var(--rpc-border)"}`, borderRadius: 4, padding: 4, opacity: p.still_held === false ? 0.55 : 1 }}>
                 {p.thumbnail_url ? <img src={proxyIpfsImageUrl(p.thumbnail_url, 320) ?? undefined} alt="" style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", borderRadius: 2 }} /> : <div style={{ width: "100%", aspectRatio: "1 / 1", background: "#1a1a1d", borderRadius: 2 }} />}
                 <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 11, color: "var(--rpc-text-primary)", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.player_name ?? p.character_name ?? "—"}</div>
                 {p.named_by === "id_neighbours" && (
@@ -931,7 +934,9 @@ function LifecycleDetail({ lifecycle, row }: { lifecycle: any; row: HistoryRow }
                 {packPullSerialLabel(p.serial_number, p.circulation_count) && (
                   <div style={{ fontFamily: monoFont, fontSize: 9, color: "var(--rpc-text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{packPullSerialLabel(p.serial_number, p.circulation_count)}</div>
                 )}
-                <div style={{ fontFamily: monoFont, fontSize: 10, color: "var(--rpc-text-secondary)" }}>{fmtUsd(p.current_fmv ?? p.fmv_usd ?? null)}</div>
+                <div style={{ fontFamily: monoFont, fontSize: 10, color: "var(--rpc-text-secondary)" }}>{fmtUsd(p.still_held === true && p.wallet_fmv_usd != null ? p.wallet_fmv_usd : (p.current_fmv ?? p.fmv_usd ?? null))}</div>
+                {p.still_held === true && <div style={{ fontFamily: monoFont, fontSize: 9, color: "var(--rpc-success-text)", letterSpacing: "0.08em", textTransform: "uppercase" }}>Held</div>}
+                {p.still_held === false && <div style={{ fontFamily: monoFont, fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" }}>No longer held</div>}
               </div>
             ))}
           </div>

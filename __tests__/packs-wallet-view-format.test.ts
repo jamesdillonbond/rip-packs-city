@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import {
   packValueLabel, packUnrealizedUsd, packHeldPullsLabel, packHeldFmvLabel, packRoiLabel, packHoldLabel,
-  packTabMetrics,
+  packTabMetrics, pullsHeldLine,
   PACK_FILTER_STATUS,
   PACK_FILTER_LABEL,
   PACK_FILTERS,
@@ -510,5 +510,19 @@ describe("v27 tab metrics: every sum names the rows it covers; a sum over none i
   })
   it("an older payload with no tab_totals renders no tiles", () => {
     expect(packTabMetrics("sold", undefined)).toEqual([])
+  })
+})
+
+describe("pullsHeldLine (dashboard pack details, 2026-11-13)", () => {
+  it("counts held pulls and sums their wallet FMV, naming unpriced ones", () => {
+    expect(pullsHeldLine([{ still_held: true, wallet_fmv_usd: 5.75 }, { still_held: false }, { still_held: true, wallet_fmv_usd: 1 }], true)).toBe("2 of 3 still held · $6.75 wallet FMV")
+    expect(pullsHeldLine([{ still_held: true, wallet_fmv_usd: 5 }, { still_held: true, wallet_fmv_usd: null }], true)).toBe("2 of 2 still held · $5.00 wallet FMV (1 of 2 priced)")
+    expect(pullsHeldLine([{ still_held: true, wallet_fmv_usd: null }], true)).toBe("1 of 1 still held")
+    expect(pullsHeldLine([{ still_held: false }, { still_held: false }], true)).toBe("none still held")
+  })
+  it("a failed check says so -- never 'none still held'; no scoped answer says nothing", () => {
+    expect(pullsHeldLine([{}, {}], false)).toBe("couldn't check which of these you still hold")
+    expect(pullsHeldLine([{}, {}], null)).toBeNull()
+    expect(pullsHeldLine([{}, {}], undefined)).toBeNull()
   })
 })

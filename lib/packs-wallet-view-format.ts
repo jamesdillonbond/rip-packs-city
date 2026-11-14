@@ -748,3 +748,21 @@ export function packTabMetrics(filter: PackFilter, t: PackTabTotals | null | und
 export function packMetricTint(tone: PackTabMetric["tone"]): string {
   return tone === "positive" ? POSITIVE_TINT : tone === "negative" ? NEGATIVE_TINT : tone === "muted" ? MUTED_TINT : "var(--rpc-text-primary)"
 }
+
+/** Line under a pack's "Pulls" heading on /dashboard/packs (2026-11-13): how many of
+ *  the pulls the wallet still holds and their wallet FMV. `checked` is the lifecycle
+ *  route's holdings_checked: false = the read failed (say so, never "0 held"); null =
+ *  no scoped answer (say nothing). An unpriced held pull is counted, not summed as $0. */
+export function pullsHeldLine(
+  pulls: ReadonlyArray<{ still_held?: boolean; wallet_fmv_usd?: number | null }>,
+  checked: boolean | null | undefined,
+): string | null {
+  if (checked === false) return "couldn't check which of these you still hold"
+  if (checked !== true || pulls.length === 0) return null
+  const held = pulls.filter((p) => p.still_held === true)
+  if (held.length === 0) return `none still held`
+  const priced = held.filter((p) => p.wallet_fmv_usd != null)
+  const sum = priced.reduce((a, p) => a + Number(p.wallet_fmv_usd), 0)
+  const value = priced.length === 0 ? "" : ` · ${fmtPackUsd(Math.round(sum * 100) / 100)} wallet FMV` + (priced.length < held.length ? ` (${priced.length} of ${held.length} priced)` : "")
+  return `${held.length} of ${pulls.length} still held${value}`
+}

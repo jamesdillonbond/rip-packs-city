@@ -342,6 +342,33 @@ describe("PackHistoryClient", () => {
     expect(document.body.textContent).toMatch(/Ownership chain/)
   })
 
+  // 2026-11-13 (Trevor): the expanded pack marks which pulls the wallet still holds.
+  it("expanded pack: still-held pulls are marked, gone ones say so, and the heading counts them", async () => {
+    mount({
+      lifecycle: () => json(200, {
+        holdings_checked: true,
+        pulls: [
+          { nft_id: "a", player_name: "Damian Lillard", fmv_usd: 12, still_held: true, wallet_fmv_usd: 11.5 },
+          { nft_id: "b", player_name: "Anfernee Simons", fmv_usd: 3, still_held: false, wallet_fmv_usd: null },
+        ],
+        ownership_chain: [],
+      }),
+    })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Series 5 Base/))
+    fireEvent.click(screen.getByText(/Series 5 Base/))
+    await waitFor(() => expect(document.body.textContent).toMatch(/1 of 2 still held · \$11\.50 wallet FMV/))
+    expect(document.querySelector('[data-still-held="yes"]')?.textContent).toMatch(/Damian Lillard.*\$11\.50.*Held/)
+    expect(document.querySelector('[data-still-held="no"]')?.textContent).toMatch(/No longer held/)
+  })
+
+  it("expanded pack: a failed holdings check says so and marks no pull as gone", async () => {
+    mount({ lifecycle: () => json(200, { holdings_checked: false, pulls: [{ nft_id: "a", player_name: "Damian Lillard", fmv_usd: 12 }], ownership_chain: [] }) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Series 5 Base/))
+    fireEvent.click(screen.getByText(/Series 5 Base/))
+    await waitFor(() => expect(document.body.textContent).toMatch(/couldn't check which of these you still hold/))
+    expect(document.body.textContent).not.toMatch(/No longer held/)
+  })
+
   // ⚠ A pull with no name must render an em-dash, not an empty cell — a blank tile beside
   // a price reads as a rendering fault rather than a catalog gap.
   it("renders an em-dash for a pull we cannot name", async () => {

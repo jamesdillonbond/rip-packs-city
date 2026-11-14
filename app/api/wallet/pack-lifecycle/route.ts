@@ -71,15 +71,15 @@ export async function GET(req: NextRequest) {
     // A reconstructed rip is not a pack id: there is no lifecycle to read.
     const isBurst = packNftId.startsWith("burst:")
     let lifecycle: Record<string, unknown> = { pack_nft_id: packNftId, status: "ripped" }
+    const collectionUuid = collection
+      ? (getCollectionByUrlSlug(collection) ?? getCollectionByDbSlug(collection))?.id ?? null
+      : null
     if (!isBurst) {
       // ⛔ Pack NFT ids are per-contract (2,294 Golazos ids are also All Day
       // rips): with a collection, read its own lifecycle RPC and never return a
       // pack filed under another collection (lib/pack-detail/lifecycle-rpc.ts).
       // The dashboard sends the history row's DB slug (laliga_golazos); accept
       // the URL form too, as get_wallet_pack_pulls does.
-      const collectionUuid = collection
-        ? (getCollectionByUrlSlug(collection) ?? getCollectionByDbSlug(collection))?.id ?? null
-        : null
       const rpc = lifecycleRpcFor(collectionUuid)
       const { data, error } = await boundedRead(sb.rpc(rpc, { p_pack_nft_id: packNftId }), `api/wallet/pack-lifecycle/${rpc}`)
       if (error) {
@@ -125,7 +125,42 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ ...lifecycle, pulls_source: pullsSource, ...pullCounts }, {
+    // 2026-11-13 (Trevor): which of these pulls this wallet STILL holds, at its own FMV
+    // (wallet_moments_cache, the binder's value). Scoped by collection_id: a moment id is
+    // unique only within a collection (#142), so with no collection there is no answer.
+    // A failed read says the check did not happen (holdings_checked false) and drops the
+    // flags -- it never marks a pull as gone, and never fails the lifecycle itself.
+    let holdingsChecked: boolean | null = null
+    const pullList = Array.isArray(lifecycle.pulls) ? (lifecycle.pulls as Array<Record<string, unknown>>) : []
+    const pullIds = pullList.map((p) => (p?.nft_id == null ? "" : String(p.nft_id))).filter(Boolean)
+    if (collectionUuid && pullIds.length > 0) {
+      const { data: held, error: heldErr } = await boundedRead(
+        sb.from("wallet_moments_cache")
+          .select("moment_id, fmv_usd")
+          .eq("wallet_address", wallet)
+          .eq("collection_id", collectionUuid)
+          .in("moment_id", pullIds),
+        "api/wallet/pack-lifecycle/wallet_moments_cache",
+      )
+      if (heldErr || !Array.isArray(held)) {
+        console.error("[wallet/pack-lifecycle] holdings", heldErr?.message ?? "no rows array")
+        holdingsChecked = false
+      } else {
+        const fmvById = new Map<string, number | null>()
+        for (const h of held as Array<{ moment_id: string; fmv_usd: number | string | null }>) {
+          fmvById.set(String(h.moment_id), h.fmv_usd == null ? null : Number(h.fmv_usd))
+        }
+        lifecycle.pulls = pullList.map((p) => {
+          const id = p?.nft_id == null ? "" : String(p.nft_id)
+          if (!id) return p
+          const stillHeld = fmvById.has(id)
+          return { ...p, still_held: stillHeld, wallet_fmv_usd: stillHeld ? fmvById.get(id) ?? null : null }
+        })
+        holdingsChecked = true
+      }
+    }
+
+    return NextResponse.json({ ...lifecycle, pulls_source: pullsSource, ...pullCounts, holdings_checked: holdingsChecked }, {
       headers: { "Cache-Control": "no-cache, no-store, must-revalidate" },
     })
   } catch (err) {
