@@ -3290,3 +3290,12 @@ For a one-fragment change to a large unpinned view, `replace(pg_get_viewdef(v, t
 - Per **sealed** row: `value_usd` + `value_basis` (`ask` > `last_sale` > `rip_ev` > `opened_avg`), NULL when none is known — never 0.
 - `tab_totals`: the requested tab over ALL its rows (the page is 25), each sum beside its count; v29 adds each sealed basis summed apart (`held_listed`, `held_floor_ask_usd`, …), which `wallet_held_pack_value` v2 reads in ONE call. `v_want_pulls` / `v_want_held` make the parts one-time filters per status; `held_pulls` / `dist_market` are `MATERIALIZED` on purpose (see the CTE-inlining note above).
 - `pull_value_usd` is current FMV maintained by jobid 810 (drift > 1.5×, rips ≥ $100) and the ~55-day stale leg — it is NOT "value at rip".
+
+## Is an `offers` row with `status='open'` really open? (2026-11-14, Cowork cloud)
+
+- **Test:** compare it against Atlas's COMPLETE edition books, `topshot_atlas_edition_verified` (`complete`, `open_offers`), joined through `topshot_atlas_edition_map.rpc_edition_id`.
+- **Result on 11-14:** over 3,381 complete books verified in the last 3 days, our open Top Shot offers exceeded Atlas's count on 329 editions. That is at most 693 of 9,488 rows (7 %).
+- **Age does not predict a phantom:** 51 of the 787 offers older than 90 d sat in those editions.
+- **Why counts differ:** Atlas's count also includes pre-06-03 offers, which the forward-only indexer never saw. So "fewer than Atlas" is expected; only "more than Atlas" can indicate a missed close.
+- **Second check:** Claude Code's step 0 (buyer + set:play + price + listed_at ± 10 min against Atlas offer rows) found 0 closed among the 10 oldest, and 2 of 300 random offers older than 90 d.
+- **Consequence:** open offers ship as open, with no "unconfirmed" age chip (`get_topshot_wallet_open_offers`).
