@@ -12,6 +12,13 @@ export type WalletSummary = {
   /** 2026-09-06: the STALE share of wallet_fmv (get_wallet_summary.stale_fmv); the headline is wallet_fmv − stale_fmv. */
   stale_fmv?: number
   stale_count?: number
+  /**
+   * 2026-11-14: the stale share split by lock state (same predicates as locked_fmv / unlocked_fmv).
+   * Present → the Locked / Unlocked tiles are netted of it so they sum to the headline. Absent (an
+   * older get_wallet_summary) → the tiles stay gross and the row says so.
+   */
+  stale_locked_fmv?: number
+  stale_unlocked_fmv?: number
   unlocked_fmv: number
   unlocked_count: number
   locked_fmv: number
@@ -36,6 +43,10 @@ export type PortfolioTotals = {
   totalCount: number
   lockedCount: number
   unlockedCount: number
+  /** 2026-11-14: how many rows carry a best offer, and the FMV of exactly those rows. */
+  offerCount?: number
+  fmvWithOffer?: number
+  pairedOffer?: number
 }
 
 // Minimal structural row shape — MomentRow[] satisfies this.
@@ -57,6 +68,9 @@ export type WalletStatRowValues = {
   lockUnknownFmv: number | null
   lockUnknownCount: number | null
   bestOfferTotal: number | null
+  /** Moments the Best Offer Total covers (null when unknown). */
+  bestOfferCount: number | null
+  /** FMV of the SAME moments the offer total covers, minus that total — never the whole wallet's FMV. */
   spreadGap: number | null
   momentCount: number | null
   /** Stale-priced share excluded from walletFmv (0 when unknown). */
@@ -69,6 +83,8 @@ export type WalletStatRowValues = {
    * the four-numbers-for-one-wallet defect at the scale of a single reader.
    */
   staleUnknown: boolean
+  /** True when Locked / Unlocked are netted of the stale share, i.e. they sum to walletFmv. */
+  staleNetted: boolean
 }
 
 // Adapter for <WalletStatRow/>: prefer the authoritative walletSummary when
@@ -130,8 +146,16 @@ export function computeWalletStatRow(input: {
   // unlocked tiles fell back to `totals` whenever ANY row had loaded, so with
   // the summary read failed they published page 1's sums as the wallet's.
   const totalsComplete = totals.totalCount > 0 && totals.totalCount >= paginatedTotal
+  // 2026-11-14 (Trevor, "the math doesn't make sense"): the headline is total − stale, so the two
+  // tiles under it are netted the same way when the summary carries the split — otherwise Locked +
+  // Unlocked summed to $52,801 under a $47,657 Wallet FMV.
+  const staleNetted = !!walletSummary &&
+    typeof walletSummary.stale_locked_fmv === "number" &&
+    typeof walletSummary.stale_unlocked_fmv === "number"
+  const staleLocked = staleNetted ? Math.max(0, Number(walletSummary!.stale_locked_fmv) || 0) : 0
+  const staleUnlocked = staleNetted ? Math.max(0, Number(walletSummary!.stale_unlocked_fmv) || 0) : 0
   const unlockedFmv: number | null = walletSummary
-    ? walletSummary.unlocked_fmv
+    ? Math.max(0, walletSummary.unlocked_fmv - staleUnlocked)
     : totalsComplete
       ? totals.unlockedFmv
       : null
@@ -142,7 +166,7 @@ export function computeWalletStatRow(input: {
       : null
 
   const lockedFmv: number | null = walletSummary
-    ? walletSummary.locked_fmv
+    ? Math.max(0, walletSummary.locked_fmv - staleLocked)
     : totalsComplete
       ? totals.lockedFmv
       : null
@@ -162,9 +186,18 @@ export function computeWalletStatRow(input: {
     ? (walletSummary.lock_unknown_count ?? null)
     : null
 
-  const bestOfferTotal: number | null = totals.totalBestOffer > 0 ? totals.totalBestOffer : null
+  // 2026-11-14: the offer total is a client sum over loaded rows, so it may stand only once every row
+  // is loaded (the same gate as the tiles above). And its gap is measured against the FMV of the SAME
+  // moments that carry an offer — "vs FMV: −$31,204" compared $16,452 of offers on some moments with
+  // the FMV of the whole wallet, most of which has no offer at all.
+  const bestOfferTotal: number | null = totalsComplete && totals.totalBestOffer > 0 ? totals.totalBestOffer : null
+  const bestOfferCount: number | null =
+    bestOfferTotal !== null && typeof totals.offerCount === "number" ? totals.offerCount : null
   const spreadGap: number | null =
-    walletFmv !== null && bestOfferTotal !== null ? walletFmv - bestOfferTotal : null
+    bestOfferTotal !== null && typeof totals.fmvWithOffer === "number" && totals.fmvWithOffer > 0 &&
+    typeof totals.pairedOffer === "number"
+      ? totals.fmvWithOffer - totals.pairedOffer
+      : null
   // 2026-11-07: the WALLET card's count is the WALLET's, like its FMV beside it.
   // `paginatedTotal` is the count under the active list filter — with a remembered
   // player filter (Luka Dončić) Trevor's card read "$52,573 · 593 moments" for a
@@ -178,6 +211,7 @@ export function computeWalletStatRow(input: {
     staleFmv,
     staleCount,
     staleUnknown,
+    staleNetted,
     walletFmv,
     unlockedFmv,
     unlockedCount,
@@ -186,6 +220,7 @@ export function computeWalletStatRow(input: {
     lockUnknownFmv,
     lockUnknownCount,
     bestOfferTotal,
+    bestOfferCount,
     spreadGap,
     momentCount,
   }

@@ -59,7 +59,7 @@ describe("computeWalletStatRow", () => {
     const r = computeWalletStatRow({
       walletSummary: fullSummary,
       walletTotalFmv: 999,
-      totals: { ...zeroTotals, totalBestOffer: 200 },
+      totals: { ...zeroTotals, totalBestOffer: 200, totalCount: 20, offerCount: 3, fmvWithOffer: 260, pairedOffer: 200 },
       paginatedTotal: 20,
       collectionSlug: "nba-top-shot",
     })
@@ -69,8 +69,66 @@ describe("computeWalletStatRow", () => {
     expect(r.lockedFmv).toBe(400)
     expect(r.lockedCount).toBe(8)
     expect(r.bestOfferTotal).toBe(200)
-    expect(r.spreadGap).toBe(800) // 1000 - 200
+    expect(r.bestOfferCount).toBe(3)
+    // 2026-11-14 re-pin: the gap is against the FMV of the SAME 3 moments (260), not the wallet's 1000.
+    expect(r.spreadGap).toBe(60)
     expect(r.momentCount).toBe(20)
+  })
+
+  // 2026-11-14 (Trevor): "Best Offer Total $16,452 · vs FMV −$31,204.98" compared offers on SOME
+  // moments with the FMV of the whole wallet, and summed only the rows loaded so far.
+  it("a PARTIAL row set publishes no Best Offer Total and no gap", () => {
+    const r = computeWalletStatRow({
+      walletSummary: fullSummary,
+      walletTotalFmv: null,
+      totals: { ...zeroTotals, totalBestOffer: 200, totalCount: 50, offerCount: 3, fmvWithOffer: 260, pairedOffer: 200 },
+      paginatedTotal: 15290,
+      collectionSlug: "nba-top-shot",
+    })
+    expect(r.bestOfferTotal).toBeNull()
+    expect(r.bestOfferCount).toBeNull()
+    expect(r.spreadGap).toBeNull()
+  })
+
+  it("the gap never uses the whole wallet's FMV", () => {
+    const r = computeWalletStatRow({
+      walletSummary: fullSummary,
+      walletTotalFmv: null,
+      totals: { ...zeroTotals, totalBestOffer: 200, totalCount: 20 },
+      paginatedTotal: 20,
+      collectionSlug: "nba-top-shot",
+    })
+    expect(r.bestOfferTotal).toBe(200)
+    expect(r.spreadGap).toBeNull() // no paired FMV supplied → no gap, never 1000 − 200
+  })
+
+  // 2026-11-14 (Trevor): Locked $50,427 + Unlocked $2,374 = $52,801 under a $47,657 Wallet FMV.
+  it("nets Locked / Unlocked of the stale share when the summary splits it, so they sum to the headline", () => {
+    const r = computeWalletStatRow({
+      walletSummary: { ...fullSummary, stale_fmv: 150, stale_locked_fmv: 100, stale_unlocked_fmv: 50 },
+      walletTotalFmv: null,
+      totals: zeroTotals,
+      paginatedTotal: 20,
+      collectionSlug: "nba-top-shot",
+    })
+    expect(r.walletFmv).toBe(850)
+    expect(r.lockedFmv).toBe(300)
+    expect(r.unlockedFmv).toBe(550)
+    expect((r.lockedFmv ?? 0) + (r.unlockedFmv ?? 0)).toBe(r.walletFmv)
+    expect(r.staleNetted).toBe(true)
+  })
+
+  it("CONTROL: an older summary without the split leaves the tiles gross and says so", () => {
+    const r = computeWalletStatRow({
+      walletSummary: { ...fullSummary, stale_fmv: 150 },
+      walletTotalFmv: null,
+      totals: zeroTotals,
+      paginatedTotal: 20,
+      collectionSlug: "nba-top-shot",
+    })
+    expect(r.lockedFmv).toBe(400)
+    expect(r.unlockedFmv).toBe(600)
+    expect(r.staleNetted).toBe(false)
   })
 
   it("falls back to walletTotalFmv, then totals, then null when no summary", () => {

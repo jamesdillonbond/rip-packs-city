@@ -105,6 +105,17 @@ describe("CollectionMomentTable mobile expanded panel", () => {
     // The loan-default path renders its own label + the $75.00 principal.
     expect(container.textContent).toContain("$75.00")
   })
+
+  // 2026-11-14 (Trevor): S1 Metallic Gold LE LeBron #258 — the card read "Floor $1999.00" and the
+  // expanded LOW ASK read "—", because only THIS moment's own listing was consulted there.
+  it("falls back to the edition floor when this moment is not listed", () => {
+    const props = baseProps({ filteredRows: [row({ lowAsk: null, editionLowAsk: 1999 })] })
+    const { container } = render(<CollectionMomentTable {...props} />)
+    const field = Array.from(container.querySelectorAll(".rpc-expand-field"))
+      .find((el) => el.textContent?.startsWith("Low Ask"))
+    expect(field?.textContent).toContain("$1,999.00")
+    expect(field?.textContent).toContain("floor")
+  })
 })
 
 // Mobile-card branches the two suites above don't reach: the Gift/Reward/Airdrop

@@ -10,7 +10,6 @@ import { isMarketClosed } from "@/lib/market-closed"
 import type { MomentRow } from "@/lib/collection/types"
 import {
   computeWalletStatRow,
-  computeLoanDefaults,
   computeCostBasisSummary,
 } from "@/lib/portfolio-summary-compute"
 import { usdSignFirst } from "@/lib/usd-format"
@@ -73,6 +72,9 @@ type CostBasisEntry = {
 type Totals = {
   totalFmv: number
   totalBestOffer: number
+  offerCount?: number
+  fmvWithOffer?: number
+  pairedOffer?: number
   lockedFmv: number
   unlockedFmv: number
   totalCount: number
@@ -141,11 +143,13 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
             lockUnknownFmv,
             lockUnknownCount,
             bestOfferTotal,
+            bestOfferCount,
             spreadGap,
             momentCount,
             staleFmv,
             staleCount,
             staleUnknown,
+            staleNetted,
           } = computeWalletStatRow({ walletSummary, walletTotalFmv, totals, paginatedTotal, collectionSlug })
           return (
           <div className="mb-5 space-y-3">
@@ -160,6 +164,8 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
               lockUnknownFmv={lockUnknownFmv}
               lockUnknownCount={lockUnknownCount}
               spreadGap={spreadGap}
+              bestOfferCount={bestOfferCount}
+              staleNetted={staleNetted}
               staleFmv={staleFmv}
               staleCount={staleCount}
               staleUnknown={staleUnknown}
@@ -190,25 +196,9 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
               </div>
             )}
 
-            {(function() {
-              const loans = computeLoanDefaults(rows)
-              if (!loans) return null
-              const { count: loanCount, totalPrincipal: total } = loans
-              return (
-                <div
-                  className="rounded-lg border px-3 py-2 text-xs font-mono flex items-center gap-2"
-                  style={{ borderColor: "rgba(239,68,68,0.35)", background: "rgba(239,68,68,0.06)", color: accentText("#fca5a5") }}
-                  title="Acquired via loan default. Principal is the USDCF value lent against these moments (1:1 USD)."
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="M14 11l7-7M9 7l7 7M3 21l4-4M9 11l4 4M14 4l6 6M3 13l8 8" />
-                  </svg>
-                  <span>
-                    {loanCount.toLocaleString("en-US")} acquired via loan default ({"$" + total.toFixed(2)} principal)
-                  </span>
-                </div>
-              )
-            })()}
+            {/* 2026-11-14 (Trevor): the loan-default callout is gone. It counted only the LOADED rows
+                ("1 acquired via loan default" on a wallet holding 12), and the principal already enters
+                Cost Basis as the moment's buy price (moment_acquisitions.buy_price = loan_principal). */}
           </div>
           )
         })()}

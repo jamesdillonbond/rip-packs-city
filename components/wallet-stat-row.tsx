@@ -41,7 +41,12 @@ export type WalletStatRowProps = {
    */
   lockUnknownFmv?: number | null
   lockUnknownCount?: number | null
+  /** FMV of the moments the offer total covers, minus their offers (2026-11-14) — never the whole wallet's. */
   spreadGap: number | null
+  /** How many moments the Best Offer Total covers (null when unknown). */
+  bestOfferCount?: number | null
+  /** Locked / Unlocked are netted of the stale share, so they sum to the headline (2026-11-14). */
+  staleNetted?: boolean
   /** Stale-priced share excluded from walletFmv; disclosed under the headline when > 0. */
   staleFmv?: number
   staleCount?: number
@@ -98,6 +103,8 @@ export default function WalletStatRow(props: WalletStatRowProps) {
     lockUnknownFmv,
     lockUnknownCount,
     spreadGap,
+    bestOfferCount,
+    staleNetted,
     staleFmv,
     staleCount,
     staleUnknown,
@@ -225,7 +232,7 @@ export default function WalletStatRow(props: WalletStatRowProps) {
         {/* 2026-11-09: Wallet FMV leaves stale-priced moments out and names them beside it; the
             locked / unlocked split counts them. On a real wallet that read Locked $54,437 above
             a Wallet FMV of $52,275 with nothing saying why. Say it where the sum is visible. */}
-        {typeof staleFmv === "number" && staleFmv > 0 && (
+        {typeof staleFmv === "number" && staleFmv > 0 && !staleNetted && (
           <div className="rpc-stat-caption">locked + unlocked include the stale-priced</div>
         )}
       </div>
@@ -235,7 +242,9 @@ export default function WalletStatRow(props: WalletStatRowProps) {
         <div className="rpc-stat-eyebrow">Best Offer Total</div>
         <div className="rpc-stat-value">{formatCurrency(bestOfferTotal)}</div>
         <div className="rpc-stat-caption">
-          {showSpreadGap ? "vs FMV: " + formatCurrency(-(spreadGap as number)) : ""}
+          {typeof bestOfferCount === "number" && bestOfferCount > 0
+            ? "on " + formatCount(bestOfferCount) + " " + noun + (showSpreadGap ? " · vs their FMV: " + formatCurrency(-(spreadGap as number)) : "")
+            : showSpreadGap ? "vs their FMV: " + formatCurrency(-(spreadGap as number)) : ""}
         </div>
       </div>
     </div>

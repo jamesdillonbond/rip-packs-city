@@ -159,7 +159,9 @@ describe("PortfolioSummary", () => {
     expect(txt).not.toContain("Wallet FMV")  // dollar tiles replaced
   })
 
-  it("renders the loan-default callout summing principal", () => {
+  // 2026-11-14 (Trevor): the callout is retired — it counted only the LOADED rows ("1 acquired via
+  // loan default" on a wallet holding 12) and the principal already enters Cost Basis as buy_price.
+  it("renders NO loan-default callout (retired 2026-11-14)", () => {
     const rows = [
       { flowId: "1", acquisitionMethod: "loan_default", loanPrincipal: 100, costBasis: 0, fmv: 150 },
       { flowId: "2", acquisitionMethod: "loan_default", loanPrincipal: 0, costBasis: 50, fmv: 60 },
@@ -167,8 +169,8 @@ describe("PortfolioSummary", () => {
     ] as unknown as MomentRow[]
     const { container } = render(<PortfolioSummary {...base} rows={rows} />)
     const txt = container.textContent!
-    expect(txt).toContain("2 acquired via loan default")
-    expect(txt).toContain("$150.00 principal") // 100 + 50
+    expect(txt).not.toContain("acquired via loan default")
+    expect(txt).not.toContain("principal)")
   })
 
   it("renders a NEGATIVE client-computed P&L (per-row cost path, not wallet-wide)", () => {

@@ -64,11 +64,17 @@ describe("WalletStatRow", () => {
 
   it("renders the vs-FMV spread gap only when both sides are positive numbers", () => {
     const shown = render(<WalletStatRow {...props({ walletFmv: 1000, bestOfferTotal: 800, spreadGap: 200 })} />)
-    expect(shown.container.textContent).toContain("vs FMV: -$200")
+    // 2026-11-14: the gap is against the FMV of the moments carrying an offer — "their" FMV.
+    expect(shown.container.textContent).toContain("vs their FMV: -$200")
     cleanup()
     // bestOfferTotal 0 → gap suppressed.
     const hidden = render(<WalletStatRow {...props({ bestOfferTotal: 0 })} />)
-    expect(hidden.container.textContent).not.toContain("vs FMV:")
+    expect(hidden.container.textContent).not.toContain("FMV: -")
+  })
+
+  it("names how many moments the offer total covers", () => {
+    const { container } = render(<WalletStatRow {...props({ walletFmv: 1000, bestOfferTotal: 800, spreadGap: 200, bestOfferCount: 42 })} />)
+    expect(container.textContent).toContain("on 42 moments · vs their FMV: -$200")
   })
 
   it("shows a count + closure note (no dollar total) for a closed market", () => {

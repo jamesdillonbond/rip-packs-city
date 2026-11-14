@@ -74,3 +74,19 @@ describe("computeCollectionTotals", () => {
     expect(t.badgeCount).toBe(1)
   })
 })
+
+// 2026-11-14: the offer gap must be like-for-like — FMV and offers of the SAME rows.
+describe("computeCollectionTotals — offer pairing", () => {
+  it("counts offered rows and pairs their FMV and offers", () => {
+    const rows = [
+      { fmv: 100, bestOffer: 80 },
+      { fmv: 50, bestOffer: null },
+      { fmv: null, bestOffer: 20 },
+    ] as unknown as Parameters<typeof computeCollectionTotals>[0]
+    const t = computeCollectionTotals(rows)
+    expect(t.totalBestOffer).toBe(100)
+    expect(t.offerCount).toBe(2)
+    expect(t.fmvWithOffer).toBe(100)
+    expect(t.pairedOffer).toBe(80)
+  })
+})

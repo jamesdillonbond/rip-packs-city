@@ -215,6 +215,10 @@ function WalletMomentsBody() {
     // tile can read total − stale like the dashboard and the share card.
     stale_fmv?: number
     stale_count?: number
+    // 2026-11-14: the stale share split by lock state — present, the Locked / Unlocked tiles are
+    // netted of it and sum to the headline. Absent (older function) → undefined, never 0.
+    stale_locked_fmv?: number
+    stale_unlocked_fmv?: number
   } | null>(null)
   const [walletSummaryLoading, setWalletSummaryLoading] = useState(false)
   const [acquisitionStats, setAcquisitionStats] = useState<{
@@ -969,6 +973,8 @@ function WalletMomentsBody() {
             // were dropped. null from the route (older function) stays undefined, never 0.
             lock_unknown_fmv: typeof json.lock_unknown_fmv === "number" ? json.lock_unknown_fmv : undefined,
             lock_unknown_count: typeof json.lock_unknown_count === "number" ? json.lock_unknown_count : undefined,
+            stale_locked_fmv: typeof json.stale_locked_fmv === "number" ? json.stale_locked_fmv : undefined,
+            stale_unlocked_fmv: typeof json.stale_unlocked_fmv === "number" ? json.stale_unlocked_fmv : undefined,
           })
           if (typeof json.wallet_fmv === "number" && json.wallet_fmv > 0) {
             setWalletTotalFmv(json.wallet_fmv)

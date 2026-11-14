@@ -12,6 +12,11 @@ import type { MomentRow } from "@/lib/collection/types"
 export interface CollectionTotals {
   totalFmv: number
   totalBestOffer: number
+  /** Rows carrying a best offer, and the FMV of exactly those rows (2026-11-14). */
+  offerCount: number
+  fmvWithOffer: number
+  /** The offers on rows that also carry an FMV — the like-for-like side of fmvWithOffer. */
+  pairedOffer: number
   lockedFmv: number
   unlockedFmv: number
   totalCount: number
@@ -29,6 +34,7 @@ export interface CollectionTotals {
 // and bucket rows by market-confidence. Behaviour is identical to the former
 // inline reducer.
 export function computeCollectionTotals(rows: MomentRow[]): CollectionTotals {
+  let offerCount = 0, fmvWithOffer = 0, pairedOffer = 0
   let totalFmv = 0, totalBestOffer = 0, lockedFmv = 0, unlockedFmv = 0
   let lockedCount = 0, unlockedCount = 0, badgeCount = 0
   let confHigh = 0, confMedium = 0, confLow = 0, confNone = 0
@@ -37,7 +43,11 @@ export function computeCollectionTotals(rows: MomentRow[]): CollectionTotals {
     const offer = row.bestOffer ?? null
     const locked = getLocked(row)
     if (typeof fmv === "number") totalFmv += fmv
-    if (typeof offer === "number") totalBestOffer += offer
+    if (typeof offer === "number") {
+      totalBestOffer += offer
+      offerCount++
+      if (typeof fmv === "number") { fmvWithOffer += fmv; pairedOffer += offer }
+    }
     const value = fmv ?? offer ?? getBestAsk(row) ?? 0
     if (locked) { lockedFmv += value; lockedCount++ } else { unlockedFmv += value; unlockedCount++ }
     if (row.badgeInfo?.badge_score) badgeCount++
@@ -51,6 +61,9 @@ export function computeCollectionTotals(rows: MomentRow[]): CollectionTotals {
   return {
     totalFmv,
     totalBestOffer,
+    offerCount,
+    fmvWithOffer,
+    pairedOffer,
     lockedFmv,
     unlockedFmv,
     totalCount: rows.length,

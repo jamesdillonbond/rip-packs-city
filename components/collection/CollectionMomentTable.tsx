@@ -519,7 +519,16 @@ export default function CollectionMomentTable(props: {
                         <div className="rpc-expand-grid">
                           <div className="rpc-expand-field">
                             <div className="rpc-expand-field-label">Low Ask</div>
-                            <div className="rpc-expand-field-value rpc-table-cell--mono">{formatCurrency(row.lowAsk ?? getBestAsk(row))}</div>
+                            {/* 2026-11-14: fall back to the EDITION's live floor (editionLowAsk, #182) like the
+                                card row and the desktop column do — the card read "Floor $1999.00" while this
+                                panel read "—" for the same moment, because only THIS moment's own listing was read. */}
+                            <div className="rpc-expand-field-value rpc-table-cell--mono">
+                              {(row.lowAsk ?? getBestAsk(row)) != null
+                                ? formatCurrency(row.lowAsk ?? getBestAsk(row))
+                                : row.editionLowAsk != null
+                                  ? <>{formatCurrency(row.editionLowAsk)} <span className="text-[10px] text-[color:var(--rpc-text-muted)]">floor</span></>
+                                  : formatCurrency(null)}
+                            </div>
                           </div>
                           <div className="rpc-expand-field">
                             <div className="rpc-expand-field-label">Best Offer</div>
