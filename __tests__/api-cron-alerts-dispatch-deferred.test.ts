@@ -158,6 +158,7 @@ describe("/api/cron/alerts-dispatch — deferred dispatch body", () => {
       deal_pool_unconfirmed: 64,
       price_pool_unconfirmed: 2480,
       serial_pool_unconfirmed: 0,
+      exact_serial_enqueued: 3,
     })
     fmvMock.mockResolvedValue({ enqueued: 0 })
 
@@ -166,6 +167,7 @@ describe("/api/cron/alerts-dispatch — deferred dispatch body", () => {
     expect(p.p_extra).toMatchObject({
       subscriptions_scanned: 2,
       enqueued_serial: 0,
+      enqueued_exact_serial: 3,
       pool_deal: 140,
       pool_price: 13160,
       pool_serial: 17,
@@ -184,7 +186,7 @@ describe("/api/cron/alerts-dispatch — deferred dispatch body", () => {
 
     expect(p.p_extra.unconfirmed_deal).toBe(5)
     expect(p.p_extra.unconfirmed_price).toBe(7)
-    for (const k of ["unconfirmed_serial", "pool_deal", "pool_price", "pool_serial", "subscriptions_scanned"]) {
+    for (const k of ["unconfirmed_serial", "pool_deal", "pool_price", "pool_serial", "subscriptions_scanned", "enqueued_exact_serial"]) {
       expect(p.p_extra).not.toHaveProperty(k)
     }
   })

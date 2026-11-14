@@ -43,6 +43,10 @@ const DEAL_VERDICT_KEYS: ReadonlyArray<readonly [string, string]> = [
   // subscriber was already sent (notify_mode). Without it a quiet run after the
   // once-per-listing change reads as "nothing matched".
   ["suppressed_unchanged", "suppressed_unchanged"],
+  // audit_20261114: pass 3 — exact-serial listings (a Top Shot serial window of <= 10 serials
+  // matched against every NEW listing). Included in `enqueued`; logged on its own so the lane's
+  // contribution is visible rather than folded into the deal total.
+  ["exact_serial_enqueued", "enqueued_exact_serial"],
 ];
 
 function authed(req: NextRequest): boolean {
