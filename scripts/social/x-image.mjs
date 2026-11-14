@@ -16,6 +16,7 @@
 //
 //   node scripts/social/x-image.mjs --slot mon --out /tmp/xdraft      # the week's top 10 sales
 //   node scripts/social/x-image.mjs --slot big --out /tmp/xdraft --video   # one big sale (still + MP4)
+//   node scripts/social/x-image.mjs --slot wed --out /tmp/xdraft      # the 2026 rookie class top 10
 //   ... --sale <sale_id> --headline "line one|line two"   (see § big below)
 //
 // House rules (same as the text): dollars only, never "DUC"; no FMV confidence; Pinnacle assets
@@ -400,6 +401,7 @@ async function main() {
   const out = { slot, images: [], items: [], warnings: [] }
   if (slot === "mon") return monMain(out, outDir)
   if (slot === "big") return bigMain(out, outDir)
+  if (slot === "wed") return wedMain(out, outDir)
   if (slot !== "sun") {
     out.warnings.push(`no image template for slot ${slot} yet — post the text with its link card`)
     console.log(JSON.stringify(out, null, 2))
@@ -445,6 +447,117 @@ async function main() {
       out.images.push(file)
       writeFileSync(join(outDir, `rpc-${slot}-${i + 1}.html`), html)
     }
+  } finally {
+    await browser.close()
+  }
+  console.log(JSON.stringify(out, null, 2))
+}
+
+// ---------- wed: the 2026 rookie class, top 10 by sales since release (Trevor, 11-14) ----------
+// Ten cards, 5×2: rank, "No. N pick" (2026 draft; none when not drafted in 2026), the player's
+// STANDARD Rookie Debut moment (Trevor: "use their standard Rookie Debut moment image, some seem
+// to use parallel images" — the API returns a sold moment of the base edition only), name, team,
+// season per-game line, sales volume and count. Same data as the text: /api/public/insights/rookie-sales.
+async function wedItems(warnings) {
+  const d = await getJson("rookie-sales?class=2026&limit=10")
+  const rows = (d.rows ?? []).filter((r) => r.sales > 0).slice(0, 10)
+  const imgs = await Promise.all(
+    rows.map((r) => (/^\d+$/.test(String(r.image_nft_id ?? "")) ? imageData(`https://assets.nbatopshot.com/media/${r.image_nft_id}/transparent/image?width=600`) : null)),
+  )
+  const items = rows.map((r, i) => {
+    if (!imgs[i]) warnings.push(`no image for #${r.rank} ${r.player_name} — its tile shows the name only`)
+    return {
+      rank: r.rank,
+      title: r.player_name,
+      team: r.team_name ?? "",
+      pick: r.draft_pick,
+      line: r.season ? `${r.season.ppg.toFixed(1)} PPG · ${r.season.rpg.toFixed(1)} RPG · ${r.season.apg.toFixed(1)} APG` : "",
+      price: usd(r.gmv_usd),
+      sales: `${Number(r.sales).toLocaleString("en-US")} sales`,
+      img: imgs[i] ? String(imgs[i]) : null,
+    }
+  })
+  return { items, meta: d.meta ?? {} }
+}
+
+function wedPage({ items, meta, fonts, logo, now }) {
+  const asOf = new Intl.DateTimeFormat("en-US", { timeZone: TZ, month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" }).format(now)
+  const through = meta.stats_through
+    ? new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "numeric", day: "numeric" }).format(new Date(`${meta.stats_through}T12:00:00Z`))
+    : null
+  const card = (it) => `<div class="card"><div class="top"><span class="rank">${it.rank}</span>${it.pick ? `<span class="pick">No. ${it.pick} pick</span>` : ""}</div>
+    <div class="art">${it.img ? `<img src="${it.img}">` : `<span class="noimg">${esc(it.title)}</span>`}</div>
+    <div class="name">${esc(it.title)}</div><div class="team">${esc(it.team)}</div><div class="stat">${esc(it.line) || "&nbsp;"}</div>
+    <div class="price">${esc(it.price)}</div><div class="sales">${esc(it.sales)}</div></div>`
+  return `<!doctype html><html><head><meta charset="utf-8"><style>
+@font-face{font-family:Barlow;src:url(data:font/ttf;base64,${fonts.barlow}) format("truetype")}
+@font-face{font-family:Mono;src:url(data:font/ttf;base64,${fonts.mono}) format("truetype")}
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:${W}px;height:${H}px;background:#080808;color:#F2F2F2;font-family:Barlow,sans-serif;overflow:hidden;position:relative}
+.bg{position:absolute;inset:0;background:radial-gradient(900px 500px at 100% 0%,rgba(224,58,47,.22),transparent 60%),radial-gradient(700px 400px at 0% 100%,rgba(224,58,47,.10),transparent 60%)}
+.stripe{position:absolute;left:0;top:0;bottom:0;width:10px;background:#E03A2F}
+.wrap{position:absolute;inset:0;padding:22px 40px 18px 50px;display:flex;flex-direction:column}
+header{display:flex;align-items:center;justify-content:space-between}
+h1{font-size:54px;line-height:.9;text-transform:uppercase}h1 em{font-style:normal;color:#E03A2F}
+.sub{font-family:Mono,monospace;font-size:17px;color:#BFC0BF;margin-top:6px}
+.logo{width:80px;height:80px}
+.grid{flex:1;display:grid;grid-template-columns:repeat(5,1fr);grid-template-rows:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0 8px;min-height:0}
+.card{background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.12);border-top:3px solid #E03A2F;border-radius:10px;padding:6px 10px 7px;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}
+.top{display:flex;align-items:center;justify-content:space-between}
+.rank{font-size:22px;line-height:1;color:#fff;background:#E03A2F;border-radius:6px;padding:3px 7px 2px;min-width:30px;text-align:center}
+.pick{font-family:Mono,monospace;font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:#fff;border:1px solid #E03A2F;background:rgba(224,58,47,.15);border-radius:999px;padding:2px 8px}
+.art{position:relative;flex:1;min-height:0;border-radius:6px;overflow:hidden;background:radial-gradient(closest-side,rgba(224,58,47,.22),transparent);display:flex;align-items:center;justify-content:center}
+.art img{max-width:100%;max-height:100%;object-fit:contain;transform:scale(1.9)}
+.noimg{font-size:18px;color:#BFC0BF;text-transform:uppercase;text-align:center;padding:6px}
+.name{font-size:21px;line-height:1;text-transform:uppercase;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.team{font-family:Mono,monospace;font-size:11.5px;color:#BFC0BF;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stat{font-family:Mono,monospace;font-size:10.5px;color:#F2F2F2;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.price{font-family:Mono,monospace;font-size:24px;color:#fff;margin-top:4px;line-height:1}
+.sales{font-family:Mono,monospace;font-size:12.5px;color:#FF4D40;margin-top:3px}
+footer{display:flex;justify-content:space-between;gap:16px;font-family:Mono,monospace;font-size:16px;color:#BFC0BF}footer b{color:#fff;font-weight:400}
+</style></head><body><div class="bg"></div><div class="stripe"></div><div class="wrap">
+<header><div><h1>2026 rookie class · <em>top 10 by sales</em></h1><div class="sub">NBA Top Shot · marketplace sales since release, every edition · as of ${esc(asOf)} PT · USD</div></div>
+<img class="logo" src="data:image/png;base64,${logo}"></header>
+<div class="grid">${items.map(card).join("")}</div>
+<footer><span><b>rippackscity.com/insights/rookies</b></span><span>Pick = 2026 NBA Draft${through ? ` · per-game stats: ${meta.stats_season ? `${meta.stats_season - 1}-${String(meta.stats_season).slice(2)} ` : ""}regular season through ${through}` : ""}</span><span>@RipPacksCity</span></footer>
+</div></body></html>`
+}
+
+async function wedMain(out, outDir) {
+  const { items, meta } = await wedItems(out.warnings)
+  out.items = items.map(({ img, ...it }) => it)
+  if (!items.length) {
+    out.warnings.push("no rookie sales on the board — no image")
+    console.log(JSON.stringify(out, null, 2))
+    return
+  }
+  const fonts = {
+    barlow: (await asset("public/fonts/BarlowCondensed-Black.ttf")).toString("base64"),
+    mono: (await asset("public/fonts/ShareTechMono-Regular.ttf")).toString("base64"),
+  }
+  const logo = (await asset("public/rip-packs-city-logo-320.png")).toString("base64")
+  const browser = await launchChromium()
+  try {
+    const ctx = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 2 })
+    const pg = await ctx.newPage()
+    const html = wedPage({ items, meta, fonts, logo, now: new Date() })
+    await pg.setContent(html, { waitUntil: "load" })
+    await pg.evaluate(() => document.fonts.ready)
+    const bad = await pg.evaluate((h) => {
+      const foot = document.querySelector("footer")?.getBoundingClientRect().top ?? h
+      return {
+        off: [...document.querySelectorAll(".card")].filter((c) => c.getBoundingClientRect().bottom > Math.min(foot, h) + 1).map((c) => c.querySelector(".name")?.textContent),
+        cut: [...document.querySelectorAll(".name,.team,.stat")].filter((n) => n.scrollWidth > n.clientWidth + 1).map((n) => n.textContent),
+        footer: (() => { const f = document.querySelector("footer"); return f && f.scrollWidth > f.clientWidth + 1 })(),
+      }
+    }, H)
+    if (bad.off.length) out.warnings.push(`card pushed off the canvas for ${bad.off.join("; ")}`)
+    if (bad.cut.length) out.warnings.push(`text ellipsized on the image: ${bad.cut.join("; ")}`)
+    if (bad.footer) out.warnings.push("footer text overflows")
+    const file = join(outDir, "rpc-wed-1.png")
+    await pg.screenshot({ path: file, type: "png" })
+    writeFileSync(join(outDir, "rpc-wed-1.html"), html)
+    out.images.push(file)
   } finally {
     await browser.close()
   }

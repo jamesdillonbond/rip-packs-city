@@ -21,7 +21,7 @@ Every post links one insights page. Each page carries a `summary_large_image` ca
 |---|---|---|---|---|
 | Mon | The week's top sales | `top-sales?window=7d&sort=price` (trailing 7 days) | `/insights/top-sales` (rides the 2/2 reply) | **One long post naming the top 10 sales** — asset, serial, price, collection and the buyer's username — with a top-10 image, then the link as a reply. Weekend-only until 11-09; Trevor, 11-09: "We should have it be top sales from a week" → "include the full top 10 in the text, with an accompanying graphic to use, that has the images of the assets, the sale price, and the buyer" |
 | Tue | Top Shot pack check | `pack-sniper` | `/insights/pack-sniper` | Packs listed below the expected value of what's still inside. Qualifies only if EV × 0.95 (Top Shot's 5% selling fee) beats the ask, EV covers ≥ 90% of the pool, and the pack isn't high-variance. None qualifying is posted as "none today", not skipped |
-| Wed | Rookie spotlight | `rookies?class=2025&sort=gmv` | `/insights/rookies` | 30-day sales for the 2025 class and its top three |
+| Wed | The 2026 rookie class top 10 | `rookie-sales?class=2026&limit=10` | `/insights/rookies?class=2026` (rides the 2/2 reply) | **One long post naming the class's top 10 by Top Shot sales since release**, every edition, each line ending with the team's confirmed hashtag, with the top-10 image (`--slot wed`), then the link as a reply. Trevor, 11-14 (first posted that Saturday: https://x.com/rippackscity/status/2121696498002084324) → "Yes do that, but might be worth skipping the one in a few days since we did today": **Wed 11/18 is skipped** (`SKIP_DATES` in `x-draft.mjs`; `--force` drafts it anyway) |
 | Thu | Deal of the week | `deals?sort=discount` | `/insights/deals` | Up to three listings $10+ **and** 15%+ under value. Falls back to Saturday's trade-in post when none qualify |
 | Fri | Board drop | one board a week, rotating by ISO week | `/insights/<board>` | A hook written from the board's live stats/rows. The script's draft is a placeholder (`needs_rewrite`) |
 | Sat | Week in numbers | `market-pulse` | `/insights/market-pulse` | 7-day sales volume per collection and in total |
@@ -96,6 +96,22 @@ This past week's top 10 sales, 11/2-11/9 📈
 - The collection is named by its official X account (`BRAND` in `x-draft.mjs`; Panini as plain `@PaniniAmerica` here).
 - **Buyers are tagged only from `X_HANDLES`** (marketplace username → X handle) in `x-draft.mjs` and `x-image.mjs`, each one confirmed by Trevor. Anyone else is named by marketplace username, untagged; `buyers_untagged` lists them. Confirmed 11-09: THEMECCA → @THEMECCA212, hichi → @chrisschlei, Lions_For_Breakfast → @FollowJay.
 - A buyer the API returns only as a wallet address is looked up on Pinnacle's public GQL (one Dapper username per wallet); never post the address.
+
+### The 2026 rookie class top 10 (Wednesday) — Trevor's format, 11-14
+
+```
+The 2026 rookie class on @NBATopShot: top 10 by sales since release 📈
+
+1. AJ Dybantsa — $15,061 · 92 sales #ForTheDistrict
+2. Darius Acuff Jr. — $12,966 · 108 sales #LightTheBeam
+…
+
+All 38 rookies: $98,114 across 2,971 sales.
+```
+
+- **Since release, every edition** (parallels and Ultimates included): `/api/public/insights/rookie-sales` (`lib/insights/rookie-sales.ts`). Not the rookies board's 30-day views — the first 2026 rookie sale was 10-22, so the two part ways from 11-21.
+- **Hashtags:** `TEAM_HASHTAG` in `x-draft.mjs` holds only hashtags Trevor confirmed live; a team missing from it gets none and a warning.
+- **Image** (`x-image.mjs --slot wed`): ten cards, each with the player's **standard** Rookie Debut moment (never a parallel — Trevor, 11-14), a "No. N pick" tag (2026 NBA Draft, `lib/insights/draft-2026.ts`; none for a player not drafted in 2026), team, the season's points / rebounds / assists per game (ESPN box scores, games played only), sales volume and count.
 
 ### The RPC Weekly Pack Drop Report (Sunday) — Trevor's format, 11-08
 

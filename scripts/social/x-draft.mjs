@@ -292,23 +292,61 @@ async function tue() {
   }
 }
 
-async function wed() {
-  const d = await getJson("rookies?class=2025&sort=gmv&limit=5")
-  const link = `${SITE}/insights/rookies`
-  const c = d.cohort_stats ?? {}
-  const rows = d.rows ?? []
-  if (!rows.length) return { skip_reason: "rookie board empty", link }
-  const [a, b, cc] = rows
-  const lines = [
-    `1. ${a.player_name} — ${usd(a.gmv_30d)} over ${int(a.sales_30d)} sales`,
-    b && `2. ${b.player_name} — ${usd(b.gmv_30d)}`,
-    cc && `3. ${cc.player_name} — ${usd(cc.gmv_30d)}`,
-  ].filter(Boolean)
+// Wednesday: the 2026 NBA rookie class, top 10 by Top Shot sales SINCE RELEASE across every
+// edition (Trevor, 11-14 — the post he ran that Saturday, https://x.com/rippackscity/status/2121696498002084324,
+// made weekly). One long post naming all ten, each line ending with the team's official hashtag,
+// the image (x-image.mjs --slot wed: standard Rookie Debut moment, draft pick, season per-game
+// line) attached, and the link in a 2/2 reply. Source: /api/public/insights/rookie-sales.
+// Team hashtags: only ones Trevor confirmed live (they show the team's logo emoji on X); a team
+// missing here gets no hashtag and a warning — never a guessed one.
+const TEAM_HASHTAG = {
+  "Washington Wizards": "#ForTheDistrict",
+  "Sacramento Kings": "#LightTheBeam",
+  "Memphis Grizzlies": "#GrindCity",
+  "Utah Jazz": "#TakeNote",
+  "Golden State Warriors": "#DubNation",
+  "Chicago Bulls": "#SeeRed",
+  "Oklahoma City Thunder": "#ThunderUp",
+  "Cleveland Cavaliers": "#LetEmKnow",
+  "LA Clippers": "#ClipperNation",
+  "Los Angeles Clippers": "#ClipperNation",
+  "Milwaukee Bucks": "#FearTheDeer",
+  "Los Angeles Lakers": "#LakeShow",
+}
+// Dates a slot is skipped on purpose, with why. The task reports skip_reason and offers --slot sat.
+const SKIP_DATES = {
+  // Trevor, 11-14: "might be worth skipping the one in a few days since we did today".
+  "2026-11-18": { wed: "the rookie top-10 ran early, Sat 11/14 (https://x.com/rippackscity/status/2121696498002084324)" },
+}
+
+async function wed(ctx) {
+  const link = `${SITE}/insights/rookies?class=2026`
+  const skip = SKIP_DATES[ctx.date]?.wed
+  if (skip && !args.includes("--force")) return { title: "Rookie class top 10", link, skip_reason: `skipped this week: ${skip} (run with --force to draft it anyway)` }
+  const d = await getJson("rookie-sales?class=2026&limit=10")
+  const rows = (d.rows ?? []).filter((r) => r.sales > 0)
+  if (!rows.length) return { skip_reason: "rookie sales board empty", link }
+  const warnings = []
+  const lines = rows.map((r) => {
+    const tag = TEAM_HASHTAG[r.team_name]
+    if (!tag) warnings.push(`no confirmed hashtag for ${r.team_name ?? "unknown team"} (${r.player_name}) — line has none; ask Trevor`)
+    return `${r.rank}. ${r.player_name} — ${usd(r.gmv_usd)} · ${int(r.sales)} sales${tag ? ` ${tag}` : ""}`
+  })
+  for (const r of rows) {
+    if (!r.season) warnings.push(`no season line for ${r.player_name} (ESPN name not matched once) — the image card shows none`)
+    if (!r.image_nft_id) warnings.push(`no standard Rookie Debut moment sold for ${r.player_name} — the image tile is name-only`)
+  }
+  const t = d.totals ?? {}
+  const head = `The 2026 rookie class on @NBATopShot: top ${rows.length} by sales since release 📈`
+  const tail = `All ${int(t.players)} rookies: ${usd(t.gmv_usd)} across ${int(t.sales)} sales.`
   return {
-    title: "Rookie spotlight",
+    title: "Rookie class top 10",
     link,
-    facts: { cohort: c, top: rows.slice(0, 3) },
-    draft: fit(lines, `2025 rookie class on Top Shot, last 30 days: ${usd(c.total_gmv_30d)} across ${int(c.total_sales_30d)} sales.\n\nLeading the class:`, `\n${link}`),
+    long_form: true,
+    facts: { totals: t, top: rows, latest_sale_at: d.meta?.latest_sale_at, stats_through: d.meta?.stats_through },
+    draft: [head, "", ...lines, "", tail].join("\n"),
+    reply: [{ n: 2, of: 2, text: `See the full 2026 rookie class here 👇\n${link}` }],
+    warnings_extra: warnings,
   }
 }
 
