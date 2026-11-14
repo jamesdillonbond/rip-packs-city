@@ -20,7 +20,9 @@ describe("anon-public pages can reach the APIs they actually call", () => {
     // 2026-09-27: the bespoke Pinnacle sniper (which called /api/pinnacle-sniper-feed) was
     // deleted; /disney-pinnacle/sniper is the shared SniperClient, whose feed is /api/sniper-feed.
     ["/disney-pinnacle/sniper", ["/api/sniper-feed"]],
-    ["/nba-top-shot/sniper", ["/api/sniper-feed"]],
+    // 2026-11-14, seventh instance: the Sniper's "Serial #" mode (#12359) shipped calling a gated
+    // route; found by fetching the deployed route signed out (307 → /login).
+    ["/nba-top-shot/sniper", ["/api/sniper-feed", "/api/topshot-serial-search"]],
     ["/nba-top-shot/packs", ["/api/pack-listings"]],
     ["/nfl-all-day/packs", ["/api/pack-listings"]],
     // 2026-09-04, fourth instance: 26 of 374 tiles on the public collection tab were broken —

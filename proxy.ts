@@ -1292,6 +1292,11 @@ export function isPublicPath(pathname: string, method: string): boolean {
     // session, no write path.
     "/api/packs/grails",
     "/api/packs/chase",
+    // 2026-11-14 (#12359): the Top Shot Sniper's "Serial #" mode reads this instead of
+    // /api/sniper-feed. The Sniper page is anon-public, so a gated route 307'd every
+    // anonymous serial search to /login (caught by fetching the deployed route). GET-only,
+    // no session, service-role read of public Atlas listing rows — /api/sniper-feed's class.
+    "/api/topshot-serial-search",
   ])
   if ((method === "GET" || method === "HEAD") && PUBLIC_READ_APIS.has(pathname)) {
     return true
