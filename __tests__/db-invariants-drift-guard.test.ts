@@ -15,6 +15,12 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-11-13. #241: every pg_net dispatch's endpoint logged (secrets masked); a trigger error never fails a dispatch.
+    fn: "pg_net_request_log_capture",
+    test: "supabase/tests/pg_net_request_log_capture.sql",
+    migration: "supabase/migrations/20261114032433_audit_20261113_pg_net_request_log_names_the_unknown_4xx.sql",
+  },
+  {
     // Added 2026-11-13. #247: an insert of a Candy ALIAS edition key is skipped (no re-creating retired duplicates).
     fn: "candy_skip_alias_edition_insert",
     test: "supabase/tests/candy_alias_editions_retired.sql",
