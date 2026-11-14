@@ -59,3 +59,43 @@ async function lookupTopShotEditionAliasRedirectUncached(decodedSlug: string): P
 // slug in one request (2026-11-07 review) — one probe per request, not three.
 // A failure is already null, so the memoised answer is the honest one.
 export const lookupTopShotEditionAliasRedirect = cache(lookupTopShotEditionAliasRedirectUncached)
+
+// ── Candy (#247, 2026-11-13) ────────────────────────────────────────────────
+// One Candy card was stored under several edition keys; `candy_edition_key_aliases`
+// maps each extra key to the card's canonical key (the most-held one), and the
+// holdings / sales / listings / offers are moved onto it. The alias edition row
+// stays (a FK target of old FMV history) with nothing of its own, so its URL 308s
+// to the canonical page. Same honesty rules as Top Shot: a miss, error or timeout
+// renders the page as before — never a guessed redirect, never a 404.
+
+// A Candy later-set key: `c:<collection prefix>:<card slug>` (lib/chains/solana/normalize.ts).
+const CANDY_KEY_RE = /^c:[a-z0-9_-]{1,98}:[a-z0-9:_-]{1,98}$/
+
+export function isCandyEditionKeyShape(decodedSlug: string): boolean {
+  return decodedSlug.length <= 100 && CANDY_KEY_RE.test(decodedSlug)
+}
+
+async function lookupCandyEditionAliasRedirectUncached(decodedSlug: string): Promise<string | null> {
+  if (!isCandyEditionKeyShape(decodedSlug)) return null
+  try {
+    const { data, error } = await withBoardBudget(
+      Promise.resolve(
+        supabaseAdmin
+          .from("candy_edition_key_aliases")
+          .select("canonical_key")
+          .eq("alias_key", decodedSlug)
+          .maybeSingle(),
+      ),
+      "alias-redirect",
+      ALIAS_REDIRECT_TIMEOUT_MS,
+      "edition/",
+    )
+    if (error || !data) return null
+    const canonical = (data as { canonical_key?: unknown }).canonical_key
+    return typeof canonical === "string" && isCandyEditionKeyShape(canonical) && canonical !== decodedSlug ? canonical : null
+  } catch {
+    return null
+  }
+}
+
+export const lookupCandyEditionAliasRedirect = cache(lookupCandyEditionAliasRedirectUncached)

@@ -33,7 +33,7 @@ import { fetchCandyMarketHistory, fetchCandyScarcityRow } from "@/lib/candy/edit
 import CandyMarketHistory from "@/components/entity/CandyMarketHistory"
 import { editionDescriptionText } from "@/lib/edition/description"
 import { lookupTopShotFossilRedirect } from "@/lib/edition/fossil-redirect"
-import { lookupTopShotEditionAliasRedirect } from "@/lib/edition/alias-redirect"
+import { lookupCandyEditionAliasRedirect, lookupTopShotEditionAliasRedirect } from "@/lib/edition/alias-redirect"
 import { fetchTitleDisambiguator } from "@/lib/edition/title-twins"
 import { editionPageMetadata, editionJsonLd, collectionDisplayName, NOT_FOUND_METADATA } from "@/lib/seo"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
@@ -497,6 +497,11 @@ export async function generateMetadata(
     const canonical = await lookupTopShotEditionAliasRedirect(slug)
     if (canonical) permanentRedirect(`/${collection}/edition/${encodeURIComponent(canonical)}`)
   }
+  if (collection === "candy-mlb") {
+    // #247 (2026-11-13): a Candy alias key (one card stored under several keys) -> its canonical edition.
+    const canonical = await lookupCandyEditionAliasRedirect(slug)
+    if (canonical) permanentRedirect(`/${collection}/edition/${encodeURIComponent(canonical)}`)
+  }
   // ⚠ BOUNDED (deep-audit R19). Measured over 7 days to 2026-08-23:
   // "edition detail unavailable: rpc get_edition_detail timed out after 45000ms"
   // threw 15,388 times across 2,963 DISTINCT USERS, and a large share of the
@@ -550,6 +555,11 @@ export default async function EditionPage(
   if (collection === "nba-top-shot") {
     // #175: alias key -> canonical page (see generateMetadata above).
     const canonical = await lookupTopShotEditionAliasRedirect(slug)
+    if (canonical) permanentRedirect(`/${collection}/edition/${encodeURIComponent(canonical)}`)
+  }
+  if (collection === "candy-mlb") {
+    // #247 (2026-11-13): a Candy alias key (one card stored under several keys) -> its canonical edition.
+    const canonical = await lookupCandyEditionAliasRedirect(slug)
     if (canonical) permanentRedirect(`/${collection}/edition/${encodeURIComponent(canonical)}`)
   }
 

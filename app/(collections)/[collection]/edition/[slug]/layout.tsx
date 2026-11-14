@@ -21,7 +21,7 @@ import { notFound, permanentRedirect } from "next/navigation"
 import { getCollectionByUrlSlug, isPinnacleUrlSlug } from "@/lib/collection-slug"
 import { entityResolves, decodeSlugOrNull } from "@/lib/entity-detail-gate"
 import { lookupTopShotFossilRedirect } from "@/lib/edition/fossil-redirect"
-import { lookupTopShotEditionAliasRedirect } from "@/lib/edition/alias-redirect"
+import { lookupCandyEditionAliasRedirect, lookupTopShotEditionAliasRedirect } from "@/lib/edition/alias-redirect"
 
 interface LayoutProps {
   children: React.ReactNode
@@ -65,6 +65,11 @@ export default async function EditionSegmentLayout({ children, params }: LayoutP
   // the alias page as before — never a guessed redirect, never a 404.
   if (collection === "nba-top-shot") {
     const canonical = await lookupTopShotEditionAliasRedirect(slug)
+    if (canonical) permanentRedirect(`/${collection}/edition/${encodeURIComponent(canonical)}`)
+  }
+  if (collection === "candy-mlb") {
+    // #247 (2026-11-13): a Candy alias key (one card stored under several keys) -> its canonical edition.
+    const canonical = await lookupCandyEditionAliasRedirect(slug)
     if (canonical) permanentRedirect(`/${collection}/edition/${encodeURIComponent(canonical)}`)
   }
 
