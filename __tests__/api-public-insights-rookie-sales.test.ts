@@ -34,6 +34,7 @@ beforeEach(() => {
   tables.editions = { data: [{ id: "e1", player_name: "AJ Dybantsa", team_name: "Washington Wizards", external_id: "281:9324", set_name: "Rookie Debut" }], error: null }
   tables.sales = { data: [{ id: "s1", edition_id: "e1", price_usd: "113.00", nft_id: "53013846", sold_at: "2026-11-14T18:00:00Z" }], error: null }
   tables.espn_athletes = { data: [{ espn_id: "5142718", display_name: "AJ Dybantsa" }], error: null }
+  tables.topshot_atlas_market_events = { data: [{ nft_id: "53013846", parallel: "Standard" }], error: null }
   tables.player_game_stats = {
     data: [{ espn_id: "5142718", event_id: "1", game_date: "2026-11-12", season: 2027, season_type: 2, did_not_play: false, stats: { points: "5", rebounds: "8", assists: "4" } }],
     error: null,
@@ -59,7 +60,7 @@ describe("GET /api/public/insights/rookie-sales", () => {
     expect(body.meta.stats_through).toBe("2026-11-12")
   })
 
-  it.each(["topshot_2026_rookie_players", "editions", "sales", "espn_athletes", "player_game_stats"])(
+  it.each(["topshot_2026_rookie_players", "editions", "sales", "espn_athletes", "player_game_stats", "topshot_atlas_market_events"])(
     "a failed %s read is a 5xx, not an empty or partial board",
     async (table) => {
       tables[table] = { data: null, error: { message: "boom" } }

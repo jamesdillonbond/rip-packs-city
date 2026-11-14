@@ -21,6 +21,7 @@ const game = (espn_id: string, event_id: string, pts: number, opts: { dnp?: bool
 
 describe("buildRookieSalesBoard", () => {
   const base = {
+    nftParallel: { "n-std-old": "Standard", "n-b": "Standard", "n-mislabeled": "Blockchain" } as Record<string, string>,
     cohort: ["Alpha One", "Beta Two"],
     editions: [
       ed("e1", "Alpha One", "281:1"),
@@ -65,6 +66,19 @@ describe("buildRookieSalesBoard", () => {
   it("never picks a parallel or Ultimate moment for the image, even when it sold more recently", () => {
     const a = buildRookieSalesBoard(base).rows.find((r) => r.player_name === "Alpha One")!
     expect(a.image_nft_id).toBe("n-std-old")
+  })
+
+  it("refuses a moment the ledger files on the base edition when Atlas says it is a parallel", () => {
+    const b = buildRookieSalesBoard({
+      ...base,
+      sales: [...base.sales, sale("s7", "e1", 120, "n-mislabeled", "2026-11-09T00:00:00Z")],
+    })
+    expect(b.rows.find((r) => r.player_name === "Alpha One")!.image_nft_id).toBe("n-std-old")
+  })
+
+  it("has no image rather than an unconfirmed one", () => {
+    const b = buildRookieSalesBoard({ ...base, nftParallel: {} })
+    expect(b.rows.every((r) => r.image_nft_id === null)).toBe(true)
   })
 
   it("averages only games played in the newest regular season", () => {

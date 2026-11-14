@@ -16,6 +16,10 @@
 //   • Image = a sold moment of the player's STANDARD Rookie Debut edition: set_name 'Rookie Debut'
 //     and an external_id with no '::' (a parallel's key is '<set>:<play>::<parallel>'). Trevor,
 //     11-14: "use their standard Rookie Debut moment image, some seem to use parallel images".
+//     ⛔ The sales ledger's edition is NOT enough: 31 parallel moments (25 Blockchain, 6 Hardcourt)
+//     of 2026 Rookie Debuts sit in `sales` on the BASE edition (measured 11-14 against Atlas), and
+//     the first live image showed one (a Blockchain Dybantsa). So a candidate is used only when
+//     Atlas's own `parallel` for that nft says 'Standard'; with none confirmed the tile has no image.
 //   • Season line = ESPN box scores (player_game_stats), regular season, the newest season present,
 //     games actually played (did_not_play rows excluded). The ESPN athlete is matched by exact
 //     display name; a name with zero or several ESPN athletes gets NO season line (null), never
@@ -84,7 +88,10 @@ export function buildRookieSalesBoard(input: {
   sales: SaleRow[]
   athletes: AthleteRow[]
   games: GameRow[]
+  /** Atlas's parallel name per nft_id ('Standard' for the base moment). Missing = unconfirmed. */
+  nftParallel?: Record<string, string>
 }): RookieSalesBoard {
+  const parallelOf = input.nftParallel ?? {}
   const cohort = new Set(input.cohort)
   const edById = new Map(input.editions.filter((e) => cohort.has(e.player_name)).map((e) => [e.id, e]))
 
@@ -106,7 +113,9 @@ export function buildRookieSalesBoard(input: {
     a.gmv += price
     if (!a.first || s.sold_at < a.first) a.first = s.sold_at
     if (!latest || s.sold_at > latest) latest = s.sold_at
-    if (s.nft_id && isStandardRookieDebut(e) && (!a.img || s.sold_at > a.img.at)) a.img = { nft: s.nft_id, at: s.sold_at }
+    if (s.nft_id && isStandardRookieDebut(e) && parallelOf[s.nft_id] === "Standard" && (!a.img || s.sold_at > a.img.at)) {
+      a.img = { nft: s.nft_id, at: s.sold_at }
+    }
   }
 
   // ESPN match: exactly one athlete per display name, or none.
@@ -156,6 +165,23 @@ export function buildRookieSalesBoard(input: {
     stats_season: season,
     stats_through: through,
   }
+}
+
+/** The newest few sold moments of each player's base Rookie Debut edition — the image candidates
+ *  whose parallel is then confirmed against Atlas. */
+export function imageCandidates(editions: EditionRow[], sales: SaleRow[], perPlayer = 8): string[] {
+  const edById = new Map(editions.filter(isStandardRookieDebut).map((e) => [e.id, e]))
+  const byPlayer = new Map<string, SaleRow[]>()
+  for (const s of sales) {
+    const e = edById.get(s.edition_id)
+    if (!e || !s.nft_id) continue
+    byPlayer.set(e.player_name, [...(byPlayer.get(e.player_name) ?? []), s])
+  }
+  const out = new Set<string>()
+  for (const list of byPlayer.values()) {
+    for (const s of [...list].sort((x, y) => (x.sold_at < y.sold_at ? 1 : -1)).slice(0, perPlayer)) out.add(s.nft_id!)
+  }
+  return [...out]
 }
 
 function must<T>(label: string, r: { rows: T[]; truncated: boolean; error: string | null }): T[] {
@@ -226,5 +252,20 @@ export async function fetchRookieSales2026(db: Db): Promise<RookieSalesBoard> {
       )
     : []
 
-  return buildRookieSalesBoard({ cohort, editions, sales, athletes, games })
+  // Confirm each image candidate is the STANDARD moment (see the header).
+  const candidates = imageCandidates(editions, sales)
+  const nftParallel: Record<string, string> = {}
+  for (let i = 0; i < candidates.length; i += 100) {
+    const ids = candidates.slice(i, i + 100)
+    const r = await db.from("topshot_atlas_market_events").select("nft_id, parallel")
+      .eq("product", "nba").in("nft_id", ids).limit(1000)
+    if (r.error) throw new Error(`topshot_atlas_market_events: ${r.error.message}`)
+    for (const row of (r.data ?? []) as { nft_id: string; parallel: string | null }[]) {
+      // Disagreeing rows for one nft would be an Atlas defect: any non-Standard reading wins.
+      if (row.parallel && nftParallel[row.nft_id] !== undefined && nftParallel[row.nft_id] !== row.parallel) nftParallel[row.nft_id] = "conflict"
+      else if (row.parallel) nftParallel[row.nft_id] = row.parallel
+    }
+  }
+
+  return buildRookieSalesBoard({ cohort, editions, sales, athletes, games, nftParallel })
 }
