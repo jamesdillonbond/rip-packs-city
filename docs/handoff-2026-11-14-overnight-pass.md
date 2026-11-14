@@ -80,5 +80,9 @@ Fast baseline `rpc_ops_snapshot()` + drill-downs:
    - **Why queued, not shipped:** (a) it replaces a live SECURITY DEFINER function — outside the additive autonomous SHIP set (new views/indexes/comments/read-only RPCs); (b) the value is low (harmless, self-healing, ~4% of hourly runs) so it does not warrant spending a production ship unattended; (c) a pin test (positive control: a planted body without the clause still deadlocks under concurrent load; the fixed body cannot wait) should accompany it. Revert = re-apply the prior body (remove the clause).
    - **Alternatively:** leave as-is. It is genuinely harmless; the only cost is 2 `ok=false` rows/day that never escalate.
 
+## Queued for Trevor / Claude Code
+
+None — the one overnight candidate shipped ~7:32 AM PT (see **Shipped**). (Section added 11-14 ~8:05 AM PT by Claude Code cloud: the ready-queue guard needs a queue heading on every handoff, and the renamed "Resolved … (was queued)" heading is deliberately not one.)
+
 ## Failed / blocked / reverted
 None. No production change was attempted, so nothing was reverted and shipping was not hard-stopped.
