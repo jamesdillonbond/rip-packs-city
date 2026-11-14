@@ -12,3 +12,8 @@
 2. add the search_path-exempt comment per migration `20261026001400` if inlining matters more.
 
 ⚠ A `SET` clause stops inlining of a per-row SQL helper. Because this runs once per candidate row inside the dispatcher, confirm the dispatcher's per-tick cost is not regressed (budget 90 s; recent ticks ~1.4 s) BEFORE pinning. If the inlining cost outweighs the advisory, take the comment-exempt path (option 2) instead. Not a spell-time reading — measured on a quiet DB.
+
+## Resolution — 2026-11-14 ~11:26 AM PT (Claude Code cloud)
+
+- **Option 2 taken** (comment-exempt, `20261114192649_audit_20261114_alert_sub_is_exact_serial_search_path_exempt`). The body names no relation (parameter comparisons + one uuid literal), so a `SET search_path` could change nothing it resolves and would only stop inlining; no body change, so there is no dispatcher cost to measure.
+- Read back: anon / authenticated EXECUTE false; `check_function_search_path_drift()` length **0**.
