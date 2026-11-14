@@ -36,3 +36,12 @@ Acceptance test for any fix: `SELECT value,status FROM v_rpc_trust_health WHERE 
 ## ✅ RESOLVED 2026-11-14 ~2:17 PM PT (Claude Code cloud — the session that caused it)
 
 Option 2 applied: `20261114221716_audit_20261114_perfect_mint_refresh_job_names_its_mv` — job 236's command now names `mv_topshot_perfect_mint_premiums_board` in a block comment. Acceptance read: `board_mv_refresh_stale_hours` **2502.9 h BREACH → 1.79 h ok**; the exact command run once logged ok / 43 rows. The deliberately-broken-job half of the acceptance test was not run in production; the metric's logic is unchanged, so its down-detection is as it was. Lesson recorded in cron-and-schedulers.md: a job command is read by more instruments than its scheduler.
+
+## ✅ FOLLOW-UP 2026-11-14 ~2:55 PM PT (Claude Code cloud) — option 1 + the acceptance test's missing half
+
+- **Option 1 (the class fix) applied too:** `20261114225500_audit_20261114_board_mv_watchdog_matches_refresh_wrapper_spelling` — `board_mv_refresh_max_stale_hours()` now also matches `refresh_<matview name minus mv_>(` in a job command, so the next board moved behind a logged-refresh wrapper is recognised without a comment. The literal-name arm is unchanged; it is the metric's only reader (catalog-checked). Live body re-read first (md5 `01d503e7…` = `20260911091415`, the revert file).
+- **Both halves of the acceptance test, run in a DO block that RAISEs so every change rolled back** (`cron.alter_job` inside it; job 236 read back afterwards: active, schedule `0 */2 * * *`, command unchanged):
+  - now: **0.81 h ok**
+  - (A) job 236's command stripped of the MV-name comment: **0.81 h**. The wrapper arm alone finds it; under the old body this was the 2502.8 h false BREACH.
+  - (B) job 236 deactivated: **2503.47 h**, a BREACH. Down-detection works.
+- Nothing in this filing remains open.
