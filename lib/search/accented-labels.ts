@@ -12,6 +12,7 @@
 // search with that exact label and merges in its team / set row.
 
 import { matchRank, foldForMatch } from "@/lib/filter-match"
+import { boundedRead } from "@/lib/api/bounded-read"
 import { ilikeWouldMatch } from "@/lib/market/player-match"
 
 export type AccentedLabel = { kind: string; label: string }
@@ -19,16 +20,24 @@ export type AccentedLabel = { kind: string; label: string }
 const TTL_MS = 60 * 60 * 1000
 const MAX_MATCHES = 3
 let memo: { at: number; labels: AccentedLabel[] } | null = null
+// 2026-11-14: the read was unbounded and a failure was not remembered, so under DB slowness a search
+// whose main query had already answered waited on this optional extra until the platform killed the
+// function, and every request paid the failure again. Bounded, and a failure is not retried for a minute.
+const READ_BUDGET_MS = 2_000
+const FAILURE_BACKOFF_MS = 60_000
+let failedAt = 0
 
 type Rpc = { rpc: (fn: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: { message: string } | null }> }
 
 /** The accented labels, memoized for an hour. A failed read returns [] and is NOT cached. */
 export async function loadAccentedLabels(db: Rpc): Promise<AccentedLabel[]> {
   if (memo && Date.now() - memo.at < TTL_MS) return memo.labels
+  if (Date.now() - failedAt < FAILURE_BACKOFF_MS) return []
   try {
-    const { data, error } = await db.rpc("search_accented_labels", {})
+    const { data, error } = await boundedRead(db.rpc("search_accented_labels", {}), "search/accented-labels", READ_BUDGET_MS)
     if (error || !Array.isArray(data)) {
-      console.error("[search] accented labels unavailable — no accent-blind team/set hits", error?.message ?? "bad payload")
+      failedAt = Date.now()
+      console.error("[search] accented labels unavailable — no accent-blind team/set hits", (error as { message?: string } | null)?.message ?? "bad payload")
       return []
     }
     const labels = (data as Array<Record<string, unknown>>)
@@ -37,6 +46,7 @@ export async function loadAccentedLabels(db: Rpc): Promise<AccentedLabel[]> {
     memo = { at: Date.now(), labels }
     return labels
   } catch (e) {
+    failedAt = Date.now()
     console.error("[search] accented labels threw", e instanceof Error ? e.message : e)
     return []
   }

@@ -71,10 +71,15 @@ describe("hubIsIndexable with a Panini panel", () => {
   it("a Panini panel with cards makes a one-collection hub a gathering hub", () => {
     expect(hubIsIndexable({ collections: [TS] }, { state: "ok", detail: DETAIL, editions: { rows: [], ok: true } })).toBe(true)
   })
-  it("absent or failed Panini does not", () => {
+  it("absent Panini does not", () => {
     expect(hubIsIndexable({ collections: [TS] }, { state: "absent" })).toBe(false)
-    expect(hubIsIndexable({ collections: [TS] }, { state: "failed" })).toBe(false)
     expect(hubIsIndexable({ collections: [TS] })).toBe(false)
+  })
+  // INVERTED 2026-11-14: this pinned a FAILED read as "absent", so a Panini timeout turned a real
+  // gathered hub into noindex, cached for the ISR window. A failed read must not change the answer;
+  // between the two wrong outcomes, failing open is the cheap one.
+  it("a FAILED Panini read fails OPEN — it never de-indexes the hub", () => {
+    expect(hubIsIndexable({ collections: [TS] }, { state: "failed" })).toBe(true)
   })
 })
 

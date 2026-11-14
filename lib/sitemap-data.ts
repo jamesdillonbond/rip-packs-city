@@ -417,10 +417,15 @@ async function getEditionRows(
       'editions',
       'id, external_id, updated_at, player_name, set_name, team_name, collection_id',
       collectionIds,
-      'updated_at',
-      false,
-      // ⚠ `updated_at` is 68.4% ties with a largest group of 1,084 — WIDER than
-      // the 1,000-row page. The uuid PK is what makes the paging deterministic.
+      // ⛔ 2026-11-14: NOT `updated_at`. Writers bump it WHILE the walk runs (allday-pack-ev,
+      // allday-resolve-unmapped, the Panini ingest), so a row not yet read jumped to the
+      // already-read head and was silently skipped, and a head insert duplicated a row at each
+      // later page boundary — a 200 sitemap missing edition URLs, cached 6 h (the partial-list
+      // class, with no error raised). Page on columns no writer changes; the order of URLs in a
+      // sitemap carries no meaning (lastModified still comes from `updated_at`).
+      'collection_id',
+      true,
+      // The uuid PK keeps the paging deterministic within a collection.
       'id',
       undefined,
       idRange,
@@ -942,6 +947,31 @@ function dropTsFossils(rows: EditionRow[]): EditionRow[] {
   )
 }
 
+/**
+ * Top Shot ALIAS edition keys (`topshot_edition_aliases`, 25 rows on 2026-11-14 — the `149:<play>::8`
+ * Diced listings) — the edition layout 308s each to its canonical key, so listing them in the sitemap
+ * submits "Page with redirect" URLs (the same reason player/team aliases are already excluded).
+ * ⚠ NON-FATAL by design: a failed read lists them anyway — 25 redirecting URLs are harmless, a 503
+ * sitemap segment is not. Returns an empty set on failure, and says so in the log.
+ */
+async function getTsAliasEditionKeys(): Promise<Set<string>> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) return new Set()
+  try {
+    const sb: any = createClient(url, key)
+    const { data, error } = await sb.from('topshot_edition_aliases').select('alias_external_id').limit(1000)
+    if (error) {
+      console.warn('[sitemap] topshot_edition_aliases unavailable — alias editions stay listed:', error.message)
+      return new Set()
+    }
+    return new Set(((data ?? []) as Array<{ alias_external_id: string | null }>).map((r) => r.alias_external_id ?? '').filter(Boolean))
+  } catch (e) {
+    console.warn('[sitemap] topshot_edition_aliases threw — alias editions stay listed:', e instanceof Error ? e.message : e)
+    return new Set()
+  }
+}
+
 function buildEditionPages(editions: EditionRow[]): MetadataRoute.Sitemap {
   return editions
     .filter((e) => !!e.external_id)
@@ -1022,7 +1052,8 @@ async function buildSitemapSegmentUncapped(id: number): Promise<MetadataRoute.Si
 
   // ── Segment 1: Top Shot edition pages ─────────────────────────────────────
   if (id === 1) {
-    const rows = dropTsFossils(await getEditionRows([TS_ID]))
+    const [allRows, aliasKeys] = await Promise.all([getEditionRows([TS_ID]), getTsAliasEditionKeys()])
+    const rows = dropTsFossils(allRows).filter((e) => !aliasKeys.has(e.external_id ?? ''))
     return buildEditionPages(rows)
   }
 

@@ -472,6 +472,34 @@ describe("segment 1 — Top Shot editions (fossil filter)", () => {
   })
 })
 
+describe("segment 1 — Top Shot ALIAS editions are not submitted (2026-11-14)", () => {
+  it("drops a key listed in topshot_edition_aliases — the edition layout 308s it", async () => {
+    h.t.editions = ok([
+      { id: "e1", external_id: "149:8054", collection_id: TS_ID, updated_at: null, player_name: "P", set_name: "S", team_name: null },
+      { id: "e2", external_id: "149:8054::8", collection_id: TS_ID, updated_at: null, player_name: "P", set_name: "S", team_name: null },
+    ])
+    h.t.topshot_edition_aliases = ok([{ alias_external_id: "149:8054::8" }])
+    try {
+      const s = await buildSitemapSegment(1)
+      expect(s.map((e) => e.url)).toEqual([`${BASE}/nba-top-shot/edition/149%3A8054`])
+    } finally {
+      delete h.t.topshot_edition_aliases
+    }
+  })
+  it("a failed alias read still serves the segment (aliases listed), never a 503", async () => {
+    h.t.editions = ok([
+      { id: "e2", external_id: "149:8054::8", collection_id: TS_ID, updated_at: null, player_name: "P", set_name: "S", team_name: null },
+    ])
+    h.t.topshot_edition_aliases = { data: null, error: { message: "timeout" } }
+    try {
+      const s = await buildSitemapSegment(1)
+      expect(s).toHaveLength(1)
+    } finally {
+      delete h.t.topshot_edition_aliases
+    }
+  })
+})
+
 describe("segment 2 — AllDay/Golazos/UFC editions (no fossil filter)", () => {
   it("keeps hyphenated non-TS slugs and builds their edition URLs", async () => {
     h.t.editions = ok([
@@ -914,7 +942,10 @@ describe("the paging tiebreaker is checked by VALUE, not just by shape", () => {
     }
     const cols = seen
     expect(cols, "the editions read must carry TWO order keys").toHaveLength(2)
-    expect(cols[0]).toBe("updated_at")
+    // Re-pinned 2026-11-14: was "updated_at". Writers bump updated_at mid-walk, so a row not yet
+    // read jumped to the already-read head and was skipped. The primary key must be IMMUTABLE.
+    expect(cols[0]).toBe("collection_id")
+    expect(cols[0]).not.toMatch(/(_at|_time|timestamp)$/i)
     expect(cols[1], "the tiebreaker must not be the order column").not.toBe(cols[0])
     // ...and it must not be another timestamp wearing a different name.
     expect(cols[1]).not.toMatch(/(_at|_time|timestamp)$/i)

@@ -9,6 +9,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 import { NextRequest } from "next/server"
 import { makeInstrumentedSupabaseFixture } from "./helpers/route-harness"
 import type { ScriptTurn } from "./helpers/anthropic-fixture"
+import { scrubConfidence } from "@/lib/concierge/scrub-confidence"
 
 const A = vi.hoisted(() => ({
   state: { script: [] as ScriptTurn[], cursor: 0 },
@@ -96,9 +97,16 @@ describe("search_live_deals ranks verified-FMV deals first", () => {
     expect(JSON.stringify(r)).not.toMatch(/confidence/i)
   })
 
-  it("the prompt forbids headlining a low-confidence discount", async () => {
+  // Re-pinned 2026-11-14: the rule named `low_confidence_fmv`, a key the model NEVER sees —
+  // scrubConfidence renames it before the tool result reaches the model, so the only signal behind
+  // the rule arrived under a name the rule did not mention. Pin the PROPERTY: the prompt names the
+  // key the scrubber actually emits, whatever it is called.
+  it("the prompt forbids headlining a thin-pricing discount, under the key the model actually receives", async () => {
     await POST(post())
     const sys = A.createCalls[0].system.map((b) => b.text).join("\n")
-    expect(sys).toMatch(/low_confidence_fmv: true is NOT a deal to headline/)
+    const emitted = Object.keys(JSON.parse(scrubConfidence(JSON.stringify({ low_confidence_fmv: true }))))[0]
+    expect(emitted).toBeTruthy()
+    expect(sys).toContain(`${emitted}: true is NOT a deal to headline`)
+    expect(sys).not.toMatch(/low_confidence_fmv/)
   })
 })

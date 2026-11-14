@@ -250,7 +250,11 @@ export async function fetchHubPanelExtras(
  */
 export function hubIsIndexable(hub: Pick<FranchiseHub, "collections">, panini?: PaniniHubPanel): boolean {
   // 2026-10-22: a Panini panel with cards counts as a gathered collection.
-  return hub.collections.length + (panini?.state === "ok" ? 1 : 0) >= 2
+  // ⚠ 2026-11-14: and a FAILED Panini read counts too — fail OPEN. Counting it as absent turned a
+  // timed-out panel (1–4 a day at the 10 s budget) into `noindex` on a real hub, cached for the ISR
+  // window, so a crawler visiting then was told to drop the page. Of the two wrong outcomes, briefly
+  // indexing a one-collection hub is far cheaper than de-indexing a gathered one.
+  return hub.collections.length + (panini?.state === "ok" || panini?.state === "failed" ? 1 : 0) >= 2
 }
 
 // ── Panini panel (2026-10-22) ────────────────────────────────────────────────

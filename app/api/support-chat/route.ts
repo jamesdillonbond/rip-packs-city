@@ -133,6 +133,7 @@ import { readPaniniSaleRecord, paniniPricingBasis, withPaniniSaleBasis, stripPan
 import { paniniEditionUrl } from "@/lib/panini/edition-url";
 import { isSqueezeCollection, SQUEEZE_LABEL, type SqueezeCollection } from "@/lib/insights/squeeze-collections";
 import { readSqueezeCheck, readWalletScanState } from "@/lib/insights/squeeze-check";
+import { boundedRead } from "@/lib/api/bounded-read";
 import { TROPHY_COLLECTIONS } from "@/lib/insights/trophy-collections";
 import { REPLY_TO } from "@/lib/emails/sender-identity";
 
@@ -1309,7 +1310,7 @@ Badges are what collectors pay attention to (Rookie Year, Top Shot Debut, Champi
 
 ## Reading get_fmv / search_catalog_deals responses
 - mode = "distribution" (count >= 2): surface median (median_fmv), middle 80% (p10 → p90), count for breadth, name 1-3 sample editions. Frame the user's price relative to the distribution.
-- ⚠ **A deal row with low_confidence_fmv: true is NOT a deal to headline.** Its FMV is ASK_ONLY (one seller's ask, no sales), STALE (carried forward, not re-priced) or SALES_ONLY (old sales, no ask to corroborate), so its discount_pct compares an ask with a number nothing supports. List verified rows first; if you mention a flagged row at all, say its FMV is thin/stale and that the discount may not be real. Never call one "the sharpest deal" or "deepest discount".
+- ⚠ **A deal row with thin_pricing_fmv: true is NOT a deal to headline.** Its FMV is ASK_ONLY (one seller's ask, no sales), STALE (carried forward, not re-priced) or SALES_ONLY (old sales, no ask to corroborate), so its discount_pct compares an ask with a number nothing supports. List verified rows first; if you mention a flagged row at all, say its FMV is thin/stale and that the discount may not be real. Never call one "the sharpest deal" or "deepest discount".
 - ⚠ **A distribution mixes very different editions.** sample_editions always include the highest-FMV one AND (on Top Shot) the highest-FMV editions that carry a badge; badged_editions_in_filter counts badged editions across the WHOLE filter (null = not counted). When the user's question names a variant — "rookie", a set, a parallel, a badge — look for a sample whose badges / set / parallel_name match it and answer about THAT edition; if none matches, call get_fmv again with setName (or search_catalog_deals with hasBadge) before answering. Never price a named variant off the whole player's median, and never say "none of the editions carry badge X" about a sample — say which editions you looked at.
 - ⚠ **If the result carries truncated: true, the percentiles are a SLICE, not the filter.** Read population_matched: the filter matched that many editions and only "scanned" of them were read, in a fixed catalog order rather than at random. You MUST say that plainly — "that matched N editions and I priced the first M of them, so treat this as a sample" — and offer to narrow by set or tier. Do NOT present a truncated distribution as the range for the whole filter, and do not quietly drop the caveat because the numbers look reasonable. A percentile over a slice is more misleading than a short list, because it LOOKS like a summary of everything.
 - mode = "single" (count = 1): surface the single edition's fmv with the sales facts behind it (sales count, last sale) and exact set/player/tier — never a confidence label.
@@ -2464,7 +2465,7 @@ async function executeToolInner(
           return JSON.stringify({
             ...board,
             source: "deals_board",
-            note: "Edition-grain deals (lowest ask vs FMV) from the same board as rippackscity.com/insights/deals. Low-confidence-FMV rows are excluded.",
+            note: "Edition-grain deals (lowest ask vs FMV) from the same board as rippackscity.com/insights/deals. Rows whose FMV rests on thin pricing are excluded.",
           });
         }
       } catch { /* fall through to the live feed below */ }
@@ -5022,11 +5023,13 @@ async function executeToolInner(
       if (!/^\d+:\d+$/.test(key)) {
         return JSON.stringify({ status: "error", message: "editionKey must be setID:playID (e.g. 258:8912)." });
       }
-      const { data: edRow } = await (supabase as any)
+      const { data: edRow, error: edErr } = await (supabase as any)
         .from("editions").select("id")
         .eq("external_id", key)
         .eq("collection_id", COLLECTION_UUID_BY_SLUG["nba-top-shot"])
         .maybeSingle();
+      // 2026-11-14: a FAILED edition read is not "no such edition" (the error was dropped).
+      if (edErr) return JSON.stringify({ status: "error", message: safeApiError(edErr).error });
       if (!edRow?.id) return JSON.stringify({ status: "not_found", editionKey: key, message: "No Top Shot edition with that key." });
       const days = Math.min(Math.max(Math.trunc(Number(toolInput.days ?? 14)) || 14, 1), 60);
       const { data, error } = await (supabase as any).rpc("get_edition_sweep_signal", { p_edition_id: edRow.id, p_days: days });
@@ -5085,7 +5088,9 @@ async function executeToolInner(
         .from("sets").select("id, name, series, set_id_onchain")
         .eq("collection_id", tsUuid).ilike("name", `%${setName}%`);
       if (toolInput.series != null && toolInput.series !== "") setQuery = setQuery.eq("series", Math.trunc(Number(toolInput.series)));
-      const { data: setRows } = await setQuery.limit(25);
+      const { data: setRows, error: setErr } = await setQuery.limit(25);
+      // 2026-11-14: a FAILED set read is not "no set matches" (the error was dropped).
+      if (setErr) return JSON.stringify({ status: "error", message: safeApiError(setErr).error });
       const sets = (setRows ?? []) as any[];
       if (sets.length === 0) return JSON.stringify({ status: "set_not_found", setName, message: "No Top Shot set matches that name." });
       if (sets.length > 1) {
@@ -5373,7 +5378,26 @@ async function executeToolInner(
       }
       // An empty ranking is a real answer — the wallet has finished everything it
       // started, or holds nothing in any indexed set. It is NOT a failed lookup.
+      // ⚠ 2026-11-14: ONLY for a wallet we have walked. The RPC builds `owned` from
+      // wallet_moments_cache, so a never-walked wallet also ranks nothing, and a new collector asking
+      // "which sets am I closest to finishing?" was told they had none started. Same scan-state read
+      // as get_collector_report (10-28).
       if (!data || !Array.isArray(data.sets) || data.sets.length === 0) {
+        const cacheWallet = resolvedAddr.toLowerCase();
+        const anyCached = await boundedRead((supabase as any)
+          .from("wallet_moments_cache").select("wallet_address").eq("wallet_address", cacheWallet).limit(1),
+          "support-chat/get_cheapest_sets_to_complete/wmc");
+        if (anyCached.error) {
+          return JSON.stringify({ status: "state_unknown", wallet: resolvedAddr, message: "Couldn't confirm whether this wallet is indexed right now. Do not say it has no sets in progress; suggest trying again shortly." });
+        }
+        const hasAny = Array.isArray(anyCached.data) && anyCached.data.length > 0;
+        const scan = await readWalletScanState(supabase, cacheWallet, hasAny, "support-chat/get_cheapest_sets_to_complete");
+        if (scan.index_state === "not_indexed") {
+          return JSON.stringify({ status: "not_indexed", wallet: resolvedAddr, message: `We have not indexed this wallet yet, so there is no set ranking — this says nothing about which sets it has started. Opening /insights/tc-report?wallet=${cacheWallet} starts the scan (usually 1–2 minutes). Do not say it has no sets in progress.` });
+        }
+        if (scan.index_state === "unknown") {
+          return JSON.stringify({ status: "state_unknown", wallet: resolvedAddr, message: "Couldn't confirm whether this wallet is indexed right now. Do not say it has no sets in progress; suggest trying again shortly." });
+        }
         return JSON.stringify({
           status: "no_results",
           wallet: resolvedAddr,
@@ -6536,6 +6560,11 @@ async function executeToolInner(
       const body = await res.json();
       const editions: any[] = Array.isArray(body?.editions) ? body.editions : [];
       const progress = body?.progress ?? null;
+      // 2026-11-14: the route sets `owned` from "a wallet was passed", not "that wallet was walked in
+      // this collection" — an unwalked wallet comes back owned:false everywhere with
+      // progress.wallet_cached:false, and the tool reported "0 owned / everything missing / the full
+      // cost to finish". Ownership is UNKNOWN there, and the model must be told so.
+      const walletUnwalked = wallet != null && progress?.wallet_cached === false;
       // by series × tier, owned vs total
       const bySeries: Record<string, Record<string, { total: number; owned: number }>> = {};
       for (const e of editions) {
@@ -6567,15 +6596,18 @@ async function executeToolInner(
         team_url: `${base}/${slug}/team/${teamSlug}`,
         scope,
         view,
-        scored_wallet: wallet,
+        scored_wallet: walletUnwalked ? null : wallet,
+        wallet_indexed: wallet == null ? null : !walletUnwalked,
         total_editions: editions.length,
-        progress,
+        progress: walletUnwalked ? null : progress,
         by_series: bySeries,
         series_note: slug === "nba-top-shot"
           ? "Top Shot series_num is on-chain: 0 = Series 1, 2 = Series 2, 3 = Summer 2021, 4 = Series 3, 5 = Series 4, 6 = 2023-24, 7 = 2024-25, 8 = 2025-26, 9 = 2026-27 (the current season). There is no series 1."
           : "series_num is the collection's own series number.",
-        most_valuable_missing: missing,
-        message: wallet ? undefined : "No wallet scored — counts are the catalog; owned is 0 everywhere by construction.",
+        ...(walletUnwalked ? { most_valuable_in_catalog: missing } : { most_valuable_missing: missing }),
+        message: walletUnwalked
+          ? "This wallet has not been indexed for this collection yet, so what it owns is UNKNOWN — not zero. Do not say the user owns none, is missing everything, or what it costs them to finish; give catalog counts and the most valuable editions, and say ownership will show once the wallet is indexed."
+          : wallet ? undefined : "No wallet scored — counts are the catalog; owned is 0 everywhere by construction.",
       });
     } catch (err: any) {
       return JSON.stringify({ status: "error", message: safeApiError(err, "get_team_checklist failed").error });
