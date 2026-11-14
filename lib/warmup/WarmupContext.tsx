@@ -348,6 +348,9 @@ interface UseWarmCacheOptions {
 
 interface UseWarmCacheResult<T> {
   data: T | null
+  /** The key `data` was fetched for. It lags `key` while a new key loads, so a
+   *  caller diffing successive data can tell a NEW QUERY from a CHANGED ANSWER. */
+  dataKey: string | null
   loading: boolean
   error: unknown
   refresh: () => void
@@ -369,7 +372,21 @@ export function useWarmCache<T>(
   fetcherRef.current = fetcher
 
   const initialEntry = enabled ? ctx.read(key) : undefined
-  const [data, setData] = useState<T | null>(initialEntry ? (initialEntry.data as T) : null)
+  const [data, setDataState] = useState<T | null>(initialEntry ? (initialEntry.data as T) : null)
+  const [dataKey, setDataKey] = useState<string | null>(initialEntry ? key : null)
+  const setData = useCallback((d: T, forKey: string) => {
+    setDataState(d)
+    setDataKey(forKey)
+  }, [])
+  // 2026-11-14: the key the hook is CURRENTLY for. A response for an older key
+  // (the reader switched filters while it was in flight) must not land: it put
+  // the previous filter's rows under the new filter's tab when it answered last.
+  // Updated in an effect declared BEFORE the fetch effect (effects run in order),
+  // so it names the new key before that key's fetch starts.
+  const keyRef = useRef(key)
+  useEffect(() => {
+    keyRef.current = key
+  }, [key])
   const [loading, setLoading] = useState<boolean>(!initialEntry && enabled)
   const [error, setError] = useState<unknown>(null)
 
@@ -380,43 +397,46 @@ export function useWarmCache<T>(
       ctx
         .fetchOrJoin<T>(key, () => fetcherRef.current(), ttlMs)
         .then((d) => {
-          setData(d)
+          if (keyRef.current !== key) return
+          setData(d, key)
           setError(null)
         })
         .catch((e) => {
+          if (keyRef.current !== key) return
           setError(e)
         })
         .finally(() => {
+          if (keyRef.current !== key) return
           if (!background) setLoading(false)
         })
     },
-    [ctx, key, ttlMs, enabled],
+    [ctx, key, ttlMs, enabled, setData],
   )
 
   useEffect(() => {
     if (!enabled) return
     const unsubscribe = ctx.subscribe(key, () => {
       const entry = ctx.read(key)
-      if (entry) setData(entry.data as T)
+      if (entry) setData(entry.data as T, key)
     })
     const entry = ctx.read(key)
     if (!entry) {
       triggerFetch(false)
     } else {
-      setData(entry.data as T)
+      setData(entry.data as T, key)
       setLoading(false)
       if (!isFresh(entry)) {
         triggerFetch(true)
       }
     }
     return unsubscribe
-  }, [ctx, key, enabled, triggerFetch])
+  }, [ctx, key, enabled, triggerFetch, setData])
 
   const refresh = useCallback(() => {
     triggerFetch(true)
   }, [triggerFetch])
 
-  return { data, loading, error, refresh }
+  return { data, dataKey, loading, error, refresh }
 }
 
 export function usePrefetch() {

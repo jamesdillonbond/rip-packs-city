@@ -171,6 +171,29 @@ describe("useWarmCache — fetch, cache, and key identity", () => {
     await act(async () => { probe.refresh?.() })
     await waitFor(() => expect(screen.getByText("v=2")).toBeTruthy())
   })
+
+  // 2026-11-14 (Sniper review): a response for a key the consumer has LEFT must
+  // not land. Switch A → B, B answers, then A answers late: the old code set A's
+  // data, so the Sniper showed the previous filter's deals under the new tab.
+  it("a late response for a previous key does not overwrite the current key's data", async () => {
+    let resolveA: (v: { v: string }) => void = () => {}
+    const fetchA = () => new Promise<{ v: string }>((r) => { resolveA = r })
+    const fetchB = async () => ({ v: "B" })
+    function Probe({ k }: { k: "lateA" | "fastB" }) {
+      const { data, dataKey } = useWarmCache<{ v: string }>(k, k === "lateA" ? fetchA : fetchB)
+      return <div>{`data=${data?.v ?? "-"} key=${dataKey ?? "-"}`}</div>
+    }
+    const { rerender } = render(wrap(<Probe k="lateA" />))
+    rerender(wrap(<Probe k="fastB" />))
+    await waitFor(() => expect(screen.getByText(/^data=B /)).toBeTruthy())
+    await act(async () => { resolveA({ v: "A" }) })
+    await new Promise((r) => setTimeout(r, 20))
+    // The race itself (independent of dataKey): A's late answer is dropped.
+    expect(screen.queryByText(/^data=A /)).toBeNull()
+    expect(screen.getByText(/^data=B /)).toBeTruthy()
+    // And the hook says which key its data is for.
+    expect(screen.getByText("data=B key=fastB")).toBeTruthy()
+  })
 })
 
 describe("usePrefetch / useWarmup", () => {

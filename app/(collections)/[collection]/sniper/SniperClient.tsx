@@ -311,6 +311,7 @@ function SniperMomentsBody() {
 
   // ── Task 1: "Just Sold" ghost listings ──────────────────────────────────────
   const prevDealIdsRef = useRef<Set<string>>(new Set());
+  const prevFeedKeyRef = useRef<string | null>(null);
   const [soldIds, setSoldIds] = useState<Set<string>>(new Set());
   const [soldDeals, setSoldDeals] = useState<Map<string, SniperDeal>>(new Map());
 
@@ -630,7 +631,7 @@ function SniperMomentsBody() {
     return (await res.json()) as FeedResult;
   }, [feedKey]);
 
-  const { data, loading, error: warmError, refresh } = useWarmCache<FeedResult>(
+  const { data, dataKey, loading, error: warmError, refresh } = useWarmCache<FeedResult>(
     feedKey,
     feedFetcher,
     { ttlMs: 30_000 },
@@ -649,7 +650,12 @@ function SniperMomentsBody() {
   useEffect(() => {
     if (!data) return;
     const newIds = new Set(data.deals.map((d) => d.flowId));
-    if (prevDealIdsRef.current.size > 0) {
+    // 2026-11-14: only a NEW ANSWER TO THE SAME QUERY can show a sale. When the
+    // filters change, the rows the new query leaves out were filtered, not sold —
+    // diffing across keys printed a red SOLD pill on every one of them.
+    const sameQuery = prevFeedKeyRef.current !== null && prevFeedKeyRef.current === dataKey;
+    prevFeedKeyRef.current = dataKey;
+    if (sameQuery && prevDealIdsRef.current.size > 0) {
       const justSold: string[] = [];
       prevDealIdsRef.current.forEach((id) => {
         if (!newIds.has(id)) justSold.push(id);
@@ -685,7 +691,7 @@ function SniperMomentsBody() {
     }
     prevDealIdsRef.current = newIds;
     prevDataRef.current = data;
-  }, [data]);
+  }, [data, dataKey]);
 
   // ── ASK_ONLY fallback: when the feed comes back empty for Golazos or UFC
   // (whose FMV is just ask = circular), load tier-median-based deals + a

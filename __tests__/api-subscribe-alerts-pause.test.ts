@@ -8,6 +8,8 @@ import { NextRequest } from "next/server"
 const SECRET = "s".repeat(40)
 const updates: Array<{ table: string; patch: unknown; eqs: Array<[string, unknown]> }> = []
 let failWrite = false
+// Fail only this table's write (2026-11-14: the steps now run in order).
+let failTable: string | null = null
 // Rows each table's UPDATE matches (returned by .select()).
 let matched: Record<string, unknown[]> = {}
 
@@ -17,12 +19,14 @@ vi.mock("@/lib/supabase", () => ({
       const rec = { table, patch: null as unknown, eqs: [] as Array<[string, unknown]> }
       const chain: any = {
         update(p: unknown) { rec.patch = p; return chain },
+        delete() { rec.patch = "DELETE"; return chain },
         eq(c: string, v: unknown) { rec.eqs.push([c, v]); return chain },
         in(c: string, v: unknown) { rec.eqs.push([c, v]); return chain },
         select() { return chain },
         then(res: (v: unknown) => void) {
           updates.push(rec)
-          res(failWrite ? { data: null, error: { message: "boom" } } : { data: matched[table] ?? [], error: null })
+          const fail = failWrite || failTable === table
+          res(fail ? { data: null, error: { message: "boom" } } : { data: matched[table] ?? [], error: null })
         },
       }
       return chain
@@ -34,6 +38,7 @@ beforeEach(() => {
   process.env.SUPABASE_SERVICE_ROLE_KEY = SECRET
   updates.length = 0
   failWrite = false
+  failTable = null
   matched = { notification_channels: [{ owner_key: "o1" }] }
 })
 
@@ -65,7 +70,9 @@ describe("alerts-pause route", () => {
     const fmv = updates.find((u) => u.table === "fmv_alerts")!
     expect(fmv.patch).toEqual({ notification_email: null })
     expect(fmv.eqs).toEqual([["notification_email", ["dana@example.com"]]])
-    expect(updates).toHaveLength(2)
+    // Re-pinned 2026-11-14: a third write — the address's QUEUED email deliveries are cleared, first.
+    expect(updates).toHaveLength(3)
+    expect(updates[0].table).toBe("alert_deliveries")
   })
   it("an address held only as an FMV alert's fallback email is paused too (2026-10-27)", async () => {
     // dispatch_triggered_fmv_alerts falls back to fmv_alerts.notification_email when no verified channel exists.
@@ -91,6 +98,39 @@ describe("alerts-pause route", () => {
     const res = await POST(new NextRequest(bad, { method: "POST" }))
     expect(res.status).toBe(400)
     expect(updates).toHaveLength(0)
+  })
+  // 2026-11-14 (alerts review): alerts-send claims pending deliveries without re-reading the channel, so a
+  // pause that left the queue kept mailing the address (and its retries go back to 'pending').
+  it("clears the address's PENDING email deliveries, and only those", async () => {
+    const { POST, url } = await load()
+    const res = await POST(new NextRequest(url, { method: "POST" }))
+    expect(res.status).toBe(200)
+    const q = updates.find((u) => u.table === "alert_deliveries")
+    expect(q?.patch).toBe("DELETE")
+    expect(q?.eqs).toEqual([["channel", "email"], ["channel_user_id", ["dana@example.com"]], ["status", "pending"]])
+  })
+  it("an address with only QUEUED emails on file is paused, not 'nothing on file'", async () => {
+    matched = { alert_deliveries: [{ id: "d1" }] }
+    const { POST, url } = await load()
+    const html = await (await POST(new NextRequest(url, { method: "POST" }))).text()
+    expect(html).toContain("Alert emails paused")
+  })
+  it("a failed queue clear changes nothing else and says nothing was changed", async () => {
+    failTable = "alert_deliveries"
+    const { POST, url } = await load()
+    const res = await POST(new NextRequest(url, { method: "POST" }))
+    expect(res.status).toBe(500)
+    expect(await res.text()).toContain("nothing was changed")
+    expect(updates.filter((u) => u.table !== "alert_deliveries")).toHaveLength(0)
+  })
+  it("a failure AFTER a step landed never says 'nothing was changed'", async () => {
+    failTable = "fmv_alerts"
+    const { POST, url } = await load()
+    const res = await POST(new NextRequest(url, { method: "POST" }))
+    expect(res.status).toBe(500)
+    const html = await res.text()
+    expect(html).not.toContain("nothing was changed")
+    expect(html).not.toContain("Alert emails paused")
   })
   it("a failed write says so instead of claiming the pause", async () => {
     failWrite = true

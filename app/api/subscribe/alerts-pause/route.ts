@@ -65,18 +65,29 @@ export async function POST(req: NextRequest) {
   const addresses = Array.from(new Set([email, email.toLowerCase()]))
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabaseAdmin as any
-  const [ch, fmv] = await Promise.all([
-    db.from("notification_channels").update({ verified: false }).eq("channel", "email").in("channel_user_id", addresses).select("owner_key"),
-    db.from("fmv_alerts").update({ notification_email: null }).in("notification_email", addresses).select("id"),
-  ])
-  const error = ch.error ?? fmv.error
+  //
+  // 2026-11-14 (alerts review): a THIRD place — emails already QUEUED. alerts-send claims pending
+  // alert_deliveries without re-reading the channel, so a pause left the queue (and its retries, which go
+  // back to 'pending') mailing this address for up to five more attempts after "paused". Clear them FIRST,
+  // as DELETE /api/alerts/channels does (11-07), then the two switches, in order: each step's failure is
+  // reported for what it is, and "nothing was changed" is said only when nothing was.
+  const queued = await db.from("alert_deliveries").delete()
+    .eq("channel", "email").in("channel_user_id", addresses).eq("status", "pending").select("id")
+  if (queued.error) {
+    console.error(`[alerts-pause] queue clear failed: ${queued.error.message}`)
+    return page("We couldn't pause them", `<p>Something went wrong on our side and nothing was changed. Please try again, or turn email off at <a href="/alerts">Alerts</a>.</p>`, 500)
+  }
+  const ch = await db.from("notification_channels").update({ verified: false }).eq("channel", "email").in("channel_user_id", addresses).select("owner_key")
+  const fmv = ch.error ? null : await db.from("fmv_alerts").update({ notification_email: null }).in("notification_email", addresses).select("id")
+  const error = ch.error ?? fmv?.error
   if (error) {
     console.error(`[alerts-pause] update failed: ${error.message}`)
-    return page("We couldn't pause them", `<p>Something went wrong on our side and nothing was changed. Please try again, or turn email off at <a href="/alerts">Alerts</a>.</p>`, 500)
+    return page("We couldn't finish pausing them", `<p>Something went wrong on our side part-way through, so some alert emails may still be sent. Please use this link again — it is safe to repeat — or turn email off at <a href="/alerts">Alerts</a>.</p>`, 500)
   }
   // "Paused" only when something was actually switched off (or was already off — the link is idempotent, so a
   // second click matching nothing new must not read as a failure). Nothing at all on file says exactly that.
-  const matched = (Array.isArray(ch.data) ? ch.data.length : 0) + (Array.isArray(fmv.data) ? fmv.data.length : 0)
+  const matched = (Array.isArray(ch.data) ? ch.data.length : 0) + (Array.isArray(fmv?.data) ? fmv.data.length : 0)
+    + (Array.isArray(queued.data) ? queued.data.length : 0)
   if (matched === 0) {
     return page("No alert emails on file", `<p>We have no alert emails set up for <strong>${esc(email)}</strong>, so there is nothing to pause. Manage alerts at <a href="/alerts">Alerts</a>.</p>`)
   }

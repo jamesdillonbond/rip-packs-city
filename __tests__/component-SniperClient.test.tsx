@@ -35,7 +35,7 @@ vi.mock("next/navigation", () => ({
 // ── The feed hook. This is the seam the whole page hangs off, so the tests
 // drive it directly rather than through fetch: `useWarmCache` owns the
 // loading/data/error triple that every honesty branch below reads.
-let warm: { data: unknown; loading: boolean; error: unknown; refresh: () => void } = {
+let warm: { data: unknown; dataKey?: string; loading: boolean; error: unknown; refresh: () => void } = {
   data: null,
   loading: false,
   error: null,
@@ -46,7 +46,9 @@ const warmKeys: string[] = []
 vi.mock("@/lib/warmup/WarmupContext", () => ({
   useWarmCache: (key: string) => {
     warmKeys.push(key)
-    return warm
+    // The real hook reports the key its data is for; a test may override it to
+    // model data that answers a DIFFERENT query (2026-11-14).
+    return { dataKey: key, ...warm }
   },
 }))
 
@@ -1350,6 +1352,29 @@ describe("SniperClient — a listing that SELLS between refreshes is called out"
 
     // The vanished row is surfaced rather than silently removed.
     await waitFor(() => expect(screen.getByText(/SOLD|JUST SOLD/i)).toBeTruthy())
+  })
+
+  // 2026-11-14 (Sniper review): a FILTER CHANGE is a new query, not a new answer.
+  // The rows it leaves out were filtered, not sold; the old diff ignored the key
+  // and painted every one of them with a red SOLD pill for 8 s.
+  it("does NOT mark rows SOLD when the next payload answers a different query (a filter change)", async () => {
+    const first = feed({ deals: [deal({ flowId: "111" }), deal({ flowId: "222", playerName: "CJ McCollum" })] })
+    warm = { data: first, loading: false, error: null, refresh: vi.fn() }
+    const { rerender } = render(<SniperClient />)
+    await screen.findAllByText(/Damian Lillard/i)
+
+    warm = {
+      data: feed({ deals: [deal({ flowId: "111" })] }),
+      dataKey: "/api/sniper-feed?collection=nba_top_shot&tier=legendary&sortBy=discount",
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+    }
+    rerender(<SniperClient />)
+    await new Promise((r) => setTimeout(r, 30))
+
+    expect(screen.queryAllByText(/JUST SOLD|^SOLD$/i)).toHaveLength(0)
+    expect(screen.queryAllByText(/CJ McCollum/i)).toHaveLength(0)
   })
 
   it("does NOT mark anything on the very first payload", async () => {
