@@ -14,7 +14,7 @@ import DashboardTabs from "@/components/dashboard/DashboardTabs"
 import { fmtUsd, relativeTime } from "@/lib/dashboard/format"
 import { currencySuffix, displayCurrency, isUsdPegged } from "@/lib/usd-format"
 import { packCoverage } from "@/lib/packs-wallet-view-format"
-import { heldPacksCaption, packBuyLabel, packIdentityNote, packInferredAcquisitionLine, packMarketLabel, packPullLabel, packPullSerialLabel, packsRippedCaption, packsSoldCaption, spentCaption, type HeldPackValue } from "@/lib/packs-wallet-view-format"
+import { heldPacksCaption, packHeldFmvLabel, packHeldPullsLabel, packValueLabel, packBuyLabel, packIdentityNote, packInferredAcquisitionLine, packMarketLabel, packPullLabel, packPullSerialLabel, packsRippedCaption, packsSoldCaption, spentCaption, type HeldPackValue } from "@/lib/packs-wallet-view-format"
 import Link from "next/link"
 import { DB_SLUG_TO_SLUG } from "@/lib/collections"
 import {
@@ -152,6 +152,14 @@ interface HistoryRow {
   minted_to_wallet_at?: string | null
   primary_minted_at?: string | null
   identity_status?: string | null
+  // 2026-11-13 (history v27): what is still held, at the wallet's own value -- optional, an
+  // older payload renders "—".
+  pulls_listed?: number | null
+  pulls_held?: number | null
+  pulls_held_priced?: number | null
+  held_fmv_usd?: number | null
+  value_usd?: number | null
+  value_basis?: string | null
 }
 
 interface History {
@@ -610,7 +618,7 @@ export default function PackHistoryClient() {
               <div style={{ padding: 28, textAlign: "center", color: "var(--rpc-text-secondary)", fontFamily: monoFont, fontSize: 12 }}>No pack activity for this filter.</div>
             ) : (
               <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-              <table style={{ width: "100%", minWidth: 720, borderCollapse: "collapse", fontFamily: monoFont, fontSize: 11 }}>
+              <table style={{ width: "100%", minWidth: 820, borderCollapse: "collapse", fontFamily: monoFont, fontSize: 11 }}>
                 <thead>
                   <tr style={{ background: "var(--rpc-black)", borderBottom: "1px solid var(--rpc-border)" }}>
                     <Th>Pack</Th>
@@ -620,6 +628,7 @@ export default function PackHistoryClient() {
                     <Th right>Sell</Th>
                     <Th right>Pull value</Th>
                     <Th right>Realized P&L</Th>
+                    <Th right>Still held</Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -816,10 +825,25 @@ function ExpandableRow({ row, isOpen, lifecycle, onClick }: { row: HistoryRow; i
         <td style={{ padding: "10px 12px", textAlign: "right" }}>{sellText}</td>
         <td style={{ padding: "10px 12px", textAlign: "right", color: pullTint }}>{packPullLabel(row)}</td>
         <td style={{ padding: "10px 12px", textAlign: "right", color: plTint, fontFamily: condensedFont, fontWeight: 700 }}>{fmtUsd(row.realized_pl_usd)}</td>
+        {/* 2026-11-13: what of this pack is still in the wallet, at its own value -- an
+            opened pack's pulls still held at wallet FMV, a sealed pack's value and basis.
+            A pack that left the wallet holds nothing here: "—". */}
+        <td style={{ padding: "10px 12px", textAlign: "right", whiteSpace: "nowrap" }}>
+          {row.status === "ripped" && (row.pulls_listed ?? 0) > 0 ? (
+            <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end" }}>
+              <span style={{ color: row.held_fmv_usd != null && row.held_fmv_usd > 0 ? "var(--rpc-success-text)" : "var(--rpc-text-secondary)", fontFamily: condensedFont, fontWeight: 700 }}>{packHeldFmvLabel(row)}</span>
+              <span style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>{packHeldPullsLabel(row)} pulls</span>
+            </span>
+          ) : row.status === "held" ? (
+            <span style={{ color: "var(--rpc-text-primary)" }}>{packValueLabel(row)}</span>
+          ) : (
+            <span style={{ color: "var(--rpc-text-muted)" }}>—</span>
+          )}
+        </td>
       </tr>
       {isOpen && (
         <tr style={{ background: "var(--rpc-black)" }}>
-          <td colSpan={7} style={{ padding: 14, borderBottom: "1px solid #1a1a1d" }}>
+          <td colSpan={8} style={{ padding: 14, borderBottom: "1px solid #1a1a1d" }}>
             <LifecycleDetail lifecycle={lifecycle} row={row} />
           </td>
         </tr>

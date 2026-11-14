@@ -124,6 +124,32 @@ describe("PackHistoryClient", () => {
     await waitFor(() => expect(document.body.textContent).toMatch(/No saved wallets yet/))
   })
 
+  // 2026-11-13 (history v27): the "Still held" column -- an opened pack's pulls still in the
+  // wallet at wallet FMV, a sealed pack's value with its basis, and nothing for a pack that left.
+  it("Still held: opened -> held FMV + count, sealed -> value + basis, sold -> a dash; no payload field -> no $0", async () => {
+    mount({
+      history: () => json(200, {
+        packs: [
+          ROW({ pack_nft_id: "o1", pack_name: "Opened One", pulls_listed: 3, pulls_held: 2, pulls_held_priced: 2, held_fmv_usd: 12.5 }),
+          ROW({ pack_nft_id: "h1", pack_name: "Sealed One", status: "held", has_rip: false, pull_value_usd: null, value_usd: 25, value_basis: "ask" }),
+          ROW({ pack_nft_id: "s1", pack_name: "Sold One", status: "flipped", has_rip: false, has_sell: true, sell_price: 30, pull_value_usd: null }),
+          ROW({ pack_nft_id: "o2", pack_name: "Old Payload" }),
+        ],
+        total_count: 4,
+      }),
+    })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Opened One/))
+    const cellOf = (name: string) => {
+      const tr = Array.from(document.querySelectorAll("tr")).find((r) => r.textContent?.includes(name))!
+      const tds = tr.querySelectorAll("td")
+      return tds[tds.length - 1].textContent ?? ""
+    }
+    expect(cellOf("Opened One")).toBe("$12.502 of 3 pulls")
+    expect(cellOf("Sealed One")).toBe("$25.00 · floor ask")
+    expect(cellOf("Sold One")).toBe("—")
+    expect(cellOf("Old Payload")).toBe("—")
+  })
+
   it("renders the summary and the pack table for the active wallet", async () => {
     mount()
     await waitFor(() => expect(document.body.textContent).toMatch(/Series 5 Base/))
