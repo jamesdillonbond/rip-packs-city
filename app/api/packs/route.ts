@@ -175,6 +175,19 @@ export async function GET(req: NextRequest) {
       .in("dist_id", distIds), "api/packs/v_allday_pack_detail_ev")
     if (corrError) {
       console.error("[api/packs] allday corrected merge", corrError.message)
+      // ⚠ 2026-11-14: a FAILED read withholds the EV, as the Pinnacle branch below
+      // does. It used to keep the canonical flat-mean EV — the inflated number this
+      // merge exists to replace — on every All Day row.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      rows = (rows as any[]).map((r) => ({
+        ...r,
+        gross_ev: null,
+        pack_ev: null,
+        value_ratio: null,
+        ev_margin_pct: null,
+        is_positive_ev: null,
+        ev_unavailable: true,
+      }))
     } else if (corr?.length) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const corrMap = new Map<string, any>(

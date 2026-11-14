@@ -237,6 +237,28 @@ export async function getPackDeals(
     if (row.dist_id) evByDist.set(String(row.dist_id), row)
   }
 
+  // NFL All Day (2026-11-14): pack_table_rows.gross_ev is the flat trimmed mean
+  // that ignores pull odds and over-states rare-heavy packs (a $4 pack modelled
+  // at $430). /api/packs, the dist page and the OG card all replace it with the
+  // odds/median-corrected EV; this board ranked and labelled All Day packs by the
+  // raw number, so its "EV / ask" disagreed with the page it links to. A FAILED
+  // correction read fails the board, exactly like the EV read above — never the
+  // inflated fallback.
+  if (collection === "nfl-all-day" && evByDist.size > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const corrRes = await (supabaseAdmin as any)
+      .from("v_allday_pack_detail_ev")
+      .select("dist_id, corrected_gross_ev")
+      .in("dist_id", Array.from(evByDist.keys()))
+    if (corrRes.error) {
+      throw new Error(`v_allday_pack_detail_ev read failed: ${corrRes.error.message}`)
+    }
+    for (const c of (corrRes.data ?? []) as Array<{ dist_id: string | number; corrected_gross_ev: number | string | null }>) {
+      const row = evByDist.get(String(c.dist_id))
+      if (row && c.corrected_gross_ev != null) evByDist.set(String(c.dist_id), { ...row, gross_ev: Number(c.corrected_gross_ev) })
+    }
+  }
+
   // Recency overlay is non-fatal — a read error just means no NEW/▼ flags today.
   // askRes.data is a clamp-proof jsonb object keyed by dist_id (one row, from
   // get_pack_ask_state_map) → build the map from its entries.

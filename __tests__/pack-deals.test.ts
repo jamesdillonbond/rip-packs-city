@@ -19,8 +19,10 @@ const state: {
   chainReads: number
   latestAskRows: any[] | null
   latestAskError: { message: string } | null
+  corrRows: any[] | null
+  corrError: { message: string } | null
 } = {
-  latestAskRows: null, latestAskError: null,
+  latestAskRows: null, latestAskError: null, corrRows: null, corrError: null,
   listings: [], evRows: [], evError: null, askMap: null, askError: null,
   chainCount: null, chainError: null, chainReads: 0,
 }
@@ -42,7 +44,7 @@ vi.mock("@/lib/supabase", () => {
   // from("pack_purchases") is the chain witness for book freshness → count.
   const makeBuilder = (table: string): any => {
     const builder: any = {}
-    for (const m of ["select", "eq", "not", "gte", "gt", "lt", "limit", "order"]) builder[m] = () => builder
+    for (const m of ["select", "eq", "not", "gte", "gt", "lt", "limit", "order", "in"]) builder[m] = () => builder
     builder.then = (resolve: any) => {
       if (table === "pack_purchases") {
         state.chainReads += 1
@@ -50,6 +52,9 @@ vi.mock("@/lib/supabase", () => {
       }
       if (table === "pack_ask_state") {
         return resolve({ data: state.latestAskRows, error: state.latestAskError })
+      }
+      if (table === "v_allday_pack_detail_ev") {
+        return resolve({ data: state.corrRows, error: state.corrError })
       }
       return resolve({ data: state.evRows, error: state.evError })
     }
@@ -107,6 +112,8 @@ beforeEach(() => {
   state.evError = null
   state.askMap = null
   state.askError = null
+  state.corrRows = null
+  state.corrError = null
 })
 
 describe("getPackDeals — guards", () => {
@@ -117,6 +124,33 @@ describe("getPackDeals — guards", () => {
   it("throws when the EV read errors", async () => {
     state.evError = { message: "db down" }
     await expect(getPackDeals("nba-top-shot")).rejects.toThrow(/pack_table_rows read failed: db down/)
+  })
+})
+
+describe("getPackDeals — All Day ranks by the corrected EV (2026-11-14)", () => {
+  it("replaces the flat-mean EV with the odds-corrected one before computing the ratio", async () => {
+    // The $4-pack-at-$430 shape: the raw EV would read a 107x "deal".
+    state.listings = [listing({ distId: "100", lowestAsk: 4 })]
+    state.evRows = [evRow({ dist_id: "100", gross_ev: 430 })]
+    state.corrRows = [{ dist_id: "100", corrected_gross_ev: 3 }]
+    const { deals, stats } = await getPackDeals("nfl-all-day")
+    expect(deals[0].liveValueRatio).toBeCloseTo(0.75, 5)
+    expect(stats.positiveEv).toBe(0)
+  })
+
+  it("a failed correction read fails the board — never the inflated fallback", async () => {
+    state.listings = [listing({ distId: "100", lowestAsk: 4 })]
+    state.evRows = [evRow({ dist_id: "100", gross_ev: 430 })]
+    state.corrError = { message: "timeout" }
+    await expect(getPackDeals("nfl-all-day")).rejects.toThrow(/v_allday_pack_detail_ev read failed/)
+  })
+
+  it("keeps the canonical EV where the view has no corrected figure", async () => {
+    state.listings = [listing({ distId: "100", lowestAsk: 10 })]
+    state.evRows = [evRow({ dist_id: "100", gross_ev: 20 })]
+    state.corrRows = [{ dist_id: "100", corrected_gross_ev: null }]
+    const { deals } = await getPackDeals("nfl-all-day")
+    expect(deals[0].liveValueRatio).toBe(2)
   })
 })
 

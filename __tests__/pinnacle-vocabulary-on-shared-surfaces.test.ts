@@ -97,7 +97,9 @@ describe("Pack detail page — Pinnacle drop-grain EV", () => {
     const { readFileSync } = await import("node:fs")
     const src = readFileSync("app/(collections)/[collection]/pack/dist/[distId]/page.tsx", "utf8")
     expect(src).toMatch(/const pinDropRes = await fetchPinnacleDropEv\(collection, distId\)/)
-    expect(src).toMatch(/const grossEv = usePinDrop\s*\?\s*num\(pinDrop!\.gross_ev\)/)
+    // Re-pinned 2026-11-14: a FAILED drop read now withholds the EV first (null), and
+    // only then does the drop EV substitute for the pool's — still never the pool's EV.
+    expect(src).toMatch(/const grossEv = !pinDropRes\.ok\s*\?\s*null\s*:\s*usePinDrop\s*\?\s*num\(pinDrop!\.gross_ev\)/)
     expect(src).toMatch(/boardStatus\("Pack EV", pinDropRes\.ok\)/)
     expect(src).toMatch(/const grailPremiumComparable = !useCorrectedEv && !usePinDrop/)
     expect(src).toMatch(/const isSentinelEv = !usePinDrop && /)

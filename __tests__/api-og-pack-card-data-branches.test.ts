@@ -30,7 +30,7 @@ const capture: { c: OgCapture | null } = { c: null }
 
 type Row = Record<string, unknown> | null
 
-function mockDb(opts: { pack?: Row; packError?: boolean; corrected?: Row; noEnv?: boolean; throws?: boolean }) {
+function mockDb(opts: { pack?: Row; packError?: boolean; corrected?: Row; correctedError?: boolean; pinDrop?: Row; pinDropError?: boolean; noEnv?: boolean; throws?: boolean }) {
   if (opts.noEnv) {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "")
     vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "")
@@ -47,9 +47,11 @@ function mockDb(opts: { pack?: Row; packError?: boolean; corrected?: Row; noEnv?
           // supabase-js RETURNS Postgrest errors but THROWS on a transport
           // failure; an uncaught throw 500s the card into an empty unfurl.
           if (opts.throws) throw new Error("socket hang up")
-          return table === "v_allday_pack_detail_ev"
-            ? { data: opts.corrected ?? null, error: null }
-            : { data: opts.pack ?? null, error: opts.packError ? { message: "timeout" } : null }
+          if (table === "v_allday_pack_detail_ev")
+            return { data: opts.correctedError ? null : opts.corrected ?? null, error: opts.correctedError ? { message: "timeout" } : null }
+          if (table === "v_pinnacle_pack_drop_ev")
+            return { data: opts.pinDropError ? null : opts.pinDrop ?? null, error: opts.pinDropError ? { message: "timeout" } : null }
+          return { data: opts.pack ?? null, error: opts.packError ? { message: "timeout" } : null }
         }
         return b
       },
@@ -181,6 +183,38 @@ describe("/api/og/pack — the verdict", () => {
     // No correction available → the guard is back in force and the raw number
     // is used, so this must NOT silently claim to be corrected.
     expect(text).toContain("$60.00")
+  })
+
+  it("WITHHOLDS the EV when the All Day correction read FAILS — never the inflated canonical one (2026-11-14)", async () => {
+    // A failed read used to return the same null as "no corrected row", so the card
+    // fell through to the flat-mean EV the correction exists to replace.
+    mockDb({
+      // No live ask, so the survivor-bias guard (> 3x ask) cannot hide the number by accident.
+      pack: { ...HEALTHY, collection_slug: "nfl_all_day", gross_ev: 430, secondary_available: false, secondary_ask: null },
+      correctedError: true,
+    })
+    const text = ogText(await render("?distId=1&collection=nfl-all-day"))
+    expect(text).not.toContain("$430")
+    expect(text).not.toContain("+EV")
+  })
+
+  it("shows a Pinnacle pack's DROP EV, not its sub-pool's own EV (#157, 2026-11-14)", async () => {
+    mockDb({
+      pack: { ...HEALTHY, collection_slug: "disney_pinnacle", gross_ev: 811, secondary_available: false, secondary_ask: null },
+      pinDrop: { gross_ev: 15 },
+    })
+    const text = ogText(await render("?distId=9&collection=disney-pinnacle"))
+    expect(text).toContain("$15.00")
+    expect(text).not.toContain("$811")
+  })
+
+  it("WITHHOLDS a Pinnacle EV when the drop-EV read fails (2026-11-14)", async () => {
+    mockDb({
+      pack: { ...HEALTHY, collection_slug: "disney_pinnacle", gross_ev: 811, secondary_available: false, secondary_ask: null },
+      pinDropError: true,
+    })
+    const text = ogText(await render("?distId=9&collection=disney-pinnacle"))
+    expect(text).not.toContain("$811")
   })
 
   // ── Guard 2: the verdict anchor ───────────────────────────────────────────

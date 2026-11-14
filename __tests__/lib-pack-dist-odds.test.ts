@@ -116,27 +116,41 @@ describe("pack-dist-odds — computeTopPulls", () => {
     ...over,
   })
 
-  it("computes probability and edition EV against the totalUnopened denominator", () => {
-    // denom = totalUnopened = 100; slots = 2.
-    //   probPct = drop_weight/100*100 ; ev = fmv * (drop_weight/100) * slots
-    const pool: TopPullPoolRow[] = [{ edition_id: "a", drop_weight: 10 }]
-    const editions: TopPullEdition[] = [ed("a", { player_name: "Dame", set_name: "Base", tier: "COMMON" })]
+  it("divides by the dist's own weight sum, never by packs remaining (inverted 2026-11-14)", () => {
+    // Live scale: Top Shot's Atlas pools sum to 1.0 per dist. Dist 1730 had 13,001
+    // packs unopened, and the old totalUnopened divisor showed its top edition at
+    // 0.00015 % (true 1.9 %) with every Edition EV "<$0.01". This case used to pin
+    // that divisor with a raw-count weight (10 of 100) no writer produces.
+    const pool: TopPullPoolRow[] = [
+      { edition_id: "a", drop_weight: 0.02 },
+      { edition_id: "b", drop_weight: 0.98 },
+    ]
+    const editions: TopPullEdition[] = [ed("a", { player_name: "Dame", set_name: "Base", tier: "COMMON" }), ed("b")]
     const fmv: TopPullFmvRow[] = [{ edition_id: "a", fmv_usd: 50 }]
 
-    const [row] = computeTopPulls({ pool, editions, fmv, fullPoolWeight: 999, totalUnopened: 100, slots: 2 })
-    expect(row.probabilityPct).toBeCloseTo(10, 6) // 10/100*100
-    expect(row.editionEv).toBeCloseTo(50 * (10 / 100) * 2, 6) // = 10
+    // The pack count is handed in on purpose (cast: it is no longer an option) — a
+    // reintroduced `totalUnopened` divisor must turn this case red.
+    const rows = computeTopPulls({ pool, editions, fmv, fullPoolWeight: 1, slots: 2, totalUnopened: 13001 } as Parameters<typeof computeTopPulls>[0])
+    const row = rows.find((r) => r.editionId === "a")!
+    expect(row.probabilityPct).toBeCloseTo(2, 6) // 0.02 / 1 × 100 — not 0.02 / 13,001
+    expect(row.editionEv).toBeCloseTo(50 * 0.02 * 2, 6) // = 2
     expect(row).toMatchObject({ editionId: "a", player: "Dame", setName: "Base", tier: "COMMON", externalId: "ext-a" })
   })
 
-  it("falls back to the full-pool weight when totalUnopened is missing, never the partial top-50 sum", () => {
+  it("is scale-invariant: raw-count weights give the same answer as shares", () => {
+    const share = computeTopPulls({ pool: [{ edition_id: "a", drop_weight: 0.1 }], editions: [ed("a")], fmv: [{ edition_id: "a", fmv_usd: 30 }], fullPoolWeight: 1, slots: 3 })[0]
+    const counts = computeTopPulls({ pool: [{ edition_id: "a", drop_weight: 145.8 }], editions: [ed("a")], fmv: [{ edition_id: "a", fmv_usd: 30 }], fullPoolWeight: 1458, slots: 3 })[0]
+    expect(counts.probabilityPct).toBeCloseTo(share.probabilityPct!, 6)
+    expect(counts.editionEv).toBeCloseTo(share.editionEv!, 6)
+  })
+
+  it("uses the full-pool weight, never the partial top-50 sum", () => {
     const pool: TopPullPoolRow[] = [{ edition_id: "a", drop_weight: 10 }] // partial sum would be 10
     const [row] = computeTopPulls({
       pool,
       editions: [ed("a")],
       fmv: [{ edition_id: "a", fmv_usd: 20 }],
-      fullPoolWeight: 200, // the real denominator
-      totalUnopened: null,
+      fullPoolWeight: 200, // the real denominator,
       slots: 1,
     })
     // Uses 200, not 10 — so the probability is 5%, not a wildly inflated 100%.
@@ -150,7 +164,6 @@ describe("pack-dist-odds — computeTopPulls", () => {
       editions: [ed("a")],
       fmv: [{ edition_id: "a", fmv_usd: 20 }],
       fullPoolWeight: 0,
-      totalUnopened: null,
       slots: 1,
     })
     expect(row.probabilityPct).toBeNull()
@@ -169,7 +182,7 @@ describe("pack-dist-odds — computeTopPulls", () => {
       { edition_id: "priced", fmv_usd: 40 },
     ]
     const byId = Object.fromEntries(
-      computeTopPulls({ pool, editions, fmv, fullPoolWeight: 100, totalUnopened: 100, slots: null }).map((r) => [r.editionId, r]),
+      computeTopPulls({ pool, editions, fmv, fullPoolWeight: 100, slots: null }).map((r) => [r.editionId, r]),
     )
     // slots null → every EV null, but probability still computes.
     expect(byId.priced.editionEv).toBeNull()
@@ -191,7 +204,7 @@ describe("pack-dist-odds — computeTopPulls", () => {
       { edition_id: "lowEv", fmv_usd: 10 }, // ev = 10*(5/100)*1 = 0.5
       { edition_id: "highEv", fmv_usd: 1000 }, // ev = 1000*(1/100)*1 = 10
     ]
-    const out = computeTopPulls({ pool, editions, fmv, fullPoolWeight: 100, totalUnopened: 100, slots: 1 })
+    const out = computeTopPulls({ pool, editions, fmv, fullPoolWeight: 100, slots: 1 })
     expect(out.map((r) => r.editionId)).toEqual([
       "highEv", // 10
       "lowEv", // 0.5
@@ -199,7 +212,7 @@ describe("pack-dist-odds — computeTopPulls", () => {
       "nullEvSmallWeight",
     ])
     // limit caps the returned rows
-    expect(computeTopPulls({ pool, editions, fmv, fullPoolWeight: 100, totalUnopened: 100, slots: 1, limit: 2 })).toHaveLength(2)
+    expect(computeTopPulls({ pool, editions, fmv, fullPoolWeight: 100, slots: 1, limit: 2 })).toHaveLength(2)
   })
 
   it("prefers denormalized player/set columns and falls back to splitEditionName only when empty", () => {
@@ -213,7 +226,7 @@ describe("pack-dist-odds — computeTopPulls", () => {
       ed("split", { player_name: null, set_name: null, name: "Ja Morant - Base Set" }),
     ]
     const byId = Object.fromEntries(
-      computeTopPulls({ pool, editions, fmv: [], fullPoolWeight: 10, totalUnopened: 10, slots: 1 }).map((r) => [r.editionId, r]),
+      computeTopPulls({ pool, editions, fmv: [], fullPoolWeight: 10, slots: 1 }).map((r) => [r.editionId, r]),
     )
     expect(byId.denorm).toMatchObject({ player: "LeBron James", setName: "MVP" })
     // whatever splitEditionName yields for the fallback, it must not be the glued name verbatim

@@ -205,7 +205,7 @@ describe("fetchTopPulls — a failed pool read must not read as an unindexed poo
     // list; if this ever returns ok:true again, that sentence starts being
     // printed for outages on packs whose pool is fully indexed.
     const { db } = makeDb({ pack_drop_pool: { data: null, error: DB_ERR } })
-    const res = await fetchTopPulls("c", "1", 100, 5, db)
+    const res = await fetchTopPulls("c", "1", 5, db)
     expect(res.ok).toBe(false)
     expect(res.rows).toEqual([])
     expect(res.partial).toBe(false)
@@ -213,14 +213,14 @@ describe("fetchTopPulls — a failed pool read must not read as an unindexed poo
 
   it("a genuinely empty pool is ok:true (that sentence is TRUE here)", async () => {
     const { db } = makeDb({ pack_drop_pool: { data: [], error: null } })
-    const res = await fetchTopPulls("c", "1", 100, 5, db)
+    const res = await fetchTopPulls("c", "1", 5, db)
     expect(res).toEqual({ rows: [], ok: true, partial: false })
   })
 
   it("short-circuits before the follow-up reads when the pool is empty", async () => {
     // Guards against a refactor that fires three more queries per empty pack.
     const { db, calls } = makeDb({ pack_drop_pool: { data: [], error: null } })
-    await fetchTopPulls("c", "1", 100, 5, db)
+    await fetchTopPulls("c", "1", 5, db)
     expect(calls).toEqual(["pack_drop_pool"])
   })
 
@@ -236,7 +236,7 @@ describe("fetchTopPulls — a failed pool read must not read as an unindexed poo
       "rpc:get_fmv_for_editions": { data: [{ edition_id: "e1", fmv_usd: 100 }], error: null },
       "rpc:query_sql": { data: [{ total_weight: 40 }], error: null },
     })
-    const res = await fetchTopPulls("c", "1", null, 5, db)
+    const res = await fetchTopPulls("c", "1", 5, db)
     expect(res.ok).toBe(true)
     expect(res.partial).toBe(false)
     expect(res.rows).toHaveLength(1)
@@ -255,7 +255,7 @@ describe("fetchTopPulls — a failed pool read must not read as an unindexed poo
       "rpc:get_fmv_for_editions": { data: [{ edition_id: "e1", fmv_usd: 100 }], error: null },
       "rpc:query_sql": { data: [{ total_weight: 40 }], error: null },
     })
-    const res = await fetchTopPulls("c", "1", null, 5, db)
+    const res = await fetchTopPulls("c", "1", 5, db)
     expect(res.ok).toBe(true)
     expect(res.partial).toBe(true)
     expect(res.rows).toHaveLength(1)
@@ -270,7 +270,7 @@ describe("fetchTopPulls — a failed pool read must not read as an unindexed poo
       "rpc:get_fmv_for_editions": { data: [], error: null },
       "rpc:query_sql": { data: null, error: DB_ERR },
     })
-    const res = await fetchTopPulls("c", "1", null, 5, db)
+    const res = await fetchTopPulls("c", "1", 5, db)
     expect(res.partial).toBe(true)
     expect(res.rows[0]?.probabilityPct).toBeNull()
   })

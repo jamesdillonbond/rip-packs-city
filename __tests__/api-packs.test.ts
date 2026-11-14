@@ -234,12 +234,19 @@ describe("GET /api/packs", () => {
   })
 
   // ── All Day corrected merge: non-fatal edges ───────────────────────────
-  it("keeps modeled EV when the AllDay corrected view errors (non-fatal)", async () => {
-    tables.pack_table_rows = { data: [{ dist_id: "d1", title: "AD", gross_ev: 430 }], count: 1, error: null }
+  // INVERTED 2026-11-14: this used to pin the fallback — the flat-mean EV (a $4 pack
+  // modelled at $430) the corrected merge exists to replace, shown whenever the
+  // correction read failed. Same rule as the Pinnacle case below: withhold.
+  it("⛔ WITHHOLDS AllDay EV when the corrected view errors — never the inflated canonical EV", async () => {
+    tables.pack_table_rows = { data: [{ dist_id: "d1", title: "AD", gross_ev: 430, pack_ev: 426, value_ratio: 107.5, ev_margin_pct: 10650 }], count: 1, error: null }
     tables.v_allday_pack_detail_ev = { data: null, error: { message: "corr boom" } }
     const res = await GET(req("https://t/api/packs?collection=nfl-all-day"))
     expect(res.status).toBe(200)
-    expect((await res.json()).rows[0].gross_ev).toBe(430)
+    const row = (await res.json()).rows[0]
+    expect(row.gross_ev).toBeNull()
+    expect(row.value_ratio).toBeNull()
+    expect(row.ev_margin_pct).toBeNull()
+    expect(row.ev_unavailable).toBe(true)
   })
 
   it("skips an AllDay corrected row with a null corrected_gross_ev", async () => {

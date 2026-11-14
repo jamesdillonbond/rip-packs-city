@@ -874,7 +874,6 @@ export async function fetchPinnacleDistPins(
 export async function fetchTopPulls(
   collectionId: string,
   distId: string,
-  totalUnopened: number | null,
   slots: number | null,
   db: Db = supabaseAdmin,
 ): Promise<RowsResult<TopPull> & { partial: boolean }> {
@@ -933,7 +932,6 @@ export async function fetchTopPulls(
       editions: (editionsRes.data ?? []) as EditionLite[],
       fmv: (fmvRes.data ?? []) as FmvRow[],
       fullPoolWeight,
-      totalUnopened,
       slots,
     }),
   }

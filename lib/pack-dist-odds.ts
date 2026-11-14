@@ -131,13 +131,22 @@ export interface TopPull {
 /**
  * Compute the "Top Pulls" rows for a pack distribution from already-fetched data.
  *
- * Probability denominator: prefer the cached `totalUnopened` (true contents
- * remaining); otherwise the full-pool drop_weight sum. Never sum only the
- * top-50 weights — that inflates % (Pack audit B2) — so probability is null when
- * neither denominator is available.
+ * Probability denominator: the dist's FULL-POOL drop_weight sum. Never sum only
+ * the top-50 weights — that inflates % (Pack audit B2) — so probability is null
+ * when the full-pool sum is unavailable.
  *
- *   probabilityPct = drop_weight / denom × 100
- *   editionEv      = FMV × (drop_weight / denom) × slots
+ * ⛔ 2026-11-14: NOT the dist's `total_unopened` (packs remaining). That was the
+ * preferred denominator until today, on the premise that drop_weight is a raw
+ * count of remaining copies. No live writer stores that scale: Top Shot's Atlas
+ * pools sum to exactly 1.0 per dist (971 / 971), All Day / Golazos rows are
+ * shares normalised to max 1, and only 33 historical dists hold raw counts. So
+ * the old divisor shrank every probability by the pack count — live dist 1730
+ * (13,001 unopened) showed its top edition at 0.00015 % against a true 1.9 %,
+ * and every "Edition EV" read "<$0.01". Dividing by the dist's own weight sum
+ * is right at every scale, and is what the Top chases RPC already does.
+ *
+ *   probabilityPct = drop_weight / Σ drop_weight × 100
+ *   editionEv      = FMV × (drop_weight / Σ drop_weight) × slots
  *
  * editionEv reconciles with the cached pack_ev_history Gross EV KPI (slots ×
  * Σ per-edition probability × FMV over the full pool) — NOT the raw
@@ -149,11 +158,10 @@ export function computeTopPulls(opts: {
   editions: TopPullEdition[]
   fmv: TopPullFmvRow[]
   fullPoolWeight: number
-  totalUnopened: number | null
   slots: number | null
   limit?: number
 }): TopPull[] {
-  const { pool, editions, fmv, fullPoolWeight, totalUnopened, slots } = opts
+  const { pool, editions, fmv, fullPoolWeight, slots } = opts
   const limit = opts.limit ?? 10
 
   const editionsById = new Map<string, TopPullEdition>()
@@ -165,11 +173,7 @@ export function computeTopPulls(opts: {
     if (v !== null && Number.isFinite(v) && v > 0) fmvById.set(r.edition_id, v)
   }
 
-  const denom = totalUnopened && totalUnopened > 0
-    ? totalUnopened
-    : fullPoolWeight > 0
-      ? fullPoolWeight
-      : null
+  const denom = Number.isFinite(fullPoolWeight) && fullPoolWeight > 0 ? fullPoolWeight : null
 
   const pulls: TopPull[] = pool.map((r) => {
     const ed = editionsById.get(r.edition_id)

@@ -205,13 +205,23 @@ export async function generateMetadata(
   // `row.gross_ev` — the exact inflated number the comment above says must not
   // be advertised — because only `data` was destructured (2026-09-04). A failed
   // read withholds the EV sentence; the page body reads its own bundle.
-  const correctedEvRes = await fetchAllDayCorrectedEv(collection, distId)
+  // Disney Pinnacle (#157, 2026-11-14): the same rule for the DROP EV — a sub-pool's
+  // own gross_ev is not a pack's, and the description advertised it ("Value still
+  // sealed ≈ $X") while the page body showed the drop's EV. Both helpers no-op
+  // (ok, null) for every other collection.
+  const [correctedEvRes, pinDropMetaRes] = await Promise.all([
+    fetchAllDayCorrectedEv(collection, distId),
+    fetchPinnacleDropEv(collection, distId),
+  ])
   const correctedEv = correctedEvRes.data
-  const correctedEvReadFailed = !correctedEvRes.ok
+  const correctedEvReadFailed = !correctedEvRes.ok || !pinDropMetaRes.ok
   const useCorrectedEv = correctedEv != null && correctedEv.corrected_gross_ev != null
+  const pinDropMetaEv = pinDropMetaRes.data?.gross_ev ?? null
   const grossEv = correctedEvReadFailed
     ? null
-    : useCorrectedEv ? num(correctedEv!.corrected_gross_ev) : num(row?.gross_ev ?? null)
+    : pinDropMetaEv != null
+      ? num(pinDropMetaEv)
+      : useCorrectedEv ? num(correctedEv!.corrected_gross_ev) : num(row?.gross_ev ?? null)
   const price = num(row?.retail_price_usd ?? null)
   // Holding/escrow packs carry sentinel prices ($9,999/$99,999/$999,999) — keep
   // them out of the SEO description so it doesn't advertise a $900K "Gross EV".
@@ -411,9 +421,16 @@ export default async function PackDetailPage(
   // Standard pack draws from every pool of its drop. Substitute the DROP EV.
   const pinDrop = pinDropRes.data
   const usePinDrop = pinDrop != null && pinDrop.gross_ev != null
-  const grossEv = usePinDrop
-    ? num(pinDrop!.gross_ev)
-    : useCorrectedEv ? num(correctedEv!.corrected_gross_ev) : grossEvRaw
+  // ⚠ 2026-11-14: a FAILED drop-EV read withholds the EV (null → em-dash, and the
+  // degraded notice below names "Pack EV"). It used to fall through to grossEvRaw —
+  // the per-pool number #157 says is not the pack's — so the Actual EV tile showed
+  // the inflated sub-pool EV right above a notice saying Pack EV was unavailable.
+  // /api/packs already withholds it the same way. (Non-Pinnacle: ok is always true.)
+  const grossEv = !pinDropRes.ok
+    ? null
+    : usePinDrop
+      ? num(pinDrop!.gross_ev)
+      : useCorrectedEv ? num(correctedEv!.corrected_gross_ev) : grossEvRaw
   // Typical Pull EV (2026-07-16) — slots × weighted-MEDIAN moment value over the
   // remaining pool. Where Actual EV (grossEv, the weighted MEAN) swings as grails
   // deplete, Typical Pull sits near the common floor and barely moves; the gap is
@@ -771,6 +788,7 @@ export default async function PackDetailPage(
       return `Pack EV computed against the live secondary ask [${fmtUsd(secondaryAskAnchor)}] — what a sealed pack actually resells for, the only honest anchor for its value.`
     }
     // 2026-10-25: said "showing Gross EV … only" on dist 7528 beside a Gross EV of "—".
+    if (grossEv == null && !pinDropRes.ok) return "Couldn't load this pack's EV right now — no verdict."
     if (grossEv == null) return "No live secondary ask and no Gross EV for this pack yet — no verdict."
     return "No live secondary ask — showing Gross EV (value still sealed) only, with no net/ratio verdict."
   })()
@@ -1449,7 +1467,6 @@ export default async function PackDetailPage(
           distId={distId}
           collection={collection}
           editionCount={editionCount}
-          totalUnopened={totalUnopened}
           slots={merged.slots ?? null}
           snapshottedAt={snapshottedAt}
         />
@@ -2700,7 +2717,6 @@ async function PackStreamedBottom({
   distId,
   collection,
   editionCount,
-  totalUnopened,
   slots,
   snapshottedAt,
 }: {
@@ -2708,7 +2724,6 @@ async function PackStreamedBottom({
   distId: string
   collection: string
   editionCount: number | null
-  totalUnopened: number | null
   slots: number | null
   snapshottedAt: string | null
 }) {
@@ -2719,7 +2734,7 @@ async function PackStreamedBottom({
   const [salesRes, topPullsRes] = await Promise.all([
     fetchPackSalesHistory(collectionId, distId, 10),
     hasDropPool
-      ? fetchTopPulls(collectionId, distId, totalUnopened, slots)
+      ? fetchTopPulls(collectionId, distId, slots)
       : Promise.resolve({ rows: [], ok: true, partial: false }),
   ])
   const salesHistory = salesRes.rows

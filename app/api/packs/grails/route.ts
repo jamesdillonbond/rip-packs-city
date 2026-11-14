@@ -111,65 +111,84 @@ export async function GET(req: NextRequest) {
     : "weighted_grail_value_100plus"
 
   try {
-    const { data: grails, error: gErr } = await boundedRead(sb
-      .from("pack_grail_metrics_mv")
-      .select("*")
-      .eq("collection_id", collectionUuid)
-      .gte("grails_100", minG100)
-      .gte("max_pull_fmv", minMP)
-      .order(sortColumn, { ascending: false, nullsFirst: false })
-      .limit(limit), "api/packs/grails/pack_grail_metrics_mv")
+    // ⚠ 2026-11-14: with buyableOnly the top-`limit` grail rows used to be read
+    // FIRST and filtered to buyable dists AFTER, so when the highest-value grail
+    // dists were retired the answer held a handful of rows or none — and the view
+    // said "No buyable packs match these grail filters" while buyable grail packs
+    // sat at rank 51+. The buyable path now walks the view in ordered pages (a
+    // UNIQUE dist_id tiebreak, so pages cannot overlap or skip) until `limit`
+    // buyable rows are found or the view is exhausted. A pre-filter by buyable id
+    // is not an option: Top Shot alone has ~1,000 buyable dists, PostgREST's clamp.
+    const PAGE = 200
+    const MAX_PAGES = buyableOnly ? 20 : 1 // 4,000 rows > the largest collection's 3,148
+    const rows: Array<GrailMvRow & { meta: PackRowMeta | null }> = []
+    let scanned = 0
+    for (let page = 0; page < MAX_PAGES && rows.length < limit; page++) {
+      const size = buyableOnly ? PAGE : limit
+      const { data: grails, error: gErr } = await boundedRead(sb
+        .from("pack_grail_metrics_mv")
+        .select("*")
+        .eq("collection_id", collectionUuid)
+        .gte("grails_100", minG100)
+        .gte("max_pull_fmv", minMP)
+        .order(sortColumn, { ascending: false, nullsFirst: false })
+        .order("dist_id", { ascending: true })
+        .range(page * size, page * size + size - 1), "api/packs/grails/pack_grail_metrics_mv")
 
-    if (gErr) {
-      console.error("[packs/grails] mv read", gErr.message)
-      return apiErrorResponse(gErr, "api/packs/grails");
+      if (gErr) {
+        console.error("[packs/grails] mv read", gErr.message)
+        return apiErrorResponse(gErr, "api/packs/grails");
+      }
+      const grailRows = (grails ?? []) as GrailMvRow[]
+      scanned += grailRows.length
+      if (grailRows.length === 0) break
+
+      const distIds = grailRows.map((g) => g.dist_id)
+      let metaQuery = sb
+        .from("pack_table_rows")
+        .select("dist_id, title, image_url, primary_price, secondary_ask, pack_ev, value_ratio, total_sealed, depletion_pct, slots, primary_available, secondary_available")
+        .eq("collection_id", collectionUuid)
+        .in("dist_id", distIds)
+
+      if (buyableOnly) {
+        // `primary_available` / `secondary_available` are columns on the pack_ev_latest
+        // snapshot, so they are exactly as fresh as `ev_snapshotted_at`. Without this
+        // bound, "buyable" included rows whose availability was last observed months
+        // ago (measured 2026-09-03: 654 of 1,210 Top Shot rows over three days old still
+        // said secondary_available, the oldest 135 days). Same 72 h bar as the pack
+        // page and the deals surface (EV_SNAPSHOT_MAX_AGE_HOURS); a null stamp is
+        // excluded here on purpose — "buyable" is an affirmative claim, and an
+        // undatable availability cannot back one.
+        const freshCutoff = new Date(Date.now() - EV_SNAPSHOT_MAX_AGE_HOURS * 3600 * 1000).toISOString()
+        metaQuery = metaQuery
+          .or("primary_available.eq.true,secondary_available.eq.true")
+          .gte("ev_snapshotted_at", freshCutoff)
+      }
+
+      const { data: meta, error: mErr } = await boundedRead(metaQuery, "api/packs/grails/pack_table_rows")
+
+      if (mErr) {
+        console.error("[packs/grails] meta read", mErr.message)
+        return apiErrorResponse(mErr, "api/packs/grails");
+      }
+      const metaMap = new Map<string, PackRowMeta>()
+      for (const m of (meta ?? []) as PackRowMeta[]) metaMap.set(m.dist_id, m)
+
+      for (const g of grailRows) {
+        const m = metaMap.get(g.dist_id) ?? null
+        // When buyableOnly is on, drop grail rows whose dist didn't survive the
+        // pack_table_rows availability filter.
+        if (buyableOnly && m === null) continue
+        rows.push({ ...g, meta: m })
+      }
+      if (grailRows.length < size) break
     }
-    const grailRows = (grails ?? []) as GrailMvRow[]
-    if (grailRows.length === 0) {
+    rows.splice(limit)
+    if (scanned === 0) {
       return NextResponse.json({ rows: [], collection_id: collectionUuid }, {
         headers: { "Cache-Control": "s-maxage=60, stale-while-revalidate=300" },
       })
     }
-
-    const distIds = grailRows.map((g) => g.dist_id)
-    let metaQuery = sb
-      .from("pack_table_rows")
-      .select("dist_id, title, image_url, primary_price, secondary_ask, pack_ev, value_ratio, total_sealed, depletion_pct, slots, primary_available, secondary_available")
-      .eq("collection_id", collectionUuid)
-      .in("dist_id", distIds)
-
-    if (buyableOnly) {
-      // `primary_available` / `secondary_available` are columns on the pack_ev_latest
-      // snapshot, so they are exactly as fresh as `ev_snapshotted_at`. Without this
-      // bound, "buyable" included rows whose availability was last observed months
-      // ago (measured 2026-09-03: 654 of 1,210 Top Shot rows over three days old still
-      // said secondary_available, the oldest 135 days). Same 72 h bar as the pack
-      // page and the deals surface (EV_SNAPSHOT_MAX_AGE_HOURS); a null stamp is
-      // excluded here on purpose — "buyable" is an affirmative claim, and an
-      // undatable availability cannot back one.
-      const freshCutoff = new Date(Date.now() - EV_SNAPSHOT_MAX_AGE_HOURS * 3600 * 1000).toISOString()
-      metaQuery = metaQuery
-        .or("primary_available.eq.true,secondary_available.eq.true")
-        .gte("ev_snapshotted_at", freshCutoff)
-    }
-
-    const { data: meta, error: mErr } = await metaQuery
-
-    if (mErr) {
-      console.error("[packs/grails] meta read", mErr.message)
-      return apiErrorResponse(mErr, "api/packs/grails");
-    }
-    const metaMap = new Map<string, PackRowMeta>()
-    for (const m of (meta ?? []) as PackRowMeta[]) metaMap.set(m.dist_id, m)
-
-    const rows = grailRows
-      .map((g) => ({
-        ...g,
-        meta: metaMap.get(g.dist_id) ?? null,
-      }))
-      // When buyableOnly is on, drop grail rows whose dist didn't survive the
-      // pack_table_rows availability filter.
-      .filter((r) => !buyableOnly || r.meta !== null)
 
     return NextResponse.json({ rows, collection_id: collectionUuid, sort, limit, buyableOnly }, {
       headers: { "Cache-Control": "s-maxage=60, stale-while-revalidate=300" },

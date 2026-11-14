@@ -101,12 +101,18 @@ async function fetchPack(distId: string, collectionSlug: string | null): Promise
   }
 }
 
+// ⚠ 2026-11-14: `ok` is separate from `data`. Both EV corrections used to return
+// null for a FAILED read, which the caller could not tell from "no corrected row",
+// so the card fell through to the raw per-pool / flat-mean EV — the exact inflated
+// number each correction exists to replace. A failed read now withholds the EV.
+type OgRead<T> = { ok: boolean; data: T | null }
+
 async function fetchAllDayCorrectedOg(
   distId: string,
-): Promise<{ corrected_gross_ev: number | null; corrected_net_ev: number | null; corrected_value_ratio: number | null } | null> {
+): Promise<OgRead<{ corrected_gross_ev: number | null; corrected_net_ev: number | null; corrected_value_ratio: number | null }>> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) return null
+  if (!url || !key) return { ok: false, data: null }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb: any = createClient(url, key, { auth: { persistSession: false } })
   // Lean per-dist view (see migration 20260809170000): same values as
@@ -121,10 +127,31 @@ async function fetchAllDayCorrectedOg(
       "og/pack/v_allday_pack_detail_ev",
       OG_FETCH_TIMEOUT_MS,
     )
-    if (error) return null
-    return data ?? null
+    if (error) return { ok: false, data: null }
+    return { ok: true, data: data ?? null }
   } catch {
-    return null
+    return { ok: false, data: null }
+  }
+}
+
+// Disney Pinnacle (#157): a sub-pool's own EV is not a pack's — a Standard pack
+// draws from every pool of its drop. The page body shows the DROP EV; so must the card.
+async function fetchPinnacleDropOg(distId: string): Promise<OgRead<{ gross_ev: number | null }>> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) return { ok: false, data: null }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sb: any = createClient(url, key, { auth: { persistSession: false } })
+  try {
+    const { data, error } = await boundedRead(
+      sb.from("v_pinnacle_pack_drop_ev").select("gross_ev").eq("dist_id", distId).maybeSingle(),
+      "og/pack/v_pinnacle_pack_drop_ev",
+      OG_FETCH_TIMEOUT_MS,
+    )
+    if (error) return { ok: false, data: null }
+    return { ok: true, data: data ?? null }
+  } catch {
+    return { ok: false, data: null }
   }
 }
 
@@ -150,14 +177,24 @@ export async function GET(req: NextRequest) {
   let usedCorrectedEv = false
   if (row && (row.collection_slug === "nfl_all_day" || collection === "nfl-all-day") && distId) {
     const corrected = await fetchAllDayCorrectedOg(distId)
-    if (corrected && corrected.corrected_gross_ev != null) {
+    if (!corrected.ok) {
+      row = { ...row, gross_ev: null, pack_ev: null, value_ratio: null }
+    } else if (corrected.data && corrected.data.corrected_gross_ev != null) {
       row = {
         ...row,
-        gross_ev: corrected.corrected_gross_ev,
-        pack_ev: corrected.corrected_net_ev,
-        value_ratio: corrected.corrected_value_ratio,
+        gross_ev: corrected.data.corrected_gross_ev,
+        pack_ev: corrected.data.corrected_net_ev,
+        value_ratio: corrected.data.corrected_value_ratio,
       }
       usedCorrectedEv = true
+    }
+  }
+  if (row && (row.collection_slug === "disney_pinnacle" || collection === "disney-pinnacle") && distId) {
+    const drop = await fetchPinnacleDropOg(distId)
+    if (!drop.ok) {
+      row = { ...row, gross_ev: null, pack_ev: null, value_ratio: null }
+    } else if (drop.data && drop.data.gross_ev != null) {
+      row = { ...row, gross_ev: drop.data.gross_ev, pack_ev: null, value_ratio: null }
     }
   }
 

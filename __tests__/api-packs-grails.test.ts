@@ -23,9 +23,10 @@ vi.mock("@/lib/collections", () => ({
 
 vi.mock("@/lib/supabase", () => {
   const make = (table: string) => {
+    let window: [number, number] | null = null
     const payload = () =>
       table === "pack_grail_metrics_mv"
-        ? { data: state.grails, error: state.gErr }
+        ? { data: Array.isArray(state.grails) && window ? state.grails.slice(window[0], window[1] + 1) : state.grails, error: state.gErr }
         : { data: state.meta, error: state.mErr }
     const b: any = {
       select: () => b,
@@ -34,7 +35,8 @@ vi.mock("@/lib/supabase", () => {
       in: () => b,
       or: (...a: any[]) => { if (table === "pack_table_rows") state.calls.push(["or", ...a]); return b },
       order: () => b,
-      limit: () => b,
+      limit: (n: number) => { window = [0, n - 1]; return b },
+      range: (from: number, to: number) => { window = [from, to]; return b },
       then: (resolve: any) => resolve(payload()),
     }
     return b
@@ -128,5 +130,26 @@ describe("GET /api/packs/grails — buyableOnly is freshness-gated", () => {
     expect(res.status).toBe(200)
     expect(state.calls.some((c) => c[0] === "or")).toBe(false)
     expect(state.calls.some((c) => c[0] === "gte")).toBe(false)
+  })
+})
+
+// 2026-11-14 (fresh-eyes review of the pack EV pages): the top-`limit` grail rows
+// were read FIRST and filtered to buyable AFTER, so a page of retired top dists
+// emptied the answer while buyable grail packs sat further down.
+describe("GET /api/packs/grails — buyableOnly reads past retired top dists", () => {
+  it("finds a buyable grail pack ranked below the first page", async () => {
+    state.grails = Array.from({ length: 250 }, (_, i) => ({ dist_id: `d${i}`, grails_100: 5, max_pull_fmv: 10_000 - i }))
+    state.meta = [{ dist_id: "d230", title: "Still On Sale", secondary_available: true }]
+    const res = await GET(req("https://t/api/packs/grails?collection=nba-top-shot&buyableOnly=true&limit=10"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.rows.map((r: any) => r.dist_id)).toEqual(["d230"])
+  })
+
+  it("stops at `limit` buyable rows", async () => {
+    state.grails = Array.from({ length: 50 }, (_, i) => ({ dist_id: `d${i}`, grails_100: 5, max_pull_fmv: 1000 - i }))
+    state.meta = state.grails.map((g: any) => ({ dist_id: g.dist_id, secondary_available: true }))
+    const res = await GET(req("https://t/api/packs/grails?collection=nba-top-shot&buyableOnly=true&limit=3"))
+    expect((await res.json()).rows.map((r: any) => r.dist_id)).toEqual(["d0", "d1", "d2"])
   })
 })
