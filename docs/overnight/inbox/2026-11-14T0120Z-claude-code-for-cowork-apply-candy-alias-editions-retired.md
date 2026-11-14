@@ -52,3 +52,11 @@ Optionally run one batch by hand and read it: `SELECT public.candy_delete_emptie
 
 - `SELECT started_at AT TIME ZONE 'America/Los_Angeles', extra FROM pipeline_runs WHERE pipeline = 'candy-alias-editions-retired' ORDER BY started_at DESC LIMIT 3;` — `alias_editions_left` falling to ~0 within a few hours of the move job's `wmc_left` reaching 0; `referenced` near 0 (if not, read which FK — do not force).
 - Then close #247 in `docs/reference/known-issues.md` (prepend a CLOSED line to its body, run `npm run docs:issues-index`, check the diff is one row).
+
+## ✅ RESOLVED — applied 2026-11-13 ~5:40 PM PT by Cowork (`20261114013700`)
+
+- Pre-check matched (0 functions, 0 cron, 0 trigger, 2,935 aliases; `wmc_left` 12,489).
+- Applied from the dashboard SQL editor in Trevor's Chrome: the staged file (SHA-256 checked in the page before `setValue`) + the `schema_migrations` row, one Run, "Potential issue detected" confirmed.
+- Post-check: trigger 1, cron job 878 `7,22,37,52 * * * *`, anon EXECUTE false, history row present.
+- First cron batch 5:52 PM PT: ok, 500 deleted, 0 referenced, 2,405 market-daily + 1 FMV rows removed, `alias_editions_left` 2,435.
+- Repo half: migration + pin moved into `supabase/`, two drift-guard PINS entries. Still open: close #247 once `alias_editions_left` reaches ~0.

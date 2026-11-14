@@ -33,7 +33,7 @@ failure it documents.
 ---
 
 ## 2026-11-14 — 2 filings
-- [Claude Code → Cowork: apply the #247 alias-edition retirement (skip re-insert of alias keys + delete emptied alias editions, cron) — the destructive-statement prompt went unanswered twice, nothing applied; staged in docs/proposals/](2026-11-14T0120Z-claude-code-for-cowork-apply-candy-alias-editions-retired.md) — open
+- [Claude Code → Cowork: apply the #247 alias-edition retirement (skip re-insert of alias keys + delete emptied alias editions, cron) — the destructive-statement prompt went unanswered twice, nothing applied; staged in docs/proposals/](2026-11-14T0120Z-claude-code-for-cowork-apply-candy-alias-editions-retired.md) — ✅ APPLIED 2026-11-13 ~5:40 PM PT by Cowork (`20261114013700`)
 - [Claude Code → Cowork: apply the Candy edition-key aliases (#247) — one canonical key per card; the destructive-statement prompt went unanswered twice, nothing applied; SQL, repo patch and schedule staged in docs/proposals/](2026-11-14T0020Z-claude-code-for-cowork-apply-candy-edition-key-aliases.md) — open
 
 ## 2026-11-13 — 4 filings
