@@ -3,7 +3,7 @@
 -- (20260725003941, marketplace_offers, returns numeric) — this file created a SECOND overload,
 -- (text, uuid), rather than replacing it (verified: the July body's md5 is unchanged and it still
 -- answers). The overload has no caller; its DROP was refused by the session permission check and
--- is pending Trevor's approval:  DROP FUNCTION public.get_wallet_best_offer_total(text, uuid);
+-- was approved and run in 20261114214338.
 -- Recorded below as `CREATE FUNCTION` — the effect it had on a database where no (text, uuid)
 -- overload existed — so the name-keyed pin guard does not read it as a rewrite of the July function.
 --
