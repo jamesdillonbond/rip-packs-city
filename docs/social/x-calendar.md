@@ -31,7 +31,17 @@ Friday rotation: squeeze → serial-premiums → market-cap → offer-spread →
 
 The trade-in finder (Top Shot This pack credits) moved into the rotation on 11-08 to make room for the drops post. Thursday still falls back to it when no deal qualifies.
 
-**Big-sale extra (any day):** a sale in the last 24 h that cleared $1,000 and ranks in the week's top 5 gets its own short draft. It is offered alongside the slot post, never instead of it. Two big-sale posts a day at most.
+**Big-sale extra (any day):** a sale in the last 24 h that cleared $1,000 and ranks in the week's top 5 gets its own short draft. It is offered alongside the slot post, never instead of it. Two big-sale posts a day at most. Format as first posted (Trevor, 11-14: https://x.com/rippackscity/status/2121645350356476091):
+
+```
+This season's first Rookie Ultimate sale is in 🏀
+
+Aday Mara, Rookie Ultimate #1/1 — $2,000 on @NBATopShot · bought by Flanete94
+
+#ThunderUp
+```
+
+then the link as a 2/2 reply ("See the week's top sales here 👇"), and the big-sale image or video attached (Images, below). The script's opening line is generic ("One of the week's top sales"); when the sale is a first or a record the data shows (e.g. the first sale in a new set), the task rewrites the line and passes the same words to `--headline`. A player moment may end with the team's official hashtag, as on Sunday.
 
 **Drop reminder (Mon–Sat):** a drop starting, or an RSVP closing, in the next 24 h gets an optional short reminder (≤ 2). Sunday's post already lists them.
 
@@ -61,7 +71,7 @@ A source that could not be read is named in `warnings` and `facts.collections_un
 - **Pinnacle assets are characters**, not players.
 - **UFC Strike is excluded** — its market is closed.
 - **A collection with no sales in the window is left out**, never posted as "$0".
-- **Collectors are never named or tagged** — not buyers, not sellers, not trophy-case owners — unless that person has said yes for that post. **One exception (Trevor, 11-09): the Monday top-sales post and image name each sale's buyer** — tagged only when Trevor has confirmed the X handle (`X_HANDLES`), otherwise by marketplace username; never a wallet address.
+- **Collectors are never named or tagged** — not buyers, not sellers, not trophy-case owners — unless that person has said yes for that post. **Two exceptions: the Monday top-sales post and image (Trevor, 11-09) and the big-sale post and image (Trevor, 11-14) name the sale's buyer** — tagged only when Trevor has confirmed the X handle (`X_HANDLES`), otherwise by marketplace username; never a wallet address.
 - **Never lead with the Team Captain designation.**
 - **No hype the data can't back**: no "best deal on Flow", "guaranteed", "can't lose", price predictions, or advice to buy.
 - **Under 280 characters by X's count** (every link counts as 23), except the long-form drops report (`long_form: true`). The script measures it.
@@ -124,7 +134,8 @@ Every post that has a template ships with an RPC-branded image. On X, a post wit
 - `node scripts/social/x-image.mjs --slot <slot> --out <dir>` renders `rpc-<slot>-<n>.png` (2400×1350, 16:9) with Playwright from the same public API the text uses. Every item in the post is on an image. Up to 9 fit one image (a 3×3 grid with tighter type; a card pushed below the footer is a warning, 11-08); a longer list is split across images (X allows 4 per post), never cut. A card whose text overflows is reported in `warnings`.
 - **Brand art only on the drops image.** No pack art, player photos or partner artwork is composited in: those belong to their owners, and pack art often carries real players' photos. Fonts and colours are RPC's (`public/fonts`, collection accents from `lib/collections.ts`). **The Monday top-sales image is the exception (Trevor, 11-09):** each card shows the sold asset's own image (its `thumbnail_url`; a Pinnacle pin through `/api/public/pinnacle-image/<render_id>?v=thumb`), embedded as a data URI. An image that cannot be fetched leaves the card's tile with the name only, and a warning.
 - Layout: up to 9 drops per image (3×3 at 4+); **one to three drops render as centred, equal-height cards** with the collection's colour glow, a large price, the status as a pill and a detail line (the drop's `detail`, e.g. capsule contents and odds) — Trevor, 11-08: "center and make the graphic a little more visually appealing". Use `--exclude <dist_ids>` to make a follow-up image for just the new drops.
-- Templates: **Sun — drops this week** (live 11-08); **Mon — top sales this week** (live 11-09: 10 cards, 5×2, each with rank, collection, asset image, name, set · serial, price and buyer). Other slots post with their link card until they get one.
+- Templates: **Sun — drops this week** (live 11-08); **Mon — top sales this week** (live 11-09: 10 cards, 5×2, each with rank, collection, asset image, name, set · serial, price and buyer); **Big sale** (live 11-14, `--slot big --sale <breaking[].sale.sale_id> [--headline "line one|line two"] [--video]`). Other slots post with their link card until they get one.
+- **Big sale (Trevor, 11-14).** One sale, large: the asset on the left, and on the right the headline, player, set · team, the edition's badges and special serials, the price, when it sold (PT) and the buyer. `--video` also renders an MP4 with the moment's own Top Shot video in the art box (needs ffmpeg; muted, because the moment's audio is NBA game sound) — post the video when there is one. **Badges are icons only, never named** ("We don't need to name out each badge there"); **Three-Star Rookie replaces its three rookie badges** ("the point of the triple badge is that we don't need to then show each of those three badges individually"); **Autographed is left off** ("users can see that"). Badges come from `/api/entity/edition-badges` and only Top Shot's official icons are drawn; special serials (#1, perfect #N/N, jersey match via `/api/entity/edition?part=bio`) use Top Shot's own glyphs on Top Shot and RPC's elsewhere. The text column sits a clear gap right of the art ("a little bit more of a spacing gap between the video and the text").
 - The daily task sends the image as a file with the draft. Trevor saves it and attaches it to post 1 (the one-tap post link cannot carry an image).
 
 ## When the data isn't there

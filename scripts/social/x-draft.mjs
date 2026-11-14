@@ -109,14 +109,6 @@ async function pageDescription(slug) {
   }
 }
 
-function saleSubject(r) {
-  const who = r.player_name || r.set_name || "Unnamed"
-  const serial = r.serial_number && r.serial_number !== 0
-    ? ` #${r.serial_number}${r.circulation_count ? `/${int(r.circulation_count)}` : ""}`
-    : ""
-  const set = r.set_name && r.set_name !== who ? ` ${r.set_name}` : ""
-  return `${who}${set}${serial}`
-}
 function fit(lines, head, tail, max = 280) {
   // Drop list lines from the bottom until the post fits.
   let body = [...lines]
@@ -559,17 +551,38 @@ async function dropAlerts(now) {
 }
 
 // Any sale in the last 24 h that cleared $1,000 AND ranks in the week's top 5 is worth its own post.
+// Format as first posted (Trevor, 11-14: https://x.com/rippackscity/status/2121645350356476091): the
+// post names the sale, its price on the collection's official account and the buyer (Trevor, 11-14:
+// "You should put the buyer on there too" — same naming rule as Monday: a confirmed X_HANDLES tag,
+// else the marketplace username untagged, never a wallet); the link rides a 2/2 reply; the image is
+// x-image.mjs --slot big (image_cmd). The opening line is generic — when the sale is a "first" (11-14:
+// "This season's first Rookie Ultimate sale is in 🏀") the task rewrites it, and passes the same
+// words to --headline.
 async function breaking(now) {
   try {
     const rows = await topSales7d()
-    return rows
+    const big = rows
       .slice(0, 5)
       .filter((r) => r.price_usd >= BIG_SALE_USD && now - new Date(r.sold_at) < 86400000)
-      .map((r) => {
-        const draft = `Big sale: ${saleSubject(r)} just went for ${usd(r.price_usd)} on ${coll(r.collection)} — one of the week's top sales.\n\n${SITE}/insights/top-sales`
-        return { sale: r, draft, draft_len: xLength(draft), intent_url: intent(draft) }
-      })
       .slice(0, 2)
+    for (const r of big) {
+      if (buyerOf(r)) continue
+      const u = await dapperUsername(r.buyer_address)
+      if (u) r.buyer_name = u
+    }
+    return big.map((r) => {
+      const b = buyerOf(r)
+      const on = BRAND[r.collection]?.handle.split(" ")[0] ?? coll(r.collection)
+      const draft = `One of the week's top sales ${BRAND[r.collection]?.emoji ?? "💰"}\n\n${topSaleSubject(r)} — ${usd(r.price_usd)} on ${on}${b ? ` · bought by ${buyerLabel(b)}` : ""}`
+      return {
+        sale: r,
+        draft,
+        draft_len: xLength(draft),
+        intent_url: intent(draft),
+        reply: [{ n: 2, of: 2, text: `See the week's top sales here 👇\n${SITE}/insights/top-sales` }],
+        image_cmd: `node x-image.mjs --slot big --sale ${r.sale_id} --video --out "$HOME/xdraft/img"`,
+      }
+    })
   } catch (e) {
     return [{ error: e.message }]
   }
