@@ -263,6 +263,16 @@ describe("GET /api/analytics — aggregation", () => {
     expect(labels).toEqual(["Unknown", "Series 1", "Summer 2021", "Series 42"])
   })
 
+  it("labels another collection's raw series as 'Series N' — never through Top Shot's map (2026-11-14)", async () => {
+    // get_wallet_moments_with_fmv remaps 1→0 for Top Shot ONLY; All Day's series 3 is All Day's
+    // series 3, which the route used to print as "Summer 2021".
+    state.pages = [[moment({ series_number: 3 }), moment({ series_number: 4 }), moment({ series_number: 7 })]]
+    const body = await (await GET(req(`?wallet=${WALLET}&collection_id=nfl-all-day`))).json()
+    const labels = body.series.map((s: { label: string }) => s.label)
+    expect(labels).toEqual(["Series 3", "Series 4", "Series 7"])
+    expect(labels).not.toContain("Summer 2021")
+  })
+
   it("scores clarity as HIGH+MEDIUM over total and files an unknown confidence as NO_DATA", async () => {
     state.pages = [[
       moment({ confidence: "HIGH" }), moment({ confidence: "medium" }),

@@ -57,7 +57,7 @@ afterEach(() => {
 
 // ── /api/og/share ───────────────────────────────────────────────────────────
 
-function mockSnapshot(mode: "rows" | "empty" | "notok" | "throws") {
+function mockSnapshot(mode: "rows" | "empty" | "notok" | "throws" | "never-walked" | "unknown-index") {
   globalThis.fetch = vi.fn(async () => {
     if (mode === "throws") throw new Error("socket hang up")
     if (mode === "notok") return new Response("upstream down", { status: 503 })
@@ -68,7 +68,11 @@ function mockSnapshot(mode: "rows" | "empty" | "notok" | "throws") {
             totalMoments: 19981,
             topMoments: [{ playerName: "Damian Lillard" }, { playerName: "Anfernee Simons" }],
           }
-        : { totalFmv: 0, totalMoments: 0, topMoments: [] }
+        : mode === "never-walked"
+          ? { totalFmv: 0, totalMoments: 0, topMoments: [], indexed: false }
+          : mode === "unknown-index"
+            ? { totalFmv: 0, totalMoments: 0, topMoments: [], indexed: null }
+            : { totalFmv: 0, totalMoments: 0, topMoments: [] }
     return new Response(JSON.stringify(body), {
       status: 200,
       headers: { "content-type": "application/json" },
@@ -108,6 +112,19 @@ describe("/api/og/share — a failed read must not publish a $0 portfolio", () =
     expect(text).not.toContain("COLLECTION FMV")
     // ...and the card still renders, branded, pointing at the live page.
     expect(text).toContain("RIP PACKS CITY")
+    expect(text).toContain("Open the page for this wallet")
+  })
+
+  // 2026-11-14: collection-snapshot answers 200 with `indexed: false` (never walked) or `null`
+  // (couldn't tell); neither is a measured empty wallet, and the card cached "$0.00 · 0 moments".
+  it.each([
+    ["a wallet RPC has never walked (indexed: false)", "never-walked" as const],
+    ["an index state that could not be read (indexed: null)", "unknown-index" as const],
+  ])("WITHHOLDS the figures for %s", async (_label, mode) => {
+    mockSnapshot(mode)
+    const text = await renderShare()
+    expect(compact(text)).not.toContain("$0.00")
+    expect(compact(text)).not.toContain("0moments")
     expect(text).toContain("Open the page for this wallet")
   })
 

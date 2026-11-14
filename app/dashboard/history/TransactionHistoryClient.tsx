@@ -13,7 +13,7 @@
 // summarized (moments_pulled badge) but not the individual pulled moments — the
 // "Pulls" tab surfaces those, so a pack open is never double-counted.
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import DashboardTabs from "@/components/dashboard/DashboardTabs"
 import { fmtUsd, relativeTime, truncAddr } from "@/lib/dashboard/format"
 import { currencySuffix } from "@/lib/usd-format"
@@ -153,8 +153,15 @@ export default function TransactionHistoryClient() {
   }, [])
 
   // ── Load timeline when wallet / filter / page change ─────────────────────
+  // 2026-11-14: only the NEWEST request may land. Changing filter or wallet on page 2+ fires two
+  // reads (the new filter at the old offset, then offset 0 after the page reset), and switching wallet
+  // races the previous wallet's read — whichever answered last won, so "No activity for this filter."
+  // could show over a filter with rows, and a Dapper wallet's rows could land under the Candy chip.
+  const historySeq = useRef(0)
   const loadHistory = useCallback(async () => {
     if (!activeWallet) return
+    const seq = ++historySeq.current
+    const current = () => seq === historySeq.current
     setHistoryLoading(true)
     setHistoryError(null)
     try {
@@ -166,6 +173,7 @@ export default function TransactionHistoryClient() {
       })
       const res = await fetch("/api/wallet/transaction-history?" + params.toString(), { cache: "no-store" })
       const json = await res.json()
+      if (!current()) return
       if (!res.ok) {
         setHistoryError(json?.error ?? "Failed to load history")
         setHistory(null)
@@ -173,9 +181,10 @@ export default function TransactionHistoryClient() {
         setHistory(json as HistoryResponse)
       }
     } catch (err) {
+      if (!current()) return
       setHistoryError(err instanceof Error ? err.message : String(err))
     } finally {
-      setHistoryLoading(false)
+      if (current()) setHistoryLoading(false)
     }
   }, [activeWallet, filter, page])
 

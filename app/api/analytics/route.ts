@@ -7,6 +7,7 @@ import { isCadenceAddress, isSolanaAddress, normalizeAddress } from "@/lib/addre
 import { boundedRead } from "@/lib/api/bounded-read"
 import { resolveToFlowAddress, UsernameLookupUnavailableError, usernameLookupUnavailableResponse } from "@/lib/chains/flow/flow-resolve"
 import { ownLookup } from "@/lib/safe-lookup"
+import { seriesDisplay } from "@/lib/series-label"
 
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const PINNACLE_COLLECTION_ID = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
@@ -14,17 +15,10 @@ const PINNACLE_COLLECTION_ID = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
 const MAX_PAGES = 10
 const VALID_UUIDS = new Set(Object.values(COLLECTION_UUID_BY_SLUG))
 
-const SERIES_MAP: Record<number, string> = {
-  0: "Series 1",
-  2: "Series 2",
-  3: "Summer 2021",
-  4: "Series 3",
-  5: "Series 4",
-  6: "Series 2023-24",
-  7: "Series 2024-25",
-  8: "Series 2025-26",
-  9: "Series 2026-27",
-}
+// 2026-11-14: the Top Shot decode lives in lib/series-label.ts, and ONLY Top Shot uses it. This route
+// kept a private copy and applied it to every collection, so an All Day wallet's series 3 read
+// "Summer 2021" and series 4 "Series 3" (get_wallet_moments_with_fmv remaps 1→0 for Top Shot only and
+// returns every other collection's raw series) — the CLAUDE.md "0↔1 is Top-Shot-specific" footgun.
 
 async function resolveWallet(input: string): Promise<string> {
   const t = input.trim()
@@ -219,7 +213,7 @@ export async function GET(req: NextRequest) {
         : r.series_number != null ? Number(r.series_number) : -1
       const seriesLabel = pinnacleSeries
         ? (pinSeries ?? "Unknown")
-        : seriesNum >= 0 ? (SERIES_MAP[seriesNum] ?? `Series ${seriesNum}`) : "Unknown"
+        : seriesNum >= 0 ? seriesDisplay(seriesNum, collectionId === COLLECTION_UUID_BY_SLUG["nba-top-shot"] ? "nba-top-shot" : null) : "Unknown"
 
       if (!tierBreakdown[tier]) tierBreakdown[tier] = { count: 0, fmv: 0 }
       tierBreakdown[tier].count++

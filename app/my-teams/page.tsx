@@ -235,13 +235,17 @@ function TeamCard({
     ? `linear-gradient(105deg, ${primary} 0%, var(--rpc-surface) 92%)`
     : "var(--rpc-surface)"
 
-  const pct = progress?.completion_pct
+  // 2026-11-14: get_team_checklist_progress answers owned 0 / completion 0 with wallet_cached:false
+  // when the wallet has never been walked in this collection — a zero nobody measured. TeamChecklist
+  // gates on it; this card printed "0% · 0 / N owned" and a full "Cost to finish". Unknown instead.
+  const walletUnwalked = progress?.wallet_cached === false
+  const pct = walletUnwalked ? null : progress?.completion_pct
   const owned = progress?.owned ?? 0
   // 2026-10-11: null when the card read failed (progress null) — `?? 0` printed
   // "0 editions in the all-time checklist" for an outage.
   const total = progress?.total ?? null
   const locked = progress?.locked_owned ?? 0
-  const cost = progress?.cost_to_complete_usd
+  const cost = walletUnwalked ? null : progress?.cost_to_complete_usd
 
   return (
     <CardShell href={hubHref} accent={accent}>

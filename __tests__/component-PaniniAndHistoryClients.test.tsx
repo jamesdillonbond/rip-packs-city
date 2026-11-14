@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { render, screen, waitFor, cleanup, fireEvent } from "@testing-library/react"
+import { act, render, screen, waitFor, cleanup, fireEvent } from "@testing-library/react"
 import TransactionHistoryClient from "@/app/dashboard/history/TransactionHistoryClient"
 
 // 2026-09-25: the two Panini clients this file also covered were DELETED when Panini
@@ -318,6 +318,34 @@ describe("TransactionHistoryClient — filters, wallets and paging", () => {
     await waitFor(() => expect(document.body.textContent).toMatch(/Damian Lillard/))
     expect(f.mock.calls.length).toBe(before)
     expect(f.mock.calls.some((c) => /offset=200\b/.test(String(c[0])))).toBe(false)
+  })
+
+  it("a stale read that answers LAST never replaces the newest one (2026-11-14)", async () => {
+    // On page 2, switching to Sells fires the new filter at the OLD offset, then offset 0 after the
+    // page reset. If the stale offset-50 read answers last and empty, the page said "No activity for
+    // this filter." over a filter with rows.
+    let releaseStale: () => void = () => {}
+    const page = (events: unknown[], total: number) =>
+      ({ ok: true, status: 200, json: async () => ({ wallet: "0xmine", kind_filter: "all", limit: 25, offset: 0, total_count: total, events }) }) as unknown as Response
+    const f = vi.fn(async (input: unknown) => {
+      const url = String(input)
+      if (url.includes("/api/profile/saved-wallets")) return { ok: true, status: 200, json: async () => WALLETS2 } as unknown as Response
+      if (/kind=sells/.test(url) && /offset=50\b/.test(url)) {
+        return new Promise<Response>((resolve) => { releaseStale = () => resolve(page([], 1)) })
+      }
+      if (/kind=sells/.test(url)) return page([EV({ kind: "moment_sell", title: "Sold Row" })], 1)
+      return page([EV()], 200)
+    })
+    vi.stubGlobal("fetch", f)
+    render(<TransactionHistoryClient />)
+    await waitFor(() => expect(document.body.textContent).toMatch(/Damian Lillard/))
+    fireEvent.click(screen.getAllByRole("button").find((b) => /next/i.test(b.textContent ?? ""))!)
+    await waitFor(() => expect(f.mock.calls.some((c) => /offset=50/.test(String(c[0])))).toBe(true))
+    fireEvent.click(screen.getAllByRole("button").find((b) => /sell/i.test(b.textContent ?? ""))!)
+    await waitFor(() => expect(document.body.textContent).toMatch(/Sold Row/))
+    await act(async () => { releaseStale(); await new Promise((r) => setTimeout(r, 20)) })
+    expect(document.body.textContent).toMatch(/Sold Row/)
+    expect(document.body.textContent).not.toMatch(/No activity for this filter/)
   })
 
   it("switching the filter resets to the first page", async () => {

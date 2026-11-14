@@ -74,7 +74,12 @@ export async function GET(req: NextRequest) {
     })
     if (res.ok) {
       const data = await res.json()
-      fetched = true
+      // 2026-11-14: a 200 with `indexed: false` (never walked) or `null` (couldn't tell) is NOT a
+      // measurement of an empty wallet — the share page itself shows "Analyzing…" there. The card
+      // drew "$0.00 · 0 moments" and cached it for hours. Withhold unless the wallet is known walked
+      // (an older payload without the field keeps the old behaviour).
+      const knownWalked = data?.indexed === undefined || data?.indexed === true
+      if (knownWalked) fetched = true
       totalFmv = data.totalFmv ?? 0
       staleFmv = typeof data.staleFmv === "number" ? data.staleFmv : null
       staleCount = Number(data.staleCount ?? 0) || 0

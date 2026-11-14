@@ -6,12 +6,14 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // error fallback shape.
 
 const rpcState: { data: any; error: any; throws: unknown; delayMs: number } = { data: null, error: null, throws: null, delayMs: 0 }
+const rpcArgs: string[] = []
 // #237: lib/wallet-indexed.ts existence reads (.from(t).select().eq().limit()); absent = no rows.
 const idxState: { tables: Record<string, { data: any; error: any }>; reads: string[] } = { tables: {}, reads: [] }
 
 vi.mock("@supabase/supabase-js", () => ({
   createClient: () => ({
-    rpc: async () => {
+    rpc: async (_fn: string, args?: { p_wallet?: string }) => {
+      rpcArgs.push(args?.p_wallet ?? "")
       // supabase-js RESOLVES most query errors, but the transport can still
       // THROW (a fetch failure, an abort). That throw is what the route catch
       // handles, and until 2026-08-25 it answered 200 -- so the suite needs a
@@ -150,7 +152,7 @@ describe("GET /api/collection-snapshot", () => {
     const res = await GET(req("https://t/api/collection-snapshot?wallet=0xABC"))
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.wallet).toBe("0xABC")
+    expect(body.wallet).toBe("0xabc") // re-pinned 2026-11-14: the wallet is normalised (Flow hex folded) before the read
     expect(body.totalMoments).toBe(1200)
     expect(body.totalFmv).toBe(34567.89)
     expect(body.badgeCount).toBe(7)
@@ -265,5 +267,23 @@ describe("a THROWN read must not be published as a zeroed collection", () => {
     const body = await res.json()
     expect(body.totalMoments).toBe(0)
     expect(body.totalFmv).toBe(0)
+  })
+})
+
+
+// 2026-11-14 (fresh-eyes review of the share surfaces): the RPC matches wallet_address EXACTLY and
+// the cache stores Flow hex folded, so an upper-case link read "$0.00 · 0 moments" for a full wallet.
+describe("collection-snapshot — the wallet is normalised before the read", () => {
+  it("folds Flow hex", async () => {
+    rpcArgs.length = 0
+    rpcState.data = { totalFmv: 1, totalMoments: 1, topMoments: [] }
+    await GET(req("https://t/api/collection-snapshot?wallet=0xBD94CADE097E50AC"))
+    expect(rpcArgs).toEqual(["0xbd94cade097e50ac"])
+  })
+  it("leaves a Solana (Candy) key exactly as given — base58 is case-sensitive", async () => {
+    rpcArgs.length = 0
+    rpcState.data = { totalFmv: 1, totalMoments: 1, topMoments: [] }
+    await GET(req("https://t/api/collection-snapshot?wallet=7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"))
+    expect(rpcArgs).toEqual(["7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"])
   })
 })

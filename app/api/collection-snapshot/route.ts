@@ -3,6 +3,7 @@ import { apiErrorResponse } from "@/lib/api-error"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { createClient } from "@supabase/supabase-js"
 import { walletIndexState } from "@/lib/wallet-indexed"
+import { normalizeAddress } from "@/lib/address"
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -33,7 +34,11 @@ export async function GET(req: NextRequest) {
   if (!walletRaw || !walletRaw.trim()) {
     return NextResponse.json({ error: "wallet query param is required" }, { status: 400 })
   }
-  const wallet = walletRaw.trim()
+  // 2026-11-14: normalizeAddress, not a bare trim. wallet_moments_cache stores Flow hex folded,
+  // and the RPC matches it exactly, so /share/0xBD94CADE097E50AC read "$0.00 · 0 moments" for a
+  // 19k-moment wallet while walletIndexState (which normalises) said "indexed" — and the OG card
+  // cached it. A Solana (Candy) key is base58 and case-sensitive, which normalizeAddress keeps.
+  const wallet = normalizeAddress(walletRaw)
   const started = Date.now()
 
   try {

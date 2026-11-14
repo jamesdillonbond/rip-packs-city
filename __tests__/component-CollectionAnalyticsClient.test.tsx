@@ -182,6 +182,16 @@ describe("CollectionAnalyticsClient — the market KPI band", () => {
     expect(kpiValue("Avg Sale Price")).not.toContain("$0")
   })
 
+  it("a DEGRADED period comparison leaves Unique Editions unknown, never 0 — the other tiles keep their totals (2026-11-14)", async () => {
+    // /api/market-analytics answers 200 with periodComparison null + degraded:["periodComparison"]
+    // on a timeout. Volume/sales fall back to `totals`; unique editions has no fallback.
+    routes["/api/market-analytics"] = () =>
+      json(200, { ...MARKET, periodComparison: null, degraded: ["periodComparison"], totals: { totalSales: 12, totalVolume: 400 } })
+    render(<CollectionAnalyticsClient />)
+    await waitFor(() => expect(kpiValue("Total Sales")).toBe("12"))
+    expect(kpiValue("Unique Editions")).toBe("—")
+  })
+
   it("adds the thin-volume ecosystem notice ONLY on a real, small market", async () => {
     routes["/api/market-analytics"] = () => json(200, { ...MARKET, totals: { totalSales: 12, totalVolume: 40 } })
     render(<CollectionAnalyticsClient />)

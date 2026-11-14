@@ -42,9 +42,10 @@ function rpcClient(byName: Record<string, { data?: unknown; error?: { message: s
   }
 }
 
+const tableCalls: Array<[string, ...unknown[]]> = []
 function tableClient(result: { data?: unknown; error?: { message: string } }) {
   const b: Record<string, unknown> = {}
-  for (const m of ["select", "eq", "not", "order", "limit"]) b[m] = () => b
+  for (const m of ["select", "eq", "not", "order", "limit", "like"]) b[m] = (...a: unknown[]) => { tableCalls.push([m, ...a]); return b }
   b.maybeSingle = async () => ({ data: result.data ?? null, error: result.error ?? null })
   return { from: () => b }
 }
@@ -112,6 +113,18 @@ describe("fetchBoundWallet", () => {
     // looking 0% for a collector who owns half the set.
     const db = tableClient({ data: { wallet_addr: "   " } })
     expect(await fetchBoundWallet(db, "u1")).toEqual({ wallet: null, ok: true })
+  })
+
+  it("does NOT require verification — a saved wallet is the wallet (2026-11-14, #59)", async () => {
+    // 54 of 56 accounts with a saved wallet had no verified row, and /my-teams told every one of
+    // them to add a wallet. Verified wallets still sort first; Flow addresses only (teams are Flow).
+    tableCalls.length = 0
+    const db = tableClient({ data: { wallet_addr: "0xbd94cade097e50ac" } })
+    expect(await fetchBoundWallet(db, "u1")).toEqual({ wallet: "0xbd94cade097e50ac", ok: true })
+    expect(tableCalls.some((c) => c[0] === "not" && c[1] === "verified_at")).toBe(false)
+    expect(tableCalls).toContainEqual(["like", "wallet_addr", "0x%"])
+    const orders = tableCalls.filter((c) => c[0] === "order").map((c) => c[1])
+    expect(orders).toEqual(["verified_at", "pinned_at"])
   })
 
   it("trims a real address", async () => {

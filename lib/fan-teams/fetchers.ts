@@ -127,7 +127,13 @@ export async function fetchFanTeams(
 }
 
 /**
- * The user's verified, most-recently-pinned saved wallet.
+ * The user's saved Flow wallet: a verified one first, then the most recently pinned.
+ *
+ * ⚠ 2026-11-14: NOT "verified only". Verification has had no live source since ~08-28 and the
+ * 09-06 decision (#59) moved every wallet gate from VERIFIED to SAVED; this read kept the old
+ * filter, so 54 of the 56 accounts with a saved wallet (2 have any verified row) were told on
+ * /my-teams to "Add a wallet address or Top Shot username on your profile". Teams are Flow
+ * collections, so a Candy (Solana) key is not picked as the wallet their progress is read for.
  *
  * ⚠ Three states, not two: a wallet, no wallet (`ok: true`), and we could not
  * ask (`ok: false`). The page prompts only on the middle one — an unread wallet
@@ -148,9 +154,10 @@ export async function fetchBoundWallet(
       Promise.resolve(
         session
           .from("saved_wallets")
-          .select("wallet_addr, pinned_at")
+          .select("wallet_addr, pinned_at, verified_at")
           .eq("user_id", userId)
-          .not("verified_at", "is", null)
+          .like("wallet_addr", "0x%")
+          .order("verified_at", { ascending: false, nullsFirst: false })
           .order("pinned_at", { ascending: false, nullsFirst: false })
           .limit(1)
           .maybeSingle(),

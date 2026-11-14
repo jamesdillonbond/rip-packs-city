@@ -1317,7 +1317,10 @@ function AnalyticsInner() {
             // /ufc/analytics read "Total Sales 0 · Avg Sale Price $0.00"; a server avgPrice of 0
             // over 0 sales is the same fabricated value, so the sales count gates both arms).
             const avgPrice = totalSalesLocal > 0 ? (cur?.avgPrice ?? totalVolume / totalSalesLocal) : null
-            const uniqueEds = cur?.uniqueEditions ?? 0
+            // 2026-11-14: no fallback source here (volume/sales fall back to `totals`; this does not),
+            // so when the period-comparison read is degraded (200 + degraded:["periodComparison"]) the
+            // tile printed "Unique Editions 0" beside real totals. Unknown, not zero.
+            const uniqueEds: number | null = typeof cur?.uniqueEditions === "number" ? cur.uniqueEditions : null
             // Failed fetch => em-dash, not 0. Rendering 0 here told visitors the
             // Top Shot market had no sales in 30 days while the Overview tab on
             // the same collection showed $32,584 in 24h (deep-audit D12).
@@ -1335,7 +1338,7 @@ function AnalyticsInner() {
                 <KpiCard label="Total Volume" value={kpi(fmt(totalVolume))} pct={pc ? ch?.volumePct : undefined} period={periodLabel} />
                 <KpiCard label="Total Sales" value={kpi(totalSalesLocal.toLocaleString("en-US"))} pct={pc ? ch?.salesPct : undefined} period={periodLabel} />
                 <KpiCard label="Avg Sale Price" value={kpi(avgPrice == null ? dash : fmtUsd(avgPrice))} pct={pc ? ch?.avgPricePct : undefined} period={periodLabel} />
-                <KpiCard label={isPinnacle ? "Unique Pins" : "Unique Editions"} value={kpi(uniqueEds.toLocaleString("en-US"))} pct={pc ? ch?.uniqueEditionsPct : undefined} period={periodLabel} />
+                <KpiCard label={isPinnacle ? "Unique Pins" : "Unique Editions"} value={kpi(uniqueEds == null ? dash : uniqueEds.toLocaleString("en-US"))} pct={pc ? ch?.uniqueEditionsPct : undefined} period={periodLabel} />
               </div>
             )
           })()}
