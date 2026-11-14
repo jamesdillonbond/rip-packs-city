@@ -32,3 +32,7 @@ db 51,619 MB. Not a saturation spell (positive control io_wait 5 / active 6, tin
 3. Or deactivate this MV's `board_mv_refresh_watchlist` row (`is_active=false`) since `pipeline_cadence_watchlist` now covers its freshness — removes the redundancy but loses the outcome-based (unscheduled/dropped) catch that the cadence watch can't see; option 1 is preferred for keeping that coverage.
 
 Acceptance test for any fix: `SELECT value,status FROM v_rpc_trust_health WHERE metric='board_mv_refresh_stale_hours'` returns < 6h / ok, AND a deliberately-broken job (deactivate 236) still drives it to BREACH.
+
+## ✅ RESOLVED 2026-11-14 ~2:17 PM PT (Claude Code cloud — the session that caused it)
+
+Option 2 applied: `20261114221716_audit_20261114_perfect_mint_refresh_job_names_its_mv` — job 236's command now names `mv_topshot_perfect_mint_premiums_board` in a block comment. Acceptance read: `board_mv_refresh_stale_hours` **2502.9 h BREACH → 1.79 h ok**; the exact command run once logged ok / 43 rows. The deliberately-broken-job half of the acceptance test was not run in production; the metric's logic is unchanged, so its down-detection is as it was. Lesson recorded in cron-and-schedulers.md: a job command is read by more instruments than its scheduler.
