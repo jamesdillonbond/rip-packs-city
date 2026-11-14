@@ -84,9 +84,13 @@
 --      the writer skips an unchanged row and its own last_checked_at is when the ask last
 --      CHANGED (one wallet read "asks checked since Aug 26" off asks re-confirmed every 5 min).
 --      An UNLISTED row keeps its own stamp (V28-1, V28-2).
+--  18. (v29 + wallet_held_pack_value v2, 2026-11-13) tab_totals carries each sealed-pack basis
+--      summed apart, and wallet_held_pack_value reads them in ONE call instead of re-running
+--      this function per 200-row page. For EVERY fixture wallet its fields equal the old
+--      page-by-page sums over the rows (V29-1), so no number moves.
 --
 -- The get_wallet_pack_history DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261114035707_audit_20261113_pack_history_ask_checked_is_last_confirmed.sql).
+-- (supabase/migrations/20261114044121_audit_20261113_pack_history_held_basis_totals.sql; wallet_held_pack_value from 20261114044351_audit_20261113_held_pack_value_one_read.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -826,6 +830,8 @@ BEGIN
   ),
   held_valued AS (
     SELECT f.collection_id, f.pack_nft_id, f.buy_usd, dm.ask_checked_at,
+           -- v29: each basis on its own, for wallet_held_pack_value's separate sums
+           dm.ask_usd, dm.last_sale_usd, dm.rip_ev_usd, dm.opened_avg_usd,
       COALESCE(dm.ask_usd, dm.last_sale_usd, dm.rip_ev_usd, dm.opened_avg_usd) AS value_usd,
       CASE WHEN dm.ask_usd IS NOT NULL        THEN 'ask'
            WHEN dm.last_sale_usd IS NOT NULL  THEN 'last_sale'
@@ -854,6 +860,17 @@ BEGIN
       'held_unrealized_usd', (SELECT round(sum(value_usd - buy_usd)::numeric, 2) FROM held_valued
                               WHERE value_usd IS NOT NULL AND buy_usd IS NOT NULL),
       'held_unrealized_n',   (SELECT count(*) FROM held_valued WHERE value_usd IS NOT NULL AND buy_usd IS NOT NULL),
+      -- v29 (2026-11-13): each basis summed apart, over EVERY held row -- what
+      -- wallet_held_pack_value used to rebuild by re-running this function once per
+      -- 200-row page. Per-row rounding first, as the page rows carry them.
+      'held_listed',         (SELECT count(ask_usd) FROM held_valued),
+      'held_floor_ask_usd',  (SELECT round(COALESCE(sum(round(ask_usd::numeric, 2)), 0), 2) FROM held_valued),
+      'held_last_sale_n',    (SELECT count(last_sale_usd) FROM held_valued),
+      'held_last_sale_usd',  (SELECT round(COALESCE(sum(round(last_sale_usd::numeric, 2)), 0), 2) FROM held_valued),
+      'held_rip_ev_n',       (SELECT count(rip_ev_usd) FROM held_valued),
+      'held_rip_ev_usd',     (SELECT round(COALESCE(sum(round(rip_ev_usd::numeric, 2)), 0), 2) FROM held_valued),
+      'held_opened_avg_n',   (SELECT count(*) FROM held_valued WHERE rip_ev_usd IS NULL AND opened_avg_usd IS NOT NULL),
+      'held_opened_avg_usd', (SELECT round(COALESCE(sum(opened_avg_usd) FILTER (WHERE rip_ev_usd IS NULL), 0), 2) FROM held_valued),
       -- Opened
       'opened_packs',      (SELECT count(*) FROM filtered WHERE status = 'ripped'),
       'pull_value_usd',    (SELECT round(sum(pull_value_usd)::numeric, 2) FROM filtered WHERE status = 'ripped'),
@@ -1055,46 +1072,41 @@ CREATE OR REPLACE FUNCTION public.wallet_held_pack_value(p_wallet text)
 AS $function$
 DECLARE
   v_page jsonb;
-  v_total int := NULL;
-  v_offset int := 0;
-  v_rows jsonb := '[]'::jsonb;
-  v_pages int := 0;
+  t jsonb;
+  v_total int;
 BEGIN
   -- The sealed packs this wallet holds, valued at the market -- read THROUGH
   -- get_wallet_pack_history(status 'held') so "held" means exactly what the
-  -- history lists (identity-sync floor, departures, transfers), page by page.
-  LOOP
-    v_page := public.get_wallet_pack_history(p_wallet, NULL, 'held', 200, v_offset);
-    IF v_page ? 'error' THEN
-      RETURN jsonb_build_object('error', v_page->>'error');
-    END IF;
-    v_total := (v_page->>'total_count')::int;
-    v_rows := v_rows || coalesce(v_page->'packs', '[]'::jsonb);
-    v_pages := v_pages + 1;
-    v_offset := v_offset + 200;
-    EXIT WHEN v_offset >= coalesce(v_total, 0) OR v_pages >= 25;
-  END LOOP;
-
-  RETURN (
-    SELECT jsonb_build_object(
-      'count',               coalesce(v_total, 0),
-      -- false = more held packs than the 25 pages read; every sum below then
-      -- covers a PART of the holdings and says so
-      'complete',            jsonb_array_length(v_rows) >= coalesce(v_total, 0),
-      'rows_read',           jsonb_array_length(v_rows),
-      'listed_count',        count(*) FILTER (WHERE e->>'lowest_ask_usd' IS NOT NULL),
-      'floor_ask_usd',       round(coalesce(sum((e->>'lowest_ask_usd')::numeric), 0), 2),
-      'oldest_ask_checked_at', min((e->>'ask_checked_at')::timestamptz) FILTER (WHERE e->>'lowest_ask_usd' IS NOT NULL),
-      'last_sale_count',     count(*) FILTER (WHERE e->>'last_sale_usd' IS NOT NULL),
-      'last_sale_usd',       round(coalesce(sum((e->>'last_sale_usd')::numeric), 0), 2),
-      'rip_ev_count',        count(*) FILTER (WHERE e->>'pack_gross_ev_usd' IS NOT NULL),
-      'rip_ev_usd',          round(coalesce(sum((e->>'pack_gross_ev_usd')::numeric), 0), 2),
-      -- 2026-09-26: packs whose drop has no modelled EV, valued at what that
-      -- drop's opened packs yielded on average -- reported apart from rip_ev
-      'opened_avg_count',    count(*) FILTER (WHERE e->>'pack_gross_ev_usd' IS NULL AND e->>'pack_opened_avg_usd' IS NOT NULL),
-      'opened_avg_usd',      round(coalesce(sum((e->>'pack_opened_avg_usd')::numeric) FILTER (WHERE e->>'pack_gross_ev_usd' IS NULL), 0), 2))
-    FROM jsonb_array_elements(v_rows) e
-  );
+  -- history lists (identity-sync floor, departures, transfers).
+  -- v2 (2026-11-13): ONE call. The history's tab_totals (v29) sums every held row,
+  -- so the old loop -- the whole classification re-run once per 200-row page, three
+  -- times on a 422-pack wallet, ~90 % of get_wallet_pack_summary -- is gone. Every
+  -- field keeps its meaning; 'complete' is now always true (the totals cover every
+  -- row, where the loop stopped at 25 pages).
+  v_page := public.get_wallet_pack_history(p_wallet, NULL, 'held', 1, 0);
+  IF v_page ? 'error' THEN
+    RETURN jsonb_build_object('error', v_page->>'error');
+  END IF;
+  t := v_page->'tab_totals';
+  IF t IS NULL THEN
+    RETURN jsonb_build_object('error', 'held totals missing from get_wallet_pack_history');
+  END IF;
+  v_total := coalesce((v_page->>'total_count')::int, 0);
+  RETURN jsonb_build_object(
+    'count',                 v_total,
+    'complete',              true,
+    'rows_read',             v_total,
+    'listed_count',          (t->>'held_listed')::int,
+    'floor_ask_usd',         (t->>'held_floor_ask_usd')::numeric,
+    'oldest_ask_checked_at', (t->>'held_ask_oldest_checked_at')::timestamptz,
+    'last_sale_count',       (t->>'held_last_sale_n')::int,
+    'last_sale_usd',         (t->>'held_last_sale_usd')::numeric,
+    'rip_ev_count',          (t->>'held_rip_ev_n')::int,
+    'rip_ev_usd',            (t->>'held_rip_ev_usd')::numeric,
+    -- packs whose drop has no modelled EV, valued at what that drop's opened packs
+    -- yielded on average -- reported apart from rip_ev
+    'opened_avg_count',      (t->>'held_opened_avg_n')::int,
+    'opened_avg_usd',        (t->>'held_opened_avg_usd')::numeric);
 END;
 $function$;
 -- <<< END verbatim wallet_held_pack_value <<<
@@ -2133,6 +2145,43 @@ BEGIN
   SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'HSP2';
   PERFORM _assert((row_->>'ask_checked_at')::timestamptz = '2026-11-13 00:00:00+00',
                   'V28-2 HSP2: an UNLISTED ask keeps its own stamp. got ' || coalesce(row_->>'ask_checked_at', 'NULL'));
+END $$;
+
+-- V29-1: wallet_held_pack_value (one read of tab_totals) == the old page-by-page sums, every wallet.
+-- H1 gets an opened average TOO, so a drop with a modelled EV AND an average is in the fixture:
+-- the opened-average sum must skip it (an exclusion only a row carrying both can test).
+INSERT INTO public.pack_observed_values VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'H1', 10, 6, 5.00, now())
+  ON CONFLICT (collection_id, dist_id) DO UPDATE SET n_opened = 10, n_valued = 6, avg_value_usd = 5.00;
+DO $$
+DECLARE w text; v jsonb; rows_ jsonb; n int := 0; nz int := 0;
+BEGIN
+  FOR w IN SELECT DISTINCT x FROM (
+             SELECT buyer_address FROM public.pack_purchases UNION SELECT opener_address FROM public.pack_rips
+             UNION SELECT owner_address FROM public.pack_nft_identity
+           ) t(x) WHERE x IS NOT NULL LOOP
+    v := public.wallet_held_pack_value(w);
+    rows_ := public.get_wallet_pack_history(w, NULL, 'held', 200, 0)->'packs';
+    PERFORM _assert(
+      (v->>'count')::int = jsonb_array_length(rows_)
+      AND (v->>'listed_count')::int = (SELECT count(*) FROM jsonb_array_elements(rows_) e WHERE e->>'lowest_ask_usd' IS NOT NULL)
+      AND (v->>'floor_ask_usd')::numeric = (SELECT round(coalesce(sum((e->>'lowest_ask_usd')::numeric), 0), 2) FROM jsonb_array_elements(rows_) e)
+      AND (v->>'oldest_ask_checked_at') IS NOT DISTINCT FROM
+          (SELECT to_jsonb(min((e->>'ask_checked_at')::timestamptz) FILTER (WHERE e->>'lowest_ask_usd' IS NOT NULL))->>0 FROM jsonb_array_elements(rows_) e)
+      AND (v->>'last_sale_count')::int = (SELECT count(*) FROM jsonb_array_elements(rows_) e WHERE e->>'last_sale_usd' IS NOT NULL)
+      AND (v->>'last_sale_usd')::numeric = (SELECT round(coalesce(sum((e->>'last_sale_usd')::numeric), 0), 2) FROM jsonb_array_elements(rows_) e)
+      AND (v->>'rip_ev_count')::int = (SELECT count(*) FROM jsonb_array_elements(rows_) e WHERE e->>'pack_gross_ev_usd' IS NOT NULL)
+      AND (v->>'rip_ev_usd')::numeric = (SELECT round(coalesce(sum((e->>'pack_gross_ev_usd')::numeric), 0), 2) FROM jsonb_array_elements(rows_) e)
+      AND (v->>'opened_avg_count')::int = (SELECT count(*) FROM jsonb_array_elements(rows_) e WHERE e->>'pack_gross_ev_usd' IS NULL AND e->>'pack_opened_avg_usd' IS NOT NULL)
+      AND (v->>'opened_avg_usd')::numeric = (SELECT round(coalesce(sum((e->>'pack_opened_avg_usd')::numeric) FILTER (WHERE e->>'pack_gross_ev_usd' IS NULL), 0), 2) FROM jsonb_array_elements(rows_) e),
+      format('V29-1 %s: one-read held value == the page-by-page sums. got %s', w, v::text));
+    n := n + 1;
+    IF (v->>'listed_count')::int > 0 THEN nz := nz + 1; END IF;
+  END LOOP;
+  PERFORM _assert(n >= 10 AND nz >= 2, format('V29-1 covered %s wallets, %s with a listed ask', n, nz));
+  -- not vacuous: a held row carrying BOTH a rip EV and an opened average is in the population
+  PERFORM _assert(EXISTS (SELECT 1 FROM jsonb_array_elements(public.get_wallet_pack_history('0xheld', NULL, 'held', 200, 0)->'packs') e
+                          WHERE e->>'pack_gross_ev_usd' IS NOT NULL AND e->>'pack_opened_avg_usd' IS NOT NULL),
+                  'V29-1 the fixture holds a pack with both an EV and an opened average');
 END $$;
 
 ROLLBACK;
