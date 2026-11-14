@@ -98,3 +98,24 @@ describe("TrophiesBoardClient — a contradicted circulation of 1", () => {
     expect(text).toContain("10 minted")
   })
 })
+
+// 2026-11-14 (fresh-eyes review of /insights): over a failed seed the strip printed
+// "Trophies 0 · 1-of-1s 0 · With a price 0" under the "unknown, not zero" banner — what
+// crawlers, no-JS readers and everyone before the refetch lands see.
+describe("TrophiesBoardClient — a failed seed has no KPIs", () => {
+  it("renders em-dashes, never measured zeros, while the seed is failed", () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})))
+    const { container } = render(
+      <TrophiesBoardClient initialRows={[]} initialFetchedAt={null} initialDegraded={{ failed: ["Trophies"], truncated: [], total: 1, headline: "Trophies is temporarily unavailable." }} />,
+    )
+    const values = Array.from(container.querySelectorAll(".rpc-tr-kpi-value")).map((n) => n.textContent)
+    expect(values.length).toBe(4)
+    expect(values.every((v) => v === "—")).toBe(true)
+  })
+  it("a successful empty read still says 0 (the no-change control)", () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})))
+    const { container } = render(<TrophiesBoardClient initialRows={[]} initialFetchedAt="2026-11-14T00:00:00Z" />)
+    const first = container.querySelector(".rpc-tr-kpi-value")?.textContent
+    expect(first).toBe("0")
+  })
+})

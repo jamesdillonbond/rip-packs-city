@@ -201,3 +201,33 @@ describe("squeeze check — NFL All Day leg", () => {
     expect(screen.queryByText(/moments across/)).toBeNull()
   })
 })
+
+// 2026-11-14 (fresh-eyes review of /insights): the exposure function files an edition with NO
+// lock/burn data in the LIQUID bucket, so a wallet with zero coverage read "Bag is 100% liquid"
+// beside "None of your editions has lock/burn data yet".
+describe("squeeze check — unknown squeeze is not liquid", () => {
+  it("with no lock/burn coverage it shows no liquidity split and no 'liquid' claim", async () => {
+    window.history.replaceState({}, "", `/insights/squeeze-check?wallet=${W}&collection=nfl-all-day`)
+    const noData = {
+      ...bag("nfl_all_day", "AD Player"),
+      editions_with_badge_coverage: 0,
+      buckets: { liquid: { editions: 4, moments: 10 }, moderate: { editions: 0, moments: 0 }, squeezed: { editions: 0, moments: 0 }, extreme: { editions: 0, moments: 0 } },
+      top_squeezed: [],
+    }
+    routes = { "collection=nfl-all-day": () => ({ body: { index_state: "indexed", summary: noData } }) }
+    install()
+    render(<SqueezeCheckPage />)
+    await waitFor(() => expect(screen.getByText(/no liquidity split to show/)).toBeTruthy())
+    expect(screen.queryByText(/100% liquid/)).toBeNull()
+    expect(screen.queryByText("Liquid")).toBeNull()
+  })
+  it("with partial coverage the Liquid bar says it includes editions with no data", async () => {
+    window.history.replaceState({}, "", `/insights/squeeze-check?wallet=${W}&collection=nfl-all-day`)
+    routes = { "collection=nfl-all-day": () => ({ body: { index_state: "indexed", summary: { ...bag("nfl_all_day", "AD Player"), editions_with_badge_coverage: 2 } } }) }
+    install()
+    render(<SqueezeCheckPage />)
+    await waitFor(() => expect(screen.getByText("AD Player")).toBeTruthy())
+    expect(screen.getByText("< 25% squeeze or no data")).toBeTruthy()
+    expect(screen.queryByText(/% liquid\./)).toBeNull()
+  })
+})

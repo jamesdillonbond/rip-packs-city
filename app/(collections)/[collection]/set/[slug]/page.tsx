@@ -5,6 +5,7 @@
 // Aggregate stats + tier mix + paginated edition grid.
 
 import type { Metadata } from "next"
+import { seriesDisplay } from "@/lib/series-label"
 import Link from "next/link"
 import { paniniProductHref, paniniProductSlug } from "@/lib/panini/product-url"
 import { notFound } from "next/navigation"
@@ -470,27 +471,9 @@ function tierBgFor(tier: string): string {
   }
 }
 
-// Top Shot encodes series as a raw on-chain UInt32 where 0 = Series 1, and
-// there is no on-chain series 1 (see the CLAUDE.md series map). The
-// sets_summary view carries that raw value, so it must be mapped before
-// display. Other collections' series encodings are not verified here, so
-// they fall back to the raw "Series N" form unchanged.
-const SERIES_DISPLAY: Record<number, string> = {
-  0: "Series 1",
-  2: "Series 2",
-  3: "Summer 2021",
-  4: "Series 3",
-  5: "Series 4",
-  6: "Series 2023-24",
-  7: "Series 2024-25",
-  8: "Series 2025-26",
-  9: "Series 2026-27",
-}
-
-function seriesDisplay(n: number, collectionUrlSlug: string): string {
-  if (collectionUrlSlug === "nba-top-shot") return SERIES_DISPLAY[n] ?? `Series ${n}`
-  return `Series ${n}`
-}
+// Top Shot's series decode lives in lib/series-label.ts (seriesDisplay). This file kept
+// its own copy of the map until 2026-11-14 — a hardcoded copy beside the shared map goes
+// stale silently (series 10 added there would read "Series 10" here).
 
 // Rendered when get_set_detail could not be READ — distinct from a set that does
 // not exist (that still 404s above). Reports our failure and makes no claim

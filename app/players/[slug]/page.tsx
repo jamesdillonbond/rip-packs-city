@@ -124,8 +124,13 @@ export default async function PlayerHubPage(props: { params: Promise<{ slug: str
   const totalEditions = routable.reduce((n, r) => n + (Number(r.entry.edition_count) || 0), 0)
 
   // Portrait: a collection headshot, else the first edition art we loaded.
+  // ⛔ 2026-11-14: NOT when the name spans more than one athlete — the hero says they are
+  // different people and are never added together, yet showed ONE of them as "<name>
+  // portrait" (an NBA and an NFL Larry Johnson, one face). A NAME is not a PERSON (rule 2).
   const firstArt = [...editions.values()].flatMap((e) => e.rows as EditionTile[]).find((t) => t?.thumbnail_url)?.thumbnail_url
-  const portrait = routable.find((r) => r.entry.headshot_url)?.entry.headshot_url ?? proxyIpfsImageUrl(firstArt, 640) ?? null
+  const portrait = manyPeople
+    ? null
+    : routable.find((r) => r.entry.headshot_url)?.entry.headshot_url ?? proxyIpfsImageUrl(firstArt, 640) ?? null
 
   const hubPath = playerHubPath(hub.canonical_slug || hub.slug)
 
@@ -147,7 +152,7 @@ export default async function PlayerHubPage(props: { params: Promise<{ slug: str
               <img src={portrait} alt={`${hub.name} portrait`} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
             ) : (
               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", background: "var(--rpc-surface)", color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
-                No portrait
+                {manyPeople ? "More than one athlete" : "No portrait"}
               </div>
             )}
           </div>

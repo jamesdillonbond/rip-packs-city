@@ -225,11 +225,19 @@ export default function PackRealityClient({
   // fixing the component that failed does not make the page honest; every panel
   // consuming the same failed read needs the same branch.
   const loadFailed = error != null
+  // ⚠ 2026-11-14: and PER SOURCE. A partial failure answers 200 with the failed read in
+  // meta.errors; the banner named it, but the ranker still said "0 positive-EV TS packs …
+  // No +EV packs right now." (a buy/no-buy claim out of a failed read) and Model vs reality
+  // "No qualifying packs yet.". Each panel now also consults its own source.
+  const sourceFailed = (source: string) => (data?.meta?.errors ?? []).some((e) => e.source === source)
+  const rankerFailed = loadFailed || sourceFailed("topshot_pack_reality_top_ev")
+  const mvrFailed = loadFailed || sourceFailed("v_topshot_pack_realized_ev")
+  const distFailed = sourceFailed("topshot_pack_reality_dist")
 
   // A count is a MEASUREMENT only when the read that produced it succeeded.
   // `data?.top_ev?.length ?? 0` published a hard "0" both while loading and on
   // failure — a manufactured number in a sentence that reads as a finding.
-  const evCount = !loadFailed && data != null ? (data.top_ev?.length ?? 0) : null
+  const evCount = !rankerFailed && data != null ? (data.top_ev?.length ?? 0) : null
 
   // ⚠ THE THIRD STATE. An empty ranker had exactly two renderings — read failed,
   // or "No +EV packs right now." The second is a claim about the MARKET, and on
@@ -398,6 +406,8 @@ export default function PackRealityClient({
         })()}
         {error ? (
           <div className="rpc-pr-state">Failed to load: {error}</div>
+        ) : distFailed ? (
+          <div className="rpc-pr-state">The pull-value distribution is temporarily unavailable — reload to try again.</div>
         ) : loading ? (
           <div className="rpc-pr-state">Loading…</div>
         ) : (
@@ -424,7 +434,7 @@ export default function PackRealityClient({
       <ModelVsRealitySection
         mvr={data?.model_vs_reality}
         loading={loading}
-        unavailable={loadFailed}
+        unavailable={mvrFailed}
       />
 
       <section className="rpc-pr-ranker" aria-label="Top +EV packs">
@@ -443,7 +453,7 @@ export default function PackRealityClient({
         </p>
         {(data?.top_ev ?? []).length === 0 ? (
           <div className="rpc-pr-state">
-            {loadFailed
+            {rankerFailed
               ? "The +EV ranker is temporarily unavailable — reload to try again."
               : loading
                 ? "Loading…"

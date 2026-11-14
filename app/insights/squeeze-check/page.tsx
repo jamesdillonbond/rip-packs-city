@@ -328,10 +328,21 @@ export default function SqueezeCheckPage() {
         </section>
       ) : summary ? (
         <>
+          {/* ⚠ 2026-11-14: the exposure function files an edition with NO lock/burn data (squeeze
+              unknown) in the LIQUID bucket. With zero coverage the bar read "Liquid 100%" and the
+              summary "Bag is 100% liquid" beside "None of your editions has lock/burn data yet";
+              with partial coverage, unknown inflated "liquid". No split without data, and say
+              what the Liquid bar holds when coverage is partial. */}
           <section className="rpc-sc-bar-row" aria-label="Exposure buckets">
-            {b ? (
+            {b && summary.editions_with_badge_coverage > 0 ? (
               <>
-                <BucketBar label="Liquid" sub="< 25% squeeze" value={b.liquid.moments} total={total} accent="success" />
+                <BucketBar
+                  label="Liquid"
+                  sub={(summary.total_editions == null || summary.editions_with_badge_coverage < summary.total_editions) ? "< 25% squeeze or no data" : "< 25% squeeze"}
+                  value={b.liquid.moments}
+                  total={total}
+                  accent="success"
+                />
                 <BucketBar label="Moderate" sub="25–50%" value={b.moderate.moments} total={total} accent="warn-soft" />
                 <BucketBar label="Squeezed" sub="50–75%" value={b.squeezed.moments} total={total} accent="warn" />
                 <BucketBar label="Extreme" sub="≥ 75%" value={b.extreme.moments} total={total} accent="danger" />
@@ -349,12 +360,15 @@ export default function SqueezeCheckPage() {
                   ({pct(summary.editions_with_badge_coverage, summary.total_editions)}).{" "}
                 </>
               ) : null}
-              {b
-                ? `Bag is ${pct(b.liquid.moments, total)} liquid, ${pct(
-                    (b.squeezed.moments ?? 0) + (b.extreme.moments ?? 0),
-                    total
-                  )} sitting in squeeze territory.`
-                : null}
+              {b && summary.editions_with_badge_coverage > 0
+                ? `${pct((b.squeezed.moments ?? 0) + (b.extreme.moments ?? 0), total)} of the bag is sitting in squeeze territory${
+                    (summary.total_editions == null || summary.editions_with_badge_coverage < summary.total_editions)
+                      ? " among the editions with lock/burn data; the rest have none yet, so how liquid they are isn't known."
+                      : `; ${pct(b.liquid.moments, total)} is liquid.`
+                  }`
+                : b
+                  ? "None of these editions has lock/burn data yet, so there is no liquidity split to show."
+                  : null}
             </div>
           </section>
 

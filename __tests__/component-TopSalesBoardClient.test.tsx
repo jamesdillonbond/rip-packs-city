@@ -214,3 +214,20 @@ describe("TopSalesBoardClient", () => {
     expect(calls.some((c) => String(c[0]).includes("/api/public/insights/top-sales"))).toBe(true)
   })
 })
+
+// 2026-11-14 (fresh-eyes review of /insights): a failed FILTER refetch kept the previous
+// filter's rows, so the pills said "NFL All Day" while the KPI strip and featured tiles
+// showed every collection's whales.
+describe("TopSalesBoardClient — a failed filter refetch shows no stale subject", () => {
+  it("drops the previous filter's sales when the new filter's read fails", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 503, json: async () => ({}) }) as unknown as Response))
+    const { container, getAllByRole, findByText } = render(
+      <TopSalesBoardClient initialRows={[fullRow]} initialFetchedAt="2026-07-31T00:00:00Z" />,
+    )
+    expect(container.textContent).toContain("$12,500")
+    fireEvent.click(getAllByRole("tab").find((b) => b.textContent === "NFL All Day")!)
+    await findByText(/HTTP 503/)
+    expect(container.textContent).not.toContain("$12,500")
+    expect(container.textContent).not.toContain("Victor Wembanyama")
+  })
+})

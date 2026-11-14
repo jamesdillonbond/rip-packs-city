@@ -139,3 +139,34 @@ describe("PackRealityClient — unpriced rips are not $0 pulls", () => {
     expect(text).toMatch(/never as a \$0\s+pull/)
   })
 })
+
+// 2026-11-14 (fresh-eyes review of /insights): a PARTIAL failure answers 200 with the failed
+// read in meta.errors. The banner named it, but the ranker still said "0 positive-EV TS packs …
+// No +EV packs right now." and Model vs reality "No qualifying packs yet." — claims out of a
+// failed read.
+describe("PackRealityClient — a panel whose own source failed says so", () => {
+  it("the +EV ranker and Model vs reality never conclude 'none' when their reads failed", () => {
+    vi.stubGlobal("fetch", neverResolvingFetch())
+    const partial = {
+      ...seedBody,
+      meta: {
+        fetched_at: "2026-10-13T14:00:00Z",
+        errors: [
+          { source: "topshot_pack_reality_top_ev", message: "canceling statement due to statement timeout" },
+          { source: "v_topshot_pack_realized_ev", message: "canceling statement due to statement timeout" },
+        ],
+      },
+    }
+    render(<PackRealityClient initialData={partial as never} />)
+    expect(screen.queryByText("No +EV packs right now.")).toBeNull()
+    expect(screen.queryByText(/^0 positive-EV/)).toBeNull()
+    expect(screen.queryByText("No qualifying packs yet.")).toBeNull()
+    expect(screen.getByText(/The \+EV ranker is temporarily unavailable/)).toBeTruthy()
+    expect(screen.getByText(/Model vs reality is temporarily unavailable/)).toBeTruthy()
+  })
+  it("no-change control: with no source errors an empty ranker still says 'No +EV packs right now.'", () => {
+    vi.stubGlobal("fetch", neverResolvingFetch())
+    render(<PackRealityClient initialData={seedBody as never} />)
+    expect(screen.getByText("No +EV packs right now.")).toBeTruthy()
+  })
+})

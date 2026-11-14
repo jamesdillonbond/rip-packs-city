@@ -358,6 +358,9 @@ export default function UnderpricedSerialsBoardClient({ initialRows, initialFetc
       } catch (e: unknown) {
         if ((e as { name?: string })?.name === "AbortError") return
         setError(e instanceof Error ? e.message : "Failed to load")
+        // 2026-11-14: never leave the previous filter's rows/stamp under the new filter.
+        setRows([])
+        setFetchedAt(null)
       } finally {
         setLoading(false)
       }
@@ -384,6 +387,8 @@ export default function UnderpricedSerialsBoardClient({ initialRows, initialFetc
     }, null)
     return { count: rows.length, top, topSaved }
   }, [rows])
+  // 2026-11-14: "Live deals 0" over a failed seed is a claim about the market. Unknown, not zero.
+  const readFailed = seedFailed || error != null
 
   // Real listings freshness — the max last_seen_at across the board rows, i.e.
   // when the Atlas curl-ingest spine was last refreshed. (The "Updated" line
@@ -471,15 +476,15 @@ export default function UnderpricedSerialsBoardClient({ initialRows, initialFetc
       <section className="rpc-us-kpi-row" aria-label="Summary">
         <div className="rpc-us-kpi">
           <div className="rpc-us-kpi-label">{listingsStale ? "Deals" : "Live deals"}</div>
-          <div className="rpc-us-kpi-value">{fmtInt(kpis.count)}</div>
+          <div className="rpc-us-kpi-value">{readFailed ? "—" : fmtInt(kpis.count)}</div>
         </div>
         <div className="rpc-us-kpi">
           <div className="rpc-us-kpi-label">Biggest discount</div>
-          <div className="rpc-us-kpi-value">{kpis.top == null ? "—" : `${Math.round(kpis.top)}%`}</div>
+          <div className="rpc-us-kpi-value">{readFailed || kpis.top == null ? "—" : `${Math.round(kpis.top)}%`}</div>
         </div>
         <div className="rpc-us-kpi">
           <div className="rpc-us-kpi-label">Biggest $ under value</div>
-          <div className="rpc-us-kpi-value">{fmtMoney(kpis.topSaved)}</div>
+          <div className="rpc-us-kpi-value">{readFailed ? "—" : fmtMoney(kpis.topSaved)}</div>
         </div>
       </section>
 

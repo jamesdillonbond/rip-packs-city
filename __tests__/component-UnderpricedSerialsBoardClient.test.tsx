@@ -161,3 +161,15 @@ describe("UnderpricedSerialsBoardClient", () => {
     await waitFor(() => expect(container.textContent).toMatch(/Copied!/i))
   })
 })
+
+// 2026-11-14 (fresh-eyes review of /insights): "Live deals 0" over a failed seed is a claim
+// about the market.
+describe("UnderpricedSerialsBoardClient — a failed seed has no KPIs", () => {
+  it("renders em-dashes, never 'Live deals 0', while the seed is failed", () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})))
+    const { container } = render(<UnderpricedSerialsBoardClient initialRows={[]} initialFetchedAt={null} initialFailed />)
+    const values = Array.from(container.querySelectorAll(".rpc-us-kpi-value")).map((n) => n.textContent)
+    expect(values.length).toBeGreaterThanOrEqual(3)
+    expect(values.every((v) => v === "—")).toBe(true)
+  })
+})

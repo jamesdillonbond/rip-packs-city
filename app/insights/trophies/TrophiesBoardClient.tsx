@@ -275,6 +275,10 @@ export default function TrophiesBoardClient({
       } catch (e: unknown) {
         if ((e as { name?: string })?.name === "AbortError") return
         setError(e instanceof Error ? e.message : "Failed to load")
+        // 2026-11-14: a failed refetch must not leave the PREVIOUS filter's rows and stamp
+        // under the new filter's pills (the KPI strip and hero kept reading them).
+        setRows([])
+        setFetchedAt(null)
       } finally {
         setLoading(false)
       }
@@ -293,6 +297,10 @@ export default function TrophiesBoardClient({
   // cap, every count is a FLOOR ("200+"), never the census — the view held 1,456
   // trophies / 1,347 one-of-ones on 2026-09-25 while the strip read "200". And
   // "Top value" is only the true maximum when the window is ordered by FMV.
+  // 2026-11-14: the strip printed "Trophies 0 · 1-of-1s 0 · With a price 0" directly under the
+  // "treat as unknown, not zero" banner when the seed read failed. Keyed on PROVENANCE: a read
+  // that succeeded and matched nothing still says 0.
+  const readFailed = (degraded?.failed?.length ?? 0) > 0 || error != null
   const kpis = useMemo(() => {
     const truncated = rows.length >= BOARD_LIMIT
     const priced = rows.filter((r) => r.fmv_usd != null)
@@ -336,21 +344,21 @@ export default function TrophiesBoardClient({
       <section className="rpc-tr-kpi-row" aria-label="Summary">
         <div className="rpc-tr-kpi">
           <div className="rpc-tr-kpi-label">Trophies</div>
-          <div className="rpc-tr-kpi-value">{boardCountFloor(kpis.count, kpis.truncated)}</div>
+          <div className="rpc-tr-kpi-value">{readFailed ? "—" : boardCountFloor(kpis.count, kpis.truncated)}</div>
         </div>
         <div className="rpc-tr-kpi">
           <div className="rpc-tr-kpi-label">1-of-1s</div>
-          <div className="rpc-tr-kpi-value">{boardCountFloor(kpis.oneOfOne, kpis.truncated)}</div>
+          <div className="rpc-tr-kpi-value">{readFailed ? "—" : boardCountFloor(kpis.oneOfOne, kpis.truncated)}</div>
         </div>
         <div className="rpc-tr-kpi">
           {/* 2026-10-20: was "With a comp" — but the count is any non-null FMV, and 77 of the
               top 200 are priced off a live ask, not a comparable sale. */}
           <div className="rpc-tr-kpi-label">With a price</div>
-          <div className="rpc-tr-kpi-value">{boardCountFloor(kpis.priced, kpis.truncated)}</div>
+          <div className="rpc-tr-kpi-value">{readFailed ? "—" : boardCountFloor(kpis.priced, kpis.truncated)}</div>
         </div>
         <div className="rpc-tr-kpi">
           <div className="rpc-tr-kpi-label">Top value</div>
-          <div className="rpc-tr-kpi-value">{fmtUsd(kpis.topFmv)}</div>
+          <div className="rpc-tr-kpi-value">{readFailed ? "—" : fmtUsd(kpis.topFmv)}</div>
         </div>
       </section>
 

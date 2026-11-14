@@ -35,8 +35,11 @@ describe("Top Shot series maps carry the newest series together", () => {
   const files = ROOTS.flatMap((r) => walk(join(process.cwd(), r)))
   const withEntry = files.filter((f) => ENTRY.test(codeOnly(readFileSync(f, "utf8"))))
 
-  it("finds the maps it is guarding (not vacuous)", () => {
-    expect(withEntry.length).toBeGreaterThanOrEqual(8)
+  // Re-pinned 2026-11-14: was `>= 8`. A count floor punishes the guard's own success — the set
+  // page's private copy was deleted for lib/series-label.ts that day and the floor went red at 7.
+  // Not-vacuous now means the regex still finds the CANONICAL map, which every copy should become.
+  it("finds the maps it is guarding (not vacuous): the canonical map is matched", () => {
+    expect(withEntry.map((f) => repoRelative(f))).toContain("lib/series-label.ts")
   })
 
   it.each(withEntry.map((f) => [repoRelative(f)]))("%s also labels Series 2026-27", (rel) => {

@@ -316,6 +316,9 @@ export default function DealsBoardClient({
       } catch (e: unknown) {
         if ((e as { name?: string })?.name === "AbortError") return
         setError(e instanceof Error ? e.message : "Failed to load")
+        // 2026-11-14: never leave the previous filter's rows/stamp under the new filter's pills.
+        setRows([])
+        setFetchedAt(null)
       } finally {
         setLoading(false)
       }
@@ -351,7 +354,7 @@ export default function DealsBoardClient({
     // printed measured-looking zeros. ⚠ Keyed on PROVENANCE, never on
     // rows.length: a read that SUCCEEDED and matched nothing genuinely IS 0 and
     // must keep saying so. The bug is the missing THIRD state, not the zero.
-    if (seedFailed) {
+    if (seedFailed || error != null) {
       return { count: null, big: null, medianDiscount: null }
     }
     if (rows.length === 0) {
@@ -364,7 +367,7 @@ export default function DealsBoardClient({
       big,
       medianDiscount: median(discounts),
     }
-  }, [rows, seedFailed])
+  }, [rows, seedFailed, error])
 
   const tweetIntent = useMemo(() => {
     const text = `Marketplaces show you a listing. We rank listings against a fair value we can stand behind.\n\nThe Below FMV board — Top Shot, NFL All Day, Disney Pinnacle, Candy MLB + Panini, what's underpriced right now:`
@@ -404,7 +407,9 @@ export default function DealsBoardClient({
         ))}
         <div className="rpc-dl-meta-row">
           <span className="rpc-dl-meta">
-            Board rebuilt <FreshnessStamp iso={fetchedAt} />
+            {/* 2026-11-14: a failed board read could still say "rebuilt 6 min ago" — its data_as_of
+                comes from a separate pipeline_runs read. A failed seed has no rebuild time to show. */}
+            Board rebuilt <FreshnessStamp iso={seedFailed ? null : fetchedAt} />
           </span>
           <span className="rpc-dl-meta-sep">·</span>
           {askFreshness && askFreshness.stale > 0 ? (

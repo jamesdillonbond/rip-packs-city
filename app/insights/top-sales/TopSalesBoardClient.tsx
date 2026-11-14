@@ -453,6 +453,12 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt, ini
       } catch (e: unknown) {
         if ((e as { name?: string })?.name === "AbortError") return
         setError(e instanceof Error ? e.message : "Failed to load")
+        // 2026-11-14: a failed FILTER refetch kept the previous filter's rows — the pills said
+        // "NFL All Day" while the KPI strip, featured tiles and 48h rail showed every
+        // collection's whales. Same state as a failed seed: no rows, no KPIs, no stamp.
+        setRows([])
+        setSeedFailed(true)
+        setFetchedAt(null)
       } finally {
         setLoading(false)
       }

@@ -383,17 +383,23 @@ async function PinnacleTopCollectorsSection({ characterName }: { characterName: 
   }
   // A genuine "nobody RPC can see" renders nothing, like the Top Shot rookie section.
   if (!row || row.collectors.length === 0) return null
-  const minted = row.total_minted ?? 0
-  const share = minted > 0 ? row.seen_copies / minted : 0
+  // ⚠ 2026-11-14: an UNKNOWN mint total is not zero. `total_minted` is a sum over the pins whose
+  // mint count is known, so it is NULL when none is, and can be SMALLER than the copies seen when
+  // only some are. It printed "Covers 140 of 0 copies (0%)" and could print X of Y with X > Y.
+  // No ratio unless the denominator is known and covers what was seen.
+  const minted = row.total_minted != null && row.total_minted > 0 ? row.total_minted : null
+  const share = minted != null && row.seen_copies <= minted ? row.seen_copies / minted : null
   return (
     <Section title="Top Collectors">
       <div className="rpc-mono" style={{ padding: "0 4px 8px", fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.06em" }}>
         From RPC&apos;s on-chain owner map · ranked by FMV of this character&apos;s pins held · Disney Pinnacle&apos;s own accounts (unsold stock, locked pins) left out
       </div>
       <div className="rpc-mono" style={{ padding: "0 4px 8px", fontSize: 11, color: "var(--rpc-text-secondary)" }}>
-        {share >= 0.95
-          ? <>Covers {fmtCount(row.seen_copies)} of {fmtCount(minted)} copies · {fmtCount(row.holders)} collectors</>
-          : <>Covers {fmtCount(row.seen_copies)} of {fmtCount(minted)} copies ({Math.round(share * 100)}%) — pins minted before December 2025 are not attributed yet, so holders of older pins may rank higher than shown.</>}
+        {share == null
+          ? <>Covers {fmtCount(row.seen_copies)} copies · {fmtCount(row.holders)} collectors — this character&apos;s total mint count isn&apos;t known for every pin, so no coverage share is shown.</>
+          : share >= 0.95
+            ? <>Covers {fmtCount(row.seen_copies)} of {fmtCount(minted!)} copies · {fmtCount(row.holders)} collectors</>
+            : <>Covers {fmtCount(row.seen_copies)} of {fmtCount(minted!)} copies ({Math.round(share * 100)}%) — pins minted before December 2025 are not attributed yet, so holders of older pins may rank higher than shown.</>}
       </div>
       <div className="rpc-scroll-x" {...scrollRegion("Top collectors")} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {row.collectors.map((c, i) => {

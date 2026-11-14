@@ -13,7 +13,7 @@
 --
 -- The function DDL below is VERBATIM from the committed migration
 -- (get_team_activity / get_team_checklist / get_team_top_editions / get_series_editions:
--- supabase/migrations/20260929055624_audit_20260928_pinnacle_tiles_named_by_pin.sql; get_series_rollups:
+-- supabase/migrations/20260929055624_audit_20260928_pinnacle_tiles_named_by_pin.sql; get_series_rollups (Pinnacle characters re-spliced 2026-11-14, 20261114205743):
 -- supabase/migrations/20260930000000_audit_20260929_series_rollups_name_a_team_moments_franchise.sql; the rest:)
 -- (supabase/migrations/20260926193906_audit_20260926_pinnacle_series_pages_count_every_pin.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
@@ -253,10 +253,18 @@ BEGIN
       SELECT
         regexp_replace(lower(btrim(pc.set_name)), '[^a-z0-9]+', '-', 'g') AS set_slug,
         btrim(pc.set_name) AS set_name,
-        regexp_replace(lower(btrim(pc.characters[1])), '[^a-z0-9]+', '-', 'g') AS player_slug,
-        btrim(pc.characters[1]) AS player_name,
         pc.fmv_usd
       FROM pinnacle_catalog pc
+      WHERE pc.series_name = v_pinnacle_year::text
+    ),
+    -- 2026-11-14: one row per pin x DISTINCT character (a pin tagged Ewok + Wicket counts for both),
+    -- matching get_player_detail; `ed` above stays one row per pin for the sets rollup.
+    ch AS (
+      SELECT regexp_replace(lower(c.name), '[^a-z0-9]+', '-', 'g') AS player_slug,
+             c.name AS player_name,
+             pc.fmv_usd
+      FROM pinnacle_catalog pc
+      CROSS JOIN LATERAL (SELECT DISTINCT btrim(x) AS name FROM unnest(pc.characters) x WHERE btrim(x) <> '') c
       WHERE pc.series_name = v_pinnacle_year::text
     ),
     s AS (
@@ -266,7 +274,7 @@ BEGIN
     ),
     p AS (
       SELECT player_slug, player_name, count(*) AS edition_count, COALESCE(sum(fmv_usd), 0) AS fmv_total
-      FROM ed WHERE player_slug IS NOT NULL AND player_name IS NOT NULL
+      FROM ch WHERE player_slug IS NOT NULL AND player_name IS NOT NULL
       GROUP BY player_slug, player_name
       ORDER BY fmv_total DESC LIMIT 12
     )
@@ -405,7 +413,12 @@ SELECT _assert_eq(
   'Sleeping Beauty Vol.1:2,Hercules Vol.1:1', 'sets by trimmed name, FMV-ordered');
 SELECT _assert_eq(
   (SELECT string_agg(p->>'player_slug', ',' ORDER BY ord) FROM jsonb_array_elements(public.get_series_rollups('7dd9dd11-e8b6-45c4-ac99-71331f959714', '2026')->'players') WITH ORDINALITY t(p, ord)),
-  'maleficent,aurora,hercules', 'top characters by trait, FMV-ordered');
+  'aurora,maleficent,hercules', 'top characters by trait, FMV-ordered — a two-character pin counts for BOTH (re-pinned 2026-11-14; was maleficent,aurora,hercules under the first-character rule)');
+-- 2026-11-14 (20261114205743): every character on a pin is credited. "The Duel" (Maleficent + Aurora,
+-- FMV 40) gives Aurora 2 pins / 52 and Maleficent 1 / 40; the SETS rollup still counts the pin once.
+SELECT _assert_eq(
+  (SELECT string_agg((p->>'player_slug') || ':' || (p->>'edition_count') || ':' || (p->>'fmv_total'), ',' ORDER BY ord) FROM jsonb_array_elements(public.get_series_rollups('7dd9dd11-e8b6-45c4-ac99-71331f959714', '2026')->'players') WITH ORDINALITY t(p, ord)),
+  'aurora:2:52,maleficent:1:40,hercules:1:0', 'a shared pin counts for every character on it');
 
 -- 4
 -- #23 (2026-09-28): the tile TITLE is the pin's own name, never its first character.

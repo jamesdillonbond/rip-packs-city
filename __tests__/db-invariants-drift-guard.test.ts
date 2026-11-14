@@ -737,10 +737,12 @@ const PINS = [
   },
   {
     // Re-pinned 2026-10-25: top players grouped by player_id, not label.
+    // Re-pointed 2026-11-14: Pinnacle top characters credit EVERY character on a pin (splice
+    // 20261114205743; this snapshot carries the full body).
     fn: "get_series_rollups",
     test: "supabase/tests/get_series_editions.sql",
     migration:
-      "supabase/migrations/20261026005855_audit_20261025_series_rollup_players_group_by_person_not_label.sql",
+      "supabase/migrations/20261114210008_audit_20261114_snapshot_series_rollups_after_character_splice.sql",
   },
   {
     // Added 2026-09-26. Pinnacle character pages list the render catalog: 36 of
