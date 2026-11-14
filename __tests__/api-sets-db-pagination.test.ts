@@ -56,8 +56,10 @@ describe("GET /api/sets-db — pagination (1000-row cap)", () => {
     }))
     tableData.sets = [{ id: "s1", name: "Mega Set" }]
     tableData.wallet_moments_cache = []
+    // Re-pinned 2026-11-14: an indexed wallet that holds none (a clean-walk record).
+    tableData.wmc_clean_walks = [{ wallet_address: "0x0000000000000abc" }]
 
-    const res = await GET(req("https://t/api/sets-db?wallet=0xabc&collection=nba-top-shot"))
+    const res = await GET(req("https://t/api/sets-db?wallet=0x0000000000000abc&collection=nba-top-shot"))
     expect(res.status).toBe(200)
     const body = await res.json()
     const s1 = body.sets.find((s: any) => s.setId === "s1")
@@ -84,7 +86,7 @@ describe("GET /api/sets-db — pagination (1000-row cap)", () => {
       is_locked: false,
     }))
 
-    const res = await GET(req("https://t/api/sets-db?wallet=0xabc&collection=nba-top-shot"))
+    const res = await GET(req("https://t/api/sets-db?wallet=0x0000000000000abc&collection=nba-top-shot"))
     expect(res.status).toBe(200)
     const body = await res.json()
     const s1 = body.sets.find((s: any) => s.setId === "s1")
@@ -111,7 +113,7 @@ describe("GET /api/sets-db — the paging ceiling (2026-10-09)", () => {
 
   it("reads a 69,520-moment wallet (the largest measured) in full — the old 60,000 cap returned a partial list", async () => {
     seed(69_520)
-    const res = await GET(req("https://t/api/sets-db?wallet=0xabc&collection=nfl-all-day"))
+    const res = await GET(req("https://t/api/sets-db?wallet=0x0000000000000abc&collection=nfl-all-day"))
     expect(res.status).toBe(200)
     const s1 = (await res.json()).sets.find((s: any) => s.setId === "s1")
     expect(s1.ownedCount).toBe(2)
@@ -120,7 +122,7 @@ describe("GET /api/sets-db — the paging ceiling (2026-10-09)", () => {
 
   it("a wallet past the ceiling gets an error, never a completion scored from a partial list", async () => {
     seed(200_000)
-    const res = await GET(req("https://t/api/sets-db?wallet=0xabc&collection=nfl-all-day"))
+    const res = await GET(req("https://t/api/sets-db?wallet=0x0000000000000abc&collection=nfl-all-day"))
     expect(res.status).toBeGreaterThanOrEqual(500)
     const body = await res.json()
     expect(body.sets).toBeUndefined()
@@ -145,7 +147,7 @@ describe("GET /api/sets-db — ownership aggregation", () => {
       { moment_id: "m4", edition_key: "extZZ", serial_number: 1, is_locked: false }, // not in editions -> continue
     ]
 
-    const res = await GET(req("https://t/api/sets-db?wallet=0xabc&collection=nba-top-shot"))
+    const res = await GET(req("https://t/api/sets-db?wallet=0x0000000000000abc&collection=nba-top-shot"))
     expect(res.status).toBe(200)
     const s1 = (await res.json()).sets.find((s: any) => s.setId === "s1")
     expect(s1.setName).toBe("Flow Legends") // resolved from the sets table, not eds[0].set_name
@@ -181,7 +183,7 @@ describe("GET /api/sets-db — ownership aggregation", () => {
       { moment_id: "m2", edition_key: "extB", serial_number: 1, is_locked: false },
     ]
 
-    const res = await GET(req("https://t/api/sets-db?wallet=0xabc&collection=nba-top-shot"))
+    const res = await GET(req("https://t/api/sets-db?wallet=0x0000000000000abc&collection=nba-top-shot"))
     const body = await res.json()
     expect(body.totalSets).toBe(2)
     expect(body.completeSets).toBe(1)

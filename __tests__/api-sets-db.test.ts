@@ -18,7 +18,11 @@ vi.mock("@/lib/supabase", () => {
     range: () => b,
     then: (resolve: any) => resolve(rows),
   }
-  return { supabaseAdmin: { from: () => b } }
+  // Re-pinned 2026-11-14: the empty-tables premise is an INDEXED wallet that holds
+  // nothing — the wmc_clean_walks existence read finds a row.
+  const walks: any = { ...b, then: (resolve: any) => resolve({ data: [{ wallet_address: "0x0000000000000abc" }], error: null }) }
+  walks.select = () => walks; walks.eq = () => walks; walks.limit = () => walks
+  return { supabaseAdmin: { from: (t: string) => (t === "wmc_clean_walks" ? walks : b) } }
 })
 
 import { GET } from "@/app/api/sets-db/route"
@@ -33,23 +37,23 @@ describe("GET /api/sets-db", () => {
   })
 
   it("400s for an unknown collection slug", async () => {
-    const res = await GET(req("https://t/api/sets-db?wallet=0xabc&collection=bogus"))
+    const res = await GET(req("https://t/api/sets-db?wallet=0x0000000000000abc&collection=bogus"))
     expect(res.status).toBe(400)
     expect((await res.json()).error).toBe("Unknown collection")
   })
 
   it("400s on an Object.prototype key (bare map[key] resolved it to a function)", async () => {
     for (const key of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
-      const res = await GET(req(`https://t/api/sets-db?wallet=0xabc&collection=${key}`))
+      const res = await GET(req(`https://t/api/sets-db?wallet=0x0000000000000abc&collection=${key}`))
       expect(res.status, key).toBe(400)
     }
   })
 
   it("returns an empty sets payload when the tables are empty", async () => {
-    const res = await GET(req("https://t/api/sets-db?wallet=0xABC&collection=nba-top-shot"))
+    const res = await GET(req("https://t/api/sets-db?wallet=0x0000000000000ABC&collection=nba-top-shot"))
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.wallet).toBe("0xabc") // lower-cased by the handler
+    expect(body.wallet).toBe("0x0000000000000abc") // lower-cased by the handler
     expect(body.totalSets).toBe(0)
     expect(body.sets).toEqual([])
   })
