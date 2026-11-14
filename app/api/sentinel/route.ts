@@ -2778,16 +2778,29 @@ async function runSentinelWithin(clock: WallBudgetClock) {
       const streaks: string[] = [];
       const unreadable: string[] = [];
       let worst = 0;
+      // 2026-11-14: the token minted 2026-08-30 started answering 401 on every read and
+      // the arm went BLIND ("Could not read ANY watched workflow") — an expired PAT took
+      // the watcher of the watchers with it. The repo is PUBLIC, so the runs API answers
+      // without credentials (60 req/h per IP; this arm makes 3). A REJECTED token now
+      // falls back to an anonymous read of the same URL, and the rejection is named in
+      // the detail so the token still gets rotated. Only a 401 falls back: a 403 is a
+      // rate limit or a policy answer, and retrying anonymously would not change it.
+      let tokenRejected = false;
 
       for (const wf of WATCHED) {
         try {
-          const r = await fetch(
-            `https://api.github.com/repos/jamesdillonbond/rip-packs-city/actions/workflows/${wf}/runs?branch=main&per_page=12`,
-            {
-              headers: { Authorization: `Bearer ${ghToken}`, Accept: "application/vnd.github+json" },
+          const url = `https://api.github.com/repos/jamesdillonbond/rip-packs-city/actions/workflows/${wf}/runs?branch=main&per_page=12`;
+          let r = await fetch(url, {
+            headers: { Authorization: `Bearer ${ghToken}`, Accept: "application/vnd.github+json" },
+            signal: AbortSignal.timeout(6000),
+          });
+          if (r.status === 401) {
+            tokenRejected = true;
+            r = await fetch(url, {
+              headers: { Accept: "application/vnd.github+json" },
               signal: AbortSignal.timeout(6000),
-            },
-          );
+            });
+          }
           if (!r.ok) {
             unreadable.push(`${wf} (HTTP ${r.status})`);
             continue;
@@ -2817,7 +2830,11 @@ async function runSentinelWithin(clock: WallBudgetClock) {
 
       // ⚠ A workflow we could not READ is reported, never folded into "healthy". The
       // whole point of this arm is that silence about an instrument is not good news.
-      const unreadNote = unreadable.length ? ` | UNREAD: ${unreadable.join(", ")}` : "";
+      const unreadNote =
+        (unreadable.length ? ` | UNREAD: ${unreadable.join(", ")}` : "") +
+        (tokenRejected
+          ? " | GITHUB_ACTIONS_READ_TOKEN rejected (HTTP 401) — read anonymously (public repo); rotate the token in Vercel env"
+          : "");
 
       if (unreadable.length === WATCHED.length) {
         checks.push({

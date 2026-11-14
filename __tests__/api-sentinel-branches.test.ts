@@ -260,6 +260,68 @@ describe("sentinel — detector health arm", () => {
     }
   })
 
+  // 2026-11-14: the 08-30 token expired and the arm went blind on all three detectors
+  // (HTTP 401). The repo is public, so a REJECTED token falls back to an anonymous read
+  // — the arm keeps watching, and still names the dead token so it gets rotated.
+  const authAware = (authed: { status: number }, anon: unknown, anonStatus = 200): FetchStub => ({
+    match: (url) => url.includes(GH),
+    respond: (_url, init) => {
+      const h = (init?.headers ?? {}) as Record<string, string>
+      return "Authorization" in h
+        ? { json: { message: "Bad credentials" }, status: authed.status, ok: false }
+        : { json: anon, status: anonStatus, ok: anonStatus < 300 }
+    },
+  })
+
+  it("reads anonymously when the token is REJECTED, and names the dead token", async () => {
+    process.env.GITHUB_ACTIONS_READ_TOKEN = "gh-expired"
+    try {
+      const r = await run({}, [
+        sniperOk, telegramOk, resendOk,
+        authAware({ status: 401 }, { workflow_runs: [{ status: "completed", conclusion: "success" }] }),
+      ])
+      const arm = chk(r, "Detector Health (GitHub Actions)")
+      expect(arm.status).toBe("ok")
+      expect(arm.detail).toContain("All 3 watched detectors green")
+      expect(arm.detail).toContain("GITHUB_ACTIONS_READ_TOKEN rejected (HTTP 401)")
+      expect(arm.detail).not.toContain("Could not read ANY")
+      // the fallback really is anonymous — the rejected credential is not re-sent
+      const gh = fetchMock!.calls.filter((c) => c.url.includes(GH))
+      expect(gh).toHaveLength(6)
+      expect(gh.filter((c) => !("Authorization" in ((c.init?.headers ?? {}) as object)))).toHaveLength(3)
+    } finally {
+      delete process.env.GITHUB_ACTIONS_READ_TOKEN
+    }
+  })
+
+  it("still reports UNREAD when the anonymous fallback fails too", async () => {
+    process.env.GITHUB_ACTIONS_READ_TOKEN = "gh-expired"
+    try {
+      const arm = chk(
+        await run({}, [sniperOk, telegramOk, resendOk, authAware({ status: 401 }, { message: "rate limited" }, 403)]),
+        "Detector Health (GitHub Actions)",
+      )
+      expect(arm.status).toBe("warn")
+      expect(arm.detail).toContain("Could not read ANY")
+      expect(arm.detail).toContain("rejected (HTTP 401)")
+    } finally {
+      delete process.env.GITHUB_ACTIONS_READ_TOKEN
+    }
+  })
+
+  it("does NOT fall back on a 403 — a rate limit is not a dead token", async () => {
+    process.env.GITHUB_ACTIONS_READ_TOKEN = "gh-test"
+    try {
+      const r = await run({}, [sniperOk, telegramOk, resendOk, authAware({ status: 403 }, { workflow_runs: [] })])
+      const arm = chk(r, "Detector Health (GitHub Actions)")
+      expect(arm.detail).toContain("403")
+      expect(arm.detail).not.toContain("rejected (HTTP 401)")
+      expect(fetchMock!.calls.filter((c) => c.url.includes(GH))).toHaveLength(3)
+    } finally {
+      delete process.env.GITHUB_ACTIONS_READ_TOKEN
+    }
+  })
+
   // A workflow the arm could not READ must never be folded into "healthy" — silence
   // about an instrument is not good news, which is the whole thesis of this arm.
   it("reports an unreadable workflow instead of counting it green", async () => {
