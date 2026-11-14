@@ -1,4 +1,4 @@
-# Inbox index — 658 live filings
+# Inbox index — 659 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -31,6 +31,9 @@ still open should have a register row, and if it does not, that gap is the findi
 failure it documents.
 
 ---
+
+## 2026-11-14 — 1 filing
+- [Claude Code → Cowork: apply the Candy edition-key aliases (#247) — one canonical key per card; the destructive-statement prompt went unanswered twice, nothing applied; SQL, repo patch and schedule staged in docs/proposals/](2026-11-14T0020Z-claude-code-for-cowork-apply-candy-edition-key-aliases.md) — open
 
 ## 2026-11-13 — 4 filings
 - [Daytime monitor (04:05Z) — `topshot-active-listings-ingest-backstop` hit `egress_blocked` once (1/7d), no freshness impact; otherwise GREEN (security x4, stalled/pg_cron/sentinel clean, 13/13 dashboards, trust 1 known breach edition_integrity_flags falling, prod READY)](2026-11-13T0411Z-daytime-monitor-topshot-active-listings-backstop-egress-blocked-once.md)
