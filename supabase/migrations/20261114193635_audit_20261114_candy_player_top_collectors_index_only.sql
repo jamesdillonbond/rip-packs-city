@@ -1,0 +1,40 @@
+-- 2026-11-14 (Claude Code cloud, ~11:30–11:40 AM PT).
+--
+-- RECORD-ONLY, following the 20260919141500 precedent. CREATE INDEX CONCURRENTLY cannot be the
+-- body of an applied migration, so the body below is the non-concurrent form and a no-op against
+-- the existing index (matched by name).
+--
+-- THE FINDING: Vercel runtime errors, 48 h to 11:30 AM PT 11-14 — `get_candy_player_top_collectors`
+-- hit its 8 s statement_timeout for 6 users since 11-09 on /mlb-candy/player/<slug> ("Couldn't load
+-- top collectors"; the page renders the failure honestly, so this is cost, not honesty).
+-- Cold EXPLAIN for Shohei Ohtani (106 editions, 10,303 cards): 5,273 ms, of which 5,171 ms was
+-- I/O — the `o` CTE's Index Scan on idx_wmc_coll_ek_serial_cover had to visit the HEAP for
+-- `wallet_address`: 6,048 block reads for 10k rows (Candy is 1.37M of wmc's 3.7M rows, scattered).
+--
+-- THE COMMAND THAT ACTUALLY RAN, as a one-off pg_cron job (jobid 883, username postgres, schedule
+-- '33 19 14 11 *', unscheduled afterwards) — ONE statement, NO prefix:
+--
+--     CREATE INDEX CONCURRENTLY idx_wmc_candy_ek_wallet ON public.wallet_moments_cache
+--       USING btree (edition_key) INCLUDE (wallet_address)
+--       WHERE (collection_id = '209ade70-32c5-4470-bc7c-4793d660f713'::uuid)
+--
+-- Result: succeeded, `CREATE INDEX`, 35.0 s (19:33:00–19:33:35Z), 160 MB, indisvalid/indisready.
+-- Recipe (database.md): a self-restoring net job (882, RESET at 19:42Z) armed FIRST, then
+-- `ALTER ROLE postgres IN DATABASE postgres SET statement_timeout='10min'`; after the build,
+-- `RESET statement_timeout` and both helper jobs unscheduled. pg_db_role_setting read before and
+-- after: back to the single ALL-DATABASES row (search_path + track_io_timing). No lanes were
+-- shed (window ~6 min, longest open xact 16 s at the start).
+--
+-- Why it is cheap to carry: wmc is 99.3 % all-visible (index-only works) and only 3.7 % of its
+-- updates are HOT already, and both columns are already indexed for Candy
+-- (idx_wmc_candy_holder_cover, wallet-leading), so it costs one more entry per non-HOT Candy write.
+--
+-- MEASURED AFTER (cold, players not touched before): Aaron Judge join (103 editions, 8,574 cards)
+-- Index Only Scan on the new index, 88 ms, 1,393 reads; Juan Soto through the real function
+-- 406 ms, 883 reads. get_candy_edition_top_owners also reads serial_number, so it keeps its plan.
+--
+-- Revert: DROP INDEX CONCURRENTLY public.idx_wmc_candy_ek_wallet;  (one-statement pg_cron job, or
+-- execute_sql — a drop is quick).
+CREATE INDEX IF NOT EXISTS idx_wmc_candy_ek_wallet
+  ON public.wallet_moments_cache USING btree (edition_key) INCLUDE (wallet_address)
+  WHERE (collection_id = '209ade70-32c5-4470-bc7c-4793d660f713'::uuid);
