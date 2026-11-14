@@ -3283,3 +3283,10 @@ For a one-fragment change to a large unpinned view, `replace(pg_get_viewdef(v, t
 ### ⚠ A CTE referenced ONCE is INLINED — measure a new CTE inside the real function, not standalone (2026-11-13)
 
 `get_wallet_pack_history` v27's `dist_market` (66 dists, 4 ms standalone) cost +750 ms inside the function: joined into the page via a once-referenced CTE, the planner re-ran it per joined row. `AS MATERIALIZED` brought it to +73 ms. A standalone EXPLAIN of the same SQL cannot see this; time the function on a scratch copy against the production wallet.
+
+
+### `get_wallet_pack_history` v27–v29 payload (2026-11-13/14) — what each new field means
+- Per **opened** row: `pulls_listed` (pulls named across every pull list we keep, de-duped: Dapper per-pack list for this opener, `allday_pack_pull`, `golazos_pack_open_pulls`, `moment_acquisitions.source_pack_rip_id`, `wallet_reconstructed_rips.nft_ids`), `pulls_held` (still in `wallet_moments_cache`, collection-scoped #142), `pulls_held_priced`, `held_fmv_usd` (NULL unless every held pull is priced; 0 = none held). `pulls_listed < moments_pulled` means a partial list — the UI says "named".
+- Per **sealed** row: `value_usd` + `value_basis` (`ask` > `last_sale` > `rip_ev` > `opened_avg`), NULL when none is known — never 0.
+- `tab_totals`: the requested tab over ALL its rows (the page is 25), each sum beside its count; v29 adds each sealed basis summed apart (`held_listed`, `held_floor_ask_usd`, …), which `wallet_held_pack_value` v2 reads in ONE call. `v_want_pulls` / `v_want_held` make the parts one-time filters per status; `held_pulls` / `dist_market` are `MATERIALIZED` on purpose (see the CTE-inlining note above).
+- `pull_value_usd` is current FMV maintained by jobid 810 (drift > 1.5×, rips ≥ $100) and the ~55-day stale leg — it is NOT "value at rip".
