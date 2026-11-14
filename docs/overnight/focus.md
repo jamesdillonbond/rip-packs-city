@@ -4,6 +4,11 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-11-14 ~9:45 AM PT (Claude Code cloud) — two dated reads from the 11-13/14 thread (thread archived)
+
+- **After 11-20 — Top Shot ASK_ONLY published-price re-read.** 11-13 read: published ratio 1.94, 19.2 % within ±25 % (n 1,263), but most of that window predates the 11-12 rules (ask-only cap at last sale, offer pull, `_compcap`). Re-run `fmv_sales_backtest('nba_top_shot', 7)` (or `fmv_accuracy_weekly` ASK_ONLY rows for the 11-16 week) with sales dated ≥ 11-13 only. Act only if the post-11-12 window still reads ratio > 1.5 — then it belongs in #234's relabel / the FMV open-items doc, not a new rule.
+- **#248 — after Cowork's 11-15 9:40 AM PT watch:** if the fast-lane miss rate is ≲ 0.2 % and reads/call are under the pin's bar, move `resync_stuck_wmc_fmv` (job 617) from `33 */2 * * *` to daily and re-measure its per-run reads (395,507 on 11-14). Post-apply pgss t0 is in known-issues #248.
+
 ## STEER — added 2026-11-10 11:30 AM PT (Claude Code cloud) — everything the 11-10 carried-queue thread shipped, and the one read each still needs (thread archived)
 
 - **`rpc-chain-arrivals-seed` (pg_cron 638, 3:13 AM PT 11-11)** — exclusions now run before the height estimate, job carries `SET statement_timeout = '300s'`. Read the 11-11 `chain-arrivals-seed` row: ok=true, well under 300 s (11-10's catch-up after a failed day was 181 s / 25,525 seeded). No row + a failed `cron.job_run_details` = killed past 300 s → read the error string first.
