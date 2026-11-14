@@ -6,13 +6,16 @@
 --   3. a holding written under an alias lands on the canonical (Candy only — another collection's row is untouched);
 --      a sale / listing / offer written on an alias edition lands on the canonical edition;
 --   4. apply moves rows already on an alias and reports what is left (0).
--- The function DDL is VERBATIM from supabase/migrations/20261114002600_audit_20261113_candy_edition_key_aliases.sql;
+-- The function DDL is VERBATIM from supabase/migrations/20261114002600_audit_20261113_candy_edition_key_aliases.sql
+-- (candy_apply_edition_key_aliases: 20261114004237_audit_20261113_candy_alias_apply_casts_the_tier.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift. Runs in a rolled-back transaction.
 
 BEGIN;
 
+-- editions.tier is the tier_type ENUM in production (wmc.tier is text): modelled as such (2026-11-13: modelling it as text hid a cast error)
+CREATE TYPE tier_type AS ENUM ('ULTIMATE','LEGENDARY','EPIC','RARE','UNCOMMON','FANDOM','COMMON','CHAMPION','CHALLENGER','CONTENDER');
 CREATE TABLE public.editions (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), collection_id uuid, external_id text, tier text,
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), collection_id uuid, external_id text, tier tier_type,
   circulation_count int, thumbnail_url text, set_name text, player_name text
 );
 CREATE TABLE public.wallet_moments_cache (
@@ -170,7 +173,7 @@ begin
   )
   update public.wallet_moments_cache w
      set edition_key = b.canonical_key,
-         tier        = coalesce(ce.tier, w.tier),
+         tier        = coalesce(ce.tier::text, w.tier),  -- editions.tier is the tier_type enum; wmc.tier is text
          mint_count  = coalesce(ce.circulation_count, w.mint_count),
          set_name    = coalesce(ce.set_name, w.set_name)
     from batch b

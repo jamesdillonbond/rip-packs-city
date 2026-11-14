@@ -36,7 +36,8 @@ const PINS = [
     // Added 2026-11-13. #247: moves rows already on an alias, in batches.
     fn: "candy_apply_edition_key_aliases",
     test: "supabase/tests/candy_edition_key_aliases.sql",
-    migration: "supabase/migrations/20261114002600_audit_20261113_candy_edition_key_aliases.sql",
+    // 2026-11-13: re-pinned to the tier-cast fix (editions.tier is the tier_type enum)
+    migration: "supabase/migrations/20261114004237_audit_20261113_candy_alias_apply_casts_the_tier.sql",
   },
   {
     // Added 2026-11-13. Top Shot offer pull + never-sold comparables hold: a hold the offer stopped says _compcap_bidfloor.
