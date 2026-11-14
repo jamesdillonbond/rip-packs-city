@@ -9,7 +9,7 @@
 --   5. a NULL floor stays NULL (unknown, never 0); a serial ask is reported only when a listing was seen;
 --   6. p_limit caps the rows, newest first.
 -- The function DDL is VERBATIM from
--- supabase/migrations/20261114161212_audit_20261114_wallet_open_offers_vs_top_bid_and_floor.sql;
+-- supabase/migrations/20261114165610_audit_20261114_wallet_open_offers_cap_covers_every_offerer.sql (cap 3000; first defined in 20261114161212);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift. Runs in a rolled-back transaction.
 
 BEGIN;
@@ -54,7 +54,7 @@ LANGUAGE plpgsql STABLE SECURITY INVOKER SET search_path = public, pg_temp
 AS $fn$
 DECLARE
   c_ts constant uuid := '95f28a17-224a-4025-96ad-adf8a4c63bfd';
-  v_limit int := least(greatest(coalesce(p_limit, 200), 1), 500);
+  v_limit int := least(greatest(coalesce(p_limit, 200), 1), 3000);
 BEGIN
   IF p_wallet IS NULL OR btrim(p_wallet) = '' THEN
     RETURN;
@@ -206,6 +206,13 @@ SELECT _assert_eq((SELECT string_agg(offer_id, ',') FROM public.get_topshot_wall
 SELECT _assert_eq((SELECT count(*)::text FROM public.get_topshot_wallet_open_offers('', 50)), '0', 'blank wallet → no rows');
 SELECT _assert_eq((SELECT string_agg(offer_id, ',') FROM public.get_topshot_wallet_open_offers('0xbob')), 'o4', 'BOB sees only his own offer');
 SELECT _assert_eq((SELECT top_other_bid::text FROM public.get_topshot_wallet_open_offers('0xbob')), '3', 'BOB sees ME''s $3 as the top OTHER bid — below his $4, so not outbid');
+
+-- 7. the cap covers a whole heavy offerer's book (3000), and no more
+INSERT INTO public.offers
+SELECT 'big' || g, '95f28a17-224a-4025-96ad-adf8a4c63bfd', '00000000-0000-0000-0000-0000000000e2', NULL, NULL, 1, '0xbig', 'edition', 'open', now() - (g || ' minutes')::interval
+  FROM generate_series(1, 3001) g;
+SELECT _assert_eq((SELECT count(*)::text FROM public.get_topshot_wallet_open_offers('0xbig', 5000)), '3000', 'cap is 3000 (3,001 open offers in, 3,000 rows out)');
+SELECT _assert_eq((SELECT count(*)::text FROM public.get_topshot_wallet_open_offers('0xbig', 1700)), '1700', 'a 1,700-offer request is served whole');
 
 \echo '✓ get_topshot_wallet_open_offers: own-only population, outbid vs superseded, serial vs edition competition, NULL floor/ask'
 

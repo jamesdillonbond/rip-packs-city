@@ -17,9 +17,12 @@
 // wallet's own higher bid (superseded, not outbid) and the edition floor — plus
 // a summary. The default response (no `view`) is unchanged.
 //   - the flag counts are over the rows RETURNED (newest first, capped at
-//     OPEN_CAP); `summary.open` is a separately MEASURED total, and
-//     `truncated` says when the two differ, so a capped list never passes for
-//     the whole set;
+//     OPEN_CAP = 3000, which covers every wallet measured on 2026-11-14);
+//     `summary.open` is a separately MEASURED total, and `truncated` says when
+//     the two differ, so a capped list never passes for the whole set;
+//   - "at or above floor" compares against what the offer can actually buy:
+//     the edition floor for an edition / parallel offer, that exact Moment's
+//     seen listing for a serial offer (lib/market/open-offer-flags.ts).
 //   - a failed RPC or count is an error response, never `rows: []`.
 
 import { NextRequest, NextResponse } from "next/server"
@@ -37,8 +40,9 @@ const TOPSHOT_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const OFFER_TRACKED_COLLECTIONS = new Set([TOPSHOT_UUID])
 const TRACKED_SINCE = "2026-06-03"
 const STATUSES = ["open", "filled", "cancelled"] as const
-/** Rows the open view returns (newest first). The RPC's own hard cap is 500. */
-const OPEN_CAP = 500
+/** Rows the open view returns (newest first). The RPC's own hard cap is 3000 — every open offer of
+ * the heaviest wallet (2,208 on 2026-11-14), so the flags cover a real offerer's whole book. */
+const OPEN_CAP = 3000
 
 async function resolveWallet(input: string): Promise<string> {
   const t = input.trim()

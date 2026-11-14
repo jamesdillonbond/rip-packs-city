@@ -205,14 +205,17 @@ function OpenOffersView({ data, urlSlug }: { data: OpenOffersResponse; urlSlug: 
                       <Chip label={`Superseded by your ${fmt(o.own_higher_usd)}`} color="var(--rpc-text-secondary)" title="Your own higher offer is on the same Moment. No other wallet is beating it." />
                     )}
                     {o.stale && <Chip label="Stale 14d+" color="var(--rpc-warning-text)" title="Open 14 days or more without being accepted. Still open." />}
-                    {o.at_or_above_floor && o.floor_usd != null && (
+                    {/* "At/above floor" compares against what THIS offer can buy. For a serial offer
+                        that is the exact Moment's seen listing, never the edition floor (a different
+                        serial) — lib/market/open-offer-flags.ts. */}
+                    {o.at_or_above_floor && o.offer_type !== "serial" && o.floor_usd != null && (
                       <Chip label="At/above floor" color="var(--rpc-success-text)" title={`Buying now costs ${fmt(o.floor_usd)}: the floor is at or under your offer.`} />
                     )}
                     {o.serial_ask_usd != null && (
                       <Chip
-                        label={`Listed at ${fmt(o.serial_ask_usd)}`}
-                        color="var(--rpc-text-secondary)"
-                        title={`This exact Moment was seen listed${o.serial_ask_seen_at ? ` ${relativeDate(o.serial_ask_seen_at)}` : ""}. It may have sold since.`}
+                        label={o.at_or_above_floor && o.offer_type === "serial" ? `Listed at ${fmt(o.serial_ask_usd)} (≤ your offer)` : `Listed at ${fmt(o.serial_ask_usd)}`}
+                        color={o.at_or_above_floor && o.offer_type === "serial" ? "var(--rpc-success-text)" : "var(--rpc-text-secondary)"}
+                        title={`This exact Moment was seen listed${o.serial_ask_seen_at ? ` ${relativeDate(o.serial_ask_seen_at)}` : ""}${o.at_or_above_floor && o.offer_type === "serial" ? ", at or under your offer" : ""}. It may have sold since.`}
                       />
                     )}
                   </td>

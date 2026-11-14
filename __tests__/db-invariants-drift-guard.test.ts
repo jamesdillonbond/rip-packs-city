@@ -24,7 +24,8 @@ const PINS = [
     // Added 2026-11-14. #12361 "my open offers": own open offers only; outbid (other wallet) vs superseded (own); NULL floor stays NULL.
     fn: "get_topshot_wallet_open_offers",
     test: "supabase/tests/get_topshot_wallet_open_offers.sql",
-    migration: "supabase/migrations/20261114161212_audit_20261114_wallet_open_offers_vs_top_bid_and_floor.sql",
+    // 2026-11-14: re-pinned to the cap-3000 follow-up (the requester alone has 1,668 open offers)
+    migration: "supabase/migrations/20261114165610_audit_20261114_wallet_open_offers_cap_covers_every_offerer.sql",
   },
   {
     // Added 2026-11-13. #241: every pg_net dispatch's endpoint logged (secrets masked); a trigger error never fails a dispatch.

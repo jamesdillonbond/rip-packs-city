@@ -140,16 +140,20 @@ describe("GET /api/wallet-offers?view=open", () => {
         row({ offer_id: "c", top_other_bid: "6.00", own_higher_usd: "9.00" }), // outbid wins
         row({ offer_id: "d", created_at: iso(20), floor_usd: "4.00" }), // stale + at/above floor
         row({ offer_id: "e", floor_usd: null }), // NULL floor: not at-floor, stays null
+        // serial offer over the EDITION floor is NOT "at floor" — the floor is a different serial
+        row({ offer_id: "f", offer_type: "serial", serial_number: 23, floor_usd: "0.69", amount_usd: "1.00" }),
+        // serial offer whose exact Moment was SEEN listed at or under it IS
+        row({ offer_id: "g", offer_type: "serial", serial_number: 7, floor_usd: "0.69", amount_usd: "1.00", serial_ask_usd: "0.95" }),
       ],
       error: null,
     }
     const res = await GET(req(`wallet=${W.toUpperCase().replace("0X", "0x")}&collection=nba-top-shot&view=open`))
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(state.rpcCalls).toEqual([{ fn: "get_topshot_wallet_open_offers", args: { p_wallet: W, p_limit: 500 } }])
+    expect(state.rpcCalls).toEqual([{ fn: "get_topshot_wallet_open_offers", args: { p_wallet: W, p_limit: 3000 } }])
     expect(body).toMatchObject({ supported: true, view: "open", wallet: W })
     // open is the MEASURED head count (2 in the mock), not rows.length (5)
-    expect(body.summary).toEqual({ open: 2, shown: 5, truncated: false, outbid: 2, superseded: 1, stale: 1, at_or_above_floor: 1 })
+    expect(body.summary).toEqual({ open: 2, shown: 7, truncated: false, outbid: 2, superseded: 1, stale: 1, at_or_above_floor: 2 })
     const by = Object.fromEntries(body.rows.map((r: { offer_id: string }) => [r.offer_id, r]))
     expect(by.a).toMatchObject({ outbid: true, superseded: false, top_other_bid: 6 })
     expect(by.b).toMatchObject({ outbid: false, superseded: true, own_higher_usd: 9 })
@@ -157,6 +161,8 @@ describe("GET /api/wallet-offers?view=open", () => {
     expect(by.d).toMatchObject({ stale: true, at_or_above_floor: true, floor_usd: 4 })
     expect(by.e.floor_usd).toBeNull()
     expect(by.e.at_or_above_floor).toBe(false)
+    expect(by.f.at_or_above_floor).toBe(false)
+    expect(by.g.at_or_above_floor).toBe(true)
   })
 
   it("says truncated when the measured open total exceeds the rows returned", async () => {

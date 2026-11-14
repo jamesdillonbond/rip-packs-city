@@ -131,15 +131,19 @@ describe("OffersHistoryCard — paging, chips, deep link", () => {
     const many = Array.from({ length: 60 }, (_, i) =>
       row({ offer_id: `r${i}`, player_name: `Row ${i}`, created_at: new Date(Date.UTC(2026, 10, 1, 0, i)).toISOString() }),
     )
-    many[0] = row({ offer_id: "chips", player_name: "Chip Row", offer_type: "serial", serial_number: 23, stale: true, at_or_above_floor: true, floor_usd: 4, serial_ask_usd: 9, serial_ask_seen_at: "2026-11-14T00:00:00Z" })
+    many[0] = row({ offer_id: "chips", player_name: "Chip Row", offer_type: "serial", serial_number: 23, stale: true, at_or_above_floor: true, floor_usd: 4, serial_ask_usd: 4.5, serial_ask_seen_at: "2026-11-14T00:00:00Z" })
+    many[1] = row({ offer_id: "edfloor", player_name: "Floor Row", at_or_above_floor: true, floor_usd: 4, created_at: "2026-11-01T00:00:00Z" })
     route(() => okJson({ supported: true, summary: { open: 60, shown: 60, truncated: false, outbid: 0, superseded: 0, stale: 1, at_or_above_floor: 1 }, rows: many }))
     const { getAllByTestId, getByText } = render(<OffersHistoryCard wallet="0xW" urlSlug="nba-top-shot" />)
     await waitFor(() => expect(getAllByTestId("open-offer-row")).toHaveLength(50))
     const chipRow = getAllByTestId("open-offer-row")[0].textContent ?? ""
     expect(chipRow).toContain("Chip Row")
     expect(chipRow).toContain("Stale 14d+")
-    expect(chipRow).toContain("At/above floor")
-    expect(chipRow).toContain("Listed at $9")
+    // a SERIAL offer never claims the edition floor — it names its own Moment's listing
+    expect(chipRow).not.toContain("At/above floor")
+    expect(chipRow).toContain("Listed at $4.50 (≤ your offer)")
+    const floorRow = getAllByTestId("open-offer-row").find((r) => (r.textContent ?? "").includes("Floor Row"))!.textContent ?? ""
+    expect(floorRow).toContain("At/above floor")
     expect(chipRow).toContain("#23")
     fireEvent.click(getByText(/Show more \(10 left\)/))
     expect(getAllByTestId("open-offer-row")).toHaveLength(60)
