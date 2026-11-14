@@ -74,3 +74,19 @@ Use queryids `-4961185993286698538` (cron_heavy) and `-2064728835023368966` (ser
 - **Revert** if, in a quiet ≥ 1 h window ≥ 24 h out, reads/call exceed the 08-28 bar: 74,159 cron / 7,195 PostgREST.
 - **Effect check** after ~24 h: re-run the miss sample from #248. Wallet rows on editions whose newest snapshot is 30 min–6 h old that disagree with it should fall from **0.8 % toward ~0.2 %**. The remaining ~28 % are other writers or the residual class.
 - When that holds, `resync_stuck_wmc_fmv` (job 617, `33 */2 * * *`) can move to daily. Measure its 8:33 AM-style per-run reads first: 395,507 reads / 2.16M buffers on 11-14.
+
+## ✅ RESOLVED 2026-11-14 ~9:13 AM PT (Cowork cloud via Claude in Chrome; Trevor: "I approve")
+
+- **Pre-check passed:** live `md5(prosrc)` was `80f0461843d1b5105a0a3aed193eeb9d` and `rwfc_applied` did not exist.
+- **Apply:** the staged file was fetched in the editor tab at `1f2fe3a`, SHA-256-checked (`b9ec9162…`), then loaded plus the history row and run once. Supabase's "Potential issue detected" dialog was confirmed. Applied as `20261114171317`.
+- **Read back:**
+  - `md5(prosrc)` = `fc41b0b8c2d75806f1bf6905e01e192c`, which equals the committed body.
+  - `uses_applied` and `has_overlap` are both true.
+  - `rwfc_applied` holds 68,203 rows, the same as `edition_fmv_current` priced rows.
+  - RLS is on; anon has no SELECT on the table and no EXECUTE on the function.
+- **Repo half:** the migration moved to `supabase/migrations/20261114171317_…`, with an anon-exec marker line added. The pin is in `supabase/tests/refresh_wmc_fmv_changed.sql`, and the drift-guard entry is re-pointed.
+  - DB-invariant suite: 309 files, all PASS.
+  - Migration parse: 0 errors.
+  - Drift guard and anon-exec guard: green.
+- **Still open:** the §5 watch (reads/call ≥ 24 h out, and the 0.8 % → ~0.2 % miss re-sample).
+

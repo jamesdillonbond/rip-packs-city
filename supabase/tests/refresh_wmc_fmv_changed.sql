@@ -51,7 +51,21 @@
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
 
+-- ⚠ RE-PINNED 2026-11-14 (#248) onto supabase/migrations/20261114171317_audit_20261114_rwfc_drops_only_what_it_applied.sql.
+-- Three premises changed, so three assertions were RE-PINNED (not inverted) and three ADDED:
+--   * the 08-30 drop rule now compares against rwfc_applied (what this lane last pushed),
+--     not the newest pre-cursor snapshot, which purge_fmv_snapshots_today can erase;
+--     the "dropped" assertion keeps its stale-row proof, with the applied row as premise;
+--   * confidence travels with the price (churn guard is now price OR confidence);
+--   * the cursor stops 5 minutes behind the run start (commit-time race), so the
+--     "advances to the run start" assertion becomes "to run start minus the overlap".
+--   Added: the PURGE case (an intraday price erased from history must not hide a move
+--   back), a confidence-only move, and a late-committed snapshot inside the overlap.
+--   Each added case was proven red against the 08-30 body (planted defects, 11-14).
+
 BEGIN;
+
+CREATE TYPE public.fmv_confidence AS ENUM ('HIGH', 'MEDIUM', 'LOW', 'ASK_ONLY', 'SALES_ONLY', 'STALE', 'NO_DATA');
 
 CREATE TABLE public.editions (
   id            uuid primary key,
@@ -62,6 +76,7 @@ CREATE TABLE public.editions (
 CREATE TABLE public.fmv_snapshots (
   edition_id  uuid,
   fmv_usd     numeric,
+  confidence  public.fmv_confidence,
   computed_at timestamptz
 );
 
@@ -70,7 +85,8 @@ CREATE TABLE public.wallet_moments_cache (
   wallet_address text,
   collection_id  uuid,
   edition_key    text,
-  fmv_usd        numeric
+  fmv_usd        numeric,
+  fmv_confidence public.fmv_confidence
 );
 
 CREATE TABLE public.rwfc_state (
@@ -78,15 +94,19 @@ CREATE TABLE public.rwfc_state (
   last_cutoff timestamptz
 );
 
+CREATE TABLE public.rwfc_applied (
+  edition_id uuid PRIMARY KEY,
+  fmv_usd    numeric NOT NULL,
+  confidence public.fmv_confidence,
+  applied_at timestamptz NOT NULL DEFAULT now()
+);
+
 -- >>> BEGIN verbatim refresh_wmc_fmv_changed (byte-identical to the migration/prod) >>>
-CREATE OR REPLACE FUNCTION public.refresh_wmc_fmv_changed(
-  p_since_minutes integer DEFAULT 30,
-  p_limit integer DEFAULT 50000
-)
-RETURNS integer
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, pg_temp
+CREATE OR REPLACE FUNCTION public.refresh_wmc_fmv_changed(p_since_minutes integer DEFAULT 30, p_limit integer DEFAULT 50000)
+ RETURNS integer
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
 AS $function$
 DECLARE
   v_total      integer := 0;
@@ -99,6 +119,10 @@ DECLARE
   v_deadline   timestamptz;
   -- Sized to fit the SMALLEST caller budget (service_role 30s), never scaled up.
   v_chunk      constant integer := 5;
+  -- 2026-11-14 (#248): how far behind its run start the cursor stops. fmv-recalc stamps
+  -- snapshots with its transaction start and commits ~50 s later; a tick inside that
+  -- window must not advance past a batch it could not yet see.
+  v_overlap    constant interval := interval '5 minutes';
 BEGIN
   -- Two callers run this same non-reentrant drain: pg_cron jobid 303 (`7-57/10`, median 240 s)
   -- and app/api/wmc-fmv-populate/route.ts (every 5 min, ~18 s budget). The route's tick one
@@ -151,35 +175,28 @@ BEGIN
   CREATE INDEX ON _rwfc_recent (computed_at);
   ANALYZE _rwfc_recent;
 
-  -- 2026-08-30: drop editions whose newest price is the price they already had.
-  -- Measured over a 2 h window: 2,295 of 3,108 new snapshots (74 %) carried an
-  -- fmv_usd IDENTICAL to the edition's previous snapshot — fmv-recalc writes a
-  -- row per recalculated edition whether or not the number moved. Every one of
-  -- those editions was still popped below, and the UPDATE's IS DISTINCT FROM
-  -- guard, which correctly writes nothing, still READS every holder row to find
-  -- that out: on a 2.5M-row table behind a bloated (collection_id, edition_key)
-  -- index that is the drain's IO, and this job (303, `7-57/10`) ran to its 360 s
-  -- deadline on every tick, ~60 % of wall-clock, ~50 min behind. Two index
-  -- probes per queued edition replace a holder scan for three editions in four.
-  -- Sound because wmc already holds the <= v_cutoff value: the cursor only
-  -- advances past an edition once its UPDATE committed (a timeout rolls both
-  -- back together). An edition with no priced snapshot on or before the cutoff
-  -- has nothing to compare against and stays queued.
+  -- 2026-08-30: drop editions whose newest price is the price wmc already has --
+  -- fmv-recalc writes a row per recalculated edition whether or not the number moved
+  -- (74 % of snapshots), and without this every one of them read every holder row.
+  -- 2026-11-14 (#248): "the price wmc already has" is now the (fmv_usd, confidence)
+  -- this lane last APPLIED (rwfc_applied), NOT the newest snapshot at or before the
+  -- cursor. fmv-recalc purges an edition's earlier same-day snapshot before inserting
+  -- the next, so after an intraday move the pre-cursor snapshot is the DAY-BEFORE
+  -- price: a move back to it was dropped as "unchanged" and the holder rows kept the
+  -- erased intraday price for 6–8 h (72 % of the lane's measured misses). An edition
+  -- with no rwfc_applied row has nothing to compare against and stays queued.
   DELETE FROM _rwfc_recent
    WHERE edition_id IN (
      SELECT r.edition_id
        FROM _rwfc_recent r
        JOIN LATERAL (
-         SELECT f.fmv_usd FROM public.fmv_snapshots f
+         SELECT f.fmv_usd, f.confidence FROM public.fmv_snapshots f
           WHERE f.edition_id = r.edition_id AND f.computed_at > v_cutoff AND f.fmv_usd IS NOT NULL
           ORDER BY f.computed_at DESC LIMIT 1
        ) cur ON true
-       JOIN LATERAL (
-         SELECT f.fmv_usd FROM public.fmv_snapshots f
-          WHERE f.edition_id = r.edition_id AND f.computed_at <= v_cutoff AND f.fmv_usd IS NOT NULL
-          ORDER BY f.computed_at DESC LIMIT 1
-       ) prev ON true
-      WHERE cur.fmv_usd = prev.fmv_usd
+       JOIN public.rwfc_applied a ON a.edition_id = r.edition_id
+      WHERE cur.fmv_usd = a.fmv_usd
+        AND cur.confidence IS NOT DISTINCT FROM a.confidence
    );
 
   LOOP
@@ -191,25 +208,40 @@ BEGIN
       RETURNING edition_id
     ),
     latest_fmv AS MATERIALIZED (
-      SELECT e.collection_id, e.external_id,
-        (SELECT f.fmv_usd
-           FROM public.fmv_snapshots f
-          WHERE f.edition_id = e.id
-            AND f.fmv_usd IS NOT NULL
-          ORDER BY f.computed_at DESC
-          LIMIT 1) AS fmv_usd
+      SELECT e.id AS edition_id, e.collection_id, e.external_id, s.fmv_usd, s.confidence
       FROM popped p
       JOIN public.editions e ON e.id = p.edition_id
+      LEFT JOIN LATERAL (
+        SELECT f.fmv_usd, f.confidence
+          FROM public.fmv_snapshots f
+         WHERE f.edition_id = e.id
+           AND f.fmv_usd IS NOT NULL
+         ORDER BY f.computed_at DESC
+         LIMIT 1
+      ) s ON true
     ),
     updated AS (
       UPDATE public.wallet_moments_cache wmc
-         SET fmv_usd = lf.fmv_usd
+         SET fmv_usd = lf.fmv_usd,
+             fmv_confidence = lf.confidence
         FROM latest_fmv lf
        WHERE wmc.collection_id = lf.collection_id
          AND wmc.edition_key   = lf.external_id
          AND wmc.edition_key IS NOT NULL
          AND lf.fmv_usd IS NOT NULL
-         AND wmc.fmv_usd IS DISTINCT FROM lf.fmv_usd
+         AND (wmc.fmv_usd IS DISTINCT FROM lf.fmv_usd
+              OR wmc.fmv_confidence IS DISTINCT FROM lf.confidence)
+      RETURNING 1
+    ),
+    -- 2026-11-14 (#248): remember what was pushed, in the same statement as the push,
+    -- so the record and the wmc write commit (or roll back) together.
+    recorded AS (
+      INSERT INTO public.rwfc_applied (edition_id, fmv_usd, confidence, applied_at)
+      SELECT lf.edition_id, lf.fmv_usd, lf.confidence, now()
+        FROM latest_fmv lf
+       WHERE lf.fmv_usd IS NOT NULL
+      ON CONFLICT (edition_id) DO UPDATE
+        SET fmv_usd = EXCLUDED.fmv_usd, confidence = EXCLUDED.confidence, applied_at = EXCLUDED.applied_at
       RETURNING 1
     )
     SELECT COUNT(*)::int INTO v_batch FROM updated;
@@ -222,7 +254,8 @@ BEGIN
   END LOOP;
 
   SELECT MIN(computed_at) - interval '1 microsecond' INTO v_new_cutoff FROM _rwfc_recent;
-  v_new_cutoff := COALESCE(v_new_cutoff, v_run_start);
+  -- 2026-11-14 (#248): never further forward than v_overlap behind this run's start.
+  v_new_cutoff := LEAST(COALESCE(v_new_cutoff, v_run_start), v_run_start - v_overlap);
 
   INSERT INTO public.rwfc_state (id, last_cutoff) VALUES (1, v_new_cutoff)
   ON CONFLICT (id) DO UPDATE SET last_cutoff = EXCLUDED.last_cutoff;
@@ -239,18 +272,18 @@ INSERT INTO public.editions (id, collection_id, external_id) VALUES
   ('33333333-3333-3333-3333-333333333333', 'dee28451-5d62-409e-a1ad-a83f763ac070', '48:1652');
 
 -- Edition 1 has TWO snapshots; only the NEWEST may propagate.
-INSERT INTO public.fmv_snapshots (edition_id, fmv_usd, computed_at) VALUES
-  ('11111111-1111-1111-1111-111111111111', 100.00, now() - interval '5 minutes'),
-  ('11111111-1111-1111-1111-111111111111', 250.00, now() - interval '1 minute'),
-  ('22222222-2222-2222-2222-222222222222',  42.00, now() - interval '2 minutes'),
-  ('33333333-3333-3333-3333-333333333333', 999.00, now() - interval '2 minutes');
+INSERT INTO public.fmv_snapshots (edition_id, fmv_usd, confidence, computed_at) VALUES
+  ('11111111-1111-1111-1111-111111111111', 100.00, 'LOW',  now() - interval '5 minutes'),
+  ('11111111-1111-1111-1111-111111111111', 250.00, 'LOW',  now() - interval '1 minute'),
+  ('22222222-2222-2222-2222-222222222222',  42.00, 'HIGH', now() - interval '2 minutes'),
+  ('33333333-3333-3333-3333-333333333333', 999.00, 'LOW',  now() - interval '2 minutes');
 
-INSERT INTO public.wallet_moments_cache (wallet_address, collection_id, edition_key, fmv_usd) VALUES
-  ('0xA', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '48:1652',  NULL),   -- never priced
-  ('0xB', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '48:1652',  100.00), -- stale price
-  ('0xC', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '121:4255', 42.00),  -- ALREADY correct
-  ('0xD', 'dee28451-5d62-409e-a1ad-a83f763ac070', '48:1652',  NULL),   -- other collection
-  ('0xE', '95f28a17-224a-4025-96ad-adf8a4c63bfd', NULL,       NULL);   -- unkeyed row
+INSERT INTO public.wallet_moments_cache (wallet_address, collection_id, edition_key, fmv_usd, fmv_confidence) VALUES
+  ('0xA', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '48:1652',  NULL,   NULL),   -- never priced
+  ('0xB', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '48:1652',  100.00, 'LOW'),  -- stale price
+  ('0xC', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '121:4255', 42.00,  'HIGH'), -- ALREADY correct
+  ('0xD', 'dee28451-5d62-409e-a1ad-a83f763ac070', '48:1652',  NULL,   NULL),   -- other collection
+  ('0xE', '95f28a17-224a-4025-96ad-adf8a4c63bfd', NULL,       NULL,   NULL);   -- unkeyed row
 
 -- 3 rows change: 0xA, 0xB (Top Shot 48:1652) and 0xD (AllDay 48:1652).
 -- 0xC is already correct and must NOT be rewritten — see the churn note below.
@@ -298,19 +331,25 @@ SELECT _assert_eq(public.refresh_wmc_fmv_changed()::text, '0',
   're-running with no new snapshots updates nothing');
 
 -- ── 2026-08-30: an edition whose price did not move is not re-swept ───────
--- Edition 2's newest snapshot after the cursor (42.00) equals its newest at or
--- before the cursor (42.00), so the drain drops it before the loop instead of
--- reading every holder row to discover IS DISTINCT FROM has nothing to write.
+-- RE-PINNED 2026-11-14: the premise is now the APPLIED row, not the pre-cursor
+-- snapshot. The first run above pushed edition 2 at (42.00, HIGH) and recorded it in
+-- rwfc_applied; its new snapshot (42.00, HIGH) equals that, so the drain drops it
+-- before the loop instead of reading every holder row to discover IS DISTINCT FROM
+-- has nothing to write.
 -- Pinned through a deliberately stale holder row: because the edition is
 -- skipped, the row is NOT repaired here (that is the NULL-fill route's job and
 -- would otherwise cost a holder scan for three editions in four).
 INSERT INTO public.rwfc_state (id, last_cutoff) VALUES (1, now() - interval '90 seconds')
 ON CONFLICT (id) DO UPDATE SET last_cutoff = EXCLUDED.last_cutoff;
-INSERT INTO public.fmv_snapshots (edition_id, fmv_usd, computed_at)
-VALUES ('22222222-2222-2222-2222-222222222222', 42.00, now() - interval '30 seconds');
+SELECT _assert_eq(
+  (SELECT fmv_usd::text || ' ' || confidence::text FROM public.rwfc_applied
+    WHERE edition_id = '22222222-2222-2222-2222-222222222222'), '42.00 HIGH',
+  'a processed edition records the (price, confidence) it pushed');
+INSERT INTO public.fmv_snapshots (edition_id, fmv_usd, confidence, computed_at)
+VALUES ('22222222-2222-2222-2222-222222222222', 42.00, 'HIGH', now() - interval '30 seconds');
 UPDATE public.wallet_moments_cache SET fmv_usd = 5.00 WHERE wallet_address = '0xC';
 SELECT _assert_eq(public.refresh_wmc_fmv_changed()::text, '0',
-  'an edition whose newest price equals its pre-cursor price is dropped from the queue');
+  'an edition whose newest (price, confidence) equals what this lane last applied is dropped from the queue');
 SELECT _assert_eq(
   (SELECT fmv_usd::text FROM public.wallet_moments_cache WHERE wallet_address='0xC'), '5.00',
   'so its holder rows are not even read (the stale row proves the skip happened)');
@@ -330,8 +369,8 @@ UPDATE public.wallet_moments_cache SET fmv_usd = 42.00 WHERE wallet_address = '0
 -- A future edit that removes two of the three is the dangerous one: it is
 -- individually harmless and leaves the portfolio value one edit from being
 -- wiped, with this test still green.
-INSERT INTO public.fmv_snapshots (edition_id, fmv_usd, computed_at)
-VALUES ('11111111-1111-1111-1111-111111111111', NULL, now());
+INSERT INTO public.fmv_snapshots (edition_id, fmv_usd, confidence, computed_at)
+VALUES ('11111111-1111-1111-1111-111111111111', NULL, NULL, now());
 DELETE FROM public.rwfc_state;
 SELECT _assert_eq(public.refresh_wmc_fmv_changed()::text, '0',
   'a NULL-priced snapshot does not even enter the queue, so nothing is rewritten');
@@ -346,9 +385,60 @@ SELECT _assert_eq(
 SELECT _assert(
   (SELECT last_cutoff FROM public.rwfc_state WHERE id = 1) IS NOT NULL,
   'the cursor is persisted after a run');
+-- RE-PINNED 2026-11-14: the cursor now stops v_overlap (5 min) behind the run start,
+-- so a batch stamped before a tick and committed after it is re-read next tick.
 SELECT _assert(
-  (SELECT last_cutoff FROM public.rwfc_state WHERE id = 1) > now() - interval '1 minute',
-  'a fully-drained queue advances the cursor to the run start, not backwards');
+  (SELECT last_cutoff FROM public.rwfc_state WHERE id = 1) > now() - interval '6 minutes',
+  'a fully-drained queue advances the cursor, not backwards');
+SELECT _assert(
+  (SELECT last_cutoff FROM public.rwfc_state WHERE id = 1) <= clock_timestamp() - interval '5 minutes',
+  'and stops the overlap behind the run start, never at it');
+
+-- ── 2026-11-14 (#248): THE PURGE CASE ─────────────────────────────────────
+-- fmv-recalc purges an edition's earlier same-day snapshot before inserting the next.
+-- Edition 1 sat at 250.00 LOW; an intraday 300.00 MEDIUM reached wmc; the next recalc
+-- PURGED that snapshot and wrote 250.00 LOW again. The surviving pre-cursor snapshot is
+-- 250.00 LOW — equal to the new one — so the 08-30 rule dropped the edition and the
+-- holders kept the erased 300.00 for 6–8 h. Compared to what was APPLIED (300.00), the
+-- move back is a move.
+INSERT INTO public.fmv_snapshots (edition_id, fmv_usd, confidence, computed_at)
+VALUES ('11111111-1111-1111-1111-111111111111', 300.00, 'MEDIUM', clock_timestamp());
+DELETE FROM public.rwfc_state;
+SELECT _assert_eq(public.refresh_wmc_fmv_changed()::text, '2',
+  'the intraday price reaches both Top Shot holders');
+DELETE FROM public.fmv_snapshots
+ WHERE edition_id = '11111111-1111-1111-1111-111111111111' AND fmv_usd = 300.00;   -- the purge
+INSERT INTO public.fmv_snapshots (edition_id, fmv_usd, confidence, computed_at)
+VALUES ('11111111-1111-1111-1111-111111111111', 250.00, 'LOW', clock_timestamp());
+UPDATE public.rwfc_state SET last_cutoff = clock_timestamp() - interval '1 minute';
+SELECT _assert_eq(public.refresh_wmc_fmv_changed()::text, '2',
+  'a move BACK to a price the purge left as the pre-cursor snapshot is still a move');
+SELECT _assert_eq(
+  (SELECT string_agg(fmv_usd::text || ' ' || fmv_confidence::text, ',' ORDER BY wallet_address)
+     FROM public.wallet_moments_cache WHERE wallet_address IN ('0xA', '0xB')), '250.00 LOW,250.00 LOW',
+  'so no holder keeps the erased intraday price');
+
+-- ── 2026-11-14 (#248): a confidence-only move propagates ──────────────────
+INSERT INTO public.fmv_snapshots (edition_id, fmv_usd, confidence, computed_at)
+VALUES ('22222222-2222-2222-2222-222222222222', 42.00, 'MEDIUM', clock_timestamp());
+UPDATE public.rwfc_state SET last_cutoff = clock_timestamp() - interval '1 minute';
+SELECT _assert_eq(public.refresh_wmc_fmv_changed()::text, '1',
+  'a same-price snapshot with a new confidence is not dropped');
+SELECT _assert_eq(
+  (SELECT fmv_usd::text || ' ' || fmv_confidence::text FROM public.wallet_moments_cache WHERE wallet_address = '0xC'),
+  '42.00 MEDIUM', 'and the holder takes the new confidence with an unchanged price');
+
+-- ── 2026-11-14 (#248): a snapshot committed behind the cursor is not lost ─
+-- fmv-recalc stamps its rows with its transaction start and commits ~50 s later. A
+-- tick that ran in between could not see them; its cursor must not pass them.
+SELECT public.refresh_wmc_fmv_changed();   -- an empty tick: the cursor moves up
+INSERT INTO public.fmv_snapshots (edition_id, fmv_usd, confidence, computed_at)
+VALUES ('33333333-3333-3333-3333-333333333333', 1111.00, 'LOW', clock_timestamp() - interval '90 seconds');
+SELECT _assert_eq(public.refresh_wmc_fmv_changed()::text, '1',
+  'a snapshot stamped before the last tick but committed after it is still applied');
+SELECT _assert_eq(
+  (SELECT fmv_usd::text FROM public.wallet_moments_cache WHERE wallet_address = '0xD'), '1111.00',
+  'on the All Day holder it belongs to');
 
 SELECT '✓ refresh_wmc_fmv_changed invariants pass' AS result;
 ROLLBACK;

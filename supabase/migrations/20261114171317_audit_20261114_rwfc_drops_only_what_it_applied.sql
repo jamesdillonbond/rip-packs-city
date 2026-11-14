@@ -39,6 +39,7 @@
 --
 -- Revert: re-apply supabase/migrations/20260830144724_audit_20260830_rwfc_skips_editions_whose_price_did_not_move.sql
 -- (CREATE OR REPLACE of the 08-30 body); rwfc_applied is then unread and may stay.
+-- anon-exec: unchanged (refresh_wmc_fmv_changed) — CREATE OR REPLACE of an existing fn; ACL preserved, read back 2026-11-14 9:14 AM PT has_function_privilege('anon', …, 'EXECUTE') = false.
 
 DO $guard$
 BEGIN
