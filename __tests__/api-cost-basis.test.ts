@@ -203,7 +203,17 @@ describe("GET /api/cost-basis", () => {
     const res = await GET(req("https://t/api/cost-basis?wallet=0xabc0000000000000"))
     const body = await res.json()
     expect(res.status).toBe(200)
-    // acqData null → no acquisition_method key added at all
+    // 2026-11-14 re-pin: the enrichment is now a chunked read (readAcquisitionData). A read that
+    // SUCCEEDED and found no acquisition row says so (null); only a FAILED read adds nothing.
+    expect(body.acquisitions[0].acquisition_method).toBeNull()
+  })
+
+  it("adds NO acquisition_method when the enrichment read fails (a failure is not 'no row')", async () => {
+    state.costBasis = { data: [{ nft_id: "n1", cost_usd: 10 }], error: null }
+    state.acq = { data: null, error: { message: "timeout" } }
+    const res = await GET(req("https://t/api/cost-basis?wallet=0xabc0000000000000"))
+    const body = await res.json()
+    expect(res.status).toBe(200)
     expect(body.acquisitions[0].acquisition_method).toBeUndefined()
   })
 

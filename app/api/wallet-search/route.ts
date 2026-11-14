@@ -1,3 +1,4 @@
+import { readAcquisitionData } from "@/lib/acquisitions/read-acquisition-data"
 import { NextRequest, NextResponse, after } from "next/server"
 import { z } from "zod"
 import fcl from "@/lib/chains/flow/flow"
@@ -978,15 +979,12 @@ async function enrichWithAcquisitionData(rows: WalletRow[], wallet: string): Pro
     const momentIds = rows.map(r => r.momentId).filter(Boolean)
     if (!momentIds.length) return rows
 
-    const { data, error } = await (supabaseAdmin as any).rpc("get_wallet_acquisition_data_scoped", {
-      p_wallet: wallet,
-      p_moment_ids: momentIds,
-      // Only the Top Shot path reaches here (Pinnacle/UFC/Golazos return earlier,
-      // All Day skips this call). moment ids collide across collections, INCLUDING inside one wallet (#142; 41 rows / 11 wallets 2026-10-31)
-      p_collection_id: TOPSHOT_COLLECTION_ID,
-    })
+    // 2026-11-14: CHUNKED (readAcquisitionData) — a single call clamps at PostgREST's 1,000 rows.
+    // Only the Top Shot path reaches here (Pinnacle/UFC/Golazos return earlier,
+    // All Day skips this call). moment ids collide across collections, INCLUDING inside one wallet (#142; 41 rows / 11 wallets 2026-10-31)
+    const { rows: data, error } = await readAcquisitionData(supabaseAdmin as any, wallet, momentIds, TOPSHOT_COLLECTION_ID)
 
-    if (error || !data) return rows
+    if (error) return rows
 
     const acqMap = new Map<string, { acquisition_method: string; buy_price: number | null; loan_principal: number | null }>()
     for (const row of data) {
