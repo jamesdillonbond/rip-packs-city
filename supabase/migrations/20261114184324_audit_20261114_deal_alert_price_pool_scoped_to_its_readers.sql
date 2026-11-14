@@ -1,6 +1,6 @@
 -- audit_20261114_deal_alert_price_pool_scoped_to_its_readers
 --
--- Claude Code cloud, 2026-11-14 ~10:50 AM PT. dispatch_due_deal_alerts builds its price-only pool
+-- Claude Code cloud, 2026-11-14 ~10:35 AM PT. dispatch_due_deal_alerts builds its price-only pool
 -- (edition_current_ask) once per tick, bounded only by the LARGEST max_price of any active price-only
 -- sub, across EVERY collection. Resuming the nine #12524 serial alerts at $10,000 (this morning) grew it
 -- 5.9k -> 21,145 rows although the only pass-1 reader at that price is ONE Pinnacle sub (the eight Top
@@ -16,7 +16,7 @@
 -- Base verified before writing: live prosrc md5 = 20261114171316's body (599f8ecebab2ff8ea1cdc1624bf39b35).
 -- anon-exec: unchanged (dispatch_due_deal_alerts) — CREATE OR REPLACE of an existing fn; ACL preserved.
 --
--- ⚠ APPLIED 2026-11-14 ~11:05 AM PT by md5-asserted replace() DO block (live 599f8e… → b6c7fa…), after a
+-- ⚠ APPLIED 2026-11-14 ~10:43 AM PT by md5-asserted replace() DO block (live 599f8e… → b6c7fa…), after a
 -- read-only equivalence proof on live data (12 price-only subs, 12,144 sub-row reads: 0 lost, 0 gained;
 -- pool 21,155 → 8,013). ⛔ SUPERSEDED THE SAME HOUR by 20261114184950_audit_20261114_deal_alert_price_pool_caps_per_collection: this
 -- correlated EXISTS ran per ask row and measured ~150k buffers per tick vs ~92k unscoped — worse, not better.

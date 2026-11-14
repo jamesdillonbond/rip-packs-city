@@ -1,6 +1,6 @@
 -- audit_20261114_deal_alert_price_pool_caps_per_collection
 --
--- Claude Code cloud, 2026-11-14 ~11:10 AM PT. Supersedes 20261114184324 (same goal, wrong shape).
+-- Claude Code cloud, 2026-11-14 ~10:49 AM PT. Supersedes 20261114184324 (same goal, wrong shape).
 --
 -- GOAL. dispatch_due_deal_alerts' price-only pool was every collection's asks under the LARGEST
 -- price-only max_price — after the nine #12524 serial alerts resumed at $10,000, 21,145 rows read by one
