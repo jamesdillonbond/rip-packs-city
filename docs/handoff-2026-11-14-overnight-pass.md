@@ -2,7 +2,9 @@
 
 > ⚠ **Environment scope:** this run executed in a **cloud session** linked to Trevor's laptop. Push went through the **laptop-VM clone + `.rpc-git-cred`** route (the cloud `add_repo` tool was absent this run). Trevor's own machine and Claude Code push normally via Git Credential Manager — **commit as usual.** Nothing here is blocked by an environment limit; push was AVAILABLE (dry-run exit 0) and all docs below were committed + pushed to `main`.
 
-**Verdict: GREEN · 0 shipped · idle: routed-to-claude-code · oldest routed: atlas-market-events-prune deadlock fix, 1 night.**
+**Verdict: GREEN · 1 shipped (attended follow-up after Trevor "Fix it all") · 0 queued.**
+
+> **Update ~7:35 AM PT:** Trevor replied "Fix it all", so the one queued item below was shipped: the `atlas-market-events-prune` deadlock fix (`20261114153229`). See **Shipped**. The overnight body below is preserved as-written.
 
 A quiet, honest night. Full health sweep clean, accuracy in band, no regression from the heavy 11-13 day ships. One genuinely new candidate (a harmless, self-healing 40P01 deadlock) was investigated end-to-end and **queued, not shipped**, because its fix replaces a live SECURITY DEFINER function (outside the additive autonomous SHIP set) and the log DETAIL that would positively name the lock partner is dropped by Supabase's log stream.
 
@@ -49,10 +51,16 @@ Fast baseline `rpc_ops_snapshot()` + drill-downs:
 - **pg_net request log (#241)**: capturing; `edition_integrity_flags` decline matches intent. No regression attributable to any 11-13 ship.
 
 ## Shipped
-**None.** 0 production-affecting changes. Docs-only outputs (this handoff, ledger entry, metrics, session entry).
+- **`atlas-market-events-prune` 40P01 deadlock — FIXED** (migration `20261114153229`, ~7:32 AM PT; Trevor: "Fix it all"). md5-asserted catalog splice appended `FOR UPDATE SKIP LOCKED` to the prune's oldest-first temp-page SELECT in `prune_topshot_atlas_market_events(int,int)` so it never waits on a tuple the concurrent `atlas_market_upsert_events` upsert holds (partner-agnostic; guards 1/2 and ordering unchanged; prune is idempotent so skipped rows return next tick).
+  - **Evidence:** base body md5 `e98dbcf6…` → `6dd86d4f…`; anon/authenticated EXECUTE preserved false; SECURITY DEFINER + search_path preserved. SKIP-LOCKED+ORDER BY+LIMIT pre-validated read-only (locked 5). **Positive control (real caller):** `SELECT prune_topshot_atlas_market_events(7,20000)` post-splice ran clean — page 1171 / deleted 1171 / error null / kept_hydration 0. **Independent subagent verification: PASS** (live body has exactly one SKIP LOCKED, both guards + base DELETE intact, anon/auth EXECUTE false, version recorded, no new deadlock row after 15:32Z).
+  - Migration file `supabase/migrations/20261114153229_audit_20261114_prune_tame_market_events_skip_locked.sql` committed (self-asserting DO block; inverse-splice revert in the header).
+  - **Revert:** the inverse splice in the migration header (removes the clause, base md5 `6dd86d4f…` asserted). **Watch (target metric):** 0 `deadlock detected` rows for `atlas-market-events-prune` in `pipeline_runs` over the next 48 h (was ~2/day; the two pre-fix rows were 17:27 & 21:27 PT on 11-13).
 
-## Queued for Trevor / Claude Code
-1. **[P3, Claude Code / attended Cowork, 1 night] `atlas-market-events-prune` 40P01 deadlock — ready `FOR UPDATE SKIP LOCKED` splice (not autonomous-SHIP-eligible: replaces a live SECURITY DEFINER fn).**
+## Resolved this session (was queued) — nothing open
+
+**✅ SHIPPED — see the Shipped section above.** The item below is the original diagnosis, kept for the record; it is CLOSED (applied as `20261114153229`, subagent-verified PASS).
+
+1. **[✅ SHIPPED 2026-11-14] `atlas-market-events-prune` 40P01 deadlock — ready `FOR UPDATE SKIP LOCKED` splice (not autonomous-SHIP-eligible: replaces a live SECURITY DEFINER fn).**
    - **What it is:** `prune_topshot_atlas_market_events(7, 20000)` (jobid 473 `rpc-prune-atlas-market-events`, hourly at `:27`) DELETEs aged `completed` `nba` rows from `topshot_atlas_market_events`. It threw `deadlock detected` on **2 of 48** runs today (05:27Z, 01:27Z); none in the prior 48 h.
    - **Why it is harmless:** the DELETE sits inside the function's own `BEGIN … EXCEPTION WHEN query_canceled OR OTHERS` block, so the 40P01 rolls back that block, is logged `ok=false`, and the function returns normally. The prune is idempotent — the next `:27` tick re-prunes the same aged rows. **No data is lost** (confirmed: 20:27 ok after 21:27… the fail at 21:27 PT was followed by 22:27 ok=true deleting the aged rows).
    - **Lock partner — inferred, NOT log-confirmed:** `process … detected deadlock while waiting for ShareLock on transaction …` = an overlapping-tuple row-lock race. The only concurrent *writer* that can hold those tuples is **`atlas_market_upsert_events`** (the feed upsert — the sole INSERT/ON-CONFLICT on the table; the other two writers are narrow UPDATE paths). Supabase's log stream drops the deadlock DETAIL/CONTEXT lines (the `query` fields come back empty), so the exact partner statement could not be read — which is precisely the precondition the monitor set ("after confirming the lock partner").
