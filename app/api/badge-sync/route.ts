@@ -250,10 +250,12 @@ function computeBadgeScore(
   if (playTagIds.has(BADGE.ROOKIE_PREMIERE)) score += 1
   if (playTagIds.has(BADGE.TOP_SHOT_DEBUT)) score += 1
   if (setPlayTagIds.has(BADGE.ROOKIE_MINT)) score += 1
+  // Three-Star Rookie = Rookie Year + Rookie Premiere + Rookie Mint (Top Shot's own definition;
+  // see lib/topshot-badges.ts). It was Top Shot Debut in place of Rookie Mint until 2026-11-14.
   const isThreeStar =
     playTagIds.has(BADGE.ROOKIE_YEAR) &&
     playTagIds.has(BADGE.ROOKIE_PREMIERE) &&
-    playTagIds.has(BADGE.TOP_SHOT_DEBUT)
+    setPlayTagIds.has(BADGE.ROOKIE_MINT)
   if (isThreeStar && setPlayTagIds.has(BADGE.ROOKIE_MINT)) score += 4
   if (playTagIds.has(BADGE.ROOKIE_OF_THE_YEAR)) score += 3
   if (playTagIds.has(BADGE.CHAMPIONSHIP_YEAR)) score += 2
@@ -332,7 +334,7 @@ function mergeTags(existing: BadgeRow, e: RawEdition) {
   for (const t of incomingSetPlay) if (!sIds.has(t.id)) { existing.set_play_tags.push(t); sIds.add(t.id) }
   if (sIds.has(BADGE.ROOKIE_MINT)) existing.has_rookie_mint = true
   existing.is_three_star_rookie =
-    pIds.has(BADGE.ROOKIE_YEAR) && pIds.has(BADGE.ROOKIE_PREMIERE) && pIds.has(BADGE.TOP_SHOT_DEBUT)
+    pIds.has(BADGE.ROOKIE_YEAR) && pIds.has(BADGE.ROOKIE_PREMIERE) && sIds.has(BADGE.ROOKIE_MINT)
   existing.badge_score = computeBadgeScore(pIds, sIds)
 }
 
@@ -374,7 +376,7 @@ function normalizeEdition(e: RawEdition, externalId: string | null): BadgeRow {
     is_three_star_rookie:
       pIds.has(BADGE.ROOKIE_YEAR) &&
       pIds.has(BADGE.ROOKIE_PREMIERE) &&
-      pIds.has(BADGE.TOP_SHOT_DEBUT),
+      sIds.has(BADGE.ROOKIE_MINT),
     has_rookie_mint: sIds.has(BADGE.ROOKIE_MINT),
     badge_score: computeBadgeScore(pIds, sIds),
     low_ask: e.lowAsk ?? null,

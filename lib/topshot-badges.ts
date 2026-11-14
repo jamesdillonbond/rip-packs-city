@@ -31,10 +31,17 @@ export const BADGE_TYPE_TO_TITLE: Record<string, string> = {
   CHAMPIONSHIP_YEAR:  "Championship Year",
 }
 
+// ⛔ Three-Star Rookie = Rookie Year + Rookie Premiere (play tags) + Rookie Mint (a SET-PLAY tag).
+// Top Shot's own moment page says so verbatim (read 2026-11-14 on moment 53148542): "This Moment
+// qualifies for all three Rookie badges: Rookie Year, Rookie Mint, and Rookie Premiere." Until
+// 2026-11-14 this file, /api/badge-sync and atlas_editions_drain used Top Shot DEBUT instead of
+// Rookie Mint, so 80 three-star editions (Aday Mara's Rookie Ultimate among them) stored false and
+// 3 non-three-star editions stored true; get_edition_badges_unified already used the right rule.
+// These are the PLAY-level parts; the Rookie Mint part is a set-play tag (fetchThreeStarRookies
+// filters on it with bySetPlayTagIDs).
 export const THREE_STAR_ROOKIE_TAG_IDS = [
   BADGE_TAG_IDS.ROOKIE_YEAR,
   BADGE_TAG_IDS.ROOKIE_PREMIERE,
-  BADGE_TAG_IDS.TOP_SHOT_DEBUT,
 ]
 
 // ============================================================
@@ -241,7 +248,7 @@ export function isThreeStarRookie(edition: MarketplaceEdition): boolean {
   return (
     playTagIds.has(BADGE_TAG_IDS.ROOKIE_YEAR) &&
     playTagIds.has(BADGE_TAG_IDS.ROOKIE_PREMIERE) &&
-    playTagIds.has(BADGE_TAG_IDS.TOP_SHOT_DEBUT)
+    hasRookieMint(edition)
   )
 }
 

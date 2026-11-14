@@ -85,12 +85,19 @@ describe("getBadges", () => {
 })
 
 describe("isThreeStarRookie", () => {
-  it("true only when all three rookie play tags are present", () => {
+  // Top Shot's definition (its moment page, 2026-11-14): Rookie Year + Rookie Mint + Rookie Premiere.
+  it("true when Rookie Year + Rookie Premiere (play) and Rookie Mint (set-play) are all present", () => {
     expect(
-      isThreeStarRookie(edition({ playTags: [ROOKIE_YEAR(), ROOKIE_PREMIERE(), TOP_SHOT_DEBUT()] }))
+      isThreeStarRookie(edition({ playTags: [ROOKIE_YEAR(), ROOKIE_PREMIERE()], setPlayTags: [ROOKIE_MINT()] }))
     ).toBe(true)
     expect(
       isThreeStarRookie(edition({ playTags: [ROOKIE_YEAR(), ROOKIE_PREMIERE()] }))
+    ).toBe(false)
+  })
+  // Inverted 2026-11-14: this case was the defect's own pin (Debut counted in place of Rookie Mint).
+  it("is NOT three-star on Year + Premiere + Top Shot Debut without Rookie Mint", () => {
+    expect(
+      isThreeStarRookie(edition({ playTags: [ROOKIE_YEAR(), ROOKIE_PREMIERE(), TOP_SHOT_DEBUT()] }))
     ).toBe(false)
   })
 })
