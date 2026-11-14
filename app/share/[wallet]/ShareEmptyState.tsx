@@ -4,6 +4,7 @@ import Link from "next/link"
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { accentText } from "@/lib/accent-text";
+import { isSolanaAddress } from "@/lib/address";
 
 // Friendly state for /share/<wallet> when the snapshot is empty (wallet not
 // indexed yet / holds nothing / bad input).
@@ -49,6 +50,10 @@ type Mode = "analyzing" | "ready" | "retry";
 export default function ShareEmptyState({ wallet }: { wallet: string }) {
   const router = useRouter();
   const isAddress = FLOW_ADDRESS.test(wallet);
+  // 2026-11-14: a Candy (Solana) key is a real address too, but this flow can only queue a Flow walk,
+  // so it lands in "retry" — whose heading said "We haven't indexed this wallet yet", a claim about
+  // our index made without checking (an indexed Candy wallet that sold everything read it).
+  const isSolana = !isAddress && isSolanaAddress(wallet.trim());
 
   const [mode, setMode] = useState<Mode>(isAddress ? "analyzing" : "retry");
   const [value, setValue] = useState("");
@@ -266,7 +271,9 @@ export default function ShareEmptyState({ wallet }: { wallet: string }) {
         <div style={{ fontSize: 20, color: "var(--rpc-text-primary)", marginBottom: 8 }}>
           {isAddress
             ? "We couldn’t find any moments for this wallet yet"
-            : "We haven’t indexed this wallet yet"}
+            : isSolana
+              ? "We couldn’t find any moments for this wallet"
+              : "We haven’t indexed this wallet yet"}
         </div>
         <div
           style={{
