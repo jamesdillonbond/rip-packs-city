@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-14 ~2:50 PM PT — Golazos Sets tab: a username or a never-scanned wallet no longer reads "0%" on every set (Claude Code cloud)
+- `/api/sets-db` (behind the Golazos Set Tracker) lower-cased its `?wallet=` input and matched it as an address: a USERNAME matched 0 rows, and a wallet RPC never walked also matched 0 — both answered "0% of every set". Now: the input is normalised with `normalizeFlowAddress`, a username resolves through `resolveTopShotUsernameCacheAware` (unresolvable → 404 `wallet_not_found`, lookup error → 5xx), and zero owned rows asks `walletIndexState`: never walked → 409 `wallet_not_indexed` with a "scan it on the Collection tab" message; a failed check → 5xx; indexed-empty → the 0% answer as before (control test). Three new tests red on the old route; three fixtures re-pinned (`0xabc` was not a valid address; empty-wallet premises now carry a clean-walk record). Preflight green.
+- Revert: `git revert` the commit titled "fix(sets-db): resolve a username and refuse a never-scanned wallet instead of 0% on every set".
+
 ### 2026-11-14 ~2:40 PM PT — search: Disney Pinnacle franchises are team hits (Claude Code cloud)
 - `rpc_search_catalog` team arm read only `editions.team_name` (0 Pinnacle rows), so "star wars" / "mickey" never offered `/disney-pinnacle/team/<slug>`. UNION ALL arm over `pinnacle_catalog × unnest(franchises)` (™/®/© stripped, as the pages do). md5-asserted splice, migration `20261114223500`. Live: "star wars" (Pinnacle) → team Star Wars 740 pins, ranked first; "mickey" (all) → Mickey & Friends 271; Top Shot "trail blazers" control unchanged. Arm cost 5 ms / 717 buffers.
 - Revert: inverse splice (swap the two literals in the migration) via `pg_get_functiondef` + EXECUTE.
