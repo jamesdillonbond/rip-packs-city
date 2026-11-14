@@ -218,6 +218,12 @@ export type CostBasisSummary = {
   plPct: number
   count: number
   walletWide: boolean
+  /**
+   * Set only on the per-row fallback when the loaded rows do NOT cover the wallet
+   * (2026-11-14): the sum is over `loaded` of `total` moments, and must say so. Null
+   * when the figure is wallet-wide or the loaded rows are the whole wallet.
+   */
+  partial: { loaded: number; total: number } | null
 }
 
 // Cost basis / P&L summary. When the authoritative wallet-wide cost basis is
@@ -229,6 +235,10 @@ export function computeCostBasisSummary(
   walletSummary: WalletSummary,
   rows: readonly PortfolioMomentRow[],
   costBasis: ReadonlyMap<string, { buyPrice: number }>,
+  // The wallet's moment count (the grid's paginated total). When the per-row fallback
+  // runs — the wallet summary still loading, failed, or carrying no cost — and the
+  // loaded rows are fewer than this, the sum is a page's, not the wallet's.
+  walletMomentTotal?: number | null,
 ): CostBasisSummary | null {
   let totalCost: number
   let totalFmv: number
@@ -264,5 +274,7 @@ export function computeCostBasisSummary(
 
   if (totalCost === 0) return null
   const plPct = totalCost > 0 ? (totalPl / totalCost) * 100 : 0
-  return { totalCost, totalFmv, totalPl, plPct, count, walletWide }
+  const total = typeof walletMomentTotal === "number" && Number.isFinite(walletMomentTotal) ? walletMomentTotal : null
+  const partial = !walletWide && total != null && rows.length < total ? { loaded: rows.length, total } : null
+  return { totalCost, totalFmv, totalPl, plPct, count, walletWide, partial }
 }

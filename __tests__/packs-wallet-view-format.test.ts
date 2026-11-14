@@ -526,3 +526,33 @@ describe("pullsHeldLine (dashboard pack details, 2026-11-13)", () => {
     expect(pullsHeldLine([{}, {}], undefined)).toBeNull()
   })
 })
+
+// 2026-11-14 (fresh-eyes review): per-collection Net P&L used the WALLET's coverage alone.
+import { collectionPlWithheld } from "@/lib/packs-wallet-view-format"
+
+describe("collectionPlWithheld", () => {
+  // A wallet whose activity is mostly well-covered Top Shot: passes the 80 % floor.
+  const wallet = { packs_purchased: 900, packs_ripped: 900, ripped_value_known_count: 900, primary_spend_unknown_count: 0, inferred_primary_count: 0, packs_sold: 0 }
+
+  it("withholds a collection with no costed packs even when the wallet passes (the live Pinnacle row)", () => {
+    // 0xd708cc29ee72b8ee, by_collection: 0 purchased, 2,651 ripped, $0 spent → "+$111,399.85".
+    const pinnacle = { packs_purchased: 0, packs_ripped: 2651, packs_sold: 0, primary_spend_unknown_count: 0 }
+    expect(collectionPlWithheld(wallet, pinnacle)).toBe(true)
+  })
+
+  it("publishes a collection whose own spend is covered when the wallet passes", () => {
+    const topShot = { packs_purchased: 800, packs_ripped: 800, packs_sold: 0, primary_spend_unknown_count: 10 }
+    expect(collectionPlWithheld(wallet, topShot)).toBe(false)
+  })
+
+  it("withholds every row when the wallet itself withholds", () => {
+    const thinWallet = { ...wallet, ripped_value_known_count: 100 }
+    const topShot = { packs_purchased: 800, packs_ripped: 800, packs_sold: 0, primary_spend_unknown_count: 0 }
+    expect(collectionPlWithheld(thinWallet, topShot)).toBe(true)
+  })
+
+  it("withholds when either side is missing — never a P&L without its coverage", () => {
+    expect(collectionPlWithheld(null, { packs_purchased: 1, packs_ripped: 1 })).toBe(true)
+    expect(collectionPlWithheld(wallet, null)).toBe(true)
+  })
+})

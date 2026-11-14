@@ -228,6 +228,11 @@ function WalletMomentsBody() {
     total_spent: number
   } | null>(null)
   const [activeWallet, setActiveWallet] = useState("")
+  // The address a USERNAME search resolved to (the moments route's `wallet`). The
+  // cost-basis read needs an address: given the raw username it prepended "0x" and
+  // matched nothing, so a collector who searched their own username never saw cost
+  // basis or the PACK PULL / MINTED chips (2026-11-14 review). Empty until resolved.
+  const [resolvedAddress, setResolvedAddress] = useState("")
   const [costBasis, setCostBasis] = useState<Map<string, { buyPrice: number; acquiredDate: string; fmvAtAcquisition: number | null; acquisitionMethod: string | null; costBasisLabel: string | null }>>(new Map())
   const [serverSortBy, setServerSortBy] = useState("fmv_desc")
 
@@ -400,14 +405,16 @@ function WalletMomentsBody() {
   // separate source and is unaffected — this clears only what THIS read owns.)
   useEffect(function() {
     setCostBasis(new Map())
-    if (!activeWallet) return
+    // An address searches as itself; a username waits for the address it resolved to.
+    const costWallet = looksLikeAddress(activeWallet) ? activeWallet : resolvedAddress
+    if (!costWallet) return
     let cancelled = false
     // Session-gated (proxy 401s a signed-out fetch): skip only on a DEFINITE
     // signed-out, so the empty map is the same "nothing to show" a 401 gave.
     signedInOnce()
       .then(function(si) {
         if (si === false) return null
-        return fetch("/api/cost-basis?wallet=" + encodeURIComponent(activeWallet) + "&collection=" + encodeURIComponent(collectionSlug))
+        return fetch("/api/cost-basis?wallet=" + encodeURIComponent(costWallet) + "&collection=" + encodeURIComponent(collectionSlug))
           .then(function(r) { return r.ok ? r.json() : null })
       })
       .then(function(data) {
@@ -427,7 +434,7 @@ function WalletMomentsBody() {
       })
       .catch(function() {})
     return function() { cancelled = true }
-  }, [activeWallet, collectionSlug])
+  }, [activeWallet, resolvedAddress, collectionSlug])
 
   // ── Background cache refresh: detect new on-chain moments ─────────────────
   useEffect(function() {
@@ -736,6 +743,10 @@ function WalletMomentsBody() {
     // AND chain-checked — `isValidAddressForChain` means a Cadence address can
     // never land in the Solana slot or vice versa, whatever the route returns.
     const resolvedWallet: string | undefined = json.wallet
+    // Only for the search still on screen, and only an address.
+    if (resolvedWallet && wallet === lastSearchedRef.current && looksLikeAddress(resolvedWallet)) {
+      setResolvedAddress(resolvedWallet)
+    }
     try {
       if (resolvedWallet && ownerKeyMatchesChain(resolvedWallet, ownerKeyChain)) {
         if (getOwnerKeyForChain(ownerKeyChain) !== resolvedWallet) {
@@ -829,6 +840,7 @@ function WalletMomentsBody() {
     })
     setInput(trimmed)
     setActiveWallet(trimmed)
+    setResolvedAddress("")
     lastSearchedRef.current = trimmed
     // Reset accumulated owned flow IDs at the start of each new wallet search
     ownedFlowIdsRef.current = new Set<string>()

@@ -217,9 +217,9 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
              "Current FMV" / P&L figure would assert a live valuation that no
              longer exists (WalletStatRow already shows the count + closure note). */}
         {hasSearched && !isMarketClosed(collectionSlug) && (walletSummary?.cost_basis ? walletSummary.cost_basis > 0 : (costBasis.size > 0 || rows.some(function(r) { return r.costBasis != null }))) && (function() {
-          const summary = computeCostBasisSummary(walletSummary, rows, costBasis)
+          const summary = computeCostBasisSummary(walletSummary, rows, costBasis, paginatedTotal)
           if (!summary) return null
-          const { totalCost, totalFmv, totalPl, plPct, count, walletWide } = summary
+          const { totalCost, totalFmv, totalPl, plPct, count, walletWide, partial } = summary
           const plColor = totalPl >= 0 ? "text-emerald-400" : "text-red-400"
           return (
             <div className="flex flex-wrap gap-6 items-center mb-4 p-3 rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] text-sm font-mono">
@@ -228,7 +228,11 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
               <div><span className="text-[color:var(--rpc-text-muted)]">P&amp;L:</span> <span className={plColor}>{totalPl >= 0 ? "+" : "-"}{fmtUsd2(Math.abs(totalPl))} ({fmtSignedFixed(plPct, 0)}%)</span></div>
               {walletWide
                 ? <div className="text-[color:var(--rpc-text-muted)] text-xs">{count > 0 ? `${count.toLocaleString("en-US")} ${count === 1 ? "moment" : "moments"} with a known cost` : "moments with a known cost"} — FMV here is theirs, not the whole wallet</div>
-                : <div className="text-[color:var(--rpc-text-muted)] text-xs">{count} moments with cost data</div>}
+                : partial
+                  // 2026-11-14: a page's sum, not the wallet's — the wallet-wide summary is
+                  // still loading or failed. It read as the wallet's P&L before.
+                  ? <div className="text-[color:var(--rpc-text-muted)] text-xs">{count} moments with cost data among the {partial.loaded.toLocaleString("en-US")} loaded of {partial.total.toLocaleString("en-US")} — not the whole wallet</div>
+                  : <div className="text-[color:var(--rpc-text-muted)] text-xs">{count} moments with cost data</div>}
             </div>
           )
         })()}

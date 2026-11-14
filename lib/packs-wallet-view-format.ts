@@ -766,3 +766,29 @@ export function pullsHeldLine(
   const value = priced.length === 0 ? "" : ` · ${fmtPackUsd(Math.round(sum * 100) / 100)} wallet FMV` + (priced.length < held.length ? ` (${priced.length} of ${held.length} priced)` : "")
   return `${held.length} of ${pulls.length} still held${value}`
 }
+
+/**
+ * Is ONE collection's Net P&L publishable? (2026-11-14, fresh-eyes review.)
+ *
+ * The per-collection P&L tiles (Collection tab Packs view, Pack History's
+ * collection rows) were gated on the WALLET's coverage alone. A wallet whose
+ * well-covered Top Shot activity passes the floor then published its Disney
+ * Pinnacle row — no pack-buy source, $0 spent — as profit: live on
+ * 0xd708cc29ee72b8ee, by_collection read "net_pl_usd 111399.85" from 2,651 rips
+ * and $0 spent, the 10-18 defect back at collection grain.
+ *
+ * `get_wallet_pack_summary.by_collection` carries the spend side (purchased,
+ * ripped, sold, spend-unknown) but not rip-value coverage or inferred drops, so
+ * the row is checked on SPEND coverage (its own costed-packs floor) and the
+ * wallet check still owns rip coverage and inferred drops. Withheld if EITHER fails.
+ */
+export function collectionPlWithheld(
+  walletTotals: PackCoverageTotals | null | undefined,
+  row: PackCoverageTotals | null | undefined,
+): boolean {
+  if (!walletTotals || !row) return true
+  if (packCoverage(walletTotals).plWithheld) return true
+  // Rip coverage is not knowable per collection: neutralise that arm here (the
+  // wallet check above enforces it) and keep the spend arm, which the row carries.
+  return packCoverage({ ...row, ripped_value_known_count: row.packs_ripped, inferred_primary_count: 0 }).plWithheld
+}

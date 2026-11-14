@@ -137,6 +137,19 @@ describe("WalletPacksView", () => {
     expect(netPlTile(container)).toBe("\u2014")
     expect(queryByText("$50.00")).toBeNull()
   })
+  it("⚠ WITHHOLDS this collection's Net P&L when IT has no costed packs, even though the wallet passes (2026-11-14)", async () => {
+    // The live Pinnacle shape: 0 purchased, ripped packs, $0 spent → gross rip value as "profit".
+    ownerKey = "0xowner"
+    const body = {
+      ...summaryBody,
+      by_collection: [{ ...summaryBody.by_collection[0], packs_purchased: 0, packs_ripped: 3, spent_usd: 0, net_pl_usd: 300, ripped_value_usd: 300 }],
+      totals: { packs_purchased: 50, packs_ripped: 3, ripped_value_known_count: 3, primary_spend_unknown_count: 0, inferred_primary_count: 0 },
+    }
+    vi.stubGlobal("fetch", routeFetch({ summary: () => res(200, body), history: () => res(200, { packs: [heldRow], total_count: 1 }) }))
+    const { container, getByText } = render(<WalletPacksView collection="nba-top-shot" />)
+    await waitFor(() => expect(getByText("Base Pack")).toBeTruthy())
+    expect(netPlTile(container)).toBe("\u2014")
+  })
   it("⚠ a payload with NO totals withholds Net P&L rather than publishing an unchecked figure", async () => {
     ownerKey = "0xowner"
     const { totals: _drop, ...noTotals } = summaryBody

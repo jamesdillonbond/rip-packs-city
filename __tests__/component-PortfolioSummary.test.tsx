@@ -191,6 +191,26 @@ describe("PortfolioSummary", () => {
     expect(txt).not.toContain("wallet-wide totals")
   })
 
+  it("says a page's cost sum is a page's when the wallet summary is absent (2026-11-14)", () => {
+    // The wallet-wide summary timed out / is still loading; 2 of 40 moments are loaded.
+    const rows = [
+      { flowId: "1", acquisitionMethod: "marketplace", loanPrincipal: 0, costBasis: 100, fmv: 40 },
+      { flowId: "2", acquisitionMethod: "marketplace", loanPrincipal: 0, costBasis: 50, fmv: 30 },
+    ] as unknown as MomentRow[]
+    const txt = render(<PortfolioSummary {...base} walletSummary={null} rows={rows} paginatedTotal={40} />).container.textContent!
+    expect(txt).toContain("among the 2 loaded of 40 — not the whole wallet")
+  })
+
+  it("no partial caveat when the loaded rows ARE the wallet (2026-11-14)", () => {
+    const rows = [
+      { flowId: "1", acquisitionMethod: "marketplace", loanPrincipal: 0, costBasis: 100, fmv: 40 },
+      { flowId: "2", acquisitionMethod: "marketplace", loanPrincipal: 0, costBasis: 50, fmv: 30 },
+    ] as unknown as MomentRow[]
+    const txt = render(<PortfolioSummary {...base} walletSummary={null} rows={rows} paginatedTotal={2} />).container.textContent!
+    expect(txt).toContain("2 moments with cost data")
+    expect(txt).not.toContain("not the whole wallet")
+  })
+
   it("enters the cost block via a non-empty costBasis Map but renders nothing when the summary is null", () => {
     // costBasis.size > 0 opens the block gate, but with no rows the summary
     // computes totalCost 0 → computeCostBasisSummary returns null → block emits null.

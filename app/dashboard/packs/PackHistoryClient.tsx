@@ -13,7 +13,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import DashboardTabs from "@/components/dashboard/DashboardTabs"
 import { fmtUsd, relativeTime } from "@/lib/dashboard/format"
 import { currencySuffix, displayCurrency, isUsdPegged } from "@/lib/usd-format"
-import { packCoverage } from "@/lib/packs-wallet-view-format"
+import { packCoverage, collectionPlWithheld } from "@/lib/packs-wallet-view-format"
 import { heldPacksCaption, pullsHeldLine, packHeldFmvLabel, packHeldPullsLabel, packValueLabel, packBuyLabel, packIdentityNote, packInferredAcquisitionLine, packMarketLabel, packPullLabel, packPullSerialLabel, packsRippedCaption, packsSoldCaption, spentCaption, type HeldPackValue } from "@/lib/packs-wallet-view-format"
 import Link from "next/link"
 import { DB_SLUG_TO_SLUG } from "@/lib/collections"
@@ -80,6 +80,8 @@ interface SummaryCollection {
   packs_purchased: number
   packs_ripped: number
   packs_sold: number
+  /** Purchases with no known price (the row's own spend coverage, collectionPlWithheld). */
+  primary_spend_unknown_count?: number
 }
 
 interface Summary {
@@ -569,8 +571,11 @@ export default function PackHistoryClient() {
                        per page: when the headline withholds, these withhold too
                        and fall back to the activity count, which is a real
                        measurement. */
-                    sub={plWithheld ? `${c.activity_total} activity` : `${c.activity_total} · ${fmtUsd(c.net_pl_usd)}`}
-                    pl={plWithheld ? undefined : c.net_pl_usd}
+                    /* 2026-11-14: and per ROW — a collection with no costed packs (Pinnacle: no
+                       pack-buy source) published its gross rip value as profit whenever the
+                       wallet as a whole passed the floor. */
+                    sub={collectionPlWithheld(t, c) ? `${c.activity_total} activity` : `${c.activity_total} · ${fmtUsd(c.net_pl_usd)}`}
+                    pl={collectionPlWithheld(t, c) ? undefined : c.net_pl_usd}
                     onClick={() => setCollection(c.collection_slug)}
                   />
                 ))}

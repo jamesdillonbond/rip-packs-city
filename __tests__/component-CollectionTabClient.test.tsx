@@ -907,6 +907,20 @@ describe("CollectionTabClient — enrichment", () => {
     )
   })
 
+  it("a USERNAME search reads cost basis for the address it resolved to, never \"0x\"+username (2026-11-14)", async () => {
+    searchParams = new URLSearchParams("wallet=damefan")
+    momentsResponse = () => json(200, { moments: [MOMENT()], wallet: "0xabc1230000000000", page: 1, total_count: 1, total_pages: 1 })
+    withRoutes({ "/api/cost-basis": () => json(200, { acquisitions: [ACQUISITION("9001")] }) })
+    render(<CollectionTabClient />)
+    await waitFor(() =>
+      expect(screen.getByTestId("moment-table").getAttribute("data-cost-basis-ids")).toBe("9001"),
+    )
+    const costUrls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/cost-basis"))
+    expect(costUrls.length).toBeGreaterThan(0)
+    expect(costUrls.every((u) => u.includes("wallet=0xabc1230000000000"))).toBe(true)
+    expect(costUrls.some((u) => u.includes("damefan"))).toBe(false)
+  })
+
   it("🚨 a FAILED cost-basis read on a NEW wallet must not leave the PREVIOUS wallet's numbers on screen", async () => {
     // The defect: the effect cleared the map only for the empty-wallet case
     // (`if (!activeWallet) { setCostBasis(new Map()); return }`), and both a

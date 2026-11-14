@@ -42,7 +42,7 @@ import {
   PACK_FILTER_LABEL,
   PACK_FILTER_STATUS,
   type PackFilter,
-  packCoverage,
+  collectionPlWithheld,
   type PackCoverageTotals,
 } from "@/lib/packs-wallet-view-format"
 import { accentText, labelOn, accentFill } from "@/lib/accent-text"
@@ -60,6 +60,8 @@ interface SummaryCollection {
   packs_purchased: number
   packs_ripped: number
   packs_sold: number
+  /** Purchases with no known price (the row's own spend coverage, collectionPlWithheld). */
+  primary_spend_unknown_count?: number
 }
 
 interface Summary {
@@ -277,8 +279,11 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
           if (cancelled) return
           if (res.ok && json && Array.isArray((json as Summary).by_collection)) {
             const sum = json as Summary
-            setSummaryRow(sum.by_collection.find((c) => c.collection_slug === dbSlug || c.collection_slug === collection) ?? null)
-            setPlWithheld(sum.totals ? packCoverage(sum.totals).plWithheld : true)
+            const row = sum.by_collection.find((c) => c.collection_slug === dbSlug || c.collection_slug === collection) ?? null
+            setSummaryRow(row)
+            // 2026-11-14: THIS collection's coverage too, not only the wallet's — a well-covered
+            // Top Shot wallet published its Pinnacle row ($0 spent, 2,651 rips) as +$111,399.85.
+            setPlWithheld(collectionPlWithheld(sum.totals, row))
             setSummaryState("ok")
             return
           }
