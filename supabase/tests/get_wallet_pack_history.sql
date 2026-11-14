@@ -81,7 +81,7 @@
 --      beside the count it covers (V27-1..V27-4), with tab_totals.packs = total_count (V27-5).
 --
 -- The get_wallet_pack_history DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261114030000_audit_20261113_pack_history_held_pulls_wallet_fmv_and_tab_totals.sql).
+-- (supabase/migrations/20261114034856_audit_20261113_pack_history_held_pulls_wallet_fmv_and_tab_totals.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.

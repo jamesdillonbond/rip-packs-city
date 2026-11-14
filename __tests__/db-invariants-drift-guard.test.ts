@@ -952,7 +952,7 @@ const PINS = [
     // v24 (2026-10-19): a Top Shot pack the index left at Revealed is an open, never a hold.
     // v26 (2026-11-06): the index naming the pack's own primary distributor is unknown, never a transfer (#218 second face).
     // v27 (2026-11-13): opened packs carry the pulls still held + their wallet FMV; sealed packs a value + basis; tab_totals.
-    migration: "supabase/migrations/20261114030000_audit_20261113_pack_history_held_pulls_wallet_fmv_and_tab_totals.sql",
+    migration: "supabase/migrations/20261114034856_audit_20261113_pack_history_held_pulls_wallet_fmv_and_tab_totals.sql",
   },
   {
     // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,
