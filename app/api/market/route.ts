@@ -1474,7 +1474,13 @@ export async function GET(req: NextRequest) {
       const total = postFiltered.length
       const paged = postFiltered.slice(offset, offset + limit)
       const hasMore = offset + limit < total
-      const modernPageFull = (data?.length ?? 0) >= limit
+      // ⚠ 2026-11-14: compared with the PAGE size (50), so 120 fully-fetched editions read "50 OF 120+".
+      // Every modern arm reads a window of at least max(limit, 500) rows (the sniper RPCs' p_limit,
+      // fetchPaniniMarketListings' `window`), so a read can only have been CUT when it returned at
+      // least that many. Conservative by construction: it may still say "+" for an arm that pages
+      // its whole catalog, but it can never call a truncated read exact.
+      const MIN_ARM_WINDOW = 500
+      const modernPageFull = (data?.length ?? 0) >= Math.max(limit, MIN_ARM_WINDOW)
 
       return NextResponse.json({
         listings: paged,

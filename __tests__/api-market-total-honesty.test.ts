@@ -251,12 +251,22 @@ describe("GET /api/market — modern path total flagging + in-memory sort", () =
     expect(body.pagination.matchedBeforeFilters).toBeNull()
   })
 
-  it("a FULL modern page is flagged as a floor — the RPC is called WITH limit, so more may exist", async () => {
-    install(modern([modernRow(0), modernRow(1), modernRow(2)]))
+  // Re-pinned 2026-11-14: the premise was "the RPC is called WITH limit" — it is called with
+  // p_limit = max(limit, 500), so a read is only possibly CUT when it fills that window. Comparing
+  // with the page size made 120 fully-fetched editions read "50 OF 120+".
+  it("a modern read that FILLS its fetch window is flagged as a floor — more may exist", async () => {
+    install(modern(Array.from({ length: 500 }, (_, i) => modernRow(i))))
     const body = await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&limit=3`))).json()
-    expect(body.pagination.total).toBe(3)
     expect(body.pagination.totalIsExact).toBe(false)
     expect(body.diagnostics.windowTruncated).toBe(true)
+  })
+
+  it("a modern read SHORT of its window is exact, even when it is longer than the page", async () => {
+    install(modern([modernRow(0), modernRow(1), modernRow(2)]))
+    const body = await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&limit=2`))).json()
+    expect(body.pagination.total).toBe(3)
+    expect(body.pagination.totalIsExact).toBe(true)
+    expect(body.diagnostics.windowTruncated).toBe(false)
   })
 
   it("re-sorts the modern feed in memory so the shown order matches the label", async () => {
