@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest"
 import {
+  packValueLabel, packUnrealizedUsd, packHeldPullsLabel, packHeldFmvLabel, packRoiLabel, packHoldLabel,
+  packTabMetrics,
   PACK_FILTER_STATUS,
   PACK_FILTER_LABEL,
   PACK_FILTERS,
@@ -415,5 +417,98 @@ describe("packPullSerialLabel", () => {
     expect(packPullSerialLabel(0, 100)).toBeNull()
     expect(packPullSerialLabel("", 100)).toBeNull()
     expect(packPullSerialLabel("abc", 100)).toBeNull()
+  })
+})
+
+// ── 2026-11-13 (get_wallet_pack_history v27): per-tab columns + metrics ─────────
+
+describe("v27 per-row columns never render an unknown as $0", () => {
+  it("a sealed pack's value names its basis, and no value is a dash", () => {
+    expect(packValueLabel({ value_usd: 25, value_basis: "ask" })).toBe("$25.00 · floor ask")
+    expect(packValueLabel({ value_usd: 18, value_basis: "last_sale" })).toBe("$18.00 · last sale")
+    expect(packValueLabel({ value_usd: null, value_basis: null })).toBe("—")
+    expect(packValueLabel({})).toBe("—")
+  })
+  it("unrealized needs a value AND a cost, and a pack from a box has no cost of its own", () => {
+    expect(packUnrealizedUsd({ value_usd: 25, buy_usd: 10 })).toBe(15)
+    expect(packUnrealizedUsd({ value_usd: 8, buy_usd: 10 })).toBe(-2)
+    expect(packUnrealizedUsd({ value_usd: 25, buy_usd: null })).toBeNull()
+    expect(packUnrealizedUsd({ value_usd: null, buy_usd: 10 })).toBeNull()
+    expect(packUnrealizedUsd({ value_usd: 25, buy_usd: 0, buy_price_source: "box" })).toBeNull()
+  })
+  it("still-held pulls say when the list is partial", () => {
+    expect(packHeldPullsLabel({ pulls_listed: 3, pulls_held: 2, moments_pulled: 3 })).toBe("2 of 3")
+    expect(packHeldPullsLabel({ pulls_listed: 2, pulls_held: 2, moments_pulled: 4 })).toBe("2 of 2 named")
+    expect(packHeldPullsLabel({ pulls_listed: 0, pulls_held: 0 })).toBe("—")
+    expect(packHeldPullsLabel({})).toBe("—")
+  })
+  it("held FMV: a real $0 when none is held, a coverage note when one held pull is unpriced", () => {
+    expect(packHeldFmvLabel({ pulls_listed: 3, pulls_held: 2, pulls_held_priced: 2, held_fmv_usd: 12 })).toBe("$12.00")
+    expect(packHeldFmvLabel({ pulls_listed: 2, pulls_held: 0, pulls_held_priced: 0, held_fmv_usd: 0 })).toBe("$0")
+    expect(packHeldFmvLabel({ pulls_listed: 2, pulls_held: 2, pulls_held_priced: 1, held_fmv_usd: null })).toBe("— (1/2 priced)")
+    // no pull list at all: unknown, never $0
+    expect(packHeldFmvLabel({ pulls_listed: null, pulls_held: null, held_fmv_usd: null })).toBe("—")
+  })
+  it("ROI and hold time need both ends", () => {
+    expect(packRoiLabel({ realized_pl_usd: 15, buy_usd: 10 })).toBe("+150%")
+    expect(packRoiLabel({ realized_pl_usd: -5, buy_usd: 10 })).toBe("-50%")
+    expect(packRoiLabel({ realized_pl_usd: 5, buy_usd: 0 })).toBe("—")
+    expect(packRoiLabel({ realized_pl_usd: null, buy_usd: 10 })).toBe("—")
+    expect(packHoldLabel("2026-10-01T00:00:00Z", "2026-10-13T00:00:00Z")).toBe("12d")
+    expect(packHoldLabel("2026-10-01T00:00:00Z", "2026-10-01T05:00:00Z")).toBe("5h")
+    expect(packHoldLabel(null, "2026-10-13T00:00:00Z")).toBe("—")
+    expect(packHoldLabel("2026-10-13T00:00:00Z", "2026-10-01T00:00:00Z")).toBe("—")
+  })
+})
+
+describe("v27 tab metrics: every sum names the rows it covers; a sum over none is a dash", () => {
+  const now = Date.parse("2026-11-13T20:00:00Z")
+  it("unopened: value over 2 of 3, unrealized over the 1 with both, old asks dated", () => {
+    const m = packTabMetrics("unopened", {
+      packs: 3, held_packs: 3, cost_usd: 14, cost_known: 2, held_value_usd: 43, held_valued: 2, held_valued_by_ask: 1,
+      held_ask_oldest_checked_at: "2026-08-27T02:58:21Z", held_unrealized_usd: 15, held_unrealized_n: 1,
+    }, now)
+    const by = Object.fromEntries(m.map((x) => [x.label, x]))
+    expect(by["Sealed packs"].value).toBe("3")
+    expect(by["Cost basis"].value).toBe("$14.00")
+    expect(by["Cost basis"].caption).toBe("across 2 of 3")
+    expect(by["Market value"].value).toBe("$43.00")
+    expect(by["Market value"].caption).toBe("across 2 of 3 · asks checked since Aug 26")
+    expect(by["Unrealized"].value).toBe("$15.00")
+    expect(by["Unrealized"].tone).toBe("positive")
+  })
+  it("unopened with nothing valued shows a dash, never $0", () => {
+    const m = packTabMetrics("unopened", { packs: 2, held_packs: 2, cost_known: 0, cost_usd: null, held_valued: 0, held_value_usd: null, held_unrealized_n: 0, held_unrealized_usd: null }, now)
+    for (const x of m.filter((x) => x.label !== "Sealed packs")) expect(x.value).toBe("—")
+  })
+  it("opened: the wallet FMV of pulls still held, with how many and how many priced", () => {
+    const m = packTabMetrics("opened", {
+      packs: 4, opened_packs: 4, opened_with_pull_list: 4, pulls_listed: 9, pulls_held: 5, pulls_held_priced: 4,
+      held_fmv_usd: 17.5, pull_value_usd: 33, pull_valued: 3, cost_usd: null, cost_known: 0, realized_pl_usd: null, realized_pl_known: 0,
+    }, now)
+    const held = m.find((x) => x.label === "Still held · wallet FMV")!
+    expect(held.value).toBe("$17.50")
+    expect(held.caption).toBe("5 of 9 pulls still held · 4 priced")
+    expect(m.find((x) => x.label === "Pull value")!.caption).toBe("across 3 of 4")
+    expect(m.find((x) => x.label === "Cost")!.value).toBe("—")
+    expect(m.find((x) => x.label === "Realized P&L")!.tone).toBe("muted")
+  })
+  it("opened with no pull list held says so instead of $0", () => {
+    const held = packTabMetrics("opened", { packs: 2, opened_packs: 2, pulls_listed: 0, pulls_held: 0, held_fmv_usd: 0 }, now)
+      .find((x) => x.label === "Still held · wallet FMV")!
+    expect(held.value).toBe("—")
+    expect(held.caption).toBe("no pull list held yet")
+  })
+  it("sold: proceeds, avg sale, P&L over the rows that carry it", () => {
+    const m = packTabMetrics("sold", { packs: 4, sold_packs: 4, proceeds_usd: 100, proceeds_known: 4, cost_usd: 30, cost_known: 2, realized_pl_usd: -6, realized_pl_known: 2 }, now)
+    const by = Object.fromEntries(m.map((x) => [x.label, x]))
+    expect(by["Proceeds"].value).toBe("$100.00")
+    expect(by["Avg sale"].value).toBe("$25.00")
+    expect(by["Realized P&L"].value).toBe("-$6.00")
+    expect(by["Realized P&L"].tone).toBe("negative")
+    expect(by["Realized P&L"].caption).toBe("across 2 of 4")
+  })
+  it("an older payload with no tab_totals renders no tiles", () => {
+    expect(packTabMetrics("sold", undefined)).toEqual([])
   })
 })

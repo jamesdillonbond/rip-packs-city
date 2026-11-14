@@ -163,8 +163,11 @@ describe("WalletPacksView", () => {
     expect(getByText("$250.00")).toBeTruthy()
     expect(getByText("$300.00")).toBeTruthy()
     expect(getByText("$50.00")).toBeTruthy()
-    // held status chip
-    expect(getByText("held")).toBeTruthy()
+    // Re-pinned 2026-11-13 (Trevor: "better metrics and columns, depending on what's relevant,
+    // under the unopened, opened, and sold tabs"): one tab is one status, so the status chip
+    // column is gone; the Unopened tab's own columns are what this row carries.
+    for (const h of ["Acquired", "Cost", "Value", "Unrealized", "Market"]) expect(getByText(h)).toBeTruthy()
+    expect(() => getByText("held")).toThrow()
     // has_buy/has_sell/has_rip all false → three "—" cells + realized P&L "—"
     expect(getAllByText("—").length).toBeGreaterThanOrEqual(3)
   })
@@ -285,5 +288,48 @@ describe("WalletPacksView", () => {
     vi.stubGlobal("fetch", fetchMock)
     const { getByText } = render(<WalletPacksView collection="nba-top-shot" />)
     await waitFor(() => expect(getByText("history exploded")).toBeTruthy())
+  })
+
+  // 2026-11-13 (history v27): the Opened tab shows what each pack yielded that the wallet
+  // STILL holds, at its wallet FMV, and the tab's metrics over every row (tab_totals).
+  it("Opened tab: still-held pulls + their wallet FMV per row, and the tab's metric tiles", async () => {
+    ownerKey = "0xowner"
+    const openedRow = {
+      ...heldRow, pack_nft_id: "555", pack_name: "Rookie Pack", dist_id: "D1", status: "ripped" as const,
+      has_rip: true, has_buy: true, buy_usd: 10, buy_price: 10, pull_value_usd: 20, realized_pl_usd: 10,
+      moments_pulled: 3, pulls_listed: 3, pulls_held: 2, pulls_held_priced: 2, held_fmv_usd: 12.5,
+      ripped_at: "2026-11-01T00:00:00Z",
+    }
+    fetchMock = routeFetch({
+      summary: () => res(200, summaryBody),
+      history: (url: string) =>
+        url.includes("status=ripped")
+          ? res(200, {
+              packs: [openedRow], total_count: 1,
+              tab_totals: { packs: 1, opened_packs: 1, opened_with_pull_list: 1, pulls_listed: 3, pulls_held: 2, pulls_held_priced: 2,
+                            held_fmv_usd: 12.5, pull_value_usd: 20, pull_valued: 1, cost_usd: 10, cost_known: 1,
+                            realized_pl_usd: 10, realized_pl_known: 1 },
+            })
+          : res(200, { packs: [heldRow], total_count: 1 }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText, getAllByText, findByText } = render(<WalletPacksView collection="nba-top-shot" />)
+    await waitFor(() => expect(getByText("Base Pack")).toBeTruthy())
+    fireEvent.click(getByText("Opened"))
+    expect(await findByText("Rookie Pack")).toBeTruthy()
+    for (const h of ["Still held", "Held FMV", "Pull value"]) expect(getAllByText(h).length).toBeGreaterThan(0)
+    expect(getByText("2 of 3")).toBeTruthy()
+    // the row's held FMV and the tile's total are the same $12.50 here
+    expect(getAllByText("$12.50").length).toBe(2)
+    expect(getByText("2 of 3 pulls still held")).toBeTruthy()
+  })
+
+  it("an older payload with no tab_totals renders no metric tiles (and no $0)", async () => {
+    ownerKey = "0xowner"
+    fetchMock = routeFetch({ summary: () => res(200, summaryBody), history: () => res(200, { packs: [heldRow], total_count: 1 }) })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText, queryByLabelText } = render(<WalletPacksView collection="nba-top-shot" />)
+    await waitFor(() => expect(getByText("Base Pack")).toBeTruthy())
+    expect(queryByLabelText("Unopened pack metrics")).toBeNull()
   })
 })

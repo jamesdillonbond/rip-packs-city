@@ -29,6 +29,15 @@ import {
   packStatusColor,
   realizedPlTint,
   relativePackTime,
+  packValueLabel,
+  packUnrealizedUsd,
+  packHeldPullsLabel,
+  packHeldFmvLabel,
+  packRoiLabel,
+  packHoldLabel,
+  packTabMetrics,
+  packMetricTint,
+  type PackTabTotals,
   PACK_FILTERS,
   PACK_FILTER_LABEL,
   PACK_FILTER_STATUS,
@@ -37,6 +46,7 @@ import {
   type PackCoverageTotals,
 } from "@/lib/packs-wallet-view-format"
 import { accentText, labelOn, accentFill } from "@/lib/accent-text"
+import { currencySuffix } from "@/lib/usd-format"
 
 interface SummaryCollection {
   collection_id: string
@@ -102,11 +112,28 @@ interface HistoryRow {
   /** 2026-09-26 (v11): Dapper minted this pack straight into the wallet (Flow PackNFT.Minted). */
   minted_to_wallet_at?: string | null
   identity_status?: string | null
+  // 2026-11-13 (history v27) — all optional: an older payload renders "—".
+  bought_at?: string | null
+  sold_at?: string | null
+  ripped_at?: string | null
+  sell_currency?: string | null
+  moments_pulled?: number | null
+  /** Pulls named for this opened pack / still in this wallet / of those with an FMV. */
+  pulls_listed?: number | null
+  pulls_held?: number | null
+  pulls_held_priced?: number | null
+  /** Wallet FMV of the pulls still held; NULL when one of them has no FMV. */
+  held_fmv_usd?: number | null
+  /** A sealed pack's value and what it rests on (ask | last_sale | rip_ev | opened_avg). */
+  value_usd?: number | null
+  value_basis?: string | null
 }
 
 interface History {
   packs: HistoryRow[]
   total_count: number
+  /** 2026-11-13 (history v27): the tab's metrics over every row, not just this page. */
+  tab_totals?: PackTabTotals | null
   // 2026-09-18: when this wallet's holdings were last confirmed with Dapper's
   // pack index (null = never; completed_at null = in flight).
   identity_sync?: {
@@ -348,6 +375,19 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
         })}
       </div>
 
+      {/* 2026-11-13: the tab's own metrics, over every row of the tab (not just this page) */}
+      {history && !loading && !error && history.tab_totals && (
+        <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 }} aria-label={`${PACK_FILTER_LABEL[packFilter]} pack metrics`}>
+          {packTabMetrics(packFilter, history.tab_totals).map((m) => (
+            <div key={m.label} className="rpc-card" style={{ padding: "10px 12px" }}>
+              <div style={{ fontFamily: mono, fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase" }}>{m.label}</div>
+              <div style={{ fontFamily: display, fontWeight: 800, fontSize: 20, lineHeight: 1.15, color: packMetricTint(m.tone), marginTop: 3 }}>{m.value}</div>
+              {m.caption && <div style={{ fontFamily: mono, fontSize: 9, color: "var(--rpc-text-muted)", marginTop: 3, lineHeight: 1.4 }}>{m.caption}</div>}
+            </div>
+          ))}
+        </section>
+      )}
+
       {/* History table */}
       <section className="rpc-card" style={{ padding: 0, overflow: "hidden" }}>
         {loading ? (
@@ -368,13 +408,35 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--rpc-border)", color: "var(--rpc-text-muted)", textTransform: "uppercase", letterSpacing: "0.1em", fontSize: 9 }}>
                   <Th>Pack</Th>
-                  <Th>Status</Th>
-                  <Th>When</Th>
-                  <Th right>Buy</Th>
-                  <Th right>Sell</Th>
-                  <Th right>Pull value</Th>
-                  <Th right>Realized P&L</Th>
-                  <Th right>Market</Th>
+                  {packFilter === "unopened" && (
+                    <>
+                      <Th>Acquired</Th>
+                      <Th right>Cost</Th>
+                      <Th right>Value</Th>
+                      <Th right>Unrealized</Th>
+                      <Th right>Market</Th>
+                    </>
+                  )}
+                  {packFilter === "opened" && (
+                    <>
+                      <Th>Opened</Th>
+                      <Th right>Cost</Th>
+                      <Th right>Pull value</Th>
+                      <Th right>Still held</Th>
+                      <Th right>Held FMV</Th>
+                      <Th right>P&L</Th>
+                    </>
+                  )}
+                  {packFilter === "sold" && (
+                    <>
+                      <Th>Sold</Th>
+                      <Th right>Cost</Th>
+                      <Th right>Sold for</Th>
+                      <Th right>P&L</Th>
+                      <Th right>ROI</Th>
+                      <Th right>Held</Th>
+                    </>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -438,20 +500,48 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
                           </span>
                         </div>
                       </td>
-                      <td style={{ padding: "9px 12px" }}>
-                        <span style={{ display: "inline-flex", padding: "2px 8px", borderRadius: 3, fontSize: 10, letterSpacing: "0.06em", textTransform: "uppercase", background: sc + "22", color: sc, border: `1px solid ${sc}66` }}>
-                          {row.status}
-                        </span>
+                      {/* 2026-11-13: one tab, one status -- the status chip only says
+                          something when the row is not the tab's plain case. */}
+                      <td style={{ padding: "9px 12px", color: "var(--rpc-text-secondary)", whiteSpace: "nowrap" }}>
+                        {relativePackTime(
+                          packFilter === "opened" ? (row.ripped_at ?? row.latest_event_at)
+                            : packFilter === "sold" ? (row.sold_at ?? row.latest_event_at)
+                              : (row.bought_at ?? row.latest_event_at),
+                        )}
+                        {packFilter === "sold" && row.status === "flipped" && (
+                          <span style={{ marginLeft: 6, padding: "1px 6px", borderRadius: 3, fontSize: 9, letterSpacing: "0.06em", textTransform: "uppercase", background: sc + "22", color: sc, border: `1px solid ${sc}66` }}>flip</span>
+                        )}
                       </td>
-                      <td style={{ padding: "9px 12px", color: "var(--rpc-text-secondary)" }}>{relativePackTime(row.latest_event_at)}</td>
                       {/* NULL price -> "—". The RPC no longer coalesces an
                           unknown primary-drop price to 0, and a retail-priced
                           drop is tagged so "$0 (reward)" reads as a fact. */}
                       <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{packBuyLabel(row)}</td>
-                      <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{row.has_sell ? fmtPackUsd(row.sell_price) : "—"}</td>
-                      <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{packPullLabel(row)}</td>
-                      <td style={{ padding: "9px 12px", textAlign: "right", color: plTint, fontFamily: display, fontWeight: 700 }}>{fmtPackUsd(row.realized_pl_usd)}</td>
-                      <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-secondary)", whiteSpace: "nowrap" }}>{market || "—"}</td>
+                      {packFilter === "unopened" && (() => {
+                        const unrl = packUnrealizedUsd(row)
+                        return (
+                          <>
+                            <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-primary)", fontFamily: display, fontWeight: 700, whiteSpace: "nowrap" }}>{packValueLabel(row)}</td>
+                            <td style={{ padding: "9px 12px", textAlign: "right", color: realizedPlTint(unrl), fontFamily: display, fontWeight: 700 }}>{fmtPackUsd(unrl)}</td>
+                            <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-secondary)", whiteSpace: "nowrap" }}>{market || "—"}</td>
+                          </>
+                        )
+                      })()}
+                      {packFilter === "opened" && (
+                        <>
+                          <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{packPullLabel(row)}</td>
+                          <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-secondary)", whiteSpace: "nowrap" }}>{packHeldPullsLabel(row)}</td>
+                          <td style={{ padding: "9px 12px", textAlign: "right", color: row.held_fmv_usd != null && row.held_fmv_usd > 0 ? "#34D399" : "var(--rpc-text-secondary)", fontFamily: display, fontWeight: 700, whiteSpace: "nowrap" }}>{packHeldFmvLabel(row)}</td>
+                          <td style={{ padding: "9px 12px", textAlign: "right", color: plTint, fontFamily: display, fontWeight: 700 }}>{fmtPackUsd(row.realized_pl_usd)}</td>
+                        </>
+                      )}
+                      {packFilter === "sold" && (
+                        <>
+                          <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-primary)" }}>{row.has_sell ? fmtPackUsd(row.sell_price) + currencySuffix(row.sell_currency) : "—"}</td>
+                          <td style={{ padding: "9px 12px", textAlign: "right", color: plTint, fontFamily: display, fontWeight: 700 }}>{fmtPackUsd(row.realized_pl_usd)}</td>
+                          <td style={{ padding: "9px 12px", textAlign: "right", color: plTint }}>{packRoiLabel(row)}</td>
+                          <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{packHoldLabel(row.bought_at, row.sold_at)}</td>
+                        </>
+                      )}
                     </tr>
                   )
                 })}

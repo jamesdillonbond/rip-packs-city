@@ -556,3 +556,195 @@ export function packCoverage(t: PackCoverageTotals): {
   const PL_COVERAGE_FLOOR = 0.8
   return { spendKnown, ripKnown, plWithheld: spendCov < PL_COVERAGE_FLOOR || ripCov < PL_COVERAGE_FLOOR }
 }
+
+// ── 2026-11-13 (get_wallet_pack_history v27): per-tab columns + metrics ─────────
+//
+// Trevor: "Packs under my binder should show their own wallet fmv for what's still
+// held. We also need better metrics and columns, depending on what's relevant, under
+// the unopened, opened, and sold tabs." Every helper below renders an UNKNOWN as "—"
+// (never $0) and names the basis or the coverage of every number it shows.
+
+export type PackValueBasis = "ask" | "last_sale" | "rip_ev" | "opened_avg"
+
+export const PACK_VALUE_BASIS_LABEL: Record<PackValueBasis, string> = {
+  ask: "floor ask",
+  last_sale: "last sale",
+  rip_ev: "rip EV",
+  opened_avg: "opened avg",
+}
+
+/** A sealed pack's value with its basis: "$25.00 · floor ask". "—" when unknown. */
+export function packValueLabel(row: { value_usd?: number | null; value_basis?: string | null }): string {
+  if (row.value_usd == null) return "—"
+  const basis = row.value_basis ? PACK_VALUE_BASIS_LABEL[row.value_basis as PackValueBasis] : undefined
+  return basis ? `${fmtPackUsd(row.value_usd)} · ${basis}` : fmtPackUsd(row.value_usd)
+}
+
+/** Unrealized gain on a sealed pack: its value minus what was paid. NULL unless both
+ *  are known (a "From a box" pack has no cost of its own, so no unrealized either). */
+export function packUnrealizedUsd(row: { value_usd?: number | null; buy_usd?: number | null; buy_price_source?: string | null }): number | null {
+  if (row.value_usd == null || row.buy_usd == null || row.buy_price_source === "box") return null
+  return Math.round((Number(row.value_usd) - Number(row.buy_usd)) * 100) / 100
+}
+
+/** "2 of 3" — the opened pack's pulls still in this wallet. When fewer pulls are
+ *  named than the pack yielded, says so ("2 of 3 named") so a partial list never
+ *  reads as the whole pack. "—" when no pull list is held. */
+export function packHeldPullsLabel(row: {
+  pulls_listed?: number | null
+  pulls_held?: number | null
+  moments_pulled?: number | null
+}): string {
+  if (row.pulls_listed == null || row.pulls_held == null || row.pulls_listed <= 0) return "—"
+  const named = row.pulls_listed
+  const total = row.moments_pulled ?? null
+  if (total != null && total > named) return `${row.pulls_held} of ${named} named`
+  return `${row.pulls_held} of ${Math.max(named, total ?? 0)}`
+}
+
+/** The wallet FMV of what an opened pack yielded that the wallet still holds.
+ *  NULL from the reader means a held pull has no FMV: say how close instead of a
+ *  partial sum. */
+export function packHeldFmvLabel(row: {
+  pulls_listed?: number | null
+  pulls_held?: number | null
+  pulls_held_priced?: number | null
+  held_fmv_usd?: number | null
+}): string {
+  if (row.pulls_listed == null || row.pulls_listed <= 0 || row.pulls_held == null) return "—"
+  if (row.held_fmv_usd != null) return fmtPackUsd(row.held_fmv_usd)
+  if (row.pulls_held > 0 && row.pulls_held_priced != null) return `— (${row.pulls_held_priced}/${row.pulls_held} priced)`
+  return "—"
+}
+
+/** Return on a sold pack: (sale − cost) / cost, "+150%". NULL without a positive cost. */
+export function packRoiLabel(row: { realized_pl_usd?: number | null; buy_usd?: number | null }): string {
+  if (row.realized_pl_usd == null || row.buy_usd == null || !(Number(row.buy_usd) > 0)) return "—"
+  const pct = (Number(row.realized_pl_usd) / Number(row.buy_usd)) * 100
+  if (!Number.isFinite(pct)) return "—"
+  const r = Math.round(pct)
+  return (r > 0 ? "+" : "") + r.toLocaleString("en-US") + "%"
+}
+
+/** How long a sold pack was held: "12d", "3h", "4mo". "—" unless both ends are known and ordered. */
+export function packHoldLabel(boughtAt: string | null | undefined, soldAt: string | null | undefined): string {
+  if (!boughtAt || !soldAt) return "—"
+  const ms = new Date(soldAt).getTime() - new Date(boughtAt).getTime()
+  if (!Number.isFinite(ms) || ms < 0) return "—"
+  const hrs = Math.floor(ms / 3_600_000)
+  if (hrs < 24) return `${Math.max(hrs, 0)}h`
+  const days = Math.floor(hrs / 24)
+  if (days < 60) return `${days}d`
+  const mos = Math.floor(days / 30)
+  if (mos < 24) return `${mos}mo`
+  return `${Math.floor(mos / 12)}y`
+}
+
+/** get_wallet_pack_history v27 `tab_totals`: the requested tab over ALL its rows. */
+export interface PackTabTotals {
+  packs: number
+  cost_usd?: number | null
+  cost_known?: number
+  realized_pl_usd?: number | null
+  realized_pl_known?: number
+  held_packs?: number
+  held_value_usd?: number | null
+  held_valued?: number
+  held_valued_by_ask?: number
+  held_ask_oldest_checked_at?: string | null
+  held_unrealized_usd?: number | null
+  held_unrealized_n?: number
+  opened_packs?: number
+  pull_value_usd?: number | null
+  pull_valued?: number
+  opened_with_pull_list?: number
+  pulls_listed?: number
+  pulls_held?: number
+  pulls_held_priced?: number
+  held_fmv_usd?: number | null
+  sold_packs?: number
+  proceeds_usd?: number | null
+  proceeds_known?: number
+}
+
+export interface PackTabMetric {
+  label: string
+  value: string
+  /** Coverage / basis line under the value; undefined when the value covers every row. */
+  caption?: string
+  tone: "neutral" | "positive" | "negative" | "muted"
+}
+
+const n_ = (x: number) => x.toLocaleString("en-US")
+
+/** "across 230 of 422" — only when a sum covers fewer rows than the tab holds. */
+function coverage(known: number | undefined, total: number): string | undefined {
+  if (known == null || known >= total) return undefined
+  return `across ${n_(known)} of ${n_(total)}`
+}
+
+function plTone(v: number | null | undefined): PackTabMetric["tone"] {
+  if (v == null) return "muted"
+  return v >= 0 ? "positive" : "negative"
+}
+
+/** The metric tiles for a tab, built from tab_totals alone. Each money figure is a
+ *  sum over the rows it names; a sum over zero rows renders "—", never "$0". */
+export function packTabMetrics(filter: PackFilter, t: PackTabTotals | null | undefined, now: number = Date.now()): PackTabMetric[] {
+  if (!t) return []
+  const money = (v: number | null | undefined, known: number | undefined) =>
+    known != null && known > 0 && v != null ? fmtPackUsd(v) : "—"
+  if (filter === "unopened") {
+    const total = t.held_packs ?? t.packs
+    let valueCaption = coverage(t.held_valued, total)
+    if ((t.held_valued_by_ask ?? 0) > 0 && t.held_ask_oldest_checked_at) {
+      const d = new Date(t.held_ask_oldest_checked_at)
+      if (Number.isFinite(d.getTime()) && now - d.getTime() > 24 * 3600 * 1000) {
+        const since = `asks checked since ${d.toLocaleDateString("en-US", { timeZone: "America/Los_Angeles", month: "short", day: "numeric" })}`
+        valueCaption = valueCaption ? `${valueCaption} · ${since}` : since
+      }
+    }
+    return [
+      { label: "Sealed packs", value: n_(total), tone: "neutral" },
+      { label: "Cost basis", value: money(t.cost_usd, t.cost_known), caption: coverage(t.cost_known, total), tone: "neutral" },
+      { label: "Market value", value: money(t.held_value_usd, t.held_valued), caption: valueCaption, tone: "neutral" },
+      {
+        label: "Unrealized",
+        value: money(t.held_unrealized_usd, t.held_unrealized_n),
+        caption: (t.held_unrealized_n ?? 0) > 0 ? coverage(t.held_unrealized_n, total) ?? "value vs cost" : "needs a cost and a value",
+        tone: (t.held_unrealized_n ?? 0) > 0 ? plTone(t.held_unrealized_usd) : "muted",
+      },
+    ]
+  }
+  if (filter === "opened") {
+    const total = t.opened_packs ?? t.packs
+    const listed = t.pulls_listed ?? 0
+    const held = t.pulls_held ?? 0
+    const priced = t.pulls_held_priced ?? 0
+    const heldCaption = listed > 0
+      ? `${n_(held)} of ${n_(listed)} pulls still held` + (priced < held ? ` · ${n_(priced)} priced` : "")
+        + ((t.opened_with_pull_list ?? 0) < total ? ` · ${n_(t.opened_with_pull_list ?? 0)} of ${n_(total)} packs' pulls known` : "")
+      : "no pull list held yet"
+    return [
+      { label: "Packs opened", value: n_(total), tone: "neutral" },
+      { label: "Still held · wallet FMV", value: listed > 0 ? fmtPackUsd(t.held_fmv_usd ?? 0) : "—", caption: heldCaption, tone: listed > 0 ? "positive" : "muted" },
+      { label: "Pull value", value: money(t.pull_value_usd, t.pull_valued), caption: coverage(t.pull_valued, total), tone: "neutral" },
+      { label: "Cost", value: money(t.cost_usd, t.cost_known), caption: coverage(t.cost_known, total), tone: "neutral" },
+      { label: "Realized P&L", value: money(t.realized_pl_usd, t.realized_pl_known), caption: coverage(t.realized_pl_known, total), tone: (t.realized_pl_known ?? 0) > 0 ? plTone(t.realized_pl_usd) : "muted" },
+    ]
+  }
+  const total = t.sold_packs ?? t.packs
+  const avg = (t.proceeds_known ?? 0) > 0 && t.proceeds_usd != null ? Number(t.proceeds_usd) / (t.proceeds_known as number) : null
+  return [
+    { label: "Packs sold", value: n_(total), tone: "neutral" },
+    { label: "Proceeds", value: money(t.proceeds_usd, t.proceeds_known), caption: coverage(t.proceeds_known, total), tone: "neutral" },
+    { label: "Avg sale", value: avg == null ? "—" : fmtPackUsd(Math.round(avg * 100) / 100), tone: "neutral" },
+    { label: "Cost", value: money(t.cost_usd, t.cost_known), caption: coverage(t.cost_known, total), tone: "neutral" },
+    { label: "Realized P&L", value: money(t.realized_pl_usd, t.realized_pl_known), caption: coverage(t.realized_pl_known, total), tone: (t.realized_pl_known ?? 0) > 0 ? plTone(t.realized_pl_usd) : "muted" },
+  ]
+}
+
+/** Tile tint for a metric tone. */
+export function packMetricTint(tone: PackTabMetric["tone"]): string {
+  return tone === "positive" ? POSITIVE_TINT : tone === "negative" ? NEGATIVE_TINT : tone === "muted" ? MUTED_TINT : "var(--rpc-text-primary)"
+}
