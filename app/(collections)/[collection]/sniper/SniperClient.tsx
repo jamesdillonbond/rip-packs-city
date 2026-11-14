@@ -27,6 +27,7 @@ import { SerialBadge } from "@/components/sniper/SerialBadge";
 import SpecialSerialGlyph from "@/components/SpecialSerialGlyph";
 import { ActionCell } from "@/components/sniper/ActionCell";
 import SniperFilterBar from "@/components/sniper/SniperFilterBar";
+import SerialSearchPanel from "@/components/sniper/SerialSearchPanel";
 import PlayerResolvedNote from "@/components/filters/PlayerResolvedNote";
 import SniperStatsBar from "@/components/sniper/SniperStatsBar";
 import { MarketplaceStatusBanner } from "@/components/marketplace-status";
@@ -53,6 +54,7 @@ import {
   sniperTeamOptions,
   readSniperUrlFilters,
   sniperShareUrl,
+  parseSerialNo,
   sniperStudioOptions,
   sniperHasChasers,
   sortByVerifiedFirst,
@@ -177,6 +179,23 @@ function SniperMomentsBody() {
   const [sortBy, setSortBy] = useState<SortOption>((urlFilters.sort as SortOption | undefined) ?? defaultSort);
   const [minDiscount, setMinDiscount] = useState(urlFilters.minDiscount ?? 0);
   const [maxPrice, setMaxPrice] = useState(urlFilters.maxPrice ?? 0);
+  // Serial search (#12359, Top Shot only): `?serialNo=23` switches the board to every
+  // listed #23 across all editions (SerialSearchPanel reads /api/topshot-serial-search,
+  // not the capped sniper pool). Distinct from `serialFilter` (all / special / jersey).
+  const serialSearchEnabled = collectionSlug === "nba-top-shot";
+  const [serialNo, setSerialNo] = useState<number>(serialSearchEnabled ? urlFilters.serialNo ?? 0 : 0);
+  const [serialDraft, setSerialDraft] = useState<string>(serialNo > 0 ? String(serialNo) : "");
+  const serialMode = serialSearchEnabled && serialNo > 0;
+  const applySerialNo = (next: number) => {
+    setSerialNo(next);
+    setSerialDraft(next > 0 ? String(next) : "");
+    try {
+      const url = new URL(window.location.href);
+      if (next > 0) url.searchParams.set("serialNo", String(next));
+      else url.searchParams.delete("serialNo");
+      window.history.replaceState(window.history.state, "", url.toString());
+    } catch { /* ignore */ }
+  };
   const [leagueFilter, setLeagueFilter] = useState<LeagueValue>("all");
   const [serialFilter, setSerialFilter] = useState("all");
   const [badgeOnly, setBadgeOnly] = useState(false);
@@ -865,6 +884,7 @@ function SniperMomentsBody() {
   async function handleCopyLink() {
     const url = sniperShareUrl(window.location.href, {
       team: teamFilter, player: playerInput, tier: tierTab, maxPrice, minDiscount, sort: sortBy, defaultSort,
+      serialNo: serialMode ? serialNo : undefined,
     });
     // The address bar holds the link either way, so a failed copy still leaves it one step away.
     try { window.history.replaceState(window.history.state, "", url); } catch { /* ignore */ }
@@ -1159,9 +1179,44 @@ function SniperMomentsBody() {
             copyLinkMsg={copyLinkMsg}
             onCopyLink={handleCopyLink}
           />
+          {serialSearchEnabled && (
+            <form
+              data-testid="serial-search-form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const n = parseSerialNo(serialDraft);
+                applySerialNo(n ?? 0);
+              }}
+              style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em" }}
+            >
+              <label htmlFor="sniper-serial-no" style={{ color: "var(--rpc-text-muted)" }}>Serial #</label>
+              <input
+                id="sniper-serial-no"
+                inputMode="numeric"
+                placeholder="e.g. 23"
+                value={serialDraft}
+                onChange={(e) => setSerialDraft(e.target.value.replace(/[^\d#]/g, "").slice(0, 6))}
+                style={{ width: 90, padding: "4px 8px", background: "var(--rpc-surface)", color: "var(--rpc-text-primary)", border: "1px solid var(--rpc-border)", borderRadius: 4, fontFamily: "var(--font-mono)" }}
+              />
+              <button type="submit" style={{ padding: "4px 10px", background: "none", border: "1px solid var(--rpc-border)", borderRadius: 4, color: "var(--rpc-text-secondary)", cursor: "pointer", fontFamily: "var(--font-mono)", fontSize: 11 }}>
+                Find every #
+              </button>
+              {serialMode && (
+                <button type="button" onClick={() => applySerialNo(0)} style={{ padding: "4px 10px", background: "none", border: "none", color: "var(--rpc-text-muted)", cursor: "pointer", fontFamily: "var(--font-mono)", fontSize: 11 }}>
+                  Clear
+                </button>
+              )}
+              <span style={{ color: "var(--rpc-text-muted)", textTransform: "none", letterSpacing: 0 }}>
+                Every listed Moment with that serial, across all editions.
+              </span>
+            </form>
+          )}
         </div>
       </div>
 
+      {serialMode ? (
+        <SerialSearchPanel serial={serialNo} maxPrice={maxPrice} tier={tierTab} onClear={() => applySerialNo(0)} />
+      ) : (<>
       {/* Stats bar */}
       <SniperStatsBar
         stats={stats}
@@ -2135,6 +2190,7 @@ function SniperMomentsBody() {
           <span className="ml-auto">Adj. FMV = base FMV × serial multiplier</span>
         </div>
       </div>
+      </>)}
 
       {/* Task 7: Listing Suggestions slide-in panel */}
       {showSuggestions && (

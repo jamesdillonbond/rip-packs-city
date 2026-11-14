@@ -44,4 +44,21 @@ describe("sniperShareUrl / readSniperUrlFilters", () => {
     expect(readSniperUrlFilters(null, allowed)).toEqual({})
     expect(readSniperUrlFilters(new URLSearchParams(""), allowed)).toEqual({})
   })
+
+  it("round-trips the serial search (#12359) under its own key, never the board's `serial` filter", () => {
+    const href = sniperShareUrl("https://x/nba-top-shot/sniper?serial=jersey", { ...base, serialNo: 23 })
+    const q = new URL(href).searchParams
+    expect(q.get("serialNo")).toBe("23")
+    expect(q.get("serial")).toBe("jersey")
+    expect(readSniperUrlFilters(q, allowed).serialNo).toBe(23)
+    // cleared serial search drops the key
+    expect(new URL(sniperShareUrl(href, { ...base })).searchParams.get("serialNo")).toBeNull()
+  })
+
+  it("drops a serial search the page cannot apply", () => {
+    for (const v of ["0", "-3", "2.5", "100000", "abc", ""]) {
+      expect(readSniperUrlFilters(new URLSearchParams(`serialNo=${v}`), allowed).serialNo, v).toBeUndefined()
+    }
+    expect(readSniperUrlFilters(new URLSearchParams("serialNo=%2323"), allowed).serialNo).toBe(23)
+  })
 })

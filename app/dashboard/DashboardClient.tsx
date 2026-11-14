@@ -1135,13 +1135,24 @@ function ProfilePageInner() {
           <Link href="/trades" style={quickLinkStyle}>Trades</Link>
         {(() => {
           const flow = wallets.find((w) => /^0x[0-9a-fA-F]{16}$/.test(String(w.wallet_addr ?? "")))?.wallet_addr ?? null
+          // "My offers" (#12361): the analytics Offers card's Open view for this wallet.
+          // tab=portfolio is the tab that card renders on; #offers is its section id.
+          // No Flow wallet → no link (never a wallet-connect prompt).
           return flow ? (
-            <Link
-              href={`/insights/trade-in?wallet=${encodeURIComponent(flow)}`}
-              style={{ ...quickLinkStyle, color: "var(--rpc-red-text)", textDecoration: "none" }}
-            >
-              Top Shot This trade-in value
-            </Link>
+            <>
+              <Link
+                href={`/nba-top-shot/analytics?wallet=${encodeURIComponent(flow)}&tab=portfolio#offers`}
+                style={quickLinkStyle}
+              >
+                My offers
+              </Link>
+              <Link
+                href={`/insights/trade-in?wallet=${encodeURIComponent(flow)}`}
+                style={{ ...quickLinkStyle, color: "var(--rpc-red-text)", textDecoration: "none" }}
+              >
+                Top Shot This trade-in value
+              </Link>
+            </>
           ) : null
         })()}
         </div>

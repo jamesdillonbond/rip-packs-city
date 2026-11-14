@@ -12,6 +12,8 @@ import { NextRequest } from "next/server"
 const state = vi.hoisted(() => ({
   reads: [] as Array<{ table: string; filters: Array<[string, unknown[]]>; head: boolean }>,
   failCount: null as string | null,
+  rpcCalls: [] as Array<{ fn: string; args: Record<string, unknown> }>,
+  rpcResult: { data: null, error: null } as { data: unknown; error: { message: string } | null },
 }))
 
 function builder(table: string) {
@@ -45,7 +47,15 @@ function builder(table: string) {
   return b
 }
 
-vi.mock("@/lib/supabase", () => ({ supabaseAdmin: { from: (t: string) => builder(t) } }))
+vi.mock("@/lib/supabase", () => ({
+  supabaseAdmin: {
+    from: (t: string) => builder(t),
+    rpc: (fn: string, args: Record<string, unknown>) => {
+      state.rpcCalls.push({ fn, args })
+      return Promise.resolve(state.rpcResult)
+    },
+  },
+}))
 
 const { GET } = await import("@/app/api/wallet-offers/route")
 
@@ -55,6 +65,8 @@ const req = (qs: string) => new NextRequest(`https://t/api/wallet-offers?${qs}`)
 beforeEach(() => {
   state.reads = []
   state.failCount = null
+  state.rpcCalls = []
+  state.rpcResult = { data: null, error: null }
 })
 
 describe("GET /api/wallet-offers", () => {
@@ -95,5 +107,85 @@ describe("GET /api/wallet-offers", () => {
   it("requires a wallet and a known collection", async () => {
     expect((await GET(req(`collection=nba-top-shot`))).status).toBe(400)
     expect((await GET(req(`wallet=${W}&collection=nope`))).status).toBe(400)
+  })
+
+  it("the default view never calls the open-offers RPC (unchanged response)", async () => {
+    const res = await GET(req(`wallet=${W}&collection=nba-top-shot`))
+    const body = await res.json()
+    expect(Object.keys(body).sort()).toEqual(["collection", "rows", "summary", "supported", "tracked_since", "wallet"])
+    expect(Object.keys(body.summary).sort()).toEqual(["cancelled", "filled", "open", "total"])
+    expect(state.rpcCalls).toHaveLength(0)
+  })
+
+  it("rejects an unknown view", async () => {
+    expect((await GET(req(`wallet=${W}&collection=nba-top-shot&view=nope`))).status).toBe(400)
+  })
+})
+
+describe("GET /api/wallet-offers?view=open", () => {
+  const day = 86_400_000
+  const iso = (daysAgo: number) => new Date(Date.now() - daysAgo * day).toISOString()
+  const row = (o: Record<string, unknown>) => ({
+    offer_id: "1", offer_type: "edition", amount_usd: "5.00", created_at: iso(1), external_id: "8:133",
+    player_name: "Damian Lillard", set_name: "Base Set", tier: "COMMON", parallel: null, serial_number: null,
+    top_other_bid: null, own_higher_usd: null, floor_usd: null, floor_confirmed_at: null,
+    serial_ask_usd: null, serial_ask_seen_at: null, age_days: "1.0", ...o,
+  })
+
+  it("calls the RPC with the normalized wallet and summarizes outbid / superseded / stale / at-floor", async () => {
+    state.rpcResult = {
+      data: [
+        row({ offer_id: "a", top_other_bid: "6.00" }), // outbid
+        row({ offer_id: "b", own_higher_usd: "9.00" }), // superseded by own
+        row({ offer_id: "c", top_other_bid: "6.00", own_higher_usd: "9.00" }), // outbid wins
+        row({ offer_id: "d", created_at: iso(20), floor_usd: "4.00" }), // stale + at/above floor
+        row({ offer_id: "e", floor_usd: null }), // NULL floor: not at-floor, stays null
+      ],
+      error: null,
+    }
+    const res = await GET(req(`wallet=${W.toUpperCase().replace("0X", "0x")}&collection=nba-top-shot&view=open`))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(state.rpcCalls).toEqual([{ fn: "get_topshot_wallet_open_offers", args: { p_wallet: W, p_limit: 500 } }])
+    expect(body).toMatchObject({ supported: true, view: "open", wallet: W })
+    // open is the MEASURED head count (2 in the mock), not rows.length (5)
+    expect(body.summary).toEqual({ open: 2, shown: 5, truncated: false, outbid: 2, superseded: 1, stale: 1, at_or_above_floor: 1 })
+    const by = Object.fromEntries(body.rows.map((r: { offer_id: string }) => [r.offer_id, r]))
+    expect(by.a).toMatchObject({ outbid: true, superseded: false, top_other_bid: 6 })
+    expect(by.b).toMatchObject({ outbid: false, superseded: true, own_higher_usd: 9 })
+    expect(by.c).toMatchObject({ outbid: true, superseded: false })
+    expect(by.d).toMatchObject({ stale: true, at_or_above_floor: true, floor_usd: 4 })
+    expect(by.e.floor_usd).toBeNull()
+    expect(by.e.at_or_above_floor).toBe(false)
+  })
+
+  it("says truncated when the measured open total exceeds the rows returned", async () => {
+    state.rpcResult = { data: [row({ offer_id: "a" })], error: null }
+    const body = await (await GET(req(`wallet=${W}&collection=nba-top-shot&view=open`))).json()
+    expect(body.summary).toMatchObject({ open: 2, shown: 1, truncated: true })
+  })
+
+  it("a failed RPC is an error response, never rows: []", async () => {
+    state.rpcResult = { data: null, error: { message: "boom" } }
+    const res = await GET(req(`wallet=${W}&collection=nba-top-shot&view=open`))
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    const body = await res.json()
+    expect(body.rows).toBeUndefined()
+    expect(body.summary).toBeUndefined()
+  })
+
+  it("a failed open count is an error, never a measured zero", async () => {
+    state.rpcResult = { data: [], error: null }
+    state.failCount = "open"
+    const res = await GET(req(`wallet=${W}&collection=nba-top-shot&view=open`))
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    expect((await res.json()).summary).toBeUndefined()
+  })
+
+  it("a collection without offer tracking answers supported:false and calls nothing", async () => {
+    const res = await GET(req(`wallet=${W}&collection=nfl-all-day&view=open`))
+    expect(await res.json()).toMatchObject({ supported: false, rows: [], summary: null })
+    expect(state.rpcCalls).toHaveLength(0)
+    expect(state.reads).toHaveLength(0)
   })
 })

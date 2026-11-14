@@ -144,9 +144,24 @@ export interface SniperUrlFilters {
   maxPrice?: number
   minDiscount?: number
   sort?: string
+  /**
+   * Serial search (#12359, Top Shot): every listed Moment with this serial, across
+   * all editions. Deliberately NOT the `serial` param — that one is the board's
+   * all / special / jersey post-filter.
+   */
+  serialNo?: number
 }
 
-export const SNIPER_URL_KEYS = ["team", "player", "tier", "maxPrice", "minDiscount", "sort"] as const
+export const SNIPER_URL_KEYS = ["team", "player", "tier", "maxPrice", "minDiscount", "sort", "serialNo"] as const
+
+/** A serial-search value the page can apply: a whole number 1–99,999, else undefined. */
+export function parseSerialNo(raw: string | number | null | undefined): number | undefined {
+  if (raw == null) return undefined
+  const s = String(raw).trim().replace(/^#/, "")
+  if (!/^\d{1,5}$/.test(s)) return undefined
+  const n = Number(s)
+  return n >= 1 && n <= 99_999 ? n : undefined
+}
 
 /** Reads the filters from a URL, dropping any value the page could not apply. */
 export function readSniperUrlFilters(
@@ -176,6 +191,8 @@ export function readSniperUrlFilters(
   if (minDiscount) out.minDiscount = minDiscount
   const sort = text("sort")
   if (sort && allowed.sorts.includes(sort)) out.sort = sort
+  const serialNo = parseSerialNo(sp.get("serialNo"))
+  if (serialNo) out.serialNo = serialNo
   return out
 }
 
@@ -186,7 +203,7 @@ export function readSniperUrlFilters(
  */
 export function sniperShareUrl(
   href: string,
-  f: { team: string; player: string; tier: string; maxPrice: number; minDiscount: number; sort: string; defaultSort: string },
+  f: { team: string; player: string; tier: string; maxPrice: number; minDiscount: number; sort: string; defaultSort: string; serialNo?: number },
 ): string {
   const url = new URL(href)
   for (const k of [...SNIPER_URL_KEYS, "highlight", "moment", "momentId"]) url.searchParams.delete(k)
@@ -196,6 +213,8 @@ export function sniperShareUrl(
   if (f.maxPrice > 0) url.searchParams.set("maxPrice", String(f.maxPrice))
   if (f.minDiscount > 0) url.searchParams.set("minDiscount", String(f.minDiscount))
   if (f.sort && f.sort !== f.defaultSort) url.searchParams.set("sort", f.sort)
+  const serialNo = parseSerialNo(f.serialNo)
+  if (serialNo) url.searchParams.set("serialNo", String(serialNo))
   return url.toString()
 }
 
