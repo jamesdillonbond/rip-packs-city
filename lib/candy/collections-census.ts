@@ -40,6 +40,7 @@ import { candySetForAsset } from "@/lib/chains/solana/candy-sets"
 import { loadCandyCollections } from "@/lib/candy/collections"
 import { purgeCandyGhostsFor } from "@/lib/candy/ghost-purge"
 import { newLockRetryBudget, withLockRetry } from "@/lib/supabase/lock-retry"
+import { loadEditionKeyAliases, NO_ALIASES } from "@/lib/candy/edition-key-aliases"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
@@ -322,7 +323,14 @@ export async function runCollectionsCensus(
         : new Set(((le ?? []) as Array<{ external_id: string }>).map((e) => e.external_id))
     }
     const recordOk = labellessKeys !== null
-    while (now() <= deadline) {
+    // #247 (2026-11-13): one canonical key per card. A key in candy_edition_key_aliases is resolved to its
+    // canonical BEFORE it is compared with the card's existing holding (lib/candy/edition-key-aliases.ts); a
+    // failed read fails the collection rather than walking without the map.
+    const al = c.edition_prefix ? await loadEditionKeyAliases(db, c.edition_prefix) : { aliases: NO_ALIASES, error: null }
+    if (al.error) rep.error = al.error
+    const canonOf = al.aliases.canonOf
+    const canonLabels = al.aliases.labels
+    while (!rep.error && now() <= deadline) {
       let items: DasAsset[]
       let nextCursor: string | null
       try {
@@ -352,7 +360,9 @@ export async function runCollectionsCensus(
           const ed = ex.complete.get(r.edition_key)
           return !!ed && !(ed.circulation_count === 1 && !r.edition_key.endsWith(`-${a.id.slice(0, 12)}`))
         })
-        if (known) reused.push({ asset: a, ed: ex.complete.get(known.edition_key)!, serial: known.serial })
+        // #247: a card reused from an ALIAS edition takes its canonical edition (same card, one key)
+        const knownCanon = known ? canonOf.get(known.edition_key) : undefined
+        if (known) reused.push({ asset: a, ed: knownCanon ? (canonLabels.get(knownCanon) as EditionLabels) : ex.complete.get(known.edition_key)!, serial: known.serial })
         else toFetch.push(a)
       }
       for (const a of toFetch) {
@@ -399,8 +409,14 @@ export async function runCollectionsCensus(
       // Editions: insert-only, deduped within the page.
       const eds = new Map<string, Record<string, unknown>>()
       for (const a of cards) {
-        const e = normalizeEdition(a) as unknown as Record<string, unknown>
-        const k = String(e.external_id ?? "")
+        let e = normalizeEdition(a) as unknown as Record<string, unknown>
+        let k = String(e.external_id ?? "")
+        // #247: an alias key is written as its canonical, with the canonical edition's labels
+        const ck = canonOf.get(k)
+        if (ck) {
+          e = { ...e, ...canonLabels.get(ck), external_id: ck }
+          k = ck
+        }
         if (k && !eds.has(k)) eds.set(k, e)
       }
       let failed: string | null = null
@@ -455,6 +471,8 @@ export async function runCollectionsCensus(
         .map((a) => {
           const s = normalizeSerial(a)
           if (!s.moment_id || !s.wallet_address) return null
+          const ck = canonOf.get(String(s.edition_key ?? ""))
+          if (ck) s.edition_key = ck
           const ed = eds.get(String(s.edition_key ?? "")) as Record<string, unknown> | undefined
           return {
             ...s,

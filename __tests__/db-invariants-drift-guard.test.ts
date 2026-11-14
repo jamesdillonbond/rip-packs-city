@@ -15,6 +15,30 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-11-13. #247 alias refresh: same art + tier + circulation = one card; stable canonical; no chains.
+    fn: "refresh_candy_edition_key_aliases",
+    test: "supabase/tests/candy_edition_key_aliases.sql",
+    migration: "supabase/migrations/20261114002600_audit_20261113_candy_edition_key_aliases.sql",
+  },
+  {
+    // Added 2026-11-13. #247: a Candy holding written on an alias lands on the canonical key.
+    fn: "candy_canonical_edition_key_trg",
+    test: "supabase/tests/candy_edition_key_aliases.sql",
+    migration: "supabase/migrations/20261114002600_audit_20261113_candy_edition_key_aliases.sql",
+  },
+  {
+    // Added 2026-11-13. #247: a Candy sale / listing / offer on an alias edition lands on the canonical edition.
+    fn: "candy_canonical_edition_id_trg",
+    test: "supabase/tests/candy_edition_key_aliases.sql",
+    migration: "supabase/migrations/20261114002600_audit_20261113_candy_edition_key_aliases.sql",
+  },
+  {
+    // Added 2026-11-13. #247: moves rows already on an alias, in batches.
+    fn: "candy_apply_edition_key_aliases",
+    test: "supabase/tests/candy_edition_key_aliases.sql",
+    migration: "supabase/migrations/20261114002600_audit_20261113_candy_edition_key_aliases.sql",
+  },
+  {
     // Added 2026-11-13. Top Shot offer pull + never-sold comparables hold: a hold the offer stopped says _compcap_bidfloor.
     fn: "fmv_snapshots_pull_topshot_thin_to_best_offer",
     test: "supabase/tests/fmv_snapshots_pull_topshot_thin_to_best_offer.sql",

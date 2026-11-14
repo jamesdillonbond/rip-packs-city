@@ -59,6 +59,12 @@ vi.mock("@/lib/chains/solana/normalize", () => ({
 }))
 vi.mock("@/lib/chains/solana/candy-sets", () => ({ candySetForAsset: () => ({ key: "c:x" }) }))
 vi.mock("@/lib/candy/collections", () => ({ loadCandyCollections: async () => ({ sets: [], error: null }) }))
+// #247 (2026-11-13): edition-key aliases — empty unless a test sets them
+const aliasState = vi.hoisted(() => ({ canonOf: new Map<string, string>(), labels: new Map<string, any>(), error: null as string | null }))
+vi.mock("@/lib/candy/edition-key-aliases", () => ({
+  NO_ALIASES: { canonOf: new Map(), labels: new Map() },
+  loadEditionKeyAliases: async () => ({ aliases: { canonOf: aliasState.canonOf, labels: aliasState.labels }, error: aliasState.error }),
+}))
 
 import { runCollectionsCensus } from "@/lib/candy/collections-census"
 
@@ -166,6 +172,7 @@ beforeEach(() => {
   state.queue = []; state.pages = {}; state.dasThrows = new Set(); state.dasNoCursor = false; state.dasCalls = []; state.wmcError = null
   ;(state as any).listingsError = null
   state.existingWmc = []; state.existingEds = []; state.readError = null; state.hydrate = null; state.hydrateCalls = []
+  aliasState.canonOf = new Map(); aliasState.labels = new Map(); aliasState.error = null
   state.updates = []; state.wmcUpserts = []; state.edUpserts = []; state.rpcs = []; state.rpcArgs = []
   ;(state as any).wmcErrOnce = []
   ;(state as any).edUpdates = []; (state as any).thumb = "https://arweave.net/x"; (state as any).deleted = []; (state as any).escrowError = null
@@ -193,6 +200,41 @@ describe("runCollectionsCensus", () => {
     expect(new Set(state.rpcArgs[0].p_moment_ids)).toEqual(new Set([...full(1000, "p1-"), ...full(3, "p2-")].map((x) => x.id)))
     // Holdings are born labelled — never left for a whole-collection denorm.
     expect(state.wmcUpserts[0].rows[0]).toMatchObject({ tier: "COMMON", player_name: "Seth Brown", set_name: "2022 Leadoff ICONs", mint_count: 850, team_name: "Athletics" })
+  })
+
+  // #247 (2026-11-13): one card, one key — an alias key is written as its canonical, and a card already on the
+  // canonical is not "repointed" back to the alias every walk.
+  describe("edition-key aliases", () => {
+    const CANON = { external_id: "ed-canon", tier: "COMMON", player_name: null, team_name: null, set_name: "S", circulation_count: 5000, thumbnail_url: "art" }
+    it("a card whose computed key is an alias is written on the canonical, with its labels", async () => {
+      aliasState.canonOf = new Map([["ed-cut", "ed-canon"]])
+      aliasState.labels = new Map([["ed-canon", CANON]])
+      state.queue = [{ address: "A", name: "A", edition_prefix: "c:x", census_page: 1, census_walk_started_at: null }]
+      state.pages.A = [[{ id: "m1", owner: "W", ed: "cut" }, { id: "m2", owner: "W", ed: "other" }]]
+      await runCollectionsCensus(db(), { budgetMs: 60_000 })
+      const rows = state.wmcUpserts.flatMap((u) => u.rows)
+      expect(rows.find((r: any) => r.moment_id === "m1")).toMatchObject({ edition_key: "ed-canon", mint_count: 5000, set_name: "S" })
+      expect(rows.find((r: any) => r.moment_id === "m2")).toMatchObject({ edition_key: "ed-other" })
+      expect(state.edUpserts.flatMap((u) => u.rows).map((r: any) => r.external_id).sort()).toEqual(["ed-canon", "ed-other"])
+    })
+    it("a card already held on the canonical is not repointed back to the alias", async () => {
+      aliasState.canonOf = new Map([["ed-cut", "ed-canon"]])
+      aliasState.labels = new Map([["ed-canon", CANON]])
+      state.queue = [{ address: "A", name: "A", edition_prefix: "c:x", census_page: 1, census_walk_started_at: null }]
+      state.pages.A = [[{ id: "m1", owner: "W", ed: "cut" }]]
+      state.existingWmc = [{ moment_id: "m1", wallet_address: "W", edition_key: "ed-canon", serial_number: 1 }]
+      await runCollectionsCensus(db(), { budgetMs: 60_000 })
+      expect(state.rpcs).not.toContain("candy_repoint_listings_to_card_edition")
+    })
+    it("a failed alias read fails the collection: nothing is walked or written", async () => {
+      aliasState.error = "edition key aliases read: timeout"
+      state.queue = [{ address: "A", name: "A", edition_prefix: "c:x", census_page: 1, census_walk_started_at: null }]
+      state.pages.A = [[{ id: "m1", owner: "W", ed: "cut" }]]
+      const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+      expect(r.ok).toBe(false)
+      expect(state.dasCalls).toEqual([])
+      expect(state.wmcUpserts).toEqual([])
+    })
   })
 
   // 2026-11-13: ending on any short page would stamp a walk complete (and run RETIRE) when DAS returned a short page
