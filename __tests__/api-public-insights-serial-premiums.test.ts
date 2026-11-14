@@ -19,6 +19,11 @@ vi.mock("@/lib/serial-premiums-board", async (importOriginal) => {
   }
 })
 
+const mvState: { asOf: string | null; calls: string[] } = { asOf: null, calls: [] }
+vi.mock("@/lib/insights/mv-freshness", () => ({
+  readMvAsOf: async (board: string) => { mvState.calls.push(board); return mvState.asOf },
+}))
+
 import { GET } from "@/app/api/public/insights/serial-premiums/route"
 
 const req = (url: string) => ({ url, nextUrl: new URL(url) }) as any
@@ -56,5 +61,31 @@ describe("GET /api/public/insights/serial-premiums", () => {
     expect(body.error).not.toContain("board down")
     expect(body.code).toBe("internal")
     expect(body.retryable).toBe(false)
+  })
+})
+
+// 2026-11-14 (fresh-eyes review of /insights): Top Shot's perfect-mint board reads an MV refreshed
+// every 2 h; its "Updated" stamp was the request time, so a dead refresh read "Updated just now".
+describe("GET /api/public/insights/serial-premiums — data_as_of dates the ROWS", () => {
+  beforeEach(() => { mvState.asOf = null; mvState.calls = [] })
+
+  it("the perfect-mint board carries the MV's last refresh, never the request time", async () => {
+    mvState.asOf = "2026-11-13T08:00:00.000Z"
+    const body = await (await GET(req(`${BASE}?headline=perfect`))).json()
+    expect(mvState.calls).toEqual(["perfect-mint-premiums"])
+    expect(body.meta.data_as_of).toBe("2026-11-13T08:00:00.000Z")
+    expect(body.meta.data_as_of).not.toBe(body.meta.fetched_at)
+  })
+
+  it("an undatable refresh is null (unknown), not now", async () => {
+    mvState.asOf = null
+    const body = await (await GET(req(`${BASE}?headline=perfect`))).json()
+    expect(body.meta.data_as_of).toBeNull()
+  })
+
+  it("a live board's rows are as fresh as the read, and no MV lookup is made", async () => {
+    const body = await (await GET(req(`${BASE}?headline=no1`))).json()
+    expect(mvState.calls).toEqual([])
+    expect(body.meta.data_as_of).toBe(body.meta.fetched_at)
   })
 })

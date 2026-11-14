@@ -100,6 +100,8 @@ describe("readMvAsOf", () => {
       "allday-first-mint": "allday-first-mint-mv",
       // refresh_panini_public_deals (audit_20261025_panini_on_public_deals_board)
       "panini-deals": "panini-public-deals",
+      // refresh_topshot_perfect_mint_premiums_board (audit_20261114_perfect_mint_premiums_refresh_logs_its_run)
+      "perfect-mint-premiums": "topshot-perfect-mint-premiums-mv",
     })
   })
 })

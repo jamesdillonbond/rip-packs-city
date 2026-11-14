@@ -38,7 +38,9 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.c
 export type { Row }
 
 type ApiResponse = {
-  meta: { fetched_at: string; total_rows: number; elapsed_ms: number }
+  /** data_as_of (2026-11-14): when the ROWS were current — the MV refresh for the perfect-mint board,
+   *  null when that cannot be dated. Older responses omit it; then fetched_at is all there is. */
+  meta: { fetched_at: string; data_as_of?: string | null; total_rows: number; elapsed_ms: number }
   rows: Row[]
 }
 
@@ -363,7 +365,7 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
         const j = (await r.json()) as ApiResponse
         setRows(j.rows ?? [])
         setSeedFailed(false)
-        setFetchedAt(j.meta?.fetched_at ?? null)
+        setFetchedAt(j.meta && "data_as_of" in j.meta ? (j.meta.data_as_of ?? null) : (j.meta?.fetched_at ?? null))
       } catch (e: unknown) {
         if ((e as { name?: string })?.name === "AbortError") return
         setError(e instanceof Error ? e.message : "Failed to load")

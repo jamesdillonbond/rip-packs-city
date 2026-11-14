@@ -48,6 +48,7 @@ import {
 } from "@/lib/serial-premiums-board"
 
 import { boardRowMeta } from "@/lib/insights/board-meta"
+import { readMvAsOf } from "@/lib/insights/mv-freshness"
 const WINDOW_DAYS: Record<string, number> = { "7d": 7, "30d": 30, "90d": 90 }
 
 export async function GET(req: NextRequest) {
@@ -98,9 +99,16 @@ export async function GET(req: NextRequest) {
     `[public/insights/serial-premiums] collection=${collection} headline=${headline} returned=${rows.length} tier=${tier ?? "*"} window=${windowKey} min=${minPremium} sort=${sort} elapsedMs=${elapsedMs}`
   )
 
+  // DATA-AS-OF = the age of the ROWS. Every board here reads sales live except Top Shot's perfect
+  // mint, which reads an MV refreshed every 2 h — its rows are as old as that refresh, and a dead
+  // refresh used to read "Updated just now" (2026-11-14). null = cannot date → the client shows unknown.
+  const fetchedAtIso = new Date().toISOString()
+  const readsMv = headline === "perfect" && collection === "nba-top-shot"
+  const dataAsOf = readsMv ? await readMvAsOf("perfect-mint-premiums") : fetchedAtIso
   const res = NextResponse.json({
     meta: {
-      fetched_at: new Date().toISOString(),
+      fetched_at: fetchedAtIso,
+      data_as_of: dataAsOf,
       source: boardTable(headline, collection),
       collection,
       headline,

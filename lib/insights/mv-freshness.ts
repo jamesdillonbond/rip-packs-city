@@ -47,6 +47,9 @@ export const MV_PIPELINE = {
   // Panini leg of the Below FMV board (2026-10-25, refresh_panini_public_deals, hourly at :44) — its own MV,
   // UNIONed into cross_collection_deals_board beside mv_cross_collection_deals.
   "panini-deals": "panini-public-deals",
+  // Top Shot perfect-mint headline of /insights/serial-premiums (2026-11-14,
+  // refresh_topshot_perfect_mint_premiums_board, pg_cron rpc-refresh-perfect-mint-premiums every 2 h).
+  "perfect-mint-premiums": "topshot-perfect-mint-premiums-mv",
 } as const
 
 export type MvBoardKey = keyof typeof MV_PIPELINE
