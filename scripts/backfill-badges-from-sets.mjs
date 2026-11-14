@@ -65,7 +65,7 @@ function computeBadgeScore(pIds, sIds) {
   if (pIds.has(BADGE.ROOKIE_PREMIERE)) score += 1
   if (pIds.has(BADGE.TOP_SHOT_DEBUT)) score += 1
   if (sIds.has(BADGE.ROOKIE_MINT)) score += 1
-  const threeStar = pIds.has(BADGE.ROOKIE_YEAR) && pIds.has(BADGE.ROOKIE_PREMIERE) && pIds.has(BADGE.TOP_SHOT_DEBUT)
+  const threeStar = pIds.has(BADGE.ROOKIE_YEAR) && pIds.has(BADGE.ROOKIE_PREMIERE) && sIds.has(BADGE.ROOKIE_MINT)
   if (threeStar && sIds.has(BADGE.ROOKIE_MINT)) score += 4
   if (pIds.has(BADGE.ROOKIE_OF_THE_YEAR)) score += 3
   if (pIds.has(BADGE.CHAMPIONSHIP_YEAR)) score += 2
@@ -116,7 +116,7 @@ function normalize(e, key) {
     parallel_name: "Standard",
     play_tags: playTags,
     set_play_tags: setPlayTags,
-    is_three_star_rookie: pIds.has(BADGE.ROOKIE_YEAR) && pIds.has(BADGE.ROOKIE_PREMIERE) && pIds.has(BADGE.TOP_SHOT_DEBUT),
+    is_three_star_rookie: pIds.has(BADGE.ROOKIE_YEAR) && pIds.has(BADGE.ROOKIE_PREMIERE) && sIds.has(BADGE.ROOKIE_MINT),
     has_rookie_mint: sIds.has(BADGE.ROOKIE_MINT),
     badge_score: computeBadgeScore(pIds, sIds),
     circulation_count: totalCirc,

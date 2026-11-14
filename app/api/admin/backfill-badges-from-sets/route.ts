@@ -184,7 +184,7 @@ function computeBadgeScore(playTagIds: Set<string>, setPlayTagIds: Set<string>):
   const isThreeStar =
     playTagIds.has(BADGE.ROOKIE_YEAR) &&
     playTagIds.has(BADGE.ROOKIE_PREMIERE) &&
-    playTagIds.has(BADGE.TOP_SHOT_DEBUT)
+    setPlayTagIds.has(BADGE.ROOKIE_MINT)
   if (isThreeStar && setPlayTagIds.has(BADGE.ROOKIE_MINT)) score += 4
   if (playTagIds.has(BADGE.ROOKIE_OF_THE_YEAR)) score += 3
   if (playTagIds.has(BADGE.CHAMPIONSHIP_YEAR)) score += 2
@@ -222,7 +222,7 @@ function mergeTags(existing: BadgeRow, e: RawEdition) {
   for (const t of incomingSetPlay) if (!sIds.has(t.id)) { existing.set_play_tags.push(t); sIds.add(t.id) }
   if (sIds.has(BADGE.ROOKIE_MINT)) existing.has_rookie_mint = true
   existing.is_three_star_rookie =
-    pIds.has(BADGE.ROOKIE_YEAR) && pIds.has(BADGE.ROOKIE_PREMIERE) && pIds.has(BADGE.TOP_SHOT_DEBUT)
+    pIds.has(BADGE.ROOKIE_YEAR) && pIds.has(BADGE.ROOKIE_PREMIERE) && sIds.has(BADGE.ROOKIE_MINT)
   existing.badge_score = computeBadgeScore(pIds, sIds)
 }
 
@@ -265,7 +265,7 @@ function normalizeEdition(e: RawEdition, externalId: string): BadgeRow {
     play_tags: playTags,
     set_play_tags: setPlayTags,
     is_three_star_rookie:
-      pIds.has(BADGE.ROOKIE_YEAR) && pIds.has(BADGE.ROOKIE_PREMIERE) && pIds.has(BADGE.TOP_SHOT_DEBUT),
+      pIds.has(BADGE.ROOKIE_YEAR) && pIds.has(BADGE.ROOKIE_PREMIERE) && sIds.has(BADGE.ROOKIE_MINT),
     has_rookie_mint: sIds.has(BADGE.ROOKIE_MINT),
     badge_score: computeBadgeScore(pIds, sIds),
     circulation_count: totalCirc,
