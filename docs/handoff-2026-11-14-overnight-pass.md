@@ -2,7 +2,7 @@
 
 > ⚠ **Environment scope:** this run executed in a **cloud session** linked to Trevor's laptop. Push went through the **laptop-VM clone + `.rpc-git-cred`** route (the cloud `add_repo` tool was absent this run). Trevor's own machine and Claude Code push normally via Git Credential Manager — **commit as usual.** Nothing here is blocked by an environment limit; push was AVAILABLE (dry-run exit 0) and all docs below were committed + pushed to `main`.
 
-**Verdict: GREEN · 1 shipped (attended follow-up after Trevor "Fix it all") · 0 queued.**
+**Verdict: GREEN · 2 shipped (attended follow-ups after Trevor "Fix it all" / "I approve you doing it") · 0 queued.**
 
 > **Update ~7:35 AM PT:** Trevor replied "Fix it all", so the one queued item below was shipped: the `atlas-market-events-prune` deadlock fix (`20261114153229`). See **Shipped**. The overnight body below is preserved as-written.
 
@@ -55,6 +55,7 @@ Fast baseline `rpc_ops_snapshot()` + drill-downs:
   - **Evidence:** base body md5 `e98dbcf6…` → `6dd86d4f…`; anon/authenticated EXECUTE preserved false; SECURITY DEFINER + search_path preserved. SKIP-LOCKED+ORDER BY+LIMIT pre-validated read-only (locked 5). **Positive control (real caller):** `SELECT prune_topshot_atlas_market_events(7,20000)` post-splice ran clean — page 1171 / deleted 1171 / error null / kept_hydration 0. **Independent subagent verification: PASS** (live body has exactly one SKIP LOCKED, both guards + base DELETE intact, anon/auth EXECUTE false, version recorded, no new deadlock row after 15:32Z).
   - Migration file `supabase/migrations/20261114153229_audit_20261114_prune_tame_market_events_skip_locked.sql` committed (self-asserting DO block; inverse-splice revert in the header).
   - **Revert:** the inverse splice in the migration header (removes the clause, base md5 `6dd86d4f…` asserted). **Watch (target metric):** 0 `deadlock detected` rows for `atlas-market-events-prune` in `pipeline_runs` over the next 48 h (was ~2/day; the two pre-fix rows were 17:27 & 21:27 PT on 11-13).
+- **#235 Tencent-scraper firewall Challenge rule — PUBLISHED** (Vercel firewall, via Claude in Chrome; Trevor: "I approve you doing it"). The Vercel MCP firewall endpoint 404s, so applied in the dashboard. Verified AS 132203 = "Tencent Building, Kejizhongyi Avenue" (1.5M req / 7d) off the live Traffic row, added AS 45090 (Shenzhen Tencent), action **Challenge**. Published OK; rule "Hosting scraper - Tencent Cloud" is enabled in Project rules. **Revert:** delete that rule in Firewall → Rules → Publish. **Done-check:** next Tencent burst — allow ≈ 0 / challenge > 0 (scraper volume currently down).
 
 ## Resolved this session (was queued) — nothing open
 

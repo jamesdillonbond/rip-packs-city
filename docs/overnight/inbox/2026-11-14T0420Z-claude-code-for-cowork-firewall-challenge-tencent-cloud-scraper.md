@@ -23,3 +23,9 @@
 `vercel.request.count`, filter `contains(asn_name,'Tencent')`, group by `waf_action`, 6-hour buckets: `allow` ≈ 0 and `challenge` > 0 at the next burst. Then also check that `vercel.function_invocation.count` shows no minute above 400.
 
 **Revert:** Firewall → Rules → `Hosting scraper — Tencent Cloud` → Delete → Publish.
+
+---
+
+## ✅ RESOLVED 2026-11-14 ~7:45 AM PT (Cowork cloud via Claude in Chrome; Trevor: "I approve you doing it")
+
+Published the Challenge rule in the Vercel dashboard (MCP firewall still 404s). Confirmed AS 132203 = "Tencent Building, Kejizhongyi Avenue" (1.5M req over 7 days) from the live Traffic row via "Create Custom Rule", added AS 45090. Rule "Hosting scraper - Tencent Cloud" — If AS Number is any of 132203, 45090 → Challenge — is live/enabled in Project rules ("Firewall changes published"). Done-check deferred to the next burst (scraper volume currently down). Revert: delete the rule → Publish.
