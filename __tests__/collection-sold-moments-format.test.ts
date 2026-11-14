@@ -6,6 +6,8 @@ import {
   filterSoldEventsByCollection,
   sumSoldProceeds,
   isSoldListTruncated,
+  momentSellsOnly,
+  soldListComplete,
 } from "@/lib/collection-sold-moments-format"
 
 // Pins the pure formatting/filtering/aggregation logic lifted out of
@@ -128,5 +130,27 @@ describe("isSoldListTruncated", () => {
   })
   it("true when total count exceeds the page limit", () => {
     expect(isSoldListTruncated(201, 200)).toBe(true)
+  })
+})
+
+describe("momentSellsOnly (2026-11-14)", () => {
+  it("drops pack sales — kind=sells returns pack_sell rows too", () => {
+    const rows = [{ kind: "moment_sell" }, { kind: "pack_sell" }, { kind: "pack_buy" }, { kind: null }]
+    expect(momentSellsOnly(rows)).toEqual([{ kind: "moment_sell" }, { kind: null }])
+  })
+})
+
+describe("soldListComplete (2026-11-14)", () => {
+  it("is complete only once every counted sale was read", () => {
+    expect(soldListComplete(200, 544, false)).toBe(false)
+    expect(soldListComplete(544, 544, true)).toBe(true)
+    expect(soldListComplete(0, 0, true)).toBe(true)
+  })
+  it("a short page ends the walk even when the count disagrees", () => {
+    expect(soldListComplete(150, 544, true)).toBe(true)
+  })
+  it("an unknown total is complete only on a short page", () => {
+    expect(soldListComplete(200, null, false)).toBe(false)
+    expect(soldListComplete(12, null, true)).toBe(true)
   })
 })

@@ -77,7 +77,8 @@ vi.mock("@/components/collection/CollectionMomentTable", () => ({
 }))
 vi.mock("@/components/collection/PortfolioSummary", () => ({
   default: (p: Record<string, unknown>) => (
-    <div data-testid="portfolio" data-total={String(p.paginatedTotal)} data-has-searched={String(p.hasSearched)} />
+    <div data-testid="portfolio" data-total={String(p.paginatedTotal)} data-has-searched={String(p.hasSearched)}
+      data-summary-fmv={String((p.walletSummary as { wallet_fmv?: number } | null)?.wallet_fmv ?? "")} />
   ),
 }))
 vi.mock("@/components/collection/CollectionFilterBar", () => ({
@@ -2180,5 +2181,33 @@ describe("CollectionTabClient — a failed badge read is said, not shown as no b
     await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).startsWith("/api/badges"))).toBe(true))
     await new Promise((r) => setTimeout(r, 50))
     expect(screen.queryByTestId("badges-partial-note")).toBeNull()
+  })
+})
+
+// ─── Late answers (2026-11-14) ───────────────────────────────────────────────
+
+describe("CollectionTabClient — a late wallet-summary answer for an earlier search", () => {
+  it("does not overwrite the newer wallet's totals", async () => {
+    let releaseWhale: (r: Response) => void = () => {}
+    const base = fetchMock.getMockImplementation() as (input: unknown) => Promise<Response>
+    fetchMock.mockImplementation(async (input: unknown) => {
+      const url = String(input)
+      if (url.startsWith("/api/wallet-summary") && url.includes("0xwhale")) {
+        return new Promise<Response>((resolve) => { releaseWhale = resolve })
+      }
+      if (url.startsWith("/api/wallet-summary")) return json(200, { wallet_fmv: 4321, total_moments: 1 })
+      return base(input)
+    })
+    searchParams = new URLSearchParams("wallet=0xwhale")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).startsWith("/api/wallet-summary") && String(c[0]).includes("0xwhale"))).toBe(true))
+    const box = screen.getByPlaceholderText(/Top Shot username or wallet address/)
+    fireEvent.change(box, { target: { value: "0xsmall" } })
+    fireEvent.keyDown(box, { key: "Enter" })
+    await waitFor(() => expect(screen.getByTestId("portfolio").getAttribute("data-summary-fmv")).toBe("4321"))
+    await act(async () => { releaseWhale(await json(200, { wallet_fmv: 987654, total_moments: 15000 })) })
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)) })
+    // The whale's summary arrived last; the newer wallet's must still be the one shown.
+    expect(screen.getByTestId("portfolio").getAttribute("data-summary-fmv")).toBe("4321")
   })
 })

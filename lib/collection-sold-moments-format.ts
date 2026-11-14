@@ -71,3 +71,26 @@ export function isSoldListTruncated(
 ): boolean {
   return (totalCount ?? 0) > fetchLimit;
 }
+
+// The "Moments sold" board lists MOMENT sales only. Since 2026-09-25
+// (20260925143056) `kind=sells` also returns `pack_sell` rows — an on-chain sale
+// of a sealed pack — and before 2026-11-14 nothing dropped them, so a pack
+// seller's "Moments sold" count and "Total proceeds" were mostly packs and each
+// pack rendered as "Moment #<pack id>". Excludes every `pack_*` kind rather than
+// requiring one spelling of the moment kind, so a renamed moment kind still shows.
+export function momentSellsOnly<T extends { kind: string | null }>(events: T[]): T[] {
+  return events.filter((e) => !(e.kind ?? "").startsWith("pack_"));
+}
+
+// Did the fetched pages reach every sale the wallet has? The RPC takes no
+// collection parameter, so the board filters client-side — and a filter over a
+// PARTIAL list cannot conclude "none in this collection" or state a total.
+// Unknown total (null) is treated as complete only when the last page was short.
+export function soldListComplete(
+  fetched: number,
+  totalCount: number | null | undefined,
+  lastPageShort: boolean,
+): boolean {
+  if (totalCount == null) return lastPageShort;
+  return fetched >= totalCount || lastPageShort;
+}

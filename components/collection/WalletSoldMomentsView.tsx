@@ -15,13 +15,17 @@
 //     exactly like pack P&L — so this is an own-wallet view. A 401/403 renders
 //     a sign-in / verify CTA, not an error.
 //  2. The RPC has no collection parameter, so we filter by collection_slug
-//     client-side over one fetched page. Selling is rare (the reference wallet
-//     has 7 sells lifetime), so a single 200-row page covers essentially every
-//     real wallet — but when total_count exceeds the page we say so instead of
-//     silently truncating.
+//     client-side. ⚠ 2026-11-14: one 200-row page is NOT "essentially every
+//     wallet" — `kind=sells` also returns `pack_sell` rows (the founder's wallet:
+//     502 pack sells, 42 moment sells), so a pack seller's 200 newest sells could
+//     all be packs or another collection, and the board then said "No moments
+//     sold … in NFL All Day" with $0.00 proceeds out of a partial list. Now: pack
+//     rows are dropped (momentSellsOnly), every page is read up to MAX_PAGES, and
+//     when the cap is hit the tiles are marked as a floor and the empty state
+//     says what was searched instead of concluding.
 
 import Link from "next/link"
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { getOwnerKey } from "@/lib/owner-key"
 import { getCollection, toDbSlug, fromDbSlug } from "@/lib/collections"
@@ -32,13 +36,17 @@ import {
   shortSellerAddr,
   filterSoldEventsByCollection,
   sumSoldProceeds,
-  isSoldListTruncated,
+  momentSellsOnly,
+  soldListComplete,
 } from "@/lib/collection-sold-moments-format"
 import { accentText } from "@/lib/accent-text"
 
 const mono = "var(--font-mono)"
 const display = "var(--font-display)"
-const FETCH_LIMIT = 200
+const FETCH_LIMIT = 200 // the route's per-page cap
+// 10 pages = the 2,000 most recent sells. Pages are read in sequence, so a
+// typical wallet (< 200 sells) still costs one request.
+const MAX_PAGES = 10
 
 interface SellEvent {
   kind: string
@@ -56,7 +64,9 @@ interface SellEvent {
 
 interface TxHistory {
   events: SellEvent[]
-  total_count: number
+  total_count: number | null
+  /** Every sale the wallet has was read (not cut off by MAX_PAGES). */
+  complete: boolean
 }
 
 export default function WalletSoldMomentsView({ collection, wallet: walletProp, walletPending = false }: { collection: string; wallet?: string | null; walletPending?: boolean }) {
@@ -88,37 +98,56 @@ export default function WalletSoldMomentsView({ collection, wallet: walletProp, 
     setWallet(resolved && resolved.startsWith("0x") ? resolved : null)
   }, [searchParams, walletProp, walletPending])
 
+  // A response for a wallet the view has since moved off must not land.
+  const loadSeq = useRef(0)
+
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current
+    const current = () => seq === loadSeq.current
     if (!wallet) { setData(null); return }
     setLoading(true)
     setError(null)
     setAuthRequired(false)
     setNotYourWallet(false)
     try {
-      const res = await fetch(
-        "/api/wallet/transaction-history?" +
-          new URLSearchParams({ wallet, kind: "sells", limit: String(FETCH_LIMIT), offset: "0" }).toString(),
-        { cache: "no-store" },
-      )
-      if (res.status === 401 || res.status === 403) {
-        setAuthRequired(res.status === 401)
-        setNotYourWallet(res.status === 403)
-        setData(null)
-        return
+      const events: SellEvent[] = []
+      let total: number | null = null
+      let lastPageShort = false
+      for (let page = 0; page < MAX_PAGES; page++) {
+        const res = await fetch(
+          "/api/wallet/transaction-history?" +
+            new URLSearchParams({ wallet, kind: "sells", limit: String(FETCH_LIMIT), offset: String(page * FETCH_LIMIT) }).toString(),
+          { cache: "no-store" },
+        )
+        if (!current()) return
+        if (res.status === 401 || res.status === 403) {
+          setAuthRequired(res.status === 401)
+          setNotYourWallet(res.status === 403)
+          setData(null)
+          return
+        }
+        const json = await res.json().catch(() => null)
+        if (!current()) return
+        // A 200 whose body did not parse is a FAILED read, not an empty history —
+        // it used to render "No moments sold from this wallet" and $0.00 (2026-11-02).
+        // A later page failing fails the whole read: a partial list is not the answer.
+        if (!res.ok || json == null) {
+          setError(json?.error ?? "Failed to load sold moments")
+          setData(null)
+          return
+        }
+        const pageEvents: SellEvent[] = Array.isArray(json.events) ? json.events : []
+        events.push(...pageEvents)
+        if (typeof json.total_count === "number") total = json.total_count
+        lastPageShort = pageEvents.length < FETCH_LIMIT
+        if (soldListComplete(events.length, total, lastPageShort)) break
       }
-      const json = await res.json().catch(() => null)
-      // A 200 whose body did not parse is a FAILED read, not an empty history —
-      // it used to render "No moments sold from this wallet" and $0.00 (2026-11-02).
-      if (!res.ok || json == null) {
-        setError(json?.error ?? "Failed to load sold moments")
-        setData(null)
-        return
-      }
-      setData(json as TxHistory)
+      setData({ events, total_count: total, complete: soldListComplete(events.length, total, lastPageShort) })
     } catch (err) {
+      if (!current()) return
       setError(err instanceof Error ? err.message : String(err))
     } finally {
-      setLoading(false)
+      if (current()) setLoading(false)
     }
   }, [wallet])
 
@@ -132,7 +161,7 @@ export default function WalletSoldMomentsView({ collection, wallet: walletProp, 
   // collection's sales onto the board. When the collection is unresolvable
   // (dbSlug null), fall back to showing everything (documented) rather than nothing.
   const rows = useMemo(() => {
-    return filterSoldEventsByCollection(data?.events ?? [], dbSlug, collection)
+    return filterSoldEventsByCollection(momentSellsOnly(data?.events ?? []), dbSlug, collection)
   }, [data, dbSlug, collection])
 
   // Diagnostic: if the fetch returned events but the filter zeroed them out,
@@ -152,7 +181,9 @@ export default function WalletSoldMomentsView({ collection, wallet: walletProp, 
 
   const totalProceeds = useMemo(() => sumSoldProceeds(rows), [rows])
 
-  const truncated = isSoldListTruncated(data?.total_count, FETCH_LIMIT)
+  // Cut off at MAX_PAGES: the count and proceeds are a floor, and "none" is not known.
+  const truncated = data != null && !data.complete
+  const floor = truncated ? "+" : ""
   const label = getCollection(collection)?.label ?? "this collection"
 
   if (walletPending && !wallet) {
@@ -208,13 +239,13 @@ export default function WalletSoldMomentsView({ collection, wallet: walletProp, 
         <div className="rpc-card" style={{ padding: "12px 14px" }}>
           <div style={{ fontFamily: mono, fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase" }}>Moments sold</div>
           <div style={{ fontFamily: display, fontWeight: 800, fontSize: 26, lineHeight: 1.1, color: "var(--rpc-text-primary)", marginTop: 4 }}>
-            {loading || error ? "—" : rows.length.toLocaleString("en-US")}
+            {loading || error ? "—" : rows.length.toLocaleString("en-US") + floor}
           </div>
         </div>
         <div className="rpc-card" style={{ padding: "12px 14px" }}>
           <div style={{ fontFamily: mono, fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase" }}>Total proceeds</div>
           <div style={{ fontFamily: display, fontWeight: 800, fontSize: 26, lineHeight: 1.1, color: "var(--rpc-success-text)", marginTop: 4 }}>
-            {loading || error ? "—" : fmtSoldUsd(totalProceeds)}
+            {loading || error ? "—" : fmtSoldUsd(totalProceeds) + floor}
           </div>
         </div>
       </section>
@@ -226,7 +257,9 @@ export default function WalletSoldMomentsView({ collection, wallet: walletProp, 
           <div style={{ padding: 16, fontFamily: mono, fontSize: 12, color: "var(--rpc-danger-text)" }}>{error}</div>
         ) : rows.length === 0 ? (
           <div style={{ padding: 26, textAlign: "center", fontFamily: mono, fontSize: 12, color: "var(--rpc-text-muted)" }}>
-            No moments sold from this wallet in {label}.
+            {truncated
+              ? <>No moment sales in {label} among this wallet&apos;s {(data?.events.length ?? 0).toLocaleString("en-US")} most recent sales; older ones were not loaded.</>
+              : <>No moments sold from this wallet in {label}.</>}
           </div>
         ) : (
           <div style={{ overflowX: "auto" }}>
@@ -280,7 +313,8 @@ export default function WalletSoldMomentsView({ collection, wallet: walletProp, 
 
         {truncated && (
           <div style={{ padding: "10px 14px", borderTop: "1px solid var(--rpc-border)", fontFamily: mono, fontSize: 11, color: "var(--rpc-text-muted)" }}>
-            Showing the {FETCH_LIMIT} most recent sales across all collections; this wallet has {data?.total_count.toLocaleString("en-US")} total.
+            Read the {(data?.events.length ?? 0).toLocaleString("en-US")} most recent sales across all collections
+            {data?.total_count != null ? <>; this wallet has {data.total_count.toLocaleString("en-US")} in all</> : null}. Older sales are not counted above.
           </div>
         )}
 

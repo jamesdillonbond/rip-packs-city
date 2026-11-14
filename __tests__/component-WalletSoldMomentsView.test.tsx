@@ -92,6 +92,57 @@ describe("WalletSoldMomentsView", () => {
     await waitFor(() => expect(getByText(/No moments sold from this wallet/)).toBeTruthy())
   })
 
+  it("counts moment sales only — a pack sale is not a sold moment (2026-11-14)", async () => {
+    ownerKey = "0xowner"
+    const packSale = { ...sell, kind: "pack_sell", nft_id: "999", title: null, amount_usd: 50000 }
+    fetchMock = vi.fn(() => res(200, { events: [packSale, sell], total_count: 2 }))
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText, queryByText, getAllByText } = render(<WalletSoldMomentsView collection="nba-top-shot" />)
+    await waitFor(() => expect(getByText("Damian Lillard — Logo Daze")).toBeTruthy())
+    expect(queryByText("Moment #999")).toBeNull()
+    expect(getByText("1")).toBeTruthy()
+    expect(getAllByText("$1,250.00").length).toBeGreaterThanOrEqual(2)
+    expect(queryByText("$51,250.00")).toBeNull()
+  })
+
+  it("reads every page before concluding there are none in this collection (2026-11-14)", async () => {
+    ownerKey = "0xowner"
+    const other = Array.from({ length: 200 }, (_, i) => ({ ...sell, nft_id: String(i), collection_slug: "nfl_all_day" }))
+    fetchMock = vi.fn((url: string) =>
+      url.includes("offset=0")
+        ? res(200, { events: other, total_count: 201 })
+        : res(200, { events: [sell], total_count: 201 }))
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText, queryByText } = render(<WalletSoldMomentsView collection="nba-top-shot" />)
+    await waitFor(() => expect(getByText("Damian Lillard — Logo Daze")).toBeTruthy())
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[1][0]).toContain("offset=200")
+    expect(queryByText(/No moments sold from this wallet/)).toBeNull()
+  })
+
+  it("at the page cap it marks a floor and does not conclude 'none' (2026-11-14)", async () => {
+    ownerKey = "0xowner"
+    const other = Array.from({ length: 200 }, (_, i) => ({ ...sell, nft_id: String(i), collection_slug: "nfl_all_day" }))
+    fetchMock = vi.fn(() => res(200, { events: other, total_count: 5000 }))
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText, queryByText } = render(<WalletSoldMomentsView collection="nba-top-shot" />)
+    await waitFor(() => expect(getByText(/most recent sales; older ones were not loaded/)).toBeTruthy())
+    expect(fetchMock).toHaveBeenCalledTimes(10)
+    expect(queryByText(/No moments sold from this wallet in/)).toBeNull()
+    expect(getByText("0+")).toBeTruthy()
+  })
+
+  it("a failed later page fails the read rather than showing the first page (2026-11-14)", async () => {
+    ownerKey = "0xowner"
+    const page = Array.from({ length: 200 }, (_, i) => ({ ...sell, nft_id: String(i) }))
+    fetchMock = vi.fn((url: string) =>
+      url.includes("offset=0") ? res(200, { events: page, total_count: 400 }) : res(500, { error: "history down" }))
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText, queryByText } = render(<WalletSoldMomentsView collection="nba-top-shot" />)
+    await waitFor(() => expect(getByText("history down")).toBeTruthy())
+    expect(queryByText("200")).toBeNull()
+  })
+
   it("surfaces a load error", async () => {
     ownerKey = "0xowner"
     fetchMock = vi.fn(() => res(500, { error: "history down" }))

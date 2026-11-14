@@ -935,7 +935,10 @@ function WalletMomentsBody() {
       fetch("/api/wallet-summary?wallet=" + encodeURIComponent(trimmed) + "&collection=" + encodeURIComponent(collectionSlug) + (summaryCollectionId ? "&collection_id=" + encodeURIComponent(summaryCollectionId) : ""))
         .then(function(r) { return r.ok ? r.json() : null })
         .then(function(json) {
-          if (!json || json.error) return
+          // 2026-11-14: the only search fetch without this guard. A whale's summary (up to
+          // ~25 s cold) answering after a smaller wallet was searched overwrote the newer
+          // wallet's FMV / locked / cost-basis tiles with the whale's numbers.
+          if (!json || json.error || lastSearchedRef.current !== trimmed) return
           setWalletSummary({
             // 2026-11-07: the wallet card's count (see computeWalletStatRow); absent → undefined, never 0
             total_moments: typeof json.total_moments === "number" ? json.total_moments : undefined,
@@ -972,7 +975,7 @@ function WalletMomentsBody() {
           }
         })
         .catch(function() {})
-        .finally(function() { setWalletSummaryLoading(false) })
+        .finally(function() { if (lastSearchedRef.current === trimmed) setWalletSummaryLoading(false) })
 
       // Secondary: call wallet-search for summary stats only (total FMV, locked/unlocked counts)
       // This runs in parallel as a background fetch — does NOT block the moment display.
@@ -1051,10 +1054,12 @@ function WalletMomentsBody() {
           // Three outcomes, three branches — not two. A non-OK response (d null)
           // and a 200 carrying `error` are BOTH failures; only the third case is
           // an answer, and only it may set the map.
+          // A late answer for a wallet the user has since searched away from must not land.
+          if (lastSearchedRef.current !== trimmed) return
           if (!d || d.error) { setPacksFailed(true); return }
           if (d.packsByTitle) setPacksByTitle(d.packsByTitle)
         })
-        .catch(function() { setPacksFailed(true) })
+        .catch(function() { if (lastSearchedRef.current === trimmed) setPacksFailed(true) })
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong")
     } finally {
