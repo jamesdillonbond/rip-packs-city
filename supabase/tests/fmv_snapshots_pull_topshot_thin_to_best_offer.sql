@@ -8,8 +8,11 @@
 --   3. never-sold, no offer -> the estimate, _compcap; an offer under the estimate does not raise it;
 --   4. an edition that HAS sold: the pull only -> $39.48, _bidpull;
 --   5. scope: an All Day row is untouched; a stale (> 3 d) estimate is ignored.
+--   6. (2026-11-13 night) a LOW (sales-based) price is pulled only by an offer ≥ 25 % of it: $125 with a $21 offer
+--      stays $125 (was $32.80); $125 with a $40 offer is pulled ($53.18); an ASK_ONLY $125 with a $21 offer is
+--      still pulled ($32.80) -- the ask-only band kept the pull on the backtest.
 -- The function DDL is VERBATIM from
--- supabase/migrations/20261113233615_audit_20261113_topshot_comparables_cut_at_the_offer_says_so.sql;
+-- supabase/migrations/20261114132054_audit_20261113_topshot_offer_pull_needs_a_real_offer_on_a_sold_price.sql;
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift. Runs in a rolled-back transaction.
 
 BEGIN;
@@ -46,8 +49,13 @@ begin
        and o.status = 'open'
        and o.offer_type in ('edition', 'subedition')
        and (o.expires_at is null or o.expires_at > now());
-    -- (1) the offer pull
-    if v_bid is not null and v_bid > 0 and v_bid < new.fmv_usd and v_bid >= 0.10 * new.fmv_usd then
+    -- (1) the offer pull. 2026-11-13 (night): a SALES-based (LOW) price is pulled only by an offer at
+    -- least 25 % of it; an ask-only price keeps the 10 % floor. Backtest, 45 d of Top Shot sales, three
+    -- 15-day windows: LOW with the bid under 25 % of the price, the pull scored within +/-25 % on 8.3 / 0.0 /
+    -- 22.2 % of next sales vs 16.7 / 29.4 / 22.2 % unpulled, WAPE 71 / 75 / 61 vs 30 / 41 / 66 (n 38);
+    -- ASK_ONLY in the same band the pull still cut WAPE in every window (81->67, 219->48, 181->60), so it stays.
+    if v_bid is not null and v_bid > 0 and v_bid < new.fmv_usd
+       and v_bid >= (case when new.confidence = 'LOW' then 0.25 else 0.10 end) * new.fmv_usd then
       v_new := greatest(round(power(new.fmv_usd, 0.25) * power(v_bid, 0.75), 2), round(v_bid, 2), 0.01);
       if v_new < new.fmv_usd then
         new.fmv_usd := v_new;
@@ -105,7 +113,12 @@ INSERT INTO public.offers VALUES
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'b0000000-0000-0000-0000-000000000005', 30.00, 'open', 'edition', NULL),
   ('dee28451-5d62-409e-a1ad-a83f763ac070', 'b0000000-0000-0000-0000-000000000006', 30.00, 'open', 'edition', NULL);
 
-INSERT INTO public.sales_market VALUES ('b0000000-0000-0000-0000-000000000005');
+INSERT INTO public.sales_market VALUES ('b0000000-0000-0000-0000-000000000005'),
+  ('b0000000-0000-0000-0000-000000000008'), ('b0000000-0000-0000-0000-000000000009'), ('b0000000-0000-0000-0000-00000000000a');
+INSERT INTO public.offers VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'b0000000-0000-0000-0000-000000000008', 21.00, 'open', 'subedition', NULL),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'b0000000-0000-0000-0000-000000000009', 40.00, 'open', 'subedition', NULL),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'b0000000-0000-0000-0000-00000000000a', 21.00, 'open', 'subedition', NULL);
 
 INSERT INTO public.fmv_snapshots (edition_id, collection_id, confidence, fmv_usd, algo_version) VALUES
   ('b0000000-0000-0000-0000-000000000001', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'ASK_ONLY', 100, 'x'),
@@ -114,7 +127,10 @@ INSERT INTO public.fmv_snapshots (edition_id, collection_id, confidence, fmv_usd
   ('b0000000-0000-0000-0000-000000000004', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'ASK_ONLY', 90, 'x'),
   ('b0000000-0000-0000-0000-000000000005', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'ASK_ONLY', 90, 'x'),
   ('b0000000-0000-0000-0000-000000000006', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'ASK_ONLY', 90, 'x'),
-  ('b0000000-0000-0000-0000-000000000007', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'ASK_ONLY', 90, 'x');
+  ('b0000000-0000-0000-0000-000000000007', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'ASK_ONLY', 90, 'x'),
+  ('b0000000-0000-0000-0000-000000000008', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'LOW', 125, 'x'),
+  ('b0000000-0000-0000-0000-000000000009', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'LOW', 125, 'x'),
+  ('b0000000-0000-0000-0000-00000000000a', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'ASK_ONLY', 125, 'x');
 
 DO $$
 DECLARE r record;
@@ -144,6 +160,16 @@ BEGIN
 
   SELECT * INTO r FROM public.fmv_snapshots WHERE edition_id = 'b0000000-0000-0000-0000-000000000007';
   PERFORM _assert_eq(r.fmv_usd::text, '90', 'an estimate older than 3 days is ignored (and no offer: no pull)');
+
+  SELECT * INTO r FROM public.fmv_snapshots WHERE edition_id = 'b0000000-0000-0000-0000-000000000008';
+  PERFORM _assert_eq(r.fmv_usd::text, '125', 'a sales-based price is not dragged to an offer under 25 % of it (the Duncan ::23 case)');
+  PERFORM _assert_eq(r.algo_version, 'x', 'and is not tagged _bidpull');
+  SELECT * INTO r FROM public.fmv_snapshots WHERE edition_id = 'b0000000-0000-0000-0000-000000000009';
+  PERFORM _assert_eq(r.fmv_usd::text, '53.18', 'a sales-based price IS pulled by an offer at 32 % of it');
+  PERFORM _assert_eq(r.algo_version, 'x_bidpull', 'tagged _bidpull');
+  SELECT * INTO r FROM public.fmv_snapshots WHERE edition_id = 'b0000000-0000-0000-0000-00000000000a';
+  PERFORM _assert_eq(r.fmv_usd::text, '32.80', 'an ask-only price is still pulled by an offer at 17 % of it');
+  PERFORM _assert_eq(r.algo_version, 'x_bidpull', 'tagged _bidpull');
 
   RAISE NOTICE '✓ fmv_snapshots_pull_topshot_thin_to_best_offer: a hold the offer stopped says so';
 END $$;

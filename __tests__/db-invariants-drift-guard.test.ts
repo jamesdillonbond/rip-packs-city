@@ -61,7 +61,8 @@ const PINS = [
     // Added 2026-11-13. Top Shot offer pull + never-sold comparables hold: a hold the offer stopped says _compcap_bidfloor.
     fn: "fmv_snapshots_pull_topshot_thin_to_best_offer",
     test: "supabase/tests/fmv_snapshots_pull_topshot_thin_to_best_offer.sql",
-    migration: "supabase/migrations/20261113233615_audit_20261113_topshot_comparables_cut_at_the_offer_says_so.sql",
+    // 2026-11-13 (night): a LOW price is pulled only by an offer >= 25 % of it.
+    migration: "supabase/migrations/20261114132054_audit_20261113_topshot_offer_pull_needs_a_real_offer_on_a_sold_price.sql",
   },
   {
     // Added 2026-11-13. All Day _compcap: the comparable cut never lands below the best open offer.
