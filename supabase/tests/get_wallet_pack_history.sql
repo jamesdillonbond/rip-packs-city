@@ -79,9 +79,14 @@
 --      is a real $0. A SEALED pack carries a value with its basis (ask > last sale > rip EV >
 --      opened avg), and every read returns tab_totals over ALL of the tab's rows, each sum
 --      beside the count it covers (V27-1..V27-4), with tab_totals.packs = total_count (V27-5).
+--  17. (v28, 2026-11-13) ask_checked_at is when the ask was last CONFIRMED: a LISTED row is
+--      confirmed by every complete snapshot walk (pack_ask_snapshot_state.last_ok_at), because
+--      the writer skips an unchanged row and its own last_checked_at is when the ask last
+--      CHANGED (one wallet read "asks checked since Aug 26" off asks re-confirmed every 5 min).
+--      An UNLISTED row keeps its own stamp (V28-1, V28-2).
 --
 -- The get_wallet_pack_history DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261114034856_audit_20261113_pack_history_held_pulls_wallet_fmv_and_tab_totals.sql).
+-- (supabase/migrations/20261114035707_audit_20261113_pack_history_ask_checked_is_last_confirmed.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -133,6 +138,8 @@ CREATE TABLE public.pack_open_pull_values (
   collection_id uuid, pack_nft_id text, opener_address text, n_pulls int, n_resolved int, n_priced int,
   pull_value_usd numeric(14,2), priced_at timestamptz DEFAULT now(), n_inferred int NOT NULL DEFAULT 0,
   PRIMARY KEY (collection_id, pack_nft_id));
+-- v28 (2026-11-13): when each collection's last COMPLETE ask walk finished
+CREATE TABLE public.pack_ask_snapshot_state (collection_slug text PRIMARY KEY, last_ok_at timestamptz, total_listed int);
 -- v27 (2026-11-13): every pull list the body reads, and the wallet's holdings at FMV
 CREATE TABLE public.pack_open_pulls (collection_id uuid, pack_nft_id text, nft_id text, opener_address text,
   PRIMARY KEY (collection_id, pack_nft_id, nft_id));
@@ -791,13 +798,19 @@ BEGIN
   dist_market AS MATERIALIZED (
     SELECT hd.collection_id, hd.dist_id,
       CASE WHEN pas.is_listed THEN pas.lowest_ask END AS ask_usd,
-      pas.last_checked_at AS ask_checked_at,
+      -- v28 (2026-11-13): when the ask was last CONFIRMED. upsert_pack_ask_state skips an
+      -- unchanged listed row (the WAL guard), so its last_checked_at is when the ask last
+      -- CHANGED; every complete 5-min walk that still lists it confirms it, and stamps
+      -- pack_ask_snapshot_state.last_ok_at. An unlisted row keeps its own stamp.
+      CASE WHEN pas.is_listed THEN GREATEST(pas.last_checked_at, ss.last_ok_at)
+           ELSE pas.last_checked_at END AS ask_checked_at,
       ev.gross_ev         AS rip_ev_usd,
       obs.avg_value_usd   AS opened_avg_usd,
       lsale.sale_price    AS last_sale_usd
     FROM held_dists hd
     LEFT JOIN public.pack_ask_state pas
       ON pas.dist_id = hd.dist_id AND pas.collection_slug = replace(hd.collection_slug, '_', '-')
+    LEFT JOIN public.pack_ask_snapshot_state ss ON ss.collection_slug = pas.collection_slug
     LEFT JOIN public.mv_pack_ev_latest ev
       ON ev.dist_id = hd.dist_id AND ev.collection_id = hd.collection_id
      AND NOT (ev.gross_ev = 0 AND ev.edition_count = 0)
@@ -867,7 +880,9 @@ BEGIN
     SELECT
       p.*,
       CASE WHEN pas.is_listed THEN pas.lowest_ask END AS lowest_ask_usd,
-      pas.last_checked_at                             AS ask_checked_at,
+      -- v28: last CONFIRMED, not last changed (see dist_market)
+      CASE WHEN pas.is_listed THEN GREATEST(pas.last_checked_at, pss.last_ok_at)
+           ELSE pas.last_checked_at END               AS ask_checked_at,
       ev.pack_ev                                      AS pack_ev_usd,
       -- 2026-09-26 (v13): the pack's CONTENTS value -- what ripping it is
       -- expected to yield. pack_ev is that minus the drop price (net), which
@@ -897,6 +912,7 @@ BEGIN
       ON p.dist_id IS NOT NULL
      AND pas.dist_id = p.dist_id
      AND pas.collection_slug = replace(p.collection_slug, '_', '-')
+    LEFT JOIN public.pack_ask_snapshot_state pss ON pss.collection_slug = pas.collection_slug
     LEFT JOIN public.mv_pack_ev_latest ev
       ON p.dist_id IS NOT NULL
      AND ev.dist_id = p.dist_id AND ev.collection_id = p.collection_id
@@ -2101,6 +2117,22 @@ BEGIN
     END LOOP;
   END LOOP;
   PERFORM _assert(n >= 40, format('V27-5 covered %s (wallet, tab) pairs', n));
+END $$;
+
+-- V28: a listed ask is confirmed by the last complete walk; an unlisted one keeps its own stamp.
+INSERT INTO public.pack_ask_snapshot_state VALUES ('nba-top-shot', '2026-11-14 03:00:00+00', 2048);
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xv27w', NULL, 'held', 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'HSP1';
+  PERFORM _assert((row_->>'ask_checked_at')::timestamptz = '2026-11-14 03:00:00+00',
+                  'V28-1 HSP1: a LISTED ask unchanged since 11-13 reads the last complete walk (11-14 03:00), not when it last changed. got ' || coalesce(row_->>'ask_checked_at', 'NULL'));
+  PERFORM _assert((r->'tab_totals'->>'held_ask_oldest_checked_at')::timestamptz = '2026-11-14 03:00:00+00',
+                  'V28-1 tab total: the oldest CONFIRMED ask is the walk time');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'HSP2';
+  PERFORM _assert((row_->>'ask_checked_at')::timestamptz = '2026-11-13 00:00:00+00',
+                  'V28-2 HSP2: an UNLISTED ask keeps its own stamp. got ' || coalesce(row_->>'ask_checked_at', 'NULL'));
 END $$;
 
 ROLLBACK;
