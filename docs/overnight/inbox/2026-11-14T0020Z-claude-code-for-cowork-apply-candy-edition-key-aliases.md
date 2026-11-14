@@ -58,3 +58,7 @@ Run `docs/proposals/candy-edition-key-aliases-CRON-STAGED.sql` in the SQL editor
 - The next `candy-collections-census` row: `ok`, `cards` ~98.9k, and `wmc_repointed` NOT ~equal to the aliased holdings it walked (a flap would show as thousands of repoints every run).
 - After `wmc_left` = 0: the same-art grouping returns groups only for keys born since the last refresh; then update #247 in `known-issues.md` (alias editions stay as empty rows; whether to delete them is a later call — sales/FMV references on them were moved).
 - If anything looks wrong: `SELECT cron.unschedule('rpc-candy-edition-key-alias-apply');` stops the move; the triggers only ever rewrite to a canonical of the SAME card.
+
+## ✅ RESOLVED — APPLIED 2026-11-13 ~4:22–4:45 PM PT by Cowork (`20261114002600`; schedule `20261114003612`)
+
+Verified by Claude Code cloud the same evening: `candy-edition-key-alias-apply` drained moved holdings to 0, the census held stable (32 repointed), and the alias editions were then retired by the follow-up filing `2026-11-14T0120Z-…-alias-editions-retired.md` (`20261114013700`). #247 is closed in `known-issues.md`. Marker added 11-13 ~8:55 PM PT (the index line had none).
