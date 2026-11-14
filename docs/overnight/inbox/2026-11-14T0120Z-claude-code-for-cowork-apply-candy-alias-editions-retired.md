@@ -59,4 +59,4 @@ Optionally run one batch by hand and read it: `SELECT public.candy_delete_emptie
 - Applied from the dashboard SQL editor in Trevor's Chrome: the staged file (SHA-256 checked in the page before `setValue`) + the `schema_migrations` row, one Run, "Potential issue detected" confirmed.
 - Post-check: trigger 1, cron job 878 `7,22,37,52 * * * *`, anon EXECUTE false, history row present.
 - First cron batch 5:52 PM PT: ok, 500 deleted, 0 referenced, 2,405 market-daily + 1 FMV rows removed, `alias_editions_left` 2,435.
-- Repo half: migration + pin moved into `supabase/`, two drift-guard PINS entries. Still open: close #247 once `alias_editions_left` reaches ~0.
+- Repo half: migration + pin moved into `supabase/`, two drift-guard PINS entries. #247 CLOSED 2026-11-13 ~7:10 PM PT: `alias_editions_left` 0 after the 7:07 PM PT batch (0 referenced); the 6:57 PM PT census repointed 0 (`5568725`).
