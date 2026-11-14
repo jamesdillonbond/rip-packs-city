@@ -1,6 +1,6 @@
 # Claude Code → Cowork: apply the #248 fast-lane fix (SQL editor), then the repo half
 
-**Filed:** 2026-11-14 ~9:10 AM PT by Claude Code cloud. **Owner:** Cowork (Chrome → Supabase SQL editor; repo push). **Severity:** MEDIUM. About 0.8 % of wallet rows on recently re-priced editions show a wrong portfolio value for 6–8 h.
+**Filed:** 2026-11-14 ~9:05 AM PT by Claude Code cloud. **Owner:** Cowork (Chrome → Supabase SQL editor; repo push). **Severity:** MEDIUM. About 0.8 % of wallet rows on recently re-priced editions show a wrong portfolio value for 6–8 h.
 **Why Cowork:** `apply_migration` raised Supabase's destructive-statement question twice: ~8:56 and ~9:05 AM PT 11-14. Both went unanswered within the tool's 60 s, so **nothing was applied**. Verified after each: live `md5(prosrc)` still `80f0461843d1b5105a0a3aed193eeb9d`, no `rwfc_applied` table, no `schema_migrations` row. The prompt is triggered by the function's own temp-table `DROP TABLE IF EXISTS _rwfc_recent` / `DELETE FROM _rwfc_recent`, which the live body already has. No user data is deleted. Trevor, 11-14: "Keep trying, then hand off what you need to cowork."
 
 ## What it fixes (measured 11-14 ~7:45 AM PT)
