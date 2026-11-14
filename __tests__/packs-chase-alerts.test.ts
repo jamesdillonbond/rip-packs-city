@@ -94,6 +94,13 @@ describe("runPackChaseDispatch", () => {
     expect(log).toEqual([])
     expect(r).toMatchObject({ fired: 0, no_channel: 1 })
   })
+  it("a failed channel LOOKUP stays armed, is not counted as no_channel, and fails the run (2026-11-14)", async () => {
+    const { db, log } = fakeDb({ watches: [watch()] })
+    const r = await runPackChaseDispatch(db, async () => { throw new Error("rpc down") }, NOW)
+    expect(log).toEqual([])
+    expect(r).toMatchObject({ fired: 0, no_channel: 0 })
+    expect(r.state_error).toMatch(/channel lookup: rpc down/)
+  })
   it("a failed reading read holds every watch — never fires, never re-arms", async () => {
     const { db, log } = fakeDb({ watches: [watch(), watch({ id: "w2", armed: false, min_vs_launch: 50 })], readErr: true })
     const r = await runPackChaseDispatch(db, targets, NOW)

@@ -39,6 +39,7 @@ import {
   sniperEmptyCopy,
   SNIPER_DEGRADED_EMPTY_COPY,
   SNIPER_DEGRADED_EMPTY_HEADING,
+  SNIPER_DEGRADED_PARTIAL_COPY,
 } from "@/lib/sniper/source-failures";
 import {
   buildListingSuggestions,
@@ -805,8 +806,26 @@ function SniperMomentsBody() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  const depthSeqRef = useRef(0);
+  function depthWriters(seq: number) {
+    const on = () => depthSeqRef.current === seq;
+    return {
+      setDepthFloor: (v: Parameters<typeof setDepthFloor>[0]) => { if (on()) setDepthFloor(v); },
+      setDepthFloorError: (v: string | null) => { if (on()) setDepthFloorError(v); },
+      setDepthRecentAsk: (v: number | null) => { if (on()) setDepthRecentAsk(v); },
+      setDepthDeals: (v: SniperDeal[]) => { if (on()) setDepthDeals(v); },
+      setDepthListingsError: (v: string | null) => { if (on()) setDepthListingsError(v); },
+      setDepthLoading: (v: boolean) => { if (on()) setDepthLoading(v); },
+    };
+  }
+
   async function toggleEditionDepth(deal: SniperDeal) {
+    // 2026-11-14 (Sniper review): each open is a REQUEST; only the latest may write
+    // the panel. Opening row B before row A's reads answered filled B's panel with
+    // A's floor and A's "other listings", and A's finish cleared B's spinner.
+    const seq = ++depthSeqRef.current;
     if (expandedFlowId === deal.flowId) {
+      depthSeqRef.current++;
       setExpandedEditionKey(null);
       setExpandedFlowId(null);
       return;
@@ -820,6 +839,7 @@ function SniperMomentsBody() {
     setDepthRecentAsk(null);
     setDepthListingsError(null);
 
+    const live = depthWriters(seq);
     // Fetch edition floor data and other listings in parallel
     // /api/edition-floor reads Top Shot + Flowty only; an All Day key there is the wrong collection's
     // question (2026-10-26). All Day reads the collection-scoped live ask instead.
@@ -827,17 +847,17 @@ function SniperMomentsBody() {
       ? (async () => {
           try {
             const collUuid = ownLookup(COLLECTION_UUID_BY_SLUG, collectionSlug) ?? null;
-            if (!collUuid) { setDepthFloorError("Could not load floor data"); return; }
+            if (!collUuid) { live.setDepthFloorError("Could not load floor data"); return; }
             const r = await fetch("/api/best-asks", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ collectionId: collUuid, editionKeys: [deal.editionKey] }),
             });
-            if (!r.ok) { setDepthFloorError("Could not load floor data"); return; }
+            if (!r.ok) { live.setDepthFloorError("Could not load floor data"); return; }
             const j = await r.json();
             const hit = Array.isArray(j?.results) ? j.results.find((x: { editionKey?: string }) => x.editionKey === deal.editionKey) : null;
-            if (hit && typeof hit.ask === "number" && hit.ask > 0) setDepthRecentAsk(hit.ask);
-          } catch { setDepthFloorError("Could not load floor data"); }
+            if (hit && typeof hit.ask === "number" && hit.ask > 0) live.setDepthRecentAsk(hit.ask);
+          } catch { live.setDepthFloorError("Could not load floor data"); }
         })()
       : deal.editionKey
       ? fetch(`/api/edition-floor?editionKey=${encodeURIComponent(deal.editionKey)}`, { cache: "no-store" })
@@ -845,9 +865,9 @@ function SniperMomentsBody() {
             if (!res.ok) throw new Error("Floor fetch failed");
             return res.json();
           })
-          .then((json) => setDepthFloor(json))
+          .then((json) => live.setDepthFloor(json))
           .catch(async () => {
-            setDepthFloorError("Could not load floor data");
+            live.setDepthFloorError("Could not load floor data");
             const collUuid = ownLookup(COLLECTION_UUID_BY_SLUG, collectionSlug) ?? null;
             if (!collUuid || !deal.editionKey) return;
             try {
@@ -859,20 +879,20 @@ function SniperMomentsBody() {
               if (!r.ok) return;
               const j = await r.json();
               const hit = Array.isArray(j?.results) ? j.results.find((x: { editionKey?: string }) => x.editionKey === deal.editionKey) : null;
-              if (hit && typeof hit.ask === "number" && hit.ask > 0) setDepthRecentAsk(hit.ask);
+              if (hit && typeof hit.ask === "number" && hit.ask > 0) live.setDepthRecentAsk(hit.ask);
             } catch { /* the error line stands */ }
           })
-      : Promise.resolve(setDepthFloorError("No edition data available"));
+      : Promise.resolve(live.setDepthFloorError("No edition data available"));
 
     const listingsPromise = fetch(`${feedEndpoint}?collection=${feedCollection}&editionKey=${encodeURIComponent(deal.editionKey)}&limit=20`, { cache: "no-store" })
       .then(async (res) => {
         // ⚠ This was a bare `return`, which is the likelier failure of the two
         // (a 5xx response, not a thrown fetch) and left depthDeals at [] — read
         // by the panel below as "none exist".
-        if (!res.ok) { setDepthListingsError("Could not load other listings"); return; }
+        if (!res.ok) { live.setDepthListingsError("Could not load other listings"); return; }
         const json = await res.json();
         const groupKey = `${deal.playerName}|${deal.setName}|${deal.seriesName}|${deal.parallelId}`;
-        setDepthDeals(
+        live.setDepthDeals(
           (json.deals ?? []).filter(
             (d: SniperDeal) =>
               d.flowId !== deal.flowId &&
@@ -880,10 +900,10 @@ function SniperMomentsBody() {
           )
         );
       })
-      .catch(() => setDepthListingsError("Could not load other listings"));
+      .catch(() => live.setDepthListingsError("Could not load other listings"));
 
     try { await Promise.all([floorPromise, listingsPromise]); } catch {}
-    setDepthLoading(false);
+    live.setDepthLoading(false);
   }
 
   // ── Task 5: Save search handler ────────────────────────────────────────────
@@ -1230,7 +1250,7 @@ function SniperMomentsBody() {
         isAllDay={isAllDay}
         ownedCount={ownedForBoard.size}
         lastRefreshed={data?.lastRefreshed}
-        feedState={data ? "ok" : error ? "failed" : "loading"}
+        feedState={data ? (feedDegraded ? "partial" : "ok") : error ? "failed" : "loading"}
       />
 
       {/* Table */}
@@ -1238,6 +1258,13 @@ function SniperMomentsBody() {
         {error && (
           <div className="rpc-hud" style={{ marginBottom: 16, borderColor: "var(--rpc-danger)", color: "var(--rpc-danger-text)", fontSize: "var(--text-sm)", fontFamily: "var(--font-mono)" }}>
             FEED ERROR: {error}
+          </div>
+        )}
+        {/* 2026-11-14: a degraded feed that still returned rows used to read as the
+            whole market — the notice lived only in the EMPTY branch. */}
+        {feedDegraded && visibleDeals.length > 0 && (
+          <div role="status" className="rpc-hud" style={{ marginBottom: 16, borderColor: "var(--rpc-danger)", color: "var(--rpc-danger-text)", fontSize: "var(--text-sm)", fontFamily: "var(--font-mono)" }}>
+            {SNIPER_DEGRADED_PARTIAL_COPY}
           </div>
         )}
         {data?.playerResolved && (

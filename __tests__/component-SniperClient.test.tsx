@@ -19,7 +19,7 @@
 // states back together, not to discover a new defect.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { render, screen, waitFor, cleanup, fireEvent } from "@testing-library/react"
+import { render, screen, waitFor, cleanup, fireEvent, act } from "@testing-library/react"
 
 // ── Routing ────────────────────────────────────────────────────────────────
 let routeCollection = "nba-top-shot"
@@ -1892,6 +1892,40 @@ describe("SniperClient — the depth panel's floor variants", () => {
   })
 })
 
+// 2026-11-14 (Sniper review): the depth panel's reads were not tied to the row
+// that asked. Open row A, then row B before A's floor answered: A's late answer
+// filled B's panel.
+describe("SniperClient — a late depth read for a previous row does not fill the current one", () => {
+  it("row B's panel keeps row B's floor when row A's floor answers last", async () => {
+    warm = {
+      data: feed({ deals: [
+        deal({ flowId: "111", editionKey: "48:1652" }),
+        deal({ flowId: "222", editionKey: "48:9999", playerName: "CJ McCollum" }),
+      ] }),
+      loading: false, error: null, refresh: vi.fn(),
+    }
+    let releaseA: () => void = () => {}
+    const gateA = new Promise<void>((r) => { releaseA = r })
+    fetchMock.mockImplementation(async (input: unknown) => {
+      const u = String(input)
+      if (u.startsWith("/api/edition-floor") && u.includes("1652")) {
+        await gateA
+        return { ok: true, status: 200, json: async () => ({ topShotFloor: 11, topShotListingCount: 111 }) }
+      }
+      if (u.startsWith("/api/edition-floor")) return { ok: true, status: 200, json: async () => ({ topShotFloor: 44, topShotListingCount: 222 }) }
+      if (u.includes("editionKey=")) return { ok: true, status: 200, json: async () => ({ deals: [] }) }
+      return { ok: true, status: 200, json: async () => ({ ids: [], deals: [], benchmarks: {} }) }
+    })
+    render(<SniperClient />)
+    fireEvent.click(await waitFor(() => document.querySelector("#sniper-row-111") as HTMLElement))
+    fireEvent.click(await waitFor(() => document.querySelector("#sniper-row-222") as HTMLElement))
+    await screen.findByText(/\(222 listed\)/)
+    await act(async () => { releaseA(); await new Promise((r) => setTimeout(r, 20)) })
+    expect(screen.queryByText(/\(111 listed\)/)).toBeNull()
+    expect(screen.getByText(/\(222 listed\)/)).toBeTruthy()
+  })
+})
+
 describe("SniperClient — suggestions before the market has loaded", () => {
   it("says it is WAITING on the feed rather than concluding from an unloaded one", async () => {
     // ⚠ The third honest state: the collection read succeeded but the deals
@@ -2064,6 +2098,31 @@ describe("SniperClient — a 200 whose SOURCES failed is not a quiet market eith
 
     expect(await screen.findByText(/THE FLOOR IS QUIET/i)).toBeTruthy()
     expect(screen.queryByText(/COULDN'T LOAD THE FLOOR/i)).toBeNull()
+  })
+
+  // 2026-11-14 (Sniper review): the degraded notice lived only in the EMPTY
+  // branch, so a feed that lost a source but still returned rows read as the
+  // whole market — "N deals · avg X% off" with nothing saying it was partial.
+  it("a degraded feed that still returned deals says the board is incomplete", async () => {
+    warm = {
+      data: feed({ deals: [deal({ flowId: "111" })], sourcesFailed: ["allday-fmv"], degraded: true }),
+      loading: false, error: null, refresh: vi.fn(),
+    }
+    render(<SniperClient />)
+    await screen.findAllByText(/Damian Lillard/i)
+    expect(screen.getByText(/this board is incomplete/i)).toBeTruthy()
+    expect(screen.getByText(/partial feed/i)).toBeTruthy()
+  })
+
+  it("NO-CHANGE CONTROL: a healthy non-empty board carries no partial notice", async () => {
+    warm = {
+      data: feed({ deals: [deal({ flowId: "111" })], sourcesFailed: [], degraded: false }),
+      loading: false, error: null, refresh: vi.fn(),
+    }
+    render(<SniperClient />)
+    await screen.findAllByText(/Damian Lillard/i)
+    expect(screen.queryByText(/this board is incomplete/i)).toBeNull()
+    expect(screen.queryByText(/partial feed/i)).toBeNull()
   })
 
   it("a degraded feed that still returned rows renders them — partial is not empty", async () => {

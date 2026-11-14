@@ -385,10 +385,12 @@ describe("client pages — a failed read is not an empty result", () => {
     })
 
     it("sets it on BOTH exits — the !res.ok return and the catch", () => {
+      // Re-pinned 2026-11-14: the writes now go through the per-request guard
+      // (`live.` — only the latest Depth open may write the panel). Same two exits.
       expect(src).toContain(
-        'if (!res.ok) { setDepthListingsError("Could not load other listings"); return; }',
+        'if (!res.ok) { live.setDepthListingsError("Could not load other listings"); return; }',
       )
-      expect(src).toContain('.catch(() => setDepthListingsError("Could not load other listings"))')
+      expect(src).toContain('.catch(() => live.setDepthListingsError("Could not load other listings"))')
     })
 
     it("the failure branch precedes the empty branch", () => {

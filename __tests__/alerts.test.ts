@@ -187,9 +187,11 @@ describe("getOwnerChannelTargets", () => {
     expect(lastCall().args.p_channel).toBe("discord")
   })
 
-  it("returns [] on error", async () => {
+  // INVERTED 2026-11-14: this pinned the defect. [] on a failed lookup read as
+  // "no linked channel" downstream (pack-chase counted chase_no_channel, ok:true).
+  it("THROWS on error — a failed lookup is not an empty channel list", async () => {
     state.rpcResults["get_owner_channel_targets"] = { data: null, error: { message: "x" } }
-    expect(await getOwnerChannelTargets("owner-1")).toEqual([])
+    await expect(getOwnerChannelTargets("owner-1")).rejects.toThrow(/get_owner_channel_targets: x/)
   })
 
   it("returns [] when data is null on success", async () => {

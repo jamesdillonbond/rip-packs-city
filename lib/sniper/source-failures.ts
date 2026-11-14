@@ -60,6 +60,10 @@ export const SNIPER_DEGRADED_EMPTY_COPY =
 
 export const SNIPER_DEGRADED_EMPTY_HEADING = "COULDN'T LOAD THE FLOOR";
 
+/** Shown ABOVE a non-empty board whose feed named failed reads (2026-11-14). */
+export const SNIPER_DEGRADED_PARTIAL_COPY =
+  "Part of the listing feed couldn't be read just now, so this board is incomplete — deals may be missing and the counts cover only what loaded. Try again in a moment.";
+
 /**
  * Picks the empty-state copy for a feed response. `fallback` is the genuine
  * "we looked and found nothing" line, and is only returned when we actually

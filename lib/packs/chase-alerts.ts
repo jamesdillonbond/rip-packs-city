@@ -167,7 +167,15 @@ export async function runPackChaseDispatch(
     }
     if (decision !== "fire" || !reading) continue
 
-    const targets = await getTargets(w.owner_key)
+    let targets: Awaited<ReturnType<typeof getTargets>>
+    try {
+      targets = await getTargets(w.owner_key)
+    } catch (e) {
+      // A failed lookup is not "no channel" (2026-11-14): keep the watch armed,
+      // and fail the run so the dispatcher's log says the lookup broke.
+      res.state_error = `channel lookup: ${e instanceof Error ? e.message : String(e)}`
+      continue
+    }
     if (targets.length === 0) {
       // No linked channel: keep it armed so it fires once one is linked.
       res.no_channel++

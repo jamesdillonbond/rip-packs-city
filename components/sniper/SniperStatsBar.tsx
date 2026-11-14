@@ -18,11 +18,13 @@ export default function SniperStatsBar(props: {
    * off" for the ~30 s the Top Shot feed takes — a conclusion drawn from a read
    * that had not happened. `loading` / `failed` render no counts at all.
    * Defaults to `ok` so a caller that always has data is unchanged.
+   * 2026-11-14: `partial` — the feed answered but named reads that failed
+   * (`sourcesFailed`); the counts are shown, labelled as covering only what loaded.
    */
-  feedState?: "loading" | "failed" | "ok";
+  feedState?: "loading" | "failed" | "ok" | "partial";
 }) {
   const { stats, isPinnacle, isAllDay, ownedCount, lastRefreshed, feedState = "ok" } = props;
-  if (feedState !== "ok") {
+  if (feedState === "loading" || feedState === "failed") {
     return (
       <div style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-surface-raised)", padding: "8px 16px" }}>
         <div className="rpc-mono flex items-center gap-6 flex-wrap" style={{ maxWidth: "var(--max-width)", margin: "0 auto", color: "var(--rpc-text-muted)" }}>
@@ -46,6 +48,9 @@ export default function SniperStatsBar(props: {
           <span><span style={{ color: accentText("#c084fc"), fontWeight: 600 }}>{stats.special}</span> special serials</span>
         )}
         <span>avg <span style={{ color: "var(--rpc-text-primary)", fontWeight: 600 }}>{fmt(stats.avgDiscount, 1)}%</span> off</span>
+        {feedState === "partial" && (
+          <span role="status" style={{ color: "var(--rpc-warning-text)" }}>partial feed — counts cover only what loaded</span>
+        )}
         {!isAllDay && ownedCount > 0 && (
           <span style={{ color: "var(--rpc-text-muted)" }}>{ownedCount} owned editions tracked</span>
         )}

@@ -116,6 +116,9 @@ export async function resolveChannelOwnerUsername(
 }
 
 // All verified channel targets for a user (optionally one channel).
+// 2026-11-14: a failed lookup THROWS. It returned [], which the pack-chase
+// dispatcher counted as "no linked channel" and logged ok:true — a dead lookup
+// read as users who had not linked anything.
 export async function getOwnerChannelTargets(ownerKey: string, channel?: Channel) {
   const { data, error } = await (supabase as any).rpc("get_owner_channel_targets", {
     p_owner_key: ownerKey,
@@ -123,7 +126,7 @@ export async function getOwnerChannelTargets(ownerKey: string, channel?: Channel
   });
   if (error) {
     console.log("[alerts] get_owner_channel_targets err", error.message);
-    return [];
+    throw new Error(`get_owner_channel_targets: ${error.message}`);
   }
   return (data ?? []) as Array<{
     channel: Channel;
