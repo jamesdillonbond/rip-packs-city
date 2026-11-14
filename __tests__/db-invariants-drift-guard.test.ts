@@ -15,6 +15,30 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-11-14. Deal alerts, pass 3 pool: new (24 h) listings of the exact serial, seen in 12 h, pass-1 FMV trust gates. Embedded in each consumer's pin.
+    fn: "topshot_exact_serial_alert_deals",
+    test: "supabase/tests/dispatch_due_deal_alerts.sql",
+    migration: "supabase/migrations/20261114171316_audit_20261114_deal_alerts_exact_serial_listings.sql",
+  },
+  {
+    // Added 2026-11-14. Deal alerts, pass 3 pool: new (24 h) listings of the exact serial, seen in 12 h, pass-1 FMV trust gates. Embedded in each consumer's pin.
+    fn: "topshot_exact_serial_alert_deals",
+    test: "supabase/tests/build_deal_alerts_for_subscription.sql",
+    migration: "supabase/migrations/20261114171316_audit_20261114_deal_alerts_exact_serial_listings.sql",
+  },
+  {
+    // Added 2026-11-14. Deal alerts, the ONE narrow-window test (<= 10 serials, Top Shot) the sender and preview share. Embedded in each consumer's pin.
+    fn: "alert_sub_is_exact_serial",
+    test: "supabase/tests/dispatch_due_deal_alerts.sql",
+    migration: "supabase/migrations/20261114171316_audit_20261114_deal_alerts_exact_serial_listings.sql",
+  },
+  {
+    // Added 2026-11-14. Deal alerts, the ONE narrow-window test (<= 10 serials, Top Shot) the sender and preview share. Embedded in each consumer's pin.
+    fn: "alert_sub_is_exact_serial",
+    test: "supabase/tests/build_deal_alerts_for_subscription.sql",
+    migration: "supabase/migrations/20261114171316_audit_20261114_deal_alerts_exact_serial_listings.sql",
+  },
+  {
     // Added 2026-11-14. #12359 serial search: 24h / complete-verify / unconfirmed classes; a row older than the verify is never confirmed.
     fn: "get_topshot_listings_by_serial",
     test: "supabase/tests/get_topshot_listings_by_serial.sql",
@@ -1933,7 +1957,8 @@ const PINS = [
     test: "supabase/tests/build_deal_alerts_for_subscription.sql",
     // Re-pointed 2026-11-13: a serial filter (min/max serial, last mint, jersey) binds pass 1 too.
     // Before it, 2026-10-10: "perfect mints only" no longer matches a 1-of-1.
-    migration: "supabase/migrations/20261113184535_audit_20261113_deal_alert_serial_filters_bind_pass_one.sql",
+    // Re-pointed 2026-11-14: pass 3, exact-serial listings (a narrow Top Shot serial window).
+    migration: "supabase/migrations/20261114171316_audit_20261114_deal_alerts_exact_serial_listings.sql",
   },
   {
     // The SENDING half of the same pipeline, pinned 2026-08-17. Its preview
@@ -1945,7 +1970,8 @@ const PINS = [
     // Re-pointed 2026-10-14: deal alerts fire once per LISTING (notify_mode),
     // not once per UTC day. Before it, 2026-10-10: perfect mints exclude 1-of-1s.
     // Re-pointed 2026-11-13: a serial filter binds pass 1 too.
-    migration: "supabase/migrations/20261113184535_audit_20261113_deal_alert_serial_filters_bind_pass_one.sql",
+    // Re-pointed 2026-11-14: pass 3, exact-serial listings (a narrow Top Shot serial window).
+    migration: "supabase/migrations/20261114171316_audit_20261114_deal_alerts_exact_serial_listings.sql",
   },
   {
     // ⚠ THREE ENTRIES, ONE FUNCTION, AND THAT IS THE POINT. `ask_is_alertable`

@@ -227,6 +227,139 @@ CREATE TABLE sales (nft_id text);
 CREATE OR REPLACE FUNCTION public.get_edition_badges_unified(p_edition_id uuid)
 RETURNS jsonb LANGUAGE sql IMMUTABLE AS $$ SELECT '[]'::jsonb $$;
 
+-- audit_20261114 (pass 3, exact-serial listings): the relations topshot_exact_serial_alert_deals reads,
+-- and its two functions VERBATIM from 20261114171316 (registered in the drift guard for this file).
+ALTER TABLE editions ADD COLUMN tier text, ADD COLUMN circulation_count integer, ADD COLUMN thumbnail_url text;
+CREATE TABLE topshot_atlas_market_events (
+  uuid text PRIMARY KEY DEFAULT gen_random_uuid()::text, product text, kind text, nft_id text, price_cents bigint,
+  listed_at timestamptz, last_seen_at timestamptz, serial_number integer, atlas_edition_id text, parallel text,
+  tier text, completed boolean DEFAULT false
+);
+CREATE TABLE topshot_atlas_edition_map (atlas_edition_id text PRIMARY KEY, rpc_edition_id uuid, external_id text);
+CREATE TABLE fmv_snapshots (collection_id uuid, edition_id uuid, fmv_usd numeric, confidence text, computed_at timestamptz);
+CREATE TABLE topshot_thin_fmv_editions (edition_id uuid);
+CREATE TABLE topshot_conflated_editions (edition_id uuid);
+CREATE TABLE IF NOT EXISTS sales (nft_id text);
+
+CREATE OR REPLACE FUNCTION public.alert_sub_is_exact_serial(p_min_serial integer, p_max_serial integer, p_collection_ids uuid[])
+ RETURNS boolean
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  -- A NARROW serial window (1–10 serials) on a subscription that includes Top Shot.
+  SELECT p_min_serial IS NOT NULL AND p_max_serial IS NOT NULL
+     AND p_max_serial >= p_min_serial AND p_max_serial - p_min_serial < 10
+     AND (p_collection_ids IS NULL OR '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid = ANY(p_collection_ids))
+$function$;
+
+CREATE OR REPLACE FUNCTION public.topshot_exact_serial_alert_deals(p_subscription_id uuid)
+ RETURNS SETOF jsonb
+ LANGUAGE plpgsql
+ STABLE
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  c_ts constant uuid := '95f28a17-224a-4025-96ad-adf8a4c63bfd';
+  v_sub public.alert_subscriptions%ROWTYPE;
+  v_price_only boolean;
+BEGIN
+  SELECT * INTO v_sub FROM public.alert_subscriptions WHERE id = p_subscription_id;
+  IF NOT FOUND OR NOT public.alert_sub_is_exact_serial(v_sub.min_serial, v_sub.max_serial, v_sub.collection_ids) THEN
+    RETURN;
+  END IF;
+  v_price_only := (v_sub.max_price IS NOT NULL AND COALESCE(v_sub.min_discount, 25) = 0);
+
+  RETURN QUERY
+  WITH ev AS (
+    -- Every open Atlas listing of the window's serials, one per Moment (its newest listing —
+    -- the ts_listings rule), seen in the last 24 h (idx_tame_open_listing_serial).
+    SELECT DISTINCT ON (x.nft_id)
+           x.nft_id, x.price_cents, x.listed_at, x.last_seen_at, x.serial_number, x.atlas_edition_id, x.parallel, x.tier
+      FROM public.topshot_atlas_market_events x
+     WHERE x.product = 'nba' AND x.kind = 'listing' AND NOT x.completed AND x.nft_id IS NOT NULL
+       AND x.price_cents > 0
+       AND x.serial_number BETWEEN v_sub.min_serial AND v_sub.max_serial
+       AND x.last_seen_at > now() - interval '24 hours'
+     ORDER BY x.nft_id, x.listed_at DESC NULLS LAST, x.last_seen_at DESC
+  ),
+  cand AS (
+    SELECT ev.*, round(ev.price_cents::numeric / 100, 2) AS ask_usd,
+           m.external_id AS ext, e.id AS edition_id, e.player_name, e.team_name, e.set_name,
+           e.tier::text AS e_tier, e.circulation_count, e.jersey_number, e.thumbnail_url
+      FROM ev
+      JOIN public.topshot_atlas_edition_map m ON m.atlas_edition_id = ev.atlas_edition_id
+      JOIN public.editions e ON e.id = m.rpc_edition_id AND e.collection_id = c_ts
+     -- A NEW listing only (listed in the last 24 h): this is a "tell me when it is listed" alert,
+     -- not a digest of the standing book (that is the Sniper's Serial # search).
+     WHERE ev.listed_at > now() - interval '24 hours'
+       -- Confirmed recently enough to wake a human: the serial-board window (12 h).
+       AND public.ask_is_alertable('nba_top_shot:serial', ev.last_seen_at)
+  ),
+  priced AS (
+    SELECT c.*, f.fmv_usd, f.confidence,
+           (EXISTS (SELECT 1 FROM public.topshot_thin_fmv_editions tf WHERE tf.edition_id = c.edition_id)
+            OR EXISTS (SELECT 1 FROM public.topshot_conflated_editions cf WHERE cf.edition_id = c.edition_id)) AS fmv_untrusted
+      FROM cand c
+      LEFT JOIN LATERAL (
+        SELECT fs.fmv_usd, fs.confidence
+          FROM public.fmv_snapshots fs
+         WHERE fs.collection_id = c_ts AND fs.edition_id = c.edition_id AND fs.computed_at <= now()
+         ORDER BY fs.computed_at DESC
+         LIMIT 1
+      ) f ON true
+  ),
+  scored AS (
+    SELECT p.*,
+           CASE WHEN p.fmv_usd > 0 THEN round((p.fmv_usd - p.ask_usd) / p.fmv_usd * 100, 1) END AS discount_pct,
+           CASE WHEN p.fmv_usd > 0 THEN round(p.fmv_usd - p.ask_usd, 2) END AS discount_usd
+      FROM priced p
+  )
+  SELECT jsonb_build_object(
+           'external_id', s.ext, 'player_name', COALESCE(s.player_name, s.team_name), 'set_name', s.set_name,
+           'tier', COALESCE(s.tier, s.e_tier), 'collection_slug', 'nba-top-shot',
+           'circulation_count', s.circulation_count, 'nft_id', s.nft_id, 'serial_number', s.serial_number,
+           'kind', 'exact_serial',
+           'ask_usd', s.ask_usd,
+           -- Edition FMV: an arbitrary serial carries no serial premium model; the discount is vs this.
+           'fmv_usd', CASE WHEN v_price_only THEN NULL ELSE s.fmv_usd END,
+           'edition_fmv_usd', s.fmv_usd,
+           'discount_pct', CASE WHEN v_price_only THEN NULL ELSE s.discount_pct END,
+           'discount_usd', CASE WHEN v_price_only THEN NULL ELSE s.discount_usd END,
+           'price_only', v_price_only,
+           'listing_url', 'https://dapper.market/nba/moment/' || s.nft_id,
+           'moment_url', '/moment/' || s.nft_id,
+           'thumbnail_url', s.thumbnail_url,
+           'ask_updated_at', s.last_seen_at,
+           'listed_at', s.listed_at,
+           'parallel', NULLIF(NULLIF(s.parallel, ''), 'Standard')
+         )
+    FROM scored s
+   WHERE (v_price_only OR (
+            s.fmv_usd > 0 AND s.confidence IN ('HIGH', 'MEDIUM') AND NOT s.fmv_untrusted
+            AND s.discount_pct >= COALESCE(v_sub.min_discount, 25)))
+     AND (v_sub.max_price IS NULL OR s.ask_usd <= v_sub.max_price)
+     AND (v_sub.min_price IS NULL OR s.ask_usd >= v_sub.min_price)
+     AND (v_sub.tiers IS NULL OR COALESCE(s.tier, s.e_tier) = ANY(v_sub.tiers))
+     AND (v_sub.player_names IS NULL OR lower(COALESCE(s.player_name, s.team_name)) = ANY(ARRAY(SELECT lower(y) FROM unnest(v_sub.player_names) y)))
+     AND (v_sub.set_names IS NULL OR EXISTS (
+       SELECT 1 FROM unnest(v_sub.set_names) sx WHERE lower(s.set_name) LIKE '%' || lower(sx) || '%'
+     ))
+     AND (v_sub.parallel_names IS NULL OR lower(s.parallel) = ANY(ARRAY(SELECT lower(y) FROM unnest(v_sub.parallel_names) y)))
+     AND (v_sub.team_names IS NULL OR lower(s.team_name) = ANY(ARRAY(SELECT lower(y) FROM unnest(v_sub.team_names) y)))
+     AND (NOT COALESCE(v_sub.require_last_mint, false) OR (s.circulation_count > 1 AND s.serial_number = s.circulation_count))
+     AND (NOT COALESCE(v_sub.require_jersey_serial, false) OR s.jersey_number = s.serial_number)
+     AND (NOT COALESCE(v_sub.require_never_sold, false) OR NOT EXISTS (
+       SELECT 1 FROM public.sales sa WHERE sa.nft_id = s.nft_id
+     ))
+     AND (v_sub.badges IS NULL OR EXISTS (
+       SELECT 1 FROM jsonb_array_elements(public.get_edition_badges_unified(s.edition_id)) AS bj(elem)
+        WHERE regexp_replace(lower(bj.elem->>'title'), '[^a-z0-9]', '', 'g') = ANY(v_sub.badges)
+     ))
+   ORDER BY s.discount_pct DESC NULLS LAST, s.ask_usd ASC, s.nft_id
+   LIMIT 25;
+END
+$function$;
+
 -- >>> BEGIN verbatim dispatch_due_deal_alerts (keep byte-identical to the migration) >>>
 -- The gate the scanner below calls. Verbatim from the same migration and
 -- registered in __tests__/db-invariants-drift-guard.test.ts under its own PINS
@@ -300,6 +433,9 @@ DECLARE
   v_dedup text;
   v_prev jsonb;
   v_suppressed int := 0;
+  -- audit_20261114: pass 3 (exact-serial listings, Top Shot) — see topshot_exact_serial_alert_deals.
+  v_exact boolean;
+  v_exact_enqueued int := 0;
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM public.alert_subscriptions WHERE active = true) THEN
     RETURN jsonb_build_object(
@@ -394,6 +530,10 @@ BEGIN
 
     -- "Just a price, no FMV condition."
     v_price_only := (v_sub.max_price IS NOT NULL AND COALESCE(v_sub.min_discount, 25) = 0);
+    -- audit_20261114: a NARROW serial window (<= 10 serials) on Top Shot is served by pass 3 from
+    -- every open listing of those serials, so pass 1 stops offering Top Shot edition low asks to it
+    -- (the same listing would otherwise arrive twice under two subject keys).
+    v_exact := public.alert_sub_is_exact_serial(v_sub.min_serial, v_sub.max_serial, v_sub.collection_ids);
 
     -- Pass 1: edition-level deals (skipped entirely for serial-only subs).
     -- 2026-07-11: team_names + badges now filter pass 1 too (previously serial-
@@ -436,6 +576,7 @@ BEGIN
           -- (audit_20260912).
           AND p.alertable
           AND p.collection_slug = ANY(v_slugs)
+          AND NOT (v_exact AND p.collection_slug = 'nba_top_shot')
           -- NULL >= 0 is NULL, not true, so a price-only sub must SKIP this
           -- predicate rather than relax it.
           AND (v_price_only OR p.discount_pct >= COALESCE(v_sub.min_discount, 25))
@@ -683,6 +824,63 @@ BEGIN
       END LOOP;
     END IF;
 
+    -- Pass 3 (audit_20261114): EXACT-SERIAL LISTINGS. A narrow serial window on Top Shot
+    -- ("alert me when #111 is listed") is matched against every open Atlas listing of those
+    -- serials (topshot_exact_serial_alert_deals), not just each edition's lowest ask. Same
+    -- subject key and fingerprint as pass 2, so a listing both passes find is sent once.
+    IF v_exact THEN
+      FOR v_deal IN SELECT x FROM public.topshot_exact_serial_alert_deals(v_sub.id) x LOOP
+        v_subject := (v_deal->>'collection_slug') || ':' || (v_deal->>'external_id')
+                     || ':#' || (v_deal->>'serial_number');
+        FOREACH v_channel IN ARRAY v_sub.channels LOOP
+          SELECT channel_user_id INTO v_target
+          FROM public.notification_channels
+          WHERE owner_key = v_sub.owner_key AND channel = v_channel
+            AND verified = true AND channel_user_id IS NOT NULL
+          LIMIT 1;
+
+          IF v_target IS NULL THEN CONTINUE; END IF;
+
+          v_fp := COALESCE(v_deal->>'nft_id', '#' || COALESCE(v_deal->>'serial_number', ''))
+                  || '@' || COALESCE(round(COALESCE(v_deal->>'low_ask', v_deal->>'ask_usd')::numeric, 2)::text, '');
+          IF v_mode = 'daily' THEN
+            v_dedup := v_bucket;
+          ELSE
+            SELECT d.payload->'deal' INTO v_prev
+            FROM public.alert_deliveries d
+            WHERE d.owner_key = v_sub.owner_key AND d.channel = v_channel
+              AND d.alert_kind = 'deal' AND d.subject_key = v_subject
+              AND d.status IS DISTINCT FROM 'failed'
+            ORDER BY d.created_at DESC
+            LIMIT 1;
+            IF v_prev IS NOT NULL AND (
+                 v_mode = 'once'
+                 OR (COALESCE(v_prev->>'nft_id', '#' || COALESCE(v_prev->>'serial_number', ''))
+                     || '@' || COALESCE(round(COALESCE(v_prev->>'low_ask', v_prev->>'ask_usd')::numeric, 2)::text, '')) = v_fp
+               ) THEN
+              v_suppressed := v_suppressed + 1;
+              CONTINUE;
+            END IF;
+            v_dedup := CASE WHEN v_mode = 'once' THEN 'once' ELSE v_bucket || ':' || v_fp END;
+          END IF;
+
+          INSERT INTO public.alert_deliveries
+            (owner_key, channel, channel_user_id, alert_kind, subject_key, dedup_bucket, payload)
+          VALUES (
+            v_sub.owner_key, v_channel, v_target, 'deal',
+            v_subject, v_dedup,
+            jsonb_build_object('subscription_id', v_sub.id, 'label', v_sub.label, 'deal', v_deal)
+          )
+          ON CONFLICT (owner_key, channel, alert_kind, subject_key, dedup_bucket) DO NOTHING;
+
+          IF FOUND THEN
+            v_enqueued := v_enqueued + 1;
+            v_exact_enqueued := v_exact_enqueued + 1;
+          END IF;
+        END LOOP;
+      END LOOP;
+    END IF;
+
     UPDATE public.alert_subscriptions SET last_run_at = now() WHERE id = v_sub.id;
     EXIT WHEN v_enqueued >= p_max;
   END LOOP;
@@ -698,6 +896,7 @@ BEGIN
     'serial_pool_unconfirmed', v_serial_pool_unconfirmed,
     'price_pool_unconfirmed', v_price_pool_unconfirmed,
     'suppressed_unchanged', v_suppressed,
+    'exact_serial_enqueued', v_exact_enqueued,
     'bucket', v_bucket,
     'ran_at', now()
   );
@@ -1255,7 +1454,10 @@ VALUES ('owner-serial', 'email', 'serial@example.test', true),
 
 INSERT INTO alert_subscriptions (id, owner_key, channels, collection_ids, min_discount, active, serial_only, min_serial, max_serial)
 VALUES ('99999999-9999-9999-9999-999999999992', 'owner-serial', ARRAY['email'],
-        ARRAY['95f28a17-224a-4025-96ad-adf8a4c63bfd']::uuid[], 25, true, false, 111, 111);
+        ARRAY['95f28a17-224a-4025-96ad-adf8a4c63bfd']::uuid[], 25, true, false, 100, 200);
+-- ⚠ 2026-11-14: was 111..111. A window that narrow on Top Shot is now served by PASS 3 (the case at
+-- the end of this file), so this case uses a WIDE window (100–200, still excluding 222) to keep pass 1's
+-- serial binding exercised.
 INSERT INTO alert_subscriptions (id, owner_key, channels, collection_ids, min_discount, active, serial_only, player_names, require_last_mint)
 VALUES ('99999999-9999-9999-9999-999999999993', 'owner-lm-pass1', ARRAY['email'],
         ARRAY['95f28a17-224a-4025-96ad-adf8a4c63bfd']::uuid[], 25, true, false, ARRAY['Last Mint Pass1'], true);
@@ -1266,7 +1468,7 @@ BEGIN
   PERFORM _assert(EXISTS (
     SELECT 1 FROM alert_deliveries
     WHERE owner_key = 'owner-serial' AND subject_key = 'nba_top_shot:73:5111'),
-    'a serial-111 alert receives the edition whose low ask IS serial 111');
+    'a serial 100–200 alert receives the edition whose low ask IS serial 111');
   PERFORM _assert(NOT EXISTS (
     SELECT 1 FROM alert_deliveries
     WHERE owner_key = 'owner-serial' AND subject_key IN ('nba_top_shot:73:5222', 'nba_top_shot:73:2785', 'nba_top_shot:73:5350')),
@@ -1280,6 +1482,68 @@ BEGIN
     WHERE owner_key = 'owner-lm-pass1' AND subject_key = 'nba_top_shot:73:5349'),
     'and not #49/50');
   RAISE NOTICE '✓ dispatch_due_deal_alerts: a serial filter binds pass 1';
+END $$;
+
+-- ── PASS 3: EXACT-SERIAL LISTINGS (audit_20261114) ─────────────────────────
+-- "Tell me when #111 is listed" is served from EVERY open listing of #111, not just each edition's
+-- low ask (the 11-13 limit). Edition 80:111's LOW ASK is a different listing (x-lowask, on the deals
+-- board) — pass 1 must NOT send it to this sub (it would arrive twice under two keys); pass 3 sends
+-- x-hit, a #111 that is NOT the low ask. Every other row is one reason pass 3 must refuse.
+INSERT INTO editions (id, collection_id, external_id, player_name, set_name, team_name, jersey_number, tier, circulation_count)
+VALUES ('aaaaaaaa-0000-0000-0000-000000000111', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '80:111', 'Exact Hit', 'Exact Set', 'Team X', NULL, 'COMMON', 4000),
+       ('aaaaaaaa-0000-0000-0000-000000000222', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '80:222', 'Exact Other', 'Exact Set', 'Team X', NULL, 'COMMON', 4000),
+       ('aaaaaaaa-0000-0000-0000-000000000333', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '80:333', 'Exact Thin', 'Exact Set', 'Team X', NULL, 'COMMON', 4000);
+INSERT INTO topshot_atlas_edition_map VALUES
+  ('A111', 'aaaaaaaa-0000-0000-0000-000000000111', '80:111'),
+  ('A222', 'aaaaaaaa-0000-0000-0000-000000000222', '80:222'),
+  ('A333', 'aaaaaaaa-0000-0000-0000-000000000333', '80:333');
+INSERT INTO fmv_snapshots VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'aaaaaaaa-0000-0000-0000-000000000111', 40, 'HIGH', now() - interval '1 hour'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'aaaaaaaa-0000-0000-0000-000000000222', 40, 'HIGH', now() - interval '1 hour'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'aaaaaaaa-0000-0000-0000-000000000333', 40, 'HIGH', now() - interval '1 hour');
+INSERT INTO topshot_thin_fmv_editions VALUES ('aaaaaaaa-0000-0000-0000-000000000333');
+INSERT INTO topshot_atlas_market_events (product, kind, nft_id, price_cents, listed_at, last_seen_at, serial_number, atlas_edition_id, parallel, tier, completed) VALUES
+  ('nba', 'listing', 'x-hit',      2000, now() - interval '2 hours',  now() - interval '10 minutes', 111, 'A111', 'Standard', 'COMMON', false), -- SENT: 50% under
+  ('nba', 'listing', 'x-serial112',2000, now() - interval '2 hours',  now() - interval '10 minutes', 112, 'A111', 'Standard', 'COMMON', false), -- other serial
+  ('nba', 'listing', 'x-old',      2000, now() - interval '3 days',   now() - interval '10 minutes', 111, 'A222', 'Standard', 'COMMON', false), -- not a NEW listing
+  ('nba', 'listing', 'x-stale',    2000, now() - interval '20 hours', now() - interval '13 hours',   111, 'A222', 'Standard', 'COMMON', false), -- not seen in 12 h
+  ('nba', 'listing', 'x-pricey',   3900, now() - interval '1 hour',   now() - interval '5 minutes',  111, 'A222', 'Standard', 'COMMON', false), -- 2.5% < 25%
+  ('nba', 'listing', 'x-closed',   1000, now() - interval '1 hour',   now() - interval '5 minutes',  111, 'A222', 'Standard', 'COMMON', true),  -- closed
+  ('nba', 'listing', 'x-thin',     1000, now() - interval '1 hour',   now() - interval '5 minutes',  111, 'A333', 'Standard', 'COMMON', false), -- thin FMV
+  ('nfl', 'listing', 'x-nfl',      1000, now() - interval '1 hour',   now() - interval '5 minutes',  111, 'A111', 'Standard', 'COMMON', false); -- All Day row
+INSERT INTO cross_collection_deals_board
+  (external_id, name, player_name, set_name, tier, circulation_count, fmv_usd,
+   confidence, low_ask, discount_pct, discount_usd, ask_updated_at,
+   collection_slug, collection_name, render_id, detail_url, thumbnail_url,
+   low_ask_serial, low_ask_nft_id, low_confidence_fmv)
+VALUES ('80:111', 'Exact Hit', 'Exact Hit', 'Exact Set', 'COMMON', 4000,
+   40.00, 'HIGH', 15.00, 62.5, 25.00, now(),
+   'nba_top_shot', 'NBA Top Shot', NULL, '/nba-top-shot/edition/80%3A111', NULL,
+   111, 'x-lowask', false);
+INSERT INTO alert_subscriptions (id, owner_key, channels, collection_ids, min_discount, active, serial_only, min_serial, max_serial)
+VALUES ('99999999-9999-9999-9999-999999999994', 'owner-exact', ARRAY['email'],
+        ARRAY['95f28a17-224a-4025-96ad-adf8a4c63bfd']::uuid[], 25, true, false, 111, 111);
+INSERT INTO notification_channels (owner_key, channel, channel_user_id, verified)
+VALUES ('owner-exact', 'email', 'exact@example.test', true);
+
+DO $$
+DECLARE r jsonb;
+BEGIN
+  r := public.dispatch_due_deal_alerts();
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-exact' AND subject_key = 'nba-top-shot:80:111:#111'
+      AND payload->'deal'->>'nft_id' = 'x-hit' AND payload->'deal'->>'kind' = 'exact_serial'),
+    'an exact-serial alert receives a #111 that is NOT its edition''s low ask');
+  PERFORM _assert_eq((SELECT count(*)::text FROM alert_deliveries WHERE owner_key = 'owner-exact'), '1',
+    'and nothing else: not #112, a 3-day-old listing, one unseen for 13 h, a 2.5% discount, a closed one, a thin-FMV edition or an All Day row');
+  PERFORM _assert(NOT EXISTS (
+    SELECT 1 FROM alert_deliveries WHERE owner_key = 'owner-exact' AND subject_key = 'nba_top_shot:80:111'),
+    'pass 1 does not ALSO send the edition low ask to an exact-serial sub');
+  PERFORM _assert_eq((r->>'exact_serial_enqueued'), '1', 'exact_serial_enqueued counts the pass-3 write');
+  r := public.dispatch_due_deal_alerts();
+  PERFORM _assert_eq((r->>'exact_serial_enqueued'), '0', 'and a second run sends the unchanged listing again to nobody');
+  RAISE NOTICE '✓ dispatch_due_deal_alerts: pass 3 sends every new listing of the exact serial, once';
 END $$;
 
 ROLLBACK;

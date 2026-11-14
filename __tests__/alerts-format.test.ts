@@ -335,3 +335,44 @@ describe("messageBatches — every row a batch carries is RENDERED in its messag
   })
 })
 
+// audit_20261114: pass 3 of the deal-alert dispatcher (topshot_exact_serial_alert_deals) sends
+// "#111 was just listed" rows in the per-serial payload shape. Pin that every channel renders one:
+// the serial, the ask, the Moment link and the Dapper listing — and, for a PRICE-ONLY sub (no FMV
+// condition, fmv_usd NULL by design), no invented "below FMV" clause.
+describe("exact-serial listing deliveries (pass 3)", () => {
+  const exact = (extra: Partial<DealPayload["deal"]> = {}) =>
+    dealDelivery({
+      external_id: "95:3475", player_name: "Dillon Brooks", set_name: "For the Win", tier: "RARE",
+      collection_slug: "nba-top-shot", circulation_count: 777, confidence: null,
+      nft_id: "40944520", serial_number: 102, kind: "exact_serial", ask_usd: 4.79,
+      fmv_usd: null, discount_pct: null, discount_usd: null, price_only: true,
+      listing_url: "https://dapper.market/nba/moment/40944520", moment_url: "/moment/40944520",
+      ask_updated_at: "2026-11-14T09:11:00Z",
+      ...extra,
+    })
+  const now = new Date("2026-11-14T09:30:00Z")
+
+  it("Telegram: serial, ask, Moment page and Dapper listing; no FMV clause when price-only", () => {
+    const msg = buildTelegramMessage([exact()], now)
+    expect(msg).toContain("#102")
+    expect(msg).toContain("$4.79")
+    expect(msg).toContain("/moment/40944520")
+    expect(msg).toContain("dapper.market/nba/moment/40944520")
+    expect(msg).not.toMatch(/below FMV/)
+    expect(msg).not.toContain("—  below")
+  })
+
+  it("Telegram: a discount sub's row states the edition-FMV discount", () => {
+    const msg = buildTelegramMessage([exact({ price_only: false, fmv_usd: 10, discount_pct: 52.1, discount_usd: 5.21 })], now)
+    expect(msg).toContain("below FMV")
+    expect(msg).toContain("$10.00")
+  })
+
+  it("email and Discord render the same row without throwing", () => {
+    const email = buildEmailMessage([exact()], now)
+    expect(JSON.stringify(email)).toContain("#102")
+    const embeds = buildDiscordEmbeds([exact()], now)
+    expect(JSON.stringify(embeds)).toContain("#102")
+  })
+})
+
