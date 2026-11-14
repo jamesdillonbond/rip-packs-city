@@ -182,15 +182,26 @@ export async function fetchRookieSales2026(db: Db): Promise<RookieSalesBoard> {
   )
   const edIds = editions.map((e) => e.id)
 
-  const [salesRes, athletesRes] = await Promise.all([
-    edIds.length
-      ? fetchAllPaged<SaleRow>(
-          (from, to) =>
-            db.from("sales").select("id, edition_id, price_usd, nft_id, sold_at")
-              .in("edition_id", edIds).gt("price_usd", 0).order("id").range(from, to),
-          { label: "rookie-sales/sales", maxPages: 200 },
-        )
-      : Promise.resolve({ rows: [] as SaleRow[], truncated: false, error: null }),
+  // ⛔ NOT `.order("id")` over the whole edition list: on the partitioned `sales` table that made
+  // the planner walk every partition's primary key and the first live call hit the statement
+  // timeout (11-14, 155 editions). `edition_id, sold_at, id` rides the per-partition
+  // (edition_id, …) indexes — 3 ms for 15 editions — and small chunks keep each plan that shape.
+  const SALES_CHUNK = 20
+  const chunks: string[][] = []
+  for (let i = 0; i < edIds.length; i += SALES_CHUNK) chunks.push(edIds.slice(i, i + SALES_CHUNK))
+  const salesChunks = Promise.all(
+    chunks.map((ids, n) =>
+      fetchAllPaged<SaleRow>(
+        (from, to) =>
+          db.from("sales").select("id, edition_id, price_usd, nft_id, sold_at")
+            .in("edition_id", ids).gt("price_usd", 0)
+            .order("edition_id").order("sold_at").order("id").range(from, to),
+        { label: `rookie-sales/sales#${n}`, maxPages: 200 },
+      ),
+    ),
+  )
+  const [salesParts, athletesRes] = await Promise.all([
+    salesChunks,
     fetchAllPaged<AthleteRow>(
       (from, to) =>
         db.from("espn_athletes").select("espn_id, display_name")
@@ -198,7 +209,7 @@ export async function fetchRookieSales2026(db: Db): Promise<RookieSalesBoard> {
       { label: "rookie-sales/espn_athletes" },
     ),
   ])
-  const sales = must("sales", salesRes)
+  const sales = salesParts.flatMap((part) => must("sales", part))
   const athletes = must("espn_athletes", athletesRes)
 
   const espnIds = [...new Set(athletes.map((a) => a.espn_id))]
