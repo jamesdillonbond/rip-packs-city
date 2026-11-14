@@ -65,3 +65,19 @@ export async function loadEditionKeyAliases(db: Db, collectionPrefix: string): P
   for (const r of rows) if (labels.has(r.canonical_key)) canonOf.set(r.alias_key, r.canonical_key)
   return { aliases: { canonOf, labels }, error: null }
 }
+
+/**
+ * The canonical key for ONE Candy edition key, or null when it is not an alias. For writers that look an edition
+ * up by key (the sales indexers): an alias edition row is deleted once its card has moved (#247), so a miss on the
+ * key must try its canonical before calling the edition "not ingested". A failed read THROWS — the caller treats
+ * it like its own failed editions read, never as "no such edition".
+ */
+export async function canonicalCandyEditionKey(db: Db, key: string): Promise<string | null> {
+  const { data, error } = await db.from("candy_edition_key_aliases")
+    .select("canonical_key")
+    .eq("alias_key", key)
+    .limit(1)
+  if (error) throw new Error(`edition key aliases read failed for ${key}: ${error.message}`)
+  const canon = (data as Array<{ canonical_key?: unknown }> | null)?.[0]?.canonical_key
+  return typeof canon === "string" && canon && canon !== key ? canon : null
+}

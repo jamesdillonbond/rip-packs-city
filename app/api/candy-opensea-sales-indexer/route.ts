@@ -40,6 +40,7 @@
 // `source: 'solana_das'` names its resolver; this one names its feed. A new
 // Candy source tag in a source-mix watch is EXPECTED from 2026-10-10.
 
+import { canonicalCandyEditionKey } from "@/lib/candy/edition-key-aliases"
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
@@ -439,6 +440,20 @@ async function handleIndex(req: NextRequest) {
               .limit(1)
             if (edErr) throw new Error(`editions read failed for ${key}: ${edErr.message}`)
             editionId = (ed?.[0]?.id ?? null) as string | null
+            // #247 (2026-11-13): a miss tries the alias's canonical key (alias edition rows are deleted once emptied)
+            if (!editionId) {
+              const canon = await canonicalCandyEditionKey(supabaseAdmin, key)
+              if (canon) {
+                const { data: cEd, error: cErr } = await (supabaseAdmin as any)
+                  .from("editions")
+                  .select("id")
+                  .eq("collection_id", CANDY_MLB_UUID)
+                  .eq("external_id", canon)
+                  .limit(1)
+                if (cErr) throw new Error(`editions read failed for ${canon}: ${cErr.message}`)
+                editionId = (cEd?.[0]?.id ?? null) as string | null
+              }
+            }
             editionIdByKey.set(key, editionId)
           }
           if (!editionId) {

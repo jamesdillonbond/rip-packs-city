@@ -207,6 +207,42 @@ describe("candy-opensea-sales-indexer", () => {
     expect((extra.skip_reasons as Record<string, number>).edition_not_ingested).toBe(1)
   })
 
+  // #247 (2026-11-13): an alias key's edition row is deleted once its card moved to the canonical key, so a miss
+  // on the key resolves through candy_edition_key_aliases before the sale is called "not ingested".
+  it("a key whose edition row is gone resolves through its canonical alias and the sale is written there", async () => {
+    const t = AUG31 + 5000
+    fetchMock = installFetchMock([eventsRoute([sale("sigAlias", "mintC", t)])])
+    const spy = install({
+      sales: { data: [], error: null },
+      candy_pack_sales: { data: [], error: null },
+      wallet_moments_cache: { data: [{ moment_id: "mintC", edition_key: "k-alias", serial_number: 1 }], error: null },
+      editions: [{ data: [], error: null }, { data: [{ id: "ed-canon" }], error: null }],
+      candy_edition_key_aliases: { data: [{ canonical_key: "k-canon" }], error: null },
+    })
+    await POST(req())
+    await runDeferred()
+    const inserted = (spy.writes.sales ?? []).filter((w) => w.method === "insert").flatMap((w) => w.rows)
+    expect(inserted).toHaveLength(1)
+    expect(inserted[0]).toMatchObject({ edition_id: "ed-canon", nft_id: "mintC" })
+  })
+
+  it("a failed alias read is a failed lookup, never 'not ingested'", async () => {
+    const t = AUG31 + 5000
+    fetchMock = installFetchMock([eventsRoute([sale("sigAliasErr", "mintC", t)])])
+    const spy = install({
+      sales: { data: [], error: null },
+      candy_pack_sales: { data: [], error: null },
+      wallet_moments_cache: { data: [{ moment_id: "mintC", edition_key: "k-alias", serial_number: 1 }], error: null },
+      editions: { data: [], error: null },
+      candy_edition_key_aliases: { data: null, error: { message: "aliases boom" } },
+    })
+    await POST(req())
+    await runDeferred()
+    expect((spy.writes.sales ?? []).filter((w) => w.method === "insert")).toHaveLength(0)
+    const extra = logRun(spy.rpcCalls)?.p_extra as Record<string, unknown> | undefined
+    expect((extra?.skip_reasons as Record<string, number> | undefined)?.edition_not_ingested ?? 0).toBe(0)
+  })
+
   it("a cursor stuck past HOLD_MAX_DAYS passes the blocking sale, counted as abandoned with its signature", async () => {
     const t = AUG31 + 5000
     fetchMock = installFetchMock([eventsRoute([sale("sigStuck", "mintC", t)])])

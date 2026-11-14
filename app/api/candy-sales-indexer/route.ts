@@ -24,6 +24,7 @@
 // the most-recent already-recorded Candy sale (`sold_at`). The unique tx-hash
 // index on sales_2026 is the dedup backstop (23505 swallowed).
 
+import { canonicalCandyEditionKey } from "@/lib/candy/edition-key-aliases"
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
@@ -459,6 +460,21 @@ async function handleIndex(req: NextRequest) {
           // the same edition inherits one failed read and lands unlinked.
           if (edErr) throw new Error(`editions read failed for ${key}: ${edErr.message}`)
           editionId = edRow?.[0]?.id ?? null
+          // #247 (2026-11-13): an alias key's edition row is deleted once its card moved to the canonical key —
+          // a miss tries the canonical before "not ingested" (a failed alias read throws, like the read above).
+          if (!editionId) {
+            const canon = await canonicalCandyEditionKey(supabaseAdmin, key)
+            if (canon) {
+              const { data: cRow, error: cErr } = await (supabaseAdmin as any)
+                .from("editions")
+                .select("id")
+                .eq("external_id", canon)
+                .eq("collection_id", CANDY_MLB_UUID)
+                .limit(1)
+              if (cErr) throw new Error(`editions read failed for ${canon}: ${cErr.message}`)
+              editionId = cRow?.[0]?.id ?? null
+            }
+          }
           edIdByKey.set(key, editionId ?? null)
         }
         if (!editionId) {
