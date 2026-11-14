@@ -3181,7 +3181,9 @@ async function executeToolInner(
           }
         }
       }
-      const walletKey = resolvedAddr.startsWith("0x") ? resolvedAddr : `0x${resolvedAddr}`;
+      // 2026-11-14: folded, as check_wallet_squeeze / get_collector_report do — the cache stores Flow hex
+      // lower-case, so a pasted upper-case address matched nothing and read as "0 moments".
+      const walletKey = (resolvedAddr.startsWith("0x") ? resolvedAddr : `0x${resolvedAddr}`).toLowerCase();
 
       const requestedCollection: string | undefined =
         typeof toolInput.collectionId === "string" && toolInput.collectionId
@@ -3220,6 +3222,24 @@ async function executeToolInner(
       });
       if (bdErr) {
         return JSON.stringify({ status: "error", message: safeApiError(bdErr).error });
+      }
+      // 2026-11-14: a never-walked wallet also counts zero — "how many Lakers moments do I own?" answered
+      // "0". Before zero stands as an answer, the same scan-state read get_collector_report uses.
+      if (Number(breakdown?.total_moments) === 0) {
+        const anyCached = await boundedRead((supabase as any)
+          .from("wallet_moments_cache").select("wallet_address").eq("wallet_address", walletKey).limit(1),
+          "support-chat/analyze_wallet_holdings/wmc");
+        if (anyCached.error) {
+          return JSON.stringify({ status: "state_unknown", wallet: walletKey, message: "Couldn't confirm whether this wallet is indexed right now. Do not say it holds none; suggest trying again shortly." });
+        }
+        const hasAny = Array.isArray(anyCached.data) && anyCached.data.length > 0;
+        const scan = await readWalletScanState(supabase, walletKey, hasAny, "support-chat/analyze_wallet_holdings");
+        if (scan.index_state === "not_indexed") {
+          return JSON.stringify({ status: "not_indexed", wallet: walletKey, message: `We have not indexed this wallet yet, so there is no count — this says nothing about what it holds. Opening /insights/tc-report?wallet=${walletKey} starts the scan (usually 1–2 minutes). Do not say it holds none.` });
+        }
+        if (scan.index_state === "unknown") {
+          return JSON.stringify({ status: "state_unknown", wallet: walletKey, message: "Couldn't confirm whether this wallet is indexed right now. Do not say it holds none; suggest trying again shortly." });
+        }
       }
       return JSON.stringify({
         ...breakdown,
@@ -5072,7 +5092,9 @@ async function executeToolInner(
         let pinWallet = pinIn;
         if (!/^0x[a-fA-F0-9]{16}$/.test(pinIn)) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const { data: pr } = await (supabase as any).rpc("resolve_topshot_username", { p_username: pinIn });
+          const { data: pr, error: prErr } = await (supabase as any).rpc("resolve_topshot_username", { p_username: pinIn });
+          // 2026-11-14: a FAILED lookup is not "no such username" (the error was dropped).
+          if (prErr) return JSON.stringify({ status: "username_lookup_failed", wallet: pinIn, message: USERNAME_LOOKUP_FAILED_COPY });
           if (pr?.found === true && typeof pr.wallet_address === "string") {
             pinWallet = pr.wallet_address.startsWith("0x") ? pr.wallet_address : `0x${pr.wallet_address}`;
           } else {
@@ -5104,7 +5126,9 @@ async function executeToolInner(
       const inputAddr = String(toolInput.walletAddress ?? "").trim();
       let wallet = inputAddr;
       if (!/^0x[a-fA-F0-9]{16}$/.test(inputAddr)) {
-        const { data: rpcResult } = await (supabase as any).rpc("resolve_topshot_username", { p_username: inputAddr });
+        const { data: rpcResult, error: rpcResultErr } = await (supabase as any).rpc("resolve_topshot_username", { p_username: inputAddr });
+        // 2026-11-14: a FAILED lookup is not "no such username" (the error was dropped).
+        if (rpcResultErr) return JSON.stringify({ status: "username_lookup_failed", wallet: inputAddr, message: USERNAME_LOOKUP_FAILED_COPY });
         if (rpcResult?.found === true && typeof rpcResult.wallet_address === "string") {
           wallet = rpcResult.wallet_address.startsWith("0x") ? rpcResult.wallet_address : `0x${rpcResult.wallet_address}`;
         } else {
@@ -5155,7 +5179,9 @@ async function executeToolInner(
         if (/^0x[a-fA-F0-9]{16}$/.test(inputAddr)) {
           wallet = inputAddr;
         } else {
-          const { data: rpcResult } = await (supabase as any).rpc("resolve_topshot_username", { p_username: inputAddr });
+          const { data: rpcResult, error: rpcResultErr } = await (supabase as any).rpc("resolve_topshot_username", { p_username: inputAddr });
+          // 2026-11-14: a FAILED lookup is not "no such username" (the error was dropped).
+          if (rpcResultErr) return JSON.stringify({ status: "username_lookup_failed", wallet: inputAddr, message: USERNAME_LOOKUP_FAILED_COPY });
           if (rpcResult?.found === true && typeof rpcResult.wallet_address === "string") {
             wallet = rpcResult.wallet_address.startsWith("0x") ? rpcResult.wallet_address : `0x${rpcResult.wallet_address}`;
           } else {
@@ -5332,7 +5358,9 @@ async function executeToolInner(
         let pinWallet = pinIn;
         if (!/^0x[a-fA-F0-9]{16}$/.test(pinIn)) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const { data: pr } = await (supabase as any).rpc("resolve_topshot_username", { p_username: pinIn });
+          const { data: pr, error: prErr } = await (supabase as any).rpc("resolve_topshot_username", { p_username: pinIn });
+          // 2026-11-14: a FAILED lookup is not "no such username" (the error was dropped).
+          if (prErr) return JSON.stringify({ status: "username_lookup_failed", wallet: pinIn, message: USERNAME_LOOKUP_FAILED_COPY });
           if (pr?.found === true && typeof pr.wallet_address === "string") {
             pinWallet = pr.wallet_address.startsWith("0x") ? pr.wallet_address : `0x${pr.wallet_address}`;
           } else {
@@ -5347,9 +5375,11 @@ async function executeToolInner(
         // On-file resolver only — same reasoning as get_collector_report: check_wallet
         // owns the full ladder and returns the address it resolved to.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: rpcResult } = await (supabase as any).rpc("resolve_topshot_username", {
+        const { data: rpcResult, error: rpcResultErr } = await (supabase as any).rpc("resolve_topshot_username", {
           p_username: inputAddr,
         });
+        // 2026-11-14: a FAILED lookup is not "no such username" (the error was dropped).
+        if (rpcResultErr) return JSON.stringify({ status: "username_lookup_failed", wallet: inputAddr, message: USERNAME_LOOKUP_FAILED_COPY });
         if (rpcResult?.found === true && typeof rpcResult.wallet_address === "string") {
           resolvedAddr = rpcResult.wallet_address.startsWith("0x")
             ? rpcResult.wallet_address
@@ -5433,9 +5463,11 @@ async function executeToolInner(
         // cheaper and honest, and it keeps ONE ladder to maintain rather than a
         // third partial copy of it.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: rpcResult } = await (supabase as any).rpc("resolve_topshot_username", {
+        const { data: rpcResult, error: rpcResultErr } = await (supabase as any).rpc("resolve_topshot_username", {
           p_username: inputAddr,
         });
+        // 2026-11-14: a FAILED lookup is not "no such username" (the error was dropped).
+        if (rpcResultErr) return JSON.stringify({ status: "username_lookup_failed", wallet: inputAddr, message: USERNAME_LOOKUP_FAILED_COPY });
         if (rpcResult?.found === true && typeof rpcResult.wallet_address === "string") {
           resolvedAddr = rpcResult.wallet_address.startsWith("0x")
             ? rpcResult.wallet_address
@@ -5961,9 +5993,11 @@ async function executeToolInner(
       }
       let resolvedAddr = inputAddr;
       if (!isHex && !candyQuirkWallet) {
-        const { data: rpcResult } = await (supabase as any).rpc("resolve_topshot_username", {
+        const { data: rpcResult, error: rpcResultErr } = await (supabase as any).rpc("resolve_topshot_username", {
           p_username: inputAddr,
         });
+        // 2026-11-14: a FAILED lookup is not "no such username" (the error was dropped).
+        if (rpcResultErr) return JSON.stringify({ status: "username_lookup_failed", wallet: inputAddr, message: USERNAME_LOOKUP_FAILED_COPY });
         if (rpcResult?.found === true && typeof rpcResult.wallet_address === "string") {
           resolvedAddr = rpcResult.wallet_address.startsWith("0x")
             ? rpcResult.wallet_address

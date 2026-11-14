@@ -110,3 +110,38 @@ describe("get_cheapest_sets_to_complete — an empty ranking is only an answer f
     expect(toolResult().status).toBe("state_unknown")
   })
 })
+
+// 2026-11-14: a FAILED username lookup was reported as "I couldn't resolve that username" — the
+// error was dropped. Seven tools; this pins two of them through the real route.
+describe("concierge username lookups — a failed lookup is not 'no such username'", () => {
+  for (const tool of ["get_cheapest_sets_to_complete", "get_set_completion_cost"]) {
+    it(`${tool}: rpc error → username_lookup_failed`, async () => {
+      const inst = makeInstrumentedSupabaseFixture({
+        "rpc:resolve_topshot_username": { data: null, error: { message: "canceling statement due to statement timeout" } },
+        sets: { data: [{ id: "s1", name: "Base Set", series: 4, set_id_onchain: 1 }], error: null },
+      })
+      A.sb = inst.fixture
+      script(tool, { walletAddress: "damefan", setName: "Base Set" })
+      await POST(post("nba-top-shot"))
+      expect(toolResult().status).toBe("username_lookup_failed")
+    })
+  }
+})
+
+// 2026-11-14: analyze_wallet_holdings answered "0" for a never-walked wallet ("how many Lakers moments
+// do I own?"), and did not fold an upper-case address the cache stores lower-case.
+describe("analyze_wallet_holdings — zero is only an answer for a walked wallet", () => {
+  it("a never-walked wallet is not_indexed, and the key reaches the RPC folded", async () => {
+    const inst = makeInstrumentedSupabaseFixture({
+      "rpc:concierge_wallet_breakdown": { data: { status: "ok", total_moments: 0, groups: [] }, error: null },
+      wallet_moments_cache: { data: [], error: null },
+      wallet_backfill_state: { data: [], error: null },
+    })
+    A.sb = inst.fixture
+    script("analyze_wallet_holdings", { walletAddress: "0x1234567890ABCDEF", team: "Lakers" })
+    await POST(post("nba-top-shot"))
+    expect(toolResult().status).toBe("not_indexed")
+    const call = inst.rpcCalls.find((c: any) => c.name === "concierge_wallet_breakdown")
+    expect(call?.args?.p_wallet).toBe("0x1234567890abcdef")
+  })
+})
