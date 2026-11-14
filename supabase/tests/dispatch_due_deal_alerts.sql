@@ -421,6 +421,9 @@ DECLARE
   v_price_pool int := 0;
   v_price_cap numeric;
   v_price_only boolean;
+  -- audit_20261114 (pool caps per collection)
+  v_cap record;
+  v_cap_rows int;
   -- How many of the rows we BUILT are barred from alerting because nobody has
   -- re-confirmed the ask. Reported so "quiet" and "quiet because the upstream
   -- ask lane is behind" are distinguishable from outside (audit_20260912).
@@ -476,12 +479,36 @@ BEGIN
   WHERE active = true AND max_price IS NOT NULL AND COALESCE(min_discount, 25) = 0;
 
   IF v_price_cap IS NOT NULL THEN
-    INSERT INTO tmp_deal_pool
-    SELECT 'price'::text, a.*,
-           public.ask_is_alertable(a.collection_slug, a.ask_updated_at)
-    FROM public.edition_current_ask a
-    WHERE a.low_ask > 0 AND a.low_ask <= v_price_cap;
-    GET DIAGNOSTICS v_price_pool = ROW_COUNT;
+    -- audit_20261114 (pool caps per collection): a row enters the pool only if SOME active
+    -- price-only sub could read it in pass 1 — at or under the highest max_price among the
+    -- price-only subs that read ITS collection, never counting an exact-serial sub on Top Shot
+    -- (pass 1 skips Top Shot for those; pass 3 serves them). One INSERT per collection, built with
+    -- LITERAL slug and cap (EXECUTE format %L): edition_current_ask is a UNION ALL of per-collection
+    -- branches, and only literals let the planner drop the other branches and push the price bound
+    -- into the one it keeps. Measured forms (rolled back, same instrument): unscoped at a $10,000 cap
+    -- ~92k buffers; a correlated EXISTS per ask row (20261114184324) ~150k; a caps JOIN ~83-92k.
+    v_price_pool := 0;
+    FOR v_cap IN
+      SELECT sl.slug, max(s.max_price) AS cap
+        FROM public.alert_subscriptions s
+        CROSS JOIN LATERAL (
+          SELECT c.slug FROM public.collections c
+           WHERE (s.collection_ids IS NULL AND c.is_active = true) OR c.id = ANY(s.collection_ids)
+        ) sl
+       WHERE s.active = true AND s.max_price IS NOT NULL AND COALESCE(s.min_discount, 25) = 0
+         AND NOT (sl.slug = 'nba_top_shot'
+                  AND public.alert_sub_is_exact_serial(s.min_serial, s.max_serial, s.collection_ids))
+       GROUP BY sl.slug
+    LOOP
+      EXECUTE format(
+        'INSERT INTO tmp_deal_pool
+         SELECT %L::text, a.*, public.ask_is_alertable(a.collection_slug, a.ask_updated_at)
+           FROM public.edition_current_ask a
+          WHERE a.collection_slug = %L AND a.low_ask > 0 AND a.low_ask <= %L::numeric',
+        'price', v_cap.slug, v_cap.cap);
+      GET DIAGNOSTICS v_cap_rows = ROW_COUNT;
+      v_price_pool := v_price_pool + v_cap_rows;
+    END LOOP;
   END IF;
 
   SELECT count(*) FILTER (WHERE pool = 'deals' AND NOT alertable),
@@ -1544,6 +1571,50 @@ BEGIN
   r := public.dispatch_due_deal_alerts();
   PERFORM _assert_eq((r->>'exact_serial_enqueued'), '0', 'and a second run sends the unchanged listing again to nobody');
   RAISE NOTICE '✓ dispatch_due_deal_alerts: pass 3 sends every new listing of the exact serial, once';
+END $$;
+
+-- ── THE PRICE POOL HOLDS ONLY ROWS SOME PRICE-ONLY SUB CAN READ (audit_20261114, pool scope) ──
+-- One $10,000 Pinnacle alert used to pull EVERY collection's asks under $10,000 into the pool
+-- (21,145 rows live, +66 % buffers per tick), and an exact-serial Top Shot sub at $10,000 raised the
+-- same cap while reading no pool row at all. A $50 Top Shot ask (no price-only Top Shot sub reaches
+-- $50 except the exact-serial one, which pass 1 skips) must stay OUT; a $50 Pinnacle ask comes IN
+-- and is still delivered.
+INSERT INTO collections (id, slug, is_active) VALUES ('bbbbbbbb-0000-0000-0000-0000000000aa', 'disney_pinnacle', true)
+  ON CONFLICT (id) DO NOTHING;
+INSERT INTO notification_channels (owner_key, channel, channel_user_id, verified)
+VALUES ('owner-pin-price', 'email', 'pinprice@example.test', true),
+       ('owner-exact-price', 'email', 'exactprice@example.test', true);
+INSERT INTO alert_subscriptions (id, owner_key, channels, collection_ids, min_discount, max_price, active, serial_only)
+VALUES ('99999999-9999-9999-9999-999999999995', 'owner-pin-price', ARRAY['email'],
+        ARRAY['bbbbbbbb-0000-0000-0000-0000000000aa']::uuid[], 0, 10000, true, false);
+INSERT INTO alert_subscriptions (id, owner_key, channels, collection_ids, min_discount, max_price, active, serial_only, min_serial, max_serial)
+VALUES ('99999999-9999-9999-9999-999999999996', 'owner-exact-price', ARRAY['email'],
+        ARRAY['95f28a17-224a-4025-96ad-adf8a4c63bfd']::uuid[], 0, 10000, true, false, 777, 777);
+
+DO $$
+DECLARE r jsonb; v_before int;
+BEGIN
+  r := public.dispatch_due_deal_alerts();
+  v_before := (r->>'price_pool_size')::int;
+  INSERT INTO edition_current_ask
+    (external_id, name, player_name, set_name, tier, circulation_count, fmv_usd, confidence, low_ask,
+     discount_pct, discount_usd, ask_updated_at, collection_slug, collection_name, render_id, detail_url,
+     thumbnail_url, low_ask_serial, low_ask_nft_id, low_confidence_fmv)
+  VALUES
+    ('99:50', 'TS Fifty', 'TS Fifty', 'Set', 'RARE', 100, NULL, NULL, 50.00, NULL, NULL, now(),
+     'nba_top_shot', 'NBA Top Shot', NULL, '/nba-top-shot/edition/99%3A50', NULL, 777, 'nft-ts50', false),
+    ('pin-50', 'Pin Fifty', 'Pin Fifty', 'Set', 'Golden', 100, NULL, NULL, 50.00, NULL, NULL, now(),
+     'disney_pinnacle', 'Disney Pinnacle', NULL, '/pinnacle/moment/pin-50', NULL, NULL, NULL, false);
+  r := public.dispatch_due_deal_alerts();
+  PERFORM _assert_eq(((r->>'price_pool_size')::int - v_before)::text, '1',
+    'only the $50 Pinnacle ask joins the pool — not the $50 Top Shot ask nobody''s pass 1 can read');
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM alert_deliveries WHERE owner_key = 'owner-pin-price' AND subject_key = 'disney_pinnacle:pin-50'),
+    'and the Pinnacle price-only sub still receives it');
+  PERFORM _assert(NOT EXISTS (
+    SELECT 1 FROM alert_deliveries WHERE owner_key = 'owner-exact-price' AND subject_key = 'nba_top_shot:99:50'),
+    'an exact-serial Top Shot sub never receives a pass-1 Top Shot row, even when its serial is the low ask');
+  RAISE NOTICE '✓ dispatch_due_deal_alerts: the price pool holds only rows a price-only sub can read';
 END $$;
 
 ROLLBACK;

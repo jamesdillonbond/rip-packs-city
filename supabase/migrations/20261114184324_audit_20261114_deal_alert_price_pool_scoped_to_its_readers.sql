@@ -16,6 +16,11 @@
 -- Base verified before writing: live prosrc md5 = 20261114171316's body (599f8ecebab2ff8ea1cdc1624bf39b35).
 -- anon-exec: unchanged (dispatch_due_deal_alerts) — CREATE OR REPLACE of an existing fn; ACL preserved.
 --
+-- ⚠ APPLIED 2026-11-14 ~11:05 AM PT by md5-asserted replace() DO block (live 599f8e… → b6c7fa…), after a
+-- read-only equivalence proof on live data (12 price-only subs, 12,144 sub-row reads: 0 lost, 0 gained;
+-- pool 21,155 → 8,013). ⛔ SUPERSEDED THE SAME HOUR by 20261114184950_audit_20261114_deal_alert_price_pool_caps_per_collection: this
+-- correlated EXISTS ran per ask row and measured ~150k buffers per tick vs ~92k unscoped — worse, not better.
+--
 -- REVERT: re-apply dispatch_due_deal_alerts from 20261114171316.
 
 CREATE OR REPLACE FUNCTION public.dispatch_due_deal_alerts(p_max integer DEFAULT 1000)

@@ -1970,8 +1970,10 @@ const PINS = [
     // Re-pointed 2026-10-14: deal alerts fire once per LISTING (notify_mode),
     // not once per UTC day. Before it, 2026-10-10: perfect mints exclude 1-of-1s.
     // Re-pointed 2026-11-13: a serial filter binds pass 1 too.
-    // Re-pointed 2026-11-14: pass 3, exact-serial listings (a narrow Top Shot serial window).
-    migration: "supabase/migrations/20261114171316_audit_20261114_deal_alerts_exact_serial_listings.sql",
+    // Re-pointed 2026-11-14: pass 3, exact-serial listings (a narrow Top Shot serial window);
+    // then the price pool scoped to rows some price-only sub can read — per-collection caps
+    // (20261114184950; the first form, a per-row EXISTS in 20261114184324, cost more than it saved).
+    migration: "supabase/migrations/20261114184950_audit_20261114_deal_alert_price_pool_caps_per_collection.sql",
   },
   {
     // ⚠ THREE ENTRIES, ONE FUNCTION, AND THAT IS THE POINT. `ask_is_alertable`

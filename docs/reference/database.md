@@ -3307,3 +3307,12 @@ For a one-fragment change to a large unpinned view, `replace(pg_get_viewdef(v, t
 ### ⭐ Applying a large pinned function change without transcribing it: the md5-asserted `replace()` DO block (2026-11-13, 2026-11-14)
 
 A 50 KB migration (two pinned deal-alert bodies plus new helpers) cannot safely be hand-copied into `apply_migration`, because a one-character slip ships a different body than the committed file. The pattern used twice: (1) assert each live `prosrc` md5 equals the base the file was derived from; (2) rebuild the new body as a chain of `replace(v_new, $q$old$q$, $q$new$q$)` from the LIVE `prosrc` (anchors generated from a line diff, each grown until unique, applied last-to-first); (3) `IF md5(v_new) <> '<file body md5>' THEN RAISE`; (4) `EXECUTE replace(pg_get_functiondef(oid), v_old, v_new)`, which keeps SECURITY DEFINER, `SET search_path` and `SET statement_timeout` verbatim; (5) re-read `md5(prosrc)`. A transcription slip can then only ABORT. ⭐ **Rehearse it on local Postgres first** (`SET check_function_bodies = off`, load the base bodies from the previous migration, run the block, compare md5s): the first generated block failed there on a non-unique anchor (`END IF;` × 8), not on production. The committed migration file stays the plain `CREATE OR REPLACE` (the pins' drift guard compares against it); its header says how it was applied.
+
+### ⛔ Filtering a UNION ALL VIEW: only LITERALS prune its branches — a JOIN or a generic parameter computes it whole (2026-11-14)
+
+`edition_current_ask` is four `UNION ALL` branches, each with a constant `collection_slug`. `dispatch_due_deal_alerts` filled its price pool with `WHERE low_ask <= v_price_cap`. At a $0.60 cap the bound pushed into every branch's index (~55k buffers per tick). At a $10,000 cap (one Pinnacle alert) it read 21k rows (~92k). Three fixes, measured rolled back on the same instrument:
+- (1) a correlated `EXISTS` over `alert_subscriptions` per ask row: **~150k**, worse;
+- (2) a per-collection caps sub-query JOINed to the view: pool 21k → 8k but **~83–92k**, because the view was still computed whole;
+- (3) a loop over the caps with `EXECUTE format('… WHERE a.collection_slug = %L AND a.low_ask <= %L::numeric', …)`: **~55–65k**.
+
+⭐ **Only (3) gives the planner constants to drop the other branches and push the bound inside.** A plpgsql variable is no substitute, because after 5 executions the cached plan may go generic and lose the pruning. ⭐ **And the ROW COUNT was never the cost**: a pool 2.6× smaller in (2) cost the same. Read BUFFERS, not rows.
