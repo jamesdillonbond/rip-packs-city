@@ -144,6 +144,7 @@ export async function POST(req: NextRequest) {
   let salesDuped = 0
   let salesUnresolved = 0
   let salesParallelRedirects = 0
+  let salesResolvedViaAtlas = 0
   let fillsSeen = 0
   const byType: Record<string, number> = { edition: 0, subedition: 0, serial: 0 }
   let fetchError: string | null = null
@@ -324,6 +325,7 @@ export async function POST(req: NextRequest) {
       const built = await buildOfferFillSales(fills)
       salesUnresolved = built.unresolved
       salesParallelRedirects = built.parallelRedirects
+      salesResolvedViaAtlas = built.resolvedViaAtlas
       const ins = await insertOfferFillSales(built.rows)
       salesWritten = ins.inserted
       salesDuped = ins.duped
@@ -402,6 +404,7 @@ export async function POST(req: NextRequest) {
     sales_duped: salesDuped,
     sales_unresolved: salesUnresolved,
     sales_parallel_redirects: salesParallelRedirects,
+    sales_resolved_via_atlas: salesResolvedViaAtlas,
     duration_ms: Date.now() - startTime,
   })
 

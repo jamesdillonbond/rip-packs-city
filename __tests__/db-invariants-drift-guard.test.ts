@@ -2050,6 +2050,12 @@ const PINS = [
     test: "supabase/tests/remap_topshot_base_keyed_parallel_sales.sql",
     migration: "supabase/migrations/20260802205000_audit_20260802_snapshot_remap_topshot_base_keyed_parallel_sales.sql",
   },
+  // 2026-11-14: parallel sales follow their subedition once the chain answers (Trevor: "Fix it").
+  {
+    fn: "topshot_parallel_sales_followup",
+    test: "supabase/tests/topshot_parallel_sales_followup.sql",
+    migration: "supabase/migrations/20261114215605_audit_20261114_topshot_parallel_sales_follow_their_subedition.sql",
+  },
   // ── Added 2026-08-15 (test-coverage pass) ─────────────────────────────────
   // The TopShot remap/conflation family was 2-of-9 pinned. Every member mutates
   // the sales/wmc/editions keying that all edition-keyed FMV derives from, so

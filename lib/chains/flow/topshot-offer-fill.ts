@@ -149,6 +149,7 @@ export interface BuiltOfferFillSales {
   unresolved: number // could not resolve an edition_id (NOT NULL on sales)
   serialsResolved: number
   parallelRedirects: number // F1 guard: impossible-serial parallel → base redirects
+  resolvedViaAtlas: number // path 4: edition from Atlas's own (set, play, parallel) for the nft
 }
 
 // Build sale rows from fills, resolving edition_id + serial via:
@@ -168,7 +169,7 @@ export async function buildOfferFillSales(fills: OfferFillEvent[]): Promise<Buil
   const byTx = new Map<string, OfferFillEvent>()
   for (const f of fills) if (f.fillTx && !byTx.has(f.fillTx)) byTx.set(f.fillTx, f)
   const list = Array.from(byTx.values())
-  if (list.length === 0) return { rows: [], unresolved: 0, serialsResolved: 0, parallelRedirects: 0 }
+  if (list.length === 0) return { rows: [], unresolved: 0, serialsResolved: 0, parallelRedirects: 0, resolvedViaAtlas: 0 }
 
   const extKeys = Array.from(new Set(list.filter((f) => f.externalId).map((f) => f.externalId!)))
   const nftIds = Array.from(new Set(list.filter((f) => f.nftId).map((f) => f.nftId!)))
@@ -231,6 +232,55 @@ export async function buildOfferFillSales(fills: OfferFillEvent[]): Promise<Buil
       if (!wmcSerByNft.has(r.moment_id)) wmcSerByNft.set(r.moment_id, r.serial_number)
   }
 
+  // 4. Atlas fallback (2026-11-14). A fill whose nft is in no `moments` row, whose offer carried no
+  //    set:play (a SERIAL offer) and whose `offers` row this indexer never saw resolved nothing above
+  //    and was DROPPED — 13 sales in 3 days, two of them 2026 rookies' (Trevor: "make sure all
+  //    editions of every moment for that player are included"). Dapper's Atlas index names the nft's
+  //    set, play, serial and parallel; the parallel's name maps to its subedition id through
+  //    topshot_subeditions (the chain's own list), so a parallel lands on `<set:play>::<sub>`, never
+  //    on its base. Used only when every Atlas row for the nft agrees.
+  const atlasByNft = new Map<string, { ext: string; serial: number | null }>()
+  const needAtlas = list
+    .filter((f) => f.nftId && !momByNft.has(f.nftId) && !(f.externalId && edByExt.has(f.externalId)) && !offRow.get(f.offerId)?.editionId)
+    .map((f) => f.nftId!)
+  if (needAtlas.length) {
+    const evs: Array<{ nft_id: string; set_id_onchain: number | null; play_id_onchain: number | null; parallel: string | null; serial_number: number | null }> = []
+    for (let i = 0; i < needAtlas.length; i += DB_IN_CHUNK) {
+      const { data } = await (supabaseAdmin as any)
+        .from("topshot_atlas_market_events")
+        .select("nft_id, set_id_onchain, play_id_onchain, parallel, serial_number")
+        .eq("product", "nba")
+        .in("nft_id", needAtlas.slice(i, i + DB_IN_CHUNK))
+      evs.push(...((data as typeof evs | null) ?? []))
+    }
+    const names = new Set(evs.map((e) => e.parallel).filter((p): p is string => !!p && p !== "Standard"))
+    const subIdByName = new Map<string, number>()
+    if (names.size) {
+      const { data } = await (supabaseAdmin as any).from("topshot_subeditions").select("subedition_id, name").in("name", [...names])
+      for (const r of (data as Array<{ subedition_id: number; name: string }> | null) ?? []) subIdByName.set(r.name, r.subedition_id)
+    }
+    const byNft = new Map<string, typeof evs>()
+    for (const e of evs) byNft.set(e.nft_id, [...(byNft.get(e.nft_id) ?? []), e])
+    for (const [nft, rows] of byNft) {
+      const keys = new Set(rows.map((r) => `${r.set_id_onchain}:${r.play_id_onchain}|${r.parallel}|${r.serial_number}`))
+      const r = rows[0]
+      if (keys.size !== 1 || r.set_id_onchain == null || r.play_id_onchain == null || !r.parallel) continue
+      const base = `${r.set_id_onchain}:${r.play_id_onchain}`
+      const sub = r.parallel === "Standard" ? null : subIdByName.get(r.parallel)
+      if (r.parallel !== "Standard" && sub == null) continue // unknown parallel name: never guess the base
+      atlasByNft.set(nft, { ext: sub == null ? base : `${base}::${sub}`, serial: r.serial_number ?? null })
+    }
+    const atlasExts = [...new Set([...atlasByNft.values()].map((v) => v.ext))].filter((e) => !edByExt.has(e))
+    for (let i = 0; i < atlasExts.length; i += DB_IN_CHUNK) {
+      const { data } = await (supabaseAdmin as any)
+        .from("editions")
+        .select("external_id, id")
+        .eq("collection_id", TS_COLLECTION_ID)
+        .in("external_id", atlasExts.slice(i, i + DB_IN_CHUNK))
+      for (const r of (data as Array<{ external_id: string; id: string }> | null) ?? []) edByExt.set(r.external_id, r.id)
+    }
+  }
+
   // F1 guard maps: reverse-resolve every edition that could be assigned →
   // external_id + circulation_count, and for the ::subID ones the base edition id.
   // A no-op on any tick with no parallel-keyed resolutions.
@@ -273,6 +323,7 @@ export async function buildOfferFillSales(fills: OfferFillEvent[]): Promise<Buil
   let unresolved = 0
   let serialsResolved = 0
   let parallelRedirects = 0
+  let resolvedViaAtlas = 0
   const nowIso = new Date().toISOString()
 
   for (const f of list) {
@@ -294,6 +345,16 @@ export async function buildOfferFillSales(fills: OfferFillEvent[]): Promise<Buil
     if ((serial == null || serial === 0) && f.nftId) {
       const ws = wmcSerByNft.get(f.nftId)
       if (ws != null && ws > 0) serial = ws
+    }
+
+    if (!editionId && f.nftId) {
+      const at = atlasByNft.get(f.nftId)
+      const id = at ? edByExt.get(at.ext) : undefined
+      if (at && id) {
+        editionId = id
+        if ((serial == null || serial === 0) && at.serial != null && at.serial > 0) serial = at.serial
+        resolvedViaAtlas++
+      }
     }
 
     if (!editionId) {
@@ -349,7 +410,7 @@ export async function buildOfferFillSales(fills: OfferFillEvent[]): Promise<Buil
     })
   }
 
-  return { rows, unresolved, serialsResolved, parallelRedirects }
+  return { rows, unresolved, serialsResolved, parallelRedirects, resolvedViaAtlas }
 }
 
 // Stamp the OfferCompleted (fill) tx onto the matching offer rows for provenance.

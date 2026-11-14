@@ -13,6 +13,8 @@ const H = vi.hoisted(() => {
     moments: [] as any[],
     offers: [] as any[],
     wmc: [] as any[],
+    atlas: [] as any[],
+    subeditions: [] as any[],
     editionsById: [] as any[], // select "id, external_id, circulation_count"
     baseEditions: [] as any[], // select "id, external_id"
     salesInsertError: null as any,
@@ -43,6 +45,8 @@ const H = vi.hoisted(() => {
     if (ctx.table === "moments") return { data: state.moments, error: null }
     if (ctx.table === "offers") return { data: state.offers, error: null }
     if (ctx.table === "wallet_moments_cache") return { data: state.wmc, error: null }
+    if (ctx.table === "topshot_atlas_market_events") return { data: state.atlas, error: null }
+    if (ctx.table === "topshot_subeditions") return { data: state.subeditions, error: null }
     return { data: [], error: null }
   }
 
@@ -220,6 +224,8 @@ beforeEach(() => {
   H.state.moments = []
   H.state.offers = []
   H.state.wmc = []
+  H.state.atlas = []
+  H.state.subeditions = []
   H.state.editionsById = []
   H.state.baseEditions = []
   H.state.salesInsertError = null
@@ -233,7 +239,7 @@ beforeEach(() => {
 describe("buildOfferFillSales", () => {
   it("returns empty result for no fills", async () => {
     const out = await buildOfferFillSales([])
-    expect(out).toEqual({ rows: [], unresolved: 0, serialsResolved: 0, parallelRedirects: 0 })
+    expect(out).toEqual({ rows: [], unresolved: 0, serialsResolved: 0, parallelRedirects: 0, resolvedViaAtlas: 0 })
   })
 
   it("resolves edition + serial via moments (path 1) and builds a sale row", async () => {
@@ -285,6 +291,42 @@ describe("buildOfferFillSales", () => {
     const out = await buildOfferFillSales([fill({ nftId: "404", externalId: null, offerId: "nope" })])
     expect(out.rows).toHaveLength(0)
     expect(out.unresolved).toBe(1)
+  })
+
+  // 2026-11-14: a SERIAL offer fill whose nft is in no moments row and whose offer row was never seen
+  // was dropped (two 2026 rookie sales among 13 in three days). Atlas names the nft's set, play,
+  // serial and parallel; a parallel lands on its ::sub edition, never on its base.
+  it("path 4: resolves a dropped serial fill from Atlas — a Standard moment onto its base edition", async () => {
+    H.state.atlas = [{ nft_id: "53136570", set_id_onchain: 281, play_id_onchain: 9400, parallel: "Standard", serial_number: 77 }]
+    H.state.editionsByExt = [{ external_id: "281:9400", id: "ed-base" }]
+    const out = await buildOfferFillSales([fill({ nftId: "53136570", offerType: "serial", offerId: "nope" })])
+    expect(out.unresolved).toBe(0)
+    expect(out.resolvedViaAtlas).toBe(1)
+    expect(out.rows[0].edition_id).toBe("ed-base")
+    expect(out.rows[0].serial_number).toBe(77)
+  })
+
+  it("path 4: a parallel moment lands on its ::sub edition, never its base", async () => {
+    H.state.atlas = [{ nft_id: "53132943", set_id_onchain: 281, play_id_onchain: 9400, parallel: "Blockchain", serial_number: 12 }]
+    H.state.subeditions = [{ subedition_id: 17, name: "Blockchain" }]
+    H.state.editionsByExt = [{ external_id: "281:9400::17", id: "ed-blockchain" }]
+    const out = await buildOfferFillSales([fill({ nftId: "53132943", offerType: "serial", offerId: "nope" })])
+    expect(out.rows[0].edition_id).toBe("ed-blockchain")
+  })
+
+  it("path 4: an unknown parallel name or disagreeing Atlas rows stay unresolved — no guess", async () => {
+    H.state.atlas = [
+      { nft_id: "1", set_id_onchain: 281, play_id_onchain: 9400, parallel: "Mystery", serial_number: 1 },
+      { nft_id: "2", set_id_onchain: 281, play_id_onchain: 9400, parallel: "Standard", serial_number: 2 },
+      { nft_id: "2", set_id_onchain: 281, play_id_onchain: 9401, parallel: "Standard", serial_number: 2 },
+    ]
+    H.state.editionsByExt = [{ external_id: "281:9400", id: "ed-base" }]
+    const out = await buildOfferFillSales([
+      fill({ nftId: "1", offerId: "a", fillTx: "0xa" }),
+      fill({ nftId: "2", offerId: "b", fillTx: "0xb" }),
+    ])
+    expect(out.rows).toHaveLength(0)
+    expect(out.unresolved).toBe(2)
   })
 
   it("F1 guard: redirects an impossible-serial parallel onto its base edition", async () => {
