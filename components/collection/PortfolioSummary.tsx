@@ -144,6 +144,7 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
             lockUnknownCount,
             bestOfferTotal,
             bestOfferCount,
+            bestOfferUnit,
             spreadGap,
             momentCount,
             staleFmv,
@@ -165,6 +166,7 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
               lockUnknownCount={lockUnknownCount}
               spreadGap={spreadGap}
               bestOfferCount={bestOfferCount}
+              bestOfferUnit={bestOfferUnit}
               staleNetted={staleNetted}
               staleFmv={staleFmv}
               staleCount={staleCount}

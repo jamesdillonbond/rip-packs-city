@@ -105,6 +105,14 @@ export async function GET(req: NextRequest) {
   }
 
   const started = Date.now()
+  // 2026-11-14: the wallet-wide Best Offer Total is read BESIDE the summary, never inside it, so
+  // a slow or failed offer read cannot cost the reader the summary. Its failure only omits the
+  // fields (the tile then falls back to its complete-rows-only client sum).
+  const offersRead = boundedRead(supabase.rpc("get_wallet_edition_bid_total", {
+    p_wallet: address,
+    p_collection_id: collectionId,
+  }), "api/wallet-summary/get_wallet_edition_bid_total", BEST_OFFER_READ_BUDGET_MS)
+    .then(function(r) { return r.error ? null : r.data }, function() { return null })
   const { data, error } = await boundedRead(supabase.rpc("get_wallet_summary", {
     p_wallet: address,
     p_collection_id: collectionId,
@@ -120,7 +128,33 @@ export async function GET(req: NextRequest) {
     )
     return apiErrorResponse(error, "api/wallet-summary")
   }
-  return NextResponse.json({ ...withoutLockStateForChainsThatHaveNone(data, collectionId), resolved_wallet: address })
+  const offers = bestOfferFields(await offersRead)
+  return NextResponse.json({ ...withoutLockStateForChainsThatHaveNone(data, collectionId), ...offers, resolved_wallet: address })
+}
+
+export const BEST_OFFER_READ_BUDGET_MS = 8_000
+
+/**
+ * 2026-11-14 — the wallet-wide bid total from get_wallet_edition_bid_total, attached ONLY when the
+ * function found at least one bid. It reads edition_offers / badge_editions; a collection whose
+ * offers live elsewhere (Pinnacle: marketplace_offers) comes back as 0 editions, and publishing
+ * that as "$0 in bids" would conclude from a source that cannot see the collection. Absent fields
+ * mean "not known here", never zero.
+ */
+export function bestOfferFields(raw: unknown): Record<string, number> {
+  if (!raw || typeof raw !== "object") return {}
+  const r = raw as Record<string, unknown>
+  const editions = Number(r.best_offer_editions)
+  const total = Number(r.best_offer_total)
+  const pairedFmv = Number(r.best_offer_paired_fmv)
+  const pairedOffer = Number(r.best_offer_paired_offer)
+  if (!Number.isFinite(editions) || editions <= 0 || !Number.isFinite(total) || total <= 0) return {}
+  const out: Record<string, number> = { best_offer_total: total, best_offer_editions: editions }
+  if (Number.isFinite(pairedFmv) && pairedFmv > 0 && Number.isFinite(pairedOffer)) {
+    out.best_offer_paired_fmv = pairedFmv
+    out.best_offer_paired_offer = pairedOffer
+  }
+  return out
 }
 
 /**

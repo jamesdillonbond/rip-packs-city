@@ -90,3 +90,21 @@ describe("computeCollectionTotals — offer pairing", () => {
     expect(t.pairedOffer).toBe(80)
   })
 })
+
+// 2026-11-14: an edition-level bid fills ONCE — three copies of one edition do not triple it.
+describe("computeCollectionTotals — one edition bid counts once", () => {
+  it("counts an edition bid on the first copy only, and every serial offer", () => {
+    const rows = [
+      { editionKey: "1:1", fmv: 10, bestOffer: 8, bestOfferType: "edition" },
+      { editionKey: "1:1", fmv: 10, bestOffer: 8, bestOfferType: "edition" },
+      { editionKey: "1:1", fmv: 10, bestOffer: 8, bestOfferType: null },
+      { editionKey: "1:1", fmv: 10, bestOffer: 9, bestOfferType: "serial" },
+      { editionKey: "2:2", fmv: 5, bestOffer: 4, bestOfferType: "edition" },
+    ] as unknown as Parameters<typeof computeCollectionTotals>[0]
+    const t = computeCollectionTotals(rows)
+    expect(t.totalBestOffer).toBe(8 + 9 + 4)
+    expect(t.offerCount).toBe(3)
+    expect(t.fmvWithOffer).toBe(25)
+    expect(t.pairedOffer).toBe(21)
+  })
+})

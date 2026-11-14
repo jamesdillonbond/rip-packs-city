@@ -19,6 +19,14 @@ export type WalletSummary = {
    */
   stale_locked_fmv?: number
   stale_unlocked_fmv?: number
+  /**
+   * 2026-11-14: the WALLET-WIDE bid total (get_wallet_edition_bid_total, one bid per held edition)
+   * and the FMV / bids of exactly those editions. Absent → not known for this collection.
+   */
+  best_offer_total?: number
+  best_offer_editions?: number
+  best_offer_paired_fmv?: number
+  best_offer_paired_offer?: number
   unlocked_fmv: number
   unlocked_count: number
   locked_fmv: number
@@ -68,8 +76,9 @@ export type WalletStatRowValues = {
   lockUnknownFmv: number | null
   lockUnknownCount: number | null
   bestOfferTotal: number | null
-  /** Moments the Best Offer Total covers (null when unknown). */
+  /** How many moments (client sum) or editions (wallet-wide read) the Best Offer Total covers. */
   bestOfferCount: number | null
+  bestOfferUnit: "editions" | "moments"
   /** FMV of the SAME moments the offer total covers, minus that total — never the whole wallet's FMV. */
   spreadGap: number | null
   momentCount: number | null
@@ -190,14 +199,33 @@ export function computeWalletStatRow(input: {
   // is loaded (the same gate as the tiles above). And its gap is measured against the FMV of the SAME
   // moments that carry an offer — "vs FMV: −$31,204" compared $16,452 of offers on some moments with
   // the FMV of the whole wallet, most of which has no offer at all.
-  const bestOfferTotal: number | null = totalsComplete && totals.totalBestOffer > 0 ? totals.totalBestOffer : null
-  const bestOfferCount: number | null =
-    bestOfferTotal !== null && typeof totals.offerCount === "number" ? totals.offerCount : null
-  const spreadGap: number | null =
-    bestOfferTotal !== null && typeof totals.fmvWithOffer === "number" && totals.fmvWithOffer > 0 &&
-    typeof totals.pairedOffer === "number"
-      ? totals.fmvWithOffer - totals.pairedOffer
-      : null
+  // The wallet-wide server figure wins whenever it is present (it never depends on how many grid
+  // pages are loaded); the client sum stands in only for a complete row set.
+  const serverOffer = walletSummary && typeof walletSummary.best_offer_total === "number" && walletSummary.best_offer_total > 0
+    ? walletSummary
+    : null
+  let bestOfferTotal: number | null
+  let bestOfferCount: number | null
+  let spreadGap: number | null
+  if (serverOffer) {
+    bestOfferTotal = serverOffer.best_offer_total as number
+    bestOfferCount = typeof serverOffer.best_offer_editions === "number" ? serverOffer.best_offer_editions : null
+    spreadGap =
+      typeof serverOffer.best_offer_paired_fmv === "number" && serverOffer.best_offer_paired_fmv > 0 &&
+      typeof serverOffer.best_offer_paired_offer === "number"
+        ? serverOffer.best_offer_paired_fmv - serverOffer.best_offer_paired_offer
+        : null
+  } else {
+    bestOfferTotal = totalsComplete && totals.totalBestOffer > 0 ? totals.totalBestOffer : null
+    bestOfferCount =
+      bestOfferTotal !== null && typeof totals.offerCount === "number" ? totals.offerCount : null
+    spreadGap =
+      bestOfferTotal !== null && typeof totals.fmvWithOffer === "number" && totals.fmvWithOffer > 0 &&
+      typeof totals.pairedOffer === "number"
+        ? totals.fmvWithOffer - totals.pairedOffer
+        : null
+  }
+  const bestOfferUnit: "editions" | "moments" = serverOffer ? "editions" : "moments"
   // 2026-11-07: the WALLET card's count is the WALLET's, like its FMV beside it.
   // `paginatedTotal` is the count under the active list filter — with a remembered
   // player filter (Luka Dončić) Trevor's card read "$52,573 · 593 moments" for a
@@ -221,6 +249,7 @@ export function computeWalletStatRow(input: {
     lockUnknownCount,
     bestOfferTotal,
     bestOfferCount,
+    bestOfferUnit,
     spreadGap,
     momentCount,
   }

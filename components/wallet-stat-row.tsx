@@ -45,6 +45,8 @@ export type WalletStatRowProps = {
   spreadGap: number | null
   /** How many moments the Best Offer Total covers (null when unknown). */
   bestOfferCount?: number | null
+  /** What bestOfferCount counts: one bid per edition (wallet-wide read) or loaded moments. */
+  bestOfferUnit?: "editions" | "moments"
   /** Locked / Unlocked are netted of the stale share, so they sum to the headline (2026-11-14). */
   staleNetted?: boolean
   /** Stale-priced share excluded from walletFmv; disclosed under the headline when > 0. */
@@ -104,6 +106,7 @@ export default function WalletStatRow(props: WalletStatRowProps) {
     lockUnknownCount,
     spreadGap,
     bestOfferCount,
+    bestOfferUnit,
     staleNetted,
     staleFmv,
     staleCount,
@@ -243,7 +246,7 @@ export default function WalletStatRow(props: WalletStatRowProps) {
         <div className="rpc-stat-value">{formatCurrency(bestOfferTotal)}</div>
         <div className="rpc-stat-caption">
           {typeof bestOfferCount === "number" && bestOfferCount > 0
-            ? "on " + formatCount(bestOfferCount) + " " + noun + (showSpreadGap ? " · vs their FMV: " + formatCurrency(-(spreadGap as number)) : "")
+            ? "on " + formatCount(bestOfferCount) + " " + (bestOfferUnit === "editions" ? (bestOfferCount === 1 ? "edition" : "editions") : noun) + (showSpreadGap ? " · vs their FMV: " + formatCurrency(-(spreadGap as number)) : "")
             : showSpreadGap ? "vs their FMV: " + formatCurrency(-(spreadGap as number)) : ""}
         </div>
       </div>

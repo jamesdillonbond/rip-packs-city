@@ -102,6 +102,21 @@ describe("computeWalletStatRow", () => {
     expect(r.spreadGap).toBeNull() // no paired FMV supplied → no gap, never 1000 − 200
   })
 
+  // 2026-11-14: the wallet-wide bid read wins over any page sum, partial or complete.
+  it("uses the wallet-wide bid total when the summary carries it, even on a partial page", () => {
+    const r = computeWalletStatRow({
+      walletSummary: { ...fullSummary, best_offer_total: 28541, best_offer_editions: 2983, best_offer_paired_fmv: 38768.05, best_offer_paired_offer: 28541 },
+      walletTotalFmv: null,
+      totals: { ...zeroTotals, totalBestOffer: 16452, totalCount: 50, offerCount: 40, fmvWithOffer: 900, pairedOffer: 700 },
+      paginatedTotal: 15758,
+      collectionSlug: "nba-top-shot",
+    })
+    expect(r.bestOfferTotal).toBe(28541)
+    expect(r.bestOfferCount).toBe(2983)
+    expect(r.bestOfferUnit).toBe("editions")
+    expect(r.spreadGap).toBeCloseTo(10227.05, 2)
+  })
+
   // 2026-11-14 (Trevor): Locked $50,427 + Unlocked $2,374 = $52,801 under a $47,657 Wallet FMV.
   it("nets Locked / Unlocked of the stale share when the summary splits it, so they sum to the headline", () => {
     const r = computeWalletStatRow({

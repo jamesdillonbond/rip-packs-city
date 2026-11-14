@@ -35,6 +35,11 @@ export interface CollectionTotals {
 // inline reducer.
 export function computeCollectionTotals(rows: MomentRow[]): CollectionTotals {
   let offerCount = 0, fmvWithOffer = 0, pairedOffer = 0
+  // 2026-11-14: an EDITION-level bid is ONE bid — it fills once, whatever number of copies the
+  // wallet holds. Counting it per copy made the total a sum no buyer would pay (a founder wallet
+  // holds 445 multi-copy editions, up to 132 of one: ~$5.9k of phantom bids). Each edition's
+  // bid is counted on its first row only; a SERIAL-level offer targets that moment and counts.
+  const editionBidSeen = new Set<string>()
   let totalFmv = 0, totalBestOffer = 0, lockedFmv = 0, unlockedFmv = 0
   let lockedCount = 0, unlockedCount = 0, badgeCount = 0
   let confHigh = 0, confMedium = 0, confLow = 0, confNone = 0
@@ -43,7 +48,13 @@ export function computeCollectionTotals(rows: MomentRow[]): CollectionTotals {
     const offer = row.bestOffer ?? null
     const locked = getLocked(row)
     if (typeof fmv === "number") totalFmv += fmv
-    if (typeof offer === "number") {
+    let countedOffer: number | null = offer
+    if (typeof offer === "number" && row.bestOfferType !== "serial" && row.editionKey) {
+      if (editionBidSeen.has(row.editionKey)) countedOffer = null
+      else editionBidSeen.add(row.editionKey)
+    }
+    if (typeof countedOffer === "number") {
+      const offer = countedOffer
       totalBestOffer += offer
       offerCount++
       if (typeof fmv === "number") { fmvWithOffer += fmv; pairedOffer += offer }
