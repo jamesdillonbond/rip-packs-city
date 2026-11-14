@@ -175,6 +175,12 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
   // the per-collection subtraction with no check — "Fix per PANEL, not per page".
   // No totals in the payload = coverage unknown = withheld.
   const [plWithheld, setPlWithheld] = useState(true)
+  // 2026-11-13: the summary has its own state. It used to ride the history fetch, so (1) a
+  // summary timeout (a cold read past its 15 s limit, seen live 8:13 PM PT) rendered the hero
+  // as four bare dashes -- a failed read reading as "unknown" -- and (2) every tab switch
+  // and page turn re-ran the slowest read on the page. It depends on the wallet alone.
+  const [summaryState, setSummaryState] = useState<"idle" | "loading" | "ok" | "error">("idle")
+  const [summaryAttempt, setSummaryAttempt] = useState(0)
   const [history, setHistory] = useState<History | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -214,8 +220,7 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
     setAuthRequired(false)
     setNotYourWallet(false)
     try {
-      const [sumRes, histRes] = await Promise.all([
-        fetch("/api/wallet/pack-summary?wallet=" + encodeURIComponent(wallet), { cache: "no-store" }),
+      const [histRes] = await Promise.all([
         fetch(
           "/api/wallet/pack-history?" +
             new URLSearchParams({
@@ -231,15 +236,13 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
       if (myReq !== reqIdRef.current) return // superseded by a newer load
       // Pack P&L (buy price / realized P&L) stays behind sign-in per the un-gate
       // policy — a 401/403 means "sign in", not a hard error.
-      if (histRes.status === 401 || histRes.status === 403 || sumRes.status === 401 || sumRes.status === 403) {
-        const signedOut = histRes.status === 401 || sumRes.status === 401
+      if (histRes.status === 401 || histRes.status === 403) {
+        const signedOut = histRes.status === 401
         setAuthRequired(signedOut)
         setNotYourWallet(!signedOut)
         setHistory(null)
-        setSummaryRow(null)
         return
       }
-      const sumJson = await sumRes.json().catch(() => null)
       const histJson = await histRes.json().catch(() => null)
       if (myReq !== reqIdRef.current) return // superseded during body parse
       // A 200 whose body did not parse is a FAILED read, not "no pack sales" (2026-11-02).
@@ -249,23 +252,44 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
       } else {
         setHistory(histJson as History)
       }
-      const row =
-        sumRes.ok && sumJson?.by_collection
-          ? ((sumJson as Summary).by_collection.find(
-              (c) => c.collection_slug === dbSlug || c.collection_slug === collection,
-            ) ?? null)
-          : null
-      setSummaryRow(row)
-      const totals = sumRes.ok ? (sumJson as Summary | null)?.totals : undefined
-      setPlWithheld(totals ? packCoverage(totals).plWithheld : true)
     } catch (err) {
       if (myReq === reqIdRef.current) setError(err instanceof Error ? err.message : String(err))
     } finally {
       if (myReq === reqIdRef.current) setLoading(false)
     }
-  }, [wallet, dbSlug, collection, page, packFilter])
+  }, [wallet, dbSlug, page, packFilter])
 
   useEffect(() => { load() }, [load])
+
+  // The hero summary: once per wallet (+ a manual retry), never per tab or page. A failed
+  // read retries once on its own -- the first read of a big wallet can run cold past the
+  // summary's limit and the second, warm, lands -- and then says it failed, with a retry.
+  useEffect(() => {
+    if (!wallet) { setSummaryRow(null); setSummaryState("idle"); return }
+    let cancelled = false
+    setSummaryState("loading")
+    ;(async () => {
+      for (let tryNo = 0; tryNo < 2 && !cancelled; tryNo++) {
+        try {
+          const res = await fetch("/api/wallet/pack-summary?wallet=" + encodeURIComponent(wallet), { cache: "no-store" })
+          if (res.status === 401 || res.status === 403) break // the history read owns the auth branches
+          const json = res.ok ? await res.json().catch(() => null) : null
+          if (cancelled) return
+          if (res.ok && json && Array.isArray((json as Summary).by_collection)) {
+            const sum = json as Summary
+            setSummaryRow(sum.by_collection.find((c) => c.collection_slug === dbSlug || c.collection_slug === collection) ?? null)
+            setPlWithheld(sum.totals ? packCoverage(sum.totals).plWithheld : true)
+            setSummaryState("ok")
+            return
+          }
+        } catch {
+          // fall through to the retry / error state
+        }
+      }
+      if (!cancelled) { setSummaryRow(null); setPlWithheld(true); setSummaryState("error") }
+    })()
+    return () => { cancelled = true }
+  }, [wallet, dbSlug, collection, summaryAttempt])
 
   const totalPages = useMemo(
     () => (history ? Math.max(1, Math.ceil(history.total_count / PAGE_SIZE)) : 1),
@@ -333,16 +357,22 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {/* Collection-scoped hero */}
       <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
-        <Stat label="Packs purchased" value={summaryRow ? summaryRow.packs_purchased.toLocaleString("en-US") : "—"} tint="var(--rpc-text-primary)" />
-        <Stat label="Total spent" value={fmtPackUsd(summaryRow?.spent_usd)} tint="var(--rpc-text-primary)" />
-        <Stat label="Ripped value" value={fmtPackUsd(summaryRow?.ripped_value_usd)} tint="#34D399" />
+        <Stat label="Packs purchased" value={summaryState === "loading" ? "…" : summaryRow ? summaryRow.packs_purchased.toLocaleString("en-US") : "—"} tint="var(--rpc-text-primary)" />
+        <Stat label="Total spent" value={summaryState === "loading" ? "…" : fmtPackUsd(summaryRow?.spent_usd)} tint="var(--rpc-text-primary)" />
+        <Stat label="Ripped value" value={summaryState === "loading" ? "…" : fmtPackUsd(summaryRow?.ripped_value_usd)} tint="#34D399" />
         <Stat
           label="Net P&L"
-          value={plWithheld ? "\u2014" : fmtPackUsd(summaryRow?.net_pl_usd)}
+          value={summaryState === "loading" ? "…" : plWithheld ? "\u2014" : fmtPackUsd(summaryRow?.net_pl_usd)}
           tint={plWithheld ? "var(--rpc-text-muted)" : summaryRow ? netPlTint(summaryRow.net_pl_usd) : "var(--rpc-red)"}
           title={plWithheld ? "Withheld: too few of this wallet's packs have a known buy price and pull value for a P&L to mean anything" : undefined}
         />
       </section>
+      {summaryState === "error" && (
+        <div role="alert" style={{ display: "flex", alignItems: "center", gap: 10, fontFamily: mono, fontSize: 11, color: "var(--rpc-danger-text)" }}>
+          <span>These totals didn&apos;t load. The tabs below are unaffected.</span>
+          <button type="button" className="rpc-chip" onClick={() => setSummaryAttempt((n) => n + 1)}>Retry</button>
+        </div>
+      )}
 
       {/* Opened | Unopened sub-filter */}
       <div style={{ display: "flex", gap: 6 }}>

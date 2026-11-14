@@ -332,4 +332,52 @@ describe("WalletPacksView", () => {
     await waitFor(() => expect(getByText("Base Pack")).toBeTruthy())
     expect(queryByLabelText("Unopened pack metrics")).toBeNull()
   })
+
+  // 2026-11-13: a summary timeout (seen live, cold read past its 15 s limit) rendered the
+  // hero as four bare dashes. It now retries once, then SAYS it failed, with a retry.
+  it("a failed summary retries once, then says so with a Retry -- never bare dashes alone", async () => {
+    ownerKey = "0xowner"
+    let sumCalls = 0
+    fetchMock = routeFetch({
+      summary: () => { sumCalls++; return res(503, { error: "timeout" }) },
+      history: () => res(200, { packs: [heldRow], total_count: 1 }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const { findByRole, getByText } = render(<WalletPacksView collection="nba-top-shot" />)
+    const alert = await findByRole("alert")
+    expect(alert.textContent).toMatch(/didn.t load/)
+    expect(sumCalls).toBe(2)
+    expect(getByText("Base Pack")).toBeTruthy() // the tabs are unaffected
+    fireEvent.click(getByText("Retry"))
+    await waitFor(() => expect(sumCalls).toBe(4))
+  })
+
+  it("a summary that fails once and lands on the retry shows its numbers and no alert", async () => {
+    ownerKey = "0xowner"
+    let sumCalls = 0
+    fetchMock = routeFetch({
+      summary: () => (++sumCalls === 1 ? res(503, {}) : res(200, summaryBody)),
+      history: () => res(200, { packs: [heldRow], total_count: 1 }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const { findByText, queryByRole } = render(<WalletPacksView collection="nba-top-shot" />)
+    expect(await findByText("$250.00")).toBeTruthy()
+    expect(queryByRole("alert")).toBeNull()
+  })
+
+  it("switching tabs re-reads the history, never the slow summary", async () => {
+    ownerKey = "0xowner"
+    let sumCalls = 0
+    fetchMock = routeFetch({
+      summary: () => { sumCalls++; return res(200, summaryBody) },
+      history: () => res(200, { packs: [heldRow], total_count: 1 }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText, findByText } = render(<WalletPacksView collection="nba-top-shot" />)
+    await findByText("$250.00")
+    fireEvent.click(getByText("Opened"))
+    fireEvent.click(getByText("Sold"))
+    await waitFor(() => expect(fetchMock.mock.calls.filter((c: unknown[]) => String(c[0]).includes("status=sold_any")).length).toBe(1))
+    expect(sumCalls).toBe(1)
+  })
 })
