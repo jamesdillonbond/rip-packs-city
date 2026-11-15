@@ -40,3 +40,7 @@ This is consistent with the decision taken at 10:15 AM PT (keep the last known p
 ## Not examined
 
 `holdings_summary` (latest non-null from `fmv_snapshots_2026`) has no caller in `app/`, `lib/`, `components/` or `supabase/functions/`; not traced further.
+
+## ✅ RESOLVED — §1 (re-checked 2026-11-15 ~11:20 AM PT, Cowork)
+
+The staged UFC tracker fix was applied 2026-11-10 ~11:15 AM PT by Claude Code (`20261110184532_audit_20261110_ufc_set_tracker_reads_current_fmv_cache`; history row present, file in `supabase/migrations/`). The seven cached-price readers stay a recorded choice (decision 11-10 10:15 AM PT). Nothing open here.

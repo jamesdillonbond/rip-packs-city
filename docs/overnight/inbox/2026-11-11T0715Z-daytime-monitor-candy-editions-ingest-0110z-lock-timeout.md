@@ -43,3 +43,7 @@ first-tick-of-day extras (1a) were not run.
   stagger the 01:10Z candy-editions-ingest tick off the collision, or give its `wallet_moments_cache`
   write a short retry / `SKIP LOCKED` path the way `wmc-fmv-stuck-resync` already carries. Do not
   conclude the lock holder from a single probe — confirm across a couple of 01:10Z ticks.
+
+## ✅ RESOLVED — re-checked 2026-11-15 ~11:20 AM PT (Cowork)
+
+`candy-editions-ingest` ran ok on every tick from 11-12 through 11-14 (5:10 PM and 8:10 PM PT, i.e. the 01:10Z tick included): 6 of 6 ok, no lock-timeout error. The 11-14 overnight pass recorded the 01:10Z stagger as cleared. No action.
