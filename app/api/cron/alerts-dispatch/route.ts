@@ -125,7 +125,9 @@ async function run(req: NextRequest) {
       } else {
         enqueuedFmv = fmv.enqueued ?? 0;
         fmvVerdict = {};
-        for (const k of ["scanned", "suppressed_unchanged", "rearmed"] as const) {
+        // 2026-11-14: + `eligible` — the count the rotating scan chose from, so a
+        // backlog (eligible > scanned) is visible in the run row.
+        for (const k of ["scanned", "eligible", "suppressed_unchanged", "rearmed"] as const) {
           const v = (fmv as Record<string, unknown>)[k];
           if (typeof v === "number") fmvVerdict[`fmv_${k}`] = v;
         }

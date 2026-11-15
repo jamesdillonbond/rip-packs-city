@@ -206,14 +206,15 @@ describe("/api/cron/alerts-dispatch — deferred dispatch body", () => {
   // the FMV verdict so "suppressed, unchanged" is distinguishable from "nothing due".
   it("the FMV verdict (scanned / suppressed_unchanged / rearmed) reaches the run row; a failed FMV call carries none", async () => {
     dealMock.mockResolvedValue({ enqueued: 0 })
-    fmvMock.mockResolvedValue({ scanned: 3, enqueued: 1, suppressed_unchanged: 2, rearmed: 1 })
+    fmvMock.mockResolvedValue({ scanned: 3, eligible: 450, enqueued: 1, suppressed_unchanged: 2, rearmed: 1 })
     const p = await drive()
-    expect(p.p_extra).toMatchObject({ fmv_scanned: 3, fmv_suppressed_unchanged: 2, fmv_rearmed: 1, enqueued_fmv: 1 })
+    // 2026-11-14: + fmv_eligible — the rotating scan's backlog (450 eligible, 3 scanned).
+    expect(p.p_extra).toMatchObject({ fmv_scanned: 3, fmv_eligible: 450, fmv_suppressed_unchanged: 2, fmv_rearmed: 1, enqueued_fmv: 1 })
 
     rpcMock.mockClear()
     fmvMock.mockResolvedValue({ error: "timeout" })
     const q = await drive()
-    for (const k of ["fmv_scanned", "fmv_suppressed_unchanged", "fmv_rearmed"]) {
+    for (const k of ["fmv_scanned", "fmv_eligible", "fmv_suppressed_unchanged", "fmv_rearmed"]) {
       expect(q.p_extra).not.toHaveProperty(k)
     }
   })
