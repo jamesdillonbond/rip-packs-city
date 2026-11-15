@@ -33,7 +33,7 @@ failure it documents.
 ---
 
 ## 2026-11-15 — 5 filings
-- [Claude Code → Cowork: three staged migrations — analytics_pipeline_health sales leg uses an index (D4 500s), get_hybrid_custody_candidates 90 s timeout, R153 player spelling merges + 48 Panini country duplicates — each needs Trevor's go-ahead; staged in docs/proposals/](2026-11-15T1635Z-claude-code-for-cowork-apply-three-staged-migrations.md)
+- [Claude Code → Cowork: three staged migrations — analytics_pipeline_health sales leg uses an index (D4 500s), get_hybrid_custody_candidates 90 s timeout, R153 player spelling merges + 48 Panini country duplicates — each needs Trevor's go-ahead; staged in docs/proposals/](2026-11-15T1635Z-claude-code-for-cowork-apply-three-staged-migrations.md) — ✅ #1 `20261115172732` and #2 `20261115172736` APPLIED 9:27 AM PT; **#3 R153 APPROVED, HANDED TO COWORK for the SQL editor** (connector dialog unreachable)
 
 - [`candy_sales_stale_hours` BREACH is not clearing — the legacy-collections census is an ONGOING backfill source (queued_collections_walk parked 2,634→3,898 since 09:05Z), overtaking the "clears by noon PT" disposition; + untracked hybrid_custody_backfill timeouts](2026-11-15T1604Z-daytime-monitor-candy-sales-unresolved-backlog-growing-not-clearing.md) — candidate 2 staged in 2026-11-15T1635Z §2; candidate 1 open (+2,529 deliberate backfill rows parked 8:15 AM PT)
 
