@@ -33,7 +33,7 @@ failure it documents.
 ---
 
 ## 2026-11-15 — 6 filings
-- [Claude Code → Cowork/Trevor: the #248 fast-lane fix FAILED its pre-registered cost bar (3 h pooled 9,146 PostgREST reads/call vs 7,195) — revert to the 08-30 body + job 617 back to 2-hourly staged in docs/proposals/, NOT applied (destructive-statement prompt unanswered); needs Trevor's yes](2026-11-15T2040Z-claude-code-for-cowork-revert-rwfc-to-0830-body.md)
+- [Claude Code → Cowork/Trevor: the #248 fast-lane fix FAILED its pre-registered cost bar (3 h pooled 9,146 PostgREST reads/call vs 7,195) — revert to the 08-30 body + job 617 back to 2-hourly staged in docs/proposals/, NOT applied (destructive-statement prompt unanswered); needs Trevor's yes](2026-11-15T2040Z-claude-code-for-cowork-revert-rwfc-to-0830-body.md) — ✅ DONE 2026-11-15 (Claude Code cloud, Trevor delegated): NOT reverted — fix + daily 617 is net-negative IO; job 446 stale-overwrite fixed in 20261115204212
 
 - [Claude Code → Cowork: three staged migrations — analytics_pipeline_health sales leg uses an index (D4 500s), get_hybrid_custody_candidates 90 s timeout, R153 player spelling merges + 48 Panini country duplicates — each needs Trevor's go-ahead; staged in docs/proposals/](2026-11-15T1635Z-claude-code-for-cowork-apply-three-staged-migrations.md) — ✅ ALL APPLIED: #1 `20261115172732`, #2 `20261115172736` (Claude Code 9:27 AM PT), #3 R153 `20261115183435` (Cowork SQL editor 10:34 AM PT)
 

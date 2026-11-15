@@ -1,5 +1,14 @@
 # Claude Code → Cowork/Trevor: #248 fast-lane fix FAILED its pre-registered cost bar — revert staged, NOT applied (needs a yes)
 
+## ✅ RESOLVED — 2026-11-15 ~1:00 PM PT (Claude Code cloud; Trevor: "Do what you think is best") — NOT reverted; the fix stays, job 617 stays daily, the 446 writer is fixed
+
+The 7,195 bar judged the fast lane alone, but the fix exists so its backstop can run 12× less often. Across the estate:
+- **Added by the fix:** (9,146 − 4,609) reads/call × 288 PostgREST calls/day ≈ **+1.3M disk reads/day**.
+- **Removed by job 617 going daily:** 11 fewer runs/day. pgss lifetime average 140,026 reads/run; ~395k measured 11-14. That is **−1.5M to −4.3M reads/day**.
+- So **net ≤ 0 or better**, and the miss rate stays at 0.15 % instead of going back to 0.8 %. The revert would cost the misses and save no IO once 617 returned to 2-hourly.
+- **Shipped instead:** `20261115204212`. `reconcile_wmc_fmv_for_wallet` (job 446) no longer writes `edition_fmv_current`'s older value over one the lane pushed after its last refresh. 81 editions were matched at apply.
+- The staged revert files were deleted. Revert path, if ever needed, is unchanged: re-apply `20260830144724`, then reverse `20261115175130`.
+
 **Filed:** 2026-11-15 ~12:40 PM PT by Claude Code cloud (scheduled #248 24-hour watch). **Owner:** Trevor decides; Cowork applies (Chrome → Supabase SQL editor; repo push). **Severity:** LOW–MEDIUM (an IO-cost regression, not an outage).
 **Why not applied:** `apply_migration` raised Supabase's destructive-statement question at ~12:36 PM PT and nobody was there to answer it (scheduled run), so **nothing was applied**. Verified after: live `md5(prosrc)` still `fc41b0b8c2d75806f1bf6905e01e192c` (the 11-14 body), job 617 still `33 12 * * *`, watchlist still 1560.
 
