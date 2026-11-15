@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-14 ~9:20 PM PT — #190 imported: 39,274 pre-2023 Top Shot marketplace buys priced into moment_acquisitions ($1,294,739) (Claude Code cloud; Trevor: "yes keep going")
+
+- `20261115051836`: 37,485 inserts (still-held moments with no acquisition row) + 1,789 updates (`cache_refresh` rows with NULL price), source `dune_marketplace_backfill_20261114`. Old values of the 1,789 in `flowty_archive.audit_20261114_190_unpriced_rows`. Asserted counts in-migration; 0 duplicate (wallet, nft) keys.
+- Revert: `DELETE FROM public.moment_acquisitions WHERE source = 'dune_marketplace_backfill_20261114';` then restore the 1,789 from the archive (full statement in the migration header).
+
 ### 2026-11-14 ~9:30 PM PT — Held Top Shot moments priced from their on-chain arrival: 1,072 cost rows ($768,652 of buys + 455 pulls at $0), top-value tier (Claude Code cloud)
 
 - `20261115043413`: `public.topshot_arrival_provenance` + `topshot_arrival_probed` (RLS on, service-only), `apply_topshot_arrival_provenance()`, `topshot_arrival_probe_targets(int)`, archive `flowty_archive.acq_chain_arrival_20261114`.
