@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~12:50 PM PT — #248: DB-invariant pin for `reconcile_wmc_fmv_for_wallet` (the 446 fix, `20261115204212`) + drift-guard entry (Claude Code cloud)
+- `supabase/tests/reconcile_wmc_fmv_for_wallet.sql`: lane-newer edition skipped, efc-newer edition written, no-applied edition copied as before, idempotent once efc agrees. Passed on scratch Postgres; the pre-fix body reds it (planted, "got [3], want [2]"); a body edit reds the drift guard (planted). Tests only, no DB change.
+- Revert: revert by message "pin reconcile_wmc_fmv_for_wallet".
+
 ### 2026-11-15 ~12:48 PM PT — /insights/drops og:image carries a per-day ?d=<PT date> so X stops serving last week's cached card (Claude Code cloud, Trevor live)
 - Trevor's composer showed the 11-08 card (Rookie Debut Case, Villains Vol.2 …) even with ?w=1115 on the page link: X caches by the IMAGE URL too. `app/insights/drops/layout.tsx` static `metadata` → `generateMetadata()` with `/api/og/insights/drops?d=YYYYMMDD` (PT); the route ignores the param; page ISR 900 s rolls the key.
 - Revert: find the commit by message "drops: per-day og:image URL" and `git revert` it. No DB change.
