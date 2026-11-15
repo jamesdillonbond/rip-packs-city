@@ -12,6 +12,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-14 ~5:20 PM PT — Top Shot parallel sales now stay on their parallel edition for every writer: a write-time trigger, follow-up v2 and a 6-hourly watch (#251) (Claude Code cloud)
+- **Why:** the 2-hourly follow-up cleared the backlog but couldn't hold it at zero. `promote_unmapped_sales()` (jobid 474) never read the chain map, and the follow-up's windows keyed on resolution date and `sold_at`, not ingestion (5 unmoved + 7 unqueued at 4:20 PM PT).
+- **Migration `20261115011709`:** BEFORE INSERT trigger `sales_topshot_follow_subedition_trg` on `sales`; `topshot_parallel_sales_followup()` v2 (queues on sold OR ingested, re-keys any sale ingested in the window); `check_topshot_parallel_sales_on_base(7)` on pg_cron `rpc-topshot-parallel-on-base-watch` (`27 1,7,13,19 * * *`) + 2 watchlist rows. Its tail backlog run re-keyed 4 sales and queued 50 (ok, `extra.version = 2`).
+- **Migration `20261115012118`:** relabels the alarm text and watchlist notes from #250 (taken by the trade-room entry meanwhile) to #251.
+- **Verified:** trigger on `sales`, v2 body live, cron job and watchlist rows present, `service_role` keeps EXECUTE and anon doesn't. A manual watch run reads `resolved_unmoved 0 · unqueued 0` (pending 13,615, oldest 4.4 h).
+- **Pin:** `supabase/tests/topshot_parallel_sales_followup.sql` (late-ingest, old-resolution and 8-row trigger cases) + PINS rows for both functions; drift guard 395/395.
+- **Revert:** drop the trigger and its function; `cron.unschedule('rpc-topshot-parallel-on-base-watch')`; delete the 2 watchlist rows; drop `check_topshot_parallel_sales_on_base(integer)`; re-apply the v1 follow-up body from `20261114215605`. Then `git revert` the commit titled "fix(topshot): parallel sales stay on their subedition".
+
 ### 2026-11-14 ~5:40 PM PT — Trade room: a stale poll can't roll a just-saved room back; a slow collection tab can't answer under another tab; two signing-state races registered as #250 (Claude Code cloud)
 - Fresh-eyes review of the trade room (read-only reviewer, 8 findings). It confirmed the kill switch fails closed on both signing paths, the signable is tied to the room server-side, every mutation checks the caller's side, and moment ids are collection-scoped.
 - **Fixed in `app/trades/[code]/TradeRoomClient.tsx`:**
