@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-14 ~9:05 PM PT — #190 cost-basis backfill built: Dune query of saved wallets' pre-2023 buys → a REVIEW-only staging table; Dune budget re-pointed at Analyst (Claude Code cloud; Trevor: "I have the analyst plan … do #1")
+
+- `20261115045540`: new `public.topshot_dune_acquisition_stage` (service-role only, RLS on, no policies; nothing reads it, nothing copies it to `moment_acquisitions` until Trevor reviews) + `dune_budget_state` paused true → false, credit cap 2500 → 4000, cycle day 24 → 14 (no Dune lane is scheduled, so unpausing starts nothing).
+- Code: `/api/cron/stage-topshot-acquisitions-dune` (vercel.json hourly at :47). Pages the LATEST execution of private temp Dune query 9129456 through dune-proxy; never executes it; skips when the stage already holds that execution in full; ok derived from the row count read back. `workers/dune-proxy` default allowlist += 9129456 (the deployed worker still needs the `DUNE_ALLOWED_QUERY_IDS` var — Cloudflare sign-in pending Trevor's 2FA code).
+- Privacy: the saved-wallet list lives only in a PRIVATE query; earlier probes 9128647 / 9129354 (which named a wallet) made private.
+- Revert: remove the cron entry + route; `DROP TABLE public.topshot_dune_acquisition_stage; UPDATE public.dune_budget_state SET paused = true, cycle_credit_cap = 2500, cycle_anchor_day = 24 WHERE id = 1;`
+
 ### 2026-11-14 ~9:00 PM PT — Set pages' Total Mint is complete or "—": sets_summary swapped to the corrected view (Claude Code cloud)
 - Trevor 8:56 PM PT: "Apply the rename version." **Applied `20261115045727`** at 8:57 PM PT. It closes the last piece of #255's code fix; the parked view remains.
 - **How:** the corrected view was built as `sets_summary_next` while the old one kept serving. The old view and its 3 indexes were then RENAMED to `sets_summary_prev_20261114`, with no DROP; the connector had held the DROP form twice for a confirmation that never arrived. The new view took the canonical name and index names. ACL is service_role only, as before.
