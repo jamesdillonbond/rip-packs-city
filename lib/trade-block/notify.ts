@@ -28,7 +28,7 @@ const TEXT = "#fafafa"
 const TEXT_MUTED = "rgba(255,255,255,0.65)"
 
 function esc(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;")
 }
 
 /** Subject + body for one notice. Pure; no I/O. */

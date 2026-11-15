@@ -13,6 +13,7 @@
 
 import { CANDY_BASE_SET_ID } from "@/lib/chains/solana/candy-sets"
 import { supabaseAdmin } from "@/lib/supabase"
+import { HOLDERS_MAX_ROWS } from "@/lib/insights/candy-board-limits"
 import { summarizeDegraded, type BoardStatus } from "@/lib/insights/board-status"
 import type { BoardLiveResult } from "@/lib/insights/board-cache"
 import { describeBoardFailures } from "@/lib/insights/board-cache"
@@ -70,6 +71,44 @@ async function fetchView(
   // which is also what keeps the client's "Showing N of M" honest, since M is the
   // fetched length and would silently become the cap.
   return { rows, ok: true, truncated: rows.length >= limit }
+}
+
+// PostgREST clamps one read at 1000 rows, so a ranking that needs more must be
+// PAGED. Holders passed 1,000 collector wallets (1,316 on 2026-11-15) and the old
+// single `.limit(800)` read showed the top 800 under a "capped" notice (R154).
+// Each page orders by the ranking column PLUS a unique tiebreak, or rows that tie
+// on the ranking column can repeat or vanish across page boundaries. A failed page
+// fails the WHOLE section (ok:false, no rows): a partial list cannot be told apart
+// from a complete one (CLAUDE.md, "a PAGED read that breaks on error").
+// `truncated` is true only when the hard ceiling `maxRows` fills.
+const PAGE_ROWS = 1000
+
+async function fetchViewPaged(
+  db: Db,
+  view: string,
+  cols: string,
+  orderCol: string,
+  uniqueCol: string,
+  maxRows: number
+): Promise<{ rows: any[]; ok: boolean; truncated: boolean }> {
+  const rows: any[] = []
+  for (let from = 0; from < maxRows; from += PAGE_ROWS) {
+    const to = Math.min(from + PAGE_ROWS, maxRows) - 1
+    const { data, error } = await db
+      .from(view)
+      .select(cols)
+      .order(orderCol, { ascending: false, nullsFirst: false })
+      .order(uniqueCol, { ascending: true })
+      .range(from, to)
+    if (error) {
+      console.error(`[candy-mlb] ${view} page ${from} error:`, error.message)
+      return { rows: [] as any[], ok: false, truncated: false }
+    }
+    const page = (data ?? []) as any[]
+    rows.push(...page)
+    if (page.length < to - from + 1) return { rows, ok: true, truncated: false }
+  }
+  return { rows, ok: true, truncated: rows.length >= maxRows }
 }
 
 async function fetchOne(
@@ -160,13 +199,13 @@ export async function fetchCandyMlbDefault(
         "circulating_pct",
         true
       ),
-      fetchView(
+      fetchViewPaged(
         db,
         "candy_holder_board",
         "wallet_address,serials,editions,est_fmv_usd,priced_serials",
         "serials",
-        false,
-        800
+        "wallet_address",
+        HOLDERS_MAX_ROWS
       ),
       fetchView(
         db,

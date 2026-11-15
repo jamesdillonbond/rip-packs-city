@@ -248,6 +248,9 @@ export async function readCandySpecialSerialsForConcierge(
       status: "ok",
       collection: CANDY_URL_SLUG,
       total: rows.length,
+      // `total` is the rows RETURNED (at most `n`, out of a 500-row read) — when either
+      // bound fills, more matches may exist (audit 2026-11-15 E-2).
+      total_is_capped: rows.length >= n || data.length >= 500,
       rows,
       note: "Candy MLB (Solana). kind: first_mint = serial #1, last_mint = the final serial (Top Shot calls it 'perfect'), jersey_match = serial equals the player's jersey number, low_serial = another low serial. holder is the wallet holding it in RPC's daily on-chain census; still_with_candy = it sits in a Candy-owned wallet (unsold stock, or an ICON a collector sold back to Candy), not with a collector.",
     })

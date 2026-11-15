@@ -2823,7 +2823,10 @@ async function executeToolInner(
               badges: d.badge_slugs,
               buy_url: d.buy_url,
             })),
+            // `total` is the number RETURNED, bounded by the requested limit — when
+            // it fills that limit there may be more deals (audit 2026-11-15 E-2).
             total: data.length,
+            total_is_capped: data.length >= (toolInput.limit || 8),
           });
         }
       }
@@ -6183,6 +6186,8 @@ async function executeToolInner(
               status: rows.length ? "ok" : "no_results",
               player_query: player,
               total: rows.length,
+              // the read stops at 200 rows and 40 are listed: a filled read is a floor, not a count.
+              total_is_capped: (data ?? []).length >= 200,
               editions: rows.slice(0, 40).map((r) => {
                 const slug = r.collection_id === adUuid ? "nfl-all-day" : "nba-top-shot";
                 return {

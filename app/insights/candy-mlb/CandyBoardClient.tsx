@@ -4,6 +4,7 @@ import { FreshnessStamp } from "@/components/insights/FreshnessStamp";
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice";
 import type { DegradedSummary } from "@/lib/insights/board-status";
 import { textIncludes } from "@/lib/filter-match";
+import { HOLDERS_MAX_ROWS } from "@/lib/insights/candy-board-limits";
 
 type Row = {
   external_id: string | null;
@@ -942,8 +943,11 @@ export default function CandyBoardClient({
               (407 live 2026-08-02), so the badge said e.g. "Holders 407" while
               the table rendered only 250 — 157 holders silently dropped. 800
               keeps it un-truncated with headroom (mirrors the Serials cap and
-              the fetch limit raised alongside it in page.tsx). */}
-          <DataTable rows={holders} cols={holderCols} defaultSort="serials" empty={sectionEmptyCopy("Holders", degraded, "No holders.")} cap={800} />
+              the fetch limit raised alongside it in page.tsx).
+              2026-11-15: holders passed 1,000 (1,316), past PostgREST's
+              per-read clamp. The server read is now PAGED up to
+              HOLDERS_MAX_ROWS and this cap is that same constant. */}
+          <DataTable rows={holders} cols={holderCols} defaultSort="serials" empty={sectionEmptyCopy("Holders", degraded, "No holders.")} cap={HOLDERS_MAX_ROWS} />
         </>
       )}
 

@@ -169,7 +169,8 @@ export async function readAllDayBadgesForConcierge(
             badges,
             edition_url: `${base}/${ALLDAY_URL_SLUG}/edition/${encodeURIComponent(String(r.external_id))}`,
           }))
-        playerEditions = { status: rows.length ? "ok" : "no_results", player_query: opts.player, total: rows.length, editions: rows.slice(0, 40) }
+        // the read stops at 400 editions: a filled read makes `total` a floor (audit 2026-11-15 E-2).
+        playerEditions = { status: rows.length ? "ok" : "no_results", player_query: opts.player, total: rows.length, total_is_capped: ((pe ?? []) as unknown[]).length >= 400, editions: rows.slice(0, 40) }
       }
     }
     return JSON.stringify({

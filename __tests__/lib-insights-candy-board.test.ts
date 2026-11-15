@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest"
 
 // board-status is pure; import the real thing so degraded summarization is exercised.
 import { fetchCandyMlbDefault } from "@/lib/insights/candy-board"
+import { HOLDERS_MAX_ROWS } from "@/lib/insights/candy-board-limits"
 
 // Query-builder fake: from(table) → chainable; terminal .limit() resolves to the
 // per-table result. Covers both candy-board chains: .select().order().limit() and
@@ -16,7 +17,18 @@ function fakeDb(byTable: Record<string, { data: any; error: any }>) {
       select: () => qb,
       eq: (c: string, v: unknown) => { (eqByTable[table] ??= []).push([c, v]); return qb },
       order: () => qb,
-      limit: () => Promise.resolve(res),
+      // Honour the limit AND PostgREST's 1,000-row clamp, so a test can tell a
+      // single capped read from a paged one.
+      limit: (n: number) =>
+        Promise.resolve(
+          res.error ? res : { data: (res.data ?? []).slice(0, Math.min(n, 1000)), error: null }
+        ),
+      // Paged reads (Holders) end in .range(from, to): slice the per-table rows so a
+      // fixture longer than one page exercises the page loop.
+      range: (from: number, to: number) =>
+        Promise.resolve(
+          res.error ? res : { data: (res.data ?? []).slice(from, Math.min(to + 1, from + 1000)), error: null }
+        ),
     }
     return qb
   }
@@ -122,14 +134,15 @@ describe("fetchCandyMlbDefault — row-cap truncation", () => {
     // Unlike panini's ranking (emptied on truncation), a large top-N candy slice is
     // still useful; blanking a tab because it filled its cap would be a far bigger
     // behaviour change than the problem. The rows must survive.
-    // holders is read with limit 800, NOT the 600 default — the call sites differ.
+    // Serials is read with limit 800, NOT the 600 default — the call sites differ.
+    // (Re-pinned 2026-11-15: this used Holders, which is now PAGED — see below.)
     const full = Array.from({ length: 800 }, (_, i) => ({ x: i }))
     const res = await fetchCandyMlbDefault(
-      fakeDb(allOk({ candy_holder_board: { data: full, error: null } }))
+      fakeDb(allOk({ candy_special_serials_board: { data: full, error: null } }))
     )
     const p = res.payload as any
-    expect(p.holders.length).toBe(800)
-    expect(p.degraded.truncated).toContain("Holders")
+    expect(p.serials.length).toBe(800)
+    expect(p.degraded.truncated).toContain("Serials")
     // The cache gate stays on Market alone — a capped Holders tab must not stop the
     // whole board being warmed.
     expect(res.ok).toBe(true)
@@ -148,5 +161,40 @@ describe("fetchCandyMlbDefault — Base Series only (2026-11-08)", () => {
     for (const t of ["candy_scarcity_board", "candy_player_board", "candy_holder_board"]) {
       expect(eqByTable[t] ?? []).toEqual([])
     }
+  })
+})
+
+// Holders passed PostgREST's 1,000-row clamp (1,316 on 2026-11-15). The section is
+// now read in pages, so every holder reaches the payload and no cap notice shows.
+describe("fetchCandyMlbDefault — paged Holders read", () => {
+  it("returns every holder past 1,000 with no cap notice", async () => {
+    const many = Array.from({ length: 1316 }, (_, i) => ({ wallet_address: `w${i}`, serials: 1316 - i }))
+    const res = await fetchCandyMlbDefault(
+      fakeDb(allOk({ candy_holder_board: { data: many, error: null } }))
+    )
+    const p = res.payload as any
+    expect(p.holders).toHaveLength(1316)
+    expect(new Set(p.holders.map((h: any) => h.wallet_address)).size).toBe(1316)
+    expect(p.degraded).toBeNull()
+  })
+
+  it("discloses Holders only when the paged read fills its ceiling", async () => {
+    const full = Array.from({ length: HOLDERS_MAX_ROWS + 5 }, (_, i) => ({ wallet_address: `w${i}` }))
+    const res = await fetchCandyMlbDefault(
+      fakeDb(allOk({ candy_holder_board: { data: full, error: null } }))
+    )
+    const p = res.payload as any
+    expect(p.holders).toHaveLength(HOLDERS_MAX_ROWS)
+    expect(p.degraded.truncated).toContain("Holders")
+    expect(res.ok).toBe(true)
+  })
+
+  it("a failed page fails the section: no partial list served as complete", async () => {
+    const res = await fetchCandyMlbDefault(
+      fakeDb(allOk({ candy_holder_board: { data: null, error: { message: "timeout" } } }))
+    )
+    const p = res.payload as any
+    expect(p.holders).toEqual([])
+    expect(p.degraded.failed).toContain("Holders")
   })
 })
