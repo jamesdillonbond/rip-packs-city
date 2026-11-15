@@ -184,7 +184,12 @@ describe("route wiring", () => {
     expect(route).toMatch(/isWalletOwnedByUser\(/)
     expect(route).toMatch(/claimUsernameFromTopShot\([^)]*\{\s*proven\s*\}\)/)
     const tb = readFileSync("app/api/trade-block/route.ts", "utf8")
-    expect(tb).toMatch(/saveProvenAccount\([\s\S]{0,400}claimHandleForProvenWallet\(/)
+    expect(tb).toMatch(/saveProvenAccount\([\s\S]{0,800}claimHandleForProvenWallet\(/)
+    // 2026-11-15: a proof also VERIFIES the saved wallet, BEFORE the handle claim (so the
+    // claim's release step sees the prover as verified).
+    expect(tb).toMatch(/saveProvenAccount\([\s\S]{0,400}markSavedWalletVerified\([\s\S]{0,400}claimHandleForProvenWallet\(/)
+    const room = readFileSync("app/api/trade-room/[code]/route.ts", "utf8")
+    expect(room).toMatch(/setWallet\([\s\S]{0,200}markSavedWalletVerified\(/)
   })
 })
 

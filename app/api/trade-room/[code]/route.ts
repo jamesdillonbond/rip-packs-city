@@ -76,6 +76,7 @@ import { buildRoomView, cosignerOf, usernamesFor, type PendingRelay } from "@/li
 import { notifyOtherSide, type TradeNotice } from "@/lib/trade-room/notify"
 import { proposalForRoom } from "@/lib/trade-block/store"
 import { readTopShotListed } from "@/lib/trade-room/topshot-listed"
+import { markSavedWalletVerified } from "@/lib/wallet/mark-verified"
 
 export const dynamic = "force-dynamic"
 // a simulation makes several Flow script calls (20 s bound each)
@@ -321,6 +322,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           .map((i) => ({ collection: (swapCollectionByDbSlug(i.collection ?? "nba_top_shot")?.slug ?? "nba-top-shot") as Pick["collection"], id: i.moment_id }))
         if (theirPicks.length) await checkReceivable(source, theirPicks)
         loaded = await setWallet(supabaseAdmin, loaded, me, out.address, source)
+        // 2026-11-15: a signed side VERIFIES the collector's saved wallet for this account.
+        const marked = await markSavedWalletVerified(supabaseAdmin as any, u.id, source)
+        if (!marked.ok) console.warn("[trade-room] mark verified:", marked.error)
         return json({ room: await view(loaded, u.id), signer: out.address, accounts })
       }
       case "items": {
