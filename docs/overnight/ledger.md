@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~4:05 PM PT — Verify-by-listing never picks a Moment worth > $99.90 (the $999 price cap would list it under 10× value) (Claude Code cloud; Trevor: "keep going")
+- `lib/verify-challenge-target.ts` `isSafeChallengeTarget`; the mint route filters candidates and answers `no_safe_target` (wallet still loads; nothing requires verification) when none qualify. Measured: all 54 unverified wallets' picks are ≤ $0.19 today, 53/54 via the strict picker — 0 changes now.
+- Also scheduled (Trevor approved): one-off adoption read Wed 11-18 10:23 AM PT (trigger `trig_018kBsFiS5Fsr68YwVCjZaQn`, read-only, push).
+- Tests: unit + route case; planted defect (no filter) reds it. tsc, ci:guards, lint:ratchet 150 = baseline.
+- Revert: find the commit by message "safe challenge target" and `git revert` it.
+
 ### 2026-11-15 ~3:46 PM PT — Repo now describes the two UFC Aptos migrations applied to prod (`20261115233604` collections crosswalk, `20261115233737` new editions) (Claude Code cloud; Trevor: "run db:migrations:recover and commit them")
 - Full 3-day window diffed by name against `supabase/migrations`: exactly these two were fileless. Recovered by dispatching `migration-autorecover.yml` (run 43776517673, green incl. anon-exec + pins gate and post-push `db:migrations:check`) → bot commit `2b5896f59`. md5 of both files re-checked locally = prod's `md5(array_to_string(statements, E'\n'))` (ba4227ea…, 225a8cf5…).
 - No DB change in this entry (the DDL was already live). Revert: `git revert 2b5896f59` removes the files only — undoing the DDL itself needs its own migration.
