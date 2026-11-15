@@ -15,6 +15,16 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // pg_cron 446 `6,36 * * * *` via reconcile_saved_wallets_wmc_fmv. A second writer of
+    // wmc.fmv_usd/fmv_confidence beside refresh_wmc_fmv_changed: it copies edition_fmv_current,
+    // which lags the newest snapshot by up to ~2 h. Pins the #248 NOT EXISTS on rwfc_applied that
+    // stops it writing an older price over one the fast lane pushed after efc last refreshed.
+    fn: "reconcile_wmc_fmv_for_wallet",
+    test: "supabase/tests/reconcile_wmc_fmv_for_wallet.sql",
+    migration:
+      "supabase/migrations/20261115204212_audit_20261115_saved_wallet_reconcile_does_not_undo_the_fast_lane.sql",
+  },
+  {
     // Added 2026-11-14. Deal alerts, pass 3 pool: new (24 h) listings of the exact serial, seen in 12 h, pass-1 FMV trust gates. Embedded in each consumer's pin.
     fn: "topshot_exact_serial_alert_deals",
     test: "supabase/tests/dispatch_due_deal_alerts.sql",
