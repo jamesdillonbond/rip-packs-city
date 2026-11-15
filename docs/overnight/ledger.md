@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-14 ~6:35 PM PT — Candy: a collection's first Magic Eden walk reads the whole feed, not 30 days; #251 follow-ups recorded (Claude Code cloud)
+- **Why:** a first walk looked back only 30 days. The legacy-Candy first walks ran 11-08/09, inside the 10-12 → 11-06 market lock, so they found almost nothing and set the cursor to "now", stranding ~5.5k pre-lock sales on 320 symbols (Cowork handoff `claude/handoff-2026-11-14-candy-fmv-coverage-gap.md`, which rewound the 356 existing cursors in the DB). This stops a newly catalogued collection from repeating it.
+- **Code:** `lib/candy/collections-market.ts`: with no `sales_high_water_at`, the floor is 0. The walk is still bounded by `MAX_PAGES` (20 × 500, ME's offset cap) and reports `truncated`. The test is inverted ("reads to the end of the feed"); with the 30-day floor planted back, it fails. Preflight 6/6.
+- **#251:** spot-check, live rolled-back trigger proof and the FMV catch-up timeline added to the register (no prod change).
+- **Revert:** `git revert` the commit titled "fix(candy): a collection's first walk reads the whole feed".
+
 ### 2026-11-14 ~6:40 PM PT — Candy Set Tracker was answering 503 to EVERY wallet since ~11-08: its checklist ceiling assumed 125 editions; the catalogue is 21,472 (Claude Code cloud)
 - Found by the live check of today's Candy never-scanned change: an unwalked key returned 503, not 409. The runtime log said `candy checklist read was truncated` / `hit maxPages=5`.
 - The cause: `/api/candy-set-progress` read the Candy checklist with `maxPages: 5`, commented "125 rows today; 40x headroom". On 11-08..11-10 the other Candy catalogues were indexed (The Bat Cowl Collection 4,953, 2022 All-Star Tricons 4,088, 2022 Leadoff ICONs 2,165, …), giving 21,472 editions in 387 sets. Past 5,000 the read truncated, and the route correctly refused a short checklist, so every Candy wallet got "try again" for about 6 days. Nothing reported it: the 503 is logged as an error per request, and the Candy Sets tab gets little traffic.
