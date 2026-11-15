@@ -125,7 +125,9 @@ export async function readPicker(db: SupabaseClient, source: string, q: string |
       .eq("collection_id", collectionId)
       .eq("wallet_address", source)
     if (anyError) throw new Error(`wallet_moments_cache count failed: ${anyError.message}`)
-    indexed = (any ?? 0) > 0
+    // 2026-11-14: an absent count is not a zero — "RPC hasn't indexed that account" is a claim.
+    if (typeof any !== "number") throw new Error("wallet_moments_cache count came back without a number")
+    indexed = any > 0
   }
   return { indexed, rows, truncated: typeof count === "number" && count > rows.length }
 }

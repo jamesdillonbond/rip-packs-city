@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest"
-import { render, cleanup, screen, fireEvent, waitFor, within } from "@testing-library/react"
+import { render, cleanup, screen, fireEvent, waitFor, within, act } from "@testing-library/react"
 
 // /trades/<code>. Drives the room through its states with a routed fetch mock and
 // a mocked wallet module: load · failed read · join · prove a wallet and pick an
@@ -37,7 +37,7 @@ const WA = { signer: "0x3d0b274c80263484", source: "0xbd94cade097e50ac" }
 const WB = { signer: "0x00000000000000bb", source: "0x00000000000000bc" }
 
 type Answer = { status: number; body: unknown }
-type Handler = Answer | ((body: Record<string, unknown>) => Answer)
+type Handler = Answer | ((body: Record<string, unknown>) => Answer | Promise<Answer>)
 let gets: Record<string, Handler>
 let posts: Record<string, Handler>
 let calls: Array<{ url: string; body: Record<string, unknown> | null }>
@@ -50,7 +50,7 @@ function installFetch() {
     calls.push({ url, body })
     const h = method === "GET" ? gets[url] : posts[String(body?.action)]
     if (!h) throw new Error(`unexpected fetch ${method} ${url} ${JSON.stringify(body)}`)
-    const r = typeof h === "function" ? h(body ?? {}) : h
+    const r = await (typeof h === "function" ? h(body ?? {}) : h)
     return { ok: r.status >= 200 && r.status < 300, status: r.status, json: async () => r.body } as Response
   }) as typeof fetch
 }
@@ -423,5 +423,57 @@ describe("TradeRoomClient — the Trade Block guide", () => {
   it("no guide without a proposal", async () => {
     await mount(view())
     expect(screen.queryByText("Agreed on the Trade Block")).toBeNull()
+  })
+})
+
+// 2026-11-14 (trade room review): responses that answer LAST must not win when
+// they answer an OLDER question.
+describe("TradeRoomClient — a late answer to an older request does not land", () => {
+  it("a slow collection tab answering after a switch does not render under the new tab", async () => {
+    await mount(view())
+    gets[`${API}?picker=1&collection=nba-top-shot&q=`] = { status: 200, body: { picker: { indexed: true, rows: [item("1", 10)], truncated: false, lock_state: "live" } } }
+    fireEvent.click(screen.getByText("Change picks"))
+    await waitFor(() => expect(screen.getByText(/Save 1 pick/)).toBeTruthy())
+    let releaseAllDay: () => void = () => {}
+    const gate = new Promise<void>((r) => { releaseAllDay = r })
+    gets[`${API}?picker=1&collection=nfl-all-day&q=`] = async () => {
+      await gate
+      return { status: 200, body: { picker: { indexed: true, rows: [], truncated: false, lock_state: "live", no_collection: true } } }
+    }
+    gets[`${API}?picker=1&collection=ufc&q=`] = { status: 200, body: { picker: { indexed: true, rows: [{ ...item("7", 3, "ufc_strike"), locked_hint: false, held_live: true }], truncated: false, lock_state: "live" } } }
+    fireEvent.click(screen.getByRole("tab", { name: "NFL All Day" }))
+    fireEvent.click(screen.getByRole("tab", { name: "UFC Strike" }))
+    await waitFor(() => expect(screen.getByText(/Player 7/)).toBeTruthy())
+    await act(async () => { releaseAllDay(); await new Promise((r) => setTimeout(r, 20)) })
+    expect(screen.queryByText(/has no NFL All Day collection on chain/)).toBeNull()
+    expect(screen.getByText(/Player 7/)).toBeTruthy()
+  })
+
+  it("a poll that started before a save cannot replace the saved room with the older one", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      await mount(view())
+      gets[`${API}?picker=1&collection=nba-top-shot&q=`] = { status: 200, body: { picker: { indexed: true, rows: [item("1", 10), item("2", 5)], truncated: false, lock_state: "live" } } }
+      fireEvent.click(screen.getByText("Change picks"))
+      await waitFor(() => expect(screen.getByText(/Save 1 pick/)).toBeTruthy())
+      // the 5 s poll starts and hangs, answering with the OLD room (v3)
+      let releasePoll: () => void = () => {}
+      const gate = new Promise<void>((r) => { releasePoll = r })
+      gets[API] = async () => { await gate; return { status: 200, body: { room: view() } } }
+      const before = calls.filter((c) => c.url === API).length
+      await act(async () => { await vi.advanceTimersByTimeAsync(5_100) })
+      expect(calls.filter((c) => c.url === API).length).toBe(before + 1)
+      // meanwhile the user saves; the route answers with the fresh room (v4)
+      posts.items = { status: 200, body: { room: view({ version: 4, a: { ...view().a, items: [item("1", 10), item("2", 5)] } }) } }
+      fireEvent.click(screen.getAllByRole("checkbox")[1])
+      fireEvent.click(screen.getByText(/Save 2 picks/))
+      await waitFor(() => expect(screen.getAllByText(/· v4 ·/).length).toBeGreaterThan(0))
+      // the stale poll lands last — it must not roll the room back to v3
+      await act(async () => { releasePoll(); await vi.advanceTimersByTimeAsync(50) })
+      expect(screen.queryAllByText(/· v3 ·/)).toHaveLength(0)
+      expect(screen.getAllByText(/· v4 ·/).length).toBeGreaterThan(0)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

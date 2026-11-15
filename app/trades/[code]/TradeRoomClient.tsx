@@ -58,7 +58,17 @@ export default function TradeRoomClient({ code }: { code: string }) {
   const [msg, setMsg] = useState<string | null>(null)
   const api = `/api/trade-room/${encodeURIComponent(code)}`
 
-  const read = useCallback(() => fetchRoom(api).then(setLoad), [api])
+  // 2026-11-14 (trade room review): every room read and action takes a ticket; a
+  // response applies only if no newer one was issued after it. A 5 s poll that
+  // started before the user's save used to land after it with the OLDER room,
+  // and the resync effect then replaced the user's picks and the shown version.
+  const roomSeq = useRef(0)
+  const read = useCallback(() => {
+    const ticket = ++roomSeq.current
+    return fetchRoom(api).then((l) => {
+      if (ticket === roomSeq.current) setLoad(l)
+    })
+  }, [api])
 
   // Which collections each side's account can RECEIVE, read from the chain (2026-11-03). Re-read
   // whenever a side's account changes; a failed read says so, never "can't receive".
@@ -103,6 +113,8 @@ export default function TradeRoomClient({ code }: { code: string }) {
       setBusy(name)
       setErr(null)
       setMsg(null)
+      // Invalidates any poll already in flight (see roomSeq).
+      ++roomSeq.current
       const r = await call(api, { method: "POST", body: JSON.stringify({ action: name, ...body }) })
       setBusy(null)
       if (!r.ok) setErr(errorOf(r))
@@ -270,6 +282,7 @@ function MySide({
   const [proof, setProof] = useState<Proof | null>(null)
   const [connecting, setConnecting] = useState(false)
   const [picker, setPicker] = useState<{ kind: "idle" } | { kind: "loading" } | { kind: "error"; error: string } | { kind: "ok"; result: PickerResult }>({ kind: "idle" })
+  const pickerSeq = useRef(0)
   const [q, setQ] = useState("")
   const [picked, setPicked] = useState<Set<string>>(new Set(side.items.map(keyOf)))
   const [showPicker, setShowPicker] = useState(false)
@@ -318,8 +331,13 @@ function MySide({
 
   const openPicker = useCallback(
     async (query: string, collection: SwapSlug) => {
+      // 2026-11-14: only the LATEST picker request may render. A slow All Day read
+      // (it goes to the chain) answering after a switch to Golazos put All Day's
+      // rows — or its "no collection on chain" — under the Golazos tab.
+      const ticket = ++pickerSeq.current
       setPicker({ kind: "loading" })
       const r = await call(`${api}?picker=1&collection=${encodeURIComponent(collection)}&q=${encodeURIComponent(query)}`)
+      if (ticket !== pickerSeq.current) return
       if (!r.ok || !r.body?.picker) setPicker({ kind: "error", error: errorOf(r) })
       else setPicker({ kind: "ok", result: r.body.picker as PickerResult })
     },
