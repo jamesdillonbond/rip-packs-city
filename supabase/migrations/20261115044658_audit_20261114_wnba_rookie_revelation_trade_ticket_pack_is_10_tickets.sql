@@ -4,7 +4,7 @@
 -- ticket count (metadata.retail_price_usd NULL), so get_wallet_pack_history priced it NULL. The drop post
 -- (blog.nbatopshot.com/posts/wnba-rookie-revelation-and-holo-icon-return) omits it; the source is the dist's
 -- own registration in Dapper's Pack Distribution Service on mainnet:
---   PDS.getDistInfo(8785) (0xb6f2481eba4df97b, Flow REST 2026-11-14 ~9:30 PM PT) -> metadata.price = "10",
+--   PDS.getDistInfo(8785) (0xb6f2481eba4df97b, Flow REST 2026-11-14 ~8:40 PM PT) -> metadata.price = "10",
 --   distributionUUID 8cccb291-7bc2-48f3-b8db-c2351bae540f.
 -- CONTROL: the same read returns price "10" for dists 8643, 8601, 8564, 8526, 8514 — every recent Trade
 -- Ticket dist whose 10-ticket count is already stored — so PDS price is the ticket count for this pack type.
