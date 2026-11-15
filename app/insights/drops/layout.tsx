@@ -10,28 +10,45 @@ const TITLE = "Pack Drops This Week — Top Shot, Pinnacle, Panini & More"
 const DESCRIPTION =
   "Every pack drop open now or starting this week across NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos, Panini and Candy MLB — price, and when pre-orders close or the drop opens, in Pacific Time. Free."
 
-export const metadata: Metadata = {
-  title: TITLE,
-  description: DESCRIPTION,
-  keywords: ["NBA Top Shot drop", "Top Shot pre-order", "Rookie Debut drop", "Disney Pinnacle release", "Panini NFT packs", "pack drops this week"].join(", "),
-  alternates: { canonical: `${SITE_URL}/insights/drops` },
-  openGraph: {
+// The OG IMAGE URL carries today's PT date (2026-11-15). X caches a card by its IMAGE URL as well as
+// the page URL: the 11-15 2/2 reply with ?w=1115 on the page link still unfurled LAST week's card
+// (Rookie Debut Case, Villains Vol.2 …), because og:image was the same bare URL X had cached on 11-08.
+// A per-day ?d= makes each day's card a new image to X; the route ignores the param. Computed at
+// render, and the page revalidates every 900 s, so the key rolls over within 15 min of PT midnight.
+function ptDayKey(now = new Date()): string {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", year: "numeric", month: "2-digit", day: "2-digit" })
+      .formatToParts(now)
+      .map((x) => [x.type, x.value]),
+  )
+  return `${p.year}${p.month}${p.day}`
+}
+
+export function generateMetadata(): Metadata {
+  const ogImage = `${SITE_URL}/api/og/insights/drops?d=${ptDayKey()}`
+  return {
     title: TITLE,
-    description: "Every pack drop open now or starting this week, with price and closing times in PT.",
-    url: `${SITE_URL}/insights/drops`,
-    siteName: "Rip Packs City",
-    images: [{ url: `${SITE_URL}/api/og/insights/drops`, width: 1200, height: 630, alt: "Pack drops this week — Rip Packs City" }],
-    locale: "en_US",
-    type: "website",
-  },
-  twitter: {
-    ...TWITTER_INHERITED,
-    card: "summary_large_image",
-    title: TITLE,
-    description: "Every pack drop open now or starting this week, with price and closing times in PT.",
-    images: [`${SITE_URL}/api/og/insights/drops`],
-    creator: "@RipPacksCity",
-  },
+    description: DESCRIPTION,
+    keywords: ["NBA Top Shot drop", "Top Shot pre-order", "Rookie Debut drop", "Disney Pinnacle release", "Panini NFT packs", "pack drops this week"].join(", "),
+    alternates: { canonical: `${SITE_URL}/insights/drops` },
+    openGraph: {
+      title: TITLE,
+      description: "Every pack drop open now or starting this week, with price and closing times in PT.",
+      url: `${SITE_URL}/insights/drops`,
+      siteName: "Rip Packs City",
+      images: [{ url: ogImage, width: 1200, height: 630, alt: "Pack drops this week — Rip Packs City" }],
+      locale: "en_US",
+      type: "website",
+    },
+    twitter: {
+      ...TWITTER_INHERITED,
+      card: "summary_large_image",
+      title: TITLE,
+      description: "Every pack drop open now or starting this week, with price and closing times in PT.",
+      images: [ogImage],
+      creator: "@RipPacksCity",
+    },
+  }
 }
 
 export default function DropsLayout({ children }: { children: React.ReactNode }) {
