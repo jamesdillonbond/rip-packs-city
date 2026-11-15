@@ -117,7 +117,30 @@ All 38 rookies: $98,114 across 2,971 sales.
 
 One long post (the account posts long-form, so no thread) with the drops image attached and **no link**, then the link as a reply (Trevor, 11-08: "split the link into a 2/2 off this post so the link doesn't bring down the algo on the first main post of it, and then the 2/2 uses the link preview image"). First one posted: https://x.com/rippackscity/status/2119601226279272741 (Sun 11-08 evening PT). Second, the first in the new-drops-only format (WNBA Finals + NWSL, balanced 3+2 image, last line on the first NWSL / Thorns collectibles on RPC): https://x.com/rippackscity/status/2122070905216217277 (Sun 11-15).
 
-Post 1:
+**Posted reports and their exact text/images are archived** in `docs/social/posts/<date>/` (11-15 onward).
+
+**Trevor's rules from the 11-15 report** (all in force):
+- **New drops only** — nothing already on an earlier report or its follow-up (see below).
+- **Full details in parentheses** — price plus the one fact that sizes it: supply ("30 made") or contents ("7 Moments", "4 cards", "10 trade tickets").
+- **A closing line may highlight what is new on RPC** for the week (11-15: "New on RPC: Friday's Prizm Black NWSL packs are the first NWSL collectibles we support, Portland Thorns included.") — Trevor chose that over an early-access line for the biggest drop. Only state support RPC actually has (the Thorns hub `/teams/nwsl/thorns` was live). No official team account is tagged unless its handle is confirmed.
+- **No analysis riders** — price comparisons, supply stats, "insights" do not go into the report or as an unrequested extra ("Don't put that extra stuff in").
+- **Read official sources beyond the feed** before drafting: the Top Shot blog's drop guide named the 2026 WNBA Finals drop four days before the pack book did. The script now warns (missed-drop probe, below).
+
+Post 1 (11-15, as posted — https://x.com/rippackscity/status/2122070905216217277):
+
+```
+The RPC Weekly Pack Drop Report, 11/15-11/22 📦
+
+🏀 @NBATopShot: 2026 WNBA Finals Case ($1,250, 30 made) — pre-orders close Wed 12 PM PT
+🏀 @NBATopShot: 2026 WNBA Finals Box ($195, 200 made) — pre-orders close Wed 1 PM PT
+🏀 @NBATopShot: 2026 WNBA Finals Collector Pack ($25, 7 Moments) — pre-orders close Wed 2 PM PT
+⚽ @PaniniAmerica Blockchain: Prizm Black NWSL Soccer Packs ($10, 4 cards) — drops Fri 8 AM PT
+🏀 @NBATopShot: 2026 WNBA Finals Trade Ticket Pack (10 trade tickets) — on sale Wed 12:30 PM PT
+
+New on RPC: Friday's Prizm Black NWSL packs are the first NWSL collectibles we support, Portland Thorns included.
+```
+
+The first report (11-08) for comparison:
 
 ```
 The RPC Weekly Pack Drop Report, 11/8-11/15 📦
@@ -135,7 +158,7 @@ Learn more about this week's drops here 👇
 https://www.rippackscity.com/insights/drops
 ```
 
-**X caches a link's preview card for about 7 days** from the first time the URL is shared, and there is no longer a way to force a refresh. The drops page's card is the live week, so a URL X first saw last week can show last week's card. Check the preview in the composer; if it is stale, post the link with a query string (`?v=2`, `?w=1115`…), which X treats as a new URL.
+**X caches a link's preview card for about 7 days** from the first time the URL is shared, and there is no longer a way to force a refresh. X caches **twice**: by the page URL *and* by the og:image URL. On 11-15 `?w=1115` on the page link still showed the 11-08 card because og:image was the same bare URL. Fixed on both sides: the drops page's og:image now carries `?d=<PT date>` (`app/insights/drops/layout.tsx`), and the script's 2/2 link carries `?w=<MMDD>` (PT) automatically. If the composer still shows an old card, the page URL with that `?w=` was already fetched with the old card — add a letter (`?w=1115b`) and re-paste the link.
 
 **Trade Ticket Packs sell out within minutes** (Trevor, 11-15), so post them by their opening time only ("drops Wed 12:30 PM PT"), never as "on sale" afterwards; a hand-entered one closes an hour after it opens.
 
@@ -153,16 +176,30 @@ Every post that has a template ships with an RPC-branded image. On X, a post wit
 
 - `node scripts/social/x-image.mjs --slot <slot> --out <dir>` renders `rpc-<slot>-<n>.png` (2400×1350, 16:9) with Playwright from the same public API the text uses. Every item in the post is on an image. Up to 9 fit one image (a 3×3 grid with tighter type; a card pushed below the footer is a warning, 11-08); a longer list is split across images (X allows 4 per post), never cut. A card whose text overflows is reported in `warnings`.
 - **Brand art only on the drops image.** No pack art, player photos or partner artwork is composited in: those belong to their owners, and pack art often carries real players' photos. Fonts and colours are RPC's (`public/fonts`, collection accents from `lib/collections.ts`). **The Monday top-sales image is the exception (Trevor, 11-09):** each card shows the sold asset's own image (its `thumbnail_url`; a Pinnacle pin through `/api/public/pinnacle-image/<render_id>?v=thumb`), embedded as a data URI. An image that cannot be fetched leaves the card's tile with the name only, and a warning.
-- Layout: up to 9 drops per image (3×3 at 4+); **one to three drops render as centred, equal-height cards** with the collection's colour glow, a large price, the status as a pill and a detail line (the drop's `detail`, e.g. capsule contents and odds) — Trevor, 11-08: "center and make the graphic a little more visually appealing". Use `--exclude <dist_ids>` to make a follow-up image for just the new drops.
+- Layout: **balanced, centred rows of equal cards for every count** (Trevor, 11-15: "more visually appealing and balanced and symmetrical"): 4 = 2+2, 5 = 3+2, 6 = 3+3, 7 = 4+3, 8 = 4+4, 9 = 3+3+3; 1–3 in one row. Every card has the collection's colour glow, name, a one-line detail when there are ≤ 2 rows, the price, then the status pill. A drop with no dollar price may pass its unit as the price ("10 tickets"). Earlier (11-08) only 1–3 drops got the centred treatment ("center and make the graphic a little more visually appealing"). The image lists the same NEW drops as the post (`x-image.mjs` applies the same 36 h rule).
 - Templates: **Sun — drops this week** (live 11-08); **Mon — top sales this week** (live 11-09: 10 cards, 5×2, each with rank, collection, asset image, name, set · serial, price and buyer); **Big sale** (live 11-14, `--slot big --sale <breaking[].sale.sale_id> [--headline "line one|line two"] [--video]`). Other slots post with their link card until they get one.
 - **Big sale (Trevor, 11-14).** One sale, large: the asset on the left, and on the right the headline, player, set · team, the edition's badges and special serials, the price, when it sold (PT) and the buyer. `--video` also renders an MP4 with the moment's own Top Shot video in the art box (needs ffmpeg; muted, because the moment's audio is NBA game sound) — post the video when there is one. **Badges are icons only, never named** ("We don't need to name out each badge there"); **Three-Star Rookie replaces its three rookie badges** ("the point of the triple badge is that we don't need to then show each of those three badges individually"); **Autographed is left off** ("users can see that"). Badges come from `/api/entity/edition-badges` and only Top Shot's official icons are drawn; special serials (#1, perfect #N/N, jersey match via `/api/entity/edition?part=bio`) use Top Shot's own glyphs on Top Shot and RPC's elsewhere. The text column sits a clear gap right of the art ("a little bit more of a spacing gap between the video and the text").
 - The daily task sends the image as a file with the draft. Trevor saves it and attaches it to post 1 (the one-tap post link cannot carry an image).
 
-## One-off: supply breakdown quote post (11-15)
+## Quote post: supply breakdown ("Where every Moment sits") — template, 11-15
 
-A reply to the 11-14 rookie top-10 post asked where the supply sits; posted as a quote post: https://x.com/rippackscity/status/2122082396774547650 (graphic: one stacked bar per player — unlocked · locked · in packs · minted, not in packs · burned).
+When a reply asks where a player's or a list's supply sits, quote it with this graphic and text. First posted: https://x.com/rippackscity/status/2122082396774547650 (quoting a reply to the 11-14 rookie top-10 post). Archive: `docs/social/posts/2026-11-15/`.
 
-Method, so a repeat is consistent: per edition from `badge_editions` (Top Shot's counts, refreshed hourly) — unlocked = circulation − locked − burned − hidden_in_packs; "minted, not in packs" (issuer reserve) = `hidden_at_fetch` − Σ `remaining_count` across the Atlas dists **measured at the same fetch** (`topshot_atlas_dist_editions`, the row with the largest remaining sets the reference), and in packs = current hidden − that reserve. ⚠ Do not subtract a stale pack count from a fresh hidden count: on 11-15 that understated the reserve by ~30 (Collector Packs kept being opened after the pack read). `get_topshot_issuer_held_split_edition()` takes its `hidden` live, so it has the same skew between dist passes.
+1. Run `docs/social/supply-breakdown.sql` (edit the player list; read-only) and turn its rows into `[[player, team, unlocked, locked, in_packs, minted_not_in_packs, burned], …]` in the order of the post being quoted.
+2. `node scripts/social/x-supply-breakdown.mjs --data rows.json --asof "<Day M/D, h:mm PM PT of counts_as_of>" --out supply.png` — one stacked bar per player, legend, totals row.
+3. Text (numbers only — Trevor cut a "Most locked: …" line):
+
+```
+Where all 6,543 Moments of the 2026 rookie top 10 sit today 👇
+
+In packs: 3,041
+Unlocked: 2,818
+Locked: 330
+Minted, not in packs: 352
+Burned: 2
+```
+
+Definitions (per edition, `badge_editions` = Top Shot's counts, hourly): **locked**, **burned** as given; **in packs + minted, not in packs** = `hidden_in_packs` (everything Top Shot still holds); **unlocked** = circulation − locked − burned − hidden (includes Moments listed for sale). The split of hidden is the method in the SQL file: ⚠ never subtract a stale pack count from a fresh hidden count (11-15: understated "minted, not in packs" by ~30). Check every row sums to the player's circulation before posting. The public Top Shot GraphQL (`public-api.nbatopshot.com`) returned Cloudflare 1033 on 11-15, so RPC's tables are the source.
 
 ## When the data isn't there
 

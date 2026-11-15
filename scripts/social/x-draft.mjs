@@ -573,7 +573,9 @@ async function drops() {
     // post back in X's ranking); the link rides in reply[], posted as a reply so its preview card
     // shows there. thread_fallback is for when long posts are unavailable.
     draft: [head, "", ...lines].join("\n"),
-    reply: [{ n: 2, of: 2, text: `Learn more about this week's drops here 👇\n${link}` }],
+    // ?w=<MMDD> (PT) makes each week's link a URL X has not cached: X keeps a link's card ~7 days by
+    // PAGE URL, so the bare link unfurled last week's card on 11-15 even after og:image went per-day.
+    reply: [{ n: 2, of: 2, text: `Learn more about this week's drops here 👇\n${link}?w=${mdPT(now).split("/").map((x) => x.padStart(2, "0")).join("")}` }],
     thread_fallback: thread(lines, `${head}\n`, "").map((text, i, all) => ({ n: i + 1, of: all.length, text, len: xLength(text) })),
     // A pack named for one player ends with that player's team hashtag (docs/social/x-calendar.md).
     // The calendar does not carry the team, so the drafter flags the lines to finish by hand.
