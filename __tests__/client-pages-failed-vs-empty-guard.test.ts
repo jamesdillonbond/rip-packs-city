@@ -458,7 +458,9 @@ describe("client pages — a failed read is not an empty result", () => {
       // elsewhere in the file.
       const guardThenParse =
         'if (!res.ok) {\n' +
-        '        setCheckHint("Couldn\'t check just now — this says nothing about your listing. Try again shortly.");\n' +
+        // 2026-11-15: the background watch passes `silent`, which suppresses only the
+        // hint; the guard still precedes the parse on both paths.
+        '        if (!silent) setCheckHint("Couldn\'t check just now — this says nothing about your listing. Try again shortly.");\n' +
         "        return;\n" +
         "      }\n" +
         "      const d = await res.json();"

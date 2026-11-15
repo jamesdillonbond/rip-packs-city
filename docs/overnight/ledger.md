@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~2:58 PM PT — test re-pin: client-pages-failed-vs-empty-guard pins the verify check's guard-then-parse with the new `if (!silent)` spelling (Claude Code cloud)
+- CI shard 4 red on 0148101: a text pin of the verify modal's `res.ok` guard. Re-pinned (the property — guard before parse — is unchanged). Lesson: grep the guards that READ an edited file before pushing.
+- Revert: find the commit by message "re-pin verify guard-then-parse" and `git revert` it.
+
 ### 2026-11-15 ~2:42 PM PT — Pinnacle art for 55 renders Dapper's search does not list: the image route falls back to Pinnacle's own edition page (Claude Code cloud, autonomous)
 - Found from Vercel 404s: `/api/public/pinnacle-image/*` 695 in 24 h (our E2E smoke + crawlers) — every `flow-chain` (31) and `pinnacle-edition-page` (24) catalog render 404ed, so 843 held pins in ~30 wallets showed placeholder art since 11-08. Measured: `searchPinnacleEditions` and `searchPinnacleNft` return 0 for them (controls on `GEN-DPIN-SIMB-S0` return full `medias`); `disneypinnacle.com/edition/<edition_id>` answers 200 from datacenter egress and embeds `assets.disneypinnacle.com/render/<rid>/{front,main,front_cropped}.png?exp=…&sig=…` (~24 h).
 - `lib/pinnacle/edition-page-media.ts` takes a URL only when its path names THIS render (the page also embeds other pins); the route reads `edition_id` from `pinnacle_catalog` (digits only) and is unchanged when the search resolves. Cache = min(30 min, signature − 5 min). 14 tests (planted defect — unanchored path — reds 3).
