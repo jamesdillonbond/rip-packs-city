@@ -3113,3 +3113,19 @@ Two misreads from the Dame Time night, both from asking the wrong table:
 
 ## ⚠ A CADENCE CHANGE IS ALSO AN ALARM CHANGE — rescale the watchlist row in the SAME migration (2026-11-14, #253)
 `20261110222110` moved `refresh_panini_sale_feed_status` from every 30 min to hourly. Its `pipeline_cadence_watchlist` row stayed at 95/185, which had been sized as "about 3 periods" for the 30-minute job. Four days later a single 120 s kill (6:14 PM PT, 11-14) fired Sentinel's Pipeline Silence at 110 min. The job was fine and the view's 2 h 15 m window absorbed the miss. Only the alarm was stale. `20261115034156` rescaled it to 185/245. **Rule: any `cron.alter_job(… schedule := …)` that lengthens a period updates that pipeline's watchlist row in the same migration, and asserts it in the trailing DO block.**
+
+## ⚠ A COST BAR ON ONE LANE CANNOT JUDGE A FIX WHOSE POINT IS RETIRING ANOTHER LANE'S WORK (2026-11-15, #248)
+The #248 fast-lane fix (`20261114171317`) carried a pre-registered bar: PostgREST reads/call ≤ 7,195, else revert. Reads were measured as pg_stat_statements deltas.
+- One-hour windows read 5,907 / 12,324 / 6,979 / 9,062 reads/call. A few heavy ticks carry the cost, so a single 1 h window can land on either side of the bar.
+- Pooled over 3 h it read 9,146, which is over the bar. The read share of buffers stayed ~12 %, so the excess was work (2.1× blocks touched), not a colder cache.
+- Judged alone, that is a revert. But the fix existed so the backstop (job 617, ~140k–395k reads per run) could drop from 12 runs a day to 1. Estate-wide that is about +1.3M reads/day against −1.5M to −4.3M/day, so the pair is net-negative IO.
+- Reverting would have restored the 0.8 % miss rate and saved nothing once the backstop went back to 2-hourly.
+- **Size a cost bar against every lane the change moves, and pool ≥ 2–3 h before reading a mean dominated by heavy ticks.**
+
+## ⛔ A SECOND WRITER FED FROM A LAGGING CACHE SILENTLY REVERTS A FRESHER LANE — and an "already applied" ledger then hides it (2026-11-15, #248)
+`reconcile_wmc_fmv_for_wallet` (job 446) copied `edition_fmv_current` into saved wallets' wmc rows. That table refreshes at :59 and lags the newest snapshot by up to ~2 h. The fast lane writes the newest snapshot ~5 min after it lands.
+- So 446 wrote the OLD price back over the lane's new one. `rwfc_applied` then told the lane there was nothing left to do.
+- The tell was `xmin`: the stale rows were written by a transaction *after* the lane's, and every wallet was one 446 had reconciled at that minute.
+- Fixed in `20261115204212`: skip an edition the lane applied after the cache last refreshed, when the two disagree. Pinned in `supabase/tests/reconcile_wmc_fmv_for_wallet.sql`.
+- **When a gated lane records "done", grep every OTHER writer of the same columns and check what each reads from. One that reads a slower source undoes the lane, and the gate makes it permanent.**
+
