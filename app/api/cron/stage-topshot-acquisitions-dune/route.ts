@@ -60,6 +60,12 @@ const PAGE_LIMIT = 2000
 const WRITE_CHUNK = 1000
 const HARD_BUDGET_MS = 720_000
 const DUNE_LOG_RESERVE_MS = 30_000
+// Dune's per-minute request cap answered 429 after ~77 pages in 46 s (2026-11-14). Pace pages and
+// back off on 429 (Retry-After when sent) so a tick walks steadily instead of stopping at the cap.
+const INTER_PAGE_MS = 700
+const MAX_429_RETRIES = 5
+const BACKOFF_BASE_MS = 5_000
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 function authed(req: NextRequest): boolean {
   return bearerMatches(req.headers.get("authorization"), "CRON_SECRET", "INGEST_SECRET_TOKEN")
@@ -112,6 +118,17 @@ async function run(req: NextRequest) {
     let startOffset = 0
 
     const fetchPage = async (offset: number, limit: number): Promise<ResultsPage> => {
+      for (let attempt = 0; ; attempt++) {
+        const page = await fetchOnce(offset, limit)
+        if (page !== "rate_limited") return page
+        if (attempt >= MAX_429_RETRIES) throw new Error(`dune proxy HTTP 429 at offset ${offset} after ${attempt} retries`)
+        const waitMs = BACKOFF_BASE_MS * 2 ** attempt
+        if (Date.now() - startedMs + waitMs > HARD_BUDGET_MS) throw new Error(`dune proxy HTTP 429 at offset ${offset}; no time left to back off`)
+        await sleep(waitMs)
+      }
+    }
+
+    const fetchOnce = async (offset: number, limit: number): Promise<ResultsPage | "rate_limited"> => {
       const res = await fetch(
         `${proxyUrl}/results?query_id=${lane.queryId}&limit=${limit}&offset=${offset}`,
         {
@@ -135,6 +152,7 @@ async function run(req: NextRequest) {
         httpStatus: res.status,
         note: `offset ${offset}`,
       })
+      if (res.status === 429) return "rate_limited"
       if (!res.ok || !body) {
         throw new Error(`dune proxy HTTP ${res.status} at offset ${offset}: ${JSON.stringify(body).slice(0, 300)}`)
       }
@@ -223,6 +241,7 @@ async function run(req: NextRequest) {
             }
             if (page.next_offset == null || rows.length === 0) break
             offset = Number(page.next_offset)
+            await sleep(INTER_PAGE_MS)
           }
           walkOffset = null
           completed = true
