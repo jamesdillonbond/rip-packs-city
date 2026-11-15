@@ -32,6 +32,7 @@ const state: {
   wuErr: any
   savedUpdates: any[]
   proven: boolean
+  savedRows: any[]
 } = {
   user: { id: "u-1" },
   resolved: { walletAddress: "0x1111111111111111", username: "Rigged", dapperId: null },
@@ -43,6 +44,7 @@ const state: {
   wuErr: null,
   savedUpdates: [],
   proven: true,
+  savedRows: [],
 }
 
 vi.mock("@/lib/supabase", () => {
@@ -70,7 +72,9 @@ vi.mock("@/lib/supabase", () => {
           ? resolve({ data: state.wuErr ? null : state.wuRows, error: state.wuErr })
           : table === "trade_block_wallets"
             ? resolve({ data: state.proven ? [{ source: "proven" }] : [], error: null })
-            : resolve({ data: [], error: null }),
+            : table === "saved_wallets"
+              ? resolve({ data: state.savedRows, error: null })
+              : resolve({ data: [], error: null }),
     }
     return b
   }
@@ -107,6 +111,7 @@ beforeEach(() => {
   state.wuRows = []
   state.wuErr = null
   state.savedUpdates = []
+  state.savedRows = []
   // Deep audit A-1 (2026-11-15): the handle is claimed only for a PROVEN wallet. Every
   // case above the "proof required" block runs proven, so the claim rules stay exercised.
   state.proven = true
@@ -244,6 +249,26 @@ describe("proof required (deep audit 2026-11-15 A-1; Trevor: \"Proof required\")
     const body = await (await POST(req({ address: "0x2222222222222222" }))).json()
     expect(state.savedUpdates).toContainEqual({ username: "ReddieMiller31" })
     expect(body.profileHandleClaimed).toBe(false)
+    expect(state.upserts).toHaveLength(0)
+  })
+
+  it("2026-11-15: the FIRST saver of an unproven wallet gets the handle (access until verification is easy)", async () => {
+    state.proven = false
+    state.savedRows = [{ id: 1, user_id: "u-1", verified_at: null }]
+    const body = await (await POST(req({ username: "Rigged" }))).json()
+    expect(body.profileHandleClaimed).toBe(true)
+    expect(state.upserts).toHaveLength(1)
+  })
+
+  it("2026-11-15: a LATER saver of a wallet someone else saved first still gets no handle", async () => {
+    state.proven = false
+    state.savedRows = [
+      { id: 1, user_id: "someone-else", verified_at: null },
+      { id: 2, user_id: "u-1", verified_at: null },
+    ]
+    const body = await (await POST(req({ username: "Rigged" }))).json()
+    expect(body.profileHandleClaimed).toBe(false)
+    expect(body.profileHandleReason).toBe("unproven")
     expect(state.upserts).toHaveLength(0)
   })
 

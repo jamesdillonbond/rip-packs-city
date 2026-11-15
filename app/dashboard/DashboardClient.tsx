@@ -802,11 +802,11 @@ function ProfilePageInner() {
       if (data.profileHandleClaimed && typeof data.profileHandle === "string") {
         pushToast(`Your profile is live at /profile/${data.profileHandle}`, "success");
       }
-      // Deep audit A-1: the Top Shot name becomes the public handle only once the
-      // wallet is proven. Say so once, with both ways forward, instead of silence.
+      // Deep audit A-1 (relaxed 11-15): the Top Shot name is withheld only when
+      // another account already holds this wallet. Say so once, with both ways forward.
       if (data.profileHandleReason === "unproven" && !data.profileHandle) {
         pushToast(
-          "Pick your public handle on Edit profile, or prove this wallet on the Trade Block to use your Top Shot name",
+          "Another account already holds this wallet. Pick your public handle on Edit profile, or prove the wallet on the Trade Block to use your Top Shot name",
           "info"
         );
       }

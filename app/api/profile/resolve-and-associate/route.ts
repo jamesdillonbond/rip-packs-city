@@ -37,7 +37,7 @@ import { publishedCollections } from "@/lib/collections";
 import { evaluateSavedWalletCap, SAVED_WALLET_LIMIT, savedWalletLimitMessage, dapperWalletLimitMessage, otherDapperWalletSaved } from "@/lib/profile/saved-wallet-quota";
 import { countLinkedIdentities } from "@/lib/profile/collector-identities";
 import { warmWalletDeep } from "@/lib/profile/warm-wallet";
-import { claimUsernameFromTopShot, isWalletProvenForUser, type ClaimOutcome } from "@/lib/profile/claim-username";
+import { claimUsernameFromTopShot, isWalletOwnedByUser, type ClaimOutcome } from "@/lib/profile/claim-username";
 import { isCadenceAddress, normalizeAddress } from "@/lib/address";
 
 // Flow collections that should auto-attach to the resolved wallet on signup.
@@ -318,13 +318,15 @@ export async function POST(req: NextRequest) {
   // and the claim path share one shape — otherwise the literal narrows and the
   // `handle` read below only compiles for one branch.
   //
-  // ⛔ PROOF REQUIRED (deep audit 2026-11-15 A-1; Trevor: "Proof required"). The
+  // ⛔ OWNERSHIP REQUIRED (deep audit 2026-11-15 A-1, relaxed the same day — Trevor:
+  // "let them have access until we can verify easily and effectively"). The
   // username/address in the body is a public identifier anyone can paste, so the
-  // handle is claimed only when THIS account has proven the wallet (Trade Block
-  // signature or a signed trade-room side). Otherwise the wallet still loads and
-  // the collector picks a handle on /profile/edit, or proves the wallet on the
-  // Trade Block, which claims the Top Shot name then (app/api/trade-block).
-  const proven = username ? await isWalletProvenForUser(supabase as any, user.id, walletAddress) : false;
+  // handle is claimed only when THIS account owns the wallet under the shared rule
+  // (proved here > verified > saved FIRST; isWalletOwnedByUser). A stranger pasting
+  // a name someone already saved gets "unproven": the wallet still loads and they
+  // pick a handle on /profile/edit. The row above is already upserted, so a first
+  // saver owns it on this very call.
+  const proven = username ? await isWalletOwnedByUser(supabase as any, user.id, walletAddress) : false;
   const claim: ClaimOutcome = username
     ? await claimUsernameFromTopShot(supabase as any, user.id, username, { proven })
     : { claimed: false, reason: "unusable" };
@@ -400,7 +402,7 @@ export async function POST(req: NextRequest) {
     profileHandle: claim.claimed ? claim.handle : (claim.handle ?? null),
     profileHandleClaimed: claim.claimed,
     // "unproven" = the Top Shot name was NOT used as the public handle because the
-    // wallet is not proven for this account (A-1); the dashboard says how to get it.
+    // wallet belongs to another account (A-1); the dashboard says how to get it.
     profileHandleReason: claim.claimed ? null : claim.reason,
   });
 }

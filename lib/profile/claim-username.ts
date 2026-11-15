@@ -9,6 +9,7 @@
 // write.
 
 import { handleFromTopShotUsername } from "@/lib/profile/username-from-topshot"
+import { ownersOfAddress } from "@/lib/wallet/wallet-owner"
 
 export type ClaimOutcome =
   | { claimed: true; handle: string }
@@ -18,7 +19,7 @@ export type ClaimOutcome =
         | "already_set" // the collector already has a handle — theirs wins
         | "taken" // someone else holds it
         | "unusable" // the Top Shot name can't become a legal handle
-        | "unproven" // the wallet is not proven to belong to this account (deep audit A-1)
+        | "unproven" // the wallet belongs to another account (proved there, or saved there first) — A-1 / 11-15
         | "error" // the read/write failed; nothing was changed
       handle?: string
     }
@@ -125,6 +126,50 @@ export async function isWalletProvenForUser(
     ])
     if (block?.error || rooms?.error) return false
     return (Array.isArray(block?.data) && block.data.length > 0) || (Array.isArray(rooms?.data) && rooms.data.length > 0)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Does `walletAddress` belong to this user under RPC's ONE ownership rule?
+ *
+ * 2026-11-15 (Trevor, after the A-1 "Proof required" ship): "We should let them
+ * have access until we can verify easily and effectively." Measured that day: of
+ * 57 accounts with a saved wallet only 2 had EVER proven one (both in June), and
+ * no self-serve proof path is easy enough to expect collectors to use. So the
+ * handle gate falls back to the rule every other private surface already uses
+ * (lib/wallet/wallet-owner.ts, known-issues #176): a user who PROVED the address
+ * owns it, else a user who VERIFIED it, else the user who saved it FIRST.
+ *
+ * What this keeps from A-1: a stranger who pastes a collector's name AFTER that
+ * collector saved their wallet does NOT get the handle (they are not the first
+ * saver). What it gives up until verification is easy: the first saver of a
+ * never-saved wallet wins its handle. A wallet proven by another account always
+ * beats a first save.
+ *
+ * FAILS CLOSED: any failed read is `false`.
+ */
+export async function isWalletOwnedByUser(
+  db: { from: (t: string) => any },
+  userId: string,
+  walletAddress: string,
+): Promise<boolean> {
+  const addr = (walletAddress ?? "").trim().toLowerCase()
+  if (!/^0x[0-9a-f]{16}$/.test(addr)) return false
+  if (await isWalletProvenForUser(db, userId, addr)) return true
+  try {
+    const [saved, block, rooms] = await Promise.all([
+      db.from("saved_wallets").select("id, user_id, verified_at").in("wallet_addr", [addr, addr.slice(2)]),
+      db.from("trade_block_wallets").select("user_id").eq("source", addr).not("proven_at", "is", null).limit(1),
+      db.from("trade_room_sides").select("user_id").eq("source", addr).not("proven_at", "is", null).limit(1),
+    ])
+    if (saved?.error || block?.error || rooms?.error) return false
+    // Someone else PROVED this wallet (we already know it isn't this user): theirs.
+    const provenElsewhere =
+      (Array.isArray(block?.data) && block.data.length > 0) || (Array.isArray(rooms?.data) && rooms.data.length > 0)
+    if (provenElsewhere) return false
+    return Array.isArray(saved?.data) && ownersOfAddress(saved.data).includes(userId)
   } catch {
     return false
   }

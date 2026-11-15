@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest"
 import {
   claimUsernameFromTopShot,
   isWalletProvenForUser,
+  isWalletOwnedByUser,
   claimHandleForProvenWallet,
 } from "@/lib/profile/claim-username"
 
@@ -77,6 +78,46 @@ describe("isWalletProvenForUser", () => {
   })
 })
 
+// 2026-11-15 (Trevor: "let them have access until we can verify easily and
+// effectively"): the handle gate uses the shared ownership rule — proved here >
+// verified > saved FIRST — instead of proof only.
+describe("isWalletOwnedByUser", () => {
+  it("the FIRST saver owns an unproven wallet; a later saver does not", async () => {
+    const db = fakeDb({
+      saved_wallets: [
+        { id: 10, user_id: "u1", wallet_addr: W, verified_at: null },
+        { id: 20, user_id: "u2", wallet_addr: W, verified_at: null },
+      ],
+    })
+    expect(await isWalletOwnedByUser(db, "u1", W)).toBe(true)
+    expect(await isWalletOwnedByUser(db, "u2", W), "pasting a name someone already saved must not win it").toBe(false)
+  })
+  it("a VERIFIED saver beats the first saver", async () => {
+    const db = fakeDb({
+      saved_wallets: [
+        { id: 10, user_id: "u1", wallet_addr: W, verified_at: null },
+        { id: 20, user_id: "u2", wallet_addr: W, verified_at: "2026-06-15" },
+      ],
+    })
+    expect(await isWalletOwnedByUser(db, "u1", W)).toBe(false)
+    expect(await isWalletOwnedByUser(db, "u2", W)).toBe(true)
+  })
+  it("a wallet PROVEN by another account beats a first save", async () => {
+    const db = fakeDb({
+      saved_wallets: [{ id: 10, user_id: "u1", wallet_addr: W, verified_at: null }],
+      trade_block_wallets: [{ user_id: "u2", source: W, proven_at: "x" }],
+      trade_room_sides: [],
+    })
+    expect(await isWalletOwnedByUser(db, "u1", W)).toBe(false)
+    expect(await isWalletOwnedByUser(db, "u2", W)).toBe(true)
+  })
+  it("FAILS CLOSED on a saved_wallets read error, and for a non-Flow address", async () => {
+    const db = fakeDb({ trade_block_wallets: [], trade_room_sides: [] }, { saved_wallets: { message: "boom" } })
+    expect(await isWalletOwnedByUser(db, "u1", W)).toBe(false)
+    expect(await isWalletOwnedByUser(fakeDb({}), "u1", "nope")).toBe(false)
+  })
+})
+
 describe("claimUsernameFromTopShot with { proven }", () => {
   it("does NOT write a handle for an unproven wallet", async () => {
     const writes: any[] = []
@@ -116,10 +157,10 @@ describe("claimHandleForProvenWallet", () => {
 })
 
 describe("route wiring", () => {
-  it("resolve-and-associate gates the claim on proof, and the trade-block proof claims", async () => {
+  it("resolve-and-associate gates the claim on ownership, and the trade-block proof claims", async () => {
     const { readFileSync } = await import("node:fs")
     const route = readFileSync("app/api/profile/resolve-and-associate/route.ts", "utf8")
-    expect(route).toMatch(/isWalletProvenForUser\(/)
+    expect(route).toMatch(/isWalletOwnedByUser\(/)
     expect(route).toMatch(/claimUsernameFromTopShot\([^)]*\{\s*proven\s*\}\)/)
     const tb = readFileSync("app/api/trade-block/route.ts", "utf8")
     expect(tb).toMatch(/saveProvenAccount\([\s\S]{0,400}claimHandleForProvenWallet\(/)
