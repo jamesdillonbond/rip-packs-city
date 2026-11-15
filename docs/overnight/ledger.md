@@ -12,6 +12,19 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-14 ~7:30 PM PT — Packs board reads all ~3,200 packs instead of the best-ratio 500; pack and Grails views never show a previous filter's rows; degraded pack, Candy-pack and badge answers are not cached; the home FMV preview stops pricing an unknown #1 at the base (Claude Code cloud)
+- Fresh-eyes review of overview / home / badges / packs (read-only reviewer, 8 findings; all 8 handled). The overview, insider signals, chase view, Panini packs and the badges redirect were clean.
+  1. **The Packs board fetched ONE page of 500** (ordered by `value_ratio`, NULLs last) and sorted / filtered it in the browser as the whole board. Today there are 3,202 Top Shot and 3,228 All Day packs; the cheapest-first default and every price / +EV filter never saw ~2,700 of them. `/api/packs` now takes `offset` with a unique `dist_id` tiebreak. The new `lib/packs/fetch-all-pack-rows.ts` walks pages up to `total` (1,000 per page, 10-page ceiling); a failed page or the ceiling is an error, never a shorter board.
+  2. **The pack board rendered the previous filter's rows** while a new filter loaded, and after it failed. The new `lib/warmup/answer-for.ts` shows data only when `dataKey` matches the current key.
+  3. **GrailsView** had no sequence guard (an older response could land last), and a failed request left the previous cards on screen. It now has a sequence ticket and clears rows on failure.
+  4. **Top Shot calibration-read failure:** modeled EV is still served (documented), but now `no-store` and `calibration_unavailable: true`, matching All Day and Pinnacle.
+  5. **Home "Live FMV preview":** a null multiplier returned the base FMV as "#1"'s adjusted value. It is now `null` and renders "—".
+  6. **Candy pack market:** a partial failure (asks / sales / EV) is now `private, no-store`.
+  7. **Badge taxonomy:** a stale-on-error answer now carries `degraded: true`, and the hook does not cache it, so one blip no longer gives grey pills for the whole visit.
+  8. **Grails buyable walk:** the ceiling was sized for 3,148 rows (All Day is at 3,226); it is now 8,000 rows, and a walk stopped at the ceiling reports `complete: false`, which the client says.
+- Every new test was red on the old code (route, view and hook tests; `answerFor` and the page walk are new helpers, covered by their own tests). PackPageClient's two test mocks were re-pinned to report `dataKey`. Full preflight green: 7/7, ratchet at baseline after memoizing the answer.
+- Revert: `git revert` the commit titled "fix(packs review): whole pack board, no stale-filter rows, degraded answers not cached, home FMV preview, grails ceiling".
+
 ### 2026-11-14 ~6:45 PM PT — 0xbd94: 484 Flowty purchases the 04-12 bulk_seed import had labelled pack pulls are marketplace buys again at their sale price ($492.59) (Claude Code cloud)
 
 - Each of the 484 has exactly one `sales` row with buyer = 0xbd94 (marketplace flowty, price > 0) within 1 h of the row's acquired_date. None has a pack-open record naming 0xbd94 as opener, and none has another acquisition row. Since tonight's pack-pulls-are-$0 rule they had read $0. Migration `20261115030000`; backup `flowty_archive.moment_acquisitions_bak_bulk_seed_flowty_buys_20261114`; verified live (484 rows / $492.59, source `bulk_seed_flowty_reclass_20261114`).
