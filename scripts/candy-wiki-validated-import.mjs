@@ -72,11 +72,11 @@ console.log(`rows ${rows.length} (all validated, all magic_eden)`)
 
 const db = createClient(url, key, { auth: { persistSession: false } })
 
-// ── Exact dedupe against Candy `sales` and the park queue, 200 signatures per read. ──
+// ── Exact dedupe against Candy `sales` and the park queue, 50 signatures per read (200 x ~88-char signatures overflowed the request URL: "fetch failed", run 43733709210). ──
 const known = new Set()
 const sigs = [...new Set(rows.map((r) => r.sig))]
-for (let i = 0; i < sigs.length; i += 200) {
-  const chunk = sigs.slice(i, i + 200)
+for (let i = 0; i < sigs.length; i += 50) {
+  const chunk = sigs.slice(i, i + 50)
   const q = await db.from("candy_sales_unresolved").select("signature").in("signature", chunk)
   if (q.error) throw new Error(`queue read: ${q.error.message}`)
   for (const r of q.data ?? []) known.add(r.signature)
