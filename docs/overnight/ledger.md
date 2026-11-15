@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~2:25 PM PT — Verify button back on every unverified Flow wallet card; a verified listing claims the Top Shot handle (Claude Code cloud; Trevor: "proceed with all")
+- Found: the listing check has worked on Atlas since 09-06 evening, but the dashboard "Verify" button removed that morning (#59, dead host) never came back — 0 challenges minted after June 15, while 9 of 9 ever started finished. Live controls 11-15: `atlas_verify_listing` matched a real open listing at its price (matched=true) and refused it 1¢ off (matched=false); `atlas-market-feed` 90/90 ok in 3 h.
+- `WalletGroupCard` shows **Verify** (opens the existing VerifyByListingModal) for unverified Flow wallets; Solana keeps "Saved" (tooltip corrected). `verify-challenge/check` now calls `claimHandleForProvenWallet` after a match (claim-then-release; a failure never fails the verification) and returns `profileHandle*`; the toast says the profile is live. The "another account holds this wallet" toast now points at Verify instead of the Trade Block.
+- Tests: 4 component + 3 route cases; #59's inverted test RE-PINNED (Verify present, nothing fetched until clicked). Planted defects red (Solana gate; claim call). tsc, ci:guards, lint:ratchet 150 = baseline, vitest related 186 green.
+- Revert: find the commit by message "Verify button back" and `git revert` it.
+
 ### 2026-11-15 ~1:50 PM PT — X calendar: 11-15 posts archived, supply-breakdown template, Sunday rules, 2/2 link auto-?w=MMDD (Claude Code cloud, Trevor live)
 - `docs/social/posts/2026-11-15/` (both posted images + text + rejected drafts), `scripts/social/x-supply-breakdown.mjs`, `docs/social/supply-breakdown.sql`, `docs/social/x-calendar.md` (Sunday rules, caching note, layout, quote-post template), `scripts/social/x-draft.mjs` reply link `?w=<MMDD>`.
 - Revert: find the commit by message "x calendar: archive 11-15 posts" and `git revert` it. No DB change.
