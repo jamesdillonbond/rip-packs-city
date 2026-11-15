@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-14 ~4:25 PM PT — alerts-dispatch run row carries `fmv_eligible` (Claude Code cloud)
+- Follow-up to the dispatch-rotation entry. The 4:14 PM production run logged no `fmv_eligible`: `app/api/cron/alerts-dispatch/route.ts` copies a FIXED key list from the RPC's result, not every numeric key as I had read it. `eligible` is added to that list and to the result type. The route test asserts `fmv_eligible` reaches `p_extra` (red on the old route), and a failed FMV call still carries none of the keys. Preflight green.
+- Revert: `git revert` the commit titled "fix(alerts-dispatch): the run row carries fmv_eligible from the rotating FMV scan".
+
 ### 2026-11-14 ~4:10 PM PT — FMV price alerts: the dispatcher rotates through every eligible alert instead of re-scanning the same 200 (Claude Code cloud)
 - Alerts review finding #6. `dispatch_triggered_fmv_alerts` scanned `LIMIT p_max` (200) with no ORDER BY or cursor, so past 200 eligible alerts the same head was evaluated every tick and the rest never were, while the run reported ok with `scanned: 200`. It is latent today (0 active alerts) and lands before there is any volume. Migration `20261114235800`:
   - new nullable `fmv_alerts.last_checked_at`, written only by this function, plus the partial index `idx_fmv_alerts_active_last_checked`
