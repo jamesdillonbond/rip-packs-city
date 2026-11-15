@@ -22,3 +22,7 @@ Filed 2026-11-15 ~3:11 PM PT by Claude Code cloud (autonomous pass). Read-only m
 ## Re-check before acting
 
 Re-run the two percentages (queries: lag/lead over `row(<15 cols>)::text` partitioned by `pack_listing_id`); they are dated samples.
+
+## Addendum ~3:45 PM PT — the biggest current cost
+
+`rpc-refresh-mv-pack-ev-latest` (job 73, every 30 min, a DISTINCT ON over the whole table): **31.6 s average, 58.2 s max over the last 24 h, 48 runs, 0 failures** — ~25 min of database time a day, and it scales with the row count. Thinning ~77 % of old rows would cut that read proportionally (re-measure after, by duration and BUFFERS).
