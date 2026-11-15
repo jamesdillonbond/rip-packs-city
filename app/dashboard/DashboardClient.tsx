@@ -2777,9 +2777,23 @@ function VerifyByListingModal({
   // `silent` = the background watch below: it only ever acts on a MATCH, never
   // writes a hint or an error, so a quiet poll cannot talk over the reader.
   const checkInFlight = useRef(false);
+  // A click that lands while a background check is in flight PROMOTES that check:
+  // the spinner shows now and its result (hint or error) is shown. Before this, the
+  // click returned early and a silent miss reported nothing, so the button looked dead.
+  const promoteInFlight = useRef(false);
   const checkNow = useCallback(async (silent = false) => {
-    if (checkInFlight.current) return;
+    if (checkInFlight.current) {
+      if (!silent) {
+        promoteInFlight.current = true;
+        setLoading(true);
+        setError(null);
+        setCheckHint(null);
+      }
+      return;
+    }
     checkInFlight.current = true;
+    promoteInFlight.current = false;
+    const loud = () => !silent || promoteInFlight.current;
     if (!silent) {
       setLoading(true);
       setError(null);
@@ -2807,7 +2821,7 @@ function VerifyByListingModal({
       // credits, so "we could not check" and "we checked and found nothing" must
       // not share a message.
       if (!res.ok) {
-        if (!silent) setCheckHint("Couldn't check just now — this says nothing about your listing. Try again shortly.");
+        if (loud()) setCheckHint("Couldn't check just now — this says nothing about your listing. Try again shortly.");
         return;
       }
       const d = await res.json();
@@ -2828,12 +2842,14 @@ function VerifyByListingModal({
         onVerified(d?.profileHandleClaimed && typeof d?.profileHandle === "string" ? d.profileHandle : null);
         return;
       }
-      if (!silent) setCheckHint(d?.hint ?? d?.error ?? "No matching listing found yet.");
+      if (loud()) setCheckHint(d?.hint ?? d?.error ?? "No matching listing found yet.");
     } catch (e: any) {
-      if (!silent) setError(e?.message ?? "Check failed");
+      if (loud()) setError(e?.message ?? "Check failed");
     } finally {
+      const wasLoud = loud();
       checkInFlight.current = false;
-      if (!silent) setLoading(false);
+      promoteInFlight.current = false;
+      if (wasLoud) setLoading(false);
     }
   }, [walletAddr, onVerified]);
 

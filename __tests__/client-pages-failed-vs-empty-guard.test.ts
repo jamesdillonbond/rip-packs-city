@@ -459,8 +459,10 @@ describe("client pages — a failed read is not an empty result", () => {
       const guardThenParse =
         'if (!res.ok) {\n' +
         // 2026-11-15: the background watch passes `silent`, which suppresses only the
-        // hint; the guard still precedes the parse on both paths.
-        '        if (!silent) setCheckHint("Couldn\'t check just now — this says nothing about your listing. Try again shortly.");\n' +
+        // hint; the guard still precedes the parse on both paths. Later the same day the
+        // gate became `loud()` (a click during an in-flight watch promotes it) — a re-pin
+        // of the spelling; the property (status before body, contiguous) is unchanged.
+        '        if (loud()) setCheckHint("Couldn\'t check just now — this says nothing about your listing. Try again shortly.");\n' +
         "        return;\n" +
         "      }\n" +
         "      const d = await res.json();"

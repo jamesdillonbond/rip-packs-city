@@ -1180,6 +1180,32 @@ describe("DashboardClient — verify by listing", () => {
     expect(screen.queryByText(/No matching listing found yet/)).toBeNull()
   })
 
+  it("2026-11-15: a click that lands during a background check is not swallowed — it shows that check's answer", async () => {
+    // Before: checkNow returned early while the 20 s watch was in flight, and the
+    // silent run reports nothing on a miss, so the button did nothing at all.
+    let release: (r: Response) => void = () => {}
+    let checks = 0
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      await openVerify({
+        "/api/profile/verify-challenge/check": () => {
+          checks += 1
+          return new Promise<Response>((r) => { release = r })
+        },
+        "/api/profile/verify-challenge": () => json(200, { challenge: CHALLENGE(), target: TARGET }),
+      })
+      const btn = await screen.findByRole("button", { name: /I've listed it/ })
+      await vi.advanceTimersByTimeAsync(20_000) // the watch fires and stays in flight
+      await waitFor(() => expect(checks).toBe(1))
+      fireEvent.click(btn)
+      expect(checks).toBe(1) // promoted, not a second request
+      release(json(200, { ok: true, matched: false }))
+      await screen.findByText(/No matching listing found yet/)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it("reports a genuine miss as a real answer", async () => {
     await openVerify({
       "/api/profile/verify-challenge/check": () => json(200, { ok: true, matched: false }),
