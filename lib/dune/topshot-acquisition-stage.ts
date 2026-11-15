@@ -3,7 +3,7 @@
 // Known-issue #190: the row mapper for /api/cron/stage-topshot-acquisitions-dune, kept out of the
 // route file (a Next.js route may export only its handlers and segment config).
 
-import { mapProvenanceRow, type ProvenanceRow } from "@/lib/dune/arrival-provenance"
+import { mapProvenanceRow, padFlowAddress, type ProvenanceRow } from "@/lib/dune/arrival-provenance"
 
 // Private temp query (team-owned). The id is not a secret: it is useless without the Dune key,
 // which only the dune-proxy worker holds. It must be in the worker's DUNE_ALLOWED_QUERY_IDS.
@@ -70,4 +70,51 @@ export function mapProvenanceStageRow(
   const row = mapProvenanceRow(raw)
   if (!row) return null
   return { ...row, probed_at: new Date().toISOString(), dune_execution_id: executionId }
+}
+
+// ── Transfer-hop lane (#190 step 3) ──────────────────────────────────────────────────────────
+// Private temp query 9129613: for each moment that arrived in a saved wallet by a plain transfer
+// (no settlement, not a Dapper pack delivery), how the SENDER had acquired it — the sender's own
+// latest arrival before the transfer, classified MP/LC/OC/P/N/S/T like the provenance lane.
+// REVIEW data: whether a sender's price may stand as the recipient's cost (own account vs gift or
+// trade) is Trevor's decision, so nothing here or downstream writes moment_acquisitions.
+export const HOP_QUERY_ID = "9129613"
+
+export type HopRow = {
+  wallet: string
+  nft_id: string
+  sender: string
+  transfer_date: string | null
+  hop_tx: string
+  hop_date: string | null
+  hop_kind: string
+  hop_price: number | null
+  hop_from: string | null
+  dune_query_id: string
+  dune_execution_id: string
+}
+
+const HOP_KINDS = new Set(["MP", "LC", "OC", "P", "N", "S", "T"])
+
+export function mapHopRow(raw: Record<string, unknown>, executionId: string): HopRow | null {
+  const wallet = padFlowAddress(raw.w)
+  const sender = padFlowAddress(raw.f)
+  const nft = raw.id == null ? "" : String(raw.id)
+  const tx = raw.htx == null ? "" : String(raw.htx).toLowerCase()
+  const kind = raw.hk == null ? "" : String(raw.hk)
+  if (!wallet || !sender || !/^\d+$/.test(nft) || !/^[0-9a-f]{64}$/.test(tx) || !HOP_KINDS.has(kind)) return null
+  const p = raw.hp == null || raw.hp === "" ? null : Number(raw.hp)
+  return {
+    wallet,
+    nft_id: nft,
+    sender,
+    transfer_date: raw.tdt == null ? null : String(raw.tdt).slice(0, 10),
+    hop_tx: tx,
+    hop_date: raw.hdt == null ? null : String(raw.hdt).slice(0, 10),
+    hop_kind: kind,
+    hop_price: p != null && Number.isFinite(p) ? p : null,
+    hop_from: padFlowAddress(raw.hf),
+    dune_query_id: HOP_QUERY_ID,
+    dune_execution_id: executionId,
+  }
 }

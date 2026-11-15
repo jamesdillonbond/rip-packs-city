@@ -30,8 +30,10 @@ import { recordDuneUsage, columnCount } from "@/lib/dune/budget"
 import {
   STAGE_QUERY_ID,
   PROVENANCE_QUERY_ID,
+  HOP_QUERY_ID,
   mapStageRow,
   mapProvenanceStageRow,
+  mapHopRow,
 } from "@/lib/dune/topshot-acquisition-stage"
 
 export const dynamic = "force-dynamic"
@@ -53,6 +55,12 @@ const LANES = {
     table: "topshot_arrival_provenance",
     onConflict: "wallet,nft_id,arrival_tx",
     map: mapProvenanceStageRow,
+  },
+  hop: {
+    queryId: HOP_QUERY_ID,
+    table: "topshot_transfer_hop_stage",
+    onConflict: "wallet,nft_id",
+    map: mapHopRow,
   },
 } as const
 type LaneName = keyof typeof LANES

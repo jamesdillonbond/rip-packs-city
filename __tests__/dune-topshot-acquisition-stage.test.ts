@@ -94,3 +94,30 @@ describe("stage route lanes", () => {
     expect(res.status).toBe(400)
   })
 })
+
+describe("mapHopRow (#190 transfer hop)", () => {
+  const raw = {
+    id: "16791499",
+    w: "0x97168ff5c33d01f",
+    f: "0xb7c1ef3c66096640",
+    tdt: "2022-03-04",
+    htx: "B".repeat(64),
+    hdt: "2022-03-04",
+    hk: "MP",
+    hp: "12.5",
+    hf: "0x1234",
+  }
+  it("pads both addresses and parses the sender's price", async () => {
+    const { mapHopRow } = await import("@/lib/dune/topshot-acquisition-stage")
+    const r = mapHopRow(raw, "E1")
+    expect(r?.wallet).toBe("0x097168ff5c33d01f")
+    expect(r?.sender).toBe("0xb7c1ef3c66096640")
+    expect(r?.hop_tx).toBe("b".repeat(64))
+    expect(r?.hop_price).toBe(12.5)
+    expect(r?.hop_from).toBe("0x0000000000001234")
+  })
+  it("rejects a row with no sender rather than inventing one", async () => {
+    const { mapHopRow } = await import("@/lib/dune/topshot-acquisition-stage")
+    expect(mapHopRow({ ...raw, f: null }, "E1")).toBeNull()
+  })
+})
