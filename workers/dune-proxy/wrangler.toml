@@ -14,3 +14,8 @@ compatibility_date = "2026-06-26"
 #   cd workers/dune-proxy && wrangler deploy
 # Smoke after deploy:
 #   curl https://dune-proxy.<subdomain>.workers.dev/health   ->  {"ok":true}
+
+# Set in the Cloudflare dashboard 2026-11-14 ~9:10 PM PT (known-issue #190); mirrored here so a
+# `wrangler deploy` does not drop it. REPLACES DEFAULT_ALLOWED_QUERY_IDS in index.ts.
+[vars]
+DUNE_ALLOWED_QUERY_IDS = "7899011,8027085,8030177,9129456"
