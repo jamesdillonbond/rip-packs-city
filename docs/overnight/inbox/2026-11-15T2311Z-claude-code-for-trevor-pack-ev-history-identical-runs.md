@@ -1,6 +1,6 @@
 # `pack_ev_history` grows ~187k rows/week and 77 % of them repeat the previous snapshot exactly — proposal to thin old identical runs (needs Trevor's yes; NOT applied)
 
-Filed 2026-11-15 ~3:15 PM PT by Claude Code cloud (autonomous pass). Read-only measurement; nothing changed.
+Filed 2026-11-15 ~3:11 PM PT by Claude Code cloud (autonomous pass). Read-only measurement; nothing changed.
 
 ## What was measured
 
