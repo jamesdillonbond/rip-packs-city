@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-14 ~9:30 PM PT — #190 step 2: one wallet-scoped Dune run feeds the arrival-provenance lane (pack pulls / offers / storefront buys) instead of ~45 batches (Claude Code cloud)
+
+- Found a concurrent session's `topshot-arrival-provenance-dune` lane (query 9129294, 2,000 ids per ~70-credit run, tested `apply_topshot_arrival_provenance()`). Rather than a parallel arrivals table, private temp query **9129489** runs the same classification ONCE over every moment whose latest Deposit is into a saved wallet (~80–400 credits vs ~3,150 for 45 batches).
+- ⚠ Dune strips leading zeros from Flow addresses: three saved wallets (`0x0…`) were invisible to the 9129456 purchase query (53 of 56 wallets). 9129489 matches both spellings; their mapper pads back.
+- `20261115052405`: `topshot_arrival_provenance.dune_execution_id` (nullable) + index. Code: stage route `?lane=provenance` (vercel.json :52 hourly; no-op once loaded); worker default allowlist 9129482 dropped, 9129489 added. Superseded query 9129482 (non-purchase arrivals) was started then abandoned — sunk ~80 credits.
+- Revert: remove the cron entry; `ALTER TABLE public.topshot_arrival_provenance DROP COLUMN dune_execution_id;` (rows it loads are applied only by `apply_topshot_arrival_provenance()`, whose writes are archived in `flowty_archive.acq_chain_arrival_20261114`).
+
 ### 2026-11-14 ~9:20 PM PT — #190 imported: 39,274 pre-2023 Top Shot marketplace buys priced into moment_acquisitions ($1,294,739) (Claude Code cloud; Trevor: "yes keep going")
 
 - `20261115051836`: 37,485 inserts (still-held moments with no acquisition row) + 1,789 updates (`cache_refresh` rows with NULL price), source `dune_marketplace_backfill_20261114`. Old values of the 1,789 in `flowty_archive.audit_20261114_190_unpriced_rows`. Asserted counts in-migration; 0 duplicate (wallet, nft) keys.
