@@ -48,6 +48,12 @@ vi.mock("@/lib/supabase", () => {
 
 import { GET, PINNACLE_FLOOR_MAP_STALE_HOURS } from "@/app/api/pinnacle-set-progress/route"
 
+// Re-pinned 2026-11-14: a wallet that owns NOTHING now asks whether RPC ever
+// walked it (lib/sets/set-progress-wallet.ts). These fixtures' premise is an
+// INDEXED wallet; the never-walked case is tested in set-progress-wallet-gate.test.ts.
+vi.mock("@/lib/wallet-indexed", () => ({ walletIndexState: async () => ({ ok: true, indexed: true }) }))
+
+
 const req = (url: string) => ({ nextUrl: new URL(url) }) as any
 const FRESH = new Date(Date.now() - 60 * 60 * 1000).toISOString()
 const STALE = new Date(
@@ -116,7 +122,7 @@ describe("GET /api/pinnacle-set-progress", () => {
       ]),
     ]
     state.ownedPages = [page([])]
-    const s = (await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0xabc"))).json()).sets[0]
+    const s = (await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0x0000000000000abc"))).json()).sets[0]
     expect(s.totalEditions).toBe(1)
     expect(s.missingCount).toBe(1)
     // …and the printing axis is reported separately, never folded in.
@@ -139,7 +145,7 @@ describe("GET /api/pinnacle-set-progress", () => {
         { id: "2", render_id: "WOODY-STD", serial_number: 9, is_locked: false },
       ]),
     ]
-    const s = (await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0xabc"))).json()).sets[0]
+    const s = (await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0x0000000000000abc"))).json()).sets[0]
     expect(s.ownedCount).toBe(2)
     expect(s.missingCount).toBe(0)
     expect(s.completionPct).toBe(100)
@@ -159,7 +165,7 @@ describe("GET /api/pinnacle-set-progress", () => {
       ]),
     ]
     state.ownedPages = [page([])]
-    const s = (await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0xabc"))).json()).sets[0]
+    const s = (await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0x0000000000000abc"))).json()).sets[0]
     expect(s.totalMissingCost).toBe(12)
     expect(s.lowestSingleAsk).toBe(12)
     // …and the row names the variant a buyer would actually take.
@@ -175,7 +181,7 @@ describe("GET /api/pinnacle-set-progress", () => {
       ]),
     ]
     state.ownedPages = [page([])]
-    const s = (await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0xabc"))).json()).sets[0]
+    const s = (await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0x0000000000000abc"))).json()).sets[0]
     // A real variant, not an arbitrary one — and still no fabricated price.
     expect(s.missing[0].playId).toBe("BUZZ-GLD")
     expect(s.totalMissingCost).toBeNull()
@@ -194,7 +200,7 @@ describe("GET /api/pinnacle-set-progress", () => {
         { id: "2", render_id: "BUZZ-GLD", serial_number: 3, is_locked: false },
       ]),
     ]
-    const s = (await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0xabc"))).json()).sets[0]
+    const s = (await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0x0000000000000abc"))).json()).sets[0]
     expect(s.ownedCount).toBe(1)
     expect(s.owned[0].playId).toBe("BUZZ-GLD")
     expect(s.ownedPrintings).toBe(2)
@@ -208,7 +214,7 @@ describe("GET /api/pinnacle-set-progress", () => {
       ]),
     ]
     state.ownedPages = [page([])]
-    const s = (await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0xabc"))).json()).sets[0]
+    const s = (await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0x0000000000000abc"))).json()).sets[0]
     expect(s.totalEditions).toBe(2)
   })
 
@@ -216,11 +222,11 @@ describe("GET /api/pinnacle-set-progress", () => {
     state.catalogPages = [page([render("A"), render("B"), render("C", { floor_ask: 25 })])]
     state.ownedPages = [page([{ id: "1", render_id: "A", serial_number: 7, is_locked: false }])]
 
-    const res = await GET(req("https://t/api/pinnacle-set-progress?wallet=0xABC"))
+    const res = await GET(req("https://t/api/pinnacle-set-progress?wallet=0x0000000000000ABC"))
     expect(res.status).toBe(200)
     const body = await res.json()
 
-    expect(body.resolvedAddress).toBe("0xabc")
+    expect(body.resolvedAddress).toBe("0x0000000000000abc")
     expect(body.totalSets).toBe(1)
     const s = body.sets[0]
     expect(s.setId).toBe("OEV1-TOYS")
@@ -242,7 +248,7 @@ describe("GET /api/pinnacle-set-progress", () => {
         render("B", { set_name: "Toy Story Vol.1 " }),
       ]),
     ]
-    const body = await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0xabc"))).json()
+    const body = await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0x0000000000000abc"))).json()
     expect(body.totalSets).toBe(1)
     expect(body.sets[0].totalEditions).toBe(2)
     // The label is trimmed, so the two spellings cannot render as two names.
@@ -257,7 +263,7 @@ describe("GET /api/pinnacle-set-progress", () => {
         { id: "2", render_id: "B", serial_number: 2, is_locked: true },
       ]),
     ]
-    const body = await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0xabc"))).json()
+    const body = await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0x0000000000000abc"))).json()
     const s = body.sets[0]
     expect(s.completionPct).toBe(100)
     expect(s.tier).toBe("complete")
@@ -274,7 +280,7 @@ describe("GET /api/pinnacle-set-progress", () => {
     state.catalogPages = [fullPage()]
     state.ownedPages = [page([])]
 
-    const res = await GET(req("https://t/api/pinnacle-set-progress?wallet=0xabc"))
+    const res = await GET(req("https://t/api/pinnacle-set-progress?wallet=0x0000000000000abc"))
     expect(res.status).toBe(503)
     const body = await res.json()
     expect(body.sets).toBeUndefined()
@@ -287,7 +293,7 @@ describe("GET /api/pinnacle-set-progress", () => {
       page(Array.from({ length: 1000 }, (_, i) => ({ id: `w${i}`, render_id: "A", serial_number: i, is_locked: false }))),
     ]
 
-    const res = await GET(req("https://t/api/pinnacle-set-progress?wallet=0xabc"))
+    const res = await GET(req("https://t/api/pinnacle-set-progress?wallet=0x0000000000000abc"))
     expect(res.status).toBe(503)
     expect((await res.json()).sets).toBeUndefined()
   })
@@ -296,7 +302,7 @@ describe("GET /api/pinnacle-set-progress", () => {
     state.catalogPages = [page([render("A", { floor_ask_updated_at: STALE }), render("B", { floor_ask_updated_at: STALE })])]
     state.ownedPages = [page([{ id: "1", render_id: "A", serial_number: 1, is_locked: false }])]
 
-    const body = await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0xabc"))).json()
+    const body = await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0x0000000000000abc"))).json()
     const s = body.sets[0]
     expect(s.asksEnriched).toBe(false)
     expect(s.totalMissingCost).toBeNull()
@@ -311,7 +317,7 @@ describe("GET /api/pinnacle-set-progress", () => {
   it("treats a missing ask as unknown, never as free", async () => {
     state.catalogPages = [page([render("A"), render("B", { floor_ask: null })])]
     state.ownedPages = [page([])]
-    const s = (await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0xabc"))).json()).sets[0]
+    const s = (await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0x0000000000000abc"))).json()).sets[0]
     expect(s.missingCount).toBe(2)
     expect(s.listedCount).toBe(1)
     expect(s.totalMissingCost).toBe(10) // the one real ask, not 10 + 0
@@ -320,7 +326,7 @@ describe("GET /api/pinnacle-set-progress", () => {
 
   it("never publishes a driver message on a read error", async () => {
     state.catalogPages = [{ data: null, error: { message: "canceling statement due to statement timeout", code: "57014" } }]
-    const res = await GET(req("https://t/api/pinnacle-set-progress?wallet=0xabc"))
+    const res = await GET(req("https://t/api/pinnacle-set-progress?wallet=0x0000000000000abc"))
     expect(res.status).toBe(503)
     const body = await res.json()
     expect(JSON.stringify(body)).not.toMatch(/canceling statement/i)
@@ -330,7 +336,7 @@ describe("GET /api/pinnacle-set-progress", () => {
   it("links a piece to the canonical render page, not the redirecting edition URL", async () => {
     state.catalogPages = [page([render("OEV1-TOYS-BUZZ-S4B")])]
     state.ownedPages = [page([])]
-    const s = (await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0xabc"))).json()).sets[0]
+    const s = (await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0x0000000000000abc"))).json()).sets[0]
     expect(s.missing[0].topshotUrl).toBe("/pinnacle/moment/OEV1-TOYS-BUZZ-S4B")
     expect(s.missing[0].topshotUrl).not.toMatch(/\/edition\//)
   })
@@ -338,14 +344,14 @@ describe("GET /api/pinnacle-set-progress", () => {
   it("puts the Pinnacle VARIANT in the tier slot (Pinnacle has no tiers)", async () => {
     state.catalogPages = [page([render("A", { variant: "Luxe Marble" })])]
     state.ownedPages = [page([])]
-    const s = (await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0xabc"))).json()).sets[0]
+    const s = (await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0x0000000000000abc"))).json()).sets[0]
     expect(s.missing[0].tier).toBe("LUXE MARBLE")
   })
 
   it("never renders the word Unknown for a pin with no character name", async () => {
     state.catalogPages = [page([render("A", { character_name: null })])]
     state.ownedPages = [page([])]
-    const s = (await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0xabc"))).json()).sets[0]
+    const s = (await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0x0000000000000abc"))).json()).sets[0]
     expect(s.missing[0].playerName).not.toMatch(/unknown/i)
   })
 })

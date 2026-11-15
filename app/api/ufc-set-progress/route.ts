@@ -9,6 +9,7 @@
 // So the mapped missing[] will be empty. The sets list itself works fine.
 
 import { NextRequest, NextResponse } from "next/server";
+import { resolveSetProgressWallet, notScannedResponse } from "@/lib/sets/set-progress-wallet";
 import { supabaseAdmin } from "@/lib/supabase";
 import { apiErrorResponse } from "@/lib/api-error";
 import { boundedRead } from "@/lib/api/bounded-read";
@@ -109,12 +110,17 @@ function classifyTier(s: RpcSet): SetTier {
 }
 
 export async function GET(req: NextRequest) {
-  const wallet = req.nextUrl.searchParams.get("wallet")?.trim();
-  if (!wallet) {
+  const input = req.nextUrl.searchParams.get("wallet")?.trim();
+  if (!input) {
     return NextResponse.json({ error: "wallet param required" }, { status: 400 });
   }
 
   try {
+    // 2026-11-14: a username / un-prefixed address used to reach the RPC raw and
+    // match nothing — "0% of every set". See lib/sets/set-progress-wallet.ts.
+    const gate = await resolveSetProgressWallet(input);
+    if (!gate.ok) return gate.response;
+    const wallet = gate.wallet;
     const { data, error } = await boundedRead(supabaseAdmin.rpc("get_ufc_set_progress", {
       p_wallet: wallet,
     }), "api/ufc-set-progress/get_ufc_set_progress");
@@ -125,6 +131,12 @@ export async function GET(req: NextRequest) {
 
     const rpc = (data ?? {}) as RpcResponse;
     const rpcSets = Array.isArray(rpc.sets) ? rpc.sets : [];
+    // 2026-11-14: owning NOTHING has two meanings — an indexed wallet with no
+    // pieces here (0% is true) or a wallet RPC never walked (0% is a claim).
+    if (!rpcSets.some((s) => (s.ownedPlays ?? 0) > 0)) {
+      const notScanned = await notScannedResponse(wallet);
+      if (notScanned) return notScanned;
+    }
 
     const sets: SetProgress[] = rpcSets.map((s) => {
       const missing: MissingPiece[] = (s.missingPreview ?? []).map((m, i) => ({

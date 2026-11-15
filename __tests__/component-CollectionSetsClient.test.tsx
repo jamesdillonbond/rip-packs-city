@@ -173,6 +173,41 @@ describe("CollectionSetsClient — the inline expand (per-set detail)", () => {
     return btn
   }
 
+  // 2026-11-14 (Sets review): the tests above guard their assertions with
+  // `if (btn)` and match "Archive Set", which is on screen regardless — so they
+  // passed while EVERY expand hung on its skeleton (the effect depended on
+  // `loadingDetail`, and setting it cancelled the fetch in flight). These assert
+  // the detail itself renders, with their own setIds (the detail cache is module-level).
+  function mountOwn(setId: string, detail: () => Response | Promise<Response>) {
+    const f = vi.fn(async (input: unknown) => {
+      if (String(input).includes("&set=")) return detail()
+      return json(200, RESP({ sets: [SET({ setId })] }))
+    })
+    vi.stubGlobal("fetch", f)
+    render(<CollectionSetsClient collection="nba-top-shot" />)
+    return f
+  }
+  async function expandOrFail() {
+    await waitFor(() => expect(document.body.textContent).toMatch(/Archive Set/))
+    const btn = screen.getAllByRole("button").find((b) => /^(expand|preview|hide|show)/i.test((b.textContent ?? "").trim()))
+    expect(btn, "the set card's expand button").toBeTruthy()
+    fireEvent.click(btn!)
+  }
+  it("the expand RENDERS the fetched detail — it does not hang on the skeleton", async () => {
+    mountOwn("s-exp-ok", () => json(200, RESP({ sets: [SET({ setId: "s-exp-ok", owned: [PIECE({ playerName: "Detail Player" })] })] })))
+    await expandOrFail()
+    await waitFor(() => expect(document.body.textContent).toMatch(/Detail Player/))
+    expect(document.querySelectorAll(".rpc-skeleton").length).toBe(0)
+  })
+  it("a failed detail read shows the preview AS a preview, with the set's true totals", async () => {
+    mountOwn("s-exp-fail", () => json(500, {}, false))
+    await expandOrFail()
+    await waitFor(() => expect(document.body.textContent).toMatch(/showing a preview/i))
+    // SET(): missingCount 6, one missing piece listed — never "MISSING (1)".
+    expect(document.body.textContent).toMatch(/MISSING \(6 · SHOWING 1\)/)
+    expect(document.body.textContent).not.toMatch(/MISSING \(1\)/)
+  })
+
   it("loads per-set detail on expand", async () => {
     const f = mountDetail(() => json(200, RESP({ sets: [SET({ owned: [PIECE({ playerName: "Detail Player" })] })] })))
     const btn = await expand()

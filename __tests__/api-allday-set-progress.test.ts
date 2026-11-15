@@ -29,6 +29,12 @@ vi.mock("@/lib/supabase", () => ({
 
 import { GET } from "@/app/api/allday-set-progress/route"
 
+// Re-pinned 2026-11-14: a wallet that owns NOTHING now asks whether RPC ever
+// walked it (lib/sets/set-progress-wallet.ts). These fixtures' premise is an
+// INDEXED wallet; the never-walked case is tested in set-progress-wallet-gate.test.ts.
+vi.mock("@/lib/wallet-indexed", () => ({ walletIndexState: async () => ({ ok: true, indexed: true }) }))
+
+
 const req = (qs = "") => new NextRequest("https://t/api/allday-set-progress" + qs)
 
 beforeEach(() => {
@@ -49,7 +55,7 @@ describe("GET /api/allday-set-progress", () => {
 
   it("500s on an RPC error", async () => {
     rpc.error = { message: "boom" }
-    expect((await GET(req("?wallet=0xabc"))).status).toBe(500)
+    expect((await GET(req("?wallet=0x0000000000000abc"))).status).toBe(500)
   })
 
   it("maps the RPC response into the sets payload", async () => {
@@ -61,7 +67,7 @@ describe("GET /api/allday-set-progress", () => {
       ],
       generatedAt: "2026-07-12T00:00:00Z",
     }
-    const res = await GET(req("?wallet=0xabc"))
+    const res = await GET(req("?wallet=0x0000000000000abc"))
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.totalSets).toBe(1)
@@ -78,7 +84,7 @@ describe("GET /api/allday-set-progress", () => {
       ],
     }
     seriesRead.data = [{ id: "a", series: 1 }, { id: "b", series: 6 }]
-    const body = await (await GET(req("?wallet=0xabc"))).json()
+    const body = await (await GET(req("?wallet=0x0000000000000abc"))).json()
     expect(body.sets.map((s: any) => [s.setName, s.setTier, s.series])).toEqual([
       ["Base", "COMMON", 1],
       ["Base", "COMMON", 6],
@@ -88,12 +94,12 @@ describe("GET /api/allday-set-progress", () => {
   it("a failed series read does not fail the tracker — the rows just carry no series", async () => {
     rpc.data = { sets: [{ setId: "a", setName: "Base", ownedPlays: 1, totalPlays: 2, missingPlays: 1, completionPct: 50 }] }
     seriesRead.error = { message: "boom" }
-    const res = await GET(req("?wallet=0xabc"))
+    const res = await GET(req("?wallet=0x0000000000000abc"))
     expect(res.status).toBe(200)
     expect((await res.json()).sets[0].series).toBeNull()
     seriesRead.error = null
     seriesRead.throw = new Error("net")
-    const res2 = await GET(req("?wallet=0xabc"))
+    const res2 = await GET(req("?wallet=0x0000000000000abc"))
     expect(res2.status).toBe(200)
     expect((await res2.json()).sets[0].series).toBeNull()
   })
@@ -116,7 +122,7 @@ describe("GET /api/allday-set-progress", () => {
         { playId: "2803", playerName: "John Lynch", tier: "uncommon", fmvUsd: 0.88, thumbnailUrl: "https://x/2803.png" },
       ],
     }
-    const res = await GET(req("?wallet=0xabc&set=011f50fb"))
+    const res = await GET(req("?wallet=0x0000000000000abc&set=011f50fb"))
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.totalSets).toBe(1)
@@ -132,7 +138,7 @@ describe("GET /api/allday-set-progress", () => {
 
   it("returns an empty payload when the detail RPC finds no set", async () => {
     rpc.data = null
-    const res = await GET(req("?wallet=0xabc&set=nope"))
+    const res = await GET(req("?wallet=0x0000000000000abc&set=nope"))
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.totalSets).toBe(0)
@@ -142,7 +148,7 @@ describe("GET /api/allday-set-progress", () => {
   it("returns an empty payload when the detail row lacks a setId", async () => {
     // `d` is truthy but has no setId -> the same "unknown set" empty branch.
     rpc.data = { setName: "orphan", totalPlays: 0 }
-    const res = await GET(req("?wallet=0xabc&set=nope"))
+    const res = await GET(req("?wallet=0x0000000000000abc&set=nope"))
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.totalSets).toBe(0)
@@ -151,7 +157,7 @@ describe("GET /api/allday-set-progress", () => {
 
   it("500s when the detail RPC returns an error", async () => {
     rpc.error = { message: "detail boom" }
-    const res = await GET(req("?wallet=0xabc&set=s1"))
+    const res = await GET(req("?wallet=0x0000000000000abc&set=s1"))
     expect(res.status).toBe(500)
     // The driver message must NOT be published — lib/api-error.ts classifies it.
     expect((await res.json()).error).not.toContain("detail boom")
@@ -159,7 +165,7 @@ describe("GET /api/allday-set-progress", () => {
 
   it("500s when the detail RPC throws (fatal catch)", async () => {
     rpc.throw = new Error("detail fatal")
-    const res = await GET(req("?wallet=0xabc&set=s1"))
+    const res = await GET(req("?wallet=0x0000000000000abc&set=s1"))
     expect(res.status).toBe(500)
     // The driver message must NOT be published — lib/api-error.ts classifies it.
     expect((await res.json()).error).not.toContain("detail fatal")
@@ -178,7 +184,7 @@ describe("GET /api/allday-set-progress", () => {
       owned: null,
       missing: null,
     }
-    const res = await GET(req("?wallet=0xabc&set=cmp"))
+    const res = await GET(req("?wallet=0x0000000000000abc&set=cmp"))
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.completeSets).toBe(1)
@@ -201,7 +207,7 @@ describe("GET /api/allday-set-progress", () => {
       owned: [{}],
       missing: [{}],
     }
-    const res = await GET(req("?wallet=0xabc&set=ns"))
+    const res = await GET(req("?wallet=0x0000000000000abc&set=ns"))
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.notStartedSets).toBe(1)
@@ -222,7 +228,7 @@ describe("GET /api/allday-set-progress", () => {
         { setId: "c", setName: "C", ownedPlays: 0, totalPlays: 4, missingPlays: 4, completionPct: 0 },
       ],
     }
-    const res = await GET(req("?wallet=0xabc"))
+    const res = await GET(req("?wallet=0x0000000000000abc"))
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.totalSets).toBe(3)
@@ -236,26 +242,26 @@ describe("GET /api/allday-set-progress", () => {
 
   it("returns an empty sets payload when the RPC data is null", async () => {
     rpc.data = null
-    const res = await GET(req("?wallet=0xabc"))
+    const res = await GET(req("?wallet=0x0000000000000abc"))
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.totalSets).toBe(0)
     expect(body.sets).toEqual([])
     // falls back to the request wallet when the RPC omits it
-    expect(body.wallet).toBe("0xabc")
-    expect(body.resolvedAddress).toBe("0xabc")
+    expect(body.wallet).toBe("0x0000000000000abc")
+    expect(body.resolvedAddress).toBe("0x0000000000000abc")
   })
 
   it("tolerates a non-array sets field", async () => {
     rpc.data = { sets: "not-an-array" }
-    const res = await GET(req("?wallet=0xabc"))
+    const res = await GET(req("?wallet=0x0000000000000abc"))
     expect(res.status).toBe(200)
     expect((await res.json()).sets).toEqual([])
   })
 
   it("500s when the main RPC throws (fatal catch)", async () => {
     rpc.throw = new Error("list fatal")
-    const res = await GET(req("?wallet=0xabc"))
+    const res = await GET(req("?wallet=0x0000000000000abc"))
     expect(res.status).toBe(500)
     // The driver message must NOT be published — lib/api-error.ts classifies it.
     expect((await res.json()).error).not.toContain("list fatal")

@@ -10,9 +10,7 @@ import { classifySetTier } from "@/lib/set-completion-tier"
 import { safeApiError, statusForSafeError } from "@/lib/api-error"
 import { ownLookup } from "@/lib/safe-lookup"
 import { momentSubjectName } from "@/lib/entity-href"
-import { normalizeFlowAddress } from "@/lib/address"
-import { walletIndexState } from "@/lib/wallet-indexed"
-import { resolveTopShotUsernameCacheAware } from "@/lib/chains/flow/topshot-username-resolve"
+import { resolveSetProgressWallet, notScannedResponse } from "@/lib/sets/set-progress-wallet"
 
 // 🚨 `disney-pinnacle` was REMOVED 2026-09-20 and must not come back. This route
 // joins `editions` + `sets` on `collection_id`, and Pinnacle has **0 rows in
@@ -82,20 +80,10 @@ export async function GET(req: NextRequest) {
     // matched against wallet_moments_cache.wallet_address — zero rows, so every
     // set read "0%" for a collector who may own most of them. Resolve it first;
     // a username that resolves to nothing is a 404, never a 0%.
-    let resolved = normalizeFlowAddress(input)
-    if (!resolved) {
-      const r = await resolveTopShotUsernameCacheAware(supabaseAdmin as any, input)
-      if (!r.found) {
-        if (r.reason === "topshot_gql_error") throw new Error(`username lookup failed: ${r.detail ?? ""}`)
-        return NextResponse.json(
-          { error: "We couldn't find a Flow wallet for that username. Try the 0x address.", code: "wallet_not_found" },
-          { status: 404 },
-        )
-      }
-      resolved = normalizeFlowAddress(r.walletAddress)
-      if (!resolved) throw new Error("username resolved to a non-Flow address")
-    }
-    const wallet: string = resolved
+    // (Shared since 2026-11-14 with the sibling set-progress routes.)
+    const gate = await resolveSetProgressWallet(input)
+    if (!gate.ok) return gate.response
+    const wallet = gate.wallet
 
     // 1. All editions in this collection (set_id, name, etc.). Paged: a
     //    collection can hold far more than the 1000-row cap, and a truncated
@@ -136,18 +124,8 @@ export async function GET(req: NextRequest) {
     // first is "0% of every set"; the second is a claim we cannot back, and a
     // failed check is not "not indexed" either (lib/wallet-indexed.ts).
     if (owned.length === 0) {
-      const idx = await walletIndexState(supabaseAdmin, wallet)
-      if (!idx.ok) throw idx.error instanceof Error ? idx.error : new Error("wallet index check failed")
-      if (!idx.indexed) {
-        return NextResponse.json(
-          {
-            error: "This wallet hasn't been scanned yet. Open it on the Collection tab to start a scan, then come back.",
-            code: "wallet_not_indexed",
-            retryable: false,
-          },
-          { status: 409 },
-        )
-      }
+      const notScanned = await notScannedResponse(wallet)
+      if (notScanned) return notScanned
     }
 
     // Index: edition external_id -> edition row

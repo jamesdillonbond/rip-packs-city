@@ -13,6 +13,7 @@ import { trackOutboundClick } from "@/lib/track-click";
 import { MarketplaceStatusBanner } from "@/components/marketplace-status";
 import { accentText } from "@/lib/accent-text"
 import { shortSeriesLabel } from "@/lib/series-label"
+import { pieceListHeader, SET_DETAIL_PREVIEW_COPY } from "@/lib/sets/piece-list-header"
 
 // ── Types (mirrors API response) ─────────────────────────────────────────────
 
@@ -204,6 +205,7 @@ export default function CollectionSetsClient({ collection }: { collection: strin
   const [filter, setFilter] = useState<FilterKey>("all");
   const [openSet, setOpenSet] = useState<SetProgress | null>(null);
   const [openSetDetail, setOpenSetDetail] = useState<SetProgress | null>(null);
+  const [openSetDetailFailed, setOpenSetDetailFailed] = useState(false);
   const modalRef = useRef<HTMLDivElement | null>(null);
   const lastFocusedRef = useRef<HTMLElement | null>(null);
 
@@ -351,12 +353,14 @@ export default function CollectionSetsClient({ collection }: { collection: strin
   // don't duplicate SetCard's expand fetch (Set audit B3).
   const openSetId = openSet?.setId ?? null;
   useEffect(() => {
+    setOpenSetDetailFailed(false);
     if (!openSetId) { setOpenSetDetail(null); return; }
     if (!SET_DETAIL_ENDPOINTS[collectionSlug] || !wallet) { setOpenSetDetail(null); return; }
     let cancelled = false;
     fetchSetDetail(wallet, openSetId, collectionSlug).then((s) => {
       if (cancelled) return;
       if (s) setOpenSetDetail(s);
+      else setOpenSetDetailFailed(true);
     });
     return () => { cancelled = true; };
   }, [openSetId, collectionSlug, wallet]);
@@ -636,10 +640,15 @@ export default function CollectionSetsClient({ collection }: { collection: strin
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {openSetDetailFailed && !openSetDetail && (
+                  <div role="status" style={{ fontFamily: monoFont, fontSize: 11, color: colors.muted }}>
+                    {SET_DETAIL_PREVIEW_COPY}
+                  </div>
+                )}
                 {mOwned.length > 0 && (
                   <div>
                     <div style={{ fontFamily: monoFont, fontSize: 9, color: colors.muted, letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 8 }}>
-                      OWNED ({mOwned.length})
+                      {pieceListHeader("OWNED", mOwned.length, modalSet.ownedCount)}
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                       {mOwned.map((piece, idx) => (
@@ -661,7 +670,7 @@ export default function CollectionSetsClient({ collection }: { collection: strin
                 {mMissing.length > 0 && (
                   <div>
                     <div style={{ fontFamily: monoFont, fontSize: 9, color: colors.muted, letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 8 }}>
-                      MISSING ({mMissing.length})
+                      {pieceListHeader("MISSING", mMissing.length, modalSet.missingCount)}
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                       {mMissing.map((piece, idx) => (
@@ -858,14 +867,19 @@ function SetCard({
   const [expanded, setExpanded] = useState(false);
   const [detail, setDetail] = useState<SetProgress | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [detailFailed, setDetailFailed] = useState(false);
 
   // Depend on stable `set.setId` (not the whole `set` object) — the previous
   // dep on the whole object made this effect re-fire on every re-render.
   // Goes through the shared cache so we don't double-fetch what the modal
   // effect already loaded (Set audit B3).
   const setId = set.setId;
+  // 2026-11-14: `loadingDetail` is NOT a dependency. It was, so setLoadingDetail(true)
+  // re-ran this effect: the cleanup cancelled the fetch in flight and the re-run
+  // returned early on `loadingDetail`, so nothing ever cleared the skeleton — every
+  // expand on Top Shot / All Day hung on it, success or failure.
   useEffect(() => {
-    if (!expanded || detail || loadingDetail || !wallet) return;
+    if (!expanded || detail || !wallet) return;
     // Top Shot (/api/sets?set=) and NFL All Day (/api/allday-set-progress?set=)
     // expose per-set detail (full owned + missing lists). Collections without a
     // detail endpoint already carry their preview data inline on the set object
@@ -880,7 +894,9 @@ function SetCard({
       .then((s) => {
         if (cancelled) return;
         // On fetch failure, fall back to the list-level set (inline preview)
-        // so the expand still renders something rather than staying blank.
+        // so the expand still renders something rather than staying blank —
+        // and SAY it is a preview (its lists are truncated).
+        setDetailFailed(!s);
         setDetail(s ?? set);
       })
       .finally(() => {
@@ -888,7 +904,7 @@ function SetCard({
       });
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `set` intentionally excluded; setId is the stable identity
-  }, [expanded, detail, loadingDetail, wallet, setId, collectionSlug]);
+  }, [expanded, detail, wallet, setId, collectionSlug]);
 
   return (
     <div
@@ -1001,6 +1017,11 @@ function SetCard({
               ))}
             </div>
           )}
+          {detail && detailFailed && (
+            <div role="status" style={{ fontFamily: monoFont, fontSize: 11, color: c.muted, marginBottom: 8 }}>
+              {SET_DETAIL_PREVIEW_COPY}
+            </div>
+          )}
           {detail && (
             <DetailGrid set={detail} accent={accent} collection={collectionSlug} />
           )}
@@ -1017,7 +1038,7 @@ function DetailGrid({ set, accent, collection }: { set: SetProgress; accent: str
       {set.owned.length > 0 && (
         <>
           <div style={{ fontFamily: monoFont, fontSize: 9, color: c.muted, letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 8 }}>
-            OWNED ({set.owned.length})
+            {pieceListHeader("OWNED", set.owned.length, set.ownedCount)}
           </div>
           <div className="rpc-set-detail-grid" style={{ display: "grid", gap: 8, marginBottom: 12 }}>
             {set.owned.map((p, i) => (
@@ -1039,7 +1060,7 @@ function DetailGrid({ set, accent, collection }: { set: SetProgress; accent: str
       {set.missing.length > 0 && (
         <>
           <div style={{ fontFamily: monoFont, fontSize: 9, color: c.muted, letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 8 }}>
-            MISSING ({set.missing.length})
+            {pieceListHeader("MISSING", set.missing.length, set.missingCount)}
           </div>
           <div className="rpc-set-detail-grid" style={{ display: "grid", gap: 8 }}>
             {set.missing.map((p, i) => (

@@ -40,13 +40,13 @@
 // `body.error` verbatim (deep-audit D3).
 
 import { NextRequest, NextResponse } from "next/server"
+import { resolveSetProgressWallet, notScannedResponse } from "@/lib/sets/set-progress-wallet"
 import { supabaseAdmin } from "@/lib/supabase"
 import { apiErrorResponse } from "@/lib/api-error"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { fetchAllPaged } from "@/lib/supabase-paginate"
 import { classifySetTier, type SetTier } from "@/lib/set-completion-tier"
 import { pinnacleRenderHref } from "@/lib/entity-href"
-import { normalizeAddress } from "@/lib/address"
 
 export const dynamic = "force-dynamic"
 // Above the 8 s per-read bound × the handful of pages each read takes, so the
@@ -138,9 +138,14 @@ export async function GET(req: NextRequest) {
   // collection, and leaves a base58 key verbatim. Behaviour on every valid
   // Pinnacle wallet is identical; what it buys is that a Solana key reaching
   // this route is not silently destroyed into a string that matches nothing.
-  const wallet = normalizeAddress(raw)
-
+  //
+  // 2026-11-14: and a USERNAME (the Sets tab passes ?wallet= verbatim, and the
+  // owner key may hold one) used to match nothing here: "0% of every set". The
+  // shared gate resolves it, and folds an un-prefixed hex address to 0x form.
   try {
+    const gate = await resolveSetProgressWallet(raw)
+    if (!gate.ok) return gate.response
+    const wallet = gate.wallet
     // 1. The checklist. Every render in the catalog, paged.
     const catalog = await fetchAllPaged<CatalogRow>(
       (from, to) =>
@@ -200,6 +205,12 @@ export async function GET(req: NextRequest) {
       throw Object.assign(new Error("pinnacle wallet holdings read was truncated"), {
         code: "57014",
       })
+    }
+    // 2026-11-14: no pins has two meanings — indexed with none (0% is true) or
+    // never walked (169 sets at 0% would be a claim nothing measured).
+    if (owned.rows.length === 0) {
+      const notScanned = await notScannedResponse(wallet)
+      if (notScanned) return notScanned
     }
 
     // Owned render -> its best (lowest) serial and whether that copy is locked.
