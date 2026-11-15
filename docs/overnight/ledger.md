@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-14 ~6:45 PM PT — 0xbd94: 484 Flowty purchases the 04-12 bulk_seed import had labelled pack pulls are marketplace buys again at their sale price ($492.59) (Claude Code cloud)
+
+- Each of the 484 has exactly one `sales` row with buyer = 0xbd94 (marketplace flowty, price > 0) within 1 h of the row's acquired_date. None has a pack-open record naming 0xbd94 as opener, and none has another acquisition row. Since tonight's pack-pulls-are-$0 rule they had read $0. Migration `20261115030000`; backup `flowty_archive.moment_acquisitions_bak_bulk_seed_flowty_buys_20261114`; verified live (484 rows / $492.59, source `bulk_seed_flowty_reclass_20261114`).
+- Revert: UPDATE back from the backup table (recipe in the file header).
+
 ### 2026-11-14 ~6:35 PM PT — Candy: a collection's first Magic Eden walk reads the whole feed, not 30 days; #251 follow-ups recorded (Claude Code cloud)
 - **Why:** a first walk looked back only 30 days. The legacy-Candy first walks ran 11-08/09, inside the 10-12 → 11-06 market lock, so they found almost nothing and set the cursor to "now", stranding ~5.5k pre-lock sales on 320 symbols (Cowork handoff `claude/handoff-2026-11-14-candy-fmv-coverage-gap.md`, which rewound the 356 existing cursors in the DB). This stops a newly catalogued collection from repeating it.
 - **Code:** `lib/candy/collections-market.ts`: with no `sales_high_water_at`, the floor is 0. The walk is still bounded by `MAX_PAGES` (20 × 500, ME's offset cap) and reports `truncated`. The test is inverted ("reads to the end of the feed"); with the 30-day floor planted back, it fails. Preflight 6/6.
