@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~8:45 AM PT — DONE: inbox `2026-11-15T0500Z` steps 5–7 (#257 lane verified, 2,529 ME sales parked, #256 program-id source found); #248 effect check passed, cost check owed (Claude Code cloud, Trevor live)
+
+- No new prod change since the 8:20 AM PT entry (the 2,529-row park is logged there). #248 miss re-sample 8:45 AM PT: 84 / 76,530 wallet rows = 0.11 % (target ≲ 0.2 %); pgss pooled 23 h puts PostgREST at 8,266 reads/call vs the 7,195 bar, so a QUIET ≥ 1 h window is owed before any verdict — steps on #248.
+- Handed off, not done: #255 DROP → Cowork (Trevor); hybrid-custody candidates timeout → `2026-11-15T1635Z` §2 (another session's staging; cross-check note added). Lessons promoted to tooling-gotchas.md; session entry in docs/sessions/2026-11.md.
+- Revert: docs only.
+
 ### 2026-11-15 ~8:45 AM PT — pack calendar stops listing REWARD dists and started no-price/no-close dists as "on sale now"; NWSL Panini line gets ⚽ (Claude Code cloud, Trevor live after the Sunday X draft)
 - `buildPackCalendar` (lib/insights/pack-calendar.ts): skips `dist_type = REWARD` always, and an unpriced dist with no `end_time` once it has started (still listed while upcoming). 11-15's draft had Metallic Silver Week 1/2 Reward, Luka Top Shot This (closed 11-09 per the official page) and Rookie Debut Trade Ticket Pack as "on sale now". 2 tests (planted-defect checked). `x-draft.mjs`: `WOMENS SOCCER` → ⚽. x-calendar.md source row notes the rule.
 - Revert: find the commit by message "pack calendar: never list REWARD dists" and `git revert` it. No DB change.
