@@ -12,6 +12,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-14 ~7:45 PM PT — Estate: every unpriced pack pull (1,151,185) and Pinnacle mint (15,320) now costs $0 on the moment side; the trigger covers mints too; a recurring lane fills saved wallets' acquisition records every 2 h (Claude Code cloud)
+
+- Trevor 7:19 PM PT: "Do all of these." Migration `20261115034000`.
+- Trigger `moment_acq_pack_pull_zero_cost` now fills a NULL price with $0 for `mint` (Pinnacle pins are minted into the opener's wallet) as well as `pack_pull`. A recorded price is never overwritten.
+- `zero_unpriced_pulls_batch_20261114` ran in 13 batches (~2.5 min total). All 1,166,505 row ids are recorded first in `flowty_archive.unpriced_pulls_zeroed_20261114`. Remaining NULL pulls/mints: 0. Pulls/mints with a price > 0: 0.
+- New pg_cron `rpc-saved-wallet-acquisition-fill` (`41 */2 * * *`, 90 s budget): `refresh_saved_wallet_acquisitions` runs the proven `backfill_acq_own_history_20261114` per saved wallet × collection, least-recently-filled first. State is kept in `saved_wallet_acquisition_fill_state`; runs log as `saved-wallet-acquisition-fill`. A test run covered 11 pairs, 0 errors, 0 new rows (just filled).
+- Revert: per the file header (unschedule; drop the trigger first; UPDATE back to NULL from the archive table).
+
 ### 2026-11-14 ~7:35 PM PT — cache-refresh: the fallback "unknown" acquisition row now carries the collection it was written for (Claude Code cloud)
 
 - `/api/cache-refresh` serves Top Shot and All Day, but its fallback `moment_acquisitions` insert omitted `collection_id`, so the row took the column's Top Shot default. The route's own existence read is collection-scoped (#142), so an All Day refresh would have written its row under Top Shot.
