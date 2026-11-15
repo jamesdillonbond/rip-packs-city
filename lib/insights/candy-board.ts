@@ -204,6 +204,9 @@ export async function fetchCandyMlbDefault(
     label: label as string,
     ok: sec.ok && !sec.truncated,
     partial: sec.truncated,
+    // fetchView sets truncated ONLY on a successful read that filled its limit
+    // (its error branch returns truncated:false), so here truncated IS a cap.
+    capped: sec.ok && sec.truncated,
   }))
 
   return {

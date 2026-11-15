@@ -158,3 +158,37 @@ describe("summarizeDegraded — a successful but CAPPED read", () => {
     expect(sum!.failed).toEqual(["Deals"])
   })
 })
+
+// Deep audit 2026-11-15 (D1): /insights/candy-mlb told every anonymous visitor its
+// Holders tab was a "temporary database-load failure … reload shortly" while the
+// read had SUCCEEDED and simply filled its 800-row cap (1,316 holders). Reloading
+// changes nothing, so that sentence was a false claim. A section that says it is
+// `capped` gets cap copy; everything else keeps the failure copy.
+describe("summarizeDegraded — a deliberate CAP is not a load failure", () => {
+  it("a capped-only board does not claim a database-load failure", () => {
+    const sum = summarizeDegraded([
+      { label: "Holders", ok: false, partial: true, capped: true },
+      { label: "Market", ok: true },
+    ])
+    expect(sum).not.toBeNull()
+    expect(sum!.truncated).toEqual(["Holders"])
+    expect(sum!.headline).toContain("1 section is showing an incomplete slice (Holders)")
+    expect(sum!.headline).not.toMatch(/database-load failure/)
+    expect(sum!.headline).not.toMatch(/reload shortly/)
+    expect(sum!.headline).toContain("fixed cap")
+  })
+
+  it("keeps the failure copy when a mid-walk failure is truncated (capped unset)", () => {
+    const sum = summarizeDegraded([{ label: "Squeeze board", ok: false, partial: true }])
+    expect(sum!.headline).toMatch(/temporary database-load failure/)
+  })
+
+  it("keeps the failure copy when ANY section failed, even beside a cap", () => {
+    const sum = summarizeDegraded([
+      { label: "Holders", ok: false, partial: true, capped: true },
+      boardStatus("Deals", false),
+    ])
+    expect(sum!.headline).toMatch(/temporary database-load failure/)
+    expect(sum!.failed).toEqual(["Deals"])
+  })
+})

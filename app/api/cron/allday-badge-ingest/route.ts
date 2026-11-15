@@ -120,12 +120,17 @@ function buildBadgeRow(r: RunnerRow) {
     parallel_id: r.parallel_id ?? 0,
     parallel_name: r.parallel_name ?? "Standard",
     low_ask: r.low_ask ?? null,
-    highest_offer: r.highest_offer ?? null,
+    // `|| null` (deep audit 2026-11-15, C2): the "measured clean — upstream nulls
+    // those" note below went stale — 3,213 of 5,607 All Day rows held
+    // highest_offer = 0 and NONE held NULL. A $0 bid is not a bid; atlas_editions_drain
+    // already NULLIFs the same field. The stored zeros were nulled by migration
+    // 20261115093610_audit_20261115_allday_badge_zero_offer_to_null.
+    highest_offer: r.highest_offer || null,
     // `|| null`, not `?? null`: upstream reports averageSalePriceCents = 0 for
     // "no sales", and an average of positive-price sales can never be $0 — so a
     // stored 0 is the fabricated-zero shape, not a price. 166 such rows were
     // nulled by the 2026-08-27 deep audit; this keeps the writer from re-minting
-    // them. (low_ask/highest_offer measured clean — upstream nulls those.)
+    // them. (low_ask measured clean — upstream nulls it.)
     avg_sale_price: r.avg_sale_price || null,
     circulation_count: circulation,
     effective_supply: null as number | null,

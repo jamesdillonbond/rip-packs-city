@@ -42,6 +42,15 @@ export interface BoardStatus {
    * read was truncated must never be able to say so and be ignored.
    */
   partial?: boolean
+  /**
+   * true when `partial` is ONLY because the read filled a deliberate row cap —
+   * the query SUCCEEDED and the ranking simply continues below the cut. Lets the
+   * notice say so instead of calling it a load failure (deep audit 2026-11-15, D1:
+   * /insights/candy-mlb told every visitor its Holders tab was a "temporary
+   * database-load failure" while 1,316 holders sat behind an 800-row cap). A
+   * caller that cannot tell a cap from a mid-walk failure must leave this unset.
+   */
+  capped?: boolean
 }
 
 export interface DegradedSummary {
@@ -100,9 +109,19 @@ export function summarizeDegraded(statuses: BoardStatus[]): DegradedSummary | nu
 
   // The second sentence is the load-bearing half: it tells the reader the blank is a
   // fetch failure, not a measurement. Without it an empty section still reads as data.
-  const headline =
-    `${parts.join("; ")}. This is a temporary database-load failure, not an empty result — ` +
-    `treat the affected sections as unknown rather than zero, and reload shortly.`
+  //
+  // ⚠ EXCEPT when nothing failed and every incomplete section is a deliberate CAP:
+  // then "temporary database-load failure … reload shortly" is itself a false
+  // claim — reloading changes nothing (D1, 2026-11-15). Only a status that says
+  // `capped` qualifies; a mid-walk failure keeps the failure copy.
+  const capOnly =
+    failed.length === 0 &&
+    statuses.filter((s) => s.partial).every((s) => s.capped === true)
+  const headline = capOnly
+    ? `${parts.join("; ")}. The list is longer than this page shows — these sections show the top rows ` +
+      `of a complete read, cut at a fixed cap; rows below the cut are not shown, not missing.`
+    : `${parts.join("; ")}. This is a temporary database-load failure, not an empty result — ` +
+      `treat the affected sections as unknown rather than zero, and reload shortly.`
 
   return { failed, truncated, total, headline }
 }
