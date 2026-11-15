@@ -58,9 +58,11 @@ async function handle(req: NextRequest) {
     without_symbol: result.without_symbol,
     stats_written: result.stats_written,
     sales_offered: result.sales_offered,
-    collections: result.collections.filter((c) => c.sales_seen > 0 || c.error || c.symbol_found_now).slice(0, 40),
+    listings_written: result.listings_written,
+    listings_retired: result.listings_retired,
+    collections: result.collections.filter((c) => c.sales_seen > 0 || c.error || c.symbol_found_now || c.listings_unresolved > 0).slice(0, 40),
   }
-  await log(startedAt, result.checked, result.stats_written + result.sales_offered, result.ok, result.error, extra)
+  await log(startedAt, result.checked, result.stats_written + result.sales_offered + result.listings_written, result.ok, result.error, extra)
   return NextResponse.json({ ok: result.ok, ...extra, error: result.error }, { status: result.ok ? 200 : 207 })
 }
 

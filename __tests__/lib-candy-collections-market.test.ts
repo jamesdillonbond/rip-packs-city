@@ -24,7 +24,13 @@ const state: {
   sold: string[]
   me: Record<string, any>
   meCalls: string[]
-} = { queue: [], updates: [], daily: [], parks: [], parkError: null, queued: [], sold: [], me: {}, meCalls: [] }
+  wmc: Record<string, string>
+  editionIds: Record<string, string>
+  ownerMoved: Array<{ pda_address: string; seller: string | null }>
+  listings: any[]
+  listingError: any
+  retires: any[]
+} = { queue: [], updates: [], daily: [], parks: [], parkError: null, queued: [], sold: [], me: {}, meCalls: [], wmc: {}, editionIds: {}, ownerMoved: [], listings: [], listingError: null, retires: [] }
 
 function db() {
   return {
@@ -33,6 +39,8 @@ function db() {
         if (state.parkError) return { data: null, error: state.parkError }
         state.parks.push(args)
       }
+      if (name === "candy_listing_owner_moved_pdas") return { data: state.ownerMoved.filter((r) => args.p_pdas.includes(r.pda_address)), error: null }
+      if (name === "candy_retire_unseen_set_listings") { state.retires.push(args); return { data: 3, error: null } }
       return { data: null, error: null }
     },
     from: (table: string) => {
@@ -52,10 +60,22 @@ function db() {
         in: (_c: string, vals: string[]) => {
           if (table === "candy_sales_unresolved") return Promise.resolve({ data: vals.filter((v) => state.queued.includes(v)).map((signature) => ({ signature })), error: null })
           if (table === "sales") return Promise.resolve({ data: vals.filter((v) => state.sold.includes(v)).map((transaction_hash) => ({ transaction_hash })), error: null })
+          // sampleMint chains .in(...).limit(1); the listings sweep awaits .in(...) directly.
+          const both = (p: Promise<any>) => Object.assign(p, { limit: b.limit })
+          if (table === "wallet_moments_cache") return both(Promise.resolve({ data: vals.filter((v) => state.wmc[v]).map((moment_id) => ({ moment_id, edition_key: state.wmc[moment_id] })), error: null }))
+          if (table === "editions") return both(Promise.resolve({ data: vals.filter((v) => state.editionIds[v]).map((external_id) => ({ id: state.editionIds[external_id], external_id })), error: null }))
           return b
         },
         update: (patch: any) => { b._patch = patch; return b },
-        upsert: async (row: any) => { state.daily.push(row); return { error: null } },
+        upsert: async (row: any) => {
+          if (table === "candy_listings") {
+            if (state.listingError) return { error: state.listingError }
+            state.listings.push(...row)
+            return { error: null }
+          }
+          state.daily.push(row)
+          return { error: null }
+        },
       }
       return b
     },
@@ -78,6 +98,7 @@ const run = (budgetMs = 60_000, now = () => NOW) => runCollectionsMarket(db(), {
 beforeEach(() => {
   state.queue = []; state.updates = []; state.daily = []; state.parks = []; state.parkError = null
   state.queued = []; state.sold = []; state.me = {}; state.meCalls = []
+  state.wmc = {}; state.editionIds = {}; state.ownerMoved = []; state.listings = []; state.listingError = null; state.retires = []
 })
 
 describe("runCollectionsMarket", () => {
@@ -169,5 +190,99 @@ describe("runCollectionsMarket", () => {
     ]
     await run()
     expect(state.parks.map((p) => p.p_signature)).toEqual(["RECENT", "ANCIENT"])
+  })
+
+  it("a walk may read to ME's offset cap of 15,000 (31 pages), not stop at 9,500", async () => {
+    state.queue = [col({ sales_high_water_at: null })]
+    state.me["/collections/2022_leadoff_icons/stats"] = { floorPrice: 1, listedCount: 0 }
+    state.me["/collections/2022_leadoff_icons/activities"] = (path: string) => {
+      const off = Number(/offset=(\d+)/.exec(path)![1])
+      return Array.from({ length: 500 }, (_, i) => ({ type: "list", signature: `L${off + i}`, blockTime: sec("2026-11-09T01:00:00Z") - off - i }))
+    }
+    const r = await run()
+    const offsets = state.meCalls.filter((p) => p.includes("/activities")).map((p) => Number(/offset=(\d+)/.exec(p)![1]))
+    expect(offsets.at(-1)).toBe(15_000)
+    expect(offsets.length).toBe(31)
+    expect(r.collections[0].truncated).toBe(true)
+  })
+})
+
+describe("runCollectionsMarket — legacy listings (2026-11-14)", () => {
+  const sym = "/collections/2021_allstar_icons"
+  const L = (pda: string, mint: string, price = 0.5, seller = "S") => ({ pdaAddress: pda, tokenMint: mint, price, seller, auctionHouse: "AH", tokenSize: 1, expiry: 0 })
+  const setup = (listings: any, listedCount = 2) => {
+    state.queue = [col({ name: "2021 All-Star ICONs", set_id: "set-asi", me_symbol: "2021_allstar_icons" })]
+    state.me[`${sym}/stats`] = { floorPrice: 1, listedCount }
+    state.me[`${sym}/activities`] = []
+    state.me[`${sym}/listings`] = listings
+    state.wmc = { M1: "k1", M2: "k2" }
+    state.editionIds = { k1: "ed-1", k2: "ed-2" }
+  }
+
+  it("writes each resolvable ask to candy_listings on its edition, priced in USD at the run's SOL rate", async () => {
+    setup([L("P1", "M1", 0.5), L("P2", "M2", 2)])
+    const r = await run()
+    expect(r.ok).toBe(true)
+    expect(state.listings).toEqual([
+      expect.objectContaining({ pda_address: "P1", token_mint: "M1", edition_id: "ed-1", collection_id: "c1", price_sol: 0.5, price_usd: 75, is_active: true, venue: "magic_eden" }),
+      expect.objectContaining({ pda_address: "P2", edition_id: "ed-2", price_usd: 300 }),
+    ])
+    expect(r.listings_written).toBe(2)
+  })
+
+  it("an ask on a mint the census has not reached is COUNTED as unresolved, never written under a guessed edition", async () => {
+    setup([L("P1", "M1"), L("P9", "UNKNOWN_MINT")])
+    const r = await run()
+    expect(state.listings.map((l) => l.pda_address)).toEqual(["P1"])
+    expect(r.collections[0].listings_unresolved).toBe(1)
+  })
+
+  it("an ask whose owner has since moved the card is not written", async () => {
+    setup([L("P1", "M1", 0.5, "SELLER"), L("P2", "M2")])
+    state.ownerMoved = [{ pda_address: "P1", seller: "SELLER" }]
+    await run()
+    expect(state.listings.map((l) => l.pda_address)).toEqual(["P2"])
+  })
+
+  it("a complete, plausible sweep retires unseen asks for THIS set only, behind the sweep's start, keeping every pda ME still serves", async () => {
+    setup([L("P1", "M1"), L("P9", "UNKNOWN_MINT")])
+    const r = await run()
+    expect(state.retires).toHaveLength(1)
+    expect(state.retires[0]).toMatchObject({ p_set_id: "set-asi", p_before: new Date(NOW).toISOString() })
+    expect([...state.retires[0].p_seen_pdas].sort()).toEqual(["P1", "P9"])
+    expect(r.listings_retired).toBe(3)
+  })
+
+  it("a sweep that saw under half the asks /stats reports retires NOTHING (ME's listings endpoint is flaky)", async () => {
+    setup([L("P1", "M1")], 40)
+    await run()
+    expect(state.listings).toHaveLength(1)
+    expect(state.retires).toEqual([])
+  })
+
+  it("a listings endpoint that 404s retires nothing", async () => {
+    setup(null)
+    await run()
+    expect(state.retires).toEqual([])
+  })
+
+  it("a sweep that hits the page cap is incomplete and retires nothing", async () => {
+    setup(() => Array.from({ length: 100 }, (_, i) => L(`P${i}`, "M1")), 2000)
+    const r = await run()
+    expect(r.collections[0].listings_complete).toBe(false)
+    expect(state.retires).toEqual([])
+  })
+
+  it("a failed listings write fails the run but keeps the completed sales walk's high-water advance", async () => {
+    setup([L("P1", "M1")])
+    state.me[`${sym}/activities`] = [{ type: "buyNow", signature: "S1", tokenMint: "M1", blockTime: sec("2026-11-08T20:00:00Z"), price: 1 }]
+    state.listingError = { message: "deadlock detected" }
+    const r = await run()
+    expect(r.ok).toBe(false)
+    expect(r.error).toMatch(/listings: candy_listings upsert: deadlock/)
+    const patch = state.updates.at(-1)!.patch
+    expect(patch.sales_high_water_at).toBe("2026-11-08T20:00:00.000Z")
+    expect(patch.market_error).toMatch(/deadlock/)
+    expect(state.retires).toEqual([])
   })
 })

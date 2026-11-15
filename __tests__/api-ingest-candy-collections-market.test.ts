@@ -16,7 +16,7 @@ vi.mock("@/lib/candy/collections-market", () => ({
 import { GET } from "@/app/api/ingest/candy-collections-market/route"
 
 const req = (auth?: string) => ({ headers: new Headers(auth ? { authorization: auth } : {}) }) as any
-const ok = { ok: true, collections: [{ name: "2022 Leadoff ICONs", sales_seen: 2, error: null, symbol_found_now: false }, { name: "quiet", sales_seen: 0, error: null, symbol_found_now: false }], checked: 90, symbols_found: 4, without_symbol: 3, stats_written: 83, sales_offered: 2, error: null }
+const ok = { ok: true, collections: [{ name: "2022 Leadoff ICONs", sales_seen: 2, error: null, symbol_found_now: false }, { name: "quiet", sales_seen: 0, error: null, symbol_found_now: false }], checked: 90, symbols_found: 4, without_symbol: 3, stats_written: 83, sales_offered: 2, listings_written: 5, listings_retired: 1, error: null }
 
 beforeEach(() => {
   process.env.CRON_SECRET = "cron-secret-for-test-000000000000"
@@ -37,7 +37,8 @@ describe("/api/ingest/candy-collections-market", () => {
     const res = await GET(req("Bearer cron-secret-for-test-000000000000"))
     expect(res.status).toBe(200)
     expect(state.heartbeats).toBe(1)
-    expect(state.logged[0]).toMatchObject({ p_pipeline: "candy-collections-market", p_ok: true, p_rows_found: 90, p_rows_written: 85 })
+    expect(state.logged[0]).toMatchObject({ p_pipeline: "candy-collections-market", p_ok: true, p_rows_found: 90, p_rows_written: 90 })
+    expect(state.logged[0].p_extra).toMatchObject({ listings_written: 5, listings_retired: 1 })
     expect(state.logged[0].p_extra.sales_offered).toBe(2)
     // Only collections with something to say are listed.
     expect(state.logged[0].p_extra.collections.map((c: any) => c.name)).toEqual(["2022 Leadoff ICONs"])

@@ -21,6 +21,8 @@
 //      resolves its edition from the census and writes `sales` — one writer for Candy sales,
 //      not two. A sale already in `sales` or already queued is not offered again (the park
 //      RPC would count a re-offer as a failed attempt).
+//   4. Listings (2026-11-14). The collection's current Magic Eden asks → candy_listings, so the
+//      FMV ask-ceiling covers legacy cards; see sweepListings for the retirement rule.
 //
 // Honesty: the high-water mark advances only after a walk that reached it (or its lookback
 // floor) AND whose every offer landed. A walk stopped by the time budget or a failed write
@@ -37,9 +39,16 @@ type FetchFn = (url: string, init?: RequestInit) => Promise<Response>
 const ME_BASE = "https://api-mainnet.magiceden.dev/v2"
 const ME_LIMIT = 500
 const ME_FETCH_TIMEOUT_MS = 15_000
-// ME rejects offset > 15,000 (HTTP 400, seen on the All-Star walk 11-08), so 20 pages of 500
-// is the deepest a walk can read in any case.
-const MAX_PAGES = 20
+// ME rejects offset > 15,000 (HTTP 400, seen on the All-Star walk 11-08), so offsets
+// 0, 500 … 15,000 — 31 pages of 500 — are the deepest a walk can read. (Was 20, which stopped
+// at offset 9,500 and left the 10,000–15,000 band unread on the deepest symbols: the 11-14
+// Magic Eden pull planned 31 pages for knight_terrors, superman_19392011_1 and 2022_leadoff_icons.)
+const MAX_PAGES = 31
+// Listings (asks). ME's /collections/<symbol>/listings accepts limit <= 100 (500 is HTTP 400,
+// candy-listings-indexer 07-24). The largest legacy book measured 11-14 was 473 asks, so 20
+// pages is far above any real book; a sweep that hits the cap is incomplete and retires nothing.
+const LISTING_LIMIT = 100
+const LISTING_MAX_PAGES = 20
 const SYMBOL_RETRY_MS = 7 * 86_400_000
 const SALE_TYPES = new Set(["buyNow", "buyNowFill", "acceptBid"])
 export const QUEUE_REASON = "queued_collections_walk"
@@ -65,6 +74,11 @@ export interface CollectionMarketReport {
   sales_offered: number
   truncated: boolean
   high_water_advanced: boolean
+  listings_seen: number
+  listings_written: number
+  listings_unresolved: number
+  listings_complete: boolean
+  listings_retired: number | null
   error: string | null
 }
 
@@ -76,6 +90,8 @@ export interface CollectionsMarketResult {
   without_symbol: number
   stats_written: number
   sales_offered: number
+  listings_written: number
+  listings_retired: number
   error: string | null
 }
 
@@ -89,7 +105,7 @@ export async function runCollectionsMarket(
   const deadline = now() + opts.budgetMs
   const out: CollectionsMarketResult = {
     ok: false, collections: [], checked: 0, symbols_found: 0, without_symbol: 0,
-    stats_written: 0, sales_offered: 0, error: null,
+    stats_written: 0, sales_offered: 0, listings_written: 0, listings_retired: 0, error: null,
   }
 
   const me = async (path: string): Promise<unknown> => {
@@ -130,7 +146,9 @@ export async function runCollectionsMarket(
     if (now() > deadline) break
     const rep: CollectionMarketReport = {
       address: c.address, name: c.name, symbol: c.me_symbol, symbol_found_now: false, stats_written: false,
-      pages: 0, sales_seen: 0, sales_offered: 0, truncated: false, high_water_advanced: false, error: null,
+      pages: 0, sales_seen: 0, sales_offered: 0, truncated: false, high_water_advanced: false,
+      listings_seen: 0, listings_written: 0, listings_unresolved: 0, listings_complete: false, listings_retired: null,
+      error: null,
     }
     out.collections.push(rep)
     out.checked++
@@ -180,6 +198,7 @@ export async function runCollectionsMarket(
         rep.stats_written = true
         out.stats_written++
       }
+      const listedCount = typeof st?.listedCount === "number" ? (st.listedCount as number) : null
 
       // 3. Sales feed back to the high-water mark.
       const hwMs = c.sales_high_water_at ? new Date(c.sales_high_water_at).getTime() : null
@@ -236,6 +255,19 @@ export async function runCollectionsMarket(
         patch.sales_high_water_at = new Date(newestMs).toISOString()
         rep.high_water_advanced = true
       }
+
+      // 4. Listings. Its own try: a failed listings sweep fails the RUN (it is recorded) but must
+      // not throw away a sales walk that completed above.
+      try {
+        await sweepListings(db, me, c.set_id, symbol, listedCount, solRate, now, deadline, rep)
+        out.listings_written += rep.listings_written
+        out.listings_retired += rep.listings_retired ?? 0
+      } catch (e) {
+        const msg = `listings: ${(e instanceof Error ? e.message : String(e)).slice(0, 180)}`
+        rep.error = msg
+        patch.market_error = msg
+        errors.push(`${c.name}: ${msg}`)
+      }
     } catch (e) {
       rep.error = (e instanceof Error ? e.message : String(e)).slice(0, 200)
       patch.market_error = rep.error
@@ -249,6 +281,146 @@ export async function runCollectionsMarket(
   out.error = errors.length ? errors.slice(0, 5).join(" | ").slice(0, 900) : null
   out.ok = errors.length === 0
   return out
+}
+
+// The collection's current asks → candy_listings (venue magic_eden), so the FMV ask-ceiling
+// (candy_listing_floor → lib/fmv-candy-ceiling.ts) covers legacy cards too. Before 11-14 only the
+// registry sets' indexer wrote asks: 0 legacy rows against ~10,650 legacy asks on ME.
+//
+// A mint resolves to its edition through the census (wallet_moments_cache.edition_key →
+// editions.external_id), exactly as candy-listings-indexer does; a mint the census has not
+// reached is counted (listings_unresolved), not written. A listing ME still serves for a card
+// whose owner has since moved is skipped (candy_listing_owner_moved_pdas, same rule as the
+// indexer).
+//
+// Retirement — an ask ME stopped serving is set inactive — runs ONLY behind a sweep that is
+// complete (a short page, inside the page cap and the time budget) AND plausible: ME's listings
+// endpoint has answered 420, 7 and 22 for the same book inside six hours (07-27), so a sweep
+// that saw fewer than half the asks /stats reports retires nothing. Retirement is scoped to
+// this collection's set (candy_retire_unseen_set_listings) and to rows last seen before this
+// sweep began, so it can never touch a registry set or an ask written by this sweep.
+async function sweepListings(
+  db: Db,
+  me: (path: string) => Promise<unknown>,
+  setId: string,
+  symbol: string,
+  listedCount: number | null,
+  solRate: number | null,
+  now: () => number,
+  deadline: number,
+  rep: CollectionMarketReport,
+): Promise<void> {
+  const sweepStartIso = new Date(now()).toISOString()
+  const listings: MeListing[] = []
+  let complete = false
+  let endpointMissing = false
+  for (let page = 0; page < LISTING_MAX_PAGES; page++) {
+    if (now() > deadline) break
+    const got = (await me(`/collections/${encodeURIComponent(symbol)}/listings?offset=${page * LISTING_LIMIT}&limit=${LISTING_LIMIT}`)) as MeListing[] | null
+    if (got === null) { endpointMissing = true; break }
+    const arr = Array.isArray(got) ? got : []
+    listings.push(...arr)
+    if (arr.length < LISTING_LIMIT) { complete = true; break }
+  }
+  const valid = listings.filter((l) => l.pdaAddress && l.tokenMint && typeof l.price === "number" && l.price > 0)
+  rep.listings_seen = valid.length
+
+  // Resolve mints → edition ids.
+  const mints = [...new Set(valid.map((l) => l.tokenMint as string))]
+  const keyByMint = new Map<string, string>()
+  for (let i = 0; i < mints.length; i += 200) {
+    const { data, error } = await db
+      .from("wallet_moments_cache")
+      .select("moment_id, edition_key")
+      .eq("collection_id", CANDY_MLB_UUID)
+      .in("moment_id", mints.slice(i, i + 200))
+    if (error) throw new Error(`wmc read: ${error.message}`)
+    for (const r of (data ?? []) as Array<{ moment_id: string; edition_key: string | null }>) {
+      if (r.edition_key && !keyByMint.has(r.moment_id)) keyByMint.set(r.moment_id, r.edition_key)
+    }
+  }
+  const keys = [...new Set(keyByMint.values())]
+  const idByKey = new Map<string, string>()
+  for (let i = 0; i < keys.length; i += 200) {
+    const { data, error } = await db
+      .from("editions")
+      .select("id, external_id")
+      .eq("collection_id", CANDY_MLB_UUID)
+      .in("external_id", keys.slice(i, i + 200))
+    if (error) throw new Error(`editions read: ${error.message}`)
+    for (const r of (data ?? []) as Array<{ id: string; external_id: string }>) {
+      if (!idByKey.has(r.external_id)) idByKey.set(r.external_id, r.id)
+    }
+  }
+
+  // Owner-moved asks are not live asks.
+  const ownerMoved = new Set<string>()
+  const pdas = [...new Set(valid.map((l) => l.pdaAddress as string))]
+  if (pdas.length) {
+    const { data, error } = await db.rpc("candy_listing_owner_moved_pdas", { p_pdas: pdas })
+    if (error) throw new Error(`owner_moved read: ${error.message}`)
+    const sellerByPda = new Map(valid.map((l) => [l.pdaAddress as string, l.seller ?? null]))
+    for (const r of (Array.isArray(data) ? data : []) as Array<{ pda_address: string; seller: string | null }>) {
+      if (sellerByPda.get(r.pda_address) === r.seller) ownerMoved.add(r.pda_address)
+    }
+  }
+
+  const seenAt = new Date(now()).toISOString()
+  const rows: Record<string, unknown>[] = []
+  const seenPdas = new Set<string>()
+  for (const l of valid) {
+    const pda = l.pdaAddress as string
+    if (seenPdas.has(pda) || ownerMoved.has(pda)) continue
+    const key = keyByMint.get(l.tokenMint as string)
+    const editionId = key ? idByKey.get(key) ?? null : null
+    if (!editionId) { rep.listings_unresolved++; continue }
+    seenPdas.add(pda)
+    rows.push({
+      pda_address: pda,
+      token_mint: l.tokenMint,
+      edition_id: editionId,
+      collection_id: CANDY_MLB_UUID,
+      seller: l.seller ?? null,
+      auction_house: l.auctionHouse ?? null,
+      price_sol: l.price,
+      price_usd: solRate != null ? Number(((l.price as number) * solRate).toFixed(2)) : null,
+      token_size: l.tokenSize ?? null,
+      expiry: l.expiry && l.expiry > 0 ? new Date(l.expiry * 1000).toISOString() : null,
+      last_seen_at: seenAt,
+      is_active: true,
+      venue: "magic_eden",
+    })
+  }
+  for (let i = 0; i < rows.length; i += 100) {
+    const batch = rows.slice(i, i + 100)
+    const { error } = await db.from("candy_listings").upsert(batch, { onConflict: "pda_address" })
+    if (error) throw new Error(`candy_listings upsert: ${error.message}`)
+    rep.listings_written += batch.length
+  }
+
+  // A pda ME still serves keeps its row even when it was not written this sweep (owner-moved
+  // or unresolved): only an ask ME no longer serves is retired.
+  const plausible = listedCount === null ? valid.length > 0 : valid.length * 2 >= listedCount
+  rep.listings_complete = complete && !endpointMissing
+  if (rep.listings_complete && plausible) {
+    const { data, error } = await db.rpc("candy_retire_unseen_set_listings", {
+      p_set_id: setId,
+      p_seen_pdas: pdas,
+      p_before: sweepStartIso,
+    })
+    if (error) throw new Error(`retire: ${error.message}`)
+    rep.listings_retired = typeof data === "number" ? data : Number(data ?? 0)
+  }
+}
+
+interface MeListing {
+  pdaAddress?: string
+  tokenMint?: string
+  auctionHouse?: string
+  seller?: string
+  price?: number
+  tokenSize?: number
+  expiry?: number
 }
 
 async function stamp(db: Db, address: string, patch: Record<string, unknown>, rep: CollectionMarketReport, errors: string[]) {
