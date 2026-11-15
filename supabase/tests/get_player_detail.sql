@@ -33,6 +33,7 @@
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Re-pinned 2026-10-25 to 20261025221903_audit_20261025_recent_low_totals_ignore_an_ask_far_above_fmv_a.sql (Recent-Low Totals call recent_low_usd).
+-- Re-pinned 2026-11-14 to 20261115043933_audit_20261114_player_totals_and_mint_dates_only_when_complete.sql (totals + dates complete or NULL).
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
 
@@ -171,11 +172,12 @@ BEGIN
                                                      lower(array_to_string(pc.characters, ' ')))))
      ) THEN
     -- 2026-09-26: the same render catalog get_player_editions lists, so the
-    -- header counts the pins the grid shows. Minting dates stay from
-    -- pinnacle_editions (the catalog carries none) and are NULL where it has none.
+    -- header counts the pins the grid shows. The catalog carries no minting
+    -- date, so this branch publishes none (2026-11-14, below).
     SELECT
       COUNT(*),
-      SUM(pc.total_minted) FILTER (WHERE pc.total_minted IS NOT NULL),
+      -- 2026-11-14: a total over SOME pins is not the total. NULL unless every pin carries one.
+      CASE WHEN COUNT(*) = COUNT(pc.total_minted) THEN SUM(pc.total_minted) END,
       SUM(pc.fmv_usd)      FILTER (WHERE pc.fmv_usd > 0),
       SUM(pc.floor_ask)    FILTER (WHERE pc.floor_ask > 0),
       SUM(pc.fmv_usd)      FILTER (WHERE pc.fmv_usd > 0 AND pc.fmv_confidence::text = 'ASK_ONLY'),
@@ -186,19 +188,20 @@ BEGIN
              OR (cardinality(pc.characters) > 1
                  AND lower(btrim(v_player.name)) IN (lower(array_to_string(pc.characters, ' & ')),
                                                      lower(array_to_string(pc.characters, ' ')))));
-    -- 2026-09-27: dates only when EVERY row carries one. pinnacle_editions has a
-    -- minting_date on 83 of 594 rows, so a MIN/MAX over the dated few published a
-    -- span as fact (Mickey Mouse: "first minted" = "last minted" from 1 of 24
-    -- rows, while his pins span 2023–2026). NULL hides the line.
-    SELECT CASE WHEN COUNT(*) > 0 AND COUNT(*) = COUNT(pe.minting_date) THEN MIN(pe.minting_date) END,
-           CASE WHEN COUNT(*) > 0 AND COUNT(*) = COUNT(pe.minting_date) THEN MAX(pe.minting_date) END
-    INTO v_first_minted, v_last_minted
-    FROM pinnacle_editions pe
-    WHERE pe.character_name = v_player.name;
+    -- 2026-09-27: dates only when EVERY row carries one (Mickey Mouse read
+    -- "first minted" = "last minted" from 1 of 24 rows).
+    -- 2026-11-14: and never from pinnacle_editions at all on this branch. That
+    -- table is SET-LEVEL and keyed by NAME, not by the pins counted above, so
+    -- "every row dated" was every row of a DIFFERENT, smaller subject: Hamm
+    -- showed one date for both from 1 row while the catalog holds 12 of his pins
+    -- (23 characters published such a span). The catalog carries no minting
+    -- date, so the honest answer is none: NULL hides the line.
+    v_first_minted := NULL;
+    v_last_minted  := NULL;
   ELSIF p_collection_id = v_pinnacle_uuid THEN
     SELECT
       COUNT(*),
-      SUM(pe.mint_count) FILTER (WHERE pe.mint_count IS NOT NULL),
+      CASE WHEN COUNT(*) = COUNT(pe.mint_count) THEN SUM(pe.mint_count) END,
       SUM(fmv.fmv_usd)   FILTER (WHERE fmv.fmv_usd > 0),
       SUM(COALESCE(fmv.floor_usd, fmv.fmv_usd)) FILTER (WHERE COALESCE(fmv.floor_usd, fmv.fmv_usd) > 0),
       CASE WHEN COUNT(*) = COUNT(pe.minting_date) THEN MIN(pe.minting_date) END,
@@ -210,11 +213,11 @@ BEGIN
   ELSE
     SELECT
       COUNT(*),
-      SUM(e.circulation_count) FILTER (WHERE e.circulation_count IS NOT NULL),
+      CASE WHEN COUNT(*) = COUNT(e.circulation_count) THEN SUM(e.circulation_count) END,
       SUM(fmv.fmv_usd)         FILTER (WHERE fmv.fmv_usd > 0),
       SUM(COALESCE(public.recent_low_usd(fmv.floor_price_usd, fmv.fmv_usd), fmv.fmv_usd)) FILTER (WHERE COALESCE(public.recent_low_usd(fmv.floor_price_usd, fmv.fmv_usd), fmv.fmv_usd) > 0),
-      MIN(e.first_minted_at),
-      MAX(e.first_minted_at)
+      CASE WHEN COUNT(*) > 0 AND COUNT(*) = COUNT(e.first_minted_at) THEN MIN(e.first_minted_at) END,
+      CASE WHEN COUNT(*) > 0 AND COUNT(*) = COUNT(e.first_minted_at) THEN MAX(e.first_minted_at) END
     INTO v_edition_count, v_total_circulation, v_fmv_total, v_floor_total, v_first_minted, v_last_minted
     FROM editions e
     LEFT JOIN LATERAL (
@@ -347,7 +350,20 @@ SELECT _assert_eq((public.get_player_detail(:PIN::uuid,'aurora') ->> 'listed_cou
 SELECT _assert((public.get_player_detail(:PIN::uuid,'aurora') ->> 'fmv_ask_derived_usd') IS NULL, 'no ASK_ONLY pin -> no ask-derived part');
 UPDATE public.pinnacle_catalog SET fmv_confidence = 'ASK_ONLY' WHERE render_id = 'LEV1-SLBT-SPIN-S6';
 SELECT _assert_eq((public.get_player_detail(:PIN::uuid,'aurora') ->> 'fmv_ask_derived_usd'), '30', 'the ASK_ONLY part of the FMV total is disclosed (30 of 42)');
-SELECT _assert_eq(left(public.get_player_detail(:PIN::uuid,'aurora') ->> 'first_minted_at', 10), '2025-01-02', 'minting dates still come from pinnacle_editions');
+-- ⚠ INVERTED 2026-11-14: a catalog character's dates USED to come from
+-- pinnacle_editions by name (Aurora's one dated row -> '2025-01-02'). That table
+-- is set-level and name-keyed, a different subject from the 3 pins counted above
+-- (live: Hamm 1 row vs 12 pins, 23 characters). The catalog has no date: none.
+SELECT _assert((public.get_player_detail(:PIN::uuid,'aurora') ->> 'first_minted_at') IS NULL, 'catalog character: no first-minted date borrowed from the set-level, name-keyed table');
+SELECT _assert((public.get_player_detail(:PIN::uuid,'aurora') ->> 'last_minted_at') IS NULL, 'catalog character: no last-minted date either');
+-- 2026-11-14: a total over SOME pins is not the total. One pin of unknown mint -> NULL ("—").
+INSERT INTO public.players (id, collection_id, name, team, is_active, headshot_url, external_id, first_name, last_name, jersey_number, position, player_tier) VALUES
+  ('a0a0a0a0-0000-4000-8000-000000000006', :PIN::uuid, 'Hamm', 'Toy Story', true, NULL, 'CH6', NULL, NULL, NULL, NULL, NULL);
+INSERT INTO public.pinnacle_catalog (render_id, characters, total_minted, fmv_usd, floor_ask) VALUES
+  ('TS-HAMM-1', ARRAY['Hamm'], 400, 5, NULL),
+  ('TS-HAMM-2', ARRAY['Hamm'], NULL, 5, NULL);
+SELECT _assert((public.get_player_detail(:PIN::uuid,'hamm') ->> 'total_circulation') IS NULL, 'catalog character with a pin of unknown mint: Total Mint is unknown, not 400');
+SELECT _assert_eq((public.get_player_detail(:PIN::uuid,'hamm') ->> 'edition_count'), '2', 'CONTROL: both pins still counted as pins');
 -- A duo character (combined name) counts the pin that lists both characters.
 INSERT INTO public.players (id, collection_id, name, team, is_active, headshot_url, external_id, first_name, last_name, jersey_number, position, player_tier) VALUES
   ('a0a0a0a0-0000-4000-8000-000000000002', :PIN::uuid, 'Maurice & Cogsworth', NULL, true, NULL, 'CH3', NULL, NULL, NULL, NULL, NULL);
@@ -370,6 +386,11 @@ INSERT INTO public.pinnacle_editions (id, character_name, mint_count, minting_da
 SELECT _assert((public.get_player_detail(:PIN::uuid,'belle') ->> 'first_minted_at') IS NULL, 'catalog character, partly dated: no first-minted date (not the dated few)');
 SELECT _assert((public.get_player_detail(:PIN::uuid,'belle') ->> 'last_minted_at') IS NULL, 'catalog character, partly dated: no last-minted date');
 SELECT _assert((public.get_player_detail(:PIN::uuid,'goofy') ->> 'first_minted_at') IS NULL, 'editions-only character, partly dated: no first-minted date');
+-- 2026-11-14: the editions-only (legacy) branch's mint total is complete or NULL too.
+INSERT INTO public.pinnacle_editions (id, character_name, mint_count, minting_date) VALUES
+  ('cc000000-0000-0000-0000-000000000005'::uuid, 'Goofy', NULL, NULL);
+SELECT _assert((public.get_player_detail(:PIN::uuid,'goofy') ->> 'total_circulation') IS NULL, 'editions-only character with an unknown mint count: Total Mint unknown, not 20');
+SELECT _assert_eq((public.get_player_detail(:PIN::uuid,'mickey-mouse') ->> 'total_circulation'), '900', 'CONTROL: a fully counted editions-only character keeps its total (500 + 400)');
 -- CONTROL: fully dated characters keep their span (Mickey: both rows dated).
 SELECT _assert((public.get_player_detail(:PIN::uuid,'mickey-mouse') ->> 'first_minted_at') IS NOT NULL, 'fully dated character keeps its first-minted date');
 SELECT _assert((public.get_player_detail(:PIN::uuid,'mickey-mouse') ->> 'first_minted_at') < (public.get_player_detail(:PIN::uuid,'mickey-mouse') ->> 'last_minted_at'), 'fully dated character: first < last');
@@ -429,6 +450,17 @@ SELECT _assert_eq((public.get_player_detail(:AD::uuid,'joey-porter-jr-') ->> 'ed
 SELECT _assert_eq((public.get_player_detail(:AD::uuid,'josh-allen') ->> 'total_circulation'), '35', 'Josh Allen (QB) = his edition + the unlinked one, never Hines-Allen''s (30 + 5)');
 SELECT _assert_eq((public.get_player_detail(:AD::uuid,'josh-hines-allen') ->> 'total_circulation'), '40', 'Hines-Allen keeps the edition labelled with his old name');
 SELECT _assert_eq((public.get_player_detail(:AD::uuid,'shell-twin') ->> 'total_circulation'), '7', 'CONTROL: a twin row with no recorded relation still matches by name');
+
+-- ── 9. A TOTAL OVER SOME EDITIONS IS NOT THE TOTAL (2026-11-14) ───────────────
+INSERT INTO public.editions (id, collection_id, player_id, player_name, team_name, circulation_count, first_minted_at, game_date) VALUES
+  ('f0000000-0000-4000-8000-000000000007', :AD::uuid, 'd0000000-0000-4000-8000-000000000001', 'Joey Porter', 'Steelers', NULL, NULL, DATE '2008-02-01');
+SELECT _assert((public.get_player_detail(:AD::uuid,'joey-porter') ->> 'total_circulation') IS NULL, 'an edition of unknown circulation makes Total Mint unknown, not 10');
+-- Dates: Damian's two editions are both dated, so his span stands (CONTROL);
+-- add an undated one and the span is withheld rather than drawn from the dated few.
+SELECT _assert((public.get_player_detail(:TS::uuid,'damian-lillard') ->> 'first_minted_at') IS NOT NULL, 'CONTROL: fully dated sports player keeps first-minted');
+INSERT INTO public.editions (id, collection_id, player_id, player_name, team_name, circulation_count, first_minted_at, game_date) VALUES
+  ('e3333333-3333-3333-3333-333333333333'::uuid, :TS::uuid, :p1::uuid, 'Damian Lillard', 'Trail Blazers', 10, NULL, DATE '2026-01-05');
+SELECT _assert((public.get_player_detail(:TS::uuid,'damian-lillard') ->> 'first_minted_at') IS NULL, 'partly dated sports player: no first-minted from the dated few');
 
 SELECT '✓ get_player_detail: all assertions passed' AS result;
 

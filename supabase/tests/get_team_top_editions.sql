@@ -241,7 +241,7 @@ BEGIN
           NULL::boolean AS is_active,
           false AS is_rookie,
           COUNT(DISTINCT ch.render_id) AS edition_count,
-          SUM(ch.total_minted) FILTER (WHERE ch.total_minted IS NOT NULL) AS total_circulation,
+          CASE WHEN COUNT(*) = COUNT(ch.total_minted) THEN SUM(ch.total_minted) END AS total_circulation,
           SUM(ch.fmv_usd)      FILTER (WHERE ch.fmv_usd > 0) AS fmv_total_usd,
           (array_agg(ch.thumbnail_url ORDER BY ch.fmv_usd DESC NULLS LAST, ch.render_id) FILTER (WHERE ch.thumbnail_url IS NOT NULL))[1] AS portrait_thumbnail
         FROM ch
@@ -271,7 +271,7 @@ BEGIN
         NULL::boolean AS is_active,
         false AS is_rookie,
         COUNT(*) AS edition_count,
-        SUM(pe.mint_count) FILTER (WHERE pe.mint_count IS NOT NULL) AS total_circulation,
+        CASE WHEN COUNT(pe.id) = COUNT(pe.mint_count) THEN SUM(pe.mint_count) END AS total_circulation,
         SUM(fmv.fmv_usd)   FILTER (WHERE fmv.fmv_usd > 0) AS fmv_total_usd,
         (array_agg(pe.thumbnail_url ORDER BY pe.minting_date DESC NULLS LAST) FILTER (WHERE pe.thumbnail_url IS NOT NULL))[1] AS portrait_thumbnail
       FROM pinnacle_editions pe
@@ -319,7 +319,7 @@ BEGIN
         MIN(te.player_name) AS label_name,
         MIN(te.label_slug) AS label_slug,
         COUNT(DISTINCT te.id) AS edition_count,
-        SUM(te.circulation_count) FILTER (WHERE te.circulation_count IS NOT NULL) AS total_circulation,
+        CASE WHEN COUNT(te.id) = COUNT(te.circulation_count) THEN SUM(te.circulation_count) END AS total_circulation,
         SUM(fmv.fmv_usd) FILTER (WHERE fmv.fmv_usd > 0) AS fmv_total_usd,
         (array_agg(te.thumbnail_url ORDER BY te.first_minted_at DESC NULLS LAST) FILTER (WHERE te.thumbnail_url IS NOT NULL))[1] AS portrait_thumbnail
       FROM team_eds te
@@ -430,6 +430,16 @@ SELECT _assert_eq((public.get_team_top_editions(:pin::uuid, 'marvel', 50, 0) -> 
 SELECT _assert_eq((public.get_team_players(:pin::uuid, 'marvel', 50, 0) -> 0 ->> 'name'), 'Iron Man', 'roster falls through too');
 SELECT _assert_eq(public.get_team_top_editions(:pin::uuid, 'no-such-franchise', 50, 0)::text, '[]', 'unknown slug -> [] (grid)');
 SELECT _assert_eq(public.get_team_players(:pin::uuid, 'no-such-franchise', 50, 0)::text, '[]', 'unknown slug -> [] (roster)');
+-- 2026-11-14: a character's / legacy character's Total Mint is complete or NULL.
+SELECT _assert_eq((SELECT x->>'total_circulation' FROM jsonb_array_elements(public.get_team_players(:pin::uuid, 'star-wars', 50, 0)) x WHERE x->>'player_slug' = 'luke-skywalker'), '150', 'CONTROL: Luke 100 + 50');
+INSERT INTO public.pinnacle_catalog (render_id, franchises, characters, character_name, set_name, variant, series_name, total_minted, thumbnail_url, fmv_usd, floor_ask, fmv_confidence) VALUES
+  ('r6', ARRAY['Star Wars'], ARRAY['Leia'], 'Leia', 'Set C', 'Brushed', '2025', NULL, NULL, 1, NULL, 'LOW');
+SELECT _assert((SELECT x->>'total_circulation' FROM jsonb_array_elements(public.get_team_players(:pin::uuid, 'star-wars', 50, 0)) x WHERE x->>'player_slug' = 'leia') IS NULL, 'catalog roster: a pin of unknown mint -> Leia''s total unknown, not 60');
+DELETE FROM public.pinnacle_catalog WHERE render_id = 'r6';
+SELECT _assert_eq((public.get_team_players(:pin::uuid, 'marvel', 50, 0) -> 0 ->> 'total_circulation'), '500', 'CONTROL legacy roster: Iron Man 500');
+INSERT INTO public.pinnacle_editions (id, franchise, character_name, variant_type, set_name, series_year, mint_count, thumbnail_url) VALUES
+  ('MRV:Brushed:1', 'Marvel', 'Iron Man', 'Brushed', 'Marvel Set', 2024, NULL, NULL);
+SELECT _assert((public.get_team_players(:pin::uuid, 'marvel', 50, 0) -> 0 ->> 'total_circulation') IS NULL, 'legacy roster: an uncounted render -> NULL, not 500');
 
 -- ── 2026-10-25: the non-Pinnacle roster groups by PERSON (player_id), not by label ──
 -- The Chiefs case: 'Patrick Mahomes' (1 edition) and 'Patrick Mahomes II' (2) are one player_id
@@ -462,6 +472,12 @@ SELECT _assert_eq((SELECT string_agg((x->>'name') || ':' || (x->>'edition_count'
   'roster: one row per player_id (Mahomes + Mahomes II = 3 editions, $1,510, the players row''s name and slug); an unlinked label still matches its namesake row by slug; an unmatched label keeps id NULL');
 SELECT _assert_eq((public.get_team_players(:ad::uuid, 'kansas-city-chiefs', 50, 0) -> 0 ->> 'headshot_url'), '/h/pm', 'meta from the linked row');
 SELECT _assert_eq((public.get_team_players(:ad::uuid, 'kansas-city-chiefs', 50, 0) -> 0 ->> 'portrait_thumbnail'), '/t/2', 'portrait = newest-minted edition across both labels');
+
+-- ── 2026-11-14: a roster row's Total Mint is complete or NULL ───────────────
+SELECT _assert_eq((SELECT x->>'total_circulation' FROM jsonb_array_elements(public.get_team_players(:ad::uuid, 'kansas-city-chiefs', 50, 0)) x WHERE x->>'player_slug' = 'travis-kelce'), '50', 'CONTROL: Kelce fully counted');
+INSERT INTO public.editions VALUES
+  ('00000000-0000-0000-0000-0000000000b6', :ad::uuid, 'Kansas City Chiefs', NULL, 'Travis Kelce', NULL, '/t/6', '2022-01-01');
+SELECT _assert((SELECT x->>'total_circulation' FROM jsonb_array_elements(public.get_team_players(:ad::uuid, 'kansas-city-chiefs', 50, 0)) x WHERE x->>'player_slug' = 'travis-kelce') IS NULL, 'sports roster: an edition of unknown circulation -> NULL, not 50');
 
 SELECT '✓ get_team_top_editions + get_team_players: all assertions passed' AS result;
 

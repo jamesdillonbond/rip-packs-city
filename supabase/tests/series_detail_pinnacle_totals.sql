@@ -115,7 +115,7 @@ BEGIN
         -- 2026-09-26: from the render catalog, as refresh_series_detail_rollup.
         SELECT
           COUNT(*),
-          SUM(pc.total_minted) FILTER (WHERE pc.total_minted IS NOT NULL),
+          CASE WHEN COUNT(*) = COUNT(pc.total_minted) THEN SUM(pc.total_minted) END,
           SUM(pc.fmv_usd)      FILTER (WHERE pc.fmv_usd > 0),
           SUM(pc.floor_ask)    FILTER (WHERE pc.floor_ask > 0),
           COUNT(DISTINCT btrim(pc.set_name)),
@@ -129,7 +129,7 @@ BEGIN
     ELSE
       SELECT
         COUNT(*),
-        SUM(e.circulation_count) FILTER (WHERE e.circulation_count IS NOT NULL),
+        CASE WHEN COUNT(e.id) = COUNT(e.circulation_count) THEN SUM(e.circulation_count) END,
         SUM(fmv.fmv_usd)         FILTER (WHERE fmv.fmv_usd > 0),
         SUM(COALESCE(public.recent_low_usd(fmv.floor_price_usd, fmv.fmv_usd), fmv.fmv_usd)) FILTER (WHERE COALESCE(public.recent_low_usd(fmv.floor_price_usd, fmv.fmv_usd), fmv.fmv_usd) > 0),
         COUNT(DISTINCT e.set_name),
@@ -224,7 +224,7 @@ BEGIN
       SELECT
         v_coll.id, cs.series_number,
         count(pc.render_id),
-        sum(pc.total_minted) FILTER (WHERE pc.total_minted IS NOT NULL),
+        CASE WHEN count(pc.render_id) = count(pc.total_minted) THEN sum(pc.total_minted) END,
         sum(pc.fmv_usd)      FILTER (WHERE pc.fmv_usd > 0),
         sum(pc.floor_ask)    FILTER (WHERE pc.floor_ask > 0),
         count(DISTINCT btrim(pc.set_name)),
@@ -254,7 +254,7 @@ BEGIN
       SELECT
         v_coll.id, cs.series_number,
         count(e.id),
-        sum(e.circulation_count) FILTER (WHERE e.circulation_count IS NOT NULL),
+        CASE WHEN count(e.id) = count(e.circulation_count) THEN sum(e.circulation_count) END,
         sum(fmv.fmv_usd)         FILTER (WHERE fmv.fmv_usd > 0),
         sum(COALESCE(public.recent_low_usd(fmv.floor_price_usd, fmv.fmv_usd), fmv.fmv_usd)) FILTER (WHERE COALESCE(public.recent_low_usd(fmv.floor_price_usd, fmv.fmv_usd), fmv.fmv_usd) > 0),
         count(DISTINCT e.set_name),
@@ -370,6 +370,21 @@ UPDATE public.edition_fmv_current SET floor_price_usd = 50 WHERE edition_id = '0
 SELECT (public.refresh_series_detail_rollup(60) ->> 'ok') IS NOT NULL AS refreshed3 \gset
 SELECT _assert_eq((SELECT floor_total_usd::text FROM public.series_detail_rollup WHERE collection_id = :'ts'::uuid AND series_number = 1), '4', 'rollup: an out-of-band floor (50 = 12.5x) contributes FMV 4, not the ask');
 SELECT _assert_eq((public.get_series_detail(:'ts'::uuid, 'series-1') ->> 'floor_total_usd'), '4', 'fast path returns the rollup''s FMV-substituted Recent-Low');
+
+-- ── 2026-11-14: a Total Mint over SOME pins / editions is not the total ──────
+-- Live path first (no rollup rows), then the rollup. A pin or edition of unknown
+-- mint makes the series total unknown (NULL, rendered "—"), never a partial sum.
+DELETE FROM public.series_detail_rollup;
+SELECT _assert_eq((public.get_series_detail(:'pin'::uuid, 'series-2026') ->> 'total_circulation'), '300', 'CONTROL live: every pin counted -> 300');
+INSERT INTO public.pinnacle_catalog VALUES ('e', '2026', 'Set B', ARRAY['Eve'], NULL, 1, NULL, 'HIGH');
+INSERT INTO public.editions VALUES ('00000000-0000-4000-8000-000000000002', :'ts'::uuid, 1, 'TS Set', NULL, 'Player 2', NULL);
+SELECT _assert((public.get_series_detail(:'pin'::uuid, 'series-2026') ->> 'total_circulation') IS NULL, 'live: a pin of unknown mint -> series Total Mint unknown, not 300');
+SELECT _assert_eq((public.get_series_detail(:'pin'::uuid, 'series-2025') ->> 'total_circulation'), '100', 'CONTROL live: a fully counted series keeps its total');
+SELECT _assert((public.get_series_detail(:'ts'::uuid, 'series-1') ->> 'total_circulation') IS NULL, 'live: an edition of unknown circulation -> Total Mint unknown, not 10');
+SELECT (public.refresh_series_detail_rollup(60) ->> 'ok') IS NOT NULL AS refreshed4 \gset
+SELECT _assert((SELECT total_circulation IS NULL FROM public.series_detail_rollup WHERE collection_id = :'pin'::uuid AND series_number = 2026), 'rollup: Pinnacle series with an uncounted pin stores NULL');
+SELECT _assert_eq((SELECT total_circulation::text FROM public.series_detail_rollup WHERE collection_id = :'pin'::uuid AND series_number = 2025), '100', 'CONTROL rollup: fully counted Pinnacle series keeps 100');
+SELECT _assert((SELECT total_circulation IS NULL FROM public.series_detail_rollup WHERE collection_id = :'ts'::uuid AND series_number = 1), 'rollup: sports series with an uncounted edition stores NULL');
 
 SELECT '✓ series_detail_pinnacle_totals: all assertions passed' AS result;
 

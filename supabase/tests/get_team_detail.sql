@@ -280,7 +280,7 @@ BEGIN
            FROM pins p CROSS JOIN LATERAL unnest(p.characters) AS u(ch)
           WHERE btrim(u.ch) NOT IN ('', 'Unknown')),
         (SELECT COUNT(*) FROM pins),
-        (SELECT SUM(total_minted) FILTER (WHERE total_minted IS NOT NULL) FROM pins),
+        (SELECT CASE WHEN COUNT(*) = COUNT(total_minted) THEN SUM(total_minted) END FROM pins),
         (SELECT SUM(fmv_usd) FILTER (WHERE fmv_usd > 0) FROM pins),
         (SELECT SUM(floor_ask) FILTER (WHERE floor_ask > 0) FROM pins),
         (SELECT SUM(fmv_usd) FILTER (WHERE fmv_usd > 0 AND fmv_confidence::text = 'ASK_ONLY') FROM pins),
@@ -323,7 +323,7 @@ BEGIN
       SELECT
         COUNT(DISTINCT pe.character_name),
         COUNT(*),
-        SUM(pe.mint_count) FILTER (WHERE pe.mint_count IS NOT NULL),
+        CASE WHEN COUNT(pe.id) = COUNT(pe.mint_count) THEN SUM(pe.mint_count) END,
         SUM(fmv.fmv_usd)   FILTER (WHERE fmv.fmv_usd > 0),
         SUM(COALESCE(fmv.floor_usd, fmv.fmv_usd)) FILTER (WHERE COALESCE(fmv.floor_usd, fmv.fmv_usd) > 0)
       INTO v_player_count, v_edition_count, v_total_circulation, v_fmv_total, v_floor_total
@@ -367,7 +367,7 @@ BEGIN
       COUNT(DISTINCT COALESCE(e.player_id::text, regexp_replace(lower(trim(e.player_name)), '[^a-z0-9]+', '-', 'g')))
         FILTER (WHERE e.player_name IS NOT NULL AND e.player_name <> ''),
       COUNT(*),
-      SUM(e.circulation_count) FILTER (WHERE e.circulation_count IS NOT NULL),
+      CASE WHEN COUNT(e.id) = COUNT(e.circulation_count) THEN SUM(e.circulation_count) END,
       SUM(fmv.fmv_usd)         FILTER (WHERE fmv.fmv_usd > 0),
       SUM(COALESCE(public.recent_low_usd(fmv.floor_price_usd, fmv.fmv_usd), fmv.fmv_usd)) FILTER (WHERE COALESCE(public.recent_low_usd(fmv.floor_price_usd, fmv.fmv_usd), fmv.fmv_usd) > 0)
     INTO v_player_count, v_edition_count, v_total_circulation, v_fmv_total, v_floor_total
@@ -525,7 +525,10 @@ SELECT _assert(public.get_team_detail(:pin::uuid,'marvel') ->> 'abbreviation' IS
 -- ── 6b. Pinnacle from the render catalog (2026-09-26) ────────────────────────
 SELECT _assert_eq((public.get_team_detail(:pin::uuid,'star-wars') ->> 'edition_count'), '3', 'catalog: every pin naming Star Wars, ™ or not, multi-franchise included');
 SELECT _assert_eq((public.get_team_detail(:pin::uuid,'star-wars') ->> 'player_count'), '2', 'catalog: characters by page slug over every name on a pin; Unknown excluded');
-SELECT _assert_eq((public.get_team_detail(:pin::uuid,'star-wars') ->> 'total_circulation'), '150', 'catalog: circulation over pins with a count');
+-- ⚠ INVERTED 2026-11-14: "circulation over pins with a count" published 150 as
+-- the franchise's Total Mint while r4's mint is unknown. A total over SOME pins
+-- is not the total: NULL ("—") until every pin carries one.
+SELECT _assert((public.get_team_detail(:pin::uuid,'star-wars') ->> 'total_circulation') IS NULL, 'catalog: a pin of unknown mint makes the Total Mint unknown, not 150');
 SELECT _assert_eq((public.get_team_detail(:pin::uuid,'star-wars') ->> 'fmv_total_usd'), '15', 'catalog: FMV total over priced pins');
 -- 2026-09-28 (#24, INVERTED): live asks only — r2 has no ask, and its FMV (5)
 -- is not a low anyone can buy at.
@@ -533,6 +536,10 @@ SELECT _assert_eq((public.get_team_detail(:pin::uuid,'star-wars') ->> 'floor_tot
 SELECT _assert_eq((public.get_team_detail(:pin::uuid,'star-wars') ->> 'listed_count'), '1', 'catalog: 1 of 3 pins listed');
 UPDATE public.pinnacle_catalog SET fmv_confidence = 'ASK_ONLY' WHERE render_id = 'r2';
 SELECT _assert_eq((public.get_team_detail(:pin::uuid,'star-wars') ->> 'fmv_ask_derived_usd'), '5', 'catalog: the ASK_ONLY part of the FMV total (5 of 15)');
+-- CONTROL (2026-11-14): once every pin carries a mint count the total is published.
+UPDATE public.pinnacle_catalog SET total_minted = 20 WHERE render_id = 'r4';
+SELECT _assert_eq((public.get_team_detail(:pin::uuid,'star-wars') ->> 'total_circulation'), '170', 'catalog: every pin counted -> Total Mint = 100 + 50 + 20');
+UPDATE public.pinnacle_catalog SET total_minted = NULL WHERE render_id = 'r4';
 UPDATE public.pinnacle_catalog SET fmv_confidence = NULL WHERE render_id = 'r2';
 SELECT _assert_eq((public.get_team_detail(:pin::uuid,'star-wars') ->> 'team_name'), 'Star Wars', 'catalog: canonical name has no ™ (the layout redirect compares slugs)');
 SELECT _assert_eq((public.get_team_detail(:pin::uuid,'lucasfilm') ->> 'edition_count'), '1', 'catalog: a pin counts toward every franchise it names');
@@ -584,6 +591,15 @@ SELECT _assert_eq((public.get_team_detail(:cid::uuid,'trail-blazers') ->> 'playe
 INSERT INTO public.editions (id, collection_id, team_name, player_name, circulation_count, player_id) VALUES
   ('99999999-0000-0000-0000-0000000000e8'::uuid, :cid::uuid, 'Trail Blazers', 'Scoot Henderson', 1, '99999999-0000-0000-0000-000000000002');
 SELECT _assert_eq((public.get_team_detail(:cid::uuid,'trail-blazers') ->> 'player_count'), '3', 'player_count: another person adds one');
+
+-- ── 2026-11-14: a team / franchise Total Mint is complete or NULL ───────────
+SELECT _assert_eq((public.get_team_detail(:pin::uuid,'marvel') ->> 'total_circulation'), '900', 'CONTROL legacy franchise: 500 + 400');
+INSERT INTO public.pinnacle_editions (id, franchise, character_name, mint_count) VALUES
+  ('aaaaaaaa-0000-0000-0000-000000000003'::uuid, 'Marvel', 'Hulk', NULL);
+SELECT _assert((public.get_team_detail(:pin::uuid,'marvel') ->> 'total_circulation') IS NULL, 'legacy franchise with an uncounted render -> Total Mint unknown, not 900');
+INSERT INTO public.editions (id, collection_id, team_name, player_name, circulation_count) VALUES
+  ('77777777-7777-7777-7777-777777777777'::uuid, :cid::uuid, 'Trail Blazers', 'Shaedon Sharpe', NULL);
+SELECT _assert((public.get_team_detail(:cid::uuid,'trail-blazers') ->> 'total_circulation') IS NULL, 'team with an edition of unknown circulation -> Total Mint unknown, not 190');
 
 SELECT '✓ get_team_detail: all assertions passed' AS result;
 

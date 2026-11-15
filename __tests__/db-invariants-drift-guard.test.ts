@@ -702,10 +702,10 @@ const PINS = [
   },
   {
     // Re-pinned 2026-10-25: the non-Pinnacle roster groups by player_id, not by label.
+    // Re-pointed 2026-11-14: Total Mint complete or NULL (no partial SUM ... FILTER).
     fn: "get_team_players",
     test: "supabase/tests/get_team_top_editions.sql",
-    migration:
-      "supabase/migrations/20261026003337_audit_20261025_team_roster_and_player_count_group_by_person_not_label.sql",
+    migration: "supabase/migrations/20261115044647_audit_20261114_entity_total_mint_only_when_complete.sql",
   },
   {
     // Added 2026-09-26. The Pinnacle series pages read pinnacle_editions by
@@ -724,16 +724,16 @@ const PINS = [
     // that its FMV Total is mostly ask-derived. Pins live asks only, the listed
     // count, the ASK_ONLY part, on both the live path and the rollup.
     // Re-pinned 2026-10-25 (#211 part B1): the live path calls recent_low_usd.
+    // Re-pointed 2026-11-14: Total Mint complete or NULL (no partial SUM ... FILTER).
     fn: "get_series_detail",
     test: "supabase/tests/series_detail_pinnacle_totals.sql",
-    migration:
-      "supabase/migrations/20261025235853_audit_20261025_recent_low_totals_ignore_an_ask_far_above_fmv_b1.sql",
+    migration: "supabase/migrations/20261115044647_audit_20261114_entity_total_mint_only_when_complete.sql",
   },
   {
+    // Re-pointed 2026-11-14: Total Mint complete or NULL (no partial SUM ... FILTER).
     fn: "refresh_series_detail_rollup",
     test: "supabase/tests/series_detail_pinnacle_totals.sql",
-    migration:
-      "supabase/migrations/20261026013559_audit_20261025_recent_low_totals_ignore_an_ask_far_above_fmv_b2.sql",
+    migration: "supabase/migrations/20261115044647_audit_20261114_entity_total_mint_only_when_complete.sql",
   },
   {
     // Re-pinned 2026-10-25: top players grouped by player_id, not label.
@@ -1603,6 +1603,7 @@ const PINS = [
     migration: "supabase/migrations/20261108171820_audit_20261108_run_pinnacle_pull_chain_lane_floor_at_mainnet27.sql",
   },
   {
+    // Re-pointed 2026-11-14: Total Mint complete or NULL (no partial SUM ... FILTER).
     fn: "get_team_detail",
     test: "supabase/tests/get_team_detail.sql",
     // Re-pinned 2026-08-01: the concurrent platform-audit changed get_team_detail
@@ -1615,7 +1616,7 @@ const PINS = [
     // Re-pinned 2026-09-28: the catalog arm reads 30-day activity from pinnacle_sales.
     // Re-pinned 2026-10-25 (#211 part C): Recent-Low Total calls recent_low_usd.
     // Re-pinned 2026-10-25: player_count counts persons (player_id), not labels.
-    migration: "supabase/migrations/20261026003337_audit_20261025_team_roster_and_player_count_group_by_person_not_label.sql",
+    migration: "supabase/migrations/20261115044647_audit_20261114_entity_total_mint_only_when_complete.sql",
   },
   {
     // Added 2026-09-25 (batch 62). The helpers behind every team read: the
@@ -1643,13 +1644,14 @@ const PINS = [
     // entire drift — the lateral latest-FMV read and the Pinnacle branch were
     // already pinned. The 2026-08-01 graceful-timeout behaviour (BEGIN/EXCEPTION
     // WHEN query_canceled, Sentry NEXTJS-22) is unchanged and still pinned.
+    // Re-pointed 2026-11-14: Total Mint complete or NULL (no partial SUM ... FILTER).
     fn: "get_set_detail",
     test: "supabase/tests/get_set_detail.sql",
     // 2026-09-27: Pinnacle Total Mint summed over the set's pins.
     // 2026-10-18: D20 underlying_set_count counts only sets that have editions (R58 residual).
     // 2026-10-21 (#204): Panini counts and NAMES the products behind a shared set name.
     // 2026-10-21 (#204 design half): a Panini slug naming a `sets` row is that PRODUCT's page.
-    migration: "supabase/migrations/20261025221903_audit_20261025_recent_low_totals_ignore_an_ask_far_above_fmv_a.sql",
+    migration: "supabase/migrations/20261115044647_audit_20261114_entity_total_mint_only_when_complete.sql",
   },
   {
     // Pinned 2026-10-18 (new): the hourly render-id pass now FILLS player_name from the
@@ -1713,7 +1715,8 @@ const PINS = [
     test: "supabase/tests/get_player_detail.sql",
     // Re-pointed 2026-09-27: Pinnacle mint dates only when every row carries one.
     // Re-pointed 2026-10-20: the name fallback skips an edition linked to another person.
-    migration: "supabase/migrations/20261025221903_audit_20261025_recent_low_totals_ignore_an_ask_far_above_fmv_a.sql",
+    // Re-pointed 2026-11-14: Total Mint + mint dates only when complete; no name-keyed Pinnacle dates.
+    migration: "supabase/migrations/20261115043933_audit_20261114_player_totals_and_mint_dates_only_when_complete.sql",
   },
   {
     fn: "get_wallet_collection_snapshot",

@@ -120,7 +120,7 @@ BEGIN
            min(e.set_name)::text                                                        AS set_name,
            ARRAY[min(e.set_name)]::text[]                                               AS set_name_variants,
            count(*)::bigint                                                             AS edition_count,
-           (sum(e.circulation_count) FILTER (WHERE e.circulation_count IS NOT NULL))::bigint AS total_circulation,
+           (CASE WHEN count(*) = count(e.circulation_count) THEN sum(e.circulation_count) END)::bigint AS total_circulation,
            (array_agg(DISTINCT e.tier::text) FILTER (WHERE e.tier IS NOT NULL))::text[] AS tiers_present,
            min(e.series)::smallint                                                      AS min_series,
            max(e.series)::smallint                                                      AS max_series,
@@ -484,6 +484,12 @@ SELECT _assert_eq((public.get_set_detail(:cid::uuid,'base-set') ->> 'floor_total
 -- No-change control: a floor inside the bound (25 = 2.5x) is summed as before: 40 + 25 = 65.
 UPDATE public.fmv_snapshots SET floor_price_usd = 25 WHERE edition_id = :e2::uuid;
 SELECT _assert_eq((public.get_set_detail(:cid::uuid,'base-set') ->> 'floor_total_usd'), '65', 'Recent-Low Total: an in-bound floor is still summed');
+
+-- ── 2026-11-14: a product page's Total Mint is complete or NULL ──────────────
+SELECT _assert_eq((public.get_set_detail(:pan::uuid,'p1819-base-prizms-blue') ->> 'total_circulation'), '49', 'CONTROL: every edition counted -> 49');
+INSERT INTO public.editions (id, collection_id, set_name, thumbnail_url, set_id, circulation_count, tier) VALUES
+  ('cccccccc-0000-0000-0000-000000000007', :pan::uuid, 'Base Prizms Blue', 'https://img/p7', :ps2::uuid, NULL, 'RARE');
+SELECT _assert((public.get_set_detail(:pan::uuid,'p1819-base-prizms-blue') ->> 'total_circulation') IS NULL, 'an edition of unknown circulation -> Total Mint unknown, not 49');
 
 SELECT '✓ get_set_detail: all assertions passed' AS result;
 
