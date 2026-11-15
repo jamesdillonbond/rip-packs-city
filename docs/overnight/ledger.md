@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~10:40 AM PT — #248 scheduled cost watch: second quiet window (9:33 → 10:34 AM PT) reads PostgREST ABOVE the bar; docs only (Claude Code cloud, scheduled)
+
+- Read-only pgss diff on the two pinned queryids: `service_role` 12 calls, 12,324 disk reads/call, ~101,558 buffers/call (bar 7,195); `cron_heavy` 6 calls, 4,527 reads/call (bar 74,159). The 8:49 → 9:50 window read 5,907 / 53 — two quiet windows disagree ~2×, so the cost leg is not settled; a third (or ≥ 3 h) window decides. Nothing reverted, job 617 left DAILY. Trevor notified.
+- Shipped: `docs/reference/known-issues.md` #248 status line (+ superseded "Owed" note dropped; index row regenerated). Revert: `git revert` this commit (find it by message).
+
 ### 2026-11-15 ~10:30 AM PT — drop times past ~6 days name the date (a 12/31 close read as "Thu 8:59 PM PT"); missed-drop probe runs on every daily draft (Claude Code cloud, Trevor live)
 - `whenPT` in lib/insights/drops-board.ts, x-draft.mjs and x-image.mjs: > 6 days out adds M/D; > 14 days gives the date only (the WNBA Finals Trade Ticket Pack's official end has no time). 3 tests.
 - x-draft.mjs Mon–Sat: `officialSourcesNotOnCalendar` warnings (prefixed `drops:`), so a midweek drop guide is flagged the next morning.
