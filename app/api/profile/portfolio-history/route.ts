@@ -4,14 +4,15 @@ import { requireOwnedKey } from "@/lib/auth/owner-key-guard";
 import { apiErrorResponse } from "@/lib/api-error";
 import { getCollection } from "@/lib/collections";
 
-// GET is DELIBERATELY PUBLIC and stays unguarded: it backs the public
-// /profile/[username] sparkline and the per-collection profile pages, and
-// proxy.ts carries an explicit GET/HEAD-only public carve-out for this exact
-// path.
+// GET ?wallet= is DELIBERATELY PUBLIC: it backs the per-collection profile's
+// "PORTFOLIO VALUE / 30D" card, and proxy.ts carries a GET/HEAD-only public
+// carve-out for this path. GET ?ownerKey= is OWNER-ONLY since 2026-11-14 (see
+// the gate below).
 //
-// ⚠ The live callers are `app/profile/[username]/ProfileClient.tsx` and
-// `app/(collections)/[collection]/profile/[username]/CollectionProfileClient.tsx`,
-// which fetch this route DIRECTLY. This comment used to name
+// ⚠ The live caller is
+// `app/(collections)/[collection]/profile/[username]/CollectionProfileClient.tsx`
+// (?wallet=), which fetches this route DIRECTLY. `app/profile/[username]/ProfileClient.tsx`
+// and that page's header sparkline used ?ownerKey= until 2026-11-14 (removed: never rendered). This comment used to name
 // `components/profile/PortfolioSparkline.tsx` as the caller; that component was
 // production-dead (zero importers, one test-only importer) and was deleted
 // 2026-08-27. **Naming a deleted file as the reason a route is public is how a
@@ -67,6 +68,16 @@ export async function GET(req: NextRequest) {
   if (!ownerKey) {
     return NextResponse.json({ error: "ownerKey or wallet required" }, { status: 400 });
   }
+
+  // ⛔ 2026-11-14: the ?ownerKey branch is the OWNER's own history, no longer a
+  // public read. Its only callers were the public-profile sparklines, which asked
+  // by USERNAME while portfolio_snapshots is keyed by user id, so they never
+  // rendered and were removed. What remained was an anon read of any user's
+  // daily portfolio total, moment count and wallet count by their id: a series
+  // that sums every saved wallet, including ones they do not own. Gate it like
+  // the POST; the ?wallet branch above (public on-chain holdings) stays public.
+  const gate = await requireOwnedKey(ownerKey);
+  if (gate instanceof Response) return gate;
 
   const since = new Date();
   since.setDate(since.getDate() - days);

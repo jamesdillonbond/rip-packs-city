@@ -70,106 +70,50 @@ async function mountWith(totals: number[]) {
   return r
 }
 
-/** The y coordinate of every sparkline point, in order. */
-function ys(container: HTMLElement): number[] {
-  return (container.querySelector("polyline")?.getAttribute("points") ?? "")
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((p) => Number(p.split(",")[1]))
-}
-
 beforeEach(() => window.history.replaceState({}, "", "/profile/trevor"))
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
 })
 
-describe("30-day change is omitted when it cannot be computed", () => {
-  it("does NOT invent a percentage from a ZERO baseline", async () => {
-    // The regression case. 0 -> 500 under `|| 1` reads "↑ 50000.0% / 30D".
-    const { container } = await mountWith([0, 500])
-    const t = container.textContent ?? ""
-    expect(t).not.toMatch(/50000/)
-    expect(t, "no percentage at all is the honest output here").not.toMatch(/% \/ 30D/)
-    // The sparkline still renders — the shape is real even when the ratio isn't.
-    expect(container.querySelector("polyline")).toBeTruthy()
-  })
+// ⚠ INVERTED 2026-11-14. The sparkline and its "/ 30D" readout were REMOVED
+// from the public profile: they fetched portfolio-history by USERNAME while
+// portfolio_snapshots is keyed by user id (0 username-keyed rows in 30 days), so
+// they never rendered in production — every case above was proven only against a
+// mocked series. The one series that does exist (snapshot_all_user_portfolios)
+// sums EVERY saved wallet, every collection, stale prices included: a different
+// number from the PORTFOLIO FMV headline beside it. The promise these tests held
+// ("never publish a confident 30-day figure we cannot stand behind") is now kept
+// by not publishing one at all, and that is what is pinned: even when the history
+// route answers with a series, the page shows no change readout and never asks.
+describe("the public profile publishes no 30-day change (removed 2026-11-14)", () => {
+  for (const [label, totals] of [
+    ["a zero baseline", [0, 500]],
+    ["a positive baseline", [400, 500]],
+    ["a decline", [500, 400]],
+    ["a flat series", [500, 500, 500]],
+  ] as const) {
+    it(`renders no change readout and no sparkline for ${label}`, async () => {
+      const { container } = await mountWith([...totals])
+      const t = container.textContent ?? ""
+      expect(t).not.toMatch(/\/ 30D/)
+      expect(t).not.toMatch(/[↑↓]\s*[\d.]+%/)
+      expect(container.querySelector("polyline")).toBeNull()
+    })
+  }
 
-  it("still colours a zero-baseline RISE as a rise, not a fall", async () => {
-    // Direction is knowable even when the percentage is not. Falling back to
-    // `sparkChange >= 0` on a null would paint a genuine gain red.
-    const { container } = await mountWith([0, 500])
-    expect(container.querySelector("polyline")?.getAttribute("stroke")).toBe("#34D399")
-  })
-
-  it("draws a FLAT series through the middle, not along the bottom of the box", async () => {
-    // ⚠ Same fabricated-denominator class as the percentage above, one component
-    // down. `const range = max - min || 1` sent every point of a flat series to
-    // (v - min) / 1 === 0, so the polyline was drawn hard along the BOTTOM edge —
-    // visually indistinguishable from a portfolio that fell to the low of its
-    // window and stayed there. A dormant wallet is unchanged, not at its low.
-    // Pin on the PROPERTY (y is the vertical centre), not on the old spelling.
-    const flat = await mountWith([500, 500, 500])
-    const flatPts = ys(flat.container)
-    const boxHeight = Number(flat.container.querySelector("svg")?.getAttribute("height"))
-    expect(flatPts.length).toBe(3)
-    expect(Number.isFinite(boxHeight) && boxHeight > 0, "no svg height to reason about").toBe(true)
-    // The honest flat render is the vertical centre — asserted against the box's
-    // OWN height, so the pin survives a caller changing the sparkline size.
-    expect(flatPts.every((y) => y === boxHeight / 2), `flat series drawn at ${flatPts.join(",")}`).toBe(true)
-    cleanup()
-
-    // ⚠ And the property that names the defect: a flat series must not sit where
-    // the LOWEST point of a real series sits. Measured from a varying series in
-    // the same box rather than from a constant, so it cannot drift apart.
-    const varying = await mountWith([100, 500])
-    const bottomY = Math.max(...ys(varying.container))
-    expect(flatPts[0]! < bottomY, `flat ${flatPts[0]} vs bottom ${bottomY}`).toBe(true)
-  })
-
-  it("still spreads a VARYING series across the full box (no-change control)", async () => {
-    // The control that stops the fix above from reading as correct because it
-    // centred everything. A real series must still use the vertical range.
-    const { container } = await mountWith([100, 500])
-    const pts = ys(container)
-    expect(new Set(pts).size).toBeGreaterThan(1)
-    const boxHeight = Number(container.querySelector("svg")?.getAttribute("height"))
-    expect(Math.max(...pts) - Math.min(...pts)).toBe(boxHeight - 4)
-  })
-
-  it("colours a decline red", async () => {
-    const { container } = await mountWith([500, 100])
-    expect(container.querySelector("polyline")?.getAttribute("stroke")).toBe("#F87171")
-  })
-
-  it("computes a real percentage when the baseline is positive", async () => {
-    // The mirror: without it, suppressing the percentage everywhere would pass
-    // every assertion above while deleting the feature.
-    const { container } = await mountWith([100, 150])
-    expect(container.textContent).toMatch(/↑\s*50\.0% \/ 30D/)
-  })
-
-  it("reports a decline with a down arrow and an absolute magnitude", async () => {
-    // The arrow carries the sign, so the number itself is |change| — a "-50.0%"
-    // beside a ↓ would read as a double negative.
-    const { container } = await mountWith([200, 100])
-    const t = container.textContent ?? ""
-    expect(t).toMatch(/↓\s*50\.0% \/ 30D/)
-    expect(t).not.toMatch(/-50\.0%/)
-  })
-
-  it("renders no change readout for a single snapshot", async () => {
-    const { container } = await mountWith([500])
-    expect(container.textContent).not.toMatch(/% \/ 30D/)
-    expect(container.querySelector("polyline")).toBeNull()
-  })
-
-  it("reports 0.0% for a genuinely flat portfolio", async () => {
-    // Distinct from the zero-baseline case: here the change really IS zero, and
-    // saying so is correct. Collapsing the two would hide real information.
-    const { container } = await mountWith([300, 300])
-    expect(container.textContent).toMatch(/↑\s*0\.0% \/ 30D/)
+  it("never requests the username-keyed portfolio history", async () => {
+    const fn = installFetch({
+      "/api/public/profile/": PROFILE,
+      "/api/profile/trophy-slabs": { slabs: [] },
+      "/api/profile/portfolio-history": { snapshots: [{ total_fmv: 0 }, { total_fmv: 500 }] },
+      "/api/profile/teams": { teams: [] },
+      "/api/profile/me": { user: null },
+    })
+    render(<ProfileClient />)
+    await waitFor(() => expect(screen.getByText("Main")).toBeTruthy())
+    const urls = fn.mock.calls.map((c) => String(c[0]))
+    expect(urls.some((u) => u.includes("/api/profile/portfolio-history"))).toBe(false)
   })
 })
 

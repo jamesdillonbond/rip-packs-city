@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 
 // Route integration test for /api/profile/portfolio-history.
-// GET stays PUBLIC and has two branches: ?wallet → get_wallet_fmv_history RPC;
-// ?ownerKey → portfolio_snapshots table; neither → 400. Pin the missing-param
+// GET has two branches: ?wallet → get_wallet_fmv_history RPC (public);
+// ?ownerKey → portfolio_snapshots table (owner-only since 2026-11-14); neither → 400. Pin the missing-param
 // 400, the wallet-branch happy path, the ownerKey-branch happy path, and the
 // wallet RPC error → 500.
 //
@@ -208,12 +208,31 @@ describe("GET /api/profile/portfolio-history", () => {
     expect(body.snapshots).toHaveLength(1) // the RPC result, not the table read
   })
 
-  it("stays PUBLIC — an unauthenticated read still works (only POST is gated)", async () => {
+  // ⚠ INVERTED 2026-11-14: the ?ownerKey branch was anon-public for the profile
+  // sparklines, which never rendered (username vs user-id key) and were removed.
+  // An owner's daily portfolio series is now theirs alone; ?wallet stays public.
+  it("401s an unauthenticated ?ownerKey read, returning no series", async () => {
     auth.user = null
     state.snapshots = { data: [{ snapshot_date: "2026-07-01", total_fmv: 50 }], error: null }
     const res = await GET(req("https://t/api/profile/portfolio-history?ownerKey=trevor"))
+    expect(res.status).toBe(401)
+    expect((await res.json()).snapshots).toBeUndefined()
+  })
+
+  it("403s a signed-in read of ANOTHER user's ?ownerKey series", async () => {
+    auth.user = { id: "attacker" }
+    ownership.claimantId = "victim"
+    state.snapshots = { data: [{ snapshot_date: "2026-07-01", total_fmv: 50 }], error: null }
+    const res = await GET(req("https://t/api/profile/portfolio-history?ownerKey=victim"))
+    expect(res.status).toBe(403)
+    expect((await res.json()).snapshots).toBeUndefined()
+  })
+
+  it("CONTROL: the ?wallet branch stays public for a signed-out caller", async () => {
+    auth.user = null
+    state.rpc = { data: [{ day: "d", total_fmv: 1 }], error: null }
+    const res = await GET(req("https://t/api/profile/portfolio-history?wallet=0x0000000000000abc"))
     expect(res.status).toBe(200)
-    expect((await res.json()).snapshots).toHaveLength(1)
   })
 })
 

@@ -788,10 +788,11 @@ export function isPublicPath(pathname: string, method: string): boolean {
   ) {
     return true
   }
-  // /api/profile/portfolio-history — GET reads portfolio_snapshots by
-  // ownerKey OR derives daily FMV totals from fmv_snapshots by wallet
-  // (both anon-safe). POST upserts a daily snapshot and MUST stay
-  // auth-gated. Same GET/HEAD-only carve-out as /api/profile/teams.
+  // /api/profile/portfolio-history — GET ?wallet= derives daily FMV totals
+  // from fmv_snapshots (public on-chain holdings, anon-safe). GET ?ownerKey=
+  // is owner-only since 2026-11-14: the ROUTE gates it with requireOwnedKey
+  // (401 signed out), so this carve-out must stay for the ?wallet= branch.
+  // POST upserts a daily snapshot and MUST stay auth-gated.
   if (
     pathname === "/api/profile/portfolio-history" &&
     (method === "GET" || method === "HEAD")

@@ -196,8 +196,12 @@ describe("ProfileClient — resilience of the four independent mount fetches", (
   })
 })
 
-describe("ProfileClient — the portfolio sparkline", () => {
-  it("draws a polyline with one point per snapshot", async () => {
+// ⚠ INVERTED 2026-11-14: the sparkline was removed (it fetched portfolio-history
+// by username; snapshots are keyed by user id, so it never rendered in prod).
+// A served series must still draw nothing — see
+// component-ProfileClient-portfolio-change.test.tsx for the full reasoning.
+describe("ProfileClient — no portfolio sparkline (removed 2026-11-14)", () => {
+  it("draws no polyline even when the history route serves a series", async () => {
     installFetch({
       "/api/public/profile/": PUBLIC_PROFILE,
       "/api/profile/trophy-slabs": { slabs: [] },
@@ -212,45 +216,8 @@ describe("ProfileClient — the portfolio sparkline", () => {
       "/api/profile/me": { user: null },
     })
     render(<ProfileClient />)
-    await waitFor(() => expect(document.querySelector("polyline")).toBeTruthy())
-    const pts = document.querySelector("polyline")?.getAttribute("points") ?? ""
-    expect(pts.trim().split(/\s+/)).toHaveLength(4)
-    // Geometry must be finite — a NaN in `points` makes the browser drop the
-    // whole polyline, so the chart silently disappears rather than erroring.
-    expect(pts).not.toMatch(/NaN|Infinity/)
-  })
-
-  it("draws NOTHING for a single snapshot rather than a degenerate line", async () => {
-    installFetch({
-      "/api/public/profile/": PUBLIC_PROFILE,
-      "/api/profile/trophy-slabs": { slabs: [] },
-      "/api/profile/portfolio-history": { snapshots: [{ snapshot_date: "2026-08-01", total_fmv: 100 }] },
-      "/api/profile/me": { user: null },
-    })
-    render(<ProfileClient />)
     await waitFor(() => expect(screen.getByText("Main")).toBeTruthy())
-    // One point is not a trend; drawing it would imply a flat history.
     expect(document.querySelector("polyline")).toBeNull()
-  })
-
-  it("does not divide by zero when every snapshot is identical", async () => {
-    // range = max - min = 0; the helper guards with `|| 1`. Without it every y
-    // is NaN and the sparkline vanishes.
-    installFetch({
-      "/api/public/profile/": PUBLIC_PROFILE,
-      "/api/profile/trophy-slabs": { slabs: [] },
-      "/api/profile/portfolio-history": {
-        snapshots: [
-          { snapshot_date: "2026-08-01", total_fmv: 100 },
-          { snapshot_date: "2026-08-02", total_fmv: 100 },
-          { snapshot_date: "2026-08-03", total_fmv: 100 },
-        ],
-      },
-      "/api/profile/me": { user: null },
-    })
-    render(<ProfileClient />)
-    await waitFor(() => expect(document.querySelector("polyline")).toBeTruthy())
-    expect(document.querySelector("polyline")?.getAttribute("points") ?? "").not.toMatch(/NaN/)
   })
 })
 

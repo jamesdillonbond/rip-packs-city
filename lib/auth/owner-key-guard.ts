@@ -56,6 +56,7 @@
 // 2026-07-29 teams IDOR fix), which resolves the body ownerKey through
 // profile_bio and rejects any value that does not resolve to the caller.
 
+import { ownersOfAddress } from "@/lib/wallet/wallet-owner"
 import type { User } from "@supabase/supabase-js"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
@@ -140,16 +141,7 @@ export async function requireOwnedKey(ownerKey: string): Promise<OwnedKeyGate> {
       // Nobody can become the first saver after the fact. Wallet verification
       // has had no live source since ~08-28 (#59), which is why "verified"
       // alone would lock every user out of their own data.
-      const verified = rows.filter((r) => r.verified_at != null).map((r) => r.user_id as string)
-      let owners: string[] = verified
-      if (owners.length === 0) {
-        const idOf = (r: { id?: unknown }) => {
-          const n = Number(r.id)
-          return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY
-        }
-        const first = rows.reduce((a, b) => (idOf(b) < idOf(a) ? b : a))
-        owners = [first.user_id as string]
-      }
+      const owners = ownersOfAddress(rows)
       return owners.includes(user.id) ? { user } : deny(403, "Forbidden")
     }
     // Unclaimed address: fall through to the unclaimed branch below, which

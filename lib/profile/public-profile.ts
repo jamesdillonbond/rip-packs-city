@@ -32,6 +32,7 @@ import { normalizeAddress } from "@/lib/address";
 import { supabaseAdmin as supabase } from "@/lib/supabase"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 import { ilikeLiteral } from "@/lib/db/ilike-literal";
+import { ownersOfAddress, type SavedWalletClaim } from "@/lib/wallet/wallet-owner";
 
 /**
  * Wall-clock budget for the whole two-step bundle, shared across both steps.
@@ -326,6 +327,71 @@ async function getPublicProfileUncached(
   console.log(
     `[public/profile:${source}] trophies+wallets parallel elapsedMs=${Date.now() - fanT0} trophies=${trophies?.length ?? 0} wallets=${wallets?.length ?? 0}`
   )
+
+  // ⛔ A wallet someone else OWNS is never published as yours (2026-11-14).
+  // Anyone can save any address, so summing every saved row let a collector
+  // put a stranger's (or a whale's) holdings into their own public Portfolio
+  // FMV, collector label and share card. Each address counts only when this
+  // user owns it under the estate's single ownership rule
+  // (lib/wallet/wallet-owner.ts: a verifier, else the first saver) — the
+  // same rule that gates private reads keyed by that address. A failed claim
+  // read fails the bundle: publishing an unfiltered sum is the defect itself.
+  const ownAddrs = [
+    ...new Set(
+      ((wallets ?? []) as any[])
+        .map((w) => (typeof w.wallet_addr === "string" ? w.wallet_addr : ""))
+        .filter((a: string) => a !== "")
+    ),
+  ]
+  let ownedRows: any[] = []
+  if (ownAddrs.length > 0) {
+    let claims: Row
+    let claimsErr: { message: string } | null = null
+    try {
+      ;({ data: claims, error: claimsErr } = await withBoardBudget<{
+        data: Row
+        error: { message: string } | null
+      }>(
+        Promise.resolve(
+          supabase
+            .from("saved_wallets")
+            .select("id, user_id, wallet_addr, verified_at")
+            .in("wallet_addr", ownAddrs)
+            .not("user_id", "is", null)
+            .order("id", { ascending: true })
+            .limit(1000),
+        ),
+        "public-profile-wallet-owners",
+        remaining(),
+        "profile/",
+      ))
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      console.error("[public/profile wallet owners] bound:", msg)
+      return { ok: false, status: TIMEOUT_STATUS, error: msg }
+    }
+    if (claimsErr) {
+      console.error("[public/profile wallet owners]", claimsErr)
+      return { ok: false, status: 500, error: claimsErr.message }
+    }
+    const claimRows = (Array.isArray(claims) ? claims : []) as Array<SavedWalletClaim & { wallet_addr?: unknown }>
+    // 1000 rows is the PostgREST ceiling: at it, the claim set may be partial,
+    // and a partial set can drop the true verifier. Fail rather than guess.
+    if (claimRows.length >= 1000) {
+      return { ok: false, status: 503, error: "wallet ownership read hit its ceiling" }
+    }
+    const byAddr = new Map<string, SavedWalletClaim[]>()
+    for (const r of claimRows) {
+      if (typeof r.wallet_addr !== "string") continue
+      const list = byAddr.get(r.wallet_addr) ?? []
+      list.push(r)
+      byAddr.set(r.wallet_addr, list)
+    }
+    ownedRows = ((wallets ?? []) as any[]).filter(
+      (w) => typeof w.wallet_addr === "string" && ownersOfAddress(byAddr.get(w.wallet_addr) ?? []).includes(userId)
+    )
+  }
+  wallets = ownedRows
 
   // Count DISTINCT addresses before the strip below, which is the only point
   // in the pipeline where they still exist. Rows with a null/blank address are

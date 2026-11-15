@@ -20,10 +20,21 @@ let bioCall = 0
 
 vi.mock("@/lib/supabase", () => {
   const mk = (table: string): any => {
+    // 2026-11-14: the bundle also reads every claim on the user's addresses
+    // (public-profile-sums-only-wallets-the-user-owns.test.ts pins that rule).
+    // Here every address is claimed only by the resolved user, so all count.
+    let isClaimRead = false
     const b: any = {
-      select: () => b,
+      select: (cols?: string) => {
+        if (table === "saved_wallets" && typeof cols === "string" && /verified_at/.test(cols)) isClaimRead = true
+        return b
+      },
       ilike: () => b,
       eq: () => b,
+      in: () => b,
+      not: () => b,
+      order: () => b,
+      limit: () => b,
       maybeSingle: async () => {
         if (table === "profile_bio") {
           bioCall++
@@ -33,7 +44,20 @@ vi.mock("@/lib/supabase", () => {
         }
         return { data: null, error: null }
       },
-      then: (resolve: any) => resolve({ data: st.wallets, error: null }),
+      then: (resolve: any) =>
+        resolve(
+          isClaimRead
+            ? {
+                data: (st.wallets ?? []).map((w: any, i: number) => ({
+                  id: i + 1,
+                  user_id: st.idRow?.user_id ?? null,
+                  wallet_addr: w.wallet_addr,
+                  verified_at: null,
+                })),
+                error: null,
+              }
+            : { data: st.wallets, error: null }
+        ),
     }
     return b
   }

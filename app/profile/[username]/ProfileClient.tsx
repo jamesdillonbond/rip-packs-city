@@ -71,11 +71,6 @@ function CacheAgeCaption({ iso }: { iso: string | null | undefined }) {
   return text ? <>{` · ${text}`}</> : null;
 }
 
-interface PortfolioSnapshot {
-  snapshot_date: string;
-  total_fmv: number;
-}
-
 // ── Constants ─────────────────────────────────────────────────────
 const monoFont = "var(--font-mono)";
 const condensedFont = "var(--font-display)";
@@ -112,31 +107,6 @@ const labelStyle: React.CSSProperties = {
   color: "var(--rpc-text-muted)",
   textTransform: "uppercase" as const,
 };
-
-// ── Sparkline SVG ─────────────────────────────────────────────────
-function Sparkline(props: { data: number[]; width?: number; height?: number; color?: string }) {
-  const { data, width = 200, height = 40, color = "#E03A2F" } = props; // brand-exception: passed to SVG <polyline stroke> attr, which can't resolve a CSS var
-  if (data.length < 2) return null;
-  const min = Math.min(...data);
-  const max = Math.max(...data);
-  // A FLAT series has no shape, and a fabricated denominator invents one. The
-  // `max - min || 1` this replaces mapped every point to (v - min) / 1 === 0,
-  // which draws the line hard along the BOTTOM of the box — visually identical
-  // to a series that fell to the low of its window and stayed there. A wallet
-  // whose snapshots are all equal (dormant, or a single value repeated) is not
-  // "at its low"; it is unchanged. Draw it through the middle instead.
-  const span = max - min;
-  const points = data.map(function(v, i) {
-    const x = (i / (data.length - 1)) * width;
-    const y = span > 0 ? height - ((v - min) / span) * (height - 4) - 2 : height / 2;
-    return x + "," + y;
-  }).join(" ");
-  return (
-    <svg width={width} height={height} viewBox={"0 0 " + width + " " + height} style={{ display: "block" }}>
-      <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
-    </svg>
-  );
-}
 
 // ── Avatar ────────────────────────────────────────────────────────
 function hexToRgba(hex: string, alpha: number): string {
@@ -244,7 +214,6 @@ export default function ProfileClient(props: {
   const [walletCount, setWalletCount] = useState<number | null>(
     typeof props.initialWalletCount === "number" ? props.initialWalletCount : null
   );
-  const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
   const [, setLoading] = useState(true);
   // Current viewer's handle + auth id (null = anon). Drives the own-profile
   // share block; the id seeds the referral &ref= on the share link.
@@ -259,8 +228,9 @@ export default function ProfileClient(props: {
   // wallets empty. The /api/public/profile/[username] aggregated endpoint
   // returns the same fields with privacy-stripped wallet summaries and is
   // intentionally unauthenticated. Phase 7.5 consolidated those three reads
-  // into the public endpoint; portfolio-history stays as a separate call
-  // because the public endpoint doesn't include sparkline snapshots.
+  // into the public endpoint. (The 30-day sparkline read portfolio-history by
+  // USERNAME, but snapshots are keyed by user id, so it never rendered; removed
+  // 2026-11-14, see known-issues #254.)
   useEffect(function() {
     if (!username) return;
     setLoading(true);
@@ -315,12 +285,6 @@ export default function ProfileClient(props: {
       .catch(function() { setSlabsError(true); })
       .finally(function() { setSlabsLoading(false); });
 
-    // Fetch portfolio history for sparkline (public, ownerKey-driven endpoint).
-    const historyP = fetch("/api/profile/portfolio-history?ownerKey=" + enc + "&days=30")
-      .then(function(r) { return r.ok ? r.json() : null; })
-      .then(function(data) { if (data?.snapshots) setSnapshots(data.snapshots); })
-      .catch(function() {});
-
     // Structured favorite teams (4-league dropdown picks). Public, ownerKey-
     // driven. Replaces the legacy free-text profile_bio.favorite_team for
     // header chip rendering — bio.favorite_team only shows as a (legacy)
@@ -330,7 +294,7 @@ export default function ProfileClient(props: {
       .then(function(data) { if (Array.isArray(data?.teams)) setFavoriteTeams(data.teams); })
       .catch(function() {});
 
-    Promise.all([publicP, slabsP, historyP, teamsP]).finally(function() { setLoading(false); });
+    Promise.all([publicP, slabsP, teamsP]).finally(function() { setLoading(false); });
   }, [username]);
 
   // Who's viewing — to show the share block only on the viewer's own profile.
@@ -399,26 +363,6 @@ export default function ProfileClient(props: {
     if (la !== lb) return la.localeCompare(lb);
     return (b.cached_fmv ?? 0) - (a.cached_fmv ?? 0);
   });
-
-  // Sparkline data
-  const sparkData = snapshots.map(function(s) { return s.total_fmv; });
-  // ⚠ A percentage change from a ZERO baseline is UNDEFINED, not enormous. The
-  // previous `|| 1` divide-by-zero guard silently substituted a $1 baseline, so
-  // a collector whose first snapshot was $0 — a new wallet, or one snapshotted
-  // before the FMV populate ran — had a rise to $500 rendered as
-  // "↑ 50000.0% / 30D" on their PUBLIC profile. Omit the percentage instead;
-  // the sparkline itself still shows the real shape.
-  const sparkBase = sparkData.length >= 2 ? sparkData[0] : null;
-  const sparkChange =
-    sparkBase != null && Number.isFinite(sparkBase) && sparkBase > 0
-      ? ((sparkData[sparkData.length - 1] - sparkBase) / sparkBase) * 100
-      : null;
-  // Direction is knowable even when the percentage is not, so the sparkline
-  // colour must not fall back to "down" just because the baseline was zero.
-  const sparkUp =
-    sparkChange != null
-      ? sparkChange >= 0
-      : sparkData.length >= 2 && sparkData[sparkData.length - 1] >= sparkData[0];
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)" }}>
@@ -626,16 +570,6 @@ export default function ProfileClient(props: {
             {staleFmv > 0 && (
               <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.08em", marginBottom: 4 }}>
                 + {fmtDollars(staleFmv)} across {staleCount.toLocaleString("en-US")} stale-priced
-              </div>
-            )}
-            {sparkData.length >= 2 && (
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, marginTop: 4 }}>
-                <Sparkline data={sparkData} width={120} height={24} color={sparkUp ? "#34D399" : "#F87171"} />
-                {sparkChange != null && (
-                  <span style={{ fontSize: 9, fontFamily: monoFont, color: sparkChange >= 0 ? "var(--rpc-success-text)" : "var(--rpc-danger-text)", letterSpacing: "0.1em" }}>
-                    {sparkChange >= 0 ? "↑" : "↓"} {Math.abs(sparkChange).toFixed(1)}% / 30D
-                  </span>
-                )}
               </div>
             )}
           </div>

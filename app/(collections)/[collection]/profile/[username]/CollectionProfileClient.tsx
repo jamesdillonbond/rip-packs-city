@@ -59,11 +59,6 @@ interface SavedWalletPublic {
   accent_color: string;
 }
 
-interface PortfolioSnapshot {
-  snapshot_date: string;
-  total_fmv: number;
-}
-
 interface SniperDealPreview {
   playerName: string;
   tier: string;
@@ -147,33 +142,6 @@ const labelStyle: React.CSSProperties = {
   color: "var(--rpc-text-muted)",
   textTransform: "uppercase" as const,
 };
-
-// ── Sparkline SVG ─────────────────────────────────────────────────
-function Sparkline(props: { data: number[]; width?: number; height?: number; color?: string }) {
-  // brand-exception: default feeds the SVG <polyline stroke> below, where a CSS
-  // var() does not resolve. Hardcoded brand red is required here.
-  const { data, width = 200, height = 40, color = "#E03A2F" } = props;
-  if (data.length < 2) return null;
-  const min = Math.min(...data);
-  const max = Math.max(...data);
-  // A FLAT series has no shape, and a fabricated denominator invents one. The
-  // `max - min || 1` this replaces mapped every point to (v - min) / 1 === 0,
-  // which draws the line hard along the BOTTOM of the box — visually identical
-  // to a series that fell to the low of its window and stayed there. A wallet
-  // whose snapshots are all equal (dormant, or a single value repeated) is not
-  // "at its low"; it is unchanged. Draw it through the middle instead.
-  const span = max - min;
-  const points = data.map(function(v, i) {
-    const x = (i / (data.length - 1)) * width;
-    const y = span > 0 ? height - ((v - min) / span) * (height - 4) - 2 : height / 2;
-    return x + "," + y;
-  }).join(" ");
-  return (
-    <svg width={width} height={height} viewBox={"0 0 " + width + " " + height} style={{ display: "block" }}>
-      <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
-    </svg>
-  );
-}
 
 // ── Trophy Slot ───────────────────────────────────────────────────
 function PublicTrophySlot(props: { slot: number; trophy: TrophyMoment | null }) {
@@ -564,7 +532,6 @@ export default function CollectionProfileClient({
   const [walletCount, setWalletCount] = useState<number | null>(null);
   // The owner's own first wallet address, for the per-wallet chart only.
   const [ownerChartWallet, setOwnerChartWallet] = useState<{ addr: string; label?: string } | null>(null);
-  const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
   const [sniperDeals, setSniperDeals] = useState<SniperDealPreview[]>([]);
   const [loading, setLoading] = useState(true);
   const [sniperLoading, setSniperLoading] = useState(true);
@@ -660,12 +627,7 @@ export default function CollectionProfileClient({
       })
       .catch(function() { setFailed(function(f) { return { ...f, trophies: true }; }); });
 
-    const historyP = fetch("/api/profile/portfolio-history?ownerKey=" + enc + "&days=30")
-      .then(function(r) { return r.ok ? r.json() : null; })
-      .then(function(data) { if (data?.snapshots) setSnapshots(data.snapshots); })
-      .catch(function() {});
-
-    Promise.all([publicP, historyP]).finally(function() { setLoading(false); });
+    Promise.all([publicP]).finally(function() { setLoading(false); });
   }, [username, collection]);
 
   // Fetch sniper deals
@@ -713,30 +675,6 @@ export default function CollectionProfileClient({
   const momentsPartial = wallets.some(function(w) { return w.cached_moment_count == null; });
   const totalBadges = wallets.reduce(function(sum, w) { return sum + (w.cached_badges?.length ?? 0); }, 0);
   const rpcScore = wallets.length > 0 ? wallets[0]?.cached_rpc_score ?? null : null;
-
-  // Sparkline data
-  const sparkData = snapshots.map(function(s) { return s.total_fmv; });
-  // ⚠ A percentage change from a ZERO baseline is UNDEFINED, not enormous. The
-  // `|| 1` guard this replaces silently substituted a $1 baseline, so a collector
-  // whose first snapshot was $0 — a new wallet, or one snapshotted before the FMV
-  // populate ran — had a rise to $500 rendered as "↑ 50000.0% / 30D".
-  //   ⚠ THIS IS THE COPY-PASTED SIBLING of `app/profile/[username]/ProfileClient.tsx`,
-  // where the same defect was found and fixed; the fix landed on that file only and
-  // this one kept the raw `|| 1`. Same lesson as the two `saved_wallets` loaders and
-  // the 15 OG cards: when you fix one of these, GREP FOR THE EXPRESSION, not the file.
-  const sparkBase = sparkData.length >= 2 ? sparkData[0] : null;
-  const sparkChange =
-    sparkBase != null && Number.isFinite(sparkBase) && sparkBase > 0
-      ? ((sparkData[sparkData.length - 1] - sparkBase) / sparkBase) * 100
-      : null;
-  // ⚠ Direction is knowable even when the percentage is not. The sparkline colour
-  // used to key on `sparkChange != null && sparkChange >= 0`, so simply nulling the
-  // ratio would paint a genuine 0 -> $500 GAIN in the loss colour — the half of this
-  // fix that is easy to miss, because it only bites on the very rows the null is for.
-  const sparkUp =
-    sparkChange != null
-      ? sparkChange >= 0
-      : sparkData.length >= 2 && sparkData[sparkData.length - 1] >= sparkData[0];
 
   const basePath = "/" + collection;
   // Registry-derived, never hardcoded. `getCollection` returns undefined for an
@@ -823,16 +761,6 @@ export default function CollectionProfileClient({
           <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 24, color: "var(--rpc-text-primary)", lineHeight: 1, margin: "8px 0 4px" }}>
             {totalFmv > 0 ? `${fmvPartial ? "\u2265 " : ""}${fmtDollars(totalFmv)}` : "\u2014"}
           </div>
-          {sparkData.length >= 2 && (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, marginTop: 4 }}>
-              <Sparkline data={sparkData} width={120} height={24} color={sparkUp ? "#34D399" : "#F87171"} />
-              {sparkChange != null && (
-                <span style={{ fontSize: 9, fontFamily: monoFont, color: sparkChange >= 0 ? "var(--rpc-success-text)" : "var(--rpc-danger-text)", letterSpacing: "0.1em" }}>
-                  {sparkChange >= 0 ? "\u2191" : "\u2193"} {Math.abs(sparkChange).toFixed(1)}% / 30D
-                </span>
-              )}
-            </div>
-          )}
         </div>
         <div style={{ ...cardStyle, textAlign: "center" }}>
           <div style={labelStyle}>MOMENTS</div>

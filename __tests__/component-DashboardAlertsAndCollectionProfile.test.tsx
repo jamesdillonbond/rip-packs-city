@@ -1145,83 +1145,29 @@ describe("CollectionProfileClient", () => {
     expect(document.body.textContent).not.toMatch(/%\s*\/\s*30D/)
   })
 
-  it("still paints a zero-baseline GAIN in the up colour, not the loss colour", async () => {
-    // ⚠ The half of this fix that is easy to miss: the sparkline colour keyed on
-    // `sparkChange != null && sparkChange >= 0`, so merely nulling the ratio would
-    // render a genuine 0 -> $500 gain RED — and only on the rows the null exists for.
-    mount({
-      wallets: () => json(200, { wallets: [WALLET()] }),
-      snapshots: () => json(200, { snapshots: SNAPS(0, 500) }),
+  // ⚠ INVERTED 2026-11-14: the header sparkline + "% / 30D" readout were REMOVED
+  // from this page and its ProfileClient sibling. They fetched portfolio-history by
+  // USERNAME (snapshots are keyed by user id — never rendered in prod), and the only
+  // series that exists sums EVERY collection, so on a per-collection page it would
+  // have been another collection's trend under this one's heading. The per-wallet
+  // "PORTFOLIO VALUE / 30D" card (?wallet=&collection=) is unaffected.
+  for (const [label, first, last] of [
+    ["a zero-baseline gain", 0, 500],
+    ["a positive-baseline gain", 100, 150],
+    ["a loss", 200, 100],
+    ["a flat series", 500, 500],
+  ] as const) {
+    it(`publishes no header 30D change for ${label}, and never asks for the username-keyed series`, async () => {
+      const f = mount({
+        wallets: () => json(200, { wallets: [WALLET()] }),
+        snapshots: () => json(200, { snapshots: SNAPS(first, last) }),
+      })
+      await waitFor(() => expect(document.body.textContent).toMatch(/Damian Lillard/))
+      expect(document.body.textContent).not.toMatch(/%\s*\/\s*30D/)
+      const urls = f.mock.calls.map((c) => String(c[0]))
+      expect(urls.some((u) => u.includes("portfolio-history?ownerKey="))).toBe(false)
     })
-    await waitFor(() => expect(document.body.textContent).toMatch(/Damian Lillard/))
-    const stroke =
-      document.body.querySelector("polyline")?.getAttribute("stroke") ??
-      document.body.querySelector("svg path")?.getAttribute("stroke")
-    expect(stroke).toBe("#34D399")
-  })
-
-  it("still reports a real percentage when the baseline is positive", async () => {
-    // The other direction: the fix must not swallow a legitimate change, or it
-    // trades a false number for a missing one.
-    mount({
-      wallets: () => json(200, { wallets: [WALLET()] }),
-      snapshots: () => json(200, { snapshots: SNAPS(100, 150) }),
-    })
-    await waitFor(() => expect(document.body.textContent).toMatch(/Damian Lillard/))
-    expect(document.body.textContent).toMatch(/50\.0%\s*\/\s*30D/)
-  })
-
-  it("marks a real LOSS as down", async () => {
-    mount({
-      wallets: () => json(200, { wallets: [WALLET()] }),
-      snapshots: () => json(200, { snapshots: SNAPS(200, 100) }),
-    })
-    await waitFor(() => expect(document.body.textContent).toMatch(/Damian Lillard/))
-    expect(document.body.textContent).toMatch(/50\.0%\s*\/\s*30D/)
-    expect(document.body.textContent).toContain("\u2193")
-  })
-
-  it("draws a FLAT series through the middle of the box, not along its bottom", async () => {
-    // ⚠ THE SAME COPY-PASTE PAIR, ONE EXPRESSION DOWN. The `|| 1` fixed above was
-    // the 30D ratio; `Sparkline` in both files carried a second one,
-    // `const range = max - min || 1`, which sent every point of a flat series to
-    // (v - min) / 1 === 0 — the line drawn hard along the BOTTOM edge, reading as
-    // "fell to the low of the window and stayed" for a wallet that simply did not
-    // change. Pinned on BOTH siblings deliberately: the register's own lesson is
-    // that fixing one and trusting the other is how this class survives.
-    mount({
-      wallets: () => json(200, { wallets: [WALLET()] }),
-      snapshots: () => json(200, { snapshots: SNAPS(500, 500) }),
-    })
-    await waitFor(() => expect(document.body.textContent).toMatch(/Damian Lillard/))
-    const poly = document.body.querySelector("polyline")
-    const boxHeight = Number(poly?.closest("svg")?.getAttribute("height"))
-    const pts = (poly?.getAttribute("points") ?? "")
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean)
-      .map((q) => Number(q.split(",")[1]))
-    expect(pts.length, "no sparkline points to inspect").toBeGreaterThan(1)
-    expect(Number.isFinite(boxHeight) && boxHeight > 0, "no svg height to reason about").toBe(true)
-    expect(pts.every((y) => y === boxHeight / 2), `flat series drawn at ${pts.join(",")}`).toBe(true)
-  })
-
-  it("still spreads a VARYING series across the box on this sibling (no-change control)", async () => {
-    mount({
-      wallets: () => json(200, { wallets: [WALLET()] }),
-      snapshots: () => json(200, { snapshots: SNAPS(100, 500) }),
-    })
-    await waitFor(() => expect(document.body.textContent).toMatch(/Damian Lillard/))
-    const poly = document.body.querySelector("polyline")
-    const boxHeight = Number(poly?.closest("svg")?.getAttribute("height"))
-    const pts = (poly?.getAttribute("points") ?? "")
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean)
-      .map((q) => Number(q.split(",")[1]))
-    expect(new Set(pts).size).toBeGreaterThan(1)
-    expect(Math.max(...pts) - Math.min(...pts)).toBe(boxHeight - 4)
-  })
+  }
 
   it("renders sniper deals when the feed has them", async () => {
     mount({

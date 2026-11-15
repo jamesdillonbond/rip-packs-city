@@ -191,8 +191,13 @@ const ROOTS = ["app", "components"]
  * page + the new "Load more" page) CONVERTED to `fetchJson` — the Load more
  * commit (eb8dd20c1) had added a second `r.ok ? r.json() : null` site (63,
  * main red), and both now discriminate on `ok`.
+ *
+ * 61 -> 59 on 2026-11-14: the public and per-collection profile 30-day
+ * sparklines were REMOVED (they read portfolio-history by username while
+ * snapshots are keyed by user id, so they never rendered) — two fetch sites
+ * gone with them. Not a conversion; re-derived from the no-slack assertion.
  */
-const BUDGET = 61
+const BUDGET = 59
 
 /**
  * A failure funnelled into the success-with-nothing value.
