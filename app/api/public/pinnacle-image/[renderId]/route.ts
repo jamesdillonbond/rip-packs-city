@@ -17,8 +17,14 @@
 //   For LIST thumbnails (Market, Sniper). Measured 2026-09-26 on one render:
 //   Front_Cropped 284,505 bytes vs Front_Transparent 1,144,333 — ~4x lighter,
 //   and the tighter crop fills a small tile. Falls back to the full renders.
+//
+// FALLBACK (2026-11-15): a render Dapper's edition search has no record of (the catalog's
+// `flow-chain` / `pinnacle-edition-page` rows) is read from Pinnacle's own edition page,
+// which embeds the same signed asset URLs — see lib/pinnacle/edition-page-media.ts.
 
 import { NextRequest, NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase";
+import { signedMediaFromEditionPage } from "@/lib/pinnacle/edition-page-media";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -73,6 +79,35 @@ async function resolveSignedUrl(
   return null;
 }
 
+// Fallback (2026-11-15): renders Dapper's edition search has no record of (catalog rows
+// sourced from the chain or Pinnacle's edition pages — 55 renders, 843 held pins, all 404
+// before this) are read from Pinnacle's own edition page, which embeds the signed asset
+// URLs the official site loads. The edition id comes from OUR catalog (digits only), and
+// the host is fixed, so nothing request-supplied reaches the fetch URL.
+const EDITION_PAGE = "https://disneypinnacle.com/edition/";
+const EDITION_ID_RE = /^[0-9]{1,9}$/;
+
+async function resolveFromEditionPage(
+  renderId: string,
+  variant: Variant,
+): Promise<{ url: string; exp: number } | null> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabaseAdmin as any)
+    .from("pinnacle_catalog")
+    .select("edition_id")
+    .eq("render_id", renderId)
+    .maybeSingle();
+  if (error) return null;
+  const editionId = String(data?.edition_id ?? "");
+  if (!EDITION_ID_RE.test(editionId)) return null;
+  const res = await fetch(EDITION_PAGE + editionId, {
+    headers: { "User-Agent": "Mozilla/5.0 (compatible; rip-packs-city/pinnacle-image)" },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) return null;
+  return signedMediaFromEditionPage(await res.text(), renderId, variant);
+}
+
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ renderId: string }> },
@@ -91,6 +126,20 @@ export async function GET(
   } catch {
     url = null;
   }
+  // Cache for CACHE_SECONDS unless a fallback signature expires sooner (keep 5 min spare).
+  let cacheSeconds = CACHE_SECONDS;
+  if (!url) {
+    try {
+      const page = await resolveFromEditionPage(renderId, variant);
+      const left = page ? page.exp - Math.floor(Date.now() / 1000) - 300 : 0;
+      if (page && left > 60) {
+        url = page.url;
+        cacheSeconds = Math.min(CACHE_SECONDS, left);
+      }
+    } catch {
+      url = null;
+    }
+  }
   if (!url) {
     // No image resolvable (unknown render_id or upstream fault). 404 so the
     // <img> onError can fall back to a placeholder tile.
@@ -100,7 +149,7 @@ export async function GET(
   return NextResponse.redirect(url, {
     status: 302,
     headers: {
-      "Cache-Control": `public, s-maxage=${CACHE_SECONDS}, stale-while-revalidate=86400`,
+      "Cache-Control": `public, s-maxage=${cacheSeconds}, stale-while-revalidate=86400`,
     },
   });
 }
