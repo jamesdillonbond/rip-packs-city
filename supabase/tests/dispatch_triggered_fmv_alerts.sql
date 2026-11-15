@@ -8,7 +8,7 @@
 -- enqueued accounting, and the last_triggered 6h re-scan dedup.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261027013447_audit_20261026_pinnacle_fmv_alerts.sql);
+-- (supabase/migrations/20261114235800_audit_20261114_fmv_alert_dispatch_rotates_instead_of_rescanning_its_head.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts, and the
 -- md5 of pg_get_functiondef was confirmed byte-identical to LIVE prod on 2026-08-01
 -- (2b37a1f183501a84545f4c7b16745012).
@@ -17,7 +17,7 @@
 
 BEGIN;
 
-CREATE TABLE fmv_alerts (id bigint GENERATED ALWAYS AS IDENTITY, owner_key text, edition_key text, player_name text, set_name text, alert_type text, threshold numeric, channel text, notification_email text, last_triggered_at timestamptz, collection_id uuid, active boolean, armed boolean NOT NULL DEFAULT true);
+CREATE TABLE fmv_alerts (id bigint GENERATED ALWAYS AS IDENTITY, owner_key text, edition_key text, player_name text, set_name text, alert_type text, threshold numeric, channel text, notification_email text, last_triggered_at timestamptz, collection_id uuid, active boolean, armed boolean NOT NULL DEFAULT true, last_checked_at timestamptz);
 CREATE TABLE editions (id uuid, external_id text, collection_id uuid, player_name text, set_name text);
 CREATE TABLE fmv_snapshots (edition_id uuid, fmv_usd numeric, confidence text, computed_at timestamptz);
 CREATE TABLE live_ask_stub (collection_id uuid, edition_key text, ask numeric);
@@ -53,10 +53,22 @@ DECLARE
   v_any_new boolean;
   v_enqueued int := 0;
   v_scanned int := 0;
+  v_eligible int := 0;
   v_suppressed int := 0;
   v_rearmed int := 0;
   v_bucket text := to_char(date_trunc('hour', now()),'YYYYMMDDHH24');
 BEGIN
+  -- 2026-11-14: the scan is a ROTATION, not a fixed head. It was `LIMIT p_max`
+  -- with no ORDER BY, so past p_max eligible alerts the planner kept handing back
+  -- roughly the same rows and the rest were never evaluated, while the run said
+  -- ok. Oldest-checked first (never-checked before all), id as the tiebreak, and
+  -- every scanned alert is stamped, so N alerts are all visited within
+  -- ceil(N / p_max) ticks. `eligible` in the result shows a backlog.
+  SELECT count(*) INTO v_eligible
+  FROM public.fmv_alerts fa
+  WHERE fa.active = true
+    AND (fa.last_triggered_at IS NULL OR fa.last_triggered_at < now() - interval '6 hours');
+
   FOR v_alert IN
     SELECT fa.id, fa.owner_key, fa.edition_key, fa.player_name, fa.set_name,
            fa.alert_type, fa.threshold, fa.channel, fa.notification_email, fa.collection_id,
@@ -64,9 +76,11 @@ BEGIN
     FROM public.fmv_alerts fa
     WHERE fa.active = true
       AND (fa.last_triggered_at IS NULL OR fa.last_triggered_at < now() - interval '6 hours')
+    ORDER BY fa.last_checked_at ASC NULLS FIRST, fa.id
     LIMIT p_max
   LOOP
     v_scanned := v_scanned + 1;
+    UPDATE public.fmv_alerts SET last_checked_at = now() WHERE id = v_alert.id;
 
     SELECT fs.fmv_usd, fs.confidence::text INTO v_fmv, v_conf
     FROM public.editions e
@@ -201,7 +215,7 @@ BEGIN
     END IF;
   END LOOP;
 
-  RETURN jsonb_build_object('scanned', v_scanned, 'enqueued', v_enqueued,
+  RETURN jsonb_build_object('scanned', v_scanned, 'eligible', v_eligible, 'enqueued', v_enqueued,
     'suppressed_unchanged', v_suppressed, 'rearmed', v_rearmed,
     'bucket', v_bucket, 'ran_at', now());
 END;
@@ -317,6 +331,24 @@ SELECT _assert_eq((SELECT payload->>'current_fmv' FROM alert_deliveries WHERE ow
 SELECT _assert_eq((SELECT count(*)::text FROM alert_deliveries WHERE owner_key='pu' AND payload->>'edition_key'='P2' AND payload->>'alert_type'='price_below'), '0', 'a stale floor map gives no ask, so a price alert cannot fire');
 SELECT _assert_eq((SELECT count(*)::text FROM alert_deliveries WHERE owner_key='pu' AND payload->>'edition_key'='P2' AND payload->>'alert_type'='fmv_below'), '1', 'an FMV alert on the same pin still fires');
 SELECT _assert_eq((SELECT count(*)::text FROM alert_deliveries WHERE owner_key='pu' AND payload->>'edition_key'='P3'), '0', 'an ask over 3x FMV is disconnected — no ask, no fire');
+
+-- 2026-11-14: THE SCAN ROTATES. It was `LIMIT p_max` with no ORDER BY, so past p_max eligible
+-- alerts the same head was re-scanned every tick and the rest never evaluated. Five eligible,
+-- never-triggering alerts, p_max = 2: three ticks must visit all five, and tick 2 must take the
+-- two NOT seen in tick 1. (now() is constant inside this transaction, so the order after the
+-- never-checked rows falls to the id tiebreak — which is exactly what makes it deterministic.)
+UPDATE fmv_alerts SET active = false;
+INSERT INTO fmv_alerts (owner_key, edition_key, player_name, set_name, alert_type, threshold, channel, notification_email, last_triggered_at, collection_id, active)
+SELECT 'rot','ek1','Pa','Sa','fmv_above', 100000,'email','r@x', NULL, '00000000-0000-0000-0000-00000000cccc', true FROM generate_series(1,5);
+CREATE TEMP TABLE rot_ids AS SELECT id, row_number() OVER (ORDER BY id) AS n FROM fmv_alerts WHERE owner_key = 'rot';
+CREATE TEMP TABLE r1 AS SELECT dispatch_triggered_fmv_alerts(2) AS j;
+SELECT _assert_eq((SELECT (j->>'scanned') || '/' || (j->>'eligible') FROM r1), '2/5', 'tick 1 scans 2 of the 5 eligible, and says 5 were eligible');
+SELECT _assert_eq((SELECT string_agg(r.n::text, ',' ORDER BY r.n) FROM rot_ids r JOIN fmv_alerts fa USING (id) WHERE fa.last_checked_at IS NOT NULL), '1,2', 'tick 1 checked alerts 1 and 2');
+CREATE TEMP TABLE r2 AS SELECT dispatch_triggered_fmv_alerts(2) AS j;
+SELECT _assert_eq((SELECT string_agg(r.n::text, ',' ORDER BY r.n) FROM rot_ids r JOIN fmv_alerts fa USING (id) WHERE fa.last_checked_at IS NOT NULL), '1,2,3,4', 'tick 2 takes the two NOT yet checked (3, 4), not the same head again');
+CREATE TEMP TABLE r3 AS SELECT dispatch_triggered_fmv_alerts(2) AS j;
+SELECT _assert_eq((SELECT count(*)::text FROM rot_ids r JOIN fmv_alerts fa USING (id) WHERE fa.last_checked_at IS NOT NULL), '5', 'three ticks of 2 visit all 5');
+SELECT _assert_eq((SELECT count(*)::text FROM alert_deliveries WHERE owner_key = 'rot'), '0', 'CONTROL: rotation alone enqueues nothing (none of them triggered)');
 
 SELECT '✓ dispatch_triggered_fmv_alerts invariants pass' AS result;
 ROLLBACK;

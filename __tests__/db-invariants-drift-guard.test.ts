@@ -2249,7 +2249,7 @@ const PINS = [
     fn: "dispatch_triggered_fmv_alerts",
     test: "supabase/tests/dispatch_triggered_fmv_alerts.sql",
     migration:
-      "supabase/migrations/20261027013447_audit_20261026_pinnacle_fmv_alerts.sql",
+      "supabase/migrations/20261114235800_audit_20261114_fmv_alert_dispatch_rotates_instead_of_rescanning_its_head.sql",
   },
   {
     fn: "edition_live_ask",
