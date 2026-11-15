@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~1:40 PM PT — R151 closed: a public handle is claimed from a Top Shot name only for a PROVEN wallet (Cowork; Trevor: "Proof required")
+- `resolve-and-associate` passes `{ proven }` to `claimUsernameFromTopShot`; proven = a `trade_block_wallets` or `trade_room_sides` row with `proven_at` for this user and wallet (`isWalletProvenForUser`, fails CLOSED). An existing handle is still reported; an unproven signup gets `profileHandleReason: "unproven"` and a dashboard notice (pick a handle on Edit profile, or prove the wallet on the Trade Block). The Trade Block wallet proof now claims the handle (`claimHandleForProvenWallet`, from `wallet_usernames`; never overwrites, never steals, never throws).
+- Tests: new `__tests__/profile-claim-username-requires-proof.test.ts`; `api-profile-resolve-and-associate-handle.test.ts` re-pinned to run proven by default plus an unproven block (planted defects: removing the proof argument reds 2, removing the fail-closed read reds 1). Canary (wallets saved by >1 user) was 0, so no handle needs releasing.
+- Also: feedback row 12524 marked duplicate of 12523 (same report; the reporter was emailed 11-14 10:15 AM PT). Deep-audit C3 (66 April `pack_ev_history` rows) left as is: not readable by any public reader.
+- Revert: find the commit by message "R151: claim a public handle only for a proven wallet" and `git revert` it.
+
 ### 2026-11-15 ~12:50 PM PT — #248: DB-invariant pin for `reconcile_wmc_fmv_for_wallet` (the 446 fix, `20261115204212`) + drift-guard entry (Claude Code cloud)
 - `supabase/tests/reconcile_wmc_fmv_for_wallet.sql`: lane-newer edition skipped, efc-newer edition written, no-applied edition copied as before, idempotent once efc agrees. Passed on scratch Postgres; the pre-fix body reds it (planted, "got [3], want [2]"); a body edit reds the drift guard (planted). Tests only, no DB change.
 - Revert: revert by message "pin reconcile_wmc_fmv_for_wallet".
