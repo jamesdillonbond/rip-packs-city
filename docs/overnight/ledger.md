@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~12:48 PM PT — /insights/drops og:image carries a per-day ?d=<PT date> so X stops serving last week's cached card (Claude Code cloud, Trevor live)
+- Trevor's composer showed the 11-08 card (Rookie Debut Case, Villains Vol.2 …) even with ?w=1115 on the page link: X caches by the IMAGE URL too. `app/insights/drops/layout.tsx` static `metadata` → `generateMetadata()` with `/api/og/insights/drops?d=YYYYMMDD` (PT); the route ignores the param; page ISR 900 s rolls the key.
+- Revert: find the commit by message "drops: per-day og:image URL" and `git revert` it. No DB change.
+
 ### 2026-11-15 ~1:00 PM PT — #248 decided (Trevor delegated): the fast-lane fix STAYS (with daily job 617 it is net-negative IO); job 446 stops writing stale edition_fmv_current prices over the lane — `20261115204212` applied (Claude Code cloud)
 - `reconcile_wmc_fmv_for_wallet` skips an edition `rwfc_applied` shows the lane pushed after `edition_fmv_current.refreshed_at` when they disagree. Live md5 `024c0356…` = file body; anon EXECUTE false; smoke call ok; 81 editions matched at apply. Staged revert files deleted; inbox `2026-11-15T2040Z` RESOLVED.
 - Revert: re-apply the `reconcile_wmc_fmv_for_wallet` body from `20260926004446_audit_20260925_saved_wallet_fmv_reconcile_stops_folding_base58.sql`; repo: revert by message "#248 decided".
