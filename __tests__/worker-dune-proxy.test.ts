@@ -161,7 +161,7 @@ describe("dune-proxy — query_id allow-list (R138c, security audit 2026-10-25)"
   })
 
   it("allows each of RPC's own saved queries", async () => {
-    for (const id of ["7899011", "8027085", "8030177"]) {
+    for (const id of ["7899011", "8027085", "8030177", "9129294"]) {
       const res = await worker.fetch(authed(`/results?query_id=${id}`), env)
       expect(res.status, id).toBe(200)
     }
