@@ -12,6 +12,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-14 ~4:10 PM PT — FMV price alerts: the dispatcher rotates through every eligible alert instead of re-scanning the same 200 (Claude Code cloud)
+- Alerts review finding #6. `dispatch_triggered_fmv_alerts` scanned `LIMIT p_max` (200) with no ORDER BY or cursor, so past 200 eligible alerts the same head was evaluated every tick and the rest never were, while the run reported ok with `scanned: 200`. It is latent today (0 active alerts) and lands before there is any volume. Migration `20261114235800`:
+  - new nullable `fmv_alerts.last_checked_at`, written only by this function, plus the partial index `idx_fmv_alerts_active_last_checked`
+  - the scan orders `last_checked_at NULLS FIRST, id` and stamps each alert it scans, so it rotates
+  - the result gains `eligible`, so a backlog shows beside `scanned` (`alerts-dispatch` logs it as `fmv_eligible`)
+- Per-alert behaviour is unchanged. The live base was re-read first (md5 `33c6a1a9…` = `20261027013447`); the live body now equals the file (md5 `1713bdaa…`), and anon still has no EXECUTE.
+- The pin `supabase/tests/dispatch_triggered_fmv_alerts.sql` has a new rotation case: 5 eligible alerts at `p_max=2` must take 1,2 → 3,4 → all 5. It fails on the old body. The drift guard now points at the new migration. The local DB suite (310 files) and full preflight are green.
+- Revert: re-apply the function from `20261027013447_audit_20261026_pinnacle_fmv_alerts.sql`. The column and index are inert without it.
+
 ### 2026-11-14 ~4:35 PM PT — Pack-pulled moments from Trevor's on-chain (PackNFT) packs now carry their share of the pack price: 234 rows, $1,735.07 (Cowork cloud)
 - `get_wallet_pack_history` already prices 103 of 0xbd94…'s 129 Top Shot PackNFT rips (onchain / marketplace / retail / retail_inferred); each pull named in `pack_open_pulls` now gets buy_usd ÷ moments_pulled. Migration `20261115000235` (input snapshot `flowty_archive.nft_pack_pull_prices_20261114`, backup `flowty_archive.moment_acquisitions_bak_pack_pull_20261114`, in-migration assertion 234 / $1,735.07). retail_inferred packs → confidence `heuristic`, the rest `verified`. Not covered here: 26 PackNFT rips with no price and the 2,922 custodial (reconstructed) rips — those need Dapper's account purchase history.
 - Revert: the UPDATE … FROM the backup in the header of `20261115000235`.
