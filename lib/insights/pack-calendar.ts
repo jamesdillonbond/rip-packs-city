@@ -259,6 +259,21 @@ export interface PinnacleOpenEditionSet {
   last_mint_at: string
 }
 
+// ONE RELEASE, NOT TWO (2026-11-15). A Pinnacle mystery-capsule sale mints its pins straight into
+// buyers' wallets, so its pins ARE the "Open Edition" set seen minting: Gargoyles Vol.1's OE minted
+// 11-01 → 11-06 17:00 UTC, exactly its capsule sale's close on disneypinnacle.com/releases. Where the
+// capsule sale is also on the calendar (Walt Disney Mugs Vol.1 via its DROP_CORRECTIONS entry), the
+// 11-15 draft listed it twice. The capsule line carries the official price and window, so the OE line
+// with the same name goes. An OE with no matching capsule (Gargoyles: no book row) stays.
+export function dropOpenEditionsSoldAsCapsules(drops: PackCalendarDrop[]): void {
+  const norm = (t: string) => t.replace(/\s*\([^)]*\)\s*$/, "").trim().toLowerCase()
+  const capsules = new Set(drops.filter((d) => d.collection === "disney_pinnacle" && d.kind === "capsule").map((d) => norm(d.title)))
+  for (let i = drops.length - 1; i >= 0; i--) {
+    const d = drops[i]
+    if (d.kind === "open_edition" && capsules.has(norm(d.title))) drops.splice(i, 1)
+  }
+}
+
 /** "Disney • Gargoyles Vol.1" + "Open Edition" → "Gargoyles Vol.1 (Open Edition)". */
 export function openEditionTitle(setName: string | null, editionType: string | null, setKey: string): string {
   const name = (setName ?? "").split("•").pop()?.trim() || setKey
@@ -535,6 +550,7 @@ export async function fetchPackCalendar(
 
   // Official-page corrections first, so a capsule sale is never "delivered" as a draw.
   applyDropCorrections(drops, now, corrections)
+  dropOpenEditionsSoldAsCapsules(drops)
   await markDeliveredDraws(sb, drops)
   // Drops no feed carries (Top Shot This trade-ins), hand-entered from the official page.
   drops.push(...buildManualDrops(now, manual))

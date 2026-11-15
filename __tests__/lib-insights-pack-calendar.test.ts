@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { buildPackCalendar, buildPinnacleOpenEditionDrops, fetchPackCalendar, openEditionTitle, type PackCalendarSourceRow, resolveUnnamedOpenEditionSets, deliveredOpenEditionSets } from "@/lib/insights/pack-calendar"
+import { buildPackCalendar, dropOpenEditionsSoldAsCapsules, buildPinnacleOpenEditionDrops, fetchPackCalendar, openEditionTitle, type PackCalendarSourceRow, resolveUnnamedOpenEditionSets, deliveredOpenEditionSets } from "@/lib/insights/pack-calendar"
 
 // 2026-11-08 12:00 PT
 const NOW = new Date("2026-11-08T20:00:00Z")
@@ -373,5 +373,19 @@ describe("deliveredOpenEditionSets — supply staged in the Pinnacle contract is
   })
   it("a failed read throws — never a guess either way", async () => {
     await expect(deliveredOpenEditionSets(sb([], { message: "timeout" }), sets)).rejects.toThrow(/timeout/)
+  })
+})
+
+// 2026-11-15: the Sunday draft listed Walt Disney Mugs Vol.1 twice — its capsule sale and the same pins minting as an "Open Edition".
+describe("dropOpenEditionsSoldAsCapsules", () => {
+  const base = { tier: null, pack_type: null, slots: null, start_time: "2026-11-09T17:00:00Z", end_time: null, status: "open" as const, detail_href: "/disney-pinnacle/sets" }
+  it("removes the Open Edition line of a release already listed as a capsule sale, and keeps one with no capsule line", () => {
+    const drops = [
+      { ...base, collection: "disney_pinnacle" as const, dist_id: "8922", title: "Walt Disney Mugs Vol.1", kind: "capsule" as const, retail_usd: 9.99 },
+      { ...base, collection: "disney_pinnacle" as const, dist_id: "OEV1-WDMG", title: "Walt Disney Mugs Vol.1 (Open Edition)", kind: "open_edition" as const, retail_usd: null },
+      { ...base, collection: "disney_pinnacle" as const, dist_id: "OEV1-GARG", title: "Gargoyles Vol.1 (Open Edition)", kind: "open_edition" as const, retail_usd: null },
+    ]
+    dropOpenEditionsSoldAsCapsules(drops)
+    expect(drops.map((d) => d.dist_id)).toEqual(["8922", "OEV1-GARG"])
   })
 })
