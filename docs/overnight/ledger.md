@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-14 ~10:05 PM PT — #190 step 2 loaded: 494,427 arrival-provenance rows (wallet-scoped) in topshot_arrival_provenance; NOT yet applied — awaiting Trevor (Claude Code cloud)
+
+- Execution `01M7ETHE1Z3QNZWENDQTY6D1MQ` of 9129489 (184 credits; result reads ~640; cycle now 1,841 / 4,000). Tick 1 stopped at Dune's per-minute cap (429, offset 77,000) and logged `resume_offset`; `dd688b2` added pacing + 429 backoff; the 9:52 PM tick resumed at 77,000 and completed (494,427 loaded, ok).
+- Controls against rows we already price: marketplace 63,344 / 63,346, storefront 34,196 / 34,215, offers 26,190 / 26,196 on price; pack pulls 97,986 / 98,273 (99.7 %) on method.
+- Would write (dry run of `apply_topshot_arrival_provenance()`): 45,186 pack pulls at $0, 8,803 offer buys $88,694.24, 5,239 marketplace $35,348.03, 55 storefront $371.33. A direct apply call was blocked pending Trevor's go-ahead.
+- Revert (load only): `DELETE FROM public.topshot_arrival_provenance WHERE dune_execution_id = '01M7ETHE1Z3QNZWENDQTY6D1MQ' AND applied_at IS NULL;`
+
 ### 2026-11-14 ~9:30 PM PT — #190 step 2: one wallet-scoped Dune run feeds the arrival-provenance lane (pack pulls / offers / storefront buys) instead of ~45 batches (Claude Code cloud)
 
 - Found a concurrent session's `topshot-arrival-provenance-dune` lane (query 9129294, 2,000 ids per ~70-credit run, tested `apply_topshot_arrival_provenance()`). Rather than a parallel arrivals table, private temp query **9129489** runs the same classification ONCE over every moment whose latest Deposit is into a saved wallet (~80–400 credits vs ~3,150 for 45 batches).
