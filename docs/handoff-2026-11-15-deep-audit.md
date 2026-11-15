@@ -2,6 +2,16 @@
 
 From the scheduled Cowork deep-audit pass (report: `docs/audits/deep-audit-2026-11-15.md`). Everything below was found and verified read-only but NOT shipped. Each item has the evidence, the proposed change and a revert path. All times are PT.
 
+
+> **Status update 2026-11-15 ~8:40 AM PT (Claude Code cloud, autonomous session):**
+> - **#4 Candy holders — ✅ DONE** (`ef0a73381`): paged read, all 1,316 holders in the 7:37 AM PT snapshot, no cap notice.
+> - **#2 D2 panini-premiums — ✅ FIXED** (`070bd9eaf`): page read budget 8 s → 25 s; every regeneration since 10-14 had died at 8 s. Live DOM 201 rows, no failure copy. The matview remains the structural fix (optional). **`/panini-blockchain/market` — left as is:** re-measured in a quiet hour, 1 of 3 renders 503'd; its board read has only ~50 production calls in pgss, so a refreshed matview would cost more than the reads it saves.
+> - **#3 D4 `/api/analytics/health` — ROOT CAUSE FOUND, migration STAGED, not applied** (`apply_migration` blocked by an unanswered confirmation): the `sales_2026` leg of `analytics_pipeline_health()` has no plain `sold_at` index and walks every 24 h row via the pkey (12,591 buffers; 4.3 s cold vs its own 5 s timeout). Adding `AND price_usd > 0` uses `idx_sales_2026_fmv_recalc_window` → 5 buffers; equivalent (0 non-positive sales in 7 d). One-line body change on 20260925060717's body.
+> - **#6 C3 — the proposed UPDATE cannot run as written:** `pack_ev_latest` is a VIEW (relkind `v`); the 66 rows come from its base history. Not exposed. Re-scope before acting.
+> - **E-2 — ✅ DONE** (`ef0a73381`): `total_is_capped` beside `total` at all four sites. **E-3 `esc()` — ✅** both notify escapers add `'`. **E-3 `#E03A2F` in FmvHistoryPlot — no change:** both carry the `brand-exception` comment (recharts SVG cannot resolve CSS vars). **E-3 zero-reference exports — not removed** (low value).
+> - **#5 C1 slug trailing dash — NOT a code defect on its own:** `slugifyName` keeps edge dashes on purpose to round-trip the SQL resolver's expression; changing it means changing the resolvers too. The per-person merges are DB work (#139 pattern).
+> - **F-1:** no live doc quotes the 44-row count; nothing to change.
+
 ## 1. A-1 · P2 · Handle squatting through resolve-and-associate (security, decide first)
 
 `POST /api/profile/resolve-and-associate` takes a Top Shot username or address from the body, saves the wallet with **no ownership proof**, then `claimUsernameFromTopShot` (`lib/profile/claim-username.ts:45`) upserts `profile_bio.username` from it, first come first served. `c082fea78` (11-03) widened it: pasting an address reverse-resolves that wallet's username into a handle. So a signed-in stranger can take a real collector's handle and appear as them on `/profile/<handle>`, the trade block and trophy boards. Not a data leak: private routes key on `user.id` (#176).
