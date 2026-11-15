@@ -12,6 +12,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-14 ~7:10 PM PT — Saved wallets: 121,382 acquisition records filled from our own sales / pack-open tables (68,230 Top Shot buys $696,382; 12,177 Top Shot "unknown" → buys $34,712; 9,506 All Day buys; 471 Pinnacle buys; 31,001 own pack pulls at $0) (Claude Code cloud)
+
+- Trevor: "Take action on things you're 100% certain on and have the facts to back it." Only 3 of 56 saved wallets had a record for >= 90% of held Top Shot moments. Every sales → acquisition lane looks back 14 days only, and Top Shot has none at all.
+- `backfill_acq_own_history_20261114(wallet, collection)` (migration `20261115031000`) writes only for HELD moments:
+  - **Buy:** the latest sale of that moment anywhere went TO this wallet (seller ≠ wallet, price > 0, USD/DUC/USDC). Recorded at that sale price; offer fills become `offer_accepted`.
+  - **Unknown → buy:** an `unknown` row with no price, under the same proof.
+  - **Pull:** this wallet is the recorded opener of the pack, and the moment has never sold since. Recorded at $0.
+  - Pinnacle reads `pinnacle_sales` / `pinnacle_pack_opens`.
+- Run once over all saved wallets × TS / All Day / Golazos / UFC / Pinnacle.
+- **Checks:** 0 written records missing, 0 price mismatches against the archive, 0 duplicate rows. A second run writes nothing. 6/6 local fixture cases correct. On knotbean, the 940 buys / $3,850 predicted before the run were what it wrote.
+- Every write is recorded in `flowty_archive.acq_own_history_backfill_20261114` (arm, row id, prior row).
+- Revert: per the file header (DELETE arms A/C by id, restore arm B from `prior`).
+- **Not done:** no recurring lane yet, so `cache_refresh` keeps writing new `unknown` rows and newly saved wallets will not be filled.
+
 ### 2026-11-14 ~7:30 PM PT — Packs board reads all ~3,200 packs instead of the best-ratio 500; pack and Grails views never show a previous filter's rows; degraded pack, Candy-pack and badge answers are not cached; the home FMV preview stops pricing an unknown #1 at the base (Claude Code cloud)
 - Fresh-eyes review of overview / home / badges / packs (read-only reviewer, 8 findings; all 8 handled). The overview, insider signals, chase view, Panini packs and the badges redirect were clean.
   1. **The Packs board fetched ONE page of 500** (ordered by `value_ratio`, NULLs last) and sorted / filtered it in the browser as the whole board. Today there are 3,202 Top Shot and 3,228 All Day packs; the cheapest-first default and every price / +EV filter never saw ~2,700 of them. `/api/packs` now takes `offset` with a unique `dist_id` tiebreak. The new `lib/packs/fetch-all-pack-rows.ts` walks pages up to `total` (1,000 per page, 10-page ceiling); a failed page or the ceiling is an error, never a shorter board.
