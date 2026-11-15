@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~7:20 AM PT — Candy holders ranking paged past 1,000 (all 1,316 shown); concierge capped counts flagged; trade-notify escaper adds `'` (Claude Code cloud, deep-audit residue items 4 / E-2 / E-3)
+
+- Item 4 (R154 follow-on): `lib/insights/candy-board.ts` reads `candy_holder_board` in 1,000-row pages ordered `serials desc, wallet_address` (unique; 1,316/1,316 distinct) up to `HOLDERS_MAX_ROWS` = 5,000 (`lib/insights/candy-board-limits.ts`), a failed page fails the section rather than serving a partial list; client table cap is the same constant. Read cost 2 ms / 30 buffers per page (MV-backed). Test fake now honours `.limit(n)` + the 1,000 clamp; planted-defect check: the old read fails both new tests.
+- E-2: concierge tools add `total_is_capped` beside `total` where the read or list cap filled (`support-chat` deals + signed editions, `candy-boards` special serials, `allday-boards` player editions).
+- E-3: `esc()` in `lib/trade-room/notify.ts` and `lib/trade-block/notify.ts` now escapes `'` (all attributes are double-quoted today, so not exploitable — hardening).
+- Revert: revert the code commit (no DB change).
+
 ### 2026-11-15 ~7:00 AM PT — #190 step 3: hop table reshaped (Trevor approved); hop v2 NOT loaded (1.88M rows), v3 query narrowed to the actual transfers (Claude Code cloud)
 
 - `20261115145948`: `topshot_transfer_hop_stage` dropped while empty and recreated keyed (sender, nft_id).
