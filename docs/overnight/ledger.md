@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~10:15 AM PT — 2026 WNBA Finals drop (Case / Box / Collector Pack / Trade Ticket Pack) hand-entered on the pack calendar; manual entries step aside once the feed lists the drop (Claude Code cloud, Trevor live)
+- The drop was on blog.nbatopshot.com since 11-12 but not in the Atlas book, so the Sunday draft, `/insights/drops` and its card missed it. `MANUAL_DROPS` now takes `kind: "rsvp" | "sale"` and `feed_match`: a feed row of the same collection whose title contains it replaces the entry (no double listing). 4 entries, times from the guide (ET, stored UTC). 1 test (planted-defect checked).
+- Revert: find the commit by message "pack calendar: 2026 WNBA Finals" and `git revert` it; or delete the 4 `manual-wnba-finals-2026-*` entries. No DB change.
+
 ### 2026-11-15 ~9:30 AM PT — applied (Trevor: "apply all three"): analytics_pipeline_health's sales leg uses an index; get_hybrid_custody_candidates gets a 90 s timeout. The R153 player merge did NOT apply (confirmation unanswered) (Claude Code cloud)
 
 - `20261115172732_audit_20261115_analytics_pipeline_health_sales_leg_uses_index`: the `sales_2026` leg adds `AND price_usd > 0` → `idx_sales_2026_fmv_recalc_window`. Read back: 4.3 s / 14.8k blocks (9,314 disk) → 20 ms / 2.4k blocks; output unchanged (sales healthy, lag 7 min). Fixes the `/api/analytics/health` 500s (deep audit D4). Revert: re-apply `20260925060717`'s body.
