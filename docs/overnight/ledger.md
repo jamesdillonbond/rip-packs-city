@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~11:39 AM PT — Sunday drops image: balanced, centred rows (5 = 3+2, 7 = 4+3, 9 = 3+3+3) with the accent/glow/pill card style on every count (Trevor: "more visually appealing and balanced and symmetrical") (Claude Code cloud, Trevor live)
+- `scripts/social/x-image.mjs` `page()`: ROW_SPLIT replaces the hole-leaving grid; price stacked over the status pill on every card; detail line while ≤ 2 rows. Rendered 4/5/7/9 cards with no overflow warnings.
+- Revert: find the commit by message "x image: balanced drops rows" and `git revert` it. No DB change.
+
 ### 2026-11-15 ~11:30 AM PT — Sunday X drops report + image list NEW drops only; drops already on sale are left out (Trevor: "not a new drop") (Claude Code cloud, Trevor live)
 - x-draft.mjs: a drop open 36 h+ before the report is dropped from the post (was a "Still on sale:" section), named in `facts.carried_over`; `skip_reason` when nothing is new. x-image.mjs applies the same filter. x-calendar.md updated. The drops page is unchanged (still lists everything live).
 - Revert: find the commit by message "x draft: Sunday report lists new drops only" and `git revert` it. No DB change.
