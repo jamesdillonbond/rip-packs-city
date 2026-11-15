@@ -20,6 +20,11 @@
 // `dune_budget_state.paused` is the kill switch; an unreadable switch fails the run.
 //
 // Auth: Bearer ${CRON_SECRET} (Vercel cron) or ${INGEST_SECRET_TOKEN}. 202 + after().
+//
+// SCHEDULE (2026-11-15): NO lane is in vercel.json. purchases + provenance finished loading on 11-14 and
+// Dune reads are paused (cycle spent). To load a new execution: add the lane's cron entry, deploy, run it
+// once from Vercel → Schedules → Cron Jobs, then remove the entry. The hop lane is re-added by the
+// Dec 13 scheduled task (known-issues #190).
 
 import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { NextRequest, NextResponse, after } from "next/server"
