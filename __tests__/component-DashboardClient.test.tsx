@@ -1199,6 +1199,44 @@ describe("DashboardClient — verify by listing", () => {
     await screen.findByText(/relist at the exact amount/)
   })
 
+  it("2026-11-15: an unverified Flow wallet card carries a Verify button that opens the modal", async () => {
+    // The button was removed 09-06 (#59) while the check had no live source and never came
+    // back after the Atlas check went live, so 0 wallets verified after June.
+    routes["/api/profile/saved-wallets"] = () =>
+      json(200, { wallets: [WALLET({ wallet_addr: "0x1111111111111111", verified_at: null })] })
+    routes["/api/profile/verify-challenge"] = () => json(200, { challenge: CHALLENGE(), target: TARGET })
+    render(<DashboardClient />)
+    const btn = await screen.findByRole("button", { name: /^Verify$/ })
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("verify-challenge"))).toBe(false)
+    fireEvent.click(btn)
+    await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("verify-challenge"))).toBe(true))
+  })
+
+  it("2026-11-15: a verified wallet shows no Verify button", async () => {
+    routes["/api/profile/saved-wallets"] = () => json(200, { wallets: [WALLET({ wallet_addr: "0x1111111111111111" })] })
+    render(<DashboardClient />)
+    await screen.findByText(/✓ Verified/)
+    expect(screen.queryByRole("button", { name: /^Verify$/ })).toBeNull()
+  })
+
+  it("2026-11-15: a Solana wallet keeps 'Saved' (listing proof is Top Shot only)", async () => {
+    routes["/api/profile/saved-wallets"] = () =>
+      json(200, { wallets: [WALLET({ wallet_addr: "7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV", verified_at: null })] })
+    render(<DashboardClient />)
+    await screen.findByText("Saved")
+    expect(screen.queryByRole("button", { name: /^Verify$/ })).toBeNull()
+  })
+
+  it("2026-11-15: a verification that claims the handle says the profile is live", async () => {
+    await openVerify({
+      "/api/profile/verify-challenge/check": () =>
+        json(200, { ok: true, matched: true, moment: "9001", profileHandleClaimed: true, profileHandle: "rigged" }),
+      "/api/profile/verify-challenge": () => json(200, { challenge: CHALLENGE(), target: TARGET }),
+    })
+    fireEvent.click(await screen.findByRole("button", { name: /I've listed it/ }))
+    await screen.findByText(/your profile is live at \/profile\/rigged/)
+  })
+
   it("confirms verification only on a matched result", async () => {
     await openVerify({
       "/api/profile/verify-challenge/check": () => json(200, { ok: true, matched: true, moment: "9001" }),
@@ -1751,17 +1789,16 @@ describe("DashboardClient — wallet card actions and favourites", () => {
     })
   })
 
-  // INVERTED 2026-09-06 (#59): the wallet card no longer offers "Verify by
-  // listing" — the check has no data source, so the button could only fail,
-  // and nothing gates on verification any more. An unverified saved wallet
-  // shows a neutral "Saved" label and never sends the reader to list a Moment.
-  it("an unverified saved wallet shows SAVED and offers NO verify-by-listing button", async () => {
+  // RE-PINNED 2026-11-15: inverted 09-06 (#59) while the listing check had no data
+  // source; the check has run on Atlas since that evening (live controls 11-15), so an
+  // unverified Flow wallet offers Verify again. The property kept: merely LOADING the
+  // dashboard never starts a challenge — only the reader's click does.
+  it("an unverified saved wallet offers Verify, and nothing starts a challenge until it is clicked", async () => {
     routes["/api/profile/saved-wallets"] = () => json(200, { wallets: [WALLET({ verified_at: null })] })
     render(<DashboardClient />)
     await screen.findByText(/0xmine|0xmi/i)
-    expect(screen.queryByRole("button", { name: /Verify by listing/ })).toBeNull()
+    expect(await screen.findByRole("button", { name: /^Verify$/ })).toBeTruthy()
     expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("verify-challenge"))).toBe(false)
-    expect(screen.getAllByText(/^Saved$/).length).toBeGreaterThan(0)
   })
 
   it("favourites a collection", async () => {

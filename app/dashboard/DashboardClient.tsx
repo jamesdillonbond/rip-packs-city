@@ -806,7 +806,7 @@ function ProfilePageInner() {
       // another account already holds this wallet. Say so once, with both ways forward.
       if (data.profileHandleReason === "unproven" && !data.profileHandle) {
         pushToast(
-          "Another account already holds this wallet. Pick your public handle on Edit profile, or prove the wallet on the Trade Block to use your Top Shot name",
+          "Another account already holds this wallet. Press Verify on the wallet card to take your Top Shot name, or pick a handle on Edit profile",
           "info"
         );
       }
@@ -1272,6 +1272,7 @@ function ProfilePageInner() {
                   covered={statsMeta[normalizeAddress(g.addr)]?.covered ?? null}
                   indexing={indexing}
                   onRemove={() => removeWallet(g.rows[0])}
+                  onVerify={() => setVerifyWallet(g.addr)}
                 />
               ))}
             </div>
@@ -1518,7 +1519,11 @@ function ProfilePageInner() {
         <VerifyByListingModal
           walletAddr={verifyWallet}
           onClose={() => setVerifyWallet(null)}
-          onVerified={async () => { setVerifyWallet(null); await refresh(); pushToast("Wallet verified", "success"); }}
+          onVerified={async (handle) => {
+            setVerifyWallet(null);
+            await refresh();
+            pushToast(handle ? `Wallet verified — your profile is live at /profile/${handle}` : "Wallet verified", "success");
+          }}
         />
       )}
 
@@ -2332,6 +2337,7 @@ function WalletGroupCard({
   covered,
   indexing,
   onRemove,
+  onVerify,
 }: {
   group: { addr: string; rows: SavedWallet[]; nickname: string | null; verifiedAt: string | null };
   stats: CollectionStat[];
@@ -2346,8 +2352,12 @@ function WalletGroupCard({
   covered?: string[] | null;
   indexing: boolean;
   onRemove: () => void;
+  /** Opens the verify-by-listing modal for this wallet (Flow wallets only). */
+  onVerify?: () => void;
 }) {
   const verified = !!group.verifiedAt;
+  // Verify-by-listing lists a Top Shot Moment, so it exists for Flow wallets only.
+  const canVerify = !!onVerify && detectAddressChain(group.addr) !== "solana";
   // No answer yet, or no answer at all. Either way every per-collection figure
   // below is unknown — and an unknown must not render as a measured zero.
   const cardUnknown = !!failed || !!loading;
@@ -2383,32 +2393,53 @@ function WalletGroupCard({
               ✓ Verified
             </span>
           ) : (
-            // 2026-09-06 (#59, decision delegated by Trevor): the "Verify by
-            // listing" button is gone. Its only check read a host that no
-            // longer exists, so the button could never succeed — and nothing
-            // gates on verification any more (history reads every SAVED
-            // wallet). A dead button that sends a collector to list a Moment
-            // for nothing is the worst shape of a false claim about their own
-            // account. The modal stays reachable via /dashboard?verify= (it
-            // reports the check as unavailable) until a replacement mechanism
-            // is chosen.
-            <span
-              title="Verification is paused — the listing check has no live data source. Every saved wallet already unlocks history."
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                padding: "2px 8px",
-                border: "1px solid var(--rpc-border)",
-                color: "var(--rpc-text-muted)",
-                fontFamily: monoFont,
-                fontSize: 9,
-                letterSpacing: "0.1em",
-                textTransform: "uppercase",
-                borderRadius: 12,
-              }}
-            >
-              Saved
-            </span>
+            // 2026-11-15 (Trevor: "verify easily and effectively"): the button is BACK.
+            // It was removed 09-06 (#59) because its check read a dead host — but the
+            // same evening the check moved to Dapper's Atlas backend and has worked
+            // since (seller-matched; live positive + negative control 11-15). Nobody
+            // could find it, so 0 wallets verified after June while every one of the
+            // 9 challenges ever started finished. Solana wallets keep "Saved".
+            canVerify ? (
+              <button
+                type="button"
+                onClick={onVerify}
+                title="Prove this wallet is yours: list one cheap Moment at a price we pick, then delist."
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  padding: "2px 8px",
+                  background: "transparent",
+                  border: "1px solid var(--rpc-border)",
+                  color: "var(--rpc-text-primary)",
+                  fontFamily: monoFont,
+                  fontSize: 9,
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  borderRadius: 12,
+                  cursor: "pointer",
+                }}
+              >
+                Verify
+              </button>
+            ) : (
+              <span
+                title="Saved. Verification lists a Top Shot Moment, so it is for Flow wallets only. Every saved wallet already unlocks history."
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  padding: "2px 8px",
+                  border: "1px solid var(--rpc-border)",
+                  color: "var(--rpc-text-muted)",
+                  fontFamily: monoFont,
+                  fontSize: 9,
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  borderRadius: 12,
+                }}
+              >
+                Saved
+              </span>
+            )
           )}
         </div>
         <button
@@ -2671,7 +2702,8 @@ function VerifyByListingModal({
 }: {
   walletAddr: string;
   onClose: () => void;
-  onVerified: () => void;
+  /** `handle` = the public handle this verification just claimed, if any. */
+  onVerified: (handle?: string | null) => void;
 }) {
   const [challenge, setChallenge] = useState<ChallengeRow | null>(null);
   const [target, setTarget] = useState<VerifyTarget | null>(null);
@@ -2783,7 +2815,7 @@ function VerifyByListingModal({
             ? { ...prev, resolved_at: new Date().toISOString(), resolved_via: "gql_on_demand", matched_moment_id: d.moment ?? null }
             : prev
         );
-        onVerified();
+        onVerified(d?.profileHandleClaimed && typeof d?.profileHandle === "string" ? d.profileHandle : null);
         return;
       }
       setCheckHint(d?.hint ?? d?.error ?? "No matching listing found yet.");

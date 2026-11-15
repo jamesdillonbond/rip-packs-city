@@ -17,6 +17,8 @@ const state: {
   priceMatch: boolean
   rpc: { data: any; error: any }
   lastRpc: { name: string; args: any } | null
+  claim: any
+  claimCalls: any[]
 } = {
   user: null,
   challenges: { data: [], error: null },
@@ -25,6 +27,8 @@ const state: {
   priceMatch: false,
   rpc: { data: {}, error: null },
   lastRpc: null,
+  claim: { claimed: false, reason: "unusable" },
+  claimCalls: [],
 }
 
 vi.mock("@/lib/supabase", () => {
@@ -65,6 +69,15 @@ vi.mock("@/lib/verify-wallet-gql", () => ({
   priceMatchesCents: () => state.priceMatch,
 }))
 
+// 2026-11-15: a verified listing claims the wallet's Top Shot handle (claim-then-release).
+vi.mock("@/lib/profile/claim-username", () => ({
+  claimHandleForProvenWallet: async (_db: any, userId: string, wallet: string) => {
+    state.claimCalls.push({ userId, wallet })
+    if (state.claim === "throw") throw new Error("claim boom")
+    return state.claim
+  },
+}))
+
 import { POST } from "@/app/api/profile/verify-challenge/check/route"
 
 const req = (body?: any) => ({ json: async () => body }) as any
@@ -77,6 +90,8 @@ const activeChallenge = (amount = 10) => ({
 })
 
 beforeEach(() => {
+  state.claim = { claimed: false, reason: "unusable" }
+  state.claimCalls = []
   state.user = null
   state.challenges = { data: [], error: null }
   state.gql = { forSale: false, price: null }
@@ -235,5 +250,42 @@ describe("POST /api/profile/verify-challenge/check — confirmed match", () => {
     expect(body.ok).toBe(false)
     expect(body.matched).toBe(true)
     expect(body.reason).toBe("already_resolved")
+  })
+})
+
+describe("2026-11-15: a verified listing claims the Top Shot handle", () => {
+  it("claims for the verifier on a match and reports the handle", async () => {
+    state.user = { id: "claim-user-1" }
+    state.challenges = activeChallenge(10)
+    state.gql = { forSale: true, price: 1000 }
+    state.priceMatch = true
+    state.rpc = { data: { ok: true }, error: null }
+    state.claim = { claimed: true, handle: "rigged" }
+    const body = await (await POST(req({ wallet_addr: "0xABC" }))).json()
+    expect(body.ok).toBe(true)
+    expect(body.profileHandleClaimed).toBe(true)
+    expect(body.profileHandle).toBe("rigged")
+    expect(state.claimCalls).toEqual([{ userId: "claim-user-1", wallet: "0xabc" }])
+  })
+  it("never claims on a miss", async () => {
+    state.user = { id: "claim-user-2" }
+    state.challenges = activeChallenge(10)
+    state.gql = { forSale: false, price: null }
+    state.priceMatch = false
+    await POST(req({ wallet_addr: "0xABC" }))
+    expect(state.claimCalls).toHaveLength(0)
+  })
+  it("a failing claim never fails the verification", async () => {
+    state.user = { id: "claim-user-3" }
+    state.challenges = activeChallenge(10)
+    state.gql = { forSale: true, price: 1000 }
+    state.priceMatch = true
+    state.rpc = { data: { ok: true }, error: null }
+    state.claim = "throw"
+    const res = await POST(req({ wallet_addr: "0xABC" }))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.ok).toBe(true)
+    expect(body.profileHandleClaimed).toBe(false)
   })
 })

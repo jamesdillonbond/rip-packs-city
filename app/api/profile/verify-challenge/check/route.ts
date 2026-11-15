@@ -24,6 +24,7 @@ import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { safeApiError, statusForSafeError } from "@/lib/api-error";
 import { fetchMomentListingState, priceMatchesCents } from "@/lib/verify-wallet-gql";
+import { claimHandleForProvenWallet, type ClaimOutcome } from "@/lib/profile/claim-username";
 
 // Light per-user rate limit so repeated "check" clicks stay polite to the
 // upstream API. Best-effort, in-memory (Fluid Compute reuses instances).
@@ -163,9 +164,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, matched: true, ...r });
   }
 
+  // 2026-11-15: a verified listing is a PROOF, so it carries the wallet's Top Shot
+  // name as the public handle — taking it back from an account that only SAVED this
+  // wallet unproven (claim-then-release, R151). Never overwrites the verifier's own
+  // handle; never throws (every failure resolves to an outcome).
+  let handle: ClaimOutcome;
+  try {
+    handle = await claimHandleForProvenWallet(supabase as any, user.id, wallet);
+  } catch {
+    handle = { claimed: false, reason: "error" };
+  }
+
   return NextResponse.json({
     ok: true,
     matched: true,
+    profileHandleClaimed: handle.claimed,
+    profileHandle: handle.claimed ? handle.handle : null,
     wallet,
     moment: targetMomentId,
     link_wallet_award: r.link_wallet_award ?? null,
