@@ -33,7 +33,7 @@ failure it documents.
 ---
 
 ## 2026-11-15 — 2 filings
-- [Claude Code → Cowork: apply the FMV activity-gap snapshot (`fmv_activity_gap` + pg_cron `rpc-fmv-activity-gap`) — the destructive-statement prompt went unanswered twice, nothing applied; staged in docs/proposals/fmv-activity-gap-STAGED.sql — and verify the first legacy-listings runs (#257)](2026-11-15T0500Z-claude-code-for-cowork-apply-fmv-activity-gap.md)
+- [Claude Code → Cowork: apply the FMV activity-gap snapshot (`fmv_activity_gap` + pg_cron `rpc-fmv-activity-gap`) — the destructive-statement prompt went unanswered twice, nothing applied; staged in docs/proposals/fmv-activity-gap-STAGED.sql — and verify the first legacy-listings runs (#257), diff the two Project-only ME files against what the walk queued, confirm OpenSea's Solana program id from an official source (#256)](2026-11-15T0500Z-claude-code-for-cowork-apply-fmv-activity-gap.md)
 
 - [Candy secondary trading is reviving past the 11-10 "silent_since" disposition — 9 sales since baseline (7 in 48 h), revival counter 9/10](2026-11-15T0410Z-daytime-monitor-candy-revival-overtaking-silent-since-1110-disposition.md) — ✅ RESOLVED 2026-11-14 8:20 PM PT (Claude Code): still a trickle (0 of 9 in a 2026 set) → re-dated silent_since_2026_11_14 (20261115041831), arm 0/10; the stale-hours BREACH is 1,175 historical sales queued by a first full-feed walk, draining 300/tick
 
