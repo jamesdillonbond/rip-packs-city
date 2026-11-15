@@ -1812,6 +1812,9 @@ extra tool call and removes the entire class.
 
 ### The trustworthy clocks
 
+- ⛔ **(2026-11-14) Never ESTIMATE the time you stamp — run `date` (the cloud sandbox is PT) or read `git log --date=format-local` under `TZ=America/Los_Angeles`.** After a long thread a ledger heading went out as "~8:50 PM PT" for work committed at 7:42 PM PT, and a session-log range ran an hour ahead the same way. Ledger headings are immutable, so the fix had to go into the entry body. The future-dated check compares DATES only and cannot catch a wrong hour.
+
+
 ⚠ **READ THE ZONE BEFORE CONVERTING — four incidents came from a plausible timestamp produced by a clock whose zone was assumed.**
 
 - **Web sandbox (this environment): `TZ` data IS present and correct.** `TZ=America/Los_Angeles date '+%Y-%m-%d %I:%M%p %Z'` returns real PDT/PST — verified 2026-09-10 (`2026-09-10 17:48 PDT` against `2026-09-11T00:48:50Z`). This is the cheapest correct conversion here and should be the default.
