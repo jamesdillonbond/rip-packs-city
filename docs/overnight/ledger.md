@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-14 ~11:25 PM PT — #190 step 3 hop query v2 running; hop cron UNSCHEDULED until its table is reshaped (Claude Code cloud)
+
+- Hop query v1 timed out at Dune's 30-minute cap (no credits). v2 lists the 2,034 senders and reads only their deposits of moments that reached saved wallets; the transfer side is joined in the DB from `topshot_arrival_provenance`.
+- Code: hop mapper now keyed (sender, nft_id); the `?lane=hop` vercel.json cron is REMOVED so the deployed loader cannot page the v2 result into the v1-shaped table (it would read every page and write nothing).
+- ⚠ The table reshape (drop + recreate the still-empty `topshot_transfer_hop_stage`) did NOT apply: the Supabase server asked for confirmation and the question went unanswered. SQL ready; apply it, then trigger `?lane=hop` once by hand.
+
 ### 2026-11-14 ~10:15 PM PT — #190 step 3: transfer-hop review table + loader lane (no cost writes) (Claude Code cloud; Trevor: "Keep going")
 
 - 24,832 of the remaining unpriced held moments arrived by plain transfer from 2,034 accounts we do not track (none from another saved wallet of the same RPC account; 325 from the TSHOT exchange contract `0x05b67ba314000b2d`). Private temp Dune query **9129613** follows each one hop back: how the sender acquired it, classified like the provenance lane.
