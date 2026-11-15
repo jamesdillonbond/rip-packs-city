@@ -156,8 +156,12 @@ export async function GET(req: NextRequest) {
               .range(from, to),
             "candy-set-progress/editions",
           ),
-        // 125 rows today; 5 pages is 40x headroom and past it we 503.
-        { pageSize: 1000, maxPages: 5, label: "candy-set-progress/editions" },
+        // ⛔ 2026-11-14: "125 rows today; 5 pages is 40x headroom" went stale on 11-08..11-10, when the
+        // other Candy catalogues were indexed (The Bat Cowl Collection 4,953, 2022 All-Star Tricons
+        // 4,088, …): 21,472 rows in 387 sets. Past 5,000 the read truncated and the route (correctly)
+        // refused a short checklist — so the Candy Set Tracker answered 503 to EVERY wallet for days,
+        // which nothing reported. 60 pages = 60,000 rows ≈ 2.8x today; each page measured ~45 ms.
+        { pageSize: 1000, maxPages: 60, label: "candy-set-progress/editions" },
       ),
       boundedRead(
         (supabaseAdmin as any)
@@ -166,19 +170,33 @@ export async function GET(req: NextRequest) {
           .eq("collection_id", CANDY_COLLECTION_ID),
         "candy-set-progress/sets",
       ),
-      boundedRead(
-        (supabaseAdmin as any).from("candy_fmv_current").select("edition_id, fmv_usd, confidence"),
-        "candy-set-progress/fmv",
+      // 2026-11-14: PAGED. A bare select is clamped at 1,000 rows by PostgREST with nothing saying
+      // so (463 rows today against 21,472 editions — it will cross). A truncated price read degrades
+      // to "unpriced" below, never to a smaller bill.
+      fetchAllPaged<{ edition_id: string; fmv_usd: unknown; confidence: string | null }>(
+        (from, to) =>
+          boundedRead(
+            (supabaseAdmin as any).from("candy_fmv_current").select("edition_id, fmv_usd, confidence").order("edition_id", { ascending: true }).range(from, to),
+            "candy-set-progress/fmv",
+          ),
+        { pageSize: 1000, maxPages: 60, label: "candy-set-progress/fmv" },
       ),
-      boundedRead(
-        (supabaseAdmin as any)
-          .from("candy_listing_floor")
-          // confirmed_floor_usd (20260926030328): the troll-capped floor over asks
-          // SEEN in the last 12 h. floor_usd also counts asks the indexer has not
-          // seen for days (it never retires on absence), which set 4 edition floors
-          // on 2026-09-25; an unseen ask must not price a shopping list.
-          .select("edition_id, confirmed_floor_usd, last_seen_at"),
-        "candy-set-progress/floor",
+      // Paged for the same reason as the FMV read (2026-11-14).
+      fetchAllPaged<{ edition_id: string; confirmed_floor_usd: unknown; last_seen_at: string | null }>(
+        (from, to) =>
+          boundedRead(
+            (supabaseAdmin as any)
+              .from("candy_listing_floor")
+              // confirmed_floor_usd (20260926030328): the troll-capped floor over asks
+              // SEEN in the last 12 h. floor_usd also counts asks the indexer has not
+              // seen for days (it never retires on absence), which set 4 edition floors
+              // on 2026-09-25; an unseen ask must not price a shopping list.
+              .select("edition_id, confirmed_floor_usd, last_seen_at")
+              .order("edition_id", { ascending: true })
+              .range(from, to),
+            "candy-set-progress/floor",
+          ),
+        { pageSize: 1000, maxPages: 60, label: "candy-set-progress/floor" },
       ),
       fetchAllPaged<OwnedRow>(
         (from, to) =>
@@ -215,8 +233,9 @@ export async function GET(req: NextRequest) {
     if (setRes.error) throw setRes.error
     // A failed PRICE read degrades to "unpriced", never to a failed tracker and
     // never to a $0 bill: completion is still exact without it.
-    const fmvOk = !fmvRes.error
-    const floorOk = !floorRes.error
+    // A failed OR truncated price read degrades to "unpriced" — a partial map would quote a smaller bill.
+    const fmvOk = !fmvRes.error && !fmvRes.truncated
+    const floorOk = !floorRes.error && !floorRes.truncated
     if (fmvRes.error) console.error("[candy-set-progress] fmv read failed:", fmvRes.error)
     if (floorRes.error) console.error("[candy-set-progress] floor read failed:", floorRes.error)
 
@@ -230,7 +249,7 @@ export async function GET(req: NextRequest) {
       return p
     }
     if (fmvOk) {
-      for (const r of (fmvRes.data ?? []) as { edition_id: string; fmv_usd: unknown; confidence: string | null }[]) {
+      for (const r of fmvRes.rows) {
         const p = slot(r.edition_id)
         p.fmv = num(r.fmv_usd)
         p.confidence = r.confidence ?? null
@@ -238,7 +257,7 @@ export async function GET(req: NextRequest) {
     }
     let newestAskStamp: number | null = null
     if (floorOk) {
-      for (const r of (floorRes.data ?? []) as { edition_id: string; confirmed_floor_usd: unknown; last_seen_at: string | null }[]) {
+      for (const r of floorRes.rows) {
         const ask = num(r.confirmed_floor_usd)
         slot(r.edition_id).ask = ask !== null && ask > 0 ? ask : null
         const t = r.last_seen_at ? Date.parse(r.last_seen_at) : NaN

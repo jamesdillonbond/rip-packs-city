@@ -271,4 +271,24 @@ describe("GET /api/candy-set-progress", () => {
       expect((await res.json()).code).not.toBe("wallet_not_indexed")
     })
   })
+
+  // 2026-11-14: the catalogue grew to 21,472 editions on 11-08..11-10 and the 5-page ceiling
+  // made the route 503 for EVERY wallet. A long checklist is read whole.
+  it("reads a checklist past 5,000 editions in full — never 503s on the catalogue's size", async () => {
+    const full = (p: number) => page(Array.from({ length: 1000 }, (_, i) => ed(`e${p}-${i}`, { set_id: `set-${p}` })))
+    state.editions = [full(0), full(1), full(2), full(3), full(4), full(5), page([ed("last-one")])]
+    const { status, json } = await body()
+    expect(status).toBe(200)
+    const editions = (json.sets as Array<{ totalEditions: number }>).reduce((a, x) => a + x.totalEditions, 0)
+    expect(editions).toBe(6001)
+  })
+  it("a TRUNCATED price read degrades to unpriced — never a smaller bill", async () => {
+    state.editions = [page([ed("mike-trout")])]
+    // every page answers a full 1,000 rows, so the paged read hits its ceiling and is truncated
+    state.floor = { data: Array.from({ length: 1000 }, (_, i) => floor(i === 0 ? "mike-trout" : `x${i}`, 5)), error: null }
+    const { status, json } = await body()
+    expect(status).toBe(200)
+    expect(json.sets[0].totalMissingCost).toBeNull()
+    expect(json.sets[0].asksEnriched).toBe(false)
+  })
 })
