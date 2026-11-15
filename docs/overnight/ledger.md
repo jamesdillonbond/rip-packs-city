@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~10:48 AM PT — WNBA Finals Trade Ticket Pack entry closes an hour after it opens (Trevor: they sell out in minutes) (Claude Code cloud, Trevor live)
+- `manual-wnba-finals-2026-trade-ticket` end 12/31 → Wed 11/18 1:30 PM PT: RPC cannot see a sell-out, so a 12/31 end would read "on sale" for six weeks. x-calendar.md: post Trade Ticket Packs by opening time only.
+- Revert: find the commit by message "drops: Trade Ticket Pack closes an hour after opening" and `git revert` it. No DB change.
+
 ### 2026-11-15 ~10:35 AM PT — R153 player spelling merges applied (`20261115183435`) and the parked `sets_summary_prev_20261114` dropped (`20261115183513`) through the Supabase SQL editor (Cowork, Chrome; both Trevor-approved)
 - R153 (inbox `2026-11-15T1635Z` #3, "apply all three"): 7 merges (5 Candy + 2 Panini, #139 pattern) + 48 Panini national-team duplicate rows (107+ editions re-pointed to the bridge's `panini-` row). Pre-check matched; file sha256 `5d2ee075…` at `b63baed`. Read back: 4 R153 aliases, 55 players + 126 edition pointers backed up, 0 duplicate Panini slugs. File moved from `docs/proposals/` to `supabase/migrations/`.
 - #255 (inbox `2026-11-15T0506Z`, "You do it I approve"): guard on live `sets_summary` md5 `e093bda0…` + `DROP MATERIALIZED VIEW`. Read back: `to_regclass` NULL, live view 3,550 rows / 237 NULL Total Mint, jobid 37 succeeded. #255 → ✅ CLOSED.
