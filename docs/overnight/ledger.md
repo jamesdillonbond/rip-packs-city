@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~1:35 PM PT — R151 relaxed: a public handle goes to the wallet's OWNER under the shared rule (proved > verified > first saver), not proof only (Claude Code cloud; Trevor: "let them have access until we can verify easily and effectively")
+- Measured first: 2 of 57 accounts with a saved wallet had EVER proven one (jamesdillonbond attested, banana_boat listing challenge, both June); `trade_block_wallets` 0 rows, `trade_room_sides` 1 proven (Trevor's test). Proof-only withheld the handle from essentially every signup.
+- New `isWalletOwnedByUser` (lib/profile/claim-username.ts): proved here → owns; another account's proof → not; else `ownersOfAddress` (lib/wallet/wallet-owner.ts, #176). Fails CLOSED. `resolve-and-associate` uses it; dashboard copy says another account already holds the wallet. Kept from A-1: pasting a name someone already saved still gets no handle. Given up until verification is easy: the first saver of a never-saved wallet wins its handle.
+- Tests: 4 unit cases + 2 route cases; planted defect (`.includes(userId)` → `.length > 0`) reds 3. tsc, ci:guards, lint:ratchet (150 = baseline), vitest related (285) green.
+- Not done: 4 accounts already own a named wallet with no handle; they get it on their next wallet refresh (no backfill).
+- Revert: find the commit by message "R151 relax: handle to the wallet owner" and `git revert` it.
+
 ### 2026-11-15 ~1:20 PM PT — #248 thread wrap-up: focus.md, session log, two lessons in cron-and-schedulers.md, #248 points at the 11-16 10:20 AM PT close-out task — docs only (Claude Code cloud)
 - Revert: revert by message "#248 wrap-up".
 
