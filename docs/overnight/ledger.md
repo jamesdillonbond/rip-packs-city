@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~1:50 AM PT — monthly deep audit: no P0/P1; shipped Candy holders cap copy fix + All Day $0-bid null-out (Cowork scheduled deep audit)
+
+- Report `docs/audits/deep-audit-2026-11-15.md`; residue `docs/handoff-2026-11-15-deep-audit.md`; register: R151–R153 OPEN, R154–R155 RESOLVED, 7 new VERIFIED-CLEAN probes, 11-15 re-measure note at the top.
+- **R154 (code):** `/insights/candy-mlb` called its 800-row Holders cap (1,316 holders) a "temporary database-load failure". `BoardStatus.capped` + cap-only copy in `summarizeDegraded`; `candy-board.ts` declares it. Revert: revert the code commit.
+- **R155 (DB + code):** migration `20261115093610_audit_20261115_allday_badge_zero_offer_to_null` NULLed 3,213 All Day `badge_editions.highest_offer = 0` rows (ids archived in `flowty_archive.audit_20261115_allday_zero_offer`; applied ~1:36 AM PT — its header says "~2:45 AM PT", a mis-stamp left as-is because migration-parity hashes the applied text); writer `allday-badge-ingest` now maps `highest_offer` with `||` null. Revert: `UPDATE public.badge_editions be SET highest_offer = 0 FROM flowty_archive.audit_20261115_allday_zero_offer a WHERE be.id = a.id AND be.collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070' AND be.highest_offer IS NULL;` + revert the code commit.
+- Decide: R151 handle squatting (`resolve-and-associate` claims a Top Shot username for an unproven wallet; 0 squats so far).
+
 ### 2026-11-15 ~1:05 AM PT — Overnight pass: GREEN, nothing shipped (Cowork cloud, VM clone)
 
 - Health GREEN. Security 4/4 `[]`; stalled `[]`; pgcron fails `[]`; sentinel ts_uuid 48h 0; wmc_null_edition_key `[]`; edition_integrity_flags 8. Trust breaches 2, both known transients: `candy_sales_stale_hours` 14.7 (indexer-unhealthy branch — legacy Magic Eden backfill parking Candy sales, `candy_sales_unresolved` 6,444/2,634 queued-walk, clears ~noon PT per Claude Code disposition) and `public_board_slow_count` 1 (chronic). Vercel prod `b5ade828` READY, no ERROR deploys, 24h errors all chronic/bounded. net._http_response 677 MB (healthy, down from 855 MB).
