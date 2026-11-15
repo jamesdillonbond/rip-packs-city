@@ -12,6 +12,19 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-14 ~8:55 PM PT — Total Mint is complete or "—" on player, set, series and team pages; Pinnacle characters stop borrowing mint dates from the set-level table (Claude Code cloud)
+- Trevor 8:35 PM PT: "Keep going." Register **#255** (partly resolved).
+- **Applied `20261115043933`** (8:39 PM PT): `get_player_detail`, an md5-guarded full-body replace with 5 exact edits.
+  - Pinnacle catalog characters publish NO first/last-minted dates. They came from `pinnacle_editions` by name, which is set-level, so Hamm showed 1 row's date against 12 pins (23 characters affected).
+  - Every Total Mint is NULL unless every row has a count.
+- **Applied `20261115044647`** (8:46 PM PT): the same rule in `get_series_detail`, `refresh_series_detail_rollup`, `get_set_detail`, `get_team_detail` and `get_team_players`.
+  - Applied as an md5-asserted in-database splice, rehearsed on a scratch local Postgres. The file carries the resulting full bodies (prosrc md5s listed in its header).
+  - ACLs unchanged; anon EXECUTE false on all six.
+- **Live check:** Hamm's dates are NULL and his total stays 6,860. The Phillies' Candy team page shows NULL (3 of 383 editions uncounted). The series rollup picks the change up at its next :59 run.
+- **Tests:** 5 pinned DB tests re-synced and the drift guard re-pointed (400 pass). 16 planted defects each red. 2 assertions that pinned the old behaviour were inverted.
+- **Held, not applied:** the `sets_summary` swap. The connector's DROP confirmation timed out. Production is unchanged; details in #255.
+- Revert: re-apply each function's previous pinned block (`20261025221903` for player/set, `20261025235853` / `20261026013559` for series, `20261026003337` for team/roster), then `SELECT public.refresh_series_detail_rollup(60);`.
+
 ### 2026-11-14 ~9:45 PM PT — WNBA Rookie Revelation Trade Ticket Pack (dist 8785) = 10 tickets, from the dist's on-chain PDS registration; #190 Dune→DB lane decided NOT built yet (Claude Code cloud)
 
 - `20261115044658`: `pack_distributions` 8785 `metadata.retail_price_usd = '10'` (fill-only). Source: `PDS.getDistInfo(8785).metadata.price = "10"` on mainnet (0xb6f2481eba4df97b); control: the same read gives "10" for 8643, 8601, 8564, 8526, 8514, every stored 10-ticket dist. 1571 has no PDS price — still unset.
