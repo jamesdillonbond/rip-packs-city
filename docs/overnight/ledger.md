@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-14 ~10:15 PM PT — #190 step 3: transfer-hop review table + loader lane (no cost writes) (Claude Code cloud; Trevor: "Keep going")
+
+- 24,832 of the remaining unpriced held moments arrived by plain transfer from 2,034 accounts we do not track (none from another saved wallet of the same RPC account; 325 from the TSHOT exchange contract `0x05b67ba314000b2d`). Private temp Dune query **9129613** follows each one hop back: how the sender acquired it, classified like the provenance lane.
+- `20261115061349`: `public.topshot_transfer_hop_stage` (service-role only, review-only). Code: stage route `?lane=hop` (vercel.json :57 hourly; no-op once loaded); worker default allowlist + `wrangler.toml` += 9129613 (live Cloudflare var updated the same turn).
+- Revert: remove the cron entry; `DROP TABLE public.topshot_transfer_hop_stage;`
+
 ### 2026-11-14 ~10:10 PM PT — #190 step 2 applied: 59,283 more Top Shot cost rows (45,186 pack pulls at $0 + 14,097 buys, $124,413.60) (Claude Code cloud; Trevor chose "Apply all")
 
 - `apply_topshot_arrival_provenance()` over the loaded wallet-scoped provenance: 52,328 inserted + 6,955 `unknown` rows updated, source `chain_arrival_dune_20261114`; every write archived in `flowty_archive.acq_chain_arrival_20261114` (arm `insert` / `update_unknown`). Matches the dry run exactly.
