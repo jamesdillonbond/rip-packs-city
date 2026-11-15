@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest"
-import { memorySupabase } from "./helpers/memory-supabase"
+import { memorySupabase as rawMemorySupabase } from "./helpers/memory-supabase"
+// 2026-11-14 (#250): the racing transitions are SQL functions now; their in-memory twins.
+import { withLockedRpcs } from "./helpers/trade-room-locked-rpcs"
+const memorySupabase = (...a: Parameters<typeof rawMemorySupabase>) => withLockedRpcs(rawMemorySupabase(...a))
 import { buildTradeNoticeEmail, notifyOtherSide, tradeRoomUrl, type TradeNotice } from "@/lib/trade-room/notify"
 import type { LoadedRoom } from "@/lib/trade-room/store"
 import type { SupabaseClient } from "@supabase/supabase-js"

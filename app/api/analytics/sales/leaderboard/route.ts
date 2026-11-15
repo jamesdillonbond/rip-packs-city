@@ -19,7 +19,8 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
-import { parseWindow, windowRange, parseCollections } from "@/lib/analytics/window"
+import { parseWindow, windowRange, parseCollections, unknownAnalyticsCollections } from "@/lib/analytics/window"
+import { apiErrorResponse } from "@/lib/api-error"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import { resolveUsernames, displayName } from "@/lib/flowty-username"
 import type { SalesLeaderboardRow } from "@/lib/analytics-types"
@@ -50,6 +51,11 @@ export async function GET(req: NextRequest) {
     }
     const window = parseWindow(url.searchParams.get("window"))
     const collections = parseCollections(url.searchParams.get("collections"))
+    // 2026-11-14: an unknown key matched nothing and answered an empty board.
+    const unknown = unknownAnalyticsCollections(collections)
+    if (unknown.length > 0) {
+      return NextResponse.json({ error: "invalid_collection", code: "bad_request", retryable: false, unknown }, { status: 400 })
+    }
     const limit = parseLimit(url.searchParams.get("limit"))
     const minVolume = parseMinVolume(url.searchParams.get("min_volume"))
     const range = windowRange(window)
@@ -74,7 +80,8 @@ export async function GET(req: NextRequest) {
 
     if (error) {
       console.log("[analytics/sales/leaderboard] rpc_error", error.message)
-      return NextResponse.json({ error: "leaderboard_failed" }, { status: 500 })
+      // 2026-11-14: the shared classifier (retryable / code), not a bare 500.
+      return apiErrorResponse(error, "api/analytics/sales/leaderboard", "Couldn't load the leaderboard.")
     }
 
     const rows = (data ?? []) as SalesLeaderboardRow[]
@@ -98,6 +105,6 @@ export async function GET(req: NextRequest) {
     )
   } catch (e: any) {
     console.log("[analytics/sales/leaderboard] error", e?.message || e, `elapsed=${Date.now() - t0}ms`)
-    return NextResponse.json({ error: "leaderboard_failed" }, { status: 500 })
+    return apiErrorResponse(e, "api/analytics/sales/leaderboard", "Couldn't load the leaderboard.")
   }
 }

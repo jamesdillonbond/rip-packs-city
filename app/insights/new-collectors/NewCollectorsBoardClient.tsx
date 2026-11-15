@@ -143,7 +143,7 @@ export default function NewCollectorsBoardClient({ initialBoard, initialFetchedA
     : cohortsDesc.slice(0, COHORT_DEFAULT_MONTHS)
 
   const newSharePct =
-    summary && summary.market_usd > 0
+    summary && summary.market_usd != null && summary.market_usd > 0 && summary.new_usd != null
       ? (summary.new_usd / summary.market_usd) * 100
       : null
 

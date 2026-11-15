@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest"
-import { memorySupabase } from "./helpers/memory-supabase"
+import { memorySupabase as rawMemorySupabase } from "./helpers/memory-supabase"
+// 2026-11-14 (#250): the racing transitions are SQL functions now; their in-memory twins.
+import { withLockedRpcs } from "./helpers/trade-room-locked-rpcs"
+const memorySupabase = (...a: Parameters<typeof rawMemorySupabase>) => withLockedRpcs(rawMemorySupabase(...a))
 import {
   accept,
   cancelRoom,
@@ -11,6 +14,7 @@ import {
   markSealed,
   markSigning,
   markSigningEnded,
+  postRoomSignature,
   newRoomCode,
   roomState,
   setItems,
@@ -354,6 +358,61 @@ describe("trade-room/store — concurrent requests never break the proposal cont
     await accept(m.db, room, sideOf(room, ALICE)!, v, true)
     const after = await accept(m.db, room, sideOf(room, BOB)!, v, true)
     expect(after.room.status).toBe("accepted")
+  })
+
+  // 2026-11-14 (known-issues #250): every racing transition decides UNDER the room lock, on the row as
+  // it is NOW. A single-threaded test cannot interleave two requests, but each race leaves its loser
+  // holding a STALE SNAPSHOT — which is exactly what these reproduce.
+  describe("#250 — a stale snapshot cannot drive a transition", () => {
+    async function signingRoom() {
+      const two = await twoSided()
+      const { m } = two
+      let room = await setItems(m.db, two.room, sideOf(two.room, ALICE)!, [item("1", 10)])
+      const v = room.room.version
+      room = await accept(m.db, room, sideOf(room, ALICE)!, v, true)
+      room = await accept(m.db, room, sideOf(room, BOB)!, v, true)
+      const accepted = room
+      await markSigning(m.db, room)
+      return { m, accepted, signing: await loadRoom(m.db, room.room.code) }
+    }
+    it("cancel decided on a snapshot taken BEFORE signing began is refused; a co-signature is never cancelled over", async () => {
+      const { m, accepted } = await signingRoom()
+      m.tables.trade_room_relay = [{ id: "r1", room_id: accepted.room.id, signature: "s", signed_at: new Date().toISOString(), created_at: new Date().toISOString() }]
+      // the snapshot says "accepted"; the room is "signing" with a co-signature
+      expect(await codeOf(cancelRoom(m.db, accepted, BOB, null))).toBe("409:stale")
+      expect((await loadRoom(m.db, accepted.room.code)).room.status).toBe("signing")
+    })
+    it("withdrawing an acceptance on a snapshot taken before signing began is refused — never 'accepted' with one side out", async () => {
+      const { m, accepted } = await signingRoom()
+      expect(await codeOf(unaccept(m.db, accepted, sideOf(accepted, BOB)!))).toBe("409:signing")
+      const now = await loadRoom(m.db, accepted.room.code)
+      expect(sideOf(now, BOB)!.accepted_version).toBe(accepted.room.version)
+    })
+    it("signing cannot start while the room's STATUS says accepted but a side does not", async () => {
+      const { m, signing } = await signingRoom()
+      await markSigningEnded(m.db, signing)
+      // the state the old race left behind: status accepted, side B's acceptance withdrawn
+      for (const sd of m.tables.trade_room_sides) if (sd.side === "b") sd.accepted_version = null
+      const room = await loadRoom(m.db, signing.room.code)
+      expect(room.room.status).toBe("accepted")
+      expect(await codeOf(markSigning(m.db, room))).toBe("409:not_accepted")
+    })
+    it("a co-signature never lands on a room that left signing (a cancel won the race)", async () => {
+      const { m, signing } = await signingRoom()
+      m.tables.trade_room_relay = [{ id: "r2", room_id: signing.room.id, signature: null, signed_at: null, created_at: new Date().toISOString() }]
+      await cancelRoom(m.db, signing, ALICE, null)
+      // the co-signer still holds the "signing" snapshot
+      expect(await codeOf(postRoomSignature(m.db, signing, "r2", "ab".repeat(64), 0))).toBe("409:not_signing")
+      expect(m.tables.trade_room_relay[0].signature).toBeNull()
+    })
+    it("CONTROL: while signing, the co-signature lands once and is never overwritten", async () => {
+      const { m, signing } = await signingRoom()
+      m.tables.trade_room_relay = [{ id: "r3", room_id: signing.room.id, signature: null, signed_at: null, created_at: new Date().toISOString() }]
+      await postRoomSignature(m.db, signing, "r3", "0x" + "AB".repeat(64), 1)
+      expect(m.tables.trade_room_relay[0].signature).toBe("ab".repeat(64))
+      expect(await codeOf(postRoomSignature(m.db, signing, "r3", "cd".repeat(64), 1))).toBe("409:already_signed")
+      expect(await codeOf(postRoomSignature(m.db, signing, "r3", "nothex", 1))).toBe("400:bad_signature")
+    })
   })
 
   it("⛔ a room whose co-signer has SIGNED can't be cancelled while signing (it may be sealing on chain)", async () => {

@@ -47,13 +47,36 @@ describe("GET /api/analytics/sales/leaderboard", () => {
     rpc.error = { message: "db" }
     const res = await GET(req("https://t/api/analytics/sales/leaderboard?role=seller"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("leaderboard_failed")
+    // Re-pinned 2026-11-14: the shared apiErrorResponse body (a readable error, a code, retryable).
+    const b = await res.json()
+    expect(b.error).toBe("Couldn't load the leaderboard.")
+    expect(typeof b.retryable).toBe("boolean")
   })
 
   it("500s when the rpc throws (outer catch path)", async () => {
     rpc.throws = true
     const res = await GET(req("https://t/api/analytics/sales/leaderboard?role=seller"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("leaderboard_failed")
+    // Re-pinned 2026-11-14: the shared apiErrorResponse body (a readable error, a code, retryable).
+    const b = await res.json()
+    expect(b.error).toBe("Couldn't load the leaderboard.")
+    expect(typeof b.retryable).toBe("boolean")
+  })
+
+  // 2026-11-14 (Collectors review): the RPC passes an unknown key through and
+  // matches nothing, so a typo answered 200 with an empty board — "no buyers".
+  it("an unknown collection key is a 400, never an empty leaderboard", async () => {
+    const res = await GET(req("https://t/api/analytics/sales/leaderboard?collections=topshoot"))
+    expect(res.status).toBe(400)
+    const b = await res.json()
+    expect(b.error).toBe("invalid_collection")
+    expect(b.unknown).toEqual(["topshoot"])
+    expect(b.rows).toBeUndefined()
+  })
+  it("CONTROL: short keys and DB slugs from the registry are accepted", async () => {
+    for (const k of ["topshot", "allday,golazos", "pinnacle", "ufc", "nba_top_shot", "candy_mlb"]) {
+      const res = await GET(req(`https://t/api/analytics/sales/leaderboard?collections=${k}`))
+      expect(res.status, k).not.toBe(400)
+    }
   })
 })

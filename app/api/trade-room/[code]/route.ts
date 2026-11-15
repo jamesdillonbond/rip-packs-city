@@ -43,7 +43,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { FlowScriptError, runFlowScript } from "@/lib/giveaways/flow-script"
 import { discoverAccounts } from "@/lib/giveaways/linked-accounts"
 import { issueClaimNonce, verifyClaimProof, type ClaimProofInput } from "@/lib/giveaways/claim-proof"
-import { getRelay, postSignable, postSignature } from "@/lib/swap-test/relay"
+import { getRelay, postSignable } from "@/lib/swap-test/relay"
 import {
   accept,
   cancelRoom,
@@ -52,6 +52,7 @@ import {
   markSealed,
   markSigning,
   markSigningEnded,
+  postRoomSignature,
   otherSide,
   setItems,
   setWallet,
@@ -385,7 +386,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         if (relay.room_id !== loaded.room.id || relay.cosigner !== me.signer) throw new TradeRoomError("This signing request isn't addressed to your wallet.", 403, "wrong_cosigner")
         // the stored signable is re-checked against the room as it is NOW, so an edit between post and sign is refused
         assertSignableMatchesRoom(loaded, otherSide(me.side), me.signer as string, relay.signable)
-        await postSignature(supabaseAdmin, id, body.signature, body.key_id, Date.now(), RELAY_TABLE)
+        // 2026-11-14 (#250): recorded only while the room is STILL signing, under the room lock.
+        await postRoomSignature(supabaseAdmin, loaded, id, body.signature, body.key_id)
         return json({ ok: true })
       }
       case "signing_ended":

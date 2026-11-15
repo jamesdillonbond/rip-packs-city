@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { NextRequest } from "next/server"
-import { memorySupabase, type MemoryDb } from "./helpers/memory-supabase"
+import { memorySupabase as rawMemorySupabase, type MemoryDb } from "./helpers/memory-supabase"
+// 2026-11-14 (#250): the racing transitions are SQL functions now; their in-memory twins.
+import { withLockedRpcs } from "./helpers/trade-room-locked-rpcs"
+const memorySupabase = (...a: Parameters<typeof rawMemorySupabase>) => withLockedRpcs(rawMemorySupabase(...a))
 import { SWAP_CADENCE } from "@/lib/swap-test/swap-cadence"
 import { CAN_RECEIVE_SCRIPT, SWAP_COLLECTIONS } from "@/lib/trade-room/multi-swap-cadence"
 import { SwapTestError } from "@/lib/swap-test/plan"

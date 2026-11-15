@@ -1,3 +1,5 @@
+import { COLLECTIONS, toDbSlug } from "@/lib/collections"
+import { shortSlug } from "@/lib/analytics/format"
 // Time-window helpers for the analytics endpoints (loans + sales).
 //
 // Was lib/analytics/loans-window.ts — renamed because the Sales RPCs use
@@ -95,4 +97,25 @@ export function parseCollections(raw: string | null | undefined): string[] | nul
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean)
   return list.length > 0 ? list : null
+}
+
+/**
+ * 2026-11-14: the collection keys an analytics_* RPC can match — each registry
+ * collection's short key (shortSlug: "topshot", …) and its DB slug ("nba_top_shot",
+ * which the RPCs pass through). DERIVED from lib/collections, never a list, so a
+ * new collection is accepted with no edit here.
+ *
+ * Why: the RPCs map known short keys and pass ANYTHING ELSE through unmapped, so
+ * `?collections=topshoot` matched zero rows and answered 200 with an empty
+ * leaderboard — "no buyers" out of a typo. Callers refuse unknown keys instead.
+ */
+export function unknownAnalyticsCollections(list: string[] | null): string[] {
+  if (!list) return []
+  const known = new Set<string>()
+  for (const c of COLLECTIONS) {
+    known.add(shortSlug(c.id))
+    const db = toDbSlug(c.id)
+    if (db) known.add(db)
+  }
+  return list.filter((k) => !known.has(k))
 }

@@ -100,6 +100,25 @@ describe("fetchNewCollectorsBoard", () => {
     expect(board.computed_at).toBe("2026-07-12T00:00:01Z")
   })
 
+  // 2026-11-14 (Collectors review): a window with no first buys has a NULL median /
+  // average / new-spend in the MV (an aggregate over no rows). numOr0 printed
+  // "Median first buy $0" — a price nobody paid.
+  it("a NULL median / average / spend stays null (unknown), never $0", async () => {
+    const board = await fetchNewCollectorsBoard(
+      ncClient({
+        summary: [{ window_label: "7d", days: 7, new_first_seen: 0, median_first_buy: null, avg_first_buy: null, new_usd: null, market_usd: null, computed_at: null }],
+        spend: null, gateway: null, cohorts: null,
+      }),
+    )
+    const r = board.summary[0]
+    expect(r.median_first_buy).toBeNull()
+    expect(r.avg_first_buy).toBeNull()
+    expect(r.new_usd).toBeNull()
+    expect(r.market_usd).toBeNull()
+    // CONTROL: a COUNT over no rows is a real 0 and stays 0.
+    expect(r.new_first_seen).toBe(0)
+  })
+
   it("coerces the spend histogram row numerics", async () => {
     const board = await fetchNewCollectorsBoard(
       ncClient({

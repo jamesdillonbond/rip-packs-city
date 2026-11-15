@@ -2254,6 +2254,36 @@ const PINS = [
       "supabase/migrations/20261010142824_audit_20261010_fmv_alerts_read_the_editions_own_live_ask.sql",
   },
   {
+    fn: "trade_room_cancel_locked",
+    test: "supabase/tests/trade_room_locked_transitions.sql",
+    migration:
+      "supabase/migrations/20261115013625_audit_20261114_trade_room_state_transitions_lock_the_room_row.sql",
+  },
+  {
+    fn: "trade_room_post_signature_locked",
+    test: "supabase/tests/trade_room_locked_transitions.sql",
+    migration:
+      "supabase/migrations/20261115013625_audit_20261114_trade_room_state_transitions_lock_the_room_row.sql",
+  },
+  {
+    fn: "trade_room_mark_signing_locked",
+    test: "supabase/tests/trade_room_locked_transitions.sql",
+    migration:
+      "supabase/migrations/20261115013625_audit_20261114_trade_room_state_transitions_lock_the_room_row.sql",
+  },
+  {
+    fn: "trade_room_unaccept_locked",
+    test: "supabase/tests/trade_room_locked_transitions.sql",
+    migration:
+      "supabase/migrations/20261115013625_audit_20261114_trade_room_state_transitions_lock_the_room_row.sql",
+  },
+  {
+    fn: "trade_room_signing_ended_locked",
+    test: "supabase/tests/trade_room_locked_transitions.sql",
+    migration:
+      "supabase/migrations/20261115013625_audit_20261114_trade_room_state_transitions_lock_the_room_row.sql",
+  },
+  {
     fn: "dispatch_triggered_fmv_alerts",
     test: "supabase/tests/dispatch_triggered_fmv_alerts.sql",
     migration:

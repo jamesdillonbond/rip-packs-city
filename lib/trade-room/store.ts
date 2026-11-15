@@ -138,6 +138,20 @@ export function roomState(room: Pick<RoomRow, "status" | "expires_at">, now: num
 /** Rooms that can still be edited. */
 export const EDITABLE: ReadonlySet<RoomStatus> = new Set(["open", "building", "accepted"])
 
+/**
+ * 2026-11-14 (known-issues #250): the racing transitions run as ONE SQL function each, which takes
+ * the trade_rooms row FOR UPDATE and decides under that lock
+ * (migration *_trade_room_state_transitions_lock_the_room_row.sql). A failed call throws; the
+ * verdict is a short string each caller maps to its existing error.
+ */
+async function lockedVerdict(db: SupabaseClient, fn: string, args: Record<string, unknown>): Promise<string> {
+  const { data, error } = await db.rpc(fn, args)
+  if (error) fail(error, fn)
+  if (typeof data !== "string") throw new TradeRoomError("Couldn't update the trade just now. Try again in a moment.", 503, "unavailable")
+  return data
+}
+const RELAY_TTL_SECONDS = Math.round(RELAY_TTL_MS / 1000)
+
 function fail(error: { message: string } | null, what: string): never {
   throw new Error(`${what}: ${error?.message ?? "no rows returned"}`)
 }
@@ -407,20 +421,17 @@ export async function accept(db: SupabaseClient, loaded: LoadedRoom, side: SideR
 
 export async function unaccept(db: SupabaseClient, loaded: LoadedRoom, side: SideRow, now: number = Date.now()): Promise<LoadedRoom> {
   requireEditable(loaded, now)
-  const { error } = await db
-    .from("trade_room_sides")
-    .update({ accepted_version: null, updated_at: new Date(now).toISOString() })
-    .eq("room_id", loaded.room.id)
-    .eq("side", side.side)
-  if (error) fail(error, "trade_room_sides unaccept")
-  if (loaded.room.status === "accepted") {
-    const { error: e2 } = await db.from("trade_rooms").update({ status: "building", updated_at: new Date(now).toISOString() }).eq("id", loaded.room.id).eq("status", "accepted")
-    if (e2) fail(e2, "trade_rooms unlock")
+  // Locked (#250): decided on the room's status UNDER the lock, so a signing that started after
+  // our snapshot is seen — withdrawing then is refused instead of leaving "accepted" with one side out.
+  const v = await lockedVerdict(db, "trade_room_unaccept_locked", { p_room_id: loaded.room.id, p_side: side.side })
+  if (v !== "ok") {
+    const status = (v === "not_found" ? "cancelled" : v) as RoomStatus
+    requireEditable({ ...loaded, room: { ...loaded.room, status } }, now)
   }
   return loadRoom(db, loaded.room.code)
 }
 
-export async function cancelRoom(db: SupabaseClient, loaded: LoadedRoom, userId: string, reason: string | null, now: number = Date.now()): Promise<LoadedRoom> {
+export async function cancelRoom(db: SupabaseClient, loaded: LoadedRoom, userId: string, reason: string | null, _now: number = Date.now()): Promise<LoadedRoom> {
   if (loaded.room.status === "sealed") throw new TradeRoomError("This trade already sealed on chain; it can't be cancelled.", 409, "sealed")
   if (loaded.room.status === "cancelled") return loaded
   // ⛔ 2026-11-07 review: once the co-signer has SIGNED, the transaction can seal
@@ -428,43 +439,44 @@ export async function cancelRoom(db: SupabaseClient, loaded: LoadedRoom, userId:
   // "cancelled" and emailed "Nothing moved". Refuse while a signature from the
   // relay window exists; after the window (or when signing ended) cancel works.
   // A failed read refuses too: we cannot say nothing was signed.
-  if (loaded.room.status === "signing") await assertNotCosigned(db, loaded, now, "cancelled")
+  // 2026-11-14 (#250): the check and the write are ONE locked step, conditional on the status this
+  // caller saw. It used to check on a snapshot and write unconditionally, so a co-signature landing
+  // in between let a trade seal after its counterparty was emailed "cancelled — nothing moved".
   const r = reason ? reason.replace(/\s+/g, " ").trim().slice(0, 200) : null
-  const { error } = await db
-    .from("trade_rooms")
-    .update({ status: "cancelled", cancelled_by: userId, cancel_reason: r, updated_at: new Date(now).toISOString() })
-    .eq("id", loaded.room.id)
-    .neq("status", "sealed")
-  if (error) fail(error, "trade_rooms cancel")
+  const v = await lockedVerdict(db, "trade_room_cancel_locked", {
+    p_room_id: loaded.room.id, p_expected_status: loaded.room.status, p_cancelled_by: userId, p_reason: r, p_relay_ttl_seconds: RELAY_TTL_SECONDS,
+  })
+  if (v === "sealed") throw new TradeRoomError("This trade already sealed on chain; it can't be cancelled.", 409, "sealed")
+  if (v === "cosigned") throw new TradeRoomError("The other wallet already signed — this trade may be sealing on chain now, so it can't be cancelled. Check it in a moment.", 409, "cosigned")
+  if (v === "stale") throw new TradeRoomError("The trade changed just now. Reload it and try again.", 409, "stale")
+  if (v === "not_found") throw new TradeRoomError("No such trade.", 404, "not_found")
   return loadRoom(db, loaded.room.code)
 }
 
-/**
- * Refuse while a co-signature from the relay window exists: the signed transaction can seal on chain at any moment.
- * A failed read refuses too — we cannot say nothing was signed.
- */
-async function assertNotCosigned(db: SupabaseClient, loaded: LoadedRoom, now: number, verb: string): Promise<void> {
-  const { count, error: relayError } = await db
-    .from("trade_room_relay")
-    .select("id", { count: "exact", head: true })
-    .eq("room_id", loaded.room.id)
-    .not("signed_at", "is", null)
-    .gt("created_at", new Date(now - RELAY_TTL_MS).toISOString())
-  if (relayError || count == null) throw new TradeRoomError("Couldn't check whether the trade was already signed. Try again in a moment.", 503, "unavailable")
-  if (count > 0) throw new TradeRoomError(`The other wallet already signed — this trade may be sealing on chain now, so it can't be ${verb}. Check it in a moment.`, 409, "cosigned")
-}
 
 /** A wallet has been asked to sign: freeze the proposal. */
-export async function markSigning(db: SupabaseClient, loaded: LoadedRoom, now: number = Date.now()): Promise<void> {
-  const { data, error } = await db
-    .from("trade_rooms")
-    .update({ status: "signing", updated_at: new Date(now).toISOString() })
-    .eq("id", loaded.room.id)
-    .eq("version", loaded.room.version)
-    .in("status", ["accepted", "signing"])
-    .select("id")
-  if (error) fail(error, "trade_rooms signing")
-  if (!Array.isArray(data) || data.length !== 1) throw new TradeRoomError("The trade changed before signing started. Review it again.", 409, "stale")
+export async function markSigning(db: SupabaseClient, loaded: LoadedRoom, _now: number = Date.now()): Promise<void> {
+  // 2026-11-14 (#250): + BOTH sides must have accepted THIS version, read under the room lock. The
+  // status alone could read "accepted" after a withdrawal raced the previous signing attempt.
+  const v = await lockedVerdict(db, "trade_room_mark_signing_locked", { p_room_id: loaded.room.id, p_version: loaded.room.version })
+  if (v === "not_accepted") throw new TradeRoomError("Both sides must accept the trade before signing.", 409, "not_accepted")
+  if (v !== "ok") throw new TradeRoomError("The trade changed before signing started. Review it again.", 409, "stale")
+}
+
+/**
+ * 2026-11-14 (#250): the co-signer's signature, recorded only while the room is STILL `signing`,
+ * under the room lock — so it can never land on a room a cancel just closed. Format checks match
+ * lib/swap-test/relay.ts postSignature (the generic relay this replaces for trade rooms).
+ */
+export async function postRoomSignature(db: SupabaseClient, loaded: LoadedRoom, relayId: string, signature: unknown, keyId: unknown): Promise<void> {
+  const sig = typeof signature === "string" ? signature.trim().toLowerCase().replace(/^0x/, "") : ""
+  if (!/^[0-9a-f]{128}$/.test(sig)) throw new TradeRoomError("The signature is not 64 bytes of hex.", 400, "bad_signature")
+  const k = Number(keyId)
+  if (!Number.isInteger(k) || k < 0) throw new TradeRoomError("The key id is not a key index.", 400, "bad_key")
+  const v = await lockedVerdict(db, "trade_room_post_signature_locked", { p_room_id: loaded.room.id, p_relay_id: relayId, p_signature: sig, p_key_id: k })
+  if (v === "not_signing") throw new TradeRoomError("This trade is not being signed right now.", 409, "not_signing")
+  if (v === "already_signed") throw new TradeRoomError("This swap request was already signed.", 409, "already_signed")
+  if (v !== "ok") throw new TradeRoomError("No such trade.", 404, "not_found")
 }
 
 /** A signing attempt ended without a seal (wallet refused, relay expired): back to accepted. */
@@ -473,13 +485,10 @@ export async function markSigningEnded(db: SupabaseClient, loaded: LoadedRoom, n
   // room back to "accepted", where cancelRoom's co-signed check (it runs only in "signing") was skipped and the items
   // were editable again — so a trade that then sealed on chain could be recorded "cancelled" (the counterparty
   // emailed "nothing moved"), or have its items changed so `sealed` could never verify it. Same guard, same window.
-  if (loaded.room.status === "signing") await assertNotCosigned(db, loaded, now, "reopened")
-  const { error } = await db
-    .from("trade_rooms")
-    .update({ status: "accepted", updated_at: new Date(now).toISOString() })
-    .eq("id", loaded.room.id)
-    .eq("status", "signing")
-  if (error) fail(error, "trade_rooms signing ended")
+  // 2026-11-14 (#250): the co-signature check and the move back to accepted are one locked step.
+  void now
+  const v = await lockedVerdict(db, "trade_room_signing_ended_locked", { p_room_id: loaded.room.id, p_relay_ttl_seconds: RELAY_TTL_SECONDS })
+  if (v === "cosigned") throw new TradeRoomError("The other wallet already signed — this trade may be sealing on chain now, so it can't be reopened. Check it in a moment.", 409, "cosigned")
 }
 
 export async function markSealed(db: SupabaseClient, loaded: LoadedRoom, txId: string, landed: unknown, now: number = Date.now()): Promise<LoadedRoom> {

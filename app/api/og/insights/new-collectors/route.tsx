@@ -21,7 +21,7 @@ type SummaryRow = {
   new_debiased: number
   active_buyers: number
   returning_buyers: number
-  market_usd: number
+  market_usd: number | null
 }
 type GatewayRow = { kind: string; name: string; buyers: number; rnk: number }
 

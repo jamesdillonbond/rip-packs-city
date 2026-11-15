@@ -30,10 +30,12 @@ export interface NCSummaryRow {
   new_prior_period: number
   active_buyers: number
   returning_buyers: number
-  market_usd: number
-  new_usd: number
-  median_first_buy: number
-  avg_first_buy: number
+  // 2026-11-14: NULL-able in the MV — a SUM / percentile / avg over no rows (a
+  // window with no first buys) is NULL, and numOr0 printed it as "$0".
+  market_usd: number | null
+  new_usd: number | null
+  median_first_buy: number | null
+  avg_first_buy: number | null
   computed_at: string | null
 }
 
@@ -137,10 +139,10 @@ export async function fetchNewCollectorsBoard(supabase: any): Promise<NewCollect
       new_prior_period: numOr0(r.new_prior_period),
       active_buyers: numOr0(r.active_buyers),
       returning_buyers: numOr0(r.returning_buyers),
-      market_usd: numOr0(r.market_usd),
-      new_usd: numOr0(r.new_usd),
-      median_first_buy: numOr0(r.median_first_buy),
-      avg_first_buy: numOr0(r.avg_first_buy),
+      market_usd: num(r.market_usd),
+      new_usd: num(r.new_usd),
+      median_first_buy: num(r.median_first_buy),
+      avg_first_buy: num(r.avg_first_buy),
       computed_at: (r.computed_at as string) ?? null,
     }))
     .sort((a, b) => a.days - b.days)
