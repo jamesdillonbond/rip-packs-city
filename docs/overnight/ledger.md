@@ -12,6 +12,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-14 ~6:40 PM PT — Candy Set Tracker was answering 503 to EVERY wallet since ~11-08: its checklist ceiling assumed 125 editions; the catalogue is 21,472 (Claude Code cloud)
+- Found by the live check of today's Candy never-scanned change: an unwalked key returned 503, not 409. The runtime log said `candy checklist read was truncated` / `hit maxPages=5`.
+- The cause: `/api/candy-set-progress` read the Candy checklist with `maxPages: 5`, commented "125 rows today; 40x headroom". On 11-08..11-10 the other Candy catalogues were indexed (The Bat Cowl Collection 4,953, 2022 All-Star Tricons 4,088, 2022 Leadoff ICONs 2,165, …), giving 21,472 editions in 387 sets. Past 5,000 the read truncated, and the route correctly refused a short checklist, so every Candy wallet got "try again" for about 6 days. Nothing reported it: the 503 is logged as an error per request, and the Candy Sets tab gets little traffic.
+- **Fix:**
+  - The ceiling is now 60 pages (60,000 rows ≈ 2.8x today). A page measured ~45 ms, so ~1 s of database time for the whole checklist.
+  - The `candy_fmv_current` and `candy_listing_floor` reads were bare selects that PostgREST silently caps at 1,000 rows (463 and 20 rows today, against 21k editions). They are now paged, and a truncated price read degrades to "unpriced", never to a smaller bill.
+- **Tests:** a checklist of 6,001 editions is read whole; a truncated floor map quotes no cost. Both were red on the old route. Tree walkers 200/200.
+- **Lesson:** a SIZED ceiling is a dated claim about a population another lane can grow, and when it trips, the route's HONEST refusal is just as invisible as a lie would be unless something watches its rate.
+- Revert: `git revert` the commit titled "fix(candy sets): read the whole 21k-edition checklist (ceiling 5 to 60 pages) and page the price reads".
+
 ### 2026-11-14 ~6:25 PM PT — Trade room product calls: a visitor no longer sees either side's wallets; the kill switch also stops an already-given signature; the fair-trade figures say how old they are (Claude Code cloud)
 - The three calls left open by #250's review, made on Trevor's "Work on all of these", each the conservative option:
   - **(1) Wallet privacy.** `lib/trade-room/view.ts` `sideView` gives `signer`/`source` only to a party to the room. Any other signed-in visitor with the invite link sees whether each side is `proven`, never the addresses, matching the Trade Block's rule that wallets stay server-side. The client renders a proven side with hidden wallets as "wallet proven".
