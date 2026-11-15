@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~8:20 AM PT — Candy: 2,529 validated Magic Eden sales parked for the drain (inbox 0500Z step 6); legacy-listings lane verified; OpenSea program-id research (Claude Code cloud, Trevor live)
+
+- Prod data: `candy_sales_unresolved` +2,529 rows (`queued_collections_walk`, first_seen 8:15–8:20 AM PT) from the two Project-only ME files, via new `scripts/candy-wiki-validated-import.mjs` + `.github/workflows/candy-wiki-validated-import.yml` (commits `7664bee80`, `62dc6a4c0`; data in `scripts/candy-wiki-validated/`). Dry run 43734198069 = 56 known / 2,529 new (matches a SQL prefix diff); apply 43734346381 ok, 0 failed. The drain (300/tick) stays the only writer of `sales`.
+- Watch: queue's open `queued_collections_walk` falls from ~6,400 over the next day; falsifier = the 2,529 sitting unresolved after 3 drain ticks, or resolving as anything but sales.
+- Revert: `DELETE FROM candy_sales_unresolved WHERE resolved_at IS NULL AND skip_reason='queued_collections_walk' AND first_seen_at BETWEEN '2026-11-15 16:15:00+00' AND '2026-11-15 16:20:30+00'`; after the drain writes them, back up and delete Candy `sales` by the files' `transaction_hash`.
+- Not done: `DROP MATERIALIZED VIEW sets_summary_prev_20261114` (#255) — refused by this session's permission classifier; pre-checks all matched. Docs: #256/#257 notes, both inbox filings updated.
+
 ### 2026-11-15 ~7:50 AM PT — arrival-provenance route honours the Dune kill switch; marked superseded for the bulk load (Claude Code cloud, cost-basis thread wrap-up)
 
 - `app/api/cron/topshot-arrival-provenance-dune` (unscheduled) now reads `dune_budget_state.paused` before any Dune call — `skipped_reason: dune_paused` when set, a FAILED run when unreadable — matching the #190 stage route. Header updated: the stage route's wallet-scoped 9129489 load superseded this route for the bulk; it stays as the per-batch tool for new held moments. Two new tests; a `no-explicit-any` in its test file fixed.

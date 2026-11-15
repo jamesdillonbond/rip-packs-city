@@ -51,3 +51,7 @@ Also check that the next `refresh_sets_summary()` run (pg_cron 37, :50 hourly) s
 - `docs/reference/known-issues.md` #255: change 🟠 PARTLY RESOLVED to ✅ CLOSED, replace its "Left to do" bullet with the drop's version + read-back, then `npm run -s docs:issues-index` (diff it: the only `-` line is the STATUS INDEX header).
 - Ledger entry (ledger first, then the migration file).
 - Mark this filing ✅ RESOLVED in place, on its INDEX.md line and in a section at the bottom. Never archive it (the inbox is append-only).
+
+## Still open — 2026-11-15 ~7:55 AM PT (Claude Code cloud, Trevor live)
+
+Pre-check re-run and matched every expected value (`to_regclass` present; live md5 `e093bda0…`; 0 functions / 0 cron / 0 dependent views; scan counter still 718,378; 0 repo refs outside docs/migrations). `apply_migration` with the guard + `DROP` was **refused by the session's permission classifier** (destructive action) before reaching the database, so nothing was dropped. It needs Trevor to run step 2 in the SQL editor, or to approve the drop in a session whose permissions allow it.
