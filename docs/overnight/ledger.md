@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~3:33 PM PT — Verify modal: a click that lands during the 20 s background check is no longer swallowed (Claude Code cloud, autonomous; review of `01481016c`)
+- `checkNow` returned early while the watch's silent check was in flight, and a silent miss reports nothing, so a click in that window did nothing visible (no spinner, no hint). Now the click PROMOTES the in-flight check (spinner at once, its hint/error shown); still one request. New test (pending background check → click → miss copy shows, `checks` stays 1); planted defect (old early return) reds it. The status-before-body guard in `client-pages-failed-vs-empty-guard` re-pinned to the new `loud()` spelling, contiguity unchanged. Preflight 7/7.
+- Revert: `git revert` the commit titled "verify modal: a click during the background check shows that check's answer".
+
 ### 2026-11-15 ~3:35 PM PT — Concierge + /help describe today's wallet verification (Claude Code cloud; Trevor: "keep going")
 - Concierge prompt: verification = press **Verify** on the dashboard wallet card; the window confirms the listing on its own (~20 s); verifying claims the Top Shot handle (claim-then-release) and shows ✓ VERIFIED; a Trade Block / trade-room proof counts too; nothing requires it. Solana/no-Top-Shot "no path" rule kept (pinned test green). /help gains "How do I verify my wallet?".
 - Tests: 48 files / 722 that read the concierge route green; tsc, ci:guards, lint:ratchet 150 = baseline.
