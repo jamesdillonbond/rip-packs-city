@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~3:04 PM PT — Candy: a retired shared 1-of-1 edition URL 308s to its ONE per-mint successor (Claude Code cloud, autonomous)
+- Found from Vercel 404s: ~130/day on `/candy-mlb/edition/*`, mostly bingbot re-crawling keys the 11-09 per-mint re-key retired (`…:paul-skenes-legendary` → `…-legendary-H8YmcBdNXaNZ`). All 9 crawled samples have exactly one successor. `lookupCandyOneOfOneSuccessorRedirect` (lib/edition/alias-redirect.ts) runs only in the layout's `entityResolves=false` branch (a live edition never pays for it) and 308s only when exactly one `<key>-<10–14 alnum>` edition exists; two or more, a capped read, an error or a hang keep the 404 (no substitution). 9 tests + a source pin; planted defect (first successor instead of exactly one) reds 1. The test also caught that the shared lowercase-only key shape would have refused every mixed-case suffix — the existing alias table has 0 such rows (checked 2,935).
+- Revert: `git revert` the commit titled "candy edition: a retired shared 1-of-1 key 308s to its one per-mint successor".
+
 ### 2026-11-15 ~2:58 PM PT — test re-pin: client-pages-failed-vs-empty-guard pins the verify check's guard-then-parse with the new `if (!silent)` spelling (Claude Code cloud)
 - CI shard 4 red on 0148101: a text pin of the verify modal's `res.ok` guard. Re-pinned (the property — guard before parse — is unchanged). Lesson: grep the guards that READ an edited file before pushing.
 - Revert: find the commit by message "re-pin verify guard-then-parse" and `git revert` it.
