@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~8:45 AM PT — pack calendar stops listing REWARD dists and started no-price/no-close dists as "on sale now"; NWSL Panini line gets ⚽ (Claude Code cloud, Trevor live after the Sunday X draft)
+- `buildPackCalendar` (lib/insights/pack-calendar.ts): skips `dist_type = REWARD` always, and an unpriced dist with no `end_time` once it has started (still listed while upcoming). 11-15's draft had Metallic Silver Week 1/2 Reward, Luka Top Shot This (closed 11-09 per the official page) and Rookie Debut Trade Ticket Pack as "on sale now". 2 tests (planted-defect checked). `x-draft.mjs`: `WOMENS SOCCER` → ⚽. x-calendar.md source row notes the rule.
+- Revert: find the commit by message "pack calendar: never list REWARD dists" and `git revert` it. No DB change.
+
 ### 2026-11-15 ~8:20 AM PT — Candy: 2,529 validated Magic Eden sales parked for the drain (inbox 0500Z step 6); legacy-listings lane verified; OpenSea program-id research (Claude Code cloud, Trevor live)
 
 - Prod data: `candy_sales_unresolved` +2,529 rows (`queued_collections_walk`, first_seen 8:15–8:20 AM PT) from the two Project-only ME files, via new `scripts/candy-wiki-validated-import.mjs` + `.github/workflows/candy-wiki-validated-import.yml` (commits `7664bee80`, `62dc6a4c0`; data in `scripts/candy-wiki-validated/`). Dry run 43734198069 = 56 known / 2,529 new (matches a SQL prefix diff); apply 43734346381 ok, 0 failed. The drain (300/tick) stays the only writer of `sales`.
