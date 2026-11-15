@@ -153,3 +153,22 @@ describe("GET /api/packs/grails — buyableOnly reads past retired top dists", (
     expect((await res.json()).rows.map((r: any) => r.dist_id)).toEqual(["d0", "d1", "d2"])
   })
 })
+
+// 2026-11-14 (packs review): the buyable walk's page ceiling was sized for 3,148 rows; a walk that
+// stops AT the ceiling without filling the page says so instead of reading as the whole answer.
+describe("GET /api/packs/grails — the buyable walk says when it could not finish", () => {
+  const mv = (n: number) => Array.from({ length: n }, (_, i) => ({ dist_id: `d${i}`, grails_100: 1, max_pull_fmv: 200 }))
+  it("a view longer than the ceiling with nothing buyable → complete:false", async () => {
+    state.grails = mv(9000)   // > 40 pages × 200
+    state.meta = []           // nothing buyable
+    const body = await (await GET(req("https://t/api/packs/grails?collection=nba-top-shot&buyableOnly=true&limit=10"))).json()
+    expect(body.rows).toEqual([])
+    expect(body.complete).toBe(false)
+  })
+  it("CONTROL: a view walked to its end with nothing buyable is complete — a true 'none'", async () => {
+    state.grails = mv(450)
+    state.meta = []
+    const body = await (await GET(req("https://t/api/packs/grails?collection=nba-top-shot&buyableOnly=true&limit=10"))).json()
+    expect(body.complete).toBe(true)
+  })
+})

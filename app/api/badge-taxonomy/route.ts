@@ -59,6 +59,8 @@ export async function POST(req: NextRequest) {
 
   const now = Date.now()
   const byKey: Record<string, BadgeMeta> = {}
+  // 2026-11-14: a stale-on-error answer says so, so the client does not keep it for the whole visit.
+  let degraded = false
   const missingTitles: string[] = []
   const missingKeys = new Set<string>() // cache keys (collection-scoped)
   const missingNormByCacheKey = new Map<string, string>() // cacheKey -> normalizedKey
@@ -86,6 +88,7 @@ export async function POST(req: NextRequest) {
       // Serve stale on DB error instead of 5xx — fall back to any cached entry,
       // even an expired one. This is the spike-killer for saturation windows.
       console.warn(`[badge-taxonomy] RPC error, serving stale where possible: ${error.message}`)
+      degraded = true
       for (const ck of missingKeys) {
         const entry = taxonomyCache.get(ck)
         if (entry?.meta) byKey[missingNormByCacheKey.get(ck)!] = entry.meta
@@ -110,5 +113,5 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ taxonomy: byKey })
+  return NextResponse.json(degraded ? { taxonomy: byKey, degraded: true } : { taxonomy: byKey })
 }

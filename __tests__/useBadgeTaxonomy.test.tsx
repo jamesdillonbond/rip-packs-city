@@ -109,6 +109,20 @@ describe("useBadgeTaxonomy", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
+  // 2026-11-14 (badges review): a DEGRADED answer (the route served stale / empty on a DB error)
+  // used to be cached for the life of the page — one brief error, grey pills until a reload.
+  it("a degraded answer is shown but NOT cached: the next mount asks again", async () => {
+    fetchMock.mockReturnValueOnce(Promise.resolve({ ok: true, json: () => Promise.resolve({ taxonomy: {}, degraded: true }) } as Response))
+    const first = renderHook(() => useBadgeTaxonomy(["Degraded Badge"], "cDegraded"))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    first.unmount()
+    const map = { degradedbadge: META({ title: "Degraded Badge" }) }
+    fetchMock.mockReturnValueOnce(mockOk(map))
+    const second = renderHook(() => useBadgeTaxonomy(["Degraded Badge"], "cDegraded"))
+    await waitFor(() => expect(second.result.current).toEqual(map))
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
   it("dedups concurrent mounts of the same key into a single in-flight fetch", async () => {
     const map = { debut: META({ title: "Debut", color_family: "cyan" }) }
     fetchMock.mockReturnValue(mockOk(map))

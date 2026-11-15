@@ -345,7 +345,9 @@ export async function GET(req: NextRequest) {
         owned_error: ownedError,
         generatedAt: new Date(now).toISOString(),
       },
-      { headers: { "Cache-Control": rawWallet ? "private, no-store" : "public, s-maxage=120, stale-while-revalidate=300" } },
+      // 2026-11-14 (packs review): a PARTIAL failure (asks / sales / EV) is not shared at the CDN —
+      // the page says "couldn't load" honestly, but served to everyone for minutes after recovery.
+      { headers: { "Cache-Control": rawWallet || asksFailed || !!salesRes.error || !!evRes.error ? "private, no-store" : "public, s-maxage=120, stale-while-revalidate=300" } },
     )
   } catch (err) {
     return apiErrorResponse(err, "api/candy-pack-market", "Pack market is unavailable right now.")

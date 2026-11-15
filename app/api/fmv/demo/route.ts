@@ -103,7 +103,9 @@ export async function GET() {
     const m = multBy.get(`${p.id}:${serial}`);
     const mult = m?.multiplier ?? null;
     return { serial, serialMult: mult != null ? r2(mult) : null, serialBasis: m?.basis ?? null,
-             adjustedFmv: r2(mult != null ? p.base * mult : p.base) };
+             // 2026-11-14: no multiplier is NO adjusted value — the base price under "#1" claimed a #1
+             // serial is worth exactly the base (public home page, cached 1 h). The card shows "—".
+             adjustedFmv: mult != null ? r2(p.base * mult) : null };
   };
 
   const samples: unknown[] = picked.map(p => ({

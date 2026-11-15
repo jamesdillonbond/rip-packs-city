@@ -1,6 +1,8 @@
 'use client'
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { answerFor } from '@/lib/warmup/answer-for'
+import { fetchAllPackRows } from '@/lib/packs/fetch-all-pack-rows'
 import Link from 'next/link'
 import PackTable, { type PackRow, type SortKey as TableSortKey } from './PackTable'
 import GrailsView from './GrailsView'
@@ -339,22 +341,29 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
     : ''
   const packsKey = 'pack-listings:' + collection + filterSuffix
   const packsFetcher = useCallback(async () => {
-    const params = new URLSearchParams({ collection, sort: serverSort, limit: '500' })
-    if (tier !== 'all') params.set('tier', tier)
-    if (search) params.set('search', search)
-    const res = await fetch('/api/packs?' + params.toString())
-    const json = (await res.json()) as ApiResponse & { error?: string }
-    if (!res.ok) throw new Error(json.error || 'Failed to load packs')
-    return json
+    // 2026-11-14 (packs review): the WHOLE board, page by page — lib/packs/fetch-all-pack-rows.ts.
+    return fetchAllPackRows<ApiRow, ApiResponse & { error?: string }>(async (offset, limit) => {
+      const params = new URLSearchParams({ collection, sort: serverSort, limit: String(limit), offset: String(offset) })
+      if (tier !== 'all') params.set('tier', tier)
+      if (search) params.set('search', search)
+      const res = await fetch('/api/packs?' + params.toString())
+      const json = (await res.json()) as ApiResponse & { error?: string }
+      if (!res.ok) throw new Error(json.error || 'Failed to load packs')
+      return json
+    })
   }, [collection, serverSort, tier, search])
 
-  const { data: packsData, loading: packsLoading, error: packsError } = useWarmCache<ApiResponse>(
+  const { data: packsData, dataKey: packsDataKey, loading: packsLoading, error: packsError } = useWarmCache<ApiResponse>(
     packsKey,
     packsFetcher,
     { ttlMs: 120_000 },
   )
-  const rows: ApiRow[] = packsData?.rows ?? []
-  const total = packsData?.total ?? 0
+  // 2026-11-14 (packs review): `data` keeps the PREVIOUS filter's rows while a new key loads — and
+  // after it fails. Rows answer this board only when they were fetched for THIS key; otherwise the
+  // table shows the loading / error state, never the old filter's packs under the new chip.
+  const currentPacks = useMemo(() => answerFor(packsData, packsDataKey, packsKey), [packsData, packsDataKey, packsKey])
+  const rows: ApiRow[] = currentPacks?.rows ?? []
+  const total = currentPacks?.total ?? 0
   const loading = packsLoading
   const error = packsError ? (packsError instanceof Error ? packsError.message : String(packsError)) : ''
 

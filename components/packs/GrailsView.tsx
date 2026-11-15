@@ -6,7 +6,7 @@
 // pack_grail_metrics_mv + pack_table_rows) and renders the chase player, the
 // per-pack at-least-once probability strip, and a CTA to the pack detail page (2026-11-12: the simulator is linked from there only).
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { tierColor, fmtUsd, fmtPct, atLeastOnce, selectPackPrice, fmvProbQualifier, fmtFmvProb, type FmvProbQualifier } from '@/lib/grail-format'
@@ -76,12 +76,19 @@ export default function GrailsView({ collection, accent }: Props) {
   const [rows, setRows] = useState<GrailRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // 2026-11-14: false when the route's buyable walk stopped at its page ceiling before the list filled.
+  const [complete, setComplete] = useState(true)
   const [sort, setSort] = useState<SortKey>('weightedGrailValue')
   const [buyableOnly, setBuyableOnly] = useState<boolean>(
     (searchParams?.get('buyableOnly') ?? '').toLowerCase() === 'true'
   )
 
+  // 2026-11-14 (packs review): only the LATEST request may write — a slower, older response used to
+  // land last and show the previous sort's cards under the new sort; and a failed request now
+  // clears the cards instead of leaving the previous query's on screen beside the error.
+  const loadSeq = useRef(0)
   const load = useCallback(async () => {
+    const ticket = ++loadSeq.current
     setLoading(true)
     setError(null)
     try {
@@ -89,16 +96,20 @@ export default function GrailsView({ collection, accent }: Props) {
       if (buyableOnly) params.set('buyableOnly', 'true')
       const res = await fetch('/api/packs/grails?' + params.toString())
       const json = await res.json()
+      if (ticket !== loadSeq.current) return
       if (!res.ok) {
         setError(json?.error ?? 'Failed to load grail metrics')
         setRows([])
       } else {
         setRows(json.rows ?? [])
+        setComplete(json.complete !== false)
       }
     } catch (err) {
+      if (ticket !== loadSeq.current) return
       setError(err instanceof Error ? err.message : String(err))
+      setRows([])
     } finally {
-      setLoading(false)
+      if (ticket === loadSeq.current) setLoading(false)
     }
   }, [collection, sort, buyableOnly])
 
@@ -189,7 +200,9 @@ export default function GrailsView({ collection, accent }: Props) {
         ))}
         {!loading && displayRows.length === 0 && !error && (
           <div style={{ padding: 24, fontFamily: "var(--font-mono)", fontSize: 12, color: 'var(--rpc-text-muted)', textAlign: 'center', border: '1px dashed var(--rpc-border)', borderRadius: 6, gridColumn: '1 / -1' }}>
-            {buyableOnly
+            {buyableOnly && !complete
+              ? "Couldn't scan every pack for buyable ones this time — try again, or toggle Buyable only off."
+              : buyableOnly
               ? 'No buyable packs match these grail filters — try toggling Buyable only off to see sold-out chase packs too.'
               : 'No grail-bearing packs matched. Try lowering the filters.'}
           </div>

@@ -22,6 +22,7 @@ vi.mock("@supabase/supabase-js", () => {
       not: () => b,
       order: () => b,
       limit: () => b,
+      range: () => b,
       then: (resolve: any) => resolve(payload()),
     }
     return b
@@ -216,6 +217,22 @@ describe("GET /api/packs", () => {
     const t1 = (await res.json()).rows.find((r: any) => r.dist_id === "t1")
     expect(t1.gross_ev).toBe(37)
     expect(t1.calibrated_gross_ev).toBeUndefined()
+  })
+
+  // 2026-11-14 (packs review): that degraded answer must not be shared at the CDN, and says so.
+  it("a failed TS calibration read is served no-store and flagged calibration_unavailable", async () => {
+    tables.pack_table_rows = { data: [{ dist_id: "t1", title: "TS", gross_ev: 37 }], count: 1, error: null }
+    tables.v_topshot_pack_realized_ev = { data: null, error: { message: "cal boom" } }
+    const res = await GET(req("https://t/api/packs?collection=nba-top-shot"))
+    expect(res.headers.get("Cache-Control")).toBe("no-store")
+    expect((await res.json()).calibration_unavailable).toBe(true)
+  })
+  it("CONTROL: a healthy calibration read stays CDN-cacheable", async () => {
+    tables.pack_table_rows = { data: [{ dist_id: "t1", title: "TS", gross_ev: 37 }], count: 1, error: null }
+    tables.v_topshot_pack_realized_ev = { data: [{ dist_id: "t1", calibrated_ev: 18 }], error: null }
+    const res = await GET(req("https://t/api/packs?collection=nba-top-shot"))
+    expect(res.headers.get("Cache-Control")).toMatch(/s-maxage/)
+    expect((await res.json()).calibration_unavailable).toBe(false)
   })
 
   it("passes a TS row through untouched when it has no calibrated match", async () => {

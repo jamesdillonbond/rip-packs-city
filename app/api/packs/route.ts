@@ -50,6 +50,11 @@ export async function GET(req: NextRequest) {
   const search = url.searchParams.get("search")?.trim() || null
   const limitRaw = parseInt(url.searchParams.get("limit") ?? "100", 10)
   const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 1000) : 100
+  // 2026-11-14 (packs review): pages. The board fetched ONE page of 500 and sorted / filtered it in
+  // the browser as if it were the whole board — 3,202 Top Shot and 3,228 All Day packs today, so
+  // ~2,700 were never seen. The client now walks pages up to `total`.
+  const offsetRaw = parseInt(url.searchParams.get("offset") ?? "0", 10)
+  const offset = Number.isFinite(offsetRaw) ? Math.min(Math.max(offsetRaw, 0), 100_000) : 0
 
   if (!ALLOWED_COLLECTIONS.has(collection)) {
     return NextResponse.json(
@@ -79,7 +84,10 @@ export async function GET(req: NextRequest) {
   const readPage = (titleFilter: (q: any) => any) =>
     titleFilter(scoped(supabase.from("pack_table_rows").select("*", { count: "exact" })))
       .order(column, { ascending, nullsFirst })
-      .limit(limit)
+      // A UNIQUE tiebreak: the sort column has ties (most All Day rows have no value_ratio), and
+      // paging over ties without one repeats and skips rows across pages.
+      .order("dist_id", { ascending: true })
+      .range(offset, offset + limit - 1)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let { data, count, error } = await readPage((q: any) => (search ? q.ilike("title", "%" + search + "%") : q))
@@ -124,6 +132,9 @@ export async function GET(req: NextRequest) {
   //     verdict anchor (PackPageClient: primary/retail is never the anchor). The
   //     view used its own stale price (dist 1202: $2 retail vs the $4 live ask).
   // Non-fatal: on error the page shows pure modeled EV.
+  // 2026-11-14 (packs review): …but that DEGRADED answer must not be shared at the CDN for minutes
+  // (All Day / Pinnacle already no-store theirs): flagged, and served no-store below.
+  let calibrationUnavailable = false
   if (collection === "nba-top-shot" && rows.length) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const evIds = (rows as any[]).filter((r) => r.gross_ev != null).map((r) => r.dist_id)
@@ -136,6 +147,7 @@ export async function GET(req: NextRequest) {
       : { data: [], error: null }
     if (calError) {
       console.error("[api/packs] calibrated merge", calError.message)
+      calibrationUnavailable = true
     } else if (calData?.length) {
       const calMap = new Map<string, number>(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -298,6 +310,8 @@ export async function GET(req: NextRequest) {
       rows,
       total: count ?? (rows.length ?? 0),
       collection_slug: collection,
+      // 2026-11-14: true when Top Shot's calibration read failed — the EV shown is the MODELED one.
+      calibration_unavailable: calibrationUnavailable,
       // Which pool the EV above was weighted by. Null for collections we do not
       // model a drop pool for (Pinnacle), where neither label would be true.
       ev_basis: basis
@@ -318,7 +332,7 @@ export async function GET(req: NextRequest) {
       // ...except when the Pinnacle EV read failed this request: rows carrying
       // ev_unavailable must not be served from the CDN for ~6 minutes (2026-10-09).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      headers: { "Cache-Control": (rows as any[]).some((r) => r?.ev_unavailable === true)
+      headers: { "Cache-Control": calibrationUnavailable || (rows as any[]).some((r) => r?.ev_unavailable === true)
         ? "no-store"
         : "public, s-maxage=120, stale-while-revalidate=240" },
     },

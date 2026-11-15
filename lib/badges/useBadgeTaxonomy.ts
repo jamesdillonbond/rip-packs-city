@@ -45,10 +45,12 @@ async function fetchTaxonomy(titles: string[], collectionId?: string | null): Pr
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ titles, collectionId: collectionId ?? undefined }),
       })
-      const json = (await res.json().catch(() => ({}))) as { taxonomy?: BadgeTaxonomyMap; error?: string }
+      const json = (await res.json().catch(() => ({}))) as { taxonomy?: BadgeTaxonomyMap; error?: string; degraded?: boolean }
       if (!res.ok) throw new Error(json.error || 'taxonomy fetch failed')
       const map = json.taxonomy ?? {}
-      resultCache.set(key, map)
+      // 2026-11-14: a DEGRADED answer (the route served stale / empty on a DB error) is shown but not
+      // kept — one brief error used to leave every badge a plain grey pill until a full reload.
+      if (!json.degraded) resultCache.set(key, map)
       return map
     } finally {
       inflight.delete(key)

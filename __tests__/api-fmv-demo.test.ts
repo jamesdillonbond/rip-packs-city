@@ -68,6 +68,21 @@ describe("GET /api/fmv/demo", () => {
     expect(s.exampleAdjustments.serial23).toMatchObject({ serialMult: 1, adjustedFmv: 100 })
   })
 
+  // 2026-11-14 (home review): an UNKNOWN multiplier is no adjusted value. The base price under
+  // "#1" told the public home page a #1 serial is worth exactly the base.
+  it("a serial with no multiplier (circulation unknown) has adjustedFmv null, never the base FMV", async () => {
+    tables.fmv_snapshots = {
+      data: [{ edition_id: "u1", fmv_usd: 100, confidence: "HIGH", computed_at: "2026-07-12T00:00:00Z" }],
+    }
+    tables.editions = { data: [{ id: "u1", external_id: "73:2785" }] }
+    tables.__serial = { data: [
+      { edition_id: "u1", serial: 1, multiplier: null, basis: "circulation_unknown" },
+    ], error: null }
+    const s = (await (await GET()).json()).samples[0]
+    expect(s.exampleAdjustments.serial1).toMatchObject({ serialMult: null, adjustedFmv: null })
+    expect(s.exampleAdjustments.serial1.adjustedFmv).not.toBe(100)
+  })
+
   it("does not publish premiums it could not compute: a failed fitted read is a failure", async () => {
     tables.fmv_snapshots = {
       data: [{ edition_id: "u1", fmv_usd: 100, confidence: "HIGH", computed_at: "2026-07-12T00:00:00Z" }],

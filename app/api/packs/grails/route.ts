@@ -120,9 +120,13 @@ export async function GET(req: NextRequest) {
     // buyable rows are found or the view is exhausted. A pre-filter by buyable id
     // is not an option: Top Shot alone has ~1,000 buyable dists, PostgREST's clamp.
     const PAGE = 200
-    const MAX_PAGES = buyableOnly ? 20 : 1 // 4,000 rows > the largest collection's 3,148
+    // 2026-11-14 (packs review): "4,000 rows > the largest collection's 3,148" went stale — All Day
+    // reached 3,226 board rows. 40 pages = 8,000; and a walk that stops AT the ceiling without
+    // filling the page says so (`complete: false`) instead of reading as the whole answer.
+    const MAX_PAGES = buyableOnly ? 40 : 1
     const rows: Array<GrailMvRow & { meta: PackRowMeta | null }> = []
     let scanned = 0
+    let exhausted = false
     for (let page = 0; page < MAX_PAGES && rows.length < limit; page++) {
       const size = buyableOnly ? PAGE : limit
       const { data: grails, error: gErr } = await boundedRead(sb
@@ -141,7 +145,7 @@ export async function GET(req: NextRequest) {
       }
       const grailRows = (grails ?? []) as GrailMvRow[]
       scanned += grailRows.length
-      if (grailRows.length === 0) break
+      if (grailRows.length === 0) { exhausted = true; break }
 
       const distIds = grailRows.map((g) => g.dist_id)
       let metaQuery = sb
@@ -181,8 +185,9 @@ export async function GET(req: NextRequest) {
         if (buyableOnly && m === null) continue
         rows.push({ ...g, meta: m })
       }
-      if (grailRows.length < size) break
+      if (grailRows.length < size) { exhausted = true; break }
     }
+    const complete = !buyableOnly || exhausted || rows.length >= limit
     rows.splice(limit)
     if (scanned === 0) {
       return NextResponse.json({ rows: [], collection_id: collectionUuid }, {
@@ -190,7 +195,7 @@ export async function GET(req: NextRequest) {
       })
     }
 
-    return NextResponse.json({ rows, collection_id: collectionUuid, sort, limit, buyableOnly }, {
+    return NextResponse.json({ rows, collection_id: collectionUuid, sort, limit, buyableOnly, complete }, {
       headers: { "Cache-Control": "s-maxage=60, stale-while-revalidate=300" },
     })
   } catch (err) {

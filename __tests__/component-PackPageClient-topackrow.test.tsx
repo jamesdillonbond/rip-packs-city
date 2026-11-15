@@ -17,7 +17,9 @@ const warm: { packs: any; listings: any } = {
 vi.mock("@/lib/warmup/WarmupContext", () => ({
   useWarmCache: (key: string) => {
     const slot = key.startsWith("pack-live-listings:") ? warm.listings : warm.packs
-    return { data: slot.data, loading: slot.loading, error: slot.error, refresh: vi.fn() }
+    // Re-pinned 2026-11-14: the real hook reports the key its data answers; the board shows
+    // only data fetched for its CURRENT key (lib/warmup/answer-for.ts).
+    return { data: slot.data, dataKey: key, loading: slot.loading, error: slot.error, refresh: vi.fn() }
   },
 }))
 

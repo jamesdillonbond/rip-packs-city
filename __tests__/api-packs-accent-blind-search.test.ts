@@ -11,7 +11,7 @@ vi.mock("@supabase/supabase-js", () => {
   const builder = () => {
     const f: { ilike?: string; imatch?: string } = {}
     const b: any = {
-      select: () => b, eq: () => b, in: () => b, not: () => b, order: () => b, limit: () => b,
+      select: () => b, eq: () => b, in: () => b, not: () => b, order: () => b, limit: () => b, range: () => b,
       ilike: (_c: string, p: string) => { f.ilike = p; return b },
       filter: (_c: string, op: string, v: string) => { if (op === "imatch") f.imatch = v; return b },
       then: (resolve: any) => {

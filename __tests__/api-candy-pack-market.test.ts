@@ -132,6 +132,16 @@ describe("GET /api/candy-pack-market", () => {
     expect(json.market.confirmedAsks).toBeNull()
   })
 
+  // 2026-11-14 (packs review): a partial failure must not be shared at the CDN for minutes.
+  it("a failed panel is served no-store; a healthy anonymous answer stays CDN-cacheable", async () => {
+    const healthy = await GET(req(""))
+    expect(healthy.headers.get("Cache-Control")).toMatch(/s-maxage/)
+    state["candy_packs:holders"] = { data: null, error: { message: "boom" } }
+    const failed = await GET(req(""))
+    expect((await failed.json()).asks_error).toBe(true)
+    expect(failed.headers.get("Cache-Control")).toBe("private, no-store")
+  })
+
   it("an unknown treasury wallet fails the holder check closed", async () => {
     state.candy_treasury_wallet = { data: [], error: null }
     const { json } = await body()

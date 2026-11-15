@@ -46,6 +46,16 @@ describe("POST /api/badge-taxonomy", () => {
     expect(await res.json()).toEqual({ taxonomy: {} })
   })
 
+  // 2026-11-14: a stale-on-error answer says so (the client then does not cache it for the visit).
+  it("an RPC error answers 200 with what it has AND degraded:true; a healthy answer carries no flag", async () => {
+    state.error = { message: "statement timeout" }
+    const bad = await (await POST(req({ titles: ["Never Cached Badge"] }))).json()
+    expect(bad.degraded).toBe(true)
+    state.error = null
+    const ok = await (await POST(req({ titles: ["Another Badge"] }))).json()
+    expect(ok.degraded).toBeUndefined()
+  })
+
   it("re-keys the RPC result by the normalized badge key", async () => {
     state.data = {
       "Top Shot Debut": {

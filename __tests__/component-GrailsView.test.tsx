@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from "vitest"
-import { render, cleanup, waitFor, fireEvent } from "@testing-library/react"
+import { render, cleanup, waitFor, fireEvent, act } from "@testing-library/react"
 
 // GrailsView — the packs-page grail grid (the Pack-audit B5 Suspense/
 // searchParams component). Drives the real fetch -> render path with a stubbed
@@ -277,5 +277,40 @@ describe("GrailsView", () => {
     })
     const { getByText } = render(<GrailsView collection="nba-top-shot" accent="#E03A2F" />)
     await waitFor(() => expect(getByText("SECONDARY")).toBeTruthy())
+  })
+})
+
+// 2026-11-14 (packs review): only the latest request may write, and a failed one clears the cards.
+describe("GrailsView — a late or failed request never leaves the wrong cards on screen", () => {
+  it("a failed reload clears the previous query's cards (they no longer answer it)", async () => {
+    let n = 0
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      if (++n === 1) return { ok: true, status: 200, json: async () => ({ rows: [grailRow()] }) }
+      throw new Error("network down")
+    }) as never)
+    const { getByText, queryByText } = render(<GrailsView collection="nba-top-shot" accent="#E03A2F" />)
+    await waitFor(() => expect(getByText("2026 Finals Pack")).toBeTruthy())
+    fireEvent.click(getByText(/Buyable only/))
+    await waitFor(() => expect(getByText(/network down/)).toBeTruthy())
+    expect(queryByText("2026 Finals Pack")).toBeNull()
+  })
+  it("an older response landing after a newer one is dropped", async () => {
+    let release: (v: unknown) => void = () => {}
+    const slow = new Promise((r) => { release = r })
+    let n = 0
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      n++
+      if (n === 1) return { ok: true, status: 200, json: async () => ({ rows: [] }) }
+      if (n === 2) { await slow; return { ok: true, status: 200, json: async () => ({ rows: [grailRow({ meta: { ...(grailRow() as any).meta, title: "Stale Pack" } })] }) } }
+      return { ok: true, status: 200, json: async () => ({ rows: [grailRow({ meta: { ...(grailRow() as any).meta, title: "Fresh Pack" } })] }) }
+    }) as never)
+    const { getByText, queryByText } = render(<GrailsView collection="nba-top-shot" accent="#E03A2F" />)
+    await waitFor(() => expect(n).toBe(1))
+    fireEvent.click(getByText(/Buyable only/))   // request 2 (slow)
+    fireEvent.click(getByText(/Buyable only/))   // request 3 (fast)
+    await waitFor(() => expect(getByText("Fresh Pack")).toBeTruthy())
+    await act(async () => { release(null); await new Promise((r) => setTimeout(r, 20)) })
+    expect(queryByText("Stale Pack")).toBeNull()
+    expect(getByText("Fresh Pack")).toBeTruthy()
   })
 })
