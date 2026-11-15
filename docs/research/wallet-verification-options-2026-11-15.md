@@ -12,7 +12,9 @@ Trevor: "let them have access until we can verify easily and effectively." Const
 
 Live controls 11-15: `atlas_verify_listing` matched a real open listing at its price and refused the same listing 1¢ off.
 
-## New candidate: favourite-team challenge (needs one live test)
+## Rejected: favourite-team challenge
+
+⛔ **Skipped (Trevor, 2026-11-15 2:30 PM PT): Top Shot locks the favourite team for the season, so a collector cannot switch it on request.** Kept below for the record — do not re-propose.
 
 Atlas `ProfileService/SearchUserProfiles {username}` (already used by the username lane) returns the profile's `favoriteTeamIds` and `profileImageUrl` alongside `flowAddress` — measured on jamesdillonbond 11-15: `["1610612757","1611661327"]` (Blazers + a WNBA team). Only the account owner can change those settings.
 
