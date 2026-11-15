@@ -1,0 +1,51 @@
+name: Candy validated ME sales import (one-time)
+
+# 2026-11-15 (Claude Code cloud; inbox 2026-11-15T0500Z step 6, known-issues #256/#257).
+# Parks the two validated Magic Eden sale files in scripts/candy-wiki-validated/ into
+# candy_sales_unresolved through candy_park_unresolved_sale (reason queued_collections_walk), so the
+# candy-sales-indexer drain stays the ONE writer of Candy `sales`. Dedupes exactly against Candy
+# `sales` and the queue first. apply=false (the default) is a dry run that only prints the counts.
+# workflow_dispatch only; safe to re-run (already-parked signatures are skipped).
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Park the remainder (false = dry run)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: candy-wiki-validated-import
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - name: Import (apply=${{ inputs.apply }})
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          APPLY: ${{ inputs.apply }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NEXT_PUBLIC_SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "::error::Supabase secrets not configured"; exit 2
+          fi
+          flag=""
+          if [ "$APPLY" = "true" ]; then flag="--apply"; fi
+          for f in scripts/candy-wiki-validated/candy-wiki-validated-me-sales.jsonl \
+                   scripts/candy-wiki-validated/candy-wiki-validated-me-sales-chain.jsonl; do
+            node scripts/candy-wiki-validated-import.mjs "$f" $flag
+          done
