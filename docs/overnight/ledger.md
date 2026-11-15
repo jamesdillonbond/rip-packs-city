@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~7:45 AM PT — #251 FMV catch-up check: 128 of 137 re-keyed editions re-priced after their move, 8 correctly unpriced (no sale in window), 1 held by the wash-trade filter; watch 0 / 0 (Claude Code cloud, scheduled, read-only)
+
+- No DB change. Read `topshot_parallel_sales_rekey_log` × `edition_fmv_current` × `fmv_recalc_sweep_order`; `90:3272::4` (sweep pos 1,220) keeps its 3:59 PM PT 11-14 $0.17 snapshot because its 3 in-window sales are a wash cluster. Watch cron is UTC (rows 5:27/11:27 AM·PM PT). Status line added to known-issues #251.
+- Revert: docs only — revert the commit.
+
 ### 2026-11-15 ~8:00 AM PT — /insights/panini-premiums read budget 8 s → 25 s: every hourly regeneration since 10-14 died at 8 s, so the page served "couldn't load" (Claude Code cloud, deep audit D2)
 
 - Vercel: `read exceeded 8000ms` is the top runtime-error group (first seen 10-14; 3 regenerations in the last 24 h, each failed); rendered DOM 3/3 "COULDN'T LOAD THE PANINI PREMIUMS" at 7:20 AM PT. Cause: `panini_serial_premiums` re-aggregates 90 days of `panini_sales` per call — pgss mean 4.5 s, max 18.7 s, ~11.9k disk reads/call (warm 1.5 s).
