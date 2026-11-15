@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-14 ~9:15 PM PT — #190 stage filled: 49,054 pre-2023 Top Shot buys staged for review; dune-proxy allowlist var set (Claude Code cloud)
+
+- Cloudflare dashboard (Chrome, Trevor entered the 2FA code): dune-proxy var `DUNE_ALLOWED_QUERY_IDS = 7899011,8027085,8030177,9129456`, deployed; mirrored in `workers/dune-proxy/wrangler.toml` (c4d3584).
+- Vercel cron run by hand once: `stage-topshot-acquisitions-dune` ok, 49,054 found / 49,054 staged in 31 s. Price agrees with every overlapping priced `moment_acquisitions` row (2,934 / 2,934). No write to `moment_acquisitions`.
+- Revert: delete the Cloudflare var (and the `[vars]` block); `TRUNCATE public.topshot_dune_acquisition_stage;`
+
 ### 2026-11-14 ~9:05 PM PT — #190 cost-basis backfill built: Dune query of saved wallets' pre-2023 buys → a REVIEW-only staging table; Dune budget re-pointed at Analyst (Claude Code cloud; Trevor: "I have the analyst plan … do #1")
 
 - `20261115045540`: new `public.topshot_dune_acquisition_stage` (service-role only, RLS on, no policies; nothing reads it, nothing copies it to `moment_acquisitions` until Trevor reviews) + `dune_budget_state` paused true → false, credit cap 2500 → 4000, cycle day 24 → 14 (no Dune lane is scheduled, so unpausing starts nothing).
