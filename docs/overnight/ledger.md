@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~10:30 AM PT — drop times past ~6 days name the date (a 12/31 close read as "Thu 8:59 PM PT"); missed-drop probe runs on every daily draft (Claude Code cloud, Trevor live)
+- `whenPT` in lib/insights/drops-board.ts, x-draft.mjs and x-image.mjs: > 6 days out adds M/D; > 14 days gives the date only (the WNBA Finals Trade Ticket Pack's official end has no time). 3 tests.
+- x-draft.mjs Mon–Sat: `officialSourcesNotOnCalendar` warnings (prefixed `drops:`), so a midweek drop guide is flagged the next morning.
+- Correction: this session's two previous headings read ~10:15 AM and ~11:00 AM PT; they shipped ~9:50 AM and ~10:10 AM PT (headings are append-only, so not edited).
+- Revert: find the commit by message "drops: far dates name the date" and `git revert` it. No DB change.
+
 ### 2026-11-15 ~11:00 AM PT — Friends-Giving Vol.2 waiting-room sale back on the calendar (through Fri 11/20 9 AM PT); Sunday X draft leads with new drops and probes Top Shot's blog + Pinnacle's releases page for missed drops (Claude Code cloud, Trevor live)
 - `DROP_CORRECTIONS` 8923: the draw did not sell out (112 of 734), and the official release page sells the rest in its waiting room to 11/20 9 AM PT — now `kind: capsule`, end 11/20 17:00 UTC (was ended at 11/13).
 - `scripts/social/x-draft.mjs`: Sunday post puts already-on-sale drops under "Still on sale:"; new `officialSourcesNotOnCalendar` warns on Top Shot "Drop Guide" posts (10 d) and Pinnacle releases purchasable/opening within 7 d that the calendar lacks (planted check: flags WNBA Finals, Friends-Giving, Mugs when the calendar is emptied). x-calendar.md documents both.
