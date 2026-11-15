@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~11:50 AM PT — #248 24-hour watch: effect holds (miss 0.15 %), cost split (1 h windows 5,907 / 12,324 / 6,979 reads/call; 2 h pooled 9,178 vs the 7,195 bar) — NOT reverted; deadlock filing 0709Z resolved (Claude Code cloud, scheduled)
+- Docs only, no DB change: #248 status line (+ `docs:issues-index`), inbox `2026-11-14T0709Z` RESOLVED + INDEX ✅ DONE (`atlas-market-events-prune` 26/26 ok, 0 deadlocks since the 11-14 7:33 AM PT fix).
+- Findings filed in #248: the residual misses are job 446 (`reconcile_saved_wallets_wmc_fmv`) writing the stale `edition_fmv_current` price back over the lane, which `rwfc_applied` then hides; the lane's 5 post-apply failures are all ticks overlapping job 617 at :33; 617 was still fixing ~7,040 rows/run before the 9:51 move to daily.
+- Revert: revert this commit (find by message "#248 24-hour watch"). The function revert, if a ≥ 3 h window confirms, is re-applying `20260830144724` (path in the `20261114171317` header).
+
 ### 2026-11-15 ~11:39 AM PT — Sunday drops image: balanced, centred rows (5 = 3+2, 7 = 4+3, 9 = 3+3+3) with the accent/glow/pill card style on every count (Trevor: "more visually appealing and balanced and symmetrical") (Claude Code cloud, Trevor live)
 - `scripts/social/x-image.mjs` `page()`: ROW_SPLIT replaces the hole-leaving grid; price stacked over the status pill on every card; detail line while ≤ 2 rows. Rendered 4/5/7/9 cards with no overflow warnings.
 - Revert: find the commit by message "x image: balanced drops rows" and `git revert` it. No DB change.
