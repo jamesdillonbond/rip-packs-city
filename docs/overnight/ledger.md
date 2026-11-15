@@ -16,7 +16,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 - `apply_topshot_arrival_provenance()` over the loaded wallet-scoped provenance: 52,328 inserted + 6,955 `unknown` rows updated, source `chain_arrival_dune_20261114`; every write archived in `flowty_archive.acq_chain_arrival_20261114` (arm `insert` / `update_unknown`). Matches the dry run exactly.
 - Saved-wallet Top Shot holdings with no cost row: 80,262 (9:20 PM) → **27,934**; unpriced `unknown` 10,235 → 3,280. What is left is classified: 24,832 transfers from another account (T), 1,308 no-withdraw (N), 685 self re-deposits (S), 130 non-USD storefront (X).
-- Revert: `DELETE FROM public.moment_acquisitions WHERE id IN (SELECT acq_id FROM flowty_archive.acq_chain_arrival_20261114 WHERE arm = 'insert' AND recorded_at > '2026-11-15 06:05+00')`; restore `update_unknown` rows from the archive's `prior` jsonb (column name per the archive table — check before running).
+- Revert: `DELETE FROM public.moment_acquisitions WHERE id IN (SELECT acq_id FROM flowty_archive.acq_chain_arrival_20261114 WHERE arm = 'insert' AND written_at > '2026-11-15 06:05+00');` then for `arm = 'update_unknown' AND written_at > '2026-11-15 06:05+00'` restore each row from the archive's `prior` jsonb (the full pre-update row).
 
 ### 2026-11-14 ~10:05 PM PT — #190 step 2 loaded: 494,427 arrival-provenance rows (wallet-scoped) in topshot_arrival_provenance; NOT yet applied — awaiting Trevor (Claude Code cloud)
 
