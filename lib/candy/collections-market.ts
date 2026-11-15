@@ -13,7 +13,9 @@
 //      exist, so stats_has_floor is recorded beside it: a 0 without a floor is "no listings
 //      OR unknown", never a confirmed empty market.
 //   3. Sales. The activity feed, newest first, back to the collection's own high-water mark
-//      (sales_high_water_at; a first walk looks back FIRST_WALK_LOOKBACK_MS). Each new sale is
+//      (sales_high_water_at; a first walk reads to the end of the feed, bounded by MAX_PAGES — a
+//      30-day first-walk window run inside the 10-12 → 11-06 market lock stranded ~5.5k pre-lock
+//      sales on 320 legacy symbols, 11-14). Each new sale is
 //      OFFERED to candy_sales_unresolved (candy_park_unresolved_sale, reason
 //      QUEUE_REASON); the sales indexer's drain prices it on its trade day's SOL rate,
 //      resolves its edition from the census and writes `sales` — one writer for Candy sales,
@@ -38,7 +40,6 @@ const ME_FETCH_TIMEOUT_MS = 15_000
 // ME rejects offset > 15,000 (HTTP 400, seen on the All-Star walk 11-08), so 20 pages of 500
 // is the deepest a walk can read in any case.
 const MAX_PAGES = 20
-const FIRST_WALK_LOOKBACK_MS = 30 * 86_400_000
 const SYMBOL_RETRY_MS = 7 * 86_400_000
 const SALE_TYPES = new Set(["buyNow", "buyNowFill", "acceptBid"])
 export const QUEUE_REASON = "queued_collections_walk"
@@ -182,7 +183,7 @@ export async function runCollectionsMarket(
 
       // 3. Sales feed back to the high-water mark.
       const hwMs = c.sales_high_water_at ? new Date(c.sales_high_water_at).getTime() : null
-      const floorMs = hwMs ?? now() - FIRST_WALK_LOOKBACK_MS
+      const floorMs = hwMs ?? 0 // no high-water mark: walk the whole feed (page cap reports `truncated`)
       let newestMs: number | null = null
       let reachedFloor = false
       let budgetStop = false

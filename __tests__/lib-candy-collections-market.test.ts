@@ -158,7 +158,9 @@ describe("runCollectionsMarket", () => {
     expect(state.meCalls).toEqual([])
   })
 
-  it("a first walk looks back 30 days, not to the start of the feed", async () => {
+  // Inverted 2026-11-14: a 30-day first walk run inside the Candy market lock (10-12 → 11-06)
+  // found almost nothing, set the cursor to "now" and stranded every pre-lock sale ME still served.
+  it("a first walk reads to the end of the feed, not just the last 30 days", async () => {
     state.queue = [col({ sales_high_water_at: null })]
     state.me["/collections/2022_leadoff_icons/stats"] = { floorPrice: 1, listedCount: 1 }
     state.me["/collections/2022_leadoff_icons/activities"] = [
@@ -166,6 +168,6 @@ describe("runCollectionsMarket", () => {
       { type: "buyNow", signature: "ANCIENT", tokenMint: "M2", blockTime: sec("2026-09-01T00:00:00Z"), price: 1 },
     ]
     await run()
-    expect(state.parks.map((p) => p.p_signature)).toEqual(["RECENT"])
+    expect(state.parks.map((p) => p.p_signature)).toEqual(["RECENT", "ANCIENT"])
   })
 })
