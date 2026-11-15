@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~2:42 PM PT — Pinnacle art for 55 renders Dapper's search does not list: the image route falls back to Pinnacle's own edition page (Claude Code cloud, autonomous)
+- Found from Vercel 404s: `/api/public/pinnacle-image/*` 695 in 24 h (our E2E smoke + crawlers) — every `flow-chain` (31) and `pinnacle-edition-page` (24) catalog render 404ed, so 843 held pins in ~30 wallets showed placeholder art since 11-08. Measured: `searchPinnacleEditions` and `searchPinnacleNft` return 0 for them (controls on `GEN-DPIN-SIMB-S0` return full `medias`); `disneypinnacle.com/edition/<edition_id>` answers 200 from datacenter egress and embeds `assets.disneypinnacle.com/render/<rid>/{front,main,front_cropped}.png?exp=…&sig=…` (~24 h).
+- `lib/pinnacle/edition-page-media.ts` takes a URL only when its path names THIS render (the page also embeds other pins); the route reads `edition_id` from `pinnacle_catalog` (digits only) and is unchanged when the search resolves. Cache = min(30 min, signature − 5 min). 14 tests (planted defect — unanchored path — reds 3).
+- Revert: `git revert` the commit titled "pinnacle-image: fall back to Pinnacle's edition page for renders the search does not list".
+
 ### 2026-11-15 ~2:45 PM PT — Verify modal watches for the listing on its own; public profile shows verified wallets (Claude Code cloud; Trevor: "keep going and exploring options")
 - Measured: 55 of 55 unverified saved Flow wallets hold an unlocked, priced Top Shot Moment, so the listing check reaches all of them — the gap is the button and a reason, not reach.
 - `VerifyByListingModal`: re-checks every 20 s while the tab is visible and the challenge is live (silent — acts only on a match, never writes a hint or error); copy says it verifies on its own. Button click unchanged.
