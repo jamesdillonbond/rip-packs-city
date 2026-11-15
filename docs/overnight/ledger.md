@@ -12,6 +12,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~1:05 AM PT — Overnight pass: GREEN, nothing shipped (Cowork cloud, VM clone)
+
+- Health GREEN. Security 4/4 `[]`; stalled `[]`; pgcron fails `[]`; sentinel ts_uuid 48h 0; wmc_null_edition_key `[]`; edition_integrity_flags 8. Trust breaches 2, both known transients: `candy_sales_stale_hours` 14.7 (indexer-unhealthy branch — legacy Magic Eden backfill parking Candy sales, `candy_sales_unresolved` 6,444/2,634 queued-walk, clears ~noon PT per Claude Code disposition) and `public_board_slow_count` 1 (chronic). Vercel prod `b5ade828` READY, no ERROR deploys, 24h errors all chronic/bounded. net._http_response 677 MB (healthy, down from 855 MB).
+- Post-ship watch CLEAN: atlas-market-events-prune 40P01 fix (`20261114153229`) holding (the 2 in-window prune deadlocks predate it); one transient `ts-sold-floor-clear` deadlock 23:45Z 11-14 fully recovered (25+ clean runs since).
+- Inbox drained: 4 daytime/Claude-Code items already ✅ resolved (candy-revival re-date `20261115041831`, board_mv false-breach `20261114221716`+`20261114225500`, alert_sub exempt `20261114192649`, rwfc `20261114171317`); fmv-activity-gap steps 1–4 done (`20261115045831`), step 5 verified healthy here.
+- QUEUED (not shipped): (1) drop parked `sets_summary_prev_20261114` — off-limits DROP, needs live approval (#255); (2) fmv-activity-gap steps 6 (ME file diff, Project-only + gated) & 7 (OpenSea Solana program id research, #256). Watches owed in the AM: candy stale clears ~noon; #248 rwfc §5 reads/call + miss re-sample at ≥24h.
+- No revert path (nothing shipped). Handoff: `docs/handoff-2026-11-15-overnight-pass.md`.
+
 ### 2026-11-14 ~11:25 PM PT — #190 step 3 hop query v2 running; hop cron UNSCHEDULED until its table is reshaped (Claude Code cloud)
 
 - Hop query v1 timed out at Dune's 30-minute cap (no credits). v2 lists the 2,034 senders and reads only their deposits of moments that reached saved wallets; the transfer side is joined in the DB from `topshot_arrival_provenance`.
