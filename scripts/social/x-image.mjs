@@ -68,11 +68,18 @@ const usd = (n) =>
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+// A weekday alone names THIS week's day; past ~6 days out add the date, past 14 days only the date
+// (lib/insights/drops-board.ts whenPT, 2026-11-15).
 function whenPT(iso) {
-  const f = new Intl.DateTimeFormat("en-US", { timeZone: TZ, weekday: "short", hour: "numeric", minute: "2-digit" })
-  const p = Object.fromEntries(f.formatToParts(new Date(iso)).map((x) => [x.type, x.value]))
+  const d = new Date(iso)
+  const f = new Intl.DateTimeFormat("en-US", { timeZone: TZ, weekday: "short", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" })
+  const p = Object.fromEntries(f.formatToParts(d).map((x) => [x.type, x.value]))
   const mins = p.minute === "00" ? "" : `:${p.minute}`
-  return `${DAY_NAMES.includes(p.weekday) ? p.weekday : p.weekday.slice(0, 3)} ${p.hour}${mins} ${p.dayPeriod} PT`
+  const day = DAY_NAMES.includes(p.weekday) ? p.weekday : p.weekday.slice(0, 3)
+  const ahead = d.getTime() - Date.now()
+  if (ahead > 14 * 86400000) return `${day} ${p.month}/${p.day}`
+  if (ahead > 6 * 86400000) return `${day} ${p.month}/${p.day} ${p.hour}${mins} ${p.dayPeriod} PT`
+  return `${day} ${p.hour}${mins} ${p.dayPeriod} PT`
 }
 function dayPT(d) {
   return new Intl.DateTimeFormat("en-US", { timeZone: TZ, month: "short", day: "numeric" }).format(d)

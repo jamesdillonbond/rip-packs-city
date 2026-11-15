@@ -54,11 +54,19 @@ export function orderDrops(drops: DropsBoardItem[]): { live: DropsBoardItem[]; e
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 /** "Wed 12:30 PM PT" — always Pacific, the house rule for every RPC time. */
-export function whenPT(iso: string): string {
-  const f = new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", weekday: "short", hour: "numeric", minute: "2-digit" })
-  const p = Object.fromEntries(f.formatToParts(new Date(iso)).map((x) => [x.type, x.value]))
+// A weekday alone names THIS week's day: "until Thu 8:59 PM PT" for a 12/31 close read as this
+// Thursday (2026-11-15, the WNBA Finals Trade Ticket Pack). Past ~6 days out the date is added, and
+// past 14 days only the date is given (an official "sale ends Dec 31" has no time to state).
+export function whenPT(iso: string, now: number = Date.now()): string {
+  const d = new Date(iso)
+  const f = new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", weekday: "short", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" })
+  const p = Object.fromEntries(f.formatToParts(d).map((x) => [x.type, x.value]))
   const mins = p.minute === "00" ? "" : `:${p.minute}`
-  return `${DAY_NAMES.includes(p.weekday) ? p.weekday : p.weekday.slice(0, 3)} ${p.hour}${mins} ${p.dayPeriod} PT`
+  const day = DAY_NAMES.includes(p.weekday) ? p.weekday : p.weekday.slice(0, 3)
+  const ahead = d.getTime() - now
+  if (ahead > 14 * 86_400_000) return `${day} ${p.month}/${p.day}`
+  if (ahead > 6 * 86_400_000) return `${day} ${p.month}/${p.day} ${p.hour}${mins} ${p.dayPeriod} PT`
+  return `${day} ${p.hour}${mins} ${p.dayPeriod} PT`
 }
 
 /** The status line, in each app's own words (Top Shot "pre-orders", Pinnacle "draw requests"). */

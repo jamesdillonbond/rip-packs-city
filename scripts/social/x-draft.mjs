@@ -446,12 +446,18 @@ async function weekNumbers() {
 
 // ---------- drops (Sunday: the week ahead; any day: a drop opening or an RSVP closing soon) ----------
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+// A weekday alone names THIS week's day; past ~6 days out add the date, past 14 days only the date
+// (lib/insights/drops-board.ts whenPT, 2026-11-15).
 function whenPT(iso) {
   const d = new Date(iso)
-  const f = new Intl.DateTimeFormat("en-US", { timeZone: TZ, weekday: "short", hour: "numeric", minute: "2-digit" })
+  const f = new Intl.DateTimeFormat("en-US", { timeZone: TZ, weekday: "short", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" })
   const p = Object.fromEntries(f.formatToParts(d).map((x) => [x.type, x.value]))
   const mins = p.minute === "00" ? "" : `:${p.minute}`
-  return `${DAY_NAMES.includes(p.weekday) ? p.weekday : p.weekday.slice(0, 3)} ${p.hour}${mins} ${p.dayPeriod} PT`
+  const day = DAY_NAMES.includes(p.weekday) ? p.weekday : p.weekday.slice(0, 3)
+  const ahead = d.getTime() - Date.now()
+  if (ahead > 14 * 86400000) return `${day} ${p.month}/${p.day}`
+  if (ahead > 6 * 86400000) return `${day} ${p.month}/${p.day} ${p.hour}${mins} ${p.dayPeriod} PT`
+  return `${day} ${p.hour}${mins} ${p.dayPeriod} PT`
 }
 const PACKS_PAGE = { nba_top_shot: "nba-top-shot", nfl_all_day: "nfl-all-day", laliga_golazos: "laliga-golazos", disney_pinnacle: "disney-pinnacle", panini_blockchain: "panini-blockchain" }
 const packsIndex = (x) => `${SITE}/${PACKS_PAGE[x.collection] ?? "nba-top-shot"}/packs`
@@ -718,4 +724,13 @@ for (const p of out.thread ?? []) {
 out.breaking = await breaking(now)
 // Sunday's post already lists every drop, so the reminders ride the other six days.
 out.drop_alerts = slot === "sun" ? [] : await dropAlerts(now)
+// The missed-drop probe runs daily too: a drop guide posted midweek (WNBA Finals, Thu 11-12) should not
+// wait for Sunday to be noticed.
+if (slot !== "sun") {
+  try {
+    for (const w of await officialSourcesNotOnCalendar(await calendar(), now)) out.warnings.push(`drops: ${w}`)
+  } catch (e) {
+    out.warnings.push(`drops: missed-drop probe failed (${e.message})`)
+  }
+}
 console.log(JSON.stringify(out, null, 2))

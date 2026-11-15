@@ -85,3 +85,12 @@ describe("applyDropCorrections — the official page overrides the pack book", (
     }
   })
 })
+
+// 2026-11-15: "On sale until Thu 8:59 PM PT" for a 12/31 close read as this Thursday.
+import { whenPT } from "@/lib/insights/drops-board"
+describe("whenPT names a far date, not just a weekday", () => {
+  const now = Date.parse("2026-11-15T18:00:00Z")
+  it("this week: weekday and time", () => expect(whenPT("2026-11-18T20:00:00Z", now)).toBe("Wed 12 PM PT"))
+  it("next week: weekday, date and time", () => expect(whenPT("2026-11-23T17:00:00Z", now)).toBe("Mon 11/23 9 AM PT"))
+  it("weeks out: the date only", () => expect(whenPT("2027-01-01T04:59:00Z", now)).toBe("Thu 12/31"))
+})
