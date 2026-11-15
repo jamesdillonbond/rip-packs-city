@@ -574,7 +574,11 @@ BEGIN
       -- (pack_pull moment rows carry $0). A Trade Ticket pack with no buy row is priced at
       -- tickets x the lowest listed Top Shot moment (rt.ticket_usd); a reward pack (Fast Break,
       -- challenge / quest / leaderboard / set-completion / chaser rewards) with no buy row is $0.
-      CASE WHEN r.bought_primary THEN COALESCE(rt.retail_usd, rt.ticket_usd)
+      -- v32 (2026-11-14, Trevor 6:56 PM PT): "Reward packs should count as $0 cost unless they were
+      -- purchased off secondary market" -- a reward pack Dapper DELIVERED (a primary drop row, no
+      -- price on chain) is $0 too, never its retail; only a secondary buy keeps the price paid.
+      CASE WHEN r.bought_primary AND rt.is_reward THEN 0::numeric
+           WHEN r.bought_primary THEN COALESCE(rt.retail_usd, rt.ticket_usd)
            WHEN NOT r.has_buy AND r.from_box IS NULL AND rt.ticket_usd IS NOT NULL THEN rt.ticket_usd
            WHEN NOT r.has_buy AND r.from_box IS NULL AND rt.is_reward THEN 0::numeric
            WHEN NOT r.has_buy AND inf.inferable THEN rt.retail_usd
@@ -586,6 +590,7 @@ BEGIN
         WHEN NOT r.has_buy AND rt.is_reward THEN 'reward'
         WHEN NOT r.has_buy AND inf.inferable AND rt.retail_usd IS NOT NULL THEN 'retail_inferred'
         WHEN NOT r.has_buy THEN NULL
+        WHEN r.bought_primary AND rt.is_reward THEN 'reward'
         WHEN r.bought_primary AND rt.retail_usd IS NOT NULL THEN 'retail'
         WHEN r.bought_primary AND rt.ticket_usd IS NOT NULL THEN 'trade_tickets'
         WHEN r.bought_primary THEN NULL
@@ -618,10 +623,14 @@ BEGIN
              END AS ticket_usd,
              coalesce(r.collection_id = v_ts
                       AND pd.title !~* 'trade ticket'
-                      -- v31: a reward-looking title never overrides a drop's known non-zero retail
-                      -- (Fast Break - Rookie Pack, retail $100, read $0 under v30)
-                      AND COALESCE(public.pack_retail_usd(pd.metadata->>'retail_price_usd'), 0) = 0
-                      AND pd.title ~* '(fast break|quest reward|challenge reward|leaderboard|snapshot|favorite team snap|set completion reward|chaser reward|reward pack)',
+                      -- v32: any title naming a Reward (Crafting / Trade-In / Set / Challenge / My Top Fan /
+                      -- Rookie Revelation / Squad Goals ... Reward: 643 dists the v30 list missed), a
+                      -- Chaser pack or an Earnable pack, besides the v30 names. A Fast Break Booster /
+                      -- Roster Booster is SOLD (Top Shot store, $5-$10), so it is never a reward.
+                      -- v32: no retail guard -- a reward pack with a non-zero drop retail is still $0 unless
+                      -- bought on the secondary market (Trevor 6:56 PM PT; withdraws 20261115032000's guard).
+                      AND pd.title ~* '(fast break|\mreward|chaser|earnable|leaderboard|snapshot|favorite team snap)'
+                      AND pd.title !~* 'booster',
                       false) AS is_reward
     ) rt
     -- A pack with no buy row we hold is priced at its drop's retail ONLY when it
@@ -1075,7 +1084,7 @@ BEGIN
     'coverage', jsonb_build_object(
       'onchain', 'pack_purchases: Top Shot + All Day, block-indexed from 2026-04; primary drops carry no price on chain',
       'opens', 'pack_rips (Top Shot, All Day) + golazos_pack_opens + pinnacle_pack_opens',
-      'retail', 'buy_price_source = retail_inferred: a pack with no buy row we hold, priced at its drop''s retail -- only when it was acquired inside the drop''s sale window (start_time - 1 day .. + 30 days; acquisition = Dapper''s index date while the index names this wallet, else -- All Day -- the pack''s mint in Dapper''s index (primary_minted_at) when no one else sold it on the marketplace before this wallet''s sale / open, else bounded by the sale / open) and the marketplace history covers that window (every Top Shot PackNFT; All Day drops from 2022-12-16, dates from Dapper''s distribution record), or -- Top Shot -- Dapper minted it straight into this wallet (minted_to_wallet_at; pack_nft_mints, Flow PackNFT.Minted from the 2025-12-29 spork floor). An old drop acquired long after its sale otherwise stays NULL. A transfer inside the window would read the same. A Trade Ticket pack is priced in tickets: buy_price_source = trade_tickets prices one with no buy row (or a primary buy) at its ticket count x the lowest listed Top Shot moment (ts_listings, live). buy_price_source = reward: a Top Shot reward pack (Fast Break, challenge / quest / leaderboard / set-completion / chaser rewards) with no buy row and no non-zero drop retail is $0. A pack''s cost lives on the pack only -- the moments it yields carry $0 in moment P/L. An All Day distribution Dapper types REWARD is $0 (reward); any other All Day price of 0 is unknown. Retail is in dollars (Top Shot UFix64 values normalised; All Day from allday_pack_supply, 0 = unknown)',
+      'retail', 'buy_price_source = retail_inferred: a pack with no buy row we hold, priced at its drop''s retail -- only when it was acquired inside the drop''s sale window (start_time - 1 day .. + 30 days; acquisition = Dapper''s index date while the index names this wallet, else -- All Day -- the pack''s mint in Dapper''s index (primary_minted_at) when no one else sold it on the marketplace before this wallet''s sale / open, else bounded by the sale / open) and the marketplace history covers that window (every Top Shot PackNFT; All Day drops from 2022-12-16, dates from Dapper''s distribution record), or -- Top Shot -- Dapper minted it straight into this wallet (minted_to_wallet_at; pack_nft_mints, Flow PackNFT.Minted from the 2025-12-29 spork floor). An old drop acquired long after its sale otherwise stays NULL. A transfer inside the window would read the same. A Trade Ticket pack is priced in tickets: buy_price_source = trade_tickets prices one with no buy row (or a primary buy) at its ticket count x the lowest listed Top Shot moment (ts_listings, live). buy_price_source = reward: a Top Shot reward pack (any title naming a Reward, a Chaser or Earnable pack, Fast Break, leaderboard / snapshot) is $0 unless it was bought on the secondary market -- with no buy row, or delivered by Dapper as a primary drop. A pack''s cost lives on the pack only -- the moments it yields carry $0 in moment P/L. An All Day distribution Dapper types REWARD is $0 (reward); any other All Day price of 0 is unknown. Retail is in dollars (Top Shot UFix64 values normalised; All Day from allday_pack_supply, 0 = unknown)',
       'reconstructed', 'wallet_reconstructed_rips: Top Shot packs opened with NO pack NFT (custodial packs, 2021 on), rebuilt from the wallet''s pack-pull moment deliveries (a gap > 3 s starts a new reveal; 114 of 115 bursts overlapping a known pack matched its moment list exactly). rip_source = reconstructed; no distribution, no price paid; covers deliveries seeded into moment_acquisitions (through 2026-03)',
       'pulls', 'pack_open_pull_values: every pack this wallet opened, priced from the moments Dapper''s searchPackNft.nfts says it yielded (current FMV, whole-pack: NULL unless every moment is priced; pulls_priced / pulls_total say how close; pulls_inferred of them are Top Shot pulls no record names, named from the moment ids minted beside them -- both neighbours the same edition within 50 ids, 99 % right when measured). Refreshed by the wallet-pack-pulls lane; pull_value_source = rip_record where only the rip row''s value is held',
       'box', 'buy_price_source = box: a pack that came out of a box or case this wallet opened (pack_box_contents). It was not bought, so it has no buy price and no P/L of its own; its cost is part of the box''s price',
@@ -1359,7 +1368,8 @@ BEGIN
   PERFORM _assert_eq(row_->>'dist_source', 'peer_sale', 'P4 dist provenance');
   PERFORM _assert_eq(row_->>'pack_name', 'Quest Reward Pack', 'P4 named');
   PERFORM _assert_eq(row_->>'buy_usd', '0.00', 'P4 retail $0 is a KNOWN zero (reward pack), kept');
-  PERFORM _assert_eq(row_->>'buy_price_source', 'retail', 'P4 retail provenance');
+  -- v32 (2026-11-14): a reward pack Dapper delivered as a primary drop is labelled reward (still $0), not retail.
+  PERFORM _assert_eq(row_->>'buy_price_source', 'reward', 'P4 a delivered reward pack -> reward provenance');
   SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P1';
   PERFORM _assert_eq(row_->>'lowest_ask_usd', '22.50', 'D1 floor ask on the page row');
   PERFORM _assert_eq(row_->>'pack_ev_usd', '31.20', 'D1 EV on the page row');
@@ -1643,8 +1653,10 @@ BEGIN
   SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P57';
   PERFORM _assert(row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' IS NULL, 'P57 a Trade Ticket pack inside its window, no listing -> NULL, never $10');
   SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P58';
-  PERFORM _assert(row_->>'buy_usd' = '100.00' AND row_->>'buy_price_source' = 'retail_inferred',
-                  'P58 (v31) a reward-looking title with a $100 drop retail -> its retail, never "$0 (reward)"');
+  -- v32 (2026-11-14, Trevor 6:56 PM PT) INVERTS v31: a reward pack is $0 unless bought on the secondary market,
+  -- whatever its drop retail says.
+  PERFORM _assert(row_->>'buy_usd' = '0.00' AND row_->>'buy_price_source' = 'reward',
+                  'P58 (v32) a Fast Break Rookie Pack ($100 drop retail) with no buy row -> $0 reward, never its retail');
 END $$;
 
 -- v30 (2026-11-14, Trevor): a Trade Ticket = the lowest listed Top Shot moment. A $0 row is not an ask.
@@ -1665,6 +1677,38 @@ BEGIN
   PERFORM _assert(row_->>'buy_usd' = '9.00' AND row_->>'buy_price_source' = 'retail_inferred', 'P50b retail pack unchanged by the ticket value');
 END $$;
 DELETE FROM public.ts_listings;
+
+-- ── v32 cases (2026-11-14, Trevor 6:56 PM PT): reward packs are $0 unless bought on the secondary market ──
+INSERT INTO public.pack_distributions VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'DRV31', 'Rookie Revelation: Earnable Chance Hit Reward', NULL, '{"retail_price_usd":"20","start_time":"2026-04-20T00:00:00Z"}', 1, 1),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'DRV32', 'Ausar Thompson Ultimate Chaser Pack', NULL, '{"retail_price_usd":"30","start_time":"2026-04-20T00:00:00Z"}', 1, 1),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'DRV33', 'Fast Break - Rookie Pack', NULL, '{"retail_price_usd":"100","start_time":"2026-04-20T00:00:00Z"}', 1, 1),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'DRV34', 'Fast Break Booster Pack', NULL, '{"retail_price_usd":"5","start_time":"2026-04-20T00:00:00Z"}', 1, 1);
+INSERT INTO public.pack_nft_identity VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'PRV31', 'DRV31', 'Sealed', '0xwallet31', now(), '2026-04-24 11:15:01.118+00'),  -- "... Reward" title, minted in
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'PRV32', 'DRV32', 'Sealed', '0xwallet31', now(), '2026-04-24 11:15:01.118+00');  -- Chaser pack, minted in
+INSERT INTO public.pack_nft_mints (collection_id, pack_nft_id, dist_id, minted_at, block_height, tx_id) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'PRV31', 'DRV31', '2026-04-24 11:15:01.118+00', 149445000, 'tx-mint'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'PRV32', 'DRV32', '2026-04-24 11:15:01.118+00', 149445000, 'tx-mint');
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sealed_at, is_primary_drop, event_kind, pack_dist_id) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'PRV33', '0xwallet31', '0x0b2a3299cc857e29', NULL, '2026-04-21', true, 'primary_withdraw', 'DRV33'),   -- reward delivered by Dapper
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'PRV34', '0xwallet31', '0xsomecollector', 12, '2026-04-22', false, 'secondary_sale', 'DRV33'),       -- bought on the marketplace
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'PRV35', '0xwallet31', '0x0b2a3299cc857e29', NULL, '2026-04-21', true, 'primary_withdraw', 'DRV34');  -- a SOLD Fast Break Booster
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xwallet31', NULL, NULL, 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'PRV31';
+  PERFORM _assert(row_->>'buy_usd' = '0.00' AND row_->>'buy_price_source' = 'reward', 'PRV31 a "... Reward" pack (retail $20) minted in -> $0 reward, never retail_inferred');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'PRV32';
+  PERFORM _assert(row_->>'buy_usd' = '0.00' AND row_->>'buy_price_source' = 'reward', 'PRV32 a Chaser pack minted in -> $0 reward');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'PRV33';
+  PERFORM _assert(row_->>'buy_usd' = '0.00' AND row_->>'buy_price_source' = 'reward', 'PRV33 a reward pack Dapper delivered (primary drop, retail $100) -> $0 reward, never $100');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'PRV34';
+  PERFORM _assert(row_->>'buy_usd' = '12.00' AND row_->>'buy_price_source' IS DISTINCT FROM 'reward', 'PRV34 a reward pack bought on the secondary market keeps its $12, never $0');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'PRV35';
+  PERFORM _assert(row_->>'buy_usd' = '5.00' AND row_->>'buy_price_source' = 'retail', 'PRV35 a Fast Break Booster bought from Dapper is a purchase, not a reward -> its $5 retail');
+END $$;
 
 -- ── v12 (2026-09-26): All Day packs judged against Dapper's drop windows; REWARD = $0 ──
 INSERT INTO public.pack_distributions VALUES

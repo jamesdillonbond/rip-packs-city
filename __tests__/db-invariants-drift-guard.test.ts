@@ -998,7 +998,7 @@ const PINS = [
     // v30 (2026-11-14, Trevor): a pack carries its own cost -- Trade Ticket packs at tickets x the lowest listed Top Shot
     // moment (trade_tickets), Top Shot reward packs with no buy row $0 (reward); the moments it yields carry $0.
     // v31 (2026-11-14): a reward-looking title never overrides a drop's known non-zero retail (Fast Break - Rookie Pack $100).
-    migration: "supabase/migrations/20261115032000_audit_20261114_pack_history_reward_never_overrides_retail.sql",
+    migration: "supabase/migrations/20261115032843_audit_20261114_pack_history_reward_packs_zero_unless_secondary.sql",
   },
   {
     // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,
