@@ -308,6 +308,21 @@ describe("POST /api/profile/verify-challenge — guard + fallback + error branch
     expect(body.reason).toBe("no_listable_target")
   })
 
+  // 2026-11-15: the price is capped at $999, so a Moment worth more than ~$99.90 would
+  // be listed under 10× its value — buyable. Such a target is never picked.
+  it("never picks a target worth more than $99.90 (no_safe_target)", async () => {
+    state.user = { id: "u1" }
+    state.ownedIds = ["m1", "m2"]
+    const pricey = { moment_id: "m1", edition_key: "3:45", serial_number: 5, player_name: "Dame", set_name: "Base", image_url: "http://img", fmv_usd: 150 }
+    install({
+      saved_wallets: { data: [{ wallet_addr: "0xabc" }], error: null },
+      "rpc:pick_verification_target": { data: [pricey], error: null },
+    })
+    const body = await (await POST(postReq({ wallet_addr: "0xABC" }))).json()
+    expect(body.reason).toBe("no_safe_target")
+    expect(body.challenge).toBeNull()
+  })
+
   // 2026-09-06: public-api.nbatopshot.com is decommissioned. Every candidate
   // check threw and the route told the collector their Moments "look locked or
   // already listed" — and pointed at "owner attestation", a feature that does

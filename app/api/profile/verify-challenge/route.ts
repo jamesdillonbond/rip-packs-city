@@ -16,6 +16,7 @@ import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { fetchMomentListingState, topShotMomentUrl } from "@/lib/verify-wallet-gql";
 import { fetchOnChainIds } from "@/lib/chains/flow/wallet-backfill-helpers";
+import { isSafeChallengeTarget } from "@/lib/verify-challenge-target";
 
 // 60 min (was 30): users list from a phone and are slow; TetrisLblock's
 // 2026-06-09 challenge expired unresolved inside the 30-min window.
@@ -268,6 +269,18 @@ export async function POST(req: NextRequest) {
       });
     }
   }
+
+  const safeCandidates = liveCandidates.filter((c) => isSafeChallengeTarget(c.fmv_usd));
+  if (!safeCandidates.length) {
+    return NextResponse.json({
+      challenge: null,
+      unavailable: true,
+      reason: "no_safe_target",
+      message:
+        "Every Moment in this wallet is worth too much to list safely for verification (the check would ask for a price close to its value). Your wallet still loads in full — nothing on RPC requires verification.",
+    });
+  }
+  liveCandidates = safeCandidates;
 
   let target: TargetCandidate | null = null;
   let checkErrors = 0;
