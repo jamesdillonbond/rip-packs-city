@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~10:00 AM PT — Candy: the two Luis Garcias get two URLs — Nationals row renamed "Luis García Jr." (Claude Code cloud; Trevor: "Yes fix all of this")
+
+- `20261115180005_audit_20261115_candy_luis_garcia_jr_two_players_two_urls`: players `462c23be…` (Nationals, 3 editions) "Luis García" → "Luis García Jr." (MLB.com's spelling; slug `luis-garcia-jr`); the Astros row keeps `luis-garcia`. Both had unaccented to one slug, so one player's page was unreachable. Edition labels untouched; linkers only fill NULL player_id, so the 12 editions stay put. Residual risk (a future "Luis García" card name-matching the Astros row) filed as known-issues #258 with its watch query (reads 0). File md5 = prod.
+- #248 final read scheduled into this session for 11-16 5:15 AM PT (`trig_01UmRESwR46DnGReEpp2fuAY`).
+- Revert: `UPDATE public.players SET name = 'Luis García' WHERE id = '462c23be-48d9-4685-a01f-0b9e80510ba7';`
+
 ### 2026-11-15 ~9:51 AM PT — #248 exit: rpc-wmc-fmv-stuck-resync (job 617) moved to DAILY after the quiet-window cost check passed (Claude Code cloud)
 
 - `20261115175130_audit_20261115_wmc_fmv_stuck_resync_daily`: `33 */2 * * *` → `33 12 * * *` (4:33 AM PT; same jobid, cron_heavy, active), `pipeline_cadence_watchlist.wmc-fmv-stuck-resync` 183/366 → 1560/3000 min. Quiet window 8:49:02 → 9:50:06 AM PT: service_role 5,907 disk reads/call (bar 7,195), cron_heavy 53 (bar 74,159); effect check (0.11 % miss) passed at 8:45 AM PT. File md5 = prod. ⓘ Its header says "~9:55 AM PT"; it was applied ~9:51 — left as-is because migration-parity hashes the applied text.
