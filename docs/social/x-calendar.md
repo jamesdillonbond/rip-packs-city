@@ -137,6 +137,8 @@ https://www.rippackscity.com/insights/drops
 
 **X caches a link's preview card for about 7 days** from the first time the URL is shared, and there is no longer a way to force a refresh. The drops page's card is the live week, so a URL X first saw last week can show last week's card. Check the preview in the composer; if it is stale, post the link with a query string (`?v=2`, `?w=1115`…), which X treats as a new URL.
 
+**Trade Ticket Packs sell out within minutes** (Trevor, 11-15), so post them by their opening time only ("drops Wed 12:30 PM PT"), never as "on sale" afterwards; a hand-entered one closes an hour after it opens.
+
 **New first** (Trevor, 11-15: "Feels like we covered a lot of these last week"): drops that open this week (or opened in the last 36 h) lead; drops that were already on sale go under a "Still on sale:" line, still each named in full. **Missed-drop probe:** the script reads blog.nbatopshot.com ("Drop Guide" posts in the last 10 days) and disneypinnacle.com/releases (purchasable now or opening within 7 days) and warns on anything the calendar lacks — 11-15 it would have caught the 2026 WNBA Finals drop and Friends-Giving Vol.2's waiting-room sale. A Pinnacle draw that did not sell out keeps selling in its waiting room until the page's stated end; only a sold-out draw's waiting-room end is a leftover.
 
 Dates are today to 7 days out, M/D in PT. One line per drop, priciest first within each group: the collection's emoji (🏀 Top Shot, 🏈 All Day, ⚽ Golazos, 📌 Pinnacle, ⚾ Candy MLB; Panini takes its pack's sport — 🎸 entertainment, 🏀/🏈/⚽/⚾ by sport, 🃏 otherwise), then the handle, title, retail price, and when, in PT. The script also emits `thread_fallback` in case long posts are ever unavailable.

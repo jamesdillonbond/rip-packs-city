@@ -112,7 +112,11 @@ export const MANUAL_DROPS: ManualDrop[] = [
     slots: 4,
     retail_usd: null,
     start_time: "2026-11-18T20:30:00Z", // Wed 3:30 PM ET
-    end_time: "2027-01-01T04:59:00Z", // Thu 12/31 (ET), or sold out
+    // Official: "until Thursday, December 31 or until sold out". Trade Ticket Packs sell out within
+    // minutes of opening (Trevor, 11-15: "always sell out in a few minutes unless there's technical
+    // issues"), and RPC cannot see a sell-out, so the entry closes an hour after it opens rather than
+    // reading "on sale" for six weeks.
+    end_time: "2026-11-18T21:30:00Z",
     detail_href: "/insights/drops",
     feed_match: "Finals Trade Ticket",
     source: "blog.nbatopshot.com 2026 WNBA Finals Drop Guide",
