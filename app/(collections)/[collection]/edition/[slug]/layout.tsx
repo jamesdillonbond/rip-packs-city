@@ -21,7 +21,7 @@ import { notFound, permanentRedirect } from "next/navigation"
 import { getCollectionByUrlSlug, isPinnacleUrlSlug } from "@/lib/collection-slug"
 import { entityResolves, decodeSlugOrNull } from "@/lib/entity-detail-gate"
 import { lookupTopShotFossilRedirect } from "@/lib/edition/fossil-redirect"
-import { lookupCandyEditionAliasRedirect, lookupTopShotEditionAliasRedirect } from "@/lib/edition/alias-redirect"
+import { lookupCandyEditionAliasRedirect, lookupCandyOneOfOneSuccessorRedirect, lookupTopShotEditionAliasRedirect } from "@/lib/edition/alias-redirect"
 
 interface LayoutProps {
   children: React.ReactNode
@@ -73,7 +73,15 @@ export default async function EditionSegmentLayout({ children, params }: LayoutP
     if (canonical) permanentRedirect(`/${collection}/edition/${encodeURIComponent(canonical)}`)
   }
 
-  if (!(await entityResolves("edition", coll.id, slug))) notFound()
+  if (!(await entityResolves("edition", coll.id, slug))) {
+    // 2026-11-15: a retired shared Candy 1-of-1 key 308s to its ONE per-mint successor
+    // (lib/edition/alias-redirect.ts). Miss path only; anything ambiguous still 404s.
+    if (collection === "candy-mlb") {
+      const successor = await lookupCandyOneOfOneSuccessorRedirect(slug)
+      if (successor) permanentRedirect(`/${collection}/edition/${encodeURIComponent(successor)}`)
+    }
+    notFound()
+  }
 
   return <>{children}</>
 }

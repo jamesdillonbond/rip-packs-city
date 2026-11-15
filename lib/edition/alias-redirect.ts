@@ -99,3 +99,61 @@ async function lookupCandyEditionAliasRedirectUncached(decodedSlug: string): Pro
 }
 
 export const lookupCandyEditionAliasRedirect = cache(lookupCandyEditionAliasRedirectUncached)
+
+// ── Candy 1-of-1 re-key successor (2026-11-15) ─────────────────────────────
+// The 11-09 census keys every Candy 1-of-1 card as its OWN edition: the shared key
+// `…:paul-skenes-legendary` became `…:paul-skenes-legendary-H8YmcBdNXaNZ` (a per-mint
+// suffix), and the emptied shared row was deleted. Crawlers still ask for the old URL
+// (bingbot ~4×/day each, ~130 Candy edition 404s a day on 11-15). When EXACTLY ONE
+// per-mint successor exists, the old key named that one card, so a 308 is the same
+// subject. Two or more successors (a shared key that split) would be a guess: no
+// redirect, the page 404s as before. Called ONLY on the miss path (the layout's
+// entityResolves=false branch), so a live edition never pays for this read.
+// Same honesty rules as the alias helpers: an error or a hang is null (404 as before).
+
+const SUCCESSOR_SUFFIX_RE = /^[A-Za-z0-9]{10,14}$/
+const CANDY_MLB_COLLECTION_ID = "209ade70-32c5-4470-bc7c-4793d660f713"
+
+/** `%`, `_` and `\` are LIKE metacharacters; a Candy key may contain `_`. */
+function escapeLike(s: string): string {
+  return s.replace(/[\\%_]/g, (c) => `\\${c}`)
+}
+
+async function lookupCandyOneOfOneSuccessorRedirectUncached(decodedSlug: string): Promise<string | null> {
+  if (!isCandyEditionKeyShape(decodedSlug)) return null
+  try {
+    const { data, error } = await withBoardBudget(
+      Promise.resolve(
+        supabaseAdmin
+          .from("editions")
+          .select("external_id")
+          .eq("collection_id", CANDY_MLB_COLLECTION_ID)
+          .like("external_id", `${escapeLike(decodedSlug)}-%`)
+          .limit(50),
+      ),
+      "alias-redirect",
+      ALIAS_REDIRECT_TIMEOUT_MS,
+      "edition/",
+    )
+    if (error || !Array.isArray(data)) return null
+    // A capped read cannot prove "exactly one": refuse rather than guess.
+    if (data.length >= 50) return null
+    const prefix = `${decodedSlug}-`
+    const successors = (data as Array<{ external_id?: unknown }>)
+      .map((r) => r?.external_id)
+      .filter(
+        (id): id is string =>
+          typeof id === "string" &&
+          id.startsWith(prefix) &&
+          // The prefix already passed isCandyEditionKeyShape; the per-mint suffix is MIXED
+          // case (H8YmcBdNXaNZ), which that lowercase-only shape would wrongly refuse.
+          SUCCESSOR_SUFFIX_RE.test(id.slice(prefix.length)) &&
+          id.length <= 120,
+      )
+    return successors.length === 1 ? successors[0] : null
+  } catch {
+    return null
+  }
+}
+
+export const lookupCandyOneOfOneSuccessorRedirect = cache(lookupCandyOneOfOneSuccessorRedirectUncached)
