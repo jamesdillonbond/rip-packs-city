@@ -125,6 +125,17 @@ export function buildPackCalendar(
     const start = Date.parse(r.start_time)
     if (!Number.isFinite(start) || new Date(start).getUTCFullYear() < 2015) continue
     const end = r.end_time ? Date.parse(r.end_time) : NaN
+    const retail = r.retail_usd == null ? null : Number(r.retail_usd)
+    const priced = retail != null && Number.isFinite(retail) && retail > 0
+    // NOT A PUBLIC DROP (2026-11-15). A REWARD dist (challenge / leaderboard reward, Top Shot This
+    // pack) is earned, never sold: the 11-15 draft listed Metallic Silver Week 1 & 2 Reward and the
+    // Luka Top Shot This pack as "on sale now" a week after they went out. Trade-in drops come from
+    // MANUAL_DROPS with their official window instead.
+    if ((r.dist_type ?? "").toUpperCase() === "REWARD") continue
+    // A dist with NO price and NO close that has already started has no window and no price we can
+    // state (Rookie Debut Trade Ticket Pack: 72% opened by 11-15, still "on sale now"); it may be listed
+    // only while upcoming, when its start is the one true fact.
+    if (!priced && !Number.isFinite(end) && start <= now.getTime()) continue
     // An earlier start counts only with a real closing time still ahead and within OPEN_CLOSE_DAYS:
     // a dist with no end (reward packs, standing offers) or a year-long sale (Pinnacle's
     // "Star Wars Halloween Vol.1" closes 2027-10) would otherwise read as "open this week" every week.
@@ -133,7 +144,6 @@ export function buildPackCalendar(
     if (!inWindow && !(stillOpen && start >= now.getTime() - 60 * DAY_MS)) continue
     const status: DropStatus =
       start > now.getTime() ? "upcoming" : Number.isFinite(end) && end <= now.getTime() ? "ended" : "open"
-    const retail = r.retail_usd == null ? null : Number(r.retail_usd)
     out.push({
       collection: COLLECTION[r.product],
       dist_id: r.dist_id,
@@ -142,7 +152,7 @@ export function buildPackCalendar(
       pack_type: r.pack_type,
       kind: (r.dist_type ?? "").toUpperCase() === "RSVP" ? "rsvp" : "sale",
       slots: r.slots,
-      retail_usd: retail != null && Number.isFinite(retail) && retail > 0 ? retail : null,
+      retail_usd: priced ? retail : null,
       start_time: new Date(start).toISOString(),
       end_time: Number.isFinite(end) ? new Date(end).toISOString() : null,
       status,

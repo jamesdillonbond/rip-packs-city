@@ -510,7 +510,7 @@ const BRAND = {
   candy_mlb: { emoji: "⚾", handle: "@CandyDigital" },
 }
 // Panini lists a sport per pack; its line takes that sport's emoji.
-const PANINI_SPORT_EMOJI = { BASKETBALL: "🏀", "WOMENS BASKETBALL": "🏀", FOOTBALL: "🏈", SOCCER: "⚽", BASEBALL: "⚾", HOCKEY: "🏒", RACING: "🏁", ENTERTAINMENT: "🎸" }
+const PANINI_SPORT_EMOJI = { BASKETBALL: "🏀", "WOMENS BASKETBALL": "🏀", FOOTBALL: "🏈", SOCCER: "⚽", "WOMENS SOCCER": "⚽", BASEBALL: "⚾", HOCKEY: "🏒", RACING: "🏁", ENTERTAINMENT: "🎸" }
 function reportLine(x) {
   const b = BRAND[x.collection] ?? { emoji: "📦", handle: x.collection }
   const emoji = x.collection === "panini_blockchain" ? PANINI_SPORT_EMOJI[(x.sport ?? "").toUpperCase()] ?? b.emoji : b.emoji

@@ -62,6 +62,28 @@ describe("buildPackCalendar", () => {
     expect(drops).toEqual([])
   })
 
+  // 2026-11-15: the Sunday draft posted four Top Shot packs as "on sale now" that nobody could buy.
+  it("never lists a REWARD dist (earned, not sold), even inside the week", () => {
+    const drops = buildPackCalendar(
+      [
+        row({ dist_id: "8915", title: "Metallic Silver: Week 1 Reward Pack", dist_type: "REWARD", retail_usd: null, start_time: "2026-11-07T17:00:00Z", end_time: null }),
+        row({ dist_id: "8924", title: "Luka Dončić Top Shot This Pack", dist_type: "REWARD", retail_usd: null, start_time: "2026-11-09T17:00:00Z", end_time: null }),
+      ],
+      NOW,
+    )
+    expect(drops).toEqual([])
+  })
+
+  it("drops a started, unpriced dist with no close (no window to state) but keeps it while upcoming", () => {
+    const started = buildPackCalendar([row({ dist_id: "8918", title: "Rookie Debut Trade Ticket Pack", dist_type: null, retail_usd: null, start_time: "2026-11-07T20:30:00Z", end_time: null })], NOW)
+    expect(started).toEqual([])
+    const upcoming = buildPackCalendar([row({ dist_id: "8918", title: "Rookie Debut Trade Ticket Pack", dist_type: null, retail_usd: null, start_time: "2026-11-11T20:30:00Z", end_time: null })], NOW)
+    expect(upcoming.map((d) => d.status)).toEqual(["upcoming"])
+    // a PRICED drop with no close is still listed once started
+    const priced = buildPackCalendar([row({ dist_id: "9", dist_type: null, retail_usd: "25", start_time: "2026-11-07T20:30:00Z", end_time: null })], NOW)
+    expect(priced.map((d) => [d.dist_id, d.status])).toEqual([["9", "open"]])
+  })
+
   it("keeps an earlier drop whose window is still open", () => {
     const drops = buildPackCalendar([row({ dist_id: "7", start_time: "2026-10-25T00:00:00Z", end_time: "2026-11-12T00:00:00Z" })], NOW)
     expect(drops.map((d) => d.status)).toEqual(["open"])
