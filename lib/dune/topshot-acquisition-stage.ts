@@ -73,20 +73,20 @@ export function mapProvenanceStageRow(
 }
 
 // ── Transfer-hop lane (#190 step 3) ──────────────────────────────────────────────────────────
-// Private temp query 9129613: for each moment that arrived in a saved wallet by a plain transfer
-// (no settlement, not a Dapper pack delivery), how the SENDER had acquired it — the sender's own
-// latest arrival before the transfer, classified MP/LC/OC/P/N/S/T like the provenance lane.
+// Private temp query 9129613 (v2): for every account that transferred a moment into a saved wallet
+// (2,034 senders, listed in the query), each sender's LATEST arrival of each moment that ever
+// reached a saved wallet, classified MP/LC/OC/P/N/S/T like the provenance lane. The database joins
+// it to the transfer (sender = topshot_arrival_provenance.from_addr, hop height < transfer height).
 // REVIEW data: whether a sender's price may stand as the recipient's cost (own account vs gift or
 // trade) is Trevor's decision, so nothing here or downstream writes moment_acquisitions.
 export const HOP_QUERY_ID = "9129613"
 
 export type HopRow = {
-  wallet: string
-  nft_id: string
   sender: string
-  transfer_date: string | null
-  hop_tx: string
+  nft_id: string
+  hop_height: number | null
   hop_date: string | null
+  hop_tx: string
   hop_kind: string
   hop_price: number | null
   hop_from: string | null
@@ -97,20 +97,19 @@ export type HopRow = {
 const HOP_KINDS = new Set(["MP", "LC", "OC", "P", "N", "S", "T"])
 
 export function mapHopRow(raw: Record<string, unknown>, executionId: string): HopRow | null {
-  const wallet = padFlowAddress(raw.w)
   const sender = padFlowAddress(raw.f)
   const nft = raw.id == null ? "" : String(raw.id)
   const tx = raw.htx == null ? "" : String(raw.htx).toLowerCase()
   const kind = raw.hk == null ? "" : String(raw.hk)
-  if (!wallet || !sender || !/^\d+$/.test(nft) || !/^[0-9a-f]{64}$/.test(tx) || !HOP_KINDS.has(kind)) return null
+  if (!sender || !/^\d+$/.test(nft) || !/^[0-9a-f]{64}$/.test(tx) || !HOP_KINDS.has(kind)) return null
   const p = raw.hp == null || raw.hp === "" ? null : Number(raw.hp)
+  const h = raw.hh == null ? null : Number(raw.hh)
   return {
-    wallet,
-    nft_id: nft,
     sender,
-    transfer_date: raw.tdt == null ? null : String(raw.tdt).slice(0, 10),
-    hop_tx: tx,
+    nft_id: nft,
+    hop_height: h != null && Number.isFinite(h) ? h : null,
     hop_date: raw.hdt == null ? null : String(raw.hdt).slice(0, 10),
+    hop_tx: tx,
     hop_kind: kind,
     hop_price: p != null && Number.isFinite(p) ? p : null,
     hop_from: padFlowAddress(raw.hf),

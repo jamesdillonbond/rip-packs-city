@@ -11,10 +11,6 @@
       "schedule": "52 * * * *"
     },
     {
-      "path": "/api/cron/stage-topshot-acquisitions-dune?lane=hop",
-      "schedule": "57 * * * *"
-    },
-    {
       "path": "/api/send-digest",
       "schedule": "23 16 * * 1"
     },

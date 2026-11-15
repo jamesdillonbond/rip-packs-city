@@ -59,7 +59,7 @@ const LANES = {
   hop: {
     queryId: HOP_QUERY_ID,
     table: "topshot_transfer_hop_stage",
-    onConflict: "wallet,nft_id",
+    onConflict: "sender,nft_id",
     map: mapHopRow,
   },
 } as const

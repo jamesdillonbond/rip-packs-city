@@ -95,24 +95,23 @@ describe("stage route lanes", () => {
   })
 })
 
-describe("mapHopRow (#190 transfer hop)", () => {
+describe("mapHopRow (#190 transfer hop v2)", () => {
   const raw = {
     id: "16791499",
-    w: "0x97168ff5c33d01f",
-    f: "0xb7c1ef3c66096640",
-    tdt: "2022-03-04",
-    htx: "B".repeat(64),
+    f: "0x97168ff5c33d01f", // Dune strips the leading zero
+    hh: 12345678,
     hdt: "2022-03-04",
+    htx: "B".repeat(64),
     hk: "MP",
     hp: "12.5",
     hf: "0x1234",
   }
-  it("pads both addresses and parses the sender's price", async () => {
+  it("pads the sender and the hop source, and parses the sender's price", async () => {
     const { mapHopRow } = await import("@/lib/dune/topshot-acquisition-stage")
     const r = mapHopRow(raw, "E1")
-    expect(r?.wallet).toBe("0x097168ff5c33d01f")
-    expect(r?.sender).toBe("0xb7c1ef3c66096640")
+    expect(r?.sender).toBe("0x097168ff5c33d01f")
     expect(r?.hop_tx).toBe("b".repeat(64))
+    expect(r?.hop_height).toBe(12345678)
     expect(r?.hop_price).toBe(12.5)
     expect(r?.hop_from).toBe("0x0000000000001234")
   })
