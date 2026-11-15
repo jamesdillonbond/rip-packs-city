@@ -5,7 +5,7 @@ import { render, cleanup, fireEvent, waitFor, screen } from "@testing-library/re
 // Drive FastBreakClient's optimize + uses sections by mocking useWarmCache,
 // matched by key PREFIX (fb-optimize / fb-uses), so we don't have to reconstruct
 // the exact wallet:run:date key.
-const warmByPrefix: Record<string, { data: unknown; loading: boolean; error: unknown }> = {}
+const warmByPrefix: Record<string, { data: unknown; loading: boolean; error: unknown; dataKey?: string }> = {}
 function pick(key: string) {
   const p = Object.keys(warmByPrefix).find((pref) => key.startsWith(pref))
   return p ? warmByPrefix[p] : { data: null, loading: false, error: null }
@@ -13,16 +13,18 @@ function pick(key: string) {
 vi.mock("@/lib/warmup/WarmupContext", () => ({
   useWarmCache: (key: string) => {
     const e = pick(key)
-    return { data: e.data, loading: e.loading, error: e.error, refresh: vi.fn() }
+    // Re-pinned 2026-11-14: the real hook reports the key its data answers (default: this key);
+    // a test may set `dataKey` to model data left over from a PREVIOUS run.
+    return { data: e.data, dataKey: e.dataKey ?? key, loading: e.loading, error: e.error, refresh: vi.fn() }
   },
 }))
 
 import FastBreakClient from "@/components/fast-break/FastBreakClient"
 
-function setWarm(map: Record<string, { data?: unknown; loading?: boolean; error?: unknown }>) {
+function setWarm(map: Record<string, { data?: unknown; loading?: boolean; error?: unknown; dataKey?: string }>) {
   for (const k of Object.keys(warmByPrefix)) delete warmByPrefix[k]
   for (const [k, v] of Object.entries(map)) {
-    warmByPrefix[k] = { data: v.data ?? null, loading: v.loading ?? false, error: v.error ?? null }
+    warmByPrefix[k] = { data: v.data ?? null, loading: v.loading ?? false, error: v.error ?? null, dataKey: v.dataKey }
   }
 }
 
@@ -104,6 +106,26 @@ describe("FastBreakClient", () => {
     const { container } = render(<FastBreakClient {...props} />)
     expect(container.textContent).toContain("Anthony Edwards")
     expect(container.textContent).toContain("Rudy Gobert")
+  })
+
+  // 2026-11-14: the hook keeps the previous key's data while a new run loads. That lineup used to
+  // render under the new run — and "Save This Lineup" POSTed it under the NEW runId.
+  it("a lineup fetched for a PREVIOUS run is neither shown nor saveable under the current run", () => {
+    setWarm({
+      "fb-optimize": {
+        dataKey: "fb-optimize:0xabc:run0:2026-11-13",
+        data: {
+          walletAddr: props.walletAddr, runId: "run0", gameDate: props.gameDate,
+          lineupSize: 2, eligibleCount: 5, consideredCount: 10,
+          lineup: { players: [optimizePlayer], captainNbaPlayerId: "p1", projectedScore: 50, serialSum: 3 },
+          alternates: [], missingPlayers: [],
+        },
+      },
+      "fb-uses": { data: { runId: props.runId, uses: [] } },
+    })
+    const { container } = render(<FastBreakClient {...props} />)
+    expect(container.textContent).not.toContain("Anthony Edwards")
+    expect(container.textContent).not.toContain("Save This Lineup")
   })
 
   it("renders a message when the optimizer returns no lineup", () => {

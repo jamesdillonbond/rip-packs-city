@@ -9,6 +9,7 @@
 // of "Saved!" when a re-save changes nothing.
 
 import { useCallback, useMemo, useState } from "react"
+import { answerFor } from "@/lib/warmup/answer-for"
 import { useWarmCache } from "@/lib/warmup/WarmupContext"
 import {
   TIER_TOKEN,
@@ -272,12 +273,18 @@ export default function FastBreakClient({
     { ttlMs: 30_000 },
   )
 
+  // 2026-11-14: the hook keeps the PREVIOUS key's data while a new wallet / run / date loads (and
+  // after it fails). Read only data fetched for the CURRENT key — otherwise the board showed the
+  // previous run's lineup, and Save POSTed that lineup under the NEW run.
+  const optimizeData = useMemo(() => answerFor(optimize.data, optimize.dataKey, optimizeKey), [optimize.data, optimize.dataKey, optimizeKey])
+  const usesData = useMemo(() => answerFor(uses.data, uses.dataKey, usesKey), [uses.data, uses.dataKey, usesKey])
+
   const save = useCallback(async () => {
-    if (!optimize.data?.lineup) return
+    if (!optimizeData?.lineup) return
     setSaving(true)
     setToast(null)
     try {
-      const lineup = optimize.data.lineup
+      const lineup = optimizeData.lineup
       const players = lineup.players.map(p => ({
         nbaPlayerId: p.nbaPlayerId,
         momentId: p.bestMomentId,
@@ -322,14 +329,14 @@ export default function FastBreakClient({
     } finally {
       setSaving(false)
     }
-  }, [optimize.data, walletAddr, runId, gameDate, hasCaptain, optimisticUses, uses])
+  }, [optimizeData, walletAddr, runId, gameDate, hasCaptain, optimisticUses, uses])
 
-  const lineup = optimize.data?.lineup ?? null
-  const missing = optimize.data?.missingPlayers ?? []
+  const lineup = optimizeData?.lineup ?? null
+  const missing = optimizeData?.missingPlayers ?? []
 
   const useRows = useMemo<UseRow[]>(
-    () => applyOptimisticUses(uses.data?.uses ?? [], optimisticUses),
-    [uses.data, optimisticUses],
+    () => applyOptimisticUses(usesData?.uses ?? [], optimisticUses),
+    [usesData, optimisticUses],
   )
 
   return (
@@ -338,7 +345,7 @@ export default function FastBreakClient({
       <div style={HERO_STYLE}>
         <div style={SECTION_HEADER}>Recommended Lineup · {runName}</div>
 
-        {optimize.loading && !optimize.data ? (
+        {optimize.loading && !optimizeData ? (
           <LineupSkeleton lineupSize={lineupSize} />
         ) : optimize.error ? (
           <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-danger-text)" }}>
@@ -346,11 +353,11 @@ export default function FastBreakClient({
           </div>
         ) : !lineup ? (
           <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-secondary)", lineHeight: 1.6 }}>
-            {optimize.data?.dataStatus === "slate_unavailable" || optimize.data?.dataStatus === "projections_unavailable"
+            {optimizeData?.dataStatus === "slate_unavailable" || optimizeData?.dataStatus === "projections_unavailable"
               ? "Our NBA schedule and projections feed is unavailable right now, so we can't build tonight's lineup. This is our data being down, not your roster."
-              : optimize.data?.dataStatus === "no_games"
+              : optimizeData?.dataStatus === "no_games"
                 ? "Tonight isn't one of this Fast Break run's game days, so there's no lineup to build."
-                : optimize.data?.consideredCount === 0
+                : optimizeData?.consideredCount === 0
                   ? "None of your eligible Top Shot players are on tonight's slate. Check back closer to tipoff."
                   : "Couldn't build a lineup with your current eligibility. Try adding a Common-tier player to your wallet."}
           </div>
@@ -477,7 +484,7 @@ export default function FastBreakClient({
                   Serial sum: <strong style={{ color: "var(--rpc-text-primary)" }}>{lineup.serialSum}</strong>. When two lineup combinations project within 5% of each other, lower serial sum wins the tiebreaker — Top Shot&apos;s Run leaderboard ranks ties by lowest combined #serial.
                 </div>
                 <div>
-                  Considered {optimize.data?.consideredCount ?? 0} of your {optimize.data?.eligibleCount ?? 0} eligible players (the rest aren&apos;t on tonight&apos;s slate or are listed OUT).
+                  Considered {optimizeData?.consideredCount ?? 0} of your {optimizeData?.eligibleCount ?? 0} eligible players (the rest aren&apos;t on tonight&apos;s slate or are listed OUT).
                 </div>
               </div>
             )}
@@ -547,9 +554,9 @@ export default function FastBreakClient({
             Refresh
           </button>
         </div>
-        {uses.loading && !uses.data ? (
+        {uses.loading && !usesData ? (
           <UsesSkeleton />
-        ) : uses.error != null && !uses.data && useRows.length === 0 ? (
+        ) : uses.error != null && !usesData && useRows.length === 0 ? (
           // 2026-11-02: a failed read used to say "No lineups saved yet" and invite a re-save.
           <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-danger-text)", lineHeight: 1.6 }}>
             Your run progress couldn&apos;t be loaded — that is our side; saved lineups are not lost.{" "}
