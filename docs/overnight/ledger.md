@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~1:50 PM PT — X calendar: 11-15 posts archived, supply-breakdown template, Sunday rules, 2/2 link auto-?w=MMDD (Claude Code cloud, Trevor live)
+- `docs/social/posts/2026-11-15/` (both posted images + text + rejected drafts), `scripts/social/x-supply-breakdown.mjs`, `docs/social/supply-breakdown.sql`, `docs/social/x-calendar.md` (Sunday rules, caching note, layout, quote-post template), `scripts/social/x-draft.mjs` reply link `?w=<MMDD>`.
+- Revert: find the commit by message "x calendar: archive 11-15 posts" and `git revert` it. No DB change.
+
 ### 2026-11-15 ~2:00 PM PT — R151 claim-then-release: a Trade Block wallet proof takes the handle back from an unproven first saver (Claude Code cloud; Trevor: "Keep going")
 - `claimHandleForProvenWallet` now, on `taken`, calls `releaseHandleFromUnprovenHolder`: clears the handle ONLY from an account that saved this same wallet, never verified it and never proved it; then claims. Any failed read releases nothing. Closes the first-saver squat left by the 1:35 PM relaxation. Register note added (deep-audit-register.md).
 - Tests: 5 new cases; planted defect (drop the "holder saved this wallet" check) reds 1. tsc, ci:guards, lint:ratchet (150 = baseline), vitest related (124) green. Canary (wallets saved by >1 user) = 0, so nothing to release today.
