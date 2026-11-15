@@ -4,6 +4,7 @@ import {
   isWalletProvenForUser,
   isWalletOwnedByUser,
   claimHandleForProvenWallet,
+  releaseHandleFromUnprovenHolder,
 } from "@/lib/profile/claim-username"
 
 // Deep audit 2026-11-15 A-1 (Trevor: "Proof required"). A pasted Top Shot username
@@ -31,7 +32,27 @@ function fakeDb(rows: Rows, errs: Errs = {}, writes: any[] = []) {
         upsert: async (row: any) => {
           writes.push({ table, row })
           if (errs[`${table}:write`]) return { error: errs[`${table}:write`] }
+          // the real UNIQUE(username): a handle another user holds raises 23505
+          if (table === "profile_bio" && row?.username) {
+            const holder = (rows.profile_bio ?? []).find((r) => r.username === row.username && r.user_id !== row.user_id)
+            if (holder) return { error: { code: "23505" } }
+            const mine = (rows.profile_bio ?? []).find((r) => r.user_id === row.user_id)
+            if (mine) mine.username = row.username
+            else (rows.profile_bio ??= []).push({ user_id: row.user_id, username: row.username })
+          }
           return { error: null }
+        },
+        update: (patch: any) => {
+          const upd: any = {
+            eq: (c: string, v: any) => { filters.push(["eq", c, v]); return upd },
+            then: (resolve: any) => {
+              writes.push({ table, update: patch })
+              if (errs[`${table}:write`]) return resolve({ error: errs[`${table}:write`] })
+              for (const r of match()) Object.assign(r, patch)
+              return resolve({ error: null })
+            },
+          }
+          return upd
         },
         then: (resolve: any) => {
           if (errs[table]) return resolve({ data: null, error: errs[table] })
@@ -164,5 +185,51 @@ describe("route wiring", () => {
     expect(route).toMatch(/claimUsernameFromTopShot\([^)]*\{\s*proven\s*\}\)/)
     const tb = readFileSync("app/api/trade-block/route.ts", "utf8")
     expect(tb).toMatch(/saveProvenAccount\([\s\S]{0,400}claimHandleForProvenWallet\(/)
+  })
+})
+
+// 2026-11-15 claim-then-release: the first saver holds the handle until a proof
+// arrives; the prover then takes it back, but never from an unrelated holder.
+describe("claimHandleForProvenWallet releases a handle held by an UNPROVEN first saver", () => {
+  const base = () => ({
+    wallet_usernames: [{ wallet_addr: W, username: "Rigged" }],
+    profile_bio: [{ user_id: "squatter", username: "rigged" }],
+    saved_wallets: [{ id: 1, user_id: "squatter", wallet_addr: W, verified_at: null }],
+    trade_block_wallets: [] as any[],
+    trade_room_sides: [] as any[],
+  })
+  it("the prover gets the handle and the squatter loses it", async () => {
+    const rows = base()
+    const out = await claimHandleForProvenWallet(fakeDb(rows), "owner", W)
+    expect(out).toEqual({ claimed: true, handle: "rigged" })
+    expect(rows.profile_bio.find((r) => r.user_id === "squatter")?.username).toBeNull()
+    expect(rows.profile_bio.find((r) => r.user_id === "owner")?.username).toBe("rigged")
+  })
+  it("never touches a holder who did NOT save this wallet (an unrelated, hand-picked handle)", async () => {
+    const rows = { ...base(), saved_wallets: [] }
+    const out = await claimHandleForProvenWallet(fakeDb(rows), "owner", W)
+    expect(out.claimed).toBe(false)
+    expect(rows.profile_bio[0].username).toBe("rigged")
+  })
+  it("never touches a holder who VERIFIED or PROVED this wallet", async () => {
+    const v = { ...base(), saved_wallets: [{ id: 1, user_id: "squatter", wallet_addr: W, verified_at: "2026-06-15" }] }
+    expect((await claimHandleForProvenWallet(fakeDb(v), "owner", W)).claimed).toBe(false)
+    const p = { ...base(), trade_block_wallets: [{ user_id: "squatter", source: W, proven_at: "x" }] }
+    expect((await claimHandleForProvenWallet(fakeDb(p), "owner", W)).claimed).toBe(false)
+    expect(v.profile_bio[0].username).toBe("rigged")
+    expect(p.profile_bio[0].username).toBe("rigged")
+  })
+  it("releases NOTHING when any read fails", async () => {
+    const rows = base()
+    const ok = await releaseHandleFromUnprovenHolder(fakeDb(rows, { trade_room_sides: { message: "boom" } }), "owner", W, "rigged")
+    expect(ok).toBe(false)
+    expect(rows.profile_bio[0].username).toBe("rigged")
+  })
+  it("does not release when the prover already has a handle of their own", async () => {
+    const rows = base()
+    rows.profile_bio.push({ user_id: "owner", username: "mine" })
+    const out = await claimHandleForProvenWallet(fakeDb(rows), "owner", W)
+    expect(out).toEqual({ claimed: false, reason: "already_set", handle: "mine" })
+    expect(rows.profile_bio[0].username).toBe("rigged")
   })
 })

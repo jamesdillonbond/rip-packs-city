@@ -195,8 +195,58 @@ export async function claimHandleForProvenWallet(
     if (error) return { claimed: false, reason: "error" }
     const name = (Array.isArray(data) ? data[0] : null)?.username
     if (typeof name !== "string" || !name.trim()) return { claimed: false, reason: "unusable" }
+    const first = await claimUsernameFromTopShot(db, userId, name.trim())
+    if (first.claimed || first.reason !== "taken" || !first.handle) return first
+    // 2026-11-15 claim-then-release: handles go to the FIRST SAVER until verification
+    // is easy (isWalletOwnedByUser), so a proof must be able to take a handle back
+    // from an account that only got it by saving this wallet unproven.
+    if (!(await releaseHandleFromUnprovenHolder(db, userId, addr, first.handle))) return first
     return await claimUsernameFromTopShot(db, userId, name.trim())
   } catch {
     return { claimed: false, reason: "error" }
+  }
+}
+
+/**
+ * Clear `handle` from the account holding it, ONLY when that account got it from
+ * this wallet without proof: it saved this wallet, never verified it, and never
+ * proved it. A handle chosen by hand for an unrelated wallet is never touched.
+ * Every read must SUCCEED to release — any error is `false` (nothing changes).
+ */
+export async function releaseHandleFromUnprovenHolder(
+  db: { from: (t: string) => any },
+  proverId: string,
+  walletAddress: string,
+  handle: string,
+): Promise<boolean> {
+  const addr = (walletAddress ?? "").trim().toLowerCase()
+  if (!/^0x[0-9a-f]{16}$/.test(addr) || !handle) return false
+  try {
+    const { data: holderRow, error: hErr } = await db
+      .from("profile_bio")
+      .select("user_id")
+      .eq("username", handle)
+      .maybeSingle()
+    if (hErr) return false
+    const holder = holderRow?.user_id
+    if (typeof holder !== "string" || holder === proverId) return false
+    const [saved, block, rooms] = await Promise.all([
+      db.from("saved_wallets").select("id, verified_at").eq("user_id", holder).in("wallet_addr", [addr, addr.slice(2)]),
+      db.from("trade_block_wallets").select("user_id").eq("user_id", holder).eq("source", addr).not("proven_at", "is", null).limit(1),
+      db.from("trade_room_sides").select("user_id").eq("user_id", holder).eq("source", addr).not("proven_at", "is", null).limit(1),
+    ])
+    if (saved?.error || block?.error || rooms?.error) return false
+    const savedRows = Array.isArray(saved?.data) ? saved.data : []
+    if (savedRows.length === 0) return false // the handle did not come from this wallet
+    if (savedRows.some((r: { verified_at?: unknown }) => r?.verified_at != null)) return false
+    if ((Array.isArray(block?.data) && block.data.length > 0) || (Array.isArray(rooms?.data) && rooms.data.length > 0)) return false
+    const { error: uErr } = await db
+      .from("profile_bio")
+      .update({ username: null, updated_at: new Date().toISOString() })
+      .eq("user_id", holder)
+      .eq("username", handle)
+    return !uErr
+  } catch {
+    return false
   }
 }
