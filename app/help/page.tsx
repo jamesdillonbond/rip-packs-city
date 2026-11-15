@@ -92,6 +92,19 @@ const FAQS: Faq[] = [
     ),
   },
   {
+    q: "How do I verify my wallet?",
+    a: (
+      <>
+        On your <Link href="/dashboard" style={LINK}>dashboard</Link>, press <strong>Verify</strong> on the wallet&apos;s
+        card. RPC picks one of your cheap Top Shot Moments and a price about 100× its value (at least $10, with odd cents),
+        so nobody will buy it. List that Moment on Top Shot at exactly that price, keep the window open, and it verifies
+        on its own; then delist. Verifying puts ✓ VERIFIED on your public profile and gives you your Top Shot username
+        as your handle if it is free. Nothing requires it — every saved wallet already loads in full. It works for Flow
+        wallets that hold a Top Shot Moment; there is no verification for a Solana (Candy MLB) wallet yet.
+      </>
+    ),
+  },
+  {
     q: "How is FMV calculated?",
     a: (
       <>
