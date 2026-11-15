@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~11:00 AM PT — Friends-Giving Vol.2 waiting-room sale back on the calendar (through Fri 11/20 9 AM PT); Sunday X draft leads with new drops and probes Top Shot's blog + Pinnacle's releases page for missed drops (Claude Code cloud, Trevor live)
+- `DROP_CORRECTIONS` 8923: the draw did not sell out (112 of 734), and the official release page sells the rest in its waiting room to 11/20 9 AM PT — now `kind: capsule`, end 11/20 17:00 UTC (was ended at 11/13).
+- `scripts/social/x-draft.mjs`: Sunday post puts already-on-sale drops under "Still on sale:"; new `officialSourcesNotOnCalendar` warns on Top Shot "Drop Guide" posts (10 d) and Pinnacle releases purchasable/opening within 7 d that the calendar lacks (planted check: flags WNBA Finals, Friends-Giving, Mugs when the calendar is emptied). x-calendar.md documents both.
+- Revert: find the commit by message "drops: Friends-Giving waiting room" and `git revert` it. No DB change.
+
 ### 2026-11-15 ~10:03 AM PT — Candy: dashless `/player/luis-garcia-jr` 308s to the real `luis-garcia-jr-` page (Claude Code cloud)
 
 - `20261115180236_audit_20261115_candy_luis_garcia_jr_dashless_alias`: one `player_name_aliases` row. "Luis García Jr." slugs to `luis-garcia-jr-` (period → dash), so the dashless URL rendered the header with 0 editions. Read back live: 308 → `luis-garcia-jr-`, which renders 3 editions; `/candy-mlb/player/luis-garcia` (Astros) renders 9. File md5 = prod.
