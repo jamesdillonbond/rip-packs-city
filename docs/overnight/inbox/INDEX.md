@@ -34,7 +34,7 @@ failure it documents.
 
 ## 2026-11-15 — 1 filing
 
-- [Candy secondary trading is reviving past the 11-10 "silent_since" disposition — 9 sales since baseline (7 in 48 h), revival counter 9/10](2026-11-15T0410Z-daytime-monitor-candy-revival-overtaking-silent-since-1110-disposition.md)
+- [Candy secondary trading is reviving past the 11-10 "silent_since" disposition — 9 sales since baseline (7 in 48 h), revival counter 9/10](2026-11-15T0410Z-daytime-monitor-candy-revival-overtaking-silent-since-1110-disposition.md) — ✅ RESOLVED 2026-11-14 8:20 PM PT (Claude Code): still a trickle (0 of 9 in a 2026 set) → re-dated silent_since_2026_11_14 (20261115041831), arm 0/10; the stale-hours BREACH is 1,175 historical sales queued by a first full-feed walk, draining 300/tick
 
 ## 2026-11-14 — 7 filings
 - [Daytime monitor (22:11Z) — `board_mv_refresh_stale_hours` false BREACH (2502.8h) from TODAYS OWN ship (migration `20261114212002`): the perfect-mint MV refresh was repointed to a wrapper fn whose name lacks the `mv_` literal, so `board_mv_refresh_max_stale_hours()` ILIKE-join misses → falls back to watchlisted_at. Board is FRESH (43 rows, refreshed 22:00Z; cadence-watchlist now covers it). LOW blast radius, HIGH cry-wolf cost. Night-pass fix: teach the join the refresh-fn spelling, or inline the MV name as a comment in job 236. Otherwise GREEN: security x4 clean, stalled/pg_cron/sentinel clean, 13/13 dashboards OK, prod READY, no spell](2026-11-14T2211Z-daytime-monitor-board-mv-refresh-false-breach-perfect-mint.md)
