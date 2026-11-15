@@ -12,6 +12,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-14 ~5:45 PM PT — Sets tab, Top Shot and Candy: a never-scanned wallet is refused instead of "0% of every set"; a non-Flow address on Top Shot says so; complete Candy walks now leave a clean-walk stamp (Claude Code cloud)
+- Follow-up to the Sets review (open items from the previous entry). Every new test was red on the old code; fixtures were re-pinned to an indexed-wallet premise. Preflight green.
+- **Top Shot, `/api/sets`:** a wallet that owns nothing now goes through the shared `notScannedResponse`: never walked → 409 `wallet_not_indexed`, failed check → 5xx. The client now renders a typed `reason` (`set_tracking_unavailable` for a non-Flow address) as "Set tracking isn't available here" with the route's message, instead of "No NBA Top Shot moments found in this wallet".
+- **Candy, `/api/candy-set-progress`:** a key holding no Candy cards needs a `wmc_clean_walks` stamp (verbatim base58) for "0 of 100" to be an answer; otherwise 409, and a failed read 5xx.
+  - `lib/candy/refresh-wallet.ts` now writes that stamp after a complete walk whose retirement landed. Before this, Candy wrote no stamp anywhere, so `wmc_clean_walks` had 0 non-hex rows. The result gains `clean_walk_stamp_error`; a failed stamp is reported, never thrown.
+  - Transitional cost: a Candy wallet walked as empty before today reads "not scanned" until its next walk; wallets holding cards are unaffected.
+- Revert: `git revert` the commit titled "fix(sets): Top Shot and Candy refuse a never-scanned wallet; Top Shot's not-a-Flow-address reason is rendered; Candy walks stamp wmc_clean_walks".
+
 ### 2026-11-14 ~5:20 PM PT — Top Shot parallel sales now stay on their parallel edition for every writer: a write-time trigger, follow-up v2 and a 6-hourly watch (#251) (Claude Code cloud)
 - **Why:** the 2-hourly follow-up cleared the backlog but couldn't hold it at zero. `promote_unmapped_sales()` (jobid 474) never read the chain map, and the follow-up's windows keyed on resolution date and `sold_at`, not ingestion (5 unmoved + 7 unqueued at 4:20 PM PT).
 - **Migration `20261115011709`:** BEFORE INSERT trigger `sales_topshot_follow_subedition_trg` on `sales`; `topshot_parallel_sales_followup()` v2 (queues on sold OR ingested, re-keys any sale ingested in the window); `check_topshot_parallel_sales_on_base(7)` on pg_cron `rpc-topshot-parallel-on-base-watch` (`27 1,7,13,19 * * *`) + 2 watchlist rows. Its tail backlog run re-keyed 4 sales and queued 50 (ok, `extra.version = 2`).
