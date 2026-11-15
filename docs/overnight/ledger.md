@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~12:29 PM PT — jobid 810 re-prices drifted rips from $50 (was $100) at 1.5× (Cowork; Trevor: "Set the floor to $50")
+- `20261115202855_audit_20261115_reprice_drifted_rips_floor_50`: `cron.alter_job(810)` → `reprice_drifted_high_value_rips(50, 1.5)`; guard on the old command + function md5 `79809e4b…`, post-check on the new command. Measured 11-14: one `(50, 1.5)` run = 14,151 candidates in 33.2 s, 2,050 re-priced. First scheduled run Mon 11-16 4:26 AM PT — read its `pipeline_runs` duration (~⅓ of the ~120 s ceiling expected).
+- Revert: `SELECT cron.alter_job(810, command := 'SELECT public.reprice_drifted_high_value_rips(100, 1.5);');`
+
 ### 2026-11-15 ~11:50 AM PT — #248 24-hour watch: effect holds (miss 0.15 %), cost split (1 h windows 5,907 / 12,324 / 6,979 reads/call; 2 h pooled 9,178 vs the 7,195 bar) — NOT reverted; deadlock filing 0709Z resolved (Claude Code cloud, scheduled)
 - Docs only, no DB change: #248 status line (+ `docs:issues-index`), inbox `2026-11-14T0709Z` RESOLVED + INDEX ✅ DONE (`atlas-market-events-prune` 26/26 ok, 0 deadlocks since the 11-14 7:33 AM PT fix).
 - Findings filed in #248: the residual misses are job 446 (`reconcile_saved_wallets_wmc_fmv`) writing the stale `edition_fmv_current` price back over the lane, which `rwfc_applied` then hides; the lane's 5 post-apply failures are all ticks overlapping job 617 at :33; 617 was still fixing ~7,040 rows/run before the 9:51 move to daily.
