@@ -459,34 +459,23 @@ export async function PATCH(req: NextRequest) {
   }
 
   let { walletAddr } = body;
-  const {
-    collectionId,
-    cachedFmv,
-    cachedMomentCount,
-    cachedTopTier,
-    cachedChange24h,
-    cachedBadges,
-    cachedRpcScore,
-  } = body;
+  const { collectionId } = body;
 
   if (!walletAddr || typeof walletAddr !== "string") {
     return NextResponse.json({ error: "walletAddr is required" }, { status: 400 });
   }
   walletAddr = normalizeAddress(walletAddr);
 
+  // ⛔ 2026-11-14 (account review): this PATCH wrote cached_fmv_usd / cached_moment_count /
+  // cached_top_tier / change / badges / rpc_score STRAIGHT FROM THE REQUEST BODY — and the public
+  // profile publishes them as PORTFOLIO FMV and MOMENTS, so a user could set their own public
+  // portfolio to any number (it also nulled every field the caller left out, and stamped one figure
+  // on every collection's row). Those figures belong to their server writers
+  // (reconcile_all_saved_wallet_stats / aggregate_saved_wallet_stats / the wallet backfill). The
+  // client can only say it viewed the wallet; any cached_* it sends is ignored.
   const updatePayload: Record<string, unknown> = {
-    cached_fmv_usd: cachedFmv ?? null,
-    cached_moment_count: cachedMomentCount ?? null,
-    cached_top_tier: cachedTopTier ?? null,
-    cached_change_24h: cachedChange24h ?? null,
-    cached_badges: cachedBadges ?? null,
-    cache_updated_at: new Date().toISOString(),
     last_viewed: new Date().toISOString(),
   };
-
-  if (typeof cachedRpcScore === "number" && cachedRpcScore > 0) {
-    updatePayload.cached_rpc_score = cachedRpcScore;
-  }
 
   try {
     let query = supabase

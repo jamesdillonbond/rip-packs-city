@@ -27,6 +27,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getSupabaseServer } from "@/lib/auth/supabase-server";
 import { apiErrorResponse } from "@/lib/api-error";
+import { ilikeLiteral } from "@/lib/db/ilike-literal";
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -49,7 +50,7 @@ async function deriveIdentity(): Promise<{
     const { data: row } = await supabase
       .from("allow_list")
       .select("username, wallet_addr")
-      .ilike("email", email)
+      .ilike("email", ilikeLiteral(email))
       .limit(1)
       .maybeSingle();
     return {

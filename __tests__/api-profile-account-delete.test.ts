@@ -119,6 +119,18 @@ describe("DELETE /api/profile/account — order and honesty", () => {
     expect(body.ok).toBeUndefined()
   })
 
+  // 2026-11-14 (account review): a TIMED-OUT purge may still commit after we answer (an abandoned
+  // query keeps running), so it must not read as "nothing was removed".
+  it("a purge that times out says the outcome is UNKNOWN, and deleteUser does not run", async () => {
+    st.rpc = { data: null, error: { message: "canceling statement due to statement timeout", code: "57014" } }
+    const res = await DELETE(req({ confirm: "DELETE" }))
+    expect(res.status).toBe(503)
+    const body = await res.json()
+    expect(body.error).toBe("purge_outcome_unknown")
+    expect(body.detail).toMatch(/may still be finishing/)
+    expect(st.calls.some((c) => c.startsWith("deleteUser:"))).toBe(false)
+  })
+
   it("a purge that returns without ok:true is a 502, not a success, and deleteUser does not run", async () => {
     st.rpc = { data: { rows: {} }, error: null }
     const res = await DELETE(req({ confirm: "DELETE" }))

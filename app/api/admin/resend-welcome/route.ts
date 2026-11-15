@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { verifyAdminRequest, adminUnauthorizedResponse } from "@/lib/admin-auth"
 import { processSinglePrewarmRow, type AllowListRow } from "@/lib/allow-list/prewarm"
+import { ilikeLiteral } from "@/lib/db/ilike-literal"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -38,7 +39,7 @@ export async function POST(req: NextRequest) {
   const { data: row, error: fetchErr } = await supabaseAdmin
     .from("allow_list")
     .select("id, email, wallet_addr, username, collections, status, prewarm_status, prewarm_attempts, welcome_email_sent_at")
-    .ilike("email", email)
+    .ilike("email", ilikeLiteral(email))
     .maybeSingle()
   if (fetchErr) {
     return NextResponse.json({ error: fetchErr.message }, { status: 500 })

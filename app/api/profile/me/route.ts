@@ -15,6 +15,7 @@ import { getCurrentUser } from "@/lib/auth/supabase-server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { resolveDisplayName } from "@/lib/user/resolveDisplayName"
 import { boundedRead } from "@/lib/api/bounded-read"
+import { ilikeLiteral } from "@/lib/db/ilike-literal"
 
 export async function GET() {
   const user = await getCurrentUser()
@@ -98,7 +99,7 @@ export async function GET() {
       (supabaseAdmin as any)
         .from("allow_list")
         .select("username, wallet_addr")
-        .ilike("email", user.email)
+        .ilike("email", ilikeLiteral(user.email))
         .limit(1)
         .maybeSingle(),
       "api/profile/me/allow_list",

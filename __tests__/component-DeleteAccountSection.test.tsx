@@ -69,6 +69,16 @@ describe("DeleteAccountSection", () => {
     expect(JSON.parse(String(init?.body))).toEqual({ confirm: "DELETE" })
   })
 
+  it("an UNKNOWN outcome (timed-out purge) never says 'Nothing was removed'", async () => {
+    fetchMock.mockResolvedValueOnce(jsonRes({ error: "purge_outcome_unknown", detail: "The deletion took too long to confirm and may still be finishing. Reload this page in a minute before trying again — your data may already be gone." }, 503))
+    render(<DeleteAccountSection />)
+    fireEvent.change(arm(), { target: { value: "DELETE" } })
+    fireEvent.click(screen.getByRole("button", { name: /permanently delete/i }))
+    const alert = await screen.findByRole("alert")
+    expect(alert.textContent).toContain("may still be finishing")
+    expect(alert.textContent).not.toMatch(/Nothing was removed/)
+  })
+
   it("a network failure is stated as unreachable and the account described as unchanged", async () => {
     fetchMock.mockRejectedValueOnce(new Error("offline"))
     render(<DeleteAccountSection />)

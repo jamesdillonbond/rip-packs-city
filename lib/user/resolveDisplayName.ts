@@ -20,6 +20,7 @@
 
 import { supabaseAdmin } from "@/lib/supabase"
 import { isBlocklisted } from "./blocklist"
+import { ilikeLiteral } from "@/lib/db/ilike-literal"
 
 export type ResolvedDisplayName = {
   display_name: string
@@ -74,7 +75,7 @@ export async function resolveDisplayName(opts: {
       ? (supabaseAdmin as any)
           .from("allow_list")
           .select("username, wallet_addr")
-          .ilike("email", opts.email)
+          .ilike("email", ilikeLiteral(opts.email))
           .limit(1)
           .maybeSingle()
       : Promise.resolve({ data: null }),

@@ -26,11 +26,10 @@
 // blank = no filter.
 
 import { NextRequest, NextResponse } from "next/server";
+import { resolveOwnOwner } from "@/lib/profile/own-owner";
 import { apiErrorResponse } from "@/lib/api-error";
 import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
-import { getCurrentUser } from "@/lib/auth/supabase-server";
-import { isSupportedAddress, normalizeAddress } from "@/lib/address";
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections";
 import { ownLookup } from "@/lib/safe-lookup";
 
@@ -49,53 +48,6 @@ import { ownLookup } from "@/lib/safe-lookup";
 // genuinely resolves to nobody still falls back to the session, because that is
 // the contract in this file's header. What is no longer allowed is for a read
 // FAILURE to be spelled the same way as "no such owner".
-type OwnerResolution =
-  | { ok: true; userId: string | null; unresolved?: true }
-  | { ok: false; error: unknown };
-
-async function resolveUserId(ownerKey: string | null, strict = false): Promise<OwnerResolution> {
-  if (ownerKey) {
-    const key = ownerKey.trim();
-    // ⛔ 2026-09-19 — THIS GATE WAS `key.startsWith("0x")` AND THE LOOKUP WAS
-    // `key.toLowerCase()`. Both are Flow-shaped, and together they made a Candy
-    // wallet unreachable through this route in two independent ways:
-    //   1. a Solana base58 address has NO `0x` prefix, so it never entered the
-    //      saved_wallets branch at all — it fell through to the profile_bio
-    //      USERNAME lookup, missed, and the route answered with the VIEWER'S
-    //      OWN data under someone else's key (the exact different-answer
-    //      failure this file's header was rewritten to stop);
-    //   2. base58 is CASE-SENSITIVE, so even a base58 key that reached the
-    //      query would have been folded to a string matching zero rows.
-    // `isSupportedAddress` + `normalizeAddress` handle Cadence, EVM and base58
-    // by shape. The resolution ORDER is unchanged: an address that resolves to
-    // nobody still falls through to the username lookup and then the session.
-    if (isSupportedAddress(key)) {
-      const { data, error } = await boundedRead(supabase
-        .from("saved_wallets")
-        .select("user_id")
-        .eq("wallet_addr", normalizeAddress(key))
-        .limit(1)
-        .maybeSingle(), "api/profile/top-moments/saved_wallets");
-      if (error) return { ok: false, error };
-      if (data?.user_id) return { ok: true, userId: data.user_id as string };
-    }
-    const { data: bio, error: bioErr } = await boundedRead(supabase
-      .from("profile_bio")
-      .select("user_id")
-      .eq("username", key)
-      .maybeSingle(), "api/profile/top-moments/profile_bio");
-    if (bioErr) return { ok: false, error: bioErr };
-    if (bio?.user_id) return { ok: true, userId: bio.user_id as string };
-    // #148 (a): STRICT mode — a page about SOMEONE ELSE must never fall back to
-    // the session. A supplied ownerKey that resolves to nobody is "no such
-    // owner", not "the viewer". The default (non-strict) keeps the documented
-    // fallback because today's callers (dashboard, trophy/avatar pickers) pass
-    // the viewer's own, possibly unsaved, owner key.
-    if (strict) return { ok: true, userId: null, unresolved: true };
-  }
-  const user = await getCurrentUser();
-  return { ok: true, userId: user?.id ?? null };
-}
 
 /** Deepest page "Load more" may ask for (~100 pages of the picker's 96). */
 const MAX_OFFSET = 9600;
@@ -126,18 +78,16 @@ export async function GET(req: NextRequest) {
   // fmv-ordered list. Whole numbers 0..MAX_OFFSET; anything else is page one.
   const offsetRaw = Number(req.nextUrl.searchParams.get("offset") ?? 0);
   const offset = Number.isInteger(offsetRaw) && offsetRaw > 0 && offsetRaw <= MAX_OFFSET ? offsetRaw : 0;
-  const owner = await resolveUserId(ownerKey, strict);
+  // 2026-11-14 (account review): only the SIGNED-IN viewer's own moments — lib/profile/own-owner.ts.
+  const owner = await resolveOwnOwner(supabase, ownerKey, strict, "api/profile/top-moments");
   if (!owner.ok) {
-    console.error("[profile/top-moments] owner resolve failed", (owner.error as { message?: string })?.message);
-    return apiErrorResponse(owner.error, "api/profile/top-moments");
-  }
-  if (owner.unresolved) {
-    return NextResponse.json({ error: "owner_not_found" }, { status: 404 });
+    if (owner.status === 500) {
+      console.error("[profile/top-moments] owner resolve failed", (owner.cause as { message?: string })?.message);
+      return apiErrorResponse(owner.cause, "api/profile/top-moments");
+    }
+    return NextResponse.json({ error: owner.error }, { status: owner.status });
   }
   const userId = owner.userId;
-  if (!userId) {
-    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  }
 
   const { data, error } = await boundedRead(supabase.rpc("get_user_top_owned_moments", {
     p_user_id: userId,

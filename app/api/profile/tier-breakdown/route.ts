@@ -44,6 +44,7 @@ import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
 import { apiErrorResponse } from "@/lib/api-error";
 import { boundedRead } from "@/lib/api/bounded-read";
+import { ilikeLiteral } from "@/lib/db/ilike-literal";
 
 const TIER_ORDER = ["Common", "Fandom", "Rare", "Legendary", "Ultimate"];
 
@@ -61,7 +62,7 @@ async function resolveUserId(ownerKey: string): Promise<OwnerResolution> {
   const { data, error } = await boundedRead((supabase as any)
     .from("profile_bio")
     .select("user_id")
-    .ilike("username", ownerKey)
+    .ilike("username", ilikeLiteral(ownerKey))
     .maybeSingle(), "api/profile/tier-breakdown/profile_bio");
   if (error) {
     console.log("[tier-breakdown] resolveUserId failed:", error.message);

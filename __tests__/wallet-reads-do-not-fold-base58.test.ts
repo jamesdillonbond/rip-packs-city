@@ -126,9 +126,11 @@ describe("top-moments resolves an ownerKey on any supported chain", () => {
 
   it("sends a base58 ownerKey to saved_wallets UNFOLDED and resolves that owner", async () => {
     savedWalletsRow.user_id = "candy-owner"
-    // A different viewer is signed in: if the route fell through to the session
-    // (the old behaviour) it would answer for THEM, not for the ownerKey.
-    authState.user = { id: "some-other-viewer" }
+    // Re-pinned 2026-11-14 (account review): the route answers ONLY for the signed-in viewer, so
+    // the viewer is the wallet's owner; what this pins is unchanged — the key reaches the lookup
+    // UNFOLDED. (A different viewer naming someone else's wallet is now 403, pinned in
+    // api-profile-top-moments.test.ts.)
+    authState.user = { id: "candy-owner" }
     const { GET } = await import("@/app/api/profile/top-moments/route")
     const res = await GET(req(`https://t/api/profile/top-moments?ownerKey=${CANDY}`))
 
@@ -141,6 +143,7 @@ describe("top-moments resolves an ownerKey on any supported chain", () => {
 
   it("no-change control: a Flow ownerKey is still folded to lowercase", async () => {
     savedWalletsRow.user_id = "flow-owner"
+    authState.user = { id: "flow-owner" } // re-pinned 2026-11-14: a signed-in viewer (signed out is 401)
     const { GET } = await import("@/app/api/profile/top-moments/route")
     await GET(req(`https://t/api/profile/top-moments?ownerKey=${FLOW_MIXED}`))
     const hit = savedWalletsEq.find((e) => e.col === "wallet_addr")

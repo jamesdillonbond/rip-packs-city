@@ -41,13 +41,17 @@ const PANINI_ID = "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b"
 const req = (url: string) => ({ nextUrl: new URL(url) }) as any
 
 beforeEach(() => {
-  state.user = null
+  // Re-pinned 2026-11-14 (account review): the route now answers ONLY for the signed-in viewer, so
+  // the default premise is a viewer (u1) asking about their own key. Signed-out and cross-user
+  // cases set their own state.
+  state.user = { id: "u1" }
   state.single = { data: null, error: null }
   state.rpc = { data: [], error: null }
 })
 
 describe("GET /api/profile/top-moments", () => {
   it("401s when no ownerKey and no session resolve a user (fail-closed)", async () => {
+    state.user = null
     const res = await GET(req("https://t/api/profile/top-moments"))
     expect(res.status).toBe(401)
     expect((await res.json()).error).toBe("Authentication required")
@@ -87,13 +91,33 @@ describe("GET /api/profile/top-moments", () => {
   })
 
   it("does not claim 'Authentication required' out of a failed lookup", async () => {
-    // The anon half of the same defect: a database timeout used to render as a
-    // 401, sending a signed-out reader to sign in for a problem that is ours.
-    state.user = null
+    // Re-pinned 2026-11-14: a SIGNED-IN viewer whose ownerKey lookup fails gets a failure (5xx),
+    // never a 401 "sign in" for a problem that is ours. (A signed-out caller is now a true 401.)
     state.single = { data: null, error: { message: "db down" } }
     const res = await GET(req("https://t/api/profile/top-moments?ownerKey=trevor"))
-    expect(res.status).not.toBe(401)
+    expect(res.status).toBeGreaterThanOrEqual(500)
     expect(JSON.stringify(await res.json())).not.toContain("Authentication required")
+  })
+
+  // ⛔ 2026-11-14 (account review): PRIVACY. Any signed-in caller could read ANOTHER user's
+  // holdings and wallet addresses by naming them in ?ownerKey. Inverted from the old happy path.
+  it("an ownerKey naming ANOTHER user is 403 — never their moments, never the viewer's", async () => {
+    state.user = { id: "viewer-1" }
+    state.single = { data: { user_id: "someone-else" }, error: null }
+    state.rpc = { data: [{ moment_id: "theirs", fmv_usd: 1000, wallet_address: "0xprivate" }], error: null }
+    const res = await GET(req("https://t/api/profile/top-moments?ownerKey=trevor"))
+    expect(res.status).toBe(403)
+    const body = JSON.stringify(await res.json())
+    expect(body).not.toContain("theirs")
+    expect(body).not.toContain("0xprivate")
+  })
+  it("a signed-out caller naming a user is 401, never that user's moments", async () => {
+    state.user = null
+    state.single = { data: { user_id: "u1" }, error: null }
+    state.rpc = { data: [{ moment_id: "m1", fmv_usd: 100 }], error: null }
+    const res = await GET(req("https://t/api/profile/top-moments?ownerKey=trevor"))
+    expect(res.status).toBe(401)
+    expect(JSON.stringify(await res.json())).not.toContain("m1")
   })
 
   it("an ownerKey that genuinely resolves to nobody still falls back to the session — positive control", async () => {
@@ -122,7 +146,8 @@ describe("GET /api/profile/top-moments", () => {
   })
 
   it("strict: a resolved ownerKey still answers (control)", async () => {
-    state.user = { id: "viewer-1" }
+    // Re-pinned 2026-11-14: the key resolves to the VIEWER (cross-user is 403, tested above).
+    state.user = { id: "u1" }
     state.single = { data: { user_id: "u1" }, error: null }
     state.rpc = { data: [{ moment_id: "m1", fmv_usd: 100 }], error: null }
     const res = await GET(req("https://t/api/profile/top-moments?ownerKey=trevor&strict=1"))

@@ -31,6 +31,7 @@ import { cache } from "react"
 import { normalizeAddress } from "@/lib/address";
 import { supabaseAdmin as supabase } from "@/lib/supabase"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
+import { ilikeLiteral } from "@/lib/db/ilike-literal";
 
 /**
  * Wall-clock budget for the whole two-step bundle, shared across both steps.
@@ -180,7 +181,7 @@ async function getPublicProfileUncached(
       error: { message: string } | null
     }>(
       Promise.resolve(
-        supabase.from("profile_bio").select("user_id").ilike("username", handle).maybeSingle(),
+        supabase.from("profile_bio").select("user_id").ilike("username", ilikeLiteral(handle)).maybeSingle(),
       ),
       "public-profile-resolve",
       remaining(),

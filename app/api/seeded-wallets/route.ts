@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { apiErrorResponse } from "@/lib/api-error"
 import { boundedRead } from "@/lib/api/bounded-read"
+import { ilikeLiteral } from "@/lib/db/ilike-literal"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -17,7 +18,7 @@ export async function GET(req: NextRequest) {
     .select("username, wallet_address, display_name, tags, priority, is_active, last_refreshed_at, cached_moment_count, cached_fmv_usd, cached_top_tier, is_pro_user")
     .eq("is_active", true)
 
-  if (username) query = query.ilike("username", username.trim())
+  if (username) query = query.ilike("username", ilikeLiteral(username.trim()))
   if (tag) query = query.contains("tags", [tag])
 
   const { data, error } = await boundedRead(query.order("priority", { ascending: true }).order("cached_fmv_usd", { ascending: false, nullsFirst: false }), "api/seeded-wallets/seeded_wallets")

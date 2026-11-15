@@ -26,11 +26,13 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { apiErrorResponse, errorLogDetail } from "@/lib/api-error"
-import { boundedRead } from "@/lib/api/bounded-read"
+import { boundedRead, RPC_READ_TIMEOUT_CODE } from "@/lib/api/bounded-read"
 import { supabaseAdmin } from "@/lib/supabase"
 import { requireUser, getSupabaseServer } from "@/lib/auth/supabase-server"
 
 export const dynamic = "force-dynamic"
+// 2026-11-14: room for the write-sized purge budget (25 s) plus the auth delete.
+export const maxDuration = 60
 
 /** The exact phrase the client must send; a guard against a stray fetch, not a security control. */
 export const DELETE_CONFIRMATION = "DELETE"
@@ -59,10 +61,27 @@ export async function DELETE(req: NextRequest) {
   // 1. Purge the data while the account still exists.
   // Bounded so a wedged purge answers with the honest 5xx below instead of a
   // platform 504 (withBoardBudget resolves into the error branch).
+  //
+  // 2026-11-14 (account review): this is a WRITE, and an abandoned query keeps running — so a
+  // timeout is NOT "nothing was removed": the purge may commit after we answered. It gets a
+  // write-sized budget, and a timeout (ours or Postgres's 57014) says the outcome is UNKNOWN.
   const { data: report, error: purgeError } = await boundedRead(
     (supabaseAdmin as any).rpc("delete_user_account", { p_user_id: user.id }),
-    "api/profile/account/delete_user_account"
+    "api/profile/account/delete_user_account",
+    25_000,
   )
+  const purgeCode = (purgeError as { code?: string } | null)?.code
+  if (purgeError && (purgeCode === RPC_READ_TIMEOUT_CODE || purgeCode === "57014")) {
+    console.error("[profile/account DELETE] purge outcome unknown (timeout)", { userId: user.id, detail: errorLogDetail(purgeError) })
+    return NextResponse.json(
+      {
+        error: "purge_outcome_unknown",
+        detail: "The deletion took too long to confirm and may still be finishing. Reload this page in a minute before trying again — your data may already be gone.",
+        retryable: false,
+      },
+      { status: 503 },
+    )
+  }
   if (purgeError) {
     console.error("[profile/account DELETE] purge failed", { userId: user.id, detail: errorLogDetail(purgeError) })
     return apiErrorResponse(purgeError, "api/profile/account")

@@ -5,7 +5,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // param 400s (walletAddr required), the PATCH invalid-JSON 400, and a mocked
 // GET happy path (non-empty saved wallets short-circuit the auto-attach).
 
-const state: { user: any; result: any } = {
+const state: { user: any; result: any; updates: any[] } = {
+  updates: [],
   user: null,
   result: { data: [], error: null, count: 0 },
 }
@@ -13,7 +14,7 @@ const state: { user: any; result: any } = {
 vi.mock("@/lib/supabase", () => {
   const build = () => {
     const b: any = {
-      select: () => b, insert: () => b, update: () => b, upsert: () => b,
+      select: () => b, insert: () => b, update: (p: any) => { state.updates.push(p); return b }, upsert: () => b,
       delete: () => b, eq: () => b, order: () => b, limit: () => b,
       single: async () => state.result,
       maybeSingle: async () => state.result,
@@ -85,6 +86,19 @@ describe("/api/profile/saved-wallets", () => {
     const res = await PATCH(req("https://t/api/profile/saved-wallets", undefined, true))
     expect(res.status).toBe(400)
     expect((await res.json()).error).toBe("Invalid JSON body")
+  })
+
+  // ⛔ 2026-11-14 (account review): the client could write its own public PORTFOLIO FMV.
+  it("PATCH ignores client-supplied cached figures — it only stamps last_viewed", async () => {
+    state.user = { id: "u1" }
+    state.updates = []
+    state.result = { data: [{ wallet_addr: "0x0000000000000abc" }], error: null }
+    const res = await PATCH(req("https://t/api/profile/saved-wallets", {
+      walletAddr: "0x0000000000000abc", cachedFmv: 9_999_999, cachedMomentCount: 50_000, cachedTopTier: "ULTIMATE", cachedRpcScore: 999,
+    }))
+    expect(res.status).toBe(200)
+    expect(state.updates).toHaveLength(1)
+    expect(Object.keys(state.updates[0])).toEqual(["last_viewed"])
   })
 
   it("PATCH 400s without walletAddr", async () => {

@@ -59,6 +59,7 @@
 import type { User } from "@supabase/supabase-js"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
+import { ilikeLiteral } from "@/lib/db/ilike-literal"
 
 export type OwnedKeyGate = { user: User } | Response
 
@@ -168,7 +169,7 @@ export async function requireOwnedKey(ownerKey: string): Promise<OwnedKeyGate> {
   const { data: claimant, error: claimantErr } = await (supabaseAdmin as any)
     .from("profile_bio")
     .select("user_id, username")
-    .ilike("username", key)
+    .ilike("username", ilikeLiteral(key))
     .maybeSingle()
 
   if (claimantErr) {

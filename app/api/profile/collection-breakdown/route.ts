@@ -33,6 +33,7 @@ import { supabaseAdmin as supabase } from "@/lib/supabase"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
 import { apiErrorResponse } from "@/lib/api-error"
 import { boundedRead } from "@/lib/api/bounded-read"
+import { ilikeLiteral } from "@/lib/db/ilike-literal"
 
 // Resolve a public ownerKey (username) → user_id the same way the other
 // public ownerKey-driven profile endpoints (teams, portfolio-history) do.
@@ -44,7 +45,7 @@ async function resolveUserId(ownerKey: string): Promise<OwnerResolution> {
   const { data, error } = await boundedRead((supabase as any)
     .from("profile_bio")
     .select("user_id")
-    .ilike("username", ownerKey)
+    .ilike("username", ilikeLiteral(ownerKey))
     .maybeSingle(), "api/profile/collection-breakdown/profile_bio")
   if (error) {
     console.log("[collection-breakdown] resolveUserId failed:", error.message)

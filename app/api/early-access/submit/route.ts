@@ -18,6 +18,7 @@ import { fitTelegramText } from "@/lib/telegram-message"
 import { anonIpKey, bumpAnonRates } from "@/lib/abuse/anon-rate"
 import { createHash } from "node:crypto"
 import { supabaseAdmin } from "@/lib/supabase"
+import { ilikeLiteral } from "@/lib/db/ilike-literal"
 
 const WALLET_RE = /^0x[a-fA-F0-9]{16}$/
 const ALL_PUBLISHED_COLLECTIONS = [
@@ -352,7 +353,7 @@ export async function POST(req: NextRequest) {
       .select("email")
       .eq("status", "active")
       .eq("wallet_addr", wallet.toLowerCase())
-      .ilike("username", username)
+      .ilike("username", ilikeLiteral(username))
       .limit(1)
     if (dupErr) {
       console.error("[early-access/submit] dedup lookup error", dupErr)

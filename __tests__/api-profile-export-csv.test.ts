@@ -126,12 +126,14 @@ describe("GET /api/profile/export-csv — row emission", () => {
     expect(body).toContain(",,") // null fields render empty
   })
 
-  it("skips a wallet whose export RPC errors but still returns the CSV", async () => {
+  // INVERTED 2026-11-14 (account review): this pinned the defect — a wallet whose read failed was
+  // skipped and the file downloaded 200 without it, a partial export kept as the user's records.
+  it("a wallet whose export RPC errors FAILS the export — never a 200 file missing that wallet", async () => {
     state.wallets = { data: [{ wallet_addr: "0x3333333333333333" }], error: null }
     state.rows = { data: null, error: { message: "rpc down" } }
     const res = await GET(req("https://t/api/profile/export-csv?ownerKey=trevor"))
-    expect(res.status).toBe(200)
-    expect((await res.text()).trim().split("\n")).toHaveLength(1) // header only
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    expect(res.headers.get("Content-Type") ?? "").not.toMatch(/text\/csv/)
   })
 
   it("ignores non-string / empty wallet addresses", async () => {

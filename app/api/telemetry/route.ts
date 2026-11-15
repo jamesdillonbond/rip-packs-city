@@ -21,6 +21,7 @@ import { getCurrentUser } from "@/lib/auth/supabase-server"
 import { anonTelemetryAllowed } from "@/lib/abuse/anon-rate"
 import { supabaseAdmin } from "@/lib/supabase"
 import { automatedReason, automatedStackReason, countOnlyAutomatedPageView } from "@/lib/telemetry/automated"
+import { ilikeLiteral } from "@/lib/db/ilike-literal"
 
 export const dynamic = "force-dynamic"
 
@@ -77,7 +78,7 @@ export async function POST(req: NextRequest) {
         const { data } = await (supabaseAdmin as any)
           .from("allow_list")
           .select("wallet_addr")
-          .ilike("email", user.email)
+          .ilike("email", ilikeLiteral(user.email))
           .limit(1)
           .maybeSingle()
         walletFromAllowList = (data?.wallet_addr as string | null | undefined) ?? null

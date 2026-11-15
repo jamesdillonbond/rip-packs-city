@@ -73,8 +73,11 @@ export async function GET(req: NextRequest) {
         p_wallet: addr,
       }), "api/profile/export-csv/export_wallet_csv")
       if (error) {
+        // 2026-11-14 (account review): a wallet whose read failed used to be SKIPPED, and the file
+        // downloaded 200 without it — a partial export a user keeps as their records (the
+        // /sitemap/3.xml #28 shape). A failed wallet fails the export.
         console.error("[export-csv rpc]", addr, error.message)
-        continue
+        return apiErrorResponse(error, "api/profile/export-csv")
       }
       const rows: Row[] = Array.isArray(data) ? (data as Row[]) : []
       for (const r of rows) {

@@ -17,6 +17,7 @@ import { isLeague, type League, type UserFavoriteTeam } from "@/lib/teams";
 import { awardPoints } from "@/lib/rewards";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { apiErrorResponse } from "@/lib/api-error";
+import { ilikeLiteral } from "@/lib/db/ilike-literal";
 
 // ⚠ HONESTY CANON. This resolver DID look at its `error` and log it — and then
 // collapsed the failure onto `null`, which the GET below spells `{ teams: [] }`.
@@ -37,7 +38,7 @@ async function resolveUserId(ownerKey: string): Promise<OwnerResolution> {
   const { data, error } = await supabase
     .from("profile_bio")
     .select("user_id")
-    .ilike("username", ownerKey)
+    .ilike("username", ilikeLiteral(ownerKey))
     .maybeSingle();
   if (error) {
     console.error("[profile/teams resolveUserId]", error);

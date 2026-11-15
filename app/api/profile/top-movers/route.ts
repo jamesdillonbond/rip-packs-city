@@ -25,6 +25,7 @@ import { getCurrentUser } from "@/lib/auth/supabase-server";
 import { apiErrorResponse } from "@/lib/api-error";
 import { RPC_READ_TIMEOUT_CODE } from "@/lib/api/bounded-read";
 import { withBoardBudget } from "@/lib/insights/board-page-fetch";
+import { ilikeLiteral } from "@/lib/db/ilike-literal";
 
 // ── ONE TOTAL BUDGET, NOT ONE PER READ ───────────────────────────────────────
 // `get_top_movers` runs once per saved wallet, SEQUENTIALLY, and nothing bounds
@@ -69,7 +70,7 @@ async function resolveUserId(ownerKey: string, bound: Bound): Promise<OwnerResol
       (supabase as any)
         .from("profile_bio")
         .select("user_id")
-        .ilike("username", ownerKey)
+        .ilike("username", ilikeLiteral(ownerKey))
         .maybeSingle(),
       "resolveUserId"
     );

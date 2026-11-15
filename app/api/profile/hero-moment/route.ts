@@ -14,11 +14,10 @@
 //      Mirrors the pattern in /api/support-chat.
 
 import { NextRequest, NextResponse } from "next/server";
+import { resolveOwnOwner } from "@/lib/profile/own-owner";
 import { apiErrorResponse } from "@/lib/api-error";
 import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
-import { getCurrentUser } from "@/lib/auth/supabase-server";
-import { isSupportedAddress, normalizeAddress } from "@/lib/address";
 import { COLLECTIONS } from "@/lib/collections";
 
 function isSmokeTestRequest(req: NextRequest): boolean {
@@ -71,72 +70,24 @@ const SMOKE_TEST_HERO = {
 // The documented resolution order is unchanged: an ownerKey that genuinely
 // resolves to nobody still falls back to the session. Only a read FAILURE stops
 // being spelled like "no such owner".
-type OwnerResolution =
-  | { ok: true; userId: string | null; unresolved?: true }
-  | { ok: false; error: unknown };
-
-async function resolveUserId(ownerKey: string | null, strict = false): Promise<OwnerResolution> {
-  if (ownerKey) {
-    const key = ownerKey.trim();
-    // ⛔ 2026-09-19 — THIS GATE WAS `key.startsWith("0x")` AND THE LOOKUP WAS
-    // `key.toLowerCase()`. Both are Flow-shaped, and together they made a Candy
-    // wallet unreachable through this route in two independent ways:
-    //   1. a Solana base58 address has NO `0x` prefix, so it never entered the
-    //      saved_wallets branch at all — it fell through to the profile_bio
-    //      USERNAME lookup, missed, and the route answered with the VIEWER'S
-    //      OWN data under someone else's key (the exact different-answer
-    //      failure this file's header was rewritten to stop);
-    //   2. base58 is CASE-SENSITIVE, so even a base58 key that reached the
-    //      query would have been folded to a string matching zero rows.
-    // `isSupportedAddress` + `normalizeAddress` handle Cadence, EVM and base58
-    // by shape. The resolution ORDER is unchanged: an address that resolves to
-    // nobody still falls through to the username lookup and then the session.
-    if (isSupportedAddress(key)) {
-      const { data, error } = await boundedRead(supabase
-        .from("saved_wallets")
-        .select("user_id")
-        .eq("wallet_addr", normalizeAddress(key))
-        .limit(1)
-        .maybeSingle(), "api/profile/hero-moment/owner-by-wallet");
-      if (error) return { ok: false, error };
-      if (data?.user_id) return { ok: true, userId: data.user_id as string };
-    }
-    const { data: bio, error: bioErr } = await boundedRead(supabase
-      .from("profile_bio")
-      .select("user_id")
-      .eq("username", key)
-      .maybeSingle(), "api/profile/hero-moment/owner-by-username");
-    if (bioErr) return { ok: false, error: bioErr };
-    if (bio?.user_id) return { ok: true, userId: bio.user_id as string };
-    // #148 (a): STRICT mode — a page about SOMEONE ELSE must never fall back to
-    // the session. A supplied ownerKey that resolves to nobody is "no such
-    // owner", not "the viewer". The default (non-strict) keeps the documented
-    // fallback because today's callers (dashboard, trophy/avatar pickers) pass
-    // the viewer's own, possibly unsaved, owner key.
-    if (strict) return { ok: true, userId: null, unresolved: true };
-  }
-  const user = await getCurrentUser();
-  return { ok: true, userId: user?.id ?? null };
-}
 
 export async function GET(req: NextRequest) {
   const ownerKey = req.nextUrl.searchParams.get("ownerKey");
   const strict = req.nextUrl.searchParams.get("strict") === "1";
-  const owner = await resolveUserId(ownerKey, strict);
+  // 2026-11-14 (account review): only the SIGNED-IN viewer's own moments — lib/profile/own-owner.ts.
+  const owner = await resolveOwnOwner(supabase, ownerKey, strict, "api/profile/hero-moment");
   if (!owner.ok) {
-    console.error("[profile/hero-moment] owner resolve failed", (owner.error as { message?: string })?.message);
-    return apiErrorResponse(owner.error, "api/profile/hero-moment");
-  }
-  if (owner.unresolved) {
-    return NextResponse.json({ error: "owner_not_found" }, { status: 404 });
+    if (owner.status === 500) {
+      console.error("[profile/hero-moment] owner resolve failed", (owner.cause as { message?: string })?.message);
+      return apiErrorResponse(owner.cause, "api/profile/hero-moment");
+    }
+    if (owner.status === 401) {
+      if (isSmokeTestRequest(req)) return NextResponse.json(SMOKE_TEST_HERO);
+      return NextResponse.json({ hero: null, reason: "no_user" }, { status: 401 });
+    }
+    return NextResponse.json({ error: owner.error }, { status: owner.status });
   }
   const userId = owner.userId;
-  if (!userId) {
-    if (isSmokeTestRequest(req)) {
-      return NextResponse.json(SMOKE_TEST_HERO);
-    }
-    return NextResponse.json({ hero: null, reason: "no_user" }, { status: 401 });
-  }
 
   const { data, error } = await boundedRead(supabase.rpc("get_user_hero_moment", {
     p_user_id: userId,

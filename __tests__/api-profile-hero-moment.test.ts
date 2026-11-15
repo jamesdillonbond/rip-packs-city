@@ -96,22 +96,38 @@ describe("GET /api/profile/hero-moment", () => {
     expect(body.hero.collectionId).toBe("nba-top-shot")
   })
 
-  it("resolves ownerKey as a 0x wallet via saved_wallets", async () => {
-    state.tables.saved_wallets = { data: { user_id: "u-wallet" }, error: null }
+  // ⛔ INVERTED 2026-11-14 (account review): these two pinned the PRIVACY defect — a signed-out
+  // caller naming a wallet or username was answered with THAT user's hero moment. The route now
+  // answers only for the signed-in viewer: their own wallet / username works; anyone else's is 403.
+  it("ownerKey = one of the VIEWER's saved wallets answers for the viewer", async () => {
+    state.user = { id: "u-wallet" }
+    state.tables.saved_wallets = { data: [{ user_id: "u-wallet" }], error: null }
     state.rpc = { data: [pricedRow({ moment_id: "mw" })], error: null }
     const res = await GET(req("https://t/api/profile/hero-moment?ownerKey=0xABCDEF0000000000"))
     expect(res.status).toBe(200)
     expect((await res.json()).hero.momentId).toBe("mw")
-    // getCurrentUser must NOT be the resolver here — ownerKey won
-    expect(state.user).toBeNull()
   })
 
-  it("resolves ownerKey as a username via profile_bio", async () => {
+  it("ownerKey = the viewer's own username answers for the viewer", async () => {
+    state.user = { id: "u-name" }
     state.tables.profile_bio = { data: { user_id: "u-name" }, error: null }
     state.rpc = { data: [pricedRow({ moment_id: "mn" })], error: null }
     const res = await GET(req("https://t/api/profile/hero-moment?ownerKey=trevor"))
     expect(res.status).toBe(200)
     expect((await res.json()).hero.momentId).toBe("mn")
+  })
+
+  it("ownerKey naming ANOTHER user is 403; signed out is 401 — never their hero", async () => {
+    state.user = { id: "viewer-1" }
+    state.tables.profile_bio = { data: { user_id: "someone-else" }, error: null }
+    state.rpc = { data: [pricedRow({ moment_id: "theirs" })], error: null }
+    const res = await GET(req("https://t/api/profile/hero-moment?ownerKey=trevor"))
+    expect(res.status).toBe(403)
+    expect(JSON.stringify(await res.json())).not.toContain("theirs")
+    state.user = null
+    const anon = await GET(req("https://t/api/profile/hero-moment?ownerKey=trevor"))
+    expect(anon.status).toBe(401)
+    expect(JSON.stringify(await anon.json())).not.toContain("theirs")
   })
 
   // HONESTY CANON — CLAUDE.md's worst sub-class (a false claim about the
@@ -133,7 +149,8 @@ describe("GET /api/profile/hero-moment", () => {
   })
 
   it("does not publish reason 'no_user' out of a failed username lookup", async () => {
-    state.user = null
+    // Re-pinned 2026-11-14: a SIGNED-IN viewer (a signed-out caller is now a true no_user 401).
+    state.user = { id: "viewer-1" }
     state.tables.profile_bio = { data: null, error: { message: "db down" } }
     const res = await GET(req("https://t/api/profile/hero-moment?ownerKey=trevor"))
     expect(res.status).not.toBe(401)

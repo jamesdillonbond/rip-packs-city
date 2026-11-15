@@ -136,6 +136,7 @@ import { readSqueezeCheck, readWalletScanState } from "@/lib/insights/squeeze-ch
 import { boundedRead } from "@/lib/api/bounded-read";
 import { TROPHY_COLLECTIONS } from "@/lib/insights/trophy-collections";
 import { REPLY_TO } from "@/lib/emails/sender-identity";
+import { ilikeLiteral } from "@/lib/db/ilike-literal";
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -260,7 +261,7 @@ async function deriveIdentity(): Promise<AuthedIdentity> {
     const { data: row } = await supabase
       .from("allow_list")
       .select("username, wallet_addr")
-      .ilike("email", email)
+      .ilike("email", ilikeLiteral(email))
       .limit(1)
       .maybeSingle();
     const userId = data?.user?.id ?? null;
@@ -7117,7 +7118,7 @@ export async function POST(req: NextRequest) {
         const { data: al } = await supabase
           .from("allow_list")
           .select("wallet_addr")
-          .ilike("username", ownerKey)
+          .ilike("username", ilikeLiteral(ownerKey ?? ""))
           .limit(1)
           .maybeSingle();
         if (al?.wallet_addr) userWallet = al.wallet_addr;

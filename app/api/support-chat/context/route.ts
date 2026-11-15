@@ -18,6 +18,7 @@ import { getSupabaseServer } from "@/lib/auth/supabase-server";
 import { isWellFormedSessionId, isBotSessionId } from "@/lib/concierge/request-guards";
 import { profileUsernameFor } from "@/lib/concierge/identity";
 import { anonTelemetryAllowed } from "@/lib/abuse/anon-rate";
+import { ilikeLiteral } from "@/lib/db/ilike-literal";
 
 export const maxDuration = 10;
 // force-dynamic is REQUIRED, not decorative: GET reads req.nextUrl.searchParams,
@@ -51,7 +52,7 @@ async function deriveIdentity(): Promise<AuthedIdentity> {
     const { data: row } = await supabase
       .from("allow_list")
       .select("username, wallet_addr")
-      .ilike("email", email)
+      .ilike("email", ilikeLiteral(email))
       .limit(1)
       .maybeSingle();
     // 2026-11-10: new members have no allow_list row — fall back to their own

@@ -11,6 +11,7 @@ import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
 import { REPLY_TO } from "@/lib/emails/sender-identity";
+import { ilikeLiteral } from "@/lib/db/ilike-literal";
 
 export const dynamic = "force-dynamic"
 
@@ -184,7 +185,7 @@ export async function GET() {
   const { data, error } = await (supabaseAdmin as any)
     .from("email_subscribers")
     .select("id, email, verified, wallet_address, digest_weekly, deal_alerts, badge_alerts, portfolio_alerts, collection_ids, deal_min_discount, deal_max_price, deal_tiers, unsubscribed_at")
-    .ilike("email", user.email.toLowerCase())
+    .ilike("email", ilikeLiteral(user.email.toLowerCase()))
     .maybeSingle()
   if (error) {
     return apiErrorResponse(error, "api/email/subscribe");

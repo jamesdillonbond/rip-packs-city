@@ -51,14 +51,19 @@ export default function DeleteAccountSection() {
     }
     if (!res.ok) {
       let reason = `HTTP ${res.status}`
+      let outcomeUnknown = false
       try {
         const body = (await res.json()) as { detail?: unknown; error?: unknown }
         if (typeof body?.detail === "string") reason = body.detail
         else if (typeof body?.error === "string") reason = body.error
+        outcomeUnknown = body?.error === "purge_outcome_unknown"
       } catch {
         // keep the status
       }
-      setError(`Couldn't delete your account (${reason}). Nothing was removed unless the message above says otherwise.`)
+      // 2026-11-14: a timed-out purge may still commit — never tell the user "nothing was removed" then.
+      setError(outcomeUnknown
+        ? reason
+        : `Couldn't delete your account (${reason}). Nothing was removed unless the message above says otherwise.`)
       setPhase("confirming")
       return
     }
