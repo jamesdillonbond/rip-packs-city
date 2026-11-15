@@ -1,4 +1,4 @@
-# Inbox index — 665 live filings
+# Inbox index — 666 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -31,6 +31,10 @@ still open should have a register row, and if it does not, that gap is the findi
 failure it documents.
 
 ---
+
+## 2026-11-15 — 1 filing
+
+- [Candy secondary trading is reviving past the 11-10 "silent_since" disposition — 9 sales since baseline (7 in 48 h), revival counter 9/10](2026-11-15T0410Z-daytime-monitor-candy-revival-overtaking-silent-since-1110-disposition.md)
 
 ## 2026-11-14 — 7 filings
 - [Daytime monitor (22:11Z) — `board_mv_refresh_stale_hours` false BREACH (2502.8h) from TODAYS OWN ship (migration `20261114212002`): the perfect-mint MV refresh was repointed to a wrapper fn whose name lacks the `mv_` literal, so `board_mv_refresh_max_stale_hours()` ILIKE-join misses → falls back to watchlisted_at. Board is FRESH (43 rows, refreshed 22:00Z; cadence-watchlist now covers it). LOW blast radius, HIGH cry-wolf cost. Night-pass fix: teach the join the refresh-fn spelling, or inline the MV name as a comment in job 236. Otherwise GREEN: security x4 clean, stalled/pg_cron/sentinel clean, 13/13 dashboards OK, prod READY, no spell](2026-11-14T2211Z-daytime-monitor-board-mv-refresh-false-breach-perfect-mint.md)
