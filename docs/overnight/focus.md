@@ -4,6 +4,13 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-11-15 ~10:06 AM PT (Claude Code cloud) — what the 11-15 deep-audit-residue thread left open (thread archived)
+
+- **#248 final exit read — after the first DAILY run of job 617 (11-16 4:33 AM PT).** Job `rpc-wmc-fmv-stuck-resync` moved to daily (`20261115175130`; watchlist 1560/3000). Read that run: ok, duration in the 85–305 s band, its disk reads (~395k per run on 11-14; a daily backlog must not multiply it), reads/day ≥ 50 % below 11-11's 7.34M; re-sample the fast-lane miss (≲ 0.2 %, query in #248). All pass → CLOSE #248. Fails → revert per the migration header. (A `send_later` into the archived thread is set for 11-16 5:15 AM PT, `trig_01UmRESwR46DnGReEpp2fuAY`, but may not fire once archived — do not count on it.)
+- **#258 watch (Luis Garcia):** `select e.external_id, e.team_name from editions e where e.player_id = '4ede4af0-b04e-41ac-8eac-14f6515fde7b' and e.team_name is not null and e.team_name <> 'Houston Astros'` → must stay 0 rows.
+- **COWORK, approved, needs the SQL editor (the connector dialog never reaches Trevor):** (1) R153 player merges + 48 Panini country duplicates — `docs/proposals/r153-player-spelling-merges-STAGED.sql`, steps in inbox `2026-11-15T1635Z`; (2) drop parked `sets_summary_prev_20261114` (#255) — inbox `2026-11-15T0506Z`. Both read back NOT applied at ~10:00 AM PT 11-15.
+- **First-week reads of today's fixes:** `/insights/panini-premiums` regenerations under the new 25 s budget (Vercel runtime errors: `[insights/Panini premiums] … read exceeded` should stop entirely); Market tab 503s (`Couldn't load market` beacon / runtime 503s on `/api/market` should fall); `/api/analytics/health` 500s should stop (function now ~20 ms); `hybrid_custody_backfill` statement-timeout failures should stop (90 s).
+
 ## STEER — added 2026-11-14 ~9:45 AM PT (Claude Code cloud) — two dated reads from the 11-13/14 thread (thread archived)
 
 - **After 11-20 — Top Shot ASK_ONLY published-price re-read.** 11-13 read: published ratio 1.94, 19.2 % within ±25 % (n 1,263), but most of that window predates the 11-12 rules (ask-only cap at last sale, offer pull, `_compcap`). Re-run `fmv_sales_backtest('nba_top_shot', 7)` (or `fmv_accuracy_weekly` ASK_ONLY rows for the 11-16 week) with sales dated ≥ 11-13 only. Act only if the post-11-12 window still reads ratio > 1.5 — then it belongs in #234's relabel / the FMV open-items doc, not a new rule.

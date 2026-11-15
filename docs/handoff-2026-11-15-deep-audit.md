@@ -12,6 +12,14 @@ From the scheduled Cowork deep-audit pass (report: `docs/audits/deep-audit-2026-
 > - **#5 C1 slug trailing dash — NOT a code defect on its own:** `slugifyName` keeps edge dashes on purpose to round-trip the SQL resolver's expression; changing it means changing the resolvers too. The per-person merges are DB work (#139 pattern).
 > - **F-1:** no live doc quotes the 44-row count; nothing to change.
 
+
+> **Status update 2026-11-15 ~10:06 AM PT (same session, after Trevor's approvals):**
+> - **#2 D2 market page — ✅ mitigated** (`19da231a6`): the Market tab retries a cold-read 503/504 once. With panini-premiums fixed, **R152 is resolved in the register**.
+> - **#3 D4 `/api/analytics/health` — ✅ APPLIED** `20261115172732` (read back 20 ms / 2.4k blocks, was 4.3 s).
+> - **Daytime-monitor candidate 2, hybrid-custody timeouts — ✅ APPLIED** `20261115172736` (90 s function timeout).
+> - **#5 C1 (R153) — Luis Garcia/García ✅ DONE** (`20261115180005` + `20261115180236`, Trevor's rename call; residual = known-issues #258). **The 6 spelling merges + 48 Panini country duplicates are APPROVED and WITH COWORK** (SQL editor; the connector dialog failed 5×) — inbox `2026-11-15T1635Z`.
+> - **#248 (not in this audit, same thread) — job 617 daily** `20261115175130`; final read 11-16 (focus.md steer).
+
 ## 1. A-1 · P2 · Handle squatting through resolve-and-associate (security, decide first)
 
 `POST /api/profile/resolve-and-associate` takes a Top Shot username or address from the body, saves the wallet with **no ownership proof**, then `claimUsernameFromTopShot` (`lib/profile/claim-username.ts:45`) upserts `profile_bio.username` from it, first come first served. `c082fea78` (11-03) widened it: pasting an address reverse-resolves that wallet's username into a handle. So a signed-in stranger can take a real collector's handle and appear as them on `/profile/<handle>`, the trade block and trophy boards. Not a data leak: private routes key on `user.id` (#176).
