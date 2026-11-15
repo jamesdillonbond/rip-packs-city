@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~1:00 PM PT — #248 decided (Trevor delegated): the fast-lane fix STAYS (with daily job 617 it is net-negative IO); job 446 stops writing stale edition_fmv_current prices over the lane — `20261115204212` applied (Claude Code cloud)
+- `reconcile_wmc_fmv_for_wallet` skips an edition `rwfc_applied` shows the lane pushed after `edition_fmv_current.refreshed_at` when they disagree. Live md5 `024c0356…` = file body; anon EXECUTE false; smoke call ok; 81 editions matched at apply. Staged revert files deleted; inbox `2026-11-15T2040Z` RESOLVED.
+- Revert: re-apply the `reconcile_wmc_fmv_for_wallet` body from `20260926004446_audit_20260925_saved_wallet_fmv_reconcile_stops_folding_base58.sql`; repo: revert by message "#248 decided".
+
 ### 2026-11-15 ~12:40 PM PT — #248: the ≥ 3 h cost read FAILS the bar (9,146 PostgREST reads/call vs 7,195); revert to the 08-30 body + job 617 back to 2-hourly STAGED, NOT applied — destructive-statement prompt unanswered (Claude Code cloud, scheduled)
 - No DB change (verified after: md5 `fc41b0b8…`, 617 `33 12 * * *`, watchlist 1560). Staged `docs/proposals/rwfc-revert-to-0830-body-STAGED.sql` + `-PIN-STAGED.sql.txt`; inbox `2026-11-15T2040Z` (+ INDEX) for Trevor/Cowork; #248 status line.
 - Revert: revert this commit (find by message "#248 revert staged"); delete the two staged files.
