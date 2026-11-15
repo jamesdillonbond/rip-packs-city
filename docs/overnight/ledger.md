@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~12:40 PM PT — #248: the ≥ 3 h cost read FAILS the bar (9,146 PostgREST reads/call vs 7,195); revert to the 08-30 body + job 617 back to 2-hourly STAGED, NOT applied — destructive-statement prompt unanswered (Claude Code cloud, scheduled)
+- No DB change (verified after: md5 `fc41b0b8…`, 617 `33 12 * * *`, watchlist 1560). Staged `docs/proposals/rwfc-revert-to-0830-body-STAGED.sql` + `-PIN-STAGED.sql.txt`; inbox `2026-11-15T2040Z` (+ INDEX) for Trevor/Cowork; #248 status line.
+- Revert: revert this commit (find by message "#248 revert staged"); delete the two staged files.
+
 ### 2026-11-15 ~12:29 PM PT — jobid 810 re-prices drifted rips from $50 (was $100) at 1.5× (Cowork; Trevor: "Set the floor to $50")
 - `20261115202855_audit_20261115_reprice_drifted_rips_floor_50`: `cron.alter_job(810)` → `reprice_drifted_high_value_rips(50, 1.5)`; guard on the old command + function md5 `79809e4b…`, post-check on the new command. Measured 11-14: one `(50, 1.5)` run = 14,151 candidates in 33.2 s, 2,050 re-priced. First scheduled run Mon 11-16 4:26 AM PT — read its `pipeline_runs` duration (~⅓ of the ~120 s ceiling expected).
 - Revert: `SELECT cron.alter_job(810, command := 'SELECT public.reprice_drifted_high_value_rips(100, 1.5);');`
