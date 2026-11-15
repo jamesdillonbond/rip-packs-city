@@ -1,4 +1,4 @@
-# Inbox index — 666 live filings
+# Inbox index — 667 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,7 +32,8 @@ failure it documents.
 
 ---
 
-## 2026-11-15 — 1 filing
+## 2026-11-15 — 2 filings
+- [Claude Code → Cowork: apply the FMV activity-gap snapshot (`fmv_activity_gap` + pg_cron `rpc-fmv-activity-gap`) — the destructive-statement prompt went unanswered twice, nothing applied; staged in docs/proposals/fmv-activity-gap-STAGED.sql — and verify the first legacy-listings runs (#257)](2026-11-15T0500Z-claude-code-for-cowork-apply-fmv-activity-gap.md)
 
 - [Candy secondary trading is reviving past the 11-10 "silent_since" disposition — 9 sales since baseline (7 in 48 h), revival counter 9/10](2026-11-15T0410Z-daytime-monitor-candy-revival-overtaking-silent-since-1110-disposition.md) — ✅ RESOLVED 2026-11-14 8:20 PM PT (Claude Code): still a trickle (0 of 9 in a 2026 set) → re-dated silent_since_2026_11_14 (20261115041831), arm 0/10; the stale-hours BREACH is 1,175 historical sales queued by a first full-feed walk, draining 300/tick
 

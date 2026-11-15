@@ -1,6 +1,18 @@
 # Candy MLB — collection roadmap (refreshed 2026-10-17, PT)
 > Dated snapshot; every number is a dated sample — re-derive before quoting. Canonical plan: [roadmap-2026-10-17.md](../roadmap-2026-10-17.md). Defects: [known-issues.md](../../reference/known-issues.md) (item text wins over this file).
 
+## ⭐ 2026-11-14 evening — FMV coverage gap: legacy history re-walked, legacy asks ingested, coverage alert redefined (read first)
+
+From the Cowork handoff `claude/handoff-2026-11-14-candy-fmv-coverage-gap.md` (in the claude.ai Project, not this repo). Every number is a dated sample. Open items: known-issues **#256** and **#257**.
+
+- **Why coverage read 76.9 %:** a collection's first Magic Eden walk looked back only 30 days, and those first walks ran 11-08/09, inside the 10-12 → 11-06 market lock. Every pre-lock legacy sale ME still serves (~5.5k on 320 symbols, Aug–Oct) was stranded. Fixed at ~6:35 PM PT (a first walk reads the whole feed). The cursor was rewound to 07-01 for every legacy collection (`20261115021309`; revert table `audit_20261115_candy_high_water_backup`). The lane re-walks that history itself, and the drain (300/tick) writes the sales over about 3 days. Expected coverage after that: ~84–85 %.
+- **The "two ME files" import was not run in this repo.** The files live only in the Project. The rewind re-reads the same ME feed, and `MAX_PAGES` 20 → 31 (`b43f5ddfe`) now reaches ME's offset cap of 15,000, the same depth the file pull used. Sales older than ME still serves exist only in those files.
+- **Legacy asks now feed the ask cap** (`b43f5ddfe`). This supersedes the 11-08 "not built (by design)" line below. The same lane sweeps each legacy symbol's `/listings` into `candy_listings` (0 legacy rows before, against ~10,650 asks). Retirement uses `candy_retire_unseen_set_listings`, set-scoped, and only behind a complete, plausible sweep. Why it must land with the backfills: 36 % of 2021 All-Star ICONs editions would otherwise get an FMV above 1.5× today's ask.
+- **The coverage alert** changes from "overall < 95 %" to "editions with a recorded sale but no FMV" (0 on 11-14), read from a pg_cron snapshot that also reports coverage without the one-of-one generative sets. The route is shipped. The snapshot migration waits on a Cowork apply (`docs/proposals/fmv-activity-gap-STAGED.sql`).
+- **One-of-ones (Trevor's call, open):** ~10,036 editions are one-of-one generative cards: The Bat Cowl Collection 4,953 · 2022 All-Star Tricons 4,088 · Palm Garden: Inklings 995, none priced on 11-14. Reported separately, coverage reads ~86 % today instead of 76.9 % (~91–95 % after the backfills, per the handoff).
+- **OpenSea:** 0 Candy OpenSea sales are captured. The plan is an on-chain capture from OpenSea's Solana launch (08-31), #256.
+- **Sourcing rule (Trevor):** a wiki (e.g. the DC3 Wiki) is for DISCOVERY only. Every data source and identifier is confirmed through an official source (the chain, the marketplace's own API or docs, Candy's own posts) before it is added.
+
 ## ⭐ 2026-11-09 night — audit-pass changes (read with the 11-08 block below)
 
 - **A Candy sale arrived:** 11-09 1:23 PM PT, $0.17, "2022 Uncut Diamond ICONs" on Magic Eden — the first since 10-12. `candy_revival_sales_since_recorded_silence` = 1. The public status stays `silent_since_2026_10_12` on one print (decided 11-09); a scheduled check on 11-12 counts sales by day and set.

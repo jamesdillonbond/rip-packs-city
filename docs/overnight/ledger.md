@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-14 ~9:05 PM PT — Data-integrity alert: "editions with a recorded sale but no FMV" replaces "overall coverage < 95 %"; its snapshot migration is staged for Cowork; register #256 (Candy OpenSea on-chain capture) and #257 (Claude Code cloud)
+- **Route** `app/api/cron/data-integrity`: the coverage leg reads `get_fmv_activity_gap()` (pg_cron snapshot) instead of `get_fmv_coverage()`. It flags any edition with a sale but no FMV (0 on 11-14), and flags a snapshot that is missing or older than 26 h. A read that errors or hangs stays UNKNOWN and unflagged, like every other leg. Overall coverage is still reported, with and without the ~10,036 one-of-one generative Candy editions. The old flag read 76.9 % and fired daily from never-traded editions.
+- **Not applied:** `fmv_activity_gap` + `refresh_fmv_activity_gap` + pg_cron `rpc-fmv-activity-gap`. Supabase's destructive-statement prompt (the function's 14-day retention DELETE) went unanswered twice (~8:30 and ~8:45 PM PT), and no `schema_migrations` row exists. It is staged at `docs/proposals/fmv-activity-gap-STAGED.sql`, with Cowork filing `inbox/2026-11-15T0500Z-…`. That filing also carries the read-only check of the first legacy-listings runs. **Until it is applied, the alert reports coverage as null (no page).**
+- **Tests:** 2 inverted (low coverage alone no longer flags; an empty snapshot is flagged, not "ok"), 2 new (sale-but-no-FMV by collection; stale snapshot). Planted defects (threshold > 5, stale check removed, empty check removed) each fail. Preflight 6/6.
+- **Docs:** known-issues #256 / #257, the Candy roadmap 11-14 block (including Trevor's wiki-for-discovery-only sourcing rule), the session log, and the ops-monitor comment.
+- **Revert:** `git revert` the commit titled "feat(data-integrity): alert on editions with a sale but no FMV, read from the activity-gap snapshot". The DB half has nothing to revert until Cowork applies it; that file's header carries its own revert.
+
 ### 2026-11-14 ~8:55 PM PT — Total Mint is complete or "—" on player, set, series and team pages; Pinnacle characters stop borrowing mint dates from the set-level table (Claude Code cloud)
 - Trevor 8:35 PM PT: "Keep going." Register **#255** (partly resolved).
 - **Applied `20261115043933`** (8:39 PM PT): `get_player_detail`, an md5-guarded full-body replace with 5 exact edits.
