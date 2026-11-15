@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~9:30 AM PT — applied (Trevor: "apply all three"): analytics_pipeline_health's sales leg uses an index; get_hybrid_custody_candidates gets a 90 s timeout. The R153 player merge did NOT apply (confirmation unanswered) (Claude Code cloud)
+
+- `20261115172732_audit_20261115_analytics_pipeline_health_sales_leg_uses_index`: the `sales_2026` leg adds `AND price_usd > 0` → `idx_sales_2026_fmv_recalc_window`. Read back: 4.3 s / 14.8k blocks (9,314 disk) → 20 ms / 2.4k blocks; output unchanged (sales healthy, lag 7 min). Fixes the `/api/analytics/health` 500s (deep audit D4). Revert: re-apply `20260925060717`'s body.
+- `20261115172736_audit_20261115_hybrid_custody_candidates_timeout_90s`: `proconfig` now has `statement_timeout=90s`. Revert: `ALTER FUNCTION public.get_hybrid_custody_candidates(integer) RESET statement_timeout;`
+- Both files written from prod's stored statements, md5-verified. R153 (`docs/proposals/r153-player-spelling-merges-STAGED.sql`): the apply timed out on the destructive-statement question; verified nothing landed (no backup table, drop rows present, 0 R153 aliases).
+
 ### 2026-11-15 ~9:10 AM PT — pack calendar lists a Pinnacle capsule sale once: its own pins' "Open Edition" line is dropped (Claude Code cloud, Trevor live)
 - `dropOpenEditionsSoldAsCapsules` (lib/insights/pack-calendar.ts), run after DROP_CORRECTIONS: an OE whose name matches a Pinnacle capsule drop is the same release (Gargoyles Vol.1's OE minted 11-01 → 11-06 17:00 UTC, exactly its capsule close). 11-15's draft listed Walt Disney Mugs Vol.1 twice. OEs with no capsule line stay. 1 test (planted-defect checked).
 - Revert: find the commit by message "pack calendar: one line per Pinnacle capsule release" and `git revert` it. No DB change.
