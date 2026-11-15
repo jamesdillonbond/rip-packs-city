@@ -12,6 +12,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-14 ~5:40 PM PT — Trade room: a stale poll can't roll a just-saved room back; a slow collection tab can't answer under another tab; two signing-state races registered as #250 (Claude Code cloud)
+- Fresh-eyes review of the trade room (read-only reviewer, 8 findings). It confirmed the kill switch fails closed on both signing paths, the signable is tied to the room server-side, every mutation checks the caller's side, and moment ids are collection-scoped.
+- **Fixed in `app/trades/[code]/TradeRoomClient.tsx`:**
+  - Room reads and actions now share a sequence, so a 5 s poll that started before a save can no longer land after it with the older room. Before, it replaced the user's picks and the shown `v{version}`.
+  - The picker applies only the latest collection request, so a slow All Day chain read no longer renders "no NFL All Day collection" or All Day rows under the UFC tab.
+  - `lib/trade-room/holdings.ts`: a count that comes back without a number now throws instead of reading as "RPC hasn't indexed that account".
+- **Tests:** the two client race tests were red on the old code; the fetch harness now accepts async handlers. The holdings change has no dedicated test. Preflight green.
+- **Not fixed, registered as known-issues #250:** cancel vs co-sign, and unaccept vs `markSigning`. Both need one row-locking SQL function, not a two-statement patch. Also recorded there as product calls: the invite link exposes side A's wallet addresses; `GET ?relay=` serves an already-given signature after the kill switch is off; the fair-trade FMV is frozen at add time.
+- Revert: `git revert` the commit titled "fix(trade room review): stale poll and slow picker tab can't overwrite newer state; register #250".
+
 ### 2026-11-14 ~5:20 PM PT — Sets tab: expanding a set no longer hangs forever; All Day / UFC / Pinnacle resolve a username and refuse a never-scanned wallet instead of "0% of every set"; a preview says it is one (Claude Code cloud)
 - Fresh-eyes review of the set-progress routes and Collectors pages (read-only reviewer, 8 findings).
 - (1) `CollectionSetsClient`'s set-card expand effect depended on `loadingDetail`. Setting it re-ran the effect, whose cleanup cancelled the fetch in flight and whose re-run returned early, so every Top Shot and All Day expand hung on its skeleton, success or failure. The existing tests guarded their assertions with `if (btn)` and matched text that is always on screen.
