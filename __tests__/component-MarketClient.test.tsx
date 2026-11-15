@@ -1447,3 +1447,40 @@ describe("MarketClient — capped ASK_ONLY marker (#215)", () => {
     expect(document.body.textContent).not.toContain("capped at sales")
   })
 })
+
+// 2026-11-15: a 503/504 is a bounded read that ran out of time on cold pages; the
+// abandoned query warms them, so the client retries ONCE. A persistent failure must
+// still render the failure (never the empty state), and other statuses never retry.
+describe("MarketClient — one retry on a cold-read 503/504", () => {
+  const marketCalls = () =>
+    fetchMock.mock.calls.filter(([u]) => {
+      const s = String(u)
+      return s.startsWith("/api/market?")
+    }).length
+
+  it("a 503 followed by a good read renders the listings", async () => {
+    // Key the 503 on the /api/market? read itself: marketResponse also answers other
+    // fall-through URLs, so a shared counter could hand the 503 to the wrong request.
+    marketResponse = () => (marketCalls() <= 1 ? json(503, {}) : json(200, market()))
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard", undefined, { timeout: 3000 })
+    expect(screen.queryByText(/Couldn't load market/)).toBeNull()
+    expect(marketCalls()).toBe(2)
+  })
+
+  it("a persistent 503 still names the failure, after exactly two attempts", async () => {
+    marketResponse = () => json(503, {})
+    render(<MarketClient />)
+    const el = await screen.findByText(/Couldn't load market/, undefined, { timeout: 3000 })
+    expect(el.textContent).toContain("HTTP 503")
+    expect(screen.queryByText("No listings match these filters.")).toBeNull()
+    expect(marketCalls()).toBe(2)
+  })
+
+  it("a 500 is not retried", async () => {
+    marketResponse = () => json(500, {})
+    render(<MarketClient />)
+    await screen.findByText(/Couldn't load market/)
+    expect(marketCalls()).toBe(1)
+  })
+})

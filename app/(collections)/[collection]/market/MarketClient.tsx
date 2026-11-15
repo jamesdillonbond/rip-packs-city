@@ -469,7 +469,7 @@ function MarketInner() {
     // let the CDN serve repeat/cross-user loads instead of forcing every load to
     // the cold origin. `no-store` here defeated that edge cache — the dominant
     // cause of the "5-8s to first data" on the common (default-filter) view.
-    fetch(`/api/market?${fetchKey}`)
+    fetchMarketOnceRetried(`/api/market?${fetchKey}`, () => cancelled)
       .then((r) => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
       .then((j: MarketResponse) => { if (!cancelled) setData(j) })
       .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)) })
@@ -1374,6 +1374,21 @@ function MarketSection() {
 }
 
 // ── Page wrapper ────────────────────────────────────────────────────────
+// A 503/504 from /api/market is almost always a bounded read that ran out of time on
+// COLD pages (Panini's default view: 4 of 8 cold loads 503'd at ~8 s on 2026-11-15
+// while the same read takes ~1 s warm). The abandoned query keeps running server-side
+// and warms those pages, so ONE retry after a short pause usually succeeds. A second
+// failure is surfaced exactly as before ("Couldn't load market — HTTP 503"); other
+// statuses are never retried. Exported for tests.
+export const MARKET_RETRY_DELAY_MS = 600
+export async function fetchMarketOnceRetried(url: string, isCancelled: () => boolean): Promise<Response> {
+  const first = await fetch(url)
+  if ((first.status !== 503 && first.status !== 504) || isCancelled()) return first
+  await new Promise((resolve) => setTimeout(resolve, MARKET_RETRY_DELAY_MS))
+  if (isCancelled()) return first
+  return fetch(url)
+}
+
 export default function MarketClient() {
   return (
     <Suspense fallback={<div className="rpc-mono" style={{ padding: 24, color: "var(--rpc-text-muted)" }}>Loading market…</div>}>
