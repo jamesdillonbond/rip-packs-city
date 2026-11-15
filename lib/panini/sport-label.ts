@@ -3,12 +3,13 @@
 // profile says "WOMENS BASKETBALL" / "FOOTBALL": RPC shows "WNBA" and Title Case for the rest, keeping
 // league acronyms (WWE, NBA, …) upper-case — the vocabulary panini_holdings_breakdown uses too.
 
-const ACRONYMS = new Set(["WWE", "NBA", "NFL", "MLB", "NASCAR", "UFC", "WNBA", "NHL", "MLS"])
+const ACRONYMS = new Set(["WWE", "NBA", "NFL", "MLB", "NASCAR", "UFC", "WNBA", "NHL", "MLS", "NWSL"])
 
 export function paniniSportLabel(sport: string): string {
   const s = sport.trim()
   const up = s.toUpperCase()
   if (up === "WOMENS BASKETBALL" || up === "WOMEN'S BASKETBALL") return "WNBA"
+  if (up === "WOMENS SOCCER" || up === "WOMEN'S SOCCER") return "NWSL"
   if (ACRONYMS.has(up)) return up
   return s
     .toLowerCase()

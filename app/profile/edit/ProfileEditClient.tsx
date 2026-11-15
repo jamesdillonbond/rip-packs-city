@@ -50,13 +50,14 @@ const EMPTY_PICKS: PickMap = {
   NFL:    { team_slug: "", is_primary: false },
   LALIGA: { team_slug: "", is_primary: false },
   MLB:    { team_slug: "", is_primary: false },
+  NWSL:   { team_slug: "", is_primary: false },
 };
 
 export default function ProfileEditClient() {
   const [form, setForm] = useState<BioForm>(EMPTY);
   const [picks, setPicks] = useState<PickMap>(EMPTY_PICKS);
   const [teamOptions, setTeamOptions] = useState<Record<League, TeamMaster[] | null>>({
-    NBA: null, WNBA: null, NFL: null, LALIGA: null, MLB: null,
+    NBA: null, WNBA: null, NFL: null, LALIGA: null, MLB: null, NWSL: null,
   });
   const [loading, setLoading] = useState(true);
   /**

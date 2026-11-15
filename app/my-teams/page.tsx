@@ -40,8 +40,8 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 }
 
-const LEAGUE_ORDER = ["NBA", "WNBA", "NFL", "LALIGA", "MLB"]
-const LEAGUE_LABEL: Record<string, string> = { NBA: "NBA", WNBA: "WNBA", NFL: "NFL", LALIGA: "LaLiga", MLB: "MLB" }
+const LEAGUE_ORDER = ["NBA", "WNBA", "NFL", "LALIGA", "MLB", "NWSL"]
+const LEAGUE_LABEL: Record<string, string> = { NBA: "NBA", WNBA: "WNBA", NFL: "NFL", LALIGA: "LaLiga", MLB: "MLB", NWSL: "NWSL" }
 
 // fmtUsd/fmtCount/logoFor extracted to lib/fan-teams-format.ts (measured + tested).
 const fmtUsd = fmtTeamUsd

@@ -141,9 +141,10 @@ const PINS = [
     // Added 2026-10-26. The Panini team map: listing > printed > unanimous same-product sibling > (NFL / MLB)
     // unanimous same-season other product (basis same_season, 20261026220929) > (WNBA / NFL) unanimous Flow moments that
     // season (inferred_from topshot_moments / allday_moments, 20261026225742); rows never deleted.
+    // 2026-11-15: 'Womens Soccer' (NWSL) added to the catalogue sport whitelist (20261115165011).
     fn: "refresh_panini_edition_team_keys",
     test: "supabase/tests/refresh_panini_edition_team_keys.sql",
-    migration: "supabase/migrations/20261026225742_audit_20261026_panini_team_keys_flow_moments.sql",
+    migration: "supabase/migrations/20261115165011_audit_20261115_nwsl_teams_and_panini_aliases.sql",
   },
   {
     // 2026-10-19: change-only floor-ask history for Pinnacle renders (#193 instrument).

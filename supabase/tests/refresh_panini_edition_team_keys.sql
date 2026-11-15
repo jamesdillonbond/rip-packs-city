@@ -1,6 +1,7 @@
 -- DB invariant: public.refresh_panini_edition_team_keys — the per-edition Panini team map behind the franchise
 -- hubs, the edition-page team chip, player-page teams and the concierge (migration
--- 20261026044548_audit_20261025_panini_edition_team_keys.sql; the season rule 20261026220929, Flow moments 20261026225742). Claims:
+-- 20261026044548_audit_20261025_panini_edition_team_keys.sql; the season rule 20261026220929, Flow moments 20261026225742; NWSL 'Womens Soccer'
+-- in the catalogue whitelist 20261115165011). Claims:
 --   1. a card the team walk saw under a team filter takes THAT team (source listing), even when another team is
 --      printed on it;
 --   2. a card with no listing takes the team printed on it (panini_editions.nation) through the resolver (printed);
@@ -138,7 +139,7 @@ BEGIN
            substring(pp.name FROM '^((?:19|20)[0-9]{2}(?:-[0-9]{2})?)') AS season
       FROM public.panini_editions pe
       JOIN public.panini_products pp ON pp.set_id = pe.product_set_id
-     WHERE pp.last_grid_sport IN ('Basketball', 'Baseball', 'Football', 'Womens Basketball')
+     WHERE pp.last_grid_sport IN ('Basketball', 'Baseball', 'Football', 'Womens Basketball', 'Womens Soccer')
   ), lk AS MATERIALIZED (
     SELECT l.psku AS external_id, array_agg(DISTINCT k ORDER BY k) AS keys
       FROM public.panini_team_listings l

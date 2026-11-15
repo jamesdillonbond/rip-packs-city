@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
   const league = req.nextUrl.searchParams.get("league");
   if (!isLeague(league)) {
     return NextResponse.json(
-      { error: "league must be one of NBA, WNBA, NFL, LALIGA, MLB" },
+      { error: "league must be one of NBA, WNBA, NFL, LALIGA, MLB, NWSL" },
       { status: 400 }
     );
   }

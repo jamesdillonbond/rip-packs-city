@@ -1,6 +1,6 @@
 # Franchise hubs — one page per real-world team, across collections
 
-**Status:** foundation SHIPPED 2026-09-23 (PT). ⭐ **Panini cards on the hubs SHIPPED 2026-10-22/23** — every NBA hub today, MLB / NFL / WNBA as the team walk reaches them (section "Panini on the hubs" just below; it supersedes "Why every hub shows ONE panel today" and the walk's "Not done, on purpose"). Trevor's 09-23 call: "Both, foundation first"; his 10-22 call: "general player, team, etc pages that are agnostic … Do it all". Player hubs: [player-hubs.md](player-hubs.md).
+**Status:** foundation SHIPPED 2026-09-23 (PT). NWSL league + 16 clubs added 2026-11-15 (section at the end). ⭐ **Panini cards on the hubs SHIPPED 2026-10-22/23** — every NBA hub today, MLB / NFL / WNBA as the team walk reaches them (section "Panini on the hubs" just below; it supersedes "Why every hub shows ONE panel today" and the walk's "Not done, on purpose"). Trevor's 09-23 call: "Both, foundation first"; his 10-22 call: "general player, team, etc pages that are agnostic … Do it all". Player hubs: [player-hubs.md](player-hubs.md).
 
 ## What a hub is
 
@@ -215,3 +215,19 @@ Asked whether the team walk could run more teams a night. Measured from `pipelin
 - The ingest runner (every 2 h from 6 AM, `panini-schedule.bat`) is active in that Chrome almost continuously: activity clusters over 24 h were 6:55–9:45, 11:01–13:45, 14:39–16:27, 18:34–21:45, 22:45–1:45, 3:01–5:45 — the only gaps are ~30–60 min after each 2-hourly start.
 - So a 6th nightly team (would start ~4:45) pushes the collector walk past the 6 AM full run; raising `PANINI_TEAM_ROTATION` alone does nothing because `PANINI_WALK_BUDGET_MIN` only stops a team from STARTING. A second daytime slot would share Chrome with an ingest run (more concurrent page loads from one residential IP — the block risk).
 - Not changed. The plan already interleaves never-walked teams by sport (`20261023145800`); on 10-26 14 WNBA, 18 MLB and ≥18 NFL labels were still never walked — ~10–12 more nights at 5 a night (≈ early November) before every roster team has one walk.
+
+## 2026-11-15 — NWSL joins (Panini Blockchain drop #1065)
+
+Trevor asked whether the Thorns existed as a team ahead of **2026 Panini NFT Prizm Black NWSL Soccer** (drop #1065, Fri 2026-11-20 8:00 AM PT, 11,650 store packs at $10 / 4 cards, Panini sport label `WOMENS SOCCER`, 16 clubs in the pack page's team filter); "do what makes sense".
+
+| Version | Migration | What |
+|---|---|---|
+| `20261115164806` | `audit_20261115_league_t_add_nwsl` | `league_t` + `NWSL` |
+| `20261115165011` | `audit_20261115_nwsl_teams_and_panini_aliases` | 16 clubs in `teams_master` (Thorns = `/teams/nwsl/thorns`); `panini_team_aliases` sport CHECK + `Womens Soccer` and 29 aliases (Panini's strings in "FC" / "Fc" spellings, plus "Utah Royals" without FC); `refresh_panini_edition_team_keys` catalogue whitelist + `Womens Soccer` (pin updated, drift guard repointed) |
+| `20261115165038` | `audit_20261115_panini_franchise_panel_nwsl_sport` | `get_panini_franchise_panel` coverage CASE `NWSL → Womens Soccer` |
+
+App: `League` / `LEAGUES` / `isLeague` gain `NWSL` (without it `parseHubParams` 404s every NWSL hub), profile-edit pick maps, `/my-teams` order + label, "Womens Soccer" reads "NWSL" (`paniniSportLabel`, `paniniSportNoun`).
+
+**How NWSL cards reach a team: the PRINTED path, not the walk.** The soccer runner fills `panini_editions.nation` from the grid's `team` field (the catalogue's existing soccer cards carry clubs there — "AC Milan", "AFC Ajax" …), so once #1065 mints, `refresh_panini_edition_team_keys` resolves each card's printed club through the aliases (dual cards "x | x" split by the resolver). The team walk was deliberately NOT extended: it needs `Womens Soccer` in two more CHECKs (`panini_team_walk_targets`, `panini_team_listings`), `panini_team_listings_ingest`'s sport guard, `TEAM_WALK_SPORTS` and the laptop script's `SUPPORTED_SPORTS`, a laptop pull, and Panini's soccer `team=` URL strings are unverified — while the printed path should already place nearly every card. Revisit only if the post-drop read shows printed coverage is thin.
+
+**Open:** club colours are NULL (no authoritative hex source found; the UI falls back to neutral); the sport string is assumed `Womens Soccer` — if `panini_products.last_grid_sport` lands as `Soccer`, widen the whitelist + alias CHECK. A post-drop check is scheduled for 2026-11-20 12:30 PM PT. Pack EV for #1065 is not modelled (WNBA 2026's bespoke model is the template).

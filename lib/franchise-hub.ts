@@ -345,7 +345,9 @@ export function paniniCoverage(
   return { sport: c.sport, noun: paniniSportNoun(c.sport), mapped, catalogued, pct: Math.floor((mapped / catalogued) * 100) }
 }
 
-/** Panini's grid sport as prose: "Womens Basketball" reads "WNBA", never "womens basketball". */
+/** Panini's grid sport as prose: "Womens Basketball" reads "WNBA", "Womens Soccer" reads "NWSL", never lower-cased. */
 export function paniniSportNoun(sport: string): string {
-  return sport === "Womens Basketball" ? "WNBA" : sport.toLowerCase()
+  if (sport === "Womens Basketball") return "WNBA"
+  if (sport === "Womens Soccer") return "NWSL"
+  return sport.toLowerCase()
 }
