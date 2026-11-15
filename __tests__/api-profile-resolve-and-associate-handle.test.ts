@@ -31,6 +31,7 @@ const state: {
   wuRows: any[]
   wuErr: any
   savedUpdates: any[]
+  proven: boolean
 } = {
   user: { id: "u-1" },
   resolved: { walletAddress: "0x1111111111111111", username: "Rigged", dapperId: null },
@@ -41,6 +42,7 @@ const state: {
   wuRows: [],
   wuErr: null,
   savedUpdates: [],
+  proven: true,
 }
 
 vi.mock("@/lib/supabase", () => {
@@ -54,6 +56,7 @@ vi.mock("@/lib/supabase", () => {
         return b
       },
       limit: () => b,
+      not: () => b,
       maybeSingle: async () => ({ data: state.bioRow, error: state.bioReadErr }),
       upsert: (payload: any) => {
         if (table === "profile_bio") {
@@ -65,7 +68,9 @@ vi.mock("@/lib/supabase", () => {
       then: (resolve: any) =>
         table === "wallet_usernames"
           ? resolve({ data: state.wuErr ? null : state.wuRows, error: state.wuErr })
-          : resolve({ data: [], error: null }),
+          : table === "trade_block_wallets"
+            ? resolve({ data: state.proven ? [{ source: "proven" }] : [], error: null })
+            : resolve({ data: [], error: null }),
     }
     return b
   }
@@ -102,6 +107,9 @@ beforeEach(() => {
   state.wuRows = []
   state.wuErr = null
   state.savedUpdates = []
+  // Deep audit A-1 (2026-11-15): the handle is claimed only for a PROVEN wallet. Every
+  // case above the "proof required" block runs proven, so the claim rules stay exercised.
+  state.proven = true
   vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => ({}) })))
 })
 afterEach(() => vi.unstubAllGlobals())
@@ -211,5 +219,39 @@ describe("the wallet-ADDRESS path reverse-resolves the username we already hold 
     const body = await (await POST(req({ address: "0x2222222222222222" }))).json()
     expect(state.savedUpdates).toHaveLength(0)
     expect(body.profileHandleClaimed).toBe(false)
+  })
+})
+
+describe("proof required (deep audit 2026-11-15 A-1; Trevor: \"Proof required\")", () => {
+  // A pasted username/address is a public identifier anyone can type. Before this, a
+  // signed-in stranger could take a real collector's handle and appear as them.
+  it("an UNPROVEN wallet still loads, but its Top Shot name is NOT claimed as the handle", async () => {
+    state.proven = false
+    const res = await POST(req({ username: "Rigged" }))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.walletAddress).toBe("0x1111111111111111")
+    expect(body.associatedCollections.length).toBeGreaterThan(0)
+    expect(body.profileHandleClaimed).toBe(false)
+    expect(body.profileHandle).toBeNull()
+    expect(body.profileHandleReason).toBe("unproven")
+    expect(state.upserts, "no handle may be written for an unproven wallet").toHaveLength(0)
+  })
+
+  it("the ADDRESS path is gated the same way", async () => {
+    state.proven = false
+    state.wuRows = [{ username: "ReddieMiller31" }]
+    const body = await (await POST(req({ address: "0x2222222222222222" }))).json()
+    expect(state.savedUpdates).toContainEqual({ username: "ReddieMiller31" })
+    expect(body.profileHandleClaimed).toBe(false)
+    expect(state.upserts).toHaveLength(0)
+  })
+
+  it("an unproven re-resolve still reports the handle the collector already has (no nag)", async () => {
+    state.proven = false
+    state.bioRow = { username: "chosen-by-hand" }
+    const body = await (await POST(req({ username: "Rigged" }))).json()
+    expect(body.profileHandle).toBe("chosen-by-hand")
+    expect(body.profileHandleReason).toBe("already_set")
   })
 })

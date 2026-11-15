@@ -26,6 +26,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { FlowScriptError } from "@/lib/giveaways/flow-script"
 import { discoverAccounts } from "@/lib/giveaways/linked-accounts"
 import { issueClaimNonce, verifyClaimProof, type ClaimProofInput } from "@/lib/giveaways/claim-proof"
+import { claimHandleForProvenWallet } from "@/lib/profile/claim-username"
 import { usernamesFor } from "@/lib/trade-room/view"
 import { readTopShotListed } from "@/lib/trade-room/topshot-listed"
 import { collectionBySlug, FLOW_ADDRESS_RE } from "@/lib/trade-block/rules"
@@ -199,7 +200,10 @@ export async function POST(req: NextRequest) {
           throw new TradeBlockError("Pick an account this wallet owns or links.", 400, "bad_source")
         }
         await saveProvenAccount(supabaseAdmin, u.id, out.address, source)
-        return json({ saved: true, ...(await myBlock(u.id)) })
+        // A proven wallet may now carry its Top Shot name as the public handle (deep audit
+        // A-1: handles are claimed only on proof). Never overwrites, never steals, never throws.
+        const handle = await claimHandleForProvenWallet(supabaseAdmin as any, u.id, source)
+        return json({ saved: true, profileHandleClaimed: handle.claimed, profileHandle: handle.claimed ? handle.handle : null, ...(await myBlock(u.id)) })
       }
       case "create": {
         const loaded = await createListing(supabaseAdmin, u.id, body)

@@ -18,6 +18,7 @@ export type ClaimOutcome =
         | "already_set" // the collector already has a handle — theirs wins
         | "taken" // someone else holds it
         | "unusable" // the Top Shot name can't become a legal handle
+        | "unproven" // the wallet is not proven to belong to this account (deep audit A-1)
         | "error" // the read/write failed; nothing was changed
       handle?: string
     }
@@ -48,6 +49,9 @@ export async function claimUsernameFromTopShot(
   },
   userId: string,
   topShotUsername: string | null | undefined,
+  /** Deep audit A-1: false = the wallet is not proven for this account, so never WRITE a handle
+   *  (an existing handle is still reported). Defaults to true for callers that hold a proof. */
+  opts: { proven: boolean } = { proven: true },
 ): Promise<ClaimOutcome> {
   const derived = handleFromTopShotUsername(topShotUsername)
   if (!derived.ok) return { claimed: false, reason: "unusable" }
@@ -68,6 +72,7 @@ export async function claimUsernameFromTopShot(
 
     const current = (existing?.username ?? "").trim()
     if (current) return { claimed: false, reason: "already_set", handle: current }
+    if (!opts.proven) return { claimed: false, reason: "unproven" }
 
     // Upsert, not update: a collector can have saved wallets before they have a
     // profile_bio row at all (measured: 1 of 21 on 2026-08-13), and an UPDATE
@@ -89,6 +94,63 @@ export async function claimUsernameFromTopShot(
     }
 
     return { claimed: true, handle }
+  } catch {
+    return { claimed: false, reason: "error" }
+  }
+}
+
+/**
+ * Is `walletAddress` a Flow account this user has PROVEN they control?
+ *
+ * Deep audit 2026-11-15 A-1 (Trevor: "Proof required"): a pasted Top Shot username
+ * or address is a public IDENTIFIER, not ownership, so it must never hand out that
+ * collector's public handle. The proofs RPC already records are the Trade Block
+ * wallet signature (`trade_block_wallets`) and a signed trade-room side
+ * (`trade_room_sides`); either names the account (`source`) the signer controls.
+ *
+ * FAILS CLOSED: a failed read is `false` — a handle is a nice-to-have, and an
+ * outage must not become a window in which handles are handed out unproven.
+ */
+export async function isWalletProvenForUser(
+  db: { from: (t: string) => any },
+  userId: string,
+  walletAddress: string,
+): Promise<boolean> {
+  const addr = (walletAddress ?? "").trim().toLowerCase()
+  if (!/^0x[0-9a-f]{16}$/.test(addr)) return false
+  try {
+    const [block, rooms] = await Promise.all([
+      db.from("trade_block_wallets").select("source").eq("user_id", userId).eq("source", addr).not("proven_at", "is", null).limit(1),
+      db.from("trade_room_sides").select("source").eq("user_id", userId).eq("source", addr).not("proven_at", "is", null).limit(1),
+    ])
+    if (block?.error || rooms?.error) return false
+    return (Array.isArray(block?.data) && block.data.length > 0) || (Array.isArray(rooms?.data) && rooms.data.length > 0)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * After a wallet proof lands: give the user the handle derived from that wallet's
+ * known Top Shot username (`wallet_usernames`), under the same never-overwrite /
+ * never-steal rules. Fail soft — a proof must never fail because of the handle.
+ */
+export async function claimHandleForProvenWallet(
+  db: { from: (t: string) => any },
+  userId: string,
+  walletAddress: string,
+): Promise<ClaimOutcome> {
+  try {
+    const addr = (walletAddress ?? "").trim().toLowerCase()
+    const { data, error } = await db
+      .from("wallet_usernames")
+      .select("username")
+      .in("wallet_addr", [addr, addr.replace(/^0x/, "")])
+      .limit(1)
+    if (error) return { claimed: false, reason: "error" }
+    const name = (Array.isArray(data) ? data[0] : null)?.username
+    if (typeof name !== "string" || !name.trim()) return { claimed: false, reason: "unusable" }
+    return await claimUsernameFromTopShot(db, userId, name.trim())
   } catch {
     return { claimed: false, reason: "error" }
   }

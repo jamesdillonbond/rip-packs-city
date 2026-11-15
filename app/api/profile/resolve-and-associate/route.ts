@@ -37,7 +37,7 @@ import { publishedCollections } from "@/lib/collections";
 import { evaluateSavedWalletCap, SAVED_WALLET_LIMIT, savedWalletLimitMessage, dapperWalletLimitMessage, otherDapperWalletSaved } from "@/lib/profile/saved-wallet-quota";
 import { countLinkedIdentities } from "@/lib/profile/collector-identities";
 import { warmWalletDeep } from "@/lib/profile/warm-wallet";
-import { claimUsernameFromTopShot, type ClaimOutcome } from "@/lib/profile/claim-username";
+import { claimUsernameFromTopShot, isWalletProvenForUser, type ClaimOutcome } from "@/lib/profile/claim-username";
 import { isCadenceAddress, normalizeAddress } from "@/lib/address";
 
 // Flow collections that should auto-attach to the resolved wallet on signup.
@@ -317,8 +317,16 @@ export async function POST(req: NextRequest) {
   // Typed as ClaimOutcome so the address path (no Top Shot name to derive from)
   // and the claim path share one shape — otherwise the literal narrows and the
   // `handle` read below only compiles for one branch.
+  //
+  // ⛔ PROOF REQUIRED (deep audit 2026-11-15 A-1; Trevor: "Proof required"). The
+  // username/address in the body is a public identifier anyone can paste, so the
+  // handle is claimed only when THIS account has proven the wallet (Trade Block
+  // signature or a signed trade-room side). Otherwise the wallet still loads and
+  // the collector picks a handle on /profile/edit, or proves the wallet on the
+  // Trade Block, which claims the Top Shot name then (app/api/trade-block).
+  const proven = username ? await isWalletProvenForUser(supabase as any, user.id, walletAddress) : false;
   const claim: ClaimOutcome = username
-    ? await claimUsernameFromTopShot(supabase as any, user.id, username)
+    ? await claimUsernameFromTopShot(supabase as any, user.id, username, { proven })
     : { claimed: false, reason: "unusable" };
   if (!claim.claimed && claim.reason === "error") {
     console.warn("[resolve-and-associate] handle claim failed for", user.id);
@@ -391,5 +399,8 @@ export async function POST(req: NextRequest) {
     // handle they now have either way — a re-resolve reports the existing one.
     profileHandle: claim.claimed ? claim.handle : (claim.handle ?? null),
     profileHandleClaimed: claim.claimed,
+    // "unproven" = the Top Shot name was NOT used as the public handle because the
+    // wallet is not proven for this account (A-1); the dashboard says how to get it.
+    profileHandleReason: claim.claimed ? null : claim.reason,
   });
 }
