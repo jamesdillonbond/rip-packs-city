@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~3:46 PM PT — Repo now describes the two UFC Aptos migrations applied to prod (`20261115233604` collections crosswalk, `20261115233737` new editions) (Claude Code cloud; Trevor: "run db:migrations:recover and commit them")
+- Full 3-day window diffed by name against `supabase/migrations`: exactly these two were fileless. Recovered by dispatching `migration-autorecover.yml` (run 43776517673, green incl. anon-exec + pins gate and post-push `db:migrations:check`) → bot commit `2b5896f59`. md5 of both files re-checked locally = prod's `md5(array_to_string(statements, E'\n'))` (ba4227ea…, 225a8cf5…).
+- No DB change in this entry (the DDL was already live). Revert: `git revert 2b5896f59` removes the files only — undoing the DDL itself needs its own migration.
+
 ### 2026-11-15 ~3:33 PM PT — Verify modal: a click that lands during the 20 s background check is no longer swallowed (Claude Code cloud, autonomous; review of `01481016c`)
 - `checkNow` returned early while the watch's silent check was in flight, and a silent miss reports nothing, so a click in that window did nothing visible (no spinner, no hint). Now the click PROMOTES the in-flight check (spinner at once, its hint/error shown); still one request. New test (pending background check → click → miss copy shows, `checks` stays 1); planted defect (old early return) reds it. The status-before-body guard in `client-pages-failed-vs-empty-guard` re-pinned to the new `loud()` spelling, contiguity unchanged. Preflight 7/7.
 - Revert: `git revert` the commit titled "verify modal: a click during the background check shows that check's answer".
