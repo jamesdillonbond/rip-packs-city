@@ -550,6 +550,9 @@ export async function GET(req: NextRequest) {
           acquired_type: 1,
           transaction_hash: "cache-refresh:" + id,
           source: "cache_refresh",
+          // 2026-11-14: this route also serves All Day; without it the row took the column's
+          // Top Shot default (moment ids collide across collections, #142).
+          collection_id: collectionId,
         }
       })
       const { error } = await supabase

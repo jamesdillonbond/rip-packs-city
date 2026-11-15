@@ -196,6 +196,8 @@ describe("cache-refresh — diff + enrichment", () => {
       acquisition_method: "unknown",
       transaction_hash: "cache-refresh:102",
       source: "cache_refresh",
+      // 2026-11-14: scoped to the collection served -- without it the row took the Top Shot column default (#142)
+      collection_id: TOPSHOT,
     })
 
     // Enrichment landed the CANONICAL edition key (not the raw "3:45"),
