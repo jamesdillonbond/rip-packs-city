@@ -158,6 +158,12 @@ Every post that has a template ships with an RPC-branded image. On X, a post wit
 - **Big sale (Trevor, 11-14).** One sale, large: the asset on the left, and on the right the headline, player, set · team, the edition's badges and special serials, the price, when it sold (PT) and the buyer. `--video` also renders an MP4 with the moment's own Top Shot video in the art box (needs ffmpeg; muted, because the moment's audio is NBA game sound) — post the video when there is one. **Badges are icons only, never named** ("We don't need to name out each badge there"); **Three-Star Rookie replaces its three rookie badges** ("the point of the triple badge is that we don't need to then show each of those three badges individually"); **Autographed is left off** ("users can see that"). Badges come from `/api/entity/edition-badges` and only Top Shot's official icons are drawn; special serials (#1, perfect #N/N, jersey match via `/api/entity/edition?part=bio`) use Top Shot's own glyphs on Top Shot and RPC's elsewhere. The text column sits a clear gap right of the art ("a little bit more of a spacing gap between the video and the text").
 - The daily task sends the image as a file with the draft. Trevor saves it and attaches it to post 1 (the one-tap post link cannot carry an image).
 
+## One-off: supply breakdown quote post (11-15)
+
+A reply to the 11-14 rookie top-10 post asked where the supply sits; posted as a quote post: https://x.com/rippackscity/status/2122082396774547650 (graphic: one stacked bar per player — unlocked · locked · in packs · minted, not in packs · burned).
+
+Method, so a repeat is consistent: per edition from `badge_editions` (Top Shot's counts, refreshed hourly) — unlocked = circulation − locked − burned − hidden_in_packs; "minted, not in packs" (issuer reserve) = `hidden_at_fetch` − Σ `remaining_count` across the Atlas dists **measured at the same fetch** (`topshot_atlas_dist_editions`, the row with the largest remaining sets the reference), and in packs = current hidden − that reserve. ⚠ Do not subtract a stale pack count from a fresh hidden count: on 11-15 that understated the reserve by ~30 (Collector Packs kept being opened after the pack read). `get_topshot_issuer_held_split_edition()` takes its `hidden` live, so it has the same skew between dist passes.
+
 ## When the data isn't there
 
 If the script sets `skip_reason`, the task says so and offers the "week in numbers" post (`--slot sat`) as a fallback. If an API fails, nothing is drafted from a guess.
