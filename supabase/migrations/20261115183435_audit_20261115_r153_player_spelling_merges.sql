@@ -1,3 +1,6 @@
+-- APPLIED 2026-11-15 ~10:34 AM PT by Cowork through the Supabase SQL editor (Trevor approved
+-- "apply all three"; filing docs/overnight/inbox/2026-11-15T1635Z-…). History row inserted in the
+-- same run. Read back: 4 R153 aliases, 55 backed-up players rows, 126 backed-up edition pointers.
 -- 2026-11-15 (PT) — deep audit 2026-11-15 R153 / handoff §5: Candy and Panini
 -- players split across spelling variants, so the player page showed a fraction of
 -- the person's editions as the whole. get_player_editions picks ONE players row by
