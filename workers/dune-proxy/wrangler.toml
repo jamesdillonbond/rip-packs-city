@@ -18,4 +18,4 @@ compatibility_date = "2026-06-26"
 # Set in the Cloudflare dashboard 2026-11-14 ~9:10 PM PT (known-issue #190); mirrored here so a
 # `wrangler deploy` does not drop it. REPLACES DEFAULT_ALLOWED_QUERY_IDS in index.ts.
 [vars]
-DUNE_ALLOWED_QUERY_IDS = "7899011,8027085,8030177,9129456"
+DUNE_ALLOWED_QUERY_IDS = "7899011,8027085,8030177,9129456,9129294,9129489"

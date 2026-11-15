@@ -27,13 +27,35 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { sweepDeadlineSignal } from "@/lib/http/sweep-deadline"
 import { recordDuneUsage, columnCount } from "@/lib/dune/budget"
-import { STAGE_QUERY_ID, mapStageRow, type StageRow } from "@/lib/dune/topshot-acquisition-stage"
+import {
+  STAGE_QUERY_ID,
+  PROVENANCE_QUERY_ID,
+  mapStageRow,
+  mapProvenanceStageRow,
+} from "@/lib/dune/topshot-acquisition-stage"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 800
 
 const PIPELINE_NAME = "stage-topshot-acquisitions-dune"
-const STAGE_TABLE = "topshot_dune_acquisition_stage"
+// Lanes share one walk. `?lane=provenance` (#190 step 2) loads the wallet-scoped arrival
+// provenance into topshot_arrival_provenance; apply_topshot_arrival_provenance() (another
+// lane's tested writer) then decides what reaches moment_acquisitions — this route never does.
+const LANES = {
+  purchases: {
+    queryId: STAGE_QUERY_ID,
+    table: "topshot_dune_acquisition_stage",
+    onConflict: "wallet,nft_id",
+    map: mapStageRow,
+  },
+  provenance: {
+    queryId: PROVENANCE_QUERY_ID,
+    table: "topshot_arrival_provenance",
+    onConflict: "wallet,nft_id,arrival_tx",
+    map: mapProvenanceStageRow,
+  },
+} as const
+type LaneName = keyof typeof LANES
 const PAGE_LIMIT = 2000
 const WRITE_CHUNK = 1000
 const HARD_BUDGET_MS = 720_000
@@ -60,10 +82,17 @@ export async function POST(req: NextRequest) {
 async function run(req: NextRequest) {
   if (!authed(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
+  const laneParam = req.nextUrl.searchParams.get("lane") ?? "purchases"
+  if (!Object.prototype.hasOwnProperty.call(LANES, laneParam)) {
+    return NextResponse.json({ error: "unknown lane" }, { status: 400 })
+  }
+  const laneName = laneParam as LaneName
+  const lane = LANES[laneName]
+  const pipeline = laneName === "purchases" ? PIPELINE_NAME : `${PIPELINE_NAME}-${laneName}`
   const proxyUrl = process.env.DUNE_PROXY_URL
   const proxySecret = process.env.DUNE_PROXY_SECRET
   const startedAt = new Date().toISOString()
-  await writeInvocationHeartbeat({ pipeline: PIPELINE_NAME, startedAtMs: Date.parse(startedAt) })
+  await writeInvocationHeartbeat({ pipeline, startedAtMs: Date.parse(startedAt) })
 
   after(async () => {
     const startedMs = Date.now()
@@ -79,7 +108,7 @@ async function run(req: NextRequest) {
 
     const fetchPage = async (offset: number, limit: number): Promise<ResultsPage> => {
       const res = await fetch(
-        `${proxyUrl}/results?query_id=${STAGE_QUERY_ID}&limit=${limit}&offset=${offset}`,
+        `${proxyUrl}/results?query_id=${lane.queryId}&limit=${limit}&offset=${offset}`,
         {
           headers: { Authorization: `Bearer ${proxySecret}` },
           cache: "no-store",
@@ -93,9 +122,9 @@ async function run(req: NextRequest) {
       const body = (await res.json().catch(() => null)) as ResultsPage | null
       const rows = body?.result?.rows ?? []
       await recordDuneUsage({
-        pipeline: PIPELINE_NAME,
+        pipeline,
         endpoint: "results",
-        queryId: STAGE_QUERY_ID,
+        queryId: lane.queryId,
         rows: rows.length,
         columns: columnCount(rows),
         httpStatus: res.status,
@@ -129,7 +158,7 @@ async function run(req: NextRequest) {
         }
 
         const { count: haveCount, error: haveErr } = await supabaseAdmin
-          .from(STAGE_TABLE)
+          .from(lane.table)
           .select("nft_id", { count: "exact", head: true })
           .eq("dune_execution_id", executionId)
         if (haveErr || haveCount == null) throw new Error(`stage count read: ${haveErr?.message ?? "no count"}`)
@@ -147,16 +176,16 @@ async function run(req: NextRequest) {
             }
             const rows = page.result?.rows ?? []
             found += rows.length
-            const mapped: StageRow[] = []
+            const mapped: Record<string, unknown>[] = []
             for (const r of rows) {
-              const m = mapStageRow(r, executionId)
+              const m = lane.map(r, executionId)
               if (m) mapped.push(m)
               else skipped++
             }
             for (let i = 0; i < mapped.length; i += WRITE_CHUNK) {
               const { error: upErr } = await supabaseAdmin
-                .from(STAGE_TABLE)
-                .upsert(mapped.slice(i, i + WRITE_CHUNK), { onConflict: "wallet,nft_id" })
+                .from(lane.table)
+                .upsert(mapped.slice(i, i + WRITE_CHUNK), { onConflict: lane.onConflict })
               if (upErr) throw new Error(`stage upsert at offset ${offset}: ${upErr.message}`)
             }
             if (page.next_offset == null || rows.length === 0) break
@@ -165,7 +194,7 @@ async function run(req: NextRequest) {
 
           // Written = what the table now holds for this execution, read back.
           const { count: afterCount, error: afterErr } = await supabaseAdmin
-            .from(STAGE_TABLE)
+            .from(lane.table)
             .select("nft_id", { count: "exact", head: true })
             .eq("dune_execution_id", executionId)
           if (afterErr || afterCount == null) throw new Error(`stage count re-read: ${afterErr?.message ?? "no count"}`)
@@ -186,7 +215,7 @@ async function run(req: NextRequest) {
 
     try {
       await supabaseAdmin.rpc("log_pipeline_run", {
-        p_pipeline: PIPELINE_NAME,
+        p_pipeline: pipeline,
         p_started_at: startedAt,
         p_rows_found: found,
         p_rows_written: upToDate ? 0 : stagedForExecution,
@@ -194,7 +223,7 @@ async function run(req: NextRequest) {
         p_ok: ok,
         p_error: errMsg,
         p_extra: {
-          query_id: STAGE_QUERY_ID,
+          query_id: lane.queryId,
           execution_id: executionId,
           dune_total_rows: totalRows,
           staged_for_execution: stagedForExecution,
@@ -204,9 +233,9 @@ async function run(req: NextRequest) {
         },
       })
     } catch (logErr) {
-      console.log(`[${PIPELINE_NAME}] log_pipeline_run err: ${logErr instanceof Error ? logErr.message : String(logErr)}`)
+      console.log(`[${pipeline}] log_pipeline_run err: ${logErr instanceof Error ? logErr.message : String(logErr)}`)
     }
   })
 
-  return NextResponse.json({ ok: true, accepted: true, pipeline: PIPELINE_NAME }, { status: 202 })
+  return NextResponse.json({ ok: true, accepted: true, pipeline }, { status: 202 })
 }

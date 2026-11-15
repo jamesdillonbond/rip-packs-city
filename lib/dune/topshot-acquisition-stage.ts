@@ -3,6 +3,8 @@
 // Known-issue #190: the row mapper for /api/cron/stage-topshot-acquisitions-dune, kept out of the
 // route file (a Next.js route may export only its handlers and segment config).
 
+import { mapProvenanceRow, type ProvenanceRow } from "@/lib/dune/arrival-provenance"
+
 // Private temp query (team-owned). The id is not a secret: it is useless without the Dune key,
 // which only the dune-proxy worker holds. It must be in the worker's DUNE_ALLOWED_QUERY_IDS.
 export const STAGE_QUERY_ID = "9129456"
@@ -53,3 +55,19 @@ export function mapStageRow(raw: Record<string, unknown>, executionId: string): 
   }
 }
 
+
+// ── Provenance lane (#190 step 2) ────────────────────────────────────────────────────────────
+// Private temp query 9129489: the arrival-provenance classification of Dune query 9129294
+// (MP/LC/OC/P/X/S/T/N, see app/api/cron/topshot-arrival-provenance-dune) run ONCE over every
+// moment whose latest Deposit is into a saved wallet, instead of 2,000 ids per execution. It feeds
+// public.topshot_arrival_provenance; apply_topshot_arrival_provenance() decides what is written.
+export const PROVENANCE_QUERY_ID = "9129489"
+
+export function mapProvenanceStageRow(
+  raw: Record<string, unknown>,
+  executionId: string,
+): (ProvenanceRow & { probed_at: string; dune_execution_id: string }) | null {
+  const row = mapProvenanceRow(raw)
+  if (!row) return null
+  return { ...row, probed_at: new Date().toISOString(), dune_execution_id: executionId }
+}

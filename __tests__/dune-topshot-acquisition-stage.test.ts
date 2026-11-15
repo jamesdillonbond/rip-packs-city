@@ -55,3 +55,42 @@ describe("app/api/cron/stage-topshot-acquisitions-dune/route.ts", () => {
     expect(res.status).toBe(401)
   })
 })
+
+describe("mapProvenanceStageRow (#190 provenance lane)", () => {
+  const raw = {
+    id: "309780",
+    w: "0x26ae10d4d65856f", // Dune strips the leading zero
+    dt: "2021-02-01",
+    h: 12345,
+    tx: "a".repeat(64),
+    k: "P",
+    p: null,
+    f: "0xe1f2a091f7bb5245",
+  }
+  it("restores the stripped leading zero and stamps the execution", async () => {
+    const { mapProvenanceStageRow } = await import("@/lib/dune/topshot-acquisition-stage")
+    const row = mapProvenanceStageRow(raw, "EXEC9")
+    expect(row?.wallet).toBe("0x026ae10d4d65856f")
+    expect(row?.kind).toBe("P")
+    expect(row?.price).toBeNull()
+    expect(row?.dune_execution_id).toBe("EXEC9")
+  })
+  it("rejects an unknown kind rather than guessing one", async () => {
+    const { mapProvenanceStageRow } = await import("@/lib/dune/topshot-acquisition-stage")
+    expect(mapProvenanceStageRow({ ...raw, k: "Q" }, "E")).toBeNull()
+  })
+})
+
+describe("stage route lanes", () => {
+  it("refuses an unknown lane", async () => {
+    process.env.CRON_SECRET = process.env.CRON_SECRET || "test-cron-secret"
+    const { GET } = await import("@/app/api/cron/stage-topshot-acquisitions-dune/route")
+    const { NextRequest } = await import("next/server")
+    const res = await GET(
+      new NextRequest("https://example.test/api/cron/stage-topshot-acquisitions-dune?lane=bogus", {
+        headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
+      }),
+    )
+    expect(res.status).toBe(400)
+  })
+})
