@@ -25,6 +25,12 @@ of 2,500** — it is cheap, and the constraint is datapoints (rows × columns), 
    CANCELLATION too**: 09-07 had **629 cancels against 272 purchases**, so counting the event raw
    manufactures a coverage gap that does not exist.
 4. **Always filter `block_date`** (the partition column), or the cost climbs fast.
+5. **Match topics EXACTLY (`topics[1] IN (...)`), never `LIKE '%Purchased'`** — measured 2026-11-14: a
+   per-moment arrival query (latest `TopShot.Deposit` + the settlement events in the same tx, query
+   9129294) timed out at Dune's 30-min cap with `LIKE` topic filters and finished in ~3 min for 2,000
+   ids (~70 credits) once the topics were exact and the second scan was keyed by
+   `transaction_hash IN (...)` / `block_date IN (...)` from the first. Exact topic list and the
+   settlement-price check (339/339 vs our `sales`): `app/api/cron/topshot-arrival-provenance-dune`.
 
 **Calibration — how good the comparison can get.** Purchased-listing counts matched RPC's own `sales`
 **EXACTLY on 27 of 30 days** (398/398, 841/841, 984/984); the three misses were one partial-window day
