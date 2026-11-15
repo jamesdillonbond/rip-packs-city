@@ -995,7 +995,9 @@ const PINS = [
     // v29 (2026-11-13): tab_totals carries each held basis summed apart (wallet_held_pack_value v2 reads it once).
     // v28 (2026-11-13): ask_checked_at = last confirmed by a complete walk, not last changed.
     // v27 (2026-11-13): opened packs carry the pulls still held + their wallet FMV; sealed packs a value + basis; tab_totals.
-    migration: "supabase/migrations/20261114044121_audit_20261113_pack_history_held_basis_totals.sql",
+    // v30 (2026-11-14, Trevor): a pack carries its own cost -- Trade Ticket packs at tickets x the lowest listed Top Shot
+    // moment (trade_tickets), Top Shot reward packs with no buy row $0 (reward); the moments it yields carry $0.
+    migration: "supabase/migrations/20261115014500_audit_20261114_pack_history_trade_ticket_and_reward_pack_cost.sql",
   },
   {
     // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,

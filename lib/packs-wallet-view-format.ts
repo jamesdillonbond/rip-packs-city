@@ -116,7 +116,10 @@ export function relativePackTime(iso: string | null | undefined, now: number = D
 // "box" (2026-10-10, #187): the pack came out of a box / case this wallet opened. It was
 // never bought on its own -- its cost is part of the box's price -- so it has no buy price
 // and no P/L of its own (a sold topper used to read "$0 (reward, inferred)" + the whole sale).
-export type BuyPriceSource = "onchain" | "marketplace" | "retail" | "retail_inferred" | "box" | null
+// "trade_tickets" (2026-11-14, Trevor): a Trade Ticket pack, valued at its ticket count x the
+// lowest listed Top Shot moment. "reward" (same day): a Top Shot reward pack with no buy row -- $0.
+// A pack carries its own cost; the moments it yields carry $0 in moment P/L.
+export type BuyPriceSource = "onchain" | "marketplace" | "retail" | "retail_inferred" | "box" | "trade_tickets" | "reward" | null
 
 /** Second line under the pack name. `null` when nothing needs saying. */
 export function packIdentityNote(
@@ -160,6 +163,8 @@ export function packBuyLabel(row: {
   buy_price_source?: BuyPriceSource
 }): string {
   const usd = row.buy_usd ?? row.buy_price
+  if (row.buy_price_source === "trade_tickets" && usd != null) return fmtPackUsd(usd) + " (trade tickets)"
+  if (row.buy_price_source === "reward" && usd != null) return "$0 (reward)"
   if (!row.has_buy) {
     if (row.buy_price_source === "box") return "From a box"
     if (row.buy_price_source === "retail_inferred" && row.buy_usd != null) {
@@ -386,6 +391,8 @@ export function packInferredAcquisitionLine(row: {
   }
   if (row.buy_price_source === "box") return "Came out of a box you opened · its cost is part of the box's price"
   if (row.buy_price_source === "retail_inferred") return "No purchase on record · acquired inside the drop's sale window"
+  if (row.buy_price_source === "trade_tickets") return "Bought with Trade Tickets · each ticket valued at the lowest listed Top Shot moment"
+  if (row.buy_price_source === "reward") return "Reward pack · no cost"
   return null
 }
 

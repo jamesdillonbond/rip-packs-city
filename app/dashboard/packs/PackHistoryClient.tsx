@@ -138,7 +138,7 @@ interface HistoryRow {
   rip_id: string | null
   // 2026-09-18 (get_wallet_pack_history v4), all optional; NULL = unknown.
   buy_usd?: number | null
-  buy_price_source?: "onchain" | "marketplace" | "retail" | "retail_inferred" | "box" | null
+  buy_price_source?: "onchain" | "marketplace" | "retail" | "retail_inferred" | "box" | "trade_tickets" | "reward" | null
   sell_source?: "onchain" | "marketplace" | null
   dist_source?: "rip" | "own_row" | "peer_sale" | null
   lowest_ask_usd?: number | null

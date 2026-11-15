@@ -205,6 +205,13 @@ describe("packBuyLabel (2026-09-18)", () => {
     expect(packBuyLabel({ has_buy: true, buy_usd: null, buy_price: null, buy_price_source: null })).toBe("—")
     expect(packBuyLabel({ has_buy: false, buy_usd: 10 })).toBe("—")
   })
+  it("prices a Trade Ticket pack in dollars and a reward pack at $0 -- the pack carries its cost (2026-11-14)", () => {
+    expect(packBuyLabel({ has_buy: false, buy_usd: 1.5, buy_price_source: "trade_tickets" })).toBe("$1.50 (trade tickets)")
+    expect(packBuyLabel({ has_buy: true, buy_usd: 1.5, buy_price_source: "trade_tickets" })).toBe("$1.50 (trade tickets)")
+    expect(packBuyLabel({ has_buy: false, buy_usd: 0, buy_price_source: "reward" })).toBe("$0 (reward)")
+    // no ticket value (no open listing) is still unknown, never $0
+    expect(packBuyLabel({ has_buy: false, buy_usd: null, buy_price_source: "trade_tickets" })).toBe("—")
+  })
   it("tags a retail-priced primary drop, and a $0 retail as a reward pack", () => {
     expect(packBuyLabel({ has_buy: true, buy_usd: 10, buy_price_source: "retail" })).toBe("$10.00 retail")
     expect(packBuyLabel({ has_buy: true, buy_usd: 0, buy_price_source: "retail" })).toBe("$0 (reward)")

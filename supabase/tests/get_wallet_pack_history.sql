@@ -151,6 +151,8 @@ CREATE TABLE public.allday_pack_pull (pack_nft_id text, moment_nft_id text, open
   PRIMARY KEY (pack_nft_id, moment_nft_id));
 CREATE TABLE public.golazos_pack_open_pulls (nft_id text, pack_nft_id text);
 CREATE TABLE public.moment_acquisitions (nft_id text, wallet text, collection_id uuid, source_pack_rip_id uuid);
+-- v30 (2026-11-14): the Top Shot open book -- its lowest ask values one Trade Ticket
+CREATE TABLE public.ts_listings (listing_id text PRIMARY KEY, price_usd numeric);
 CREATE TABLE public.wallet_moments_cache (wallet_address text, collection_id uuid, moment_id text, fmv_usd numeric,
   PRIMARY KEY (wallet_address, collection_id, moment_id));
 
@@ -568,15 +570,24 @@ BEGIN
       -- the distribution's retail price for a primary drop, NULL when unknown.
       -- 2026-09-26 (v10): ... and, for a pack with NO buy row that can only have
       -- come from Dapper, the drop's retail price, labelled 'retail_inferred'.
-      CASE WHEN r.bought_primary THEN rt.retail_usd
+      -- v30 (2026-11-14, Trevor): a pack's cost lives HERE, never on the moments it yields
+      -- (pack_pull moment rows carry $0). A Trade Ticket pack with no buy row is priced at
+      -- tickets x the lowest listed Top Shot moment (rt.ticket_usd); a reward pack (Fast Break,
+      -- challenge / quest / leaderboard / set-completion / chaser rewards) with no buy row is $0.
+      CASE WHEN r.bought_primary THEN COALESCE(rt.retail_usd, rt.ticket_usd)
+           WHEN NOT r.has_buy AND r.from_box IS NULL AND rt.ticket_usd IS NOT NULL THEN rt.ticket_usd
+           WHEN NOT r.has_buy AND r.from_box IS NULL AND rt.is_reward THEN 0::numeric
            WHEN NOT r.has_buy AND inf.inferable THEN rt.retail_usd
            ELSE r.buy_price END AS buy_usd,
       CASE
         -- v21 (#187): out of a box this wallet opened -- no price of its own (the box carries it)
         WHEN NOT r.has_buy AND r.from_box IS NOT NULL THEN 'box'
+        WHEN NOT r.has_buy AND rt.ticket_usd IS NOT NULL THEN 'trade_tickets'
+        WHEN NOT r.has_buy AND rt.is_reward THEN 'reward'
         WHEN NOT r.has_buy AND inf.inferable AND rt.retail_usd IS NOT NULL THEN 'retail_inferred'
         WHEN NOT r.has_buy THEN NULL
         WHEN r.bought_primary AND rt.retail_usd IS NOT NULL THEN 'retail'
+        WHEN r.bought_primary AND rt.ticket_usd IS NOT NULL THEN 'trade_tickets'
         WHEN r.bought_primary THEN NULL
         WHEN r.buy_price IS NULL THEN NULL
         ELSE r.buy_src
@@ -597,7 +608,18 @@ BEGIN
     CROSS JOIN LATERAL (
       SELECT CASE WHEN r.collection_id = v_ad AND pd.metadata->>'type' = 'REWARD' THEN 0::numeric
                   WHEN r.collection_id = v_ad THEN NULLIF(aps.pack_price, 0)
-                  ELSE public.pack_retail_usd(pd.metadata->>'retail_price_usd', pd.title) END AS retail_usd
+                  ELSE public.pack_retail_usd(pd.metadata->>'retail_price_usd', pd.title) END AS retail_usd,
+             -- v30: a Top Shot Trade Ticket pack's price is its ticket count (retail_price_usd,
+             -- UFix64-normalised) x the lowest listed Top Shot moment -- Trevor's ticket value.
+             -- The min is uncorrelated (one InitPlan, run only when a ticket pack is reached).
+             CASE WHEN r.collection_id = v_ts AND pd.title ILIKE '%trade ticket%'
+                  THEN round(public.pack_retail_usd(pd.metadata->>'retail_price_usd')
+                             * (SELECT min(l.price_usd) FROM public.ts_listings l WHERE l.price_usd > 0), 2)
+             END AS ticket_usd,
+             coalesce(r.collection_id = v_ts
+                      AND pd.title !~* 'trade ticket'
+                      AND pd.title ~* '(fast break|quest reward|challenge reward|leaderboard|snapshot|favorite team snap|set completion reward|chaser reward|reward pack)',
+                      false) AS is_reward
     ) rt
     -- A pack with no buy row we hold is priced at its drop's retail ONLY when it
     -- was acquired inside that drop's sale window -- from 1 day before the
@@ -718,7 +740,8 @@ BEGIN
         WHEN status = 'flipped' AND sell_price     IS NOT NULL AND buy_usd IS NOT NULL THEN sell_price     - buy_usd
         -- 2026-09-26: a pack sold with no buy row, priced at its drop's retail
         WHEN status = 'sold'    AND sell_price     IS NOT NULL AND buy_usd IS NOT NULL
-                                AND buy_price_source = 'retail_inferred'           THEN sell_price     - buy_usd
+                                AND buy_price_source IN ('retail_inferred', 'trade_tickets', 'reward')
+                                                                                   THEN sell_price     - buy_usd
         ELSE NULL
       END AS realized_pl_usd,
       -- v22: what the packs this box yielded became (sold + opened), and how many of them
@@ -1049,7 +1072,7 @@ BEGIN
     'coverage', jsonb_build_object(
       'onchain', 'pack_purchases: Top Shot + All Day, block-indexed from 2026-04; primary drops carry no price on chain',
       'opens', 'pack_rips (Top Shot, All Day) + golazos_pack_opens + pinnacle_pack_opens',
-      'retail', 'buy_price_source = retail_inferred: a pack with no buy row we hold, priced at its drop''s retail -- only when it was acquired inside the drop''s sale window (start_time - 1 day .. + 30 days; acquisition = Dapper''s index date while the index names this wallet, else -- All Day -- the pack''s mint in Dapper''s index (primary_minted_at) when no one else sold it on the marketplace before this wallet''s sale / open, else bounded by the sale / open) and the marketplace history covers that window (every Top Shot PackNFT; All Day drops from 2022-12-16, dates from Dapper''s distribution record), or -- Top Shot -- Dapper minted it straight into this wallet (minted_to_wallet_at; pack_nft_mints, Flow PackNFT.Minted from the 2025-12-29 spork floor). An old drop acquired long after its sale otherwise stays NULL. A transfer inside the window would read the same. A Trade Ticket pack''s price is in tickets, not dollars: NULL. An All Day distribution Dapper types REWARD is $0 (reward); any other All Day price of 0 is unknown. Retail is in dollars (Top Shot UFix64 values normalised; All Day from allday_pack_supply, 0 = unknown)',
+      'retail', 'buy_price_source = retail_inferred: a pack with no buy row we hold, priced at its drop''s retail -- only when it was acquired inside the drop''s sale window (start_time - 1 day .. + 30 days; acquisition = Dapper''s index date while the index names this wallet, else -- All Day -- the pack''s mint in Dapper''s index (primary_minted_at) when no one else sold it on the marketplace before this wallet''s sale / open, else bounded by the sale / open) and the marketplace history covers that window (every Top Shot PackNFT; All Day drops from 2022-12-16, dates from Dapper''s distribution record), or -- Top Shot -- Dapper minted it straight into this wallet (minted_to_wallet_at; pack_nft_mints, Flow PackNFT.Minted from the 2025-12-29 spork floor). An old drop acquired long after its sale otherwise stays NULL. A transfer inside the window would read the same. A Trade Ticket pack is priced in tickets: buy_price_source = trade_tickets prices one with no buy row (or a primary buy) at its ticket count x the lowest listed Top Shot moment (ts_listings, live). buy_price_source = reward: a Top Shot reward pack (Fast Break, challenge / quest / leaderboard / set-completion / chaser rewards) with no buy row is $0. A pack''s cost lives on the pack only -- the moments it yields carry $0 in moment P/L. An All Day distribution Dapper types REWARD is $0 (reward); any other All Day price of 0 is unknown. Retail is in dollars (Top Shot UFix64 values normalised; All Day from allday_pack_supply, 0 = unknown)',
       'reconstructed', 'wallet_reconstructed_rips: Top Shot packs opened with NO pack NFT (custodial packs, 2021 on), rebuilt from the wallet''s pack-pull moment deliveries (a gap > 3 s starts a new reveal; 114 of 115 bursts overlapping a known pack matched its moment list exactly). rip_source = reconstructed; no distribution, no price paid; covers deliveries seeded into moment_acquisitions (through 2026-03)',
       'pulls', 'pack_open_pull_values: every pack this wallet opened, priced from the moments Dapper''s searchPackNft.nfts says it yielded (current FMV, whole-pack: NULL unless every moment is priced; pulls_priced / pulls_total say how close; pulls_inferred of them are Top Shot pulls no record names, named from the moment ids minted beside them -- both neighbours the same edition within 50 ids, 99 % right when measured). Refreshed by the wallet-pack-pulls lane; pull_value_source = rip_record where only the rip row''s value is held',
       'box', 'buy_price_source = box: a pack that came out of a box or case this wallet opened (pack_box_contents). It was not bought, so it has no buy price and no P/L of its own; its cost is part of the box''s price',
@@ -1604,15 +1627,35 @@ BEGIN
   PERFORM _assert(row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' IS NULL,
                   'P53 an All Day pack minted in is NOT priced: its supply price does not mark a reward');
   SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P54';
+  -- v30 (2026-11-14): with NO open listing there is no ticket value -- NULL, never $0 and never $10
   PERFORM _assert(row_->>'has_buy' = 'true' AND row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' IS NULL,
-                  'P54 a recorded Trade Ticket primary buy has no dollar price -- never $10');
+                  'P54 a recorded Trade Ticket primary buy with no listing to value a ticket -> NULL, never $10');
   SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P55';
-  PERFORM _assert(row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' IS NULL, 'P55 a Trade Ticket pack minted in -> NULL, never $10');
+  PERFORM _assert(row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' IS NULL, 'P55 a Trade Ticket pack minted in, no listing -> NULL, never $10');
   SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P56';
-  PERFORM _assert(row_->>'buy_usd' = '0.00' AND row_->>'buy_price_source' = 'retail_inferred', 'P56 a reward pack minted in -> $0 (reward), inferred');
+  PERFORM _assert(row_->>'buy_usd' = '0.00' AND row_->>'buy_price_source' = 'reward', 'P56 a reward pack (Fast Break) minted in -> $0, labelled reward');
   SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P57';
-  PERFORM _assert(row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' IS NULL, 'P57 a Trade Ticket pack inside its window -> NULL, never $10');
+  PERFORM _assert(row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' IS NULL, 'P57 a Trade Ticket pack inside its window, no listing -> NULL, never $10');
 END $$;
+
+-- v30 (2026-11-14, Trevor): a Trade Ticket = the lowest listed Top Shot moment. A $0 row is not an ask.
+INSERT INTO public.ts_listings VALUES ('L1', 0.17), ('L2', 0.15), ('L3', 0), ('L4', 40);
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xwallet5', NULL, NULL, 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P54';
+  PERFORM _assert(row_->>'has_buy' = 'true' AND row_->>'buy_usd' = '1.50' AND row_->>'buy_price_source' = 'trade_tickets',
+                  'P54b a recorded Trade Ticket primary buy -> 10 tickets x $0.15 lowest ask = $1.50, never $10');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P55';
+  PERFORM _assert(row_->>'buy_usd' = '1.50' AND row_->>'buy_price_source' = 'trade_tickets', 'P55b a Trade Ticket pack minted in -> $1.50 (trade_tickets)');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P57';
+  PERFORM _assert(row_->>'buy_usd' = '1.50' AND row_->>'buy_price_source' = 'trade_tickets', 'P57b a Trade Ticket pack inside its window -> $1.50, never $10');
+  -- no-change control: a non-ticket, non-reward pack the listings cannot move
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P50';
+  PERFORM _assert(row_->>'buy_usd' = '9.00' AND row_->>'buy_price_source' = 'retail_inferred', 'P50b retail pack unchanged by the ticket value');
+END $$;
+DELETE FROM public.ts_listings;
 
 -- ── v12 (2026-09-26): All Day packs judged against Dapper's drop windows; REWARD = $0 ──
 INSERT INTO public.pack_distributions VALUES
