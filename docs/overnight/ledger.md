@@ -12,6 +12,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-14 ~6:25 PM PT — Trade room product calls: a visitor no longer sees either side's wallets; the kill switch also stops an already-given signature; the fair-trade figures say how old they are (Claude Code cloud)
+- The three calls left open by #250's review, made on Trevor's "Work on all of these", each the conservative option:
+  - **(1) Wallet privacy.** `lib/trade-room/view.ts` `sideView` gives `signer`/`source` only to a party to the room. Any other signed-in visitor with the invite link sees whether each side is `proven`, never the addresses, matching the Trade Block's rule that wallets stay server-side. The client renders a proven side with hidden wallets as "wallet proven".
+  - **(2) Kill switch.** `GET ?relay=` now refuses with 503 `execute_closed` when `RPC_TRADE_ROOM_EXECUTE` is off. A signature already given could otherwise still be fetched, and so submitted, after the switch was turned off.
+  - **(3) Valuation age.** The room view gains `valued_from` (the oldest priced Moment's `added_at`). The page says "Each Moment is valued at its FMV when it was added — the oldest on <date, PT>. Prices may have moved since."
+- Tests: view, route and client tests, each red on the old code. One tree-walking guard (client dates must be hydration-safe) caught the unpinned date; it is now pinned to America/Los_Angeles. Tree walkers 200/200, preflight otherwise green.
+- Revert: `git revert` the commit titled "fix(trade room): wallets private to the parties, kill switch covers relay fetch, valuation age shown".
+
 ### 2026-11-14 ~6:10 PM PT — Trade room #250 closed: cancel / co-sign / unaccept / signing transitions lock the room row; New Collectors shows "—" for a missing median; sales leaderboard refuses an unknown collection (Claude Code cloud)
 - **Trade room (known-issues #250 → resolved).** Migration `20261115013625` adds five SECURITY INVOKER functions (`trade_room_{cancel,post_signature,mark_signing,unaccept,signing_ended}_locked`). Each takes the `trade_rooms` row FOR UPDATE, decides on the row as it is NOW, and returns a verdict. EXECUTE is revoked from PUBLIC, anon and authenticated, granted to service_role only (read back).
   - Cancel is conditional on the status the caller saw: a stale snapshot gets 409 `stale`, and a co-signature in the window gets 409 `cosigned`.
