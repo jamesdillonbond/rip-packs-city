@@ -185,6 +185,8 @@ export default function ProfileClient(props: {
   initialWallets?: SavedWalletPublic[];
   /** DISTINCT wallet addresses — see the WALLETS tile for why not wallets.length. */
   initialWalletCount?: number | null;
+  /** 2026-11-15: server count of this collector's VERIFIED wallets. */
+  initialVerifiedWalletCount?: number | null;
   /** The SSR read FAILED, so `initialWallets` is [] out of an outage rather than
    *  out of an empty collection. Without this the two are indistinguishable. */
   initialFailed?: boolean;
@@ -213,6 +215,10 @@ export default function ProfileClient(props: {
   // wallets.length — that fallback is the bug this replaced.
   const [walletCount, setWalletCount] = useState<number | null>(
     typeof props.initialWalletCount === "number" ? props.initialWalletCount : null
+  );
+  // 2026-11-15: how many of the collector's wallets are VERIFIED (server count).
+  const [verifiedWalletCount, setVerifiedWalletCount] = useState<number | null>(
+    typeof props.initialVerifiedWalletCount === "number" ? props.initialVerifiedWalletCount : null
   );
   const [, setLoading] = useState(true);
   // Current viewer's handle + auth id (null = anon). Drives the own-profile
@@ -253,6 +259,7 @@ export default function ProfileClient(props: {
         if (data.bio) setBio(data.bio);
         if (Array.isArray(data.wallets)) setWallets(data.wallets);
         if (typeof data.wallet_count === "number") setWalletCount(data.wallet_count);
+        if (typeof data.verified_wallet_count === "number") setVerifiedWalletCount(data.verified_wallet_count);
         // The client succeeded where the server may not have, so a stale
         // server-seeded failure must not outlive it.
         setProfileError(false);
@@ -591,6 +598,11 @@ export default function ProfileClient(props: {
             {walletCount != null && (
               <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.1em" }}>
                 {walletCount} WALLET{walletCount !== 1 ? "S" : ""}
+                {verifiedWalletCount != null && verifiedWalletCount > 0 && (
+                  <span style={{ color: "var(--rpc-success-text)" }}>
+                    {" · "}✓ {verifiedWalletCount === walletCount ? "VERIFIED" : `${verifiedWalletCount} VERIFIED`}
+                  </span>
+                )}
               </div>
             )}
           </div>

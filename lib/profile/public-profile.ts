@@ -130,6 +130,12 @@ export type PublicProfilePayload = {
    * so publishing the number leaks nothing the page did not already claim.
    */
   wallet_count: number
+  /**
+   * 2026-11-15: how many of those wallets this collector has VERIFIED (listing
+   * challenge or attestation — `saved_wallets.verified_at` on their own row).
+   * A trust signal for trades; a count, so it leaks no address.
+   */
+  verified_wallet_count: number
 }
 
 export type PublicProfileResult =
@@ -344,6 +350,7 @@ async function getPublicProfileUncached(
     ),
   ]
   let ownedRows: any[] = []
+  const verifiedAddrs = new Set<string>()
   if (ownAddrs.length > 0) {
     let claims: Row
     let claimsErr: { message: string } | null = null
@@ -390,6 +397,11 @@ async function getPublicProfileUncached(
     ownedRows = ((wallets ?? []) as any[]).filter(
       (w) => typeof w.wallet_addr === "string" && ownersOfAddress(byAddr.get(w.wallet_addr) ?? []).includes(userId)
     )
+    for (const r of claimRows) {
+      if (r.user_id === userId && r.verified_at != null && typeof r.wallet_addr === "string") {
+        verifiedAddrs.add(normalizeAddress(r.wallet_addr))
+      }
+    }
   }
   wallets = ownedRows
 
@@ -441,6 +453,7 @@ async function getPublicProfileUncached(
       trophies: trophies ?? [],
       wallets: walletSummaries,
       wallet_count: walletCount,
+      verified_wallet_count: verifiedAddrs.size,
     },
   }
 }

@@ -93,4 +93,20 @@ describe("public profile wallets are the user's own", () => {
     const r = await getPublicProfile("collector-d")
     expect(r.ok).toBe(false)
   })
+
+  it("2026-11-15: counts only wallets THIS user verified (not another account's verification)", async () => {
+    st.claims = [
+      { id: 1, user_id: "me", wallet_addr: "0x00000000000000aa", verified_at: "2026-11-15" },
+      { id: 2, user_id: "me", wallet_addr: "0x00000000000000AA", verified_at: "2026-11-15" },
+      { id: 3, user_id: "whale", wallet_addr: "0x00000000000000bb", verified_at: "2026-09-01" },
+    ]
+    const r = await getPublicProfile("collector-e")
+    expect(r.ok && r.data.verified_wallet_count).toBe(1)
+  })
+
+  it("2026-11-15: zero verified wallets reads 0, not absent", async () => {
+    st.claims = [{ id: 1, user_id: "me", wallet_addr: "0x00000000000000aa", verified_at: null }]
+    const r = await getPublicProfile("collector-f")
+    expect(r.ok && r.data.verified_wallet_count).toBe(0)
+  })
 })

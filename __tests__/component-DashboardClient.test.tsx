@@ -1237,6 +1237,32 @@ describe("DashboardClient — verify by listing", () => {
     await screen.findByText(/your profile is live at \/profile\/rigged/)
   })
 
+  it("2026-11-15: the open modal watches for the listing and verifies without a click", async () => {
+    let checks = 0
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      await openVerify({
+        "/api/profile/verify-challenge/check": () => {
+          checks += 1
+          return checks < 2
+            ? json(200, { ok: true, matched: false, hint: "Not seeing it yet" })
+            : json(200, { ok: true, matched: true, moment: "9001" })
+        },
+        "/api/profile/verify-challenge": () => json(200, { challenge: CHALLENGE(), target: TARGET }),
+      })
+      await screen.findByText(/watching for your listing/)
+      await vi.advanceTimersByTimeAsync(20_000)
+      await waitFor(() => expect(checks).toBe(1))
+      // a silent miss writes NO hint over the reader
+      expect(screen.queryByText(/Not seeing it yet/)).toBeNull()
+      await vi.advanceTimersByTimeAsync(20_000)
+      await screen.findByText(/Wallet verified/)
+      expect(checks).toBe(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it("confirms verification only on a matched result", async () => {
     await openVerify({
       "/api/profile/verify-challenge/check": () => json(200, { ok: true, matched: true, moment: "9001" }),

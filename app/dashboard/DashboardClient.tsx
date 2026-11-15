@@ -2684,6 +2684,9 @@ function PickerCard({ m, disabled, onClick }: { m: TopMoment; disabled: boolean;
 
 // ── Verify by Listing ──────────────────────────────────────────────────────
 
+/** How often the open verify modal re-checks for the listing on its own. */
+const VERIFY_WATCH_MS = 20_000;
+
 interface VerifyTarget {
   moment_id: string;
   edition_key: string | null;
@@ -2771,10 +2774,17 @@ function VerifyByListingModal({
   // Live check: confirm the target Moment is listed at exactly the challenge
   // amount via Top Shot's API. On a match the server resolves the challenge,
   // flips the wallet to verified, and awards +500 credits.
-  const checkNow = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    setCheckHint(null);
+  // `silent` = the background watch below: it only ever acts on a MATCH, never
+  // writes a hint or an error, so a quiet poll cannot talk over the reader.
+  const checkInFlight = useRef(false);
+  const checkNow = useCallback(async (silent = false) => {
+    if (checkInFlight.current) return;
+    checkInFlight.current = true;
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+      setCheckHint(null);
+    }
     try {
       const res = await fetch("/api/profile/verify-challenge/check", {
         method: "POST",
@@ -2797,7 +2807,7 @@ function VerifyByListingModal({
       // credits, so "we could not check" and "we checked and found nothing" must
       // not share a message.
       if (!res.ok) {
-        setCheckHint("Couldn't check just now — this says nothing about your listing. Try again shortly.");
+        if (!silent) setCheckHint("Couldn't check just now — this says nothing about your listing. Try again shortly.");
         return;
       }
       const d = await res.json();
@@ -2818,17 +2828,32 @@ function VerifyByListingModal({
         onVerified(d?.profileHandleClaimed && typeof d?.profileHandle === "string" ? d.profileHandle : null);
         return;
       }
-      setCheckHint(d?.hint ?? d?.error ?? "No matching listing found yet.");
+      if (!silent) setCheckHint(d?.hint ?? d?.error ?? "No matching listing found yet.");
     } catch (e: any) {
-      setError(e?.message ?? "Check failed");
+      if (!silent) setError(e?.message ?? "Check failed");
     } finally {
-      setLoading(false);
+      checkInFlight.current = false;
+      if (!silent) setLoading(false);
     }
   }, [walletAddr, onVerified]);
 
   const expiresMs = challenge ? new Date(challenge.expires_at).getTime() - now : 0;
   const priceLabel = challenge ? `$${Number(challenge.challenge_amount).toFixed(2)}` : "";
   const done = verified || !!challenge?.resolved_at;
+
+  // 2026-11-15: watch for the listing so the collector does not have to come back
+  // and press Done (they list from the Top Shot app and often forget). One check
+  // every VERIFY_WATCH_MS while the tab is visible and the challenge is live —
+  // ~3 Atlas reads a minute per open modal, under the route's 6/min limit.
+  const watchable = !!challenge && !done && !unavailable && expiresMs > 0;
+  useEffect(() => {
+    if (!watchable) return;
+    const t = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      void checkNow(true);
+    }, VERIFY_WATCH_MS);
+    return () => clearInterval(t);
+  }, [watchable, checkNow]);
 
   return (
     <ModalShell onClose={onClose} title={`Verify ${truncateAddress(walletAddr)}`}>
@@ -2897,7 +2922,7 @@ function VerifyByListingModal({
                   Open on Top Shot ↗
                 </a>
               )}
-              <button onClick={checkNow} disabled={loading} style={secondaryBtnStyle}>
+              <button onClick={() => void checkNow()} disabled={loading} style={secondaryBtnStyle}>
                 {loading ? "Checking…" : "I've listed it — Done"}
               </button>
               <span style={{ fontFamily: monoFont, fontSize: 11, color: expiresMs <= 0 ? "var(--rpc-danger-text)" : "var(--rpc-text-secondary)" }}>
@@ -2906,6 +2931,11 @@ function VerifyByListingModal({
             </div>
           )}
 
+          {!done && expiresMs > 0 && (
+            <div style={{ marginTop: 10, color: "var(--rpc-text-muted)", fontFamily: monoFont, fontSize: 11, lineHeight: 1.5 }}>
+              We&apos;re watching for your listing — keep this open and it verifies on its own.
+            </div>
+          )}
           {done && (
             <div style={{ marginTop: 12, color: "var(--rpc-success-text)", fontFamily: monoFont, fontSize: 12 }}>
               ✓ Wallet verified. You can delist the Moment now.

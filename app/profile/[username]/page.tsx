@@ -85,6 +85,7 @@ export default async function PublicProfilePage(props: {
       initialBio={data?.bio ?? null}
       initialWallets={Array.isArray(data?.wallets) ? data.wallets : []}
       initialWalletCount={typeof data?.wallet_count === "number" ? data.wallet_count : null}
+      initialVerifiedWalletCount={typeof data?.verified_wallet_count === "number" ? data.verified_wallet_count : null}
       initialFailed={!result.ok}
     />
   )
