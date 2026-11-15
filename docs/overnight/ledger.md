@@ -12,6 +12,9 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~1:20 PM PT — #248 thread wrap-up: focus.md, session log, two lessons in cron-and-schedulers.md, #248 points at the 11-16 10:20 AM PT close-out task — docs only (Claude Code cloud)
+- Revert: revert by message "#248 wrap-up".
+
 ### 2026-11-15 ~1:10 PM PT — #248: job 446 fix verified live (0 of 485 saved-wallet rows reverted after the 1:06 run) — docs only (Claude Code cloud)
 - Revert: revert by message "#248 446 fix verified".
 
