@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~9:51 AM PT — #248 exit: rpc-wmc-fmv-stuck-resync (job 617) moved to DAILY after the quiet-window cost check passed (Claude Code cloud)
+
+- `20261115175130_audit_20261115_wmc_fmv_stuck_resync_daily`: `33 */2 * * *` → `33 12 * * *` (4:33 AM PT; same jobid, cron_heavy, active), `pipeline_cadence_watchlist.wmc-fmv-stuck-resync` 183/366 → 1560/3000 min. Quiet window 8:49:02 → 9:50:06 AM PT: service_role 5,907 disk reads/call (bar 7,195), cron_heavy 53 (bar 74,159); effect check (0.11 % miss) passed at 8:45 AM PT. File md5 = prod. ⓘ Its header says "~9:55 AM PT"; it was applied ~9:51 — left as-is because migration-parity hashes the applied text.
+- Revert: `SET ROLE cron_heavy; SELECT cron.schedule('rpc-wmc-fmv-stuck-resync', '33 */2 * * *', 'SELECT public.resync_stuck_wmc_fmv();'); RESET ROLE;` and `UPDATE public.pipeline_cadence_watchlist SET max_silent_minutes = 183, max_minutes_without_success = 366 WHERE pipeline = 'wmc-fmv-stuck-resync';`
+
 ### 2026-11-15 ~10:15 AM PT — 2026 WNBA Finals drop (Case / Box / Collector Pack / Trade Ticket Pack) hand-entered on the pack calendar; manual entries step aside once the feed lists the drop (Claude Code cloud, Trevor live)
 - The drop was on blog.nbatopshot.com since 11-12 but not in the Atlas book, so the Sunday draft, `/insights/drops` and its card missed it. `MANUAL_DROPS` now takes `kind: "rsvp" | "sale"` and `feed_match`: a feed row of the same collection whose title contains it replaces the entry (no double listing). 4 entries, times from the guide (ET, stored UTC). 1 test (planted-defect checked).
 - Revert: find the commit by message "pack calendar: 2026 WNBA Finals" and `git revert` it; or delete the 4 `manual-wnba-finals-2026-*` entries. No DB change.
