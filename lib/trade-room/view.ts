@@ -67,6 +67,12 @@ export interface RoomView {
   /** Null until the counterparty joins. */
   b: SideView | null
   valuation: TradeValuation
+  /**
+   * 2026-11-14: each Moment's FMV is captured when it is ADDED and is not refreshed for the
+   * room's life (up to 7 days). The oldest priced item's added_at, so the page can say how
+   * old the fair-trade figures may be; null when nothing is priced.
+   */
+  valued_from: string | null
   notice: string
   execution: { open: boolean; message: string | null }
   /** A relay waiting for THIS viewer's wallet to co-sign, when one is pending. */
@@ -124,13 +130,16 @@ export async function usernamesFor(db: SupabaseClient, userIds: readonly string[
   return out
 }
 
-function sideView(loaded: LoadedRoom, s: SideRow, viewerId: string, names: Map<string, string>): SideView {
+function sideView(loaded: LoadedRoom, s: SideRow, viewerId: string, names: Map<string, string>, member: boolean): SideView {
   return {
     side: s.side,
     username: names.get(s.user_id) ?? ANONYMOUS_USERNAME,
     is_me: s.user_id === viewerId,
-    signer: s.signer,
-    source: s.source,
+    // 2026-11-14 (trade room review): a room's invite link is made to be posted, so ANY signed-in
+    // visitor could read side A's wallet addresses. The Trade Block keeps wallets server-side; so
+    // does the room now — a viewer who is not a party sees whether a side is proven, not its wallets.
+    signer: member ? s.signer : null,
+    source: member ? s.source : null,
     proven: Boolean(s.signer && s.source),
     accepted: s.accepted_version === loaded.room.version,
     items: loaded.items.filter((i) => i.side === s.side).map(itemView),
@@ -158,7 +167,7 @@ export function buildRoomView(loaded: LoadedRoom, viewerId: string, names: Map<s
   )
   const open = executionOpen(opts.env)
   const aView: SideView = a
-    ? sideView(loaded, a, viewerId, names)
+    ? sideView(loaded, a, viewerId, names, mine !== null)
     : { side: "a", username: "A collector who left", is_me: false, signer: null, source: null, proven: false, accepted: false, items: loaded.items.filter((i) => i.side === "a").map(itemView) }
   return {
     code: room.code,
@@ -176,13 +185,23 @@ export function buildRoomView(loaded: LoadedRoom, viewerId: string, names: Map<s
     me: mine ? { side: mine.side, notice_read: mine.notice_read_at != null } : null,
     can_join: !mine && state === "open" && b === null,
     a: aView,
-    b: b ? sideView(loaded, b, viewerId, names) : null,
+    b: b ? sideView(loaded, b, viewerId, names, mine !== null) : null,
     valuation,
+    valued_from: oldestPricedAt(loaded),
     notice: WITHDRAWAL_NOTICE,
     execution: { open, message: open ? null : EXECUTE_CLOSED_MESSAGE },
     relay: opts.relay ?? null,
     from_block: opts.fromBlock ?? null,
   }
+}
+
+function oldestPricedAt(loaded: LoadedRoom): string | null {
+  let oldest: string | null = null
+  for (const i of loaded.items) {
+    if (typeof i.fmv_usd !== "number" || !Number.isFinite(i.fmv_usd) || !i.added_at) continue
+    if (oldest === null || Date.parse(i.added_at) < Date.parse(oldest)) oldest = i.added_at
+  }
+  return oldest
 }
 
 /** The side that would co-sign a relay the viewer initiates. */

@@ -205,6 +205,9 @@ export async function GET(req: NextRequest, ctx: Ctx) {
     const relayId = sp.get("relay")
     if (relayId) {
       mySide(loaded, u.id)
+      // 2026-11-14 (trade room review): the kill switch stops a trade at EVERY step it can — a
+      // signature already given used to stay fetchable (and so submittable) after it was turned off.
+      if (!executionOpen()) throw new TradeRoomError(EXECUTE_CLOSED_MESSAGE, 503, "execute_closed")
       const relay = await getRelay(supabaseAdmin, relayId, Date.now(), RELAY_TABLE)
       if (relay.room_id !== loaded.room.id) throw new TradeRoomError("No such relay.", 404, "no_relay")
       return json({ relay })

@@ -391,6 +391,14 @@ describe("/api/trade-room — the routes", () => {
     const sig = { action: "relay_sign", id, signature: "a".repeat(128), key_id: 0 }
     expect((await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, sig), ctx(code)))).status).toBe(403)
     expect((await as(BOB, () => room.POST(post(`/api/trade-room/${code}`, sig), ctx(code)))).status).toBe(200)
+    // 2026-11-14 (trade room review): the kill switch also stops a signature ALREADY given from being
+    // fetched (and so submitted). Open: Alice can read Bob's signature; switched off: refused.
+    expect((await as(ALICE, () => room.GET(get(`/api/trade-room/${code}?relay=${id}`), ctx(code)))).status).toBe(200)
+    vi.stubEnv("RPC_TRADE_ROOM_EXECUTE", "0")
+    const shut = await as(ALICE, () => room.GET(get(`/api/trade-room/${code}?relay=${id}`), ctx(code)))
+    expect(shut.status).toBe(503)
+    expect(await shut.json()).toMatchObject({ code: "execute_closed" })
+    vi.stubEnv("RPC_TRADE_ROOM_EXECUTE", "1")
 
     // CISO 2026-11-04 (trade-room finding M1): "sealed" is a CHAIN fact, never a claim.
     const txId = "f".repeat(64)

@@ -477,3 +477,25 @@ describe("TradeRoomClient — a late answer to an older request does not land", 
     }
   })
 })
+
+// 2026-11-14 (trade room review): product calls on the page.
+describe("TradeRoomClient — the age of the fair-trade figures, and hidden wallets", () => {
+  it("says each Moment is valued when it was added, with the oldest date", async () => {
+    await mount(view({ valued_from: "2026-11-09T18:00:00Z" }))
+    expect(screen.getByText(/valued at its FMV when it was added/)).toBeTruthy()
+    expect(screen.getByText(/Nov 9/)).toBeTruthy()
+  })
+  it("no priced Moment → no age line", async () => {
+    await mount(view({ valued_from: null }))
+    expect(screen.queryByText(/valued at its FMV when it was added/)).toBeNull()
+  })
+  it("a visitor who is not a party sees 'wallet proven', never an address", async () => {
+    await mount(view({
+      me: null, can_join: false,
+      a: { ...view().a, is_me: false, signer: null, source: null },
+      b: { ...view().b, signer: null, source: null },
+    }))
+    expect(screen.getAllByText(/wallet proven/).length).toBeGreaterThan(0)
+    expect(document.body.textContent).not.toMatch(/0x3d0b|0xbd94/)
+  })
+})

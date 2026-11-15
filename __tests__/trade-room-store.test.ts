@@ -296,6 +296,30 @@ describe("trade-room/view — what a viewer sees", () => {
   })
 })
 
+// 2026-11-14 (trade room review): product calls.
+describe("trade-room/view — privacy and the age of the fair-trade figures", () => {
+  it("a viewer who is NOT a party sees whether each side is proven, never its wallets; a party sees both", async () => {
+    const { room } = await twoSided()
+    const names = new Map<string, string>()
+    const stranger = buildRoomView(room, "cccccccc-0000-4000-8000-000000000003", names)
+    expect(stranger.a.proven).toBe(true)
+    expect([stranger.a.signer, stranger.a.source, stranger.b?.signer, stranger.b?.source]).toEqual([null, null, null, null])
+    expect(JSON.stringify(stranger)).not.toContain(WA.signer)
+    expect(JSON.stringify(stranger)).not.toContain(WB.source)
+    const party = buildRoomView(room, BOB, names)
+    expect([party.a.signer, party.b?.source]).toEqual([WA.signer, WB.source])
+  })
+  it("valued_from is the OLDEST priced Moment's added_at; null when nothing is priced", async () => {
+    const two = await twoSided()
+    let room = await setItems(two.m.db, two.room, sideOf(two.room, ALICE)!, [item("1", 10), item("2", null)])
+    const names = new Map<string, string>()
+    const priced = room.items.filter((i) => i.fmv_usd != null).map((i) => i.added_at).sort()[0]
+    expect(buildRoomView(room, BOB, names).valued_from).toBe(priced)
+    room = await setItems(two.m.db, room, sideOf(room, ALICE)!, [item("2", null)])
+    expect(buildRoomView(room, BOB, names).valued_from).toBeNull()
+  })
+})
+
 describe("trade-room/valuation — the fair-trade hint", () => {
   it("counts only priced moments, names the unpriced, and gives a verdict only when every moment is priced", () => {
     const a = [{ moment_id: "1", fmv_usd: 10 }, { moment_id: "2", fmv_usd: 2.5 }]

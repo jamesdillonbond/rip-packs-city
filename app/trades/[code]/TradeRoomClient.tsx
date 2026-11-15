@@ -585,7 +585,7 @@ function TheirSide({ side, room, receive, receiveFailed }: { side: SideView | nu
       ) : (
         <>
           <div style={{ ...muted, fontFamily: MONO, fontSize: 12, marginBottom: 8 }}>
-            {side.proven ? `${shortAddr(side.signer)} signs · Moments from ${shortAddr(side.source)}` : "wallet not proven yet"} · {side.accepted ? `accepted v${room.version}` : "not accepted"}
+            {side.proven ? (side.signer && side.source ? `${shortAddr(side.signer)} signs · Moments from ${shortAddr(side.source)}` : "wallet proven") : "wallet not proven yet"} · {side.accepted ? `accepted v${room.version}` : "not accepted"}
             {side.proven ? <CanReceive receive={receive} failed={receiveFailed} mine={side.is_me} /> : null}
           </div>
           <ItemList items={side.items} empty="Nothing yet." />
@@ -629,6 +629,13 @@ function FairTrade({ room }: { room: RoomView }) {
         {sideLine(room.a.username, v.a)} · {sideLine(room.b?.username ?? "the other side", v.b)}
       </div>
       <p style={{ margin: "6px 0 0", fontSize: 13 }}>{v.summary}</p>
+      {/* 2026-11-14: an item's FMV is taken when it is added and not refreshed for the room's life. */}
+      {room.valued_from ? (
+        <p style={{ ...muted, fontSize: 12, margin: "6px 0 0" }}>
+          Each Moment is valued at its FMV when it was added — the oldest on{" "}
+          {new Date(room.valued_from).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "America/Los_Angeles" })}. Prices may have moved since.
+        </p>
+      ) : null}
       <p style={{ ...muted, fontSize: 12, margin: "6px 0 0" }}>
         A Moment reads &quot;not priced&quot; when it hasn&apos;t had enough sales for a confident value. This is a hint, not an appraisal: the trade is whatever you both agree to.
       </p>
