@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~7:50 AM PT — arrival-provenance route honours the Dune kill switch; marked superseded for the bulk load (Claude Code cloud, cost-basis thread wrap-up)
+
+- `app/api/cron/topshot-arrival-provenance-dune` (unscheduled) now reads `dune_budget_state.paused` before any Dune call — `skipped_reason: dune_paused` when set, a FAILED run when unreadable — matching the #190 stage route. Header updated: the stage route's wallet-scoped 9129489 load superseded this route for the bulk; it stays as the per-batch tool for new held moments. Two new tests; a `no-explicit-any` in its test file fixed.
+- Leftover check: the last Trade Ticket dist with no ticket count ("Run It Back: Quick Rips August (Trade Ticket)") has 0 known pack NFTs, so no wallet's pack cost is affected.
+- Revert: `git revert` this commit (code-only; no DB change).
+
 ### 2026-11-15 ~7:45 AM PT — #251 FMV catch-up check: 128 of 137 re-keyed editions re-priced after their move, 8 correctly unpriced (no sale in window), 1 held by the wash-trade filter; watch 0 / 0 (Claude Code cloud, scheduled, read-only)
 
 - No DB change. Read `topshot_parallel_sales_rekey_log` × `edition_fmv_current` × `fmv_recalc_sweep_order`; `90:3272::4` (sweep pos 1,220) keeps its 3:59 PM PT 11-14 $0.17 snapshot because its 3 in-window sales are a wash cluster. Watch cron is UTC (rows 5:27/11:27 AM·PM PT). Status line added to known-issues #251.
