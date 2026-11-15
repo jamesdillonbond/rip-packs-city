@@ -533,10 +533,17 @@ async function drops() {
   const link = `${SITE}/insights/drops`
   // Priciest first: the drops collectors are deciding on lead.
   const byPrice = [...ahead].sort((a, b) => (b.retail_usd ?? 0) - (a.retail_usd ?? 0) || a.start_time.localeCompare(b.start_time))
-  const lines = byPrice.map(reportLine)
+  // NEW FIRST (Trevor, 11-15: "Feels like we covered a lot of these last week"). A drop that had already
+  // started when this report runs was on an earlier report (or its follow-up), so it moves under
+  // "Still on sale" — still named in full (never "+N more"), just not leading the post.
+  const now = new Date()
+  const isNew = (x) => x.status === "upcoming" || Date.parse(x.start_time) > now.getTime() - 36 * 3600000
+  const fresh = byPrice.filter(isNew)
+  const carried = byPrice.filter((x) => !isNew(x))
+  const lines = fresh.map(reportLine)
   // Candy MLB has no store listing (its store is offline); a drop it ANNOUNCED this week rides as a line.
   for (const a of calendarAnnouncements) lines.push(`${BRAND.candy_mlb.emoji} ${BRAND.candy_mlb.handle}: ${a.title}`)
-  const now = new Date()
+  if (carried.length) lines.push(...(lines.length ? [""] : []), "Still on sale:", ...carried.map(reportLine))
   const head = `The RPC Weekly Pack Drop Report, ${mdPT(now)}-${mdPT(new Date(now.getTime() + 7 * 86400000))} 📦`
   const covered = Object.keys(calendarMeta?.complete_at ?? {}).map((p) => ATLAS_NAMES[p] ?? p).filter((n) => !calendarMeta.unread.includes(n))
   return {
@@ -562,9 +569,55 @@ async function drops() {
     // The calendar does not carry the team, so the drafter flags the lines to finish by hand.
     warnings_extra: [
       ...(calendarMeta?.unread?.length ? [`pack book unread for ${calendarMeta.unread.join(", ")} — their drops are missing from this list`] : []),
+      ...(await officialSourcesNotOnCalendar(all, now)),
       ...byPrice.filter(isPlayerPack).map((x) => `"${x.title}" is a player pack — end its line with the team's hashtag (docs/social/x-calendar.md)`),
     ],
   }
+}
+
+// MISSED-DROP PROBE (2026-11-15). The 11-15 draft missed Top Shot's 2026 WNBA Finals drop (on its blog
+// since 11-12, not yet in the pack book) and Pinnacle's Friends-Giving Vol.2 waiting-room sale (draw
+// closed, 622 capsules still on sale to 11-20). Both official sources are read here and anything the
+// calendar does not carry becomes a warning for the drafter to verify and add — never a line by itself.
+const norm = (t) => String(t ?? "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/&amp;|\\u0026/g, "&").toLowerCase().replace(/[^a-z0-9& ]+/g, " ").replace(/\s+/g, " ").trim()
+async function officialSourcesNotOnCalendar(all, now) {
+  const out = []
+  const titles = all.filter((x) => x.status !== "ended").map((x) => norm(x.title))
+  const onCalendar = (name) => titles.some((t) => t.includes(norm(name)))
+  // Top Shot blog (Webflow, no feed): "Drop Guide" posts dated in the last 10 days.
+  try {
+    const html = await (await fetch("https://blog.nbatopshot.com/", { signal: AbortSignal.timeout(15000) })).text()
+    const text = html.replace(/<[^>]*>/g, "\n").split("\n").map((l) => l.trim()).filter(Boolean)
+    for (let i = 0; i < text.length; i++) {
+      if (!/drop guide/i.test(text[i])) continue
+      const dateLine = text.slice(i + 1, i + 8).find((l) => /^[A-Z][a-z]{2,8} \d{1,2}(, \d{4})?$/.test(l))
+      if (!dateLine) continue
+      const posted = new Date(/\d{4}$/.test(dateLine) ? dateLine : `${dateLine}, ${now.getFullYear()}`)
+      if (!(now - posted < 10 * 86400000)) continue
+      const subject = text[i].replace(/drop guide/i, "").replace(/\b20\d\d\b/, "").trim()
+      if (!onCalendar(subject)) out.push(`Top Shot blog posted "${text[i]}" (${dateLine}) and the calendar has no "${subject}" drop — read it and add its packs (lib/insights/manual-drops.ts) before posting`)
+    }
+  } catch (e) {
+    out.push(`could not read blog.nbatopshot.com (${e.message}) — check it by hand for this week's drop guides`)
+  }
+  // Pinnacle releases page: releases purchasable now, or opening within 7 days.
+  try {
+    const html = (await (await fetch("https://disneypinnacle.com/releases", { signal: AbortSignal.timeout(15000) })).text()).replace(/\\"/g, '"')
+    const re = /"\$typeName":"atlas\.v1\.Release","releaseId":"([^"]+)","product":"disney","title":"([^"]+)"/g
+    const starts = [...html.matchAll(re)]
+    starts.forEach((m, k) => {
+      const seg = html.slice(m.index, starts[k + 1]?.index ?? m.index + 60000)
+      const ts = (key) => Number(seg.match(new RegExp(`"${key}":\\{[^}]*"seconds":"\\$n(\\d+)"`))?.[1] ?? NaN) * 1000
+      const purchasable = /"isPurchasable":true/.test(seg)
+      const start = ts("purchaseStartDate")
+      const soon = Number.isFinite(start) && start > now.getTime() && start - now.getTime() < 7 * 86400000
+      const title = m[2].replace(/\\u0026/g, "&")
+      if ((purchasable || soon) && !onCalendar(title)) out.push(`disneypinnacle.com/releases shows "${title}" ${purchasable ? "purchasable now" : `opening ${new Date(start).toISOString()}`} and the calendar does not list it open — check https://disneypinnacle.com/releases/${m[1]} and add a DROP_CORRECTIONS / MANUAL_DROPS entry`)
+    })
+  } catch (e) {
+    out.push(`could not read disneypinnacle.com/releases (${e.message}) — check it by hand`)
+  }
+  return out
 }
 
 // A drop starting, or an RSVP closing, within the next 24 h gets its own optional reminder.

@@ -148,12 +148,16 @@ export const DROP_CORRECTIONS: DropCorrection[] = [
   {
     dist_id: "8923",
     title: "Disney Mickey & Friends: Friends-Giving Vol.2",
-    kind: "rsvp",
-    detail: "Timed draw · requests close Fri 11/13 9 AM PT",
-    // Timed draw: requests Thu 11/12 9 AM PT → Fri 11/13 9 AM PT.
-    end_time: "2026-11-13T17:00:00Z",
-    source: "disneypinnacle.com/releases",
-    verified_at: "2026-11-08",
+    // Timed draw: requests Thu 11/12 9 AM PT → Fri 11/13 9 AM PT. The draw did NOT sell out (112 of
+    // 734 by 11-15), and the release page sells the rest in its waiting room "through Nov 20, 9 AM PT
+    // (or while supplies last)" — release JSON: isPurchasable true, queue ends 1795194000. So the
+    // book's 11/20 end is REAL here; it was a leftover only for a draw that sold out (Stitch, 11-06).
+    // As a capsule sale it is not "delivered" by its first open.
+    kind: "capsule",
+    detail: "Timed draw closed 11/13 · remaining capsules on sale in the waiting room while supplies last",
+    end_time: "2026-11-20T17:00:00Z",
+    source: "disneypinnacle.com/releases/bba1002e-142a-4aab-91ce-48368591dd31",
+    verified_at: "2026-11-15",
   },
 ]
 
