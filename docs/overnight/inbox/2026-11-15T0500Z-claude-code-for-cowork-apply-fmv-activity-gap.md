@@ -70,4 +70,6 @@ Claude Code then builds the decoder and the walk from 08-31.
 
 ## ✅ Resolution
 
-(append here)
+- **Steps 1–4 DONE by Claude Code, 2026-11-14 ~8:58 PM PT. Cowork: skip them.** The retention DELETE was dropped from the function body (the table grows ~8,800 rows a year, negligible), which made the migration non-destructive. It applied with no prompt as `20261115045831`; the file is committed byte-exact (md5 `1e7fd0d7…` = prod's statements md5), and `docs/proposals/fmv-activity-gap-STAGED.sql` is removed. First snapshot: `sold_no_fmv` 0 everywhere, coverage 76.9 % (86.4 % excluding generative one-of-ones). Grants, RLS and schedule were read back.
+- **Still for Cowork:** step 5 (legacy-listings run check), step 6 (ME file diff), step 7 (OpenSea program id).
+

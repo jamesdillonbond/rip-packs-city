@@ -14,8 +14,7 @@
 -- WHAT. CREATE OR REPLACE of each live body (md5-guarded; each byte-equal to its pinned migration) with
 -- exact replacements only. Headers, SECURITY, search_path and statement_timeout unchanged.
 --
--- anon-exec: unchanged (get_series_detail, refresh_series_detail_rollup, get_set_detail, get_team_detail,
--- get_team_players) — CREATE OR REPLACE of existing fns; ACLs preserved.
+-- anon-exec: unchanged (get_series_detail, refresh_series_detail_rollup, get_set_detail, get_team_detail, get_team_players) — CREATE OR REPLACE of existing fns; ACLs preserved.
 --
 -- APPLIED AS (2026-11-14 ~8:46 PM PT from the clock, version 20261115044647): an md5-asserted in-database splice — each
 -- live body read by pg_get_functiondef, the exact replacements below applied with an anchor-count check of 1,

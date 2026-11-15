@@ -13,12 +13,16 @@
 -- route's 8 s RPC budget, so it is PRECOMPUTED here by pg_cron and the route reads the latest
 -- snapshot (and treats a stale one as unknown, never as zero).
 --
+-- No retention step: the table grows by one row per active collection per run (~8,800 a year),
+-- which is negligible. A retention statement in the body raised Supabase's destructive-statement
+-- prompt (twice unanswered, 11-14). Prune by hand if it ever matters.
+--
 -- The one-of-one generative sets are reported in their own columns so coverage can be read
 -- with and without them; nothing here decides which figure is the target.
 --
--- Revert: SELECT cron.unschedule('rpc-fmv-activity-gap');
---         DROP FUNCTION public.refresh_fmv_activity_gap(); DROP FUNCTION public.get_fmv_activity_gap();
---         DROP TABLE public.fmv_activity_gap;
+-- Revert: SELECT cron.unschedule('rpc-fmv-activity-gap'); then remove the two functions
+--         (public.refresh_fmv_activity_gap(), public.get_fmv_activity_gap()) and the table
+--         public.fmv_activity_gap.
 create table if not exists public.fmv_activity_gap (
   measured_at timestamptz not null,
   slug text not null,
@@ -74,7 +78,6 @@ begin
     from eds e
    group by e.slug;
   get diagnostics v_n = row_count;
-  delete from public.fmv_activity_gap where measured_at < v_at - interval '14 days';
   return v_n;
 end
 $$;

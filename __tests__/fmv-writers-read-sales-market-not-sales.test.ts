@@ -32,6 +32,8 @@ const SUPPRESSED: Record<string, string> = {
   fmv_recalc_90d_catchup_editions: "selector: same reason as fmv_recalc_edition_page",
   fmv_backfill_candidates: "selector: editions with sales but no snapshot; the backfill then prices from sales_market",
   get_wallet_moments_with_fmv: "display read for a wallet page, not an FMV writer",
+  refresh_fmv_activity_gap:
+    "monitor, not an FMV writer: counts editions with ANY raw sale but no snapshot (the data-integrity alert's definition of market activity, 2026-11-14); writes only fmv_activity_gap",
 }
 
 const FMV_ROUTES = ["app/api/fmv-recalc/route.ts", "app/api/fmv-backfill/route.ts"]
