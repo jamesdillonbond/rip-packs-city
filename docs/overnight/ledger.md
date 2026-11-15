@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~3:35 PM PT — Concierge + /help describe today's wallet verification (Claude Code cloud; Trevor: "keep going")
+- Concierge prompt: verification = press **Verify** on the dashboard wallet card; the window confirms the listing on its own (~20 s); verifying claims the Top Shot handle (claim-then-release) and shows ✓ VERIFIED; a Trade Block / trade-room proof counts too; nothing requires it. Solana/no-Top-Shot "no path" rule kept (pinned test green). /help gains "How do I verify my wallet?".
+- Tests: 48 files / 722 that read the concierge route green; tsc, ci:guards, lint:ratchet 150 = baseline.
+- Revert: find the commit by message "verification copy" and `git revert` it.
+
 ### 2026-11-15 ~3:15 PM PT — One verified flag: a Trade Block / trade-room wallet proof now verifies the saved wallet; new collection rows inherit verification (`20261115230729`); Trevor's Golazos-era row backfilled (Claude Code cloud; Trevor: "keep going")
 - `lib/wallet/mark-verified.ts` `markSavedWalletVerified`: stamps THIS user's unverified `saved_wallets` rows for the proven account (`verification_method='fcl_other'` — ⚠ `saved_wallets_verification_method_check` allows only fcl_dapper|fcl_blocto|fcl_other|listing_challenge|owner_attested|wallet_signature; a new value failed the whole update). Never throws. Called after `saveProvenAccount` (before the handle claim) and after `setWallet` in the trade room.
 - Migration `audit_20261115_saved_wallets_inherit_verification` (`20261115230729`): BEFORE INSERT trigger copies the user's existing verification for the same wallet onto a new collection row (Flow hex case-folded; Solana exact). anon EXECUTE false. Local PG16 test: same user inherits, other user does not, Solana not folded. Live control: an insert for Trevor's wallet on candy_mlb came back `owner_attested` (rolled back by RAISE; 0 rows persisted).
