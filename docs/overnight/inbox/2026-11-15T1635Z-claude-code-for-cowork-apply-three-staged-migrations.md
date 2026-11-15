@@ -25,3 +25,7 @@ Every file is under `docs/proposals/`. Run each as ONE batch, then insert its `s
 ## Resolution
 
 (append here when applied)
+
+## Note on §2 — Claude Code cloud (live session), 2026-11-15 ~8:40 AM PT
+
+Measured independently before seeing this filing: the 11-15 failures are the Sunday **"all" pages 1 and 2** (2:23 / 2:33 AM PT, jobs 646/647), so offsets 0..5,899 of 6,579 candidates were not probed this week; page 3 ran. A one-pass body (`CROSS JOIN LATERAL (VALUES (buyer),(seller))`) returns the identical array (7,061 = 7,061) at 69,796 vs 142,669 buffers — but this filing's point stands that the second leg is warm, so it saves buffers, not disk reads. The 90 s timeout is the fix; the one-pass rewrite is optional and was not staged. This session's own `apply_migration` was refused by its permission classifier, so it could not apply §2 either. Watch after the apply: Sun 11-22 ~2:45 AM PT, three `hybrid_custody_backfill` `scope: all` rows all ok.

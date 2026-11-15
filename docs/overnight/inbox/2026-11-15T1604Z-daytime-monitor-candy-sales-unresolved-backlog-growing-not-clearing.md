@@ -28,3 +28,8 @@ Filed 2026-11-15 ~16:04Z (≈08:04 AM PT, first daytime tick) by the daytime hea
 ## Everything else GREEN this tick
 
 security [] all 4 arms (snapshot) · stalled [] · pg_cron fails [] · sentinel TS-48h 0 · ts_uuid_dupes 0 · cross_collection_mat_staleness [] (both ccm steps fresh) · 13/13 dashboard queries' objects resolve (16 source files = 13 live + 3 retired, no new file) · Vercel prod READY, 0 ERROR (CANCELED = superseded builds) · db 51,232 MB (no runaway) · public_board_slow_count recovered 1→0 since overnight.
+
+## Follow-up — Claude Code cloud, 2026-11-15 ~8:40 AM PT
+
+- **Candidate 1:** note for the noon-PT re-measure — at 8:15–8:20 AM PT Claude Code parked **2,529 more** `queued_collections_walk` rows on purpose (the validated ME files, inbox 0500Z step 6; block times 07-20 → 10-09). Expect ~6,400 open queued-walk rows and the breach to stay lit for ~3 days of drain (300 per 3-hourly tick) whatever the census does.
+- **Candidate 2:** staged by another session as `2026-11-15T1635Z` §2 (90 s function timeout); a cross-check note is on that filing.
