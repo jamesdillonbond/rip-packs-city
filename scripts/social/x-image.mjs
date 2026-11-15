@@ -103,7 +103,9 @@ async function dropsItems() {
   const d = await r.json()
   const unread = Object.entries(d.meta?.complete_at ?? {}).filter(([, at]) => !at).map(([k]) => k)
   const excluded = new Set((arg("exclude") ?? "").split(",").map((s) => s.trim()).filter(Boolean))
-  const ahead = (d.drops ?? []).filter((x) => x.status !== "ended" && !excluded.has(x.dist_id))
+  // New drops only, as in x-draft.mjs (Trevor, 11-15): one already on sale for 36 h+ was on an earlier report.
+  const isNew = (x) => x.status === "upcoming" || Date.parse(x.start_time) > Date.now() - 36 * 3600000
+  const ahead = (d.drops ?? []).filter((x) => x.status !== "ended" && isNew(x) && !excluded.has(x.dist_id))
   // Same order as the thread: priciest first.
   ahead.sort((a, b) => (b.retail_usd ?? 0) - (a.retail_usd ?? 0) || a.start_time.localeCompare(b.start_time))
   const items = ahead.map((x) => ({

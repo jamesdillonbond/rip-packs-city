@@ -546,10 +546,13 @@ async function drops() {
   const isNew = (x) => x.status === "upcoming" || Date.parse(x.start_time) > now.getTime() - 36 * 3600000
   const fresh = byPrice.filter(isNew)
   const carried = byPrice.filter((x) => !isNew(x))
+  if (!fresh.length && !calendarAnnouncements.length) return { skip_reason: `no NEW drop this week (still on sale from earlier reports: ${carried.map((x) => x.title).join(", ") || "none"})`, link: `${SITE}/insights/drops` }
   const lines = fresh.map(reportLine)
   // Candy MLB has no store listing (its store is offline); a drop it ANNOUNCED this week rides as a line.
   for (const a of calendarAnnouncements) lines.push(`${BRAND.candy_mlb.emoji} ${BRAND.candy_mlb.handle}: ${a.title}`)
-  if (carried.length) lines.push(...(lines.length ? [""] : []), "Still on sale:", ...carried.map(reportLine))
+  // Trevor, 11-15: "We need to pull the pinnacle drop since we already covered it last week and it's not
+  // a new drop" — a drop already on sale was on an earlier report, so the post leaves it out entirely.
+  // facts.carried_over names them for the drafter; the drops page still lists them.
   const head = `The RPC Weekly Pack Drop Report, ${mdPT(now)}-${mdPT(new Date(now.getTime() + 7 * 86400000))} 📦`
   const covered = Object.keys(calendarMeta?.complete_at ?? {}).map((p) => ATLAS_NAMES[p] ?? p).filter((n) => !calendarMeta.unread.includes(n))
   return {
@@ -557,7 +560,8 @@ async function drops() {
     link,
     long_form: true,
     facts: {
-      drops: ahead,
+      drops: fresh,
+      carried_over: carried.map((x) => x.title),
       ended_this_week: all.filter((x) => x.status === "ended").length,
       collections_covered: covered,
       collections_unread: calendarMeta?.unread ?? [],
