@@ -12,7 +12,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
-### 2026-11-15 ~7:05 AM PT — #190 step 3: hop table reshaped (Trevor approved); hop v2 NOT loaded (1.88M rows), v3 query narrowed to the actual transfers (Claude Code cloud)
+### 2026-11-15 ~7:00 AM PT — #190 step 3: hop table reshaped (Trevor approved); hop v2 NOT loaded (1.88M rows), v3 query narrowed to the actual transfers (Claude Code cloud)
 
 - `20261115145948`: `topshot_transfer_hop_stage` dropped while empty and recreated keyed (sender, nft_id).
 - Hop v2 completed (118 credits) but returned 1,884,445 rows (every sender deposit of any moment that ever reached a saved wallet) — ~3,800 credits to read, over the remaining budget. Not loaded. v3 (same query id 9129613) keeps only plain transfers into saved wallets and the sender's latest arrival before each; row count checked before any load. Hop cron stays unscheduled.
