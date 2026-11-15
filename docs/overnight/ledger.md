@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~8:48 AM PT — Market page retries a cold-read 503/504 once before showing "Couldn't load market" (Claude Code cloud, deep audit R152 remainder)
+
+- `/panini-blockchain/market` (and every collection's Market tab) failed outright on the first 503: 1 of 3 quiet-hour renders this morning, 4 of 8 in the audit's 1:21–1:27 AM sample. The 503 is a bounded read that ran out of time on cold pages; the abandoned query warms them, so `MarketClient` now retries ONCE after 600 ms on 503/504 only (`fetchMarketOnceRetried`). A second failure renders exactly as before; other statuses never retry. Tests: 503→200 renders rows (2 calls), persistent 503 still names the failure (2 calls), 500 not retried (1 call); red on a planted revert.
+- Revert: revert the code commit.
+
 ### 2026-11-15 ~8:45 AM PT — DONE: inbox `2026-11-15T0500Z` steps 5–7 (#257 lane verified, 2,529 ME sales parked, #256 program-id source found); #248 effect check passed, cost check owed (Claude Code cloud, Trevor live)
 
 - No new prod change since the 8:20 AM PT entry (the 2,529-row park is logged there). #248 miss re-sample 8:45 AM PT: 84 / 76,530 wallet rows = 0.11 % (target ≲ 0.2 %); pgss pooled 23 h puts PostgREST at 8,266 reads/call vs the 7,195 bar, so a QUIET ≥ 1 h window is owed before any verdict — steps on #248.
