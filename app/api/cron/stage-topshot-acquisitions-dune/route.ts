@@ -105,6 +105,11 @@ async function run(req: NextRequest) {
     let totalRows: number | null = null
     let upToDate = false
     let pausedStop = false
+    // Next page to read when this tick stops early; the next tick resumes there (never re-buys pages).
+    let resumeOffset: number | null = null
+    let walkOffset: number | null = null
+    let completed = false
+    let startOffset = 0
 
     const fetchPage = async (offset: number, limit: number): Promise<ResultsPage> => {
       const res = await fetch(
@@ -163,13 +168,41 @@ async function run(req: NextRequest) {
           .eq("dune_execution_id", executionId)
         if (haveErr || haveCount == null) throw new Error(`stage count read: ${haveErr?.message ?? "no count"}`)
 
-        if (haveCount >= totalRows) {
+        // Done = a previous tick walked this execution to its end. A row count alone cannot say so:
+        // rows the mapper skips are never written, so the count may never reach Dune's total, and
+        // relying on it alone would re-buy the whole result every hour.
+        const { count: doneRuns, error: doneErr } = await supabaseAdmin
+          .from("pipeline_runs")
+          .select("id", { count: "exact", head: true })
+          .eq("pipeline", pipeline)
+          .eq("extra->>execution_id", executionId)
+          .eq("extra->>completed", "true")
+        if (doneErr || doneRuns == null) throw new Error(`completion read: ${doneErr?.message ?? "no count"}`)
+
+        if (haveCount >= totalRows || doneRuns > 0) {
           upToDate = true
           stagedForExecution = haveCount
         } else {
-          let offset = 0
+          // Resume where the last tick on THIS execution stopped. Pages already written are not
+          // re-read: Dune bills result reads by volume, and a restart from 0 would buy them again.
+          const { data: prev, error: prevErr } = await supabaseAdmin
+            .from("pipeline_runs")
+            .select("extra")
+            .eq("pipeline", pipeline)
+            .eq("extra->>execution_id", executionId)
+            .not("extra->>resume_offset", "is", null)
+            .order("started_at", { ascending: false })
+            .limit(1)
+          if (prevErr) throw new Error(`resume read: ${prevErr.message}`)
+          const prevOffset = Number((prev?.[0]?.extra as { resume_offset?: unknown } | undefined)?.resume_offset)
+          startOffset = Number.isInteger(prevOffset) && prevOffset > 0 ? prevOffset : 0
+          let offset = startOffset
           for (;;) {
-            if (Date.now() - startedMs > HARD_BUDGET_MS) throw new Error(`time budget spent at offset ${offset}`)
+            walkOffset = offset
+            if (Date.now() - startedMs > HARD_BUDGET_MS) {
+              resumeOffset = offset
+              throw new Error(`time budget spent at offset ${offset}; next tick resumes there`)
+            }
             const page = await fetchPage(offset, PAGE_LIMIT)
             if (page.execution_id !== executionId) {
               throw new Error(`execution changed mid-walk (${executionId} -> ${page.execution_id}); rerun`)
@@ -191,6 +224,8 @@ async function run(req: NextRequest) {
             if (page.next_offset == null || rows.length === 0) break
             offset = Number(page.next_offset)
           }
+          walkOffset = null
+          completed = true
 
           // Written = what the table now holds for this execution, read back.
           const { count: afterCount, error: afterErr } = await supabaseAdmin
@@ -199,16 +234,18 @@ async function run(req: NextRequest) {
             .eq("dune_execution_id", executionId)
           if (afterErr || afterCount == null) throw new Error(`stage count re-read: ${afterErr?.message ?? "no count"}`)
           stagedForExecution = afterCount
-          if (found !== totalRows) {
+          if (startOffset === 0 && found !== totalRows) {
             ok = false
             errMsg = `paged ${found} rows but Dune reports ${totalRows}`
-          } else if (afterCount !== found - skipped) {
+          } else if (startOffset === 0 && afterCount !== found - skipped) {
             ok = false
             errMsg = `stage holds ${afterCount} rows for ${executionId}, expected ${found - skipped}`
           }
         }
       }
     } catch (e) {
+      // Any failure mid-walk resumes at the page that did not finish, never at 0.
+      if (resumeOffset == null && walkOffset != null) resumeOffset = walkOffset
       ok = false
       errMsg = e instanceof Error ? e.message : String(e)
     }
@@ -228,6 +265,9 @@ async function run(req: NextRequest) {
           dune_total_rows: totalRows,
           staged_for_execution: stagedForExecution,
           up_to_date: upToDate,
+          ...(completed ? { completed: true } : {}),
+          ...(startOffset > 0 ? { resumed_from: startOffset } : {}),
+          ...(resumeOffset != null ? { resume_offset: resumeOffset } : {}),
           ...(pausedStop ? { paused: true } : {}),
           duration_ms: Date.now() - startedMs,
         },
