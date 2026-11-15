@@ -12,6 +12,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~2:45 PM PT — Verify modal watches for the listing on its own; public profile shows verified wallets (Claude Code cloud; Trevor: "keep going and exploring options")
+- Measured: 55 of 55 unverified saved Flow wallets hold an unlocked, priced Top Shot Moment, so the listing check reaches all of them — the gap is the button and a reason, not reach.
+- `VerifyByListingModal`: re-checks every 20 s while the tab is visible and the challenge is live (silent — acts only on a match, never writes a hint or error); copy says it verifies on its own. Button click unchanged.
+- `getPublicProfile` returns `verified_wallet_count` (this user's own `verified_at` rows, distinct addresses); `/profile/<handle>` shows `✓ VERIFIED` or `N VERIFIED` beside the wallet count; zero/absent renders nothing.
+- Research note updated (docs/research/wallet-verification-options-2026-11-15.md): reach, kept-for-later (All Day listing, avatar), rejected (favourite team).
+- Tests: watch test (fake timers) + 2 profile-count cases + 3 SSR badge cases; planted defects red (silent hint; no watch). tsc, ci:guards, lint:ratchet 150 = baseline, vitest related 349 green.
+- Revert: find the commit by message "verify modal watches" and `git revert` it.
+
 ### 2026-11-15 ~2:31 PM PT — Cadence Collapse bridge for `wmc-fmv-stuck-resync` (job 617 → daily this morning, #248) (`20261115223136`) (Claude Code cloud, autonomous)
 - Sentinel 1:59 PM PT WARN: 8/day vs a 24/day baseline (0.33). `20261115175130` cut the lane 24× on purpose without the bridge cron-and-schedulers.md asks for. Row in `cadence_exempt_lanes`, `review_by` 11-28 (median clean from 11-27: ≥ 8 daily days from 11-16). Read back: the lane is in `suppressed`, `collapsed` empty. Pipeline Silence still watches it (1560/3000 min). If #248's 11-16 close-out restores 2-hourly, delete the row.
 - Revert: `DELETE FROM public.cadence_exempt_lanes WHERE pipeline_pattern = 'wmc-fmv-stuck-resync';`

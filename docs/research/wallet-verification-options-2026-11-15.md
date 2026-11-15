@@ -12,6 +12,20 @@ Trevor: "let them have access until we can verify easily and effectively." Const
 
 Live controls 11-15: `atlas_verify_listing` matched a real open listing at its price and refused the same listing 1¢ off.
 
+## Reach (measured 2026-11-15 ~2:40 PM PT)
+
+All **55 of 55** unverified saved Flow wallets hold at least one unlocked, priced Top Shot Moment in `wallet_moments_cache`, so the listing check can reach every one of them today. Reach is not the gap; finding the button and having a reason to press it are. Shipped the same afternoon:
+
+- the Verify button back on every unverified Flow wallet card (it had been missing 09-06 → 11-15);
+- a verified listing claims the wallet's Top Shot handle (claim-then-release);
+- the open modal watches for the listing every 20 s, so the collector does not have to come back and press Done;
+- the public profile says how many of a collector's wallets are verified (`✓ VERIFIED` / `N VERIFIED`) — a trust signal for trades.
+
+## Kept for later (no user needs them today)
+
+- **All Day / Golazos / Pinnacle listing check** — Atlas reads `product:'nfl'` listings too, so the same challenge could pick an All Day Moment. 0 unverified wallets lack a Top Shot Moment, so not built.
+- **Avatar change** — `profileImageUrl` comes back from the same ProfileService read and only the owner can change it. Weaker UX than a listing (the collector has to go to Dapper account settings and back), and unknown whether Atlas reflects the change quickly. Needs one live test before any build.
+
 ## Rejected: favourite-team challenge
 
 ⛔ **Skipped (Trevor, 2026-11-15 2:30 PM PT): Top Shot locks the favourite team for the season, so a collector cannot switch it on request.** Kept below for the record — do not re-propose.
