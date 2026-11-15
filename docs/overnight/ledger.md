@@ -12,6 +12,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-14 ~7:25 PM PT — Pack history v31: a reward-looking title no longer prices a $100 Fast Break Rookie Pack at $0 (Claude Code cloud)
+
+- Found while double-checking tonight's v30. The reward-title rule matched "Fast Break - Rookie Pack" (dist 4039, drop retail $100) and "Fast Break Booster Pack" ($5), so a held one with no buy row read "$0 (reward)".
+- The fix: a reward title now applies only when the drop carries no non-zero retail. Splice v30 a62f193d… → v31 e419a967…, migration `20261115032000`.
+- DB test P58 added and proven against a planted v30 body (fails there, passes on v31); pin re-pointed.
+- Live: peanpean's dist-4039 pack now reads $100 retail (inferred).
+- Revert: re-apply `20261115014500`.
+
 ### 2026-11-14 ~7:55 PM PT — Fast Break: a lineup fetched for a previous run can no longer be shown, or SAVED, under the current run (Claude Code cloud)
 - Sweep of `useWarmCache` consumers after the packs review: the hook keeps the previous key's data while a new key loads, and after that load fails. `FastBreakClient` read `optimize.data` directly, so on a wallet / run / date change it rendered the previous run's lineup, and "Save This Lineup" POSTed that lineup under the NEW `runId`, a write.
 - Both hooks now go through `answerFor` (data only when its `dataKey` is the current key). The test mock is re-pinned to report `dataKey`, and a new test was red on the old client. The other consumers were checked: the Collection tab's saved-wallets read only drives a prefetch (an empty list skips it), and the RTR sections are display-only; left as is. Preflight green.
