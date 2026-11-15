@@ -1,0 +1,16 @@
+-- audit_20261115_discover_missing_topshot_dists_90s_timeout
+--
+-- WHY (Claude Code cloud, 2026-11-15 ~2:27 PM PT). topshot-pack-dist-names-onchain failed 3 of its last 8 runs
+-- (11-14 4:25 PM, 10:25 PM, 11-15 1:25 AM PT) with "discover: canceling statement due to statement timeout". The
+-- route calls discover_missing_topshot_pack_distributions(7) over PostgREST as service_role, whose statement_timeout
+-- is 30 s. Measured ~2:25 PM PT, cold: 5.5 s, of which 4.8 s is 8,254 random heap reads on pack_rips (17,493 rows in
+-- the 7-day window, fetched only for dist_id); under estate IO those reads cross 30 s. Same class and same lever as
+-- get_hybrid_custody_candidates this morning (20261115172736): a function-level statement_timeout applies via
+-- PostgREST when it is HIGHER than the role's. The route has no client-side abort (maxDuration 300 s, the budget
+-- check runs after discovery), and the lane runs every 3 h, so 90 s cannot pile up runs.
+-- Not taken: a covering (collection_id, sealed_at) INCLUDE (pull_value_usd, dist_id) index swap on the 2.4 GB table
+-- (buffers 16,983 -> 7,487 measured on the existing index's index-only path, but 4,484 heap fetches remain because
+-- recent pages are not all-visible). Revisit only if 90 s also fails.
+--
+-- REVERT: ALTER FUNCTION public.discover_missing_topshot_pack_distributions(integer) RESET statement_timeout;
+ALTER FUNCTION public.discover_missing_topshot_pack_distributions(integer) SET statement_timeout = '90s';
