@@ -16,9 +16,7 @@ import { makeReq } from "./cron-req-helper"
 const cfg = vi.hoisted(() => ({
   security: { data: [] as any[] | null, error: null as any },
   coverage: {
-    data: [{ slug: "nba_top_shot", editions: 100, fmv_editions: 100, coverage_pct: 100 }] as
-      | any[]
-      | null,
+    data: [{ measured_at: new Date().toISOString(), slug: "nba_top_shot", editions: 100, fmv_editions: 100, sold_no_fmv: 0, generative_1of1_editions: 0, generative_1of1_fmv_editions: 0 }] as any[] | null,
     error: null as any,
   },
   badge: { data: { updated_at: new Date().toISOString() } as any, error: null as any },
@@ -49,7 +47,8 @@ const sb = vi.hoisted(() => {
   s.maybeSingle = async () => ({ data: cfg.badge.data, error: cfg.badge.error })
   s.rpc = async (name: string) => {
     if (cfg.hangAll) return new Promise(() => {}) // every RPC hangs, not just coverage
-    if (name === "get_fmv_coverage") {
+    // 2026-11-14: the coverage leg reads the get_fmv_activity_gap() snapshot.
+    if (name === "get_fmv_activity_gap") {
       if (cfg.hangCoverage) return new Promise(() => {}) // never settles
       return { data: cfg.coverage.data, error: cfg.coverage.error }
     }
@@ -79,7 +78,7 @@ vi.mock("@/lib/ops-alert", () => ({ sendOpsAlert: alertSpy }))
 function resetCfg() {
   cfg.security = { data: [], error: null }
   cfg.coverage = {
-    data: [{ slug: "nba_top_shot", editions: 100, fmv_editions: 100, coverage_pct: 100 }],
+    data: [{ measured_at: new Date().toISOString(), slug: "nba_top_shot", editions: 100, fmv_editions: 100, sold_no_fmv: 0, generative_1of1_editions: 0, generative_1of1_fmv_editions: 0 }],
     error: null,
   }
   cfg.badge = { data: { updated_at: new Date().toISOString() }, error: null }
@@ -164,19 +163,24 @@ describe("GET /api/cron/data-integrity — degrade + flag branches", () => {
     expect(alertSpy.mock.calls[0][0]).toMatchObject({ key: "data-integrity" })
   })
 
-  it("reports fmv_coverage_pct null when the coverage RPC returns no rows", async () => {
+  // Inverted 2026-11-14: an EMPTY snapshot answer means the pg_cron writer never ran.
+  // That used to read as a quiet "ok"; a gap nobody ever measured is not a gap of 0.
+  it("flags a never-measured activity gap (empty snapshot) instead of reading it as ok", async () => {
     cfg.coverage = { data: [], error: null }
     const res = await GET(authedReq())
     const body = await res.json()
-    expect(body.status).toBe("ok")
+    expect(body.status).toBe("issues_found")
     expect(body.stats.fmv_coverage_pct).toBeNull()
+    expect(body.stats.fmv_activity_gap).toBeNull()
+    expect(body.issues.some((i: string) => /never been measured/.test(i))).toBe(true)
   })
 
-  it("reports fmv_coverage_pct null when the coverage RPC errors", async () => {
+  it("reports the coverage and activity gap UNKNOWN (null) when the snapshot read errors", async () => {
     cfg.coverage = { data: null, error: { message: "cov boom" } }
     const res = await GET(authedReq())
     const body = await res.json()
     expect(body.stats.fmv_coverage_pct).toBeNull()
+    expect(body.stats.fmv_activity_gap).toBeNull()
   })
 
   // Regression pin for 2026-08-18: get_fmv_coverage() did not finish in 55s, the
@@ -278,17 +282,51 @@ describe("GET /api/cron/data-integrity — degrade + flag branches", () => {
     expect(body.issues).toEqual([])
   })
 
-  it("flags a broad FMV coverage regression (< 95%)", async () => {
+  // Inverted 2026-11-14 (Trevor, Candy FMV coverage handoff): low overall coverage is
+  // NOT an integrity issue by itself — Candy's never-traded catalogue held it at 76.9 %
+  // and the old < 95 % flag fired every day. It is still REPORTED, both ways.
+  it("does NOT flag low overall coverage when every edition with a sale has an FMV", async () => {
     cfg.coverage = {
-      data: [{ slug: "nba_top_shot", editions: 100, fmv_editions: 40, coverage_pct: 40 }],
+      data: [
+        { measured_at: new Date().toISOString(), slug: "candy_mlb", editions: 21472, fmv_editions: 463, sold_no_fmv: 0, generative_1of1_editions: 10036, generative_1of1_fmv_editions: 0 },
+      ],
+      error: null,
+    }
+    const res = await GET(authedReq())
+    const body = await res.json()
+    expect(body.status).toBe("ok")
+    expect(body.issues).toEqual([])
+    expect(body.stats.fmv_coverage_pct).toBe(2.2)
+    expect(body.stats.fmv_coverage_pct_excl_generative_1of1).toBe(4)
+    expect(body.stats.fmv_activity_gap).toBe(0)
+    expect(alertSpy).not.toHaveBeenCalled()
+  })
+
+  it("flags editions with a recorded sale but no FMV, by collection, and pages ops", async () => {
+    cfg.coverage = {
+      data: [
+        { measured_at: new Date().toISOString(), slug: "candy_mlb", editions: 100, fmv_editions: 90, sold_no_fmv: 3, generative_1of1_editions: 0, generative_1of1_fmv_editions: 0 },
+        { measured_at: new Date().toISOString(), slug: "nba_top_shot", editions: 100, fmv_editions: 100, sold_no_fmv: 0, generative_1of1_editions: 0, generative_1of1_fmv_editions: 0 },
+      ],
       error: null,
     }
     const res = await GET(authedReq())
     const body = await res.json()
     expect(body.status).toBe("issues_found")
-    expect(body.stats.fmv_coverage_pct).toBe(40)
-    expect(body.issues.some((i: string) => i.includes("40%"))).toBe(true)
+    expect(body.stats.fmv_activity_gap).toBe(3)
+    expect(body.issues).toEqual(["3 edition(s) with a recorded sale but no FMV (candy_mlb 3)"])
     expect(alertSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it("flags a STALE snapshot instead of reporting its 0 as current", async () => {
+    cfg.coverage = {
+      data: [{ measured_at: new Date(Date.now() - 30 * 3_600_000).toISOString(), slug: "nba_top_shot", editions: 100, fmv_editions: 100, sold_no_fmv: 0, generative_1of1_editions: 0, generative_1of1_fmv_editions: 0 }],
+      error: null,
+    }
+    const res = await GET(authedReq())
+    const body = await res.json()
+    expect(body.status).toBe("issues_found")
+    expect(body.issues.some((i: string) => /30(\.0)?h old/.test(i) && /not a current measurement/.test(i))).toBe(true)
   })
 
   it("flags stale badge data (> 72h) and reports the age", async () => {
@@ -342,7 +380,7 @@ describe("GET /api/cron/data-integrity — degrade + flag branches", () => {
   it("aggregates multiple issues into one ops page", async () => {
     cfg.security = { data: [{}], error: null }
     cfg.coverage = {
-      data: [{ slug: "x", editions: 100, fmv_editions: 10, coverage_pct: 10 }],
+      data: [{ measured_at: new Date().toISOString(), slug: "x", editions: 100, fmv_editions: 10, sold_no_fmv: 5, generative_1of1_editions: 0, generative_1of1_fmv_editions: 0 }],
       error: null,
     }
     const res = await GET(authedReq())

@@ -61,6 +61,10 @@ jobs:
   # TS editions + legitimately player-less award/team cards — now informational stats
   # only). Flagged checks are all clean 0/healthy baselines (security invariants +
   # badge freshness), so a green scheduled run is expected.
+  # 2026-11-14: FMV coverage no longer flags on "< 95 %" (it read 76.9 % permanently,
+  # from never-traded Candy editions). It flags editions with a recorded SALE but no
+  # FMV (0 that day), read from the pg_cron snapshot get_fmv_activity_gap(), and a
+  # snapshot that is missing or older than 26 h.
   data-integrity:
     runs-on: ubuntu-latest
     timeout-minutes: 10

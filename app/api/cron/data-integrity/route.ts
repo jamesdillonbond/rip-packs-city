@@ -27,6 +27,10 @@ import { rpcWithRetry, withQueryDeadline } from "@/lib/analytics/rpc-with-retry"
 // timeout is terminal rather than retried. Genuine throws still propagate.
 const SECURITY_RPC_TIMEOUT_MS = 6_000;
 const COVERAGE_RPC_TIMEOUT_MS = 8_000;
+// The snapshot is refreshed at 05:53 / 11:53 / 17:53 / 23:53 UTC and read once a
+// day at 06:41 UTC, so a healthy read is < 1 h old. 26 h = one whole missed day
+// plus slack: past it the job has stopped, and a stale 0 is not a measured 0.
+const GAP_SNAPSHOT_MAX_AGE_H = 26;
 const TABLE_READ_TIMEOUT_MS = 3_000;
 
 const supabaseAdmin = createClient(
@@ -53,12 +57,15 @@ export const maxDuration = 30;
 //      tables, updatable+anon-writable views, unexpected-definer views,
 //      anon-EXECUTE secdef trigger fns, and anon-readable materialized views
 //      (check_public_security_invariants(); replaces the old dead RLS-key check).
-//   2. FMV coverage — overall editions-with-an-fmv-snapshot, via the
-//      get_fmv_coverage() RPC (replaces the old health_check() call). Flags only
-//      on overall <95%; the thin UFC market is reported per-collection but not
-//      flagged. ⚠ No latency figure is quoted here ON PURPOSE — see the block at
-//      the call site: the last two numbers in this comment were both dated
-//      samples that went wrong in opposite directions.
+//   2. FMV activity gap — editions with a recorded sale but NO FMV (2026-11-14,
+//      replaces the "overall coverage < 95 %" flag). Read from the pg_cron
+//      snapshot get_fmv_activity_gap() (refresh_fmv_activity_gap, 4x a day).
+//      Flags on any such edition, and on a snapshot that is missing or older
+//      than GAP_SNAPSHOT_MAX_AGE_H. Overall coverage stays as an informational
+//      stat, with and without the one-of-one generative Candy sets.
+//      ⚠ No latency figure is quoted here ON PURPOSE — see the block at the
+//      call site: the last two numbers in this comment were both dated samples
+//      that went wrong in opposite directions.
 //   3. badge data freshness (>72h).
 //   4. wallet-pack ownership floor — saved wallets whose pack sync completed
 //      cleanly but carry no last_clean_sync_at, i.e. the stamping trigger has
@@ -140,8 +147,21 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // 2. FMV coverage — overall % of active-collection editions with an FMV snapshot.
-    //    Flags only on a broad regression (overall <95%).
+    // 2. FMV activity gap (2026-11-14). The flag USED to be "overall coverage
+    //    < 95 %", which counts every catalogued edition. 21,009 of Candy's 21,472
+    //    editions have never traded (about 10,000 of them one-of-one generative
+    //    cards), so it read 76.9 % and fired every day while measuring nothing a
+    //    person could act on. The actionable defect is an edition that HAS a sale
+    //    and still no FMV (0 on 11-14). An ask alone does not count: a listing is
+    //    never FMV, so counting asks would make this permanently non-zero.
+    //
+    //    That probe costs ~19 s cold (measured 11-14), so it is precomputed by
+    //    pg_cron; this reads the latest snapshot. Missing or stale → flagged as
+    //    such, never reported as a measured 0. The read itself erroring or
+    //    hanging stays UNKNOWN and unflagged, like every other leg here.
+    //
+    //    The history below is about the OLD get_fmv_coverage() read; it is kept
+    //    because the lesson (bound the leg, never quote a latency) still binds.
     //
     // ⚠ THIS COMMENT HAS NOW BEEN WRONG TWICE, IN OPPOSITE DIRECTIONS, AND BOTH
     // TIMES BECAUSE A ONE-INSTANT READING WAS WRITTEN DOWN AS A PROPERTY.
@@ -167,25 +187,57 @@ export async function GET(request: NextRequest) {
     //
     // If you are tempted to put a fresh millisecond figure in this comment: that
     // is exactly what went wrong the last two times. Measure it yourself.
-    const { data: coverage, error: covErr } = await rpcWithRetry<any[]>(
+    const { data: gap, error: gapErr } = await rpcWithRetry<any[]>(
       supabaseAdmin,
-      "get_fmv_coverage",
+      "get_fmv_activity_gap",
       {},
       { timeoutMs: COVERAGE_RPC_TIMEOUT_MS }
     );
-    if (!covErr && Array.isArray(coverage) && coverage.length > 0) {
-      const totEd = coverage.reduce((s: number, r: any) => s + Number(r.editions || 0), 0);
-      const totFmv = coverage.reduce((s: number, r: any) => s + Number(r.fmv_editions || 0), 0);
-      const overall = totEd > 0 ? Number(((totFmv / totEd) * 100).toFixed(1)) : null;
-      stats.fmv_coverage_pct = overall;
-      stats.fmv_coverage_by_collection = Object.fromEntries(
-        coverage.map((r: any) => [r.slug, Number(r.coverage_pct)])
-      );
-      if (overall != null && overall < 95) {
-        issues.push(`Overall FMV coverage at ${overall}% (target: >=95%)`);
+    stats.fmv_coverage_pct = null;
+    stats.fmv_coverage_pct_excl_generative_1of1 = null;
+    stats.fmv_activity_gap = null;
+    stats.fmv_activity_gap_age_hours = null;
+    if (!gapErr && Array.isArray(gap)) {
+      if (gap.length === 0) {
+        issues.push(
+          "FMV activity gap has never been measured — get_fmv_activity_gap() returned no snapshot " +
+            "(pg_cron rpc-fmv-activity-gap not running?)"
+        );
+      } else {
+        const sum = (k: string) => gap.reduce((s: number, r: any) => s + Number(r[k] || 0), 0);
+        const totEd = sum("editions");
+        const totFmv = sum("fmv_editions");
+        const genEd = sum("generative_1of1_editions");
+        const genFmv = sum("generative_1of1_fmv_editions");
+        const pct = (n: number, d: number) => (d > 0 ? Number(((n / d) * 100).toFixed(1)) : null);
+        stats.fmv_coverage_pct = pct(totFmv, totEd);
+        stats.fmv_coverage_pct_excl_generative_1of1 = pct(totFmv - genFmv, totEd - genEd);
+        stats.fmv_coverage_by_collection = Object.fromEntries(
+          gap.map((r: any) => [r.slug, pct(Number(r.fmv_editions || 0), Number(r.editions || 0))])
+        );
+        const soldNoFmv = sum("sold_no_fmv");
+        stats.fmv_activity_gap = soldNoFmv;
+        const measuredMs = Date.parse(String(gap[0].measured_at));
+        const ageH = Number.isFinite(measuredMs)
+          ? Number(((Date.now() - measuredMs) / 3_600_000).toFixed(1))
+          : null;
+        stats.fmv_activity_gap_age_hours = ageH;
+        stats.fmv_activity_gap_measured_at = Number.isFinite(measuredMs)
+          ? new Date(measuredMs).toISOString()
+          : null;
+        if (ageH == null || ageH > GAP_SNAPSHOT_MAX_AGE_H) {
+          issues.push(
+            `FMV activity-gap snapshot is ${ageH == null ? "undated" : `${ageH}h old`} ` +
+              `(>${GAP_SNAPSHOT_MAX_AGE_H}h) — its count (${soldNoFmv}) is not a current measurement`
+          );
+        } else if (soldNoFmv > 0) {
+          const by = gap
+            .filter((r: any) => Number(r.sold_no_fmv) > 0)
+            .map((r: any) => `${r.slug} ${r.sold_no_fmv}`)
+            .join(", ");
+          issues.push(`${soldNoFmv} edition(s) with a recorded sale but no FMV (${by})`);
+        }
       }
-    } else {
-      stats.fmv_coverage_pct = null;
     }
 
     // 3. Badge data freshness.
@@ -257,7 +309,7 @@ export async function GET(request: NextRequest) {
       console.log(
         `[data-integrity] All checks passed. ` +
           `Security violations: ${stats.security_invariant_violations}, ` +
-          `FMV coverage: ${stats.fmv_coverage_pct}%, ` +
+          `FMV coverage: ${stats.fmv_coverage_pct ?? "?"}% (activity gap ${stats.fmv_activity_gap ?? "?"}), ` +
           `Badge age: ${stats.badge_data_age_hours ?? "?"}h, ` +
           `(orphans informational: ${stats.editions_no_set ?? "?"} no-set / ${stats.editions_no_player_real ?? "?"} no-player)`
       );
