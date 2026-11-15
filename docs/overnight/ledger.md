@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-14 ~7:35 PM PT — cache-refresh: the fallback "unknown" acquisition row now carries the collection it was written for (Claude Code cloud)
+
+- `/api/cache-refresh` serves Top Shot and All Day, but its fallback `moment_acquisitions` insert omitted `collection_id`, so the row took the column's Top Shot default. The route's own existence read is collection-scoped (#142), so an All Day refresh would have written its row under Top Shot.
+- Measured: all 36,546 existing `cache_refresh` rows are Top Shot and none matches an All Day holding, so no data to repair. This change closes the path.
+- Test `api-cache-refresh-deep` now pins `collection_id`; proven by running it against the previous route (fails) and this one (passes). tsc and lint ratchet are clean.
+- Revert: find the commit by message "cache-refresh fallback row carries its collection".
+
 ### 2026-11-14 ~7:25 PM PT — Pack history v31: a reward-looking title no longer prices a $100 Fast Break Rookie Pack at $0 (Claude Code cloud)
 
 - Found while double-checking tonight's v30. The reward-title rule matched "Fast Break - Rookie Pack" (dist 4039, drop retail $100) and "Fast Break Booster Pack" ($5), so a held one with no buy row read "$0 (reward)".
