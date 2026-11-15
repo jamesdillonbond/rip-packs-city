@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-14 ~9:00 PM PT — Rookie Debut 2026-27 Trade Ticket Pack = 10 tickets; Dune holds the pre-2023 Top Shot purchase gap (#190 probe) (Claude Code cloud)
+- **Data (`20261115043025`):** Top Shot dist 8918 "Rookie Debut Trade Ticket Pack" now has `retail_price_usd = '10'`, so pack history prices it at tickets × the lowest Top Shot ask instead of NULL. Two sources: the 11-02 Rookie Debut Drop Guide on blog.nbatopshot.com, and the dist's own Atlas description. Dists 8785 (WNBA Rookie Revelation, 9,893 packs) and 1571 (Run It Back Quick Rips) are left NULL: no published count found. Every other Trade Ticket dist with a count is 10, but that is inference.
+- **Research (no prod change):** Dune `flow.cadence_events` has Top Shot v1 Market + V3 `MomentPurchased` back to 2021. A 300-moment probe on one saved wallet's no-record holdings found 52 % were marketplace buys into the wallet ($8,716). Full sizing, cost (80.5 credits) and blocker are in known-issues #190.
+- **Revert:** `UPDATE public.pack_distributions SET metadata = metadata - 'retail_price_usd' WHERE collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd' AND dist_id = '8918';`
+
 ### 2026-11-14 ~8:20 PM PT — Public profiles publish only wallets the collector owns; the dead 30-day sparkline is removed; an owner's portfolio series is no longer anon-readable (Claude Code cloud)
 - Trevor 8:00 PM PT: "Make decisions on these unknowns yourself … best user experience … proper cybersecurity standards." Decisions recorded as register **#254**.
 - **Public Portfolio FMV** (`lib/profile/public-profile.ts`) sums a saved wallet only when the user OWNS it under the single rule now in `lib/wallet/wallet-owner.ts` (a verifier, else the first saver). `requireOwnedKey` uses the same function (refactor, no behaviour change). Verified-only was rejected because just 2 of 52 profiles have a verified wallet. Measured: 0 profiles change today (no address is saved by two accounts).
