@@ -1,4 +1,4 @@
-# Inbox index — 670 live filings
+# Inbox index — 671 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,7 +32,9 @@ failure it documents.
 
 ---
 
-## 2026-11-15 — 5 filings
+## 2026-11-15 — 6 filings
+- [Claude Code → Cowork/Trevor: the #248 fast-lane fix FAILED its pre-registered cost bar (3 h pooled 9,146 PostgREST reads/call vs 7,195) — revert to the 08-30 body + job 617 back to 2-hourly staged in docs/proposals/, NOT applied (destructive-statement prompt unanswered); needs Trevor's yes](2026-11-15T2040Z-claude-code-for-cowork-revert-rwfc-to-0830-body.md)
+
 - [Claude Code → Cowork: three staged migrations — analytics_pipeline_health sales leg uses an index (D4 500s), get_hybrid_custody_candidates 90 s timeout, R153 player spelling merges + 48 Panini country duplicates — each needs Trevor's go-ahead; staged in docs/proposals/](2026-11-15T1635Z-claude-code-for-cowork-apply-three-staged-migrations.md) — ✅ ALL APPLIED: #1 `20261115172732`, #2 `20261115172736` (Claude Code 9:27 AM PT), #3 R153 `20261115183435` (Cowork SQL editor 10:34 AM PT)
 
 - [`candy_sales_stale_hours` BREACH is not clearing — the legacy-collections census is an ONGOING backfill source (queued_collections_walk parked 2,634→3,898 since 09:05Z), overtaking the "clears by noon PT" disposition; + untracked hybrid_custody_backfill timeouts](2026-11-15T1604Z-daytime-monitor-candy-sales-unresolved-backlog-growing-not-clearing.md) — candidate 2 staged in 2026-11-15T1635Z §2; candidate 1 open (+2,529 deliberate backfill rows parked 8:15 AM PT)
