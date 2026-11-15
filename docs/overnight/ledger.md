@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~2:00 PM PT — R151 claim-then-release: a Trade Block wallet proof takes the handle back from an unproven first saver (Claude Code cloud; Trevor: "Keep going")
+- `claimHandleForProvenWallet` now, on `taken`, calls `releaseHandleFromUnprovenHolder`: clears the handle ONLY from an account that saved this same wallet, never verified it and never proved it; then claims. Any failed read releases nothing. Closes the first-saver squat left by the 1:35 PM relaxation. Register note added (deep-audit-register.md).
+- Tests: 5 new cases; planted defect (drop the "holder saved this wallet" check) reds 1. tsc, ci:guards, lint:ratchet (150 = baseline), vitest related (124) green. Canary (wallets saved by >1 user) = 0, so nothing to release today.
+- Revert: find the commit by message "R151 claim-then-release" and `git revert` it.
+
 ### 2026-11-15 ~1:35 PM PT — R151 relaxed: a public handle goes to the wallet's OWNER under the shared rule (proved > verified > first saver), not proof only (Claude Code cloud; Trevor: "let them have access until we can verify easily and effectively")
 - Measured first: 2 of 57 accounts with a saved wallet had EVER proven one (jamesdillonbond attested, banana_boat listing challenge, both June); `trade_block_wallets` 0 rows, `trade_room_sides` 1 proven (Trevor's test). Proof-only withheld the handle from essentially every signup.
 - New `isWalletOwnedByUser` (lib/profile/claim-username.ts): proved here → owns; another account's proof → not; else `ownersOfAddress` (lib/wallet/wallet-owner.ts, #176). Fails CLOSED. `resolve-and-associate` uses it; dashboard copy says another account already holds the wallet. Kept from A-1: pasting a name someone already saved still gets no handle. Given up until verification is easy: the first saver of a never-saved wallet wins its handle.
