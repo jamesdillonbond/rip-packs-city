@@ -115,7 +115,7 @@ All 38 rookies: $98,114 across 2,971 sales.
 
 ### The RPC Weekly Pack Drop Report (Sunday) — Trevor's format, 11-08
 
-One long post (the account posts long-form, so no thread) with the drops image attached and **no link**, then the link as a reply (Trevor, 11-08: "split the link into a 2/2 off this post so the link doesn't bring down the algo on the first main post of it, and then the 2/2 uses the link preview image"). First one posted: https://x.com/rippackscity/status/2119601226279272741 (Sun 11-08 evening PT).
+One long post (the account posts long-form, so no thread) with the drops image attached and **no link**, then the link as a reply (Trevor, 11-08: "split the link into a 2/2 off this post so the link doesn't bring down the algo on the first main post of it, and then the 2/2 uses the link preview image"). First one posted: https://x.com/rippackscity/status/2119601226279272741 (Sun 11-08 evening PT). Second, the first in the new-drops-only format (WNBA Finals + NWSL, balanced 3+2 image, last line on the first NWSL / Thorns collectibles on RPC): https://x.com/rippackscity/status/2122070905216217277 (Sun 11-15).
 
 Post 1:
 
