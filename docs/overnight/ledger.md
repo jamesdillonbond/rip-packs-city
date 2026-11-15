@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~9:10 AM PT — pack calendar lists a Pinnacle capsule sale once: its own pins' "Open Edition" line is dropped (Claude Code cloud, Trevor live)
+- `dropOpenEditionsSoldAsCapsules` (lib/insights/pack-calendar.ts), run after DROP_CORRECTIONS: an OE whose name matches a Pinnacle capsule drop is the same release (Gargoyles Vol.1's OE minted 11-01 → 11-06 17:00 UTC, exactly its capsule close). 11-15's draft listed Walt Disney Mugs Vol.1 twice. OEs with no capsule line stay. 1 test (planted-defect checked).
+- Revert: find the commit by message "pack calendar: one line per Pinnacle capsule release" and `git revert` it. No DB change.
+
 ### 2026-11-15 ~8:48 AM PT — Market page retries a cold-read 503/504 once before showing "Couldn't load market" (Claude Code cloud, deep audit R152 remainder)
 
 - `/panini-blockchain/market` (and every collection's Market tab) failed outright on the first 503: 1 of 3 quiet-hour renders this morning, 4 of 8 in the audit's 1:21–1:27 AM sample. The 503 is a bounded read that ran out of time on cold pages; the abandoned query warms them, so `MarketClient` now retries ONCE after 600 ms on 503/504 only (`fetchMarketOnceRetried`). A second failure renders exactly as before; other statuses never retry. Tests: 503→200 renders rows (2 calls), persistent 503 still names the failure (2 calls), 500 not retried (1 call); red on a planted revert.
