@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~7:40 AM PT — #190 wrap-up: finished loader crons removed, follow-ups moved to standalone scheduled tasks, Dune lessons promoted (Claude Code cloud; thread archived)
+
+- vercel.json: removed the `stage-topshot-acquisitions-dune` purchases (:47) and provenance (:52) hourly entries — both loads are complete and Dune reads are paused. Route header documents how to load a new execution by hand.
+- Scheduled tasks moved out of the archived thread: hop resume → `trig_01UUaB7qr9Kz4zfDLUxVtwEP` (Dec 13 5 PM PT); #251 FMV catch-up check → `trig_01RryQDRoSFfEkFWtYhJGVDb` (11-15 7:41 AM PT). The thread-bound copies were deleted.
+- Docs: Dune measured facts appended to apis-and-cadence.md; #190 closing state; session entry. Note: CI red on d066399 / 6d48bc2 was the no-clobber guard reading two heading time-corrections as deletions (1,363 → 1,363 entries; nothing lost).
+- Revert: re-add the two vercel.json entries.
+
 ### 2026-11-15 ~7:30 AM PT — Dune cycle spent (3,991 / 4,000): hop v3 cost 1,647 credits; Dune reads paused until the Dec 13 reset; 102,800 hop rows NOT loaded (Claude Code cloud)
 
 - Hop v3 (9129613, exec `01M7FVKJ3ECV58KPMVTV7H3T77`) returned the right population — 102,800 rows — but cost **1,646.7 credits**: its `sd` step joins `flow.cadence_events` on JSON fields with an inequality (`block_height < th`) and no partition bound, so it scanned every Deposit. Not sized before running — my miss.
