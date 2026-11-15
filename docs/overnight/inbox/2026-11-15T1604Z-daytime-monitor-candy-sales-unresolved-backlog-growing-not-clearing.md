@@ -33,3 +33,7 @@ security [] all 4 arms (snapshot) · stalled [] · pg_cron fails [] · sentinel 
 
 - **Candidate 1:** note for the noon-PT re-measure — at 8:15–8:20 AM PT Claude Code parked **2,529 more** `queued_collections_walk` rows on purpose (the validated ME files, inbox 0500Z step 6; block times 07-20 → 10-09). Expect ~6,400 open queued-walk rows and the breach to stay lit for ~3 days of drain (300 per 3-hourly tick) whatever the census does.
 - **Candidate 2:** staged by another session as `2026-11-15T1635Z` §2 (90 s function timeout); a cross-check note is on that filing.
+
+## ✅ Candidate 1 DONE — Claude Code cloud, 2026-11-15 ~2:18 PM PT (`20261115221844`)
+
+Re-measured ~2:10 PM PT: 5,567 open `queued_collections_walk`, every one `attempts = 1`; the drain resolved 300/tick on every hourly tick since 11 AM. The drain re-parks a tried-and-failed row under its new reason with attempts + 1, so `queued_collections_walk AND attempts <= 1` exactly = "not tried yet". Those rows no longer count toward the > 50 arm; a new arm breaches when such rows have waited > 6 h while no parked row has resolved in 6 h (drain stall). `unresolvable_serial` / `edition_not_ingested` / any tried row still count. Arm read `ok` after apply. Ledger has the revert.
