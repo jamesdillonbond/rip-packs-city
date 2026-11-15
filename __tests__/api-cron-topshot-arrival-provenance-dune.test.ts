@@ -6,7 +6,8 @@ import { makeInstrumentedSupabaseFixture, installFetchMock, type RecordedRpcCall
 // that prices held Top Shot moments from their on-chain arrival transaction.
 // Pins: auth; an unconfigured proxy is a logged FAILURE (not a quiet skip);
 // no targets spends nothing; a configured run executes, stores mapped rows,
-// marks every target probed and applies; a refused /execute flips ok=false.
+// marks every target probed and applies; a refused /execute flips ok=false;
+// the dune_budget_state.paused kill switch stops it before Dune (unreadable = fail).
 
 const state = vi.hoisted(() => ({ afterCbs: [] as Array<() => unknown>, sb: null as unknown }))
 
@@ -35,6 +36,7 @@ function install(fixtures: Fixtures) {
     topshot_arrival_provenance: { data: null, error: null },
     topshot_arrival_probed: { data: null, error: null },
     dune_api_usage: { data: null, error: null },
+    dune_budget_state: { data: { paused: false }, error: null },
     ...fixtures,
   })
   state.sb = spy.fixture
@@ -42,7 +44,9 @@ function install(fixtures: Fixtures) {
 }
 const req = (auth = "Bearer cron-secret") =>
   new NextRequest("https://t/api/cron/topshot-arrival-provenance-dune", { headers: new Headers(auth ? { authorization: auth } : {}) })
-const terminalLog = (calls: RecordedRpcCall[]) => calls.filter((c) => c.name === "log_pipeline_run").at(-1)?.args as any
+type LogArgs = { p_ok: boolean; p_error: string | null; p_extra: Record<string, unknown> } & Record<string, unknown>
+const terminalLog = (calls: RecordedRpcCall[]) =>
+  calls.filter((c) => c.name === "log_pipeline_run").at(-1)?.args as LogArgs
 
 async function runDeferred() {
   const cbs = [...state.afterCbs]
@@ -90,6 +94,25 @@ describe("topshot-arrival-provenance-dune", () => {
     expect(fetchMock.calls).toHaveLength(0)
     expect(terminalLog(spy.rpcCalls)).toMatchObject({ p_ok: true })
     expect(terminalLog(spy.rpcCalls).p_extra.skipped_reason).toBe("no_targets")
+  })
+
+  it("the shared Dune kill switch stops it before any Dune call", async () => {
+    const spy = install({ dune_budget_state: { data: { paused: true }, error: null } })
+    fetchMock = installFetchMock([])
+    await POST(req())
+    await runDeferred()
+    expect(fetchMock.calls).toHaveLength(0)
+    expect(terminalLog(spy.rpcCalls).p_extra.skipped_reason).toBe("dune_paused")
+    expect(spy.writes.topshot_arrival_probed ?? []).toHaveLength(0)
+  })
+
+  it("an unreadable kill switch fails the run instead of spending", async () => {
+    const spy = install({ dune_budget_state: { data: null, error: { message: "boom" } } })
+    fetchMock = installFetchMock([])
+    await POST(req())
+    await runDeferred()
+    expect(fetchMock.calls).toHaveLength(0)
+    expect(terminalLog(spy.rpcCalls)).toMatchObject({ p_ok: false })
   })
 
   it("executes only the targets above the floor, stores rows, marks probed, applies", async () => {

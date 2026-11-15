@@ -34,12 +34,12 @@
 // Cost: ~70 Dune credits per 2,000-id execution (measured 2026-11-14). When no
 // target is left a tick is a clean skip that spends nothing.
 //
-// ⚠ NOT SCHEDULED (2026-11-14 ~9:30 PM PT). A concurrent session built the #190
-// stage lane (query 9129456 -> public.topshot_dune_acquisition_stage, review-only,
-// 49,054 pre-2023 buys) the same evening, and only 9129456 is on the live
-// worker's DUNE_ALLOWED_QUERY_IDS var. Until Trevor picks one lane, run this by
-// hand (Bearer INGEST_SECRET_TOKEN) after adding 9129294 to that var; scheduling
-// both would buy the same Dune rows twice.
+// ⚠ NOT SCHEDULED, AND SUPERSEDED FOR THE BULK LOAD (2026-11-15). The #190 stage
+// route (app/api/cron/stage-topshot-acquisitions-dune) ran the same classification
+// wallet-scoped (query 9129489) and loaded 494,427 rows into the same table; 59,283
+// were applied 11-14 ~10:10 PM PT. This route stays as the per-batch tool for NEW
+// held moments only. It honours the same kill switch, dune_budget_state.paused,
+// before any Dune call — paused since 2026-11-15 (Analyst cycle spent, reset Dec 13).
 //
 // Auth: Bearer ${CRON_SECRET} (vercel.json cron) or ${INGEST_SECRET_TOKEN}.
 
@@ -116,6 +116,15 @@ async function run(req: NextRequest) {
       if (list.length === 0) {
         skippedReason = "no_targets"
       } else {
+        const { data: st, error: stErr } = await supabaseAdmin
+          .from("dune_budget_state")
+          .select("paused")
+          .eq("id", 1)
+          .single()
+        if (stErr || !st) throw new Error(`dune_budget_state read: ${stErr?.message ?? "no row"}`)
+        if (st.paused === true) skippedReason = "dune_paused"
+      }
+      if (list.length > 0 && skippedReason == null) {
         const ids = Array.from(new Set(list.map((t) => t.nft_id))).join(",")
         const wallets = Array.from(new Set(list.map((t) => t.wallet))).join(",")
         const exRes = await fetch(`${proxyUrl}/execute?query_id=${QUERY_ID}`, {
