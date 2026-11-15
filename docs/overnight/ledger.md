@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~8:00 AM PT — /insights/panini-premiums read budget 8 s → 25 s: every hourly regeneration since 10-14 died at 8 s, so the page served "couldn't load" (Claude Code cloud, deep audit D2)
+
+- Vercel: `read exceeded 8000ms` is the top runtime-error group (first seen 10-14; 3 regenerations in the last 24 h, each failed); rendered DOM 3/3 "COULDN'T LOAD THE PANINI PREMIUMS" at 7:20 AM PT. Cause: `panini_serial_premiums` re-aggregates 90 days of `panini_sales` per call — pgss mean 4.5 s, max 18.7 s, ~11.9k disk reads/call (warm 1.5 s).
+- `app/insights/panini-premiums/page.tsx` passes 25 s to `fetchBoardForPage` (hourly ISR regenerates in the background; under service_role's 30 s and Next's 60 s prerender limit). Structural fix (a matview for the serial board) not shipped.
+- Revert: revert the code commit.
+
 ### 2026-11-15 ~7:40 AM PT — #190 wrap-up: finished loader crons removed, follow-ups moved to standalone scheduled tasks, Dune lessons promoted (Claude Code cloud; thread archived)
 
 - vercel.json: removed the `stage-topshot-acquisitions-dune` purchases (:47) and provenance (:52) hourly entries — both loads are complete and Dune reads are paused. Route header documents how to load a new execution by hand.
