@@ -32,6 +32,18 @@ describe("buildManualDrops", () => {
     expect(dropStatusLine(buildManualDrops(new Date("2026-11-10T03:00:00Z"), [E])[0])).toBe("Trade-ins closed")
     expect(buildManualDrops(new Date("2026-11-20T03:00:00Z"), [E])).toEqual([])
   })
+  // 2026-11-15: the WNBA Finals drop was announced on Top Shot's blog days before the pack book listed it.
+  it("an announced pre-order reads 'pre-orders open' until it opens, then its close; the feed's own row replaces it", () => {
+    const P: ManualDrop = { ...E, id: "m-case", title: "2026 WNBA Finals Case", kind: "rsvp", retail_usd: 1250, start_time: "2026-11-16T20:00:00Z", end_time: "2026-11-18T20:00:00Z", feed_match: "Finals Case" }
+    const [up] = buildManualDrops(new Date("2026-11-15T18:00:00Z"), [P])
+    expect(dropStatusLine(up)).toBe("Pre-orders open Mon 12 PM PT")
+    const [open] = buildManualDrops(new Date("2026-11-17T18:00:00Z"), [P])
+    expect(dropStatusLine(open)).toBe("Pre-orders close Wed 12 PM PT")
+    const feedRow = { ...open, dist_id: "8940", title: "2026 WNBA Finals Case" }
+    expect(buildManualDrops(new Date("2026-11-17T18:00:00Z"), [P], [feedRow])).toEqual([])
+    // another collection's row with the same words does not hide it
+    expect(buildManualDrops(new Date("2026-11-17T18:00:00Z"), [P], [{ ...feedRow, collection: "nfl_all_day" }])).toHaveLength(1)
+  })
   it("every shipped entry has a parseable close, a source and a verified date", () => {
     for (const m of MANUAL_DROPS) {
       expect(Number.isFinite(Date.parse(m.end_time)), m.id).toBe(true)

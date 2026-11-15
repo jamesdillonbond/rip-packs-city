@@ -553,7 +553,7 @@ export async function fetchPackCalendar(
   dropOpenEditionsSoldAsCapsules(drops)
   await markDeliveredDraws(sb, drops)
   // Drops no feed carries (Top Shot This trade-ins), hand-entered from the official page.
-  drops.push(...buildManualDrops(now, manual))
+  drops.push(...buildManualDrops(now, manual, drops))
 
   drops.sort((a, b) => a.start_time.localeCompare(b.start_time) || a.dist_id.localeCompare(b.dist_id))
   return { complete, complete_at, drops, announcements: candy.announcements }

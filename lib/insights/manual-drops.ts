@@ -13,15 +13,26 @@
 //     list and puts the drop in this week's window; no copy shows it for a trade-in).
 //   - `end_time` is required: an entry without a close would read as "open" forever.
 //   - Remove entries a week or so after they close (they render as "ended this week" until then).
+import { textIncludes } from "@/lib/filter-match"
 import type { DropStatus, PackCalendarDrop } from "@/lib/insights/pack-calendar"
 
 export interface ManualDrop {
   id: string
   collection: PackCalendarDrop["collection"]
   title: string
-  kind: "trade_in"
+  /**
+   * "trade_in" (Top Shot This), or "rsvp" / "sale" for an announced Dapper drop the pack book has not
+   * listed yet (2026 WNBA Finals, read 11-15 from blog.nbatopshot.com four days before it opened).
+   */
+  kind: "trade_in" | "rsvp" | "sale"
   /** One phrase of what you give for a pack, in the app's words. */
   detail: string
+  slots?: number | null
+  /**
+   * Case-insensitive text of the FEED's title for this drop. Once a feed drop of the same collection
+   * carries it, the feed row wins and this entry is skipped, so the drop is never listed twice.
+   */
+  feed_match?: string
   retail_usd: number | null
   start_time: string
   end_time: string
@@ -44,6 +55,68 @@ export const MANUAL_DROPS: ManualDrop[] = [
     detail_href: "/insights/trade-in",
     source: "nbatopshot.com Top Shot This page",
     verified_at: "2026-11-08",
+  },
+  // 2026 WNBA Finals (blog.nbatopshot.com/posts/2026-wnba-finals-drop-guide, read 2026-11-15; times ET
+  // there). Early access opens Mon 11/16 3 PM ET (start below); public pre-orders Tue 11/17 3 PM ET.
+  {
+    id: "manual-wnba-finals-2026-case",
+    collection: "nba_top_shot",
+    title: "2026 WNBA Finals Case",
+    kind: "rsvp",
+    detail: "30 made · 12 packs, 78 Moments",
+    slots: 78,
+    retail_usd: 1250,
+    start_time: "2026-11-16T20:00:00Z",
+    end_time: "2026-11-18T20:00:00Z", // Wed 3 PM ET
+    detail_href: "/insights/drops",
+    feed_match: "Finals Case",
+    source: "blog.nbatopshot.com 2026 WNBA Finals Drop Guide",
+    verified_at: "2026-11-15",
+  },
+  {
+    id: "manual-wnba-finals-2026-box",
+    collection: "nba_top_shot",
+    title: "2026 WNBA Finals Box",
+    kind: "rsvp",
+    detail: "200 made · 6 packs, 36 Moments",
+    slots: 36,
+    retail_usd: 195,
+    start_time: "2026-11-16T20:00:00Z",
+    end_time: "2026-11-18T21:00:00Z", // Wed 4 PM ET
+    detail_href: "/insights/drops",
+    feed_match: "Finals Box",
+    source: "blog.nbatopshot.com 2026 WNBA Finals Drop Guide",
+    verified_at: "2026-11-15",
+  },
+  {
+    id: "manual-wnba-finals-2026-collector",
+    collection: "nba_top_shot",
+    title: "2026 WNBA Finals Collector Pack",
+    kind: "rsvp",
+    detail: "7 Moments, no duplicates",
+    slots: 7,
+    retail_usd: 25,
+    start_time: "2026-11-16T20:00:00Z",
+    end_time: "2026-11-18T22:00:00Z", // Wed 5 PM ET
+    detail_href: "/insights/drops",
+    feed_match: "Finals Collector",
+    source: "blog.nbatopshot.com 2026 WNBA Finals Drop Guide",
+    verified_at: "2026-11-15",
+  },
+  {
+    id: "manual-wnba-finals-2026-trade-ticket",
+    collection: "nba_top_shot",
+    title: "2026 WNBA Finals Trade Ticket Pack",
+    kind: "sale",
+    detail: "10 trade tickets · 4 Moments",
+    slots: 4,
+    retail_usd: null,
+    start_time: "2026-11-18T20:30:00Z", // Wed 3:30 PM ET
+    end_time: "2027-01-01T04:59:00Z", // Thu 12/31 (ET), or sold out
+    detail_href: "/insights/drops",
+    feed_match: "Finals Trade Ticket",
+    source: "blog.nbatopshot.com 2026 WNBA Finals Drop Guide",
+    verified_at: "2026-11-15",
   },
 ]
 
@@ -103,10 +176,14 @@ export function applyDropCorrections(drops: PackCalendarDrop[], now: Date, corre
 const DAY_MS = 86_400_000
 
 /** The manual entries that belong on this week's calendar: open, upcoming within 7 days, or closed in the last 7. */
-export function buildManualDrops(now: Date, entries: ManualDrop[] = MANUAL_DROPS): PackCalendarDrop[] {
+export function buildManualDrops(now: Date, entries: ManualDrop[] = MANUAL_DROPS, feed: PackCalendarDrop[] = []): PackCalendarDrop[] {
   const t = now.getTime()
   const out: PackCalendarDrop[] = []
   for (const m of entries) {
+    if (m.feed_match) {
+      const needle = m.feed_match
+      if (feed.some((d) => d.collection === m.collection && textIncludes(d.title, needle))) continue
+    }
     const start = Date.parse(m.start_time)
     const end = Date.parse(m.end_time)
     if (!Number.isFinite(start) || !Number.isFinite(end)) continue
@@ -119,7 +196,7 @@ export function buildManualDrops(now: Date, entries: ManualDrop[] = MANUAL_DROPS
       tier: null,
       pack_type: null,
       kind: m.kind,
-      slots: null,
+      slots: m.slots ?? null,
       retail_usd: m.retail_usd,
       start_time: new Date(start).toISOString(),
       end_time: new Date(end).toISOString(),
