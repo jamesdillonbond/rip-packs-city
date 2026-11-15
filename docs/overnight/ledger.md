@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~2:31 PM PT — Cadence Collapse bridge for `wmc-fmv-stuck-resync` (job 617 → daily this morning, #248) (`20261115223136`) (Claude Code cloud, autonomous)
+- Sentinel 1:59 PM PT WARN: 8/day vs a 24/day baseline (0.33). `20261115175130` cut the lane 24× on purpose without the bridge cron-and-schedulers.md asks for. Row in `cadence_exempt_lanes`, `review_by` 11-28 (median clean from 11-27: ≥ 8 daily days from 11-16). Read back: the lane is in `suppressed`, `collapsed` empty. Pipeline Silence still watches it (1560/3000 min). If #248's 11-16 close-out restores 2-hourly, delete the row.
+- Revert: `DELETE FROM public.cadence_exempt_lanes WHERE pipeline_pattern = 'wmc-fmv-stuck-resync';`
+
 ### 2026-11-15 ~2:27 PM PT — `discover_missing_topshot_pack_distributions` gets a 90 s function timeout: `topshot-pack-dist-names-onchain` died at service_role's 30 s on 3 of 8 runs (`20261115222757`) (Claude Code cloud, autonomous)
 - Failures 11-14 4:25 PM / 10:25 PM, 11-15 1:25 AM PT, all "discover: … statement timeout". Cold read 5.5 s, 4.8 s of it 8,254 random `pack_rips` heap reads (dist_id for 17,493 rows in 7 d); IO spells push it past 30 s. Same lever as `get_hybrid_custody_candidates` this morning. Route has no client abort (maxDuration 300 s); the lane runs every 3 h. Covering-index swap measured (16,983 → 7,487 buffers) but not taken (2.4 GB table, 4,484 heap fetches remain). Read: the next 8 runs (every 3 h at :25) ok.
 - Revert: `ALTER FUNCTION public.discover_missing_topshot_pack_distributions(integer) RESET statement_timeout;`
