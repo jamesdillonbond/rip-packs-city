@@ -3,6 +3,10 @@
   "regions": ["pdx1"],
   "crons": [
     {
+      "path": "/api/cron/stage-topshot-acquisitions-dune",
+      "schedule": "47 * * * *"
+    },
+    {
       "path": "/api/send-digest",
       "schedule": "23 16 * * 1"
     },

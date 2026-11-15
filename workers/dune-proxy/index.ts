@@ -74,7 +74,8 @@ function authOk(request: Request, env: Env): boolean {
 //   8030177 — sales ingest recovery   (sync-sales-ingest-dune; route kept, schedule retired)
 // Adding a query means adding its id here or
 // setting the DUNE_ALLOWED_QUERY_IDS var (comma list), which REPLACES this list.
-const DEFAULT_ALLOWED_QUERY_IDS = ["7899011", "8027085", "8030177"];
+// 9129456 = the #190 cost-basis stage query (private temp; added 2026-11-14).
+const DEFAULT_ALLOWED_QUERY_IDS = ["7899011", "8027085", "8030177", "9129456"];
 
 function allowedQueryIds(env: Env): Set<string> {
   const raw = (env.DUNE_ALLOWED_QUERY_IDS ?? "").trim();
