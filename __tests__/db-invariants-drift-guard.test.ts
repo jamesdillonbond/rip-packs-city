@@ -997,7 +997,8 @@ const PINS = [
     // v27 (2026-11-13): opened packs carry the pulls still held + their wallet FMV; sealed packs a value + basis; tab_totals.
     // v30 (2026-11-14, Trevor): a pack carries its own cost -- Trade Ticket packs at tickets x the lowest listed Top Shot
     // moment (trade_tickets), Top Shot reward packs with no buy row $0 (reward); the moments it yields carry $0.
-    migration: "supabase/migrations/20261115014500_audit_20261114_pack_history_trade_ticket_and_reward_pack_cost.sql",
+    // v31 (2026-11-14): a reward-looking title never overrides a drop's known non-zero retail (Fast Break - Rookie Pack $100).
+    migration: "supabase/migrations/20261115032000_audit_20261114_pack_history_reward_never_overrides_retail.sql",
   },
   {
     // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,

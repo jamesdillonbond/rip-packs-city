@@ -618,6 +618,9 @@ BEGIN
              END AS ticket_usd,
              coalesce(r.collection_id = v_ts
                       AND pd.title !~* 'trade ticket'
+                      -- v31: a reward-looking title never overrides a drop's known non-zero retail
+                      -- (Fast Break - Rookie Pack, retail $100, read $0 under v30)
+                      AND COALESCE(public.pack_retail_usd(pd.metadata->>'retail_price_usd'), 0) = 0
                       AND pd.title ~* '(fast break|quest reward|challenge reward|leaderboard|snapshot|favorite team snap|set completion reward|chaser reward|reward pack)',
                       false) AS is_reward
     ) rt
@@ -1072,7 +1075,7 @@ BEGIN
     'coverage', jsonb_build_object(
       'onchain', 'pack_purchases: Top Shot + All Day, block-indexed from 2026-04; primary drops carry no price on chain',
       'opens', 'pack_rips (Top Shot, All Day) + golazos_pack_opens + pinnacle_pack_opens',
-      'retail', 'buy_price_source = retail_inferred: a pack with no buy row we hold, priced at its drop''s retail -- only when it was acquired inside the drop''s sale window (start_time - 1 day .. + 30 days; acquisition = Dapper''s index date while the index names this wallet, else -- All Day -- the pack''s mint in Dapper''s index (primary_minted_at) when no one else sold it on the marketplace before this wallet''s sale / open, else bounded by the sale / open) and the marketplace history covers that window (every Top Shot PackNFT; All Day drops from 2022-12-16, dates from Dapper''s distribution record), or -- Top Shot -- Dapper minted it straight into this wallet (minted_to_wallet_at; pack_nft_mints, Flow PackNFT.Minted from the 2025-12-29 spork floor). An old drop acquired long after its sale otherwise stays NULL. A transfer inside the window would read the same. A Trade Ticket pack is priced in tickets: buy_price_source = trade_tickets prices one with no buy row (or a primary buy) at its ticket count x the lowest listed Top Shot moment (ts_listings, live). buy_price_source = reward: a Top Shot reward pack (Fast Break, challenge / quest / leaderboard / set-completion / chaser rewards) with no buy row is $0. A pack''s cost lives on the pack only -- the moments it yields carry $0 in moment P/L. An All Day distribution Dapper types REWARD is $0 (reward); any other All Day price of 0 is unknown. Retail is in dollars (Top Shot UFix64 values normalised; All Day from allday_pack_supply, 0 = unknown)',
+      'retail', 'buy_price_source = retail_inferred: a pack with no buy row we hold, priced at its drop''s retail -- only when it was acquired inside the drop''s sale window (start_time - 1 day .. + 30 days; acquisition = Dapper''s index date while the index names this wallet, else -- All Day -- the pack''s mint in Dapper''s index (primary_minted_at) when no one else sold it on the marketplace before this wallet''s sale / open, else bounded by the sale / open) and the marketplace history covers that window (every Top Shot PackNFT; All Day drops from 2022-12-16, dates from Dapper''s distribution record), or -- Top Shot -- Dapper minted it straight into this wallet (minted_to_wallet_at; pack_nft_mints, Flow PackNFT.Minted from the 2025-12-29 spork floor). An old drop acquired long after its sale otherwise stays NULL. A transfer inside the window would read the same. A Trade Ticket pack is priced in tickets: buy_price_source = trade_tickets prices one with no buy row (or a primary buy) at its ticket count x the lowest listed Top Shot moment (ts_listings, live). buy_price_source = reward: a Top Shot reward pack (Fast Break, challenge / quest / leaderboard / set-completion / chaser rewards) with no buy row and no non-zero drop retail is $0. A pack''s cost lives on the pack only -- the moments it yields carry $0 in moment P/L. An All Day distribution Dapper types REWARD is $0 (reward); any other All Day price of 0 is unknown. Retail is in dollars (Top Shot UFix64 values normalised; All Day from allday_pack_supply, 0 = unknown)',
       'reconstructed', 'wallet_reconstructed_rips: Top Shot packs opened with NO pack NFT (custodial packs, 2021 on), rebuilt from the wallet''s pack-pull moment deliveries (a gap > 3 s starts a new reveal; 114 of 115 bursts overlapping a known pack matched its moment list exactly). rip_source = reconstructed; no distribution, no price paid; covers deliveries seeded into moment_acquisitions (through 2026-03)',
       'pulls', 'pack_open_pull_values: every pack this wallet opened, priced from the moments Dapper''s searchPackNft.nfts says it yielded (current FMV, whole-pack: NULL unless every moment is priced; pulls_priced / pulls_total say how close; pulls_inferred of them are Top Shot pulls no record names, named from the moment ids minted beside them -- both neighbours the same edition within 50 ids, 99 % right when measured). Refreshed by the wallet-pack-pulls lane; pull_value_source = rip_record where only the rip row''s value is held',
       'box', 'buy_price_source = box: a pack that came out of a box or case this wallet opened (pack_box_contents). It was not bought, so it has no buy price and no P/L of its own; its cost is part of the box''s price',
@@ -1589,6 +1592,8 @@ INSERT INTO public.pack_distributions VALUES
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'D11', 'Anthology Quick Rip', NULL, '{"retail_price_usd":"9","start_time":"2024-06-06T19:30:00Z"}', 1, 1),
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'D12', 'Freshman Gems Trade Ticket Pack', NULL, '{"retail_price_usd":"10","start_time":"2026-02-19T20:00:00Z"}', 1, 1),
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'D13', 'Fast Break - WNBA Run 4', NULL, '{"retail_price_usd":"0","start_time":"2025-06-23T04:00:00Z"}', 1, 1),
+  -- v31: a reward-looking title with a real drop retail ($100) -- never priced as a $0 reward
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'D14', 'Fast Break - Rookie Pack', NULL, '{"retail_price_usd":"100","start_time":"2026-04-20T00:00:00Z"}', 1, 1),
   ('dee28451-5d62-409e-a1ad-a83f763ac070', 'A11', 'AD Old Drop', NULL, '{"start_time":"2024-01-01T00:00:00Z"}', 1, 1);
 INSERT INTO public.allday_pack_supply VALUES ('A11', 50);
 -- all arrive 2026-04-24 11:15:01.118 UTC -- years after D11's / A11's sale windows
@@ -1599,7 +1604,8 @@ INSERT INTO public.pack_nft_identity VALUES
   ('dee28451-5d62-409e-a1ad-a83f763ac070', 'P53', 'A11', 'Sealed', '0xwallet5', now(), '2026-04-24 11:15:01.118+00'),  -- All Day, minted in
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P55', 'D12', 'Sealed', '0xwallet5', now(), '2026-04-24 11:15:01.118+00'),  -- Trade Ticket, minted in
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P56', 'D13', 'Sealed', '0xwallet5', now(), '2026-04-24 11:15:01.118+00'),  -- reward, minted in
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P57', 'D12', 'Sealed', '0xwallet5', now(), '2026-02-25 00:00:00+00');      -- Trade Ticket inside its window
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P57', 'D12', 'Sealed', '0xwallet5', now(), '2026-02-25 00:00:00+00'),       -- Trade Ticket inside its window
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P58', 'D14', 'Sealed', '0xwallet5', now(), '2026-04-24 11:15:01.118+00');  -- v31: $100 Fast Break pack inside its window
 INSERT INTO public.pack_nft_mints (collection_id, pack_nft_id, dist_id, minted_at, block_height, tx_id) VALUES
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P50', 'D11', '2026-04-24 11:15:01.118+00', 149445000, 'tx-mint'),
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P52', 'D11', '2026-04-24 10:15:00+00',     149440000, 'tx-early'),
@@ -1636,6 +1642,9 @@ BEGIN
   PERFORM _assert(row_->>'buy_usd' = '0.00' AND row_->>'buy_price_source' = 'reward', 'P56 a reward pack (Fast Break) minted in -> $0, labelled reward');
   SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P57';
   PERFORM _assert(row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' IS NULL, 'P57 a Trade Ticket pack inside its window, no listing -> NULL, never $10');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P58';
+  PERFORM _assert(row_->>'buy_usd' = '100.00' AND row_->>'buy_price_source' = 'retail_inferred',
+                  'P58 (v31) a reward-looking title with a $100 drop retail -> its retail, never "$0 (reward)"');
 END $$;
 
 -- v30 (2026-11-14, Trevor): a Trade Ticket = the lowest listed Top Shot moment. A $0 row is not an ask.
