@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-14 ~7:55 PM PT — Fast Break: a lineup fetched for a previous run can no longer be shown, or SAVED, under the current run (Claude Code cloud)
+- Sweep of `useWarmCache` consumers after the packs review: the hook keeps the previous key's data while a new key loads, and after that load fails. `FastBreakClient` read `optimize.data` directly, so on a wallet / run / date change it rendered the previous run's lineup, and "Save This Lineup" POSTed that lineup under the NEW `runId`, a write.
+- Both hooks now go through `answerFor` (data only when its `dataKey` is the current key). The test mock is re-pinned to report `dataKey`, and a new test was red on the old client. The other consumers were checked: the Collection tab's saved-wallets read only drives a prefetch (an empty list skips it), and the RTR sections are display-only; left as is. Preflight green.
+- Revert: `git revert` the commit titled "fix(fast break): read only the lineup fetched for the current run".
+
 ### 2026-11-14 ~7:10 PM PT — Saved wallets: 121,382 acquisition records filled from our own sales / pack-open tables (68,230 Top Shot buys $696,382; 12,177 Top Shot "unknown" → buys $34,712; 9,506 All Day buys; 471 Pinnacle buys; 31,001 own pack pulls at $0) (Claude Code cloud)
 
 - Trevor: "Take action on things you're 100% certain on and have the facts to back it." Only 3 of 56 saved wallets had a record for >= 90% of held Top Shot moments. Every sales → acquisition lane looks back 14 days only, and Top Shot has none at all.
