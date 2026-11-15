@@ -2054,7 +2054,13 @@ const PINS = [
   {
     fn: "topshot_parallel_sales_followup",
     test: "supabase/tests/topshot_parallel_sales_followup.sql",
-    migration: "supabase/migrations/20261114215605_audit_20261114_topshot_parallel_sales_follow_their_subedition.sql",
+    migration: "supabase/migrations/20261115011709_audit_20261114_topshot_parallel_sales_stay_on_their_subedition.sql",
+  },
+  {
+    // 2026-11-14 (#251): every writer files a resolved parallel's sale on its subedition at write time.
+    fn: "topshot_sales_follow_subedition_trg",
+    test: "supabase/tests/topshot_parallel_sales_followup.sql",
+    migration: "supabase/migrations/20261115011709_audit_20261114_topshot_parallel_sales_stay_on_their_subedition.sql",
   },
   // ── Added 2026-08-15 (test-coverage pass) ─────────────────────────────────
   // The TopShot remap/conflation family was 2-of-9 pinned. Every member mutates
