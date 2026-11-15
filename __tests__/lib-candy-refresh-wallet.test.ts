@@ -64,6 +64,10 @@ function db() {
         }
         return b
       }
+      // 2026-11-14: a complete walk stamps wmc_clean_walks (its own table, recorded apart).
+      if (table === "wmc_clean_walks") {
+        return { upsert: async (row: any, opts: any) => { ;(state as any).stamps.push({ row, opts }); return { error: (state as any).stampError ?? null } } }
+      }
       if (table === "candy_listings") {
         const b: any = { select: () => b, eq: () => b, order: () => b, limit: async () => state.listings }
         return b
@@ -87,6 +91,8 @@ function db() {
 }
 
 beforeEach(() => {
+  ;(state as any).stamps = []
+  ;(state as any).stampError = null
   ;(state as any).touched = []
   ;(state as any).touchError = null
   state.pages = []
@@ -139,6 +145,31 @@ describe("refreshCandyWallet", () => {
     expect(r.complete).toBe(false)
     expect(r.walk_error).toMatch(/502/)
     expect(state.rpcs.map((x) => x.name)).not.toContain("candy_retire_wallet_unseen")
+  })
+
+  // 2026-11-14: the clean-walk stamp is the only record that a Candy wallet holding
+  // NOTHING was actually looked at (/api/candy-set-progress reads it).
+  it("a complete, cleanly-retired walk stamps wmc_clean_walks under the VERBATIM key", async () => {
+    state.pages = [[{ id: "a", candy: true }]]
+    const r = await refreshCandyWallet(db(), W, { retire: true })
+    expect(r.complete).toBe(true)
+    const stamps = (state as any).stamps
+    expect(stamps).toHaveLength(1)
+    expect(stamps[0].row).toMatchObject({ wallet_address: W, collection_id: "c1", observed_count: 1 })
+    expect(r.clean_walk_stamp_error).toBeNull()
+  })
+  it("an incomplete walk leaves NO stamp (absence must not read as 'not held')", async () => {
+    state.pages = [[{ id: "a", candy: true }]]
+    state.upsertError = { message: "deadlock detected" }
+    await refreshCandyWallet(db(), W, { retire: true })
+    expect((state as any).stamps).toHaveLength(0)
+  })
+  it("a failed stamp is reported, never thrown", async () => {
+    state.pages = [[{ id: "a", candy: true }]]
+    ;(state as any).stampError = { message: "boom" }
+    const r = await refreshCandyWallet(db(), W, { retire: true })
+    expect(r.complete).toBe(true)
+    expect(r.clean_walk_stamp_error).toBe("boom")
   })
 
   it("a rejected write retires NOTHING", async () => {

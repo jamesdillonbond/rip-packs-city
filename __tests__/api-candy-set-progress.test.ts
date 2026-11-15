@@ -19,12 +19,16 @@ const state: {
   sets: { data: Row[] | null; error: any }
   fmv: { data: Row[] | null; error: any }
   floor: { data: Row[] | null; error: any }
+  walks: { data: Row[] | null; error: any }
 } = {
   editions: [],
   owned: [],
   sets: { data: [], error: null },
   fmv: { data: [], error: null },
   floor: { data: [], error: null },
+  // Re-pinned 2026-11-14: a wallet holding no Candy now needs a clean-walk stamp
+  // for "0 of 100" to be an answer. The default premise is a WALKED wallet.
+  walks: { data: [{ wallet_address: "x" }], error: null },
 }
 const calls = { editions: 0, owned: 0 }
 const ownedFilters: Array<[string, unknown]> = []
@@ -38,6 +42,7 @@ vi.mock("@/lib/supabase", () => {
         return b
       },
       not: () => b,
+      limit: () => b,
       order: () => b,
       range: () => b,
       then: (resolve: any) => {
@@ -54,6 +59,7 @@ vi.mock("@/lib/supabase", () => {
         if (table === "sets") return resolve(state.sets)
         if (table === "candy_fmv_current") return resolve(state.fmv)
         if (table === "candy_listing_floor") return resolve(state.floor)
+        if (table === "wmc_clean_walks") return resolve(state.walks)
         return resolve({ data: [], error: null })
       },
     }
@@ -99,6 +105,7 @@ beforeEach(() => {
   state.sets = { data: [{ id: SET, name: "2026 MLB Base Series ICONs", series: 1 }], error: null }
   state.fmv = { data: [], error: null }
   state.floor = { data: [], error: null }
+  state.walks = { data: [{ wallet_address: "x" }], error: null }
 })
 
 async function body(url = URL_OK) {
@@ -243,5 +250,25 @@ describe("GET /api/candy-set-progress", () => {
     expect(s.asksEnriched).toBe(true)
     expect(s.missing[0].lowestAsk).toBeNull()
     expect(s.totalMissingCost).toBeNull()
+  })
+
+  // 2026-11-14 (Sets review): an unwalked Candy key read "0 of 100".
+  describe("a key holding no Candy cards", () => {
+    it("never walked (no clean-walk stamp) → 409 wallet_not_indexed, never 0 of 100", async () => {
+      state.walks = { data: [], error: null }
+      state.owned = [{ data: [], error: null }]
+      const res = await GET(req(`https://t/api/candy-set-progress?wallet=${WALLET}`))
+      expect(res.status).toBe(409)
+      const body = await res.json()
+      expect(body.code).toBe("wallet_not_indexed")
+      expect(body.sets).toBeUndefined()
+    })
+    it("a failed stamp read is a failure, never 'not indexed'", async () => {
+      state.walks = { data: null, error: { message: "boom" } }
+      state.owned = [{ data: [], error: null }]
+      const res = await GET(req(`https://t/api/candy-set-progress?wallet=${WALLET}`))
+      expect(res.status).toBeGreaterThanOrEqual(500)
+      expect((await res.json()).code).not.toBe("wallet_not_indexed")
+    })
   })
 })

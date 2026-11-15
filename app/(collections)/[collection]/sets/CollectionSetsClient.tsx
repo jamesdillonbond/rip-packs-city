@@ -83,6 +83,10 @@ interface SetsResponse {
   generatedAt: string;
   /** Candy only: the published checklist, and its players RPC has no card for. */
   publishedChecklist?: { total: number; notIndexed: string[] };
+  /** Set when the route could not ask this question of this wallet (e.g. Top
+   *  Shot's tracker given a non-Flow address): `sets: []` is then NOT "none". */
+  reason?: string;
+  message?: string;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -474,11 +478,15 @@ export default function CollectionSetsClient({ collection }: { collection: strin
 
         {data && data.sets.length === 0 && !loading && (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "40vh", gap: 12 }}>
+            {/* 2026-11-14: a route that could not ASK (a typed `reason`) is not a wallet
+                that holds nothing — /api/sets answers a non-Flow address that way. */}
             <div style={{ fontFamily: displayFont, fontWeight: 800, fontSize: 18, color: colors.text, textTransform: "uppercase" }}>
-              NO SETS FOUND
+              {data.reason ? "SET TRACKING ISN'T AVAILABLE HERE" : "NO SETS FOUND"}
             </div>
             <div style={{ fontFamily: monoFont, fontSize: 12, color: colors.muted }}>
-              {`No ${collectionObj?.label ?? "this collection"} ${pieceNoun} found in this wallet`}
+              {data.reason
+                ? (data.message ?? "Set tracking can't be read for this wallet.")
+                : `No ${collectionObj?.label ?? "this collection"} ${pieceNoun} found in this wallet`}
             </div>
           </div>
         )}

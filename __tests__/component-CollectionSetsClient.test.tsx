@@ -487,3 +487,20 @@ describe("momentIdFromListingUrl", () => {
     expect(momentIdFromListingUrl("https://nbatopshot.com/listings/moment/abc")).toBeNull()
   })
 })
+
+// 2026-11-14 (Sets review): /api/sets answers a non-Flow address with
+// `{ sets: [], reason: "set_tracking_unavailable" }` — a question it cannot ask,
+// not a wallet that holds nothing. The page concluded "No … found in this wallet".
+describe("CollectionSetsClient — a typed reason is not 'none'", () => {
+  it("renders the route's reason instead of concluding the wallet is empty", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json(200, { wallet: "x", sets: [], reason: "set_tracking_unavailable", message: "Set tracking is a Top Shot feature and this is not a Flow address." })))
+    render(<CollectionSetsClient collection="nba-top-shot" />)
+    await waitFor(() => expect(document.body.textContent).toMatch(/this is not a Flow address/))
+    expect(document.body.textContent).not.toMatch(/found in this wallet/)
+  })
+  it("CONTROL: a genuinely empty answer still says none were found", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json(200, RESP({ sets: [], totalSets: 0 }))))
+    render(<CollectionSetsClient collection="nba-top-shot" />)
+    await waitFor(() => expect(document.body.textContent).toMatch(/found in this wallet/))
+  })
+})

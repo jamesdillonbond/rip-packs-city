@@ -6,6 +6,7 @@
 // in Postgres. No FCL, no Top Shot GraphQL.
 
 import { NextRequest, NextResponse } from "next/server";
+import { notScannedResponse } from "@/lib/sets/set-progress-wallet";
 import { supabaseAdmin } from "@/lib/supabase";
 import { safeApiError, statusForSafeError } from "@/lib/api-error";
 import { resolveToFlowAddress, UsernameLookupUnavailableError, usernameLookupUnavailableResponse } from "@/lib/chains/flow/flow-resolve";
@@ -396,6 +397,13 @@ export async function GET(req: NextRequest) {
     if (error) throw error;
     const payload = data as RpcProgressPayload | null;
     const sets = (payload?.sets ?? []).map(mapSetSummary);
+    // 2026-11-14: owning nothing has two meanings — an indexed wallet with no Top
+    // Shot (0% is true) or one RPC never walked (every set at 0% would be a claim
+    // nothing measured). Shared with the sibling routes: lib/sets/set-progress-wallet.ts.
+    if (!sets.some((s) => s.ownedCount > 0)) {
+      const notScanned = await notScannedResponse(flowAddress);
+      if (notScanned) return notScanned;
+    }
 
     return NextResponse.json(
       {

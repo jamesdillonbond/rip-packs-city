@@ -28,11 +28,17 @@ vi.mock("@/lib/chains/flow/flow-resolve", () => ({
     new Response(JSON.stringify({ code: "upstream_unavailable", error: "We couldn't reach Top Shot to look up that username, so this says nothing about it." }), { status: 503 }),
 }))
 
+// 2026-11-14: a wallet owning NOTHING now asks whether RPC ever walked it.
+// Default premise: indexed. The never-walked case is tested below.
+const idx = vi.hoisted(() => ({ state: { ok: true, indexed: true } as { ok: boolean; indexed?: boolean; error?: unknown } }))
+vi.mock("@/lib/wallet-indexed", () => ({ walletIndexState: async () => idx.state }))
+
 import { GET } from "@/app/api/sets/route"
 
 const req = (url: string) => ({ nextUrl: new URL(url) }) as any
 
 beforeEach(() => {
+  idx.state = { ok: true, indexed: true }
   state.data = null
   state.error = null
   state.rpcCalls = 0
@@ -217,5 +223,24 @@ describe("GET /api/sets — cost-to-complete honesty (2026-09-24)", () => {
     const body = await (await GET(req("https://t/api/sets?wallet=0xabc"))).json()
     expect(body.sets[0].unpricedMissingCount).toBeNull()
     expect(body.sets[0].totalMissingCost).toBe(3)
+  })
+
+  // 2026-11-14 (Sets review): every set from the catalog at 0% for a wallet RPC
+  // never walked was a claim nothing measured.
+  it("a never-walked Flow wallet gets 409 wallet_not_indexed, not 0% of every set", async () => {
+    idx.state = { ok: true, indexed: false }
+    state.data = { sets: [{ setId: "s1", setName: "S", totalPlays: 5, ownedPlays: 0, completionPct: 0, missingPlays: 5 }] }
+    const res = await GET(req("https://t/api/sets?wallet=0x00000000000f00ba"))
+    expect(res.status).toBe(409)
+    const body = await res.json()
+    expect(body.code).toBe("wallet_not_indexed")
+    expect(body.sets).toBeUndefined()
+  })
+  it("a failed index check is a failure, never 'not indexed' and never 0%", async () => {
+    idx.state = { ok: false, error: new Error("boom") }
+    state.data = { sets: [] }
+    const res = await GET(req("https://t/api/sets?wallet=0x00000000000f00ba"))
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    expect((await res.json()).sets).toBeUndefined()
   })
 })

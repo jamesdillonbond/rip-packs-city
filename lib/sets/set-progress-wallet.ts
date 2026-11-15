@@ -58,3 +58,26 @@ export async function notScannedResponse(wallet: string): Promise<NextResponse |
     { status: 409 },
   )
 }
+
+/**
+ * The Candy (Solana) form of {@link notScannedResponse}. `walletIndexState` is
+ * Flow-only, so a base58 key is judged here, VERBATIM (case-sensitive): the
+ * caller already knows the wallet holds no Candy rows, so the only evidence of a
+ * walk is the wmc_clean_walks stamp a complete Candy walk leaves (written since
+ * 2026-11-14 by lib/candy/refresh-wallet.ts). A failed read THROWS.
+ */
+export async function notScannedCandyResponse(wallet: string, candyCollectionId: string): Promise<NextResponse | null> {
+  const { data, error } = await (supabaseAdmin as any)
+    .from("wmc_clean_walks")
+    .select("wallet_address")
+    .eq("wallet_address", wallet)
+    .eq("collection_id", candyCollectionId)
+    .limit(1)
+  if (error) throw new Error(`wmc_clean_walks read failed: ${error.message ?? String(error)}`)
+  if (!Array.isArray(data)) throw new Error("wmc_clean_walks: no rows array")
+  if (data.length > 0) return null
+  return NextResponse.json(
+    { error: WALLET_NOT_INDEXED_COPY, code: "wallet_not_indexed", retryable: false },
+    { status: 409 },
+  )
+}

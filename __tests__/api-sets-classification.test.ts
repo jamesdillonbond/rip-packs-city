@@ -16,6 +16,8 @@ vi.mock("@/lib/chains/flow/flow-resolve", () => ({
   resolveToFlowAddress: async (w: string) => w,
 }))
 
+// Re-pinned 2026-11-14: these fixtures' premise is an INDEXED wallet.
+vi.mock("@/lib/wallet-indexed", () => ({ walletIndexState: async () => ({ ok: true, indexed: true }) }))
 import { GET } from "@/app/api/sets/route"
 
 const req = (url: string) => ({ nextUrl: new URL(url) }) as any

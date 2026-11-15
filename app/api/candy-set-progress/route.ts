@@ -39,6 +39,7 @@
 //     makes `allPriced` false — `null` is "nobody is selling one", not "free".
 
 import { NextRequest, NextResponse } from "next/server"
+import { notScannedCandyResponse } from "@/lib/sets/set-progress-wallet"
 import { supabaseAdmin } from "@/lib/supabase"
 import { apiErrorResponse } from "@/lib/api-error"
 import { boundedRead } from "@/lib/api/bounded-read"
@@ -204,6 +205,12 @@ export async function GET(req: NextRequest) {
     if (owned.error) throw new Error(owned.error)
     if (owned.truncated) {
       throw Object.assign(new Error("candy holdings read was truncated"), { code: "57014" })
+    }
+    // 2026-11-14: no Candy cards has two meanings — a walked wallet that holds none
+    // ("0 of 100" is true) or a key RPC never walked ("0 of 100" is a claim).
+    if (owned.rows.length === 0) {
+      const notScanned = await notScannedCandyResponse(wallet, CANDY_COLLECTION_ID)
+      if (notScanned) return notScanned
     }
     if (setRes.error) throw setRes.error
     // A failed PRICE read degrades to "unpriced", never to a failed tracker and

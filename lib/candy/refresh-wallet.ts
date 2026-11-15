@@ -85,6 +85,12 @@ export interface CandyWalletRefreshResult {
   retired: number | null
   ghosts_purged: number | null
   retire_error: string | null
+  /**
+   * 2026-11-14: the wmc_clean_walks stamp a COMPLETE, cleanly-retired walk leaves —
+   * the only record that a Candy wallet holding NOTHING was actually looked at
+   * (/api/candy-set-progress reads it). Null when it was written or not attempted.
+   */
+  clean_walk_stamp_error: string | null
 }
 
 export async function refreshCandyWallet(
@@ -116,6 +122,7 @@ export async function refreshCandyWallet(
     retired: null,
     ghosts_purged: null,
     retire_error: null,
+    clean_walk_stamp_error: null,
   }
   // Every catalogued Candy collection (candy_collections), registered with the normalizer
   // before the walk so a wallet's 2021–2025 ICONs, DC, pins… are written, not just counted.
@@ -334,6 +341,21 @@ export async function refreshCandyWallet(
       }
     } catch (e) {
       r.retire_error = e instanceof Error ? e.message : String(e)
+    }
+    // 6. The clean-walk stamp — the same record the Flow walkers leave
+    //    (lib/chains/flow/wmc-unseen-delete.ts), keyed on the VERBATIM base58 key.
+    //    Only behind a complete walk whose retirement landed: that is when absence
+    //    from wmc means "not held". A failed stamp is reported, never thrown.
+    if (r.retire_error === null) {
+      try {
+        const { error } = await db.from("wmc_clean_walks").upsert(
+          { wallet_address: wallet, collection_id: CANDY_MLB_UUID, last_clean_walk_at: new Date().toISOString(), observed_count: seen.size },
+          { onConflict: "wallet_address,collection_id" },
+        )
+        if (error) r.clean_walk_stamp_error = error.message
+      } catch (e) {
+        r.clean_walk_stamp_error = e instanceof Error ? e.message : String(e)
+      }
     }
   }
 
