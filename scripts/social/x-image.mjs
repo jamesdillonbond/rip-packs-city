@@ -140,16 +140,32 @@ function card(it, big) {
   </div>`
 }
 
+// BALANCED ROWS (Trevor, 11-15: "more visually appealing and balanced and symmetrical"). Every count up
+// to PER_IMAGE gets centred rows of equal-width cards — 4 = 2+2, 5 = 3+2, 7 = 4+3, 9 = 3+3+3 — never a
+// grid with holes. All cards get the 1–3-drop treatment (accent gradient, glow, status pill); type
+// steps down with the number of rows. A detail line shows while there are at most two rows.
+const ROW_SPLIT = { 1: [1], 2: [2], 3: [3], 4: [2, 2], 5: [3, 2], 6: [3, 3], 7: [4, 3], 8: [4, 4], 9: [3, 3, 3] }
 function page({ items, pageNo, pages, fonts, logo, now }) {
   const n = items.length
-  const cols = n <= 2 ? n : n <= 4 ? 2 : n <= 6 || n === 9 ? 3 : 4
-  const rows = Math.ceil(n / cols)
-  // Three rows only fit the 675px canvas with tighter type; the page check below catches a miss.
-  const dense = rows >= 3
-  // One to three drops: centred cards sized to their content, with room for a detail line
-  // (Trevor, 11-08: "center and make the graphic a little more visually appealing").
-  const spacious = n <= 3
-  const cardW = n === 1 ? 640 : n === 2 ? 500 : 340
+  const split = ROW_SPLIT[n] ?? [n]
+  const nRows = split.length
+  const maxK = Math.max(...split)
+  const CONTENT_W = W - 54 - 44
+  const gap = nRows >= 3 ? 14 : 22
+  const cardW = n === 1 ? 640 : n === 2 ? 500 : n === 3 ? 340 : Math.floor((CONTENT_W - gap * (maxK - 1)) / maxK)
+  const dense = nRows >= 3
+  const showDetail = nRows <= 2
+  const sz = nRows === 1
+    ? { title: n <= 2 ? 42 : 34, price: n <= 2 ? 58 : 46, pill: 16, chip: 15, pad: "26px 30px 28px", minH: n <= 2 ? 300 : 280, detail: 15 }
+    : nRows === 2
+      ? { title: maxK >= 4 ? 22 : 25, price: maxK >= 4 ? 26 : 30, pill: 12, chip: 12, pad: "14px 20px 16px", minH: 0, detail: 12 }
+      : { title: 21, price: 24, pill: 12, chip: 12, pad: "11px 15px 13px", minH: 0, detail: 12 }
+  const rowsHtml = []
+  let at = 0
+  for (const k of split) {
+    rowsHtml.push(`<div class="r">${items.slice(at, at + k).map((it) => card(it, showDetail)).join("")}</div>`)
+    at += k
+  }
   const range = `${dayPT(now)} – ${dayPT(new Date(now.getTime() + 7 * 86400000))}`
   return `<!doctype html><html><head><meta charset="utf-8"><style>
 @font-face{font-family:Barlow;src:url(data:font/ttf;base64,${fonts.barlow}) format("truetype")}
@@ -157,41 +173,35 @@ function page({ items, pageNo, pages, fonts, logo, now }) {
 *{box-sizing:border-box;margin:0;padding:0}
 body{width:${W}px;height:${H}px;background:#080808;color:#F2F2F2;font-family:Barlow,sans-serif;overflow:hidden;position:relative}
 .bg{position:absolute;inset:0;background:radial-gradient(900px 500px at 100% 0%,rgba(224,58,47,.22),transparent 60%),radial-gradient(700px 400px at 0% 100%,rgba(224,58,47,.10),transparent 60%)}
+.glow{position:absolute;left:50%;top:58%;width:1000px;height:${nRows === 1 ? 420 : 520}px;transform:translate(-50%,-50%);
+  background:radial-gradient(closest-side,color-mix(in srgb,${COLL[items[0]?.collection]?.accent ?? "#E03A2F"} 18%,transparent),transparent);pointer-events:none}
 .stripe{position:absolute;left:0;top:0;bottom:0;width:10px;background:#E03A2F}
-.wrap{position:absolute;inset:0;padding:${dense ? '26px 44px 22px 54px' : '34px 44px 30px 54px'};display:flex;flex-direction:column}
+.wrap{position:absolute;inset:0;padding:${dense ? "26px 44px 22px 54px" : "34px 44px 30px 54px"};display:flex;flex-direction:column}
 header{display:flex;align-items:center;justify-content:space-between}
 h1{font-size:${dense ? 56 : 70}px;line-height:.9;letter-spacing:.5px;text-transform:uppercase}
 h1 em{font-style:normal;color:#E03A2F}
 .sub{font-family:Mono,monospace;font-size:19px;color:#BFC0BF;margin-top:8px}
 .logo{width:104px;height:104px}
-.grid{flex:1;display:grid;grid-template-columns:repeat(${cols},1fr);grid-template-rows:repeat(${rows},minmax(0,1fr));gap:${dense ? 10 : 14}px;margin:${dense ? '14px 0 10px' : '22px 0 16px'};min-height:0}
-.card{background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.12);border-top:4px solid var(--acc);border-radius:12px;padding:${dense ? '9px 14px' : '14px 16px'};display:flex;flex-direction:column;min-width:0;min-height:0}
-.chip{font-family:Mono,monospace;font-size:14px;color:#BFC0BF;text-transform:uppercase;letter-spacing:1px;display:flex;align-items:center;gap:8px}
-.dot{width:9px;height:9px;border-radius:50%;background:var(--acc)}
-.title{font-size:${cols >= 4 || dense ? 27 : 36}px;line-height:1.02;text-transform:uppercase;margin:${dense ? 4 : 8}px 0 auto;overflow-wrap:anywhere}
-.row{display:flex;flex-direction:${dense ? 'row' : 'column'};${dense ? 'align-items:baseline;flex-wrap:wrap;column-gap:14px;' : ''}gap:4px;margin-top:${dense ? 6 : 10}px}
-.price{font-family:Mono,monospace;font-size:${cols >= 4 || dense ? 27 : 36}px;color:#fff}
-.when{font-family:Mono,monospace;font-size:${cols >= 4 || dense ? 16 : 18}px;color:#FF4D40}
-.when.soon{color:#FBBF24}
-.spacious .grid{flex:0 0 auto;display:flex;flex-wrap:nowrap;align-items:stretch;justify-content:center;gap:28px;margin:auto 0}
-.spacious .card{width:${cardW}px;flex:0 0 auto;min-height:${n <= 2 ? 300 : 280}px;padding:26px 30px 28px;border-radius:18px;border-top-width:5px;
+.grid{flex:1;display:flex;flex-direction:column;justify-content:center;gap:${gap}px;margin:${dense ? "14px 0 10px" : "20px 0 16px"};min-height:0}
+.r{display:flex;justify-content:center;gap:${gap}px;flex:${nRows === 1 ? "0 0 auto" : "1 1 0"};min-height:0}
+.card{position:relative;width:${cardW}px;flex:0 0 auto;min-height:${sz.minH}px;padding:${sz.pad};border-radius:${nRows === 1 ? 18 : 14}px;
+  border:1px solid rgba(255,255,255,.12);border-top:${nRows === 1 ? 5 : 4}px solid var(--acc);display:flex;flex-direction:column;min-width:0;
   background:linear-gradient(165deg,color-mix(in srgb,var(--acc) 20%,transparent),rgba(255,255,255,.03) 55%);
   box-shadow:0 0 0 1px rgba(255,255,255,.04),0 24px 70px -24px color-mix(in srgb,var(--acc) 70%,transparent)}
-.spacious .chip{font-size:15px}
-.spacious .title{font-size:${n <= 2 ? 42 : 34}px;line-height:1;margin:14px 0 0}
-.spacious .detail{font-family:Mono,monospace;font-size:15px;line-height:1.35;color:#D4D4D4;margin-top:14px}
-.spacious .row{margin-top:auto;padding-top:22px;gap:12px}
-.spacious .price{font-size:${n <= 2 ? 58 : 46}px;line-height:1}
-.spacious .when{align-self:flex-start;font-size:16px;padding:7px 12px;border-radius:999px;background:rgba(255,77,64,.12);border:1px solid rgba(255,77,64,.35)}
-.spacious .when.soon{background:rgba(251,191,36,.10);border-color:rgba(251,191,36,.35)}
-.spacious .glow{position:absolute;left:50%;top:58%;width:900px;height:420px;transform:translate(-50%,-50%);
-  background:radial-gradient(closest-side,color-mix(in srgb,${COLL[items[0]?.collection]?.accent ?? "#E03A2F"} 22%,transparent),transparent);pointer-events:none}
+.chip{font-family:Mono,monospace;font-size:${sz.chip}px;color:#BFC0BF;text-transform:uppercase;letter-spacing:1px;display:flex;align-items:center;gap:8px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--acc)}
+.title{font-size:${sz.title}px;line-height:1;text-transform:uppercase;margin:${dense ? 6 : 10}px 0 0;overflow-wrap:anywhere}
+.detail{font-family:Mono,monospace;font-size:${sz.detail}px;line-height:1.35;color:#D4D4D4;margin-top:${dense ? 6 : 10}px}
+.row{display:flex;flex-direction:column;align-items:flex-start;gap:${dense ? 6 : 9}px;margin-top:auto;padding-top:${dense ? 8 : 12}px}
+.price{font-family:Mono,monospace;font-size:${sz.price}px;line-height:1;color:#fff}
+.when{font-family:Mono,monospace;font-size:${sz.pill}px;padding:${dense ? "4px 9px" : "6px 11px"};border-radius:999px;color:#FF4D40;background:rgba(255,77,64,.12);border:1px solid rgba(255,77,64,.35);white-space:nowrap}
+.when.soon{color:#FBBF24;background:rgba(251,191,36,.10);border-color:rgba(251,191,36,.35)}
 footer{display:flex;justify-content:space-between;font-family:Mono,monospace;font-size:17px;color:#BFC0BF}
 footer b{color:#fff;font-weight:400}
-</style></head><body class="${spacious ? "spacious" : ""}"><div class="bg"></div>${spacious ? '<div class="glow"></div>' : ""}<div class="stripe"></div><div class="wrap">
-<header><div><h1>Drops <em>this week</em></h1><div class="sub">${esc(range)} · every drop open now or starting soon · times PT · retail prices${pages > 1 ? ` · ${pageNo}/${pages}` : ""}</div></div>
+</style></head><body><div class="bg"></div><div class="glow"></div><div class="stripe"></div><div class="wrap">
+<header><div><h1>Drops <em>this week</em></h1><div class="sub">${esc(range)} · ${pages > 1 ? `${pageNo}/${pages} · ` : ""}times PT · retail prices</div></div>
 <img class="logo" src="data:image/png;base64,${logo}"></header>
-<div class="grid">${items.map((it) => card(it, spacious)).join("")}</div>
+<div class="grid">${rowsHtml.join("")}</div>
 <footer><span><b>rippackscity.com</b></span><span>@RipPacksCity</span></footer>
 </div></body></html>`
 }
