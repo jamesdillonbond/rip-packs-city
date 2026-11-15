@@ -12,9 +12,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~10:03 AM PT — Candy: dashless `/player/luis-garcia-jr` 308s to the real `luis-garcia-jr-` page (Claude Code cloud)
+
+- `20261115180236_audit_20261115_candy_luis_garcia_jr_dashless_alias`: one `player_name_aliases` row. "Luis García Jr." slugs to `luis-garcia-jr-` (period → dash), so the dashless URL rendered the header with 0 editions. Read back live: 308 → `luis-garcia-jr-`, which renders 3 editions; `/candy-mlb/player/luis-garcia` (Astros) renders 9. File md5 = prod.
+- Revert: `DELETE FROM public.player_name_aliases WHERE collection_id = '209ade70-32c5-4470-bc7c-4793d660f713' AND alias_slug = 'luis-garcia-jr';`
+
 ### 2026-11-15 ~10:00 AM PT — Candy: the two Luis Garcias get two URLs — Nationals row renamed "Luis García Jr." (Claude Code cloud; Trevor: "Yes fix all of this")
 
-- `20261115180005_audit_20261115_candy_luis_garcia_jr_two_players_two_urls`: players `462c23be…` (Nationals, 3 editions) "Luis García" → "Luis García Jr." (MLB.com's spelling; slug `luis-garcia-jr`); the Astros row keeps `luis-garcia`. Both had unaccented to one slug, so one player's page was unreachable. Edition labels untouched; linkers only fill NULL player_id, so the 12 editions stay put. Residual risk (a future "Luis García" card name-matching the Astros row) filed as known-issues #258 with its watch query (reads 0). File md5 = prod.
+- `20261115180005_audit_20261115_candy_luis_garcia_jr_two_players_two_urls`: players `462c23be…` (Nationals, 3 editions) "Luis García" → "Luis García Jr." (MLB.com's spelling; slug `luis-garcia-jr-`); the Astros row keeps `luis-garcia`. Both had unaccented to one slug, so one player's page was unreachable. Edition labels untouched; linkers only fill NULL player_id, so the 12 editions stay put. Residual risk (a future "Luis García" card name-matching the Astros row) filed as known-issues #258 with its watch query (reads 0). File md5 = prod.
 - #248 final read scheduled into this session for 11-16 5:15 AM PT (`trig_01UmRESwR46DnGReEpp2fuAY`).
 - Revert: `UPDATE public.players SET name = 'Luis García' WHERE id = '462c23be-48d9-4685-a01f-0b9e80510ba7';`
 
