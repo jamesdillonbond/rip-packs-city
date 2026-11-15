@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-14 ~8:05 PM PT — #252 closed: a wide, rarely-traded set's Recent Sales panel no longer times out cold (Top Shot holo-icon 16.6 s cold vs an 8 s limit) (Claude Code cloud)
+- 🗄 APPLIED `20261115040451_audit_20261114_get_set_activity_sparse_wide_top_w_editions`. On the sparse-wide path `get_set_activity` reads each edition's latest sale index-only, then full rows for only the top-W editions; a self-check falls back to the old full read if a sale's collection ever disagrees with its edition's. Cold part on holo-icon: 1,794 disk reads → 0, heap rows 3,795 → ~404. Proved over every wide set: 507 calls, 0 errors, same sold_at sequence in all (one equal-time swap at a window edge, as on 09-28). Live body md5 `f4ee0177…` = file; anon EXECUTE false; the migration asserts the 09-28 base md5 before replacing.
+- Revert: re-apply `20260928143942_audit_20260928_get_set_activity_sparse_wide_set_per_edition_path.sql` (body md5 `a3fbff86…`).
+
 ### 2026-11-14 ~8:50 PM PT — Sentinel 7:04 PM WARN handled: the Panini sale-feed silence alarm rescaled to its hourly period; the slow-board breach was one transient probe (Claude Code cloud)
 - **Pipeline Silence, `panini-sale-feed-status-refresh` silent 110m (>95m, info).**
   - One run (6:14 PM PT) hit its 120 s statement_timeout. A kill writes no `pipeline_runs` row; 7:14 PM recovered (68 s, ok). Nothing user-facing: the view's 2 h 15 m snapshot window is built to absorb one missed hourly tick.
