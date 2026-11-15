@@ -20,8 +20,23 @@ export const revalidate = 3600
 
 const EMPTY: PaniniPremiumsPayload = { parallels: [], parallelsCapped: false, serials: [], serialsCapped: false }
 
+// ⚠ This page's read gets 25 s, not the shared 8 s BOARD_LIVE_TIMEOUT_MS. Measured 2026-11-15:
+// `panini_serial_premiums` re-aggregates 90 days of panini_sales on every call (~30.5k heap
+// blocks; pgss mean 4.5 s, max 18.7 s, ~11.9k disk reads per call), and EVERY hourly regeneration
+// logged in the prior 24 h died at 8 s ("read exceeded 8000ms"), so the page served its cached
+// "couldn't load" around the clock (deep audit 2026-11-15, D2). Hourly ISR regenerates in the
+// BACKGROUND, so a slow read delays nobody; 25 s stays under service_role's 30 s statement_timeout
+// and well under Next's 60 s prerender limit (the build-integrity reason the 8 s bound exists).
+// The structural fix is a precomputed matview for the serial board; when it lands, drop this.
+const PANINI_PREMIUMS_READ_BUDGET_MS = 25_000
+
 export default async function PaniniPremiumsPage() {
-  const { data, fetchedAt, ok } = await fetchBoardForPage<PaniniPremiumsPayload>("Panini premiums", EMPTY, (db) => fetchPaniniPremiums(db))
+  const { data, fetchedAt, ok } = await fetchBoardForPage<PaniniPremiumsPayload>(
+    "Panini premiums",
+    EMPTY,
+    (db) => fetchPaniniPremiums(db),
+    PANINI_PREMIUMS_READ_BUDGET_MS,
+  )
   return (
     <>
       <DegradedDataNotice summary={summarizeDegraded([boardStatus("Panini premiums", ok)])} />
