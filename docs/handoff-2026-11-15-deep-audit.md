@@ -3,7 +3,7 @@
 From the scheduled Cowork deep-audit pass (report: `docs/audits/deep-audit-2026-11-15.md`). Everything below was found and verified read-only but NOT shipped. Each item has the evidence, the proposed change and a revert path. All times are PT.
 
 
-> **Status update 2026-11-15 ~8:40 AM PT (Claude Code cloud, autonomous session):**
+> **Status update 2026-11-15 ~8:15 AM PT (Claude Code cloud, autonomous session):**
 > - **#4 Candy holders — ✅ DONE** (`ef0a73381`): paged read, all 1,316 holders in the 7:37 AM PT snapshot, no cap notice.
 > - **#2 D2 panini-premiums — ✅ FIXED** (`070bd9eaf`): page read budget 8 s → 25 s; every regeneration since 10-14 had died at 8 s. Live DOM 201 rows, no failure copy. The matview remains the structural fix (optional). **`/panini-blockchain/market` — left as is:** re-measured in a quiet hour, 1 of 3 renders 503'd; its board read has only ~50 production calls in pgss, so a refreshed matview would cost more than the reads it saves.
 > - **#3 D4 `/api/analytics/health` — ROOT CAUSE FOUND, migration STAGED, not applied** (`apply_migration` blocked by an unanswered confirmation): the `sales_2026` leg of `analytics_pipeline_health()` has no plain `sold_at` index and walks every 24 h row via the pkey (12,591 buffers; 4.3 s cold vs its own 5 s timeout). Adding `AND price_usd > 0` uses `idx_sales_2026_fmv_recalc_window` → 5 buffers; equivalent (0 non-positive sales in 7 d). One-line body change on 20260925060717's body.
