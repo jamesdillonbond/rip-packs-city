@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-14 ~10:10 PM PT — #190 step 2 applied: 59,283 more Top Shot cost rows (45,186 pack pulls at $0 + 14,097 buys, $124,413.60) (Claude Code cloud; Trevor chose "Apply all")
+
+- `apply_topshot_arrival_provenance()` over the loaded wallet-scoped provenance: 52,328 inserted + 6,955 `unknown` rows updated, source `chain_arrival_dune_20261114`; every write archived in `flowty_archive.acq_chain_arrival_20261114` (arm `insert` / `update_unknown`). Matches the dry run exactly.
+- Saved-wallet Top Shot holdings with no cost row: 80,262 (9:20 PM) → **27,934**; unpriced `unknown` 10,235 → 3,280. What is left is classified: 24,832 transfers from another account (T), 1,308 no-withdraw (N), 685 self re-deposits (S), 130 non-USD storefront (X).
+- Revert: `DELETE FROM public.moment_acquisitions WHERE id IN (SELECT acq_id FROM flowty_archive.acq_chain_arrival_20261114 WHERE arm = 'insert' AND recorded_at > '2026-11-15 06:05+00')`; restore `update_unknown` rows from the archive's `prior` jsonb (column name per the archive table — check before running).
+
 ### 2026-11-14 ~10:05 PM PT — #190 step 2 loaded: 494,427 arrival-provenance rows (wallet-scoped) in topshot_arrival_provenance; NOT yet applied — awaiting Trevor (Claude Code cloud)
 
 - Execution `01M7ETHE1Z3QNZWENDQTY6D1MQ` of 9129489 (184 credits; result reads ~640; cycle now 1,841 / 4,000). Tick 1 stopped at Dune's per-minute cap (429, offset 77,000) and logged `resume_offset`; `dd688b2` added pacing + 429 backoff; the 9:52 PM tick resumed at 77,000 and completed (494,427 loaded, ok).
