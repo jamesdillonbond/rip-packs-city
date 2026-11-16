@@ -116,8 +116,16 @@ export function parseCollectorWalkBody(body: unknown): { ok: true; value: Collec
       holdings.push(h)
     }
     if (typeof b.complete !== "boolean") return { ok: false, reason: "complete must be a boolean" }
-    const profileState = PROFILE_STATES.find((s) => s === b.profile_state)
-    if (!profileState) return { ok: false, reason: `profile_state must be one of ${PROFILE_STATES.join(", ")}` }
+    const claimedState = PROFILE_STATES.find((s) => s === b.profile_state)
+    if (!claimedState) return { ok: false, reason: `profile_state must be one of ${PROFILE_STATES.join(", ")}` }
+    // ⚠ A walk that delivered HOLDINGS read the profile's own collection pages, so the profile
+    // exists: `not_found` beside holdings contradicts itself. 2026-11-16: walker copies older than
+    // profileStateUrl took the state from the LAST tab visited (unopened-packs, which can bounce to
+    // /usernotfound), so complete walks (sdb 63/63, jamesdillonbond 149/149) posted not_found, the
+    // DB refused them and both profiles read "not found" to their owners. The walker runs on a box
+    // that does not auto-pull, so the receiver holds the line: such a walk is `public` (the
+    // walker's own rule — a collected answer arrived).
+    const profileState = claimedState === "not_found" && holdings.length > 0 ? "public" : claimedState
     // A count that was not read is null — never 0 (a 0 here would publish "no unopened packs").
     const reportedTotal = b.reported_total == null ? null : nonNegInt(b.reported_total)
     const unopenedPacks = b.unopened_packs == null ? null : nonNegInt(b.unopened_packs)

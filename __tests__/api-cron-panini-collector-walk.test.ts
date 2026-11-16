@@ -83,6 +83,13 @@ describe("auth + validation", () => {
     expect(parseCollectorWalkBody({ ...ingest(), unopened_packs: -1 })).toMatchObject({ ok: false, reason: /unopened_packs/ })
     expect(parseCollectorWalkBody({ op: "plan", limit: 0 })).toMatchObject({ ok: false, reason: /limit/ })
   })
+  it("a walk that delivered holdings is never not_found (11-16: complete walks posted not_found from a bounced later tab)", () => {
+    expect(parseCollectorWalkBody({ ...ingest(), profile_state: "not_found" })).toMatchObject({ ok: true, value: { profileState: "public" } })
+    // With no holdings the walker's not_found stands — a missing user really is missing.
+    expect(parseCollectorWalkBody({ ...ingest(), profile_state: "not_found", holdings: [], complete: false })).toMatchObject({ ok: true, value: { profileState: "not_found" } })
+    // Only not_found is corrected; a private claim is left as sent.
+    expect(parseCollectorWalkBody({ ...ingest(), profile_state: "private" })).toMatchObject({ ok: true, value: { profileState: "private" } })
+  })
   it("an unread count stays null — never 0", () => {
     const r = parseCollectorWalkBody({ ...ingest(), unopened_packs: null, reported_total: undefined })
     expect(r).toMatchObject({ ok: true, value: { unopenedPacks: null, reportedTotal: null } })
