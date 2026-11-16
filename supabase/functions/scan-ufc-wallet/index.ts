@@ -128,11 +128,22 @@ serve(async (req: Request) => {
     })
   }
 
-  let wallet = ""
-  try {
-    const body = await req.json() as { wallet?: string }
-    wallet = (body.wallet ?? "").trim()
-  } catch { /* ignore */ }
+  // 2026-11-16: the only caller (/api/ufc-wallet-scan) sends GET ?wallet=…, the same shape as
+  // enrich-ufc-wallet. This function read ONLY a JSON body, so every binder scan answered
+  // "Missing wallet" (400) and the route returned 502. Query first, body kept as a fallback.
+  let wallet = (url.searchParams.get("wallet") ?? "").trim()
+  if (!wallet) {
+    try {
+      const body = await req.json() as { wallet?: string }
+      wallet = (body.wallet ?? "").trim()
+    } catch { /* ignore */ }
+  }
+  if (wallet && !/^(0x)?[0-9a-fA-F]{16}$/.test(wallet)) {
+    return new Response(JSON.stringify({ error: "wallet must be a Flow address" }), {
+      status: 400, headers: { "Content-Type": "application/json" },
+    })
+  }
+  wallet = wallet.toLowerCase()
   if (!wallet) {
     return new Response(JSON.stringify({ error: "Missing wallet" }), {
       status: 400, headers: { "Content-Type": "application/json" },
