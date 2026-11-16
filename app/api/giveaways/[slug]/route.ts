@@ -38,7 +38,7 @@ import { instantDeliveryEnabled, sendFromVault } from "@/lib/giveaways/vault"
 import type { DropRow } from "@/lib/giveaways/store"
 import { accountTopShotWallet, walletVerifiedElsewhere, type AccountWallet } from "@/lib/giveaways/account-wallet"
 import { readPoolExtras } from "@/lib/giveaways/pool-extras"
-import { challengeOfDrop, hasCompletedChallenge } from "@/lib/giveaways/challenge-reward"
+import { challengeOfDrop, hasCompletedChallenge, isInternalAccount } from "@/lib/giveaways/challenge-reward"
 
 // The vault send runs after the response (a claim answers in ~1 s; the send waits for a seal).
 export const maxDuration = 120
@@ -178,15 +178,20 @@ export async function GET(req: NextRequest, ctx: Ctx) {
     // signed-in viewer whether THEY can claim before they press the button. A failed read is
     // `eligibility: null` + `eligibility_error` — the page then shows the form exactly as before,
     // never "not eligible".
-    let eligibility: { challenge: { slug: string; title: string }; viewer: "eligible" | "not_eligible" | "unknown" } | null = null
+    // 2026-11-16: an INTERNAL account is `internal` — its claim is refused (see refuseInternalOnRewardDrop).
+    let eligibility: { challenge: { slug: string; title: string }; viewer: "eligible" | "not_eligible" | "internal" | "unknown" } | null = null
     let eligibility_error = false
     try {
       const ch = await challengeOfDrop(supabaseAdmin as never, drop.id)
       if (ch) {
-        let viewer: "eligible" | "not_eligible" | "unknown" = "unknown"
+        let viewer: "eligible" | "not_eligible" | "internal" | "unknown" = "unknown"
         if (user) {
           try {
-            viewer = (await hasCompletedChallenge(supabaseAdmin as never, ch.id, user.id)) ? "eligible" : "not_eligible"
+            viewer = (await isInternalAccount(supabaseAdmin as never, user.id))
+              ? "internal"
+              : (await hasCompletedChallenge(supabaseAdmin as never, ch.id, user.id))
+                ? "eligible"
+                : "not_eligible"
           } catch (e) {
             console.warn(`[giveaways] eligibility read: ${e instanceof Error ? e.message : String(e)}`)
           }
@@ -235,6 +240,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       return NextResponse.json({ error: "No such giveaway.", code: "not_found" }, { status: 404, headers: NO_STORE })
     }
     if (drop.status !== "open") return claimOutcomeResponse("not_open", null)
+    const internal = await refuseInternalOnRewardDrop(user.id, drop)
+    if (internal) return internal
     const refused = await refuseOtherDestination(user.id, drop)
     if (refused) return refused
 
@@ -269,6 +276,23 @@ export async function POST(req: NextRequest, ctx: Ctx) {
 }
 
 /**
+ * ⛔ An INTERNAL account (Trevor's, QA) cannot claim from a challenge REWARD drop
+ * (2026-11-16): those packs are held for the members who finished — Dame Time has
+ * exactly as many packs left as eligible members, and the founder's account holds a
+ * completed case too, so one claim from it would take a member's pack. Applies on all
+ * three claim paths. A failed read THROWS to the caller's classified error, never a pass.
+ */
+async function refuseInternalOnRewardDrop(userId: string, drop: DropRow): Promise<NextResponse | null> {
+  const ch = await challengeOfDrop(supabaseAdmin as never, drop.id)
+  if (!ch) return null
+  if (!(await isInternalAccount(supabaseAdmin as never, userId))) return null
+  return NextResponse.json(
+    { error: "This is a staff account. Challenge reward packs are held for members who finished, so it can't claim one.", code: "internal_account" },
+    { status: 403, headers: NO_STORE },
+  )
+}
+
+/**
  * ⛔ No other destination for an account that HAS a Top Shot wallet (Trevor,
  * 2026-11-10: users "should not have this option at all"): the username and
  * Flow Wallet paths answer this instead of claiming. A failed read THROWS to
@@ -295,6 +319,8 @@ async function claimWithAccountWallet(slug: string, userId: string) {
       return NextResponse.json({ error: "No such giveaway.", code: "not_found" }, { status: 404, headers: NO_STORE })
     }
     if (drop.status !== "open") return claimOutcomeResponse("not_open", null)
+    const internal = await refuseInternalOnRewardDrop(userId, drop)
+    if (internal) return internal
     const r = await accountTopShotWallet(supabaseAdmin as never, userId, drop.collection_id)
     if (!r.wallet) {
       return NextResponse.json(
@@ -339,6 +365,8 @@ async function claimWithWallet(req: NextRequest, slug: string, userId: string, b
       return NextResponse.json({ error: "No such giveaway.", code: "not_found" }, { status: 404, headers: NO_STORE })
     }
     if (drop.status !== "open") return claimOutcomeResponse("not_open", null)
+    const internal = await refuseInternalOnRewardDrop(userId, drop)
+    if (internal) return internal
     const refused = await refuseOtherDestination(userId, drop)
     if (refused) return refused
 

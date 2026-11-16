@@ -49,10 +49,11 @@ vi.mock("@/lib/giveaways/account-wallet", () => ({
   walletVerifiedElsewhere: (...a: unknown[]) => verifiedElsewhere(...a),
 }))
 // the drop's challenge and the viewer's eligibility (2026-11-10); default: a drop open to everyone
-const { dropChallenge, completed } = vi.hoisted(() => ({ dropChallenge: vi.fn(), completed: vi.fn() }))
+const { dropChallenge, completed, internalAcct } = vi.hoisted(() => ({ dropChallenge: vi.fn(), completed: vi.fn(), internalAcct: vi.fn() }))
 vi.mock("@/lib/giveaways/challenge-reward", () => ({
   challengeOfDrop: (...a: unknown[]) => dropChallenge(...a),
   hasCompletedChallenge: (...a: unknown[]) => completed(...a),
+  isInternalAccount: (...a: unknown[]) => internalAcct(...a),
 }))
 const { discover } = vi.hoisted(() => ({ discover: vi.fn() }))
 const { verifyProof } = vi.hoisted(() => ({ verifyProof: vi.fn() }))
@@ -113,6 +114,8 @@ beforeEach(() => {
   poolExtras.mockResolvedValue(new Map())
   acctWallet.mockResolvedValue({ wallet: null, reason: "none" })
   verifyProof.mockReset()
+  internalAcct.mockReset()
+  internalAcct.mockResolvedValue(false)
   planFunding.mockReset()
   for (const f of Object.values(vault)) f.mockReset()
   afterFns.length = 0
@@ -298,6 +301,72 @@ describe("a reward drop says whose packs these are, and whether this viewer can 
     expect(b.eligibility).toBeNull()
     expect(b.eligibility_error).toBe(true)
     expect(b.drop.slug).toBeTruthy()
+  })
+})
+
+describe("a staff (internal) account cannot claim from a challenge reward drop (2026-11-16)", () => {
+  const url = "http://x/api/giveaways/test-drop"
+  const CH = { id: "ch1", slug: "dame-time", title: "Dame Time" }
+  const FW = "0x00000000000000f1"
+  beforeEach(() => {
+    store.getDrop.mockResolvedValue(DROP)
+    store.getPool.mockResolvedValue([{ moment_id: "1", pack_no: 1, slot: 1, fmv_usd: 2, delivered_at: null, last_checked_at: null }])
+    store.getClaims.mockResolvedValue([])
+    store.claimPack.mockResolvedValue({ outcome: "claimed", pack_no: 2 })
+    getCurrentUser.mockResolvedValue({ id: "staff" })
+    dropChallenge.mockReset()
+    completed.mockReset()
+    completed.mockResolvedValue(true)
+    resolve.mockResolvedValue({ found: true, walletAddress: "0x00000000000000BB", username: "Alice" })
+    verifiedElsewhere.mockReset()
+    verifiedElsewhere.mockResolvedValue(false)
+    publicRoute.__resetProofRateLimit()
+    verifyProof.mockResolvedValue({ ok: true, address: FW })
+    discover.mockResolvedValue([{ address: FW, role: "flow_wallet", topshot_count: 3, name: null, dapper: false }])
+    vi.spyOn(console, "warn").mockImplementation(() => {})
+  })
+
+  it("GET says `internal` (not eligible) even with a finished case", async () => {
+    dropChallenge.mockResolvedValue(CH)
+    internalAcct.mockResolvedValue(true)
+    const body = await (await publicRoute.GET(new NextRequest(url), slugCtx("test-drop"))).json()
+    expect(body.eligibility.viewer).toBe("internal")
+    expect(internalAcct).toHaveBeenCalledWith({}, "staff")
+  })
+
+  it("every claim path is refused with 403 internal_account, and nothing is claimed", async () => {
+    dropChallenge.mockResolvedValue(CH)
+    internalAcct.mockResolvedValue(true)
+    acctWallet.mockResolvedValue({ wallet: { address: "0x00000000000000cc", username: "Trevor" } })
+    const a = await publicRoute.POST(post(url, { account: true, agree: true }), slugCtx("test-drop"))
+    expect(a.status).toBe(403)
+    expect((await a.json()).code).toBe("internal_account")
+    acctWallet.mockResolvedValue({ wallet: null, reason: "none" })
+    const b = await publicRoute.POST(post(url, { username: "alice", agree: true }), slugCtx("test-drop"))
+    expect((await b.json()).code).toBe("internal_account")
+    const c = await publicRoute.POST(post(url, { proof: { address: FW }, destination: FW, agree: true }), slugCtx("test-drop"))
+    expect((await c.json()).code).toBe("internal_account")
+    expect(store.claimPack).not.toHaveBeenCalled()
+  })
+
+  it("a member (not internal) still claims; a drop open to everyone never asks", async () => {
+    dropChallenge.mockResolvedValue(CH)
+    const a = await publicRoute.POST(post(url, { username: "alice", agree: true }), slugCtx("test-drop"))
+    expect(a.status).toBe(200)
+    dropChallenge.mockResolvedValue(null)
+    internalAcct.mockClear()
+    internalAcct.mockResolvedValue(true)
+    const b = await publicRoute.POST(post(url, { username: "alice", agree: true }), slugCtx("test-drop"))
+    expect(b.status).toBe(200)
+    expect(internalAcct).not.toHaveBeenCalled()
+  })
+
+  it("a failed internal-account read refuses (classified error), never a pass", async () => {
+    dropChallenge.mockResolvedValue(CH)
+    internalAcct.mockRejectedValue({ message: "canceling statement due to statement timeout", code: "57014" })
+    const r = await publicRoute.POST(post(url, { username: "alice", agree: true }), slugCtx("test-drop"))
+    expect(r.status).toBe(503)
+    expect(store.claimPack).not.toHaveBeenCalled()
   })
 })
 

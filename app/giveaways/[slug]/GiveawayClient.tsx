@@ -22,7 +22,7 @@ type View = PublicDropView & {
   account_wallet?: { address: string; username: string | null } | null
   account_wallet_error?: boolean
   /** A reward drop for one trophy challenge: whose packs these are, and whether THIS viewer can claim. */
-  eligibility?: { challenge: { slug: string; title: string }; viewer: "eligible" | "not_eligible" | "unknown" } | null
+  eligibility?: { challenge: { slug: string; title: string }; viewer: "eligible" | "not_eligible" | "internal" | "unknown" } | null
 }
 type ClaimAccount = { address: string; role: "flow_wallet" | "linked"; name?: string | null; dapper?: boolean; can_receive: boolean }
 type ClaimNonce = { nonce: string; issuedAt: string }
@@ -326,7 +326,11 @@ export default function GiveawayClient({ slug }: { slug: string }) {
           <div style={{ marginBottom: 12 }}>
             <PackWall total={drop.pack_count} claimed={drop.claimed_count} drawn={drawn} onLanded={() => setTimeout(refresh, 900)} theme={drop.pack_theme} />
           </div>
-          {signed_in && load.view.eligibility?.viewer === "not_eligible" ? (
+          {signed_in && load.view.eligibility?.viewer === "internal" ? (
+            <p style={{ margin: 0 }} data-testid="claim-internal">
+              This is a staff account. These packs are held for the members who finished the challenge, so it can&apos;t claim one.
+            </p>
+          ) : signed_in && load.view.eligibility?.viewer === "not_eligible" ? (
             <p style={{ margin: 0 }} data-testid="claim-not-eligible">
               This account has no completed {load.view.eligibility.challenge.title} entry, so there is no pack for it to claim here. If you finished the challenge
               on a different account, sign in with that one.

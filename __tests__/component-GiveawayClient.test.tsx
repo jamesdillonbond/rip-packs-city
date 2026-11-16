@@ -149,6 +149,17 @@ describe("GiveawayClient — claiming", () => {
     expect(screen.getByRole("button", { name: "Claim my pack" })).toBeTruthy()
   })
 
+  // 2026-11-16: a staff account holding a finished case must not be offered a member's pack
+  it("an internal (staff) account is told it can't claim and gets no claim form, even with a finished case", async () => {
+    const ch = { slug: "dame-time", title: "Dame Time" }
+    vi.stubGlobal("fetch", vi.fn(async () => json({ ...BASE, account_wallet: { address: "0x00000000000000cc", username: "Carol" }, eligibility: { challenge: ch, viewer: "internal" } })))
+    render(<GiveawayClient slug="fall-drop" />)
+    expect((await screen.findByTestId("claim-internal")).textContent).toContain("staff account")
+    expect(screen.queryByRole("button", { name: "Claim my pack" })).toBeNull()
+    expect(screen.queryByTestId("account-wallet-claim")).toBeNull()
+    expect(screen.queryByTestId("claim-eligibility")?.textContent ?? "").not.toContain("one of these is yours")
+  })
+
   it("a drop open to everyone shows no eligibility line", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => json({ ...BASE, eligibility: null })))
     render(<GiveawayClient slug="fall-drop" />)

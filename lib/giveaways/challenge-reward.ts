@@ -61,6 +61,18 @@ export async function hasCompletedChallenge(db: Reader, challengeId: string, use
   return rows(r.data).length > 0
 }
 
+/**
+ * Whether this is an INTERNAL account (Trevor's, QA — `internal_accounts`). A reward
+ * drop's packs are held for MEMBERS who finished (2026-11-16: Dame Time has exactly
+ * as many packs left as eligible members, and the founder's account holds a completed
+ * case too). A failed read THROWS — the claim path then refuses, never lets it through.
+ */
+export async function isInternalAccount(db: Reader, userId: string): Promise<boolean> {
+  const r = await db.from("internal_accounts").select("user_id").eq("user_id", userId).limit(1)
+  if (r.error) throw new Error(`internal_accounts read failed: ${r.error.message}`)
+  return rows(r.data).length > 0
+}
+
 /** The OPEN reward drop for a challenge (the newest, if there were ever two); null when there is none taking claims. */
 export async function openRewardDropForChallenge(db: Reader, challengeSlug: string): Promise<RewardDrop | null> {
   const c = await db.from("trophy_challenges").select("id").eq("slug", challengeSlug).limit(1)
@@ -100,9 +112,7 @@ export async function unclaimedRewardsForUser(db: Reader, userId: string): Promi
   // 2026-11-15: an INTERNAL account (Trevor's, QA) is never invited to claim. Dame Time
   // ended with exactly 6 packs for 6 eligible members, and the founder's account also
   // holds a completed case — one tap on the card would have taken a member's pack.
-  const internal = await db.from("internal_accounts").select("user_id").eq("user_id", userId).limit(1)
-  if (internal.error) throw new Error(`internal_accounts read failed: ${internal.error.message}`)
-  if (rows(internal.data).length > 0) return []
+  if (await isInternalAccount(db, userId)) return []
   const cases = await db.from("trophy_cases").select("challenge_id").eq("user_id", userId).not("completed_at", "is", null).limit(50)
   if (cases.error) throw new Error(`trophy_cases read failed: ${cases.error.message}`)
   const challengeIds = [...new Set(rows(cases.data).map((r) => str(r.challenge_id)).filter((s): s is string => s != null))]
