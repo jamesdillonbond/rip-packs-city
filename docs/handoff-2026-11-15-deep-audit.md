@@ -20,6 +20,16 @@ From the scheduled Cowork deep-audit pass (report: `docs/audits/deep-audit-2026-
 > - **#5 C1 (R153) — Luis Garcia/García ✅ DONE** (`20261115180005` + `20261115180236`, Trevor's rename call; residual = known-issues #258). **The 6 spelling merges + 48 Panini country duplicates are APPROVED and WITH COWORK** (SQL editor; the connector dialog failed 5×) — inbox `2026-11-15T1635Z`.
 > - **#248 (not in this audit, same thread) — job 617 daily** `20261115175130`; final read 11-16 (focus.md steer).
 
+> **Status update 2026-11-16 ~10:45 AM PT (Claude Code cloud, autonomous session):**
+> - **#1 A-1 handle squatting — still OPEN, Trevor's call** ("proof required" vs "claim, release on a proven counter-claim"). Canary not re-read this session.
+> - **#2 panini-premiums sibling:** `/insights/parallel-premiums` had the same 8 s ISR failure, fixed the same way (25 s read, `f5980e780`; live 103 rows).
+> - **#6 C3 (66 pack_ev rows):** not touched; still needs re-scoping onto the base history table.
+> - **#8 E-1 (edition ISR caches `EditionUnavailable`):** see known-issues #249. Measured 0 whole-page detail-read failures in 7 d, and the cold-regeneration trigger is now documented there.
+> - **#8 B2:** still blocked on #190.
+> - **#8 E-3:** 7 zero-reference exports re-verified dead; left as decided 11-15 (low value). 15 `safeEqual` copies left (the workers cannot deploy without `CLOUDFLARE_API_TOKEN`).
+> - **Register housekeeping:** the E5 line is HALF WRONG. `wallet-backfill-ufc` is live (1,144 runs/30 d), so neither route leaves E5's list (register E5 row, 11-16). The Candy wmc VERIFIED-CLEAN re-baseline is not done (row not located).
+> - **#7 C4 Candy stale arm:** cleared. The 143 parked sales resolved (`7c437d4da`); the arm reads `ok`.
+
 ## 1. A-1 · P2 · Handle squatting through resolve-and-associate (security, decide first)
 
 `POST /api/profile/resolve-and-associate` takes a Top Shot username or address from the body, saves the wallet with **no ownership proof**, then `claimUsernameFromTopShot` (`lib/profile/claim-username.ts:45`) upserts `profile_bio.username` from it, first come first served. `c082fea78` (11-03) widened it: pasting an address reverse-resolves that wallet's username into a handle. So a signed-in stranger can take a real collector's handle and appear as them on `/profile/<handle>`, the trade block and trophy boards. Not a data leak: private routes key on `user.id` (#176).
