@@ -29,6 +29,7 @@ import { tierColorAlpha } from "@/lib/tier-color";
 import TrophyPickerModal from "@/components/profile/TrophyPickerModal";
 import TrophyNoteEditor from "@/components/profile/TrophyNoteEditor";
 import TrophyCasesPanel from "@/components/profile/TrophyCasesPanel";
+import FillTop6Button from "@/components/profile/FillTop6Button";
 import { occupantOfSlot, reorderByDelta, reorderByTarget } from "@/lib/trophy/reorder";
 import { openSlotsOf } from "@/lib/trophy/fill-slots";
 import { savedWalletChains } from "@/lib/trophy-picker-format";
@@ -385,6 +386,7 @@ function ProfilePageInner() {
     toastTimersRef.current.add(timer);
   }, []);
 
+
   // Open the verify-by-listing modal when arriving via /dashboard?verify=...
   // (the /rewards CTA). The value may be a specific 0x wallet, or "1" to mean
   // "pick the first wallet that still needs verifying".
@@ -657,6 +659,7 @@ function ProfilePageInner() {
       setLoading(false);
     }
   }, [refreshStats, pushToast]);
+
 
   useEffect(() => {
     refresh();
@@ -1064,7 +1067,7 @@ function ProfilePageInner() {
              nothing is told so HERE, where they land — the Trophy Cases tab
              repeats it beside the empty grid. (A failed slab read shows nothing
              here; the trophy tab carries the honest retry.) */
-          <EmptyHeroState wallets={wallets} indexing={indexing} onPickSlot={setPinSlot} />
+          <EmptyHeroState wallets={wallets} indexing={indexing} onPickSlot={setPinSlot} onToast={pushToast} onRefresh={refresh} />
         ) : null}
         {/* ── Stats Tiles ── */}
         {/* ⚠ THREE states, not two: a wallet that was just saved has NO stats yet
@@ -1393,7 +1396,7 @@ function ProfilePageInner() {
             </button>
           </section>
         ) : (
-          <EmptyHeroState wallets={wallets} indexing={indexing} onPickSlot={setPinSlot} />
+          <EmptyHeroState wallets={wallets} indexing={indexing} onPickSlot={setPinSlot} onToast={pushToast} onRefresh={refresh} />
         )}
         {/* Extra trophy cases + challenge entries (2026-11-06). Signed-in only:
             every route behind it is requireUser. */}
@@ -1786,7 +1789,7 @@ function HeroMomentImage({ imageUrl, playerName, tier, tc }: { imageUrl: string 
   return <img src={proxyIpfsImageUrl(imageUrl, 640) ?? undefined} alt={playerName ?? ""} onError={() => setFailed(true)} style={commonStyle} />;
 }
 
-function EmptyHeroState({ wallets, indexing, onPickSlot }: { wallets: SavedWallet[]; indexing: boolean; onPickSlot: (slot: number) => void }) {
+function EmptyHeroState({ wallets, indexing, onPickSlot, onToast, onRefresh }: { wallets: SavedWallet[]; indexing: boolean; onPickSlot: (slot: number) => void; onToast: (text: string, tone?: "success" | "info") => void; onRefresh: () => Promise<void> }) {
   const isIndexing = indexing && wallets.length > 0;
   return (
     <section className="rpc-section rpc-binder-slot" style={{ padding: "28px 20px", textAlign: "center" }}>
@@ -1798,9 +1801,13 @@ function EmptyHeroState({ wallets, indexing, onPickSlot }: { wallets: SavedWalle
         {isIndexing ? "This usually takes 30-60 seconds." : "Pick from your top-FMV moments to build your six-slot showcase."}
       </div>
       {!isIndexing && (
-        <button onClick={() => onPickSlot(1)} style={{ ...primaryBtnStyle, marginTop: 12 }}>
-          + Pick a moment
-        </button>
+        <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap", marginTop: 12 }}>
+          {/* 2026-11-16: one tap instead of six picker trips — components/profile/FillTop6Button.tsx */}
+          {wallets.length > 0 && <FillTop6Button onToast={onToast} onDone={onRefresh} style={primaryBtnStyle} />}
+          <button onClick={() => onPickSlot(1)} style={{ ...secondaryBtnStyle }}>
+            + Pick a moment
+          </button>
+        </div>
       )}
     </section>
   );

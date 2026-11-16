@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~11:45 AM PT — "Fill with my top 6" for the main trophy case (Claude Code cloud; Trevor: "Keep going")
+- Measured (members since 09-01, internal excluded, by day-0 action → came back on a later day): entered a challenge 12/12 · pinned to the main case (no challenge) 3/5 · saved a wallet, pinned nothing 5/16 · no wallet 0/5. Every member trophy case ever made is a challenge case; the main case's only path was "+ Pick a moment", six trips through the picker.
+- CODE: `POST /api/profile/trophy/fill` (propose without `confirm`, pin with `confirm: true`; candidates = the picker's own `get_user_top_owned_moments` top 48 minus Panini; one per edition first; only EMPTY slots via ignoreDuplicates on the NULLS NOT DISTINCT key; `pinned` = rows returned; trophy_pinned funnel rows per slot). `lib/trophy/fill-main.ts` (pure selection + confirm copy). `components/profile/FillTop6Button.tsx` on the dashboard's empty-case card (Overview + Trophy tab), events `main-fill-click/-declined/-pinned`. Candidate read measured 1.9 s on the largest wallet (a direct wmc FMV sort was 11.7 s cold — not used).
+- Tests: route test (10) + component test (6). Full `npm run preflight` green (coverage 90.86 %).
+- Revert: `git revert` this commit (no DB half).
+
 ### 2026-11-16 ~8:45 AM PT — Two Panini profiles read "not found" to their owners: data corrected + receiver guard (Claude Code cloud; same autonomous session)
 - **What owners saw:** this morning's walker bug (see the ~7:25 AM entry) did not only fail the run. `panini_collector_walks.profile_state` was stored `not_found` for `jamesdillonbond` (149/149 cards) and `sdb` (63/63), so the profile panel and the Panini collection tab told both owners their Panini profile does not exist.
 - **Data (prod):** `UPDATE panini_collector_walks SET profile_state='public'` for those 2 usernames, guarded on `profile_state='not_found' AND last_complete_at IS NOT NULL AND cards_collected >= reported_total`; 2 rows. Revert: set the 2 rows back to `not_found` (the next walk overwrites either way).
