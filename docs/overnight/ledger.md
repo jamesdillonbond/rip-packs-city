@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~6:24 PM PT — Candy Team Ball fix verified live + 60 parked rows closed (Claude Code cloud, autonomous)
+- 6:20 PM PT `candy-sales-indexer` tick ok (243 rows written); `sales` now holds 60 `ball24:` Candy sales, all `serial_number` NULL (by design, 320b7c036).
+- Closed the 60 `candy_sales_unresolved` `unresolvable_serial` rows whose signature is now in `sales` (`resolved_at=now()`, `resolution='written'`). 1 left open on purpose: mint 3Z6hBv… is `c:2024-inaugural-mark-emerald:paul-skenes-debut` with no census serial — not a Team Ball, so a guessed serial stays refused.
+- Revert (data): `UPDATE candy_sales_unresolved SET resolved_at=NULL, resolution=NULL WHERE resolution='written' AND skip_reason='unresolvable_serial' AND resolved_at > '2026-11-16 02:20Z'`.
+
 ### 2026-11-15 ~6:10 PM PT — Wallet search: one chain script per 25 moments; parallels keyed set:play::N, priced by their own edition, circulation from the edition row (Claude Code, Trevor's laptop; "work through it all")
 - The chain's numMomentsInEdition is the whole set:play family. On mainnet a /500 parallel read 16,000 and a 4,000 base read 4,099. The route showed it as "#/N", keyed every parallel as its base set:play, priced it with the base FMV and wrote that base key to wmc. Now: getMomentsSubedition → set:play::N; circulation from editions (then wmc, else null); traits recomputed; the seed skips parallels. Batched script: 60 moments exceed Flow's 100k compute limit (100,004), 40 pass, so 25 per script.
 - Tests: +3 (parallel key/price/size/name, never the chain count, one script per page). Planted reverts of the key and the circulation each red. Preflight green (tsc, lint:ratchet, 2,815 tests). Inbox 2026-11-16T0058Z ✅.
