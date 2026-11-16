@@ -39,6 +39,8 @@ import {
   normalizeSerial,
 } from "@/lib/chains/solana/normalize"
 import { bearerMatches } from "@/lib/auth/bearer-secret"
+import { loadCandyCollections } from "@/lib/candy/collections"
+import { hydrateFromJsonUri, isUnhydrated } from "@/lib/chains/solana/hydrate"
 import { CANDY_BASE_SET_ID, CANDY_SETS, candySaleSerialOptional } from "@/lib/chains/solana/candy-sets"
 
 export const dynamic = "force-dynamic"
@@ -91,6 +93,11 @@ const DUST_SKIP = "dust_price_rounds_to_zero"
 // missing. Parked, then closed in the same pass so they don't burn drain budget
 // (or sit in the dead letter forever once attempts hit MAX_PARK_ATTEMPTS).
 const TERMINAL_SKIPS = new Set([PACK_SKIP, DUST_SKIP])
+// 2026-11-16: a DAS read of a card in an edition-key-PREFIXED collection that came back
+// name-only (no traits, no image) and whose off-chain JSON could not be read. Keyed from
+// the name alone it would drop the rarity and land on the wrong edition (or none) —
+// docs/reference/chain-strategy.md "Never key a card from a name alone". Parked, retried.
+const UNHYDRATED_SKIP = "unhydrated_asset"
 
 interface MeActivity {
   signature: string
@@ -273,6 +280,21 @@ async function handleIndex(req: NextRequest) {
       const cursorBefore = cursorBeforeMs ? new Date(cursorBeforeMs).toISOString() : null
 
       const rate = await solUsd()
+      // 2026-11-16: register every catalogued Candy collection (candy_collections) with the
+      // normalizer, as the census and wallet reads already do. The DAS path below keys a card
+      // from its collection's edition prefix; without this, a card of a non-registry collection
+      // (2022 Leadoff ICONs, 2023 Rookie ICONs, …) that the census never holds — every BURNT
+      // card, since the census skips burnt assets — keyed as a bare Base-style slug that no
+      // edition carries, and parked as edition_not_ingested for good (143 sales, 11-16).
+      // A failed read registers nothing and is reported; those cards park as before.
+      const catalog = await loadCandyCollections(supabaseAdmin)
+      const prefixedCollections = new Set(
+        [...CANDY_SETS, ...catalog.sets]
+          .filter((s) => s.editionKeyPrefix && s.collectionAddress)
+          .map((s) => s.collectionAddress as string),
+      )
+      let saleHydrated = 0
+      let saleUnhydrated = 0
       // edition_key → editions.id cache (so repeat keys cost one query).
       const edIdByKey = new Map<string, string | null>()
       // mint → census edition_key/serial (null = not in the census; use DAS).
@@ -391,6 +413,27 @@ async function handleIndex(req: NextRequest) {
           assetFetches++
         } catch {
           return { skip: "das_fetch_failed" }
+        }
+        // DAS sometimes returns a Candy asset with its on-chain name only (burnt cards
+        // included). Read its off-chain JSON before classifying or keying it — the same
+        // repair the census applies (lib/chains/solana/hydrate.ts).
+        if (isUnhydrated(asset) && typeof asset.content?.json_uri === "string") {
+          try {
+            const h = await hydrateFromJsonUri([asset], { concurrency: 1, rateLimitRetries: 1 })
+            if (h.hydrated[0]) {
+              asset = h.hydrated[0]
+              saleHydrated++
+            }
+          } catch {
+            // fall through: the gate below parks a prefixed card it could not hydrate
+          }
+        }
+        {
+          const coll = asset.grouping?.find((g: { group_key: string }) => g.group_key === "collection")?.group_value
+          if (coll && prefixedCollections.has(coll) && isUnhydrated(asset)) {
+            saleUnhydrated++
+            return { skip: UNHYDRATED_SKIP }
+          }
         }
         // The ME collection MIXES sealed PACK assets (Item Type=Pack) with the
         // individual ICONs, and packs are deliberately not editions — so a pack
@@ -868,6 +911,12 @@ async function handleIndex(req: NextRequest) {
         asset_fetches: assetFetches,
         // Sales resolved from the census without a DAS call (2026-11-08).
         census_resolved: censusResolved,
+        // candy_collections registered for the DAS path (2026-11-16); null count when the read failed.
+        catalog_collections: catalog.error ? null : catalog.sets.length,
+        catalog_error: catalog.error,
+        // DAS reads repaired from off-chain JSON / prefixed cards parked because they could not be.
+        sale_hydrated: saleHydrated,
+        sale_unhydrated: saleUnhydrated,
         // One entry per later Candy set (All-Star, Gold, Quest rewards).
         sets: setReports,
         me_key_present: Boolean(process.env.MAGIC_EDEN_API_KEY),

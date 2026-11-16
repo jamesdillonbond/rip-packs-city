@@ -22,7 +22,11 @@ const state = vi.hoisted(() => ({
   sb: null as unknown,
   ready: true,
   rate: 150 as number | null,
-  assets: {} as Record<string, { key: string; serial: number | null; pack?: boolean }>,
+  assets: {} as Record<string, { key: string; serial: number | null; pack?: boolean; [k: string]: unknown }>,
+  catalogSets: [] as any[],
+  catalogError: null as string | null,
+  catalogCalls: 0,
+  hydrateOk: true,
   assetThrows: new Set<string>(),
   sets: [] as any[],
 }))
@@ -35,6 +39,20 @@ vi.mock("@/lib/chains/solana/candy-sets", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/chains/solana/candy-sets")>()
   return { CANDY_BASE_SET_ID: "base-set", get CANDY_SETS() { return state.sets }, candySaleSerialOptional: actual.candySaleSerialOptional }
 })
+vi.mock("@/lib/candy/collections", () => ({
+  loadCandyCollections: async () => {
+    state.catalogCalls++
+    return { sets: state.catalogSets, error: state.catalogError }
+  },
+}))
+// An asset is "unhydrated" in these tests when it says so; hydration flips it unless told to fail.
+vi.mock("@/lib/chains/solana/hydrate", () => ({
+  isUnhydrated: (a: { unhydrated?: boolean }) => a.unhydrated === true,
+  hydrateFromJsonUri: async (assets: Array<Record<string, unknown>>) =>
+    state.hydrateOk
+      ? { hydrated: assets.map((a) => ({ ...a, unhydrated: false })), failed: [] }
+      : { hydrated: [], failed: assets.map((a) => ({ id: a.id, reason: "HTTP 404" })) },
+}))
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: new Proxy(
     {},
@@ -88,6 +106,10 @@ beforeEach(() => {
   state.rate = 150
   state.assets = {}
   state.assetThrows = new Set()
+  state.catalogSets = []
+  state.catalogError = null
+  state.catalogCalls = 0
+  state.hydrateOk = true
   state.sets = [
     { key: "base26", setId: "base-set", meSymbol: "candy-mlb-icons", editionKeyPrefix: null },
     { key: "asg26", setId: "asg-set", meSymbol: "asg-symbol", editionKeyPrefix: "asg26" },
@@ -199,5 +221,84 @@ describe("candy-sales-indexer — later Candy sets", () => {
     expect((spy.writes.sales ?? []).flatMap((w) => w.rows)).toHaveLength(0)
     const parks = spy.rpcCalls.filter((c) => c.name === "candy_park_unresolved_sale").map((c) => c.args)
     expect(parks).toContainEqual(expect.objectContaining({ p_signature: "sigNoSerial", p_skip_reason: "unresolvable_serial" }))
+  })
+
+  // 2026-11-16: 143 sales of BURNT cards from non-registry collections (2022 Leadoff ICONs, …)
+  // parked as edition_not_ingested for good — the census skips burnt cards, so they reach the
+  // DAS path, which did not know those collections' edition prefixes.
+  describe("non-registry collections on the DAS path (2026-11-16)", () => {
+    const LEADOFF = "LeadoffCollectionAddr"
+    const leadoffSale = () => installFetchMock([
+      jsonRoute("candy-mlb-icons", [{ signature: "sigLead", type: "buyNow", tokenMint: "leadMint", buyer: "B", seller: "S", price: 1, blockTime: 1_800_000_100 }]),
+      jsonRoute("asg-symbol", [{ signature: "a1", type: "list", tokenMint: "m", blockTime: 1 }]),
+    ])
+    const fixtures = () => ({
+      sales: [{ data: [], error: null }, { data: null, error: null }],
+      "rpc:candy_sales_high_water": [{ data: null, error: null }, { data: null, error: null }],
+      wallet_moments_cache: { data: [], error: null },
+      editions: [{ data: [{ id: "ed-lead" }], error: null }, { data: null, error: null, count: 40 }],
+    })
+    beforeEach(() => {
+      state.catalogSets = [{ key: "c:2022-leadoff-icons", setId: "lead-set", collectionAddress: LEADOFF, editionKeyPrefix: "c:2022-leadoff-icons" }]
+    })
+
+    it("loads the catalogue once per run and reports it", async () => {
+      fetchMock = leadoffSale()
+      state.assets = { leadMint: { key: "c:2022-leadoff-icons:phil-bickford-core", serial: 376, grouping: [{ group_key: "collection", group_value: LEADOFF }] } }
+      const spy = install(fixtures())
+      await POST(req())
+      await runDeferred()
+      expect(state.catalogCalls).toBe(1)
+      const extra = logRun(spy.rpcCalls)?.p_extra as Record<string, any>
+      expect(extra.catalog_collections).toBe(1)
+      expect(extra.catalog_error).toBeNull()
+      expect((spy.writes.sales ?? []).flatMap((w) => w.rows)).toContainEqual(expect.objectContaining({ transaction_hash: "sigLead", edition_id: "ed-lead", serial_number: 376 }))
+    })
+
+    it("a name-only DAS read is hydrated from its JSON before it is keyed, then written", async () => {
+      fetchMock = leadoffSale()
+      state.assets = { leadMint: { key: "c:2022-leadoff-icons:phil-bickford-core", serial: 376, unhydrated: true, content: { json_uri: "https://permaweb.candy.io/x" }, grouping: [{ group_key: "collection", group_value: LEADOFF }] } }
+      const spy = install(fixtures())
+      await POST(req())
+      await runDeferred()
+      expect((spy.writes.sales ?? []).flatMap((w) => w.rows)).toContainEqual(expect.objectContaining({ transaction_hash: "sigLead", edition_id: "ed-lead" }))
+      expect((logRun(spy.rpcCalls)?.p_extra as Record<string, any>).sale_hydrated).toBe(1)
+    })
+
+    it("a prefixed card that STAYS name-only is parked as unhydrated_asset — never keyed from its name, even when an edition would match", async () => {
+      fetchMock = leadoffSale()
+      state.hydrateOk = false
+      state.assets = { leadMint: { key: "c:2022-leadoff-icons:phil-bickford-core", serial: 376, unhydrated: true, content: { json_uri: "https://permaweb.candy.io/x" }, grouping: [{ group_key: "collection", group_value: LEADOFF }] } }
+      const spy = install(fixtures())
+      await POST(req())
+      await runDeferred()
+      expect((spy.writes.sales ?? []).flatMap((w) => w.rows)).toHaveLength(0)
+      const parks = spy.rpcCalls.filter((c) => c.name === "candy_park_unresolved_sale").map((c) => c.args)
+      expect(parks).toContainEqual(expect.objectContaining({ p_signature: "sigLead", p_skip_reason: "unhydrated_asset" }))
+      expect((logRun(spy.rpcCalls)?.p_extra as Record<string, any>).sale_unhydrated).toBe(1)
+    })
+
+    it("control: a name-only card OUTSIDE any prefixed collection (Base keys are names) is still written", async () => {
+      fetchMock = leadoffSale()
+      state.hydrateOk = false
+      state.assets = { leadMint: { key: "phil-bickford", serial: 376, unhydrated: true, grouping: [{ group_key: "collection", group_value: "BaseAddr" }] } }
+      const spy = install(fixtures())
+      await POST(req())
+      await runDeferred()
+      expect((spy.writes.sales ?? []).flatMap((w) => w.rows)).toContainEqual(expect.objectContaining({ transaction_hash: "sigLead" }))
+    })
+
+    it("a failed catalogue read is reported as an error with a null count, never as 0 collections", async () => {
+      fetchMock = leadoffSale()
+      state.catalogSets = []
+      state.catalogError = "catalog boom"
+      state.assets = { leadMint: { key: "phil-bickford", serial: 376 } }
+      const spy = install(fixtures())
+      await POST(req())
+      await runDeferred()
+      const extra = logRun(spy.rpcCalls)?.p_extra as Record<string, any>
+      expect(extra.catalog_collections).toBeNull()
+      expect(extra.catalog_error).toBe("catalog boom")
+    })
   })
 })
