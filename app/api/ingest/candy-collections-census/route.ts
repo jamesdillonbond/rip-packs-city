@@ -62,6 +62,8 @@ async function handle(req: NextRequest) {
     hydrated_reused: result.hydrated_reused,
     unhydrated_skipped: result.unhydrated_skipped,
     wmc_repointed: result.wmc_repointed,
+    // 2026-11-15: NULL serials filled from a fresh read (name "(N/M)" or the serial trait)
+    wmc_serial_filled: result.wmc_serial_filled,
     listings_repointed: result.listings_repointed,
     offers_repointed: result.offers_repointed,
     // 2026-11-12: label-less editions completed from a hydrated card (#246 residual)

@@ -262,6 +262,13 @@ describe("Candy normalize QA fixes (2026-07-17)", () => {
   it("serial = numerator of the 'Serial Number' trait (DAS omits serial_number)", () => {
     expect(serialFromAsset(named("x", [{ trait_type: "Serial Number", value: "9/15" }]))).toBe(9)
     expect(serialFromAsset(named("x", [{ trait_type: "Serial Number", value: "248/250" }]))).toBe(248)
+  })  // 2026-11-15: metadata without the serial trait (attributes: []) — the name carries "(N/M)"
+  it("serial falls back to the '(N/M)' numerator in the name; '(TBD/171)' stays null", () => {
+    expect(serialFromAsset(named("Paul Skenes - Debut (11/46)"))).toBe(11)
+    expect(serialFromAsset(named("2023 MLB Rookie Ball (1030/4122)"))).toBe(1030)
+    expect(serialFromAsset(named("Munetaka Murakami - GREEN 10"))).toBe(10)
+    expect(serialFromAsset(named("Gunnar Henderson Team Ball (TBD/171)"))).toBeNull()
+    expect(serialFromAsset(named("Aaron Judge"))).toBeNull()
   })
 })
 

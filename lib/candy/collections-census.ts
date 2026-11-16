@@ -34,7 +34,7 @@
 
 import { getAssetsByGroupCursor, type DasAsset } from "@/lib/chains/solana/das"
 import { attributeEscrowHeldToSellers } from "@/lib/chains/solana/escrow"
-import { CANDY_MLB_UUID, isBurnt, isPack, normalizeEdition, normalizeSerial } from "@/lib/chains/solana/normalize"
+import { CANDY_MLB_UUID, isBurnt, isPack, normalizeEdition, normalizeSerial, serialFromName } from "@/lib/chains/solana/normalize"
 import { editionGroupKey, failureClass, hydrateFromJsonUri, isUnhydrated } from "@/lib/chains/solana/hydrate"
 import { candySetForAsset } from "@/lib/chains/solana/candy-sets"
 import { loadCandyCollections } from "@/lib/candy/collections"
@@ -83,6 +83,8 @@ export interface CollectionCensusReport {
   hydrated_reused: number
   unhydrated_skipped: number
   wmc_repointed: number
+  /** Rows whose stored serial was NULL and this walk read one (2026-11-15). */
+  wmc_serial_filled: number
   listings_repointed: number
   offers_repointed: number
   editions_filled: number
@@ -141,6 +143,8 @@ export interface CollectionsCensusResult {
   hydrated_reused: number
   unhydrated_skipped: number
   wmc_repointed: number
+  /** Rows whose stored serial was NULL and this walk read one (2026-11-15). */
+  wmc_serial_filled: number
   listings_repointed: number
   offers_repointed: number
   editions_filled: number
@@ -247,7 +251,7 @@ export async function runCollectionsCensus(
   const lockOpts = opts.lockSleep ? { sleep: opts.lockSleep } : {}
   const out: CollectionsCensusResult = {
     ok: false, collections: [], pages: 0, cards: 0, wmc_inserted: 0, editions_inserted: 0,
-    hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, listings_repointed: 0, offers_repointed: 0, editions_filled: 0, wmc_retired: 0, wmc_noncard_retired: 0, hydrate_fail_reasons: {}, hydrate_fetches: 0, hydrate_unverified_groups: 0, hydrate_rate_limit_retries: 0, hydrate_min_concurrency: null, hydrate_max_gap_ms: 0, unhydrated_sample: [],
+    hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, wmc_serial_filled: 0, listings_repointed: 0, offers_repointed: 0, editions_filled: 0, wmc_retired: 0, wmc_noncard_retired: 0, hydrate_fail_reasons: {}, hydrate_fetches: 0, hydrate_unverified_groups: 0, hydrate_rate_limit_retries: 0, hydrate_min_concurrency: null, hydrate_max_gap_ms: 0, unhydrated_sample: [],
     completed: 0, escrow_remapped: 0, ghosts_purged: null, error: null,
   }
 
@@ -281,7 +285,7 @@ export async function runCollectionsCensus(
   const breakerOpen = () => fetchAttempts >= BREAKER_MIN_ATTEMPTS && fetchFailures / fetchAttempts > BREAKER_FAIL_SHARE
   for (const c of (queue ?? []) as Array<{ address: string; name: string; edition_prefix?: string | null; census_page: number; census_cursor: string | null; census_walk_started_at: string | null; census_walk_tracked?: boolean | null; census_walk_labelless_seen?: string[] | null; census_walk_skipped?: number | null; census_walk_cards?: number | null }>) {
     if (now() > deadline) break
-    const rep: CollectionCensusReport = { address: c.address, name: c.name, pages: 0, cards: 0, wmc_inserted: 0, editions_inserted: 0, hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, listings_repointed: 0, offers_repointed: 0, editions_filled: 0, wmc_retired: 0, wmc_noncard_retired: 0, completed: false, error: null }
+    const rep: CollectionCensusReport = { address: c.address, name: c.name, pages: 0, cards: 0, wmc_inserted: 0, editions_inserted: 0, hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, wmc_serial_filled: 0, listings_repointed: 0, offers_repointed: 0, editions_filled: 0, wmc_retired: 0, wmc_noncard_retired: 0, completed: false, error: null }
     out.collections.push(rep)
     let page = Math.max(1, c.census_page || 1)
     let cursor: string | null = c.census_cursor || null
@@ -362,7 +366,9 @@ export async function runCollectionsCensus(
         })
         // #247: a card reused from an ALIAS edition takes its canonical edition (same card, one key)
         const knownCanon = known ? canonOf.get(known.edition_key) : undefined
-        if (known) reused.push({ asset: a, ed: knownCanon ? (canonLabels.get(knownCanon) as EditionLabels) : ex.complete.get(known.edition_key)!, serial: known.serial })
+        // 2026-11-15: a stored NULL serial is filled from the card's own name ("… (11/46)") —
+        // the reuse path never re-reads metadata, so a row born without one kept it forever.
+        if (known) reused.push({ asset: a, ed: knownCanon ? (canonLabels.get(knownCanon) as EditionLabels) : ex.complete.get(known.edition_key)!, serial: known.serial ?? serialFromName(a.content?.metadata?.name) })
         else toFetch.push(a)
       }
       for (const a of toFetch) {
@@ -505,7 +511,14 @@ export async function runCollectionsCensus(
       // REPOINT the owner's existing row when it names a different edition; the rest stay insert-only.
       const repoint = attributed.rows.filter((r) => (ex.rows.get(String(r.moment_id)) ?? []).some((e) => e.wallet === r.wallet_address && e.edition_key !== r.edition_key))
       const repointSet = new Set(repoint)
-      const insertOnly = attributed.rows.filter((r) => !repointSet.has(r))
+      // SERIAL FILL (2026-11-15): the insert-only write discards a serial a later walk reads for a row born
+      // with NULL (9,238 holdings in numbered editions). Rewrite only the owner's row on the SAME edition whose
+      // stored serial is NULL and whose fresh one is known; never overwrite a stored serial.
+      const serialFill = attributed.rows.filter((r) =>
+        !repointSet.has(r) && r.serial_number != null &&
+        (ex.rows.get(String(r.moment_id)) ?? []).some((e) => e.wallet === r.wallet_address && e.edition_key === r.edition_key && e.serial == null))
+      const serialFillSet = new Set(serialFill)
+      const insertOnly = attributed.rows.filter((r) => !repointSet.has(r) && !serialFillSet.has(r))
       for (let i = 0; i < insertOnly.length && !failed; i += WRITE_CHUNK) {
         // Lock retry (2026-11-12): 3:57 PM PT run failed on "lock timeout" here — the wmc-fmv-populate
         // Candy step holds rows briefly; the same wrapper fixed candy-editions-ingest on 11-11.
@@ -532,6 +545,17 @@ export async function runCollectionsCensus(
         )
         if (error) failed = `wallet_moments_cache repoint: ${error.message}`
         else rep.wmc_repointed += data?.length ?? 0
+      }
+      for (let i = 0; i < serialFill.length && !failed; i += WRITE_CHUNK) {
+        const chunk = serialFill.slice(i, i + WRITE_CHUNK)
+        const { data, error } = await withLockRetry<Array<{ moment_id: string }>>(
+          () => db.from("wallet_moments_cache")
+            .upsert(chunk, { onConflict: "wallet_address,collection_id,moment_id", ignoreDuplicates: false })
+            .select("moment_id"),
+          lockBudget, lockOpts,
+        )
+        if (error) failed = `wallet_moments_cache serial fill: ${error.message}`
+        else rep.wmc_serial_filled += data?.length ?? 0
       }
       // A listing follows its CARD (2026-11-09, inbox 2026-11-10T0430Z): the repointed cards'
       // candy_listings rows (both venues, active or retired) move to the card's new edition, so
@@ -609,6 +633,7 @@ export async function runCollectionsCensus(
     out.hydrated_reused += rep.hydrated_reused
     out.unhydrated_skipped += rep.unhydrated_skipped
     out.wmc_repointed += rep.wmc_repointed
+    out.wmc_serial_filled += rep.wmc_serial_filled
     out.listings_repointed += rep.listings_repointed
     out.offers_repointed += rep.offers_repointed
     out.editions_filled += rep.editions_filled

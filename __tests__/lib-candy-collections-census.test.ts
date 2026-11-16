@@ -50,7 +50,8 @@ vi.mock("@/lib/chains/solana/escrow", () => ({
       ? { rows, remapped: 0, unmatched: 1, error: (state as any).escrowError }
       : { rows, remapped: 0, unmatched: 0, error: null },
 }))
-vi.mock("@/lib/chains/solana/normalize", () => ({
+vi.mock("@/lib/chains/solana/normalize", async (importOriginal) => ({
+  serialFromName: ((await importOriginal()) as any).serialFromName,
   isBurnt: (a: any) => a.kind === "burnt",
   isPack: (a: any) => a.kind === "pack",
   CANDY_MLB_UUID: "c1",
@@ -342,6 +343,54 @@ describe("runCollectionsCensus", () => {
     expect(state.hydrateCalls.flat().map((a) => a.id)).toEqual(["m1"])
     const overwrite = state.wmcUpserts.find((u) => u.opts.ignoreDuplicates === false)!
     expect(overwrite.rows[0]).toMatchObject({ moment_id: "m1", edition_key: "ed-own" })
+  })
+
+  // 2026-11-15: 9,238 holdings in NUMBERED editions stored serial NULL — the reuse path carried the NULL forward
+  // and the insert-only write discarded any serial a later walk read. The name carries it: "… (11/46)".
+  it("SERIAL FILL (reuse): a stored NULL serial is filled from the card's name and the row OVERWRITTEN, with no fetch", async () => {
+    state.queue = [{ address: "A", name: "A", census_page: 1, census_cursor: null, census_walk_started_at: null }]
+    state.pages.A = [[{ id: "m1", owner: "W", ownership: { owner: "W" }, ed: "x", bare: true, content: { metadata: { name: "Paul Skenes - Debut (11/46)" } } }]]
+    state.existingWmc = [{ moment_id: "m1", wallet_address: "W", edition_key: "ed-debut", serial_number: null }]
+    state.existingEds = [{ external_id: "ed-debut", tier: null, player_name: null, team_name: null, set_name: "S", circulation_count: 46, thumbnail_url: "https://img" }]
+    const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+    expect(r.ok).toBe(true)
+    expect(state.hydrateCalls).toEqual([])
+    const overwrite = state.wmcUpserts.find((u) => u.opts.ignoreDuplicates === false)!
+    expect(overwrite.rows).toHaveLength(1)
+    expect(overwrite.rows[0]).toMatchObject({ moment_id: "m1", wallet_address: "W", edition_key: "ed-debut", serial_number: 11 })
+    expect(r.wmc_serial_filled).toBe(1)
+    expect(r.wmc_repointed).toBe(0)
+  })
+
+  it("SERIAL FILL (hydrated): a fresh serial for a row stored NULL on the SAME edition overwrites it", async () => {
+    state.queue = [{ address: "A", name: "A", census_page: 1, census_cursor: null, census_walk_started_at: null }]
+    state.pages.A = [[{ id: "m1", owner: "W", ed: "a" }]]
+    state.existingWmc = [{ moment_id: "m1", wallet_address: "W", edition_key: "ed-a", serial_number: null }]
+    const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+    const overwrite = state.wmcUpserts.find((u) => u.opts.ignoreDuplicates === false)!
+    expect(overwrite.rows[0]).toMatchObject({ moment_id: "m1", edition_key: "ed-a", serial_number: 1 })
+    expect(r.wmc_serial_filled).toBe(1)
+  })
+
+  it("no SERIAL FILL when the name has no number ('(TBD/171)') or the stored serial is already set", async () => {
+    state.queue = [{ address: "A", name: "A", census_page: 1, census_cursor: null, census_walk_started_at: null }]
+    state.pages.A = [[
+      { id: "m1", owner: "W", ownership: { owner: "W" }, ed: "x", bare: true, content: { metadata: { name: "Team Ball (TBD/171)" } } },
+      { id: "m2", owner: "W", ownership: { owner: "W" }, ed: "x", bare: true, content: { metadata: { name: "Paul Skenes - Debut (12/46)" } } },
+    ]]
+    state.existingWmc = [
+      { moment_id: "m1", wallet_address: "W", edition_key: "ed-ball", serial_number: null },
+      { moment_id: "m2", wallet_address: "W", edition_key: "ed-debut", serial_number: 5 },
+    ]
+    state.existingEds = [
+      { external_id: "ed-ball", tier: null, player_name: null, team_name: null, set_name: "S", circulation_count: null, thumbnail_url: "https://img" },
+      { external_id: "ed-debut", tier: null, player_name: null, team_name: null, set_name: "S", circulation_count: 46, thumbnail_url: "https://img" },
+    ]
+    const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+    expect(r.wmc_serial_filled).toBe(0)
+    expect(state.wmcUpserts.some((u) => u.opts.ignoreDuplicates === false)).toBe(false)
+    const rows = state.wmcUpserts.flatMap((u) => u.rows)
+    expect(rows.find((x) => x.moment_id === "m2")).toMatchObject({ serial_number: 5 })
   })
 
   it("a 1-of-1 edition that IS this card's own key is still reused, with no fetch", async () => {

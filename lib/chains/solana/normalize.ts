@@ -266,7 +266,19 @@ export function serialFromAsset(asset: DasAsset): number | null {
   }
   const s = toIntOrNull(attr(asset, SERIAL_ATTR_KEY))
   if (s != null) return s
-  const m = (asset.content?.metadata?.name ?? "").match(/(\d+)\s*$/)
+  return serialFromName(asset.content?.metadata?.name)
+}
+
+// 2026-11-15: the name carries the serial as "(N/M)" — "Paul Skenes - Debut (11/46)",
+// "2023 MLB Rookie Ball (1030/4122)". An asset whose metadata came back without the
+// "Serial Number" trait (attributes: []) fell through to the bare-trailing-integer match,
+// which a closing ")" defeats: 9,238 holdings in 146 NUMBERED editions stored serial NULL.
+// "(TBD/171)" (2024 Team Balls) is not digits and stays null, as it should.
+export function serialFromName(name: string | null | undefined): number | null {
+  const n = name ?? ""
+  const frac = n.match(/\(\s*(\d+)\s*\/\s*\d+\s*\)\s*$/)
+  if (frac) return toIntOrNull(frac[1])
+  const m = n.match(/(\d+)\s*$/)
   return m ? toIntOrNull(m[1]) : null
 }
 
