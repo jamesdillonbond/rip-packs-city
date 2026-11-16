@@ -1,6 +1,26 @@
 # UFC Strike — collection roadmap (refreshed 2026-10-17, PT)
 > Dated snapshot; every number is a dated sample — re-derive before quoting. Canonical plan: [roadmap-2026-10-17.md](../roadmap-2026-10-17.md). Defects: [known-issues.md](../../reference/known-issues.md) (item text wins over this file).
 
+## 2026-11-15/16 — UFC Strike on Aptos is being built (supersedes "Aptos: watch, don't build" below)
+
+**Decision (Trevor, 11-15):** UFC Strike on Aptos extends the existing `ufc_strike` collection. Plan: `claude/ufc-reopen-on-aptos-plan-2026-11-16.md` (claude.ai Project). Dated sample, 11-15 ~9 PM PT:
+- **Lanes:** `.github/workflows/ufc-aptos-sales-ingest.yml`, 4×/day, applying. Its three steps:
+  - `scripts/ufc-aptos-sales-ingest.mjs` → `sales` with `source='aptos_indexer_v1'`, `currency='APT'`, priced from `apt_usd_daily`;
+  - `scripts/ufc-aptos-wallet-link.mjs` → `ufc_aptos_migration_matches` / `ufc_aptos_wallet_links` (Flow burn ↔ Aptos mint);
+  - `scripts/ufc-aptos-holdings.mjs` → `ufc_aptos_holdings`.
+- **First applied run:** 1,746 sales inserted (1,772 Aptos sales in all, $16.9k, 529 editions, cursor 5.56B of 8.07B). 93 wallet links, filling at about 320 mints per run. 35,238 holdings rows across 93 wallets.
+- **Two ingest fixes vs the patch:**
+  - Keyset paging: offset paging 408'd forever in busy windows.
+  - Address normalisation: the indexer pads token addresses (`0x0…`) and events don't, so every `0x0…` token was skipped.
+- **Binder (shipped 11-15, `aeded751b`):**
+  - Flow holdings at current FMV with "Still on Flow — migrate to Aptos to trade".
+  - An "On Aptos" section from `/api/ufc/aptos-holdings`, which is anon-public. It renders nothing for an unlinked collector, never $0.
+- **Not done, waiting for Trevor to see the binder:** the reopen flip (`collections.market_closed_at`, `CLOSED_MARKETS`, the marketplace-status row, Rarible collection-page buy link, concierge copy). Every UFC FMV stays STALE until then.
+- **Open:**
+  - FMV spot checks (Geoff Neal $0.01 vs a $3.00 sale; Moreno $0.10 vs $12.80; Bisping $134.51 vs $196.60) wait for `fmv-recalc`'s page sweep. Its hot lane keys on `sold_at` within 36 h, so backfilled history is not "hot".
+  - The Aug–Oct 2025 migrants (mainnet26 Flow node is gone) link via Dune on 12-14.
+  - `scan-ufc-wallet` (UFC on Flow) no longer type-checks against `UFC_NFT`; retire it with the flip.
+
 ## 2026-11-09 night — audit-pass note
 
 - Unchanged archive: 617 / 617 editions with an FMV row, 0.0 % HIGH/MEDIUM, 0 sales. Concierge probes on a UFC page declined challenges and offers with the closed-market fact; the sweep tools now refuse UFC outright. The Terms page no longer names Flowty.
