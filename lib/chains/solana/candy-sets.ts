@@ -106,6 +106,15 @@ export const CANDY_SETS: readonly CandySet[] = [
 /** The 2024 Team Ball set: a club, not a player — see the note above CANDY_SETS. */
 export const CANDY_TEAM_BALL_SET_KEY = "ball24"
 
+// 2026-11-15: a Team Ball sale has no serial to record ("(TBD/171)" above), so the sales
+// indexer writes it with serial_number NULL (unassigned, never guessed). Requiring a
+// serial parked every Team Ball sale as `unresolvable_serial` forever, and with none
+// ever written the set's cursor stayed empty, so every tick re-walked its whole feed.
+// Every other Candy key still needs a serial.
+export function candySaleSerialOptional(editionKey: string): boolean {
+  return editionKey.startsWith(`${CANDY_TEAM_BALL_SET_KEY}:`)
+}
+
 // Candy's update authority on every one of its Metaplex Core collections — measured
 // 2026-11-08 by reading the collection accounts (2026 Base / All-Star / Team Ball, and the
 // migrated 2021–2023 legacy collections all read 7wixES…). The October security response

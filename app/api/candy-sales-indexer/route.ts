@@ -39,7 +39,7 @@ import {
   normalizeSerial,
 } from "@/lib/chains/solana/normalize"
 import { bearerMatches } from "@/lib/auth/bearer-secret"
-import { CANDY_BASE_SET_ID, CANDY_SETS } from "@/lib/chains/solana/candy-sets"
+import { CANDY_BASE_SET_ID, CANDY_SETS, candySaleSerialOptional } from "@/lib/chains/solana/candy-sets"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -276,7 +276,7 @@ async function handleIndex(req: NextRequest) {
       // edition_key → editions.id cache (so repeat keys cost one query).
       const edIdByKey = new Map<string, string | null>()
       // mint → census edition_key/serial (null = not in the census; use DAS).
-      const wmcByMint = new Map<string, { key: string; serial: number } | null>()
+      const wmcByMint = new Map<string, { key: string; serial: number | null } | null>()
       let censusResolved = 0
 
       // A sale we SEE but cannot write used to be counted `skipped` and then
@@ -371,7 +371,10 @@ async function handleIndex(req: NextRequest) {
             .limit(1)
           if (we) throw new Error(`wmc read failed for ${tokenMint}: ${we.message}`)
           const r0 = wr?.[0]
-          known = r0?.edition_key && r0.serial_number != null ? { key: r0.edition_key as string, serial: Number(r0.serial_number) } : null
+          known =
+            r0?.edition_key && (r0.serial_number != null || candySaleSerialOptional(String(r0.edition_key)))
+              ? { key: r0.edition_key as string, serial: r0.serial_number != null ? Number(r0.serial_number) : null }
+              : null
           wmcByMint.set(tokenMint, known)
         }
         if (known) {
@@ -429,7 +432,7 @@ async function handleIndex(req: NextRequest) {
 
         const key = editionKeyFromAsset(asset)
         const serial = normalizeSerial(asset).serial_number
-        if (!key || serial == null) return { skip: "unresolvable_serial" }
+        if (!key || (serial == null && !candySaleSerialOptional(key))) return { skip: "unresolvable_serial" }
         return await rowFromKey(signature, tokenMint, tMs, price, priceUsd, buyer, seller, key, serial)
       }
 
@@ -444,7 +447,7 @@ async function handleIndex(req: NextRequest) {
         buyer: string | null | undefined,
         seller: string | null | undefined,
         key: string,
-        serial: number,
+        serial: number | null,
       ): Promise<{ row: Record<string, unknown> } | { skip: string }> {
 
         let editionId = edIdByKey.get(key)

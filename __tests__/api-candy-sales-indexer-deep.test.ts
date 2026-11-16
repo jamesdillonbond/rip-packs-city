@@ -43,6 +43,7 @@ vi.mock("next/server", async (importOriginal) => {
 vi.mock("@/lib/chains/solana/candy-sets", () => ({
   CANDY_BASE_SET_ID: "base-set",
   CANDY_SETS: [{ key: "base26", setId: "base-set", meSymbol: "candy-mlb-icons", editionKeyPrefix: null }],
+  candySaleSerialOptional: (k: string) => k.startsWith("ball24:"),
 }))
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: new Proxy(

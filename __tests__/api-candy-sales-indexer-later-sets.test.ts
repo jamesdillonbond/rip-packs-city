@@ -31,7 +31,10 @@ vi.mock("next/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("next/server")>()
   return { ...actual, after: (cb: () => unknown) => void state.afterCbs.push(cb) }
 })
-vi.mock("@/lib/chains/solana/candy-sets", () => ({ CANDY_BASE_SET_ID: "base-set", get CANDY_SETS() { return state.sets } }))
+vi.mock("@/lib/chains/solana/candy-sets", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/chains/solana/candy-sets")>()
+  return { CANDY_BASE_SET_ID: "base-set", get CANDY_SETS() { return state.sets }, candySaleSerialOptional: actual.candySaleSerialOptional }
+})
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: new Proxy(
     {},
@@ -150,5 +153,51 @@ describe("candy-sales-indexer — later Candy sets", () => {
     expect(fetchMock.calls.some((c) => c.url.includes("asg-symbol"))).toBe(false)
     expect(spy.rpcCalls.some((c) => c.name === "candy_park_unresolved_sale")).toBe(false)
     expect(logRun(spy.rpcCalls)?.p_ok).toBe(true)
+  })
+
+  // 2026-11-15: a 2024 Team Ball has no serial ("(TBD/171)"). Requiring one parked every
+  // Team Ball sale as unresolvable_serial forever and left the set's cursor empty.
+  it("a Team Ball sale (ball24: key, no serial) is written with serial_number NULL — census path, no DAS call", async () => {
+    state.sets = [
+      { key: "base26", setId: "base-set", meSymbol: "candy-mlb-icons", editionKeyPrefix: null },
+      { key: "ball24", setId: "ball-set", meSymbol: "ball-symbol", editionKeyPrefix: "ball24" },
+    ]
+    fetchMock = installFetchMock([
+      jsonRoute("ball-symbol", [{ signature: "sigBall", type: "buyNow", tokenMint: "ballMint", buyer: "B", seller: "S", price: 0.2, blockTime: 1_800_000_100 }]),
+      jsonRoute("candy-mlb-icons", [{ signature: "b1", type: "list", tokenMint: "m", blockTime: 1 }]),
+    ])
+    const spy = install({
+      sales: [{ data: [], error: null }, { data: null, error: null }],
+      "rpc:candy_sales_high_water": [{ data: null, error: null }, { data: null, error: null }],
+      wallet_moments_cache: { data: [{ edition_key: "ball24:2024-los-angeles-dodgers-baseball-core", serial_number: null }], error: null },
+      editions: [{ data: null, error: null, count: 30 }, { data: [{ id: "ed-ball" }], error: null }],
+    })
+    await POST(req())
+    await runDeferred()
+    const rows = (spy.writes.sales ?? []).flatMap((w) => w.rows)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ transaction_hash: "sigBall", edition_id: "ed-ball", serial_number: null, price_usd: 30 })
+    const extra = logRun(spy.rpcCalls)?.p_extra as Record<string, any>
+    expect(extra.asset_fetches).toBe(0)
+    expect(spy.rpcCalls.some((c) => c.name === "candy_park_unresolved_sale")).toBe(false)
+  })
+
+  it("any OTHER key with no serial still parks as unresolvable_serial (DAS path)", async () => {
+    fetchMock = installFetchMock([
+      jsonRoute("asg-symbol", [{ signature: "sigNoSerial", type: "buyNow", tokenMint: "asgMintX", buyer: "B", seller: "S", price: 1, blockTime: 1_800_000_100 }]),
+      jsonRoute("candy-mlb-icons", [{ signature: "b1", type: "list", tokenMint: "m", blockTime: 1 }]),
+    ])
+    state.assets = { asgMintX: { key: "asg26:someone-rare", serial: null } }
+    const spy = install({
+      sales: [{ data: [], error: null }, { data: null, error: null }],
+      "rpc:candy_sales_high_water": [{ data: null, error: null }, { data: null, error: null }],
+      wallet_moments_cache: { data: [], error: null },
+      editions: [{ data: null, error: null, count: 40 }, { data: [{ id: "ed-asg" }], error: null }],
+    })
+    await POST(req())
+    await runDeferred()
+    expect((spy.writes.sales ?? []).flatMap((w) => w.rows)).toHaveLength(0)
+    const parks = spy.rpcCalls.filter((c) => c.name === "candy_park_unresolved_sale").map((c) => c.args)
+    expect(parks).toContainEqual(expect.objectContaining({ p_signature: "sigNoSerial", p_skip_reason: "unresolvable_serial" }))
   })
 })
