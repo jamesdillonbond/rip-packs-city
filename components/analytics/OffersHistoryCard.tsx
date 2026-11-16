@@ -18,6 +18,7 @@
 // only after the wallet's analytics load, so the browser's own hash scroll has
 // already passed; the card scrolls itself into view once when the hash asks.
 import { useEffect, useMemo, useRef, useState } from "react"
+import { track } from "@/lib/telemetry/track"
 import Link from "next/link"
 import { fmt, relativeDate } from "@/lib/analytics/format"
 import { fetchJson } from "@/lib/analytics/fetch-json"
@@ -313,6 +314,10 @@ export default function OffersHistoryCard({ wallet, urlSlug }: { wallet: string;
     fetchJson<OpenOffersResponse>(`${base}&view=open`).then((r) => {
       if (cancelled) return
       setOpen({ key: k, r: !r.ok || !r.json ? { status: "failed" } : { status: "ok", data: r.json } })
+      // 2026-11-16: uptake of #12361 was unmeasurable — one event per wallet × collection load
+      if (r.ok && r.json?.supported) {
+        track("open-offers-shown", { collection: urlSlug, open: r.json.summary?.open ?? null, outbid: (r.json.rows ?? []).filter((x) => x.outbid).length })
+      }
     })
     return () => { cancelled = true }
   }, [wallet, urlSlug])
@@ -342,7 +347,7 @@ export default function OffersHistoryCard({ wallet, urlSlug }: { wallet: string;
       type="button"
       role="tab"
       aria-selected={tab === t}
-      onClick={() => setPicked({ key, tab: t })}
+      onClick={() => { setPicked({ key, tab: t }); track("offers-tab", { tab: t, collection: urlSlug }) }}
       className="mr-3 border-b-2 pb-0.5 text-[11px] uppercase tracking-widest"
       style={{
         fontFamily: "var(--font-mono)",

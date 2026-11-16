@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, cleanup, waitFor, fireEvent } from "@testing-library/react"
+const { track } = vi.hoisted(() => ({ track: vi.fn() }))
+vi.mock("@/lib/telemetry/track", () => ({ track: (...a: unknown[]) => track(...a) }))
 import OffersHistoryCard, { sortOpenOffers, type OpenOfferRow } from "@/components/analytics/OffersHistoryCard"
 
 // The wallet Offers card (feedback #12361): Open | History tabs.
@@ -45,6 +47,7 @@ function route(open: () => Promise<Response>, history: () => Promise<Response> =
 }
 
 beforeEach(() => {
+  track.mockReset()
   fetchMock = vi.fn()
   vi.stubGlobal("fetch", fetchMock)
 })
@@ -55,6 +58,23 @@ afterEach(() => {
 })
 
 describe("OffersHistoryCard", () => {
+  // 2026-11-16: uptake of #12361 was unmeasurable
+  it("records the open-offers load (open + outbid counts) and each tab click; an unsupported collection records nothing", async () => {
+    route(() => okJson(OPEN))
+    const { getByText, getByRole } = render(<OffersHistoryCard wallet="0xW" urlSlug="nba-top-shot" />)
+    await waitFor(() => expect(getByText("Outbid Player")).toBeTruthy())
+    expect(track).toHaveBeenCalledWith("open-offers-shown", { collection: "nba-top-shot", open: 2, outbid: 1 })
+    fireEvent.click(getByRole("tab", { name: "History" }))
+    expect(track).toHaveBeenCalledWith("offers-tab", { tab: "history", collection: "nba-top-shot" })
+    cleanup()
+    track.mockReset()
+    route(() => okJson({ supported: false }), () => okJson({ supported: false }))
+    render(<OffersHistoryCard wallet="0xW" urlSlug="nba-top-shot" />)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4))
+    await new Promise((r) => setTimeout(r, 20))
+    expect(track).not.toHaveBeenCalled()
+  })
+
   it("opens on the Open view, with outbid and superseded rendered as different claims", async () => {
     route(() => okJson(OPEN))
     const { getByText, queryByText, getAllByTestId, container } = render(<OffersHistoryCard wallet="0xW" urlSlug="nba-top-shot" />)

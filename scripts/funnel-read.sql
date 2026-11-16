@@ -18,7 +18,12 @@
 --   share viewers        signed-out browsers that viewed a /share/<wallet> card
 --   edition prompt       the signed-out "Own this …?" prompt on edition pages (every collection
 --                        from 2026-11-16): shows (usage_events anon-value-cta-shown) vs clicks
---                        (funnel_events signin_click, surface <collection>_edition_signup)
+--                        (funnel_events signin_click, surface <collection>_edition_signup).
+--                        Shows count distinct HUMAN browsers and those with 2+ pages (the
+--                        Panini crawler is one lone page per fresh visitor id).
+--   feature use          browsers · events for the features instrumented 11-15/16: owner share
+--                        clicks, edition Watch, reward card, Fill with my top 6, serial search
+--                        (#12359), open offers (#12361)
 --
 -- Traps (measured 2026-11-16):
 --   * magic-link-requested browsers that "never signed in" are NOT lost signups:
@@ -74,13 +79,35 @@ UNION ALL SELECT '9 share signin clicks · ' || coalesce(f.surface, '?'), count(
   WHERE f.event_type = 'signin_click' AND f.surface IN ('share_hero', 'share_cta')
     AND f.created_at >= p.s AND f.created_at < p.e AND NOT coalesce(f.bot_ua, false)
   GROUP BY f.surface
-UNION ALL SELECT '10 edition prompt shown · ' || coalesce(ue.metadata->>'surface', '?'), count(*)::text
-  FROM usage_events ue, params p
-  WHERE ue.feature_name = 'anon-value-cta-shown' AND ue.occurred_at >= p.s AND ue.occurred_at < p.e
-  GROUP BY ue.metadata->>'surface'
+-- 10: distinct human browsers shown the prompt (automated = our own Playwright/axe runs, 25 of
+-- the first 31 shows on 11-16), and how many of them viewed 2+ pages. The Panini crawler is
+-- one lone page per fresh visitor id, so only the 2+ column says a person saw it.
+UNION ALL SELECT '10 edition prompt shown (browsers · 2+ pages) · ' || coalesce(x.surface, '?'),
+       count(*)::text || ' · ' || count(*) FILTER (WHERE x.pages >= 2)::text
+  FROM (
+    SELECT DISTINCT ue.metadata->>'surface' AS surface, ue.metadata->>'vid' AS vid,
+           (SELECT count(*) FROM usage_events pv
+             WHERE pv.feature_name = 'page-view' AND pv.metadata->>'vid' = ue.metadata->>'vid'
+               AND pv.occurred_at >= p.s AND pv.occurred_at < p.e) AS pages
+      FROM usage_events ue, params p
+     WHERE ue.feature_name = 'anon-value-cta-shown' AND ue.occurred_at >= p.s AND ue.occurred_at < p.e
+       AND coalesce(ue.metadata->>'automated', 'false') <> 'true'
+  ) x
+  GROUP BY x.surface
 UNION ALL SELECT '11 edition prompt clicks · ' || coalesce(f.surface, '?'), count(*)::text
   FROM funnel_events f, params p
   WHERE f.event_type = 'signin_click' AND f.surface LIKE '%\_edition\_signup'
     AND f.created_at >= p.s AND f.created_at < p.e AND NOT coalesce(f.bot_ua, false)
   GROUP BY f.surface
+-- 12: uptake of the features instrumented 11-15/11-16 (humans; internal accounts excluded)
+UNION ALL SELECT '12 feature use (browsers · events) · ' || ue.feature_name,
+       count(DISTINCT coalesce(ue.user_id::text, ue.metadata->>'vid'))::text || ' · ' || count(*)::text
+  FROM usage_events ue, params p
+  WHERE ue.occurred_at >= p.s AND ue.occurred_at < p.e
+    AND ue.feature_name IN ('share-click', 'watch-edition-open', 'watch-edition-signin-needed', 'watch-edition-saved',
+                            'reward-claim-card-shown', 'reward-claim-card-click', 'main-fill-click', 'main-fill-declined',
+                            'main-fill-pinned', 'serial-search', 'open-offers-shown', 'offers-tab')
+    AND coalesce(ue.metadata->>'automated', 'false') <> 'true'
+    AND (ue.user_id IS NULL OR NOT EXISTS (SELECT 1 FROM internal_accounts ia WHERE ia.user_id = ue.user_id))
+  GROUP BY ue.feature_name
 ORDER BY 1;

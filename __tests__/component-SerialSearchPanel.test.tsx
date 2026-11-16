@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, cleanup, waitFor, fireEvent } from "@testing-library/react"
+const { track } = vi.hoisted(() => ({ track: vi.fn() }))
+vi.mock("@/lib/telemetry/track", () => ({ track: (...a: unknown[]) => track(...a) }))
 import SerialSearchPanel, { serialSearchUrl, type SerialSearchRow } from "@/components/sniper/SerialSearchPanel"
 
 // Serial search (feedback #12359). Contracts:
@@ -28,6 +30,7 @@ const body = (rows: SerialSearchRow[], confirmed: number, unconfirmed: number) =
 })
 
 beforeEach(() => {
+  track.mockReset()
   fetchMock = vi.fn()
   vi.stubGlobal("fetch", fetchMock)
 })
@@ -38,6 +41,19 @@ afterEach(() => {
 })
 
 describe("SerialSearchPanel", () => {
+  // 2026-11-16: uptake of #12359 was unmeasurable — one event per search, with what it found
+  it("records each search: confirmed / unconfirmed counts on a good read, ok:false on a failed one", async () => {
+    fetchMock.mockReturnValue(okJson(body([row({ nft_id: "1" }), row({ nft_id: "2", confirmation: "unconfirmed" })], 1, 1)))
+    const { getByTestId } = render(<SerialSearchPanel serial={23} maxPrice={10} tier="all" onClear={() => {}} />)
+    await waitFor(() => expect(getByTestId("serial-coverage")).toBeTruthy())
+    expect(track).toHaveBeenCalledWith("serial-search", { serial: 23, ok: true, confirmed: 1, unconfirmed: 1, filtered: true })
+    cleanup()
+    track.mockReset()
+    fetchMock.mockReturnValue(failJson())
+    render(<SerialSearchPanel serial={7} maxPrice={0} tier="all" onClear={() => {}} />)
+    await waitFor(() => expect(track).toHaveBeenCalledWith("serial-search", { serial: 7, ok: false }))
+  })
+
   it("renders the coverage line and keeps unconfirmed rows collapsed and separate", async () => {
     fetchMock.mockReturnValue(
       okJson(body([

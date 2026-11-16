@@ -19,6 +19,7 @@ import { fetchJson } from "@/lib/analytics/fetch-json"
 import { relativeDate } from "@/lib/analytics/format"
 import { editionHref } from "@/lib/entity-href"
 import { marketplaceMomentUrl } from "@/lib/collections"
+import { track } from "@/lib/telemetry/track"
 
 export type SerialSearchRow = {
   nft_id: string
@@ -151,11 +152,18 @@ export default function SerialSearchPanel({
     let cancelled = false
     fetchJson<SerialSearchResponse>(url).then((r) => {
       if (cancelled) return
-      if (!r.ok || !r.json || !r.json.coverage || !Array.isArray(r.json.rows)) setResult({ url, ok: false })
-      else setResult({ url, ok: true, data: r.json })
+      // 2026-11-16: uptake of #12359 was unmeasurable (no event, and the serial is not in the page path)
+      if (!r.ok || !r.json || !r.json.coverage || !Array.isArray(r.json.rows)) {
+        setResult({ url, ok: false })
+        track("serial-search", { serial, ok: false })
+      } else {
+        setResult({ url, ok: true, data: r.json })
+        const confirmedCount = r.json.rows.filter((x) => x.confirmation !== "unconfirmed").length
+        track("serial-search", { serial, ok: true, confirmed: confirmedCount, unconfirmed: r.json.rows.length - confirmedCount, filtered: maxPrice > 0 || (!!tier && tier !== "all") })
+      }
     })
     return () => { cancelled = true }
-  }, [url])
+  }, [url, serial, maxPrice, tier]) // url is a function of the other three, so this re-runs exactly when it did
 
   const loading = !result || result.url !== url
   const confirmed = useMemo(() => (result && result.ok ? result.data.rows.filter((r) => r.confirmation !== "unconfirmed") : []), [result])
