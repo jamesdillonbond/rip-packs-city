@@ -3129,3 +3129,7 @@ The #248 fast-lane fix (`20261114171317`) carried a pre-registered bar: PostgRES
 - Fixed in `20261115204212`: skip an edition the lane applied after the cache last refreshed, when the two disagree. Pinned in `supabase/tests/reconcile_wmc_fmv_for_wallet.sql`.
 - **When a gated lane records "done", grep every OTHER writer of the same columns and check what each reads from. One that reads a slower source undoes the lane, and the gate makes it permanent.**
 
+
+## One request id is one render, not a storm (2026-11-16, PT)
+
+Six `[pack-detail]` panels "failed in the same second" read like a prefetch storm of many pack pages. The log lines all carried ONE request id (`GET /panini-blockchain/collection`) at the same millisecond, so they were one pack render whose whole fan-out timed out together. Its trigger was never established. **Before attributing a burst, read the request ids. Then measure the mechanism directly instead of inferring it from the errors.** Here the direct measure was counting `_rsc` prefetch requests per page view in Playwright: the Top Shot pack-market board fired 20 pack-page prefetches per view before `prefetch={false}` and 0 after. The fix shipped on the documented rule (the 11-12 `/teams` storm), and the ledger says it was not proven by this incident.
