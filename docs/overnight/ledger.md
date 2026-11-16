@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~9:10 PM PT — UFC Aptos: 4th fileless migration recovered md5-exact (`20261116043121` audit_20261116_ufc_aptos_listings) (Claude Code cloud; Trevor: UFC Aptos consolidated handoff)
+- Prod-applied (Cowork) but fileless: `ufc_aptos_listings` + `v_ufc_aptos_edition_floor` + `ufc_aptos_ingest_state.listings_scanned_through_version`. File written from `schema_migrations.statements` via base64, md5 `adb27853…` = prod, 3,313 bytes. No DB change.
+- Not done here, on purpose: the 4th script (`scripts/ufc-aptos-listings.mjs`), the 4-step workflow and backlog items 1–4 must come VERBATIM from the claude.ai Project patch folder, which this cloud session cannot read (no Project id/connector); the laptop session is executing the same handoff (binder `aeded751b`). Skip-what's-on-main applies to it.
+- Revert: `git revert` this commit (file only).
+
 ### 2026-11-15 ~9:00 PM PT — UFC binder: Flow holdings valued with a migrate note + an "On Aptos" section; first applied UFC Aptos run verified (Claude Code, Trevor's laptop; addendum 2, gate B/C — reopen flip NOT done)
 - First `apply=true` run (`43802462498`, all 3 steps green): sales ingest 1,747 UFC purchases → **1,746 priced and inserted** (1 skip; the 0x0 fix held), cursor 3.2B → 5.56B of 8.07B (more next runs). Wallet links: 323 mints matched → **93 links (83 high / 10 medium)**, 7,986 mints left at ~540 s/run, so ~850 in about 2 days; `dead_sporks` mainnet26 only. Holdings: **35,238 rows over 93 wallets**, 3 whales ≈ 23k (one is the plan's `0x4c12…` wash suspect). `pipeline_runs` has all three, ok=true. Aptos sales in `sales`: 1,772 / $16,944.90 / 529 editions.
 - FMV spot checks are NOT moved yet: Geoff Neal $0.01 (sale $3.00), Moreno $0.10 ($12.80), Khabib $0.01 ($9.10), Bisping $134.51 ($196.60), all STALE. `fmv-recalc`'s hot lane keys on sold_at in the last 36 h, so backfilled history waits for the page sweep (500 editions / 20 min). Re-read after the next sweep cycle.
