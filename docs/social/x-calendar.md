@@ -183,11 +183,14 @@ Every post that has a template ships with an RPC-branded image. On X, a post wit
 
 ## Quote post: supply breakdown ("Where every Moment sits") — template, 11-15
 
-When a reply asks where a player's or a list's supply sits, quote it with this graphic and text. First posted: https://x.com/rippackscity/status/2122082396774547650 (quoting a reply to the 11-14 rookie top-10 post). Archive: `docs/social/posts/2026-11-15/`.
+When a reply asks where a player's or a list's supply sits, quote it with this graphic and text. First posted: https://x.com/rippackscity/status/2122082396774547650 (quoting a reply to the 11-14 rookie top-10 post). Archive: `docs/social/posts/2026-11-15/`. Second, for the 2025 class (11-16, Trevor asked for it): https://x.com/rippackscity/status/2122407037539922412, archive `docs/social/posts/2026-11-16/`.
 
-1. Run `docs/social/supply-breakdown.sql` (edit the player list; read-only) and turn its rows into `[[player, team, unlocked, locked, in_packs, minted_not_in_packs, burned], …]` in the order of the post being quoted.
-2. `node scripts/social/x-supply-breakdown.mjs --data rows.json --asof "<Day M/D, h:mm PM PT of counts_as_of>" --out supply.png` — one stacked bar per player, legend, totals row.
-3. Text (numbers only — Trevor cut a "Most locked: …" line):
+**A rookie class counts its ROOKIE-SEASON Moments only** (Trevor, 11-16: "These should only be for their rookie season"). Set `season` in the SQL to the class's rookie season (`2025-26` for the 2025 class, `2026-27` for 2026). A 2025 rookie's 2026-27 Season Tip-Off Moments are left out; that season's 2026 Playoff Premieres and 2026 NBA Finals sets are Series 2025-26 and stay in. Every edition and parallel of the season counts (Ultimates and Signature Series 1/1s included).
+
+1. Run `docs/social/supply-breakdown.sql` (edit `players` and `season`; read-only) and turn its rows into `[[player, team, unlocked, locked, in_packs, minted_not_in_packs, burned], …]` in the order of the post being quoted. For a class top 10, rank with the "top 10 by sales" query at the bottom of the same file (rookie-season editions, all-time sales) and look at #11 too.
+2. **Re-read it live before posting:** run the file's "Inputs" query, paste its strings into `scripts/social/supply-breakdown-live-check.js`, run that in an nbatopshot.com tab through Claude in Chrome, and poll `window.__supply` (~350 calls, ~2 min). Use its numbers. The SQL's in-packs / minted-not-in-packs split is an estimate from pack reads that can be weeks old (11-16: 960 / 98 from SQL, 954 / 104 live); minted, locked, burned and unlocked matched Atlas exactly on all 197 editions.
+3. `node scripts/social/x-supply-breakdown.mjs --data rows.json --asof "<Day M/D, h:mm AM/PM PT of the live read>" --label "<class> rookie class top 10 · rookie-season" --out supply.png` — one stacked bar per player, legend, totals row. Keep `--label` short: a longer one wraps the subtitle onto two lines.
+4. Text (numbers only — Trevor cut a "Most locked: …" line):
 
 ```
 Where all 6,543 Moments of the 2026 rookie top 10 sit today 👇
@@ -199,7 +202,19 @@ Minted, not in packs: 352
 Burned: 2
 ```
 
-Definitions (per edition, `badge_editions` = Top Shot's counts, hourly): **locked**, **burned** as given; **in packs + minted, not in packs** = `hidden_in_packs` (everything Top Shot still holds); **unlocked** = circulation − locked − burned − hidden (includes Moments listed for sale). The split of hidden is the method in the SQL file: ⚠ never subtract a stale pack count from a fresh hidden count (11-15: understated "minted, not in packs" by ~30). Check every row sums to the player's circulation before posting. The public Top Shot GraphQL (`public-api.nbatopshot.com`) returned Cloudflare 1033 on 11-15, so RPC's tables are the source.
+Definitions (per edition, `badge_editions` = Top Shot's counts, hourly): **locked**, **burned** as given; **in packs + minted, not in packs** = `hidden_in_packs` (everything Top Shot still holds); **unlocked** = circulation − locked − burned − hidden (includes Moments listed for sale). The split of hidden is the method in the SQL file: ⚠ never subtract a stale pack count from a fresh hidden count (11-15: understated "minted, not in packs" by ~30). Check every row sums to the player's circulation before posting. The public Top Shot GraphQL (`public-api.nbatopshot.com`) returned Cloudflare 1033 on 11-15, so RPC's tables are the source. Atlas itself (`api.production.atlas.dapperlabs.com/public/atlas.v1.*`) answers from an nbatopshot.com browser tab, which is how the live check reads it. ⚠ Atlas `SearchEditions` filters `setId` by **set name**: 241 and 260 (both "Signature Series") each return all 30 editions of both. Summing a per-set walk double-counts unless you de-duplicate by edition id; the live check reads editions one by one (`GetEdition {editionId}`) for that reason.
+
+2025 class, posted 11-16 (https://x.com/rippackscity/status/2122407037539922412; rookie-season; every number re-read live at 11:21 AM PT):
+
+```
+Where all 16,994 @NBATopShot rookie-season Moments of the top 10 2025 Rookies sit today 📊
+
+Locked: 8,459
+Unlocked: 5,339
+Burned: 2,386
+In packs: 747
+Minted, not in packs: 63
+```
 
 ## When the data isn't there
 
