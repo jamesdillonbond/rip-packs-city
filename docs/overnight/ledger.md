@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~10:30 AM PT — #248 (wmc FMV backstop cost) RESOLVED: all three last exits pass (scheduled close-out `trig_01CScx2oshq9AXFGxvLJEeiZ`, Claude Code cloud; Trevor approved closing on pass)
+
+Read-only checks, no DB change. Job 617's first daily run (4:33 AM PT) ok, 1,565 rows fixed (was ~7,040 per 2-hourly run), 369,389 disk reads = the whole day (was ~1.7M–4.7M/day; 7.34M on 11-11). Fast-lane miss re-sample 10:22 AM PT: 66 / 71,974 rows = 0.09 %, 0 in price (11-15: 0.15 %). Job 446: 41 / 41 ok since 12:42 PM PT 11-15, fixed/run down to 0 on the last four. Docs: #248 marked ✅ + `docs:issues-index` (only #248 moved). **Revert:** `git revert` this docs commit (no DB state changed).
+
 ### 2026-11-16 ~10:17 AM PT — Links to pack pages no longer prefetch them (14 links, 11 files) + tree-walk guard (Claude Code cloud; Trevor: "Keep going and doing what you can")
 - Every `<Link>` to `/<collection>/pack/dist/…` or `/<collection>/pack/…` (wallet Packs table, Top Shot and All Day pack-market and pack-reality boards, pack history, grails, chase, chase watches, the edition page's packs list, one blog post) now carries `prefetch={false}`. Pack pages are ISR (revalidate 600) with an ~8-read fan-out (5 s each), so a list of them prefetched in the viewport is the cold-regeneration burst CLAUDE.md records for `/teams` (11-12). Two pack links already opted out (dist page cross-links, Pinnacle moment page).
 - Guard `__tests__/pack-page-links-do-not-prefetch.test.ts`: red on the pre-fix tree, green after, with positive and negative controls.
