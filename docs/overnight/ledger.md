@@ -17,6 +17,8 @@ Format per item: date · status · what · revert path (if shipped) · target me
 - Guard `__tests__/pack-page-links-do-not-prefetch.test.ts`: red on the pre-fix tree, green after, with positive and negative controls.
 - ⚠ Applied as the documented RULE, not because an incident proved it here. The 8:15:35 AM PT read (six pack-detail panels timing out in one millisecond under one `GET /panini-blockchain/collection` request id) is one render's whole fan-out hitting a slow moment, and its trigger was not established.
 - Cost: a click on a pack link now loads the page on demand (`loading.tsx` covers it) instead of from a prefetch. Revert: revert the commit.
+- **Verified live (Playwright, counting `_rsc` requests to `/pack/…` on one page load of `/insights/topshot-pack-market`, 45 pack links): 20 pack-page prefetches before → 0 at 10:21 AM PT after the deploy.**
+- Measured, NOT changed: edition links prefetch the same way. One view of `/insights/parallel-premiums` fires 29 edition-page prefetches, and `/nba-top-shot/market` fires 21 edition + 7 set + 4 player. Left as is: hundreds of links, real navigation benefit, and about 5 edition-section timeouts in 7 d show no harm yet. If edition panels start failing in bursts, this is the lever.
 
 ### 2026-11-16 ~10:05 AM PT — Candy sales of burnt cards from non-registry collections can resolve (Claude Code cloud; Trevor: "Keep going")
 
