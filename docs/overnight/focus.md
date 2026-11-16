@@ -4,7 +4,7 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
-## STEER — added 2026-11-16 ~9:00 AM PT (Claude Code cloud) — two dated reads
+## STEER — added 2026-11-16 ~8:47 AM PT (Claude Code cloud) — two dated reads
 
 - **11-17 after ~8:15 AM PT — `candy_sales_stale_hours` should leave BREACH by itself** (the 143 `edition_not_ingested` rows from the #257 walk age out of the 48 h window; history walk drained). Still red after 9 AM PT 11-17 → read which leg fires before touching the view (inbox `2026-11-16T0705Z`, candidate 2 note).
 - **Panini walker `profile_state`:** after Trevor pulls on the walker box, no complete walk should post `not_found` again. The receiver now corrects one that arrives with holdings anyway (`9cd4b2dbc`). Read: `select username, profile_state from panini_collector_walks where username in ('sdb','jamesdillonbond')` → both `public`.
