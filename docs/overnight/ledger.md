@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~9:47 AM PT — Candy sales indexer back to every 3 hours (scheduled exit task; Trevor approved 11-15)
+
+The hourly drain finished: 0 queued_collections_walk rows open (5,871 written since 11-15 11 AM PT); last 6 ticks all ok, no no_sol_rate/das_fetch_failed/insert_failed rows. `vercel.json` `/api/candy-sales-indexer` `20 * * * *` → `20 */3 * * *` (undoes df0ffd7). 143 `edition_not_ingested` rows remain open — a separate carve-out, not this queue. Revert: set the schedule back to `20 * * * *`.
+
 ### 2026-11-16 ~9:50 AM PT — X top-sales buyers: two more confirmed handles (Cowork daily X draft; Trevor: "Do all you can")
 - Trevor confirmed Jason3555 → @jason3555 and Karso → @orangekarso. Added to `X_HANDLES` in `scripts/social/x-draft.mjs` and `scripts/social/x-image.mjs`, and to the confirmed list in `docs/social/x-calendar.md`. No site or DB change.
 - Revert: `git revert` this commit.
