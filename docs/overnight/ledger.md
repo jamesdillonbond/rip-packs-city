@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~1:11 AM PT — Overnight pass: QUIET GREEN, 0 shipped, 0 reverted; post-ship watch clean (Cowork cloud, VM clone + .rpc-git-cred push)
+- Health GREEN: security 4/4 []; 1 trust breach (candy_sales_stale_hours 38.7h, breach_at 0 — 130 edition_not_ingested rows trip the >50-in-48h arm the 11-15 redesign left for non-backfill reasons; Candy market closed since 10-11, no user impact); public_board_slow_count recovered 1->0; stalled []; pgcron fails all upstream:0 (chronic Atlas + 3 wmc-fmv #248 + 2 hybrid_custody pre-fix). Vercel prod a1378127b READY, no ERROR deploys, 24h errors 4 chronic graceful-degradation groups.
+- Post-ship watch CLEAN: pack_ev thin 20261116014326 (job 73 18.9-34.9s, shortfall 0.49 unchanged, daily job 889 not yet fired); #259 re-key 79c7bcece/20261116043431 (over-circ cards 3,857->2,400, editions 90->63, draining); candy_sales redesign 20261115221844 working for its class; hybrid_custody 90s 20261115172736 (both fails predate it, first post-fix run ~1:19 PM PT); candy_secondary_board 0410Z a one-off flicker (00:28Z 15,642ms->06:28Z 886ms).
+- QUEUED: (1) refresh_wmc_fmv_changed timeout class -> #248 close-out (owned, scheduled 10:20 AM PT; LOW impact, backstopped; route-logic lever, not a night-pass ship); (2) candy_sales_stale_hours edition_not_ingested carve-out -> Trevor (read-only, do not edit view).
+- RESOLVED since last pass: #255 parked sets_summary_prev_20261114 dropped (to_regclass NULL) -- removed from queue.
+- No main/prod change this pass (docs only: handoff, ledger, metrics, session). Revert: n/a.
+
 ### 2026-11-15 ~11:00 PM PT — Unclaimed-reward card hidden for internal accounts (Claude Code cloud; Trevor: "Keep going")
 - Live check in Trevor's Chrome: `/api/profile/unclaimed-rewards` 200 and the card rendered on jamesdillonbond's dashboard. That is the defect — Dame Time has exactly 6 packs left for 6 eligible members, and the founder's account also holds a completed, unclaimed case, so one tap on the card would have taken a member's pack.
 - CODE: `lib/giveaways/challenge-reward.ts` `unclaimedRewardsForUser` returns [] for an `internal_accounts` user (a failed read of that table THROWS). Tests: internal → [] with no further reads; internal read failure throws. Preflight green.
