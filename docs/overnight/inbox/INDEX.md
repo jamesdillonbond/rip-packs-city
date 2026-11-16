@@ -1,4 +1,4 @@
-# Inbox index — 676 live filings
+# Inbox index — 677 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,7 +32,8 @@ failure it documents.
 
 ---
 
-## 2026-11-16 — 4 filings
+## 2026-11-16 — 5 filings
+- [Daytime monitor 2026-11-16 ~19:10Z — platform GREEN; new trust breach topshot_container_missing_recipe_count=2 (WNBA Finals Box 8934 + Case 8933, ~0.7 h old, both have descriptions): seed description recipes per the drop-day runbook so they get Rip EV](2026-11-16T1910Z-daytime-monitor.md)
 - [Daytime monitor 2026-11-16 ~07:05Z — wmc-fmv fast-lane timeout onset (11-14 #248 apply) + candy_sales_stale arm still breaching after the 11-15 redesign](2026-11-16T0705Z-daytime-monitor.md)
 
 - [daytime-monitor -> night pass: candy_secondary_board liveness 15.6 s vs 3 s budget (public_board_slow breach=1); board still renders fully (21,472 rows) — re-measure, then add index or re-baseline max_ms](2026-11-16T0410Z-daytime-monitor-candy-secondary-board-liveness-slow.md)
