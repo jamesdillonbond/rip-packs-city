@@ -510,14 +510,14 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
                               lifecycle data is thin. */}
                           <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
                             {row.dist_id ? (
-                              <Link
+                              <Link prefetch={false}
                                 href={`/${collection}/pack/dist/${encodeURIComponent(row.dist_id)}`}
                                 style={{ color: "var(--rpc-text-primary)", textDecoration: "none", fontFamily: display, fontWeight: 700, fontSize: 12 }}
                               >
                                 {packName}
                               </Link>
                             ) : (
-                              <Link
+                              <Link prefetch={false}
                                 href={`/${collection}/pack/${encodeURIComponent(row.pack_nft_id)}`}
                                 title="Sealed pack — which distribution it came from is only recorded when the pack is opened or resold on the marketplace."
                                 style={{ color: "var(--rpc-text-primary)", textDecoration: "none", fontFamily: display, fontWeight: 700, fontSize: 12 }}

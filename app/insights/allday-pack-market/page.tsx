@@ -95,7 +95,7 @@ function MarketTable({ rows, accent, showRatio }: { rows: PackMarketRow[]; accen
             return (
               <tr key={r.dist_id} style={{ borderTop: "1px solid var(--rpc-border-subtle)" }}>
                 <td style={{ padding: "8px 10px" }}>
-                  <Link
+                  <Link prefetch={false}
                     href={`/nfl-all-day/pack/dist/${encodeURIComponent(r.dist_id)}`}
                     style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}
                   >

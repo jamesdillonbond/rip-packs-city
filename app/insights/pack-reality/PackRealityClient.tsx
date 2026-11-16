@@ -480,7 +480,7 @@ export default function PackRealityClient({
                 <tr key={row.pack_listing_id}>
                   <td className="rpc-pr-td-pack">
                     {row.dist_id ? (
-                      <Link
+                      <Link prefetch={false}
                         href={`/nba-top-shot/pack/dist/${encodeURIComponent(row.dist_id)}`}
                         className="rpc-pr-pack-link"
                         title={`Open ${row.pack_name ?? "this pack"} distribution page`}
@@ -613,7 +613,7 @@ function MvrTable({
           {rows.map((row) => (
             <tr key={row.dist_id}>
               <td className="rpc-pr-td-pack">
-                <Link
+                <Link prefetch={false}
                   href={`/nba-top-shot/pack/dist/${encodeURIComponent(row.dist_id)}`}
                   className="rpc-pr-pack-link"
                   title={`Open ${row.title ?? "this pack"} distribution page`}

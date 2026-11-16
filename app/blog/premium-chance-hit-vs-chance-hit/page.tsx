@@ -285,13 +285,13 @@ export default function PremiumChanceHitVsChanceHit() {
             {PAIRS.map((r) => (
               <tr key={r.pch}>
                 <td style={TD}>
-                  <Link href={`/nba-top-shot/pack/dist/${r.pch}`} style={A}>{r.drop}</Link>
+                  <Link prefetch={false} href={`/nba-top-shot/pack/dist/${r.pch}`} style={A}>{r.drop}</Link>
                 </td>
                 <td style={TD_NUM}>
                   ${r.pchPrice} · {r.pchHits} · {r.pchCost}
                 </td>
                 <td style={TD_NUM}>
-                  <Link href={`/nba-top-shot/pack/dist/${r.ch}`} style={A}>${r.chPrice}</Link> · {r.chHits} · {r.chCost}
+                  <Link prefetch={false} href={`/nba-top-shot/pack/dist/${r.ch}`} style={A}>${r.chPrice}</Link> · {r.chHits} · {r.chCost}
                 </td>
               </tr>
             ))}

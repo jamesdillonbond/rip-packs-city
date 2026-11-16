@@ -1803,7 +1803,7 @@ async function EditionBottomSections({
         <Section title="Found in These Packs">
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10 }}>
             {namedPacks.map(p => (
-              <Link
+              <Link prefetch={false}
                 key={p.dist_id}
                 href={`/${collection}/pack/dist/${encodeURIComponent(p.dist_id)}`}
                 className="rpc-card"

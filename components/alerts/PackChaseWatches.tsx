@@ -103,7 +103,7 @@ export default function PackChaseWatches() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <Link href={`/nba-top-shot/pack/dist/${encodeURIComponent(w.dist_id)}`} style={{ fontSize: 12, textDecoration: 'underline' }}>View</Link>
+                  <Link prefetch={false} href={`/nba-top-shot/pack/dist/${encodeURIComponent(w.dist_id)}`} style={{ fontSize: 12, textDecoration: 'underline' }}>View</Link>
                   <button type="button" onClick={() => remove(w)} style={{ fontSize: 12, color: 'var(--rpc-red-text)', background: 'none', border: 'none', cursor: 'pointer' }}>
                     Delete
                   </button>

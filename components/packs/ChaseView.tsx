@@ -171,7 +171,7 @@ function ChaseCard({ row, rank, collection, tierLabel }: { row: ChaseRow; rank: 
       <div className="min-w-0 flex-1">
         <div className="flex items-start gap-2">
           <span className="font-mono text-[10px] text-[color:var(--rpc-text-muted)]">#{rank}</span>
-          <Link
+          <Link prefetch={false}
             href={`/${collection}/pack/dist/${encodeURIComponent(row.distId)}`}
             className="min-w-0 flex-1 truncate font-semibold text-[color:var(--rpc-text-primary)] hover:underline"
             title={row.title}

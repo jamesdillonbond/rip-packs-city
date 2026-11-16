@@ -287,7 +287,7 @@ function GrailCard({ row, accent, collection }: { row: GrailRow; accent: string;
             <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: 'var(--rpc-text-muted)', letterSpacing: '0.12em', textTransform: 'uppercase' }}>{priceLabel ?? 'PRICE'}</div>
             <div style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 800, color: 'var(--rpc-text-primary)' }}>{fmtUsd(price)}</div>
           </div>
-          <Link
+          <Link prefetch={false}
             href={`/${collection}/pack/dist/${encodeURIComponent(row.dist_id)}`}
             style={{
               padding: '8px 12px',

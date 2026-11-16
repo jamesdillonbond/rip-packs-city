@@ -954,7 +954,7 @@ function LifecycleDetail({ lifecycle, row }: { lifecycle: any; row: HistoryRow }
       )}
       {row.dist_id && (
         <div>
-          <Link
+          <Link prefetch={false}
             href={`/${urlSlug(row.collection_slug)}/pack/dist/${encodeURIComponent(row.dist_id)}`}
             style={{ display: "inline-block", padding: "6px 12px", background: "var(--rpc-red-fill)", color: "#fff", borderRadius: 5, fontFamily: condensedFont, fontWeight: 700, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", textDecoration: "none" }}
           >
