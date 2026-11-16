@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~10:25 AM PT — `deepmerge` prototype-poisoning advisory closed by vendoring a patched copy; `npm audit` 7 low → 0 (Claude Code cloud; Trevor: "Anything you can do?")
+
+GHSA-gcqx-w48m-w2h4 has no upstream fix (affects all ≥4.2.0). `vendor/deepmerge/` = upstream 4.3.1 + prototype-key skip + `defineProperty`; root `file:vendor/deepmerge` dep + `overrides."deepmerge": "$deepmerge"` (a nested `file:` override writes a lock `npm ci` rejects — measured). Clean `npm ci` verified on npm 10 + 11; new test fails 3/11 against upstream; preflight 6/6 green. No runtime change: no `@onflow/*` bundle imports deepmerge. Detail: known-issues #231. **Revert:** `git revert <this sha>` (restores the registry package + lock) — or delete `vendor/deepmerge`, the root dep, the override and the test, then `npm install`.
+
 ### 2026-11-16 ~10:30 AM PT — #248 (wmc FMV backstop cost) RESOLVED: all three last exits pass (scheduled close-out `trig_01CScx2oshq9AXFGxvLJEeiZ`, Claude Code cloud; Trevor approved closing on pass)
 
 Read-only checks, no DB change. Job 617's first daily run (4:33 AM PT) ok, 1,565 rows fixed (was ~7,040 per 2-hourly run), 369,389 disk reads = the whole day (was ~1.7M–4.7M/day; 7.34M on 11-11). Fast-lane miss re-sample 10:22 AM PT: 66 / 71,974 rows = 0.09 %, 0 in price (11-15: 0.15 %). Job 446: 41 / 41 ok since 12:42 PM PT 11-15, fixed/run down to 0 on the last four. Docs: #248 marked ✅ + `docs:issues-index` (only #248 moved). **Revert:** `git revert` this docs commit (no DB state changed).
