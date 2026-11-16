@@ -86,7 +86,7 @@ describe("POST /api/ufc-wallet-scan — failure paths + background drain", () =>
   const TOKEN = "ufc-scan-token"
   let POST: (req: any) => Promise<Response>
   // Driven per-test: scan outcome, then a queue of enrich chunk outcomes.
-  const f: { scanOk: boolean; enrich: Array<any | "fail"> ; enrichCalls: number[]; enrichUrls: string[]; enrichAuth: Array<string | null> } = {
+  const f: { scanOk: boolean; scanBody?: Record<string, unknown>; enrich: Array<any | "fail"> ; enrichCalls: number[]; enrichUrls: string[]; enrichAuth: Array<string | null> } = {
     scanOk: true, enrich: [], enrichCalls: [], enrichUrls: [], enrichAuth: [],
   }
 
@@ -97,7 +97,7 @@ describe("POST /api/ufc-wallet-scan — failure paths + background drain", () =>
       const isEnrich = String(url).includes("enrich-ufc-wallet")
       if (!isEnrich) {
         if (!f.scanOk) return { ok: false, status: 503, json: async () => ({}) }
-        return { ok: true, json: async () => ({ scanned: 7, total: 7 }) }
+        return { ok: true, json: async () => (f.scanBody ?? { scanned: 7, total: 7 }) }
       }
       const start = Number(new URL(String(url)).searchParams.get("start") ?? 0)
       f.enrichCalls.push(start)
@@ -153,6 +153,18 @@ describe("POST /api/ufc-wallet-scan — failure paths + background drain", () =>
     expect(body.done).toBe(false)
     expect(body.enrichError).toContain("HTTP 500")
     expect(cap.fn).toBeNull() // no drain scheduled on a failed first chunk
+  })
+
+  it("reads the edge functions' REAL field names (momentsFound / upserted / totalMoments), not a fabricated 0", async () => {
+    // 2026-11-16: scan-ufc-wallet answers { momentsFound, upserted } and enrich-ufc-wallet
+    // { totalMoments }; the route read scanned/total and reported 0 for every live scan.
+    f.scanBody = { ok: true, momentsFound: 68, upserted: 68 }
+    f.enrich = [{ totalEnriched: 68, totalMoments: 68, done: true }]
+    const body = await (await POST(wallet())).json()
+    f.scanBody = undefined
+    expect(body.scanned).toBe(68)
+    expect(body.totalMoments).toBe(68)
+    expect(body.enrichedSoFar).toBe(68)
   })
 
   it("schedules the drain off nextStart (NOT the enrichedSoFar count) and walks to done", async () => {

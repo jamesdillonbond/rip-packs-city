@@ -85,8 +85,10 @@ export async function POST(req: NextRequest) {
   let totalMoments = 0
   try {
     const scan = await callScan(wallet)
-    scanned = pickNumber(scan.scanned, scan.total)
-    totalMoments = pickNumber(scan.total, scan.scanned)
+    // scan-ufc-wallet answers { momentsFound, upserted } (2026-11-16: this read only
+    // scanned/total, which it never returns, so every scan reported 0). Old names kept as fallback.
+    scanned = pickNumber(scan.upserted, scan.scanned, scan.total)
+    totalMoments = pickNumber(scan.momentsFound, scan.total, scan.scanned)
   } catch (err) {
     return NextResponse.json(
       { error: "scan failed", detail: err instanceof Error ? err.message : String(err) },
@@ -105,7 +107,8 @@ export async function POST(req: NextRequest) {
   }
 
   const enrichedSoFar = pickNumber(firstChunk.totalEnriched, firstChunk.enriched)
-  const total = pickNumber(firstChunk.total, totalMoments)
+  // enrich-ufc-wallet answers `totalMoments`, not `total`.
+  const total = pickNumber(firstChunk.totalMoments, firstChunk.total, totalMoments)
   const done = firstChunk.done === true
 
   if (!done) {
