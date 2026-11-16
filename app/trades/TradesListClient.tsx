@@ -68,7 +68,7 @@ export default function TradesListClient() {
           Swap NBA Top Shot, NFL All Day, LaLiga Golazos and UFC Strike Moments with another collector — in any mix. Both Flow Wallets sign one transaction, so either every Moment moves or nothing does. RPC never holds a Moment or a key, and charges no fee.
         </p>
         <p style={{ margin: "6px 0 0", fontSize: 14 }}>
-          Looking for someone to trade with? <Link href="/trades/block">Browse the Trade Block</Link> or <Link href="/trades/block/mine">post what you&apos;d trade</Link>.
+          Looking for someone to trade with? <Link href="/trades/block">Browse the Trade Block</Link>, <Link href="/trades/block/mine">post what you&apos;d trade</Link>, or <Link href="/trades/compare">compare your collection with another collector&apos;s</Link>.
         </p>
       </div>
 

@@ -124,6 +124,7 @@ export const IA_GROUPS: readonly IaGroup[] = [
     href: "/trades/block",
     items: [
       { label: "Trade Block", href: "/trades/block", hint: "What collectors would move" },
+      { label: "Compare collections", href: "/trades/compare", hint: "What two collectors could swap" },
       { label: "Trade room", href: "/trades", auth: true, hint: "Two wallets, one signed swap, no custody" },
       { label: "Top Shot This trade-in", href: "/insights/trade-in" },
     ],

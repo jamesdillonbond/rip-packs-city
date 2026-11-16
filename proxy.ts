@@ -582,6 +582,10 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // rooms (/trades/<code>) and /trades/block/mine stay signed-in. Their data comes from
   // /api/public/trade-block (public above); every action is /api/trade-block (signed in).
   if (pathname === "/trades/block" || /^\/trades\/block\/[a-z0-9]{10}$/.test(pathname)) return true
+  // /trades/compare — two usernames in, what each could trade the other (2026-11-16). Reads only
+  // (/api/public/trades/compare, public above); "Start a trade room" posts to /api/trade-room,
+  // which stays signed-in. EXACT path.
+  if (pathname === "/trades/compare") return true
   // /blog + subpaths — force-static long-form marketing content built for SEO.
   // Linked from the public TopNav, so anon clicks must not bounce to /login.
   // Read-only static; sitemap lists the index + posts. (2026-06-08)
