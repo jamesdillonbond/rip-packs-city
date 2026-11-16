@@ -154,9 +154,13 @@ describe("PortfolioSummary", () => {
       />,
     )
     const txt = container.textContent!
-    expect(txt).toContain("Market closed")   // WalletStatRow closed treatment
+    // Re-pinned 2026-11-16 (Trevor's gate C): UFC's Flow holdings are VALUED at current FMV with
+    // a migrate note, instead of the closure tile. Cost basis / P&L stays suppressed while the
+    // market is marked closed — that half of the property is unchanged.
+    expect(txt).toContain("On Flow · current FMV")
+    expect(txt).toContain("Still on Flow — migrate to Aptos to trade")
     expect(txt).not.toContain("Cost Basis:") // P&L block suppressed
-    expect(txt).not.toContain("Wallet FMV")  // dollar tiles replaced
+    expect(txt).not.toContain("Wallet FMV")  // the four live-market tiles are not shown
   })
 
   // 2026-11-14 (Trevor): the callout is retired — it counted only the LOADED rows ("1 acquired via

@@ -8,6 +8,19 @@ vi.mock("next/link", () => ({
   default: ({ children, ...props }: any) => <a {...props}>{children}</a>,
 }))
 
+// 2026-11-16: UFC Strike, the only closed market, now takes the UFC-on-Aptos binder path (Flow
+// holdings valued, with a migrate note). So the generic closed-market branch keeps a subject that
+// genuinely lacks that path: a synthetic closed slug, declared here.
+vi.mock("@/lib/market-closed", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/market-closed")>()
+  const fake = { closedOn: "2026-01-02", venue: "Testchain", note: "Test market closed." }
+  return {
+    ...actual,
+    closedMarket: (slug: string) => (slug === "test-closed" ? fake : actual.closedMarket(slug)),
+    isMarketClosed: (slug: string) => slug === "test-closed" || actual.isMarketClosed(slug),
+  }
+})
+
 import WalletStatRow, { WalletStatRowProps } from "@/components/wallet-stat-row"
 
 afterEach(cleanup)
@@ -78,14 +91,36 @@ describe("WalletStatRow", () => {
   })
 
   it("shows a count + closure note (no dollar total) for a closed market", () => {
-    // UFC Strike's Flow market is closed — a wallet must show a count + note,
-    // never a portfolio total (which would assert a value that no longer exists).
-    const { container } = render(<WalletStatRow {...props({ collectionSlug: "ufc" })} />)
+    // A closed market must show a count + note, never a portfolio total (which
+    // would assert a value that no longer exists). Re-pinned 2026-11-16 onto a
+    // synthetic closed slug: UFC now takes the Aptos-binder path below.
+    const { container } = render(<WalletStatRow {...props({ collectionSlug: "test-closed" })} />)
     const txt = container.textContent!
     expect(txt).toContain("12 moments")
     expect(txt).toContain("Market closed")
     expect(txt).not.toContain("$1,000")
     expect(txt).not.toContain("$800")
+  })
+
+  it("UFC: Flow holdings at current FMV (headline + stale) with the migrate note, not a closure tile", () => {
+    // Trevor's gate C (2026-11-16): moments still on Flow are valued at current FMV and told to
+    // migrate. Every UFC snapshot is STALE while the Flow market is marked closed, so the value
+    // sits in the stale share — the tile must not show the netted near-$0 headline.
+    const { container } = render(
+      <WalletStatRow {...props({ collectionSlug: "ufc", walletFmv: 0, staleFmv: 1234.5, staleCount: 12 })} />,
+    )
+    const txt = container.textContent!
+    expect(txt).toContain("On Flow · current FMV")
+    expect(txt).toContain("$1,234")
+    expect(txt).toContain("Still on Flow — migrate to Aptos to trade")
+    expect(txt).not.toContain("Market closed")
+    expect(txt).not.toMatch(/\$0(?![.,\d])/)
+  })
+
+  it("UFC: an unloaded summary is an em dash, never $0", () => {
+    const { container } = render(<WalletStatRow {...props({ collectionSlug: "ufc", walletFmv: null })} />)
+    expect(container.textContent).toContain("—")
+    expect(container.textContent).not.toMatch(/\$0(?![.,\d])/)
   })
 
   it("still shows the full dollar tiles for a live market", () => {

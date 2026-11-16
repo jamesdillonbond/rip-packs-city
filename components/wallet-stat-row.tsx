@@ -5,6 +5,7 @@ import { formatCurrency, formatCount } from "@/lib/format"
 import FmvDisclaimer from "@/components/legal/FmvDisclaimer"
 import { closedMarket, formatClosedOn } from "@/lib/market-closed"
 import { collectionHasLocking } from "@/lib/collections"
+import { FLOW_MIGRATE_NOTE, isUfcAptosBinder } from "@/lib/ufc-aptos"
 
 // Shared four-tile wallet analytics row used by every collection's
 // /[collection]/collection page (and the standalone Pinnacle page until
@@ -128,6 +129,28 @@ export default function WalletStatRow(props: WalletStatRowProps) {
   // signal is a count + a closure note. Fall through to the normal tiles once
   // the count has loaded so we never render a bare "market closed" with no data.
   const closed = closedMarket(collectionSlug)
+  // UFC Strike (2026-11-16, Trevor's gate C): moments still on Flow are valued at the edition's
+  // current FMV with a migrate note, and the Aptos half renders in its own section
+  // (components/collection/UfcAptosHoldings.tsx). Every UFC snapshot is STALE while the Flow
+  // market is marked closed, so the summary puts the whole value in the stale share; the tile
+  // shows headline + stale (= the summary's total), never the netted near-$0 headline.
+  if (isUfcAptosBinder(collectionSlug) && !loading) {
+    const flowTotal = walletFmv === null ? null : walletFmv + (typeof staleFmv === "number" ? staleFmv : 0)
+    return (
+      <div>
+        <div className="rpc-stat-tile" data-testid="ufc-flow-holdings-tile">
+          <div className="rpc-stat-eyebrow">
+            <span>On Flow · current FMV</span>
+            {walletFmvAccessory}
+          </div>
+          <div className="rpc-stat-value">{flowTotal === null ? "—" : formatCurrency(flowTotal)}</div>
+          <div className="rpc-stat-caption" style={{ lineHeight: 1.5 }}>
+            {formatCount(momentCount)} {noun} · {FLOW_MIGRATE_NOTE}
+          </div>
+        </div>
+      </div>
+    )
+  }
   if (closed && !loading) {
     return (
       <div>

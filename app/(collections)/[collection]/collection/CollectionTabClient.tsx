@@ -25,6 +25,8 @@ import { acquisitionMethodLabel } from "@/lib/analytics/shape"
 import { track } from "@/lib/telemetry/track"
 import { pickLoading } from "@/lib/schonely"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
+import UfcAptosHoldings from "@/components/collection/UfcAptosHoldings"
+import { isUfcAptosBinder } from "@/lib/ufc-aptos"
 import AutoSearchReader, { type AutoSearchSource } from "@/components/collection/AutoSearchReader"
 import { useSessionOwner } from "@/lib/hooks/useSessionOwner"
 import { fetchSavedWalletForCollection } from "@/lib/profile/saved-wallet-for-collection"
@@ -1575,6 +1577,12 @@ function WalletMomentsBody() {
           ownerKey={ownerKey}
           input={input}
         />
+
+        {/* UFC Strike on Aptos (2026-11-16): the moments this collector has migrated, found
+            from their Flow address. Renders nothing until there is something true to show. */}
+        {hasSearched && isUfcAptosBinder(collectionSlug) && activeWallet ? (
+          <UfcAptosHoldings key={activeWallet} wallet={activeWallet} />
+        ) : null}
 
         {/* Filters + sort — only once there is something to filter. Before a
             wallet is loaded the first thing a phone visitor saw on MY BINDER
