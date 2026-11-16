@@ -51,6 +51,8 @@ None.
 
 Still queued from prior nights (gated / needs Trevor):
 - fmv-activity-gap step 6 (ME-file diff — Project-only + gated) and step 7 (OpenSea Solana program-id research, #256). (2 nights.)
+  - ↳ **11-16 10:35 AM PT (Claude Code, laptop): this line was STALE when written.** Step 6 DONE 11-15 ~8:20 AM PT (2,529 parked; the queue has since drained to 0 open rows). Step 7 answered 11-15: no official page publishes the program id (OpenSea hands it out per order as `protocol_address`), so #256 waits on Trevor's sourcing call, not on research. See inbox `2026-11-15T0500Z` resolution.
+- ↳ Items 1–2 above: **CLOSED 11-16** — #248 resolved by the 10:20 AM PT close-out; the Candy arm reads `ok` at 10:34 AM PT (`7c437d4da` resolved the rows).
 
 Resolved since last pass (removed from queue): **#255 drop parked `sets_summary_prev_20261114`** — the table no longer exists (`to_regclass` NULL); dropped 11-15. No longer queued.
 
