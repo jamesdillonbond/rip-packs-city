@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~3:20 PM PT — Dropped the unused Top Shot-only Compare function (Claude Code cloud; Trevor: "Do what you think is best")
+- DB (prod, applied ~3:16 PM PT): `DROP FUNCTION public.get_topshot_trade_compare(text, text, int)` — migration `20261116231611`. Replaced by `get_trade_compare` (live in c44fd21 and verified on all three collections first); no caller in code, cron.job or any function body. Verified after: old 0, new 1.
+- Revert: re-apply the function block of `20261116180340`.
+
 ### 2026-11-16 ~2:45 PM PT — /trades/compare covers All Day and Golazos; pre-fills your username; Top Shot capitalisation (Claude Code cloud; Trevor: "Keep going")
 - DB (prod, applied ~2:16 PM PT): `get_trade_compare(uuid, text, text, int)` — migration `20261116221606`; the Top Shot-only body with the collection a parameter; SECURITY INVOKER, service_role only (anon verified false). The old `get_topshot_trade_compare` stays until this deploy is live, then a follow-up drops it. Revert: `DROP FUNCTION public.get_trade_compare(uuid, text, text, int);` (after reverting the code, which calls it).
 - CODE: `?c=nfl-all-day|laliga-golazos` (unknown/UFC = 400, never Top Shot); per-collection held reader, listings (Top Shot contract; All Day/Golazos from cached_listings_v2 open rows by seller), on-chain count (local Golazos script); All Day custodied-locked worded; plans carry their collection into the room and the room's add maps each line to its collection. "You" pre-fills from `/api/profile/me` when signed in; the reply prefers a saved wallet's capitalisation of the same username. Spec: trading.md §4.
