@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~11:15 AM PT — Wallet-search outcome event on the collection pages (Claude Code cloud; Trevor: "Keep going")
+- Measured: `search-executed` (73 human events in 7 days, all address searches) fires BEFORE the load, so a failed read and a wallet that loaded empty were both invisible. No human `client_error` on any collection page in 7 days.
+- CODE: `CollectionTabClient.tsx` → `search-result` {collection, ok, total (server count; 0 = loaded empty), ms (monotonic timer — the wall-clock ratchet counts `Date.now()` even in handlers)}; `ok:false` on a failed read. `scripts/funnel-read.sql` row 13 reads loaded · empty · failed per collection (runs clean against prod).
+- Tests: 1 component test (load + failed read). Full `npm run preflight` green.
+- Revert: `git revert` this commit (no DB half).
+
 ### 2026-11-16 ~11:12 AM PT — UFC Aptos wallet-link lane: its budget no longer spends itself on listing mints, and a run that matched nothing logs ok=false (Claude Code, laptop; Trevor: "Keep going and work through these")
 - **Found:** the 10:21 AM PT (17:25Z) scheduled run matched **0 of 7,987** pending Aptos mints in 674 s yet logged `ok=true`; `ufc_aptos_wallet_links` stuck at 93 (focus steer expects ~850 by 11-18). The budget clock started at script launch, and listing all 8,310 mints took 11 min on the runner (4 min at 04:26Z), so the matching loop never ran an iteration.
 - **Shipped:** `scripts/ufc-aptos-wallet-link.mjs` — matching budget starts when matching starts; the mint listing has its own cap (`--enum-budget-sec 720`) and, if exceeded, logs `ok=false` with the reason and exits 1; a run with work, 0 processed, no error and no dead spork logs `ok=false` ("0 of N processed"). Workflow `ufc-aptos-sales-ingest.yml` job timeout 40 → 50 min to fit the worst case.
