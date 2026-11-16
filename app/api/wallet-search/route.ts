@@ -1898,7 +1898,10 @@ export async function POST(req: NextRequest) {
           momentId: String(id),
           playerName: meta.player || "Unknown (error loading)",
           team: meta.team || undefined,
-          setName: meta.setName || "Unknown Set",
+          // 2026-11-15: normalised exactly as the success path does. With the GraphQL
+          // host dead every Top Shot row takes THIS branch, and the raw chain name
+          // "Base Set6" reached 28 of 264 sampled production rows.
+          setName: normalizeSetName(meta.setName) || "Unknown Set",
           series: meta.series || undefined,
           serial: toNum(meta.serial) ?? undefined,
           mintSize: toNum(meta.mint) ?? undefined,

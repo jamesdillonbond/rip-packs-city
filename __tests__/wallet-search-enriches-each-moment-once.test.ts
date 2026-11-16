@@ -230,6 +230,15 @@ describe("the surviving leg's values still reach the degraded row", () => {
     expect(row.officialBadges).toBeUndefined()
   })
 
+  it("2026-11-15: GraphQL down — the chain's raw \"Base Set6\" is normalised like the success path", async () => {
+    state.gqlThrows = CF_530
+    state.metadataById["101"] = { ...momentMeta("5"), setName: "Base Set6" }
+    const body = await (await POST(post({ input: WALLET }))).json()
+    const row = body.rows.find((r: { momentId: string }) => r.momentId === "101")
+    expect(row.setName).toBe("Base Set")
+    expect(body.rows.some((r: { setName: string }) => r.setName === "Base Set6")).toBe(false)
+  })
+
   it("Flow metadata down: the row still carries the GraphQL flowId that was read", async () => {
     state.metaThrows = true
     const body = await (await POST(post({ input: WALLET }))).json()
