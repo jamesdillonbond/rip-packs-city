@@ -4,6 +4,10 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-11-16 ~10:58 AM PT (Claude Code cloud) — one dated read (#253 slot move; thread archived)
+
+- **After ~11-19 — job 714 at `:53` (`20261116184451`).** Read: `select extract(hour from start_time)::int % 2 = 0 as even_utc, count(*), count(*) filter (where status <> 'succeeded') kills, percentile_cont(0.5) within group (order by extract(epoch from end_time-start_time)) p50 from cron.job_run_details where jobid = 714 and start_time > '2026-11-16 18:50Z' group by 1`. **Pass:** both parities median ≲ 35 s (was even 50 / odd 27) and kills at or under ~3/week. First tick 11-16 10:53 AM PT: 51 s, even hour (the :14 even-hour runs over the prior day were 77–117 s). If kills continue at the odd-hour rate, #253's writer-maintained counter is the lever. Close the steer and note the outcome in known-issues #253.
+
 ## STEER — added 2026-11-16 ~8:47 AM PT (Claude Code cloud) — two dated reads
 
 - ✅ **RE-READ 11-16 10:34 AM PT (Claude Code, laptop): CLEAR — `candy_sales_stale_hours` status `ok`, breach_at 730 (the recorded-closure re-verify clock), value 48.2 h; `candy_sales_unresolved` open rows 0. No 11-17 read needed.** ✅ **OVERTAKEN 10:22 AM PT: the rows RESOLVED (`7c437d4da` — burnt non-registry cards; 142 resolved, 0 open), so the arm should already be clear; re-read once.** Was: **11-17 after ~8:15 AM PT — `candy_sales_stale_hours` should leave BREACH by itself** (the 143 `edition_not_ingested` rows from the #257 walk age out of the 48 h window; history walk drained). Still red after 9 AM PT 11-17 → read which leg fires before touching the view (inbox `2026-11-16T0705Z`, candidate 2 note).
