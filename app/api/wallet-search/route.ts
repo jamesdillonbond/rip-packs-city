@@ -1,5 +1,6 @@
 import { readAcquisitionData } from "@/lib/acquisitions/read-acquisition-data"
 import { NextRequest, NextResponse, after } from "next/server"
+import { GQL_BREAKER_REASON, guardTopshotGql } from "@/lib/wallet-search/topshot-gql-breaker"
 import { z } from "zod"
 import fcl from "@/lib/chains/flow/flow"
 import * as t from "@onflow/types"
@@ -391,7 +392,12 @@ async function getMomentMetadata(wallet: string, id: number) {
   })
 }
 
+// 2026-11-15: guarded by a dead-host breaker (lib/wallet-search/topshot-gql-breaker.ts).
 async function fetchMomentGraphQL(id: string) {
+  return guardTopshotGql(() => fetchMomentGraphQLUnguarded(id))
+}
+
+async function fetchMomentGraphQLUnguarded(id: string) {
   return getOrSetCache(`gql-moment:${id}`, GQL_MOMENT_TTL, async () => {
     const q = `
       query GetMoment($id: ID!) {
@@ -1853,8 +1859,9 @@ export async function POST(req: NextRequest) {
       } catch (momentErr: any) {
         const reason = ((momentErr?.message ?? "unknown") as string).slice(0, 80)
         const walletShort = wallet ? wallet.slice(0, 10) : "none"
-        // An All Day id skipped the Top Shot legs on purpose — not a failure.
-        if (!isAllDay) console.warn(
+        // An All Day id skipped the Top Shot legs on purpose — not a failure; nor is a
+        // moment skipped by the open dead-host breaker (one line per moment was 24 a search).
+        if (!isAllDay && reason !== GQL_BREAKER_REASON.slice(0, 80)) console.warn(
           `[wallet-search] moment-fail momentId=${id} ` +
             `wallet=${walletShort} ` +
             `stage=${stage} ` +

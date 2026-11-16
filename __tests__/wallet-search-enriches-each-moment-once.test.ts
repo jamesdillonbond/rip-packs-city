@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 import { NextRequest } from "next/server"
 import { makeInstrumentedSupabaseFixture } from "./helpers/route-harness"
+import { resetTopshotGqlBreaker } from "@/lib/wallet-search/topshot-gql-breaker"
 
 // ── WHY THIS EXISTS ──────────────────────────────────────────────────────────
 // `/api/wallet-search` enriches each moment from two independent upstreams —
@@ -148,6 +149,9 @@ function install() {
 const IDS = [101, 102, 103]
 
 beforeEach(() => {
+  // 2026-11-15: the route's dead-host breaker is module state; a 530 case must not
+  // open it for the next case (each case models one fresh request).
+  resetTopshotGqlBreaker()
   state.ownedIds = [...IDS]
   state.metadataById = { "101": momentMeta("5"), "102": momentMeta("777"), "103": momentMeta("12") }
   state.gqlById = {
