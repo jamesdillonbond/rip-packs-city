@@ -882,7 +882,10 @@ function WalletMomentsBody() {
       // UFC: scan + first enrich chunk on the Flow blockchain before reading
       // from the wallet_moments_cache. Background chunks continue server-side.
       let ufcEnrichPending = false
-      if (collectionSlug === "ufc" && trimmed.startsWith("0x")) {
+      // Session-gated like cost-basis / cache-refresh / wallet-packs (2026-11-16): the proxy sends a
+      // signed-out POST to /login, so it was a wasted ~1 s round trip under a "Scanning…" banner that
+      // could never scan. Skip only on a DEFINITE signed-out; the cached holdings still load below.
+      if (collectionSlug === "ufc" && trimmed.startsWith("0x") && (await signedInOnce()) !== false) {
         try {
           setError("Scanning Flow blockchain for UFC moments...")
           const scanRes = await fetch("/api/ufc-wallet-scan", {
