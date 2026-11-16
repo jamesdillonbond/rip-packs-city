@@ -26,6 +26,13 @@ the six #187/#188 migrations on 2026-10-10, every body md5-equal to its file on 
 sessions apply migrations within minutes: if one lands with a LATER version before you push, rename
 yours past it (replay order must match apply order).
 
+## ⛔ A NESTED `file:` OVERRIDE INSTALLS LOCALLY AND BREAKS `npm ci` EVERYWHERE ELSE — use a root dep + `"$name"` (2026-11-16)
+
+Patching a transitive dependency with a repo-local copy (`vendor/<pkg>/`): `overrides: { "@onflow/sdk": { "deepmerge": "file:./vendor/deepmerge" } }` **resolves the path RELATIVE TO THE DEPENDENT PACKAGE**. The lockfile records `node_modules/@onflow/sdk/vendor/deepmerge` (an empty entry). `npm install` on the box that wrote it looks fine (a symlink happened to land on the right directory, and `npm audit` printed 0). A clean `npm ci` from that lock then refuses with `Missing: deepmerge@ from lock file`, which would have failed CI and the Vercel install. A top-level `"deepmerge": "file:./vendor/deepmerge"` override writes the SAME broken lock.
+- **Working form:** declare the copy as a root dependency (`"deepmerge": "file:vendor/deepmerge"`) and override with a reference (`overrides: { "deepmerge": "$deepmerge" }`). Lock: `node_modules/deepmerge` → `resolved: "vendor/deepmerge", link: true` plus a `vendor/deepmerge` entry.
+- **Prove it with a clean `npm ci` in a scratch copy** (`package.json`, `package-lock.json`, `.npmrc`, `vendor/` only), on BOTH npm 10 and `npx -y npm@11`, then `require.resolve("<pkg>", { paths: [require.resolve("<dependent>")] })`. A green local `npm install` is not that proof.
+- Vercel's install of the working form read "changed 1 package" and the deploy went READY (`1e42ba0b4`).
+
 ## Cowork cloud session — four facts from 2026-11-09 evening
 
 - **Bash's `$HOME` is `/root`, not `/home/claude`.** A clone made with `cd ~` lives at `/root/rpc`; a `Write` to `/home/claude/rpc/...` silently creates a stray tree beside it (nothing errors — a typecheck/test then runs without the new file). Use the absolute `/root/...` path for `Read`/`Write`/`Edit`.

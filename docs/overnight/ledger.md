@@ -20,7 +20,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ### 2026-11-16 ~10:25 AM PT — `deepmerge` prototype-poisoning advisory closed by vendoring a patched copy; `npm audit` 7 low → 0 (Claude Code cloud; Trevor: "Anything you can do?")
 
-GHSA-gcqx-w48m-w2h4 has no upstream fix (affects all ≥4.2.0). `vendor/deepmerge/` = upstream 4.3.1 + prototype-key skip + `defineProperty`; root `file:vendor/deepmerge` dep + `overrides."deepmerge": "$deepmerge"` (a nested `file:` override writes a lock `npm ci` rejects — measured). Clean `npm ci` verified on npm 10 + 11; new test fails 3/11 against upstream; preflight 6/6 green. No runtime change: no `@onflow/*` bundle imports deepmerge. Detail: known-issues #231. **Revert:** `git revert <this sha>` (restores the registry package + lock) — or delete `vendor/deepmerge`, the root dep, the override and the test, then `npm install`.
+GHSA-gcqx-w48m-w2h4 has no upstream fix (affects all ≥4.2.0). `vendor/deepmerge/` = upstream 4.3.1 + prototype-key skip + `defineProperty`; root `file:vendor/deepmerge` dep + `overrides."deepmerge": "$deepmerge"` (a nested `file:` override writes a lock `npm ci` rejects — measured). Clean `npm ci` verified on npm 10 + 11; new test fails 3/11 against upstream; preflight 6/6 green. No runtime change: no `@onflow/*` bundle imports deepmerge. Detail: known-issues #231. **Revert:** `git revert 1e42ba0b4` (restores the registry package + lock; the docs half is `a3d7298d3`) — or delete `vendor/deepmerge`, the root dep, the override and the test, then `npm install`.
 
 ### 2026-11-16 ~10:30 AM PT — #248 (wmc FMV backstop cost) RESOLVED: all three last exits pass (scheduled close-out `trig_01CScx2oshq9AXFGxvLJEeiZ`, Claude Code cloud; Trevor approved closing on pass)
 
