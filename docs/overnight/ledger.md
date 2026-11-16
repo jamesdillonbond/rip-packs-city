@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~10:05 AM PT — Candy sales of burnt cards from non-registry collections can resolve (Claude Code cloud; Trevor: "Keep going")
+
+The 143 open `edition_not_ingested` Candy sales (the leg lighting `candy_sales_stale_hours`) are ALL burnt cards (public RPC: 1-byte Core accounts) from `candy_collections` sets — 2022 Leadoff ICONs, 2023 Rookie/Base ICONs, Ambassadors (Magic Eden activity). The census skips burnt cards, so they reach the DAS path, and `candy-sales-indexer` never called `loadCandyCollections`: those collections had no edition prefix there and keyed as bare Base slugs no edition carries. The route now registers the catalogue once per run, hydrates a name-only DAS read from its JSON before keying, and parks a prefixed card that stays name-only as `unhydrated_asset` (never keyed from its name). New extra fields: `catalog_collections`, `catalog_error`, `sale_hydrated`, `sale_unhydrated`. 5 tests, 2 planted defects caught; preflight green. **Verify:** next drain ticks resolve the 143 (or re-park them as `unhydrated_asset`). Revert: revert the `candy-sales-indexer` commit by message.
+
 ### 2026-11-16 ~9:47 AM PT — Candy sales indexer back to every 3 hours (scheduled exit task; Trevor approved 11-15)
 
 The hourly drain finished: 0 queued_collections_walk rows open (5,871 written since 11-15 11 AM PT); last 6 ticks all ok, no no_sol_rate/das_fetch_failed/insert_failed rows. `vercel.json` `/api/candy-sales-indexer` `20 * * * *` → `20 */3 * * *` (undoes df0ffd7). 143 `edition_not_ingested` rows remain open — a separate carve-out, not this queue. Revert: set the schedule back to `20 * * * *`.
