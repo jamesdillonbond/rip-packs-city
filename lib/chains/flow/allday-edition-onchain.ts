@@ -17,6 +17,7 @@
 // AllDay GQL via worker), matching the healthy allday-fmv-populate path.
 
 import { normalizeFlowEventAddress } from "@/lib/address"
+import { parseGameDate } from "@/lib/game-date"
 
 export const FLOW_REST = "https://rest-mainnet.onflow.org"
 export const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070"
@@ -110,38 +111,43 @@ access(all) fun main(buyer: Address, id: UInt64): {String: String}? {
 }
 `
 
+// ⛔ THE ONE COPY (2026-11-15). This script and two private copies (allday-sales-indexer,
+// allday-sales-history-backfill) had NEVER type-checked against the deployed AllDay
+// contract: getEditionData / getPlayData / getSetData / getSeriesData return NON-optional
+// values (they panic on an unknown id), EditionData.tier is a non-optional String (so
+// `ed.tier ?? "COMMON"` is a type error), and SetData has no seriesID (the edition does).
+// Every call threw, so the chain fallback for an edition the hydrator missed never created
+// one. Play metadata keys are playerFirstName / playerLastName / gameDate (MM/DD/YYYY) —
+// there is no playerFullName or dateOfMoment. An unknown id fails with
+// "pre-condition failed: Cannot borrow edition, no such id"; callers catch it.
+// Verified on mainnet 11-15 (editions 255 and 5223). Both routes import this constant.
 export const GET_EDITION_DATA_SCRIPT = `
 import AllDay from 0xe4cf4bdc1751c65d
 access(all) fun main(editionID: UInt64): {String: String}? {
-  let edOpt = AllDay.getEditionData(id: editionID)
-  if edOpt == nil { return nil }
-  let ed = edOpt!
-  let result: {String: String} = {
+  let ed = AllDay.getEditionData(id: editionID)
+  var result: {String: String} = {
     "playID": ed.playID.toString(),
     "setID": ed.setID.toString(),
-    "tier": ed.tier ?? "COMMON",
+    "seriesID": ed.seriesID.toString(),
+    "tier": ed.tier,
     "maxMintSize": ed.maxMintSize?.toString() ?? "",
     "numMinted": ed.numMinted.toString()
   }
-  let playOpt = AllDay.getPlayData(id: ed.playID)
-  if playOpt != nil {
-    let meta = playOpt!.metadata
-    result["playerName"] = meta["playerFullName"] ?? meta["playerName"] ?? ""
-    result["teamName"] = meta["teamName"] ?? ""
-    result["playType"] = meta["playType"] ?? ""
-    result["dateOfMoment"] = meta["dateOfMoment"] ?? ""
-    result["awayTeamName"] = meta["awayTeamName"] ?? ""
-    result["homeTeamName"] = meta["homeTeamName"] ?? ""
+  let meta = AllDay.getPlayData(id: ed.playID).metadata
+  let first = meta["playerFirstName"] ?? ""
+  let last = meta["playerLastName"] ?? ""
+  if first != "" && last != "" {
+    result["playerName"] = first.concat(" ").concat(last)
+  } else {
+    result["playerName"] = first.concat(last)
   }
-  let setOpt = AllDay.getSetData(id: ed.setID)
-  if setOpt != nil {
-    result["setName"] = setOpt!.name
-    result["seriesID"] = setOpt!.seriesID.toString()
-    let seriesOpt = AllDay.getSeriesData(id: setOpt!.seriesID)
-    if seriesOpt != nil {
-      result["seriesName"] = seriesOpt!.name
-    }
-  }
+  result["teamName"] = meta["teamName"] ?? ""
+  result["playType"] = meta["playType"] ?? ""
+  result["dateOfMoment"] = meta["gameDate"] ?? ""
+  result["awayTeamName"] = meta["awayTeamName"] ?? ""
+  result["homeTeamName"] = meta["homeTeamName"] ?? ""
+  result["setName"] = AllDay.getSetData(id: ed.setID).name
+  result["seriesName"] = AllDay.getSeriesData(id: ed.seriesID).name
   return result
 }
 `
@@ -297,8 +303,8 @@ export function buildOnChainEditionRow(
   const seriesID = Number(data.seriesID)
   const setIdOnchain = Number(data.setID)
   const playIdOnchain = Number(data.playID)
-  const dateRaw = data.dateOfMoment ? String(data.dateOfMoment).slice(0, 10) : null
-  const gameDate = dateRaw && /^\d{4}-\d{2}-\d{2}$/.test(dateRaw) ? dateRaw : null
+  // The chain gives MM/DD/YYYY; parseGameDate normalises it and drops sentinel dates.
+  const gameDate = parseGameDate(data.dateOfMoment)
   const composedName =
     playerName && setName ? `${playerName} — ${setName}` : playerName ?? setName
 

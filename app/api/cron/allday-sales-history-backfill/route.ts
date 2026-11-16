@@ -8,6 +8,8 @@ import { hydrateAllDayEditions, toUpsertRow } from "@/lib/editions-hydrate"
 import { decodeV1SaleTx } from "@/lib/chains/flow/dapper-v1-tx-decode"
 import crypto from "crypto"
 import { normalizeFlowEventAddress } from "@/lib/address"
+// The one copy of the edition-data script: this route's private copy never type-checked (2026-11-15).
+import { GET_EDITION_DATA_SCRIPT } from "@/lib/chains/flow/allday-edition-onchain"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // NFL All Day sales-history backfill — closes the native pre-indexer gap.
@@ -257,41 +259,6 @@ access(all) fun main(buyer: Address, id: UInt64): {String: String}? {
 }
 `
 
-const GET_EDITION_DATA_SCRIPT = `
-import AllDay from 0xe4cf4bdc1751c65d
-access(all) fun main(editionID: UInt64): {String: String}? {
-  let edOpt = AllDay.getEditionData(id: editionID)
-  if edOpt == nil { return nil }
-  let ed = edOpt!
-  let result: {String: String} = {
-    "playID": ed.playID.toString(),
-    "setID": ed.setID.toString(),
-    "tier": ed.tier ?? "COMMON",
-    "maxMintSize": ed.maxMintSize?.toString() ?? "",
-    "numMinted": ed.numMinted.toString()
-  }
-  let playOpt = AllDay.getPlayData(id: ed.playID)
-  if playOpt != nil {
-    let meta = playOpt!.metadata
-    result["playerName"] = meta["playerFullName"] ?? meta["playerName"] ?? ""
-    result["teamName"] = meta["teamName"] ?? ""
-    result["playType"] = meta["playType"] ?? ""
-    result["dateOfMoment"] = meta["dateOfMoment"] ?? ""
-    result["awayTeamName"] = meta["awayTeamName"] ?? ""
-    result["homeTeamName"] = meta["homeTeamName"] ?? ""
-  }
-  let setOpt = AllDay.getSetData(id: ed.setID)
-  if setOpt != nil {
-    result["setName"] = setOpt!.name
-    result["seriesID"] = setOpt!.seriesID.toString()
-    let seriesOpt = AllDay.getSeriesData(id: setOpt!.seriesID)
-    if seriesOpt != nil {
-      result["seriesName"] = seriesOpt!.name
-    }
-  }
-  return result
-}
-`
 
 async function runScript(code: string, args: Array<{ type: string; value: unknown }>): Promise<unknown> {
   const body = {

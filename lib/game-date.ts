@@ -13,9 +13,15 @@
 // epoch DAY, never a later cut-off year.
 export const EPOCH_SENTINEL_DATE = "1970-01-01"
 
+// 2026-11-15: All Day's on-chain play metadata carries `gameDate` as MM/DD/YYYY
+// ("10/02/2025"), not ISO — it is normalised to YYYY-MM-DD here so the chain fallback in
+// lib/chains/flow/allday-edition-onchain.ts yields a date instead of a silent null.
+const US_DATE = /^(\d{2})\/(\d{2})\/(\d{4})$/
+
 export function parseGameDate(raw: unknown): string | null {
   if (raw == null || raw === "") return null
-  const s = String(raw).slice(0, 10)
+  const us = US_DATE.exec(String(raw).trim())
+  const s = us ? `${us[3]}-${us[1]}-${us[2]}` : String(raw).slice(0, 10)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null
   if (Number(s.slice(0, 4)) < 1900) return null
   if (s === EPOCH_SENTINEL_DATE) return null

@@ -46,3 +46,21 @@ describe("parseGameDate", () => {
     expect(moment).toMatch(/fmtAbsDate\(parseGameDate\(e\.game_date\)\)/)
   })
 })
+
+// 2026-11-15: All Day's on-chain play metadata carries `gameDate` as MM/DD/YYYY. The chain
+// fallback (lib/chains/flow/allday-edition-onchain.ts) passes it straight here, and before
+// this every such date read as null.
+describe("parseGameDate — All Day's MM/DD/YYYY chain form", () => {
+  it("normalises MM/DD/YYYY to YYYY-MM-DD", () => {
+    expect(parseGameDate("10/02/2025")).toBe("2025-10-02")
+    expect(parseGameDate(" 01/31/2021 ")).toBe("2021-01-31")
+  })
+  it("still drops the sentinels in that form", () => {
+    expect(parseGameDate("12/30/1899")).toBeNull()
+    expect(parseGameDate("01/01/1970")).toBeNull()
+  })
+  it("does not invent a date from a partial or other form", () => {
+    expect(parseGameDate("10/2/2025")).toBeNull()
+    expect(parseGameDate("2025/10/02")).toBeNull()
+  })
+})

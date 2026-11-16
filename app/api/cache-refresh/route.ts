@@ -62,17 +62,28 @@ const TOPSHOT_GET_IDS = `
   }
 `
 
+// ⛔ 2026-11-15: both All Day scripts here used /public/AllDayMomentNFTCollection, a path
+// nothing publishes (every working All Day script uses /public/AllDayNFTCollection), so
+// this one returned [] for EVERY wallet — the route never found a new All Day moment —
+// and the metadata script borrowed `borrowMomentNFT` off &{AllDay.MomentNFTCollectionPublic},
+// an interface that is EMPTY in Cadence 1.0, so it never type-checked. The method lives on
+// the concrete &AllDay.Collection.
 const ALLDAY_GET_IDS = `
   import AllDay from 0xe4cf4bdc1751c65d
   access(all)
   fun main(address: Address): [UInt64] {
     let acct = getAccount(address)
-    let col = acct.capabilities.borrow<&{AllDay.MomentNFTCollectionPublic}>(/public/AllDayMomentNFTCollection)
+    let col = acct.capabilities.borrow<&AllDay.Collection>(/public/AllDayNFTCollection)
     if col == nil { return [] }
     return col!.getIDs()
   }
 `
 
+// ⛔ NO TIER FROM THE CHAIN: TopShotMomentMetadataView has no tier member. The former
+// `data.momentTierString` failed Cadence's type check, so this whole script was rejected
+// for EVERY moment and no Top Shot stub was ever enriched by this route (found
+// 2026-11-15; the view's fields are listed in apis-and-cadence.md). Tier comes from
+// GraphQL below, or from the backfill lanes. "sub" is TopShot.getMomentsSubedition().
 const TOPSHOT_GET_METADATA = `
   import TopShot from 0x0b2a3299cc857e29
   import MetadataViews from 0x1d7e57aa55817448
@@ -86,6 +97,7 @@ const TOPSHOT_GET_METADATA = `
     let setID = nft.data.setID.toString()
     let playID = nft.data.playID.toString()
     let serial = nft.data.serialNumber.toString()
+    let sub = TopShot.getMomentsSubedition(nftID: id)?.toString() ?? ""
 
     if let view = nft.resolveView(Type<TopShot.TopShotMomentMetadataView>()) {
       let data = view as! TopShot.TopShotMomentMetadataView
@@ -95,10 +107,10 @@ const TOPSHOT_GET_METADATA = `
         "setName": data.setName ?? "",
         "series": data.seriesNumber?.toString() ?? "",
         "serial": serial,
-        "mint": data.numMomentsInEdition?.toString() ?? "",
+        "sub": sub,
         "playID": playID,
         "setID": setID,
-        "tier": data.momentTierString ?? ""
+        "tier": ""
       }
     }
 
@@ -113,7 +125,7 @@ const TOPSHOT_GET_METADATA = `
       "setName": "",
       "series": "",
       "serial": serial,
-      "mint": "",
+      "sub": sub,
       "playID": playID,
       "setID": setID,
       "tier": ""
@@ -127,7 +139,7 @@ const ALLDAY_GET_METADATA = `
   access(all)
   fun main(address: Address, id: UInt64): {String:String} {
     let acct = getAccount(address)
-    let col = acct.capabilities.borrow<&{AllDay.MomentNFTCollectionPublic}>(/public/AllDayMomentNFTCollection)
+    let col = acct.capabilities.borrow<&AllDay.Collection>(/public/AllDayNFTCollection)
       ?? panic("no collection")
     let nft = col.borrowMomentNFT(id: id) ?? panic("no nft")
     let editionID = nft.editionID.toString()
@@ -173,7 +185,15 @@ const COLLECTION_SCRIPTS: Record<string, CollectionScripts> = {
     getIds: TOPSHOT_GET_IDS,
     getMetadata: TOPSHOT_GET_METADATA,
     collectionId: "95f28a17-224a-4025-96ad-adf8a4c63bfd",
-    buildEditionKey: function(meta) { return meta.setID + ":" + meta.playID },
+    // `set:play::N` for parallel N (TopShot.getMomentsSubedition), `set:play` for the base.
+    // 2026-11-15: this was always `set:play`, so a new parallel moment was keyed (and
+    // priced, and sized) as its base until the 6-hourly wallet-backfill re-sent it
+    // through upsert_wmc_batch. The script no longer returns numMomentsInEdition: it
+    // counts the whole family and nothing here may use it as a circulation.
+    buildEditionKey: function(meta) {
+      const sub = Number(meta.sub)
+      return meta.setID + ":" + meta.playID + (Number.isInteger(sub) && sub > 0 ? "::" + sub : "")
+    },
   },
   "nfl-all-day": {
     getIds: ALLDAY_GET_IDS,
@@ -614,12 +634,17 @@ export async function GET(req: NextRequest) {
           for (const row of edRows ?? []) {
             if (row.set_id_onchain == null || row.play_id_onchain == null) continue
             const intKey = `${row.set_id_onchain}:${row.play_id_onchain}`
-            const isInt = /^\d+:\d+$/.test(String(row.external_id ?? ""))
             const existing = canonicalKeyByInt.get(intKey)
-            // Equivalent to: ORDER BY (external_id ~ '^[0-9]+:[0-9]+$') ASC LIMIT 1
-            if (!existing || (!isInt && /^\d+:\d+$/.test(existing))) {
-              canonicalKeyByInt.set(intKey, String(row.external_id))
-            }
+            // 🚨 A `::N` PARALLEL IS A DIFFERENT PRINTING, NEVER A SUBSTITUTE FOR ITS BASE
+            // (2026-11-15; the rule /api/wallet-search took on 09-11). The old test was
+            // `/^\d+:\d+$/`, false for `90:3550::1`, so "prefer the non-int key" promoted
+            // whichever parallel came back first over the base: a new base moment was
+            // cached on a parallel's key, circulation and price until the next 6-hourly
+            // walk. Every Top Shot external_id is int-family today (0 others), so this
+            // map only ever swaps in a genuinely non-int-family key.
+            const isIntFamily = /^\d+:\d+(::\d+)?$/.test(String(row.external_id ?? ""))
+            if (isIntFamily) continue
+            if (!existing) canonicalKeyByInt.set(intKey, String(row.external_id))
           }
         }
       }
