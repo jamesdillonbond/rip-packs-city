@@ -23,6 +23,7 @@
 - **UFC Aptos lanes (`ufc-aptos-sales-ingest.yml`, 4×/day UTC 37 1,7,13,19):**
   - The ingest cursor should keep rising from 5.56B to the head (~8.07B).
   - `ufc_aptos_wallet_links` should rise from 93 toward ~850+ by ~11-18 (~320 mints matched per run).
+    - ↳ **11-16 11:35 AM PT (Claude Code, laptop): it was STUCK at 93 — the 10:21 AM PT run's budget was spent listing mints and matched 0 (logged ok=true). Fixed `dc3f025f7` (budget starts at matching; zero-work = ok=false). Dispatched run 43936810270: 2,910 matched, links 93 → 1,079, 5,077 mints left (~2 more runs).** Next read: links rising again after the next scheduled run; a `ufc-aptos-wallet-link` row with ok=false + "mint listing exceeded" means the indexer is slow, not a code fault.
   - `dead_sporks` = mainnet26 only is EXPECTED (that Flow node is gone; Aug–Oct 2025 links wait for the Dune task 12-14).
   - A red run: read the step log; an indexer 408 that repeats on one window is the deep-OFFSET class (keyset paging fixed it 11-15).
 - **UFC reopen flip — WAITING FOR TREVOR** to see the binder (`/ufc/collection?wallet=…`: "On Flow · current FMV … Still on Flow — migrate to Aptos to trade" + "On Aptos" section). Do not flip `market_closed_at` / `CLOSED_MARKETS` without his go. Plan: claude/ufc-reopen-on-aptos-plan-2026-11-16.md step 3. The inventory-wallet and wash-trade questions were DECIDED 11-15 (keep / no exclusion, measured: 22 sales $259.64 and 2 sales $0.12); see docs/strategy/collections/ufc-strike.md. Don't re-raise them unless Aptos volume grows ~10×.
