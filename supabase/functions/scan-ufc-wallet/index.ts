@@ -36,9 +36,9 @@ import MetadataViews from 0x1d7e57aa55817448
 
 access(all) fun main(address: Address, id: UInt64): {String: String} {
   let acct = getAccount(address)
-  let col = acct.capabilities.borrow<&{UFC_NFT.MomentNFTCollectionPublic}>(/public/UFC_NFTCollection)
+  let col = acct.capabilities.borrow<&UFC_NFT.Collection>(/public/UFC_NFTCollection)
     ?? panic("No UFC collection")
-  let nft = col.borrowMomentNFT(id: id) ?? panic("No moment")
+  let nft = col.borrowUFC_NFT(id: id) ?? panic("No moment")
   let result: {String: String} = {"nftID": id.toString()}
 
   if let editions = nft.resolveView(Type<MetadataViews.Editions>()) {

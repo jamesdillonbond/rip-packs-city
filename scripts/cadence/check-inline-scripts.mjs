@@ -42,8 +42,7 @@ const KNOWN_DEAD = {
   "lib/chains/flow/allday-cadence.ts:31": "GET_PLAY_DATA — /api/allday-sets only (see above).",
   "lib/chains/flow/allday-cadence.ts:120": "GET_MOMENT_METADATA — /api/allday-sets only (see above).",
   "lib/chains/flow/cadence/pinnacle-wallet.ts:57": "GET_PINNACLE_METADATA — exported, imported by nothing.",
-  "supabase/functions/scan-ufc-wallet/index.ts:33":
-    "UFC Strike left Flow for Aptos; UFC_NFT no longer declares MomentNFTCollectionPublic. Retire with the UFC-on-Flow scan path (UFC Aptos handoff 2026-11-15).",
+  // scan-ufc-wallet's metadata script was fixed 2026-11-16 (UFC_NFT.Collection + borrowUFC_NFT) — no longer suppressed.
 }
 
 const PLANTED = {
