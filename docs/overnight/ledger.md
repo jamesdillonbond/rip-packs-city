@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~8:30 PM PT — Sniper "Link copied" timer cleared on unmount (CI flake on afc5b4c9a, shard 3/4) (Claude Code cloud, autonomous)
+- CI run 43794934883 (the census serial-fill commit) went red with 6534/6534 tests passing: one uncaught error after jsdom teardown from `component-SniperClient.test.tsx` — `SniperClient`'s 3 s `setTimeout(() => setCopyLinkMsg(null))` outlived the unmounted client. The next two code commits (other sessions) were green; not caused by the census change.
+- Fix: the timer lives in a ref, is replaced on a second click and cleared on unmount. New test pins it (planted old shape reds it).
+- Revert: `git revert` the code commit "sniper: clear the copy-link timer on unmount".
+
 ### 2026-11-15 ~8:25 PM PT — UFC Aptos: holdings lane + 3-step workflow; ingest no longer stalls (keyset paging) or skips 0x0… tokens (Claude Code, Trevor's laptop; UFC Aptos addendum 2)
 - From the Project (sha256-verified): `scripts/ufc-aptos-holdings.mjs` (9d835878…) and the 3-step workflow (8cbc8858…: holdings step, 40-min timeout). Migrations `audit_20261116_ufc_revival_arm_flow_only` + `audit_20261116_ufc_aptos_holdings` recovered md5-exact (`c895c4438`).
 - The first dry run (`43800024385`) FAILED in Ingest: the indexer 408'd 8× at window v3.80B. Cause: the lane pages ALL marketplace buys by OFFSET, and offset 300 in a busy window always exceeds the indexer's 10 s cap. Fix: keyset paging on (transaction_version, event_index); the probe cleared that window in 11 pages, all < 4 s, 1,055 unique rows. Same run: 7 Tradeport `buy_tokens_v2` sales skipped "no marketplace event". The BuyEvent was there, but the indexer pads token addresses (`0x0dda…`) and events don't (`0xdda…`), so comparisons are now normalised. Wallet-links dry step was healthy: `dead_sporks` = mainnet26 only.
