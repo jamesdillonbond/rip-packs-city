@@ -68,6 +68,11 @@ const eslintConfig = defineConfig([
     "coverage/**",
     "coverage-components/**",
     "coverage-workers/**",
+    // Third-party source vendored verbatim-plus-a-patch (vendor/deepmerge: GHSA-gcqx-w48m-w2h4
+    // fix, 2026-11-16). Linting it would hold upstream style to our rules and grow the ratchet
+    // population with code nobody here wrote; its behaviour is pinned by
+    // __tests__/vendor-deepmerge-prototype-poisoning.test.ts instead.
+    "vendor/**",
     // 🚨 SAME DEFECT, LARGER BLAST RADIUS — and this one DID contaminate the
     // baseline. An agent run with `isolation: "worktree"` checks a SECOND FULL
     // COPY of this repo out under `.claude/worktrees/<name>/`, and eslint walks
