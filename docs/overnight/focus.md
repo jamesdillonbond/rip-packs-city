@@ -6,7 +6,7 @@
 
 ## STEER — added 2026-11-16 ~8:47 AM PT (Claude Code cloud) — two dated reads
 
-- **11-17 after ~8:15 AM PT — `candy_sales_stale_hours` should leave BREACH by itself** (the 143 `edition_not_ingested` rows from the #257 walk age out of the 48 h window; history walk drained). Still red after 9 AM PT 11-17 → read which leg fires before touching the view (inbox `2026-11-16T0705Z`, candidate 2 note).
+- ✅ **OVERTAKEN 10:22 AM PT: the rows RESOLVED (`7c437d4da` — burnt non-registry cards; 142 resolved, 0 open), so the arm should already be clear; re-read once.** Was: **11-17 after ~8:15 AM PT — `candy_sales_stale_hours` should leave BREACH by itself** (the 143 `edition_not_ingested` rows from the #257 walk age out of the 48 h window; history walk drained). Still red after 9 AM PT 11-17 → read which leg fires before touching the view (inbox `2026-11-16T0705Z`, candidate 2 note).
 - **Panini walker `profile_state`:** after Trevor pulls on the walker box, no complete walk should post `not_found` again. The receiver now corrects one that arrives with holdings anyway (`9cd4b2dbc`). Read: `select username, profile_state from panini_collector_walks where username in ('sdb','jamesdillonbond')` → both `public`.
 
 ## STEER — added 2026-11-15 ~9:20 PM PT (Claude Code, Trevor's laptop) — dated reads from the 11-15 evening thread (pack history, wallet search, inline Cadence, UFC on Aptos; thread archived)
