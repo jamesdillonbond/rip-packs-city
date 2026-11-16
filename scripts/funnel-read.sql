@@ -16,6 +16,9 @@
 --   share signin clicks  funnel_events signin_click by surface: share_hero (under the
 --                        value, from 2026-11-16) vs share_cta (bottom of the card)
 --   share viewers        signed-out browsers that viewed a /share/<wallet> card
+--   edition prompt       the signed-out "Own this …?" prompt on edition pages (every collection
+--                        from 2026-11-16): shows (usage_events anon-value-cta-shown) vs clicks
+--                        (funnel_events signin_click, surface <collection>_edition_signup)
 --
 -- Traps (measured 2026-11-16):
 --   * magic-link-requested browsers that "never signed in" are NOT lost signups:
@@ -69,6 +72,15 @@ UNION ALL SELECT '8 share viewers (signed out)', n::text FROM share_views
 UNION ALL SELECT '9 share signin clicks · ' || coalesce(f.surface, '?'), count(*)::text
   FROM funnel_events f, params p
   WHERE f.event_type = 'signin_click' AND f.surface IN ('share_hero', 'share_cta')
+    AND f.created_at >= p.s AND f.created_at < p.e AND NOT coalesce(f.bot_ua, false)
+  GROUP BY f.surface
+UNION ALL SELECT '10 edition prompt shown · ' || coalesce(ue.metadata->>'surface', '?'), count(*)::text
+  FROM usage_events ue, params p
+  WHERE ue.feature_name = 'anon-value-cta-shown' AND ue.occurred_at >= p.s AND ue.occurred_at < p.e
+  GROUP BY ue.metadata->>'surface'
+UNION ALL SELECT '11 edition prompt clicks · ' || coalesce(f.surface, '?'), count(*)::text
+  FROM funnel_events f, params p
+  WHERE f.event_type = 'signin_click' AND f.surface LIKE '%\_edition\_signup'
     AND f.created_at >= p.s AND f.created_at < p.e AND NOT coalesce(f.bot_ua, false)
   GROUP BY f.surface
 ORDER BY 1;

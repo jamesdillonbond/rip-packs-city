@@ -10,6 +10,8 @@ import { render, cleanup, fireEvent, waitFor } from "@testing-library/react"
 const trackMock = vi.fn()
 vi.mock("@/lib/track-funnel", () => ({ trackFunnelEvent: (...a: unknown[]) => trackMock(...a) }))
 vi.mock("next/navigation", () => ({ usePathname: () => "/panini-blockchain/edition/packcard-1" }))
+const usageMock = vi.fn()
+vi.mock("@/lib/telemetry/track", () => ({ track: (...a: unknown[]) => usageMock(...a) }))
 
 import AnonCollectionValueCta from "@/components/auth/AnonCollectionValueCta"
 
@@ -24,6 +26,7 @@ function mockMe(res: { ok: boolean; body?: unknown } | "throw") {
 afterEach(() => {
   cleanup()
   trackMock.mockReset()
+  usageMock.mockReset()
 })
 
 describe("AnonCollectionValueCta", () => {
@@ -55,5 +58,23 @@ describe("AnonCollectionValueCta", () => {
     await new Promise((r) => setTimeout(r, 20))
     expect(a.container.querySelector("[data-rpc-anon-value-cta]")).toBeNull()
     expect(b.container.querySelector("[data-rpc-anon-value-cta]")).toBeNull()
+  })
+
+  // 2026-11-16: the prompt logs that it was SHOWN (once per page), so clicks ÷ shows
+  // is readable; 30 days of 0 clicks could not say whether anyone saw it.
+  it("logs one anon-value-cta-shown per page when it renders, and none when it does not", async () => {
+    mockMe({ ok: true, body: { user: null } })
+    const { container } = render(<AnonCollectionValueCta identityNoun="Top Shot username" itemNoun="moment" surface="topshot_edition" />)
+    await waitFor(() => expect(container.querySelector("[data-rpc-anon-value-cta]")).not.toBeNull())
+    expect(container.textContent).toMatch(/Own this moment\? Add your Top Shot username/)
+    expect(usageMock).toHaveBeenCalledWith("anon-value-cta-shown", { surface: "topshot_edition" })
+    cleanup()
+    render(<AnonCollectionValueCta identityNoun="Top Shot username" itemNoun="moment" surface="topshot_edition" />)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(usageMock).toHaveBeenCalledTimes(1)
+    mockMe({ ok: true, body: { user: { id: "u" } } })
+    render(<AnonCollectionValueCta identityNoun="Dapper username" itemNoun="pin" surface="pinnacle_edition" />)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(usageMock).toHaveBeenCalledTimes(1)
   })
 })

@@ -70,6 +70,7 @@ import ExplainButton from "@/components/ExplainButton"
 import EditionActivity from "@/components/entity/EditionActivity"
 import PaniniSalesChart from "@/components/entity/PaniniSalesChart"
 import AnonCollectionValueCta from "@/components/auth/AnonCollectionValueCta"
+import { anonValueCtaCopy } from "@/lib/auth/anon-value-cta-copy"
 import { franchiseHubPath } from "@/lib/franchise-hub-path"
 import { PaniniOffersSection, PaniniHoldersSection, PaniniProductPacksSection, PaniniAskHistorySection, PaniniSpecialSerialsSection } from "@/components/entity/PaniniEditionExtras"
 import { fetchPaniniEditionOffers, fetchPaniniEditionHolders, fetchPaniniEditionPacks, fetchPaniniEditionAskHistory, fetchPaniniEditionTeams, fetchPaniniSpecialSerials, type PaniniEditionTeam } from "@/lib/panini/edition-extras"
@@ -977,8 +978,13 @@ export default async function EditionPage(
             <OnTheBlockLink collection={collection} name={detail.player_name ?? detail.name ?? ""} edition={detail.external_id ?? detail.id} />
 
             {/* 2026-11-08: Panini edition pages are the largest signed-out landing
-                surface (32 visitors in two weeks, 0 sign-ups). Signed-out only. */}
-            {isPanini && <AnonCollectionValueCta identityNoun="Panini username" surface="panini_edition" />}
+                surface (32 visitors in two weeks, 0 sign-ups). Signed-out only.
+                2026-11-16: on every collection's edition page (search lands on all of
+                them), worded for each; Panini keeps its "panini_edition" surface. */}
+            {(() => {
+              const copy = anonValueCtaCopy(collection)
+              return copy ? <AnonCollectionValueCta {...copy} /> : null
+            })()}
 
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
               <TierBadge tier={detail.tier} />
