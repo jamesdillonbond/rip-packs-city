@@ -87,9 +87,10 @@ describe("openRewardDropForChallenge", () => {
 
 describe("unclaimedRewardsForUser (2026-11-15)", () => {
   const drop = { id: "d1", slug: "dame-time-challenge-reward-pack", title: "Dame Time Challenge Reward Pack", pack_count: 27 }
-  function world(opts: { mine?: number; all?: number; failOn?: string; dropStatusOpen?: boolean } = {}) {
+  function world(opts: { mine?: number; all?: number; failOn?: string; dropStatusOpen?: boolean; internal?: boolean } = {}) {
     return db((c) => {
       if (opts.failOn === c.table) return fail
+      if (c.table === "internal_accounts") return ok(opts.internal ? [{ user_id: "u1" }] : [])
       if (c.table === "trophy_cases") return ok([{ challenge_id: "ch1" }, { challenge_id: "ch1" }])
       if (c.table === "giveaway_drops") return ok(opts.dropStatusOpen === false ? [] : [drop])
       if (c.table === "giveaway_claims") {
@@ -105,7 +106,8 @@ describe("unclaimedRewardsForUser (2026-11-15)", () => {
     expect(await unclaimedRewardsForUser(d as never, "u1")).toEqual([
       { drop: { slug: "dame-time-challenge-reward-pack", title: "Dame Time Challenge Reward Pack" }, challenge: { slug: "dame-time", title: "Dame Time" }, packsLeft: 6 },
     ])
-    expect(d.calls[0]).toMatchObject({ table: "trophy_cases", eq: { user_id: "u1" }, not: ["completed_at is"] })
+    expect(d.calls[0]).toMatchObject({ table: "internal_accounts", eq: { user_id: "u1" } })
+    expect(d.calls[1]).toMatchObject({ table: "trophy_cases", eq: { user_id: "u1" }, not: ["completed_at is"] })
     expect(d.calls.filter((c) => c.table === "giveaway_drops")[0]).toMatchObject({ eq: { eligible_challenge_id: "ch1", status: "open" } })
   })
   it("a claimed pack, an exhausted drop or no open drop is no reward", async () => {
@@ -113,8 +115,13 @@ describe("unclaimedRewardsForUser (2026-11-15)", () => {
     expect(await unclaimedRewardsForUser(world({ all: 27 }) as never, "u1")).toEqual([])
     expect(await unclaimedRewardsForUser(world({ dropStatusOpen: false }) as never, "u1")).toEqual([])
   })
+  it("an INTERNAL account is never offered a member's pack, and reads nothing further", async () => {
+    const d = world({ internal: true })
+    expect(await unclaimedRewardsForUser(d as never, "u1")).toEqual([])
+    expect(d.calls.map((c) => c.table)).toEqual(["internal_accounts"])
+  })
   it("a failed read on any table THROWS — never 'no reward'", async () => {
-    for (const t of ["trophy_cases", "giveaway_drops", "giveaway_claims", "trophy_challenges"]) {
+    for (const t of ["internal_accounts", "trophy_cases", "giveaway_drops", "giveaway_claims", "trophy_challenges"]) {
       await expect(unclaimedRewardsForUser(world({ failOn: t }) as never, "u1")).rejects.toThrow(/read failed/)
     }
   })

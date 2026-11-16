@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~11:00 PM PT — Unclaimed-reward card hidden for internal accounts (Claude Code cloud; Trevor: "Keep going")
+- Live check in Trevor's Chrome: `/api/profile/unclaimed-rewards` 200 and the card rendered on jamesdillonbond's dashboard. That is the defect — Dame Time has exactly 6 packs left for 6 eligible members, and the founder's account also holds a completed, unclaimed case, so one tap on the card would have taken a member's pack.
+- CODE: `lib/giveaways/challenge-reward.ts` `unclaimedRewardsForUser` returns [] for an `internal_accounts` user (a failed read of that table THROWS). Tests: internal → [] with no further reads; internal read failure throws. Preflight green.
+- Not changed: `claim_giveaway_pack` itself still lets an internal account claim from the giveaway page directly.
+- Revert: `git revert` this commit.
+
 ### 2026-11-15 ~10:30 PM PT — Activity review, second pass: share clicks and edition "Watch" are measured; completion toast points at sharing (Claude Code cloud; Trevor: "Keep going and working through this")
 - Re-measured two findings from the first pass, and both were wrong. (a) `trophy-share-cta-click` is the VISITOR's button on a shared case; owner shares went only to `/api/rewards/track`, which has written nothing since ~10-04, so shares were unmeasured. (b) The edition page's "Watch this edition" alert already exists and writes `fmv_alerts` — 0 rows ever — so it was not a missing feature.
 - CODE: `components/profile/ShareProfileButtons.tsx` → `share-click` usage event (medium, surface, challenge); `components/alerts/WatchEditionButton.tsx` → `watch-edition-open/-signin-needed/-saved`; `components/profile/TrophyCasesPanel.tsx` completion toast adds "Share it from the buttons above your case." only when those buttons render (board username known).

@@ -97,6 +97,12 @@ export interface UnclaimedReward {
  * failed read THROWS, so the caller shows nothing rather than "no reward".
  */
 export async function unclaimedRewardsForUser(db: Reader, userId: string): Promise<UnclaimedReward[]> {
+  // 2026-11-15: an INTERNAL account (Trevor's, QA) is never invited to claim. Dame Time
+  // ended with exactly 6 packs for 6 eligible members, and the founder's account also
+  // holds a completed case — one tap on the card would have taken a member's pack.
+  const internal = await db.from("internal_accounts").select("user_id").eq("user_id", userId).limit(1)
+  if (internal.error) throw new Error(`internal_accounts read failed: ${internal.error.message}`)
+  if (rows(internal.data).length > 0) return []
   const cases = await db.from("trophy_cases").select("challenge_id").eq("user_id", userId).not("completed_at", "is", null).limit(50)
   if (cases.error) throw new Error(`trophy_cases read failed: ${cases.error.message}`)
   const challengeIds = [...new Set(rows(cases.data).map((r) => str(r.challenge_id)).filter((s): s is string => s != null))]
