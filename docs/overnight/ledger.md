@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~11:45 AM PT — Candy: all 2,529 parked validated Magic Eden sales resolved by the drain — docs-only status read (Claude Code cloud; scheduled check)
+- Read-only SQL. 2,527 `written` + 2 `pack_asset`, 0 open, 0 failure resolutions; all 2,527 have a Candy `sales` row (magic_eden, tx hash = signature); `sold_at` = block time and `price_usd` = `price_sol` × daily `sol_usd_daily` on 2,527/2,527. Whole `candy_sales_unresolved` queue now 0 open (was ~6,400 queued-walk at 11-15 8:20 AM PT); last 8 `candy-sales-indexer` runs ok. Falsifier did not fire.
+- DOCS: status line appended to known-issues #257 (index regenerated, no row change). Revert: `git revert` this commit (docs only; no DB change).
+
 ### 2026-11-16 ~11:30 AM PT — @RipPacksCity 2025 rookie class "Where every Moment sits" posted + supply-breakdown template made rookie-season-aware with a live Atlas re-read (claude.ai thread; Trevor: "Can you also do one like this but for the 2025 rookies?" → "These should only be for their rookie season" → "Commit it yourself")
 - Posted: https://x.com/rippackscity/status/2122407037539922412 — 2025 class top 10 (rookie-season sales), 16,994 rookie-season Moments: locked 8,459 · unlocked 5,339 · burned 2,386 · in packs 747 · minted, not in packs 63. Every number re-read live from Atlas at 11:21 AM PT (191 editions, 95 dists + 20 newer ids probed, 0 errors) and matched. Archive: `docs/social/posts/2026-11-16/`.
 - Trevor's rule: a rookie class counts ROOKIE-SEASON Moments only (`badge_editions.season` = Atlas `NbaSeason`); the first draft's 17,462 included Flagg's and Bailey's 2026-27 Season Tip-Off (468).
