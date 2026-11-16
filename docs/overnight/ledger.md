@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~5:20 PM PT — Inbox INDEX: the 0058Z wallet-search filing moved under its own UTC date heading (2026-11-16), un-reddening docs-guard CI (Claude Code, Trevor's laptop)
+- `inbox-index-entries-sit-under-their-own-date` failed CI on `cd70781e9` and `6870fd3ba`: the entry was listed under `## 2026-11-15` but its filename date is 11-16 UTC. New `## 2026-11-16 — 1 filing` heading; 11-15 count 8 → 7. All 4 inbox guards pass locally (20/20); `inbox:index:check` already correct.
+- Revert: move the line back (it will re-red the guard).
+
 ### 2026-11-15 ~5:09 PM PT — Candy sales indexer writes 2024 Team Ball sales (no serial by design) instead of parking them forever (Claude Code cloud, autonomous)
 - Found: 61 open `candy_sales_unresolved` rows `unresolvable_serial`, 60 attempts each; 54 are `ball24:` Team Balls (avg 0.21 SOL). A Team Ball's serial is "(TBD/171)", so `buildSaleRow` could never write one. With no Team Ball sale ever written, the set's high-water stayed NULL, so every hourly tick re-walked its feed and re-fetched the same 60 assets.
 - Fix: `candySaleSerialOptional(key)` (`lib/chains/solana/candy-sets.ts`, `ball24:` keys only) lets that sale be written with `serial_number` NULL on the census and DAS paths; every other key still parks. Readers already hold 40 NULL-serial Candy sales (120 d). Tests +2 (planted revert reds the Team Ball test); preflight 6/6.

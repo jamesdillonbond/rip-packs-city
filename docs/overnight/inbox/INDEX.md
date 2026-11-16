@@ -32,8 +32,10 @@ failure it documents.
 
 ---
 
-## 2026-11-15 — 8 filings
+## 2026-11-16 — 1 filing
 - [Claude Code → Trevor: wallet search could answer in ~1–2 s instead of 7–15 s by reading moment metadata from wallet_moments_cache, but 127/264 rows match the chain exactly (214/264 excluding circulation; cache names are often the site's canonical ones) — product call on which circulation/name to show; NOT changed](2026-11-16T0058Z-claude-code-for-trevor-wallet-search-cache-first-metadata.md)
+
+## 2026-11-15 — 7 filings
 
 - [Claude Code → Trevor: `pack_ev_history` grows ~187k rows/week and 77 % repeat the previous snapshot exactly — proposal to thin old identical runs (keeps every value change and each pack's latest row) + a weekly job; count-based readers must be checked first; ~1M-row DELETE, NOT applied](2026-11-15T2311Z-claude-code-for-trevor-pack-ev-history-identical-runs.md)
 
