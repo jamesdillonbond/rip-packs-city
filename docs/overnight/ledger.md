@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~11:45 AM PT — A trade room started from /trades/compare carries the plan (Claude Code cloud; Trevor: "Yes")
+- DB (prod, applied ~11:16 AM PT): table `trade_room_plans` (migration `20261116191551`): one row per room, FK to `trade_rooms` ON DELETE CASCADE, RLS on, anon/authenticated revoked (verified: anon SELECT false, authenticated INSERT false). Revert: `DROP TABLE public.trade_room_plans;`
+- CODE: `POST /api/trade-room { plan }` stores the partner's username and each side's planned Top Shot ids with display lines read server-side from the index; a bad plan creates no room (400); a failed attach answers `plan_saved:false` and Compare says so with a link. `RoomView.from_compare` + "Planned on Compare" panel: a guide, never a pick, with a one-tap "Add my N planned Moments" through the normal chain-checked `items` save. `lib/trade-room/plan.ts`. Spec: `docs/strategy/features/trading.md` §4.
+- Tests: 5 route + 5 room component + 1 compare component; a planted removal of the plan's id check reds the route test. Full `npm run preflight` green after one lint fix (component coverage 90.85 %).
+- Revert: `git revert` this commit, then the DROP above.
+
 ### 2026-11-16 ~11:45 AM PT — Next.js 16.4.3 → 16.4.5 (Dependabot #30, GHSA-mfr8-8qww-v76h, moderate) (Claude Code, laptop; Trevor: "Keep going and work through these")
 - **Exposure:** none found — the advisory needs a `'use cache'` function called through `unstable_cache()`; the tree has no `'use cache'` directive (only plain `unstable_cache` in `lib/marketplace-status.ts` and `components/entity/PopularOnCollection.tsx`). Patched anyway to clear the alert. 16.4.5 published 11-03.
 - **Lockfile:** only `next` + 9 `@next/*` entries changed; Windows npm's dropping of the Linux `libc` fields was undone by hand (no platform drift). `npm ci` clean; preflight 5/5.
