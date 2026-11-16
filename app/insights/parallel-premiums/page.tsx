@@ -17,6 +17,15 @@ import { fetchParallelPremiums, type ParallelRow } from "@/lib/parallel-premiums
 // The backing view reads FMV live; 15-min ISR matches the route's edge cache.
 export const revalidate = 900
 
+// ⚠ This page's read gets 25 s, not the shared 8 s BOARD_LIVE_TIMEOUT_MS — the same call
+// /insights/panini-premiums made on 2026-11-15. Measured 2026-11-16: the default read of
+// v_topshot_parallel_premiums runs a newest-FMV lateral per parallel edition (5,103 parallels,
+// ~76k buffers, 2.8 s cold with 2.6 s of it disk reads); pgss over 5,103 calls: mean 3.3 s,
+// sd 6.0 s, max 29.9 s. So a cold or contended regeneration overruns 8 s, and a failed read is
+// cached by ISR for the whole 15-min window ("read exceeded 8000ms", Vercel runtime errors,
+// recurring since 08-17). ISR regenerates in the BACKGROUND, so a slower read delays nobody;
+// 25 s stays under service_role's 30 s statement_timeout and Next's 60 s prerender limit.
+const PARALLEL_PREMIUMS_READ_BUDGET_MS = 25_000
 
 export default async function ParallelPremiumsPage() {
   const { data: rows, fetchedAt, ok } = await fetchBoardForPage<ParallelRow[]>(
@@ -29,6 +38,7 @@ export default async function ParallelPremiumsPage() {
       sort: "premium",
       limit: 100,
     }),
+    PARALLEL_PREMIUMS_READ_BUDGET_MS,
   )
   return (
     <>

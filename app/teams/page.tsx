@@ -121,7 +121,14 @@ function LeagueSection({ league }: { league: DirectoryLeague }) {
                   background: readableFill(t.primary_color) || "var(--rpc-surface, rgba(255,255,255,0.04))",
                   // brand-exception: a team's own colours are theme-independent
                   // …but only when it reads on the primary (readableOn, 2026-10-24).
-                  color: readableOn(readableFill(t.primary_color), t.secondary_color),
+                  // ⚠ NO primary → the fill above is the THEME surface, so the label must be
+                  // the theme's text colour too. readableOn(null, …) answers the secondary or
+                  // #fff, which on the light surface (#f7f7f5) is 1.07:1 — the 2026-11-16
+                  // scheduled axe run failed /teams?theme=light on 16 such chips (NWSL clubs
+                  // with no colours: Angel City, Bay FC, Legacy…).
+                  color: readableFill(t.primary_color)
+                    ? readableOn(readableFill(t.primary_color), t.secondary_color)
+                    : "var(--rpc-text-primary)",
                 }}
               >
                 {t.abbreviation || "—"}

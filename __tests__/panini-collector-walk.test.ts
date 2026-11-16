@@ -31,6 +31,7 @@ import {
   operationOf,
   parseTargets,
   profileStateOf,
+  profileStateUrl,
   profileUrl,
   readCollected,
   toHolding,
@@ -107,6 +108,20 @@ describe("profileStateOf", () => {
   it("public only when the collected answer arrived; otherwise unknown", () => {
     expect(profileStateOf({ url: "", profileInfo: null, collectedSeen: true })).toBe("public")
     expect(profileStateOf({ url: "", profileInfo: null, collectedSeen: false })).toBe("unknown")
+  })
+})
+
+describe("profileStateUrl", () => {
+  const LIST = "https://nft.paniniamerica.net/@sdb/profile/collections.html?tab=collected"
+  const BOUNCED = "https://nft.paniniamerica.net/usernotfound"
+  it("a later tab bouncing to /usernotfound does not make a profile whose list answered not_found (11-16: sdb 63/63)", () => {
+    const url = profileStateUrl({ listUrl: LIST, finalUrl: BOUNCED })
+    expect(url).toBe(LIST)
+    expect(profileStateOf({ url, profileInfo: null, collectedSeen: true })).toBe("public")
+  })
+  it("with no list answer the final URL still decides, so a real missing user stays not_found", () => {
+    const url = profileStateUrl({ listUrl: "", finalUrl: BOUNCED })
+    expect(profileStateOf({ url, profileInfo: null, collectedSeen: false })).toBe("not_found")
   })
 })
 

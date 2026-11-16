@@ -365,6 +365,18 @@ export function profileStateOf({ url, profileInfo, collectedSeen }) {
   return collectedSeen ? "public" : "unknown"
 }
 
+/**
+ * Which page URL speaks for the profile's existence (2026-11-16). The URL the COLLECTION LIST
+ * answered on, when it answered — never whichever tab the walk happened to visit last. Step 3
+ * navigates to the unopened-packs tab, and when that tab bounced to /usernotfound, a profile just
+ * read in full (sdb 63/63, jamesdillonbond 149/149 on 11-16) was posted as `not_found`, so the
+ * receiver refused the complete walk ("walker claimed complete; DB disagreed") and retired nothing.
+ * With no list answer, the final URL is still the evidence (a real /usernotfound lands there).
+ */
+export function profileStateUrl({ listUrl, finalUrl }) {
+  return listUrl || finalUrl || ""
+}
+
 /** Is the walk complete? Only with a known total and at least that many distinct cards. */
 export function isComplete(distinct, total, error) {
   return error == null && total != null && distinct >= total
@@ -533,6 +545,8 @@ async function walkProfile(ctx, nickname, { maxPages, log, capMin = null }) {
   }
 
   let finalUrl = ""
+  // The page URL at the moment the collection list answered (see profileStateUrl).
+  let listUrl = ""
   try {
     // 1. The profile's collection list: one row per collection, each with its collected count.
     let got
@@ -543,6 +557,7 @@ async function walkProfile(ctx, nickname, { maxPages, log, capMin = null }) {
       })
       got = await first
       if (got !== undefined && got !== null) {
+        listUrl = page.url()
         source = candidate
         log(`  ${nickname}: collection list answered on ${candidate}`)
         break
@@ -628,7 +643,7 @@ async function walkProfile(ctx, nickname, { maxPages, log, capMin = null }) {
     await withDeadline(page.close().catch(() => {}), 10_000)
   }
   const total = reportedCardTotal(collections, collectionTotal)
-  const profileState = profileStateOf({ url: finalUrl, profileInfo, collectedSeen: collectedSeen || (collections != null && collections.length === 0 && collectionTotal === 0) })
+  const profileState = profileStateOf({ url: profileStateUrl({ listUrl, finalUrl }), profileInfo, collectedSeen: collectedSeen || (collections != null && collections.length === 0 && collectionTotal === 0) })
   if (!error && total != null && holdings.size < total) error = `collected ${holdings.size} of ${total} cards`
   return { holdings: [...holdings.values()], total, unopenedPacks, profileState, answers, error, sampleKeys, source, foreign, names }
 }
