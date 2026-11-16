@@ -456,6 +456,28 @@ describe("POST /api/wallet-search — parallels and circulation", () => {
     expect(seeded.some((k) => k.includes("::"))).toBe(false)
   })
 
+  it("with GraphQL down (the degraded row), a parallel still gets its own key and its name", async () => {
+    state.gqlError = new Error("Top Shot GraphQL failed with 530")
+    state.metadataById = { "101": { ...momentMeta("66"), sub: "17" }, "102": momentMeta("777") }
+    install(
+      baseFixtures({
+        editions: [
+          { data: null, error: null },
+          { data: [{ id: "uuid-par-17", external_id: "3:45::17", circulation_count: 99 }], error: null },
+        ],
+        topshot_subeditions: { data: [{ subedition_id: 17, name: "Legendary Parallel" }], error: null },
+      }),
+    )
+    const body = await (await POST(post({ input: WALLET }))).json()
+    const par = body.rows.find((r: { momentId: string }) => r.momentId === "101")
+    expect(par.enrichFailed).toBe(true)
+    expect(par.editionKey).toBe("3:45::17")
+    expect(par.parallel).toBe("Legendary Parallel")
+    expect(par.circulationCount).toBe(99)
+    const base = body.rows.find((r: { momentId: string }) => r.momentId === "102")
+    expect(base.parallel ?? null).toBeNull()
+  })
+
   it("never shows the chain's family count: no edition circulation → null, not the chain number", async () => {
     state.metadataById = {
       "101": { ...momentMeta("5"), mint: "4099" },

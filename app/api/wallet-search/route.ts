@@ -2019,8 +2019,10 @@ export async function POST(req: NextRequest) {
           lastPurchasePrice: null,
           acquiredAt: null,
           editionKey: editionKeyFb,
-          parallel: null,
-          subedition: null,
+          // The chain read (not the dead GraphQL leg) supplies the subedition, so a
+          // parallel keeps its name here too; a base or unread row stays null.
+          parallel: (toNum(meta.sub) ?? 0) > 0 ? subeditionName(subNames, toNum(meta.sub)!) : null,
+          subedition: (toNum(meta.sub) ?? 0) > 0 ? subeditionName(subNames, toNum(meta.sub)!) : null,
           flowId: gqlFallback.flowId ?? null,
           thumbnailUrl: null,
           tssPoints: null,
