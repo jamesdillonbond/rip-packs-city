@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~9:35 PM PT — UFC Flow wallet scan works again: `scan-ufc-wallet`'s metadata script borrowed an interface UFC_NFT no longer declares (Claude Code, Trevor's laptop; "keep going")
+- `UFC_NFT` now exposes `UFC_NFTCollectionPublic` and `borrowUFC_NFT(id:)`. The edge function's script used `&{UFC_NFT.MomentNFTCollectionPublic}` + `borrowMomentNFT`, so it never type-checked, and every UFC binder search's Flow scan enriched nothing. That leaves the new "On Flow" tile empty for any wallet not already cached. Now: `&UFC_NFT.Collection` + `borrowUFC_NFT`, verified on mainnet (0x6cbb…: 68 ids; metadata edition / serial 4551 / max 12000 / tier / athlete).
+- Removed from `check-inline-scripts.mjs` KNOWN_DEAD. The drift census read every deployed edge fn == repo at 6:15 AM PT, so the deploy reverts nothing. Deployed via `edge-fn-deploy.yml`.
+- Revert: `git revert` + redeploy the function from the reverted file.
+
 ### 2026-11-15 ~9:15 PM PT — #259 verified on its first census run: 452 merged-edition cards re-read, 193 moved, 90 → 86 editions (Claude Code cloud)
 - 8:57 PM PT `candy-collections-census` (ok): `split_rechecked` 452, `wmc_repointed` 193, listings 1, sales 0 (none of those cards had sales), 23 re-reads failed (`fetch failed`, not recorded — retried next walk). Merged editions 90 → 86, over-circulation cards 3,857 → 3,830; every recorded card's holdings row = its recorded key (0 mismatches).
 - Read-back of where cards went: into the RIGHT editions that already existed (Batman #405 legendary 65 / core 63; Blackest Night uncommon 30, rare 9; Atom Project uncommon/rare/epic), serials all within the destination's circulation; the majority stayed (#405 epic 154, max serial 1,220 ≤ 1,225); one true collision split to a new `…justice-league-vs-suicide-legendary-n750` (8 cards, max 749 ≤ 750).
