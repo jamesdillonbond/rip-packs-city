@@ -36,10 +36,13 @@ export function rewardsFromBody(body: unknown): RewardCardItem[] {
   return out
 }
 
-// One "shown" event per page load, however often the Overview re-mounts.
+// One "shown" event per page load and surface, however often the page re-mounts.
 const shownThisLoad = new Set<string>()
 
-export default function UnclaimedRewardCard() {
+/** Where the card renders: dashboard Overview (11-15) or the Packs tab (11-16). */
+export type RewardCardSurface = "overview" | "packs"
+
+export default function UnclaimedRewardCard({ surface = "overview" }: { surface?: RewardCardSurface } = {}) {
   const [rewards, setRewards] = useState<RewardCardItem[]>([])
 
   useEffect(() => {
@@ -52,15 +55,15 @@ export default function UnclaimedRewardCard() {
         const list = rewardsFromBody(body)
         setRewards(list)
         const key = list.map((r) => r.dropSlug).join(",")
-        if (list.length && !shownThisLoad.has(key)) {
-          shownThisLoad.add(key)
-          track("reward-claim-card-shown", { drops: key })
+        if (list.length && !shownThisLoad.has(`${surface}:${key}`)) {
+          shownThisLoad.add(`${surface}:${key}`)
+          track("reward-claim-card-shown", { drops: key, surface })
         }
       })
     return () => {
       active = false
     }
-  }, [])
+  }, [surface])
 
   if (rewards.length === 0) return null
   return (
@@ -82,7 +85,7 @@ export default function UnclaimedRewardCard() {
           </div>
           <a
             href={`/giveaways/${r.dropSlug}`}
-            onClick={() => track("reward-claim-card-click", { drop: r.dropSlug })}
+            onClick={() => track("reward-claim-card-click", { drop: r.dropSlug, surface })}
             // brand-exception: white label on the red CTA button — theme-independent
             style={{ padding: "12px 20px", background: "var(--rpc-red-fill)", borderRadius: 8, color: "#fff", fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 13, letterSpacing: "0.08em", textTransform: "uppercase", textDecoration: "none" }}
           >

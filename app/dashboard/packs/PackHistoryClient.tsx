@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import DashboardTabs from "@/components/dashboard/DashboardTabs"
+import UnclaimedRewardCard from "@/components/profile/UnclaimedRewardCard"
 import { fmtUsd, relativeTime } from "@/lib/dashboard/format"
 import { currencySuffix, displayCurrency, isUsdPegged } from "@/lib/usd-format"
 import { packCoverage, collectionPlWithheld } from "@/lib/packs-wallet-view-format"
@@ -422,6 +423,10 @@ export default function PackHistoryClient() {
 
         {/* IA Phase 1 (2026-11-06): the same five-tab row the dashboard shows, with this page current. */}
         <DashboardTabs active="packs" />
+
+        {/* 2026-11-16: tomwagmi saw the reward card on Overview and went straight to this page
+            looking for the pack. An earned, unclaimed reward pack belongs where packs live too. */}
+        <UnclaimedRewardCard surface="packs" />
 
         {/* Wallet selector */}
         {walletsLoading ? (
