@@ -1298,6 +1298,12 @@ export function isPublicPath(pathname: string, method: string): boolean {
     // anonymous serial search to /login (caught by fetching the deployed route). GET-only,
     // no session, service-role read of public Atlas listing rows — /api/sniper-feed's class.
     "/api/topshot-serial-search",
+    // 2026-11-16: the UFC binder's "On Aptos" section (components/collection/UfcAptosHoldings.tsx).
+    // The Collection tab is anon-public, so a gated route 307'd every anonymous binder's read to
+    // /login and the section silently never appeared (caught by fetching the deployed route, again).
+    // GET-only, no session, service-role read of public chain-derived holdings; returns no Aptos
+    // address and no link confidence.
+    "/api/ufc/aptos-holdings",
   ])
   if ((method === "GET" || method === "HEAD") && PUBLIC_READ_APIS.has(pathname)) {
     return true
