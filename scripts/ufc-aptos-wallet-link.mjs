@@ -43,7 +43,12 @@ for (let i = 0; i < SPORKS.length; i++) SPORKS[i].end = SPORKS[i + 1] ? SPORKS[i
 const args = process.argv.slice(2)
 const APPLY = args.includes("--apply")
 const arg = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d }
+// The budget bounds the MATCHING loop and starts when it starts. Listing every Aptos mint first takes
+// 4–11 min on the hosted runner (11-16: 4 min at 04:26Z, 11 min at 17:25Z). When the clock also covered
+// that listing, the 17:25Z run spent the whole budget there and matched nothing. The listing has its own
+// cap (--enum-budget-sec) and fails the run, rather than quietly leaving no time to do the work.
 const BUDGET_MS = Number(arg("--budget-sec", 900)) * 1000
+const ENUM_BUDGET_MS = Number(arg("--enum-budget-sec", 720)) * 1000
 const CONC = Number(arg("--concurrency", 6))
 const ONLY_SPORK = arg("--spork", null)
 const t0 = Date.now()
@@ -142,6 +147,20 @@ for (let v = 3180000000; ;) {
   for (const x of r) mints.push({ aptos_version: Number(x.transaction_version), minted_at: x.transaction_timestamp + "Z", aptos_address: x.to_address })
   if (r.length < 100) break
   v = r.at(-1).transaction_version
+  if (Date.now() - t0 > ENUM_BUDGET_MS) {
+    // A PARTIAL mint list is not the list: stop, and say so in pipeline_runs.
+    const msg = `mint listing exceeded ${ENUM_BUDGET_MS / 1000}s after ${mints.length} mints (indexer slow); matched nothing this run`
+    console.error(msg)
+    if (APPLY) {
+      const { error } = await db.rpc("log_pipeline_run", {
+        p_pipeline: "ufc-aptos-wallet-link", p_started_at: new Date(t0).toISOString(), p_rows_found: null, p_rows_written: 0,
+        p_rows_skipped: 0, p_ok: false, p_error: msg, p_collection_slug: "ufc_strike", p_cursor_before: null, p_cursor_after: null,
+        p_extra: { mints_listed: mints.length, seconds: Math.round((Date.now() - t0) / 1000) },
+      })
+      if (error) console.warn(`log_pipeline_run failed: ${error.message}`)
+    }
+    process.exit(1)
+  }
   await sleep(process.env.APTOS_API_KEY ? 100 : 1200)
 }
 const done = new Set()
@@ -156,7 +175,8 @@ console.log(`mode ${APPLY ? "APPLY" : "dry-run"} · ${mints.length} Aptos mint t
 
 const deadSporks = new Map()
 const stats = { processed: 0, written: 0, count_exact: 0, count_superset: 0, none: 0, skipped_unreachable: 0, errors: 0 }
-for (let i = 0; i < todo.length && Date.now() - t0 < BUDGET_MS; i += CONC) {
+const tMatch = Date.now()
+for (let i = 0; i < todo.length && Date.now() - tMatch < BUDGET_MS; i += CONC) {
   const slice = todo.slice(i, i + CONC).filter((b) => !deadSporks.has(sporkFor(b.minted_at).name))
   const rows = []
   await Promise.all(slice.map(async (b) => {
@@ -179,12 +199,16 @@ if (APPLY) {
   if (error) throw error
   links = data
 }
-const summary = { ...stats, links_upserted: links, remaining: todo.length - stats.processed, dead_sporks: Object.fromEntries(deadSporks), seconds: Math.round((Date.now() - t0) / 1000) }
+const summary = { ...stats, links_upserted: links, remaining: todo.length - stats.processed, dead_sporks: Object.fromEntries(deadSporks), enum_seconds: Math.round((tMatch - t0) / 1000), seconds: Math.round((Date.now() - t0) / 1000) }
 console.log(JSON.stringify(summary))
+// Work existed, nothing was matched and nothing explains why (no error, no dead spork) = the run did not
+// do its job, whatever else succeeded. ok must say so (11-16 17:25Z run: 0 of 7,987, logged ok=true).
+const stalled = todo.length > 0 && stats.processed === 0 && stats.errors === 0 && stats.skipped_unreachable === 0
 if (APPLY) {
   const { error } = await db.rpc("log_pipeline_run", {
     p_pipeline: "ufc-aptos-wallet-link", p_started_at: startedAt, p_rows_found: todo.length, p_rows_written: stats.written,
-    p_rows_skipped: stats.skipped_unreachable + stats.errors, p_ok: stats.errors === 0, p_error: stats.errors ? `${stats.errors} batch errors` : null,
+    p_rows_skipped: stats.skipped_unreachable + stats.errors, p_ok: stats.errors === 0 && !stalled,
+    p_error: stats.errors ? `${stats.errors} batch errors` : stalled ? `0 of ${todo.length} processed` : null,
     p_collection_slug: "ufc_strike", p_cursor_before: String(done.size), p_cursor_after: String(done.size + stats.written), p_extra: summary,
   })
   if (error) console.warn(`log_pipeline_run failed: ${error.message}`)
