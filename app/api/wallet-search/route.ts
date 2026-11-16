@@ -23,6 +23,7 @@ import { ownLookup } from "@/lib/safe-lookup"
 import { askCapFlag, type FmvCapFlag } from "@/lib/fmv-basis"
 import { anonIpKey, bumpAnonRates } from "@/lib/abuse/anon-rate"
 import { isSeedableRow, seedTier } from "@/lib/wallet-search/seed-edition"
+import { loadTopshotSubeditionNames, subeditionName, type SubeditionNames } from "@/lib/topshot-subeditions"
 
 type WalletRow = {
   momentId: string
@@ -332,64 +333,107 @@ async function getAllDayOwnedIds(wallet: string): Promise<number[]> {
   })
 }
 
-async function getMomentMetadata(wallet: string, id: number) {
-  return getOrSetCache(`metadata:${wallet}:${id}`, METADATA_TTL, async () => {
-    // Non-panicking variant: always pulls setID/playID/serial directly from
-    // moment.data (resource fields on TopShot.NFT) so edition_key resolution
-    // does not depend on metadata view availability. Falls back to empty
-    // strings for rich fields if TopShotMomentMetadataView cannot be
-    // resolved (e.g. for some newer moment types).
-    const cadence = `
-      import TopShot from 0x0b2a3299cc857e29
-      import MetadataViews from 0x1d7e57aa55817448
-      access(all)
-      fun main(address: Address, id: UInt64): {String:String} {
-        let acct = getAccount(address)
-        let col = acct.capabilities.borrow<&{TopShot.MomentCollectionPublic}>(/public/MomentCollection)
-          ?? panic("no collection")
-        let nft = col.borrowMoment(id:id) ?? panic("no nft")
+// ⭐ ONE chain script per page, not one per moment (2026-11-15). The per-moment
+// script was the `enrich_moments` stage: 6.0–12.8 s of a 7.5–15 s uncached
+// search (inbox 2026-11-16T0058Z), 8 scripts in flight at a time. A batched
+// script read 17 moments in ~360 ms. ⚠ A SCRIPT HAS A 100,000 COMPUTATION LIMIT:
+// 60 moments used 100,004 and failed (measured 11-15, ~1,700 per moment), 40
+// passed. 25 per script (~42k) leaves ~2.4× headroom; a page's chunks run in
+// parallel, so the default 24-moment page is one script and the 60 cap is three.
+//
+// ⛔ NO "mint" FIELD. TopShotMomentMetadataView.numMomentsInEdition counts the
+// whole set:play FAMILY, parallels included: measured 11-15, every parallel in a
+// sample read 16,000 against its real /500, /2,500 or /4,000, and a base moment
+// read 4,099 for a 4,000 edition. Circulation comes from `editions` (by the
+// subedition-aware key) or the cache, never from here.
+//
+// ⭐ "sub" is TopShot.getMomentsSubedition(): 0 = the base printing, N > 0 = a
+// parallel, whose edition key is `set:play::N` (apis-and-cadence.md, "Reading
+// Top Shot NFT truth from the chain"). Without it every parallel was keyed,
+// priced and cached as its base edition.
+//
+// A moment the collection cannot borrow is absent from the result (the caller
+// treats it as "no nft"); rich fields fall back to MetadataViews.Display's name
+// for moment types without the Top Shot view, exactly as the per-moment script did.
+const METADATA_BATCH = 25
 
+const METADATA_BATCH_CADENCE = `
+  import TopShot from 0x0b2a3299cc857e29
+  import MetadataViews from 0x1d7e57aa55817448
+  access(all)
+  fun main(address: Address, ids: [UInt64]): {UInt64: {String: String}} {
+    let out: {UInt64: {String: String}} = {}
+    let acct = getAccount(address)
+    let col = acct.capabilities.borrow<&{TopShot.MomentCollectionPublic}>(/public/MomentCollection)
+    if col == nil { return out }
+    for id in ids {
+      if let nft = col!.borrowMoment(id: id) {
         let setID = nft.data.setID.toString()
         let playID = nft.data.playID.toString()
         let serial = nft.data.serialNumber.toString()
-
+        let sub = TopShot.getMomentsSubedition(nftID: id)?.toString() ?? ""
         if let view = nft.resolveView(Type<TopShot.TopShotMomentMetadataView>()) {
           let data = view as! TopShot.TopShotMomentMetadataView
-          return {
+          out[id] = {
             "player": data.fullName ?? "",
             "team": data.teamAtMoment ?? "",
             "setName": data.setName ?? "",
             "series": data.seriesNumber?.toString() ?? "",
             "serial": serial,
-            "mint": data.numMomentsInEdition?.toString() ?? "",
+            "sub": sub,
+            "playID": playID,
+            "setID": setID
+          }
+        } else {
+          var displayName = ""
+          if let display = nft.resolveView(Type<MetadataViews.Display>()) as? MetadataViews.Display {
+            displayName = display.name
+          }
+          out[id] = {
+            "player": displayName,
+            "team": "",
+            "setName": "",
+            "series": "",
+            "serial": serial,
+            "sub": sub,
             "playID": playID,
             "setID": setID
           }
         }
-
-        var displayName = ""
-        if let display = nft.resolveView(Type<MetadataViews.Display>()) as? MetadataViews.Display {
-          displayName = display.name
-        }
-
-        return {
-          "player": displayName,
-          "team": "",
-          "setName": "",
-          "series": "",
-          "serial": serial,
-          "mint": "",
-          "playID": playID,
-          "setID": setID
-        }
       }
-    `
-    const result = await fcl.query({
-      cadence,
-      args: (arg: any) => [arg(wallet, t.Address), arg(String(id), t.UInt64)],
-    })
-    return result as Record<string, string>
-  })
+    }
+    return out
+  }
+`
+
+/**
+ * moment id → chain metadata for every id the wallet holds. A failed chunk
+ * REJECTS (its moments then take the degraded row, as a failed per-moment read
+ * did); a moment absent from a successful chunk is simply not in the map.
+ */
+async function getMomentMetadataBatch(wallet: string, ids: number[]): Promise<Map<string, Record<string, string>>> {
+  const chunks: number[][] = []
+  for (let i = 0; i < ids.length; i += METADATA_BATCH) chunks.push(ids.slice(i, i + METADATA_BATCH))
+  const results = await Promise.all(
+    chunks.map((chunk) =>
+      getOrSetCache(`metadata-batch:${wallet}:${chunk.join(",")}`, METADATA_TTL, async () => {
+        const result = await fcl.query({
+          cadence: METADATA_BATCH_CADENCE,
+          args: (arg: any) => [arg(wallet, t.Address), arg(chunk.map(String), t.Array(t.UInt64))],
+        })
+        return (result && typeof result === "object" ? result : {}) as Record<string, Record<string, string>>
+      }),
+    ),
+  )
+  const out = new Map<string, Record<string, string>>()
+  for (const r of results) for (const [id, meta] of Object.entries(r)) out.set(String(id), meta)
+  return out
+}
+
+/** `set:play` for the base printing, `set:play::N` for parallel N; null without both ids. */
+function chainEditionKey(setId: number | null, playId: number | null, sub: number | null): string | null {
+  if (setId === null || playId === null) return null
+  return sub !== null && sub > 0 ? `${setId}:${playId}::${sub}` : `${setId}:${playId}`
 }
 
 // 2026-11-15: guarded by a dead-host breaker (lib/wallet-search/topshot-gql-breaker.ts).
@@ -596,6 +640,9 @@ async function seedEditionsToSupabase(rows: WalletRow[], collectionId: string) {
       // A degraded row (its metadata read failed) seeds nothing, and an unknown
       // tier is NULL, never COMMON — lib/wallet-search/seed-edition.ts.
       if (!isSeedableRow(row)) continue
+      // A parallel (`set:play::N`) is the catalog's to create, with its parallel
+      // name and circulation; this seed knows neither (2026-11-15).
+      if (row.editionKey?.includes("::")) continue
       const normalizedTier = seedTier(row.tier)
 
       let playerId: string | null = null
@@ -752,7 +799,7 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
     for (let i = 0; i < editionKeys.length; i += CHUNK) {
       let q = (supabaseAdmin as any)
         .from("editions")
-        .select("id, external_id")
+        .select("id, external_id, circulation_count")
         .in("external_id", editionKeys.slice(i, i + CHUNK))
       // 2026-11-07 review: external_id is unique per (external_id, collection_id).
       // Every `set:play` key in editions is Top Shot's today, so this is a no-op
@@ -779,6 +826,9 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
 
     // 4. Build edition external_id → internal UUID map
     const extToId = new Map<string, string>()
+    // The edition's own circulation, by the subedition-aware key — the one
+    // circulation source this route trusts (the chain's count is the family).
+    const extToCirc = new Map<string, number>()
     // ⚠ A failed resolve chunk is NOT "no FMV" (2026-11-07 review): `{ data }`
     // dropped its error, every row read fmv null with no fmvReadFailed, and the
     // cache write nulled their cached FMVs — the defect step 6 below fixed for its
@@ -788,6 +838,8 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
       if (error) editionResolveFailed = true
       for (const row of (data ?? [])) {
         extToId.set(row.external_id, row.id)
+        const circ = toNum(row.circulation_count)
+        if (circ !== null && circ > 0) extToCirc.set(row.external_id, circ)
       }
     }
 
@@ -959,8 +1011,20 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
 
       if (fmvData) enrichedCount++
 
+      // The edition's circulation wins over the cache's per-moment copy. The
+      // serial traits that need it are recomputed here, never on a degraded row
+      // (its traits are UNKNOWN, not empty).
+      const circ = row.editionKey ? extToCirc.get(row.editionKey) : undefined
+      const circulation = circ ?? row.circulationCount ?? null
+      const traits = row.enrichFailed
+        ? row.specialSerialTraits
+        : specialSerialTraits(row.serialNumber ?? null, circulation, row.officialBadges ?? [])
+
       return {
         ...row,
+        circulationCount: circulation,
+        mintSize: circulation ?? undefined,
+        specialSerialTraits: traits,
         fmv: fmvData?.fmv ?? null,
         ...(fmvReadError ? { fmvReadFailed: true } : {}),
         marketConfidence: fmvData?.confidence ?? null,
@@ -1786,6 +1850,29 @@ export async function POST(req: NextRequest) {
     const slice = ids.slice(offset, offset + limit)
     mark("enrich_moments")
 
+    // One batched chain read for the page (see getMomentMetadataBatch). Started
+    // before the per-moment loop so it overlaps the GraphQL leg; each moment
+    // awaits its own entry. Never created for an All Day page (#142).
+    const metaBatchP = !isAllDay && slice.length > 0 ? getMomentMetadataBatch(wallet, slice) : null
+    // Parallel names, read only when the page holds a parallel. A failed read
+    // leaves the name null (never "Parallel N"); the key is still correct.
+    const subNamesP: Promise<SubeditionNames | null> = metaBatchP
+      ? metaBatchP.then(
+          async (m) => {
+            if (![...m.values()].some((v) => (toNum(v.sub) ?? 0) > 0)) return null
+            const r = await loadTopshotSubeditionNames()
+            return r.ok ? r.names : null
+          },
+          () => null,
+        )
+      : Promise.resolve(null)
+    const metaFor = async (id: number): Promise<Record<string, string>> => {
+      if (!metaBatchP) throw new Error("no metadata read")
+      const meta = (await metaBatchP).get(String(id))
+      if (!meta) throw new Error("no nft")
+      return meta
+    }
+
     const baseRows = (await mapWithConcurrency(slice, 8, async (id) => {
       // INVARIANT_SAFE: catch per-moment errors so one bad moment doesn't crash the whole wallet
       // `stage` tracks which sub-step failed so Vercel logs can identify
@@ -1821,11 +1908,12 @@ export async function POST(req: NextRequest) {
         ? ([
             { status: "rejected", reason: notTopShot },
             { status: "rejected", reason: notTopShot },
-          ] as [PromiseSettledResult<Awaited<ReturnType<typeof fetchMomentGraphQL>>>, PromiseSettledResult<Awaited<ReturnType<typeof getMomentMetadata>>>])
+          ] as [PromiseSettledResult<Awaited<ReturnType<typeof fetchMomentGraphQL>>>, PromiseSettledResult<Record<string, string>>])
         : await Promise.allSettled([
             fetchMomentGraphQL(String(id)),
-            getMomentMetadata(wallet, id),
+            metaFor(id),
           ])
+      const subNames = await subNamesP
       try {
       if (gqlSettled.status === "rejected") { stage = "enrich-gql"; throw gqlSettled.reason }
       if (metaSettled.status === "rejected") { stage = "flow-metadata"; throw metaSettled.reason }
@@ -1834,12 +1922,18 @@ export async function POST(req: NextRequest) {
       stage = "assemble"
 
       const serial = toNum(meta.serial)
-      const mint = toNum(meta.mint)
+      // Circulation is NOT read here (the chain's count is the whole family) —
+      // batchEnrichFmvAndAsks / fillFromWalletCache supply it, and recompute
+      // the serial traits that depend on it.
+      const mint: number | null = null
       const setId = toNum(meta.setID) ?? toNum(gql.setID)
       const playId = toNum(meta.playID) ?? toNum(gql.playID)
-      const editionKey = setId !== null && playId !== null ? `${setId}:${playId}` : null
+      const sub = toNum(meta.sub)
+      const editionKey = chainEditionKey(setId, playId, sub)
       const normalizedSet = normalizeSetName(meta.setName ?? "Unknown Set")
-      const normalizedParallel = normalizeParallel("")
+      // A parallel whose name is unknown is null, never "Base".
+      const normalizedParallel =
+        sub !== null && sub > 0 ? subeditionName(subNames, sub) : normalizeParallel("")
       const graphqlBadgeTypes = gql.badges.map((b) => b.type).filter(Boolean)
 
       return {
@@ -1851,9 +1945,9 @@ export async function POST(req: NextRequest) {
         series: meta.series ?? undefined,
         tier: gql.tier ?? undefined,
         serial: serial ?? undefined,
-        mintSize: mint ?? undefined,
+        mintSize: undefined,
         serialNumber: serial ?? null,
-        circulationCount: mint ?? null,
+        circulationCount: null,
         officialBadges: graphqlBadgeTypes,
         specialSerialTraits: specialSerialTraits(serial, mint, graphqlBadgeTypes),
         isLocked: gql.isLocked,
@@ -1893,7 +1987,9 @@ export async function POST(req: NextRequest) {
             : { flowId: null, setID: null, playID: null };
         const setIdFb = toNum(meta.setID) ?? toNum(gqlFallback.setID);
         const playIdFb = toNum(meta.playID) ?? toNum(gqlFallback.playID);
-        const editionKeyFb = setIdFb !== null && playIdFb !== null ? `${setIdFb}:${playIdFb}` : null;
+        // Subedition-aware like the success path. Without the chain read there is
+        // no `sub`, so the key is the base `set:play` — as it always was here.
+        const editionKeyFb = chainEditionKey(setIdFb, playIdFb, toNum(meta.sub));
         return {
           momentId: String(id),
           playerName: meta.player || "Unknown (error loading)",
@@ -1904,9 +2000,9 @@ export async function POST(req: NextRequest) {
           setName: normalizeSetName(meta.setName) || "Unknown Set",
           series: meta.series || undefined,
           serial: toNum(meta.serial) ?? undefined,
-          mintSize: toNum(meta.mint) ?? undefined,
+          mintSize: undefined,
           serialNumber: toNum(meta.serial) ?? null,
-          circulationCount: toNum(meta.mint) ?? null,
+          circulationCount: null,
           // ⛔ NOT `[]` / `false`. This block runs BECAUSE the read failed, so
           // these are UNKNOWN, and an empty array or a `false` is indistinguishable
           // from a measured "this moment has no badges / is not locked". Measured

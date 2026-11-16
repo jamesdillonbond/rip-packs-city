@@ -49,16 +49,20 @@ vi.mock("@/lib/chains/flow/flow", () => ({
   default: {
     query: async (opts: { cadence: string; args?: (arg: unknown, t: unknown) => unknown[] }) => {
       if (opts.cadence.includes("getIDs")) return state.ownedIds
-      const collected: string[] = []
+      // Batched metadata script (2026-11-15): one call carries the page's ids;
+      // each id is still asked once. A moment the wallet does not hold is ABSENT
+      // from the returned dictionary, as the Cadence returns it.
+      const collected: unknown[] = []
       opts.args?.(((v: unknown) => {
-        collected.push(String(v))
+        collected.push(v)
         return v
       }) as never, {} as never)
-      state.metaCalls.push(collected[1])
+      const ids = (collected[1] as string[]) ?? []
+      state.metaCalls.push(...ids)
       if (state.metaThrows) throw new Error("no nft")
-      const meta = state.metadataById[collected[1]]
-      if (!meta) throw new Error("no nft")
-      return meta
+      const out: Record<string, Record<string, string>> = {}
+      for (const id of ids) if (state.metadataById[id]) out[id] = state.metadataById[id]
+      return out
     },
   },
 }))

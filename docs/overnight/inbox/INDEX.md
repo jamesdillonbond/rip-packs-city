@@ -33,11 +33,11 @@ failure it documents.
 ---
 
 ## 2026-11-16 — 1 filing
-- [Claude Code → Trevor: wallet search could answer in ~1–2 s instead of 7–15 s by reading moment metadata from wallet_moments_cache, but 127/264 rows match the chain exactly (214/264 excluding circulation; cache names are often the site's canonical ones) — product call on which circulation/name to show; NOT changed](2026-11-16T0058Z-claude-code-for-trevor-wallet-search-cache-first-metadata.md)
+- [Claude Code → Trevor: wallet search could answer in ~1–2 s instead of 7–15 s by reading moment metadata from wallet_moments_cache, but 127/264 rows match the chain exactly (214/264 excluding circulation; cache names are often the site's canonical ones) — product call on which circulation/name to show; NOT changed](2026-11-16T0058Z-claude-code-for-trevor-wallet-search-cache-first-metadata.md) — ✅ RESOLVED 2026-11-15 ~6:00 PM PT (Claude Code): chain circulation is the whole family (a /500 parallel read 16,000), so circulation now comes from the edition row; parallels keyed set:play::N, priced by their own edition; chain read batched 25/script. Names unchanged (cache-first not needed)
 
 ## 2026-11-15 — 7 filings
 
-- [Claude Code → Trevor: `pack_ev_history` grows ~187k rows/week and 77 % repeat the previous snapshot exactly — proposal to thin old identical runs (keeps every value change and each pack's latest row) + a weekly job; count-based readers must be checked first; ~1M-row DELETE, NOT applied](2026-11-15T2311Z-claude-code-for-trevor-pack-ev-history-identical-runs.md)
+- [Claude Code → Trevor: `pack_ev_history` grows ~187k rows/week and 77 % repeat the previous snapshot exactly — proposal to thin old identical runs (keeps every value change and each pack's latest row) + a weekly job; count-based readers must be checked first; ~1M-row DELETE, NOT applied](2026-11-15T2311Z-claude-code-for-trevor-pack-ev-history-identical-runs.md) — ✅ RESOLVED 2026-11-15 ~5:55 PM PT (Claude Code): 20261116014326 — 691,464 interior identical rows thinned (1.41M → 723k), newest/filtered/hourly reads proven identical; daily pg_cron 889 keeps it thinned; backup audit_20261115_pack_ev_history_thinned
 
 - [Claude Code → Cowork/Trevor: the #248 fast-lane fix FAILED its pre-registered cost bar (3 h pooled 9,146 PostgREST reads/call vs 7,195) — revert to the 08-30 body + job 617 back to 2-hourly staged in docs/proposals/, NOT applied (destructive-statement prompt unanswered); needs Trevor's yes](2026-11-15T2040Z-claude-code-for-cowork-revert-rwfc-to-0830-body.md) — ✅ DONE 2026-11-15 (Claude Code cloud, Trevor delegated): NOT reverted — fix + daily 617 is net-negative IO; job 446 stale-overwrite fixed in 20261115204212
 

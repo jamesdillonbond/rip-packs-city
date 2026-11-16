@@ -46,14 +46,16 @@ vi.mock("@/lib/chains/flow/flow", () => ({
         if (state.ownedIdsError) throw state.ownedIdsError
         return state.ownedIds
       }
-      const collected: string[] = []
+      // Batched metadata script (2026-11-15): absent ids are not in the result.
+      const collected: unknown[] = []
       opts.args?.(((v: unknown) => {
-        collected.push(String(v))
+        collected.push(v)
         return v
       }) as never, {} as never)
-      const meta = state.metadataById[collected[1]]
-      if (!meta) throw new Error("no nft")
-      return meta
+      const ids = (collected[1] as string[]) ?? []
+      const out: Record<string, Record<string, string>> = {}
+      for (const id of ids) if (state.metadataById[id]) out[id] = state.metadataById[id]
+      return out
     },
   },
 }))

@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
   sb: null as unknown,
   ownedIds: [] as number[],
   metadataById: {} as Record<string, Record<string, string>>,
+  metadataError: null as Error | null,
   gqlById: {} as Record<string, unknown>,
   gqlError: null as Error | null,
 }))
@@ -26,16 +27,19 @@ vi.mock("@/lib/chains/flow/flow", () => ({
   default: {
     query: async (opts: { cadence: string; args?: (arg: unknown, t: unknown) => unknown[] }) => {
       if (opts.cadence.includes("getIDs")) return state.ownedIds
-      // Metadata script: recover the moment id from the args builder.
-      const collected: string[] = []
+      // Batched metadata script (2026-11-15): recover the id list from the args
+      // builder and answer only the ids the wallet "holds" — a missing id is
+      // absent from the dictionary, exactly as the Cadence returns it.
+      if (state.metadataError) throw state.metadataError
+      const collected: unknown[] = []
       opts.args?.(((v: unknown) => {
-        collected.push(String(v))
+        collected.push(v)
         return v
-      }) as never, {} as never)
-      const id = collected[1]
-      const meta = state.metadataById[id]
-      if (!meta) throw new Error("no nft")
-      return meta
+      }) as never, { Array: () => "Array" } as never)
+      const ids = (collected[1] as string[]) ?? []
+      const out: Record<string, Record<string, string>> = {}
+      for (const id of ids) if (state.metadataById[id]) out[id] = state.metadataById[id]
+      return out
     },
   },
 }))
@@ -81,7 +85,9 @@ function momentMeta(serial: string): Record<string, string> {
     setName: "Base Set",
     series: "5",
     serial,
-    mint: "15000",
+    // The chain's numMomentsInEdition is NOT read any more (it counts the whole
+    // family); circulation comes from the edition row below.
+    sub: "0",
     playID: "45",
     setID: "3",
   }
@@ -121,7 +127,7 @@ function baseFixtures(overrides: Fixtures = {}): Fixtures {
     collections: { data: { id: TS_UUID }, error: null },
     editions: [
       { data: null, error: null }, // batch upsert of missing editions
-      { data: [{ id: "uuid-ed-1", external_id: "3:45" }], error: null }, // key resolve
+      { data: [{ id: "uuid-ed-1", external_id: "3:45", circulation_count: 15000 }], error: null }, // key resolve
     ],
     cached_listings: { data: [{ flow_id: "flow-101", ask_price: 11, fmv: null }], error: null },
     "rpc:get_editions_latest_fmv_wide": {
@@ -168,6 +174,7 @@ beforeEach(() => {
     "102": momentGql("flow-102", "777", 800),
   }
   state.gqlError = null
+  state.metadataError = null
 })
 
 describe("POST /api/wallet-search — enrichment body", () => {
@@ -390,6 +397,101 @@ describe("POST /api/wallet-search — enrichment body", () => {
     const row = body.rows.find((r: { momentId: string }) => r.momentId === "101")
     expect(row.serial).toBe(1)
     expect(row.specialSerialTraits).toContain("#1 Serial")
+  })
+})
+
+// 2026-11-15: a parallel is its own edition. TopShot.getMomentsSubedition() > 0
+// means the key is `set:play::N`; the chain's numMomentsInEdition counts the
+// whole set:play family (a /500 parallel read 16,000 on mainnet), so it must not
+// become the circulation, and the base edition's FMV must not price a parallel.
+describe("POST /api/wallet-search — parallels and circulation", () => {
+  const flush = async () => {
+    for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0))
+  }
+
+  it("keys a parallel as set:play::N, prices and sizes it from ITS edition, and names it", async () => {
+    state.metadataById = {
+      // serial 500 of a /500 parallel: a perfect mint, but only by the parallel's own size.
+      "101": { ...momentMeta("500"), sub: "3", mint: "16000" },
+      "102": momentMeta("777"),
+    }
+    const spy = install(
+      baseFixtures({
+        editions: [
+          { data: null, error: null },
+          {
+            data: [
+              { id: "uuid-par-3", external_id: "3:45::3", circulation_count: 500 },
+              { id: "uuid-ed-1", external_id: "3:45", circulation_count: 15000 },
+            ],
+            error: null,
+          },
+        ],
+        topshot_subeditions: { data: [{ subedition_id: 3, name: "Blockchain" }], error: null },
+      }),
+    )
+    const body = await (await POST(post({ input: WALLET }))).json()
+    await flush()
+
+    const par = body.rows.find((r: { momentId: string }) => r.momentId === "101")
+    expect(par.editionKey).toBe("3:45::3")
+    expect(par.parallel).toBe("Blockchain")
+    expect(par.circulationCount).toBe(500)
+    expect(par.mintSize).toBe(500)
+    expect(par.specialSerialTraits).toContain("Original Perfect Mint Serial")
+    // The FMV fixture prices only the BASE edition: the parallel must not inherit it.
+    expect(par.fmv).not.toBe(42.5)
+    expect(par.fmv ?? null).toBeNull()
+    // It is a different edition from its base sibling, so neither counts the other.
+    expect(par.editionsOwned).toBe(1)
+
+    const base = body.rows.find((r: { momentId: string }) => r.momentId === "102")
+    expect(base).toMatchObject({ editionKey: "3:45", circulationCount: 15000, fmv: 42.5, editionsOwned: 1 })
+
+    // The insert-only seed never creates a parallel edition (the catalog owns them).
+    const seeded = (spy.writes.editions ?? [])
+      .flatMap((w) => w.rows)
+      .filter((r) => "name" in r)
+      .map((r) => String(r.external_id))
+    expect(seeded.some((k) => k.includes("::"))).toBe(false)
+  })
+
+  it("never shows the chain's family count: no edition circulation → null, not the chain number", async () => {
+    state.metadataById = {
+      "101": { ...momentMeta("5"), mint: "4099" },
+      "102": { ...momentMeta("777"), mint: "4099" },
+    }
+    install(
+      baseFixtures({
+        editions: [
+          { data: null, error: null },
+          { data: [{ id: "uuid-ed-1", external_id: "3:45", circulation_count: null }], error: null },
+        ],
+      }),
+    )
+    const body = await (await POST(post({ input: WALLET }))).json()
+    for (const row of body.rows) {
+      expect(row.circulationCount ?? null).toBeNull()
+      expect(row.mintSize ?? null).toBeNull()
+    }
+  })
+
+  it("reads the page's chain metadata in ONE script, not one per moment", async () => {
+    let scripts = 0
+    const flow = (await import("@/lib/chains/flow/flow")).default as { query: (o: { cadence: string }) => unknown }
+    const orig = flow.query
+    flow.query = async (o: { cadence: string }) => {
+      if (!o.cadence.includes("getIDs")) scripts++
+      return (orig as (x: unknown) => unknown)(o)
+    }
+    try {
+      install(baseFixtures())
+      const body = await (await POST(post({ input: WALLET }))).json()
+      expect(body.rows).toHaveLength(2)
+      expect(scripts).toBe(1)
+    } finally {
+      flow.query = orig
+    }
   })
 })
 
