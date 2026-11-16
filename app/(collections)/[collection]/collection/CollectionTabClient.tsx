@@ -943,7 +943,11 @@ function WalletMomentsBody() {
       }
 
       // Primary: fetch paginated moments from Supabase cache (fast ~200ms)
+      const searchStarted = performance.now()
       const { totalCount } = await fetchPaginatedMoments(trimmed, 1, sort, false)
+      // 2026-11-16: search-executed said a search RAN, never whether it loaded — an empty
+      // wallet and a failed read were invisible. `total` is the server's count (0 = loaded, empty).
+      track("search-result", { collection: collectionSlug, ok: true, total: totalCount, ms: Math.round(performance.now() - searchStarted) })
 
       // UFC background enrichment is still running — re-fetch in 30s to pick up newly enriched moments.
       if (ufcEnrichPending) {
@@ -1094,6 +1098,7 @@ function WalletMomentsBody() {
         .catch(function() { if (lastSearchedRef.current === trimmed) setPacksFailed(true) })
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong")
+      track("search-result", { collection: collectionSlug, ok: false })
     } finally {
       setLoading(false)
     }

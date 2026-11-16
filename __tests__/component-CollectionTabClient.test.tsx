@@ -2012,6 +2012,27 @@ describe("CollectionTabClient — the owner key follows the collection's chain",
     await waitFor(() => expect(track).toHaveBeenCalled())
     expect(track.mock.calls[0][1]).toMatchObject({ input_kind: "address" })
   })
+
+  // 2026-11-16: search-executed said a search RAN, never whether the wallet LOADED
+  it("records the search outcome: the server's total on a load, ok:false on a failed one", async () => {
+    render(<CollectionTabClient />)
+    const box = await screen.findByPlaceholderText(/wallet address/)
+    fireEvent.change(box, { target: { value: "0xa1b2c3d4e5f60718" } })
+    fireEvent.keyDown(box, { key: "Enter" })
+    await waitFor(() => expect(track.mock.calls.some((c) => c[0] === "search-result")).toBe(true))
+    const ok = track.mock.calls.find((c) => c[0] === "search-result")![1]
+    expect(ok).toMatchObject({ ok: true, total: 137 })
+    expect(typeof ok.ms).toBe("number")
+    cleanup()
+    track.mockClear()
+    momentsResponse = () => json(503, { error: "unavailable" })
+    render(<CollectionTabClient />)
+    const box2 = await screen.findByPlaceholderText(/wallet address/)
+    fireEvent.change(box2, { target: { value: "0xa1b2c3d4e5f60718" } })
+    fireEvent.keyDown(box2, { key: "Enter" })
+    await waitFor(() => expect(track.mock.calls.some((c) => c[0] === "search-result")).toBe(true))
+    expect(track.mock.calls.find((c) => c[0] === "search-result")![1]).toMatchObject({ ok: false })
+  })
 })
 
 // 2026-11-07 (Trevor, screenshots of his own binder): a signed-in collector whose SAVED

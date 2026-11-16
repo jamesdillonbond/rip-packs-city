@@ -24,6 +24,8 @@
 --   feature use          browsers · events for the features instrumented 11-15/16: owner share
 --                        clicks, edition Watch, reward card, Fill with my top 6, serial search
 --                        (#12359), open offers (#12361)
+--   wallet search outcome collection-page wallet searches by result (search-result, 11-16):
+--                        loaded with moments · loaded empty · failed read
 --
 -- Traps (measured 2026-11-16):
 --   * magic-link-requested browsers that "never signed in" are NOT lost signups:
@@ -110,4 +112,15 @@ UNION ALL SELECT '12 feature use (browsers · events) · ' || ue.feature_name,
     AND coalesce(ue.metadata->>'automated', 'false') <> 'true'
     AND (ue.user_id IS NULL OR NOT EXISTS (SELECT 1 FROM internal_accounts ia WHERE ia.user_id = ue.user_id))
   GROUP BY ue.feature_name
+-- 13: wallet searches on the collection pages, by outcome (from 2026-11-16): a failed read and a
+-- wallet that loaded EMPTY were both invisible before (search-executed fires before the load)
+UNION ALL SELECT '13 wallet search outcome (loaded · empty · failed) · ' || coalesce(ue.metadata->>'collection', '?'),
+       count(*) FILTER (WHERE ue.metadata->>'ok' = 'true' AND (ue.metadata->>'total')::numeric > 0)::text || ' · ' ||
+       count(*) FILTER (WHERE ue.metadata->>'ok' = 'true' AND (ue.metadata->>'total')::numeric = 0)::text || ' · ' ||
+       count(*) FILTER (WHERE ue.metadata->>'ok' = 'false')::text
+  FROM usage_events ue, params p
+  WHERE ue.occurred_at >= p.s AND ue.occurred_at < p.e AND ue.feature_name = 'search-result'
+    AND coalesce(ue.metadata->>'automated', 'false') <> 'true'
+    AND (ue.user_id IS NULL OR NOT EXISTS (SELECT 1 FROM internal_accounts ia WHERE ia.user_id = ue.user_id))
+  GROUP BY ue.metadata->>'collection'
 ORDER BY 1;
