@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~11:45 AM PT — Next.js 16.4.3 → 16.4.5 (Dependabot #30, GHSA-mfr8-8qww-v76h, moderate) (Claude Code, laptop; Trevor: "Keep going and work through these")
+- **Exposure:** none found — the advisory needs a `'use cache'` function called through `unstable_cache()`; the tree has no `'use cache'` directive (only plain `unstable_cache` in `lib/marketplace-status.ts` and `components/entity/PopularOnCollection.tsx`). Patched anyway to clear the alert. 16.4.5 published 11-03.
+- **Lockfile:** only `next` + 9 `@next/*` entries changed; Windows npm's dropping of the Linux `libc` fields was undone by hand (no platform drift). `npm ci` clean; preflight 5/5.
+- **Revert:** `git revert` the commit titled "deps: next 16.4.5"; verify prod by the next deploy READY + smoke.
+
 ### 2026-11-16 ~11:45 AM PT — Candy: all 2,529 parked validated Magic Eden sales resolved by the drain — docs-only status read (Claude Code cloud; scheduled check)
 - Read-only SQL. 2,527 `written` + 2 `pack_asset`, 0 open, 0 failure resolutions; all 2,527 have a Candy `sales` row (magic_eden, tx hash = signature); `sold_at` = block time and `price_usd` = `price_sol` × daily `sol_usd_daily` on 2,527/2,527. Whole `candy_sales_unresolved` queue now 0 open (was ~6,400 queued-walk at 11-15 8:20 AM PT); last 8 `candy-sales-indexer` runs ok. Falsifier did not fire.
 - DOCS: status line appended to known-issues #257 (index regenerated, no row change). Revert: `git revert` this commit (docs only; no DB change).
