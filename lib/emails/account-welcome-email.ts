@@ -83,6 +83,13 @@ export function buildAccountWelcomeHtml(opts: AccountWelcomeOpts): string {
             </tr>
             <tr>
               <td style="padding:18px 28px 0 28px;font-size:15px;line-height:1.7;color:${TEXT_MUTED};">
+                <strong style="color:${TEXT};">First step:</strong> add your Top Shot username on your
+                <a href="${SITE}/dashboard" style="color:${ACCENT};text-decoration:underline;">dashboard</a>
+                and it fills in with every moment you hold, each with an estimated value.
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:18px 28px 0 28px;font-size:15px;line-height:1.7;color:${TEXT_MUTED};">
                 What you can look up here:
                 <ul style="margin:8px 0 0 0;padding:0 0 0 18px;color:${TEXT_MUTED};font-size:14px;line-height:1.7;">
                   <li><strong style="color:${TEXT};">Any wallet</strong> — its moments, an estimated value for each, and how that estimate was graded.</li>
@@ -109,7 +116,7 @@ export function buildAccountWelcomeHtml(opts: AccountWelcomeOpts): string {
             </tr>
             <tr>
               <td align="center" style="padding:0 12px 24px 12px;font-size:11px;line-height:1.6;color:${TEXT_SUBTLE};">
-                This is a one-time notice that an account was created with this address. We do not send marketing email.
+                This is a one-time notice that an account was created with this address. Beyond it, the most we send is a getting-started note a day or two after you join and, when your collection moves, a weekly portfolio email; each has an unsubscribe link.
                 <a href="${manage}" style="color:${TEXT_SUBTLE};text-decoration:underline;">Manage your account and email preferences</a>.
                 If this was not you, ignore this message — nothing can be done with the account without access to this inbox.
               </td>
@@ -130,6 +137,8 @@ export function buildAccountWelcomeText(opts: AccountWelcomeOpts): string {
     `An account was just created at Rip Packs City with ${opts.email}.`,
     "Sign in any time with a magic link to that address — there is no password to keep.",
     "",
+    `First step: add your Top Shot username on your dashboard (${SITE}/dashboard) and it fills in with every moment you hold, each with an estimated value.`,
+    "",
     "What you can look up here:",
     "- Any wallet: its moments, an estimated value for each, and how that estimate was graded.",
     "- Pack EV: what a pack's typical pull has been worth against its price.",
@@ -139,7 +148,7 @@ export function buildAccountWelcomeText(opts: AccountWelcomeOpts): string {
     "",
     "Prices on Rip Packs City are estimates from public marketplace data, graded by how much recent sales back them. They are not appraisals or advice.",
     "",
-    "This is a one-time notice that an account was created with this address. We do not send marketing email.",
+    "This is a one-time notice that an account was created with this address. Beyond it, the most we send is a getting-started note a day or two after you join and, when your collection moves, a weekly portfolio email; each has an unsubscribe link.",
     `Manage your account and email preferences: ${manage}`,
     "If this was not you, ignore this message — nothing can be done with the account without access to this inbox.",
     "",

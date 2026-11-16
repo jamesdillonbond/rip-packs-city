@@ -11,6 +11,10 @@
       "schedule": "33 16 * * 1"
     },
     {
+      "path": "/api/cron/day1-onboarding",
+      "schedule": "17 17 * * *"
+    },
+    {
       "path": "/api/cron/pinnacle-trades-indexer",
       "schedule": "*/10 * * * *"
     },

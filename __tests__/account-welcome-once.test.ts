@@ -152,14 +152,22 @@ describe("the welcome copy obeys the founder's rules", () => {
   const text = buildAccountWelcomeText({ email: EMAIL })
   const both = `${html}\n${text}\n${buildAccountWelcomeSubject()}`
 
-  it("names the address, links sign-in and the manage page, and says it is one-time and non-marketing", () => {
+  it("names the address, links sign-in, the dashboard and the manage page, and names the other emails truthfully", () => {
     expect(html).toContain(EMAIL)
     expect(text).toContain(EMAIL)
     expect(html).toContain("https://www.rippackscity.com/login")
     expect(text).toContain("https://www.rippackscity.com/login")
     expect(html).toContain(ACCOUNT_WELCOME_MANAGE_URL)
     expect(text).toContain(ACCOUNT_WELCOME_MANAGE_URL)
-    expect(both).toMatch(/do not send marketing email/i)
+    // 2026-11-16 RE-PIN: "We do not send marketing email" stopped being true when the
+    // weekly portfolio email went live (11-03) and the day-1 note was added. The
+    // promise now pinned: the welcome says which other emails exist and that each
+    // can be unsubscribed from — and never claims there are none.
+    expect(both).not.toMatch(/do not send marketing email/i)
+    expect(both).toMatch(/getting-started note a day or two after you join/)
+    expect(both).toMatch(/weekly portfolio email; each has an unsubscribe link/)
+    expect(html).toContain("https://www.rippackscity.com/dashboard")
+    expect(text).toContain("First step: add your Top Shot username")
     expect(both).toMatch(/not appraisals or advice/)
   })
 

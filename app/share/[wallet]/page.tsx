@@ -5,6 +5,7 @@ import { cache } from "react"
 import ShareButton from "./ShareButton"
 import SaveToCollectionCTA from "./SaveToCollectionCTA"
 import ShareSignUpLink from "./ShareSignUpLink"
+import ShareHeroSignUp from "./ShareHeroSignUp"
 import WalletSearch from "@/components/WalletSearch"
 import ShareEmptyState from "./ShareEmptyState"
 import DealWatchCapture from "@/components/DealWatchCapture"
@@ -339,6 +340,11 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
           })()}
         </div>
 
+        {/* Account CTA at the value moment (2026-11-16). The bottom CTA below sits
+            under the series chart; 3 of 42 signed-out viewers reached and clicked
+            it in the 30 days to 11-16. Same destination, measured separately. */}
+        <ShareHeroSignUp wallet={wallet} />
+
         {/* Value-moment email capture — convert the anon searcher into a lead
             without an account. Fires email_capture_submitted. */}
         <DealWatchCapture wallet={wallet} />
@@ -617,7 +623,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
           </div>
         </div>
 
-        {/* Conversion CTA — honest free-preview framing (no paywall language) */}
+        {/* Conversion CTA — a free account, no paywall or "beta" framing (2026-11-16: "free during beta" implied a later paid tier) */}
         <div
           style={{
             marginBottom: 28,
@@ -629,10 +635,10 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
           }}
         >
           <div style={{ fontSize: 13, letterSpacing: "0.12em", color: "var(--rpc-red-text)", textTransform: "uppercase", fontWeight: 700, marginBottom: 8 }}>
-            Free preview
+            Free account
           </div>
           <div style={{ fontSize: 16, color: "var(--rpc-text-secondary)", lineHeight: 1.5, maxWidth: 540, margin: "0 auto 16px" }}>
-            This is a free snapshot. Sign up to save this wallet, track its FMV over time, badges and set completion, and get price alerts on the moments you watch — free during beta.
+            This is a snapshot. A free account saves this wallet, tracks its FMV over time, badges and set completion, and sends price alerts on the moments you watch.
           </div>
           <ShareSignUpLink wallet={wallet} />
         </div>

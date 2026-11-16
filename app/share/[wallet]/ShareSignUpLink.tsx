@@ -11,7 +11,22 @@
 
 import { trackFunnelEvent } from "@/lib/track-funnel"
 
-export default function ShareSignUpLink({ wallet }: { wallet: string }) {
+// 2026-11-16: a second placement directly under the Total FMV hero
+// (surface "share_hero"). 30 days to 11-16: 42 signed-out visitors viewed share
+// cards and 3 clicked the bottom button ("share_cta"), which sits below the series
+// chart; the hero slot went to an email capture with 1 interaction in 75 shows.
+// Separate surfaces so the two placements can be compared.
+export type ShareSignUpSurface = "share_cta" | "share_hero"
+
+export default function ShareSignUpLink({
+  wallet,
+  surface = "share_cta",
+  label = "Create a free account →",
+}: {
+  wallet: string
+  surface?: ShareSignUpSurface
+  label?: string
+}) {
   // 2026-11-08: `intent=signup` heads /login as account creation, matching the
   // button's words (the 11-07 header pills do the same). ChatGPT referrals land
   // here via /insights/account-value — 6 visitors pasted a wallet in two weeks.
@@ -19,11 +34,11 @@ export default function ShareSignUpLink({ wallet }: { wallet: string }) {
   return (
     <a
       href={href}
-      onClick={() => trackFunnelEvent({ eventType: "signin_click", walletAddress: wallet, surface: "share_cta" })}
+      onClick={() => trackFunnelEvent({ eventType: "signin_click", walletAddress: wallet, surface })}
       // brand-exception: white label on the red CTA button — theme-independent
       style={{ display: "inline-block", padding: "12px 28px", background: "var(--rpc-red-fill)", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 14, textDecoration: "none", letterSpacing: "0.06em" }}
     >
-      Create a free account →
+      {label}
     </a>
   )
 }
