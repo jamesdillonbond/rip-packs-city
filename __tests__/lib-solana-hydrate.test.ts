@@ -125,6 +125,20 @@ describe("unhydrated Candy assets", () => {
     expect(new Set([...byId.values()].map((x) => normalizeEdition(x).external_id))).toEqual(new Set(["c:2022-leadoff-icons:phil-bickford-core"]))
   })
 
+  // #259 (2026-11-15): a card re-read because a shared fetch gave it another card's metadata reads its OWN
+  it("soloIds: listed cards are fetched ALONE even when their names would group", async () => {
+    const a = card("s1", "Phil Bickford (376/850)"), b = card("s2", "Phil Bickford (12/850)"), c = card("s3", "Phil Bickford (1/850)")
+    expect(editionGroupKey(a)).toBe(editionGroupKey(b))
+    const seen: string[] = []
+    const f = (async (u: string) => { seen.push(u); return new Response(JSON.stringify(offChain), { status: 200 }) }) as unknown as typeof fetch
+    const r = await hydrateFromJsonUri([a, b, c], { fetchImpl: f, soloIds: new Set(["s1", "s2"]) })
+    expect(r.failed).toEqual([])
+    // s1 and s2 alone (2 fetches), s3 its own group (1 fetch)
+    // (either gateway: the pool rotates them) — one fetch per card, each its own JSON
+    expect(seen.map((u) => u.split("/").pop()).sort()).toEqual(["s1", "s2", "s3"])
+    expect(r.hydrated).toHaveLength(3)
+  })
+
   // 2026-11-09: "(n/1)" cards are 1-of-1s — their names are cut at 32 chars, so a shared group
   // would copy ONE card's image and traits onto different cards.
   it("⚠ two 1/1 cards with the same cut name are NEVER grouped — each is fetched alone", async () => {

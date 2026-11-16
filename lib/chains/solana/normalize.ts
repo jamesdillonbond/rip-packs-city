@@ -27,6 +27,7 @@
 import { candyChecklistBadges } from "./candy-checklist"
 import { candySetForAsset, CANDY_TEAM_BALL_SET_KEY, type CandySet } from "./candy-sets"
 import type { DasAsset } from "./das"
+import { splitEditionKey } from "./candy-split-editions"
 
 // Collection UUID in public.collections (seeded inert 2026-06-08).
 export const CANDY_MLB_UUID = "209ade70-32c5-4470-bc7c-4793d660f713"
@@ -112,13 +113,20 @@ export function isPack(asset: DasAsset): boolean {
 //   "Mike Trout #12/100"              -> "Mike Trout"
 // The Rainbow colour survives (it is part of the name), so distinct colours map
 // to distinct editions while every serial of one card maps to the same base.
+// 2026-11-15 (#259): once a "(n/m)" suffix is stripped, the serial is gone — the "n/m"-without-
+// parentheses strip must NOT run again, or it eats a DATE: "MLB Play of the Day 10/26/21 (3632/3640)"
+// became "MLB Play of the Day 10/" and every October game shared one edition (9 such buckets, 1,207
+// cards). The "#N" and bare-number strips still run (DC keys rely on "#1" being dropped).
+const PAREN_SERIAL = /\s*\(\s*\d+\s*\/\s*\d+\s*\)\s*$/i
 function baseName(asset: DasAsset): string {
   const name = asset.content?.metadata?.name ?? ""
-  return name
-    .replace(/\s*\(\s*\d+\s*\/\s*\d+\s*\)\s*$/i, "")
+  const hadParenSerial = PAREN_SERIAL.test(name)
+  let out = name
+    .replace(PAREN_SERIAL, "")
     // 2024 Team Balls carry an unassigned serial: "… Baseball  (TBD/171)".
     .replace(/\s*\(\s*TBD\s*\/\s*\d+\s*\)\s*$/i, "")
-    .replace(/\s*#?\s*\d+\s*\/\s*\d+\s*$/i, "")
+  if (!hadParenSerial) out = out.replace(/\s*#?\s*\d+\s*\/\s*\d+\s*$/i, "")
+  return out
     .replace(/\s*#\s*\d+\s*$/i, "")
     .replace(/\s+\d+\s*$/i, "") // bare trailing serial ("... - GREEN 10")
     .trim()
@@ -178,8 +186,13 @@ export function editionKeyFromAsset(asset: DasAsset): string {
     // Tricons editions, up to 4 cards each), and a whole collection whose every card is
     // "1/1" collapsed into one edition (The Bat Cowl Collection: 4,404 cards). Those were
     // published as single 1-of-1 trophies. Base Series keys (no prefix) are untouched.
-    const oneOfOne = editionSizeFromAsset(asset) === 1 ? `-${asset.id.slice(0, 12)}` : ""
-    return fitEditionKey(`${set.editionKeyPrefix}:${slug || asset.id}${rarity ? `-${rarity}` : ""}${oneOfOne}`)
+    const size = editionSizeFromAsset(asset)
+    const oneOfOne = size === 1 ? `-${asset.id.slice(0, 12)}` : ""
+    const key = fitEditionKey(`${set.editionKeyPrefix}:${slug || asset.id}${rarity ? `-${rarity}` : ""}${oneOfOne}`)
+    // #259 (2026-11-15): a key listed as MERGING different cards keeps its majority card; a card of
+    // another edition size gets its own edition (lib/chains/solana/candy-split-editions.ts).
+    const split = splitEditionKey(key, size)
+    return split === key ? key : fitEditionKey(split)
   }
   return slug || asset.id
 }

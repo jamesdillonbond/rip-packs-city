@@ -38,8 +38,9 @@ vi.mock("@/lib/chains/solana/hydrate", () => ({
   isUnhydrated: (a: any) => a.bare === true,
   failureClass: (r: string) => r,
   editionGroupKey: (a: any) => `g|${a.id}`,
-  hydrateFromJsonUri: async (assets: any[]) => {
+  hydrateFromJsonUri: async (assets: any[], opts?: any) => {
     state.hydrateCalls.push(assets)
+    ;(state as any).hydrateOpts.push(opts)
     if (typeof state.hydrate === "function") return state.hydrate(assets)
     return state.hydrate ?? { hydrated: assets.map((a) => ({ ...a, bare: false, ed: a.realEd ?? a.ed })), failed: [] }
   },
@@ -123,6 +124,8 @@ function db() {
             },
             in: async (col: string, vals: string[]) => {
               if (state.readError) return { data: null, error: state.readError }
+              // #259: merged-edition cards already re-read
+              if (t === "candy_edition_split_checked") return { data: ((state as any).splitChecked as string[]).filter((id) => vals.includes(id)).map((id) => ({ moment_id: id })), error: null }
               if (t === "wallet_moments_cache" && opts?.head) return { count: state.existingWmc.filter((r) => vals.includes(r.edition_key)).length, error: null }
               if (t === "wallet_moments_cache") return { data: state.existingWmc.filter((r) => vals.includes(r.moment_id)), error: null }
               return { data: state.existingEds.filter((e) => vals.includes(e.external_id)), error: null }
@@ -158,6 +161,7 @@ function db() {
         },
         upsert: (rows: any[], opts: any) => {
           if (t === "wallet_moments_cache") state.wmcUpserts.push({ rows, opts })
+          else if (t === "candy_edition_split_checked") (state as any).splitUpserts.push({ rows, opts })
           else state.edUpserts.push({ rows, opts })
           return { select: async () => {
             if (t === "wallet_moments_cache" && (state as any).wmcErrOnce?.length) return { data: null, error: (state as any).wmcErrOnce.shift() }
@@ -176,6 +180,7 @@ beforeEach(() => {
   aliasState.canonOf = new Map(); aliasState.labels = new Map(); aliasState.error = null
   state.updates = []; state.wmcUpserts = []; state.edUpserts = []; state.rpcs = []; state.rpcArgs = []
   ;(state as any).wmcErrOnce = []
+  ;(state as any).hydrateOpts = []; (state as any).splitChecked = []; (state as any).splitUpserts = []
   ;(state as any).edUpdates = []; (state as any).thumb = "https://arweave.net/x"; (state as any).deleted = []; (state as any).escrowError = null
 })
 
@@ -391,6 +396,52 @@ describe("runCollectionsCensus", () => {
     expect(state.wmcUpserts.some((u) => u.opts.ignoreDuplicates === false)).toBe(false)
     const rows = state.wmcUpserts.flatMap((u) => u.rows)
     expect(rows.find((x) => x.moment_id === "m2")).toMatchObject({ serial_number: 5 })
+  })
+
+  // #259 (2026-11-15): 90 editions merged different cards; REUSE kept a card on the wrong one forever.
+  const MERGED = "c:batman-1940-2011-1:batman-1940-2011-uncommon"
+  const mergedEd = { external_id: MERGED, tier: "UNCOMMON", player_name: null, team_name: null, set_name: "Batman", circulation_count: 1500, thumbnail_url: "https://img" }
+  it("SPLIT: a card stored on a MERGED edition is re-read ALONE (not reused), repointed, its sales follow, and it is recorded", async () => {
+    state.queue = [{ address: "A", name: "A", census_page: 1, census_cursor: null, census_walk_started_at: null }]
+    state.pages.A = [[{ id: "m1", owner: "W", ownership: { owner: "W" }, ed: "x", realEd: "core", bare: true }]]
+    state.existingWmc = [{ moment_id: "m1", wallet_address: "W", edition_key: MERGED, serial_number: 1996 }]
+    state.existingEds = [mergedEd]
+    const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+    expect(r.ok).toBe(true)
+    expect(r.hydrated_reused).toBe(0)
+    expect(state.hydrateCalls.flat().map((a) => a.id)).toEqual(["m1"])
+    expect([...((state as any).hydrateOpts[0]?.soloIds ?? [])]).toEqual(["m1"])
+    const overwrite = state.wmcUpserts.find((u) => u.opts.ignoreDuplicates === false)!
+    expect(overwrite.rows[0]).toMatchObject({ moment_id: "m1", edition_key: "ed-core" })
+    const si = state.rpcs.indexOf("candy_repoint_sales_to_card_edition")
+    expect(si).toBeGreaterThanOrEqual(0)
+    expect(state.rpcArgs[si]).toEqual({ p_mints: ["m1"] })
+    expect(r.sales_repointed).toBe(4) // the rpc mock answers 4
+    expect((state as any).splitUpserts.flatMap((u: any) => u.rows)).toEqual([{ moment_id: "m1", result_key: "ed-core" }])
+    expect(r.split_rechecked).toBe(1)
+  })
+
+  it("SPLIT: a merged-edition card already RECORDED is reused like any other (never fetched twice)", async () => {
+    state.queue = [{ address: "A", name: "A", census_page: 1, census_cursor: null, census_walk_started_at: null }]
+    state.pages.A = [[{ id: "m1", owner: "W", ownership: { owner: "W" }, ed: "x", bare: true }]]
+    state.existingWmc = [{ moment_id: "m1", wallet_address: "W", edition_key: MERGED, serial_number: 7 }]
+    state.existingEds = [mergedEd]
+    ;(state as any).splitChecked = ["m1"]
+    const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+    expect(state.hydrateCalls).toEqual([])
+    expect(r.hydrated_reused).toBe(1)
+    expect(r.split_rechecked).toBe(0)
+  })
+
+  it("SPLIT: a failed re-read is NOT recorded (the next walk tries again)", async () => {
+    state.queue = [{ address: "A", name: "A", census_page: 1, census_cursor: null, census_walk_started_at: null }]
+    state.pages.A = [[{ id: "m1", owner: "W", ownership: { owner: "W" }, ed: "x", bare: true }]]
+    state.existingWmc = [{ moment_id: "m1", wallet_address: "W", edition_key: MERGED, serial_number: 7 }]
+    state.existingEds = [mergedEd]
+    state.hydrate = { hydrated: [], failed: [{ id: "m1", reason: "HTTP 502" }] }
+    const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+    expect((state as any).splitUpserts).toEqual([])
+    expect(r.split_rechecked).toBe(0)
   })
 
   it("a 1-of-1 edition that IS this card's own key is still reused, with no fetch", async () => {

@@ -200,6 +200,11 @@ export async function hydrateFromJsonUri(
     gapStepMs?: number
     /** ceiling for that gap (default 2000 ms) */
     maxGapMs?: number
+    /**
+     * #259 (2026-11-15): assets fetched ALONE, never through a shared group fetch — a card re-read
+     * because a shared fetch gave it another card's metadata must read its own.
+     */
+    soloIds?: ReadonlySet<string>
   } = {},
 ): Promise<HydrateResult & { fetches: number; groups: number; unverified_groups: number; rate_limit_retries: number; min_concurrency: number; max_gap_ms: number }> {
   // 48 (was 16): throughput is latency-bound, not rate-limited — 68 HTTP 429 in 4,761 requests
@@ -254,7 +259,7 @@ export async function hydrateFromJsonUri(
   const out: HydrateResult & { fetches: number; groups: number; unverified_groups: number; rate_limit_retries: number; min_concurrency: number; max_gap_ms: number } = { hydrated: [], failed: [], fetches: 0, groups: 0, unverified_groups: 0, rate_limit_retries: 0, min_concurrency: concurrency, max_gap_ms: 0 }
   const groups = new Map<string, DasAsset[]>()
   for (const a of assets) {
-    const k = editionGroupKey(a)
+    const k = opts.soloIds?.has(a.id) ? `solo|${a.id}` : editionGroupKey(a)
     const g = groups.get(k)
     if (g) g.push(a)
     else groups.set(k, [a])

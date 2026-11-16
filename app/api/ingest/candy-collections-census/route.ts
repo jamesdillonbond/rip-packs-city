@@ -66,6 +66,9 @@ async function handle(req: NextRequest) {
     wmc_serial_filled: result.wmc_serial_filled,
     listings_repointed: result.listings_repointed,
     offers_repointed: result.offers_repointed,
+    // 2026-11-15 (#259): merged-edition cards re-read once; their sales follow a repoint
+    sales_repointed: result.sales_repointed,
+    split_rechecked: result.split_rechecked,
     // 2026-11-12: label-less editions completed from a hydrated card (#246 residual)
     editions_filled: result.editions_filled,
     // 2026-11-12: holdings retired from label-less editions after a clean complete walk (#246 residual)

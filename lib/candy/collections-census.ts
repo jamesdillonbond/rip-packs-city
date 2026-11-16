@@ -41,6 +41,7 @@ import { loadCandyCollections } from "@/lib/candy/collections"
 import { purgeCandyGhostsFor } from "@/lib/candy/ghost-purge"
 import { newLockRetryBudget, withLockRetry } from "@/lib/supabase/lock-retry"
 import { loadEditionKeyAliases, NO_ALIASES } from "@/lib/candy/edition-key-aliases"
+import { isSplitEditionKey } from "@/lib/chains/solana/candy-split-editions"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
@@ -87,6 +88,10 @@ export interface CollectionCensusReport {
   wmc_serial_filled: number
   listings_repointed: number
   offers_repointed: number
+  /** #259: historical sales moved with a repointed card (2026-11-15). */
+  sales_repointed: number
+  /** #259: cards of a merged edition re-read from their own metadata and recorded (2026-11-15). */
+  split_rechecked: number
   editions_filled: number
   wmc_retired: number
   /** Holdings rows deleted for assets this walk SAW and classified as packs or burnt (2026-11-12). */
@@ -147,6 +152,10 @@ export interface CollectionsCensusResult {
   wmc_serial_filled: number
   listings_repointed: number
   offers_repointed: number
+  /** #259: historical sales moved with a repointed card (2026-11-15). */
+  sales_repointed: number
+  /** #259: cards of a merged edition re-read from their own metadata and recorded (2026-11-15). */
+  split_rechecked: number
   editions_filled: number
   wmc_retired: number
   wmc_noncard_retired: number
@@ -251,7 +260,7 @@ export async function runCollectionsCensus(
   const lockOpts = opts.lockSleep ? { sleep: opts.lockSleep } : {}
   const out: CollectionsCensusResult = {
     ok: false, collections: [], pages: 0, cards: 0, wmc_inserted: 0, editions_inserted: 0,
-    hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, wmc_serial_filled: 0, listings_repointed: 0, offers_repointed: 0, editions_filled: 0, wmc_retired: 0, wmc_noncard_retired: 0, hydrate_fail_reasons: {}, hydrate_fetches: 0, hydrate_unverified_groups: 0, hydrate_rate_limit_retries: 0, hydrate_min_concurrency: null, hydrate_max_gap_ms: 0, unhydrated_sample: [],
+    hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, wmc_serial_filled: 0, listings_repointed: 0, offers_repointed: 0, sales_repointed: 0, split_rechecked: 0, editions_filled: 0, wmc_retired: 0, wmc_noncard_retired: 0, hydrate_fail_reasons: {}, hydrate_fetches: 0, hydrate_unverified_groups: 0, hydrate_rate_limit_retries: 0, hydrate_min_concurrency: null, hydrate_max_gap_ms: 0, unhydrated_sample: [],
     completed: 0, escrow_remapped: 0, ghosts_purged: null, error: null,
   }
 
@@ -285,7 +294,7 @@ export async function runCollectionsCensus(
   const breakerOpen = () => fetchAttempts >= BREAKER_MIN_ATTEMPTS && fetchFailures / fetchAttempts > BREAKER_FAIL_SHARE
   for (const c of (queue ?? []) as Array<{ address: string; name: string; edition_prefix?: string | null; census_page: number; census_cursor: string | null; census_walk_started_at: string | null; census_walk_tracked?: boolean | null; census_walk_labelless_seen?: string[] | null; census_walk_skipped?: number | null; census_walk_cards?: number | null }>) {
     if (now() > deadline) break
-    const rep: CollectionCensusReport = { address: c.address, name: c.name, pages: 0, cards: 0, wmc_inserted: 0, editions_inserted: 0, hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, wmc_serial_filled: 0, listings_repointed: 0, offers_repointed: 0, editions_filled: 0, wmc_retired: 0, wmc_noncard_retired: 0, completed: false, error: null }
+    const rep: CollectionCensusReport = { address: c.address, name: c.name, pages: 0, cards: 0, wmc_inserted: 0, editions_inserted: 0, hydrated_fetched: 0, hydrated_reused: 0, unhydrated_skipped: 0, wmc_repointed: 0, wmc_serial_filled: 0, listings_repointed: 0, offers_repointed: 0, sales_repointed: 0, split_rechecked: 0, editions_filled: 0, wmc_retired: 0, wmc_noncard_retired: 0, completed: false, error: null }
     out.collections.push(rep)
     let page = Math.max(1, c.census_page || 1)
     let cursor: string | null = c.census_cursor || null
@@ -351,11 +360,26 @@ export async function runCollectionsCensus(
       // Existing holdings for every card on the page: drives REUSE and REPOINT.
       const ex = await readExisting(db, items.map((a) => a.id).filter(Boolean))
       if (ex.error) { rep.error = `page ${page}: ${ex.error}`; break }
+      // #259 (2026-11-15): a card whose stored edition MERGES different cards is re-read ONCE from its own
+      // metadata (never reused, never a shared group fetch) and recorded, so it is not fetched again.
+      const splitCand = items
+        .filter((a) => a.id && isUnhydrated(a) && !isBurnt(a) && (ex.rows.get(a.id) ?? []).some((r) => isSplitEditionKey(r.edition_key)))
+        .map((a) => a.id)
+      const splitChecked = new Set<string>()
+      let splitReadErr: string | null = null
+      for (let i = 0; i < splitCand.length && !splitReadErr; i += READ_CHUNK) {
+        const { data, error } = await db.from("candy_edition_split_checked").select("moment_id").in("moment_id", splitCand.slice(i, i + READ_CHUNK))
+        if (error) splitReadErr = error.message
+        else for (const r of (data ?? []) as Array<{ moment_id: string }>) splitChecked.add(String(r.moment_id))
+      }
+      if (splitReadErr) { rep.error = `page ${page}: split-checked read: ${splitReadErr}`; break }
+      const splitFetch = new Set(splitCand.filter((id) => !splitChecked.has(id)))
       const reused: Array<{ asset: DasAsset; ed: EditionLabels; serial: number | null }> = []
       const toFetch: DasAsset[] = []
       const ready: DasAsset[] = []
       for (const a of items) {
         if (!isUnhydrated(a) || isBurnt(a)) { ready.push(a); continue }
+        if (splitFetch.has(a.id)) { toFetch.push(a); continue }
         // 2026-11-09: a 1-of-1 edition is reusable only when it is THIS card's own (keyed by
         // its asset id, lib/chains/solana/normalize.ts). A name-keyed 1/1 merged different cards
         // (2022 All-Star Tricons; The Bat Cowl Collection), so reusing it would pin the card to
@@ -385,7 +409,7 @@ export async function runCollectionsCensus(
         ? { hydrated: [] as DasAsset[], failed: [] as Array<{ id: string; reason: string }> }
         : breakerOpen()
           ? { hydrated: [] as DasAsset[], failed: toFetch.map((a) => ({ id: a.id, reason: "breaker open" })) }
-          : await hydrateFromJsonUri(toFetch)
+          : await hydrateFromJsonUri(toFetch, { soloIds: splitFetch })
       for (const f of fetched.failed) {
         const k = failureClass(f.reason)
         out.hydrate_fail_reasons[k] = (out.hydrate_fail_reasons[k] ?? 0) + 1
@@ -573,6 +597,25 @@ export async function runCollectionsCensus(
         if (error) failed = `offers repoint: ${error.message}`
         else rep.offers_repointed += typeof data === "number" ? data : 0
       }
+      // …and so does its SALE HISTORY (#259, 2026-11-15): a merged edition's sales belong to the card's real
+      // edition. Each move is logged (candy_sales_rekey_log) for revert.
+      if (!failed && repoint.length) {
+        const { data, error } = await db.rpc("candy_repoint_sales_to_card_edition", { p_mints: repoint.map((r) => String(r.moment_id)) })
+        if (error) failed = `sales repoint: ${error.message}`
+        else rep.sales_repointed += typeof data === "number" ? data : 0
+      }
+      // Record the merged-edition cards this page re-read from their own metadata (only once their rows landed).
+      if (!failed && splitFetch.size) {
+        const keyOf = new Map(attributed.rows.map((r) => [String(r.moment_id), String(r.edition_key ?? "")]))
+        const done = fetched.hydrated.filter((a) => splitFetch.has(a.id)).map((a) => ({ moment_id: a.id, result_key: keyOf.get(a.id) ?? null }))
+        for (let i = 0; i < done.length && !failed; i += WRITE_CHUNK) {
+          const { data, error } = await db.from("candy_edition_split_checked")
+            .upsert(done.slice(i, i + WRITE_CHUNK), { onConflict: "moment_id", ignoreDuplicates: true })
+            .select("moment_id")
+          if (error) failed = `split-checked write: ${error.message}`
+          else rep.split_rechecked += data?.length ?? 0
+        }
+      }
       if (!failed && nonCardIds.length) {
         const { data, error } = await db.rpc("candy_retire_noncard_wmc", { p_moment_ids: nonCardIds })
         if (error) failed = `non-card retire: ${error.message}`
@@ -636,6 +679,8 @@ export async function runCollectionsCensus(
     out.wmc_serial_filled += rep.wmc_serial_filled
     out.listings_repointed += rep.listings_repointed
     out.offers_repointed += rep.offers_repointed
+    out.sales_repointed += rep.sales_repointed
+    out.split_rechecked += rep.split_rechecked
     out.editions_filled += rep.editions_filled
     out.wmc_retired += rep.wmc_retired
     out.wmc_noncard_retired += rep.wmc_noncard_retired

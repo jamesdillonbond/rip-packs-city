@@ -263,6 +263,14 @@ describe("Candy normalize QA fixes (2026-07-17)", () => {
     expect(serialFromAsset(named("x", [{ trait_type: "Serial Number", value: "9/15" }]))).toBe(9)
     expect(serialFromAsset(named("x", [{ trait_type: "Serial Number", value: "248/250" }]))).toBe(248)
   })  // 2026-11-15: metadata without the serial trait (attributes: []) — the name carries "(N/M)"
+  // #259 (2026-11-15): the date bug and the merged-edition split
+  it("a DATE before '(N/M)' survives: Play of the Day keys per day, not per month", () => {
+    expect(editionKeyFromAsset(named("MLB Play of the Day 10/26/21 (3632/3640)"))).toBe("mlb-play-of-the-day-102621")
+    expect(editionKeyFromAsset(named("MLB Play of the Day 10/26/21 3632"))).toBe("mlb-play-of-the-day-102621")
+    // the DC "#N" and bare serial strips are unchanged
+    expect(editionKeyFromAsset(named("Batman (1940-2011) #1 (1996/2000)"))).toBe("batman-1940-2011")
+    expect(editionKeyFromAsset(named("Munetaka Murakami - GREEN 10"))).toBe("munetaka-murakami-green")
+  })
   it("serial falls back to the '(N/M)' numerator in the name; '(TBD/171)' stays null", () => {
     expect(serialFromAsset(named("Paul Skenes - Debut (11/46)"))).toBe(11)
     expect(serialFromAsset(named("2023 MLB Rookie Ball (1030/4122)"))).toBe(1030)

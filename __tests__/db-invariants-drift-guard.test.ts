@@ -124,6 +124,12 @@ const PINS = [
     migration: "supabase/migrations/20261113191137_audit_20261113_hero_moment_auto_pick_reads_the_covering_index.sql",
   },
   {
+    // Added 2026-11-15 (#259). A Candy sale follows its card; every move logged for revert.
+    fn: "candy_repoint_sales_to_card_edition",
+    test: "supabase/tests/candy_repoint_sales_to_card_edition.sql",
+    migration: "supabase/migrations/20261116043431_audit_20261115_candy_split_merged_editions.sql",
+  },
+  {
     // Added 2026-11-12. A Candy offer follows its card (twin of candy_repoint_listings_to_card_edition).
     fn: "candy_repoint_offers_to_card_edition",
     test: "supabase/tests/candy_repoint_offers_to_card_edition.sql",
