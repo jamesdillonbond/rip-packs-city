@@ -1,0 +1,77 @@
+name: UFC Strike Aptos sales ingest
+
+# 2026-11-15 (Cowork; handoff claude/handoff-2026-11-15-ufc-aptos-sales-ingest.md).
+# UFC Strike on Aptos is an extension of the ufc_strike collection (Trevor 2026-11-15). This lane
+# scans Tradeport + Rarible purchases of UFC Moments on Aptos and writes them to `sales`
+# (currency APT, source aptos_indexer_v1) via scripts/ufc-aptos-sales-ingest.mjs, plus the
+# APT/USD daily close into apt_usd_daily. Cursor: ufc_aptos_ingest_state.
+# Scheduled runs APPLY; a manual run is a dry run unless apply=true. The backfill from Aug 2025
+# drains over successive runs (each run is time-budgeted and advances the cursor per window).
+# Needs secrets: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, APTOS_API_KEY (Geomi key —
+# without it the public Aptos endpoint rate-limits to a crawl, but the run still completes safely).
+# Second step (2026-11-16): scripts/ufc-aptos-wallet-link.mjs matches Flow UFC_NFT burns to the Aptos
+# issuer::mint_for batches that follow them -> ufc_aptos_migration_matches -> ufc_aptos_wallet_links
+# (Flow/Dapper -> Aptos wallet pairs). Old-spork Flow nodes (mainnet26/27, :8070) are tried; if unreachable
+# those batches are skipped and retried next run. Finding: claude/ufc-aptos-wallet-link-finding-2026-11-15.md.
+
+on:
+  schedule:
+    # Off-anchor minutes, 4×/day. The market is thin (≈0–10 UFC sales/month), so a few runs a day is plenty.
+    - cron: "37 1,7,13,19 * * *"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Write to the database (false = dry run)"
+        type: boolean
+        default: false
+      budget_sec:
+        description: "Time budget for the scan, seconds"
+        type: string
+        default: "900"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ufc-aptos-sales-ingest
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - name: Ingest
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          APTOS_API_KEY: ${{ secrets.APTOS_API_KEY }}
+          APPLY: ${{ github.event_name == 'schedule' || inputs.apply }}
+          BUDGET: ${{ inputs.budget_sec || '900' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NEXT_PUBLIC_SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "::error::Supabase secrets not configured"; exit 2
+          fi
+          if [ -z "${APTOS_API_KEY:-}" ]; then echo "::warning::APTOS_API_KEY not set — anonymous Aptos API, slow"; fi
+          flag=""
+          if [ "$APPLY" = "true" ]; then flag="--apply"; fi
+          node scripts/ufc-aptos-sales-ingest.mjs $flag --budget-sec "$BUDGET"
+      - name: Wallet links (Flow burn -> Aptos mint)
+        if: ${{ !cancelled() }}
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          APTOS_API_KEY: ${{ secrets.APTOS_API_KEY }}
+          APPLY: ${{ github.event_name == 'schedule' || inputs.apply }}
+        run: |
+          set -euo pipefail
+          flag=""
+          if [ "$APPLY" = "true" ]; then flag="--apply"; fi
+          node scripts/ufc-aptos-wallet-link.mjs $flag --budget-sec 540
