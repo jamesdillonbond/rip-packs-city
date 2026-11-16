@@ -214,3 +214,18 @@ describe("the route under a dead host", () => {
     expect(topshotGqlBreakerOpen()).toBe(false)
   })
 })
+
+describe("per-stage timing line (2026-11-15)", () => {
+  it("a successful search logs one timing line naming every stage it passed, with the 4.5 s gap in its own bucket", async () => {
+    const lines: string[] = []
+    vi.spyOn(console, "log").mockImplementation((...a: unknown[]) => { lines.push(a.map(String).join(" ")) })
+    const res = await POST(post({ input: WALLET, limit: 20 }))
+    expect(res.status).toBe(200)
+    const timing = lines.filter((l) => l.startsWith("[wallet-search] timing "))
+    expect(timing).toHaveLength(1)
+    for (const stage of ["fetch_owned_ids", "enrich_moments", "fill_and_counts", "fmv_enrich", "acquisition_enrich"]) {
+      expect(timing[0]).toMatch(new RegExp(`\\b${stage}=\\d+ms\\b`))
+    }
+    expect(timing[0]).toMatch(/total=\d+ms/)
+  })
+})

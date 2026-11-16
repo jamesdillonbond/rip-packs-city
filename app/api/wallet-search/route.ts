@@ -1392,10 +1392,23 @@ export async function POST(req: NextRequest) {
     | "resolve_wallet"
     | "fetch_owned_ids"
     | "enrich_moments"
+    | "fill_and_counts"
     | "fmv_enrich"
     | "acquisition_enrich"
     | "respond"
     = "parse_body"
+  // 2026-11-15: elapsed ms per stage, logged once per successful search, because an
+  // uncached search takes 7–14 s and log timestamps alone mis-attributed where (the
+  // per-moment failure lines are written only after both legs settle).
+  const searchStartedAt = Date.now()
+  let stageEnteredAt = searchStartedAt
+  const stageMs: Record<string, number> = {}
+  const mark = (next: typeof topLevelStage) => {
+    const now = Date.now()
+    stageMs[topLevelStage] = (stageMs[topLevelStage] ?? 0) + (now - stageEnteredAt)
+    stageEnteredAt = now
+    topLevelStage = next
+  }
   let resolvedInput: string | null = null
   try {
     let body: unknown
@@ -1412,7 +1425,7 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       )
     }
-    topLevelStage = "validate"
+    mark("validate")
 
     if (!body || typeof body !== "object" || !("input" in body) || !(body as any).input || String((body as any).input).trim() === "") {
       console.log("[wallet-search] missing or empty input field")
@@ -1627,9 +1640,9 @@ export async function POST(req: NextRequest) {
     let wallet: string
     let ids: number[]
     try {
-      topLevelStage = "resolve_wallet"
+      mark("resolve_wallet")
       wallet = await resolveWalletFromInput(input)
-      topLevelStage = "fetch_owned_ids"
+      mark("fetch_owned_ids")
       ids = isAllDay ? await getAllDayOwnedIds(wallet) : await getOwnedMomentIds(wallet)
     } catch (err) {
       if (err instanceof UsernameLookupError) return usernameLookupResponse(err)
@@ -1771,7 +1784,7 @@ export async function POST(req: NextRequest) {
     }
 
     const slice = ids.slice(offset, offset + limit)
-    topLevelStage = "enrich_moments"
+    mark("enrich_moments")
 
     const baseRows = (await mapWithConcurrency(slice, 8, async (id) => {
       // INVARIANT_SAFE: catch per-moment errors so one bad moment doesn't crash the whole wallet
@@ -1916,6 +1929,7 @@ export async function POST(req: NextRequest) {
       }
     }))
 
+    mark("fill_and_counts")
     // Recover what the dead Top Shot host used to supply, from the database.
     // Runs BEFORE the per-edition tally below so `locked` counts see the
     // recovered readings. Never throws: a failure here must not cost the
@@ -1995,11 +2009,11 @@ export async function POST(req: NextRequest) {
     }
 
     // Batch-enrich FMV from fmv_snapshots + low ask from cached_listings
-    topLevelStage = "fmv_enrich"
+    mark("fmv_enrich")
     const fmvEnriched = await batchEnrichFmvAndAsks(rowsCounted)
 
     // Enrich with acquisition method data
-    topLevelStage = "acquisition_enrich"
+    mark("acquisition_enrich")
     // ⛔ Everything from here to the response is keyed to TOP SHOT: the wmc
     // cache writes below pin the Top Shot collection id, and the acquisition
     // reads/writes key on a bare moment id. On an All Day request those ids are
@@ -2139,7 +2153,12 @@ export async function POST(req: NextRequest) {
       console.log("[wallet-search] acquisition-stats lookup failed:", err instanceof Error ? err.message : String(err))
     }
 
-    topLevelStage = "respond"
+    mark("respond")
+    console.log(
+      `[wallet-search] timing total=${Date.now() - searchStartedAt}ms ` +
+        Object.entries(stageMs).map(([k, v]) => `${k}=${v}ms`).join(" ") +
+        ` moments=${rows.length}`,
+    )
     return NextResponse.json({
       rows,
       walletAddress: wallet,
