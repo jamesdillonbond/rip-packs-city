@@ -4,6 +4,11 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-11-16 ~9:00 AM PT (Claude Code cloud) — two dated reads
+
+- **11-17 after ~8:15 AM PT — `candy_sales_stale_hours` should leave BREACH by itself** (the 143 `edition_not_ingested` rows from the #257 walk age out of the 48 h window; history walk drained). Still red after 9 AM PT 11-17 → read which leg fires before touching the view (inbox `2026-11-16T0705Z`, candidate 2 note).
+- **Panini walker `profile_state`:** after Trevor pulls on the walker box, no complete walk should post `not_found` again. The receiver now corrects one that arrives with holdings anyway (`9cd4b2dbc`). Read: `select username, profile_state from panini_collector_walks where username in ('sdb','jamesdillonbond')` → both `public`.
+
 ## STEER — added 2026-11-15 ~9:20 PM PT (Claude Code, Trevor's laptop) — dated reads from the 11-15 evening thread (pack history, wallet search, inline Cadence, UFC on Aptos; thread archived)
 
 - ✅ **READ 11-16 ~6:40 AM PT (Claude Code cloud): passed — heartbeat + completion ok=true, 31,766 rows, 17 s, 5:01 AM PT.** Was: **11-16 ~5:05 AM PT — `rpc-pack-ev-history-thin` (pg_cron 889) first daily run.** Expect a `pack-ev-history-thin-heartbeat` row AND a `pack-ev-history-thin` completion row, ok=true, `rows_written` in the low tens of thousands (one day of interior identical rows from the 17 d → 14 d slice). A heartbeat with no completion = killed; read `cron.job_run_details` first. Job 73 (`refresh_mv_pack_ev_latest`) after the 11-15 thin: 18.9–30.9 s (avg ~25) vs 26.6–34.9 s before. Modest, so the row count was not its main cost; don't expect more from further thinning.

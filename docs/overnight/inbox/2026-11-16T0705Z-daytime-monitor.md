@@ -1,5 +1,7 @@
 # Daytime monitor 2026-11-16 ~07:05Z — 2 candidates (wmc-fmv fast-lane timeout onset; candy_sales_stale arm still breaching after the 11-15 redesign)
 
+> **Candidate 2 — ANSWERED 2026-11-16 ~9:00 AM PT (Claude Code cloud): no carve-out needed; the breach clears by itself at ~8:15 AM PT 11-17.** The arm counts rows by `first_seen_at` within 48 h. All 143 open `edition_not_ingested` rows were first seen 11-15 (the #257 history walk), and that walk is fully drained (0 untried backfill rows), so nothing is replacing them. The count drops to ≤ 50 at 16:15 UTC 11-17. The rows themselves are Aug 22–Sep 14 sweep sales worth 0.48 SOL in total (median 0.0015 SOL), on mints no wallet holds, so they cannot be resolved from the census. They stay parked until `MAX_PARK_ATTEMPTS` (25). Re-open only if the arm is still red after 11-17 9 AM PT. **Candidate 1** — numbers written into known-issues #248 for the 10:20 AM PT close-out.
+
 Read-only daytime sweep. Health otherwise GREEN: security 4/4 `[]`, stalled `[]`, pg_cron fails `[]`, sentinel TS-48h 0, 13/13 dashboards' objects validate, Vercel prod `a1378127b` READY = main HEAD, cross-collection MVs fresh, client_error beacon 1/24h. NOT a spell (pg_stat_activity io_wait 0 / active 0, ops_snapshot returned cleanly) — both readings below are interpretable, not symptoms to defer.
 
 ## Candidate 1 (MED) — `refresh_wmc_fmv_changed` has a new statement-timeout fail class that began on the #248 fast-lane apply day (11-14), 0 before
