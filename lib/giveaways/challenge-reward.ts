@@ -80,3 +80,62 @@ export async function openRewardDropForChallenge(db: Reader, challengeSlug: stri
   const title = str(row?.title)
   return slug && title ? { slug, title } : null
 }
+
+export interface UnclaimedReward {
+  drop: RewardDrop
+  challenge: { slug: string; title: string }
+  packsLeft: number
+}
+
+/**
+ * Reward packs this account EARNED and has not claimed (2026-11-15 activity review:
+ * 6 of 27 Dame Time finishers never claimed; knotbean opened the dashboard 14 times
+ * after finishing and never reached /giveaways — nothing on the dashboard said a pack
+ * was waiting). An earned reward = an OPEN drop whose eligible challenge this account
+ * has a COMPLETED case in (claim_giveaway_pack's own test), with no claim by this
+ * account and at least one pack left. [] is a successful read that found none; a
+ * failed read THROWS, so the caller shows nothing rather than "no reward".
+ */
+export async function unclaimedRewardsForUser(db: Reader, userId: string): Promise<UnclaimedReward[]> {
+  const cases = await db.from("trophy_cases").select("challenge_id").eq("user_id", userId).not("completed_at", "is", null).limit(50)
+  if (cases.error) throw new Error(`trophy_cases read failed: ${cases.error.message}`)
+  const challengeIds = [...new Set(rows(cases.data).map((r) => str(r.challenge_id)).filter((s): s is string => s != null))]
+  const out: UnclaimedReward[] = []
+  for (const challengeId of challengeIds) {
+    const drops = await db
+      .from("giveaway_drops")
+      .select("id, slug, title, pack_count")
+      .eq("eligible_challenge_id", challengeId)
+      .eq("status", "open")
+      .order("opened_at", { ascending: false })
+      .limit(10)
+    if (drops.error) throw new Error(`giveaway_drops read failed: ${drops.error.message}`)
+    const dropRows = rows(drops.data)
+    if (dropRows.length === 0) continue
+    let challenge: { slug: string; title: string } | null = null
+    for (const d of dropRows) {
+      const dropId = str(d.id)
+      const slug = str(d.slug)
+      const title = str(d.title)
+      const packCount = typeof d.pack_count === "number" ? d.pack_count : null
+      if (!dropId || !slug || !title || packCount == null) continue
+      const mine = await db.from("giveaway_claims").select("id").eq("drop_id", dropId).eq("user_id", userId).limit(1)
+      if (mine.error) throw new Error(`giveaway_claims read failed: ${mine.error.message}`)
+      if (rows(mine.data).length > 0) continue
+      const all = await db.from("giveaway_claims").select("id").eq("drop_id", dropId).limit(1000)
+      if (all.error) throw new Error(`giveaway_claims read failed: ${all.error.message}`)
+      const packsLeft = packCount - rows(all.data).length
+      if (packsLeft <= 0) continue
+      if (!challenge) {
+        const c = await db.from("trophy_challenges").select("slug, title").eq("id", challengeId).limit(1)
+        if (c.error) throw new Error(`trophy_challenges read failed: ${c.error.message}`)
+        const cs = str(rows(c.data)[0]?.slug)
+        const ct = str(rows(c.data)[0]?.title)
+        if (!cs || !ct) throw new Error("the drop's challenge could not be read")
+        challenge = { slug: cs, title: ct }
+      }
+      out.push({ drop: { slug, title }, challenge, packsLeft })
+    }
+  }
+  return out
+}

@@ -39,6 +39,7 @@ import { proxyIpfsImageUrl } from "@/lib/ipfs-media";
 import { momentSubjectName } from "@/lib/entity-href"
 import FirstAlertPrompt from "@/components/alerts/FirstAlertPrompt";
 import ChallengeProgressNudge from "@/components/profile/ChallengeProgressNudge";
+import UnclaimedRewardCard from "@/components/profile/UnclaimedRewardCard";
 import { accentText } from "@/lib/accent-text"
 
 const condensedFont = "var(--font-display)";
@@ -1008,8 +1009,20 @@ function ProfilePageInner() {
             ok AND empty — see components/alerts/FirstAlertPrompt.tsx. */}
         {/* 2026-11-08: an unfinished trophy-challenge entry (below 6) — see
             components/profile/ChallengeProgressNudge.tsx. Renders nothing otherwise. */}
-        <ChallengeProgressNudge />
-        <FirstAlertPrompt />
+        {/* 2026-11-15: an earned, unclaimed challenge reward pack — see
+            components/profile/UnclaimedRewardCard.tsx. Renders nothing otherwise. */}
+        <UnclaimedRewardCard />
+        {/* 2026-11-15 activity review: 3 of 4 signups since 11-11 never saved a wallet;
+            one saw the challenge invite and the alert prompt twice on an empty dashboard
+            and left. With no wallet saved (read ok AND empty), the add-wallet form below
+            is the ONLY ask — neither card can do anything for a collector with nothing
+            to pin or watch. A failed wallets read keeps the old behaviour. */}
+        {!heroFormShown && (
+          <>
+            <ChallengeProgressNudge />
+            <FirstAlertPrompt />
+          </>
+        )}
         {/* ── Hero: onboarding CTA / HeroMoment / Trophy Case ── */}
         {/* ⚠ `walletsFailed` FIRST. An empty `wallets` is ambiguous — it means
             either "has added none" or "we could not read the list" — and only

@@ -38,6 +38,14 @@
 --                  path-segments bucket holding ≥ 8 such visits. Over 10-13..11-10 only the 11-09 crawler hit it;
 --                  a burst of real visitors (a post going viral) would carry refs or a second event. Reported as
 --                  its own row so a change in the rule is visible.
+--                  (2026-11-15) The crawler came back as a DRIP: 50–850 lone /panini-blockchain visits a
+--                  DAY, spread so thinly that ~400 of 2,325 in 11-09..11-15 never reached 8 in one hour
+--                  (592 "browsers" against ~100 engaged). A second bucket now also excludes a
+--                  day × first-two-path-segments bucket holding ≥ 20 such visits. 20, not 8: the 11-10
+--                  giveaway claim day put 14 lone no-ref visits on /giveaways (links opened from Discord
+--                  and X apps carry no ref) and those are people. "engaged browsers" (below) is the
+--                  rule-independent cross-check: browsers with a 2nd page, a 2nd visit, a ref or any
+--                  non-page-view event.
 --   concierge    = (2026-11-08) support_conversations not flagged smoke, WITH a visit_session_id (the site
 --                  widget always sends one; direct-API probes do not — 11-07's unflagged probes had none),
 --                  minus the log_* rows (feedback_type set) that the bot writes beside an answer.
@@ -63,6 +71,9 @@ WITH params AS (
     AND NOT EXISTS (SELECT 1 FROM visits_all o WHERE o.vid = va.vid AND o.sid <> va.sid)
 ), crawler AS (
   SELECT l.sid FROM lone l JOIN (SELECT hr, pfx FROM lone GROUP BY 1, 2 HAVING count(*) >= 8) b USING (hr, pfx)
+  UNION
+  SELECT l.sid FROM lone l JOIN (SELECT date_trunc('day', hr) AS dy, pfx FROM lone GROUP BY 1, 2 HAVING count(*) >= 20) b
+    ON date_trunc('day', l.hr) = b.dy AND l.pfx = b.pfx
 ), visits AS (
   SELECT * FROM visits_all WHERE sid NOT IN (SELECT sid FROM crawler)
 ), src AS (
@@ -81,6 +92,9 @@ WITH params AS (
 SELECT 'human events' AS metric, count(*)::text AS value FROM ev
 UNION ALL SELECT 'browsers', count(DISTINCT vid)::text FROM visits
 UNION ALL SELECT 'visits', count(*)::text FROM visits
+UNION ALL SELECT 'engaged browsers (2+ pages, 2+ visits, a ref, or an event)', count(DISTINCT v.vid)::text
+  FROM visits_all v WHERE v.pv > 1 OR v.other_ev > 0 OR v.ref IS NOT NULL
+    OR EXISTS (SELECT 1 FROM visits_all o WHERE o.vid = v.vid AND o.sid <> v.sid)
 UNION ALL SELECT 'excluded: crawler-burst visits', count(*)::text FROM crawler
 UNION ALL SELECT 'external signed-in users', count(*)::text FROM signed
 UNION ALL SELECT 'source: ' || source, count(*)::text || ' visits (' || count(*) FILTER (WHERE pv = 1) || ' one-page)' FROM src GROUP BY source

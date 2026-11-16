@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { challengeOfDrop, hasCompletedChallenge, openRewardDropForChallenge } from "@/lib/giveaways/challenge-reward"
+import { challengeOfDrop, hasCompletedChallenge, openRewardDropForChallenge, unclaimedRewardsForUser } from "@/lib/giveaways/challenge-reward"
 
 // The link between a trophy challenge and its reward drop (2026-11-10). Each read has THREE
 // answers: the thing · a successful read that found nothing · a failed read, which THROWS so
@@ -82,5 +82,40 @@ describe("openRewardDropForChallenge", () => {
   it("either failed read throws, never null", async () => {
     await expect(openRewardDropForChallenge(db(() => fail) as never, "dame-time")).rejects.toThrow(/trophy_challenges read failed/)
     await expect(openRewardDropForChallenge(db((c) => (c.table === "trophy_challenges" ? ok([{ id: "ch1" }]) : fail)) as never, "dame-time")).rejects.toThrow(/giveaway_drops read failed/)
+  })
+})
+
+describe("unclaimedRewardsForUser (2026-11-15)", () => {
+  const drop = { id: "d1", slug: "dame-time-challenge-reward-pack", title: "Dame Time Challenge Reward Pack", pack_count: 27 }
+  function world(opts: { mine?: number; all?: number; failOn?: string; dropStatusOpen?: boolean } = {}) {
+    return db((c) => {
+      if (opts.failOn === c.table) return fail
+      if (c.table === "trophy_cases") return ok([{ challenge_id: "ch1" }, { challenge_id: "ch1" }])
+      if (c.table === "giveaway_drops") return ok(opts.dropStatusOpen === false ? [] : [drop])
+      if (c.table === "giveaway_claims") {
+        const n = c.eq.user_id ? (opts.mine ?? 0) : (opts.all ?? 21)
+        return ok(Array.from({ length: n }, (_, i) => ({ id: `c${i}` })))
+      }
+      if (c.table === "trophy_challenges") return ok([{ slug: "dame-time", title: "Dame Time" }])
+      return ok([])
+    })
+  }
+  it("lists an open drop for a COMPLETED challenge this account has not claimed, once per challenge", async () => {
+    const d = world()
+    expect(await unclaimedRewardsForUser(d as never, "u1")).toEqual([
+      { drop: { slug: "dame-time-challenge-reward-pack", title: "Dame Time Challenge Reward Pack" }, challenge: { slug: "dame-time", title: "Dame Time" }, packsLeft: 6 },
+    ])
+    expect(d.calls[0]).toMatchObject({ table: "trophy_cases", eq: { user_id: "u1" }, not: ["completed_at is"] })
+    expect(d.calls.filter((c) => c.table === "giveaway_drops")[0]).toMatchObject({ eq: { eligible_challenge_id: "ch1", status: "open" } })
+  })
+  it("a claimed pack, an exhausted drop or no open drop is no reward", async () => {
+    expect(await unclaimedRewardsForUser(world({ mine: 1 }) as never, "u1")).toEqual([])
+    expect(await unclaimedRewardsForUser(world({ all: 27 }) as never, "u1")).toEqual([])
+    expect(await unclaimedRewardsForUser(world({ dropStatusOpen: false }) as never, "u1")).toEqual([])
+  })
+  it("a failed read on any table THROWS — never 'no reward'", async () => {
+    for (const t of ["trophy_cases", "giveaway_drops", "giveaway_claims", "trophy_challenges"]) {
+      await expect(unclaimedRewardsForUser(world({ failOn: t }) as never, "u1")).rejects.toThrow(/read failed/)
+    }
   })
 })
