@@ -12,6 +12,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~6:10 PM PT — Wallet search: one chain script per 25 moments; parallels keyed set:play::N, priced by their own edition, circulation from the edition row (Claude Code, Trevor's laptop; "work through it all")
+- The chain's numMomentsInEdition is the whole set:play family. On mainnet a /500 parallel read 16,000 and a 4,000 base read 4,099. The route showed it as "#/N", keyed every parallel as its base set:play, priced it with the base FMV and wrote that base key to wmc. Now: getMomentsSubedition → set:play::N; circulation from editions (then wmc, else null); traits recomputed; the seed skips parallels. Batched script: 60 moments exceed Flow's 100k compute limit (100,004), 40 pass, so 25 per script.
+- Tests: +3 (parallel key/price/size/name, never the chain count, one script per page). Planted reverts of the key and the circulation each red. Preflight green (tsc, lint:ratchet, 2,815 tests). Inbox 2026-11-16T0058Z ✅.
+- Revert: `git revert` the code commit (no DB half).
+
+### 2026-11-15 ~5:55 PM PT — pack_ev_history thinned: 691,464 interior identical rows deleted (1.41M → 723k); daily pg_cron 889 keeps it thinned (Claude Code, Trevor's laptop; "work through it all")
+- `20261116014326`: `thin_pack_ev_history_chunk` + procedure `thin_pack_ev_history_all` + backup `audit_20261115_pack_ev_history_thinned` (id/pack/timestamp, which rebuilds each row exactly). The one-off ran via one-shot job 890 (unscheduled): 25 batches, 62 s, cutoff 11-01 UTC. Rolled-back proof first: newest row, filtered newest row and hourly October series all identical. Packs 4,877 → 4,877; shortfall metric 0.49 → 0.49. Job 73's first run after: 23.8 s (26.6–34.9 s before, one sample).
+- Daily job 889 `rpc-pack-ev-history-thin` (5:01 AM PT) thins the 17 d → 14 d slice, with a heartbeat and a completion pipeline_runs row. Inbox 2026-11-15T2311Z ✅.
+- Revert (data): the INSERT … CROSS JOIN LATERAL in the migration header. Revert (objects): `cron.unschedule('rpc-pack-ev-history-thin')`, drop the procedure and function.
+
 ### 2026-11-15 ~5:20 PM PT — Inbox INDEX: the 0058Z wallet-search filing moved under its own UTC date heading (2026-11-16), un-reddening docs-guard CI (Claude Code, Trevor's laptop)
 - `inbox-index-entries-sit-under-their-own-date` failed CI on `cd70781e9` and `6870fd3ba`: the entry was listed under `## 2026-11-15` but its filename date is 11-16 UTC. New `## 2026-11-16 — 1 filing` heading; 11-15 count 8 → 7. All 4 inbox guards pass locally (20/20); `inbox:index:check` already correct.
 - Revert: move the line back (it will re-red the guard).
