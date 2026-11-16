@@ -12,7 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
-### 2026-11-16 ~11:45 AM PT — "Fill with my top 6" for the main trophy case (Claude Code cloud; Trevor: "Keep going")
+### 2026-11-16 ~9:40 AM PT — Staff accounts can't claim a challenge reward pack (Claude Code cloud; Trevor: "Keep going")
+- Measured: Dame Time is open with 27 packs / 21 claims (6 left) for 6 eligible members, and 1 internal account holds a completed case. The 11-15 pass hid the dashboard reward card from internal accounts, but `/giveaways/<slug>` still let one claim — one press would have taken a member's pack.
+- CODE: `app/api/giveaways/[slug]/route.ts` refuses all three claim paths (account wallet, typed username, Flow Wallet proof) with 403 `internal_account` when the drop has `eligible_challenge_id` and the account is in `internal_accounts`; a failed read refuses (classified error). GET returns `viewer: "internal"`; `GiveawayClient.tsx` shows "This is a staff account…" and no claim form. Helper `isInternalAccount` in `lib/giveaways/challenge-reward.ts` (also used by the reward card). Drops open to everyone are unaffected. No DB change (`claim_giveaway_pack` untouched).
+- Tests: 4 route + 1 component; a planted removal on the account path reds the route test.
+- Revert: `git revert` this commit (no DB half).
+
+### 2026-11-16 ~9:05 AM PT — "Fill with my top 6" for the main trophy case (Claude Code cloud; Trevor: "Keep going")
 - Measured (members since 09-01, internal excluded, by day-0 action → came back on a later day): entered a challenge 12/12 · pinned to the main case (no challenge) 3/5 · saved a wallet, pinned nothing 5/16 · no wallet 0/5. Every member trophy case ever made is a challenge case; the main case's only path was "+ Pick a moment", six trips through the picker.
 - CODE: `POST /api/profile/trophy/fill` (propose without `confirm`, pin with `confirm: true`; candidates = the picker's own `get_user_top_owned_moments` top 48 minus Panini; one per edition first; only EMPTY slots via ignoreDuplicates on the NULLS NOT DISTINCT key; `pinned` = rows returned; trophy_pinned funnel rows per slot). `lib/trophy/fill-main.ts` (pure selection + confirm copy). `components/profile/FillTop6Button.tsx` on the dashboard's empty-case card (Overview + Trophy tab), events `main-fill-click/-declined/-pinned`. Candidate read measured 1.9 s on the largest wallet (a direct wmc FMV sort was 11.7 s cold — not used).
 - Tests: route test (10) + component test (6). Full `npm run preflight` green (coverage 90.86 %).
@@ -25,7 +31,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 - Left as is: 5 older `not_found` rows (spinotronpc, rigged, philthy503, juiceshack, cazsreyem; last walked 09-29/30, never complete), and `mempheattle` (a genuinely missing profile, correctly shown).
 - Time correction: written at ~8:31 AM PT (clock read 16:31 UTC); the code shipped 8:33 AM PT. The heading time was ahead of the clock.
 
-### 2026-11-16 ~10:00 AM PT — Edition-page account prompt on every collection, as a button, with a "shown" event (Claude Code cloud; Trevor: "Keep going")
+### 2026-11-16 ~7:55 AM PT — Edition-page account prompt on every collection, as a button, with a "shown" event (Claude Code cloud; Trevor: "Keep going")
 - Measured (30 days to 11-16): ~46 Google visitors landed on Panini edition pages, 82 % left after one page, and the 11-08 signed-out prompt (an 11px mono text link) logged 0 clicks with no impression event. Rookie board (19 Google visits, all one page) already has a header CTA and a "Check your own wallet" box above the fold, so it was left alone.
 - CODE: `components/auth/AnonCollectionValueCta.tsx` is now a bordered row with a red "Create free account" button, logs a once-per-page `anon-value-cta-shown` usage event, and takes an `itemNoun`. `lib/auth/anon-value-cta-copy.ts` (new) words it per collection (Panini keeps `panini_edition`; Top Shot, All Day, Golazos, Pinnacle, Candy added; UFC and others get none). The edition page renders it from that registry instead of `isPanini &&`. `scripts/funnel-read.sql` rows 10–11 (shows vs clicks).
 - Tests: component test + `anon-value-cta-copy.test.ts`. Full `npm run preflight` green (coverage 90.86 %).
