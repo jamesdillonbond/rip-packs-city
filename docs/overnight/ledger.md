@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~9:15 PM PT — #259 verified on its first census run: 452 merged-edition cards re-read, 193 moved, 90 → 86 editions (Claude Code cloud)
+- 8:57 PM PT `candy-collections-census` (ok): `split_rechecked` 452, `wmc_repointed` 193, listings 1, sales 0 (none of those cards had sales), 23 re-reads failed (`fetch failed`, not recorded — retried next walk). Merged editions 90 → 86, over-circulation cards 3,857 → 3,830; every recorded card's holdings row = its recorded key (0 mismatches).
+- Read-back of where cards went: into the RIGHT editions that already existed (Batman #405 legendary 65 / core 63; Blackest Night uncommon 30, rare 9; Atom Project uncommon/rare/epic), serials all within the destination's circulation; the majority stayed (#405 epic 154, max serial 1,220 ≤ 1,225); one true collision split to a new `…justice-league-vs-suicide-legendary-n750` (8 cards, max 749 ≤ 750).
+- Remaining: the walk reaches the other listed editions over its ~7 h cycle. Close #259 when the re-measure SQL (inbox `2026-11-16T0404Z`) reads 0.
+
 ### 2026-11-15 ~9:10 PM PT — UFC Aptos: 4th fileless migration recovered md5-exact (`20261116043121` audit_20261116_ufc_aptos_listings) (Claude Code cloud; Trevor: UFC Aptos consolidated handoff)
 - Prod-applied (Cowork) but fileless: `ufc_aptos_listings` + `v_ufc_aptos_edition_floor` + `ufc_aptos_ingest_state.listings_scanned_through_version`. File written from `schema_migrations.statements` via base64, md5 `adb27853…` = prod, 3,313 bytes. No DB change.
 - Not done here, on purpose: the 4th script (`scripts/ufc-aptos-listings.mjs`), the 4-step workflow and backlog items 1–4 must come VERBATIM from the claude.ai Project patch folder, which this cloud session cannot read (no Project id/connector); the laptop session is executing the same handoff (binder `aeded751b`). Skip-what's-on-main applies to it.
