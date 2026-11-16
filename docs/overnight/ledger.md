@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~2:35 PM PT — Unclaimed reward card also on the dashboard Packs tab (Claude Code cloud; Trevor: "Keep going")
+- Measured: since the 9:43 AM PT claim email, the only reward-card event is tomwagmi (one of the six) at 1:38 PM PT. He saw the card on Overview and went straight to /dashboard/packs, then back. No claim yet.
+- CODE: `components/profile/UnclaimedRewardCard.tsx` takes `surface` ("overview" default, "packs") and tags `reward-claim-card-shown/-click` with it; `app/dashboard/packs/PackHistoryClient.tsx` renders it under the tabs. It renders nothing unless the read answered ok with a reward, and nothing for internal accounts (route-side).
+- Tests: 3 component render tests (packs surface + link + events, overview default, failed read renders and records nothing) + wiring pin. Full `npm run preflight` green.
+- Revert: `git revert` this commit (no DB half).
+
 ### 2026-11-16 ~12:05 PM PT — Component coverage gate un-reddened by a real test, not a lowered floor: SkipToContentLink's click contract pinned (Claude Code, laptop; Trevor: "Keep going and work through these")
 - **Found:** CI `Component coverage — merge + coverage ratchet` red on `d8c393b3a`, `6a588e6ad`, `4f9a25a34`: statements **90.84 %** vs floor 90.85 %, flapping (90.85 on `015280e50` with identical component code) — the merge sat exactly ON the floor. Not caused by the next 16.4.5 bump.
 - **Shipped:** `__tests__/component-SkipToContentLink-focuses-deepest-anchor.test.tsx` — the skip link focuses the LAST page-content anchor and cancels the jump; with none it leaves the native `#main-content` jump alone. Planted defect (`anchors[0]`) → 1 failed. Local merge: statements **90.91 %**; floor unchanged.
