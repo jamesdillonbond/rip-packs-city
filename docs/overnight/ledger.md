@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~9:50 AM PT — X top-sales buyers: two more confirmed handles (Cowork daily X draft; Trevor: "Do all you can")
+- Trevor confirmed Jason3555 → @jason3555 and Karso → @orangekarso. Added to `X_HANDLES` in `scripts/social/x-draft.mjs` and `scripts/social/x-image.mjs`, and to the confirmed list in `docs/social/x-calendar.md`. No site or DB change.
+- Revert: `git revert` this commit.
+
 ### 2026-11-16 ~9:40 AM PT — Staff accounts can't claim a challenge reward pack (Claude Code cloud; Trevor: "Keep going")
 - Measured: Dame Time is open with 27 packs / 21 claims (6 left) for 6 eligible members, and 1 internal account holds a completed case. The 11-15 pass hid the dashboard reward card from internal accounts, but `/giveaways/<slug>` still let one claim — one press would have taken a member's pack.
 - CODE: `app/api/giveaways/[slug]/route.ts` refuses all three claim paths (account wallet, typed username, Flow Wallet proof) with 403 `internal_account` when the drop has `eligible_challenge_id` and the account is in `internal_accounts`; a failed read refuses (classified error). GET returns `viewer: "internal"`; `GiveawayClient.tsx` shows "This is a staff account…" and no claim form. Helper `isInternalAccount` in `lib/giveaways/challenge-reward.ts` (also used by the reward card). Drops open to everyone are unaffected. No DB change (`claim_giveaway_pack` untouched).
