@@ -272,6 +272,26 @@ describe("TrophyCasesPanel (owner dashboard)", () => {
     expect(window.confirm).toHaveBeenCalledTimes(1)
   })
 
+  // 2026-11-15 activity review: the completion moment is where a share is most likely,
+  // so the toast points at the share buttons — but ONLY when they render (a board
+  // username exists). Without one there is nothing above the case to point at.
+  it("'Fill my case' completing the entry points at the share buttons when they exist", async () => {
+    routes["GET /api/profile/trophy-cases"] = () =>
+      ok({ cases: [{ id: CASE, name: "Dame Time", created_at: "", completed_at: null, challenge: DAME, slabs: [slab(1), slab(2)] }], challenges: [], board_username: "rrx69" })
+    routes["POST /api/profile/trophy-cases/fill"] = () => {
+      const body = JSON.parse(calls.at(-1)!.init.body)
+      return body.confirm
+        ? ok({ need: 4, picks: [], short: 0, pinned: 4 })
+        : ok({ need: 4, short: 0, picks: [3, 4, 5, 6].map((slot) => ({ slot, player_name: "Damian Lillard", set_name: "Base", serial_number: slot, fmv: 2 })) })
+    }
+    const toast = vi.fn()
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={toast} />)
+    fireEvent.click(await screen.findByTestId("fill-my-case"))
+    await waitFor(() =>
+      expect(toast).toHaveBeenCalledWith("Pinned 4 — your Dame Time entry is complete. Share it from the buttons above your case.", "success"),
+    )
+  })
+
   it("'Fill my case' declined at the confirm writes NOTHING", async () => {
     ;(window.confirm as any).mockReturnValue(false)
     const posts: any[] = []

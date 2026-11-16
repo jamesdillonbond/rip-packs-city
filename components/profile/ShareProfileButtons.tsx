@@ -32,6 +32,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { challengeCaseOgPath, challengeCaseSharePath } from "@/lib/trophy/challenge-link";
 import { ogProfileCardPath, ogTrophyCaseCardPath } from "@/lib/og/card-url";
+import { track as trackUsage } from "@/lib/telemetry/track";
 
 const DISPLAY = "var(--font-display)";
 // White label text goes on the FILL token, not the raw brand red (4.36:1 <
@@ -191,6 +192,10 @@ export default function ShareProfileButtons({
     )}&url=${encodeURIComponent(url)}`;
     prewarmCard(username, shareSurface, challenge, cardToken);
     track();
+    // 2026-11-15: the ONLY record of a share click. The /api/rewards/track earn above has
+    // written nothing since ~10-04 (the program is pulled), so the 11-15 activity review
+    // could not tell "nobody shared" from "nobody's clicks were recorded".
+    trackUsage("share-click", { medium: "x", surface: shareSurface, challenge: challenge?.slug ?? null });
     window.open(intent, "_blank", "noopener,noreferrer");
   }, [username, tweetText, track, referrerId, shareSurface, challenge, cardToken]);
 
@@ -205,6 +210,7 @@ export default function ShareProfileButtons({
       // clipboard can be blocked — non-fatal.
     }
     track();
+    trackUsage("share-click", { medium: "copy", surface: shareSurface, challenge: challenge?.slug ?? null });
   }, [username, track, referrerId, shareSurface, challenge, cardToken]);
 
   const btn: React.CSSProperties = {

@@ -13,6 +13,7 @@
 
 import Link from "next/link"
 import { useState } from "react";
+import { track } from "@/lib/telemetry/track";
 
 type AlertType = "fmv_below" | "fmv_above" | "price_below" | "discount_above";
 
@@ -72,6 +73,7 @@ export default function WatchEditionButton({
         }),
       });
       if (res.status === 401 || res.status === 405 || res.redirected) {
+        track("watch-edition-signin-needed", { collection: collectionId });
         setMsg({ kind: "auth", text: "Sign in to set an alert." });
         return;
       }
@@ -81,6 +83,7 @@ export default function WatchEditionButton({
         return;
       }
       setMsg({ kind: "ok", text: "Alert set. Manage it on the Alerts page." });
+      track("watch-edition-saved", { collection: collectionId, type: alertType });
       setThreshold("");
     } catch {
       setMsg({ kind: "err", text: "Network error. Try again." });
@@ -93,7 +96,9 @@ export default function WatchEditionButton({
     return (
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        // 2026-11-15: fmv_alerts had ZERO rows ever, and nothing recorded whether this was
+        // opened — "never seen" and "opened, then abandoned" read the same.
+        onClick={() => { setOpen(true); track("watch-edition-open", { collection: collectionId }); }}
         className="rpc-mono"
         style={{
           display: "inline-flex",

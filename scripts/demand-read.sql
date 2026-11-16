@@ -49,6 +49,13 @@
 --   concierge    = (2026-11-08) support_conversations not flagged smoke, WITH a visit_session_id (the site
 --                  widget always sends one; direct-API probes do not — 11-07's unflagged probes had none),
 --                  minus the log_* rows (feedback_type set) that the bot writes beside an answer.
+--   shares       = (2026-11-15) usage_events `share-click` (medium x|copy, surface, challenge). NOT
+--                  `trophy-share-cta-click` — that is the VISITOR's Enter/Build button on a shared case. Before
+--                  11-15 owner shares went only to /api/rewards/track, which has written nothing since ~10-04,
+--                  so no earlier week has a share count.
+--   alerts       = TWO tables: alert_subscriptions (/alerts, the Sniper's "Alert me") AND fmv_alerts (the
+--                  edition page's "Watch this edition"; events watch-edition-open/-saved/-signin-needed from
+--                  11-15). The 11-15 review counted only the first; fmv_alerts had 0 rows ever.
 WITH params AS (
   SELECT timestamptz '2026-11-03 08:00+00' AS s, timestamptz '2026-11-10 08:00+00' AS e
 ), ev AS (

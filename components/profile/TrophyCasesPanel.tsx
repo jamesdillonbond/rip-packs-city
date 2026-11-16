@@ -321,6 +321,10 @@ export default function TrophyCasesPanel({
   // slots (highest FMV, new editions first), confirm, then pin. The server gates
   // every piece exactly like a hand pin.
   const [shortBy, setShortBy] = useState<Record<string, number>>({});
+  // The share buttons render only with a public handle to build the URL on (see the
+  // challenge-share block), so the completion toast points at them only then.
+  const canShare = load.state === "ok" && !!load.username;
+
   const fillCase = useCallback(
     async (c: TrophyCaseData) => {
       if (!c.challenge) return;
@@ -357,7 +361,7 @@ export default function TrophyCasesPanel({
         const left = typeof dd?.short === "number" ? dd.short : short;
         setShortBy((m) => ({ ...m, [c.id]: left }));
         onToast(
-          left > 0 ? `Pinned ${pinned} — ${left} slot${left === 1 ? "" : "s"} still empty` : `Pinned ${pinned} — your ${title} entry is complete`,
+          left > 0 ? `Pinned ${pinned} — ${left} slot${left === 1 ? "" : "s"} still empty` : `Pinned ${pinned} — your ${title} entry is complete${canShare ? ". Share it from the buttons above your case." : ""}`,
           pinned > 0 ? "success" : "info"
         );
       } catch {
@@ -367,7 +371,7 @@ export default function TrophyCasesPanel({
         await refresh();
       }
     },
-    [onToast, refresh]
+    [onToast, refresh, canShare]
   );
 
   // "Enter" (2026-11-08): entering used to create an EMPTY case and stop there.
