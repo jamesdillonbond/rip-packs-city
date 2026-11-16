@@ -36,6 +36,7 @@
 // Three outcomes, never two: a check that fails names what failed; a chain that
 // could not be asked answers 503 + retryable, never "not held" or "not yours".
 
+import { planForRoom } from "@/lib/trade-room/plan"
 import { NextRequest, NextResponse, after } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error"
 import { requireUser } from "@/lib/auth/supabase-server"
@@ -161,7 +162,7 @@ async function pendingRelayFor(loaded: LoadedRoom, me: SideRow | null): Promise<
 
 async function view(loaded: LoadedRoom, userId: string) {
   const me = sideOf(loaded, userId)
-  const [names, relay, fromBlock] = await Promise.all([
+  const [names, relay, fromBlock, fromCompare] = await Promise.all([
     usernamesFor(supabaseAdmin, loaded.sides.map((s) => s.user_id)),
     pendingRelayFor(loaded, me),
     // the Trade Block proposal this room came from, as a guide; a failed read only drops
@@ -170,8 +171,13 @@ async function view(loaded: LoadedRoom, userId: string) {
       console.error(`[trade-room] from-block read failed: ${e instanceof Error ? e.message : String(e)}`)
       return null
     }),
+    // the trade planned on /trades/compare (2026-11-16): a guide too, so a failed read drops it
+    planForRoom(supabaseAdmin, loaded.room.id).catch((e) => {
+      console.error(`[trade-room] from-compare read failed: ${e instanceof Error ? e.message : String(e)}`)
+      return null
+    }),
   ])
-  return buildRoomView(loaded, userId, names, { relay, fromBlock })
+  return buildRoomView(loaded, userId, names, { relay, fromBlock, fromCompare })
 }
 
 /** `picks: [{collection, id}]`, or the original all-Top-Shot `ids: [...]`. Refuses an unknown collection. */

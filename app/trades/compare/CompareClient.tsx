@@ -66,7 +66,7 @@ export default function CompareClient() {
   const [rookieOnly, setRookieOnly] = useState(false)
   const [league, setLeague] = useState<"" | "NBA" | "WNBA">("")
   const [picks, setPicks] = useState<Pick[]>([])
-  const [room, setRoom] = useState<{ kind: "idle" } | { kind: "starting" } | { kind: "signin" } | { kind: "error"; message: string }>({ kind: "idle" })
+  const [room, setRoom] = useState<{ kind: "idle" } | { kind: "starting" } | { kind: "signin" } | { kind: "error"; message: string } | { kind: "unplanned"; code: string }>({ kind: "idle" })
   const [copied, setCopied] = useState(false)
 
   const run = useCallback(async (a: string, b: string) => {
@@ -171,10 +171,18 @@ export default function CompareClient() {
 
   const startRoom = async () => {
     setRoom({ kind: "starting" })
-    const r = await call("/api/trade-room", { method: "POST", body: "{}" })
+    if (!data) return
+    const plan = {
+      partner_username: data.b.username,
+      give: picks.filter((p) => p.side === "a").map((p) => p.moment_id),
+      get: picks.filter((p) => p.side === "b").map((p) => p.moment_id),
+    }
+    const r = await call("/api/trade-room", { method: "POST", body: JSON.stringify({ plan }) })
     if (r.status === 401) return setRoom({ kind: "signin" })
     const code = (r.body?.room as { code?: unknown } | undefined)?.code
     if (!r.ok || typeof code !== "string") return setRoom({ kind: "error", message: r.ok ? "The trade was created but its link was missing. Open your trades to find it." : errorOf(r) })
+    // the room exists but the plan didn't attach: say so instead of arriving at a room without it
+    if (r.body?.plan_saved === false) return setRoom({ kind: "unplanned", code })
     router.push(`/trades/${code}`)
   }
 
@@ -306,12 +314,18 @@ export default function CompareClient() {
                   </button>
                 </div>
                 <div style={muted}>
-                  The room is where the trade happens: send @{data.b.username} its link (and this trade&apos;s link), each of you adds these Moments from your own account, and both
-                  wallets sign one transaction — every Moment moves or none does.
+                  The room is where the trade happens: it carries this plan, so each of you adds your planned Moments from your own account with one tap. Send @{data.b.username}
+                  the room&apos;s link; both wallets sign one transaction — every Moment moves or none does.
                 </div>
                 {room.kind === "signin" && (
                   <div role="alert" style={{ fontSize: 13 }}>
                     <Link href={`/login?next=${encodeURIComponent(planUrl ?? "/trades/compare")}`}>Sign in</Link> to start a trade room. Your trade stays in this page&apos;s link.
+                  </div>
+                )}
+                {room.kind === "unplanned" && (
+                  <div role="alert" style={{ fontSize: 13 }}>
+                    The trade room is ready, but this plan couldn&apos;t be attached to it — add the Moments there by hand (this page&apos;s link keeps the plan).{" "}
+                    <Link href={`/trades/${room.code}`}>Open the trade room</Link>
                   </div>
                 )}
                 {room.kind === "error" && (

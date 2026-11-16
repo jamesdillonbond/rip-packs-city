@@ -7,6 +7,7 @@
 // on-chain step is open. Everything here is derived from the loaded rows; nothing
 // is read from the chain.
 
+import type { FromCompare } from "@/lib/trade-room/plan"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { EXECUTE_CLOSED_MESSAGE, executionOpen } from "@/lib/trade-room/execute"
 import { otherSide, roomState, type ItemRow, type LoadedRoom, type RoomState, type Side, type SideRow } from "@/lib/trade-room/store"
@@ -81,6 +82,9 @@ export interface RoomView {
    *  what each side agreed to give there, as a guide for the picks. Never a pick itself —
    *  the room's own picks and chain checks decide what moves. */
   from_block: FromBlock | null
+  /** The trade planned on /trades/compare this room was started from (2026-11-16), when there is
+   *  one: a guide for the picks, never a pick (lib/trade-room/plan.ts). */
+  from_compare: FromCompare | null
 }
 
 export interface AgreedItem {
@@ -150,6 +154,7 @@ export interface BuildViewOpts {
   now?: number
   relay?: PendingRelay | null
   fromBlock?: FromBlock | null
+  fromCompare?: FromCompare | null
   env?: Record<string, string | undefined>
 }
 
@@ -192,6 +197,7 @@ export function buildRoomView(loaded: LoadedRoom, viewerId: string, names: Map<s
     execution: { open, message: open ? null : EXECUTE_CLOSED_MESSAGE },
     relay: opts.relay ?? null,
     from_block: opts.fromBlock ?? null,
+    from_compare: opts.fromCompare ?? null,
   }
 }
 

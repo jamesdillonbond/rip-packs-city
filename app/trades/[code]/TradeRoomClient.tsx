@@ -170,6 +170,7 @@ export default function TradeRoomClient({ code }: { code: string }) {
       </section>
 
       {room.from_block && room.state !== "sealed" ? <FromBlockPanel room={room} /> : null}
+      {room.from_compare && room.state !== "sealed" ? <FromComparePanel room={room} mine={mine} editable={editable} busy={busy} act={act} setMsg={setMsg} /> : null}
 
       {room.state === "cancelled" ? (
         <p style={muted}>
@@ -898,6 +899,71 @@ function FromBlockPanel({ room }: { room: RoomView }) {
             <Link href={`/trades/block/${fb.listing_code}`}>The listing</Link>
           </>
         ) : null}
+      </p>
+    </section>
+  )
+}
+
+/** The trade planned on /trades/compare this room was started from (2026-11-16): a guide, never a
+ *  pick. Each side adds ITS OWN planned Moments with one tap — the normal `items` save, so every one
+ *  is chain-checked (held, unlocked, not listed, receivable) like a hand pick. */
+function FromComparePanel({
+  room,
+  mine,
+  editable,
+  busy,
+  act,
+  setMsg,
+}: {
+  room: RoomView
+  mine: SideView | null
+  editable: boolean
+  busy: string | null
+  act: Act
+  setMsg: (s: string | null) => void
+}) {
+  const fc = room.from_compare
+  if (!fc) return null
+  const rows: Array<[string, typeof fc.a_gives]> = [
+    [room.a.username, fc.a_gives],
+    [room.b?.username ?? `@${fc.partner_username}`, fc.b_gives],
+  ]
+  const planned = mine ? (mine.side === "a" ? fc.a_gives : fc.b_gives) : []
+  const have = new Set(mine ? mine.items.map(keyOf) : [])
+  const missing = planned.filter((p) => !have.has(`nba_top_shot:${p.moment_id}`))
+  const add = async () => {
+    if (!mine) return
+    const existing = mine.items.map((i) => ({ collection: swapCollectionByDbSlug(i.collection)?.slug ?? i.collection, id: i.moment_id }))
+    const picks = [...existing, ...missing.map((p) => ({ collection: "nba-top-shot", id: p.moment_id }))]
+    await act("items", { picks }, () => setMsg("Your planned Moments are added and checked on chain: held, unlocked and not listed."))
+  }
+  return (
+    <section style={card}>
+      <div style={label}>Planned on Compare with @{fc.partner_username}</div>
+      {rows.map(([who, items]) => (
+        <p key={who} style={{ fontSize: 13, margin: "6px 0 0" }}>
+          <strong>{who}</strong> gives: {items.length ? items.map(agreedLine).join("; ") : "nothing"}
+        </p>
+      ))}
+      {mine && editable && planned.length > 0 ? (
+        mine.proven ? (
+          missing.length === 0 ? (
+            <p style={{ ...muted, fontSize: 12, margin: "8px 0 0" }}>Your planned Moments are in your picks.</p>
+          ) : mine.items.length + missing.length > MAX_ITEMS_PER_SIDE ? (
+            <p style={{ ...muted, fontSize: 12, margin: "8px 0 0" }}>Adding these would pass {MAX_ITEMS_PER_SIDE} Moments on your side — remove some picks first.</p>
+          ) : (
+            <div style={{ marginTop: 8 }}>
+              <button type="button" style={btnPrimary} disabled={busy !== null} onClick={() => void add()}>
+                {busy === "items" ? "Checking on chain…" : `Add my ${missing.length} planned Moment${missing.length === 1 ? "" : "s"}`}
+              </button>
+            </div>
+          )
+        ) : (
+          <p style={{ ...muted, fontSize: 12, margin: "8px 0 0" }}>Connect your Flow Wallet below, then add your planned Moments from here.</p>
+        )
+      ) : null}
+      <p style={{ ...muted, fontSize: 12, margin: "6px 0 0" }}>
+        A plan, not a pick: only what both of you pick and accept here moves, and the room re-checks each Moment on chain.
       </p>
     </section>
   )

@@ -80,6 +80,7 @@ function view(o: Partial<Record<string, unknown>> = {}) {
     execution: { open: false, message: "Signing is paused on RPC right now: trades can still be built and accepted here, but no wallet is asked to sign. Nothing has moved." },
     relay: null,
     from_block: null,
+    from_compare: null,
     ...o,
   }
 }
@@ -497,5 +498,57 @@ describe("TradeRoomClient — the age of the fair-trade figures, and hidden wall
     }))
     expect(screen.getAllByText(/wallet proven/).length).toBeGreaterThan(0)
     expect(document.body.textContent).not.toMatch(/0x3d0b|0xbd94/)
+  })
+})
+
+// 2026-11-16: a room started from /trades/compare carries the plan — a guide with a one-tap add.
+describe("TradeRoomClient — the planned trade from Compare", () => {
+  const plan = (o: Record<string, unknown> = {}) => ({
+    partner_username: "ThunderHour_ts",
+    a_gives: [
+      { collection: "Top Shot", moment_id: "1", player_name: "Player 1", set_name: "Set", serial_number: 1 },
+      { collection: "Top Shot", moment_id: "5", player_name: "Tre Mann", set_name: "Equinox", serial_number: 135 },
+    ],
+    b_gives: [{ collection: "Top Shot", moment_id: "9", player_name: "Andre Iguodala", set_name: "With the Strip", serial_number: 101 }],
+    ...o,
+  })
+
+  it("shows both sides' planned Moments and adds only MY missing ones, keeping my existing picks", async () => {
+    await mount(view({ from_compare: plan() }))
+    expect(screen.getByText("Planned on Compare with @ThunderHour_ts")).toBeTruthy()
+    expect(screen.getByText(/Top Shot · Andre Iguodala · With the Strip · #101/)).toBeTruthy()
+    posts.items = () => ({ status: 200, body: { room: view({ from_compare: plan(), a: { ...view().a, items: [item("1", 10), item("5", 4.23)] } }) } })
+    fireEvent.click(screen.getByRole("button", { name: "Add my 1 planned Moment" }))
+    await waitFor(() => expect(screen.getByText(/Your planned Moments are added and checked on chain/)).toBeTruthy())
+    const sent = calls.find((c) => c.body?.action === "items")!.body!
+    expect(sent.picks).toEqual([{ collection: "nba-top-shot", id: "1" }, { collection: "nba-top-shot", id: "5" }])
+    expect(screen.getByText("Your planned Moments are in your picks.")).toBeTruthy()
+  })
+
+  it("a chain refusal on the add is shown, never swallowed", async () => {
+    await mount(view({ from_compare: plan() }))
+    posts.items = { status: 409, body: { error: "Listed for sale on Top Shot (cancel the listing first): 5." } }
+    fireEvent.click(screen.getByRole("button", { name: "Add my 1 planned Moment" }))
+    await waitFor(() => expect(screen.getByText(/Listed for sale on Top Shot/)).toBeTruthy())
+  })
+
+  it("an unproven side is told to connect its wallet first; the partner sees their own planned Moments", async () => {
+    await mount(view({ from_compare: plan(), me: { side: "b", notice_read: false }, a: { ...view().a, is_me: false }, b: { ...view().b!, is_me: true, proven: false, signer: null, source: null, items: [] } }))
+    expect(screen.getByText(/Connect your Flow Wallet below, then add your planned Moments/)).toBeTruthy()
+    cleanup()
+    await mount(view({ from_compare: plan(), me: { side: "b", notice_read: false }, a: { ...view().a, is_me: false }, b: { ...view().b!, is_me: true, items: [] } }))
+    expect(screen.getByRole("button", { name: "Add my 1 planned Moment" })).toBeTruthy()
+  })
+
+  it("adding past the per-side limit is refused before any call", async () => {
+    const many = Array.from({ length: 10 }, (_, i) => item(String(100 + i), 1))
+    await mount(view({ from_compare: plan(), a: { ...view().a, items: many } }))
+    expect(screen.getByText(/would pass 10 Moments on your side/)).toBeTruthy()
+    expect(screen.queryByRole("button", { name: /planned Moment/ })).toBeNull()
+  })
+
+  it("no panel without a plan", async () => {
+    await mount(view())
+    expect(screen.queryByText(/Planned on Compare/)).toBeNull()
   })
 })

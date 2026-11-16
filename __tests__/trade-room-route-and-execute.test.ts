@@ -605,3 +605,52 @@ describe("/api/trade-room — the routes", () => {
     expect(new TradeRoomError("x", 409, "stale")).toBeInstanceOf(Error)
   })
 })
+
+// 2026-11-16: a room started from /trades/compare carries the planned trade — a GUIDE, never a pick.
+describe("a planned trade from /trades/compare", () => {
+  it("is stored with display lines read SERVER-SIDE from the index, shown to both sides, and picks nothing by itself", async () => {
+    const created = await as(ALICE, () => rooms.POST(post("/api/trade-room", { plan: { partner_username: "@bob_ts", give: ["1"], get: ["9"] } })))
+    expect(created.status).toBe(201)
+    const body = (await created.json()) as { plan_saved: boolean; room: { code: string; a: { items: unknown[] }; from_compare: { partner_username: string; a_gives: Array<{ player_name: string; serial_number: number }>; b_gives: Array<{ moment_id: string }> } } }
+    expect(body.plan_saved).toBe(true)
+    expect(body.room.from_compare.partner_username).toBe("bob_ts")
+    expect(body.room.from_compare.a_gives).toEqual([expect.objectContaining({ moment_id: "1", player_name: "Player 1", serial_number: 1 })])
+    expect(body.room.from_compare.b_gives.map((i) => i.moment_id)).toEqual(["9"])
+    // a guide, never a pick
+    expect(body.room.a.items).toEqual([])
+    const code = body.room.code
+    await as(BOB, () => room.POST(post(`/api/trade-room/${code}`, { action: "join" }), ctx(code)))
+    const seen = await as(BOB, () => room.GET(get(`/api/trade-room/${code}`), ctx(code)))
+    expect(((await seen.json()) as { room: { from_compare: { b_gives: Array<{ moment_id: string }> } } }).room.from_compare.b_gives[0].moment_id).toBe("9")
+  })
+
+  it("a bad plan is refused before any room exists", async () => {
+    for (const plan of [{ partner_username: "", give: ["1"] }, { partner_username: "bob", give: ["x1"] }, { partner_username: "bob", give: Array.from({ length: 11 }, (_, i) => String(i + 1)) }]) {
+      const r = await as(ALICE, () => rooms.POST(post("/api/trade-room", { plan })))
+      expect(r.status).toBe(400)
+    }
+    expect(mem.current.tables.trade_rooms ?? []).toHaveLength(0)
+  })
+
+  it("a plan that fails to attach is SAID (plan_saved:false), and the room still exists", async () => {
+    mem.current.failNext("insert", "trade_room_plans", "boom")
+    const r = await as(ALICE, () => rooms.POST(post("/api/trade-room", { plan: { partner_username: "bob", give: ["1"], get: [] } })))
+    expect(r.status).toBe(201)
+    const b = (await r.json()) as { plan_saved: boolean; room: { from_compare: unknown } }
+    expect(b.plan_saved).toBe(false)
+    expect(b.room.from_compare).toBeNull()
+  })
+
+  it("a room with no plan reads from_compare null; an empty body still starts a room", async () => {
+    const r = await as(ALICE, () => rooms.POST(new NextRequest("http://x/api/trade-room", { method: "POST" })))
+    expect(r.status).toBe(201)
+    expect(((await r.json()) as { room: { from_compare: unknown } }).room.from_compare).toBeNull()
+  })
+
+  it("adding the planned Moments goes through the normal chain-checked items save", async () => {
+    const code = await twoSided()
+    chain.listed.mockImplementationOnce(async () => new Set(["1"]))
+    const r = await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, { action: "items", picks: [{ collection: "nba-top-shot", id: "1" }] }), ctx(code)))
+    expect(r.status).toBe(409)
+  })
+})

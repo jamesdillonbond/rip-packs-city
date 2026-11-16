@@ -161,6 +161,30 @@ describe("CompareClient", () => {
     await waitFor(() => expect(nav.push).toHaveBeenCalledWith("/trades/abcdefghij"))
   })
 
+  it("the room is started WITH the plan; a plan that didn't attach is said, with a link to the room", async () => {
+    compareWith({ status: 200, body: result() })
+    const sent: unknown[] = []
+    let saved = false
+    answers.push((url, init) => {
+      if (url !== "/api/trade-room" || init?.method !== "POST") return null
+      sent.push(JSON.parse(String(init.body)))
+      return { status: 201, body: { room: { code: "abcdefghij" }, plan_saved: saved } }
+    })
+    render(<CompareClient />)
+    submit()
+    await screen.findByText("@Jamesdillonbond could trade")
+    fireEvent.click(screen.getByRole("button", { name: "Add serial 135 to the trade" }))
+    fireEvent.click(screen.getByRole("button", { name: "Add serial 101 to the trade" }))
+    fireEvent.click(screen.getByRole("button", { name: "Start a trade room" }))
+    const link = await screen.findByRole("link", { name: "Open the trade room" })
+    expect(link.getAttribute("href")).toBe("/trades/abcdefghij")
+    expect(nav.push).not.toHaveBeenCalled()
+    expect(sent[0]).toEqual({ plan: { partner_username: "roham", give: ["50452811"], get: ["999"] } })
+    saved = true
+    fireEvent.click(screen.getByRole("button", { name: "Start a trade room" }))
+    await waitFor(() => expect(nav.push).toHaveBeenCalledWith("/trades/abcdefghij"))
+  })
+
   it("filters: series, league, Rookie Debut only", async () => {
     compareWith({ status: 200, body: result() })
     render(<CompareClient />)
