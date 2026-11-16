@@ -19,7 +19,7 @@
 - **Open:**
   - FMV spot checks (Geoff Neal $0.01 vs a $3.00 sale; Moreno $0.10 vs $12.80; Bisping $134.51 vs $196.60) wait for `fmv-recalc`'s page sweep. Its hot lane keys on `sold_at` within 36 h, so backfilled history is not "hot".
   - The Aug–Oct 2025 migrants (mainnet26 Flow node is gone) link via Dune on 12-14.
-  - `scan-ufc-wallet` (UFC on Flow) no longer type-checks against `UFC_NFT`; retire it with the flip.
+  - ✅ `scan-ufc-wallet` FIXED 11-15 ~9:50 PM PT (v56): its metadata script was rebuilt for the current `UFC_NFT` API, and it now reads the wallet from the query its caller sends. Every binder scan had failed since 04-14. Keep it: it fills the "On Flow" tile. `/api/ufc-wallet-scan` stays gated for anonymous visitors (an unbounded write path with no rate limit).
 
 ## 2026-11-09 night — audit-pass note
 
