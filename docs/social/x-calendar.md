@@ -94,7 +94,7 @@ This past week's top 10 sales, 11/2-11/9 📈
 ```
 
 - The collection is named by its official X account (`BRAND` in `x-draft.mjs`; Panini as plain `@PaniniAmerica` here).
-- **Buyers are tagged only from `X_HANDLES`** (marketplace username → X handle) in `x-draft.mjs` and `x-image.mjs`, each one confirmed by Trevor. Anyone else is named by marketplace username, untagged; `buyers_untagged` lists them. Confirmed 11-09: THEMECCA → @THEMECCA212, hichi → @chrisschlei, Lions_For_Breakfast → @FollowJay.
+- **Buyers are tagged only from `X_HANDLES`** (marketplace username → X handle) in `x-draft.mjs` and `x-image.mjs`, each one confirmed by Trevor. Anyone else is named by marketplace username, untagged; `buyers_untagged` lists them. Confirmed 11-09: THEMECCA → @THEMECCA212, hichi → @chrisschlei, Lions_For_Breakfast → @FollowJay. Confirmed 11-16: Jason3555 → @jason3555, Karso → @orangekarso.
 - A buyer the API returns only as a wallet address is looked up on Pinnacle's public GQL (one Dapper username per wallet); never post the address.
 
 ### The 2026 rookie class top 10 (Wednesday) — Trevor's format, 11-14
