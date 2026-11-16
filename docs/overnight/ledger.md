@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~6:53 PM PT — Candy census fills NULL serials: name "(N/M)" parsed, reuse no longer carries NULL forward, holdings write overwrites a NULL serial (Claude Code cloud, autonomous)
+- Finding: 9,238 Candy holdings in 146 NUMBERED editions (circulation known) stored `serial_number` NULL; the 108k NULL rows in 262 editions with no circulation are unnumbered by design and untouched. Magic Eden via pg_net showed the NULL cards' metadata came back with `attributes: []` while the name carries the serial ("Paul Skenes - Debut (11/46)", "2023 MLB Rookie Ball (1030/4122)").
+- Three gaps fixed: `serialFromAsset` now parses a trailing "(N/M)" (new `serialFromName`; "(TBD/171)" stays null); the census REUSE path fills a stored NULL from the name; a new SERIAL FILL bucket overwrites only the owner's row on the SAME edition whose stored serial is NULL (never a set serial). Report field `wmc_serial_filled` in the census `extra`.
+- Watch: the next hourly census runs (:57) should show `wmc_serial_filled > 0` and the numbered-edition NULL count fall from 9,238. Then the 1 parked Candy sale (Skenes debut, attempts 25) can be re-armed.
+- Revert: `git revert` the code commit "candy census: fill NULL serials".
+
 ### 2026-11-15 ~6:24 PM PT — Candy Team Ball fix verified live + 60 parked rows closed (Claude Code cloud, autonomous)
 - 6:20 PM PT `candy-sales-indexer` tick ok (243 rows written); `sales` now holds 60 `ball24:` Candy sales, all `serial_number` NULL (by design, 320b7c036).
 - Closed the 60 `candy_sales_unresolved` `unresolvable_serial` rows whose signature is now in `sales` (`resolved_at=now()`, `resolution='written'`). 1 left open on purpose: mint 3Z6hBv… is `c:2024-inaugural-mark-emerald:paul-skenes-debut` with no census serial — not a Team Ball, so a guessed serial stays refused.
