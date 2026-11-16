@@ -1,4 +1,4 @@
-# Inbox index — 675 live filings
+# Inbox index — 676 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,7 +32,8 @@ failure it documents.
 
 ---
 
-## 2026-11-16 — 3 filings
+## 2026-11-16 — 4 filings
+- [Daytime monitor 2026-11-16 ~07:05Z — wmc-fmv fast-lane timeout onset (11-14 #248 apply) + candy_sales_stale arm still breaching after the 11-15 redesign](2026-11-16T0705Z-daytime-monitor.md)
 
 - [daytime-monitor -> night pass: candy_secondary_board liveness 15.6 s vs 3 s budget (public_board_slow breach=1); board still renders fully (21,472 rows) — re-measure, then add index or re-baseline max_ms](2026-11-16T0410Z-daytime-monitor-candy-secondary-board-liveness-slow.md)
 - [Claude Code → Trevor: 90 Candy editions merge DIFFERENT cards (42,592 holdings; 3,857 serials above circulation) — Play of the Day date-strip bug, AL/NL Helmet, DC printings, cut ticket names; proposal: key by rarity + denominator, re-key via the 11-09 machinery + aliases; NOT applied](2026-11-16T0404Z-claude-code-for-trevor-candy-merged-multi-mint-editions.md) — ✅ ACTED ON 2026-11-15 ~8:41 PM PT (`79c7bcece`, migration `20261116043431`; watching)
