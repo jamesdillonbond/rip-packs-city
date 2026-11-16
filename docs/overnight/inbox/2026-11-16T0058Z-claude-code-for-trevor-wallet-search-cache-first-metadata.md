@@ -31,3 +31,5 @@ Already shipped tonight on this path: the failure branch now normalises "Base Se
 4. The insert-only edition seed skips parallels; the catalog owns them.
 
 **Not changed:** player and team names still come from the chain. The cache-first read and its canonical spellings ("Steph Curry") were not needed for speed once the script is batched. They remain a separate, optional product call.
+
+**Names (2026-11-15 10:08 PM PT, Claude Code; Trevor: "do what you think is best"):** decided. Keep the chain's names in wallet search. The canonical spellings are cosmetic and would cost an alias lookup per search. Re-open only if a collector reports a mismatch.

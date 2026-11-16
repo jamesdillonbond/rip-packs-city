@@ -16,6 +16,11 @@
   - Flow holdings at current FMV with "Still on Flow — migrate to Aptos to trade".
   - An "On Aptos" section from `/api/ufc/aptos-holdings`, which is anon-public. It renders nothing for an unlinked collector, never $0.
 - **Not done, waiting for Trevor to see the binder:** the reopen flip (`collections.market_closed_at`, `CLOSED_MARKETS`, the marketplace-status row, Rarible collection-page buy link, concierge copy). Every UFC FMV stays STALE until then.
+- **Decided 11-15 10:08 PM PT** (Claude Code; Trevor: "do what you think is best"), measured over all 1,772 Aptos sales:
+  - **UFC inventory-wallet sales stay in** `sales` / FMV: 22 sales, $259.64, 1.5 % of volume. This is the Top Shot / All Day rule: issuer sales and buy-backs are market sales, because a collector paid that price.
+  - **No wash-trade exclusion:** only 2 round-trip sales (same token, same two wallets, both directions) on 1 edition, $0.12 in total.
+  - **Wallet search keeps the chain player names.** The cache-canonical spellings would cost an alias lookup on the hot path, for a cosmetic difference.
+  - Re-measure all three if Aptos volume grows ~10×.
 - **Open:**
   - FMV spot checks (Geoff Neal $0.01 vs a $3.00 sale; Moreno $0.10 vs $12.80; Bisping $134.51 vs $196.60) wait for `fmv-recalc`'s page sweep. Its hot lane keys on `sold_at` within 36 h, so backfilled history is not "hot".
   - The Aug–Oct 2025 migrants (mainnet26 Flow node is gone) link via Dune on 12-14.

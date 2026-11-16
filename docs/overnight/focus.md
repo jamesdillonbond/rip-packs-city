@@ -16,7 +16,7 @@
   - `ufc_aptos_wallet_links` should rise from 93 toward ~850+ by ~11-18 (~320 mints matched per run).
   - `dead_sporks` = mainnet26 only is EXPECTED (that Flow node is gone; Aug–Oct 2025 links wait for the Dune task 12-14).
   - A red run: read the step log; an indexer 408 that repeats on one window is the deep-OFFSET class (keyset paging fixed it 11-15).
-- **UFC reopen flip — WAITING FOR TREVOR** to see the binder (`/ufc/collection?wallet=…`: "On Flow · current FMV … Still on Flow — migrate to Aptos to trade" + "On Aptos" section). Do not flip `market_closed_at` / `CLOSED_MARKETS` without his go. Plan: claude/ufc-reopen-on-aptos-plan-2026-11-16.md step 3. Also his call: whether UFC's own inventory wallet's Rarible sales count toward FMV, and the `0x4c12…`/`0xb7e2…` wash-trade suspects.
+- **UFC reopen flip — WAITING FOR TREVOR** to see the binder (`/ufc/collection?wallet=…`: "On Flow · current FMV … Still on Flow — migrate to Aptos to trade" + "On Aptos" section). Do not flip `market_closed_at` / `CLOSED_MARKETS` without his go. Plan: claude/ufc-reopen-on-aptos-plan-2026-11-16.md step 3. The inventory-wallet and wash-trade questions were DECIDED 11-15 (keep / no exclusion, measured: 22 sales $259.64 and 2 sales $0.12); see docs/strategy/collections/ufc-strike.md. Don't re-raise them unless Aptos volume grows ~10×.
 - **`cadence-inline-scripts.yml`** (new 11-15): a red run = a script that cannot type-check against mainnet, so every call to it fails. Fix the script; never add a KNOWN_DEAD entry for live code.
 
 ## STEER — added 2026-11-15 ~10:06 AM PT (Claude Code cloud) — what the 11-15 deep-audit-residue thread left open (thread archived)
