@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~8:06 PM PT — Candy serial fill verified (9,238 → 4,533 after one walk); parked Skenes sale re-armed; merged multi-mint editions filed for Trevor (Claude Code cloud, autonomous)
+- 6:57 PM PT census run (`afc5b4c9a` live): `wmc_serial_filled` 4,549; numbered-edition NULL serials 9,238 → 4,533. The rest fill as the hourly walks reach their pages.
+- DATA: `candy_sales_unresolved` sig `2v1YCe…` (Skenes debut, mint 3Z6hBv…) `attempts` 25 → 24 so the drain retries it with the "(N/M)" name parse; it sits behind the 4,069-row queue (~Mon AM). Revert: `UPDATE candy_sales_unresolved SET attempts=25 WHERE signature LIKE '2v1YCe%' AND resolved_at IS NULL`.
+- Found while range-checking the fill: 90 Candy editions (42,592 holdings, 3,857 serials above circulation) merge different cards — NOT changed; inbox `2026-11-16T0404Z`, known-issues #259.
+
 ### 2026-11-15 ~7:45 PM PT — UFC Strike on Aptos: ingest + wallet-link lanes, workflow and seed migration file committed (Claude Code, Trevor's laptop; UFC Aptos handoff + addendum)
 - From the claude.ai Project patch folder, byte-verified by sha256 (read via the Project's docs API, copied through the clipboard): `scripts/ufc-aptos-sales-ingest.mjs` (4bcdf4b5…), `scripts/ufc-aptos-wallet-link.mjs` (ba8517ef…, one change below), `.github/workflows/ufc-aptos-sales-ingest.yml` (4a9210eb…: "Wallet links" step, 35-min timeout, same action pins), and the seed as `supabase/migrations/20261116013917_audit_20261115_ufc_aptos_sales_seed_aug_nov_2026.sql` (a1a79df4…; prod stored NULL statements, so this is the SQL Cowork ran).
 - ONE deviation from verbatim: the wallet-link script's `ufc_aptos_migration_matches` page read gained `.order("aptos_version")` (the PK). Without it, unordered `.range()` paging can skip or repeat rows in the "already matched" set (`paginated-range-requires-order-ratchet` red).

@@ -1,4 +1,4 @@
-# Inbox index — 673 live filings
+# Inbox index — 674 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,7 +32,8 @@ failure it documents.
 
 ---
 
-## 2026-11-16 — 1 filing
+## 2026-11-16 — 2 filings
+- [Claude Code → Trevor: 90 Candy editions merge DIFFERENT cards (42,592 holdings; 3,857 serials above circulation) — Play of the Day date-strip bug, AL/NL Helmet, DC printings, cut ticket names; proposal: key by rarity + denominator, re-key via the 11-09 machinery + aliases; NOT applied](2026-11-16T0404Z-claude-code-for-trevor-candy-merged-multi-mint-editions.md)
 - [Claude Code → Trevor: wallet search could answer in ~1–2 s instead of 7–15 s by reading moment metadata from wallet_moments_cache, but 127/264 rows match the chain exactly (214/264 excluding circulation; cache names are often the site's canonical ones) — product call on which circulation/name to show; NOT changed](2026-11-16T0058Z-claude-code-for-trevor-wallet-search-cache-first-metadata.md) — ✅ RESOLVED 2026-11-15 ~6:00 PM PT (Claude Code): chain circulation is the whole family (a /500 parallel read 16,000), so circulation now comes from the edition row; parallels keyed set:play::N, priced by their own edition; chain read batched 25/script. Names unchanged (cache-first not needed)
 
 ## 2026-11-15 — 7 filings
