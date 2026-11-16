@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~12:05 PM PT — Component coverage gate un-reddened by a real test, not a lowered floor: SkipToContentLink's click contract pinned (Claude Code, laptop; Trevor: "Keep going and work through these")
+- **Found:** CI `Component coverage — merge + coverage ratchet` red on `d8c393b3a`, `6a588e6ad`, `4f9a25a34`: statements **90.84 %** vs floor 90.85 %, flapping (90.85 on `015280e50` with identical component code) — the merge sat exactly ON the floor. Not caused by the next 16.4.5 bump.
+- **Shipped:** `__tests__/component-SkipToContentLink-focuses-deepest-anchor.test.tsx` — the skip link focuses the LAST page-content anchor and cancels the jump; with none it leaves the native `#main-content` jump alone. Planted defect (`anchors[0]`) → 1 failed. Local merge: statements **90.91 %**; floor unchanged.
+- **Revert:** delete the test file (the gate returns to flapping).
+
 ### 2026-11-16 ~11:45 AM PT — A trade room started from /trades/compare carries the plan (Claude Code cloud; Trevor: "Yes")
 - DB (prod, applied ~11:16 AM PT): table `trade_room_plans` (migration `20261116191551`): one row per room, FK to `trade_rooms` ON DELETE CASCADE, RLS on, anon/authenticated revoked (verified: anon SELECT false, authenticated INSERT false). Revert: `DROP TABLE public.trade_room_plans;`
 - CODE: `POST /api/trade-room { plan }` stores the partner's username and each side's planned Top Shot ids with display lines read server-side from the index; a bad plan creates no room (400); a failed attach answers `plan_saved:false` and Compare says so with a link. `RoomView.from_compare` + "Planned on Compare" panel: a guide, never a pick, with a one-tap "Add my N planned Moments" through the normal chain-checked `items` save. `lib/trade-room/plan.ts`. Spec: `docs/strategy/features/trading.md` §4.
