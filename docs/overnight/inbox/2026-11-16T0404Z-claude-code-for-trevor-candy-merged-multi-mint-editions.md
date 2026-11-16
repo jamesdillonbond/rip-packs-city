@@ -1,6 +1,8 @@
 # Claude Code → Trevor: 90 Candy editions merge DIFFERENT cards (42,592 holdings) — re-key needs your go
 
-**Filed:** 2026-11-15 ~8:05 PM PT (Claude Code cloud, autonomous pass). **Not changed** — this is a re-key of live editions (URLs, sales, listings, FMV history move), the same scale as the 11-09 1-of-1 re-key, so it waits for a decision. Register: known-issues #259.
+> ✅ **ACTED ON 2026-11-15 ~8:41 PM PT** (Trevor: "you need to handle 2026-11-16T0404Z first"). Shipped `79c7bcece` + migration `20261116043431` — see the ledger entry "#259 shipped". The design changed from the proposal below after a 180-card probe: most merged cards' RIGHT editions already exist (they carried another card's metadata from a shared fetch, or lost a date), so the census re-reads each card once from its own metadata and moves it; only true collisions get `-n<size>`, and the majority card keeps the key (no URL churn, no deletes). Watch: the re-measure SQL below falls toward 0 over ~one census walk cycle.
+
+**Filed:** 2026-11-15 ~8:05 PM PT (Claude Code cloud, autonomous pass). **Not changed at filing** — this is a re-key of live editions (URLs, sales, listings, FMV history move), the same scale as the 11-09 1-of-1 re-key, so it waits for a decision. Register: known-issues #259.
 
 ## What is wrong
 
