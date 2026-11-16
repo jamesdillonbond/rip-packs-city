@@ -13,6 +13,8 @@ name: UFC Strike Aptos sales ingest
 # issuer::mint_for batches that follow them -> ufc_aptos_migration_matches -> ufc_aptos_wallet_links
 # (Flow/Dapper -> Aptos wallet pairs). Old-spork Flow nodes (mainnet26/27, :8070) are tried; if unreachable
 # those batches are skipped and retried next run. Finding: claude/ufc-aptos-wallet-link-finding-2026-11-15.md.
+# Third step (2026-11-16): scripts/ufc-aptos-holdings.mjs refreshes ufc_aptos_holdings (UFC tokens currently owned on
+# Aptos by linked wallets; read via get_ufc_aptos_holdings_for_flow). Plan: claude/ufc-reopen-on-aptos-plan-2026-11-16.md.
 
 on:
   schedule:
@@ -39,7 +41,7 @@ concurrency:
 jobs:
   ingest:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -75,3 +77,15 @@ jobs:
           flag=""
           if [ "$APPLY" = "true" ]; then flag="--apply"; fi
           node scripts/ufc-aptos-wallet-link.mjs $flag --budget-sec 540
+      - name: Aptos holdings for linked wallets
+        if: ${{ !cancelled() }}
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          APTOS_API_KEY: ${{ secrets.APTOS_API_KEY }}
+          APPLY: ${{ github.event_name == 'schedule' || inputs.apply }}
+        run: |
+          set -euo pipefail
+          flag=""
+          if [ "$APPLY" = "true" ]; then flag="--apply"; fi
+          node scripts/ufc-aptos-holdings.mjs $flag --budget-sec 300

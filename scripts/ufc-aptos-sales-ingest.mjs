@@ -118,37 +118,47 @@ async function refreshAptUsd() {
 // ── 3. price one sale from its transaction's marketplace event ───────────────────────────────────
 function marketplaceOf(fn) { return fn.startsWith(TRADEPORT) ? "tradeport" : fn.startsWith(RARIBLE) ? "rarible" : null }
 const inner = (v) => (v && typeof v === "object" ? v.inner : v)
+// ⚠ Aptos addresses come in two spellings: the indexer zero-pads to 64 hex digits
+// ("0x0dda0bce…"), event data drops leading zeros ("0xdda0bce…"). Comparing them raw
+// skipped every sale of a token whose address starts with 0x0 — 7 of ~50 in the first dry
+// run (2026-11-15, Claude Code), all "no marketplace event for token" although the
+// BuyEvent was there. Compare normalised; nft_id is still stored as the indexer gives it.
+const addr = (v) => {
+  const s = String(inner(v) ?? "").toLowerCase().replace(/^0x/, "")
+  return s ? "0x" + s.padStart(64, "0") : ""
+}
 
 function priceFromEvents(tx, tokenId) {
   const p = priceFromMarketEvent(tx, tokenId)
   if (!p.skip && !p.buyer) {
     // some events (e.g. Tradeport unlist_and_accept_collection_bid) carry no buyer: use the token's final recipient
-    const hops = (tx.events ?? []).filter((e) => e.type === "0x1::object::Transfer" && e.data?.object === tokenId)
+    const hops = (tx.events ?? []).filter((e) => e.type === "0x1::object::Transfer" && addr(e.data?.object) === addr(tokenId))
     if (hops.length) p.buyer = hops[hops.length - 1].data.to
   }
   return p
 }
 
 function priceFromMarketEvent(tx, tokenId) {
+  const tok = addr(tokenId)
   for (const ev of tx.events ?? []) {
     const t = ev.type, d = ev.data ?? {}
     if (!(t.startsWith(TRADEPORT) || t.startsWith(RARIBLE))) continue
     if (t.endsWith("::bundles::BundleSold")) {
-      if ((d.tokens ?? []).includes(tokenId)) return { skip: "bundle (no per-token price)" }
+      if ((d.tokens ?? []).map(addr).includes(tok)) return { skip: "bundle (no per-token price)" }
       continue
     }
     if (t.endsWith("::offers::OfferAccepted")) {
-      const give = d.give_tokens ?? [], want = d.want_tokens ?? []
-      if (!give.includes(tokenId) && !want.includes(tokenId)) continue
+      const give = (d.give_tokens ?? []).map(addr), want = (d.want_tokens ?? []).map(addr)
+      if (!give.includes(tok) && !want.includes(tok)) continue
       // APT for exactly this one token, in either direction; anything else is a swap.
-      if (give.length === 1 && give[0] === tokenId && want.length === 0 && Number(d.want_apt) > 0 && Number(d.give_apt) === 0)
+      if (give.length === 1 && give[0] === tok && want.length === 0 && Number(d.want_apt) > 0 && Number(d.give_apt) === 0)
         return { octas: Number(d.want_apt), buyer: d.proposer, seller: d.counterparty }
-      if (want.length === 1 && want[0] === tokenId && give.length === 0 && Number(d.give_apt) > 0 && Number(d.want_apt) === 0)
+      if (want.length === 1 && want[0] === tok && give.length === 0 && Number(d.give_apt) > 0 && Number(d.want_apt) === 0)
         return { octas: Number(d.give_apt), buyer: d.counterparty, seller: d.proposer }
       return { skip: "offer swap (tokens on both sides or multi-token)" }
     }
     // Tradeport BuyEvent / Accept*BidEvent, Rarible Sold: one token, one price
-    if (d.price != null && inner(d.token) === tokenId)
+    if (d.price != null && addr(d.token) === tok)
       return { octas: Number(d.price), buyer: d.buyer ?? d.bid_buyer, seller: d.seller ?? d.bid_seller }
   }
   return { skip: "no marketplace event for token" }
@@ -167,7 +177,7 @@ const { data: px } = await db.from("apt_usd_daily").select("day, usd")
 const usdOn = new Map((px ?? []).map((r) => [r.day, Number(r.usd)]))
 
 const head = Number((await (await fetchRetry(`${FULLNODE}/`, { headers: aptosHeaders }, "ledger")).json()).ledger_version)
-const Q = `query($lo:bigint,$hi:bigint,$off:Int,$f:[String!]){token_activities_v2(where:{transaction_version:{_gte:$lo,_lt:$hi},type:{_eq:"0x1::object::Transfer"},entry_function_id_str:{_in:$f}},limit:100,offset:$off,order_by:{transaction_version:asc}){transaction_version transaction_timestamp entry_function_id_str token_data_id current_token_data{collection_id token_properties}}}`
+const Q = `query($lo:bigint,$hi:bigint,$off:Int,$f:[String!]){token_activities_v2(where:{transaction_version:{_gte:$lo,_lt:$hi},type:{_eq:"0x1::object::Transfer"},entry_function_id_str:{_in:$f}},limit:100,offset:$off,order_by:[{transaction_version:asc},{event_index:asc}]){transaction_version event_index transaction_timestamp entry_function_id_str token_data_id current_token_data{collection_id token_properties}}}`
 
 const startedAt = new Date().toISOString()
 const cursorBefore = Number(st.scanned_through_version)
@@ -176,11 +186,22 @@ const stats = { windows: 0, buys: 0, ufc: 0, priced: 0, inserted: 0, skipped: {}
 while (cursor < head && Date.now() - t0 < BUDGET_MS) {
   const hi = Math.min(cursor + WINDOW, head)
   const found = []
-  for (let off = 0; ; off += 100) {
-    const rows = (await gql(Q, { lo: cursor, hi, off, f: BUY_FNS })).token_activities_v2
+  // KEYSET paging (2026-11-15, Claude Code): the window spans ALL marketplace buys, not just
+  // UFC's, and a deep OFFSET in a busy window makes the indexer time out every time ("Upstream
+  // took longer than 10000ms"; v3.80B–3.84B: offset 0 and 100 ≈ 1 s, offset 300 → 408, so the
+  // lane could never pass that window). Each page restarts at the last version seen and skips
+  // only the rows already read AT that version; (transaction_version, event_index) is a total order.
+  let pageLo = cursor
+  let skipAtLo = 0
+  for (;;) {
+    const rows = (await gql(Q, { lo: pageLo, hi, off: skipAtLo, f: BUY_FNS })).token_activities_v2
     stats.buys += rows.length
     for (const r of rows) if (editionOf.has(r.current_token_data?.collection_id)) found.push(r)
     if (rows.length < 100) break
+    const last = Number(rows[rows.length - 1].transaction_version)
+    const atLast = rows.filter((r) => Number(r.transaction_version) === last).length
+    skipAtLo = last === pageLo ? skipAtLo + atLast : atLast
+    pageLo = last
   }
   // dedupe a token moved twice inside one tx (listing object hop) — one sale per (tx, token)
   const uniq = [...new Map(found.map((r) => [`${r.transaction_version}:${r.token_data_id}`, r])).values()]
