@@ -768,6 +768,23 @@ describe("SniperClient — COPY LINK (replaced SAVE SEARCH, 2026-09-29)", () => 
     expect(screen.queryByText(/Sign in to save searches/i)).toBeNull()
   })
 
+  // 2026-11-15: the 3 s "Link copied" clear timer fired after unmount — CI shard 3/4 (run 43794934883) red on an
+  // uncaught error after jsdom teardown. Unmount must clear it.
+  it("unmounting clears the pending 'Link copied' timer", async () => {
+    const setSpy = vi.spyOn(globalThis, "setTimeout")
+    const clearSpy = vi.spyOn(globalThis, "clearTimeout")
+    const { unmount } = render(<SniperClient />)
+    fireEvent.click(await screen.findByRole("button", { name: /COPY LINK/i }))
+    expect(await screen.findByText(/Link copied/i)).toBeTruthy()
+    const idx = setSpy.mock.calls.findIndex((c) => c[1] === 3000)
+    expect(idx).toBeGreaterThanOrEqual(0)
+    const id = setSpy.mock.results[idx].value
+    unmount()
+    expect(clearSpy.mock.calls.some((c) => c[0] === id)).toBe(true)
+    setSpy.mockRestore()
+    clearSpy.mockRestore()
+  })
+
   it("a blocked clipboard says so, and leaves the link in the address bar", async () => {
     writeText.mockRejectedValue(new Error("denied"))
     render(<SniperClient />)

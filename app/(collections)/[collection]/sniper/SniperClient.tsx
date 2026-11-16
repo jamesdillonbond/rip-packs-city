@@ -363,6 +363,10 @@ function SniperMomentsBody() {
 
   // ── Task 5: Save search ─────────────────────────────────────────────────────
   const [copyLinkMsg, setCopyLinkMsg] = useState<string | null>(null);
+  // 2026-11-15: the 3 s clear timer outlived an unmounted client (CI shard 3/4 red on an
+  // uncaught error after jsdom teardown, run 43794934883). Track it and clear it on unmount.
+  const copyLinkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (copyLinkTimerRef.current) clearTimeout(copyLinkTimerRef.current); }, []);
 
   // ── Relative deals fallback (ASK_ONLY collections) ────────────────────────
   // When the sniper feed is empty on an ASK_ONLY collection (Golazos, UFC),
@@ -924,7 +928,8 @@ function SniperMomentsBody() {
       copied = false;
     }
     setCopyLinkMsg(copied ? "Link copied" : "Copy blocked: the link is in the address bar");
-    setTimeout(() => setCopyLinkMsg(null), 3000);
+    if (copyLinkTimerRef.current) clearTimeout(copyLinkTimerRef.current);
+    copyLinkTimerRef.current = setTimeout(() => setCopyLinkMsg(null), 3000);
   }
 
   // P2.5 — filter (discount>=0 + search + Verified-only + owned gate) then demote
