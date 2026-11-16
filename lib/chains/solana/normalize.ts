@@ -295,12 +295,25 @@ export function serialFromName(name: string | null | undefined): number | null {
   return m ? toIntOrNull(m[1]) : null
 }
 
+// 2026-11-16: Candy's own Arweave gateways serve the SAME content-addressed transaction as
+// arweave.net, but only arweave.net (+ *.arweave.net) is in the site's CSP img-src/media-src and
+// only `https://arweave.net/<tx>` reaches the image resizer (lib/ipfs-media.ts ARWEAVE_TX_RE). A
+// card whose metadata named permaweb.candy.io rendered as a blocked image (229 editions, 6,529
+// holdings), and that host's TLS certificate expired 2026-11-15 4:53 PM PT. Every Candy media URL
+// is stored in the arweave.net form; anything else passes through unchanged.
+const CANDY_GATEWAY_TX_RE = /^https:\/\/(?:permaweb\.candy\.io|candy\.permaweb\.services)\/([A-Za-z0-9_-]{43})$/
+export function canonicalCandyMediaUrl(url: string | null | undefined): string | null {
+  if (!url) return null
+  const m = url.match(CANDY_GATEWAY_TX_RE)
+  return m ? `https://arweave.net/${m[1]}` : url
+}
+
 function imageUrl(asset: DasAsset): string | null {
-  return (
+  return canonicalCandyMediaUrl(
     asset.content?.links?.image ??
     asset.content?.files?.find((f) => (f.mime ?? "").startsWith("image"))?.uri ??
     asset.content?.files?.[0]?.uri ??
-    null
+    null,
   )
 }
 
@@ -364,10 +377,11 @@ function editionBadges(asset: DasAsset): string[] | null {
 }
 
 export function normalizeEdition(asset: DasAsset): NormalizedEdition {
-  const video =
+  const video = canonicalCandyMediaUrl(
     asset.content?.links?.animation_url ??
     asset.content?.files?.find((f) => (f.mime ?? "").startsWith("video"))?.uri ??
-    null
+    null,
+  )
   return {
     external_id: editionKeyFromAsset(asset),
     collection_id: CANDY_MLB_UUID,

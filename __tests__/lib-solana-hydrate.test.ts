@@ -85,22 +85,28 @@ describe("unhydrated Candy assets", () => {
     expect(called).toBe(false)
   })
 
-  it("a failure on Candy's gateway is retried on arweave.net (same transaction)", async () => {
-    expect(gatewayAlternates("https://permaweb.candy.io/TX")).toEqual(["https://permaweb.candy.io/TX", "https://arweave.net/TX"])
-    expect(gatewayAlternates("https://arweave.net/TX")).toEqual(["https://arweave.net/TX", "https://permaweb.candy.io/TX"])
+  // 2026-11-16: permaweb.candy.io's TLS certificate expired 2026-11-15 4:53 PM PT and every census read
+  // of it failed. The URI's own host is no longer tried FIRST: the two live gateways share the load, and
+  // permaweb.candy.io (the host every Candy on-chain URI names) is the last resort.
+  it("a Candy URI is read from the live gateways first, and its own (dead) host never first", async () => {
+    expect(gatewayAlternates("https://permaweb.candy.io/TX")).toEqual(["https://candy.permaweb.services/TX", "https://arweave.net/TX", "https://permaweb.candy.io/TX"])
+    expect(gatewayAlternates("https://arweave.net/TX")).toEqual(["https://candy.permaweb.services/TX", "https://arweave.net/TX"])
+    expect(gatewayAlternates("https://candy.permaweb.services/TX")).toEqual(["https://candy.permaweb.services/TX", "https://arweave.net/TX"])
     expect(gatewayAlternates("https://other.host/TX")).toEqual(["https://other.host/TX"])
-    // rotation splits load: an odd rotation tries the OTHER main gateway first
-    expect(gatewayAlternates("https://permaweb.candy.io/TX", 1)).toEqual(["https://arweave.net/TX", "https://permaweb.candy.io/TX"])
-    // the third Candy gateway falls back to both main ones
-    expect(gatewayAlternates("https://candy.permaweb.services/TX")).toEqual(["https://candy.permaweb.services/TX", "https://permaweb.candy.io/TX", "https://arweave.net/TX"])
+    // rotation splits load: an odd rotation swaps the two live gateways; the dead host stays last
+    expect(gatewayAlternates("https://permaweb.candy.io/TX", 1)).toEqual(["https://arweave.net/TX", "https://candy.permaweb.services/TX", "https://permaweb.candy.io/TX"])
+    for (const rot of [0, 1, 2, 3]) expect(gatewayAlternates("https://permaweb.candy.io/TX", rot)[0]).not.toContain("permaweb.candy.io")
+    // a dead first gateway (the expired certificate surfaces as a thrown fetch) falls through to a live one
     const seen: string[] = []
     const flaky = (async (u: string) => {
       seen.push(u)
-      return u.includes("permaweb") ? new Response("busy", { status: 429 }) : new Response(JSON.stringify(offChain), { status: 200 })
+      if (u.startsWith("https://permaweb.candy.io/")) throw new TypeError("fetch failed")
+      return u.startsWith("https://candy.permaweb.services/") ? new Response("busy", { status: 429 }) : new Response(JSON.stringify(offChain), { status: 200 })
     }) as unknown as typeof fetch
     const r = await hydrateFromJsonUri([bare], { fetchImpl: flaky })
     expect(r.hydrated).toHaveLength(1)
-    expect(seen).toEqual([bare.content!.json_uri, "https://arweave.net/4J8W5OW1SwBqKrUgHvKYp5vdpZ6DIhu6mKpNZ1_Wwio"])
+    expect(seen).toEqual(["https://candy.permaweb.services/4J8W5OW1SwBqKrUgHvKYp5vdpZ6DIhu6mKpNZ1_Wwio", "https://arweave.net/4J8W5OW1SwBqKrUgHvKYp5vdpZ6DIhu6mKpNZ1_Wwio"])
+    expect(seen.some((u) => u.startsWith("https://permaweb.candy.io/"))).toBe(false)
   })
 
   // ── one fetch per edition group (2026-11-09 8:57 AM PT: per-card fetching read 15 pages in 10 min) ──
@@ -239,7 +245,7 @@ describe("HTTP 429 on every gateway", () => {
     let calls = 0
     const f = (async () => {
       calls++
-      return calls <= 2 ? new Response("slow down", { status: 429 }) : new Response(JSON.stringify(offChain), { status: 200 })
+      return calls <= 3 ? new Response("slow down", { status: 429 }) : new Response(JSON.stringify(offChain), { status: 200 })
     }) as unknown as typeof fetch
     const r = await hydrateFromJsonUri([bare], { fetchImpl: f, sleep, rateLimitBackoffMs: 50 })
     expect(r.failed).toHaveLength(0)
@@ -256,7 +262,7 @@ describe("HTTP 429 on every gateway", () => {
     const r = await hydrateFromJsonUri([bare], { fetchImpl: f, sleep, rateLimitBackoffMs: 50, rateLimitRetries: 2 })
     expect(r.hydrated).toHaveLength(0)
     expect(r0(r)).toBe("HTTP 429")
-    expect(calls).toBe(6) // 3 rounds x 2 gateways
+    expect(calls).toBe(9) // 3 rounds x 3 gateways (2 live + the card's own permaweb.candy.io, tried last)
     expect(r.rate_limit_retries).toBe(2)
   })
 
@@ -266,7 +272,7 @@ describe("HTTP 429 on every gateway", () => {
     const f = (async () => { calls++; return new Response("gone", { status: 404 }) }) as unknown as typeof fetch
     const r = await hydrateFromJsonUri([bare], { fetchImpl: f, sleep })
     expect(r0(r)).toBe("HTTP 404")
-    expect(calls).toBe(2)
+    expect(calls).toBe(3)
     expect(r.rate_limit_retries).toBe(0)
     expect(sleeps).toHaveLength(0)
   })
@@ -275,7 +281,7 @@ describe("HTTP 429 on every gateway", () => {
     let calls = 0
     const f = (async (u: string) => { calls++; return new Response("x", { status: u.includes("permaweb") ? 429 : 404 }) }) as unknown as typeof fetch
     const r = await hydrateFromJsonUri([bare], { fetchImpl: f, sleep })
-    expect(calls).toBe(2)
+    expect(calls).toBe(3)
     expect(r.rate_limit_retries).toBe(0)
   })
 
@@ -284,7 +290,7 @@ describe("HTTP 429 on every gateway", () => {
     let calls = 0
     const f = (async () => {
       calls++
-      return calls <= 2 ? new Response("x", { status: 429, headers: { "retry-after": "3" } }) : new Response(JSON.stringify(offChain), { status: 200 })
+      return calls <= 3 ? new Response("x", { status: 429, headers: { "retry-after": "3" } }) : new Response(JSON.stringify(offChain), { status: 200 })
     }) as unknown as typeof fetch
     await hydrateFromJsonUri([bare], { fetchImpl: f, sleep, rateLimitBackoffMs: 10 })
     expect(sleeps[0]).toBeGreaterThan(2500)
@@ -350,7 +356,11 @@ describe("adaptive in-flight limit under a gateway that rate-limits by concurren
     return f
   }
   const realSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
-  const few = many.slice(0, 40)
+  // 2026-11-16: on arweave.net URIs, so each round is exactly TWO gateways (candy.permaweb.services +
+  // arweave.net). A permaweb.candy.io URI now gets a third, last-resort try (its expired-certificate
+  // host), and three shots per round against this one shared rate limit rarely ALL draw 429 — the
+  // all-429 rounds that drive the pacing this test is about stop happening, and it passed 1 in 5.
+  const few = many.slice(0, 40).map((a) => ({ ...a, content: { ...a.content!, json_uri: a.content!.json_uri!.replace("https://permaweb.candy.io/", "https://arweave.net/") } }))
 
   it("a RATE-limited gateway: once the width is at its floor, pacing request starts recovers the cards", async () => {
     const paced = await hydrateFromJsonUri(few, { fetchImpl: ratedGateway(4), sleep: realSleep, rateLimitBackoffMs: 5, concurrency: 8, minConcurrency: 4, gapStepMs: 2, maxGapMs: 40 })

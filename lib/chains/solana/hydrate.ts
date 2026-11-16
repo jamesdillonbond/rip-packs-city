@@ -73,24 +73,28 @@ export interface HydrateResult {
   failed: Array<{ id: string; reason: string }>
 }
 
-// The same Arweave transaction is served by Candy's gateway and by arweave.net (verified
-// 2026-11-09: both answered 20/20 concurrent reads for one card). A failure on one is retried
-// on the other.
-// candy.permaweb.services is a third Candy gateway seen in on-chain URIs (2026-11-09); it is
-// recognised (so a failure there falls back) but never chosen as an alternate.
-const GATEWAYS = ["https://permaweb.candy.io/", "https://arweave.net/"]
-const KNOWN_GATEWAYS = [...GATEWAYS, "https://candy.permaweb.services/"]
+// The same Arweave transaction is served by every gateway below. A failure on one is retried on
+// the next.
+// 2026-11-16: permaweb.candy.io — the host in Candy's on-chain URIs — stopped serving: its TLS
+// certificate expired 2026-11-15 4:53 PM PT, so every request to it failed ("fetch failed",
+// CERT_HAS_EXPIRED) and arweave.net carried the whole census alone, resetting 5–26 of every 40
+// concurrent reads (measured from this box). candy.permaweb.services (Candy's other gateway) answered
+// 40/40 twice. The two LIVE gateways now share the load; permaweb.candy.io is tried LAST (it costs
+// one fast failure while it is down, and picks the traffic back up if it is fixed).
+const GATEWAYS = ["https://candy.permaweb.services/", "https://arweave.net/"]
+const KNOWN_GATEWAYS = [...GATEWAYS, "https://permaweb.candy.io/"]
 /**
- * The URI first, then the same transaction on the other gateways. With `rotate` odd, a URI on
- * one of the two main gateways is tried on the OTHER one first, so a batch splits its load
- * across both (2026-11-09: ~1 request per card for comic sets, so throughput is latency-bound).
+ * The same transaction on each LIVE gateway (with `rotate` odd, in the other order, so a batch
+ * splits its load across both — 2026-11-09: ~1 request per card for comic sets, so throughput is
+ * latency-bound), then the URI's own gateway if it is not one of them. A URI on an unknown host is
+ * returned alone.
  */
 export function gatewayAlternates(uri: string, rotate = 0): string[] {
   for (const g of KNOWN_GATEWAYS) {
     if (uri.startsWith(g)) {
       const tx = uri.slice(g.length)
-      const all = [uri, ...GATEWAYS.filter((o) => o !== g).map((o) => o + tx)]
-      return rotate % 2 === 1 && GATEWAYS.includes(g) && all.length > 1 ? [all[1], all[0], ...all.slice(2)] : all
+      const live = rotate % 2 === 1 ? [...GATEWAYS].reverse() : GATEWAYS
+      return [...live.map((o) => o + tx), ...(GATEWAYS.includes(g) ? [] : [uri])]
     }
   }
   return [uri]
