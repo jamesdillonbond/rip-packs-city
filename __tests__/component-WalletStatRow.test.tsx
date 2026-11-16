@@ -117,6 +117,14 @@ describe("WalletStatRow", () => {
     expect(txt).not.toMatch(/\$0(?![.,\d])/)
   })
 
+  it("UFC: nothing on Flow is a found-nothing line, not $0 and not a migrate instruction", () => {
+    const { container } = render(<WalletStatRow {...props({ collectionSlug: "ufc", walletFmv: 0, staleFmv: 0, momentCount: 0 })} />)
+    const txt = container.textContent!
+    expect(txt).toContain("No UFC Strike moments found on Flow for this wallet")
+    expect(txt).not.toContain("migrate to Aptos")
+    expect(txt).not.toMatch(/\$0(?![.,\d])/)
+  })
+
   it("UFC: an unloaded summary is an em dash, never $0", () => {
     const { container } = render(<WalletStatRow {...props({ collectionSlug: "ufc", walletFmv: null })} />)
     expect(container.textContent).toContain("—")

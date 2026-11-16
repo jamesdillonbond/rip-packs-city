@@ -136,6 +136,10 @@ export default function WalletStatRow(props: WalletStatRowProps) {
   // shows headline + stale (= the summary's total), never the netted near-$0 headline.
   if (isUfcAptosBinder(collectionSlug) && !loading) {
     const flowTotal = walletFmv === null ? null : walletFmv + (typeof staleFmv === "number" ? staleFmv : 0)
+    // A collector who has migrated everything has nothing on Flow: no "$0", and no "migrate"
+    // instruction about moments that are not there (live, 2026-11-16: a fully migrated wallet
+    // read "$0 · 0 moments · Still on Flow — migrate"). Worded as what our read found.
+    const noneOnFlow = momentCount === 0
     return (
       <div>
         <div className="rpc-stat-tile" data-testid="ufc-flow-holdings-tile">
@@ -143,9 +147,11 @@ export default function WalletStatRow(props: WalletStatRowProps) {
             <span>On Flow · current FMV</span>
             {walletFmvAccessory}
           </div>
-          <div className="rpc-stat-value">{flowTotal === null ? "—" : formatCurrency(flowTotal)}</div>
+          <div className="rpc-stat-value">{noneOnFlow || flowTotal === null ? "—" : formatCurrency(flowTotal)}</div>
           <div className="rpc-stat-caption" style={{ lineHeight: 1.5 }}>
-            {formatCount(momentCount)} {noun} · {FLOW_MIGRATE_NOTE}
+            {noneOnFlow
+              ? `No UFC Strike ${noun} found on Flow for this wallet`
+              : <>{formatCount(momentCount)} {noun} · {FLOW_MIGRATE_NOTE}</>}
           </div>
         </div>
       </div>
