@@ -7,9 +7,9 @@
 // ownership. The rule (known-issues #176, 2026-10-10):
 //   1. a user who VERIFIED the address owns it;
 //   2. otherwise the user who saved it FIRST (lowest row id) owns it.
-// Nobody can become the first saver after the fact, and verification has had
-// no live source since ~08-28 (#59), so "verified only" would lock almost
-// everyone out of their own data.
+// Nobody can become the first saver after the fact, and few wallets are verified
+// (the dashboard Verify button was missing 09-06 → 11-15, #59), so "verified only"
+// would lock almost everyone out of their own data.
 //
 // Callers: lib/auth/owner-key-guard.ts (private reads/writes keyed by an
 // address) and lib/profile/public-profile.ts (which wallets a collector's

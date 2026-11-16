@@ -129,7 +129,7 @@ export async function fetchFanTeams(
 /**
  * The user's saved Flow wallet: a verified one first, then the most recently pinned.
  *
- * ⚠ 2026-11-14: NOT "verified only". Verification has had no live source since ~08-28 and the
+ * ⚠ 2026-11-14: NOT "verified only". Few wallets are verified (the Verify button was missing 09-06 → 11-15) and the
  * 09-06 decision (#59) moved every wallet gate from VERIFIED to SAVED; this read kept the old
  * filter, so 54 of the 56 accounts with a saved wallet (2 have any verified row) were told on
  * /my-teams to "Add a wallet address or Top Shot username on your profile". Teams are Flow

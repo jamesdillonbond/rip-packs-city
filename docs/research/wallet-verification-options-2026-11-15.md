@@ -23,7 +23,7 @@ All **55 of 55** unverified saved Flow wallets hold at least one unlocked, price
 
 ## Kept for later (no user needs them today)
 
-- **All Day / Golazos / Pinnacle listing check** — Atlas reads `product:'nfl'` listings too, so the same challenge could pick an All Day Moment. 0 unverified wallets lack a Top Shot Moment, so not built.
+- **All Day / Golazos / Pinnacle listing challenge** — the CHECK already matches the on-chain listing book (10-18, `20261018232027`), but the TARGET picker (`pick_verification_target` + the wmc fallback) picks Top Shot Moments only. Widening the picker is the whole job. 0 unverified wallets lack a Top Shot Moment today, so not built.
 - **Avatar change** — `profileImageUrl` comes back from the same ProfileService read and only the owner can change it. Weaker UX than a listing (the collector has to go to Dapper account settings and back), and unknown whether Atlas reflects the change quickly. Needs one live test before any build.
 
 ## Rejected: favourite-team challenge

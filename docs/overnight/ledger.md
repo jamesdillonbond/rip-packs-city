@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-15 ~4:20 PM PT — Wallet-verification thread close-out: docs + stale comments (Claude Code cloud; Trevor: "update any relevant documentation before I archive this thread")
+- docs/strategy/features/wallet-and-portfolio.md: 2026-11-15 section (how verification works now, what it does, one verified flag, adoption read); "There is no wallet verification" (twice) corrected to "no wallet sign-in; verification optional". known-issues #59 and #176: dated notes appended at item end (index unchanged, guard green). go-live table: verifiable again. Research note: the All Day check already matches on-chain books; only the target picker is Top Shot-only.
+- Comments only: lib/wallet/wallet-owner.ts, lib/auth/owner-key-guard.ts, lib/fan-teams/fetchers.ts no longer say verification "has had no live source since 08-28".
+- Revert: find the commit by message "verification close-out" and `git revert` it.
+
 ### 2026-11-15 ~4:05 PM PT — Verify-by-listing never picks a Moment worth > $99.90 (the $999 price cap would list it under 10× value) (Claude Code cloud; Trevor: "keep going")
 - `lib/verify-challenge-target.ts` `isSafeChallengeTarget`; the mint route filters candidates and answers `no_safe_target` (wallet still loads; nothing requires verification) when none qualify. Measured: all 54 unverified wallets' picks are ≤ $0.19 today, 53/54 via the strict picker — 0 changes now.
 - Also scheduled (Trevor approved): one-off adoption read Wed 11-18 10:23 AM PT (trigger `trig_018kBsFiS5Fsr68YwVCjZaQn`, read-only, push).

@@ -138,9 +138,9 @@ export async function requireOwnedKey(ownerKey: string): Promise<OwnedKeyGate> {
       // watchlist, alerts, snapshots and wallet profile keyed by it. Every
       // caller of this guard serves PRIVATE rows, so the address has ONE owner:
       // a user who VERIFIED it, else the user who saved it FIRST (lowest id).
-      // Nobody can become the first saver after the fact. Wallet verification
-      // has had no live source since ~08-28 (#59), which is why "verified"
-      // alone would lock every user out of their own data.
+      // Nobody can become the first saver after the fact. Few wallets are
+      // verified (the dashboard Verify button was missing 09-06 → 11-15, #59),
+      // which is why "verified" alone would lock almost every user out.
       const owners = ownersOfAddress(rows)
       return owners.includes(user.id) ? { user } : deny(403, "Forbidden")
     }

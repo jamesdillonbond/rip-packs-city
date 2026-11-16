@@ -1,6 +1,17 @@
 # Wallet & portfolio — feature roadmap (refreshed 2026-10-17, PT)
 > Dated snapshot; re-derive any number before quoting. Canonical plan: [roadmap-2026-10-17.md](../roadmap-2026-10-17.md). Per-collection detail: [collections/](../collections/). Defects: [known-issues.md](../../reference/known-issues.md).
 
+## ⭐ 2026-11-15 — wallet verification is live again, and it means something
+
+Trevor: "let them have access until we can verify easily and effectively" (full trail: ledger 11-15 1:35–4:05 PM PT; options note `docs/research/wallet-verification-options-2026-11-15.md`).
+
+- **Measured first:** only 2 accounts had ever verified (both June). The dashboard **Verify** button had been missing since 09-06 (#59, dead host) although the listing check worked on Atlas from that evening; 9 of 9 challenges ever started finished. All 55 unverified Flow wallets hold a listable Top Shot Moment.
+- **How a collector verifies:** press **Verify** on the dashboard wallet card → list the picked Moment at the shown price (~100× value, ≥ $10, odd cents; never a Moment worth > $99.90, because the price caps at $999) → the window re-checks every 20 s and verifies on its own → delist. A Trade Block / trade-room Flow Wallet proof also verifies (`verification_method = 'fcl_other'`).
+- **What verifying does:** ✓ VERIFIED on the public profile (`verified_wallet_count`); the wallet's Top Shot username becomes the handle if free, taken back from an account that only SAVED the wallet (claim-then-release, R151). Nothing requires verification.
+- **Handles without proof:** the handle goes to the wallet's OWNER under the shared rule (`lib/wallet/wallet-owner.ts`: proved > verified > first saver). 3 owning accounts were backfilled 11-15.
+- **One verified flag:** new `saved_wallets` collection rows inherit the user's existing verification for the wallet (trigger `20261115230729`).
+- **Adoption read:** scheduled one-off Wed 11-18 10:23 AM PT.
+
 ## ⭐ 2026-11-09 night — audit-pass changes (found by walking production signed in)
 
 - **Cost basis count:** the Collection tab printed "27 moments with a known cost" beside a cost basis summed over 6,628 moments; the count came from the rows on screen. It now uses `get_wallet_summary.moments_with_cost`.
@@ -17,7 +28,7 @@
 - pack history (see [pack-ev.md](pack-ev.md));
 - owner-only cost basis, per-moment P&L and CSV export (10-11).
 
-There is no wallet verification. It was removed by decision (#0, 08-08).
+There is no wallet SIGN-IN (#0, 08-08: identifiers only). Verification is optional and live — see 2026-11-15 above.
 
 **Public share card** `/share/<wallet>`. It is built on `get_wallet_collection_snapshot` and `get_wallet_intel_summary`. It is the week's one proven acquisition path: ChatGPT → `/insights/account-value` → share card → signup (mavhill, 10-10).
 
@@ -91,7 +102,7 @@ There is no wallet verification. It was removed by decision (#0, 08-08).
 ## Decisions on record (do not re-litigate)
 
 - **Achievements are NOT widened** (10-17). The roadmap keeps gamification off until the gate passes. Widening would only add badges to OG share cards, which is a growth surface.
-- **No wallet verification** (#0, 08-08). The signed-in reader's wallet is assumed and never asked for.
+- **No wallet sign-in** (#0, 08-08). The signed-in reader's wallet is assumed and never asked for. Verification (listing challenge / Flow Wallet proof) is optional and gates nothing (#59; 2026-11-15).
 - **No mega-wallet id source now** (#138, 09-25).
 - **#190 declined** (10-17): no paid indexer for pre-2023 opens.
 - **Parallel `#N / M`** is the moment's own serial over its own edition's run (D25, 10-13/10-17).
