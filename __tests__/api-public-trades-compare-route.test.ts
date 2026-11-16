@@ -10,9 +10,15 @@ const readCandidates = vi.hoisted(() => vi.fn())
 const readChain = vi.hoisted(() => vi.fn())
 const readOnChainCount = vi.hoisted(() => vi.fn())
 
-vi.mock("@/lib/supabase", () => ({
-  supabaseAdmin: { from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null }) }) }) }) },
-}))
+const saved = vi.hoisted(() => ({ rows: [] as Array<{ username: string | null }>, error: null as { message: string } | null }))
+vi.mock("@/lib/supabase", () => {
+  // a chainable stand-in: every builder method returns the builder; awaiting it answers `saved`
+  const builder: Record<string, unknown> = {}
+  for (const m of ["select", "eq", "not", "limit"]) builder[m] = () => builder
+  builder.maybeSingle = async () => ({ data: null, error: null })
+  builder.then = (ok: (v: unknown) => unknown) => ok({ data: saved.error ? null : saved.rows, error: saved.error })
+  return { supabaseAdmin: { from: () => builder } }
+})
 vi.mock("@/lib/abuse/anon-rate", () => ({
   anonIpKey: () => "1.2.3.4",
   bumpAnonRates: async () => ({ ...rates, count: 1 }),
@@ -21,7 +27,7 @@ vi.mock("@/lib/chains/flow/topshot-username-resolve", () => ({
   isWalletAddress: (v: string) => /^0x[a-fA-F0-9]{16}$/.test(v.trim()),
   resolveTopShotUsernameCacheAware: resolveMock,
 }))
-vi.mock("@/lib/trade-compare/read", () => ({ readCandidates, readChain, readOnChainCount, CANDIDATE_LIMIT: 600 }))
+vi.mock("@/lib/trade-compare/read", async (orig) => ({ ...(await orig<typeof import("@/lib/trade-compare/read")>()), readCandidates, readChain, readOnChainCount }))
 
 import { GET } from "@/app/api/public/trades/compare/route"
 
@@ -47,12 +53,14 @@ beforeEach(() => {
   readCandidates.mockReset()
   readCandidates.mockResolvedValue({ a_indexed: 10, b_indexed: 10, a_total: 1, b_total: 1, a_rows: [cand("11", "x", 6)], b_rows: [cand("22", "y", 6.5)] })
   readChain.mockReset()
-  readChain.mockImplementation(async (_a: string, rows: Array<{ moment_id: string }>) => ({
+  readChain.mockImplementation(async (_db: unknown, _c: unknown, _a: string, rows: Array<{ moment_id: string }>) => ({
     holdings: Object.fromEntries(rows.map((r) => [r.moment_id, { held: true, locked: false }])),
     listed: new Set(),
   }))
   readOnChainCount.mockReset()
   readOnChainCount.mockResolvedValue(10)
+  saved.rows = []
+  saved.error = null
 })
 
 describe("GET /api/public/trades/compare", () => {
@@ -112,5 +120,33 @@ describe("GET /api/public/trades/compare", () => {
     const body = await (await GET(req("u1=jamesdillonbond&u2=roham"))).json()
     expect(body.a.coverage).toEqual({ indexed: 10, on_chain: 15, complete: false })
     expect(body.b.coverage.complete).toBeNull()
+  })
+
+  it("All Day and Golazos compare the same two wallets in THAT collection; an unknown collection is refused, never answered as Top Shot", async () => {
+    const r = await GET(req("u1=jamesdillonbond&u2=roham&c=nfl-all-day"))
+    expect(r.status).toBe(200)
+    expect((await r.json()).collection).toBe("nfl-all-day")
+    expect(readCandidates).toHaveBeenLastCalledWith(expect.anything(), "dee28451-5d62-409e-a1ad-a83f763ac070", A, B)
+    expect((readChain.mock.calls.at(-1) as unknown[])[1]).toMatchObject({ slug: "nfl-all-day" })
+    readCandidates.mockClear()
+    for (const c of ["ufc", "disney-pinnacle", "nope"]) {
+      const bad = await GET(req(`u1=jamesdillonbond&u2=roham&c=${c}`))
+      expect(bad.status).toBe(400)
+      expect(JSON.stringify(await bad.json())).not.toMatch(/editions/)
+    }
+    expect(readCandidates).not.toHaveBeenCalled()
+  })
+
+  it("shows Top Shot's own capitalisation when a saved wallet carries it; otherwise the resolver's", async () => {
+    resolveMock.mockImplementation(async (_db: unknown, u: string) =>
+      u === "roham" ? { found: true, walletAddress: B, username: "roham" } : { found: true, walletAddress: A, username: "jamesdillonbond" },
+    )
+    saved.rows = [{ username: "Jamesdillonbond" }]
+    const body = await (await GET(req("u1=jamesdillonbond&u2=roham"))).json()
+    expect(body.a.username).toBe("Jamesdillonbond")
+    saved.rows = [{ username: "SomeoneElse" }]
+    expect((await (await GET(req("u1=jamesdillonbond&u2=roham"))).json()).a.username).toBe("jamesdillonbond")
+    saved.error = { message: "down" }
+    expect((await (await GET(req("u1=jamesdillonbond&u2=roham"))).json()).a.username).toBe("jamesdillonbond")
   })
 })

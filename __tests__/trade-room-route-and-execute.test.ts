@@ -624,8 +624,16 @@ describe("a planned trade from /trades/compare", () => {
     expect(((await seen.json()) as { room: { from_compare: { b_gives: Array<{ moment_id: string }> } } }).room.from_compare.b_gives[0].moment_id).toBe("9")
   })
 
+  it("an All Day plan reads its lines from All Day's rows, never another collection's same moment id", async () => {
+    mem.current.tables.wallet_moments_cache.push({ ...wmc(WA.source, "1", 7, "HIGH"), collection_id: AD_COLLECTION_ID, player_name: "Josh Allen", set_name: "Base", serial_number: 77 })
+    const r = await as(ALICE, () => rooms.POST(post("/api/trade-room", { plan: { collection: "nfl-all-day", partner_username: "bob", give: ["1"], get: [] } })))
+    expect(r.status).toBe(201)
+    const b = (await r.json()) as { room: { from_compare: { a_gives: Array<{ collection: string; player_name: string; serial_number: number }> } } }
+    expect(b.room.from_compare.a_gives).toEqual([expect.objectContaining({ collection: "All Day", player_name: "Josh Allen", serial_number: 77 })])
+  })
+
   it("a bad plan is refused before any room exists", async () => {
-    for (const plan of [{ partner_username: "", give: ["1"] }, { partner_username: "bob", give: ["x1"] }, { partner_username: "bob", give: Array.from({ length: 11 }, (_, i) => String(i + 1)) }]) {
+    for (const plan of [{ partner_username: "", give: ["1"] }, { partner_username: "bob", give: ["x1"] }, { partner_username: "bob", give: Array.from({ length: 11 }, (_, i) => String(i + 1)) }, { collection: "ufc", partner_username: "bob", give: ["1"] }]) {
       const r = await as(ALICE, () => rooms.POST(post("/api/trade-room", { plan })))
       expect(r.status).toBe(400)
     }

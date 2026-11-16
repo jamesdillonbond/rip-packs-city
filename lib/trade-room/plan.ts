@@ -13,12 +13,15 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { MOMENT_ID, TradeRoomError } from "@/lib/trade-room/store"
 import { MAX_ITEMS_PER_SIDE } from "@/lib/trade-room/valuation"
-import { TOP_SHOT_COLLECTION_ID } from "@/lib/trade-room/holdings"
+import { compareCollection } from "@/lib/trade-compare/read"
+import type { SwapCollection } from "@/lib/trade-room/multi-swap-cadence"
 import type { AgreedItem } from "@/lib/trade-room/view"
 
 const USERNAME = /^[A-Za-z0-9_.-]{1,40}$/
 
 export interface PlanInput {
+  /** The collection the plan was made in (Compare covers Top Shot, All Day, Golazos). */
+  collection: SwapCollection
   partner_username: string
   /** Top Shot moment ids the room's creator (side A) plans to give. */
   give: string[]
@@ -38,6 +41,9 @@ export function readPlan(raw: unknown): PlanInput | null {
   const p = raw as Record<string, unknown>
   const partner = String(p.partner_username ?? "").trim().replace(/^@/, "")
   if (!USERNAME.test(partner)) throw new TradeRoomError("The planned trade is missing its partner.", 400, "bad_plan")
+  // an absent collection is a Top Shot plan (the morning's Compare); an unknown one is refused
+  const collection = compareCollection(p.collection == null ? "nba-top-shot" : String(p.collection))
+  if (!collection) throw new TradeRoomError("The planned trade names a collection Compare doesn't cover.", 400, "bad_plan")
   const ids = (v: unknown): string[] => {
     if (!Array.isArray(v)) return []
     const out = [...new Set(v.map((x) => String(x).trim()))]
@@ -50,19 +56,19 @@ export function readPlan(raw: unknown): PlanInput | null {
     throw new TradeRoomError(`At most ${MAX_ITEMS_PER_SIDE} Moments per side.`, 400, "too_many")
   }
   if (give.length === 0 && get.length === 0) return null
-  return { partner_username: partner, give, get }
+  return { collection, partner_username: partner, give, get }
 }
 
 type Snap = { moment_id: string; player_name: string | null; set_name: string | null; serial_number: number | null }
 
-/** Display lines for Top Shot moment ids, from RPC's index (moment_id is unique within a collection). */
-async function snapshot(db: SupabaseClient, ids: readonly string[]): Promise<Map<string, Snap>> {
+/** Display lines for one collection's moment ids, from RPC's index (moment_id is unique only within a collection). */
+async function snapshot(db: SupabaseClient, collectionId: string, ids: readonly string[]): Promise<Map<string, Snap>> {
   const out = new Map<string, Snap>()
   if (ids.length === 0) return out
   const { data, error } = await db
     .from("wallet_moments_cache")
     .select("moment_id, player_name, set_name, serial_number")
-    .eq("collection_id", TOP_SHOT_COLLECTION_ID)
+    .eq("collection_id", collectionId)
     .in("moment_id", [...ids])
     .limit(200)
   if (error) throw new Error(`wallet_moments_cache plan snapshot failed: ${error.message}`)
@@ -70,19 +76,20 @@ async function snapshot(db: SupabaseClient, ids: readonly string[]): Promise<Map
   return out
 }
 
-function line(id: string, s: Snap | undefined): AgreedItem {
-  return { collection: "Top Shot", moment_id: id, player_name: s?.player_name ?? null, set_name: s?.set_name ?? null, serial_number: s?.serial_number ?? null }
+function line(label: string, id: string, s: Snap | undefined): AgreedItem {
+  return { collection: label, moment_id: id, player_name: s?.player_name ?? null, set_name: s?.set_name ?? null, serial_number: s?.serial_number ?? null }
 }
 
 /** Store the plan on a room just created by `userId`. Throws on a failed read or write. */
 export async function savePlan(db: SupabaseClient, roomId: string, userId: string, plan: PlanInput): Promise<void> {
-  const snaps = await snapshot(db, [...plan.give, ...plan.get])
+  const snaps = await snapshot(db, plan.collection.collectionId, [...plan.give, ...plan.get])
+  const label = plan.collection.short
   const { error } = await db.from("trade_room_plans").insert({
     room_id: roomId,
     created_by: userId,
     partner_username: plan.partner_username,
-    a_gives: plan.give.map((id) => line(id, snaps.get(id))),
-    b_gives: plan.get.map((id) => line(id, snaps.get(id))),
+    a_gives: plan.give.map((id) => line(label, id, snaps.get(id))),
+    b_gives: plan.get.map((id) => line(label, id, snaps.get(id))),
   })
   if (error) throw new Error(`trade_room_plans insert failed: ${error.message}`)
 }

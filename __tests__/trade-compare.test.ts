@@ -1,6 +1,7 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi } from "vitest"
 import { buildSide, quickTrade, closeEnough, coverage, type CandidateRow, type ChainState } from "@/lib/trade-compare/compare"
-import { readHoldingsParallel } from "@/lib/trade-compare/read"
+import { readHoldingsParallel, readIndexedListed, readChain, compareCollection, readOnChainCount } from "@/lib/trade-compare/read"
+import { memorySupabase } from "./helpers/memory-supabase"
 
 // 2026-11-16: /trades/compare — what two collectors could trade, checked on chain, priced on FMV.
 
@@ -151,5 +152,61 @@ describe("readHoldingsParallel", () => {
     const read = async (_a: string, chunk: readonly string[]) => Object.fromEntries(chunk.map((id) => [id, { held: true, locked: false }]))
     const out = await readHoldingsParallel("0x0000000000000001", ids, read)
     expect(Object.keys(out)).toHaveLength(260)
+  })
+})
+
+describe("per collection (2026-11-16 afternoon)", () => {
+  const AD = "dee28451-5d62-409e-a1ad-a83f763ac070"
+
+  it("covers Top Shot, All Day and Golazos only — UFC (closed market) and anything else is null", () => {
+    expect(compareCollection("nba-top-shot")?.collectionId).toBe("95f28a17-224a-4025-96ad-adf8a4c63bfd")
+    expect(compareCollection("nfl-all-day")?.collectionId).toBe(AD)
+    expect(compareCollection("laliga-golazos")?.short).toBe("Golazos")
+    for (const v of ["ufc", "disney-pinnacle", "", null, "nba_top_shot"]) expect(compareCollection(v as string | null)).toBeNull()
+  })
+
+  it("All Day listings come from the index: open, unexpired rows of THAT seller in THAT collection", async () => {
+    const future = new Date(Date.now() + 86_400_000).toISOString()
+    const past = new Date(Date.now() - 86_400_000).toISOString()
+    // (flow_id is bigint in Postgres, which casts the string ids; the in-memory double compares exactly)
+    const m = memorySupabase({
+      cached_listings_v2: [
+        { collection_id: AD, seller_address: "0xa", flow_id: "1", completed_at: null, expiry_at: future },
+        { collection_id: AD, seller_address: "0xa", flow_id: "2", completed_at: "2026-11-01T00:00:00Z", expiry_at: null },
+        { collection_id: AD, seller_address: "0xa", flow_id: "3", completed_at: null, expiry_at: past },
+        { collection_id: AD, seller_address: "0xb", flow_id: "4", completed_at: null, expiry_at: null },
+        { collection_id: "95f28a17-224a-4025-96ad-adf8a4c63bfd", seller_address: "0xa", flow_id: "5", completed_at: null, expiry_at: null },
+      ],
+    })
+    const got = await readIndexedListed(m.db, AD, "0xa", ["1", "2", "3", "4", "5"])
+    expect([...got]).toEqual(["1"])
+  })
+
+  it("a failed listings read throws (never 'not listed')", async () => {
+    const m = memorySupabase({ cached_listings_v2: [] })
+    m.failNext("select", "cached_listings_v2", "boom")
+    await expect(readIndexedListed(m.db, AD, "0xa", ["1"])).rejects.toThrow(/boom/)
+  })
+
+  it("readChain uses the collection's own readers and reads nothing for no candidates", async () => {
+    const m = memorySupabase({})
+    const holdings = vi.fn(async (_a: string, ids: string[]) => Object.fromEntries(ids.map((id) => [id, { held: true, locked: false }])))
+    const listed = vi.fn(async () => new Set(["7"]))
+    const c = compareCollection("nfl-all-day")!
+    const out = await readChain(m.db, c, "0xa", [row({ moment_id: "7", edition_key: "e" })], { holdings, listed })
+    expect(out.listed.has("7")).toBe(true)
+    expect(holdings).toHaveBeenCalledWith("0xa", ["7"])
+    const none = await readChain(m.db, c, "0xa", [], { holdings, listed })
+    expect(Object.keys(none.holdings)).toHaveLength(0)
+    expect(holdings).toHaveBeenCalledTimes(1)
+  })
+
+  it("Golazos' on-chain count is read by its own script; an unreadable answer is null, never 0", async () => {
+    const answer = (v: unknown, ok = true) => vi.fn(async () => ({ ok, text: async () => `"${btoa(JSON.stringify(v))}"` }) as unknown as Response)
+    const gz = compareCollection("laliga-golazos")!
+    expect(await readOnChainCount("0x0000000000000001", gz, answer({ type: "Int", value: "45" }))).toBe(45)
+    expect(await readOnChainCount("0x0000000000000001", gz, answer({ type: "Int", value: "-1" }))).toBe(0)
+    expect(await readOnChainCount("0x0000000000000001", gz, answer({ type: "String", value: "x" }))).toBeNull()
+    expect(await readOnChainCount("0x0000000000000001", gz, answer({}, false))).toBeNull()
   })
 })

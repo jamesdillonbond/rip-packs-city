@@ -3,7 +3,7 @@
 // "What could these two collectors trade?" — the pure half of /trades/compare (2026-11-16,
 // after a live read of thetradefloor.pages.dev; Trevor: "Keep going and working on this").
 //
-// Input: the DB's CANDIDATES (get_topshot_trade_compare — duplicates one wallet holds in an
+// Input: the DB's CANDIDATES (get_trade_compare — duplicates one wallet holds in an
 // edition the other does not own) plus the CHAIN's answer for those candidates (held, locked,
 // listed for sale). Output: per side, the editions with the copies that can actually move, and
 // a Quick Trade — one Moment each way whose RPC FMVs are close.
@@ -27,7 +27,7 @@ import { isAskDerivedFmv } from "@/lib/fmv-basis"
 
 export const CONFIDENT = new Set(["HIGH", "MEDIUM"])
 
-/** A row of get_topshot_trade_compare's a_rows / b_rows. */
+/** A row of get_trade_compare's a_rows / b_rows. */
 export interface CandidateRow {
   moment_id: string
   edition_key: string

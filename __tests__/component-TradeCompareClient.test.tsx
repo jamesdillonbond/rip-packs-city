@@ -15,6 +15,7 @@ vi.mock("next/navigation", () => ({
 import CompareClient from "@/app/trades/compare/CompareClient"
 
 type Answer = { status: number; body: unknown }
+const me = { status: 200, body: { user: null } as unknown }
 let answers: Array<(url: string, init?: RequestInit) => Answer | null>
 
 beforeEach(() => {
@@ -22,8 +23,10 @@ beforeEach(() => {
   nav.replace.mockReset()
   nav.params = new URLSearchParams()
   answers = []
+  me.body = { user: null }
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
+    if (url === "/api/profile/me") return { ok: me.status === 200, status: me.status, json: async () => me.body } as Response
     for (const a of answers) {
       const r = a(url, init)
       if (r) return { ok: r.status >= 200 && r.status < 300, status: r.status, json: async () => r.body } as Response
@@ -179,7 +182,7 @@ describe("CompareClient", () => {
     const link = await screen.findByRole("link", { name: "Open the trade room" })
     expect(link.getAttribute("href")).toBe("/trades/abcdefghij")
     expect(nav.push).not.toHaveBeenCalled()
-    expect(sent[0]).toEqual({ plan: { partner_username: "roham", give: ["50452811"], get: ["999"] } })
+    expect(sent[0]).toEqual({ plan: { collection: "nba-top-shot", partner_username: "roham", give: ["50452811"], get: ["999"] } })
     saved = true
     fireEvent.click(screen.getByRole("button", { name: "Start a trade room" }))
     await waitFor(() => expect(nav.push).toHaveBeenCalledWith("/trades/abcdefghij"))
@@ -215,6 +218,40 @@ describe("CompareClient", () => {
     render(<CompareClient />)
     fireEvent.click(screen.getByRole("button", { name: "Compare" }))
     expect(screen.getByText("Enter two Top Shot usernames.")).toBeTruthy()
-    expect(globalThis.fetch).not.toHaveBeenCalled()
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.filter((c) => String(c[0]).startsWith("/api/public/trades/compare"))).toHaveLength(0)
+  })
+
+  it("signed in with a Top Shot username, 'You' is pre-filled; signed out or a failed read leaves it empty", async () => {
+    me.body = { user: { id: "u", topshot_username: "Jamesdillonbond" } }
+    render(<CompareClient />)
+    await waitFor(() => expect((screen.getByLabelText("Your Top Shot username") as HTMLInputElement).value).toBe("Jamesdillonbond"))
+    cleanup()
+    me.status = 503
+    me.body = { error: "down" }
+    render(<CompareClient />)
+    await new Promise((r) => setTimeout(r, 20))
+    expect((screen.getByLabelText("Your Top Shot username") as HTMLInputElement).value).toBe("")
+    me.status = 200
+  })
+
+  it("switching collection re-runs the same two collectors in that collection, with its own series names and no Top Shot-only filters", async () => {
+    const calls: string[] = []
+    answers.push((url) => {
+      if (!url.startsWith("/api/public/trades/compare")) return null
+      calls.push(url)
+      return url.includes("c=nfl-all-day")
+        ? { status: 200, body: result({ collection: "nfl-all-day", a: side("Jamesdillonbond", [ed({ edition_key: "ad:1", player_name: "Josh Allen", series_number: 2, from_asks: false, fmv_usd: 12 })], { blocked: { locked: 0, listed: 0, gone: 2 } }), b: side("roham", []) }) }
+        : { status: 200, body: result() }
+    })
+    render(<CompareClient />)
+    submit()
+    await screen.findByText("Tre Mann")
+    fireEvent.change(screen.getByLabelText("Collection"), { target: { value: "nfl-all-day" } })
+    await screen.findByText("Josh Allen")
+    expect(calls.at(-1)).toMatch(/u1=Jamesdillonbond&u2=roham&c=nfl-all-day$/)
+    expect(nav.replace).toHaveBeenLastCalledWith("/trades/compare?u1=Jamesdillonbond&u2=roham&c=nfl-all-day", { scroll: false })
+    expect(screen.queryByRole("checkbox")).toBeNull()
+    expect(screen.queryByLabelText("League")).toBeNull()
+    expect(screen.getByText(/All Day's locked Moments are held by Dapper/)).toBeTruthy()
   })
 })

@@ -525,6 +525,14 @@ describe("TradeRoomClient — the planned trade from Compare", () => {
     expect(screen.getByText("Your planned Moments are in your picks.")).toBeTruthy()
   })
 
+  it("an All Day plan adds its Moments under All Day", async () => {
+    await mount(view({ from_compare: plan({ a_gives: [{ collection: "All Day", moment_id: "1", player_name: "Josh Allen", set_name: "Base", serial_number: 77 }], b_gives: [] }) }))
+    posts.items = { status: 200, body: { room: view() } }
+    fireEvent.click(screen.getByRole("button", { name: "Add my 1 planned Moment" }))
+    await waitFor(() => expect(calls.some((c) => c.body?.action === "items")).toBe(true))
+    expect(calls.find((c) => c.body?.action === "items")!.body!.picks).toEqual([{ collection: "nba-top-shot", id: "1" }, { collection: "nfl-all-day", id: "1" }])
+  })
+
   it("a chain refusal on the add is shown, never swallowed", async () => {
     await mount(view({ from_compare: plan() }))
     posts.items = { status: 409, body: { error: "Listed for sale on Top Shot (cancel the listing first): 5." } }

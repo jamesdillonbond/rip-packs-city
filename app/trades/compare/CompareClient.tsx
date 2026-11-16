@@ -30,7 +30,7 @@ type Side = {
   coverage: Coverage
   indexing: boolean
 }
-type Result = { a: Side; b: Side; quick_trade: QuickTrade | null; checked_at: string }
+type Result = { collection?: string; a: Side; b: Side; quick_trade: QuickTrade | null; checked_at: string }
 type Load =
   | { kind: "idle" }
   | { kind: "loading" }
@@ -42,8 +42,18 @@ type Pick = { side: "a" | "b"; moment_id: string; serial: number | null; edition
 
 const ASKS = fmvBasis("ASK_ONLY")!
 
-function seriesOf(e: CompareEdition): string {
-  return e.series_number == null ? "Unknown series" : seriesDisplay(e.series_number, "nba-top-shot")
+// Compare covers these three (2026-11-16 afternoon). One Dapper wallet holds all of them, so the
+// same Top Shot usernames name the wallets for each.
+const COLLECTIONS = [
+  { slug: "nba-top-shot", label: "NBA Top Shot" },
+  { slug: "nfl-all-day", label: "NFL All Day" },
+  { slug: "laliga-golazos", label: "LaLiga Golazos" },
+] as const
+type Slug = (typeof COLLECTIONS)[number]["slug"]
+const isSlug = (v: string | null): v is Slug => COLLECTIONS.some((c) => c.slug === v)
+
+function seriesOf(e: CompareEdition, slug: Slug): string {
+  return e.series_number == null ? "Unknown series" : seriesDisplay(e.series_number, slug)
 }
 
 function sumPicks(p: readonly Pick[]): { total: number; unpriced: number } {
@@ -60,6 +70,8 @@ export default function CompareClient() {
   const router = useRouter()
   const params = useSearchParams()
   const [u1, setU1] = useState(params.get("u1") ?? "")
+  const initialC = params.get("c")
+  const [coll, setColl] = useState<Slug>(isSlug(initialC) ? initialC : "nba-top-shot")
   const [u2, setU2] = useState(params.get("u2") ?? "")
   const [load, setLoad] = useState<Load>({ kind: "idle" })
   const [series, setSeries] = useState("")
@@ -69,9 +81,9 @@ export default function CompareClient() {
   const [room, setRoom] = useState<{ kind: "idle" } | { kind: "starting" } | { kind: "signin" } | { kind: "error"; message: string } | { kind: "unplanned"; code: string }>({ kind: "idle" })
   const [copied, setCopied] = useState(false)
 
-  const run = useCallback(async (a: string, b: string) => {
+  const run = useCallback(async (a: string, b: string, c: Slug) => {
     setLoad({ kind: "loading" })
-    const r = await call(`/api/public/trades/compare?u1=${encodeURIComponent(a)}&u2=${encodeURIComponent(b)}`)
+    const r = await call(`/api/public/trades/compare?u1=${encodeURIComponent(a)}&u2=${encodeURIComponent(b)}&c=${c}`)
     if (r.ok && r.body && typeof r.body === "object" && "a" in r.body && "b" in r.body) {
       setLoad({ kind: "ok", data: r.body as unknown as Result })
       return
@@ -84,7 +96,22 @@ export default function CompareClient() {
   useEffect(() => {
     const a = params.get("u1")
     const b = params.get("u2")
-    if (a && b) void run(a, b)
+    if (a && b) void run(a, b, coll)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Signed in with a Top Shot username on file → it pre-fills "You". A convenience only: signed
+  // out, no username or a failed read all leave the field as it was (an empty field claims nothing).
+  useEffect(() => {
+    if (params.get("u1")) return
+    let live = true
+    void call("/api/profile/me").then((r) => {
+      const name = (r.body?.user as { topshot_username?: unknown } | null | undefined)?.topshot_username
+      if (live && r.ok && typeof name === "string" && name.trim()) setU1((cur) => (cur ? cur : name.trim()))
+    })
+    return () => {
+      live = false
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -109,27 +136,44 @@ export default function CompareClient() {
     const b = u2.trim().replace(/^@/, "")
     if (!a || !b) return setLoad({ kind: "refused", message: "Enter two Top Shot usernames." })
     setPicks([])
-    router.replace(`/trades/compare?u1=${encodeURIComponent(a)}&u2=${encodeURIComponent(b)}`, { scroll: false })
-    void run(a, b)
+    setSeries("")
+    router.replace(`/trades/compare?u1=${encodeURIComponent(a)}&u2=${encodeURIComponent(b)}${coll === "nba-top-shot" ? "" : `&c=${coll}`}`, { scroll: false })
+    void run(a, b, coll)
   }
 
   const data = load.kind === "ok" ? load.data : null
+
+  // switching collection re-runs a comparison already on screen (same two collectors)
+  const changeCollection = (v: string) => {
+    if (!isSlug(v)) return
+    setColl(v)
+    setSeries("")
+    setPicks([])
+    if (load.kind === "ok" || load.kind === "error") {
+      const a = (data?.a.username ?? u1).trim()
+      const b = (data?.b.username ?? u2).trim()
+      if (a && b) {
+        router.replace(`/trades/compare?u1=${encodeURIComponent(a)}&u2=${encodeURIComponent(b)}${v === "nba-top-shot" ? "" : `&c=${v}`}`, { scroll: false })
+        void run(a, b, v)
+      }
+    }
+  }
   const seriesOptions = useMemo(() => {
     if (!data) return []
     const s = new Map<string, number>()
-    for (const e of [...data.a.editions, ...data.b.editions]) s.set(seriesOf(e), e.series_number ?? 99)
+    for (const e of [...data.a.editions, ...data.b.editions]) s.set(seriesOf(e, coll), e.series_number ?? 99)
     return [...s.entries()].sort((x, y) => x[1] - y[1]).map(([k]) => k)
-  }, [data])
+  }, [data, coll])
 
   const visible = useCallback(
     (eds: CompareEdition[]) =>
       eds.filter(
         (e) =>
-          (!series || seriesOf(e) === series) &&
-          (!rookieOnly || /rookie debut/i.test(e.set_name ?? "")) &&
-          (!league || (e.league ?? "NBA").toUpperCase() === league),
+          (!series || seriesOf(e, coll) === series) &&
+          (coll !== "nba-top-shot" || !rookieOnly || /rookie debut/i.test(e.set_name ?? "")) &&
+          (coll !== "nba-top-shot" || !league || (e.league ?? "NBA").toUpperCase() === league),
       ),
-    [series, rookieOnly, league],
+    [series, rookieOnly, league, coll],
   )
 
   const toggle = (side: "a" | "b", e: CompareEdition, c: { moment_id: string; serial_number: number | null }) => {
@@ -153,10 +197,11 @@ export default function CompareClient() {
     const give = picks.filter((p) => p.side === "a").map((p) => p.moment_id).join(",")
     const get = picks.filter((p) => p.side === "b").map((p) => p.moment_id).join(",")
     const q = new URLSearchParams({ u1: data.a.username, u2: data.b.username })
+    if (coll !== "nba-top-shot") q.set("c", coll)
     if (give) q.set("give", give)
     if (get) q.set("get", get)
     return `/trades/compare?${q.toString()}`
-  }, [data, picks])
+  }, [data, picks, coll])
 
   const copyPlan = async () => {
     if (!planUrl) return
@@ -173,6 +218,7 @@ export default function CompareClient() {
     setRoom({ kind: "starting" })
     if (!data) return
     const plan = {
+      collection: coll,
       partner_username: data.b.username,
       give: picks.filter((p) => p.side === "a").map((p) => p.moment_id),
       get: picks.filter((p) => p.side === "b").map((p) => p.moment_id),
@@ -196,7 +242,7 @@ export default function CompareClient() {
       <div>
         <h1 style={{ fontFamily: DISPLAY, textTransform: "uppercase", margin: "0 0 4px", fontSize: 28 }}>Compare collections</h1>
         <p style={{ ...muted, margin: 0, fontSize: 14 }}>
-          Enter two NBA Top Shot usernames. You&apos;ll see the duplicates each collector holds in editions the other doesn&apos;t own — checked on chain just now, so locked
+          Enter two NBA Top Shot usernames and pick a collection — Top Shot, NFL All Day or LaLiga Golazos (one Dapper account holds all three). You&apos;ll see the duplicates each collector holds in editions the other doesn&apos;t own — checked on chain just now, so locked
           Moments and Moments listed for sale are left out — priced with RPC&apos;s FMV, never a single asking price. One copy of every edition always stays with its owner.
         </p>
       </div>
@@ -209,6 +255,16 @@ export default function CompareClient() {
         <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: "1 1 180px" }}>
           <span style={label}>Trade partner</span>
           <input value={u2} onChange={(e) => setU2(e.target.value)} placeholder="Top Shot username" autoComplete="off" spellCheck={false} aria-label="Trade partner's Top Shot username" style={inputStyle} />
+        </label>
+        <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: "0 1 170px" }}>
+          <span style={label}>Collection</span>
+          <select value={coll} onChange={(e) => changeCollection(e.target.value)} aria-label="Collection" style={inputStyle}>
+            {COLLECTIONS.map((c) => (
+              <option key={c.slug} value={c.slug}>
+                {c.label}
+              </option>
+            ))}
+          </select>
         </label>
         <button type="submit" style={btnPrimary} disabled={load.kind === "loading"}>
           {load.kind === "loading" ? "Checking…" : "Compare"}
@@ -228,7 +284,7 @@ export default function CompareClient() {
       {load.kind === "error" && (
         <div role="alert" style={{ ...card, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
           <span>{load.message}</span>
-          <button type="button" style={btn} onClick={() => void run(u1.trim(), u2.trim())}>
+          <button type="button" style={btn} onClick={() => void run(u1.trim(), u2.trim(), coll)}>
             Retry
           </button>
         </div>
@@ -236,8 +292,8 @@ export default function CompareClient() {
 
       {data && (
         <>
-          <CoverageNotes side={data.a} />
-          <CoverageNotes side={data.b} />
+          <CoverageNotes side={data.a} collection={coll} />
+          <CoverageNotes side={data.b} collection={coll} />
 
           <section style={{ ...card, display: "flex", flexDirection: "column", gap: 8 }} aria-label="Quick Trade">
             <div style={label}>Quick Trade</div>
@@ -274,6 +330,8 @@ export default function CompareClient() {
                 </option>
               ))}
             </select>
+            {coll === "nba-top-shot" && (
+              <>
             <select value={league} onChange={(e) => setLeague(e.target.value as "" | "NBA" | "WNBA")} aria-label="League" style={inputStyle}>
               <option value="">NBA + WNBA</option>
               <option value="NBA">NBA</option>
@@ -282,11 +340,13 @@ export default function CompareClient() {
             <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13 }}>
               <input type="checkbox" checked={rookieOnly} onChange={(e) => setRookieOnly(e.target.checked)} /> Rookie Debut only
             </label>
+              </>
+            )}
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))", gap: 16 }}>
-            <SideList title={`@${data.a.username} could trade`} other={data.b.username} side={data.a} eds={visible(data.a.editions)} picks={picks} onToggle={(e, c) => toggle("a", e, c)} sideKey="a" />
-            <SideList title={`@${data.b.username} could trade`} other={data.a.username} side={data.b} eds={visible(data.b.editions)} picks={picks} onToggle={(e, c) => toggle("b", e, c)} sideKey="b" />
+            <SideList title={`@${data.a.username} could trade`} other={data.b.username} side={data.a} eds={visible(data.a.editions)} picks={picks} onToggle={(e, c) => toggle("a", e, c)} sideKey="a" coll={coll} />
+            <SideList title={`@${data.b.username} could trade`} other={data.a.username} side={data.b} eds={visible(data.b.editions)} picks={picks} onToggle={(e, c) => toggle("b", e, c)} sideKey="b" coll={coll} />
           </div>
 
           <section
@@ -340,7 +400,7 @@ export default function CompareClient() {
           <p style={{ ...muted, fontSize: 12 }}>
             {/* hydration-safe: data exists only after a client fetch, never at SSR — the viewer's own clock is the right zone */}
             Checked on chain at {new Date(data.checked_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZoneName: "short" })}. Values are RPC&apos;s fair market
-            value for the edition and don&apos;t price serial-number premiums. Confirm on Top Shot before you trade.
+            value for the edition and don&apos;t price serial-number premiums. Confirm on the marketplace before you trade.
           </p>
         </>
       )}
@@ -375,7 +435,7 @@ function Fmv({ e }: { e: CompareEdition }) {
   )
 }
 
-function CoverageNotes({ side }: { side: Side }) {
+function CoverageNotes({ side, collection }: { side: Side; collection: Slug }) {
   const notes: string[] = []
   const c = side.coverage
   if (c.indexed === 0 && c.on_chain === 0) notes.push(`@${side.username} holds no Top Shot Moments.`)
@@ -388,7 +448,7 @@ function CoverageNotes({ side }: { side: Side }) {
   const left: string[] = []
   if (b.locked) left.push(`${b.locked} locked`)
   if (b.listed) left.push(`${b.listed} listed for sale`)
-  if (b.gone) left.push(`${b.gone} no longer in the account`)
+  if (b.gone) left.push(collection === "nfl-all-day" ? `${b.gone} not in the wallet on chain (All Day's locked Moments are held by Dapper)` : `${b.gone} no longer in the account`)
   if (left.length) notes.push(`Left out for @${side.username}: ${left.join(", ")}.`)
   if (side.capped) notes.push(`@${side.username} has ${side.candidates_total.toLocaleString("en-US")} possible Moments; the most valuable were checked.`)
   if (!notes.length) return null
@@ -422,9 +482,10 @@ function SideList(props: {
   eds: CompareEdition[]
   picks: Pick[]
   sideKey: "a" | "b"
+  coll: Slug
   onToggle: (e: CompareEdition, c: { moment_id: string; serial_number: number | null }) => void
 }) {
-  const { title, other, side, eds, picks, sideKey, onToggle } = props
+  const { title, other, side, eds, picks, sideKey, coll, onToggle } = props
   return (
     <section aria-label={title} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <h2 style={{ fontFamily: DISPLAY, textTransform: "uppercase", fontSize: 18, margin: 0 }}>{title}</h2>
@@ -445,7 +506,7 @@ function SideList(props: {
               <Fmv e={e} />
             </div>
             <div style={{ ...muted, fontSize: 12 }}>
-              {[seriesOf(e), e.set_name, e.tier ? e.tier.charAt(0) + e.tier.slice(1).toLowerCase() : null].filter(Boolean).join(" · ")}
+              {[seriesOf(e, coll), e.set_name, e.tier ? e.tier.charAt(0) + e.tier.slice(1).toLowerCase() : null].filter(Boolean).join(" · ")}
             </div>
             <div style={{ ...muted, fontSize: 12 }}>
               Owns {e.owned} · {e.tradeable.length} can move

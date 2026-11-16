@@ -930,11 +930,13 @@ function FromComparePanel({
   ]
   const planned = mine ? (mine.side === "a" ? fc.a_gives : fc.b_gives) : []
   const have = new Set(mine ? mine.items.map(keyOf) : [])
-  const missing = planned.filter((p) => !have.has(`nba_top_shot:${p.moment_id}`))
+  // the plan's lines carry the collection's short label ("Top Shot", "All Day", "Golazos")
+  const of = (label: string | null) => SWAP_COLLECTIONS.find((c) => c.short === label) ?? null
+  const missing = planned.filter((p) => of(p.collection) && !have.has(`${of(p.collection)!.dbSlug}:${p.moment_id}`))
   const add = async () => {
     if (!mine) return
     const existing = mine.items.map((i) => ({ collection: swapCollectionByDbSlug(i.collection)?.slug ?? i.collection, id: i.moment_id }))
-    const picks = [...existing, ...missing.map((p) => ({ collection: "nba-top-shot", id: p.moment_id }))]
+    const picks = [...existing, ...missing.map((p) => ({ collection: of(p.collection)!.slug, id: p.moment_id }))]
     await act("items", { picks }, () => setMsg("Your planned Moments are added and checked on chain: held, unlocked and not listed."))
   }
   return (

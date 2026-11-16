@@ -4,12 +4,15 @@
 // Moments each could trade the other out. Public, no sign-in — RPC asks for identifiers, never a
 // wallet connect, to READ (rpc-no-wallet-signin).
 //
-//   GET ?u1=<username|0x…>&u2=<username|0x…>
-//     -> { a: Side, b: Side, quick_trade: QuickTrade | null, checked_at }
+//   GET ?u1=<username|0x…>&u2=<username|0x…>[&c=nba-top-shot|nfl-all-day|laliga-golazos]
+//     -> { collection, a: Side, b: Side, quick_trade: QuickTrade | null, checked_at }
+//   (2026-11-16 afternoon: All Day and Golazos too. One Dapper wallet holds all three, so a Top
+//    Shot username names the wallet. An unknown `c` is REFUSED (400), never answered as Top Shot —
+//    the substitution rule; an ABSENT `c` defaults to Top Shot.)
 //
 // Side = { username, editions[], editions_total, candidates_total, capped, blocked, coverage }
 //
-// Order of truth: RPC's index names the CANDIDATES (get_topshot_trade_compare); the CHAIN decides
+// Order of truth: RPC's index names the CANDIDATES (get_trade_compare); the CHAIN decides
 // what is tradeable (held, unlocked, not listed). A failed chain read is a 503 — never a list
 // of unverified Moments, never "nothing to trade". An unknown username is a 404 by name; a
 // lookup that FAILED is a 503 (never "no such user").
@@ -28,7 +31,8 @@ import { boardUnavailable } from "@/lib/insights/board-error"
 import { anonIpKey, bumpAnonRates } from "@/lib/abuse/anon-rate"
 import { isWalletAddress, resolveTopShotUsernameCacheAware } from "@/lib/chains/flow/topshot-username-resolve"
 import { buildSide, coverage, quickTrade, type CompareEdition, type Coverage } from "@/lib/trade-compare/compare"
-import { readCandidates, readChain, readOnChainCount, CANDIDATE_LIMIT } from "@/lib/trade-compare/read"
+import { compareCollection, readCandidates, readChain, readOnChainCount, CANDIDATE_LIMIT } from "@/lib/trade-compare/read"
+import type { SwapCollection } from "@/lib/trade-room/multi-swap-cadence"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 
 export const dynamic = "force-dynamic"
@@ -67,8 +71,24 @@ async function resolve(raw: string): Promise<Who | "not_found" | "failed"> {
     return { address, username: name ?? `${address.slice(0, 6)}…${address.slice(-4)}` }
   }
   const r = await resolveTopShotUsernameCacheAware(supabaseAdmin, v)
-  if (r.found) return { address: r.walletAddress.toLowerCase(), username: r.username }
+  if (r.found) {
+    const address = r.walletAddress.toLowerCase()
+    return { address, username: await displaySpelling(address, r.username) }
+  }
   return r.reason === "topshot_gql_error" ? "failed" : "not_found"
+}
+
+/**
+ * Top Shot's own capitalisation of a username. The resolver's cache can hold the spelling a
+ * visitor TYPED ("jamesdillonbond" for "Jamesdillonbond"); a saved wallet carries the spelling
+ * the collector's own account resolved. Same name ignoring case → that spelling; anything else
+ * (no row, a read error) keeps the resolver's — display only, never a lookup key.
+ */
+async function displaySpelling(address: string, resolved: string): Promise<string> {
+  const { data, error } = await supabaseAdmin.from("saved_wallets").select("username").eq("wallet_addr", address).not("username", "is", null).limit(10)
+  if (error || !Array.isArray(data)) return resolved
+  const match = (data as Array<{ username: string | null }>).map((r) => r.username).find((u) => u && u !== resolved && u.toLowerCase() === resolved.toLowerCase())
+  return match ?? resolved
 }
 
 async function dispatchWalk(req: NextRequest, wallet: string): Promise<boolean> {
@@ -115,6 +135,8 @@ export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams
   const u1 = (sp.get("u1") ?? "").trim()
   const u2 = (sp.get("u2") ?? "").trim()
+  const c = compareCollection(sp.get("c") ?? "nba-top-shot")
+  if (!c) return NextResponse.json({ error: "Compare covers NBA Top Shot, NFL All Day and LaLiga Golazos.", code: "bad_collection" }, { status: 400 })
   for (const u of [u1, u2]) {
     if (!u || !(NAME.test(u) || isWalletAddress(u))) {
       return NextResponse.json({ error: "Enter two Top Shot usernames.", code: "bad_input" }, { status: 400 })
@@ -132,7 +154,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    return await withBoardBudget(compare(req, u1, u2), "compare", COMPARE_BUDGET_MS, "trades/")
+    return await withBoardBudget(compare(req, c, u1, u2), "compare", COMPARE_BUDGET_MS, "trades/")
   } catch (e) {
     if (e instanceof UpstreamError) {
       console.warn(`[trades/compare] ${e.message}`)
@@ -142,7 +164,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-async function compare(req: NextRequest, u1: string, u2: string): Promise<NextResponse> {
+async function compare(req: NextRequest, c: SwapCollection, u1: string, u2: string): Promise<NextResponse> {
   {
     const [ra, rb] = await Promise.all([resolve(u1), resolve(u2)])
     for (const [r, raw] of [[ra, u1], [rb, u2]] as const) {
@@ -158,19 +180,25 @@ async function compare(req: NextRequest, u1: string, u2: string): Promise<NextRe
     }
 
     const [raw, countA, countB] = await Promise.all([
-      readCandidates(supabaseAdmin, a.address, b.address),
-      readOnChainCount(a.address),
-      readOnChainCount(b.address),
+      readCandidates(supabaseAdmin, c.collectionId, a.address, b.address),
+      readOnChainCount(a.address, c),
+      readOnChainCount(b.address, c),
     ])
-    const [chainA, chainB] = await Promise.all([upstream(readChain(a.address, raw.a_rows), "chain read A"), upstream(readChain(b.address, raw.b_rows), "chain read B")])
+    const [chainA, chainB] = await Promise.all([
+      upstream(readChain(supabaseAdmin, c, a.address, raw.a_rows), "chain read A"),
+      upstream(readChain(supabaseAdmin, c, b.address, raw.b_rows), "chain read B"),
+    ])
 
     const sideA = buildSide(raw.a_rows, chainA)
     const sideB = buildSide(raw.b_rows, chainB)
     const covA = coverage(raw.a_indexed, countA)
     const covB = coverage(raw.b_indexed, countB)
+    // the walk dispatched here is Top Shot's (fire-and-forget); All Day's is a long SYNC walk owned
+    // by the multicollection orchestrator, so a short All Day / Golazos index is said, not walked
+    const walks = c.slug === "nba-top-shot"
     const [indexingA, indexingB] = await Promise.all([
-      covA.complete === false ? dispatchWalk(req, a.address) : Promise.resolve(false),
-      covB.complete === false ? dispatchWalk(req, b.address) : Promise.resolve(false),
+      walks && covA.complete === false ? dispatchWalk(req, a.address) : Promise.resolve(false),
+      walks && covB.complete === false ? dispatchWalk(req, b.address) : Promise.resolve(false),
     ])
 
     const side = (who: Who, s: typeof sideA, total: number, rows: number, cov: Coverage, indexing: boolean): CompareSide => ({
@@ -186,6 +214,7 @@ async function compare(req: NextRequest, u1: string, u2: string): Promise<NextRe
 
     return NextResponse.json(
       {
+        collection: c.slug,
         a: side(a, sideA, raw.a_total, raw.a_rows.length, covA, indexingA),
         b: side(b, sideB, raw.b_total, raw.b_rows.length, covB, indexingB),
         quick_trade: quickTrade(sideA.editions, sideB.editions, sideA.confident, sideB.confident),
