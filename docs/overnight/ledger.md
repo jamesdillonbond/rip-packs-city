@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~10:30 AM PT — Usage events for serial search (#12359) and open offers (#12361); funnel read row 10 counts humans (Claude Code cloud; Trevor: "Keep going")
+- Measured: neither 11-14 feature had a usage event (and the serial is not in the page path), so the review's "no logged usage" could not be read. Only 1 human visitor opened any Sniper page since 11-14. Separately, `funnel-read.sql` row 10 counted our own Playwright/axe runs: 25 of the first 31 edition-prompt shows were `automated`, and every human one was a lone Panini page (the crawler pattern).
+- CODE: `components/sniper/SerialSearchPanel.tsx` → `serial-search` {serial, ok, confirmed, unconfirmed, filtered}; `components/analytics/OffersHistoryCard.tsx` → `open-offers-shown` {collection, open, outbid} (supported collections only) and `offers-tab` {tab}. `scripts/funnel-read.sql`: row 10 now counts distinct human browsers and those with 2+ pages; new row 12 reads every instrument added 11-15/16 (internal and automated excluded). Both rows run clean against prod.
+- Tests: 2 component tests. Full `npm run preflight` green.
+- Revert: `git revert` this commit (no DB half).
+
 ### 2026-11-16 ~10:25 AM PT — `deepmerge` prototype-poisoning advisory closed by vendoring a patched copy; `npm audit` 7 low → 0 (Claude Code cloud; Trevor: "Anything you can do?")
 
 GHSA-gcqx-w48m-w2h4 has no upstream fix (affects all ≥4.2.0). `vendor/deepmerge/` = upstream 4.3.1 + prototype-key skip + `defineProperty`; root `file:vendor/deepmerge` dep + `overrides."deepmerge": "$deepmerge"` (a nested `file:` override writes a lock `npm ci` rejects — measured). Clean `npm ci` verified on npm 10 + 11; new test fails 3/11 against upstream; preflight 6/6 green. No runtime change: no `@onflow/*` bundle imports deepmerge. Detail: known-issues #231. **Revert:** `git revert <this sha>` (restores the registry package + lock) — or delete `vendor/deepmerge`, the root dep, the override and the test, then `npm install`.
