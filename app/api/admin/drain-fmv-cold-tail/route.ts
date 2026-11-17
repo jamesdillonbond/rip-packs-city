@@ -93,6 +93,13 @@ type ResultRow = {
   error: string | null
 }
 
+function failedSlugErrors(results: ResultRow[]): string {
+  return results
+    .filter((r) => !r.ok)
+    .map((r) => `${r.slug}: ${r.error ?? "failed with no error message"}`)
+    .join("; ")
+}
+
 function isAuthorized(req: NextRequest): boolean {
   const token = process.env.INGEST_SECRET_TOKEN
   if (!token) return false
@@ -314,6 +321,10 @@ export async function POST(req: NextRequest) {
         started_at: new Date(startedAt).toISOString(),
         finished_at: new Date().toISOString(),
         ok: allOk,
+        // The failing slugs' errors, so a red row is readable from the `error`
+        // column every sweep reads (11-16: an ok=false row carried error=NULL,
+        // its cause visible only in extra.results[].error).
+        error: allOk ? null : failedSlugErrors(results),
         rows_found: totalProcessed,
         rows_written: totalProcessed,
         extra: {

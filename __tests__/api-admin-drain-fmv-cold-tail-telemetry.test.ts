@@ -410,6 +410,12 @@ describe("drain-fmv-cold-tail per-slug bound", () => {
     expect(String(slugRow?.error), "the row must say the read was abandoned, and name the slug").toContain(
       "drain-fmv-cold-tail/nba_top_shot",
     )
+    // The terminal row's own `error` column carries the cause (11-16: it was
+    // NULL on an ok=false row, so every sweep reading `error` saw a blank).
+    expect(rows[0].ok).toBe(false)
+    expect(String(rows[0].error), "a red row must say why in its error column").toContain(
+      "nba_top_shot: [drain-fmv-cold-tail/nba_top_shot]",
+    )
     // ⚠ The heartbeat still stands beside it — the two are not alternatives.
     expect(heartbeats()).toHaveLength(1)
   }, 20_000)
@@ -426,6 +432,7 @@ describe("drain-fmv-cold-tail per-slug bound", () => {
     const rows = terminals()
     expect(rows).toHaveLength(1)
     expect(rows[0].ok).toBe(true)
+    expect(rows[0].error, "a green row carries no error").toBeNull()
     expect(rows[0].rows_found).toBe(5)
   }, 20_000)
 })
