@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-17 ~3:25 PM PT — Pack-reality "why is the board empty" leg reads a 2-hourly snapshot; the live view failed on every visit (Claude Code, laptop; Trevor: "Keep going and doing what you can")
+
+- **Found (Vercel runtime errors):** `v_topshot_pack_reality_ranker_staleness` ran 18.4 s cold / 11.4 s warm (~36k blocks from disk, a 65 MB on-disk sort: `pack_ev_latest`'s DISTINCT ON over every collection before the Top Shot filter) against the route's 8 s bound. The leg runs only when the ranker is empty, which it is now, and failures are `no-store`, so every visit re-ran it and timed out (5 in the 12 h to 3:09 PM PT). The #118 explanation could never render.
+- **Migration `20261117232134`:** `mv_topshot_pack_reality_ranker_staleness` = the view's one row + `computed_at`, unique key for CONCURRENTLY, service_role SELECT only (anon false; security invariants still `[]`). pg_cron 892 `rpc-refresh-pack-reality-ranker-staleness` at `38 */2` (4 min after the ranker's job 241). First row: 0 candidates, so the board is empty because nothing qualifies, not because of staleness. **Code:** `lib/insights/topshot-pack-reality.ts` reads the snapshot; route tests re-pinned to the new name (same assertions).
+- Not changed: the view and `pack_ev_latest` (15 dependents; Top Shot is 74 % of `pack_ev_history`, so collection-scoping the DISTINCT ON would not get it under 8 s). Other readers of `pack_ev_latest` may carry the same cost; not measured here.
+- Revert: migration header (unschedule 892, drop the MV), then `git revert` the code commit that follows.
+
 ### 2026-11-17 ~3:11 PM PT — Dependency audit red on a new picomatch advisory: baselined with its reason; all 30 scheduled workflows dispatched by hand (Cowork cloud; Trevor: "Keep going and doing what you can in the meantime")
 
 - **Found by the manual dispatch** (the audit's own schedule has not fired today): `npm audit --omit=dev` reports GHSA-fc5q-39xc-vjpf, picomatch ReDoS, high, range `*`, "No fix available". It is in the tree only through `@onflow/fcl-wc` → `postcss-cli` and `@walletconnect/keyvaluestorage` → `unstorage`; the attack needs an attacker-supplied glob pattern and nothing in `app/`, `lib/`, `scripts/`, `components/` or `workers/` imports a glob matcher. Added to `prod-dep-audit-baseline.json` with that reason; the gate reds again the day npm stops reporting it.
