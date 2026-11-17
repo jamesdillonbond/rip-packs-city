@@ -23,7 +23,7 @@
   - ↳ **11-16 ~5:20 PM PT: re-priced now** instead of waiting for the 7-day cold tail — all 458 editions whose newest snapshot predated their Aptos sales (migration `20261117011341`, audit table `audit_20261116_ufc_aptos_fmv_catchup`, same row `drain_fmv_cold_tail` writes). Moreno /517 $0.10 → $12.80, Khabib UFC 205 /148 $0.01 → $25.20.
 - **UFC Aptos lanes (`ufc-aptos-sales-ingest.yml`, 4×/day UTC 37 1,7,13,19):**
   - The ingest cursor should keep rising from 5.56B to the head (~8.07B).
-  - `ufc_aptos_wallet_links` should rise from 93 toward ~850+ by ~11-18 (~320 mints matched per run).
+  - `ufc_aptos_wallet_links` should rise from 93 toward ~850+ by ~11-18 (~320 mints matched per run). ✅ **MET 11-16:** 1,079 links after the first run with the budget fix (11:12 AM PT run: 2,910 of 7,987 mints processed, ok=true). Watch only that later runs keep processing >0.
     - ↳ **11-16 11:35 AM PT (Claude Code, laptop): it was STUCK at 93 — the 10:21 AM PT run's budget was spent listing mints and matched 0 (logged ok=true). Fixed `dc3f025f7` (budget starts at matching; zero-work = ok=false). Dispatched run 43936810270: 2,910 matched, links 93 → 1,079, 5,077 mints left (~2 more runs).** Next read: links rising again after the next scheduled run; a `ufc-aptos-wallet-link` row with ok=false + "mint listing exceeded" means the indexer is slow, not a code fault.
   - `dead_sporks` = mainnet26 only is EXPECTED (that Flow node is gone; Aug–Oct 2025 links wait for the Dune task 12-14).
   - A red run: read the step log; an indexer 408 that repeats on one window is the deep-OFFSET class (keyset paging fixed it 11-15).
