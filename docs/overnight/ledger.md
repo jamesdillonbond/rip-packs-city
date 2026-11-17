@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-17 ~12:55 PM PT — Docs: the small-edition FMV caps written up (Claude Code cloud; Trevor: "work through anything still unresolved … update any relevant documentation")
+
+- known-issues #260 and #213 carry the 11-17 follow-ups (index regenerated: 2 lines changed, 0 rows lost); `docs/reference/database.md` gains the per-edition "ordinary sale" rule and the suffix-reader contract; `docs/strategy/features/fmv-pricing.md` shipped line; `docs/sessions/2026-11.md` entry with four lessons. Project doc `claude/fmv-engine-open-items-2026-11-12.md` updated (11-17 section, new falsifier row, 11-23 split note).
+- Re-measured before writing: Top Shot STALE ≤ /50 split like #213's 11-05 read — recent 60 d n 145, within ±25 15.2 → 26.2 (72 closer / 10 further), so the 11-05 "loses the recent half" (n 12) is superseded. Live state re-checked after the pause: both guard bodies match the committed files (md5 `f46037ab…`, `c774ec48…`), Lillard holds $1,011.
+- Revert: docs only — `git revert` this commit.
+
 ### 2026-11-17 ~11:36 AM PT — Laptop pull refuses a fast-forward that deletes most of the tree (Cowork cloud; Trevor: "Do what makes sense")
 
 - **`scripts/laptop-tree-ff.mjs`:** before `merge --ff-only`, counts the files `origin/main` deletes; ≥ 500 AND ≥ 20 % of tracked files → logs `FAILED: REFUSED …`, exit code 3, HEAD untouched. Checked against the real pair: `17f49aec2` → `2e021e372` deletes 9,616 of 9,621. This is the script the Windows task "RPC laptop pull main" (5:15 AM) and the runners' launchers call — the one that gutted the laptop tree this morning. Test: 4 new cases in `__tests__/laptop-tree-ff.test.ts`.
