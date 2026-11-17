@@ -22,7 +22,9 @@ describe("an existence read that gates a write reads its error", () => {
     expect(src).toMatch(/const \{ data, error: cachedErr \} = await supabase\s+\.from\("wallet_moments_cache"\)/)
     expect(src).toMatch(/if \(cachedErr\) \{[\s\S]{0,200}status: 502/)
     expect(src).toMatch(/const \{ data: existingRows, error: existingErr \} = await supabase\s+\.from\("moment_acquisitions"\)/)
-    expect(src).toMatch(/const acqNewIds = acqReadFailed \? \[\] :/)
+    // 2026-11-16: the gate moved to the arrival-fill CANDIDATES; placeholders are a subset of them.
+    expect(src).toMatch(/const acqCandidateIds = acqReadFailed \? \[\] :/)
+    expect(src).toMatch(/const acqNewIds = acqCandidateIds\.filter/)
   })
 
   it("cost-basis-gql-backfill: a failed existence read fails the chunk", () => {
