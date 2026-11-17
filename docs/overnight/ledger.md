@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~8:25 PM PT — Binder search row wraps; save confirm takes its own line (Claude Code cloud; Trevor: "Keep going")
+
+- Signed-in walk in Trevor's Chrome (767 px): "This is my collection" → "Is @sdb your wallet?" → Cancel, then + Follow → ✓ Following → row in `followed_wallets` → dashboard Friend Activity listed @sdb and "@sdb sold Steph Curry #1075" → ✕ unfollow → 0 rows. The confirm panel squeezed to ~120 px beside the input and the button labels wrapped to 3 lines; the row now wraps (`sm:flex-wrap`), the confirm takes its own line, the buttons don't wrap. Revert: `git revert` the code commit.
+
 ### 2026-11-16 ~8:05 PM PT — Save-vs-follow follow-through: usage events, concierge knows Follow, share-card copy, docs (Claude Code cloud; Trevor: "Keep going")
 
 - Usage events `own-wallet-confirm` {step shown|yes|cancel, surface} and `wallet-follow` {on, surface}; concierge prompt: never tell a collector to save a friend's wallet, Follow it; share card's signed-out copy says Follow needs a free account (anon still sees no buttons there — that island's contract is pinned). Docs: features/wallet-and-portfolio.md 11-16 section, brand-auth-proxy.md carve-out note. Revert: `git revert` the code commit.
