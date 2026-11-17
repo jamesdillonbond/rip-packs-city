@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-17 ~9:11 AM PT — Daytime audit pass handoff; GitHub schedules STILL dark after a third attempt (Cowork cloud; Trevor: "work autonomously … Fix any issues you encounter")
+
+- Docs only: `docs/handoff-2026-11-17-daytime-audit-pass.md`. Third schedule attempt: `75a31da2` removed the 30 comment lines of `416bcfca` and was pushed from the laptop VM with the owner's saved credential (8:50 AM PT). 0 schedule-triggered runs 1:00–9:11 AM PT today vs 12 in the same hours 11-16. **Open P1 — handoff item 1 has the next step (an edit to a `cron:` line pushed as Trevor).**
+- Revert: n/a (docs).
+
 ### 2026-11-17 ~8:50 AM PT — All Day ask-only with no 180-day sale capped at its last sale of any age (was 3× the last-3 median) (Claude Code cloud; Trevor: "Keep going")
 
 - **Migration `20261117162830` `audit_20261117_allday_ask_only_old_sale_cap`**: `fmv_snapshots_cap_allday_ask_only_to_recent_sales()` — All Day's no-180-day-sale arm now takes Top Shot's #260 rule (last ordinary sale of any age, `_histcap`) instead of 3× the last-3 median. 60-day backtest vs the current rule: n 1,096, 24 moved, 23 closer / 1 further; WAPE ≤ /50 3.11 → 2.96, > /50 0.96 → 0.88. Tested and NOT shipped: a last-sale cap on the 180-day arm too (> /50 64 closer / 70 further). Re-stamped 75 rows ($24,317 → $16,431), backup `audit_20261117_allday_ask_only_old_sale_cap_backup` + `fmv_restatements`. Pin e3 re-pinned, e9 inverted, e24 holds never-raises (planted previous body fails).
