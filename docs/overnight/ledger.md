@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~8:35 PM PT — Save confirm sits last in its row (Claude Code cloud; Trevor: "Keep going")
+
+- `OwnWalletConfirm` takes `order: 1`, so it opens on its own line after Search / Share / Follow instead of stretching them to its height (seen live in Trevor's Chrome). Revert: `git revert` the code commit.
+
 ### 2026-11-16 ~8:20 PM PT — funnel-read.sql row 14: save-vs-follow instruments (Claude Code cloud; Trevor: "Keep going")
 
 - `scripts/funnel-read.sql` reads `own-wallet-confirm` (shown · yes · cancel) and `wallet-follow` (follow · unfollow) per surface, humans only. Verified on prod: the 11-16 test pass's binder shown → cancel came back (internal account; excluded in the real read). Read-only script, no prod change. Revert: `git revert` this commit.
