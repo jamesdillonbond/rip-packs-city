@@ -15,6 +15,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 ### 2026-11-16 ~8:35 PM PT — Save confirm sits last in its row (Claude Code cloud; Trevor: "Keep going")
 
 - `OwnWalletConfirm` takes `order: 1`, so it opens on its own line after Search / Share / Follow instead of stretching them to its height (seen live in Trevor's Chrome). Revert: `git revert` the code commit.
+- Follow-up: live it still shared the line — a 420 px `max-width` clamps a 100 % flex-basis, so the card fitted beside the buttons. The confirm now has a full-width outer line (basis 100 %, order 1) and the 420 px cap on an inner card.
 
 ### 2026-11-16 ~8:26 PM PT — Acquisition dates: 1,406 more Top Shot arrivals + 19,875 proven pack pulls dated; new undated pulls blocked at insert (Claude Code cloud; Trevor: "Keep going and working through those still open")
 - (Migration names carry the UTC date 20261117; applied ~8:00–8:25 PM PT 11-16.) **Migration `audit_20261117_topshot_arrival_dates_unsettled_kinds`** → `apply_topshot_arrival_dates(kinds[], limit)` (single statement, no temp table). Ran for kinds N (deposit with no Withdraw) + X (non-USD storefront purchase): **1,040 inserted + 366 lone `unknown` re-dated** (= dry run exactly: N 955+343, X 85+23); re-run 0. Method stays `unknown`, price NULL. Kind S (same-wallet re-deposit) not written. Archive `flowty_archive.acq_chain_arrival_20261114` arms `arrival_*`.
