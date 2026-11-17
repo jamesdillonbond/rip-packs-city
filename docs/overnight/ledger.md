@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~6:37 PM PT — Docs: 11-16 funnel-pass lessons + session entry (Claude Code cloud; Trevor: "update any relevant documentation")
+- `docs/reference/key-files-and-honesty.md` (end): five lessons — hiding an offer ≠ refusing the action; a start event can't report the read; `automated` misses the Panini crawler; the `Date.now()` ratchet counts handlers; propose-first write routes are live-verifiable. `docs/sessions/2026-11.md`: the 9:50 AM → 6:45 PM PT entry (decisions, reward-email outcome, five ships).
+- Docs only — no code or DB change. Revert: `git revert` this commit.
+
 ### 2026-11-16 ~5:59 PM PT — Concierge can compare two collectors; /trades/compare in the E2E smoke (Claude Code cloud; Trevor: "Keep going and working on what you can")
 - CODE: the compare moved from the route into `lib/trade-compare/run.ts` (`runCompare`, behaviour unchanged; the route keeps its rate limits, budget, walk dispatch and HTTP shapes). New concierge tool `compare_collections` (you · partner · collection; omits `you` → the signed-in collector's wallet) calls it directly — not through the public route, so concierge users don't share one per-IP cap; unknown name = not_found by name, failed lookup/chain read = retryable error, never "holds nothing"; budget 30 s. Prompt names the tool and /trades/compare. `/trades/compare` added to `e2e/smoke.spec.ts` (run here against production: passed).
 - Tests: +4 concierge (ecosystem-tools); the hook-arrow guard caught a `beforeEach(() => mock.mockReset())` — fixed. Full preflight green.
