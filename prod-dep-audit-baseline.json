@@ -1,4 +1,9 @@
 {
   "//": "Accepted high/critical ROOT advisories in the production tree, each with why it cannot be fixed yet. Read by scripts/check-prod-dep-audit.mjs (npm audit --omit=dev). Shrink-only: an entry npm audit stops reporting reds the gate until it is removed. Emptied 2026-10-25 (security audit finding 2): next 16.3.8 -> 16.4.3 and zod 4.3.6 -> 4.6.7 cleared the new criticals/highs, and braces (GHSA-vfj7-8cjw-p6xm) is no longer reported.",
-  "advisories": {}
+  "advisories": {
+    "https://github.com/advisories/GHSA-fc5q-39xc-vjpf": {
+      "package": "picomatch",
+      "reason": "Baselined 2026-11-17. npm audit reports every picomatch version as affected (range *, 'No fix available'; 2.3.2 and 4.0.4 are in the tree, 4.0.7 is the newest published). It reaches the production tree only transitively: @onflow/fcl -> @onflow/fcl-wc -> postcss-cli (chokidar / anymatch / readdirp / tinyglobby) and @walletconnect/keyvaluestorage -> unstorage -> anymatch. The ReDoS needs an attacker-supplied GLOB PATTERN; nothing in RPC passes request input to a glob matcher (no app/, lib/ or scripts/ file imports picomatch, anymatch, chokidar or tinyglobby), so it is not reachable from a request. Remove this entry when npm audit stops reporting it (the gate reds on a stale entry) or pin a patched version through package.json overrides once one is published."
+    }
+  }
 }
