@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~8:25 PM PT — Binder Acquired dates: day-only dates no longer a day early; first-seen stamps read "by <date>" (Claude Code cloud; Trevor: "Keep going. Also how can we get acquisition date filled in?")
+- Measured (0xbd94 Top Shot): the binder already gets a date for 2,000/2,000 Recent-order rows via `COALESCE(moment_acquisitions.acquired_date, wmc.acquired_at)` — wmc.acquired_at alone (NULL on 13,220) is NOT the instrument. 1,329 of those are day-only (`dune_deposit_tx` / `chain_arrival_dune_*`, midnight UTC) and rendered a day EARLY in PT; `unknown` rows (cache_refresh first-seen stamps) rendered as if acquisition dates.
+- `formatAcquiredAt` formats a midnight-UTC value as a calendar date (UTC) and prefixes "by " for `acquisition_method = 'unknown'`; card, desktop column, expanded panel and CSV export all pass the method. Test pins TZ=America/Los_Angeles (fails on the old body in a UTC runner — verified by stash).
+- Clayton #34 / Bühner #46 are today's marketplace buys ($13 6:13 PM, $7 6:59 PM PT, in `sales`); their `unknown` rows are upgraded by existing jobid 886 `rpc-saved-wallet-acquisition-fill` (every 2 h at :41, arm B) — no new lane needed.
+- Code only, no DB change. Revert: `git revert` the code commit.
+
 ### 2026-11-16 ~7:30 PM PT — Saving your wallet vs following a friend's: "Is this your wallet?" confirm, clearer labels, follow-a-wallet (Claude Code cloud; Trevor: "Do it all")
 
 - **DB:** `followed_wallets` (`20261117024128_audit_20261116_followed_wallets`; RLS on, own-row policies, anon revoked). Revert: `DROP TABLE public.followed_wallets;`
