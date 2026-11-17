@@ -1,0 +1,190 @@
+// app/api/public/insights/squeeze/route.ts
+//
+// PUBLIC INSIGHTS — Top Shot lock-rate squeeze board.
+//
+// Read-only JSON endpoint backing the (planned) /insights/squeeze page.
+// Lives under /api/public/* so the proxy.ts allowlist lets it through with
+// no auth. Reads from the public `topshot_squeeze_board` view (shipped
+// 2026-05-30 via `audit_20260530_topshot_squeeze_board_view`) which joins
+// badge_editions (hourly refresh) + editions + latest fmv_snapshots and
+// filters to squeeze_pct >= 50.
+//
+// Why this exists: per the 2026-05-29 Flow collection research thread,
+// effective-supply squeeze (locked + burned %) is the single biggest
+// under-told story on Top Shot. nbatopshot.com displays nominal
+// circulation, not effective supply. Wemby Rookie Revelation = 81% locked.
+// Origins rookies averaging 60-65% locked. Median TS edition is 38.6%
+// locked. This route surfaces the squeeze ranking in a shape an OG-friendly
+// page can render without auth.
+//
+// Query params:
+//   collection=nba-top-shot|nfl-all-day              default nba-top-shot. NFL All Day joined 2026-10-27
+//                                                     (allday_squeeze_board). Any other value is a 400 —
+//                                                     Top Shot's board under another collection's name
+//                                                     would be substitution.
+//   tier=COMMON|RARE|LEGENDARY|FANDOM|ULTIMATE        single tier filter (All Day: COMMON|UNCOMMON|RARE|LEGENDARY|ULTIMATE)
+//   min_squeeze=<number>                              floor on squeeze_pct (default 50)
+//   max_buyable=<number>                              cap on effectively_buyable (e.g. 10 for trophy-tier)
+//   max_circulation=<number>                          cap on circulation (e.g. 100 for trophies)
+//   min_circulation=<number>                          floor on circulation (cuts 1/1s and Ultimates out of the top)
+//   min_buyable=<number>                              floor on effectively_buyable
+//   team=<text>                                       a team; resolved to its FRANCHISE's every label (historic names too)
+//   league=NBA|WNBA                                   Top Shot only (beta feedback 11682, 2026-10-30); a 400 on All Day,
+//                                                     whose rows are all NFL — never the whole board under a league heading
+//   set=<text>                                        ilike match on set_name
+//   player=<text>                                     ilike match on player_name
+//   sort=squeeze|circulation|fmv|buyable|concentration  default squeeze (concentration = top-5 holder share, census-less rows last)
+//   limit=<1..200>                                    default 50
+//
+// Response:
+//   {
+//     meta: { fetchedAt, source: "topshot_squeeze_board", total_rows, filters: {...} },
+//     rows: [{ edition_id, external_id, player_name, set_name, tier, circulation,
+//              locked, burned, lock_pct, burn_pct, squeeze_pct, effectively_buyable,
+//              low_ask, fmv_usd, confidence, game_date, thumbnail_url }, ...]
+//   }
+//
+// CACHE: 5-minute s-maxage matches the hourly cadence of badge_editions
+// without re-querying on every page hit.
+
+import { NextRequest, NextResponse } from "next/server";
+import { supabaseAdmin as supabase } from "@/lib/supabase";
+import { boardUnavailable } from "@/lib/insights/board-error";
+import { fetchSqueezeBoard, isSqueezeCollection, resolveSqueezeTeam, SQUEEZE_SOURCES } from "@/lib/insights/squeeze-board";
+import { ownLookup } from "@/lib/safe-lookup";
+import { SQUEEZE_LEAGUES, SQUEEZE_TIERS } from "@/lib/insights/squeeze-collections";
+
+import { boardRowMeta } from "@/lib/insights/board-meta"
+// Tier vocabularies differ: All Day has UNCOMMON and no FANDOM (lib/insights/squeeze-collections.ts).
+const VALID_TIERS = {
+  "nba-top-shot": new Set(SQUEEZE_TIERS["nba-top-shot"]),
+  "nfl-all-day": new Set(SQUEEZE_TIERS["nfl-all-day"]),
+};
+const VALID_SORTS = new Set(["squeeze", "circulation", "fmv", "buyable", "concentration"]);
+
+export async function GET(req: NextRequest) {
+  const startedAt = Date.now();
+  const url = new URL(req.url);
+  const sp = url.searchParams;
+
+  const collectionParam = sp.get("collection");
+  if (collectionParam != null && !isSqueezeCollection(collectionParam)) {
+    return NextResponse.json({ error: "unknown collection" }, { status: 400 });
+  }
+  const collection = collectionParam ?? "nba-top-shot";
+  const tiers = ownLookup(VALID_TIERS, collection);
+  const source = ownLookup(SQUEEZE_SOURCES, collection);
+  if (!tiers || !source) return NextResponse.json({ error: "unknown collection" }, { status: 400 });
+
+  const tier = sp.get("tier")?.toUpperCase() ?? null;
+  const minSqueeze = Number(sp.get("min_squeeze") ?? "50");
+  const maxBuyable = sp.get("max_buyable") ? Number(sp.get("max_buyable")) : null;
+  const setFilter = sp.get("set")?.trim() ?? null;
+  const playerFilter = sp.get("player")?.trim() ?? null;
+  // Optional: limit to "trophy circ" editions (e.g. max_circulation=100
+  // surfaces only Ultimate/Legendary tier editions).
+  const maxCirculation = sp.get("max_circulation") ? Number(sp.get("max_circulation")) : null;
+  // Floors (beta feedback 10250/10252): the top of the board is 1/1s and
+  // Ultimates that are 100 % squeezed by arithmetic; a collector wants to cut
+  // under them on TOTAL mint and on the supply that is actually buyable.
+  const minCirculation = sp.get("min_circulation") ? Number(sp.get("min_circulation")) : null;
+  const minBuyable = sp.get("min_buyable") ? Number(sp.get("min_buyable")) : null;
+  // Team (beta feedback 10253): resolved to the FRANCHISE's labels below.
+  const teamFilter = sp.get("team")?.trim() || null;
+  // League (beta feedback 11682): a column of the view, so it is a plain server-side filter.
+  const league = sp.get("league")?.trim().toUpperCase() || null;
+  const sort = sp.get("sort") ?? "squeeze";
+  const limit = Math.max(1, Math.min(200, Number(sp.get("limit")) || 50));
+
+  if (tier && !tiers.has(tier)) {
+    return NextResponse.json(
+      { error: `tier must be one of ${[...tiers].join(",")}` },
+      { status: 400 }
+    );
+  }
+  if (league) {
+    const leagues = ownLookup(SQUEEZE_LEAGUES, collection) ?? [];
+    if (!leagues.includes(league)) {
+      return NextResponse.json(
+        { error: leagues.length ? `league must be one of ${leagues.join(",")}` : `${collection} has no league filter` },
+        { status: 400 },
+      );
+    }
+  }
+  if (!Number.isFinite(minSqueeze) || minSqueeze < 0) {
+    return NextResponse.json({ error: "min_squeeze must be a non-negative number" }, { status: 400 });
+  }
+  for (const [name, v] of [["min_circulation", minCirculation], ["min_buyable", minBuyable]] as const) {
+    if (v != null && (!Number.isFinite(v) || v < 0)) {
+      return NextResponse.json({ error: `${name} must be a non-negative number` }, { status: 400 });
+    }
+  }
+  if (!VALID_SORTS.has(sort)) {
+    return NextResponse.json(
+      { error: `sort must be one of ${[...VALID_SORTS].join(",")}` },
+      { status: 400 }
+    );
+  }
+
+  // The QUERY lives in lib/insights/squeeze-board.ts, shared with
+  // app/insights/squeeze/page.tsx so the server-rendered board and this route
+  // cannot drift. This route keeps its own failure policy (boardUnavailable).
+  // A typed team is a label; the board filters on the franchise's EVERY label
+  // (historic names included). A failed resolution is a failed read — 503,
+  // never the unfiltered board under a team heading.
+  let teamNames: string[] | null = null;
+  let teamResolution: { status: string; current_name: string | null; labels: number } | null = null;
+  if (teamFilter) {
+    const { data: tr, error: terr } = await resolveSqueezeTeam(teamFilter, supabase, collection);
+    if (terr || !tr) {
+      return boardUnavailable(terr ?? { message: "team resolution returned nothing" }, "insights/squeeze");
+    }
+    teamNames = tr.labels;
+    teamResolution = { status: tr.status, current_name: tr.currentName, labels: tr.labels.length };
+  }
+
+  const { data, error, playerResolved } = await fetchSqueezeBoard(
+    { collection, tier, set: setFilter, player: playerFilter, minSqueeze, maxBuyable, maxCirculation, minCirculation, minBuyable, teamNames, league, sort, limit },
+    supabase,
+  );
+  if (error) {
+    return boardUnavailable(error, "insights/squeeze");
+  }
+
+  const elapsedMs = Date.now() - startedAt;
+  console.log(
+    `[public/insights/squeeze] returned=${data?.length ?? 0} tier=${tier ?? "*"} min_squeeze=${minSqueeze} sort=${sort} elapsedMs=${elapsedMs}`
+  );
+
+  const res = NextResponse.json({
+    meta: {
+      fetched_at: new Date().toISOString(),
+      source: source.view,
+      collection,
+      ...boardRowMeta(data?.length ?? 0, limit),
+      elapsed_ms: elapsedMs,
+      filters: {
+        tier,
+        min_squeeze: minSqueeze,
+        max_buyable: maxBuyable,
+        max_circulation: maxCirculation,
+        min_circulation: minCirculation,
+        min_buyable: minBuyable,
+        set: setFilter,
+        player: playerFilter,
+        team: teamFilter,
+        team_resolution: teamResolution,
+        league,
+        sort,
+        limit,
+      },
+      ...(playerResolved ? { player_resolved: playerResolved } : {}),
+    },
+    rows: data ?? [],
+  });
+
+  // 5-minute edge cache. badge_editions refreshes hourly so 5m is well
+  // inside the freshness window and protects the DB from a viral OG-share spike.
+  res.headers.set("Cache-Control", "public, s-maxage=300, stale-while-revalidate=60");
+  return res;
+}

@@ -1,0 +1,355 @@
+// lib/entity-editions-grid-format.ts
+//
+// Pure sort / partition / URL / image-candidate logic lifted out of
+// components/entity/EditionsGridPaginated.tsx so it lands under the coverage
+// ratchet (vitest `include` is lib/** + app/api/**/route.ts only — component
+// bodies are invisible). Behavior is identical to the inline versions; the
+// component imports these and renders unchanged.
+//
+// A regression here mis-sorts the edition tile grid, mis-partitions the
+// pack-mode "exhausted / pulled out" section, breaks Load-more pagination, or
+// drops the Top Shot per-moment image fallback.
+
+import { proxyIpfsImageUrl, thumbWidthFor } from "@/lib/ipfs-media"
+import { textIncludes } from "@/lib/filter-match"
+
+export type EditionSortKey = "fmv_desc" | "circ_asc" | "series_desc" | "alpha"
+
+/** Minimal shape the comparator needs. */
+export interface ComparableEdition {
+  fmv_usd: number | null
+  circulation_count: number | null
+  series_num?: number | null
+}
+
+/**
+ * Sort comparator for the edition grid. Mirrors the inline `compare()`:
+ *   fmv_desc    → FMV descending (null FMV sorts as 0)
+ *   circ_asc    → circulation ascending (null circulation sorts last via 1e12)
+ *   series_desc → series number descending (null series sorts as 0)
+ *   alpha       → subject A→Z via the caller-supplied subject function
+ * `subjectOf` is injected (the component passes tileSubject) so this module
+ * stays free of any React/component import.
+ */
+export function compareEditions<T extends ComparableEdition>(
+  a: T,
+  b: T,
+  key: EditionSortKey,
+  subjectOf: (e: T) => string,
+): number {
+  const av = a.fmv_usd ?? 0
+  const bv = b.fmv_usd ?? 0
+  switch (key) {
+    case "fmv_desc":
+      return bv - av
+    case "circ_asc":
+      return (a.circulation_count ?? 1e12) - (b.circulation_count ?? 1e12)
+    case "series_desc":
+      return (b.series_num ?? 0) - (a.series_num ?? 0)
+    case "alpha":
+      return subjectOf(a).localeCompare(subjectOf(b))
+  }
+}
+
+// Collections whose editions carry moment clips, so tiles can hover-play video.
+// Top Shot / All Day / Golazos / UFC have editions.video_url populated;
+// Pinnacle has no video CDN.
+//
+// Candy MLB added 2026-09-25, AFTER arweave went into media-src (proxy.ts). The
+// 09-05 note here was right that doing it the other way round renders a
+// <video> the CSP forbids — and that a poster-only tile hides the failure, since
+// the arweave thumbnail loads under img-src. Verified before enabling: all 125
+// Candy editions carry https://arweave.net/<id>; that URL 302s to a
+// per-transaction *.arweave.net host serving video/mp4 (5 of 5 sampled, base and
+// Rainbow). media-src therefore carries BOTH hosts. ⛔ Do not remove either from
+// the CSP while candy-mlb is in this set.
+const VIDEO_ENABLED_SLUGS: ReadonlySet<string> = new Set([
+  "nba-top-shot",
+  "nfl-all-day",
+  "laliga-golazos",
+  "ufc",
+  "candy-mlb",
+])
+
+/** Whether hover-video is enabled for a collection's tiles. */
+export function isTileVideoEnabled(collectionUrlSlug: string): boolean {
+  return VIDEO_ENABLED_SLUGS.has(collectionUrlSlug)
+}
+
+/** Minimal shape for pack-mode partitioning. */
+export interface PackPartitionRow {
+  drop_weight?: number | null
+}
+
+export interface PackPartition<T extends PackPartitionRow> {
+  gridRows: T[]
+  exhaustedRows: T[]
+}
+
+/**
+ * Pack-mode split: rows with drop_weight === 0 are exhausted / pulled out and
+ * move to the collapsed section; everything else (incl. rows with no
+ * drop_weight — every non-pack importer) stays in the main grid. When packMode
+ * is off, all rows stay in the grid and there are no exhausted rows.
+ */
+export function partitionPackRows<T extends PackPartitionRow>(
+  rows: T[],
+  packMode: boolean,
+): PackPartition<T> {
+  if (!packMode) return { gridRows: rows, exhaustedRows: [] }
+  return {
+    gridRows: rows.filter((e) => e.drop_weight !== 0),
+    exhaustedRows: rows.filter((e) => e.drop_weight === 0),
+  }
+}
+
+/**
+ * Header count for the exhausted section — the larger of the server-reported
+ * total and the number of exhausted rows currently loaded.
+ */
+export function exhaustedCount(exhaustedTotal: number, loadedExhausted: number): number {
+  return Math.max(exhaustedTotal, loadedExhausted)
+}
+
+/**
+ * Offset-based Load-more URL. Appends offset/limit with the correct separator
+ * depending on whether fetchUrl already has a query string.
+ */
+export function buildLoadMoreUrl(fetchUrl: string, offset: number, pageSize: number): string {
+  const sep = fetchUrl.includes("?") ? "&" : "?"
+  return `${fetchUrl}${sep}offset=${offset}&limit=${pageSize}`
+}
+
+/** Minimal shape for building tile image candidates. */
+export interface EditionImageFields {
+  rep_nft_id?: string | null
+  thumbnail_url: string | null
+}
+
+/** Default requested width for a full grid tile. */
+export const GRID_TILE_IMAGE_WIDTH = 400
+
+/**
+ * Top Shot's per-moment CDN derivative, sized upstream.
+ *
+ * `assets.nbatopshot.com/media/<nft_id>/image?width=N` is the only Top Shot media
+ * form that resizes — the IPFS gateways that serve `editions.thumbnail_url` for
+ * ~80% of TS editions ignore `?width=` and 403 on `/cdn-cgi/image/`, so they can
+ * only ever return the 2880×2880 archival master (~4 MB). Requesting a real width
+ * here is what keeps a 72px tile from downloading 4 MB, and the transform happens
+ * on Top Shot's CDN, so it adds no Vercel image-optimization cost.
+ *
+ * Returns null when the collection isn't Top Shot or no numeric rep_nft_id is
+ * available, so callers fall through to their existing thumbnail source.
+ */
+export function tsSizedMomentImage(
+  collectionUrlSlug: string | null | undefined,
+  repNftId: string | null | undefined,
+  width: number = GRID_TILE_IMAGE_WIDTH,
+): string | null {
+  if (collectionUrlSlug !== "nba-top-shot") return null
+  if (!repNftId || !/^\d+$/.test(repNftId)) return null
+  return `https://assets.nbatopshot.com/media/${repNftId}/image?width=${Math.round(width)}`
+}
+
+/**
+ * Ordered image-source candidates for a tile. For Top Shot with a numeric
+ * rep_nft_id, prefer the per-moment media/<nft_id>/image form (works for legacy
+ * editions whose stored thumbnail 404s), then fall back to the stored
+ * thumbnail (ipfs.io rewritten to the same-origin proxy). Other collections
+ * just use the stored thumbnail. TileMedia advances on load error.
+ *
+ * `width` is the requested upstream derivative width — pass the real rendered
+ * slot size (montage tiles are 72px, grid tiles ~200px) rather than accepting the
+ * grid default, since the byte cost scales with it.
+ */
+export function buildEditionImageCandidates(
+  e: EditionImageFields,
+  collectionUrlSlug: string,
+  width: number = GRID_TILE_IMAGE_WIDTH,
+): string[] {
+  const out: string[] = []
+  const sized = tsSizedMomentImage(collectionUrlSlug, e.rep_nft_id, width)
+  if (sized) out.push(sized)
+  if (e.thumbnail_url) {
+    const t = proxyIpfsImageUrl(e.thumbnail_url, thumbWidthFor(width))
+    if (t) out.push(t)
+  }
+  return out
+}
+
+/**
+ * 2026-09-25: the PARALLEL a tile should name, or null.
+ *
+ * Top Shot carries it as `subedition_name` (projected by the entity edition
+ * RPCs since migration 20260925173217: "Hexwave", "Galactic"). Candy MLB has no
+ * subedition column — its parallel is the edition NAME's suffix ("Junior
+ * Caminero - BLUE" → "Blue"), the same derivation the collection tab uses
+ * (`parallelFromEditionName`). Without this the Rays team page showed five
+ * "Junior Caminero · LEGENDARY · Mint 15" tiles told apart by nothing.
+ * The name-suffix arm is Candy-only: Top Shot names use an em dash
+ * ("Player — Set") and no other collection encodes a parallel in the name.
+ */
+export function tileParallelLabel(
+  e: { subedition_name?: string | null; name?: string | null; player_name?: string | null },
+  collectionUrlSlug: string,
+): string | null {
+  const sub = e.subedition_name?.trim()
+  if (sub) return sub
+  if (collectionUrlSlug !== "candy-mlb") return null
+  const name = e.name?.trim()
+  const player = e.player_name?.trim()
+  if (!name || !player) return null
+  const prefix = `${player} - `
+  if (!name.startsWith(prefix)) return null
+  const suffix = name.slice(prefix.length).trim()
+  if (!suffix) return null
+  return suffix.charAt(0).toUpperCase() + suffix.slice(1).toLowerCase()
+}
+
+// ── Edition filters (player page, 2026-09-25) ────────────────────────────────
+//
+// Client-side, over the rows ALREADY LOADED. ⚠ That makes a filtered view a
+// SAMPLE whenever more pages remain — the grid says so next to the count
+// rather than letting "0 matches" read as "this player has none".
+
+export type EditionOwnFilter = "all" | "owned" | "not_owned" | "locked"
+
+export interface EditionFilters {
+  q: string
+  team: string
+  set: string
+  series: string
+  tier: string
+  parallel: string
+  own: EditionOwnFilter
+  /** A badge TITLE ("Top Shot Debut"), or "all". */
+  badge: string
+}
+
+export const EMPTY_EDITION_FILTERS: EditionFilters = {
+  q: "", team: "all", set: "all", series: "all", tier: "all", parallel: "all", own: "all", badge: "all",
+}
+
+/** The label a Standard (non-parallel) printing files under in the Parallel filter. */
+export const STANDARD_PARALLEL = "Standard"
+
+export interface FilterableEdition {
+  route_slug: string
+  player_name: string | null
+  name: string | null
+  team_name?: string | null
+  set_name?: string | null
+  series_label: string | null
+  series_num?: number | null
+  tier: string | null
+  tier_rank?: number | null
+  subedition_name?: string | null
+}
+
+export interface EditionOwnership { owned: number; locked: number }
+
+export function isEditionFilterActive(f: EditionFilters): boolean {
+  return (
+    f.q.trim() !== "" || f.team !== "all" || f.set !== "all" || f.series !== "all" ||
+    f.tier !== "all" || f.parallel !== "all" || f.own !== "all" || f.badge !== "all"
+  )
+}
+
+export function editionParallelValue(e: FilterableEdition, collectionUrlSlug: string): string {
+  return tileParallelLabel(e, collectionUrlSlug) ?? STANDARD_PARALLEL
+}
+
+export interface EditionFilterOptions {
+  teams: string[]
+  sets: string[]
+  series: string[]
+  tiers: string[]
+  parallels: string[]
+}
+
+/** Distinct option values present in `rows` — a filter never offers a value that matches nothing. */
+export function editionFilterOptions<T extends FilterableEdition>(rows: T[], collectionUrlSlug: string): EditionFilterOptions {
+  const teams = new Set<string>()
+  const sets = new Set<string>()
+  const series = new Map<string, number>()
+  const tiers = new Map<string, number>()
+  const parallels = new Set<string>()
+  for (const e of rows) {
+    if (e.team_name) teams.add(e.team_name)
+    if (e.set_name) sets.add(e.set_name)
+    if (e.series_label) {
+      const n = e.series_num ?? Number.NEGATIVE_INFINITY
+      series.set(e.series_label, Math.max(series.get(e.series_label) ?? Number.NEGATIVE_INFINITY, n))
+    }
+    if (e.tier) tiers.set(e.tier, Math.min(tiers.get(e.tier) ?? Number.POSITIVE_INFINITY, e.tier_rank ?? Number.POSITIVE_INFINITY))
+    parallels.add(editionParallelValue(e, collectionUrlSlug))
+  }
+  const alpha = (a: string, b: string) => a.localeCompare(b)
+  return {
+    teams: [...teams].sort(alpha),
+    sets: [...sets].sort(alpha),
+    // newest series first, then label
+    series: [...series.entries()].sort((a, b) => (b[1] - a[1]) || alpha(a[0], b[0])).map(([k]) => k),
+    // rarest first (tier_rank 1 = ULTIMATE)
+    tiers: [...tiers.entries()].sort((a, b) => (a[1] - b[1]) || alpha(a[0], b[0])).map(([k]) => k),
+    // Standard first, then parallels A→Z
+    parallels: [...parallels].sort((a, b) => (a === STANDARD_PARALLEL ? -1 : b === STANDARD_PARALLEL ? 1 : alpha(a, b))),
+  }
+}
+
+// The badges collectors filter on most, in the order Top Shot lists them; any
+// other title the data carries follows A→Z.
+const BADGE_ORDER = [
+  "Three-Star Rookie", "Rookie Mint", "Rookie Year", "Rookie Premiere", "Top Shot Debut",
+  "Rookie of the Year", "MVP Year", "Championship Year", "All-Star",
+]
+
+/**
+ * Distinct badge titles across the rows whose badges are KNOWN. A row missing
+ * from `badges` contributes nothing — it is unknown, not badge-less.
+ */
+export function editionBadgeOptions(rows: Array<{ route_slug: string }>, badges: Map<string, string[]>): string[] {
+  const seen = new Set<string>()
+  for (const e of rows) for (const t of badges.get(e.route_slug) ?? []) seen.add(t)
+  const rank = (t: string) => { const i = BADGE_ORDER.indexOf(t); return i < 0 ? BADGE_ORDER.length : i }
+  return [...seen].sort((a, b) => (rank(a) - rank(b)) || a.localeCompare(b))
+}
+
+/**
+ * Apply `f` to `rows`. `ownership` is null when the wallet's counts are not
+ * KNOWN (no wallet, still loading, or the read failed) — the ownership filter
+ * is then a no-op rather than an "owns nothing" that empties the grid.
+ */
+export function filterEditions<T extends FilterableEdition>(
+  rows: T[],
+  f: EditionFilters,
+  collectionUrlSlug: string,
+  ownership: Map<string, EditionOwnership> | null,
+  // Badge titles per route_slug. A row ABSENT from the map has unknown badges
+  // and cannot match a badge filter (it is not claimed to lack the badge — the
+  // grid reports how many rows are still unknown).
+  badges: Map<string, string[]> = new Map(),
+): T[] {
+  const q = f.q.trim().toLowerCase()
+  return rows.filter((e) => {
+    if (f.team !== "all" && e.team_name !== f.team) return false
+    if (f.set !== "all" && e.set_name !== f.set) return false
+    if (f.series !== "all" && e.series_label !== f.series) return false
+    if (f.tier !== "all" && e.tier !== f.tier) return false
+    if (f.parallel !== "all" && editionParallelValue(e, collectionUrlSlug) !== f.parallel) return false
+    if (f.own !== "all" && ownership) {
+      const o = ownership.get(e.route_slug)
+      const owned = o?.owned ?? 0
+      if (f.own === "owned" && owned === 0) return false
+      if (f.own === "not_owned" && owned > 0) return false
+      if (f.own === "locked" && (o?.locked ?? 0) === 0) return false
+    }
+    if (f.badge !== "all" && !(badges.get(e.route_slug) ?? []).includes(f.badge)) return false
+    if (q) {
+      const hay = [e.name, e.player_name, e.team_name, e.set_name, e.subedition_name].filter(Boolean).join(" ")
+      if (!textIncludes(hay, q)) return false
+    }
+    return true
+  })
+}

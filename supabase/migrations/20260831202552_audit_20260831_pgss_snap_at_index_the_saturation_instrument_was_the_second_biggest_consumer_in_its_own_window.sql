@@ -1,0 +1,48 @@
+-- audit_20260831 — index public.audit_20260830_pgss_snap(at).
+--
+-- WHY: the saturation instrument is now one of the largest consumers in its own
+-- measurement window. Diff over 18:59:35Z -> 20:19:28Z (80 min), ranked on the
+-- pgss DIFF as item 15 requires, showed FOUR separate snapshot-diff queries in
+-- the top five by buffers, each 17,733,789 buffers / 71.5-78.0 s — ~53 M buffers
+-- and ~294 s of DB exec time spent measuring, inside a single 80-minute window.
+-- A fifth (this pass's) hit the 60 s MCP wall and never returned.
+--
+-- ROOT CAUSE — no index, plus a stats blind spot that is STRUCTURAL, not stale.
+-- The table carried ZERO indexes (31 MB, 92,540 rows). Every pass diffs the
+-- NEWEST `at` against an older one, and the newest slice is by construction not
+-- yet in the histogram (`n_mod_since_analyze` = 4,829 at read time, one full
+-- snapshot), so the planner estimates `rows=1` for it and picks a Nested Loop
+-- whose inner side is a 3,894-page Seq Scan re-run once per outer row.
+-- ⚠ ANALYZE IS NOT THE FIX. The table HAD been analyzed 40 min earlier
+-- (last_analyze 19:06:59Z, last_autoanalyze 18:21:01Z) and the misestimate still
+-- happened, because the offending value is always the one inserted after the last
+-- ANALYZE. The plan is therefore a coin flip on query shape: this pass's own
+-- top-15 diff got a Hash Join and cost 7,878 buffers / 3.0 s, while the
+-- queryid-lookup shape got the Nested Loop and timed out. The index removes the
+-- variance rather than the average.
+--
+-- MEASURED A/B, WARM vs WARM, same state, back to back, on TOTAL BUFFERS TOUCHED
+-- (a plan change cannot be faked by a warm cache, a wall-clock ratio can). The
+-- probe is the real diff query with the outer side capped at `LIMIT 500` so it
+-- survives the 60 s tool wall; it is faithful — 500 loops x 3,894 pages
+-- extrapolates to 18.8 M buffers for the full 4,829-row outer, against the
+-- 17,733,789 actually recorded four times in pgss.
+--     baseline (Nested Loop, 2,400,000 rows removed by join filter):
+--         1,950,714 buffers / 11,674 ms
+--     post-fix: recorded in the COMMENT ON INDEX applied immediately after this.
+--
+-- NOT CHANGED: no column, constraint, RLS policy or grant on this table. RLS
+-- stays ENABLED (it was turned on 08-30 after `rls_off_base_table` fired here and
+-- `has_table_privilege('anon', ...)` was measured true). The insert path pays one
+-- btree entry per row, ~4,829 rows per pass.
+--
+-- ⛔ This does NOT schedule the snapshot. `cron.job` still has no row for it and
+-- the instrument is still session-driven and still gap-prone (18 snapshots on
+-- record, gaps to 4 h). Naming and lifecycle remain Trevor's call — see item 15.
+--
+-- REVERT: DROP INDEX IF EXISTS public.idx_audit_20260830_pgss_snap_at;
+-- Nothing else to undo. The index is dropped with the table whenever its owner
+-- retires it.
+
+CREATE INDEX IF NOT EXISTS idx_audit_20260830_pgss_snap_at
+  ON public.audit_20260830_pgss_snap (at);

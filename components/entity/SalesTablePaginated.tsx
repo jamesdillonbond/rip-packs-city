@@ -1,0 +1,248 @@
+"use client"
+
+// components/entity/SalesTablePaginated.tsx
+// Phase 1B. Recent-sales table with "Load 30 more" client-side pagination.
+
+import { useMemo, useState } from "react"
+import { sectionEmptyCopy, sectionUnavailableCopy } from "@/lib/entity/section-empty-copy"
+import Link from "next/link"
+import { EM_DASH, fmtUsd, truncWallet } from "./_shared"
+import { displayAddress } from "@/lib/address"
+import RelTime from "./RelTime"
+import { BUYBACK_TITLE } from "@/lib/entity/buyback-copy"
+import { useResolveUsernames } from "@/lib/analytics/username-resolver"
+
+interface SaleRow {
+  serial_number: number | null
+  price_usd: number | null
+  marketplace: string | null
+  source: string | null
+  buyer_address: string | null
+  seller_address: string | null
+  nft_id: string | null
+  transaction_hash: string | null
+  sold_at: string | null
+  // Top Shot: which printing (Standard / Hexwave / ...) the sale belongs to,
+  // resolved per-NFT server-side. NULL on other collections -> column hidden.
+  parallel?: string | null
+  // 2026-10-25: bought by the collection's own buyback wallet. sales_market (the
+  // 30d count, last-sale age and FMV) excludes these, so the row says so.
+  buyback?: boolean | null
+}
+
+interface Props {
+  collectionUrlSlug: string
+  routeSlug: string
+  initial: SaleRow[]
+  initialOffset: number
+  pageSize: number
+  isAllDay: boolean
+  // P6b — server-resolved { lowercased addr → username } for the initial rows,
+  // so the first paint shows @names instead of flashing raw 0x… for ~2s while
+  // the client hook resolves. Optional; the hook still fills paginated rows.
+  initialNames?: Record<string, string>
+  /**
+   * `false` only when the server's sales read FAILED. Without it an empty
+   * `initial` is indistinguishable from a degraded one and this table publishes
+   * "No sales yet." out of a failed read — measured 221x in 24h on 2026-08-21.
+   */
+  serverOk?: boolean
+}
+
+const TH: React.CSSProperties = {
+  fontFamily: "var(--font-mono)",
+  fontSize: 9,
+  letterSpacing: "0.14em",
+  textTransform: "uppercase",
+  color: "var(--rpc-text-muted)",
+  textAlign: "left",
+  padding: "6px 10px",
+  borderBottom: "1px solid var(--rpc-border)",
+}
+
+const TD: React.CSSProperties = {
+  fontFamily: "var(--font-mono)",
+  fontSize: 11,
+  color: "var(--rpc-text-primary)",
+  padding: "8px 10px",
+  borderBottom: "1px solid var(--rpc-border-subtle)",
+  whiteSpace: "nowrap",
+}
+
+function WalletCell({ address, name, collectionUrlSlug }: { address: string | null; name?: string | null; collectionUrlSlug?: string | null }) {
+  if (!address) return <span style={{ color: "var(--rpc-text-muted)" }}>{EM_DASH}</span>
+  // ⛔ 2026-09-19 — the fold-and-prefix fabrication, and this copy feeds the
+  // HREF as well as the title. On a Candy MLB edition page a Solana mint was
+  // lowercased (it is CASE-SENSITIVE) and given a Flow prefix, so every
+  // buyer/seller link resolved to nothing and the analyzer rendered an EMPTY
+  // WALLET — "this collector holds nothing" rather than a broken link.
+  // ⚠ This is its OWN copy, not `WalletLink`'s: the first sweep scoped the grep
+  // to app/(collections)/** and missed components/entity/**. Hex output is
+  // byte-identical.
+  const lower = displayAddress(address) ?? address
+  // 2026-09-06 (Search Console): this linked to /profile/<address>, a URL that
+  // does NOT EXIST — /profile/<handle> resolves an RPC username only, so every
+  // buyer/seller/owner link on every sales table was a 404 for the reader and
+  // for Googlebot (GSC: 302 "Not found" + 865 "noindex" profile URLs, all
+  // /profile/0x…). The page a collector actually wants behind a wallet is the
+  // wallet analyzer, /<collection>/collection?wallet=<addr> — anon-public, and
+  // robots-disallowed via `?wallet=` so it costs no crawl budget. rel=nofollow
+  // says the same thing at the link. Without a collection to route to, the
+  // address is plain text with the full value in the title.
+  const label = name ? `@${name}` : truncWallet(address)
+  if (!collectionUrlSlug) {
+    return <span title={lower} style={{ color: "var(--rpc-text-primary)", }}>{label}</span>
+  }
+  const href = `/${collectionUrlSlug}/collection?wallet=${lower}`
+  return (
+    <Link
+      href={href}
+      rel="nofollow"
+      title={name ? `${name} · ${lower}` : lower}
+      style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}
+    >
+      {label}
+    </Link>
+  )
+}
+
+export default function SalesTablePaginated({ collectionUrlSlug, routeSlug, initial, initialOffset, pageSize, isAllDay, initialNames, serverOk = true }: Props) {
+  const [rows, setRows] = useState<SaleRow[]>(initial)
+  const [offset, setOffset] = useState<number>(initialOffset)
+  const [loading, setLoading] = useState(false)
+  const [exhausted, setExhausted] = useState(initial.length < pageSize)
+  const [pageError, setPageError] = useState(false)
+
+  const addrs = useMemo(() => {
+    const out: string[] = []
+    for (const r of rows) {
+      if (r.buyer_address) out.push(r.buyer_address)
+      if (r.seller_address) out.push(r.seller_address)
+    }
+    return out
+  }, [rows])
+  const names = useResolveUsernames(addrs)
+  // P6b — prefer the client-resolved name (covers paginated rows), fall back to
+  // the server-seeded map so first-page rows never flash a raw 0x….
+  const nameFor = (a: string | null) =>
+    a ? (names[a.toLowerCase()] ?? initialNames?.[a.toLowerCase()]) : undefined
+
+  async function loadMore() {
+    if (loading || exhausted) return
+    setLoading(true)
+    try {
+      const url = `/api/entity/edition?collection=${encodeURIComponent(collectionUrlSlug)}&slug=${encodeURIComponent(routeSlug)}&part=sales&offset=${offset}&limit=${pageSize}`
+      const r = await fetch(url, { cache: "no-store" })
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      const next: SaleRow[] = await r.json()
+      setPageError(false)
+      const safe = Array.isArray(next) ? next : []
+      setRows(prev => [...prev, ...safe])
+      setOffset(prev => prev + safe.length)
+      if (safe.length < pageSize) setExhausted(true)
+    } catch {
+      // ⚠ Do NOT `setExhausted(true)` here. That was the same lie one layer in:
+      // a failed page-N fetch rendered as "you have reached the end of the
+      // sales", so a network blip silently truncated the history. Surface it and
+      // leave Load More available so the reader can retry.
+      setPageError(true)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Parallel/printing attribution column (2026-07-07) — rendered only when the
+  // server resolved a printing for at least one row (Top Shot), so other
+  // collections keep the 5-column layout.
+  const hasParallelCol = rows.some(r => r.parallel != null && r.parallel !== "")
+
+  if (rows.length === 0) {
+    return (
+      <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>
+        {sectionEmptyCopy(serverOk, "Recent sales", "No sales yet.")}
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              <th scope="col" style={TH}>Serial</th>
+              {hasParallelCol && <th scope="col" style={TH}>Parallel</th>}
+              <th scope="col" style={TH}>Price</th>
+              <th scope="col" style={TH}>Buyer</th>
+              <th scope="col" style={TH}>Seller</th>
+              <th scope="col" style={TH}>When</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((s, i) => {
+              const serialCell = isAllDay && (s.serial_number === 0 || s.serial_number === null) ? (
+                <span style={{
+                  display: "inline-block",
+                  padding: "1px 6px",
+                  borderRadius: 3,
+                  background: "rgba(245,158,11,0.10)",
+                  border: "1px solid rgba(245,158,11,0.30)",
+                  color: "var(--rpc-warning-text)",
+                  fontSize: 9,
+                  letterSpacing: "0.10em",
+                  textTransform: "uppercase",
+                }}>unresolved</span>
+              ) : (s.serial_number != null && s.serial_number > 0 ? `#${s.serial_number}` : EM_DASH)
+              return (
+                <tr key={`${s.transaction_hash ?? "s"}-${s.serial_number ?? "n"}-${i}`}>
+                  <td style={TD}>{serialCell}</td>
+                  {hasParallelCol && (
+                    <td style={{ ...TD, color: s.parallel && s.parallel !== "Standard" ? "var(--rpc-red-text)" : "var(--rpc-text-secondary)" }}>
+                      {s.parallel ?? EM_DASH}
+                    </td>
+                  )}
+                  <td style={TD}>
+                    {fmtUsd(s.price_usd)}
+                    {s.buyback === true && (
+                      <span title={BUYBACK_TITLE} style={{
+                        display: "inline-block",
+                        marginLeft: 6,
+                        padding: "1px 6px",
+                        borderRadius: 3,
+                        border: "1px solid var(--rpc-border)",
+                        color: "var(--rpc-text-muted)",
+                        fontSize: 9,
+                        letterSpacing: "0.10em",
+                        textTransform: "uppercase",
+                        verticalAlign: "middle",
+                      }}>buyback</span>
+                    )}
+                  </td>
+                  <td style={TD}><WalletCell address={s.buyer_address} name={nameFor(s.buyer_address)} collectionUrlSlug={collectionUrlSlug} /></td>
+                  <td style={TD}><WalletCell address={s.seller_address} name={nameFor(s.seller_address)} collectionUrlSlug={collectionUrlSlug} /></td>
+                  <td style={{ ...TD, color: "var(--rpc-text-secondary)" }}><RelTime iso={s.sold_at} /></td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      {!exhausted && (
+        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+          <button type="button" className="rpc-btn-ghost" disabled={loading} onClick={loadMore}>
+            {loading ? "Loading…" : `Load ${pageSize} more`}
+          </button>
+          {/* ⚠ The reader has to be told the page did not load. Before this the
+              catch set `exhausted`, so a failed fetch silently rendered as
+              "that is all the sales there are" — the same failed-read-as-fact
+              defect as the empty state above, one interaction further in. */}
+          {pageError && !loading && (
+            <div role="status" style={{ color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
+              {sectionUnavailableCopy("More sales")}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}

@@ -1,0 +1,16 @@
+-- 2026-10-15 (Claude Code, Windows box, ~3:25 PM PT). RECORD-ONLY (precedent 20261015152521): the index
+-- was dropped live with DROP INDEX CONCURRENTLY from a one-statement pg_cron job (jobid 736, 22:24:00Z,
+-- succeeded in 0.1 s; role statement_timeout set to 900s for the run, RESET after; pg_db_role_setting
+-- read before/after = only the ALL-DATABASES search_path row). The statement below is a no-op against it.
+--
+-- WHY: 20261015151449 built idx_panini_serials_owner_lower_incl = this index's key (lower(owner)) and
+-- predicate (owner <> '') plus INCLUDE (owner), so it serves every query this one did; keeping both doubled
+-- the write cost of every owner change on panini_card_serials (3.4M rows).
+-- STATISTICAL GROUND: idx_scan 17,501 (old) / 26,023 (_incl) at 12:58 PM PT and identical at 3:20 PM PT;
+-- the old index's last scan was 8:03 AM PT, just before _incl was built — the planner moved off it then.
+-- STRUCTURAL GROUND: pg_get_indexdef of both, same key + predicate, _incl adds INCLUDE.
+--
+-- REVERT (one-statement pg_cron job or the SQL editor):
+--   CREATE INDEX CONCURRENTLY idx_panini_serials_owner_lower ON public.panini_card_serials
+--   USING btree (lower(owner)) WHERE (owner <> ''::text);
+DROP INDEX IF EXISTS public.idx_panini_serials_owner_lower;

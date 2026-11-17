@@ -1,0 +1,47 @@
+name: Allow-list Reconcile
+
+# ⚠ SCHEDULE MOVED TO VERCEL CRON on 2026-08-01 — now MANUAL-ONLY.
+# GitHub Actions delivered only ~9 of the 24 daily ticks this '14 * * * *'
+# schedule implies (~60% loss), and unlike the listing cache this pipeline was
+# not even on pipeline_cadence_watchlist, so the loss was invisible. The same
+# minute now lives in vercel.json (Vercel crons measure ~100% delivery on this
+# project) and the route learned to accept CRON_SECRET, which is the only
+# credential a Vercel cron can send.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Run allow-list reconciliation
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            "https://www.rippackscity.com/api/cron/allow-list-reconcile") || RESPONSE=""
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+
+          echo "HTTP Status: $HTTP_CODE"
+          echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
+
+          # ⚠ `bash -e` + a fallible command in an ASSIGNMENT aborts the step HERE.
+          # `jq` exits 5 on a non-JSON body and `2>/dev/null` hides the message, not
+          # the status — so a 502 carrying HTML killed this step BEFORE the
+          # `HTTP_CODE != 200` check below that exists to report it. The step failed
+          # with nothing naming why. (deep-audit R32, same shape as offer-fill.)
+          SKIPPED=$(echo "$BODY" | jq -r '.skipped_count' 2>/dev/null) || SKIPPED=""
+
+          if [ "$SKIPPED" != "0" ] && [ "$SKIPPED" != "null" ] && [ -n "$SKIPPED" ]; then
+            echo "::warning::$SKIPPED allow_list rows skipped during reconcile"
+          fi
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Reconcile returned HTTP $HTTP_CODE"
+            exit 1
+          fi

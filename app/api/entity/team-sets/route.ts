@@ -1,0 +1,41 @@
+// app/api/entity/team-sets/route.ts
+// Team Hub Phase 3 (C7). Sets featuring the team (counts + cheapest entry, plus
+// owned-per-set when a wallet is supplied), via get_team_sets. Mirrors
+// team-editions/route.ts.
+//   GET /api/entity/team-sets?collection=<urlSlug>&slug=<teamSlug>&wallet=<0x.. | base58 on a Solana collection>
+// Read-only; proxy.ts already opens GET /api/entity/* to anon.
+
+import { NextResponse } from "next/server"
+import { supabaseAdmin } from "@/lib/supabase"
+import { getCollectionByUrlSlug } from "@/lib/collection-slug"
+import { apiErrorResponse } from "@/lib/api-error"
+import { boundedRead } from "@/lib/api/bounded-read"
+import { getCollection } from "@/lib/collections"
+import { parseChecklistWallet } from "@/lib/entity/checklist-wallet"
+
+export const runtime = "nodejs"
+export const dynamic = "force-dynamic"
+
+export async function GET(req: Request) {
+  const url = new URL(req.url)
+  const collectionUrlSlug = url.searchParams.get("collection") ?? ""
+  const teamSlug = url.searchParams.get("slug") ?? ""
+  const coll = getCollectionByUrlSlug(collectionUrlSlug)
+  if (!coll) return NextResponse.json({ error: "unknown collection" }, { status: 404 })
+  if (!teamSlug) return NextResponse.json({ error: "missing slug" }, { status: 400 })
+
+  // Parsed for the collection's own chain, like the checklist routes: a Solana
+  // key passes VERBATIM, a wrong-chain key on a Solana collection is refused.
+  const parsed = parseChecklistWallet(url.searchParams.get("wallet"), getCollection(collectionUrlSlug)?.dbChain)
+  if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 })
+  const wallet = parsed.wallet
+
+  const supa = supabaseAdmin as unknown as { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }> }
+  const { data, error } = await boundedRead(supa.rpc("get_team_sets", {
+    p_collection_id: coll.id,
+    p_team_slug: teamSlug,
+    p_wallet: wallet,
+  }), "api/entity/team-sets/get_team_sets")
+  if (error) return apiErrorResponse(error, "api/entity/team-sets")
+  return NextResponse.json(data ?? [])
+}

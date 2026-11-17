@@ -1,0 +1,2680 @@
+import { NextResponse } from "next/server";
+import { SupabaseClient } from "@supabase/supabase-js";
+import { supabaseAdmin } from "@/lib/supabase";
+import { getOrSetCache, deleteCache } from "@/lib/cache";
+import { z } from "zod";
+import { computePinnacleSniperFeed } from "@/lib/sniper/pinnacle";
+// Per-serial weighting + display signal lives in a tested lib module.
+import { sniperSerialMultiplier as serialMultiplier } from "@/lib/sniper/serial-multiplier";
+import { applySerialFmvEstimates } from "@/lib/sniper/serial-estimate";
+import { TOPSHOT_SERIES_LABELS, topShotSeriesLabel } from "@/lib/sniper/series-label";
+import { feeNetDeal } from "@/lib/marketplace-fees";
+import { applyFmvStalenessPenalty, fmvCannotAnchorDiscount } from "@/lib/sniper/fmv-staleness";
+import { leagueForEdition } from "@/lib/league";
+import { loadTopshotFmvGuard, guardTopshotFmv } from "@/lib/fmv-display-guard";
+// Pure listing/badge helpers live in a tested lib module.
+import {
+  parseListingPrice,
+  extractBadgeSlugs,
+  BADGE_LABELS,
+  sortSniperDeals,
+  mergeDedupeByEditionKey,
+} from "@/lib/sniper/feed-helpers";
+// Per-request source-failure accumulator. Every deal-bearing read below used to
+// collapse to an empty list on failure, so the route answered 200 with
+// `deals: []` and the UI concluded "No deals match your filters."
+import { createSourceFailureSink, sniperFeedDegraded, type SourceFailureSink } from "@/lib/sniper/source-failures";
+import { decorateAutographs, filterAutographsOnly, isAutographCollection } from "@/lib/sniper/autograph-decorate";
+import { AUTOGRAPH_BADGE_SLUG, AUTOGRAPH_BADGE_TITLE, fetchTopShotAutographedKeys } from "@/lib/autographs";
+import { textIncludes } from "@/lib/filter-match";
+import { CATALOG_PLAYER_COLLECTIONS, resolveCatalogPlayer } from "@/lib/market/catalog-player";
+import { getCollectionUuid } from "@/lib/collections";
+import { readCappedByExternalId } from "@/lib/fmv-capped";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface RawListing {
+  id: string;
+  // Legacy Flowty/MomentListing fields
+  flowRetailPrice?: { value: string };
+  marketplacePrice?: number;
+  setPlay?: {
+    setID?: number;
+    playID?: number;
+    parallelID?: number;
+    ID?: string;
+    flowRetired?: boolean;
+    circulations?: { circulationCount?: number; forSaleByCollectors?: number; locked?: number };
+  };
+  serialNumber?: number;
+  setName?: string;
+  momentTier?: string;
+  momentTitle?: string;
+  playerName?: string;
+  teamAtMomentNbaId?: string;
+  /** editions.team_name for the listing's (set_id, play_id) — the Top Shot pool's team. */
+  teamName?: string;
+  tags?: Array<{ id?: string; title?: string }>;
+  assetPathPrefix?: string;
+  isLocked?: boolean;
+  storefrontListingID?: string;
+  sellerAddress?: string;
+  listingOrderID?: string;
+  setSeriesNumber?: number;
+  parallelSetPlay?: { setID: number; playID: number; parallelID?: number };
+  // New MarketplaceEdition fields
+  tier?: string;
+  lowAsk?: number;
+  parallelID?: number;
+  parallelName?: string;
+  editionListingCount?: number;
+  set?: {
+    id?: string;
+    flowId?: string;
+    flowSeriesNumber?: number;
+    flowName?: string;
+  };
+  play?: {
+    id?: string;
+    flowID?: string;
+    stats?: {
+      playerName?: string;
+      teamAtMoment?: string;
+      jerseyNumber?: string;
+      nbaSeason?: string;
+    };
+  };
+  circulationCount: number;
+  // Wall-clock listing timestamp from the upstream marketplace, when known.
+  listedAt?: string | null;
+}
+
+
+// Shared honesty predicate for the two RPC-backed legs (AllDay fallback +
+// Top Shot). A row whose fmv_usd is NULL/0/non-numeric has no fair value, and
+// `Number(x) || 0` would have shipped it as a literal $0.00 on the board with a
+// 0% discount. Drop the row; an em-dash would be honest, a $0.00 is not.
+// (2026-07-25)
+function hasUsableFmv(row: { fmv_usd?: number | string | null } | null | undefined): boolean {
+  const f = row?.fmv_usd == null ? NaN : Number(row.fmv_usd);
+  return Number.isFinite(f) && f > 0;
+}
+
+interface FmvRow {
+  editionKey: string;
+  // NULLABLE on purpose. fmv_snapshots.fmv_usd is nullable, and coercing an
+  // absent FMV to a number here is how the ask-proxy guard downstream came to
+  // invent a price for editions that have none (`null < 1` is true in JS).
+  // Callers MUST null-check before doing arithmetic.
+  fmv: number | null;
+  aspUsd: number | null;
+  floorPriceUsd: number | null;
+  confidence: string;
+  daysSinceSale: number | null;
+  // 2026-10-28: the age of the newest sale the FMV RESTS ON (fmv_snapshots.basis_days_since_sale). daysSinceSale is
+  // the edition's last market sale, which can be a recent special-serial sale the price excludes; the staleness
+  // penalty is about the price's evidence, so it reads this, falling back to daysSinceSale when unknown.
+  basisDaysSinceSale?: number | null;
+  salesCount30d: number | null;
+  packListingId: string | null;
+  packName: string | null;
+  // On-chain integer setID:playID — null when the editions row hasn't
+  // been backfilled yet. This is the only valid source for ownership
+  // matching against /api/owned-flow-ids.
+  setIdOnchain: number | null;
+  playIdOnchain: number | null;
+  // Canonical edition art (editions.thumbnail_url) — preferred over the
+  // constructed assets.nbatopshot.com URL, which 404s for editions the GQL
+  // listing didn't key to media. ~99.7% populated for canonical TS editions.
+  thumbnailUrl: string | null;
+}
+
+interface PackEvRow {
+  pack_listing_id: string;
+  pack_name: string;
+  pack_price: number;
+  ev: number;
+  ev_ratio: number;
+}
+
+export interface SniperDeal {
+  flowId: string;
+  momentId: string;
+  editionKey: string;
+  // Integer-format setID:playID key (e.g. "218:8238") used for matching
+  // against on-chain owned editions returned by /api/owned-flow-ids.
+  // Null when the deal cannot be resolved to a Supabase edition row.
+  intEditionKey: string | null;
+  playerName: string;
+  teamName: string;
+  setName: string;
+  seriesName: string;
+  tier: string;
+  parallel: string;
+  parallelId: number;
+  serial: number;
+  circulationCount: number;
+  askPrice: number;
+  baseFmv: number;
+  /** #215: an ASK_ONLY price capped at the edition's sales. null = not checked. Set once, on the returned page. */
+  fmvCapped?: boolean | "comparables" | "offers" | null;
+  adjustedFmv: number;
+  aspUsd: number | null;
+  daysSinceSale: number | null;
+  salesCount30d: number | null;
+  discount: number;
+  confidence: string;
+  confidenceSource: string;
+  hasBadge: boolean;
+  badgeSlugs: string[];
+  badgeLabels: string[];
+  badgePremiumPct: number;
+  /** Signed edition (editions.autographed_at, via lib/sniper/autograph-decorate). Top Shot + All Day only. */
+  isAutographed?: boolean;
+  serialMult: number;
+  isSpecialSerial: boolean;
+  isJersey: boolean;
+  serialSignal: string | null;
+  thumbnailUrl: string | null;
+  isLocked: boolean;
+  updatedAt: string | null;
+  packListingId: string | null;
+  packName: string | null;
+  packEv: number | null;
+  packEvRatio: number | null;
+  buyUrl: string;
+  listingResourceID: string | null;
+  listingOrderID: string | null;
+  storefrontAddress: string | null;
+  // Marketplace tag — collection-native fetches use the per-collection slug.
+  // UI consumes this for source labels.
+  source: "topshot" | "allday" | "golazos" | "pinnacle";
+  paymentToken: "DUC" | "FUT" | "FLOW" | "USDC_E";
+  offerAmount: number | null;
+  offerFmvPct: number | null;
+  dealRating: number;
+  isLowestAsk: boolean;
+  // Fee-net math. Every price on this deal is GROSS, but the marketplace takes
+  // its cut out of the SELLER's proceeds, so `discount` overstates what a flip
+  // is actually worth. `netIfResold` is what you'd keep selling at adjustedFmv;
+  // `netMarginPct` is that net against the ASK — the money at risk — not against
+  // FMV, which would flatter it the same way the gross discount does. Null when
+  // the collection has no VERIFIED published rate (never a guessed fee on a
+  // money surface). Additive ONLY: it does not touch discount, adjustedFmv or
+  // ranking. See lib/marketplace-fees.ts.
+  netOfFees?: {
+    feePct: number;
+    netIfResold: number;
+    netMarginUsd: number;
+    netMarginPct: number;
+    flipsNegative: boolean;
+  } | null;
+  // P1a: true when the FMV backing this deal is thin/uncertain or was clamped
+  // to the edition's 90d max sale. The UI renders a "thin data — FMV uncertain"
+  // caveat instead of headlining the discount. Top Shot only.
+  lowConfidenceFmv?: boolean;
+  // Phase 2 serial-adjusted FMV — the LiveToken-validated tier×circ #1/perfect
+  // premium estimate. Additive intelligence ONLY: it never feeds adjustedFmv,
+  // discount, or ranking. Non-null only for #1/perfect serials on a HIGH/MEDIUM
+  // base (the sniper's own serialMult/adjustedFmv are unchanged).
+  serialFmvEstimate?: {
+    estimate_usd: number;
+    multiplier: number;
+    serial_bucket: "first" | "perfect";
+    label: string;
+  } | null;
+}
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const TS_PROXY_SECRET = process.env.TS_PROXY_SECRET ?? "";
+
+const ALLDAY_PROXY_URL = process.env.ALLDAY_PROXY_URL ?? "";
+
+// When the TS GQL pool returns fewer than this many listings, augment the
+// feed with edition-level rows from get_topshot_sniper_deals (sourced from
+// badge_editions, which topshot-fmv-populate keeps fresh). Threshold sized
+// so a healthy GQL day (~150-220 listings) stays GQL-only, while an
+// anomalously-empty day (0-25 listings) gets the RPC backfill.
+const TS_GQL_SPARSE_THRESHOLD = 25;
+
+const ALLDAY_MARKETPLACE_QUERY = `
+  query searchMarketplaceEditions($after: String, $first: Int, $sortBy: MarketplaceEditionSortType) {
+    searchMarketplaceEditions(input: { after: $after, first: $first, sortBy: $sortBy, filters: {} }) {
+      totalCount
+      pageInfo { endCursor hasNextPage }
+      edges {
+        node {
+          editionFlowID
+          lowestPrice
+          averageSale
+          totalListings
+          numberOneSerial {
+            id flowID
+            momentNFTListing { id priceV2 { value } }
+          }
+          jerseySerial {
+            id flowID
+            momentNFTListing { id priceV2 { value } }
+          }
+          edition {
+            id flowID tier
+            maxMintSize currentMintSize numMomentsBurned
+            badges { id slug title }
+            play { metadata { playerFullName teamName } }
+            set { name }
+            series { name }
+            parallel
+          }
+        }
+      }
+    }
+  }
+`;
+
+
+const NBA_TEAMS: Record<string, string> = {
+  "1610612737": "ATL", "1610612738": "BOS", "1610612739": "CLE", "1610612740": "NOP",
+  "1610612741": "CHI", "1610612742": "DAL", "1610612743": "DEN", "1610612744": "GSW",
+  "1610612745": "HOU", "1610612746": "LAC", "1610612747": "LAL", "1610612748": "MIA",
+  "1610612749": "MIL", "1610612750": "MIN", "1610612751": "BKN", "1610612752": "NYK",
+  "1610612753": "ORL", "1610612754": "IND", "1610612755": "PHI", "1610612756": "PHX",
+  "1610612757": "POR", "1610612758": "SAC", "1610612759": "SAS", "1610612760": "OKC",
+  "1610612761": "TOR", "1610612762": "UTA", "1610612763": "MEM", "1610612764": "WAS",
+  "1610612765": "DET", "1610612766": "CHA",
+};
+
+// One table for every Top Shot path (lib/sniper/series-label.ts, 2026-10-25).
+const SERIES_NAMES: Record<number, string> = TOPSHOT_SERIES_LABELS;
+
+const PARALLEL_NAMES: Record<number, string> = {
+  0: "Base", 1: "Holo MMXX", 2: "Throwbacks", 3: "Camo", 4: "Metaverse",
+  5: "Cosmic", 6: "Ember", 7: "Infinite", 8: "Sapphire", 9: "Ruby",
+  10: "Gold", 11: "Super Rare", 12: "Platinum Ice", 13: "Black Ice",
+  14: "Bronze", 15: "Silver", 16: "Metallic Gold LE", 17: "Legendary", 18: "Unique",
+  19: "Unique", 20: "Unique",
+};
+
+// ─── Serial premium model ─────────────────────────────────────────────────────
+
+
+// Display-time FMV staleness penalty (applyFmvStalenessPenalty) now lives in
+// @/lib/sniper/fmv-staleness (imported above, unit-tested).
+
+// ─── Serial-adjusted FMV estimate (Phase 2) ────────────────────────────────────
+// Attaches the LiveToken-validated tier×circ #1/perfect premium to qualifying
+// Top Shot deals via the SECDEF serial_fmv_estimate() RPC (the single source of
+// truth — never recomputed here). Since 2026-10-25 it also PRICES those deals:
+// applySerialFmvEstimates (lib/sniper/serial-estimate.ts) replaces adjustedFmv, discount,
+// serialMult and the ranking key where it returned an estimate on a HIGH/MEDIUM base. The qualifying subset (#1 / perfect-mint on
+// a HIGH/MEDIUM base) is tiny per feed, so per-deal calls are cheap.
+// Serial-FMV is fitted per collection; both Top Shot and NFL All Day now have a
+// live model (compute_serial_fmv_multipliers/_power_model run + weekly-scheduled
+// per collection, 2026-07-10). Golazos (too thin) and Pinnacle (separate engine)
+// stay excluded here. Keyed off the deal's own source, not a hardcoded TS id.
+const SERIAL_FMV_COLLECTION_BY_SOURCE: Record<string, string> = {
+  topshot: "95f28a17-224a-4025-96ad-adf8a4c63bfd",
+  allday: "dee28451-5d62-409e-a1ad-a83f763ac070",
+};
+
+async function attachSerialFmvEstimates(supabase: SupabaseClient, deals: SniperDeal[]): Promise<void> {
+  const targets = deals.filter(
+    (d) =>
+      SERIAL_FMV_COLLECTION_BY_SOURCE[d.source] != null &&
+      d.baseFmv > 0 &&
+      (d.serial === 1 || (d.circulationCount > 0 && d.serial === d.circulationCount))
+  );
+  if (!targets.length) return;
+
+  // Resolve each target's edition UUID so the pooled multi-factor model can fire
+  // (it keys set/jersey effects off the edition). Matched on the canonical
+  // integer setID:playID (intEditionKey == editions.external_id for canonical
+  // Top Shot editions). Unresolved -> p_edition_id null -> the RPC falls through
+  // to the power-law/grid path (unchanged behaviour). AllDay has no pooled model,
+  // so it stays on power-law whether or not its edition resolves.
+  const editionIdByKey = new Map<string, string>(); // `${collectionId}|${intEditionKey}` -> edition uuid
+  const keysByCollection = new Map<string, Set<string>>();
+  for (const d of targets) {
+    const coll = SERIAL_FMV_COLLECTION_BY_SOURCE[d.source];
+    if (!coll || !d.intEditionKey) continue;
+    if (!keysByCollection.has(coll)) keysByCollection.set(coll, new Set());
+    keysByCollection.get(coll)!.add(d.intEditionKey);
+  }
+  await Promise.all(
+    Array.from(keysByCollection.entries()).map(async ([coll, keys]) => {
+      try {
+        const { data: eds } = await (supabase as any)
+          .from("editions")
+          .select("id, external_id")
+          .eq("collection_id", coll)
+          .in("external_id", Array.from(keys));
+        for (const row of (eds ?? []) as Array<{ id: string; external_id: string }>) {
+          editionIdByKey.set(`${coll}|${row.external_id}`, row.id);
+        }
+      } catch {
+        /* additive — unresolved editions just miss the pooled path */
+      }
+    })
+  );
+
+  await Promise.all(
+    targets.map(async (d) => {
+      try {
+        const coll = SERIAL_FMV_COLLECTION_BY_SOURCE[d.source];
+        const { data } = await (supabase as any).rpc("serial_fmv_estimate", {
+          p_collection_id: coll,
+          p_serial: d.serial,
+          p_circulation: d.circulationCount,
+          p_tier: d.tier,
+          p_edition_fmv: d.baseFmv,
+          p_confidence: d.confidence,
+          p_edition_id: d.intEditionKey
+            ? editionIdByKey.get(`${coll}|${d.intEditionKey}`) ?? null
+            : null,
+        });
+        if (data && typeof data === "object" && data.estimate_usd != null) {
+          d.serialFmvEstimate = {
+            estimate_usd: Number(data.estimate_usd),
+            multiplier: Number(data.multiplier),
+            serial_bucket: data.serial_bucket,
+            label: String(data.label ?? "estimated serial premium"),
+          };
+        }
+      } catch {
+        /* additive — a failed estimate just omits the badge */
+      }
+    })
+  );
+}
+
+// ─── Top Shot GQL ─────────────────────────────────────────────────────────────
+
+// ─── Top Shot listings from Supabase cache ────────────────────────────────────
+// ts_listings is populated every 5 min by GitHub Actions via Flowty API.
+// The marketplace/graphql endpoint is Cloudflare-protected from Vercel IPs,
+// so we use the Supabase table as the primary TS feed source.
+
+// ── Bounded database reads (2026-09-03) ──────────────────────────────────────
+//
+// Every deal-bearing read below used to be UNBOUNDED: no `withBoardBudget`, no
+// per-read timeout, nothing between a slow Postgres read and the route's 45 s
+// `maxDuration`. Measured (inbox 2026-09-03T0850Z): `get_topshot_sniper_deals`
+// 6,898 ms MEAN over 6,746 calls with a maximum pinned at the 30 s
+// `statement_timeout`, `get_allday_sniper_deals` 20,145 ms mean, and 3 × 504
+// `Task timed out after 45 seconds` in one day against 455 × 200. Warm the
+// function runs in ~110 ms — the latency is the instance's disk-IO saturation,
+// not the plan — so the fix is not in the function: it is that a read which
+// overruns must RESOLVE into the `if (error)` branch each site already has
+// (which notes the source on the sink and renders "COULDN'T LOAD THE FLOOR"),
+// instead of holding the whole response until Vercel kills it.
+//
+// ⚠ RESOLVES, never rejects. `withBoardBudget` rejects on overrun; the sites here
+// destructure `{ data, error }` and have no try/catch around the read, so a
+// rejection would escape the handler — the pack-detail page's `bounded()`
+// envelope is the same shape for the same reason.
+//
+// The budget is per READ, not per request: the Top Shot path chains
+// ts_listings → editions RPC → GQL (6 s, already bounded) → deals RPC →
+// enrichment, so 8 s a read keeps the worst case under the 45 s wall with room
+// for the serial estimates. Overridable for tests only, so a hanging read can be
+// proven to resolve without waiting eight real seconds.
+const SNIPER_DB_READ_TIMEOUT_MS = 8_000;
+function sniperReadTimeoutMs(): number {
+  const raw = Number(process.env.SNIPER_DB_READ_TIMEOUT_MS ?? "");
+  return Number.isFinite(raw) && raw > 0 ? raw : SNIPER_DB_READ_TIMEOUT_MS;
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ReadEnvelope = { data: any; error: { message: string } | null };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function boundedRead(p: PromiseLike<any>, label: string): Promise<ReadEnvelope> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      Promise.resolve(p) as Promise<ReadEnvelope>,
+      new Promise<ReadEnvelope>((resolve) => {
+        timer = setTimeout(
+          () => resolve({ data: null, error: { message: `[sniper-feed/${label}] read exceeded ${sniperReadTimeoutMs()}ms` } }),
+          sniperReadTimeoutMs(),
+        );
+      }),
+    ]);
+  } catch (e) {
+    // supabase-js RETURNS Postgrest errors but the transport can still throw;
+    // the sites below expect the envelope either way.
+    const message = e instanceof Error ? e.message : String(e);
+    return { data: null, error: { message } };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
+const TS_POOL_COLUMNS =
+  "listing_id, flow_id, set_id, play_id, parallel_id, serial_number, circulation_count, price_usd, player_name, set_name, moment_tier, series_number, is_locked, listed_at, ingested_at";
+const TS_POOL_LIMIT = 200;
+// PostgREST puts `.in()` values in the URL; 150 integer ids keeps it well short.
+const TS_PLAY_CHUNK = 150;
+
+type EditionTeamRow = { set_id_onchain: number | null; play_id_onchain: number | null; team_name: string | null };
+
+// Paged Top Shot editions read, ordered on the unique `id` so no page skips or
+// repeats a row. Returns an error rather than a partial list.
+async function readTopshotEditionTeams(
+  supabase: SupabaseClient,
+  scope: { teams: string[] } | { playIds: number[] },
+  label: string,
+): Promise<{ rows: EditionTeamRow[]; error: ReadEnvelope["error"] }> {
+  const PAGE = 1000;
+  const rows: EditionTeamRow[] = [];
+  for (let from = 0; ; from += PAGE) {
+    let q = (supabase as any)
+      .from("editions")
+      .select("set_id_onchain, play_id_onchain, team_name")
+      .eq("collection_id", TOPSHOT_COLLECTION_ID);
+    q = "teams" in scope ? q.in("team_name", scope.teams) : q.in("play_id_onchain", scope.playIds);
+    const { data, error } = await boundedRead(q.order("id").range(from, from + PAGE - 1), label);
+    if (error) return { rows: [], error };
+    const page = (data ?? []) as EditionTeamRow[];
+    rows.push(...page);
+    if (page.length < PAGE) return { rows, error: null };
+  }
+}
+
+// 2026-09-29 — a Team pick reads that team's listings from the WHOLE open pool.
+// Before, the pool was the newest 200 of ~27k open listings and the team filter
+// ran over those 200 alone: 915 open Blazers listings, and the Blazers pick
+// showed whichever few (usually none) happened to be in the latest sync batch.
+// The site's team slug (same expression as editions' idx_editions_collection_team_slug).
+function teamSlug(name: string): string {
+  return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-");
+}
+
+// Every label the picked team's FRANCHISE has carried (a team label is not a
+// franchise): "LA Clippers" also finds the 53 "Los Angeles Clippers" editions,
+// the Thunder the SuperSonics. Slugs come from team_franchise_slugs (the same
+// registry the team pages use); names from the registries that slug came from.
+// On any failed read the pick falls back to its own label and `error` is set, so
+// the caller reports a NARROWED board rather than presenting it as the franchise.
+// Per collection: the registries its team labels live in — league_team_abbr
+// (historic names) and teams_master via get_teams_for_league (current names).
+type TeamLeagues = { collectionId: string; abbr: readonly string[]; master: readonly string[] };
+const TOPSHOT_LEAGUES: TeamLeagues = { collectionId: TOPSHOT_COLLECTION_ID, abbr: ["nba", "wnba"], master: ["NBA", "WNBA"] };
+const ALLDAY_LEAGUES: TeamLeagues = { collectionId: "dee28451-5d62-409e-a1ad-a83f763ac070", abbr: ["nfl"], master: ["NFL"] };
+
+async function resolveFranchiseLabels(
+  supabase: SupabaseClient,
+  leagues: TeamLeagues,
+  team: string,
+): Promise<{ labels: string[]; error: ReadEnvelope["error"] }> {
+  const [slugs, ...names] = await Promise.all([
+    boundedRead((supabase as any).rpc("team_franchise_slugs", { p_collection_id: leagues.collectionId, p_team_slug: teamSlug(team) }), "team-franchise-slugs"),
+    ...leagues.abbr.map((lg) => boundedRead((supabase as any).rpc("league_team_abbr", { p_league: lg }), `team-labels-${lg}`)),
+    ...leagues.master.map((lg) => boundedRead((supabase as any).rpc("get_teams_for_league", { p_league: lg }), `team-labels-${lg}`)),
+  ]);
+  const failed = [slugs, ...names].find((r) => r.error);
+  if (failed) return { labels: [team], error: failed.error };
+  const wanted = new Set<string>(Array.isArray(slugs.data) ? (slugs.data as string[]) : []);
+  const labels = new Set<string>([team]);
+  for (const { data } of names) {
+    for (const r of (data ?? []) as Array<{ team_name?: string | null }>) {
+      if (r.team_name && wanted.has(teamSlug(r.team_name))) labels.add(r.team_name);
+    }
+  }
+  return { labels: Array.from(labels), error: null };
+}
+
+// What a narrowed board asks the listing pool for. Every narrowing filter is
+// pushed INTO the pool read — applied afterwards, it only ever searched the
+// newest 200 listings (the Legendary tab answered 0 deals with 699 open).
+type PoolScope = { player: string | null; tier: string | null; maxPrice: number };
+
+function scopePoolQuery(q: any, scope: PoolScope): any {
+  let out = q;
+  if (scope.player) out = out.ilike("player_name", ilikeContains(scope.player));
+  // ts_listings.moment_tier is COMMON | FANDOM | RARE | LEGENDARY | ULTIMATE.
+  if (scope.tier) out = out.eq("moment_tier", scope.tier.toUpperCase());
+  if (scope.maxPrice > 0) out = out.lte("price_usd", scope.maxPrice);
+  return out;
+}
+
+// A LIKE pattern matching `text` literally anywhere (its %, _ and \ escaped).
+function ilikeContains(text: string): string {
+  return `%${text.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+}
+
+async function readTeamPoolRows(
+  supabase: SupabaseClient,
+  labels: string[],
+  scope: PoolScope = { player: null, tier: null, maxPrice: 0 },
+): Promise<{ rows: any[]; teamByPair: Map<string, string>; error: ReadEnvelope["error"] }> {
+  const teamByPair = new Map<string, string>();
+  const eds = await readTopshotEditionTeams(supabase, { teams: labels }, "ts-team-editions");
+  if (eds.error) return { rows: [], teamByPair, error: eds.error };
+  const plays = new Set<number>();
+  for (const e of eds.rows) {
+    if (e.set_id_onchain == null || e.play_id_onchain == null || !e.team_name) continue;
+    teamByPair.set(`${e.set_id_onchain}:${e.play_id_onchain}`, e.team_name);
+    plays.add(e.play_id_onchain);
+  }
+  const playList = Array.from(plays);
+  const rows: any[] = [];
+  for (let i = 0; i < playList.length; i += TS_PLAY_CHUNK) {
+    // Each chunk's newest TS_POOL_LIMIT is a superset of its share of the
+    // overall newest TS_POOL_LIMIT, so the merge below loses nothing.
+    let q = (supabase as any)
+      .from("ts_listings")
+      .select(TS_POOL_COLUMNS)
+      .in("play_id", playList.slice(i, i + TS_PLAY_CHUNK));
+    q = scopePoolQuery(q, scope);
+    const { data, error } = await boundedRead(q
+      .order("ingested_at", { ascending: false })
+      .order("listing_id", { ascending: true })
+      .limit(TS_POOL_LIMIT), "ts_listings-team");
+    if (error) return { rows: [], teamByPair, error };
+    for (const r of data ?? []) {
+      if (teamByPair.has(`${r.set_id}:${r.play_id}`)) rows.push(r);
+    }
+  }
+  rows.sort((a, b) =>
+    String(b.ingested_at ?? "").localeCompare(String(a.ingested_at ?? "")) ||
+    String(a.listing_id).localeCompare(String(b.listing_id)));
+  return { rows: rows.slice(0, TS_POOL_LIMIT), teamByPair, error: null };
+}
+
+// The WNBA team labels (current names from teams_master, historic / all-star
+// labels from league_team_abbr) for the league filter's team-first rule (#219).
+// Enrichment: a failed read returns an EMPTY set, which leagueForEdition treats
+// as "no label knowledge" and falls back to the set rule.
+async function fetchWnbaTeamLabels(supabase: SupabaseClient): Promise<Set<string>> {
+  const [abbr, master] = await Promise.all([
+    boundedRead((supabase as any).rpc("league_team_abbr", { p_league: "wnba" }), "team-labels-wnba"),
+    boundedRead((supabase as any).rpc("get_teams_for_league", { p_league: "WNBA" }), "team-labels-WNBA"),
+  ]);
+  const labels = new Set<string>();
+  for (const { data, error } of [abbr, master]) {
+    if (error) {
+      console.error("[sniper-feed] WNBA team labels unavailable (league filter falls back to the set rule):", error.message);
+      return new Set();
+    }
+    for (const r of (data ?? []) as Array<{ team_name?: string | null }>) if (r.team_name) labels.add(r.team_name);
+  }
+  return labels;
+}
+
+// Every current team of the collection's leagues (Top Shot: NBA + WNBA; All
+// Day: NFL), so the Team dropdown can offer a team whose listings are not on the
+// default board (the client merges in board teams, which covers historic names).
+// Enrichment: a failed read returns [] and the dropdown falls back to board teams.
+async function fetchLeagueTeamOptions(supabase: SupabaseClient, leagues: TeamLeagues): Promise<string[]> {
+  const reads = await Promise.all(
+    leagues.master.map((league) =>
+      boundedRead((supabase as any).rpc("get_teams_for_league", { p_league: league }), `teams-${league}`)),
+  );
+  const names = new Set<string>();
+  for (const { data, error } of reads) {
+    if (error) {
+      console.error("[sniper-feed] team options unavailable:", error.message);
+      continue;
+    }
+    for (const r of (data ?? []) as Array<{ team_name?: string | null; has_moments?: boolean | null }>) {
+      if (r.team_name && r.has_moments !== false) names.add(r.team_name);
+    }
+  }
+  return Array.from(names).sort((a, b) => a.localeCompare(b));
+}
+
+async function fetchTopShotPool(
+  supabase: SupabaseClient,
+  sink: SourceFailureSink,
+  team: string = "all",
+  player: string = "",
+  tier: string = "all",
+  maxPrice: number = 0,
+): Promise<{ listings: RawListing[]; tsCount: number; teamLabels: Set<string> | null }> {
+  try {
+    const teamPick = team !== "all" ? team : null;
+    // 2026-09-29 — a PLAYER search reads that player's listings from the whole
+    // pool, like a team pick. It used to filter the finished board (the newest
+    // 200 listings) after the fact: "Lillard" answered 0 deals while 54 Lillard
+    // listings were open and 67 Lillard editions had a priced floor.
+    const playerPick = player.trim() || null;
+    const scope: PoolScope = { player: playerPick, tier: tier !== "all" ? tier : null, maxPrice };
+    const scoped = !!(scope.player || scope.tier || scope.maxPrice > 0);
+    // Team per (set, play). ts_listings carries no team, so every pool row had
+    // teamName "" and the Team dropdown only ever listed the RPC-augment rows'
+    // teams. On the default board this is enrichment, not deal-bearing: a failed
+    // read leaves the names blank.
+    let teamByPair = new Map<string, string>();
+    let teamLabels: Set<string> | null = null;
+    if (teamPick) {
+      const franchise = await resolveFranchiseLabels(supabase, TOPSHOT_LEAGUES, teamPick);
+      if (franchise.error) {
+        console.error("[sniper-feed] franchise labels unavailable:", franchise.error.message);
+        sink.note("team-franchise");
+      }
+      teamLabels = new Set(franchise.labels);
+    }
+    const { data, error } = teamPick
+      ? await readTeamPoolRows(supabase, Array.from(teamLabels ?? []), scope).then((r) => {
+        teamByPair = r.teamByPair;
+        return { data: r.rows, error: r.error };
+      })
+      : await boundedRead(scopePoolQuery((supabase as any).from("ts_listings").select(TS_POOL_COLUMNS), scope)
+        .order("ingested_at", { ascending: false })
+        .order("listing_id", { ascending: true })
+        .limit(TS_POOL_LIMIT), scoped ? "ts_listings-scoped" : "ts_listings");
+
+    if (error) {
+      console.error("[sniper-feed] ts_listings fetch error:", error.message);
+      sink.note("ts_listings");
+      return { listings: [], tsCount: 0, teamLabels };
+    }
+
+    const rows = data ?? [];
+
+    if (!teamPick && rows.length) {
+      const playIds = Array.from(new Set(rows.map((r: any) => r.play_id).filter((v: unknown) => v != null))) as number[];
+      for (let i = 0; i < playIds.length; i += TS_PLAY_CHUNK) {
+        const t = await readTopshotEditionTeams(supabase, { playIds: playIds.slice(i, i + TS_PLAY_CHUNK) }, "ts-pool-teams");
+        if (t.error) {
+          console.error("[sniper-feed] pool team names unavailable:", t.error.message);
+          teamByPair.clear();
+          break;
+        }
+        for (const e of t.rows) {
+          if (e.team_name) teamByPair.set(`${e.set_id_onchain}:${e.play_id_onchain}`, e.team_name);
+        }
+      }
+    }
+
+    // Resolve edition external_ids by matching player_name + set_name + series
+    // against the editions + players tables. This gives us the edition key for FMV lookup.
+    const editionKeyMap = await resolveEditionKeys(supabase, rows, sink);
+
+    const listings: RawListing[] = rows.map((r: {
+      listing_id: string;
+      flow_id: string;
+      set_id: number | null;
+      play_id: number | null;
+      parallel_id: number | null;
+      serial_number: number;
+      circulation_count: number;
+      price_usd: number;
+      player_name: string | null;
+      set_name: string | null;
+      moment_tier: string | null;
+      series_number: number | null;
+      is_locked: boolean | null;
+      listed_at: string | null;
+      ingested_at: string | null;
+    }) => {
+      // 2026-09-07: ts_listings is fed from the Atlas firehose again, and every row
+      // carries the on-chain set/play (and the parallel's subedition id) straight
+      // from the marketplace event. Those are the edition's IDENTITY - use them
+      // first, and fall back to the name-tuple lookup only for a row without them
+      // (the old GHA writer's shape). A name match can pick a same-named set in
+      // another series; an id cannot.
+      const editionKey = editionKeyMap.get(r.flow_id);
+      const parts = editionKey?.split(":") ?? [];
+      const setID = r.set_id != null ? String(r.set_id) : (parts[0] ?? "");
+      const playID = r.play_id != null ? String(r.play_id) : (parts[1] ?? "");
+      const parallelID = r.parallel_id != null && r.parallel_id > 0 ? r.parallel_id : 0;
+      return {
+        id: r.flow_id,
+        circulationCount: r.circulation_count ?? 0,
+        serialNumber: r.serial_number ?? 0,
+        marketplacePrice: r.price_usd,
+        playerName: r.player_name ?? undefined,
+        setName: r.set_name ?? undefined,
+        momentTier: r.moment_tier ?? "COMMON",
+        // 2026-11-03: undefined, NOT 0, when the row has no series. 0 is a real Top Shot series ("Series 1"),
+        // so `?? 0` defeated seriesName's own `sn != null` guard and labelled an unknown series "Series 1".
+        setSeriesNumber: r.series_number ?? undefined,
+        isLocked: r.is_locked ?? false,
+        listingOrderID: r.listing_id,
+        setPlay: { setID, playID, parallelID },
+        teamName: teamByPair.get(`${r.set_id}:${r.play_id}`) ?? undefined,
+        // Prefer the actual on-chain listing time; fall back to when our
+        // ingest job first saw the row. Either is dramatically better than
+        // "now", which would make every TS deal show as "Just now".
+        listedAt: r.listed_at ?? r.ingested_at ?? null,
+      };
+    });
+
+    console.log(`[sniper-feed] ts_listings: ${listings.length} rows, ${editionKeyMap.size} edition keys resolved`);
+    return { listings, tsCount: listings.length, teamLabels };
+  } catch (err) {
+    console.error("[sniper-feed] ts_listings exception:", err instanceof Error ? err.message : String(err));
+    sink.note("ts_listings");
+    return { listings: [], tsCount: 0, teamLabels: null };
+  }
+}
+
+// Resolve ts_listings rows to edition external_ids by matching player + set + series
+// against editions joined with players. Returns flowId → external_id map.
+async function resolveEditionKeys(
+  supabase: SupabaseClient,
+  rows: Array<{ flow_id: string; player_name: string | null; set_name: string | null; series_number: number | null }>,
+  sink: SourceFailureSink
+): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  if (!rows.length) return result;
+
+  // Build unique (player, set, series) tuples from ts_listings
+  const tuples = new Map<string, string[]>();
+  for (const r of rows) {
+    // 2026-11-03: a row with NO series cannot be name-matched. `series_number ?? 0` keyed it as Top Shot's
+    // real series 0 ("Series 1"), so a keyless listing could be priced against Series 1's same-named
+    // edition — a cross-series misattribution. Unresolved is honest: the row has no FMV basis and drops.
+    if (!r.player_name || !r.set_name || r.series_number == null) continue;
+    const key = `${r.player_name.toLowerCase()}|${r.set_name.toLowerCase()}|${r.series_number}`;
+    const existing = tuples.get(key);
+    if (existing) existing.push(r.flow_id);
+    else tuples.set(key, [r.flow_id]);
+  }
+
+  if (!tuples.size) return result;
+
+  const { data: editionRows, error } = await boundedRead(
+    (supabase as any).rpc("get_editions_for_sniper", { p_collection_id: null }),
+    "get_editions_for_sniper",
+  );
+
+  if (error) {
+    // Deal-bearing, not enrichment: without an edition key a listing has no
+    // FMV to price against, so it is dropped downstream.
+    console.error("[sniper-feed] edition RPC error:", error.message);
+    sink.note("topshot-edition-keys");
+    return result;
+  }
+  if (!editionRows?.length) {
+    console.log("[sniper-feed] edition key resolve: 0 editions in DB");
+    return result;
+  }
+
+  // Build lookup: "playerName|setName|series" → external_id from edition names
+  // Edition name format: "PlayerName — SetName"
+  const editionLookup = new Map<string, string>();
+  for (const e of editionRows) {
+    if (!e.name) continue;
+    const dashIdx = e.name.indexOf(" \u2014 ");
+    if (dashIdx < 0) continue;
+    const playerName = e.name.slice(0, dashIdx);
+    const setName = e.name.slice(dashIdx + 3);
+    const lookupKey = `${playerName.toLowerCase()}|${setName.toLowerCase()}|${e.series}`;
+    // Prefer keeping the first match (don't overwrite)
+    if (!editionLookup.has(lookupKey)) {
+      editionLookup.set(lookupKey, e.external_id);
+    }
+  }
+
+  // Match ts_listings tuples to editions
+  for (const [tupleKey, flowIds] of tuples) {
+    const extId = editionLookup.get(tupleKey);
+    if (extId) {
+      for (const flowId of flowIds) {
+        result.set(flowId, extId);
+      }
+    }
+  }
+
+  console.log(`[sniper-feed] edition key resolve: ${result.size}/${rows.length} listings matched`);
+  return result;
+}
+
+// ─── NFL All Day marketplace GQL ──────────────────────────────────────────────
+// searchMarketplaceEditions is the public marketplace feed. It can be fetched
+// directly from Vercel (no Cloudflare block) or via a Worker proxy when
+// ALLDAY_PROXY_URL is set. Returns edition-level floor data plus optional
+// numberOneSerial / jerseySerial hooks for the #1 and Jersey-Serial specials.
+
+interface AlldayGqlPage {
+  edges: unknown[];
+  endCursor: string | null;
+  hasNextPage: boolean;
+}
+
+async function fetchAlldayGqlPage(after: string | null, sink: SourceFailureSink): Promise<AlldayGqlPage> {
+  try {
+    const url = ALLDAY_PROXY_URL || "https://nflallday.com/consumer/graphql";
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (ALLDAY_PROXY_URL && TS_PROXY_SECRET) headers["X-Proxy-Secret"] = TS_PROXY_SECRET;
+    const res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        operationName: "searchMarketplaceEditions",
+        query: ALLDAY_MARKETPLACE_QUERY,
+        variables: { after, first: 100, sortBy: "LISTED_DATE_DESC" },
+      }),
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      console.error(`[sniper-feed] AD GQL FAILED: HTTP ${res.status} ${txt.slice(0, 200)}`);
+      sink.note("allday-marketplace");
+      return { edges: [], endCursor: null, hasNextPage: false };
+    }
+    const json = await res.json() as {
+      data?: { searchMarketplaceEditions?: {
+        edges?: unknown[];
+        pageInfo?: { endCursor?: string | null; hasNextPage?: boolean };
+      } };
+      errors?: Array<{ message?: string }>;
+    };
+    if (json.errors && json.errors.length) {
+      console.error(`[sniper-feed] AD GQL FAILED: ${json.errors[0].message ?? "unknown GQL error"}`);
+      sink.note("allday-marketplace");
+      return { edges: [], endCursor: null, hasNextPage: false };
+    }
+    const search = json.data?.searchMarketplaceEditions;
+    if (!search) {
+      console.error(`[sniper-feed] AD GQL FAILED: missing searchMarketplaceEditions`);
+      sink.note("allday-marketplace");
+      return { edges: [], endCursor: null, hasNextPage: false };
+    }
+    return {
+      edges: search.edges ?? [],
+      endCursor: search.pageInfo?.endCursor ?? null,
+      hasNextPage: !!search.pageInfo?.hasNextPage,
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`[sniper-feed] AD GQL FAILED: ${msg}`);
+    sink.note("allday-marketplace");
+    return { edges: [], endCursor: null, hasNextPage: false };
+  }
+}
+
+// ⚠ 2026-09-28: the All Day marketplace GraphQL leg is OFF unless
+// ALLDAY_MARKETPLACE_GQL=1. Both surfaces have been dead since June 2026:
+// `public-api.nflallday.com/graphql` answers an nginx 404 and
+// `nflallday.com/consumer/graphql` a WAF 403 (re-verified 08-08 from a
+// residential IP). With browser headers the consumer path is now a plain 404
+// page, so the endpoint is gone, not just walled. Every request still called
+// it, so the All Day board ALWAYS came from the get_allday_sniper_deals
+// fallback while reporting `sourcesFailed: ["allday-marketplace"]` and
+// `degraded: true`. A permanently degraded flag cannot tell a real outage from
+// this. Off, the RPC is the primary path and `degraded` reports real failures
+// only; set the env var to revive this leg if Dapper restores an endpoint.
+function alldayMarketplaceGqlEnabled(): boolean {
+  return process.env.ALLDAY_MARKETPLACE_GQL === "1";
+}
+
+async function fetchAlldayPool(sink: SourceFailureSink): Promise<Array<Record<string, unknown>>> {
+  if (!alldayMarketplaceGqlEnabled()) return [];
+  const page1 = await fetchAlldayGqlPage(null, sink);
+  let page2Edges: unknown[] = [];
+  if (page1.hasNextPage && page1.endCursor) {
+    const page2 = await fetchAlldayGqlPage(page1.endCursor, sink);
+    page2Edges = page2.edges;
+  }
+  const allEdges = [...page1.edges, ...page2Edges].slice(0, 200);
+  const nodes: Array<Record<string, unknown>> = [];
+  for (const edge of allEdges) {
+    const node = (edge as { node?: Record<string, unknown> } | null)?.node;
+    if (node && typeof node === "object") nodes.push(node);
+  }
+  console.log(`[sniper-feed] AD pool: page1=${page1.edges.length} page2=${page2Edges.length} total=${nodes.length}`);
+  return nodes;
+}
+
+// ─── Badge enrichment ────────────────────────────────────────────────────────
+// Fetches the entire badge_editions table and matches in JS.
+// Avoids .or() ilike filter syntax issues with apostrophes/accents in player names.
+// Safe because badge_editions is a small table (hundreds of rows).
+
+interface BadgeRow {
+  external_id: string | null;
+  player_name: string;
+  play_tags: Array<{ id: string; title: string }> | null;
+  set_play_tags: Array<{ id: string; title: string }> | null;
+}
+
+// Badge tags keyed by EDITION KEY (badge_editions.external_id, "setID:playID").
+//
+// 2026-08-01: this replaces fetchBadgesByPlayers(), which keyed the same rows
+// by player_name. Two things were wrong with that:
+//   1. It was the wrong GRAIN. Badges are a property of a PLAY, not a player -
+//      keying by player would mark every edition of that player as badged.
+//   2. Nothing consumed it. The returned map was awaited into `badgeMap` and
+//      then used only in a console.log, so the fetch was pure waste while
+//      `hasBadge` was computed from `l.tags` - a RawListing field that is
+//      declared but NEVER ASSIGNED anywhere in this file. `hasBadge` was
+//      therefore false for every Top Shot row, on both legs.
+//
+// external_id is unique in badge_editions and matches BOTH the ts_listings
+// edition key and the RPC's moment_id, so a single map serves both legs.
+//
+// 🚨 THIS WAS A BARE `.select()` AND THE TABLE OUTGREW THE CAP. The comment here
+// used to justify it as "safe because badge_editions is a small table (hundreds
+// of rows)" against a measured 4,981. Measured again 2026-09-02: **9,471 Top
+// Shot rows**, so PostgREST returned 1,000 of them — 10.6% — and `hasBadge` was
+// false for ~89% of the editions that actually carry a badge. There is no error
+// and no short read to notice: the fetch succeeds and the map is simply wrong.
+// A count in a comment is a DATED SAMPLE, never a bound. Paged with .range()
+// over a stable unique sort so the size stops mattering.
+//
+// ⚠ 2026-10-15: returns `complete`. A page error `break`s with the rows read so
+// far, and a partial map is indistinguishable from a complete one (CLAUDE.md #28).
+// That is harmless as DECORATION, but with "Badges only" on, the map is the
+// FILTER: every deal it does not name is dropped, so a failed page silently
+// shrank the board while it read as complete. The caller notes the read on the
+// source-failure sink in that mode only.
+async function fetchBadgesByEditionKey(
+  supabase: SupabaseClient
+): Promise<{ map: Map<string, Array<{ id: string; title: string }>>; complete: boolean }> {
+  // KEYSET, not OFFSET. external_id is unique within this collection (9,471 of
+  // 9,471 distinct, verified live), so a `> cursor` walk is both deterministic
+  // and O(n). Measured 2026-09-02 on the last page: keyset 1,935 buffers /
+  // 118 ms vs the equivalent .range() page at 7,698 / 187 ms — an OFFSET page
+  // re-walks every row before it, so a ten-page read pays that quadratically.
+  const rows: BadgeRow[] = [];
+  const PAGE = 1000;
+  const MAX_PAGES = 200; // safety bound; the table is ~15k rows across collections
+  let cursor = "";
+  let complete = false;
+  const readPage = () => {
+    let q = (supabase as any)
+      .from("badge_editions")
+      .select("external_id, player_name, play_tags, set_play_tags")
+      .eq("collection_id", "95f28a17-224a-4025-96ad-adf8a4c63bfd")
+      .order("external_id", { ascending: true })
+      .limit(PAGE);
+    if (cursor) q = q.gt("external_id", cursor);
+    return q;
+  };
+  for (let page = 0; page < MAX_PAGES; page++) {
+    let { data, error } = await readPage();
+    // One retry before giving up: the one live failure (2026-10-15, page 8,
+    // "Project not specified") was a single gateway answer that never recurred,
+    // and without a retry it left the map partial on every view of that build.
+    if (error) ({ data, error } = await readPage());
+
+    if (error) {
+      console.error(`[sniper-feed] badge_editions fetch error @page ${page}: ${error.message}`);
+      // Enrichment: a partial badge map costs chips and the badge premium, not
+      // the listing itself — so this is not noted on the source-failure sink.
+      break;
+    }
+    const rowsPage = (data ?? []) as BadgeRow[];
+    rows.push(...rowsPage);
+    if (rowsPage.length < PAGE) { complete = true; break; }
+    const next = rowsPage[rowsPage.length - 1]?.external_id;
+    // No cursor means no progress — stop rather than re-read page 0 forever.
+    if (!next || next === cursor) break;
+    cursor = next;
+  }
+  const result = new Map<string, Array<{ id: string; title: string }>>();
+  for (const row of rows) {
+    const key = (row.external_id ?? "").trim();
+    if (!key) continue;
+    const tags = [...(row.play_tags ?? []), ...(row.set_play_tags ?? [])].filter(
+      (t) => t && t.title
+    );
+    if (tags.length) result.set(key, tags);
+  }
+
+  console.log(
+    `[sniper-feed] badge_editions rows=${rows.length} badged_editions=${result.size} complete=${complete}`
+  );
+  return { map: result, complete };
+}
+
+// ─── Supabase FMV lookup ──────────────────────────────────────────────────────
+
+async function fetchFmvBatch(
+  supabase: SupabaseClient,
+  integerKeys: string[]
+): Promise<Map<string, FmvRow>> {
+  if (!integerKeys.length) return new Map();
+
+  // 2026-10-23: both reads below THROW on error. They used to drop it, and an
+  // empty map drops every Top Shot listing (`if (!fmvRow) continue`) — so a
+  // failed read emptied the leg while the feed reported `degraded: false`.
+  // The caller notes "topshot-fmv" on the throw.
+  const { data: editionRows, error: editionsErr } = await (supabase as any)
+    .from("editions")
+    .select("id, external_id, set_id_onchain, play_id_onchain, thumbnail_url")
+    .in("external_id", integerKeys);
+  if (editionsErr) throw new Error(`editions: ${editionsErr.message}`);
+
+  if (!editionRows?.length) {
+    console.log(`[sniper-feed] Supabase editions: 0 hits for ${integerKeys.length} integer keys`);
+    return new Map();
+  }
+
+  const extToUuid = new Map<string, string>();
+  const uuidToExt = new Map<string, string>();
+  const onchainByExt = new Map<string, { setIdOnchain: number | null; playIdOnchain: number | null }>();
+  const thumbnailByExt = new Map<string, string | null>();
+  for (const row of editionRows as {
+    id: string;
+    external_id: string;
+    set_id_onchain: number | null;
+    play_id_onchain: number | null;
+    thumbnail_url: string | null;
+  }[]) {
+    extToUuid.set(row.external_id, row.id);
+    uuidToExt.set(row.id, row.external_id);
+    onchainByExt.set(row.external_id, {
+      setIdOnchain: row.set_id_onchain,
+      playIdOnchain: row.play_id_onchain,
+    });
+    thumbnailByExt.set(row.external_id, row.thumbnail_url ?? null);
+  }
+
+  // Read the latest snapshot per edition (1 row/edition) NOT raw fmv_snapshots DESC —
+  // the latter overflows PostgREST's 1000-row cap (~35 history rows/edition) and
+  // silently drops COLD editions, whose FMV then resolves null and whose (possibly
+  // underpriced) listing is dropped from the deal board. Chunk the id list so a
+  // >500-edition feed can't cap either. (asp_usd is exposed as wap_usd.)
+  const fmvEditionIds = Array.from(extToUuid.values());
+  const fmvRows: any[] = [];
+  // 2026-09-20: `.from("fmv_current").in("edition_id", chunk)` → the per-id helper. The
+  // view's DISTINCT ON walks ~76 snapshots per edition before Unique keeps one (pgss: the
+  // 8-column shape of this read was 902 calls at a 6.0 s mean); the helper is one index
+  // probe per id and returns every column the view exposed (wap_usd = asp_usd). Same rows,
+  // set-difference 0 on 100 ids. 500 ids per call: an RPC result is capped at PostgREST's
+  // 1000 rows too, and one row per id must never sit exactly on the cap.
+  const FMV_CHUNK = 500;
+  for (let i = 0; i < fmvEditionIds.length; i += FMV_CHUNK) {
+    const { data, error } = await (supabase as any)
+      .rpc("get_editions_latest_fmv_wide_v2", { p_edition_ids: fmvEditionIds.slice(i, i + FMV_CHUNK) });
+    if (error) throw new Error(`get_editions_latest_fmv_wide_v2: ${error.message}`);
+    if (data?.length) fmvRows.push(...data);
+  }
+
+  if (!fmvRows.length) {
+    console.log(`[sniper-feed] Supabase FMV: 0 snapshots for ${editionRows.length} editions`);
+    return new Map();
+  }
+
+  const seen = new Set<string>();
+  const map = new Map<string, FmvRow>();
+  for (const row of fmvRows as {
+    edition_id: string; fmv_usd: number | null; wap_usd: number | null;
+    floor_price_usd: number | null; confidence: string;
+    days_since_sale: number | null; sales_count_30d: number | null;
+    basis_days_since_sale?: number | null;
+  }[]) {
+    if (seen.has(row.edition_id)) continue;
+    seen.add(row.edition_id);
+    const extKey = uuidToExt.get(row.edition_id);
+    if (!extKey) continue;
+    const onchain = onchainByExt.get(extKey);
+    map.set(extKey, {
+      editionKey: extKey,
+      // Keep NULL as null — never 0, never a substitute. An absent FMV must be
+      // distinguishable from a genuine $0 downstream so the row can be dropped
+      // instead of priced off something else.
+      fmv: row.fmv_usd == null || !Number.isFinite(Number(row.fmv_usd))
+        ? null
+        : Number(row.fmv_usd),
+      aspUsd: row.wap_usd,
+      floorPriceUsd: row.floor_price_usd,
+      confidence: (row.confidence ?? "low").toLowerCase(),
+      daysSinceSale: row.days_since_sale,
+      basisDaysSinceSale: row.basis_days_since_sale ?? null,
+      salesCount30d: row.sales_count_30d,
+      packListingId: null,
+      packName: null,
+      setIdOnchain: onchain?.setIdOnchain ?? null,
+      playIdOnchain: onchain?.playIdOnchain ?? null,
+      thumbnailUrl: thumbnailByExt.get(extKey) ?? null,
+    });
+  }
+
+  console.log(`[sniper-feed] Supabase FMV hits: ${map.size}/${integerKeys.length}`);
+  return map;
+}
+
+async function fetchPackEvBatch(
+  supabase: SupabaseClient,
+  packIds: string[]
+): Promise<Map<string, PackEvRow>> {
+  if (!packIds.length) return new Map();
+  const { data } = await (supabase as any)
+    .from("pack_ev_cache")
+    .select("pack_listing_id, pack_name, pack_price, ev, ev_ratio")
+    .in("pack_listing_id", packIds);
+  const map = new Map<string, PackEvRow>();
+  for (const row of (data ?? []) as PackEvRow[]) map.set(row.pack_listing_id, row);
+  return map;
+}
+
+// ─── Jersey number lookup ─────────────────────────────────────────────────────
+
+async function fetchJerseyNumbers(
+  supabase: SupabaseClient,
+  playerNames: string[]
+): Promise<Map<string, number>> {
+  if (!playerNames.length) return new Map();
+
+  // ⚠ Also over the cap. Measured 2026-09-02: 1,317 Top Shot players carry a
+  // jersey number, so a bare .select() returned 1,000 and the last ~24% of
+  // players never had their jersey-serial listings flagged. Same silent shape
+  // as badge_editions above — a successful read of the wrong rows.
+  // ⚠ THE PAGING FIX'S OWN FAILURE MODE RECREATED THE BUG IT FIXED (2026-09-12).
+  // The loop below was added because a bare `.select()` returned 1,000 of 1,317
+  // and silently dropped the last ~24 % — "a successful read of the wrong rows",
+  // per the comment above. But `if (error) break` reaches the SAME outcome by a
+  // different route: a partial map that no caller can tell from a complete one.
+  // CLAUDE.md's rule for this class is explicit — "throw, or carry
+  // `complete:false`" — so the page failure is now RECORDED rather than hidden.
+  const rows: Array<{ name: string; jersey_number: number }> = [];
+  const PAGE = 1000;
+  const MAX_ROWS = 100000;
+  let complete = false;
+  for (let from = 0; from < MAX_ROWS; from += PAGE) {
+    const { data, error } = await (supabase as any)
+      .from("players")
+      .select("name, jersey_number")
+      .eq("collection", "nba_top_shot")
+      .not("jersey_number", "is", null)
+      // players.id is the unique key; name is not guaranteed unique, so order
+      // on id to keep the page boundary deterministic.
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) {
+      console.warn(`[sniper-feed] jersey_numbers INCOMPLETE at offset ${from}: ${error.message}`);
+      break;
+    }
+    const page = (data ?? []) as Array<{ name: string; jersey_number: number }>;
+    rows.push(...page);
+    if (page.length < PAGE) { complete = true; break; }
+  }
+  // ⚠ An empty map is reported as incomplete rather than as "no player has a
+  // jersey number" — that is the three-states rule: read failed, read ok +
+  // genuinely empty, and read ok + partial are DIFFERENT answers.
+  if (!rows.length) {
+    if (!complete) console.warn("[sniper-feed] jersey_numbers: 0 rows AND incomplete — treating as unknown, not as empty");
+    return new Map();
+  }
+
+  const map = new Map<string, number>();
+  for (const row of rows) {
+    map.set(row.name.toLowerCase().trim(), row.jersey_number);
+  }
+  console.log(`[sniper-feed] jersey_numbers: ${map.size} players loaded`);
+  return map;
+}
+
+// Retired-moment nft_ids (excluded from the feed). Retirement is per-MOMENT
+// (a retired edition retires all of its moments), so this set can run to many
+// thousands of rows once retirements land — well past PostgREST's 1,000-row cap.
+// A bare `.select()` would silently return only the first 1,000, leaking the
+// rest back into the feed, so page with `.range()` over a stable sort until a
+// short page signals the end. (Today `moments.retired` has 0 true rows, so this
+// returns an empty set — the fix is purely defensive against that changing.)
+async function fetchRetiredMomentIds(supabase: SupabaseClient): Promise<Set<string>> {
+  // 🚨 THIS SET IS AN EXCLUSION, SO A PARTIAL READ FAILS *OPEN* (2026-09-12).
+  // Every id missing from it is a retired moment that LEAKS BACK INTO THE FEED —
+  // precisely the outcome this function's paging was written to prevent. A
+  // partial exclusion set is therefore not a smaller answer, it is a WRONGER
+  // one, and it must not be silently indistinguishable from a complete set.
+  // ⚠ Blast radius today is ZERO and is stated rather than assumed: `moments`
+  // holds 845,793 rows and **0** with `retired = true` (measured 2026-09-12), so
+  // this loop returns an empty set on its first page either way. The fix is
+  // shape, not a save — but the shape is what bites the day retirements land.
+  const ids = new Set<string>();
+  const PAGE = 1000;
+  const MAX_ROWS = 500000; // safety bound (moments has ~572k rows total)
+  let complete = false;
+  for (let from = 0; from < MAX_ROWS; from += PAGE) {
+    const { data, error } = await (supabase as any)
+      .from("moments")
+      .select("nft_id")
+      .eq("retired", true)
+      .order("nft_id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) {
+      console.warn(`[sniper-feed] retired-moment exclusion INCOMPLETE at offset ${from}: ${error.message} — retired moments may leak into the feed`);
+      break;
+    }
+    const rows = (data ?? []) as Array<{ nft_id: string | null }>;
+    for (const r of rows) if (r.nft_id != null) ids.add(String(r.nft_id));
+    if (rows.length < PAGE) { complete = true; break; }
+  }
+  if (!complete) console.warn(`[sniper-feed] retired-moment exclusion returning ${ids.size} ids from an INCOMPLETE walk`);
+  return ids;
+}
+
+// ─── Input validation ─────────────────────────────────────────────────────────
+
+const feedParamsSchema = z.object({
+  minDiscount: z.coerce.number().min(0).max(100).default(0),
+  rarity: z.string().default("all"),
+  tier: z.string().default("all"), // alias for rarity — UI sends "tier"
+  player: z.string().default(""), // post-fetch filter on playerName
+  team: z.string().default("all"),
+  badgeOnly: z.enum(["true", "false"]).default("false"),
+  // Signed editions only (NBA Top Shot + NFL All Day; editions.autographed_at).
+  autographOnly: z.enum(["true", "false"]).default("false"),
+  serial: z.string().default("all"),
+  maxPrice: z.coerce.number().min(0).default(0),
+  limit: z.coerce.number().min(1).max(500).default(0), // 0 = no limit
+  sortBy: z.enum(["discount", "price_asc", "price_desc", "fmv_desc", "serial_asc", "listed_desc"]).default("listed_desc"),
+  flowWalletOnly: z.enum(["true", "false"]).default("false"),
+  editionKey: z.string().default(""), // edition depth filter (e.g. "26:504")
+  collection: z.string().default("nba-top-shot"), // collection slug — nba-top-shot or nfl-all-day
+  // Phase 2 alias: callers may pass collectionId instead of collection.
+  // Handled below by overriding `collection` when collectionId is set.
+  collectionId: z.string().optional(),
+  league: z.enum(["NBA", "WNBA"]).optional(),
+});
+
+// ─── Route handler ────────────────────────────────────────────────────────────
+
+export const dynamic = "force-dynamic";
+export const maxDuration = 45;
+
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const raw = Object.fromEntries(url.searchParams);
+  const params = feedParamsSchema.parse(raw);
+  // "tier" is a UI-friendly alias for "rarity"
+  const effectiveRarity = params.tier !== "all" ? params.tier : params.rarity;
+  const { minDiscount, team, sortBy, maxPrice, player, limit } = params;
+  const badgeOnly = params.badgeOnly === "true";
+  const autographOnly = params.autographOnly === "true";
+  const serialFilter = params.serial;
+
+  // Phase 2: collectionId takes precedence over legacy `collection` param.
+  // Phase 5: also accept long-form (underscored) slugs as aliases for the
+  // hyphenated form the rest of the app uses, so callers can pass either
+  // `nba-top-shot` or `nba_top_shot` etc.
+  const COLLECTION_ALIASES: Record<string, string> = {
+    nba_top_shot: "nba-top-shot",
+    nfl_all_day: "nfl-all-day",
+    laliga_golazos: "laliga-golazos",
+    disney_pinnacle: "disney-pinnacle",
+    ufc_strike: "ufc",
+    pinnacle: "disney-pinnacle",
+  };
+  const rawCollection = params.collectionId ?? params.collection;
+  const collection = COLLECTION_ALIASES[rawCollection] ?? rawCollection;
+
+  // Cache key based on all query params — same params = same response for 25s.
+  // The player is a parameter of each run: an accent-only miss re-runs with the
+  // catalog spelling (#207, below), and that run caches under its own key.
+  const cacheKeyFor = (p: string) => `sniper-feed:${JSON.stringify({ ...params, player: p })}`;
+  const CACHE_TTL = 25_000;
+
+  function buildComputeFn(player: string): () => Promise<unknown> {
+    if (collection === "nfl-all-day") {
+      return () => computeAllDaySniperFeed({ minDiscount, rarity: effectiveRarity, team, player, maxPrice, sortBy });
+    }
+    if (collection === "disney-pinnacle") {
+      // Pinnacle has its own data source (pinnacle_fmv_snapshots + direct
+      // Pinnacle listings) and its own SniperDeal mapping shape — see
+      // lib/sniper/pinnacle.ts.
+      return async () => {
+        const pin = await computePinnacleSniperFeed({
+          variantFilter: effectiveRarity,
+          maxPrice,
+          minDiscount,
+          playerFilter: player,
+          sortBy,
+        });
+        return {
+          count: pin.count,
+          tsCount: 0,
+          flowtyCount: pin.flowtyCount,
+          lastRefreshed: pin.lastRefreshed,
+          deals: pin.deals as unknown as SniperDeal[],
+          // lib/sniper/pinnacle.ts throws on a failed read rather than
+          // returning an empty board, so an empty result here IS a looked-and-
+          // found-nothing. Nothing to note.
+          sourcesFailed: [] as string[],
+        };
+      };
+    }
+    if (collection !== "nba-top-shot") {
+      // Other collections (golazos, ufc) — Flowty cache retired May 2026; no
+      // live source plumbed yet. Return empty rather than read stale rows.
+      return async () => ({
+        count: 0,
+        tsCount: 0,
+        flowtyCount: 0,
+        lastRefreshed: new Date().toISOString(),
+        deals: [] as SniperDeal[],
+        // A deliberate no-source state, not a failed read: nothing is plumbed.
+        sourcesFailed: [] as string[],
+      });
+    }
+    return () => computeSniperFeed({ minDiscount, rarity: effectiveRarity, team, player, badgeOnly, serialFilter, maxPrice, sortBy, league: params.league });
+  }
+
+  type FeedResult = { count: number; tsCount: number; flowtyCount: number; lastRefreshed: string; deals: SniperDeal[]; cached?: boolean; sourcesFailed?: string[]; teamOptions?: string[]; autographsRead?: boolean };
+
+  // Signed editions are marked inside the CACHED build, so every view of a board
+  // carries the same chips; the read is one bounded page (~240 rows).
+  function buildComputeWithAutographs(player: string): () => Promise<unknown> {
+    const compute = buildComputeFn(player);
+    if (!isAutographCollection(collection)) return compute;
+    const c = collection;
+    return async () => {
+      const built = (await compute()) as FeedResult;
+      if (!built || !Array.isArray(built.deals)) return built;
+      const { deals, autographsRead } = await decorateAutographs(supabaseAdmin as any, c, built.deals);
+      return { ...built, deals, autographsRead };
+    };
+  }
+
+  function applyOuterFilters(deals: SniperDeal[], player: string): SniperDeal[] {
+    let out = deals;
+    if (params.editionKey) {
+      const ek = params.editionKey;
+      out = out.filter((d) => d.editionKey === ek || d.intEditionKey === ek);
+    }
+    if (player && player.trim()) {
+      const lower = player.trim().toLowerCase();
+      out = out.filter((d) => textIncludes(d.playerName, lower));
+    }
+    if (params.flowWalletOnly === "true") {
+      out = out.filter((d) => d.paymentToken === "FLOW" || d.paymentToken === "USDC_E");
+    }
+    if (autographOnly) out = filterAutographsOnly(out);
+    return out;
+  }
+
+  async function runFeed(player: string) {
+    const key = cacheKeyFor(player);
+    const result = (await getOrSetCache(key, CACHE_TTL, buildComputeWithAutographs(player))) as FeedResult;
+    // With "Autographs only" the autograph read IS the filter: a failed read must
+    // degrade the board, never render "no signed Moments listed".
+    const sourcesFailed = [
+      ...(result.sourcesFailed ?? []),
+      ...(autographOnly && isAutographCollection(collection) && result.autographsRead !== true ? ["autographs"] : []),
+    ];
+    // ⚠ Do not let a degraded build sit in the warm-lambda cache for the full
+    // TTL — the next request would inherit this request's outage. The response
+    // stays honest either way; this just shortens how long it lasts.
+    if (sniperFeedDegraded(sourcesFailed)) deleteCache(key);
+    return { result, sourcesFailed, filteredDeals: applyOuterFilters(result.deals, player) };
+  }
+
+  try {
+    let run = await runFeed(player);
+    // #207 (2026-10-22): the Top Shot pool, the All Day RPC and the Golazos RPC
+    // match the player with an accent-SENSITIVE ilike — live, "doncic" answered
+    // 0 deals and "Dončić" 96. A search that matched NOTHING (and did not fail) is
+    // retried once with the single catalog name it matches accent-blind, and the
+    // swap is REPORTED (playerResolved), never silent. Anything else is untouched.
+    let playerResolved: { from: string; to: string } | null = null;
+    const typed = player.trim();
+    const collectionUuid = getCollectionUuid(collection);
+    if (typed && run.filteredDeals.length === 0 && !sniperFeedDegraded(run.sourcesFailed)
+      && collectionUuid && CATALOG_PLAYER_COLLECTIONS.has(collectionUuid)) {
+      const to = await resolveCatalogPlayer(collectionUuid, typed, "api/sniper-feed");
+      if (to) {
+        const again = await runFeed(to);
+        if (!sniperFeedDegraded(again.sourcesFailed) && again.filteredDeals.length > 0) {
+          run = again;
+          playerResolved = { from: typed, to };
+        }
+      }
+    }
+    const { result, sourcesFailed, filteredDeals } = run;
+
+    // Final shaping uses the filtered set.
+    let finalDeals = filteredDeals;
+    if (limit > 0 && finalDeals.length > limit) {
+      finalDeals = finalDeals.slice(0, limit);
+    }
+
+    // #215: flag the capped ASK_ONLY prices on the RETURNED page only (one pass,
+    // every collection path), for the deal modal's "capped at sales" marker.
+    if (collectionUuid) {
+      const capped = await readCappedByExternalId(
+        collectionUuid,
+        finalDeals.map((d) => ({ key: d.editionKey, fmv: d.baseFmv, confidence: d.confidence })),
+      );
+      finalDeals = finalDeals.map((d) => ({ ...d, fmvCapped: capped.get(d.editionKey) ?? null }));
+    }
+
+    // Fee-net enrichment. Applied HERE — once, after slicing — rather than in
+    // each per-collection compute path, so every source (topshot / allday /
+    // golazos / pinnacle) gets identical treatment and the cached compute
+    // results stay fee-agnostic. Resale basis is adjustedFmv (the serial-aware
+    // figure), because the thing being valued is this specific serial.
+    finalDeals = finalDeals.map((d) => {
+      const net = feeNetDeal(d.askPrice, d.adjustedFmv, collection);
+      return net
+        ? {
+            ...d,
+            netOfFees: {
+              feePct: net.fee.pct,
+              netIfResold: net.netIfResold,
+              netMarginUsd: net.netMarginUsd,
+              netMarginPct: net.netMarginPct,
+              flipsNegative: net.flipsNegative,
+            },
+          }
+        : { ...d, netOfFees: null };
+    });
+
+    return NextResponse.json(
+      {
+        ...result,
+        deals: finalDeals,
+        count: finalDeals.length,
+        marketplaceAvailability: {
+          topshot: true,
+          flowty: false,
+        },
+        // Names the deal-bearing reads that failed on this build. Empty means
+        // every source answered — so an empty `deals` is a real "nothing
+        // matched", which is the only case the UI may say so in.
+        sourcesFailed,
+        degraded: sniperFeedDegraded(sourcesFailed),
+        teamApplied: team !== "all" && (collection === "nba-top-shot" || collection === "nfl-all-day") ? team : null,
+        ...(playerResolved ? { playerResolved } : {}),
+      },
+      {
+        // A degraded feed is evicted from the lambda cache above; it must not be
+        // held at the CDN either, or every visitor inherits this request's outage
+        // for s-maxage + stale-while-revalidate (2026-10-09).
+        headers: {
+          "Cache-Control": sniperFeedDegraded(sourcesFailed)
+            ? "no-store"
+            : "public, max-age=0, s-maxage=90, stale-while-revalidate=60",
+        },
+      }
+    );
+  } catch (err: any) {
+    console.error("[sniper-feed] unhandled error:", err?.message);
+    return NextResponse.json(
+      {
+        error: "Feed unavailable",
+        deals: [],
+        count: 0,
+        marketplaceAvailability: { topshot: true, flowty: false },
+        sourcesFailed: ["sniper-feed"],
+        degraded: true,
+      },
+      { status: 500 }
+    );
+  }
+}
+
+const ALLDAY_THUMBNAIL_BASE = "https://media.nflallday.com/editions/";
+
+// ── All Day sniper feed via live marketplace GQL + fmv_snapshots join ─────
+// Pulls the public searchMarketplaceEditions feed (two pages, up to 200 edges),
+// cross-references an in-memory FMV map built from fmv_snapshots for the
+// AllDay collection, and emits a SniperDeal per edition plus specials for
+// #1 and Jersey Serial listings when present. Falls back to the RPC-based
+// path when the live feed returns zero edges (proxy down, CF block, etc.).
+async function computeAllDaySniperFeed(opts: {
+  minDiscount: number; rarity: string; team: string; maxPrice: number; sortBy: string;
+  /** substring of the player name, pushed into the RPC (also re-applied to the board) */
+  player?: string;
+}) {
+  const sink = createSourceFailureSink();
+  const { minDiscount, rarity, team, maxPrice } = opts;
+  const supabase = supabaseAdmin;
+  const ALLDAY_COLLECTION_ID = ALLDAY_LEAGUES.collectionId;
+
+  // A team pick covers every label its franchise has carried (Washington
+  // Commanders + Football Team + Redskins; Raiders in Oakland/LA/Las Vegas), and
+  // the dropdown offers every NFL team. Both as on Top Shot; see resolveFranchiseLabels.
+  const [franchise, teamOptions] = await Promise.all([
+    team !== "all" ? resolveFranchiseLabels(supabase, ALLDAY_LEAGUES, team) : Promise.resolve(null),
+    fetchLeagueTeamOptions(supabase, ALLDAY_LEAGUES).catch(() => [] as string[]),
+  ]);
+  if (franchise?.error) {
+    console.error("[sniper-feed] AD franchise labels unavailable:", franchise.error.message);
+    sink.note("team-franchise");
+  }
+  const teamLabels = franchise ? new Set(franchise.labels) : null;
+
+  // 1. Build FMV map keyed on external_id (integer edition flow ID as string).
+  //
+  //    Reads `fmv_current`, NOT raw fmv_snapshots. The old read was
+  //    `.eq(collection_id).order(computed_at DESC)` with no bound, justified by a
+  //    comment that lived here claiming the AD snapshot table held only ~341
+  //    rows. It does not: 306,895 AD snapshot rows over 6,190 editions.
+  //    PostgREST caps every read at 1000 rows, so that query only ever saw the
+  //    newest ~1000 SNAPSHOTS — a few hundred distinct editions. The "~341"
+  //    figure in the comment was the truncation artifact, not the table size.
+  //    This is the exact class __tests__/invariants-postgrest-cap.test.ts exists
+  //    to prevent; it slipped through only because that guard's allowlist is
+  //    per-FILE and this route was listed for its OTHER, genuinely .in()-bounded
+  //    Top Shot read. (2026-07-25)
+  //
+  //    It matters more now than it did: since a listing with no FMV is excluded
+  //    rather than priced off its own ask, a truncated map would silently drop
+  //    most of the board instead of merely mislabelling it.
+  //
+  //    Both the view and `get_editions_latest_fmv()` return the latest snapshot,
+  //    <=1 row per edition, so no JS dedupe is needed. The ~1,075 editions whose
+  //    newest snapshot is NULL land in the map as `fmv: null`, which buildDeal
+  //    drops — so a map MISS and an unusable FMV stay the same condition.
+  //
+  // 🚨 THE READ ORDER IS LOAD-BEARING, AND GETTING IT WRONG COST 45-SECOND
+  // TIMEOUTS IN PRODUCTION. This used to page `fmv_current` filtered by
+  // `collection_id` and THEN resolve external_ids. But **a qual on a DISTINCT ON
+  // view's KEY pushes down; a qual on any other column does not** — and
+  // `fmv_current` is `DISTINCT ON (edition_id)`, so `collection_id` is "any other
+  // column". Measured live 2026-09-02, ONE page of that read:
+  //
+  //     Unique over 274,519 snapshot rows → 5,248 editions → filter → 1,000
+  //     shared hit=233,394 read=29,998   Execution Time: 19,529 ms
+  //
+  // …times SIX pages, against a 45 s lambda budget. Production showed exactly
+  // that: `AD fmv_current error @0: canceling statement due to statement timeout`
+  // and `Vercel Runtime Timeout Error: Task timed out after 45 seconds` on the
+  // SAME deployment and the SAME second — one request, both symptoms.
+  //
+  // Inverting the order fixed the timeout because `edition_id` IS the DISTINCT ON
+  // key, so PostgREST's `= ANY($1)` reaches the partitioned index instead of
+  // materialising the view.
+  //
+  // ⚠ REACHING THE INDEX IS NOT THE SAME AS BEING CHEAP, and the first draft of
+  // this comment conflated the two. `fmv_current` has no per-group LIMIT, so an
+  // index-cond scan still reads EVERY snapshot row for each edition and lets
+  // `Unique` discard all but the newest. Measured warm 2026-09-02, the whole
+  // 6,190-edition AD id list, same session, bound-array form (what PostgREST
+  // actually sends):
+  //
+  //     fmv_current WHERE edition_id = ANY($1) ..... 424,475 buffers   631 ms
+  //     per-id LATERAL LIMIT 1 ..................... 24,760 buffers     51 ms
+  //
+  // …so the read now goes through `get_editions_latest_fmv()`, whose LATERAL stops
+  // at the first row per edition. 17x fewer buffers on an IO-bound instance.
+  //
+  // ⚠ That 17x is NOT the 249x an earlier benchmark of the same swap reported. That
+  // arm built its id array inside a materialised CTE, which defeats the index cond;
+  // PostgREST never sends that shape, so its 1.33M buffers measured the harness.
+  // Judge this on the bound-array arm.
+  //
+  // ⚠ The route's OWN `fetchFmvBatch` already used the `.in("edition_id", …)`
+  // shape for Top Shot. The right pattern was in this file the whole time, one
+  // function away, and the wrong one still shipped: **a correct sibling is not a
+  // guard.**
+  const fmvMap = new Map<string, { fmv: number | null; confidence: string }>();
+  try {
+    // 1a. AD editions first — this read IS bounded by an indexed collection_id
+    //     on a plain table, and it is the id list the FMV read needs anyway.
+    const extByEditionId = new Map<string, string>();
+    const ED_PAGE = 1000;
+    let edCursor = "";
+    for (let page = 0; page < 200; page++) {
+      let q = (supabase as any)
+        .from("editions")
+        .select("id, external_id")
+        .eq("collection_id", ALLDAY_COLLECTION_ID)
+        .order("id", { ascending: true })
+        .limit(ED_PAGE);
+      if (edCursor) q = q.gt("id", edCursor);
+      const { data: edRows, error: edErr } = await boundedRead(q, "allday-editions");
+      if (edErr) {
+        console.error(`[sniper-feed] AD editions error @page ${page}: ${edErr.message}`);
+        // Deal-bearing: no edition row means no FMV lookup means the listing is
+        // dropped, exactly as a missing FMV would be.
+        sink.note("allday-fmv");
+        break;
+      }
+      const rows = (edRows ?? []) as Array<{ id: string; external_id: string | null }>;
+      for (const e of rows) if (e.external_id) extByEditionId.set(e.id, String(e.external_id));
+      if (rows.length < ED_PAGE) break;
+      const next = rows[rows.length - 1]?.id;
+      // No cursor means no progress — stop rather than re-read page 0 forever.
+      if (!next || next === edCursor) break;
+      edCursor = next;
+    }
+
+    // 1b. FMV per edition through the LATERAL helper, keyed on the DISTINCT ON
+    //     column and chunked at 500 — the same bound the concierge uses, and well
+    //     under PostgREST's 1000-row cap, which applies to an RPC result set the
+    //     same way it applies to a table read. This is the read whose SHAPE was
+    //     the whole defect.
+    const editionIds = Array.from(extByEditionId.keys());
+    const FMV_RPC_CHUNK = 500;
+    for (let i = 0; i < editionIds.length; i += FMV_RPC_CHUNK) {
+      const chunk = editionIds.slice(i, i + FMV_RPC_CHUNK);
+      const { data: fmvRows, error: fmvErr } = await boundedRead(
+        (supabase as any).rpc("get_editions_latest_fmv", { p_edition_ids: chunk }),
+        "get_editions_latest_fmv",
+      );
+      if (fmvErr) {
+        console.error(`[sniper-feed] AD fmv error @chunk ${i / FMV_RPC_CHUNK}: ${fmvErr.message}`);
+        sink.note("allday-fmv");
+        break;
+      }
+      for (const row of (fmvRows ?? []) as Array<{ edition_id: string; fmv_usd: number | null; confidence: string }>) {
+        const ext = extByEditionId.get(row.edition_id);
+        if (!ext) continue;
+        const raw = row.fmv_usd == null ? NaN : Number(row.fmv_usd);
+        // Keep NULL as null — never 0, never the ask. The view read also carried a
+        // server-side `.gt("fmv_usd", 0)`; that was bandwidth, not correctness, and
+        // it is deliberately NOT reproduced here. buildDeal's own guard is what
+        // excludes a null/0 FMV, and two tests pin it — re-adding the filter here
+        // would make those tests pass on the filter instead of on the guard.
+        fmvMap.set(ext, {
+          fmv: Number.isFinite(raw) ? raw : null,
+          confidence: String(row.confidence ?? "LOW"),
+        });
+      }
+    }
+  } catch (err) {
+    console.error(`[sniper-feed] AD FMV map build failed: ${err instanceof Error ? err.message : String(err)}`);
+    sink.note("allday-fmv");
+  }
+  console.log(`[sniper-feed] AD FMV map size: ${fmvMap.size}`);
+
+  // 2. Pull the live marketplace pool from NFL All Day public GQL — only when
+  //    ALLDAY_MARKETPLACE_GQL=1 (see alldayMarketplaceGqlEnabled; dead since June).
+  const nodes = await fetchAlldayPool(sink);
+
+  // 3. The RPC path: the primary source while the GQL leg is off, and the
+  //    fallback when it is on and returned nothing.
+  if (nodes.length === 0) {
+    if (alldayMarketplaceGqlEnabled()) {
+      console.log(`[sniper-feed] AD GQL empty — falling back to get_allday_sniper_deals RPC`);
+    }
+    // p_team is one exact label (ILIKE), so a franchise pick asks once per label
+    // (measured 40-150 ms a call) and merges, deduped by listing.
+    const adTeams = teamLabels ? Array.from(teamLabels) : ["all"];
+    const adReads = await Promise.all(adTeams.map((t) => boundedRead(
+      (supabase as any).rpc("get_allday_sniper_deals", {
+        p_min_discount: minDiscount,
+        p_max_price: maxPrice,
+        p_rarity: rarity === "all" ? "all" : rarity,
+        p_team: t,
+        p_sort_by: opts.sortBy,
+        p_limit: 200,
+        // 2026-09-29 (migration 20260930013059): the player is searched IN the
+        // RPC. Filtering its top 200 afterwards found 1 Mahomes listing of 88.
+        ...((opts.player ?? "").trim() ? { p_player: (opts.player ?? "").trim() } : {}),
+      }),
+      "get_allday_sniper_deals",
+    )));
+    const answered = adReads.filter((r) => !r.error);
+    const error = adReads.find((r) => r.error)?.error ?? null;
+    const seenAd = new Set<string>();
+    const rows = answered.flatMap((r) => (r.data ?? []) as any[]).filter((r) => {
+      const k = String(r.flow_id ?? "") || `${r.moment_id ?? ""}#${r.serial_number ?? ""}`;
+      if (seenAd.has(k)) return false;
+      seenAd.add(k);
+      return true;
+    });
+    // One franchise label failing still renders the others, reported degraded.
+    if (error && answered.length > 0) {
+      console.error(`[sniper-feed] get_allday_sniper_deals error (partial): ${error.message}`);
+      sink.note("allday-deals-rpc");
+    }
+    if (error && answered.length === 0) {
+      console.error(`[sniper-feed] get_allday_sniper_deals error: ${error.message}`);
+      sink.note("allday-deals-rpc");
+      // ⚠ `lastRefreshed: null`, NOT the clock. This is the FAILED-read return, and
+      // SniperStatsBar renders "updated <time>" from this field — so stamping it
+      // here put a freshness claim on a board that had just failed to read
+      // anything. The bar already guards `{lastRefreshed && …}`, so null omits the
+      // line rather than printing a time we cannot stand behind. Seen live
+      // 2026-09-03 00:12Z: "AD FMV map size: 6190" (this read is fine) followed by
+      // "get_allday_sniper_deals error: canceling statement due to statement
+      // timeout" — an empty board that would have said it was updated just now.
+      return { count: 0, tsCount: 0, flowtyCount: 0, lastRefreshed: null, deals: [], sourcesFailed: sink.failed };
+    }
+    // Same honesty rule as the live path: a row with no usable FMV cannot be
+    // shown as a discount (see hasUsableFmv).
+    const fallback: SniperDeal[] = (rows ?? []).filter(hasUsableFmv).map((r: any) => {
+      const tier = String(r.tier ?? "COMMON").replace("MOMENT_TIER_", "");
+      const confidence = String(r.confidence ?? "ASK_ONLY");
+      const momentId = r.moment_id ? String(r.moment_id) : "";
+      const thumbnailUrl = r.thumbnail_url ?? (momentId
+        ? ALLDAY_THUMBNAIL_BASE + momentId + "/media/image?width=512&format=webp&quality=90"
+        : null);
+      return {
+        flowId: r.flow_id ?? "",
+        momentId,
+        editionKey: "",
+        intEditionKey: null,
+        playerName: r.player_name ?? "",
+        teamName: r.team_name ?? "",
+        setName: r.set_name ?? "",
+        seriesName: r.series_name ?? "",
+        tier,
+        parallel: "Base",
+        parallelId: 0,
+        serial: r.serial_number ?? 0,
+        circulationCount: r.circulation_count ?? 0,
+        askPrice: Number(r.ask_price) || 0,
+        baseFmv: Number(r.fmv_usd) || 0,
+        adjustedFmv: Number(r.fmv_usd) || 0,
+        aspUsd: null,
+        daysSinceSale: null,
+        salesCount30d: null,
+        discount: Number(r.discount_pct) || 0,
+        // 2026-09-25: this leg set NO low-confidence flag, so an ASK_ONLY or STALE
+        // FMV rendered a confident discount — the live All Day board (the GQL leg
+        // 403s on Vercel egress) was topped by a "94.7% off" Legendary priced from
+        // 2024 sales. Same rule as every other leg (fmvCannotAnchorDiscount).
+        lowConfidenceFmv: fmvCannotAnchorDiscount(confidence),
+        confidence: confidence.toLowerCase(),
+        confidenceSource: confidence === "ASK_ONLY" ? "ask_fallback" : "fmv_snapshots",
+        hasBadge: false,
+        badgeSlugs: [],
+        badgeLabels: [],
+        badgePremiumPct: 0,
+        serialMult: 1,
+        isSpecialSerial: false,
+        isJersey: false,
+        serialSignal: null,
+        thumbnailUrl,
+        isLocked: false,
+        updatedAt: r.listed_at ?? null,
+        packListingId: null,
+        packName: null,
+        packEv: null,
+        packEvRatio: null,
+        buyUrl: r.buy_url ?? "",
+        listingResourceID: r.listing_resource_id ?? null,
+        listingOrderID: null,
+        storefrontAddress: null,
+        source: "allday",
+        paymentToken: "FLOW",
+        offerAmount: null,
+        offerFmvPct: null,
+        dealRating: (Number(r.discount_pct) || 0) / 100,
+        isLowestAsk: false,
+      };
+    });
+    // 2026-10-26 (All Day parity): badges. Every deal above is built with hasBadge=false, so BADGES ONLY
+    // could not work on All Day. get_allday_listing_badges maps each listing to its edition's badge titles
+    // (badge_editions.set_play_tags). An ENRICHMENT read: on failure the deals render undecorated and it is
+    // logged, not noted in the sink (lib/sniper/source-failures.ts — noting a decoration read would make the
+    // empty-state copy fire on an honestly empty board), the same rule as Top Shot's badge decoration.
+    const adListingIds = Array.from(new Set(
+      fallback.map((d) => Number(d.listingResourceID)).filter((n) => Number.isFinite(n) && n > 0),
+    )).slice(0, 500);
+    if (adListingIds.length > 0) {
+      const br = await boundedRead(
+        (supabase as any).rpc("get_allday_listing_badges", { p_listing_ids: adListingIds }),
+        "get_allday_listing_badges",
+      );
+      if (br.error) {
+        console.error(`[sniper-feed] get_allday_listing_badges error: ${br.error.message}`);
+      } else {
+        const badgeMap = new Map<string, string[]>();
+        const keyMap = new Map<string, string>();
+        for (const b of (br.data ?? []) as Array<{ listing_resource_id: number | string; edition_key?: string | null; badges: string[] | null }>) {
+          badgeMap.set(String(b.listing_resource_id), Array.isArray(b.badges) ? b.badges.filter(Boolean) : []);
+          if (b.edition_key) keyMap.set(String(b.listing_resource_id), String(b.edition_key));
+        }
+        for (const d of fallback) {
+          // 2026-10-26 (parity pass 3): the edition key too, so the Own / Lock cell (wallet edition counts are
+          // keyed by the All Day edition id) and the edition link work. A deal this read cannot map keeps "".
+          const key = keyMap.get(String(d.listingResourceID ?? ""));
+          if (key) d.editionKey = key;
+          const titles = badgeMap.get(String(d.listingResourceID ?? ""));
+          if (titles && titles.length > 0) {
+            d.hasBadge = true;
+            d.badgeSlugs = titles;
+            d.badgeLabels = titles;
+          }
+        }
+      }
+    }
+    // 2026-10-27 (All Day parity pass 8): special serials. These All Day rows are LISTINGS with real serials (Top
+    // Shot's board is edition-level, so its special-serial stat can never fire), so #1, jersey match and last mint
+    // are knowable here. Jersey comes from editions.jersey_number (Atlas playerNumber) for the keys the badge read
+    // mapped. Display only: serialMult stays 1 and the FMV / discount are untouched. An ENRICHMENT read like the
+    // badges: a failed jersey read leaves jersey matches unflagged (logged), #1 / last mint still apply.
+    // The RPC reads the serial from the wallet cache, which knows only cached sellers (155 of 188 deals had no
+    // serial, 10-27 ~7:10 PM PT). A moment's serial never changes, so any past sale of the same NFT names it.
+    // Enrichment like the badges: a failed read leaves the serial unknown (0), logged.
+    const noSerial = Array.from(new Set(fallback.filter((d) => !(d.serial > 0) && d.flowId).map((d) => String(d.flowId)))).slice(0, 300);
+    if (noSerial.length > 0) {
+      const sr = await boundedRead(
+        (supabase as any).from("sales").select("nft_id, serial_number")
+          .eq("collection_id", ALLDAY_COLLECTION_ID).in("nft_id", noSerial).limit(1000),
+        "allday_serial_from_sales",
+      );
+      if (sr.error) {
+        console.error(`[sniper-feed] allday serial-from-sales error: ${sr.error.message}`);
+      } else {
+        // 10-27 review: 21 All Day nft_ids carry two different serials in sales (e.g. 523 and 14 on a /39
+        // edition), and the rows arrive unordered — so an nft whose sales DISAGREE gets no serial, and a serial
+        // above the edition's circulation (impossible) is never shown.
+        const serialsByNft = new Map<string, Set<number>>();
+        for (const r of (sr.data ?? []) as Array<{ nft_id: string | number | null; serial_number: number | string | null }>) {
+          const n = Number(r.serial_number);
+          if (r.nft_id == null || !Number.isInteger(n) || n <= 0) continue;
+          const k = String(r.nft_id);
+          serialsByNft.set(k, (serialsByNft.get(k) ?? new Set<number>()).add(n));
+        }
+        for (const d of fallback) {
+          if (d.serial > 0) continue;
+          const candidates = serialsByNft.get(String(d.flowId));
+          if (!candidates || candidates.size !== 1) continue;
+          const [n] = candidates;
+          if (d.circulationCount > 0 && n > d.circulationCount) continue;
+          d.serial = n;
+        }
+      }
+    }
+    const adKeys = Array.from(new Set(fallback.map((d) => d.editionKey).filter((k) => !!k))).slice(0, 500);
+    const jerseyByKey = new Map<string, number>();
+    if (adKeys.length > 0) {
+      const jr = await boundedRead(
+        (supabase as any).from("editions").select("external_id, jersey_number")
+          .eq("collection_id", ALLDAY_COLLECTION_ID).in("external_id", adKeys),
+        "allday_edition_jerseys",
+      );
+      if (jr.error) {
+        console.error(`[sniper-feed] allday edition jerseys error: ${jr.error.message}`);
+      } else {
+        for (const e of (jr.data ?? []) as Array<{ external_id: string; jersey_number: number | string | null }>) {
+          const n = Number(e.jersey_number);
+          if (Number.isFinite(n) && n > 0) jerseyByKey.set(String(e.external_id), n);
+        }
+      }
+    }
+    for (const d of fallback) {
+      if (!(d.serial > 0)) continue;
+      const jersey = d.editionKey ? jerseyByKey.get(d.editionKey) ?? null : null;
+      // circulation 0 = unknown: never call a serial the last mint of an unknown edition size.
+      const { signal, isSpecial } = serialMultiplier(d.serial, d.circulationCount > 1 ? d.circulationCount : -1, jersey);
+      if (isSpecial) {
+        d.isSpecialSerial = true;
+        d.serialSignal = signal;
+        d.isJersey = jersey !== null && d.serial === jersey;
+      }
+    }
+    // Several franchise labels arrive as separately-ordered lists: re-sort the merge.
+    const fallbackDeals = adTeams.length > 1 ? sortSniperDeals(fallback, opts.sortBy) : fallback;
+    return {
+      count: fallbackDeals.length,
+      tsCount: 0,
+      flowtyCount: fallbackDeals.length,
+      lastRefreshed: new Date().toISOString(),
+      deals: fallbackDeals,
+      teamOptions,
+      // With the GQL leg ON, a failure there that sent us down this path is
+      // still named here. With it OFF (the default since 2026-09-28) this lists
+      // only real failures, e.g. the FMV map.
+      sourcesFailed: sink.failed,
+    };
+  }
+
+  // 4. Shape GQL node → SniperDeal. buildDeal is reused for floor + specials.
+  type EditionNode = {
+    editionFlowID?: number | string;
+    lowestPrice?: number | string | null;
+    numberOneSerial?: { flowID?: number | string; momentNFTListing?: { priceV2?: { value?: string | number | null } } } | null;
+    jerseySerial?: { flowID?: number | string; momentNFTListing?: { priceV2?: { value?: string | number | null } } } | null;
+    edition?: {
+      tier?: string | null;
+      maxMintSize?: number | null;
+      currentMintSize?: number | null;
+      badges?: Array<{ id?: string; slug?: string; title?: string }> | null;
+      play?: { metadata?: { playerFullName?: string | null; teamName?: string | null } | null } | null;
+      set?: { name?: string | null } | null;
+      series?: { name?: string | null } | null;
+      parallel?: string | null;
+    } | null;
+  };
+
+  interface DealOverrides {
+    askPrice?: number;
+    serial?: number;
+    isSpecialSerial?: boolean;
+    serialSignal?: string | null;
+    flowId?: string;
+    buyUrl?: string;
+  }
+
+  const buildDeal = (raw: Record<string, unknown>, overrides?: DealOverrides): SniperDeal | null => {
+    const node = raw as EditionNode;
+    const editionFlowID = String(node.editionFlowID ?? "");
+    if (!editionFlowID) return null;
+    const floorPrice = parseFloat(String(node.lowestPrice ?? "")) || 0;
+    const askPrice = overrides?.askPrice ?? floorPrice;
+    if (!askPrice || askPrice <= 0) return null;
+
+    const tier = String(node.edition?.tier ?? "COMMON").replace("MOMENT_TIER_", "").toUpperCase();
+    const fmvEntry = fmvMap.get(editionFlowID);
+    // NO FMV -> NO ROW. This was `fmvEntry?.fmv || askPrice`, which quietly
+    // substituted the ask for a missing (or 0) FMV: the listing then rendered
+    // "FMV = ask" at a fake 0% discount, and — when an fmvEntry existed with a
+    // NULL fmv_usd — it was even labelled confidenceSource "fmv_snapshots".
+    // An absent FMV cannot be priced, so drop the listing rather than invent
+    // a number. Note `||` vs `??`: a legitimate 0 is also not a usable FMV
+    // here (nothing can be "40% off" a $0 fair value), so both are excluded.
+    // (2026-07-25)
+    const fmvValue = fmvEntry?.fmv ?? null;
+    if (fmvValue == null || !Number.isFinite(fmvValue) || fmvValue <= 0) return null;
+    const baseFmv = fmvValue;
+    const adjustedFmv = baseFmv;
+    const confidence = fmvEntry?.confidence?.toLowerCase() ?? "ask_only";
+    const confidenceSource = "fmv_snapshots";
+    const discount = askPrice < adjustedFmv
+      ? Math.round(((adjustedFmv - askPrice) / adjustedFmv) * 1000) / 10
+      : 0;
+
+    const badges = node.edition?.badges ?? [];
+    const badgeSlugs = badges.map((b) => String(b?.slug ?? "")).filter(Boolean);
+    const badgeLabels = badges.map((b) => String(b?.title ?? "")).filter(Boolean);
+    const hasBadge = badgeSlugs.length > 0;
+
+    const playerName = String(node.edition?.play?.metadata?.playerFullName ?? "");
+    const teamName = String(node.edition?.play?.metadata?.teamName ?? "");
+    const setName = String(node.edition?.set?.name ?? "");
+    const seriesName = String(node.edition?.series?.name ?? "");
+    const parallel = String(node.edition?.parallel ?? "Base");
+    const circulationCount = Number(node.edition?.currentMintSize)
+      || Number(node.edition?.maxMintSize)
+      || 0;
+
+    const thumbnailUrl = `https://media.nflallday.com/editions/${editionFlowID}/media/image?format=jpeg&width=512`;
+    const buyUrl = overrides?.buyUrl
+      ?? `https://nflallday.com/marketplace?filters=editionID:${editionFlowID}`;
+
+    return {
+      flowId: overrides?.flowId ?? editionFlowID,
+      momentId: editionFlowID,
+      editionKey: editionFlowID,
+      intEditionKey: null,
+      playerName,
+      teamName,
+      setName,
+      seriesName,
+      tier,
+      parallel,
+      parallelId: 0,
+      serial: overrides?.serial ?? 0,
+      circulationCount,
+      askPrice,
+      baseFmv,
+      adjustedFmv,
+      aspUsd: null,
+      daysSinceSale: null,
+      salesCount30d: null,
+      discount,
+      confidence,
+      confidenceSource,
+      // This GQL path never set lowConfidenceFmv at all, so an ask-derived FMV
+      // rendered a confident discount % with no caveat. Flag ASK_ONLY here too.
+      // NOTE: unlike the other two paths this one also never applies
+      // guardTopshotFmv to baseFmv — that clamp CHANGES the discount number, so
+      // it wants its own blast-radius measurement and is deliberately NOT added
+      // here alongside a disclosure-only fix.
+      lowConfidenceFmv: fmvCannotAnchorDiscount(confidence),
+      hasBadge,
+      badgeSlugs,
+      badgeLabels,
+      badgePremiumPct: 0,
+      serialMult: 1,
+      isSpecialSerial: overrides?.isSpecialSerial ?? false,
+      isJersey: false,
+      serialSignal: overrides?.serialSignal ?? null,
+      thumbnailUrl,
+      isLocked: false,
+      updatedAt: null,
+      packListingId: null,
+      packName: null,
+      packEv: null,
+      packEvRatio: null,
+      buyUrl,
+      listingResourceID: null,
+      listingOrderID: null,
+      storefrontAddress: null,
+      source: "allday",
+      paymentToken: "FLOW",
+      offerAmount: null,
+      offerFmvPct: null,
+      dealRating: adjustedFmv > 0 ? Math.max(0, Number((1 - askPrice / adjustedFmv).toFixed(4))) : 0,
+      isLowestAsk: false,
+    };
+  };
+
+  const deals: SniperDeal[] = [];
+  for (const raw of nodes) {
+    const floor = buildDeal(raw);
+    if (floor) deals.push(floor);
+
+    const n1 = (raw as { numberOneSerial?: { flowID?: number | string; momentNFTListing?: { priceV2?: { value?: string | number | null } } } | null }).numberOneSerial;
+    const n1Price = parseFloat(String(n1?.momentNFTListing?.priceV2?.value ?? ""));
+    if (n1 && Number.isFinite(n1Price) && n1Price > 0) {
+      const n1Flow = n1.flowID ? String(n1.flowID) : null;
+      const d = buildDeal(raw, {
+        askPrice: n1Price,
+        serial: 1,
+        isSpecialSerial: true,
+        serialSignal: "#1",
+        flowId: n1Flow ?? `${raw.editionFlowID}-1`,
+        buyUrl: n1Flow ? `https://nflallday.com/moment/${n1Flow}` : undefined,
+      });
+      if (d) deals.push(d);
+    }
+
+    const js = (raw as { jerseySerial?: { flowID?: number | string; momentNFTListing?: { priceV2?: { value?: string | number | null } } } | null }).jerseySerial;
+    const jsPrice = parseFloat(String(js?.momentNFTListing?.priceV2?.value ?? ""));
+    if (js && Number.isFinite(jsPrice) && jsPrice > 0) {
+      const jsFlow = js.flowID ? String(js.flowID) : null;
+      const d = buildDeal(raw, {
+        askPrice: jsPrice,
+        isSpecialSerial: true,
+        serialSignal: "Jersey Serial",
+        flowId: jsFlow ?? `${raw.editionFlowID}-jersey`,
+        buyUrl: jsFlow ? `https://nflallday.com/moment/${jsFlow}` : undefined,
+      });
+      if (d) deals.push(d);
+    }
+  }
+
+  // 5. Filters — minDiscount, maxPrice, rarity, team.
+  let filtered = deals;
+  if (maxPrice > 0) filtered = filtered.filter((d) => d.askPrice <= maxPrice);
+  if (rarity && rarity !== "all") {
+    const want = rarity.toUpperCase();
+    filtered = filtered.filter((d) => d.tier.toUpperCase() === want);
+  }
+  if (team && team !== "all") {
+    filtered = filtered.filter((d) => (teamLabels ? teamLabels.has(d.teamName) : d.teamName === team));
+  }
+  if (minDiscount > 0) filtered = filtered.filter((d) => d.discount >= minDiscount);
+
+  // 6. Hard-coded price_asc sort — AllDay's API doesn't support LOW_ASK
+  //    server-side, so we override whatever sortBy the UI sent.
+  filtered.sort((a, b) => a.askPrice - b.askPrice);
+
+  // 7. Mark lowest ask per edition so the UI can flag the floor listing.
+  const lowestAskByEdition = new Map<string, number>();
+  for (const d of filtered) {
+    const current = lowestAskByEdition.get(d.editionKey);
+    if (current === undefined || d.askPrice < current) lowestAskByEdition.set(d.editionKey, d.askPrice);
+  }
+  for (const d of filtered) {
+    d.isLowestAsk = d.askPrice === lowestAskByEdition.get(d.editionKey);
+  }
+
+  const withFmv = filtered.filter((d) => d.confidenceSource === "fmv_snapshots").length;
+  console.log(`[sniper-feed] AD DONE: total=${filtered.length} fmv_hits=${withFmv} fmv_map=${fmvMap.size}`);
+
+  return {
+    count: filtered.length,
+    tsCount: 0,
+    flowtyCount: filtered.length,
+    lastRefreshed: new Date().toISOString(),
+    deals: filtered,
+    teamOptions,
+    sourcesFailed: sink.failed,
+  };
+}
+
+async function computeSniperFeed(opts: {
+  minDiscount: number; rarity: string; team: string;
+  badgeOnly: boolean; serialFilter: string; maxPrice: number; sortBy: string;
+  league?: "NBA" | "WNBA";
+  /** substring of the player name; also applied to the board after the build */
+  player?: string;
+}) {
+  const { minDiscount, rarity, team, badgeOnly, serialFilter, maxPrice, sortBy } = opts;
+  const player = (opts.player ?? "").trim();
+
+  const sink = createSourceFailureSink();
+  const supabase = supabaseAdmin;
+
+  // P1a display guard — clamp base FMV to the edition's 90d max sale when it
+  // overshoots (so a role-player common with a stale $42 FMV stops rendering a
+  // fake -99% deal), and flag thin-data FMV. Loaded once per feed build.
+  const fmvGuard = await loadTopshotFmvGuard(supabase as any).catch(() => new Map());
+
+  // 1. Fetch TS listings - ts_listings, rebuilt every 2 min from the Atlas
+  //    firehose (open Dapper-marketplace listings verified in the last 24 h;
+  //    migration 20260907020428). Before 2026-09-07 this table held one row
+  //    from May and the feed was edition-level only.
+  const { listings: tsListings, teamLabels } = await fetchTopShotPool(supabase as any, sink, team, player, rarity, maxPrice);
+
+  console.log(`[sniper-feed] fetched ts=${tsListings.length}`);
+
+  // TS GQL sparse-pool augmentation. The TS GQL pool is anomalously small
+  // some days (1-5 listings vs the healthy ~150-220), but get_topshot_sniper_deals
+  // (sourced from badge_editions kept fresh by topshot-fmv-populate) has 2,400+
+  // priced editions on hand. When GQL is below TS_GQL_SPARSE_THRESHOLD we
+  // augment — not replace — the GQL pool with edition-level RPC rows so the
+  // user still sees a populated feed. The merge happens after enrichment and
+  // dedupes by editionKey so a deal that appears in both sources only shows
+  // once (RPC wins on tie since it carries FMV that the GQL pool may lack).
+  // Per-listing fields (serial_number, listing_resource_id) are NULL on RPC
+  // rows because the RPC is edition-level, not per-moment.
+  let rpcDeals: SniperDeal[] = [];
+  // ⚠ Sparse by EDITIONS, not by rows (2026-09-13). The pool is the newest 200
+  // ts_listings rows by ingested_at — i.e. the last sync tick's batch — and one
+  // batch is a handful of moments listed many times over. Measured in production
+  // logs: `ts_listings: 200 rows` over FIVE distinct editions, `built ts=0`,
+  // and the feed answering `0 deals, degraded: false` for hours while the sync
+  // tick was down — an empty state that CONCLUDED. 200 rows is not a pool when
+  // they price five moments; count what can actually become distinct deals.
+  const tsDistinctEditions = new Set(
+    tsListings.map((l) => `${l.setPlay?.setID ?? ""}:${l.setPlay?.playID ?? ""}`),
+  ).size;
+  // ⚠ A TEAM PICK ALWAYS AUGMENTS (2026-09-29). The RPC reads every edition of
+  // the team with a floor, the pool only its newest 200 listings. Gated on
+  // sparseness alone, the board's COVERAGE depended on how many editions those
+  // 200 happened to span: 8 of 65 teams (Lakers 37, Liberty 32…) cleared 25 and
+  // got a newest-200 slice instead of every edition's floor.
+  // A player search augments on the same terms: its floors are every edition
+  // of that player with an ask, which the listing pool alone cannot promise.
+  // …and so does a filter that can cut the pool down to a handful (2026-09-29):
+  // a tier, a minimum discount, badges-only. The Legendary tab answered 0 deals
+  // while ≥1,000 Legendary editions had a priced floor, because a non-sparse
+  // pool skipped the one read that has them. (A max price alone is not in this
+  // list: it is pushed into the pool read, and cheap listings dominate the pool.)
+  // A sort other than "Recently listed" is a market-wide question too: "Best
+  // discount" re-ranked the ~28 priced deals among the newest 200 listings,
+  // while the market's best verified discounts (58 %, MEDIUM) sat in the
+  // edition floors the default board never read.
+  const teamPicked = team !== "all" || player !== "" || rarity !== "all" || minDiscount > 0 || badgeOnly
+    || sortBy !== "listed_desc";
+  // The read itself, unchanged, as a function: it runs here for a narrowed or
+  // sparse board and again below (step 6a) when the default board comes out thin.
+  const readRpcAugment = async (why: string): Promise<SniperDeal[]> => {
+    let rpcDeals: SniperDeal[] = [];
+    console.log(`[sniper-feed] TS augment (${why}: ${tsListings.length} listings over ${tsDistinctEditions} editions) — get_topshot_sniper_deals RPC`);
+    // p_team is one exact label, so a franchise pick asks once per label it has
+    // carried (measured 10-30 ms a call) — else the edition-level rows, which
+    // dominate a sparse board, would be the picked label's alone.
+    const rpcTeams = team === "all" ? ["all"] : Array.from(teamLabels ?? [team]);
+    const rpcReads = await Promise.all(rpcTeams.map((t) => boundedRead(
+      (supabase as any).rpc("get_topshot_sniper_deals", {
+        p_min_discount: minDiscount,
+        p_max_price: maxPrice,
+        p_rarity: rarity === "all" ? "all" : rarity,
+        p_team: t,
+        p_sort_by: sortBy,
+        ...(player ? { p_player: player } : {}),
+        // A team pick reads EVERY priced edition of the team (at most 504
+        // editions; the Knicks' 467 floors measured 37 ms). At 200 the board was
+        // the top 200 by DISCOUNT — the RPC has no listed_desc order — so a
+        // "Recently listed" team board silently left out 263 Lakers editions.
+        // 1000 is PostgREST's row cap. The default board keeps 200.
+        p_limit: teamPicked ? 1000 : 200,
+      }),
+      "get_topshot_sniper_deals",
+    )));
+    const rpcErr = rpcReads.find((r) => r.error)?.error ?? null;
+    const seenRpc = new Set<string>();
+    const rpcRows = rpcReads.flatMap((r) => (r.data ?? []) as any[]).filter((r) => {
+      const k = String(r.moment_id ?? "");
+      if (!k) return true;
+      if (seenRpc.has(k)) return false;
+      seenRpc.add(k);
+      return true;
+    });
+    if (rpcErr) {
+      console.error(`[sniper-feed] get_topshot_sniper_deals error: ${rpcErr.message}`);
+      // Reached when the pool is sparse or a team is picked; either way this
+      // read carries the board's edition coverage, so its failure is reported.
+      sink.note("topshot-deals-rpc");
+    }
+    // A franchise pick's labels are read separately; the ones that answered
+    // still render (the failed one is reported above).
+    {
+      // No usable FMV -> no row. `Number(r.fmv_usd) || 0` below would emit
+      // baseFmv/adjustedFmv 0 — a literal $0.00 fair value (see hasUsableFmv).
+      rpcDeals = (rpcRows ?? []).filter(hasUsableFmv).map((r: any) => {
+        const tier = String(r.tier ?? "COMMON");
+        const confidence = String(r.confidence ?? "ASK_ONLY");
+        const momentId = r.moment_id ? String(r.moment_id) : "";
+        // P1a: clamp FMV to 90d max sale + flag thin data, then recompute the
+        // discount off the honest figure (the RPC's discount_pct is vs raw FMV).
+        const rpcAsk = Number(r.ask_price) || 0;
+        const g = guardTopshotFmv(fmvGuard, momentId, Number(r.fmv_usd) || 0);
+        const rpcFmv = g.effectiveFmv;
+        const rpcDiscount = rpcFmv > 0 && rpcAsk < rpcFmv
+          ? Math.round(((rpcFmv - rpcAsk) / rpcFmv) * 1000) / 10
+          : 0;
+        return {
+          flowId: r.flow_id ?? "",
+          momentId,
+          editionKey: momentId,
+          intEditionKey: /^[0-9]+:[0-9]+$/.test(momentId) ? momentId : null,
+          playerName: r.player_name ?? "",
+          teamName: r.team_name ?? "",
+          setName: r.set_name ?? "",
+          seriesName: r.series_name ?? "",
+          tier,
+          parallel: "Base",
+          parallelId: 0,
+          serial: r.serial_number ?? 0,
+          circulationCount: r.circulation_count ?? 0,
+          askPrice: rpcAsk,
+          baseFmv: rpcFmv,
+          adjustedFmv: rpcFmv,
+          aspUsd: null,
+          daysSinceSale: null,
+          salesCount30d: null,
+          discount: rpcDiscount,
+          // ASK_ONLY FMV is 0.90 x a single seller's ask with no sales anchor,
+          // so ANY discount against it is ask-vs-ask, not a real deal. The
+          // display guard only carries editions it has already flagged (~17% of
+          // ASK_ONLY rows), so keying the caveat off the guard alone let 83% of
+          // them render a hard discount %. Matches app/api/market/route.ts.
+          lowConfidenceFmv: g.lowConfidenceFmv || fmvCannotAnchorDiscount(confidence),
+          confidence: confidence.toLowerCase(),
+          confidenceSource: confidence === "ASK_ONLY" ? "ask_fallback" : "fmv_snapshots",
+          hasBadge: false,
+          badgeSlugs: [],
+          badgeLabels: [],
+          badgePremiumPct: 0,
+          serialMult: 1,
+          isSpecialSerial: false,
+          isJersey: false,
+          serialSignal: null,
+          thumbnailUrl: r.thumbnail_url ?? null,
+          isLocked: false,
+          updatedAt: r.listed_at ?? null,
+          packListingId: null,
+          packName: null,
+          packEv: null,
+          packEvRatio: null,
+          buyUrl: r.buy_url ?? "",
+          listingResourceID: r.listing_resource_id ?? null,
+          listingOrderID: null,
+          storefrontAddress: null,
+          source: "topshot",
+          paymentToken: "FLOW",
+          offerAmount: null,
+          offerFmvPct: null,
+          dealRating: rpcDiscount / 100,
+          isLowestAsk: false,
+        };
+      });
+      console.log(`[sniper-feed] TS RPC augment: ${rpcDeals.length} edition-level rows`);
+    }
+    return rpcDeals;
+  };
+  let rpcAugmented = false;
+  if (teamPicked || tsListings.length < TS_GQL_SPARSE_THRESHOLD || tsDistinctEditions < TS_GQL_SPARSE_THRESHOLD) {
+    rpcDeals = await readRpcAugment(teamPicked ? "narrowed board" : "sparse");
+    rpcAugmented = true;
+  }
+
+  // 2. Build integer edition keys for Supabase FMV lookup
+  const tsEditionKeys = new Set<string>();
+  for (const l of tsListings) {
+    // Support both MarketplaceEdition shape (set.flowId + play.flowID) and legacy shape (setPlay.setID/playID)
+    const setId = l.set?.flowId ?? l.setPlay?.setID;
+    const playId = l.play?.flowID ?? l.setPlay?.playID;
+    if (setId && playId) {
+      const parallelId = l.parallelID ?? l.setPlay?.parallelID ?? 0;
+      const key = parallelId > 0 ? `${setId}:${playId}::${parallelId}` : `${setId}:${playId}`;
+      tsEditionKeys.add(key);
+      tsEditionKeys.add(`${setId}:${playId}`);
+    }
+  }
+
+  // 3. Collect unique player names for badge + jersey lookups
+  const allPlayerNames = Array.from(new Set(
+    tsListings.map(l => l.play?.stats?.playerName ?? l.playerName ?? "").filter(Boolean)
+  ));
+
+  // 4. Fire all Supabase lookups in parallel
+  const [fmvMap, badgeRead, jerseyMap, retiredIds, teamOptions, signedRead] = await Promise.all([
+    fetchFmvBatch(supabase, Array.from(tsEditionKeys)).catch((e) => {
+      console.error("[sniper-feed] topshot fmv read failed:", e instanceof Error ? e.message : String(e));
+      sink.note("topshot-fmv");
+      return new Map<string, any>();
+    }),
+    fetchBadgesByEditionKey(supabase).catch(() => ({
+      map: new Map<string, Array<{ id: string; title: string }>>(),
+      complete: false,
+    })),
+    fetchJerseyNumbers(supabase, allPlayerNames).catch(() => new Map<string, string>()),
+    fetchRetiredMomentIds(supabase).catch(() => new Set<string>()),
+    fetchLeagueTeamOptions(supabase, TOPSHOT_LEAGUES).catch(() => [] as string[]),
+    fetchTopShotAutographedKeys(supabase as any, "sniper-feed/autographs#badges"),
+  ]);
+  console.log(`[sniper-feed] retiredIds size=${retiredIds.size}`);
+  const badgeMap = badgeRead.map;
+  // A signed edition is a badge too, and it must be in the map BEFORE "Badges only"
+  // filters on it — otherwise a signed edition with no moment tag was dropped here and
+  // the later autograph decoration never saw it.
+  if (signedRead.ok) {
+    for (const key of signedRead.value) {
+      const tags = badgeMap.get(key) ?? [];
+      if (!tags.some((t) => t.id === AUTOGRAPH_BADGE_SLUG)) {
+        badgeMap.set(key, [{ id: AUTOGRAPH_BADGE_SLUG, title: AUTOGRAPH_BADGE_TITLE }, ...tags]);
+      }
+    }
+  }
+  // With "Badges only" the badge map is the filter, so an incomplete read
+  // suppresses deals and must not read as a quiet board (see fetchBadgesByEditionKey).
+  if (badgeOnly && !badgeRead.complete) sink.note("badge_editions");
+  if (badgeOnly && !signedRead.ok) sink.note("autographs");
+
+  // 4b. Enrich the RPC augment rows with REAL badges, then apply the
+  // badge/serial predicates to them.
+  //
+  // These rows are built above, BEFORE badgeMap exists, so they were emitted
+  // with `hasBadge: false` placeholders - and, because they are merged in at
+  // step 6b AFTER the step-5 enrichment loop, they never passed through that
+  // loop's `if (badgeOnly && !hasBadge) continue`. So "Badges only" did not
+  // filter them at all.
+  //
+  // That is the whole bug: ts_listings is a DEAD table (1 row, frozen
+  // 2026-05-15), so `tsListings.length` is always < TS_GQL_SPARSE_THRESHOLD,
+  // the RPC augment fires on every request, and these rows ARE the Top Shot
+  // board. Checking "Badges only" therefore dropped the single ts_listings row
+  // and passed ~200 unfiltered, all-flagged-unbadged RPC rows straight through
+  // - a silent no-op returning exclusively un-badged moments.
+  //
+  // ⚠ CORRECTED 2026-10-23: ts_listings is LIVE again — 25,088 rows, a rolling
+  // 24 h window (ingested_at 10-23 04:33Z → 10-24 04:31Z). So the augment no
+  // longer fires on every request (only when the pool or a team pick is sparse),
+  // and the ts_listings leg's own FMV/badge paths below carry real rows.
+  //
+  // badge_editions.external_id === the RPC's moment_id, so the same map used
+  // by the ts_listings leg applies here. Verified live: 200/200 rows join and
+  // 77 carry a real badge, so `badgeOnly` now yields a populated, honest board
+  // rather than 0 or 200.
+  const enrichRpcDeals = (rows: SniperDeal[]): SniperDeal[] => {
+    let rpcDeals = rows;
+    if (rpcDeals.length === 0) return rpcDeals;
+    rpcDeals = rpcDeals.map((d) => {
+      const tags = badgeMap.get(d.editionKey) ?? badgeMap.get(d.momentId);
+      if (!tags?.length) return d;
+      const slugs = extractBadgeSlugs(tags);
+      if (!slugs.length) return d;
+      return {
+        ...d,
+        hasBadge: true,
+        badgeSlugs: slugs,
+        badgeLabels: slugs.map((s) => BADGE_LABELS[s] ?? s),
+      };
+    });
+    if (badgeOnly) rpcDeals = rpcDeals.filter((d) => d.hasBadge);
+    // get_topshot_sniper_deals is EDITION-level: serial_number is NULL on
+    // every row (verified live 200/200), so an edition row can never satisfy a
+    // per-serial predicate. Dropping them is the honest answer - passing them
+    // through is what made "Special serials" a no-op. The UI no longer offers
+    // this control, but the query param is still reachable directly.
+    if (serialFilter === "special" || serialFilter === "jersey") rpcDeals = [];
+    return rpcDeals;
+  };
+  rpcDeals = enrichRpcDeals(rpcDeals);
+
+  // 5. Enrich TS listings
+  const tsDeals: SniperDeal[] = [];
+  for (const l of tsListings) {
+    const askPrice = parseListingPrice(l);
+    if (!askPrice || askPrice <= 0) continue;
+    if (maxPrice > 0 && askPrice > maxPrice) continue;
+
+    const tierRaw = (l.tier ?? l.momentTier ?? "COMMON").replace("MOMENT_TIER_", "").toUpperCase();
+    if (rarity !== "all" && tierRaw.toUpperCase() !== rarity.toUpperCase()) continue;
+
+    // Support both MarketplaceEdition (set.flowId/play.flowID) and legacy (setPlay.setID/playID)
+    const setId = l.set?.flowId ?? l.setPlay?.setID;
+    const playId = l.play?.flowID ?? l.setPlay?.playID;
+    if (!setId || !playId) continue;
+    const parallelId = l.parallelID ?? l.setPlay?.parallelID ?? 0;
+    const editionKeyParallel = parallelId > 0 ? `${setId}:${playId}::${parallelId}` : null;
+    const editionKeyBase = `${setId}:${playId}`;
+    const editionKey = editionKeyParallel ?? editionKeyBase;
+
+    // MarketplaceEdition is edition-level (no serial) — use 0 as placeholder
+    const serial = l.serialNumber ?? 0;
+    const circ = l.circulationCount ?? l.setPlay?.circulations?.circulationCount ?? 1000;
+
+    const playerNameRaw = l.play?.stats?.playerName ?? l.playerName ?? l.momentTitle ?? "Unknown";
+    const jerseyRaw = jerseyMap.get(playerNameRaw.toLowerCase().trim()) ?? null;
+    const jerseyNumber = jerseyRaw !== null ? Number(jerseyRaw) || null : null;
+    const { mult: serialMult, signal: serialSignal, isSpecial: isSpecialSerial } =
+      serialMultiplier(serial, circ, jerseyNumber);
+    const isJersey = jerseyNumber !== null && serial === jerseyNumber;
+
+    const teamName = l.teamName ?? NBA_TEAMS[l.play?.stats?.teamAtMoment ?? l.teamAtMomentNbaId ?? ""] ?? l.play?.stats?.teamAtMoment ?? "";
+    // A pick matches every label of its franchise (teamLabels), else its own.
+    if (team !== "all" && !(teamLabels ? teamLabels.has(teamName) : teamName === team)) continue;
+
+    // Badges come from badge_editions keyed by edition key. `l.tags` is a
+    // declared-but-never-assigned RawListing field, so the old
+    // extractBadgeSlugs(l.tags) returned [] for every row - which meant
+    // "Badges only" dropped 100% of this leg. Kept as a last-resort fallback
+    // in case a future pool source does populate it.
+    const badgeTags =
+      (editionKeyParallel ? badgeMap.get(editionKeyParallel) : null) ??
+      badgeMap.get(editionKeyBase) ??
+      l.tags;
+    const badgeSlugs = extractBadgeSlugs(badgeTags);
+    const hasBadge = badgeSlugs.length > 0;
+    if (badgeOnly && !hasBadge) continue;
+    if (serialFilter === "special" && !isSpecialSerial) continue;
+    if (serialFilter === "jersey" && !isJersey) continue;
+
+    const fmvRow = (editionKeyParallel ? fmvMap.get(editionKeyParallel) : null)
+      ?? fmvMap.get(editionKeyBase)
+      ?? null;
+
+    if (!fmvRow) continue;
+
+    // A missing FMV is NOT a small FMV. The ask-proxy guard below reads
+    // `baseFmv < 1`, and in JavaScript `null < 1` is TRUE — so before this
+    // check an edition with no FMV at all fell into the ask-proxy branch and
+    // got a fabricated price of floorPriceUsd * 0.90. Drop the row instead:
+    // absent data must never be rendered as a number. (2026-07-25)
+    if (fmvRow.fmv == null || !Number.isFinite(fmvRow.fmv)) continue;
+
+    let baseFmv: number = fmvRow.fmv;
+    const confidence = fmvRow.confidence;
+    let confidenceSource = "supabase";
+
+    // Ask-proxy fallback: if FMV is effectively zero with LOW confidence,
+    // use floor ask price * 0.90 as a usable price signal. Only reachable for
+    // a REAL number now (a genuine 0/near-0 snapshot), never for a NULL.
+    if (
+      (confidence === "LOW" || confidence === "low") &&
+      baseFmv < 1 &&
+      fmvRow.floorPriceUsd &&
+      fmvRow.floorPriceUsd > 0
+    ) {
+      baseFmv = fmvRow.floorPriceUsd * 0.90;
+      confidenceSource = "ask_proxy";
+    }
+
+    // P1a: clamp the edition base FMV to its 90d max sale when it overshoots
+    // (applied to base, NOT adjustedFmv, so legit #1/last-serial premiums are
+    // preserved). Fake bargains then fall below the ask and drop out at the
+    // discount filter below; thin-data survivors get flagged for the caveat.
+    const guarded = guardTopshotFmv(fmvGuard, editionKey, baseFmv);
+    baseFmv = guarded.effectiveFmv;
+
+    let adjustedFmv = baseFmv * serialMult;
+    // Staleness penalty (display-only — does NOT mutate fmv_snapshots).
+    // The recalc weights WAP by days_since_sale decay, but a single sale
+    // from 20+ days ago can still leave FMV inflated relative to the
+    // current market. Apply a 30% haircut when the only data point is
+    // both old (>14d) and lonely (<=1 sale in the last 30d). For LOW
+    // confidence editions where the lone sale is older than a month,
+    // collapse FMV to the ask price so the deal renders at 0% discount
+    // instead of a fake bargain.
+    adjustedFmv = applyFmvStalenessPenalty(adjustedFmv, askPrice, confidence, fmvRow.basisDaysSinceSale ?? fmvRow.daysSinceSale, fmvRow.salesCount30d);
+    if (askPrice >= adjustedFmv) continue;
+    const discount = Math.round(((adjustedFmv - askPrice) / adjustedFmv) * 1000) / 10;
+    const dealRating = adjustedFmv > 0 ? Math.max(0, Number((1 - askPrice / adjustedFmv).toFixed(4))) : 0;
+    if (discount < minDiscount) continue;
+
+    // Prefer the canonical editions.thumbnail_url (reliable, ~99.7% populated)
+    // over the GQL asset-path / constructed media URL, which 404s when the
+    // listing didn't resolve to media. Falls back to the constructed URL.
+    const thumbnailUrl = fmvRow.thumbnailUrl
+      ?? (l.assetPathPrefix
+        ? `${l.assetPathPrefix}Hero_Black_2880_2880.jpg`
+        : `https://assets.nbatopshot.com/media/${l.id}?width=256`);
+
+    const tsListingResourceId = l.listingOrderID ?? l.storefrontListingID ?? null;
+    // Always link to the per-moment page (verified-working). The old
+    // `/marketplace/editions/<setID>/<playID>` format (on-chain integer ids)
+    // 404s on Top Shot — see handoff-2026-06-17-alert-buy-link-url-correction.md.
+    // Unlike the edition-level deal board, the sniper feed has the moment id, so
+    // `/moment/<id>` is both valid and more precise (lands on the exact listing).
+    const tsBuyUrl = `https://nbatopshot.com/moment/${l.id}`;
+
+    // Bare integer setID:playID for on-chain ownership matching. The ONLY
+    // valid source is set_id_onchain/play_id_onchain on the editions row.
+    // The TS GQL setId/playId values are NOT on-chain integers — do not use
+    // them. Falls back to parsing external_id when it happens to already be
+    // in integer form (e.g. "90:4060").
+    let intEditionKey: string | null = null;
+    if (fmvRow.setIdOnchain != null && fmvRow.playIdOnchain != null) {
+      intEditionKey = `${fmvRow.setIdOnchain}:${fmvRow.playIdOnchain}`;
+    } else if (fmvRow.editionKey && /^\d+:\d+(::\d+)?$/.test(fmvRow.editionKey)) {
+      intEditionKey = fmvRow.editionKey.split("::")[0];
+    }
+
+    tsDeals.push({
+      flowId: String(l.id),
+      momentId: String(l.id),
+      editionKey,
+      intEditionKey,
+      playerName: playerNameRaw,
+      teamName,
+      setName: l.set?.flowName ?? l.setName ?? "",
+      seriesName: (() => { const sn = l.set?.flowSeriesNumber ?? l.setSeriesNumber; return sn != null ? (SERIES_NAMES[sn] ?? "") : ""; })(),
+      tier: tierRaw,
+      parallel: PARALLEL_NAMES[parallelId] ?? (parallelId > 0 ? `Parallel #${parallelId}` : "Base"),
+      parallelId,
+      serial,
+      circulationCount: circ,
+      askPrice,
+      baseFmv,
+      adjustedFmv,
+      aspUsd: fmvRow.aspUsd,
+      daysSinceSale: fmvRow.daysSinceSale,
+      salesCount30d: fmvRow.salesCount30d,
+      discount,
+      confidence,
+      confidenceSource,
+      hasBadge,
+      badgeSlugs,
+      badgeLabels: badgeSlugs.map(s => BADGE_LABELS[s] ?? s),
+      badgePremiumPct: 0,
+      serialMult,
+      isSpecialSerial,
+      isJersey,
+      serialSignal,
+      thumbnailUrl,
+      isLocked: l.isLocked ?? false,
+      updatedAt: l.listedAt ?? new Date().toISOString(),
+      packListingId: fmvRow.packListingId,
+      packName: fmvRow.packName,
+      packEv: null,
+      packEvRatio: null,
+      buyUrl: tsBuyUrl,
+      listingResourceID: tsListingResourceId,
+      listingOrderID: l.listingOrderID ?? null,
+      storefrontAddress: l.sellerAddress ?? null,
+      source: "topshot",
+      paymentToken: "DUC",
+      offerAmount: null,
+      offerFmvPct: null,
+      dealRating,
+      isLowestAsk: false,
+      // See the RPC path above — ask-derived FMV never anchors a real discount.
+      lowConfidenceFmv:
+        guarded.lowConfidenceFmv || fmvCannotAnchorDiscount(confidence),
+    });
+  }
+
+  console.log(`[sniper-feed] built ts=${tsDeals.length}`);
+
+  // 6. Exclude retired moments.
+  let allDeals: SniperDeal[] = tsDeals.filter((d) => !retiredIds.has(d.flowId));
+
+  // 6a. A THIN default board augments too (2026-10-20). The sparse test above
+  // counts EDITIONS in the newest-200 pool, but what the reader sees is DEALS:
+  // on 10-20 the pool spanned enough editions to skip the augment and priced 4
+  // deals, while the market held ~1,000 (sortBy=discount). Until ts_listings
+  // came back to life on 09-07 this augment ran on every request and its rows
+  // WERE the board. Same read, same enrichment, same merge; "Recently listed"
+  // still orders the result by listing time (RPC rows carry listed_at).
+  if (!rpcAugmented && allDeals.length < TS_GQL_SPARSE_THRESHOLD) {
+    rpcDeals = enrichRpcDeals(await readRpcAugment(`thin board, ${allDeals.length} deals`));
+    rpcAugmented = true;
+  }
+
+  // 6b. Merge RPC augment rows when GQL was sparse. Dedup by editionKey so
+  // a deal present in both sources only shows once. RPC entries come first
+  // and win on collision since they carry the FMV the GQL pool may lack.
+  if (rpcDeals.length > 0) {
+    const merged = mergeDedupeByEditionKey(rpcDeals, allDeals);
+    console.log(`[sniper-feed] TS merge: rpc=${rpcDeals.length} gql=${allDeals.length} → ${merged.length}`);
+    allDeals = merged;
+  }
+
+  // 7. Mark the lowest ask per edition so the UI can flag the floor listing.
+  const lowestAskByEdition = new Map<string, number>();
+  for (const d of allDeals) {
+    const key = d.editionKey || d.flowId;
+    const current = lowestAskByEdition.get(key);
+    if (current === undefined || d.askPrice < current) {
+      lowestAskByEdition.set(key, d.askPrice);
+    }
+  }
+  for (const d of allDeals) {
+    const key = d.editionKey || d.flowId;
+    d.isLowestAsk = d.askPrice === lowestAskByEdition.get(key);
+  }
+
+  // 8. Pack EV enrichment
+  const packIds = Array.from(new Set(allDeals.map(d => d.packListingId).filter(Boolean) as string[]));
+  const packMap = await fetchPackEvBatch(supabase, packIds);
+  for (const d of allDeals) {
+    if (d.packListingId) {
+      const pev = packMap.get(d.packListingId);
+      if (pev) { d.packEv = pev.ev; d.packEvRatio = pev.ev_ratio; }
+    }
+  }
+
+  // 9. League filter (NBA / WNBA) — Top Shot only. #219 (2026-10-30): the deal's
+  // TEAM label decides first (the WNBA labels come from the same registries the
+  // team pick reads — current names + historic), then the set rule; a WNBA
+  // moment in a mixed set (Fresh Gems, Level Up…) is no longer filed under NBA.
+  // A failed label read falls back to the set rule and says so in the log —
+  // the previous behaviour, never a narrowed board presented as the league.
+  if (opts.league) {
+    const before = allDeals.length;
+    const wnbaLabels = await fetchWnbaTeamLabels(supabase);
+    allDeals = allDeals.filter((d) => leagueForEdition(d.setName, d.teamName, wnbaLabels) === opts.league);
+    console.log(`[sniper-feed] league=${opts.league} filtered ${before} → ${allDeals.length} (wnba labels ${wnbaLabels.size})`);
+  }
+
+  // 10. Sort
+  const sorted = sortSniperDeals(allDeals, sortBy);
+
+  // 11. Attach the serial-adjusted FMV estimate to #1/perfect deals, then let it PRICE them:
+  // the flat 8x display multiplier overstated small editions' #1 by ~2.6x median (measured
+  // 2026-10-25, lib/sniper/serial-estimate.ts). Re-sorted because discounts move.
+  await attachSerialFmvEstimates(supabase, sorted);
+  const repriced = sortSniperDeals(applySerialFmvEstimates(sorted, opts.minDiscount), sortBy);
+  sorted.length = 0;
+  sorted.push(...repriced);
+  // 12. One series label shape on every card (the RPC paths carried a bare "8" / "Series 8").
+  for (const d of sorted) d.seriesName = topShotSeriesLabel(d.seriesName);
+
+  const badgedCount = sorted.filter(d => d.hasBadge).length;
+  console.log(
+    `[sniper-feed] DONE ts=${tsDeals.length} total=${sorted.length} ` +
+    `badged=${badgedCount} fmv_hits=${fmvMap.size} badged_editions=${badgeMap.size}`
+  );
+
+  return {
+    count: sorted.length,
+    // Surface the actual displayed count so the UI badge matches what users
+    // see. After the RPC augment + dedup + filters, this differs from the
+    // raw ts_listings count returned by fetchTopShotPool.
+    tsCount: sorted.length,
+    flowtyCount: 0,
+    lastRefreshed: new Date().toISOString(),
+    deals: sorted,
+    teamOptions,
+    sourcesFailed: sink.failed,
+  };
+}

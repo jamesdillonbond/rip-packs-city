@@ -1,0 +1,39 @@
+-- ⛔⛔ APPLIED AND THEN REVERTED ~20 MINUTES LATER, BOTH ON 2026-09-13.
+-- This file exists because migration parity matches on NAME and this name WAS
+-- applied to production. **It is not the live definition.** The live body is
+-- 20260913021000_audit_20260913_allday_pull_value_realigns_with_the_rollup_at_open_basis.
+--
+-- WHAT IT DID: changed `backfill_pack_rip_metadata`'s All Day arm from summing
+-- the stored at-open `allday_pack_pull.fmv_usd` to summing the newest
+-- `fmv_snapshots` row per pull edition, and re-keyed the `allday_repair`
+-- predicate from `ap.fmv_usd IS NULL` to `ap.edition_id IS NULL`. Everything
+-- else in the function was byte-identical to 20260913014000.
+--
+-- WHY I APPLIED IT: `pull_value_usd` means two different things by collection --
+-- Top Shot sums CURRENT fmv_snapshots, All Day summed AT-OPEN fmv. Measured on
+-- 500 resolved 2026-06+ pulls: at-open mean $8.97, current mean $3.14, agreeing
+-- on 22 of 500 -- and /dashboard/packs sums both into one RIPPED VALUE tile and
+-- one NET P&L. Current also covered MORE (3,967 vs 3,780 whole packs per 4,000),
+-- because 76,376 pulls across 53,309 packs carry an edition with no stored fmv.
+--
+-- ⭐ WHY I REVERTED IT: there is a SECOND, PRE-EXISTING WRITER I had not found --
+-- `rollup_allday_rip_pull_value()` -- which sums `allday_pack_pull.fmv_usd` per
+-- pack, all-or-nothing, into the same column, incrementally off
+-- `allday_rip_rollup_state`. It is healthy and current. Two writers with two
+-- definitions would have FOUGHT: the rollup would overwrite a current-FMV value
+-- with an at-open one whenever a pull's `updated_at` moved, and the column would
+-- flip between bases with nothing recording which one any row held. **Two
+-- writers disagreeing is strictly worse than one definition I disagree with.**
+--
+-- ⚠ NO DATA WAS WRITTEN ON THE CURRENT-FMV BASIS -- verified before reverting:
+-- zero runs of the function between the two migrations. Nothing to repair.
+--
+-- ⚠ THE UNDERLYING INCONSISTENCY IS REAL AND STAYS OPEN. Both bases are correct
+-- for different consumers (realized-EV calibration wants at-open; a user's NET
+-- P&L wants current). Splitting the column is the likely answer and it is a
+-- product decision, not a 2am judgement call. See the revert migration's header.
+--
+-- This file intentionally carries NO executable statement: re-running it would
+-- reintroduce the conflict. The applied body is recoverable from this repo's
+-- history of 20260913014000 with the two CTE swaps described above.
+-- (no-op by design; see header)

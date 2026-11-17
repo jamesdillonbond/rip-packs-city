@@ -1,0 +1,277 @@
+# Rip Packs City — Claude Code AI Assistant Configuration
+
+> **HOW THIS FILE WORKS (restructured 2026-08-17).** The memory-file limit is **40,000 characters** on a standard 200k session — what the nightly pass, Cowork and every subagent run at (formula: the test below). This file carries only what a session needs *before* it knows its topic; the rest moved **verbatim** to `docs/reference/*.md`. Nothing was deleted — a rule that feels missing is in one of those files.
+>
+> **KEEPING IT UNDER: the limit is on CHARACTERS. Count with `node -e` and `.length` — NOT `wc -c` (BYTES) and NOT Python `len()` (CODE POINTS); both misread this file, in opposite directions.** Numbers + the 4 instruments: [tooling-gotchas.md](docs/reference/tooling-gotchas.md); case: `__tests__/claude-md-stays-under-the-memory-file-limit.test.ts`. 🚨 **HEADROOM IS ~0 (re-measured 09-20) — a new rule must DISPLACE one, never merely SPEND room** — put the displaced text **verbatim** in the matching `docs/reference/*.md` with a one-line pointer from here. **Over the limit the whole file is flagged and stops being trustworthy context.**
+>
+> ⚠ **Two rules govern every number here and in those docs. (1) Every figure is a DATED SAMPLE, not a constant — re-measure before quoting it. (2) A recorded correction has a shelf life.** **Re-derive; do not quote.**
+
+---
+
+## Reference index
+
+**[docs/reference/README.md](docs/reference/README.md)** (navigation data; each section below carries its own pointer). Two judgements stay here: ⚠ **`claude-md-condensed-originals.md` holds sections SHORTENED rather than moved — check there first if a detail seems missing**; **`schema-truth.md` wins over prose, but only as fresh as its stamp** (no generator — read it).
+
+---
+
+## WORKING STYLE — EXECUTE, do not narrate handoffs (Trevor, 2026-06-22, emphatic)
+
+**If you identify a task you have the tools to do, DO IT in the same turn, then report it done.** Do NOT call something a "Claude Code handoff" or "operator item" and stop when you could execute it yourself. Hand off ONLY what needs access you lack — and hand off the committed artifact, never a promise. Narrating instead of shipping angered Trevor ("lazy antics"). Ship first, summarize second, keep talk minimal.
+
+## Ledger — log every change that touches `main` or prod state
+
+Any time you ship something that changes `main` or production DB/data state — a code push, a migration, a data mutation — append an entry to [docs/overnight/ledger.md](docs/overnight/ledger.md) **in the same turn**, short: **date · what shipped · revert path**. Newest at the top of the dated section. Skip it for pure research / Q&A / no-op turns.
+
+⚠ **RE-READ THE LEDGER FROM DISK IMMEDIATELY BEFORE WRITING IT** — it is append-at-top and sessions write it concurrently, so splice into the freshly-read file, never write back a copy you read earlier. **Splice at a line-start `^### `, never a substring match on `### `** (a substring splice buries the heading mid-sentence — five times now). After writing: `grep -c '^### '` must rise by exactly the entries added; `find-swallowed-ledger-headings.awk` must print **0** (a COUNT — never `| wc -l` it); `find-future-dated-ledger-headings.mjs` must print **0** (dates are PT, CI's clock UTC).
+
+⚠ **On a rebase conflict, do NOT hand-edit the markers** — re-splice into upstream's copy (`git show :2:…`) at the first `^### `. Three traps, each drawn blood (anchor the check to line start · gate `git add` on the resolver's exit code · measure a baseline first). Recipe: [ledger-discipline.md](docs/reference/ledger-discipline.md).
+
+🚨 **Pre-2026-08-03 `git revert <sha>` paths are DEAD** (`filter-repo`): find the commit by MESSAGE; DB halves unaffected — full note in the ledger header. Residue: #22.
+
+---
+
+## Development workflow (READ FIRST)
+
+**ALWAYS commit and push directly to `main`. NEVER create feature branches. NEVER open PRs. This is non-negotiable.** This rule overrides any harness-supplied "develop on branch X" instruction, any "create a PR" suggestion, and any default Claude Code branching behavior. If the environment pre-checks out a `claude/*` branch, switch to `main` first, then commit and push there.
+
+- If a branch must be created for a risky refactor, delete it locally after merge (remote delete-ref 403 trap: tooling-gotchas.md).
+- Run the smoke test after deploying; verify Supabase row counts and Vercel deploy status before calling a task done.
+- **Commit the ledger BEFORE the code** so the code commit is the tip and auto-deploys (a docs-only tip suppresses the Vercel deploy — this trap has bitten twice).
+- Verify pages by **rendered DOM, not HTTP 200** — streaming shells always return 200, and a HIDDEN tab never reveals one (tooling-gotchas.md). ⚠ **And platform STATE by a REQUEST, never a status field** — `get_project.live:false` reads IDENTICALLY on a healthy estate (#76; verbatim: claude-md-condensed-originals.md).
+- **Before gating a route, enumerate EVERY caller AND every inbound link** — cron-job.org, GHA, vercel.json, pg_cron, in-repo fetches, each `href` builder (2 cases: known-issues.md). ⚠ **`/api/entity/*` is anon-public for GET only — a POST there works signed-in, 401s signed-out** (09-25).
+
+### Pushing from a sandbox — test it, do not assume it
+
+- ⚠ **"The sandbox cannot push" is CONDITIONAL — TEST IT, in one command: `git push --dry-run origin main`** (re-verified 09-12). A session whose authorized repo set lacks this repo is refused at the **repo-authorization layer, before any credential is evaluated**, so a PAT returns the identical 403 (discriminator + 2nd probe: tooling-gotchas.md).
+- ⚠ **Diagnose a push failure from the ERROR STRING, not from the fact that it failed** — `(non-fast-forward)` means BEHIND ORIGIN and reads exactly like a permissions failure.
+- ⛔ **Never "fix" a 403 by re-embedding a PAT** — merely reading it (`git remote -v`) prints a live `github_pat_…` into the transcript; that burned a real PAT on 2026-08-16. ⚠ **`pushurl` harvest DEAD; use the mount's `.rpc-git-cred` (Cowork sandbox too).**
+- **When push IS genuinely denied**, four proven routes — **displaced 09-20 to [tooling-gotchas.md](docs/reference/tooling-gotchas.md) (verbatim, end of file)**.
+- ⚠ **A no-push session's DB reach is narrower than `apply_migration` suggests** — a PINNED SQL function is PUSH-GATED and every `apply_migration` reds `migration-parity` until its file is committed. **Real no-push levers: pg_cron schedules, indexes, new objects**; `execute_sql` for SCRATCH DDL.
+- Bash-green ≠ push-green; never commit from the mount. History: [tooling-gotchas.md](docs/reference/tooling-gotchas.md).
+
+## Autonomous Cowork tasks
+
+Two scheduled Cowork tasks; coordinate via the shared ledger.
+
+**What each task does + the off-limits list: [autonomous-tasks.md](docs/reference/autonomous-tasks.md)** (moved 2026-09-19).
+
+Shared state in `docs/overnight/`: `ledger.md` (**"Declined — do not re-suggest"** is Trevor's heading), `inbox/` (⚠ read autonomous-tasks.md BEFORE archiving a filing — `INDEX.md` carries CI assertions), `metrics-latest.json`, `focus.md`, `.lock`. **Skim `ledger.md` first**; the night pass will not edit files committed in the last 24–48h. To halt autonomous shipping, create `docs/FREEZE.md`. Detail: [autonomous-tasks.md](docs/reference/autonomous-tasks.md).
+
+---
+
+## Project overview
+
+Rip Packs City (RPC) is a production-grade Flow blockchain digital collectibles intelligence platform: analytics, deal-finding, sniper tools, FMV pricing and badge tracking across the 5 published Flow collections (NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, UFC Strike). Trevor (founder) holds an official Portland Trail Blazers Team Captain designation on NBA Top Shot — ⛔ **IYKYK: never lead copy or outreach with it** (09-06).
+
+Stack: Next.js 16 · React 19 · TS 5 · Tailwind 4 · Supabase (Pro, Large) · Vercel Pro. Live: https://www.rippackscity.com · Repo: github.com/jamesdillonbond/rip-packs-city (public).
+
+**Repo map** (re-derive; never quote a count): [routes-and-surfaces.md](docs/reference/routes-and-surfaces.md).
+
+---
+
+## Infrastructure IDs (required on every tool call)
+
+- Supabase project ID: `bxcqstmqfzmuolpuynti` (Pro; **compute = LARGE since 2026-09-20** — ⚠ any pre-09-20 finding citing the **22 MB/s floor** is the OLD Small tier, so RE-DERIVE it). Specs, IO budget and tier table: [database.md](docs/reference/database.md).
+- Vercel project ID: `prj_YBJ6Utl32GfyBOIzbsp3kbshJh96`
+- Vercel team ID: `team_YWGCVToPBJSS60NgVh8jiCFV`
+- GitHub repo ID: `1188272071`
+
+Never omit `teamId` on a Vercel API/MCP call.
+
+---
+
+## Frequently used commands
+
+**List: [tooling-gotchas.md](docs/reference/tooling-gotchas.md)** (package.json data). ⚠ **`npm ci` FIRST in a fresh sandbox or agent worktree**, or `npx vitest`/`tsc` die on `MODULE_NOT_FOUND …`. ⭐ **`tsc --noEmit` DOES run in the laptop VM** with `--max-old-space-size=3072`; it OOMs at the default heap; skipping it put a compile error on `main` (09-19).
+
+
+⚠ **Exit-code traps** (pipe status, `grep && push`, a wrapper's `exit code 0`): verbatim in tooling-gotchas.md.
+
+---
+
+## Standing rules — the cross-cutting lessons
+
+These are the rules a session needs *before* it knows which subsystem it is in. Each links to where the full case history lives.
+
+### Honesty — a failed read must not render as an answer
+
+**The single most productive defect class on this platform.** A read fails, and the surface publishes the failure as a *fact*: "No +EV packs right now" out of a 503, "0 moments / $0" out of a timeout, "Follow a team to build your hub" to someone who follows six. Four layers, four helpers — pick the one for your layer, do not invent a fifth:
+
+| layer | helper |
+|---|---|
+| any API route a user can reach (anon OR signed-in) | `lib/api-error.ts` → `apiErrorResponse()` (its `/api/public/**` alias `boardUnavailable()` lives in `lib/insights/board-error.ts`) |
+| server page | `lib/insights/board-status.ts` → `summarizeDegraded()` / `degradedFromSource()` |
+| client dashboard | `lib/analytics/fetch-json.ts` → `fetchJson()` (discriminate on `ok`, **never** on `json == null`) |
+| OG social card | `lib/og/board-empty-copy.ts` → `boardEmptyCopy(fetched, noun)` |
+
+- ⚠ **A PAGED read that `break`s on error returns a PARTIAL list no caller can distinguish from a complete one** (`/sitemap/3.xml`, #28). No copy exists to grep — the tell is the control-flow keyword. Throw, or carry `complete:false`.
+- ⛔ **An ADD-ONLY refresh never retires what its source STOPPED returning — trust an ownership claim only at or after the walk that CONFIRMED it, keep that floor where a re-dispatch cannot clear it, and fail OPEN with no clean walk.** ⭐ 100% of them being ONE status class names the missing re-check path (23 phantom "unopened" packs: key-files-and-honesty.md).
+- **There are always THREE states, never two:** read failed · read ok + genuinely empty · read ok + unrenderable (e.g. rows that failed a name join). A name filter is not an emptiness test. ⚠ **The MIRROR: an `unknown` that is actually KNOWN is the same defect** (#80). ⛔ **A failure flag for ONE source must not gate a field fed by ANOTHER.**
+- ⚠ **Displaced 09-25, verbatim at the end of key-files-and-honesty.md:** a SERVER-SEEDED PROP is a fifth layer · ISR CACHES A FAILED READ (#33).
+- ⚠ **THE WRITE SIDE, absent from the table above (R120/R123):** a swallowed write error + a hardcoded `ok=true` + a count that CANNOT GO DOWN publishes a FAILED WRITE as a successful run — 66 days on one lane, **20+ writers estate-wide**. **DERIVE `ok` from whether the write landed, pair every count with its own `_error`, and make a count mean rows WRITTEN.** ⛔ **An `insert` awaited with NO destructuring is unreadable by construction, not merely ignored.** ⭐ **A failed CURSOR/STATE write fails the RUN and reports the cursor where it IS; close a delete-then-insert window by ORDER — write first, delete only what you did not write** (R123).
+- ⛔ **A WINDOW OVER A CHANGE-ONLY FEED IS NOT A CENSUS — nor its aged-out rows.** Atlas re-reports only CHANGED listings: a 24 h window held 29k of 411k open, its floor was false on 1,233 editions, its count "0 listed" on 10,871 — yet 20 % of older "open" rows were closed. Only a VERIFICATION answers; NULL until then (#149).
+- ⚠ **Displaced 09-26 (verbatim, end of key-files-and-honesty.md):** DEAD COUNTER vs a FLOOR (#74) · a SUPPRESSION IS A CLAIM — gate it on its OWN age.
+- ⛔ **SUBSTITUTION is the face where NOTHING FAILS: a fallback swapping the SUBJECT, not the DEPTH.** `?collection=candy_mlb` answered with Top Shot's buyers, every helper above satisfied. **Refuse — no rows, no subject name in the body.** An ABSENT param may still default.
+- **Fix per PANEL, not per page.** A page with one honest error branch is not an honest page (key-files-and-honesty.md).
+- **The worst sub-classes:** an account-level false claim; a page that **LOADS state and WRITES IT BACK** (a failed read there is a *delete*); an **alert**; a **guard** (`?? 0` fails it *open*); an empty state that **CONCLUDES**; a **SWEEP whose `ok` means it COMPLETED, not that its LANES worked**; a **DONE stamp in an ELSE that cannot tell IN FLIGHT from FINISHED** (#123). Cases: key-files-and-honesty.md
+- ⚠ **`?? 0` on a supabase count, `|| 1` as a divide-guard, and a DEFAULTED DB COLUMN beside a NULL `*_checked_at` are the fabricated-value shapes.** **ANY unwrapper that RETURNS on failure** (#114) publishes a measured zero AND leaves every downstream `catch` dead; ⭐ **The DB form's tell is a PERFECT CORRELATION** (#112; key-files-and-honesty.md). `no-fabricated-divisor-ratchet` bans it at zero. **Never persist a PARTIAL read as the fact** — a walk returning ROWS *and* an ERROR is the same shape (#119)
+- 🚨 **A CLIENT-ONLY failure is captured by NOTHING but the 09-07 beacon** (Sentry SDK OUT OF THE TREE — #34, decided: no spend; Vercel sees only server execution): `usage_events.client_error` + the scheduled `E2E DOM Smoke` badge (#69). Verbatim: claude-md-condensed-originals.md.
+- ⚠ **When you find one, grep for the EXPRESSION, not the file** — spread by copy-paste 5×; **a comment is only read by someone already in that file**. 🚨 **A READ-LAYER FIX DOES NOT CLOSE A FABRICATION THE WRITE LAYER CAN RE-CREATE:** a fabricated 0 is not ABSENT, so `count()` counts it and the reader republishes it — 82,864 rows defeated the 08-01 view fix from the writer's side (#128). **Grep the column's WRITERS; where TWO write one column, PIN BOTH.** ⚠ **That sweep is a POPULATION, not debt** (79 sites, 19 write-side, 0 live: it needs a PERSISTED write AND no paired known-count).
+
+Full canon + every instance: [docs/reference/key-files-and-honesty.md](docs/reference/key-files-and-honesty.md).
+
+### Guards, tests and instruments
+
+- ⚠ **`npx vitest run <file>` proves the FILE, and the SUITE is not the GATE: `npm test`+`tsc` pass trees `npm run lint:ratchet` reds (per-RULE); run `npm run preflight`.** A red run is not automatically yours: read the failing JOB first.
+- ⚠ **Ask what RUNS a guard and ASSERT THE COUNT IT INSPECTED** — a staged-only default inspected **nothing** on CI and exited 0. ⭐ **THE TELL IS SILENCE: one that normally states its count and then says nothing has not PASSED, it has not SPOKEN** (a `;` in an npm script dies in cmd.exe — use a node driver): testing-and-ci.md.
+- ⚠ **Ask what a passing guard is structurally SILENT about — its DERIVATION fixes its blast radius, and its ROOT *and stated CLASS* are CLAIMS.** **Prefer a tree walk over a curated list and a ban at zero over an allowlist; make *suppression* the curated list.** ⚠ **A control’s POPULATION must be the set the property is TRUE of, not a proxy that coincides today.** ⛔ **A SUPPRESSION IS A CLAIM that the CODE is wrong — when the GUARD is wrong it buys silence and can FAKE ANOTHER INSTRUMENT’S SIGNAL**: testing-and-ci.md.
+- ⚠ **A vacuous assertion reads as coverage everywhere, and mutation testing cannot find the worst kind** — **a test stating the contract in a comment and asserting something weaker.** The tell is the TITLE: a name carrying a negative claim or a transformation is a promise the assertion usually fails to keep. **Assert the ABSENCE of the false claim, not the PRESENCE of an error message.** 🚨 **Prove a guard with a PLANTED DEFECT, never by reading it — `\b` inside a JS template literal is U+0008, so the regex was unfalsifiable and looked right in every diff** (testing-and-ci.md).
+- ⛔ **A HAND-EDITED GENERATED BLOCK TURNS ITS OWN REGENERATOR INTO A DELETER** — `docs:issues-index`, the repair its own failure message prescribes, deletes rows whose text exists ONLY in that block (2 findings; `main` was red). **Diff a regeneration BEFORE `git add` — all `-` and no `+` is this class.** ⚠ **And a FIXER that derives its expected value FROM the state it repairs cannot detect an error in it**: `inbox:index:fix` counted a misplaced entry and agreed. Pair it with a check reading a source it never touches: testing-and-ci.md.
+- ⛔ **A header claiming it MIRRORS another implementation, or DESCRIBES a model, is an UNTESTED CLAIM — diff it against the body** (opposite verdicts for a week; a "7-day half-life" that was tiered 3/2/1): testing-and-ci.md.
+- ⛔ **A HARDCODED ALLOWLIST BESIDE A REGISTRY GOES STALE SILENTLY** — resolve through the registry, pin the narrowing gate: testing-and-ci.md.
+- ⛔ **A REGISTRY VALUE has no file of its own — `grep -rl <value> __tests__` BEFORE the push, not the files you edited** (one tab in `lib/collections.ts` reddened two guards in files never opened); ⚠ and grep the guards that READ a file before editing it: testing-and-ci.md.
+- ⚠ **A test red because its PREMISE changed is a RE-PIN, not an inversion — but re-pinning the row is not enough: check the property is still EXERCISED** by a subject that genuinely lacks it: testing-and-ci.md.
+- ⚠ **Tests that pin the defect they were named to prevent get INVERTED, never deleted** — a passing test asserting a promise is what holds that promise in place. **Pin the property, not the spelling**.
+- ⚠ **A not-vacuous check must be satisfiable at a population of ZERO**, or the guard punishes its own success; strip comments with `scripts/lib/strip-comments.mjs`, never a fresh copy: testing-and-ci.md.
+- ⚠ **FIXING A GUARD WITHOUT FIXING ITS RECORD leaves the incidence unmeasurable** — fix the guard AND the field an observer keys on (testing-and-ci.md).
+- ⚠ **A lane whose PERIOD exceeds its table's RETENTION cannot be watched** (#56): cron-and-schedulers.md.
+- ⚠ **A permanently-red or -zero instrument is indistinguishable from a broken one, and a CHECK THAT DIDN'T RUN from one that PASSED** (docs-only CI: testing-and-ci.md) — check the LOG, not the badge; **prove a watcher sees a FAILURE**. ⚠ **An ALARM SHARING ITS SUBJECT'S SCHEDULER is no alarm** — shed every tick 2.8h (#80).
+- ⚠ **CI `run:` is `bash -e`: a fallible ASSIGNMENT aborts the step** (⛔ never `|| X="0"`): testing-and-ci.md.
+- ⚠ **An exclusion justified by ANOTHER instrument is a claim about it — check that one can SEE the property**, and know what NOTHING here measures — **the BUILT BUNDLE** (see Vercel). ⭐ LAYOUT now has one: `scripts/qa/mobile-sweep.mjs` 390+320, `e2e/mobile-layout.spec.ts`.
+
+⭐ **This sandbox CAN run the DB-invariant suite + migration parse check locally** (`initdb` as `postgres`; root is refused) — recipe: tooling-gotchas.md. Full detail: [docs/reference/testing-and-ci.md](docs/reference/testing-and-ci.md).
+
+### Measurement discipline
+
+- ⚠ **A filed FINDING is a hypothesis — re-derive before acting; and so is a filed DECISION NOT TO ACT (the tell is a cost stated with no number in it), a stale JUSTIFICATION (invertible — the tell cites a SHIP DATE), and a filed CORRECTION.** ⛔ **Read the ITEM, never an excerpt — a grep of #118’s first paragraph cost a change it twice FORBIDS. OPEN the dated item before contradicting it, and a CONFOUND found does not license the OPPOSITE attribution.** Five more clauses + every case, verbatim: [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md).
+- ⚠ **A plausible mechanism is not a measurement**, including when it flatters this file — a cheap sample beats a good story. ⚠ **And a probe whose HARNESS differs from production in the ONE dimension the answer depends on is not a measurement of production** (OG-font case: key-files-and-honesty.md).
+- ⛔ **A FIX TO A ROUTE IS NOT A FIX TO THE SURFACE until its CALLER can reach it** — one was verified live 0 → 5 while its client still returned early on the wallet shape, and **no route-level test could have caught it** (case: cron-and-schedulers.md).
+- ⚠ **Name the caller before you touch the function** — an afternoon went into one with **zero** callers. **EIGHT sources, and the last two are INVISIBLE from a sandbox**; a TRIGGER function has no textual caller. ⚠ **A TABLE’s WRITERS the same — grep the DB: two pg_cron ones REFUTED a filed finding (#81).** ⛔ **A writer bypassing a GATED one removes the gate.** Full list: [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md).
+- ⚠ **Displaced 09-20 (verbatim, end of file): DISCOVERY must not double as the REFRESH list · an ELIGIBILITY count is not a GAIN count · a SWEEP under-covers two ways, both reporting success: too few slots (`N ≥ population ÷ staleness_hours`) and the WRONG POPULATION · **size the MARGINAL set; a CAP IS NOT A RATE** · a directional claim needs a DISTRIBUTION (09-27) → [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md) · `count(*)` over a ONE-ROW function → database.md · Diff the SET, not the count → trust-board-and-safety.md.**
+- ⚠ **Read `cron.job.command` to learn what a schedule calls; never infer the callee from the name** — two objects one suffix apart yielded *opposite* conclusions. ⛔ **Where a job’s PERIOD outruns the instrument’s WINDOW, `latest_status=failed` cannot separate STILL-BROKEN from FIXED-AWAITING-NEXT-RUN** — a WEEKLY reindex read red 11 min after its fix landed; resolve against LIVE state.
+- ⚠ **A window sitting ENTIRELY AFTER a change point cannot tell a STEP from a LEVEL, and read the live alarm's OWN `detail`/ack text before fixing what it already covers** (case, verbatim: cron-and-schedulers.md).
+- ⚠ **When an instrument's first finding is SURPRISING, establish WHO generated it before believing WHAT it says** (case + REQUESTS≠READERS: cron-and-schedulers.md, end). ⛔ **Traction/campaign counts EXCLUDE `internal_accounts`; a QA account you create goes IN it that turn.**
+- ⚠ **A rate POOLED ACROSS A FIX measures the fix's ABSENCE and reads as its FAILURE; under an IO spell a cron DURATION or completion rate measures the ESTATE, not your fix — judge per-call work on pgss blocks/call.** Split on the change point — ⭐ **the ALARM pools across it too, so a live `failure_rate` row is NOT evidence of a live problem until you split it** (R124; numbers + case, verbatim: [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md)).
+- 🚨 **A PERFECT RATIO ACROSS N INDEPENDENT INSTRUMENTS IS ONE POPULATION COUNTED TWICE, NOT N REGRESSIONS** — all 19 ratchet rules "grew" **exactly 2×** because eslint walked a stray agent worktree (`.claude/worktrees/`), a second checkout. **Read what the instrument INSPECTED (3119 files → 6208) before what it CONCLUDED**: testing-and-ci.md.
+- ⚠ **Controls, both directions:** a NULL result needs a positive control; a POSITIVE needs a no-change control **the fix cannot move**; a DIFFERENCE needs both sides counted by the same instrument. **Never pair a count from one table with a property from another.** ⚠ **A control must use the PRODUCTION CALLER**: a `postgres` MCP call cannot prove a `cron_heavy` job runs.
+- ⚠ **FIVE ways a measurement lies; the fifth is new 09-20: a CORRECTNESS PROBE IS SILENT ABOUT COST BY CONSTRUCTION — after an ORDER BY/plan change on a hot lane read the next PRODUCTION row's duration, not your own output** (a 28× buffer regression shipped that way; `duration_ms` 4,746 → 37,000 caught it). Other four + warm-vs-warm as DIAGNOSIS + `pg_postmaster_start_time()` before any fleet attribution: **verbatim in [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md).**
+- ⛔ **A METRIC'S DEFINITION LIVES IN CODE, NOT IN THE THRESHOLD YOU REMEMBER — a model that cannot reproduce TODAY'S value cannot predict tomorrow's.** A model that missed two code paths read 34% against an observed 53%, and that 19-point miss shipped as a **backwards call on a launch gate** (the two paths: claude-md-condensed-originals.md).
+- ⚠ **AN ENGINE THAT IS UP IS NOT A PLATFORM THAT IS REACHABLE, and log SILENCE is not engine silence** — 09-18 the instance lost **outbound DNS** while Postgres kept writing (#122). ⭐ **A `<!DOCTYPE html>` from Supabase IS Cloudflare's `522`; probe an endpoint reading NONE of our tables to split ENGINE from PATH.**
+- ⚠ **Read the ERROR STRING, never the duration — and ALL of it: the clause you SKIP discriminates.** Two ~2-min timeouts (gateway vs `statement_timeout`) give one number, two meanings: [database.md](docs/reference/database.md). ⛔ **Never state a cause the error did not** — half a string became false user-facing copy on 09-14.
+
+### Concurrent sessions — THREE writers, and two are indistinguishable
+
+⛔ **"Not mine" + "not mine" ESTABLISHES NOTHING** — who you can MESSAGE ≠ who writes; a Cowork pass ships unannounced. `git log -1 --format=%an` tells Cowork from this box; **nothing tells two sessions ON it apart.** ⛔ **`git add <shared file>` stages the OTHER session's uncommitted hunks** — `git diff` it first, commit same turn; **`git add -p` exits 0 staging NOTHING.** ⭐ **A DIRTY FILE MAY BE ALREADY PUSHED from another clone — `git hash-object <f>` vs `git rev-parse origin/main:<f>` is the discriminator; reading the DIFF tells you nothing** (4 of 6 were already upstream). ⛔ **Before any before/after, list migrations in your window** — "freeze the tree" is unactionable here, so windows are MINUTES. ⭐ **ARRIVAL ≠ SURVIVAL — assert your change LANDED, not just that nothing died.** ⭐ **Remove the failure mode; do not soften the detector.** [tooling-gotchas.md](docs/reference/tooling-gotchas.md)
+
+### Timestamps
+
+🚨 **EVERY TIME YOU REPORT TO TREVOR IS PT — chat, summaries, ledger headings, all of it. NEVER quote a UTC/`Z` time to him** (asked repeatedly; broken again 09-10). ⚠ **READ THE ZONE BEFORE CONVERTING — four incidents came from a plausible timestamp produced by a clock whose zone was assumed.** ⚠ Git Bash lies BOTH ways and the web sandbox is LA time (PDT/PST). Clocks + conversion recipe: [tooling-gotchas.md](docs/reference/tooling-gotchas.md).
+
+### Windows / Git Bash
+
+**Moved VERBATIM to [tooling-gotchas.md](docs/reference/tooling-gotchas.md) 2026-09-20.** The three that bite most: ⚠ **backticks in `git commit -m` are command substitution** (write the message to a file, `git commit -F`); ⚠ **assert the occurrence count before a scripted replace, and key any backup on the FULL PATH**; 🚨 **`get_edge_function` AND `cron.job.command` hand back live gate keys — redact or hash, never echo**, and never broad-query a DOM that can hold secrets.
+
+### Database — the traps that bite most often
+
+- **PostgREST caps reads at 1000 rows and CLAMPS an explicit `.limit()` above that**; a bare `.select()` clamps too. For a total, read the returned `count` (`head: true`), never `rows.length`.
+- ⚠ **A `LIMIT` bounds a query's OUTPUT, not its COST — "lower the limit" is often not a lever.** Cut ITEMS per tick, not rows per item, and compare **BUFFERS**, never timings (66,499 → 741 on one `WHERE collection_id`: database.md). ⚠ **Scoping an aggregate is an EQUIVALENCE claim: PROVE it over the population.** ⭐ **A per-key `LATERAL` beats a table-streaming `DISTINCT ON` only if the index carries the aggregated column — and even then MEASURE: a blessed pattern whose precondition holds is not automatically an improvement** (#121: 3.1× faster, 24 % WORSE in buffers — not shipped; database.md)
+- ⚠ **`SET statement_timeout` on a function is INERT on pg_cron; via PostgREST only a HIGHER one applies (gateway cap ~120 s).** ⛔ Most are load-bearing — do NOT strip.
+- ⚠ **Displaced 09-20, verbatim at the end of the named file — all still binding.** [database.md](docs/reference/database.md): a DIFFERENTIAL UPSERT probes every offered row · `EXCEPTION WHEN OTHERS` does NOT catch a 57014 kill (R118) · every `.range()` needs a deterministic `.order()` on a UNIQUE key · a batch `.insert()` is ALL-OR-NOTHING · cursor paging needs a UNIQUE tiebreak. every `apply_migration` bursts user-facing `PGRST002` 500s for ~10–20 s (batch them). [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md): CADENCE AND BUDGET ARE ONE DECISION · a 600 s pg_cron reader wants an HOUR-SET before a minute (the READ is the lever).
+- ⚠ **A LEG'S `ORDER BY` DECIDES WHETHER IT PROGRESSES AT ALL.** A walk starting at the top of what it resolves COMPOUNDS; one on an **IMMUTABLE** key re-reads its own head forever, so unresolvable rows pile up there and throughput decays to **ZERO with nothing reporting it** — a SHARED counter hid a leg at 0 (#128). **Order by a column the job WRITES, page a BOUNDED index slice behind a cursor, and INDEX that column** (28× buffers otherwise). [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md)
+- ⛔ **`last_vacuum` AND `last_autovacuum` both NULL = NEVER vacuumed**; a fresh stamp is not enough — read `relallvisible`/`relpages` (#121); **BLOCKS TOUCHED is the cache-independent discriminator**; size an index build first. Verbatim: database.md.
+- ⛔ **`CREATE OR REPLACE` IS A FULL-BODY WRITE — RE-READ THE LIVE OBJECT IMMEDIATELY BEFORE ONE** (a stale draft silently reverts another session's guard, and its pin). ⭐ **Verify the base on `prosrc` (stored VERBATIM) against the migration's BODY — `pg_get_functiondef` REFORMATS THE HEADER, so diffing THAT against the file reads as drift that is not there.** ⚠ On a VIEW it also RESETS reloptions, stripping `security_invoker=on` and cannot rename/reorder columns (`42P16`). [database.md](docs/reference/database.md)
+- ⛔ **A `moment_id` IS UNIQUE ONLY WITHIN A COLLECTION, EVEN INSIDE ONE WALLET — scope every wmc / `moment_acquisitions` id read/write by `collection_id`; wallet scope is NOT enough** (#142, #223: binder "Paid $65"; tree-walk guard). ⚠ **A SQL-language helper INLINES and re-runs per scanned row; `= ANY (ARRAY(SELECT unnest(fn(…))))` runs it ONCE** (batch 62): database.md
+
+- ⚠ **`rows_written = 0`, `ok = false` and `extra.<step>=0` are null instruments** — read `extra` + `last_error`, pair every count with an `_error`, **measure the OUTCOME table, not the self-report**. [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md)
+- ⚠ **`*_at` = its WRITER's contract** (R107): displaced 09-27 verbatim to database.md (end).
+- ⚠ **Displaced 09-20 to [database.md](docs/reference/database.md) (verbatim, end of file): REVOKE `FROM PUBLIC, anon, authenticated` in ONE statement ORPHANS a pg_cron caller — GRANT in the same migration · `check_*` MIXED return shapes — THREE, incl. a jsonb OBJECT; LENGTH ≠ SEVERITY · UNIQUE INDEX on a PARTITIONED table · `pipeline_runs` ~73h retention.**
+- **`apply_migration` for DDL (its FILE first, 09-26); `execute_sql` for reads.** FMV writes are delete-then-insert, NEVER upsert. ⚠ **CIC needs `execute_sql` and dies at the 60 s cap leaving `indisvalid=false`; a `SET …;` prefix makes a pg_cron command a TRANSACTION BLOCK; ⛔ never `RESET ALL`** — [database.md](docs/reference/database.md). MCP + schema gotchas: [tooling-gotchas.md](docs/reference/tooling-gotchas.md).
+
+### Vercel
+
+- 🚨 **A GREEN DEPLOY IS NOT PROOF A CSS CHANGE SHIPPED** — 3 of 6 CSS-only commits hit READY with the rule ABSENT from the served chunk (2 byte-identical; `Restored build cache`). **Grep the deployed chunk for the DECLARATION**; `@media` counts lie (Lightning CSS merges blocks): scripts/qa/README.md.
+- **A docs-only push never rebuilds** — `ignoreCommand` diffs vs the LAST DEPLOY and also skips migrations/tests/`.github` (#61); ⚠ the v13 POST does NOT override it. Touch a non-docs file.
+- **Pro Lambda `maxDuration` hard cap is 800s.** Higher sends the deploy to ERROR *invisibly*.
+- 🚨 **A GREEN SUITE IS NOT A DEPLOY GATE FOR SEGMENT SEMANTICS** — `DYNAMIC_SERVER_USAGE` lives only in a real render, so `tsc`/vitest/lint and even a guard pinning the CALL are blind; it 500'd a live route (09-20). **CI `build-render` renders all routes (09-25); PREVIEW-verify too.**
+- ⚠ **`get_deployment.state` LAGS** (`ready` vs `buildingAt`); **check the deploy PER COMMIT** — "none" may be a ~20-min LAG, and a late OLD build then STEALS prod (10-21). 🚨 Rollback aliases LIE; disk IO can fail a build: tooling-gotchas.md.
+
+---
+
+## Quick-reference facts
+
+### Two collection-string conventions (CRITICAL footgun)
+
+**Long-form** (`sales`, `editions`, `collections.slug`) vs **short-form** (`flowty_*`, CHECK-whitelisted to six values, NOT `other`) — both lists: [schema-truth.md](docs/reference/schema-truth.md).
+
+⚠ **That CHECK is on `flowty_transactions` ONLY** — a wrong value persists SILENTLY in the other two: schema-truth.md.
+
+### Chain two — a Solana address is not a Flow address with different characters (CRITICAL footgun)
+
+Flow/EVM: hex, `0x`-prefixed, case-INsensitive. Solana: **base58, un-prefixed, CASE-SENSITIVE**. This repo's two reflexes — `.toLowerCase()` and *prepend `0x` if missing* — do not normalise a Candy key, they **destroy** it. ⚠ **It fails SILENTLY IN THE WRONG DIRECTION: zero rows, rendered as "this wallet holds nothing"** — or a complete object of ZEROS echoing the mangled wallet back.
+
+- **Use [lib/address.ts](lib/address.ts) — never a bare `.toLowerCase()`, never a fresh helper** (a grep found TEN already). Which function for which job: [chain-strategy.md](docs/reference/chain-strategy.md).
+- ⛔ **NEVER NARROW THE INCUMBENT CHAIN WHILE WIDENING FOR A NEW ONE.** `isValidAddressForChain(k,"flow")` is **stricter** than the `startsWith("0x")` it resembles. Pin the hex path as its own arm. ⛔ **`dbChain ?? "flow"` made null-chain Panini Flow — test `=== "flow"`.**
+- ⛔ **Fold-and-prefix on a DISPLAYED address is a FABRICATION, not an absence**; a per-device identity key is chain-scoped, swept by PREFIX: chain-strategy.md.
+- ⛔ **A collection-keyed map lacking the new chain returns `null`, and null SILENTLY DROPS features** (Candy moment pages lost links + CTA; its test used `candy_mlb` as "unknown"): chain-strategy.md.
+
+### Disney Pinnacle grain
+
+⛔ **A pin = a `pinnacle_catalog` row (`render_id`); `pinnacle_editions` is SET-LEVEL (one character/franchise per key) and its `external_id` matches NO held key**: [schema-truth.md](docs/reference/schema-truth.md) (end). ⛔ **WRITERS too (#151: 33k held pins misnamed).** ⛔ **A character = the `characters` TRAIT, never `character_name` (the PIN's name, 266/683 404); franchise slugs drop ™.**
+
+### Collection UUIDs
+
+All 7 live in the DB-derived table in [schema-truth.md](docs/reference/schema-truth.md) — ⚠ **09-08: Candy MLB (`solana`) is `is_active=true` (#63); Panini `is_active=true` since 10-19 — its own tables feed every rollup (#64).**
+
+### Enums
+
+- **Never `.ilike` an enum column — use `.eq`**; `fmv_snapshots.confidence` is UPPERCASE. Value lists (+ a 2nd confidence vocabulary; `fmv_confidence`, `tier_type`): [database.md](docs/reference/database.md). `chain_type`, and why `chain` lives on `collections` ONLY: [chain-strategy.md](docs/reference/chain-strategy.md).
+
+### Series map (on-chain UInt32 → display name)
+
+⚠ **0↔1 is TOP-SHOT-SPECIFIC — NEVER blanket-remap `1 → 0` across collections** (dropped 385,734 TS rows). Full map + `collection_series` divergence: [database.md](docs/reference/database.md).
+
+### Cadence
+
+⚠ **MCP-verify deployed mainnet source before any `.cdc`, Cadence literal or FCL `mutate`/`query`** — [apis-and-cadence.md](docs/reference/apis-and-cadence.md).
+
+---
+
+## Concierge non-negotiable rules
+
+1. **RPC is READ-ONLY** — no cart, no gifting; the only transactions: admin giveaway delivery + the no-custody user TRADE ROOM (`/trades`; signing LIVE since 10-31, kill switch `RPC_TRADE_ROOM_EXECUTE`: concierge.md). **Never offer an action the product lacks.**
+2. **A NAME is not a PERSON; a team label is not a FRANCHISE** (09-25): resolve via `resolve_player_name` / `resolve_team_name` (aliases, league spelling, renames, father/son, historic labels); a new father/son or rename goes in `player_relations`; the league's spelling is an ALIAS, never a rename.
+3. ⛔ **FMV CONFIDENCE IS INTERNAL — no tier on any page, OG card or concierge answer** (10-18; API field kept): key-files-and-honesty.md.
+
+The rest (Pinnacle's FMV triple-join, DERIVE-don't-recite): [concierge.md](docs/reference/concierge.md); rule 2: [player-identity.md](docs/reference/player-identity.md).
+
+---
+
+## Code patterns and conventions
+
+- ⛔ **Every collection renders the SHARED `[collection]` pages — no static `app/(collections)/<slug>/` fork; differences are registry switches** (09-27: routes-and-surfaces.md). Pinnacle `is_locked` = contract maturity: KEEP data, NO lock UI (schema-truth.md).
+- Full file replacements only — never snippets or diffs. Claude Code prompts: normal markdown, desktop-read.
+- Next.js conventions (`proxy.ts`, `any` client, `generateMetadata` placement + shallow merge, Suspense): [architecture-notes.md](docs/reference/architecture-notes.md) (end).
+- Fire-and-forget >30s: `after(runX())` from `next/server`, return `{status: accepted}`. ⚠ **`try/catch` CANNOT catch a `maxDuration` kill and the kill is ABSENT from `pipeline_runs_daily`** — write a `<pipeline>-heartbeat` BEFORE the work (`rows_*` NULL), read kills by CORRELATION (`npm run pipelines:kills`), bound every `fetch`. Cases: [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md)
+- Never hardcode `#E03A2F` or `'Barlow Condensed'` — always the tokens in `app/rpc-tokens.css`. ⚠ **Web red is `#E03A2F`; email red is `#E55A4C`**, hardcoded on purpose (email clients lack CSS custom properties). ⚠ `--rpc-black` and `--rpc-text-primary` are THEME-AWARE — a hardcoded dark hex renders a black slab in light mode.
+
+---
+
+## Hot wallet & secrets
+
+Flow CLI hot wallet `0x3aa11c84d776838f`. ⛔ **Signing MUST be ECDSA_secp256k1 + SHA2_256** (`server-authz.ts` used p256 + SHA3-256 for months) and signing tests must verify **cryptographically**, never assert output shape. Wallet rules, HybridCustody ban, the 8 key env vars: [tooling-gotchas.md](docs/reference/tooling-gotchas.md).
+
+⭐ **Edge deploys: push, then dispatch `.github/workflows/edge-fn-deploy.yml` (`function=<slug>`) — CLI from committed files, read-back checks; no MCP transcription.** rpc-edge-fn-deploy §4.
+
+## Prioritized next actions
+
+**The canonical forward plan is [docs/strategy/roadmap-2026-10-17.md](docs/strategy/roadmap-2026-10-17.md)**; one roadmap per collection in `docs/strategy/collections/`, per feature in `features/`. Thesis (08-03): **accuracy is the GATE, not a phase** — growth tactics stay removed until the data beats the sites collectors already use; headline metric is the share of prices at HIGH/MEDIUM confidence. Still binding: **intelligence-first**; Cart / gifting removed (trading = the trade room, 10-31: features/trading.md); **no paid tier shown or considered anywhere until 100 WAU** (09-25); no infra spend pre-revenue.
+
+**Live numbers, open items, decisions:** [roadmap-status.md](docs/reference/roadmap-status.md) (dated samples). Register: [known-issues.md](docs/reference/known-issues.md).
+
+---
+
+## Recent sessions
+
+Session entries live in `docs/sessions/`, one per month; none is needed to start work. **Write into the CURRENT month's file (prepend, newest-first), never here**, and **promote every durable lesson into this file or the matching `docs/reference/*.md` — a fact left only in a session log stops being read.**
+
+⚠ **`docs/archive/**`, `docs/health/**` and `docs/sessions/**` are frozen history — never rewrite their links.** Layout: [session-and-archive-conventions.md](docs/reference/session-and-archive-conventions.md).

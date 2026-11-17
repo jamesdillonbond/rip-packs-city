@@ -1,0 +1,58 @@
+-- audit_20260912_sales_counterparty_backfill_was_stuck_below_its_work_not_exhausted
+--
+-- ⭐⭐ RESETS `sales_counterparty_backfill_state.cursor_sold_at` TO NULL so the lane restarts
+-- from the HEAD. One row, one column. This CORRECTS a filed conclusion rather than acting on it.
+--
+-- 🚨 THE FILING SAID "PERMANENTLY EXHAUSTED". IT IS STUCK, WHICH IS THE OPPOSITE PROBLEM.
+-- Inbox `2026-09-12T0117Z` measured three slices (104,600 rows, zero eligible) and concluded the
+-- decodable work was finished. The window IS exhausted — but the JOB is not, and retiring the lane
+-- (the obvious next step) would have abandoned real work.
+--
+-- (1) THE WINDOW, re-derived EXHAUSTIVELY rather than sampled. The cursor sits at
+--     2024-04-19 09:32:49.894839+00 and the floor at 2023-11-08 17:00:00+00, so the walk covers
+--     sales_2023 (from the floor) + sales_2024 (to the cursor). Counted partition-direct, by source:
+--       sales_2023 floor..Dec31 :  78,441 allday_studio_history_v1 + 18,645 ufc_studio_history_v1
+--       sales_2024 Jan1..cursor :  93,098 allday_studio_history_v1 + 29,314 ufc_studio_history_v1
+--     = 219,498 null-seller rows in range, and **100% carry one of the two sources the claim
+--     predicate excludes**. ZERO eligible. That is why every tick returns nothing and 77% of them
+--     die on the Postgres statement timeout walking the whole index range to prove it.
+--
+-- (2) ⭐ BUT THERE IS ELIGIBLE WORK ABOVE THE CURSOR, WHICH THE LANE CAN NEVER REACH.
+--     `sales_2026` null-seller rows by source: topshot_marketplace 4,948 · onchain_dapper_v1 2,883 ·
+--     onchain 734 · onchain_dapper_v2 42 (plus 1,329 allday_studio_history_v1, excluded). All have a
+--     valid 64-hex transaction_hash. ⚠ Discount topshot_marketplace — migration 20260902053232
+--     recorded it converting ZERO of 480 — and **~3,659 `onchain*` rows remain genuinely claimable**.
+--     The cursor branch only walks `sold_at < cursor`, so none of them is ever in range.
+--
+-- (3) ⛔ THE "RE-WALK" OBJECTION IN THE FILING DOES NOT HOLD, and it is why this is safe.
+--     It warned that resetting the cursor makes the lane "re-walk everything above that is already
+--     done". It cannot: the claim predicate is `seller_address IS NULL`, and a row that was resolved
+--     HAS a seller. A reset re-walks only UNRESOLVED rows, newest first — which is exactly the 2026
+--     backlog.
+--
+-- (4) ⭐ AND THE RESET BRANCH IS THE CHEAP ONE. `EXPLAIN` of the `cursor IS NULL` query: the
+--     partitions are range-ordered on `sold_at`, so the planner emits an ORDER-PRESERVING `Append`
+--     newest-first (2027, 2026, 2025, 2024, 2023) with `Limit` above it — satisfied inside
+--     `sales_2026` at **cost ~10,791**, never touching 2023–2025. The stuck branch has no such exit:
+--     it must walk all 219,498 ineligible rows. **This makes the lane cheaper AND productive.**
+--
+-- ⚠ NOT a substitute for the partial index. Once the cursor descends past 2026 the lane re-enters the
+-- exhausted zone and the timeouts return. The queued fix stands: add `source` to the predicate of
+-- `idx_sales_*_nullseller_soldat` so the excluded rows are not in the index at all. That is a
+-- CONCURRENTLY build on 1.47 GB of partitions and needs a genuinely quiet instance — at the time of
+-- writing there were 7 active backends, 3 in IO wait and 9 failed cron jobs in 30 minutes, so it is
+-- deliberately NOT done here.
+--
+-- ⛔ DO NOT "fix" this by raising `floor_sold_at`: the function self-heals a cursor strictly below the
+-- floor to NULL, so that route reaches the same state by a side effect nobody reading the floor would
+-- predict. Set the cursor directly, as here.
+--
+-- REVERT (restores the exact prior position):
+--   UPDATE public.sales_counterparty_backfill_state
+--      SET cursor_sold_at = '2024-04-19 09:32:49.894839+00'::timestamptz
+--    WHERE id = 1;
+
+UPDATE public.sales_counterparty_backfill_state
+   SET cursor_sold_at = NULL
+ WHERE id = 1
+   AND cursor_sold_at = '2024-04-19 09:32:49.894839+00'::timestamptz;

@@ -1,0 +1,674 @@
+"use client"
+// components/fast-break/FastBreakClient.tsx
+//
+// The interactive heart of /[collection]/fast-break: hero lineup card,
+// missing-players list, run-progress widget, save flow. Reads from
+// /api/fast-break/optimize (60s warmCache) and /api/fast-break/uses (no
+// TTL — refetched after every successful save). Save flow honors the
+// idempotent flag the route returns and surfaces "Already saved" instead
+// of "Saved!" when a re-save changes nothing.
+
+import { useCallback, useMemo, useState } from "react"
+import { answerFor } from "@/lib/warmup/answer-for"
+import { useWarmCache } from "@/lib/warmup/WarmupContext"
+import {
+  TIER_TOKEN,
+  tierToken,
+  thumbnailFor,
+  initialsFor,
+  applyOptimisticUses,
+  groupUsesByTier,
+  applyUseBumps,
+  type Tier,
+} from "@/lib/fast-break-client-compute"
+
+interface OptimizePlayer {
+  nbaPlayerId: string
+  fullName: string
+  teamAbbr: string
+  highestTier: Tier
+  remainingUses: number
+  bestMomentId: string
+  bestSerial: number
+  projPoints: number
+  projMinutes: number
+  injuryStatus: string | null
+  gameId: string
+  opponentTeamAbbr: string
+}
+
+interface OptimizeLineup {
+  players: OptimizePlayer[]
+  captainNbaPlayerId: string | null
+  projectedScore: number
+  serialSum: number
+}
+
+interface MissingPlayer {
+  nbaPlayerId: string
+  fullName: string | null
+  teamAbbr: string | null
+  projFp: number | null
+  cheapestListing: { momentId: string | null; askUsd: number; url: string | null } | null
+  /**
+   * true = we could not look up a listing (the read failed, or we had no player
+   * name to search on). NOT the same as looking and finding none — which is the
+   * only case that earns the flat "Not currently listed" claim below.
+   * Optional so a cached payload from before this shipped renders as before.
+   */
+  listingUnknown?: boolean
+}
+
+interface OptimizeResponse {
+  walletAddr: string
+  runId: string
+  gameDate: string
+  lineupSize: number
+  eligibleCount: number
+  consideredCount: number
+  /**
+   * Whether an empty lineup is OUR missing data or the user's roster (#8).
+   * Optional so a cached payload from before this shipped renders as before.
+   */
+  dataStatus?: "ok" | "no_games" | "slate_unavailable" | "projections_unavailable"
+  lineup: OptimizeLineup | null
+  alternates: OptimizeLineup[]
+  missingPlayers: MissingPlayer[]
+  message?: string
+}
+
+interface UseRow {
+  nbaPlayerId: string
+  fullName: string | null
+  teamAbbr: string | null
+  highestTierOwned: Tier
+  totalAllowed: number
+  timesUsed: number
+  remainingUses: number
+  datesUsed: string[]
+  bestMomentId: string | null
+  bestSerial: number | null
+}
+
+interface UsesResponse {
+  runId: string
+  uses: UseRow[]
+}
+
+interface SaveResponse {
+  ok: boolean
+  idempotent?: boolean
+  firstSave?: boolean
+  lineupId: string | null
+  added: string[]
+  removed: string[]
+  useCounts: Array<{ nbaPlayerId: string; timesUsed: number; totalAllowed: number }>
+}
+
+interface Props {
+  walletAddr: string
+  runId: string
+  runName: string
+  lineupSize: 2 | 3
+  hasCaptain: boolean
+  gameDate: string
+}
+
+const SECTION_HEADER: React.CSSProperties = {
+  fontFamily: "var(--font-display)",
+  fontWeight: 900,
+  fontSize: 14,
+  letterSpacing: "0.12em",
+  textTransform: "uppercase",
+  color: "var(--rpc-text-secondary)",
+  margin: "0 0 12px",
+}
+
+const HERO_STYLE: React.CSSProperties = {
+  background: "var(--rpc-surface)",
+  border: "1px solid var(--rpc-border)",
+  borderRadius: "var(--radius-lg)",
+  padding: 20,
+  marginBottom: 24,
+}
+
+const CARD_STYLE: React.CSSProperties = {
+  background: "var(--rpc-surface)",
+  border: "1px solid var(--rpc-border)",
+  borderRadius: "var(--radius-lg)",
+  padding: 20,
+}
+
+const PLAYER_TILE: React.CSSProperties = {
+  background: "rgba(255,255,255,0.03)",
+  border: "1px solid var(--rpc-border)",
+  borderRadius: "var(--radius-md)",
+  padding: 14,
+  display: "flex",
+  flexDirection: "column",
+  gap: 6,
+  position: "relative",
+  minWidth: 0,
+}
+
+function TierChip({ tier, compact }: { tier: Tier; compact?: boolean }) {
+  const t = tierToken(tier)
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        background: t.bg,
+        color: t.color,
+        border: `1px solid ${t.border}`,
+        padding: compact ? "1px 6px" : "2px 8px",
+        borderRadius: 999,
+        fontFamily: "var(--font-mono)",
+        fontSize: compact ? 9 : 10,
+        letterSpacing: "0.12em",
+        textTransform: "uppercase",
+      }}
+    >
+      {t.label}
+    </span>
+  )
+}
+
+function PlayerThumb({ momentId, fullName, tier }: { momentId: string | null | undefined; fullName: string | null | undefined; tier: Tier }) {
+  const url = thumbnailFor(momentId ?? undefined)
+  const initials = initialsFor(fullName)
+  const tokens = tierToken(tier)
+  const [errored, setErrored] = useState(false)
+  if (!url || errored) {
+    return (
+      <div
+        style={{
+          width: 64,
+          height: 64,
+          borderRadius: 999,
+          background: tokens.bg,
+          border: `1px solid ${tokens.border}`,
+          color: tokens.color,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontFamily: "var(--font-display)",
+          fontWeight: 800,
+          fontSize: 18,
+          letterSpacing: "0.04em",
+        }}
+        aria-hidden
+      >
+        {initials}
+      </div>
+    )
+  }
+  return (
+    // Plain <img/> is fine here — these are 64×64 thumbnails on a single
+    // hero card, not worth pulling in next/image's full pipeline.
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={url}
+      alt={fullName ?? ""}
+      width={64}
+      height={64}
+      onError={() => setErrored(true)}
+      style={{
+        width: 64,
+        height: 64,
+        borderRadius: 999,
+        objectFit: "cover",
+        border: `1px solid ${tokens.border}`,
+        background: tokens.bg,
+      }}
+    />
+  )
+}
+
+interface Toast {
+  kind: "success" | "idle" | "error"
+  text: string
+}
+
+export default function FastBreakClient({
+  walletAddr,
+  runId,
+  runName,
+  lineupSize,
+  hasCaptain,
+  gameDate,
+}: Props) {
+  const [toast, setToast] = useState<Toast | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [whyOpen, setWhyOpen] = useState(false)
+  const [optimisticUses, setOptimisticUses] = useState<Record<string, number>>({})
+
+  const optimizeKey = useMemo(
+    () => `fb-optimize:${walletAddr}:${runId}:${gameDate}`,
+    [walletAddr, runId, gameDate],
+  )
+  const usesKey = useMemo(() => `fb-uses:${walletAddr}:${runId}`, [walletAddr, runId])
+
+  const optimize = useWarmCache<OptimizeResponse>(
+    optimizeKey,
+    async () => {
+      const res = await fetch("/api/fast-break/optimize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletAddr, runId }),
+      })
+      if (!res.ok) throw new Error(`optimize ${res.status}`)
+      return (await res.json()) as OptimizeResponse
+    },
+    { ttlMs: 60_000 },
+  )
+
+  const uses = useWarmCache<UsesResponse>(
+    usesKey,
+    async () => {
+      const res = await fetch(`/api/fast-break/uses?runId=${encodeURIComponent(runId)}`)
+      if (!res.ok) throw new Error(`uses ${res.status}`)
+      return (await res.json()) as UsesResponse
+    },
+    { ttlMs: 30_000 },
+  )
+
+  // 2026-11-14: the hook keeps the PREVIOUS key's data while a new wallet / run / date loads (and
+  // after it fails). Read only data fetched for the CURRENT key — otherwise the board showed the
+  // previous run's lineup, and Save POSTed that lineup under the NEW run.
+  const optimizeData = useMemo(() => answerFor(optimize.data, optimize.dataKey, optimizeKey), [optimize.data, optimize.dataKey, optimizeKey])
+  const usesData = useMemo(() => answerFor(uses.data, uses.dataKey, usesKey), [uses.data, uses.dataKey, usesKey])
+
+  const save = useCallback(async () => {
+    if (!optimizeData?.lineup) return
+    setSaving(true)
+    setToast(null)
+    try {
+      const lineup = optimizeData.lineup
+      const players = lineup.players.map(p => ({
+        nbaPlayerId: p.nbaPlayerId,
+        momentId: p.bestMomentId,
+        serial: p.bestSerial,
+      }))
+      const res = await fetch("/api/fast-break/lineup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          walletAddr,
+          runId,
+          gameDate,
+          players,
+          captainNbaPlayerId: hasCaptain ? lineup.captainNbaPlayerId : undefined,
+        }),
+      })
+      const json: SaveResponse | { error?: string; playerId?: string } = await res.json()
+      if (!res.ok) {
+        const msg = (json as { error?: string }).error ?? `save_failed_${res.status}`
+        setToast({ kind: "error", text: msg.replace(/_/g, " ") })
+        return
+      }
+      const ok = json as SaveResponse
+      if (ok.idempotent) {
+        setToast({ kind: "idle", text: "Already saved for tonight" })
+      } else {
+        // Optimistic bump for newly-added players. Authoritative
+        // useCounts come back in the response; we reconcile against
+        // them after a short delay in case the user keeps tapping.
+        setOptimisticUses(applyUseBumps(optimisticUses, ok.added, ok.removed))
+        setToast({ kind: "success", text: "Lineup saved" })
+
+        setTimeout(() => {
+          // Authoritative reconciliation: refetch /api/fast-break/uses
+          // so the widget pulls fresh totals straight from the DB.
+          uses.refresh()
+          setOptimisticUses({})
+        }, 500)
+      }
+    } catch (err) {
+      setToast({ kind: "error", text: err instanceof Error ? err.message : "save failed" })
+    } finally {
+      setSaving(false)
+    }
+  }, [optimizeData, walletAddr, runId, gameDate, hasCaptain, optimisticUses, uses])
+
+  const lineup = optimizeData?.lineup ?? null
+  const missing = optimizeData?.missingPlayers ?? []
+
+  const useRows = useMemo<UseRow[]>(
+    () => applyOptimisticUses(usesData?.uses ?? [], optimisticUses),
+    [usesData, optimisticUses],
+  )
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      {/* ── Hero lineup ──────────────────────────────────────── */}
+      <div style={HERO_STYLE}>
+        <div style={SECTION_HEADER}>Recommended Lineup · {runName}</div>
+
+        {optimize.loading && !optimizeData ? (
+          <LineupSkeleton lineupSize={lineupSize} />
+        ) : optimize.error ? (
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-danger-text)" }}>
+            Failed to load optimizer. <button onClick={optimize.refresh} className="rpc-btn-ghost" style={{ marginLeft: 8 }}>Retry</button>
+          </div>
+        ) : !lineup ? (
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-secondary)", lineHeight: 1.6 }}>
+            {optimizeData?.dataStatus === "slate_unavailable" || optimizeData?.dataStatus === "projections_unavailable"
+              ? "Our NBA schedule and projections feed is unavailable right now, so we can't build tonight's lineup. This is our data being down, not your roster."
+              : optimizeData?.dataStatus === "no_games"
+                ? "Tonight isn't one of this Fast Break run's game days, so there's no lineup to build."
+                : optimizeData?.consideredCount === 0
+                  ? "None of your eligible Top Shot players are on tonight's slate. Check back closer to tipoff."
+                  : "Couldn't build a lineup with your current eligibility. Try adding a Common-tier player to your wallet."}
+          </div>
+        ) : (
+          <>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: `repeat(${Math.min(lineupSize, 3)}, minmax(0, 1fr))`,
+                gap: 12,
+              }}
+            >
+              {lineup.players.map(p => {
+                const isCaptain = hasCaptain && lineup.captainNbaPlayerId === p.nbaPlayerId
+                return (
+                  <div key={p.nbaPlayerId} style={PLAYER_TILE}>
+                    {isCaptain && (
+                      <span
+                        title="Captain"
+                        style={{
+                          position: "absolute",
+                          top: -8,
+                          right: -8,
+                          width: 26,
+                          height: 26,
+                          borderRadius: 999,
+                          background: "var(--tier-legendary)",
+                          color: "#1a1a1a",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: 14,
+                          fontWeight: 900,
+                          boxShadow: "0 0 0 2px var(--rpc-surface)",
+                        }}
+                        aria-label="Captain"
+                      >
+                        ★
+                      </span>
+                    )}
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <PlayerThumb momentId={p.bestMomentId} fullName={p.fullName} tier={p.highestTier} />
+                      <div style={{ minWidth: 0 }}>
+                        <div
+                          style={{
+                            fontFamily: "var(--font-display)",
+                            fontWeight: 800,
+                            fontSize: 16,
+                            letterSpacing: "0.04em",
+                            color: "var(--rpc-text-primary)",
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                          }}
+                          title={p.fullName}
+                        >
+                          {p.fullName}
+                        </div>
+                        <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.1em", color: "var(--rpc-text-secondary)", textTransform: "uppercase" }}>
+                          {p.teamAbbr} · vs {p.opponentTeamAbbr || "—"}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 4 }}>
+                      <TierChip tier={p.highestTier} compact />
+                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.08em", color: "var(--rpc-text-muted)" }}>
+                        Serial #{p.bestSerial}
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 4,
+                        fontFamily: "var(--font-display)",
+                        fontSize: 22,
+                        fontWeight: 800,
+                        color: "var(--rpc-red-text)",
+                        letterSpacing: "0.04em",
+                      }}
+                    >
+                      {p.projPoints.toFixed(1)} <span style={{ fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase", marginLeft: 4 }}>FP</span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, marginTop: 18 }}>
+              <button
+                onClick={save}
+                disabled={saving}
+                className="rpc-btn-primary"
+                style={{ opacity: saving ? 0.6 : 1 }}
+              >
+                {saving ? "Saving…" : "Save This Lineup"}
+              </button>
+              <button
+                onClick={() => setWhyOpen(v => !v)}
+                className="rpc-btn-ghost"
+                aria-expanded={whyOpen}
+              >
+                {whyOpen ? "Hide rationale" : "Why this lineup?"}
+              </button>
+              {toast && <ToastBanner toast={toast} />}
+            </div>
+
+            {whyOpen && (
+              <div
+                style={{
+                  marginTop: 14,
+                  padding: 14,
+                  background: "rgba(255,255,255,0.03)",
+                  border: "1px dashed var(--rpc-border)",
+                  borderRadius: "var(--radius-md)",
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
+                  color: "var(--rpc-text-secondary)",
+                  lineHeight: 1.7,
+                }}
+              >
+                <div>
+                  Total projected score: <strong style={{ color: "var(--rpc-text-primary)" }}>{lineup.projectedScore.toFixed(1)}</strong> FP across {lineup.players.length} players.
+                </div>
+                <div>
+                  Serial sum: <strong style={{ color: "var(--rpc-text-primary)" }}>{lineup.serialSum}</strong>. When two lineup combinations project within 5% of each other, lower serial sum wins the tiebreaker — Top Shot&apos;s Run leaderboard ranks ties by lowest combined #serial.
+                </div>
+                <div>
+                  Considered {optimizeData?.consideredCount ?? 0} of your {optimizeData?.eligibleCount ?? 0} eligible players (the rest aren&apos;t on tonight&apos;s slate or are listed OUT).
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* ── Acquisition gap ──────────────────────────────────── */}
+      {missing.length > 0 && (
+        <div style={CARD_STYLE}>
+          <div style={SECTION_HEADER}>Acquisition Gap</div>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-muted)", marginBottom: 12, lineHeight: 1.6 }}>
+            Top-projected players you don&apos;t currently have available. Pick one up to lift tomorrow&apos;s lineup ceiling.
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {missing.map(m => (
+              <div
+                key={m.nbaPlayerId}
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 10,
+                  padding: "10px 12px",
+                  background: "rgba(255,255,255,0.03)",
+                  border: "1px solid var(--rpc-border)",
+                  borderRadius: "var(--radius-md)",
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, letterSpacing: "0.04em", color: "var(--rpc-text-primary)" }}>
+                    {m.fullName ?? "—"} <span style={{ color: "var(--rpc-text-muted)", fontWeight: 500 }}>· {m.teamAbbr ?? "—"}</span>
+                  </div>
+                  <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.1em", color: "var(--rpc-text-secondary)", marginTop: 2 }}>
+                    {m.projFp != null ? `${m.projFp.toFixed(1)} FP projected` : "no projection"} · you don&apos;t have remaining uses on this player tonight
+                  </div>
+                </div>
+                {m.cheapestListing && m.cheapestListing.momentId ? (
+                  <a
+                    href={`/nba-top-shot/sniper?moment=${encodeURIComponent(m.cheapestListing.momentId)}`}
+                    className="rpc-btn-primary"
+                    style={{ textDecoration: "none" }}
+                  >
+                    Buy on Sniper · ${m.cheapestListing.askUsd.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                  </a>
+                ) : m.listingUnknown ? (
+                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-muted)" }}>
+                    Listing unavailable — refresh
+                  </span>
+                ) : (
+                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-muted)" }}>
+                    Not currently listed
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Run progress ─────────────────────────────────────── */}
+      <div style={CARD_STYLE}>
+        <div style={{ ...SECTION_HEADER, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span>Run Progress</span>
+          <button onClick={uses.refresh} className="rpc-btn-ghost" style={{ padding: "4px 10px", fontSize: 10 }}>
+            Refresh
+          </button>
+        </div>
+        {uses.loading && !usesData ? (
+          <UsesSkeleton />
+        ) : uses.error != null && !usesData && useRows.length === 0 ? (
+          // 2026-11-02: a failed read used to say "No lineups saved yet" and invite a re-save.
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-danger-text)", lineHeight: 1.6 }}>
+            Your run progress couldn&apos;t be loaded — that is our side; saved lineups are not lost.{" "}
+            <button onClick={uses.refresh} className="rpc-btn-ghost" style={{ marginLeft: 8 }}>Retry</button>
+          </div>
+        ) : useRows.length === 0 ? (
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)", lineHeight: 1.6 }}>
+            No lineups saved yet. Save tonight&apos;s lineup to start the run.
+          </div>
+        ) : (
+          <RunProgressByTier rows={useRows} />
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ToastBanner({ toast }: { toast: Toast }) {
+  if (toast.kind === "success") {
+    return (
+      <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-success-text)", letterSpacing: "0.06em" }}>
+        ✓ {toast.text}
+      </span>
+    )
+  }
+  if (toast.kind === "idle") {
+    return (
+      <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-muted)", letterSpacing: "0.06em" }}>
+        {toast.text}
+      </span>
+    )
+  }
+  return (
+    <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-danger-text)", letterSpacing: "0.06em" }}>
+      ✕ {toast.text}
+    </span>
+  )
+}
+
+function LineupSkeleton({ lineupSize }: { lineupSize: 2 | 3 }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(lineupSize, 3)}, minmax(0, 1fr))`, gap: 12 }}>
+      {Array.from({ length: lineupSize }).map((_, i) => (
+        <div key={i} style={{ ...PLAYER_TILE, height: 160 }}>
+          <div style={{ width: 64, height: 64, borderRadius: 999, background: "rgba(255,255,255,0.05)" }} />
+          <div style={{ width: "70%", height: 14, background: "rgba(255,255,255,0.05)", borderRadius: 4 }} />
+          <div style={{ width: "40%", height: 10, background: "rgba(255,255,255,0.05)", borderRadius: 4 }} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function UsesSkeleton() {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {Array.from({ length: 3 }).map((_, i) => (
+        <div key={i} style={{ height: 14, background: "rgba(255,255,255,0.05)", borderRadius: 4 }} />
+      ))}
+    </div>
+  )
+}
+
+function RunProgressByTier({ rows }: { rows: UseRow[] }) {
+  const grouped = groupUsesByTier(rows)
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {grouped.map(g => {
+        const t = TIER_TOKEN[g.tier]
+        return (
+          <div key={g.tier} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+            <span
+              style={{
+                background: t.bg,
+                color: t.color,
+                border: `1px solid ${t.border}`,
+                padding: "2px 8px",
+                borderRadius: 4,
+                fontFamily: "var(--font-mono)",
+                fontSize: 9,
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+                flexShrink: 0,
+              }}
+            >
+              {t.label}
+            </span>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {g.rows.map(r => (
+                <span
+                  key={r.nbaPlayerId}
+                  title={`${r.fullName ?? r.nbaPlayerId} · ${r.timesUsed}/${r.totalAllowed}`}
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 10,
+                    color: r.remainingUses === 0 ? "var(--rpc-text-muted)" : "var(--rpc-text-secondary)",
+                    letterSpacing: "0.04em",
+                    background: "rgba(255,255,255,0.03)",
+                    border: "1px solid var(--rpc-border)",
+                    padding: "2px 8px",
+                    borderRadius: 999,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {r.fullName ?? "?"} {r.timesUsed}/{r.totalAllowed}
+                </span>
+              ))}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}

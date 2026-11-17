@@ -1,0 +1,238 @@
+<title>Set Challenge ROI</title>
+<style>:root{color-scheme:dark}</style>
+<script>
+/* Port shim (2026-10-20, known-issue #114). These dashboards were written for the
+   desktop Cowork bridge (window.cowork.callMcpTool). On claude.ai they read through
+   the page's `mcp` capability instead. Every failure THROWS here, so a query that
+   did not run can never render as an empty result set. */
+(function(){
+  var mcpP = (window.claude && typeof window.claude.use === "function") ? window.claude.use("mcp") : Promise.resolve(null);
+  var FIX = {
+    needs_reauth: "Reconnect {s} in claude.ai Settings, Connectors, then Reload.",
+    server_not_connected: "Add the {s} connector in claude.ai Settings, Connectors, then Reload.",
+    selection_required: "Choose which {s} connector this page should use, then Reload.",
+    not_in_manifest: "{s} is not allowed for this page. Allow it from the artifact's Permissions menu, then Reload.",
+    approval_required: "This page needs your approval to read from {s}. Reload and choose Allow.",
+    blocked_by_policy: "Your organization's policy blocks this {s} tool.",
+    server_unavailable: "{s} did not answer in time. Try Reload in a minute.",
+    not_granted: "Connectors are not available in this view. Open the page in claude.ai.",
+    capability_disabled: "Connectors are not available in this view. Open the page in claude.ai."
+  };
+  function serverFor(t){ return /list_deployments$/.test(t) ? "Vercel" : "Supabase"; }
+  function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+  async function call(mcp, s, name, args, retried){
+    try { return await mcp.callTool(s, name, args, { cache: false }); }
+    catch (e) {
+      var c = (e && e.code) || "upstream_error";
+      if (e && e.retryable && !retried) { await sleep(Math.min(e.retryAfterMs || 0, 15000) + 600 + Math.random() * 900); return call(mcp, s, name, args, true); }
+      var hint = (FIX[c] || "").replace("{s}", s);
+      var msg = s + " query did not run (" + c + ")" + (hint ? ". " + hint : (e && e.message ? ": " + String(e.message).slice(0, 240) : ""));
+      var err = new Error(msg); err.code = c; throw err;
+    }
+  }
+  window.cowork = { callMcpTool: async function(tool, args){
+    var mcp = await mcpP;
+    if (!mcp) throw new Error("Live data is not available in this view. Open the page in claude.ai with the Supabase connector connected.");
+    var s = serverFor(tool), name = String(tool).split("__").pop();
+    var res = await call(mcp, s, name, args, false);
+    var p = res && res.payload;
+    if (p && typeof p === "object" && !Array.isArray(p) && p.error && typeof p.error === "object")
+      throw new Error(s + " query failed: " + String(p.error.message || p.error.name || "error").slice(0, 300));
+    var out = { content: (res && res.content) || [] };
+    if (res && typeof res.structuredContent !== "undefined") out.structuredContent = res.structuredContent;
+    return out;
+  } };
+})();
+</script>
+<style>
+  :root{ color-scheme:dark; --rpc-red:#E03A2F; --bg:#0c0c0e; --card:#16161a; --card2:#1b1b20;
+         --ink:#ECEAE3; --head:#F2F0EA; --muted:#9A968C; --line:rgba(255,255,255,0.10); --line2:rgba(255,255,255,0.07);
+         --good:#5fd6a0; --goodbg:rgba(46,160,110,0.20); --mid:#e0a64b; --midbg:rgba(186,117,23,0.22);
+         --bad:#e88a8a; --badbg:rgba(185,28,28,0.20); --blue:#7FB2F0; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.45}
+  .wrap{max-width:1180px;margin:0 auto;padding:18px 16px 46px}
+  h1{font-size:20px;letter-spacing:.07em;text-transform:uppercase;color:var(--head);margin:0 0 2px;border-bottom:3px solid var(--rpc-red);padding-bottom:8px;display:inline-block}
+  .sub{color:var(--muted);font-size:12px;margin:8px 0 16px;font-variant-numeric:tabular-nums}
+  .mono,.num{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+  @media(min-width:720px){.grid{grid-template-columns:repeat(4,1fr)}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:13px 14px}
+  .card h3{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin:0 0 7px;font-weight:700}
+  .big{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:23px;font-weight:600;color:var(--rpc-red);line-height:1.05}
+  .big.pos{color:var(--good)} .big.neg{color:var(--bad)}
+  .csub{color:var(--muted);font-size:11px;margin-top:6px}
+  h2.sec{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:26px 0 4px;border-bottom:1px solid var(--line);padding-bottom:6px}
+  .hint{color:var(--muted);font-size:11.5px;margin:8px 0 12px;line-height:1.5}
+  .scroll{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:transparent}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line2);vertical-align:middle;white-space:nowrap}
+  th{font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:700;cursor:pointer;user-select:none}
+  th.num,td.num{text-align:right;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  th:hover{color:var(--ink)} th.act{color:var(--head)}
+  tr:last-child td{border-bottom:none}
+  tbody tr:hover td{background:rgba(255,255,255,0.03)}
+  .setn{font-weight:600;color:var(--head)}
+  .slotsub{color:var(--muted);font-size:10.5px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .pill{font-size:10px;font-weight:700;letter-spacing:.03em;padding:2px 7px;border-radius:999px;white-space:nowrap}
+  .p-good{color:var(--good);background:var(--goodbg)} .p-bad{color:var(--bad);background:var(--badbg)}
+  .pos{color:var(--good)} .neg{color:var(--bad)}
+  .bar{height:5px;border-radius:3px;background:rgba(255,255,255,0.10);overflow:hidden;margin-top:4px;min-width:60px}
+  .bar > i{display:block;height:100%;background:var(--rpc-red)}
+  .soon{color:var(--bad)} .mid2{color:var(--mid)} .dim{color:var(--muted)}
+  .warn{color:var(--mid);cursor:help}
+  .foot{color:var(--muted);font-size:11.5px;margin-top:22px;line-height:1.6}
+  .foot b{color:var(--ink)}
+  .err{color:var(--bad);font-size:12px;margin:8px 0}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--card2);padding:1px 5px;border-radius:4px;font-size:12px;color:var(--ink)}
+</style>
+
+
+<div class="wrap">
+  <h1>RPC · Set-Challenge ROI</h1>
+  <div class="sub" id="stamp">Reading live set-challenge data from Supabase…</div>
+
+  <div class="grid" id="kpis"></div>
+
+  <h2 class="sec">Active set challenges — sorted by best expected value</h2>
+  <div class="hint">
+    Cost is the real Challenge-Builder slot model (cheapest <b style="color:var(--ink)">eligible</b> moment per VARIABLE slot). <b style="color:var(--ink)">Exp. net</b> counts the airdrop: complete a set and you earn one pack now <b>plus</b> a share of the leftover allocation next summer, so a completer expects ≈ <span class="mono">packs/user</span> packs total. Exp. net = reward/pack × packs/user − cost. Positive = completing is +EV even before counting the moments you keep. (The in-app board's stricter verdict values only the single guaranteed pack.) Click a header to re-sort; ⚠ = an unresolved slot (cost is a floor).
+  </div>
+  <div class="scroll">
+    <table id="tbl">
+      <thead><tr>
+        <th data-k="setName">Challenge</th>
+        <th data-k="hoursLeft" class="num">Expires</th>
+        <th data-k="completedCount" class="num">Done / Alloc</th>
+        <th data-k="packsPerUser" class="num">Packs / user</th>
+        <th data-k="costToComplete" class="num">Cost</th>
+        <th data-k="rewardValue" class="num">Reward / pack</th>
+        <th data-k="expReward" class="num">Exp. reward</th>
+        <th data-k="expNet" class="num act">Exp. net ▼</th>
+      </tr></thead>
+      <tbody><tr><td colspan="8" class="csub">Loading…</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="foot" id="foot">
+    <b>What this is.</b> The community <span class="mono">set-challenge-tracker</span> shows only completions ÷ allocation → packs per completer. This board adds RPC's pricing and turns it into an ROI call. <b>Exp. net</b> = <span class="mono">reward/pack × packs/user − cost-to-complete</span> — the airdrop-adjusted answer to "is completing this worth it", the way the Top Shot blog frames set rewards (fewer completions → more bonus packs each). A green Exp. net means the expected packs alone cover the completion cost; you also keep every moment you bought.<br>
+    <b>Source.</b> <code>get_active_challenges</code> over <code>challenges</code> + <code>challenge_slots</code> + <code>challenge_slot_editions</code> and latest FMV. <b>Reward/pack</b> = the completion pack's value: the pack's own recent secondary-sale median (≥3 sales/90d — the true market price), falling back to drop-pool moment FMV only for thin-market packs; blank where the pack doesn't trade (7 packs). Measured 2026-07-14, the old per-slot pool method understated real pack value 2–7×, so reward now uses market prices wherever the pack is liquid. Completions auto-refresh from the Top Shot <code>searchChallenges</code> ingest (daily 08:10 UTC). Use the header <b>Reload</b> to refresh.
+  </div>
+</div>
+<script>
+const TOOL="mcp__24ab6d77-3292-4646-b039-669cc9535ef8__execute_sql";
+const PROJECT="bxcqstmqfzmuolpuynti";
+const TS="95f28a17-224a-4025-96ad-adf8a4c63bfd";
+const PAYLOAD_SQL="SELECT get_active_challenges(NULL,'"+TS+"') AS payload;";
+
+function extractRows(raw){
+  if(raw==null) return [];
+  if(Array.isArray(raw)) return raw;
+  if(typeof raw==="object"){ if(raw.isError===true||(raw.error&&typeof raw.error==="object")) throw new Error(String((raw.error&&(raw.error.message||raw.error.name))||(Array.isArray(raw.content)?raw.content.map(c=>(c&&c.text)||"").join(" "):"")||"tool returned an error")); 
+    if(typeof raw.structuredContent!=="undefined"){ const r=extractRows(raw.structuredContent); if(r.length) return r; }
+    if(Array.isArray(raw.content)){ return extractRows(raw.content.map(c=>typeof c==="string"?c:(c&&c.text)||"").join("\n")); }
+    if(typeof raw.result==="string") return extractRows(raw.result);
+    if(typeof raw.text==="string") return extractRows(raw.text);
+    if(typeof raw.data!=="undefined") return extractRows(raw.data);
+    return [raw];
+  }
+  if(typeof raw==="string"){
+    let s=raw.trim();
+    try{ return extractRows(JSON.parse(s)); }catch(e){}
+    const m=s.match(/\[[\s\S]*\]/);
+    if(m){ try{ return JSON.parse(m[0]); }catch(e){} }
+    if(!s) return []; throw new Error("unreadable tool response: "+s.slice(0,160));
+  }
+  return [];
+}
+async function fetchChallenges(){
+  if(!(window.cowork && window.cowork.callMcpTool)) throw new Error("MCP bridge unavailable (open inside Cowork).");
+  const r=await window.cowork.callMcpTool(TOOL,{project_id:PROJECT,query:PAYLOAD_SQL});
+  if(r && r.isError) throw new Error(typeof r.content==="string"?r.content:JSON.stringify(r.content||r));
+  const rows=extractRows(r);
+  let payload=rows.length?rows[0].payload:null;
+  if(typeof payload==="string"){ try{ payload=JSON.parse(payload); }catch(e){} }
+  if(!payload||typeof payload!=="object") throw new Error("Unexpected result shape from get_active_challenges.");
+  return payload;
+}
+function num(x,d){ return (x==null||isNaN(x))?"—":Number(x).toLocaleString(undefined,{maximumFractionDigits:(d==null?0:d)}); }
+function usd(x){ if(x==null||isNaN(x)) return "—"; const v=Number(x); return "$"+v.toLocaleString(undefined,{maximumFractionDigits:(Math.abs(v)<100?2:0)}); }
+function usdSigned(x){ if(x==null||isNaN(x)) return "—"; const v=Number(x); const s=v>=0?"+":"−"; return s+"$"+Math.abs(v).toLocaleString(undefined,{maximumFractionDigits:(Math.abs(v)<100?2:0)}); }
+function fmtHrs(h){ if(h==null||isNaN(h)) return "—"; h=Number(h); if(h<=0) return "expired"; const d=Math.floor(h/24), r=Math.floor(h%24); return d>0?(d+"d "+String(r).padStart(2,"0")+"h"):(String(Math.floor(h))+"h "+String(Math.round((h%1)*60)).padStart(2,"0")+"m"); }
+
+let DATA=[], sortK="expNet", sortAsc=false;
+function prep(list){
+  const now=Date.now();
+  return list.map(c=>{
+    const hoursLeft = c.endsAt ? (new Date(c.endsAt).getTime()-now)/3600000 : null;
+    const rv = c.rewardValue==null?null:Number(c.rewardValue);
+    const ppu = c.packsPerUser==null?null:Number(c.packsPerUser);
+    const cost = c.costToComplete==null?null:Number(c.costToComplete);
+    const expReward = (rv!=null && ppu!=null) ? rv*ppu : null;
+    const expNet = (expReward!=null && cost!=null) ? expReward-cost : null;
+    return Object.assign({}, c, {hoursLeft, expReward, expNet});
+  });
+}
+function render(){
+  const tb=document.querySelector("#tbl tbody");
+  const rows=[...DATA].sort((a,b)=>{
+    let x=a[sortK], y=b[sortK];
+    if(sortK==="setName"){ x=(x||"").toLowerCase(); y=(y||"").toLowerCase(); return sortAsc?(x<y?-1:x>y?1:0):(x<y?1:x>y?-1:0); }
+    x=(x==null?(sortAsc?Infinity:-Infinity):Number(x)); y=(y==null?(sortAsc?Infinity:-Infinity):Number(y));
+    return sortAsc?x-y:y-x;
+  });
+  tb.innerHTML=rows.map(r=>{
+    const alloc=Number(r.totalRewardAllocation)||0, done=Number(r.completedCount)||0;
+    const pct=alloc?Math.min(100,100*done/alloc):0;
+    const expcls=r.hoursLeft==null?"":(r.hoursLeft<=24?"soon":(r.hoursLeft<=48?"mid2":""));
+    const warn=(Number(r.unresolvedSlots)>0)?' <span class="warn" title="'+r.unresolvedSlots+' slot(s) had no eligible edition — cost is a floor">⚠</span>':'';
+    const netcls=r.expNet==null?"dim":(r.expNet>0?"pos":"neg");
+    const slots=(r.totalRequired!=null)?('<div class="slotsub">'+r.totalRequired+' slots</div>'):'';
+    return "<tr>"+
+      '<td><span class="setn">'+(r.setName||"—")+"</span>"+warn+slots+"</td>"+
+      '<td class="num '+expcls+'">'+fmtHrs(r.hoursLeft)+"</td>"+
+      '<td class="num">'+num(done)+" / "+num(alloc)+'<div class="bar"><i style="width:'+pct+'%"></i></div></td>'+
+      '<td class="num"><b>'+num(r.packsPerUser,2)+"</b></td>"+
+      '<td class="num">'+usd(r.costToComplete)+"</td>"+
+      '<td class="num">'+(r.rewardValue==null?'<span class="dim">—</span>':usd(r.rewardValue))+"</td>"+
+      '<td class="num">'+(r.expReward==null?'<span class="dim">—</span>':usd(r.expReward))+"</td>"+
+      '<td class="num '+netcls+'"><b>'+usdSigned(r.expNet)+"</b></td>"+
+    "</tr>";
+  }).join("")||'<tr><td colspan="8" class="csub">No active challenges.</td></tr>';
+  document.querySelectorAll("#tbl th").forEach(th=>{
+    const k=th.getAttribute("data-k"); th.classList.toggle("act",k===sortK);
+    th.textContent=th.textContent.replace(/ [▲▼]$/,"")+(k===sortK?(sortAsc?" ▲":" ▼"):"");
+  });
+}
+function renderKpis(rows,meta){
+  const el=document.getElementById("kpis");
+  const active=meta.activeCount||rows.length;
+  const soon=rows.reduce((m,r)=>(r.hoursLeft!=null&&r.hoursLeft<m.hoursLeft)?r:m,{hoursLeft:Infinity});
+  const best=rows.filter(r=>r.expNet!=null).reduce((m,r)=>(m==null||Number(r.expNet)>Number(m.expNet))?r:m,null);
+  const nPos=rows.filter(r=>r.expNet!=null&&r.expNet>0).length;
+  const bestNet=best?Number(best.expNet):null;
+  el.innerHTML=
+    '<div class="card"><h3>Active challenges</h3><div class="big">'+active+'</div><div class="csub">Series 25-26 · slot model</div></div>'+
+    '<div class="card"><h3>Next deadline</h3><div class="big">'+fmtHrs(soon.hoursLeft)+'</div><div class="csub">'+(soon.setName||"—")+'</div></div>'+
+    '<div class="card"><h3>+EV to complete</h3><div class="big">'+nPos+'</div><div class="csub">of '+rows.filter(r=>r.expNet!=null).length+' priced · airdrop-adjusted</div></div>'+
+    '<div class="card"><h3>Best expected net</h3><div class="big '+(bestNet==null?"":(bestNet>0?"pos":"neg"))+'">'+usdSigned(bestNet)+'</div><div class="csub">'+(best?best.setName:"—")+'</div></div>';
+}
+document.querySelectorAll("#tbl th").forEach(th=>th.addEventListener("click",()=>{
+  const k=th.getAttribute("data-k");
+  if(k===sortK){ sortAsc=!sortAsc; } else { sortK=k; sortAsc=(k==="setName"||k==="costToComplete"||k==="hoursLeft"); }
+  render();
+}));
+(async()=>{
+  try{
+    const p=await fetchChallenges();
+    DATA=prep(Array.isArray(p.challenges)?p.challenges:[]);
+    const gen=p.generatedAt?new Date(p.generatedAt).toLocaleString():new Date().toLocaleString();
+    document.getElementById("stamp").textContent="As of "+new Date().toLocaleString()+" · "+DATA.length+" active challenges · airdrop-adjusted · computed "+gen+" · live read";
+    renderKpis(DATA,p); render();
+  }catch(e){
+    const msg=(e&&e.message)||String(e);
+    document.getElementById("kpis").innerHTML='<div class="err">Load failed: '+msg+'</div>';
+    document.querySelector("#tbl tbody").innerHTML='<tr><td colspan="8" class="err">'+msg+'</td></tr>';
+  }
+})();
+</script>

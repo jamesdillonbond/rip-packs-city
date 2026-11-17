@@ -1,0 +1,1 @@
+SELECT cron.schedule('rpc-chain-arrival-flips', '1-59/2 * * * *', 'SELECT public.run_chain_arrival_flip_lane() FROM pg_sleep(27);');

@@ -1,0 +1,22 @@
+-- audit_20260812_rpc_search_catalog_text_casts
+--
+-- SAME-SESSION ITERATION of rpc_search_catalog, not an independent change.
+-- The function was built and corrected in one sitting on 2026-08-11 (PT); each
+-- correction had to be a full CREATE OR REPLACE, so prod recorded four
+-- migration names minutes apart. This file exists so `migration-parity` can
+-- match that name to a committed file.
+--
+-- WHAT THIS STEP FIXED: Added ::text casts to every varchar-derived output column. `collections.slug`
+--   is varchar(50) and players/sets.name are varchar, so the first version failed
+--   at runtime with 42804 'structure of query does not match function result
+--   type'. A plpgsql RETURN QUERY type-checks on EXECUTION, not at CREATE, so
+--   applying the migration succeeded and only calling the function surfaced it.
+--
+-- THE AUTHORITATIVE, CURRENTLY-LIVE DEFINITION IS:
+--   supabase/migrations/20260812020000_audit_20260812_rpc_search_catalog.sql
+-- That file carries the final body — the one that converged after all four
+-- steps — so read and edit it, not this stub. Re-running this stub is a no-op.
+--
+-- Revert path for the whole function (all four steps):
+--   DROP FUNCTION IF EXISTS public.rpc_search_catalog(text, uuid, int);
+--   DROP INDEX CONCURRENTLY IF EXISTS public.idx_editions_team_name_trgm;

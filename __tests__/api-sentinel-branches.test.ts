@@ -1,0 +1,1048 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
+import { NextRequest } from "next/server"
+import { makeInstrumentedSupabaseFixture, installFetchMock, jsonRoute, type FetchStub } from "./helpers/route-harness"
+
+// Branch coverage for /api/sentinel — the sibling deep test drives the green
+// battery + the saturation-inconclusive + config-disable + high-sev-stall
+// classes. This drives the remaining BREACH / ERROR arms of each check:
+//   ingest-health RPC error (crit vs sat-warn), a per-collection silence breach,
+//   a dead per-source lane, FMV Freshness stale/critical/error/empty, low FMV
+//   confidence + its RPC error, low edition coverage + its RPC error, the TS
+//   writer-leak warn/critical bands, medium-only pipeline stall, a trust-health
+//   breach + its query error, zero/errored total-sales, and the sniper feed
+//   0-deals / non-200 / abort / hard-error arms.
+
+const state = vi.hoisted(() => ({ sb: null as unknown }))
+
+vi.mock("@supabase/supabase-js", () => ({
+  createClient: () => new Proxy({}, { get: (_t, prop) => (state.sb as Record<PropertyKey, unknown>)[prop] }),
+}))
+
+process.env.INGEST_SECRET_TOKEN = "sentinel-token"
+process.env.TELEGRAM_BOT_TOKEN = "tg-token"
+process.env.TELEGRAM_CHAT_ID = "12345"
+process.env.RESEND_API_KEY = "re-key"
+process.env.ALERT_EMAIL = "ops@example.com"
+
+const { POST } = await import("@/app/api/sentinel/route")
+
+function post(): NextRequest {
+  return new NextRequest("https://t/api/sentinel", { method: "POST", headers: new Headers({ authorization: "Bearer sentinel-token" }) })
+}
+
+type Fixtures = Parameters<typeof makeInstrumentedSupabaseFixture>[0]
+
+function ingestHealthy(): Record<string, unknown>[] {
+  return [
+    { collection: "nba_top_shot", display_name: "Top Shot", marketplace: "topshot", source: "onchain", sales_24h: 2000, coll_hours_since_last: 0.3, silence_hours: 3, loudness: "critical" },
+    { collection: "nba_top_shot", display_name: "Top Shot", marketplace: "topshot", source: "offer_fill", sales_24h: 550, coll_hours_since_last: 0.3, silence_hours: 3, loudness: "critical" },
+    { collection: "nfl_all_day", display_name: "All Day", marketplace: "nflallday", source: "onchain_dapper_v2", sales_24h: 71, coll_hours_since_last: 0.4, silence_hours: 12, loudness: "critical" },
+    { collection: "disney_pinnacle", display_name: "Pinnacle", marketplace: "pinnacle", source: "on-chain", sales_24h: 116, coll_hours_since_last: 1.5, silence_hours: 12, loudness: "warn" },
+    { collection: "ufc_strike", display_name: "UFC", marketplace: "(none)", source: "(none)", sales_24h: 0, coll_hours_since_last: 2088, silence_hours: 999, loudness: "off" },
+  ]
+}
+
+function greenFixtures(): Fixtures {
+  return {
+    sentinel_threshold_config: { data: [], error: null },
+    sales: { count: 1500, error: null } as never,
+    fmv_snapshots: { data: [{ computed_at: new Date().toISOString() }], error: null },
+    "rpc:sentinel_fmv_confidence_canonical_ts_split": {
+      data: [
+        { printing: "base", confidence: "HIGH", count: 100 },
+        { printing: "base", confidence: "MEDIUM", count: 300 },
+        { printing: "base", confidence: "LOW", count: 600 },
+        { printing: "parallel", confidence: "LOW", count: 490 },
+      ],
+      error: null,
+    },
+    editions: { count: 3, error: null } as never,
+    "rpc:sentinel_edition_coverage": {
+      data: [
+        { scope: "live", editions: 1000, with_fmv: 950 },
+        { scope: "inert_ts_uuid", editions: 128, with_fmv: 100 },
+      ],
+      error: null,
+    },
+    "rpc:detect_stalled_pipelines": { data: [], error: null },
+    // pg_cron failure-rate arm (added 2026-09-09). Healthy fixture: a normal 6h
+    // window. ⚠ It must be supplied explicitly — the arm treats an unreadable
+    // payload and an explicit zero-runs answer as INCONCLUSIVE rather than as
+    // health, which is deliberate and is what caught a third-state bug in it.
+    "rpc:check_pgcron_failure_rate": {
+      data: {
+        window_text: "06:00:00",
+        runs: 2100,
+        fails: 1,
+        jobs_failing: 1,
+        startup_timeouts: 0,
+        statement_timeouts: 1,
+        other_fails: 0,
+        top: [{ jobname: "rpc-example", fails: 1 }],
+      },
+      error: null,
+    },
+    v_rpc_trust_health: { data: [{ metric: "topshot_fmv_stale_hours", value: 1, breach_at: 6, status: "ok" }], error: null },
+    // Wall-kills + probe-cost arms (added 2026-09-13). Healthy fixtures: a real
+    // population inspected, nothing over the line. ⚠ Supplied EXPLICITLY — both
+    // arms treat an unreadable payload and an empty population as UNMEASURED,
+    // never as health, so an omission here fails loudly instead of passing.
+    "rpc:check_wall_kills": {
+      data: {
+        window: { hours: 24, grace_minutes: 10, correlation_seconds: 5 },
+        inspected: 45,
+        verified: 44,
+        unverified: [{ pipeline: "dead-lane-backstop", heartbeats: 7 }],
+        offenders: [],
+      },
+      error: null,
+    },
+    "rpc:check_maintenance_load": {
+      data: { vacuums: [], clusters: [], index_builds: [], autovacuum_workers: 0, autovacuum_max_workers: 3, io_waiters: 1, measured_at: "2026-09-13T18:56:01Z" },
+      error: null,
+    },
+    "rpc:check_pg_net_dispatch": {
+      data: {
+        queued: 0,
+        responses_10m: 139,
+        errored_10m: 3,
+        http5xx_10m: 0,
+        last_response_at: "2026-09-13T17:32:15Z",
+        store_bytes: 1.4 * 1024 ** 3,
+        store_rows: 5391,
+        ttl: "6 hours",
+        batch_size: 200,
+      },
+      error: null,
+    },
+    "rpc:sentinel_probe_cost": {
+      data: {
+        since: "2026-09-13T16:30:00Z",
+        rows: [
+          { fn: "sentinel_sales_ingest_health", calls: 12, mean_ms: 900, max_ms: 3000, blks_per_call: 5694, total_s: 11 },
+          { fn: "check_wall_kills", calls: 12, mean_ms: 2000, max_ms: 6000, blks_per_call: 33414, total_s: 24 },
+        ],
+      },
+      error: null,
+    },
+    "rpc:sentinel_total_sales_estimate": { data: 4200000, error: null },
+    "rpc:sentinel_sales_ingest_health": { data: ingestHealthy(), error: null },
+  }
+}
+
+const sniperOk = jsonRoute("/api/sniper-feed", { deals: [{ source: "topshot" }, { source: "allday" }] })
+const telegramOk = jsonRoute("api.telegram.org", { ok: true })
+const resendOk = jsonRoute("api.resend.com", { id: "email-1" })
+
+let fetchMock: ReturnType<typeof installFetchMock> | null = null
+afterEach(() => {
+  fetchMock?.restore()
+  fetchMock = null
+})
+beforeEach(() => {
+  process.env.INGEST_SECRET_TOKEN = "sentinel-token"
+})
+
+interface Check { name: string; status: string; detail: string; value?: string }
+async function run(over: Fixtures = {}, stubs: FetchStub[] = [sniperOk, telegramOk, resendOk]) {
+  const fixtures: Fixtures = { ...greenFixtures(), ...over }
+  state.sb = makeInstrumentedSupabaseFixture(fixtures).fixture
+  fetchMock = installFetchMock(stubs)
+  const report = await (await POST(post())).json()
+  return report as { status: string; checks: Check[]; notifications: string[] }
+}
+const chk = (r: { checks: Check[] }, name: string) => {
+  const c = r.checks.find((x) => x.name === name)
+  if (!c) throw new Error(`check not found: ${name}`)
+  return c
+}
+
+// ── ARM COMPLETENESS, and why it is not a name roster ──
+// An alerting surface fails in a way ordinary code does not: its output is
+// SILENCE, so a missing arm is indistinguishable from a healthy one. CLAUDE.md
+// calls this the unfalsifiable class and it happened here — the FMV Confidence
+// arm branched on `error`, then on `data`, with no else, so a read that returned
+// NEITHER pushed nothing and the roadmap's headline metric vanished from its own
+// report.
+//
+// ⚠ The obvious guard is a hardcoded roster of expected arm names, and CLAUDE.md
+// warns against exactly that: "a guard that NAMES its instances — three have died
+// on a rename." So this pins the property BEHAVIOURALLY instead. The healthy run
+// defines the roster, and the failing runs must not lose any of it. A rename
+// changes both sides at once and the test stays true, while a vanished arm reds it.
+//
+// Two failure shapes, because they are genuinely different states and only one of
+// them was ever handled: every read ERRORING, and every read returning NO PAYLOAD
+// with no error. Verified against the pre-fix route: the null-payload run produced
+// 12 arms instead of 13 and named the missing one.
+// ── Detector Health: the arm that watches the watchers (known-issues #25) ──
+//
+// Three daily detectors are the only things that can see their rot classes, and on
+// 2026-08-22 two had been red for a fortnight while being CORRECT, with nothing
+// surfacing it. This arm keys on a consecutive-failure STREAK, because one red run
+// is a detector doing its job — the defect is a red that PERSISTS unread.
+//
+// ⚠ The property these cases pin hardest: the arm must never be SILENT. An
+// unconfigured or unreadable state has to show up as a check, because "said nothing"
+// is exactly the failure it exists to catch — it must not commit that bug itself.
+describe("sentinel — detector health arm", () => {
+  const GH = "api.github.com"
+  const runs = (concls: (string | null)[]) =>
+    jsonRoute(GH, {
+      workflow_runs: concls.map((c) => ({ status: "completed", conclusion: c })),
+    })
+
+  it("reports NOT CONFIGURED rather than vanishing when no token is set", async () => {
+    // Only the dedicated variable is read; GITHUB_TOKEN is deliberately NOT a
+    // fallback (it is set in this sandbox and in Actions for unrelated reasons).
+    const prevA = process.env.GITHUB_ACTIONS_READ_TOKEN
+    delete process.env.GITHUB_ACTIONS_READ_TOKEN
+    try {
+      const arm = chk(await run(), "Detector Health (GitHub Actions)")
+      // ⚠ VISIBLE and annotated, but `ok` — a permanently-warn arm would drag the
+      // whole sentinel to WARN every hour until a token exists, and a permanently-red
+      // instrument is indistinguishable from a broken one. Same convention this route
+      // already uses for a config-disabled check. The property pinned here is that it
+      // is PRESENT and says why, not that it pages.
+      expect(arm.status).toBe("ok")
+      expect(arm.detail).toContain("NOT CONFIGURED")
+    } finally {
+      if (prevA !== undefined) process.env.GITHUB_ACTIONS_READ_TOKEN = prevA
+    }
+  })
+
+  it("is ok when every watched detector's latest completed run is green", async () => {
+    process.env.GITHUB_ACTIONS_READ_TOKEN = "gh-test"
+    try {
+      const r = await run({}, [sniperOk, telegramOk, resendOk, runs(["success", "failure"])])
+      const arm = chk(r, "Detector Health (GitHub Actions)")
+      expect(arm.status).toBe("ok")
+      // A single historical failure BELOW the newest success must not count — the
+      // streak is counted from the newest completed run backwards.
+      expect(arm.value).toBe(0)
+    } finally {
+      delete process.env.GITHUB_ACTIONS_READ_TOKEN
+    }
+  })
+
+  it("warns on a sustained streak but NOT on a single red run", async () => {
+    process.env.GITHUB_ACTIONS_READ_TOKEN = "gh-test"
+    try {
+      const one = chk(
+        await run({}, [sniperOk, telegramOk, resendOk, runs(["failure", "success", "success"])]),
+        "Detector Health (GitHub Actions)",
+      )
+      expect(one.status).toBe("ok")
+      expect(one.value).toBe(1)
+
+      const many = chk(
+        await run({}, [sniperOk, telegramOk, resendOk, runs(["failure", "failure", "failure", "success"])]),
+        "Detector Health (GitHub Actions)",
+      )
+      expect(many.status).toBe("warn")
+      expect(many.value).toBe(3)
+    } finally {
+      delete process.env.GITHUB_ACTIONS_READ_TOKEN
+    }
+  })
+
+  it("pages critical on the fortnight-long streak this arm was built for", async () => {
+    process.env.GITHUB_ACTIONS_READ_TOKEN = "gh-test"
+    try {
+      // edge-fn-drift was red 14 consecutive runs on 2026-08-22 and nobody read it.
+      const arm = chk(
+        await run({}, [sniperOk, telegramOk, resendOk, runs(Array(12).fill("failure"))]),
+        "Detector Health (GitHub Actions)",
+      )
+      expect(arm.status).toBe("critical")
+    } finally {
+      delete process.env.GITHUB_ACTIONS_READ_TOKEN
+    }
+  })
+
+  // 2026-11-14: the 08-30 token expired and the arm went blind on all three detectors
+  // (HTTP 401). The repo is public, so a REJECTED token falls back to an anonymous read
+  // — the arm keeps watching, and still names the dead token so it gets rotated.
+  const authAware = (authed: { status: number }, anon: unknown, anonStatus = 200): FetchStub => ({
+    match: (url) => url.includes(GH),
+    respond: (_url, init) => {
+      const h = (init?.headers ?? {}) as Record<string, string>
+      return "Authorization" in h
+        ? { json: { message: "Bad credentials" }, status: authed.status, ok: false }
+        : { json: anon, status: anonStatus, ok: anonStatus < 300 }
+    },
+  })
+
+  it("reads anonymously when the token is REJECTED, and names the dead token", async () => {
+    process.env.GITHUB_ACTIONS_READ_TOKEN = "gh-expired"
+    try {
+      const r = await run({}, [
+        sniperOk, telegramOk, resendOk,
+        authAware({ status: 401 }, { workflow_runs: [{ status: "completed", conclusion: "success" }] }),
+      ])
+      const arm = chk(r, "Detector Health (GitHub Actions)")
+      expect(arm.status).toBe("ok")
+      expect(arm.detail).toContain("All 3 watched detectors green")
+      expect(arm.detail).toContain("GITHUB_ACTIONS_READ_TOKEN rejected (HTTP 401)")
+      expect(arm.detail).not.toContain("Could not read ANY")
+      // the fallback really is anonymous — the rejected credential is not re-sent
+      const gh = fetchMock!.calls.filter((c) => c.url.includes(GH))
+      expect(gh).toHaveLength(6)
+      expect(gh.filter((c) => !("Authorization" in ((c.init?.headers ?? {}) as object)))).toHaveLength(3)
+    } finally {
+      delete process.env.GITHUB_ACTIONS_READ_TOKEN
+    }
+  })
+
+  it("still reports UNREAD when the anonymous fallback fails too", async () => {
+    process.env.GITHUB_ACTIONS_READ_TOKEN = "gh-expired"
+    try {
+      const arm = chk(
+        await run({}, [sniperOk, telegramOk, resendOk, authAware({ status: 401 }, { message: "rate limited" }, 403)]),
+        "Detector Health (GitHub Actions)",
+      )
+      expect(arm.status).toBe("warn")
+      expect(arm.detail).toContain("Could not read ANY")
+      expect(arm.detail).toContain("rejected (HTTP 401)")
+    } finally {
+      delete process.env.GITHUB_ACTIONS_READ_TOKEN
+    }
+  })
+
+  it("does NOT fall back on a 403 — a rate limit is not a dead token", async () => {
+    process.env.GITHUB_ACTIONS_READ_TOKEN = "gh-test"
+    try {
+      const r = await run({}, [sniperOk, telegramOk, resendOk, authAware({ status: 403 }, { workflow_runs: [] })])
+      const arm = chk(r, "Detector Health (GitHub Actions)")
+      expect(arm.detail).toContain("403")
+      expect(arm.detail).not.toContain("rejected (HTTP 401)")
+      expect(fetchMock!.calls.filter((c) => c.url.includes(GH))).toHaveLength(3)
+    } finally {
+      delete process.env.GITHUB_ACTIONS_READ_TOKEN
+    }
+  })
+
+  // A workflow the arm could not READ must never be folded into "healthy" — silence
+  // about an instrument is not good news, which is the whole thesis of this arm.
+  it("reports an unreadable workflow instead of counting it green", async () => {
+    process.env.GITHUB_ACTIONS_READ_TOKEN = "gh-test"
+    try {
+      const arm = chk(
+        await run({}, [sniperOk, telegramOk, resendOk, jsonRoute(GH, {}, { status: 403, ok: false })]),
+        "Detector Health (GitHub Actions)",
+      )
+      expect(arm.status).toBe("warn")
+      expect(arm.detail).toContain("403")
+      expect(arm.detail).not.toContain("All 3 watched detectors green")
+    } finally {
+      delete process.env.GITHUB_ACTIONS_READ_TOKEN
+    }
+  })
+})
+
+describe("sentinel — no arm may disappear from its own report", () => {
+  function allFixturesAs(shape: Record<string, unknown>): Fixtures {
+    const out: Record<string, unknown> = {}
+    for (const k of Object.keys(greenFixtures())) out[k] = shape
+    return out as Fixtures
+  }
+
+  it("keeps every healthy arm when every read ERRORS", async () => {
+    const greenNames = (await run()).checks.map((c) => c.name).sort()
+    // Guard against a vacuous pass: if the healthy run produced almost nothing,
+    // "no arm went missing" would be trivially true and would pin nothing.
+    expect(greenNames.length).toBeGreaterThan(10)
+
+    const failed = await run(
+      allFixturesAs({ data: null, count: null, error: { message: "canceling statement due to statement timeout" } }),
+      []
+    )
+    const failedNames = failed.checks.map((c) => c.name)
+    expect(greenNames.filter((n) => !failedNames.includes(n))).toEqual([])
+  })
+
+  it("keeps every healthy arm when every read returns NO PAYLOAD and no error", async () => {
+    const greenNames = (await run()).checks.map((c) => c.name).sort()
+    expect(greenNames.length).toBeGreaterThan(10)
+
+    // The state that actually bit: supabase-js RETURNS rather than throws, so this
+    // is a read that neither failed nor delivered. It is not an error and it is
+    // not a zero.
+    const nulled = await run(allFixturesAs({ data: null, count: null, error: null }), [])
+    const nullNames = nulled.checks.map((c) => c.name)
+    expect(greenNames.filter((n) => !nullNames.includes(n))).toEqual([])
+  })
+})
+
+describe("sentinel — sales-ingest health arms", () => {
+  it("a non-saturation ingest-health RPC error pages the collection lane critical and warns the source lane", async () => {
+    const r = await run({ "rpc:sentinel_sales_ingest_health": { data: null, error: { message: "relation missing" } } as never })
+    expect(chk(r, "Sales Ingest by Collection").status).toBe("critical")
+    expect(chk(r, "Sales Ingest by Source").status).toBe("warn")
+  })
+
+  it("a saturation ingest-health RPC error is inconclusive-warn on both lanes", async () => {
+    const r = await run({ "rpc:sentinel_sales_ingest_health": { data: null, error: { message: "canceling statement due to statement timeout" } } as never })
+    expect(chk(r, "Sales Ingest by Collection").status).toBe("warn")
+    expect(chk(r, "Sales Ingest by Collection").detail).toContain("INCONCLUSIVE")
+  })
+
+  it("a page-loud collection past its silence ceiling pages critical", async () => {
+    const rows = ingestHealthy().map((row) =>
+      row.collection === "nba_top_shot" ? { ...row, coll_hours_since_last: 5 } : row) // > silence_hours 3, loudness critical
+    const r = await run({ "rpc:sentinel_sales_ingest_health": { data: rows, error: null } as never })
+    const c = chk(r, "Sales Ingest by Collection")
+    expect(c.status).toBe("critical")
+    expect(c.detail).toContain(">3h!")
+  })
+
+  it("a warn-loud collection past its ceiling warns (does not page)", async () => {
+    const rows = ingestHealthy().map((row) =>
+      row.collection === "disney_pinnacle" ? { ...row, coll_hours_since_last: 20 } : row) // > 12, loudness warn
+    const r = await run({ "rpc:sentinel_sales_ingest_health": { data: rows, error: null } as never })
+    expect(chk(r, "Sales Ingest by Collection").status).toBe("warn")
+  })
+
+  it("an off collection reads 'market closed' only when its market is in CLOSED_MARKETS", async () => {
+    const rows = [
+      ...ingestHealthy(),
+      { collection: "candy_mlb", display_name: "Candy MLB", marketplace: "(none)", source: "(none)", sales_24h: 0, coll_hours_since_last: 72, silence_hours: 12, loudness: "off" },
+    ]
+    const r = await run({ "rpc:sentinel_sales_ingest_health": { data: rows, error: null } as never })
+    const c = chk(r, "Sales Ingest by Collection")
+    expect(c.status).toBe("ok")
+    expect(String(c.detail)).toMatch(/UFC [^·]*\(market closed\)/)
+    expect(String(c.detail)).toMatch(/Candy MLB [^·]*\(silent by decision\)/)
+    expect(String(c.detail)).not.toMatch(/Candy MLB [^·]*\(market closed\)/)
+  })
+
+  it("a silent source lane while its collection still flows warns the source lane", async () => {
+    const rows = ingestHealthy().map((row) =>
+      row.collection === "nba_top_shot" && row.source === "offer_fill" ? { ...row, sales_24h: 0 } : row)
+    const r = await run({ "rpc:sentinel_sales_ingest_health": { data: rows, error: null } as never })
+    const c = chk(r, "Sales Ingest by Source")
+    expect(c.status).toBe("warn")
+    expect(c.detail).toContain("LANE SILENT")
+    expect(c.detail).toContain("Top Shot/offer_fill")
+  })
+})
+
+describe("sentinel — FMV freshness arms", () => {
+  it("warns when the latest snapshot is between the warn and crit ages", async () => {
+    const r = await run({ fmv_snapshots: { data: [{ computed_at: new Date(Date.now() - 4 * 3600 * 1000).toISOString() }], error: null } })
+    expect(chk(r, "FMV Freshness").status).toBe("warn")
+  })
+  it("pages critical when the latest snapshot is older than the crit age", async () => {
+    const r = await run({ fmv_snapshots: { data: [{ computed_at: new Date(Date.now() - 9 * 3600 * 1000).toISOString() }], error: null } })
+    expect(chk(r, "FMV Freshness").status).toBe("critical")
+  })
+  it("pages critical when there are no snapshots at all", async () => {
+    const r = await run({ fmv_snapshots: { data: [], error: null } })
+    expect(chk(r, "FMV Freshness").detail).toContain("No FMV snapshots")
+  })
+  it("a non-saturation freshness query error pages critical", async () => {
+    const r = await run({ fmv_snapshots: { data: null, error: { message: "permission denied" } } as never })
+    expect(chk(r, "FMV Freshness").status).toBe("critical")
+  })
+})
+
+describe("sentinel — confidence / coverage / leak arms", () => {
+  it("warns when base HIGH+MED confidence is below the threshold", async () => {
+    const r = await run({
+      "rpc:sentinel_fmv_confidence_canonical_ts_split": {
+        data: [
+          { printing: "base", confidence: "HIGH", count: 10 },
+          { printing: "base", confidence: "MEDIUM", count: 10 },
+          { printing: "base", confidence: "LOW", count: 980 },
+        ],
+        error: null,
+      } as never,
+    })
+    expect(chk(r, "FMV Confidence (canonical TS)").status).toBe("warn")
+  })
+  it("warns on a confidence RPC error", async () => {
+    const r = await run({ "rpc:sentinel_fmv_confidence_canonical_ts_split": { data: null, error: { message: "boom" } } as never })
+    expect(chk(r, "FMV Confidence (canonical TS)").status).toBe("warn")
+  })
+  // A no-error/no-payload read used to fall through `else if (data)` and push
+  // NOTHING, so the headline accuracy arm vanished from the report rather than
+  // reporting that it could not be read. The assertion is therefore that the
+  // arm is PRESENT and states no percentage — not merely that some error text
+  // exists somewhere. Asserting presence-of-a-message would pass on a version
+  // that also published a fabricated "0%".
+  it("keeps the confidence arm present, and claims no percentage, when the RPC returns no payload", async () => {
+    const r = await run({ "rpc:sentinel_fmv_confidence_canonical_ts_split": { data: null, error: null } as never })
+    const arm = chk(r, "FMV Confidence (canonical TS)")
+    expect(arm).toBeDefined()
+    expect(arm.status).toBe("warn")
+    // The false claim is a share-of-prices figure derived from a read that returned nothing.
+    expect(arm.detail).not.toMatch(/\d+(\.\d+)?\s*%/)
+    expect(arm.value ?? "").not.toMatch(/\d+(\.\d+)?\s*%/)
+  })
+  it("marks a Pipeline Success RPC timeout INCONCLUSIVE so the blackout arm can count it", async () => {
+    // 2026-09-13 09:51 PT sweep: this arm said "RPC error: canceling statement
+    // due to statement timeout" with no marker while three sibling arms carried
+    // one, so the Measurement Blackout arm counted three blind arms of four.
+    const r = await run({ "rpc:detect_pipelines_without_success": { data: null, error: { message: "canceling statement due to statement timeout" } } as never })
+    const c = chk(r, "Pipeline Success")
+    expect(c.status).toBe("warn")
+    expect(String(c.detail)).toMatch(/^INCONCLUSIVE \(db saturated\)/)
+    expect(String(c.detail)).toContain("RPC error: canceling statement")
+    // A NON-saturation error keeps its plain shape: it is a real failure to read.
+    const r2 = await run({ "rpc:detect_pipelines_without_success": { data: null, error: { message: "permission denied for function detect_pipelines_without_success" } } as never })
+    expect(String(chk(r2, "Pipeline Success").detail)).not.toContain("INCONCLUSIVE")
+  })
+
+  it("warns when live edition coverage is below the threshold", async () => {
+    const r = await run({ "rpc:sentinel_edition_coverage": { data: [{ scope: "live", editions: 1000, with_fmv: 500 }], error: null } as never })
+    expect(chk(r, "Edition Coverage").status).toBe("warn")
+  })
+  // 2026-11-09: the Candy legacy catalogue is its own scope — reported beside the headline, and it
+  // can neither lift a low live share nor sink a healthy one.
+  it("reports the Candy legacy catalogue beside the headline without letting it move the verdict", async () => {
+    const healthy = await run({ "rpc:sentinel_edition_coverage": { data: [
+      { scope: "live", editions: 1000, with_fmv: 990 },
+      { scope: "candy_legacy_catalog", editions: 20000, with_fmv: 1 },
+    ], error: null } as never })
+    expect(chk(healthy, "Edition Coverage").status).toBe("ok")
+    expect(chk(healthy, "Edition Coverage").detail).toMatch(/Candy legacy catalogue counted separately: 1 of 20000 priced/)
+    const low = await run({ "rpc:sentinel_edition_coverage": { data: [
+      { scope: "live", editions: 1000, with_fmv: 500 },
+      { scope: "candy_legacy_catalog", editions: 20000, with_fmv: 20000 },
+    ], error: null } as never })
+    expect(chk(low, "Edition Coverage").status).toBe("warn")
+  })
+  it("says nothing about a Candy legacy scope the RPC did not return", async () => {
+    const r = await run({ "rpc:sentinel_edition_coverage": { data: [{ scope: "live", editions: 1000, with_fmv: 990 }], error: null } as never })
+    expect(chk(r, "Edition Coverage").detail).not.toMatch(/Candy legacy/)
+  })
+  it("warns on an edition-coverage RPC error", async () => {
+    const r = await run({ "rpc:sentinel_edition_coverage": { data: null, error: { message: "boom" } } as never })
+    expect(chk(r, "Edition Coverage").status).toBe("warn")
+  })
+  // A population of ZERO is not a share of zero. Both gate meters used to divide
+  // by an empty denominator and render "0%", which reads as a reportable collapse
+  // in accuracy when the truth is that there was nothing to measure. The assertion
+  // is the ABSENCE of a percentage — asserting the presence of some warning text
+  // would pass unchanged on the version that also published the fabricated 0%.
+  it("claims no percentage when the confidence tally has no base editions", async () => {
+    const r = await run({
+      "rpc:sentinel_fmv_confidence_canonical_ts_split": {
+        data: [{ printing: "parallel", confidence: "LOW", count: 12 }],
+        error: null,
+      } as never,
+    })
+    const arm = chk(r, "FMV Confidence (canonical TS)")
+    expect(arm.status).toBe("warn")
+    // Strict: no percent sign at all. The copy deliberately says "not zero"
+    // rather than "not 0%" so this assertion needs no carve-out — a carve-out
+    // to tolerate the fix's own wording is how a test stops pinning anything.
+    expect(arm.detail).not.toContain("%")
+    expect(arm.value ?? "").not.toContain("%")
+  })
+  it("claims no percentage when edition coverage has no live-scope row", async () => {
+    const r = await run({ "rpc:sentinel_edition_coverage": { data: [], error: null } as never })
+    const arm = chk(r, "Edition Coverage")
+    expect(arm.status).toBe("warn")
+    // Strict: no percent sign at all. The copy deliberately says "not zero"
+    // rather than "not 0%" so this assertion needs no carve-out — a carve-out
+    // to tolerate the fix's own wording is how a test stops pinning anything.
+    expect(arm.detail).not.toContain("%")
+    expect(arm.value ?? "").not.toContain("%")
+  })
+  it("warns then pages on the TS writer-leak bands", async () => {
+    const warnR = await run({ editions: { count: 300, error: null } as never })
+    expect(chk(warnR, "TS Edition Writer Leak (48h)").status).toBe("warn")
+    const critR = await run({ editions: { count: 2500, error: null } as never })
+    expect(chk(critR, "TS Edition Writer Leak (48h)").status).toBe("critical")
+  })
+
+  // ⚠ THIS TRIPWIRE USED TO REPORT "ok" FROM A FAILED READ, on the sentinel —
+  // the report Trevor actually reads.
+  //
+  // The count was destructured without `error`, and `inertUuid || 0` made a
+  // failed read n = 0, which is below warn_at, so the arm published a measured
+  // PASS. ⚠ The surrounding try/catch looks like it covers this and does not:
+  // supabase-js RESOLVES on a query error rather than throwing, so the exception
+  // branch only ever fires for a genuine throw.
+  //
+  // Asserted as "not ok" rather than "== warn" so the pin survives someone
+  // deciding this deserves critical; and `value` must be ABSENT, because a
+  // fabricated 0 is precisely what made the failure invisible.
+  it("does NOT report ok when the inert-UUID count read errors", async () => {
+    const r = await run({
+      editions: { count: null, error: { message: "canceling statement due to statement timeout" } } as never,
+    })
+    const arm = chk(r, "TS Edition Writer Leak (48h)")
+    expect(arm.status).not.toBe("ok")
+    expect(arm.detail).toMatch(/INCONCLUSIVE/i)
+    expect(arm.value).toBeUndefined()
+    // The driver message may be shown here — this is the operator-only sentinel,
+    // not an anon surface — but the arm must not claim a measured zero.
+    expect(arm.detail).not.toMatch(/0 inert/)
+  })
+
+  it("does NOT report ok when the count comes back absent without an error", async () => {
+    const r = await run({ editions: { count: null, error: null } as never })
+    const arm = chk(r, "TS Edition Writer Leak (48h)")
+    expect(arm.status).not.toBe("ok")
+    expect(arm.detail).toMatch(/INCONCLUSIVE/i)
+  })
+
+  it("NO-CHANGE CONTROL: a genuine zero still reports ok, with the value", async () => {
+    // Without this, "never report ok" would satisfy both cases above and the
+    // tripwire would sit permanently warn — which CLAUDE.md records as
+    // indistinguishable from a broken instrument.
+    const r = await run({ editions: { count: 0, error: null } as never })
+    const arm = chk(r, "TS Edition Writer Leak (48h)")
+    expect(arm.status).toBe("ok")
+    expect(arm.value).toBe(0)
+    expect(arm.detail).toMatch(/0 inert UUID-keyed/)
+  })
+})
+
+describe("sentinel — pipeline / trust / totals arms", () => {
+  it("warns (not pages) when only medium-severity pipelines are stalled", async () => {
+    const r = await run({
+      "rpc:detect_stalled_pipelines": {
+        data: [{ pipeline: "wmc-fmv-populate", severity: "medium", silent_minutes: 80, max_silent_minutes: 60 }],
+        error: null,
+      } as never,
+    })
+    expect(chk(r, "Pipeline Silence").status).toBe("warn")
+  })
+  it("warns on a stalled-pipelines RPC error", async () => {
+    const r = await run({ "rpc:detect_stalled_pipelines": { data: null, error: { message: "boom" } } as never })
+    expect(chk(r, "Pipeline Silence").status).toBe("warn")
+  })
+
+  // ── FAIL CLOSED ON SHAPE — a tripwire that fabricated a healthy claim ──────
+  //
+  // detect_stalled_pipelines returns scalar `jsonb` (pg_proc, not SETOF), so
+  // `data` is whatever that jsonb is. The arm read
+  // `Array.isArray(data) ? data : []`, so ANY non-array payload became an empty
+  // stalled-list and the arm reported status "ok" with the copy "All watchlisted
+  // pipelines running within their max-silent window" — a positive claim about
+  // every watchlisted pipeline, manufactured from a payload it could not read.
+  //
+  // ⚠ Asserted on the STATUS and on the ABSENCE of the healthy sentence, not on
+  // the presence of an error string: the false claim is the defect, so that is
+  // what must not appear.
+  it.each([
+    ["object", { stalled: [] }],
+    ["null", null],
+    ["scalar", 0],
+  ])("a non-array detect_stalled_pipelines payload (%s) warns and never claims the watchlist is healthy", async (_label, payload) => {
+    const r = await run({ "rpc:detect_stalled_pipelines": { data: payload, error: null } as never })
+    const c = chk(r, "Pipeline Silence")
+    expect(c.status).toBe("warn")
+    expect(c.status).not.toBe("ok")
+    expect(String(c.detail)).not.toContain("All watchlisted pipelines running")
+    expect(String(c.detail)).toContain("unexpected payload shape")
+  })
+
+  // Positive control: an EMPTY ARRAY is a real measurement of "nothing stalled"
+  // and must keep reporting ok with the healthy copy. Without it, "treat every
+  // payload as unreadable" would satisfy the three cases above while permanently
+  // warning on a healthy platform — the cry-wolf failure this repo has paid for.
+  it("an EMPTY ARRAY of stalled pipelines is an honest ok, with the healthy copy intact", async () => {
+    const r = await run({ "rpc:detect_stalled_pipelines": { data: [], error: null } as never })
+    const c = chk(r, "Pipeline Silence")
+    expect(c.status).toBe("ok")
+    expect(String(c.detail)).toContain("All watchlisted pipelines running")
+  })
+
+  // ── ZERO COLLECTIONS INSPECTED IS NOT A PASS ──────────────────────────────
+  //
+  // `worst` starts at "ok" and only moves when a collection breaches, so an
+  // EMPTY result fell through to status "ok" with an EMPTY detail string: a green
+  // check that examined nothing. An emptied or mis-filtered sentinel_ingest_watch
+  // would read as "sales ingest is healthy" indefinitely, and the arm cannot page
+  // for a collection it never looked at. "0 breaches in 12 collections" and
+  // "0 breaches in 0 collections" are opposite results that rendered identically.
+  it("zero inspected collections is a WARN that names the cardinality, not a green tick", async () => {
+    const r = await run({ "rpc:sentinel_sales_ingest_health": { data: [], error: null } as never })
+    const c = chk(r, "Sales Ingest by Collection")
+    expect(c.status).toBe("warn")
+    expect(c.status).not.toBe("ok")
+    expect(String(c.detail)).toContain("inspected 0 collections")
+    expect(c.value).toBe(0)
+  })
+
+  // Positive control for the case above: a NON-empty result must still be able to
+  // report ok, and must state how many collections it actually inspected — the
+  // count is what makes the green readable.
+  it("a populated ingest-health result still reports ok AND states how many it inspected", async () => {
+    const r = await run()
+    const c = chk(r, "Sales Ingest by Collection")
+    expect(c.status).toBe("ok")
+    expect(Number(c.value)).toBeGreaterThan(0)
+    expect(String(c.detail)).toContain("collections inspected")
+  })
+  it("warns and lists the breached metric when trust health has a breach", async () => {
+    const r = await run({
+      v_rpc_trust_health: {
+        data: [
+          { metric: "topshot_fmv_stale_hours", value: 10, breach_at: 6, status: "breach" },
+          { metric: "offer_edition_gap", value: 0, breach_at: 50, status: "ok" },
+        ],
+        error: null,
+      },
+    })
+    const c = chk(r, "Trust Health")
+    expect(c.status).toBe("warn")
+    expect(c.detail).toContain("topshot_fmv_stale_hours=10")
+  })
+  it("warns on a trust-health query error", async () => {
+    const r = await run({ v_rpc_trust_health: { data: null, error: { message: "permission denied" } } as never })
+    expect(chk(r, "Trust Health").status).toBe("warn")
+  })
+  // 2026-09-26: zero metrics read "0/0 trust metrics ok" with status ok.
+  it("warns when trust health returns NO metrics — nothing measured is not 'ok'", async () => {
+    const r = await run({ v_rpc_trust_health: { data: [], error: null } as never })
+    const c = chk(r, "Trust Health")
+    expect(c.status).toBe("warn")
+    expect(c.detail).not.toMatch(/0\/0 trust metrics ok/)
+  })
+  it("warns when total-sales estimate is zero", async () => {
+    const r = await run({ "rpc:sentinel_total_sales_estimate": { data: 0, error: null } as never })
+    expect(chk(r, "Total Sales").status).toBe("warn")
+  })
+  it("warns on a total-sales estimate error", async () => {
+    const r = await run({ "rpc:sentinel_total_sales_estimate": { data: null, error: { message: "boom" } } as never })
+    expect(chk(r, "Total Sales").status).toBe("warn")
+  })
+})
+
+describe("sentinel — sniper-feed arms + notification failure", () => {
+  it("warns when the sniper feed returns zero deals", async () => {
+    const r = await run({}, [jsonRoute("/api/sniper-feed", { deals: [] }), telegramOk, resendOk])
+    expect(chk(r, "Sniper Feed").status).toBe("warn")
+    expect(chk(r, "Sniper Feed").detail).toContain("0 deals")
+  })
+  it("pages critical on a non-200 sniper-feed response", async () => {
+    const r = await run({}, [jsonRoute("/api/sniper-feed", {}, { status: 503, ok: false }), telegramOk, resendOk])
+    expect(chk(r, "Sniper Feed").status).toBe("critical")
+  })
+  it("treats an AbortError from the sniper feed as inconclusive-warn", async () => {
+    const abort: FetchStub = {
+      match: (u) => u.includes("/api/sniper-feed"),
+      respond: () => { const e: any = new Error("The user aborted a request."); e.name = "AbortError"; throw e },
+    }
+    const r = await run({}, [abort, telegramOk, resendOk])
+    expect(chk(r, "Sniper Feed").status).toBe("warn")
+  })
+  it("pages critical on a hard (non-saturation) sniper-feed error and records email-FAILED when Resend is down", async () => {
+    const boom: FetchStub = {
+      match: (u) => u.includes("/api/sniper-feed"),
+      respond: () => { throw new Error("ECONNREFUSED") },
+    }
+    const r = await run({}, [boom, telegramOk, jsonRoute("api.resend.com", { error: "bad" }, { status: 500, ok: false })])
+    expect(chk(r, "Sniper Feed").status).toBe("critical")
+    expect(r.status).toBe("CRITICAL")
+    // ⚠ Prefix, not equality (2026-08-30): the entry now carries the REASON, and
+    // the reason is the improvement — `email-FAILED` alone said an alert was lost
+    // and nothing about why. The prefix pins the property any reader matches on.
+    const em = (r.notifications as string[]).find((n: string) => n.startsWith("email-FAILED"))
+    expect(em).toBeDefined()
+    expect(em).toContain("http_500")
+    expect(r.notifications).toContain("telegram")
+  })
+})
+
+// ── Acknowledged criticals (audit_20260903_sentinel_threshold_config_ack_with_reason_and_expiry) ──
+//
+// The Detector Health arm was built to page on a detector that is CORRECT and red
+// unread. On 2026-08-30 it took its first reading and found edge-fn-drift red for
+// functions only an operator can move (unset *_GATE_KEY secrets, recorded deferrals),
+// so the fleet alarm went CRITICAL every hour for a condition engineering cannot
+// clear — and masked every other arm. The ack is the answer the 08-31 filing asked
+// for: a reason and an EXPIRY, downgrading critical to warn (never ok) while unexpired,
+// coming back on its own when it lapses. `enabled=false` is the wrong lever — it is
+// permanent, silent, and carries no reason.
+//
+// Properties pinned, each with the failure mode it would let through:
+//   1. unexpired ack → warn, reason + date in detail, report no longer CRITICAL.
+//      (Never `ok`: an ack says "known and owned", not "fine".)
+//   2. EXPIRED ack → still critical, annotated as expired. (A lapsed ack that kept
+//      silencing would be enabled=false with extra steps.)
+//   3. an ack touches ONLY a critical check. (A warn or ok must not gain the banner —
+//      the property is "downgrade a page", not "annotate a check".)
+//   4. half an ack is no ack — reason without a date, or an unparsable date, does
+//      not downgrade. (A malformed row must never silence a page.)
+describe("sentinel — an acknowledged critical", () => {
+  const GH = "api.github.com"
+  const ARM = "Detector Health (GitHub Actions)"
+  const streak = (n: number, tail: string[] = []) =>
+    jsonRoute(GH, {
+      workflow_runs: [...Array(n).fill("failure"), ...tail].map((c) => ({ status: "completed", conclusion: c })),
+    })
+  const REASON = "operator-owned: 4 functions wait on *_GATE_KEY secrets, 2 deferred by decision"
+  const cfg = (row: Record<string, unknown>): Fixtures => ({
+    sentinel_threshold_config: { data: [{ check_name: ARM, warn_at: null, crit_at: null, enabled: true, ...row }], error: null },
+  })
+  const future = new Date(Date.now() + 7 * 864e5).toISOString()
+  const past = new Date(Date.now() - 864e5).toISOString()
+
+  beforeEach(() => {
+    process.env.GITHUB_ACTIONS_READ_TOKEN = "gh-test"
+  })
+  afterEach(() => {
+    delete process.env.GITHUB_ACTIONS_READ_TOKEN
+  })
+
+  it("control — the same streak with no ack row pages CRITICAL", async () => {
+    const r = await run({}, [sniperOk, telegramOk, resendOk, streak(12)])
+    expect(chk(r, ARM).status).toBe("critical")
+    expect(r.status).toBe("CRITICAL")
+  })
+
+  it("an unexpired ack downgrades the critical to warn — never ok — with the reason and expiry rendered", async () => {
+    const control = await run({}, [sniperOk, telegramOk, resendOk, streak(12)])
+    const r = await run(cfg({ ack_reason: REASON, ack_expires_at: future }), [sniperOk, telegramOk, resendOk, streak(12)])
+    const arm = chk(r, ARM)
+    expect(arm.status).toBe("warn")
+    expect(arm.detail).toContain(`[ACKNOWLEDGED until ${future.slice(0, 10)}`)
+    expect(arm.detail).toContain(REASON)
+    // The finding itself is still in the detail — an ack annotates, it does not hide.
+    expect(arm.detail).toContain("Consecutive-failure streaks: edge-fn-drift 12x")
+    // Diff the SET, not the count: exactly this arm leaves the critical set and no
+    // other check moves. (These fixtures carry unrelated criticals on purpose — the
+    // deep suite owns the all-green battery — so the report-level status is not the
+    // property here; the membership change is.)
+    const crit = (x: { checks: Check[] }) => x.checks.filter((c) => c.status === "critical").map((c) => c.name).sort()
+    expect(crit(control)).toContain(ARM)
+    expect(crit(r)).toEqual(crit(control).filter((n) => n !== ARM))
+  })
+
+  it("an EXPIRED ack leaves the check critical and says the ack expired", async () => {
+    const r = await run(cfg({ ack_reason: REASON, ack_expires_at: past }), [sniperOk, telegramOk, resendOk, streak(12)])
+    const arm = chk(r, ARM)
+    expect(arm.status).toBe("critical")
+    expect(arm.detail).toContain(`[ACK EXPIRED ${past.slice(0, 10)}`)
+    expect(arm.detail).not.toContain("ACKNOWLEDGED")
+    expect(r.status).toBe("CRITICAL")
+  })
+
+  it("an ack touches only a critical check — a warn keeps its status and gains no banner, and so does ok", async () => {
+    const warn = chk(await run(cfg({ ack_reason: REASON, ack_expires_at: future }), [sniperOk, telegramOk, resendOk, streak(3, ["success"])]), ARM)
+    expect(warn.status).toBe("warn")
+    expect(warn.detail).not.toContain("ACKNOWLEDGED")
+    const ok = chk(await run(cfg({ ack_reason: REASON, ack_expires_at: future }), [sniperOk, telegramOk, resendOk, streak(0, ["success"])]), ARM)
+    expect(ok.status).toBe("ok")
+    expect(ok.detail).not.toContain("ACKNOWLEDGED")
+  })
+
+  it("half an ack is no ack — a reason with no date, or an unparsable date, does not downgrade", async () => {
+    const noDate = chk(await run(cfg({ ack_reason: REASON, ack_expires_at: null }), [sniperOk, telegramOk, resendOk, streak(12)]), ARM)
+    expect(noDate.status).toBe("critical")
+    expect(noDate.detail).not.toContain("ACKNOWLEDGED")
+    const badDate = chk(await run(cfg({ ack_reason: REASON, ack_expires_at: "next month" }), [sniperOk, telegramOk, resendOk, streak(12)]), ARM)
+    expect(badDate.status).toBe("critical")
+    expect(badDate.detail).not.toContain("ACKNOWLEDGED")
+    const noReason = chk(await run(cfg({ ack_reason: "  ", ack_expires_at: future }), [sniperOk, telegramOk, resendOk, streak(12)]), ARM)
+    expect(noReason.status).toBe("critical")
+  })
+})
+
+// ── The threshold-config read itself (2026-09-03) ──
+//
+// supabase-js RETURNS its error, so `const { data } = await …select()` on a failed
+// read yields `data: null, error: {…}` and the loop over `data || []` runs zero
+// times: every check falls back to its hardcoded threshold, every `enabled=false`
+// and every ack is dropped — and the report is byte-for-byte what a healthy run
+// with an EMPTY table produces. That is CLAUDE.md's "a failed read must not render
+// as an answer", on the alarm that is supposed to catch it elsewhere. The fallback
+// is right; the silence is the defect. These pin: a failed read is a VISIBLE warn
+// arm that says what was not applied; a healthy read produces no such arm; and an
+// ack that could not be read does not silently downgrade the critical it covered.
+describe("sentinel — a failed threshold-config read is visible, and never silently drops an ack", () => {
+  const GH = "api.github.com"
+  const ARM = "Detector Health (GitHub Actions)"
+  const CFG = "Threshold Config"
+  const streak12 = jsonRoute(GH, { workflow_runs: Array(12).fill({ status: "completed", conclusion: "failure" }) })
+
+  it("a healthy config read adds NO config arm — the arm exists only to name a failure", async () => {
+    const r = await run()
+    expect(r.checks.map((c) => c.name)).not.toContain(CFG)
+  })
+
+  it("a config read that RETURNS an error is a warn arm naming the error and what was not applied", async () => {
+    const r = await run({
+      sentinel_threshold_config: { data: null, error: { message: "canceling statement due to statement timeout" } } as never,
+    })
+    const arm = chk(r, CFG)
+    expect(arm.status).toBe("warn")
+    expect(arm.detail).toContain("CONFIG READ FAILED")
+    expect(arm.detail).toContain("canceling statement due to statement timeout")
+    expect(arm.detail).toContain("no acknowledgement was applied")
+  })
+
+  it("no payload and no error is also a failed read, not an empty table", async () => {
+    const r = await run({ sentinel_threshold_config: { data: null, error: null } as never })
+    expect(chk(r, CFG).status).toBe("warn")
+  })
+
+  it("when the config read fails, a critical that an ack WOULD have covered still pages, and the report says why", async () => {
+    process.env.GITHUB_ACTIONS_READ_TOKEN = "gh-test"
+    try {
+      const r = await run(
+        { sentinel_threshold_config: { data: null, error: { message: "PGRST002 schema cache" } } as never },
+        [sniperOk, telegramOk, resendOk, streak12],
+      )
+      expect(chk(r, ARM).status).toBe("critical")
+      expect(chk(r, ARM).detail).not.toContain("ACKNOWLEDGED")
+      expect(chk(r, CFG).detail).toContain("PGRST002")
+    } finally {
+      delete process.env.GITHUB_ACTIONS_READ_TOKEN
+    }
+  })
+})
+
+// ── Pipeline Success — the opt-in long-horizon arm (2026-09-04) ──────────────
+//
+// Pipeline Silence reads max(started_at) with no `ok` filter, so a pipeline that
+// RUNS and FAILS keeps its clock green (measured: ALL CLEAR through a 7-hour
+// outage). This arm reads detect_pipelines_without_success(): the active
+// watchlist rows whose newest ok=true run is older than their own opt-in
+// `max_minutes_without_success`. Same fail-closed contract as Silence — an
+// error or an unreadable payload is a tripwire that did not evaluate, never an
+// "every pipeline succeeds" claim — pinned by the ABSENCE of the healthy copy.
+describe("sentinel — Pipeline Success (no-success arm)", () => {
+  it("an EMPTY ARRAY is an honest ok with the healthy copy (control)", async () => {
+    const r = await run({ "rpc:detect_pipelines_without_success": { data: [], error: null } as never })
+    const c = chk(r, "Pipeline Success")
+    expect(c.status).toBe("ok")
+    expect(String(c.detail)).toContain("has succeeded inside its own no-success window")
+  })
+
+  it("warns (not pages) when only medium-severity pipelines have not succeeded", async () => {
+    const r = await run({
+      "rpc:detect_pipelines_without_success": {
+        data: [{ pipeline: "topshot-fmv-populate", severity: "medium", minutes_without_success: 1065, max_minutes_without_success: 480 }],
+        error: null,
+      } as never,
+    })
+    const c = chk(r, "Pipeline Success")
+    expect(c.status).toBe("warn")
+    expect(String(c.detail)).toContain("topshot-fmv-populate 1065m since the last success (>480m, medium)")
+    expect(String(c.detail)).not.toContain("has succeeded inside")
+  })
+
+  it("pages (critical) on a high-severity pipeline, and names a NULL age as beyond retention rather than inventing a number", async () => {
+    const r = await run({
+      "rpc:detect_pipelines_without_success": {
+        data: [{ pipeline: "topshot-sales-indexer", severity: "high", minutes_without_success: null, max_minutes_without_success: 60 }],
+        error: null,
+      } as never,
+    })
+    const c = chk(r, "Pipeline Success")
+    expect(c.status).toBe("critical")
+    expect(String(c.detail)).toContain("no successful run inside the pipeline_runs retention window")
+    expect(String(c.detail)).not.toMatch(/nullm|NaN/)
+  })
+
+  it("warns on an RPC error and never claims every pipeline succeeds", async () => {
+    const r = await run({ "rpc:detect_pipelines_without_success": { data: null, error: { message: "boom" } } as never })
+    const c = chk(r, "Pipeline Success")
+    expect(c.status).toBe("warn")
+    expect(String(c.detail)).not.toContain("has succeeded inside")
+  })
+
+  it.each([
+    ["object", { failing: [] }],
+    ["null", null],
+    ["scalar", 0],
+  ])("a non-array payload (%s) warns and never claims every pipeline succeeds", async (_label, payload) => {
+    const r = await run({ "rpc:detect_pipelines_without_success": { data: payload, error: null } as never })
+    const c = chk(r, "Pipeline Success")
+    expect(c.status).toBe("warn")
+    expect(String(c.detail)).not.toContain("has succeeded inside")
+    expect(String(c.detail)).toContain("unexpected payload shape")
+  })
+})
+
+// ── A THROWN read must be classified exactly like a RETURNED one ──
+//
+// Every arm has two failure paths: supabase-js RETURNS `{ error }` (the `if
+// (error)` branch, which classifies with isSaturationError and prefixes the
+// INCONCLUSIVE marker) and the read THROWS (the `catch`, which until 2026-09-18
+// emitted a bare `Exception: …` in sixteen of twenty-four arms). The blackout
+// arm counts blindness by that marker, falling back to its own narrower regex,
+// so a 522 gateway page that killed a read in a bare catch was blind to the arm
+// whose whole subject is blindness — the "marker not applied uniformly" filing
+// of 09-13, measured as 3 counted of 4 blind. These pin the property, not the
+// spelling: with EVERY read throwing the gateway shape, no arm may report an
+// exception without the marker, and the control shows the marker is not simply
+// stamped on everything.
+describe("sentinel — a THROWN read is classified like a RETURNED one", () => {
+  const GATEWAY =
+    '<!DOCTYPE html>\n<!--[if lt IE 7]> <html class="no-js ie6 oldie" lang="en-US"> <![endif]-->\n<title>bxcqstmqfzmuolpuynti.supabase.co | 522: Connection timed out</title>'
+  const CODE_DEFECT = "Cannot read properties of null (reading 'fails')"
+
+  function throwingClient(message: string) {
+    const reject = () => Promise.reject(new Error(message))
+    const b: Record<string, unknown> = {}
+    for (const m of [
+      "select", "insert", "update", "upsert", "delete", "eq", "neq", "in", "is", "not", "or", "and",
+      "gte", "lte", "gt", "lt", "order", "limit", "range", "match", "returns", "filter", "ilike",
+      "like", "contains", "containedBy", "overlaps", "textSearch", "csv", "abortSignal",
+    ]) b[m] = () => b
+    b.single = reject
+    b.maybeSingle = reject
+    b.then = (onF?: (v: unknown) => unknown, onR?: (e: unknown) => unknown) => reject().then(onF, onR)
+    b.catch = (onR?: (e: unknown) => unknown) => reject().catch(onR)
+    b.finally = (cb?: () => void) => reject().finally(cb)
+    return { from: () => b, rpc: reject }
+  }
+  async function runThrowing(message: string) {
+    state.sb = throwingClient(message)
+    fetchMock = installFetchMock([sniperOk, telegramOk, resendOk])
+    return (await (await POST(post())).json()) as { status: string; checks: Check[] }
+  }
+  const threw = (r: { checks: Check[] }) => r.checks.filter((c) => String(c.detail).includes("Exception:"))
+
+  it("every arm killed by a gateway-shaped throw carries INCONCLUSIVE, and the blackout arm counts each one", async () => {
+    const r = await runThrowing(GATEWAY)
+    // Positive control against a vacuous pass: the throw has to reach a real
+    // population of catch branches, not one or two.
+    expect(threw(r).length).toBeGreaterThanOrEqual(10)
+    const bare = threw(r).filter((c) => !String(c.detail).startsWith("INCONCLUSIVE"))
+    expect(bare.map((c) => c.name)).toEqual([])
+    // Composition: counted by the MARKER, not by a regex that happens to match.
+    const blackout = chk(r, "Measurement Blackout")
+    expect(blackout.status).toBe("warn")
+    for (const c of threw(r)) expect(blackout.detail).toContain(c.name)
+  })
+
+  it("NO-CHANGE CONTROL: a thrown code defect is NOT marked — a TypeError is a bug, not a blackout", async () => {
+    const r = await runThrowing(CODE_DEFECT)
+    expect(threw(r).length).toBeGreaterThanOrEqual(10)
+    expect(threw(r).filter((c) => String(c.detail).includes("INCONCLUSIVE")).map((c) => c.name)).toEqual([])
+    for (const c of threw(r)) expect(c.detail).toContain(CODE_DEFECT)
+  })
+
+  it("a throw with an EMPTY message is stated as a dropped read, never printed as a truncated line", async () => {
+    const r = await runThrowing("")
+    expect(threw(r).length).toBeGreaterThanOrEqual(10)
+    for (const c of threw(r)) {
+      expect(c.detail).toMatch(/^INCONCLUSIVE/)
+      expect(c.detail).toContain("empty error message")
+      expect(c.detail).not.toMatch(/Exception: $/)
+    }
+  })
+
+  it("BAN AT ZERO: no catch branch in the route renders its own `Exception:` line — one renderer, or the marker drifts again", async () => {
+    const { readFileSync } = await import("node:fs")
+    const { stripComments } = await import("../scripts/lib/strip-comments.mjs")
+    const src = stripComments(readFileSync(new URL("../app/api/sentinel/route.ts", import.meta.url), "utf8"))
+    // The single allowed occurrence is the renderer's own template.
+    const inline = src.match(/Exception: \$\{/g) ?? []
+    expect(inline).toHaveLength(1)
+    expect(src).toContain("function exceptionDetail(")
+    // And the renderer is what the catch branches call — a guard that only bans
+    // the old spelling would pass on a route with no catch branches at all.
+    const calls = src.match(/detail: exceptionDetail\(e\)/g) ?? []
+    expect(calls.length).toBeGreaterThanOrEqual(20)
+  })
+})

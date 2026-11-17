@@ -1,0 +1,45 @@
+-- APPLIED 2026-11-04 ~8:00 AM PT (Cowork, Trevor's go-ahead) via the Supabase dashboard SQL editor, one statement
+-- at a time: step-1 pre-check both valid; DROP ran; RENAME ran; post-check below returned
+--   CREATE INDEX idx_wmc_wallet_coll_ek_fmv_tier ON public.wallet_moments_cache USING btree
+--   (wallet_address, collection_id, edition_key) INCLUDE (fmv_usd, tier, series_number, mint_count)  — 286 MB;
+--   idx_wmc_wallet_coll_ek_snap_cover no longer exists. This migration is RECORD-ONLY (SELECT 1); the runbook follows.
+--
+-- STAGED, NOT APPLIED — needs a human to approve a destructive statement (2026-11-03 ~6:30 PM PT).
+-- 2026-11-04 ~7:20 AM PT: a THIRD attempt (Claude Code cloud, Trevor present) raised the MCP prompt and timed out
+--   unanswered at 60 s. Pre-check just before it: both valid; old 346 MB (idx_scan 105.8M lifetime), cover 284 MB.
+--   The DROP most likely did NOT run (an unanswered prompt does not execute) — RE-RUN the step-1 pre-check first.
+--   The MCP path has now failed three times on this prompt; the dashboard SQL editor is the reliable route.
+--
+-- Context: known-issues #228; migration 20261104013841_audit_20261103_collection_snapshot_aggregates_from_the_index.
+-- idx_wmc_wallet_coll_ek_snap_cover (built 11-03, 189 MB, valid) is a strict SUPERSET of
+-- idx_wmc_wallet_coll_ek_fmv_tier (same keys; INCLUDE (fmv_usd, tier) vs (fmv_usd, tier, series_number, mint_count)),
+-- which reads 335 MB. Keeping both costs ~190 MB and a second index maintained on every wmc write.
+-- The cloud session's DROP raised the Supabase MCP destructive-statement prompt and it went unanswered.
+--
+-- Run each statement ON ITS OWN (dashboard SQL editor, or execute_sql one call each) — CONCURRENTLY cannot
+-- run inside a transaction block, so do not paste them as one script, and do not prefix SET lock_timeout.
+--
+-- 1. Pre-check (expect both rows, both indisvalid = true):
+--    SELECT c.relname, i.indisvalid FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+--    WHERE c.relname IN ('idx_wmc_wallet_coll_ek_fmv_tier', 'idx_wmc_wallet_coll_ek_snap_cover');
+--
+-- 2. Drop the subset index:
+-- (ran) DROP INDEX CONCURRENTLY IF EXISTS public.idx_wmc_wallet_coll_ek_fmv_tier;
+--
+-- 3. Give the superset its name, so the weekly reindex job (rpc-weekly-wmc-reindex-*, jobid 478 targets this
+--    NAME) and run_wmc_reindex_verify()'s target list keep covering it:
+-- (ran) ALTER INDEX public.idx_wmc_wallet_coll_ek_snap_cover RENAME TO idx_wmc_wallet_coll_ek_fmv_tier;
+--
+-- 4. Post-check: one row, idx_wmc_wallet_coll_ek_fmv_tier, INCLUDE (fmv_usd, tier, series_number, mint_count):
+--    SELECT pg_get_indexdef('public.idx_wmc_wallet_coll_ek_fmv_tier'::regclass);
+--
+-- Then record it: commit a migration file named for the version a no-op apply gets, e.g. apply_migration
+-- `audit_YYYYMMDD_wmc_snapshot_cover_takes_the_tier_index_name` with body `SELECT 1;` and this file's text as
+-- its header comment, and delete this staged file.
+--
+-- REVERT (after step 3): rebuild the old shape under its own name, CONCURRENTLY, then drop the superset:
+--   CREATE INDEX CONCURRENTLY idx_wmc_wallet_coll_ek_fmv_tier_old ON public.wallet_moments_cache
+--     USING btree (wallet_address, collection_id, edition_key) INCLUDE (fmv_usd, tier);
+-- (Not needed for correctness: the superset serves every query the subset did.)
+
+SELECT 1;

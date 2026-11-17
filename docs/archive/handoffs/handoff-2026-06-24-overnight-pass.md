@@ -1,0 +1,58 @@
+# Overnight autonomous pass — 2026-06-24
+
+**Mode: MONITOR-MODE (borderline-late).** Scheduled 01:02 PDT; fired late at real **~06:41 PDT** (~41 min past the 00:00–06:00 window) via the recurring ~5.5h sandbox/DB-clock skew. Per the quiet-hours guard + the 06-23 precedent: full review + health triage + post-ship watch, **shipped 0 to production, queued everything, docs-only commit.** Push WAS available; the skew (not a push failure) is why nothing shipped. origin/main `895e8e9` unchanged start→end.
+
+## The clock-skew determination (why MONITOR-MODE)
+- First DB `now()` returned **08:03Z** and shell `date` agreed (08:02Z) → looked in-window (01:03 PDT).
+- BUT app-stamped columns were ~5.5h AHEAD of that `now()`: `sales.ingested_at` max 13:36Z, `fmv_snapshots.computed_at` max 13:38Z — rows cannot be stamped in the future, so the writers (Vercel lambdas, real wall-clock) were at ~13:38Z while the DB/sandbox clock lagged at 08:03Z.
+- A re-query of `now()` minutes later returned **13:41:38Z**, now coherent with pg_cron `cron.job_run_details` max (13:37Z), sales (13:36Z), fmv (13:38Z), pipeline_runs (13:41Z). The first `now()` (08:03Z) was the skewed read; **real UTC ≈ 13:41 = 06:41 PDT.**
+- Conclusive: a 5.5h cron blackout (real 08:03→13:38 with no successes) would have tripped `detect_stalled` (it's `[]`), so 08:03 cannot be real. Two independent real-world signals (Vercel writers + Vercel error aggregation) agree on ~13:3x.
+- **Lesson for future runs:** do NOT trust a single `now()` for the quiet-hours gate. Cross-check against `max(sales.ingested_at)` / `max(fmv_snapshots.computed_at)` (app-stamped real clock). Same skew class as 2026-06-23.
+- Also: my early "last 12h" window queries were anchored to the skewed 08:03 clock and missed the real 08:03→13:41 window; I re-ran them with absolute timestamps.
+
+## Post-ship regression watch — ALL PASS, 0 reverts
+The heaviest single-day wave in weeks (the **historical-sales-capture program** + media recovery + Scarcity Board), all Trevor/CC daytime work 06-23 → 06-24, all on `main`, prod = `37993a1` READY.
+
+1. **Historical-sales-capture program (`47e83e4` AllDay route + `c967efb` AllDay cron + `37993a1` program #2-4) — PASS.** Five new `*/3`-hourly Vercel backfill crons (allday `7`, pinnacle `13`, ts-flowty `27`, golazos `34`, ufc `48`), each `maxDuration=300` (≤ 800 Pro cap — the b32102e/900s lesson honored). Each has now fired **3× at every slot, all `ok=true`, 0 failures, no error strings** (06:07/09:07/12:07Z etc.). First-tick `extra` shows sane work: AllDay scanned 30k blocks backward from the 148,653,524 forward floor → 113 sales found / 63 editions resolved (46s); Pinnacle 64/61 (38s); TS-Flowty 250 decoded / 60 resolved (88s); Golazos & UFC found ~0 in their first low-volume window (expected, not an error). No sales dup-key (the 1 "dup" in 12h is the documented empty-`transaction_hash` source=NULL historical-backfill class, 168 distinct nft_ids — not a real dup). `fmv_sanity_flags` 0. Editions FLAT (no writer leak). **SIDE EFFECT = the one new finding (HISTORY-BACKFILL-UNMAPPED-SPIKE, below).**
+2. **Media recovery (`c68b3b1` dead-CDN art + cron self-heal, `c0adbf1` IPFS migration repo-sync) — PASS.** TS dead-media tail sits at **803 thumbs / 823 videos**, exactly matching c68b3b1's one-time-drain result (1,541→803). Editions FLAT (UPDATE-only, no INSERT). The daily cron's widened `isDeadMedia()` predicate is the self-healer; remaining ~803 are genuinely artless on-chain (getCIDs nil — the WNBA/Base-Set catalog tail). No regression.
+3. **AllDay Scarcity Board (`52c4303`) — PASS.** `allday_scarcity_board` returns **6,190 rows**, `security_invoker=on`, anon SELECT = true (correct rpc-insights-qa posture). The 5 entity-grid RPCs (entity_rep_nft_id) broke no artifact backing object (monitor validated across 4 ticks). `/insights/allday-scarcity` live.
+4. **Edition-page streaming (`d9721d0`) — PASS.** Route-only, 0 Sentry, high-traffic public/SEO edition route soaked clean across the day.
+5. **Prior-wave ASK_ONLY parity (`9056eff`) — PASS, holding.** AllDay ASK_ONLY 646 / NO_DATA 1,666 / HIGH+MED 901 (reconciles to 6,191 exact). Pinnacle NO_DATA 0.
+6. **Last night's CAND-1 artifact repair + the `enable_nestloop=off` special-serial-owners MV fix — PASS.** rpc-live-health `leak_48h` 0 (`::subID` predicate holding); special-serial MV fresh at 6,793 rows.
+
+## Health-drift triage — GREEN except one trust-health breach
+- **Security 0/0/0/0:** RLS-off base `[]`; anon/auth-write-on-RLS-off base `[]`; `check_public_security_invariants()` null (clean); `check_secdef_anon_execute_violations()` `[]`.
+- **`detect_stalled_pipelines()` `[]`.** `get_pipeline_alerts()` = 1 INFO (`ufc_sales` resolving_editions, 2/24h — benign, the UFC backfill's edition-resolution bridge).
+- **`check_pgcron_recent_failures()` = 1** = `rpc-refresh-thin-fmv-guard` @06-23 13:30Z (the daily `30 13` cron). KNOWN/stale-pre-watch (already THIN-FMV-GUARD-CONTENTION); reads "failed" in cron.job_run_details until today's 13:30Z tick (fires AFTER this run — daytime monitor's check). Not re-logged.
+- **Sentinel TS-UUID-leak 48h: 0** (floor). ts_uuid_dupes_created_24h 0/200. No writer leak.
+- **Editions FLAT:** TS 17,318 / AllDay 6,191 / Golazos 581 / UFC 518 (exact vs the 06-23 13:35Z baseline).
+- **FMV (latest-per-edition):** TS HIGH+MED **4,399** (1,227+3,172; improving from 4,366) · AllDay **901** (251+650; flat). Reconcile (TS sum 17,316 vs 17,318 = 2 fresh `::` parallels; AllDay 6,191=6,191 exact). `fmv_sanity_flags` 0; FMV write fresh 13:38Z.
+- **Trust health: 8/9 ok, 1 BREACH** — `unmapped_resolution_backlog_max` **725** (threshold 100). See finding. Other 8 green (edition_integrity 4/50, fmv_sanity 0/1, offer_edition_gap $0/50, pack_ev_board_stale 0.59d/2, pack_ev_depleted 0/30, pinnacle_ask 0.2h/3, pinnacle_fmv 15.9h/30, ts_uuid_dupes_24h 0/200).
+- **conflation_guard 68** — high end of the documented benign oscillation (44→34→50→63→68 across the day; pg_cron remap `23 */6` converges; flagged editions suppressed from boards = no user harm). Carried operator item (refresh-conflated-editions).
+- **DB 5,235 MB** (+68 over ~18h vs 5,167 baseline; benign creep). **special-serial MV 6,793.** thin_fmv 104.
+- **Sentry: 0 unresolved** (the lone NEXTJS-1Q aged out). **Vercel: 0 ERROR** across 20 recent; prod `37993a1` READY (the `895e8e9` monitor commit is docs-only/CANCELED by ignore-build-step).
+- **Vercel runtime errors:** all long-standing known/benign — `url.parse()` DEP0169 deprecation *warning* (since 2026-03-22, not an error), allday-fmv-populate GQL-403 WAF (known), wallet-backfill-allday dup-key race (15, benign idempotent), 2 single-event statement-timeouts (team/player pages). Nothing new or spiking.
+- **Artifacts:** 16 enumerated (2 tombstones: pack-drops-ev-check, rpc-ts-data-mission; 14 active). Monitor validated 14/14 across 5 ticks incl. the full rpc-live-health consolidated payload (leak_48h 0, all 11 insights boards return rows). Fresh-on-open + no schema change since the 06-23T13:56Z CAND-1 repair → **none drifted, none repaired** (deliberately not regenerating working artifacts).
+
+## NEW QUEUED — HISTORY-BACKFILL-UNMAPPED-SPIKE [MED · CC/operator · off-limits sales path]
+The `topshot-flowty-sales-history-backfill` (#3) is enqueuing edition-unresolvable Flowty-marketplace TS sales into `unmapped_sales` **faster than any resolver drains them**: TS open backlog **384 → 725** across the 3 ticks (06:27/09:27/12:27Z), only **3 resolved** since program start. This pushes trust-health `unmapped_resolution_backlog_max` to a **standing BREACH (725/100)** and will climb each `*/3` tick. AllDay added 77 (135 open), Golazos 0 (16 flat), UFC 2.
+
+- **NOT corruption, NOT a user-facing regression.** unmapped_sales rows are correctly held OUT of `sales` — they don't surface on any board, don't enter FMV, don't corrupt anything. The 06-06Z monitor tick PRE-AUTHORIZED this framing ("breach risk… NOT corruption, rows correctly held out of sales… pace the backfill cron / boost resolver cadence").
+- **Root mechanism:** the #3 route resolves editions inline via `getMintedMoment` (60/tick succeed); the unmapped remainder are dead-Flowty-era TS moments `getMintedMoment` can't resolve, so they may be **permanently unresolvable** (like the documented AllDay `flowty_no_edition_id` retire class).
+- **NOT auto-actioned because:** (1) MONITOR-MODE (ship nothing); (2) route logic on the sales-ingest path = OFF-LIMITS; (3) `app/api/cron/topshot-flowty-sales-history-backfill/route.ts` is a HOT file (committed ~11h ago, Trevor); (4) it's a deliberately-shipped founder feature — reverting over a quarantine-queue metric with zero user harm would overstep.
+- **Fix options for Trevor/CC (pick one):** (a) a resolver/drain that covers backfill-era Flowty TS unmapped rows (getMintedMoment retry or a different resolution path); (b) a retire mechanism for permanently-unresolvable Flowty-era rows (mirror `promote_unmapped_sales`'s retry-cap/retire used for the AllDay class), so the backlog metric reflects only genuinely-resolvable rows; (c) pace the #3 cron slower while (a)/(b) is built; (d) if these are accepted-unresolvable, segregate them so `unmapped_resolution_backlog_max` measures only the resolvable queue. **Do NOT** simply raise the trust-health threshold (masks the signal) without Trevor's call.
+
+## QUEUED (carried / future)
+- **HISTORY-BACKFILL-WATCHLIST [LOW · future night-pass SHIP].** The 5 new sales-history-backfill crons are NOT in `pipeline_cadence_watchlist`, so a silent death wouldn't surface in `detect_stalled_pipelines()`. HELD tonight: only 3 ticks observed (can't set a sane `max_silent_minutes` on a `*/3`-hour cadence yet — the BUYERBF/UFC-DRAIN lesson) + MONITOR-MODE. Ship after ~24-48h banked cadence. Ready INSERT (threshold ~250m = ~2 missed 3h ticks + grace): `INSERT INTO pipeline_cadence_watchlist (pipeline, max_silent_minutes, severity, is_active, notes) VALUES ('allday-sales-history-backfill',250,'low',true,'*/3h historical backfill'),('pinnacle-sales-history-backfill',250,'low',true,'*/3h'),('topshot-flowty-sales-history-backfill',250,'low',true,'*/3h'),('golazos-sales-history-backfill',250,'low',true,'*/3h'),('ufc-sales-history-backfill',250,'low',true,'*/3h') ON CONFLICT (pipeline) DO NOTHING;` (deactivate each row when its backfill reaches the spork floor and the cron is retired — the migrate-wmc lesson). Revert: DELETE those 5 rows.
+- **THIN-FMV-GUARD-CONTENTION [LOW · watch].** `rpc-refresh-thin-fmv-guard` (`30 13`) failed its 06-23 13:30Z tick on a 120s timeout (manually refreshed healthy 3.9s yesterday). The 06-24 13:30Z tick fires after this run — daytime monitor confirms; if it fails again → planner/timeout fix (special-serial-MV class).
+- **conflation_guard / refresh-conflated-editions [operator].** Benign oscillation (now 68); pg_cron remap `23 */6` converges; flagged editions suppressed from boards.
+- **Standing carried (unchanged):** BUYERBF-PERINVOCATION-WORK, ALLDAY-V1-UNMAPPED-DRIFT, TS-WMC-UUID-FOSSILS (6,428 accepted residual), VERCEL cost family, A1-WORKER-PASSTHROUGH-CLEANUP, PIN-FMV-REKEY-WAVES 2/3, PIN-SYNC-CRON, P3-BUYERS, DUPE1, Q2/Q5/Q6, ANALYTICS-SMOKE-RESIDUAL, IPFS ×2. See ledger.
+
+## Shipped / reverted / failed
+- **Shipped: 0** (MONITOR-MODE; also the correct substantive outcome — 0 inbox candidates, all open items off-limits/CC/operator).
+- **Auto-reverted: 0** (all post-ship watch PASS).
+- **Failed / blocked: 0.**
+- **Artifacts repaired: 0** (none drifted).
+
+## Inbox drained
+6 monitor files (15:56Z, 18:06Z, 21:06Z, 00:06Z, 03:06Z, 06:06Z) — all GREEN, 0 new fix candidates; their post-ship-watch handoffs are folded in above. Archived to inbox/archive/.

@@ -1,0 +1,5 @@
+#!/bin/sh
+# Fast staged-tree checks (conflict markers, ledger, generated indexes, register).
+# Activated by `git config core.hooksPath .githooks` (the web SessionStart hook
+# does this). Bypass once: git commit --no-verify. See scripts/pre-commit-check.mjs.
+exec node scripts/pre-commit-check.mjs

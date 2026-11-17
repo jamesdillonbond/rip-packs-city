@@ -1,0 +1,601 @@
+import { describe, it, expect, beforeEach, vi } from "vitest"
+import { makeReq } from "./cron-req-helper"
+
+// Route integration test for /api/ingest/candy-editions (GET + POST). FAIL-CLOSED
+// auth accepts Bearer INGEST_SECRET_TOKEN or CRON_SECRET. Deep legs added: the
+// discovery_pending 202 short-circuit, and the captured after() DAS walk —
+// paginateGroup fan-out, the burnt/pack skip filter, per-page edition dedup +
+// chunked upsert, the serial→wmc map (null wallet/moment dropped), the upsert
+// error branches, the logRun success telemetry, and the thrown-walk catch.
+
+const st = vi.hoisted(() => ({
+  ready: true,
+  pages: [] as any[][],
+  edUpsert: { data: [{ id: "e1" }] as { id: string }[] | null, error: null as any },
+  wmcUpsert: { data: [{ moment_id: "m1" }] as { moment_id: string }[] | null, error: null as any },
+  // Answers served BEFORE wmcUpsert, one per call (lock-retry cases).
+  wmcQueue: [] as { data: any; error: any }[],
+  wmcCalls: 0,
+  packUpsert: { data: [{ token_mint: "p1" }] as { token_mint: string }[] | null, error: null as any },
+  jerseyUpsert: { data: [{ external_id: "ed1" }] as { external_id: string }[] | null, error: null as any },
+  paginateThrows: false,
+  heartbeatThrows: false,
+  runs: [] as any[],
+  // The invocation heartbeat moved from the `log_pipeline_run` RPC to a direct
+  // `pipeline_runs` INSERT on 2026-08-20 (lib/pipeline/heartbeat.ts), because
+  // the RPC has no `p_finished_at` and therefore cannot stop `duration_ms` from
+  // publishing its own call latency. Captured separately so the terminal row
+  // (still an RPC) and the marker row cannot be confused for one another.
+  hbRows: [] as any[],
+  captured: null as null | (() => Promise<void>),
+  wmcRows: [] as any[],
+  listings: { data: [] as any[] | null, error: null as any },
+  linkCalls: 0,
+  linkResult: { data: { players_created: 0, editions_linked: 0 }, error: null } as { data: unknown; error: any },
+  sets: [{ key: "base26", collectionAddress: "col-addr", writesPacks: true, editionKeyPrefix: null }] as any[],
+  walkedAddrs: [] as string[],
+  // hydrate: ids that fail to hydrate; hydrated assets take a.realEd as their edition key
+  hydrateFail: [] as string[],
+  hydrateCalls: 0,
+}))
+
+// The census walks every Candy set (lib/chains/solana/candy-sets.ts, 2026-11-08).
+// Default: one Base-like set, so every pre-existing assertion reads one walk.
+vi.mock("@/lib/chains/solana/candy-sets", () => ({
+  get CANDY_SETS() { return st.sets },
+}))
+
+vi.mock("next/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("next/server")>()
+  return { ...actual, after: (fn: any) => { st.captured = fn } }
+})
+vi.mock("@/lib/supabase", () => ({
+  supabaseAdmin: {
+    rpc: async (name: string, args: any) => {
+      // candy_link_catalog takes no args (2026-11-08): record its call by name.
+      if (name === "candy_link_catalog") {
+        st.linkCalls++
+        return st.linkResult
+      }
+      st.runs.push(args)
+      return { data: null, error: null }
+    },
+    from(table: string) {
+      if (table === "pipeline_runs") {
+        return {
+          insert: async (row: any) => {
+            if (st.heartbeatThrows) throw new Error("heartbeat insert failed")
+            st.hbRows.push(row)
+            return { error: null }
+          },
+        }
+      }
+      if (table === "candy_listings") {
+        // Chainable + thenable: the escrow lookup filters venue AND is_active
+        // (2026-10-10), so the query must resolve on await, not on the first eq.
+        const q: any = {
+          select: () => q,
+          in: () => q,
+          eq: () => q,
+          then: (onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) => Promise.resolve(st.listings).then(onF, onR),
+        }
+        return q
+      }
+      return {
+        upsert: (rows: any[]) => ({
+          select: async () => {
+            if (table === "wallet_moments_cache") {
+              st.wmcRows.push(...rows)
+              st.wmcCalls++
+              if (st.wmcQueue.length) return st.wmcQueue.shift()!
+            }
+            return table === "editions" ? st.edUpsert : table === "candy_packs" ? st.packUpsert : st.wmcUpsert
+          },
+        }),
+      }
+    },
+  },
+}))
+// Keep the real retry logic but never really sleep between attempts.
+vi.mock("@/lib/supabase/lock-retry", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/supabase/lock-retry")>()
+  return {
+    ...actual,
+    withLockRetry: (op: any, budget: any, opts: any = {}) =>
+      actual.withLockRetry(op, budget, { ...opts, sleep: async () => {} }),
+  }
+})
+vi.mock("@/lib/chains/solana/das", () => ({
+  paginateGroup: async (addr: string, cb: (items: any[]) => Promise<void>) => {
+    st.walkedAddrs.push(addr)
+    if (st.paginateThrows) throw new Error("DAS down")
+    let seen = 0
+    for (const page of st.pages) { seen += page.length; await cb(page) }
+    return seen
+  },
+}))
+vi.mock("@/lib/chains/solana/hydrate", () => ({
+  isUnhydrated: (a: any) => a.bare === true,
+  hydrateFromJsonUri: async (assets: any[]) => {
+    st.hydrateCalls++
+    return {
+      hydrated: assets.filter((a) => !st.hydrateFail.includes(a.id)).map((a) => ({ ...a, bare: false, ed: a.realEd ?? a.ed })),
+      failed: assets.filter((a) => st.hydrateFail.includes(a.id)).map((a) => ({ id: a.id, reason: "404" })),
+    }
+  },
+}))
+vi.mock("@/lib/chains/solana/normalize", () => ({
+  CANDY_MLB_COLLECTION_ADDRESS: "col-addr",
+  CANDY_MLB_SLUG: "candy_mlb",
+  candyDiscoveryReady: () => st.ready,
+  // "burntpack" is BOTH — the case that proves packs are checked before the
+  // burnt filter (a burnt pack is an OPENED pack and must still be recorded).
+  isBurnt: (a: any) => a.kind === "burnt" || a.kind === "burntpack",
+  isPack: (a: any) => a.kind === "pack" || a.kind === "burntpack",
+  normalizeEdition: (a: any) => ({ external_id: a.ed ?? null, collection_id: "c1", jersey_number: a.jersey ?? null }),
+  normalizeSerial: (a: any) => ({ wallet_address: a.w ?? null, moment_id: a.m ?? null, tier: "COMMON", ...(a.bare === false ? { edition_key: a.ed } : {}) }),
+  normalizePack: (a: any) => ({ token_mint: a.m ?? "p1", collection_id: "c1", is_burnt: a.kind === "burntpack" }),
+}))
+
+import { GET, POST } from "@/app/api/ingest/candy-editions/route"
+
+// Select telemetry rows by PIPELINE NAME, never by index. The invocation
+// heartbeat is written before the after() walk, so it occupies terminal() on
+// every accepted request — a positional read silently retargets these
+// assertions at the heartbeat, where `p_ok` is always true and `p_extra`
+// carries none of the fields under test.
+const terminal = () => st.runs.find((r) => r.p_pipeline === "candy-editions-ingest")
+const heartbeat = () => st.hbRows.find((r) => r.pipeline === "candy-editions-ingest-heartbeat")
+
+beforeEach(() => {
+  st.hydrateFail = []
+  st.hydrateCalls = 0
+  st.linkCalls = 0
+  st.linkResult = { data: { players_created: 0, editions_linked: 0 }, error: null }
+  st.sets = [{ key: "base26", collectionAddress: "col-addr", writesPacks: true, editionKeyPrefix: null }]
+  st.walkedAddrs = []
+  vi.unstubAllEnvs()
+  vi.stubEnv("CRON_SECRET", "")
+  st.ready = true
+  st.pages = [[{ kind: "icon", ed: "ed1", w: "w1", m: "m1" }, { kind: "burnt" }, { kind: "pack" }]]
+  st.edUpsert = { data: [{ id: "e1" }], error: null }
+  st.wmcUpsert = { data: [{ moment_id: "m1" }], error: null }
+  st.wmcQueue = []
+  st.wmcCalls = 0
+  st.packUpsert = { data: [{ token_mint: "p1" }], error: null }
+  st.jerseyUpsert = { data: [{ external_id: "ed1" }], error: null }
+  st.paginateThrows = false
+  st.heartbeatThrows = false
+  st.runs = []
+  // ⚠ Reset alongside `runs`. Omitting this leaked marker rows between cases and
+  // made the "a failing heartbeat is non-fatal" test find a PREVIOUS test's row,
+  // i.e. it would have passed while asserting nothing about its own fixture.
+  st.hbRows = []
+  st.captured = null
+  st.wmcRows = []
+  st.listings = { data: [], error: null }
+})
+
+describe("candy-editions — auth", () => {
+  it("401s FAIL-CLOSED when no auth secret is set", async () => {
+    vi.stubEnv("INGEST_SECRET_TOKEN", "")
+    expect((await POST(makeReq({ url: "https://t/api/ingest/candy-editions" }))).status).toBe(401)
+  })
+  it("401s on a non-matching Bearer", async () => {
+    vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
+    expect((await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer wrong" }))).status).toBe(401)
+  })
+  it("GET 401s FAIL-CLOSED", async () => {
+    vi.stubEnv("INGEST_SECRET_TOKEN", "")
+    expect((await GET(makeReq({ url: "https://t/api/ingest/candy-editions", method: "GET" }))).status).toBe(401)
+  })
+})
+
+describe("candy-editions — accept + discovery gate", () => {
+  it("202-accepts on a valid INGEST token and captures the after() walk", async () => {
+    vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
+    const res = await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
+    expect(res.status).toBe(202)
+    expect((await res.json()).accepted).toBe(true)
+    expect(st.captured).toBeTypeOf("function")
+  })
+  it("GET 202-accepts on Bearer CRON_SECRET (Vercel cron path)", async () => {
+    vi.stubEnv("CRON_SECRET", "cronsecret")
+    const res = await GET(makeReq({ url: "https://t/api/ingest/candy-editions", method: "GET", auth: "Bearer cronsecret" }))
+    expect(res.status).toBe(202)
+  })
+  it("202 discovery_pending (no walk) when discovery isn't ready", async () => {
+    st.ready = false
+    vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
+    const res = await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
+    expect(res.status).toBe(202)
+    const body = await res.json()
+    expect(body.accepted).toBe(false)
+    expect(body.skipped).toBe("discovery_pending")
+    expect(st.captured).toBeNull() // after() never scheduled
+    // logRun recorded the skip
+    expect(terminal().p_extra.skip_reason).toBe("discovery_pending")
+  })
+})
+
+describe("candy-editions — the after() DAS walk", () => {
+  async function accept() {
+    vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
+    await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
+  }
+
+  it("filters burnt+pack, upserts editions + serials, and logs a success run", async () => {
+    await accept()
+    await st.captured!()
+    const run = terminal()
+    expect(run.p_ok).toBe(true)
+    expect(run.p_extra.assets_seen).toBe(3)
+    // Renamed 2026-07-26: these are upsert ROWS TOUCHED, not catalog size — the
+    // same edition is re-upserted on every DAS page, which is why the old
+    // `editions_written` read 3,108 against a 125-edition catalog.
+    expect(run.p_extra.edition_rows_touched).toBe(1)
+    expect(run.p_extra.serial_rows_touched).toBe(1)
+    expect(run.p_extra.editions_written).toBeUndefined()
+    expect(run.p_extra.serials_written).toBeUndefined()
+    // The honest catalog counts, deduped across pages.
+    expect(run.p_extra.editions_distinct).toBe(1)
+    expect(run.p_extra.serials_distinct).toBe(1)
+    expect(run.p_extra.burnt_skipped).toBe(1)
+    expect(run.p_extra.packs_skipped).toBe(1)
+    // Packs are no longer thrown away — the DAS walk already paid for them and
+    // they feed candy_pack_market.
+    expect(run.p_extra.pack_rows_touched).toBe(1)
+    expect(run.p_extra.packs_distinct).toBe(1)
+  })
+
+  // INVERTED 2026-09-20 (R123): this case used to assert `p_ok: true` after a
+  // rejected editions upsert — it pinned the swallowed-write defect it was named
+  // to tolerate. A rejected write is still non-fatal to the WALK, but the run row
+  // must not claim success. Mutation-checked: restoring the hardcoded `true, null`
+  // reds this arm on p_ok.
+  it("drops serials with a null wallet/moment; a rejected upsert is non-fatal to the walk but FAILS the run row", async () => {
+    st.pages = [[{ kind: "icon", ed: "ed1", w: null, m: null }]] // serial dropped
+    st.edUpsert = { data: null, error: { message: "ed err" } } // edition upsert error branch
+    await accept()
+    await st.captured!()
+    const run = terminal()
+    expect(run.p_ok).toBe(false)
+    expect(String(run.p_error)).toContain("editions: ed err")
+    expect(run.p_extra.write_errors).toBe(1)
+    expect(run.p_extra.edition_rows_touched).toBe(0)
+    expect(run.p_extra.serial_rows_touched).toBe(0)
+    // The edition WAS seen (distinct counts the payload, not the write), the
+    // upsert just failed; the serial was dropped before it could be counted.
+    expect(run.p_extra.editions_distinct).toBe(1)
+    expect(run.p_extra.serials_distinct).toBe(0)
+  })
+
+  // 2026-11-11: the 01:10 UTC tick lost one wmc chunk to a lock timeout two days
+  // running (the hourly wmc-fmv-populate Candy step held the rows). A lock-timeout
+  // chunk is now retried; the run is ok only because the retry LANDED.
+  it("retries a wmc chunk that hit a lock timeout; the run is ok once it lands", async () => {
+    st.wmcQueue = [{ data: null, error: { message: "canceling statement due to lock timeout", code: "55P03" } }]
+    await accept()
+    await st.captured!()
+    const run = terminal()
+    expect(st.wmcCalls).toBe(2)
+    expect(run.p_ok).toBe(true)
+    expect(run.p_error).toBeNull()
+    expect(run.p_extra.write_errors).toBe(0)
+    expect(run.p_extra.serial_rows_touched).toBe(1)
+    expect(run.p_extra.wmc_lock_retries).toBe(1)
+    expect(run.p_extra.wmc_lock_recovered).toBe(1)
+  })
+
+  it("a wmc chunk whose lock never clears still FAILS the run row", async () => {
+    st.wmcUpsert = { data: null, error: { message: "canceling statement due to lock timeout", code: "55P03" } }
+    await accept()
+    await st.captured!()
+    const run = terminal()
+    expect(st.wmcCalls).toBe(4) // first attempt + 3 retries
+    expect(run.p_ok).toBe(false)
+    expect(String(run.p_error)).toContain("wallet_moments_cache: canceling statement due to lock timeout")
+    expect(run.p_extra.wmc_lock_recovered).toBe(0)
+  })
+
+  it("a non-lock wmc error is not retried", async () => {
+    st.wmcUpsert = { data: null, error: { message: "value too long", code: "22001" } }
+    await accept()
+    await st.captured!()
+    expect(st.wmcCalls).toBe(1)
+    expect(terminal().p_ok).toBe(false)
+    expect(terminal().p_extra.wmc_lock_retries).toBe(0)
+  })
+
+  it("logs an ok:false run when the DAS walk throws", async () => {
+    st.paginateThrows = true
+    await accept()
+    await st.captured!()
+    expect(terminal().p_ok).toBe(false)
+    expect(terminal().p_error).toContain("DAS down")
+  })
+})
+
+
+// Sealed-pack capture (added 2026-07-27). The collection mixes Item Type=Pack
+// assets with the ICONs; the walk used to count them (`packs_skipped`) and drop
+// them, so RPC had no pack supply, no pack holders and no opened-vs-sealed
+// split — while paying for the fetch every day.
+describe("candy-editions — sealed-pack inventory", () => {
+  it("records a BURNT pack (an opened pack) rather than discarding it as burnt", async () => {
+    vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
+    // A burnt PACK must reach candy_packs; a burnt CARD must still be skipped.
+    st.pages = [[{ kind: "burntpack", m: "p9" }, { kind: "burnt" }]]
+    st.packUpsert = { data: [{ token_mint: "p9" }], error: null }
+    await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
+    await st.captured!()
+    const run = terminal()
+    expect(run.p_ok).toBe(true)
+    // The pack was counted as a pack, NOT as a burnt card...
+    expect(run.p_extra.packs_skipped).toBe(1)
+    expect(run.p_extra.burnt_skipped).toBe(1) // the burnt CARD only
+    // ...and it landed in candy_packs, because is_burnt IS the opened signal.
+    expect(run.p_extra.pack_rows_touched).toBe(1)
+    expect(run.p_extra.packs_distinct).toBe(1)
+    // No card rows from a page of a pack + a burnt card.
+    expect(run.p_extra.editions_distinct).toBe(0)
+    expect(run.p_extra.serials_distinct).toBe(0)
+  })
+
+  // INVERTED 2026-09-20 (R123): was "non-fatal and leaves the run ok". The walk
+  // continues past a rejected candy_packs upsert (the editions/serials tables are
+  // still written), but the run row reports the rejection.
+  it("a candy_packs upsert error is non-fatal to the walk but FAILS the run row, naming the table", async () => {
+    vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
+    st.pages = [[{ kind: "pack", m: "p1" }]]
+    st.packUpsert = { data: null, error: { message: "pack err" } }
+    await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
+    await st.captured!()
+    const run = terminal()
+    expect(run.p_ok).toBe(false)
+    expect(String(run.p_error)).toContain("candy_packs: pack err")
+    expect(run.p_extra.pack_rows_touched).toBe(0)
+    expect(run.p_extra.packs_distinct).toBe(0)
+  })
+})
+
+
+// Jersey capture (added 2026-07-27, rehomed the same day). The board's Serials
+// footnote asserted that "Candy players carry no jersey number" and used that to
+// justify having no jersey-match rows. It is false — Aaron Judge #99, Manny
+// Machado #13, Mike Trout #27, all verified on-chain metadata. The walk already
+// reads the same attribute map for player_name and team; it was dropping this one.
+//
+// REHOMED: this first shipped writing a Candy-only `candy_player_numbers` table.
+// That was wrong — `editions.jersey_number` is the platform-wide column Top Shot
+// (65% filled) and All Day (88%) already use, and the one that feeds the
+// jersey-match special-serial row. The value now rides the editions upsert that
+// was happening anyway, so there is no second write to fail and no Candy-specific
+// table for downstream consumers to special-case.
+describe("candy-editions — jersey numbers", () => {
+  it("carries Player Number on the editions row and counts trait coverage", async () => {
+    vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
+    st.pages = [[{ kind: "icon", ed: "ed1", w: "w1", m: "m1", pn: "Mike Trout", jersey: 27 }]]
+    await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
+    await st.captured!()
+    const run = terminal()
+    expect(run.p_ok).toBe(true)
+    expect(run.p_extra.jerseys_distinct).toBe(1)
+    expect(run.p_extra.editions_distinct).toBe(1)
+  })
+
+  it("counts no jersey for an asset with no Player Number, but still lands the edition", async () => {
+    vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
+    st.pages = [[{ kind: "icon", ed: "ed1", w: "w1", m: "m1", pn: "No Number", jersey: null }]]
+    await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
+    await st.captured!()
+    const run = terminal()
+    expect(run.p_ok).toBe(true)
+    expect(run.p_extra.jerseys_distinct).toBe(0)
+    expect(run.p_extra.editions_distinct).toBe(1)
+  })
+
+  // Replaces "a candy_player_numbers upsert error is non-fatal". There is no
+  // separate jersey write left to fail: the jersey shares the editions upsert, so
+  // the guarantee worth pinning is that an editions failure does not leave the
+  // jersey counter claiming coverage the DB never received.
+  it("does not count jersey coverage when the editions upsert itself failed", async () => {
+    vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
+    st.pages = [[{ kind: "icon", ed: "ed1", w: "w1", m: "m1", jersey: 99 }]]
+    st.edUpsert = { data: null, error: { message: "editions err" } }
+    await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
+    await st.captured!()
+    const run = terminal()
+    expect(run.p_ok).toBe(false) // R123: a rejected editions upsert is no longer a success (was true)
+    expect(run.p_extra.edition_rows_touched).toBe(0)
+  })
+})
+
+// The invocation heartbeat exists to separate three states that were previously
+// one. All the route's work runs inside after(), which logs ONLY on completion,
+// so a killed invocation wrote nothing at all and a hard failure presented as an
+// absence — the sentinel reported "silent 2337m" for a route that was in fact
+// running and being killed at the wall, twice (300 s in Aug 2026, then again at
+// the raised 800 s ceiling on 2026-08-16, when pipeline_runs held nothing newer
+// than 08-15 while editions.updated_at proved the 08-16 tick had done its work).
+//
+// `after` is captured rather than executed in this harness, so NOT calling
+// st.captured() is exactly the killed-invocation case.
+describe("candy-editions — invocation heartbeat", () => {
+  it("writes the heartbeat under a SEPARATE pipeline name, never an extra own-name row", async () => {
+    vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
+    await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
+    await st.captured!()
+
+    expect(heartbeat()).toBeTruthy()
+    // `phase` normalised "invoked" -> "started" when the five hand-rolled
+    // copies were unified: two sites already said "started", and a correlation
+    // query keyed on the phase would silently have skipped the other three.
+    expect(heartbeat().extra.phase).toBe("started")
+    expect(heartbeat().collection_slug).toBe("candy_mlb")
+    // ⚠ NULL, not the column default 0. A marker row measures nothing, and a 0
+    // here is the fabricated-measurement shape that made a live pipeline read
+    // as inert in the 2026-08-16 retirement sweep.
+    expect(heartbeat().rows_found).toBeNull()
+    expect(heartbeat().rows_written).toBeNull()
+    expect(heartbeat().rows_skipped).toBeNull()
+    // duration_ms is GENERATED from (finished_at - started_at); pinning them
+    // equal is what keeps it from publishing this INSERT's own latency.
+    expect(heartbeat().finished_at).toBe(heartbeat().started_at)
+
+    // The name must differ from the watched pipeline. A marker under
+    // "candy-editions-ingest" would refresh last_run every tick and silence
+    // detect_stalled_pipelines() on the very outage this exists to expose —
+    // so exactly ONE own-name row per completed run, not two.
+    expect(st.runs.filter((r) => r.p_pipeline === "candy-editions-ingest")).toHaveLength(1)
+  })
+
+  it("KILLED invocation leaves the heartbeat and NO terminal row (the state that used to be invisible)", async () => {
+    vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
+    await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
+    // after() never runs — the invocation was killed at the wall.
+
+    expect(heartbeat()).toBeTruthy()
+    expect(terminal()).toBeUndefined()
+  })
+
+  it("is written BEFORE the discovery gate, so a skipped tick still proves the route was reached", async () => {
+    vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
+    st.ready = false
+    await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
+
+    expect(heartbeat()).toBeTruthy()
+    expect(terminal().p_extra.skip_reason).toBe("discovery_pending")
+  })
+
+  it("an unauthorized request writes NO heartbeat — 'neither row' must keep meaning 'never reached'", async () => {
+    vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
+    await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer wrong" }))
+
+    expect(st.runs).toHaveLength(0)
+  })
+
+  it("a failing heartbeat is NON-FATAL — diagnostics must never break the ingest", async () => {
+    vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
+    st.heartbeatThrows = true
+    const res = await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
+    expect(res.status).toBe(202)
+    await st.captured!()
+
+    // The walk still completed and still logged its own terminal row.
+    expect(heartbeat()).toBeUndefined()
+    expect(terminal().p_ok).toBe(true)
+  })
+})
+
+// 2026-09-25: a listed Candy card sits in Magic Eden's escrow, and the walk used
+// to write it under the escrow — so it vanished from its seller's portfolio.
+describe("candy-editions — escrow-held (listed) cards are attributed to their seller", () => {
+  const ESCROW = "1BWutmTvYPwDtmw9abTkS4Ssr8no61spGAvW1X6NDix"
+  async function run() {
+    vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
+    await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
+    await st.captured!()
+  }
+
+  it("writes an escrow-held card under the seller of its active listing, and counts it", async () => {
+    st.pages = [[{ kind: "icon", ed: "ed1", w: ESCROW, m: "m9" }, { kind: "icon", ed: "ed1", w: "w1", m: "m1" }]]
+    st.listings = { data: [{ token_mint: "m9", seller: "SellerWallet111", last_seen_at: "2026-09-25T20:00:00Z" }], error: null }
+    await run()
+    expect(st.wmcRows.find((r) => r.moment_id === "m9")?.wallet_address).toBe("SellerWallet111")
+    expect(st.wmcRows.find((r) => r.moment_id === "m1")?.wallet_address).toBe("w1")
+    expect(terminal()?.p_extra).toMatchObject({ escrow_remapped: 1, escrow_unmatched: 0, escrow_remap_error: null })
+  })
+
+  it("leaves an escrow-held card with NO active listing on the escrow — nothing is guessed", async () => {
+    st.pages = [[{ kind: "icon", ed: "ed1", w: ESCROW, m: "m9" }]]
+    await run()
+    expect(st.wmcRows[0].wallet_address).toBe(ESCROW)
+    expect(terminal()?.p_extra).toMatchObject({ escrow_remapped: 0, escrow_unmatched: 1 })
+  })
+
+  it("a failed listings lookup keeps the escrow rows and RECORDS the error", async () => {
+    st.pages = [[{ kind: "icon", ed: "ed1", w: ESCROW, m: "m9" }]]
+    st.listings = { data: null, error: { message: "timeout" } }
+    await run()
+    expect(st.wmcRows[0].wallet_address).toBe(ESCROW)
+    expect(terminal()?.p_extra?.escrow_remap_error).toContain("timeout")
+  })
+})
+
+// 2026-11-08 — Candy ships each product line as its own Core collection. The census
+// walks every set; only the Base Series feeds candy_packs; every edition is linked to
+// a player afterwards; per-set counts are reported so a set walking 0 is visible.
+describe("candy-editions — every Candy set", () => {
+  async function walk() {
+    vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
+    await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
+    await st.captured!()
+    return terminal()
+  }
+
+  it("walks each set's collection address and reports per-set counts", async () => {
+    st.sets = [
+      { key: "base26", collectionAddress: "addr-base", writesPacks: true, editionKeyPrefix: null },
+      { key: "asg26", collectionAddress: "addr-asg", writesPacks: false, editionKeyPrefix: "asg26" },
+    ]
+    const run = await walk()
+    expect(st.walkedAddrs).toEqual(["addr-base", "addr-asg"])
+    expect(run.p_extra.sets).toMatchObject({ base26: { assets: 3 }, asg26: { assets: 3 } })
+    expect(run.p_ok).toBe(true)
+  })
+
+  it("a later set's sealed packs are skipped, never written to candy_packs (that table models the Base pack)", async () => {
+    st.sets = [{ key: "asg26", collectionAddress: "addr-asg", writesPacks: false, editionKeyPrefix: "asg26" }]
+    const run = await walk()
+    expect(run.p_extra.other_set_packs_skipped).toBe(1)
+    expect(run.p_extra.packs_distinct).toBe(0)
+  })
+
+  it("links the catalog to players after the walk and reports it", async () => {
+    st.linkResult = { data: { players_created: 3, editions_linked: 9 }, error: null }
+    const run = await walk()
+    expect(st.linkCalls).toBe(1)
+    expect(run.p_extra.catalog_link).toEqual({ players_created: 3, editions_linked: 9 })
+  })
+
+  it("a FAILED catalog link fails the run (and says so) — never ok=true", async () => {
+    st.linkResult = { data: null, error: { message: "link boom" } }
+    const run = await walk()
+    expect(run.p_ok).toBe(false)
+    expect(run.p_extra.catalog_link_error).toContain("link boom")
+  })
+})
+
+// 2026-11-12 (#246 source): this registry walk keyed an asset DAS returned WITHOUT its metadata from the bare
+// name, fabricating label-less editions (30 live 2024 Team Ball editions, re-written every run) and upserting
+// the card onto them. Same rule as the collections census: hydrate from json_uri; a card that cannot be
+// hydrated is never written.
+describe("candy-editions — unhydrated assets", () => {
+  async function accept() {
+    vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
+    await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
+  }
+  it("hydrates a bare asset and writes it under the HYDRATED key, never the name-only one", async () => {
+    st.pages = [[{ id: "a1", kind: "icon", bare: true, ed: "ball24:2024-reds-baseball", realEd: "ball24:2024-reds-baseball-core", w: "W", m: "a1" }]]
+    await accept()
+    await st.captured!()
+    expect(st.hydrateCalls).toBe(1)
+    expect(st.wmcRows.find((r: any) => r.moment_id === "a1")?.edition_key).toBe("ball24:2024-reds-baseball-core")
+    const run = terminal()
+    expect(run.p_ok).toBe(true)
+    expect(run.p_extra.hydrated_fetched).toBe(1)
+    expect(run.p_extra.unhydrated_skipped).toBe(0)
+  })
+  it("SKIPS a bare asset whose metadata cannot be fetched — no edition, no holdings row — and a >10% skip rate fails the run", async () => {
+    st.pages = [[{ id: "a2", kind: "icon", bare: true, ed: "ball24:2024-reds-baseball", w: "W", m: "a2" }, { id: "a3", kind: "icon", ed: "ball24:x-core", w: "W", m: "a3" }]]
+    st.hydrateFail = ["a2"]
+    await accept()
+    await st.captured!()
+    expect(st.wmcRows.map((r: any) => r.moment_id)).not.toContain("a2")
+    const run = terminal()
+    expect(run.p_extra.unhydrated_skipped).toBe(1)
+    expect(run.p_ok).toBe(false)
+    expect(String(run.p_error)).toMatch(/metadata fetch failed for 1 of 1/)
+  })
+})

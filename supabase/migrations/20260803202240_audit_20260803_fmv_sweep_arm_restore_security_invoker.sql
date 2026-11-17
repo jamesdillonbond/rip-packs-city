@@ -1,0 +1,1 @@
+ALTER VIEW public.v_rpc_trust_health SET (security_invoker = on);

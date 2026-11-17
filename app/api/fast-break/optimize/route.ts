@@ -1,0 +1,350 @@
+// app/api/fast-break/optimize/route.ts
+//
+// Builds the recommended Fast Break lineup for a wallet+run pair. The wallet
+// itself is the implicit auth boundary (anyone querying a wallet sees its
+// public ownership), so this is unauthenticated. Heavy lifting is in
+// lib/fast-break-optimizer.ts (pure-function); this route does the I/O.
+
+import { NextRequest, NextResponse } from "next/server"
+import { z } from "zod"
+import { supabaseAdmin as supabase } from "@/lib/supabase"
+import { nbaFeedAnsweredRecently } from "@/lib/fast-break/nba-feed"
+import {
+  buildOptimalLineup,
+  findAcquisitionGap,
+  type EligiblePlayer,
+  type ProjectedPlayer,
+  type Tier,
+} from "@/lib/fast-break-optimizer"
+
+export const dynamic = "force-dynamic"
+
+const ROUTE_HEADERS: Record<string, string> = { "X-RPC-Route": "fast-break-optimize" }
+const NBA_TOP_SHOT_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+
+// The lane that writes nba_games, and how recently it must have succeeded for an
+// empty slate to be read as an NBA off-day: lib/fast-break/nba-feed.ts (shared
+// with the fast-break page's slate).
+
+// Top Shot weights the Captain's points higher than the rest of the lineup.
+// The exact factor is set once observed Run scoring is regressed; until then the
+// env var is unset and the default 1.0 leaves scoring unweighted. Clamped to a
+// sane [1, 3] band so a fat-fingered value can't wildly distort recommendations.
+function captainMultiplier(): number {
+  const raw = Number(process.env.FAST_BREAK_CAPTAIN_MULTIPLIER)
+  if (!Number.isFinite(raw)) return 1
+  return Math.min(3, Math.max(1, raw))
+}
+
+const bodySchema = z.object({
+  walletAddr: z.string().regex(/^0x[a-f0-9]{16}$/i, "walletAddr must be a 0x + 16 hex Flow address"),
+  runId: z.string().uuid(),
+  lineupSize: z.union([z.literal(2), z.literal(3)]).optional(),
+})
+
+function todayInET(): string {
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+  const parts = Object.fromEntries(fmt.formatToParts(new Date()).map(p => [p.type, p.value]))
+  return `${parts.year}-${parts.month}-${parts.day}`
+}
+
+function eligibleFromRpcRow(e: any): EligiblePlayer {
+  return {
+    nbaPlayerId: e.nba_player_id,
+    fullName: e.full_name,
+    teamAbbr: e.current_team_abbr ?? "",
+    highestTier: (e.highest_tier as Tier) ?? "COMMON",
+    remainingUses: Number(e.remaining_uses ?? 0),
+    bestMomentId: e.best_moment_id ?? "",
+    bestSerial: Number(e.best_serial ?? 0),
+  }
+}
+
+export async function POST(req: NextRequest) {
+  let raw: unknown
+  try {
+    raw = await req.json()
+  } catch {
+    return NextResponse.json({ error: "malformed_json" }, { status: 400, headers: ROUTE_HEADERS })
+  }
+  const parsed = bodySchema.safeParse(raw)
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "invalid_body", detail: parsed.error.format() },
+      { status: 400, headers: ROUTE_HEADERS },
+    )
+  }
+  const { runId } = parsed.data
+  const walletAddr = parsed.data.walletAddr.toLowerCase()
+
+  try {
+    const { data: run, error: runErr } = await supabase
+      .from("fast_break_runs")
+      .select("id, lineup_size, has_captain, start_date, end_date")
+      .eq("id", runId)
+      .single()
+    if (runErr || !run) {
+      return NextResponse.json(
+        { error: "run_not_found", detail: runErr?.message },
+        { status: 404, headers: ROUTE_HEADERS },
+      )
+    }
+
+    const lineupSize = (parsed.data.lineupSize ?? run.lineup_size) as 2 | 3
+
+    const { data: eligibleRaw, error: eligErr } = await (supabase as any).rpc(
+      "get_fb_eligible_players",
+      { p_wallet_addr: walletAddr, p_run_id: runId },
+    )
+    if (eligErr) {
+      console.error("[fast-break-optimize] get_fb_eligible_players:", eligErr.message)
+      return NextResponse.json(
+        { error: "eligible_rpc_failed" },
+        { status: 500, headers: ROUTE_HEADERS },
+      )
+    }
+    const eligibleArr = (eligibleRaw ?? []) as any[]
+    const eligible: EligiblePlayer[] = eligibleArr.map(eligibleFromRpcRow)
+
+    const gameDate = todayInET()
+
+    // ⚠ THE ERROR IS LOAD-BEARING AND WAS NOT EVEN DESTRUCTURED. supabase-js
+    // RETURNS errors rather than throwing, so a failed slate read left `games`
+    // undefined, `?? []` made it an empty slate, the projections block was
+    // skipped entirely, every eligible player was `continue`d for want of a
+    // projection, and the route answered 200 with `lineup: null` — byte-identical
+    // to the legitimate "no games scheduled tonight" reply the test above pins.
+    // A user reads that as "nothing to play for", not "we failed to ask".
+    // 500 here matches this route's own handling of runErr and projErr, and the
+    // client throws on a non-2xx, so it already surfaces as an error state.
+    const { data: games, error: gamesErr } = await supabase
+      .from("nba_games")
+      .select("id, home_team_abbr, away_team_abbr, tipoff_at")
+      .eq("game_date", gameDate)
+    if (gamesErr) {
+      console.error("[fast-break-optimize] games:", gamesErr.message)
+      return NextResponse.json(
+        { error: "games_lookup_failed" },
+        { status: 500, headers: ROUTE_HEADERS },
+      )
+    }
+    const gameIds = (games ?? []).map(g => g.id)
+    const gameLookup = new Map((games ?? []).map(g => [g.id, g]))
+
+    // The RANKABLE projection per player, whatever its source (known-issues #8,
+    // 2026-10-23). This read used to pin `source = 'draftkings'`, which made the
+    // free ESPN lane (`nba-espn-projections`) invisible here. The DB guarantees
+    // at most ONE row with proj_fp_dk NOT NULL per (player, game_date) — trigger
+    // `nba_projection_single_rankable`, priority draftkings > espn > other — so
+    // filtering on it yields one row per player and `projByPlayer` cannot keep
+    // the wrong source of two.
+    let projRows: any[] = []
+    if (gameIds.length > 0) {
+      const { data, error: projErr } = await supabase
+        .from("nba_player_projections")
+        .select("nba_player_id, game_id, proj_fp_dk, proj_minutes, injury_status")
+        .in("game_id", gameIds)
+        .eq("game_date", gameDate)
+        .not("proj_fp_dk", "is", null)
+      if (projErr) {
+        console.error("[fast-break-optimize] projections:", projErr.message)
+        return NextResponse.json(
+          { error: "projections_lookup_failed" },
+          { status: 500, headers: ROUTE_HEADERS },
+        )
+      }
+      projRows = data ?? []
+    }
+    const projByPlayer = new Map<string, any>(projRows.map(r => [r.nba_player_id, r]))
+
+    // ── Is an empty lineup OUR data or the user's roster? (known-issues #8) ──
+    // The edge-function NBA feeds (`sync-nba-games`, `sync-nba-projections`) have
+    // been dead since 2026-08-04; since 2026-10-23 the free ESPN DB lane
+    // (`nba-espn-projections`) writes the slate and projections. With a feed down, the
+    // reply used to be `consideredCount: 0`, which the client renders as "None of
+    // your eligible players are on tonight's slate" — a claim about the USER'S
+    // roster produced by OUR missing data. Three states, never two:
+    //   • slate_unavailable       — the run is live today, we hold no games for
+    //                               today, AND the feed has not answered recently.
+    //                               ⚠ A run is a continuous DATE RANGE, not a list of
+    //                               game days (run de3864eb held 9 real playoff
+    //                               off-days), so an empty slate inside a live run is
+    //                               only our outage when the feed itself is down.
+    //   • projections_unavailable — games exist but not ONE player on the whole
+    //                               slate has a projection. A roster cannot cause
+    //                               that; a dead feed can.
+    //   • no_games                — no games AND today is outside the run's window:
+    //                               a fact from fast_break_runs, not from the feed.
+    //   • ok                      — the data answered; the roster copy is earned.
+    const day = (v: unknown) => (typeof v === "string" ? v.slice(0, 10) : null)
+    const runStart = day((run as any).start_date)
+    const runEnd = day((run as any).end_date)
+    const runLiveToday = runStart != null && runEnd != null && runStart <= gameDate && gameDate <= runEnd
+
+    // Is the NBA feed ANSWERING? A successful run of either nba_games writer
+    // (lib/fast-break/nba-feed.ts) inside the window means an empty slate
+    // today is the NBA's schedule (an off-day), not our outage. Only asked when it
+    // decides the answer. ⚠ A failed or unreadable check proves nothing about the
+    // feed, so it keeps the outage wording rather than asserting an off-day we
+    // could not confirm.
+    let feedAnsweredRecently = false
+    if (gameIds.length === 0 && runLiveToday) {
+      feedAnsweredRecently = await nbaFeedAnsweredRecently(supabase, "[fast-break-optimize]")
+    }
+
+    const dataStatus: "ok" | "no_games" | "slate_unavailable" | "projections_unavailable" =
+      gameIds.length === 0
+        ? runLiveToday && !feedAnsweredRecently
+          ? "slate_unavailable"
+          : "no_games"
+        : projRows.length === 0
+          ? "projections_unavailable"
+          : "ok"
+
+    // Inner-join eligibility × projections. Skip rows missing a projection
+    // (player owns moments but team isn't playing tonight) and rows without
+    // a usable proj_fp_dk (DK occasionally lists pool entries with null FP).
+    const projected: ProjectedPlayer[] = []
+    for (const e of eligible) {
+      const proj = projByPlayer.get(e.nbaPlayerId)
+      if (!proj || proj.proj_fp_dk == null) continue
+      const game = gameLookup.get(proj.game_id)
+      let opponent = ""
+      if (game && e.teamAbbr) {
+        if (game.home_team_abbr === e.teamAbbr) opponent = game.away_team_abbr
+        else if (game.away_team_abbr === e.teamAbbr) opponent = game.home_team_abbr
+      }
+      projected.push({
+        ...e,
+        projPoints: Number(proj.proj_fp_dk),
+        // DraftKings doesn't expose minutes; fallback to 32 keeps the
+        // suggestCaptainAlternates variance heuristic stable.
+        projMinutes: proj.proj_minutes != null ? Number(proj.proj_minutes) : 32,
+        injuryStatus: proj.injury_status ?? null,
+        gameId: proj.game_id,
+        opponentTeamAbbr: opponent,
+      })
+    }
+
+    const capMult = captainMultiplier()
+    const lineup = buildOptimalLineup(projected, lineupSize, !!run.has_captain, capMult)
+
+    // Top-3 alternates: re-run the optimizer on a pool that excludes each
+    // chosen lineup so the user sees the next-best swap-out options.
+    const alternates: ReturnType<typeof buildOptimalLineup>[] = []
+    if (lineup) {
+      let pool = projected.filter(p => !lineup.players.find(x => x.nbaPlayerId === p.nbaPlayerId))
+      for (let i = 0; i < 3; i++) {
+        if (pool.length < lineupSize) break
+        const alt = buildOptimalLineup(pool, lineupSize, !!run.has_captain, capMult)
+        if (!alt) break
+        alternates.push(alt)
+        pool = pool.filter(p => !alt.players.find(x => x.nbaPlayerId === p.nbaPlayerId))
+      }
+    }
+
+    // Acquisition gap: who would the optimal lineup be if ownership were
+    // unconstrained? The "wanted" set is the top-N ranked projections across
+    // tonight's slate (any player, OUT excluded). Anything in that set the
+    // user can't slot becomes a "missing" recommendation.
+    const allRanked = projRows
+      .filter(r => r.proj_fp_dk != null && (r.injury_status ?? "ACTIVE") !== "OUT")
+      .sort((a, b) => Number(b.proj_fp_dk) - Number(a.proj_fp_dk))
+      .slice(0, lineupSize)
+    const wantedIds = allRanked.map(r => r.nba_player_id as string)
+    const missingIds = findAcquisitionGap(wantedIds, eligible)
+
+    const missingPlayers: any[] = []
+    if (missingIds.length > 0) {
+      // Unlike the slate above, a failed name read degrades a FIELD in a
+      // secondary panel rather than invalidating the lineup, so it must not 500
+      // and blank a correct recommendation. It must not be SILENT either — this
+      // read logged nothing at all before.
+      const { data: missingMeta, error: missingMetaErr } = await supabase
+        .from("nba_players")
+        .select("id, full_name, current_team_abbr")
+        .in("id", missingIds)
+      if (missingMetaErr) console.error("[fast-break-optimize] missing meta:", missingMetaErr.message)
+      const metaMap = new Map((missingMeta ?? []).map(m => [m.id, m]))
+
+      for (const id of missingIds) {
+        const ranked = allRanked.find(r => r.nba_player_id === id)
+        const meta = metaMap.get(id)
+        const fullName = meta?.full_name ?? null
+        let cheapest: { momentId: string | null; askUsd: number; url: string | null } | null = null
+        // ⚠ THREE STATES, NOT TWO. `cheapest === null` used to mean both "we
+        // queried and this player has nothing for sale" and "we never got to
+        // ask", and the client renders the first of those as the flat market
+        // claim "Not currently listed". That claim is only EARNED by a query
+        // that came back empty. It is also actionable in the wrong direction: a
+        // user shopping for that player reads it and stops looking.
+        //
+        // Two distinct ways we never got to ask, and both used to render as the
+        // claim: the listings read itself failed, OR `fullName` is null so the
+        // lookup below is skipped — which includes the case where the name read
+        // above just errored, so that failure compounds into this one.
+        let listingUnknown = false
+        if (fullName) {
+          const { data: listingRows, error: listingErr } = await supabase
+            .from("cached_listings")
+            .select("moment_id, ask_price, buy_url")
+            .eq("collection_id", NBA_TOP_SHOT_UUID)
+            .eq("player_name", fullName)
+            .order("ask_price", { ascending: true })
+            .limit(1)
+          if (listingErr) {
+            console.error("[fast-break-optimize] listings:", listingErr.message)
+            listingUnknown = true
+          }
+          const listing = (listingRows ?? [])[0]
+          if (listing && listing.ask_price != null) {
+            cheapest = {
+              momentId: listing.moment_id,
+              askUsd: Number(listing.ask_price),
+              url: listing.buy_url ?? null,
+            }
+          }
+        } else {
+          // No name to search on — we could not look, so we must not conclude.
+          listingUnknown = true
+        }
+        missingPlayers.push({
+          nbaPlayerId: id,
+          fullName,
+          teamAbbr: meta?.current_team_abbr ?? null,
+          projFp: ranked?.proj_fp_dk != null ? Number(ranked.proj_fp_dk) : null,
+          cheapestListing: cheapest,
+          /** true = we could not look. NOT the same as looked-and-found-none. */
+          listingUnknown,
+        })
+      }
+    }
+
+    return NextResponse.json(
+      {
+        walletAddr,
+        runId,
+        gameDate,
+        lineupSize,
+        eligibleCount: eligible.length,
+        consideredCount: projected.length,
+        dataStatus,
+        lineup,
+        alternates,
+        missingPlayers,
+      },
+      { headers: ROUTE_HEADERS },
+    )
+  } catch (err: any) {
+    console.error("[fast-break-optimize]", err?.message ?? err)
+    return NextResponse.json(
+      { error: "internal_error", detail: err?.message ?? String(err) },
+      { status: 500, headers: ROUTE_HEADERS },
+    )
+  }
+}

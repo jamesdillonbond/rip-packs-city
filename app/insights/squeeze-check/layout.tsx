@@ -1,0 +1,62 @@
+// app/insights/squeeze-check/layout.tsx
+
+import type { Metadata } from "next"
+import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
+
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
+
+export const metadata: Metadata = {
+  // The root metadata template in lib/seo.ts appends " | Rip Packs City",
+  // so baking the brand in here rendered it twice. (deep-audit D24)
+  title: "What's Liquid In Your Bag?",
+  description:
+    "Paste your Flow wallet and see how much of your Top Shot or NFL All Day collection is actually liquid vs how much is sitting in challenge-locked or burned editions. Free. No signup.",
+  keywords: [
+    "NBA Top Shot wallet check",
+    "Top Shot squeeze exposure",
+    "Top Shot collection liquidity",
+    "NFL All Day squeeze exposure",
+    "Flow wallet analysis",
+  ].join(", "),
+  alternates: { canonical: `${SITE_URL}/insights/squeeze-check` },
+  openGraph: {
+    title: "What's Liquid In Your Bag?",
+    description:
+      "Paste your wallet, see how much of your Top Shot or All Day bag is actually liquid vs sitting in lock + burn.",
+    url: `${SITE_URL}/insights/squeeze-check`,
+    siteName: "Rip Packs City",
+    images: [
+      {
+        url: `${SITE_URL}/api/og/insights/squeeze-check`,
+        width: 1200,
+        height: 630,
+        alt: "What's Liquid In Your Bag? — Rip Packs City",
+      },
+    ],
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    ...TWITTER_INHERITED,
+    card: "summary_large_image",
+    title: "What's Liquid In Your Bag?",
+    description:
+      "Paste your Flow wallet, see your Top Shot or All Day lock + burn exposure.",
+    images: [`${SITE_URL}/api/og/insights/squeeze-check`],
+    creator: "@RipPacksCity",
+  },
+}
+
+export default function SqueezeCheckLayout({ children }: { children: React.ReactNode }) {
+  const jsonLd = insightsBoardJsonLd("squeeze-check")
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(jsonLd) }}
+      />
+      {children}
+    </>
+  )
+}

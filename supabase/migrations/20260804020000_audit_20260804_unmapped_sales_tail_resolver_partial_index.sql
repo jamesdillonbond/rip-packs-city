@@ -1,0 +1,69 @@
+-- audit_20260804_unmapped_sales_tail_resolver_partial_index
+--
+-- Drains inbox item 1 of docs/overnight/inbox/2026-08-04T0010Z-daytime-monitor.md:
+-- `allday-unmapped-resolver-tail` failing ~37.5% on
+-- `load_open: canceling statement due to statement timeout`.
+--
+-- ⚠ THE MONITOR'S DIAGNOSIS WAS WRONG AND ITS PRESCRIBED FIX WOULD NOT HAVE
+-- APPLIED. It read this as "an unbounded scan of partitioned `sales`" and
+-- prescribed the 08-03 classify-acquisitions remedy (a `p_since` bound written as
+-- `sold_at >= COALESCE(p_since,'-infinity')`). But the query in
+-- app/api/cron/allday-resolve-unmapped-tail/route.ts reads `unmapped_sales`,
+-- which is a PLAIN table — `relispartition=false`, 0 partitions, 132 MB, ~112k
+-- rows. There are no partitions to prune and no time bound to add; it already
+-- has `sold_at < now() - 7 days`.
+--
+-- WHAT IS ACTUALLY SLOW (measured live, EXPLAIN ANALYZE):
+--   Index Scan using idx_unmapped_sales_onchain_attempt_cursor
+--     Index Cond: (collection_id = <allday> AND sold_at < now() - 7d)
+--     Filter:     (price_usd > 0) AND (last_onchain_attempt_at IS NULL
+--                                       OR last_onchain_attempt_at < now() - 14d)
+--     Rows Removed by Filter: 73,736      <-- to return THIRTY-SIX rows
+--     Buffers: shared hit=27,280 read=7,366
+--     Execution Time: 2,655 ms
+--
+-- Two things compound. `price_usd > 0` is not in any index predicate, so it is
+-- evaluated as a filter over every unresolved AllDay row. And the ORDER BY
+-- `last_onchain_attempt_at ASC NULLS FIRST` means the ~36 genuinely-eligible rows
+-- sort FIRST — but `LIMIT 600` cannot be satisfied, so the scan keeps walking the
+-- entire remaining range hunting for matches that do not exist. The tail is
+-- essentially drained (36 candidates), so nearly all of that work is wasted, and
+-- on Micro the 7,366 uncached page reads are what blow the statement timeout
+-- under concurrent load.
+--
+-- FIX — DB-ONLY, no resolver logic touched. Add `price_usd > 0` to the partial
+-- index predicate so the eligible set is indexed rather than filtered. The new
+-- index covers 35,942 rows (vs 77,500 unresolved) and is 1,600 kB.
+--
+--   after:  Rows Removed by Filter: 32,206
+--           Buffers: shared hit=22,969 read=177
+--           Execution Time: 40.6 ms
+--
+-- ⚠ Quote the BUFFER/READ numbers, not the wall clock. Per the 2026-08-03 candy
+-- board lesson, wall-clock on this instance swings with I/O contention and a
+-- quiet "after" against a contended "before" measures the load, not the fix. The
+-- load-independent result is **disk reads 7,366 -> 177 (-98%)** and total buffers
+-- 34,646 -> 23,146 (-33%).
+--
+-- ⚠ RESIDUAL, DELIBERATELY NOT TAKEN. 32,206 rows are still removed by filter:
+-- the `(x IS NULL OR x < cutoff)` OR-form cannot become an index condition, so
+-- the scan still cannot stop early. Making it sargable means splitting it into
+-- two arms (the UNION pattern used on candy_special_serials_board the same day),
+-- which is a CODE change to an ingest-adjacent resolver. Not proportionate here:
+-- the monitor itself classes this as efficiency-only (the main resolver is
+-- healthy at ~2.2k resolved/24h and the backlog is unaffected), and the index
+-- already removes the disk I/O that was causing the timeouts. Revisit only if the
+-- failure rate does not fall.
+--
+-- The pre-existing idx_unmapped_sales_onchain_attempt_cursor is KEPT — its
+-- predicate is a superset (no price filter) and other callers may rely on it.
+--
+-- REVERT: DROP INDEX IF EXISTS public.idx_unmapped_sales_tail_resolver_targets;
+--
+-- Applied live via MCP (with SET lock_timeout = '5s'; the table is 132 MB so the
+-- brief ACCESS EXCLUSIVE lock is sub-second — CONCURRENTLY is unavailable through
+-- apply_migration, which wraps in a transaction). This is the idempotent repo
+-- record.
+CREATE INDEX IF NOT EXISTS idx_unmapped_sales_tail_resolver_targets
+  ON public.unmapped_sales (collection_id, last_onchain_attempt_at NULLS FIRST, sold_at DESC)
+  WHERE resolved_at IS NULL AND price_usd > 0;

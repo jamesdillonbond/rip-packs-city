@@ -1,0 +1,77 @@
+// ARCHIVED deployed source of `seed-allday-editions` v72, recovered 2026-10-14 (register R21) by a redacted
+// subagent and kept ONLY as the revert artifact for its retirement. Credential literals are
+// replaced by __REDACTED_SECRET_n__ (they are burned). `.txt` on purpose: no walker, type-checker
+// or deploy picks this up. To revive: copy to supabase/functions/seed-allday-editions/index.ts, replace the gate
+// with _shared/cron-gate.ts (rpc-edge-fn-deploy skill section 0), fix what the retirement note
+// names, then deploy via edge-fn-deploy.yml.
+// ─────────────────────────────────────────────────────────────
+Deno.serve(async (req: Request) => {
+  const auth = req.headers.get("Authorization");
+  if (auth !== "Bearer __REDACTED_SECRET_1__") return new Response("Unauthorized", { status: 401 });
+  const results: any = { v: "sales-probe" };
+
+  const headers = { "Origin": "https://www.flowty.io", "Referer": "https://www.flowty.io/", "Content-Type": "application/json" };
+
+  // Probe 1: Flowty activity/history endpoint
+  const probes = [
+    { name: "collection-activity", url: "https://api2.flowty.io/activity/0xe4cf4bdc1751c65d/AllDay?limit=10" },
+    { name: "collection-sales", url: "https://api2.flowty.io/sales/0xe4cf4bdc1751c65d/AllDay?limit=10" },
+    { name: "collection-history", url: "https://api2.flowty.io/history/0xe4cf4bdc1751c65d/AllDay?limit=10" },
+    { name: "collection-events", url: "https://api2.flowty.io/events/0xe4cf4bdc1751c65d/AllDay?limit=10" },
+    { name: "nft-orders", url: "https://api2.flowty.io/nft/0xe4cf4bdc1751c65d/AllDay/5819671" },
+  ];
+
+  results.probes = [];
+  for (const p of probes) {
+    try {
+      const res = await fetch(p.url, { headers });
+      const text = await res.text();
+      let parsed: any = null;
+      try { parsed = JSON.parse(text); } catch {}
+      results.probes.push({
+        name: p.name,
+        status: res.status,
+        keys: parsed ? Object.keys(parsed) : null,
+        sample: text.substring(0, 600),
+      });
+    } catch (e: any) {
+      results.probes.push({ name: p.name, error: e.message });
+    }
+  }
+
+  // Probe 2: Check if that NFT has orders/sales in its response
+  try {
+    const res = await fetch("https://api2.flowty.io/nft/0xe4cf4bdc1751c65d/AllDay/5819671", { headers });
+    const data = await res.json();
+    results.nftDetail = {
+      hasOrders: !!data?.orders,
+      ordersCount: Array.isArray(data?.orders) ? data.orders.length : null,
+      ordersSample: Array.isArray(data?.orders) ? data.orders.slice(0, 2) : data?.orders,
+      hasValuations: !!data?.valuations,
+      valuations: data?.valuations || null,
+      hasBestOffer: !!data?.bestDapperOffer || !!data?.bestNonCustodialOffer,
+      bestDapperOffer: data?.bestDapperOffer,
+      bestNonCustodialOffer: data?.bestNonCustodialOffer,
+    };
+  } catch (e: any) { results.nftDetailError = e.message; }
+
+  // Probe 3: Flowty collection endpoint with different params
+  try {
+    const res = await fetch("https://api2.flowty.io/collection/0xe4cf4bdc1751c65d/AllDay?sort=blockTimestamp&order=desc&limit=5&type=sale", { headers });
+    const data = await res.json();
+    results.collectionSaleFilter = {
+      status: res.status,
+      keys: Object.keys(data),
+      total: data?.total,
+      nftsCount: Array.isArray(data?.nfts) ? data.nfts.length : null,
+      firstNft: Array.isArray(data?.nfts) && data.nfts[0] ? {
+        id: data.nfts[0].id,
+        hasOrders: !!data.nfts[0].orders,
+        ordersLen: Array.isArray(data.nfts[0].orders) ? data.nfts[0].orders.length : null,
+        valuations: data.nfts[0].valuations || null,
+      } : null,
+    };
+  } catch (e: any) { results.collectionSaleError = e.message; }
+
+  return new Response(JSON.stringify(results, null, 2), { headers: { "Content-Type": "application/json" } });
+});

@@ -1,0 +1,321 @@
+import { getEditionMarketMap, type EditionMarketResolved } from "@/lib/edition-market"
+import { getExternalEditionMarketMap, type ExternalEditionMarketResolved } from "@/lib/external-market-adapter"
+import {
+  buildLiveEditionMarketMap,
+  type LiveEditionMarketResolved,
+  type LiveMarketInputRow,
+} from "@/lib/edition-market-live"
+import {
+  buildEditionScopeKey,
+  normalizeParallel,
+  normalizeSetName,
+} from "@/lib/wallet-normalize"
+
+export type UnifiedMarketInputRow = {
+  momentId: string
+  editionKey?: string | null
+  setName?: string | null
+  playerName?: string | null
+  parallel?: string | null
+  subedition?: string | null
+  lowAsk?: number | null
+  bestAsk?: number | null
+  bestOffer?: number | null
+  lastPurchasePrice?: number | null
+}
+
+export type UnifiedEditionMarket = {
+  scopeKey: string
+  lowAsk: number | null
+  bestOffer: number | null
+  lastSale: number | null
+  askCount: number
+  offerCount: number
+  saleCount: number
+  source: string | null
+  sourceChain: string[]
+  notes: string[]
+  tags: string[]
+  topshotAsk: number | null
+  flowtyAsk: number | null
+  fmvUsd: number | null
+  fmvConfidence: string | null
+  fmvComputedAt: string | null
+}
+
+function dedupeStrings(values: Array<string | null | undefined>) {
+  return Array.from(
+    new Set(
+      values.filter(
+        (value): value is string =>
+          typeof value === "string" && value.trim().length > 0
+      )
+    )
+  )
+}
+
+function toLiveRows(rows: UnifiedMarketInputRow[]): LiveMarketInputRow[] {
+  return rows.map((row) => ({
+    momentId: row.momentId,
+    editionKey: row.editionKey ?? null,
+    setName: row.setName ?? null,
+    playerName: row.playerName ?? null,
+    parallel: row.parallel ?? null,
+    subedition: row.subedition ?? null,
+    lowAsk: row.lowAsk ?? null,
+    bestAsk: row.bestAsk ?? null,
+    bestOffer: row.bestOffer ?? null,
+    lastPurchasePrice: row.lastPurchasePrice ?? null,
+  }))
+}
+
+function mergeResolvedMarkets(input: {
+  scopeKey: string
+  live?: LiveEditionMarketResolved | null
+  external?: ExternalEditionMarketResolved | null
+  graphql?: null  // reserved for future Flowty/OTM feed via RPC_EXTERNAL_MARKET_URL
+  seeded?: EditionMarketResolved | null
+}): UnifiedEditionMarket {
+  const { scopeKey, live, external, seeded } = input
+
+  // Priority: external (Flowty/OTM feed) > live row aggregate > seeded file
+  const lowAsk =
+    external?.lowAsk ??
+    live?.lowAsk ??
+    seeded?.lowAsk ??
+    null
+
+  const bestOffer =
+    external?.bestOffer ??
+    live?.bestOffer ??
+    seeded?.bestOffer ??
+    null
+
+  // Last sale: live aggregate uses lastPurchasePrice from wallet rows
+  const lastSale =
+    external?.lastSale ??
+    seeded?.lastSale ??
+    live?.lastSale ??
+    null
+
+  const askCount = external?.askCount ?? live?.askCount ?? 0
+  const offerCount = external?.offerCount ?? live?.offerCount ?? 0
+  const saleCount = external?.saleCount ?? live?.saleCount ?? 0
+
+  const sourceChain = dedupeStrings([
+    external?.source ?? null,
+    live?.source ?? null,
+    seeded?.source ?? null,
+  ])
+
+  const notes = dedupeStrings([
+    ...(external?.notes ?? []),
+    ...(live?.notes ?? []),
+    ...(seeded?.notes ?? []),
+  ])
+
+  const tags = dedupeStrings([
+    ...(external?.tags ?? []),
+    ...(live?.tags ?? []),
+    ...(seeded?.tags ?? []),
+  ])
+
+  return {
+    scopeKey,
+    lowAsk,
+    bestOffer,
+    lastSale,
+    askCount,
+    offerCount,
+    saleCount,
+    source: sourceChain[0] ?? null,
+    sourceChain,
+    notes,
+    tags,
+    topshotAsk: null,
+    flowtyAsk: null,
+    fmvUsd: null,
+    fmvConfidence: null,
+    fmvComputedAt: null,
+  }
+}
+
+/**
+ * Fetch market data from Supabase for edition keys that already exist in the DB.
+ * This is a supplementary layer — it enriches editions that have been
+ * previously indexed, but the primary market data now comes from GraphQL.
+ */
+// FMV map for the requested editions, keyed by `${external_id}::Base` to match
+// buildEditionScopeKey. Two bugs were fixed here 2026-07-27 (the endpoint,
+// /api/market-truth, has no client, so this was dead + silently broken):
+//   1. It read a GLOBAL window of fmv_snapshots (`.order(computed_at DESC)
+//      .limit(10000)`, which PostgREST CLAMPS to 1,000) and only kept the rows
+//      that happened to overlap `scopeKeys` — so a requested edition whose latest
+//      snapshot wasn't in the platform-wide freshest-1,000 got NO FMV. Now the
+//      read is SCOPED to the requested editions via the `fmv_current` view
+//      (DISTINCT ON (edition_id) latest), chunked under the 1,000 cap.
+//   2. It selected `editions.parallel_tier`, a column that DOES NOT EXIST, so the
+//      editions read errored and the function returned an all-empty map on every
+//      call. Dropped it; the `?? "Base"` fallback was the only real behaviour
+//      anyway (TopShot parallels carry their parallel in external_id itself, e.g.
+//      `set:play::sub`, so the base key is correct). FMV values are unchanged —
+//      `fmv_current.fmv_usd` is the same latest-snapshot figure the old code
+//      intended, just scoped and complete.
+async function getSupabaseMarketMap(
+  scopeKeys: string[]
+): Promise<Map<string, Partial<UnifiedEditionMarket>>> {
+  const out = new Map<string, Partial<UnifiedEditionMarket>>()
+  for (const key of scopeKeys) {
+    out.set(key, {})
+  }
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!supabaseUrl || !supabaseKey) return out
+
+  // The scope key is `${editionKey}::${parallel}` (buildEditionScopeKey); for
+  // rows carrying a real editionKey that first field IS editions.external_id.
+  const externalIds = Array.from(
+    new Set(scopeKeys.map((k) => k.split("::")[0]).filter(Boolean))
+  )
+  if (externalIds.length === 0) return out
+
+  const CHUNK = 300 // keep each `.in(...)` well under PostgREST's 1,000-row cap
+
+  try {
+    const { createClient } = await import("@supabase/supabase-js")
+    const db = createClient(supabaseUrl, supabaseKey)
+
+    // 1. Resolve the requested external_ids → edition ids (scoped, chunked).
+    const externalIdByEditionId = new Map<string, string>()
+    const editionIds: string[] = []
+    for (let i = 0; i < externalIds.length; i += CHUNK) {
+      const chunk = externalIds.slice(i, i + CHUNK)
+      const { data, error } = await db
+        .from("editions")
+        .select("id, external_id")
+        .in("external_id", chunk)
+      if (error) {
+        console.warn("[market-sources] editions read error:", error.message)
+        return out
+      }
+      for (const ed of (data ?? []) as Array<{ id: string; external_id: string }>) {
+        externalIdByEditionId.set(ed.id, ed.external_id)
+        editionIds.push(ed.id)
+      }
+    }
+    if (editionIds.length === 0) return out
+
+    // 2. Latest FMV per edition, SCOPED to just those editions. fmv_current is
+    //    DISTINCT ON (edition_id) latest, so this returns ≤1 row per edition.
+    for (let i = 0; i < editionIds.length; i += CHUNK) {
+      const chunk = editionIds.slice(i, i + CHUNK)
+      const { data, error } = await db
+        .from("fmv_current")
+        .select("edition_id, fmv_usd, confidence, computed_at")
+        .in("edition_id", chunk)
+      if (error) {
+        console.warn("[market-sources] fmv_current error:", error.message)
+        return out
+      }
+      for (const row of (data ?? []) as Array<{
+        edition_id: string
+        fmv_usd: number | null
+        confidence: string | null
+        computed_at: string | null
+      }>) {
+        const externalId = externalIdByEditionId.get(row.edition_id)
+        if (!externalId) continue
+        const scopeKey = `${externalId}::Base`
+        if (out.has(scopeKey)) {
+          out.set(scopeKey, {
+            lowAsk: null,
+            lastSale: row.fmv_usd ?? null,
+            source: "supabase-fmv",
+            topshotAsk: null,
+            flowtyAsk: null,
+            fmvUsd: row.fmv_usd ?? null,
+            fmvConfidence: row.confidence ?? null,
+            fmvComputedAt: row.computed_at ?? null,
+          })
+        }
+      }
+    }
+  } catch (e) {
+    console.warn(
+      "[market-sources] Supabase exception:",
+      e instanceof Error ? e.message : e
+    )
+  }
+
+  return out
+}
+
+export async function buildUnifiedEditionMarketMap(rows: UnifiedMarketInputRow[]) {
+  // 1. Build live aggregate from the wallet rows themselves (free, synchronous)
+  //    This aggregates lowAsk, bestOffer, lastSale per edition from the loaded moments
+  const liveMap = buildLiveEditionMarketMap(toLiveRows(rows))
+
+  // 2. Build scope keys for all rows
+  const scopeKeys = Array.from(
+    new Set(
+      rows.map((row) =>
+        buildEditionScopeKey({
+          editionKey: row.editionKey ?? null,
+          setName: normalizeSetName(row.setName ?? null),
+          playerName: row.playerName ?? null,
+          parallel: normalizeParallel(row.parallel ?? row.subedition ?? ""),
+          subedition: normalizeParallel(row.subedition ?? row.parallel ?? ""),
+        })
+      )
+    )
+  )
+
+  // 3. Fetch static/external sources in parallel (no rate-limited API calls)
+  //    GraphQL market data is available via RPC_EXTERNAL_MARKET_URL env var
+  //    when a Flowty/OTM partnership feed is configured.
+  const [externalMap, seededMap, supabaseMap] = await Promise.all([
+    getExternalEditionMarketMap(),
+    getEditionMarketMap(),
+    getSupabaseMarketMap(scopeKeys),
+  ])
+
+  // 4. Merge all sources for each scope key
+  const out = new Map<string, UnifiedEditionMarket>()
+
+  for (const scopeKey of scopeKeys) {
+    const supabaseData = supabaseMap.get(scopeKey)
+    const hasSupabaseData =
+      supabaseData && (supabaseData.lowAsk != null || supabaseData.lastSale != null)
+
+    const merged = mergeResolvedMarkets({
+      scopeKey,
+      live: liveMap.get(scopeKey) ?? null,
+      external: externalMap.get(scopeKey) ?? null,
+      graphql: null,
+      seeded: seededMap.get(scopeKey) ?? null,
+    })
+
+    // Layer in Supabase data where live/external have no signal
+    if (hasSupabaseData) {
+      if (merged.lowAsk === null && supabaseData.lowAsk != null) {
+        merged.lowAsk = supabaseData.lowAsk
+        merged.source = "supabase-fmv"
+        merged.sourceChain = ["supabase-fmv", ...merged.sourceChain]
+      }
+      if (merged.lastSale === null && supabaseData.lastSale != null) {
+        merged.lastSale = supabaseData.lastSale
+      }
+      // Always carry through Supabase FMV-specific fields
+      merged.topshotAsk = supabaseData.topshotAsk ?? null
+      merged.flowtyAsk = supabaseData.flowtyAsk ?? null
+      merged.fmvUsd = supabaseData.fmvUsd ?? null
+      merged.fmvConfidence = supabaseData.fmvConfidence ?? null
+      merged.fmvComputedAt = supabaseData.fmvComputedAt ?? null
+    }
+
+    out.set(scopeKey, merged)
+  }
+
+  return out
+}

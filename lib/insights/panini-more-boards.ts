@@ -1,0 +1,349 @@
+// lib/insights/panini-more-boards.ts
+//
+// The four Panini WC Prizm boards that were BUILT but never surfaced — deals,
+// pack EV, special serials, players — assembled into ONE snapshot payload for the
+// tabs under /insights/panini-squeeze (Trevor, 2026-09-25: "All four").
+//
+// ── WHY THEY WERE HELD, AND WHAT CHANGED ────────────────────────────────────
+// 2026-07-19 they were deliberately NOT surfaced: every one reads the same
+// LISTING-GATED index (Panini publishes no checklist; a card is known only once
+// it has been listed), and surfacing them would "multiply one completeness
+// defect across five more public boards". That gap is unchanged (pct_trustworthy
+// ~35%), so it is DISCLOSED on every tab rather than resolved — the payload
+// carries the coverage row and the client renders it above each board.
+//
+// ── WHY A SNAPSHOT, WARMED HOURLY ───────────────────────────────────────────
+// Measured 2026-09-25: panini_deal_board ~3 s / 86k buffers (a seq scan of
+// panini_card_serials), panini_player_board ~0.5 s / 158k buffers, special
+// serials ~0.2 s / 26k. Run per anonymous render that is a disk-IO bill this
+// estate has paid before; run on the 5-minute warm cron it is ~290 GB of buffer
+// traffic a day. The data only moves on Panini's ~4-hourly walk, so the board is
+// warmed HOURLY (`warmEveryMs` in WARM_BOARDS) and served from the snapshot.
+//
+// ── HONESTY ────────────────────────────────────────────────────────────────
+//   · Each board carries its own `*_error` flag: a failed read is "couldn't
+//     load", never "no deals".
+//   · `ok` (cache the payload) requires EVERY board read to succeed — a partial
+//     payload is never cached, so a stale-but-complete snapshot wins.
+//   · `owner` (a Panini username) is not selected: nothing on these boards needs
+//     a person's handle.
+//   · A capped board says it is capped (`*_capped`) so "top 200" never reads as
+//     "all of them".
+//
+// ── DEALS ACROSS EVERY PRODUCT (2026-10-10) ───────────────────────────────────
+// `deals` stays World Cup only (panini_deal_board = panini_deal_board_all filtered to
+// 2332) for the WC squeeze page's Deals tab. `deals_all` is the same deal rules over
+// EVERY walked product (soccer, NBA, NFL, WNBA, MLB, NASCAR), with product name + sport, and
+// is what the collection's Sniper tab shows. Measured at apply: 798 deals across 5
+// sports vs 211 WC; the view resolves FMV once per edition (138k buffers, 0.46 s).
+
+import { supabaseAdmin } from "@/lib/supabase"
+import { summarizeDegraded, type BoardStatus } from "@/lib/insights/board-status"
+import type { BoardLiveResult } from "@/lib/insights/board-cache"
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Db = any
+
+export const PANINI_BOARD_LIMIT = 200
+/** The all-product deal board's cap — it is ~4× the WC board (798 vs 211 on 2026-10-10). */
+export const PANINI_ALL_DEALS_LIMIT = 600
+
+const DEAL_COLS =
+  "sku,player_name,parallel,tier,serial_number,mint_cap,ask_usd,best_offer_usd,last_sale_usd,fmv_usd," +
+  "discount_pct,est_profit_usd,special_flag,ask_confirmed_at,recent_sales_median_usd,recent_sales_n,deal_basis"
+const DEAL_ALL_COLS = DEAL_COLS + ",product_set_id,product_name,sport"
+const PACK_COLS =
+  "pack_type,pack_cost_usd,floor_usd,avg_sale_usd,recent_sale_usd,cards_per_pack,packs_total,packs_remaining," +
+  "packs_ripped_pct,actual_ev_usd,typical_ev_usd,net_rip_edge_usd,model_note,updated_at"
+const SPECIAL_COLS =
+  "sku,player_name,parallel,serial_number,mint_cap,headline_flag,all_flags,serial_ask_usd,serial_fmv_usd," +
+  "edition_fmv_usd,last_sale_usd,last_sale_at,ask_confirmed_at"
+const PLAYER_COLS =
+  "player_name,editions,chases,rookie_editions,sealed_in_packs,top_fmv_usd,catalog_fmv_usd,sealed_fmv_exposure_usd,avg_rip_pct"
+
+// ── HOLDERS (2026-10-21, ripz.one "Chokehold" parity) ──────────────────────────
+// mv_panini_holder_concentration (audit_20261021_panini_holder_concentration) is COUNTS ONLY: no
+// username is stored, so none can leave. Shares are of OWNED copies — a blank owner is an unopened
+// card and a BURNT serial is gone, both counted apart. Only editions whose census is complete
+// (serials read >= 98 % of mint_cap) and with >= HOLDER_MIN_COPIES owned copies are shown, so a
+// share never rests on a partial read or a three-copy edition. The MV refreshes daily (51 s pass).
+export const HOLDER_MIN_COPIES = 10
+/** One collector owns at least this share of the owned copies. */
+export const HOLDER_STACKED_SHARE = 0.25
+/** The top three collectors own at least this share of the owned copies. */
+export const HOLDER_CORNERED_SHARE = 0.5
+const HOLDER_COLS =
+  "external_id,product_set_id,player_name,set_name,parallel,tier,mint_cap,owned_copies,unopened_copies,burnt_copies," +
+  "holders,top1_copies,top3_copies,top1_share,top3_share,computed_at"
+
+// ── BID VS FLOOR (2026-10-25, Top Shot /insights/offer-spread parity) ─────────
+// mv_panini_offer_spread (audit_20261025_panini_offer_spread_floor_copy, hourly): per edition, the CHEAPEST
+// LISTED copy and the best offer Panini shows on THAT copy. Panini offers are per serial, so an edition-wide
+// best offer (often on a #1) is not a bid on a floor copy; this is a spread on one card. Asks under $5 are
+// left off, as on Top Shot's board.
+export const OFFER_SPREAD_MIN_ASK = 5
+/** The offer is at least this share of the ask — "tight". */
+export const OFFER_SPREAD_TIGHT_PCT = 80
+const OFFER_SPREAD_COLS =
+  "external_id,player_name,set_name,parallel,mint_cap,product_name,sport,floor_serial,ask_usd,best_offer_usd," +
+  "offers_on_copy,offer_pct_of_ask,spread_usd,seen_at,fmv_usd,computed_at"
+
+// ── FLOOR MOVERS · 7 DAYS (2026-11-04, Top Shot floor-movers parity) ─────────
+// mv_panini_floor_movers (audit_20261104_panini_floor_movers, daily 12:11 UTC, 10 min after the ask lane): per
+// edition, the lowest confirmed ask on the newest lane day vs 7 days earlier, both $5+ and different. Editions
+// that LEFT the board (no ask re-read in 7 days) are not moves and are excluded; so is a rise where a copy at or
+// under the old floor is still marked listed but was not re-read (an age-out, not the market). window_complete
+// is false when the lane missed a day inside the window — the tab says so rather than presenting the move.
+export const FLOOR_MOVERS_MIN_ASK = 5
+export const FLOOR_MOVERS_LIMIT = 50
+const FLOOR_MOVER_COLS =
+  "external_id,player_name,set_name,parallel,mint_cap,product_name,sport,ask_then_usd,ask_now_usd,listed_now," +
+  "change_usd,change_pct,direction,day_then,day_now,window_complete,computed_at"
+
+interface Read<T> {
+  rows: T[] | null
+  error: string | null
+}
+
+async function read<T>(q: PromiseLike<{ data: T[] | null; error: { message: string } | null }>, label: string): Promise<Read<T>> {
+  try {
+    const { data, error } = await q
+    if (error) {
+      console.error(`[panini-more-boards] ${label}:`, error.message)
+      return { rows: null, error: `${label}: ${error.message}` }
+    }
+    return { rows: data ?? [], error: null }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    console.error(`[panini-more-boards] ${label} threw:`, msg)
+    return { rows: null, error: `${label}: ${msg}` }
+  }
+}
+
+export async function fetchPaniniMoreBoards(
+  db: Db = supabaseAdmin,
+): Promise<BoardLiveResult<Record<string, unknown>>> {
+  // 2026-10-26: the two deal reads run ONE AFTER THE OTHER, the all-product board first.
+  // panini_deal_board IS panini_deal_board_all filtered to WC (one body), so each read pays the
+  // whole view: ~240k buffers, 0.8 s warm but 15–29 s cold. Fired together they raced each other
+  // for the same cold pages and both hit the 30 s service_role statement_timeout (10-25 9:52 PM
+  // and 10-26 5:07 PM PT, both boards at once). In sequence the second read finds the pages warm.
+  const dealsPair = (async () => {
+    const all = await read(
+      db.from("panini_deal_board_all").select(DEAL_ALL_COLS)
+        .order("deal_basis", { ascending: true })
+        .order("est_profit_usd", { ascending: false })
+        .order("sku", { ascending: true })
+        .limit(PANINI_ALL_DEALS_LIMIT),
+      "panini_deal_board_all",
+    )
+    const wc = await read(
+      db.from("panini_deal_board").select(DEAL_COLS)
+        // Sale-corroborated deals FIRST ('fmv_and_recent_sales' sorts before
+        // 'fmv_only_no_recent_sales'), so the cap can only cut FMV-only rows.
+        // Ordered by edge alone, 5 of the 20 sale-backed deals fell outside the
+        // top 200 and the tab said "15 are also under the median" (2026-09-25).
+        .order("deal_basis", { ascending: true })
+        .order("est_profit_usd", { ascending: false })
+        .order("sku", { ascending: true })
+        .limit(PANINI_BOARD_LIMIT),
+      "panini_deal_board",
+    )
+    return [wc, all] as const
+  })()
+  const [[deals, dealsAll], packs, specials, players, coverage, specialCount, holders, holderCount, spread, spreadCount, rises, falls, moverCount] = await Promise.all([
+    dealsPair,
+    // WC-only board: since 2026-09-28 panini_pack_ev_board also carries packs of products the model
+    // does not price (NULL EV, ev_modeled=false). They belong on the Packs tab, which says "not
+    // modeled"; here they would be EV rows with no EV. Filter on the view's own discriminator.
+    // ⚠ AND on the product (2026-09-30): ev_modeled alone stopped meaning "WC" when the 2026 Prizm
+    // WNBA Hobby pack (2420) got a model — on this WC board it would be a WNBA pack posing as WC.
+    // ⚠ AND on the pack TYPE (2026-10-10): secondary packs priced from Panini's guaranteed contents
+    // (panini_pack_ev_guaranteed) are ev_modeled too, and one of them (1043, White Sparkle /8) is a WC
+    // pack. This tab is the Hobby/FOTL model with its Silver/base/insert legs; `hobby`/`fotl` are
+    // claimed only by the modeled standard packs, so the type keeps a one-slot pack off it.
+    read(db.from("panini_pack_ev_board").select(PACK_COLS).eq("ev_modeled", true).eq("product_set_id", 2332).in("pack_type", ["hobby", "fotl"]).order("pack_type", { ascending: true }), "panini_pack_ev_board"),
+    read(
+      db.from("panini_special_serials_board").select(SPECIAL_COLS)
+        .eq("is_listed", true)
+        .eq("ask_unconfirmed", false)
+        .order("serial_fmv_usd", { ascending: false, nullsFirst: false })
+        .order("sku", { ascending: true })
+        .limit(PANINI_BOARD_LIMIT),
+      "panini_special_serials_board",
+    ),
+    read(
+      db.from("panini_player_board").select(PLAYER_COLS)
+        // By indexed EDITIONS, not catalog FMV: that sum includes ask-derived FMV
+        // on cards that never traded, so one high ask could top the board.
+        .order("editions", { ascending: false, nullsFirst: false })
+        .order("player_name", { ascending: true })
+        .limit(PANINI_BOARD_LIMIT),
+      "panini_player_board",
+    ),
+    read(
+      db.from("panini_coverage_summary").select("total_editions,pct_trustworthy,edition_age_p50_h").limit(1),
+      "panini_coverage_summary",
+    ),
+    // How many special serials exist and how many are listed with a confirmed ask,
+    // so the tab can say "top 200 of N" instead of implying 200 is all of them.
+    (async (): Promise<{ total: number | null; listed: number | null; error: string | null }> => {
+      try {
+        const [t, l] = await Promise.all([
+          db.from("panini_special_serials_board").select("sku", { count: "exact", head: true }),
+          db.from("panini_special_serials_board").select("sku", { count: "exact", head: true })
+            .eq("is_listed", true).eq("ask_unconfirmed", false),
+        ])
+        if (t.error || l.error || t.count == null || l.count == null) {
+          return { total: null, listed: null, error: (t.error ?? l.error)?.message ?? "count unavailable" }
+        }
+        return { total: t.count, listed: l.count, error: null }
+      } catch (e) {
+        return { total: null, listed: null, error: e instanceof Error ? e.message : String(e) }
+      }
+    })(),
+    read(
+      db.from("mv_panini_holder_concentration").select(HOLDER_COLS)
+        .eq("census_complete", true)
+        .gte("owned_copies", HOLDER_MIN_COPIES)
+        .order("top1_share", { ascending: false, nullsFirst: false })
+        .order("external_id", { ascending: true })
+        .limit(PANINI_BOARD_LIMIT),
+      "mv_panini_holder_concentration",
+    ),
+    // How many shown-eligible editions are stacked / cornered, so the tab can say "N of M"
+    // rather than letting the top-200 list stand in for the whole count.
+    (async (): Promise<{ eligible: number | null; stacked: number | null; cornered: number | null; error: string | null }> => {
+      try {
+        const base = () => db.from("mv_panini_holder_concentration").select("external_id", { count: "exact", head: true })
+          .eq("census_complete", true).gte("owned_copies", HOLDER_MIN_COPIES)
+        const [e, s, c] = await Promise.all([
+          base(),
+          base().gte("top1_share", HOLDER_STACKED_SHARE),
+          base().gte("top3_share", HOLDER_CORNERED_SHARE),
+        ])
+        if (e.error || s.error || c.error || e.count == null || s.count == null || c.count == null) {
+          return { eligible: null, stacked: null, cornered: null, error: (e.error ?? s.error ?? c.error)?.message ?? "count unavailable" }
+        }
+        return { eligible: e.count, stacked: s.count, cornered: c.count, error: null }
+      } catch (err) {
+        return { eligible: null, stacked: null, cornered: null, error: err instanceof Error ? err.message : String(err) }
+      }
+    })(),
+    read(
+      db.from("mv_panini_offer_spread").select(OFFER_SPREAD_COLS)
+        .gte("ask_usd", OFFER_SPREAD_MIN_ASK)
+        .order("offer_pct_of_ask", { ascending: false })
+        .order("external_id", { ascending: true })
+        .limit(PANINI_BOARD_LIMIT),
+      "mv_panini_offer_spread",
+    ),
+    // How many floors carry an offer and how many are tight, so the tab says "N of M".
+    (async (): Promise<{ total: number | null; tight: number | null; error: string | null }> => {
+      try {
+        const base = () => db.from("mv_panini_offer_spread").select("external_id", { count: "exact", head: true })
+          .gte("ask_usd", OFFER_SPREAD_MIN_ASK)
+        const [t, k] = await Promise.all([base(), base().gte("offer_pct_of_ask", OFFER_SPREAD_TIGHT_PCT)])
+        if (t.error || k.error || t.count == null || k.count == null) {
+          return { total: null, tight: null, error: (t.error ?? k.error)?.message ?? "count unavailable" }
+        }
+        return { total: t.count, tight: k.count, error: null }
+      } catch (err) {
+        return { total: null, tight: null, error: err instanceof Error ? err.message : String(err) }
+      }
+    })(),
+    // Floor movers: biggest rises first, biggest falls first, each its own capped list.
+    read(
+      db.from("mv_panini_floor_movers").select(FLOOR_MOVER_COLS)
+        .eq("direction", "rise")
+        .order("change_pct", { ascending: false })
+        .order("external_id", { ascending: true })
+        .limit(FLOOR_MOVERS_LIMIT),
+      "mv_panini_floor_movers (rises)",
+    ),
+    read(
+      db.from("mv_panini_floor_movers").select(FLOOR_MOVER_COLS)
+        .eq("direction", "fall")
+        .order("change_pct", { ascending: true })
+        .order("external_id", { ascending: true })
+        .limit(FLOOR_MOVERS_LIMIT),
+      "mv_panini_floor_movers (falls)",
+    ),
+    // How many rose / fell in all, so "top 50" never reads as "all of them".
+    (async (): Promise<{ rises: number | null; falls: number | null; error: string | null }> => {
+      try {
+        const base = () => db.from("mv_panini_floor_movers").select("external_id", { count: "exact", head: true })
+        const [r, f] = await Promise.all([base().eq("direction", "rise"), base().eq("direction", "fall")])
+        if (r.error || f.error || r.count == null || f.count == null) {
+          return { rises: null, falls: null, error: (r.error ?? f.error)?.message ?? "count unavailable" }
+        }
+        return { rises: r.count, falls: f.count, error: null }
+      } catch (err) {
+        return { rises: null, falls: null, error: err instanceof Error ? err.message : String(err) }
+      }
+    })(),
+  ])
+
+  const statuses: BoardStatus[] = [
+    { label: "Deals", ok: deals.error === null, partial: false },
+    { label: "Deals (all products)", ok: dealsAll.error === null, partial: false },
+    { label: "Pack EV", ok: packs.error === null, partial: false },
+    { label: "Special serials", ok: specials.error === null, partial: false },
+    { label: "Players", ok: players.error === null, partial: false },
+    { label: "Holders", ok: holders.error === null, partial: false },
+    { label: "Bid vs Floor", ok: spread.error === null, partial: false },
+    { label: "Floor movers", ok: rises.error === null && falls.error === null, partial: false },
+  ]
+  const errors = [deals, dealsAll, packs, specials, players, coverage, holders, spread, rises, falls].map((r) => r.error).filter(Boolean) as string[]
+  if (specialCount.error) errors.push(`special serial counts: ${specialCount.error}`)
+  if (holderCount.error) errors.push(`holder counts: ${holderCount.error}`)
+  if (spreadCount.error) errors.push(`bid vs floor counts: ${spreadCount.error}`)
+  if (moverCount.error) errors.push(`floor mover counts: ${moverCount.error}`)
+
+  return {
+    payload: {
+      deals: deals.rows,
+      deals_error: deals.error !== null,
+      deals_capped: (deals.rows?.length ?? 0) >= PANINI_BOARD_LIMIT,
+      deals_all: dealsAll.rows,
+      deals_all_error: dealsAll.error !== null,
+      deals_all_capped: (dealsAll.rows?.length ?? 0) >= PANINI_ALL_DEALS_LIMIT,
+      packs: packs.rows,
+      packs_error: packs.error !== null,
+      specials: specials.rows,
+      specials_error: specials.error !== null,
+      specials_total: specialCount.total,
+      specials_listed: specialCount.listed,
+      players: players.rows,
+      players_error: players.error !== null,
+      players_capped: (players.rows?.length ?? 0) >= PANINI_BOARD_LIMIT,
+      holders: holders.rows,
+      holders_error: holders.error !== null,
+      holders_capped: (holders.rows?.length ?? 0) >= PANINI_BOARD_LIMIT,
+      holders_eligible: holderCount.eligible,
+      holders_stacked: holderCount.stacked,
+      holders_cornered: holderCount.cornered,
+      offer_spread: spread.rows,
+      offer_spread_error: spread.error !== null,
+      // "More floors carry an offer" only when the exact count says so (2026-10-27); the row count alone reads
+      // exactly PANINI_BOARD_LIMIT qualifying floors as "more". Falls back to the row count only when the count failed.
+      offer_spread_capped: spreadCount.total != null ? spreadCount.total > (spread.rows?.length ?? 0) : (spread.rows?.length ?? 0) >= PANINI_BOARD_LIMIT,
+      offer_spread_total: spreadCount.total,
+      offer_spread_tight: spreadCount.tight,
+      // One flag for both lists: a tab showing rises with its falls missing would be a half-board.
+      floor_rises: rises.error === null && falls.error === null ? rises.rows : null,
+      floor_falls: rises.error === null && falls.error === null ? falls.rows : null,
+      floor_movers_error: rises.error !== null || falls.error !== null,
+      floor_rises_total: moverCount.rises,
+      floor_falls_total: moverCount.falls,
+      coverage: coverage.rows?.[0] ?? null,
+      degraded: summarizeDegraded(statuses),
+      fetchedAt: new Date().toISOString(),
+    },
+    // Cache only a COMPLETE payload; a stale-but-complete snapshot beats a
+    // fresh one with a board missing.
+    ok: errors.length === 0,
+    rowCount: deals.rows?.length ?? null,
+    error: errors.length ? errors.join("; ").slice(0, 500) : undefined,
+  }
+}

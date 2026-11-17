@@ -1,0 +1,1678 @@
+/* ═══════════════════════════════════════════════════════════
+   RPC Design Tokens — Rip Packs City Brand System
+   Import in globals.css: @import "./rpc-tokens.css";
+   ═══════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Core Palette ─────────────────────────────────────── */
+  --rpc-red: #E03A2F;
+  --rpc-red-hover: #FF4D40;
+  --rpc-red-muted: rgba(224, 58, 47, 0.5);
+  /* Red used AS SMALL TEXT (the @RIPPACKSCITY handle, 9 px mono). --rpc-red
+     reads 4.46:1 on the surface and --rpc-red-muted 1.9:1 — both under WCAG
+     AA's 4.5:1 (axe color-contrast, first scheduled audit 2026-10-12). This
+     is the red that clears it in each theme; fills and borders keep --rpc-red. */
+  --rpc-red-text: #FF4D40;
+  /* Red as a FILL UNDER WHITE LABEL TEXT (buttons, active tabs, CTAs). #E03A2F
+     under #FFF is 4.36:1 — under WCAG AA's 4.5 for normal-size text, and axe
+     flagged it on every primary button. #D93529 is 4.68:1 and visually the same
+     red; the hover goes DARKER (5.65:1), because the old lighter hover (#FF4D40)
+     read 3.29:1. Decided 2026-10-24 under delegation. Accents, borders, bars,
+     dots and the wordmark keep --rpc-red; red TEXT keeps --rpc-red-text.
+     Same value in both themes: the label sits on the fill, not the canvas. */
+  --rpc-red-fill: #D93529;
+  --rpc-red-fill-hover: #C42B22;
+  /* A collection ACCENT painted as TEXT goes through lib/accent-text.ts:
+     color-mix(in srgb, <accent>, <mix> <amt>). Dark lifts every accent 12 %
+     toward white (worst case 4.83:1 on the dark canvases and accent-tinted
+     chips; #A855F7 / #EF4444 read 4.12 / 4.33 raw); light darkens 55 %
+     (#F59E0B was 2.15:1 on white; the pastel rgb(253,224,71) sets the floor: worst 4.90:1). Measured 2026-10-18. */
+  --rpc-accent-text-mix: #FFFFFF;
+  --rpc-accent-text-amt: 12%;
+  /* TEXT twins of the tier + semantic colours (#194, decided 2026-10-18 under
+     delegation). Fills, borders, stripes and dots keep --tier-* / --rpc-success…
+     so a tier reads identically in both themes; only TEXT gets a light-mode shade,
+     the way red text took --rpc-red-text on 10-12. Dark = the fill colour, except
+     rare/challenger/info, a shade lighter so they clear AA on their own tint
+     over a raised card (__tests__/accent-text-contrast.test.ts). */
+  --tier-legendary-text: var(--tier-legendary);
+  --tier-ultimate-text: #FF7542; /* fill read 4.37:1 on its tint over 3 stacked cards + hover (11-07) */
+  --tier-rare-text: #8E98F8; /* the fill read 4.4:1 on its tint over a raised dark card; 8792F8 read 4.34 over 3 stacked cards + hover (11-07) */
+  --tier-fandom-text: var(--tier-fandom);
+  --tier-uncommon-text: var(--tier-uncommon);
+  --tier-common-text: var(--tier-common);
+  --tier-champion-text: var(--tier-champion);
+  --tier-challenger-text: #8E98F8;
+  --tier-contender-text: var(--tier-contender);
+  --tier-epic-text: #C185FC; /* 4.55 → 4.60 over 3 stacked cards + hover (11-07) */
+  --rpc-success-text: var(--rpc-success);
+  --rpc-warning-text: var(--rpc-warning);
+  --rpc-danger-text: var(--rpc-danger);
+  --rpc-info-text: #5C97F8; /* the fill read ~4.2:1 on its tint over a raised dark card */
+  --rpc-red-bg: rgba(224, 58, 47, 0.08);
+  --rpc-red-border: rgba(224, 58, 47, 0.3);
+  --rpc-red-glow: rgba(224, 58, 47, 0.25);
+
+  --rpc-black: #080808;
+  --rpc-surface: #0D0D0D;
+  --rpc-surface-raised: rgba(255, 255, 255, 0.03);
+  --rpc-surface-hover: rgba(255, 255, 255, 0.06);
+  --rpc-border: rgba(255, 255, 255, 0.12);
+  --rpc-border-hover: rgba(255, 255, 255, 0.18);
+  --rpc-border-subtle: rgba(255, 255, 255, 0.04);
+  --rpc-border-active: rgba(224, 58, 47, 0.6);
+  --rpc-silver: #BFC0BF;
+
+  /* Page / art canvases + sticky-header + modal scrim. These are theme-aware
+     (the light block flips the first three); scrims stay dark in both themes
+     because a modal backdrop should always dim the page behind it. The dark
+     values below are byte-identical to the literals they replace. */
+  --rpc-bg: #000000;
+  --rpc-bg-elev: rgba(255, 255, 255, 0.02);
+  --rpc-header-bg: rgba(8, 8, 8, 0.97);
+  --rpc-scrim: rgba(0, 0, 0, 0.85);
+  --rpc-scrim-soft: rgba(0, 0, 0, 0.55);
+
+  /* ── Text ──────────────────────────────────────────────── */
+  --rpc-text-primary: #F1F1F1;
+  --rpc-text-secondary: rgba(255, 255, 255, 0.55);
+  /* 0.42 read 4.10:1 on --rpc-surface (axe serious on every audited route,
+     2026-10-12); 0.5 reads 5.34:1. Still visibly quieter than secondary (0.55). */
+  --rpc-text-muted: rgba(255, 255, 255, 0.5);
+  --rpc-text-ghost: rgba(255, 255, 255, 0.2);
+
+  /* ── Tier Colors ──────────────────────────────────────── */
+  --tier-legendary: #FFD700;
+  --tier-legendary-bg: rgba(255, 215, 0, 0.10);
+  --tier-legendary-border: rgba(255, 215, 0, 0.30);
+
+  --tier-ultimate: #FF6B35;
+  --tier-ultimate-bg: rgba(255, 107, 53, 0.10);
+  --tier-ultimate-border: rgba(255, 107, 53, 0.30);
+
+  --tier-rare: #818CF8;
+  --tier-rare-bg: rgba(129, 140, 248, 0.10);
+  --tier-rare-border: rgba(129, 140, 248, 0.30);
+
+  /* UFC Strike EPIC — a real on-chain TIER (UFC_NFT set metadata, 2026-10-18). */
+  --tier-epic: #C084FC;
+  --tier-epic-bg: rgba(192, 132, 252, 0.10);
+  --tier-epic-border: rgba(192, 132, 252, 0.30);
+
+  --tier-fandom: #34D399;
+  --tier-fandom-bg: rgba(52, 211, 153, 0.10);
+  --tier-fandom-border: rgba(52, 211, 153, 0.30);
+
+  --tier-uncommon: #14B8A6;
+  --tier-uncommon-bg: rgba(20, 184, 166, 0.10);
+  --tier-uncommon-border: rgba(20, 184, 166, 0.30);
+
+  --tier-common: #94A3B8;
+  --tier-common-bg: rgba(148, 163, 184, 0.08);
+  --tier-common-border: rgba(148, 163, 184, 0.20);
+
+  /* UFC Strike tiers */
+  --tier-champion: #F59E0B;
+  --tier-champion-bg: rgba(245, 158, 11, 0.10);
+  --tier-champion-border: rgba(245, 158, 11, 0.30);
+
+  --tier-challenger: #818CF8;
+  --tier-challenger-bg: rgba(129, 140, 248, 0.10);
+  --tier-challenger-border: rgba(129, 140, 248, 0.30);
+
+  --tier-contender: #94A3B8;
+  --tier-contender-bg: rgba(148, 163, 184, 0.08);
+  --tier-contender-border: rgba(148, 163, 184, 0.20);
+
+  /* ── Status Colors ────────────────────────────────────── */
+  --rpc-success: #34D399;
+  --rpc-warning: #F59E0B;
+  --rpc-danger: #F87171;
+  --rpc-info: #3B82F6;
+
+  /* ── Typography ───────────────────────────────────────── */
+  /* --font-barlow / --font-share-tech are injected by next/font (self-hosted,
+     see app/layout.tsx). The literal family names remain as fallbacks so type
+     still resolves if the next/font vars are ever absent. */
+  --font-display: var(--font-barlow), 'Barlow Condensed', sans-serif;
+  --font-mono: var(--font-share-tech), 'Share Tech Mono', monospace;
+  --font-body: var(--font-barlow), 'Barlow Condensed', sans-serif;
+
+  --text-xs: 9px;
+  --text-sm: 11px;
+  --text-base: 13px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 24px;
+  --text-3xl: 32px;
+
+  /* ── Spacing ──────────────────────────────────────────── */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 14px;
+  --space-lg: 20px;
+  --space-xl: 28px;
+  --space-2xl: 40px;
+
+  /* ── Radii ────────────────────────────────────────────── */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 50%;
+
+  /* ── Shadows ──────────────────────────────────────────── */
+  --shadow-card: 0 2px 12px rgba(0, 0, 0, 0.3);
+  --shadow-elevated: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --shadow-glow-red: 0 0 20px rgba(224, 58, 47, 0.15);
+
+  /* ── Transitions ──────────────────────────────────────── */
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.25s ease;
+  --transition-slow: 0.4s ease;
+
+  /* ── Z-Index Scale ────────────────────────────────────── */
+  --z-base: 1;
+  --z-dropdown: 50;
+  --z-sticky: 100;
+  --z-modal: 200;
+  --z-chat: 9000;
+  --z-toast: 9999;
+
+  /* ── Layout ───────────────────────────────────────────── */
+  --max-width: 1440px;
+
+  /* Native UI (scrollbars, form controls) should render dark by default. */
+  color-scheme: dark;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   LIGHT THEME — opt-in via data-theme="light" on <html>.
+   DARK remains the product default (no attribute = dark).
+   Overrides ONLY the neutral surface / text / border / shadow
+   tokens. Brand red, fonts, and tier colors are intentionally
+   left untouched so the brand reads identically in both themes.
+   Un-tokenized surfaces (Tailwind dark: utilities, hardcoded
+   white-alpha literals) stay dark until the Phase-1 sweep
+   tokenizes them — that is the expected, acceptable rough edge.
+   Phase 0, 2026-06-10.
+   ═══════════════════════════════════════════════════════════ */
+[data-theme="light"] {
+  color-scheme: light;
+
+  --rpc-black: #FFFFFF;
+  --rpc-surface: #F7F7F5;
+  --rpc-surface-raised: rgba(0, 0, 0, 0.04);
+  --rpc-surface-hover: rgba(0, 0, 0, 0.07);
+  --rpc-border: rgba(0, 0, 0, 0.12);
+  --rpc-border-hover: rgba(0, 0, 0, 0.20);
+  --rpc-border-subtle: rgba(0, 0, 0, 0.06);
+  --rpc-silver: #5A5C5A;
+
+  /* Light twins for the page/art canvases + sticky header. Scrims stay dark
+     (inherited from :root) so modal backdrops still dim in light mode. */
+  --rpc-bg: #FFFFFF;
+  --rpc-bg-elev: rgba(0, 0, 0, 0.02);
+  --rpc-header-bg: rgba(247, 247, 245, 0.97);
+
+  --rpc-text-primary: #141414;
+  --rpc-text-secondary: rgba(0, 0, 0, 0.62);
+  /* 0.45 read 3.31:1 on #F7F7F5; 0.58 reads 5.20:1 (secondary 0.62 = 6.05:1). */
+  --rpc-text-muted: rgba(0, 0, 0, 0.58);
+  --rpc-text-ghost: rgba(0, 0, 0, 0.28);
+
+  /* The wordmark + rpc-red-muted borders read pale at the dark 0.5 alpha on a
+     white canvas — nudge up for legible contrast in light only. */
+  --rpc-red-muted: rgba(224, 58, 47, 0.65);
+  /* Small red text on the light canvas: #E03A2F is 4.07:1, this is 5.90:1. */
+  --rpc-red-text: #B52A21;
+  --rpc-accent-text-mix: #000000;
+  --rpc-accent-text-amt: 55%; /* was 45 % (10-18 AM): the dark-chip PASTELS that also route here (tier-style, verdict greens) need 55 % — worst 4.90:1 */
+  /* Light TEXT twins: the smallest black mix per colour that clears 4.6:1 on
+     white, #F7F7F5, #EBEBEB and its own 15 % tint over EACH of them — the
+     tinted chip on a raised card is the worst real background (axe read the
+     first values at 4.34:1 there, 10-18).
+     2026-11-07: darkened ~12 % more. The player/team hubs stack THREE .rpc-card
+     layers (each rgba(0,0,0,0.04)) under the chip tint, and the 10-18 values
+     read 4.12–4.49:1 there (axe, light). Each now clears 4.6:1 on its tint over
+     the canvas, 1/2/3 stacked cards and 3 cards + hover —
+     __tests__/design-tokens-text-contrast pins it. */
+  --tier-legendary-text: #695800;
+  --tier-ultimate-text: #8E3B1D;
+  --tier-rare-text: #4A508E;
+  --tier-fandom-text: #186247;
+  --tier-uncommon-text: #0B6057;
+  --tier-common-text: #4F5762;
+  --tier-champion-text: #794D05;
+  --tier-challenger-text: #4A508E;
+  --tier-contender-text: #4F5762;
+  --tier-epic-text: #674788;
+  --rpc-success-text: #1C7051;
+  --rpc-warning-text: #895806;
+  --rpc-danger-text: #9A4646;
+  --rpc-info-text: #2A5CAF;
+
+  /* The dark shadow presets assume a near-black canvas — soften for light. */
+  --shadow-card: 0 1px 6px rgba(0, 0, 0, 0.08);
+  --shadow-elevated: 0 8px 28px rgba(0, 0, 0, 0.14);
+
+  /* v2 POR / binder / scanline neutrals re-tuned off a light canvas. */
+  --por-black: #FFFFFF;
+  --scan-line: rgba(0, 0, 0, 0.015);
+  --binder-sleeve-bg: rgba(0, 0, 0, 0.015);
+  --binder-sleeve-edge: rgba(0, 0, 0, 0.07);
+}
+
+/* The root <body> is set to Tailwind `bg-black text-zinc-100` in app/layout.tsx.
+   Override it here (attribute+element specificity beats the utility class) so
+   the outermost canvas flips in light mode while the default dark body stays
+   byte-identically #000. */
+[data-theme="light"] body {
+  background: #FFFFFF;
+  color: #141414;
+}
+
+/* ── Holographic Card Shimmer ─────────────────────────────── */
+@keyframes holoShimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+.rpc-holo-legendary {
+  position: relative;
+  overflow: hidden;
+}
+.rpc-holo-legendary::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 20%,
+    rgba(255, 215, 0, 0.08) 35%,
+    rgba(255, 215, 0, 0.15) 50%,
+    rgba(255, 215, 0, 0.08) 65%,
+    transparent 80%
+  );
+  background-size: 200% 100%;
+  animation: holoShimmer 4s ease-in-out infinite;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.rpc-holo-ultimate {
+  position: relative;
+  overflow: hidden;
+}
+.rpc-holo-ultimate::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 20%,
+    rgba(255, 107, 53, 0.08) 35%,
+    rgba(255, 107, 53, 0.15) 50%,
+    rgba(255, 107, 53, 0.08) 65%,
+    transparent 80%
+  );
+  background-size: 200% 100%;
+  animation: holoShimmer 3.5s ease-in-out infinite;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.rpc-holo-rare {
+  position: relative;
+  overflow: hidden;
+}
+.rpc-holo-rare::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 20%,
+    rgba(129, 140, 248, 0.06) 35%,
+    rgba(129, 140, 248, 0.12) 50%,
+    rgba(129, 140, 248, 0.06) 65%,
+    transparent 80%
+  );
+  background-size: 200% 100%;
+  animation: holoShimmer 5s ease-in-out infinite;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+/* Defensive guard: the holo shimmer ::after must NEVER paint on a table row.
+   position:relative + overflow:hidden have undefined effect on <tr> per the
+   CSS spec, so on GPU/browser paths where the tr doesn't become a containing
+   block the absolutely-positioned ::after resolves inset:0 against the
+   page-level containing block — one full-viewport animated gradient per tier
+   row, stacked (the tetrisLblock collection-page glitch, 2026-06-09). Holo
+   classes belong on real block boxes (cards, thumbnails) only. */
+tr[class*="rpc-holo-"]::after { content: none !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  [class*="rpc-holo-"]::after { animation: none; }
+}
+
+/* ── CRT Scanline Overlay ─────────────────────────────────── */
+.rpc-scanlines::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.03) 2px,
+    rgba(0, 0, 0, 0.03) 4px
+  );
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* ── Branded Skeleton Loading ─────────────────────────────── */
+@keyframes skeletonPulse {
+  0%, 100% { opacity: 0.05; }
+  50% { opacity: 0.12; }
+}
+
+.rpc-skeleton {
+  background: rgba(224, 58, 47, 0.08);
+  border-radius: var(--radius-sm);
+  animation: skeletonPulse 1.8s ease-in-out infinite;
+}
+
+/* ── Giveaway pack reveal (app/giveaways/[slug]/PackRevealClient.tsx) ── */
+@keyframes rpcPackCardIn {
+  0% { opacity: 0; transform: rotateY(90deg) scale(0.92); }
+  100% { opacity: 1; transform: rotateY(0deg) scale(1); }
+}
+
+.rpc-pack-card-in {
+  animation: rpcPackCardIn 420ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rpc-pack-card-in { animation: none; }
+}
+
+/* ── Giveaway pack opening v3 (2026-11-10; v2 was 11-08): crimped holo-foil pack that
+   tilts under the pointer → shake, strip peel, light leak, flash → dark arena stage
+   whose glow takes the flipped card's tier colour → 3D flip with holo sheen + sparks →
+   chase charge, flash and slam → summary. Tier colours come from the --tier-* tokens.
+   The pack, the card backs and the stage are OBJECTS with their own fixed dark/foil
+   colours in both themes (their text is set explicitly, never a theme token). Every
+   animation is off under prefers-reduced-motion at the end of this block. ── */
+.rpc-gw-reveal { position: relative; display: flex; flex-direction: column; gap: 14px; }
+.rpc-gw-reveal [data-tier] { --gw-tier: var(--tier-common); --gw-tier-bg: var(--tier-common-bg); --gw-tier-text: var(--tier-common-text); }
+.rpc-gw-reveal [data-tier="fandom"]    { --gw-tier: var(--tier-fandom);    --gw-tier-bg: var(--tier-fandom-bg);    --gw-tier-text: var(--tier-fandom-text); }
+.rpc-gw-reveal [data-tier="rare"]      { --gw-tier: var(--tier-rare);      --gw-tier-bg: var(--tier-rare-bg);      --gw-tier-text: var(--tier-rare-text); }
+.rpc-gw-reveal [data-tier="legendary"] { --gw-tier: var(--tier-legendary); --gw-tier-bg: var(--tier-legendary-bg); --gw-tier-text: var(--tier-legendary-text); }
+.rpc-gw-reveal [data-tier="ultimate"]  { --gw-tier: var(--tier-ultimate);  --gw-tier-bg: var(--tier-ultimate-bg);  --gw-tier-text: var(--tier-ultimate-text); }
+
+/* Per-drop pack design (lib/giveaways/pack-theme.ts is THE list; pinned by
+   __tests__/giveaway-pack-theme.test.ts). A theme sets the wrapper colour (--gw-pack)
+   and the glow / card-back accent (--gw-pack-glow). "classic" sets NEITHER, so it is
+   the brand red exactly as before themes existed. */
+[data-pack-theme="blackout"] { --gw-pack: #2b2b31; --gw-pack-glow: var(--rpc-red); }
+[data-pack-theme="gold"]     { --gw-pack: #b8891f; --gw-pack-glow: #ffd34d; }
+[data-pack-theme="ice"]      { --gw-pack: #1f6fd0; --gw-pack-glow: #6cc4ff; }
+[data-pack-theme="emerald"]  { --gw-pack: #0d8a5f; --gw-pack-glow: #3fe0a5; }
+[data-pack-theme="ember"]    { --gw-pack: #e2601a; --gw-pack-glow: #ffa24d; }
+[data-pack-theme="royal"]    { --gw-pack: #5b34c9; --gw-pack-glow: #a98bff; }
+
+/* The stage: a dark arena with a spotlight, in both themes. */
+.rpc-gw-stage {
+  position: relative; isolation: isolate; overflow: hidden; display: flex; justify-content: center; align-items: center;
+  min-height: 470px; padding: 34px 12px 46px; border-radius: 16px; perspective: 1200px; color: #fff;
+  background:
+    radial-gradient(120% 70% at 50% -10%, rgba(255, 255, 255, 0.13), transparent 60%),
+    radial-gradient(60% 40% at 50% 104%, color-mix(in srgb, var(--gw-pack-glow, var(--rpc-red)) 34%, transparent), transparent 70%),
+    radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1.4px) 0 0 / 14px 14px,
+    linear-gradient(180deg, #131316, #050506);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), inset 0 -60px 80px rgba(0, 0, 0, 0.5);
+}
+.rpc-gw-stage[data-phase="ripping"]::after {
+  content: ""; position: absolute; inset: 0; z-index: 5; pointer-events: none; background: #fff; opacity: 0;
+  animation: rpcGwAfterflash 520ms ease-out both;
+}
+.rpc-gw-stage.is-slam { animation: rpcGwSlam 520ms cubic-bezier(.3, .7, .3, 1) 380ms both; }
+/* the tier-coloured light behind the card just flipped */
+.rpc-gw-amb {
+  position: absolute; inset: -10%; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(42% 46% at 50% 46%, color-mix(in srgb, var(--gw-tier) 46%, transparent), transparent 72%),
+    conic-gradient(from 200deg at 50% -20%, transparent 0 18deg, color-mix(in srgb, var(--gw-tier) 16%, transparent) 24deg, transparent 32deg 50deg, color-mix(in srgb, var(--gw-tier) 12%, transparent) 58deg, transparent 66deg);
+  animation: rpcGwAmbIn 900ms ease-out 250ms both;
+}
+.rpc-gw-stage.is-charging .rpc-gw-amb { opacity: 0.15; animation: none; transition: opacity 500ms ease-out; }
+.rpc-gw-flash {
+  position: absolute; inset: 0; z-index: 6; pointer-events: none; opacity: 0;
+  background: radial-gradient(circle at 50% 48%, #fff 0%, rgba(255, 255, 255, 0.85) 22%, color-mix(in srgb, var(--gw-tier, var(--rpc-red)) 55%, transparent) 55%, transparent 80%);
+  animation: rpcGwFlash 700ms ease-out 330ms both;
+}
+.rpc-gw-flash--tear { animation: rpcGwFlashTear 1400ms ease-in both; }
+
+/* ── The pack: a crimped foil wrapper ── */
+.rpc-gw-pack-float { display: block; animation: rpcGwFloat 3.6s ease-in-out infinite; perspective: 900px; }
+.rpc-gw-pack {
+  --gw-rx: 0deg; --gw-ry: 0deg; --gw-mx: 50%; --gw-my: 30%;
+  position: relative; display: block; width: min(270px, 70vw); aspect-ratio: 5 / 7.5; border: none; padding: 0; background: none;
+  cursor: pointer; color: #fff; -webkit-tap-highlight-color: transparent;
+  transform: rotateX(var(--gw-rx)) rotateY(var(--gw-ry)); transition: transform 160ms ease-out;
+  filter: drop-shadow(0 24px 26px rgba(0, 0, 0, 0.6)) drop-shadow(0 0 26px color-mix(in srgb, var(--gw-pack-glow, var(--rpc-red)) 40%, transparent));
+}
+.rpc-gw-pack:hover { transition-duration: 60ms; }
+.rpc-gw-pack:focus-visible { outline: 3px solid #fff; outline-offset: 6px; border-radius: 6px; }
+.rpc-gw-pack-strip, .rpc-gw-pack-wrap {
+  position: absolute; left: 0; right: 0; overflow: hidden;
+  background:
+    repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.07) 0 2px, transparent 2px 9px),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.35), transparent 14%, rgba(255, 255, 255, 0.1) 46%, transparent 62%, rgba(0, 0, 0, 0.4)),
+    linear-gradient(172deg, color-mix(in srgb, var(--gw-pack, var(--rpc-red)) 82%, #fff 18%) 0%, var(--gw-pack, var(--rpc-red)) 30%, color-mix(in srgb, var(--gw-pack, var(--rpc-red)) 50%, #000 50%) 62%, #0b0b0d 100%);
+}
+/* top seal: saw-tooth edge, crimp lines, dashed tear line */
+.rpc-gw-pack-strip {
+  top: 0; height: 11%; z-index: 3; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 3px;
+  transform-origin: 100% 100%;
+  background:
+    repeating-linear-gradient(180deg, rgba(0, 0, 0, 0.28) 0 2px, rgba(255, 255, 255, 0.16) 2px 4px) top / 100% 62% no-repeat,
+    linear-gradient(90deg, rgba(0, 0, 0, 0.35), transparent 14%, rgba(255, 255, 255, 0.12) 46%, transparent 62%, rgba(0, 0, 0, 0.4)),
+    color-mix(in srgb, var(--gw-pack, var(--rpc-red)) 84%, #fff 16%);
+  border-bottom: 1.5px dashed rgba(255, 255, 255, 0.7);
+  -webkit-mask: conic-gradient(from 135deg at top, #0000, #000 1deg 89deg, #0000 90deg) 50% / 10px 100%;
+  mask: conic-gradient(from 135deg at top, #0000, #000 1deg 89deg, #0000 90deg) 50% / 10px 100%;
+}
+.rpc-gw-pack-strip > span { font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.3em; text-transform: uppercase; opacity: 0.85; }
+.rpc-gw-pack-wrap {
+  top: 11%; bottom: 0; z-index: 2;
+  -webkit-mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% / 10px 100%;
+  mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% / 10px 100%;
+}
+.rpc-gw-pack-wrap::after { /* bottom seal crimp */
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 7.5%; z-index: 3;
+  background: repeating-linear-gradient(180deg, rgba(0, 0, 0, 0.4) 0 2px, rgba(255, 255, 255, 0.14) 2px 4px);
+  border-top: 1px solid rgba(255, 255, 255, 0.22);
+}
+/* holographic film: a rainbow that slides with the pointer, plus a glare spot */
+.rpc-gw-pack-holo {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none; mix-blend-mode: color-dodge; opacity: 0.34;
+  background:
+    radial-gradient(circle at var(--gw-mx) var(--gw-my), rgba(255, 255, 255, 0.55), transparent 42%),
+    repeating-linear-gradient(118deg, #ff2d6f 0%, #ffd23f 9%, #3dffb0 18%, #36c5ff 27%, #a45bff 36%, #ff2d6f 45%);
+  background-size: 100% 100%, 260% 260%;
+  background-position: 0 0, var(--gw-mx) var(--gw-my);
+  animation: rpcGwHolo 7s ease-in-out infinite alternate;
+  -webkit-mask-image: linear-gradient(115deg, transparent 8%, #000 34%, rgba(0, 0, 0, 0.25) 52%, #000 70%, transparent 94%);
+  mask-image: linear-gradient(115deg, transparent 8%, #000 34%, rgba(0, 0, 0, 0.25) 52%, #000 70%, transparent 94%);
+}
+.rpc-gw-pack:hover .rpc-gw-pack-holo { animation-play-state: paused; opacity: 0.46; }
+.rpc-gw-pack-foil {
+  position: absolute; inset: -40%; z-index: 1; pointer-events: none;
+  background: linear-gradient(115deg, transparent 40%, rgba(255, 255, 255, 0.4) 48%, rgba(255, 255, 255, 0.08) 52%, transparent 60%);
+  animation: rpcGwShine 3.2s ease-in-out infinite;
+}
+.rpc-gw-pack-body {
+  position: relative; z-index: 2; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px; text-align: center; padding: 10px 16px 12%;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+.rpc-gw-pack-badge { position: relative; width: 60%; display: block; margin-bottom: 6px; }
+.rpc-gw-pack-badge::before { /* slow halo turning behind the logo */
+  content: ""; position: absolute; inset: -16%; border-radius: 50%; z-index: -1;
+  background: conic-gradient(from 0deg, transparent, rgba(255, 255, 255, 0.75), transparent 28%, transparent 50%, rgba(255, 255, 255, 0.5), transparent 78%);
+  -webkit-mask: radial-gradient(closest-side, transparent 80%, #000 82% 96%, transparent 98%);
+  mask: radial-gradient(closest-side, transparent 80%, #000 82% 96%, transparent 98%);
+  animation: rpcGwSpin 9s linear infinite;
+}
+.rpc-gw-pack-logo {
+  display: block; width: 100%; height: auto; aspect-ratio: 1 / 1; border-radius: 50%;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.9), 0 10px 24px rgba(0, 0, 0, 0.55);
+}
+.rpc-gw-pack-title {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; opacity: 0.9;
+  max-width: 100%; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.rpc-gw-pack-no { font-size: 44px; line-height: 0.95; text-transform: uppercase; letter-spacing: 0.01em; }
+.rpc-gw-pack-plate {
+  font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; padding: 4px 10px; border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+}
+.rpc-gw-pack-hint { font-size: 10px; letter-spacing: 0.08em; opacity: 0.8; margin-top: 6px; animation: rpcGwHint 1.8s ease-in-out infinite; }
+/* light escaping along the tear line */
+.rpc-gw-pack-light {
+  position: absolute; left: 4%; right: 4%; top: 11%; height: 3px; z-index: 4; border-radius: 3px; opacity: 0; pointer-events: none;
+  background: #fff; box-shadow: 0 0 14px 5px #fff, 0 -8px 44px 16px color-mix(in srgb, var(--gw-pack-glow, var(--rpc-red)) 70%, #fff 30%);
+}
+.rpc-gw-back-logo {
+  width: 56%; height: auto; aspect-ratio: 1 / 1; border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.8), 0 6px 14px rgba(0, 0, 0, 0.5);
+}
+/* tearing: shake → strip peels → light → pack drops away under the flash */
+.rpc-gw-pack--tear { animation: rpcGwPackTear 1400ms cubic-bezier(.4, 0, .6, 1) forwards; }
+.rpc-gw-pack--tear .rpc-gw-pack-strip { animation: rpcGwStripOff 620ms cubic-bezier(.5, 0, .8, .4) 330ms forwards; }
+.rpc-gw-pack--tear .rpc-gw-pack-light { animation: rpcGwLight 1000ms ease-out 400ms forwards; }
+.rpc-gw-pack--tear .rpc-gw-pack-hint { animation: none; opacity: 0; }
+.rpc-gw-pack--tear .rpc-gw-sparks { top: 11%; }
+.rpc-gw-pack--tear .rpc-gw-sparks > i { animation-delay: calc(480ms + var(--s)); background: #fff; }
+
+/* sparks: thrown from the centre of the parent along --a for --d */
+.rpc-gw-sparks { position: absolute; left: 50%; top: 46%; width: 0; height: 0; z-index: 4; pointer-events: none; }
+.rpc-gw-sparks > i {
+  position: absolute; left: -3px; top: -7px; width: 6px; height: 14px; border-radius: 2px; opacity: 0;
+  background: var(--gw-tier, #fff); box-shadow: 0 0 8px var(--gw-tier, #fff);
+  animation: rpcGwSpark 1000ms cubic-bezier(.1, .7, .3, 1) calc(420ms + var(--s)) both;
+}
+.rpc-gw-sparks > i[data-alt] { background: #fff; width: 4px; height: 4px; border-radius: 50%; }
+
+/* ── The wall of packs still on the table ── */
+.rpc-gw-wall { display: flex; flex-wrap: wrap; gap: 7px; }
+.rpc-gw-wall-pack {
+  position: relative; overflow: hidden; width: 32px; aspect-ratio: 5 / 7.5; display: flex; align-items: center; justify-content: center;
+  background:
+    linear-gradient(90deg, rgba(0, 0, 0, 0.3), transparent 20%, rgba(255, 255, 255, 0.14) 48%, transparent 66%, rgba(0, 0, 0, 0.35)),
+    repeating-linear-gradient(180deg, rgba(0, 0, 0, 0.3) 0 1px, rgba(255, 255, 255, 0.16) 1px 2px) top / 100% 9% no-repeat,
+    repeating-linear-gradient(180deg, rgba(0, 0, 0, 0.3) 0 1px, rgba(255, 255, 255, 0.16) 1px 2px) bottom / 100% 9% no-repeat,
+    linear-gradient(172deg, color-mix(in srgb, var(--gw-pack, var(--rpc-red)) 82%, #fff 18%), var(--gw-pack, var(--rpc-red)) 34%, #0b0b0d 100%);
+  -webkit-mask: conic-gradient(from 135deg at top, #0000, #000 1deg 89deg, #0000 90deg) top / 4px 51% repeat-x, conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / 4px 51% repeat-x;
+  mask: conic-gradient(from 135deg at top, #0000, #000 1deg 89deg, #0000 90deg) top / 4px 51% repeat-x, conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / 4px 51% repeat-x;
+  transition: transform 90ms ease-out, filter 90ms ease-out;
+}
+.rpc-gw-wall-pack::after {
+  content: ""; position: absolute; inset: -40%; pointer-events: none;
+  background: linear-gradient(115deg, transparent 42%, rgba(255, 255, 255, 0.45) 50%, transparent 58%);
+  animation: rpcGwShine 4.2s ease-in-out infinite;
+}
+.rpc-gw-wall-pack:nth-child(3n)::after { animation-delay: 0.7s; }
+.rpc-gw-wall-pack:nth-child(3n + 1)::after { animation-delay: 1.5s; }
+.rpc-gw-wall-pack img { width: 64%; height: auto; border-radius: 50%; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.8); }
+.rpc-gw-wall-pack.is-claimed { opacity: 0.22; filter: grayscale(1); }
+.rpc-gw-wall-pack.is-claimed::after { display: none; }
+.rpc-gw-wall-pack.is-lit { transform: translateY(-5px) scale(1.16); filter: brightness(1.5) drop-shadow(0 0 8px var(--gw-pack-glow, var(--rpc-red))); z-index: 1; }
+.rpc-gw-wall-pack.is-landed { animation: rpcGwLand 700ms cubic-bezier(.2, 1.4, .4, 1) both; }
+@keyframes rpcGwLand {
+  0% { transform: translateY(-5px) scale(1.16); filter: brightness(2.2) drop-shadow(0 0 4px #fff); }
+  45% { transform: translateY(-11px) scale(1.5) rotate(-4deg); filter: brightness(1.8) drop-shadow(0 0 16px var(--gw-pack-glow, var(--rpc-red))); }
+  100% { transform: translateY(-5px) scale(1.28); filter: brightness(1.3) drop-shadow(0 0 10px var(--gw-pack-glow, var(--rpc-red))); }
+}
+
+/* ── The table: the card just flipped + the face-down stack ── */
+.rpc-gw-table { display: flex; gap: 26px; align-items: center; justify-content: center; flex-wrap: wrap; }
+.rpc-gw-stack {
+  position: relative; width: min(190px, 46vw); aspect-ratio: 5 / 7; border: none; background: none; padding: 0; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: width 380ms cubic-bezier(.2, .8, .2, 1);
+  animation: rpcGwRise 560ms cubic-bezier(.2, 1.2, .3, 1) both;
+}
+.rpc-gw-table.has-card .rpc-gw-stack { width: min(112px, 28vw); animation: none; }
+.rpc-gw-stack:focus-visible { outline: 3px solid #fff; outline-offset: 8px; border-radius: 12px; }
+.rpc-gw-stack-card { position: absolute; inset: 0; display: block; transition: transform 200ms ease-out; }
+.rpc-gw-stack:hover .rpc-gw-stack-card.is-top { translate: 0 -8px; }
+.rpc-gw-stack-count {
+  position: absolute; left: 50%; bottom: -28px; transform: translateX(-50%);
+  font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.06em; color: rgba(255, 255, 255, 0.7); white-space: nowrap;
+}
+.rpc-gw-stack--charge .rpc-gw-stack-card.is-top { animation: rpcGwCharge 1100ms ease-in forwards; }
+.rpc-gw-stack--charge::before, .rpc-gw-stack--charge::after { /* energy rings closing on the stack */
+  content: ""; position: absolute; left: 50%; top: 50%; width: 210%; aspect-ratio: 1; translate: -50% -50%; border-radius: 50%; pointer-events: none;
+  border: 2px solid var(--gw-tier, var(--rpc-red)); box-shadow: 0 0 18px var(--gw-tier, var(--rpc-red)), inset 0 0 18px var(--gw-tier, var(--rpc-red));
+  animation: rpcGwRing 550ms ease-in infinite;
+}
+.rpc-gw-stack--charge::after { animation-delay: 275ms; }
+
+.rpc-gw-back {
+  position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%;
+  border-radius: 12px; color: #fff;
+  background:
+    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--gw-pack-glow, var(--rpc-red)) 55%, transparent), transparent 62%),
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.05) 0 2px, transparent 2px 10px),
+    repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.05) 0 2px, transparent 2px 10px),
+    linear-gradient(160deg, #1a1a1e, #08080a);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.55), inset 0 0 0 2px var(--gw-pack-glow, var(--rpc-red)), inset 0 0 0 6px #0b0b0d, inset 0 0 0 7px rgba(255, 255, 255, 0.28);
+}
+.rpc-gw-back::after {
+  content: ""; position: absolute; inset: -40%; pointer-events: none;
+  background: linear-gradient(115deg, transparent 44%, rgba(255, 255, 255, 0.16) 50%, transparent 56%);
+  animation: rpcGwShine 3.6s ease-in-out infinite;
+}
+
+.rpc-gw-flip { position: relative; width: min(300px, 78vw); perspective: 1100px; }
+.rpc-gw-tilt {
+  --gw-rx: 0deg; --gw-ry: 0deg; --gw-mx: 50%; --gw-my: 20%;
+  transform: rotateX(var(--gw-rx)) rotateY(var(--gw-ry)); transform-style: preserve-3d; transition: transform 160ms ease-out;
+}
+.rpc-gw-flip-inner { position: relative; transform-style: preserve-3d; transition: transform 650ms cubic-bezier(.2, .8, .2, 1); transform: rotateY(180deg); }
+.rpc-gw-flip.is-up .rpc-gw-flip-inner { animation: rpcGwFlip 760ms cubic-bezier(.2, .8, .2, 1) both; transform: rotateY(0deg); }
+.rpc-gw-flip-back, .rpc-gw-flip-front { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.rpc-gw-flip-back { position: absolute; inset: 0; transform: rotateY(180deg); }
+
+.rpc-gw-face {
+  position: relative; overflow: hidden; color: var(--rpc-text-primary); /* not the stage’s white: the face is theme-coloured */
+  background: linear-gradient(180deg, var(--gw-tier-bg), var(--rpc-surface-raised) 40%), var(--rpc-bg);
+  border: 2px solid var(--gw-tier); border-radius: 12px; padding: 10px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2), 0 14px 34px rgba(0, 0, 0, 0.5), 0 0 30px color-mix(in srgb, var(--gw-tier) 34%, transparent);
+}
+.rpc-gw-face::before { /* glare that follows the pointer + one sweep right after the flip */
+  content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none; border-radius: inherit;
+  background:
+    radial-gradient(circle at var(--gw-mx, 50%) var(--gw-my, 20%), rgba(255, 255, 255, 0.22), transparent 46%),
+    linear-gradient(115deg, transparent 42%, rgba(255, 255, 255, 0.5) 50%, transparent 58%) 0 0 / 300% 100% no-repeat;
+  background-position: 0 0, 130% 0;
+}
+.rpc-gw-flip .rpc-gw-face::before { animation: rpcGwSweep 900ms ease-out 520ms both; }
+.rpc-gw-face::after { /* holo film on rare and up */
+  content: none; position: absolute; inset: 0; z-index: 2; pointer-events: none; border-radius: inherit; mix-blend-mode: color-dodge; opacity: 0.2;
+  background: repeating-linear-gradient(118deg, #ff2d6f 0%, #ffd23f 9%, #3dffb0 18%, #36c5ff 27%, #a45bff 36%, #ff2d6f 45%);
+  background-size: 260% 260%; background-position: var(--gw-mx, 50%) var(--gw-my, 20%);
+  animation: rpcGwHoloFace 6s ease-in-out infinite alternate;
+}
+.rpc-gw-face[data-tier="rare"]::after, .rpc-gw-face[data-tier="legendary"]::after, .rpc-gw-face[data-tier="ultimate"]::after { content: ""; }
+.rpc-gw-face[data-tier="legendary"]::after, .rpc-gw-face[data-tier="ultimate"]::after { opacity: 0.26; }
+.rpc-gw-summary .rpc-gw-face::after { opacity: 0.12; }
+.rpc-gw-face-ribbon {
+  display: flex; justify-content: space-between; gap: 8px; margin-bottom: 8px;
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--gw-tier-text);
+  white-space: nowrap; overflow: hidden;
+}
+.rpc-gw-summary .rpc-gw-face-ribbon { font-size: 10px; letter-spacing: 0.06em; }
+.rpc-gw-flip.is-chase .rpc-gw-face { animation: rpcGwChaseGlow 1.8s ease-in-out 760ms infinite; }
+.rpc-gw-burst {
+  position: absolute; inset: -34%; z-index: -1; pointer-events: none; border-radius: 50%;
+  background: repeating-conic-gradient(from 0deg, color-mix(in srgb, var(--gw-tier) 60%, transparent) 0 5deg, transparent 5deg 16deg);
+  mask-image: radial-gradient(circle, #000 25%, transparent 68%);
+  -webkit-mask-image: radial-gradient(circle, #000 25%, transparent 68%);
+  animation: rpcGwBurst 1.6s ease-out 300ms both, rpcGwSpin 14s linear 1.9s infinite;
+}
+
+.rpc-gw-dots { display: flex; gap: 7px; justify-content: center; list-style: none; padding: 0; margin: 4px 0 0; }
+.rpc-gw-dots li { width: 10px; height: 10px; border-radius: 50%; background: var(--rpc-border); }
+.rpc-gw-dots li.is-on { background: var(--gw-tier, var(--tier-common)); box-shadow: 0 0 8px var(--gw-tier, transparent); animation: rpcGwDot 420ms cubic-bezier(.2, 1.6, .4, 1) both; }
+
+.rpc-gw-summary { display: flex; flex-direction: column; gap: 10px; }
+.rpc-gw-summary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(170px, 100%), 1fr)); gap: 10px; }
+.rpc-gw-summary-item { animation: rpcGwDeal 520ms cubic-bezier(.2, 1.1, .3, 1) both; }
+.rpc-gw-summary-item.is-chase .rpc-gw-face { animation: rpcGwChaseGlow 2.2s ease-in-out infinite; }
+
+@keyframes rpcGwFloat { 0%, 100% { transform: translateY(0) rotate(-1.2deg); } 50% { transform: translateY(-9px) rotate(1.2deg); } }
+@keyframes rpcGwShine { 0% { transform: translateX(-38%); } 60%, 100% { transform: translateX(38%); } }
+@keyframes rpcGwHolo { from { background-position: 0 0, 0% 0%; } to { background-position: 0 0, 100% 100%; } }
+@keyframes rpcGwHoloFace { from { background-position: 0% 0%; } to { background-position: 100% 100%; } }
+@keyframes rpcGwHint { 0%, 100% { opacity: 0.45; } 50% { opacity: 0.95; } }
+@keyframes rpcGwSpin { to { transform: rotate(360deg); } }
+@keyframes rpcGwPackTear {
+  0% { transform: translate(0, 0) rotate(0); }
+  4% { transform: translate(-5px, 1px) rotate(-2.5deg); }
+  8% { transform: translate(5px, -1px) rotate(2.5deg); }
+  12% { transform: translate(-6px, 0) rotate(-3deg); }
+  16% { transform: translate(6px, 1px) rotate(3deg); }
+  20% { transform: translate(-4px, -1px) rotate(-2deg); }
+  24% { transform: translate(0, 0) rotate(0) scale(1.03); }
+  62% { transform: translate(0, -8px) scale(1.07); opacity: 1; }
+  100% { transform: translate(0, 46%) scale(0.86); opacity: 0; }
+}
+@keyframes rpcGwStripOff {
+  0% { transform: none; opacity: 1; }
+  45% { transform: rotate(16deg) translate(4%, -30%); opacity: 1; }
+  100% { transform: rotate(52deg) translate(60%, -260%); opacity: 0; }
+}
+@keyframes rpcGwLight { 0% { opacity: 0; transform: scaleX(0.1); } 30% { opacity: 1; transform: scaleX(1); } 100% { opacity: 1; transform: scaleX(1) scaleY(5); } }
+@keyframes rpcGwFlashTear { 0%, 58% { opacity: 0; } 86% { opacity: 0.95; } 100% { opacity: 1; } }
+@keyframes rpcGwAfterflash { from { opacity: 0.9; } to { opacity: 0; } }
+@keyframes rpcGwFlash { 0% { opacity: 0; } 18% { opacity: 0.95; } 100% { opacity: 0; } }
+@keyframes rpcGwAmbIn { from { opacity: 0; transform: scale(0.7); } to { opacity: 1; transform: none; } }
+@keyframes rpcGwSlam {
+  0% { transform: none; } 12% { transform: translate(0, 7px) scale(1.012); } 28% { transform: translate(-5px, -3px); }
+  44% { transform: translate(5px, 2px); } 62% { transform: translate(-3px, -1px); } 80% { transform: translate(2px, 1px); } 100% { transform: none; }
+}
+@keyframes rpcGwRise { from { opacity: 0; transform: translateY(46%) scale(0.8); } to { opacity: 1; transform: none; } }
+@keyframes rpcGwRing { from { transform: scale(1.25); opacity: 0; } 40% { opacity: 0.9; } to { transform: scale(0.45); opacity: 0; } }
+@keyframes rpcGwSpark {
+  0% { opacity: 0; transform: rotate(var(--a)) translateY(0) scale(1); }
+  10% { opacity: 1; }
+  100% { opacity: 0; transform: rotate(var(--a)) translateY(calc(var(--d) * -1)) scale(0.3); }
+}
+/* no opacity in the flip: opacity < 1 flattens preserve-3d and shows the face mirrored through the back */
+@keyframes rpcGwFlip {
+  0% { transform: translateY(16%) rotateY(180deg) scale(0.55); }
+  62% { transform: translateY(-1%) rotateY(-10deg) scale(1.04); }
+  82% { transform: translateY(0) rotateY(4deg) scale(0.99); }
+  100% { transform: translateY(0) rotateY(0deg) scale(1); }
+}
+@keyframes rpcGwSweep { from { background-position: 0 0, 130% 0; } to { background-position: 0 0, -40% 0; } }
+@keyframes rpcGwCharge {
+  0% { transform: translate(6px, -6px); filter: brightness(1); }
+  20% { transform: translate(4px, -6px) rotate(-2deg); }
+  40% { transform: translate(8px, -6px) rotate(2deg); filter: brightness(1.3); }
+  60% { transform: translate(3px, -7px) rotate(-3deg); }
+  80% { transform: translate(9px, -5px) rotate(3deg) scale(1.04); filter: brightness(1.7) drop-shadow(0 0 18px var(--gw-tier, var(--rpc-red))); }
+  100% { transform: translate(6px, -6px) scale(1.1); filter: brightness(2.2) drop-shadow(0 0 34px var(--gw-tier, var(--rpc-red))); }
+}
+@keyframes rpcGwChaseGlow {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2), 0 14px 34px rgba(0, 0, 0, 0.5), 0 0 18px color-mix(in srgb, var(--gw-tier) 45%, transparent); }
+  50% { box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2), 0 14px 34px rgba(0, 0, 0, 0.5), 0 0 44px var(--gw-tier); }
+}
+@keyframes rpcGwBurst { 0% { opacity: 0; transform: scale(0.3); } 35% { opacity: 1; } 100% { opacity: 0.55; transform: scale(1); } }
+@keyframes rpcGwDot { from { transform: scale(0.3); } to { transform: none; } }
+@keyframes rpcGwDeal { from { opacity: 0; transform: translateY(26px) rotate(-5deg) scale(0.9); } to { opacity: 1; transform: none; } }
+
+@media (max-width: 480px) {
+  .rpc-gw-stage { min-height: 430px; padding: 26px 8px 44px; }
+  .rpc-gw-table { gap: 16px; }
+  .rpc-gw-flip { width: min(250px, 70vw); }
+  .rpc-gw-table.has-card .rpc-gw-stack { width: 84px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rpc-gw-pack-float, .rpc-gw-pack, .rpc-gw-pack-foil, .rpc-gw-pack-holo, .rpc-gw-pack-hint, .rpc-gw-pack-badge::before,
+  .rpc-gw-pack--tear, .rpc-gw-pack--tear .rpc-gw-pack-strip, .rpc-gw-pack--tear .rpc-gw-pack-light,
+  .rpc-gw-stage.is-slam, .rpc-gw-amb, .rpc-gw-stack, .rpc-gw-back::after, .rpc-gw-wall-pack::after,
+  .rpc-gw-stack--charge .rpc-gw-stack-card.is-top, .rpc-gw-flip.is-up .rpc-gw-flip-inner,
+  .rpc-gw-flip .rpc-gw-face::before, .rpc-gw-face::after, .rpc-gw-dots li.is-on,
+  .rpc-gw-flip.is-chase .rpc-gw-face, .rpc-gw-summary-item.is-chase .rpc-gw-face, .rpc-gw-burst, .rpc-gw-summary-item { animation: none; }
+  .rpc-gw-flash, .rpc-gw-sparks, .rpc-gw-stage[data-phase="ripping"]::after, .rpc-gw-stack--charge::before, .rpc-gw-stack--charge::after { display: none; }
+  .rpc-gw-flip-inner, .rpc-gw-tilt, .rpc-gw-pack, .rpc-gw-stack, .rpc-gw-stack-card, .rpc-gw-wall-pack { transition: none; }
+  .rpc-gw-wall-pack.is-landed { animation: none; }
+}
+
+/* ── Utility Classes ──────────────────────────────────────── */
+.rpc-label {
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  letter-spacing: 0.2em;
+  color: var(--rpc-text-muted);
+  text-transform: uppercase;
+}
+
+.rpc-heading {
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--rpc-text-primary);
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+.rpc-mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  letter-spacing: 0.06em;
+}
+
+.rpc-card {
+  background: var(--rpc-surface-raised);
+  border: 1px solid var(--rpc-border);
+  border-radius: var(--radius-md);
+  transition: border-color var(--transition-fast);
+}
+.rpc-card:hover {
+  border-color: var(--rpc-border-hover);
+}
+
+.rpc-btn-primary {
+  background: linear-gradient(135deg, var(--rpc-red-fill), var(--rpc-red-fill-hover));
+  border: none;
+  color: #fff;
+  padding: 7px 18px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.rpc-btn-primary:hover {
+  background: var(--rpc-red-fill-hover);
+  transform: translateY(-1px);
+}
+
+.rpc-btn-ghost {
+  background: transparent;
+  border: 1px solid var(--rpc-red-border);
+  color: var(--rpc-red-text);
+  padding: 7px 18px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.rpc-btn-ghost:hover {
+  background: var(--rpc-red-bg);
+}
+
+.rpc-chip {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  color: var(--rpc-text-secondary);
+  padding: 4px 12px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.1em;
+  transition: all var(--transition-fast);
+}
+.rpc-chip:hover {
+  border-color: var(--rpc-red-muted);
+  color: var(--rpc-red-text);
+}
+.rpc-chip.active {
+  background: var(--rpc-red-bg);
+  border-color: var(--rpc-red-muted);
+  color: var(--rpc-red-text);
+}
+
+/* ── HUD Box (game UI panel) ──────────────────────────────── */
+.rpc-hud {
+  border: 1px solid var(--rpc-red-border);
+  border-radius: var(--radius-md);
+  padding: 14px 18px;
+  position: relative;
+  background: var(--rpc-surface-raised);
+}
+.rpc-hud::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 16px;
+  width: 40px;
+  height: 2px;
+  background: var(--rpc-red);
+}
+
+/* ── Tier Stripe (card top border) ────────────────────────── */
+.rpc-tier-stripe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  opacity: 0.7;
+}
+.rpc-tier-stripe.legendary { background: var(--tier-legendary); }
+.rpc-tier-stripe.ultimate { background: var(--tier-ultimate); }
+.rpc-tier-stripe.rare { background: var(--tier-rare); }
+.rpc-tier-stripe.epic { background: var(--tier-epic); }
+.rpc-tier-stripe.fandom { background: var(--tier-fandom); }
+.rpc-tier-stripe.uncommon { background: var(--tier-uncommon); }
+.rpc-tier-stripe.common { background: var(--tier-common); }
+
+/* ── Card Binder Background ──────────────────────────────── */
+.rpc-binder-bg {
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 23px,
+      rgba(255, 255, 255, 0.03) 23px,
+      rgba(255, 255, 255, 0.03) 24px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 23px,
+      rgba(255, 255, 255, 0.03) 23px,
+      rgba(255, 255, 255, 0.03) 24px
+    );
+}
+
+/* ── Hot Deal Accent ─────────────────────────────────────── */
+.rpc-hot-deal {
+  border-left: 3px solid var(--rpc-red);
+  background: rgba(224, 58, 47, 0.08) !important;
+}
+
+/* ── Tier Glow Badges ────────────────────────────────────── */
+.rpc-tier-glow-legendary {
+  text-shadow: 0 0 8px rgba(251, 191, 36, 0.6);
+  color: var(--tier-legendary-text);
+}
+.rpc-tier-glow-ultimate {
+  text-shadow: 0 0 8px rgba(168, 85, 247, 0.6);
+  color: var(--tier-ultimate-text);
+}
+.rpc-tier-glow-rare {
+  text-shadow: 0 0 8px rgba(129, 140, 248, 0.6);
+  color: var(--tier-rare-text);
+}
+.rpc-tier-glow-epic {
+  text-shadow: 0 0 8px rgba(192, 132, 252, 0.6);
+  color: var(--tier-epic);
+}
+
+/* ── Arcade Button Style ─────────────────────────────────── */
+.rpc-chip {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  padding: 5px 14px;
+}
+
+/* ── Sniper Table Header Scanline ────────────────────────── */
+.rpc-thead-scanline {
+  position: relative;
+}
+.rpc-thead-scanline::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.04) 2px,
+    rgba(0, 0, 0, 0.04) 4px
+  );
+  pointer-events: none;
+}
+
+/* ── FMV Delta Chevrons ──────────────────────────────────── */
+.rpc-fmv-delta-up {
+  color: var(--rpc-success-text);
+  font-size: var(--text-xs);
+  margin-left: 2px;
+}
+.rpc-fmv-delta-down {
+  color: var(--rpc-danger-text);
+  font-size: var(--text-xs);
+  margin-left: 2px;
+}
+
+/* ── Active border accent ────────────────────────────────── */
+.rpc-card:active,
+.rpc-chip:active {
+  border-color: var(--rpc-border-active);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   v2 ADDITIONS — POR + video-game + trading-card binder
+   Brand direction: Portland Trail Blazers palette, CRT HUD feel,
+   9-up binder grid, per-collection accents keyed off data-collection.
+   v1 tokens + utilities above are preserved untouched.
+   ═══════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Portland Trail Blazers primary palette ── */
+  --por-red:     #E03A2F;
+  --por-black:   #0C0C0C;
+  --por-silver:  #BFC0BF;
+  --por-white:   #F1F1F1;
+  --por-pin:     #2A2A2A;
+
+  /* ── Per-collection accent registry (drives --rpc-accent below) ── */
+  --col-nba-top-shot:    #E03A2F;
+  --col-nfl-all-day:     #4F94D4;
+  --col-laliga-golazos:  #22C55E;
+  --col-disney-pinnacle: #A855F7;
+  --col-ufc:             #EF4444;
+
+  /* ── CRT / video-game effects ── */
+  --scan-line:        rgba(255, 255, 255, 0.015);
+  --scan-glow:        0 0 20px rgba(224, 58, 47, 0.15);
+  --scan-glow-strong: 0 0 32px rgba(224, 58, 47, 0.35);
+  --neon-text-glow:   0 0 6px rgba(224, 58, 47, 0.45);
+
+  /* ── Trading-card holo sheen gradients (v2 overlay system) ── */
+  --holo-base: linear-gradient(
+    135deg,
+    rgba(255,255,255,0.00) 0%,
+    rgba(255,255,255,0.08) 30%,
+    rgba(224,58,47,0.10) 50%,
+    rgba(255,255,255,0.08) 70%,
+    rgba(255,255,255,0.00) 100%
+  );
+  --holo-ultimate:  linear-gradient(135deg, rgba(255,107,53,0), rgba(255,107,53,0.18) 50%, rgba(255,215,0,0.12) 100%);
+  --holo-legendary: linear-gradient(135deg, rgba(255,215,0,0), rgba(255,215,0,0.22) 50%, rgba(255,165,0,0.15) 100%);
+  --holo-rare:      linear-gradient(135deg, rgba(129,140,248,0), rgba(129,140,248,0.18) 50%, rgba(167,139,250,0.12) 100%);
+  --holo-fandom:    linear-gradient(135deg, rgba(52,211,153,0), rgba(52,211,153,0.18) 50%, rgba(34,197,94,0.12) 100%);
+
+  /* ── Binder (trading-card grid) dimensions ── */
+  --binder-gap:         14px;
+  --binder-card-min:    180px;
+  --binder-card-max:    240px;
+  --binder-slot-ratio:  1.45;
+  --binder-sleeve-bg:   rgba(255,255,255,0.015);
+  --binder-sleeve-edge: rgba(255,255,255,0.05);
+}
+
+/* ── CRT scanline overlay — opt-in via class, isolates from existing scan pattern ── */
+.rpc-scan-crt {
+  position: relative;
+  isolation: isolate;
+}
+.rpc-scan-crt::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background-image: repeating-linear-gradient(
+    0deg,
+    var(--scan-line) 0,
+    var(--scan-line) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  opacity: 0.7;
+  mix-blend-mode: overlay;
+}
+
+/* ── Live pill (CRT flicker) ── */
+@keyframes rpc-crt-flicker {
+  0%, 100% { opacity: 1; }
+  92%      { opacity: 0.92; }
+  96%      { opacity: 1; }
+}
+.rpc-live-pill {
+  /* Pure white on the DEEPER fill: the CRT flicker dips the whole pill to 0.92
+     opacity, which blends label and fill toward the canvas — #D93529 then reads
+     4.23:1 on the light canvas, #C42B22 holds >= 5.04:1 on every canvas through the
+     dip. #F1F1F1 on #E03A2F read 3.7:1 there and was the last carve-out in the a11y
+     gate (retired 2026-10-24). */
+  background: var(--rpc-red-fill-hover);
+  color: #FFFFFF;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.15em;
+  padding: 2px 8px;
+  border-radius: 2px;
+  font-weight: 700;
+  animation: rpc-crt-flicker 4.3s infinite;
+  text-shadow: var(--neon-text-glow);
+}
+
+/* ── Neon-edged card (hero stats, today's deal) ── */
+.rpc-card-neon {
+  background: var(--rpc-surface);
+  border: 1px solid var(--rpc-red-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--scan-glow), inset 0 1px 0 rgba(255,255,255,0.04);
+  position: relative;
+  transition: box-shadow var(--transition-fast);
+}
+.rpc-card-neon:hover {
+  box-shadow: var(--scan-glow-strong), inset 0 1px 0 rgba(255,255,255,0.08);
+}
+
+/* ── Trading-card binder primitives ── */
+.rpc-binder {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--binder-card-min), 1fr));
+  gap: var(--binder-gap);
+}
+
+.rpc-binder-slot {
+  background: var(--binder-sleeve-bg);
+  border: 1px solid var(--binder-sleeve-edge);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  aspect-ratio: 1 / var(--binder-slot-ratio);
+  position: relative;
+  transition: border-color 0.15s, transform 0.15s;
+}
+.rpc-binder-slot:hover {
+  border-color: var(--rpc-border-hover);
+  transform: translateY(-2px);
+}
+
+/* Tier-aware border (compose with .rpc-binder-slot) */
+.rpc-tier-legendary { border-color: var(--tier-legendary-border); }
+.rpc-tier-ultimate  { border-color: var(--tier-ultimate-border); }
+.rpc-tier-rare      { border-color: var(--tier-rare-border); }
+.rpc-tier-epic      { border-color: var(--tier-epic-border); }
+.rpc-tier-fandom    { border-color: var(--tier-fandom-border); }
+.rpc-tier-common    { border-color: var(--tier-common-border); }
+
+/* Holo overlay (v2) — renamed from v2-spec .rpc-holo* to .rpc-holo-overlay*
+   to avoid clobbering v1 .rpc-holo-legendary/-ultimate/-rare shimmers that
+   six existing pages depend on. Usage:
+     <div class="rpc-binder-slot rpc-tier-legendary">
+       <img ... />
+       <div class="rpc-holo-overlay rpc-holo-overlay-legendary" />
+     </div>
+*/
+.rpc-holo-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--holo-base);
+  mix-blend-mode: screen;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+.rpc-binder-slot:hover .rpc-holo-overlay { opacity: 1; }
+.rpc-holo-overlay-ultimate  { background: var(--holo-ultimate); }
+.rpc-holo-overlay-legendary { background: var(--holo-legendary); }
+.rpc-holo-overlay-rare      { background: var(--holo-rare); }
+.rpc-holo-overlay-fandom    { background: var(--holo-fandom); }
+
+/* Serial pill — monochrome, corner-mounted on card art */
+.rpc-serial-pill {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(0,0,0,0.75);
+  border: 1px solid var(--por-silver);
+  color: var(--por-white);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.05em;
+}
+
+/* ── Per-collection theming — data-collection attribute drives accent ── */
+[data-collection="nba-top-shot"]    { --rpc-accent: var(--col-nba-top-shot); }
+[data-collection="nfl-all-day"]     { --rpc-accent: var(--col-nfl-all-day); }
+[data-collection="laliga-golazos"]  { --rpc-accent: var(--col-laliga-golazos); }
+[data-collection="disney-pinnacle"] { --rpc-accent: var(--col-disney-pinnacle); }
+[data-collection="ufc"]             { --rpc-accent: var(--col-ufc); }
+
+:root { --rpc-accent: var(--por-red); }
+
+.rpc-accent-bg     { background: var(--rpc-accent); }
+.rpc-accent-border { border-color: var(--rpc-accent); }
+.rpc-accent-text   { color: var(--rpc-accent); }
+.rpc-accent-glow   { box-shadow: 0 0 0 1px var(--rpc-accent); }
+
+/* ── Reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .rpc-live-pill,
+  .rpc-binder-slot,
+  .rpc-card-neon { animation: none !important; transition: none !important; }
+  .rpc-scan-crt::before { display: none; }
+}
+
+/* ── Mobile tweaks for binder grid ── */
+@media (max-width: 640px) {
+  :root {
+    --binder-gap: 10px;
+    --binder-card-min: 140px;
+  }
+}
+
+/* ── Filter region — wallet analytics ─────────────────────── */
+.rpc-filter-select,
+.rpc-filter-input {
+  background: var(--rpc-surface);
+  border: 1px solid var(--rpc-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--rpc-text-primary);
+  outline: none;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.rpc-filter-select::placeholder,
+.rpc-filter-input::placeholder {
+  color: var(--rpc-text-muted);
+}
+.rpc-filter-select:focus,
+.rpc-filter-input:focus {
+  border-color: var(--rpc-red);
+  box-shadow: 0 0 0 2px var(--rpc-red-bg);
+}
+.rpc-filter-select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 32px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='none' stroke='%23ffffff6b' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M1 1l4 4 4-4'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 10px 6px;
+}
+
+.rpc-filter-button {
+  background: transparent;
+  border: 1px solid var(--rpc-border);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--rpc-text-secondary);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+.rpc-filter-button:hover {
+  background: var(--rpc-surface-hover);
+  border-color: var(--rpc-border-hover);
+  color: var(--rpc-text-primary);
+}
+.rpc-filter-button--active,
+.rpc-filter-button--active:hover {
+  background: var(--rpc-red-bg);
+  border-color: var(--rpc-red-border);
+  color: var(--rpc-red-text);
+}
+
+.rpc-filter-toggle {
+  background: transparent;
+  border: 1px solid var(--rpc-border);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--rpc-text-secondary);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+.rpc-filter-toggle:hover {
+  background: var(--rpc-surface-hover);
+  border-color: var(--rpc-border-hover);
+  color: var(--rpc-text-primary);
+}
+.rpc-filter-toggle--active,
+.rpc-filter-toggle--active:hover {
+  background: var(--rpc-red-bg);
+  border-color: var(--rpc-red-border);
+  color: var(--rpc-red-text);
+}
+
+/* ── Stat tile (wallet analytics row) ─────────────────────── */
+.rpc-stat-tile {
+  background: var(--rpc-surface);
+  border: 1px solid var(--rpc-border);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+}
+.rpc-stat-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--rpc-text-muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rpc-stat-value {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: 24px;
+  letter-spacing: 0.02em;
+  color: var(--rpc-text-primary);
+  margin-top: 4px;
+  line-height: 1.1;
+}
+.rpc-stat-caption {
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--rpc-text-muted);
+  letter-spacing: 0.05em;
+}
+
+/* ── Table region — wallet analytics ──────────────────────── */
+.rpc-table-wrapper {
+  border: 1px solid var(--rpc-border);
+  border-radius: 12px;
+  background: var(--rpc-surface);
+  overflow-x: auto;
+}
+.rpc-table {
+  width: 100%;
+  min-width: 900px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.rpc-table thead {
+  background: var(--rpc-surface-raised);
+  border-bottom: 1px solid var(--rpc-border);
+}
+.rpc-table th {
+  padding: 12px 16px;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--rpc-text-muted);
+}
+.rpc-table tbody tr {
+  border-bottom: 1px solid var(--rpc-border-subtle);
+  transition: background-color 0.15s;
+  cursor: pointer;
+}
+.rpc-table tbody tr:hover {
+  background: var(--rpc-surface-hover);
+}
+.rpc-table tbody tr.rpc-table-row--expanded {
+  background: var(--rpc-surface-hover);
+  box-shadow: inset 3px 0 0 var(--rpc-red);
+}
+.rpc-table td {
+  padding: 10px 16px;
+  color: var(--rpc-text-primary);
+  vertical-align: middle;
+}
+.rpc-table-cell--mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.rpc-table-cell--player {
+  font-weight: 600;
+  color: var(--rpc-text-primary);
+}
+.rpc-table-cell--muted {
+  color: var(--rpc-text-secondary);
+}
+.rpc-table-empty {
+  padding: 48px 24px;
+  text-align: center;
+  font-family: var(--font-mono);
+  color: var(--rpc-text-muted);
+}
+.rpc-table-load-more {
+  background: transparent;
+  border: 1px solid var(--rpc-border);
+  border-radius: 6px;
+  padding: 10px 20px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--rpc-text-secondary);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+.rpc-table-load-more:hover {
+  background: var(--rpc-surface-hover);
+  border-color: var(--rpc-border-hover);
+  color: var(--rpc-text-primary);
+}
+.rpc-table-load-more:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Expand panel — wallet analytics ──────────────────────── */
+.rpc-expand-panel {
+  background: var(--rpc-surface-raised);
+  border-top: 1px solid var(--rpc-border-subtle);
+  padding: 20px 24px;
+}
+.rpc-expand-section {
+  margin-bottom: 16px;
+}
+.rpc-expand-section:last-child {
+  margin-bottom: 0;
+}
+.rpc-expand-section-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--rpc-text-muted);
+  margin-bottom: 8px;
+}
+.rpc-expand-grid {
+  display: grid;
+  gap: 12px 24px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+.rpc-expand-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.rpc-expand-field-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--rpc-text-muted);
+}
+.rpc-expand-field-value {
+  font-size: 12px;
+  color: var(--rpc-text-primary);
+}
+.rpc-expand-field-value--debug {
+  color: var(--rpc-text-secondary);
+  font-size: 11px;
+}
+.rpc-expand-link {
+  display: block;
+  border: 1px solid var(--rpc-border);
+  border-radius: var(--radius-md);
+  padding: 6px 12px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--rpc-text-primary);
+  transition: background-color var(--transition-fast), border-color var(--transition-fast);
+}
+.rpc-expand-link:hover {
+  background: var(--rpc-surface-hover);
+  border-color: var(--rpc-border-hover);
+}
+.rpc-expand-link--muted {
+  color: var(--rpc-text-secondary);
+}
+
+/* ── Responsive entity-detail + tabular helpers (mobile overflow fix 2026-05-31) ──
+   Entity detail pages (edition/player/pack/team) use inline-styled 2-col hero
+   grids with no media-query fallback, which overflow ~390px viewports inside
+   the collection chrome's padding. These classes keep the desktop layout
+   identical (the media column is 320px by default, with --240/--260 width
+   variants) and collapse to a single column under 640px. The scroll-x wrapper
+   mirrors the insights board pages' .rpc-sq-table-wrap so wide tables/rows
+   scroll within their container instead of widening the page. */
+.rpc-entity-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 320px) 1fr;
+  gap: 24px;
+  align-items: start;
+}
+.rpc-entity-hero--240 { grid-template-columns: minmax(0, 240px) 1fr; }
+.rpc-entity-hero--260 { grid-template-columns: minmax(0, 260px) 1fr; }
+.rpc-scroll-x {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+@media (max-width: 640px) {
+  .rpc-entity-hero,
+  .rpc-entity-hero--240,
+  .rpc-entity-hero--260 {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+}
+
+/* Collection overview — KPI row + the side-by-side data panels (Sniper Deals |
+   Pipeline, Recent Top Sales | Community). Inline styles can't carry a media
+   query, so the layout lives here: desktop keeps the multi-column grid, phones
+   stack to one column so two content-heavy panels aren't crammed two-up at
+   ~160px each (mobile QA 2026-07-04). Desktop rendering is unchanged — the base
+   rules mirror the prior inline values. */
+.rpc-ov-kpi3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+.rpc-ov-2col {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+@media (max-width: 640px) {
+  .rpc-ov-kpi3,
+  .rpc-ov-2col {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Site footer — responsive layout. The top row is brand | social (2-col on
+   desktop) and the bottom strip is copyright | links. Both stack and center
+   under 640px so the PRIVACY link no longer clips on phones. Inline styles
+   can't express @media, so the layout lives here while the footer keeps its
+   maxWidth/margin/padding inline. */
+.rpc-footer-top {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 24px;
+}
+.rpc-footer-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+/* Desktop default for the links group. Lives here (not inline on the div) so
+   the 640px override below can actually win — an inline justify-content would
+   always beat the media query and re-clip the wrapped PRIVACY link. */
+.rpc-footer-bottom > div {
+  justify-content: flex-end;
+}
+@media (max-width: 640px) {
+  .rpc-footer-top {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    text-align: center;
+    gap: 12px;
+  }
+  .rpc-footer-bottom {
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+  .rpc-footer-bottom > div {
+    justify-content: center;
+  }
+}
+
+/* ── Tap-target floor (§9 / WCAG 2.5.5) ─────────────────────────────────────
+   MEASURED 2026-08-22 in Chromium at 390x844: 86 distinct controls rendered
+   under the 44px floor. Most of them are in-view FILTER chips at 27-31px, and
+   those are a deliberate density choice for a tool whose users scan hundreds of
+   moments — enlarging them would make the product worse on the screen it
+   matters most. See the exception written into RPC_DESIGN_SYSTEM §9.
+
+   NAVIGATION is the half with no such defence. A collector who mis-taps a
+   filter re-taps it; one who mis-taps the tab bar lands on the wrong page.
+
+   This class raises the HIT AREA to 44x44 with ZERO visual change: the
+   ::after overlay is a child, so a click on it still targets the element, and
+   nothing about the element's own box, border or spacing moves. Use it for a
+   small bordered control whose visible size is deliberate; grow the padding
+   instead when the control SHOULD look chunkier.
+
+   ⚠ The overlay can overflow past the element and steal a neighbour's clicks.
+   `e2e/mobile-layout.spec.ts` asserts, per control, that a point at the centre
+   of every NEIGHBOUR still hit-tests to that neighbour — apply this class and
+   run that spec, do not eyeball it. */
+.rpc-tap44 {
+  position: relative;
+}
+.rpc-tap44::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  height: 100%;
+  min-width: 44px;
+  min-height: 44px;
+  /* Purely a hit area — never paints, and must not become a focus ring. */
+  pointer-events: auto;
+}
+
+/* ═══ LIGHT THEME — Tailwind palette TEXT utilities (#194 follow-up, 2026-10-18) ═══
+   text-emerald-400, text-red-400, text-amber-300 … are dark-theme colours; on the
+   light canvases they read 1.2–3.5:1 (axe: Collection tab 651 nodes, Pack EV 2,736).
+   TEXT utilities only — bg-* / border-* fills stay identical in both themes. Each
+   mix is the smallest black share that clears 4.6:1 on #FFF/#F7F7F5/#F5F5F5/#EBEBEB
+   and on the colour's own 15 % tint over each (computed from the live sRGB values).
+   Shades 100/200 and the neutral families (zinc/gray…) are EXCLUDED: they are
+   chip text on dark fills that stay dark in light theme, where darkening them
+   would hide them. Regenerate, never hand-edit: a class added to the app needs a
+   line here. */
+[data-theme="light"] .group:hover .group-hover\:text-emerald-400 { color: color-mix(in srgb, var(--color-emerald-400), #000 48%); }
+[data-theme="light"] .group:hover .group-hover\:text-red-400 { color: color-mix(in srgb, var(--color-red-400), #000 38%); }
+[data-theme="light"] .hover\:text-amber-300:hover { color: color-mix(in srgb, var(--color-amber-300), #000 54%); }
+[data-theme="light"] .hover\:text-amber-400:hover { color: color-mix(in srgb, var(--color-amber-400), #000 50%); }
+[data-theme="light"] .hover\:text-emerald-300:hover { color: color-mix(in srgb, var(--color-emerald-300), #000 53%); }
+[data-theme="light"] .hover\:text-emerald-400:hover { color: color-mix(in srgb, var(--color-emerald-400), #000 48%); }
+[data-theme="light"] .hover\:text-red-300:hover { color: color-mix(in srgb, var(--color-red-300), #000 48%); }
+[data-theme="light"] .hover\:text-red-400:hover { color: color-mix(in srgb, var(--color-red-400), #000 38%); }
+[data-theme="light"] .hover\:text-teal-300:hover { color: color-mix(in srgb, var(--color-teal-300), #000 54%); }
+[data-theme="light"] .hover\:text-teal-400:hover { color: color-mix(in srgb, var(--color-teal-400), #000 49%); }
+[data-theme="light"] .hover\:text-violet-300:hover { color: color-mix(in srgb, var(--color-violet-300), #000 48%); }
+[data-theme="light"] .hover\:text-violet-400:hover { color: color-mix(in srgb, var(--color-violet-400), #000 38%); }
+[data-theme="light"] .text-amber-300 { color: color-mix(in srgb, var(--color-amber-300), #000 54%); }
+[data-theme="light"] .text-amber-400 { color: color-mix(in srgb, var(--color-amber-400), #000 50%); }
+[data-theme="light"] .text-amber-500 { color: color-mix(in srgb, var(--color-amber-500), #000 45%); }
+[data-theme="light"] .text-blue-300 { color: color-mix(in srgb, var(--color-blue-300), #000 49%); }
+[data-theme="light"] .text-blue-400 { color: color-mix(in srgb, var(--color-blue-400), #000 40%); }
+[data-theme="light"] .text-cyan-300 { color: color-mix(in srgb, var(--color-cyan-300), #000 54%); }
+[data-theme="light"] .text-emerald-300 { color: color-mix(in srgb, var(--color-emerald-300), #000 53%); }
+[data-theme="light"] .text-emerald-400 { color: color-mix(in srgb, var(--color-emerald-400), #000 48%); }
+[data-theme="light"] .text-emerald-500 { color: color-mix(in srgb, var(--color-emerald-500), #000 42%); }
+[data-theme="light"] .text-fuchsia-300 { color: color-mix(in srgb, var(--color-fuchsia-300), #000 50%); }
+[data-theme="light"] .text-green-300 { color: color-mix(in srgb, var(--color-green-300), #000 54%); }
+[data-theme="light"] .text-green-400 { color: color-mix(in srgb, var(--color-green-400), #000 50%); }
+[data-theme="light"] .text-indigo-300 { color: color-mix(in srgb, var(--color-indigo-300), #000 46%); }
+[data-theme="light"] .text-orange-300 { color: color-mix(in srgb, var(--color-orange-300), #000 50%); }
+[data-theme="light"] .text-orange-400 { color: color-mix(in srgb, var(--color-orange-400), #000 43%); }
+[data-theme="light"] .text-purple-300 { color: color-mix(in srgb, var(--color-purple-300), #000 50%); }
+[data-theme="light"] .text-purple-400 { color: color-mix(in srgb, var(--color-purple-400), #000 39%); }
+[data-theme="light"] .text-red-300 { color: color-mix(in srgb, var(--color-red-300), #000 48%); }
+[data-theme="light"] .text-red-400 { color: color-mix(in srgb, var(--color-red-400), #000 38%); }
+[data-theme="light"] .text-red-500 { color: color-mix(in srgb, var(--color-red-500), #000 30%); }
+[data-theme="light"] .text-rose-300 { color: color-mix(in srgb, var(--color-rose-300), #000 48%); }
+[data-theme="light"] .text-rose-400 { color: color-mix(in srgb, var(--color-rose-400), #000 38%); }
+[data-theme="light"] .text-sky-300 { color: color-mix(in srgb, var(--color-sky-300), #000 51%); }
+[data-theme="light"] .text-sky-400 { color: color-mix(in srgb, var(--color-sky-400), #000 45%); }
+[data-theme="light"] .text-teal-300 { color: color-mix(in srgb, var(--color-teal-300), #000 54%); }
+[data-theme="light"] .text-teal-400 { color: color-mix(in srgb, var(--color-teal-400), #000 49%); }
+[data-theme="light"] .text-violet-300 { color: color-mix(in srgb, var(--color-violet-300), #000 48%); }
+[data-theme="light"] .text-violet-400 { color: color-mix(in srgb, var(--color-violet-400), #000 38%); }
+[data-theme="light"] .text-yellow-300 { color: color-mix(in srgb, var(--color-yellow-300), #000 55%); }
+[data-theme="light"] .text-yellow-400 { color: color-mix(in srgb, var(--color-yellow-400), #000 52%); }
+
+[data-theme="light"] .hover\:text-amber-200:hover { color: color-mix(in srgb, var(--color-amber-200), #000 56%); }
+[data-theme="light"] .text-emerald-200 { color: color-mix(in srgb, var(--color-emerald-200), #000 56%); }
+/* Status-badge FILLS (bg-<hue>-800/900/950, often translucent): over a light canvas they
+   turn a muddy mid-tone where neither light nor dark text passes (Pack EV badge read
+   1.78:1). In light theme they become a 12 % tint of the hue — the same chip shape the
+   text shades above were sized for. Brand/tier fills are NOT here; they stay identical. */
+[data-theme="light"] .bg-amber-950\/40 { background-color: color-mix(in srgb, var(--color-amber-500) 12%, transparent); }
+[data-theme="light"] .bg-red-950 { background-color: color-mix(in srgb, var(--color-red-500) 12%, transparent); }
+[data-theme="light"] .bg-yellow-950 { background-color: color-mix(in srgb, var(--color-yellow-500) 12%, transparent); }
+[data-theme="light"] .bg-teal-950 { background-color: color-mix(in srgb, var(--color-teal-500) 12%, transparent); }
+[data-theme="light"] .bg-purple-950 { background-color: color-mix(in srgb, var(--color-purple-500) 12%, transparent); }
+[data-theme="light"] .bg-green-950 { background-color: color-mix(in srgb, var(--color-green-500) 12%, transparent); }
+[data-theme="light"] .bg-emerald-950 { background-color: color-mix(in srgb, var(--color-emerald-500) 12%, transparent); }
+[data-theme="light"] .bg-amber-950 { background-color: color-mix(in srgb, var(--color-amber-500) 12%, transparent); }
+[data-theme="light"] .bg-purple-900 { background-color: color-mix(in srgb, var(--color-purple-500) 12%, transparent); }
+[data-theme="light"] .bg-orange-950\/40 { background-color: color-mix(in srgb, var(--color-orange-500) 12%, transparent); }
+[data-theme="light"] .bg-orange-950 { background-color: color-mix(in srgb, var(--color-orange-500) 12%, transparent); }
+[data-theme="light"] .bg-green-900 { background-color: color-mix(in srgb, var(--color-green-500) 12%, transparent); }
+[data-theme="light"] .bg-fuchsia-950\/40 { background-color: color-mix(in srgb, var(--color-fuchsia-500) 12%, transparent); }
+[data-theme="light"] .bg-emerald-900\/40 { background-color: color-mix(in srgb, var(--color-emerald-500) 12%, transparent); }
+[data-theme="light"] .bg-blue-950 { background-color: color-mix(in srgb, var(--color-blue-500) 12%, transparent); }
+[data-theme="light"] .bg-blue-900 { background-color: color-mix(in srgb, var(--color-blue-500) 12%, transparent); }
+[data-theme="light"] .bg-amber-950\/20 { background-color: color-mix(in srgb, var(--color-amber-500) 12%, transparent); }
+[data-theme="light"] .bg-violet-950 { background-color: color-mix(in srgb, var(--color-violet-500) 12%, transparent); }
+[data-theme="light"] .bg-rose-950 { background-color: color-mix(in srgb, var(--color-rose-500) 12%, transparent); }
+[data-theme="light"] .bg-red-950\/30 { background-color: color-mix(in srgb, var(--color-red-500) 12%, transparent); }
+[data-theme="light"] .bg-red-950\/20 { background-color: color-mix(in srgb, var(--color-red-500) 12%, transparent); }
+[data-theme="light"] .bg-indigo-950 { background-color: color-mix(in srgb, var(--color-indigo-500) 12%, transparent); }
+[data-theme="light"] .bg-cyan-950 { background-color: color-mix(in srgb, var(--color-cyan-500) 12%, transparent); }
+[data-theme="light"] .bg-amber-950\/10 { background-color: color-mix(in srgb, var(--color-amber-500) 12%, transparent); }
+[data-theme="light"] .hover\:bg-emerald-900\/70:hover { background-color: color-mix(in srgb, var(--color-emerald-500) 20%, transparent); }

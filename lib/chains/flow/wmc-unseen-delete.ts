@@ -1,0 +1,252 @@
+import { supabaseAdmin } from "@/lib/supabase"
+
+// Delete-not-seen for wallet_moments_cache.
+//
+// This lives in its own module, NOT in wallet-backfill-helpers, for the same
+// reason wmc-chunk-upsert does: the Top Shot route's test suite
+// (__tests__/api-wallet-backfill-deep.test.ts) mocks wallet-backfill-helpers
+// wholesale, so a delete imported through that module would be a STUB on the
+// Top Shot path — the one collection with the confirmed phantom-holdings case.
+// Importing from here puts the real implementation on every caller.
+
+// Keyset paging (2026-08-30). These reads used to page with LIMIT/OFFSET on
+// ORDER BY moment_id, so page k re-walked the first k*1000 index entries: a
+// 154k-row whale cost ~12M index-entry visits to load once (O(n²)), and the
+// pgss diff on the 13:57–14:13Z storm showed this one statement shape at 520
+// calls / 2,498 s / 2.7M buffer hits in 16 min. Paging on `moment_id > last`
+// over the unique (wallet_address, collection_id, moment_id) index makes every
+// page an O(page) index-only range scan (1,122 buffers per 1,000 rows measured
+// on the whale). moment_id is text and both ORDER BY and the cursor compare use
+// the column's own collation, so the cursor is exact. The deterministic-order
+// argument from 2026-08-16 (snapshot-institutional-wallets) still holds and is
+// now also what makes the cursor correct.
+//
+// Fails OPEN with whatever it has read so far. For the delete below that is the
+// safe direction: toDelete is a SUBSET of what this returns, so a truncated read
+// can only under-delete (phantoms linger one more pass), never over-delete.
+export async function loadCachedMomentIds(wallet: string, collectionUuid: string): Promise<Set<string>> {
+  const ids = new Set<string>()
+  const PAGE = 1000
+  let after: string | null = null
+  while (true) {
+    // deno-lint-ignore no-explicit-any
+    let q = (supabaseAdmin as any)
+      .from("wallet_moments_cache")
+      .select("moment_id")
+      .eq("wallet_address", wallet)
+      .eq("collection_id", collectionUuid)
+    if (after != null) q = q.gt("moment_id", after)
+    const { data, error } = await q.order("moment_id", { ascending: true }).limit(PAGE)
+    if (error) {
+      console.warn(`[wallet-backfill] cached-id read failed: ${error.message}`)
+      return ids
+    }
+    const rows = (data ?? []) as Array<{ moment_id: string }>
+    for (const r of rows) ids.add(String(r.moment_id))
+    if (rows.length < PAGE) break
+    after = String(rows[rows.length - 1].moment_id)
+  }
+  return ids
+}
+
+export interface UnseenDeleteOutcome {
+  deleted: number
+  skippedReason?: string
+  error?: string
+  /** The wmc_clean_walks stamp failed to write (the walk itself was fine). */
+  cleanWalkStampError?: string
+  /** The >90 % cap tripped and an independent count of the collection equalled the walk's (confirmCompleteness). */
+  capConfirmed?: boolean
+}
+
+/**
+ * Record that this (wallet, collection) was just CLEANLY walked: delete-not-seen
+ * ran over a non-empty observed set, was not skipped, and every delete chunk
+ * succeeded. This is the ONLY stamp that makes "absent from wmc" mean "not held"
+ * (get_trophy_slab_data's held_state, migration 20260929061743_audit_20260928_trophy_still_held_state).
+ * seeded_wallets.last_refreshed_per_collection and wallet_backfill_state are both
+ * written on timeouts and degraded runs too, so neither can carry that claim.
+ *
+ * ⚠ A failed stamp is REPORTED, never thrown: the walk's own work landed, and a
+ * missing stamp only leaves the trophy marker at 'unknown' (fail-open).
+ */
+async function stampCleanWalk(wallet: string, collectionUuid: string, observedCount: number): Promise<string | undefined> {
+  try {
+    // deno-lint-ignore no-explicit-any
+    const { error } = await (supabaseAdmin as any)
+      .from("wmc_clean_walks")
+      .upsert(
+        {
+          wallet_address: wallet,
+          collection_id: collectionUuid,
+          last_clean_walk_at: new Date().toISOString(),
+          observed_count: observedCount,
+        },
+        { onConflict: "wallet_address,collection_id" },
+      )
+    return error ? String(error.message ?? error) : undefined
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err)
+  }
+}
+
+function withStamp(outcome: UnseenDeleteOutcome, stampError: string | undefined): UnseenDeleteOutcome {
+  return stampError ? { ...outcome, cleanWalkStampError: stampError } : outcome
+}
+
+/**
+ * Delete wmc rows for (wallet, collection) whose moment_id is NOT in the set the
+ * completing pass actually observed. This is the ONLY safe way to remove a moment
+ * the wallet no longer holds.
+ *
+ * WHY THIS EXISTS. Nothing else deletes a wmc row when a moment LEAVES a wallet:
+ * the ingest path only ever upserts, and the sole cleanup is prune_stale_wmc()
+ * (pg_cron rpc-weekly-wmc-prune, Sundays) deleting rows whose last_seen_at is
+ * older than 14 days. So a sold or transferred moment lingers for up to 14 days
+ * plus up to 7 more until the weekly run — a ~14–21 day window in which the
+ * dashboard, the /share card and saved_wallets.cached_moment_count all OVERCOUNT
+ * the user's holdings. Confirmed live 2026-09-14 on 0x0d79d58c5fe83cdc: a forced
+ * complete Top Shot pass saw 1,109 moments against 1,159 cached rows.
+ *
+ * WHY NOT last_seen_at. upsert_wmc_batch is change-detecting: its ON CONFLICT DO
+ * UPDATE fires only when edition_key/serial_number changed OR last_seen_at is
+ * already older than 24h. A pass that re-confirms a moment inside that window
+ * writes nothing and does NOT advance last_seen_at, so a confirmed row and a
+ * departed row carry identical timestamps. Measured 2026-09-14 on wallet
+ * 0xba1a13299beb4b19 (All Day): a complete pass found 100 and wrote 0. A prune
+ * keyed on "last_seen older than this pass" would have deleted all 100 real,
+ * currently-held moments. The observed id-set is the only authority, and it
+ * exists only inside the backfill — which is also why this cannot be a DB-only
+ * pg_cron job, and why one must not be built.
+ *
+ * SAFETY CONTRACT — the caller MUST guarantee all of these before calling:
+ *   1. The pass is COMPLETE (walked the wallet's whole holdings). Never on a
+ *      soft-deadline / paginated-partial / safety-ceiling / timeout / error /
+ *      skip exit — those have seen only a prefix of the wallet.
+ *   2. `observedIds` is NON-EMPTY. A zero-length scan is never a delete trigger:
+ *      an empty result is indistinguishable from a degraded read (a nil
+ *      capability borrow returns [] exactly like an empty wallet). ⚠ The 14-day
+ *      prune_stale_wmc() backstop this used to name EXCLUDES active seeded
+ *      wallets, so for a tracked wallet nothing retired them (2026-10-14). The
+ *      ONE exception: `emptyProven`, set only from proveCollectionEmpty()
+ *      (wmc-empty-proof.ts) returning `proven_empty` — an independent read that
+ *      found the collection PRESENT with 0 ids. It never comes from the walk's
+ *      own empty list.
+ *   3. For All Day, `observedIds` INCLUDES the studio (locked) moment ids AND the
+ *      studio walk succeeded. All Day has no on-chain locking contract, so a
+ *      locked moment is legitimately absent from getIDs(); deleting on a degraded
+ *      custody walk would remove real holdings. If studio degraded, do NOT call.
+ *   4. `observedIds` is built BEFORE any skip-cached filter. A skipped row was
+ *      still observed; treating it as unseen deletes exactly what the skip
+ *      was protecting.
+ *
+ * Defensive cap: if the diff would delete >90% of cached rows AND the wallet has
+ * >100 cached rows, SKIP the delete and log unseen_delete_suspiciously_large — a
+ * latent scan bug must not be able to wipe a whale's collection in one tick. The
+ * 14-day prune remains the backstop for a genuine full sell-off.
+ */
+export async function deleteUnseenWmcRows(args: {
+  wallet: string
+  collectionUuid: string
+  observedIds: Set<string>
+  pipelineName: string
+  /**
+   * The cached id set the caller ALREADY read for its skip-cached filter. Pass it
+   * whenever you have one: without it this re-runs the same keyset-paged walk,
+   * which on a 154k-row whale is a second full index scan per pass for no new
+   * information. A pre-upsert snapshot is fine — and marginally safer — because
+   * anything this pass just wrote is by definition in observedIds.
+   */
+  cachedIds?: Iterable<string>
+  /**
+   * The wallet's collection was read separately and is PRESENT with 0 ids
+   * (proveCollectionEmpty → "proven_empty"). Only meaningful with an empty
+   * observedIds; it licenses retiring every cached row, and the >90 % cap below
+   * does not apply (that cap guards a scan bug, and this is a second read).
+   */
+  emptyProven?: boolean
+  /**
+   * Called ONLY when the >90 % cap would trip: an independent read of the
+   * collection's id count (readCollectionCount in wmc-empty-proof.ts). If it
+   * EQUALS observedIds.size the walk was not truncated — the one thing the cap
+   * guards — and the delete proceeds; anything else (null, a different count, a
+   * throw) keeps the skip. Without it, a tracked wallet that sold most of its
+   * collection kept the sold rows forever (prune_stale_wmc skips seeded wallets).
+   */
+  confirmCompleteness?: () => Promise<number | null>
+}): Promise<UnseenDeleteOutcome> {
+  const { wallet, collectionUuid, observedIds, pipelineName, cachedIds } = args
+  const provenEmpty = observedIds.size === 0 && args.emptyProven === true
+  if (observedIds.size === 0 && !provenEmpty) return { deleted: 0, skippedReason: "empty_observed" }
+
+  const cached = cachedIds ? new Set(cachedIds) : await loadCachedMomentIds(wallet, collectionUuid)
+  const toDelete: string[] = []
+  for (const id of cached) if (!observedIds.has(id)) toDelete.push(id)
+  // Nothing left the wallet: still a clean walk — the cache matches the chain.
+  if (toDelete.length === 0) {
+    return withStamp({ deleted: 0 }, await stampCleanWalk(wallet, collectionUuid, observedIds.size))
+  }
+
+  let capConfirmed = false
+  if (!provenEmpty && cached.size > 100 && toDelete.length > cached.size * 0.9 && args.confirmCompleteness) {
+    let independent: number | null = null
+    try {
+      independent = await args.confirmCompleteness()
+    } catch {
+      independent = null
+    }
+    capConfirmed = independent === observedIds.size
+  }
+  if (!provenEmpty && !capConfirmed && cached.size > 100 && toDelete.length > cached.size * 0.9) {
+    console.warn(
+      `[${pipelineName}] unseen_delete_suspiciously_large wallet=${wallet} ` +
+        `cached=${cached.size} would_delete=${toDelete.length} — skipping, leaving it to the 14-day prune`,
+    )
+    return { deleted: 0, skippedReason: "suspiciously_large" }
+  }
+
+  let deleted = 0
+  let firstError: string | undefined
+  const CHUNK = 200
+  for (let i = 0; i < toDelete.length; i += CHUNK) {
+    const chunk = toDelete.slice(i, i + CHUNK)
+    // Always scoped by wallet + collection + an EXPLICIT id list. Never a bare
+    // NOT IN / negated filter: a mis-built predicate there deletes the complement.
+    // deno-lint-ignore no-explicit-any
+    const { error, count } = await (supabaseAdmin as any)
+      .from("wallet_moments_cache")
+      .delete({ count: "exact" })
+      .eq("wallet_address", wallet)
+      .eq("collection_id", collectionUuid)
+      .in("moment_id", chunk)
+    if (error) {
+      firstError = String(error.message ?? error)
+      console.warn(`[${pipelineName}] unseen-delete chunk failed: ${firstError}`)
+      break
+    }
+    deleted += typeof count === "number" ? count : chunk.length
+  }
+  if (deleted > 0) {
+    console.log(
+      `[${pipelineName}] unseen_deleted wallet=${wallet} deleted=${deleted}/${toDelete.length} cached=${cached.size}`,
+    )
+  }
+  if (firstError) return { deleted, error: firstError, ...(capConfirmed ? { capConfirmed } : {}) } // a failed chunk is NOT a clean walk
+  return withStamp({ deleted, ...(capConfirmed ? { capConfirmed } : {}) }, await stampCleanWalk(wallet, collectionUuid, observedIds.size))
+}
+
+/**
+ * Telemetry shape for the delete-not-seen step. Emitted on EVERY complete-pass
+ * log site — including the ones that deliberately SKIP the delete — so an
+ * observer keying on `unseen_deleted` never gets NULL from a pipeline that ran,
+ * and so a skip says WHY rather than reading as "nothing had left the wallet".
+ */
+export function unseenDeleteExtra(outcome: UnseenDeleteOutcome): Record<string, unknown> {
+  return {
+    unseen_deleted: outcome.deleted,
+    ...(outcome.skippedReason ? { unseen_delete_skipped: outcome.skippedReason } : {}),
+    ...(outcome.error ? { unseen_delete_error: outcome.error.slice(0, 200) } : {}),
+    ...(outcome.cleanWalkStampError ? { clean_walk_stamp_error: outcome.cleanWalkStampError.slice(0, 200) } : {}),
+    ...(outcome.capConfirmed ? { unseen_delete_cap_confirmed: true } : {}),
+  }
+}

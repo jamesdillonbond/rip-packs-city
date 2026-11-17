@@ -1,0 +1,15 @@
+-- audit_20261019_panini_blockchain_is_active_true
+--
+-- Trevor 2026-10-19 11:12 AM PT: "Do all of it." Flips collections.panini_blockchain.is_active
+-- to true — the last step of known-issues #64. Cleared before this file:
+--   · all five #64 rollups carry a Panini arm or a deliberate exclusion (20261019145232,
+--     …151025, …151137, …153030, …153924);
+--   · the 10-19 per-reader audit's blockers (20261019181549): editions_unified no longer
+--     double-lists Panini, liquidity/tier-pulse/platform-stats/health_check/backstop exclude it;
+--   · no app, edge-function or cron code filters `collections` on is_active (grep 10-19).
+-- What changes: anon RLS (`public_read_collections`: is_active IS TRUE) now shows the Panini
+-- collections row; sets_summary's Panini sets come from editions_unified's editions arm instead
+-- of its NOT-is_active arm (same columns, verified equal after the next refresh);
+-- get_platform_stats.collection_count 6 → 7; get_fmv_coverage gains a Panini row.
+-- Revert: UPDATE public.collections SET is_active = false WHERE slug = 'panini_blockchain';
+UPDATE public.collections SET is_active = true WHERE slug = 'panini_blockchain' AND is_active = false;

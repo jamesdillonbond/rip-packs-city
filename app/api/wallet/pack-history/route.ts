@@ -1,0 +1,160 @@
+// app/api/wallet/pack-history/route.ts
+//
+// GET /api/wallet/pack-history?wallet=&collection=&status=&limit=&offset=
+//
+// Auth: requires a Supabase user session; verifies the requested wallet
+// is SAVED on the user's account (saved_wallets; verification no longer gates — 09-06, #59).
+//
+// Wraps get_wallet_pack_history(p_wallet, p_collection_slug, p_status,
+// p_limit, p_offset). `status` accepts all | ripped | flipped | sold | held |
+// transferred | other; "all" or empty maps to NULL on the RPC. `collection` accepts the
+// underscore-form DB slug (nba_top_shot, …) or the hyphen-form URL slug
+// (nba-top-shot, …); both are normalized via SLUG_TO_DB_SLUG.
+
+import { normalizeAddress } from "@/lib/address"
+import { NextRequest, NextResponse, after } from "next/server"
+import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
+import { supabaseAdmin } from "@/lib/supabase"
+import { requireUser } from "@/lib/auth/supabase-server"
+import { SLUG_TO_DB_SLUG } from "@/lib/collections"
+import { ownLookup } from "@/lib/safe-lookup"
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const sb: any = supabaseAdmin
+
+// `sold_any` is a VIRTUAL status handled inside get_wallet_pack_history —
+// it means status IN ('flipped','sold'), i.e. every "sold on while sealed"
+// outcome regardless of whether a matching buy row was attributable to the
+// wallet. The Packs "Sold" sub-tab uses it so it can't silently hide flipped
+// rows if Dapper's seller attribution improves. 'sold' keeps its exact
+// meaning for existing callers (app/dashboard/packs).
+const VALID_STATUSES = new Set(["ripped", "flipped", "sold", "sold_any", "held", "transferred", "other"])
+
+// #228 lever (b′) for this route, 2026-11-10 — the one /api/wallet-summary and /api/collection-snapshot took.
+// Two `RPC_READ_TIMEOUT` at the 8 s default (latest 11:49 AM PT 11-10, pack-summary and pack-history
+// together for one reader). pg_stat_statements holds PostgREST calls of `get_wallet_pack_history` up to
+// 17.9 s (230 calls since 08-12, mean 2.0 s) that COMPLETED after this route had already answered 503 —
+// boundedRead abandons the wait, not the query — so the 8 s bound turned a slow success into an error.
+// 20 s sits under the service_role 30 s statement_timeout and this route's maxDuration, so a read that is
+// genuinely stuck is still reported by us as a retryable 503. Callers (PackHistoryClient, WalletPacksView)
+// carry no deadline of their own.
+export const PACK_HISTORY_READ_BUDGET_MS = 20_000
+export const maxDuration = 30
+
+export async function GET(req: NextRequest) {
+  let user
+  try {
+    user = await requireUser()
+  } catch (res) {
+    return res as Response
+  }
+
+  const url = req.nextUrl
+  // normalizeAddress, never a bare fold: a saved Candy (Solana) key is base58 and
+  // case-sensitive, so a folded copy matches no saved_wallets row and reads as
+  // "wallet not saved on this account". Hex is folded exactly as before.
+  const wallet = normalizeAddress(url.searchParams.get("wallet") ?? "")
+  const collectionRaw = (url.searchParams.get("collection") ?? "").trim()
+  const statusRaw = (url.searchParams.get("status") ?? "").trim().toLowerCase()
+  const limitRaw = parseInt(url.searchParams.get("limit") ?? "50", 10)
+  const offsetRaw = parseInt(url.searchParams.get("offset") ?? "0", 10)
+
+  if (!wallet) {
+    return NextResponse.json({ error: "wallet required" }, { status: 400 })
+  }
+
+  const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 50
+  const offset = Number.isFinite(offsetRaw) && offsetRaw >= 0 ? offsetRaw : 0
+
+  // Normalize collection slug: accept hyphen-form, pass DB-form to RPC.
+  let collectionSlug: string | null = null
+  if (collectionRaw) {
+    if (ownLookup(SLUG_TO_DB_SLUG, collectionRaw)) {
+      collectionSlug = ownLookup(SLUG_TO_DB_SLUG, collectionRaw) ?? null
+    } else if (Object.values(SLUG_TO_DB_SLUG).includes(collectionRaw)) {
+      collectionSlug = collectionRaw
+    } else {
+      return NextResponse.json({ error: "unknown collection: " + collectionRaw }, { status: 400 })
+    }
+  }
+
+  // status=all → NULL, otherwise must be in the allowlist.
+  let status: string | null = null
+  if (statusRaw && statusRaw !== "all") {
+    if (!VALID_STATUSES.has(statusRaw)) {
+      return NextResponse.json({ error: "invalid status: " + statusRaw }, { status: 400 })
+    }
+    status = statusRaw
+  }
+
+  // Wallet ownership check (same shape as /api/wallet/pack-summary).
+  // 2026-09-06 (Trevor delegated the decision): the gate is "SAVED on this
+  // account", no longer "VERIFIED". Verification-by-listing has had no live data
+  // source since ~08-28 (public-api.nbatopshot.com is gone), so 0 wallets could
+  // verify and this route was unreachable for every new user — while everything
+  // it returns is public on-chain data. Ownership of the READ still requires the
+  // wallet to be on the caller's account. known-issues #59.
+  const { data: matches, error: lookupErr } = await boundedRead(sb
+    .from("saved_wallets")
+    .select("wallet_addr")
+    .eq("user_id", user.id)
+    .eq("wallet_addr", wallet)
+    .limit(1), "api/wallet/pack-history/saved_wallets")
+
+  if (lookupErr) {
+    console.error("[wallet/pack-history] verify lookup", lookupErr.message)
+    return apiErrorResponse(lookupErr, "api/wallet/pack-history");
+  }
+  if (!matches || matches.length === 0) {
+    return NextResponse.json(
+      { error: "wallet not saved on this account" },
+      { status: 403 },
+    )
+  }
+
+  // 2026-09-18: ask Dapper's pack index for this wallet's holdings in the
+  // background. request_wallet_pack_sync is a no-op when a sync completed in
+  // the last 12 h or one is in flight; otherwise it dispatches page 1 and the
+  // pack-nft-identity lane pages the rest within a tick. The response below
+  // is what we hold NOW; `identity_sync` in it says how fresh that is.
+  after(async () => {
+    try {
+      const { error: syncErr } = await sb.rpc("request_wallet_pack_sync", { p_wallet: wallet })
+      if (syncErr) console.error("[wallet/pack-history] sync request", syncErr.message)
+    } catch (err) {
+      console.error("[wallet/pack-history] sync request threw", err instanceof Error ? err.message : String(err))
+    }
+    // 2026-09-26: and for the list of moments every OPENED pack yielded
+    // (searchPackNft.nfts), which prices each rip's pull value. No-op when a
+    // walk completed in the last 6 h or one is in flight; the
+    // rpc-wallet-pack-pulls-lane pg_cron job collects it within 5 minutes.
+    try {
+      const { error: pullErr } = await sb.rpc("request_wallet_pack_pulls", { p_wallet: wallet })
+      if (pullErr) console.error("[wallet/pack-history] pull request", pullErr.message)
+    } catch (err) {
+      console.error("[wallet/pack-history] pull request threw", err instanceof Error ? err.message : String(err))
+    }
+  })
+
+  try {
+    const { data, error } = await boundedRead(sb.rpc("get_wallet_pack_history", {
+      p_wallet: wallet,
+      p_collection_slug: collectionSlug,
+      p_status: status,
+      p_limit: limit,
+      p_offset: offset,
+    }), "api/wallet/pack-history/get_wallet_pack_history", PACK_HISTORY_READ_BUDGET_MS)
+    if (error) {
+      console.error("[wallet/pack-history]", error.message)
+      return apiErrorResponse(error, "api/wallet/pack-history");
+    }
+    return NextResponse.json(data ?? {}, {
+      headers: { "Cache-Control": "no-cache, no-store, must-revalidate" },
+    })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error("[wallet/pack-history] unexpected", msg)
+    return apiErrorResponse(err, "api/wallet/pack-history");
+  }
+}

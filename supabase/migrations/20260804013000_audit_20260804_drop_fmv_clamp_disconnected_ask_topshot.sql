@@ -1,0 +1,27 @@
+-- audit_20260804_drop_fmv_clamp_disconnected_ask_topshot
+--
+-- Retire the Top-Shot-hardcoded overload, superseded by
+-- fmv_clamp_disconnected_ask(uuid, boolean) in
+-- 20260804010000_audit_20260804_fmv_clamp_disconnected_ask_all_collections.sql.
+--
+-- Applied live via MCP; this is the idempotent repo record.
+--
+-- ⚠ ORDER MATTERS — this ran only after all three of its preconditions held, so
+-- there was never a window where a live caller referenced a missing function:
+--   1. pg_cron job 69 (rpc-fmv-clamp-disconnected-ask, 55 8 * * *) repointed to
+--      `SELECT public.fmv_clamp_disconnected_ask(NULL, false)`. Note the job is
+--      owned by `cron_heavy`, which lacks EXECUTE on cron.alter_job, while
+--      `postgres` holds it WITH GRANT OPTION but fails alter_job's ownership
+--      check — so the repoint required granting EXECUTE to cron_heavy, SET ROLE
+--      cron_heavy, altering, then revoking (verified revoked afterwards).
+--   2. Vercel deploy dpl_4E9aJmJS6txB8teNSwVnQ94NP3H9 (commit 98f12079) READY and
+--      aliased to www.rippackscity.com, so the live bundle's /api/fmv-recalc
+--      Step 10 calls the new name.
+--   3. Zero remaining references anywhere in the DB: cron.job commands 0, other
+--      function bodies 0, view definitions 0.
+--
+-- REVERT: re-apply
+-- supabase/migrations/20260731210000_audit_20260731_snapshot_stale_pin_ddl_fmv_clamp_and_pack_ev.sql
+-- (it carries the verbatim Top-Shot-only body) and point job 69 back at
+-- `SELECT public.fmv_clamp_disconnected_ask_topshot(false)`.
+DROP FUNCTION IF EXISTS public.fmv_clamp_disconnected_ask_topshot(boolean);

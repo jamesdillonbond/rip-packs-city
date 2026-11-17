@@ -1,0 +1,3925 @@
+import { describe, it, expect } from "vitest"
+import { readdirSync, readFileSync } from "node:fs"
+import path from "node:path"
+
+// The supabase/tests/*.sql DB-invariant tests embed a VERBATIM copy of the
+// function-under-test's DDL so they run self-contained on a vanilla Postgres
+// (no full-schema apply). That copy is only meaningful if it stays identical to
+// the committed migration — otherwise the DB tests would validate stale logic.
+// This guard extracts the function's DDL from both the SQL test file and its
+// source migration, normalizes whitespace, and asserts they match. It needs no
+// database, so it runs in the ordinary (blocking) unit-tests job even though the
+// DB tests themselves run in the separate, initially-non-blocking db-tests job.
+
+const root = process.cwd()
+
+const PINS = [
+  {
+    // pg_cron 446 `6,36 * * * *` via reconcile_saved_wallets_wmc_fmv. A second writer of
+    // wmc.fmv_usd/fmv_confidence beside refresh_wmc_fmv_changed: it copies edition_fmv_current,
+    // which lags the newest snapshot by up to ~2 h. Pins the #248 NOT EXISTS on rwfc_applied that
+    // stops it writing an older price over one the fast lane pushed after efc last refreshed.
+    fn: "reconcile_wmc_fmv_for_wallet",
+    test: "supabase/tests/reconcile_wmc_fmv_for_wallet.sql",
+    migration:
+      "supabase/migrations/20261115204212_audit_20261115_saved_wallet_reconcile_does_not_undo_the_fast_lane.sql",
+  },
+  {
+    // Added 2026-11-14. Deal alerts, pass 3 pool: new (24 h) listings of the exact serial, seen in 12 h, pass-1 FMV trust gates. Embedded in each consumer's pin.
+    fn: "topshot_exact_serial_alert_deals",
+    test: "supabase/tests/dispatch_due_deal_alerts.sql",
+    migration: "supabase/migrations/20261114171316_audit_20261114_deal_alerts_exact_serial_listings.sql",
+  },
+  {
+    // Added 2026-11-14. Deal alerts, pass 3 pool: new (24 h) listings of the exact serial, seen in 12 h, pass-1 FMV trust gates. Embedded in each consumer's pin.
+    fn: "topshot_exact_serial_alert_deals",
+    test: "supabase/tests/build_deal_alerts_for_subscription.sql",
+    migration: "supabase/migrations/20261114171316_audit_20261114_deal_alerts_exact_serial_listings.sql",
+  },
+  {
+    // Added 2026-11-14. Deal alerts, the ONE narrow-window test (<= 10 serials, Top Shot) the sender and preview share. Embedded in each consumer's pin.
+    fn: "alert_sub_is_exact_serial",
+    test: "supabase/tests/dispatch_due_deal_alerts.sql",
+    migration: "supabase/migrations/20261114171316_audit_20261114_deal_alerts_exact_serial_listings.sql",
+  },
+  {
+    // Added 2026-11-14. Deal alerts, the ONE narrow-window test (<= 10 serials, Top Shot) the sender and preview share. Embedded in each consumer's pin.
+    fn: "alert_sub_is_exact_serial",
+    test: "supabase/tests/build_deal_alerts_for_subscription.sql",
+    migration: "supabase/migrations/20261114171316_audit_20261114_deal_alerts_exact_serial_listings.sql",
+  },
+  {
+    // Added 2026-11-14. #12359 serial search: 24h / complete-verify / unconfirmed classes; a row older than the verify is never confirmed.
+    fn: "get_topshot_listings_by_serial",
+    test: "supabase/tests/get_topshot_listings_by_serial.sql",
+    migration: "supabase/migrations/20261114162100_audit_20261114_topshot_listings_by_serial.sql",
+  },
+  {
+    // Added 2026-11-14. #12361 "my open offers": own open offers only; outbid (other wallet) vs superseded (own); NULL floor stays NULL.
+    fn: "get_topshot_wallet_open_offers",
+    test: "supabase/tests/get_topshot_wallet_open_offers.sql",
+    // 2026-11-14: re-pinned to the cap-3000 follow-up (the requester alone has 1,668 open offers)
+    migration: "supabase/migrations/20261114165610_audit_20261114_wallet_open_offers_cap_covers_every_offerer.sql",
+  },
+  {
+    // Added 2026-11-13. #241: every pg_net dispatch's endpoint logged (secrets masked); a trigger error never fails a dispatch.
+    fn: "pg_net_request_log_capture",
+    test: "supabase/tests/pg_net_request_log_capture.sql",
+    migration: "supabase/migrations/20261114032433_audit_20261113_pg_net_request_log_names_the_unknown_4xx.sql",
+  },
+  {
+    // Added 2026-11-13. #247: an insert of a Candy ALIAS edition key is skipped (no re-creating retired duplicates).
+    fn: "candy_skip_alias_edition_insert",
+    test: "supabase/tests/candy_alias_editions_retired.sql",
+    migration: "supabase/migrations/20261114013700_audit_20261113_candy_alias_editions_retired.sql",
+  },
+  {
+    // Added 2026-11-13. #247: deletes an alias edition nothing references; a NO ACTION reference is counted, never forced.
+    fn: "candy_delete_emptied_alias_editions",
+    test: "supabase/tests/candy_alias_editions_retired.sql",
+    migration: "supabase/migrations/20261114013700_audit_20261113_candy_alias_editions_retired.sql",
+  },
+  {
+    // Added 2026-11-13. #247 alias refresh: same art + tier + circulation = one card; stable canonical; no chains.
+    fn: "refresh_candy_edition_key_aliases",
+    test: "supabase/tests/candy_edition_key_aliases.sql",
+    migration: "supabase/migrations/20261114002600_audit_20261113_candy_edition_key_aliases.sql",
+  },
+  {
+    // Added 2026-11-13. #247: a Candy holding written on an alias lands on the canonical key.
+    fn: "candy_canonical_edition_key_trg",
+    test: "supabase/tests/candy_edition_key_aliases.sql",
+    migration: "supabase/migrations/20261114002600_audit_20261113_candy_edition_key_aliases.sql",
+  },
+  {
+    // Added 2026-11-13. #247: a Candy sale / listing / offer on an alias edition lands on the canonical edition.
+    fn: "candy_canonical_edition_id_trg",
+    test: "supabase/tests/candy_edition_key_aliases.sql",
+    migration: "supabase/migrations/20261114002600_audit_20261113_candy_edition_key_aliases.sql",
+  },
+  {
+    // Added 2026-11-13. #247: moves rows already on an alias, in batches.
+    fn: "candy_apply_edition_key_aliases",
+    test: "supabase/tests/candy_edition_key_aliases.sql",
+    // 2026-11-13: re-pinned to the tier-cast fix (editions.tier is the tier_type enum)
+    migration: "supabase/migrations/20261114004237_audit_20261113_candy_alias_apply_casts_the_tier.sql",
+  },
+  {
+    // Added 2026-11-13. Top Shot offer pull + never-sold comparables hold: a hold the offer stopped says _compcap_bidfloor.
+    fn: "fmv_snapshots_pull_topshot_thin_to_best_offer",
+    test: "supabase/tests/fmv_snapshots_pull_topshot_thin_to_best_offer.sql",
+    // 2026-11-13 (night): a LOW price is pulled only by an offer >= 25 % of it.
+    migration: "supabase/migrations/20261114132054_audit_20261113_topshot_offer_pull_needs_a_real_offer_on_a_sold_price.sql",
+  },
+  {
+    // Added 2026-11-13. All Day _compcap: the comparable cut never lands below the best open offer.
+    fn: "fmv_snapshots_cap_allday_thin_to_comparables",
+    test: "supabase/tests/fmv_snapshots_cap_allday_thin_to_comparables.sql",
+    migration: "supabase/migrations/20261113195740_audit_20261113_allday_comparables_cut_stops_at_the_best_offer.sql",
+  },
+  {
+    // Added 2026-11-13. Hero card: auto pick from the covering index, then one keyed fetch; override + fallback.
+    fn: "get_user_hero_moment",
+    test: "supabase/tests/get_user_hero_moment.sql",
+    migration: "supabase/migrations/20261113191137_audit_20261113_hero_moment_auto_pick_reads_the_covering_index.sql",
+  },
+  {
+    // Added 2026-11-15 (#259). A Candy sale follows its card; every move logged for revert.
+    fn: "candy_repoint_sales_to_card_edition",
+    test: "supabase/tests/candy_repoint_sales_to_card_edition.sql",
+    migration: "supabase/migrations/20261116043431_audit_20261115_candy_split_merged_editions.sql",
+  },
+  {
+    // Added 2026-11-12. A Candy offer follows its card (twin of candy_repoint_listings_to_card_edition).
+    fn: "candy_repoint_offers_to_card_edition",
+    test: "supabase/tests/candy_repoint_offers_to_card_edition.sql",
+    migration: "supabase/migrations/20261113044929_audit_20261112_candy_offers_follow_their_card.sql",
+  },
+  {
+    // Added 2026-11-12. Census deletes holdings rows for assets it SAW as packs/burnt: Candy-scoped, by moment id.
+    fn: "candy_retire_noncard_wmc",
+    test: "supabase/tests/candy_retire_noncard_wmc.sql",
+    migration: "supabase/migrations/20261113032216_audit_20261112_candy_retire_noncard_wmc.sql",
+  },
+  {
+    // Added 2026-11-12. The census RETIRE delete: Candy-only, label-less keys only (re-checked server-side), refused over the cap.
+    fn: "candy_retire_unseen_labelless_wmc",
+    test: "supabase/tests/candy_retire_unseen_labelless_wmc.sql",
+    migration: "supabase/migrations/20261112183358_audit_20261112_candy_retire_unseen_labelless_wmc.sql",
+  },
+  {
+    // Added 2026-10-26. Panini ask history: change rows only, one NULL row when an edition leaves the board.
+    fn: "refresh_panini_edition_ask_daily",
+    test: "supabase/tests/refresh_panini_edition_ask_daily.sql",
+    migration: "supabase/migrations/20261026040131_audit_20261025_panini_edition_ask_daily.sql",
+  },
+  {
+    // Added 2026-10-26. The Panini team map: listing > printed > unanimous same-product sibling > (NFL / MLB)
+    // unanimous same-season other product (basis same_season, 20261026220929) > (WNBA / NFL) unanimous Flow moments that
+    // season (inferred_from topshot_moments / allday_moments, 20261026225742); rows never deleted.
+    // 2026-11-15: 'Womens Soccer' (NWSL) added to the catalogue sport whitelist (20261115165011).
+    fn: "refresh_panini_edition_team_keys",
+    test: "supabase/tests/refresh_panini_edition_team_keys.sql",
+    migration: "supabase/migrations/20261115165011_audit_20261115_nwsl_teams_and_panini_aliases.sql",
+  },
+  {
+    // 2026-10-19: change-only floor-ask history for Pinnacle renders (#193 instrument).
+    fn: "pinnacle_catalog_floor_ask_history_capture",
+    test: "supabase/tests/pinnacle_catalog_floor_ask_history_capture.sql",
+    migration: "supabase/migrations/20261019152952_audit_20261019_pinnacle_floor_ask_history_capture.sql",
+  },
+  {
+    // Added 2026-10-11 (platform review M2). The once-per-account claim behind the transactional welcome email; idempotency IS the property.
+    fn: "claim_welcome_email",
+    test: "supabase/tests/claim_welcome_email.sql",
+    migration: "supabase/migrations/20261012054000_audit_20261011_user_profiles_welcome_email_claim_is_idempotent.sql",
+  },
+  {
+    // Added 2026-10-11 (platform review M2). Reverts a failed claim so the next sign-in can retry; bounded to 10 min and a 'sent' row.
+    fn: "record_welcome_email_failure",
+    test: "supabase/tests/claim_welcome_email.sql",
+    migration: "supabase/migrations/20261012054000_audit_20261011_user_profiles_welcome_email_claim_is_idempotent.sql",
+  },
+  {
+    // Added 2026-10-11. The rip re-key lane also moves the rip's topshot_pack_rip_attribution copy (realized EV reads it alone).
+    fn: "rekey_pack_rips_to_chain_identity",
+    test: "supabase/tests/rekey_pack_rips_to_chain_identity.sql",
+    migration: "supabase/migrations/20261011083816_audit_20261011_rip_rekey_keeps_attribution_in_step.sql",
+  },
+  {
+    // Added 2026-10-10 (#181). While mainnet24's node is parked dark, a chain-arrival floor probe is re-floored on mainnet27's live root.
+    fn: "run_chain_arrival_refloor",
+    test: "supabase/tests/run_chain_arrival_refloor.sql",
+    migration: "supabase/migrations/20261023213517_audit_20261023_chain_arrival_retires_pre_mainnet27_lookups.sql",
+  },
+  {
+    // Added 2026-10-09 (#173 follow-up). One-off: re-keys sales / moments / wmc rows to their table row's edition, only where the checkpoint verifies it.
+    fn: "fix_173b_rekey_verified",
+    test: "supabase/tests/fix_173b_rekey_verified.sql",
+    migration: "supabase/migrations/20261009211308_audit_20261009_173b_checkpoint_verified_rows_follow_their_edition.sql",
+  },
+  {
+    // Added 2026-11-02 (#226). The repoint block shared by the Atlas and checkpoint reconcile lanes.
+    fn: "_apply_topshot_reconcile_run",
+    test: "supabase/tests/reconcile_topshot_map_with_checkpoint.sql",
+    migration: "supabase/migrations/20261103020800_audit_20261102_226_topshot_map_reconciles_with_chain_mint_records.sql",
+  },
+  {
+    // Added 2026-11-02 (#226). Chain mint record -> Top Shot map repoint behind a cursor that never passes the newest record.
+    fn: "reconcile_topshot_map_with_checkpoint",
+    test: "supabase/tests/reconcile_topshot_map_with_checkpoint.sql",
+    migration: "supabase/migrations/20261103022000_audit_20261102_226_checkpoint_reconcile_slice_stops_at_the_frontier.sql",
+  },
+  {
+    // Added 2026-11-02 (#226). Second copy of the spork-agreement helper, used by the checkpoint reconcile test.
+    fn: "topshot_checkpoint_base",
+    test: "supabase/tests/reconcile_topshot_map_with_checkpoint.sql",
+    migration: "supabase/migrations/20261009203911_audit_20261009_topshot_subedition_base_follows_the_checkpoint.sql",
+  },
+  {
+    // Added 2026-10-09 (#173). The chain set:play for a Top Shot nft, only when every checkpoint spork agrees.
+    fn: "topshot_checkpoint_base",
+    test: "supabase/tests/topshot_subedition_base_from_checkpoint.sql",
+    migration: "supabase/migrations/20261009203911_audit_20261009_topshot_subedition_base_follows_the_checkpoint.sql",
+  },
+  {
+    // Added 2026-10-09 (#173). Every writer to topshot_moment_subeditions gets the checkpoint base, not one copied from a sale.
+    fn: "trg_topshot_subedition_base_from_checkpoint",
+    test: "supabase/tests/topshot_subedition_base_from_checkpoint.sql",
+    migration: "supabase/migrations/20261009203911_audit_20261009_topshot_subedition_base_follows_the_checkpoint.sql",
+  },
+  {
+    // Added 2026-10-09 (#173). One-off: collects the conflicting rows per nft-id slice.
+    fn: "audit_173_collect",
+    test: "supabase/tests/topshot_subedition_base_from_checkpoint.sql",
+    migration: "supabase/migrations/20261009203911_audit_20261009_topshot_subedition_base_follows_the_checkpoint.sql",
+  },
+  {
+    // Added 2026-10-09 (#173). One-off: re-keys sales / moments / wmc of the conflicting nfts, logging every old value.
+    fn: "fix_173_rekey_batch",
+    test: "supabase/tests/topshot_subedition_base_from_checkpoint.sql",
+    migration: "supabase/migrations/20261009203911_audit_20261009_topshot_subedition_base_follows_the_checkpoint.sql",
+  },
+  {
+    // Added 2026-10-03. One Top Shot edition's issuer-held split for the edition
+    // tile: one row or zero, only this printing's rows of each drop's current pass,
+    // NULL + status until provable, an unkeyable parallel → unknown.
+    fn: "get_topshot_issuer_held_split_edition",
+    test: "supabase/tests/get_topshot_issuer_held_split_edition.sql",
+    // 2026-10-15: the parallel name -> subedition_id map is looked up per row (lateral), not built per call.
+    migration: "supabase/migrations/20261015225311_audit_20261015_issuer_split_maps_parallels_per_row_not_per_call.sql",
+  },
+  {
+    // Added 2026-10-03. Atlas DistributionService walk for Top Shot pack supply: a
+    // steady 2-request trickle that backs off while the market lane is 403'd; an
+    // edition pass lands under its summary and closes on the page reaching totalCount.
+    fn: "topshot_pack_supply_tick",
+    test: "supabase/tests/topshot_pack_supply_tick.sql",
+    // 2026-10-10: an unchanged summary carries its reconciled pass forward (40 h re-read);
+    // the market-403 back-off counts every drained market request.
+    // 2026-10-14: a new list pass keeps list_done_at; readers gate on its age.
+    // 2026-10-31: a 403/408/429/5xx/no-response is CHALLENGED (re-asked), not a failed run.
+    // 2026-11-16: a new drop read before any pack is minted is re-read in 2 h, not parked 30 days.
+    migration: "supabase/migrations/20261117053146_audit_20261116_pack_supply_tick_rereads_an_unminted_new_drop.sql",
+  },
+  {
+    // Added 2026-10-03. Per-edition issuer-held split (in sealed packs vs reserve):
+    // NULL until every drop is read and every drop with packs left reconciles exactly.
+    fn: "topshot_issuer_held_split_editions",
+    test: "supabase/tests/topshot_pack_supply_tick.sql",
+    migration: "supabase/migrations/20261015001336_audit_20261014_issuer_held_split_survives_the_daily_list_rewalk.sql",
+  },
+  {
+    // Added 2026-10-03. Per-tier issuer-held split from the drop summaries; stale
+    // issuer-held rows are excluded AND disclosed; contradicted never goes negative.
+    fn: "get_topshot_issuer_held_split",
+    test: "supabase/tests/topshot_pack_supply_tick.sql",
+    migration: "supabase/migrations/20261015001336_audit_20261014_issuer_held_split_survives_the_daily_list_rewalk.sql",
+  },
+  {
+    // Added 2026-10-03. Market cap = FMV x COLLECTOR-HELD supply at every grain.
+    // Pins burned + issuer-held exclusion, unknown supply → NULL cap (never $0),
+    // an unknown collection → zero rows, and known caps ranking ahead of unknown.
+    fn: "get_market_cap_board",
+    test: "supabase/tests/get_market_cap_board.sql",
+    // Re-pointed 2026-11-04 (#233): the 7-day baseline is restated to today's pricing rules.
+    migration: "supabase/migrations/20261105043000_audit_20261104_market_cap_7d_change_nets_out_fmv_restatements.sql",
+  },
+  {
+    // Added 2026-10-03. The ONE per-edition supply x FMV row set the board, the
+    // entity tile and the daily snapshot all read.
+    fn: "market_cap_edition_rows",
+    test: "supabase/tests/get_market_cap_board.sql",
+    migration: "supabase/migrations/20261003213500_audit_20261003_market_cap_current_daily_history_and_four_more_supply_sources.sql",
+  },
+  {
+    // Added 2026-10-03. One entity's cap + rank for the edition/player/team/set
+    // tile: matched by each page's own slug rule; no match → zero rows, never $0.
+    fn: "get_market_cap_entity",
+    test: "supabase/tests/get_market_cap_board.sql",
+    // Re-pointed 2026-11-04 (#233): the 7-day baseline is restated to today's pricing rules.
+    migration: "supabase/migrations/20261105043000_audit_20261104_market_cap_7d_change_nets_out_fmv_restatements.sql",
+  },
+  {
+    // Added 2026-10-03. Recomputes market_cap_current (entity tiles) + the PT-dated
+    // market_cap_daily history. Write-first upsert, unchanged rows untouched, an
+    // empty stage refuses to wipe the table.
+    fn: "refresh_market_cap_current",
+    test: "supabase/tests/get_market_cap_board.sql",
+    // Re-pointed 2026-11-04 (#233): carries mcap_restated_7d_usd (rule re-prices netted out of the 7-day baseline).
+    migration: "supabase/migrations/20261105043000_audit_20261104_market_cap_7d_change_nets_out_fmv_restatements.sql",
+  },
+  {
+    // Added 2026-10-31 (#222). Last event per moment wins; never over a newer poll; Top Shot rows only.
+    fn: "topshot_lock_events_apply",
+    test: "supabase/tests/topshot_lock_events_tick.sql",
+    migration: "supabase/migrations/20261101052029_audit_20261031_topshot_lock_events_lane.sql",
+  },
+  {
+    // Added 2026-10-31 (#222). The one pg_net GET (sealed height / MomentLocked / MomentUnlocked range) + request row.
+    fn: "topshot_lock_events_request",
+    test: "supabase/tests/topshot_lock_events_tick.sql",
+    migration: "supabase/migrations/20261101052029_audit_20261031_topshot_lock_events_lane.sql",
+  },
+  {
+    // Added 2026-11-01 (#222). The lock-check writer (cron + trade-room heal): a NULL reading keeps the flag and stamps; scoped by (wallet, collection, moment).
+    fn: "apply_lock_check_batch",
+    test: "supabase/tests/apply_lock_check_batch.sql",
+    migration: "supabase/migrations/20261101151627_audit_20261101_apply_lock_check_batch_null_keeps_flag.sql",
+  },
+  {
+    // Added 2026-10-31 (#222). Drain (transients re-asked x3) -> sealed height -> <=6 ranges/tick, never past the known sealed height.
+    fn: "topshot_lock_events_tick",
+    test: "supabase/tests/topshot_lock_events_tick.sql",
+    migration: "supabase/migrations/20261101052029_audit_20261031_topshot_lock_events_lane.sql",
+  },
+  {
+    // Added 2026-10-31 (#218). Upserts a SearchDistributions page; a late page from an older pass cannot roll a newer observation back.
+    fn: "atlas_pack_market_ingest_page",
+    test: "supabase/tests/atlas_pack_market_tick.sql",
+    migration: "supabase/migrations/20261101022135_audit_20261031_atlas_pack_market_book.sql",
+  },
+  {
+    // Added 2026-10-31 (#218). The one pg_net page request + request row (dispatch and retry).
+    fn: "atlas_pack_market_request_page",
+    test: "supabase/tests/atlas_pack_market_tick.sql",
+    migration: "supabase/migrations/20261101022135_audit_20261031_atlas_pack_market_book.sql",
+  },
+  {
+    // Added 2026-10-31 (#218). Drain (403/5xx re-asked up to 3 attempts), a pass is complete only when every page landed, dispatch <=4 pages/product/min.
+    fn: "atlas_pack_market_tick",
+    test: "supabase/tests/atlas_pack_market_tick.sql",
+    migration: "supabase/migrations/20261101022135_audit_20261031_atlas_pack_market_book.sql",
+  },
+  {
+    // Added 2026-10-31 (#218). Publishes only a COMPLETE pass and only dists with a real ask; carries Studio vs Atlas newest listing.
+    fn: "atlas_pack_book",
+    test: "supabase/tests/atlas_pack_market_tick.sql",
+    migration: "supabase/migrations/20261101022135_audit_20261031_atlas_pack_market_book.sql",
+  },
+  {
+    // Added 2026-10-09. The one pg_net page request + request row, shared by the
+    // dispatcher and the drain's retry.
+    fn: "atlas_supply_request_page",
+    test: "supabase/tests/atlas_supply_drain.sql",
+    migration: "supabase/migrations/20261009150802_audit_20261009_atlas_supply_retries_a_challenged_page.sql",
+  },
+  {
+    // Added 2026-10-03. Atlas EditionService walk for Golazos ('laliga') + Pinnacle
+    // ('disney') supply. One walk in flight per product. Re-pointed 2026-10-09
+    // (calls atlas_supply_request_page).
+    fn: "atlas_supply_dispatch",
+    test: "supabase/tests/atlas_supply_drain.sql",
+    migration: "supabase/migrations/20261009150802_audit_20261009_atlas_supply_retries_a_challenged_page.sql",
+  },
+  {
+    // Added 2026-10-03. Upserts only editions carrying all six buckets; a failed page
+    // is recorded on its request row and makes the run not-ok. Re-pointed 2026-10-09:
+    // a transiently refused page (403/408/429/5xx/no response) is re-asked up to 3
+    // attempts before it counts as failed.
+    fn: "atlas_supply_drain",
+    test: "supabase/tests/atlas_supply_drain.sql",
+    migration: "supabase/migrations/20261009150802_audit_20261009_atlas_supply_retries_a_challenged_page.sql",
+  },
+  {
+    // Added 2026-09-30. A separate, labelled ESTIMATE for thin Top Shot parallels
+    // (base FMV x typical parallel premium). Pins the time-matched ratio cells, the
+    // leave-one-edition-out error on both parity branches, the n>=30 / ln(1.5) gate,
+    // the fresh-ask cap, write-first-then-retire, fail-closed on stale cells, and a
+    // recorded 57014. Never touches fmv_snapshots / edition_fmv_current.
+    fn: "compute_topshot_parallel_ratio_cells",
+    test: "supabase/tests/refresh_edition_fmv_estimates.sql",
+    migration: "supabase/migrations/20261004002116_audit_20261003_fmv_readers_exclude_buyback_wallets.sql",
+  },
+  {
+    fn: "refresh_edition_fmv_estimates",
+    test: "supabase/tests/refresh_edition_fmv_estimates.sql",
+    migration: "supabase/migrations/20260930133000_audit_20260930_edition_fmv_estimates_from_parallel_ratios.sql",
+  },
+  {
+    // Added 2026-09-29. Community pack giveaways (v1, one admin). Pins that a
+    // draft copies only the admin's own UNLOCKED same-collection cache rows, a
+    // seal covers the pool exactly once, and a claim is open-only, one per
+    // account and per recipient, never to the admin, never a pack twice.
+    fn: "claim_giveaway_pack",
+    test: "supabase/tests/giveaways.sql",
+    // 2026-11-08: also refuses a pool Moment's funded_from (the giveaway vault).
+    // 2026-11-10: a drop linked to a trophy challenge refuses non-finishers (not_eligible).
+    migration: "supabase/migrations/20261110214259_audit_20261110_giveaway_drop_limited_to_challenge_finishers.sql",
+  },
+  {
+    fn: "create_giveaway_draft",
+    test: "supabase/tests/giveaways.sql",
+    migration: "supabase/migrations/20261003230716_audit_20261003_giveaway_pool_spans_linked_wallets.sql",
+  },
+  {
+    fn: "create_giveaway_draft_multi",
+    test: "supabase/tests/giveaways.sql",
+    migration: "supabase/migrations/20261003230716_audit_20261003_giveaway_pool_spans_linked_wallets.sql",
+  },
+  {
+    fn: "seal_giveaway_drop",
+    test: "supabase/tests/giveaways.sql",
+    migration: "supabase/migrations/20260929192842_audit_20260929_community_pack_giveaways.sql",
+  },
+  {
+    // Added 2026-11-08. The balanced deal: refused unless every slot is its FMV value band.
+    // Added 2026-11-08. The giveaway vault: funding remembers each Moment's origin; the send lock
+    // hands out a claim's Moments once, to the claim's own recipient, or unclaimed ones back home.
+    fn: "mark_giveaway_vault_funded",
+    test: "supabase/tests/giveaways.sql",
+    migration: "supabase/migrations/20261108231643_audit_20261108_giveaway_vault_instant_delivery.sql",
+  },
+  {
+    fn: "reserve_giveaway_vault_send",
+    test: "supabase/tests/giveaways.sql",
+    migration: "supabase/migrations/20261108231643_audit_20261108_giveaway_vault_instant_delivery.sql",
+  },
+  {
+    fn: "seal_giveaway_drop_dealt",
+    test: "supabase/tests/giveaways.sql",
+    // 2026-11-10: the top band fills the LAST slot (floor first).
+    migration: "supabase/migrations/20261110220815_audit_20261110_giveaway_balanced_deal_floor_first.sql",
+  },
+  {
+    // Added 2026-09-29. Disney Pinnacle pack openers read from the open tx's
+    // Pinnacle.Deposit events (90,105 opens held NO opener). Pins the in-tx
+    // scope (never a later transfer), spork-clamped windows, re-reads for
+    // late-ingested opens, 429-not-a-failure.
+    fn: "run_pinnacle_opener_lane",
+    test: "supabase/tests/run_pinnacle_opener_lane.sql",
+    // 2026-11-08: floor at the mainnet27 root; Flow retired the mainnet24-26 nodes (#181).
+    migration: "supabase/migrations/20261108171810_audit_20261108_run_pinnacle_opener_lane_floor_at_mainnet27.sql",
+  },
+  {
+    // The ingest re-upserts opener NULL; a known opener must survive it.
+    fn: "pinnacle_pack_opens_keep_opener",
+    test: "supabase/tests/run_pinnacle_opener_lane.sql",
+    migration: "supabase/migrations/20260929183000_audit_20260929_pinnacle_pack_openers_read_from_the_open_tx.sql",
+  },
+  {
+    // Added 2026-09-29. A chain-found arrival from a Dapper delivery account
+    // (0xe1f2..., 0xb6f2...) that is not a known NFT pack pull becomes a
+    // verified custodial pack-pull acquisition. Pins the allowlist (collector
+    // wallets 0xb5b7.../0xf2b9... that sold on the marketplace are excluded),
+    // the NFT-pack exclusion, and that existing pack-pull records stand.
+    // Re-pointed 2026-10-09: each probe is checked once per finish (a marker at
+    // the finished_at it saw), in 2,000-probe chunks under a 45 s budget, and
+    // wallets wait in chain_arrival_rebuild_queue until rebuilt (75 s cutoff) --
+    // the unbounded re-check of history wedged the 120 s pg_cron wall 5 nights.
+    fn: "apply_chain_arrival_pack_pulls",
+    test: "supabase/tests/apply_chain_arrival_pack_pulls.sql",
+    migration:
+      "supabase/migrations/20261009162222_audit_20261009_chain_arrival_pack_pulls_checks_each_probe_once.sql",
+  },
+  {
+    // Added 2026-09-29. When and from whom a wallet got a Top Shot moment,
+    // bisected on its own holdings on the historical spork nodes, then the
+    // delivering TopShot.Withdraw (0xb5b7... = custodial pack pull). Pins the
+    // bisection direction, spork-end splits + per-node script syntax, the
+    // LAST non-wallet withdraw as the delivery, and 429-not-a-failure.
+    fn: "run_chain_arrival_lane",
+    test: "supabase/tests/run_chain_arrival_lane.sql",
+    // 2026-09-29: the events parse is MATERIALIZED (an 11.9 MB window timed out);
+    // then a 'floor' check first, dispatched ahead of bisections; then a
+    // failed call retries in half-size batches (1,000 held ids -> HTTP 500).
+    // then round-robin dispatch across wallets; 24 per node; 2026-09-30: a 503
+    // is a free retry and mainnet25's script gap (<86,031,700) is walked by events;
+    // then ALIGNED bisection + holdings calls grouped by (wallet, height);
+    // 2026-10-10: no HTTP answer at all (a connect that never completed) is a free retry too;
+    // then that failure parks the NODE for an hour (one canary after), known-issues #181.
+    // 2026-11-08: floor at the mainnet27 root; Flow retired the mainnet24-26 nodes (#181).
+    migration: "supabase/migrations/20261109134500_audit_20261109_chain_arrival_lane_4xx_is_attributed_by_the_alert_arm.sql",
+  },
+  {
+    // Seeds every saved wallet's unexplained held Top Shot moment at the floor;
+    // 2026-09-30: and every one it SOLD since the floor (hi = just before the sale).
+    fn: "seed_saved_wallet_chain_arrivals",
+    test: "supabase/tests/run_chain_arrival_lane.sql",
+    // 2026-11-10: the height estimate runs only for sold moments that survive the exclusions.
+    migration:
+      "supabase/migrations/20261110165800_audit_20261110_chain_arrivals_seed_estimates_height_only_for_new_sold_moments.sql",
+  },
+  {
+    fn: "enqueue_chain_arrivals",
+    test: "supabase/tests/run_chain_arrival_lane.sql",
+    migration:
+      "supabase/migrations/20260929170000_audit_20260929_chain_arrivals_find_when_and_from_whom_a_wallet_got_a_moment.sql",
+  },
+  {
+    // Added 2026-10-03. A sold moment delivered AND sold inside the sold seed's
+    // 100-block margin is found by reading the events up to the sale. Pins the
+    // sale = the wallet's FIRST withdraw, the delivery = the last other withdraw
+    // strictly BEFORE it (never the buyer's after), and skip-once enqueue.
+    fn: "run_chain_arrival_flip_lane",
+    test: "supabase/tests/run_chain_arrival_flip_lane.sql",
+    migration:
+      "supabase/migrations/20261003160000_audit_20261003_chain_arrival_flips_read_past_the_sale_margin.sql",
+  },
+  {
+    // Added 2026-09-29. A Top Shot pull is named by READING THE CHAIN at its
+    // pack's rip block on the historical spork node (269 of 269 ids read back;
+    // every disagreement a parallel our record filed under its base). Pins the
+    // spork routing + script syntax, the per-node cap, 429-not-a-failure, and
+    // that a parallel we do not carry is never folded into its base.
+    fn: "run_topshot_pull_chain_lane",
+    test: "supabase/tests/run_topshot_pull_chain_lane.sql",
+    // 2026-09-29: 20 reads per node per tick (was 8). 2026-11-07: floor at the
+    // mainnet27 root -- Flow retired the mainnet24-26 nodes (#181).
+    migration: "supabase/migrations/20261108071848_audit_20261107_topshot_pull_chain_lane_floor_at_mainnet27.sql",
+  },
+  {
+    // Added 2026-09-29. A Top Shot pull no record names takes its edition from
+    // its nearest known ids (batch mint = consecutive ids) ONLY when both sides
+    // agree within 50 ids -- 99.3 % right on 3,189 validation pulls, 81 % past
+    // 50. Pins agree + gap, never overwriting a record, and n_inferred.
+    fn: "name_pack_pulls_by_id_neighbours",
+    test: "supabase/tests/name_pack_pulls_by_id_neighbours.sql",
+    // 2026-09-29: inferred names re-derived every run.
+    migration: "supabase/migrations/20260929145500_audit_20260929_inferred_pull_names_rederived_each_run.sql",
+  },
+  {
+    // Its corpus: drops ids two sources disagree on; an empty build never wipes it.
+    fn: "refresh_topshot_moment_id_editions",
+    test: "supabase/tests/name_pack_pulls_by_id_neighbours.sql",
+    migration: "supabase/migrations/20260929150500_audit_20260929_id_neighbour_corpus_reads_atlas_standard_events.sql",
+  },
+  {
+    // 2026-09-29: sale-named ids for that corpus; a disagreement is final.
+    fn: "refresh_topshot_sale_id_editions",
+    test: "supabase/tests/name_pack_pulls_by_id_neighbours.sql",
+    migration: "supabase/migrations/20260929143000_audit_20260929_id_neighbour_corpus_reads_sales.sql",
+  },
+  {
+    // Added 2026-09-27. The Pinnacle wallet-backfill post-pass named holdings
+    // from the SET-LEVEL pinnacle_editions key: 769 held pins read "Unknown"
+    // (the trophy picker showed Dolly that way) and ~31k read another
+    // character from the same set. Pins that names come from the pin catalog.
+    fn: "backfill_pinnacle_wmc_metadata_from_editions",
+    test: "supabase/tests/backfill_pinnacle_wmc_metadata_from_editions.sql",
+    migration:
+      "supabase/migrations/20260927164145_audit_20260927_pinnacle_multi_character_names_read_as_a_list.sql",
+  },
+  {
+    // Added 2026-09-26 (known-issues #150 residue). Eight Pinnacle readers joined
+    // pinnacle_editions (one character + franchise per set-level key): market
+    // analytics named the wrong character on 3,711 of 4,928 30-day sales, the
+    // wallet franchise breakdown misfiled 3,423 held pins, platform stats and the
+    // sets summary counted 594 keys for 2,732 pins. Pins the catalog reads.
+    fn: "pinnacle_top_editions",
+    test: "supabase/tests/pinnacle_readers_use_the_pin_catalog.sql",
+    migration:
+      "supabase/migrations/20260926215225_audit_20260926_pinnacle_remaining_readers_use_the_pin_catalog.sql",
+  },
+  {
+    fn: "pinnacle_top_sales",
+    test: "supabase/tests/pinnacle_readers_use_the_pin_catalog.sql",
+    migration:
+      "supabase/migrations/20260926215225_audit_20260926_pinnacle_remaining_readers_use_the_pin_catalog.sql",
+  },
+  {
+    fn: "pinnacle_tier_analytics",
+    test: "supabase/tests/pinnacle_readers_use_the_pin_catalog.sql",
+    migration:
+      "supabase/migrations/20260926215225_audit_20260926_pinnacle_remaining_readers_use_the_pin_catalog.sql",
+  },
+  {
+    fn: "pinnacle_daily_tier_volume",
+    test: "supabase/tests/pinnacle_readers_use_the_pin_catalog.sql",
+    migration:
+      "supabase/migrations/20260926215225_audit_20260926_pinnacle_remaining_readers_use_the_pin_catalog.sql",
+  },
+  {
+    fn: "get_pinnacle_franchise_breakdown",
+    test: "supabase/tests/pinnacle_readers_use_the_pin_catalog.sql",
+    migration:
+      "supabase/migrations/20260926215225_audit_20260926_pinnacle_remaining_readers_use_the_pin_catalog.sql",
+  },
+  {
+    fn: "get_edition_detail",
+    test: "supabase/tests/pinnacle_readers_use_the_pin_catalog.sql",
+    // Re-pointed 2026-10-12 (review E4): the editions arm carries
+    // editions.description (Pinnacle arms NULL) for the edition page + its meta.
+    // Re-pointed 2026-10-19: a legacy key's live_ask reads the render floor.
+    // Re-pointed 2026-10-20: the editions arm names the linked player row (player_page_name).
+    // Re-pointed 2026-10-21: the editions arm carries play_category/play_type/game_date/subedition_name (SEO titles).
+    // Re-pointed 2026-10-29 (#215): the editions arm's fmv carries basis_capped.
+    // Re-pointed 2026-11-04: basis_capped survives the Top Shot offer floor's _bidfloor suffix.
+    // Re-pointed 2026-11-12: the editions arm's fmv carries basis_comparables (the All Day _compcap).
+    // Re-pointed 2026-11-12 (evening): the editions arm's fmv carries basis_offer (the Top Shot _bidpull).
+    migration:
+      "supabase/migrations/20261113011738_audit_20261112_edition_detail_says_when_a_price_is_weighted_to_the_best_offer.sql",
+  },
+  {
+    fn: "get_platform_stats",
+    // Re-pointed 2026-10-30: listing_count reads the on-chain book (cached_listings_v2), not the Flowty v1 rows.
+    test: "supabase/tests/pinnacle_readers_use_the_pin_catalog.sql",
+    migration:
+      "supabase/migrations/20261030172307_audit_20261030_listing_counts_read_the_onchain_book_not_flowty.sql",
+  },
+  {
+    fn: "analytics_sets_summary",
+    test: "supabase/tests/pinnacle_readers_use_the_pin_catalog.sql",
+    migration:
+      "supabase/migrations/20260926215225_audit_20260926_pinnacle_remaining_readers_use_the_pin_catalog.sql",
+  },
+  {
+    // Added 2026-10-25. The search_path ban-at-zero and its one curated exemption: an
+    // inlined SQL helper with a 'search_path-exempt' comment and no anon/authenticated
+    // EXECUTE (recent_low_usd: a SET clause stops inlining, measured 13x slower).
+    fn: "check_function_search_path_drift",
+    test: "supabase/tests/check_function_search_path_drift.sql",
+    migration:
+      "supabase/migrations/20261026001535_audit_20261025_search_path_guard_exempts_an_inlined_sql_helper_by_named_claim.sql",
+  },
+  {
+    // Added 2026-10-25. The 3x-FMV bound on a "recent low" that the five entity header
+    // totals call; get_set_detail.sql pins its arms.
+    fn: "recent_low_usd",
+    test: "supabase/tests/get_set_detail.sql",
+    migration:
+      "supabase/migrations/20261025221903_audit_20261025_recent_low_totals_ignore_an_ask_far_above_fmv_a.sql",
+  },
+  {
+    // Added 2026-09-26. get_team_sets / get_team_activity read only `editions`,
+    // which holds no Pinnacle rows, so both franchise-page sections were hidden.
+    // Pins the catalog sets (trimmed slug, pins held by render_id) and the
+    // render_id sales feed (both lanes agree).
+    // Re-pinned 2026-10-25 (#211 part C): cheapest entry calls recent_low_usd.
+    fn: "get_team_sets",
+    test: "supabase/tests/get_team_sets.sql",
+    migration:
+      "supabase/migrations/20261025235754_audit_20261025_recent_low_totals_ignore_an_ask_far_above_fmv_c.sql",
+  },
+  {
+    fn: "get_team_activity",
+    test: "supabase/tests/get_team_sets.sql",
+    migration:
+      "supabase/migrations/20260929055624_audit_20260928_pinnacle_tiles_named_by_pin.sql",
+  },
+  {
+    // Added 2026-09-26. A Pinnacle character page's Top sales matched
+    // pinnacle_editions.character_name (one character per set-level key), so
+    // catalog-only characters read "No recorded sales yet" over real sales.
+    // Pins the catalog pin match (duos included), render_id sales, the fallback.
+    fn: "get_player_top_sales",
+    test: "supabase/tests/get_player_top_sales.sql",
+    // Re-pinned 2026-10-21: the name fallback skips another person's editions (rule 2).
+    migration:
+      "supabase/migrations/20261021134844_audit_20261021_player_top_sales_and_related_editions_skip_another_persons_editions.sql",
+  },
+  {
+    // Added 2026-09-26. The Pinnacle franchise checklist joined wallet holdings on
+    // pinnacle_editions.external_id, which matched none of the 431 keys wallets
+    // hold, so every wallet read 0 owned. Pins the catalog pin list, ownership by
+    // the pin held (render_id), the progress aggregates and the fallback's
+    // corrected legacy-key join. Re-pointed 2026-10-03: the generic arm's
+    // floor_usd is the LIVE low ask (<= 7 d, <= 3x FMV, FMV required), never
+    // fmv_snapshots' historical floor — beta feedback 10231/10233. Rows also
+    // carry high_offer_usd (10235) since 20261003182955.
+    // Re-pointed 2026-10-10 (#184): the low_ask arm reads low_ask_confirmed_at.
+    // Re-pointed 2026-10-18: series_season gains WHEN 9 THEN 2026 (Series 2026-27, tip-off 10-20).
+    // Re-pointed 2026-10-27: on NFL All Day series_season reads collection_series (Contemporary scope).
+    fn: "get_team_checklist",
+    test: "supabase/tests/get_team_checklist.sql",
+    migration:
+      "supabase/migrations/20261028141531_audit_20261028_allday_play_season_opens_in_march.sql",
+  },
+  {
+    fn: "get_team_checklist_progress",
+    test: "supabase/tests/get_team_checklist.sql",
+    migration:
+      "supabase/migrations/20261028141531_audit_20261028_allday_play_season_opens_in_march.sql",
+  },
+  {
+    // Added 2026-10-30 (beta feedback 11691): the PLAYER checklist — the team
+    // checklist's generic arm over one person's editions (the get_player_editions
+    // person predicate). Pins the namesake exclusion, ownership + lock state,
+    // the live-ask-else-FMV cost rule, series scope and the empty shapes.
+    fn: "get_player_checklist",
+    test: "supabase/tests/get_player_checklist.sql",
+    migration: "supabase/migrations/20261031044056_audit_20261031_player_checklist.sql",
+  },
+  {
+    fn: "get_player_checklist_progress",
+    test: "supabase/tests/get_player_checklist.sql",
+    migration: "supabase/migrations/20261031044056_audit_20261031_player_checklist.sql",
+  },
+  {
+    // Added 2026-09-26. The Pinnacle franchise grid and roster read
+    // pinnacle_editions (one franchise + one character per set-level key, grid
+    // limited to rows with a thumbnail): Star Wars listed 98 of 723 pins, three
+    // franchises had an empty grid. Pins the catalog read by the Franchises trait
+    // (™ stripped, every franchise a pin names), the roster over every name on a
+    // pin, and the legacy fallback.
+    fn: "get_team_top_editions",
+    test: "supabase/tests/get_team_top_editions.sql",
+    // Re-pointed 2026-10-21: the editions branch projects play_category + game_date (grid tiles).
+    migration:
+      "supabase/migrations/20261021145002_audit_20261021_entity_edition_grids_project_play_and_date.sql",
+  },
+  {
+    // Re-pinned 2026-10-25: the non-Pinnacle roster groups by player_id, not by label.
+    // Re-pointed 2026-11-14: Total Mint complete or NULL (no partial SUM ... FILTER).
+    fn: "get_team_players",
+    test: "supabase/tests/get_team_top_editions.sql",
+    migration: "supabase/migrations/20261115044647_audit_20261114_entity_total_mint_only_when_complete.sql",
+  },
+  {
+    // Added 2026-09-26. The Pinnacle series pages read pinnacle_editions by
+    // series_year, set on 87 rows: 2026 showed 11 of 1,023 pins. Pins the
+    // catalog read scoped to the series year for the grid and its set/character
+    // rollups.
+    fn: "get_series_editions",
+    test: "supabase/tests/get_series_editions.sql",
+    // Re-pointed 2026-10-21: the editions branch projects play_category + game_date (grid tiles).
+    migration:
+      "supabase/migrations/20261021145002_audit_20261021_entity_edition_grids_project_play_and_date.sql",
+  },
+  {
+    // Added 2026-09-28 (#24). The Pinnacle series header summed
+    // COALESCE(floor_ask, fmv_usd) as its Recent-Low Total and never disclosed
+    // that its FMV Total is mostly ask-derived. Pins live asks only, the listed
+    // count, the ASK_ONLY part, on both the live path and the rollup.
+    // Re-pinned 2026-10-25 (#211 part B1): the live path calls recent_low_usd.
+    // Re-pointed 2026-11-14: Total Mint complete or NULL (no partial SUM ... FILTER).
+    fn: "get_series_detail",
+    test: "supabase/tests/series_detail_pinnacle_totals.sql",
+    migration: "supabase/migrations/20261115044647_audit_20261114_entity_total_mint_only_when_complete.sql",
+  },
+  {
+    // Re-pointed 2026-11-14: Total Mint complete or NULL (no partial SUM ... FILTER).
+    fn: "refresh_series_detail_rollup",
+    test: "supabase/tests/series_detail_pinnacle_totals.sql",
+    migration: "supabase/migrations/20261115044647_audit_20261114_entity_total_mint_only_when_complete.sql",
+  },
+  {
+    // Re-pinned 2026-10-25: top players grouped by player_id, not label.
+    // Re-pointed 2026-11-14: Pinnacle top characters credit EVERY character on a pin (splice
+    // 20261114205743; this snapshot carries the full body).
+    fn: "get_series_rollups",
+    test: "supabase/tests/get_series_editions.sql",
+    migration:
+      "supabase/migrations/20261114210008_audit_20261114_snapshot_series_rollups_after_character_splice.sql",
+  },
+  {
+    // Added 2026-09-26. Pinnacle character pages list the render catalog: 36 of
+    // 248 rendered no editions when the branch read pinnacle_editions filtered
+    // to rows with a thumbnail. Pins the catalog match (Characters trait, exact;
+    // duos by joined name), the fallback, and the unknown-slug empty.
+    fn: "get_player_editions",
+    test: "supabase/tests/get_player_editions.sql",
+    // Re-pointed 2026-10-20: the name fallback skips an edition linked to another person.
+    // Re-pointed 2026-10-21: the editions branch projects play_category + game_date (grid tiles).
+    migration:
+      "supabase/migrations/20261021145002_audit_20261021_entity_edition_grids_project_play_and_date.sql",
+  },
+  {
+    // Added 2026-09-26. Every pinnacle_editions writer walks wallet holdings, so
+    // a catalog key no tracked wallet held never got a row (Disney Genesis), and
+    // an 'Unknown' stub was never repaired (Finding Nemo Vol.2). Pins the catalog
+    // fill: lowest render_id names the row, mint only when renders agree, only
+    // 'Unknown' fields are filled, idempotent.
+    fn: "pinnacle_editions_fill_from_catalog",
+    test: "supabase/tests/pinnacle_editions_fill_from_catalog.sql",
+    // Re-pointed 2026-09-26: 20260926185325 added the thumbnail step,
+    // 20260926193316 the character step.
+    migration:
+      "supabase/migrations/20260926193316_audit_20260926_every_pinnacle_catalog_character_gets_a_page.sql",
+  },
+  {
+    // Added 2026-09-26. Every Pinnacle players row came from a one-time 05-05
+    // seed, so 127 of 249 characters had no row and their pages 404'd. Pins the
+    // writer the pinnacle_editions trigger calls: one row per slug, keyed
+    // disney_pinnacle-<slug>, idempotent across case variants, never for the
+    // 'Unknown' stub placeholder, and never overwriting an existing row.
+    fn: "pinnacle_ensure_character_player",
+    test: "supabase/tests/pinnacle_ensure_character_player.sql",
+    migration:
+      "supabase/migrations/20260926164840_audit_20260926_pinnacle_characters_get_a_page_the_day_they_mint.sql",
+  },
+  {
+    fn: "pinnacle_catalog_ensure_character_players_tg",
+    test: "supabase/tests/pinnacle_catalog_ensure_character_players_tg.sql",
+    // 2026-09-27: catalog-only characters (the Characters trait) get a page.
+    migration: "supabase/migrations/20260928111652_audit_20260927_pinnacle_catalog_characters_get_a_page.sql",
+  },
+  {
+    fn: "pinnacle_sale_serials_tick",
+    test: "supabase/tests/pinnacle_sale_serials_tick.sql",
+    // 2026-09-28 (#156): serials for serialised Pinnacle sales (local + Studio history).
+    migration: "supabase/migrations/20260928113619_audit_20260928_pinnacle_sale_serials.sql",
+  },
+  {
+    fn: "populate_pinnacle_wmc_fmv",
+    test: "supabase/tests/populate_pinnacle_wmc_fmv.sql",
+    // 2026-09-28: a pin the catalog de-prices (NO_DATA) goes back to NULL in
+    // every wallet — it used to keep its last price forever.
+    // Re-pinned 2026-11-04: a price changed IN PLACE (no fmv_computed_at bump) is caught by a catalog fingerprint.
+    migration:
+      "supabase/migrations/20261105030303_audit_20261104_pinnacle_wmc_fmv_sees_in_place_reprices.sql",
+  },
+  {
+    fn: "analytics_fmv_tier_pulse",
+    // Re-pointed 2026-10-20: 20261019181549 spliced Panini out in place; this snapshot carries the body.
+    test: "supabase/tests/analytics_fmv_tier_pulse.sql",
+    // 2026-09-28: Pinnacle FMV Health reads pinnacle_catalog (never snapshots).
+    migration:
+      "supabase/migrations/20261020150000_audit_20261020_snapshot_panini_spliced_platform_stats_and_fmv_tier_pulse.sql",
+  },
+  {
+    fn: "analytics_listings_summary",
+    test: "supabase/tests/analytics_listings_summary.sql",
+    // 2026-09-28: Pinnacle Order Book Depth reads pinnacle_live_listings.
+    // 2026-10-18: All Day + Golazos read cached_listings_v2 (their v1 rows are Flowty's alone).
+    migration:
+      "supabase/migrations/20261018220225_audit_20261018_analytics_listings_summary_onchain_order_book.sql",
+  },
+  {
+    fn: "pinnacle_period_comparison",
+    test: "supabase/tests/pinnacle_period_comparison.sql",
+    // 2026-09-28: uniqueEditions counts pins (render_id), not set keys.
+    migration: "supabase/migrations/20260929022535_audit_20260928_pinnacle_unique_editions_count_pins.sql",
+  },
+  {
+    fn: "analytics_packs_summary",
+    test: "supabase/tests/pinnacle_pack_drop_ev.sql",
+    // 2026-09-28 (#157): Pinnacle packs at DROP grain (v_pinnacle_pack_drop_ev).
+    migration: "supabase/migrations/20260930003500_audit_20260929_analytics_packs_summary_reads_latest_snapshot_index_only.sql",
+  },
+  {
+    fn: "analytics_packs_top_ev",
+    test: "supabase/tests/pinnacle_pack_drop_ev.sql",
+    // 2026-09-28 (#157): no Pinnacle sub-pool or ask-driven drop on the leaderboard.
+    migration: "supabase/migrations/20260929025310_audit_20260928_pinnacle_pack_ev_at_drop_grain.sql",
+  },
+  {
+    // Added 2026-09-26. The pulls a wallet's pack row shows: Dapper's list for
+    // THIS pack and opener, else the wallet's own reconstructed burst, else
+    // nothing -- never the moment_acquisitions linkage that listed 95 "pulls"
+    // for a 3-moment pack. Collection-scoped editions; FMV 0 is unpriced.
+    fn: "get_wallet_pack_pulls",
+    test: "supabase/tests/get_wallet_pack_pulls.sql",
+    // 2026-09-29: the pull lane's names first; named_by + pulls_inferred.
+    // 2026-09-29: serial falls back to the chain read (Top Shot only).
+    migration: "supabase/migrations/20260929163000_audit_20260929_pack_pull_serials_from_the_chain_read.sql",
+  },
+  {
+    // Added 2026-09-26. Pins the reconstruction of packs opened with NO pack NFT
+    // (custodial Top Shot packs) from pack-pull delivery bursts: the 3 s burst
+    // rule, that a burst overlapping a KNOWN rip is never reconstructed, whole-
+    // pack pricing, and write-first / retire-only-this-wallet.
+    // Re-pointed 2026-10-09: SET plan_cache_mode = force_custom_plan. From the 6th
+    // call in one session the generic plan took over and a 32k-pull wallet hung
+    // past 120 s -- the chain-arrival-pack-pulls wedge.
+    fn: "rebuild_wallet_reconstructed_rips",
+    test: "supabase/tests/rebuild_wallet_reconstructed_rips.sql",
+    migration:
+      "supabase/migrations/20261009165544_audit_20261009_wallet_rips_rebuild_plans_per_wallet.sql",
+  },
+  {
+    // Added 2026-09-26. Rebuilds what each drop's opened packs yielded (mean
+    // current value, the counts behind it): the pull list first, the rip row
+    // second, unpriced opens counted but never averaged in as 0; write first,
+    // delete only what it did not write.
+    fn: "refresh_pack_observed_values",
+    test: "supabase/tests/get_wallet_pack_history.sql",
+    migration: "supabase/migrations/20260926233000_audit_20260926_pack_observed_values_value_drops_with_no_published_pool.sql",
+  },
+  {
+    // Added 2026-09-26. The sealed packs a wallet holds, valued at the market,
+    // read THROUGH get_wallet_pack_history('held') page by page: counts beside
+    // every sum, an unlisted ask adds nothing, a missing EV is not 0.
+    fn: "wallet_held_pack_value",
+    test: "supabase/tests/get_wallet_pack_history.sql",
+    // v2 (2026-11-13): one read of the history's held tab_totals, not a loop of 200-row pages.
+    migration: "supabase/migrations/20261114044351_audit_20261113_held_pack_value_one_read.sql",
+  },
+  {
+    // Added 2026-09-26. Pins the lane that records every All Day drop's sale
+    // window from Dapper searchDistributions (1,632 distributions had no start
+    // time): pages walked with their cursor, a page with a next page is not a
+    // finished walk, an unparseable time is NULL, a failed page ends the walk
+    // with its error and ok=false.
+    fn: "run_allday_drop_windows_lane",
+    test: "supabase/tests/run_allday_drop_windows_lane.sql",
+    // 2026-09-26 2:24 PM PT: a page carrying the same node twice wedged the walk (ON CONFLICT twice) — nodes DISTINCT ON id.
+    migration: "supabase/migrations/20260926212402_audit_20260926_allday_drop_windows_one_row_per_distribution_per_page.sql",
+  },
+  {
+    // Added 2026-09-26. Pins the lane that reads Flow's PackNFT.Minted events at
+    // the instant Dapper's index says a wallet acquired each pack (215 of
+    // Trevor's packs arrived in one PDS mint on 2026-04-24): Top Shot + All Day
+    // instants only, below-floor instants failed with their reason, a window
+    // that misses its instant re-aimed (never recorded as "no mints"), ok=false
+    // on an HTTP failure.
+    fn: "run_pack_mint_probe_lane",
+    test: "supabase/tests/run_pack_mint_probe_lane.sql",
+    // 2026-09-29: floor = mainnet24 root; per-spork node routing, 25/node, 429 free.
+    // 2026-10-02: 90 s on historical nodes (20261003023303) 503ed whole batches; reverted.
+    // 2026-10-02 (#166): node faults (timeout, 5xx, no response) retry 12 times, others 4.
+    // 2026-11-08: floor raised to the mainnet27 root; Flow retired the mainnet24-26 nodes (DNS gone).
+    migration: "supabase/migrations/20261108164041_audit_20261108_pack_mint_probe_lane_floor_at_mainnet27.sql",
+  },
+  {
+    // Added 2026-11-07. The forward TAIL that keeps pack_nft_mints current from the chain: one
+    // probe every 3 minutes from a per-collection cursor to now − 5 min, the cursor advancing past
+    // every instant offered (a conflict is coverage), nothing past the horizon. Trevor's 15 fresh
+    // packs read "distribution not recorded" for a day while Studio's index was frozen and the
+    // bracket resolver had no neighbours for a brand-new drop.
+    fn: "enqueue_pack_mint_tail_probes",
+    test: "supabase/tests/enqueue_pack_mint_tail_probes.sql",
+    migration:
+      "supabase/migrations/20261107211500_audit_20261107_pack_mint_tail_follows_the_chain_and_fresh_not_found_rechecks.sql",
+  },
+  {
+    // Added 2026-09-26. The height estimate the mint-probe lane aims with.
+    fn: "flow_height_estimate",
+    test: "supabase/tests/run_pack_mint_probe_lane.sql",
+    // 2026-11-07: pack_purchases (chain-indexed) joins Studio's frozen index as an anchor source;
+    // the nearest row on each side wins. Every post-10-29 probe had aimed ~8 h early.
+    migration:
+      "supabase/migrations/20261107212800_audit_20261107_flow_height_estimate_anchors_on_the_chain_feed_too.sql",
+  },
+  {
+    // Added 2026-10-10 (#188). A Top Shot box / case is valued as the sum of what it yields:
+    // observed recipes (a partly-named box never shapes one), container-only inner packs priced
+    // here, never a partial sum, untyped containers typed.
+    fn: "refresh_container_pack_ev",
+    test: "supabase/tests/refresh_container_pack_ev.sql",
+    // 2026-10-10: a dist Dapper never indexed is keyed by its dist_id.
+    // 2026-10-19: a never-read dist's default 0 / 0 supply is withheld as NULL.
+    migration: "supabase/migrations/20261020060107_audit_20261019_ev_writers_withhold_supply_never_read.sql",
+  },
+  {
+    // Added 2026-10-19. Pins the verdicts that withdraw a supply counter contradicting the opens
+    // we observed. A box/case writes no rip row, so its opens come from Dapper's index -- valid
+    // for "opened by the stamp" only (checked_at bounds the open time from above).
+    fn: "refresh_pack_supply_counter_checks",
+    test: "supabase/tests/refresh_pack_supply_counter_checks.sql",
+    migration:
+      "supabase/migrations/20261020044518_audit_20261019_counter_checks_zero_unopened_at_zero_pct_is_refutable.sql",
+  },
+  {
+    // Added 2026-09-26. Pins the lane that prices every pack a saved wallet
+    // OPENED from Dapper's own list of what it yielded (searchPackNft.nfts):
+    // collection-scoped edition resolution, whole-pack all-or-nothing pricing
+    // (never a partial sum, FMV 0 = unpriced), the All Day index lookup, and
+    // that a page with a next page is not a finished walk.
+    fn: "collect_wallet_pack_pulls",
+    test: "supabase/tests/collect_wallet_pack_pulls.sql",
+    // 2026-09-29: box packs yield packs. 2026-10-10 (#188): new inner packs queued for identity.
+    // 2026-10-19: a Top Shot pack the index left at Revealed was opened -- its nfts are read.
+    // 2026-10-19 (follow-up): a Revealed box never records a pack a third party withdrew.
+    migration:
+      "supabase/migrations/20261020041933_audit_20261019_a_revealed_box_never_records_a_pack_a_third_party_withdrew.sql",
+  },
+  {
+    // Added 2026-09-18. Pins the FIX for "my wallet shows 0 sold packs when I have
+    // sold hundreds" (Trevor). pack_purchases.seller_address is the transaction
+    // PAYER — Dapper's escrow on every marketplace sale (103,396 of 103,398 Top
+    // Shot secondary rows) — so "seller = wallet" matched nobody and every wallet
+    // read 0 sold. The seller lives in topshot_pack_sales_history /
+    // allday_pack_sales_history.storefront_address, which this body UNIONs in.
+    // Also pins the three fabricated-zero shapes it removed (buy_price,
+    // pull_value_usd, realized_pl_usd were COALESCE(.., 0)) and that a sealed
+    // pack's distribution resolves from ANY marketplace row, or stays NULL.
+    fn: "get_wallet_pack_history",
+    test: "supabase/tests/get_wallet_pack_history.sql",
+    // v5 (same day): status 'transferred' from Dapper's pack index + the index as
+    // a dist source of last resort.
+    // v6 (same night): the index as a holdings source -- packs the wallet holds
+    // or opened that no buy/rip of ours ever saw.
+    // v7 (2026-09-20): an ownership claim is only trusted at or after the
+    // wallet's last CLEAN walk. A departed pack is never re-walked, so its row
+    // kept naming the old owner -- 23 rows on 5 of 27 saved wallets, 23 of 23
+    // Sealed, each rendered as an unopened pack still in that user's inventory.
+    // v8 (2026-09-26): Golazos/Pinnacle opens + Golazos market trades, and pull
+    // value from Dapper's per-pack pull list (same opener) before the rip row.
+    // v9 (same day): packs opened with no pack NFT, reconstructed from delivery
+    // bursts (wallet_reconstructed_rips), labelled rip_source = reconstructed.
+    // v15 (2026-09-28): an All Day primary buy dated by its mint in Dapper's
+    // index (pack_index_mints) -- a SOLD pack included -- unless someone else
+    // sold it first; the index's acquisition date only while it names this wallet.
+    // v16 (same night): the wallet's own index date outranks the mint -- some
+    // All Day drops are pre-minted days before they open. v17: and a mint
+    // BEFORE the window is ignored (the sale / open bound decides).
+    // v20 (2026-10-10): a bought pack the confirmed index says this wallet opened is ripped.
+    // v21 (2026-10-10, #187): a pack out of a box this wallet opened was not bought -- no buy, no P/L.
+    // v22 (same night): the box realizes what its packs became (P/L only when all are realized).
+    // v23 (2026-10-11): status decided before enrichment; a filtered read enriches only its rows (perf only).
+    // v24 (2026-10-19): a Top Shot pack the index left at Revealed is an open, never a hold.
+    // v26 (2026-11-06): the index naming the pack's own primary distributor is unknown, never a transfer (#218 second face).
+    // v29 (2026-11-13): tab_totals carries each held basis summed apart (wallet_held_pack_value v2 reads it once).
+    // v28 (2026-11-13): ask_checked_at = last confirmed by a complete walk, not last changed.
+    // v27 (2026-11-13): opened packs carry the pulls still held + their wallet FMV; sealed packs a value + basis; tab_totals.
+    // v30 (2026-11-14, Trevor): a pack carries its own cost -- Trade Ticket packs at tickets x the lowest listed Top Shot
+    // moment (trade_tickets), Top Shot reward packs with no buy row $0 (reward); the moments it yields carry $0.
+    // v31 (2026-11-14): a reward-looking title never overrides a drop's known non-zero retail (Fast Break - Rookie Pack $100).
+    migration: "supabase/migrations/20261115032843_audit_20261114_pack_history_reward_packs_zero_unless_secondary.sql",
+  },
+  {
+    // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,
+    // sold_proceeds_usd, packs_purchased, spent) over the same union, one row per
+    // (collection, pack) so a purchase both sources saw counts once.
+    fn: "get_wallet_pack_summary",
+    test: "supabase/tests/get_wallet_pack_summary.sql",
+    // 2026-09-28: inferred_primary_* take the same All Day mint rule.
+    // 2026-10-10 (#187): a pack out of this wallet's own box is never an inferred buy.
+    migration:
+      "supabase/migrations/20261011022500_audit_20261010_wallet_pack_summary_a_pack_out_of_a_box_is_not_an_inferred_buy.sql",
+  },
+  {
+    // Added 2026-09-11 with the arm itself. Pins the RATE detector that exists
+    // because a SILENCE detector cannot see a cadence collapse — nine lanes ran at
+    // 1/12th cadence for two days while `cron_silent` (1,800-minute threshold) and
+    // `ok = true` both stayed green (#76). Three properties are asserted in both
+    // directions: that a still-ticking degraded lane is found at all; that
+    // `degraded` and `stopped` stay APART (merging them fires on long-retired
+    // lanes and reads as noise — the #25 trap — and `stopped` is already
+    // detect_stalled_pipelines()'s case); and ⭐ that the baseline EXCLUDES the
+    // recent days. That last one is the property most likely to be simplified away
+    // and its removal is SILENT: a trailing baseline that includes the collapse
+    // decays toward it, so the ratio climbs back to 1.0 and the arm goes quiet
+    // while the lane is still broken. The fixture is built so removing the
+    // exclusion FLIPS the verdict rather than merely changing a number.
+    fn: "check_pipeline_cadence_collapse",
+    test: "supabase/tests/check_pipeline_cadence_collapse.sql",
+    // ⚠ REPOINTED 2026-09-18 to the R102 migration. The pin must name the migration
+    // that carries the LIVE body, not the one that created the function — the
+    // 20260912 file is now historical, and leaving the pin on it would have made
+    // this guard assert the test copy against superseded DDL while reporting green.
+    // ⚠ REPOINTED AGAIN 2026-09-19 to the exempt-lanes migration. The body now
+    // reads a THIRD table (public.cadence_exempt_lanes), so the pin's fixtures had
+    // to gain it — a repoint without that would have left the copy unrunnable
+    // while this guard reported only "stale pin".
+    migration:
+      "supabase/migrations/20260919202147_audit_20260919_cadence_collapse_honours_exempt_lanes.sql",
+  },
+  {
+    // Added 2026-09-02 with the fields it pins. This function had ONE input —
+    // max(started_at) over the pipeline's own terminal rows — so it could say a
+    // watchlisted pipeline had gone silent and could not say whether the schedule
+    // had stopped or the route was being KILLED at its lambda wall before it could
+    // log. Those need opposite responses, and a `maxDuration` kill writes nothing,
+    // so the terminal row cannot tell them apart. The pinned property is the ±5 s
+    // correlation between a `<pipeline>-heartbeat` marker and its terminal row:
+    // the obvious `started_at > last_run` spelling reported THREE healthy live
+    // pipelines as orphaned, because the marker is written 2–14 ms after the
+    // terminal row of the same tick. Both directions are asserted in the test.
+    fn: "detect_stalled_pipelines",
+    test: "supabase/tests/detect_stalled_pipelines.sql",
+    migration:
+      "supabase/migrations/20260924182358_audit_20260924_watchlist_checks_read_the_daily_rollup.sql",
+  },
+  {
+    // Added 2026-08-20. A live deleter with THREE DELETE legs that had NO
+    // migration anywhere in the repo — prod carried DDL the repo could not
+    // describe. The snapshot migration was created for it in the same pass.
+    fn: "prune_log_tables",
+    test: "supabase/tests/prune_log_tables.sql",
+    migration: "supabase/migrations/20260820190000_audit_20260820_snapshot_prune_log_tables.sql",
+  },
+  {
+    // Added 2026-08-20 by the completeness arm below, which found it: this file
+    // carried a verbatim copy and was in NO drift check, so it read as covered
+    // (it lives in supabase/tests/, it runs in db-tests, it has a verbatim
+    // block) while nothing compared it to the migration.
+    fn: "capture_board_liveness_history",
+    test: "supabase/tests/capture_board_liveness_history.sql",
+    migration: "supabase/migrations/20260811003456_audit_20260810_board_liveness_history_decoupled_capture.sql",
+  },
+  {
+    // Added 2026-09-03. The MCP worker's per-call usage writer. Pinned because
+    // this function is HALF of a two-sided invariant that neither side states:
+    // `check_feature_quota` counts `usage_events WHERE feature_name = p_feature`
+    // exactly, and the worker gates on `'mcp_query'`. This function wrote only
+    // `'mcp_' || p_tool_name`, so the counted key was written by NOTHING and the
+    // daily cap could not fire for any plan — a rate limiter failing SILENTLY IN
+    // THE DIRECTION OF PERMISSION, which no instrument distinguishes from a cap
+    // nobody has hit. If its body drifts back to a single insert the pin's own
+    // SQL test reds on `used_today` staying 0, which is the property, not the
+    // spelling.
+    fn: "mcp_log_tool_call",
+    test: "supabase/tests/mcp_log_tool_call.sql",
+    migration:
+      "supabase/migrations/20260903164254_audit_20260903_mcp_log_tool_call_writes_the_quota_key.sql",
+  },
+  {
+    // R138(a), 2026-10-25: check-and-count in one transaction under a per-wallet
+    // advisory lock (the worker's quota was check-then-log, so parallel calls all
+    // passed). The SQL test pins counting + denial-writes-nothing sequentially.
+    fn: "mcp_reserve_tool_call",
+    test: "supabase/tests/mcp_reserve_tool_call.sql",
+    migration: "supabase/migrations/20261025232432_audit_20261025_mcp_reserve_tool_call_atomic_quota.sql",
+  },
+  {
+    fn: "mcp_log_tool_detail",
+    test: "supabase/tests/mcp_reserve_tool_call.sql",
+    migration: "supabase/migrations/20261025232432_audit_20261025_mcp_reserve_tool_call_atomic_quota.sql",
+  },
+  {
+    fn: "allday_sales_cross_source_dedup",
+    test: "supabase/tests/allday_sales_cross_source_dedup.sql",
+    migration: "supabase/migrations/20260702130000_audit_20260702_allday_cross_source_dedup_writer_trigger.sql",
+  },
+  {
+    // Added 2026-08-11. 129 call sites — more than any other RPC in the repo —
+    // and the write path behind pipeline_runs, which detect_stalled_pipelines(),
+    // get_pipeline_alerts(), the sentinel and the daily rollup all read.
+    // ⚠ THE COUNTER PIN WAS INVERTED 2026-08-28, and the rationale it carried
+    // here was factually wrong. It read: "Pins the COALESCE-to-0 counters: a NULL
+    // reaching the column would poison every downstream SUM and make a broken
+    // pipeline read as healthy-but-empty." SUM() IGNORES NULLs — it goes NULL only
+    // for an all-NULL group — and every *-heartbeat pipeline has written NULL
+    // counters into this same table for months via lib/pipeline/heartbeat.ts's
+    // direct insert, which rollup_pipeline_runs aggregates without incident.
+    // What the COALESCE actually did was publish a measured zero for callers that
+    // had measured nothing, in the one function whose job is to make failure
+    // legible — and two callers were passing NULL deliberately and being
+    // overwritten. The pin now asserts BOTH halves: an explicit NULL survives,
+    // an omitted counter still defaults to 0.
+    fn: "log_pipeline_run",
+    test: "supabase/tests/log_pipeline_run.sql",
+    // Re-pinned 2026-08-23 onto the clock_timestamp() fix (which IS duration_ms:
+    // now() there made the GREATEST-clamped duration a hard 0 for ten pipelines),
+    // then again 2026-08-28 onto the COALESCE removal. That earlier fix is carried
+    // forward verbatim inside the DDL this migration names.
+    migration:
+      "supabase/migrations/20260829041215_audit_20260828_log_pipeline_run_stops_fabricating_zero_counters.sql",
+  },
+  {
+    // Added 2026-08-11. Batch writer into wallet_moments_cache (~2.2M rows).
+    // Pins the conditional DO UPDATE ... WHERE — without it every wallet
+    // re-walk rewrites the wallet's rows, sustained HOT-update churn on a
+    // disk-IO-bound instance — and the 24h clause that stops last_seen_at
+    // freezing on an otherwise-unchanging moment.
+    fn: "upsert_wmc_batch",
+    test: "supabase/tests/upsert_wmc_batch.sql",
+    // 2026-09-04: re-pinned to the parallel-aware body — a base setID:playID key
+    // whose nft the on-chain map resolved to a cataloged parallel is written as
+    // base::N, so a re-walk no longer reverts a split row (67,607 rows were).
+    // 2026-09-29: re-pinned — a NULL edition_key / serial_number no longer
+    // erases a known one (/api/wallet-cache posted degraded page rows back).
+    migration:
+      "supabase/migrations/20260929203000_audit_20260929_upsert_wmc_batch_null_never_erases_a_known_key.sql",
+  },
+  {
+    // Added 2026-08-11. Bookkeeping write behind wallet_backfill_state, which
+    // skip_cached reads to decide whether a wallet needs a fresh Cadence walk.
+    // Pins the three distinct validation rejections (blank wallet / negative
+    // count / unknown slug), the scan_count INCREMENT, and the lowercase+trim
+    // normalisation that keeps writes matching reads.
+    fn: "record_wallet_backfill_scan",
+    test: "supabase/tests/record_wallet_backfill_scan.sql",
+    migration: "supabase/migrations/20260812033700_audit_20260812_snapshot_record_wallet_backfill_scan.sql",
+  },
+  {
+    fn: "candy_park_unresolved_sale",
+    test: "supabase/tests/candy_park_unresolved_sale.sql",
+    migration: "supabase/migrations/20260726233100_audit_20260726_candy_park_unresolved_sale_fn.sql",
+  },
+  {
+    fn: "clear_badge_low_ask_missing",
+    test: "supabase/tests/clear_badge_low_ask_missing.sql",
+    migration: "supabase/migrations/20260427070000_badge_low_ask_clear_missing.sql",
+  },
+  {
+    fn: "resolve_ufc_edition_by_studio_meta",
+    test: "supabase/tests/resolve_ufc_edition_by_studio_meta.sql",
+    migration: "supabase/migrations/20260625040127_ufc_studio_history_resolver_and_targets.sql",
+  },
+  {
+    fn: "purge_fmv_snapshots_today",
+    test: "supabase/tests/purge_fmv_snapshots_today.sql",
+    migration: "supabase/migrations/20260713020000_audit_20260713_purge_fmv_snapshots_today_lock_timeout.sql",
+  },
+  {
+    fn: "purge_fmv_snapshots_today_except",
+    test: "supabase/tests/purge_fmv_snapshots_today_except.sql",
+    migration:
+      "supabase/migrations/20261023151316_audit_20261023_fmv_recalc_replace_delete_keeps_what_it_did_not_write.sql",
+  },
+  {
+    fn: "fmv_backfill_candidates",
+    test: "supabase/tests/fmv_backfill_candidates.sql",
+    migration:
+      "supabase/migrations/20261111014609_audit_20261110_fmv_backfill_candidates_prefilters_on_edition_fmv_current.sql",
+  },
+  {
+    fn: "topshot_serial_board_candidates",
+    test: "supabase/tests/topshot_serial_board_candidates.sql",
+    migration: "supabase/migrations/20260726012000_audit_20260726_serial_board_candidates_pooled_edition_id.sql",
+  },
+  {
+    fn: "upsert_pack_rips_from_api",
+    test: "supabase/tests/upsert_pack_rips_from_api.sql",
+    migration: "supabase/migrations/20260711140000_pack_opens_api_backfill_state_and_upsert.sql",
+  },
+  {
+    fn: "upsert_allday_marketplace_fmv",
+    test: "supabase/tests/upsert_allday_marketplace_fmv.sql",
+    migration: "supabase/migrations/20260711185416_audit_20260711_fmv_snapshots_rename_wap_to_asp.sql",
+  },
+  {
+    fn: "populate_wmc_fmv_from_snapshots",
+    test: "supabase/tests/populate_wmc_fmv_from_snapshots.sql",
+    // Re-pointed 2026-08-12: the function now also denormalizes `confidence`
+    // into wmc.fmv_confidence, taken from the SAME snapshot row as the value.
+    // Re-pointed 2026-11-11: the NULL-only path locks only the rows it writes.
+    migration: "supabase/migrations/20261111172832_audit_20261111_populate_wmc_fmv_locks_only_fillable_rows.sql",
+  },
+  {
+    fn: "refresh_allday_ask_fmv_from_listings",
+    test: "supabase/tests/refresh_allday_ask_fmv_from_listings.sql",
+    // Re-pointed 2026-09-22: the rescuer read cached_listings_v2 directly, so it
+    // kept pricing editions off listings whose NFT had already sold -- the exact
+    // rows the floor view had just been taught to exclude. It now anti-joins
+    // allday_listings_sold_after_listing and counts what it declines to price.
+    // Re-pointed 2026-09-23: it also re-caps an ASK_ONLY price that sits above
+    // today's live ask (nothing revisited one after a cheaper listing arrived).
+    migration:
+      "supabase/migrations/20260925231149_audit_20260925_allday_ask_lane_tracks_its_own_floor_both_ways.sql",
+  },
+  {
+    fn: "backfill_wmc_metadata_from_editions",
+    test: "supabase/tests/backfill_wmc_metadata_from_editions.sql",
+    // Re-pointed 2026-08-30: rows whose NULLs the edition cannot fill are no
+    // longer rewritten (and no longer counted) on every child run.
+    // ⚠ Re-pointed again 2026-09-13: the UPDATE moved inside EXECUTE … USING so
+    // it is planned with the parameter VALUES. As a plain statement plpgsql
+    // switched to a GENERIC plan after five calls of a pooled session, and that
+    // plan inverted the join — seq-scanning editions and probing wmc per
+    // edition, 73,414 buffers against 1,175 (register #113). The SQL is
+    // character-identical apart from the parameters becoming $1/$2.
+    // Re-pointed 2026-10-31 (#219): the fill also writes `league` for Top Shot
+    // rows via topshot_league_for (603k NULLs since 05-09 — the writer that
+    // actually runs, not upsert_wallet_moments).
+    migration: "supabase/migrations/20261031191751_audit_20261031_wmc_metadata_fill_writes_league.sql",
+  },
+  {
+    // Added 2026-10-31 (#219): the ONE SQL home of the Top Shot NBA/WNBA rule.
+    fn: "topshot_league_for",
+    test: "supabase/tests/topshot_league_for.sql",
+    migration: "supabase/migrations/20261031191751_audit_20261031_wmc_metadata_fill_writes_league.sql",
+  },
+  {
+    fn: "update_badge_low_ask_from_cached_listings",
+    test: "supabase/tests/update_badge_low_ask_from_cached_listings.sql",
+    migration: "supabase/migrations/20260427020000_badge_low_ask_aggregator.sql",
+  },
+  {
+    fn: "update_badge_low_ask_by_external",
+    test: "supabase/tests/update_badge_low_ask_by_external.sql",
+    migration: "supabase/migrations/20260427020000_badge_low_ask_aggregator.sql",
+  },
+  {
+    fn: "apply_sales_ingest_external",
+    test: "supabase/tests/apply_sales_ingest_external.sql",
+    migration: "supabase/migrations/20260725172000_audit_20260725_sales_ingest_park_and_resolver.sql",
+  },
+  {
+    fn: "resolve_sales_ingest_unresolved",
+    test: "supabase/tests/resolve_sales_ingest_unresolved.sql",
+    migration: "supabase/migrations/20260725172000_audit_20260725_sales_ingest_park_and_resolver.sql",
+  },
+  {
+    fn: "_norm_player",
+    test: "supabase/tests/norm_player.sql",
+    migration: "supabase/migrations/20260713031000_audit_20260713_resolve_challenge_slots.sql",
+  },
+  {
+    fn: "fmv_snapshots_block_phantoms",
+    test: "supabase/tests/fmv_block_phantoms.sql",
+    migration: "supabase/migrations/20260711185416_audit_20260711_fmv_snapshots_rename_wap_to_asp.sql",
+  },
+  {
+    fn: "expire_ended_challenges",
+    test: "supabase/tests/expire_ended_challenges.sql",
+    migration: "supabase/migrations/20260716151708_audit_20260716_expire_ended_challenges.sql",
+  },
+  {
+    // Re-pinned 2026-07-31: the pin named the 2026-07-02 14:45 definition while
+    // production has run a different SELECTION PREDICATE since 16:54 the same
+    // day (circulation-gated p90*3/p90*8 → circulation-agnostic med*3 + p90*1.5).
+    // Re-pinned again 2026-08-04, this time following a RENAME: the function
+    // hardcoded the Top Shot UUID in both CTEs, so it ran for one collection out
+    // of five and never saw the All Day rows its own predicate selects. The
+    // generalised fmv_clamp_disconnected_ask(uuid, boolean) supersedes it; no
+    // threshold changed, only scope.
+    fn: "fmv_clamp_disconnected_ask",
+    test: "supabase/tests/fmv_clamp_disconnected_ask.sql",
+    migration: "supabase/migrations/20261004002116_audit_20261003_fmv_readers_exclude_buyback_wallets.sql",
+  },
+  {
+    // Re-pinned 2026-07-31: the pin ran ~2 weeks behind live (4 uncommitted
+    // redefinitions), so typical_pull_ev (the weighted median the public pack-EV
+    // surfaces lead with), the pool_incomplete guard, and TS's forced remaining
+    // basis had no pinned invariant.
+    // Re-pinned 2026-08-02: fmv_coverage_pct / edition_count counted exhausted
+    // (zero-weight) pool rows, so both described a pool that can no longer be
+    // pulled. Now counted over weight > 0 under the basis in use; EV-neutral.
+    fn: "compute_pack_ev_per_edition_weighted",
+    test: "supabase/tests/compute_pack_ev_per_edition_weighted.sql",
+    // Re-pointed 2026-08-30: pool FMV via per-edition LATERAL, not the fmv_current view.
+    // Re-pointed 2026-10-18: no price (0/NULL) is never is_positive_ev.
+    migration: "supabase/migrations/20261018163817_audit_20261018_pack_ev_no_price_is_never_positive_ev.sql",
+  },
+  {
+    fn: "refresh_golazos_ask_fmv_from_listings",
+    test: "supabase/tests/refresh_golazos_ask_fmv_from_listings.sql",
+    migration: "supabase/migrations/20260925224605_audit_20260925_golazos_ask_fmv_moves_off_flowty_onto_the_onchain_book.sql",
+  },
+  {
+    fn: "fmv_from_cached_listings",
+    test: "supabase/tests/fmv_from_cached_listings.sql",
+    migration: "supabase/migrations/20260925224605_audit_20260925_golazos_ask_fmv_moves_off_flowty_onto_the_onchain_book.sql",
+  },
+  {
+    fn: "apply_fmv_thin_sales_guard",
+    test: "supabase/tests/apply_fmv_thin_sales_guard.sql",
+    // Re-pointed 2026-08-31 to the LATERAL-cursor migration, applied to prod at
+    // 15:11:41Z by a no-push session; its file was recovered byte-exact from
+    // prod (md5 fc5dfa269a88d16e8afc6edc831c75a6). The driving cursor is the
+    // only body change, and total_examined still exercises it.
+    // Re-pinned 2026-10-29: the live write states the last market sale's age and the basis age.
+    migration: "supabase/migrations/20261029154358_audit_20261029_fmv_basis_age_never_younger_than_last_sale.sql",
+  },
+  {
+    fn: "rpc_guard_block_destructive",
+    test: "supabase/tests/rpc_guard_block_destructive.sql",
+    migration: "supabase/migrations/20260719170000_audit_20260719_commit_destructive_op_circuit_breaker.sql",
+  },
+  {
+    fn: "resolve_moment_id",
+    test: "supabase/tests/resolve_moment_id.sql",
+    migration: "supabase/migrations/20260930001000_audit_20260929_resolve_moment_id_resolves_a_live_topshot_listing.sql",
+  },
+  {
+    fn: "backfill_allday_edition_jersey",
+    test: "supabase/tests/backfill_allday_edition_jersey.sql",
+    migration: "supabase/migrations/20260710181203_audit_20260710_backfill_allday_edition_jersey_rpc.sql",
+  },
+  {
+    fn: "refresh_topshot_fmv_display_guard",
+    test: "supabase/tests/refresh_topshot_fmv_display_guard.sql",
+    migration: "supabase/migrations/20261018000700_audit_20261017_fmv_display_guard_compute_before_truncate.sql",
+  },
+  {
+    fn: "check_email_allowed",
+    test: "supabase/tests/check_email_allowed.sql",
+    migration: "supabase/migrations/20260720210000_audit_20260720_open_front_door_check_email_allowed.sql",
+  },
+  {
+    fn: "flowty_collection_id_from_nft_type",
+    test: "supabase/tests/flowty_collection_id_from_nft_type.sql",
+    migration: "supabase/migrations/20260517220000_flowty_extractor_marketplace_offers_and_rpcs.sql",
+  },
+  {
+    fn: "get_pinnacle_wallet_best_offer_total",
+    test: "supabase/tests/get_pinnacle_wallet_best_offer_total.sql",
+    migration: "supabase/migrations/20260724234035_audit_20260724_pinnacle_wallet_best_offer_total.sql",
+  },
+  {
+    fn: "get_wallet_best_offer_total",
+    test: "supabase/tests/get_wallet_best_offer_total.sql",
+    migration: "supabase/migrations/20260725003941_audit_20260725_get_wallet_best_offer_total.sql",
+  },
+  {
+    fn: "pinnacle_serial_fmv_estimate",
+    test: "supabase/tests/pinnacle_serial_fmv_estimate.sql",
+    // 2026-09-27: #1 + perfect only (the shared serial_fmv_estimate pattern).
+    migration: "supabase/migrations/20260927183258_audit_20260927_pinnacle_serial_premium_first_and_perfect_only.sql",
+  },
+  {
+    fn: "pinnacle_fmv_recalc_render",
+    test: "supabase/tests/pinnacle_fmv_recalc_render.sql",
+    // 2026-09-27 (#155): price = recency-weighted MEDIAN, not a WAP-centred trim.
+    // 2026-09-29: capped at the 30-day max sale when the render has 2+ sales in 30 d.
+    // 2026-10-09: a render < 7 d old prices at its last 5 sales; < 3 d at most LOW, 3-6 d at most MEDIUM.
+    // 2026-10-23 (#193): a HIGH-eligible render (5+ sales in 30 d, last sale <= 14 d) prices at the median of its last 5 sales.
+    migration: "supabase/migrations/20261024015511_audit_20261023_pinnacle_high_render_prices_at_last5_median.sql",
+  },
+  {
+    fn: "panini_serial_premium_mult",
+    test: "supabase/tests/panini_serial_premium_mult.sql",
+    // 2026-09-24: IMMUTABLE -> STABLE (it reads panini_serial_premium, refit that day); body unchanged.
+    migration: "supabase/migrations/20260925045149_audit_20260924_panini_premium_mult_stable_and_freshness_comment.sql",
+  },
+  {
+    fn: "check_anon_write_surface",
+    test: "supabase/tests/check_anon_write_surface.sql",
+    migration: "supabase/migrations/20260725010345_audit_20260725_check_anon_write_surface.sql",
+  },
+  {
+    fn: "serial_fmv_estimate",
+    test: "supabase/tests/serial_fmv_estimate.sql",
+    migration: "supabase/migrations/20260726015000_audit_20260726_pooled_serial_fmv_jersey1_readpath.sql",
+  },
+  {
+    fn: "get_edition_fmv_history",
+    test: "supabase/tests/get_edition_fmv_history.sql",
+    migration: "supabase/migrations/20260711185416_audit_20260711_fmv_snapshots_rename_wap_to_asp.sql",
+  },
+  {
+    fn: "get_edition_related",
+    test: "supabase/tests/get_edition_related.sql",
+    // Re-pinned 2026-09-25: a trailing `badges text[]` column (DROP + CREATE) so
+    // the edition page's related tiles can name a Candy Rainbow parallel.
+    // Re-pinned 2026-10-21: the player leg skips another person's editions (rule 2).
+    migration: "supabase/migrations/20261021134844_audit_20261021_player_top_sales_and_related_editions_skip_another_persons_editions.sql",
+  },
+  {
+    fn: "sync_ts_listings_from_atlas",
+    test: "supabase/tests/sync_ts_listings_from_atlas.sql",
+    // 2026-09-18: pointed at 20260919012821 for 42 minutes, then REVERTED by 20260919021449 (same-evening IO spell, later RULED OUT as the cause).
+    // 2026-09-19: R101 v2 — scan-once (slim _open24, no memory grants) + delta-first upserts; equivalence proven on prod data before apply.
+    // ⚠ 2026-09-19 11:2x AM: re-pointed a SECOND time — commit 14f38e53c (a concurrent session) wrote this file from a stale copy and silently reverted both entries; main was red for ~35 min.
+    // 2026-09-24: stub-edition listings (NULL circulation_count) are withheld + counted (no_circulation) instead of aborting the tick.
+    migration: "supabase/migrations/20260925034501_audit_20260924_ts_listings_sync_withholds_and_counts_stub_edition_listings_instead_of_aborting_the_tick.sql",
+  },
+  {
+    fn: "sync_edition_offers_from_atlas",
+    test: "supabase/tests/sync_edition_offers_from_atlas.sql",
+    // 2026-09-18: pointed at 20260919012821 for 42 minutes, then REVERTED by 20260919021449 (same-evening IO spell, later RULED OUT as the cause).
+    // 2026-09-19: R101 v2 — scan-once (slim _open24, no memory grants) + delta-first upserts; equivalence proven on prod data before apply.
+    // ⚠ 2026-09-19 11:2x AM: re-pointed a SECOND time — commit 14f38e53c (a concurrent session) wrote this file from a stale copy and silently reverted both entries; main was red for ~35 min.
+    // 2026-09-26: a 24 h floor undercut by an older open listing under half its price is written NULL (unknown), never published as the floor (20260926192206);
+    //             then the same test on a STORED floor the 24 h window no longer re-observes (20260926192947).
+    // 2026-09-30: stamps low_ask_confirmed_at with the floor listing's last OBSERVATION and re-confirms an
+    //             unchanged floor Atlas re-observed (step a1) — the 1 h Top Shot alert window reads it.
+    migration: "supabase/migrations/20261001030000_audit_20260930_topshot_alert_asks_are_rechecked_before_they_are_sent.sql",
+  },
+  {
+    // The trigger that keeps every OTHER edition_offers writer honest about low_ask_confirmed_at
+    // (an offer-only write must not refresh an ask's confirmation). Embedded in the sync pin, which
+    // owns the fixture table.
+    fn: "edition_offers_stamp_low_ask_confirmed",
+    test: "supabase/tests/sync_edition_offers_from_atlas.sql",
+    migration: "supabase/migrations/20261001030000_audit_20260930_topshot_alert_asks_are_rechecked_before_they_are_sent.sql",
+  },
+  {
+    // Click → sale attribution (audit_20260930): matches an RPC outbound click to the marketplace
+    // sale that followed it. Its output is a number nobody can check by eye, so the matching rules
+    // (collection scope, windows, ask caps, buyer-is-clicker, bot skip) are pinned.
+    // Re-pointed 2026-10-03: a match made while the sale's buyer was NULL is re-checked once the
+    // buyer lands, so the clicker's own purchase is upgraded to confirmed (was stuck at "likely").
+    fn: "attribute_outbound_clicks",
+    test: "supabase/tests/attribute_outbound_clicks.sql",
+    migration: "supabase/migrations/20261003160654_click_attribution_rechecks_a_buyer_filled_in_after_the_match.sql",
+  },
+  {
+    fn: "mcp_get_fmv",
+    test: "supabase/tests/mcp_get_fmv.sql",
+    migration: "supabase/migrations/20260711185416_audit_20260711_fmv_snapshots_rename_wap_to_asp.sql",
+  },
+  {
+    fn: "backfill_nft_edition_map_from_sales",
+    test: "supabase/tests/backfill_nft_edition_map_from_sales.sql",
+    migration: "supabase/migrations/20260727180000_audit_20260727_nem_from_sales_limit_binds_on_derivable_rows.sql",
+  },
+  {
+    // Re-pinned 2026-07-31: the pin still pointed at the 2026-04-27 migration
+    // long after 20260727170000 replaced the function, so the DB test was
+    // validating a superseded definition. It now tracks the live DDL.
+    // Re-pinned again 2026-08-29 onto the self-overlap guard. ⚠ Before editing,
+    // the committed body and live prosrc were normalised and md5-compared
+    // (146cd31ded32d5a1db3d554ef428904e, 9,031 chars) — they matched, so this
+    // pin was current and the new DDL is a true successor rather than a
+    // reconstruction. Do that check first; two pins were found stale earlier the
+    // same night precisely because nobody had.
+    fn: "promote_unmapped_sales",
+    test: "supabase/tests/promote_unmapped_sales.sql",
+    // ⚠ Keep this comment ABOVE `migration:` — check-db-pin-staleness.mjs matches
+    // `migration:\s*"..."`, so a comment in that gap drops the pin from the live check.
+    // Re-pointed 2026-08-30: a per-scope 20-minute minimum gap between real drains.
+    migration:
+      "supabase/migrations/20261004030511_audit_20261003_run_durations_no_longer_wrap_at_60_seconds.sql",
+  },
+  {
+    // Installed for real (not stubbed) inside promote_unmapped_sales.sql: it is
+    // the only insert-suppressing trigger on public.sales, and the drainer's
+    // `merged_cross_source` outcome mirrors its predicate.
+    fn: "allday_sales_cross_source_dedup",
+    test: "supabase/tests/promote_unmapped_sales.sql",
+    migration: "supabase/migrations/20260702130000_audit_20260702_allday_cross_source_dedup_writer_trigger.sql",
+  },
+  {
+    // Added 2026-09-02 IN THE SAME SESSION as the change. A pg_cron wrapper whose
+    // whole job is that a FAILED re-key still writes a pipeline_runs row — so the
+    // properties worth pinning are the ABSENCES (NULL, never 0, on the error path)
+    // and the fact that it does not re-raise. Its callee runs where the ~120 s
+    // Supabase gateway cap does not apply; the HTTP ?rekey=1 leg it replaces was
+    // rolled back on roughly half its daily runs.
+    fn: "run_topshot_onchain_rekey",
+    test: "supabase/tests/run_topshot_onchain_rekey.sql",
+    migration:
+      "supabase/migrations/20260920143959_audit_20260920_r118_batch_three_fourteen_pinned_functions_catch_query_canceled_literal_ddl_from_their_pins.sql",
+  },
+  {
+    // Added 2026-09-02 with the function. The pinned behaviour is the AMBIGUITY
+    // filter: on an edition_key where wallet_moments_cache holds more than one
+    // distinct player_name, wmc was measured 58.8% wrong (10 of 17 subedition
+    // keys named a different player). The `count(DISTINCT ...) = 1` guard is the
+    // difference between a backfill and a fabrication, so it is pinned.
+    fn: "backfill_topshot_stub_player_names_from_wmc",
+    test: "supabase/tests/backfill_topshot_stub_player_names_from_wmc.sql",
+    migration:
+      "supabase/migrations/20260902092542_audit_20260902_topshot_stub_player_names_come_from_wmc_before_the_chain.sql",
+  },
+  {
+    // Re-pointed 2026-09-02 IN THE SAME SESSION as the change: nft_edition_map
+    // joined moments + wallet_moments_cache as a THIRD, strictly-last COALESCE
+    // leg (2,192 null-serial sales recoverable; AllDay's unresolvable remainder
+    // went to zero). The 20260705 migration is superseded as the newest
+    // defining migration for this function.
+    fn: "backfill_null_serial_sales_from_moments",
+    test: "supabase/tests/backfill_null_serial_sales_from_moments.sql",
+    // Re-pointed AGAIN 2026-09-02, hours later and in the same session: the
+    // DEFAULT age window went 45d -> 3650d once it was measured that the
+    // `*-sales-history-backfill` walkers write sales older than 45 days by
+    // construction, so every null-serial row they produced was permanently
+    // unreachable by the hourly job that calls this with no argument.
+    migration:
+      "supabase/migrations/20260902102507_audit_20260902_null_serial_recovery_default_window_covers_the_history_backfills.sql",
+  },
+  {
+    fn: "get_wallet_moments_with_fmv",
+    test: "supabase/tests/get_wallet_moments_with_fmv.sql",
+    // Re-pointed 2026-08-05: the series 0-vs-1 convention fix (Top-Shot-scoped
+    // normalisation of the editions.series fallback arm) supersedes the
+    // 20260726 pooled-edition_id snapshot as the newest defining migration.
+    // Re-pointed 2026-08-30 IN THE SAME SESSION as the change: LANGUAGE sql ->
+    // plpgsql + plan_cache_mode=force_custom_plan (a SQL-language function is planned
+    // param-blind on PG 17, so a 15k-moment wallet got the generic nested-loop plan:
+    // 139,922 buffers -> 80,986). The SELECT body is byte-identical, wrapped in
+    // RETURN ( ... ).
+    migration: "supabase/migrations/20261101163512_audit_20261101_wallet_moments_player_filter_folds_spelling.sql",
+  },
+  {
+    fn: "upsert_topshot_marketplace_fmv",
+    test: "supabase/tests/upsert_topshot_marketplace_fmv.sql",
+    // ⚠ RE-POINTED 2026-08-28 onto the prefilter migration, IN THE SAME SESSION as
+    // the change — and only because a full DB-invariant run surfaced it. The guard
+    // above is repo-vs-repo: it compares this test to the migration THIS LINE names,
+    // so leaving it on the 07-11 rename would have kept every check green while the
+    // test validated a body that no longer runs anywhere. That is this mechanism's
+    // documented blind spot, and it costs nothing to walk into.
+    migration: "supabase/migrations/20261004002116_audit_20261003_fmv_readers_exclude_buyback_wallets.sql",
+  },
+  // ── 2026-07-29: read/write RPC snapshot pins ────────────────────────────────
+  // fmv_recalc_edition_page, get_edition_badges_unified, recalc_ultimate_fmv,
+  // refresh_seeded_wallet_stats, and get_team_detail had no committed migration
+  // carrying their current live DDL (MCP-applied, or drifted), so their verbatim
+  // DDL was captured into a documentation-snapshot migration.
+  {
+    fn: "fmv_recalc_edition_page",
+    test: "supabase/tests/fmv_recalc_edition_page.sql",
+    // Re-pinned 2026-10-10: ties on MAX(sold_at) break on edition_id (#177 part 1);
+    // then the order is snapshotted at offset 0 and later pages slice it (#177 part 2).
+    migration: "supabase/migrations/20261010143219_audit_20261010_fmv_recalc_sweep_pages_a_snapshot_of_its_order.sql",
+  },
+  {
+    fn: "recalc_ultimate_fmv",
+    test: "supabase/tests/recalc_ultimate_fmv.sql",
+    // Re-pinned 2026-10-03: run duration no longer wraps at 60 s (#147).
+    // Re-pinned 2026-10-25: retires a priced row it can no longer support (NO_DATA).
+    // Re-pinned 2026-10-29: days_since_sale is the last market sale; the model's age is basis_days_since_sale.
+    migration: "supabase/migrations/20261029154358_audit_20261029_fmv_basis_age_never_younger_than_last_sale.sql",
+  },
+  {
+    // 2026-10-19: the daily Atlas autograph sweep — writes editions.autographed_at on change
+    // (and retires a withdrawn signature), re-stamps edition_autograph_checks, retries 403 pages.
+    fn: "autograph_sweep_tick",
+    test: "supabase/tests/autograph_sweep_tick.sql",
+    migration: "supabase/migrations/20261020030228_audit_20261019_editions_autographed_at_from_atlas.sql",
+  },
+  {
+    fn: "get_edition_badges_unified",
+    test: "supabase/tests/get_edition_badges_unified.sql",
+    // Re-pinned 2026-10-19: a signed edition (editions.autographed_at) gets an 'autograph'-source
+    // "Autographed" badge, ordered first, that does not suppress the derived fallback.
+    migration: "supabase/migrations/20261020030510_audit_20261019_edition_badges_carry_the_autograph.sql",
+  },
+  {
+    fn: "refresh_seeded_wallet_stats",
+    test: "supabase/tests/refresh_seeded_wallet_stats.sql",
+    migration: "supabase/migrations/20260729000000_audit_20260729_snapshot_read_write_rpc_ddl_for_pinning.sql",
+  },
+  {
+    // 2026-09-29: pre-spork Pinnacle pulls named by a chain read, else the wallet cache / sales / live listings (unanimous); least-recently-tried first.
+    // 2026-10-09: unpriced opens re-tried after 1 h (was 6 h).
+    fn: "price_pinnacle_pack_opens",
+    test: "supabase/tests/price_pinnacle_pack_opens.sql",
+    migration: "supabase/migrations/20261009204812_audit_20261009_pinnacle_pack_opens_retry_hourly.sql",
+  },
+  {
+    // 2026-09-29: Pinnacle pack pulls named by reading each pin's editionID on chain at the open block.
+    fn: "run_pinnacle_pull_chain_lane",
+    test: "supabase/tests/run_pinnacle_pull_chain_lane.sql",
+    // 2026-11-08: floor at the mainnet27 root; the pre-Cadence-1.0 mainnet24 script removed (#181).
+    migration: "supabase/migrations/20261108171820_audit_20261108_run_pinnacle_pull_chain_lane_floor_at_mainnet27.sql",
+  },
+  {
+    // Re-pointed 2026-11-14: Total Mint complete or NULL (no partial SUM ... FILTER).
+    fn: "get_team_detail",
+    test: "supabase/tests/get_team_detail.sql",
+    // Re-pinned 2026-08-01: the concurrent platform-audit changed get_team_detail
+    // (unaccented-slug 404 fix) via MCP with no committed migration, so the pin
+    // now points at a fresh snapshot of the live body.
+    // Re-pinned 2026-09-25 (batch 62): the read covers the WHOLE franchise —
+    // every label it minted under — and names the primary name canonical.
+    // Re-pinned 2026-09-26: the Pinnacle branch reads the render catalog by
+    // each pin's Franchises trait (™ stripped); legacy read kept as fallback.
+    // Re-pinned 2026-09-28: the catalog arm reads 30-day activity from pinnacle_sales.
+    // Re-pinned 2026-10-25 (#211 part C): Recent-Low Total calls recent_low_usd.
+    // Re-pinned 2026-10-25: player_count counts persons (player_id), not labels.
+    migration: "supabase/migrations/20261115044647_audit_20261114_entity_total_mint_only_when_complete.sql",
+  },
+  {
+    // Added 2026-09-25 (batch 62). The helpers behind every team read: the
+    // franchise's slugs (registry-keyed, cheap enough for an index condition),
+    // its primary name, and the historic slugs the sitemap drops.
+    fn: "team_franchise_slugs",
+    test: "supabase/tests/team_franchise_slugs.sql",
+    migration: "supabase/migrations/20260926033639_audit_20260925_a_franchises_historic_era_belongs_to_the_franchise.sql",
+  },
+  {
+    fn: "team_franchise_primary_name",
+    test: "supabase/tests/team_franchise_slugs.sql",
+    migration: "supabase/migrations/20260926033639_audit_20260925_a_franchises_historic_era_belongs_to_the_franchise.sql",
+  },
+  {
+    fn: "team_historic_slugs",
+    test: "supabase/tests/team_franchise_slugs.sql",
+    migration: "supabase/migrations/20260926033639_audit_20260925_a_franchises_historic_era_belongs_to_the_franchise.sql",
+  },
+  // These already had a committed migration carrying their current live DDL.
+  {
+    // Re-pinned 2026-08-22: the live body gained the D20 `underlying_set_count`
+    // rollup, so this pin had read STALE on every db-pin-staleness run since
+    // 2026-08-10 (13 consecutive; known-issues #24). That ONE feature was the
+    // entire drift — the lateral latest-FMV read and the Pinnacle branch were
+    // already pinned. The 2026-08-01 graceful-timeout behaviour (BEGIN/EXCEPTION
+    // WHEN query_canceled, Sentry NEXTJS-22) is unchanged and still pinned.
+    // Re-pointed 2026-11-14: Total Mint complete or NULL (no partial SUM ... FILTER).
+    fn: "get_set_detail",
+    test: "supabase/tests/get_set_detail.sql",
+    // 2026-09-27: Pinnacle Total Mint summed over the set's pins.
+    // 2026-10-18: D20 underlying_set_count counts only sets that have editions (R58 residual).
+    // 2026-10-21 (#204): Panini counts and NAMES the products behind a shared set name.
+    // 2026-10-21 (#204 design half): a Panini slug naming a `sets` row is that PRODUCT's page.
+    migration: "supabase/migrations/20261115044647_audit_20261114_entity_total_mint_only_when_complete.sql",
+  },
+  {
+    // Pinned 2026-10-18 (new): the hourly render-id pass now FILLS player_name from the
+    // pin's `characters` trait (NULL / 'Unknown' only), so a pin whose render_id lands
+    // after the wallet post-pass is not nameless until the daily heal.
+    fn: "derive_pinnacle_wmc_from_catalog",
+    test: "supabase/tests/derive_pinnacle_wmc_from_catalog.sql",
+    migration: "supabase/migrations/20261019010856_audit_20261018_derive_pinnacle_wmc_fills_player_name.sql",
+  },
+  {
+    fn: "get_user_top_owned_moments",
+    test: "supabase/tests/get_user_top_owned_moments.sql",
+    // Repointed 2026-09-28: a second branch offers the cards under the Panini
+    // usernames the user linked (saved_collector_identities), so Panini can be
+    // pinned to the trophy case.
+    // Repointed 2026-11-06: p_query (5th arg) searches the whole wallet
+    // server-side; a Top Shot row's image is always the per-Moment media URL
+    // (the cached Series-1 edition hero assets are dead).
+    // Repointed 2026-11-08: every typed word must match some field (player +
+    // set across fields), so "Damian Lillard Extra Spice" finds the Moment.
+    // Repointed 2026-11-09 (#243): Panini holdings are name-filtered on their own
+    // psku edition BEFORE the per-card panini_card_serials lookup (cold cost).
+    // Repointed 2026-11-10: serial_fmv_estimate + the wallet rows' latest-snapshot read run only for the
+    // returned page (MATERIALIZED page CTE); rows and order unchanged.
+    migration: "supabase/migrations/20261110221809_audit_20261110_top_owned_moments_estimates_only_the_returned_page.sql",
+  },
+  {
+    fn: "get_trophy_slab_data",
+    test: "supabase/tests/get_trophy_slab_data.sql",
+    // Repointed 2026-09-11: the circulation expression is no longer a plain
+    // COALESCE — it refuses a serial above the resolved edition's circulation
+    // (the rendered `#1017/50`). D25's render half.
+    // ⚠ REPOINTED 2026-09-12, hours after the impossible-serial guard above:
+    // `thumbnail_url` became COALESCE(tm.thumbnail_url, e.thumbnail_url) — the one
+    // display field in this function that had no live side, which is why a trophy
+    // with a junk stored URL published as a blank slab with nothing to fall back
+    // to. Two sessions replaced this function the same evening; the second read
+    // the LIVE definition before writing, which is the only reason the first
+    // one's guard is still here.
+    // ⚠ REPOINTED 2026-09-27: both moment_acquisitions reads are scoped to the
+    // trophy's collection_id (a moment_id is unique only within a collection;
+    // 55 nft_ids already span collections in that table).
+    // ⚠ REPOINTED 2026-09-28: held_state / held_checked_at — 'not_held' only on a
+    // clean walk (wmc_clean_walks, or a complete public Panini walk) after the pin.
+    // ⚠ REPOINTED 2026-09-29: jersey_number (NULL unless > 0) for the trophy
+    // slab's special-serial marks — the one input specialCats() lacked.
+    // ⚠ REPOINTED 2026-11-06: p_case_id DEFAULT NULL (multiple trophy cases) —
+    // the read is scoped to ONE case (NULL = main), and case_id is projected.
+    migration:
+      "supabase/migrations/20261106194000_audit_20261106_multiple_trophy_cases_and_challenges.sql",
+  },
+  {
+    fn: "get_moment_detail",
+    test: "supabase/tests/get_moment_detail.sql",
+    // Re-pointed 2026-10-27: the price band reads sales_market (buybacks never enter it).
+    migration: "supabase/migrations/20261027173341_audit_20261027_review_1025_product_packs_all_set_ids_and_moment_band_market_sales.sql",
+  },
+  // ── 2026-07-29 batch 2: more high-traffic read RPCs ─────────────────────────
+  {
+    fn: "get_player_detail",
+    test: "supabase/tests/get_player_detail.sql",
+    // Re-pointed 2026-09-27: Pinnacle mint dates only when every row carries one.
+    // Re-pointed 2026-10-20: the name fallback skips an edition linked to another person.
+    // Re-pointed 2026-11-14: Total Mint + mint dates only when complete; no name-keyed Pinnacle dates.
+    migration: "supabase/migrations/20261115043933_audit_20261114_player_totals_and_mint_dates_only_when_complete.sql",
+  },
+  {
+    fn: "get_wallet_collection_snapshot",
+    test: "supabase/tests/get_wallet_collection_snapshot.sql",
+    // re-pointed 2026-10-02: plpgsql EXECUTE … USING (per-wallet plan), labels and confidence
+    // resolved once per distinct value; same eight invariants.
+    // re-pointed 2026-10-26: badgeCount adds Candy MLB's editions.badges designations (+1 assertion).
+    // re-pointed 2026-11-03 (#228): aggregates from index-covered columns; display rows per edition key (+5 assertions).
+    // re-pointed 2026-11-03 (#228 follow-up): conf reads only STALE rows (byte-identical over 34 wallets).
+    // re-pointed 2026-11-10: a withdrawn price (current row, NULL price) still cached counts as stale (+5 assertions).
+    migration:
+      "supabase/migrations/20261110175500_audit_20261110_withdrawn_prices_in_wallets_count_as_stale.sql",
+  },
+  {
+    fn: "get_pack_detail_bundle",
+    test: "supabase/tests/get_pack_detail_bundle.sql",
+    // re-pointed 2026-08-09: the AllDay leg now reads the lean v_allday_pack_detail_ev
+    // instead of v_allday_pack_info (identical output, without the 1.19M-cost
+    // pack_ev_latest join that was 500ing every AllDay pack page under contention).
+    migration: "supabase/migrations/20260906215343_audit_20260906_snapshot_five_spliced_functions_so_their_pins_can_be_repointed.sql",
+  },
+  {
+    fn: "holdings_summary",
+    test: "supabase/tests/holdings_summary.sql",
+    migration: "supabase/migrations/20260806000200_audit_20260806_snapshot_holdings_summary_market_closed.sql",
+  },
+  {
+    fn: "resolve_canonical_owner",
+    test: "supabase/tests/resolve_canonical_owner.sql",
+    migration: "supabase/migrations/20260801160000_audit_20260801_snapshot_resolve_canonical_owner.sql",
+  },
+  {
+    fn: "normalize_player_name_alias",
+    test: "supabase/tests/normalize_player_name_alias.sql",
+    migration: "supabase/migrations/20260925150357_audit_20260925_one_curry_name_everywhere_alias_normalizer_and_search.sql",
+  },
+  {
+    // Added 2026-09-25 (#139 follow-up). The league-id crosswalk's matcher: links
+    // by name only when unique both ways, breaks a shared name by the editions'
+    // TEAM then by season, and COUNTS what it cannot break instead of guessing.
+    fn: "match_player_identities",
+    test: "supabase/tests/match_player_identities.sql",
+    // re-pointed 2026-09-25 (batch 46): reads league_team_abbr, gains the SUFFIX
+    // arm and the team+season tie-break.
+    migration: "supabase/migrations/20260925232127_audit_20260925_name_writers_resolve_through_the_player_identity_crosswalk.sql",
+  },
+  {
+    // Added 2026-09-25 (batch 46). The crosswalk's answer to "which person is
+    // this edition label?": feed-backed identities by base name + game year,
+    // then the edition's team; ambiguity is declared, never guessed.
+    fn: "resolve_player_identity",
+    test: "supabase/tests/resolve_player_identity.sql",
+    migration: "supabase/migrations/20260925232127_audit_20260925_name_writers_resolve_through_the_player_identity_crosswalk.sql",
+  },
+  {
+    // Added 2026-09-25 (batch 46). The daily linker's identity arm: links,
+    // mints with the league's spelling, aliases the label, counts what it
+    // cannot decide; the legacy name/alias arms only for labels the crosswalk
+    // does not know.
+    fn: "link_editions_to_players_by_name",
+    test: "supabase/tests/link_editions_to_players_by_name.sql",
+    // re-pointed 2026-09-25 (batch 54): a city-labelled team moment links to the franchise row.
+    migration: "supabase/migrations/20260926004758_audit_20260925_city_labelled_team_moments_belong_to_the_franchise_row.sql",
+  },
+  {
+    // Added 2026-09-25 (batch 47). The player page's stats read: NULL for a
+    // player the feed cannot key (no identity / no espn_id), [] for one with
+    // no rows yet, else the latest N regular seasons newest first.
+    fn: "get_player_season_stats",
+    test: "supabase/tests/get_player_season_stats.sql",
+    // re-pointed 2026-09-25 (batch 49): the key gained team_slug (a traded season
+    // is one line per team plus a total), the read returns is_total.
+    // re-pointed 2026-09-25 (batch 56): returns espn_league (WNBA seasons are calendar years).
+    migration: "supabase/migrations/20260926012607_audit_20260925_stats_feed_reaches_retired_players_and_the_wnba.sql",
+  },
+  {
+    fn: "resolve_canonical_player",
+    test: "supabase/tests/resolve_canonical_player.sql",
+    // re-pointed 2026-09-25 (batch 53): the league-id crosswalk decides before the slug.
+    migration: "supabase/migrations/20260926004254_audit_20260925_resolve_canonical_player_consults_the_player_identity_crosswalk.sql",
+  },
+  {
+    // Added 2026-09-25 (batch 55). The concierge's view of a player NAME: any
+    // spelling → the person, with namesakes, recorded relations (parent/child,
+    // unrelated, name change), aliases, crosswalk identity; ambiguity declared.
+    fn: "resolve_player_name",
+    test: "supabase/tests/resolve_player_name.sql",
+    migration: "supabase/migrations/20261102215531_audit_20261102_resolve_player_name_alias_slug_trailing_dash.sql",
+  },
+  {
+    // Added 2026-09-25 (batch 55). resolve_player_name's per-player summary
+    // (shared by the resolved case and every ambiguous candidate).
+    fn: "_player_identity_summary",
+    test: "supabase/tests/resolve_player_name.sql",
+    // re-pointed 2026-09-25 (batch 57): output slugs are the site's (a trailing "." keeps its dash).
+    // re-pointed 2026-09-25 (batch 59): player.labels — every edition label the person carries.
+    migration: "supabase/migrations/20260926015840_audit_20260925_resolve_player_name_carries_the_persons_edition_labels.sql",
+  },
+  {
+    // Added 2026-09-25 (batch 61). The concierge's view of a TEAM name: labels
+    // grouped into franchises through the league map (historic names), the
+    // current name primary, ambiguity declared.
+    // Re-pinned 2026-09-25 (batch 62): the note says the reads cover every era.
+    fn: "resolve_team_name",
+    test: "supabase/tests/resolve_team_name.sql",
+    // Re-pinned 2026-11-08 (#238): a team NICKNAME (team_name_aliases) matches its label.
+    migration: "supabase/migrations/20261108162400_audit_20261108_team_nicknames_in_search_and_resolver.sql",
+  },
+  {
+    // Added 2026-11-08 (pinnacle-wmc-render-gap fix 3). Minted renders with no catalog row,
+    // recent ones counted apart; read by the daily catalog backfill.
+    fn: "pinnacle_minted_renders_missing_from_catalog",
+    test: "supabase/tests/pinnacle_minted_renders_missing_from_catalog.sql",
+    migration: "supabase/migrations/20261108181134_audit_20261108_pinnacle_minted_renders_missing_from_catalog.sql",
+  },
+  {
+    // Added 2026-11-09: deletes Candy NAME-ONLY editions (DAS returned no metadata) no card holds
+    // after the census repointed their cards to the real edition; hourly pg_cron.
+    fn: "candy_delete_orphan_name_only_editions",
+    test: "supabase/tests/candy_delete_orphan_name_only_editions.sql",
+    migration: "supabase/migrations/20261110044500_audit_20261109_candy_delete_orphan_name_only_editions.sql",
+  },
+  {
+    // Added 2026-11-09: a Candy listing follows its card when the census repoints / re-keys it.
+    fn: "candy_repoint_listings_to_card_edition",
+    test: "supabase/tests/candy_repoint_listings_to_card_edition.sql",
+    migration: "supabase/migrations/20261110044500_audit_20261109_candy_delete_orphan_name_only_editions.sql",
+  },
+  {
+    // Added 2026-11-09: deletes Candy 1/1 editions no card holds (after the 1-of-1 re-key); hourly pg_cron.
+    fn: "candy_delete_orphan_one_of_one_editions",
+    test: "supabase/tests/candy_delete_orphan_one_of_one_editions.sql",
+    migration: "supabase/migrations/20261110041400_audit_20261109_candy_trophies_mlb_only_and_orphan_one_of_one_cleanup.sql",
+  },
+  {
+    // Added 2026-11-08 (#221). wmc player names follow the catalog where the cached spelling is a
+    // registered alias or a case/space variant; accent-only variants are never rewritten.
+    fn: "heal_wmc_player_names_from_catalog",
+    test: "supabase/tests/heal_wmc_player_names_from_catalog.sql",
+    // Re-pinned 2026-11-08 (second pass): the target is the LINKED PERSON, not the edition label.
+    // Re-pinned 2026-11-09: one call walks a bounded slice behind a cursor (the whole-table scan
+    // timed out once the Candy census grew wmc to 3.6M rows).
+    migration: "supabase/migrations/20261110000023_audit_20261109_wmc_player_names_heal_walks_a_bounded_slice.sql",
+  },
+  {
+    fn: "upsert_player_canonical",
+    test: "supabase/tests/upsert_player_canonical.sql",
+    migration: "supabase/migrations/20261108020159_audit_20261107_upsert_player_canonical_honours_aliases.sql",
+  },
+  {
+    fn: "update_sale_serial",
+    test: "supabase/tests/update_sale_serial.sql",
+    migration: "supabase/migrations/20260802182000_audit_20260802_snapshot_serial_write_guards.sql",
+  },
+  {
+    fn: "update_topshot_sale_serial",
+    test: "supabase/tests/update_topshot_sale_serial.sql",
+    migration: "supabase/migrations/20260802182000_audit_20260802_snapshot_serial_write_guards.sql",
+  },
+  {
+    fn: "record_serial_backfill_failure",
+    test: "supabase/tests/record_serial_backfill_failure.sql",
+    migration: "supabase/migrations/20260802182500_audit_20260802_snapshot_record_serial_backfill_failure.sql",
+  },
+  {
+    fn: "draw_raffle",
+    test: "supabase/tests/draw_raffle.sql",
+    migration: "supabase/migrations/20260802183000_audit_20260802_snapshot_draw_raffle.sql",
+  },
+  {
+    fn: "admin_verify_wallet",
+    test: "supabase/tests/admin_verify_wallet.sql",
+    migration: "supabase/migrations/20260802183500_audit_20260802_snapshot_admin_verify_wallet.sql",
+  },
+  {
+    fn: "bump_concierge_ip_rate",
+    test: "supabase/tests/bump_concierge_ip_rate.sql",
+    migration: "supabase/migrations/20260802184000_audit_20260802_snapshot_bump_concierge_ip_rate.sql",
+  },
+  {
+    fn: "close_expired_cached_listings",
+    test: "supabase/tests/close_expired_cached_listings.sql",
+    migration: "supabase/migrations/20260802184500_audit_20260802_snapshot_close_expired_cached_listings.sql",
+  },
+  {
+    fn: "pinnacle_upsert_nft_map",
+    test: "supabase/tests/pinnacle_upsert_nft_map.sql",
+    migration: "supabase/migrations/20260802185000_audit_20260802_snapshot_pinnacle_upsert_nft_map.sql",
+  },
+  {
+    fn: "mark_signal_wallets_fully_enriched",
+    test: "supabase/tests/mark_signal_wallets_fully_enriched.sql",
+    migration: "supabase/migrations/20260802185500_audit_20260802_snapshot_mark_signal_wallets_fully_enriched.sql",
+  },
+  {
+    fn: "claim_pipeline_lock",
+    test: "supabase/tests/claim_pipeline_lock.sql",
+    migration: "supabase/migrations/20260802190000_audit_20260802_snapshot_claim_pipeline_lock.sql",
+  },
+  {
+    fn: "check_feature_quota",
+    test: "supabase/tests/check_feature_quota.sql",
+    migration: "supabase/migrations/20260802190500_audit_20260802_snapshot_check_feature_quota.sql",
+  },
+  {
+    fn: "apply_topshot_supply",
+    test: "supabase/tests/apply_topshot_supply.sql",
+    // re-pointed 2026-09-11: the success branch now also writes last_success_at, so
+    // an as-of can survive a failed fetch (the failure branch bumps updated_at while
+    // leaving stale counters, which would otherwise publish a fresh age over them).
+    migration: "supabase/migrations/20260912072451_audit_20260911_topshot_pack_supply_keeps_its_last_success_stamp.sql",
+  },
+  {
+    fn: "resolve_golazos_listing_edition_ids",
+    test: "supabase/tests/resolve_golazos_listing_edition_ids.sql",
+    migration: "supabase/migrations/20260802191500_audit_20260802_snapshot_resolve_golazos_listing_edition_ids.sql",
+  },
+  {
+    fn: "check_set_completion",
+    test: "supabase/tests/check_set_completion.sql",
+    migration: "supabase/migrations/20260802192000_audit_20260802_snapshot_check_set_completion.sql",
+  },
+  {
+    fn: "stub_editions_from_wmc",
+    test: "supabase/tests/stub_editions_from_wmc.sql",
+    migration: "supabase/migrations/20260802192500_audit_20260802_snapshot_stub_editions_from_wmc.sql",
+  },
+  {
+    fn: "detect_floor_drops",
+    test: "supabase/tests/detect_floor_drops.sql",
+    migration: "supabase/migrations/20260925165425_audit_20260925_snapshot_five_spliced_functions_so_their_pins_can_be_repointed.sql",
+  },
+  {
+    // The PREVIEW half of the deal-alert pipeline. Pinned 2026-08-17 — it was
+    // the largest unpinned function on the alert path, and an alert's output is
+    // SILENCE, so a defect there is unfalsifiable from the outside: the
+    // 2026-08-16 migration exists because a saved, "live"-looking $0.60 alert
+    // was structurally incapable of firing for weeks.
+    // Re-pointed 2026-09-13: both halves now refuse to build an alert from an ask
+    // nobody has re-confirmed inside ASK_STALE_HOURS (audit_20260912 —
+    // a $0.50 Lillard ask delivered on four consecutive nights off a stamp frozen
+    // three days earlier, against a live floor of $1.03). The preview is pinned
+    // against the sender's rule rather than its own: a preview showing rows the
+    // sender is gated against is the 2026-08-16 defect one level up.
+    fn: "build_deal_alerts_for_subscription",
+    test: "supabase/tests/build_deal_alerts_for_subscription.sql",
+    // Re-pointed 2026-11-13: a serial filter (min/max serial, last mint, jersey) binds pass 1 too.
+    // Before it, 2026-10-10: "perfect mints only" no longer matches a 1-of-1.
+    // Re-pointed 2026-11-14: pass 3, exact-serial listings (a narrow Top Shot serial window).
+    migration: "supabase/migrations/20261114171316_audit_20261114_deal_alerts_exact_serial_listings.sql",
+  },
+  {
+    // The SENDING half of the same pipeline, pinned 2026-08-17. Its preview
+    // sibling above pins what a subscriber WOULD get; this pins what is actually
+    // written — pool gating, per-subscription pool exclusivity, dedupe, and the
+    // rule that `enqueued` counts writes rather than matches.
+    fn: "dispatch_due_deal_alerts",
+    test: "supabase/tests/dispatch_due_deal_alerts.sql",
+    // Re-pointed 2026-10-14: deal alerts fire once per LISTING (notify_mode),
+    // not once per UTC day. Before it, 2026-10-10: perfect mints exclude 1-of-1s.
+    // Re-pointed 2026-11-13: a serial filter binds pass 1 too.
+    // Re-pointed 2026-11-14: pass 3, exact-serial listings (a narrow Top Shot serial window);
+    // then the price pool scoped to rows some price-only sub can read — per-collection caps
+    // (20261114184950; the first form, a per-row EXISTS in 20261114184324, cost more than it saved).
+    migration: "supabase/migrations/20261114184950_audit_20261114_deal_alert_price_pool_caps_per_collection.sql",
+  },
+  {
+    // ⚠ THREE ENTRIES, ONE FUNCTION, AND THAT IS THE POINT. `ask_is_alertable`
+    // is embedded in its own pin file AND in each consumer's (the pin files are
+    // self-contained, so the gate has to exist before the body that calls it).
+    // An unregistered copy is the worst miss this guard knows — it reads as
+    // covered from every angle while nothing compares it to the migration — so
+    // every copy gets an entry.
+    fn: "ask_is_alertable",
+    test: "supabase/tests/ask_is_alertable.sql",
+    migration: "supabase/migrations/20261001030000_audit_20260930_topshot_alert_asks_are_rechecked_before_they_are_sent.sql",
+  },
+  {
+    fn: "ask_is_alertable",
+    test: "supabase/tests/dispatch_due_deal_alerts.sql",
+    migration: "supabase/migrations/20261001030000_audit_20260930_topshot_alert_asks_are_rechecked_before_they_are_sent.sql",
+  },
+  {
+    fn: "ask_is_alertable",
+    test: "supabase/tests/build_deal_alerts_for_subscription.sql",
+    migration: "supabase/migrations/20261001030000_audit_20260930_topshot_alert_asks_are_rechecked_before_they_are_sent.sql",
+  },
+  {
+    fn: "detect_concentration_buys",
+    test: "supabase/tests/detect_concentration_buys.sql",
+    migration: "supabase/migrations/20261004004247_audit_20261003_buyer_signals_exclude_buyback_wallets.sql",
+  },
+  {
+    fn: "detect_unusual_edition_volume",
+    test: "supabase/tests/detect_unusual_edition_volume.sql",
+    migration: "supabase/migrations/20260802201000_audit_20260802_snapshot_detect_unusual_edition_volume.sql",
+  },
+  {
+    fn: "detect_new_edition_early_buyers",
+    test: "supabase/tests/detect_new_edition_early_buyers.sql",
+    // Re-pointed 2026-11-10: edition_first_sale AS MATERIALIZED (plan only; > 55 s -> 0.19 s on All Day).
+    migration: "supabase/migrations/20261110215349_audit_20261110_insider_early_buyer_detector_materializes_first_sales.sql",
+  },
+  {
+    fn: "detect_topshot_sweeps",
+    test: "supabase/tests/detect_topshot_sweeps.sql",
+    migration: "supabase/migrations/20261004004247_audit_20261003_buyer_signals_exclude_buyback_wallets.sql",
+  },
+  {
+    fn: "compute_pinnacle_serial_fmv_multipliers",
+    test: "supabase/tests/compute_pinnacle_serial_fmv_multipliers.sql",
+    // 2026-09-27: #1 + perfect only (the shared serial_fmv_estimate pattern).
+    migration: "supabase/migrations/20260927183258_audit_20260927_pinnacle_serial_premium_first_and_perfect_only.sql",
+  },
+  {
+    // Re-pointed 2026-08-27 onto the change-detection migration, which added a
+    // WHERE to both of this function's previously-unguarded writes (measured:
+    // ~26,846 -> ~2,978 row writes/hr, symmetric difference ZERO rows over the
+    // real 499,186-row population). The pin's SECTION 2 was added in the same
+    // change because every pre-existing assertion was structurally BLIND to it:
+    // LEAST() already guarantees the stored value, so an INVERTED predicate
+    // passed the identical value assertions. Section 2 reads ROW_COUNT, which
+    // is the only thing the predicate changes, and was verified to FAIL against
+    // the old body.
+    fn: "roll_pack_ask_hourly_low",
+    test: "supabase/tests/roll_pack_ask_hourly_low.sql",
+    migration:
+      "supabase/migrations/20260827023000_audit_20260827_roll_pack_ask_hourly_low_change_detection.sql",
+  },
+  {
+    fn: "remap_topshot_parallel_to_base_misattributed",
+    test: "supabase/tests/remap_topshot_parallel_to_base_misattributed.sql",
+    migration: "supabase/migrations/20260802204500_audit_20260802_snapshot_remap_topshot_parallel_to_base_misattributed.sql",
+  },
+  {
+    fn: "remap_topshot_base_keyed_parallel_sales",
+    test: "supabase/tests/remap_topshot_base_keyed_parallel_sales.sql",
+    migration: "supabase/migrations/20260802205000_audit_20260802_snapshot_remap_topshot_base_keyed_parallel_sales.sql",
+  },
+  // 2026-11-14: parallel sales follow their subedition once the chain answers (Trevor: "Fix it").
+  {
+    fn: "topshot_parallel_sales_followup",
+    test: "supabase/tests/topshot_parallel_sales_followup.sql",
+    migration: "supabase/migrations/20261115011709_audit_20261114_topshot_parallel_sales_stay_on_their_subedition.sql",
+  },
+  {
+    // 2026-11-14 (#251): every writer files a resolved parallel's sale on its subedition at write time.
+    fn: "topshot_sales_follow_subedition_trg",
+    test: "supabase/tests/topshot_parallel_sales_followup.sql",
+    migration: "supabase/migrations/20261115011709_audit_20261114_topshot_parallel_sales_stay_on_their_subedition.sql",
+  },
+  // ── Added 2026-08-15 (test-coverage pass) ─────────────────────────────────
+  // The TopShot remap/conflation family was 2-of-9 pinned. Every member mutates
+  // the sales/wmc/editions keying that all edition-keyed FMV derives from, so
+  // pinning two of them and leaving seven was an arbitrary line — the two that
+  // were pinned are simply the two someone happened to write a snapshot for.
+  // These close the family. Each was validated on a local postgres:16 and
+  // mutation-proven (every assertion demonstrably reddens on a one-token change).
+  {
+    // The only member that DELETES. Pins the int-key gate (refuses to remap onto
+    // a UUID-keyed target, keeping the two key conventions apart), the
+    // slot-scoped collision split between UPDATE and DELETE, and the
+    // `edition_id <> v_canon` guard that stops a half-migrated row satisfying
+    // its own EXISTS subquery and deleting itself.
+    fn: "remap_pack_pool_uuid_key",
+    test: "supabase/tests/remap_pack_pool_uuid_key.sql",
+    migration: "supabase/migrations/20260815160000_audit_20260815_snapshot_remap_pack_pool_uuid_key.sql",
+  },
+  {
+    // Widest blast radius in the family — rewrites edition_id AND serial_number
+    // on `sales`. Pins the slice rotation (a sale in the gap between the fresh
+    // window and the current slice is legitimately skipped), the ambiguity guard
+    // that drops moments whose wmc rows disagree rather than guessing (without it
+    // they are re-keyed on every run, oscillating forever without ever erroring),
+    // and the dup_pairs serial-collision guard.
+    fn: "remap_misattributed_topshot_sales",
+    test: "supabase/tests/remap_misattributed_topshot_sales.sql",
+    // Repointed 2026-09-14: the plausibility guard (never re-key a sale onto an
+    // edition whose circulation cannot contain the serial) is the newest defining
+    // migration for this function.
+    migration: "supabase/migrations/20260914132300_audit_20260914_the_remap_refuses_a_serial_its_target_edition_cannot_contain.sql",
+  },
+  {
+    // Re-keys FOSSIL wmc rows (edition_key not in canonical setID:playID[::subID]
+    // form). wmc is the portfolio store and its UUID fossils render as real
+    // moments on /share, so a bad re-key is user-visible. Pins the
+    // COALESCE(parallel, base) precedence — collapsing it is the conflation
+    // defect itself and is invisible in the return value — plus the fact that an
+    // unresolvable row is COUNTED rather than written to a fallback, and that the
+    // audit table's predicate matches the UPDATE's (it is the revert path).
+    fn: "remap_topshot_wmc_from_onchain_map",
+    test: "supabase/tests/remap_topshot_wmc_from_onchain_map.sql",
+    migration: "supabase/migrations/20260815162000_audit_20260815_snapshot_remap_topshot_wmc_from_onchain_map.sql",
+  },
+  {
+    // Re-keys sales AND moments from the on-chain map. Pins the deliberate
+    // asymmetry: sales move unconditionally, moments move FREE-SLOT ONLY and a
+    // blocked one is reported as `moments_deferred_conflict` rather than forced
+    // (which would corrupt moment identity) or dropped silently (which would make
+    // the return value lie).
+    fn: "remap_topshot_from_onchain_map",
+    test: "supabase/tests/remap_topshot_from_onchain_map.sql",
+    migration:
+      "supabase/migrations/20260913181737_audit_20260913_onchain_rekey_stops_downgrading_a_parallel_to_its_base_on_absence_of_evidence.sql",
+  },
+  {
+    // Splits base-keyed rows onto their resolved ::N parallel across sales, wmc
+    // AND moments. Its migration was already committed and was verified
+    // byte-identical to LIVE on 2026-08-15, so no snapshot was needed — only the
+    // test was missing. Pins the LIMIT-binds-on-actionable clause (without it the
+    // drain samples an arbitrary slice of a ~99%-already-split 673k-row table and
+    // reports success while making no progress) and the knot skip holding across
+    // all three tables at once.
+    fn: "remap_topshot_split_resolved_subeditions",
+    test: "supabase/tests/remap_topshot_split_resolved_subeditions.sql",
+    migration:
+      "supabase/migrations/20260828231031_audit_20260828_r55_conflated_step_timeouts_beat_the_gateway.sql",
+  },
+  {
+    // Realigns rows already carrying a ::N suffix onto the RIGHT parallel (or
+    // back to the base). Pins the `LIKE base || '::%'` confinement, which is the
+    // only thing stopping a realign dragging a row across bases.
+    fn: "remap_topshot_realign_miskeyed_subeditions",
+    test: "supabase/tests/remap_topshot_realign_miskeyed_subeditions.sql",
+    migration:
+      "supabase/migrations/20260828231031_audit_20260828_r55_conflated_step_timeouts_beat_the_gateway.sql",
+  },
+  {
+    // The function the rest of the family defers TO: every other remapper detects
+    // a knot and skips it, this is the only thing that unties one. Pins the
+    // 2-move permutation's DISTINCT transient serial parks (+3M/+4M — parking
+    // both at the same offset makes them collide with each other mid-swap, which
+    // the test's real UNIQUE(edition_id, serial_number) index makes observable)
+    // and the defensive re-check that refuses to apply a stale candidate.
+    // Its migration was already committed and verified byte-identical to LIVE on
+    // 2026-08-15, so only the test was missing.
+    fn: "resolve_topshot_subedition_collision_knots",
+    test: "supabase/tests/resolve_topshot_subedition_collision_knots.sql",
+    migration:
+      "supabase/migrations/20260705223000_audit_20260705_collision_knot_resolver_orchestrator_step.sql",
+  },
+  {
+    fn: "raise_impossible_parallel_circ",
+    test: "supabase/tests/raise_impossible_parallel_circ.sql",
+    // Re-pointed 2026-09-11 (#82): the function now audits ONLY raises that survived
+    // the BEFORE trigger and reports attempted / raised / reverted_by_trigger. Until
+    // then its audit row was written from the PRE-trigger CTE value and `raised` counted
+    // UPDATEs ATTEMPTED, so 274 "repairs" were logged across 188 editions while 168 of
+    // them are not reflected in the data. ⭐ The fixture moved with it: it had NEITHER
+    // the `badge_editions` table NOR the trigger that reverts the write, so it validated
+    // the function in a world where the thing that breaks it does not exist.
+    migration: "supabase/migrations/20260911103459_impossible_parallel_selfheal_audits_only_raises_that_survived.sql",
+  },
+  {
+    fn: "get_wallet_total_fmv",
+    test: "supabase/tests/get_wallet_total_fmv.sql",
+    // re-pointed 2026-08-10: collection-scoped the editions join (fixes the
+    // cross-collection FMV inflation); the fix migration supersedes the snapshot.
+    // Re-pointed 2026-08-30 IN THE SAME SESSION as the change: the whole-table
+    // DISTINCT ON latest_fmv (1.37M buffers per call) became a per-edition LATERAL and
+    // the function went LANGUAGE plpgsql + force_custom_plan (the generic plan filtered
+    // a 155k-row wallet instead of using the (wallet, collection) index: 30 s timeout).
+    // Same 3-tier COALESCE, same fixtures, all three assertions unchanged.
+    migration: "supabase/migrations/20260830025740_audit_20260830_get_wallet_total_fmv_scopes_latest_fmv_to_the_wallet_and_plans_with_its_params.sql",
+  },
+  {
+    fn: "resolve_wallet_challenge_match",
+    test: "supabase/tests/resolve_wallet_challenge_match.sql",
+    migration: "supabase/migrations/20260801160400_audit_20260801_snapshot_resolve_wallet_challenge_match.sql",
+  },
+  {
+    fn: "get_linked_parents",
+    test: "supabase/tests/get_linked_accounts.sql",
+    migration: "supabase/migrations/20260801160500_audit_20260801_snapshot_get_linked_accounts.sql",
+  },
+  {
+    fn: "get_linked_children",
+    test: "supabase/tests/get_linked_accounts.sql",
+    migration: "supabase/migrations/20260801160500_audit_20260801_snapshot_get_linked_accounts.sql",
+  },
+  {
+    fn: "award_points",
+    test: "supabase/tests/award_points.sql",
+    migration: "supabase/migrations/20260801160600_audit_20260801_snapshot_award_points.sql",
+  },
+  {
+    fn: "activate_pro_from_stripe",
+    test: "supabase/tests/activate_pro_from_stripe.sql",
+    migration:
+      "supabase/migrations/20260801230000_audit_20260801_snapshot_activate_pro_from_stripe.sql",
+  },
+  {
+    fn: "admin_adjust_points",
+    test: "supabase/tests/admin_adjust_points.sql",
+    migration:
+      "supabase/migrations/20260801230100_audit_20260801_snapshot_admin_adjust_points.sql",
+  },
+  {
+    fn: "activate_pro_from_payment",
+    test: "supabase/tests/activate_pro_from_payment.sql",
+    migration:
+      "supabase/migrations/20260801230200_audit_20260801_snapshot_activate_pro_from_payment.sql",
+  },
+  {
+    fn: "resolve_channel_owner",
+    test: "supabase/tests/resolve_channel_owner.sql",
+    migration:
+      "supabase/migrations/20260801230300_audit_20260801_snapshot_resolve_channel_owner.sql",
+  },
+  {
+    fn: "clear_badge_low_ask_stale",
+    test: "supabase/tests/clear_badge_low_ask_stale.sql",
+    migration:
+      "supabase/migrations/20260801230400_audit_20260801_snapshot_clear_badge_low_ask_stale.sql",
+  },
+  {
+    fn: "get_owner_channel_targets",
+    test: "supabase/tests/get_owner_channel_targets.sql",
+    migration:
+      "supabase/migrations/20260801230500_audit_20260801_snapshot_get_owner_channel_targets.sql",
+  },
+  {
+    // Re-pinned 2026-11-04 evening: a Top Shot cut stops at the best open edition offer (_haircut_bidfloor);
+    // then All Day LOW with unknown depth takes 0.75 like Top Shot (20261105050000).
+    fn: "fmv_apply_thin_sale_haircut",
+    test: "supabase/tests/fmv_apply_thin_sale_haircut.sql",
+    migration: "supabase/migrations/20261105050000_audit_20261104_allday_low_haircut_075.sql",
+  },
+  {
+    // 2026-11-04 evening: the inline twin fmv-recalc step 8 calls — pinned for the first time with the bid stop.
+    fn: "fmv_apply_thin_sale_haircut_for_editions",
+    test: "supabase/tests/fmv_apply_thin_sale_haircut.sql",
+    migration: "supabase/migrations/20261105050000_audit_20261104_allday_low_haircut_075.sql",
+  },
+  {
+    fn: "check_triggered_fmv_alerts",
+    test: "supabase/tests/check_triggered_fmv_alerts.sql",
+    migration:
+      "supabase/migrations/20261010142824_audit_20261010_fmv_alerts_read_the_editions_own_live_ask.sql",
+  },
+  {
+    fn: "trade_room_cancel_locked",
+    test: "supabase/tests/trade_room_locked_transitions.sql",
+    migration:
+      "supabase/migrations/20261115013625_audit_20261114_trade_room_state_transitions_lock_the_room_row.sql",
+  },
+  {
+    fn: "trade_room_post_signature_locked",
+    test: "supabase/tests/trade_room_locked_transitions.sql",
+    migration:
+      "supabase/migrations/20261115013625_audit_20261114_trade_room_state_transitions_lock_the_room_row.sql",
+  },
+  {
+    fn: "trade_room_mark_signing_locked",
+    test: "supabase/tests/trade_room_locked_transitions.sql",
+    migration:
+      "supabase/migrations/20261115013625_audit_20261114_trade_room_state_transitions_lock_the_room_row.sql",
+  },
+  {
+    fn: "trade_room_unaccept_locked",
+    test: "supabase/tests/trade_room_locked_transitions.sql",
+    migration:
+      "supabase/migrations/20261115013625_audit_20261114_trade_room_state_transitions_lock_the_room_row.sql",
+  },
+  {
+    fn: "trade_room_signing_ended_locked",
+    test: "supabase/tests/trade_room_locked_transitions.sql",
+    migration:
+      "supabase/migrations/20261115013625_audit_20261114_trade_room_state_transitions_lock_the_room_row.sql",
+  },
+  {
+    fn: "dispatch_triggered_fmv_alerts",
+    test: "supabase/tests/dispatch_triggered_fmv_alerts.sql",
+    migration:
+      "supabase/migrations/20261114235800_audit_20261114_fmv_alert_dispatch_rotates_instead_of_rescanning_its_head.sql",
+  },
+  {
+    fn: "edition_live_ask",
+    test: "supabase/tests/edition_live_ask.sql",
+    migration:
+      "supabase/migrations/20261020041750_audit_20261019_edition_live_ask_probes_floor_views_by_edition_id.sql",
+  },
+  {
+    fn: "get_special_serial_owners_board",
+    test: "supabase/tests/get_special_serial_owners_board.sql",
+    migration:
+      "supabase/migrations/20260801230900_audit_20260801_snapshot_get_special_serial_owners_board.sql",
+  },
+  {
+    fn: "get_active_challenges",
+    test: "supabase/tests/get_active_challenges.sql",
+    migration:
+      "supabase/migrations/20261028003726_audit_20261027_challenge_worth_it_never_on_a_partial_cost.sql",
+  },
+  {
+    fn: "get_challenge_plan",
+    test: "supabase/tests/get_challenge_plan.sql",
+    migration:
+      "supabase/migrations/20261028003726_audit_20261027_challenge_worth_it_never_on_a_partial_cost.sql",
+  },
+  {
+    fn: "refresh_challenge_costs",
+    test: "supabase/tests/refresh_challenge_costs.sql",
+    migration:
+      "supabase/migrations/20260927153137_audit_20260927_challenge_reward_median_excludes_topshot_shop.sql",
+  },
+  {
+    // Points at the 2026-08-01 snapshot, NOT the 2026-07-13 migration whose
+    // resolve_challenge_slots body is stale vs live (redefined via MCP after).
+    fn: "resolve_challenge_slots",
+    test: "supabase/tests/resolve_challenge_slots.sql",
+    migration:
+      "supabase/migrations/20260801231300_audit_20260801_snapshot_resolve_challenge_slots.sql",
+  },
+  {
+    fn: "save_user_wallet",
+    test: "supabase/tests/save_user_wallet.sql",
+    migration: "supabase/migrations/20260801160700_audit_20260801_snapshot_save_user_wallet.sql",
+  },
+  {
+    fn: "compute_serial_fmv_multipliers",
+    test: "supabase/tests/compute_serial_fmv_multipliers.sql",
+    migration: "supabase/migrations/20261004002116_audit_20261003_fmv_readers_exclude_buyback_wallets.sql",
+  },
+  {
+    fn: "compute_ultimate_non_special_fmv",
+    test: "supabase/tests/compute_ultimate_non_special_fmv.sql",
+    // Re-pinned 2026-10-25: the ask is the edition's own (moment_id = external_id), not the player/set's.
+    // Re-pinned 2026-11-02 (#227): no cached ask -> badge_editions.low_ask (the thin-sales guard's source).
+    migration: "supabase/migrations/20261102210500_audit_20261102_ultimate_fmv_falls_back_to_the_guard_ask.sql",
+  },
+  {
+    fn: "compute_serial_fmv_power_model",
+    test: "supabase/tests/compute_serial_fmv_power_model.sql",
+    migration: "supabase/migrations/20261004002116_audit_20261003_fmv_readers_exclude_buyback_wallets.sql",
+  },
+  {
+    fn: "compute_serial_fmv_jersey_model",
+    test: "supabase/tests/compute_serial_fmv_jersey_model.sql",
+    migration: "supabase/migrations/20261004002116_audit_20261003_fmv_readers_exclude_buyback_wallets.sql",
+  },
+  {
+    fn: "grant_pro_grandfather",
+    test: "supabase/tests/grant_pro_grandfather.sql",
+    migration:
+      "supabase/migrations/20260801231900_audit_20260801_snapshot_grant_pro_grandfather.sql",
+  },
+  {
+    fn: "redeem_shop_item",
+    test: "supabase/tests/redeem_shop_item.sql",
+    migration:
+      "supabase/migrations/20260802000100_audit_20260802_snapshot_redeem_shop_item.sql",
+  },
+  {
+    fn: "record_link_state",
+    test: "supabase/tests/record_link_state.sql",
+    migration:
+      "supabase/migrations/20260929235500_audit_20260929_record_link_state_script_write_keeps_event_provenance.sql",
+  },
+  {
+    fn: "fulfill_redemption",
+    test: "supabase/tests/fulfill_redemption.sql",
+    migration:
+      "supabase/migrations/20260802000300_audit_20260802_snapshot_fulfill_redemption.sql",
+  },
+  {
+    fn: "upsert_wallet_moments",
+    test: "supabase/tests/upsert_wallet_moments.sql",
+    // Re-pointed 2026-10-31 (#219): league = the edition's TEAM label OR the set rule.
+    // Re-pointed 2026-10-31 (#222): a payload without is_locked keeps the row's lock flag.
+    migration:
+      "supabase/migrations/20261101040817_audit_20261031_upsert_wallet_moments_keeps_a_lock_flag_it_was_not_given.sql",
+  },
+  {
+    fn: "save_fast_break_lineup",
+    test: "supabase/tests/save_fast_break_lineup.sql",
+    migration:
+      "supabase/migrations/20260802000500_audit_20260802_snapshot_save_fast_break_lineup.sql",
+  },
+  {
+    fn: "ensure_topshot_edition_stub",
+    test: "supabase/tests/ensure_topshot_edition_stub.sql",
+    migration:
+      "supabase/migrations/20260802000600_audit_20260802_snapshot_ensure_topshot_edition_stub.sql",
+  },
+  {
+    fn: "fmv_snapshots_cap_closed_market_confidence",
+    test: "supabase/tests/fmv_snapshots_cap_closed_market_confidence.sql",
+    migration:
+      "supabase/migrations/20260804050100_audit_20260804_fmv_cap_confidence_closed_market.sql",
+  },
+  {
+    fn: "fmv_snapshots_zero_stale_sales_count",
+    test: "supabase/tests/fmv_snapshots_zero_stale_sales_count.sql",
+    migration:
+      "supabase/migrations/20260804060000_audit_20260804_fmv_zero_stale_sales_count.sql",
+  },
+  {
+    // Re-pinned 2026-10-23: the Golazos arm (the same cap, the same measured shape).
+    // Re-pinned 2026-10-29: the All Day _histcap arm (no sale in 180 d: capped at 3x the last-3 of any age),
+    // then the same day its Top Shot extension (Top Shot's 180-day _salescap arm stays off).
+    // Re-pinned 2026-11-04: a Top Shot ask above 3x a RECENT last-3 median is bounded there too (_histcap).
+    // Re-pinned 2026-11-04 evening: a Top Shot ask with a 180-day sale is capped at the LAST sale (_salescap).
+    fn: "fmv_snapshots_cap_allday_ask_only_to_recent_sales",
+    test: "supabase/tests/fmv_snapshots_cap_allday_ask_only_to_recent_sales.sql",
+    migration: "supabase/migrations/20261105024000_audit_20261104_topshot_ask_only_last_sale_cap.sql",
+  },
+  {
+    // 2026-11-04 evening: a Top Shot FMV is floored at the best OPEN edition-level offer (<= 3x), _bidfloor.
+    fn: "fmv_snapshots_floor_topshot_at_best_offer",
+    test: "supabase/tests/fmv_snapshots_floor_topshot_at_best_offer.sql",
+    migration: "supabase/migrations/20261105033000_audit_20261104_topshot_fmv_floor_at_best_offer.sql",
+  },
+  {
+    // 2026-11-04 evening: the weekly FMV accuracy instrument (published price vs the sales that followed it).
+    fn: "refresh_fmv_accuracy_weekly",
+    test: "supabase/tests/refresh_fmv_accuracy_weekly.sql",
+    migration: "supabase/migrations/20261105040000_audit_20261104_fmv_accuracy_weekly.sql",
+  },
+  {
+  // 2026-10-23 (#209): a Top Shot / All Day STALE price is capped at the edition's LAST market sale.
+  // Backtested 60 d on sales under a CURRENT STALE snapshot: published 2.0× (TS) / 5.0× (AD) realised,
+  // min(published, last sale) 1.25× / 1.40×, best on every axis, never worse by last-sale age.
+    fn: "fmv_snapshots_cap_stale_to_last_sale",
+    test: "supabase/tests/fmv_snapshots_cap_stale_to_last_sale.sql",
+    // 2026-11-05 (#213): All Day circulation <= 50 caps at the last NON-PREMIUM sale (not #1 / jersey / last mint).
+    migration: "supabase/migrations/20261105213600_audit_20261105_allday_stale_cap_skips_premium_serials.sql",
+  },
+  {
+    // 2026-10-26 (#202, panini-1.4.1): a Panini LOW price is capped at the edition's lowest live ask.
+    // Forward shadow read 10-21..10-26: on the 82 sales the cap changed, within ±25 % 1.2 % -> 53.7 %; no tier loses.
+    fn: "fmv_snapshots_cap_panini_low_to_live_ask",
+    test: "supabase/tests/fmv_snapshots_cap_panini_low_to_live_ask.sql",
+    // Re-pointed 2026-11-12: the cap covers every sale-derived tier (LOW, MEDIUM, HIGH, STALE).
+    migration: "supabase/migrations/20261112183500_audit_20261112_panini_ask_cap_covers_every_sale_tier.sql",
+  },
+  {
+    // 2026-11-04: panini_fmv_snapshots (the twin the public Panini boards read) withholds FMV > $10,000, as
+    // fmv_snapshots_block_phantoms does on the published FMV. Was: a $500k ask-only FMV and a "30 % off" $44k deal.
+    fn: "panini_fmv_snapshots_withhold_over_cap",
+    test: "supabase/tests/panini_fmv_snapshots_withhold_over_cap.sql",
+    migration: "supabase/migrations/20261105000529_audit_20261104_panini_fmv_snapshots_withhold_over_cap.sql",
+  },
+  {
+    // 2026-11-04 (Trevor: "Ship it now"): a Pinnacle ASK_ONLY price above 3x the median of the pin's last 3 sales
+    // is capped there (_histcap), the All Day / Top Shot rule. Was: Pedro /54 at $1,620 off one $1,800 ask after ~$100 sales.
+    fn: "pinnacle_catalog_cap_ask_only_to_sales_history",
+    test: "supabase/tests/pinnacle_catalog_cap_ask_only_to_sales_history.sql",
+    migration: "supabase/migrations/20261105010815_audit_20261104_pinnacle_ask_only_histcap.sql",
+  },
+  {
+    // 2026-10-23: the sitemap's readers for the cross-collection hubs — the bulk form
+    // of the predicate each hub page applies (and get_player_hub's canonical slug).
+    fn: "list_indexable_player_hubs",
+    test: "supabase/tests/list_indexable_hubs.sql",
+    migration: "supabase/migrations/20261023073556_audit_20261023_sitemap_lists_the_indexable_hubs.sql",
+  },
+  {
+    fn: "list_indexable_franchise_hubs",
+    test: "supabase/tests/list_indexable_hubs.sql",
+    // Re-pointed 2026-10-25 in the same session as the change: reads panini_edition_team_keys
+    // (walk listing → printed team → sibling) instead of the raw walk listings.
+    migration: "supabase/migrations/20261026044548_audit_20261025_panini_edition_team_keys.sql",
+  },
+  {
+    fn: "fmv_snapshots_block_stale_ingest_algo",
+    test: "supabase/tests/fmv_snapshots_block_stale_ingest_algo.sql",
+    migration:
+      "supabase/migrations/20260804210000_audit_20260804_snapshot_fmv_snapshots_remaining_write_guards.sql",
+  },
+  {
+    fn: "tg_fmv_snapshots_set_collection",
+    test: "supabase/tests/tg_fmv_snapshots_set_collection.sql",
+    migration:
+      "supabase/migrations/20260804210000_audit_20260804_snapshot_fmv_snapshots_remaining_write_guards.sql",
+  },
+  {
+    fn: "stamp_unmapped_onchain_attempt",
+    test: "supabase/tests/stamp_unmapped_onchain_attempt.sql",
+    migration:
+      "supabase/migrations/20260804220000_audit_20260804_unmapped_sales_onchain_attempts_counter.sql",
+  },
+  // ── Added 2026-08-15: the SCHEDULED DELETERS ───────────────────────────────
+  // Measured on the live instance that day: 183 SECDEF functions in `public`
+  // WRITE (insert/update/delete), 66 were pinned, 117 were not — and 25 of the
+  // unpinned ones run on an ACTIVE pg_cron schedule. These three are the
+  // deleters in that set, chosen first because a delete is the failure mode
+  // this layer cannot recover from: over-deletion produces an ABSENCE, not an
+  // error, so nothing downstream reports it.
+  {
+    // pg_cron `41 */6 * * *`. Deletes from pipeline_runs — the only record that
+    // a run happened. A row pruned early is indistinguishable from "the
+    // pipeline never ran", which CLAUDE.md records two sessions independently
+    // mis-reading. Pins the retention BOUNDARY in both directions (the fixture
+    // sits exactly ON the cutoff, because a boundary test that is merely NEAR
+    // the boundary passes under both `<` and `<=`), and that a NULL started_at
+    // is never age-pruned.
+    fn: "prune_pipeline_runs",
+    test: "supabase/tests/prune_pipeline_runs.sql",
+    migration:
+      "supabase/migrations/20260815203500_audit_20260815_snapshot_prune_pipeline_runs.sql",
+  },
+  {
+  // ── Trust-board precompute legs (8) ───────────────────────────────────────
+  //
+  // ⚠ THESE ENTERED THE "SCHEDULED WRITER" POPULATION WITH NO CODE CHANGE AT ALL.
+  // CLAUDE.md recorded that surface CLOSED at 52/52 on 2026-08-16. Re-derived the same
+  // day with the same predicate it was 52 of 63, and eight of the eleven newcomers are
+  // these legs: the 8-way cron split retired the monolithic orchestrator (jobid 287) and
+  // created per-leg jobs 324-331, so each leg's NAME now appears directly in
+  // cron.job.command where previously only the orchestrator's did.
+  //
+  // The lesson is worth more than the pins: a closed-set claim over "scheduled X" can be
+  // REOPENED BY A PURE SCHEDULING CHANGE. The pin count never fell; the population grew.
+  // Re-derive it, do not quote it.
+  //
+  // Stakes: these ten-odd metrics ARE the trust board, and v_rpc_trust_health has no
+  // per-metric age column — so a leg that writes a WRONG value is indistinguishable from
+  // one that wrote a right one. The max-age arm cannot see a value that is fresh and wrong.
+  //
+  // Every leg test also pins the same documented defect in both directions: the 999
+  // sentinel fires on an ordinary error and CANNOT fire on a statement timeout, because
+  // PostgreSQL excludes QUERY_CANCELED from `WHEN OTHERS`. That is current behaviour and
+  // deliberately unfixed (the fix was shipped and reverted on 2026-08-15, `255e7d24`).
+  //
+  // Writes the ten per-collection FMV coverage arms. ⚠ Its two COALESCE(...,0) defaults
+  // point in OPPOSITE directions for the identical absence: 0% stale reads as PERFECT,
+  // 0% high/med share reads as WORST. Pinned, not endorsed.
+    // Re-pointed 2026-09-11: the leg gained `*_fmv_sweep_pct_24h` and
+    // `*_fmv_high_med_fresh24h_pct`, so it writes 20 arms rather than 10, and an
+    // absent collection now publishes -1 there (not measured) instead of a 0 that
+    // would be a claim. ⚠ Caught by `npm run db:pins:check` against LIVE, not by this
+    // guard — this guard compares the test copy to the migration THIS ENTRY NAMES, so
+    // while the entry still named the 08-28 migration it was green on a definition
+    // that had not run in production since 23:21Z 09-10. The test's assertions moved
+    // with it (10 -> 20 in three places) and its cancel-test marker changed from -1 to
+    // -424242, because the leg itself now writes -1 legitimately.
+    fn: "rpc_thp_leg_fmv_coverage",
+    test: "supabase/tests/rpc_thp_leg_fmv_coverage.sql",
+    // Re-pinned 2026-08-28 onto the R41 all-rows-denominator migration (the
+    // canonical-only filter is gone; both TS metrics changed denominator).
+    migration:
+      "supabase/migrations/20260920143959_audit_20260920_r118_batch_three_fourteen_pinned_functions_catch_query_canceled_literal_ddl_from_their_pins.sql",
+  },
+  {
+  // Parallel-only, known-circulation-only. Both filters asserted in both directions:
+  // without the second, a catalog gap (circulation 0) would read as mass conflation.
+    fn: "rpc_thp_leg_impossible_parallel",
+    test: "supabase/tests/rpc_thp_leg_impossible_parallel.sql",
+    migration:
+      "supabase/migrations/20261002142107_audit_20261002_leg_324_counts_the_just_closed_month_live_until_its_baseline_lands.sql",
+  },
+  {
+  // ⚠ Two deliberate blind spots pinned because they look like health: a collection under
+  // the 200-sample floor is INVISIBLE rather than safe, and with nothing over the floor the
+  // arm publishes 0 — a platform-wide ingest stop reads as perfect serial supply.
+    fn: "rpc_thp_leg_serial_supply",
+    test: "supabase/tests/rpc_thp_leg_serial_supply.sql",
+    migration:
+      "supabase/migrations/20260920143959_audit_20260920_r118_batch_three_fourteen_pinned_functions_catch_query_canceled_literal_ddl_from_their_pins.sql",
+  },
+  {
+  // The one leg whose sentinel is reachable WITHOUT an exception (empty history ->
+  // NULLIF -> COALESCE 999). ⚠ It can also go NEGATIVE when more packs are published than
+  // priced, which reads as very healthy against an upper-bound threshold.
+    fn: "rpc_thp_leg_pack_ev",
+    test: "supabase/tests/rpc_thp_leg_pack_ev.sql",
+    migration:
+      "supabase/migrations/20260920143959_audit_20260920_r118_batch_three_fourteen_pinned_functions_catch_query_canceled_literal_ddl_from_their_pins.sql",
+  },
+  {
+  // ⚠ THE MODEL FOR THE OTHERS: an incomplete sweep publishes 999 (INCONCLUSIVE), never
+  // the partial numbers it did collect. Compare rpc_thp_leg_fmv_coverage, which publishes a
+  // hard 0 for its own absence and so reads as perfect.
+    fn: "rpc_thp_leg_board_liveness",
+    test: "supabase/tests/rpc_thp_leg_board_liveness.sql",
+    migration:
+      "supabase/migrations/20260920143959_audit_20260920_r118_batch_three_fourteen_pinned_functions_catch_query_canceled_literal_ddl_from_their_pins.sql",
+  },
+  {
+  // Dry days is a CURRENT-STREAK counter (running bool_or from the newest day backwards),
+  // not a total — which is why +1/day on the breached arm is the outage continuing rather
+  // than new information, and why one captured day resets it to 0 immediately.
+  // Re-pinned 2026-08-18: the streak counted on raw_supplied_sale_price, i.e.
+  // raw->>'brought_at_price' — an upstream field ABANDONED and replaced 2026-08-08. It read 0 on
+  // every one of the last 30 days, so the arm could only climb (+1/day, at 20 when fixed) and could
+  // never clear. Re-pointed to column_last_sale_usd, live at a steady 22-24% since 08-09; the arm
+  // reset to 0 on the next leg run. The fixture below now keeps the DEAD column all-zero and carries
+  // the signal in the live one, so a revert yields dry_days=5 and FAILS rather than passing quietly.
+  // NOTE mapping_shortfall is still built on the dead field and publishes negatives - untouched on
+  // purpose, because fixing it is a semantic decision, not a re-point.
+    fn: "rpc_thp_leg_panini",
+    test: "supabase/tests/rpc_thp_leg_panini.sql",
+    migration:
+      "supabase/migrations/20260920143959_audit_20260920_r118_batch_three_fourteen_pinned_functions_catch_query_canceled_literal_ddl_from_their_pins.sql",
+  },
+  {
+  // Thin by design; pinned for the one thing it cannot express — an empty view and a view
+  // that stopped being populated both publish 0.
+    fn: "rpc_thp_leg_fmv_sanity",
+    test: "supabase/tests/rpc_thp_leg_fmv_sanity.sql",
+    migration:
+      "supabase/migrations/20260920143959_audit_20260920_r118_batch_three_fourteen_pinned_functions_catch_query_canceled_literal_ddl_from_their_pins.sql",
+  },
+  {
+  // Reads pinnacle_fmv_history, which is a TRIGGER-written copy of pinnacle_catalog rather
+  // than an independent source — so this arm's denominator is not the catalogue.
+    fn: "rpc_thp_leg_pinnacle_fmv_share",
+    test: "supabase/tests/rpc_thp_leg_pinnacle_fmv_share.sql",
+    migration:
+      "supabase/migrations/20260920143959_audit_20260920_r118_batch_three_fourteen_pinned_functions_catch_query_canceled_literal_ddl_from_their_pins.sql",
+  },
+  {
+  // Panini's half of the headline accuracy metric (2026-10-14). Latest row PER EDITION —
+  // panini_fmv_snapshots keeps daily history, so a per-row count would overweight liquid editions.
+    fn: "rpc_thp_leg_panini_fmv_share",
+    test: "supabase/tests/rpc_thp_leg_panini_fmv_share.sql",
+    migration:
+      "supabase/migrations/20261015025957_audit_20261014_panini_fmv_share_gets_a_trust_health_leg.sql",
+  },
+  {
+  // ── Non-SECDEF scheduled writers (3) ──────────────────────────────────────
+  //
+  // ⚠ The other three of the eleven. They were missed because the sweep that produced the
+  // "52 of 52" claim was scoped to SECURITY DEFINER functions, and these are not. A
+  // predicate's scope is the first thing to question when a closed set turns out not to be.
+  //
+  // The Pinnacle FMV writer — a PRICING writer. Pins that an ASK-derived price never
+  // overwrites a sales-derived one, that an absurd floor is rejected BEFORE it can reach the
+  // price chart, and that a vanished floor reverts to NO_DATA rather than leaving a stale
+  // ask standing as a current price.
+    fn: "pinnacle_fmv_recalc_render_all",
+    test: "supabase/tests/pinnacle_fmv_recalc_render_all.sql",
+    migration:
+      "supabase/migrations/20260623161114_pinnacle_ask_only_cover_null_confidence.sql",
+  },
+  {
+  // Shares a file with the writer above, because the defect lives in their INTERACTION:
+  // NOW() is transaction-stable, so both of that function's passes stamp one fmv_computed_at
+  // and collide on this trigger's (render_id, computed_at) key. While that resolved to DO
+  // NOTHING it discarded the PUBLISHED revision for 776 renders. Measured live 2026-08-16
+  // after the DO UPDATE fix: 0 renders differ. ⚠ CLAUDE.md still describes this as open in
+  // two places; the test asserts the fixed behaviour so a revert reds.
+    fn: "pinnacle_catalog_fmv_history_capture",
+    test: "supabase/tests/pinnacle_fmv_recalc_render_all.sql",
+    migration:
+      "supabase/migrations/20260815172945_audit_20260815_pinnacle_fmv_history_keep_last_write_per_timestamp.sql",
+  },
+  {
+  // ⚠ Was UNPINNABLE: its only committed migration declared a zero-argument FUNCTION while
+  // live is a three-argument PROCEDURE with a soft deadline and per-wallet COMMITs — drift
+  // that `db:pins:check` was structurally blind to, because it only reads functions already
+  // in this array. The snapshot migration above captures the live body.
+  // ⚠ Its test cannot use the suite's BEGIN/ROLLBACK isolation (a COMMIT inside an explicit
+  // transaction raises 2D000); it runs in a throwaway DATABASE instead. See the file header.
+    fn: "reconcile_all_saved_wallet_stats",
+    test: "supabase/tests/reconcile_all_saved_wallet_stats.sql",
+    // ⚠ Repointed 2026-08-26 from the 08-16 snapshot to the duration_ms fix. The two
+    // differ ONLY in the log_pipeline_run call's argument form: the 3-arg overload
+    // hard-codes `p_started_at := now()`, and now() is TRANSACTION start, so this —
+    // the only COMMITting caller in the database — recorded the milliseconds since its
+    // last COMMIT as the run's duration (avg 27,370 ms logged as 10 ms, 2,688x understated).
+    // The named-arg form passes the real v_started. Every logged value is unchanged.
+    // ⚠ Repointed 2026-09-13 to the size gate: a fourth parameter (p_max_moments,
+    // default 20,000) keeps a (user, wallet) pair whose cached_moment_count sums
+    // above it OUT of the hourly queue — one 44.6k-moment wallet at the head killed
+    // the CALL at the 120 s statement budget every hour from 07:44 PT and starved
+    // the other 91. Skipped pairs are counted (wallets_skipped_big, p_rows_skipped)
+    // and measured (oldest_big_cache_h), and oldest_cache_h excludes them so it
+    // cannot pin to a wallet the sweep will never attempt. The three-argument
+    // signature is dropped in the same migration (an added overload would make
+    // pg_cron's three-argument CALL ambiguous).
+    // ⚠ Repointed again 2026-09-13 4:3x PM: oldest_cache_h / oldest_big_cache_h
+    // now split on the PAIR's summed count (the queue's own test) instead of the
+    // row's — the whale's own 4,580-row All Day row had pinned oldest_cache_h at
+    // 17 h while every queued wallet was fresh. Same signature, no DROP.
+    migration:
+      "supabase/migrations/20260913233500_audit_20260913_oldest_cache_h_excludes_the_whole_pair_the_size_gate_skips.sql",
+  },
+  {
+    // pg_cron `10 9 * * *` (jobid 201). Holds a deliberate opt-in past the
+    // destructive-op circuit breaker, so this pin is the ONLY remaining check
+    // on what it deletes from wallet_moments_cache. Pins that the SURVIVOR is
+    // the newest row per moment_id — inverting the ORDER BY keeps the ghost and
+    // deletes the live owner, with an identical row count either way — and that
+    // the collection scope holds (moment_id is not unique across collections).
+    fn: "purge_candy_wmc_ghost_rows",
+    test: "supabase/tests/purge_candy_wmc_ghost_rows.sql",
+    migration:
+      "supabase/migrations/20260815203600_audit_20260815_snapshot_purge_candy_wmc_ghost_rows.sql",
+  },
+  {
+    // pg_cron `20 10 * * 0`. A WEEKLY delete against the ~2.2M-row portfolio
+    // store. The 14-day bound appears TWICE and the copy inside the per-wallet
+    // DELETE is load-bearing: without it, a wallet that qualifies on one stale
+    // row loses its ENTIRE cache including moments seen minutes ago. Also pins
+    // the seeded exemption in BOTH directions (active exempt, inactive not),
+    // and (#227) a collector's saved wallet is exempt.
+    fn: "prune_stale_wmc",
+    test: "supabase/tests/prune_stale_wmc.sql",
+    migration:
+      "supabase/migrations/20261102214905_audit_20261102_prune_stale_wmc_spares_saved_wallets.sql",
+  },
+  // ── Added 2026-08-15: scheduled writers that already had a matching
+  // committed migration, so they needed only a test. Worth checking for before
+  // authoring a snapshot — all four were verified byte-identical to live prosrc
+  // and cost nothing but the test file.
+  {
+    // pg_cron `11 */6 * * *`. Writes pipeline_runs_daily, the INDEFINITE archive
+    // and the only place pipeline history older than ~73h exists. The MONOTONE
+    // GUARD (`WHERE EXCLUDED.runs >= d.runs`) is the invariant: the oldest day in
+    // the re-aggregation window is being concurrently half-deleted by the pruner,
+    // so without it a pass overwrites a complete day with a truncated count — a
+    // plausible smaller number that nothing downstream flags.
+    fn: "rollup_pipeline_runs",
+    test: "supabase/tests/rollup_pipeline_runs.sql",
+    migration:
+      "supabase/migrations/20260902044456_audit_20260902_pipeline_runs_daily_keeps_numeric_extra_values_not_just_key_presence.sql",
+  },
+  {
+    // pg_cron `7-57/10 * * * *` (jobid 303), and the platform's #2 disk reader
+    // (112 GB). Propagates fmv_snapshots into wmc.fmv_usd, the column ~34 DB
+    // functions sum for a collector's portfolio total. Pins the latest-snapshot
+    // selection, the (collection_id, edition_key) join — external_id is NOT
+    // unique across collections — and the IS DISTINCT FROM churn guard, which is
+    // an IO-budget property on a disk-throttled instance rather than a
+    // micro-optimisation.
+    fn: "refresh_wmc_fmv_changed",
+    test: "supabase/tests/refresh_wmc_fmv_changed.sql",
+    // ⚠ RE-POINTED 2026-08-28 BACK OFF the freshness-guarded edition_fmv_current
+    // fast path. db-pin-staleness compares THIS migration's DDL against live prosrc,
+    // so a stale target describes a body that no longer runs — which is why 08-23/24
+    // went red, and why this MUST move in the same push as the migration.
+    //
+    // The fast path shipped with a PRE-REGISTERED exit condition and FAILED it on
+    // both callers when it was read in the quiet window it asked for: pg_cron
+    // 87,352 reads/call vs a 74,159 threshold (+17.8%), PostgREST 10,029 vs 7,195
+    // (+39.4%), reproduced on a second independent window. It buys ~26.5% less wall
+    // time for ~18.5% more disk reads, and this instance is IO-bound.
+    //
+    // The pin's ASSERTIONS were not hand-edited: the .sql was restored VERBATIM from
+    // fb533970, the last commit before the fast path — which is also before the
+    // stray-`$` terminator that commit's assembly regex introduced, so it is a body
+    // CI has actually parsed green. Its header carries the (comment-STRIPPED) clause
+    // counts for the restored body.
+    // ⚠ RE-POINTED AGAIN 2026-08-28 onto the two-caller advisory-lock fix. The
+    // note above says this MUST move in the same push as the migration; it did
+    // not, and a full DB-invariant run is what caught it.
+    // ⚠ KEEP THE COMMENT ABOVE `migration:`, NEVER BETWEEN IT AND THE STRING —
+    // scripts/check-db-pin-staleness.mjs matches `migration:\s*"..."`, so a comment
+    // in that gap drops this pin from the LIVE drift check silently. Two pins were
+    // invisible for exactly that reason until 2026-08-08, and
+    // __tests__/db-pin-staleness-parser-coverage.test.ts caught this one at 188/189.
+    // ⚠ RE-POINTED 2026-08-30: editions whose newest price equals their pre-cursor
+    // price are dropped from the queue before the loop (74 % of snapshots).
+    // ⚠ RE-POINTED 2026-11-14 (#248): the drop compares against rwfc_applied (what the
+    // lane last pushed) because purge_fmv_snapshots_today erases the pre-cursor price;
+    // confidence travels with the price; the cursor stops 5 min behind its run start.
+    migration:
+      "supabase/migrations/20261114171317_audit_20261114_rwfc_drops_only_what_it_applied.sql",
+  },
+  {
+    // pg_cron `28 */6 * * *`. An INSTRUMENT — it feeds the
+    // `public_board_slow_count` trust arm, which is breached and being acted on.
+    // Pins the SLOW-vs-EMPTY split: a 57014 means the board renders too slowly
+    // (a perf signal), any other error means it renders BLANK (a correctness
+    // signal), and the operator's next action differs completely.
+    fn: "public_board_liveness_sweep",
+    test: "supabase/tests/public_board_liveness_sweep.sql",
+    migration:
+      "supabase/migrations/20260822203000_audit_20260822_snapshot_public_board_liveness_sweep_predictive_skip.sql",
+  },
+  {
+    // pg_cron `29 * * * *`. Feeds `unmapped_resolution_backlog_max`, also
+    // breached. Pins `open_gross_unsplittable_rows` (rows in a multi-NFT tx
+    // cannot be priced per-NFT, so they are permanently undrainable — which is
+    // precisely the "exclude on a REASON" the arm's own text asks for), and that
+    // `days_to_drain` stays NULL unless the backlog is genuinely draining rather
+    // than publishing a negative ETA.
+    fn: "refresh_unmapped_backlog_growth",
+    test: "supabase/tests/refresh_unmapped_backlog_growth.sql",
+    // Re-pointed 2026-08-31: 20260831132548 added an `OFFSET 0` optimization fence to
+    // the tx CTE. Without it the planner index-scans unmapped_sales_dedup_idx for a
+    // presorted transaction_hash and heap-fetches ~105k rows in index order — 102,791
+    // buffers against a 9,296-page table. Fenced: 9,296 buffers. Equivalence proven
+    // both directions before ship.
+    migration:
+      "supabase/migrations/20260906215343_audit_20260906_snapshot_five_spliced_functions_so_their_pins_can_be_repointed.sql",
+  },
+  {
+    // pg_cron `25 9 * * *`. One of only TWO scheduled SECDEF functions that
+    // DELETE and were unpinned as of 2026-08-15 (measured: 169 SECDEF writers in
+    // public, 36 on an active schedule, 17 of those unpinned). Deleters were
+    // pinned first because over-deletion produces an ABSENCE, not an error, so
+    // nothing downstream reports it — and this one rebuilds the cache behind the
+    // thin-sale ask DISCLOSURE, the copy that tells a collector an FMV came from
+    // an ask rather than from sales. A silently-empty cache does not break a
+    // page; it removes a caveat from a price.
+    //
+    // Pins the delete-then-insert-in-one-transaction property (a reader must
+    // never observe the table empty), that it rebuilds FROM THE VIEW rather than
+    // from a re-derived predicate (else the disclosure drifts from the clamp it
+    // describes — how the Pinnacle FMV drift guard went tautological), and that
+    // a zero-row rebuild is REPORTED rather than silent.
+    fn: "fmv_thin_sale_ask_disclosure_refresh",
+    test: "supabase/tests/fmv_thin_sale_ask_disclosure_refresh.sql",
+    migration:
+      "supabase/migrations/20260805125830_audit_20260805_thin_sale_disclosure_refresh_cron_heavy_and_timeout.sql",
+  },
+  {
+    // pg_cron `23 */6 * * *` (jobid 62, via rpc-remap-misattributed-sales) AND
+    // step 5 of /api/cron/drain-conflated-subeditions. The second of the two
+    // unpinned scheduled deleters, and the higher-stakes one:
+    // `topshot_deals_vs_fmv` EXCLUDES the editions this table holds, so an
+    // under-populated rebuild publishes CONFLATED editions on the PUBLIC deals
+    // board as genuine deals, priced off a serial that belongs to two different
+    // moments. It fails in the direction of showing MORE rows.
+    //
+    // ⚠ Its migration is a SNAPSHOT — the function was MCP-applied with no
+    // committed file, which is what made it unpinnable. The file was pulled from
+    // live via pg_get_functiondef (md5 511458579340501cbb8f7e608f4877f1) and is
+    // a no-op to apply.
+    //
+    // ⚠ The two callers matter: deep-audit R7 reasoned from the dead drain route
+    // alone that this guard must be ~15 days stale; measured live it is 0.0 days
+    // stale over 931 rows, because jobid 62 calls it independently.
+    fn: "refresh_topshot_conflated_editions_detector_only",
+    test: "supabase/tests/refresh_topshot_conflated_editions_detector_only.sql",
+    migration:
+      "supabase/migrations/20260828231031_audit_20260828_r55_conflated_step_timeouts_beat_the_gateway.sql",
+  },
+  {
+    // pg_cron `17 */6 * * *`. Writes moment_acquisitions — the COST BASIS table
+    // every P&L figure a Pinnacle collector sees is computed against. A defect
+    // does not throw; it shows a collector the wrong profit on their own
+    // collection.
+    //
+    // ⚠ Pins that only PRICED sales qualify (`sale_price_usd > 0`), because a
+    // basis of 0 renders as a 100%-profit moment. And pins that this path has NO
+    // nft_id-scoped gate, deliberately: a moment changes hands, so each owner
+    // needs their own basis. Adding the mint sibling's NOT EXISTS here — which
+    // would look like making the pair consistent — would leave every buyer after
+    // the first with no cost basis at all.
+    //
+    // Re-pointed 2026-09-04: the function gained `p_since_days` (NULL = unbounded,
+    // the cron passes 14). Its whole candidate join was 6,573 rows, all already
+    // inserted, re-scanned for up to 120 s four times a day and killed one tick in
+    // five; the window takes that to ~300 ms. Every pinned property above holds
+    // byte-for-byte at the default — the pin's own fixtures prove it — and a new
+    // section pins that the window excludes what it should and admits what it should.
+    fn: "backfill_pinnacle_acquisitions",
+    test: "supabase/tests/backfill_pinnacle_acquisitions.sql",
+    migration:
+      "supabase/migrations/20260904014220_audit_20260904_backfill_pinnacle_acquisitions_gains_a_recency_window.sql",
+  },
+  {
+    // pg_cron `19 * * * *`. The mint half of the same cost-basis pair.
+    //
+    // ⚠ Pins the two properties most likely to be "tidied" into bugs: a mint
+    // writes NO buy_price (the column is absent from the INSERT list, so it lands
+    // NULL — a 0 would render as 100% profit forever), and the NOT EXISTS gate is
+    // scoped on nft_id ALONE rather than the table's (nft_id, wallet,
+    // transaction_hash) conflict key, so a mint can never be inserted
+    // retroactively beneath a later marketplace purchase by a different wallet.
+    fn: "backfill_pinnacle_mint_acquisitions",
+    test: "supabase/tests/backfill_pinnacle_mint_acquisitions.sql",
+    // Re-pointed 2026-10-31: the NOT EXISTS gate is now Pinnacle-scoped (#142).
+    migration:
+      "supabase/migrations/20261101145804_audit_20261031_acquisition_writers_and_export_are_collection_scoped.sql",
+  },
+  // Added 2026-10-31 (#142): three moment_acquisitions readers/writers that
+  // matched on (wallet, nft_id) only, so another collection's row answered —
+  // 168 cost-basis rows priced from All Day / UFC sales, 443 duplicated CSV
+  // moments, wrong Paid in wallet-search. One pin file, three functions.
+  // Added 2026-11-01 (#142): the sales_2026 trigger feeding topshot_insider_buybacks
+  // had no collection gate (sales_2026 holds every collection) and an unscoped
+  // cache lookup. Latent — 0 wrong rows in 3,255 — pinned so it stays closed.
+  {
+    fn: "tg_capture_topshot_insider_marketplace_buyback",
+    test: "supabase/tests/tg_capture_topshot_insider_marketplace_buyback.sql",
+    migration: "supabase/migrations/20261101160840_audit_20261101_topshot_insider_buyback_trigger_is_top_shot_scoped.sql",
+  },
+  {
+    fn: "get_wallet_acquisition_data_scoped",
+    test: "supabase/tests/acquisition_reads_are_collection_scoped.sql",
+    migration: "supabase/migrations/20261101145940_audit_20261031_get_wallet_acquisition_data_scoped.sql",
+  },
+  {
+    fn: "export_wallet_csv",
+    test: "supabase/tests/acquisition_reads_are_collection_scoped.sql",
+    migration: "supabase/migrations/20261101145804_audit_20261031_acquisition_writers_and_export_are_collection_scoped.sql",
+  },
+  {
+    fn: "backfill_cost_basis_from_ids",
+    test: "supabase/tests/acquisition_reads_are_collection_scoped.sql",
+    migration: "supabase/migrations/20261101145804_audit_20261031_acquisition_writers_and_export_are_collection_scoped.sql",
+  },
+  {
+    // Added 2026-08-22 with the Pinnacle TRADE lane — the third Pinnacle
+    // transaction type. Pinned for the same reason as its two siblings (it
+    // writes the COST BASIS table) and for one more: it sits BESIDE
+    // backfill_pinnacle_mint_acquisitions and is DELIBERATELY asymmetric with
+    // it. The mint path gates on an nft_id-scoped NOT EXISTS because a mint is a
+    // Pin's FIRST acquisition; this path must NOT, because a Pin trades many
+    // times and each trade is a real acquisition. Making the two "consistent"
+    // would silently record only a Pin's first trade — the regression the SQL
+    // test exists to catch. Like the mint path it writes NO buy_price: a trade
+    // costs Pins, not dollars, and a 0 renders 100% profit forever.
+    fn: "backfill_pinnacle_trade_acquisitions",
+    test: "supabase/tests/backfill_pinnacle_trade_acquisitions.sql",
+    migration:
+      "supabase/migrations/20260822180000_pinnacle_trade_events_and_trade_acquisitions.sql",
+  },
+  {
+    // Added 2026-08-22. The resolver's candidate FEED — it decides which Pins
+    // ever get an edition, so a Pin outside its population is invisible forever
+    // while every pipeline reports healthy. That is exactly how traded Pins sat
+    // at 7.8% resolved against sales at 68.9%. ⚠ The property most likely to
+    // regress silently is leg ORDER: the outer LIMIT truncates from the bottom,
+    // so `sales → sales_owner → trades → wmc` is what keeps FMV ahead of trades.
+    fn: "pinnacle_get_unresolved_batch_v2",
+    test: "supabase/tests/pinnacle_get_unresolved_batch_v2.sql",
+    migration:
+      "supabase/migrations/20260822220000_pinnacle_resolver_ownership_hint_leg.sql",
+  },
+  {
+    // Added 2026-08-22. Promotes a resolved pinnacle_nft_map entry onto
+    // pinnacle_trade_events.edition_id — resolving a Pin and NAMING a trade are
+    // separate steps, and before this existed a trade stayed unnameable even
+    // after its Pin resolved. ⚠ Its dangling-edition guard is the load-bearing
+    // half: a key pointing at an edition we do not carry reads as NAMED while
+    // joining to nothing, which is strictly worse than an honest NULL.
+    fn: "backfill_pinnacle_trade_editions",
+    test: "supabase/tests/backfill_pinnacle_trade_editions.sql",
+    migration:
+      "supabase/migrations/20260822213000_pinnacle_trades_join_the_resolver_population.sql",
+  },
+  {
+    // pg_cron `30 8 * * *`. An FMV HONESTY instrument: the set of Top Shot
+    // editions whose published FMV is inflated relative to what the market
+    // actually paid — THIN (<15 sales/90d) AND FMV >1.5x the 90-day median. Those
+    // two constants ARE the definition, so both are pinned ON their boundaries
+    // (15 sales is not thin; exactly 1.5x is not flagged).
+    //
+    // ⚠ It TRUNCATEs and rebuilds, which is why it needs a pin more than most: a
+    // rebuild that inserts nothing leaves the table EMPTY, and empty reads
+    // exactly like "no edition has an unsupported FMV" — the most reassuring
+    // possible answer, produced by a broken instrument.
+    fn: "refresh_topshot_thin_fmv_editions",
+    test: "supabase/tests/refresh_topshot_thin_fmv_editions.sql",
+    migration: "supabase/migrations/20261017235000_audit_20261017_thin_fmv_guard_compute_before_truncate.sql",
+  },
+  {
+    // pg_cron `34 * * * *`. Backstop for the offers indexer, feeding
+    // edition_offers.highest_offer — the denormalized column the best-offer
+    // displays read.
+    //
+    // ⚠ RAISE-ONLY. A backstop runs on a partial view of the chain, so lowering
+    // a value the primary writer set would DELETE a real offer from every
+    // surface showing it.
+    //
+    // ⚠ TWO mechanisms LOOK like they enforce that; only the
+    // `WHERE EXCLUDED.highest_offer > COALESCE(existing, 0)` guard actually
+    // does. The `GREATEST(...)` in the SET is redundant while that guard exists
+    // (the guard only admits rows where EXCLUDED > existing, for which GREATEST
+    // is EXCLUDED by definition) — replacing it with a plain assignment changes
+    // nothing observable and the pin stays green. Verified by mutation, which
+    // is how an earlier version of this comment — claiming both were pinned
+    // separately — was found to be wrong. See the test file header.
+    //
+    // Also pins that serial/subedition offers are EXCLUDED: those are bids on one
+    // specific serial, and folding one into the edition-level best offer
+    // publishes a number nobody is bidding for the edition as a whole.
+    //
+    // 2026-10-31 (#220): also pins that a chain bid Top Shot's own index has walked
+    // past and does not carry (marketplace-hidden, unfunded most likely) is NOT
+    // published, while a bid newer than the last walk and an unmapped edition are.
+    fn: "raise_edition_offers_from_chain",
+    test: "supabase/tests/raise_edition_offers_from_chain.sql",
+    migration:
+      "supabase/migrations/20261031210439_audit_20261031_raise_edition_offers_skips_marketplace_hidden_bids.sql",
+  },
+  {
+    // pg_cron `41 5 * * *`. Backfills pinnacle_sales.edition_id from the render
+    // spine — the self-heal for the exact column behind deep-audit R4, whose
+    // NULLs left the overview's top-sales panel unable to NAME 2 of its top 5.
+    //
+    // ⚠ Pins the HAVING clause: it bridges ONLY where a render maps to exactly
+    // ONE edition. Attributing a sale to an arbitrary candidate would move that
+    // edition's FMV, and a wrong price is worse than a missing name. The
+    // `min(pe.id)` is a GROUP BY requirement, NOT a tie-break — reading it as
+    // one is the mistake to avoid. Also pins fill-only, and that the RETURN
+    // counts audit inserts rather than updates (so a re-bridge with an existing
+    // audit row reports 0 while doing real work).
+    fn: "bridge_pinnacle_sales_editions",
+    test: "supabase/tests/bridge_pinnacle_sales_editions.sql",
+    migration:
+      "supabase/migrations/20260816020000_audit_20260816_snapshot_pinnacle_bridge_and_allday_badge_low_ask.sql",
+  },
+  {
+    // pg_cron `*/30 * * * *`. Two phases on badge_editions.low_ask for All Day:
+    // write the current floor ask, then CLEAR it where there no longer is one.
+    //
+    // ⚠ The clear phase is the half that is easy to drop and expensive to lose —
+    // a stale low_ask is a price that NO LONGER EXISTS shown as current, failing
+    // in the reassuring direction so nothing reports it. Also pins that a ZERO
+    // ask is excluded from both phases (so it clears rather than publishing 0),
+    // and IS DISTINCT FROM rather than `<>` (a NULL -> value first write would
+    // be skipped entirely by `<>`).
+    //
+    // ⚠ Its EXCEPTION WHEN OTHERS handler cannot fire on a statement timeout —
+    // PostgreSQL excludes QUERY_CANCELED from OTHERS — so a timeout leaves NO
+    // pipeline_runs row at all. Recorded in the test header, deliberately not
+    // changed; same class as the trust-precompute 999 sentinel.
+    fn: "refresh_allday_badge_low_ask",
+    test: "supabase/tests/refresh_allday_badge_low_ask.sql",
+    migration:
+      "supabase/migrations/20260920143959_audit_20260920_r118_batch_three_fourteen_pinned_functions_catch_query_canceled_literal_ddl_from_their_pins.sql",
+  },
+  {
+    // pg_cron `10,40 * * * *`. The Golazos sibling of the above — and it is NOT
+    // "the AllDay one with a different UUID", which is the whole reason it gets
+    // its own pin: it calls resolve_golazos_listing_edition_ids() FIRST, healing
+    // edition_id on newly indexed listings BEFORE reading the floor-ask view.
+    //
+    // ⚠ That ordering is load-bearing. golazos_edition_floor_ask joins on
+    // edition_id, so a freshly indexed listing whose edition_id is still NULL is
+    // INVISIBLE to it — the ask never reaches the badge and the edition reads as
+    // having no ask while a live listing sits on the marketplace, with the job
+    // reporting ok. Same class as the Pinnacle NULL-edition_id gap (deep-audit
+    // R4). The test asserts the ordering directly, via a deliberately observable
+    // stand-in resolver.
+    //
+    // ⚠ Coverage context before anyone "fixes" the ~37% Golazos low_ask share:
+    // the ceiling is LISTING-GATED, not a defect, and a second cron will not
+    // raise it. This function is that one cron.
+    fn: "refresh_golazos_badge_low_ask",
+    test: "supabase/tests/refresh_golazos_badge_low_ask.sql",
+    migration:
+      "supabase/migrations/20260920143959_audit_20260920_r118_batch_three_fourteen_pinned_functions_catch_query_canceled_literal_ddl_from_their_pins.sql",
+  },
+  {
+    // pg_cron jobid 64 `10 3 * * *`, called with 20000. INFERS which pack
+    // distribution an unattributed Top Shot rip came from, by matching its
+    // editions against the pools observed in rips whose distribution is KNOWN.
+    //
+    // ⚠ Attribution feeds pack EV, which drives a PUBLIC +EV buy signal — so a
+    // rip attached to the wrong distribution moves a number collectors act on.
+    // Live split 2026-08-16: rip_dist/high 36,464 vs empirical_subset/medium
+    // 1,001, i.e. ~2.7% of attributions are inferences sitting beside 36k
+    // observations.
+    //
+    // ⚠ THE PROPERTY TO PROTECT ABOVE ALL: no feedback loop. Both pool CTEs read
+    // method='rip_dist' ONLY, so references are ground truth and never this
+    // function's own output — widen either and each inference becomes evidence
+    // for the next. The two filters MASK EACH OTHER, so the test carries two
+    // purpose-built fixtures (DIST-MIX, and an inferred row on DIST-A) that make
+    // each independently observable; without them both mutations passed.
+    //
+    // Also pins: the >= 20 support bar, >= 2 editions to be identifying, full
+    // (not partial) containment, and HAVING count(*) = 1 so an ambiguous rip is
+    // left unattributed rather than assigned to min(dist_id).
+    fn: "attribute_topshot_rips_empirical",
+    test: "supabase/tests/attribute_topshot_rips_empirical.sql",
+    migration:
+      "supabase/migrations/20260816040000_audit_20260816_snapshot_attribute_topshot_rips_empirical.sql",
+  },
+  {
+    // pg_cron `25 * * * *`. Hourly pack EV for every Top Shot distribution whose
+    // drop pool came from Atlas, appended to pack_ev_history — the table behind
+    // pack_ev_latest and the PUBLIC **+EV** badge.
+    //
+    // ⚠ `is_positive_ev` is the one boolean a collector reads as "buying this
+    // pack is worth it", so the pins here are honesty guards: no +EV without a
+    // known ask, a NULL value_ratio rather than a fabricated one, a delisted or
+    // zero ask treated as NO ask (not a $0 pack, which would look infinitely
+    // +EV), and a FAILED EV computation still writing a row — skipping would
+    // leave last hour's row as pack_ev_latest and keep a stale badge live.
+    //
+    // ⚠ Also pins that `pack_ev` and `is_positive_ev` can legitimately disagree:
+    // an ask-less pack gets a positive-looking pack_ev equal to its gross EV
+    // while the flag is NULL. Anything rendering a buy signal must read the FLAG.
+    //
+    // ⚠ REPOINTED 2026-09-07 from the 20260816050000 snapshot to the supply fix.
+    // The success branch had hardcoded `total_unopened = 0, depletion_pct = NULL`,
+    // and pack_ev_latest reads a non-NULL total_unopened <= 0 as SOLD OUT — so
+    // it VETOED the very flag these pins protect, on every row this writer
+    // produced (573 live rows, 0 ever publishable as +EV, against 12 positive
+    // among the 100 that other writers leave NULL). ⭐ The pin was GREEN
+    // throughout: `total_unopened` was asserted nowhere in it and depletion_pct
+    // only on the failure branch, so the honesty guard was silent about the two
+    // columns that could overrule its own subject. The repoint adds assertions
+    // in BOTH directions — real supply published, a genuine sold-out 0 still
+    // written, unknown supply withheld as NULL rather than coalesced to 0 — and
+    // the fixture gained real total_sealed / depletion_pct values so those reads
+    // resolve to something instead of passing vacuously on NULL.
+    fn: "refresh_atlas_pack_ev",
+    test: "supabase/tests/refresh_atlas_pack_ev.sql",
+    // 2026-10-10 (#65 follow-up): clamp, NOT NULL flag, unkeyed dists skipped, failures logged.
+    // 2026-10-10 (#188): a dist with no Dapper uuid is keyed by its dist_id.
+    // 2026-10-19: a never-read dist's default 0 / 0 supply is withheld as NULL.
+    migration:
+      "supabase/migrations/20261020060107_audit_20261019_ev_writers_withhold_supply_never_read.sql",
+  },
+  {
+    // pg_cron `13 * * * *` — one of the three heavy jobs CLAUDE.md names as
+    // colliding at :13. Backfills pack EV at the PRIMARY retail price (its atlas
+    // sibling prices against the secondary ask), into the same pack_ev_history
+    // behind the public +EV badge.
+    //
+    // ⚠ THE PIN EXISTS FOR ONE CLAUSE: `gross_ev <= 3 * sec_ask`, the
+    // survivor-bias cap. A DEPLETED Top Shot pool prices at 40-86x — the good
+    // moments are gone and what remains is the tail — so an EV over the original
+    // pool is absurd. This DISCARDS such a row. Removing it puts a green +EV
+    // badge on packs that are nothing of the sort. The cheapest live ask is the
+    // denominator (ORDER BY ASC), and the test pins that too: with the dearest
+    // ask instead, a 40x EV sails through.
+    //
+    // Also pins the satoshi conversion (>= 1000000 divided by 1e8 — eight orders
+    // of magnitude), weighted-pools-only, and that a SENTINEL row does not count
+    // as covered so a failed distribution is retried rather than suppressed for
+    // 12 hours.
+    fn: "backfill_topshot_historical_pack_ev",
+    test: "supabase/tests/backfill_topshot_historical_pack_ev.sql",
+    migration:
+      "supabase/migrations/20260816060000_audit_20260816_snapshot_backfill_topshot_historical_pack_ev.sql",
+  },
+  // ── The last four unpinned SCHEDULED SECDEF writers (2026-08-16) ──────────
+  // With these, that whole population is pinned: it was measured at 33 scheduled
+  // writers, 14 of them unpinned, on 2026-08-15.
+  {
+    // pg_cron `37 5 * * *`. FABRICATES a CDN thumbnail url for artless Top Shot
+    // editions by borrowing a representative moment's asset path.
+    //
+    // ⚠ It is a synthesised URL, so the only thing between "the edition finally
+    // shows its art" and "the edition shows SOMEONE ELSE'S art" is which moment
+    // is picked. The three-tier COALESCE is that choice; tier (c) matches on
+    // subedition_id so a parallel cannot inherit a sibling parallel's or the
+    // base printing's image — the conflation class this repo keeps paying for.
+    //
+    // Also pins: no representative means no row (and no audit row claiming a
+    // fill that never happened), fill-only in both directions, and that the
+    // audit table is a ONCE-ONLY ledger — a manually undone fill is never redone.
+    fn: "fill_ts_artless_from_rep_moments",
+    test: "supabase/tests/fill_ts_artless_from_rep_moments.sql",
+    migration:
+      "supabase/migrations/20260816070000_audit_20260816_snapshot_last_four_scheduled_secdef_writers.sql",
+  },
+  {
+    // pg_cron `10 4 * * *`. Rebuilds the cross-collection cohort.
+    //
+    // ⚠ `HAVING COUNT(DISTINCT collection_id) >= 3` is not a tuning constant —
+    // it is what "cross-collection collector" MEANS here, and every downstream
+    // figure is a statement about that cohort. Pinned from both sides of the
+    // boundary, plus DISTINCT-not-COUNT(*), the atomic TRUNCATE-then-rebuild,
+    // and the single shared computed_at.
+    //
+    // ⚠ Also pins what the fmv COALESCE actually does: SUM already ignores
+    // NULLs, so it only matters when EVERY moment is unpriced — and there it
+    // publishes a hard $0.00 rather than NULL. Recorded as current behaviour,
+    // not endorsed; it is the `?? 0` shape in a DB function.
+    fn: "refresh_cross_collection_cohort_step1",
+    test: "supabase/tests/refresh_cross_collection_cohort_step1.sql",
+    // Re-pinned 2026-08-23: the 2026-08-22 ~20:35Z lock-window rewrite (temp-table
+    // build, then TRUNCATE immediately before a tiny insert) shipped its own new
+    // pin file but did NOT repoint this entry, so the live `db:pins:check` sweep
+    // went red the next morning while the in-CI drift guard stayed green — the
+    // exact repo-vs-live split the staleness checker exists to catch. Six other
+    // pins had been closed hours earlier the same day; this pair is not part of
+    // that batch.
+    migration:
+      "supabase/migrations/20260822013000_audit_20260821_cross_collection_refresh_lock_window.sql",
+  },
+  {
+    // pg_cron `25 23 * * *` (was `25 4`). The DOWNSTREAM half of the pair — per Top Shot set,
+    // how much of the cohort holds it.
+    //
+    // ⚠ It has NO check that step1 ran. Pinned so the failure mode is a known
+    // property: an empty cohort quietly yields an empty overlap table, and the
+    // realistic version is "yesterday's cohort" because step1 truncates inside
+    // its own transaction. Also pins holders-are-DISTINCT-wallets (COUNT(*)
+    // there would inflate "how many people" by each collector's position depth)
+    // and both collection scopes — the editions-side one needs a colliding
+    // external_id to be observable at all, which is a real state.
+    fn: "refresh_cross_collection_cohort_step2",
+    test: "supabase/tests/refresh_cross_collection_cohort_step2.sql",
+    // Re-pinned 2026-08-23: the 2026-08-22 ~20:35Z lock-window rewrite (temp-table
+    // build, then TRUNCATE immediately before a tiny insert) shipped its own new
+    // pin file but did NOT repoint this entry, so the live `db:pins:check` sweep
+    // went red the next morning while the in-CI drift guard stayed green — the
+    // exact repo-vs-live split the staleness checker exists to catch. Six other
+    // pins had been closed hours earlier the same day; this pair is not part of
+    // that batch.
+    // ⚠ RE-POINTED 2026-08-25 IN THE SAME COMMIT as the enable_nestloop fix. The
+    // trap described just above — a rewrite that shipped its own pin file but
+    // left this entry on the old migration, so the live db:pins:check went red
+    // the next morning while the in-CI guard stayed green — is exactly why this
+    // line is edited here rather than left for later.
+    migration:
+      "supabase/migrations/20260825170000_audit_20260825_ccm_step2_hash_join_the_cohort_that_is_72pct_of_wmc.sql",
+  },
+  {
+    // pg_cron `45 9 * * *`. Refreshes the five "new collectors" MVs.
+    //
+    // ⚠ THE ORDER IS THE INVARIANT: `mv_ts_buyer_first_buy` first, because the
+    // other four derive from it. Refreshing a dependent view before its base
+    // recomputes it from YESTERDAY's data — silently, with the run still ok,
+    // leaving a summary that disagrees with the base it summarises. The test
+    // shims REFRESH via an event trigger to observe the sequence, since view
+    // contents can only show that data is right, not that it was computed in the
+    // order that makes it right.
+    //
+    // Also pins that its EXCEPTION handler logs ok:false and does NOT re-raise,
+    // so cron.job_run_details reports success and pipeline_runs.ok is the only
+    // health signal.
+    fn: "refresh_insights_new_collectors",
+    test: "supabase/tests/refresh_insights_new_collectors.sql",
+    migration:
+      "supabase/migrations/20260920143959_audit_20260920_r118_batch_three_fourteen_pinned_functions_catch_query_canceled_literal_ddl_from_their_pins.sql",
+  },
+  // ── The scheduled MV-refresh wrappers (2026-08-16) ───────────────────────
+  // Nine near-identical one-liners sharing ONE test file. Their bodies hold no
+  // logic, but two real invariants live OUTSIDE them:
+  //   • CONCURRENTLY REQUIRES A UNIQUE INDEX on the view. Drop that index — in a
+  //     different migration, touching a different object — and every one of
+  //     these crons fails at runtime. The test proves the coupling rather than
+  //     asserting it in prose.
+  //   • Each wrapper must name the view its own name implies. Five share a body
+  //     differing only in the view name, and a copy-paste slip is SILENT: one
+  //     view refreshes twice a cycle, another never does and goes stale behind
+  //     whatever reads it, with nothing erroring.
+  // refresh_topshot_misattrib_candidates deliberately does NOT use CONCURRENTLY
+  // (internal MV, no public read path, so the exclusive lock is free and it
+  // needs no unique index) — asserted as an exception so a "harmonising"
+  // tidy-up has to make that call on purpose.
+  {
+    fn: "refresh_sets_summary",
+    test: "supabase/tests/mv_refresh_wrappers.sql",
+    migration:
+      "supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql",
+  },
+  {
+    fn: "refresh_mv_pack_ev_latest",
+    test: "supabase/tests/mv_refresh_wrappers.sql",
+    // Re-pointed 2026-08-30: 20260830222057 replaced the one-liner body with a
+    // watermark gate that SKIPS the refresh when pack_ev_history has not
+    // advanced. Only the live check (`npm run db:pins:check`) saw the drift —
+    // the SQL test re-creates the function from its own embedded copy, so it
+    // stayed green against text that no longer ran anywhere.
+    migration:
+      "supabase/migrations/20260830222057_audit_20260830_mv_pack_ev_latest_refresh_watermark_gate.sql",
+  },
+  {
+    fn: "refresh_allday_pack_realized",
+    test: "supabase/tests/mv_refresh_wrappers.sql",
+    migration:
+      "supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql",
+  },
+  {
+    fn: "refresh_allday_pack_sales_agg",
+    test: "supabase/tests/mv_refresh_wrappers.sql",
+    migration:
+      "supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql",
+  },
+  {
+    fn: "refresh_topshot_pack_sales_agg",
+    test: "supabase/tests/mv_refresh_wrappers.sql",
+    migration:
+      "supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql",
+  },
+  {
+    fn: "refresh_topshot_pack_rip_values",
+    test: "supabase/tests/mv_refresh_wrappers.sql",
+    migration:
+      "supabase/migrations/20261025170715_audit_20261025_rip_values_refresh_failure_raises_instead_of_being_swallowed.sql",
+  },
+  {
+    fn: "refresh_topshot_edition_median",
+    test: "supabase/tests/mv_refresh_wrappers.sql",
+    migration:
+      "supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql",
+  },
+  {
+    fn: "refresh_mv_topshot_set_play_catalog",
+    test: "supabase/tests/mv_refresh_wrappers.sql",
+    migration:
+      "supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql",
+  },
+  {
+    fn: "refresh_topshot_misattrib_candidates",
+    test: "supabase/tests/mv_refresh_wrappers.sql",
+    migration:
+      "supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql",
+  },
+  {
+    // pg_cron `14 * * * *`. Denormalizes each All Day rip's TOTAL pull value.
+    //
+    // ⚠ RE-PINNED 2026-09-13 from 20260816080000 to the #92 migration. The value
+    // is now the CURRENT fmv of each pull's edition (latest fmv_snapshots row),
+    // NOT the at-open allday_pack_pull.fmv_usd. The old pin sat stale from
+    // 2026-09-12 until the live check caught it, green the whole time against a
+    // body that had stopped running — repo-vs-repo cannot see that, only
+    // scripts/check-db-pin-staleness.mjs can.
+    //
+    // ⚠ ALL-OR-NOTHING: written only when EVERY pull is priced. A partial sum is
+    // a SMALLER number that reads exactly like a real one — a 5-moment rip with
+    // 2 priced pulls would publish those 2 as the pack's value, making a good
+    // pull look like a bad pack, and it fails in the reassuring direction so
+    // nothing reports it. "Unpriced" now means the edition has no snapshot.
+    //
+    // ⚠ Its watermark is captured BEFORE the read, so a pull changed mid-run is
+    // re-processed next tick rather than skipped forever; and `updated_at >= w`
+    // is inclusive, because re-processing is free (change-detection) while
+    // skipping is not. The inclusive half is asserted; the before-vs-after half
+    // needs a concurrent writer and is documented as a harness limit.
+    // ⚠ Re-pointed 2026-09-20: this body gained a WHOLE-PACK clause
+    // (`agg.total_pulls = r.moments_pulled`) in the SAME migration as the identical
+    // clause on the OTHER writer of this column. The pairing is the invariant —
+    // register #128 is the record of what these two disagreeing costs, and fixing
+    // one arm alone recreates that divergence one property over.
+    fn: "rollup_allday_rip_pull_value",
+    test: "supabase/tests/rollup_allday_rip_pull_value.sql",
+    migration:
+      "supabase/migrations/20260920230950_audit_20260920_both_allday_pull_value_writers_gain_the_whole_pack_check_together.sql",
+  },
+  {
+    // Added 2026-09-20. THE OTHER WRITER of pack_rips.pull_value_usd, and the
+    // reason the entry above was not enough: that pin's header calls this path
+    // "the same source and same shape", and it was a mirror claim with no test.
+    // This body wrote COALESCE(SUM(fc.fmv_usd), 0), so it did the OPPOSITE on the
+    // exact case that pin exists for -- 82,864 Top Shot rows carried a fabricated
+    // 0 (28.4 % of every valued Top Shot rip; 0 of 600 sampled were genuine), and
+    // through mv_topshot_pack_rip_values they entered realized_mean and
+    // calibrated_ev on the pack-EV board. 9 dists read a realized mean of exactly
+    // USD 0.00. Pins: all-or-nothing, whole-pack (count = moments_pulled), that a
+    // stored 0 is CLEARED but a stored POSITIVE is PRESERVED (the delete-then-
+    // insert defence), that the #93 stamped-but-unvalued population is reachable,
+    // and that every repair leg orders by a column the function itself writes --
+    // `sealed_at DESC` made the All Day leg re-read its own head forever.
+    // ⚠ Re-pointed the SAME DAY to 20260920210651: the leg ORDER BY fix in
+    // 20260920204056 carried a 28x buffer regression (a parallel seq scan plus a
+    // 16 MB external-merge sort, caught by the production run's duration_ms, not
+    // by my own correctness probe), and the repair is a PARTIAL INDEX plus the
+    // matching predicate in the leg. That predicate is load-bearing, not
+    // cosmetic: a partial index is unusable unless the query repeats it.
+    // ⚠ Re-pointed 2026-09-24 to 20260924123824: the dist vote FILLS a NULL and
+    // never overwrites a stored dist (property 8) — the overwrite had relabelled
+    // 6,274 rips to an old dist whose pool contained every pulled edition.
+    // ⚠ Re-pointed 2026-10-16 to 20261016162203: allday_repair and unpriced_retry read
+    // their eligibility once as sets (4.28 M -> 453 k buffers through the function).
+    // Restates plan_cache_mode, which 20261004173500 set by ALTER.
+    // ⚠ Re-pointed 2026-11-02 to 20261102201245: the dist vote fills only on a UNIQUE full
+    // match (property 9) — the lowest-id tie-break filed 595 AJ Dybantsa Tip-Off (8911) rips
+    // under older drops that shared its editions.
+    fn: "backfill_pack_rip_metadata",
+    test: "supabase/tests/backfill_pack_rip_metadata.sql",
+    // Re-pinned 2026-11-09 (#242): the two whole-set eligibility legs read a precomputed queue.
+    migration:
+      "supabase/migrations/20261110021600_audit_20261109_rip_metadata_queue_is_read_as_a_rotated_slice.sql",
+  },
+  {
+    // Added 2026-11-09 (#242): builds the queue backfill_pack_rip_metadata re-checks; pg_cron every 2 h.
+    fn: "refresh_pack_rip_backfill_eligible",
+    test: "supabase/tests/backfill_pack_rip_metadata.sql",
+    migration:
+      "supabase/migrations/20261110021600_audit_20261109_rip_metadata_queue_is_read_as_a_rotated_slice.sql",
+  },
+  {
+    // pg_cron `40 9 * * *`. Sets players.team from the catalogue.
+    //
+    // ⚠ THE 18-MONTH WINDOW IS ANCHORED TO THE CATALOGUE'S OWN MAX game_date,
+    // NOT now(). That is what stops the window sliding off the end of the data
+    // through an offseason, an ingest stall, or a closed market — the same class
+    // as the panini gate whose denominator was a rolling window of the series it
+    // watched. Pinned with every fixture date years in the past, so a
+    // now()-anchored window would make the whole file inert.
+    //
+    // Also pins latest-appearance-wins, and that a teamless edition cannot BLANK
+    // a team already known.
+    // Re-pinned 2026-10-21: the league's current-season team (player_season_stats) now wins
+    // over a stale catalogue team when the player has exactly one team in that season.
+    fn: "refresh_players_current_team",
+    test: "supabase/tests/refresh_players_current_team.sql",
+    migration:
+      "supabase/migrations/20261021181724_audit_20261021_players_current_team_from_current_season_stats.sql",
+  },
+  {
+    // pg_cron `24 * * * *`. Copies All Day minted/opened totals onto
+    // pack_distributions, which drive the depletion figure a collector reads
+    // before buying.
+    //
+    // ⚠ `coalesce(packnft_total,0) > 0` refuses to write a ZERO minted total:
+    // that is the indexer saying "not yet", not the chain saying "none", and
+    // copying it publishes a depletion percentage computed against a supply of
+    // nothing. Note the guard is on MINTED only — zero OPENS is a real state and
+    // must still be written, or every never-ripped pack freezes forever.
+    fn: "sync_allday_pack_dist_totals",
+    test: "supabase/tests/sync_allday_pack_dist_totals.sql",
+    migration:
+      "supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql",
+  },
+  {
+    // pg_cron `2-59/5 * * * *`. Labels wmc rows with their FMV confidence.
+    //
+    // ⚠ VALUE AND LABEL COME FROM THE SAME SNAPSHOT ROW — one LATERAL selects
+    // both. Two separate lookups, even two correct ones, would let a row carry
+    // one snapshot's price under another's confidence: a STALE price wearing a
+    // HIGH label is a number a collector has no way to distrust.
+    //
+    // ⚠ Also pins that its CROSS JOIN (not LEFT) leaves an edition with no
+    // priced snapshot unlabelled forever, and that `LIMIT` bounds rows EXAMINED
+    // rather than written — together those are the mechanism behind the
+    // permanent backlog floor and behind this job becoming the instance's #1
+    // disk reader once its queue drained.
+    fn: "backfill_wmc_fmv_confidence",
+    test: "supabase/tests/backfill_wmc_fmv_confidence.sql",
+    migration:
+      "supabase/migrations/20261110211850_audit_20261110_backfill_wmc_fmv_confidence_limits_after_the_priced_join.sql",
+  },
+  {
+    // pg_cron `13 4,16 * * *`.
+    //
+    // ⚠ ITS NAME SAYS TOPSHOT AND IT REFRESHES **TWO** MVs — Top Shot AND All
+    // Day. Someone auditing All Day's special serials for a refresh job will not
+    // find one, because it lives inside a function named for another collection.
+    // Pinned so the pairing cannot be silently halved: dropping the All Day line
+    // leaves the Top Shot board fine and the All Day one frozen, with the run
+    // still reporting ok.
+    //
+    // Also pins the `enable_nestloop=off` PLANNER HINT baked into the function
+    // definition — invisible from every call site, and nothing would notice its
+    // removal until the job started timing out at its 200s budget — and that its
+    // NAMED-ARGUMENT log_pipeline_run call really resolves and lands a row, the
+    // failure mode where one wrong argument name makes a pipeline vanish from
+    // telemetry entirely.
+    fn: "refresh_topshot_special_serial_owners_mv",
+    test: "supabase/tests/refresh_topshot_special_serial_owners_mv.sql",
+    migration:
+      "supabase/migrations/20260920143959_audit_20260920_r118_batch_three_fourteen_pinned_functions_catch_query_canceled_literal_ddl_from_their_pins.sql",
+  },
+  {
+    // Added 2026-08-20, deleters-first. Over-deletion produces an ABSENCE rather
+    // than an error: nothing raises, the rows are gone, and every downstream
+    // reader silently agrees with the smaller number. The load-bearing clause is
+    // not the age — it is `feedback_type IS NULL`, which keeps a conversation the
+    // user gave feedback on FOREVER. That feedback is the only durable record of
+    // what a real collector told us the product got wrong, and it cannot be
+    // re-fetched from anywhere.
+    fn: "purge_old_support_conversations",
+    test: "supabase/tests/purge_old_support_conversations.sql",
+    migration: "supabase/migrations/20260821021000_audit_20260820_snapshot_retention_purges.sql",
+  },
+  {
+    // Added 2026-08-20. `usage_events` backs the active-user count, and the
+    // roadmap gates monetization on "50+ weekly active users". A retention bug
+    // here moves the headline metric DOWN — the direction that reads as "not
+    // ready yet", so nobody questions it.
+    fn: "purge_old_usage_events",
+    test: "supabase/tests/purge_old_usage_events.sql",
+    migration: "supabase/migrations/20260821021000_audit_20260820_snapshot_retention_purges.sql",
+  },
+  {
+    // Added 2026-10-11. The 180-day sweep over ANONYMOUS funnel_events that
+    // the privacy policy now states. Its `user_id IS NULL` predicate is what
+    // keeps campaign attribution (trophy_pinned by user) and traction history
+    // alive; dropping it deletes evidence silently and the smaller number
+    // reads as "fewer users", the direction nobody questions.
+    fn: "purge_old_funnel_events",
+    test: "supabase/tests/purge_old_funnel_events.sql",
+    migration: "supabase/migrations/20261012041115_audit_20261011_funnel_events_anon_telemetry_180d_retention.sql",
+  },
+  {
+    // Added 2026-10-11. The account-deletion purge. It walks the catalog, so
+    // the pin's job is the RULES: delete the user's rows in every key shape,
+    // anonymise aggregate facts, KEEP another user's objects (a shared wallet,
+    // a giveaway whose creator left), never touch a scratch table, and never
+    // delete auth.users itself. A miss in either direction is silent.
+    fn: "delete_user_account",
+    test: "supabase/tests/delete_user_account.sql",
+    migration: "supabase/migrations/20261012052403_audit_20261011_delete_user_account_catalog_walk.sql",
+  },
+  {
+    // Added 2026-08-20. ⚠ The one whose cutoff is DATE arithmetic
+    // (`CURRENT_DATE - p_days_keep`) rather than `NOW() - interval` like every
+    // sibling — correct, because `snapshot_at` is a `date`. Pinned so a
+    // consistency pass cannot harmonise it into an uncast timestamptz comparison
+    // and move the boundary by up to 24h. Portfolio history is not re-derivable:
+    // the snapshots ARE the record of what a wallet held on a past day.
+    fn: "purge_old_wallet_holdings_snapshots",
+    test: "supabase/tests/purge_old_wallet_holdings_snapshots.sql",
+    migration: "supabase/migrations/20260821021000_audit_20260820_snapshot_retention_purges.sql",
+  },
+  {
+    // Added 2026-09-12 with the lane itself. ⚠ The only SCHEDULED object that
+    // deliberately NULLs a column two public surfaces read — it puts a drifted AllDay
+    // dist back into the deployed one-shot hydrator's candidate set, which is the only
+    // way to make that hydrator re-count it. Three properties carry the whole safety
+    // case and each one's removal is SILENT (the function still expires rows and still
+    // looks like it works): the EVIDENCE predicate (a candidate needs a pack_rip sealed
+    // after that dist's OWN stamp, under THIS collection — widen it to an age window
+    // and the lane blanks rows that were never wrong), the BREAKER (nothing expires
+    // while a row is still in flight, so a dead upstream costs one bounded batch rather
+    // than a growing hole), and the RESTORE (an unanswered row gets its pre-image
+    // written back AND that tick reports ok = false — drop only the ok = false and the
+    // loop self-heals silently, which is exactly how the 32-day freeze it fixes went
+    // unseen). The SQL test asserts all three in the failing direction.
+    fn: "expire_allday_dist_opened_drifted",
+    test: "supabase/tests/expire_allday_dist_opened_drifted.sql",
+    migration:
+      "supabase/migrations/20260913060000_audit_20260913_allday_dist_opened_expiry_is_scheduled_and_a_cooldown_is_not_ok.sql",
+  },
+  {
+    // Added 2026-09-13 when the function gained an EXHAUSTED state. The lane had
+    // stranded itself below its own work twice — the cursor only descends, so once
+    // it passes the last decodable row every tick re-derives the same zero at
+    // 195,564 buffers, 288×/day, and times out 36–47 % of the time under load. The
+    // 09-12 cursor reset cured it for SIX HOURS and it re-stranded at the
+    // byte-identical value.
+    // ⚠ The property that matters is INVISIBLE IN THE RETURN VALUE: inside the
+    // cooldown the claim returns empty AND MUST NOT SCAN, and it returns empty when
+    // it scans and finds nothing too. So the pin asserts it by DROPPING the sales
+    // table and requiring the call to succeed — a function that scans cannot. That
+    // control is the reason this file exists; an assertion on the rows would pass
+    // against a function with no short-circuit at all.
+    // Also pinned: a productive scan must NOT arm the cooldown (one good tick would
+    // otherwise silence the lane), the re-arm must clear the cursor (the only way
+    // rows that arrived above it are ever seen), `rearm_after` must be READ from the
+    // column rather than hardcoded, and the pre-existing below-floor self-heal from
+    // 20260902042214 must survive the rewrite.
+    // The WRITE half of the same lane, pinned 2026-09-13 because it acquired a
+    // load-bearing property that day: a pass that took rows in and applied NONE arms
+    // the lane's cooldown. That decision cannot live in the claim — the claim knows
+    // only how many rows it handed out, never whether any resolved — and the
+    // claim-side alternative (arm on a partial batch) breaks the sibling pin's
+    // "a productive scan must not silence the lane" property. The file also pins
+    // fill-only semantics and that an EMPTY batch arms nothing.
+    fn: "apply_sales_counterparty",
+    test: "supabase/tests/apply_sales_counterparty.sql",
+    migration: "supabase/migrations/20261004005326_audit_20261003_counterparty_barren_cooldown_only_at_the_bottom.sql",
+  },
+  {
+    fn: "claim_sales_counterparty_batch",
+    test: "supabase/tests/claim_sales_counterparty_batch.sql",
+    migration: "supabase/migrations/20261004005326_audit_20261003_counterparty_barren_cooldown_only_at_the_bottom.sql",
+  },
+  {
+    // Added 2026-10-02. The pack-dist page's EV-contributor list: latest Top Shot
+    // snapshot per pool edition by index probe (was a DISTINCT ON that spilled
+    // to temp), another collection's newer snapshot ignored, ordering + p_limit.
+    fn: "get_pack_ev_contributors",
+    test: "supabase/tests/get_pack_ev_contributors.sql",
+    // 2026-10-19: re-pinned — p_collection_id added (All Day / Golazos panels).
+    migration:
+      "supabase/migrations/20261020021235_audit_20261019_pack_ev_contributors_takes_the_collection.sql",
+  },
+  {
+    // Added 2026-10-02. The edition page's recent-sales table: newest first,
+    // the #142 serial ceiling, Top Shot parallel names scoped to Top Shot
+    // editions (the body scoped nothing before), 'Parallel #N' fallback.
+    fn: "get_edition_recent_sales",
+    test: "supabase/tests/get_edition_recent_sales.sql",
+    migration:
+      "supabase/migrations/20261025211314_audit_20261025_edition_recent_sales_flags_buyback_purchases.sql",
+  },
+  {
+    // Added 2026-10-03. /admin/visitor-journeys: four streams join into one
+    // visit; bot / smoke / internal sessions are excluded from the list but
+    // COUNTED; returning = the visitor id seen in an earlier session <= 30 d.
+    // Re-pointed 2026-10-03: AI-referral lists also count browsers (a session is a tab).
+    fn: "admin_visitor_journeys",
+    test: "supabase/tests/admin_visitor_journeys.sql",
+    migration:
+      "supabase/migrations/20261003181338_visitor_journeys_ai_referrals_count_browsers_not_only_tabs.sql",
+  },
+  {
+    // Same test file: the AI-assistant classifier the board's referral counts use
+    // (host matched at a boundary — a look-alike domain must not count).
+    fn: "referrer_ai_source",
+    test: "supabase/tests/admin_visitor_journeys.sql",
+    migration:
+      "supabase/migrations/20261003150031_visitor_journeys_concierge_visit_link_returning_visitor_id.sql",
+  },
+  {
+    // Added 2026-10-03. Internal check sessions are tests on support_conversations and
+    // chat_sessions for EVERY writer (a tool path had inserted a qa- probe as real).
+    fn: "tag_internal_session_as_test",
+    test: "supabase/tests/tag_internal_session_as_test.sql",
+    migration: "supabase/migrations/20261003183547_internal_session_ids_are_tests_for_every_writer.sql",
+  },
+  {
+    // Added 2026-10-03 (#167). The throttled historical walk that backfills 2025 Top Shot
+    // sell-backs: promotes into `sales` only with a resolved edition, closes a page as failed
+    // after 8 attempts, never exceeds p_max_inflight.
+    // Re-pointed 2026-10-09: a 200 page with an id-less event is re-queued, not
+    // read (it aborted every tick for ~6 h on 10-06 and 10-08).
+    fn: "run_topshot_sellback_walk",
+    test: "supabase/tests/run_topshot_sellback_walk.sql",
+    // 2026-11-08: floor at the mainnet27 root; Flow retired the mainnet24-26 nodes (#181).
+    migration: "supabase/migrations/20261108171930_audit_20261108_run_topshot_sellback_walk_floor_at_mainnet27.sql",
+  },
+  {
+    // Added 2026-10-03 (#167). Names the walk's staged sell-backs from a chain read of the
+    // buy-back wallet: window reads, a per-block fallback, a parallel never folded into its base.
+    fn: "run_topshot_sellback_edition_reads",
+    test: "supabase/tests/run_topshot_sellback_edition_reads.sql",
+    // 2026-11-08: floor at the mainnet27 root; Flow retired the mainnet24-26 nodes (#181).
+    migration: "supabase/migrations/20261108171920_audit_20261108_run_topshot_sellback_edition_reads_floor_at_mainnet27.sql",
+  },
+  {
+    // Added 2026-10-04 (#167, the second 2025 gap). Recovers the collector sales the sell-back
+    // walk staged but `sales` never held: buyer from the tx result's own Deposit, edition from
+    // the buyer's collection at the purchase block; never a guessed edition, never a re-walk.
+    fn: "run_topshot_collector_sale_backfill",
+    test: "supabase/tests/run_topshot_collector_sale_backfill.sql",
+    // 2026-10-10 (#167): the walk margin applies only while the walk is scheduled.
+    // 2026-11-08: floor at the mainnet27 root; Flow retired the mainnet24-26 nodes (#181).
+    migration: "supabase/migrations/20261108171910_audit_20261108_run_topshot_collector_sale_backfill_floor_at_mainnet27.sql",
+  },
+  {
+    // Added 2026-10-03 (#169). The buyer board excludes registry buy-back wallets (unless contracts
+    // are asked for); the seller board keeps sell-back proceeds; the registry is per collection.
+    fn: "analytics_sales_leaderboard",
+    test: "supabase/tests/analytics_sales_leaderboard.sql",
+    migration: "supabase/migrations/20261004165000_audit_20261004_sales_leaderboard_buyback_check_stays_index_only.sql",
+  },
+  {
+    // Added 2026-10-10 (#65). Writes the latest Atlas edition list of a Top Shot dist into
+    // pack_drop_pool (fill / upgrade a frozen GraphQL pool / refresh); gated, zeroes, never deletes.
+    fn: "sync_topshot_pools_from_atlas",
+    test: "supabase/tests/sync_topshot_pools_from_atlas.sql",
+    // 2026-10-10 follow-ups: the zeroing arm keeps orig_drop_weight; the size gate counts drawable rows.
+    // 2026-11-16: an edition list re-confirmed by a later reconciled summary counts as fresh.
+    migration: "supabase/migrations/20261117054311_audit_20261116_atlas_pool_sync_trusts_a_reconfirmed_edition_list.sql",
+  },
+  {
+    // Added 2026-10-10 (#85). Picks the editions whose Atlas snapshot is re-fetched next; an
+    // edition whose last snapshot was incomplete (> one 200-row page) waits 30 days, not 24 h
+    // (7 days was a no-op: shorter than the ~11-day rotation).
+    fn: "atlas_edition_verify_dispatch",
+    test: "supabase/tests/atlas_edition_verify_dispatch.sql",
+    migration: "supabase/migrations/20261010181823_audit_20261010_edition_verify_incomplete_wait_exceeds_the_rotation.sql",
+  },
+  {
+    // Added 2026-10-10 (#101). The independent resolver for Top Shot misattribution candidates:
+    // maps from agreeing Atlas events (parallel-safe), reads Atlas {nftId} for the rest.
+    fn: "resolve_topshot_misattrib_via_atlas",
+    test: "supabase/tests/resolve_topshot_misattrib_via_atlas.sql",
+    // 2026-10-10 (#171): held unknown parallels are queued for the chain lane.
+    migration: "supabase/migrations/20261010183509_audit_20261010_misattrib_resolver_queues_unknown_parallels_for_the_chain.sql",
+  },
+  {
+    // Added 2026-10-10 (#18). The public /api/fmv's serial premium: the fitted estimator, one batch
+    // call; no-premium is 1.0, an unplaceable circulation is NULL (never a guessed 1.0).
+    fn: "serial_fmv_multiplier_batch",
+    test: "supabase/tests/serial_fmv_multiplier_batch.sql",
+    migration: "supabase/migrations/20261010185326_audit_20261010_public_fmv_api_prices_serials_with_the_fitted_model.sql",
+  },
+  {
+    // Added 2026-10-10 (#102 (c)). Suppression count/freshness predicates as CODE (never by
+    // executing the reason text); ban at zero; only live suppressions; unmeasurable does not hold.
+    fn: "check_suppression_count_predicate_drift",
+    test: "supabase/tests/check_suppression_count_predicate_drift.sql",
+    migration: "supabase/migrations/20261010185858_audit_20261010_suppression_count_predicates_are_code.sql",
+  },
+]/**
+ * Find the first `CREATE OR REPLACE FUNCTION public.<name>` occurrence that is
+ * NOT inside a `--` line comment. Migrations frequently carry the prior version
+ * of a function commented out (e.g. in a REVERT note), so a naive indexOf would
+ * latch onto the stale commented copy and compare the wrong DDL.
+ */
+// ⚠ PROCEDURE, not just FUNCTION. This looked for `CREATE OR REPLACE FUNCTION` only
+// until 2026-08-16, which made every PROCEDURE in this database UNPINNABLE — the
+// extractor returned null and the pin could not be added at all. Postgres treats the
+// two as separate object kinds and pg_proc holds both (prokind 'f' vs 'p'), so a
+// scheduled writer that happens to be a procedure was outside this guard's reach BY
+// CONSTRUCTION, however often it ran green. `reconcile_all_saved_wallet_stats` is one
+// (it COMMITs per wallet, which is only legal in a procedure); so is the trust-board
+// orchestrator `rpc_trust_health_precompute_refresh_p`.
+//
+// It failed SAFE rather than silently — a missing extraction reds the pin's own test —
+// but "safe" here meant the pin could never be written, which is indistinguishable from
+// nobody having got round to it. That is the same shape as the other scope blind spots
+// in this repo: the guard's own predicate decided what it was able to see.
+const FN_KINDS = ["FUNCTION", "PROCEDURE"] as const
+
+function findFnStart(src: string, name: string): number {
+  for (const kind of FN_KINDS) {
+    const needle = `CREATE OR REPLACE ${kind} public.${name}`
+    let from = 0
+    for (;;) {
+      const idx = src.indexOf(needle, from)
+      if (idx < 0) break
+      const lineStart = src.lastIndexOf("\n", idx) + 1
+      // if the same line has a `--` before the match, it's a comment — skip it.
+      if (!src.slice(lineStart, idx).includes("--")) return idx
+      from = idx + needle.length
+    }
+  }
+  return -1
+}
+
+/**
+ * Extract a `CREATE OR REPLACE FUNCTION public.<name> ... $tag$ ... $tag$;` block
+ * (dollar-quoted body, tag auto-detected) and normalize its whitespace.
+ */
+function extractSqlFn(src: string, name: string): string | null {
+  const start = findFnStart(src, name)
+  if (start < 0) return null
+  const rest = src.slice(start)
+  const tagMatch = /\$([a-zA-Z_]*)\$/.exec(rest)
+  if (!tagMatch) return null
+  const tag = tagMatch[0] // "$$" or "$function$"
+  const bodyOpen = tagMatch.index + tag.length
+  const closeRel = rest.indexOf(tag, bodyOpen)
+  if (closeRel < 0) return null
+  const semi = rest.indexOf(";", closeRel + tag.length)
+  if (semi < 0) return null
+  return rest.slice(0, semi + 1).replace(/\s+/g, " ").trim()
+}
+
+describe("the extractor itself handles both object kinds", () => {
+  // Guards the guard. Without this, narrowing findFnStart back to FUNCTION-only would
+  // simply make every procedure pin fail with "not found" — which reads like a bad path
+  // or a renamed function, not like a lost capability.
+  const FN = `CREATE OR REPLACE FUNCTION public.zz_probe()\n RETURNS void LANGUAGE plpgsql\nAS $fn$ BEGIN NULL; END $fn$;\n`
+  const PROC = `CREATE OR REPLACE PROCEDURE public.zz_probe(IN a integer)\n LANGUAGE plpgsql\nAS $procedure$ BEGIN COMMIT; END $procedure$;\n`
+
+  it("extracts a FUNCTION", () => {
+    expect(extractSqlFn(FN, "zz_probe")).toContain("CREATE OR REPLACE FUNCTION public.zz_probe")
+  })
+
+  it("extracts a PROCEDURE", () => {
+    expect(extractSqlFn(PROC, "zz_probe")).toContain("CREATE OR REPLACE PROCEDURE public.zz_probe")
+  })
+
+  it("still skips a commented-out declaration of either kind", () => {
+    expect(extractSqlFn(`-- ${FN}`, "zz_probe")).toBeNull()
+    expect(extractSqlFn(`-- ${PROC}`, "zz_probe")).toBeNull()
+  })
+
+  it("every pin file carrying a verbatim copy is REGISTERED — the list cannot silently drift", () => {
+    // ⚠ PINS is a CURATED LIST, which is the shape this repo has been bitten by
+    // more than any other. A pin file that embeds a verbatim copy of a live DB
+    // object but is absent from PINS is the worst kind of miss: it reads as
+    // covered from every angle — it sits in supabase/tests/, db-tests executes
+    // it, and it visibly contains the object's DDL — while NOTHING compares that
+    // DDL to the migration. Its copy can rot indefinitely.
+    //
+    // Measured 2026-08-20 when this arm was added: 172 files carried a verbatim
+    // block and 2 were unregistered — capture_board_liveness_history (now
+    // registered above) and v_pack_pipeline_health.
+    //
+    // ⚠ THE VIEW EXCLUSION IS ARGUED, NOT AN ALLOWLIST OF CONVENIENCE. The
+    // extractor below is FN_KINDS = FUNCTION | PROCEDURE and locates a body by
+    // its $tag$ delimiters; a VIEW has neither, so a view pin cannot be
+    // registered under the current mechanism at all. It is excluded by what it
+    // IS, re-derived from the file on every run, not by being named — so a view
+    // pin that is later converted to a function stops being excluded
+    // automatically. Extending the extractor to views is the real fix and is
+    // deliberately not attempted here.
+    const dir = path.join(root, "supabase", "tests")
+    const withVerbatim = readdirSync(dir)
+      .filter((f) => f.endsWith(".sql"))
+      .filter((f) => readFileSync(path.join(dir, f), "utf8").includes("BEGIN verbatim"))
+
+    expect(withVerbatim.length, "the walk found no pin files at all").toBeGreaterThan(100)
+
+    const registered = new Set(PINS.map((p) => p.test.replace(/^supabase\/tests\//, "")))
+    const unregistered = withVerbatim.filter((f) => !registered.has(f))
+
+    // A MATERIALIZED view has no $tag$ body either (2026-11-04: mv_panini_floor_movers). Its pin is not
+    // unguarded — __tests__/panini-floor-movers-pin-matches-migration.test.ts diffs the view body itself.
+    const isViewPin = (f: string) =>
+      /CREATE OR REPLACE VIEW|DROP VIEW IF EXISTS|CREATE MATERIALIZED VIEW/.test(readFileSync(path.join(dir, f), "utf8"))
+    const viewPins = unregistered.filter(isViewPin)
+    const realMisses = unregistered.filter((f) => !isViewPin(f))
+
+    expect(
+      realMisses,
+      "these pin files embed a verbatim DB object but are in no drift check — register them in PINS:\n" +
+        realMisses.join("\n"),
+    ).toEqual([])
+
+    // The exclusion is real, so keep it honest: if it ever empties, the special
+    // case should go rather than linger as dead reasoning.
+    expect(viewPins.length, "the view exclusion is now empty — delete it and the argument above").toBeGreaterThan(0)
+  })
+
+  it("at least one pin is actually a PROCEDURE, so the capability is exercised for real", () => {
+    // Not vacuous, and satisfiable at any population > 0: if the last procedure pin is
+    // ever removed this reds, prompting a decision rather than silent rot.
+    const procPins = PINS.filter(({ test }) =>
+      /CREATE OR REPLACE PROCEDURE public\./.test(readFileSync(path.join(root, test), "utf8")),
+    )
+    expect(procPins.length).toBeGreaterThan(0)
+  })
+})
+
+describe("DB-invariant drift guard — embedded DDL must equal the committed migration", () => {
+  it.each(PINS)("$fn: the SQL test's copy is byte-identical (normalized) to its migration", ({ fn, test, migration }) => {
+    const testSrc = readFileSync(path.join(root, test), "utf8")
+    const migSrc = readFileSync(path.join(root, migration), "utf8")
+
+    const embedded = extractSqlFn(testSrc, fn)
+    const committed = extractSqlFn(migSrc, fn)
+
+    expect(embedded, `${fn} not found in ${test}`).not.toBeNull()
+    expect(committed, `${fn} not found in ${migration}`).not.toBeNull()
+    expect(embedded).toBe(committed)
+  })
+})
+
+describe("DB-invariant pin files must not contain a LONE `$`", () => {
+  // 🚨 WHY THIS EXISTS — a real red `main`, 2026-08-26, ~35 minutes and four commits.
+  //
+  // supabase/tests/refresh_wmc_fmv_changed.sql ended its verbatim block with
+  // `$function$;$` — one stray dollar sign left by a bad assembly regex. psql failed
+  // the WHOLE file with `syntax error at or near "$"`, so the `DB invariants (SQL)`
+  // job went red while every local check stayed green.
+  //
+  // ⚠ THE DRIFT GUARD ABOVE IS STRUCTURALLY BLIND TO IT, and that is the point of a
+  // separate check rather than a tweak to that one. `extractSqlFn` ends its slice at
+  // `rest.indexOf(";", closeRel + tag.length)` — the first semicolon after the
+  // dollar-quote terminator — so ANY text after that semicolon, valid or garbage, is
+  // outside what it compares. The pin and the migration therefore matched byte-for-byte
+  // on the extracted region while the file itself would not parse.
+  //
+  // ⚠ `npm test` cannot catch this either: nothing in the vitest suite parses SQL, and
+  // there is no Postgres or Docker on the dev box. Only CI's psql run does — which is
+  // why the rule has to be a cheap TEXTUAL proxy that runs locally.
+  //
+  // ⭐ PROVEN IN BOTH DIRECTIONS before being committed, per the repo's rule about
+  // scripted guards:
+  //   [A] silent on the clean tree — 181 files, 0 hits (so it is satisfiable at a
+  //       population of zero and cannot punish its own success);
+  //   [B] loud on the KNOWN OFFENDER — the exact `$function$;$` line reconstructed from
+  //       the real failure produces exactly 1 hit.
+  // A rule that only passed [A] would be indistinguishable from one that inspects nothing.
+
+  /** A `$` is legitimate only as a dollar-quote tag ($$ / $tag$) or a positional
+   *  parameter ($1). Line comments are stripped first because prose in these files
+   *  legitimately contains prices like `$100`. */
+  function loneDollarLines(src: string): { line: number; text: string }[] {
+    const hits: { line: number; text: string }[] = []
+    src.split(/\r?\n/).forEach((rawLine, i) => {
+      const cleaned = rawLine
+        .replace(/--.*$/, "")
+        .replace(/\$[a-zA-Z_][a-zA-Z0-9_]*\$/g, "")
+        .replace(/\$\$/g, "")
+        .replace(/\$\d+/g, "")
+        .replace(/'[^']*'/g, "")
+      if (cleaned.includes("$")) hits.push({ line: i + 1, text: rawLine.trim().slice(0, 90) })
+    })
+    return hits
+  }
+
+  const sqlDir = path.join(root, "supabase/tests")
+  const sqlFiles = readdirSync(sqlDir).filter((f) => f.endsWith(".sql"))
+
+  it("inspects a non-zero number of pin files (so a passing run means something)", () => {
+    // Guards that silently inspect nothing have shipped green in this repo before.
+    expect(sqlFiles.length).toBeGreaterThan(50)
+  })
+
+  it("no supabase/tests/*.sql contains a dollar sign outside a dollar-quote tag or $n parameter", () => {
+    const offenders: string[] = []
+    for (const f of sqlFiles) {
+      for (const h of loneDollarLines(readFileSync(path.join(sqlDir, f), "utf8"))) {
+        offenders.push(`${f}:${h.line}: ${h.text}`)
+      }
+    }
+    expect(
+      offenders,
+      "A lone `$` in a pin file is a typo that psql rejects for the WHOLE file, and the\n" +
+        "drift guard cannot see it (it stops at the first `;` after the dollar-quote\n" +
+        "terminator). This exact shape turned main red on 2026-08-26. Offenders:",
+    ).toEqual([])
+  })
+
+  it("CATCHES THE KNOWN OFFENDER: the reconstructed `$function$;$` line is detected", () => {
+    // The negative control. Without this, an over-eager future edit to loneDollarLines
+    // could make the check above vacuous and nothing would notice.
+    const good = readFileSync(path.join(sqlDir, "refresh_wmc_fmv_changed.sql"), "utf8")
+    const broken = good.replace("$function$;\n-- <<< END verbatim", "$function$;$\n-- <<< END verbatim")
+    expect(broken, "anchor moved — update this control rather than deleting it").not.toBe(good)
+    expect(loneDollarLines(broken).length).toBeGreaterThan(0)
+  })
+})

@@ -1,0 +1,3820 @@
+<!-- Extracted from CLAUDE.md on 2026-08-17 to bring that file under the memory-file
+char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
+Same rules apply: every number here is a dated sample - re-measure before quoting. -->
+
+## ⭐⭐ THREE QA GATES THAT WERE GREEN BY NOT LOOKING, AND WHAT EACH NOW ASSERTS (2026-10-20)
+
+All three were found from two red checks one morning. Every fix below was proven with a planted defect AND a positive control; the numbers are dated samples.
+
+**1. The a11y gate audited a LOADING STATE on its data routes.** `e2e/a11y.spec.ts` ran axe 1.5 s after `load`, before client-fetched data rendered. `/nba-top-shot/packs` passed every run in 3.1 s INCLUDING axe — impossible on the real page (30,590 elements, 500 rows; axe 107–124 s on it). Its pass signature, "45 rules passed, 3 accepted-exception", is exactly the page with its data unreachable (reproduced locally against captured production responses). It went red on 10-20 only because the 700 KB `/api/packs` began landing inside the window and axe never finished. The Collection tab and bare `/sets` (a "no wallet loaded" prompt) were the same class. The gate now: waits for `networkidle` (capped 15 s); prints each route's element and row count, so a loading-state audit shows as a tiny count instead of a fast green; requires every data route to show its content (`READY`: selector + minimum, set well below the 10-20 production values), failing as "not audited" otherwise; audits at most 25 rows per `<tbody>` (rows are one template — the stated cost is a defect only row 26+ could show); gives axe its own 45 s budget and writes an overrun into `a11y-summary.md` instead of vanishing from it; and prints each failing contrast node's `fg on bg = ratio` and opening HTML (a bare `.border` selector was unfixable from the log). The first runs that audited real content found three real contrast bugs: the GIFT/REWARD cost-basis chips in dark (4.07 / 4.12:1) and the whole neutral badge family in light (1.06:1, `text-white/80` has no light override; now pinned in `useBadgeTaxonomy.test.tsx`).
+⚠ **An instrument I added misled me once, worth keeping:** the first overrun probe asked the page for its element count AFTER axe timed out, got no answer, and reported "main thread unresponsive (render loop)". `Promise.race` does not cancel axe; the probe was queued behind axe itself. Measure the DOM BEFORE the work you are timing.
+
+**2. The pin guard could not see an IN-PLACE SPLICE.** `20261019181549` rewrote two PINNED functions with a DO block (`replace()` over `pg_get_functiondef`, then `EXECUTE`), so no committed full body matched production and the daily live check went red (2 of 322). `db-pin-points-at-the-newest-defining-migration` only matched `CREATE OR REPLACE`. It now treats a file that calls `pg_get_functiondef(` AND `EXECUTE`s and quotes a pinned function's name as a redefinition, unless the splice is older than the pin or names the pinned file in its text (20260929064703 does: "the resulting body is the one in …"). 41 (file, fn) pairs inspected on 10-20; two-way `SPLICE_NOT_A_REDEFINITION` allowlist, empty. Remedy text names the snapshot recipe (database.md, "Re-pinning a stale DB-invariant pin").
+
+**3. Preflight never ran SQL.** A migration with a syntax error (`20261020044118`, line 66) reached `main` on 10-19 and held CI red ~5 pushes. `scripts/lib/local-postgres.mjs` now provisions a bare throwaway cluster the way CI does (as `postgres` when root; a `/var/tmp` data dir; no pre-created extensions; ~2 s). Changed migrations are parsed even in `--quick` (the pre-push hook); the DB-invariant suite (270 files, ~35 s) runs in full mode when a `supabase/tests/*.sql` changes. With no local Postgres (Windows) both print NOT RUN with the reason. `check-migration-sql-parses.sh` takes an optional file list (no args = CI's full ~2 min sweep). Proof: the real broken file from `cd427b6b8` fails `preflight --quick` with CI's exact error.
+
+**Also:** both e2e upload steps dropped `test-results/`. The html report keeps its own content-addressed copy of every trace and `error-context.md` (`playwright-report/data/<sha1>`, measured byte-identical), so a failing a11y artifact was ~550 MB of duplicates.
+⭐ **The planted defect also caught a weak test of mine.** A 24-vs-25-deal boundary test for the Sniper thin-board fix passed with the fix disabled: its 24-edition pool tripped the OLD edition-count rule. Build a boundary so only the rule under test can decide it.
+
+## ⭐ A NEW PIPELINE GETS A SILENCE ARM AUTOMATICALLY (2026-10-02)
+
+`pipeline_cadence_watchlist` is **opt-in**: a lane with no row has no silence or no-success alarm at all. The 2026-09-04 sweep (`20260904044417`) armed every unwatched pipeline from its own gap profile, but it ran **once**. By 10-02, **70 pipelines that ran in the last 3 days had no row**, and 24 of them met that sweep's own bar. The same evening `seed-topshot-pack-distributions` (pack-EV catalog) turned out unwatched for its whole life.
+- **`public.arm_unwatched_pipelines()`** (migration `audit_20261002_arm_unwatched_pipelines_daily`) is the 09-04 rule verbatim: 12+ active days in 14 and a run yesterday or today; thresholds from the lane's OWN gaps; `info`, which never pages; and `ON CONFLICT DO NOTHING`, so a human-retired row (`is_active=false`) is never touched. pg_cron runs it **daily at 3:19 AM PT** (`rpc-arm-unwatched-pipelines`), and it logs its own `pipeline_runs` row listing what it armed. It is not excluded from its own rule, so after 12 days it watches itself.
+- First run: **24 arms** (watchlist 188 → 212), including `atlas-editions-refresh`, `pack-nft-identity`, `allday-unmapped-atlas-resolver`, the `thp-leg-*` health legs and `sentinel`. Newer high-volume lanes (`chain-arrivals`, `pack-mint-probes`, the pull-chain lanes) arm on their own once they have 12 days.
+- ⚠ **Promotion past `info` stays a human read**, per the 09-04 rule. Security invariants were 0/0/0 after apply; `anon` cannot execute the function.
+
+## ⭐ A DEPENDENCY CHANGE MAY NOT ADD A HIGH/CRITICAL PRODUCTION ADVISORY (2026-10-02)
+
+Until 10-02 **nothing in CI read `npm audit`**. Every `npm ci` log printed "29 vulnerabilities (… 1 critical)", and every job went green under it.
+- **`.github/workflows/dependency-audit.yml`** runs `scripts/check-prod-dep-audit.mjs` on any push or PR that changes `package.json` / `package-lock.json`, and on demand. It reads `npm audit --omit=dev`, reduced to **root** advisories (not the packages that only inherit one), at high/critical, and compares them to `prod-dep-audit-baseline.json`.
+  - Exit 1 on a new advisory, **or on a baseline entry no longer reported** (the baseline, at the repo root because `scripts/*.json` is gitignored, is shrink-only).
+  - Exit 2 when the audit returned no readable report.
+  - Not on every push: the advisory DB moves daily. New disclosures on installed packages are Dependabot's job.
+- **Baseline at ship: ONE advisory**, `braces` (CSS build tooling under `dependencies`; no in-range fix). A concurrent session had just shipped the production bumps (`97ee418e0` ws/defu/viem, `f2d33ceee` sharp 0.35.5 + `@vercel/og` dropped), which took production highs from 11 to 7, all of them `braces` and its inheritors. **Dev tree, same evening:** an in-range `npx -y npm@11 update brace-expansion browserslist js-yaml undici vite` took all-tree highs **14 → 9**. All 9 left are the `eslint-config-next` chain (the only "fix" npm offers is a downgrade to 14.x) or have no fix: `@onflow/fcl-wc`, `chokidar`, `postcss-cli`, `tailwindcss`.
+- ⚠ **Regenerate the lockfile with npm 11 (Node 24, as `engines` and every workflow pin).** On 10-02, npm 10.9 (the web sandbox's Node 22) crashed inside `npm audit fix` / `npm update` (`Cannot read properties of null (reading 'edgesOut')`). It also rejects an npm-11 lockfile in `npm ci` (`Missing: @noble/hashes@2.4.0`). Use `npx -y npm@11 …` there.
+- Planted-defect proof: removing one baseline entry reddened the live audit and named the advisory. `__tests__/prod-dep-audit-gate.test.ts` runs the same check offline.
+- 📏 **11-16: production tree at ZERO advisories of ANY severity** (`npm audit --omit=dev` and full `npm audit` both "found 0"). The last residual, `deepmerge` GHSA-gcqx-w48m-w2h4 (low, no upstream fix), is closed by a VENDORED patched copy — `vendor/deepmerge/`, root `file:` dep + `overrides."deepmerge": "$deepmerge"` (known-issues #231). The gate itself stays high/critical; tightening it to every severity would red the daily run on any new unfixable low, so that is a decision, not a cleanup. **When upstream fixes an advisory, a vendored copy is the thing to DELETE first** (its exit is in known-issues #231).
+
+## ⭐ AND EVERY EDGE FUNCTION'S FAILED RUN IS CHECKED FOR A FALSE SUCCESS (2026-10-02)
+
+**`supabase/functions/_tests/failed_run_honesty_test.ts`** is the write-side honesty rule (R120/R123) *executed* against the edge fleet, rather than grepped for. `harness.admit()` gets each function past its own gate: every env var holds `test-value-<NAME>`, and each value is presented in every slot the fleet's gates read. The run happens with **every database call failing and every upstream answering 503**, and the suite waits for its `EdgeRuntime.waitUntil` work to finish. Then:
+- **No `pipeline_runs` write may claim success.** Every read failed, so `p_ok=true` / `ok=true` can only be a failure misrecorded.
+- **A synchronous body may not claim success.** An `accepted`/`queued` body with work still running is honest; its outcome is in the run row.
+- **Every function must be admitted.** One the probe cannot get past would be unseen, so it reds.
+
+**Measured 10-02:** ~25 functions record `ok:false` with the real error even when they answer 200 or 202. Seven did not. **The three with a live caller were fixed and deployed the same day:**
+- `sales-serial-backfill` (Vercel cron, every 2 h): a failed target read returned empty stats → `ok=true`.
+- `snapshot-institutional-wallets`: a failed read wrote `ok=false`, **then a second row with the same `started_at` and `ok=true`**.
+- `enrich-ufc-wallet` (user wallet backfill): a failed read answered `{"ok":true,"message":"No moments"}`, and the caller marked the wallet `done`.
+
+The four with no caller found sit in the suite's `KNOWN` map, which can only shrink: `topshot-insider-detect-patterns` (dormant), `seed-ufc-editions`, `special-serial-delta` and `scan-ufc-wallet`.
+- ⭐ **Rule (3), added the same evening, covers "records nothing and claims nothing".** An admitted run that answers **2xx** while everything failed must write an **`ok=false` row**; a non-2xx answer counts as a trace of its own. This is the shape `ingest-allday-pack-opens` fixed on 08-13 (HTTP 200, no row, a "succeeded" cron run), and **its Top Shot sibling still had it**: `ingest-topshot-pack-opens-history` (pg_cron, every 15 min) answered `tip_unreachable` with 200 and no row. `resolve-allday-rip-dist-api` (hourly) answered `{"note":"none"}` after a failed read. Both were fixed and deployed 10-02, and each was proven red on its old code. Three wrote **no run row on any outcome**. **Decided 10-02 by measured invocations** (`function_edge_logs`, 24 h): `seed-topshot-pack-distributions` (5 calls, every 4 h at :13; it feeds the Top Shot pack-EV distribution catalog) was **fixed** with one `log_pipeline_run` row per run (ok=false on a failed walk or upsert, or an empty catalog) and **armed** in `pipeline_cadence_watchlist` (720 / 1440 min, medium). `special-serial-sweep` and `backfill-allday-pack-supply` had **0 invocations**, and so did all four `KNOWN` false-success functions. **They stay listed:** changing code nobody calls buys no user benefit and costs a deploy. Fix one only if it is revived; the shrink-only lists force the update.
+- ⚠ **Silent about** partial failure: here everything fails at once.
+- ⚠ **Deploying an edge function now proves itself, for every import style (detector fixes, 10-02).** `edge-fn-deploy.yml`'s read-back needs the drift verdict `clean`. Two detector defects had made it unreachable:
+  1. **Tier 1 read the sticky `import_map` flag.** It stays `false` for a function first created without a map, even after a CLI deploy sets `import_map_path`. It now accepts either signal (`hasImportMap`). The counterexample was `resolve-allday-rip-dist-api` v38, which boots and served a 200.
+  2. **A url-only function read `unclassifiable` even when tier 2 had read and matched its body.** The census now records an explicit `contentMatched` list, and `slugVerdict()` calls such a function `clean` only on that positive evidence. Absence from the failure lists is not enough. This covers `flowty-proxy` and `sync-nba-games`.
+
+## ⭐ CI NOW EXECUTES EVERY EDGE FUNCTION'S AUTH GATE (2026-10-02)
+
+**`supabase/functions/_tests/auth_gate_test.ts`** is the first `deno test` in this repo, and it runs in `ci.yml` → `edge-deno`. Before it, CI only ran `deno check` and `deno lint` on the edge functions, and none of them was ever **executed**.
+- **Why the gate:** every function is deployed `--no-verify-jwt`, and on 10-02 all 43 in the tree read `verify_jwt=false` live. **Its own first lines are the only thing between a public URL and a service-role client.** The older guards read source text, which cannot tell a check that runs first from one that runs after a write.
+- **How:** `_tests/deno.json` remaps supabase-js, std `serve` and the edge-runtime types to local recording stubs, so the suite needs **no network**. `harness.ts` stubs `Deno.serve`, `fetch` and `EdgeRuntime`, and gives every env var a function reads a value. Each function then gets three anonymous probes (POST with no credential, GET, and a wrong key in every slot). Each probe must answer **4xx with zero db calls and zero fetches**. Reading the caller (`.auth.*`) or a Vault key (`rpc(cron_gate_key)`) counts as the gate, not as work.
+- **Ban at zero:** 43/43 functions passed before the suite was written.
+- ⭐ **The planted defects were refused with a 401, and the suite still went red.** A fetch or a `from().select()` placed before the gate in two real functions was caught on all three probes, although both still answered 401. **A status-only test would have passed both.** A positive-control fixture (`fixtures/ungated.ts`) must be flagged on every run, or the recorders are blind.
+- ⚠ **Location matters:** `_tests/` has **no `index.ts`**, which keeps it invisible to every function walker (edge-fn-drift, the gate-key test, the reachable-tests ratchet). It sits under the `tsc` exclude of `supabase/functions`. `__tests__/edge-auth-gate-deno-test-runs-in-ci.test.ts` pins the CI step: it runs with `--allow-read --allow-env`, without network and without a swallowed exit, and `_tests/index.ts` must never exist.
+- ⚠ **Silent about:** whether a VALID caller is admitted (the `pipeline_runs` rows from the real callers prove that), the deployed copy (edge-fn-drift's job), and the deployed functions that have no source here.
+- Local run: `npm i deno` in a scratch dir (dl.deno.land is blocked from the web sandbox, npm is not), then the same command as the CI step.
+
+## ⭐ A TREE-WIDE CREDENTIAL SCAN, AND A PLANTED-DEFECT TEST FOR AN UNTESTED GATE (2026-10-02)
+
+**`__tests__/no-credential-literals-in-tracked-files.test.ts`** scans every `git ls-files` text file, `docs/` included. Until 10-02 **nothing in CI scanned the tree for a credential shape**: no gitleaks, trufflehog or CodeQL, and `edge-fn-no-hardcoded-gate-keys` reads only `supabase/functions/*/index.ts`. Both of this public repo's leaks were outside that scope: D2's gate keys mirrored into ~9 docs, and #22's `github_pat_`.
+- **Ban at zero:** 7,067 files, 0 hits across 12 vendor-prefixed shapes (GitHub, Anthropic, OpenAI, `rpc_pls_`, `sb_secret_`, AWS, Stripe live, Slack, Telegram, private-key blocks, any JWT).
+- ⛔ **The report carries `file:line pattern len=N`, never the match.** A CI log is as public as the repo. Each planted case asserts the secret is absent from the report.
+- It runs on **docs-only pushes too**, because `docs-tests` selects every test file that mentions `docs/`.
+- ⚠ **It is silent about** keys with no prefix (the Flow private key has the same 64-hex shape as every tx hash), git history, and untracked `.env*` files. Read its header before trusting a pass.
+- Proven 10-02 by staging a fake `rpc_pls_` key in a `docs/` file: red, named `file:line`, no key text in the output.
+
+**`__tests__/check-responsive-flex-basis-planted-defects.test.ts`** covers the one CI gate script no test touched. It runs the real script against seven fixture trees, including its 08-22 first-cut brace bug and the Tailwind arm its header had contradicted itself about. Re-planting the brace bug reds 6 of the 7 cases.
+
+## ⭐ CI NOW BUILDS AND RENDERS THE APP, AND LINTS ITS OWN WORKFLOWS (2026-09-25)
+
+Two new `ci.yml` jobs close two gaps that nothing covered before.
+
+**`build-render`: `next build`, then `next start`, then one request per page route** (`scripts/qa/built-render-smoke.mjs`, `npm run test:render-smoke`).
+- Until 09-25 **no CI job ran `next build`**. `ci.yml`'s own header said it "blocks a broken build", but only `tsc` ran. And **nothing ever rendered the built app**, which is the only place `DYNAMIC_SERVER_USAGE` exists (the 09-20 Pinnacle outage).
+- ⭐ **Planted-defect proof, 09-25:** the 09-20 `await connection()` was re-planted in `app/(collections)/[collection]/edition/[slug]/page.tsx`. **`next build` exited 0.** The render smoke went red on all 7 `/<collection>/edition/…` URLs and found the digest in the server log. **So the build step alone does NOT close the 09-20 class; the render does.** The build step covers a different class: a module that throws at evaluation, and page-data collection or prerender crashes.
+- **No secrets.** Seven placeholder env vars are enough to build: the address `NEXT_PUBLIC_SUPABASE_URL` plus six keys (`NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `INGEST_SECRET_TOKEN`, `ANTHROPIC_API_KEY`, `FLOWTY_PROXY_TOKEN`, `TS_PROXY_SECRET`). They were found by building until green, not by grep. ⚠ **A NEW module-level `throw` on a missing env var reds this job at page-data collection.** Add a placeholder to the job's `env:` block; do not remove the throw.
+- The Supabase URL is `http://127.0.0.1:9`, which refuses connections, so **every data read fails fast and the smoke renders the FAILED-READ path of every page**. A 5xx there means a page turns an unreachable DB into a crash, which is the honesty canon's failure mode. `KNOWN_5XX` is empty and may only shrink.
+- **What it inspected (09-25):** 314 URLs from 125 page routes, with `[collection]` expanded over the registry's 8 ids (parsed from `lib/collections.ts`, never a hand list). Final status: 227 × 200, 86 login-gated, 1 × 404, 0 × 5xx. It follows same-origin redirects, so a canonicalising 307 is never scored as a render. A redirect to `/login` counts as GATED, not passing. There is a not-vacuous floor: at least ⅓ of URLs must render 2xx. ~~⚠ **The 86 gated routes are NOT rendered.** That is the next gap, and closing it needs a signed test session.~~ ✅ **Closed the same day (`ca7cf7b62`, 09-25):** pass 2 re-requests every gated URL signed in, against a stub that answers only `GET /auth/v1/user` and `rpc/check_email_allowed`. See the script's header. (This line was stale until 10-02, and a 10-02 audit briefly reported the gap as still open because of it.)
+- ⚠ It is not a data check and cannot see a wrong number. It can only see a render that fails.
+- Runtime: about 2 min of build (cold, 3 cores) plus about 80 s of smoke. The six `/<c>/pack/dist/1` URLs each take about 10 s against the dead DB.
+
+**`workflow-lint`: actionlint 1.7.7 (version- and sha256-pinned) plus the runner's shellcheck at `--severity=warning`.**
+- Baseline was **zero** findings at that severity across 24 workflows. The only hits were 2 info-level SC2012 results, below the threshold. So it is a ban at zero.
+- Planted-defect proof: `needs.chnages.outputs.code` → `property "chnages" is not defined`, exit 1. Without this job, that typo evaluates to `''` and silently skips the job it gates.
+
+**Same day, second pass:**
+- **`deno lint` is a RATCHET** (`scripts/check-deno-lint-ratchet.mjs`, baseline `deno-lint-ratchet.json`, 17 findings keyed per rule+file). It used to run with `|| true` and so could never fail. The 17 findings are NOT fixed in bulk because they sit in deployed edge functions, and `edge:drift:check` compares the repo against the deployed copies, so a bulk fix means 13 redeploys. Fix one when you are already deploying that function, then run `--update`. Planted proof: a `let` that is never reassigned → `prefer-const|…: 0 → 1`, exit 1. ⚠ `no-unused-vars` ignores `_`-prefixed names, and my first planted defect used one, so it passed silently. **Plant a defect the rule actually flags.**
+- **The Playwright smoke runs after every successful Production deploy** (`deployment_status`, gated by `if:` to Production + success; a newer deploy cancels an in-flight smoke). `scheduler-liveness` counts only `event=schedule` runs, so its 4/day no-change control is unaffected. Every non-matching status still creates a SKIPPED run, which is expected.
+- ⭐ **The smoke's user agent now self-identifies** (`… RPC-E2E-Smoke (playwright)`). `devices["Desktop Chrome"]` ships a plain Chrome UA, so every smoke page view reached `/api/track-funnel` as `bot_ua=false`, counted as a HUMAN. That was 4 runs a day before this change and would have been roughly 10× more with per-deploy runs. Pinned against the route's own `isBotUserAgent`, with the bare device UA as the control.
+- Investigated but not changed: the six `/<c>/pack/dist/1` URLs take about 10 s with the DB down. That is `generateMetadata` running two sequential reads, each capped by a 5 s `withBoardBudget`, while supabase-js retries the refused connection. It is bounded and deliberate: the fallback read can still name the pack when the first read fails.
+- ✅ **CLOSED same day: the login-gated URLs are rendered SIGNED IN.** The Supabase URL is now a local STUB started by the smoke script (`http://127.0.0.1:54329`; port 9 cannot be bound by a non-root CI user). The stub answers only the two calls `proxy.ts` makes to admit a user: `GET /auth/v1/user` for the test session's token, and `rpc/check_email_allowed` → `true`. It DROPS every other connection, so data reads fail exactly as before. The anonymous pass is byte-identical (227 × 200 / 1 × 404, the no-change control). Every URL that pass bounces to `/login` is re-requested with an `@supabase/ssr` session cookie (`sb-127-auth-token=base64-…`). The run fails if any still bounces, or if the stub served zero user calls, because then it signed nobody in. ⭐ **Planted proof:** a `throw` at the top of `/analytics/sets/[set_id]`. The anonymous pass saw only a login redirect; the signed-in pass reported HTTP 500.
+- **Same pass: two more coverage holes found and closed.** (a) `/analytics/sales/[collection]` and `/analytics/loans/[collection]` take their OWN slugs (`topshot`, `allday`, …), so the registry expansion 404'd on them and the real pages were never requested. The smoke now also requests every concrete path in `.next/prerender-manifest.json` (+18 URLs). (b) `/edition/[id]` and `/analytics/sets/[set_id]` check for a UUID before they read, so the generic `1` stopped at the format check. They now get a UUID placeholder. That surfaced `/edition/[id]`'s DELIBERATE throw on a failed lookup (a retryable error page instead of a false 404), which is `KNOWN_5XX`'s only entry. Its test fails if the throw it justifies disappears.
+- **Numbers 09-25 (evening):** 332 URLs. Anonymous: 227 × 200, 1 × 404, 104 login-gated. Signed in: 87 × 200, 16 × 404, 1 × 500 (the known one). The 16 404s are all explained: 14 registry slugs on the two analytics trees (their real slugs are covered via the prerender manifest), `/rewards` (disabled in its layout by design), and `/sitemap/1` (the real path is `.xml`).
+- The Playwright cache in `e2e-smoke.yml` is split into restore and save. GitHub refuses a cache SAVE on a `deployment_status` run, which had surfaced as a warning on every deploy smoke. Every run restores; only scheduled or dispatched runs save.
+
+## 🚨🚨 A GUARD THAT CANNOT FAIL, AND THE ONLY REASON I KNOW IT: `\b` IN A JS TEMPLATE LITERAL IS **U+0008 BACKSPACE** (2026-09-20)
+
+Writing `__tests__/addresses-are-never-folded-and-prefixed.test.ts`, one arm re-derives the census
+that justifies excluding `supabase/functions`. It was generated by a patch script whose replacement
+text was a **template literal**:
+
+```js
+// inside `...` — this is NOT the regex you think it is
+const marker = `const SOLANA_SURFACE = /\b(?:candy|solana|base58|magic_eden)\b/i`
+```
+
+In a template literal `\b` is the **backspace escape**, not a regex word boundary. The emitted source
+was `/⌫(?:candy|solana|…)⌫/i` — **a regex requiring a literal U+0008 in the file it scans**, which
+nothing ever contains. The arm could not fail.
+
+⭐⭐ **AND IT LOOKS CORRECT IN EVERY EDITOR, EVERY DIFF AND EVERY CODE REVIEW**, because U+0008 renders
+as nothing. `grep` shows `/\b(?:candy|…)\b/i`. The file reads exactly like the code you meant to
+write. Only `JSON.stringify(line).includes("\u0008")` tells the truth:
+
+```bash
+node -e 'const l=require("fs").readFileSync(F,"utf8").split("\n").find(x=>x.includes("MY_REGEX ="));
+         console.log(JSON.stringify(l), l.includes("\u0008"))'
+```
+
+🚨 **THE TELL WAS A CONTROL THAT DID NOT FIRE — not a failing test.** Planting a Solana reference in an
+edge function left the arm **green**. Every other arm in the file passed, the suite was green, CI would
+have been green, and the guard would have sat there for months asserting nothing. ⭐ **This is the
+strongest argument in this repo for planting the defect rather than trusting that the matcher works:
+a vacuous guard is indistinguishable from a passing one from the outside, and the only instrument that
+separates them is a deliberate failure you watch for.**
+
+⚠ **THE GENERAL RULE: any backslash escape you write INSIDE a template literal is interpreted by the
+template, not passed through.** `\b` `\n` `\t` `\s` `\d` `\w` — `\s`/`\d`/`\w` survive by accident
+(they are not recognised escapes, so JS keeps the backslash), which is exactly why the trap is hard to
+spot: **most of your regex escapes work, and the handful that collide with real string escapes are
+silently eaten.** Write generator scripts' regexes with a quoted heredoc (`<<'EOF'`) or `String.raw`,
+and assert on the emitted bytes.
+
+⚠ **The same script also did a `.replace()` whose anchor no longer matched — a silent no-op** that made
+me think a debug line had run when nothing had. CLAUDE.md's rule is already there for this
+(*"assert the occurrence count before a scripted replace"*) and I broke it in the same ten minutes I
+was writing a guard about false confidence.
+
+## ⭐⭐ A SUPPRESSION IS A CLAIM, AND IT IS NOT ALWAYS FREE — it can FAKE ANOTHER INSTRUMENT'S SIGNAL (2026-09-20)
+
+Two lessons, one day apart, about the inline-marker escape hatch this repo uses everywhere.
+
+**1. A suppression claims the guard is right and the code is wrong. When the GUARD is wrong, a marker
+buys silence and leaves the next honest instance to be flagged too.** `20260920185051` tripped the
+R118 when-others guard; I greened `main` with the documented marker. The guard's author then narrowed
+the guard instead — its `RECORDING` test had been **body-scoped**, so a three-line JSON cast guard was
+flagged for a `log_pipeline_run` two hundred lines away — and removed the marker as dead. Their fix
+was the right one, and their reason is the rule: **a marker would have left every future loop handler
+to be flagged the same way.** ⭐ **Before you suppress, ask whether the population the guard is
+matching is the population the property is true of.**
+
+**2. A suppression can perturb a DIFFERENT instrument, and that cost is invisible from the file you
+are editing.** The fold-and-prefix ban wanted markers on two `supabase/functions` files.
+`check-edge-fn-drift` compares repo source to the DEPLOYED bundle through a dialect ladder
+(`verbatim → normalised → canonical → canonical_tight`) and **watches which rung each function lands
+on** — its own doc calls a decay from `canonical` to `canonical_tight` "the early warning". Measured
+directly against `scripts/lib/eszip-source.mjs`:
+
+    canonicaliseSource(withComment) === canonicaliseSource(without)   false
+    tightNormalise(withComment)     === tightNormalise(without)        true
+
+So a comment there does **not** cause drift — it **demotes the function one rung and fakes that
+instrument's decay signal.** ⭐ **A guard's escape hatch is a write to the repo like any other: check
+what else reads the lines you are adding.**
+
+The guard instead EXCLUDES that root and **asserts the exclusion's premise every run**: zero of the 41
+edge functions mention candy/solana/base58/magic_eden, so the arm reds the day one does. ⚠ That is the
+difference between an exclusion and a blind spot — CLAUDE.md's *"a control's POPULATION must be the set
+the property is TRUE of, not a proxy that coincides today"*, made executable rather than commented.
+
+## ⭐⭐ AN AGGREGATE IS NEVER A PROXY FOR THE SLICE YOU MEASURED — and a freshness STAMP is not a RATE (2026-09-19, register R109)
+
+Two errors in one night, both of which produced confident wrong conclusions, and both cheap to avoid.
+
+### 1. The aggregate/slice error — it killed a whole diagnosis
+R109 explained a slow index-only scan on `wallet_moments_cache` as visibility-map rot, and the
+evidence was `relallvisible / relpages` — **85.8% for that table against 99.7% for a same-size,
+same-`autovacuum_vacuum_scale_factor` neighbour.** That looked like a clean control pair.
+
+⛔ **It licensed nothing, because the probe read the FIRST 5,000 index entries — 0.23% of the
+table — and the head of an index is not a random sample of it.** `relallvisible` aggregates
+120,286 pages; the probe touched a few hundred.
+
+**The estate then ran the falsifier for free.** Overnight the map recovered *on its own* to
+**98.1%** after an autovacuum completed at 04:16 PT (75.4% → 78.1% → 98.1%). If the table-wide
+map drove the heap fetches, they had to collapse. They did not:
+
+| reading | table-wide all-visible | Heap Fetches / 5,000 |
+|---|---|---|
+| 22:15 PT (vacuum running — contaminated) | 85.8% | 2,407 (48.1%) |
+| 22:45 PT (idle box, clean) | ~78% | 1,833 (36.7%) |
+| 04:47 PT (clean) | **98.1%** | **2,127 (42.5%)** |
+
+**Four readings spanning 75.4% → 98.1% coverage; the heap-fetch rate sat at 36–43% in every one,
+and was HIGHER at 98.1% than at 78%.**
+
+⚠ **Timings were NOT the comparison** — load differed between readings. `Heap Fetches` is a
+load-independent count, which is exactly why it is the comparable quantity here. Pick the
+instrument that does not move with the thing you cannot hold still.
+
+✅ **What survived:** the scan really does ~40% heap fetches, stably, under every condition tested.
+⛔ **What died:** the explanation and its lever — "let the visibility map recover" is refuted,
+because it recovered completely, unaided, and nothing improved.
+⚠ **Newly named untested assumption:** that the head of the index is representative. It may be its
+worst part. The open probe is `pg_visibility` on the specific page range those entries touch
+(extension available, NOT installed), plus a probe sampling the index at several offsets.
+
+### ⭐ THE OFFSET PROBE, 2026-09-19 05:20 PT — the head of the index is ~2.8× worse than its body, so EVERY R109 heap-fetch number was taken from its least representative slice
+
+The assumption named one section above — *"that the head of the index is representative; it may be
+its worst part"* — was tested by seeking to `pg_stats.histogram_bounds` quantiles (free: already
+computed by ANALYZE) and re-running the identical bounded scan at each.
+
+| seek point | Heap Fetches / 5,000 | rate | buffers read |
+|---|---|---|---|
+| head (p00) | 2,127 | **42.5%** | 1,949 |
+| p25 `0x3c06…` | 713 | **14.3%** | 626 |
+| p50 `0x8e8f…` | 860 | **17.2%** | 703 |
+| p75 `0xd266…` | 769 | **15.4%** | 547 |
+
+⛔ **The head is ~2.8× the body's rate. The representative rate is ~14–17%, not ~40%.**
+
+🚨 **And the slice was even narrower than "0.23% of rows" suggested: `pg_stats.n_distinct` for
+`wallet_address` is 859 across 2.16M rows — ~2,500 rows per wallet — so a 5,000-row `LIMIT` on an
+index LEADING with that column samples roughly TWO values.** When an index's leading column has few
+distinct values, a row-count `LIMIT` is a key-count sample, and the two are not interchangeable.
+
+⚠ **This refutes R109's magnitude as well as its mechanism.** Extrapolating from the body rate
+(~600 buffers per 5,000 rows) the full scan is ~259,000 buffers ≈ 2 GB ≈ **~95 s of pure IO at the
+estate's ~22 MB/s floor — inside the 600 s ceiling, not the "~27 minutes on an idle box" R109
+claimed from the head.**
+
+✅ **What still stands, unchanged and measured three times:** `refresh_cross_collection_cohort_step1()`
+really does fail at 600.0 s (09-17, 09-18, and again 09-19 03:02 PT on its new schedule), and the mat
+really is 61 h stale.
+⛔ **What is now open again:** WHY. Contention was the first hypothesis and it was dismissed on a
+single 110 s cancellation at io_wait 2 — a reading that, against a ~95 s scan estimate, is no longer
+surprising enough to rule contention out. **Do not now assert contention either.**
+👉 **THE DECISIVE TEST, not run here because the box was at io_wait 12:** run the full step1
+aggregate on a genuinely quiet box under a generous `SET LOCAL statement_timeout` and record an
+actual COMPLETION TIME rather than another cancellation. A cancellation gives a lower bound and
+three of them have now been over-read.
+
+### 2. A freshness STAMP is not a RATE — this one shipped a bad change
+A lane was declared to have **"zero output"** on the strength of `max(ingested_at)` being 38 minutes
+old. Counted properly afterwards, it had taken **2,837 rows in the preceding 2 h** — degraded
+(16–32 rows/10 min), not silent — **and the output cliff preceded the change by ~35 minutes.**
+
+⭐ "Compare against the MEASURED state, not the DESIGNED one" was the right instinct. **The measured
+state was itself wrong, because a stamp was read as a rate.** If the claim is about throughput,
+count rows in a window; a newest-timestamp answers a different question.
+
+### 3. A candidate its own NO-CHANGE CONTROL outperforms has not been shown to work
+The cadence change taken on that premise was reverted 6 h later. The decisive reading was **not**
+the lane's own recovery — it was that the untouched control lane (`rpc-allday-unmapped-atlas-resolver`,
+same table, never modified) went **55% fail → 32% → 0% (9 of 9)** over the same hours while the
+CHANGED lane was still mixed, and **both recovered at the same instant.** The estate calmed down.
+
+Two further tells that the knob was wrong, either of which was enough on its own:
+- **The first 80 minutes at the new cadence were 100% failure (15 of 15).**
+- **The failing work was per-tick FIXED:** 12 of 17 timeouts were two `CREATE TEMP TABLE … DISTINCT ON`
+  builds, which cost the same at either cadence. ⭐ That also retired the *proposed follow-up*, which
+  would have held throughput constant by ADDING work to a tick that already could not finish.
+
+### 4. ⚠ `regexp_replace` flags `s` and `n` CONFLICT — and a strip that matches nothing reads as a FAILURE
+The fidelity check for a full-body `CREATE OR REPLACE` works by stripping the added lines and
+re-hashing to the pre-change md5. With flags `'sn'`, **`n` wins, `.` stops matching newlines, the
+pattern matches nothing, and the md5 "fails"** — which looks exactly like a corrupted body.
+
+✅ **Always assert the STRIPPED LENGTH equals the original length before trusting the verdict.**
+Here `stripped_len` came back identical to `current_len` (6,604), proving the strip was a no-op;
+with flags `'g'` and `[\s\S]*?` it stripped to 5,991 and the md5 matched exactly. **A vacuous check
+that fails safe is still vacuous.**
+
+
+
+## ⭐⭐ AN ALARM THAT SAMPLES ITS WHOLE POPULATION IN ONE PASS CANNOT NAME A SUBJECT — its per-subject falsifier must condition on BREADTH (2026-09-18, register R50)
+
+**The shape.** `capture_board_liveness_history` times all 44 watchlisted board views in a single
+sweep and writes one row each. R50 was closed on 2026-09-07 with a per-board falsifier:
+
+> *"a board with p50 over budget for 3 consecutive sweeps reopens this row for THAT board."*
+
+⛔ **Applied literally on 2026-09-18 it reopens EIGHT rows** — `panini_sale_feed_status` and
+`v_topshot_parallel_premiums` at 4 consecutive, plus `pack_table_rows`, `candy_player_board`,
+`topshot_serial_premiums_board`, `v_insights_trophies`, `topshot_2025_rookie_cohort_stats` and
+`candy_special_serials_board` at 3. ⭐ **And every one of those runs ENDS AT THE SAME SWEEP
+(06:28:01Z).** Eight subjects do not regress in the same minute. One shared resource does.
+
+**The tell is per-sweep BREADTH, and it is bimodal rather than a gradient** — 28 sweeps × 44 boards:
+
+| boards over budget in a sweep | sweeps | fleet p50 |
+|---|---:|---|
+| 0–2 | **20 of 28** | 25–86 ms |
+| 9–12 | **8 of 28** | 251–662 ms (fleet max 30–94 s) |
+
+There is no middle. Either the instance is fine and almost nothing is over, or it is saturated and a
+quarter of the fleet is over together.
+
+✅ **THE CORRECTED FORM.** A subject reopens only if it breaches in sweeps where the POPULATION is
+calm (here: ≤ 2 of 44 over in that same sweep). Over the 21 calm sweeps, three boards ever go over
+and only one is a real cost problem — `v_topshot_parallel_premiums`, 5 of 21, calm p50 **6,437 ms**
+against a 9,100 ms budget. The other two sit **under** budget at p50 (1,828 ms and 909 ms): they are
+near-budget noise that the naive falsifier promoted to findings. Every other board's calm p50 is in
+the tens of milliseconds.
+
+⚠ **WHY THIS IS NOT JUST "IGNORE SPELLS".** The naive falsifier does not merely produce extra
+noise — it **inverts the ranking**. The board with the worst per-board cost (42.9% of all samples
+over) and a board that is comfortably healthy (35.7%, p50 under budget) come out looking alike,
+because both are dominated by the same eight spell sweeps. **Pooling across a shared-resource event
+does not add error evenly; it compresses every subject toward the event.**
+
+⭐ **THE GENERAL RULE.** *An instrument that measures every subject in one pass can only report THAT
+something was slow, never WHICH thing is slow.* If its verdict is per-subject, the verdict has to
+condition on the breadth of that same sample. Otherwise every shared-resource incident reopens every
+subject at once, and the one row that matters is buried in the seven that do not.
+
+👉 **SIBLING, one layer down:** *"CONTENTION PRODUCES A PARTIAL RED THAT READS AS A REAL DEFECT — and
+the tell is the ELAPSED TIME, not the failures"* (2026-09-12, further down this file). Same mistake,
+different instrument: there the shared resource is CI runners, here it is instance IO. In both, the
+discriminator is a property of the RUN rather than of the subject.
+
+---
+
+## 🚨 A GUARD'S CLAIM ABOUT ITS OWN COVERAGE IS ITSELF A CLAIM, AND IT WAS WRONG FOR SIX WEEKS (2026-09-18)
+
+`__tests__/workflow-curl-assignments-are-guarded.test.ts` was added 2026-08-30 after the opaque
+`exit 28` incident. Its header says, in terms:
+
+> The lesson was applied at the SITE where it was observed instead of to the CLASS — which is why
+> this guard keys on the shape, not on `jq`.
+
+**It did not key on the shape.** Its regex was `^\s*([A-Za-z_][A-Za-z0-9_]*)=\$\(curl\b` — `curl`,
+another single command. The sentence describes the fix that *should* have shipped, and reads as
+though it did. Nobody re-read it against the regex for six weeks.
+
+⭐ **The CLASS is "a detector whose answer a guard then acts on"**, and CLAUDE.md names a second
+member in the same breath as the first (*"and `jq` counts (exit 5 on a non-JSON body)"*). Walking the
+real population — 31 assignment sites across `.github/workflows/*.yml` **and**
+`.github/actions/*/action.yml`, `curl` 21 · `node` 5 · `jq` 4 · `awk` 1 — found the class alive in
+`ci.yml` itself, **in the two jobs whose entire purpose is catching a guard that silently no-ops**.
+Three sibling pairs, each with one call failing CLOSED and its twin failing OPEN AS CLEAN:
+
+| site | shape | what a failure rendered as |
+|---|---|---|
+| `FD=$(node find-future-dated-ledger-headings.mjs …)` | unguarded, then read via `${FD:-0}` | "0 future-dated headings" = **clean** |
+| `SW_BEFORE=$(git show HEAD~1:… \| awk -f …)` | a PIPE, and the step sets no `pipefail` | awk reads empty stdin, prints `0` |
+| `LOST_R=$(node "$DETECT" …) \|\| LOST_R="0"` | guarded, and **substitutes the clean value** | "this removed filing carried 0 corrections" |
+
+⛔ **The third is the worst, and it is the one a `bash -e` rule alone does not catch.** The first two
+abort the step, which is loud. `|| LOST_R="0"` does **not** abort: it substitutes the answer meaning
+*nothing was lost* and carries on, incrementing `INSPECTED`, so the inbox guard reported a clean
+inspection of a filing it had never read — twelve lines above a sibling call to the **same detector**
+that already failed closed on the same condition.
+
+⚠ **The second produced a FALSE ALARM, not a false pass, and that is its own lesson.** GitHub's
+default shell is `bash -e {0}` — `-e` only, **no `pipefail`** — so a failing `git show` was invisible
+and awk printed `0` for the baseline. Against the **3** pre-existing swallowed headings the delta
+became `3 > 0`, firing an error that told the pusher *"your entry spliced on the substring '### '"*
+when it had not. **Reproduced 2026-09-18: old shape exit 1, new shape exit 0.** That is CLAUDE.md's
+"never state a cause the error did not", produced by a guard rather than by a route.
+
+### What the generalised guard asserts, and the two judgement calls in it
+
+Three ban-at-zero arms over both roots: an **unguarded** assignment · a fallback that **substitutes
+the literal `0`** · `${VAR:-0}` inside a **fail-OPEN** `-gt`/`-ge`.
+
+- ⚠ **Arm 3 is DIRECTION-SENSITIVE on purpose.** `${n:-0} -lt 60` (the `docs-tests` floor) is
+  fail-CLOSED: a dead detector reads 0, trips the floor and reds. `${FD:-0} -gt 0` is fail-OPEN: a
+  dead detector reads 0, `0 > 0` is false, the guard passes. **The check keys on the COMPARISON, not
+  on the default** — flagging both would have punished correct code.
+- ⚠ **Arm 2 was NARROWED ON EVIDENCE, not to go green.** Its first run flagged three more sites. All
+  three were read before a line was changed, and all three are *correct fail-CLOSED sentinels*:
+  `|| STATUS="000"` in `badge-sync` (`000` is the case arm that sets `alive=false`) and in
+  `topshot-active-listings-ingest` (only `"200"` increments `OK`), and
+  `|| GONE="(detector failed to list them)"` in `ci.yml` (`[ -n "$GONE" ]` reports it). **A sentinel
+  meaning BAD is the pattern we want**; flagging it would have taught people to delete their
+  fallbacks. They are now pinned as NEGATIVE CONTROLS, so a drift back to "any non-empty fallback"
+  reds. ⭐ **Narrowing a check to make it pass is a defect; narrowing it because you read the
+  population is a fix. The difference is whether you looked.**
+- **Non-vacuity:** population floor re-derived (≥20 of 31), **both roots must contribute**, and the
+  walk must span **more than one command** — that last arm is the one that would have caught the
+  original. Proven by mutation: reverting each of the three fixes reds a **different** arm.
+
+⭐ **TRANSFERABLE, and it generalises past CI:** the repo already knew *"a guard's stated RISK is
+itself a claim"* (the `inherited-status` fail-open, 2026-09-14, where the documented risk was tested
+and the real one was not). **This is the same shape one notch further: a guard's stated SCOPE — the
+class it says it walks — is a claim, and the cheapest test of it is to print the population and look
+at what commands are in it.** "Keys on the shape" is true only if the walk enumerates the shape's
+members.
+
+⚠ **Also corrected the same day, same class but a claim rather than code.**
+`site-availability-alarm.yml` said it fires *"at most ~4/hour"*. Re-derived from `event=schedule` run
+history: the cron asks **96/day**, GitHub delivers **6–8** (7 full days, median 6) — **wrong by ~15×,
+in the direction that flatters the alarm**. `pipeline-sentinel` asks 24 → 5–7; **`e2e-smoke` asks 4 →
+4/4 every day, the no-change control** that rules out "Actions got slower" in favour of a cap on
+high-frequency schedules. `scheduler-liveness.yml`'s `~5` point estimate re-derived to **~6**, dated,
+as its own header asks. Behaviour unchanged — the alarm's recovered-outage arm was already sized
+against DELIVERY — but a reader taking the cron at face value would size the next detector wrong.
+The operator remainder (moving those crons to cron-job.org) is register **#124**.
+
+### Displaced from CLAUDE.md 2026-09-18 (verbatim) — to pay for the rule above
+
+CLAUDE.md is at its character limit, so two narrow implementation details moved here to make room.
+Both are dated facts, not standing rules; the rules they hung off stay in CLAUDE.md.
+
+From the strip-comments bullet:
+
+> 🚨 **Now JSX-aware, pinned char-for-char vs the TS COMPILER on every file (#87).**
+
+From the "pin the property, not the spelling" bullet, its two instances:
+
+> (twice: a literal `count ?? 0`; a comment's line WRAPPING)
+
+## 🚨 A GREEN CHECK ON A DOCS-ONLY PUSH IS NOT A STATEMENT ABOUT `main` (2026-09-13)
+
+`unit-tests-shard` is gated on `needs.changes.outputs.code == 'true'`. **That gating is correct and
+nothing here proposes removing it** — a docs-only push has no reason to spend 6 minutes of runner
+time on the unit suite. The cost is that its green check means *"the docs guards passed"* and is
+rendered identically to *"main is green"*.
+
+Measured, not hypothetical:
+
+| run | commit | ran | verdict |
+|---|---|---|---|
+| **#5476** | `3840baf` (code) | full suite, 6m 01s | 🔴 **the red starts here** |
+| #5477 | `8940f14` (docs) | 1m 21s, no shards | ✅ green |
+| #5478 | `e6a5047` (docs) | 1m 26s, no shards | ✅ green |
+| #5479 | `c3678d3` (docs) | 1m 41s, no shards | ✅ green |
+| **#5480** | `eada52c` (code) | full suite, 5m 54s | 🔴 same failure, inherited |
+
+Three consecutive greens over a red `main`, for ~9 hours, and **not one of them is wrong** — each
+ran exactly what it was asked to run. The red surfaced only because someone happened to push code.
+
+⭐ **The generalisation worth keeping:** this repo already knows *"a permanently-red or -zero
+instrument is indistinguishable from a broken one."* This is that one level up — **a check that DID
+NOT RUN is indistinguishable from a check that PASSED**, and the rendering is what makes them
+indistinguishable. Any conditional job creates this shape; the condition is not the bug, the
+*rendering* is.
+
+### The guard: `inherited-status` / `scripts/check-last-code-ci-on-main.mjs`
+
+On a **docs-only push to main**, it finds the most recent COMPLETED CI run that actually ran the
+shards and reds if that run was not a success. The message names the run and commit that **is** red,
+because the docs push is not the cause and reverting it would not help.
+
+- ⛔ **Docs-only pushes ONLY.** On a code push the run itself is the statement, and failing on an
+  inherited red there would block the very commit that fixes it.
+- ⚠ **It fails OPEN, loudly** (`verdict=unknown`, exit 0) when the run history or the API is
+  unavailable. Reddening every docs push over missing history would be worse than useless. That
+  fail-open puts all the weight on one drift: if `SHARD_JOB_MARKER` stops matching the job name
+  `ci.yml` produces, the guard becomes a permanent no-op **that still prints a reassuring line**.
+  `__tests__/inherited-main-status-guard.test.ts` pins exactly that, by parsing `ci.yml`, expanding
+  the `${{ matrix.shard }}` template and asserting the marker prefixes the real names — not by
+  comparing the marker to a copy of itself.
+- ⚠ **The walk breaks at the first full-suite run.** The jobs endpoint is one request PER RUN, so
+  without the break a quiet week of docs pushes costs 15 requests on every push. **Losing it fails
+  no fixture test, only the bill** — so it is pinned against a counting local HTTP server, together
+  with "never spends a request on its own run" and "a non-2xx becomes an `ApiError`, never an empty
+  list that reads as `unknown`".
+- Proven non-vacuous by mutation: drifting the marker, flipping the exit code so `unknown` reds,
+  deleting the early break, and reverting the executed-vs-listed check below. Each reds a different
+  test.
+
+### 🚨 AND IT SHIPPED A NO-OP, WHICH ITS OWN PUBLISHED SUMMARY IS WHAT CAUGHT (2026-09-14)
+
+The first summary this guard rendered said, on a docs-only push:
+
+> **Inherited `main` status: `green`** — last full-suite run **CI #5502 · `673fdc9` · success**
+
+`673fdc9` is **docs-only** — every path under `docs/` or `*.md`, shards skipped. So the guard was
+reporting **the last run of any kind** behind a green banner.
+
+⭐ **The cause: a job NAME in the jobs list is not evidence the job RAN.** The Actions jobs endpoint
+returns SKIPPED jobs too, with their real names and `conclusion: "skipped"`, so a docs-only run still
+lists `Unit tests (vitest) — shard 1/2`. `ranFullSuite` matched the name and concluded the suite ran.
+
+⛔ **The documented fail-open was the WRONG RISK.** This file and the script both said the weight
+rested on `SHARD_JOB_MARKER` drifting away from ci.yml's job name — and the marker matched perfectly.
+**Matching a name was never the question; whether the job executed is.** A guard's stated risk is
+itself a claim, and this one was tested (the ci.yml pin) while the real one was not.
+
+✅ **Fixed:** `ranFullSuite` now requires a shard job whose `conclusion` is present and not
+`"skipped"`. A shard that FAILED still counts as having run — that is precisely the run to report.
+The pinned case is the real docs-run payload, with a code-run control, and reverting the check reds
+two independent tests.
+
+⭐ **The reason this was found at all is the summary from the previous fix.** Had the verdict stayed
+in the admin-only step log, the guard would have kept printing `green` off docs runs indefinitely.
+**Making a result readable is what made it falsifiable.**
+
+### 🚨 AND THE SAME BLIND SPOT WAS ALREADY IN `ops-monitor.yml`, THE JOB BUILT TO CATCH A RED `main`
+
+`ops-monitor.yml`'s `ci-status` job exists because *"main's `unit-tests` job sat RED for ~24h
+completely undetected"* (2026-07-19). It took the newest completed `ci.yml` run on main — **of any
+kind** — and called main green when that run concluded `success`.
+
+⛔ **Once the docs-only fast path landed, that became the same false green.** A red introduced by a
+code push, followed by any docs push, reads as GREEN in the monitor: **the exact 24h-undetected
+scenario the job exists for, reintroduced by an optimisation added later.** Nobody connected the two
+changes, because each is correct on its own.
+
+✅ **`ci-status` now delegates to `scripts/check-last-code-ci-on-main.mjs`** — one implementation, one
+test suite, two callers. Pinned by tests that assert the job still exists, that it runs the script,
+and that the newest-run-of-any-kind shortcut has not come back.
+
+⚠ **Cancelled runs are now WALKED PAST rather than reported.** `ops-monitor` had already reasoned
+this out once — *"concurrent-push supersession is normal on this repo — not a signal"* — and that
+judgement was about to be lost in the consolidation. Redding a docs push over a superseded run is a
+false alarm; calling it green is worse; walking to the last decisive run is neither.
+
+⭐ **The transferable question:** when you add a fast path that SKIPS work, ask what ELSEWHERE reads
+the result of that work. The gate was correct, the monitor was correct, and the pair was wrong.
+
+
+⚠ **What it still does not cover:** a red introduced on a branch, and any OTHER conditional job whose
+skip is rendered as a pass. The shape is general even though this guard is not.
+
+## ⭐ AN OVER-BROAD MOCK CAN DELETE A TEST'S SUBJECT WHILE LEAVING IT GREEN-ADJACENT (2026-09-12)
+
+`api-og-share-cards-no-false-zero` asserts what badges a share card draws, via a helper that reads every
+`data:image/svg+xml` src out of the rendered tree (`drawnGlyphs()`), because the slabs carry no text. Its
+fixture mocked `lib/og/img-data` like this:
+
+```ts
+ogImageDataUri: async (u) => (u ? "data:image/png;base64,AAAA" : null)
+```
+
+— slab art, for **every** URL. That was correct while the only thing resolving through that helper WAS slab
+art. The moment the cards began resolving official BADGE art through the same helper, each badge became a
+PNG, `drawnGlyphs()` filtered it out as slab art, and two cases failed reading *"expected 2 glyphs, got 1"*
+— i.e. **"the badge vanished"**, which is exactly what it looks like when a real regression drops a badge.
+
+⚠ **The failure was in the harness, and it pointed at the subject.** The badge was being drawn correctly the
+whole time; it had stopped being *countable*. The tell is worth keeping: when a mock's return value is
+**less specific than the set of things now flowing through it**, the test silently changes what it measures
+rather than failing honestly.
+
+**The fix is not to loosen the assertion.** The mock now answers differently for `/api/badge-image` than for
+slab art, so the marks stay countable — and the case was then STRENGTHENED to assert the badge is the
+*official* asset (`data-official="threeStars"`), which is the property the change was actually for. A mock
+narrowed to keep an old assertion passing is a test that has quietly stopped covering the new path.
+
+⚠ **General form:** a fixture that answers ALL inputs identically encodes an assumption that only one kind
+of input exists. That assumption is invisible until a second kind arrives, and it fails as a
+subject-shaped error rather than a harness-shaped one.
+
+## `npm run badges:art:check` — the static badge-art registry vs the live tables (added 2026-09-12)
+
+`lib/badges/official-art.ts` holds a STATIC mirror of which badges have official art
+(`badge_taxonomy.icon_url` + the collection-aware `badge_art_overrides`). Static on purpose: an OG card
+renders while a social crawler holds the connection, and a taxonomy read per card buys nothing for a set
+that changes a few times a year. The cost of that choice is drift, and the drift is **invisible** — a badge
+that GAINS art keeps drawing the RPC fallback glyph, which looks fine.
+
+`scripts/check-badge-art-registry-drift.mjs` diffs it against the live tables. Three properties worth
+copying:
+
+* **BOTH directions.** An entry the DB dropped is as much a defect as one it gained — the card spends a
+  crawler's connection to receive a 400 from the proxy allowlist and fall back to the glyph it already had.
+* **It asserts the COUNT it inspected.** An empty read is not "no drift"; either table returning zero rows
+  exits 2 rather than 0.
+* **It checks the proxy allowlist too**, because `/api/badge-image`'s allowlist is that route's injection
+  guard — a slug it does not know is a 400, so the registry must be a subset of it.
+
+⚠ **It shape-checks every parsed slug (`/^[A-Za-z0-9-]+$/`) INSTEAD OF TRUSTING THE COMMENT STRIPPER,** and
+that earned itself on the first run: the allowlist block contains the prose *"v2's chip"*, whose apostrophe
+a naive quoted-string scan reads as an opening quote — it reported two real slugs as unservable. The
+stripper is applied AND its `endState`/`tplDepth` are asserted, per CLAUDE.md's rule that calling it is not
+proof it stripped; the shape-check is the belt to that braces, because a check that does not NEED the
+stripper to be right is better than one that does.
+
+
+## ⚠ A GUARD ANCHORED ON AN OPERATOR IS BLIND TO ITS CLASS HOISTED INTO A NAME (moved here 2026-09-12)
+
+**Moved OUT of CLAUDE.md on 2026-09-12** to make room for two rules from the same evening; it is a
+rule, not a case note, so it needs a home a guard author actually reads rather than only the
+displacement log. The original text, verbatim:
+
+> ⚠ **A guard anchored on an OPERATOR is blind to its class HOISTED into a name** (`t = x || 1`
+> then `p / t` — 3 live sites in the divisor ban's OWN roots).
+
+⭐ **It has now defeated two separate bans in this repo, which is the argument for it being a rule
+rather than an anecdote:**
+
+- **`no-fabricated-divisor-ratchet`** — anchored on the literal `|| 1` beside a division. Hoisting
+  the guard into `const t = x || 1` and then dividing by `t` walks straight past it. **Three live
+  sites were inside the ban's OWN roots**, i.e. the guard could not see its own subject matter.
+- **The PostgREST-cap ban** (register **#71**) — anchored on `.limit(<literal>)`. Its own header had
+  recorded, under *what this is structurally silent about*, that a non-literal bound cannot be judged
+  statically. ⛔ **Half wrong: a same-file `const NAME = <number>` IS statically judgeable**, and
+  hoisting the number into a name is exactly how the class survived. Resolving every `.limit(<name>)`
+  against its own file found **74 named sites, 31 resolvable, exactly ONE over the cap**.
+
+**How to apply it:** when a ban is keyed on a token, ask what the same defect looks like one
+indirection away — a local constant, an alias, a helper — and resolve that form in the same file
+before declaring the population. ⚠ **And drop any name defined more than once rather than guessing**:
+`let CAP = 2000; CAP = 10;` read as a single definition in #71's first resolver (a bare reassignment
+carries no `const|let|var`) and produced a false positive, which on a ban-at-zero guard reds CI for
+everyone.
+
+
+## ⭐⭐ A COVERAGE PERCENTAGE IS A RATIO, AND EVERY GUARD HERE WATCHED THE NUMERATOR (2026-09-12)
+
+Three gates ratchet a coverage percentage. The thresholds red when coverage DROPS,
+`coverage-gates-are-wired-to-ci` checks the gates run in CI, `component-gate-include-completeness`
+checks no new `components/` subtree is silently ungated. **Nothing watched the denominator.**
+
+🚨 **Narrowing `lib/**/*.ts` to `lib/analytics/**`, or deleting `app/**/route.ts` from an
+`include` array, removes hundreds of files from the measurement — and because the files that
+remain are the well-tested ones, the percentage goes UP and every threshold passes.** The gate
+reports a better number for measuring less. That is the repo's most-feared shape — a guard that
+inspected nothing, reading as a pass — turned on the coverage gates themselves.
+
+✅ **`__tests__/coverage-gates-still-measure-what-they-claim.test.ts`**: four bans at zero, one per
+surface the gates claim. ⚠ **Expressed over the TREE, not over a count** — a first cut asserted
+"matches at least N files", which reds the day somebody legitimately deletes N+1. *A ceiling that
+churns gets raised rather than read.* ⚠ **The globs are READ FROM the configs, never restated** —
+a copy is a claim about the configs that goes stale silently. ⭐ Mutation-proven against the real
+config, and **a commented-out glob correctly does not count as coverage** (the array is read
+through `stripComments`), which is the subtle death: the glob is still visible, so a reviewer
+skimming the config sees the surface named.
+
+⚠ **The census half is deliberately NOT ratcheted:** 341 of 1,460 files sit in no gate, but
+**38 of 38 edge functions use `Deno.*`/`serve()`** (re-derived, not inherited) so they are
+structurally unmeasurable, and a ratchet over high-churn `scripts/` or over 116 pages reds on
+routine work. ⛔ **Filed as UNMEASURED, not untested — 93 test files already import from
+`scripts/`.** [inbox 2026-09-13T0108Z](../overnight/inbox/2026-09-13T0108Z-341-source-files-sit-in-no-coverage-gate-and-nothing-watched-the-denominator.md)
+
+## 🚨 TWO WAYS A GREEN TEST STOPS MEANING WHAT IT SAYS — both found redding `main` on 2026-09-12
+
+A concurrent session shipped Candy MLB a Market tab. Nothing about it was wrong, and it broke
+three guards. Both mechanisms generalise well past this repo.
+
+### ⛔ 1. A PIN RE-DERIVED FROM THE OBSERVED STATE CAN NEVER DISAGREE WITH REALITY
+
+`panini-launch-flag-contract` pinned two absolute sitemap lengths (`toHaveLength(73)` / `(72)`).
+Candy's new tab made it 74, and the file's own comment had flagged the restructure as owed since
+its **third** bump — this was the **sixth**.
+
+⭐ **The churn was the symptom; the disease is that the expected number was recomputed from the
+tree every time it broke.** Whoever tripped it read the new value off the failure message and
+wrote it in. A number maintained that way is not an assertion — it is a record of the last time
+someone looked. **This is the `fix-inbox-index-counts.mjs` shape** already recorded here (a fixer
+that derives its expected value from the observed state launders an error into internal
+consistency), in the costume nobody recognises: a hand-maintained constant.
+
+✅ **The repair is to assert the claim the number stood in for.** Here that was *"nothing ELSE
+moved when the flag flips"* — a **DELTA between two builds**, not an absolute count of one. The
+symmetric difference between the flag-on and flag-off sitemaps must be exactly the panini entry.
+**Unrelated growth cancels**, so it cannot churn, and it is strictly stronger than the two counts
+it replaced. ⚠ Non-vacuity first: two empty lists also have an empty symmetric difference, so the
+build is asserted substantial before the difference is read.
+
+### ⛔ 2. A CONTROL'S POPULATION MUST BE THE SET THE PROPERTY IS TRUE OF, NOT A PROXY THAT COINCIDES TODAY
+
+`ufc-sniper-is-retired`'s NO-CHANGE CONTROL read *"every OTHER multi-tab published collection
+keeps its sniper"* and failed with **`candy-mlb lost its sniper` — a sentence describing something
+that never happened.** Candy is published, now multi-tab, on Solana, thin, and deliberately
+sniper-less.
+
+⭐ **`pages.length > 1` was standing in for "is a Flow collection with a marketplace", and the two
+stopped being the same set the moment a sixth collection shipped a tab.** The control was not
+wrong when written; it was *underdetermined*, and a proxy population is a claim that silently
+expires. Re-keyed on the sniper set itself with a floor, so a shared-list deletion still reds
+(mutation-proven: removing all 8 entries reds it) while a new sniper-less collection cannot.
+
+### ⭐ AND ONE GUARD BEHAVED PERFECTLY, WHICH IS WORTH RECORDING TOO
+
+`migration-view-security-invoker-guard` caught a **true positive** — `candy_market_board` created
+with no stated security mode. ⚠ **Live state was read before acting rather than inferred:**
+`reloptions` NULL, but anon and authenticated SELECT already false, because the same session had
+revoked them one migration later. **So there was no hole, only the latent half.** Fixed forward
+with an `ALTER` (the convention for an already-applied migration) and the applied file
+grandfathered. ⭐⭐ **The grandfather list's SIZE PIN then reddened on that entry** — so growing the
+list could not happen as a side effect of silencing the other case. *That is what a size pin on an
+allowlist is for, and it is the cheapest guard in this whole file.*
+
+
+## ⭐⭐ THE STRIPPER IS FIXED, AND THE THING WORTH KEEPING IS THE ORACLE, NOT THE FIX (2026-09-12, register #87)
+
+`scripts/lib/strip-comments.mjs` DEFECT 4 — a JS/TS parser run over `.tsx` — is repaired at the root:
+two new states, `jsxTag` (quotes ARE attribute delimiters, `{` opens an expression container) and
+`jsxText` (quotes, `//` and `/* */` are all prose). Census **10 files / 899 lines → 0 / 0**; both
+ratchets are bans at zero. That is the boring half.
+
+⭐⭐ **THE DELIVERABLE IS `__tests__/strip-comments-matches-typescript.test.ts`.** It parses every file
+in the tree with the TypeScript compiler and asserts its comment ranges are EXACTLY the ranges the
+stripper blanks — both directions, two bans at zero, **3,008 / 3,008 files agreeing**. The argument for
+it generalises past this helper:
+
+> **Every one of the five defects in this file was found by accident, weeks or months late, and then
+> pinned by a fixture written to describe the case that had just been found. A fixture can only assert
+> the defect its author already knows about.** The contract was never a list of cases — it is *"blank
+> exactly the comments and nothing else"*, and that is checkable against an INDEPENDENT instrument
+> over the real tree.
+
+TypeScript is independent in the way that matters: it *defines* what a comment is, it resolves JSX by
+file extension (which the helper cannot), and it shares no code, author or assumption with the state
+machine. ⚠ **Mutation-proven** — disabling the JSX branch reds both directions with file and line.
+
+### ⛔ THE ORACLE WAS WRONG TWICE BEFORE THE STRIPPER WAS, AND BOTH LOOKED LIKE REAL FINDINGS
+
+A cross-instrument check is only evidence once the *other* instrument is right, and a wrong oracle
+produces confident, specific, entirely false findings. Both cuts here named real files and real lines:
+
+| cut | reported | actually |
+|---|---:|---|
+| char mask over all characters | 2,945 files "keep a comment" | blanking maps comments to SPACES, so an original space is indistinguishable — compare only NON-WHITESPACE |
+| node walk for comment ranges | 525 files "destroy source" | no node starts before a closing brace, so comments there are missed — walk LEAF TOKENS |
+| leading trivia only | 905 more files "destroy source" | a comment on the same line as the preceding token is TRAILING trivia; `getLeadingCommentRanges` excludes it by design |
+
+⭐ **The tell was the CONTENT of the first finding, not its size** — `" @vitest-environment jsdom"` and
+`// trimmed` are obviously comments, so "the stripper keeps them" was obviously wrong. *When a new
+instrument's first finding is surprising, establish that the INSTRUMENT is right before believing WHAT
+it says.* Final residue after the third cut: 22 files, all genuine.
+
+### 🚨 THE FIX REFUTED THE DEFECT'S OWN SAFETY CLAIM — a symptom-based census can only report the safe half
+
+The header said DEFECT 4 *"fails in the SAFE direction … KEEPS too much and never blanks code"*, and
+the register repeated it. **False.** Measured against TypeScript on the shipped stripper: **2 files, 46
+characters of real source BLANKED** — DEFECT 3's direction, the one that hid a live P0. JSX text was
+never a string state at all; it was parsed as CODE, so `//` in a URL opened a line comment.
+`app/(analytics)/analytics/api/page.tsx:116` handed every guard:
+
+```
+            https:                      
+```
+
+— the production base URL, printed on a public page, cut at the scheme.
+
+⭐⭐ **WHY IT SURVIVED SIXTEEN DAYS, and this is the transferable rule.** The census counted `sq`/`dq`
+line states. Those really are verbatim and really do only keep too much, so a census built on them
+reports the safe half **completely and correctly**. The unsafe half of the *same root cause* is
+invisible to it **by construction**. **Never derive a claim about a DEFECT from an instrument that
+measures one of its SYMPTOMS** — and ask what a passing guard is structurally silent about *before*
+quoting it as a safety property, not after.
+
+### ⭐ A FIFTH DEFECT FELL OUT OF THE SAME SWEEP AND HAS NOTHING TO DO WITH JSX
+
+`word` accumulated identifier characters **across whitespace**: `continue` on one line and `return` on
+the next made `continuereturn`, which is not a keyword, so the regex after it read as DIVISION and the
+machine desynced. ⚠ **An identical regex desynced or not depending only on what sat on the PREVIOUS
+LINE** — proven by running the same two lines with and without the preceding identifier. It had
+desynced `__tests__/helpers-client-directive.test.ts` for months, attributed to nothing, because its
+symptom (`dq`) is indistinguishable from DEFECT 4's. ⚠ **The code's own comment described the correct
+behaviour while the code did the opposite** (*"a run of whitespace ends the word"* — it did not).
+
+### ⚠ TWO SMALLER TRAPS, both of which read as extra coverage
+
+- ⛔ **IMPORTING A `*.test.ts` FROM ANOTHER `*.test.ts` RE-REGISTERS ITS SUITES.** The oracle imported
+  `walk` from the census file; the entire census then ran a second time, its 12 tests attributed to the
+  oracle's filename. **A duplicated suite is worse than a missing one** — it reads as coverage while
+  doubling cost and hiding which file actually failed. Caught by counting tests per file (48 where 37
+  were expected), not by any failure. The walk now lives in `__tests__/helpers/source-files.ts`.
+- ⚠ **A GUARD'S POPULATION MUST BE COUNTED BY THE GUARD'S OWN PREDICATE, NOT BY A REGEX THAT RESEMBLES
+  IT.** Sizing the residual `<`-ambiguity, I grepped `<tag>(`, found every hit identifier-preceded and
+  therefore already blocked, and wrote *"zero instances exist in this tree"* into the header. The census
+  then failed on `<> (last updated {d})</>` — a FRAGMENT, which the pattern could not match because it
+  required an identifier between the brackets. The grep answered a narrower question than the code asks.
+
+
+## 🚨 THE SHARED COMMENT STRIPPER'S DEFECT 4 IS TWICE THE SIZE ITS OWN CENSUS SAID, AND THE PROXY IS WHY (2026-09-12)
+
+`scripts/lib/strip-comments.mjs` DEFECT 4 — a JS/TS parser run over `.tsx`, where an apostrophe in
+JSX *prose* opens an `sq` state that copies everything verbatim, comments included — was already
+documented, ratcheted and believed to affect **7 files**. It reddened
+`no-rewards-promises-while-unshipped` on 2026-09-12 with `app/dashboard/DashboardClient.tsx: +50
+Status`, a string sitting inside a `//` comment the guard believes it strips.
+
+⭐⭐ **THE FILE WAS IN NEITHER CENSUS THE REPO HAD, AND THE REASON GENERALISES.** The ratchet counted
+`endState !== "code"` — a desync **still open at EOF**. JSX prose carries apostrophes in PAIRS as
+often as not ("we'll … doesn't"), so the machine opens `sq` on the first, copies through, CLOSES on
+the second, and reports `code`. Healthy, by that probe. DashboardClient was the **largest instance
+in the repo**: one contraction on line 1192, **1,076 of its lines** read as string, 63 comment lines
+handed to every guard as source.
+
+⭐ **COUNT A BOUNDARY BY ITS SYMPTOM, NOT BY A PROXY FOR IT — and here the symptom needs no proxy,
+because a single- or double-quoted string CANNOT SPAN A NEWLINE in JS/TS.** So a line whose START
+state is `sq`/`dq` is not evidence of a desync, it IS one, wherever it sits and whether or not the
+machine re-syncs. `stripCommentsWithState` now returns `lineStates`, and
+`__tests__/strip-comments-defect-4-population.test.ts` ratchets on it: **10 files, 1,764 lines**
+(898 after a concurrent session reworded part of DashboardClient — a DATED SAMPLE, re-measure).
+The new census **strictly contains** the old 7-file ceiling, which was checked rather than assumed;
+the ban-at-zero on the source-BLANKING states is not subsumed and stays.
+
+⚠ **`tpl` IS EXCLUDED AND MUST BE.** A template literal spanning newlines is ordinary, and the `//`
+inside our Cadence transactions is SOURCE that must survive. A first cut of this census counted
+those and over-reported **13 files where there are 10** — a census that over-counts gets its ceiling
+raised, which is how a ratchet dies.
+
+⭐⭐ **THE REPAIR THAT ACTUALLY SHIPPED IS NOT A STRIPPER FIX — it is the standing rule "prefer a
+check that does not NEED it right", made concrete.** `copyOf` in
+`__tests__/no-rewards-promises-while-unshipped.test.ts` strips comments AND blanks `//` / `*` lines
+TEXTUALLY, because published COPY never lives in a line comment. That guard no longer depends on a
+parser being correct about JSX in order to be correct about copy. ⚠ **Proven non-vacuous by a
+positive control** — an injected `Earn +50 Status` in real JSX still reds it — because "blank more
+lines" is one keystroke from "blank everything".
+
+⛔ **REWORDING THE SOURCE IS THE OTHER AVAILABLE FIX AND IT IS A TRAP.** A concurrent session took
+it the same afternoon and CI went green; the file is **still desynced**, and the next contraction in
+any `.tsx` puts some other comment back in front of some other guard. A workaround that removes the
+symptom removes the reason anyone would fix the cause. Register **#87**.
+
+## ⭐ ASSERTING ON A SURFACE THAT RENDERS NO TEXT: make the two cases DIFFER, don't ask whether one renders (2026-09-12)
+
+An OG card's trophy tiles carry art and nothing else — no label a tree-walking harness can read. The
+tempting test ("does the card render with badges?") passes through every interesting defect, because
+the broken card renders perfectly well; it is just wrong.
+
+**Three assertion shapes, strongest first:**
+
+1. **Read the rendered `<img>` srcs.** `ogImageSrcs` from `__tests__/helpers/og-capture` returns
+   every src; our glyphs are `data:` URIs, so `decodeURIComponent` hands back the geometry that was
+   drawn. This distinguishes *drew the jersey glyph* from *drew a glyph* — byte comparison cannot.
+2. **Differential between two FAILURES**, when there is no text and no readable src. Two renders
+   that differ only in WHICH input failed must not be byte-identical. This is what caught the
+   compacting-prefetch misattribution (see key-files-and-honesty.md, eleventh shape).
+3. **Byte inequality against a baseline** — the weakest, and it only proves *something* changed.
+
+⚠ **A `textTransform: uppercase` label is TITLE CASE to `ogText`.** The harness walks the element
+tree; it does not lay out. Asserting `"JERSEY MATCH"` passes only by accident of how the fixture is
+written and reds the day the style moves — assert the canonical string the code produces.
+
+⚠ **AND A MOCK CAN MAKE THE WHOLE SUITE VACUOUS FROM ONE LINE.** `api-og-share-cards-no-false-zero`
+mocked `ogImageDataUri` to `null`; with no art the slab draws the ART UNAVAILABLE placeholder and
+**not** its badge strip, so every badge assertion would have passed while testing nothing. Check
+what a module mock's default makes IMPOSSIBLE, not only what it makes deterministic.
+
+## ⚠⚠ CONTENTION PRODUCES A *PARTIAL* RED THAT READS AS A REAL DEFECT — and the tell is the ELAPSED TIME, not the failures (2026-09-12)
+
+The all-red contention signature is already recorded (`Vitest failed to find the runner`, every file,
+`Tests no tests`) and is unmistakable. **This is the dangerous sibling: a handful of files failing with
+ordinary hook and assertion errors, on a green commit.**
+
+Measured the same morning, same commit, same box, minutes apart:
+
+| run | files | result | elapsed |
+|---|---:|---|---:|
+| suite5 | 1506 | **all pass** | ~4 min |
+| suite6 — with the candidate fix **REVERTED** | 1506 | **all pass** | ~4 min |
+| suite7 | 1499 | **8 files / 9 tests FAIL** | **> 10 min** |
+| the same 8 files re-run **together** | 8 | **73 pass** | 40 s |
+
+⭐ **THE DURATION IS THE INSTRUMENT.** suite7 ran **2.5× slower** because concurrent sessions were
+building and pushing eight commits; once they finished, CPU read **3%** across 16 logical cores. A
+~4-minute wall is the reference on this box — **a full run that takes much longer is measuring
+contention, not the code** (CLAUDE.md: *a reading taken while its SUBJECT CHANGED is not a reading*).
+
+⛔ **WHY IT IS CONVINCING, WHICH IS THE PART TO DISTRUST.** The failures were named
+*"finds the DDL-extractor copies at all (positive control)"* and *"CONTROL — a PARTIAL failure stays
+`ok=true`"*. **A failing positive control or CONTROL reads as structural breakage** — precisely the
+finding a session acts on immediately. They were timeouts.
+
+**The order of checks, cheapest first**
+
+1. **Elapsed time** against the ~4-minute baseline, and CPU/`node` process load.
+2. **Re-run the failing files TOGETHER.** If they pass, it is the environment. (Alone is weaker: a real
+   cross-file leak also passes alone.)
+3. Only then look for an isolation bug.
+
+## 🚨 THE SAME MORNING'S SECOND RED WAS **NOT** CONTENTION, AND `hookTimeout` IS WHY — the 2026-08-24 fix never covered hooks
+
+⛔ **A separate red on `api-allday-listings-indexer` looked identical to the above and was NOT.** It
+reproduced on an **idle** box in a **161 s** run. The error, once read instead of assumed:
+
+```
+Error: Hook timed out in 10000ms.
+```
+
+**`testTimeout: 30_000` does not apply to `beforeAll`/`beforeEach`** — hooks kept vitest's **10 s**
+default. That file's `beforeAll` does `vi.resetModules()` then `await import("@/app/api/...")`, and the
+file measured **16,396 ms**. ⭐⭐ **§2 of `vitest-config-notes.md` NAMES THIS VERY FILE** among those
+that "red for being SLOW and pass in isolation" — so the 08-24 fix was incomplete in exactly the way
+that kept its own worked example flaky. Fixed by **`hookTimeout: 30_000`** in all three vitest configs.
+
+⭐ **The causal proof is in the skip count, not in the green:** before, `16,711 passed | 8 skipped`;
+after, `16,714 passed | 5 skipped` — **exactly the 3 tests of the aborted block moved from skipped to
+passing.** A green run alone would have proved nothing.
+
+🚨 **WHAT IT COST, because this is the reason the asymmetry mattered.** A hook timeout reports as a
+**hook failure with ZERO failed assertions and its tests marked skipped** — which reads as structural
+breakage. I diagnosed a cross-file env leak (`lib/supabase.ts` calls
+`createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, …)` at **module level**, and
+`api-og-cards-render-sweep` **deleted** that variable in `afterEach` instead of restoring it), shipped
+the hardening, and had to **retract the fix claim** when two controls refused it: the pair passed
+before and after, and a full suite with the change **reverted** passed too. ⚠ **Read the error string
+before building a mechanism** — "hook failed" and "hook timed out" are different findings.
+
+⭐ **The hardening stays on its own merits, and is worth keeping as a rule: cleanup that DELETES rather
+than RESTORES leaks an ABSENCE, which is worse than leaking a stub whenever a module reads env at
+import time.** Save the prior value in `beforeEach`, restore it in `afterEach` — the pattern
+`api-cron-drain-base-parallel-probe.test.ts` already uses. **But it is not the fix for that red.**
+
+
+## 🚨 A PRESENCE GUARD AND AN AUTO-FIXER CAN AGREE WITH EACH OTHER AND BOTH BE WRONG (2026-09-11)
+
+I filed an inbox entry late in the PT evening. UTC had already rolled to the next day, so
+the filing was named `2026-09-12T0117Z-…` while I was thinking in the PT date, and its
+`INDEX.md` line went under the wrong day heading. **Every instrument stayed green**, and
+the reason is the transferable part:
+
+- `inbox-index-lists-every-filing` asserts **membership** — every file on disk is listed,
+  and no entry points at a file that is gone. **Placement is not a membership property**,
+  so it is structurally invisible to that guard. (This is the *"ask what a passing guard
+  is structurally SILENT about"* rule, in its cheapest costume: the guard was not wrong,
+  it was answering a different question.)
+- `scripts/fix-inbox-index-counts.mjs` recomputes each `## YYYY-MM-DD — N filings` heading
+  **from the `- [` lines it finds under that heading**. Given a misplaced entry it derives
+  a count that **agrees with** the misplacement.
+
+⛔ **A fixer that derives its expected value from the OBSERVED state cannot detect an error
+in the observed state — it launders one into internal consistency.** Two green instruments
+are not two pieces of evidence when one consumes the other's output; that is the
+*"monitor whose input set includes another monitor's OUTPUT"* rule, and an auto-fixer is
+the form of it nobody recognises, because a fixer does not look like a monitor.
+**Pair every derive-from-state fixer with an assertion that does not read from the thing it
+repairs.**
+
+✅ **Shipped: `__tests__/inbox-index-entries-sit-under-their-own-date.test.ts`**, which reads
+the **filename** — the one field the fixer never touches. Measured over all **431** entries
+2026-09-11: headings from **2026-08-29** onward are **127 entries with ZERO mismatches**, so
+it is a **ban at zero** with a real population, not an allowlist. The seven headings
+2026-08-22..08-28 are mixed (**63** entries one day early) and are held as a **ratchet that
+can only shrink**, so repairing history greens the test and can never red it — those filings
+are permanent citation targets and their INDEX lines should not be shuffled for cosmetics.
+⭐ **Mutation-proven**: moving one live entry one heading up reds it with the offending line
+number; restoring greens it.
+
+⚠ **The tell that made the diagnosis certain rather than a guess: every mismatch is exactly
++1 day.** A fourth assertion pins that, so if the residue ever acquires a non-boundary
+offset the guard says *"this is no longer the UTC/PT class"* instead of absorbing it.
+
+## 🚨 A DB PIN CAN GUARD BLAST RADIUS AND BE STRUCTURALLY SILENT ABOUT EFFICACY (2026-09-11, register #82)
+
+`supabase/tests/*.sql` pins run a **verbatim copy** of a function against tables the test file
+`CREATE`s itself. **Those tables are not production's.** Anything production has that the fixture
+lacks — a trigger, a companion table, a constraint — is **invisible to the pin by construction**,
+however green it runs. This is a different failure from a **stale** pin (one pointing at a superseded
+migration): here the pin was current, correct, and green, and the function it pinned **did nothing at
+all in production**.
+
+**The measured case.** `raise_impossible_parallel_circ()` ran 4×/day for months, logged
+**274 repairs across 188 editions** in `impossible_parallel_circ_raises`, and **made none of them**.
+A `BEFORE UPDATE` trigger (`trg_topshot_normalize_base_club_circulation`) rewrites a Top Shot
+parallel's `circulation_count` from `badge_editions` in the **same statement**, so every raise was
+reverted before it landed. Proven live and rolled back:
+
+```
+before=99 | wrote=140 | after_trigger=99
+```
+
+The pin asserted `raised = '1'` and passed, because its fixture had **neither the trigger nor
+`badge_editions`**.
+
+⭐⭐ **THE SHAPE, and it is the part that generalises: the pin guarded BLAST RADIUS and was silent
+about EFFICACY.** Its own header said *"a regression here would silently mutate circulation on the
+wrong editions"*, and every assertion was about what the function must **NOT** touch — non-parallels,
+other collections, rows already within circulation. **Not one asserted that the change SURVIVED.**
+Both are legitimate concerns; only one was covered, and the register read as though the function was
+verified working.
+
+**How to apply — two questions, not one.** When adding or reviewing any pin, ask *what must it not
+touch?* **and** *does its effect persist?* A suite answering only the first reads as thorough and
+proves nothing about the second.
+
+- Before trusting a pin, diff the fixture's schema against production for the table it writes:
+  `SELECT tgname FROM pg_trigger WHERE tgrelid = '<table>'::regclass AND NOT tgisinternal`.
+  A trigger the fixture lacks is the classic gap.
+- A fixture **stand-in** for a production trigger is acceptable **if it is labelled as one** and the
+  behaviour it reproduces is quoted inline, so a reader can check it against `pg_proc` without
+  leaving the file. Reproduce only the branch under test. The 09-11 fix added
+  `_stand_in_normalize_parallel_circ` on exactly that contract, plus fixture **e5** whose write the
+  stand-in reverts.
+- ⚠ **`RETURNING` sees a `BEFORE` trigger's rewrite — it reports the row as actually STORED.** That
+  is the cheap way to make *"did my write survive?"* observable inside the same statement, and it is
+  what the forward fix uses to split `attempted` from `raised`:
+  `reverted_by_trigger = attempted - raised`, with the audit insert filtered to
+  `stored_circ IS NOT DISTINCT FROM new_circ`.
+- ⚠ **A mutating function must be captured ONCE.** The first draft of the new pin called
+  `raise_impossible_parallel_circ()` three times to make three assertions — three different runs
+  against three different states. `CREATE TEMP TABLE _run1 AS SELECT raise_impossible_parallel_circ() AS j;`
+  then assert against `_run1`.
+
+
+## Memory docs carry no duplicated blocks (`memory-docs-have-no-duplicated-blocks`, added 2026-08-27)
+
+🚨 **A scripted insert duplicated half a reference doc and NOTHING SAW IT FOR TWO DAYS.** On 2026-08-25
+(`3592f1d6d`) an edit to `routes-and-surfaces.md` split a bullet **mid-token** and pasted a 46-line copy of
+the file's own opening — header comment, first `## ` section and all — into the middle of it. The file
+carried two copies of half its content and a sentence ending `then a \`^[0-9]+` followed by a document
+header. **Every guard in the repo stayed green**: the link guard checks link TARGETS, the retired-rule guard
+checks ABSENCES, coverage has no opinion about markdown. ⭐ **It was found by eye during a tidy-up, and
+"someone will notice" is not a detector** — hence this one.
+
+**Three signals, each a BAN AT ZERO because none has a legitimate instance:** the extraction header
+appearing **more than once** in a file (the 08-25 fingerprint) · a **repeated `## ` heading** inside one
+file (how the SECOND instance was found the same day — `claude-md-condensed-originals.md` carried the same
+"Displaced 2026-08-23" section twice, its quote identical after whitespace normalisation) · the extraction
+header appearing **anywhere but the start of a line** (the seam itself).
+
+⚠ **It walks the TREE (`docs/reference/**`, `docs/strategy/**`), not a curated list**, and **asserts the
+number of files it inspected** — a walk that silently matched nothing would otherwise pass every case.
+✅ **Both failure modes proven on the real tree, not a fixture:** appending a duplicate `## ` heading to a
+live doc reddens it, and fusing the header onto a line of prose reddens two of the four cases; the tree is
+green again on restore.
+
+⚠ **THE FIRST DRAFT WAS TOO BROAD AND IS WORTH RECORDING.** The seam check originally read *"no prose before
+any `<!--` on a line"* and **false-positived on this very file**, which documents the inline
+`<!-- retired-rule:allow <id> -->` marker in running prose — a marker whose entire design is to sit at the
+END of a line. **A guard that fires on the thing it documents is noise**, so it was narrowed to the one
+comment that is structurally a document header and can never legitimately appear mid-line.
+
+## The known-issues register carries a generated STATUS INDEX (`npm run docs:issues-index`, added 2026-08-27)
+
+**The register is the canonical open list, and it had 45 numbered items in one ~80 KB section with no way to
+see them at a glance — 15 of which read RESOLVED / CLOSED / SHELVED / RETIRED in their own first sentence
+while sitting under the heading `### Open`.** ⭐ **That mismatch has already cost sessions, in the opposite
+direction: item #8's own text records that it "sat under a Resolved heading, so anyone enumerating the Open
+list never saw it".**
+
+⛔ **The fix is deliberately NOT to move or renumber anything.** The ledger, `focus.md`, inbox filings,
+CLAUDE.md and migration record files all cite items by number, so re-sorting breaks every citation. The
+index is **additive**: number → status → title, between generated markers, with the body untouched.
+
+⚠ **Status is DERIVED from each item's own first sentence**, never curated — so the index cannot silently
+disagree with the item, and a row that reads wrong means the ITEM's opening words are wrong. The
+closed/partial boundary is the trap the derivation is unit-tested on: **"PARTLY RESOLVED" contains
+"RESOLVED"**, and a re-opened item names its own resolution history while still being open.
+
+**Guard: `known-issues-index-lists-every-item`** — a ban at zero checked in BOTH directions (a missing row
+hides an item; a dangling row asserts one that does not exist), plus byte-identity against a fresh
+regeneration, plus an assertion that it inspected a non-zero population. ✅ **Proven able to fail on the real
+file:** inserting a real item without regenerating turns `--check` red (exit 1) and reddens three cases.
+⚠ **`closed` in that index means the item SAYS it is closed — it is not a re-verification.**
+
+## Retired rules must not survive in live memory (`npm run memory:retired:check`, added 2026-08-24)
+
+⭐ **Built because every fact corrected during the 2026-08-24 memory refresh was wrong on MORE THAN ONE
+surface, and two were still being found AFTER the pass that "fixed" them.** Nothing had decayed — the
+corrections had never PROPAGATED:
+
+<!-- retired-rule:allow limit-10000-lifts-the-postgrest-cap -->
+- **`.limit(10000)`** was corrected in `RPC_DESIGN_SYSTEM.md` §5 and left intact in the **§0 CHECKLIST of the
+  same file** — the section headed *"run through this on every edit"*. **A file contradicting itself.**
+- **The retired iPhone-copy-paste handoff rule** was corrected in §10 and in the `rpc-handoff` skill on
+  **2026-07-25** and was still sitting in **CLAUDE.md**, the highest-authority memory file, on 2026-08-24.
+- A third copy sat in `claude-md-condensed-originals.md`. ⚠ **That file is verbatim history — but CLAUDE.md's
+  index points readers at it with *"check here first if a detail seems missing"*, which makes it a LIVE lookup
+  surface.** An unmarked retired rule there is handed out as a live answer, so it got a correction note rather
+  than a bare suppression. **"It's only history" is a claim about how a file is READ, not about where it sits.**
+
+**Scope: a TREE WALK over `CLAUDE.md` + `RPC_DESIGN_SYSTEM.md` + `docs/reference/**.md` +
+`docs/cowork-skills/*/SKILL.md`** — 33 files / 6,268 lines as of 2026-08-24. ⛔ **Frozen history
+(`docs/sessions`, `docs/archive`, `docs/overnight`) is excluded on a stated POLICY**, not on a claim that
+another instrument covers it: recording retired text is what a ledger is FOR, and a tree-wide ban would be
+**permanently red**, which this file already says reads identically to a broken instrument.
+⛔ **The `.skill` bundles are deliberately NOT scanned** — the bundle-parity guard binds every bundle to its
+`SKILL.md`, which IS scanned, so a retired rule cannot reach a bundle without passing this guard first. **That
+is a claim about a specific sibling instrument: if bundle parity is ever removed, re-scope this one.**
+
+⚠ **Each pattern matches the RETIRED SPELLING, never the topic.** A topic-matcher reds on the correction
+itself, and the suppression list then swallows whole files — this repo has had at least six guards fire on the
+comment documenting the fix.
+
+**Suppression IS the curated list**, as CLAUDE.md prescribes. A doc that must QUOTE a retired rule marks that
+line, or the line immediately above, with `<!-- retired-rule:allow <id> -->`. ⚠ **The marker is deliberately
+adjacent-only** — a wider lookback would let one marker launder every later violation in the file, and there
+is a test arm for exactly that. Suppressions are **counted and printed** (7 today), so sprinkling them is
+visible rather than silent.
+
+⚠ **The live 15-file floor was UNTESTABLE at first** — it is skipped under `--root` because a fixture is
+deliberately small, so its logic could never be observed failing. Added `--min-files <n>`, which a fixture may
+pass but **live ignores by construction** (`IS_LIVE ? LIVE_MIN_FILES : …`), with an arm asserting that
+structure so the flag cannot become a hole.
+
+**12 test arms**: three planted offenders, a no-change control, an inspected-nothing arm, a floor arm, the
+adjacent-only-suppression arm, and a wrong-id-does-not-suppress arm. Proven to red on a planted violation in a
+file the author never touched, which is what shows the tree walk reaches new files.
+
+## Testing & CI coverage (added 2026-07-12)
+
+The repo has a real automated test suite. Run it before shipping non-trivial code changes.
+
+- **Runner:** [vitest](../../vitest.config.ts) (`npm test` = `vitest run`; `npm run test:watch`; `npm run test:coverage`). Setup file `vitest.setup.ts`; `@` alias resolves to repo root.
+- **Two measured layers (coverage `include`: `lib/**/*.{ts,tsx}` + `app/**/route.{ts,tsx}` + `proxy.ts`):**
+  - **Route handlers** — every `app/api/**/route.ts` is imported and its auth/param guards are exercised; a large subset also drive the 2xx success/accept path by stubbing the `after()` / Supabase seam. Since 2026-07-16/17, flagship route BODIES are also driven end-to-end via the integration harness (below) — sniper-feed 48%, pack-ev 69%, support-chat 22.6% — but the deepest inline surfaces (Flow REST/Cadence scans, SSE streams) still can't be cleanly driven, so a modest line % on the remaining routes is expected.
+  - **Pure `lib/**` logic** — unit tests for decode/FMV/pack-EV/market-adapter/logger modules.
+- ⚠ **THE STRUCTURAL BLIND SPOT: `app/**/page.tsx` is measured by NEITHER gate — both families are held by RATCHETS rather than tests (2026-08-13).**
+  ⚠ **RE-MEASURED 2026-08-17: 119 `page.tsx` = 113 server (17,590 lines) + 6 client (2,906).** This bullet said **~75k LOC** and the two sub-bullets below said **48,325** and **27,016** — those are LANDING-DAY figures for a workstream that then ran to completion, and they overstate the live surface by roughly 3.5×. **A session planning against them would size the work against a population that no longer exists.** ⚠ And the client count moved **4 → 6 inside two hours** on 2026-08-17 while sessions converted pages concurrently, so even a fresh count here is a dated sample: re-derive, and read the ratchets' `const BUDGET` for the authoritative live number. The primary gate's include stops at `route.{ts,tsx}`; the component gate's include is `components/<subtree>/**` + `app/**/*Client.tsx`. A `page.tsx` matches nothing in either, however much logic it holds. **Breadth is not the gap** — 452/452 API routes and 250/254 `lib/` files are referenced by a test; this is.
+  - **Server pages doing their own DB access** (⚠ the figures that stood here — 48,325 LOC, 79 querying Supabase — are superseded; see the re-measurement above, and take the live count from `server-page-data-access-ratchet`'s `BUDGET`, whose predicate is direct data access rather than a mere import).** The repo's prior answer was `server-pages-error-vs-absent-guard.test.ts`: hand-written source assertions covering **2** of them. Now also held by **`__tests__/server-page-data-access-ratchet.test.ts`**, freezing the count at **8** (down from 37). ⚠ **A ratchet, not a ban, deliberately**: a ban would have shipped a 35-entry allowlist, i.e. theatre. The ratchet forces a NEW page's data access through `lib/`, where the primary gate watches it. The remedy for an existing one is **extraction** (`lib/trophy-case/pdf-image.ts` → `lib/pack-dist/fetchers.ts` → `lib/moment-detail/fetchers.ts` → `lib/entity/edition-market-fetchers.ts`), and extraction is what surfaces the defects: every fetcher returns `{ data, ok }` so the caller cannot render a failed read as a fact. ⚠ **Pick candidates by CALL SITES, not by LOC**, and do the ARG-ONLY ones first. The edition page is 1,131 lines but only **two** fetchers still held a client; the eight `/insights` board pages held **none** — they imported `supabaseAdmin` purely to hand it to a fetcher that already lived in `lib/`, wrapped in eight byte-identical try/catch copies, so injecting the client inside one shared helper (`lib/insights/board-page-fetch.ts`) removed the import, the duplication and eight ratchet entries at once. **A page whose only Supabase reference is an ARGUMENT is a five-minute conversion; one holding its own `.from().select()` is a real one.** ⚠ Grep carefully — a naive `\.rpc\(` misses `(supabaseAdmin.rpc as any)(`, which mis-sorted two analytics pages into the cheap bucket. **That tier is now exhausted: all remaining pages hold real queries.** ⚠ **Also check for a DEAD import** — `app/(analytics)/analytics/page.tsx` occupied a ratchet slot for an import it never used (`tsc` is clean on an unused import, so nothing caught it); the ratchet detects an IMPORT, not data access, so a dead one overstates the work left. The ratchet now asserts against that. ⚠ **And when a page duplicates its API route's query** (the `/insights/*` board pages all say they read the view "exactly as the API route does" — a claim nothing enforced), extract ONE fetcher used by both: it removes the drift AND the ratchet entry. Share the QUERY, not the policy — the page and route legitimately differ on defaults, and returning supabase's `{ data, error }` untouched lets each keep its own failure handling (`boardUnavailable` vs the degraded notice). ⚠ **And `ok` is worth returning even when the page does not consume it** — the edition page's render sites all gate on `!= null` / `length >= 2`, so a failed read already degrades to an em-dash or a hidden section rather than a fabricated `0`; that safety is a property of the CURRENT call sites, not of the data, so the first consumer wanting to render a figure unconditionally must not have to re-derive the distinction.
+  - **`"use client"` `page.tsx` outside `/insights`** (⚠ superseded: **27,016 LOC / 33 files** was the landing-day figure; live 2026-08-17 is **6 files / 2,906 lines** across the whole app) (`dashboard` 2,299 · `[collection]/sniper` 1,748 · `[collection]/analytics` 1,706). Held by **`__tests__/client-page-gate-ratchet.test.ts`**, at **1** as of 2026-08-17 04:48Z — and ⚠ **that 1 is the FLOOR, not "one conversion left". The workstream is DONE.** The single remaining page is `app/rewards/page.tsx`, a hard 404 (`app/rewards/layout.tsx` calls `notFound()` unconditionally), so converting it would add ~1,244 lines of denominator to the component gate measuring code no user can run — a smaller number here bought by making the gate less meaningful. It stays on the ratchet as honest debt rather than being excluded, because the day rewards ships is the day it becomes real work again. **Do not open a session to "finish" this.** (33 at landing.) ⚠ **THIS SENTENCE SAID 9 FOR THE THREE COMMITS AFTER THE VALUE BECAME 6, AND THE MECHANISM IS THIS FILE'S OWN RECURRING ONE: the correction landed in a dated session entry and not in the canonical bullet.** Commit `17f04231` re-derived all three ratchets to **6 / 8 / 39** from the failing no-slack assertion (live is **5 / 7 / 39** as of 03:05Z — it moved again mid-pass) and edited only the session-entry sentence, so a reader following the canonical text got the superseded 9 / 12 / 38 — *including the reader who correctly distrusted the prose and came here for the authoritative number*. ⚠ **Read the number off `const BUDGET`, not off this sentence** — and understand HOW fast it moves before quoting it: this line said **30** at 16:15Z and the live value was **9** five hours later, because **twelve commits between 07:58 and 16:49 PT lowered it 32 → 30 → 29 → 28 → 25 → 24 → 21 → 19 → 17 → 15 → 13 → 11 → 10 → 9**, every step a real conversion or honesty fix. **A ratchet is the fastest-moving canonical number in this file** — it is a countdown someone is actively working, so any prose figure is stale within hours, and a session that plans work off "~30 remaining" will plan against a population that no longer exists. ⚠ Found only by asking what a PASSING guard could not see: `insights-gate-include-completeness` requires client pages to be named `*Client.tsx` so the component gate catches them — and it **walks `INSIGHTS_DIR`**, so it is silent about client pages anywhere else by construction, however often it runs green. Until a file is split, its honesty properties are pinned by source guards (`collection-analytics-failed-vs-empty-guard`, `client-pages-failed-vs-empty-guard`) that **strip comments before matching** — see the OG-layer note under "Key files" for why. ⚠ **Those guards cover HAND-PICKED sites (3 as of 2026-08-15), against ~175 fetch/`catch` sites across 39 client pages — an allowlist for a class two orders of magnitude bigger, and NOT ONE client page uses `fetchJson`, the helper that layer exists for.** So the way to find the next one is to **sweep the empty-state COPY, not the fetch code**: `/alerts` was found that way and was the sharpest instance after the dashboard hero-picker, because every claim on it is about the reader's OWN account — "No alerts yet. Create one above." invited a **duplicate** of an alert they already had, and the channel list told a collector whose Telegram IS linked that it was not. ⚠ Track failure **per leg** when a page fans out (`/alerts` runs three endpoints under one `Promise.all`): one flag blanks all three sections whenever any one breaks, and a thrown fetch must fail **all** legs, since no leg's state can be trusted after it.
+    ⚠ **THE CONVERSION WORKSTREAM IS OPEN AS OF 2026-08-16, AND ITS COST IS MEASURED — read this before starting one.** The remedy is the `*Client.tsx` split, because `app/**/*Client.tsx` IS in the component gate's include. ⚠ **The cheapest shape is EXHAUSTED**: `[collection]/packs` was a client page for ONE reason — a `useParams()` call for a value a server page receives as a prop, with everything below it already gated, so no `*Client.tsx` was needed at all — and a sweep found **no others** whose only client-side API is a routing hook. Every remaining page holds real state, effects or handlers. ⚠ **Hoisting the Suspense boundary that `useSearchParams` requires UP to the server page is what makes the split testable**; leaving it inside moves the file into the gate without making it renderable by a test, which is measurement with no assertions. ⚠ **THE NUMBER THAT DECIDES AFFORDABILITY: a conversion moves `% Funcs` DOWN.** Landing `NotificationsClient` at 100/85.9/100/100 took the component gate 90.72/82.09/89.55/93.68 → 90.78/82.34/**89.42**/93.74 — statements, branches and lines UP, **functions down 0.13 against a 89.1 threshold with ~0.3pt of room**. A page is many small handlers, so a partly-tested conversion hits functions hardest (a first pass at 77.8 funcs narrowed the margin to 0.15). **Cover the handlers, not just the fetch paths.**
+    ⚠ **AND A RATCHET IS THE ONE CONSTANT WHERE BOTH "take mine" AND "take theirs" ARE SILENTLY WRONG (learned on a real collision, 2026-08-16).** Two sessions ran this workstream at once and each lowered the same budget by *its own* conversions only — 32 and 31. Neither was right: 33 minus THREE conversions is **30**. The value is a COUNT of a shared population, not an opinion, so **re-derive it from the failing no-slack assertion rather than picking a side**. (The other session's conversion had also landed with no note saying which page it converted; a ratchet whose history has a gap cannot be audited, so record the page.)
+    ⚠ **That allowlist is now FROZEN by `__tests__/client-page-fetch-honesty-ratchet.test.ts`, at 4 as of 2026-08-17 04:48Z** (3 as of 2026-10-13 — `pack-reality/page.tsx` became a server shell; its client body still fetches directly, in `PackRealityClient.tsx`) (35 when first measured 2026-08-15, 33 at 16:15Z the next day — it fell 31 → 8 across a twelve-commit afternoon, so the same do-not-quote-the-prose rule applies; this sentence has already carried a superseded **12** and a superseded **7**, see the sibling bullet). It began as **35 `"use client"` `page.tsx` files calling `fetch(` directly across 149 call sites and 168 catch sites, with ZERO importing `fetchJson`.** A ratchet, not a ban, because the largest were 1,300–2,500 lines and several are edited by concurrent sessions; a ban would have shipped a 35-entry allowlist. ⚠ **THE REMAINING 4 ARE NOT PENDING CONVERSIONS, AND READING THEM AS A WORK QUEUE IS THE MISTAKE THIS BULLET NOW EXISTS TO PREVENT.** They are `app/rewards/page.tsx` (the hard 404 above) plus `app/insights/{pack-reality,squeeze-check,tc-report}/page.tsx` — and those three are **explicitly named in `vitest.components.config.ts`'s `include` (lines ~95-97) with their own suites**, so they are already MEASURED; they simply do not use the `fetchJson` helper. Adopting it there is a **fetch-layer refactor on PUBLIC boards**, not a `*Client.tsx` conversion, and `pack-reality` is the very page whose honesty defect was fixed 2026-08-15 — so it is a deliberate, separately-scoped decision, not leftover work. **Passing means the blind spot did not GROW.** It carries a guards-the-guard case: renaming `fetchJson` would make every page trivially satisfy "does not import fetchJson", so the ratchet would keep passing while pointing at nothing. **53 client COMPONENTS also fetch without the helper.** ⚠ **This used to read "deliberately NOT gated — the component gate measures them, so they are not a blind spot in the same way", and that reasoning was CORRECTED 2026-08-16: it is about COVERAGE and does not carry over to HONESTY.** `TrophyPickerModal` lives in `components/profile/**`, is fully measured, had **three** existing test files — and still rendered "No owned moments found yet" to a collector with thousands, out of a failed read. **Coverage asks whether a line RAN, never whether the sentence it printed was TRUE.** Components are now in scope of `__tests__/client-failure-collapses-to-empty-ratchet.test.ts` (below).
+    ⚠ **THE COPY SWEEP WAS RUN AGAIN 2026-08-15 AND FOUND TWO MORE, so treat it as the standing method rather than a one-off.** `/insights/pack-reality` is a PUBLIC board whose `error` state was consulted by **exactly ONE of five claim sites**, so a 503 rendered "Failed to load: HTTP 503" in the pull-value section while **"No +EV packs right now."**, **"No qualifying packs yet."** and a hard **"0 positive-EV TS packs"** rendered below it — the page contradicting itself, on the panel a collector uses to decide whether to buy a pack. **Being in the component gate did not help**: pack-reality is measured there and still shipped this, because coverage asks whether a line ran, not whether the sentence it printed was true. ⚠ **The scope rule is the one this file keeps restating — the fix is per PANEL, not per page.** A page with an honest error branch somewhere is not an honest page; every panel consuming the same failed read needs its own branch, and a sub-component that renders a market claim on an empty list needs the distinction passed IN (a **required** prop, so a later caller cannot silently reopen it by forgetting it).
+    ⚠ **AND THE TEST FOR IT ALREADY DESCRIBED THE CONTRACT WITHOUT ENFORCING IT — a distinct failure from the "tests that assert the defect" class, and harder to spot.** The existing case was titled and commented *"an outage must not render as 'no positive-EV packs exist right now', which is a claim about the market"* and asserted only `toMatch(/HTTP 500|error|failed/i)` — that a failure was mentioned **somewhere**. That is satisfied by the one honest section while the market claims render directly beneath it, so the test passed for years on a defective page. **Assert the ABSENCE of the false claim, not the PRESENCE of an error message.** Same root as the `f02362c7` panini case (asserted what the function returns, never what the reader sees).
+    ⚠ **Always pin BOTH directions.** An empty board and a genuinely-zero count are HONEST answers and must keep reading as such — a fix that blanks every empty state into "unavailable" only moves the dishonesty and cries wolf on the system working, the cost `board-status.ts` already documents.
+    **Verified CLEAN in the same sweep, recorded so nobody re-derives them:** `[collection]/market` (a proper `loading : error : empty` ladder, so the error branch precedes the empty one — this is the shape to copy) and `[collection]/sets` (already distinguishes "Moment-level detail isn't available for this set yet" from "No moments owned in this set yet" via `ownedCount`). `allday-pack-reality` does **not** carry pack-reality's copy, so that defect did not spread by copy-paste the way the 15 OG cards and 5 sales indexers did. Still unswept: the `panini-blockchain` sniper page and the long tail of the ~175 catch sites.
+  - **The IDIOM behind all of them, frozen at 39 sites across `app/**` + `components/**`** (39 on landing, briefly 38) (`__tests__/client-failure-collapses-to-empty-ratchet.test.ts`, 2026-08-16): a client read funnelling a FAILURE into the value a successful-but-empty read produces — `.then(r => r.ok ? r.json() : null)`, `res.json().catch(() => null)`, `if (!res.ok) setRows([])`. ⚠ **A ratchet, not a ban, because most of the remaining sites are NOT defects** — a read degrading to an omitted section understates, the safe direction; banning would force a rewrite of ~40 correct call sites and teach people to edit the guard. **Passing claims only that the idiom did not SPREAD** — whether a surviving site is honest depends on what the empty value RENDERS AS, which no static check can see, so **the copy sweep is still the method**. ⚠ **At landing, raw count 43 against a guarded count of 39 — the gap is COMMENTS**: the guard's header quotes all three patterns and the fixed call sites quote the shape they replaced, so without `stripComments()` it would double-count the very conversions it rewards, and a conversion that documented itself would read as a regression.
+  - **Both ratchets carry a not-vacuous check AND a no-slack assertion** (the frozen number must equal the live count, not merely bound it). A ratchet with headroom silently licenses the next N additions — the same compounding failure the component gate paid for with a ~13-point unguarded branch buffer. **Lower the budget in the same commit that converts a page**; never raise it.
+- **Route-integration harness + deep-loop fixtures (use these for new route tests):** `__tests__/helpers/route-harness.ts` (`installFetchMock`/`jsonRoute`/`gqlRoute` operationName-matched GQL fixtures/`makeSupabaseFixture` sequence-aware chainable stubs — unmatched fetch throws; the all-empty fixture returns `[]` for every unmocked RPC, often enough to drive a whole GET to a stable 200) and `__tests__/helpers/anthropic-fixture.ts` (`buildAnthropicClass` — replays a scripted sequence of model turns for tool-use loops like support-chat). Usage docs: `docs/audits/test-coverage-integration-harness-2026-07-16.md` + `docs/audits/test-coverage-deep-loop-fixture-layer-2026-07-17.md`. **For an OG card use `__tests__/helpers/og-capture.ts`** (2026-08-13): it stubs `next/og`'s `ImageResponse` and keeps the React element, so `ogText()` / `usesColor()` assert the rendered TREE — the tests then pin **honesty logic, not layout** (the closed-market FMV suppression, the pack card's survivor-bias guard, a withheld figure vs a manufactured `$0`). ⚠ It is COMPLEMENTARY to `api-og-cards-render-sweep`, never a replacement: the stub short-circuits satori, so it cannot see a real render failure — the byte-level sweep is what catches the zero-byte-PNG mode.
+- ⚠ **A test whose fixture real data never produces asserts nothing — delete it rather than tune it to green.** An OG "with rows" case was written and dropped for exactly this reason: the 15 cards read 15 different row shapes, one generic fixture satisfied 10, and "passing" would only have meant the invented shape happened to fit. Same trap as the `costBasisLabel: "Pack pull"` case the vocabulary never emits. The replacement asserts the property STRUCTURALLY and **spelling-independently** — the empty copy sits in the first arm of a ternary whose second arm renders the rows — because the obvious check (`a .length === 0 precedes it`) reds the `market` card, whose emptiness test is `heads.every(h => h.median == null)` and is just as correct. Enumerating spellings is the path that eventually excludes a real card to make a build pass.
+- **React components** have a separate jsdom harness (`__tests__/*.test.tsx`, **235** `.test.tsx` files; **1,308** test files total under `__tests__/` — re-counted 2026-08-17, up from the ~157/~1,053 this line used to carry). They are measured **separately** — deliberately NOT folded into the route/lib coverage number (400+ presentational files would swamp the signal) — and since 2026-07-26 have their **own blocking CI ratchet** (`component-tests` job / `vitest.components.config.ts`, thresholds **90.3/81.6/89.1/93.2** as of 2026-08-15 (raised from 89.8/81.3/88.6/92.7 by the 0%-coverage component wave — SIX gated components were sitting at **0% STATEMENTS**, never rendered by any test while still counting against this gate: `ProBadge`, `GlobalSiteHeader`, `SiteFooter`, `TeamLogo`, `ExploreSection`, `SniperThumbnailPreview`; actuals moved 90.21/81.74/89.00/93.10 → 90.72/82.09/89.55/93.68. ⚠ **`ProBadge` is the one to remember: it carried an 11-line comment describing the site-wide silent failure it narrowly avoided and NOTHING pinned that fix** — re-keying it onto a null identity passed `tsc` AND the full 11,958-test suite. **A near-miss earning a comment instead of a test is the shape to watch for.** Itself re-seated hours earlier from 88.5/79.4/88.2/91.6 against actuals of 90.21/81.74/89.00/93.10 — the branch buffer had drifted to **2.34pt**, the same direction as the ~13pt incident below, so it was pulled back to a ~0.4–0.5pt margin matching the primary gate's; ⚠ **re-seat in the SAME pass that measures a drift** — "keep the buffer" is exactly how the 13pt version accumulated), raised there by the 08-12/13 component wave, and ⚠ **the reason it was that large is itself the lesson**: actuals had drifted to ~80.9 branch against a 67.0 threshold, a **~13-POINT unguarded buffer**, because several waves raised coverage additively and left the ratchet alone ("keep the concurrent-churn buffer"). That is right once and wrong when repeated — **the ratchet only protects the coverage it is actually set to**. The new numbers keep a deliberate ~1.4pt margin: enough for the concurrent-push churn lesson `47f901a1` records, without leaving 13 points dark. Before that: 79.0/67.0/78.8/83.2 as of 2026-08-09, raised from 78.6/66.4/78.2/82.6 by the 08-09 board-client coverage pass (PackSniper/FirstMint/PackDrops/UnderpricedSerials clients, gate ~78.83→79.91 st / 66.65→67.74 br); the 78.6 baseline had itself been re-baselined DOWN ~0.4 in `17738436` when the wallet-sign-in removal DELETED the well-covered `SignInWithDapper`/`ConnectButton` components along with their suites, mechanically lowering the aggregate (the config comment records the legitimacy: "files left the measured set" is the ONE valid reason to move a ratchet down); just before that the 2026-08-08 test-coverage pass had raised it to 79.0/66.5/78.6/83.0, up from the 20.2/17/19/21.2 it launched at — the 07-28→07-31 component-coverage program climbed the gate ~30→71 st, then the 2026-08-08 pass drove the insights-board + entity/pack/modal/wallet client branches ~64→66.9 br across seven batches), scoped to the logic-bearing component subtrees so the gate is meaningful rather than drowned in presentational files. **The gate's `include` is an ALLOWLIST, guarded against silent rot** by `__tests__/component-gate-include-completeness.test.ts` (2026-07-31): a new `components/<feature>/` subtree holding logic-bearing `.tsx` must be added to the gate's `include` (+ tested) OR to that test's `KNOWN_UNMEASURED` allowlist with a reason, else the blocking `unit-tests` job reds — closing the hole where an untested new subtree contributed zero to the ratchet until a human remembered it.
+- **Deno edge functions are excluded** (no Deno toolchain in CI). Their pure logic is extracted into vitest-importable modules under `supabase/functions/_shared` (`cdc.ts`, `hybrid-custody-parse.ts`, `pack-ev-edition.ts` — incl. `computeDualPrice`, `spork-cursor.ts`) and tested there, with lib↔_shared parity + source-drift guards where a routine has a repo copy. When editing an edge fn, put testable logic in `_shared` and import it.
+- **WRITING A NEW `*-deep.test.ts`? Type the mock-state `data` field `as any[] | null` from the start.** The single most repeated CI breakage on this repo: a `vi.hoisted` mock state initialised `data: [] as any[]` (TS infers `any[]`) and then an error-path test assigns `{ data: null, error: {...} }` → `TS2322: Type 'null' is not assignable to type 'any[]'`, reddening the **blocking** `typecheck` job for every concurrent session. It happened **four separate times on 2026-07-25 alone** (`72835ebe`, `d872110`, `c2f53227`, and again hours later), each needing a follow-up repair commit. `tsc --noEmit` is NOT run by vitest, so a green local `npm test` does not catch it — run `npx tsc --noEmit` before pushing a new test file. Same for the sibling `TS2741`: give every mock-result object BOTH `data` and `error`.
+- ⚠ **A SHARED MUTABLE SUPABASE BUILDER CANNOT MODEL PER-TABLE BEHAVIOUR UNDER `Promise.all` — and it fails by making a correct route look broken (2026-08-15).** The common stub returns one singleton from every call (`from: () => b, select: () => b, …`), which is fine while every query resolves identically. The moment a test needs ONE table to fail, the obvious move — record the table in a `let table` inside `from()` — silently does not work: a route that builds its chains inside a single `Promise.all` (`/api/rewards/summary` builds ~9) calls `from()` nine times **synchronously** before any `then` settles, so every chain resolves as the **LAST** table. The tell is a brand-new test failing against a route you already fixed. **`from()` must return a builder that CLOSES OVER its own table.** Worth the two minutes because per-table failure injection is what proves a `?? 0`-style honesty fix at all — a stub that fails every read lets the assertion pass for the wrong reason.
+- **CI ratchet (do not defeat).** `vitest.config.ts` `thresholds` sit just below the live baseline (**91.3 stmts / 78.6 branch / 93.1 funcs / 93.4 lines** as of 2026-08-15 — re-seated by the 08-15 page.tsx-extraction pass; ⚠ **this bullet still read 91.2/78.3/93.0/93.35 a day after the config moved**, because the re-seat was recorded in a dated session entry and not here, which is the same "a fact left only in a session log stops being read" failure this file documents for the trust board. **Read the numbers off `vitest.config.ts`, not off this sentence.** Before that: 91.2/78.3/93.0/93.35 as of 2026-08-13, against live actual 91.50/78.63/93.30/93.65 — raised by the 08-13 "analyze test coverage → do all you can" pass. ⚠ **That raise was ~0.9 on branch, an order of magnitude more than a normal increment, and the reason is the durable part**: the previous numbers had drifted ~0.8–1.0 BELOW actual because several waves added coverage additively and left the gate where it was. Defensible once; wrong when repeated, because **a ratchet only protects the coverage it is actually set to** — this repo has already paid for the compound version, the component gate reaching a ~13-point unguarded branch buffer. Before that: 90.4/77.0/92.2/92.6, raised by the 08-12/13 coverage-and-defect program, which also grew the DENOMINATOR: adding `app/api/**/route.tsx` + `lib/**/*.tsx` to `coverage.include` brought ~1,777 previously-UNMEASURED branches into the gate, moving actuals 91.65→90.83 stmts / 78.76→77.28 branch with nothing regressed and ~90 tests ADDED. **That is measurement expanding, not coverage falling** — the mirror image of the documented "files left the measured set" exception, and the only other legitimate reason a number here moves down. Before that: 89.3/75.1/91.5/91.6 as of 2026-08-08, raised 2026-07-31→08-08 from 87.85/73.35/90.7/90.35, itself up across the 07-25→07-31 continuation passes from 76.3/61.45/82.0/78.9 and from ~45/37/53/47 at the deep-loop program's start; the full comment history in `vitest.config.ts` records every wave's numbers and what it covered), so a coverage **drop** fails CI while normal noise passes. ⚠ **The primary gate now also measures `proxy.ts`** (the site-wide auth + allow-list middleware, added to `coverage.include` 2026-08-08) — it sits at the repo root, so before that NEITHER gate measured the security wall; its `isPublicPath` table + page-rate scope + the async `proxy()` dispatch chain (bypass-token / CORS / rate-limit 429 / unauth redirect / allow-list cookie+RPC+revoke) are all now driven. **Raise these as coverage climbs; NEVER lower them to make a red build pass** — but keep a real ~0.1–0.2 buffer under actuals: on this multi-session repo, concurrent pushes add uncovered code and a zero-margin threshold reds CI on otherwise-green work (lesson `47f901a1`). CI job is `unit-tests` in [.github/workflows/ci.yml](../../.github/workflows/ci.yml), which runs `npm run test:coverage`.
+- ⚠ **AN ASSERTION CAN BE VACUOUS IN FIVE DISTINCT WAYS, AND ONLY MUTATION FINDS THEM.** All five were hit in one 2026-08-15 pass, each on a test that read as thorough. **Run the mutation before believing a new assertion**, and when one SURVIVES, decide deliberately between fixing the fixture and documenting the clause as unreachable — do not just move on.
+  1. **The mutation currently EQUALS the real value.** `expect(badge).toContain(publishedChainsBadge())` passes with the call replaced by the literal `"BUILT ON FLOW"`, because that is what it returns today; a launch-flag guard passes with the flag check deleted, because the flag is `true`. **Remedy: pair the runtime check with a SOURCE assertion**, which can see the difference.
+  2. **Self-referential comparison.** `expect(select).toBe(THE_EXPORTED_COLS)` passes when a column is deleted — the mutation changes BOTH sides. **Remedy: a literal list of the columns the consumers actually render.**
+  3. **The fixture is not ON the boundary.** `<` → `<=` survives a row one second inside the cutoff. `NOW()` is transaction-stable, so insert exactly `now() - interval '<retention>'`.
+  4. **The fixture cannot distinguish the two implementations.** One failing chunk makes FIRST and LAST failed chunk the same block, so `if (first === null)` is unobservable; one erroring board that fails the slow test anyway cannot separate SLOW from EMPTY. **Remedy: add the second failure / the row that trips both classifiers.**
+  5. **The property is not observable from a return value at all.** Deleting a `clearTimeout` in a `finally` changes nothing a caller sees, though a leaked timer keeps the export event loop alive. **Remedy: make it observable (spy on `clearTimeout`) rather than accept the gap.**
+  ⚠ **And the sixth shape, which mutation CANNOT find: a test that states the contract in a comment and asserts something weaker** — see the pack-reality case under the client-page bullet. **Assert the ABSENCE of the false claim, not the PRESENCE of an error message.**
+  ⚠ **THE SIXTH SHAPE'S PUREST INSTANCE, AND IT IS WHY `/dashboard` SHIPPED A FALSE CLAIM ON THE PRIMARY SIGNED-IN SURFACE (`969bff49`, 2026-08-16).** `component-DashboardClient.test.tsx` already carried a case named **exactly right** — *"survives a failed saved-wallets read without claiming none are saved"* — stubbing the route to 503. Its entire body was `await waitFor(() => expect(fetchMock).toHaveBeenCalled())`. **That passes whatever the page renders**, so it certified the defect it was named to prevent: a 503 left `walletList` at `[]`, the hero rendered the onboarding "paste your Dapper address" banner to a collector who had already added one, and the tiles fell through to a confident "0 moments / $0". ⚠ **The title is not the assertion, and a well-named case is the hardest kind to audit** — it reads as covered in any grep, any review, and any coverage report. **When a case name contains a negative claim ("without claiming…", "does not show…"), open it and check that a negative assertion is actually present.** Now five cases, asserting the banner's ABSENCE on failure and its PRESENCE on a genuine empty list. ⚠ Its Retry sibling is the other half: **a Retry that rebuilds its argument from the empty list is inert precisely in the case it is offered for** (`refreshStats([])` early-returns), so **an action offered for a state it cannot fix is its own dishonesty** — and asserting recovery rather than a call count is what proves the retry reaches the failing route. ⚠ **Two Retry buttons render on that path and call DIFFERENT things**, so `getAllByText(/Retry/i)[0]` MASKED the second branch entirely; caught by mutation, not review. ⚠ **A GREP-ABLE FORM OF THE SAME TELL, from the 2026-08-21 cursor-swallow sweep: a title claiming a failure was ABSORBED.** Three tests across the indexer family were not merely vacuous but **asserted the defect as correct** — *"…survives a 500 event fetch"* ending `// The 500 leg did not poison the run — cursor still advanced.`, and two copies of *"an OfferAvailable events HTTP error **degrades that range to empty and still advances the cursor**"*. Each pinned permanent data loss and described it, in its own title, as a graceful degrade. **Grep test TITLES for `survives`, `degrades to`, `still advances`, `does not poison`** — an absorbed failure is the honesty canon's core defect, so a title boasting of one is where it hides. ⚠ Judge by the SUBJECT, not the word: *"a below-spork-floor 404 stops the scan gracefully… cursor still advances"* is the legitimate below-floor case, and *"halves the window on a 429 and advances the cursor only to the block that actually succeeded"* is the CORRECT shape. ⚠ And per CLAUDE.md such a test is **INVERTED, never deleted** — the passing assertion is what held the defect in place, so the same fixture must prove the opposite.
+- ⚠ **A GUARD THAT MUST BE DELETED BEFORE A FEATURE CAN SHIP WILL BE DELETED IN A HURRY BY SOMEONE WHO DOES NOT KNOW WHY IT EXISTED — so make it RETIRE ITSELF, and pin the DETECTOR rather than the state (2026-08-16).** `no-rewards-promises-while-unshipped` bans points/Credits copy on user-facing surfaces **only while `app/rewards/layout.tsx` still calls `notFound()`** — it reads its own precondition out of the product, so the day rewards ships it stops enforcing on its own. ⚠ **Its FIRST version asserted `rewardsIsHidden === true`, which HARD-FAILS on launch day**: a guard written to protect the launch would have reddened CI *at* the launch, the exact outcome its own header promised to avoid — found by MUTATING `notFound()` out, not by review. The fix is to assert the **detector** (it reads the real file; it discriminates; a COMMENTED-OUT call reads as not-hidden) and let the enforcement cases `it.runIf(...)` skip — otherwise a silently-broken detector leaves every case skipping while the guard reports green, which is the vacuous-guard trap wearing a clean shirt.
+- **DB-invariant SQL tests (added 2026-07-19 — the layer vitest can't reach).** Plain-SQL tests in `supabase/tests/*.sql` pin the behavior of high-stakes Postgres functions/triggers (guards, normalizers, the destructive-op circuit breaker) that live in the database, not in `lib/`/`app/api/`. Each file is **self-contained**: it creates the minimal fixture tables + a **verbatim copy of the committed function DDL** (between `>>> BEGIN verbatim … >>>` / `<<< END verbatim … <<<` markers), asserts the invariant via `_helpers.sql`, and `ROLLBACK`s — so it runs on a vanilla `postgres:16` (only `unaccent` needed) with **no schema apply** (the repo's migrations are incremental `audit_*` patches over an externally-created base and don't rebuild from scratch; some prod objects were applied via MCP and never committed as files). Run locally: `DATABASE_URL=… bash scripts/run-db-tests.sh`. ⚠ **The runner pins `PGTZ=UTC` (added 2026-08-15) and that line is load-bearing — do NOT drop it.** Several tests assert a rendered `timestamptz`, which psql prints in the SESSION zone, so on a non-UTC machine they fail on the OFFSET while describing the same instant (`got [2026-06-30 17:00:00-07] want [2026-07-01 00:00:00+00]`) — which reads exactly like a logic bug. CI containers happen to be UTC, so this was invisible there while failing for **anyone running the suite locally, and Trevor's box is PT**. Prod Postgres is UTC, so pinning makes the suite match production rather than the developer. **If a future instance of this appears, do not "fix" it by editing the expected string to the local offset** — that just moves the breakage to the next machine. **When you change a pinned function: edit the migration, then copy the new DDL verbatim into the test file** — the blocking `unit-tests` job runs `__tests__/db-invariants-drift-guard.test.ts`, which fails CI if a test's embedded DDL diverges from its source migration. CI job is `db-tests` (blocking as of 2026-07-19), which provisions a throwaway Postgres from the runner's preinstalled `initdb`/`pg_ctl` binaries on port 5433 (a `services:` container hangs on image pull here). **180 pins over 179 distinct functions, and 172 `.sql` test files, re-measured live 2026-08-16 23:57Z** (169/168 over 160 files earlier the same day — the scheduled-writer re-close and the pack/board-liveness work moved all three). The drift-guard `PINS` array is the source of truth; `supabase/tests/` holds the per-pin `.sql` files + `_helpers.sql`. ⚠ **Files ≠ pins, in BOTH directions**: several pins legitimately SHARE one file (e.g. the nine MV-refresh wrappers), and the file count also includes `_helpers.sql`, which is not a pin at all — so `ls supabase/tests/*.sql | wc -l` is not a pin census. Count pins from `PINS` (`grep -cE '^\s+fn:'`) and distinct functions by de-duplicating that list; the two differ because `allday_sales_cross_source_dedup` carries two pins. ⚠ **THE SCHEDULED WRITE SURFACE WAS RECORDED CLOSED AT "52 of 52" AND WAS 52 OF 63 THE SAME DAY. Re-derived and re-closed at 63/63 (2026-08-16).** ⚠ **THE REOPENING MECHANISM IS THE PART TO REMEMBER, BECAUSE NO CODE CHANGED: eight `rpc_thp_leg_*` legs entered the population when the 8-way split retired jobid 287 and created per-leg jobs 324–331**, so each leg's NAME now appears directly in `cron.job.command` where only the orchestrator's did before. **A closed-set claim over "scheduled X" can be reopened by a pure SCHEDULING change — the pin count never fell, the population grew.** The other three (`pinnacle_fmv_recalc_render_all` — a PRICING writer, `reconcile_all_saved_wallet_stats`, `capture_board_liveness_history`) are **non-SECDEF**, so a SECDEF-scoped sweep could not see them; ⚠ **`reconcile_all_saved_wallet_stats` had also DRIFTED** (its only committed migration declares a zero-arg FUNCTION where live is a three-arg PROCEDURE), which `db:pins:check` is structurally blind to because it reads only functions already pinned — snapshot migration `20260816181600` fixes that. ⚠ **And the drift guard could not parse `CREATE OR REPLACE PROCEDURE` at all until 2026-08-16, making every procedure in this DB unpinnable**; it failed safe, but "safe" meant the pin could never be written, which is indistinguishable from nobody having got to it. ⚠ **But the number that matters is the PREDICATE, and getting it wrong is the recurring failure here.** The sweep that drove this whole workstream enumerated writers by matching `insert into` / `update ` / `delete from` / `truncate `, and reported "33 scheduled writers, 14 unpinned". Adding **`refresh materialized view`** to that predicate found **52** — a function whose entire body is `REFRESH MATERIALIZED VIEW` contains none of the four DML verbs, so that whole CATEGORY was invisible **by construction**, and `refresh_sets_summary` (which CLAUDE.md singles out for running as a `rolbypassrls` role under pg_cron) sat in it. **"Closed" means closed against THIS predicate.** Before quoting 52/52, ask what shape it is still silent about — a function that calls another function which writes, a `DO` block, a trigger reached only from a scheduled statement. **Re-derive it; do not quote it.** The word-boundary match also matters: `LIKE '%'||proname||'%'` prefix-matches siblings (`..._refresh_p`) and inflated the count once already — use `j.command ~ ('\y'||p.proname||'\y')`.
+  ⚠ **HOW TO PICK THE NEXT PINS, now that the scheduled surface is done.** The remaining unpinned population is the **UNSCHEDULED** writers — reached from routes, from other functions, or by hand. Measure it the same way and rank by stakes, not size; the DELETERS first, because over-deletion produces an ABSENCE, not an error, so nothing downstream reports it. ⚠ **Count it with the parser, not a grep** — `grep -cE '\bfn:'` reads **126** because it also catches the `it.each(PINS)("$fn: …")` title, and `allday_sales_cross_source_dedup` legitimately carries two pins, so pins ≠ distinct fns. ⚠ **The +7 on 2026-08-15 CLOSED THE TOPSHOT REMAP/CONFLATION FAMILY, which had been 2-of-9 pinned** — an arbitrary line, since all nine mutate the same `sales` / `wallet_moments_cache` / `editions` keying every edition-keyed FMV derives from, and the two that were pinned were simply the two someone had written a snapshot for. Added: `remap_pack_pool_uuid_key` (the only member that DELETEs), `remap_misattributed_topshot_sales`, `remap_topshot_wmc_from_onchain_map`, `remap_topshot_from_onchain_map`, `remap_topshot_split_resolved_subeditions`, `remap_topshot_realign_miskeyed_subeditions`, `resolve_topshot_subedition_collision_knots`. **Five needed a snapshot migration first; two already had committed migrations that were verified byte-identical to LIVE, so needed only a test** — check that before authoring a snapshot, it halves the work. ⚠ **Three defensive clauses in that family are UNREACHABLE and are deliberately NOT asserted** (`o.id <> mv.moment_pk`; `m2.nft_id <> m.nft_id` in two siblings), each documented in place with the upstream filter that makes it redundant AND the change that would make it load-bearing again — contriving a fixture would assert a state the query cannot produce. ⚠ **Mutation testing found FIVE assertions that were MASKED and proved nothing**, all the same shape: a guard rejecting a bad input is unobservable unless that input would OTHERWISE succeed (a UUID-keyed target that resolves to no edition returns 0 with or without the gate). **Fixture-before-guard is the rule** — add the row that makes the guard the only thing standing between the input and a write.
+  ⚠ **THE 2026-08-16 WAVE (139 → 169) ADDED FIVE MORE MUTATION-SURVIVOR CATEGORIES. Sort every survivor into one of them BEFORE touching anything — they need opposite responses, and three of the five are "leave the code alone".**
+  1. **A FIXTURE GAP** — close it, but only with a state prod really produces. Three separate survivors this wave needed the SAME fixture: **an `external_id` colliding across collections** (CLAUDE.md states outright it is not unique), which is what makes a collection-scope guard observable at all. Others: an edition that already HAS art (so a fill-only check can be seen declining), a second and DEARER ask (so `ORDER BY lowest_ask ASC` stops being decorative), a pack with a real minted total (so a zero-price guard has something to guard).
+  2. **REDUNDANT BEHIND ANOTHER GUARD, IN THE SAME STATEMENT** — document, do not contrive. `sec_ask IS NOT NULL` sits behind `gross_ev <= 3 * sec_ask` (`x <= 3 * NULL` is NULL). `total_fmv IS NOT NULL` sits behind `valued_pulls = total_pulls >= 1`. `IF p_collection_id IS NULL THEN RETURN 0` sits behind three-valued logic. Assert the **COMPOSITE** where both can be dropped, and record what would make the clause load-bearing again.
+  3. **REDUNDANT BEHIND A DIFFERENT OBJECT** — settle it with a live measurement, not a judgement call, because the answer goes both ways. The Golazos `floor_ask > 0` is unreachable because the live VIEW already filters `price_usd > 0` (read from `pg_get_viewdef`) → documented. The atlas pool-collection scope looked identical but **54 dist_ids already span collections** in `pack_drop_pool` → it earned a fixture. **One query separates them; guessing is wrong half the time.**
+  4. **A CONCURRENCY BACKSTOP** — structurally unobservable in a single-session rolled-back test, so assert the composite and say so. `NOT EXISTS` + `ON CONFLICT DO NOTHING`; the candidate-side and UPDATE-side halves of a fill-only check; a watermark captured before-vs-after the read.
+  4b. ⚠ **AN ABSENCE ASSERTION IS VACUOUS UNLESS THE FIXTURE WOULD HAVE MADE THE THING PRESENT (2026-08-16).** "renders no achievements section" passed with the component REMOUNTED, because it returns `null` on an empty list and the fetch stub answered `{}` — so the assertion held whether or not the section was mounted. **Give the fixture a real row, then assert the absence.** Its two siblings this session are the over-broad negative: `not.toContain("TR")` and `not.toMatch(/WALLET/)` both matched unrelated page copy ("TROPHY", "SAVED WALLETS") and failed against CORRECT code. **Scope a negative to the thing it is about** (`/\d+\s+WALLETS?\b/` for a count line), and assert it on the smallest element that can carry it, not on `document.body`.
+  5. **INVISIBLE IN BEHAVIOUR BUT VISIBLE IN THE CATALOG** — seven of eight `CONCURRENTLY` mutations passed, because removing the keyword still refreshes; it merely takes an ACCESS EXCLUSIVE lock, and no rolled-back test can watch a lock. ⚠ **`pg_get_functiondef` IS QUERYABLE FROM INSIDE THE TEST** — assert the keyword, the planner hint (`SET enable_nestloop TO 'off'`), or anything else that lives in the definition rather than in the output. Same trick pins a `statement_timeout` or a `search_path`.
+  ⚠ **A `waitFor` ON AN ABSENCE IS VACUOUS WHENEVER A THIRD STATE PASSES THROUGH — second recorded instance, 2026-08-16.** A "the failure flag clears on refetch" case did `await waitFor(() => expect(notice).toBeNull())` and **passed with the reset removed**: the effect nulls its rows on re-run, so the SPINNER branch wins for a tick and the notice is legitimately absent during it — the assertion resolved in that window and never observed the state it was about. **Await the RECOVERED CONTENT first, then assert the absence.** Same root as the pills case: *two conditions individually true at DIFFERENT moments do not prove they are ever true together.*
+  ⚠ **A ONE-ARG `vi.fn` TYPES `.mock.calls` AS A 1-TUPLE, so every `c[1]` read is a `tsc` error while vitest stays green.** Declare both params (`async (input: unknown, _init?: RequestInit)`) even when only the first is read. This is the repo's most-repeated CI breakage met from a new direction — `npx tsc --noEmit` before pushing a new test file, always. ⚠ And **`vitest.components.config.ts` does not enable globals, so testing-library's auto-cleanup never registers**: without an explicit `cleanup()` the previous test's tree stays mounted and the NEXT test fails looking for something a stale render never produced, which reads as a component bug. ⚠ Also, a label regex is a SUBSTRING match — `/nba favorite team/i` also matches **"WNBA favorite team"**; anchor it.
+  ⚠ **AND THE SAME GAP BIT FROM THE OPPOSITE DIRECTION 2026-08-27: a SUPPRESSION added on assumption became the error.** A new guard test imported a plain `.mjs` script and carried `// @ts-expect-error - plain .mjs script, no types`. This repo's tsconfig resolves that import fine, so the directive was **unused — TS2578** — and reddened `npx tsc --noEmit` while **vitest ran 15,248 tests green and the coverage gate exited 0**. ⭐ **A suppression is a CLAIM ABOUT THE COMPILER, and vitest never evaluates it: verify it against `tsc`, never infer it from a file extension.** ⚠ **The cost was not the type error — it was that six CI guards are sequenced after `tsc` in the same job and were SKIPPED** (see the job-step section below). **Run `npx tsc --noEmit` before pushing ANY new or edited `.ts`/`.tsx` test file; a green vitest run is not evidence about types.**
+  ⚠ **KEY A MUTATION HARNESS'S BACKUPS ON THE FULL PATH, NEVER THE BASENAME — this destroyed two files of uncommitted work on 2026-08-16.** A six-file harness stored backups as `<basename>.bak`; three of the targets were `page.tsx`, so all three wrote ONE backup and the restore overwrote two pages with a third's content. ⚠ **Nothing noticed the clobber** — it surfaced two mutations later as `occurrence count 0`, which reads like a stale pattern, not like data loss. `tsc` was clean the whole time, because the file it was overwritten with is itself valid. **Hash the path** (`md5(path)`), and prefer a harness that restores from `git stash`/`git checkout` where the work is committed. The recovery was cheap only because the transforms were scripted and still in the transcript; a hand-edited file would have been gone.
+  ⚠ **AND A MUTATION RESULT IS MEANINGLESS UNTIL THE BASELINE IS GREEN.** A scripted `replace` adding a fixture row silently did not match (whitespace), while the *assertion* about that row did land — so the baseline went red and the next mutation "reddened" for the wrong reason entirely. **Assert the occurrence count before replacing** (`n = s.count(old); assert n == 1`) and re-run the baseline after every fixture edit. The same no-op-replace trap also produced a mutation that hit the file's own HEADER COMMENT instead of the code (`HAVING count(*) >= 20` appears in the prose first), which reads as a surviving mutation and is not one.
+  ⚠ **A FAILING ASSERTION IS SOMETIMES THE CODE BEING RIGHT — read it before fixing it.** `backfill_wmc_fmv_confidence(NULL, 1)` returned 0 where I expected 1, because **`LIMIT` sits in the targets CTE, BEFORE the join to a priced snapshot: it bounds rows EXAMINED, not rows written.** That is the entire mechanism behind that job's permanent backlog floor and behind its becoming the instance's #1 disk reader once the queue drained — a sharper property than the one I set out to assert.
+  ⚠ **FIXTURE COLUMN TYPES MUST MATCH `information_schema`, NOT INTUITION.** `topshot_moment_subeditions.nft_id` is **text** (it looks like a number) and `subedition_id` is **smallint**. Typing them bigint/int errored loudly — the lucky version. A fixture that merely WIDENS a type passes while testing a shape production cannot produce. The +3 since the 122 of 2026-08-05 came from the 08-12 `.tsx`-gate wave (3 DB writers) and the wmc FMV-confidence ship. Up from a 66-pin baseline via a long 2026-07-31→08-05 pin campaign, all validated on a local `postgres:16` + mutation-tested. The 117→122 additions landed in the 2026-08-04→05 continuation (read the `PINS` array for the current set); the earlier +2 (115→117) were the parallel↔base sales-misattribution remappers `remap_topshot_parallel_to_base_misattributed` + `remap_topshot_base_keyed_parallel_sales`. The **2026-08-02 wave alone added 25 (89→114)**: the FULL insider-signal detector family (`detect_floor_drops`, `detect_concentration_buys`, `detect_unusual_edition_volume`, `detect_new_edition_early_buyers`, `detect_topshot_sweeps` — the fabricated-market-signal class), the two sales serial-number write guards (`update_sale_serial` + `update_topshot_sale_serial` — a regression here silently corrupts every serial-keyed FMV multiplier / special-serial / #1-premium), the canonical player-write path `upsert_player_canonical` (COALESCE-fill-only team, no cross-collection clobber), `record_serial_backfill_failure`, `draw_raffle`, `admin_verify_wallet`, `bump_concierge_ip_rate`, `close_expired_cached_listings`, `pinnacle_upsert_nft_map` (NULL-owner-never-nulls-a-holder), `mark_signal_wallets_fully_enriched`, `claim_pipeline_lock` (cross-session anti-double-run), `check_feature_quota` (Pro daily quota), `apply_topshot_supply`, `resolve_golazos_listing_edition_ids`, `check_set_completion`, `stub_editions_from_wmc`, and `compute_pinnacle_serial_fmv_multipliers` (Pinnacle serial-FMV multipliers). The whole 112-pin layer (111 distinct fns) was then audited **0 STALE / 0 NOT_IN_LIVE** against live prod (2026-08-02, via the MCP-replicated `check-db-pin-staleness.mjs`). The 2026-08-01 rewards/account-linking/wmc/game-integrity pins (`redeem_shop_item`, `record_link_state`, `fulfill_redemption`, `upsert_wallet_moments`, `save_fast_break_lineup`, `ensure_topshot_edition_stub`) and the earlier 89-pin audit are folded into that count. The later 2026-08-01 test-coverage session added 9 by authoring the FIRST committed **snapshot migrations** for hot functions that were previously UNPINNABLE (MCP-applied, no committed DDL): `resolve_canonical_owner`, `classify_acquisition`, `raise_impossible_parallel_circ`, the live 2-arg `get_wallet_total_fmv`, `resolve_wallet_challenge_match` (the credit-award + referral-abuse-guard flow), the `get_linked_parents` + `get_linked_children` account-linking pair, `award_points` (the reward-currency mint — per-user-limit / daily-cap / cooldown / global-cap guards), and `save_user_wallet` (saved-wallet write path, COALESCE-never-null-out honesty) — each `supabase/migrations/20260801160*_audit_20260801_snapshot_*.sql` committing the verbatim `pg_get_functiondef` body (a no-op if applied, byte-identical to live) so the function gains a drift-guarded pin. This is the documented remedy for the "UNPINNABLE until someone authors a snapshot migration first" gap below — three of the exact examples it named are now pinned. (`resolve_special_serials_from_ownership` was deliberately NOT pinned — it is dormant/uncalled, so a pin would be theater.) The 2026-08-01 session added 16 (allday_sales_cross_source_dedup, candy_park_unresolved_sale, clear_badge_low_ask_missing, resolve_ufc_edition_by_studio_meta, purge_fmv_snapshots_today, fmv_backfill_candidates, purge_old_fcl_auth_nonces, topshot_serial_board_candidates, upsert_pack_rips_from_api, upsert_allday_marketplace_fmv + refresh_allday_ask_fmv_from_listings, populate_wmc_fmv_from_snapshots, backfill_wmc_metadata_from_editions, update_badge_low_ask_{from_cached_listings,by_external}, apply_sales_ingest_external), each verified byte-identical (or comment-stripped-identical) to LIVE prod before pinning. ⚠ **DURABLE — the cloud (web) sandbox CAN both validate a new pin end-to-end AND verify it isn't stale-from-birth**, so do this before pushing a new pin rather than hand-authoring blind: (1) stand up throwaway `postgres:16` from `/usr/lib/postgresql/16/bin` (initdb/pg_ctl need an unprivileged user — `useradd pgtest; su pgtest -c '…'` on `-k /tmp/pgrun -p 5433 -A trust`; `CREATE EXTENSION unaccent SCHEMA extensions`) and run `run-db-tests.sh`; (2) pull the live definition via the Supabase MCP `pg_get_functiondef`/`prosrc` and confirm the committed-migration body matches (only comments may differ — `check-db-pin-staleness.mjs` tolerates that). With no `SUPABASE_SERVICE_ROLE_KEY` you can still replicate `db:pins:check` by pulling `pg_proc.prosrc` for the pinned set via MCP and comparing to the committed migrations (audited 2026-08-01: all prior pins 53/53 clean). **Many high-value functions are MCP-applied with NO committed migration** (e.g. `resolve_canonical_owner`, `raise_impossible_parallel_circ`, live 2-arg `get_wallet_total_fmv`) — the drift guard has nothing to compare against, so they are UNPINNABLE until someone authors a snapshot migration first. ⚠ **A pin can go STALE without CI noticing, and the repo cannot detect it — only the live DB can.** The guard compares the test copy to **the migration named in its `PINS` entry**, which is repo-vs-repo; when a function is redefined and applied via MCP *without* a committed migration file, the pin, the test and the guard all stay green while the test validates a definition that no longer runs anywhere. Audited 2026-07-31: **3 of the then-42 pins were in that state** — `promote_unmapped_sales` (~3 months behind), `fmv_clamp_disconnected_ask_topshot` (pinned to a superseded circulation-gated clamp predicate; live is `fmv > med*3 AND fmv > p90*1.5`), `compute_pack_ev_per_edition_weighted` (~2 weeks behind, missing the weighted-median `typical_pull_ev` that the public pack-EV surfaces LEAD with). **The obvious repo-side check — "does the pin name the newest committed migration defining this function?" — catches NONE of them** (for two, the repo holds exactly one defining migration), so do not build it and call it done. The real check is **`npm run db:pins:check`** (`scripts/check-db-pin-staleness.mjs`): it parses `PINS` out of the drift-guard test so the lists can't diverge, reads `pg_proc` for every pinned function, compares bodies under both comment-stripped and comments-included normalization (live `prosrc` is often comment-stripped relative to the file — a cosmetic-only diff is NOT drift), and exits non-zero. It needs `SUPABASE_SERVICE_ROLE_KEY` + `NEXT_PUBLIC_SUPABASE_URL`, so it runs in the scheduled `db-pin-staleness.yml` workflow (daily 07:20 UTC + dispatch), not the DB-less `unit-tests` job. **This workflow now ENFORCES as of 2026-08-01** — the last missing repo secret `NEXT_PUBLIC_SUPABASE_URL` was added (the service-role key had existed since 04-02; the pre-existing `SUPABASE_URL` secret is a different key the workflow does not read), so it no longer soft-skips: the first real dispatch checked 90 pins, 90 clean. It is the ONLY check that can catch a pin whose LIVE definition drifted (the in-CI drift guard is repo-vs-repo and structurally cannot). Revert to soft-skip: `gh secret delete NEXT_PUBLIC_SUPABASE_URL`. Pinned-but-intentionally-undeployed functions sit in its two-way `NOT_DEPLOYED_OK` allowlist (**currently EMPTY**). ⚠ **A pin whose function is GONE should be DELETED, not allowlisted.** `compute_listing_divergence` was allowlisted on 07-31 and deleted hours later the same day: `pg_proc` (all schemas) 0, referencing function bodies 0, views 0, `cron.job` commands 0, zero in-repo callers — retired with Flowty. Its SQL test created its own copy of the function, so it passed unconditionally: a test that *cannot* fail asserts nothing, and the allowlist entry then has to be maintained and re-read by every future pin auditor in exchange for zero coverage. Reserve `NOT_DEPLOYED_OK` for a function genuinely pending deployment. **Repointing a stale `PINS` entry is only half the repair — re-read the test's ASSERTIONS**, which by then describe behaviour production has stopped exhibiting (the 07-31 clamp test asserted a circulation gate that no longer exists; the pack-EV test asserted `ev_basis='original'` for a Top Shot pool that live forces to `remaining`). ⚠ **DURABLE — the staleness check's own pin-PARSER had a blind spot (fixed 2026-08-08 `a5e98fb3`): its regex required `fn:`/`test:`/`migration:` on strictly ADJACENT lines, so any PINS entry carrying a comment BETWEEN its fields (a "re-pointed 2026-…" note) was silently dropped from the live-drift check** — `get_wallet_moments_with_fmv` + `get_team_detail` were both invisible. Now uses `[\s\S]*?` between fields (captures all 122), guarded by `__tests__/db-pin-staleness-parser-coverage.test.ts` (reads the script's actual regex, asserts it covers every pin). **Live audit 2026-08-08: all 122 pins CLEAN / 0 stale** (replicated via MCP `pg_proc.prosrc` md5 under both normalizations). Docs: `supabase/tests/README.md`.
+- **Cadence tests** — ⛔ **the `test:cadence` lint harness and its `cadence-lint` CI job were RETIRED 2026-10-03 (R99) with the dead purchase/offer templates; the text that follows is history.** `npm run test:cadence` extracted inline Cadence (`scripts/extract-cadence.mjs`) and runs `flow cadence lint` against `tests/cadence/fixtures/`. Gated in CI (`cadence-lint` job, needs `flow dependencies install`). See `docs/cadence-testing.md`. Separately, a real `flow test` suite exists for the (undeployed) RPCTradeEscrow contract at `cadence/tests/RPCTradeEscrow_test.cdc` — **16/16 green**, all 12 audit scenarios covered — run locally via `npm run test:cadence:escrow` (fetches deps via `scripts/fetch-cadence-escrow-test-deps.sh` first) and **now run in CI** as of 2026-07-19 (`cadence-escrow-tests` job installs flow-cli from master + fetches pinned ExampleNFT v1.2.2; one-time local setup in `cadence/tests/README.md`).
+- **Rendered-DOM live smoke (Playwright, added 2026-08-01).** `e2e/smoke.spec.ts` drives a real browser over the PUBLIC deployed surfaces (home, the 5 collections' read tabs, `/insights` hub + top-sales, `/analytics`, `/pricing`) and asserts each renders real content — status <400, NO error-boundary text, a non-trivial rendered-body length (not a 200 streaming shell) — the "200-but-broken-DOM" class the API smoke gate (`/api/smoke-test`) structurally can't see. Shared assertion in `e2e/healthy-page.ts`; config `playwright.config.ts` (`SMOKE_BASE_URL` env, prod default). It runs as a **scheduled + dispatch MONITOR** (`.github/workflows/e2e-smoke.yml`, every 6h), NOT a pull_request gate, so a live-site hiccup never blocks a merge. `e2e/smoke-selfcheck.spec.ts` proves the assertion logic against local fixtures (healthy passes; 500 / error-boundary / empty-shell / missing-text all fail) so it's exercisable even where the deployed site is unreachable. ⚠ **DURABLE — sandbox browser facts (verified 2026-08-01):** Chromium is at `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`, launches fine and reaches **localhost** (pass `proxy:{server:'http://127.0.0.1:1',bypass:'localhost,127.0.0.1'}` + `PW_CHROMIUM_PATH`), but **CANNOT tunnel the agent proxy to reach the LIVE site** — so `smoke.spec.ts`'s first real run is the CI job, and local verification is the self-check only. `@playwright/test` is not installed but `playwright` (1.61.1) bundles the runner (`import from "playwright/test"`). `e2e/**` IS type-checked by CI's `typecheck`; vitest ignores it (its include is `__tests__/**/*.test.ts(x)`).
+- **CI jobs (9, all in [.github/workflows/ci.yml](../../.github/workflows/ci.yml)) — ⚠ this bullet said 8 and omitted `worker-tests` for a full day after that job landed; count the `jobs:` keys in the file, not this sentence:** `typecheck` (`tsc --noEmit` over the whole repo incl. `__tests__`), `cadence-lint`, `cadence-escrow-tests`, `unit-tests` (vitest + coverage ratchet + the DDL drift guard), **`worker-tests`** (the third coverage gate — `npm run test:coverage:workers` over `vitest.workers.config.ts`, thresholds **85.1/72.1/83.8/88.1** as of 2026-08-15; added in `513c514e` because `workers/**` is Cloudflare-Worker source that neither the primary nor the component gate includes), `component-tests` (the jsdom component-coverage ratchet — `npm run test:coverage:components` over `vitest.components.config.ts`, thresholds **90.3/81.6/89.1/93.2** as of 2026-08-15 (read them off `vitest.components.config.ts`, not off this sentence), raised on 08-13 by the component wave, which closed a ~13-point unguarded branch buffer; before that 79.0/67.0/78.8/83.2 as of 2026-08-09, itself raised from 78.6/66.4/78.2/82.6 by the 08-09 board-client coverage pass; the 78.6 baseline had been re-baselined down in `17738436` when the wallet-sign-in removal deleted well-covered connect components — added 2026-07-26 in `c3c86427` at 20.2/17/19/21.2 and climbed by the component-coverage program; also guarded by the include-completeness rot-guard, see the React-components bullet above), `db-tests` (SQL invariants), `ledger-guard` (fails a push that DROPS or REMOVES any `docs/overnight/ledger.md` entry — it compares the `^### ` heading **sets** between `HEAD~1`→`HEAD`, not just counts, so a same-count remove-one/add-one swap is caught too, after commit `2966c0a` defeated the count-only check on 2026-07-19; opt out of a legitimate archival roll with `[ledger-roll]` in the commit message), and **`edge-deno`** (added 2026-07-29; `deno check` + informational `deno lint` over `supabase/functions/**` — the ONLY thing type-checking the Deno edge source, which the vitest/tsc jobs exclude. **PROMOTED TO BLOCKING 2026-08-01 (`33b207e3`), 16 `deno check` errors → 0.** ⚠ The long-standing 16 were NEVER a toolchain conflict or edge-source import bugs (the 2026-07-31 diagnosis this file used to record was wrong on all three of its claims, each re-tested on a real Deno 2.9.4) — they were an **INVOCATION BUG in the job**: there is no `deno.json` at the repo root and the steps run from the repo root, so Deno never discovered `supabase/functions/deno.json` and the import map was never applied. Adding **`--config supabase/functions/deno.json`** to the `deno cache`/`deno check` steps cleared 14 of 16 on the spot (all 12 `@supabase/functions-js/edge-runtime.d.ts` + both `std/http/server.ts` "not a dependency"); the 2 residual `TS7022` were genuine (Deno bundles TS 6.x vs the repo's TS 5) and were fixed with two type-erased annotations in `compute-topshot-pack-ev/index.ts` (type-only → erased at runtime → no redeploy). `--node-modules-dir=auto` is NOT load-bearing; the `jsr:→npm:` remap the old comment/handoff prescribed is unnecessary deploy-affecting churn and must not be resurrected. `supabase/functions/deno.lock` is gitignored on purpose. **Edge fns import deps by BARE specifier via the `supabase/functions/deno.json` import map — new edge code must not use inline `https://esm.sh`/`jsr:` URLs.**
+
+---
+
+
+## Fixing a guard without fixing its RECORD leaves the incidence unmeasurable (displaced from CLAUDE.md 2026-09-10, verbatim)
+
+> - ⚠ **FIXING A GUARD WITHOUT FIXING ITS RECORD leaves the incidence unmeasurable** — 8 of 10 saturation
+>   breakers logged `extra: {}`, so the obvious query saw **1** event and a shape-independent one saw **3**.
+>   Fix the guard AND the field an observer keys on.
+
+The rule stays in CLAUDE.md; the worked numbers live here. **The trap is that the guard WORKED** — it
+tripped ten times — and the defect was entirely in what it wrote down: with `extra` empty, the query any
+observer would naturally write (keyed on the field naming the offender) found one event, and only a
+shape-independent count found three. **An instrument's record is part of the instrument.** When you fix a
+guard, fix the field whoever comes to measure its incidence will key on, or the fix is unmeasurable and the
+next reader concludes the problem was rare.
+
+## Test-quality lessons from the 2026-08-17 coverage pass
+
+Added rather than extracted — these are new, and the pass that produced them is recorded in
+`docs/overnight/inbox/2026-08-18T0230Z-test-coverage-analysis.md`.
+
+### ⚠ A test that sleeps WALL CLOCK inside a timer window is a CI flake, and it fails on somebody else's commit
+
+`c9923296` changed only markdown and its blocking `unit-tests` job **failed on `main`**, between two
+passing runs of the same code. Cause: `component-AdminFeedbackClient.test.tsx` slept **90ms of real
+time** inside a **300ms** debounce window and asserted nothing had fired. **A `setTimeout` is a FLOOR
+on the delay, never a ceiling** — under runner contention the sleep itself outlasts the window, the
+debounce fires, and the branch is blocked over a component nobody touched.
+
+- **The fix is fake timers plus `act()`, and `act()` is load-bearing.** The first fake-timer rewrite was
+  **vacuous**: without `act()` around the keystrokes React had not yet run the effect that *schedules*
+  the debounce, so the timer was created after the advance and a `0ms` debounce behaved exactly like a
+  `300ms` one. **Only running the mutation showed it.**
+- ⚠ **Do NOT blanket-convert the siblings.** A sweep found five. Three assert a non-occurrence *inside a
+  window* and were converted (`AdminFeedbackClient` 300/90, `CollectionAnalyticsClient` 500/120,
+  `MarketClient` 350/60). Two were left alone because their claims hold at **any** elapsed time (no
+  saved wallets ⇒ no prefetch; no token ⇒ no request) — there the sleep is a courtesy, not a premise.
+  **The discriminator is whether the assertion depends on the clock, not whether the file contains a
+  sleep.**
+- A fourth site in the same neighbourhood was a different defect: it captured a baseline from **the
+  same expression it later compared to**, so a persisted no-op that had not landed inside 40ms
+  satisfied the assertion. **Assert the absolute value when the fixture makes one available.**
+
+### ⚠ A coverage gate reds on the NEXT pusher, not the one who added the untested code (2026-10-11)
+
+`Component coverage (vitest jsdom)` read **90.74 % against 90.85 %** on **seven consecutive code
+pushes to `main`** (`54baa4c23` → `83bc3cf5d`, three sessions). Every one of those pushes was green on
+`tsc`, eslint, both vitest shards and the render smoke, so each session saw its own work pass, read the
+red X as somebody else's, and moved on. The deficit was **18 statements**: the honesty fixes from that
+day's UI pass (`writeOrSay` in `AlertsClient`, the bio and avatar save errors in
+`CollectionProfileClient`) shipped their new failure branches without tests. A SQL-only push
+(`c1f6fa5a8`) inherited the red.
+**Fixed by testing those branches, not by lowering the floor:** nine tests, each proved with a planted
+defect (silence the failure message and 7 of the 9 go red). The two that stay green under that plant
+target branches it doesn't touch: the network-throw bio test and the link-refusal test. Gate 90.74 → 90.86.
+⚠ **A second session fixed the same red within five minutes** (`2b73302ea`, four other test files),
+neither knowing about the other. That's the cost of three writers and no claim on a shared red. The
+fixes didn't overlap, so both stay: **90.98 %** combined.
+⭐ **Read the failing JOB of the run you inherit, not the badge:** "CI failure" on a docs push is the
+`Inherited main status` job. The real job is in the last CODE run. ⚠ Each fix alone left a margin
+of **0.01 pt**, inside the run-to-run spread recorded below; together they leave 0.13 pt. The next UI push that adds an untested
+branch will red it again. **Ship a failure branch WITH its test**, and run `npm run
+test:coverage:components` (~5 min) before pushing a `*Client.tsx` or `components/**` change.
+
+### ⚠ A coverage gate can red on an unchanged tree — check the distribution before believing a margin
+
+Repeated runs of `component-tests` on an **identical** tree measured **3484 / 3485 / 3488 covered of
+3910** → **89.10 / 89.13 / 89.20**, against a threshold of **89.1**. The low sample clears by
+**0.004pt**. A stash/unstash A/B confirmed it is not caused by any one change. **A stated margin is a
+single sample; the number that matters is the spread.** ⚠ The remedy is to find the nondeterministic
+suite, **never to lower the threshold** — the config's own rule, and this repo has already paid for the
+compounding version.
+
+⚠ **RESOLVED THE SAME NIGHT, AND THE USEFUL PART IS WHAT THE WOBBLE TURNED OUT TO BE.** The session
+that took this lane localised it with six gate runs across two independent triples — **not** to the
+file the filing named as its leading hypothesis (`SniperClient.tsx`, picked because it was the only
+file that moved between two runs and holds a `setInterval`). **That suspect was refuted on
+measurement.** The varying file was `CollectionTabClient`, and its `"appends the next page rather than
+replacing the loaded rows"` case **was passing without exercising Load More at all**: an auto-paginate
+effect appended the remaining pages by itself after a 300 ms sleep, so whenever it beat the click the
+assertion held anyway. Proved by deleting the click and watching the test still pass. **So an
+oscillating coverage number is worth chasing not because the gate is noisy, but because it is often a
+test that is INTERMITTENTLY VACUOUS** — the coverage delta is the only visible symptom of an assertion
+that sometimes measures nothing. ⚠ The fix's own trap is recorded with it: freezing the clock does not
+work, because the effect sets `loadingMore` *before* its sleep, so a frozen clock leaves the button
+permanently disabled and unclickable. ⚠ And it is **not** a claim that the gate is now deterministic —
+the 3484/3485 low end never reproduced in that session's six runs, so one source was removed, not
+proven to be the only one.
+
+### ⚠ A guard that NAMES its instances is silent about the population it did not name — the SEO instance
+
+`seo-shared-helpers-inherit-og-twitter` pins three `lib/seo.ts` helpers **by name**. Every `app/**`
+file that builds metadata inline was therefore outside it *by construction*: **43 files**, **31 of them
+the `/insights` board layouts**, each setting `twitter.creator` and omitting `twitter.site` — dropping
+the X card byline, **the exact symptom deep-audit R10 was filed for**, on the surface this repo calls
+its most shareable. `lib/seo.ts` even carried the instruction ("spread these into every block rather
+than restating the literals") three lines above the constants; it had only ever been applied to the
+helpers. **The replacement walks the tree and DERIVES the demanded fields from the exported constants,
+with a separate case asserting those constants match `rootMetadata`** — so adding a root field widens
+the ban for free. ⚠ Its brace matcher was not string-aware in v1, so a `}` inside a quoted `alt:` closed
+the block early and reported fields that were present: **a false positive is the expensive direction on
+a guard, because the next person weakens the guard to get green.**
+
+### ⚠ A completeness guard over a monitor must be BIDIRECTIONAL when a launch flag moves the population
+
+The rendered-DOM smoke listed **6 of 31** public `/insights` URLs, and both React #418 incidents it
+exists for landed on boards it did not watch. Its comment said `panini-squeeze`/`candy-mlb` were
+"deliberately omitted… until its flag stays flipped" — **both flags had been `true` since launch**, so
+two live public boards sat outside the only monitor that can see them, protected by a sentence that
+read like a decision. `e2e-smoke-covers-public-insights-boards` now derives the set from
+`app/insights/*` + the real `isPublicPath` **and also fails if a GATED board is listed**: a one-way
+check would go red in the slowest, least legible place — the 6-hourly live monitor, on a board now
+302-ing to `/login`.
+
+### ⚠ Pin a DB function against LIVE `prosrc`, not merely against the committed migration
+
+Before pinning, compare `md5(prosrc)` from the live DB with the migration's body. Both 2026-08-17 pins
+matched exactly (`build_deal_alerts_for_subscription` 8,943 chars; `dispatch_due_deal_alerts` 13,203) —
+but CLAUDE.md records that some objects were applied by MCP and never committed, and **a pin against a
+stale migration pins something production does not run.** ⚠ `rebuild_flowty_loans` has **no committed
+migration at all**, so it cannot be pinned until its DDL is committed; dumping live `prosrc` into a test
+file would pin whatever is deployed with nothing asserting the repo agrees.
+
+⚠ **And expect the fixture, not the assertion, to be the weak part.** `dispatch_due_deal_alerts` had
+**two of five mutations survive** its first fixture, both reading as thorough coverage:
+
+1. Dropping `COALESCE(min_discount, 25) = 0` from the price-cap predicate survived because **the only
+   subscription carrying a `max_price` was the price-only one** — so the wrong predicate selected the
+   same row. Fixed by giving the ordinary sub a `max_price` too.
+2. Replacing the per-sub pool guard with `pool IN ('price','deals')` survived because the one deals row
+   was $20 against a $0.60 cap — **the price filter excluded it whatever the pool guard did.** Fixed by
+   adding a $0.50 deals row *inside* the cap.
+
+⚠ A sixth mutation **survives on purpose** and the file says why: `IF v_price_cap IS NOT NULL` → `IF
+true` changes nothing, because the INSERT it guards filters on `low_ask <= v_price_cap` and `<= NULL`
+is NULL. **Document an unreachable clause rather than chasing it with a contrived assertion.**
+
+⚠ Three dependency stubs were needed for branches **no case exercises** (`pinnacle_catalog`, `sales`,
+`get_edition_badges_unified`): **plpgsql plans the whole statement**, so a missing relation fails on
+PLANNING and reads like a broken test rather than a missing table.
+
+### ⚠ The three gates share `coverage/`, and the invariant saying they must not is unimplemented
+
+`.gitignore` states *"the two gates must run into SEPARATE `reportsDirectory` dirs or they corrupt each
+other's `coverage/.tmp`"* and ignores `/coverage-*` — but **no config sets `reportsDirectory`**, so that
+ignore line guards directories nothing creates. Two gates run concurrently kill each other with
+*"Something removed the coverage directory"*. CI is safe (separate jobs); a local parallel run is not.
+**A documented invariant with no implementation and no test is the same shape as an unenforced guard.**
+
+### 🚨 The JOB-STEP twin of that rule: a guard sequenced after a fallible step in the SAME job is GATED ON IT
+
+**Measured 2026-08-28, run `33142460652` (`5479b6f89`).** The `typecheck` job's only failure was
+`npx tsc --noEmit` — one unused `@ts-expect-error`. The job report then shows the next **six** steps
+`skipped`:
+
+`check-brand-tokens` · `check-memory-doc-links` · `check-driver-message-leaks` ·
+`check-unhandled-third-state` · `check-responsive-flex-basis` · `check-unbounded-server-reads`
+
+**Four of the six are honesty-family guards.** GitHub skips every later step in a job once one fails,
+so **ANY type error switched all six off**, and nothing said so — the job named the tsc error, which
+reads like one problem with one fix. A commit could have landed violating any of the six while CI
+displayed only an unrelated line about types.
+
+⭐ **The rule is CLAUDE.md's "ask what RUNS a guard, not only whether it passes", at job-step
+granularity: a guard is gated on every fallible step ahead of it in its own job.** Reading the badge,
+or even the job's failure message, does not reveal it — only the per-step conclusions do.
+
+**Fixed** by putting `if: ${{ !cancelled() }}` on all six: they are independent of `tsc` and of each
+other, and are pure node with no deps, so nothing was ever gained by gating them. ⚠ `!cancelled()`
+rather than `always()`, so a cancelled run still stops.
+
+⚠ **This generalises past these six — audit any job that runs guards after a build or typecheck step.**
+And note the shape of the near-miss: the guards were not deleted, disabled or misconfigured. They were
+**correctly written, correctly registered, and simply never executed.**
+
+### ⚠ A retry loop placed after a command that can fail is DEAD CODE under `bash -e` — and it reads as coverage
+
+Found 2026-08-18 in `.github/workflows/ops-monitor.yml`. The step carried an explicit, well-written
+three-attempt retry and a comment promising *"Fail only if all attempts are non-200, so a single blip
+doesn't red the monitor."* It had never once retried.
+
+GitHub Actions runs `run:` blocks under `shell: /usr/bin/bash -e`. The loop body opened with
+
+```bash
+RESPONSE=$(curl -s --max-time 35 -w "\n%{http_code}" ... )
+```
+
+and under `-e` a **non-zero exit from curl itself aborts the whole step at that line**, before any
+retry, any `HTTP_CODE` test, or any diagnostic `echo` below it. So the protection covered exactly one
+failure mode — a **non-200 response**, where curl still exits 0 — and never covered a **timeout**
+(`exit 28`), which is the cron-saturation case the retry was written for. The sibling
+`data-integrity` step had the same shape and failed as a bare `28` instead of reaching its own
+`::error::data-integrity returned HTTP …` line, making the failure undiagnosable from the log.
+
+Fix is `|| true` on the assignment so the script's own logic decides:
+
+```bash
+RESPONSE=$(curl -s --max-time 35 -w "\n%{http_code}" ... ) || true
+```
+
+⚠ **Verify this class in BOTH directions — the two behaviours are one character apart and look
+identical in review.** The control that settles it:
+
+```bash
+bash -e -c 'R=$(curl -s --max-time 2 -w "\n%{http_code}" http://10.255.255.1/ ); echo "after"'   # exit 28, "after" NEVER prints
+bash -e -c 'R=$(curl -s --max-time 2 -w "\n%{http_code}" http://10.255.255.1/ ) || true; echo "after"'  # prints, code=000
+```
+
+Note the repaired path yields `HTTP_CODE=000`, not empty — curl still writes its `-w` output on
+timeout — so a `!= "200"` test retries correctly and the final message names `last: 000`.
+
+⚠ **It is NOT only curl, and the first fix missed the sibling.** Re-running the monitor after
+guarding both curls showed `fmv-staleness` retrying correctly (`Attempt 1/2/3 — HTTP Status: 000`)
+while `data-integrity` printed `HTTP Status: 504` and died on **exit code 5** — `jq` exiting non-zero
+on a non-JSON (HTML error page) body:
+
+⚠ **And the obvious candidate was the WRONG line — only a third live run found it.** Guarding the
+`ISSUE_COUNT=$(… jq …)` assignment did not fix it; the step still died on 5. The actual culprit was
+the jq **inside the branch**, which happened to be the branch's LAST command:
+
+```bash
+if [ "$ISSUE_COUNT" != "0" ] && [ "$ISSUE_COUNT" != "null" ]; then
+  echo "::warning::$ISSUE_COUNT data integrity issues found"
+  echo "$BODY" | jq -r '.issues[]' 2>/dev/null      # <- exit 5 aborts the step HERE
+fi
+```
+
+**Do not reason about which line aborts — re-run and read the log.** I named the wrong line twice.
+
+⚠ **The guard then introduced a fresh honesty bug, which is the reason to re-run rather than
+assume.** With an unparseable body `ISSUE_COUNT` is empty, and empty passes `!= "0"` and
+`!= "null"`, so the step published `::warning:: data integrity issues found` — a blank count
+rendered as a positive finding, off a 504 HTML page. **An empty read is not a count of zero and not
+a count of anything**; the branch now requires `-n "$ISSUE_COUNT"` first. Verified end state:
+`::error::data-integrity returned HTTP 504` then `exit 1`, with no fabricated warning.
+
+⚠ **`2>/dev/null` hides the MESSAGE, not the EXIT CODE** — it looks defensive and is not. So the
+step still never reached its own `::error::data-integrity returned HTTP 504`. **Audit every
+command-substitution assignment in an `-e` block, not just the obvious network call**; `jq`, `grep`
+(exit 1 on no match) and `head -n -1` are the usual suspects. ⚠ And the tell that there is a second
+instance is an exit code that is **neither 0 nor the script's own** — a bare `5` or `28` where the
+script only ever writes `exit 1`.
+
+**Generalise it:** in any `-e` block, a conditional, a retry, or an error message placed *after* a
+command that can legitimately fail is unreachable. This is the shell instance of the standing rule
+that a guard's own construction fixes its blast radius, and of the rule that a permanently-red
+instrument is indistinguishable from a broken one — this monitor's red was real, but its stated
+tolerance was fiction.
+
+
+---
+
+### ⚠ Look for a monitor whose input set includes another monitor's OUTPUT
+
+**Displaced verbatim from CLAUDE.md on 2026-08-21** to make room for the exclusion-premise rule below,
+which is the same family and cost more. Nothing here changed:
+
+> ⚠ **Look for a monitor whose input set includes another monitor's OUTPUT** — a concierge health check
+> counted its own smoke suite's fixtures and reported an outage that was not happening.
+
+### ⚠ An exclusion justified by ANOTHER instrument is a claim about that instrument — 2026-08-21, 7 live defects
+
+The full case behind CLAUDE.md's one-line rule.
+
+Two of the repo's honesty guards skip the route tree, and both said why in code:
+
+    // app/api/** is the ROUTE tree — server code, already in the primary gate.   (client-failure-collapses-to-empty-ratchet)
+    /** Every .ts/.tsx outside `app/api`, which the primary gate already measures. */  (server-page-data-access-ratchet)
+
+**The exclusions are correct — neither guard is about routes. The REASON was false.** "The primary gate"
+is the vitest **coverage** gate. Coverage measures whether lines EXECUTE; it cannot see an unhandled
+error branch, **because the branch does not exist to be uncovered**. A happy-path route test gives an
+unguarded `const { data } = await supabase…` 100% coverage. So the sentence that read as "this is
+covered elsewhere" meant "nothing checks this".
+
+**What it cost:** 7 live instances found in one evening — 4 in Fast Break (incl. a market claim,
+"Not currently listed", published out of a failed `cached_listings` read) and 3 more in
+`cost-basis` / `market-movers` / `edition-stats`. `cost-basis` was the sharpest: a failed
+`collection_config` read collapsed to `null`, the caller reads null as "no filter requested", and the
+RPC then returned **every** collection the wallet holds inside a single-collection tab — a different
+question answered silently, about the reader's own money.
+
+**Measured population** (multi-line-aware detector, with a positive control):
+
+| tree | files | reads **with** `error` (control) | **without** |
+|---|---:|---:|---:|
+| `app/api/` | 453 | 492 | **259** (35%) |
+| `lib/` | 297 | 101 | **21** (17%) |
+| `workers/` | 17 | 11 | **0** |
+| `components/` | 161 | 0 | **0** |
+
+⚠ **My FIRST measurement said 32 — wrong by 8×.** The detector used `[^\n;]*?` between `await` and
+`.from(`, which **cannot cross a newline**, and this repo puts `.from()` on the next line. Caught only
+because the count barely moved after four fixes. **The positive control is what makes 259 a finding
+rather than a regex that matches everything.**
+
+⚠ **The remainder is NOT a to-do list.** A file-scoped version of this predicate is already recorded as
+producing 12 false positives, because "losing a buyer address degrades a FIELD while losing an event
+range moves the CURSOR — same expression, opposite correctness". Triage on: **does a swallowed error
+become a CLAIM?** `workers/` and `components/` are clean; `lib/`'s 21 are mostly concierge/ingest
+(off-limits) or benign (the `alerts.ts` ones are username lookups with an honest wallet-address
+fallback). Full triage tiers:
+`docs/overnight/inbox/2026-08-21T1945Z-259-route-reads-…`.
+
+## The 2026-08-17/18 guard sweep — five guards, one shape (promoted from session log)
+
+Five separate guards were found defective in ~12 hours, and **every one failed the same way: the
+DERIVATION was wrong, not the logic.** Recording them together because the individual fixes are far
+less useful than the pattern.
+
+| guard | how it was silent |
+|---|---|
+| `insights-client-dates-are-hydration-safe` | scoped to `ROOTS = ["app/insights","components/insights"]` — the two dirs the same pass had driven to zero, so green by construction everywhere else |
+| `seo-shared-helpers-inherit-og-twitter` | pinned three helpers **BY NAME**; 43 inline metadata blocks called no helper |
+| `server-page-data-access-ratchet` | walked `entry === "page.tsx"`, so a `layout.tsx` or server component was outside it |
+| smoke battery's `cached_listings` check | prior sweeps were scoped by **call-kind** (RPCs); this was the only direct TABLE read |
+| `check-tree-corruption.mjs` | **nothing invoked it at all** — see below |
+| `anon-api-no-driver-message-leak-guard` | *(a SIXTH, found 2026-08-18)* excluded `app/api/{admin,cron}/**` and asserted that exclusion with a **file-level** grep — see below |
+
+### ⚠ An exclusion asserted per-FILE cannot defend a property that is per-HANDLER
+
+`anon-api-no-driver-message-leak-guard` skips `app/api/admin/**` and `app/api/cron/**` wholesale, and
+it is careful about it: a companion test asserts *"every excluded admin/cron route really does gate
+itself on a secret"*, so the exclusion cannot quietly come to cover an ungated route. **That
+companion greps the FILE.** The surface it is defending is per **handler**.
+
+**`export async function GET()` takes no parameters, so it cannot read a header, a cookie or a query
+param — it cannot authenticate anyone** — and `isPublicPath` returns true for both prefixes, so the
+proxy steps aside and every anonymous caller reaches the body. A gated `POST` in the same file
+satisfied the grep and vouched for the ungated `GET` beside it. Measured 2026-08-18: **four such
+handlers, all four dishonest** — a `count ?? 0` publishing a measured zero out of a timeout, two
+returning `error.message` to anyone, and one discarding its error into `ok: true`.
+
+Two method notes, both bought at the usual price:
+
+- ⚠ **The first measurement said 22 and was mostly false positives.** A static "which handlers reach a
+  gate" walk missed `const TOKEN = process.env.INGEST_SECRET_TOKEN` at module scope and
+  `export const GET = handler`. Spot-reading five found four gated. **Discard a sweep that cannot
+  survive five hand-reads; do not publish its number.** The replacement predicate is decidable from
+  the declaration alone — an empty parameter list.
+- ⚠ **Zero-arg does not imply unauthenticatable.** `cookies()` / `headers()` from `next/headers` are
+  ambient in the App Router, so a zero-arg handler importing them CAN authenticate. The guard checks
+  the import list too; without that it is a false-positive machine.
+
+**Generalise it:** when a guard buys its scope with an exclusion, the assertion defending that
+exclusion must be at the same granularity as the property. A file-level answer to a handler-level
+question is not a weaker guard — it is a guard that reports green on the exact case it excluded.
+
+### ⚠ Ask what RUNS a guard, not whether it passes
+
+`check-tree-corruption.mjs` guards a documented mount-corruption failure. Its header says *"wire it
+as a pre-commit hook"*. **Measured 2026-08-18: no CI job, no `.husky`, no `core.hooksPath`, no
+`.git/hooks/pre-commit`; its only caller in the repo was the manual `scripts/clean-tree.mjs`.** It ran
+when a human remembered. **A guard nobody invokes and a guard that passes are the same colour.**
+Before trusting any `scripts/check-*.mjs`, grep for its callers in `.github/workflows/`, `package.json`
+and hook config — not for its exit code.
+
+### ⚠ And check its DEFAULT MODE before wiring it
+
+That script defaults to inspecting **STAGED** content. On a CI checkout nothing is staged, so it
+prints `0 file(s) checked, clean` and exits **0** — a job that passes by inspecting nothing. **Wiring
+it naively ships the theatre, not the guard.** The `tree-corruption` job therefore runs `--all` **and
+asserts the reported file count** (`>= 1000` against ~4,774 tracked). Removing `--all` makes that
+assertion fire. **Any guard whose scope is a flag needs its scope asserted, not assumed.**
+
+⚠ It earned its place on first run: a literal **NUL byte committed** in `lib/concierge/rich-text.ts`,
+inside a URL sanitiser's control-character class written with three raw control bytes.
+
+### ⚠ A coverage number that MOVES can be a vacuous test, not a noisy gate
+
+`component-tests` sat 0.004pt above its `functions` threshold and oscillated. The cause was not a
+flaky gate: `"appends the next page rather than replacing the loaded rows"` **passed without clicking
+Load More**. An auto-paginate effect (300 ms sleep) raced the click; when it won, the button unmounted,
+`handleLoadMore` never ran, and the id assertion still passed because auto-paginate had appended the
+row itself. **Proved by checking out the pre-fix test, deleting the click entirely, and watching it
+pass.** The only instrument that ever saw it was a coverage count moving by 2.
+
+Two traps found while fixing it, both worth knowing before writing a similar test:
+- **Freezing the clock is not enough** — the effect calls `setLoadingMore(true)` BEFORE its sleep, so
+  holding time under 300 ms leaves the button permanently disabled and unclickable.
+- **Keying a mock on CALL ORDER is not enough** — the initial search issues more than one request on
+  its own, so the dead-end payload lands on the wrong call. Key on a request PARAM plus an occurrence
+  count.
+
+### ⚠ A control that proves the NUMBER is right does not prove the FILE still runs
+
+`audit_20260818_repoint_panini_dry_days_arm…` re-pointed a trust arm onto a live column and verified
+both the headline value (`dry_days = 2`) and the revert control (`5`). Both true. **Neither covered
+the two sub-cases below them**, which still wrote the DEAD column: the recovery assertion (`want 0`,
+got 2) and a 57014 timeout probe whose stub declared only the old columns, so the leg failed with
+`undefined_column` — which `WHEN OTHERS` **does** catch — and the error it was probing for never
+surfaced. **A dead-column write changes no expected value; it just silently stops doing anything.**
+⚠ The second break was invisible until the first was fixed — a pgTAP file aborts at the first ERROR,
+so one fix reveals the next. Budget for a chain, not a fix.
+
+### ⚠ Concurrent coverage runs publish FABRICATED numbers (fixed 2026-08-18)
+
+All three vitest gates defaulted to `coverage/`. `.gitignore` documented the separate-directory
+invariant in prose; **no config implemented it.** Running the primary and component gates at once:
+one dies loudly (`Something removed the coverage directory`), and **the other does NOT crash** — it
+loses the deleted `.tmp` chunks and reports the remainder as a measured result (82.27 st / 80.61 fn
+against true 90.68 / 89.25), failing as a **threshold violation** that reads as *"your diff broke
+coverage"*. Now `coverage` / `coverage-components` / `coverage-workers`, pinned by
+`__tests__/vitest-gates-have-distinct-coverage-dirs.test.ts`, which **globs `vitest*.config.*`** so a
+fourth gate is covered the day it lands. CI was never affected (separate jobs); the cost was entirely
+on local and agent runs.
+
+---
+
+## LAYOUT is a defect class no gate in this repo can see (2026-08-22)
+
+**Promoted from CLAUDE.md's "Guards, tests and instruments" section, which now carries only the one-line rule.**
+
+### Why it is invisible
+
+`vitest` + jsdom returns a **zero box** from `getBoundingClientRect()` for every element, and coverage
+measures whether a line RAN, not what it measured. So a component can render at 3.5× its specified size
+with `tsc`, eslint and both coverage gates green — the MARKUP is correct; only the LAYOUT is wrong.
+
+### The case that proved it
+
+`components/WalletSearchBand.tsx` specified "~112px total — one band, not a hero" in its own header
+comment and rendered **350px** tall at 390×844 (and at 320px) for four weeks, above the fold on every
+`/[collection]/*` and `/insights/*` page, for the anonymous mobile visitor the band exists for.
+
+Cause: the input wrapper carried `style={{ flex: "1 1 300px" }}`. **`flex-basis` sizes the MAIN axis**,
+and `.rpc-wsb`'s `@media (max-width:640px)` rule flips that axis from width to HEIGHT — so the 300px
+width-basis became a 300px height, and **an inline style is exactly the one declaration a media query
+cannot override**. Desktop was correct throughout (82px at 1440 / 1024 / 700 before and after), which is
+why nobody caught it. After the fix: 102px.
+
+The generalisation: **a size that changes MEANING at a breakpoint must not be an inline style.** Guarded
+by `scripts/check-responsive-flex-basis.mjs` (ban at population zero; joins by class name so a component
+styled by the global token sheet is in scope; also covers Tailwind's `flex-col sm:flex-row`).
+
+### The instrument
+
+`e2e/mobile-layout.spec.ts`, in the scheduled `e2e-smoke.yml` monitor (NOT the PR gate — same posture as
+`smoke.spec.ts`, a live hiccup must never block a merge). It runs against `SMOKE_BASE_URL`, so it is the
+only thing here that can check a layout claim **against production**. Every assertion is a ban at a
+population that was zero when it landed:
+
+* no horizontal scroll at 390px on five public routes;
+* the bottom `MobileNav` tabs ≥44px in both axes;
+* navigation controls' 44px HIT AREA reachable (hit-tested, not box-measured — see below);
+* the wallet band ≤160px tall.
+
+⚠ **`/[collection]/overview` is deliberately absent from its route list.** The 2026-08-22 13:15Z run
+failed with `page.goto: Timeout 30000ms` on four collections' overview pages; that is a SLOWNESS signal
+`smoke.spec.ts` already reports, and a navigation timeout in the layout spec would raise a LAYOUT alarm
+for it. A monitor that cries wolf stops being read.
+
+⚠ **It asserts PRESENCE rather than skipping.** The band check originally had `test.skip(band === null)`.
+A post-deploy run reported "4 skipped" and the CI tail names the flaky test but NOT the skipped ones — so
+"the band stopped rendering entirely", a worse regression than it being too tall, would have been a
+silent non-result inside a 97-test monitor.
+
+### Running it locally
+
+`npm run dev` with placeholder Supabase env, then
+`SMOKE_BASE_URL=http://localhost:3000 PW_CHROMIUM_PATH=/opt/pw-browsers/chromium npx playwright test e2e/mobile-layout.spec.ts`.
+⚠ In a Claude Code web sandbox, Playwright's own browser build is ABSENT (the repo pins a newer revision
+than `/opt/pw-browsers` carries) — pass `executablePath` and `--no-sandbox`. ⚠ The agent proxy answers
+**403 to CONNECT for www.rippackscity.com** (org network policy, not a transient failure), so production
+cannot be measured from there at all; dispatch the workflow instead.
+
+⚠ **A local dev build runs with non-working Supabase credentials**, so data-driven controls are absent.
+A clean local result means "the chrome and the empty-state layout are clean", never "the page is clean".
+
+### Three `elementFromPoint` false positives that cost a wrong reading
+
+1. It returns **null for any coordinate outside the VIEWPORT**. The collection tab bar and the switcher
+   row are `overflow-x: auto`, so a control scrolled out of view read as a broken hit area.
+2. **`NEXTJS-PORTAL`** — the DEV error-overlay root, absent in production — intercepts points and reads
+   as click theft.
+3. **The FIXED mobile bottom nav (`nav.rpc-mobile-nav`, 60 px) covers whatever sits in the bottom 60 px
+   of the viewport at load time**, so a control that is merely below the fold reads as stolen. That
+   produced known-issues #133, filed as "undiagnosed" and open for 3 days (closed 2026-09-23).
+   ⭐ **Discriminator: `scrollIntoView({block: "center"})` first, then hit-test.** A real overlay still
+   steals at mid-viewport; the nav does not (0 of 21 there). **Print WHAT the hit landed on, never
+   only a count** — one line naming `nav.rpc-mobile-nav` diagnosed in a minute what a bare
+   `stolen=2` hid for 3 days. ⚠ The "reads 0 on every other page" control was vacuous: those pages
+   had 0 matching elements. Report `checked` beside every zero.
+
+---
+
+## The unbounded-server-read ratchet (2026-08-22)
+
+Fourth occurrence of one class, **the same error string every time** — `Timed out acquiring connection
+from connection pool`:
+
+1. `first-mint` → `BOARD_LIVE_TIMEOUT_MS`
+2. `/analytics/sets` → `SET_DETAIL_TIMEOUT_MS`
+3. `/insights/market` + `market-pulse` → **two ERRORed production builds**, 2026-08-15
+4. `/[collection]/overview` → four collections' pages hung 30s, 2026-08-22
+
+⚠ **Occurrences 1–3 were each fixed on the ONE page that failed**, and
+`__tests__/insights-server-pages-bound-their-reads.test.ts` was written to make it shape-level. It walks
+`app/insights`, so **occurrence 4 was outside it BY CONSTRUCTION** — this repo's own "ask what a passing
+guard is structurally SILENT about" rule landing on the guard written to satisfy it.
+
+`scripts/check-unbounded-server-reads.mjs` is the population that ban cannot see: async server
+`page.tsx`/`layout.tsx` under `app/**`, imports followed to depth 3, counting those that reach a Supabase
+read with no budget primitive. **A RATCHET, not a ban** — the population cannot be driven to zero in one
+pass (several surfaces are on the roadmap's untouchable list, and several have **no honest-degraded
+branch to reject INTO**, so bounding them blind turns a slow page into a thrown error boundary, which is
+worse than slow). Ceiling started at 17. **Lower it in the commit that bounds a page; never raise it.**
+
+### 🚨 A GUARD SCOPED TO WHERE THE BUG WAS FOUND IS SCOPED TO THE PAST — FOUR instances, 2026-09-03
+
+The passage above records the shape once, for the Supabase-read class. **It has now happened four
+times, in four different classes, all four found within about eighteen hours of each other.**
+
+| # | class | the guard, and the set it froze | the next instance, and why it was outside |
+|---|---|---|---|
+| 1 | server pages with an unbounded Supabase read | `insights-server-pages-bound-their-reads` walks `app/insights` | `/[collection]/overview` hung 30 s — not under `app/insights` |
+| 2 | unbounded `fetch` on an OG card | `og-fetches-are-bounded` walks `app/api/og/**` + `lib/og/**` | `app/api/badge-image` + `app/api/moment-thumbnail` — not under either |
+| 3 | a bound that only covers the HEADERS | the fix and its behavioural pins named the two routes in the error report | `avatar-media` had the same shape; caught only because the sweep asked *"what returns an upstream body?"* rather than *"which routes were in the incident?"* |
+| 4 | an `after()` route with no invocation marker | `after-route-heartbeat-ratchet` read **each route file's own text** for a `pipeline_runs` write | **five** routes whose terminal write is one delegation away in `lib/chains/flow/wallet-backfill-helpers.ts` |
+
+⭐ **INSTANCE 4 IS THE MOST INSTRUCTIVE, BECAUSE THE SCOPE WAS NOT A GLOB.** That ratchet went out of
+its way NOT to use a path convention — its header argues at length that *"routes under `app/api/cron/`
+is a curated list wearing a glob"* and derives the population structurally instead. **It was still
+scoped to the past**, because the structural predicate it chose (`after(` + a visible terminal write)
+asked about the ROUTE FILE and the property lives across the call boundary. ⚠ **So "derive it
+structurally" is not the fix on its own — the derivation has to be over the set where the PROPERTY is
+meaningful, not over the text you happen to be reading.**
+
+⛔ **And the cost was not theoretical.** The blindest of the five, `wallet-backfill-golazos`, was the
+**fleet's top wall-kill route — 6 `Task timed out` in 24 h, more than every other route on the platform
+combined** — and every one of those kills was recorded by nothing. It was found by looking at Vercel's
+timeout log grouped by `requestPath`, an instrument **outside** `pipeline_runs` entirely.
+
+⚠ **When widening a walk raises a ratchet's number, say which predicate changed.** BUDGET went 31 → 35
+in that commit, and that is a POPULATION CORRECTION rather than banked slack: the "never raise it" rule
+bans licensing new *instances*, while widening the walk admits the old number measured a subset. A
+raise that cannot name the predicate change behind it is the thing the rule forbids.
+
+**Instance 2 is worth reading closely, because the guard was excellent.** On 2026-08-29 it drove its
+class to a MEASURED zero — *30 bare calls across 28 files, none carrying a signal* — asserted the
+population it inspected, carried a curated-exemption list with the bound each exempt file uses
+instead, and explained in its own header why a render check could not see the property. **It did
+everything this repo asks of a guard except one thing: it took its file set from where the bug had
+been found.**
+
+Five days later `/api/badge-image` produced **463 `TimeoutError`s across 69 users in 24 h** — the
+identical defect, one directory over, with the guard green the whole time.
+
+⭐ **THE RULE.** When a class is driven to zero, the ban's population is the last decision to make,
+and *"the directories where I found it"* is the wrong answer every time. Ask instead: **what is the
+widest set where this property is even MEANINGFUL?** For an unbounded `fetch` that is every server
+route, not the six that happened to fail. If that set is too large to ban, **ban at zero on the
+subset whose failure answer is settled and RATCHET the rest** — which is what
+`__tests__/image-proxy-routes-bound-their-upstream.test.ts` does: a ban on the three user-facing image
+proxies (their answer is a status, so `<img onError>` can fall back) and a frozen ceiling of 26 over
+the remaining `app/api/**`, where *"what should this return on a timeout?"* is a real per-route
+decision.
+
+⚠ **And do not read this as "always widen the glob".** Instance 1's ban is still correctly scoped —
+`app/insights` pages genuinely share a degraded contract that other surfaces do not. **The error is
+not narrowness; it is narrowness inherited from the incident rather than argued from the property.**
+
+⚠ **The first count was 31 and wrong: `Array.from(` matched a loose `/\.from\s*\(/`.** supabase-js takes
+a STRING first argument on both `.from()` and `.rpc()`, so the pattern requires one — 31 → 19. An earlier
+filing's "23" is superseded.
+
+⚠ **Blind spots:** depth-3 import following misses barrels and dynamic imports, and **it cannot tell a
+read that BLOCKS the stream from one inside `<Suspense>`** — Suspense is a legitimate answer to this class
+and still counts here.
+
+### The `/overview` mechanism, because it generalises
+
+`app/(collections)/[collection]/overview/layout.tsx` — the overview **SEGMENT's own layout**, not the
+shared `[collection]/layout.tsx` — awaits `<PopularOnCollection>`, an async server component, with **no
+Suspense boundary**. `revalidate = 3600`, and every deploy empties the ISR entry, so the first request per
+collection does the read inline with the whole document waiting on it.
+
+⚠ **Vercel logged `200` for every one of those requests.** The streaming shell answers instantly, so a
+read that hangs is only ever visible as a document that never finishes — the "200-but-broken-DOM" class in
+its LATENCY form.
+
+⚠ **Grepping "the page and its layouts" is not grepping "the segment's layouts".** I first concluded the
+overview page did no server work — true of `overview/page.tsx`, `[collection]/layout.tsx`,
+`(collections)/layout.tsx` and the root layout. In the App Router those are different sets.
+
+⚠ **Suspense was considered and rejected here.** It would also unblock the stream, but that block exists
+to put server-rendered internal links in the DELIVERED HTML for crawl equity. Bounding leaves the success
+path byte-for-byte identical and only changes behaviour when the read was already failing.
+
+`withBoardBudget` gained an optional `prefix` (default `"insights/"`, so all 36 existing call sites are
+byte-identical) — an `[insights/…]` label on a non-insights surface sends an operator to the wrong
+subsystem.
+
+---
+
+## 🚨 The unbounded-`fetch` ratchet, and six instrument lessons that cost real time (2026-08-27)
+
+`__tests__/unbounded-fetch-in-after-routes-ratchet.test.ts` — sibling to the unbounded-server-read
+ratchet above. **No NEW unbounded `fetch(` in an `after()` + `maxDuration` route; count down only
+(`RATCHET`).** Same rationale as its sibling: a ban is not satisfiable today, and the correct timeout
+is not a constant.
+
+**Why this shape and not "unbounded fetch" generally.** `fetch()` has NO default timeout. In an
+ordinary handler an upstream that accepts the connection and holds it open is merely slow. In an
+`after()` route with a `maxDuration` it is **invisible**: the lambda is killed, so neither the success
+path nor the `catch` runs, **no terminal `pipeline_runs` row is written at all**, and the outage reads
+as *"the cron never fired"*. Measured on `/api/candy-listings-indexer`: 15 invocation heartbeats
+against ONE terminal row in 48 h, while the PUBLIC `/insights/candy-mlb` board served asks **44 hours
+stale**.
+
+⭐ **The fix already existed one file away and had never spread.** `solUsd()` in
+`lib/chains/solana/das.ts` — called by that route one line above the walk that hung — carries an 8 s
+cap and a comment naming this exact failure mode. This repo's rule is *"when you find one, grep for
+the EXPRESSION, not the file"*; here **it was not the DEFECT that spread by copy-paste, it was the FIX
+that failed to.** A comment is only read by someone already in that file. That is what a ratchet is
+for.
+
+⚠ **Scope limit, stated so the guard is not over-trusted:** it walks `app/api` only. A `lib/` helper
+reached FROM an `after()` route is out of scope by construction — `dasCall` was exactly that, and had
+to be bounded by hand. **The guard cannot see a hazard one import away.**
+
+### 1. ⛔ Size a deadline off the OBSERVED SUCCESS BAND, never off `maxDuration`
+
+The first sweep budget shipped for the candy sweep was 240 s, reasoned as *"60 s of headroom under the
+300 s `maxDuration`"*. **Every successful run on record took 375,699 / 389,236 / 391,226 ms — all
+ABOVE the declared ceiling, all completing and logging.** `extra.duration_ms` is `Date.now() -
+startedMs`, the same clock the budget uses, so **240 s would have truncated every healthy sweep the
+pipeline had.**
+
+**`maxDuration` is what the platform DECLARES; the success band is what the route actually GETS**, and
+on Fluid Compute they disagree — `after()` work routinely overruns. Confirmed on four independent
+pipelines the same night: `candy-listings` (391 s vs 300 s), `check-alerts` (84.8 s vs 60 s),
+`topshot-listing-cache` (361.5 s vs 300 s), `allday-listing-cache` (344.3 s vs 300 s).
+
+⚠ **A budget is invisible to every test that does not exceed it.** The route's tests mock a one-page
+book that finishes instantly, so they passed either way and CI was green. It surfaced only from
+reading the duration distribution.
+
+⭐ **And the rule produces OPPOSITE actions on different routes, which is the point.** `sales-indexer`
+(85/85 ok, p95 40 s, max 83 s vs 120 s) and both alert dispatchers got per-request timeouts and
+**deliberately NO deadline** — they are finishing, so a budget could only truncate healthy runs.
+**Read the distribution; the rule is not "add a budget".**
+
+### 2. 🚨 A guard's POPULATION is as comment-sensitive as its assertions — and nobody re-checks it
+
+`__tests__/api-og-insights-empty-vs-unavailable.test.ts` selected its 15 cards with
+`readFileSync(p).includes("boardEmptyCopy(")` — **raw source**. Adding a comment to `candy-mlb`
+*explaining why it cannot adopt that helper* contained the literal token and **enrolled the card in
+the guard**, which then failed it on fetch-driven assertions it structurally cannot satisfy (the card
+reads `supabaseAdmin` directly, so a `globalThis.fetch` mock cannot drive it).
+
+⭐ **That file already warned about exactly this, one function ABOVE the offending line** — *"Any check
+that greps source for user copy must strip comments — including the one you are about to write."* The
+warning was applied to its `loading`-claim sweep and not to the selector beneath it. `boardCards()`
+now strips.
+
+**The generalisable half: a wrong population still reports a number.** The guard was green throughout;
+it simply measured a different set. Related to *"ask what a passing guard is structurally SILENT
+about"*, one level up: not what it asserts — what it asserts it ON.
+
+### 3. ⛔ A detector validated only against the population it measures cannot report its own blind spot
+
+The ad-hoc sweep that found this class used a regex requiring `;` or a newline after the closing
+paren. It matched every real file (they are formatted that way) and **missed
+`await fetch(u, {...}) })` entirely.** Every count published from it was a floor.
+
+**It had a real consequence, not just a numerical one:** the regex was blind to `support-chat`,
+`smoke-test` and `golazos-listing-cache`, so three of the four `*-listing-cache` siblings were bounded
+and the fourth was left — *purely because the detector did not show it*. The ratchet balances parens
+and carries **synthetic fixtures** (bounded / unbounded / mixed / zero-arg). **The fixture caught the
+bug; running against the repo never would have, because the repo is formatted agreeably.**
+
+⚠ **Never compare counts across detectors.** The "29" in the inbox filing and the ratchet's number
+count different things; only the ratchet's is detector-verified.
+
+### 4. ⚠ The SHARED comment stripper is not a guarantee that comments were stripped
+
+`scripts/lib/strip-comments.mjs` (mandatory, `MAX_LOCAL_STRIPPERS` down-only) **does not blank** line
+80 of `app/api/check-alerts/route.ts` — while blanking the identical line in isolation and in every
+other file swept. So a comment documenting a fix was counted as code **through the mandated
+protection rather than around it**. Original filing (symptom + four falsified hypotheses):
+`docs/overnight/inbox/2026-08-27T0500Z-the-shared-comment-stripper-leaves-a-comment-line-intact-in-one-file.md`.
+
+✅ **ROOT CAUSE FOUND AND FIXED 2026-08-27** — by that filing's own recommended next step
+(instrument the state machine rather than bisect inputs further), which worked first try.
+**A nested template literal inside `${...}` desyncs the machine.** The header called copying an
+interpolation verbatim "the safe direction (KEEPING too much, never blanking too much)"; 🚨 **that
+claim was false.** The inner opening backtick is read as the OUTER literal's closing one, after which
+the machine sits in `code` **inside HTML text**, where `/` in `</td>` opens a regex and `//` in a URL
+opens a comment — and it ping-pongs `tpl → regex → code` for the rest of the file.
+
+⭐ **Both failure directions are the SAME desync, twenty lines apart in one file:** line 80's comment
+left **INTACT**, line 100's real Telegram URL **BLANKED at `https:`**. That is why neither symptom led
+to it — the recorded relative *hides code*, this one appeared to *expose comments*, and it is neither:
+**the direction observed is an artifact of the text that follows.** ⛔ **So do not reason about this
+stripper in terms of "which direction does it fail".**
+
+Fixed with an explicit `tplStack` (interpolations parsed as code; braces counted only in `code` state).
+⚠ Deliberate consequence: a `//` inside `${...}` **is** now stripped. Full suite **1,386 files /
+15,204 tests green** — but read honestly that means no guard *depended* on the bug, **not** that none
+was *misreading*. ⚠ **DEFECT 4 remains, known and unfixed: JSX text is not JS**, so an apostrophe in
+`<p>Couldn't</p>` opens an `sq` state — **8 files** end desynced, in the genuinely safe direction.
+⚠ **EOF state is a LOWER BOUND on the population** (9 before / 8 after, of 2,836): `check-alerts`
+desyncs mid-file and re-syncs, so it is in neither count. Filing:
+`docs/overnight/inbox/2026-08-28T0056Z-ROOT-CAUSE-FOUND-the-shared-stripper-desyncs-on-nested-template-literals-and-fails-BOTH-ways.md`.
+
+**Displaced from CLAUDE.md 2026-08-27 to pay for the rule above, verbatim:** *a copy-pasted stripper
+blanked 100k+ chars of real source and hid a live P0; **49** files import the shared one,
+`MAX_LOCAL_STRIPPERS` ratchets at **2**, down only; at least six guards have fired on the comment
+documenting the fix.*
+
+⭐ **Tactic worth reusing: where a shared helper is unreliable, prefer a check that does not NEED it to
+be right over one that assumes it is.** The ratchet skips zero-argument `fetch()` (never a real call
+site), so its count no longer depends on stripping having succeeded.
+
+### 5. ⚠ A retry loop only helps a TRANSIENT failure
+
+`Install Flow CLI` reddened `main` twice in one hour with a **7-attempt exponential-backoff loop
+already in place**. All seven failed **~65 ms in**, at *"Getting version of latest stable release"* —
+`install.sh` resolving `latest` through the **unauthenticated GitHub API at 60 req/hr shared across
+the runner IP pool**. Once that limit is hit the failure is deterministic for the hour; the loop's
+whole budget is ~168 s. **It converted a fast red into a slow red.**
+
+Fixed by passing the auto-minted `secrets.GITHUB_TOKEN` as `GITHUB_TOKEN` on both `Install Flow CLI`
+steps (the script reads it, and falls back to unauthenticated on 403, so it cannot make things worse).
+⛔ Deliberately NOT pinned to a version — that trades a CI-reliability problem for a coverage one.
+
+**Ask what a retry is RETRYING.** The existing comment block was careful and correct about the failure
+it was written for (a 2026-07-31 curl reset on the `raw.githubusercontent` fetch); this was a
+different failure, at a different URL, in a different phase — and the loop was inherited as though it
+covered both.
+
+### 6. ⚠ A liveness probe must exercise the PRODUCTION CALLER's code path
+
+`panini-run.bat` relaunched Chrome only when port 9222 was not listening. **A hung browser still
+accepts TCP**, so it was never restarted and every run died on `connectOverCDP: Timeout 30000ms
+exceeded` — 22 h, four missed bursts, a PUBLIC board drifting.
+
+🚨 **The obvious upgrade is also wrong, and it was MEASURED rather than assumed:** against the
+actually-hung browser, `GET /json/version` returned **HTTP 200** with a full version payload. **Three
+probes of the same process disagreed — TCP said healthy, HTTP said healthy, the real client said
+dead.** The preflight (`scripts/panini-cdp-preflight.mjs`) now does what the runner does
+(`connectOverCDP`). Same family as *a control must use the PRODUCTION CALLER* and *probe THE ENDPOINT
+YOU NEED, not any endpoint it should reach*.
+
+
+## 🚨 A GUARD'S PROSE AND ITS CONSTANT DISAGREE, AND THE CONSTANT IS THE FACT (2026-09-07 — four re-swept dead ends in one session)
+
+**Symptom: you read a guard file or a register item, believe there is open work, sweep it, and find it drained.** That happened **four times in one session** on 2026-09-07, and each time the pointer that misled was NARRATIVE TEXT sitting beside a live value that said otherwise. This is the mirror image of the rule CLAUDE.md already carries (*"every figure is a DATED SAMPLE — re-measure before quoting it"*): here the stale figure does not overstate health, it **overstates the remaining work**, so the cost is a wasted sweep rather than a wrong ship. Cheaper to catch, easier to repeat.
+
+| what the prose said | what the live value said |
+|---|---|
+| `server-page-data-access-ratchet`: *"ships a guard with a 36-entry allowlist"*, *"the 36 pages below"* | **`const BUDGET = 3`** — the debt fell 37 → 3, and all three survivors are under `app/insights/**`, inside the derived wiring guard. The narrative is the file's own history, kept deliberately; it is not the population. |
+| `key-files-and-honesty.md` fifth layer: *"Two were found 2026-08-23. Five more on 2026-08-24"* | **0 of 22** — every seeded-prop client component now conveys failure. |
+| known-issues **#17**: a *"Remaining"* paragraph listing modal accessibility | a later ✅ block **in the same item** says drained; the sweep's two hits are both documented non-instances. |
+| my own inbox filing, six hours old: *"one failed chunk discards all later chunks"* | the one caller slices **200** ids for a route that chunks at **500**, so the loop runs once. |
+
+⭐ **THE READING RULE.** In a guard file, the **constant, the walk, and the budget are the specification**; the paragraphs are its changelog. Read `const BUDGET`/`THRESHOLD`/the derivation **before** the comment that explains them, and in a register item read the **newest dated block**, not the first `Remaining:` heading — items here are appended to, never rewritten, so the oldest text is the most prominent and the most wrong.
+
+⚠ **Do not "fix" this by deleting the history.** Those paragraphs are why the numbers are trusted — the ratchet's own note that it *"fell four times without anyone tracking it"* is the evidence its no-slack assertion works. The defect is reading order, not the presence of history.
+
+ⓘ **Related, same session, different mechanism** (recorded in `key-files-and-honesty.md`): when a guard's population is **derived**, absence-of-mention is the EXPECTED state, so any *"is X covered?"* probe that greps for X's name reports a false gap on exactly the best-guarded code. **Both failures share one root — treating a search over PROSE as a measurement of STATE.**
+
+## eslint is NOT in CI, and that is a decision (2026-08-22)
+
+`grep eslint .github/workflows` returns nothing; `package.json` has the script and no job calls it.
+**Do not cite eslint as coverage anywhere**, and do not wire it in without re-making this decision:
+
+`npx eslint .` reports **6,373 problems (5,925 errors)**, of which **5,633 are
+`@typescript-eslint/no-explicit-any`** — a convention CLAUDE.md explicitly sanctions ("Supabase client
+typed `any` in API routes"). Adding the gate would make CI permanently red on a rule the repo chose.
+
+The one subset worth a look is `react-hooks/set-state-in-effect` (**60** instances, a real correctness
+smell — `components/MobileNav.tsx:44` is one). 60 is not a ban either; it would need a ratchet.
+
+---
+
+## 🚨 THE GUARD FAMILY WAS NOT PORTABLE, SO `npm test` ON TREVOR'S BOX WAS AN UNTRUSTWORTHY INSTRUMENT (2026-08-24)
+
+**Measured 2026-08-24 on the Windows box: `npm test` reported 54 failures across 10 files. 53 were not defects.** After the fixes below: **1371/1371 files, 14,945/14,945 tests green** — the first clean full run on that machine. **CI was green throughout**, because every cause is one that only exists off the Linux runner.
+
+⚠ **THE COST IS NOT THE FALSE REDS — IT IS WHAT THEY TRAIN.** CLAUDE.md requires a full-suite run before every push. **A permanently-red instrument is one a reader learns to skim, and a real failure hides in the noise.** Exactly **one** of the 54 was real (a whole-shape `toEqual` in `og-insights-headline-count-is-not-a-page-length`), and it was found only because the other 53 were traced to a cause first.
+
+⚠ **"IT PASSES IN CI" IS NOT THE COUNTER-ARGUMENT — IT IS THE OTHER HALF OF THE FINDING.** CI is the platform on which all four causes below happen to work. That is precisely what let them accumulate. **Where the dev machine and CI differ, each is blind to the other's failures; neither alone is "the" test result.**
+
+### Cause 1 — `execSync("grep -rl … || true")` to discover a guard's own population
+
+Correct on the runner, broken under `cmd.exe`, **in three ways and only one of them loud**:
+
+| mode | instance | what happened |
+|---|---|---|
+| **LOUD** | `metadata-catch-branch-is-not-a-404` | pattern contains SPACES → cmd.exe re-split it → `execSync` threw **at module scope** → suite reported **"0 test"**. 🚨 **DEAD on that box, green in CI.** |
+| **QUIET** | `log-pipeline-run-args-match-the-function` | a simpler pattern happens to work, so the mechanism looks sound until someone widens it |
+| **SILENT** ⚠ | `indexer-cursor-hold-on-partial-scan-guard` | **`\|\| true` swallows the cmd.exe failure into an EMPTY list, so the guard walks ZERO files and PASSES.** Its two `--include='*.ts'` sites had exactly this shape — cmd.exe does not strip the quotes, so grep matched no filename at all. |
+
+⚠ **The SILENT mode is the one that matters: a guard inspecting nothing is indistinguishable at a glance from a guard finding nothing.** Same lesson as *"ASSERT THE COUNT IT INSPECTED"* above, arriving by a new route.
+
+### Cause 2 — `f.replace(process.cwd() + "/", "")`
+
+`node:path.join` yields backslashes on Windows, so this **never matches**, the value silently stays ABSOLUTE, and **any allowlist or suppression keyed on a relative path stops matching**. `entity-sections-do-not-conclude-from-a-failed-read` therefore **reported its own deliberately-SUPPRESSED entry as an offender** — ⚠ **which for ten minutes read like a live honesty defect on `/series/[slug]`. It was not.**
+
+### Cause 3 — an AMBIENT SECRET in the developer's shell
+
+**`INGEST_SECRET_TOKEN` is exported from the user profile on that box**, so every process started there inherits the live token. Many routes gate as `if (expectedToken && authHeader !== …)` — **auth is enforced only when the secret is SET** — so a test written against the *unset* branch got a **401** locally and the intended status in CI. ⚠ **`api-ingest-backfill.test.ts` states that contract in its own header and then failed for having it set by someone else.** ⚠ **`vitest.setup.ts`'s `||=` cannot help: it defaults a MISSING var and is silent about a PRESENT one.** It now **deletes** a named list of auth secrets so the test process matches CI. **The list is the CLASS, not the instance.**
+
+### Cause 4 — a SECOND COPY OF A PACKAGE, which defeats `vi.mock` SILENTLY
+
+`workers/topshot-moments-hydrator/` and `workers/pack-events-ingest/` each carry **their own `node_modules/`** (`@supabase/supabase-js` **2.105.4** vs the root's **2.104.0**). 🚨 **The consequence is not a version skew — it is a MOCK MISS.** A worker importing the bare specifier resolved the **NESTED** copy, **a different module id from the one `vi.mock("@supabase/supabase-js")` registered**, so the mock silently did not apply, the worker built a **REAL** client, and the suite made **REAL network calls** that hung to the 5 s timeout.
+
+- ⚠ **It presented as FLAKINESS.** At `--testTimeout=60000` the mask came off and it was an ordinary assertion failure underneath. ➡ **Re-run a "timeout" with a long timeout before believing it is one.**
+- ⚠ **Those dirs are gitignored, so they exist on a dev box and NEVER in CI.**
+- ⓘ **One probe nearly stopped the hunt:** `createClient` showed **0 calls** with the worker plainly having run — which reads as *"it never gets there"* and actually means *"it called a DIFFERENT module's `createClient`"*.
+- **Control both ways: 22 of 25 worker suites pass, and the 3 that failed are EXACTLY the two dirs with a nested install; every other worker dir has none.**
+- ⛔ **Fixed by ALIASING the specifier to the root copy in both vitest configs, NOT by deleting those `node_modules`** — they are a local wrangler convenience, and deleting a developer's install to make a test pass is the wrong direction.
+
+### The replacement, and the ban
+
+`__tests__/helpers/source-files.ts` — `filesMatching` / `repoRelative` / `walkSourceFiles`. Returns **repo-relative, forward-slash, sorted** paths, **byte-identical to `grep -rl` on Linux, so no migrated guard needed edits to its allowlists or ratchets.** ⚠ **PARITY MEASURED, not assumed — all seven populations match POSIX grep exactly: 32 / 11 / 18 / 23 / 10 / 98 / 1.**
+
+`__tests__/guards-do-not-shell-out-to-grep.test.ts` bans both shapes at zero across `__tests__` + `scripts`, **proven end-to-end in both directions with a planted offender file**, not merely against string literals.
+
+- ⚠ **It excludes ITSELF**, because its detector-proof block must carry the banned shapes as **string LITERALS, which survive comment-stripping** (comment-stripping alone was tried first and it still reported itself — the seventh guard here to fire on its own documentation, this time via fixtures rather than prose). The exclusion is **DERIVED from `import.meta.url`**, never spelled out, since **a guard that names its instances dies on a rename**; and it is **asserted at the property's granularity** — exactly one file dropped, it is this one, and it genuinely carries both shapes.
+- 🚨 **AND IT RED-ON-LOAD IN CI, WHICH IS THE SAME DEFECT IT WAS WRITTEN ABOUT.** It passed locally and standalone, then **timed out at 5217 ms inside CI's `--coverage` run** — it read and comment-stripped ~1,400 files **four times** (once per arm, twice per assertion: the value and the failure message). ⚠ **The very next commit's CI passed by luck**, which is what load-sensitive flakiness looks like. Now reads once, memoised, with an explicit 60 s timeout on the scan-bound arms. ➡ **A guard that reds for being SLOW is indistinguishable at a glance from one that found something, and it trains exactly the same skimming.** ⚠ **Budget a whole-tree scan for the FULL parallel coverage run, never for a standalone run.**
+
+## Displaced from CLAUDE.md — full case histories (verbatim)
+
+Both bullets below were condensed to their rule in CLAUDE.md on 2026-08-22 to make room for the LAYOUT
+instrument. The rules still stand; only the examples moved.
+
+⚠ **A THIRD displacement, 2026-08-25** — the LAYOUT and BUILT-BUNDLE clauses of the
+"exclusion justified by another instrument" bullet were themselves condensed to a pointer, to make room
+for the EQUIVALENCE-PROOF rule the `drain_fmv_cold_tail` scoping earned. **Their full cases already live in
+this file** (`## LAYOUT is a defect class no gate in this repo can see` and
+`## Nothing here sees the BUILT BUNDLE either`); the CLAUDE.md wording itself, verbatim as it stood:
+
+> ⚠ **NOTHING here measures LAYOUT** — jsdom returns a ZERO box for every element, so a band shipped
+> **350px** tall against the ~100px it specified for four weeks with every gate green.
+> `e2e/mobile-layout.spec.ts` (scheduled e2e monitor) is the only instrument; a layout claim needs a real
+> browser. **The broad-sweep instrument (added 2026-09-06): `scripts/qa/mobile-sweep.mjs`** — real Chromium at
+> 390 × 844 from the Cowork device VM, one measured JSONL record + one PNG per page; the session stages
+> the PNGs and READS them. It measures, it does not assert — recipe + how to read it honestly in
+> `scripts/qa/README.md`. ⚠ The Cowork/Chrome-extension window bottoms out at ~738 px, so every
+> sub-420 claim made through it before 09-06 was a desktop layout squinted at. ⚠ **Nor the BUILT BUNDLE** — turbopack constant-folded a `+`-joined template and DROPPED a
+> quasi, so production rendered a sentence the source does not contain while vitest and `tsc` read it
+> correctly.
+
+> - ⚠ **Ask what RUNS a guard, not only whether it passes** — `check-tree-corruption.mjs` had no CI job
+>   and one manual caller, and its default staged-only mode inspects **nothing** on a CI checkout
+>   (`0 file(s) checked`, exit 0). Wiring it naively ships the theatre: **assert the count it inspected**.
+>   Its first real run found a committed NUL byte in a URL sanitiser.
+
+> - ⚠ **A permanently-red or permanently-zero instrument is indistinguishable from a broken one at a
+>   glance** — `edge-fn-drift` was loudly correct for a week while naming the function fabricating 161k
+>   rows, and nobody read it. Check the LOG, not the badge. ⚠ **Before relying on a watcher, prove it can
+>   see a FAILURE** — an unreachable monitor and a green build look identical.
+
+### 🚨 The sharpest instance of that rule: SENTRY, and the zero got written in the HEALTHY column (2026-08-26)
+
+**A dark error reporter reports nothing, including its own darkness** — so its silence arrives in exactly
+the shape of good news, and it was read that way. Sentry ingested nothing from **2026-08-18** onward; on
+**2026-08-26 00:55Z** its newest event was still 7 days old while Vercel carried **50 error groups whose
+newest fired in the same minute as the reading**. Both 2026-08-25 daytime-monitor filings had recorded
+*"✅ Healthy and unaffected: … no new Sentry issues in 24h"*.
+
+⭐ **The durable rule is that the Sentry number is not readable alone — it is a PAIR:**
+
+> **A Sentry zero is health ONLY if the Vercel 24h error groups are ALSO near zero.**
+> A zero on one against 50 groups on the other is a DARK REPORTER, never a quiet week.
+
+⚠ **Why this evaded the sweep for a week:** `rpc-nightly-autonomous-pass/SKILL.md` §2 says *"run …
+Sentry … then distrust each"* and then listed distrust bullets for **six** instruments — Sentry not among
+them. **An instrument named in the "run" list but absent from the "distrust" list is read at face value**,
+which is the failure mode, not the analyst. A seventh bullet now closes it.
+
+⚠ **And two negatives worth not re-deriving:** the Sentry MCP has **no** stats/usage/quota surface (the
+catalogue was searched, not assumed), and the decisive ingest probe — POST one envelope, read the status,
+where **429 + `X-Sentry-Rate-Limits` confirms quota and 202 refutes it** — **cannot be run from a cloud
+sandbox**: it returns the agent proxy's `403 Host not in allowlist`. ⛔ **That 403 is the PROXY's, not
+Sentry's, and reading it as a Sentry signal would be the "diagnose from the error STRING, not the fact
+that it failed" trap.** Full filing:
+[inbox 2026-08-26T0100Z](../overnight/inbox/2026-08-26T0100Z-sentry-is-dark-on-day-seven-and-the-monitor-reads-the-silence-as-health.md).
+
+## 🚨 A RECOVERY TOOL CAN TRIP A GUARD THAT A HAND-AUTHORED FILE SATISFIES (2026-08-23) — and CI must be verified PER PUSH
+
+**`main` was red for six consecutive commits and nobody noticed, including me.** I verified CI green through
+one commit, then pushed six more on the assumption. ⚠ **CLAUDE.md already says *a red run is not
+automatically yours: read the failing JOB first* — the failure here was never reading it at all.**
+**Verify CI per push, not once per session.** A docs-only push is not exempt: the guard that broke was
+triggered by *other* files already on `main`.
+
+**The mechanism is the durable part.** `scripts/recover-fileless-migrations.mjs` reconstructs a `.sql` for a
+migration that was applied via MCP and never committed — byte-exactly, from
+`supabase_migrations.schema_migrations.statements`, md5-verified against prod. Running it and committing the
+sixteen recovered files was **correct**, and it turned CI red anyway:
+`__tests__/migration-new-function-states-its-anon-exec-decision.test.ts` requires every migration from its
+`20260817000000` CUTOFF forward to **state an anon-execute decision** per public function it creates — and
+**a byte-exact capture of an already-applied migration states none.** Ten files, five functions.
+
+🚨 **THIRD INSTANCE 2026-09-13 (PT), AND THE NEW LESSON IS NOT THE GUARD — IT IS THAT I RAN A DIFFERENT INSTRUMENT AND BELIEVED IT COVERED THIS ONE.** Migration `20260914032500` (`CREATE OR REPLACE public.atlas_edition_verify_settle`) took `main` red on exactly this guard, and three docs-only pushes then rendered green over it — the same masking already recorded below for 09-10 and 09-13. ⛔ **Before shipping it I DID run `check_secdef_anon_exec_drift()` and got a clean zero-length array, and I treated that as the anon-exec box ticked.** It is not the same check: **`check_secdef_anon_exec_drift()` is a LIVE-DB check on the deployed ACL; `migration-new-function-states-its-anon-exec-decision` is a REPO check on the migration TEXT.** A function can be correctly revoked in prod (it was — anon `false`, authenticated `false`, PUBLIC `false`) and the migration still state no decision, which is precisely what happened. ⭐ **Generalise past this pair: two guards whose NAMES describe the same property can inspect different populations — one the database, one the file — and passing either says nothing about the other.** ⚠ **`CREATE OR REPLACE` makes this easy to rationalise away**, because it does not reset a function ACL, so the honest marker is `-- anon-exec: unchanged` and a REVOKE would be a no-op that reads as hardening. 👉 **Operationally: a migration touching a function is not verified until the five `__tests__/migration-*` guards have RUN** — `npx vitest run __tests__/migration-*.test.ts` is two seconds, and neither `check_secdef_anon_exec_drift()` nor `apply_migration` succeeding is a substitute.
+
+⚠ **The guard's own header justifies its CUTOFF on the grounds that *"an applied migration is history —
+editing it cannot change production"*. Recovered files ARE history; they simply arrived in the repo late.**
+So the guard's scoping assumption — *in-repo files were authored here* — is the thing that broke, not the
+guard. **Any future recovery run hits this again until the script writes the marker itself.**
+
+**How it was fixed, and what was deliberately NOT done.** ⛔ The CUTOFF was not raised, the files were not
+exempted, the guard was not weakened. The decision was **stated and MEASURED**: `has_function_privilege`
+(never the acl text) on all five — `get_series_detail`, `get_series_editions`, `get_series_rollups`,
+`get_set_editions`, `refresh_series_detail_rollup` — reads **SECURITY DEFINER, anon false, authenticated
+false, service_role true**. No exposure; the guard wanted a statement, not a hole.
+⚠ **A REVOKE must NOT be added to a snapshot/recovered file** — `CREATE OR REPLACE FUNCTION` does not reset
+an ACL, so it would CHANGE production while presenting itself as a no-op.
+⚠ **Cost stated rather than hidden: those ten files no longer md5-match prod's stored `statements`.** Only a
+comment banner was added — not one SQL byte — so re-running them is still a no-op and each revert path is
+intact. Each file says so in its own header.
+
+## ✅ The CI guard estate, PROVEN RED one by one (2026-08-26) — a clean audit, recorded because clean audits are what nobody writes down
+
+CLAUDE.md's rule is *"before relying on a watcher, prove it can see a FAILURE — an unreachable monitor
+and a green build look identical."* That had been applied to individual guards after individual
+incidents; it had **never been run across the estate**. It has now, and the result is good, which is
+exactly why it is written down — otherwise the next session re-does it, or worse, assumes it.
+
+**Method (cheap, ~10 minutes, re-runnable):** for each guard, record the baseline exit code, introduce
+a *synthetic violation of the thing it bans*, confirm it exits **1** and **names the file**, delete
+the probe, confirm it returns to **0**. Probes went in throwaway dirs (`components/_guardprobe`,
+`app/api/_guardprobe`) and one appended line in a memory doc, restored from a copy. ⚠ **`git status`
+verified empty afterwards** — a probe left behind is a defect shipped by an audit.
+
+| guard (CI `typecheck` job) | probe used | red on violation? | non-vacuous arm |
+|---|---|:--:|---|
+| `check-brand-tokens` | hardcoded `#E03A2F` + `'Barlow Condensed'` in a component | ✅ | surface counts `=== 0` |
+| `check-driver-message-leaks` | ungated `GET` returning `err.message` | ✅ **named the file** | `handlersInspected < 100`; **gated-leak count `=== 0`** |
+| `check-unhandled-third-state` | — (**self-testing**) | ✅ **by construction** | **runs a synthetic fixture that MUST flag, before reporting on the real tree** |
+| `check-responsive-flex-basis` | `md:flex-row` + inline `flex: "1 1 320px"` | ✅ | asserts files + media blocks inspected; ⭐ **since 2026-10-02 re-proven on every run** by `__tests__/check-responsive-flex-basis-planted-defects.test.ts` (7 fixture cases, mutation-checked) |
+| `check-memory-doc-links` | broken relative link appended to a reference doc | ✅ | `files === 0 \|\| linksChecked === 0`, plus "implausibly few" |
+| `check-unbounded-server-reads` | async server page with a bare `.from().select()` | ✅ **named the file** | `INSTRUMENT BROKEN` on empty walk |
+
+⭐ **THE PATTERN WORTH COPYING IS THE SELF-TEST.** Two of the six do not need an external probe at
+all: `check-unhandled-third-state` runs its detector against a fixture that must be flagged **before**
+it reports anything about the real tree, and `check-driver-message-leaks` treats its **gated** leak
+population as a built-in positive control — *"if it ever reads 0, the GATE or LEAK regex has stopped
+matching and the clean result is meaningless."* **Those two cannot silently rot; the other four can
+only be shown healthy by an audit like this one.** When adding a guard, prefer the self-test: it
+converts "somebody should re-check this" into "CI re-checks it every run".
+
+⚠ **What this does NOT claim:** that the guards catch everything in their class. It is a check on
+*detector liveness*, not on coverage — and this file records two guards whose assertion is
+narrower than their own header (`.range()`/`.order()` presence-vs-uniqueness, and
+`check-unbounded-server-reads`'s reachable-vs-applied). **A guard can be provably red on the thing it
+tests and still test less than it says.**
+
+## The instrument audit of 2026-08-22 — three daily detectors, and the question that paid
+
+CLAUDE.md's standing rule is **"ask what RUNS a guard, not only whether it passes."** Applied to the three
+`check-*.mjs` scripts that are NOT wired into `ci.yml`, it returned nothing: each has its own daily workflow
+(`edge-fn-drift` 06:40Z · `db-pin-staleness` 07:20Z · `migration-parity` 07:40Z). **The question that paid
+was the next one down: not whether they run, but whether anyone READS what they say.**
+
+Measured that day: **edge-fn-drift red 14 consecutive runs** (since 08-09; run #1 on 08-08 is its only pass
+ever) · **db-pin-staleness red 13** (since 08-10) · migration-parity 14/14 green. ⚠ **Both red ones were
+LOUDLY CORRECT** — 25 edge functions provably not running `main`, and 6 of 187 DB pins no longer matching
+live. Neither was broken; both were being ignored. CLAUDE.md already records this happening to
+`edge-fn-drift` once before, which makes 2026-08-22 the **second** time for that detector and the first for
+a second one — a property of the estate, not an incident. Registered as known-issues **#23/#24/#25**.
+
+⚠ **The structural gap (#25) and why the obvious fix is wrong.** The hourly sentinel is what actually gets
+read, and it has **no GitHub Actions arm**. A watchdog *workflow* would be the same problem one level up —
+something else nobody reads. The fix belongs in the sentinel, keyed on a failure **STREAK** (a single red is
+normal for a detector doing its job), and it is blocked on a secrets decision: the sentinel runs on Vercel
+and needs a GitHub token with `actions: read`.
+
+### A detector that cannot distinguish "clean" from "did not look"
+
+`check-edge-fn-drift.mjs` tier 2 — which its own header calls *"the only census"*, tier 1 being *"a LOWER
+BOUND"* — swallowed every body-read failure into a bare `catch {}` commented *"tier 1 still covers it"*. It
+does not. **A run whose census read nothing printed the identical DRIFT number to one that completed and
+found nothing.** The persisted artifact was worse: it carried no tier-2 field at all, so a function tier 1
+called clean but whose body had drifted was recorded as `"clean"` — the series asserting the opposite of the
+finding. Now reports `bodies_read` / `bodies_failed` / `content_drifted`, carries `ran` as a **positive
+control**, adds a `clean_tier1_only` verdict, and refuses an all-clear it did not earn (a 200 with no
+`index.ts` counts as a FAILED read, else an API shape change silently converts the census into a permanent
+all-clear).
+
+### A comment claiming a mirror is not a mirror
+
+Three copies of the same DDL extractor exist. The drift guard learned about `PROCEDURE` on **2026-08-16**,
+recording that a FUNCTION-only needle *"made every PROCEDURE in this database UNPINNABLE"*.
+`check-db-pin-staleness.mjs` — whose own comment says it *"mirrors the guard's own parser"* — did not get the
+fix for six days. ⚠ **Grepping the EXPRESSION rather than the file then turned up a THIRD copy**,
+`scripts/verify-live-ddl.mjs`, also FUNCTION-only, whose header likewise claimed it extracts DDL *"exactly
+as"* the drift guard does. **Neither mirror claim was true, and only the expression grep found copy three.**
+Consequence: because extraction failed, the live-drift comparison for `reconcile_all_saved_wallet_stats`
+**never ran at all** while it sat in the PINS array looking covered. **A pin that cannot parse its own DDL
+asserts nothing** — and it reports that as a chore (`NO_DDL_IN_MIGRATION`) rather than as a gap.
+Pinned by a test that derives the extractor-copy set **by scanning** for the needle shape (a curated list is
+exactly how copy three was missed), with a floor of ≥3 copies so a broken detector cannot pass.
+
+## Provisioning the DB-invariant suite locally (2026-08-22)
+
+`scripts/run-db-tests.sh` needs only a vanilla Postgres 16, and this sandbox has one. CI provisions it with
+`initdb` + `pg_ctl`; the sandbox runs as **root**, so `initdb` refuses unless invoked through `su postgres`:
+
+```
+PGBIN=/usr/lib/postgresql/16/bin; PGDATA=/var/tmp/pgdata-rpc
+mkdir -p "$PGDATA" /var/tmp/pgrun && chown -R postgres:postgres "$PGDATA" /var/tmp/pgrun
+su postgres -c "$PGBIN/initdb -D $PGDATA -U postgres --auth=trust"
+su postgres -c "$PGBIN/pg_ctl -D $PGDATA -o '-p 5433 -k /var/tmp/pgrun' -l /var/tmp/pg.log -w start"
+DATABASE_URL="postgres://postgres@localhost:5433/postgres" bash scripts/run-db-tests.sh   # 181 files
+```
+
+⚠ **It does NOT survive a session resume** — the cluster is stopped even though `/var/tmp/pgdata-rpc`
+remains, so `psql` gives *"Connection refused"*. Re-`pg_ctl start` (re-`initdb` only if the data dir is
+gone). Being able to run all 181 files locally is what made re-pinning six DB functions verifiable rather
+than hopeful — and it caught nothing that CI later disagreed with.
+
+---
+
+## The blind normaliser — a guard class discovered 2026-08-22
+
+⚠ **DISPLACED VERBATIM FROM CLAUDE.md** (condensed there to make room for the grep-for-guards rule): the
+per-HANDLER exclusion example in full — *"a FILE-level secret grep defended a per-HANDLER exclusion, so a
+gated `POST` vouched for the ungated `GET` beside it (4 dishonest handlers)."*
+
+### The class
+
+🚨 **A guard's COMMENT STRIPPER is upstream of everything it checks, and when it blanks real source the
+guard does not error — it still runs, still reports a population, and still passes.** Nothing distinguishes
+that from real coverage except a before/after count. Two separate implementations were measured blind on
+the same day:
+
+1. **The 20-copy regex stripper** stripped BLOCK comments before LINE comments, so an ordinary line comment
+   mentioning a glob path (`// used by /api/* endpoints`) opened a block comment that closed at the next
+   `*/` **anywhere in the file**. Measured across 1,315 files: **103,590 characters blanked across 49
+   product files**. It concealed a live P0 — ~19.6k chars of `CollectionAnalyticsClient.tsx`, including the
+   branch publishing a 99-day-old row as market depth.
+2. ⚠ **THE PROPOSED FIX WAS ALSO BLIND, AND THE INSTRUCTION WAS TO LIFT IT VERBATIM.** The state machine
+   had no regex-literal state, so a regex ending in an escaped slash (`/^https?:\/\//`) presents the raw
+   characters `\` `/` `/` — read as `//`, blanking the rest of the line. **80 occurrences in 66 files,
+   including the guards' own `.replace(/\/\*[\s\S]*?\*\//g, …)` bodies**, so the "fix" would have blanked
+   the very code implementing it.
+
+⚠ **The original finding was also UNDERCOUNTED, and the mechanism says why: the swallow comes from the
+BLOCK regex ALONE.** The line strip is not part of the defect, so a further **30 files** running the block
+regex with no line strip were blind identically — **48,825 chars across 13 files**, same top offenders.
+
+### What this cost, and what it bought
+
+Migrating **28 guards** to `scripts/lib/strip-comments.mjs` produced **two real reds**, both in
+`CollectionAnalyticsClient.tsx`: 10 hidden bare `.toLocaleString()` calls (fixed — all 32 in the file now
+pass `"en-US"`, ceiling lowered 101 → **79**), and 4 hidden `.then((r) => (r.ok ? r.json() : null))` sites
+(triaged individually — **all four discriminate the null**, so they match on SHAPE, not defect).
+
+⚠ **`__tests__/guards-use-the-shared-comment-stripper.test.ts` ratchets the population at 25, down only** —
+and it caught its first regression **within the hour**, a newly-landed file carrying a fresh copy.
+
+⚠ **Migration hazard that bit once:** if the local helper is itself named `stripComments`, replacing only
+its BODY makes it call itself and blow the stack. **Remove the wrapper; do not delegate to it.**
+⚠ **And a red during a migration reads exactly like a discovery** — that one was my own bug, and it arrived
+after two genuine reds, which is precisely the context that makes a third feel confirmed. **Read the
+failure, not the count.**
+
+⛔⛔ **HOW to verify a strip actually happened — content inequality, NEVER length (2026-08-30).**
+CLAUDE.md warns *"using it is not a guarantee it stripped — blind THREE times"* but has never said how
+to check, and **the obvious check is structurally broken**:
+
+```js
+if (out.length !== raw.length) { /* stripped */ }   // ⛔ ALWAYS FALSE
+```
+
+`stripComments` **blanks comments IN PLACE with spaces** — it preserves byte offsets deliberately, so
+line/column numbers still line up with the original source. **Length is identical by design.** Proven in
+one line: `"const a=1 // x
+const b=2"` → `"const a=1      
+const b=2"`, same length.
+
+A length-based verifier therefore reports "strip failed" for **every file that HAS comments** — the exact
+inverse of the truth — and it fails **silently in the safe-looking direction**: the sweep skips those files
+and returns a confident zero. Measured on an ad-hoc empty-state-copy sweep the same day: it declared
+**211 of 219** client `.tsx` files unstrippable, scanned almost nothing, and reported **0 hits**, which
+reads as a clean codebase. The real run found 9 candidates.
+
+**The correct check, and report both arms so a no-op run is visible:**
+```js
+const out = stripComments(raw)
+const proved = out !== raw     // ✅ comments existed AND were blanked
+// else: file genuinely had no comments — count it SEPARATELY, never as success
+```
+
+⭐ **And prove it against a known offender first** — four one-line cases take seconds and would have caught
+this immediately: a line comment (must blank), a block comment (must blank), a `https://` URL (must
+SURVIVE — it contains `//`), and a JSX string (must survive). This is the same
+*"prove a scripted guard against a known offender"* rule the repo already carries, applied to the
+stripper itself rather than to the guard using it.
+
+ⓘ **Audited 2026-08-30: no committed guard in `__tests__/` or `scripts/` uses a length-based strip
+verification**, so nothing here is currently vacuous from this cause. It is a trap for the next person who
+follows the "verify it stripped" advice — which is why it is written down rather than left as a near miss.
+
+## A fixture that BATCHES what production STAGGERS can silently disarm the assertion (2026-08-22)
+
+⚠ **Found by mutation testing, invisible to review.** `supabase/tests/backfill_pinnacle_trade_acquisitions.sql` exists to catch exactly one regression: copying the sibling `backfill_pinnacle_mint_acquisitions`'s `nft_id`-scoped `NOT EXISTS` gate onto the trade path. The mint needs that gate (a mint is a Pin's FIRST acquisition); the trade path must not have it (a Pin trades many times), and the two functions sit side by side and are near-identical, so "make them consistent" is the tempting wrong edit. **Applying that exact mutation left the test GREEN.**
+
+⚠ **The mechanism generalises far past this function. Within ONE call, every candidate is selected by the CTE before any row is inserted — so a `NOT EXISTS` against the TARGET table reads an EMPTY table and never fires.** It fires only on a LATER call. The fixture inserted both of a Pin's trades in a single batch and called the function once, so it asserted the property while being **structurally incapable of observing its violation**. It looked thorough in every grep and review: named for the regression, with the reasoning written out above it.
+
+**The rule: when the thing under test accumulates state across invocations, the fixture must INVOKE IT MORE THAN ONCE.** A single-call fixture cannot see any cross-call guard. Here the fix was to have the second trade arrive BETWEEN two calls — which is also how it really arrives, one cron tick per new trade. **Ask what production staggers that the fixture batches**; that difference is where a guard quietly stops guarding.
+
+Now mutation-proven in four directions, each reddening the assertion named for it: the mint gate copied across · `buy_price` defaulted to 0 · a case-sensitive wallet join · the counterparty dropped.
+
+---
+
+## Pin the property, not the spelling — the second instance (2026-08-22)
+
+The `#E03A2F` brand-exception guard asserted its justification comment on **one line**. A concurrent session
+**correctly** rewrote that comment (its old text claimed to be "the only sanctioned hardcode", which the
+deep audit found false — the recharts SVG strokes and the email accent are sanctioned too) and the re-wrap
+**red-ed CI while changing no meaning**.
+
+🚨 **The sharper half is the assertion that kept PASSING.** It matched `/only sanctioned hardcode/i`, and
+after the rewrite the only text satisfying it was the sentence **REFUTING** the claim. **It had gone vacuous
+while staying green and greppable.** It now matches the machine-readable `brand-exception:` marker against
+whitespace-normalised prose, mutation-tested three ways (marker removed → fails; reason removed → fails;
+re-wrapped → passes).
+
+## ⚠ A filed DECISION offering a tidy A-or-B choice is the least re-checked hypothesis
+
+CLAUDE.md already records that a filed FINDING is a hypothesis, and that **a filed decision NOT to act is
+the one nobody re-checks**. 2026-08-22 added a third shape, and it is the most seductive: **a filing that
+hands the reader a clean either/or.**
+
+`/api/ready` was filed with two candidate fixes framed as an operator choice (grant `anon` EXECUTE, or move
+to the service-role client). **Both are wrong**, because they share an unstated premise — that
+`health_check` is a viable synchronous call. Measured three hours later: it **does not return inside 60 s**.
+Candidate 1 dies on `authenticator`'s `statement_timeout=8s`; candidate 2 dies on Vercel's kill, which is
+already the second error cluster on that route.
+
+⚠ **The A-or-B framing is what suppressed the check** — it reads as though the analysis is finished and only
+a preference remains. **Before offering a choice, state the premise both options share and test THAT.**
+
+## A fail-soft SKIP is a GREEN job, and a module-level memo leaks across Playwright spec FILES (2026-08-22)
+
+Two lessons from adding one arm (`edition_golazos`) to `e2e/entity-smoke.spec.ts`. Both are about the
+instrument, not the pages it checks.
+
+⚠ **`entity-smoke.spec.ts` fail-softs by design: a type it cannot discover from the sitemap is SKIPPED, and
+a skip counts as a passing job.** In the dispatched run on `bb945049` four of eight arms — `moment`, `set`,
+`player`, `team`, every type resolved from **sitemap segment 3** — skipped, and the job was green. Nothing in
+"the run succeeded" said four page types went unchecked; only the log lines did. **So "the smoke run passed"
+is not evidence that an arm ran** — read the per-arm lines, or assert the count of arms that resolved.
+Same family as the permanently-green instrument: an instrument that cannot report its own non-execution.
+
+🚨 **`fetchSitemapLocs`'s memo is MODULE-level and Playwright reuses a worker PROCESS across spec FILES.**
+`entity-smoke.spec.ts` runs against production and fills that cache; `smoke-selfcheck.spec.ts` then read
+**production** locs instead of the fixture server it had just started — expected the fixture's
+`/laliga-golazos/edition/541`, received a production URL. **The self-check was passing against the wrong
+corpus**, i.e. a green self-check that proved nothing about the fixture. Fixed by keying the memo on the
+base URL rather than caching a single global list. ⚠ **Verified against the conditions that produced it, not
+just re-run**: re-dispatch on `6fce088b` gave **100 passed, 0 flaky, 0 skipped** against `1 flaky` before.
+
+⚠ **And the same re-dispatch RETRACTED a filing written eight minutes earlier** which reported the four
+segment-3 arms as skipping — all four resolved on the next run. **A single observation of a failure is not a
+standing state.** What survived the retraction is the structural half (the sitemap's partial-read `break`
+and its 72%-tie paging key — see `known-issues.md`), because that half is a property of the code rather than
+a sample.
+
+### ⚠ The sitemap's 503-on-incomplete fix SILENTLY UNWATCHES four entity arms (observed 2026-08-26)
+
+Known-issues #28 fixed the silent sitemap truncation the right way — `fetchAllByCollection` now throws
+`SitemapReadIncomplete` and `app/sitemap/[id]/route.ts` turns that into a **503** so a crawler keeps the
+sitemap it already has. **That fix has a downstream consequence on the monitor that nobody would see from a
+run summary:** `fetchSitemapLocs` treats a non-200 as `[]`, so while segment 3 is degraded, the `moment`,
+`set`, `player` and `team` arms **skip — and a skip is a green job**.
+
+Observed across three dispatched runs: **4 skipped → 0 skipped → 4 skipped**, all four being the segment-3
+types, every run reporting **success**. ⚠ **So "the DOM monitor is green" does not mean those four page
+types were checked**, and the fix that made the sitemap honest is what makes the monitor quieter. The
+per-arm lines are the only place this shows. **Asserting the COUNT of arms that resolved would close it**;
+nothing does today.
+
+## Nothing here sees the BUILT BUNDLE either (2026-08-22)
+
+CLAUDE.md records that no gate in this repo measures LAYOUT. The same is true of the **build artifact**:
+turbopack constant-folded a `+`-joined template literal whose interpolations were all module-level string
+constants and **dropped one quasi**, so production rendered *"…switched off on 2026-05-26**written on**
+2026-05-15…"* — a sentence the committed source does not contain. vitest evaluates the module and gets the
+correct string; `tsc` is clean; the served JS chunk itself was wrong. **A real-browser read of production is
+the only instrument that sees this class.**
+
+⚠ **The generalisation was REFUTED and the blanket lint rule must not be written.** The fold requires
+*every* interpolation in the chain to be compile-time constant, so a template carrying any runtime value
+cannot lose a quasi this way: **42 at-risk-SHAPED concatenations across `app`/`components`/`lib`/`workers`,
+ZERO constant-foldable.** The guard `no-constant-foldable-joined-templates` therefore bans the
+**precondition at population zero** rather than cleaning up 42 sites that cannot exhibit the defect — and
+the zero means something only because the same detector, run against the pre-fix source at `e0f3186dc`,
+flags the one real site and names both of its constants.
+
+### Displaced from CLAUDE.md 2026-08-22 — the second "silent by construction" example (verbatim)
+
+CLAUDE.md's *"ask what a passing guard is structurally SILENT about"* bullet used to carry two examples; the
+second moved here to make room for the built-bundle instrument gap. The rule is unchanged.
+
+> `check_secdef_anon_exec_drift()` reads `prosecdef = true`, so 84 anon-executable INVOKER functions were
+> outside it.
+
+## Running one FILE proves the file, not the tree (2026-08-23)
+
+⚠ **Verifying a commit with `npx vitest run <path>` is not verifying the commit.** On 2026-08-22 I
+shipped four commits that way; each targeted file passed, and CI went red on a guard in a *different*
+file that the change had made reachable. Four red runs accumulated on `main` before anyone looked,
+and the diagnosis then cost more than the full run would have (~5 min locally: **1,365 files / 14,867
+tests**).
+
+**The rule: a targeted run is for the edit loop; the full suite is for the push.** `npm test` before
+pushing, or accept that CI is the first instrument that sees your change whole — on a repo where a
+guard's roots deliberately span the tree, that is a coin flip, not a verification.
+⚠ **2026-10-14, the same rule broken from the other side: a NEW FILE joins every walker's population.**
+Two recovered edge functions passed the targeted set (their own pin, the gate guards, `deno check`, the
+Deno harness) and red-CI'd `get-fmv-for-editions-is-chunked-under-max-rows` — a guard that names no file
+and could only see them once they existed. Adding a file is a population change for every tree walk.
+
+⚠ **And a red CI run is not automatically yours.** The same night, four consecutive red runs had two
+different causes — one inherited from a concurrent session's commit, one my own guard correctly
+reporting a live defect. **Read the failing JOB and STEP before assuming either way**: "my push is
+red" and "my change broke it" are different claims, and the second needs the job log.
+
+## Two memory-file guards added 2026-08-22/23, and what each is blind to
+
+- **`inbox-index-lists-every-filing`** — every filing on disk is listed, no entry links a file that is
+  not there, the heading count equals the file count, and each per-day count equals its section. Ban at
+  population zero, with a >50-file vacuity floor. ⚠ **Blind to CONTENT**: an entry whose title no longer
+  matches its filing passes, because nothing compares them.
+- **`claude-md-stays-under-the-memory-file-limit`** — the 40,000-character ceiling measured with Node
+  `String.length`, plus a 20,000 floor so a truncated file cannot satisfy the ceiling trivially, plus an
+  arm asserting bytes > characters (the evidence that `wc -c` is the wrong unit). ⚠ **Blind to the
+  reference docs**: nothing bounds `docs/reference/*.md`, and nothing checks that displaced text
+  actually landed there — the "displace it verbatim" rule is still enforced only by the author.
+
+### Displaced from CLAUDE.md 2026-08-23 — the vacuous-assertion TITLE examples (verbatim)
+
+Condensed in CLAUDE.md to make room for the "one file is not the tree" rule. The tell is unchanged;
+these are the names that gave it away.
+
+> The tell is the TITLE: a name carrying a negative claim ("without claiming none are saved") or a
+> transformation ("is not an error", "at or below FMV") is a promise the assertion usually fails to keep.
+
+### Displaced from CLAUDE.md 2026-08-23 (verbatim) — what a passing guard is silent about
+
+Moved here to pay for two new standing rules; nothing deleted. CLAUDE.md keeps the rules, this keeps the cases.
+
+> ⚠ **Ask what a passing guard is structurally SILENT about** — every guard's own derivation fixes its blast radius (the anon driver-message guard derived its file set from `isPublicPath`, so everything behind sign-in was outside it *by construction*). **Prefer a directory/tree walk over a curated list, and a ban at population zero over an allowlist.** ⚠ **A curated list drifts, and COVERAGE IS ONLY REAL AGAINST WHAT THE GUARD READS** — `detect_stalled_pipelines`'s `WHERE w.is_active` blind spot is **76 of 164** (08-23; numerator held while the population grew — diff the SET). Derive from `pipeline_runs`; make *suppression* the curated list. ⚠ **Assert an exclusion at the PROPERTY's granularity** — a FILE-level grep vouched for a per-HANDLER exclusion (4 dishonest handlers).
+
+**A THIRD AXIS, found 2026-09-07 — the OPERATOR the guard anchors on.** A root can be right, a spelling
+list can be complete, and the guard can still be blind because it matches the class only where the class is
+written *inline*. `no-fabricated-divisor-ratchet` anchors on the `/` — deliberately, since that is what lets
+`parseInt(x) || 1` stay legal — and therefore could not see the substitution once the denominator was **named
+first**:
+
+```
+const total = stats?.total_principal_usd || 1     // the guard sees nothing here
+const pct = (part / total) * 100                  // …nor here
+```
+
+That exact code sat in `components/analytics/WalletProfile.tsx`, **inside the guard's own roots**, for the
+guard's whole lifetime, publishing a measured `0%` share for wallets whose principal sums to zero — and the same
+sweep found the already-twice-recorded copy-paste pair carrying `max - min || 1` in both `Sparkline`s. ⭐ **The
+rule: a guard anchored on an OPERATOR is blind to the hoisted spelling of its own class. Assign the fabricated
+value to a name and every operator-anchored ban stops seeing it** — ask this of every guard here, not just that
+one. Two secondary lessons from the widening: the hoisted detector's first cut reported two FALSE POSITIVES that
+were both the identifier appearing inside a **URL path** (`"/api/fmv/demo"`, `"/serial-premiums"` — a `/` is not
+an operator just because it precedes the name); and the opt-out's fixed **3-line** window silently swallowed
+*both* suppressions written that day, because a justification naming the measured population, why the fix is
+elsewhere, and the exit condition does not fit in three lines. It is now those 3 lines UNIONed with the
+contiguous comment block immediately above, which stops at the first non-comment line and so cannot reach across
+code. **An escape hatch that quietly does nothing is worse than none — the author believes it took.**
+
+**Two more instances, both found 2026-08-23, both by asking what the guard's DERIVATION excludes:**
+
+1. 🚨 **A guard's ROOT is a claim.** `saturation-throttle-reads-its-error` walked `app/api/cron` ONLY, and its own
+   header argued *"a guard that walks the tree cannot miss the tenth"*. It walked one DIRECTORY. The tenth copy of
+   the fail-open breaker was one directory over in `lib/studio-sales-history.ts` — the SHARED implementation that
+   `golazos-studio-` and `allday-studio-sales-history-backfill` delegate to entirely, so those two never entered the
+   population and their breaker was the broken one. Fixed by walking a SECOND ROOT **plus an assertion that the
+   second root CONTRIBUTES**, so a widening that matches nothing fails loudly instead of silently narrowing back.
+
+2. 🚨 **A SPELLING LIST is not the property.** `entity-sections-do-not-conclude-from-a-failed-read` matched
+   `/No (?:sales|open offers|notable serials|recent sales|offers|listings|history)\b/` and said in its header that it
+   existed to stop "the FIFTH". The fifth said **"No recorded sales yet"** — one adjective, no match — and was live
+   at **202 degradations / 157 users a day**. Widened to `No` + ≤2 words + a data noun. ⚠ **Widening reddened CORRECT
+   code twice, and both were kept as EXEMPTIONS rather than narrowing back:** the NEGATION (`*Unavailable` copy says
+   "it does **not mean** this player has no moments" — the register already records a word-ban failing here for
+   exactly this), and the OTHER SANCTIONED GATE (`TeamChecklist`'s `failed ? <load-failure> : … : empty`).
+   ⚠ **Its window is 520 chars because that was MEASURED** — TeamChecklist's honest gate sits **394** chars from its
+   sentence; a shorter window reddened correct code.
+
+3. ⚠ **A window-based assertion must stop at the next STATEMENT.** A 260-char window from `throttle_read:` passed
+   with the log's `extra` emptied, because the next line is
+   `return NextResponse.json({ ok:false, skipped:"throttle_error" })` — the same string. **The HTTP body is not the
+   record; `pipeline_runs` is.**
+
+### ⚠ A DOC'S SUMMARY OF A GUARD CAN BE SILENT ABOUT HALF ITS ASSERTIONS — and running the documented checks is then not enough (2026-08-23, reddened `main`)
+
+**Instance.** Adding one entry to `docs/overnight/inbox/INDEX.md` reddened `Unit tests (vitest)` on two commits (`6d816200`, `e85c7103`). `__tests__/inbox-index-lists-every-filing.test.ts` has **five** `it(` blocks — a population floor, plus four substantive assertions:
+
+| # | assertion | did the CLAUDE.md summary name it? |
+|---|---|---|
+| 1 | *lists every filing on disk — zero omissions* | ✅ "every filing listed" |
+| 2 | *links no filing that does not exist* | ✅ "no dangling link" |
+| 3 | *states a heading count equal to the number of filings* (`# Inbox index — N live filings`) | ❌ |
+| 4 | *states per-day counts equal to the entries under each day* (`## YYYY-MM-DD — N filings`) | ❌ |
+
+🚨 **The failure mode is precise and worth naming: I ran checks 1 and 2, both passed, and both are exactly what the prose described.** CLAUDE.md read *"`INDEX.md` is CI-guarded: every filing listed, no dangling link"* — a true statement that is **half the contract**, and a half-description of a guard reads as a whole one. The two counts I did not know about are the two that failed.
+
+➡ **RULE: enumerate a guard's assertions from the test file — `grep -nE '^\s*it\(' <test>` — never from a doc's summary of it, including this repo's own.** A prose summary is a *pointer* to a guard, never a specification of it. The same applies to `npm run` script names and CI job names: the authority is the file, and the doc is a hint.
+
+⚠ **Corollary, since the fix is not "write longer summaries":** CLAUDE.md is at its size equilibrium, so the clause was *shortened* to `**4 CI assertions, TWO of them COUNTS**` (net −9 chars). **A summary that states the SHAPE and the COUNT of a guard's assertions is more useful than one that lists some of them**, because it tells the reader when they have not finished reading.
+
+ⓘ **The two counts to bump when adding an INDEX entry:** the header total on line 1, and the dated `## YYYY-MM-DD — N filings` heading for the section the entry lands in. ⚠ **Sections are keyed by PACIFIC date, while filenames carry a `Z` stamp** — a `2026-08-24T0430Z` filing belongs under `## 2026-08-23` (21:30 PT). Getting that wrong moves the failure from check 4 to check 4 in a different section, and reads identically.
+
+⚠ **It was fixed by somebody else's commit, incidentally** (`ad4606ed` bumped 222→224 and 21→23 while covering its own filing), which is the recorded hazard about a concurrent session absorbing your breakage — the red would otherwise still be open, and the tip going green is NOT evidence your commit was clean. **Check CI per commit, not at the tip.**
+
+## A test can PIN a fabricated number, and a `toBeNull()` is green whenever the harness cannot reach the state (2026-08-26)
+
+Two test-side failures found while fixing the eighth honesty shape. Both are worse than a missing test,
+because both read as coverage.
+
+### 1. The assertion was WEAKER than the title, and the title was the tell
+
+`component-DashboardClient.test.tsx` carried:
+
+```ts
+it("⚠ does NOT replace the case with the onboarding prompt when the slab read FAILED", …)
+  // every assertion it had:
+  expect(calls.some(u => u.startsWith("/api/profile/hero-moment"))).toBe(false)
+```
+
+The title promises a **render** property; the assertion tests a **fetch**. Gating the hero fetch on
+`slabsRes.ok` stops `hero` being set — and the page then fell through to the onboarding prompt anyway. **It
+passed for the entire time the defect was live.** ⭐ Proven, not asserted: with the fix disabled the old
+assertion still passes and only the new one reds. **Assert the ABSENCE OF THE FALSE CLAIM, not the absence
+of a fetch.**
+
+### 2. Two tests did not miss the defect — they PINNED it
+
+`component-AchievementsCard.test.tsx` asserted `getByText("0 / 7")` on a **deliberately failed** read, with
+the comment *"0 unlocked -> the count badge still renders once loading settles"*. That is the fabricated
+number, written down as the expected result. Per the standing rule both were **INVERTED, never deleted** —
+the assertion is what holds the behaviour in place, so it has to keep existing and say the opposite.
+
+⭐ **Swept the repo for that exact shape afterwards and it PASSES: 2,940 `it()` blocks across 247 component
+test files, nothing else pins a rendered numeric claim on a failed read.** ⚠ The first cut of that sweep read
+**41** and was worthless — it could not distinguish `getByText("0")` (presence, the defect) from
+`queryByText("0").toBeNull()` (absence, the fix), and it flagged every ROUTE test correctly asserting a
+pipeline recorded `ok:false`. Narrow to component renders and presence-only. ⓘ A passing audit is worth
+recording precisely because nobody records one.
+
+### 3. ⚠⚠ A `toBeNull()` passes when the harness never reaches the state at all
+
+My own first test for the "✓ Updated" fix asserted `expect(queryByText(/updated/i)).toBeNull()` under fake
+timers. It passed — **against the UN-FIXED component.** The promise chain never reached `setUpdated` in that
+harness, so the absence assertion was vacuous, and only the mutation run exposed it (restoring the original
+`setUpdated(true)` still gave 10 passed).
+
+⭐ **Ship every absence assertion with a POSITIVE CONTROL THAT REACHES THE STATE, and put it first.** The
+pair now reads:
+
+```ts
+it("POSITIVE CONTROL — a successful recompute DOES claim Updated", …)   // proves the harness can get there
+it("does NOT claim Updated when the recompute POST failed", …)          // now means something
+```
+
+**This generalises past this file: `queryByText(...)`, `not.toBeInTheDocument()` and `toHaveLength(0)` are
+all green against a harness that renders nothing at all.**
+
+---
+
+## The 2026-08-29 CI/testing audit — six lessons, promoted from the filing
+
+Full filing: [`docs/overnight/inbox/2026-08-29T1741Z-ci-testing-audit-…`](../overnight/inbox/2026-08-29T1741Z-ci-testing-audit-the-gates-are-strong-the-detectors-are-not-firing.md). What follows is only the part that generalises.
+
+### 🚨 A TEST CAN COVER THE CALLER'S EARLY RETURN WHILE CLAIMING TO COVER THE CALLEE'S GUARD (2026-09-14)
+
+Found by mutation during the wmc delete-not-seen work. `deleteUnseenWmcRows()` opens with an explicit refusal — `if (observedIds.size === 0) return {skippedReason:"empty_observed"}` — and a test titled ***"an EMPTY scan never deletes"*** drove the RUNNER with an empty scan and asserted no delete happened. It passed. ⚠ **It also passed with that guard deleted outright.**
+
+The runner has its own `if (onChainIds.length === 0) { …log…; return }` ABOVE the call site, so an empty scan never reaches the helper. The test was a TRUE statement about the runner and said **nothing whatsoever** about the guard named in its title. Nine other mutations over the same change were all caught; this was the one that was not.
+
+⭐ **THE TELL IS STRUCTURAL AND CHEAP TO CHECK BY EYE: if the input that should trigger a guard ALSO triggers an earlier return in the caller, a caller-level test CANNOT reach that guard.** From that test's point of view the guard is dead code — and dead code is always "correct". This is not the weak-assertion trap above: the assertion is strong and the title is not wrong; **the input simply never arrives.**
+
+**The fix is a test at each layer, not a better test at one.** Drive the helper DIRECTLY for its own refusals and KEEP the runner-level test — they assert different, both-real properties (*"the runner returns before it gets there"* and *"the helper refuses if it does get there"*). ⚠ **Generalises past early returns to any cheaper upstream short-circuit**: a cache hit, a feature flag, a lock claim, a `length === 0` fast path, a preflight that returns before the work. ⭐ **Budget a mutation sweep for any guard whose whole job is to REFUSE — a refusal that never runs is indistinguishable from one that works**, and the cheap form is enough: delete the guard, run the file, see whether anything reds.
+
+### 🚨 A MUTATION CONTROL INHERITS EVERY HIDDEN DEPENDENCE OF THE TEST IT VALIDATES
+
+The most useful thing this repo learned that day, and it cost a red `main` on someone else's commit.
+
+New tests asserted `extra.notifications` contains `telegram` on a GREEN fixture. `/api/sentinel` only notifies when `hasCritical || hasWarn || (UTC hour % 6 === 0)`, so on a green run those assertions hold **in 4 hours out of 24**. They were written and mutation-checked at **18:xx UTC** — one of those four. **All four mutation controls passed, and every one of them inherited the same lucky window**, so they certified nothing about the other twenty hours. CI 4196 (18:52Z) passed; 4197 (19:05Z) failed.
+
+⭐ **Proving a test reds when the code is broken says nothing about whether it is green for the RIGHT REASON.** When an assertion could depend on ambient state — clock, timezone, network, row counts, physical row order — the control has to vary **that**, not only the code under test. This is the ambient-state sibling of the vacuous-assertion rule already recorded above.
+
+⛔ **And the fix NOT to make:** switching the affected tests to a fixture that notifies unconditionally (a CRITICAL one) passes at every hour **by testing a different thing** — it drops coverage of the scheduled GREEN report, the one path where nobody is already looking at a page. Pin the clock instead (`vi.useFakeTimers({ toFake: ["Date"] })` — `Date` only, or faking `setTimeout` hangs awaited fetch mocks), and add a sweep over all 24 hours asserting the contract holds at each.
+
+⚠ **THREE instances on 2026-08-29, by THREE independent authors, in three subsystems** — and they do **not** share one mechanism, which is why a detector aimed at one shape would miss the others:
+
+| # | where | mechanism | window it was wrong in |
+|---|---|---|---|
+| 1 | `api-sentinel-deep` durability block | the CODE branches on the hour (`getUTCHours() % 6 === 0`), so a green-fixture assertion only holds when it notifies | 20 h of 24 |
+| 2 | `analytics-rpc-with-retry` budget crumbs | reads real time and asserts an exact outcome | — |
+| 3 | `seo-jsonld-ask-age` | **a DATE compared as a DATETIME** | 00:00Z → ~13:00Z daily |
+
+⭐ **Sub-shape 3 is the one no amount of clock-pinning discipline would have prevented, and it generalises: `Date.parse("2026-08-30")` is 00:00Z — the START of the day.** `priceValidUntil` is a schema.org **date** meaning *"no longer available AFTER this date"*, so parsing it to a timestamp and comparing against `Date.now()` says "expired" for the first thirteen hours of the very day it still covers. **Compare a date as a date** — a lexical `>=` on `YYYY-MM-DD` — never via `Date.parse`. The same commit records the corollary for fixtures: with a date-granular field, an "already elapsed" claim is only unambiguous beyond **`ASK_STALE_HOURS` + one calendar day** (~36 h), so a 31 h fixture is true or false depending on the hour CI runs.
+
+⭐ **Three in one day across three authors is not a rarity argument — it is a frequency argument.** "No suite-level detector exists" stops being an observation and becomes a priority. **There is still no such detector, and a grep cannot be one** — `new Date()` appears in hundreds of legitimate fixtures. The sound version varies the ambient state: a scheduled job running the suite with the runner clock moved to one hour from each `% 6` residue class. ⚠ **`TZ` alone would have read clean through BOTH defects**, because the predicate is `getUTCHours()`, which a timezone does not move.
+
+### 🚨 "Flaky" is not a diagnosis — the 720×-vs-15% discriminator
+
+`api-og-cards-render-sweep` timed out at **60,000 ms** on a card that renders in **83 ms** locally. The tempting read is a slow runner. But the whole run was only **~15% slower** than local (453 s vs 395 s) while that one test was **~720× slower**.
+
+⭐ **General slowness moves everything by the same factor. A lone 720× excursion is a HANG.** That ratio is what makes this repo's standing "flake is not a root cause" rule checkable rather than a slogan.
+
+The cause was `lib/og/brand-fonts.ts` fetching two `.ttf` files from the LIVE SITE with **no timeout**, escaping the sweep's stub (its allowlist was `/api/` and `/rest/v1/`; 0 of 2 matched). ⚠ **The loader memoises at module scope, so the FIRST card to render pays the fetch** — which is why exactly ONE test hangs and why WHICH one varies with execution order. That is what made it present as random.
+
+⚠ **`catch` cannot catch a hang.** The file's header guaranteed "THIS NEVER REJECTS", which was true and beside the point. CLAUDE.md's *"Bound every `fetch` — no default timeout"* covers this; the fetch had none.
+
+⭐ **Mutation-check a bound with a signal that NEVER FIRES.** "Does it pass an `AbortSignal`?" is satisfied by `AbortSignal.timeout(2_147_483_647)` — the unbounded case wearing a signal.
+
+👉 Closing the sweep's passthrough (throw on any unmatched http(s) call, delegate non-http so `next/og` can still load its WASM) immediately surfaced a **second** escape nobody had recorded: `next/og` fetches Twemoji SVGs from `cdn.jsdelivr.net` **at render time**, on 6 of 44 OG routes, in production, on the path a social crawler waits on.
+
+✅ **FIXED 2026-08-29 (R66), and the fix found a THIRD escape.** `next/og` has **two** remote fallbacks, not one: an emoji goes to jsdelivr, and **any glyph the supplied fonts do not cover** goes to `fonts.googleapis.com/css2?family=Noto+Sans+Symbols` — `2605 25c8 25a3 25a6 2192 2191 2193 2190 25b2 25bc 2713 2715 2153 2116 203e` measured, so `★` and `→` were remote too. ⛔ There is still no `loadAdditionalAsset` hook (`ImageResponseOptions` exposes only `emoji?: EmojiType`, every preset remote), so the fix is not config: the cards **draw** their glyphs now, as inline SVG (`lib/og/marks.tsx`).
+
+⭐ **THE PROBE THAT GETS THIS WRONG.** Rendering one character per `ImageResponse` **with no `fonts` option** shows `→` fetching nothing — satori's bundled default covers arrows and production never uses it. Supply `brandFonts()`, as every card does, and it fetches. *A probe whose harness differs from production in the one dimension the answer depends on is not a measurement of production.*
+
+⭐⭐ **AND THE SWEEP'S OWN STUB WAS WHY THIS SHIPPED.** It stubbed `twemoji` "so the suite is hermetic" — so it rendered every card, stayed green, and the CDN dependency ran in production for weeks. **Hermetic by STUBBING hides the dependency; hermetic by THROWING reports it.** Stub deleted; verified a throwing fetch makes the render REJECT rather than degrade (`"deal 🎯 card"` rejects, control `"deal card"` renders 3,364 bytes).
+
+⭐ **Two instruments, each covering the other's blind spot — and a MUTATION THAT SEPARATES THEM, which is what proves the pair rather than asserting it.** The render sweep sees glyphs arriving through DATA (`og/collection` rendered `collection.icon` at 140px and every registry icon is an emoji — no source scan could ever have found that) but only on the branches its fixtures take. The source scan `og-cards-render-no-glyph-they-must-fetch` sees every branch and nothing from data. Putting `→` back in `insights/serial-premiums` **reds the scan and leaves the sweep green**, because that card takes its empty-state branch under the sweep's stub envelope. Neither is a census; together the only gap is a production-only branch carrying a data-only glyph.
+
+⭐ **The scan is a SUPPRESSION list, not a detection list.** Enumerating the bad characters is a description of the past — the next emoji pasted is not on it. `COVERED` enumerates what is **proven local** (ASCII, Latin-1 + Latin Extended-A/B for accented player names, and an individually measured punctuation set including U+2212 MINUS SIGN, which `og/pack` renders); everything else fails by default, and clearing a character costs one measurement.
+
+### 🚨 A workflow that CAPTURES a status, ECHOES it, and never TESTS it
+
+`pipeline-sentinel.yml` did exactly that with `HTTP_CODE`. The only branch that could fail the job was `STATUS = "CRITICAL"`, so a 500, a 504, or a 401 from a rotated token all left `STATUS` as `PARSE_ERROR` — which is not "CRITICAL" — and the step exited **0**. **A sentinel that was completely down reported GREEN**, on the one workflow whose badge is the fleet alarm's only signal to anyone not watching Telegram.
+
+⭐ **Grep for the shape, not the file: a variable assigned from a response, printed, and never compared.** A 200 whose body will not parse must also fail — "unreadable" must never resolve to "not CRITICAL".
+
+⚠ **Pin a workflow's decision by EXECUTING the shipped bash against response fixtures, not by grepping it.** A grep for `if [ "$HTTP_CODE" != "200" ]` passes against a script that tests the code and then swallows the result, and dies on a harmless reformat. ⚠ **Harness trap:** `${{ secrets.… }}` is **not inert text to bash** — it is a bad substitution, so `RESPONSE=$(curl …)` fails, `|| RESPONSE=""` swallows it, and every fixture arrives EMPTY. The first harness reported "unreachable" for every case *including the healthy ones*, which reads exactly like the guard working.
+
+### ⚠ 10,483 lines of edge-function code CANNOT enter the JS coverage gates, and extraction is the only path
+
+Measured 2026-08-29: **38 edge functions, 10,483 code lines, median 246** — and **all 38 use `Deno.*` globals or `serve()`**, so none is importable by vitest. A coverage `include` over `supabase/functions/*/index.ts` is not achievable without a second (Deno) coverage toolchain.
+
+⚠ **Only 6 of 38 import from `_shared/`** — and `supabase/functions/_shared/**` **IS** in the primary gate (29 modules). So the path to measuring this code already exists, is established, and is taken by six.
+
+⛔ **Do not read one well-factored example as the architecture.** `edge-atlas-pool-normalize.test.ts` imports from `_shared/` and its comment says *"edge fns are outside the coverage measure"*, which reads like a considered design — and generalising from it understates the gap by 32 functions. The census is the tree walk, not the exemplar.
+
+### ⚠ A missing tool is not automatically a gap — measure the distribution before calling it one
+
+`npm run lint` had never run in CI and ci.yml said so. Filed as a plain gap; **measuring it changed the finding.** Over 2,857 files: **6,474 violations across 20 rules, of which 5,757 (89%) are `@typescript-eslint/no-explicit-any`** — a documented convention here. A gate would be a 6,000-error wall switched off within a day. **It was a rule-set mismatch, not neglect.**
+
+⭐ **The shippable form is a RATCHET over the part that is NOT conventional** (`eslint-ratchet`, 717 violations / 19 rules, several of them correctness: `react-hooks/set-state-in-effect` 59, `@next/next/no-html-link-for-pages` 114). ⚠ **Exclude at the RULE's granularity, never the plugin's** — muting `@typescript-eslint` wholesale would also silence `no-unused-expressions`, `no-require-imports` and `no-empty-object-type`, which are not conventional here. ⚠ **A rule absent from the baseline that APPEARS must fail**, or the ratchet goes blind the day a plugin upgrade adds one. ⚠ **And it must refuse an all-clear on a missing or empty report**, because "eslint found nothing" and "eslint did not run" produce the same zero.
+
+⚠ **A message with no `ruleId` is an unused `eslint-disable` directive, not a parse failure.** Reading those 24 as "files eslint cannot parse" was a much more alarming finding than the truth, and it was wrong.
+
+### 🚨 GitHub caps this repo at ~5 scheduled runs per workflow per day — any cron above that is fiction
+
+Measured across 17 scheduled workflows in one 24h window: **observed ≈ `min(expected, 5)`**. Eight workflows asking for 24–96/day all received **4–6 (mean 5.0)**, with no relationship to whether they asked for 24 or 96; 8/day got 4–6, 4/day got 3, and all three 1/day workflows got **1 of 1**.
+
+⛔ **It is NOT a constant fraction, so "~92% shed" is the wrong summary statistic** — it is 95% for a 96/day cron and **0%** for a daily one. ⛔ **And total load is not obviously the cause:** the repo requests 561 runs/day, but a per-workflow cap and a per-repo budget are indistinguishable in one window. 👉 **Discriminator:** disable a few high-frequency workflows and see whether the others RISE (budget) or hold at ~5 (cap).
+
+👉 **Consequence: raising a cadence buys nothing** — `offer-fill-backfill` asks for 96 ticks and gets 5, so its cron is a false document the next reader will trust. Move high-frequency schedules to cron-job.org, which is not subject to this, or rewrite the cron to state what it actually gets.
+
+⚠ **A dropped tick emits NO run, NO badge and NO email**, so the workflow reads `active`, its last run reads `success`, and nothing says the alarm did not fire — *an instrument that never RUNS is indistinguishable from one that ran and found nothing.* `scheduler-liveness.yml` (daily, because daily schedules are the ones surviving) catches **total silence only**; ⛔ at a 12.7h observed max gap **no silence bound both clears today's steady state and catches an hourly job that stopped an hour ago**, and saying so is the point.
+
+⚠ **Compute inter-run gaps over CONTIGUOUS pages only.** A union across paginated API pages straddles an unsampled hole and reported a bogus 31.8h maximum where the true figure was 12.7h.
+
+### ⚠ `spy.mockRestore()` CLEARS `mock.calls` — assert before you restore
+
+Found 2026-08-29 building `og-fetches-are-bounded`. The natural shape puts the restore in a `finally` and the assertion after it:
+
+```ts
+try { await ogFetch(url) } finally { spy.mockRestore() }
+expect(spy).toHaveBeenCalledWith(OG_FETCH_TIMEOUT_MS)   // reads [] — fails on a CORRECT helper
+```
+
+`mockRestore()` resets the mock's state as well as unpatching it, so the assertion reads an empty call list and the case fails against code that is doing exactly the right thing. Capture what you need inside the `try` (`const args = spy.mock.calls.map(c => [...c])`) and assert on that. The tell is a mutation suite where the **baseline** is red and every mutation is red too — a test that can never pass is not a strict test, it is a broken one.
+
+---
+
+## The 2026-08-29/30 detection pass — three new instruments, and what each cannot see
+
+Sibling to the "six lessons" section above; that one was about the audit, this one is about the
+guards it produced. **Every one of them was wrong on its first run**, and the corrections are the
+part worth reading.
+
+### 1. `scripts/check-register-integrity.mjs` + the `register-guard` CI job
+
+`docs/audits/deep-audit-register.md` is what CLAUDE.md calls the canonical open list, and it was the
+only one of the three coordination files with **no guard at all** — the ledger has the no-clobber +
+future-date arms, `docs/overnight/inbox/INDEX.md` has four CI assertions, the register had nothing.
+A lost register row does not merely drop a record: **it un-files a finding**, and the next pass
+re-derives it or never looks again.
+
+Three arms: no id vanishes between `HEAD~1` and `HEAD` (ids tracked as a **SET**, so an
+OPEN→RESOLVED move is the lifecycle and not a loss); every row matches the width **its own section
+header declares**; ids are unique.
+
+⚠ **It found four real defects on its first full run** — R26, R31, D30, R46 — all one shape.
+**GFM splits a table row on `|` BEFORE it parses inline code**, so a raw pipe inside backticks
+(`` `/(ts|tsx)$/` ``, `` `(TierBreakdownCard|PortfolioSparkline)` ``) opens a column, and cells past
+the header's width are **discarded by the renderer**. R46's `owner` column had vanished from the
+rendered table entirely. 🚨 **Every character is still in the file, so a grep finds all of it** —
+which is what makes this the worst shape of loss and why four audit runs missed it.
+
+⚠ **TWO CORRECTIONS TO THE GUARD ITSELF, both from running it against the real file rather than a
+fixture.** (1) It hardcoded `{OPEN: 6, RESOLVED: 5}` and flagged all 48 resolved rows — the width is
+now read from **each section's own header row**, which cannot drift from the file it checks.
+(2) It matched `^\| R\d+ \|`, silently skipping `D12b`, `D30`, `D2b`, `E5`; widening to every
+id-keyed row took the population **67 → 111 and found D30 on the spot**.
+
+⚠ Non-vacuity at **two** granularities: it fails on zero rows, *and* fails unless **at least two
+sections contribute** — a parser that stopped matching `RESOLVED` would otherwise report a
+healthy-looking count from `OPEN` alone. The prose sections are excluded **by the property** (their
+header's first column is `area` / `item`, not `id`), which is asserted, so a new id-keyed section is
+picked up with no edit.
+
+### 2. `scripts/clock-sweep.mjs` + `clock-sweep.yml` — the wall-clock detector (register R67)
+
+Runs the suite once per sampled UTC hour and **diffs the failing SETS**. A test failing at some
+offsets and passing at others is the finding. The clock is shifted by an opt-in
+`RPC_CLOCK_OFFSET_MS` shim in `vitest.setup.ts` that moves **only the zero-argument `Date`** — every
+explicit instant is left alone, or the sweep would report the whole suite.
+
+⛔ **A source scan cannot be the detector.** `new Date()` appears in hundreds of legitimate fixtures,
+and R67's three instances had at least two distinct mechanisms, one of which (a DATE compared as a
+DATETIME) clock-pinning discipline does not prevent at all. **The sound version varies the ambient
+state and compares outcomes.**
+
+⭐ **Why in-process rather than `sudo date -s` on the runner, which is what R67 filed and declined:**
+its falsifier was *"if it reds for runner reasons rather than test reasons, revert"*. Shifting inside
+the vitest process removes that failure mode **by construction** — a failure caused by the runner, a
+bad dependency, or genuinely broken code fails at **every** offset and is classified ALWAYS-FAILING
+rather than reported. **The instrument cannot cry wolf about its own environment.**
+
+⚠ **The sampled hours are chosen against the residue classes, not spread evenly** — an even spread is
+exactly what a `% 6` predicate survives. `0, 5, 13, 20`: no two agree under mod 6, 3 or 2, and hour 0
+is load-bearing twice (the `% 6 === 0` notify branch AND the early-UTC window where a date parsed as
+a datetime reads as already elapsed). Asserted, not merely chosen.
+
+🚨 **THE FIRST REAL RUN CAUGHT ME TWICE.**
+1. My own `expect(process.env.RPC_CLOCK_OFFSET_MS ?? "0").toBe("0")` is false **by construction**
+   while the sweep runs, so the detector reported an always-failing test on every sweep. **I shipped a
+   permanently-noisy instrument into the replacement for one declined for being permanently noisy.**
+   The honest assertion holds under both conditions: the process clock differs from the real clock by
+   exactly the declared offset.
+2. ⭐ **The shim cannot reach a CHILD PROCESS.** `find-future-dated-ledger-headings.test.ts` computes
+   "today in Pacific" in the vitest process and runs the detector via `execFileSync`; a child starts
+   with the real clock. Parent and child disagree under the sweep in a way they never do in CI. That
+   gets a **third bucket — UNMEASURED**: printed every run, explicitly *not* a clean bill, and not a
+   failure. The predicate is a **property of the file** (does it spawn a child), not a name list.
+
+⛔ **Standing limits, stated rather than glossed:** anything a child process decides, and any
+clock-dependence needing a span longer than 24 h (a month- or year-boundary shape). Neither is covered.
+
+⚠ **Three readings were DISCARDED rather than reported**, and this is the durable rule: one was taken
+while a migration file was created mid-run (four tests walk `supabase/migrations`, so the tree moved
+under the instrument); one was my own bad assertion; one was the child-process artifact. **Only the
+fourth run was a measurement.** A detector's first output is a hypothesis about the detector.
+
+### 3. `lib/redact-secrets.ts` — publishing an alert's failure reason without publishing the token
+
+`pipeline-sentinel` run 33283636751 reported `"notifications":["telegram-FAILED"]` on a **CRITICAL**
+sweep. It had correctly found three dead pipelines and **could not tell anyone**, and the reason went
+to `console.error` only — so a revoked token, a non-2xx and a thrown fetch were indistinguishable.
+CLAUDE.md's alert sub-class exactly: *an alert's output is silence, so its error is unfalsifiable.*
+
+⚠ **The second half was worse:** both push sites sat inside `if (TOKEN && CHAT_ID)`, so an
+**unconfigured** channel produced **no entry at all** — absence, indistinguishable from "no
+notification was needed". Now `…-FAILED:not_configured`.
+
+🚨 **Publishing the reason is only safe because of the redactor: the Telegram bot token is IN THE URL
+PATH** (`/bot<TOKEN>/sendMessage`), so a thrown fetch quoting the URL would write a live credential
+into `pipeline_runs.extra` and the route's JSON response. **Two independent arms, and the second is
+not redundant:** (1) replace each secret VALUE the process holds — cannot cover a rotated token;
+(2) rewrite the token-bearing SHAPES regardless — cannot cover a value outside those shapes.
+⚠ `length >= 8` stops a short env value turning the redactor into a mangler that destroys the very
+diagnosis it exists to give.
+
+### Mutation lessons from this pass
+
+- ⚠ **Two agreeing signals, one silently wrong.** A mutation that dropped the two-section floor from
+  `ok` survived, because the exit code enforced it separately. **Assert both when a decision is
+  computed in two places**, or one can rot unnoticed.
+- ⚠ **A parent-only comparison hides half the loss.** Restricting the register's "before" set to
+  `OPEN` survived every test: deleting **RESOLVED** rows — where the revert paths live — was
+  invisible. Test the direction you did not think of.
+- ⚠ **An exemption widened to everything can leave the other bucket untouched**, so a finding appears
+  in both. When a classifier partitions, **assert the partition**, not each side.
+- ⚠ **Deleting an IMPORT is not a mutation of the behaviour** — the helper name is still in the source
+  and the guard still matches, while the build breaks for an unrelated reason. Mutate the **calls**.
+
+---
+
+## A guard can be blind in a way its output never shows — and the DB had two of them, one right (2026-09-02)
+
+`check_secdef_anon_execute_violations()` is the guard that watches for SECURITY DEFINER functions
+`anon` or `authenticated` can EXECUTE. It **iterated a hardcoded list of NINE function names.** The
+schema has **559 SECDEF functions.** It returned `[]`; `rpc_ops_snapshot` published that as
+`security.secdef_anon_violations`; the smoke test hard-passed on it and would have Sentry-alerted on
+anything else; the daytime monitor's health line read *"security 0/0/0/0"*. **Four anon/authenticated-
+executable rows existed the whole time, and the guard never looked at them.**
+
+⭐ **IT WAS FOUND BY ASKING A DIFFERENT INSTRUMENT THE SAME QUESTION.** Supabase's own advisor reports
+`anon_security_definer_function_executable`; ours reported zero. **Two instruments, one question,
+opposite answers — and the wrong one was ours.** When a guard has an external counterpart, run both
+once; agreement is cheap and disagreement is the whole finding.
+
+### ⛔ And then the fix duplicated a guard that already existed
+
+The rewrite — a tree walk, correctly — carried its own **hardcoded** suppression list. But
+`check_secdef_anon_exec_drift()` had walked the same population since 2026-07-21, subtracting
+`public.secdef_anon_exec_allowlist`, **a table**. The duplicate was found by a one-line census of
+`check_*` functions run *after* building it.
+
+👉 **The standing rule "name the caller before you touch the function" has a sibling: CHECK WHETHER THE
+GUARD ALREADY EXISTS BEFORE WRITING IT.** For this database that is one query:
+
+```sql
+SELECT proname, length(prosrc) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+WHERE n.nspname='public' AND proname LIKE 'check\_%' ORDER BY 1;
+```
+
+### Why a suppression TABLE beats a suppression LITERAL
+
+Four reasons, and the third is the one that matters most:
+
+1. Operator-editable without a migration.
+2. Every row carries a `note` and an `approved_at` — a suppression becomes an auditable **decision**.
+3. ⚠ **The table's notes were better-researched than the ones written from scratch.** The literal
+   called `serial_fmv_estimate` a *"public pricing calculator"*; the table records that it is reached
+   **INDIRECTLY** through a SECURITY INVOKER function and an anon-SELECTable `security_invoker` view —
+   *"an invoker caller executes the callee AS THE CALLER, so revoking breaks the wallet-moments read
+   and the public board."* **A security finding was suppressed without knowing why the grant was
+   needed. It happened to be right; that is not the same thing.**
+4. The table is RLS-protected with no anon/authenticated SELECT or INSERT, so **the guard cannot be
+   disarmed by the roles it watches** — a property a literal cannot have, but also cannot lose.
+
+⚠ **Match on `oid::regprocedure`** (type names, no parameter names) when comparing against such a
+table — `pg_get_function_identity_arguments` includes parameter names and never matches.
+
+### The three assertions that make a rewritten guard non-vacuous
+
+- **It inspected a population**: `>= 50` SECDEF functions seen. *A rewrite that looked at nothing would
+  also return `[]` and look perfect.*
+- **The suppression is what removes the rows**, not the walk missing them: every reachable row must be
+  in the allowlist.
+- **No stale entries**: the allowlist may not hold more rows than are reachable, or a suppression rots
+  in silence.
+
+And, once two guards share a population, **assert that they AGREE** — disagreement means one is looking
+somewhere the other is not, which is exactly the failure that started this.
+
+---
+
+## Two guards over one defect class, disjoint syntax — and neither can find the other's population (2026-09-02)
+
+`consequential-read-binds-its-error-ratchet` was built to catch a discarded supabase-js error. Its
+detector is:
+
+```
+const\s*\{([^}]*)\}\s*=\s*await\s*\(?\s*supabaseAdmin      // then: does group 1 name `error`?
+```
+
+That is not a rule about **reads**; it is a rule about **destructuring**. So it is structurally blind
+to the most consequential write on this platform:
+
+```ts
+await supabaseAdmin.from("event_cursor").update({ last_processed_block: X })…
+cursorAfter = String(X)          // ← logged whether or not the write landed
+```
+
+**Twenty-one routes carried exactly that**, and the ratchet had been read as clean over the same tree
+minutes earlier. A block cursor is the one piece of pipeline state a re-run cannot reconstruct, and
+`cursor_before`/`cursor_after` on `pipeline_runs` is the only pair an operator can read to see a walk
+progressing — so a failed advance was **logged as a movement**, and the next tick re-scanned the
+identical range while the log said otherwise.
+
+⭐ **The transferable rule: a guard's DERIVATION fixes its blast radius, and a detector keyed on a
+SYNTACTIC FORM covers that form, not the concept it was written for.** Before trusting a clean
+ratchet, write down the shapes the same defect can take that its regex cannot express — here, every
+statement with no `const {` at all. Then decide whether that is a second guard (it was) or a widened
+one (it could not be: widening this regex to bare `await` would sweep every fire-and-forget write in
+the tree into a population the ratchet is not shaped for).
+
+**Ban vs ratchet, decided on the population rather than by habit.** The read population is large and
+mostly benign, so it is ratcheted and goes down over time. Cursor writes are **few, uniform, and
+consequential by construction**, so `event-cursor-writes-bind-their-error` is a **ban at zero** and its
+suppression list is empty — an allowlist there would be theatre.
+
+**What makes the ban non-vacuous** (the same three-part shape as every other guard here):
+
+- **Floors on the population it inspected** — `>= 20` cursor writes across `>= 10` files. `routeFiles()`
+  returns `[]` for a root that does not exist, and `stripComments` has blanked real source three times
+  in this repo; both failures read as a clean ban without this.
+- **A positive control on the DETECTOR, not the tree** — synthetic bound / unbound / read snippets,
+  asserting it flags the unbound one, passes the bound one, and does **not** count a `.select()` as a
+  write. *Prove a watcher can see a failure before relying on it.*
+- **A behavioural half** (`api-topshot-offers-indexer-deep`): a failed cursor update must log
+  `ok:false` and must NOT report reaching the tip, with its own positive control that the same fixtures
+  minus the error DO reach it — otherwise the assertion passes for a route that never got that far.
+
+⚠ **And the retroactive-incidence check for this class is a trap.** The obvious signature — run N logs
+`cursor_after = X`, run N+1 opens at `cursor_before < X` — reported `pinnacle-trades-indexer` at
+**436 of 874 runs (50%)**. That route runs **two modes under one pipeline name against two cursors**
+(`pinnacle_trades` ascending, `pinnacle_trades_backfill` descending), so alternating ticks produce the
+shape by design; `fmv-recalc`'s "cursor" is not a block number at all. 👉 **A cursor-continuity check
+that ignores WHICH cursor a run used reads a dual-mode indexer as 50% broken.** No incidence was
+claimed, in either direction.
+
+---
+
+## 🚨 A ratchet that reaches ZERO breaks its own not-vacuous check — worked example, 2026-09-02
+
+`consequential-read-binds-its-error-ratchet` drove its population **61 → 51 → 47 → 28 → 0** in one
+night. The last fix turned the guard **red**, and the failing assertion was its *not-vacuous floor*:
+
+```ts
+it("is not vacuous: the pattern still matches real source", () => {
+  const total = family.reduce((n, f) => n + discardingReads(stripComments(readFileSync(f, "utf8"))), 0)
+  expect(total).toBeGreaterThanOrEqual(20)     // ← AssertionError: expected 0 to be >= 20
+})
+```
+
+Its comment called it *"a positive control on the DETECTOR itself"*. **It is not.** It is keyed on the
+**defect**, so it can only pass while the defect survives. This repo's rule — *"a not-vacuous check
+must be satisfiable at a population of ZERO, or the guard punishes its own success"* — is already
+written down, **and this file's own header cited it while shipping the violation.** Knowing the rule
+did not prevent it; the shape did.
+
+👉 **The tell is what the floor COUNTS.** A floor over *"files walked"*, *"objects inspected"*, or
+*"synthetic fixtures the detector classified correctly"* survives success. A floor over *"violations
+found"* cannot, and it reads identically at a glance.
+
+**The repair, and the shape to copy:**
+
+```ts
+it("is not vacuous: the DETECTOR still detects", () => {
+  expect(discardingReads(`const { data } = await supabaseAdmin.from("x")`)).toBe(1)
+  expect(discardingReads(`const { data: rows } = await supabaseAdmin.from("x")`)).toBe(1)
+  expect(discardingReads(`const { count: n } = await supabaseAdmin.from("x")`)).toBe(1)
+  expect(discardingReads(`const { data, error } = await supabaseAdmin.from("x")`)).toBe(0)
+  // ⚠ the false positive this very detector once had: `[^}]*` swallowed the binding
+  expect(discardingReads(`const { data: cursorRow, error: cursorErr } = await …`)).toBe(0)
+  expect(discardingReads(stripComments(`// const { data } = await supabaseAdmin.from("x")`))).toBe(0)
+})
+```
+
+Nine assertions against **synthetic** source: shapes it must catch, bound forms it must not, and one
+commented-out read proving the shared stripper is reachable and still blanking. It is satisfiable at
+zero and still fails if `stripComments` blanks the tree or the regex stops matching — the two
+failures the original floor was reaching for. **Keep the population floor separately** (`family.length
+>= 30`, plus four routes asserted present by name): that one counts what was WALKED, not what was
+broken, so it also survives.
+
+⭐ **And when a ratchet hits zero, convert it.** The honest claim strengthens from *"this must not
+grow"* to *"there are none"*, so `BASELINE` becomes `0` and the per-route pins become redundant —
+**except** as population detectors: each `it.each` row also asserts its route is still *discovered*,
+which is the one thing a ban cannot see. A rename, a move, or a landing expression edited out of a
+file all read as success to a ban at zero.
+
+
+## 🚨 `npm run lint:ratchet` read a STALE report for a whole day (2026-09-02) — four red pushes
+
+`main`'s CI was red on four consecutive code commits and the local gates said green every time. One
+job failed, always the same one: **ESLint ratchet**, `@typescript-eslint/no-unused-vars grew
+353 -> 355`. Everything else — tsc, all three coverage gates, DB invariants, Cadence, edge functions,
+the ledger and register guards — passed on all four.
+
+### The instrument, not the lint
+
+CI's ratchet job is **two** lines:
+
+```yaml
+npx eslint . --format json -o /tmp/eslint-report.json || true
+node scripts/check-eslint-ratchet.mjs --report /tmp/eslint-report.json
+```
+
+`npm run lint:ratchet` was **only the second**. It reads whatever JSON sits at that fixed `/tmp` path,
+so it read a report generated hours earlier — before any of the day's work existed — and printed
+`2889 files, 717 violations (baseline 717)` on every check while CI regenerated the report and saw
+`2893 files, 719`. ⭐ **A green local instrument and a red CI job, out of the same script.**
+
+⚠ **The file count was in the output the whole time (2889 vs 2893) and I read past it.** When two
+runs of "the same" check disagree, the DENOMINATOR is where the disagreement shows first.
+
+### ⭐ "Did the instrument produce output?" ≠ "did the instrument measure THIS?"
+
+The script already refused a report that was MISSING, unparseable, or EMPTY — three ways of measuring
+*nothing*, each with its own exit code, all of them carefully thought through. It had **no defence
+against a report that is complete, parseable, and describes a DIFFERENT TREE.** This repo's own
+measurement rule — *a reading taken while its subject changed is not a reading* — was being applied
+to database A/Bs the same afternoon and not to the toolchain.
+
+**Generalise it: any check that consumes an artifact it did not produce can be handed a stale one.**
+Look for the shape — a fixed path, a `--report`/`--input` flag, a build output compared against a
+baseline — and ask what proves the artifact describes the tree in front of you.
+
+### The fix, in three parts
+
+1. **The npm script generates the report itself**, so local and CI cannot diverge. This is the part
+   that actually removes the class.
+2. **`findStaleness()`** (exported from `scripts/check-eslint-ratchet.mjs`, unit-tested): if any file
+   the report claims to have linted is newer than the report, exit 2 and name the worst offender.
+   A 1 s slack absorbs coarse checkout mtimes. Proven to fire — `touch` one route and it refuses.
+3. A test pins that **CI's own job still generates before comparing**, because a guard's blast radius
+   is fixed by what RUNS it: if that line is ever dropped, the runner-local file goes stale too.
+
+### ⚠ And the guard's own test header carried a false claim
+
+It read *"This repo does not run eslint in CI and ci.yml says so."* Raw eslint is not a gate — but the
+**ratchet job is blocking and it runs eslint**. That sentence is part of why the local number looked
+authoritative. Corrected in place. **A comment that mis-describes what runs a guard is a defect in
+the guard.**
+
+## 🚨🚨 `npm run lint:ratchet` WAS A NO-OP ON WINDOWS — it exited 0 having never run the comparison (2026-09-14)
+
+**Same gate, second instrument failure, and this one was worse than the 09-02 stale report above: there
+was no comparison at all.** The script was a shell chain:
+
+```
+npx eslint . --format json -o /tmp/eslint-report.json || true; node scripts/check-eslint-ratchet.mjs --report /tmp/eslint-report.json
+```
+
+⛔ **npm runs scripts through `cmd.exe` on Windows (`script-shell` unset), and cmd.exe does not treat
+`;` as a command separator.** eslint exits **1** whenever any violation exists — which is the permanent
+state here, since the ratchet's whole job is holding a non-zero count steady — so the `|| true…` arm
+ran, `true` resolved to Git-for-Windows' `true.exe`, and it swallowed
+`; node scripts/check-eslint-ratchet.mjs --report …` **as arguments**. Exit 0, no output.
+
+### The A/B, on one tree with three violations injected
+
+| runner | verdict |
+|---|---|
+| the shell chain, exactly as npm ran it | **exit 0, ZERO output** |
+| the driver that replaced it | **exit 1** — `@typescript-eslint/no-unused-vars grew 353 -> 356` |
+
+⭐ **THE TELL WAS THE SILENCE, and it is a rule worth generalising: a guard that normally states the
+count it inspected and then says nothing has not passed — it has not spoken.** This one normally prints
+`eslint ratchet — 3073 files, 715 violations…`. CLAUDE.md's *assert the count it inspected* applied one
+level up, **to the guard's runner**.
+
+### ⚠ The test that should have caught it asserted the SPELLING
+
+`eslint-ratchet-detector` pinned the script's **text** — that it contained `eslint … -o` before
+`check-eslint-ratchet.mjs`. Both substrings were present, in the right order, in a string that never
+ran the comparison. **It passed throughout.** Pin the property, not the spelling.
+
+### And `/tmp` is TWO directories on this box
+
+A literal `/tmp/…` resolves to `C:\tmp` for a Windows process and to `C:\Users\<user>\AppData\Local\Temp`
+when MSYS/Git Bash rewrites the path. **Both report files existed, 15 hours apart** — so which report got
+compared depended on which shell typed the path. That is the 09-02 stale-report class with a second cause.
+
+### The fix
+
+`scripts/run-lint-ratchet.mjs` — one Node process, **no shell doing the sequencing**: it spawns eslint
+(ignoring its exit code, deliberately), **refuses to compare unless the report exists and is non-empty**
+(*"the command ran" is not "the artifact exists"*), then propagates the comparison's exit code. Report
+path is `os.tmpdir()`, overridable with `ESLINT_REPORT`. ⓘ **CI is unchanged and is NOT required to use
+the driver** — its job is bash on ubuntu, where the two-line form is correct.
+
+Three guards replace the spelling assertion, each **proven to fire** by restoring the old script:
+a **ban at population zero** on any npm script sequencing with `;` (21+ scripts asserted, so it cannot
+pass vacuously), a check that `lint:ratchet` invokes a driver that generates before comparing, and a
+check that the driver refuses a report eslint did not write.
+
+## The CI estate audit of 2026-09-02 — three gaps every gate was structurally blind to
+
+Measured over the last 40 CI runs on main (32 green, 8 red, every red a real catch, zero flakes), a
+local run of all three coverage gates (0.2–0.65 pt of slack on all twelve numbers), and the Vercel
+deployments API. The estate catches regressions well; the defects were in the SEAMS between tools.
+
+- ⚠ **The push-time smoke measured the PREVIOUS deploy.** `smoke-tests.yml` slept 45 s after a
+  push; a production build takes **110–124 s** `buildingAt → ready` and the job's median wall clock was
+  75 s, so every push-triggered run hit `/api/smoke-test` about a minute before the new build went live.
+  A push that broke production read green, and the red landed on the NEXT push under the wrong sha.
+  **Fixed by triggering on `deployment_status` (Production + success)** — Vercel's GitHub integration
+  posts one per deploy (`githubDeployment: "1"` on every deploy's meta) — no secret, no polling.
+  Falsifier: a run with event `deployment_status` must appear within a day of a code push.
+  ⭐ **The rule: a check that runs at a fixed delay after a push is measuring whatever was live at
+  push time, not the push.** Size waits from a measured distribution, or key on the deploy event.
+- ⚠ **`workers/**` was type-checked by nothing.** The root tsconfig `exclude`s it, and the worker
+  coverage job runs vitest, which strips types with esbuild. Four worker packages each carried a
+  `typecheck` script that no workflow ran. Same gap the edge functions had until `edge-deno` (08-01).
+  Now a `workers-typecheck` job walks `workers/*/tsconfig.json` against the root `node_modules`
+  (the workers have no lockfiles) and asserts it found ≥ 3. **Coverage is not a type check** — a
+  gate that RUNS code says nothing about whether it compiles.
+- ⚠ **`scripts/run-db-tests.sh` passed at zero test files.** It printed the count and never asserted
+  it. Now fails under 90 (183 on 2026-09-02). Same shape as the tree-corruption job's 1000 floor.
+- ⚠ **Ten ops workflows `cat` curl's `-o` file bare under `bash -e`.** On a connection-level failure
+  curl writes NO file (reproduced: exit 7, no file), `cat` exits 1, and the step dies BEFORE the
+  `::warning::` that names the failure — so a 504 was a green warning and a DNS failure an unnamed
+  red, and under `continue-on-error` it vanished entirely. Spelling that works:
+  `cat "$F" 2>/dev/null || echo "<no body>"`.
+- ⚠ **A warn-only GHA-only caller reads a rotated token as a transient.** badge-sync, the backward
+  owner-discovery scan and the Top Shot sales-history backfill have no other trigger and return before
+  writing `pipeline_runs`; a 401 on every tick was a green warning forever. Now `401|403 → exit 1`.
+  **An auth failure is never transient.**
+- ⚠ **A load-bearing redundancy claim was false for 68 days.** `topshot-listing-cache.yml` and
+  `cron-schedule.md` said rpc-pipeline still called the route as step 5; that step was removed
+  2026-06-25 (`EXPECTED_STEPS: "6"`). The route is single-trigger. Same shape as the sales-indexers
+  header corrected 08-27: **re-derive a "backstop exists" claim from the caller's file, not the callee's.**
+- Also that day: `allday-ingest.yml` (72 asks/day into a route that returns `skipped` unconditionally)
+  deleted; `rpc-pipeline`'s six synchronous POSTs lost `--retry 2` (a retry after a client timeout
+  re-invoked an unlocked 300 s route while it was still running, under the saturation that made it
+  slow); `migration-autorecover` now fails on a stopped rebase and asserts `ls-remote == HEAD` after
+  push instead of logging "Pushed" over "Everything up-to-date"; `timeout-minutes` on every ci.yml job
+  and the eight secret-bearing sweeps (the default is 6 h); `permissions: contents: read` everywhere.
+- **Deliberately not shipped** (each a decision, not an oversight): a docs-only path filter for CI
+  (58% of the last 500 commits are docs-only and run all 14 jobs; the guard jobs must stay
+  unconditional, so it needs a `changes` job), a pre-push hook (CI verdicts arrive ~6 min after the
+  deploy is live), sharding the 7-minute unit-tests job, a composite `rpc-call` action for the ~25
+  curl-and-check copies, SHA-pinning actions (Dependabot is told never to move them), and retiring
+  one of the THREE `/api/smoke-test` concierge callers (cron-job.org console).
+
+## CI audit drain, pass 2 (2026-09-02, overnight) — what a docs-only push runs now, and three measurements
+
+- **Docs-only pushes skip the ten code jobs.** `ci.yml`'s `changes` job classifies the push from
+  `github.event.before..HEAD` (⚠ never `HEAD~1` — a push of N commits hides code under a docs tip);
+  typecheck, eslint-ratchet, both cadence jobs, unit/component/worker coverage, workers-typecheck,
+  db-tests and edge-deno gate on `needs.changes.outputs.code == 'true'`. **Fail-safe by construction:**
+  an unresolvable base, an empty diff, a `pull_request` event or a script error all leave `code=true`.
+  ⚠ **What still runs on a docs push:** ledger/register/inbox guards, tree-corruption, the always-on
+  `memory-docs` job (the link guard left `typecheck`, which docs pushes skip), and `docs-tests` — a
+  TREE WALK over `__tests__` for files reading `docs/`, `CLAUDE.md` or `.github/` (107 files / 1,406
+  tests / 37 s on 2026-09-02, floor 60). The register, ledger, inbox and memory-limit pins live in the
+  unit suite; a docs push must never blind them, and this is what makes the skip honest.
+  Falsifier: a code push reporting `code=false` is a classifier bug — delete the `changes` job first.
+- **The Flow CLI install is one composite** (`.github/actions/install-flow-cli`); ci.yml carried it
+  twice verbatim, and a fix to one copy had to be remembered for the other.
+- **scheduler-liveness: a never-fired workflow younger than 48 h is `⏳ pending`, not `✗ dead`.**
+  GitHub delays a fresh schedule's first fire by hours (daily workflows measured 0/73 on time), so
+  every new scheduled workflow reddened the next 08:17 sweep exactly once. `createdAt` is probed from
+  the workflows API only when no run exists; older-and-unfired stays red (the cron-that-never-matches shape).
+- **vitest config prose displaced** — 17 comment blocks, 1,600 lines, verbatim to
+  [vitest-config-notes.md](vitest-config-notes.md); the thresholds had sat at line 905 of a 913-line
+  file. Each config keeps the block's first line and a §-pointer. (CLAUDE.md's index had 28 chars of
+  headroom, so the file is reachable from here, not from there.)
+- **Measured and NOT shipped, with the number:**
+  - *Pre-push hook.* Of the 8 CI reds in the last 40 runs, **0 were tsc/guard-class** (2 vitest
+    regressions, 3 coverage-ratchet dips, 1 DB pin, 2 vitest mocks). A tsc+guards hook catches none of
+    them and `vitest --changed` cannot see a ratchet dip; the cost lands on ~100 agent pushes/day.
+  - *Sharding the 7-minute unit-tests job.* Two shards measured **258 s / 192 s under contention**
+    (415 s clean single-run), merge 6 s, and **the merged coverage is byte-identical to the single run**
+    (92.15 / 80.05 / 94.13 / 94.24) — fidelity inside the 0.2-pt ratchet is NOT the risk. Per-shard
+    coverage reads 55–59% and fails thresholds by design, so shards run with thresholds zeroed and a
+    merge job applies them; `coverage-gates-are-wired-to-ci.test.ts` pins `npm run test:coverage`.
+    Recipe: `vitest run --coverage --reporter=blob --shard=N/2 --coverage.thresholds.{lines,functions,branches,statements}=0`,
+    then `vitest run --merge-reports --coverage`. ~3 min off the wall for three jobs; Trevor's call.
+    **✅ SHIPPED 2026-09-03 (pass 3, R81):** `unit-tests-shard` 1/2 + 2/2 and a `unit-tests` merge job that
+    asserts exactly two blobs before applying the ratchet. ⚠ The shards zero their thresholds ON PURPOSE;
+    the ratchet is applied once, at the merge, and `coverage-gates-are-wired-to-ci.test.ts` pins that shape
+    (a bare `npm run test:coverage` match would be satisfied by the shard script's name as a substring).
+  - *`rpc-call` composite for the ~19 curl copies* — they just received their `cat`/401 fixes in
+    place; re-plumbing is verifiable only on shed schedules. **✅ SHIPPED 2026-09-03 (pass 3):**
+    `.github/actions/rpc-call` now serves the ten single-call sites; loops and body-parsing steps keep
+    their own curl. Verified by a local stub-server harness (nine cases) and by `workflow_dispatch`. *SHA-pinning actions* — the sandbox
+    cannot resolve shas and Dependabot is configured never to move them. **✅ SHIPPED 2026-09-03 (pass 3):** the
+    premise was wrong — `git ls-remote --tags` over the anonymous proxy resolves them. 57 refs pinned
+    to the sha each major tag pointed at that day; `github-actions-are-sha-pinned.test.ts` bans a
+    floating ref. The majors themselves are old (checkout v4 vs v7 upstream, Node 20 deprecation
+    warnings in every log) — a bump is a separate, dispatch-verified pass. **✅ DONE the same day (pass 4, R82):** all five bumped to current
+    releases (checkout v7.0.1, setup-node v7.0.0, upload-artifact v7.0.1, download-artifact v8.0.1,
+    cache v6.1.0), breaking changes read from each repo first — none applied — and verified by CI plus
+    three dispatches. ⭐ Read the changelog from the action's own repo over `git clone --depth 1`; the
+    GitHub releases page is API-gated from the sandbox but the repo is not. *Retiring one of three
+    `/api/smoke-test` concierge callers* — cron-job.org console.
+
+## CI audit drain, passes 3–5 (2026-09-03) — sharding, one composite, pins, and two test-shaped lessons
+
+Full narrative in `docs/sessions/2026-09.md` (entry "the CI estate audit, drained in five passes"); ledger entries carry each watch and revert. What a future session needs from it:
+
+- **The primary coverage gate is sharded (2/2) and the ratchet is applied ONCE, at the merge.** `npm run test:coverage:shard -- --shard=N/2` writes a blob with all four thresholds zeroed — a half suite reads 55–59% and that is not a number about the codebase — and `npm run test:coverage:merge` (`vitest run --merge-reports --coverage`) applies `vitest.config.ts`'s thresholds to the merged report. The merge job asserts exactly two blobs are present, so a lost shard cannot read green. Merged coverage was byte-identical to a single run when shipped. ⚠ `--reporter=blob` alone prints NO failing test names — keep `--reporter=default` beside it or a red shard is unreadable.
+- **`.github/actions/rpc-call` is the one copy of the curl-and-check block** (status captured under `bash -e`, body printed even when curl wrote no file, 401/403 fatal unless `fail-on-auth: false`, an accept list for 200/202 routes). ⚠ A guard whose population is "workflows/" stops seeing sites that move into `actions/` — `workflow-curl-assignments-are-guarded` now walks both roots and asserts the second root CONTRIBUTES, which is the general rule for any guard whose subject can migrate between directories.
+- **Every `uses:` is a 40-char sha with a `# vX.Y.Z` comment** (`github-actions-are-sha-pinned`, ban at zero, composites asserted IN the walk). Read an action's breaking changes from its repo over `git clone --depth 1` — the releases page is API-gated from the sandbox, the repo is not. The five first-party actions are on their Node 24 majors; the job-log line to watch for is "Node.js 20 is deprecated".
+- ⚠ **"Wait for the render, not the call."** Three board-interaction tests `await waitFor`'d until `fetch` was CALLED with the new sort, then asserted the rows synchronously. The rows render one tick later, after the mock resolves. It passed locally 3 of 3 and reddened `main` on a commit with no `.tsx` in it. The tell is a `waitFor` whose predicate is about the MOCK followed by an assertion about the DOM.
+- ⚠ **Register ids collide between concurrent sessions.** R83 and R84 were each claimed twice on 2026-09-03 by two sessions minutes apart; `check-register-integrity` reds the whole run. Re-fetch origin and re-run the integrity check in the SAME command chain as the push, not before it; on a collision the later claimant renumbers. ⚠ **And a concurrent register write from a STALE copy drops CELL CONTENT with the guard green** — `check-register-integrity` compares rows and ids, not cell text, so commit `7fe59d47b` silently reverted four cells' same-day addenda (R61/R64/R71/R78; re-applied `dfdadc5ee`). After any register edit, diff your rows against `origin/main` before AND after the next fetch; a shorter cell is the tell.
+- **The sentinel's threshold-config read is now a visible failure** (`Threshold Config` warn arm) — the `const { data } = await …select()` shape on a supabase-js call is CLAUDE.md's `?? 0` class one layer up: the error comes back in the object, not as a throw, and a `for … of data || []` runs zero times with nothing said.
+
+## The SUITE is not the GATE (2026-09-10, measured the expensive way)
+
+🚨 **Three code commits were pushed on 2026-09-10 with RED CI, each verified locally first and each reported green in its own commit message.** The local checks run were `npm test` (16,599 → 16,610 → 16,619 tests, all passing) and `npx tsc --noEmit` (clean). **Both were honest; neither covers the gate that failed.**
+
+⭐ **ONE JOB OF NINETEEN WAS RED: `ESLint ratchet`.** Green alongside it: TypeScript, both vitest shards, the coverage merge + ratchet, component coverage, worker coverage and typecheck, DB invariants, both Cadence jobs, and every doc guard. **`npm test` runs vitest and nothing else. `tsc --noEmit` is types only. Neither runs ESLint.**
+
+⭐ **THE RATCHET IS PER-RULE, NOT PER-TOTAL, which is why one line tripped it:** `prefer-const grew 15 -> 16`, on a `let` in a test harness that is never reassigned. **The TOTAL read 717 against a baseline of 717 — so a total-only ratchet would have passed the broken tree.** That is the same shape this file warns about elsewhere: a check whose granularity is coarser than the property it claims to protect.
+
+✅ **THE LOCAL SET FOR A CODE PUSH IS THEREFORE THREE COMMANDS, not two:**
+
+```bash
+npm test                 # vitest
+npx tsc --noEmit         # types
+npm run lint:ratchet     # eslint, per-RULE against the baseline
+```
+
+⚠ **WHY IT SURVIVED THREE PUSHES, and this is the transferable half:** docs-only commits skip the code jobs and pass, so the badge history read as *alternating*, not as *broken* — and **local green was read as CI's verdict instead of CI being read.** ⭐ Same error, one level down, as the `live: false` correction filed the same night: **verify by making the request, not by reading the status you expect.**
+
+🚨 **IT RECURRED 2026-09-10 PT, RAN SEVEN PUSHES INSTEAD OF THREE, AND POINTED THE OTHER WAY — that second half is the part this note was missing.** Run **5111** (`75383f902`, a `.sql` migration, so classified code) went **failure** at 05:12Z on `migration-new-function-states-its-anon-exec-decision`. Runs **5112–5118 were all docs-only**, so the ten code jobs were **skipped** and each published a **green** badge over a tree whose unit suite was still red — ~52 minutes and seven green badges deep by the time a code push ran the suite again.
+
+⭐ **AND THE FAILURE MODE INVERTED.** The 08-xx instance was *local green believed over CI*. This time a session ran the suite locally, saw a genuine red, checked the latest CI run (5118, **green**) and nearly **retracted a true finding** — the badge was about to win against a correct measurement. **A `success` conclusion is not evidence the suite passed; it is evidence that nothing which could fail was run.** Before believing a green badge, read whether the job you care about has `conclusion: "skipped"` — `list_workflow_jobs` says so per job, and `skipped` and `success` both roll up to a green check.
+
+⚠ **So the standing rule cuts both ways: read CI rather than the badge, and read the JOB rather than the run.** The corollary for anyone doing this arithmetic later: a red introduced by a code push stays hidden for as many docs-only pushes as follow it, which on a ledger-heavy night is most of them.
+
+## 🚨 POSTGRES STORES COMMENTS IN `prosrc` — so a comment-only difference between a pinned file and production is DRIFT the repo-vs-repo guard CANNOT SEE (2026-09-11)
+
+Caught on my own work, one command before committing it. I drafted a function with two inline
+comments inside the body, applied a version **without** them (typed into `apply_migration`), and
+then committed the drafted file as the migration. Both halves looked right:
+`db-invariants-drift-guard` compares **the pin file against the migration file** — both mine,
+both carrying the comments — so it would have passed **green forever** while the committed DDL
+was not what runs.
+
+⛔ **`prosrc` contains everything between the dollar-quote delimiters, comments included.** So:
+
+- a comment present in the file and absent from prod is a **body difference**;
+- `npm run db:pins:check` (prod-vs-repo) reports it — **but that needs the service-role key and
+  is not in the blocking job**, so it can sit unnoticed for as long as nobody runs a health sweep;
+- the drift guard is **structurally blind** to it by construction, because neither side it
+  compares is production. This is the README's own warning — *"It says nothing about
+  production"* — with a new way in.
+
+⭐ **The check is one command and needs no key beyond MCP read access.** Normalise whitespace on
+both sides and compare digests — never eyeball it, and never compare raw lengths only:
+
+```sql
+select md5(btrim(regexp_replace(prosrc, '\s+', ' ', 'g'))) from pg_proc where proname = '<fn>';
+```
+
+```python
+m = re.search(r"as \$function\$(.*?)\$function\$", open(migration).read(), re.S)
+hashlib.md5(re.sub(r"\s+", " ", m.group(1)).strip().encode()).hexdigest()
+```
+
+**Identical digests or the file is not the applied SQL.** Mine differed by **282 characters** of
+comment; the fix was to move them into the header *above* `CREATE OR REPLACE`, which is outside
+`prosrc` and therefore free. ⭐ **Do this on every MCP-applied migration that defines a pinned
+function** — `apply_migration` applies first and the file is a manual follow-up, so the repo
+record is a **retyping** of production unless something proves otherwise.
+
+⚠ **And a second, cheaper trap in the same hour: the drift guard's extractor matches the LITERAL
+UPPERCASE `CREATE OR REPLACE FUNCTION public.<name>`.** A migration written in lowercase makes
+the pin **unextractable**, and the failure reads `"<fn> not found in supabase/tests/<pin>.sql"` —
+which looks like a wrong path or a renamed function, not like casing. (`PROCEDURE` is matched
+too; `prokind` does not matter.) The casing of the `CREATE` line is **not** stored in `prosrc`,
+so fixing it in the file is free and does not touch production.
+
+## "The tip went green" can be evidence of NOTHING — a docs-only push SKIPS the shards (2026-09-13)
+
+⚠ **Measured while watching a red main recover, and it nearly shipped a false all-clear.** A concurrent
+session's migration created a public table with no RLS and reddened
+`migration-new-public-table-enables-rls`. The next commit to land was that session's **docs-only**
+push, and its run came back **success** — so a watcher keyed on "is the tip green" reported MAIN GREEN
+while the guard had not run at all.
+
+**Read the JOB LIST, not the conclusion.** On the docs-only run: 7 doc guards `success`, and
+**11 jobs `skipped`** — both `Unit tests (vitest)` shards, `TypeScript`, `ESLint ratchet`,
+`DB invariants (SQL)`, component and worker coverage, the merge + coverage ratchet. The run that
+actually proved the fix was a `supabase/migrations/**` push, where all of those ran.
+
+⭐ **The generalisation is this file's own rule pointed at the WATCHER rather than at the guard:
+*ask what RUNS, not only whether it passes*.** A CI-status monitor is an instrument, and an instrument
+whose success condition cannot distinguish "the gate passed" from "the gate was skipped" is the
+permanently-green twin of the permanently-red arm.
+
+👉 **When you need a specific guard's verdict, watch the run for a commit that TOUCHES CODE** — and if
+the only recent push is docs, the honest statement is "not yet exercised", not "green".
+
+## ⛔ A GUARD SATISFIED BY ITS OWN COMMENT — the vacuity that survives a mutation test (2026-09-13)
+
+A new ratchet exempted three helpers on the grounds that each proxies internally, and asserted the
+exemption held with `expect(src).toContain("proxyIpfsUrl")` over **raw** source. **A mutation that
+deleted the actual `proxyIpfsUrl(...)` call still PASSED** — because the comment written above it,
+explaining that the helper rewrites IPFS urls, contained the word.
+
+⚠ **Neither half of the usual defence catches this.** The assertion is not vacuous in the "asserts
+nothing" sense — it asserts a real string over a real file — and mutation testing only found it
+because the mutation happened to delete the call and leave the prose. Had the mutation deleted both,
+it would have "passed the test" and taught nothing.
+
+**Two rules, and the first is already in CLAUDE.md:**
+- **Strip comments before grepping source** (`scripts/lib/strip-comments.mjs`, never a fresh copy) —
+  the more so when the thing you are grepping for is a word you are also likely to *write about*.
+- **Match the CALL, not the NAME**: `toContain("proxyIpfsUrl(")` cannot be satisfied by prose that
+  mentions the helper. A bare identifier is a word; a word with its open-paren is a use.
+
+⭐ **And the tell for finding more of these: any guard that greps for a symbol whose own documentation
+would naturally name it.** `stripComments` + the open-paren is the cheap fix; running the mutation is
+what proves it.
+
+
+---
+
+## Displaced from CLAUDE.md 2026-09-13 (verbatim) — the exclusion-justified-by-another-instrument bullet
+
+Moved here to make room for the eleventh honesty shape (register #112). The rule stays in CLAUDE.md; the three measured cases live here.
+
+- ⚠ **An exclusion justified by ANOTHER instrument is a claim about it — check that one can SEE the property.** Two guards skipped `app/api` as "in the primary gate"; coverage sees whether lines RUN, not whether `error` is handled — 7 defects, 259 unlooked reads. ⚠ **NOTHING here measures LAYOUT** (jsdom boxes are ZERO; only the real browser in `e2e/mobile-layout.spec.ts` sees it) **nor the BUILT BUNDLE** (turbopack dropped a quasi from a `+`-joined template). Both shipped WRONG for weeks with every gate green.
+
+---
+
+## The docs-only CI skip, caught live (2026-09-19)
+
+CLAUDE.md states the rule — *a CHECK THAT DIDN'T RUN reads identically to one that PASSED* —
+and on 2026-09-19 PT it happened in the open, so here is the concrete case to point at.
+
+**Main was RED on code for ~20 minutes while the CI badge read GREEN.**
+
+| run | sha | commit | conclusion | why |
+|---|---|---|---|---|
+| 5799 | `d96c088c1` | `feat(candy): the Collection tab is on` | **failure** | 2 real test failures |
+| 5800 | `dc447269c` | `docs(ledger): own it — …` | success | **docs-only: code jobs never ran** |
+| 5801 | `584b74dad` | `docs(handoff): second post-close …` | success | **docs-only: code jobs never ran** |
+
+Every code job in `ci.yml` is gated on `if: needs.changes.outputs.code == 'true'`. Two
+docs-only commits landed on top of the break, each went green, and the badge said the tree
+was healthy while `collections-chain-dispatch` and `share-card-view` were both failing.
+
+⭐ **The discriminator that settled it in one command** — and the reason not to guess:
+
+```bash
+git worktree add -q --detach /tmp/wt-base origin/main
+cd /tmp/wt-base && ln -s <repo>/node_modules node_modules
+npx vitest run <the failing files>      # reproduces on CLEAN origin/main => not yours
+```
+
+Both failures reproduced on untouched `origin/main`, which is what made it safe to say
+"not mine" rather than assume it. ⚠ **The inverse matters just as much:** a code push onto
+a red main runs the code jobs and WEARS the red, so the next author looks guilty. Check the
+last CODE run, not the last run.
+
+⛔ **Do not fix another session's in-flight feature tests on this evidence alone.** Here the
+fix required encoding *their* claim about seven routes; the owning session pushed
+`f294fc8c2` within minutes. Verify, report, and let the owner land it.
+
+---
+
+## The DB-invariant suite runs LOCALLY in the web sandbox (2026-09-19)
+
+Previously assumed to be CI-only because `scripts/run-db-tests.sh` and
+`scripts/check-migration-sql-parses.sh` both need `DATABASE_URL`. They do not need a
+*remote* one. Postgres 16 binaries are present; ⚠ **`initdb` refuses to run as root**, which
+is the whole reason this looked impossible — run it as the `postgres` user:
+
+```bash
+PGBIN="$(ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1)"
+rm -rf /tmp/pgpin && mkdir -p /tmp/pgpin/data /tmp/pgpin/sock && chown -R postgres:postgres /tmp/pgpin
+su postgres -c "$PGBIN/initdb -D /tmp/pgpin/data -A trust -U postgres"
+su postgres -c "$PGBIN/pg_ctl -D /tmp/pgpin/data -o '-p 5433 -k /tmp/pgpin/sock -h 127.0.0.1' -l /tmp/pgpin/log start -w"
+export DATABASE_URL="postgres://postgres@127.0.0.1:5433/postgres"
+bash scripts/run-db-tests.sh              # 194 files on 2026-09-19
+bash scripts/check-migration-sql-parses.sh # 1,146 files, 0 syntax errors
+```
+
+⭐ **Worth the two minutes.** `db-tests` is a BLOCKING CI gate, and a pin whose fixtures do
+not match a changed function body fails there rather than here — on 2026-09-19 a new
+function body read a THIRD table and the pin could not even run. It also makes the pin's
+assertions mutation-testable locally, which is the only way to know a new assertion is
+load-bearing.
+
+---
+
+## A guard that is honest about its own boundary can still be the hole (2026-09-20)
+
+`__tests__/retired-orderbook-source-not-rendered-ratchet.test.ts` is a well-built guard: it walks the tree instead of naming files, it is satisfiable at a population of zero, and it carries a positive control for its own comment stripper. It also stated its boundary plainly:
+
+> ⚠ WHAT THIS DOES NOT CLAIM. It asserts the disclosure module is REFERENCED, not that the rendered sentence is true — no static check can see that.
+
+**It was GREEN for the 13 days the site published a false claim to anonymous visitors.** The boundary statement was accurate and the guard was still the hole. *"Ask what a passing guard is structurally SILENT about"* is not satisfied by the guard having written its silence down — someone has to act on it.
+
+**What actually closed it** was moving the thing the guard could not see into data the guard *can* see: the RPC now publishes `age_hours`, the module derives its verdict from that, and the ratchet gained a rule it can enforce — **a ban at zero on any date literal in the provenance module's live code** (comments keep the case history). Mutation-proven: re-adding `TS_LISTINGS_LAST_ROW_ON = "2026-05-15"` reds it with the intended message.
+
+### Three re-usable rules
+
+1. **A test pinning the SPELLING of a disclosure is a RE-PIN when the premise changes, not an inversion.** The code was fine when written. `component-CollectionAnalyticsClient` asserted `/sampler was switched off on 2026-05-26/` — correct on the day it shipped, false 13 days later. Re-point it; do not delete it.
+2. ⛔ **Re-pinning the row is not enough — check the property is still EXERCISED.** One assertion in that suite had gone **vacuous**: it asserted `queryByText(/sampler was switched off/)` was null, on a collection where the gate must not fire. After the rename that string existed **nowhere in the tree**, so the assertion would have passed against a gate leaking to every collection. It now runs against a deliberately STALE fixture so the Top-Shot-only property is genuinely tested.
+3. **Pin behaviour from all three directions when the property has three states.** The suite now covers `fresh` → publishes real depth, `stale` → discloses the measured age and suppresses the count, `unknown` → distinct copy, suppresses the count. A fixture world where every arm is fresh passes a one-sided check — which is how the previous two versions of this test died.
+
+⚠ **Unrelated but load-bearing: a red `npm test` is not automatically yours.** Two of three failures in a full run during this session were a concurrent session's in-flight migration files, and the guard passed in isolation minutes later. **Read the failing job, and re-run on a settled tree, before changing anything.**
+
+## "It MIRRORS X" is a claim with no test — diff the two implementations (2026-09-20)
+
+`lib/sentinel/wall-kills.ts` documents `check_wall_kills()` as mirroring `lib/pipeline/kill-rate.ts`, statement by statement. It had **diverged for a week**: a rule (`unverified` — a marker with no terminal writer anywhere in the window is unproven, not 100% killed) was added to the SQL side on 09-13 and never to the TS side.
+
+Read live on 09-20, same `pipeline_runs` rows, minutes apart:
+
+| instrument | `dead-lane-backstop` |
+|---|---|
+| `check_wall_kills()` | `unverified`, 8 heartbeats — not an offender |
+| `correlateRuns()` | `failing`, 15/15 = 100%, rank 0 |
+
+⛔ **The divergent one was the operator CLI**, whose exit is `records.some(verdict === 'failing') ? 1 : 0` — so `npm run pipelines:kills` exited 1 on **every** run, forever, on a GitHub-Actions liveness probe that by design never writes a terminal row. A permanently-red instrument is indistinguishable from a broken one.
+
+⭐ **Two implementations of one rule need a shared fixture or a diff, not a sentence.** Where they cannot share code (SQL vs TS here), the header that claims the mirror should name the last date the two were actually compared.
+
+## Mutate the fix BEFORE trusting arms you wrote for a bug you theorised (2026-09-20)
+
+While re-testing the fleet after a compute resize, an ad-hoc split-window script produced `p = 0` for a lane and I attributed it to a degenerate null in `classifyKillRecord` (a pooled rate of exactly 1.0 making `(1-r)**n` zero). I wrote a Laplace smoothing fix and five arms for it. **All five passed — and so did the suite with the fix removed.**
+
+⭐ **The arms were vacuous and the mutation test is the only thing that said so.** The degenerate case is **unreachable**: `killRate` is killed/total over the whole sequence, so `killRate === 1` implies `cleanTicks === 0`, and that branch returns `failing` before any p is computed. The `p = 0` came from **my own script**, which took the null from one window and the clean run from another.
+
+- ⛔ **A test written for a defect you have not reproduced in the code under test will usually pass for the wrong reason.** Reproduce it against the real function first.
+- ⛔ **Removing the fix must red the arms.** If it does not, the arms are describing something else.
+- ⚠ **The specific trap, now pinned:** if you want a before/after rate, hand the FULL sequence to `classifyKillRecord` and let it pool. Feeding it two windows and calling the output a p-value manufactures certainty — it briefly had a lane filed as `recovered` on two ticks.
+
+---
+
+## Before you suppress a guard, check whether the GUARD is wrong (2026-09-20)
+
+Two sessions independently added a `when-others-timeout-blind: intentional` marker to silence `new-plpgsql-recording-handlers-catch-query-canceled`, and **both markers were dead within hours** — the guard's author narrowed it the same day, scoping its `RECORDING` test to the **handler region** (bounded at `END;`) instead of the whole function body. One `log_pipeline_run` anywhere in a function had been making *every* handler in it "recording", including bare loop handlers that record nothing and that CLAUDE.md explicitly says must stay bare.
+
+⭐ **The reusable lesson is the order of operations.** A guard firing on code you believe is correct is two hypotheses, not one: *your code is wrong*, or *the guard is*. **Suppressing is the answer to the first and a cover-up of the second** — and a suppression marker, once committed, reads as a considered decision to everyone after you. Ask what property the guard is actually testing and whether your subject has it, **before** reaching for the escape hatch. Here the property was "a handler that RECORDS A FAILURE cannot see a cancel", and the subject — a JSON-parse fallback assigning `v_body := NULL` — records nothing, so it never belonged in scope.
+
+⚠ **If you do need the marker, its placement is not where the message implies.** The failure text says to add it "in a comment above it", which reads as *above the handler*; the code anchors its lookback at the **`CREATE OR REPLACE` declaration**:
+
+```js
+const line = src.slice(0, at).split("\n").length - 1   // `at` = offset of the declaration
+if (isMarkerSuppressed(rawLines, line, MARKER, LOOKBACK)) continue
+```
+
+⛔ **So the marker belongs in the migration HEADER, outside the function body — and putting it inside the body is actively harmful**, because a comment there is part of `prosrc`: a documentation-only edit becomes a schema change, and the file stops matching the deployed function until a second migration re-applies it. That nearly cost a redundant migration on 2026-09-20 before the marker moved to the header and the body reverted byte-identical to production. Also: a reason longer than the lookback window pushes the marker out of it — put the prose first, the marker line last.
+
+---
+
+## A live instance of the POPULATION rule, from verifying a fix rather than writing a guard (2026-09-20)
+
+CLAUDE.md's *"a control's POPULATION must be the set the property is TRUE of, not a proxy that
+coincides today"* is usually read as advice about writing a guard. It bites just as hard when
+**re-checking a filed claim**, and it nearly produced a false refutation of a correct record.
+
+Register #128 (c) states *"`still_zero` is now 0 on all nine"* for the nine Top Shot distributions
+whose `mv_topshot_pack_realized_ev.realized_mean` had been publishing exactly USD 0.00. Verifying it,
+the obvious query is *count `pack_rips` rows per `dist_id`*:
+
+| dist | rows at zero, ALL rips | rows at zero, MV population |
+|---|---|---|
+| `1765` | 31 | **0** |
+| `7738` | 1,066 | **0** |
+| `8431` | 1,313 | **0** |
+| `8612` | 10 | **0** |
+
+The left column reads as *the record is false on eight of nine*. It is not. `mv_topshot_pack_rip_values`
+is `topshot_pack_rip_attribution ⋈ pack_rips WHERE pull_value_usd IS NOT NULL`, so the **attributed**
+set is the population the claim is about — the dists also contain tens of thousands of un-attributed
+rips (`1765` alone has 13,155) that the board never averages and the repair leg never had to touch.
+Over the right population the count is **0 on all nine**, with means USD 0.24 → 80.19 exactly as filed.
+
+⭐ **The tell was available before the query ran:** the filing quoted *365 rips* and *`n_opens >= 10`*.
+A 13,155-row dist cannot be the subject of a 365-row claim. **When a re-check disagrees with a filing
+by two orders of magnitude, suspect the population before the filing.**
+
+⚠ **And read the view definition, not the view's name** — `mv_topshot_pack_rip_values` sounds like
+"every rip's value" and is not. The `WHERE pull_value_usd IS NOT NULL` is what makes an honest NULL
+disappear from the average instead of dragging it down, which is the whole point of #128's fix, and it
+is also what makes `7730` sit at exactly `n_opens = 10`: **one more row going NULL drops that dist off
+the board entirely.** A fix that replaces fabricated zeros with NULLs moves rows *out* of a population
+gated on NOT NULL, so check the gate's floor after any such repair.
+
+## Displaced from CLAUDE.md 2026-09-21 (headroom was 99 chars)
+
+Verbatim, so nothing is lost — all three were full bullets under *Guards, tests
+and instruments* and are now one-line pointers there.
+
+- ⛔ **A header saying it MIRRORS another implementation is a CLAIM WITH NO TEST — diff them.** `check_wall_kills()` and `correlateRuns()` read the same rows and gave OPPOSITE verdicts for a week (one rule added to the SQL side only); the divergent one was the CLI, pinned at exit 1 forever on a healthy lane.
+
+- ⛔ **A HARDCODED ALLOWLIST BESIDE A REGISTRY GOES STALE SILENTLY** — a four-slug map 400'd UFC and Candy from a button the reader can see. Resolve through the registry, and **pin the narrowing gate too**, or the swap widens to unpublished collections.
+
+- ⚠ **A not-vacuous check must be satisfiable at a population of ZERO**, or the guard punishes its own success. Same for a guard that NAMES its instances — three have died on a rename. ⚠ **Strip comments before grepping source — with `scripts/lib/strip-comments.mjs`, NEVER a fresh copy.** **Still prefer a check that does not NEED it right** (`copyOf`).
+
+---
+
+## A perfect ratio across N independent instruments is ONE POPULATION COUNTED TWICE (2026-09-20)
+
+`npm run lint:ratchet` reported **1,425 violations across 19 rules against a 712 baseline**, and named every one of the nineteen as a regression:
+
+```
+::error::@typescript-eslint/no-unused-vars grew 353 -> 707
+::error::@next/next/no-html-link-for-pages grew 114 -> 228
+::error::react-hooks/set-state-in-effect grew 55 -> 110
+::error::react/no-unescaped-entities grew 54 -> 108
+::error::@next/next/no-img-element grew 28 -> 56
+::error::prefer-const grew 14 -> 28
+::error::no-var grew 9 -> 18
+…19 rules, every one of them exactly 2×
+```
+
+⭐ **THE TELL IS THE RATIO, AND IT IS AVAILABLE BEFORE ANY INVESTIGATION.** Nineteen rules with unrelated causes do not regress in lockstep, and they certainly do not double to the unit. A uniform multiplier across independent measures is arithmetic, not nineteen defects: **the same population was counted twice.**
+
+📏 **Diagnosed in one query against the report eslint had already written** — not by reading code, and not by bisecting:
+
+```js
+const j = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), "rpc-eslint-report.json"), "utf8"))
+const roots = new Map()
+for (const e of j) {
+  const rel = path.relative(process.cwd(), e.filePath).split(path.sep)[0]
+  roots.set(rel, (roots.get(rel) || 0) + 1)
+}
+// → .claude 3089 · __tests__ 1590 · app 763 · lib 356 · components 162 · …
+```
+
+**3,089 of 6,208 linted files were under `.claude/worktrees/cool-gould-f682a2/`** — a second full checkout of this repository, left behind by an agent run with `isolation: "worktree"`, contributing **6,873 lint messages**. It held **zero commits not on `main`** and a clean `git status`; `git worktree list` was the only thing in the repo that named it. Removed with `git worktree remove` + branch delete.
+
+⛔ **THE REMOVAL IS NOT THE FIX.** A worktree is transient and per-machine; a second one appears the next time an agent runs isolated, and the ratchet would read double again. The instrument must not be *movable* by a directory that comes and goes, so `.claude/**` went into `globalIgnores` beside `coverage/**`, which is there for the identical reason — that block's own comment already says *"an instrument whose population depends on build output cannot be compared across runs — so the population is now the source tree."* This is that rule's second instance.
+
+⚠ **AND FLAT CONFIG DOES NOT READ `.gitignore`.** The same sweep found `_to_delete/` (19 files) and `Rip Packs City/` (4) being linted — both gitignored scratch space, so `git status` stays clean while the ratchet's population silently tracks whatever was last left lying around. Both are now ignored explicitly. 23 files, 1 violation, 711 → 710.
+
+📌 **WHAT THE DOUBLING HID.** Underneath it sat exactly one real regression, `no-unused-vars` 353 → 354: two `_params` arguments in `__tests__/api-cron-backfill-pack-rip-metadata-deferred.test.ts`. ⚠ **A leading underscore does NOT exempt a binding here** — `eslint.config.mjs` sets no `argsIgnorePattern`, and `npm test` + `tsc` were green throughout. Fixed by moving the argument into the property's TYPE (`vi.hoisted((): { fn: (params?: any) => Promise<any> } => …)`), since every reassignment in that file is zero-arg while the rpc stub still calls it with one.
+
+⭐ **THE GENERALIZATION, which is not about eslint:** when several independent instruments move together by the same factor, suspect the denominator before the subject. Check what the instrument INSPECTED (`3119` files before, `6208` after) before reading what it CONCLUDED. The file count was printed on the same line as the failure the whole time.
+
+---
+
+## A hand-edited GENERATED block turns its own regenerator into a DELETER (2026-09-20)
+
+`docs/reference/known-issues.md` carries a generated status index between `<!-- BEGIN:ITEM-INDEX (generated by scripts/gen-known-issues-index.mjs — do not hand-edit) -->` markers. A push added findings **#132** and **#133** by writing rows into that block directly instead of adding body items.
+
+Two consequences, and the second is the dangerous one:
+
+1. `npm run docs:issues-index -- --check` exited **1 on `main`**, taking **4 tests across 2 files** with it (`known-issues-index-lists-every-item`, `scripts-main-module-guard-works-on-windows`).
+
+2. 🚨 **`npm run docs:issues-index` — the repair the failure message itself prescribes — DELETES BOTH ROWS.** The generator derives the index FROM the body (`parseItems` scans `^([0-9]+[a-z]?)\.\s+` inside `### Open`); the body had no #132/#133, so regenerating removed them. **The entire text of both findings existed only in those hand-written rows** — the ~3,900-tap-target product call, and the two filter pills that hit-test to another element on `/insights/set-squeeze` and `/insights/offer-spread`. Running the prescribed fix and committing it would have destroyed both, and the commit would have looked like routine index maintenance.
+
+**Repair:** relocate both verbatim into the body with a proper bolded lead, then regenerate FROM that. 129 → 131 items, `--check` exits 0, and the index rows are derived summaries again (`OPEN, NEW 2026-09-20 (PT)`) rather than hand-written paragraphs.
+
+⭐ **THE RULE:** a generated region and a hand-edit are incompatible by construction, and the failure mode is *silent deletion by the tool you were told to run*. When a `--check` says a generated artifact is stale, **diff what the regeneration would do before running it** — `git diff` after, *before* `git add`. Here the diff was two `-` lines and no `+` lines, which is the signature of exactly this class.
+
+⚠ **BOTH WERE ALSO STAMPED `NEW 2026-09-21 (PT)` WHILE 09-21 PT HAD NOT HAPPENED** — a UTC clock labelled PT. That is the defect `scripts/find-future-dated-ledger-headings.mjs` exists for, occurring in a file that guard does not cover. Restamped 09-20 (PT). The same mis-stamp is in this file's own `## Displaced from CLAUDE.md 2026-09-21` heading, written the same evening.
+
+### The sibling: a FIXER cannot detect an error in the state it derives from
+
+Same session, same shape, different file. A filing named `2026-09-21T0011Z-…md` was listed in `docs/overnight/inbox/INDEX.md` under `## 2026-09-20`, on the inference that the 63 cross-dated entries already in the file meant the day headings were PT-keyed. They are not — those 63 are the documented PRE-CUTOFF residue, and from `2026-08-29` onward `__tests__/inbox-index-entries-sit-under-their-own-date.ts` is a **ban at zero** on the UTC date in the FILENAME.
+
+⛔ **`npm run inbox:index:fix` AGREED WITH THE MISPLACEMENT.** It recomputes each `## YYYY-MM-DD — N filings` heading **from the entries it finds under that heading**, so given a misplaced entry it derives a count that matches — it printed `## 2026-09-20: 5 -> 6` and exited clean. **A fixer that derives its expected value from the observed state cannot detect an error in that state; it launders one into internal consistency.**
+
+⭐ Pair every such fixer with an assertion that reads a source the fixer never touches. Here that is the FILENAME — which is exactly what the guard's own header says it was built to do, after the identical incident on 2026-09-11.
+
+---
+
+## A causal claim in a comment, refuted by the thing it described (2026-09-20)
+
+A commit fixed a real defect — Vaultopolis ships some player names with the unicode escape UNDECODED, so `/insights/pack-drops` printed the literal characters `Marine Johann\u{e8}s` to users, and an escaped name can never satisfy the `player_name ILIKE` the FMV match runs on. That half was correct and is now pinned.
+
+⛔ **BUT IT ALSO ASSERTED, IN A COMMENT AND IN A TEST TITLE, THAT A HAND-ROLLED SLUG 404s.** Measured the same day against `get_player_detail` and against production: **it does not.** The resolver matches TWO expressions —
+
+```sql
+WHERE regexp_replace(lower(trim(p.name)), '[^a-z0-9]+', '-', 'g') = p_player_slug
+   OR regexp_replace(lower(trim(extensions.unaccent(p.name))), '[^a-z0-9]+', '-', 'g') = p_player_slug
+```
+
+— the raw name slugified **and** the unaccented one (migration `audit_20260906_player_slugs_resolve_unaccented…`). So `/nba-top-shot/player/marine-johann-s` returns **200 with a page byte-identical** (164,899 bytes, same `<h1>`) to `…/marine-johannes`, and **all five** accented names on the live board resolve BOTH ways:
+
+| name | hand-rolled | resolves | unaccented | resolves |
+|---|---|---|---|---|
+| Marine Johannès | `marine-johann-s` | ✅ | `marine-johannes` | ✅ |
+| Janelle Salaün | `janelle-sala-n` | ✅ | `janelle-salaun` | ✅ |
+| Azurá Stevens | `azur-stevens` | ✅ | `azura-stevens` | ✅ |
+| Bojan Bogdanović | `bojan-bogdanovi-` | ✅ | `bojan-bogdanovic` | ✅ |
+| Jusuf Nurkić | `jusuf-nurki-` | ✅ | `jusuf-nurkic` | ✅ |
+
+**The 404 was the ESCAPED slug** — `marine-johann-u-e8-s`, confirmed 404 on production — which neither arm can produce, because the escape's own `u` and hex digits survive as slug segments. So the fix belongs at INGEST (decoding), which is where it is; `slugifyPlayerName` at the render site is belt-and-braces, and its real justification is the OTHER half: the raw arm only matches when the name being slugified is spelled the way the `players` row spells it, which is the measured 2026-09-06 case of 4 of 1,413 sitemap player URLs 404ing.
+
+🚨 **THE TEST THAT "PINNED" THIS WAS VACUOUS, IN THE EXACT SHAPE CLAUDE.md NAMES.** Its title carried a negative causal claim:
+
+```ts
+it("a hand-rolled slug WOULD have 404'd — this is why entity-labels owns it", () => {
+  const handRolled = "Marine Johannès".toLowerCase().replace(/[^a-z0-9]+/g, "-")…
+  expect(handRolled).toBe("marine-johann-s")
+  expect(handRolled).not.toBe("marine-johannes")
+})
+```
+
+…while the assertion only checks that **two spellings differ**, which is true of any two spellings and would pass with the claim inverted. Rewritten to pin the property that is true — the escaped form is unreachable by either resolver arm, and decoding removes the difference — and **proved with a planted defect: stubbing `decodeUnicodeEscapes` to a no-op reds 16 of 24 arms.**
+
+📏 **THE POPULATION WAS ALSO WRONG, AND IN A WAY WORTH NAMING.** The comment said "4 names across 6 rows"; re-derived straight from the feed across all 8 drops it is **5 names / 13 asset rows**, of which the board renders 6 rows. The "4" was a count of **codepoints** (`U+0107` carries two of the names) labelled as a count of names. ⚠ **A test file called its array `LIVE_CASES` and included `Luka Dončić`, who is not in the feed at all** — a synthetic case sitting inside an array whose name claims it was measured.
+
+⭐ **All three errors share one cause: the fix was verified, the STORY about the fix was not.** Decoding was tested; the resolver was never queried, the feed was never re-counted, and the 404 was never requested.
+
+---
+
+## SHIP THE INSTRUMENT WITH THE CLAIM (2026-09-20)
+
+`e2e/mobile-layout.spec.ts` shipped a 320px loop whose header reads *"Measured for real on 2026-09-20 with `scripts/qa/mobile-sweep.mjs`'s new `narrow` mode over all 56 swept pages."* **That mode was not in the repository** — it existed only in an uncommitted working tree, so the pin cited an instrument a reader could not run and CI did not have.
+
+The same file had claimed since 2026-08-22 that its routes were *"measured clean at both 390px and 320px"* while its loop ran 390 only, for four weeks. Shipping the loop without the sweep that measured it recreates that gap one level down: **the claim moves from a comment into a test, and the evidence for it stays unshippable.**
+
+Both halves are now in: the `narrow` mode (320 × 568, the same `iPhone 13` touch emulation so a difference between runs is WIDTH and nothing else), and the pin. Verified before shipping — the spec **17/17 green against production**, all six 320px arms included, and the sweep clean over 5 pages (`overflow 0, errored 0, non200 0, brokenImgs 0`).
+
+---
+
+## Displaced from CLAUDE.md 2026-09-20 PT (headroom was 90 chars)
+
+Condensed in CLAUDE.md to make room for the four rules above; kept here verbatim.
+
+- ⚠ **Ask what RUNS a guard, not only whether it passes, and ASSERT THE COUNT IT INSPECTED** — a staged-only default inspected **nothing** on a CI checkout and exited 0. ⭐ **THE TELL IS SILENCE — one that normally states its count and then says nothing has not PASSED, it has not SPOKEN** — a `;` in an npm script dies in cmd.exe; use a **node driver**.
+
+- ⛔ **A REGISTRY VALUE has no file of its own — grep the TEST TREE for it, not the files you edited.** One tab added to `lib/collections.ts` reddened two guards in files never opened, both keyed on `getCollection(…).pages`; main was red 11 minutes. `grep -rl <collection> __tests__` costs seconds, BEFORE the push.
+
+- ⛔ **A MOVED OR CONVERTED `page.tsx` CHANGES THE POPULATION OF EVERY TREE-WALKING RATCHET, AND NONE OF THEM NAMES THE FILE** (2026-10-13, review E2). Converting `app/insights/pack-reality/page.tsx` to a server shell over `PackRealityClient.tsx` reddened `main` twice: first the page-level ratchets keyed on the PAGE importing `@/lib/supabase` (`server-page-data-access-ratchet`, `insights-server-pages-bound-their-reads`), then two guards that walk the tree — `client-page-fetch-honesty-ratchet` (its BUDGET is a count of a population the page had just left) and `insights-client-dates-are-hydration-safe-guard` (a `Date.now()` the seed made reachable during SSR). `grep -rl pack-reality __tests__` found neither, and the pre-push "vitest related" run cannot: nothing imports a page. **The population is `ls __tests__ | grep -E "ratchet|guard"` (54 files, 980 tests, ~2 min) — run it whenever a `page.tsx` moves, splits or gains a read, before the push.** Also learned there: the hydration guard's escape is a `hydration-safe: <reason>` comment within 4 lines ABOVE the call, and a server seed makes every `data == null` SSR assumption in the client false — grep the client for "unreachable during SSR" before adding an `initial*` prop.
+
+- ⚠ **A test red because its PREMISE changed is a RE-PIN, not an inversion** — the code was fine. ⛔ **But re-pinning the row is not enough: check the property is still EXERCISED.** Once every collection had the tab, a hardcoded path passed every row; the arm had to be kept alive by a subject that genuinely lacks it.
+
+- ⚠ **Every CI `run:` block is `bash -e`, so a fallible command in an ASSIGNMENT aborts the step there** — a retry loop after it is DEAD CODE that reads as coverage, and `jq` counts (exit 5 on a non-JSON body). Write `X=$(…) || X=""`, then check explicitly — ⛔ `|| X="0"` is WORSE: it never aborts, so the guard reports a clean read of what it never read.
+
+- ⚠ **And the guard-silence bullet, condensed in the same pass — verbatim:**
+
+- ⚠ **Ask what a passing guard is structurally SILENT about — its DERIVATION fixes its blast radius, and its ROOT *and stated CLASS* are CLAIMS.** **Prefer a tree walk over a curated list and a ban at zero over an allowlist; make *suppression* the curated list; assert an exclusion at the PROPERTY's granularity, and that a SECOND root CONTRIBUTES.** ⚠ **A control's POPULATION must be the set the property is TRUE of, not a proxy that coincides today.** ⛔ **A SUPPRESSION IS A CLAIM that the guard is right and the CODE is wrong — when the GUARD is wrong it buys silence and leaves the next honest instance flagged, and one can FAKE ANOTHER INSTRUMENT'S SIGNAL.** AGGREGATE-vs-SLICE, re-derived pins, both suppression cases: below in this file.
+
+## A rolled-back dry run proves only the branches its candidate set REACHES (2026-09-23, PT)
+
+⚠ **Before trusting a "dry run was clean", check the changed branch actually executed.** Re-pointing `drain_fmv_cold_tail`'s All Day ask (`20260923235425`), the rolled-back run processed 25 and then all 28 live candidates, and **every one came out STALE under BOTH the old and the new body**. It looked like a pass and tested nothing, because no candidate had an ask, so the ASK_ONLY branch never ran. ⭐ **Construct the pair inside the same rolled-back transaction:** one row the change must leave alone (a live-floor edition, old = new = ASK_ONLY $2.70) and one it must change (a planted $50 `badge_editions` ask with no live floor, old ASK_ONLY $45.00 → new NO_DATA), running the OLD body first and the NEW body second on the same fixture. This is the positive-and-no-change-control rule applied to a migration's dry run rather than to a test.
+
+## ⭐ Review another session's overnight ships against LIVE DATA, not against their diff (2026-09-24, PT)
+
+A read-only review of one overnight Cowork pass (`547ed1396`, `6a74fd67a` and the pack-metrics ships) found **8 defects**. Every one was reached by querying what the ship PRODUCED, not by reading its code. Examples:
+- a dist label that disagreed with the studio index on 34,540 rows;
+- a backtest ratio (1.31×) that was placeholder zeros, really 0.62×;
+- a pricer that re-read its own head (4 priced a tick, when 285 was possible);
+- a latched cursor with no way back (#135).
+
+The diffs were clean, tested and honest by construction. The defects lived in the DATA each one selected.
+- ⭐ **Ask each ship "what did it write, and does an independent source agree?"** Its own report counts only rows it wrote; count rows that are CORRECT.
+- ⚠ **A headline number from a ship is a claim until re-derived.** The 1.31× went into a ledger entry and needed a CORRECTION entry of its own. Filing the correction under the original entry keeps the next reader from quoting the stale figure.
+
+
+## A pin fixture must carry the live table's CONSTRAINTS, or it cannot see the violation it exists to prevent (2026-09-24, PT)
+
+`supabase/tests/sync_ts_listings_from_atlas.sql` declared its `ts_listings` fixture with only the columns the function touches and no NOT NULL. The live table has `circulation_count NOT NULL`, and one listing on a stub edition aborted a whole production tick on exactly that. The pin could not have caught it: in the fixture, the NULL row would simply have LANDED.
+
+The fix made the fixture column NOT NULL as live. With that, the previous body fails the pin with the byte-identical production error, which is the planted-defect proof.
+
+⚠ **"Minimal fixtures (only the columns the function reads/writes)" must still include every constraint the function can VIOLATE on those columns:** NOT NULL, CHECK, UNIQUE. A constraint-free fixture turns an abort into a silent write.
+⚠ **Second instance, worse, 2026-10-10 (`refresh_atlas_pack_ev`):** the fixture lacked prod's `is_positive_ev NOT NULL`, `pack_listing_id NOT NULL` and the `pack_ev` CHECK. So the pin didn't merely miss the NULL flag on an ask-less pack, it **ASSERTED it as a documented property** ("the flag is NULL, not FALSE"). Each of the three was fatal to the whole hourly sweep, and they stayed latent only while the swept population (57 Atlas pools) happened to avoid them. Widening the population to ~820 dists (#65) hit all three on the first run. **Before pinning a value as a property, check the live column can HOLD it** (`information_schema.columns.is_nullable`, `pg_constraint`).
+
+### The client failure-collapse ratchet counts the IDIOM, not the defect (2026-09-26)
+
+`__tests__/client-failure-collapses-to-empty-ratchet.test.ts` counts `r.ok ? r.json() : null`-shaped reads. Fixing a failed-read-as-claim defect by keeping that shape and handling the `null` honestly downstream (TeamFollowButton: null → an "unknown" state) still ADDS a site and reds the budget, though the code is now correct. **Do not raise the budget:** write the failure branch as STATE at the read — `if (!r.ok) { setState("unknown"); return }` — so there is no null sentinel to count. The ratchet then stays flat and the fix is visible in one place.
+
+### A test selection by COMPONENT NAME misses guards that read the page by ROUTE (2026-09-26)
+
+Before pushing a rewrite of `CollectionProfileClient.tsx` I ran every test that `grep`-matched the component's name — 635 green — and `main` went RED on `client-pages-failed-vs-empty-guard.test.ts`, which reads the page by ROUTE path (`app/(collections)/[collection]/profile/[username]/page.tsx` + its siblings, via `pageSource()`) and never names the component. It pins a SHAPE (the trophy leg sets its failure flag on BOTH the null-body path and the catch); the rewrite kept the behaviour but routed both through one catch. **A targeted selection is a speed-up, not a gate: before pushing a component or route REWRITE, run the full suite** (~10 min locally, `timeout 900 npx vitest run`). When `main` is red from your own push, push the repair first and let the full suite confirm it — do not leave `main` red for the length of a local run.
+
+## Displaced from CLAUDE.md — 2026-09-27 (verbatim; it paid for the one-page-structure + Pinnacle-lock rule)
+
+- ⚠ **Grep for the guards that READ a file before you EDIT it** — a pinned exemption reddened main (08-22).
+
+### A guard that follows IMPORTS must skip TYPE-ONLY imports — they carry no code (2026-09-27)
+
+`check-unbounded-server-reads` reddened `main` for ~1.5 h (2 > 0) on `/[collection]/packs` and `/sets`: the only path to the read in `lib/panini/coverage.ts` was five client components doing `import type { PaniniCoverage }`, which TypeScript erases. `importsOf` matched any `from "@/…"`. Fixed by skipping `import type` / `export type` statements (classified by the statement's FIRST line, so a multi-line `import type {…}` counts as type-only; a mixed `import X, { type Y }` still reaches). ⚠ **Four pushes from two sessions stacked on the red before anyone read the failing STEP** — the job was named `TypeScript` and `tsc` itself was green; the failing step was the ratchet script after it. **Read the step, not the job name.** Register [#154](known-issues.md).
+
+
+## Two lessons from the signed-in-wallet work (2026-09-28/29, PT)
+
+### ⚠ Adding a hook call can grow the React Compiler lint on lines you never touched
+`MarketClient.tsx` gained `useOwnFlowWallet()` plus a `setOwnerKey(… || fallback)` inside an existing effect: `lint:ratchet` went 696 → 700 — **3 `set-state-in-effect` + 1 `preserve-manual-memoization`, all on UNTOUCHED lines** (341, 372, 418, 514), because the compiler re-analyses the whole component. Re-shaped as a DERIVED value (`const ownerKey = deviceOwnerKey || (flow ? own.wallet : null)`, original effect byte-identical): back to 696. **Read a ratchet growth by file, not by the lines in your diff; prefer deriving over setting state in an effect.**
+
+### ⚠ A planted defect that does not red the test may be a mis-PLANTED defect — count occurrences first
+Pinning the binder's "no second account-level seed" test, the planted seed passed the test. The test was fine: the plant's `}, [ownerKey])` → `}, [ownerKey, own.wallet])` replacement hit the FIRST of two identical dependency arrays, so the seed effect never re-ran. Re-planted on the right occurrence, it reds. **Before concluding a test is vacuous, assert the plant's anchor count (CLAUDE.md's scripted-replace rule applies to plants too) and grep that the defect landed where you meant.**
+
+## The CI `TypeScript` job runs six node scripts after `tsc` — run them locally too (2026-09-30)
+
+`tsc`, `lint:ratchet` and vitest all passed locally and CI still went red twice, on `scripts/check-unbounded-server-reads.mjs` (step 10 of the `TypeScript` job). Before pushing a page/lib change, run all six: `for s in check-brand-tokens check-driver-message-leaks check-unhandled-third-state check-responsive-flex-basis check-unbounded-server-reads check-lane-egress; do node scripts/$s.mjs >/dev/null 2>&1; echo "$s=$?"; done`. **10-03: that loop is now `npm run ci:guards`** (`scripts/run-ci-guards.mjs`, list pinned to the workflow by `__tests__/ci-guards-script-matches-the-workflow.test.ts`) — it exists because the loop was written down and still skipped: `8c4f654af` passed tsc/vitest/ratchet locally and reddened `main` for 20 min on `check-brand-tokens`.
+
+- ⚠ **Its BOUNDED list is curated: `boundedRead` is NOT on it.** A server page reaching a read wrapped only in `boundedRead` counts as unbounded. On the edition page use `withQueryDeadline` (same timeout-to-`{error}` shape, no retry).
+- ⚠ **A nested generic defeats its matcher.** `withQueryDeadline<Record<string, unknown>>(` does not match `(?:<[^>]*>)?\s*\(` (the first `>` closes the group), so the call reads as unbounded. Drop the type argument or use a single-level one.
+- ⚠ **The E2E DOM smoke picks entity URLs from the live sitemap**, so it can go red on a deploy for a URL no commit in it touched — reproduce the URL before attributing (09-30: a Panini set the sitemap listed before its page could resolve; key-files-and-honesty.md, end).
+
+
+### The built-render smoke fails FABRICATED FRESHNESS, and a local run is not CI's run (2026-10-03, R94)
+
+- **`scripts/qa/built-render-smoke.mjs` (CI `build-render`) renders every page of the BUILT app with every Supabase read dropped, so it is the platform's forced cold pass, the one R94 said was "owed" for weeks.** Read it as that: on 10-03 it confirmed R94 (all 13 boards' KPI strips `—`) and found four defects no SSR arm could see (a concluding empty state, a "Top 0" in prose, two render-time "Updated" stamps that ISR then cached).
+- ⭐ **It now fails any page whose `<time dateTime>` is later than the build start.** Every read fails in that run, so such a stamp can only have come from the clock. Allowlist `KNOWN_FABRICATED_STAMP` (empty, ratchet). Date-only and midnight-UTC values are exempt (publish dates). The run reports how many renders it inspected.
+- 🚨 **The sandbox's network is NOT CI's network.** This web sandbox cannot reach `www.rippackscity.com` or `data.vaultopolis.com` (proxy `connect_rejected`; left as is by decision 10-03). CI has open internet. So a page fed by an EXTERNAL host plus our DB behaves differently: the local smoke was clean, and the first CI run caught `/insights/pack-drops` (Vaultopolis up, DB down → substitution, key-files-and-honesty.md end). **A green local smoke proves only the DB-only pages; treat `build-render` as the authority, and for the live site use the Vercel MCP `web_fetch_vercel_url`, not curl.**
+
+## ⭐ A SHADOWED CLI IS NOT THE CLI (2026-10-03, R77) — a mock that answers any invocation cannot see a flag the real binary rejects
+
+The runner-side pager (`scripts/ci/page-via-github-issue.sh`) had a seven-case unit test that EXECUTED the script with `gh` shadowed by a bash stub, and it was green for the whole afternoon. The first live dispatch (`pager-test.yml`) opened issue #16 as designed; the second opened #17 instead of commenting on #16. The dedupe lookup was `gh issue list … --jq --arg t "$PAGE_TITLE" '…'` — gh's `--jq` takes ONE expression and has no `--arg`, so the real gh exited non-zero, `2>/dev/null` swallowed it, and "no open issue" was the answer every time. The stub matched on `"$1 $2" = "issue list"` and printed the fixture regardless of the rest of the argv, so the defect was invisible to it BY CONSTRUCTION.
+
+- **The rule:** a stub proves the script's DECISION LOGIC given an answer; it proves nothing about whether the real CLI would give that answer. Every CLI invocation a script depends on needs ONE real execution (a dispatch-only workflow, a sandbox call against the real API) before it is believed — and the stub should then be tightened to REJECT what the real CLI rejects (here: exit 1 on any `--arg`, answer only the one REST path the script now uses), so the planted old line goes red.
+- **The cheaper shape that avoids the class:** do the data selection in bash/awk on a plain CLI output rather than in a flag-dependent query language — `gh api …/issues?state=open&labels=<l> --jq '.[] | "\(.number)\t\(.title)"' | awk -F'\t' -v t="$TITLE" '$2 == t'` — because the comparison then runs in a language whose semantics the test can exercise.
+- **Keep the live test:** `pager-test.yml` is `workflow_dispatch`-only (no schedule, so the liveness watchlist ignores it). Dispatch it after any change to the pager; the first run opens the test issue, the second must COMMENT. Close the issue afterwards.
+
+## ⚠ A MODEL COMMENT IS A CLAIM — read the FUNCTION before attributing an estimator's behaviour (2026-10-03, R125)
+
+`app/api/fmv-recalc/route.ts` said "WAP: recency-weighted average price (7-day half-life exponential decay)" and defined `WAP_HALF_LIFE_SECONDS`; the function `weightedAveragePrice` is tiered 3/2/1 over 0–7 / 7–14 / 14–30 days and the constant had no reader. Two documents written that afternoon (the first R125 text, the handoff) repeated the header, and the attribution of WHY the WAP lagged the market was wrong until the function was read (a 29-day print carries a THIRD of today's weight under the real code, not a sixteenth). Same family as "a header claiming it MIRRORS another implementation is an untested claim": a comment describing a model is a claim about the code beneath it — diff it against the body, and `grep` the constant for a reader before quoting it.
+
+## ⚠ REPRODUCE A CI-ONLY TEST FAILURE ON CI'S RUNTIME — Node 24, not the sandbox's 22 (2026-10-04)
+
+`component-GiveawayClient` failed on CI three times (`13f3934f8`, `bdd2af035`, `a58e57eca`) and passed every local run. The first diagnosis (a 1 s `findBy*` budget overrun on a loaded shard) was "reproduced" by delaying every mocked fetch 1.1 s. That proved only that a slow chain fails a 1 s budget. The 5 s fix then failed the same way. The cloud sandbox runs **Node 22**; CI and `package.json` `engines` run **Node 24**. On Node 24 the file failed 3 runs in 30, and every failing test (no passing one) printed FCL's "WalletConnect Service Plugin" banner: a dynamic `import()` of a `vi.mock`ed module had resolved to the REAL module, whose wallet connect never returns. The page showed "Opening Flow Wallet…", which is a HANG, not slowness. Fix: also mock the module the mocked one re-exports from (32/32 green, 0 FCL loads). The timeout was reverted.
+
+- **Get Node 24 without an installer:** `npm pack node-linux-x64@24` in the scratchpad, `tar xzf`, then `PATH=<dir>/package/bin:$PATH node node_modules/vitest/vitest.mjs run <file>`.
+- **Run it many times in parallel** (8 at once on 4 cores). A 1-in-10 failure needs ~30 runs to show and ~30 clean runs to call fixed.
+- **Read the stuck DOM before naming the mechanism.** A fully mocked chain cannot take 5 s, so a state frozen past the budget means a hang. Grep stderr for a real dependency's banner in the failing test only.
+- **A mocked module's dynamic `import()` can bypass `vi.mock` on Node 24** (vitest 4.1). When a component lazy-loads a mocked wallet/SDK wrapper, mock the layer beneath it too.
+
+⚠ **A PLANTED DEFECT CAN PASS BECAUSE THE FIXTURE NEVER REACHES THE BRANCH (2026-10-09, `fix_173b_rekey_verified`).** The "no checkpoint → untouched" claim survived a planted defect that let no-checkpoint rows through, because the fixture's target edition was also uncatalogued and a LATER filter dropped it anyway. A claim needs a subject that fails ONLY that one condition; when a planted defect survives, first ask which other filter is still catching the subject.
+
+⚠ **A MATCHER RUN OVER FREE TEXT ITS OWN AUTHOR WRITES WILL EVENTUALLY MATCH ITS AUTHOR (2026-10-09, `scripts/report-ready-queue.mjs`).** The ready-queue finds the night pass's ledger heading by its words. A case-insensitive whole-line match stopped at a daytime entry about "the night pass's ready queue". The case-sensitive fix then stopped at the NEXT entry, the one describing that fix, which quoted `NIGHT PASS`. Every queued item read open both times, and the second break came from the fix's own ledger entry. **Anchor on STRUCTURE the writer controls (here the status prefix before the first `**`), not on vocabulary, and test against the real strings that broke it.** Survey the whole population too: 09-24 → 10-09 the prefix rule finds 9 headings, one per pass, and 0 daytime entries.
+
+⚠ **A SELECTOR THAT READS A WIDER TABLE THAN THE COMPUTATION IT FEEDS SILENTLY DROPS THE DIFFERENCE — AND THE SUPPRESSION EXPLAINING WHY WAS A FALSE CLAIM (2026-10-10, `fc398a34e`).** `fmv_recalc_edition_page` reads `sales` so a buy-back-only edition stays in the work list; its suppression in `fmv-writers-read-sales-market-not-sales.test.ts` says that is "so its FMV is re-derived without the buy-backs". The route then built its work map from `sales_market` rows only, so those editions never entered it and kept a pre-exclusion FMV for a week (50 of 69). The guard was right about the SQL and silent about the caller. When a suppression asserts a downstream effect, trace one subject through the downstream code before believing it.
+
+⛔ **A TABLE-KEYED FIXTURE CAN INVENT A COLUMN, AND A SWALLOWED SELECT ERROR MAKES THAT GREEN TEST THE ONLY "PROOF" (2026-10-10, `1812c274f`).** `/api/alerts` selected `badge_editions.edition_key`, a column that does not exist. Every production call raised 42703, and the route read only `{ data }`, so every ask was null and no price alert could preview as triggered. `api-alerts-deep` stayed green because `makeInstrumentedSupabaseFixture` returns whatever rows the fixture declares, and the fixture declared `{ edition_key, low_ask }`. A route test cannot catch a wrong column. Bind every `error` (the route now does), and **check each fixture row's keys against the real table** (`information_schema.columns`) when you write it. The same day's `component-CollectionTabClient` "attaches badge info to the matching player + series" case asserted only a row count. It is now two cases that assert which edition's badges attached, with a same-player decoy that wins under the old keying.
+
+## `no-html-link-for-pages` reports ONE literal `<a href="/x">` about 11–12 times (2026-10-11)
+
+A single new `<a href="/">` in `app/error.tsx` moved the ratchet **114 → 126**, and replacing one hardcoded `<a href="/nba-top-shot/packs">` with a dynamic href moved it **114 → 103**. The rule reports a literal internal href once per pages directory it resolves, so **a jump of ~12 on this one rule is one site, not twelve** — `npx eslint <file>` shows the duplicates on a single line. A dynamic `href={…}` is not flagged; use `next/link`'s `Link` for a literal route. ⚠ Related: when a fix SHRINKS a ratchet's population, its no-slack assertion fails too — lower the budget in the same commit and re-derive the number from the failing assertion (three did that day: honest-error-outside 20 → 19, client collapse 64 → 63, eslint baseline 692 → 681).
+
+
+## CI + local-gate improvements (2026-10-12/13, PT) — what shipped, what was measured and NOT shipped
+
+Source: a failure taxonomy of the last 200 `ci.yml` runs on `main` (10-10 4:36 AM → 10-12 6:43 PM PT): 177 green, 23 red, **0 flaky** — every red was deterministic and ended with a fixing commit, never a re-run.
+
+- **Unit shards 2 → 3.** At 2, shard 1 ran a median 424 s vs 308 s (13 green runs) and set the wall clock: vitest splits by file COUNT, not duration. First run at 3: 290 / 268 / 151 s. The ceiling is now `Build + render smoke` (~323 s).
+- **`npm run preflight`** (`scripts/preflight.mjs`) runs the gates a change can red, picked by changed path with CI's own docs-only rule: tsc, `ci:guards`, `lint:ratchet`, `vitest related`, and `test:coverage:components` for any `components/**` / non-route `.tsx` / `*.test.tsx` change — the gate that held `main` red 3 h 14 m on 10-11 while seven pushes landed on it. `--full` adds the primary ratchet.
+- **10-20: preflight runs the SQL gates** (changed migrations parsed even in `--quick`; DB-invariant suite in full mode) against a throwaway local Postgres — see the top of this file.
+- **`.githooks/`** — `pre-commit` (staged-tree: conflict markers, ledger heading dropped / swallowed / future-dated, known-issues + inbox index `--check`, register `--before HEAD`) and `pre-push` (`preflight --quick`). Activated by the web SessionStart hook (`git config core.hooksPath .githooks`); elsewhere `npm run hooks:install`. 7 of the 17 non-inherited reds were these process slips. ⚠ **Push runs QUICK on purpose**: agent sessions run `git push` under a ~2 min command timeout, and a 5-min coverage run in the hook would be killed mid-push for every concurrent writer — quick mode NAMES the slow gates it skipped. Bypass once: `--no-verify` / `RPC_SKIP_PREFLIGHT=1`; a deliberate ledger roll: `RPC_LEDGER_ROLL=1`.
+- **`Inherited main status` waits for an in-flight fix.** It read COMPLETED runs only, so a docs push landing while the fix was still running reported a red already being fixed (38049689552; `be1f0bcc7`). On a `red` verdict it now waits ≤ 12 min for newer in-flight runs, then re-decides; the job timeout went 5 → 20 so a kill cannot turn a real red into an inconclusive cancel (pinned).
+- ⭐ **A SLOW TEST WAS THE ONLY INSTRUMENT THAT SAW A PRODUCTION CSS BUG.** `component-DashboardClient` took 85 s; each describe block ran 4–6× slower in the file than alone. Refuted on measurement before the cause was found: `defaultHidden` role queries (no change), leaked listeners / DOM / `<head>` (all 0), live timers (≤ 15 toast timeouts), `performance` entries (0). A CPU profile named it: css-tree `SyntaxError` + jsdom `handleSheet` + Vite stack rewriting on every `getComputedStyle`. A comment copy-pasted into **8** `<style>` blocks — "so p-*/m-* classes rendered as 0" — contains `*/` and closed itself mid-sentence. **Chromium dropped the `@layer base` reset on all 8 surfaces** (incl. `app/(collections)/layout.tsx`; verified: 1 rule parsed vs 2 fixed), hidden only because Tailwind preflight carries the same reset. `no-unlayered-universal-reset` passed throughout — it reads TEXT and saw the `@layer`. Fixed (85 s → 21 s) and guarded by `__tests__/inline-style-css-parses.test.ts`, which PARSES every inline `<style>` template with css-tree (pinned devDependency). ⚠ **"Could not parse CSS stylesheet" in a vitest log is a finding, not noise.**
+- **10-13 addendum — the preflight now selects what `vitest related` cannot see.** Both reds on `main` the next morning were TREE-WALKING guards (`no-credential-literals-in-tracked-files`, `insights-client-dates-are-hydration-safe-guard`): they READ files, so no import graph reaches them. Two DERIVED selections, never a curated list: tests whose source NAMES a changed path (1–13 files for the busiest paths; runs on push too) and every tree-walking guard (`readdirSync` / `ls-files` / `walk(` — 140 files, 88 s; full preflight only, quick NAMES it as not run). ⚠ The 3-shard falsifier (slowest shard > ~380 s) did not fire: 290 s and 301 s on the next two green runs; `Build + render smoke` (373 s) is the ceiling.
+- ⚠ **10-18: "NAMES a changed path" was a LITERAL match, and a test that spells its subject as `join("app", "api", "support-chat", "route.ts")` names it in segments.** The concierge cache-breakpoint guard was invisible to preflight that way, so seven local-green pushes sat on a red `main` (~6:20 → ~7:41 PM PT). `testsNamingPaths` now also matches quoted segments joined by commas (a route change selects 16 tests, up from 7). ⚠ **Still invisible: a subject reached through a variable, a glob, or a computed path.** The tree-walking set catches only the `readdirSync`/`ls-files`/`walk(` shapes. **So read the CI run after every code push; preflight is a filter, not CI.**
+- ⚠ **10-14: a REAL-CLOCK fixture is a time bomb** — `fmv-accuracy-gate` asserted `stale: false` on a hardcoded 10-12 stamp through the function's DEFAULT `Date.now()`, and reddened `main` by itself 48 h later (run 38573637012) on a push that touched nothing near it. When a function takes `nowMs`, a test asserting a time-relative property must PASS it.
+- ⭐ **10-14: the daily `clock-sweep` now samples DAYS, not only hours** (`DEFAULT_DAY_SHIFTS = [3, 30]` at 13:30 UTC; job timeout 75 → 110 min). Its four UTC hours all sit inside ONE day, so the 48 h `fmv-accuracy-gate` expiry above was invisible to it by construction. Measured first: the whole suite at +3 d and +30 d (jsdom included, positive control 31 d) had **no** clock-dependent failure, so this adds coverage, not noise; a planted copy of the 10-14 time bomb is reported from the `13+3d` sample alone. `--hours` accepts `H+Nd`.
+- **10-14: render smoke concurrency 4 → 8.** `Build + render smoke` became the CI ceiling (~373 s) once the shards split. The render half is I/O-bound (requests wait on the deliberately dropped Supabase connections), not CPU-bound as assumed: same build, 4-core box, 444 renders each — c=4 187 s (twice, so not warmness), c=8 105 s, c=12 77 s. 8 keeps headroom under the 45 s per-request timeout. `RENDER_SMOKE_CONCURRENCY` still overrides.
+- **10-14: component coverage SHARDED (2 + merge), like the unit gate.** It became the ceiling (~300 s) after the two changes above. Same tree: single 301 s → shards 151 + 145 s, merge 4 s; merged 16,136 / 17,745 statements vs 16,134 single (90.93 vs 90.92 %), inside this gate's documented wobble. Scripts `test:coverage:components:shard` / `:merge`; blobs in `.vitest-reports-components/`, artifacts `component-blob-*` so the unit merge (`vitest-blob-*`) never reads them. ⚠ `coverage-gates-are-wired-to-ci` now pins shard + merge + needs for this gate — the old `npm run test:coverage:components` substring check would have been satisfied by the SHARD script's name (planted defect: merge step removed → ORPHANED, red). `test:coverage:components` (single run) stays for local use and `preflight`. CI wall clock before this: 304–340 s per green code run, from a 488 s median on 10-12.
+- **10-14 outcome — where the wall clock stands.** Unit shards then went 3 → 4 (1/3 led every run at 290–301 s). Run 38612435409: slowest job 249 s (unit 1/4), build + render 234 s, unit 2–3/4 186–200 s, component shards 160–175 s; wall 316 s, from a 488 s median on 10-12. Four jobs now sit within ~60 s of each other, so further sharding mostly buys `npm ci` + merge overhead — the next real lever would be the per-job `npm ci` (~30 s × every job).
+- ⛔ **MEASURED, NOT SHIPPED — dropping `*.test.tsx` from the unit suite** (they also run in `component-tests`, ~47 % of unit file-time). Primary coverage without them: **92.05 → 90.95 % statements** (gate 91.8), branches 80.70 → 79.73, functions 94.22 → 92.03; **38 `lib/` files** are covered only by component tests (`lib/warmup/WarmupContext.tsx` −193 statements, `lib/hooks/useModalA11y.ts` −55, …). And since shards are no longer the critical path, the saving would be runner minutes, which are free on a public repo. Re-open only if a shard becomes the ceiling again.
+
+### ⚠ A mutation harness restores from a SAVED COPY, never by inverse replace (2026-10-14)
+Restoring a mutation by replacing the mutated text back fails whenever that text is not unique in the file, or is empty (a deleted line). Two such restores failed in one session, and the half-restored source only surfaced because the next suite run went red. Copy the file before mutating and copy it back after (`cp f f.orig; …; mv f.orig f`). Then `git diff --stat` should show only the intended edits.
+
+### ⚠ Changing user COPY silently disarms every NEGATIVE test that matched the old text (2026-10-14)
+
+"No sales in the last 24h" became "No sales indexed in the last 24h". Five `not.toMatch(/No sales in the last 24h/)` / `queryByText(...)).toBeNull()` assertions across three overview test files — the ones pinning that a FAILED read never renders the empty-market line — would have gone on passing forever against ANY render, because the new copy no longer matches their regex. The positive assertions red and get fixed; the negatives stay green and go vacuous. **When you change copy, grep the OLD string across `__tests__` and widen every match to both spellings (`/No sales (indexed )?in the last 24h/`) in the same commit** — then check a NEW negative written for the new copy is not itself matched by the widened regex (one was, and red until rewritten as a positive).
+
+### A pin whose fixture shares the dedup KEY with the defect cannot see the defect (2026-10-14)
+
+`dispatch_triggered_fmv_alerts`'s pin aged `last_triggered_at` past the 6 h gate to prove "no re-fire", and the OLD body passed: its hourly `dedup_bucket` collided with the first delivery (same test hour), so `ON CONFLICT DO NOTHING` hid the re-fire the gate would have produced an hour later in production. Moving the earlier deliveries into an old bucket made the old body red (`got [2], want [0]`). **When a fixture cannot move the clock, move every key derived FROM the clock.**
+
+## 2026-10-17/18 — four lessons from the text-contrast and collection-tab work (Claude Code, Windows box, PT)
+
+### ⚠ A GREEN WORKFLOW CAN CARRY A JOB THAT FAILED EVERY NIGHT
+⚠ **10-20: for data routes the gate had also been auditing a LOADING state** — see "THREE QA GATES THAT WERE GREEN BY NOT LOOKING" at the top of this file.
+`E2E DOM Smoke` was green on every scheduled run 09-29 → 10-17 (go-live M8), while its NON-blocking `a11y-audit` job (`continue-on-error`) read `serious · color-contrast` on 4 of 5 routes every night. The badge is the workflow conclusion; a non-blocking job's failure never reaches it. **Read the job list of a "green" workflow, and grep its log for `N failed`.** Fixed 10-17/18: 299 → 18 axe nodes (then #194 a+b); the remaining 18 are the accepted white-on-red buttons. ⭐ **Since 10-18 ~4:50 PM PT the job is a GATE** — `continue-on-error` removed after the rewritten spec read 22/22 against production; it fails on color-contrast and select-name, excludes only the white-on-#E03A2F signature, and prints every other serious rule (#196).
+
+### ⚠ A "LOAD FLAKE" THAT FAILS ON A FILE THAT EXISTS ONLY BRIEFLY IS A RACE
+`strip-comments-matches-typescript` failed in preflight twice on 10-17 and passed alone, and I called it load (its import takes ~55 s). The error was `ENOENT … stat 'tmp-gitignore-probe'`: `gitignore-cannot-silently-swallow-a-docs-file.test.ts` creates and removes that directory at the repo ROOT while `walkRepoSourceTree` walks it in parallel. **Read the error string before you name a cause** (CLAUDE.md, measurement). Fix: the walker skips an entry that vanishes between `readdir` and `stat` (ENOENT only; anything else still throws) — preflight's tree-walking step went 7/7 green on the next run.
+
+### ⚠ A NEW GUARD CAN BREAK CI THAT PREFLIGHT DID NOT
+A new test that walked files with `execSync("git ls-files")` passed preflight locally and reddened CI through `guards-do-not-shell-out-to-grep` (fixed by Cowork in `e7f8ae9bb`, ~10 min later). **After every push, watch CI on the exact SHA to `completed`** — with the FULL SHA (`gh run list --json headSha` filtered on `git rev-parse HEAD`): a `--commit <short-sha>` filter returned nothing and a "wait for CI" loop exited having seen no run.
+
+### ⚠ A VERIFY-LOOP THAT NEVER MATCHED THE OLD STATE MEASURED NOTHING
+A poll for a shipped CSS rule (`rpc-sq-td-emph{color:var(--rpc-red-text)`) ran 20 min and printed `new=[] old=[]` on every tick: the served inline style has SPACES (`.rpc-sq-td-emph { color: …`). Before trusting a "not live yet", make the probe find the OLD value first — a probe blind to both states is not evidence of either. The reliable live check for a client change was the BEHAVIOUR (the production page's own `/api/badges?…&editions=` request in a Playwright trace).
+
+### ⚠ A PRIVATE `walk()` THAT RETURNS `join()` PATHS REDS ONLY ON WINDOWS (2026-10-18)
+Two tree-walking tests built their own `walk()` with `path.join` and compared the result to POSIX-keyed lists (`SUPPRESSED_TS["app/api/…"]`, an expected-file list): on Windows `join` returns `app\api\…`, so every key read as "stale" / missing — red on the laptop on clean `main`, green on Linux CI, and easy to dismiss as "not mine". Fixed in both by normalising (`p.split("\\").join("/")`); the second was written an hour after the first was fixed. **Use `walkSourceFiles` + `repoRelative` from `__tests__/helpers/source-files.ts`, which already return POSIX paths**, rather than a fresh walker.
+
+### A population counted by REGEX over SQL bodies is a claim, not a census — count CALL ARGUMENTS with a parser (2026-10-18)
+
+#195 was filed with "91 of the 93 callers of the 3-arg `log_pipeline_run(text, boolean, jsonb)` publish a fabricated `rows_written`", and a follow-up read that "the zero-yield guard is blind to 91 lanes". Both were false. The census regex `log_pipeline_run\s*\(\s*'[^']+'\s*,\s*(true|false|v_|…)` meant "second argument looks boolean", but `v_` also matched `v_started`, the 11-arg form's timestamp. A 30-line parser that counts top-level arguments (tracking quotes and parentheses) over each function's newest migration definition found **3** three-arg callers and 95 eleven-arg ones. The wrong numbers sat in the register, the night-pass steer and the ledger for ~15 minutes before the per-caller fix, which needed the real call shapes, exposed them. ⭐ **Before quoting a population derived from code, run a positive control on one member the pattern says is IN and one it says is OUT, and read both call sites.** For call arity, parse; never regex.
+
+
+### ⭐ An UNCALLED matcher is a vacuous assertion that every test runner passes — `no-unused-expressions` is its detector, now banned at zero (2026-10-19)
+`expect(body.dormant_since_days).toBeUndefined // not on the response body` (`__tests__/api-admin-resend-welcome-batch-deep.test.ts`) evaluated the matcher FUNCTION and discarded it, so the test stated the contract in a comment and asserted nothing: the CLAUDE.md "vacuous assertion" class with no mutation-testing signature. It surfaced only as one of 3 `@typescript-eslint/no-unused-expressions` hits in the lint ratchet. Fixed (`toBeUndefined()`; flipping it to `toBeDefined()` reds it), the other two hits were statement-ternaries in a script, and the rule's baseline entry is deleted, so any new uncalled matcher fails CI. A grep of `__tests__` and `e2e` for `).toX` with no call found no other instance. ⚠ A ratchet rule that LOOKS cosmetic can be the only instrument for a correctness class; read what each remaining hit IS before calling a rule style debt.
+
+### ⛔ A MOCK THAT INVENTS AN API THE REAL CLIENT LACKS GREENS A ROUTE THAT CANNOT RUN (2026-10-19)
+`/api/migrate-acquired-at` had two test files and passed both, yet it could never succeed in production: its fallback called `supabaseAdmin.raw(…)`, which supabase-js v2 does not have, and the shared mock in `__tests__/api-admin-deferred-cron-bodies.test.ts` supplied `raw: (s) => s`. Its primary RPC (`exec_sql`) did not exist in prod either, and its SQL named columns `moment_acquisitions` does not have. The route was deleted (ledger 10-19). ⚠ When a mock exposes a method, check the real client has it; a mock is a claim about the dependency's API, and nothing else tests that claim. Found from an unused `updateError` binding in the lint ratchet.
+
+### ⛔ A MIGRATION FILE ASSEMBLED BY SLICING AT `CREATE OR REPLACE` CAN START INSIDE A COMMENT (2026-10-19)
+`20261020044118` was built by a script that cut the file at the first `CREATE OR REPLACE`, which sat inside the header comment, so five comment lines landed as bare SQL. The APPLIED body was right (md5 of live `prosrc` matched); only the file was malformed, and `main` CI went red on "Every migration file parses as SQL" for that push and the next three from other sessions. **The pre-push hook runs `preflight --quick`, which does NOT run the parse check** — run it yourself before pushing any migration: start the local Postgres (tooling-gotchas.md recipe) and `DATABASE_URL=postgresql://postgres@localhost:5433/postgres bash scripts/check-migration-sql-parses.sh` (needs a superuser; it creates a scratch DB). Assemble a file by anchoring on a line START, never a substring.
+
+### ⚠ Preflight missed every test that walks the tree THROUGH A HELPER (fixed 2026-10-20 ~8:30 PM PT)
+`isTreeWalkingTest()` looked for `readdirSync` / `ls-files` / `walk(` in the test's OWN source, but 33 guards walk via `__tests__/helpers/{migration-defs,og-capture,page-source,source-files}.ts` (e.g. every migration-body guard calling `newestDefinitions(migrationFiles())`). So a migration whose `replace()` anchor literal read as a `CREATE OR REPLACE FUNCTION` passed preflight 7/7 and reddened `main` on `allday-golazos-readers-stay-on-the-onchain-book` (20261021024344, ~7:55 PM PT). Preflight now derives the walking helpers from their source (`walkingHelpers()`) and counts a test that imports one: 152 → 185 walkers. Pinned in `pre-commit-and-preflight.test.ts`. ⚠ The anchor lesson itself: inside a migration, never write another object's `CREATE … FUNCTION public.<name>(` as a string literal — split it (`'…public.' || '<name>('`).
+
+## ⚠ jsdom is blind to three browser behaviours that broke the filter dropdowns — test them in real Chromium (2026-10-21, PT)
+
+`getBoundingClientRect()` returns zero boxes (see above), and jsdom also does **not** forward a click inside a `<label>` to the label's control, and has no layout viewport. All three mattered on 10-21: a trigger inside a `<label>` re-opened its list on every pick (live), and a phone panel nudge measured `window.innerWidth` (which grows to 534 px on a 390 px phone with overflow) and pushed the page sideways. Every vitest click test passed through both. Pin what jsdom cannot see **structurally** (`trigger.closest("label")` is null), and run the component itself in Chromium with a Vite-built harness page + Playwright (`/opt/pw-browsers/chromium`, `devices["iPhone 13"]`): recipe in [filter-controls.md](filter-controls.md#verifying--what-a-sandbox-can-and-cannot-see).
+
+- ⚠ **A COPY PIN IS ONLY AS TRUE AS THE MODULE IT PINS TO — check that module has a LIVE CALLER (2026-10-22).** `homepage-serial-premium-copy-matches-the-model.test.ts` (R105) pinned the homepage's "#1 = 12×, jersey = 8×, perfect-mint = 6×" to `lib/market-compute.ts` and passed for five weeks — while that module's only caller (`/api/market-truth`) had no client and every live surface priced serials through the SQL `serial_fmv_estimate` (multipliers fitted per tier and mint size; no below-median curve at all). The guard faithfully held the copy to a dead model. **Before pinning copy to code, grep the code's callers out to a page.** Re-pinned to the live model's real properties (no fixed N×, the three buckets it prices), with both old bullets as failing controls.
+
+### ⚠ `timeout` KILLS THE CHILD, NOT THE GRANDCHILD — a retry that fails in 2 s is the same lock, not a second try (2026-10-23)
+
+The fix above was one attempt wearing three labels. The 2:41 PM PT scheduled smoke (run 40028655626) stalled on the mirror again, `timeout 240` killed `npx`, and the `sudo apt-get` that `playwright install --with-deps` had spawned lived on holding `/var/lib/dpkg/lock-frontend`; attempts 2 and 3 each died in ~2 s with `dpkg frontend lock was locked by /usr/bin/apt-get process with pid 2654`. The `dpkg --configure -a` between attempts hit the same lock. **A "retry" whose attempts complete in a fraction of the first one's time has not retried — read the attempt durations, not the loop count.** The install now lives in `scripts/ci/install-chromium.sh` (both `e2e-smoke.yml` jobs): per attempt `timeout -k 15`, then `pkill` any `apt-get`/`dpkg` the expired attempt left (they are the only ones on a runner), a bounded wait on the lock, `dpkg --configure -a`, and a mirror switch (`azure.archive.ubuntu.com` → `archive.ubuntu.com`) from the second attempt — four stalls in a day on one mirror are the mirror. Self-tested with a stalling fake install that leaves a detached `apt-get` behind (`__tests__/ci-install-chromium-retries-for-real.test.ts` pins the loop; a planted swallowed-`rc` defect reds it). General rule: **when a bounded command spawns workers under `sudo`, the bound must reach the workers — kill by name or process group, then prove the resource they held is free before calling the next attempt a retry.**
+
+### ⚠ `cancelled` IS NOT `superseded` — the DOM smoke was silently skipped by an apt-mirror stall (2026-10-23)
+
+`E2E DOM Smoke` cancels an in-flight deploy run when a newer deploy lands, so a `cancelled` conclusion reads as routine. On 10-23 the 5:10, 6:39 and 10:48 AM PT runs were NOT superseded: their job logs end on `Install Chromium` → `npx playwright install --with-deps chromium` → apt `Get: … fonts-wqy-zenhei` / `xvfb` from `azure.archive.ubuntu.com`, stalled until the 10-minute job limit, and the smoke never ran (8 of the day's 12 runs were cancelled; healthy installs take 20 s–5 min). One was the run for `0262dd4` — a deploy check that looked done. **Fix (`.github/workflows/e2e-smoke.yml`, both jobs):** apt gets `Acquire::Retries 5` + `Acquire::http(s)::Timeout 30` so a stalled transfer fails fast and retries; the install runs up to 3× under `timeout 240` with `dpkg --configure -a` between; job `timeout-minutes` 10 → 20 to fit. **Rule: before reading a `cancelled` run as superseded, check that a NEWER run of the same group exists — and read the step that was running when it died.** A scheduled run has no group-mate to be superseded by, so a cancelled SCHEDULED run is always a failure.
+
+### ⭐ A SHARED SAFE HELPER THAT IS NOT USED IS NOT A GUARD — `ownLookup` existed while six routes did `MAP[param]` (2026-10-23)
+
+`lib/safe-lookup.ts` (`ownLookup`) was written for exactly this: a bare `MAP[key]` on a plain object resolves a crafted `constructor` / `toString` / `__proto__` / `hasOwnProperty` to a TRUTHY `Object.prototype` member, which defeats the `if (!x) return 400` after it. Its header named the shape, and six `app/api` routes still did it (`market-analytics`, `sets-db`, `insider-signals`, `wallet-preflight`, `cache-refresh` public; `cron/golazos-storefront-reconcile`), each reaching an RPC or a walk with a function as its "collection". **Fix:** every collection-keyed map read in `app/api` goes through `ownLookup`, the four already-safe sites included, so the ban needs NO allowlist. **Guard:** `__tests__/a-collection-key-never-reads-object-prototype.test.ts` walks `app/api` (asserts > 300 files inspected; 484 on 10-23) and bans `UPPER_CASE_MAP[collection|collectionSlug|slug|collectionRaw|dbSlug|collectionId]` on comment-stripped source; planted in the tree (`sets-db` reverted), it reds naming the file. ⚠ **Stated limit:** it is silent about a map keyed by any other identifier, and page segments are out of scope (`app/(collections)/[collection]/layout.tsx` 404s an unknown collection through an array `find`, so a crafted segment never reaches those reads). **Rule: when a helper exists for a hazard, the guard is a ban on the BARE shape, not a reminder to use the helper.**
+
+### ⛔ A FIXTURE SHAPED BY THE CODE'S ASSUMPTION PINS THE BUG — derive fixtures from a LIVE row (2026-10-25)
+
+`compare_pack_value` treated `pack_table_rows.pack_ev` as gross EV; the view defines it as `gross_ev − live_ask` (net). Both test files fed it `pack_ev: 18` on a $9 pack with `value_ratio: 2.0` — a row the real view can never return (it would say `pack_ev: 9`) — so the tests asserted the wrong math and stayed green for weeks while every "+EV packs" answer was inverted against the packs page (a 1.53× pack told to the user as 0.53×). `/analytics/packs` had the same premise in its fixtures and headed the net figure "EV". **Tell:** a fixture whose columns are arithmetically inconsistent with each other (`pack_ev ÷ price ≠ value_ratio − 1`). **Rule:** before writing a fixture for a view's row, `SELECT` one live row and copy its SHAPE (which columns are derived from which); and a column whose name is a noun (`pack_ev`) needs its definition read from `pg_get_viewdef`, never from the name. Found by replaying real user questions against production, not by any test.
+
+### ⚠ A MOCKED TEST THAT "TIMES OUT" IS MAKING A REAL NETWORK CALL until proven otherwise (2026-10-25)
+
+`concierge-player-identity` and `api-support-chat-tools-populated-2` reddened `main` on 2 of 3 runs with `search_catalog_deals` → `status: "timeout"`, and passed 3/3 locally. Every DB read was mocked; the tool's post-processor (`annotateQuietMarket`) was not: it `fetch`ed the LIVE site's market-pulse board with a 9 s abort inside the tool's 6 s race. On CI that call reaches production (variable latency → intermittent); in this sandbox the proxy refuses `rippackscity.com` instantly, so it failed fast and never timed out — **the sandbox could not reproduce it by construction.** The same race was live for users. **Before calling a timeout in a mocked suite a flake: grep the tool path for `fetch(`, and compare every inner timeout with the budget that races it** — an inner abort longer than its outer budget is dead code. Guard: `concierge-tool-budget-covers-its-board-fetch` (reads both numbers from the route source). Planted-defect proof for the fix: a never-answering `fetch` reproduces the exact CI assertion at 9 s. ⚠ **The guard sums EVERY `fetchPublicInsight(` call in a tool's branch as if sequential (10-26):** two exclusive `return fetchPublicInsight(…)` arms (an All Day leg and the default) read as 18 s against a 10 s budget. Build the path first and make ONE call per branch rather than raising the budget.
+
+## 2026-10-25 — a11y at phone width; images the harness cannot see
+
+- ⭐ **`scrollable-region-focusable` is GATED, and read at PHONE WIDTH.** The rule only fires where a table is wider than its box, so the 1280 px audit was structurally silent: production at 390 px had 16 `.rpc-scroll-x` wrappers + 6 inline `overflow-x: auto` tables unreachable by keyboard while every scheduled run was green. `e2e/a11y.spec.ts` now resizes each route to 390×844 after the desktop audit and re-reads `PHONE_RULES` (adds seconds — one rule). Proved before deploy: `/nba-top-shot/challenges [dark]` failed the phone step (1 gated) while its desktop pass read 0. Fix pattern: `lib/a11y/scroll-region.ts` `scrollRegion(label)` (focusable, `role=region`, a per-site label); `scroll-regions-are-keyboard-reachable.test.ts` tree-walks every `.rpc-scroll-x` — ⚠ it cannot see INLINE `overflow-x: auto` (98 exist; most hold links, which satisfy the rule), so the phone-width axe pass is the instrument for those. jsx-a11y's `no-noninteractive-tabindex` contradicts axe/WAI for scroll regions; the props go through the helper rather than as literal `tabIndex`.
+- ⚠ **The OG test harness (`__tests__/helpers/og-capture`) reads TEXT, not LAYOUT.** The share card's social image laid "COLLECTION FMV · $1,515.94 · 691 moments" out as a misaligned ROW for as long as it existed — its children sat in a React fragment, which satori lays out as a row — and every OG test was green. **Render the route before shipping an OG change:** a temporary `zz-*.mts` IN THE REPO (node_modules resolution) that mocks `globalThis.fetch`, imports the route's `GET`, and writes the PNG — `npx tsx --tsconfig tsconfig.json ./zz-render.mts out.png` — then look at it. Delete the script before lint runs (two `.cjs` probes left in the root grew `no-require-imports` in a preflight).
+- ⚠ **A preflight that started BEFORE an edit did not test it.** Twice today an edit landed mid-preflight; rerun, or run `vitest related` + the guard for the late file.
+
+### ⚠ A plain-viewport layout probe cannot see a PHONE widening its layout viewport (2026-10-26)
+At 320px with a plain Playwright viewport an oversized box only scrolls the page; with mobile emulation (`isMobile`) the browser instead WIDENS the layout viewport (`innerWidth` 329–375) and renders the whole page zoomed out. Top Shot market did exactly that while `e2e/mobile-layout.spec.ts` (plain 320px) read it clean; `scripts/qa/mobile-sweep.mjs` (iPhone descriptor) showed it as `iw` > 320. **Measure layout under mobile emulation, and read `innerWidth` as well as `scrollWidth - clientWidth`.** Two causes found that night, both now guarded or fixed: a non-wrapping flex group of controls, and `repeat(auto-fit, minmax(280px, 1fr))` (cannot go below one 280px column — use `minmax(min(280px, 100%), 1fr)`; tree-walk guard `responsive-grid-minimum-fits-a-phone`). A fixed `left:0; right:0` bar that looks like the offender is a SYMPTOM — it fills whatever width the viewport grew to.
+
+### 🔁 RECURRED 2026-10-26 — three more tree-walk guards red on Windows only (backslash paths vs forward-slash keys)
+`a-player-search-survives-a-missing-accent`, `a-search-box-matches-accented-names` and `wallet-links-follow-their-context` each built their own `walk()` with `path.join` and compared to POSIX literals (`SANCTIONED` keys, an `ENTRY` regex `/\/(page|layout)…/`, `rel === "lib/…"`). The wallet-links walk reached **0** files on Windows, so its "> 300 reachable" check failed and its real assertion inspected nothing. CI (Linux) was green on all three, so `npm run preflight` on this box was red for reasons CI never saw — and a red local gate gets ignored. All three now normalise. **Fourth time this shape has landed: a new tree-walk guard must use `walkSourceFiles` + `repoRelative` from `__tests__/helpers/source-files.ts`, not a fresh walker** (see the 2026-09-03 section above).
+
+## ⚠ A FALLBACK THAT RENDERS ONLY ON FAILURE IS UNTESTED UNTIL THE DEPENDENCY FAILS (2026-10-28, PT)
+
+While Dapper's image host was down, the scheduled `a11y-audit` went red on three image fallbacks: the collection table's initials tile (white on the brand red, 4.36:1), the editions grid's "No image" and `IpfsThumb`'s label (muted text on a fixed translucent black, 3.63–3.89:1 in light mode). Working images had hidden all three since they shipped. **Treat an outage-day visual or a11y failure as a real defect the working path was masking, not as noise.** A component test that forces the failure branch (`fireEvent.error` on the `<img>`) and asserts the fallback's colours is the standing instrument. The house pair for text on an accent is `accentFill()` under `labelOn()` (`lib/accent-text.ts`); a label over a translucent tile needs its own opaque theme surface.
+
+- ⚠ **THE MIGRATION-DEFINITION PARSER READS A `CREATE` BODY UP TO THE NEXT `CREATE` OR EOF (2026-10-30).** `__tests__/helpers/migration-defs.ts` (`newestDefinitions`, used by the tree-walking DB guards) has no statement boundary. So a DO-block splice placed AFTER a `CREATE OR REPLACE FUNCTION` in the same migration file is read as part of that function's body. In `20261030172307` the `get_collection_stats` splice carried its old anchor text (`FROM cached_listings …`), which made `get_platform_stats` look like a v1 reader and turned `allday-golazos-readers-stay-on-the-onchain-book` red. **Put splices (and any SQL that quotes old bodies) BEFORE the first `CREATE` in a file.**
+- ⚠ **AFTER DELETING A ROUTE, GREP `__tests__` FOR ITS PATH *SEGMENT*, NOT ITS IMPORT STRING (2026-10-30).** `heartbeat-marker-precedes-the-terminal-row.test.ts` imported the Flowty lanes as `` `@/app/api/${slug}-listing-cache/route` ``. Preflight's related-tests step and a grep for `topshot-listing-cache/route` both missed that template-string import, and `main` CI went red on shard 3/4 (`f01690f` → fixed `0f2cf2f`). `grep -rlE '<segment>' __tests__` would have found it.
+- ⚠ **A MIGRATION YOU COULD NOT APPLY DOES NOT GO IN `supabase/migrations/` (2026-10-31).** Two guards read that directory as a statement about production: `db-pin-points-at-the-newest-defining-migration` (a committed file redefining a PINNED function while the pin names an older one is a red, whether or not the file is live) and `migration-new-function-states-its-anon-exec-decision` (every `CREATE [OR REPLACE] FUNCTION` needs a REVOKE or an `-- anon-exec:` line — a pre-existing function too). Neither lives in `db-invariants-drift-guard.test.ts`, so a green drift guard proved nothing about them; the whole of shard 4 went red on two pushes (`3b37dae`, `0c44749`) before the failing JOB was read. The established home for a written-but-unapplied migration is `docs/proposals/<slug>-STAGED-MIGRATION.sql` (the #217 and cadence-bridge files went that way); it moves under its recorded version on apply. A pin that is AHEAD of prod is parked the same way (`supabase/tests/pending/`, which no walker reads) — `db-pin-staleness` compares pins to LIVE and cannot tell ahead from behind.
+
+### ⚠ A 320 px PIN measured in the sandbox is not proof — the width depends on LIVE DATA and the FONT STACK (2026-10-31)
+Six routes were pinned in `e2e/mobile-layout.spec.ts` after measuring 320/320 live from the cloud sandbox (mobile-sweep `narrow` + a Playwright probe with isMobile/hasTouch). The first E2E DOM Smoke that was not concurrency-cancelled failed `/nba-top-shot/packs` by **2 px**. Cause: a pack card's EV block held three inline-block chips that FLOWED on one line — 182.8 px in the sandbox (right edge 295.8, title column squeezed to ~40 px, so the sandbox read clean) and ~209 px under CI's emoji/font stack. Two rules. **(1)** Treat a sandbox 320 reading as a hypothesis until CI's chromium has rendered the deployed build — and remember the E2E is a `deployment_status` run, so every push from a concurrent session cancels it; a pin can sit unproven for hours. **(2)** Do not let a chip row flow: `flex-col` the stack (`components/packs/PackTable.tsx`, `91a453a`). Fix in the component, never by widening the test's tolerance.
+
+### ⚠ A `position:fixed; left:0; right:0` bar only MIRRORS a widened viewport — the overflow reporter must skip it (2026-10-31)
+The same red named `<nav class="rpc-mobile-nav"> ends at 322px`. The nav is 4 × 80 = 320 wide; it ENDED at 322 because something else forced `innerWidth` to 322, and a "widest uncontained box" reporter picks the bar because it spans the viewport. The 320 block now skips fixed/sticky bars with `left:0;right:0` and lists the THREE widest offenders with their text and `innerWidth` (`ded8962`, hotfix `10ebe54`), which is how the pack card was found on the next run. ⚠ And the hotfix exists because the first cut threw `ReferenceError: innerWidth is not defined` on EVERY route for one run: Playwright's `expect(x, message)` builds the message string eagerly, on pass as well as fail, so a reporter bug reds the whole suite — run the spec's `--list` AND one real route before pushing a reporter change.
+
+### ⚠ A SCRATCH TABLE in `public` is inside the smoke's RLS population the moment it exists (2026-10-31)
+The #219 one-off backfill parked its cursor in `public._wmc_league_backfill_cursor` (created, RLS off, pg_cron-only). `Smoke Tests` reddened on the next commit: `HARD FAIL: public base tables: RLS on + no anon write — rls_off_base_table:_wmc_league_backfill_cursor`. The tree walk is right and the table was wrong. Create any scratch table with `ENABLE ROW LEVEL SECURITY` (no policies needed — pg_cron runs as owner) and drop it when its job is unscheduled; the ledger entry that creates it carries the cleanup line.
+
+### ⛔ A guard's stated PREMISE is a claim — the #142 guard passed 9 unscoped sites on a false one (2026-11-01)
+`wallet-moments-cache-moment-id-reads-are-collection-scoped` accepted `.eq("wallet_address")` as scope, with the premise written in its header: "a wallet is one chain, so its ids do not collide". False — one Flow wallet holds three collections whose ids collide (41 rows / 11 wallets). The guard was green over 9 wallet-only sites, 5 of them WRITES (wallet-search progressive-classify wrote Top Shot classifications onto colliding rows). Fixed: collection_id is the only accepted scope, the walk covers `moment_acquisitions.nft_id` too, and the old "wallet-only is good" fixture is INVERTED into a planted defect. Control: the new guard run against the pre-fix `app/` tree reds all 9. **Test a guard's premise against the data, not just its regex against a fixture — the fixture encoded the false premise as a passing case.**
+
+## Two CI lessons from the #218/#222 thread (2026-10-31, PT)
+- ⛔ **Run the FULL suite before pushing a route change, not the files you touched.** Adding one bounded-elsewhere `.rpc()` to a route that already degrades honestly raised `api-routes-that-degrade-honestly-also-bound-their-reads` to 43/42 and reddened `main` (`fef2d1027`; fixed with `.abortSignal(AbortSignal.timeout(…))` in `a392eceb8`). The targeted test files were all green. A commit interleaved from another session went red at its own tip for the same reason.
+- ⚠ **An unstubbed `fetch` in a test passes in CI only because production answered** — it is red in any sandbox without egress, and a CI pass that depends on prod being up. Stub every route the code under test calls (the `get_trade_in` "another collection" case, stubbed 10-31).
+
+## ⛔ A HOOK ARROW THAT RETURNS A MOCK MAKES VITEST CALL IT (2026-11-01, PT)
+
+vitest treats a FUNCTION returned from `beforeEach` / `beforeAll` as a cleanup hook and invokes it after
+the test. Every `mock.mockReset()` / `mockClear()` / `mockResolvedValue()` returns the MOCK, and a mock
+is a function — so `beforeEach(() => fetchMock.mockReset())` calls `fetchMock()` with NO arguments at
+teardown. It is invisible while the mock tolerates a no-arg call (it had spread to 6 files), and it
+fails confusingly the first time one does not: a URL-routing `mockImplementation` threw
+`unexpected fetch undefined` from `callCleanupHooks` and failed 5 correct tests in
+`ipfs-thumb-mirror.test.ts`. **Write the body in braces: `beforeEach(() => { m.mockReset() })`.**
+Guard (tree walk, ban at zero; planted-red on the 6 real sites before they were fixed):
+`__tests__/a-hook-arrow-never-returns-a-mock.test.ts`. ⚠ Its fixtures are ASSEMBLED
+(`"before" + "Each("`) — `stripComments` removes comments, not string literals, and the first draft
+flagged its own fixtures.
+
+### ⚠ A route that reads its secret at CALL time is a different test premise from one that captured it at MODULE LOAD (2026-11-04, PT)
+Converting 24 routes from `bearer === TOKEN` (a module-level `const TOKEN = process.env.X ?? ""`) to `tokenMatches(bearer, "X")` (reads `process.env.X` per call) turned FIVE route tests red — `api-cron-{allday-resolve-unmapped,allday-sales-history-backfill,lock-check-batch,pinnacle-metadata-backfill,pinnacle-sales-history-backfill}` — though every route was correct. Their "success path" blocks set the secret once in a `beforeAll` and re-imported the module, while a top-level `beforeEach` reset the env to a different value before each case; the module-captured route never saw the reset, the call-time one did (401). **Fix the PREMISE, not the route: a describe-level `beforeEach` that re-applies the block's own token.** Tell: a 401 where the token is "obviously" right, in a file whose header says "token is MODULE-LOAD captured". The same shape bites any env-read refactor (feature flags, kill switches): grep the test for `beforeAll` + `process.env.` + `resetModules` before trusting its green.
+
+### ⛔ A RATCHET THAT MATCHES AN IDENTIFIER BY ITS PREFIX IS BLIND TO THE SUFFIX-NAMED VARIABLE EVERY ROUTE USES (2026-11-07, PT)
+The R150 ratchet (`ingest-secret-compared-in-shared-helpers-ratchet.test.ts`) declared every local `INGEST_SECRET_TOKEN` / `CRON_SECRET` compare converted ("41 → 37 → 0", 11-04). Its `LOCAL_COMPARE` matched a left-hand identifier that STARTS with `token|secret|…` and a right-hand `\bTOKEN` — so `receivedToken === ingestToken`, `authHeader.slice(7) === cronSecret`, `token !== INGEST_TOKEN` (no word boundary inside `INGEST_TOKEN`), `presented === CRON_TOKEN` and `qToken === ingest` all passed. **Eight routes** still compared the secret with `===`, and one of them (`/api/fmv-recalc`) also logged 8 characters of it on every request. Found by a code review, not by the guard. Fix: a second pattern keyed on an identifier ENDING in `Secret|Token` (literals excluded), the missed shapes PLANTED as assertions, all eight converted. **The "0 remaining" was true of the PATTERN, not of the code** — a population claim is only as wide as the detector that counted it, so plant the shapes you expect the codebase to actually spell, not the shape the sweep replaced.
+
+### ⚠ The COMPONENT COVERAGE GATE is preflight's LAST step — a push before it ends can red `main` (2026-11-08, PT)
+
+`npm run preflight` runs the component coverage gate last (~10 min); CI runs the same global thresholds. On 11-08 a Cowork push went out with every earlier step green and the gate still running: a new, untested `components/auth/AnonCollectionValueCta.tsx` took global component coverage 90.83 / 89.27 against 90.85 / 89.3, and `main` was red ~15 min (`793899f` → fixed by `8cad176`, a 3-case component test). **When the diff adds a file under `components/**`, wait for the gate's own line (`✓ component coverage gate`) before pushing, and ship the component's test in the same commit.** A diff with no component change skips the gate — then the earlier steps are the whole preflight.
+
+
+### ⚠ A whole-output md5 is not a before/after comparator when ties reorder between statements (2026-11-10)
+
+The staged UFC set-tracker migration recorded `md5(get_ufc_set_progress(wallet)::text)` baselines that "must be unchanged"; after applying, all three moved. Calling the function twice in ONE statement gave equal hashes; across statements they differed — sets tied on completion and cost come back in a different order (no tiebreak in the ORDER BY). The data had not changed: canonicalised per set (`jsonb_agg(s ORDER BY s->>'setId')`) against the old body recreated in `pg_temp`, 15 of 15 wallets were identical. **Canonicalise before hashing, and prove the hash is stable across two statements before trusting it as a baseline.** (The equivalent trap for row sets — diff the SET, not the count — is in trust-board-and-safety.md.)
+
+### ⚠ A catalog SPLICE leaves the drift guard's pin pointing at a body that no longer exists (2026-11-14)
+
+`db-invariants-drift-guard` compares a pin's embedded function copy with a full `CREATE OR REPLACE` in the migration it names. An md5-asserted `replace()` splice (a `DO` block) has no body, so re-pointing the guard at the splice file fails "not found". **Remedy (precedent 20260925165425 / 20261020150000): a SNAPSHOT migration re-stating the full post-splice body**, built from the pin's copy after checking `md5` of its `$function$` body equals the live `prosrc`. ⭐ **Record it without transcribing 8 KB through the MCP call:** apply `EXECUTE pg_get_functiondef(oid)` between two md5 asserts under the snapshot's name, and say so in the file header (`20261114210008`). Re-splice the pin with the same anchors and INVERT the assertion that encoded the old behaviour; prove it with a planted copy of the old rule.
+
+⚠ **And a not-vacuous COUNT FLOOR punished a deletion the same afternoon** — `topshot-series-maps-agree-on-the-newest-series` required ≥ 8 files with a Top Shot series map; deleting a private copy in favour of `lib/series-label.ts` made it 7. Re-pinned to "the canonical map is matched". A floor on how many duplicates exist is a floor on the debt.
+- ⚠ **A query-builder fake that ignores `.limit(n)` cannot catch a row-cap regression** (2026-11-15, `__tests__/lib-insights-candy-board.test.ts`): the fake returned every fixture row whatever the limit, so a "returns all 1,316 holders" test passed against the OLD capped read too. Make the fake honour `limit(n)` AND PostgREST's 1,000-row clamp (and `range(from,to)` likewise), then prove the test with a planted revert.

@@ -1,0 +1,234 @@
+// Wallet directory — index page listing every wallet active on the
+// Flowty loan book. Rendered server-side so each wallet row links to a
+// crawlable /analytics/wallets/[address] page, which is the SEO play here.
+//
+// Data source: flowty_analytics_wallet_directory() RPC. We sort by total
+// volume desc and render a flat list (~60 rows currently). When the list
+// grows beyond a comfortable single-page render we'll paginate, but at
+// this scale the page weight is dominated by the WalletIdenticon SVGs,
+// not the row count.
+
+import type { Metadata } from "next"
+import Link from "next/link"
+import { ArrowRight, Wallet } from "lucide-react"
+import { loadWalletDirectory } from "@/lib/analytics/wallet-directory"
+import { resolveUsernames, displayName } from "@/lib/flowty-username"
+import WalletIdenticon from "@/components/analytics/WalletIdenticon"
+import WalletsHubOverview from "@/components/analytics/WalletsHubOverview"
+import NetMarketplaceLeaderboard from "@/components/analytics/NetMarketplaceLeaderboard"
+import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
+
+export const dynamic = 'force-dynamic'
+export const revalidate = 600
+
+export const metadata: Metadata = analyticsMetadata({
+  title: "Flowty Wallet Directory (Historical) — Lenders & Borrowers",
+  description:
+    "Browse every wallet that was active on the Flowty NFT-collateralized loan book. Lenders, borrowers, and mixed-role power users — sorted by total volume. Historical archive (Flowty closed May 2026).",
+  path: "/analytics/wallets",
+})
+
+function fmtUsd(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return "$0"
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`
+  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}k`
+  if (n >= 100) return `$${n.toFixed(0)}`
+  return `$${n.toFixed(2)}`
+}
+
+function fmtRelative(iso: string | null | undefined): string {
+  if (!iso) return "—"
+  const d = new Date(iso)
+  const ms = Date.now() - d.getTime()
+  if (ms < 0) return "just now"
+  const min = Math.floor(ms / 60000)
+  if (min < 1) return "just now"
+  if (min < 60) return `${min}m ago`
+  const hr = Math.floor(min / 60)
+  if (hr < 24) return `${hr}h ago`
+  const day = Math.floor(hr / 24)
+  if (day < 30) return `${day}d ago`
+  const mon = Math.floor(day / 30)
+  if (mon < 12) return `${mon}mo ago`
+  return `${Math.floor(mon / 12)}y ago`
+}
+
+function truncateAddress(addr: string): string {
+  const a = (addr || "").toLowerCase()
+  if (!a.startsWith("0x") || a.length <= 10) return a
+  return a.slice(0, 6) + "…" + a.slice(-4)
+}
+
+
+export default async function WalletsIndexPage() {
+  // ⚠ The read lives in lib/ so it is BOUNDED and TESTABLE — see that module's
+  // header. The `ok` distinction below is unchanged; what changed is that a read
+  // which merely HANGS can now reach it.
+  const { rows, ok } = await loadWalletDirectory()
+
+  const enriched = rows
+    .map((r) => ({
+      ...r,
+      total_volume:
+        (Number(r.borrower_principal_usd) || 0) +
+        (Number(r.lender_principal_usd) || 0),
+      total_loans:
+        (Number(r.borrower_loan_count) || 0) +
+        (Number(r.lender_loan_count) || 0),
+    }))
+    .sort((a, b) => b.total_volume - a.total_volume)
+
+  const names = await resolveUsernames(enriched.map((r) => r.addr))
+
+  const datasetJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Dataset",
+    name: "Rip Packs City Flowty Wallet Directory (Historical Archive)",
+    description:
+      "Index of every wallet that was active on the Flowty NFT-collateralized loan book. Historical archive — Flowty closed May 2026.",
+    creator: { "@type": "Organization", name: "Rip Packs City" },
+    url: `${ANALYTICS_BASE_URL}/analytics/wallets`,
+  }
+
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(datasetJsonLd) }}
+      />
+      <div className="space-y-10">
+        <header className="space-y-2">
+          <h1 className="text-2xl font-bold text-[color:var(--rpc-text-primary)]">
+            Wallets — Loan-Book Lender &amp; Borrower Hub (Historical)
+          </h1>
+          <p className="text-sm text-[color:var(--rpc-text-secondary)] max-w-2xl">
+            Every wallet that was active on the Flowty NFT-collateralized loan
+            book, with a hub-level view of segments, role splits, and activity
+            recency above the per-wallet directory. Flowty closed its marketplace
+            in May 2026 — this is a frozen historical archive.
+          </p>
+        </header>
+
+        <WalletsHubOverview />
+
+        <NetMarketplaceLeaderboard />
+
+        <div className="space-y-3">
+          <div>
+            <h2 className="text-lg font-semibold text-[color:var(--rpc-text-primary)]">
+              Wallet directory
+            </h2>
+            <p className="text-xs text-[color:var(--rpc-text-muted)]">
+              Per-wallet detail — sorted by total volume. Each profile is a
+              standalone page with role-specific stats and recent loan activity.
+            </p>
+          </div>
+
+        <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] overflow-hidden">
+          <div className="flex items-center justify-between p-4 border-b border-[color:var(--rpc-border)]">
+            <div className="flex items-center gap-2">
+              <Wallet size={16} className="text-emerald-400" />
+              <span className="text-sm font-semibold text-[color:var(--rpc-text-primary)]">
+                {enriched.length} wallets
+              </span>
+            </div>
+          </div>
+          {enriched.length === 0 ? (
+            <div className="p-8 text-center text-sm text-[color:var(--rpc-text-muted)]">
+              {ok
+                ? "No wallet activity to display."
+                : "Couldn't load the wallet directory just now — the database is under heavy load. This is a temporary failure, not an empty result. Try again in a minute."}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[640px]">
+                <thead>
+                  <tr className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] border-b border-[color:var(--rpc-border)]">
+                    <th scope="col" className="py-2 px-3 text-left font-semibold w-10">#</th>
+                    <th scope="col" className="py-2 px-3 text-left font-semibold">Wallet</th>
+                    <th scope="col" className="py-2 px-3 text-left font-semibold">Role</th>
+                    <th scope="col" className="py-2 px-3 text-right font-semibold">Loans</th>
+                    <th scope="col" className="py-2 px-3 text-right font-semibold">Volume</th>
+                    <th scope="col" className="py-2 px-3 text-right font-semibold">Last active</th>
+                    <th scope="col" className="py-2 px-3 w-10"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {enriched.map((row, i) => {
+                    const display = displayName(row.addr, names)
+                    const truncated = truncateAddress(row.addr)
+                    const role = row.primary_role || "borrower"
+                    const roleCls =
+                      role === "lender"
+                        ? "border-emerald-500/30 text-emerald-400"
+                        : role === "mixed"
+                          ? "border-amber-500/30 text-amber-400"
+                          : "border-sky-500/30 text-sky-400"
+                    return (
+                      <tr
+                        key={row.addr}
+                        className="border-b border-[color:var(--rpc-border-subtle)] last:border-b-0 hover:bg-[color:var(--rpc-surface-hover)] transition-colors"
+                      >
+                        <td className="py-2.5 px-3 text-[color:var(--rpc-text-muted)] tabular-nums">
+                          {i + 1}
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <Link
+                            href={`/analytics/wallets/${row.addr}`}
+                            className="flex items-center gap-2 min-w-0"
+                          >
+                            <WalletIdenticon addr={row.addr} size={28} />
+                            <div className="min-w-0">
+                              <div className="text-[color:var(--rpc-text-secondary)] truncate group-hover:text-emerald-400">
+                                {display}
+                              </div>
+                              {display !== truncated ? (
+                                <div className="text-[10px] text-[color:var(--rpc-text-muted)] font-mono truncate">
+                                  {truncated}
+                                </div>
+                              ) : null}
+                            </div>
+                          </Link>
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <span
+                            className={
+                              "rounded border px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-semibold " +
+                              roleCls
+                            }
+                          >
+                            {role}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-right text-[color:var(--rpc-text-secondary)] tabular-nums">
+                          {row.total_loans}
+                        </td>
+                        <td className="py-2.5 px-3 text-right text-[color:var(--rpc-text-primary)] tabular-nums font-medium">
+                          {fmtUsd(row.total_volume)}
+                        </td>
+                        <td className="py-2.5 px-3 text-right text-[color:var(--rpc-text-secondary)] tabular-nums text-xs">
+                          {fmtRelative(row.last_active_at)}
+                        </td>
+                        <td className="py-2.5 px-3 text-right">
+                          <Link
+                            href={`/analytics/wallets/${row.addr}`}
+                            className="inline-flex items-center text-[color:var(--rpc-text-muted)] hover:text-emerald-400 transition-colors"
+                            aria-label={`View ${display} profile`}
+                          >
+                            <ArrowRight size={14} />
+                          </Link>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+        </div>
+      </div>
+    </>
+  )
+}

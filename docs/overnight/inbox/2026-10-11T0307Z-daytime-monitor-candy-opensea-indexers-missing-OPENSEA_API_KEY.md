@@ -1,0 +1,27 @@
+# Daytime monitor — 2026-10-11T03:05Z (~8:05 PM PT 10-10)
+
+Read-only daytime sweep. Platform HEALTHY (security 4/4 clean, trust 38/38 ok + 0 breaches — the 10-10 night pass's lone `public_board_slow_count=1` has cleared, stalled [], pg_cron recent failures [], sentinel ts_uuid 48h 0, precompute max age 5.26h). DB 35,520 MB (flat, −82 vs 10-10 baseline). Editions: panini 25,215 (+2,144 vs baseline, walks), topshot 14,521. FMV HIGH+MED: topshot 8,249 / panini 6,397 / pinnacle 848 / nfl_all_day 1,647 / candy 31 / golazos 7 / ufc 0 (flat). Latest production deploy READY (tip 06f98691, offers-indexer serial fix); several CANCELED in the deploy list are superseded builds from today's rapid push burst, no ERROR state. NOT in a saturation spell (snapshot + all probes returned fast; no IO-wait signal), so the read below is stated at normal confidence.
+
+The three items from this run's own 00:08Z tick (unattributed pg_net 401; misattrib-drain suppression drift; allday-storefront-reconcile failure_rate) are NOT re-logged — the 401 and allday-reconcile alerts have since aged out of the snapshot, and the misattrib open-candidate count has ticked DOWN (1544 → 1512) with `topshot-misattrib-atlas-resolver` running every 5 min all-ok, i.e. it is draining as that tick asked the night pass to confirm. See `2026-10-11T0008Z-daytime-monitor-unattributed-pg_net-401-and-misattrib-drain-drift.md`.
+
+Candidates (sensing only):
+
+## 1. candy-opensea sales/listings/offers indexers fail every tick — OPENSEA_API_KEY not set [P-med, likely expected mid-build]
+- **Source:** Vercel `get_runtime_errors` (24h) + `pipeline_runs`. Three groups, each count=1 in 24h, routes `/api/candy-opensea-{sales,listings,offers}-indexer`, first/last 2026-10-11 00:40Z / 00:55Z / 01:05Z. Pipeline error verbatim: `OPENSEA_API_KEY not set (misconfiguration, not an OpenSea outage)`. Each lane: 1 run / 6h, 0 ok, 1 fail; its `*-heartbeat` logs ok, so the dispatcher is firing and the lane is honestly self-reporting the missing secret.
+- **Attribution:** these three lanes shipped during today's heavy active-build burst (the 00:08Z tick saw the candy OpenSea feeds among 12 production deploys). This is their first full daytime reading. The code degrades gracefully and labels the cause itself ("misconfiguration, not an OpenSea outage").
+- **Risk read:** low / no user-or-data impact right now. The primary Candy feeds are healthy (`candy-sales-indexer`, `candy-listings-indexer`, `candy-offers-indexer` each ≤2 fails/24h, by-design) and every Candy trust metric is `ok` (candy_sales_stale 3.1h, candy_fmv_stale 0.1h, candy_ask_book_drop 1.4%, candy_offers_unverified 0%, candy_offers_oldest_active 2.2h). OpenSea is a supplementary venue for Candy MLB; its leg being dark is not degrading the headline Candy data. Most likely Trevor shipped the code ahead of wiring the secret.
+- **Suggested action (night pass / Trevor):** confirm whether `OPENSEA_API_KEY` is intended to be set now (operator action: add the secret to the Vercel project env for these three routes) or whether the OpenSea Candy integration is deliberately parked pre-key — in which case add a one-line do-not-reflag disposition so future passes skip these three "missing key" errors. No revert needed; this is a config gap, not a regression of existing functionality. Do NOT alarm Trevor live — supplementary lane, no user impact, shipped hours ago.
+
+## Sweep coverage note
+- pipeline_fails_24h top line `topshot-pack-supply-atlas` 211 = the Atlas pack-supply upstream-403 lane (info; last 200 at 03:03Z, nothing lost — tick re-asks failed pages) — known/by-design. pack-mint-probes 12/0-ok = EXPECTED (backward walk on mainnet24 historical node, focus). All other `pipeline_fails_24h` ≤8 and by-design/muted (sync-nba-projections muted to 10-28).
+- pipeline_alerts all `info`/by-design: atlas-editions / atlas-market / atlas-pack-supply upstream-403 (Cloudflare challenge, re-walked, 0 stale sets), flow-rest-moment-moved-400 (sold/transferred Moments, by-design). None escalated to high.
+- Artifact validation: the live Cowork/desktop artifacts cannot be enumerated or opened from this session (no artifact tools reachable), so backing data was validated through `rpc_ops_snapshot` instead — trust_health 38 arms, fmv_by_collection all 7, editions_by_collection all 7, pack EV trust arms (pack_ev_board_max_stale 0.03d, pack_ev_publish_shortfall 0.78%) all responded with sane values, no daytime schema break.
+- Sentry connector requires re-auth this run (unavailable) — Sentry not checked; health taken from Supabase + Vercel.
+- 1a first-tick-of-day watches (trust-health full table + cross-collection refresh verify) SKIPPED — 03:05Z is not the ~8am first tick.
+- **inbox written to mount, push unavailable** (remote.origin.pushurl empty; no authenticated remote/credential helper reachable this session, per this same run's 00:08Z precedent). Night pass picks this up locally.
+
+---
+
+## ✅ DISPOSITIONED 2026-10-11 (Claude Code, indexing this filing)
+
+Filed to the mount with no push. Claude Code committed and indexed it on 10-11. This is **known #58**: `OPENSEA_API_KEY` is absent from Vercel. Trevor confirmed it on 09-23 and it is shelved. The lanes degrade honestly (heartbeat ok, run `ok=false`, and they name the misconfiguration). Magic Eden covers every Candy trust arm. **Do not re-flag these three "missing key" errors.** The fix is Trevor-only: set `OPENSEA_API_KEY` in Vercel and redeploy. See `docs/handoff-2026-10-11-overnight-pass.md` QUEUED #4.

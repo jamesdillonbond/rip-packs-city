@@ -1,0 +1,1997 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
+import { NextRequest } from "next/server"
+import {
+  makeInstrumentedSupabaseFixture,
+  installFetchMock,
+  jsonRoute,
+  type FetchStub,
+} from "./helpers/route-harness"
+
+// Deep test for POST /api/sentinel — drives the full check battery with fixtures
+// and pins the two production incident classes:
+//   1. Saturation/empty-error inconclusive classification (2026-06-10 + 2026-07-16
+//      false-CRITICAL pages): a query error that cannot PROVE data loss must warn,
+//      never page critical.
+//   2. Silent-alert-failure guard: a dead Telegram/Resend channel must report
+//      "-FAILED", never claim delivery.
+// Plus the config table contract: thresholds override, disabled checks are
+// neutralized but stay visible.
+
+const state = vi.hoisted(() => ({ sb: null as unknown }))
+
+vi.mock("@supabase/supabase-js", () => ({
+  createClient: () =>
+    new Proxy({}, { get: (_t, prop) => (state.sb as Record<PropertyKey, unknown>)[prop] }),
+}))
+
+// Notification env must exist BEFORE the module loads (read into module consts).
+process.env.INGEST_SECRET_TOKEN = "sentinel-token"
+process.env.TELEGRAM_BOT_TOKEN = "tg-token"
+process.env.TELEGRAM_CHAT_ID = "12345"
+process.env.RESEND_API_KEY = "re-key"
+process.env.ALERT_EMAIL = "ops@example.com"
+
+const { POST } = await import("@/app/api/sentinel/route")
+
+function post(): NextRequest {
+  return new NextRequest("https://t/api/sentinel", {
+    method: "POST",
+    headers: new Headers({ authorization: "Bearer sentinel-token" }),
+  })
+}
+
+type Fixtures = Parameters<typeof makeInstrumentedSupabaseFixture>[0]
+
+// A fully-green fixture set; individual tests override single keys.
+function greenFixtures(): Fixtures {
+  return {
+    sentinel_threshold_config: { data: [], error: null },
+    // Chain Arrival Nodes (#181): no probe parked on a dead spork node.
+    chain_arrival_probes: { count: 0, error: null } as unknown as { data?: unknown; error?: unknown },
+    sales: { count: 1500, error: null } as unknown as { data?: unknown; error?: unknown },
+    fmv_snapshots: { data: [{ computed_at: new Date().toISOString() }], error: null },
+    // Panini Ingest (2026-09-24): walked 1 h ago, tail 90 h, paging live (259), sale 20 h ago.
+    "rpc:sentinel_panini_health": {
+      data: {
+        newest_walk_at: new Date(Date.now() - 3_600_000).toISOString(),
+        edition_age_max_h: 90,
+        editions: 5090,
+        max_serials_per_edition_26h: 259,
+        newest_sale_at: new Date(Date.now() - 20 * 3_600_000).toISOString(),
+      },
+      error: null,
+    },
+    // Split by printing class: base HIGH+MED = 400/1000 = 40% >= 25 -> ok.
+    "rpc:sentinel_fmv_confidence_canonical_ts_split": {
+      data: [
+        { printing: "base", confidence: "HIGH", count: 100 },
+        { printing: "base", confidence: "MEDIUM", count: 300 },
+        { printing: "base", confidence: "LOW", count: 600 },
+        { printing: "parallel", confidence: "HIGH", count: 10 },
+        { printing: "parallel", confidence: "MEDIUM", count: 20 },
+        { printing: "parallel", confidence: "LOW", count: 470 },
+      ],
+      error: null,
+    },
+    // editions is read once now: the 48h UUID-leak count. Coverage moved to
+    // sentinel_edition_coverage() and no longer reads count(*) FROM editions.
+    editions: { count: 3, error: null } as unknown as { data?: unknown; error?: unknown },
+    // 950 of 1000 live editions covered = 95% >= 90 -> ok; inert bucket reported separately.
+    "rpc:sentinel_edition_coverage": {
+      data: [
+        { scope: "live", editions: 1000, with_fmv: 950 },
+        { scope: "inert_ts_uuid", editions: 128, with_fmv: 100 },
+      ],
+      error: null,
+    },
+    "rpc:detect_stalled_pipelines": { data: [], error: null },
+    // pg_cron failure-rate arm (added 2026-09-09). Healthy fixture: a normal 6h
+    // window. ⚠ It must be supplied explicitly — the arm treats an unreadable
+    // payload and an explicit zero-runs answer as INCONCLUSIVE rather than as
+    // health, which is deliberate and is what caught a third-state bug in it.
+    "rpc:check_pgcron_failure_rate": {
+      data: {
+        window_text: "06:00:00",
+        runs: 2100,
+        fails: 1,
+        jobs_failing: 1,
+        startup_timeouts: 0,
+        statement_timeouts: 1,
+        other_fails: 0,
+        top: [{ jobname: "rpc-example", fails: 1 }],
+      },
+      error: null,
+    },
+    // Zero-yield arm (added 2026-09-10, #79). Healthy fixture: a real population
+    // inspected, nothing fallen to zero. ⚠ It must be supplied EXPLICITLY — the
+    // arm treats an unreadable payload and an inspected-nothing answer as
+    // UNMEASURED rather than as health, which is the whole point of it and is
+    // what makes an omission here fail loudly instead of silently passing.
+    "rpc:check_zero_yield_lanes": {
+      data: {
+        inspected: 243,
+        suppressed: 0,
+        window: { baseline_days: 30, zero_days: 7, min_runs: 50 },
+        offenders: [],
+      },
+      error: null,
+    },
+    // Cadence-collapse arm (wired 2026-09-12, #76/#80). Healthy fixture: a real
+    // population inspected, nothing running below its own cadence. ⚠ Supplied
+    // EXPLICITLY for the same reason as the two arms above — an unreadable
+    // payload reads UNMEASURED, not clean, so forgetting it fails loudly.
+    // ⛔ `stopped` is populated on purpose: this arm reports stopped lanes as
+    // CONTEXT and must never score them, so a healthy fixture with stopped lanes
+    // in it is the control for that.
+    "rpc:check_pipeline_cadence_collapse": {
+      data: {
+        inspected: 98,
+        excluded_heartbeats: 46,
+        window: { window_hours: 12, baseline_days: 14, ratio: 0.4, exclude_days: 3 },
+        degraded: [],
+        stopped: [{ pipeline: "offers-sweep", baseline_per_day: 72, last_run_at: null }],
+      },
+      error: null,
+    },
+    v_rpc_trust_health: {
+      data: [
+        { metric: "topshot_fmv_stale_hours", value: 1, breach_at: 6, status: "ok" },
+        { metric: "offer_edition_gap", value: 0, breach_at: 50, status: "ok" },
+      ],
+      error: null,
+    },
+    // Wall-kills + probe-cost arms (added 2026-09-13). Healthy fixtures: a real
+    // population inspected, nothing over the line. ⚠ Supplied EXPLICITLY — both
+    // arms treat an unreadable payload and an empty population as UNMEASURED,
+    // never as health, so an omission here fails loudly instead of passing.
+    "rpc:check_wall_kills": {
+      data: {
+        window: { hours: 24, grace_minutes: 10, correlation_seconds: 5 },
+        inspected: 45,
+        verified: 44,
+        unverified: [{ pipeline: "dead-lane-backstop", heartbeats: 7 }],
+        offenders: [],
+      },
+      error: null,
+    },
+    // Correlated Tick Loss (R77, 2026-10-03). Healthy: a real clock population,
+    // the worst hour well under warn_at. Supplied explicitly — an omitted or
+    // empty payload is UNMEASURED by design, so leaving it out fails loudly.
+    "rpc:check_correlated_tick_loss": {
+      data: {
+        clock_pipelines: 132,
+        recent: "03:00:00",
+        history: "72:00:00",
+        hours: [{ due_hour: "2026-10-03T18:00:00Z", pipelines: 1, ticks: 1, sample: ["pinnacle-nft-resolver"] }],
+      },
+      error: null,
+    },
+    "rpc:check_maintenance_load": {
+      data: { vacuums: [], clusters: [], index_builds: [], autovacuum_workers: 0, autovacuum_max_workers: 3, io_waiters: 1, measured_at: "2026-09-13T18:56:01Z" },
+      error: null,
+    },
+    "rpc:check_pg_net_dispatch": {
+      data: {
+        queued: 0,
+        responses_10m: 139,
+        errored_10m: 3,
+        http5xx_10m: 0,
+        last_response_at: "2026-09-13T17:32:15Z",
+        store_bytes: 1.4 * 1024 ** 3,
+        store_rows: 5391,
+        ttl: "6 hours",
+        batch_size: 200,
+      },
+      error: null,
+    },
+    "rpc:sentinel_probe_cost": {
+      data: {
+        since: "2026-09-13T16:30:00Z",
+        rows: [
+          { fn: "sentinel_sales_ingest_health", calls: 12, mean_ms: 900, max_ms: 3000, blks_per_call: 5694, total_s: 11 },
+          { fn: "check_wall_kills", calls: 12, mean_ms: 2000, max_ms: 6000, blks_per_call: 33414, total_s: 24 },
+        ],
+      },
+      error: null,
+    },
+    "rpc:sentinel_total_sales_estimate": { data: 4200000, error: null },
+    // Dune Spend: 20% of the datapoint cycle at 25% elapsed, credits barely
+    // touched -> on pace, ok.
+    "rpc:dune_spend_report": {
+      data: {
+        configured: true,
+        cycle_datapoints_pct: 20,
+        cycle_elapsed_pct: 25,
+        credits_est_left: 2400,
+        cycle_credit_cap: 2500,
+        days_left_in_cycle: 23,
+        on_pace: true,
+        by_pipeline: [{ pipeline: "ownership-sync-dune", datapoints_cycle: 200000 }],
+      },
+      error: null,
+    },
+    // ⚠ FOUR ARMS READ `pipeline_runs`, IN THIS ORDER, so the fixture is a
+    // SEQUENCE — the harness hands successive calls successive elements and
+    // clamps at the last. A single object here would feed all three the same
+    // payload, and the Portfolio Cache Drain arm would then read a row with no
+    // `extra` and correctly report UNREADABLE, turning this green battery amber.
+    //   [0] Ownership Index Freshness — most recent PRODUCTIVE run of either
+    //       ownership writer. Fresh => ok.
+    //   [1] Pack Sales Ingest (Top Shot / All Day) — the unlatch guard row.
+    //       ⚠ Its OWN age is checked first, so a row older than 40 min is
+    //       CRITICAL however healthy its contents look; a green battery has to
+    //       model this element, not omit it.
+    //   [2] Portfolio Cache Drain — most recent reconcile run, read for
+    //       `extra.oldest_cache_h`. 0.9h taken just now => ok.
+    //   [3] the notification-delivery read, which wants `extra.notifications`
+    //       and finds none — exactly what it saw before this sequence existed.
+    pipeline_runs: [
+      {
+        data: [{ pipeline: "ownership-onchain-walk", started_at: new Date().toISOString() }],
+        error: null,
+      },
+      {
+        data: [
+          {
+            pipeline: "pack-sales-cursor-unlatch",
+            started_at: new Date().toISOString(),
+            extra: {
+              topshot: { sale_age_hours: 1.6, was_latched: false },
+              allday: { sale_age_hours: 49.0, was_latched: false },
+            },
+          },
+        ],
+        error: null,
+      },
+      {
+        data: [
+          {
+            pipeline: "reconcile-saved-wallet-stats",
+            started_at: new Date().toISOString(),
+            extra: { oldest_cache_h: 0.9 },
+          },
+        ],
+        error: null,
+      },
+      {
+        data: [{ pipeline: "ownership-onchain-walk", started_at: new Date().toISOString() }],
+        error: null,
+      },
+    ],
+    // Per-collection + per-source ingest health — all within their ceilings.
+    "rpc:sentinel_sales_ingest_health": { data: ingestHealthy(), error: null },
+    // Edge Lane Observability: the healthy shape is a FULL registry - every
+    // active edge-function cron job accounted for. ⚠ `unchecked` is non-zero
+    // in production by design (two known gaps) and must NOT escalate, which the
+    // "does not escalate on unchecked alone" case below pins.
+    "rpc:check_edge_lane_observability": {
+      data: {
+        inspected: 12,
+        unregistered_count: 0,
+        unregistered: [],
+        stale_count: 0,
+        stale: [],
+        unchecked_count: 0,
+        unchecked: [],
+        fresh_count: 12,
+      },
+      error: null,
+    },
+    // Pipeline Success Coverage: two watchlisted pipelines, both with at least one
+    // success in the window. NOTE the arm reports INCONCLUSIVE (warn) on an EMPTY
+    // watchlist by design — "we measured nothing" is not "everything is fine" — so
+    // a green battery has to model the watchlist, not omit it.
+    pipeline_cadence_watchlist: {
+      data: [{ pipeline: "topshot-sales-indexer" }, { pipeline: "fmv-recalc" }],
+      error: null,
+    },
+    pipeline_alert_suppression: { data: [], error: null },
+    pipeline_runs_daily: {
+      data: [
+        { pipeline: "topshot-sales-indexer", runs: 70, ok_count: 68, rows_written: 4200, last_error: null, refreshed_at: new Date().toISOString() },
+        { pipeline: "fmv-recalc", runs: 40, ok_count: 25, rows_written: 19000, last_error: null, refreshed_at: new Date().toISOString() },
+      ],
+      error: null,
+    },
+  }
+}
+
+// Mirrors sentinel_sales_ingest_health() output: one row per (collection,
+// source), each carrying the collection's hours-since-last + its config.
+function ingestHealthy(): Record<string, unknown>[] {
+  return [
+    { collection: "nba_top_shot", display_name: "Top Shot", marketplace: "topshot", source: "onchain", sales_1h: 50, sales_6h: 800, sales_24h: 2000, coll_hours_since_last: 0.3, silence_hours: 3, loudness: "critical" },
+    { collection: "nba_top_shot", display_name: "Top Shot", marketplace: "topshot", source: "offer_fill", sales_1h: 6, sales_6h: 116, sales_24h: 550, coll_hours_since_last: 0.3, silence_hours: 3, loudness: "critical" },
+    { collection: "nfl_all_day", display_name: "All Day", marketplace: "nflallday", source: "onchain_dapper_v2", sales_1h: 9, sales_6h: 11, sales_24h: 71, coll_hours_since_last: 0.4, silence_hours: 12, loudness: "critical" },
+    { collection: "candy_mlb", display_name: "Candy MLB", marketplace: "magic_eden", source: "solana_das", sales_1h: 0, sales_6h: 25, sales_24h: 183, coll_hours_since_last: 2.3, silence_hours: 12, loudness: "warn" },
+    { collection: "disney_pinnacle", display_name: "Pinnacle", marketplace: "pinnacle", source: "on-chain", sales_1h: 0, sales_6h: 28, sales_24h: 116, coll_hours_since_last: 1.5, silence_hours: 12, loudness: "warn" },
+    { collection: "laliga_golazos", display_name: "Golazos", marketplace: "(none)", source: "(none)", sales_1h: 0, sales_6h: 0, sales_24h: 0, coll_hours_since_last: 68, silence_hours: 168, loudness: "warn" },
+    { collection: "ufc_strike", display_name: "UFC", marketplace: "(none)", source: "(none)", sales_1h: 0, sales_6h: 0, sales_24h: 0, coll_hours_since_last: 2088, silence_hours: 999, loudness: "off" },
+  ]
+}
+
+function install(fixtures: Fixtures) {
+  const spy = makeInstrumentedSupabaseFixture(fixtures)
+  state.sb = spy.fixture
+  return spy
+}
+
+/**
+ * install() plus a record of the FILTERS applied per table.
+ *
+ * The shared fixture's chainables discard their arguments, which is fine for
+ * almost every check — but the Sales Ingest (2h) fix IS a filter. `sales` has no
+ * index on `ingested_at`, so that predicate alone parallel-seq-scans all 8
+ * partitions; bounding `sold_at` (the partition key) is what lets the planner
+ * prune 6 of them. A test that only asserts the resulting status would pass just
+ * as happily with the bound deleted, i.e. it would assert nothing about the one
+ * thing this change is.
+ */
+function installRecordingFilters(fixtures: Fixtures) {
+  const spy = makeInstrumentedSupabaseFixture(fixtures)
+  const f = spy.fixture as { from: (t: string) => Record<string, unknown> }
+  const baseFrom = f.from.bind(f)
+  // `in` is recorded WITH its value list: the Ownership Index Freshness arm must
+  // span BOTH ownership writers, and since the fixture's chainables discard their
+  // arguments, dropping one writer is otherwise invisible to any status assertion.
+  const filters: Record<string, Array<{ op: string; col: string; val?: unknown }>> = {}
+  const queryCount: Record<string, number> = {}
+  f.from = (table: string) => {
+    queryCount[table] = (queryCount[table] ?? 0) + 1
+    const b = baseFrom(table)
+    for (const op of ["gte", "lte", "gt", "lt", "eq", "in"] as const) {
+      const base = b[op] as (...a: unknown[]) => unknown
+      b[op] = (...args: unknown[]) => {
+        ;(filters[table] ??= []).push({ op, col: String(args[0]), val: args[1] })
+        return base(...args)
+      }
+    }
+    return b
+  }
+  state.sb = f
+  return { ...spy, filters, queryCount }
+}
+
+const sniperOk = jsonRoute("/api/sniper-feed", {
+  deals: [{ source: "topshot" }, { source: "allday" }],
+})
+const telegramOk = jsonRoute("api.telegram.org", { ok: true })
+const resendOk = jsonRoute("api.resend.com", { id: "email-1" })
+
+let fetchMock: ReturnType<typeof installFetchMock> | null = null
+function stubFetch(stubs: FetchStub[]) {
+  fetchMock = installFetchMock(stubs)
+  return fetchMock
+}
+afterEach(() => {
+  fetchMock?.restore()
+  fetchMock = null
+})
+beforeEach(() => {
+  process.env.INGEST_SECRET_TOKEN = "sentinel-token"
+})
+
+interface Check {
+  name: string
+  status: string
+  detail: string
+  /** Present on arms that publish a number; absent when a check could not be evaluated. */
+  value?: string | number
+}
+function check(report: { checks: Check[] }, name: string): Check {
+  const c = report.checks.find((x) => x.name === name)
+  if (!c) throw new Error(`check not found: ${name}`)
+  return c
+}
+
+describe("POST /api/sentinel — full battery", () => {
+  it("reports ALL CLEAR when every check is green", async () => {
+    install(greenFixtures())
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    const res = await POST(post())
+    expect(res.status).toBe(200)
+    const report = await res.json()
+
+    expect(report.status).toBe("ALL CLEAR")
+    expect(report.checks.map((c: Check) => c.status)).not.toContain("critical")
+    expect(check(report, "Sales Ingest (2h)").detail).toContain("1500 new sales")
+    expect(check(report, "FMV Freshness").status).toBe("ok")
+    // base 100+300 of 1000 canonical TS base editions = 40% high+med >= default 25 -> ok.
+    expect(check(report, "FMV Confidence (canonical TS)").status).toBe("ok")
+    expect(check(report, "FMV Confidence (canonical TS)").detail).toContain("BASE HIGH+MED: 40.0%")
+    // 950 of 1000 live editions covered = 95% >= 90 -> ok; inert bucket excluded.
+    expect(check(report, "Edition Coverage").detail).toContain("950 of 1000 live editions")
+    expect(check(report, "Edition Coverage").detail).toContain("excludes 128 inert")
+    expect(check(report, "TS Edition Writer Leak (48h)").status).toBe("ok")
+    expect(check(report, "Pipeline Silence").status).toBe("ok")
+    expect(check(report, "Trust Health").detail).toBe("2/2 trust metrics ok")
+    expect(check(report, "Sniper Feed").detail).toBe("2 deals (topshot: 1, allday: 1)")
+    expect(check(report, "Ownership Index Freshness").status).toBe("ok")
+    expect(check(report, "Dune Spend (cycle)").status).toBe("ok")
+    expect(check(report, "Dune Spend (cycle)").detail).toContain("20% of datapoints at 25%")
+  })
+
+  // Dune Spend — the only surface where either Dune meter is visible. The plan is
+  // 1,000,000 datapoints + 2,500 credits per cycle and ONE ownership walk is
+  // 684,498 datapoints (68.4%), so a single run is the difference between "on
+  // pace" and "the month is gone".
+  describe("Dune Spend (cycle)", () => {
+    const spend = (over: Record<string, unknown>) => {
+      const f = greenFixtures() as any
+      f["rpc:dune_spend_report"] = {
+        data: { ...(f["rpc:dune_spend_report"].data as object), ...over },
+        error: null,
+      }
+      return f
+    }
+
+    it("warns when spend has passed 95% of the cycle's datapoints", async () => {
+      install(spend({ cycle_datapoints_pct: 97, cycle_elapsed_pct: 90, on_pace: true }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const report = await (await POST(post())).json()
+      expect(check(report, "Dune Spend (cycle)").status).toBe("warn")
+    })
+
+    it("warns on BURN RATE even while total spend is low — 40% spent at 5% elapsed", async () => {
+      // The failure that has no threshold breach yet: two walks landed in the
+      // first days of a cycle. Reading only the total would call this healthy
+      // right up until the month is gone.
+      install(spend({ cycle_datapoints_pct: 40, cycle_elapsed_pct: 5, on_pace: false }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const report = await (await POST(post())).json()
+      const c = check(report, "Dune Spend (cycle)")
+      expect(c.status).toBe("warn")
+      expect(c.detail).toContain("PROJECTED TO EXHAUST")
+    })
+
+    it("says EXHAUSTED, not 'projected to exhaust', once the cycle cap is already spent", async () => {
+      // 2026-09-13: the live sweep read "103.5% of datapoints at 66.5% of the
+      // cycle … PROJECTED TO EXHAUST BEFORE THE CYCLE ENDS" — a forecast of a
+      // state already reached. Past 100% the honest copy names the configured
+      // stop; a projection there is a false claim about the future.
+      install(spend({ cycle_datapoints_pct: 103.5, cycle_elapsed_pct: 66.5, on_pace: false }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const report = await (await POST(post())).json()
+      const c = check(report, "Dune Spend (cycle)")
+      expect(c.status).toBe("warn")
+      expect(c.detail).toContain("EXHAUSTED")
+      expect(c.detail).not.toContain("PROJECTED TO EXHAUST")
+    })
+
+    it("warns when the CREDIT meter is nearly spent though datapoints are untouched", async () => {
+      // Two meters, different lanes: the cursored backfills buy one execution
+      // per window and can exhaust credits while the datapoint gauge reads calm.
+      install(spend({ cycle_datapoints_pct: 3, credits_est_left: 100, cycle_credit_cap: 2500 }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Dune Spend (cycle)")
+      expect(c.status).toBe("warn")
+      expect(c.detail).toContain("% of credits")
+    })
+
+    it("reports an unreadable meter as unreadable, never as 0% spent", async () => {
+      const f = greenFixtures() as any
+      f["rpc:dune_spend_report"] = { data: null, error: { message: "pool timeout" } }
+      install(f)
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Dune Spend (cycle)")
+      expect(c.status).toBe("warn")
+      expect(c.detail).toContain("pool timeout")
+      expect(c.detail).not.toContain("0% of datapoints")
+    })
+
+    it("says so plainly when no lane has spent yet, rather than printing an empty list", async () => {
+      install(spend({ by_pipeline: [], cycle_datapoints_pct: 0 }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Dune Spend (cycle)")
+      expect(c.status).toBe("ok")
+      expect(c.detail).toContain("no lane has spent yet")
+    })
+  })
+
+  // Ownership Index Freshness — the arm added after ownership-onchain-walk failed
+  // two daily ticks (2026-08-15/16) with every cadence-shaped instrument reading
+  // healthy, because the cron fired on time and a FAILING run still logs a row.
+  // Panini Ingest — the only server-side Panini alarm (the desktop freshness check never
+  // wrote a pipeline_runs row). Worst-of four OUTCOME legs from sentinel_panini_health().
+  describe("Panini Ingest", () => {
+    const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString()
+    const panini = (over: Record<string, unknown>) => ({
+      ...greenFixtures(),
+      "rpc:sentinel_panini_health": {
+        data: {
+          newest_walk_at: hoursAgo(1), edition_age_max_h: 90, editions: 5090,
+          max_serials_per_edition_26h: 259, newest_sale_at: hoursAgo(20), ...over,
+        },
+        error: null,
+      },
+    })
+
+    it("is ok and quotes every leg on a healthy runner", async () => {
+      install(panini({}))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Panini Ingest")
+      expect(c.status).toBe("ok")
+      expect(c.detail).toContain("last walk 1.0h ago")
+      expect(c.detail).toContain("max serials/edition in 26h 259")
+    })
+
+    it("warns after an overnight gap and pages after a lost day", async () => {
+      install(panini({ newest_walk_at: hoursAgo(15) }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      expect(check(await (await POST(post())).json(), "Panini Ingest").status).toBe("warn")
+      install(panini({ newest_walk_at: hoursAgo(30) }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      expect(check(await (await POST(post())).json(), "Panini Ingest").status).toBe("critical")
+    })
+
+    it("reads the newest-captures key when the function provides it, and says so", async () => {
+      install(panini({ max_serials_per_edition_26h: undefined, max_serials_per_edition_newest_captures: 390 }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Panini Ingest")
+      expect(c.status).toBe("ok")
+      expect(c.detail).toContain("max serials/edition in the newest 20k captures 390")
+      expect(c.detail).not.toContain("in 26h")
+      install(panini({ max_serials_per_edition_26h: undefined, max_serials_per_edition_newest_captures: 30 }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const r = check(await (await POST(post())).json(), "Panini Ingest")
+      expect(r.status).toBe("warn")
+      expect(r.detail).toMatch(/serial paging regressed/)
+    })
+
+    it("names a serial-paging regression (one 30-row page) as a warn", async () => {
+      install(panini({ max_serials_per_edition_26h: 30 }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Panini Ingest")
+      expect(c.status).toBe("warn")
+      expect(c.detail).toMatch(/serial paging regressed/)
+    })
+
+    it("pages when the rotation tail or the sale feed goes stale", async () => {
+      install(panini({ edition_age_max_h: 400 }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      expect(check(await (await POST(post())).json(), "Panini Ingest").status).toBe("critical")
+      install(panini({ newest_sale_at: hoursAgo(200) }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      expect(check(await (await POST(post())).json(), "Panini Ingest").status).toBe("critical")
+    })
+
+    // 2026-10-31: the tail is judged against the MEASURED rotation, not a fixed 168 h. The live
+    // reading that motivated it (225 h tail, 4,078 of 40,153 walked in 24 h ≈ 236 h rotation)
+    // warned on every run for days while the walk was reaching the tail on schedule.
+    it("does NOT warn on a tail that matches the measured rotation (the 10-31 live shape)", async () => {
+      install(panini({ edition_age_max_h: 225, editions: 40153, edition_refreshed_24h: 4078 }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Panini Ingest")
+      expect(c.status).toBe("ok")
+      expect(c.detail).toContain("rotation 236h")
+      expect(c.detail).not.toMatch(/tail not being reached/)
+    })
+
+    it("warns, then pages, when the tail falls behind the rotation (a real stall)", async () => {
+      install(panini({ edition_age_max_h: 400, editions: 40153, edition_refreshed_24h: 4078 }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      let c = check(await (await POST(post())).json(), "Panini Ingest")
+      expect(c.status).toBe("warn")
+      expect(c.detail).toMatch(/tail not being reached/)
+      install(panini({ edition_age_max_h: 500, editions: 40153, edition_refreshed_24h: 4078 }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      c = check(await (await POST(post())).json(), "Panini Ingest")
+      expect(c.status).toBe("critical")
+    })
+
+    it("names a too-slow rotation as a capacity warn even when the tail keeps pace", async () => {
+      install(panini({ edition_age_max_h: 450, editions: 40153, edition_refreshed_24h: 2000 }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Panini Ingest")
+      expect(c.status).toBe("warn")
+      expect(c.detail).toMatch(/walk capacity below catalogue size/)
+      expect(c.detail).not.toMatch(/tail not being reached/)
+    })
+
+    it("a read error warns (never pages) and a missing walk stamp pages", async () => {
+      install({ ...greenFixtures(), "rpc:sentinel_panini_health": { data: null, error: { message: "canceling statement due to statement timeout" } } })
+      stubFetch([sniperOk, telegramOk, resendOk])
+      expect(check(await (await POST(post())).json(), "Panini Ingest").status).toBe("warn")
+      install(panini({ newest_walk_at: null }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      expect(check(await (await POST(post())).json(), "Panini Ingest").status).toBe("critical")
+    })
+  })
+
+  describe("Ownership Index Freshness", () => {
+    const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString()
+
+    it("goes critical when the last productive write is older than the crit threshold", async () => {
+      install({
+        ...greenFixtures(),
+        pipeline_runs: {
+          data: [{ pipeline: "ownership-onchain-walk", started_at: hoursAgo(80) }],
+          error: null,
+        },
+      })
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const report = await (await POST(post())).json()
+      const c = check(report, "Ownership Index Freshness")
+      expect(c.status).toBe("critical")
+      expect(c.detail).toContain("80.0h ago")
+    })
+
+    it("warns after one missed daily tick without paging", async () => {
+      install({
+        ...greenFixtures(),
+        pipeline_runs: {
+          data: [{ pipeline: "ownership-onchain-walk", started_at: hoursAgo(40) }],
+          error: null,
+        },
+      })
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const report = await (await POST(post())).json()
+      expect(check(report, "Ownership Index Freshness").status).toBe("warn")
+    })
+
+    // The arm must span BOTH writers: the Dune replay is WEEKLY, so a quiet walk
+    // is not an outage if Dune just refreshed the index. Reading only the walk
+    // would page during a legitimately healthy week.
+    it("stays ok when the weekly Dune writer is the freshest source", async () => {
+      install({
+        ...greenFixtures(),
+        pipeline_runs: {
+          data: [{ pipeline: "ownership-sync-dune", started_at: hoursAgo(2) }],
+          error: null,
+        },
+      })
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Ownership Index Freshness")
+      expect(c.status).toBe("ok")
+      expect(c.detail).toContain("ownership-sync-dune")
+    })
+
+    // THE load-bearing case. pipeline_runs prunes at ~73h, so once the outage
+    // outlives retention the query returns NOTHING — and "no rows" is the state
+    // the arm must never read as healthy, because it arrives exactly when the
+    // outage has gone on long enough to matter.
+    it("treats an empty pipeline_runs window as CRITICAL, not ok, and dates it from the indefinite rollup", async () => {
+      install({
+        ...greenFixtures(),
+        pipeline_runs: { data: [], error: null },
+        pipeline_runs_daily: { data: [{ day: "2026-08-01" }], error: null },
+      })
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Ownership Index Freshness")
+      expect(c.status).toBe("critical")
+      expect(c.detail).toContain("2026-08-01")
+      expect(c.detail).toContain("no fresh write")
+    })
+
+    // Same empty window, but the rollup is unreadable too: still critical, and the
+    // detail must state a bound it can substantiate rather than inventing an age.
+    it("stays critical with honest wording when the rollup cannot date it either", async () => {
+      install({
+        ...greenFixtures(),
+        pipeline_runs: { data: [], error: null },
+        pipeline_runs_daily: { data: [], error: null },
+      })
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Ownership Index Freshness")
+      expect(c.status).toBe("critical")
+      expect(c.detail).toContain("retention")
+      expect(c.detail).not.toMatch(/\d+(\.\d+)?h ago/)
+    })
+
+    // The two-writer property, asserted at the QUERY rather than via status. The
+    // fixture's chainables discard their arguments, so a status-only test passes
+    // just as happily with a writer deleted from the list — it would assert
+    // nothing about the one thing that keeps this arm from paging during a
+    // healthy Dune-only week. Also pins rows_written > 0, which is what makes
+    // this an OUTCOME check rather than a cadence one: a failing run still logs.
+    it("queries BOTH ownership writers and requires rows_written > 0", async () => {
+      const spy = installRecordingFilters(greenFixtures())
+      stubFetch([sniperOk, telegramOk, resendOk])
+      await POST(post())
+
+      const runFilters = spy.filters.pipeline_runs ?? []
+      const writers = runFilters.find((f) => f.op === "in" && f.col === "pipeline")
+      expect(writers?.val).toEqual(
+        expect.arrayContaining(["ownership-onchain-walk", "ownership-sync-dune"])
+      )
+      expect(runFilters).toContainEqual(
+        expect.objectContaining({ op: "gt", col: "rows_written", val: 0 })
+      )
+    })
+
+    // A saturated DB is not data loss — the platform-wide rule for this route.
+    it("warns rather than pages when the query itself fails under saturation", async () => {
+      install({
+        ...greenFixtures(),
+        pipeline_runs: { data: null, error: { message: "canceling statement due to statement timeout" } },
+      })
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Ownership Index Freshness")
+      expect(c.status).toBe("warn")
+    })
+  })
+
+  // Portfolio Cache Drain — the MIRROR of the arm above. Ownership catches a
+  // pipeline that fails and writes nothing; this catches one that succeeds,
+  // writes rows, and still loses ground. `reconcile-saved-wallet-stats` sweeps a
+  // bounded batch under a soft deadline and commits the partial result, so it is
+  // working-as-designed on every run while its backlog grows — and it is the
+  // NAMED reason the success-coverage arm carries its `rows_written` guard, so
+  // the one instrument that could have fired is deliberately blind here.
+  // Measured 2026-09-12: a 16-hour drain ran with Pipeline Silence,
+  // detect_stalled_pipelines() and Pipeline Success Coverage all green.
+  describe("Portfolio Cache Drain", () => {
+    const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString()
+    /** Element [2] of the pipeline_runs sequence is the drain arm's read. */
+    const withDrain = (row: Record<string, unknown> | null, err: unknown = null) => {
+      const g = greenFixtures()
+      const seq = g.pipeline_runs as unknown as Array<Record<string, unknown>>
+      return {
+        ...g,
+        pipeline_runs: [seq[0], seq[1], { data: row === null ? [] : [row], error: err }, seq[3]],
+      } as typeof g
+    }
+
+    it("stays ok on a shallow cache measured moments ago", async () => {
+      install(withDrain({ started_at: hoursAgo(0.1), extra: { oldest_cache_h: 0.9 } }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Portfolio Cache Drain")
+      expect(c.status).toBe("ok")
+      expect(c.value).toMatch(/^>=1\.0h$/)
+    })
+
+    // ⭐ THE REASON THIS ARM EXISTS, replayed from the real incident: the run
+    // reports ok=false with `soft_deadline_reached_partial_sweep_committed` and
+    // a nonzero write, which is precisely the shape every other instrument reads
+    // as healthy-or-excluded. The arm must key on the OUTCOME and nothing else.
+    it("warns on the real 2026-09-12 16h drain — a run that SUCCEEDED at writing rows", async () => {
+      install(
+        withDrain({
+          started_at: hoursAgo(0.2),
+          ok: false,
+          rows_written: 8,
+          error: "soft_deadline_reached_partial_sweep_committed",
+          extra: { oldest_cache_h: 16, wallets_done: 2, wallets_total: 16, truncated: true },
+        })
+      )
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Portfolio Cache Drain")
+      expect(c.status).toBe("warn")
+      expect(c.detail).toContain("16.0h when measured")
+    })
+
+    // The converse of the same property, and the one that would catch this being
+    // rewritten as a success check: a partial sweep with a SHALLOW cache is
+    // healthy. ok=false is not the question being asked.
+    it("stays ok on a partial sweep whose cache is shallow — ok=false is not the question", async () => {
+      install(
+        withDrain({
+          started_at: hoursAgo(0.1),
+          ok: false,
+          rows_written: 0,
+          error: "soft_deadline_reached_partial_sweep_committed",
+          extra: { oldest_cache_h: 0.8 },
+        })
+      )
+      stubFetch([sniperOk, telegramOk, resendOk])
+      expect(check(await (await POST(post())).json(), "Portfolio Cache Drain").status).toBe("ok")
+    })
+
+    // ⭐ THE READING AGES TOO. A 5h cache measured 14h ago is a 19h cache — the
+    // number can only have gotten worse since. Without the age term this reads
+    // 5h and stays green, so a status-only test on a FRESH reading would pass
+    // just as happily with the term deleted; this is the assertion that pins it.
+    it("adds the AGE OF THE READING — a shallow number taken long ago is not a shallow cache", async () => {
+      install(withDrain({ started_at: hoursAgo(14), extra: { oldest_cache_h: 5 } }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Portfolio Cache Drain")
+      expect(c.status).toBe("warn")
+      expect(c.detail).toContain("5.0h when measured")
+      expect(c.detail).toContain("reading 14.0h old")
+      expect(c.value).toMatch(/^>=19\.0h$/)
+    })
+
+    it("goes critical once the effective depth passes the crit threshold", async () => {
+      install(withDrain({ started_at: hoursAgo(1), extra: { oldest_cache_h: 30 } }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      expect(check(await (await POST(post())).json(), "Portfolio Cache Drain").status).toBe(
+        "critical"
+      )
+    })
+
+    // ⚠ UNREADABLE IS NOT ZERO. The key is written by the reconcile function; a
+    // version that stopped emitting it would otherwise park this arm at "ok"
+    // forever — a failed read rendering as an answer, which is the exact shape
+    // the rest of this route exists to refuse. `value` must be ABSENT, not 0.
+    it("reports UNREADABLE, never ok, when the run published no oldest_cache_h", async () => {
+      install(withDrain({ started_at: hoursAgo(0.5), extra: { wallets_done: 4 } }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Portfolio Cache Drain")
+      expect(c.status).toBe("warn")
+      expect(c.detail).toContain("UNREADABLE, not zero")
+      expect(c.value).toBeUndefined()
+    })
+
+    // Same retention logic as Ownership: pipeline_runs prunes at ~73h, so an
+    // empty window means the reconciler has not run inside it — strictly worse
+    // than crit, arriving exactly when it has gone on long enough to matter.
+    it("treats an empty pipeline_runs window as CRITICAL, not ok", async () => {
+      install(withDrain(null))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Portfolio Cache Drain")
+      expect(c.status).toBe("critical")
+      expect(c.detail).toContain("retention")
+    })
+
+    it("warns rather than pages when the query itself fails under saturation", async () => {
+      install(withDrain(null, { message: "canceling statement due to statement timeout" }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Portfolio Cache Drain")
+      expect(c.status).toBe("warn")
+      expect(c.detail).toContain("INCONCLUSIVE")
+    })
+  })
+
+  // Pack Sales Ingest — the arm that exists because a SIX-DAY outage (Top Shot
+  // pack sales, 2026-09-13..19) ran with every other instrument green. The
+  // writers are edge functions that write no pipeline_runs row at all, so every
+  // pipeline arm was out of scope by construction, not by curation.
+  describe("Pack Sales Ingest", () => {
+    const minsAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString()
+    /** Element [1] of the pipeline_runs sequence is the unlatch guard's row. */
+    const withPackSales = (
+      row: Record<string, unknown> | null,
+      err: unknown = null,
+    ) => {
+      const g = greenFixtures()
+      const seq = g.pipeline_runs as unknown as Array<Record<string, unknown>>
+      return {
+        ...g,
+        pipeline_runs: [
+          seq[0],
+          { data: row === null ? [] : [row], error: err },
+          seq[2],
+          seq[3],
+        ],
+      } as typeof g
+    }
+    const guardRow = (topshot: number, allday: number, ageMin = 1) => ({
+      pipeline: "pack-sales-cursor-unlatch",
+      started_at: minsAgo(ageMin),
+      extra: {
+        topshot: { sale_age_hours: topshot, was_latched: false },
+        allday: { sale_age_hours: allday, was_latched: false },
+      },
+    })
+
+    // ⭐ THE SHARPEST PROPERTY IN THIS BLOCK, and the one a "simplify it to one
+    // threshold" refactor breaks: ONE reading, ONE number, OPPOSITE verdicts.
+    // 49h is normal for All Day (1-25 sales/day, 7 empty days in six weeks) and
+    // is a dead lane for Top Shot (sales EVERY day, 105-804/day). A shared
+    // threshold would have to be the All Day one -- which is what let the Top
+    // Shot outage run for six days.
+    it("gives opposite verdicts to the two lanes on the SAME 49h reading", async () => {
+      install(withPackSales(guardRow(49, 49)))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const body = await (await POST(post())).json()
+      expect(check(body, "Pack Sales Ingest (Top Shot)").status).toBe("critical")
+      expect(check(body, "Pack Sales Ingest (All Day)").status).toBe("ok")
+    })
+
+    it("is ok on the healthy case and states each lane's age", async () => {
+      install(withPackSales(guardRow(1.6, 49)))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const body = await (await POST(post())).json()
+      const ts = check(body, "Pack Sales Ingest (Top Shot)")
+      expect(ts.status).toBe("ok")
+      expect(ts.value).toBe("1.6h")
+    })
+
+    it("pages on the 2026-09-13 outage shape: Top Shot silent for six days", async () => {
+      install(withPackSales(guardRow(144, 49)))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Pack Sales Ingest (Top Shot)")
+      expect(c.status).toBe("critical")
+    })
+
+    // ⚠ A FROZEN READING IS THE FAILED-READ-AS-ANSWER SHAPE. If the unlatch job
+    // dies, its last row keeps a healthy `sale_age_hours` forever, and that
+    // number is indistinguishable from a current one. Assert the ABSENCE of the
+    // false claim (an `ok`), not merely the presence of some wording.
+    it("refuses to conclude from a reading older than the guard's own cadence", async () => {
+      install(withPackSales(guardRow(1.6, 49, 90)))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const body = await (await POST(post())).json()
+      for (const n of ["Pack Sales Ingest (Top Shot)", "Pack Sales Ingest (All Day)"]) {
+        const c = check(body, n)
+        expect(c.status, n).not.toBe("ok")
+        expect(c.status, n).not.toBe("warn")
+        expect(c.detail, n).toContain("INCONCLUSIVE")
+        // The frozen healthy age must NOT be published as the current one.
+        expect(c.detail, n).not.toContain("1.6h ago")
+      }
+    })
+
+    // pipeline_runs prunes at ~73h, so "no row" means the guard has been gone
+    // longer than that -- the lanes have no self-heal AND no coverage. Treating
+    // it as ok would silence the arm exactly when it matters most.
+    it("treats a missing guard row as CRITICAL, not ok", async () => {
+      install(withPackSales(null))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const body = await (await POST(post())).json()
+      for (const n of ["Pack Sales Ingest (Top Shot)", "Pack Sales Ingest (All Day)"]) {
+        expect(check(body, n).status, n).toBe("critical")
+      }
+    })
+
+    // A row that exists but carries no age must not default to a number -- that
+    // would fabricate health out of an unreadable payload.
+    it("does not fabricate an age when the payload lacks one", async () => {
+      install(
+        withPackSales({
+          pipeline: "pack-sales-cursor-unlatch",
+          started_at: minsAgo(1),
+          extra: { topshot: {}, allday: {} },
+        }),
+      )
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Pack Sales Ingest (Top Shot)")
+      expect(c.status).toBe("critical")
+      expect(c.detail).toContain("INCONCLUSIVE")
+    })
+
+    // #218 (2026-10-31): Dapper's pack-sales index froze while our walkers ran clean and the
+    // CHAIN feed the product reads stayed current. Upstream freeze ≠ our outage.
+    describe("upstream freeze vs our outage (sentinel_pack_sales_feeds)", () => {
+      const hAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString()
+      const feeds = (o: { tsChainH?: number; adChainH?: number; walkerOk?: boolean; partial?: boolean; walkerMin?: number } = {}) => {
+        const walker = {
+          started_at: minsAgo(o.walkerMin ?? 5), ok: o.walkerOk ?? true, partial: o.partial ?? false,
+          head_new: 0, newest_block_time: hAgo(59),
+        }
+        return {
+          data: {
+            topshot: { chain_newest_sale_at: hAgo(o.tsChainH ?? 0.2), walker },
+            allday: { chain_newest_sale_at: hAgo(o.adChainH ?? 15), walker },
+          },
+          error: null,
+        }
+      }
+      const frozen = (f: ReturnType<typeof feeds> | { data: null; error: unknown }) =>
+        ({ ...withPackSales(guardRow(59, 130)), "rpc:sentinel_pack_sales_feeds": f }) as ReturnType<typeof greenFixtures>
+
+      it("is OK on the 10-31 shape: mirror 59h/130h stale, walker clean, chain current", async () => {
+        install(frozen(feeds()))
+        stubFetch([sniperOk, telegramOk, resendOk])
+        const body = await (await POST(post())).json()
+        for (const n of ["Pack Sales Ingest (Top Shot)", "Pack Sales Ingest (All Day)"]) {
+          const c = check(body, n)
+          expect(c.status, n).toBe("ok")
+          expect(c.detail, n).toMatch(/Dapper's pack-sales index is BEHIND/)
+        }
+      })
+
+      it("still pages when the CHAIN feed goes quiet too (judged on the feed the product reads)", async () => {
+        install(frozen(feeds({ tsChainH: 30 })))
+        stubFetch([sniperOk, telegramOk, resendOk])
+        expect(check(await (await POST(post())).json(), "Pack Sales Ingest (Top Shot)").status).toBe("critical")
+      })
+
+      it("keeps the ORIGINAL verdict when our walker is not clean (the 09-13 latch class)", async () => {
+        for (const bad of [{ walkerOk: false }, { partial: true }, { walkerMin: 180 }]) {
+          install(frozen(feeds(bad)))
+          stubFetch([sniperOk, telegramOk, resendOk])
+          const c = check(await (await POST(post())).json(), "Pack Sales Ingest (Top Shot)")
+          expect(c.status, JSON.stringify(bad)).toBe("critical")
+          expect(c.detail, JSON.stringify(bad)).not.toMatch(/BEHIND/)
+        }
+      })
+
+      it("a failed feeds read falls back to the original verdict, never to ok", async () => {
+        install(frozen({ data: null, error: { message: "permission denied" } }))
+        stubFetch([sniperOk, telegramOk, resendOk])
+        expect(check(await (await POST(post())).json(), "Pack Sales Ingest (Top Shot)").status).toBe("critical")
+      })
+    })
+
+    it("warns rather than pages when the query itself fails under saturation", async () => {
+      install(withPackSales(null, { message: "canceling statement due to statement timeout" }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Pack Sales Ingest (All Day)")
+      expect(c.status).toBe("warn")
+      expect(c.detail).toContain("INCONCLUSIVE")
+    })
+  })
+
+  // Chain Arrival Nodes (2026-10-10, #181). A connect that never completes became
+  // a FREE retry, so a dead spork node parks probes while the lane logs ok:true.
+  // This arm is the alarm that free retry removed.
+  describe("Chain Arrival Nodes", () => {
+    const withProbes = (payload: { count?: number | null; error?: unknown }) => {
+      const g = greenFixtures()
+      return { ...g, chain_arrival_probes: payload as never } as typeof g
+    }
+    it("is ok with no parked probe", async () => {
+      install(withProbes({ count: 0, error: null }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      expect(check(await (await POST(post())).json(), "Chain Arrival Nodes").status).toBe("ok")
+    })
+    it("warns, with the count, when probes are parked on a dead node", async () => {
+      install(withProbes({ count: 526, error: null }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Chain Arrival Nodes")
+      expect(c.status).toBe("warn")
+      expect(c.detail).toContain("526")
+    })
+    it("a failed read or a missing count is unmeasured (warn), never ok", async () => {
+      install(withProbes({ count: null, error: { message: "boom" } }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      expect(check(await (await POST(post())).json(), "Chain Arrival Nodes").status).toBe("warn")
+      install(withProbes({ count: null, error: null }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      expect(check(await (await POST(post())).json(), "Chain Arrival Nodes").status).toBe("warn")
+    })
+  })
+
+  // Edge Lane Observability — R110's exit condition. The five edge-function cron
+  // lanes that write no pipeline_runs row are invisible to every arm above BY
+  // CONSTRUCTION, and two of them were dead for 6 and 7 days before anyone
+  // looked. This arm's job is that a lane nobody watches SAYS SO.
+  describe("Edge Lane Observability", () => {
+    const withElo = (payload: Record<string, unknown> | null, err: unknown = null) => {
+      const g = greenFixtures()
+      return { ...g, "rpc:check_edge_lane_observability": { data: payload, error: err } } as typeof g
+    }
+    const base = {
+      inspected: 12, unregistered_count: 0, unregistered: [],
+      stale_count: 0, stale: [], unchecked_count: 0, unchecked: [], fresh_count: 12,
+    }
+
+    it("is ok when every edge lane is registered and fresh, and states the count", async () => {
+      install(withElo(base))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Edge Lane Observability")
+      expect(c.status).toBe("ok")
+      // The healthy detail must still say HOW MANY it inspected - a green arm
+      // that does not state its population is the silence trap.
+      expect(c.detail).toContain("12")
+      expect(c.value).toBe("0")
+    })
+
+    // ⭐ THE PROPERTY THE WHOLE ARM EXISTS FOR: an edge lane nobody registered is
+    // an edge lane nobody watches, and it must be named.
+    it("⭐ pages on an UNREGISTERED edge lane and names it", async () => {
+      install(withElo({
+        ...base,
+        unregistered_count: 1,
+        unregistered: [{ jobid: 99, jobname: "rpc-brand-new-edge-lane", schedule: "*/5 * * * *" }],
+        fresh_count: 11,
+      }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Edge Lane Observability")
+      expect(c.status).not.toBe("ok")
+      expect(c.detail).toContain("rpc-brand-new-edge-lane")
+      expect(c.detail).toContain("UNREGISTERED")
+    })
+
+    it("pages on a stale outcome and states the bound it broke", async () => {
+      install(withElo({
+        ...base,
+        stale_count: 1,
+        stale: [{
+          jobname: "rpc-topshot-pack-sales-backfill",
+          outcome: "topshot_pack_sales_history.block_time",
+          age_hours: 144, max_age_hours: 24, severity: "critical",
+        }],
+        fresh_count: 11,
+      }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Edge Lane Observability")
+      expect(c.status).not.toBe("ok")
+      expect(c.detail).toContain("topshot_pack_sales_history.block_time")
+      expect(c.detail).toContain("144")
+      expect(c.detail).toContain("24")
+    })
+
+    // ⚠ `unchecked` is a STANDING known gap (two lanes today). If it escalated,
+    // this arm would be permanently amber — the exact failure mode that makes an
+    // alarm unreadable. It must be STATED without paging.
+    it("⭐ does NOT escalate on `unchecked` alone, but still says so", async () => {
+      install(withElo({
+        ...base,
+        unchecked_count: 2,
+        unchecked: [
+          { jobname: "rpc-allday-dist-opened-backfill", note: "completed backfill", severity: "info" },
+          { jobname: "rpc-allday-resolve-rip-dist-api", note: "outcome table unidentified", severity: "warn" },
+        ],
+        fresh_count: 10,
+      }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Edge Lane Observability")
+      expect(c.status).toBe("ok")
+      expect(c.detail).toContain("unchecked by design")
+      expect(c.detail).toContain("rpc-allday-resolve-rip-dist-api")
+    })
+
+    // ⚠ A verdict from zero lanes is not a verdict. Assert the ABSENCE of an
+    // all-clear, not merely the presence of wording.
+    it("⭐ treats `inspected: 0` as UNMEASURED, not as an all-clear", async () => {
+      install(withElo({ ...base, inspected: 0, fresh_count: 0 }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Edge Lane Observability")
+      expect(c.status).not.toBe("ok")
+      expect(c.detail).toContain("INCONCLUSIVE")
+      expect(c.detail).toContain("zero")
+    })
+
+    it("does not fabricate a verdict from an unreadable payload", async () => {
+      install(withElo({ nonsense: true }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Edge Lane Observability")
+      expect(c.status).toBe("critical")
+      expect(c.detail).toContain("INCONCLUSIVE")
+    })
+
+    it("warns rather than pages when the RPC fails under saturation", async () => {
+      install(withElo(null, { message: "canceling statement due to statement timeout" }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Edge Lane Observability")
+      expect(c.status).toBe("warn")
+      expect(c.detail).toContain("INCONCLUSIVE")
+    })
+  })
+
+  it("classifies a statement-timeout sales error as inconclusive WARN, not CRITICAL (2026-06-10 class)", async () => {
+    const f = greenFixtures()
+    f.sales = { data: null, error: { message: "canceling statement due to statement timeout" } } as never
+    install(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    const report = await (await POST(post())).json()
+    const sales = check(report, "Sales Ingest (2h)")
+    expect(sales.status).toBe("warn")
+    expect(sales.detail).toContain("INCONCLUSIVE (db saturated)")
+    expect(report.status).toBe("WARN")
+  })
+
+  it("classifies an EMPTY error message as inconclusive WARN (2026-07-16 false-CRITICAL class)", async () => {
+    const f = greenFixtures()
+    f.sales = { data: null, error: { message: "" } } as never
+    install(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    const report = await (await POST(post())).json()
+    const sales = check(report, "Sales Ingest (2h)")
+    expect(sales.status).toBe("warn")
+    expect(report.status).not.toBe("CRITICAL")
+    // And the SENTENCE states the condition: "Query error: " with nothing after
+    // it read like a truncated line on two real sweeps (2026-09-13).
+    expect(sales.detail).not.toMatch(/Query error:\s*$/)
+    expect(sales.detail).toMatch(/empty error message/)
+  })
+
+  // ── Sales Ingest (2h): partition pruning + the forward/total distinction ──
+  //
+  // Context: measured 2026-08-13, this check was the largest low-hit-ratio
+  // reader on the instance (~2.2 GB/call, 11.7% hit, 28.3 GB over 39.7 h),
+  // because `sales.ingested_at` has no index and the predicate alone scans all
+  // 8 partitions. It is NOT redundant with the per-collection arm — that keys on
+  // `sold_at` (market time), this on `ingested_at` (did we write anything) — so
+  // the fix had to make it cheaper WITHOUT deleting it.
+
+  it("bounds the partition key so the common path cannot scan every partition", async () => {
+    const f = greenFixtures()
+    f.sales = { count: 1500, error: null } as never
+    const spy = installRecordingFilters(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    const report = await (await POST(post())).json()
+    expect(check(report, "Sales Ingest (2h)").status).toBe("ok")
+
+    const cols = (spy.filters.sales ?? []).map((x) => x.col)
+    // ingested_at is the QUESTION; sold_at is what makes it affordable. Both.
+    expect(cols).toContain("ingested_at")
+    expect(cols, "sold_at bound missing — the planner would scan all 8 partitions").toContain("sold_at")
+    // And the expensive unbounded probe must NOT run on the healthy path.
+    expect(spy.queryCount.sales).toBe(1)
+  })
+
+  it("does not pay for the unbounded scan when the count is merely below a floor", async () => {
+    // Below a configured floor is a THRESHOLD breach, not an outage — there is
+    // nothing for the second probe to disambiguate, so it must not run.
+    const f = greenFixtures()
+    f.sentinel_threshold_config = {
+      data: [{ check_name: "Sales Ingest (2h)", warn_at: null, crit_at: 2000, enabled: true }],
+      error: null,
+    }
+    f.sales = { count: 1500, error: null } as never
+    const spy = installRecordingFilters(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    const sales = check(await (await POST(post())).json(), "Sales Ingest (2h)")
+    expect(sales.status).toBe("critical")
+    // Must NOT claim zero — 1500 rows did land.
+    expect(sales.detail).not.toContain("ZERO")
+    expect(sales.detail).toContain("below the configured floor of 2000")
+    expect(spy.queryCount.sales).toBe(1)
+  })
+
+  it("names the failure when forward ingest is dead but backfills are still landing", async () => {
+    // The distinction the old check could not make at all: a lone history
+    // backfill ticking away used to SATISFY it while every forward indexer was
+    // dead. Now zero-forward triggers the second probe, and 250 historical rows
+    // mean the writer is alive and the forward lane specifically is down.
+    const f = greenFixtures()
+    f.sales = [{ count: 0, error: null }, { count: 250, error: null }] as never
+    const spy = installRecordingFilters(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    const sales = check(await (await POST(post())).json(), "Sales Ingest (2h)")
+    expect(sales.status).toBe("critical")
+    expect(sales.detail).toContain("forward indexers appear DOWN")
+    expect(sales.detail).toContain("250 historical")
+    expect(spy.queryCount.sales).toBe(2)
+  })
+
+  it("keeps the plain total-outage wording when nothing at all was ingested", async () => {
+    const f = greenFixtures()
+    f.sales = [{ count: 0, error: null }, { count: 0, error: null }] as never
+    installRecordingFilters(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    const sales = check(await (await POST(post())).json(), "Sales Ingest (2h)")
+    expect(sales.status).toBe("critical")
+    expect(sales.detail).toContain("ZERO sales ingested in last 2 hours")
+    expect(sales.detail).not.toContain("historical")
+  })
+
+  it("still pages, and says the probe was inconclusive, when the second scan errors", async () => {
+    // The second probe is the expensive one, so it is the one most likely to be
+    // killed by the saturation it is trying to describe. It must degrade the
+    // DETAIL, never downgrade a genuine zero-forward-ingest page.
+    const f = greenFixtures()
+    f.sales = [
+      { count: 0, error: null },
+      { data: null, error: { message: "canceling statement due to statement timeout" } },
+    ] as never
+    installRecordingFilters(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    const sales = check(await (await POST(post())).json(), "Sales Ingest (2h)")
+    expect(sales.status).toBe("critical")
+    expect(sales.detail).toContain("ZERO forward sales")
+    expect(sales.detail).toContain("db saturated")
+  })
+
+  it("a GENUINE zero-sales window still pages CRITICAL and marks a dead Telegram channel as FAILED", async () => {
+    const f = greenFixtures()
+    f.sales = { count: 0, error: null } as never
+    install(f)
+    // Telegram is down (500); Resend accepts.
+    stubFetch([sniperOk, jsonRoute("api.telegram.org", { ok: false }, { status: 500 }), resendOk])
+
+    const report = await (await POST(post())).json()
+    expect(report.status).toBe("CRITICAL")
+    expect(check(report, "Sales Ingest (2h)").detail).toContain("ZERO sales")
+    // Silent-alert-failure guard: the dead channel must not claim delivery.
+    // ⚠ STRENGTHENED, not relaxed, when the reason was added (2026-08-30): the
+    // entry keeps the `telegram-FAILED` PREFIX any existing reader matches on,
+    // and must now also say WHY. `telegram-FAILED` alone was the unfalsifiable
+    // shape this whole change removes — matching the prefix pins the property,
+    // matching the reason pins the improvement.
+    const tg = (report.notifications as string[]).find((n) => n.startsWith("telegram-FAILED"))
+    expect(tg).toBeDefined()
+    expect(tg).toContain("http_500")
+    expect(report.notifications).toContain("email")
+  })
+
+  it("high-severity stalled pipelines page CRITICAL with the stall detail", async () => {
+    const f = greenFixtures()
+    f["rpc:detect_stalled_pipelines"] = {
+      data: [
+        { pipeline: "topshot-sales-indexer", severity: "high", silent_minutes: 120, max_silent_minutes: 45 },
+        { pipeline: "wmc-fmv-populate", severity: "medium", silent_minutes: 80, max_silent_minutes: 60 },
+      ],
+      error: null,
+    }
+    install(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    const report = await (await POST(post())).json()
+    const silence = check(report, "Pipeline Silence")
+    expect(silence.status).toBe("critical")
+    expect(silence.detail).toContain("topshot-sales-indexer silent 120m")
+    expect(report.status).toBe("CRITICAL")
+  })
+
+  // ⚠ A NULL `silent_minutes` is the arm's MOST SEVERE reading — detect_stalled_pipelines()
+  // found no run at all in `pipeline_runs` (~73h retention) — and it used to render as the
+  // literal "silent nullm". That reads as a cosmetic template bug, so the worst case was
+  // the least legible thing in the alert. Measured 2026-08-22: `candy-editions-ingest` had
+  // missed three consecutive daily ticks on a collection public since 07-31, and the alert
+  // said `silent nullm`.
+  it("a NULL silent_minutes renders as a stated fact, never as the string 'nullm'", async () => {
+    const f = greenFixtures()
+    f["rpc:detect_stalled_pipelines"] = {
+      data: [
+        { pipeline: "candy-editions-ingest", severity: "medium", silent_minutes: null, max_silent_minutes: 1800, last_run: null },
+      ],
+      error: null,
+    }
+    install(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    const report = await (await POST(post())).json()
+    const silence = check(report, "Pipeline Silence")
+    // Assert the ABSENCE of the false/garbled claim, not merely the presence of some text.
+    expect(silence.detail).not.toContain("nullm")
+    expect(silence.detail).not.toContain("null")
+    expect(silence.detail).toContain("candy-editions-ingest")
+    expect(silence.status).toBe("warn")
+  })
+
+  it("does NOT invent a silence figure when silent_minutes is NULL", async () => {
+    // ⚠ THIS IS A FORWARD PIN, NOT A REGRESSION TEST — stated because a reader would
+    // otherwise assume it caught the nullm bug. It passes on the ORIGINAL buggy code too
+    // (the string "nullm" happens to contain no digit), so it discriminates nothing about
+    // that defect. What it does catch is the tempting WRONG FIX: substituting a computed
+    // figure for the null. The arm cannot distinguish "stalled past the retention window"
+    // from "never ran once", so any number here would be fabricated — the shape this repo
+    // tracks. The test above is the one that reds on the original bug.
+    const f = greenFixtures()
+    f["rpc:detect_stalled_pipelines"] = {
+      data: [
+        { pipeline: "candy-editions-ingest", severity: "medium", silent_minutes: null, max_silent_minutes: 1800, last_run: null },
+      ],
+      error: null,
+    }
+    install(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    const report = await (await POST(post())).json()
+    const detail = check(report, "Pipeline Silence").detail as string
+    // The only number in the line must be the threshold itself (1800), never a silence figure.
+    const silenceClause = detail.slice(0, detail.indexOf("(>"))
+    expect(silenceClause).not.toMatch(/\d/)
+    expect(detail).toContain("1800m")
+  })
+
+  it("still renders a real silent_minutes unchanged — the null branch must not swallow the normal case", async () => {
+    const f = greenFixtures()
+    f["rpc:detect_stalled_pipelines"] = {
+      data: [
+        { pipeline: "pinnacle-sync", severity: "medium", silent_minutes: 3191, max_silent_minutes: 1560 },
+      ],
+      error: null,
+    }
+    install(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    const report = await (await POST(post())).json()
+    expect(check(report, "Pipeline Silence").detail).toContain("pinnacle-sync silent 3191m")
+  })
+
+  it("config thresholds override the hardcoded defaults", async () => {
+    const f = greenFixtures()
+    // Raise the sales critical bar above the observed count: 1500 <= 2000 -> critical.
+    f.sentinel_threshold_config = {
+      data: [{ check_name: "Sales Ingest (2h)", warn_at: null, crit_at: 2000, enabled: true }],
+      error: null,
+    }
+    install(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    const report = await (await POST(post())).json()
+    expect(check(report, "Sales Ingest (2h)").status).toBe("critical")
+  })
+
+  it("a config-disabled check is neutralized to ok but stays visible with the annotation", async () => {
+    const f = greenFixtures()
+    f.sales = { count: 0, error: null } as never
+    f.sentinel_threshold_config = {
+      data: [{ check_name: "Sales Ingest (2h)", warn_at: null, crit_at: null, enabled: false }],
+      error: null,
+    }
+    install(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    const report = await (await POST(post())).json()
+    const sales = check(report, "Sales Ingest (2h)")
+    expect(sales.status).toBe("ok")
+    expect(sales.detail).toContain("[check disabled via config]")
+    expect(report.status).toBe("ALL CLEAR")
+  })
+
+  it("trust-health breaches warn (never page) and name the breaching metric", async () => {
+    const f = greenFixtures()
+    f.v_rpc_trust_health = {
+      data: [
+        { metric: "topshot_impossible_parallel_serials", value: 16, breach_at: 3, status: "breach" },
+        { metric: "offer_edition_gap", value: 0, breach_at: 50, status: "ok" },
+      ],
+      error: null,
+    }
+    install(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    const report = await (await POST(post())).json()
+    const trust = check(report, "Trust Health")
+    expect(trust.status).toBe("warn")
+    expect(trust.detail).toContain("topshot_impossible_parallel_serials=16")
+    expect(report.status).toBe("WARN")
+  })
+
+  it("a sniper-feed self-fetch timeout is inconclusive (warn), a non-OK response is critical", async () => {
+    install(greenFixtures())
+    stubFetch([jsonRoute("/api/sniper-feed", { error: "gateway" }, { status: 504 }), telegramOk, resendOk])
+    let report = await (await POST(post())).json()
+    expect(check(report, "Sniper Feed").status).toBe("critical")
+
+    install(greenFixtures())
+    stubFetch([
+      {
+        match: (url) => url.includes("/api/sniper-feed"),
+        respond: () => {
+          throw Object.assign(new Error("The operation was aborted"), { name: "AbortError" })
+        },
+      },
+      telegramOk,
+      resendOk,
+    ])
+    report = await (await POST(post())).json()
+    const sniper = check(report, "Sniper Feed")
+    expect(sniper.status).toBe("warn")
+    expect(sniper.detail).toContain("INCONCLUSIVE")
+  })
+
+  it("per-collection ingest health is green and names every collection + source lane", async () => {
+    install(greenFixtures())
+    stubFetch([sniperOk, telegramOk, resendOk])
+    const report = await (await POST(post())).json()
+
+    const byColl = check(report, "Sales Ingest by Collection")
+    expect(byColl.status).toBe("ok")
+    // every watched collection is present, including the closed one
+    for (const name of ["Top Shot", "All Day", "Candy MLB", "Pinnacle", "Golazos", "UFC"]) {
+      expect(byColl.detail).toContain(name)
+    }
+    expect(byColl.detail).toContain("market closed") // UFC labelled, never alarmed
+    // Top Shot rolls up both sources: 2000 + 550 = 2550
+    expect(byColl.detail).toContain("Top Shot 2550/24h")
+
+    const bySrc = check(report, "Sales Ingest by Source")
+    expect(bySrc.status).toBe("ok")
+    expect(bySrc.detail).toContain("Top Shot/onchain: 2000")
+    expect(bySrc.detail).toContain("Top Shot/offer_fill: 550")
+    expect(bySrc.detail).toContain("Pinnacle/on-chain: 116") // separate pinnacle_sales table folded in
+    expect(report.status).toBe("ALL CLEAR")
+  })
+
+  it("a page-loud collection (Top Shot) silent past its ceiling pages CRITICAL", async () => {
+    const f = greenFixtures()
+    const rows = ingestHealthy().map((r) =>
+      r.collection === "nba_top_shot" ? { ...r, sales_1h: 0, sales_6h: 0, sales_24h: 0, coll_hours_since_last: 5 } : r
+    )
+    f["rpc:sentinel_sales_ingest_health"] = { data: rows, error: null }
+    install(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+    const report = await (await POST(post())).json()
+
+    const byColl = check(report, "Sales Ingest by Collection")
+    expect(byColl.status).toBe("critical") // 5h > 3h ceiling, loudness critical
+    expect(byColl.detail).toContain(">3h!")
+    expect(report.status).toBe("CRITICAL")
+  })
+
+  it("a non-loud collection (Candy) silent past its ceiling only WARNs", async () => {
+    const f = greenFixtures()
+    const rows = ingestHealthy().map((r) =>
+      r.collection === "candy_mlb" ? { ...r, sales_6h: 0, sales_24h: 0, coll_hours_since_last: 20 } : r
+    )
+    f["rpc:sentinel_sales_ingest_health"] = { data: rows, error: null }
+    install(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+    const report = await (await POST(post())).json()
+
+    const byColl = check(report, "Sales Ingest by Collection")
+    expect(byColl.status).toBe("warn") // 20h > 12h ceiling, loudness warn
+    expect(report.status).toBe("WARN")
+  })
+
+  it("a single dead lane while its collection still flows WARNs (by source)", async () => {
+    const f = greenFixtures()
+    // TS offer_fill dies (0/24h) but onchain still flows -> collection rollup ok,
+    // lane view must catch it.
+    const rows = ingestHealthy().map((r) =>
+      r.collection === "nba_top_shot" && r.source === "offer_fill"
+        ? { ...r, sales_1h: 0, sales_6h: 0, sales_24h: 0 }
+        : r
+    )
+    f["rpc:sentinel_sales_ingest_health"] = { data: rows, error: null }
+    install(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+    const report = await (await POST(post())).json()
+
+    expect(check(report, "Sales Ingest by Collection").status).toBe("ok") // onchain still fresh
+    const bySrc = check(report, "Sales Ingest by Source")
+    expect(bySrc.status).toBe("warn")
+    expect(bySrc.detail).toContain("LANE SILENT")
+    expect(bySrc.detail).toContain("Top Shot/offer_fill")
+  })
+
+  it("a saturation error on the ingest RPC is inconclusive (warn), a real error pages", async () => {
+    // Saturation -> both new checks warn, never page.
+    let f = greenFixtures()
+    f["rpc:sentinel_sales_ingest_health"] = { data: null, error: { message: "canceling statement due to statement timeout" } }
+    install(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+    let report = await (await POST(post())).json()
+    expect(check(report, "Sales Ingest by Collection").status).toBe("warn")
+    expect(check(report, "Sales Ingest by Collection").detail).toContain("INCONCLUSIVE")
+    expect(check(report, "Sales Ingest by Source").status).toBe("warn")
+
+    // A non-saturation RPC error is a real failure -> collection check pages.
+    f = greenFixtures()
+    f["rpc:sentinel_sales_ingest_health"] = { data: null, error: { message: "function does not exist" } }
+    install(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+    report = await (await POST(post())).json()
+    expect(check(report, "Sales Ingest by Collection").status).toBe("critical")
+  })
+
+  it("a collection that has never traded shows 'never' and does not alarm", async () => {
+    const f = greenFixtures()
+    const rows = ingestHealthy().map((r) =>
+      r.collection === "laliga_golazos" ? { ...r, coll_hours_since_last: null } : r
+    )
+    f["rpc:sentinel_sales_ingest_health"] = { data: rows, error: null }
+    install(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+    const report = await (await POST(post())).json()
+    const byColl = check(report, "Sales Ingest by Collection")
+    expect(byColl.detail).toContain("Golazos 0/24h (last never)")
+    expect(byColl.status).toBe("ok")
+  })
+
+  it("UFC (loudness off) never alarms even when silent for months", async () => {
+    install(greenFixtures()) // UFC row already has coll_hours_since_last 2088
+    stubFetch([sniperOk, telegramOk, resendOk])
+    const report = await (await POST(post())).json()
+    // UFC contributes nothing to status; overall stays ALL CLEAR
+    expect(check(report, "Sales Ingest by Collection").status).toBe("ok")
+    expect(report.status).toBe("ALL CLEAR")
+  })
+})
+
+/**
+ * Until 2026-08-29 this route wrote NOTHING to pipeline_runs. Its status, its
+ * per-check verdicts and — the part that matters — whether the Telegram/email
+ * alert actually DELIVERED existed only in the HTTP response and a console.log.
+ * The GHA caller reads one field out of that body and discards the rest into a
+ * run log that is read only when someone opens the run, which (measured
+ * 2026-08-29) mostly does not exist because GitHub sheds most of this
+ * workflow's hourly ticks.
+ *
+ * So "did the fleet alarm run, and did anyone hear it?" was unanswerable from
+ * any durable store. Its own sibling `stale-fmv-monitor` carried the identical
+ * gap until deep-audit D7 and states the rule: "A monitor whose own run history
+ * is invisible cannot be checked for having run, which is the one thing you need
+ * from a monitor."
+ *
+ * ⚠ The write is deliberately inside a try/catch so telemetry can never break
+ * the check it measures — which means EVERY OTHER TEST IN THIS FILE PASSES
+ * WHETHER OR NOT IT HAPPENS. That is exactly why these assertions exist, and why
+ * they assert the row's CONTENT rather than merely that some rpc was called.
+ */
+describe("POST /api/sentinel — records its own run durably", () => {
+  /**
+   * ⚠ THE CLOCK IS PINNED, AND IT HAS TO BE. The route only sends anything when
+   * `hasCritical || hasWarn || isScheduledReport`, and `isScheduledReport` is
+   * `now.getUTCHours() % 6 === 0` (route.ts). The two assertions below drive a
+   * GREEN fixture on purpose — the scheduled all-clear report is precisely the
+   * case where a silently-dead channel is invisible — so on a green run the
+   * notification block is reachable ONLY in UTC hours 0, 6, 12 and 18.
+   *
+   * Unpinned, these tests therefore passed 4 hours in 24 and FAILED THE OTHER
+   * 20, deterministically, everywhere — CI included. Observed 2026-08-29 at
+   * 19:2xZ as `expected [] to include 'telegram'` (19 % 6 = 1).
+   *
+   * ⛔ Do NOT "fix" a recurrence by switching these to a CRITICAL fixture. That
+   * makes them pass at every hour by testing a different thing: the scheduled
+   * GREEN report would stop being covered, which is the one path where nobody
+   * is already looking at a page.
+   *
+   * Only `Date` is faked — `setTimeout` stays real, so the route's awaited
+   * fetch mocks still settle normally.
+   */
+  async function onScheduledHour<T>(run: () => Promise<T>): Promise<T> {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date("2026-01-01T06:00:00Z"))
+    try {
+      return await run()
+    } finally {
+      vi.useRealTimers()
+    }
+  }
+
+  it("writes a pipeline_runs row carrying the verdict and the alert-delivery outcome", async () => {
+    const spy = install(greenFixtures())
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    await onScheduledHour(() => POST(post()))
+
+    const logged = spy.rpcCalls.filter((c) => c.name === "log_pipeline_run")
+    expect(logged, "the sentinel must record its own run exactly once").toHaveLength(1)
+
+    const args = logged[0].args as Record<string, unknown>
+    expect(args.p_pipeline).toBe("sentinel")
+    expect(typeof args.p_started_at).toBe("string")
+
+    const extra = args.p_extra as Record<string, unknown>
+    // The verdict has to be readable WITHOUT reading `ok`, which means only that
+    // the check completed.
+    expect(extra.status).toBe("ALL CLEAR")
+    expect(extra.checks_run).toBeGreaterThan(0)
+    // Delivery outcome, not delivery intent. This is the field that makes a
+    // silently-dead alert channel falsifiable.
+    expect(extra.notifications).toContain("telegram")
+    expect(extra.notifications).toContain("email")
+  })
+
+  it("carries the BREACHING CHECK NAMES out, not just a count", async () => {
+    // A count reads "no change" across a fix landing and a new arm firing on the
+    // same day — diff the SET, not the number. This is what makes the row worth
+    // querying rather than merely worth storing.
+    const f = greenFixtures()
+    f.sales = { count: 0, error: null } as never
+    const spy = install(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    const report = await (await POST(post())).json()
+
+    // Positive control on the fixture itself: an empty `critical` array would
+    // otherwise satisfy the assertion below for entirely the wrong reason.
+    expect(report.status).toBe("CRITICAL")
+    const breaching = report.checks
+      .filter((c: Check) => c.status === "critical")
+      .map((c: Check) => c.name)
+    expect(breaching.length).toBeGreaterThan(0)
+
+    const args = spy.rpcCalls.find((c) => c.name === "log_pipeline_run")!.args as Record<
+      string,
+      unknown
+    >
+    const extra = args.p_extra as Record<string, unknown>
+    expect(extra.status).toBe("CRITICAL")
+    // The stored set must be the reported set — not a truncation, not a count.
+    expect(extra.critical).toEqual(breaching)
+  })
+
+  it("🚨 the durable row stores each non-ok check's DETAIL, not just its name", async () => {
+    // ⚠ WHY THIS EXISTS, and it is a measurement rather than a worry. Until
+    // 2026-09-13 `extra` held `critical`/`warn` as NAMES only, so every
+    // per-pipeline fact an arm produced — which pipeline, how many minutes,
+    // against which threshold — lived ONLY in the Telegram/email body. Asking the
+    // database "has the no-success arm ever named `reconcile-saved-wallet-stats`?"
+    // returned a confident ZERO across 21 sentinel runs, and that zero was
+    // meaningless: no key in the row had ever held a pipeline name, so the query
+    // could not have matched for ANY pipeline. It was nearly published as a
+    // refutation of a real defect.
+    // ⭐ So the property is not "findings exists" — it is that a fact visible in
+    // the REPORT survives into the ROW, which is the only thing that makes the
+    // sentinel's own history checkable.
+    const f = greenFixtures()
+    f.sales = { count: 0, error: null } as never
+    const spy = install(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    const report = await (await POST(post())).json()
+
+    const nonOk = report.checks.filter((c: Check) => c.status !== "ok")
+    expect(nonOk.length).toBeGreaterThan(0) // positive control on the fixture
+
+    const args = spy.rpcCalls.find((c) => c.name === "log_pipeline_run")!.args as Record<
+      string,
+      unknown
+    >
+    const extra = args.p_extra as Record<string, unknown>
+    const findings = extra.findings as Array<{ name: string; status: string; detail: string }>
+    expect(Array.isArray(findings)).toBe(true)
+
+    // Every non-ok check is represented, and its DETAIL travels with it.
+    const withDetail = nonOk.find((c: Check) => (c.detail ?? "").length > 0) as Check | undefined
+    expect(withDetail).toBeTruthy()
+    const stored = findings.find((f) => f.name === withDetail!.name)
+    expect(stored).toBeTruthy()
+    expect(stored!.status).toBe(withDetail!.status)
+    // The detail is the reported one (possibly capped), not a placeholder.
+    expect(withDetail!.detail.startsWith(stored!.detail.slice(0, 40))).toBe(true)
+    expect(stored!.detail.length).toBeGreaterThan(0)
+
+    // ⚠ ok checks are NOT stored: an all-clear has nothing to explain and this
+    // row is read on every alert tick. Without this the row grows with the
+    // check count rather than with the incident.
+    const okNames = report.checks.filter((c: Check) => c.status === "ok").map((c: Check) => c.name)
+    for (const f of findings) expect(okNames).not.toContain(f.name)
+
+    // Bounded in both dimensions, so a pathological arm cannot bloat every row.
+    expect(findings.length).toBeLessThanOrEqual(25)
+    for (const f of findings) expect(f.detail.length).toBeLessThanOrEqual(400)
+  })
+
+  it("a dead alert channel is recorded as FAILED in the durable row, not omitted", async () => {
+    // The silent-alert-failure class, made queryable. Before this row existed the
+    // only trace of a dead Telegram bot was a string in a response body nobody
+    // stored.
+    const spy = install(greenFixtures())
+    stubFetch([sniperOk, jsonRoute("api.telegram.org", { ok: false }, { status: 500 }), resendOk])
+
+    await onScheduledHour(() => POST(post()))
+
+    const logged = spy.rpcCalls.filter((c) => c.name === "log_pipeline_run")
+    expect(logged).toHaveLength(1)
+    const extra = (logged[0].args as Record<string, unknown>).p_extra as Record<string, unknown>
+    const tg = (extra.notifications as string[]).find((n) => n.startsWith("telegram-FAILED"))
+    expect(tg).toBeDefined()
+    // The reason is in the DURABLE row, which is the point: before this the only
+    // trace of WHY was a console.error nobody stores.
+    expect(tg).toContain("http_500")
+    // ...and it must still not claim delivery.
+    expect(extra.notifications).not.toContain("telegram")
+  })
+
+  it("records rows_* as a measured zero, never as an unmeasured NULL", async () => {
+    // log_pipeline_run now PRESERVES an explicit NULL (shipped 2026-08-29), so
+    // the distinction is live and the choice has to be deliberate: this route
+    // genuinely moves no rows, which is a measured zero. Passing NULL here would
+    // claim "not measured" and make the row unreadable to the rollups.
+    const spy = install(greenFixtures())
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    await POST(post())
+
+    const args = spy.rpcCalls.find((c) => c.name === "log_pipeline_run")!.args as Record<string, unknown>
+    expect(args.p_rows_found).toBe(0)
+    expect(args.p_rows_written).toBe(0)
+    expect(args.p_rows_skipped).toBe(0)
+  })
+  /**
+   * The off-hour counterpart to onScheduledHour(). Added 2026-08-29 alongside the
+   * clock fix rather than instead of it: pinning to ONE notifying hour proves the
+   * assertions are stable, but says nothing about what the route does in the
+   * twenty hours that are not a scheduled report — which is where the sentinel
+   * spends 83% of its life.
+   */
+  async function atUtcHour<T>(hour: number, run: () => Promise<T>): Promise<T> {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date(Date.UTC(2026, 0, 1, hour, 30, 0)))
+    try {
+      return await run()
+    } finally {
+      vi.useRealTimers()
+    }
+  }
+
+  it("writes the row in the twenty hours when a green sentinel sends nothing", async () => {
+    // Sending nothing is CORRECT outside the six-hourly window — but the ROW must
+    // exist anyway. If it did not, the sentinel's invocation cadence would be
+    // invisible five hours in six, and making that cadence visible is the entire
+    // reason the row was added (GitHub is currently shedding most of this
+    // workflow's hourly ticks).
+    const spy = install(greenFixtures())
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    await atUtcHour(19, () => POST(post()))
+
+    const logged = spy.rpcCalls.filter((c) => c.name === "log_pipeline_run")
+    expect(logged).toHaveLength(1)
+    const extra = (logged[0].args as Record<string, unknown>).p_extra as Record<string, unknown>
+    expect(extra.status).toBe("ALL CLEAR")
+    expect(extra.notifications).toEqual([])
+  })
+
+  it("behaves identically at every hour of the day", async () => {
+    // THE CONTROL THAT WOULD HAVE CAUGHT THE ORIGINAL DEFECT. These tests shipped
+    // green-fixture notification assertions against the real clock, were
+    // mutation-checked at 18:xx UTC — one of the four hours where that works —
+    // and reddened main at 19:05Z on someone else's commit.
+    //
+    // The transferable part is not "use fake timers": A MUTATION CONTROL INHERITS
+    // EVERY HIDDEN DEPENDENCE OF THE TEST IT VALIDATES. All four controls passed
+    // inside the same lucky window and certified nothing about the other twenty
+    // hours. When an assertion could depend on ambient state, the control has to
+    // vary THAT, not only the code under test — which is what this sweep does.
+    for (let hour = 0; hour < 24; hour++) {
+      const spy = install(greenFixtures())
+      stubFetch([sniperOk, telegramOk, resendOk])
+
+      await atUtcHour(hour, () => POST(post()))
+
+      const logged = spy.rpcCalls.filter((c) => c.name === "log_pipeline_run")
+      expect(logged, `hour ${hour}: the row is written unconditionally`).toHaveLength(1)
+      const extra = (logged[0].args as Record<string, unknown>).p_extra as Record<string, unknown>
+      expect(extra.status, `hour ${hour}`).toBe("ALL CLEAR")
+      expect(
+        (extra.notifications as string[]).length > 0,
+        `hour ${hour}: notified`,
+      ).toBe(hour % 6 === 0)
+    }
+  })
+
+  // ── pg_cron failure-rate arm (2026-09-09) ─────────────────────────────────
+  // Added after a spell logged 399 cron failures against a 0-3/DAY fleet
+  // baseline with nothing watching: every other arm reads pipeline_runs, and a
+  // job that fails to START never writes one. These cases pin the three states
+  // the arm must keep apart, and the middle one is a bug it actually had.
+  describe("pg_cron Failures (6h)", () => {
+    const NAME = "pg_cron Failures (6h)"
+    const cron = (over: Record<string, unknown>) => {
+      const f = greenFixtures() as any
+      f["rpc:check_pgcron_failure_rate"] = {
+        data: {
+          window_text: "06:00:00",
+          runs: 2100,
+          fails: 0,
+          jobs_failing: 0,
+          startup_timeouts: 0,
+          statement_timeouts: 0,
+          other_fails: 0,
+          top: [],
+          complete: true,
+          ...over,
+        },
+        error: null,
+      }
+      return f
+    }
+
+    it("is ok at the measured baseline and still REPORTS the count", async () => {
+      // The arm is the record that lets a future pass fit a real threshold, so
+      // it must state the number even when quiet — and must NOT borrow the
+      // firing line's language.
+      install(cron({ fails: 1, jobs_failing: 1, statement_timeouts: 1 }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), NAME)
+      expect(c.status).toBe("ok")
+      expect(c.value).toBe(1)
+      expect(c.detail).toContain("1 of 2100")
+      expect(c.detail).toContain("for the record rather than as a finding")
+    })
+
+    it("warns past the threshold and NAMES the startup-vs-statement split", async () => {
+      // That split is the discriminator that took longest to find on 09-09:
+      // startup timeout = no worker slot (contention, 6 of them); statement
+      // timeout = ran and was cancelled at its budget. Same count, opposite fix.
+      install(cron({
+        fails: 157, jobs_failing: 44, startup_timeouts: 59, statement_timeouts: 98,
+        top: [{ jobname: "rpc-ts-listings-atlas-sync", fails: 60 }],
+      }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), NAME)
+      expect(c.status).toBe("warn")
+      expect(c.value).toBe(157)
+      expect(c.detail).toContain("59 worker-slot")
+      expect(c.detail).toContain("98 cancelled at a statement budget")
+      expect(c.detail).toContain("max_worker_processes = 6")
+      expect(c.detail).toContain("rpc-ts-listings-atlas-sync=60")
+    })
+
+    it("⚠ separates an UNREADABLE payload from an answered ZERO — the bug it had", async () => {
+      // `Number(r.runs ?? 0) || 0` collapsed "no payload" into "zero runs",
+      // i.e. a failed read published as a measurement, inside an arm whose
+      // subject is measurement honesty. Both warn, and they must not say the
+      // same thing: one is unreadable, the other is a scheduler-down signal.
+      const unreadable = greenFixtures() as any
+      unreadable["rpc:check_pgcron_failure_rate"] = { data: null, error: null }
+      install(unreadable)
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const a = check(await (await POST(post())).json(), NAME)
+      expect(a.status).toBe("warn")
+      expect(a.detail).toContain("no readable payload")
+      expect(a.detail).toContain("not zero runs")
+      expect(a.value).toBeUndefined()
+
+      install(cron({ runs: 0 }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const b = check(await (await POST(post())).json(), NAME)
+      expect(b.status).toBe("warn")
+      expect(b.detail).toContain("ANSWERED and reported ZERO runs")
+      expect(b.detail).toContain("scheduler-down")
+      expect(b.value).toBe(0)
+      expect(a.detail).not.toBe(b.detail)
+    })
+
+    it("never returns critical, at any failure level", async () => {
+      // A failure burst under saturation is real but is not data loss, and this
+      // route's header records two false CRITICAL pages from that conflation.
+      for (const fails of [0, 10, 400, 5000]) {
+        install(cron({ fails, jobs_failing: 50, statement_timeouts: fails }))
+        stubFetch([sniperOk, telegramOk, resendOk])
+        const c = check(await (await POST(post())).json(), NAME)
+        expect(["ok", "warn"], `fails=${fails}`).toContain(c.status)
+      }
+    })
+
+    it("⚠ a BOUND fence is a lower bound, so \"below threshold\" is NOT concluded from it", async () => {
+      // check_pgcron_failure_rate fences its scan on the runid PK for cost and
+      // reports complete:false when that fence cut the window short. An
+      // under-count under a bar proves nothing about the real value, so the arm
+      // must not return ok on one — that would be the exact failed-read-as-fact
+      // shape this arm exists to catch, one level down.
+      //
+      // ⭐ This case is why the fence gained a p_fence_span override on
+      // 2026-09-09: the fence scales with p_window, so no window binds it and
+      // complete:false was UNREACHABLE in production. A flag nothing can drive
+      // to its interesting value is indistinguishable from one hard-wired true.
+      // Proven live at the same time: span 100 -> complete false / runs 100;
+      // span 50000 (the computed floor) -> complete true / runs 2174, identical
+      // to the default path.
+      install(cron({ fails: 2, jobs_failing: 1, statement_timeouts: 2, complete: false }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), NAME)
+      expect(c.status).not.toBe("ok")
+      expect(c.detail).toContain("LOWER BOUND")
+      expect(c.detail).toContain("at least 2 of 2100")
+      // ⚠ And it must not STATE the conclusion it is about to retract. The
+      // blackout arm shipped exactly this defect once — a clause untrue at the
+      // value it prints — so the sub-threshold wording is suppressed when the
+      // fence bound, rather than printed and then walked back two clauses later.
+      expect(c.detail).not.toContain("for the record rather than as a finding")
+    })
+
+    it("a bound fence ABOVE the threshold still stands as a finding, worded as a lower bound", async () => {
+      // Asymmetry on purpose: a lower bound under a bar proves nothing, but a
+      // lower bound OVER the bar still proves the bar was crossed.
+      install(cron({ fails: 157, jobs_failing: 44, startup_timeouts: 59, statement_timeouts: 98, complete: false }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), NAME)
+      expect(c.status).toBe("warn")
+      expect(c.detail).toContain("at least 157")
+      expect(c.detail).toContain("max_worker_processes = 6")
+    })
+
+    it("a complete scan does NOT carry the lower-bound caveat", async () => {
+      // The negative control: without it the caveat could be unconditional text
+      // and both cases above would still pass.
+      install(cron({ fails: 2, jobs_failing: 1, statement_timeouts: 2, complete: true }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), NAME)
+      expect(c.status).toBe("ok")
+      expect(c.detail).not.toContain("LOWER BOUND")
+      expect(c.detail).not.toContain("at least")
+      expect(c.detail).toContain("2 of 2100")
+    })
+
+    it("a MISSING complete flag is stated as unknown, never read as complete", async () => {
+      // Three states, not two. An older function deployment emits no such key;
+      // treating absence as true would republish a possibly-bound count as a
+      // measurement.
+      const f = cron({ fails: 2 })
+      delete (f["rpc:check_pgcron_failure_rate"] as any).data.complete
+      install(f)
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), NAME)
+      expect(c.detail).toContain("UNKNOWN, not confirmed")
+      expect(c.detail).not.toContain("LOWER BOUND")
+    })
+
+    it("an RPC saturation error is marked INCONCLUSIVE so the blackout arm counts it", async () => {
+      const f = greenFixtures() as any
+      f["rpc:check_pgcron_failure_rate"] = {
+        data: null,
+        error: { message: "canceling statement due to statement timeout" },
+      }
+      install(f)
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const report = await (await POST(post())).json()
+      const c = check(report, NAME)
+      expect(c.status).toBe("warn")
+      expect(c.detail).toContain("INCONCLUSIVE")
+      // and the composition: the blackout arm must see it in its population
+      const blackout = check(report, "Measurement Blackout")
+      expect(blackout.detail).toContain(NAME)
+    })
+  })
+
+})

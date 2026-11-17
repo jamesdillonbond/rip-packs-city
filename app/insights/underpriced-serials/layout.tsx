@@ -1,0 +1,73 @@
+// app/insights/underpriced-serials/layout.tsx
+//
+// SEO surface for the public Underpriced #1s & Perfect Mints board. Server
+// component so the metadata export is honored (a "use client" page.tsx cannot
+// export metadata directly). The canonical is param-stripped (always
+// /insights/underpriced-serials) so the ?headline= / ?tier= / ?quality= /
+// ?sort= filtered URLs don't index as duplicate content. Mirrors
+// app/insights/serial-premiums/layout.tsx.
+
+import type { Metadata } from "next"
+import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
+
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
+
+export const metadata: Metadata = {
+  // The root metadata template in lib/seo.ts appends " | Rip Packs City",
+  // so baking the brand in here rendered it twice. (deep-audit D24)
+  title: "Underpriced #1s — Headline Serials Listed Below Value",
+  description:
+    "NBA Top Shot #1 mints and perfect mints (#N/N) that are LISTED RIGHT NOW for less than the serial is worth. Live deals, ranked by discount. Free. No signup.",
+  keywords: [
+    "Top Shot underpriced moments",
+    "Top Shot #1 mint deals",
+    "Top Shot perfect mint for sale",
+    "NBA Top Shot serial number 1 listing",
+    "cheap Top Shot low serial",
+    "Top Shot deal finder",
+    "Flow blockchain underpriced serials",
+  ].join(", "),
+  alternates: {
+    canonical: `${SITE_URL}/insights/underpriced-serials`,
+  },
+  openGraph: {
+    title: "Underpriced #1s — Headline Serials Listed Below Value",
+    description:
+      "NBA Top Shot #1 mints and perfect mints listed right now below their serial-FMV estimate. Live deals, ranked by discount.",
+    url: `${SITE_URL}/insights/underpriced-serials`,
+    siteName: "Rip Packs City",
+    images: [
+      {
+        url: `${SITE_URL}/api/og/insights/underpriced-serials`,
+        width: 1200,
+        height: 630,
+        alt: "Underpriced #1s — Headline Serials Listed Below Value — Rip Packs City",
+      },
+    ],
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    ...TWITTER_INHERITED,
+    card: "summary_large_image",
+    title: "Underpriced #1s — Headline Serials Listed Below Value",
+    description:
+      "Top Shot #1 mints & perfect mints listed below value right now — live deals, ranked by discount.",
+    images: [`${SITE_URL}/api/og/insights/underpriced-serials`],
+    creator: "@RipPacksCity",
+  },
+}
+
+export default function UnderpricedSerialsLayout({ children }: { children: React.ReactNode }) {
+  const jsonLd = insightsBoardJsonLd("underpriced-serials")
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(jsonLd) }}
+      />
+      {children}
+    </>
+  )
+}

@@ -1,0 +1,39 @@
+-- 2026-10-02 · idx_panini_serials_captured_at_edition — the Panini health sentinel stops
+-- reading 1.5 GB of heap to count one day's serial captures
+--
+-- REPO RECORD of an object created OUTSIDE the migration channel: `CREATE INDEX
+-- CONCURRENTLY` cannot run through `apply_migration` (transaction block) and the MCP client
+-- caps a statement at 60 s, so the index was built by the one-off pg_cron recipe (job 668,
+-- 'zz-idx-panini-serials-captured-at-20261002', `* * * * *`, one statement, no prefix; ran
+-- 6:21:00 → 6:21:45 PM PT, `CREATE INDEX`, then unscheduled). This file is its committed
+-- record, IF NOT EXISTS so it is a no-op wherever the index already exists.
+--
+-- WHY. The 2-hourly `audit_20260830_pgss_snap` delta (3:05 → 5:05 PM PT) ranked
+-- `sentinel_panini_health()` — the PostgREST RPC behind the `Panini Ingest` arm of
+-- /api/sentinel, 56 calls a day — the #2 DISK READER on the instance: 532,227 blocks read
+-- in 3 calls. Its `max_serials_per_edition_26h` leg
+--   SELECT count(*) FROM panini_card_serials WHERE captured_at > now() - interval '26 hours'
+--   GROUP BY edition_external_id
+-- had no index on `captured_at`, so it was a Parallel Seq Scan of the whole 1,499 MB heap
+-- (1,144,169 rows; the `raw jsonb` column is most of each row): 191,849 buffers read,
+-- 7,636 ms cold, 500,005 of 571,879 rows removed by the filter PER WORKER — ~84 GB of disk
+-- reads a day for one health number. The other four legs are already index-backed
+-- (`idx_panini_serials_last_sale_at` from 09-29 serves `newest_sale_at`).
+--
+-- WHAT. B-tree on `(captured_at) INCLUDE (edition_external_id)` over all rows (71 MB): the
+-- leg becomes an Index Only Scan of the last 26 hours' entries.
+--
+-- MEASURED, EXPLAIN (ANALYZE, BUFFERS), same statement, before → after:
+--     Parallel Seq Scan ........ 191,849 read + 87 hit · 7,636 ms (cold)
+--     Index Only Scan .......... 27,242 read + 4,425 hit · 3,719 ms (cold)   (6.1× fewer buffers)
+--   Heap Fetches 114,751 of 143,749 rows: the rows captured in the last day sit on pages the
+--   walks have just written, which the visibility map has not marked all-visible yet, so most
+--   of the remaining cost is heap probes on recent pages — structural for a recency window,
+--   and it shrinks after each autovacuum. The sibling `idx_panini_serials_edition_agg`
+--   (20261003012400) takes the OTHER full-table reader on this table, the squeeze MV.
+--
+-- Revert: DROP INDEX CONCURRENTLY IF EXISTS public.idx_panini_serials_captured_at_edition;
+--   (a human — the MCP holds a DROP).
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_panini_serials_captured_at_edition
+  ON public.panini_card_serials (captured_at) INCLUDE (edition_external_id);

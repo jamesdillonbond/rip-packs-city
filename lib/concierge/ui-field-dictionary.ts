@@ -1,0 +1,258 @@
+// A dictionary of what the numbers and badges on RPC's surfaces MEAN, read
+// from the rendering code (2026-10-03). The concierge's explain_ui_field tool
+// answers "what is the +$ in the top right?" from this instead of asking the
+// user to diagnose the page. Every entry names the file the meaning was read
+// from; an entry is only as current as that file. Add to it when a reader
+// asks about a field that is not here — the question itself is the signal.
+
+import { FMV_ALGO_VERSION, FMV_RECENT_SALES_N, FMV_RECENT_SPAN_DAYS } from "@/lib/fmv-recalc-math";
+import { NOTIFY_MODE_HINT, NOTIFY_MODE_LABEL } from "@/lib/alerts/notify-mode";
+
+export type UiFieldEntry = {
+  id: string;
+  surface: string;
+  field: string;
+  aliases: string[];
+  meaning: string;
+  source: string;
+};
+
+export const UI_FIELD_DICTIONARY: readonly UiFieldEntry[] = [
+  {
+    id: "team-checklist.add-cost-badge",
+    surface: "team checklist (/[collection]/team/[slug])",
+    field: "\"+ $X ASK\" / \"+ $X FMV\" / \"+ $X PAR\" badge in a card's top-right corner (only when a wallet is scored)",
+    aliases: ["+ $", "+$", "plus dollar", "top right", "top-right", "$ value", "value number", "number on the card", "add cost", "+ add", "ask fmv par", "par badge", "cheapest way in"],
+    meaning:
+      "The cheapest way IN to that missing edition — its contribution to the checklist's cost-to-complete. The suffix says what the figure is: ASK = the LIVE low ask for the edition (used when it is within 3× FMV); FMV = the edition's FMV because nothing is listed; PAR = the price of a PARALLEL of this edition (the \"Full editions\" view counts owning any parallel as collected, so the cheapest parallel is the cheapest way in). It is therefore not the high offer and, when the suffix is FMV or PAR, not this edition's own low ask either. \"+ add\" means no price is on file. Hovering the badge spells it out. Owned cards show ✓ (×N for multiples) and 🔒 when the owned copy is locked. (Before 2026-10-03 ~1:00 PM PT the badge was an unlabelled \"+ $X\" — the question that produced this entry.)",
+    source: "components/entity/TeamChecklist.tsx (addLabel / addTitle, 8e5435d) + lib/entity/checklist-full-editions.ts (edition_cost_source, edition_cost_from_parallel)",
+  },
+  {
+    id: "team-checklist.cost-to-complete",
+    surface: "team checklist header",
+    field: "Cost to complete",
+    aliases: ["cost to complete", "completion cost", "how much to finish"],
+    meaning:
+      "The sum of the per-edition add costs over every missing edition that HAS a price: the live low ask where one is listed (within 3× FMV), else FMV; cheapest-of-parallels in the Full editions view. Editions with no price on file are counted separately as unpriced and are NOT in the total, so the true cost is at least this number. An estimate, not a quote.",
+    source: "lib/entity/checklist-full-editions.ts (progress: cost, unpriced_missing_count; 8e5435d)",
+  },
+  {
+    id: "team-checklist.views",
+    surface: "team checklist toggles",
+    field: "All moments vs Full editions; All-Time vs Contemporary",
+    aliases: ["all moments", "full editions", "all-time", "contemporary", "scope", "view toggle", "parallels toggle"],
+    meaning:
+      "\"All moments\" lists every edition including each parallel as its own card; \"Full editions\" lists one card per play (the base edition) and treats owning ANY parallel of it as collected. \"All-Time\" includes every era the franchise minted under (historic team labels included); \"Contemporary\" is the current-label era only.",
+    source: "components/entity/TeamChecklist.tsx + app/api/entity/team-checklist-full-editions/route.ts (view, scope)",
+  },
+  {
+    // 2026-10-30 (beta feedback 11691, webz_80 on the Nuggets page): "a player checklist might be a
+    // fun addition" alongside team checklists. Shipped as the team checklist component over one
+    // person's editions (get_player_checklist / _progress, migration 20261031044056).
+    id: "player-checklist",
+    surface: "player page \"<Player> Checklist\" section (/[collection]/player/[slug]; Top Shot, All Day, Golazos, Candy MLB)",
+    field: "Player checklist — owned vs missing editions of one player, cost to complete",
+    aliases: ["player checklist", "player check list", "checklist for a player", "every edition a player has", "collect them all for a player", "player set", "all of a player's moments", "favorite player checklist"],
+    meaning:
+      "Every edition ONE player has in a collection (the person, not a namesake — resolved the way the player page resolves them), scored owned vs missing for the pasted or signed-in wallet, with the same header as a team checklist: N editions, owned, completion %, estimated cost to complete (live ask when there is one within 3× FMV, else FMV), per-tier breakdown, All moments / Full editions and All-Time / Contemporary / series toggles. It sits on the player page under the stat strip. Not offered for Pinnacle characters or Panini players. A player can be followed (☆ Follow player under the name; listed on /my-teams) since 2026-10-31. Added 2026-10-30.",
+    source: "app/(collections)/[collection]/player/[slug]/page.tsx (TeamChecklist entity=\"player\") + supabase/migrations/20261031044056 (get_player_checklist, get_player_checklist_progress)",
+  },
+  {
+    id: "squeeze.pct",
+    surface: "team page \"Squeeze & Scarcity\" (/[collection]/team/[slug]), /insights/squeeze, /insights/set-squeeze, edition supply blocks",
+    field: "Squeeze % and \"N / M\" buyable count",
+    aliases: ["squeeze", "squeeze %", "squeeze pct", "squeezed", "squeeze percentage", "locked + burned", "effective supply", "effectively buyable", "buyable", "scarcity", "lock rate"],
+    meaning:
+      "The share of an edition's minted supply that can no longer be bought: (locked + burned) ÷ circulation. Burned copies are destroyed; locked copies are held in a Top Shot lock and cannot be listed until it expires. The \"N / M\" beside it is the effectively-buyable count (circulation minus locked minus burned) over the minted circulation. A higher squeeze means fewer copies can ever reach the market, so a tighter supply — it is a supply fact, not a price or a prediction. The team page ranks that franchise's editions by it. Squeeze % does NOT count stacking (one collector holding many unlocked copies); /insights/squeeze shows that separately in its \"Top 5 hold\" column — see that entry.",
+    source: "components/entity/TeamSqueeze.tsx (squeeze_pct, effectively_buyable) + supabase/migrations/20261003181445 (round(100 × (locked + burned) / circulation, 1))",
+  },
+  {
+    // 2026-10-25 replay: asked "does the squeeze calculation take into account
+    // users stacking the moment", the concierge said no and logged a feature
+    // request for the column the board has carried since 10-03 — built from
+    // that same user's request (beta feedback 10256).
+    id: "squeeze-board.top5-hold",
+    surface: "/insights/squeeze (Top Shot squeeze board)",
+    field: "\"Top 5 hold\" column and the \"Top-5 holder share\" sort",
+    aliases: ["top 5 hold", "top 5", "top five", "top-5", "holder share", "holder concentration", "concentration", "stacking", "stacker", "stackers", "whale", "whales", "holders", "one user holding", "ownership concentration", "wallet concentration"],
+    meaning:
+      "The combined share of an edition's circulation held by its 5 largest COLLECTOR wallets, from RPC's on-chain owner census (Top Shot's unopened-pack account and the Dapper buyback account are excluded — they are not collectors). It is the stacking signal: an edition can have a low squeeze % and still be tightly held. Shown only where the census covers the whole edition; \"—\" means no complete census yet, never 0%, and the board states how many of its rows have one. Sort the board by \"Top-5 holder share (desc)\" to rank editions by it. Top Shot only. Added 2026-10-03.",
+    source: "app/insights/squeeze/SqueezeBoardClient.tsx (top5_share_pct, holders; sort 'concentration') + supabase/migrations/20261003184843 (topshot_edition_concentration)",
+  },
+  {
+    id: "squeeze-board.filters",
+    surface: "/insights/squeeze (Top Shot squeeze board)",
+    field: "Board filters: tier, LEAGUE, MAX BUYABLE, MAX MINT (was TROPHY-CIRC), MIN MINT, MIN BUYABLE, TEAM, PLAYER, SORT; set drill-down",
+    aliases: ["filter", "filters", "team filter", "player filter", "league", "nba only", "wnba only", "wnba toggle", "min circulation", "minimum circulation", "min mint", "max mint", "min buyable", "max buyable", "trophy-circ", "trophy circ", "1/1", "one of one", "sort", "squeeze board"],
+    meaning:
+      "The squeeze board filters by tier; LEAGUE (Top Shot only: ALL / NBA / WNBA — read from the edition's team and set, so WNBA moments inside a mixed set like Fresh Gems or Level Up still count as WNBA; added 2026-10-30); MAX BUYABLE and MIN BUYABLE (effectively-buyable copies); MAX MINT (circulation ≤ 100 / 75 / 10 — it was labelled TROPHY-CIRC until 2026-10-30; it caps the MINTED count, which locks and burns never reduce, and ≤ 100 is the band collectors call trophy circ) and MIN MINT (circulation ≥ 10 / 50 / 100 / 500 / 1K / 5K — the ≥ 10 and ≥ 50 floors were added 2026-10-30 so a Legendary view can drop 1/1s and low-mint parallels); TEAM, a typed box that resolves to the franchise and includes its historic names; and PLAYER, a typed box (added 2026-10-30) that filters to one player's editions with the squeeze floor dropped to 0 so every edition of theirs shows — the same path the rookies / first-mint drill-down links use (?player=<name>, \"FILTERED TO PLAYER\" banner). SORT offers squeeze %, effectively buyable, circulation, FMV and Top-5 holder share. TEAM, PLAYER, LEAGUE, MIN MINT and MIN BUYABLE (and the set drill-down) persist in the URL, so that view can be shared; the other pills reset on reload.",
+    source: "app/insights/squeeze/SqueezeBoardClient.tsx (rpc-sq-controls; league, teamFilter, playerFilter, minCirculation, minBuyable) + supabase/migrations/20261031040755 (league column)",
+  },
+  {
+    id: "fmv",
+    surface: "edition page, moment cards, wallet views",
+    field: "FMV",
+    aliases: ["fmv", "fair market value", "value", "what is fmv"],
+    meaning:
+      `Rip Packs City's modelled Fair Market Value for the edition: the median of its ${FMV_RECENT_SALES_N} most recent typical sales (sales within ${FMV_RECENT_SPAN_DAYS} days of the newest, special serials and grail spikes set aside), widened to 90 days when the edition is too thin to price otherwise. It is a value estimate, not a listing price; it is NOT the low ask and NOT the high offer.`,
+    source: `lib/fmv-recalc-math.ts medianOfMostRecent (algo ${FMV_ALGO_VERSION})`,
+  },
+  {
+    id: "fmv.confidence",
+    surface: "NOT SHOWN on the site (internal only since 2026-10-18)",
+    field: "confidence (HIGH / MEDIUM / LOW / STALE / ASK_ONLY / SALES_ONLY / NO_DATA)",
+    aliases: ["confidence", "high medium low", "stale", "ask only", "sales only", "no data", "colour of the number", "color of the fmv"],
+    meaning:
+      "RPC does not publish a confidence rating — it is internal (Trevor, 2026-10-18). If a user asks about it, say the site shows no confidence rating and describe the facts behind the price instead (how many recent sales, when the last one was, whether it comes from a listing). Never name a tier to the user. Internal meaning: HIGH: enough recent sales that agree. MEDIUM: enough sales but noisier, or a thin edition corroborated by a fresh ask. LOW: too few sales or too much disagreement — directional only. STALE: the number was carried forward, not recently recomputed. ASK_ONLY: a live ask with no sales behind it (a floor, not a value). SALES_ONLY: old sales with no ask to corroborate. NO_DATA: nothing to price from. Only HIGH and MEDIUM should be read as a market value.",
+    source: "app/api/support-chat/route.ts FMV_METHODOLOGY_BLOCK",
+  },
+  {
+    id: "edition.low-ask-high-offer",
+    surface: "edition page",
+    field: "Low ask / High offer / Last sale",
+    aliases: ["low ask", "lowest ask", "floor", "high offer", "best offer", "last sale", "recent sale"],
+    meaning:
+      "Low ask: the cheapest listing RPC has for the edition (live for Top Shot via the marketplace; indexed for others, with a timestamp). High offer: the highest standing offer in RPC's market bundle for the edition, with an updated_at — on a parallel page it is either scoped to that printing or an edition-wide offer any printing can fill (the cell label says which). Last sale: the most recent recorded sale. None of these is the FMV; the FMV is modelled from the sales history.",
+    source: "lib/entity/edition-market-fetchers.ts (HighOffer: highest_offer, low_ask, updated_at, offer_scope) + get_edition_listings",
+  },
+  {
+    id: "serial.fmv",
+    surface: "moment / serial detail",
+    field: "Serial FMV",
+    aliases: ["serial fmv", "serial value", "special serial", "#1 serial", "jersey match", "perfect mint", "low serial"],
+    meaning:
+      "The edition FMV multiplied by a serial premium for #1, jersey-number match, perfect mint (last serial), and low serials. Quirky serials (palindromes, 420s) carry no premium.",
+    source: "app/api/support-chat/route.ts FMV_METHODOLOGY_BLOCK (Serials)",
+  },
+  {
+    id: "sniper.after-fees",
+    surface: "sniper / deals board",
+    field: "DEALS AFTER FEES toggle; net after fee",
+    aliases: ["after fees", "deals after fees", "net after fee", "fee", "net"],
+    meaning:
+      "The listing's margin against FMV after the marketplace fee is deducted. With the toggle on (the default), listings whose fee-net margin is zero or negative are hidden, so a $0.25 common at \"net +$0.00\" no longer fills the first screen.",
+    source: "components/sniper/SniperFilterBar.tsx (afterFeesOnly) + the 2026-10-03 ledger entry \"sniper: hide listings the fee erases by default\"",
+  },
+  {
+    id: "trophy-case.badges",
+    surface: "trophy case / profile",
+    field: "moment badges",
+    aliases: ["badges", "debut", "rookie year", "rookie debut", "badge missing"],
+    meaning:
+      "Badges are the moment's Top Shot tags (Debut, Rookie Year, Rookie Debut, …) read from the catalog. Special-serial badges (#1, perfect mint, jersey match) are a separate class computed from the serial; if they are absent on a card where the serial qualifies, that is a known report (2026-09-30, trophy case), not a missing tag.",
+    source: "beta-feedback queue 2026-09-30 + app/api/support-chat/route.ts (badges guidance)",
+  },
+  {
+    // 2026-11-12 (Trevor: "Rip EV on Boxes and Cases"). A box / case holds PACKS, not Moments.
+    id: "pack-detail.box-case-contents",
+    surface: "pack detail page of a Top Shot box or case (/[collection]/pack/dist/[distId]) — \"What's inside this box / case\"",
+    field: "Rip EV — open everything; Sealed value — sell the packs inside; per-pack Qty / EV each / Lowest ask",
+    aliases: ["box ev", "case ev", "rip ev", "sealed value", "what's inside this box", "what's inside this case", "box topper", "case topper", "premium pack", "worth opening the box", "open the case or sell", "sell the packs inside", "priced", "not priced yet", "box", "case"],
+    meaning:
+      "A box or case contains sealed packs (e.g. the 2026-27 Rookie Debut Box = 1 Box Topper + 4 Collector Packs; Case = 1 Case Topper + 1 Premium Pack + 10 Collector Packs). Rip EV = the sum of each inner pack's expected pull value × how many are inside — what opening everything is worth before fees. Sealed value = the sum of each inner pack's lowest live ask × how many — what selling the packs inside unopened would fetch. Each total shows only when EVERY inner pack has a number; \"— (N% priced)\" means only N% of that pack's pool has an FMV yet (under 25% its EV is withheld), which is why a new Case often has no Rip EV until its topper's chase cards sell. The \"from the official description\" note means no box/case has been opened on record yet; the contents come from Top Shot's own description until one is. There is no rip simulator for a box or case (it has no Moment pool) — open an inner pack's page for that.",
+    source: "app/(collections)/[collection]/pack/dist/[distId]/page.tsx (ContainerContentsSection) + lib/pack-dist/container-contents.ts + pack_container_recipes / refresh_container_pack_ev (20261112144751)",
+  },
+  {
+    id: "pack-simulator.where",
+    surface: "pack detail page (/[collection]/pack/dist/[distId])",
+    field: "\"Simulate a rip\" button — the only way into the rip simulator",
+    aliases: ["simulator", "simulate", "rip simulator", "pack simulator", "open simulator", "where is the simulator", "simulate a rip", "run simulator"],
+    meaning:
+      "Clicking a pack anywhere on RPC opens its pack detail page. The rip simulator is linked from there only — the \"Simulate a rip\" button beside \"← All packs\" at the top. It appears only for packs with an indexed Moment pool (Top Shot, All Day, Golazos); boxes, cases and Disney Pinnacle packs have none, so they have no button.",
+    source: "app/(collections)/[collection]/pack/dist/[distId]/page.tsx (data-testid pack-simulator-link; 2026-11-12) + __tests__/pack-clicks-open-the-detail-page-not-the-simulator.test.ts",
+  },
+  {
+    id: "pack-simulator.ev-per-slot",
+    surface: "pack rip simulator (/[collection]/packs/simulator/[distId])",
+    field: "EV / Slot (shown as \"≥ $X\" when coverage is under 100%)",
+    aliases: ["ev / slot", "ev per slot", "ev slot", "expected value", "≥", "greater than", "at least", "pack ev", "ev"],
+    meaning:
+      "The expected FMV of ONE slot: every pullable edition's latest FMV weighted by its drop weight. An edition with no FMV counts as $0, so when FMV cov. is under 100% the figure is a LOWER BOUND and is shown with \"≥\" (hover says how many pullable editions are unpriced). Multiply by Slots / Pack for a whole pack. It may differ from the trimmed-mean pack EV on the pack listing page, which is computed separately.",
+    source: "public.pack_grail_metrics (ev_per_slot = sum(drop_weight × coalesce(fmv,0)) / sum(drop_weight)) via get_pack_for_simulator + PackSimulatorClient.tsx",
+  },
+  {
+    id: "pack-simulator.header-stats",
+    surface: "pack rip simulator header",
+    field: "Slots / Pack, Pool, FMV cov., Depletion, Chase",
+    aliases: ["slots", "slots / pack", "~", "pool", "editions", "fmv cov", "fmv coverage", "coverage", "depletion", "chase", "max pull"],
+    meaning:
+      "Slots / Pack: moments per pack; a trailing \"~\" means the pack does not publish it and the simulator assumed 5. Pool: how many editions can still be pulled (drop weight > 0). FMV cov.: the share of those pullable editions that have an FMV. Depletion: the share of the drop's minted packs already opened, from the pack's distribution record (\"—\" when unknown). Chase: the single highest-FMV edition in the pool.",
+    source: "PackSimulatorClient.tsx (Stat row) + public.pack_grail_metrics (edition_count_pullable, fmv_coverage_pct, max_pull_*) + pack_distributions.depletion_pct",
+  },
+  {
+    id: "overview.priced-from-sales",
+    surface: "collection overview (/[collection]/overview)",
+    field: "Priced from Recent Sales",
+    aliases: ["priced from recent sales", "priced from sales", "priced", "coverage", "how much is priced", "overview percentage"],
+    meaning:
+      "The share of this collection's editions that had at least one marketplace sale in the last 30 days (sales to a platform buyback wallet don't count), so their price can rest on a recent sale. A closed market reads 0% even though its closing values come from older sales. It is NOT the share of editions that have any FMV at all, which is much larger. Updated hourly. \"—\" means the figure could not be read or is out of date, not 0%.",
+    source: "app/(collections)/[collection]/overview/CollectionOverviewClient.tsx (recent_sale_pct from mv_collection_recent_sale_share via lib/collection-stats/read.ts; no fallback to fmv_high_medium_pct or fmv_pct)",
+  },
+  {
+    id: "alerts.notify-mode",
+    surface: "alerts page (/alerts), deal alert form",
+    field: "Notify me (how often an alert repeats)",
+    aliases: ["notify me", "notify mode", "how often", "repeat", "every day", "my alert", "pinging me", "ping me", "alert again", "only once", "relisted", "cadence", "daily digest", "weekly digest"],
+    // Built from the same text the form shows under the select, so this answer
+    // cannot drift from the control (lib/alerts/notify-mode.ts).
+    meaning:
+      `How often one deal alert repeats for the same moment. ${NOTIFY_MODE_LABEL.new_listing} (the default): ${NOTIFY_MODE_HINT.new_listing} ${NOTIFY_MODE_LABEL.once}: ${NOTIFY_MODE_HINT.once} ${NOTIFY_MODE_LABEL.daily}: ${NOTIFY_MODE_HINT.daily} There is no daily or weekly DIGEST — before 2026-10-14 the form offered one and nothing implemented it; it was replaced by this setting.`,
+    source: "app/alerts/AlertsClient.tsx (alert-notify-mode) + lib/alerts/notify-mode.ts + dispatch_due_deal_alerts (20261015002500)",
+  },
+  {
+    // 2026-11-09 (signed-in production probe): asked "what is my Top Shot cost basis", the
+    // concierge sent the collector to the dashboard Overview, which has no cost basis on it.
+    id: "collection.cost-basis",
+    surface: "Collection tab (/[collection]/collection), the strip under the wallet stats; signed-in owner of the wallet only",
+    field: "Cost Basis · Current FMV · P&L · \"N moments with a known cost\"",
+    aliases: ["cost basis", "p&l", "pnl", "profit and loss", "what i paid", "how much i spent", "moments with a known cost", "known cost", "am i up or down"],
+    meaning:
+      "Shown on a collection's Collection tab (for example /nba-top-shot/collection) for the signed-in owner of the wallet — NOT on the dashboard Overview. Cost Basis is the sum of what was paid for the moments whose purchase price is on record (marketplace buys, loan defaults); pack pulls, gifts and rewards have no per-moment price and are left out. Current FMV in that strip is the FMV of THOSE moments only, so it is smaller than the Wallet FMV tile above it. P&L is that FMV minus that cost. The count beside it is how many moments the three figures cover. The concierge has no tool that reads a wallet's cost basis: say where the strip is and what it covers, never a figure.",
+    source: "components/collection/PortfolioSummary.tsx + lib/portfolio-summary-compute.ts (computeCostBasisSummary) + get_wallet_summary (cost_basis, current_fmv, pnl, moments_with_cost)",
+  },
+  {
+    // 2026-11-09: the same probe asked when the weekly digest sends; the concierge had nothing.
+    id: "email.weekly-portfolio-email",
+    surface: "Email settings (/dashboard/notifications), \"Weekly digest\" switch",
+    field: "Weekly digest (the weekly portfolio email)",
+    aliases: ["digest email", "weekly email", "portfolio email", "email settings", "when does the digest", "monday email", "email me weekly", "unsubscribe"],
+    meaning:
+      "One email on Monday morning (Pacific) saying how the value of the collector's saved wallets moved over the week. It goes only to a signed-in collector who has left the switch on, and only in a week the value moved by 5% or more — a quiet week sends nothing, which is not a failure. Every email has an unsubscribe link, and the switch on /dashboard/notifications turns it off. It is separate from listing alerts (the Alerts page), which have no digest mode. The concierge cannot see whether a particular collector is opted in or was sent one: point to the page.",
+    source: "app/dashboard/notifications/NotificationsClient.tsx + app/api/cron/weekly-digest/route.ts (DEFAULT_MIN_ABS_PCT 5; vercel.json Mondays 16:33 UTC)",
+  },
+];
+
+function norm(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9$#+ ]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Score entries against a free-text question; returns the best matches
+ * (highest first). Matching is token overlap over field + aliases + surface,
+ * with an exact alias hit ranked above everything else.
+ */
+export function lookupUiField(question: string, surface?: string | null, limit = 3): UiFieldEntry[] {
+  const q = norm(question);
+  const qTokens = new Set(q.split(" ").filter((t) => t.length > 1));
+  const sNorm = surface ? norm(surface) : "";
+  // "+62.00", "+ $62", "+$12.50": a plus sign before a figure is the add-cost
+  // badge's own shape, whatever words surround it.
+  const plusFigure = /\+\s*\$?\d/.test(question);
+  const scored = UI_FIELD_DICTIONARY.map((e) => {
+    let score = 0;
+    if (plusFigure && e.aliases.includes("+$")) score += 20;
+    for (const a of e.aliases) {
+      const an = norm(a);
+      if (an && q.includes(an)) score += 10 + an.length;
+    }
+    const hay = norm(`${e.field} ${e.surface} ${e.aliases.join(" ")}`);
+    for (const t of qTokens) if (hay.includes(t)) score += 1;
+    if (sNorm && norm(e.surface).split(" ").some((w) => w.length > 3 && sNorm.includes(w))) score += 3;
+    return { e, score };
+  });
+  return scored
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((x) => x.e);
+}

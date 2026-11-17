@@ -1,0 +1,254 @@
+// app/api/wallet-cost-basis/route.ts
+//
+// GET /api/wallet-cost-basis?wallet=0x...|username&collection=<slug>
+// Computes per-moment P&L for a wallet's TopShot acquisitions where buy_price is known.
+// Aggregates a summary block + top gainers/losers.
+//
+// Non-TopShot collections return reason='cost_basis_unavailable' (200).
+// Zero-tracked TopShot wallets return reason='no_tracked_acquisitions'.
+
+import { NextRequest, NextResponse } from "next/server"
+import {apiErrorResponse, isUnresolvedIdentifierError, unresolvedIdentifierResponse} from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
+import { supabaseAdmin } from "@/lib/supabase"
+import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
+import { isCadenceAddress, isSolanaAddress, normalizeAddress } from "@/lib/address"
+import { resolveToFlowAddress, UsernameLookupUnavailableError, usernameLookupUnavailableResponse } from "@/lib/chains/flow/flow-resolve"
+import { ownLookup } from "@/lib/safe-lookup"
+import { requireOwnedKey } from "@/lib/auth/owner-key-guard"
+
+const TOPSHOT_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+
+async function resolveWallet(input: string): Promise<string> {
+  const t = input.trim()
+  // On-chain addresses pass through, normalised per chain (Flow hex folds, a
+  // Candy base58 key stays verbatim), so a Candy wallet reaches the honest
+  // "unavailable for this collection" answer below instead of failing in the
+  // Top Shot username lookup.
+  if (isCadenceAddress(t) || isSolanaAddress(t)) return normalizeAddress(t)
+  // 2026-09-29: the shared ladder (cache → live Atlas → Top Shot GQL). The local
+  // copy went cache → the dead Top Shot host only, so a username not already
+  // cached could never resolve here. A miss throws "Could not resolve …"; a
+  // failure to look throws UsernameLookupUnavailableError (answered 503).
+  return resolveToFlowAddress(t)
+}
+
+type MoverRow = {
+  player_name: string | null
+  set_name: string | null
+  tier: string | null
+  serial_number: number | null
+  buy_price: number
+  current_fmv: number
+  pnl_pct: number
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    const walletInput = req.nextUrl.searchParams.get("wallet")
+    if (!walletInput) return NextResponse.json({ error: "wallet required" }, { status: 400 })
+
+    const collectionSlug = req.nextUrl.searchParams.get("collection")?.trim() || ""
+    const collectionUuid = ownLookup(COLLECTION_UUID_BY_SLUG, collectionSlug)
+    if (!collectionUuid) {
+      return NextResponse.json({ error: `unknown collection: ${collectionSlug}` }, { status: 400 })
+    }
+
+    const wallet = await resolveWallet(walletInput)
+
+    // ⛔ 2026-10-11 — per-moment P&L is OWNER-ONLY (see app/api/cost-basis).
+    // Gated on the RESOLVED address, after the username lookup, so a Top Shot
+    // username and its 0x address are judged by the same saved_wallets rows.
+    // Sits before the non-TopShot short-circuit on purpose: the gate decides
+    // who may ask, not what the answer is.
+    const gate = await requireOwnedKey(wallet)
+    if (gate instanceof Response) return gate
+
+    if (collectionUuid !== TOPSHOT_UUID) {
+      return NextResponse.json(
+        { wallet, collection: collectionSlug, rows: [], reason: "cost_basis_unavailable" },
+        { headers: { "Cache-Control": "public, max-age=300, stale-while-revalidate=600" } }
+      )
+    }
+
+    // ── 1. Pull tracked acquisitions (buy_price > 0) ────────────────────────
+    const PAGE = 1000
+    type AcqRow = { nft_id: string; buy_price: string | number }
+    const acqRows: AcqRow[] = []
+    for (let page = 0; page < 50; page++) {
+      const { data, error } = await boundedRead((supabaseAdmin as any)
+        .from("moment_acquisitions")
+        .select("nft_id, buy_price")
+        .eq("wallet", wallet)
+        .eq("collection_id", TOPSHOT_UUID)
+        .not("buy_price", "is", null)
+        .gt("buy_price", 0)
+        .order("id", { ascending: true })
+        .range(page * PAGE, page * PAGE + PAGE - 1), "api/wallet-cost-basis/moment_acquisitions")
+      if (error) throw new Error(error.message)
+      const batch = (data ?? []) as AcqRow[]
+      acqRows.push(...batch)
+      if (batch.length < PAGE) break
+    }
+
+    // ── 2. Total wallet acquisition count for sample-size note ───────────────
+    // ⚠ Bound to `error`: supabase-js returns a failed count as `{ count: null, error }`,
+    // and the old `totalAcq ?? trackedCount` turned that into "tracked on 42 of 42" —
+    // a 100 % coverage claim manufactured from a read that never returned, on the
+    // one line whose job is to DISCLOSE sample size (2026-09-03).
+    const { count: totalAcqRaw, error: totalAcqErr } = await boundedRead((supabaseAdmin as any)
+      .from("moment_acquisitions")
+      .select("nft_id", { count: "exact", head: true })
+      .eq("wallet", wallet)
+      .eq("collection_id", TOPSHOT_UUID), "api/wallet-cost-basis/moment_acquisitions")
+    const totalAcq: number | null = totalAcqErr ? null : (typeof totalAcqRaw === "number" ? totalAcqRaw : null)
+    if (totalAcqErr) console.warn("[wallet-cost-basis] acquisition count failed:", totalAcqErr.message)
+
+    if (acqRows.length === 0) {
+      return NextResponse.json(
+        { wallet, collection: collectionSlug, rows: [], reason: "no_tracked_acquisitions" },
+        { headers: { "Cache-Control": "public, max-age=300, stale-while-revalidate=600" } }
+      )
+    }
+
+    // ── 3. Enrich with edition_key + denorm metadata via wallet_moments_cache ─
+    const nftIds = acqRows.map((r) => r.nft_id).filter(Boolean)
+    const cacheRows: Array<{ moment_id: string; edition_key: string | null; player_name: string | null; set_name: string | null; tier: string | null; serial_number: number | null }> = []
+    for (let i = 0; i < nftIds.length; i += 500) {
+      const slice = nftIds.slice(i, i + 500)
+      const { data, error } = await boundedRead((supabaseAdmin as any)
+        .from("wallet_moments_cache")
+        .select("moment_id, edition_key, player_name, set_name, tier, serial_number")
+        .eq("wallet_address", wallet)
+        .eq("collection_id", TOPSHOT_UUID)
+        .in("moment_id", slice), "api/wallet-cost-basis/wallet_moments_cache")
+      if (error) throw new Error(error.message)
+      cacheRows.push(...(data ?? []))
+    }
+    const cacheByMoment = new Map(cacheRows.map((r) => [r.moment_id, r]))
+
+    // ── 4. Map edition_key → edition uuid via editions.external_id ──────────
+    const editionKeys = Array.from(new Set(cacheRows.map((r) => r.edition_key).filter(Boolean) as string[]))
+    const editionMeta = new Map<string, { id: string; tier: string | null; player_name: string | null; set_name: string | null }>()
+    for (let i = 0; i < editionKeys.length; i += 500) {
+      const slice = editionKeys.slice(i, i + 500)
+      const { data, error } = await boundedRead((supabaseAdmin as any)
+        .from("editions")
+        .select("id, external_id, tier, player_name, set_name")
+        .eq("collection_id", TOPSHOT_UUID)
+        .in("external_id", slice), "api/wallet-cost-basis/editions")
+      if (error) throw new Error(error.message)
+      for (const e of data ?? []) editionMeta.set(e.external_id, e)
+    }
+
+    // ── 5. Most-recent fmv_snapshot per edition_id ───────────────────────────
+    const editionUuids = Array.from(new Set(Array.from(editionMeta.values()).map((e) => e.id)))
+    const fmvByEdition = new Map<string, number>()
+    // CHUNKED (2026-09-22): get_fmv_for_editions is a set-returning RPC and PostgREST
+    // clamps every RPC result to max-rows = 1000, so a wallet spanning more than 1,000
+    // editions silently lost the FMV of the rest (measured on the AllDay pack-EV twin
+    // of this call: 1,000 of 1,488). One row per id, so 500 ids can never hit the cap.
+    for (let i = 0; i < editionUuids.length; i += 500) {
+      const { data, error } = await boundedRead((supabaseAdmin as any).rpc("get_fmv_for_editions", {
+        p_collection_id: TOPSHOT_UUID,
+        p_edition_ids: editionUuids.slice(i, i + 500),
+      }), "api/wallet-cost-basis/get_fmv_for_editions")
+      if (error) throw new Error(error.message)
+      for (const row of (data ?? []) as Array<{ edition_id: string; fmv_usd: number | string }>) {
+        const v = Number(row.fmv_usd)
+        if (Number.isFinite(v) && v > 0) fmvByEdition.set(row.edition_id, v)
+      }
+    }
+
+    // ── 6. Fold rows ─────────────────────────────────────────────────────────
+    type Row = MoverRow & { pnl_usd: number }
+    const rows: Row[] = []
+    let totalCost = 0
+    let totalFmv = 0
+    let wins = 0
+    let losses = 0
+    // Acquisitions with a real buy price but NO current FMV: the moment has left
+    // the wallet (no cache row), its edition is unmapped, or the edition is
+    // unpriced. Scoring them at $0 published a fabricated -100% "loser" and
+    // dragged the totals down; they are excluded and counted instead.
+    let unpriced = 0
+
+    for (const acq of acqRows) {
+      const cache = cacheByMoment.get(acq.nft_id)
+      const editionKey = cache?.edition_key ?? null
+      const ed = editionKey ? editionMeta.get(editionKey) : undefined
+      const buy = Number(acq.buy_price) || 0
+      if (buy <= 0) continue
+      const fmv = ed ? fmvByEdition.get(ed.id) : undefined
+      if (fmv == null) {
+        unpriced++
+        continue
+      }
+      const pnl = fmv - buy
+      const pnlPct = (pnl / buy) * 100
+      totalCost += buy
+      totalFmv += fmv
+      if (pnl > 0) wins++
+      else if (pnl < 0) losses++
+      rows.push({
+        player_name: ed?.player_name ?? cache?.player_name ?? null,
+        set_name: ed?.set_name ?? cache?.set_name ?? null,
+        tier: ed?.tier ?? cache?.tier ?? null,
+        serial_number: cache?.serial_number ?? null,
+        buy_price: Math.round(buy * 100) / 100,
+        current_fmv: Math.round(fmv * 100) / 100,
+        pnl_usd: Math.round(pnl * 100) / 100,
+        pnl_pct: Math.round(pnlPct * 10) / 10,
+      })
+    }
+
+    const trackedCount = rows.length
+    const totalPnl = totalFmv - totalCost
+    const totalPnlPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0
+
+    const sorted = [...rows].sort((a, b) => b.pnl_pct - a.pnl_pct)
+    const gainers = sorted
+      .filter((r) => r.pnl_pct > 0)
+      .slice(0, 5)
+      .map(({ pnl_usd, ...rest }) => rest)
+    const losers = sorted
+      .filter((r) => r.pnl_pct < 0)
+      .slice(-5)
+      .reverse()
+      .map(({ pnl_usd, ...rest }) => rest)
+
+    const unpricedNote = unpriced > 0
+      ? `; ${unpriced} with a purchase price but no current FMV (sold, unmapped or unpriced) are left out`
+      : ""
+    const sampleNote = totalAcq == null
+      ? `Cost basis tracked on ${trackedCount} moments — the wallet's total acquisition count could not be read, so coverage is unknown; only acquisitions with confirmed purchase prices and a current FMV are included${unpricedNote}`
+      : `Cost basis tracked on ${trackedCount} of ${totalAcq} moments — only acquisitions with confirmed purchase prices and a current FMV are included${unpricedNote}`
+
+    console.log("[wallet-cost-basis]", wallet, collectionSlug, trackedCount)
+
+    return NextResponse.json(
+      {
+        wallet,
+        collection: collectionSlug,
+        summary: {
+          tracked_count: trackedCount,
+          total_cost_basis: Math.round(totalCost * 100) / 100,
+          total_current_fmv: Math.round(totalFmv * 100) / 100,
+          total_pnl_usd: Math.round(totalPnl * 100) / 100,
+          total_pnl_pct: Math.round(totalPnlPct * 10) / 10,
+          win_count: wins,
+          loss_count: losses,
+          unpriced_count: unpriced,
+        },
+        top_movers: { gainers, losers },
+        sample_size_note: sampleNote,
+      },
+      { headers: { "Cache-Control": "public, max-age=300, stale-while-revalidate=600" } }
+    )
+  } catch (err) {
+    console.log("[wallet-cost-basis] error:", err instanceof Error ? err.message : String(err))
+    if (err instanceof UsernameLookupUnavailableError) return usernameLookupUnavailableResponse();
+    if (isUnresolvedIdentifierError(err)) return unresolvedIdentifierResponse();
+    return apiErrorResponse(err, "api/wallet-cost-basis");
+  }
+}

@@ -1,0 +1,844 @@
+"use client"
+
+// app/insights/tc-report/page.tsx
+//
+// Public "Top Collector Report" tool — Surface I from the 2026-05-29 launch
+// plan. Paste a Flow wallet and get a comprehensive bag analytics dashboard:
+// squeeze exposure (shared with squeeze-check), top set completion,
+// cross-collection breakdown, rookie + WNBA coverage, and recent
+// acquisitions. Wraps the get_wallet_tc_report SECDEF RPC via the public
+// /api/public/insights/tc-report route. Same wallet-paste trust model as
+// squeeze-check.
+//
+// 2026-10-28 (All Day parity): an NFL All Day squeeze section beside Top Shot's (the API's `allday_squeeze`, the
+// same read /insights/squeeze-check makes), and ⛔ THREE STATES behind an empty report. A report built from zero
+// cache rows used to render as a reading — "— moments across — editions", "No rookie editions held", "0 of 17 WNBA
+// sets" — for a wallet we never scanned. The API's `index_state` now decides: not_indexed queues the wallet for
+// indexing (/api/public/queue-wallet) and re-checks; empty says what OUR SCAN found, never what the wallet holds;
+// unknown says we could not tell.
+
+import { useCallback, useEffect, useRef, useState } from "react"
+import Link from "next/link"
+import { useOwnFlowWallet } from "@/lib/hooks/useOwnFlowWallet"
+import { slugifyName } from "@/lib/entity-labels"
+import { fromDbSlug, getCollection } from "@/lib/collections"
+import { closedMarket, formatClosedOn } from "@/lib/market-closed"
+import { usdSignFirst } from "@/lib/usd-format"
+import { accentText } from "@/lib/accent-text"
+import { scrollRegion } from "@/lib/a11y/scroll-region"
+import DealWatchCapture from "@/components/DealWatchCapture"
+
+type Bucket = { editions: number; moments: number }
+type Buckets = { liquid: Bucket; moderate: Bucket; squeezed: Bucket; extreme: Bucket }
+type SqueezeTopRow = {
+  player_name: string | null
+  set_name: string | null
+  tier: string | null
+  edition_key: string | null
+  circulation: number | null
+  locked: number | null
+  burned: number | null
+  squeeze_pct: number | null
+  held: number | null
+}
+type Squeeze = {
+  wallet: string
+  collection: string
+  total_moments: number | null
+  total_editions: number | null
+  editions_with_badge_coverage: number
+  buckets: Buckets
+  top_squeezed: SqueezeTopRow[]
+  computed_at: string
+}
+type TopSet = {
+  set_name: string
+  // 2026-09-24: the RPC now carries the set's series (additive keys) so the
+  // four "Base Set" rows a long-time collector holds are distinguishable.
+  series?: number | null
+  series_label?: string | null
+  owned_eds: number
+  set_total_eds: number
+  completion_pct: number
+  total_moments_held: number
+}
+type WnbaCoverage = {
+  per_set: { set_name: string; owned: number; total: number }[] | null
+  // 2026-10-18: the latest Top Shot series with WNBA sets (was a hidden, hard-coded 7 = 2024-25).
+  series?: number | null
+  series_label?: string | null
+  sets_total: number
+  sets_touched: number
+  editions_owned: number
+  editions_in_cohort_total: number
+}
+type RookieCoverage = {
+  cohort_size: number
+  owned_count: number
+  // The RPC's best_holding is the single best rookie MOMENT (serial #1 first,
+  // then tier, then lowest serial): player + set + tier + serial. It never
+  // carried an edition_count — the page read one anyway and printed
+  // "Deepest: <player> (— editions)" on every wallet (live 2026-09-24).
+  best_holding: { player_name: string | null; set_name?: string | null; tier?: string | null; serial?: number | null } | null
+}
+type CrossCollection = {
+  slug: string
+  moments: number
+  editions: number
+  approx_fmv_usd: number | null
+}
+type RecentAcquisition = {
+  edition_id?: string | null
+  /** All Day rows carry the edition's external id (→ /nfl-all-day/edition/<id>). */
+  external_id?: string | null
+  player_name: string | null
+  set_name: string | null
+  tier: string | null
+  price_usd: number | null
+  sold_at: string | null
+}
+type Report = {
+  wallet: string
+  computed_at: string
+  squeeze: Squeeze
+  top_sets: TopSet[]
+  wnba_coverage: WnbaCoverage | null
+  rookie_coverage: RookieCoverage | null
+  cross_collection: CrossCollection[]
+  recent_acquisitions: RecentAcquisition[]
+} | null
+type IndexState = "indexed" | "empty" | "not_indexed" | "unknown"
+type QueueState = "idle" | "queued" | "failed"
+type AlldayLeg = { index_state: IndexState | null; summary: Squeeze | null } | null
+type AlldaySections = { top_sets: TopSet[]; recent_acquisitions: RecentAcquisition[] } | null
+type ReportCollection = "nba-top-shot" | "nfl-all-day"
+
+const RECHECK_INTERVAL_MS = 15_000
+const RECHECK_MAX = 8 // ~2 minutes of indexing budget, then a manual "Check again"
+
+function fmtScanDate(iso: string | null): string | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "America/Los_Angeles" })
+}
+
+// Labels come from the registry (lib/collections) through the DB-slug bridge —
+// a hardcoded map beside a registry goes stale silently (Candy was missing
+// from three such maps on 09-24).
+function collectionLabelForDbSlug(dbSlug: string): string {
+  const urlSlug = fromDbSlug(dbSlug)
+  return (urlSlug && getCollection(urlSlug)?.label) || dbSlug
+}
+
+/** "as of 13 May 2026 (Flow market closed)" for a closed market, else null —
+ *  an FMV on a closed market is the last value observed before it closed, and
+ *  must not read as a current price (lib/market-closed.ts). */
+export function ccFmvAsOf(dbSlug: string): string | null {
+  const urlSlug = fromDbSlug(dbSlug)
+  const cm = urlSlug ? closedMarket(urlSlug) : null
+  return cm ? `as of ${formatClosedOn(cm.closedOn)} · ${cm.venue} market closed` : null
+}
+
+function fmtInt(n: number | null | undefined): string {
+  if (n == null) return "—"
+  return Number(n).toLocaleString("en-US")
+}
+function fmtUsd(n: number | null | undefined): string {
+  const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
+  if (n == null) return "—"
+  const v = Number(n)
+  if (v >= 1000) return `$${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k`
+  if (v >= 100) return `$${v.toFixed(0)}`
+  return `$${v.toFixed(2)}`
+}
+function pct(n: number | null | undefined, total: number | null | undefined): string {
+  if (n == null || !total) return "—"
+  return `${Math.round((Number(n) / Number(total)) * 100)}%`
+}
+function fmtPct(n: number | null | undefined): string {
+  if (n == null) return "—"
+  return `${Number(n).toFixed(1)}%`
+}
+function fmtRelDate(iso: string | null | undefined): string {
+  if (!iso) return "—"
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return "—"
+  // hydration-safe: `report` starts null and is only ever filled by the
+  // post-mount wallet-paste fetch, so `recent_acquisitions` is empty at SSR and
+  // this formatter cannot contribute to the hydration diff.
+  const days = Math.floor((Date.now() - d.getTime()) / 86_400_000)
+  if (days <= 0) return "today"
+  if (days === 1) return "1d ago"
+  if (days < 30) return `${days}d ago`
+  if (days < 365) return `${Math.floor(days / 30)}mo ago`
+  return `${Math.floor(days / 365)}y ago`
+}
+function tierColor(tier: string | null): string {
+  switch (tier) {
+    case "LEGENDARY":
+      return "var(--tier-legendary)"
+    case "ULTIMATE":
+      return "var(--tier-ultimate)"
+    case "RARE":
+      return "var(--tier-rare)"
+    case "FANDOM":
+      return "var(--tier-fandom)"
+    case "UNCOMMON":
+      return "var(--tier-uncommon)"
+    case "COMMON":
+      return "var(--tier-common)"
+    default:
+      return "var(--rpc-text-muted)"
+  }
+}
+
+export default function TcReportPage() {
+  const [wallet, setWallet] = useState("")
+  const [report, setReport] = useState<Report>(null)
+  const [reportWallet, setReportWallet] = useState<string | null>(null)
+  const [indexState, setIndexState] = useState<IndexState>("unknown")
+  const [lastScannedAt, setLastScannedAt] = useState<string | null>(null)
+  const [allday, setAllday] = useState<AlldayLeg>(null)
+  const [alldayError, setAlldayError] = useState(false)
+  const [alldaySections, setAlldaySections] = useState<AlldaySections>(null)
+  const [alldaySectionsError, setAlldaySectionsError] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [queue, setQueue] = useState<QueueState>("idle")
+  const [rechecks, setRechecks] = useState(0)
+  const reqRef = useRef(0)
+  const queuedForRef = useRef<string | null>(null)
+
+  // `quiet` = a background re-check: no spinner, and a failed re-check keeps what is already shown.
+  const runCheck = useCallback(async (rawWallet: string, quiet = false) => {
+    const w = rawWallet.trim().toLowerCase()
+    if (!/^0x[a-f0-9]{16}$/.test(w)) {
+      setError("Wallet must look like a Flow address — 0x + 16 hex chars.")
+      return
+    }
+    const myReq = ++reqRef.current
+    if (!quiet) {
+      setError(null)
+      setLoading(true)
+    }
+    try {
+      const r = await fetch(`/api/public/insights/tc-report?wallet=${encodeURIComponent(w)}`, {
+        cache: "no-store",
+      })
+      const j = await r.json()
+      if (!r.ok) throw new Error(j?.error ?? `HTTP ${r.status}`)
+      if (myReq !== reqRef.current) return
+      const st: IndexState =
+        j.index_state === "indexed" || j.index_state === "empty" || j.index_state === "not_indexed" ? j.index_state : "unknown"
+      setReport(j.report ?? null)
+      setReportWallet(w)
+      setIndexState(st)
+      setLastScannedAt(j.last_scanned_at ?? null)
+      setAllday(j.allday_squeeze ?? null)
+      setAlldayError(j.allday_squeeze_error === true)
+      setAlldaySections(j.allday_sections ?? null)
+      setAlldaySectionsError(j.allday_sections_error === true)
+    } catch (err: unknown) {
+      if (myReq !== reqRef.current || quiet) return
+      setReport(null)
+      setReportWallet(null)
+      setError(err instanceof Error ? err.message : "Failed to load")
+    } finally {
+      if (myReq === reqRef.current && !quiet) setLoading(false)
+    }
+  }, [])
+
+  // A never-scanned wallet: start indexing it (once per wallet per page view), then re-check on a short budget.
+  useEffect(() => {
+    if (!reportWallet || indexState !== "not_indexed") return
+    if (queuedForRef.current === reportWallet) return
+    queuedForRef.current = reportWallet
+    setQueue("idle")
+    setRechecks(0)
+    fetch("/api/public/queue-wallet", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet: reportWallet }),
+    })
+      .then(async (r) => {
+        // An unreadable body is "did not start", never a silent null a later check could read as queued.
+        let queued = false
+        try {
+          queued = r.ok && (await r.json())?.queued === true
+        } catch {
+          queued = false
+        }
+        setQueue(queued ? "queued" : "failed")
+      })
+      .catch(() => setQueue("failed"))
+  }, [reportWallet, indexState])
+
+  useEffect(() => {
+    if (!reportWallet || indexState !== "not_indexed" || queue !== "queued" || rechecks >= RECHECK_MAX) return
+    const t = setTimeout(() => {
+      setRechecks((n) => n + 1)
+      void runCheck(reportWallet, true)
+    }, RECHECK_INTERVAL_MS)
+    return () => clearTimeout(t)
+  }, [reportWallet, indexState, queue, rechecks, runCheck])
+
+  // Auto-load when a wallet is pre-filled via ?wallet= URL param (same
+  // pattern as squeeze-check).
+  // Signed in with no ?wallet= → load the reader's OWN wallet instead of an
+  // empty box asking them to paste it (2026-09-28). The box stays for checking
+  // any other wallet. Runs once, after the session resolves.
+  const own = useOwnFlowWallet()
+  const autoRanRef = useRef(false)
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const url = new URL(window.location.href)
+    const w = url.searchParams.get("wallet")
+    if (w && /^0x[a-f0-9]{16}$/i.test(w)) {
+      autoRanRef.current = true
+      setWallet(w)
+      void runCheck(w)
+    }
+  }, [runCheck])
+  useEffect(() => {
+    if (autoRanRef.current || own.loading || !own.wallet) return
+    autoRanRef.current = true
+    setWallet(own.wallet)
+    void runCheck(own.wallet)
+  }, [own.loading, own.wallet, runCheck])
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    autoRanRef.current = true // a search typed before the session resolved wins
+    await runCheck(wallet)
+  }
+
+  const sq = report?.squeeze ?? null
+  const cc = report?.cross_collection ?? []
+  const topSets = report?.top_sets ?? []
+  const rookies = report?.rookie_coverage
+  const wnba = report?.wnba_coverage
+  const acq = report?.recent_acquisitions ?? []
+
+  return (
+    <main style={styles.page}>
+      <style>{CSS}</style>
+
+      <section className="rpc-tc-hero">
+        <div className="rpc-tc-eyebrow">RPC Insights · Public</div>
+        <h1 className="rpc-tc-h1">Top Collector Report</h1>
+        <p className="rpc-tc-lede">
+          Paste your Flow wallet. We pull squeeze exposure, set progress,
+          cross-collection footprint, and rookie / WNBA cohort coverage in
+          one shot — squeeze for Top Shot and NFL All Day. Top Shot&apos;s profile page shows you what you own. This
+          shows you what it means.
+        </p>
+      </section>
+
+      <section className="rpc-tc-form-wrap">
+        <form className="rpc-tc-form" onSubmit={submit}>
+          <input
+            className="rpc-tc-input"
+            type="text"
+            placeholder="0x1234567890abcdef"
+            value={wallet}
+            onChange={(e) => setWallet(e.target.value)}
+            aria-label="Flow wallet address"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <button className="rpc-tc-btn" type="submit" disabled={loading}>
+            {loading ? "Loading…" : "Run report"}
+          </button>
+        </form>
+        {error ? <div className="rpc-tc-error">{error}</div> : null}
+      </section>
+
+      {report && indexState === "not_indexed" ? (
+        <section className="rpc-tc-section" data-testid="tc-not-indexed">
+          <div className="rpc-tc-state">
+            We haven&apos;t indexed this wallet yet — this is not a reading of what it holds.{" "}
+            {queue === "queued"
+              ? rechecks >= RECHECK_MAX
+                ? "Indexing is still running. Check again in a few minutes."
+                : "Indexing has started; this re-checks itself every few seconds (usually 1–2 minutes)."
+              : queue === "failed"
+                ? "We couldn't start indexing just now. Try again shortly."
+                : "Starting indexing…"}
+          </div>
+          {queue !== "idle" && reportWallet ? (
+            <div className="rpc-tc-recheck">
+              <button
+                type="button"
+                className="rpc-tc-sample-btn"
+                data-testid="tc-recheck"
+                onClick={() => {
+                  setRechecks(0)
+                  void runCheck(reportWallet)
+                }}
+              >
+                Check again
+              </button>
+            </div>
+          ) : null}
+        </section>
+      ) : report && indexState === "empty" ? (
+        <section className="rpc-tc-section" data-testid="tc-empty">
+          <div className="rpc-tc-state">
+            Our last scan of this wallet{fmtScanDate(lastScannedAt) ? ` (${fmtScanDate(lastScannedAt)})` : ""} found no moments
+            in any collection we track.
+          </div>
+        </section>
+      ) : report && indexState === "unknown" ? (
+        <section className="rpc-tc-section" data-testid="tc-unknown">
+          <div className="rpc-tc-state">
+            We couldn&apos;t confirm whether this wallet is indexed — this says nothing about what it holds. Try again shortly.
+          </div>
+        </section>
+      ) : report ? (
+        <>
+          <SqueezeBlock title="Squeeze Exposure · Top Shot" label="Top Shot" sq={sq} testId="tc-squeeze-topshot" />
+          {alldayError ? (
+            <section className="rpc-tc-section" data-testid="tc-squeeze-allday-error">
+              <h2 className="rpc-tc-h2">Squeeze Exposure · NFL All Day</h2>
+              <div className="rpc-tc-state">Couldn&apos;t load the NFL All Day squeeze just now — this says nothing about the wallet.</div>
+            </section>
+          ) : allday && allday.index_state === "indexed" ? (
+            <SqueezeBlock title="Squeeze Exposure · NFL All Day" label="NFL All Day" sq={allday.summary} testId="tc-squeeze-allday" />
+          ) : (
+            // 10-28 review: every other leg state used to render NOTHING — a failed state read ("unknown") looked
+            // exactly like a wallet with no All Day squeeze. Each state now says what we know, in squeeze-check's words.
+            <section className="rpc-tc-section" data-testid="tc-squeeze-allday-state">
+              <h2 className="rpc-tc-h2">Squeeze Exposure · NFL All Day</h2>
+              <div className="rpc-tc-state">
+                {allday?.index_state === "empty"
+                  ? "Our last scan found no NFL All Day moments in this wallet."
+                  : allday?.index_state === "not_indexed"
+                    ? "We haven't indexed this wallet's NFL All Day moments yet — this says nothing about what it holds."
+                    : "We couldn't confirm whether this wallet's NFL All Day moments are indexed — this says nothing about what it holds. Try again shortly."}
+              </div>
+            </section>
+          )}
+          {/* Cross-collection footprint */}
+          {cc.length > 0 ? (
+            <section className="rpc-tc-section">
+              <h2 className="rpc-tc-h2">Cross-Collection Footprint</h2>
+              <div className="rpc-tc-cc-grid">
+                {cc.map((c) => (
+                  <div key={c.slug} className="rpc-tc-cc-card">
+                    <div className="rpc-tc-cc-label">{collectionLabelForDbSlug(c.slug)}</div>
+                    <div className="rpc-tc-cc-val">{fmtInt(c.moments)}</div>
+                    <div className="rpc-tc-cc-sub">moments · {fmtInt(c.editions)} editions</div>
+                    {c.approx_fmv_usd != null ? (
+                      <div className="rpc-tc-cc-fmv">
+                        ≈ {fmtUsd(c.approx_fmv_usd)} FMV
+                        {ccFmvAsOf(c.slug) ? (
+                          <span className="rpc-tc-cc-asof"> · {ccFmvAsOf(c.slug)}</span>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {/* Value-moment email capture (2026-11-02) — the share page has carried this since 10-03, but
+              WalletSearch routes half its pastes here and this result had none. Same waitlist copy (#214). */}
+          {reportWallet ? <DealWatchCapture wallet={reportWallet} surface="tc-report" /> : null}
+
+          {/* Top sets in progress */}
+          {topSets.length > 0 ? <TopSetsBlock title="Top Sets In Progress" sets={topSets} collection="nba-top-shot" /> : null}
+          {alldaySectionsError ? (
+            <section className="rpc-tc-section" data-testid="tc-allday-sections-error">
+              <h2 className="rpc-tc-h2">NFL All Day · Sets &amp; Acquisitions</h2>
+              <div className="rpc-tc-state">Couldn&apos;t load the NFL All Day sets and acquisitions just now — this says nothing about the wallet.</div>
+            </section>
+          ) : (alldaySections?.top_sets?.length ?? 0) > 0 ? (
+            <TopSetsBlock title="Top Sets In Progress · NFL All Day" sets={alldaySections!.top_sets} collection="nfl-all-day" />
+          ) : null}
+
+          {/* Cohort coverage (rookies + WNBA) */}
+          {rookies || wnba ? (
+            <section className="rpc-tc-section">
+              <h2 className="rpc-tc-h2">Cohort Coverage</h2>
+              <div className="rpc-tc-cohort-grid">
+                {rookies ? (
+                  <div className="rpc-tc-cohort-card">
+                    <div className="rpc-tc-cohort-label">Rookies (90d)</div>
+                    <div className="rpc-tc-cohort-val">
+                      {fmtInt(rookies.owned_count)}<span className="rpc-tc-cohort-of"> of {fmtInt(rookies.cohort_size)}</span>
+                    </div>
+                    {rookies.best_holding?.player_name ? (
+                      <div className="rpc-tc-cohort-sub">
+                        Best rookie holding: {rookies.best_holding.player_name}
+                        {rookies.best_holding.set_name ? ` · ${rookies.best_holding.set_name}` : ""}
+                        {rookies.best_holding.tier ? ` · ${rookies.best_holding.tier}` : ""}
+                        {rookies.best_holding.serial != null ? ` #${rookies.best_holding.serial}` : ""}
+                      </div>
+                    ) : (
+                      <div className="rpc-tc-cohort-sub">No rookie editions held.</div>
+                    )}
+                  </div>
+                ) : null}
+                {wnba ? (
+                  <div className="rpc-tc-cohort-card">
+                    <div className="rpc-tc-cohort-label">WNBA Sets{wnba.series_label ? ` · ${wnba.series_label}` : ""}</div>
+                    <div className="rpc-tc-cohort-val">
+                      {fmtInt(wnba.sets_touched)}<span className="rpc-tc-cohort-of"> of {fmtInt(wnba.sets_total)}</span>
+                    </div>
+                    <div className="rpc-tc-cohort-sub">
+                      {fmtInt(wnba.editions_owned)} editions held of {fmtInt(wnba.editions_in_cohort_total)} cohort total
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
+
+          {/* Recent acquisitions */}
+          {acq.length > 0 ? <AcquisitionsBlock title="Recent Acquisitions" rows={acq} collection="nba-top-shot" /> : null}
+          {!alldaySectionsError && (alldaySections?.recent_acquisitions?.length ?? 0) > 0 ? (
+            <AcquisitionsBlock title="Recent Acquisitions · NFL All Day" rows={alldaySections!.recent_acquisitions} collection="nfl-all-day" />
+          ) : null}
+        </>
+      ) : (
+        <section className="rpc-tc-empty">
+          <div className="rpc-tc-empty-text">
+            Try one of these to see the shape:{" "}
+            <button
+              className="rpc-tc-sample-btn"
+              onClick={() => setWallet("0xbd94cade097e50ac")}
+              type="button"
+            >
+              Founder&apos;s wallet
+            </button>
+          </div>
+        </section>
+      )}
+
+      <section className="rpc-tc-footer">
+        <div className="rpc-tc-method">
+          <h3 className="rpc-tc-h3">Methodology</h3>
+          <p>
+            <strong>Squeeze %</strong> = (locked + burned) / circulation, per
+            edition, shown for Top Shot and NFL All Day. Buckets are moments-weighted. <strong>Completion %</strong>{" "}
+            uses the canonical set catalog; sub-100% rolls into
+            &quot;in progress&quot;. <strong>Recent acquisitions</strong> are
+            sourced from our sales ingest — V1 Dapper buys from before the
+            buyer-address backfill may not appear.
+          </p>
+          <p>
+            <strong>Cohort coverage</strong> reflects 90d rookie GMV leaders
+            and the WNBA sets of the latest series that has them. <strong>Cross-collection FMV</strong> uses
+            each chain&apos;s native FMV snapshot table.
+          </p>
+        </div>
+        <div className="rpc-tc-side">
+          <Link href="/insights/squeeze-check" className="rpc-tc-back">
+            ← Just the squeeze check
+          </Link>
+          <Link href="/insights" className="rpc-tc-back">
+            More public insights →
+          </Link>
+        </div>
+      </section>
+    </main>
+  )
+}
+
+/** A collection's top sets in progress. Links open that collection's set page. */
+function TopSetsBlock({ title, sets, collection }: { title: string; sets: TopSet[]; collection: ReportCollection }) {
+  const label = collection === "nfl-all-day" ? "NFL All Day" : "NBA Top Shot"
+  return (
+    <section className="rpc-tc-section" data-testid={`tc-top-sets-${collection}`}>
+      <h2 className="rpc-tc-h2">{title}</h2>
+      <div className="rpc-scroll-x" {...scrollRegion("Top sets in progress")}>
+      <table className="rpc-tc-table">
+        <thead>
+          <tr>
+            <th scope="col">Set</th>
+            <th scope="col" className="rpc-tc-th-num">Owned</th>
+            <th scope="col" className="rpc-tc-th-num">Total</th>
+            <th scope="col" className="rpc-tc-th-num">Moments</th>
+            <th scope="col" className="rpc-tc-th-num rpc-tc-th-emph">Completion</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sets.map((s) => (
+            <tr key={`${s.set_name}::${s.series ?? "?"}`}>
+              <td className="rpc-tc-td-ed">
+                <Link
+                  href={`/${collection}/set/${slugifyName(s.set_name)}`}
+                  className="rpc-tc-set-link"
+                  title={`Open ${s.set_name}${s.series_label ? ` (${s.series_label})` : ""} on ${label}`}
+                >
+                  {s.set_name}
+                </Link>
+                {s.series_label ? (
+                  <div className="rpc-tc-ed-set">{s.series_label}</div>
+                ) : null}
+              </td>
+              <td className="rpc-tc-td-num">{fmtInt(s.owned_eds)}</td>
+              <td className="rpc-tc-td-num">{fmtInt(s.set_total_eds)}</td>
+              <td className="rpc-tc-td-num">{fmtInt(s.total_moments_held)}</td>
+              <td className="rpc-tc-td-num rpc-tc-td-emph">{fmtPct(s.completion_pct)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      </div>
+    </section>
+  )
+}
+
+/** A collection's recent acquisitions (sales TO this wallet, 90 days). */
+function AcquisitionsBlock({ title, rows, collection }: { title: string; rows: RecentAcquisition[]; collection: ReportCollection }) {
+  const href = (a: RecentAcquisition): string | null =>
+    collection === "nfl-all-day"
+      ? (a.external_id ? `/nfl-all-day/edition/${encodeURIComponent(a.external_id)}` : null)
+      : (a.edition_id ? `/moment/${a.edition_id}` : null)
+  return (
+    <section className="rpc-tc-section" data-testid={`tc-acquisitions-${collection}`}>
+      <h2 className="rpc-tc-h2">{title}</h2>
+      <div className="rpc-scroll-x" {...scrollRegion("Recent acquisitions")}>
+      <table className="rpc-tc-table">
+        <thead>
+          <tr>
+            <th scope="col">Edition</th>
+            <th scope="col" className="rpc-tc-th-num">Tier</th>
+            <th scope="col" className="rpc-tc-th-num">Price</th>
+            <th scope="col" className="rpc-tc-th-num">When</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((a, i) => {
+            const h = href(a)
+            return (
+              <tr key={`${a.edition_id ?? a.external_id ?? "x"}-${i}`}>
+                <td className="rpc-tc-td-ed">
+                  {h ? (
+                    <Link href={h} className="rpc-tc-set-link">
+                      <div className="rpc-tc-ed-name">{a.player_name ?? "—"}</div>
+                      <div className="rpc-tc-ed-set">{a.set_name ?? "—"}</div>
+                    </Link>
+                  ) : (
+                    <>
+                      <div className="rpc-tc-ed-name">{a.player_name ?? "—"}</div>
+                      <div className="rpc-tc-ed-set">{a.set_name ?? "—"}</div>
+                    </>
+                  )}
+                </td>
+                <td className="rpc-tc-td-num">
+                  <span className="rpc-tc-tier" style={{ color: accentText(tierColor(a.tier)) }}>
+                    {a.tier ?? "—"}
+                  </span>
+                </td>
+                <td className="rpc-tc-td-num">{fmtUsd(a.price_usd)}</td>
+                <td className="rpc-tc-td-num">{fmtRelDate(a.sold_at)}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+      </div>
+    </section>
+  )
+}
+
+/** One collection's squeeze section. A summary with no moments renders a line saying so — never 0 % bars. */
+function SqueezeBlock({ title, label, sq, testId }: { title: string; label: string; sq: Squeeze | null; testId: string }) {
+  if (!sq || !(Number(sq.total_moments) > 0)) {
+    return (
+      <section className="rpc-tc-section" data-testid={testId}>
+        <h2 className="rpc-tc-h2">{title}</h2>
+        <div className="rpc-tc-summary-line">No {label} moments in our index for this wallet.</div>
+      </section>
+    )
+  }
+  const total = Number(sq.total_moments)
+  const b = sq.buckets
+  return (
+    <section className="rpc-tc-section" data-testid={testId}>
+      <h2 className="rpc-tc-h2">{title}</h2>
+      <div className="rpc-tc-bar-row" aria-label="Exposure buckets">
+        {b ? (
+          <>
+            <BucketBar label="Liquid" sub="< 25% squeeze" value={b.liquid.moments} total={total} accent="success" />
+            <BucketBar label="Moderate" sub="25–50%" value={b.moderate.moments} total={total} accent="warn-soft" />
+            <BucketBar label="Squeezed" sub="50–75%" value={b.squeezed.moments} total={total} accent="warn" />
+            <BucketBar label="Extreme" sub="≥ 75%" value={b.extreme.moments} total={total} accent="danger" />
+          </>
+        ) : null}
+      </div>
+      <div className="rpc-tc-summary-line">
+        <strong>{fmtInt(sq?.total_moments)}</strong> {label} moments across{" "}
+        <strong>{fmtInt(sq?.total_editions)}</strong> editions.{" "}
+        {b ? (
+          <>
+            Bag is {pct(b.liquid.moments, total)} liquid,{" "}
+            {pct((b.squeezed.moments ?? 0) + (b.extreme.moments ?? 0), total)} in squeeze territory.
+          </>
+        ) : null}
+      </div>
+      {sq?.top_squeezed && sq.top_squeezed.length > 0 ? (
+        <div className="rpc-scroll-x" {...scrollRegion("Top squeezed holdings")}>
+        <table className="rpc-tc-table">
+          <thead>
+            <tr>
+              <th scope="col">Edition</th>
+              <th scope="col" className="rpc-tc-th-num">Tier</th>
+              <th scope="col" className="rpc-tc-th-num">Held</th>
+              <th scope="col" className="rpc-tc-th-num">Circ</th>
+              <th scope="col" className="rpc-tc-th-num">Locked</th>
+              <th scope="col" className="rpc-tc-th-num">Burned</th>
+              <th scope="col" className="rpc-tc-th-num rpc-tc-th-emph">Squeeze</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sq.top_squeezed.slice(0, 10).map((r, i) => (
+              <tr key={r.edition_key ?? `unkeyed-${i}`}>
+                <td className="rpc-tc-td-ed">
+                  <div className="rpc-tc-ed-name">{r.player_name ?? "—"}</div>
+                  <div className="rpc-tc-ed-set">{r.set_name ?? "—"}</div>
+                </td>
+                <td className="rpc-tc-td-num">
+                  <span className="rpc-tc-tier" style={{ color: accentText(tierColor(r.tier)) }}>
+                    {r.tier ?? "—"}
+                  </span>
+                </td>
+                <td className="rpc-tc-td-num">{fmtInt(r.held)}</td>
+                <td className="rpc-tc-td-num">{fmtInt(r.circulation)}</td>
+                <td className="rpc-tc-td-num">{fmtInt(r.locked)}</td>
+                <td className="rpc-tc-td-num">{fmtInt(r.burned)}</td>
+                <td className="rpc-tc-td-num rpc-tc-td-emph">{fmtPct(r.squeeze_pct)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
+function BucketBar({
+  label,
+  sub,
+  value,
+  total,
+  accent,
+}: {
+  label: string
+  sub: string
+  value: number
+  total: number
+  accent: "success" | "warn-soft" | "warn" | "danger"
+}) {
+  const pctNum = total > 0 ? (value / total) * 100 : 0
+  return (
+    <div className={`rpc-tc-bucket rpc-tc-bucket-${accent}`}>
+      <div className="rpc-tc-bucket-label">{label}</div>
+      <div className="rpc-tc-bucket-sub">{sub}</div>
+      <div className="rpc-tc-bucket-val">{value.toLocaleString("en-US")}</div>
+      <div className="rpc-tc-bucket-pct">{pctNum.toFixed(1)}%</div>
+      <div className="rpc-tc-bucket-track">
+        <div className="rpc-tc-bucket-fill" style={{ width: `${Math.min(pctNum, 100)}%` }} />
+      </div>
+    </div>
+  )
+}
+
+const styles: Record<string, React.CSSProperties> = {
+  page: {
+    minHeight: "100vh",
+    background: "var(--rpc-black)",
+    color: "var(--rpc-text-primary)",
+    fontFamily: "var(--font-body)",
+    padding: "32px 20px 80px",
+  },
+}
+
+const CSS = `
+.rpc-tc-hero { max-width: 1180px; margin: 0 auto 28px; padding-bottom: 24px; border-bottom: 1px solid var(--rpc-border-subtle); }
+.rpc-tc-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: var(--rpc-red-text); margin-bottom: 12px; }
+.rpc-tc-h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(38px, 6vw, 64px); letter-spacing: 0.5px; line-height: 1.02; margin: 0 0 14px; text-transform: uppercase; }
+.rpc-tc-h2 { font-family: var(--font-display); font-weight: 800; font-size: 26px; letter-spacing: 0.5px; text-transform: uppercase; margin: 0 0 18px; }
+.rpc-tc-h3 { font-family: var(--font-display); font-weight: 800; font-size: 22px; letter-spacing: 1px; text-transform: uppercase; margin: 0 0 10px; }
+.rpc-tc-lede { font-size: 18px; line-height: 1.55; color: var(--rpc-text-secondary); max-width: 820px; margin: 0; }
+
+.rpc-tc-form-wrap { max-width: 1180px; margin: 0 auto 28px; }
+.rpc-tc-form { display: flex; gap: 12px; flex-wrap: wrap; }
+.rpc-tc-input { flex: 1; min-width: 240px; font-family: var(--font-mono); font-size: 16px; letter-spacing: 0.5px; padding: 14px 16px; background: var(--rpc-surface); border: 1px solid var(--rpc-border); color: var(--rpc-text-primary); border-radius: 2px; }
+.rpc-tc-input:focus { outline: none; border-color: var(--rpc-red); }
+.rpc-tc-btn { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; background: var(--rpc-red-fill); color: #fff; padding: 14px 26px; border: 0; border-radius: 2px; cursor: pointer; }
+.rpc-tc-btn:hover { background: var(--rpc-red-fill-hover); }
+.rpc-tc-btn:disabled { opacity: 0.6; cursor: progress; }
+.rpc-tc-error { margin-top: 10px; font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-danger-text); }
+
+.rpc-tc-section { max-width: 1180px; margin: 0 auto 36px; }
+
+.rpc-tc-bar-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+.rpc-tc-bucket { border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); padding: 16px; border-radius: 2px; display: flex; flex-direction: column; gap: 4px; }
+.rpc-tc-bucket-success { border-left: 4px solid var(--rpc-success); }
+.rpc-tc-bucket-warn-soft { border-left: 4px solid var(--rpc-warning); }
+.rpc-tc-bucket-warn { border-left: 4px solid #FB923C; }
+.rpc-tc-bucket-danger { border-left: 4px solid var(--rpc-red); }
+.rpc-tc-bucket-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--rpc-text-muted); }
+.rpc-tc-bucket-sub { font-family: var(--font-mono); font-size: 11px; letter-spacing: 1px; color: var(--rpc-text-muted); }
+.rpc-tc-bucket-val { font-family: var(--font-display); font-weight: 800; font-size: 28px; color: var(--rpc-red-text); margin-top: 4px; }
+.rpc-tc-bucket-pct { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1px; color: var(--rpc-text-secondary); }
+.rpc-tc-bucket-track { background: var(--rpc-surface); height: 4px; border-radius: 2px; overflow: hidden; margin-top: 4px; }
+.rpc-tc-bucket-fill { height: 100%; background: var(--rpc-red); }
+
+.rpc-tc-summary-line { font-size: 14px; line-height: 1.6; color: var(--rpc-text-secondary); margin-bottom: 18px; }
+.rpc-tc-summary-line strong { color: var(--rpc-text-primary); font-family: var(--font-mono); }
+
+.rpc-tc-table { width: 100%; border-collapse: collapse; font-size: 14px; border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface); border-radius: 2px; }
+.rpc-tc-table th { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--rpc-text-muted); text-align: left; padding: 12px; border-bottom: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); white-space: nowrap; }
+.rpc-tc-th-num { text-align: right; }
+.rpc-tc-th-emph { color: var(--rpc-red-text); }
+.rpc-tc-table td { padding: 12px; border-bottom: 1px solid var(--rpc-border-subtle); vertical-align: middle; }
+.rpc-tc-td-ed { min-width: 240px; }
+.rpc-tc-ed-name { font-weight: 700; font-size: 15px; color: var(--rpc-text-primary); }
+.rpc-tc-ed-set { font-family: var(--font-mono); font-size: 11px; color: var(--rpc-text-muted); letter-spacing: 1px; margin-top: 2px; }
+.rpc-tc-td-num { text-align: right; font-family: var(--font-mono); color: var(--rpc-text-primary); white-space: nowrap; }
+.rpc-tc-td-emph { color: var(--rpc-red-text); font-weight: 700; }
+.rpc-tc-tier { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; }
+.rpc-tc-set-link { color: var(--rpc-text-primary); text-decoration: none; }
+.rpc-tc-set-link:hover { color: var(--rpc-red-text); }
+
+.rpc-tc-cc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.rpc-tc-cc-card { border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); padding: 18px; border-radius: 2px; }
+.rpc-tc-cc-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); margin-bottom: 6px; }
+.rpc-tc-cc-val { font-family: var(--font-display); font-weight: 800; font-size: 32px; color: var(--rpc-red-text); letter-spacing: 0.5px; }
+.rpc-tc-cc-sub { font-family: var(--font-mono); font-size: 11px; color: var(--rpc-text-muted); letter-spacing: 1px; margin-top: 4px; }
+.rpc-tc-cc-fmv { font-family: var(--font-mono); font-size: 12px; color: var(--rpc-text-secondary); letter-spacing: 1px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--rpc-border-subtle); }
+.rpc-tc-cc-asof { color: var(--rpc-text-muted); letter-spacing: 0; text-transform: none; }
+
+.rpc-tc-cohort-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 12px; }
+.rpc-tc-cohort-card { border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); padding: 18px; border-radius: 2px; }
+.rpc-tc-cohort-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); margin-bottom: 6px; }
+.rpc-tc-cohort-val { font-family: var(--font-display); font-weight: 800; font-size: 32px; color: var(--rpc-red-text); letter-spacing: 0.5px; }
+.rpc-tc-cohort-of { font-size: 18px; color: var(--rpc-text-secondary); font-weight: 400; }
+.rpc-tc-cohort-sub { font-family: var(--font-mono); font-size: 11px; color: var(--rpc-text-muted); letter-spacing: 1px; margin-top: 6px; }
+
+.rpc-tc-empty { max-width: 1180px; margin: 0 auto; padding: 36px 0; text-align: center; }
+.rpc-tc-empty-text { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.5px; color: var(--rpc-text-muted); }
+.rpc-tc-state { padding: 28px; text-align: center; font-family: var(--font-mono); font-size: 13px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface); }
+.rpc-tc-recheck { margin-top: 12px; text-align: center; }
+.rpc-tc-sample-btn { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.5px; background: transparent; border: 1px solid var(--rpc-border); color: var(--rpc-red-text); padding: 6px 12px; border-radius: 2px; cursor: pointer; margin-left: 6px; }
+.rpc-tc-sample-btn:hover { border-color: var(--rpc-red); }
+
+.rpc-tc-footer { max-width: 1180px; margin: 36px auto 0; display: grid; grid-template-columns: 2fr 1fr; gap: 32px; }
+.rpc-tc-method p { font-size: 14px; line-height: 1.65; color: var(--rpc-text-secondary); margin: 0 0 12px; }
+.rpc-tc-method strong { color: var(--rpc-text-primary); }
+.rpc-tc-side { display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
+.rpc-tc-back { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-secondary); text-decoration: none; padding: 10px; text-align: center; border: 1px solid var(--rpc-border-subtle); border-radius: 2px; }
+.rpc-tc-back:hover { color: var(--rpc-red-text); border-color: var(--rpc-red); }
+
+@media (max-width: 760px) {
+  .rpc-tc-bar-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rpc-tc-footer { grid-template-columns: 1fr; }
+}
+`

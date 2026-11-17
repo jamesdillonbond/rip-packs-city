@@ -1,0 +1,186 @@
+# SEO — what Search Console says, and what to do about it (2026-09-06)
+
+Read from `sc-domain:rippackscity.com` on 2026-09-06 (Trevor's logged-in Chrome). Every number is a dated sample.
+
+## The headline
+
+**45 clicks and 3.77K impressions in the property's entire life (data starts 2026-05-30), average position 22, CTR 1.2% — against 31.3K indexed pages and a 34,125-URL sitemap.** Google has crawled and indexed the site at scale and ranks almost none of it. The site is not technically broken; it is technically fine and has **no authority**: **External links: 0. Top linking sites: none.** Not one page anywhere on the web links to rippackscity.com. Nothing below matters as much as that one fact.
+
+The pages that DO get impressions: `/` (90), `/nba-top-shot/overview` (449 impressions, 4 clicks), `/ufc/overview` (156), `/insights/rookies` (89), `/laliga-golazos/overview` (74), `/nba-top-shot/collection` (45). Entity pages (edition / player / team / set — ~30K of the 31K indexed) get essentially nothing.
+
+## What the index looks like
+
+| bucket | pages | what it is | verdict |
+|---|---|---|---|
+| Indexed | 31.3K | mostly edition/player/team/set entity pages | indexed but not ranking (no authority; programmatic pages at scale) |
+| Alternate page with proper canonical | 6,462 | `/moment/<edition uuid>` (canonical → edition page), `?player=` / `?q=` variants | by design, but 6K crawl-budget URLs for duplicates — **fixed: 301 + dropped from sitemap** |
+| Crawled – currently not indexed | 4,448 | `/moment/<uuid>`, some edition + pack-dist pages | same duplicate family + Google declining thin programmatic pages |
+| Discovered – not indexed | 2,827 | `/disney-pinnacle/pack/dist/*` and similar | Google chose not to spend budget; these pages are near-identical shells |
+| Blocked by robots.txt | 1,449 | `/_next/static/*` JS/CSS chunks + `/api/public/ipfs-media/*` | **the chunks were a real problem — fixed: `/_next/static/`, `/_next/image` allowed** |
+| Excluded by noindex | 865 | `/profile/0x…` | old "unknown handle" shells (pre-09-03), linked from every sales table — **fixed at the link** |
+| Not found (404) | 302 | `/profile/0x…`, UUID-keyed edition URLs, legacy player slugs | the profile links (**fixed**), the inert UUID rows (from the old sitemap; will age out), player 404s (mostly fixed 09-06 morning) |
+| Duplicate without user-selected canonical | 61 | `/moment/<uuid>` | same family — fixed |
+| Server error (5xx) | 29 | edition / player / pack pages | the saturation-window 60 s timeouts (known) |
+| Duplicate, Google chose different canonical | 21 | UUID-keyed edition URLs | inert rows; ignore |
+| Indexed, though blocked by robots.txt | 1 | one URL | ignore |
+
+Sitemap: one index, 5 segments, 34,125 discovered URLs, last read 2026-09-06, status Success. Core Web Vitals: "not enough usage data" on both mobile and desktop — the site has too few real-user pageviews for Google to score it.
+
+## Shipped today (code, `main`)
+
+1. **robots.txt no longer blocks `/_next/static/` or `/_next/image`.** `Disallow: /_next/` had put every JS/CSS chunk in the robots-blocked bucket, and Google's own guidance is never to block the resources a page needs to render: a Googlebot that cannot fetch the hydration bundles sees the streaming shell and whatever was server-rendered, and grades layout/CLS blind. The rest of `/_next/` stays blocked. (`__tests__/seo-search-console-2026-09-06-pins.test.ts`.)
+2. **`/moment/<edition uuid>` 301s to `/<collection>/edition/<slug>`.** It was the same page with a canonical hint; ~11,000 of them sat in the not-indexed buckets. Serial-grain `/moment/<nft id>` (the shareable URL) is untouched. The `/moment/` block (top 200) is out of the sitemap.
+3. **Every buyer/seller/owner cell stops linking to `/profile/<address>`** — a URL that does not exist (`/profile/<handle>` resolves RPC usernames only; Trevor's own address 404s). Four components, thousands of links per crawl, every one a 404 for the reader too. They now link to the wallet analyzer `/<collection>/collection?wallet=<addr>` (anon-public, robots-disallowed via `?wallet=`, `rel=nofollow`), or render plain text where no collection is in scope.
+
+## Shipped later the same evening (code, `main`)
+
+4. ✅ **§5 done — the dollar figure is out of every edition title.** `editionPageMetadata` interpolated the live FMV (`… · Value $1.11 | …`) across ~20K entity URLs. It is now FMV-independent: `<Player> — <Set> · Value, Floor & Sales | …` live, `… · Value History & Sales (<venue> market closed) | …` closed. The number moved to the description, which Google re-reads on the same crawl. Pinned by an ABSENCE assertion (`not.toMatch(/\$[\d,]/)`) over all five entity helpers rather than by the new string, so a re-introduction under a different spelling still fails; the two honesty cases in `honesty-disclosure-2026-08-02.test.ts` were INVERTED, not deleted — the property they held ("a dead price is never titled as a live one") is now pinned one step stronger, and the closed-market title still names the closure.
+
+5. ✅ **§2 turned up an honesty defect, not just a title mismatch: all five UFC tabs advertised a LIVE market.** `PAGE_META` is written for a trading collection and says so — "live FMV", "real-time FMV", "daily market pulse", and, on the sniper tab, **"Live deals below FMV"**. UFC Strike's Flow market has not traded since 2026-05-13. That copy was rendering into `<title>`, `description`, `og:` and `twitter:` on `/ufc/{overview,collection,sniper,sets,analytics}` — `/ufc/overview` being one of only six URLs on this site that earns impressions at all (156). The sniper line is the sharpest: it offers an ACTION the product cannot perform on a dead market, which is the read-only rule reached through metadata. `pageMetadata` now serves closed-market copy DERIVED from `closedMarket()` (keyed by tab, applying to any market that closes, venue + date interpolated) — never a second per-slug list, because `lib/market-closed.ts`'s own header says closure is edited in that map and nowhere else. Guard: `__tests__/closed-market-tab-copy-carries-no-liveness-claim.test.ts`, a ban at zero over `CLOSED_MARKETS × PUBLIC_TAB_PAGES` — the closure must be disclosed with venue AND date, no liveness token (`live|real-time|daily|current|today`) may survive in title, description or `og:description`, no placeholder may leak, the population counts are asserted so it cannot pass vacuously, and a **no-change control** proves a live collection still gets the live copy. Positive control run: deleting one tab's closed entry fails it by name (`ufc/sniper: no venue disclosure`).
+   ⓘ **Not changed, and named rather than left implied:** the collection ROOT metadata (`collectionLayoutMetadata`) still reads "FMV pricing, sniper deals, and wallet analytics for UFC Strike moments. Collection migrated to Aptos; 247 NFTs indexed on Flow." It carries its own, more specific disclosure, so it is not making a live-market claim — but "sniper deals" is the same offer one level up and the guard above does not cover that function. Left for a decision rather than swept in.
+
+6. ✅ **Part three (09-07, late): the five indexable client-shell tabs served Googlebot a shell.** Measured on every published collection: `/<collection>/collection`, `/sniper`, `/analytics`, `/sets`, `/market` — 19 sitemap URLs at priority 0.7 — answered an anonymous fetch with 95–178 chars of `<main>` ("Loading market…") and **0 entity links**; `/overview` had 42 from `PopularOnCollection`. The fan-out now renders under those tabs too, and its two reads are Data-Cached per collection for an hour (the overview's `revalidate` never applied — the route is dynamic). Ledger entry "SEO part three"; pins in `__tests__/seo-client-shell-tabs-carry-the-catalog-fanout.test.tsx`. Owed: the served-HTML re-count after the deploy, and "Crawled – currently not indexed" for those URLs in two crawls.
+
+## What would actually move the number (not code, or not only code)
+
+**1. Links. Zero is the whole story.** With no external links the domain has no authority, so 31K well-built pages rank on page 3. The CLAUDE.md rule "no tweets / Reddit / TC DMs on multi-chain pre-launch" is about announcing the multi-chain product; it does not have to mean zero links. Cheapest first:
+- Flow ecosystem listings: flow.com ecosystem/dapp directory, Flowverse, DappRadar, Alchemy's dapp store, DeFiLlama-style Flow trackers — each is a real editorial link.
+- The public GitHub repo README (`jamesdillonbond/rip-packs-city`) should link to www.rippackscity.com in its first line; it currently is the one page Google associates with the brand and it carries no link.
+- Top Shot / All Day community surfaces that allow tool links: the r/nbatopshot and r/nflallday tools threads, the Discord resource channels, Own The Moment / LiveToken comparison posts, the WNBA Top Shot community (see the query list — "wnba gold slot" is the #1 impression query and nobody clicks because the ranking page is a generic entity page).
+- Product Hunt / Indie Hackers launch (free, indexable, real links).
+- ⛔ Not a lever: Trevor's Team Captain designation. It stays IYKYK — never lead a post, listing or bio with it (Trevor, 09-06). Anyone who knows the Top Shot side will connect the reused RPC brand on their own; the links above stand on the product.
+
+**2. Match the queries that already show up — PARTLY SHIPPED 09-07.** `/insights/account-value` is now titled *NBA Top Shot Account Value Calculator — Free Value Tracker*; pack-dist pages (where "wnba gold slot" → the WNBA Metallic Gold LE packs, and "premiumchance" → the Premium Chance packs, both land) are titled *<Pack> — <Tier> Pack · Odds, Pulls & EV* and no longer publish `Retail $0.00` for an unrecorded price. ~~Still open: a WNBA Gold explainer and a premium-chance explainer~~ — **RESOLVED 2026-10-14.** (a) **"wnba gold slot" is not a Top Shot query:** *WNBA Gold* is a BetMGM online casino slot game (5×3 reels, 25 paylines; BetMGM blog `casino.betmgm.com/en/blog/game-insights/wnba-gold-slot/`). The 73 impressions / 0 clicks were casino searchers; a Top Shot page cannot satisfy that intent and none was built. (b) **"premiumchance" shipped as `/blog/premium-chance-hit-vs-chance-hit`**, written from Top Shot's own published pack contents (`pack_distributions.metadata.original_counts_by_tier` / `total_pack_count`), not from recall: across 10 paired drops, Rare-or-better per pack ranges 0.09–3.00 on Premium Chance Hit (recent drops consistent with a guaranteed slot; Top Shot's own copy on dist 8756: "Each Premium Chance Hit Pack contains 1 Rare or higher tier Moment"), and Premium was cheaper per hit in 8 of 10 releases — both Rookie Revelation drops the exception. Every Top Shot Chance Hit / Premium Chance Hit pack page now links the post. **Original finding:** 224 queries in 3 months, most with 0 clicks. They cluster into four intents the site has no dedicated, title-matched page for:
+- **"nba top shot value tracker" / "nba top shot value" / "account value" / "account value calculator" / "price tracker" / "valuation"** (~130 impressions combined, position ~15-25). The home page and `/nba-top-shot/overview` half-match. A single page titled *NBA Top Shot Account Value Calculator — free wallet valuation* (the `/insights/account-value` board renamed and expanded, or the collection tab given that title) would match all of them. Same for "nfl all day account value".
+- **"wnba gold slot(s)" / "wnba gold"** (73 impressions, 0 clicks). Whatever ranks is an entity page whose title says nothing about gold slots. A short explainer + live table page ("WNBA Gold Slot — what it is, current floor, holders") would take the click.
+- **"premiumchance"** (26) — the Top Shot pack "premium chance" mechanic. A pack-odds explainer page linked from the pack-reality board.
+- **"ufc strike" / "ufc nft" / "ufc value" / "ufc strike marketplace"** (~60) — `/ufc/overview` ranks; its title should say "UFC Strike" first and mention "closed market — last prices" since the market is closed and readers are searching for what their UFC NFTs are worth now.
+- Player queries ("benoit saint denis sell", "patrick ewing top shot", "giannis antetokounmpo coin collection", "victor wembanyama 3.58%") — the player pages exist; they need the player's name FIRST in the title and a sentence of real copy (current floor, best serial sold, lock rate) rather than a template.
+
+**3. Fewer, stronger pages — PARTLY SHIPPED 09-07.** Pack distributions with a known mint of 1–49 packs (All Day's median is 25 — reward/promo shells) or no title left the sitemap: 2,065 of 5,529. Unknown mints (Golazos) stay. ~~Single-edition long-tail sets~~ — **SHIPPED 2026-10-14:** a set with one edition is a near-duplicate of that edition's page; 677 were listed (UFC 257, Panini 413, All Day 5, Golazos 2, Top Shot 0) and segment 3 no longer lists them (pages stay up and linked). ~~Editions with no sales and no holders~~ — **measured 2026-10-14: the population is empty.** Every Top Shot / All Day / Golazos / UFC / Candy edition (21,936) has an `edition_fmv_current` row and a mint count; 1,414 have no recorded sale but all have supply. Panini: 28,384 of 30,251 have a sale and 30,135 an FMV; 116 have neither. Nothing to prune on this rule; the same day Panini moved to its own sitemap shards (5-8) because its growth, not its quality, was the sitemap risk. **Original finding:** 34K URLs with zero authority is worse than 2K. Google's "Discovered – not indexed" (2,827) and "Crawled – not indexed" (4,448) are it saying the marginal page adds nothing. Candidates to drop from the sitemap (keep the pages, stop advertising them): pack-dist pages for closed markets and sold-out drops, editions with no sales and no holders, series pages, WNBA/UFC long-tail sets with a single edition. Keep: overview pages, insights boards, player and team pages, editions with activity. Rule of thumb: if a page would never be the best answer to any query, it should not be in the sitemap.
+
+**4. Internal linking is inverted — PARTLY SHIPPED 09-07.** Shipped: `/pricing` out of the footer (+ sitemap, + noindex); the edition page's new *More from this player / set* block (`get_edition_related`, up to 6 sibling editions — it had linked to zero other editions); the *Same Play · Other Sets* and moment-page *Parallels* cards link straight to the canonical edition URL instead of `/moment/<edition uuid>` (a redirect hop for every reader and the source of the duplicate-URL family). Overview → editions turned out to already exist (18 edition / 12 player / 12 set links per overview, measured 09-07) — struck. **Original finding:** Top internal-link targets are `/pricing` (27,566 links — from the footer on every page, to a page that says the product is free), `/ufc/overview`, the insights boards — all nav/footer. The entity pages that carry the long-tail get one link each from their parent. Add "related" blocks: player page → that player's top 5 editions and team; edition page → player, set, and the 3 nearest editions by FMV; overview pages → the 20 most-traded editions this week. Take `/pricing` out of the footer (or noindex it) until there is a price.
+
+**5. ✅ SHIPPED 2026-09-06 (see item 4 above).** Edition titles were `<Player> — <Set> · Value $1.11 | NBA Top Shot | Rip Packs City`. A dollar figure in the title re-writes the title on every crawl and buries the searchable part; Google often replaces it. The value is now in the description, not the title.
+
+> ⚠ **Owed measurement (09-07):** the other side of this call is that a price in a SERP title is the click magnet on price-comparison results. Compare edition-page CTR for the 30 days before vs after `9909fb8`; if it fell, the figure goes back in a stable form (rounded, e.g. "~$250").
+>
+> ✅ **MEASURED 2026-11-05 ~4:33 PM PT (Claude Code cloud, Trevor's Chrome, `sc-domain:rippackscity.com`, Web search) — the price STAYS OUT of the title; the decision rule's "if it fell" is not met on evidence that can carry it.**
+>
+> | window (PT) | pages | clicks | impressions | CTR | avg position |
+> |---|---|---|---|---|---|
+> | 08-07 – 09-05 (price in title) | all `/edition/` | 13 | 1.1K | 1.2 % | 10.5 |
+> | 09-07 – 10-06 (no price) | all `/edition/` | 2 | 1.17K | 0.2 % | 7 |
+> | 10-07 – 11-04 (no price) | all `/edition/` | 54 | 1.8K | 3.0 % | 8.9 |
+> | 08-07 – 09-05 | `/nba-top-shot/edition/` | 8 | 825 | 1.0 % | 9.8 |
+> | 10-07 – 11-04 | `/nba-top-shot/edition/` | 1 | 415 | 0.2 % | 7.6 |
+> | 08-07 – 09-05 / 09-07 – 10-06 | whole site | 29 / 13 | 2.16K / 1.46K | 1.3 % / 0.9 % | 21.6 / 14.2 |
+>
+> The first month after the change did fall (13 → 2 clicks) while the rest of the site rose (≈ 16 / 1.06K → 11 / 0.29K, i.e. ~1.5 % → ~3.8 %), which read as the price-magnet effect. **The next month refutes it as a sitewide cause:** edition pages reached 3.0 %, above the pre-change 1.2 %, and those clicks are mostly Panini edition pages, which carry the SAME price-free title template. Top Shot edition pages alone did fall (8/825 → 1/415), but 8 versus 1 clicks cannot separate a title effect from chance, and Top Shot queries face the official marketplace and established trackers that Panini queries do not. **Re-open only if** Top Shot edition pages reach ≥ 30 clicks in a 28-day window at a CTR still under half the Panini edition pages' — then test a rounded figure ("~$250") on Top Shot titles alone, not sitewide.
+
+**6. Nothing here is a Core Web Vitals problem** — there is not enough traffic to measure one. Do not spend time on it before the links exist.
+
+## Owned watches
+
+- GSC "Blocked by robots.txt" should fall from 1,449 toward the `/api/public/ipfs-media` residue over the next two crawls; "Alternate page with proper canonical" and "Crawled – not indexed" should fall as the 301s are re-crawled (weeks, not days).
+- "Not found (404)" should stop growing on `/profile/0x…` immediately; the existing 302 age out.
+- Re-read the Performance report in 30 days; the number that matters is impressions, not clicks, until links exist.
+
+## 2026-10-14 pass — measured, and what is owed
+
+- **Live audits:** 42 stratified pages (structure) and 120 random sitemap URLs of 70,383 (health): all 200, self-canonical, `index, follow`, one title + one h1. 95% upper bound on a sitemap-URL defect rate ≈ 2.5%.
+- **Measured nulls (do not re-open without new evidence):** page weight (heaviest 443 KB raw / 37 KB gzip); edition-page DB reads per call on live editions — `get_edition_detail` ~29 ms, `get_edition_recent_sales` 25–62 ms, `get_edition_high_offer` ~109 ms. The large pg_stat_statements means (160 / 686 ms) are pooled over past IO spells and are not a current problem.
+- **Owed:** Search Console re-read on **Oct 28, 2026** (scheduled check-in): sitemap children all "Success"; "Crawled – not indexed" and "Duplicate" counts; 28-day clicks/impressions and the Premium Chance Hit query; Breadcrumbs / Product snippets enhancement counts.
+- **Still Trevor's, by decision:** external links (held by the accuracy gate, roadmap-2026-08-03); the GitHub repo "Website" field.
+
+## 2026-10-20 read (early, Cowork via Trevor's Chrome) — index data "Last update 10/11/26"
+
+Read ahead of the 10-28 date because Trevor asked for an SEO pass. ⚠ The index data stops at 10/11, so **the 10-28 re-read is still owed** for anything that depends on post-10-11 crawls.
+
+- **Index:** 43.6K indexed (31.8K on 10-03) · 28.8K not indexed (17.6K).
+- **Crawled – currently not indexed: 13,785 (5,033).** The 1,000-row example sample is 995 Panini edition pages, crawled ~Oct 13. That is Google sampling the ~16.7K Panini editions the 10-03 robots fix opened, not a regression. ⛔ **Not a reason to prune Panini from the sitemap:** Panini editions are now the best organic surface (28 d: **19 of 41 clicks**, 474 of 1.75K impressions, 285 pages with impressions). Measured null: a Panini edition serves ~3.8K chars of streamed text vs ~9.2K on a Top Shot edition — thinner, not empty.
+- **Blocked by robots.txt: 4,029, validation FAILED 10-04.** Panini player/set rows were all last crawled Oct 1–3 (before the fix took effect) and drain on recrawl. The rest are by design (`/login?next=…`, `/<c>/collection?wallet=…`), so this validation can never pass — do not re-click it.
+- **404: 365, FAILED.** 288 UUID-form `/nba-top-shot/edition/<set>:<play>` (crawled mostly Aug; the 4,447-pair 308 map shipped 10-03; the one Oct row is an ambiguous pair, honest 404) · 22 stale `/_next/static` font hashes (harmless) · **37 `/profile/0x…`** — most likely fossils of the pre-09-06 `WalletLink` bug being re-crawled (302 then, 37 now); ⚠ NOT from `/special-serial-owners`, which is sign-in-only (corrected 10:51 PM). That board's holder links were a real 404 for signed-in readers and were fixed this pass anyway. Confirm the referring page via URL Inspection at 10-28 · 12 old All Day `/pack/dist/*` now 200 · team-label player slugs (decided honest 404).
+- **Page with redirect: 152, FAILED** — legacy `/moment/<uuid>` 308s, apex → www. By design; the validation can never pass.
+- **Sitemaps:** index Success, 104,777 discovered; all 9 children Success (last read Oct 12–20).
+- **Enhancements:** Breadcrumbs 139 valid / 0 invalid · Product snippets 39 valid / **5 invalid → FIXED this pass** (offer-less Product → CreativeWork, all four emitters) · Merchant listings 39 / 0 · CWV no CrUX data · HTTPS 86 / 0.
+- **Server error (5xx): 18, validation Started 10-03.** All crawled Jul 7 – Aug 22 (the IO-throttle era). Re-fetched 10-20 10:5x PM: 17 now 200; the 18th is `/profile/0x35c19b8614ba6163` (404, crawled **Jul 7** — three months before `/special-serial-owners` existed, which supports the WalletLink-fossil reading of the profile 404s). Duplicate-without-canonical (61) and Google-chose-different-canonical (17) are June UUID-form Top Shot editions (now 308 or honest 404).
+- **Declined:** the GSC recommendation "Display your 17.9K products on the Shopping tab" (Merchant Center). RPC is read-only and sells nothing (concierge rule 1); a Shopping listing would advertise an action the product lacks.
+- **Performance 28 d:** 41 clicks / 1.75K impressions / CTR 2.3 % / pos 12.4 (10-03: 9 clicks / 1.4K / pos 15.3). "premium chance hit": no impressions. ⓘ Transactional player queries ("nihat kahveci buy", "ketlen souza sell", "sandro mamukelashvili buy") rank pos 4–10 with 0 clicks on 3–10 impressions each — too few to act on; watch at 10-28.
+
+## 2026-10-21 — Crawl stats (Settings → Crawl stats, 90 d)
+
+- 128K Googlebot requests, 1.55 GB, avg response 1.17 s. By type: **Other 45 % (57.9K, avg 164 ms) = Next.js `?_rsc=` flight payloads** · HTML 32 % (41.6K, **avg 3.02 s**) · JSON 14 % (18K, 101 ms) = **all `/15dcfe7049762b91/view`, the Vercel Analytics beacon** · JS 7 %. By purpose: refresh 72 % / discovery 28 %. Responses 97 % 200.
+- **Shipped:** robots.txt disallows `/*?_rsc=`, `/*&_rsc=` and both Vercel analytics prefixes (render-safety measured; see ledger 10-21 6:46 AM).
+- **Measured, no action:** HTML response today — median TTFB 0.81 s cold (102/108 sampled sitemap URLs were MISS), 0.32 s total once cached, 0 > 2 s. The 3.02 s 90-d average carries the pre-09-20 IO era; re-read it at 10-28. Cold-render cost is the remaining lever and is not cheap.
+- **Panini "crawled – not indexed" diagnosis:** an INDEXED Panini card (Lauren Betts, packcard-2420_538246_12857423_147) and two skipped ones render the same shape under a Googlebot UA (~1.8–2.3K chars, 13–14 internal links, 6 card links, player + set links, no loading fallbacks). Player pages link ~50 cards, set pages ~67. So neither content shape nor link graph separates indexed from skipped — consistent with Google working through ~30K new templated pages under a crawl budget, which the robots change frees.
+- **Falsifier for the robots change:** "Other file type" share falls and HTML share rises in Crawl stats over 2–4 weeks; Discovered-not-indexed (3,032) shrinks.
+
+## 2026-10-21 — duplicate edition titles (biggest on-page find)
+
+- The edition <title> was "<player> — <set>". Measured on live `editions`: **10,308 of 14,528 Top Shot (71 %), 2,543 of 6,190 All Day (41 %), 188 of 575 Golazos** shared a title with another edition; every Top Shot ::N parallel repeated its base's title. Found from a Hornets hub row showing five identical Kon Knueppel Signature Series 1/1s.
+- **Shipped:** `get_edition_detail` carries play_category / play_type / game_date / subedition_name (`20261021142334`); `lib/edition-title-context.ts` titles = set · parallel · play · date · /circulation (circulation for All Day + Golazos only). Duplicates → **82 / 50 / 88**. Live: "Kon Knueppel — Signature Series · Dunk · Nov 15, 2025", "LaMelo Ball — Holo Icon · Omega · 3 Pointer · Jan 6, 2026", "A.J. Brown — Road to 100 · Reception · Oct 29, 2023 · /397".
+- **Watch at 10-28 and after:** "Duplicate, Google chose different canonical" and "Crawled – not indexed" for Top Shot / All Day editions; Google re-reads titles on recrawl, so expect weeks, not days.
+- **Also 10-21:** robots.txt now blocks RSC payloads + analytics beacons (Crawl stats: 59 % of requests were non-documents); site-wide WebApplication JSON-LD moved to the homepage.
+
+## 2026-10-21 afternoon — titles, breadcrumbs, redirects, page speed (Cowork cloud, session_01L8xC29bjgWAanLeKvoNg4X)
+
+All shipped to `main`, each with a ledger entry and revert path, each verified on the live site (not by deploy status).
+
+- **Grid tiles name the play and date** (`20261021145002` + `7807764a`). The player/set/series/team/pack grids and franchise hubs showed a player's several plays in one set as identical tiles, with identical link anchor text. The five grid RPCs project `play_category` + `game_date`; tiles print "<play> · <date>". Live: Kon Knueppel's player page renders 10 distinct play · date lines.
+- **Edition title twins get a tie-break** (`6ccc20ef`). The remaining duplicate titles (82 TS / 50 AD / 88 Golazos) were editions identical on every titled field (Golazos 293/350 — two plays of one Abdón Prats goal; TS 141:5149/5150 — two FANDOM /4347 Celtics Redemptions). `lib/edition/title-twins.ts` reads the player/team + set siblings (bounded 2 s, fail-soft to the old title) and appends the fewest separating words: tier → (TS) mint size → `#<edition>`. Non-twins unchanged.
+- **One breadcrumb trail per page** (`42cfedc1`). Every page under /[collection]/* carried TWO BreadcrumbLists (the layout's Home → collection beside the page's own trail) plus a CollectionPage whose @id was /overview. The collection JSON-LD now renders on the overview only.
+- **Breadcrumbs name the 200 URL; the collection root is a 308** (`329f4384`). Trails (JSON-LD and visible) linked `/<collection>`, which 307'd to `/overview`; they now link `/overview`, and `/<collection>` is `permanentRedirect` (308).
+- **Search Console Breadcrumbs report:** 153 valid / 0 invalid (read 10-21 12:40 PM).
+- **Page speed — measured with Lighthouse mobile** (Search Console Core Web Vitals has **no CrUX data**: too little real traffic). Home 98 / LCP 1.5 s · /insights/deals 98 / 1.6 s · overview 81–86 / 3.1–3.3 s (CLS 0.116 in the lab, ~0.0006 in an unthrottled browser — left) · player 83 / 3.9 s · **edition 60–74 / LCP 3.9–5.8 s** (poor > 4 s). The edition LCP element is the hero image.
+  - **Hero srcset** (`44900ac0`): the hero was one fixed width (ipfs-thumb 960 px = 142 KB; Top Shot CDN 1080 px = 73 KB) in a box capped at 320 px. `lib/hero-srcset.ts` serves 320/640/960 (ipfs) or 320/640/1080 (TS); phones now fetch 640 (27–80 KB).
+  - ⚠ **It first caused a DOUBLE download** — the `<video poster>` still named the fixed-width src, so pages fetched ?width=640 AND ?width=1080 (they used to be one URL). Caught by Lighthouse after deploy; fixed (`9df32664`): the poster reuses the file the `<img>` actually loaded (`currentSrc`). **Lesson: a srcset on an `<img>` must be applied to every other element that names the same picture (poster, preload, og) or it adds a fetch instead of shrinking one.**
+  - **recharts off the critical path** (`fac029a3`): the plot moved to `components/entity/FmvHistoryPlot.tsx`, loaded with `next/dynamic({ ssr:false })` in the existing 220 px box. Recharts is now requested at Low priority ~1.1–3 s in (was in the initial set). Chart verified rendering in a real browser.
+  - **Result, honestly:** across 3 Lighthouse runs per page after all three changes the edition LCP reads **3.5–5.6 s** — run-to-run noise is larger than any change, so no LCP gain is claimed. The image now waits on hydration CPU (react-dom ~1.5 s of script time under 4× throttle) and ~437 KB of JS (supabase-js 206 KB raw on a public page). **That is the next lever and it is a real refactor** (fewer/lighter client components on the edition page; supabase-js only where a signed-in action needs it).
+- **Deploy hazard found and fixed** (matters for every SEO ship): pushes reached Vercel 17–22 min late that morning, and a late build of an OLDER commit took the production alias from a newer one twice (the tile and twin-title changes were each off prod ~15 min). `scripts/vercel-ignore-build.sh` now fetches the live sha and skips a build whose commit is an ancestor of what is live (`2d604b32`). ⚠ **Not yet exercised in production** — the queue was prompt for the rest of the day; the first late stale build will print `vercel-ignore-build: skip —` in its log.
+
+### Owed at the 10-28 Search Console re-read (adds to the list above)
+
+- "Duplicate, Google chose different canonical" and "Crawled – not indexed" for TS / All Day editions (titles changed today; expect weeks).
+- Breadcrumbs count (should keep 0 invalid; trails now single and pointing at /overview).
+- Crawl stats: "Other file type" share falling (robots `_rsc` block), HTML share rising.
+- The `/profile/0x…` 404 referrer (URL Inspection).
+- Product snippets validation (offer-less Product → CreativeWork, started 10-20).
+- If CrUX data appears in Core Web Vitals: edition-page LCP is the number to watch.
+
+## 2026-10-28 read (Cowork via Trevor's Chrome, ~8:30 PM PT) — index data "Last update 10/22/26"
+
+The owed two-week re-read. Each figure is a dated sample.
+
+- **Index:** **49.4K indexed** (43.6K on 10-20, 31.8K on 10-03) · 47.6K not indexed (28.8K).
+- **Discovered – currently not indexed: 19,436** (3,032 on 10-21). The 1,000-row example sample is **847 Panini edition pages** + 38 Panini player + 20 Panini set pages — Google has found the ~40K-edition Panini catalog (5K → 40K between 09-28 and 10-19, all in sitemap shards 5–8) and not crawled it yet. Expected after a catalog expansion, not a defect, and not a prune signal (Panini editions are still the top click surface, below).
+- **Crawled – currently not indexed: 15,961** (13,785) — the same Panini sampling seen 10-20.
+- **Blocked by robots 4,333 · 404 394 · redirect 159 — validations FAILED and stay failed by design** (do not re-click; see 10-20). Alternate-canonical 6,397 · noindex 864 · dup-no-canonical 61 (validation Started) · Google-chose-canonical 17 · 5xx 18 (Started).
+- **404 composition (all 394):** 288 UUID-form `/nba-top-shot/edition/<set>:<play>` (latest crawl Oct 1; the 4,447-pair 308 map covers the unambiguous ones) · 42 stale `/_next/static` hashes · **46 `/profile/0x…`** (37 on 10-20; crawled as late as Oct 23) · 12 `/nfl-all-day/pack` (Jul) · small remainder. No live page builds `/profile/<address>` (guard `a-wallet-address-is-not-a-profile-handle`), so they are the 09-06 / 10-20 link-builder fossils being re-crawled. **FIXED this pass:** an address-shaped `/profile/0x<16 hex>` that is not a username now 308s to `/share/<wallet>` (the wallet's public holdings card) instead of 404ing — `app/profile/[username]/page.tsx`, tests in `profile-page-unknown-handle-is-a-404-not-a-failed-load.test.tsx` (planted defect proven red). Watch: the `/profile/0x…` 404 count should fall as Google re-crawls them.
+- **Sitemaps:** index Success, read Oct 27, **83,955 discovered**; all 9 children Success (read Oct 21–28). Live child counts the same evening summed **84,358** (0.5 % over Google's — normal growth since its reads). The 10-20 note's "104,777" does not reconcile with today's shards; it is not a 21K loss.
+- **Performance 28 d:** **60 clicks / 2.15K impressions / CTR 2.8 % / position 12.5** (10-20: 41 / 1.75K / 2.3 % / 12.4). Top pages by clicks: home (8) and **Panini edition pages (13 clicks across the 6 top-clicked)**. "premium chance hit" / "premiumchance": **no impressions** in 114 queries (still).
+- **Enhancements:** **Product snippets 0 invalid / 22 valid** (10-20: 5 invalid → the offer-less Product → CreativeWork fix is confirmed) · **Breadcrumbs 0 invalid / 124 valid**, "no issues in the last 90 days". The valid counts are Google's sample slice, not a markup defect (10-21).
+- **Videos (new report): 36,778 "Video isn't on a watch page" · 4 indexed.** By design — an edition page shows the moment's clip but is about the collectible, not a video watch page; the PAGE is indexed, only the video-results listing is skipped. No action.
+- **Crawl stats (90 d):** 143K requests, avg response **1.05 s** (1.17 s on 10-21). File types Other **44 %** (45 %) · HTML **34 %** (32 %) · JSON 13 % (14 %) — the direction the 10-21 robots `_rsc` / analytics block predicts, on ~1 week of post-change data inside a 90-day window. Falsifier date stays ~11-11. Responses 97 % 200.
+- **Not read:** the 35 unread Search Console messages — the panel does not render through the extension (screenshot capture times out on GSC, as on 10-20); they are also emailed to the owner, and every report they point to was read directly above.
+- **Still Trevor's, by decision:** external links (accuracy gate).
+
+
+## 2026-11-09 read (Cowork via Trevor's Chrome, ~11:35 PM PT) — index chart through 10/25/26; performance 28 d to 11-08
+
+| | 10-03 | 10-20 | 11-09 |
+|---|---|---|---|
+| Clicks / impressions (28 d) | 9 / 1.4K | 41 / — | **58 / 2.01K** (CTR 2.9 %, position 12.4) |
+| Indexed | 31.8K | 43.6K | 41.3K |
+| Not indexed | 17.6K | 28.8K | **62.5K** |
+| Crawled – currently not indexed | 5,033 | 13,785 | 31,742 |
+| Discovered – currently not indexed | 3,171 | — | 21,370 |
+| Blocked by robots.txt | 1,472 | — | 4,715 |
+| Not found (404) | 326 | — | 539 |
+| Server error (5xx) | 23 | 18 | 19 |
+
+Other buckets 11-09: alternate canonical 2,800 · noindex 862 · page with redirect 349 · duplicate without canonical 56 · Google chose a different canonical 17 · indexed though blocked 0. Top queries by impressions are player-name + "buy" / "purchase" / "sell" (Joan Beringer, Adem Bona, Ketlen Souza), then "nba top shot", "optic nft".
+
+**Reading.** Clicks keep rising (9 → 41 → 58). The not-indexed total more than doubled because the sitemap grew: it lists 111,866 URLs today (counted from the nine children at ~11:40 PM PT), of which 42,946 are Panini editions and **21,961 are Candy editions — about 21.7k of them the legacy collections catalogued on 11-08, with no price**. Blocked-by-robots rising to 4,715 is the 10-21 `?_rsc=` disallow doing its job.
+
+**Decision recorded (#66, not changed tonight):** no sitemap prune for the legacy Candy editions. It is the obvious crawl-budget lever, but the 10-20 read found that Panini's "crawled, not indexed" editions were also the top organic surface, so the same shape is not evidence of waste. Re-read around 11-23: if `candy-mlb/edition` pages have earned no impressions by then while the crawled-not-indexed bucket keeps growing, list a Candy edition only once it has a price (`edition_fmv_current`) or belongs to a 2026 set.

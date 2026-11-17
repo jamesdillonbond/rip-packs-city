@@ -1,0 +1,805 @@
+"use client";
+
+import { useEffect } from "react";
+import Link from "next/link";
+import { trackFunnelEvent } from "@/lib/track-funnel";
+import WalletSearch from "@/components/WalletSearch";
+import AccountCta from "@/components/auth/AccountCta";
+import RpcLogo from "@/components/RpcLogo";
+import GlobalSearch from "@/components/search/GlobalSearch";
+import SiteFooter from "@/components/SiteFooter";
+import PinwheelDivider from "@/components/visual/PinwheelDivider";
+import HomeFmvPreview from "@/components/HomeFmvPreview";
+import { publishedCollections } from "@/lib/collections";
+import { organizationJsonLd } from "@/lib/seo";
+import { accentText } from "@/lib/accent-text"
+import { visibleGroups, visibleItems, resolveHref, DEFAULT_COLLECTION } from "@/lib/ia"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
+
+function HomeHeader() {
+  return (
+    <header
+      style={{
+        position: "sticky",
+        top: 0,
+        zIndex: 100,
+        // Theme-aware (2026-10-11): a hardcoded near-black left the header's
+        // token-coloured links dark-on-dark in light mode.
+        background: "var(--rpc-header-bg)",
+        backdropFilter: "blur(20px)",
+        WebkitBackdropFilter: "blur(20px)",
+        borderBottom: "1px solid var(--rpc-border)",
+      }}
+    >
+      <div
+        className="rpc-home-header-inner"
+        style={{
+          maxWidth: 1440,
+          margin: "0 auto",
+          padding: "0 20px",
+          height: 56,
+          display: "flex",
+          alignItems: "center",
+          gap: 16,
+        }}
+      >
+        <Link
+          href="/"
+          style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none", flexShrink: 0 }}
+        >
+          <RpcLogo size={36} />
+          <div>
+            <div
+              style={{
+                fontSize: 7,
+                fontFamily: "var(--font-mono)",
+                letterSpacing: "0.2em",
+                color: "var(--rpc-red-text)",
+              }}
+            >
+              @RIPPACKSCITY
+            </div>
+          </div>
+        </Link>
+        <div style={{ flex: 1 }} />
+        {/* 2026-09-28: the bottom bar's SEARCH tab was retired in favour of the
+            header's search box, and this header had none — on a phone every nav
+            link below is hidden, so it was a bare logo. */}
+        <GlobalSearch />
+        <nav
+          className="rpc-home-nav"
+          style={{ display: "flex", alignItems: "center", gap: 14 }}
+        >
+          {/* 2026-11-07: the SAME five public groups, in the SAME order, as the
+              header on every other page (IA rule 4 — this landing header was a
+              fourth nav vocabulary: Insights · Collections · How it works · Free
+              account). Rendered from the registry, plain links: the pillar doors
+              below are the homepage's map, the header only has to agree with the
+              rest of the site. The in-page anchors it carried are one scroll away
+              and the hero + closing CTA still carry the signup. */}
+          {visibleGroups(false).map((g) => (
+            <Link key={g.id} href={resolveHref(g.href, DEFAULT_COLLECTION, g.page)} style={navLinkStyle} prefetch={false}>
+              {g.label}
+            </Link>
+          ))}
+          {/* 2026-11-07: CREATE FREE ACCOUNT is the primary pill, "Sign in" beside it
+              (components/auth/AccountCta.tsx) — the landing header said only SIGN IN,
+              which is the returning user's word; a new visitor had no door. /login,
+              not /dashboard: /dashboard is gated and bounced through proxy.ts. */}
+          <AccountCta surface="home_header" size="md" />
+        </nav>
+      </div>
+    </header>
+  );
+}
+
+const navLinkStyle: React.CSSProperties = {
+  fontFamily: "var(--font-mono)",
+  fontSize: 11,
+  letterSpacing: "0.12em",
+  textTransform: "uppercase",
+  color: "var(--rpc-text-secondary)",
+  textDecoration: "none",
+  whiteSpace: "nowrap",
+};
+
+// 2026-09-24: the collection count is READ FROM THE REGISTRY, never typed. The
+// hardcoded "5" and "FIVE COLLECTIONS" shipped beside a six-tile grid once
+// Candy MLB was published — the same page contradicted itself.
+const NUMBER_WORDS = ["ZERO", "ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX", "SEVEN", "EIGHT", "NINE", "TEN"];
+export function collectionCountWord(n: number): string {
+  return NUMBER_WORDS[n] ?? String(n);
+}
+export function coveringSentence(labels: string[]): string {
+  if (labels.length === 0) return "";
+  if (labels.length === 1) return `Covering ${labels[0]}.`;
+  return `Covering ${labels.slice(0, -1).join(", ")}, and ${labels[labels.length - 1]}.`;
+}
+
+const STATS: Array<{ value: string; label: string }> = [
+  // Defensible, non-fabricated values. The collection count is the registry's
+  // published count; "4M+ sales
+  // indexed" is a safe floor (the sales table only grows — live row estimate
+  // ~4.7M on 2026-08-05, and reltuples under-counts between analyzes); "20 MIN"
+  // is the cron cadence; "24/7" reflects the always-on pipeline. Avoid absolute/
+  // stale claims like "100% Uptime" or a precise refresh count that drifts.
+  { value: String(publishedCollections().length), label: "Collections Tracked" },
+  { value: "4M+", label: "Sales Indexed" },
+  { value: "20 MIN", label: "Live Refresh" },
+  { value: "24/7", label: "Live Pipeline" },
+];
+
+const HOW_STEPS: Array<{ n: string; title: string; copy: string }> = [
+  {
+    n: "01",
+    title: "SEARCH",
+    copy: "Type any wallet, username, or moment. No signup, no API key.",
+  },
+  {
+    n: "02",
+    title: "ANALYZE",
+    copy: "We pull live FMV from sales data, real listings from Top Shot, badges, serials, and series labels.",
+  },
+  {
+    n: "03",
+    title: "ACT",
+    copy: "Find underpriced deals, track portfolio value over time, and complete sets faster.",
+  },
+];
+
+const DEPTH_BULLETS: Array<{ icon: string; copy: string }> = [
+  { icon: "◈", copy: "Outlier-filtered FMV with distributional shape (p10 / p50 / p90)." },
+  // Deep-audit R105 (2026-09-18): this bullet once read "1-of-1 = 12×, low serials = 4.5×, last mint =
+  // 3×" — numbers no model implemented. Do not put a fixed multiplier back here (see below).
+  // ⚠ 2026-10-22: re-pinned to the LIVE model. The "#1 = 12×, jersey = 8×, perfect-mint = 6×" + "a
+  // curve for serials below the median" bullet quoted lib/market-compute.ts, whose only caller
+  // (/api/market-truth) has no client. Every live surface prices serials through the SQL
+  // serial_fmv_estimate (fitted models with set + player effects), which prices ONLY #1 /
+  // perfect-mint / jersey-match serials and varies by tier and mint size (#1 measured 5.3× on a
+  // /99 Rare, 10.2× on a 15,000 Common, 12.8× on a /25 Legendary) — so a flat number is false for
+  // most editions. Pinned by __tests__/homepage-serial-premium-copy-matches-the-model.test.ts.
+  { icon: "▲", copy: "Special-serial premiums fitted to real sales — #1, perfect-mint and jersey-match serials, each priced by tier and mint size, not one flat multiplier." },
+  { icon: "≋", copy: "Liquidity ratings on every edition based on 30-day depth." },
+  { icon: "⚡", copy: "Real-time deal sniping on Top Shot." },
+  { icon: "✦", copy: "Badge-aware pricing — Top Shot Debut, Rookie Year, Championship, Fresh." },
+  { icon: "◉", copy: "Set bottleneck finder — cheapest path to completion." },
+  // NOT "buy / skip recommendations": RPC does not make buy/sell calls — the
+  // concierge system prompt bans that phrasing outright. What actually ships is
+  // the typical-pull median alongside EV-vs-retail, which is the honest claim.
+  { icon: "▣", copy: "Pack EV calculations, depletion-aware, led by the typical pull — not the average." },
+];
+
+// A TRUST entry is plain copy, optionally ending in one link. The fourth entry
+// (2026-10-11, platform review M4) points at the published accuracy gate — the
+// share of our prices backed by recent sales, per collection — on the
+// methodology page. ⚠ Copy rule (founder): it says what WE publish; it claims
+// nothing about anyone else's prices.
+const TRUST: Array<{ copy: string; link?: { label: string; href: string } }> = [
+  { copy: "Built in Portland, Oregon by an independent collector." },
+  { copy: "Live pipelines updated every 20 minutes." },
+  { copy: "Automated monitoring and alerting on every data pipeline." },
+  {
+    copy: "We publish how much of our pricing rests on recent sales, per collection.",
+    link: { label: "See the figures", href: "/legal/fmv-methodology#accuracy" },
+  },
+];
+
+export default function HomePageMarketing() {
+  const collections = publishedCollections();
+
+  // Funnel: log the anon arrival once per mount. Fire-and-forget.
+  useEffect(() => {
+    trackFunnelEvent({ eventType: "home_view", surface: "home" });
+  }, []);
+
+  // WebSite entity carrying the sitelinks SearchAction. Since 2026-10-21 the
+  // WebApplication (organizationJsonLd) is emitted HERE, on the homepage only —
+  // it used to ride on every page from the root layout; this is a
+  // distinct WebSite type (where schema.org expects potentialAction) rather
+  // than a second near-identical WebApplication — fixes the duplicate-JSON-LD
+  // finding from the 2026-06-12 audit. (2026-06-13)
+  //
+  // 2026-11-06: the SearchAction (sitelinks search box) is GONE. Its target was
+  // /share/{search_term_string} — a WALLET card route that robots.txt disallows
+  // and that renders a card, not a search, for a typed term — so the markup
+  // advertised a search endpoint the site does not have. Google retired the
+  // sitelinks-search-box feature in Nov 2024 anyway; the WebSite entity stays.
+  const webSiteJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: organizationJsonLd.name,
+    url: organizationJsonLd.url,
+  };
+
+  return (
+    <div className="rpc-home-root" style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)" }}>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(webSiteJsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(organizationJsonLd) }}
+      />
+
+      <style>{`
+        /* 2026-10-03: this reset MUST sit in @layer base. Unlayered, it outranks every Tailwind utility
+           (cascade layers lose to unlayered rules regardless of specificity), so p-* and m-* classes
+           rendered as 0 on every page under it. Tailwind preflight already carries the same reset
+           in @layer base; this keeps the declaration where it was, in the layer it must be in. */
+        @layer base{*{box-sizing:border-box;margin:0;padding:0;}}
+        .rpc-home-h1{font-family:var(--font-display);font-weight:900;font-size:56px;letter-spacing:0.04em;text-transform:uppercase;line-height:1.02;color:var(--rpc-text-primary);}
+        .rpc-home-h1-accent{color:var(--rpc-red-text);}
+        .rpc-home-h2{font-family:var(--font-display);font-weight:900;font-size:40px;letter-spacing:0.04em;text-transform:uppercase;line-height:1.05;color:var(--rpc-text-primary);}
+        .rpc-home-eyebrow{font-family:var(--font-mono);font-size:11px;letter-spacing:0.3em;text-transform:uppercase;color:var(--rpc-red-text);}
+        /* 2026-10-11: body copy was hardcoded white — invisible on the light theme's white canvas.
+           Dark keeps its brighter-than-secondary alpha; light falls back to the theme token. */
+        /* brand-exception: the DARK-theme value; light overrides it below */ .rpc-home-root{--rpc-home-body:rgba(255,255,255,0.75);}
+        [data-theme="light"] .rpc-home-root{--rpc-home-body:var(--rpc-text-secondary);}
+        .rpc-home-sub{font-family:var(--font-mono);font-size:14px;line-height:1.65;color:var(--rpc-home-body);max-width:640px;margin-inline:auto;}
+        .rpc-home-section{padding:96px 24px;}
+        .rpc-home-stats-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;}
+        .rpc-home-collection-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;}
+        .rpc-home-how-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;}
+        .rpc-home-depth-grid{display:grid;grid-template-columns:1.1fr 1fr;gap:48px;align-items:start;}
+        .rpc-home-doors{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;}
+        .rpc-home-door{background:var(--rpc-surface);border:1px solid var(--rpc-border);border-radius:12px;padding:18px 16px;display:flex;flex-direction:column;gap:8px;min-width:0;}
+        .rpc-home-door-title{font-family:var(--font-display);font-weight:900;font-size:22px;letter-spacing:0.04em;text-transform:uppercase;color:var(--rpc-text-primary);text-decoration:none;}
+        .rpc-home-door-title:hover{color:var(--rpc-red-text);}
+        .rpc-home-door-job{font-family:var(--font-mono);font-size:11px;letter-spacing:0.06em;color:var(--rpc-text-muted);line-height:1.5;}
+        .rpc-home-door-list{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:6px;font-family:var(--font-body);font-size:14px;line-height:1.4;}
+        /* Underlined at rest, not only on hover: the link shares a text block with its
+           " — hint" span, and colour alone is not a distinguisher (axe link-in-text-block,
+           WCAG 1.4.1 — found on the 2026-11-07 pass). */
+        .rpc-home-door-list a{color:var(--rpc-text-secondary);text-decoration:underline;text-decoration-color:var(--rpc-border);text-underline-offset:3px;}
+        .rpc-home-door-list a:hover{color:var(--rpc-text-primary);text-decoration-color:currentColor;}
+        .rpc-home-door-hint{color:var(--rpc-text-muted);font-size:12px;}
+        .rpc-home-trophy-grid{display:grid;grid-template-columns:1fr 1.2fr;gap:48px;align-items:center;}
+        .rpc-home-trust-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:24px;}
+        .rpc-home-collection-tile{transition:transform var(--transition-fast),border-color var(--transition-fast),box-shadow var(--transition-fast);}
+        .rpc-home-collection-tile:hover{transform:translateY(-4px);}
+        @media (max-width:1024px){ .rpc-home-doors{grid-template-columns:repeat(2,minmax(0,1fr));} }
+        @media (max-width:768px){
+          .rpc-home-section{padding:64px 16px;}
+          .rpc-home-h1{font-size:36px;}
+          .rpc-home-h2{font-size:28px;}
+          .rpc-home-sub{font-size:13px;}
+          .rpc-home-stats-row{grid-template-columns:repeat(2,minmax(0,1fr));}
+          .rpc-home-collection-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+          .rpc-home-how-grid{grid-template-columns:1fr;}
+          .rpc-home-depth-grid{grid-template-columns:1fr;gap:24px;}
+          .rpc-home-doors{grid-template-columns:1fr;}
+          .rpc-home-trophy-grid{grid-template-columns:1fr;gap:24px;}
+          .rpc-home-trust-grid{grid-template-columns:1fr;gap:14px;}
+          .rpc-home-nav a{display:none;}
+          .rpc-home-header-inner{padding:0 14px;}
+          .rpc-home-hero{min-height:auto !important;justify-content:flex-start !important;padding-top:40px;padding-bottom:48px;}
+          .rpc-home-stat-label{font-size:11px !important;}
+        }
+        @media (max-width:380px){
+          .rpc-home-h1{font-size:32px;}
+          .rpc-home-collection-grid{grid-template-columns:1fr;}
+        }
+      `}</style>
+
+      <HomeHeader />
+
+      {/* ONE <main> landmark (axe `landmark-one-main` + `region`, first scheduled
+          audit 2026-10-12: 46 content nodes sat outside any landmark). Every
+          section lives inside it; the header and footer stay their own
+          landmarks. Block element, no styles — no layout change. */}
+      <main>
+      {/* HERO */}
+      <section
+        className="rpc-home-section rpc-home-hero"
+        style={{
+          minHeight: "calc(100vh - 56px)",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          textAlign: "center",
+          gap: 24,
+        }}
+      >
+        {/*
+          The <h1> is the SEARCHED QUESTION, not the brand name (changed
+          2026-08-01). "Rip Packs City" optimised for people who already knew RPC
+          existed — a set that numbered 39 Google referrals lifetime. The brand
+          still carries in the eyebrow, the nav logo and <title>; the h1 now
+          matches what a collector actually types. The wallet input sits directly
+          beneath it, above the fold, so the page answers its own headline.
+        */}
+        <div className="rpc-home-eyebrow">◈ RIP PACKS CITY · COLLECTOR INTELLIGENCE ◈</div>
+        <h1 className="rpc-home-h1">
+          What is your <span className="rpc-home-h1-accent">collection</span> worth?
+        </h1>
+        <p className="rpc-home-sub">
+          Paste a Top Shot username or Flow wallet and see every moment priced at live FMV — free, no signup. {coveringSentence(collections.map((c) => c.label))}
+        </p>
+        <WalletSearch
+            surface="home"
+            variant="hero"
+            hint="No signup required. Try a wallet address, username, or moment ID."
+          />
+        {/* 2026-11-07: the second door, above the fold. A collector who already
+            knows what their binder is worth wants the ACCOUNT — saved wallet,
+            trophy case, FMV alerts — and the hero only offered the search. */}
+        <div className="rpc-home-hero-cta" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, marginTop: 4 }}>
+          <Link
+            href="/login?intent=signup"
+            onClick={() => trackFunnelEvent({ eventType: "signin_click", surface: "home_hero_signup" })}
+            style={{
+              background: "var(--rpc-red-fill)",
+              // brand-exception: white text on the --rpc-red button
+              color: "#fff",
+              padding: "14px 28px",
+              borderRadius: 6,
+              fontFamily: "var(--font-mono)",
+              fontWeight: 700,
+              fontSize: 13,
+              letterSpacing: "0.16em",
+              textTransform: "uppercase",
+              textDecoration: "none",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Create free account →
+          </Link>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-muted)", letterSpacing: "0.04em", lineHeight: 1.6, maxWidth: 520 }}>
+            Email in, link back — no password, no invite. Then add your Dapper username and your binder, trophy case and FMV alerts are yours.
+          </div>
+        </div>
+      </section>
+
+      {/* LIVE STATS BAND */}
+      <section
+        style={{
+          background: "var(--rpc-surface)",
+          borderTop: "1px solid var(--rpc-red-border)",
+          borderBottom: "1px solid var(--rpc-border)",
+          padding: "32px 16px",
+        }}
+      >
+        <div className="rpc-home-stats-row" style={{ maxWidth: 1100, margin: "0 auto" }}>
+          {STATS.map((s, i) => (
+            <div
+              key={s.label}
+              style={{
+                textAlign: "center",
+                padding: "8px 12px",
+                borderLeft: i === 0 ? "none" : "1px solid var(--rpc-border)",
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontWeight: 900,
+                  fontSize: 32,
+                  letterSpacing: "0.04em",
+                  color: "var(--rpc-text-primary)",
+                  lineHeight: 1,
+                }}
+              >
+                {s.value}
+              </div>
+              <div
+                className="rpc-home-stat-label"
+                style={{
+                  marginTop: 6,
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 9,
+                  letterSpacing: "0.2em",
+                  textTransform: "uppercase",
+                  color: "var(--rpc-text-muted)",
+                }}
+              >
+                {s.label}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* THE FIVE DOORS (IA Phase 3, 2026-11-06). The homepage pitches pillars,
+          not features: one card per job group from lib/ia.ts (the same groups
+          the header, mobile bar and footer use), each naming its hub and a few
+          of its pages. The sections these replaced ("Things Top Shot won't tell
+          you", the Fast Break promo, "Find your edge") each pitched ONE feature;
+          those features are items inside a door now.
+          docs/strategy/features/information-architecture-2026-11-06.md */}
+      <section className="rpc-home-section" aria-labelledby="home-doors-h2">
+        <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+          <div style={{ textAlign: "center", marginBottom: 28 }}>
+            <div className="rpc-home-eyebrow">◈ WHERE TO START ◈</div>
+            <h2 id="home-doors-h2" className="rpc-home-h2" style={{ marginTop: 12 }}>FIVE JOBS. ONE PLACE EACH.</h2>
+          </div>
+          <div className="rpc-home-doors">
+            {visibleGroups(false).map((g) => (
+              <article key={g.id} className="rpc-home-door" data-home-door={g.id}>
+                <Link href={resolveHref(g.href, DEFAULT_COLLECTION, g.page)} className="rpc-home-door-title">
+                  {g.label} →
+                </Link>
+                <div className="rpc-home-door-job">{g.job}</div>
+                <ul className="rpc-home-door-list">
+                  {visibleItems(g, false).slice(0, 4).map((i) => (
+                    <li key={i.href}>
+                      <Link href={resolveHref(i.href, DEFAULT_COLLECTION, i.page)} prefetch={false}>{i.label}</Link>
+                      {i.hint ? <span className="rpc-home-door-hint"> — {i.hint}</span> : null}
+                    </li>
+                  ))}
+                </ul>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+
+      {/* COLLECTIONS */}
+      <section id="collections" className="rpc-home-section">
+        <div style={{ maxWidth: 1200, margin: "0 auto" }}>
+          <div style={{ textAlign: "center", marginBottom: 40 }}>
+            <h2 className="rpc-home-h2">{collectionCountWord(collections.length)} COLLECTIONS. ONE PLATFORM.</h2>
+            <div
+              style={{
+                marginTop: 12,
+                fontFamily: "var(--font-mono)",
+                fontSize: 12,
+                letterSpacing: "0.04em",
+                color: "var(--rpc-text-muted)",
+              }}
+            >
+              Every published collection — Flow and Solana — in one analytics surface.
+            </div>
+          </div>
+
+          <div className="rpc-home-collection-grid">
+            {collections.map((c) => (
+              <Link
+                key={c.id}
+                href={`/${c.id}/overview`}
+                className="rpc-home-collection-tile"
+                style={{
+                  position: "relative",
+                  display: "block",
+                  background: "var(--rpc-surface-raised)",
+                  border: "1px solid var(--rpc-border)",
+                  borderTop: `2px solid ${c.accent}`,
+                  borderBottom: `2px solid ${c.accent}`,
+                  borderRadius: "var(--radius-md)",
+                  padding: "20px 18px 18px",
+                  textDecoration: "none",
+                  color: "var(--rpc-text-primary)",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    justifyContent: "space-between",
+                    gap: 8,
+                  }}
+                >
+                  <div style={{ fontSize: 32, lineHeight: 1 }}>{c.icon}</div>
+                  <span
+                    aria-hidden
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 14,
+                      color: accentText(c.accent),
+                      letterSpacing: "0.1em",
+                    }}
+                  >
+                    →
+                  </span>
+                </div>
+                <div
+                  style={{
+                    marginTop: 14,
+                    fontFamily: "var(--font-display)",
+                    fontWeight: 800,
+                    fontSize: 18,
+                    letterSpacing: "0.04em",
+                    textTransform: "uppercase",
+                    color: accentText(c.accent),
+                    lineHeight: 1.05,
+                  }}
+                >
+                  {c.label}
+                </div>
+                <div
+                  style={{
+                    marginTop: 6,
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 10,
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                    color: "var(--rpc-text-muted)",
+                  }}
+                >
+                  {c.partner} · {c.sport}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <PinwheelDivider />
+
+      {/* HOW IT WORKS */}
+      <section
+        id="how-it-works"
+        className="rpc-home-section"
+        style={{ background: "var(--rpc-surface)", borderTop: "1px solid var(--rpc-border)" }}
+      >
+        <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+          <div style={{ textAlign: "center", marginBottom: 40 }}>
+            <div className="rpc-home-eyebrow">◈ HOW IT WORKS ◈</div>
+            <h2 className="rpc-home-h2" style={{ marginTop: 12 }}>
+              FROM SEARCH TO ACTION IN SECONDS
+            </h2>
+          </div>
+
+          <div className="rpc-home-how-grid">
+            {HOW_STEPS.map((step) => (
+              <div
+                key={step.n}
+                style={{
+                  background: "var(--rpc-surface-raised)",
+                  border: "1px solid var(--rpc-border)",
+                  borderLeft: "3px solid var(--rpc-red)",
+                  borderRadius: "var(--radius-md)",
+                  padding: "22px 22px 24px",
+                }}
+              >
+                <div
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 11,
+                    letterSpacing: "0.2em",
+                    color: "var(--rpc-red-text)",
+                  }}
+                >
+                  {step.n} / {step.title}
+                </div>
+                <div
+                  style={{
+                    marginTop: 14,
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 13,
+                    lineHeight: 1.6,
+                    color: "var(--rpc-home-body)",
+                  }}
+                >
+                  {step.copy}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* DEPTH FOLD */}
+      <section className="rpc-home-section">
+        <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+          <div style={{ marginBottom: 40 }}>
+            <div className="rpc-home-eyebrow">◈ HOW WE PRICE ◈</div>
+            <h2 className="rpc-home-h2" style={{ marginTop: 12 }}>
+              A PRICE YOU CAN CHECK
+            </h2>
+          </div>
+
+          <div className="rpc-home-depth-grid">
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {DEPTH_BULLETS.map((b, i) => (
+                <div
+                  key={i}
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 14,
+                    padding: "12px 14px",
+                    background: "var(--rpc-surface-raised)",
+                    border: "1px solid var(--rpc-border)",
+                    borderRadius: "var(--radius-sm)",
+                  }}
+                >
+                  <span
+                    aria-hidden
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 16,
+                      color: "var(--rpc-red-text)",
+                      lineHeight: 1,
+                      marginTop: 2,
+                      flexShrink: 0,
+                      width: 16,
+                    }}
+                  >
+                    {b.icon}
+                  </span>
+                  <span
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 12,
+                      lineHeight: 1.55,
+                      color: "var(--rpc-home-body)",
+                    }}
+                  >
+                    {b.copy}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* Live FMV preview — fetches the public /api/fmv/demo endpoint and
+                renders a real recent sample (FMV + serial-premium
+                math), with a clearly-labelled SAMPLE fallback. */}
+            <HomeFmvPreview />
+          </div>
+        </div>
+      </section>
+
+      {/* TROPHY CASE — the thing the campaign asks people to build, which
+          this page never mentioned (2026-09-02 onboarding QA, finding #8). The
+          example is a REAL case (the OG card the share link unfurls into), not
+          a mock-up, so the promise and the product are the same picture. */}
+      <section className="rpc-home-section" data-home-trophy-case>
+        <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+          <div className="rpc-home-trophy-grid">
+            <div style={{ display: "flex", flexDirection: "column", gap: 16, justifyContent: "center" }}>
+              <div className="rpc-home-eyebrow">◈ SHOW OFF YOUR BEST ◈</div>
+              <h2 className="rpc-home-h2">BUILD YOUR TROPHY CASE</h2>
+              <p
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 13,
+                  lineHeight: 1.7,
+                  color: "var(--rpc-home-body)",
+                  margin: 0,
+                  maxWidth: 460,
+                }}
+              >
+                Pin your 6 best Moments from any collection, add a caption to each, and get a page
+                and social card of your own — rippackscity.com/profile/<span style={{ color: "var(--rpc-text-primary)" }}>you</span>/trophy-case.
+                Post it on X or drop it in Discord; the card unfurls with your slabs on it.
+              </p>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+                <Link
+                  href="/login"
+                  onClick={() => trackFunnelEvent({ eventType: "signin_click", surface: "home_trophy_case" })}
+                  style={{
+                    background: "var(--rpc-red-fill)",
+                    // brand-exception: white text on the --rpc-red button
+                    color: "#fff",
+                    padding: "12px 22px",
+                    borderRadius: 6,
+                    fontFamily: "var(--font-mono)",
+                    fontWeight: 700,
+                    fontSize: 12,
+                    letterSpacing: "0.16em",
+                    textTransform: "uppercase",
+                    textDecoration: "none",
+                  }}
+                >
+                  BUILD YOURS — FREE →
+                </Link>
+                <Link
+                  href="/profile/jamesdillonbond/trophy-case"
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 11,
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                    color: "var(--rpc-text-muted)",
+                    textDecoration: "none",
+                  }}
+                >
+                  See a live case →
+                </Link>
+              </div>
+            </div>
+            <Link
+              href="/profile/jamesdillonbond/trophy-case"
+              aria-label="A real Rip Packs City trophy case"
+              style={{
+                display: "block",
+                borderRadius: 12,
+                overflow: "hidden",
+                border: "1px solid var(--rpc-border)",
+                background: "var(--rpc-surface)",
+                boxShadow: "0 24px 60px rgba(0,0,0,0.45)",
+              }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element -- the OG route renders a PNG at 1200x630; next/image cannot optimise a dynamic route */}
+              <img
+                src="/api/og/trophy-case/jamesdillonbond"
+                alt="Example trophy case: six slabbed Moments with tier-coloured frames on a Rip Packs City share card"
+                width={1200}
+                height={630}
+                loading="lazy"
+                style={{ display: "block", width: "100%", height: "auto" }}
+              />
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* CREDIBILITY */}
+      <section
+        style={{
+          background: "var(--rpc-surface)",
+          borderTop: "1px solid var(--rpc-border)",
+          borderBottom: "1px solid var(--rpc-border)",
+          padding: "32px 24px",
+        }}
+      >
+        <div className="rpc-home-trust-grid" style={{ maxWidth: 1200, margin: "0 auto" }}>
+          {TRUST.map((t, i) => (
+            <div
+              key={i}
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                lineHeight: 1.55,
+                color: "var(--rpc-text-muted)",
+                letterSpacing: "0.02em",
+              }}
+            >
+              {t.copy}
+              {t.link && (
+                <>
+                  {" "}
+                  <Link href={t.link.href} style={{ color: "var(--rpc-text-secondary)", textDecoration: "underline" }}>
+                    {t.link.label}
+                  </Link>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* PRICING */}
+      <section id="pricing" className="rpc-home-section" style={{ textAlign: "center" }}>
+        <div style={{ maxWidth: 720, margin: "0 auto", display: "flex", flexDirection: "column", gap: 16, alignItems: "center" }}>
+          {/* 2026-10-11 — was "PRICING / FREE DURING BETA", which reads as "a
+              paywall is coming". Trevor (09-25): no paid tier is mentioned or
+              considered anywhere until 100 WAU. The anchor id stays for links. */}
+          <div className="rpc-home-eyebrow">◈ FREE ◈</div>
+          <h2 className="rpc-home-h2">FREE. NO INVITE NEEDED.</h2>
+          <p className="rpc-home-sub">
+            Searching wallets and public insights are free with no signup. A free account — instant, no invite needed — adds saved wallets, FMV alerts, and portfolio tracking over time.
+          </p>
+          <Link
+            href="/login"
+            onClick={() => trackFunnelEvent({ eventType: "signin_click", surface: "home_pricing" })}
+            style={{
+              marginTop: 8,
+              background: "var(--rpc-red-fill)",
+              // brand-exception: white text on the --rpc-red button
+              color: "#fff",
+              padding: "14px 28px",
+              borderRadius: 6,
+              fontFamily: "var(--font-mono)",
+              fontWeight: 700,
+              fontSize: 13,
+              letterSpacing: "0.16em",
+              textTransform: "uppercase",
+              textDecoration: "none",
+            }}
+          >
+            CREATE FREE ACCOUNT →
+          </Link>
+        </div>
+      </section>
+
+      </main>
+
+      <SiteFooter />
+    </div>
+  );
+}

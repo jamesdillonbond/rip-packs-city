@@ -1,0 +1,92 @@
+-- 2026-09-19 early morning (Cowork cloud). AUTHORED 05:31 PT 09-19 = 12:31Z.
+--
+--   public.idx_tame_nfl_nft_seen (the INERT invalid stump from the 09-18 attempt) -> DROPPED.
+--
+-- No other schema change. The R108 partial index is STILL NOT BUILT. This migration exists to
+-- record the drop (a real state change) and, more importantly, to close out the R108 recipe with
+-- measurements that replace three sessions' worth of inference.
+--
+-- ============================================================================================
+-- WHAT WAS ACTUALLY ACHIEVED
+-- ============================================================================================
+-- 1. The inert stump is GONE. Three prior attempts could not remove it (`DROP INDEX
+--    CONCURRENTLY` blocked past the 60 s client cap). It drops in milliseconds as a PLAIN
+--    `DROP INDEX` once the table's three reader lanes are shed -- the lock, not the drop, was
+--    the obstacle. ALWAYS bound it: `SET lock_timeout` first, because an ACCESS EXCLUSIVE
+--    REQUEST queues AHEAD of new readers, so an unbounded wait stalls every reader of a hot
+--    table. Two bounded attempts (2 s, 3 s) failed safely against live traffic before the shed.
+--
+-- 2. The shed-and-self-restore pattern worked exactly as documented, and jobids 463/464/466
+--    were restored to their ORIGINAL schedules ('1-59/2', '4-59/5', '*/2'), captured before
+--    the shed and verified after.
+--
+-- ============================================================================================
+-- ⛔ THE PINCER IS NOW CLOSED ON ALL FOUR SIDES -- DO NOT RE-DERIVE THESE
+-- ============================================================================================
+-- (a) A `SET statement_timeout` PREFIX IS IMPOSSIBLE. A multi-statement pg_cron command runs in
+--     one implicit transaction and CIC refuses to run there. MEASURED (see migration
+--     20260919120000). Note the asymmetry that makes this trap easy to fall into: jobid 235 is
+--     postgres-owned, carries `SET statement_timeout = '600s';` in its command, and was observed
+--     running to 600.4 s -- because REFRESH MATERIALIZED VIEW CONCURRENTLY *tolerates* a
+--     transaction block and CIC does not. The sibling pattern does NOT transfer.
+--
+-- (b) RAISING THE postgres ROLE DEFAULT IS UNSAFE ON THIS ESTATE, which is a stronger statement
+--     than "inelegant". `ALTER ROLE postgres ... SET statement_timeout` would be picked up by a
+--     single-statement CIC job at session start with no prefix, so it SOLVES (a). ⛔ But it is
+--     load-bearing elsewhere: MEASURED 2026-09-19, **72 of 94 active postgres-owned cron jobs
+--     carry NO in-command budget** and lean entirely on the 120 s cluster cap as their only
+--     brake. Raising it would, for the duration, let the very Atlas lanes that are currently
+--     CUT at 120 s run to the new ceiling on a box with max_worker_processes = 6. That trades a
+--     bounded 689 MB read for an unbounded worker-starvation risk.
+--
+-- (c) cron_heavy HAS 600 s BUT IS NOT THE OWNER, and cannot be made one cheaply. Also newly
+--     measured: an ordinary session cannot even shed the cron_heavy lanes -- `cron.alter_job`
+--     as postgres returns "Job 303 does not exist or you don't own it". So a deterministic
+--     estate-wide lull cannot be manufactured from a postgres session at all.
+--
+-- (d) THE 120 s CAP IS BINDING ON THE *FINAL* PHASE, AND THE SHED MOVES THE FAILURE BUT DOES
+--     NOT REMOVE IT. ⭐ This is the genuinely new result. Attempt 1 (09-18) died at
+--     `indisready = FALSE` -- in `WaitForLockers`, "waiting for writers before validation".
+--     With 463/464/466 shed that table HAS no writers, and the 12:18Z attempt got strictly
+--     further: it reached **`indisready = TRUE, indisvalid = FALSE`**, i.e. the build and the
+--     second scan completed and it died in the final `WaitForOlderSnapshots`. Shedding the
+--     table's own readers fixes the writers phase and CANNOT fix the last one, because
+--     `WaitForOlderSnapshots` waits on EVERY transaction older than the build's snapshot
+--     anywhere in the cluster -- not only those touching this table.
+--
+-- 🚨 AND THAT IS WHY THE "QUIET WINDOW" IN THE OLD RECIPE IS THE WRONG PRECONDITION.
+--    The recipe said: wait until the Atlas tick reads under ~40 s. Atlas is not the binding
+--    constraint. MEASURED over 6 h: 50 active lanes have runs over 55 s, and the worst are
+--    cron_heavy ones this session cannot shed -- jobid 303 `refresh_wmc_fmv_changed` every
+--    10 minutes at a **295 s average** (max 445 s), jobid 235 at ~590 s every 2 h, plus
+--    refresh_topshot_pack_rip_values, refresh_mv_pack_ev_latest (observed at 533 s), and
+--    refresh_pack_grail_metrics_mv at :23. For CIC to finish inside 120 s the oldest
+--    transaction in the CLUSTER must have under ~60 s left to run at the moment it fires.
+--
+-- 📏 THE WINDOW IS REAL BUT RARE, AND THAT IS A MEASUREMENT, NOT A FEELING. Merging every run
+--    longer than 100 s over 6 h leaves **29 gaps, only 10 of them >= 120 s, longest 957.9 s,
+--    mean 152.6 s** -- roughly 1.7 usable gaps per hour, which a 1-minute cron granularity
+--    cannot reliably aim at. Two attempts inside a 25-minute shed both missed.
+--
+-- ⚠ A FAILED ATTEMPT IS NOT FREE, AND THIS IS THE TRAP FOR THE NEXT SESSION. A failed CIC
+--   leaves `indisready = TRUE, indisvalid = FALSE`, which is WORSE than the original stump:
+--   the planner will not use it, but every INSERT/UPDATE on a hot table MAINTAINS it. It must
+--   be dropped, and the name is occupied until it is -- so attempts cannot simply be retried
+--   in a loop, and each retry needs its own shed to get the lock. Both attempts here were
+--   dropped; the table ends this session with exactly its original 10 indexes.
+--
+-- 👉 SO THE ONLY ROUTES LEFT ARE (pick one, none is a quick grab):
+--    1. An operator/superuser session that can raise ITS OWN statement_timeout and run the CIC
+--       directly -- no pg_cron, no prefix problem, no 120 s cap. This is by far the cheapest
+--       and is the recommended path. It needs a human with a psql connection.
+--    2. A coordinated shed that includes the cron_heavy lanes (needs a role that owns them),
+--       giving a deterministic cluster-wide lull.
+--    3. Supabase support / a maintenance window.
+--
+-- REVERT: nothing to revert. The stump this dropped was inert (never read, never maintained)
+-- and the table is back to its pre-session index set.
+-- FALSIFIER for anyone claiming R108 is fixed: `select indisvalid from pg_index where
+-- indexrelid = 'public.idx_tame_nfl_nft_seen'::regclass` must return TRUE, and a plain EXPLAIN
+-- of Leg 1 must read `Index Only Scan`, not `Parallel Seq Scan`.
+
+DROP INDEX IF EXISTS public.idx_tame_nfl_nft_seen;

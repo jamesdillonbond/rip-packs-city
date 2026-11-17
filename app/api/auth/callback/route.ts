@@ -1,0 +1,154 @@
+// app/api/auth/callback/route.ts
+//
+// Magic-link callback. Supports both the legacy PKCE/code flow (?code=...) and
+// the newer email-OTP flow (?token_hash=...&type=magiclink). On success we
+// exchange/verify into a session (cookies set on the response) and redirect to
+// the ?redirect= target if it's a same-site path, else "/".
+
+import { NextRequest, NextResponse, after } from "next/server"
+import { createServerClient } from "@supabase/ssr"
+import type { EmailOtpType } from "@supabase/supabase-js"
+import { supabaseAdmin } from "@/lib/supabase"
+import { safeRedirectPath } from "@/lib/auth/safe-redirect"
+import { sendAccountWelcomeOnce } from "@/lib/welcome/send-account-welcome"
+
+const VALID_OTP_TYPES: ReadonlySet<EmailOtpType> = new Set([
+  "signup",
+  "invite",
+  "magiclink",
+  "recovery",
+  "email_change",
+  "email",
+])
+
+async function touchUserProfile(userId: string) {
+  // Mirrors /api/profile/touch — kept in-process here so the redirect response
+  // can issue without a second round-trip. ON CONFLICT (id) preserves
+  // user-set fields like display_name, username, wallet_address.
+  const now = new Date().toISOString()
+  const { error } = await (supabaseAdmin as any)
+    .from("user_profiles")
+    .upsert(
+      { id: userId, last_active_at: now, updated_at: now },
+      { onConflict: "id", ignoreDuplicates: false }
+    )
+  if (error) {
+    console.log("[auth/callback] user_profiles upsert failed:", error.message)
+  }
+}
+
+// 2026-10-11 (platform review M2) — the one-time welcome email. The DB claim
+// (claim_welcome_email) decides idempotently whether anything is sent, so this
+// may run on every sign-in from every creation path and no account is welcomed
+// twice; accounts that predate the feature are 'pre_existing' and never claim.
+// Scheduled AFTER the response so a slow Resend call never delays the redirect,
+// and wrapped so a scheduling failure never fails a sign-in.
+function scheduleWelcome(user: { id: string; email?: string | null }) {
+  const run = () => sendAccountWelcomeOnce({ userId: user.id, email: user.email })
+  try {
+    after(run)
+  } catch {
+    void run()
+  }
+}
+
+export async function GET(req: NextRequest) {
+  const url = new URL(req.url)
+  const code = url.searchParams.get("code")
+  const tokenHash = url.searchParams.get("token_hash")
+  const typeParam = url.searchParams.get("type")
+  const errorDescription = url.searchParams.get("error_description")
+  const redirectParam = url.searchParams.get("redirect")
+
+  // ⛔ 2026-10-11 — was `redirectParam.startsWith("/")`, the exact test
+  // lib/auth/safe-redirect.ts exists to replace: `//evil.example` starts with
+  // "/" and `new URL("//evil.example", req.url)` resolves to
+  // https://evil.example/ — an open redirect fired AFTER a successful sign-in,
+  // on the one link the user has every reason to trust. Latent today only
+  // because request-magic-link sanitises `next` before building the link; a
+  // second producer (a dashboard email template, a future OAuth provider)
+  // would have re-opened it. The fallback stays "/" (this route's historical
+  // default), not DEFAULT_POST_AUTH_PATH, so nothing but the rejection changes.
+  const safeRedirect = safeRedirectPath(redirectParam) ?? "/"
+
+  // Supabase-side failure surfaced in the redirect URL (expired link, denied, etc).
+  if (!code && !tokenHash && errorDescription) {
+    const target = new URL("/login", req.url)
+    target.searchParams.set("error", "auth_failed")
+    target.searchParams.set("description", errorDescription)
+    return NextResponse.redirect(target)
+  }
+
+  // Nothing actionable on the URL — log a redacted param map so the next
+  // failure leaves a trail in Vercel logs, then send the user back to /login.
+  if (!code && !(tokenHash && typeParam)) {
+    const SENSITIVE_KEY = /token|code|hash|secret|key/i
+    const redactedParams: Record<string, string> = {}
+    url.searchParams.forEach((value, key) => {
+      redactedParams[key] = SENSITIVE_KEY.test(key) ? "<redacted>" : value
+    })
+    console.warn("[auth/callback] missing_code — searchParams:", redactedParams)
+    return NextResponse.redirect(new URL("/login?error=missing_code", req.url))
+  }
+
+  const response = NextResponse.redirect(new URL(safeRedirect, req.url))
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return req.cookies.getAll().map((c) => ({ name: c.name, value: c.value }))
+        },
+        setAll(list) {
+          list.forEach(({ name, value, options }) => {
+            response.cookies.set({ name, value, ...options })
+          })
+        },
+      },
+    }
+  )
+
+  if (code) {
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code)
+    if (error) {
+      const target = new URL("/login", req.url)
+      target.searchParams.set("error", "auth_failed")
+      target.searchParams.set("description", error.message)
+      return NextResponse.redirect(target)
+    }
+    if (data?.user?.id) {
+      await touchUserProfile(data.user.id)
+      scheduleWelcome(data.user)
+    }
+    return response
+  }
+
+  // token_hash + type path
+  const otpType = typeParam as EmailOtpType
+  if (!VALID_OTP_TYPES.has(otpType)) {
+    const target = new URL("/login", req.url)
+    target.searchParams.set("error", "auth_failed")
+    target.searchParams.set("description", `Unsupported OTP type: ${typeParam}`)
+    return NextResponse.redirect(target)
+  }
+
+  const { data, error } = await supabase.auth.verifyOtp({
+    token_hash: tokenHash!,
+    type: otpType,
+  })
+  if (error) {
+    const target = new URL("/login", req.url)
+    target.searchParams.set("error", "auth_failed")
+    target.searchParams.set("description", error.message)
+    return NextResponse.redirect(target)
+  }
+
+  if (data?.user?.id) {
+    await touchUserProfile(data.user.id)
+    scheduleWelcome(data.user)
+  }
+
+  return response
+}

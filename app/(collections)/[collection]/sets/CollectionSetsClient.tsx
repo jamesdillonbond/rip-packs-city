@@ -1,0 +1,1148 @@
+"use client";
+
+import { useState, useEffect, useMemo, useRef, type CSSProperties } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { getCollection } from "@/lib/collections";
+import { filterAndSortSets, tierStripeColor, computeSetSummary } from "@/lib/sets/display";
+import { getOwnerKey, getOwnerKeyForChain, ownerKeyMatchesChain } from "@/lib/owner-key";
+import { fetchSavedWalletForCollection } from "@/lib/profile/saved-wallet-for-collection";
+import { setEntityHref } from "@/lib/entity-href";
+import MomentMedia from "@/components/MomentMedia";
+import { trackOutboundClick } from "@/lib/track-click";
+import { MarketplaceStatusBanner } from "@/components/marketplace-status";
+import { accentText } from "@/lib/accent-text"
+import { shortSeriesLabel } from "@/lib/series-label"
+import { pieceListHeader, SET_DETAIL_PREVIEW_COPY } from "@/lib/sets/piece-list-header"
+
+// ── Types (mirrors API response) ─────────────────────────────────────────────
+
+interface MissingPiece {
+  playId: string;
+  playerName: string;
+  tier: string;
+  lowestAsk: number | null;
+  thumbnailUrl: string | null;
+  topshotUrl: string;
+  fmv?: number | null;
+  fmvConfidence?: string | null;
+  hasBadge?: boolean;
+  badgeSlugs?: string[];
+}
+
+interface OwnedPiece {
+  playId: string;
+  playerName: string;
+  tier: string;
+  serialNumber: number | null;
+  thumbnailUrl: string | null;
+  topshotUrl: string;
+  isLocked?: boolean;
+}
+
+type SetTier = "complete" | "almost_there" | "bottleneck" | "completable" | "incomplete" | "unpriced";
+
+interface SetProgress {
+  setId: string;
+  setName: string;
+  series?: number | null;
+  setTier?: string | null;
+  totalEditions: number;
+  ownedCount: number;
+  missingCount: number;
+  listedCount: number;
+  completionPct: number;
+  totalMissingCost: number | null;
+  lowestSingleAsk: number | null;
+  bottleneckPrice: number | null;
+  bottleneckPlayerName: string | null;
+  tier: SetTier;
+  owned: OwnedPiece[];
+  missing: MissingPiece[];
+  asksEnriched: boolean;
+  costConfidence?: "high" | "mixed" | "low";
+  lockedOwnedCount?: number;
+  tradeableOwnedCount?: number;
+  tradeableCompletionPct?: number;
+  /** The PARALLEL axis, reported beside completion and never folded into it.
+   *  A checklist slot is one subject (a Top Shot play, a Pinnacle character);
+   *  these count the printings of it — `::subID` parallels, Pinnacle variants.
+   *  Only the Pinnacle backend sends them today. */
+  totalPrintings?: number;
+  ownedPrintings?: number;
+}
+
+interface SetsResponse {
+  wallet: string;
+  resolvedAddress: string;
+  totalSets: number;
+  completeSets: number;
+  inProgressSets?: number;
+  notStartedSets?: number;
+  sets: SetProgress[];
+  generatedAt: string;
+  /** Candy only: the published checklist, and its players RPC has no card for. */
+  publishedChecklist?: { total: number; notIndexed: string[] };
+  /** Set when the route could not ask this question of this wallet (e.g. Top
+   *  Shot's tracker given a non-Flow address): `sets: []` is then NOT "none". */
+  reason?: string;
+  message?: string;
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+type SortKey = "completion" | "cost" | "name";
+type FilterKey = "all" | "complete" | "in_progress" | "not_started";
+
+function fmt$(n: number | null): string {
+  if (n === null || n === undefined) return "—";
+  if (n >= 1000) return "$" + (n / 1000).toFixed(1) + "k";
+  return "$" + n.toFixed(2);
+}
+
+
+// In-memory cache of per-set detail keyed by `${collectionSlug}:${wallet}:${setId}`.
+// SetCard expand and the modal both fetch the same row; without a shared cache
+// they double-request whenever the user expands a card then opens it (Set audit
+// B3). Lives for the page lifetime. Top Shot uses /api/sets?set=; NFL All Day
+// uses /api/allday-set-progress?set= (both return the same SetsResponse shape).
+const setDetailCache = new Map<string, SetProgress>();
+
+// Collections with a per-set detail endpoint (full owned + missing lists).
+const SET_DETAIL_ENDPOINTS: Record<string, string> = {
+  "nba-top-shot": "/api/sets",
+  "nfl-all-day": "/api/allday-set-progress",
+};
+
+async function fetchSetDetail(wallet: string, setId: string, collectionSlug: string): Promise<SetProgress | null> {
+  const base = SET_DETAIL_ENDPOINTS[collectionSlug];
+  if (!base) return null;
+  const key = `${collectionSlug}:${wallet}:${setId}`;
+  const cached = setDetailCache.get(key);
+  if (cached) return cached;
+  try {
+    const r = await fetch(`${base}?wallet=${encodeURIComponent(wallet)}&set=${encodeURIComponent(setId)}`);
+    if (!r.ok) return null;
+    const j: SetsResponse = await r.json();
+    const s = j?.sets?.[0];
+    if (s) {
+      setDetailCache.set(key, s);
+      return s;
+    }
+  } catch {
+    /* swallow — caller renders the list-level row as fallback */
+  }
+  return null;
+}
+
+// ── Styles ───────────────────────────────────────────────────────────────────
+
+const displayFont = "var(--font-display)";
+const monoFont = "var(--font-mono)";
+
+// The set-card heading's look, shared by its link and its plain-text form so
+// suppressing a dead link cannot also change the card's appearance.
+function setTitleStyle(c: ReturnType<typeof makeColors>): CSSProperties {
+  return {
+    fontFamily: displayFont, fontWeight: 800, fontSize: 16, color: c.text,
+    textTransform: "uppercase", letterSpacing: "0.02em", lineHeight: 1.15,
+    textDecoration: "none", flex: 1, minWidth: 0, overflow: "hidden",
+    textOverflow: "ellipsis", display: "-webkit-box",
+    WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+  } as CSSProperties;
+}
+
+function makeColors(accent: string) {
+  return {
+    // Theme tokens (2026-10-18, #194): this palette was hardcoded dark, so in
+    // light theme the page stayed a dark slab and red text on it read 3.16:1.
+    bg: "var(--rpc-black)",
+    card: "var(--rpc-surface-raised)",
+    cardBorder: "var(--rpc-border)",
+    cardHover: `${accent}4D`,
+    accent,
+    text: "var(--rpc-text-primary)",
+    muted: "var(--rpc-text-muted)",
+    green: "#22c55e",
+    barBg: "var(--rpc-surface-hover)",
+  };
+}
+
+// ── Component ────────────────────────────────────────────────────────────────
+
+export default function CollectionSetsClient({ collection }: { collection: string }) {
+  const collectionSlug = collection;
+  const collectionObj = getCollection(collectionSlug);
+  const accent = collectionObj?.accent ?? "var(--rpc-red)";
+  const colors = makeColors(accent);
+  const isAllDay = collectionSlug === "nfl-all-day";
+  const isUfc = collectionSlug === "ufc";
+  const isPinnacle = collectionSlug === "disney-pinnacle";
+  const isCandy = collectionSlug === "candy-mlb";
+  // Pinnacle's collectibles are PINS, not moments — the same relabel
+  // components/collection/PackSubNav.tsx already makes on the sub-nav.
+  const pieceNoun = isPinnacle ? "pins" : "moments";
+  // Where a collection has no set DETAIL page (Pinnacle), the Market tab
+  // filtered to that set is the honest destination — and as of 2026-09-20 that
+  // filter actually works on this arm (it was silently ignored before; #129).
+  // ⚠ It shows only what is LISTED, not the whole checklist, so the affordance
+  // is labelled "SHOP", never "VIEW FULL SET PAGE".
+  const marketSetHref = (name: string) =>
+    collectionObj?.pages.includes("market")
+      ? `/${collectionSlug}/market?set=${encodeURIComponent(name.trim())}`
+      : null;
+  // Each collection's word for a second printing of the same subject. Top Shot
+  // calls them parallels (`setID:playID::subID`), Pinnacle calls them variants;
+  // both are the same axis (docs/reference/parallels-variants-data-model.md).
+  const printingNoun = isPinnacle ? "variants" : "parallels";
+  const PieceNoun = isPinnacle ? "Pin" : "Moment";
+  const [wallet, setWallet] = useState<string | null>(null);
+  const [data, setData] = useState<SetsResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // deep-audit D3: a saturation timeout is transient, so it gets a retry
+  // affordance instead of a dead "ERROR" wall. The API now classifies the
+  // failure (lib/api-error.ts) and never returns a raw Postgres message.
+  const [errorRetryable, setErrorRetryable] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [sortBy, setSortBy] = useState<SortKey>("completion");
+  const [filter, setFilter] = useState<FilterKey>("all");
+  const [openSet, setOpenSet] = useState<SetProgress | null>(null);
+  const [openSetDetail, setOpenSetDetail] = useState<SetProgress | null>(null);
+  const [openSetDetailFailed, setOpenSetDetailFailed] = useState(false);
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  const lastFocusedRef = useRef<HTMLElement | null>(null);
+
+  const autoLoadFired = useRef(false);
+
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const w = p.get("wallet") || p.get("address") || null;
+    if (w && w.trim()) {
+      setWallet(w.trim());
+      return;
+    }
+    if (autoLoadFired.current) return;
+    // The owner key is CHAIN-SCOPED (lib/owner-key.ts). Flow collections keep the
+    // historical global slot byte-for-byte (it may hold a Top Shot username,
+    // which /api/sets resolves); a Solana collection reads its own slot and
+    // refuses a key of the wrong chain, so a Flow key is never sent to Candy.
+    const dbChain = collectionObj?.dbChain ?? null;
+    const key = isCandy
+      ? (() => {
+          const k = getOwnerKeyForChain(dbChain);
+          return k && ownerKeyMatchesChain(k, dbChain) ? k : "";
+        })()
+      : getOwnerKey();
+    if (key) {
+      autoLoadFired.current = true;
+      setWallet(key);
+      return;
+    }
+    let cancelled = false;
+    fetchSavedWalletForCollection(collectionSlug).then((addr) => {
+      if (cancelled || autoLoadFired.current || !addr) return;
+      if (isCandy && !ownerKeyMatchesChain(addr, dbChain)) return;
+      autoLoadFired.current = true;
+      setWallet(addr);
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- collectionObj/isCandy derive from collectionSlug
+  }, [collectionSlug]);
+
+  useEffect(() => {
+    if (!wallet) return;
+    const w = wallet;
+    let cancelled = false;
+    async function go() {
+      setLoading(true);
+      setError(null);
+      setData(null);
+      try {
+        const isTopShot = collectionSlug === "nba-top-shot";
+        const endpoint =
+          isAllDay ? "/api/allday-set-progress"
+          : isUfc ? "/api/ufc-set-progress"
+          : isTopShot ? "/api/sets"
+          // Pinnacle is catalogued render-keyed in pinnacle_catalog and has ZERO
+          // rows in `editions`/`sets`, so /api/sets-db answered every wallet with
+          // a confident "0 sets". It has its own route (2026-09-20).
+          : isPinnacle ? "/api/pinnacle-set-progress"
+          // Candy MLB is Solana: a base58 key is CASE-SENSITIVE and /api/sets-db
+          // folds it, so that route matched nothing and would have answered
+          // "0 of 100". Its own route keeps the key verbatim and counts the 100
+          // PLAYERS as slots, Rainbow colours as parallels (2026-09-25).
+          : isCandy ? "/api/candy-set-progress"
+          : `/api/sets-db?collection=${encodeURIComponent(collectionSlug)}&`;
+        const url = endpoint.includes("?")
+          ? endpoint + "wallet=" + encodeURIComponent(w)
+          : endpoint + "?wallet=" + encodeURIComponent(w);
+        const res = await fetch(url);
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          // Guard: only trust a string `error`; never stringify an object (that
+          // produced "[object Object]" on the error banner).
+          const apiErr = typeof body?.error === "string" && body.error ? body.error : null;
+          const err = new Error(apiErr ?? "Request failed (" + res.status + ")");
+          // The classifier marks transient capacity failures retryable.
+          (err as Error & { retryable?: boolean }).retryable =
+            body?.retryable === true || res.status === 503;
+          throw err;
+        }
+        const json: SetsResponse = await res.json();
+        if (!cancelled) setData(json);
+      } catch (e: unknown) {
+        if (!cancelled) {
+          const msg = e instanceof Error && e.message ? e.message : "Failed to load sets";
+          setError(msg);
+          setErrorRetryable(
+            !!(e && typeof e === "object" && (e as { retryable?: boolean }).retryable)
+          );
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    go();
+    return () => { cancelled = true; };
+  }, [wallet, collectionSlug, isAllDay, isUfc, isPinnacle, isCandy, reloadKey]);
+
+  // Modal a11y: escape-to-close + focus trap (Set audit V5).
+  useEffect(() => {
+    if (!openSet) return;
+    lastFocusedRef.current = (document.activeElement as HTMLElement | null) ?? null;
+    // Focus the first interactive element in the modal so screen readers and
+    // keyboard users land inside the dialog when it opens.
+    const focusFirst = () => {
+      const root = modalRef.current;
+      if (!root) return;
+      const focusables = root.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"]), input:not([disabled])'
+      );
+      (focusables[0] ?? root).focus();
+    };
+    const raf = requestAnimationFrame(focusFirst);
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") { setOpenSet(null); return; }
+      if (e.key !== "Tab") return;
+      const root = modalRef.current;
+      if (!root) return;
+      const focusables = Array.from(
+        root.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"]), input:not([disabled])'
+        )
+      ).filter((el) => !el.hasAttribute("aria-hidden"));
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (e.shiftKey && active === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      cancelAnimationFrame(raf);
+      // Restore focus to whatever opened the modal.
+      lastFocusedRef.current?.focus?.();
+    };
+  }, [openSet]);
+
+  // Top Shot's list response omits per-set owned moments — fetch the detail
+  // view so the modal can show them. Other collections carry whatever
+  // moment-level detail they have inline on the set object already.
+  // Depend on `openSet?.setId` (not the whole object) so the effect doesn't
+  // re-fire on unrelated re-renders, and consult the shared cache so we
+  // don't duplicate SetCard's expand fetch (Set audit B3).
+  const openSetId = openSet?.setId ?? null;
+  useEffect(() => {
+    setOpenSetDetailFailed(false);
+    if (!openSetId) { setOpenSetDetail(null); return; }
+    if (!SET_DETAIL_ENDPOINTS[collectionSlug] || !wallet) { setOpenSetDetail(null); return; }
+    let cancelled = false;
+    fetchSetDetail(wallet, openSetId, collectionSlug).then((s) => {
+      if (cancelled) return;
+      if (s) setOpenSetDetail(s);
+      else setOpenSetDetailFailed(true);
+    });
+    return () => { cancelled = true; };
+  }, [openSetId, collectionSlug, wallet]);
+
+  const displaySets = useMemo(() => {
+    if (!data) return [];
+    return filterAndSortSets(data.sets, filter, sortBy);
+  }, [data, sortBy, filter]);
+
+  const { totalSets, completeSets, inProgressSets, notStartedSets, completePct } = computeSetSummary(data);
+
+  if (wallet === null && !loading) {
+    return (
+      <div style={{ background: colors.bg, minHeight: "100vh" }}>
+        <div style={{ maxWidth: 1440, margin: "0 auto", padding: "24px 24px 60px" }}>
+          {/* This no-wallet branch is what SERVER-RENDERS: `wallet` starts null, so a
+              crawler (and the first paint) gets this markup, not the main return below —
+              which is why /{collection}/sets shipped 0 headings of any level despite
+              owning a "SET TRACKER" h1 at line ~359. sr-only so the centered empty state
+              is visually unchanged. */}
+          <h1 className="sr-only">Set Tracker</h1>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "50vh", gap: 16 }}>
+            <div style={{ fontFamily: displayFont, fontWeight: 800, fontSize: 20, color: colors.text, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+              NO WALLET LOADED
+            </div>
+            <div style={{ fontFamily: monoFont, fontSize: 13, color: colors.muted, textAlign: "center", maxWidth: 400, lineHeight: 1.6 }}>
+              Search a wallet on the Collection tab first
+            </div>
+            <Link
+              href={`/${collectionSlug}/collection`}
+              style={{ fontFamily: monoFont, fontSize: 12, color: accentText(colors.accent), textDecoration: "none", border: `1px solid ${accent}4D`, padding: "8px 20px", borderRadius: 4, marginTop: 8, transition: "background 0.15s ease" }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = `${accent}14`)}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+            >
+              GO TO COLLECTION →
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ background: colors.bg, minHeight: "100vh" }}>
+      <div style={{ maxWidth: 1440, margin: "0 auto", padding: "24px 24px 60px" }}>
+
+        <h1 style={{ fontFamily: displayFont, fontWeight: 900, fontSize: 28, color: colors.text, textTransform: "uppercase", letterSpacing: "0.04em", margin: "0 0 20px", lineHeight: 1 }}>
+          SET TRACKER
+        </h1>
+
+        {/* Marketplace status banner — renders nothing for healthy collections.
+            This tab quotes a live-looking `lowestAsk` and `fmv` on every missing
+            piece, i.e. a cost-to-complete, so on a collection whose market has
+            closed it is quoting a price nobody can transact at (UFC's last Flow
+            sale was 2026-05-13). Mounted 2026-08-03 — sets and analytics were the
+            two UFC tabs the 08-02 disclosure work never reached. */}
+        <div style={{ marginBottom: 16 }}>
+          <MarketplaceStatusBanner collectionSlug={collectionSlug} />
+        </div>
+
+        {loading && (
+          <div>
+            <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="rpc-skeleton" style={{ width: 140, height: 64, borderRadius: 8 }} />
+              ))}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(280px, 100%), 1fr))", gap: 16 }}>
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} style={{ background: colors.card, border: "1px solid " + colors.cardBorder, borderRadius: 10, padding: 20 }}>
+                  <div className="rpc-skeleton" style={{ width: "60%", height: 18, marginBottom: 14, borderRadius: 4 }} />
+                  <div className="rpc-skeleton" style={{ width: "100%", height: 8, marginBottom: 10, borderRadius: 4 }} />
+                  <div className="rpc-skeleton" style={{ width: "40%", height: 12, borderRadius: 4 }} />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {error && !loading && (
+          <div style={{ background: `${accent}14`, border: `1px solid ${accent}40`, borderRadius: 8, padding: "16px 20px", marginBottom: 20 }}>
+            {/* A transient capacity failure is not an "ERROR" the reader caused,
+                and it is worth retrying — the old wall said ERROR and offered
+                nothing. The message itself is now classified server-side, so a
+                raw Postgres string can no longer land here (deep-audit D3). */}
+            <div style={{ fontFamily: displayFont, fontWeight: 700, fontSize: 14, color: accentText(colors.accent), textTransform: "uppercase", marginBottom: 4 }}>
+              {errorRetryable ? "TAKING TOO LONG" : "ERROR"}
+            </div>
+            <div style={{ fontFamily: monoFont, fontSize: 12, color: colors.muted, lineHeight: 1.5 }}>{error}</div>
+            {errorRetryable && (
+              <button
+                onClick={() => setReloadKey((k) => k + 1)}
+                style={{
+                  marginTop: 10,
+                  fontFamily: monoFont,
+                  fontSize: 12,
+                  padding: "6px 14px",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  background: "transparent",
+                  border: `1px solid ${accent}66`,
+                  color: accentText(colors.accent),
+                  textTransform: "uppercase",
+                }}
+              >
+                Retry
+              </button>
+            )}
+          </div>
+        )}
+
+        {data && data.sets.length === 0 && !loading && (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "40vh", gap: 12 }}>
+            {/* 2026-11-14: a route that could not ASK (a typed `reason`) is not a wallet
+                that holds nothing — /api/sets answers a non-Flow address that way. */}
+            <div style={{ fontFamily: displayFont, fontWeight: 800, fontSize: 18, color: colors.text, textTransform: "uppercase" }}>
+              {data.reason ? "SET TRACKING ISN'T AVAILABLE HERE" : "NO SETS FOUND"}
+            </div>
+            <div style={{ fontFamily: monoFont, fontSize: 12, color: colors.muted }}>
+              {data.reason
+                ? (data.message ?? "Set tracking can't be read for this wallet.")
+                : `No ${collectionObj?.label ?? "this collection"} ${pieceNoun} found in this wallet`}
+            </div>
+          </div>
+        )}
+
+        {data && data.sets.length > 0 && !loading && (
+          <>
+            {isAllDay && (
+              <div
+                role="note"
+                style={{
+                  marginBottom: 16,
+                  padding: "10px 14px",
+                  background: `${accent}14`,
+                  border: `1px solid ${accent}40`,
+                  borderRadius: 8,
+                  fontFamily: monoFont,
+                  fontSize: 12,
+                  lineHeight: 1.6,
+                  color: colors.muted,
+                }}
+              >
+                NFL All Day has ended primary pack sales — completing a set is now a
+                secondary-market purchase. Cost-to-complete figures below reflect
+                secondary prices only.
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
+              <SummaryCard label="TOTAL SETS" value={String(totalSets)} accent={accent} />
+              <SummaryCard label="COMPLETE" value={String(completeSets)} sub={completePct + "%"} accent={accent} />
+              <SummaryCard label="IN PROGRESS" value={String(inProgressSets)} accent={accent} />
+              <SummaryCard label="NOT STARTED" value={String(notStartedSets)} accent={accent} />
+            </div>
+
+            <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.5, marginBottom: 16, maxWidth: 880 }}>
+              {isCandy ? (
+                <>
+                  RPC counts a set complete when you own every player in it, in any printing. The five-colour Rainbow cards are parallels of those players &mdash; counted beside completion as depth, never as extra checklist slots.
+                  {data.publishedChecklist && data.publishedChecklist.notIndexed.length > 0 ? (
+                    <>
+                      {" "}Candy&apos;s published checklist names {data.publishedChecklist.total} players; RPC has not seen a minted card for{" "}
+                      {data.publishedChecklist.notIndexed.join(", ")}, so they are not counted here yet.
+                    </>
+                  ) : null}
+                </>
+              ) : (
+                // Pinnacle collects PINS and has no challenges/badges; the Top Shot
+                // caveat only describes Top Shot (2026-09-27).
+                isPinnacle ? (
+                  <>RPC counts a set complete when you own every pin in it.</>
+                ) : (
+                  // The "Completed Sets" caveat describes Top Shot's own tracker. It printed on
+                  // All Day, Golazos and UFC too (signed-in walk, 2026-11-10), naming a product
+                  // the collector was not looking at.
+                  collectionSlug === "nba-top-shot" ? (
+                    <>RPC counts a set complete when you own every play in it. Top Shot&apos;s &ldquo;Completed Sets&rdquo; may include per-set criteria (challenges, badges, parallel collections) this tracker doesn&apos;t model &mdash; gaps are expected.</>
+                  ) : (
+                    <>RPC counts a set complete when you own every play in it.</>
+                  )
+                )
+              )}
+            </div>
+
+            <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+              <span style={{ fontFamily: monoFont, fontSize: 10, color: colors.muted, letterSpacing: "0.1em", textTransform: "uppercase", alignSelf: "center", marginRight: 4 }}>SORT</span>
+              <Pill label="COMPLETION %" active={sortBy === "completion"} onClick={() => setSortBy("completion")} accent={accent} />
+              <Pill label="COST TO COMPLETE" active={sortBy === "cost"} onClick={() => setSortBy("cost")} accent={accent} />
+              <Pill label="NAME A-Z" active={sortBy === "name"} onClick={() => setSortBy("name")} accent={accent} />
+            </div>
+
+            <div style={{ display: "flex", gap: 8, marginBottom: 24, flexWrap: "wrap" }}>
+              <span style={{ fontFamily: monoFont, fontSize: 10, color: colors.muted, letterSpacing: "0.1em", textTransform: "uppercase", alignSelf: "center", marginRight: 4 }}>FILTER</span>
+              <Pill label="ALL" active={filter === "all"} onClick={() => setFilter("all")} accent={accent} />
+              <Pill label="COMPLETE" active={filter === "complete"} onClick={() => setFilter("complete")} accent={accent} />
+              <Pill label="IN PROGRESS" active={filter === "in_progress"} onClick={() => setFilter("in_progress")} accent={accent} />
+              <Pill label="NOT STARTED" active={filter === "not_started"} onClick={() => setFilter("not_started")} accent={accent} />
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(320px, 100%), 1fr))", gap: 16 }}>
+              {displaySets.map((set) => (
+                <SetCard
+                  key={set.setId}
+                  set={set}
+                  collectionSlug={collectionSlug}
+                  wallet={wallet ?? ""}
+                  accent={accent}
+                  onView={() => setOpenSet(set)}
+                  printingNoun={printingNoun}
+                />
+              ))}
+            </div>
+
+            {displaySets.length === 0 && (
+              <div style={{ fontFamily: monoFont, fontSize: 12, color: colors.muted, textAlign: "center", padding: "40px 0" }}>
+                No sets match this filter
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {openSet && (() => {
+        const modalSet = openSetDetail ?? openSet;
+        const mOwned = modalSet.owned ?? [];
+        const mMissing = modalSet.missing ?? [];
+        const openSetHref = setEntityHref(collectionSlug, openSet.setName);
+        return (
+        <div
+          role="presentation"
+          onClick={(e) => { if (e.target === e.currentTarget) setOpenSet(null); }}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+        >
+          <div
+            ref={modalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="set-modal-title"
+            tabIndex={-1}
+            style={{ background: colors.bg, border: "1px solid " + colors.cardBorder, borderRadius: 10, padding: "20px 24px", maxWidth: 720, maxHeight: "85vh", width: "100%", overflow: "auto", outline: "none" }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+              <h3 id="set-modal-title" style={{ fontFamily: displayFont, fontWeight: 800, fontSize: 18, color: colors.text, textTransform: "uppercase", letterSpacing: "0.04em", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {openSet.setName}
+              </h3>
+              <button
+                onClick={() => setOpenSet(null)}
+                aria-label={`Close ${openSet.setName} details`}
+                style={{ fontFamily: monoFont, fontSize: 14, color: colors.muted, background: "transparent", border: "none", cursor: "pointer", padding: 4, flexShrink: 0 }}
+              >
+                ✕
+              </button>
+            </div>
+            <div style={{ fontFamily: monoFont, fontSize: 11, color: colors.muted, marginBottom: 14, letterSpacing: "0.05em", textTransform: "uppercase" }}>
+              {openSet.ownedCount} / {openSet.totalEditions} OWNED · {openSet.completionPct}%
+            </div>
+            {/* ⚠ Only where the set actually HAS a page. setEntityHref returns
+                null for Pinnacle, whose sets live in pinnacle_catalog and have
+                no `sets`/`editions` rows for get_set_detail to find — the link
+                would 404 (lib/entity-href.ts). */}
+            {openSetHref ? (
+              <Link
+                href={openSetHref}
+                style={{ display: "inline-block", fontFamily: monoFont, fontSize: 11, color: accentText(accent), textDecoration: "none", border: `1px solid ${accent}4D`, padding: "6px 14px", borderRadius: 4, marginBottom: 14, letterSpacing: "0.08em" }}
+              >
+                VIEW FULL SET PAGE →
+              </Link>
+            ) : marketSetHref(openSet.setName) ? (
+              <Link
+                href={marketSetHref(openSet.setName)!}
+                style={{ display: "inline-block", fontFamily: monoFont, fontSize: 11, color: accentText(accent), textDecoration: "none", border: `1px solid ${accent}4D`, padding: "6px 14px", borderRadius: 4, marginBottom: 14, letterSpacing: "0.08em" }}
+              >
+                SHOP THIS SET →
+              </Link>
+            ) : null}
+            {mOwned.length === 0 && mMissing.length === 0 ? (
+              <div style={{ fontFamily: monoFont, fontSize: 12, color: colors.muted, padding: "20px 0", textAlign: "center" }}>
+                {openSet.ownedCount > 0
+                  ? `${PieceNoun}-level detail isn't available for this set yet`
+                  : `No ${pieceNoun} owned in this set yet`}
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {openSetDetailFailed && !openSetDetail && (
+                  <div role="status" style={{ fontFamily: monoFont, fontSize: 11, color: colors.muted }}>
+                    {SET_DETAIL_PREVIEW_COPY}
+                  </div>
+                )}
+                {mOwned.length > 0 && (
+                  <div>
+                    <div style={{ fontFamily: monoFont, fontSize: 9, color: colors.muted, letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 8 }}>
+                      {pieceListHeader("OWNED", mOwned.length, modalSet.ownedCount)}
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {mOwned.map((piece, idx) => (
+                        <ModalRow
+                          key={`o-${piece.playId}-${piece.serialNumber ?? idx}`}
+                          href={piece.topshotUrl}
+                          thumbnailUrl={piece.thumbnailUrl}
+                          playerName={piece.playerName}
+                          meta={`#${piece.serialNumber ?? "—"} · ${piece.tier}`}
+                          colors={colors}
+                          collection={collectionSlug}
+                          tier={piece.tier}
+                          askPrice={null}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {mMissing.length > 0 && (
+                  <div>
+                    <div style={{ fontFamily: monoFont, fontSize: 9, color: colors.muted, letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 8 }}>
+                      {pieceListHeader("MISSING", mMissing.length, modalSet.missingCount)}
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {mMissing.map((piece, idx) => (
+                        <ModalRow
+                          key={`m-${piece.playId}-${idx}`}
+                          href={piece.topshotUrl}
+                          thumbnailUrl={piece.thumbnailUrl}
+                          playerName={piece.playerName}
+                          meta={`${piece.tier}${piece.lowestAsk != null ? ` · ~${fmt$(piece.lowestAsk)}` : ""}`}
+                          colors={colors}
+                          collection={collectionSlug}
+                          tier={piece.tier}
+                          askPrice={piece.lowestAsk}
+                          muted
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+        );
+      })()}
+    </div>
+  );
+}
+
+// ── Subcomponents ────────────────────────────────────────────────────────────
+
+// Outbound click on a set piece → outbound_clicks. The set-progress APIs carry
+// no moment id FIELD for a piece (playId + a marketplace URL), but a MISSING piece
+// with a live listing links to that listing's moment (Top Shot:
+// /listings/moment/<nft id>), so the moment id is read off the URL for attribution.
+// An OWNED piece's link is the collector's own moment — not a purchase — so it
+// sends none.
+// askPrice is the MISSING piece's lowest ask (null for an owned piece).
+// ⚠ `topshotUrl` is NOT always external: Candy (editionHref) and Pinnacle
+// (pinnacleRenderHref) set it to an internal RPC route, and sets-db sends "".
+// Only an absolute http(s) URL is an outbound click.
+/** The on-chain moment id in a marketplace moment/listing URL, or null. */
+export function momentIdFromListingUrl(href: string): string | null {
+  const m = /\/(?:listings\/moment|moments?)\/(\d+)(?:[/?#]|$)/.exec(href);
+  return m ? m[1] : null;
+}
+
+function trackSetPieceClick(
+  collection: string,
+  href: string,
+  playerName: string,
+  tier: string | null,
+  askPrice: number | null,
+  surface: string,
+) {
+  if (!/^https?:\/\//i.test(href)) return;
+  trackOutboundClick({
+    surface,
+    collection,
+    momentId: askPrice != null ? momentIdFromListingUrl(href) : null,
+    // ufc/allday set-progress send a marketplace SEARCH url; the others a
+    // moment / edition listing page.
+    linkKind: /\/search\?/.test(href) ? "search" : "listing",
+    destination: "native_marketplace",
+    playerName,
+    tier,
+    askPrice,
+    buyUrl: href,
+  });
+}
+
+function SummaryCard({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent: string }) {
+  const c = makeColors(accent);
+  return (
+    <div style={{ background: c.card, border: "1px solid " + c.cardBorder, borderRadius: 8, padding: "12px 18px", minWidth: 120 }}>
+      <div style={{ fontFamily: monoFont, fontSize: 9, color: c.muted, letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 4 }}>
+        {label}
+      </div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+        <span style={{ fontFamily: displayFont, fontWeight: 800, fontSize: 22, color: c.text }}>
+          {value}
+        </span>
+        {sub && (
+          <span style={{ fontFamily: monoFont, fontSize: 11, color: c.muted }}>
+            {sub}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ModalRow({
+  href,
+  thumbnailUrl,
+  playerName,
+  meta,
+  colors,
+  muted,
+  collection,
+  tier,
+  askPrice,
+}: {
+  href: string;
+  thumbnailUrl: string | null;
+  playerName: string;
+  meta: string;
+  colors: ReturnType<typeof makeColors>;
+  muted?: boolean;
+  collection: string;
+  tier: string | null;
+  askPrice: number | null;
+}) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={() => trackSetPieceClick(collection, href, playerName, tier, askPrice, "sets_modal")}
+      style={{ display: "flex", alignItems: "center", gap: 12, padding: 8, borderRadius: 6, background: colors.card, border: "1px solid " + colors.cardBorder, textDecoration: "none", opacity: muted ? 0.85 : 1, transition: "border-color 0.15s ease" }}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = colors.cardHover)}
+      onMouseLeave={(e) => (e.currentTarget.style.borderColor = colors.cardBorder)}
+    >
+      <MomentMedia thumbnailUrl={thumbnailUrl} alt={playerName || "Moment thumbnail"} size={40} rounded={4} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontFamily: displayFont, fontWeight: 700, fontSize: 14, color: colors.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {playerName}
+        </div>
+        <div style={{ fontFamily: monoFont, fontSize: 10, color: colors.muted, letterSpacing: "0.05em", textTransform: "uppercase" }}>
+          {meta}
+        </div>
+      </div>
+      <span style={{ fontFamily: monoFont, fontSize: 10, color: accentText(colors.accent), letterSpacing: "0.08em", flexShrink: 0 }}>VIEW →</span>
+    </a>
+  );
+}
+
+function Pill({ label, active, onClick, accent }: { label: string; active: boolean; onClick: () => void; accent: string }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        fontFamily: monoFont,
+        fontSize: 10,
+        letterSpacing: "0.08em",
+        padding: "5px 14px",
+        borderRadius: 4,
+        border: "1px solid " + (active ? `${accent}80` : "var(--rpc-border-subtle)"),
+        background: active ? `${accent}14` : "var(--rpc-surface-raised)",
+        color: active ? accentText(accent) : "var(--rpc-text-muted)",
+        cursor: "pointer",
+        transition: "all 0.15s ease",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function SetCard({
+  set,
+  collectionSlug,
+  wallet,
+  accent,
+  onView,
+  printingNoun = "printings",
+}: {
+  set: SetProgress;
+  collectionSlug: string;
+  wallet: string;
+  accent: string;
+  onView: () => void;
+  /** "variants" for Pinnacle, "parallels" for a Top Shot-shaped collection. */
+  printingNoun?: string;
+}) {
+  const c = makeColors(accent);
+  const router = useRouter();
+  // null for a collection whose sets have no detail page (Pinnacle) — the card
+  // then stops being a link AND stops being click-to-navigate.
+  const setHref = setEntityHref(collectionSlug, set.setName);
+  // Only when the backend sends the axis AND the set actually has parallels —
+  // "12 / 12 PRINTINGS" on a set with one printing each is noise.
+  const printingDepth =
+    set.totalPrintings != null &&
+    set.ownedPrintings != null &&
+    set.totalPrintings > set.totalEditions
+      ? `${set.ownedPrintings} / ${set.totalPrintings} ${printingNoun.toUpperCase()}`
+      : null;
+  const isComplete = set.completionPct === 100;
+  const inProgress = set.completionPct > 0 && set.completionPct < 100;
+  const stripeColor = tierStripeColor(set.setTier);
+
+  const [expanded, setExpanded] = useState(false);
+  const [detail, setDetail] = useState<SetProgress | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [detailFailed, setDetailFailed] = useState(false);
+
+  // Depend on stable `set.setId` (not the whole `set` object) — the previous
+  // dep on the whole object made this effect re-fire on every re-render.
+  // Goes through the shared cache so we don't double-fetch what the modal
+  // effect already loaded (Set audit B3).
+  const setId = set.setId;
+  // 2026-11-14: `loadingDetail` is NOT a dependency. It was, so setLoadingDetail(true)
+  // re-ran this effect: the cleanup cancelled the fetch in flight and the re-run
+  // returned early on `loadingDetail`, so nothing ever cleared the skeleton — every
+  // expand on Top Shot / All Day hung on it, success or failure.
+  useEffect(() => {
+    if (!expanded || detail || !wallet) return;
+    // Top Shot (/api/sets?set=) and NFL All Day (/api/allday-set-progress?set=)
+    // expose per-set detail (full owned + missing lists). Collections without a
+    // detail endpoint already carry their preview data inline on the set object
+    // from the list response — render that directly.
+    if (!SET_DETAIL_ENDPOINTS[collectionSlug]) {
+      setDetail(set);
+      return;
+    }
+    let cancelled = false;
+    setLoadingDetail(true);
+    fetchSetDetail(wallet, setId, collectionSlug)
+      .then((s) => {
+        if (cancelled) return;
+        // On fetch failure, fall back to the list-level set (inline preview)
+        // so the expand still renders something rather than staying blank —
+        // and SAY it is a preview (its lists are truncated).
+        setDetailFailed(!s);
+        setDetail(s ?? set);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingDetail(false);
+      });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `set` intentionally excluded; setId is the stable identity
+  }, [expanded, detail, wallet, setId, collectionSlug]);
+
+  return (
+    <div
+      role="presentation"
+      onClick={(e) => { const t = e.target as HTMLElement; if (t.closest("a,button")) return; if (setHref) router.push(setHref); }}
+      style={{
+        position: "relative",
+        background: c.card,
+        border: "1px solid " + c.cardBorder,
+        borderRadius: 10,
+        overflow: "hidden",
+        transition: "border-color 0.15s ease",
+        cursor: "pointer",
+      }}
+    >
+      <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: stripeColor }} />
+
+      <div style={{ padding: "16px 18px 14px" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
+          {setHref ? (
+            <Link
+              href={setHref}
+              prefetch={false}
+              style={setTitleStyle(c)}
+            >
+              {set.setName}
+            </Link>
+          ) : (
+            // No set page for this collection — render the heading as text
+            // rather than a link that resolves to a 404.
+            <span style={setTitleStyle(c)}>{set.setName}</span>
+          )}
+          {/* 2026-11-10: the rarity was a 2px stripe colour only. All Day issues one set per
+              (name, rarity, series), so "49ers Vintage" appeared four times with nothing
+              in words to tell them apart. */}
+          {set.setTier ? (
+            <span style={{
+              fontFamily: monoFont, fontSize: 9, color: c.muted, letterSpacing: "0.08em",
+              padding: "2px 8px", borderRadius: 999, textTransform: "uppercase",
+              border: "1px solid " + c.cardBorder, background: "var(--rpc-surface-raised)",
+              flexShrink: 0,
+            }}>
+              {set.setTier}
+            </span>
+          ) : null}
+          {set.series != null && (
+            <span style={{
+              fontFamily: monoFont, fontSize: 9, color: c.muted, letterSpacing: "0.08em",
+              padding: "2px 8px", borderRadius: 999,
+              border: "1px solid " + c.cardBorder, background: "var(--rpc-surface-raised)",
+              flexShrink: 0,
+            }}>
+              {shortSeriesLabel(set.series, collectionSlug)}
+            </span>
+          )}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+          <div style={{ flex: 1, height: 6, background: c.barBg, borderRadius: 3, overflow: "hidden" }}>
+            <div style={{ width: set.completionPct + "%", height: "100%", background: isComplete ? c.green : c.accent }} />
+          </div>
+          <span style={{ fontFamily: monoFont, fontSize: 11, color: c.text, minWidth: 36, textAlign: "right" }}>
+            {set.completionPct}%
+          </span>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: printingDepth ? 4 : 12 }}>
+          <span style={{ fontFamily: monoFont, fontSize: 11, color: c.muted, letterSpacing: "0.04em" }}>
+            {set.ownedCount} / {set.totalEditions} OWNED
+          </span>
+          <span style={{ fontFamily: displayFont, fontWeight: 700, fontSize: 14, color: c.text }}>
+            {fmt$(set.totalMissingCost)}
+          </span>
+        </div>
+
+        {/* The parallel/variant axis, secondary by design. Completion answers
+            "have you finished the set"; this answers "how deep do you go" — a
+            Pinnacle Standard and its Golden differ ~13x in price, so a
+            completionist wants both numbers and must never see them mixed. */}
+        {printingDepth && (
+          <div style={{ fontFamily: monoFont, fontSize: 9, color: c.muted, letterSpacing: "0.06em", marginBottom: 12 }}>
+            {printingDepth}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={onView}
+            style={{ flex: 1, fontFamily: monoFont, fontSize: 10, padding: "6px 10px", borderRadius: 4, border: "1px solid " + c.cardBorder, background: "transparent", color: accentText(c.accent), cursor: "pointer", letterSpacing: "0.08em" }}
+          >
+            VIEW
+          </button>
+          {inProgress && (
+            <button
+              onClick={() => setExpanded((v) => !v)}
+              style={{ flex: 1, fontFamily: monoFont, fontSize: 10, padding: "6px 10px", borderRadius: 4, border: "1px solid " + c.cardBorder, background: expanded ? `${accent}14` : "transparent", color: c.muted, cursor: "pointer", letterSpacing: "0.08em" }}
+            >
+              {expanded ? "COLLAPSE ▲" : "EXPAND ▼"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {expanded && (
+        <div style={{ borderTop: "1px solid " + c.cardBorder, padding: "12px 14px 16px", background: "rgba(0,0,0,0.25)" }}>
+          {loadingDetail && !detail && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} className="rpc-skeleton" style={{ aspectRatio: "1 / 1", borderRadius: 6 }} />
+              ))}
+            </div>
+          )}
+          {detail && detailFailed && (
+            <div role="status" style={{ fontFamily: monoFont, fontSize: 11, color: c.muted, marginBottom: 8 }}>
+              {SET_DETAIL_PREVIEW_COPY}
+            </div>
+          )}
+          {detail && (
+            <DetailGrid set={detail} accent={accent} collection={collectionSlug} />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DetailGrid({ set, accent, collection }: { set: SetProgress; accent: string; collection: string }) {
+  const c = makeColors(accent);
+  return (
+    <>
+      {set.owned.length > 0 && (
+        <>
+          <div style={{ fontFamily: monoFont, fontSize: 9, color: c.muted, letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 8 }}>
+            {pieceListHeader("OWNED", set.owned.length, set.ownedCount)}
+          </div>
+          <div className="rpc-set-detail-grid" style={{ display: "grid", gap: 8, marginBottom: 12 }}>
+            {set.owned.map((p, i) => (
+              <DetailTile
+                key={`o-${p.playId}-${i}`}
+                thumbnailUrl={p.thumbnailUrl}
+                playerName={p.playerName}
+                badge={p.serialNumber != null ? `#${p.serialNumber}` : null}
+                href={p.topshotUrl}
+                accent={accent}
+                collection={collection}
+                tier={p.tier}
+                askPrice={null}
+              />
+            ))}
+          </div>
+        </>
+      )}
+      {set.missing.length > 0 && (
+        <>
+          <div style={{ fontFamily: monoFont, fontSize: 9, color: c.muted, letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 8 }}>
+            {pieceListHeader("MISSING", set.missing.length, set.missingCount)}
+          </div>
+          <div className="rpc-set-detail-grid" style={{ display: "grid", gap: 8 }}>
+            {set.missing.map((p, i) => (
+              <DetailTile
+                key={`m-${p.playId}-${i}`}
+                thumbnailUrl={p.thumbnailUrl}
+                playerName={p.playerName}
+                badge={p.lowestAsk != null ? `~${fmt$(p.lowestAsk)}` : null}
+                href={p.topshotUrl}
+                accent={accent}
+                muted
+                collection={collection}
+                tier={p.tier}
+                askPrice={p.lowestAsk}
+              />
+            ))}
+          </div>
+        </>
+      )}
+      <style>{`
+        .rpc-set-detail-grid { grid-template-columns: repeat(3, 1fr); }
+        @media (min-width: 768px) { .rpc-set-detail-grid { grid-template-columns: repeat(6, 1fr); } }
+      `}</style>
+    </>
+  );
+}
+
+function DetailTile({
+  thumbnailUrl,
+  playerName,
+  badge,
+  href,
+  accent,
+  muted,
+  collection,
+  tier,
+  askPrice,
+}: {
+  thumbnailUrl: string | null;
+  playerName: string;
+  badge: string | null;
+  href: string;
+  accent: string;
+  muted?: boolean;
+  collection: string;
+  tier: string | null;
+  askPrice: number | null;
+}) {
+  const c = makeColors(accent);
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={() => trackSetPieceClick(collection, href, playerName, tier, askPrice, "sets_detail")}
+      style={{
+        display: "block", textDecoration: "none",
+        borderRadius: 6, overflow: "hidden",
+        border: "1px solid " + c.cardBorder,
+        opacity: muted ? 0.85 : 1,
+        background: c.card,
+      }}
+    >
+      <MomentMedia thumbnailUrl={thumbnailUrl} alt={playerName} rounded={0} />
+      <div style={{ padding: "6px 8px" }}>
+        <div style={{ fontFamily: displayFont, fontWeight: 700, fontSize: 11, color: c.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.2 }}>
+          {playerName}
+        </div>
+        {badge && (
+          <div style={{ fontFamily: monoFont, fontSize: 9, color: c.muted, letterSpacing: "0.05em" }}>
+            {badge}
+          </div>
+        )}
+      </div>
+    </a>
+  );
+}

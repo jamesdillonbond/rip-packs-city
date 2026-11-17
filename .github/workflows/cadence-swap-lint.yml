@@ -1,0 +1,73 @@
+name: Cadence swap lint (trade room transactions vs deployed contracts)
+
+# 2026-11-02 (Trevor: "Keep going"). The trade room asks two wallets to sign
+# SWAP_CADENCE (all Top Shot) or MULTI_SWAP_CADENCE (Top Shot / All Day / Golazos /
+# UFC). Both import contracts WE DO NOT OWN — TopShot, AllDay, Golazos, UFC_NFT,
+# HybridCustody, NonFungibleToken — which their owners can upgrade at any time. An
+# upgrade that renames a path, a type or an entitlement would break our transaction
+# with nothing on RPC's side changing, and the first to find out would be a collector
+# whose wallet refused to sign (or whose transaction reverted).
+#
+# This runs `npm run cadence:lint-swaps` (scripts/cadence/lint-trade-swaps.ts): it
+# fetches every imported contract's DEPLOYED source from mainnet, transitively, and
+# runs the Flow CLI's Cadence checker on the exact texts the wallets sign. It is red
+# when the texts no longer type-check — AND when its three planted defects are not
+# caught, so a broken checker cannot pass silently.
+#
+# Weekly (contract upgrades are rare and the check takes ~1 min), on any push that
+# touches the swap texts or this check, and on demand.
+#
+# ⚠ The CLI is pinned by version AND sha256: v2.19.0 (checked 2026-11-02). v2.12.0's
+# checker is older than mainnet's TopShot and reports a false error inside the
+# deployed contract itself — do not downgrade.
+
+on:
+  schedule:
+    # Mondays 17:41 UTC — off the hour, clear of the other scheduled jobs.
+    - cron: "41 17 * * 1"
+  push:
+    branches: [main]
+    paths:
+      - "lib/swap-test/swap-cadence.ts"
+      - "lib/trade-room/multi-swap-cadence.ts"
+      - "scripts/cadence/lint-trade-swaps.ts"
+      - ".github/workflows/cadence-swap-lint.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-swaps:
+    name: Type-check the swap transactions against mainnet's deployed contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      FLOW_CLI_VERSION: v2.19.0
+      FLOW_CLI_SHA256: 6d9cf90011b91cceaa193b7e864be991f343066babd3c4c5f67c4fa0f7813d88
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - name: Install the Flow CLI (pinned version + checksum)
+        run: |
+          set -euo pipefail
+          url="https://github.com/onflow/flow-cli/releases/download/${FLOW_CLI_VERSION}/flow-cli-${FLOW_CLI_VERSION}-linux-amd64.tar.gz"
+          curl -fsSL -o flow.tgz "$url"
+          echo "${FLOW_CLI_SHA256}  flow.tgz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/flow"
+          tar xzf flow.tgz -C "$RUNNER_TEMP/flow"
+          echo "FLOW_CLI=$RUNNER_TEMP/flow/flow-cli" >> "$GITHUB_ENV"
+      - name: Lint the swap transactions
+        run: |
+          set -euo pipefail
+          npm run -s cadence:lint-swaps | tee lint.out
+          {
+            echo "### Trade swap transactions vs deployed contracts"
+            echo '```'
+            cat lint.out
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

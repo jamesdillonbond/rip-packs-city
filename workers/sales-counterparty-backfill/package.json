@@ -1,0 +1,20 @@
+{
+  "name": "sales-counterparty-backfill",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloudflare Worker — recovers buyer/seller on historical public.sales rows by decoding each row's own Flow transaction. 79% of NBA Top Shot sales were imported without wallet addresses, which made every wallet-scoped 'sold' view a severe undercount. Fill-only, idempotent, newest-first, self-scheduled via Cron Triggers.",
+  "main": "index.ts",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240605.0",
+    "typescript": "^5.6.0",
+    "wrangler": "^3.78.0"
+  }
+}

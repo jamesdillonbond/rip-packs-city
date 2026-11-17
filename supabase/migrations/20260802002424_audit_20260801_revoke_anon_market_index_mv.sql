@@ -1,0 +1,17 @@
+-- Materializing topshot_market_index_daily earlier today (to fix the /insights/market
+-- 500) created a SECOND anon-reachable path to the same data: PostgREST exposes
+-- `mv_topshot_market_index_daily` directly at /rest/v1/ once it carries an anon grant.
+--
+-- Verified both real consumers use the SERVICE-ROLE client, so neither needs it:
+--   app/insights/market/page.tsx:14,31        -> import { supabaseAdmin }
+--   app/api/public/insights/market/route.ts:38 -> import { supabaseAdmin as supabase }
+-- (Note the second one is named `supabase` — the documented trap where an identifier
+-- called `supabase` is actually the service-role client. Resolve the BINDING.)
+--
+-- The data itself is benign public aggregate, so this is surface reduction rather
+-- than leak closure. Deliberately NARROW: the parent VIEW's grants are left exactly
+-- as they were, so no pre-existing behaviour changes — this only removes the new
+-- second door. MVs also bypass RLS by nature, which is the stronger reason not to
+-- leave one anon-granted by accident.
+REVOKE SELECT ON public.mv_topshot_market_index_daily FROM anon, authenticated;
+-- Revert: GRANT SELECT ON public.mv_topshot_market_index_daily TO anon, authenticated;

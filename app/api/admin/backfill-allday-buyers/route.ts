@@ -1,0 +1,466 @@
+import { NextRequest, NextResponse, after } from "next/server"
+import { tokenMatches } from "@/lib/auth/bearer-secret"
+import { supabaseAdmin } from "@/lib/supabase"
+import { decodeV1SaleTx } from "@/lib/chains/flow/dapper-v1-tx-decode"
+import { normalizeFlowEventAddress } from "@/lib/address"
+import { CURRENT_SPORK_START_ISO, buyerBackfillVerdict, cursorOrFilter, cursorRowBelow } from "@/lib/pipeline/buyer-backfill-window"
+
+// POST /api/admin/backfill-allday-buyers — Authorization: Bearer $INGEST_SECRET_TOKEN
+//   (or Bearer $CRON_SECRET for the Vercel cron, or ?token=$INGEST_SECRET_TOKEN)
+//
+// BUILD 1 (greenlit 2026-07-02, docs/handoff-2026-07-02-BUILD-greenlit.md).
+// AllDay historical sales were indexed with an unresolved buyer for a large slice
+// of history — either NULL, or the Flowty-router escrow 0x3cdbb3d569211ff3 (the V2
+// Flowty-fork fee router, never the real buyer). This route drains that backlog:
+// for each unresolved-buyer AllDay sale it fetches the on-chain transaction once
+// and recovers the real buyer + seller, the same decode the forward
+// allday-sales-indexer runs (AllDay.Deposit.to = the moment's recipient = the
+// buyer; A.e4cf4bdc1751c65d).
+//
+// Primary: decodeV1SaleTx pulls AllDay.Deposit.to matching the sale's nft_id.
+// Fallback (V2 Flowty-fork envelopes where Deposit.to is the escrow): the tx's
+// proposer/authorizers/payer minus the known intermediaries — used ONLY when it
+// resolves to exactly one candidate (never guessed).
+//
+// Resumable + idempotent: walks sold_at DESCENDING via a cursor in
+// pipeline_runs.extra->>cursor_sold_at (recent + high-value first, then walks
+// back on wrap). Every UPDATE is gated on the buyer still being unresolved, so
+// re-runs are safe. Old-spork txs (pre current-spork) return no events and stay
+// unresolved — retried on the next top-down pass. Fully reversible: each write's
+// before-state is captured in audit_20260706_allday_buyer_backfill.
+//
+// ?collection=golazos parameterizes the same decode for the Golazos "— —" buyer
+// tail (contract 0x87ca73a41bb50ad5); default is AllDay.
+//
+// CUSTODIAL-HELD ROWS, the persistence half (2026-10-22 ~9 PM PT, Cowork cloud;
+// the counting half landed in cd292b289 the same evening). A sale whose
+// `AllDay.Deposit.to` is the constant Dapper custodian 0xddfbe848a81b2236 has no
+// person to name: the decoder withholds the buyer on purpose (register #83) and
+// the tx's signers are the AllDay contract, the DUC co-signer and the custodian
+// itself. Measured 10-22 against the chain: 1,336 such rows sat in the forward
+// window (May–June 2026, all `onchain_dapper_v1`), and 7 of 8 sampled nfts were
+// STILL in the custodian's collection (17,233 All Day NFTs) four months on — the
+// "re-forwards later" story does not describe them, and nothing this lane can
+// read names the buyer. Counting them honestly (cd292b289) stopped the red runs;
+// it did not stop every cursor wrap re-fetching ~1,300 txs and spending 3 runs
+// in 8 before reaching a genuinely new row. Now the decode's own facts are
+// written once — `proposer_address` / `payer_address` from the tx, the columns
+// the Top Shot lane fills the same way — and the candidate select excludes rows
+// this lane has already stamped (`proposer_address IS NULL` is the candidate
+// test). `buyer_address` stays NULL: writing the custodian there is the lie #83
+// undid. A future custodian-forward lane can re-key these rows (stamped proposer
+// + NULL buyer) by nft_id.
+// ⚠ 10-22 ~11:20 PM PT, first run's outcome table: the exclusion was first keyed
+// on "proposer IS a custodial target", and 154 of the 480 rows it stamped were
+// proposed by the DUC co-signer 0xead892083b3e2c6c, not the custodian — a third
+// of the churn would have come back every wrap. This lane is the ONLY writer of
+// `proposer_address` on All Day / Golazos rows (measured: 480 of 480 stamped rows
+// are its own), so a stamped row IS a recorded one, whichever signer proposed.
+
+const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
+const CRON = process.env.CRON_SECRET ?? ""
+
+export const dynamic = "force-dynamic"
+// 800 = the Pro Lambda HARD cap (over 800 silently ERRORs the deploy). BATCH +
+// MAX_RUN_MS bound the actual runtime well under it; this is insurance only.
+export const maxDuration = 800
+
+// 480 (was 120, 2026-10-10). Sized from the backlog, not the runtime: 82,984 All Day null-buyer
+// rows sat below the cursor, and at 120 rows × 8 runs/day (vercel.json `15 */3`) that drain was
+// ~86 days, while each run used ~29 s of its budget (~0.25 s/row, every row resolving via
+// Deposit.to). 480 ≈ 2 min a run, ~3,840 rows/day, ~22 days; MAX_RUN_MS still bounds a run
+// if per-row latency drifts, and the cursor only advances past rows actually processed.
+const BATCH = 480
+// Forward lane owns current-spork rows only (mainnet28, from its root block
+// 2025-12-29T03:11:27Z — the spork rest-mainnet.onflow.org serves, 2026-10-23):
+// pre-spork rows can't be decoded via current-spork REST and just churn the
+// cursor at rows_written=0 (#192 — the old "2025-01-01" floor did exactly that).
+// Bounding the select also lets the planner partition-prune.
+const FORWARD_WINDOW_START = CURRENT_SPORK_START_ISO
+const TX_DECODE_DELAY_MS = 40
+// Wall-clock self-bound: stop enqueuing new decodes past this so a batch/latency
+// drift can never approach the Lambda cap (a run past the cap dies BEFORE the
+// finally block writes its pipeline_runs row — the invisible-failure class). The
+// cursor advances only to the oldest row actually processed, so bailing skips
+// nothing.
+const MAX_RUN_MS = 600_000
+
+const FLOW_REST = "https://rest-mainnet.onflow.org"
+
+// Addresses that appear in an AllDay/Golazos purchase envelope but are never the
+// real buyer (Flowty escrow/fee, Dapper DUC co-signer, the Dapper trade contract,
+// the storefront escrow). Compared case-insensitively as 0x + bare hex.
+const EXCLUDED_ADDRESSES = new Set<string>([
+  "0x3cdbb3d569211ff3", // Flowty storefront escrow / fee router
+  "0x18eb4ee6b3c026d2", // storefront escrow / Flowty fee payer
+  "0xead892083b3e2c6c", // Dapper DUC co-signer
+  "0xedf9df96c92f4595", // AllDay/Golazos/UFC Dapper trade contract
+])
+
+interface CollectionConfig {
+  slug: string
+  collectionId: string
+  collectionLong: string
+  depositEvent: string
+  withdrawEvent: string
+  pipeline: string
+}
+
+const COLLECTIONS: Record<string, CollectionConfig> = {
+  allday: {
+    slug: "nfl-all-day",
+    collectionId: "dee28451-5d62-409e-a1ad-a83f763ac070",
+    collectionLong: "nfl_all_day",
+    depositEvent: "A.e4cf4bdc1751c65d.AllDay.Deposit",
+    withdrawEvent: "A.e4cf4bdc1751c65d.AllDay.Withdraw",
+    pipeline: "allday-buyer-backfill",
+  },
+  golazos: {
+    slug: "laliga-golazos",
+    collectionId: "06248cc4-b85f-47cd-af67-1855d14acd75",
+    collectionLong: "laliga_golazos",
+    depositEvent: "A.87ca73a41bb50ad5.Golazos.Deposit",
+    withdrawEvent: "A.87ca73a41bb50ad5.Golazos.Withdraw",
+    pipeline: "golazos-buyer-backfill",
+  },
+}
+
+function delay(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms))
+}
+
+// Tx proposer/authorizers/payer and decoded event addresses: the indexers'
+// canonical form (left-padded to 16 hex), from the one copy in lib/address.ts.
+// 2026-10-16: replaces a local fold-and-prefix that did not pad, so an event
+// address that dropped its leading zeros was written short.
+const normalizeAddress = normalizeFlowEventAddress
+
+interface TxSigners {
+  /** The tx was fetched and parsed; false ⇒ the fields below are unknown, not empty. */
+  ok: boolean
+  proposer: string | null
+  payer: string | null
+  /** proposer/authorizers/payer minus the known intermediaries (the V2 fallback's candidates). */
+  candidates: string[]
+}
+
+const NO_SIGNERS: TxSigners = { ok: false, proposer: null, payer: null, candidates: [] }
+
+// V2 Flowty-fork fallback: the tx's proposer/authorizers/payer minus the known
+// intermediaries. Only unambiguous (exactly-one-candidate) results are used as
+// the buyer; the raw proposer/payer are kept so a custodial-held row can record
+// the tx's signers (see the header).
+async function fetchTxSigners(txHash: string): Promise<TxSigners> {
+  const clean = txHash.replace(/^0x/, "")
+  const res = await fetch(`${FLOW_REST}/v1/transactions/${clean}`, {
+    signal: AbortSignal.timeout(8000),
+  })
+  if (!res.ok) return NO_SIGNERS
+  const j = (await res.json()) as {
+    proposal_key?: { address?: string }
+    authorizers?: string[]
+    payer?: string
+  }
+  const proposer = j.proposal_key?.address ? normalizeAddress(j.proposal_key.address) : null
+  const payer = j.payer ? normalizeAddress(j.payer) : null
+  const candidates = new Set<string>()
+  if (proposer) candidates.add(proposer)
+  for (const a of j.authorizers ?? []) candidates.add(normalizeAddress(a))
+  if (payer) candidates.add(payer)
+  return {
+    ok: true,
+    proposer,
+    payer,
+    candidates: Array.from(candidates).filter((a) => !EXCLUDED_ADDRESSES.has(a)),
+  }
+}
+
+interface UnresolvedRow {
+  id: string
+  nft_id: string
+  transaction_hash: string
+  sold_at: string
+  buyer_address: string | null
+  seller_address: string | null
+}
+
+async function handle(req: NextRequest) {
+  const auth = req.headers.get("authorization") ?? ""
+  const bearer = auth.replace(/^Bearer\s+/i, "")
+  const urlToken = req.nextUrl.searchParams.get("token") ?? ""
+  // Constant-time, fail-closed (lib/auth/bearer-secret.ts; review S4 2026-10-11).
+  const okAuth =
+    (TOKEN && (tokenMatches(bearer, "INGEST_SECRET_TOKEN") || tokenMatches(urlToken, "INGEST_SECRET_TOKEN"))) ||
+    (CRON && tokenMatches(bearer, "CRON_SECRET"))
+  if (!okAuth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+
+  const cfgKey = (req.nextUrl.searchParams.get("collection") ?? "allday").toLowerCase()
+  const cfg = COLLECTIONS[cfgKey]
+  if (!cfg) {
+    return NextResponse.json(
+      { error: `unknown collection '${cfgKey}' (expected: ${Object.keys(COLLECTIONS).join(", ")})` },
+      { status: 400 },
+    )
+  }
+
+  const startedAtIso = new Date().toISOString()
+  const startedAt = Date.now()
+
+  // Re-resolve predicate: buyer is NULL or one of the never-a-real-buyer intermediaries.
+  const orFilter =
+    "buyer_address.is.null," + Array.from(EXCLUDED_ADDRESSES).map((a) => `buyer_address.eq.${a}`).join(",")
+
+  after(async () => {
+    let cursorBefore: string | null = null
+    let cursorBeforeId: string | null = null
+    let cursorAfter: string | null = null
+    let cursorAfterId: string | null = null
+    let found = 0
+    let buyersResolved = 0
+    let sellersFilled = 0
+    let viaDeposit = 0
+    let viaAuthorizers = 0
+    let decodeFailed = 0
+    // Decoded, but the deposit went to the Dapper custodian: no buyer is knowable from this tx.
+    let custodial = 0
+    // Custodial rows whose tx signers were written (proposer/payer), so the next cycle skips them.
+    let custodialRecorded = 0
+    let updateFailed = 0
+    let bailedEarly = false
+    let ok = true
+    let errMsg: string | null = null
+
+    try {
+      const { data: lastRun, error: lastRunErr } = await (supabaseAdmin as any)
+        .from("pipeline_runs")
+        .select("extra")
+        .eq("pipeline", cfg.pipeline)
+        .order("started_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      cursorBefore =
+        (lastRun?.extra && typeof lastRun.extra.cursor_sold_at === "string"
+          ? lastRun.extra.cursor_sold_at
+          : null) ?? null
+      // The id half of the cursor (2026-10-23): absent on a run logged before it.
+      cursorBeforeId =
+        (cursorBefore && lastRun?.extra && typeof lastRun.extra.cursor_id === "string"
+          ? lastRun.extra.cursor_id
+          : null) ?? null
+      // 2026-10-27: a failed cursor read fails the run (it used to restart from the top as if it had wrapped),
+      // and a run that fails before its walk ends logs the cursor it READ — never a wrap it did not make.
+      if (lastRunErr) {
+        ok = false
+        errMsg = `cursor read failed: ${lastRunErr.message}`
+        return
+      }
+      cursorAfter = cursorBefore
+      cursorAfterId = cursorBeforeId
+
+      let q = (supabaseAdmin as any)
+        .from("sales")
+        .select("id, nft_id, transaction_hash, sold_at, buyer_address, seller_address")
+        .eq("collection", cfg.collectionLong)
+        .or(orFilter)
+        .not("transaction_hash", "is", null)
+        .gte("sold_at", FORWARD_WINDOW_START)
+        // Candidate predicate, second half (ANDed with the .or above): unresolved
+        // buyer AND not already stamped as custodial-held by this lane. Keyed on
+        // the stamp itself, not on WHICH custodial signer proposed (header).
+        .is("proposer_address", null)
+        // (sold_at, id) is the walk order AND the cursor: sold_at alone is not
+        // unique, and a batch ending inside a shared timestamp skipped the rest
+        // of that timestamp (9 rows measured 2026-10-23). A third .or() ANDs.
+        .order("sold_at", { ascending: false })
+        .order("id", { ascending: false })
+        .limit(BATCH)
+      if (cursorBefore) q = q.or(cursorOrFilter({ soldAt: cursorBefore, id: cursorBeforeId }))
+
+      const { data, error } = await q
+      if (error) {
+        ok = false
+        errMsg = error.message
+        console.log(`[backfill-allday-buyers:${cfgKey}] select err: ${error.message}`)
+        return
+      }
+      const rows = (data ?? []) as UnresolvedRow[]
+      found = rows.length
+
+      const auditRows: any[] = []
+      // The smallest (sold_at, id) PROCESSED — the next run resumes strictly below it.
+      let minRow: { sold_at: string; id: string } | null = null
+
+      for (const row of rows) {
+        if (Date.now() - startedAt > MAX_RUN_MS) { bailedEarly = true; break }
+        if (minRow === null || cursorRowBelow(row, minRow)) minRow = { sold_at: row.sold_at, id: row.id }
+
+        try {
+          // Primary: AllDay/Golazos.Deposit.to matching this nft_id.
+          const dec = await decodeV1SaleTx(String(row.transaction_hash), {
+            depositEventType: cfg.depositEvent,
+            withdrawEventType: cfg.withdrawEvent,
+            nftId: String(row.nft_id),
+          })
+
+          let buyer: string | null = null
+          let method = ""
+          if (dec.buyer) {
+            const b = normalizeAddress(dec.buyer)
+            if (!EXCLUDED_ADDRESSES.has(b)) { buyer = b; method = "deposit_to" }
+          }
+          // Fallback: V2 Flowty-fork — tx authorizers, only if unambiguous.
+          let signers: TxSigners = NO_SIGNERS
+          if (!buyer) {
+            signers = await fetchTxSigners(String(row.transaction_hash))
+            if (signers.candidates.length === 1) { buyer = signers.candidates[0]; method = "tx_authorizers" }
+          }
+          // Custodial-held and the tx WAS read: record its signers once. A fetch
+          // failure records nothing (the row is retried), never a guessed value.
+          const recordSigners =
+            !buyer && dec.custodialDeposit === true && signers.ok && signers.proposer !== null
+          const signerPatch: Record<string, unknown> = {}
+          if (recordSigners) {
+            signerPatch.proposer_address = signers.proposer
+            if (signers.payer) signerPatch.payer_address = signers.payer
+          }
+
+          const seller =
+            !row.seller_address && dec.seller && !EXCLUDED_ADDRESSES.has(normalizeAddress(dec.seller))
+              ? normalizeAddress(dec.seller)
+              : null
+
+          if (!buyer && !seller) {
+            if (dec.custodialDeposit) custodial++
+            else decodeFailed++
+            if (recordSigners) {
+              const { error: sErr } = await (supabaseAdmin as any)
+                .from("sales")
+                .update(signerPatch)
+                .eq("id", row.id)
+                .or(orFilter)
+              if (sErr) {
+                updateFailed++
+                console.log(`[backfill-allday-buyers:${cfgKey}] signers update err id=${row.id}: ${sErr.message}`)
+              } else {
+                custodialRecorded++
+              }
+            }
+          } else {
+            const patch: Record<string, unknown> = { ...signerPatch }
+            if (buyer) patch.buyer_address = buyer
+            if (seller) patch.seller_address = seller
+            const { error: upErr } = await (supabaseAdmin as any)
+              .from("sales")
+              .update(patch)
+              .eq("id", row.id)
+              .or(orFilter)
+            if (upErr) {
+              updateFailed++
+              console.log(`[backfill-allday-buyers:${cfgKey}] update err id=${row.id}: ${upErr.message}`)
+            } else {
+              if (buyer) {
+                buyersResolved++
+                if (method === "deposit_to") viaDeposit++
+                else viaAuthorizers++
+                auditRows.push({
+                  sale_id: row.id,
+                  collection_slug: cfg.slug,
+                  nft_id: String(row.nft_id),
+                  transaction_hash: String(row.transaction_hash),
+                  old_buyer_address: row.buyer_address,
+                  new_buyer_address: buyer,
+                  method,
+                })
+              }
+              if (seller) sellersFilled++
+              if (recordSigners) { custodial++; custodialRecorded++ }
+            }
+          }
+        } catch (err) {
+          decodeFailed++
+          console.log(
+            `[backfill-allday-buyers:${cfgKey}] decode err tx=${row.transaction_hash}: ${err instanceof Error ? err.message : String(err)}`,
+          )
+        }
+        await delay(TX_DECODE_DELAY_MS)
+      }
+
+      if (auditRows.length > 0) {
+        const { error: aErr } = await (supabaseAdmin as any)
+          .from("audit_20260706_allday_buyer_backfill")
+          .upsert(auditRows, { onConflict: "sale_id", ignoreDuplicates: true })
+        if (aErr) console.log(`[backfill-allday-buyers:${cfgKey}] audit insert err: ${aErr.message}`)
+      }
+
+      // Short batch ⇒ bottom of the unresolved set for this pass; wrap the cursor
+      // so the next run starts a fresh top-down sweep (retries old-spork misses).
+      cursorAfter = rows.length < BATCH ? null : (minRow?.sold_at ?? null)
+      cursorAfterId = cursorAfter === null ? null : (minRow?.id ?? null)
+      const verdict = buyerBackfillVerdict({ found, decodeFailed, updateFailed, custodial })
+      if (!verdict.ok) {
+        ok = false
+        errMsg = verdict.error
+      }
+    } catch (err) {
+      ok = false
+      errMsg = err instanceof Error ? err.message : String(err)
+      console.log(`[backfill-allday-buyers:${cfgKey}] fatal: ${errMsg}`)
+    } finally {
+      try {
+        // write-discarded: run telemetry; a failed log row cannot change what the run did, and shows up as a missing run.
+        await (supabaseAdmin as any).from("pipeline_runs").insert({
+          pipeline: cfg.pipeline,
+          collection_slug: cfg.slug,
+          started_at: startedAtIso,
+          finished_at: new Date().toISOString(),
+          rows_found: found,
+          rows_written: buyersResolved,
+          rows_skipped: decodeFailed + custodial,
+          ok,
+          error: errMsg ? errMsg.slice(0, 500) : null,
+          extra: {
+            cursor_sold_at: cursorAfter,
+            // the id half of the cursor (2026-10-23): with cursor_sold_at, the exact row to resume below
+            cursor_id: cursorAfterId,
+            cursor_before: cursorBefore,
+            buyers_resolved: buyersResolved,
+            sellers_filled: sellersFilled,
+            via_deposit_to: viaDeposit,
+            via_tx_authorizers: viaAuthorizers,
+            decode_failed: decodeFailed,
+            custodial_deposit: custodial,
+            // of those, rows whose proposer/payer were written (the next cycle skips them)
+            custodial_recorded: custodialRecorded,
+            update_failed: updateFailed,
+            wrapped: ok && cursorAfter === null,
+            bailed_early: bailedEarly,
+            duration_ms: Date.now() - startedAt,
+          },
+        })
+      } catch (logErr) {
+        console.log(
+          `[backfill-allday-buyers:${cfgKey}] pipeline_runs insert threw: ${logErr instanceof Error ? logErr.message : String(logErr)}`,
+        )
+      }
+      console.log(
+        `[backfill-allday-buyers:${cfgKey}] done found=${found} buyers=${buyersResolved} (deposit=${viaDeposit} authz=${viaAuthorizers}) sellers=${sellersFilled} failed=${decodeFailed} custodial=${custodial}/${custodialRecorded} cursorAfter=${cursorAfter}`,
+      )
+    }
+  })
+
+  return NextResponse.json({
+    ok: true,
+    queued: true,
+    collection: cfgKey,
+    note: `${cfg.pipeline} queued; progress in pipeline_runs (${cfg.pipeline}).`,
+  })
+}
+
+// Vercel cron fires a GET with Bearer $CRON_SECRET; admin/cron-job.org can POST
+// with Bearer $INGEST_SECRET_TOKEN. Both routes share the same handler.
+export async function GET(req: NextRequest) {
+  return handle(req)
+}
+export async function POST(req: NextRequest) {
+  return handle(req)
+}

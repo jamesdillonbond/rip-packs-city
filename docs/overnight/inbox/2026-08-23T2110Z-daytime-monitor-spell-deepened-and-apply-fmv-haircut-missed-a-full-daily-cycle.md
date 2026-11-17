@@ -1,0 +1,26 @@
+# Daytime monitor — 2026-08-23 ~21:10Z (14:10 PT) — the saturation spell has DEEPENED since 18:10Z, and `apply-fmv-haircut` has now missed a full daily cycle
+
+**Run posture: saturation spell ACTIVE — SYMPTOMS only, no causal claims (SKILL §1c).** Positive control taken first: `pg_stat_activity` = **io_wait 34 / active 32 / total 43** — a large majority of active sessions in IO wait, and `rpc_ops_snapshot()` **timed out** (`57014 canceling statement due to statement timeout` on statement 1), itself the spell signal. This is a continuation of, and materially worse than, the spell in [the 18:12Z monitor filing](2026-08-23T1812Z-daytime-monitor-saturation-spell-symptoms.md) (`io_wait 12 / active 11 / total 46`), and is now in the severe band alongside the 08-22 first-tick spell (31/43). Nothing below is a cause or a cost figure — each is a symptom to re-measure in a quiet window before any action.
+
+**inbox written to mount, push unavailable** (`remote.origin.pushurl` empty — NO-PUSH sandbox, matching the lock's 08:15Z note). No git run against the mounted `.git`.
+
+## What is clean (not everything is a symptom)
+- **Security 2/2 clean**: `pg_tables rowsecurity=false` → `[]`; anon/authenticated write-grant-on-RLS-off check → `[]`.
+- **Vercel: 0 deploys in ERROR** in the last 20. The long CANCELED tail is docs-only commits superseded by rapid successive pushes (Trevor + prior sessions have been shipping migration-parity / db-pin / honesty-layer work all afternoon); the latest completed code builds are READY (`df06dfaa` db-pins, `a817b89c`, `9772...` etc.).
+- Lock is RELEASED (nightly finished 08:15Z), so the inbox write was permitted this run.
+
+## Symptoms observed (re-measure in a quiet window before acting)
+
+1. **The spell itself has deepened.** io_wait 34/43 at 21:10Z vs 12/46 at 18:10Z. Per focus.md item 3 this whole class (fmv-recalc kills, board-warm failures, pg_cron statement-timeouts, `get_collection_stats` timeout) is ONE root cause — disk-IO budget on the SMALL instance — and is NOT a new investigation. Recorded only as an escalation datapoint for the night pass; the standing R46 working-set brief ([2026-08-23T1610Z](2026-08-23T1610Z-R46-is-a-working-set-problem-not-an-IOPS-one-and-the-first-lever-may-be-free.md)) already owns the fix decision.
+
+2. **`apply-fmv-haircut` has now missed a FULL daily cycle — a state change worth a look.** `detect_stalled_pipelines()`: silent **2318 min (~38.6h)**, threshold 1800, last good run **2026-08-22 06:30Z**, so the daily **2026-08-23 06:30Z** run did not land. The daily 06:30 tick falls inside the 05–08:30Z saturation window, and the ledger's prior read of this pipeline is "one-off transient (upstream/gateway ~120s cap), a missed daily haircut re-applies next day." This is consistent with saturation collateral rather than a code fault — but it has now crossed from "one transient miss" to "missed a whole cycle," so if the **2026-08-24 06:30Z** tick also fails to advance, it stops being self-healing. **Suggested action (night pass / quiet window):** confirm whether the 08-23 06:30 run failed on gateway/statement timeout (saturation) vs a logic error, and check the freshest `algo_version '..._haircut'` stamp to see if the haircut is materially stale on any live price. Medium; do not raise a timeout (focus.md item 3).
+
+3. **`compute-golazos-pack-ev`** — `detect_stalled_pipelines()`: silent **1230 min** vs threshold 800, medium. No prior same-day filing. Last run 2026-08-23 00:38Z. Likely the same saturation-collateral class (pack-EV recompute is disk-IO heavy), but flagged for a quiet-window re-measure since I can't distinguish "band-killed" from "stopped firing" during the spell. `topshot-active-listings-ingest` also silent (2121 min) but that arm is max-governed / visibility-only / known dropout-prone — NOT a finding.
+
+4. **pg_cron failure cluster is saturation collateral, NOT N distinct bugs (SKILL §1c + focus.md item 3).** `check_pgcron_recent_failures()` returned 11 jobs, and **every one** is `canceling statement due to statement timeout` or `job startup timeout` (allday MV refreshes ×3, `public-board-liveness-sweep`, `ccm-step2`, `thin-sale-ask-disclosure-refresh`, `serial-fmv-jersey-weekly`, `challenge-costs`, `attribute-pack-rips-empirical`, `candy-wmc-ghost-purge`, `pinnacle-bridge-selfheal`) — no logic errors. The `job startup timeout` pair matches the named `max_worker_processes=6` vs `cron.max_running_jobs=32` cause already in focus.md (08-22 steer). Recorded as one symptom of the active spell; filed as such, not as 11 findings.
+
+## Not re-run this spell (would add IO to what it measures, SKILL §1c)
+Artifact payload queries, `v_rpc_trust_health` first-tick view (not a first-tick run anyway — this is a ~14:10 PT tick), and any duration/buffer probe. These re-run on a later, quieter tick. Demand gate (users/WAU) not re-captured this run — the DB was too saturated for the reads; last confirmed remains 20–21 users / 0 WAU.
+
+## De-dup note for the night pass
+This run surfaced nothing NEW beyond the two state-changes in §2 and §3 and the spell escalation in §1. The already-filed same-day items it re-touched — Sentry-dark, fmv-recalc page-0, the 16 fileless migrations, the PG-17 partial-index trap, the board-liveness sentinel — are all present in the inbox and were deliberately not re-filed.

@@ -1,0 +1,33 @@
+name: Wallet Walk (one wallet)
+# Operator lever (2026-11-08, Dame Time): walk ONE Top Shot wallet now instead of
+# waiting for the 6 h sweep. The route continues its own walk when a whale wallet
+# is cut at the soft deadline (MAX_CONTINUATIONS), so one dispatch finishes it.
+on:
+  workflow_dispatch:
+    inputs:
+      wallet:
+        description: "Flow address (0x + 16 hex)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  walk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch /api/wallet-backfill
+        env:
+          WALLET: ${{ inputs.wallet }}
+          TOKEN: ${{ secrets.INGEST_SECRET_TOKEN }}
+        run: |
+          if ! [[ "$WALLET" =~ ^0x[0-9a-fA-F]{16}$ ]]; then
+            echo "::error::not a Flow address"; exit 1
+          fi
+          STATUS=$(curl -s --max-time 30 -o /tmp/walk.json -w "%{http_code}" \
+            -X POST -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
+            -d "{\"wallet\":\"$WALLET\",\"skip_cached\":true}" \
+            "https://www.rippackscity.com/api/wallet-backfill") || STATUS="curl_failed"
+          echo "status: $STATUS"; cat /tmp/walk.json || true
+          if [ "$STATUS" != "202" ]; then echo "::error::wallet-backfill returned $STATUS"; exit 1; fi

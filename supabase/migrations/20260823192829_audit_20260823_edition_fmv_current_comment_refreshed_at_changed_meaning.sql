@@ -1,0 +1,28 @@
+-- Documentation only. The incremental rewrite changed what `refreshed_at` MEANS
+-- and the original COMMENT still describes the full-rebuild semantics.
+--
+-- When every run rewrote every row, `refreshed_at` was "when the table was last
+-- refreshed" and `max(age(now(), refreshed_at))` was a valid staleness read.
+-- After audit_20260823_edition_fmv_current_incremental_by_watermark a run only
+-- touches CHANGED editions, so:
+--   * `refreshed_at` now means "when THIS ROW last changed", not "when the table
+--     was last refreshed";
+--   * measured just now: newest 19:06:58Z, oldest **17:54:16Z** (the cold-start
+--     rebuild), 865 of 27,075 rows touched in the last hour. So
+--     `max(age(...))` reads **1 h 33 m stale** on a table refreshed 20 minutes
+--     ago. That number is correct and means nothing.
+--
+-- ⚠ This is the `saved_wallets.cache_updated_at` trap verbatim: a skip changed a
+-- timestamp's meaning from "last checked" to "last changed", and the recorded
+-- rule there is **do not later add a staleness monitor on it — it would fire on
+-- healthy skips.** Same applies here. The freshness signal for this table is the
+-- `pipeline_runs('series-detail-rollup')` row, which already has a
+-- pipeline_cadence_watchlist arm at 180 min.
+--
+-- ⓘ `max(refreshed_at)` is *usually* a valid "did the job run" read, because
+-- every run touches something — but an hour in which no FMV changed would leave
+-- it looking stale while the job ran fine. Do not build on it.
+--
+-- REVERT: restore the previous COMMENT (no behavioural change either way).
+COMMENT ON TABLE public.edition_fmv_current IS
+  'Latest fmv_snapshots row per edition, refreshed by refresh_edition_fmv_current() at the TOP of refresh_series_detail_rollup() (cron jobid 357, hourly, cron_heavy). For ORDERING and bulk aggregation only - NEVER as the displayed price; readers take the ordering from here and re-read live values for the rows that survive their LIMIT. A missing row means "not yet refreshed", so callers must fall back to a live read rather than treat it as "no FMV" (get_series_editions / get_series_rollups both carry an EXISTS guard for this). ⚠ refreshed_at means "when THIS ROW last changed", NOT "when the table was refreshed" - the refresh is incremental off a watermark minus a 2h safety lag, so most rows keep an old stamp and max(age(refreshed_at)) is meaningless as a staleness metric. Freshness lives in pipeline_runs(''series-detail-rollup''), which has a 180-minute cadence watchlist arm.';

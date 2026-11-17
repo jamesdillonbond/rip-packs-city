@@ -1,0 +1,87 @@
+// components/entity/TeamSqueeze.tsx
+// Team Hub Phase 3 (C8). Server component. Ranked squeeze table (effective-supply
+// lock+burn) for the team, from get_team_squeeze via /api/entity/team-squeeze.
+// Top Shot and NFL All Day (All Day arm 2026-10-26: badge_editions locked/burned,
+// verified floor as the ask; the RPC returns [] elsewhere). The team page only
+// renders the section when rows are non-empty, so it self-hides for other collections.
+
+import Link from "next/link"
+import { EM_DASH, fmtUsd, fmtCount, TierBadge, tileSubject } from "./_shared"
+import { editionRouteHref } from "@/lib/entity-href"
+
+export interface SqueezeRow {
+  route_slug: string
+  player_name: string | null
+  set_name: string | null
+  // Team-moment display: team moments (player_name null) read "{team} {play}".
+  team_name?: string | null
+  play_type?: string | null
+  tier: string | null
+  squeeze_pct: number | null
+  lock_pct: number | null
+  burn_pct: number | null
+  effectively_buyable: number | null
+  circulation: number | null
+  low_ask: number | null
+  fmv_usd: number | null
+  thumbnail_url: string | null
+}
+
+function pct(n: number | null | undefined): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return EM_DASH
+  return `${n.toFixed(0)}%`
+}
+
+export default function TeamSqueeze({ collectionUrlSlug, rows }: { collectionUrlSlug: string; rows: SqueezeRow[] }) {
+  if (!rows || rows.length === 0) return null
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", marginBottom: 8 }}>
+        Ranked by effective-supply squeeze (locked + burned). Fewer buyable copies = tighter supply.
+      </div>
+      {/* 2026-10-24 (feedback 11373): the % and the "N / M" had no explanation on
+          the page — a reader had to ask the concierge. One line, always visible. */}
+      <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", marginBottom: 8, lineHeight: 1.5 }}>
+        <strong style={{ color: "var(--rpc-text-secondary)" }}>Squeeze %</strong> = (locked + burned) ÷ minted. <strong style={{ color: "var(--rpc-text-secondary)" }}>N / M</strong> = copies that can still be bought / copies minted. A supply fact, not a price.
+      </div>
+      {rows.map((r, i) => (
+        <Link
+          key={`${r.route_slug}-${i}`}
+          href={editionRouteHref(collectionUrlSlug, r.route_slug)}
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(0,1fr) auto auto auto",
+            gap: 10,
+            alignItems: "center",
+            padding: "9px 0",
+            borderBottom: "1px solid var(--rpc-border-subtle)",
+            textDecoration: "none",
+            color: "inherit",
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {tileSubject({ player_name: r.player_name, team_name: r.team_name, play_type: r.play_type, name: r.set_name })}
+            </div>
+            <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {r.set_name ?? EM_DASH}
+            </div>
+          </div>
+          <TierBadge tier={r.tier} />
+          <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+            <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 15, color: "var(--rpc-red-text)" }}>{pct(r.squeeze_pct)}</div>
+            <div className="rpc-mono" title="Share of minted supply that is locked or burned, so cannot be bought" style={{ fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.10em" }}>SQUEEZE</div>
+          </div>
+          <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+            <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-secondary)" }}>
+              {r.effectively_buyable != null ? fmtCount(r.effectively_buyable) : EM_DASH}<span style={{ color: "var(--rpc-text-muted)" }}> / {r.circulation != null ? fmtCount(r.circulation) : EM_DASH}</span>
+            </div>
+            <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>
+              ask {r.low_ask != null && r.low_ask > 0 ? fmtUsd(r.low_ask) : EM_DASH}
+            </div>
+          </div>
+        </Link>
+      ))}
+    </div>
+  )
+}

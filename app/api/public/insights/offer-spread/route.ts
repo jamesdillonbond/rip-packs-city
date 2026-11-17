@@ -1,0 +1,114 @@
+// app/api/public/insights/offer-spread/route.ts
+//
+// PUBLIC INSIGHTS — Top Shot Bid vs Floor (offer/ask spread board).
+//
+// Read-only JSON endpoint backing the /insights/offer-spread page. Lives under
+// /api/public/* so the proxy.ts allowlist lets it through with no auth. Reads
+// the public `topshot_offer_ask_spread` view (shipped 2026-06-01 via
+// audit_20260601_topshot_offer_ask_spread_view -> _v2_honest_rank ->
+// _v3_par_distance). security_invoker=on, anon SELECT-only; backing
+// edition_offers hardened (RLS on, anon SELECT-only).
+//
+// What it surfaces: TS editions that have BOTH a standing offer (bid) and a
+// floor ask, ranked by how tightly the two meet. A bid at/above the floor is
+// EITHER instant liquidity OR a stale / different-serial cheap listing — we
+// show the floor ask next to the bid so the reader can judge. NOT promoted as
+// guaranteed arbitrage (per the "rank, not price" lesson).
+//
+// Query params:
+//   tier=COMMON|RARE|LEGENDARY|FANDOM|ULTIMATE   single tier filter
+//   min_ask=<number>                              floor on low_ask (default 0;
+//                                                 the board view passes 5 to
+//                                                 hide penny-floor ratio noise)
+//   bid_meets_ask=true                            only rows where bid >= floor
+//   set=<text>                                    ilike match on set_name
+//   player=<text>                                 ilike match on player_name
+//   sort=par|spread|offer|ask|pct|bidage          default par (tightest first);
+//                                                 bidage = longest-standing bid first,
+//                                                 undated rows last (never first)
+//   limit=<1..200>                                default 50
+//
+// CACHE: 5-minute s-maxage, which protects the DB from a viral OG-share spike.
+// ⚠ THIS USED TO JUSTIFY ITSELF WITH "edition_offers refreshes continuously via the
+// offers-sweep cron, so 5m is well inside the freshness window." The cache window is
+// still right; the JUSTIFICATION was a dependency stated with no expiry. offers-sweep
+// was then the writer of the ask side, and when its upstream died the column froze for
+// 30 h at a median age of 30.0 h — the cache was five minutes fresh over data a day
+// old. `updated_at` ships in every row precisely so the reader can tell the two
+// apart; see lib/market/ask-freshness.ts.
+// ⚠ TWO CORRECTIONS TO THE PARAGRAPH ABOVE, both dated 2026-09-13. (1) "the ONLY
+// writer" was already REFUTED by #81 — `edition_offers` has DB-side writers a repo
+// grep cannot see. (2) `offers-sweep` has now written NOTHING since 2026-08-28 and
+// stopped running entirely after 09-07, so the ask side is maintained by
+// `sync_edition_offers_from_atlas()`, which bumps `updated_at` ONLY WHEN THE FLOOR
+// CHANGES. ⭐ So on this board `updated_at` is a LAST-CHANGED stamp, not a
+// last-checked one — the tooltip says so per collection now
+// (`askStampKind`/`askAgeTitle`), and the 5-minute cache argument is unaffected.
+
+import { NextRequest, NextResponse } from "next/server";
+import { supabaseAdmin as supabase } from "@/lib/supabase";
+import { boardUnavailable } from "@/lib/insights/board-error";
+import { fetchOfferSpreadBoard, isOfferSpreadCollection, OFFER_SPREAD_TIERS, OFFER_SPREAD_VIEWS } from "@/lib/insights/offer-spread-board";
+
+import { boardRowMeta } from "@/lib/insights/board-meta"
+import { ownLookup } from "@/lib/safe-lookup"
+const VALID_SORTS = new Set(["par", "spread", "offer", "ask", "pct", "bidage"]);
+
+export async function GET(req: NextRequest) {
+  const startedAt = Date.now();
+  const sp = new URL(req.url).searchParams;
+
+  // 2026-10-26: collection=nba-top-shot (default when ABSENT) | nfl-all-day. An unknown value is refused,
+  // never answered with Top Shot rows (substitution).
+  const collectionParam = sp.get("collection");
+  if (collectionParam != null && !isOfferSpreadCollection(collectionParam)) {
+    return NextResponse.json({ error: "collection must be nba-top-shot or nfl-all-day" }, { status: 400 });
+  }
+  const collection = collectionParam ?? "nba-top-shot";
+  const VALID_TIERS = new Set(ownLookup(OFFER_SPREAD_TIERS, collection) ?? []);
+  const tier = sp.get("tier")?.toUpperCase() ?? null;
+  // min_ask floors out penny-floor ratio artifacts. Default 0 so player/set
+  // drill-downs never empty (QA point 6); the page's board view passes 5.
+  const minAsk = Number(sp.get("min_ask") ?? "0");
+  const bidMeetsAsk = sp.get("bid_meets_ask") === "true";
+  const setFilter = sp.get("set")?.trim() ?? null;
+  const playerFilter = sp.get("player")?.trim() ?? null;
+  const sort = sp.get("sort") ?? "par";
+  const limit = Math.max(1, Math.min(200, Number(sp.get("limit")) || 50));
+
+  if (tier && !VALID_TIERS.has(tier)) {
+    return NextResponse.json({ error: `tier must be one of ${[...VALID_TIERS].join(",")}` }, { status: 400 });
+  }
+  if (!Number.isFinite(minAsk) || minAsk < 0) {
+    return NextResponse.json({ error: "min_ask must be a non-negative number" }, { status: 400 });
+  }
+  if (!VALID_SORTS.has(sort)) {
+    return NextResponse.json({ error: `sort must be one of ${[...VALID_SORTS].join(",")}` }, { status: 400 });
+  }
+
+  // The QUERY lives in lib/insights/offer-spread-board.ts, shared with the server page
+  // so the crawlable board and this route cannot drift. This route keeps its
+  // own failure policy (boardUnavailable).
+  const { data, error, playerResolved } = await fetchOfferSpreadBoard(
+    { collection, tier, set: setFilter, player: playerFilter, bidMeetsAsk, minAsk, sort, limit },
+    supabase,
+  );
+  if (error) {
+    return boardUnavailable(error, "insights/offer-spread");
+  }
+
+  const res = NextResponse.json({
+    meta: {
+      fetched_at: new Date().toISOString(),
+      source: ownLookup(OFFER_SPREAD_VIEWS, collection) ?? null,
+      collection,
+      ...boardRowMeta(data?.length ?? 0, limit),
+      elapsed_ms: Date.now() - startedAt,
+      filters: { collection, tier, min_ask: minAsk, bid_meets_ask: bidMeetsAsk, set: setFilter, player: playerFilter, sort, limit },
+      ...(playerResolved ? { player_resolved: playerResolved } : {}),
+    },
+    rows: data ?? [],
+  });
+  res.headers.set("Cache-Control", "public, s-maxage=300, stale-while-revalidate=60");
+  return res;
+}

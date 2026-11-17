@@ -1,0 +1,218 @@
+// lib/panini/owner-cards.ts
+//
+// Parsers for the Panini Collection tab (2026-09-27): panini_owner_cards (cards RPC
+// has SEEN under a username, listing-gated) and panini_profile_holdings (cards a
+// collector walk read off the username's PUBLIC Panini profile). Pure and
+// client-safe. A missing number is null, never 0; a payload without its counts is
+// rejected (null) so the route answers "unavailable" instead of "0 cards".
+
+import { paniniAssetUrl } from "@/lib/panini/assets"
+
+export interface PaniniOwnerCard {
+  sku: string
+  editionKey: string | null
+  serial: number | null
+  mintCap: number | null
+  isListed: boolean
+  askUsd: number | null
+  lastSaleUsd: number | null
+  lastSaleAt: string | null
+  seenAt: string | null
+  flags: string[]
+  playerName: string | null
+  setName: string | null
+  tier: string | null
+  thumbnailUrl: string | null
+  fmvUsd: number | null
+  /** RPC has this card's edition (a page to link to, a price to show). */
+  catalogued: boolean
+  sport: string | null
+}
+
+export interface PaniniOwnerCards {
+  username: string
+  cardsSeen: number
+  listedNow: number
+  editions: number
+  specialSerials: number
+  fmvSeenUsd: number | null
+  fmvPricedCards: number
+  lastSeenAt: string | null
+  cards: PaniniOwnerCard[]
+}
+
+function num(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
+const str = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v : null)
+
+export function parsePaniniOwnerCards(raw: unknown): PaniniOwnerCards | null {
+  const r = Array.isArray(raw) ? raw[0] : raw
+  if (!r || typeof r !== "object") return null
+  const o = r as Record<string, unknown>
+  const cardsSeen = num(o.cards_seen)
+  const listedNow = num(o.listed_now)
+  const editions = num(o.editions)
+  const specialSerials = num(o.special_serials)
+  const fmvPricedCards = num(o.fmv_priced_cards)
+  const username = str(o.username)
+  if (username === null || cardsSeen === null || listedNow === null || editions === null || specialSerials === null || fmvPricedCards === null) {
+    return null
+  }
+  const cards = parseCards(o.cards)
+  return {
+    username,
+    cardsSeen,
+    listedNow,
+    editions,
+    specialSerials,
+    fmvSeenUsd: num(o.fmv_seen_usd),
+    fmvPricedCards,
+    lastSeenAt: str(o.last_seen_at),
+    cards,
+  }
+}
+
+function parseCards(raw: unknown): PaniniOwnerCard[] {
+  return (Array.isArray(raw) ? raw : []).map((c): PaniniOwnerCard => {
+    const x = (c ?? {}) as Record<string, unknown>
+    const flags: string[] = []
+    if (x.is_number_one === true) flags.push("#1")
+    if (x.is_jersey_mint === true) flags.push("jersey")
+    if (x.is_perfect_mint === true) flags.push("last_mint")
+    return {
+      sku: String(x.sku ?? ""),
+      editionKey: str(x.edition_external_id),
+      serial: num(x.serial_number),
+      mintCap: num(x.mint_cap),
+      isListed: x.is_listed === true,
+      askUsd: num(x.ask_usd),
+      lastSaleUsd: num(x.last_sale_usd),
+      lastSaleAt: str(x.last_sale_at),
+      seenAt: str(x.captured_at),
+      flags,
+      playerName: str(x.player_name),
+      setName: str(x.set_name),
+      tier: str(x.tier),
+      thumbnailUrl: paniniAssetUrl(str(x.thumbnail_url)),
+      fmvUsd: num(x.fmv_usd),
+      // panini_owner_cards reads RPC's own serial table, so its cards are catalogued unless told otherwise.
+      catalogued: x.catalogued !== false,
+      sport: str(x.sport),
+    }
+  })
+}
+
+export type PaniniProfileState = "public" | "private" | "not_found" | "unknown"
+
+/** The last collector walk of a username's public Panini profile. */
+export interface PaniniProfileWalk {
+  lastWalkAt: string
+  lastCompleteAt: string | null
+  profileState: PaniniProfileState
+  reportedTotal: number | null
+  cardsCollected: number | null
+  unopenedPacks: number | null
+  lastError: string | null
+}
+
+export interface PaniniProfileHoldings {
+  /** null = this username has never been walked (not linked) — NOT "holds nothing". */
+  walk: PaniniProfileWalk | null
+  cardsHeld: number
+  editions: number
+  cataloguedCards: number
+  listedNow: number
+  specialSerials: number
+  fmvHeldUsd: number | null
+  fmvPricedCards: number
+  /**
+   * Cards an earlier walk saw that the marketplace now shows under another owner (captured after
+   * the walk) — left out of every count above (2026-10-15). null = an older response without it.
+   */
+  cardsMovedSinceSeen: number | null
+  cards: PaniniOwnerCard[]
+}
+
+const STATES: PaniniProfileState[] = ["public", "private", "not_found", "unknown"]
+
+export function parsePaniniProfileHoldings(raw: unknown): PaniniProfileHoldings | null {
+  const r = Array.isArray(raw) ? raw[0] : raw
+  if (!r || typeof r !== "object") return null
+  const o = r as Record<string, unknown>
+  const cardsHeld = num(o.cards_held)
+  const editions = num(o.editions)
+  const cataloguedCards = num(o.catalogued_cards)
+  const listedNow = num(o.listed_now)
+  const specialSerials = num(o.special_serials)
+  const fmvPricedCards = num(o.fmv_priced_cards)
+  if (cardsHeld === null || editions === null || cataloguedCards === null || listedNow === null || specialSerials === null || fmvPricedCards === null) {
+    return null
+  }
+  let walk: PaniniProfileWalk | null = null
+  if (o.walk && typeof o.walk === "object") {
+    const w = o.walk as Record<string, unknown>
+    const lastWalkAt = str(w.last_walk_at)
+    const state = STATES.find((s) => s === w.profile_state) ?? "unknown"
+    if (lastWalkAt === null) return null
+    walk = {
+      lastWalkAt,
+      lastCompleteAt: str(w.last_complete_at),
+      profileState: state,
+      reportedTotal: num(w.reported_total),
+      cardsCollected: num(w.cards_collected),
+      unopenedPacks: num(w.unopened_packs),
+      lastError: str(w.last_error),
+    }
+  } else if (o.walk !== null && o.walk !== undefined) {
+    return null
+  }
+  return {
+    walk,
+    cardsHeld,
+    editions,
+    cataloguedCards,
+    listedNow,
+    specialSerials,
+    fmvHeldUsd: num(o.fmv_held_usd),
+    fmvPricedCards,
+    cardsMovedSinceSeen: num(o.cards_moved_since_seen),
+    cards: parseCards(o.cards),
+  }
+}
+
+/** One recorded day of a walked collector's collection value (panini_portfolio_daily, 2026-10-26). */
+export interface PaniniValueDay {
+  day: string
+  cards: number
+  pricedCards: number
+  /** FMV of the priced cards; null when none were priced — never 0. */
+  fmvUsd: number | null
+  /** The walk behind this day read the whole profile. */
+  walkComplete: boolean
+}
+
+/** Rows newest first; malformed rows are dropped, never coerced to zeros. */
+export function parsePaniniValueHistory(raw: unknown): PaniniValueDay[] {
+  if (!Array.isArray(raw)) return []
+  const out: PaniniValueDay[] = []
+  for (const r of raw) {
+    if (!r || typeof r !== "object") continue
+    const o = r as Record<string, unknown>
+    const day = typeof o.day === "string" && /^\d{4}-\d{2}-\d{2}$/.test(o.day) ? o.day : null
+    const cards = num(o.cards)
+    const pricedCards = num(o.priced_cards)
+    if (!day || cards === null || pricedCards === null) continue
+    const fmv = num(o.fmv_usd)
+    out.push({ day, cards, pricedCards, fmvUsd: fmv !== null && fmv > 0 ? fmv : null, walkComplete: o.walk_complete === true })
+  }
+  return out
+}
+
+/**
+ * /api/panini-collection: the listing-seen view plus the profile walk's view, plus the recorded
+ * value history (null = that read failed — rendered as "couldn't load", never as no history).
+ */
+export type PaniniCollectionResponse = PaniniOwnerCards & { profile: PaniniProfileHoldings; valueHistory?: PaniniValueDay[] | null }

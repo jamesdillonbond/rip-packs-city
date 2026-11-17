@@ -1,0 +1,11 @@
+-- CREATE OR REPLACE VIEW does NOT preserve reloptions -- it RESETS them. The preceding
+-- migration (audit_20260810_candy_pack_ev_model_scope_fmv_to_collection) therefore dropped
+-- `security_invoker=on` from candy_pack_ev_model, silently reverting it to DEFINER semantics
+-- and putting it in scope for check_public_security_invariants()'s view_unexpected_definer.
+-- Grants were unaffected (anon/authenticated SELECT stayed revoked), so there was no exposure
+-- window, but the posture must match the rest of the Candy view estate.
+--
+-- DURABLE: any CREATE OR REPLACE VIEW on a security_invoker view MUST be followed by an
+-- explicit ALTER VIEW ... SET (security_invoker = on) in the SAME migration. Verify with
+-- pg_class.reloptions before AND after -- grants alone will not reveal this.
+ALTER VIEW public.candy_pack_ev_model SET (security_invoker = on);

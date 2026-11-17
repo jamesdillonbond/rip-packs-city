@@ -1,0 +1,18 @@
+-- audit_20260823_series_rollup_cron_heavy_execute_grant
+--
+-- pg_cron job 357 (rpc-series-detail-rollup) runs as `cron_heavy`, and EXECUTE
+-- is checked against the CALLER even on a SECURITY DEFINER function. Measured
+-- immediately after scheduling: has_function_privilege('cron_heavy', …) was
+-- FALSE.
+--
+-- ⚠ WITHOUT THIS THE JOB WOULD HAVE RAISED 42501 EVERY HOUR AND LEFT NO TRACE.
+-- The pipeline_runs row is written by the function's own body, so a permission
+-- failure happens BEFORE any logging: it presents as silence, not as failure —
+-- the same shape as a 401 on a gated route, and the reason the cadence
+-- watchlist row added alongside it is the only real instrument here.
+--
+-- Caught by asking whether the caller can run it, not by assuming that
+-- scheduling a job implies permission to execute what it calls.
+--
+-- Revert: REVOKE EXECUTE ON FUNCTION public.refresh_series_detail_rollup(integer) FROM cron_heavy;
+GRANT EXECUTE ON FUNCTION public.refresh_series_detail_rollup(integer) TO cron_heavy;

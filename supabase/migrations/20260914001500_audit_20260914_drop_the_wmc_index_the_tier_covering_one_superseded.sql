@@ -1,0 +1,39 @@
+-- audit_20260914_drop_the_wmc_index_the_tier_covering_one_superseded
+--
+-- RECORD-ONLY. `DROP INDEX CONCURRENTLY` cannot run inside a transaction block,
+-- so the real work was executed as a one-off pg_cron job (recipe: migration
+-- 20260826153459 and docs/reference/database.md). This file exists so the
+-- change has a committed artefact and a revert path. Applying it a second
+-- time changes nothing (`IF EXISTS`).
+--
+-- ── WHY ────────────────────────────────────────────────────────────────────────
+-- 20260913231800 built `idx_wmc_wallet_coll_ek_fmv_tier` —
+-- `(wallet_address, collection_id, edition_key) INCLUDE (fmv_usd, tier)` — and
+-- left the older `idx_wmc_wallet_coll_ek_fmv` (`INCLUDE (fmv_usd)` only) in
+-- place "until production has been observed using the new one". Observed:
+--
+--   pg_stat_user_indexes, 2026-09-13 PT     4:33 PM        5:11 PM
+--     idx_wmc_wallet_coll_ek_fmv (old)      26,287,272     26,287,272   (+0)
+--     idx_wmc_wallet_coll_ek_fmv_tier (new)     61,251        119,555   (+58,304)
+--
+-- Every scan the old index used to serve — the hourly saved-wallet sweep, the
+-- 10-minute FMV refresh, the wallet page loads — moved to the new one the
+-- moment it was valid, because the new index has the SAME key columns and a
+-- SUPERSET of the INCLUDE columns: there is no plan the old index can serve
+-- that the new one cannot. The old one cost 281 MB and a 20th index's write
+-- amplification on a 2.3M-row table that every FMV refresh updates.
+--
+-- ── EXECUTED 2026-09-13 5:13 PM PT as a one-off pg_cron job ────────────────────
+--   SELECT cron.schedule('oneoff-drop-idx-wmc-wallet-coll-ek-fmv', '13 00 * * *',
+--     $$DROP INDEX CONCURRENTLY IF EXISTS public.idx_wmc_wallet_coll_ek_fmv$$);
+--   -- jobid 498, as postgres (the table owner; a drop finishes well inside the
+--   -- role's 120 s budget); altered to never re-fire once it ran, then
+--   -- unscheduled.
+--
+-- ── REVERT ──────────────────────────────────────────────────────────────────────
+-- Rebuild via the same one-off route (28 s measured for the sibling build):
+--   CREATE INDEX CONCURRENTLY idx_wmc_wallet_coll_ek_fmv
+--     ON public.wallet_moments_cache USING btree
+--     (wallet_address, collection_id, edition_key) INCLUDE (fmv_usd);
+
+DROP INDEX IF EXISTS public.idx_wmc_wallet_coll_ek_fmv;

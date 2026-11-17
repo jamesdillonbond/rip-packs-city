@@ -1,0 +1,16 @@
+-- A new MATERIALIZED VIEW inherits Supabase's default per-role anon/authenticated
+-- grant, exactly like a table or view (CLAUDE.md footgun). Verified live: my new
+-- mv_topshot_perfect_mint_premiums_board was the ONLY one of 25 public MVs with
+-- anon SELECT = true. Revoke to match the house posture (the other 24) so the MV
+-- is not a second, unpublished PostgREST path at
+-- /rest/v1/mv_topshot_perfect_mint_premiums_board that bypasses the view.
+--
+-- Consequence (accepted, matches the 2026-08-01 market_index_daily precedent):
+-- the published view is security_invoker=on, so an ANON PostgREST read of
+-- public.topshot_perfect_mint_premiums_board now fails with "permission denied
+-- for materialized view". The product is unaffected -- the only consumers are
+-- /api/public/insights/serial-premiums and the OG card, both via supabaseAdmin
+-- (service_role). Verified by grep: zero client-side/anon readers.
+--
+-- REVERT: GRANT SELECT ON public.mv_topshot_perfect_mint_premiums_board TO anon, authenticated;
+REVOKE SELECT ON public.mv_topshot_perfect_mint_premiums_board FROM anon, authenticated;

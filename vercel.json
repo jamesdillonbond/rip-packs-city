@@ -1,0 +1,174 @@
+{
+  "ignoreCommand": "bash scripts/vercel-ignore-build.sh",
+  "regions": ["pdx1"],
+  "crons": [
+    {
+      "path": "/api/send-digest",
+      "schedule": "23 16 * * 1"
+    },
+    {
+      "path": "/api/cron/weekly-digest",
+      "schedule": "33 16 * * 1"
+    },
+    {
+      "path": "/api/cron/day1-onboarding",
+      "schedule": "17 17 * * *"
+    },
+    {
+      "path": "/api/cron/pinnacle-trades-indexer",
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/pinnacle-trades-indexer?mode=backfill",
+      "schedule": "5,15,25,35,45,55 * * * *"
+    },
+    {
+      "path": "/api/smoke-test",
+      "schedule": "17 */4 * * *"
+    },
+    {
+      "path": "/api/cron/refresh-insights-cache",
+      "schedule": "7,22,37,52 * * * *"
+    },
+    {
+      "path": "/api/cron/warm",
+      "schedule": "13,43 13-23,0-5 * * *"
+    },
+    {
+      "path": "/api/admin/recover-v1-budget-exhausted",
+      "schedule": "*/20 * * * *"
+    },
+    {
+      "path": "/api/cron/allday-resolve-unmapped-tail",
+      "schedule": "40 */3 * * *"
+    },
+    {
+      "path": "/api/cron/golazos-discover-buyers",
+      "schedule": "18 8 * * *"
+    },
+    {
+      "path": "/api/cron/allday-lock-refresh-batch",
+      "schedule": "23 * * * *"
+    },
+    {
+      "path": "/api/admin/backfill-pinnacle-catalog?floors_only=1",
+      "schedule": "45 1,7,13,19 * * *"
+    },
+    {
+      "path": "/api/admin/backfill-pinnacle-catalog",
+      "schedule": "37 21 * * *"
+    },
+    {
+      "path": "/api/cron/purge-stale-listings",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/golazos-storefront-reconcile",
+      "schedule": "43 */2 * * *"
+    },
+    {
+      "path": "/api/cron/golazos-storefront-reconcile?collection=nfl_all_day",
+      "schedule": "13 1-23/2 * * *"
+    },
+    {
+      "path": "/api/admin/backfill-topshot-onchain-art?limit=300",
+      "schedule": "22 */3 * * *"
+    },
+    {
+      "path": "/api/admin/drain-conflated-subeditions",
+      "schedule": "30 20 * * *"
+    },
+    {
+      "path": "/api/cron/allday-sales-history-backfill",
+      "schedule": "7 */3 * * *"
+    },
+    {
+      "path": "/api/cron/pinnacle-sales-history-backfill",
+      "schedule": "13 */3 * * *"
+    },
+    {
+      "path": "/api/cron/golazos-sales-history-backfill",
+      "schedule": "34 */3 * * *"
+    },
+    {
+      "path": "/api/cron/allday-studio-sales-history-backfill",
+      "schedule": "52 */3 * * *"
+    },
+    {
+      "path": "/api/cron/golazos-studio-sales-history-backfill",
+      "schedule": "56 */3 * * *"
+    },
+    {
+      "path": "/api/cron/pinnacle-studio-sales-history-backfill",
+      "schedule": "58 */3 * * *"
+    },
+    {
+      "path": "/api/cron/allow-list-reconcile",
+      "schedule": "14 * * * *"
+    },
+    {
+      "path": "/api/cron/sales-serial-backfill",
+      "schedule": "40 */2 * * *"
+    },
+    {
+      "path": "/api/cron/topshot-circulation-onchain",
+      "schedule": "5 4,10,16,22 * * *"
+    },
+    {
+      "path": "/api/cron/topshot-pack-dist-names-onchain",
+      "schedule": "25 */3 * * *"
+    },
+    {
+      "path": "/api/cron/pinnacle-pack-dist-names-onchain",
+      "schedule": "40 */3 * * *"
+    },
+    {
+      "path": "/api/cron/topshot-set-series-onchain",
+      "schedule": "5,15,25,35,45,55 * * * *"
+    },
+    {
+      "path": "/api/admin/backfill-allday-buyers",
+      "schedule": "15 */3 * * *"
+    },
+    {
+      "path": "/api/admin/backfill-allday-buyers?collection=golazos",
+      "schedule": "25 6 * * *"
+    },
+    {
+      "path": "/api/ingest/candy-editions",
+      "schedule": "10 1,4 * * *"
+    },
+    {
+      "path": "/api/ingest/candy-collections-census",
+      "schedule": "57 * * * *"
+    },
+    {
+      "path": "/api/ingest/candy-collections-market",
+      "schedule": "47 1-23/2 * * *"
+    },
+    {
+      "path": "/api/candy-sales-indexer",
+      "schedule": "20 */3 * * *"
+    },
+    {
+      "path": "/api/ingest/candy-offers",
+      "schedule": "50 */6 * * *"
+    },
+    {
+      "path": "/api/candy-listings-indexer",
+      "schedule": "35 */3 * * *"
+    },
+    {
+      "path": "/api/cron/evm-transfers-ingest",
+      "schedule": "4,14,24,34,44,54 * * * *"
+    },
+    {
+      "path": "/api/cron/challenge-wallet-refresh",
+      "schedule": "17 * * * *"
+    },
+    {
+      "path": "/api/cron/wallet-backfill-resume",
+      "schedule": "3-59/10 * * * *"
+    }
+  ]
+}

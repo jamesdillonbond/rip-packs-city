@@ -1,0 +1,542 @@
+// @vitest-environment jsdom
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import { render, cleanup, fireEvent, screen, waitFor } from "@testing-library/react"
+
+// The extra-trophy-cases surfaces (2026-11-06): the owner's dashboard panel, the
+// public profile block and the challenge board. The pins that matter:
+//   · a FAILED read never renders as "no cases" / "no entries yet";
+//   · each case's writes carry ITS caseId (never an unscoped main-case write);
+//   · the Dame Time picker opens pre-searched for the challenge's player.
+
+vi.mock("@/lib/badges/useBadgeTaxonomy", () => ({ useBadgeTaxonomy: () => ({}), lookupBadge: () => null }))
+vi.mock("next/link", () => ({ default: ({ children, ...p }: any) => <a {...p}>{children}</a> }))
+vi.mock("@/lib/ipfs-media", () => ({ proxyIpfsUrl: (u: string) => u }))
+const picker = vi.fn()
+vi.mock("@/components/profile/TrophyPickerModal", () => ({
+  default: (p: any) => {
+    picker(p)
+    return (
+      <div data-testid="picker">
+        <button onClick={() => p.onPinned()}>fake-pin</button>
+        <button onClick={() => p.onClose()}>fake-close</button>
+      </div>
+    )
+  },
+}))
+
+import TrophyCasesPanel, { copyMainToast, fillConfirmCopy, slotsOf, unfinishedLiveChallenge } from "@/components/profile/TrophyCasesPanel"
+import PublicTrophyCases from "@/components/profile/PublicTrophyCases"
+import ChallengeBoardClient from "@/app/trophy-challenges/[slug]/ChallengeBoardClient"
+
+const CASE = "11111111-1111-4111-8111-111111111111"
+const slab = (slot: number, extra: any = {}) => ({
+  id: slot,
+  slot,
+  moment_id: "m" + slot,
+  edition_id: null,
+  player_name: "Damian Lillard",
+  set_name: "Base",
+  serial_number: 7,
+  circulation_count: 100,
+  tier: "RARE",
+  thumbnail_url: null,
+  video_url: null,
+  fmv: 10,
+  fmv_confidence: null,
+  badges: [],
+  note: null,
+  collection_id: "c",
+  collection_slug: "nba_top_shot",
+  collection_display_name: "NBA Top Shot",
+  play_description: null,
+  team_name: null,
+  series: null,
+  pinned_at: null,
+  acquired_price: null,
+  acquisition_method: null,
+  ...extra,
+})
+const DAME = {
+  id: "ch1",
+  slug: "dame-time",
+  title: "Dame Time",
+  tagline: "Show off your Dame.",
+  description: "Damian Lillard only.",
+  rules: { player_names: ["Damian Lillard"] },
+  ends_at: null,
+  is_active: true,
+}
+
+type Call = { url: string; init?: any }
+let calls: Call[] = []
+let routes: Record<string, () => any> = {}
+const ok = (body: any) => ({ ok: true, status: 200, json: async () => body })
+const fail = (status = 503) => ({ ok: false, status, json: async () => ({ error: "x", code: "timeout" }) })
+
+beforeEach(() => {
+  calls = []
+  picker.mockClear()
+  routes = {}
+  ;(globalThis as any).fetch = vi.fn(async (url: string, init?: any) => {
+    calls.push({ url, init })
+    const key = Object.keys(routes).find((k) => url.startsWith(k) && (!init?.method || k.includes(init.method) || !k.includes(" ")))
+    const exact = routes[`${init?.method ?? "GET"} ${url.split("?")[0]}`] ?? (key ? routes[key] : undefined)
+    if (!exact) throw new Error("no route " + url)
+    return exact()
+  })
+  vi.spyOn(window, "confirm").mockReturnValue(true)
+})
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+})
+
+describe("slotsOf", () => {
+  it("places slabs by their OWN slot, not array position", () => {
+    const cells = slotsOf([slab(4) as any, slab(1) as any])
+    expect(cells[0]?.slot).toBe(1)
+    expect(cells[3]?.slot).toBe(4)
+    expect(cells[1]).toBeNull()
+  })
+})
+
+describe("TrophyCasesPanel (owner dashboard)", () => {
+  it("⚠ a failed read says it couldn't load — never the empty 'create a case' state", async () => {
+    routes["GET /api/profile/trophy-cases"] = () => fail()
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} />)
+    expect(await screen.findByText(/Couldn.t load your other trophy cases/)).toBeTruthy()
+    expect(screen.queryByPlaceholderText(/New case name/)).toBeNull()
+  })
+
+  it("offers an open challenge you haven't entered, and Enter posts its slug", async () => {
+    routes["GET /api/profile/trophy-cases"] = () => ok({ cases: [], challenges: [DAME] })
+    routes["POST /api/profile/trophy-cases"] = () => ok({ case: { id: CASE } })
+    const toast = vi.fn()
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={toast} />)
+    fireEvent.click(await screen.findByText("Enter"))
+    await waitFor(() => expect(toast).toHaveBeenCalledWith("Entered Dame Time", "success"))
+    const post = calls.find((c) => c.init?.method === "POST")!
+    expect(JSON.parse(post.init.body)).toEqual({ challengeSlug: "dame-time" })
+  })
+
+  it("Enter opens the challenge's picker right away — pre-searched, every slot fillable at once", async () => {
+    let entered = false
+    routes["GET /api/profile/trophy-cases"] = () =>
+      ok(entered ? { cases: [{ id: CASE, name: "Dame Time", challenge: DAME, slabs: [] }], challenges: [DAME] } : { cases: [], challenges: [DAME] })
+    routes["POST /api/profile/trophy-cases"] = () => {
+      entered = true
+      return ok({ case: { id: CASE } })
+    }
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} />)
+    fireEvent.click(await screen.findByText("Enter"))
+    await screen.findByTestId("picker")
+    const p = picker.mock.calls.at(-1)![0]
+    expect(p.caseId).toBe(CASE)
+    expect(p.slot).toBe(1)
+    expect(p.initialQuery).toBe("Damian Lillard")
+    expect(p.openSlots).toEqual([1, 2, 3, 4, 5, 6])
+  })
+
+  it("⚠ deep link: ?challenge=<slug> (survives the login bounce, unlike a hash) scrolls to the row, highlights it, and the challenge row is the target — not the panel top", async () => {
+    const scrolled: string[] = []
+    const orig = (Element.prototype as any).scrollIntoView
+    ;(Element.prototype as any).scrollIntoView = function (this: Element) { scrolled.push(this.id) }
+    window.history.replaceState(null, "", "/dashboard?tab=trophy&challenge=dame-time")
+    try {
+      routes["GET /api/profile/trophy-cases"] = () => ok({ cases: [], challenges: [DAME] })
+      const { container } = render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} />)
+      await screen.findByText("Enter")
+      await waitFor(() => expect(scrolled[0]).toBe("challenge-dame-time"))
+      expect(container.querySelector("#challenge-dame-time")!.getAttribute("data-focused")).toBe("true")
+    } finally {
+      ;(Element.prototype as any).scrollIntoView = orig
+      window.history.replaceState(null, "", "/")
+    }
+  })
+
+  it("deep link: #challenge-<slug> scrolls to the challenge row once the panel loads — before AND after entering", async () => {
+    const scrolled: string[] = []
+    const orig = (Element.prototype as any).scrollIntoView
+    ;(Element.prototype as any).scrollIntoView = function (this: Element) { scrolled.push(this.id) }
+    window.history.replaceState(null, "", "/dashboard?tab=trophy#challenge-dame-time")
+    try {
+      routes["GET /api/profile/trophy-cases"] = () => ok({ cases: [], challenges: [DAME] })
+      render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} />)
+      await screen.findByText("Enter")
+      await waitFor(() => expect(scrolled[0]).toBe("challenge-dame-time"))
+      cleanup()
+      scrolled.length = 0
+      routes["GET /api/profile/trophy-cases"] = () =>
+        ok({ cases: [{ id: CASE, name: "Dame Time", created_at: "", completed_at: null, challenge: DAME, slabs: [] }], challenges: [DAME] })
+      render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} />)
+      await waitFor(() => expect(scrolled[0]).toBe("challenge-dame-time"))
+    } finally {
+      ;(Element.prototype as any).scrollIntoView = orig
+      window.history.replaceState(null, "", "/")
+    }
+  })
+
+  it("an entry with pieces + a public handle offers Share — pointing at THAT entry's page; no handle or nothing pinned, no share", async () => {
+    routes["GET /api/profile/trophy-cases"] = () =>
+      ok({ cases: [{ id: CASE, name: "Dame Time", created_at: "", completed_at: null, challenge: DAME, slabs: [slab(1)] }], challenges: [], board_username: "trev", board_username_known: true })
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} />)
+    const share = await screen.findByTestId("challenge-share")
+    expect(share.querySelector("a")!.getAttribute("href")).toBe("/profile/trev/trophy-case/dame-time")
+    cleanup()
+    routes["GET /api/profile/trophy-cases"] = () =>
+      ok({ cases: [{ id: CASE, name: "Dame Time", created_at: "", completed_at: null, challenge: DAME, slabs: [slab(1)] }], challenges: [], board_username: null, board_username_known: true })
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} />)
+    await screen.findByText("Dame Time")
+    expect(screen.queryByTestId("challenge-share")).toBeNull()
+    cleanup()
+    routes["GET /api/profile/trophy-cases"] = () =>
+      ok({ cases: [{ id: CASE, name: "Dame Time", created_at: "", completed_at: null, challenge: DAME, slabs: [] }], challenges: [], board_username: "trev", board_username_known: true })
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} />)
+    await screen.findByText("Dame Time")
+    expect(screen.queryByTestId("challenge-share")).toBeNull()
+  })
+
+  // 2026-11-07: the first outside entrant (peanpean) pinned six Dame pieces in
+  // his MAIN case and never entered. The offer turns that into one tap.
+  it("⚠ main case holds Dame pieces + not entered → 'Enter with my N Dame Time pieces' creates the entry, then copies", async () => {
+    routes["GET /api/profile/trophy-cases"] = () => ok({ cases: [], challenges: [DAME] })
+    routes["POST /api/profile/trophy-cases"] = () => ({ ok: true, status: 201, json: async () => ({ case: { id: CASE } }) })
+    routes["POST /api/profile/trophy-cases/copy-main"] = () => ok({ copied: 2, skipped: [] })
+    const toast = vi.fn()
+    const mainPins = [
+      { player_name: "Damian Lillard", moment_id: "a" },
+      { player_name: "LeBron James", moment_id: "b" },
+      { player_name: "Damian Lillard", moment_id: "c" },
+    ]
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={toast} mainPins={mainPins} />)
+    fireEvent.click(await screen.findByText("Enter with my 2 Dame Time pieces"))
+    await waitFor(() => expect(toast).toHaveBeenCalledWith("Entered Dame Time with 2 pieces from your main case", "success"))
+    const posts = calls.filter((c) => c.init?.method === "POST").map((c) => [c.url, JSON.parse(c.init.body)])
+    expect(posts).toEqual([
+      ["/api/profile/trophy-cases", { challengeSlug: "dame-time" }],
+      ["/api/profile/trophy-cases/copy-main", { caseId: CASE }],
+    ])
+  })
+
+  it("no offer when the main case has no matching pieces, or its read failed (null)", async () => {
+    routes["GET /api/profile/trophy-cases"] = () => ok({ cases: [], challenges: [DAME] })
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} mainPins={[{ player_name: "LeBron James", moment_id: "b" }]} />)
+    await screen.findByText("Enter")
+    expect(screen.queryByTestId("enter-with-main")).toBeNull()
+    cleanup()
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} mainPins={null} />)
+    await screen.findByText("Enter")
+    expect(screen.queryByTestId("enter-with-main")).toBeNull()
+  })
+
+  it("an entry with empty slots offers 'Add N from my main case' — not counting pieces already in it", async () => {
+    routes["GET /api/profile/trophy-cases"] = () =>
+      ok({ cases: [{ id: CASE, name: "Dame Time", created_at: "", completed_at: null, challenge: DAME, slabs: [slab(1, { moment_id: "a" })] }], challenges: [] })
+    routes["POST /api/profile/trophy-cases/copy-main"] = () => ok({ copied: 1, skipped: [{ reason: "That card isn't under a Panini username linked to your profile." }] })
+    const toast = vi.fn()
+    render(
+      <TrophyCasesPanel
+        ownerKey={null}
+        savedChains={null}
+        onToast={toast}
+        mainPins={[{ player_name: "Damian Lillard", moment_id: "a" }, { player_name: "Damian Lillard", moment_id: "d" }, { player_name: "Damian Lillard", moment_id: "e" }]}
+      />,
+    )
+    fireEvent.click(await screen.findByText("Add 2 from my main case"))
+    await waitFor(() =>
+      expect(toast).toHaveBeenCalledWith(
+        "Dame Time with 1 piece from your main case (1 skipped: That card isn't under a Panini username linked to your profile.)",
+        "success",
+      ),
+    )
+  })
+
+  // 2026-11-08 weekend review: rrx69 held 15 eligible Dame editions and stopped at
+  // 5/6 after ~20 picker opens; "Fill my case" proposes, confirms, then pins.
+  it("'Fill my case' PROPOSES first, pins only after confirm, and reports the result", async () => {
+    const posts: any[] = []
+    routes["GET /api/profile/trophy-cases"] = () =>
+      ok({ cases: [{ id: CASE, name: "Dame Time", created_at: "", completed_at: null, challenge: DAME, slabs: [slab(1), slab(2)] }], challenges: [] })
+    routes["POST /api/profile/trophy-cases/fill"] = () => {
+      const body = JSON.parse(calls.at(-1)!.init.body)
+      posts.push(body)
+      return body.confirm
+        ? ok({ need: 4, picks: [], short: 0, pinned: 4 })
+        : ok({ need: 4, short: 0, picks: [3, 4, 5, 6].map((slot) => ({ slot, player_name: "Damian Lillard", set_name: "Base", serial_number: slot, fmv: 2 })) })
+    }
+    const toast = vi.fn()
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={toast} />)
+    fireEvent.click(await screen.findByTestId("fill-my-case"))
+    await waitFor(() => expect(toast).toHaveBeenCalledWith("Pinned 4 — your Dame Time entry is complete", "success"))
+    expect(posts).toEqual([{ caseId: CASE, confirm: false }, { caseId: CASE, confirm: true }])
+    expect(window.confirm).toHaveBeenCalledTimes(1)
+  })
+
+  // 2026-11-15 activity review: the completion moment is where a share is most likely,
+  // so the toast points at the share buttons — but ONLY when they render (a board
+  // username exists). Without one there is nothing above the case to point at.
+  it("'Fill my case' completing the entry points at the share buttons when they exist", async () => {
+    routes["GET /api/profile/trophy-cases"] = () =>
+      ok({ cases: [{ id: CASE, name: "Dame Time", created_at: "", completed_at: null, challenge: DAME, slabs: [slab(1), slab(2)] }], challenges: [], board_username: "rrx69" })
+    routes["POST /api/profile/trophy-cases/fill"] = () => {
+      const body = JSON.parse(calls.at(-1)!.init.body)
+      return body.confirm
+        ? ok({ need: 4, picks: [], short: 0, pinned: 4 })
+        : ok({ need: 4, short: 0, picks: [3, 4, 5, 6].map((slot) => ({ slot, player_name: "Damian Lillard", set_name: "Base", serial_number: slot, fmv: 2 })) })
+    }
+    const toast = vi.fn()
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={toast} />)
+    fireEvent.click(await screen.findByTestId("fill-my-case"))
+    await waitFor(() =>
+      expect(toast).toHaveBeenCalledWith("Pinned 4 — your Dame Time entry is complete. Share it from the buttons above your case.", "success"),
+    )
+  })
+
+  it("'Fill my case' declined at the confirm writes NOTHING", async () => {
+    ;(window.confirm as any).mockReturnValue(false)
+    const posts: any[] = []
+    routes["GET /api/profile/trophy-cases"] = () =>
+      ok({ cases: [{ id: CASE, name: "Dame Time", created_at: "", completed_at: null, challenge: DAME, slabs: [] }], challenges: [] })
+    routes["POST /api/profile/trophy-cases/fill"] = () => {
+      posts.push(JSON.parse(calls.at(-1)!.init.body))
+      return ok({ need: 6, short: 0, picks: [{ slot: 1, player_name: "Damian Lillard", set_name: "Base", serial_number: 1, fmv: 1 }] })
+    }
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} />)
+    fireEvent.click(await screen.findByTestId("fill-my-case"))
+    await waitFor(() => expect(window.confirm).toHaveBeenCalled())
+    expect(posts.every((b) => b.confirm === false)).toBe(true)
+  })
+
+  it("a collector who can't reach 6 is told how many short — with no false 'complete'", async () => {
+    routes["GET /api/profile/trophy-cases"] = () =>
+      ok({ cases: [{ id: CASE, name: "Dame Time", created_at: "", completed_at: null, challenge: DAME, slabs: [slab(1), slab(2), slab(3), slab(4), slab(5)] }], challenges: [] })
+    routes["POST /api/profile/trophy-cases/fill"] = () => ok({ need: 1, picks: [], short: 1 })
+    const toast = vi.fn()
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={toast} />)
+    fireEvent.click(await screen.findByTestId("fill-my-case"))
+    await waitFor(() => expect(toast).toHaveBeenCalledWith("None of your held pieces fit the empty slots — Dame Time needs 1 more.", "info"))
+    expect((await screen.findByTestId("fill-short")).textContent).toMatch(/1 short of 6/)
+  })
+
+  it("fillConfirmCopy names each slot and never hides a remaining gap", () => {
+    const one = [{ slot: 6, player_name: "Damian Lillard", set_name: "Base Set", serial_number: 145, fmv: 21 }]
+    expect(fillConfirmCopy("Dame Time", one, 0)).toBe("Pin these 1 to your Dame Time entry?\n\nSlot 6: Base Set #145 · $21.00")
+    expect(fillConfirmCopy("Dame Time", one, 2)).toMatch(/leaves 2 slots empty — Dame Time completes at 6\.$/)
+  })
+
+  it("reports the unfinished live challenge to the dashboard (for the main-case picker's offer)", async () => {
+    routes["GET /api/profile/trophy-cases"] = () => ok({ cases: [], challenges: [DAME] })
+    const seen = vi.fn()
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} onLiveChallenge={seen} />)
+    await waitFor(() => expect(seen).toHaveBeenCalledWith({ slug: "dame-time", title: "Dame Time" }))
+  })
+
+  it("unfinishedLiveChallenge: an entry below 6 or an open un-entered challenge — never a full entry or a closed one", () => {
+    const full = { id: CASE, name: "Dame Time", created_at: "", completed_at: "x", challenge: DAME, slabs: [1, 2, 3, 4, 5, 6].map((n) => slab(n)) } as any
+    const part = { ...full, slabs: [slab(1)] }
+    expect(unfinishedLiveChallenge([part], [])).toEqual({ slug: "dame-time", title: "Dame Time" })
+    expect(unfinishedLiveChallenge([full], [DAME as any])).toBeNull()
+    expect(unfinishedLiveChallenge([{ ...part, challenge: { ...DAME, is_active: false } }], [])).toBeNull()
+    expect(unfinishedLiveChallenge([], [{ ...DAME, is_active: false } as any])).toBeNull()
+    expect(unfinishedLiveChallenge([], null)).toBeNull()
+  })
+
+  it("an open request from the main-case picker opens the entry's picker on its FIRST EMPTY slot", async () => {
+    routes["GET /api/profile/trophy-cases"] = () =>
+      ok({ cases: [{ id: CASE, name: "Dame Time", created_at: "", completed_at: null, challenge: DAME, slabs: [slab(1), slab(2)] }], challenges: [] })
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} openRequest={{ slug: "dame-time", n: 1 }} />)
+    await screen.findByTestId("picker")
+    const p = picker.mock.calls.at(-1)![0]
+    expect(p.caseId).toBe(CASE)
+    expect(p.slot).toBe(3)
+    expect(p.challengeSlug).toBe("dame-time")
+  })
+
+  it("copyMainToast never hides a skip, and says so when nothing landed", () => {
+    expect(copyMainToast("Dame Time", { copied: 0, skipped: [{ reason: "nope" }] }, true)).toBe(
+      "Entered Dame Time — none of your main-case pieces could be added (1 skipped: nope)",
+    )
+    expect(copyMainToast("Dame Time", { copied: 6, skipped: [] }, true)).toBe("Entered Dame Time with 6 pieces from your main case")
+  })
+
+  it("does not offer a challenge already entered; a null challenge list offers nothing", async () => {
+    routes["GET /api/profile/trophy-cases"] = () =>
+      ok({ cases: [{ id: CASE, name: "Dame Time", created_at: "", completed_at: null, challenge: DAME, slabs: [] }], challenges: [DAME] })
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} />)
+    expect(await screen.findByText(/Challenge entry/)).toBeTruthy()
+    expect(screen.queryByText("Enter")).toBeNull()
+  })
+
+  it("every write from a case carries THAT case's id", async () => {
+    routes["GET /api/profile/trophy-cases"] = () =>
+      ok({
+        cases: [{ id: CASE, name: "Dame Time", created_at: "", completed_at: null, challenge: DAME, slabs: [slab(1)] }],
+        challenges: [],
+      })
+    routes["DELETE /api/profile/trophy"] = () => ok({ ok: true })
+    routes["DELETE /api/profile/trophy-cases"] = () => ok({ ok: true })
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} />)
+    await screen.findByText("1 / 6")
+
+    // Empty slot 2 → picker opens for THIS case, pre-searched for Dame.
+    fireEvent.click(screen.getAllByText(/PIN A MOMENT/)[0])
+    await screen.findByTestId("picker")
+    const p = picker.mock.calls.at(-1)![0]
+    expect(p.caseId).toBe(CASE)
+    expect(p.initialQuery).toBe("Damian Lillard")
+    expect(p.pinnedMomentIds).toEqual(["m1"])
+    fireEvent.click(screen.getByText("fake-pin"))
+    await waitFor(() => expect(screen.queryByTestId("picker")).toBeNull())
+
+    // Delete the case → body names it.
+    fireEvent.click(screen.getByText("Delete"))
+    await waitFor(() => expect(calls.some((c) => c.init?.method === "DELETE" && c.url === "/api/profile/trophy-cases")).toBe(true))
+    const del = calls.find((c) => c.init?.method === "DELETE" && c.url === "/api/profile/trophy-cases")!
+    expect(JSON.parse(del.init.body)).toEqual({ caseId: CASE })
+  })
+
+  it("a challenge entry says it is SAVED (no name box, no save step) — Trevor 11-06: 'It should auto save as you create it'", async () => {
+    routes["GET /api/profile/trophy-cases"] = () =>
+      // RE-PINNED 2026-11-07: "on the board" now needs a KNOWN username (the board lists only those).
+      ok({ cases: [{ id: CASE, name: "Dame Time", created_at: "", completed_at: null, challenge: DAME, slabs: [slab(1), slab(2)] }], challenges: [], board_username: "trev", board_username_known: true })
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} />)
+    expect(await screen.findByText(/Entry saved · 2 of 6 on the board/)).toBeTruthy()
+    // No bare name input under the case; no Rename for a challenge case.
+    expect(screen.queryByPlaceholderText(/New case name/)).toBeNull()
+    expect(screen.queryByText("Rename")).toBeNull()
+    expect(screen.getByText(/Start another case/)).toBeTruthy()
+  })
+
+  // 2026-11-07 review: get_trophy_challenge_entries lists only collectors with
+  // a profile username, so "on the board" was a false claim for everyone else.
+  it("⛔ with NO username the entry never claims to be on the board — it says how to get there", async () => {
+    routes["GET /api/profile/trophy-cases"] = () =>
+      ok({ cases: [{ id: CASE, name: "Dame Time", created_at: "", completed_at: null, challenge: DAME, slabs: [slab(1)] }], challenges: [], board_username: null, board_username_known: true })
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} />)
+    const line = await screen.findByText(/set a username to appear on the board/)
+    expect(line.textContent).not.toMatch(/of 6 on the board/)
+    expect(line.closest("a")!.getAttribute("href")).toBe("/profile/edit")
+  })
+
+  it("a FAILED username read claims neither listed nor unlisted", async () => {
+    routes["GET /api/profile/trophy-cases"] = () =>
+      ok({ cases: [{ id: CASE, name: "Dame Time", created_at: "", completed_at: null, challenge: DAME, slabs: [slab(1)] }], challenges: [], board_username: null, board_username_known: false })
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} />)
+    const line = await screen.findByText(/Entry saved · 1 of 6/)
+    expect(line.textContent).not.toMatch(/on the board|set a username/)
+  })
+
+  it("an empty challenge entry says each pick saves itself", async () => {
+    routes["GET /api/profile/trophy-cases"] = () =>
+      ok({ cases: [{ id: CASE, name: "Dame Time", created_at: "", completed_at: null, challenge: DAME, slabs: [] }], challenges: [] })
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} />)
+    expect(await screen.findByText(/each pick saves itself/)).toBeTruthy()
+  })
+
+  it("creates and renames a named case; a server refusal is toasted, not swallowed", async () => {
+    routes["GET /api/profile/trophy-cases"] = () =>
+      ok({ cases: [{ id: CASE, name: "Rookies", created_at: "", completed_at: null, challenge: null, slabs: [] }], challenges: [] })
+    routes["POST /api/profile/trophy-cases"] = () => ({ ok: false, status: 409, json: async () => ({ error: "You can have up to 10 extra trophy cases." }) })
+    routes["PATCH /api/profile/trophy-cases"] = () => ok({ case: { id: CASE, name: "Rooks" } })
+    const toast = vi.fn()
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={toast} />)
+    // 2026-11-06: the name box is behind a "Start another case" button, so it
+    // never reads as the save step for the case above it.
+    fireEvent.click(await screen.findByText(/Start another case/))
+    fireEvent.change(await screen.findByPlaceholderText(/New case name/), { target: { value: "Bigs" } })
+    fireEvent.click(screen.getByText("New case"))
+    await waitFor(() => expect(toast).toHaveBeenCalledWith(expect.stringContaining("up to 10"), "info"))
+
+    fireEvent.click(screen.getByText("Rename"))
+    fireEvent.change(screen.getByLabelText("Trophy case name"), { target: { value: "Rooks" } })
+    fireEvent.click(screen.getByText("Save"))
+    await waitFor(() => expect(toast).toHaveBeenCalledWith("Case renamed", "success"))
+    const patch = calls.find((c) => c.init?.method === "PATCH")!
+    expect(JSON.parse(patch.init.body)).toEqual({ caseId: CASE, name: "Rooks" })
+  })
+
+  it("a network failure on a write is reported", async () => {
+    routes["GET /api/profile/trophy-cases"] = () => ok({ cases: [], challenges: [DAME] })
+    routes["POST /api/profile/trophy-cases"] = () => {
+      throw new Error("offline")
+    }
+    const toast = vi.fn()
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={toast} />)
+    fireEvent.click(await screen.findByText("Enter"))
+    await waitFor(() => expect(toast).toHaveBeenCalledWith(expect.stringMatching(/Couldn.t reach/), "info"))
+  })
+})
+
+describe("PublicTrophyCases (profile)", () => {
+  it("renders only cases with pins, with a link to the challenge board", async () => {
+    routes["GET /api/public/trophy-cases"] = () =>
+      ok({
+        cases: [
+          { id: CASE, name: "Dame Time", challenge: DAME, slabs: [slab(2)] },
+          { id: "empty", name: "Draft", challenge: null, slabs: [] },
+        ],
+      })
+    render(<PublicTrophyCases username="trev" />)
+    expect(await screen.findByText("Dame Time")).toBeTruthy()
+    expect(screen.queryByText("Draft")).toBeNull()
+    expect(calls[0].url).toBe("/api/public/trophy-cases?username=trev")
+  })
+
+  it("⚠ a failed read says so rather than rendering as 'no extra cases'", async () => {
+    routes["GET /api/public/trophy-cases"] = () => fail()
+    render(<PublicTrophyCases username="trev" />)
+    expect(await screen.findByText(/Couldn.t load this collector/)).toBeTruthy()
+  })
+})
+
+describe("ChallengeBoardClient", () => {
+  const board = (entries: any[]) =>
+    ok({ challenge: { ...DAME }, entry_count: entries.length, entries, is_open: true })
+
+  it("renders entries with their owner links", async () => {
+    routes["GET /api/public/trophy-challenges/dame-time"] = () =>
+      board([{ case_id: CASE, username: "trev", slab_count: 1, completed_at: null, slabs: [slab(1)] }])
+    render(<ChallengeBoardClient slug="dame-time" />)
+    expect(await screen.findByText("@trev")).toBeTruthy()
+    // The CTA lands ON the challenge (Trophy tab, scrolled to its row) — a bare
+    // /dashboard opened Overview and left the collector hunting for it.
+    expect(screen.getByText(/Enter from your dashboard/).closest("a")!.getAttribute("href")).toBe(
+      "/dashboard?tab=trophy&challenge=dame-time"
+    )
+  })
+
+  it("'complete' follows the LIVE count — a case stamped complete and then unpinned to 4 is not complete", async () => {
+    routes["GET /api/public/trophy-challenges/dame-time"] = () =>
+      board([{ case_id: CASE, username: "trev", slab_count: 4, completed_at: "2026-11-06T00:00:00Z", slabs: [slab(1)] }])
+    render(<ChallengeBoardClient slug="dame-time" />)
+    expect(await screen.findByText(/4 \/ 6/)).toBeTruthy()
+    expect(screen.queryByText(/complete/)).toBeNull()
+  })
+
+  it("a genuinely empty board invites the first entry", async () => {
+    routes["GET /api/public/trophy-challenges/dame-time"] = () => board([])
+    render(<ChallengeBoardClient slug="dame-time" />)
+    expect(await screen.findByText(/No entries yet — be the first/)).toBeTruthy()
+  })
+
+  it("⚠ a failed read is NEVER 'no entries yet'", async () => {
+    routes["GET /api/public/trophy-challenges/dame-time"] = () => fail()
+    render(<ChallengeBoardClient slug="dame-time" />)
+    expect(await screen.findByText(/Couldn.t load this challenge/)).toBeTruthy()
+    expect(screen.queryByText(/No entries yet/)).toBeNull()
+  })
+
+  it("an unknown challenge says so", async () => {
+    routes["GET /api/public/trophy-challenges/nope"] = () => ({ ok: false, status: 404, json: async () => ({}) })
+    render(<ChallengeBoardClient slug="nope" />)
+    expect(await screen.findByText(/no trophy challenge here/)).toBeTruthy()
+  })
+
+  it("a closed challenge shows closed, with no entry CTA", async () => {
+    routes["GET /api/public/trophy-challenges/dame-time"] = () =>
+      ok({ challenge: { ...DAME }, entry_count: 0, entries: [], is_open: false })
+    render(<ChallengeBoardClient slug="dame-time" />)
+    expect(await screen.findByText(/This challenge has closed/)).toBeTruthy()
+    expect(screen.queryByText(/Enter from your dashboard/)).toBeNull()
+  })
+})

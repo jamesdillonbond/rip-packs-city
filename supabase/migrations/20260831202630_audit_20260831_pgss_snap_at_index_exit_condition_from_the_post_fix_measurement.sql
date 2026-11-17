@@ -1,0 +1,35 @@
+-- audit_20260831 — exit condition for idx_audit_20260830_pgss_snap_at, taken from
+-- the post-fix measurement, not from a hoped-for order of magnitude.
+--
+-- POST-FIX, measured immediately after the index was created, warm, same state,
+-- same probe as the baseline in the preceding migration:
+--   500-row probe : 1,950,714 buffers / 11,674 ms  ->      319 buffers /   5.7 ms
+--   FULL diff     : 4,829 x 4,801 rows, Hash Right Join over two Index Scans
+--                                                  ->      503 buffers / 351.4 ms
+-- The full-diff figure is the one to check against, because that is the query
+-- every pass actually runs. Against the 17,733,789 buffers / 71,829 ms that the
+-- same shape recorded in pg_stat_statements before the index, that is 35,255x
+-- fewer buffers touched.
+--
+-- EXIT CONDITION — the next pass, when it ranks its own pgss diff (item 15), looks
+-- for snapshot-diff queries (`query LIKE '%audit_20260830_pgss_snap%'`) in the
+-- ranking:
+--     PASS       if no snapshot-diff query exceeds 100,000 buffers in the window.
+--                Headroom is deliberate: 503 buffers today, and the slice grows by
+--                ~4,829 rows per snapshot, so a diff of two slices should stay
+--                O(10^3) for a long time.
+--     FALSIFIED  if any snapshot-diff query again exceeds 1,000,000 buffers.
+-- FALSIFIED means the planner has gone back to a Nested Loop despite the index —
+-- most likely a diff written with a join predicate the index cannot serve (e.g.
+-- joining on `queryid` alone, which item 15 already forbids for correctness) — and
+-- the fix is the query, not another index.
+--
+-- ⚠ WHAT THIS DOES NOT FIX: the snapshot is still session-driven. `cron.job` has
+-- no row for it, 18 snapshots are on record and the gaps reach 4 h, so a "2-hour
+-- window" claim still has to be checked against the baseline row's actual age
+-- before it is believed. Scheduling remains queued for Trevor (item 15).
+--
+-- REVERT: COMMENT ON INDEX public.idx_audit_20260830_pgss_snap_at IS NULL;
+
+COMMENT ON INDEX public.idx_audit_20260830_pgss_snap_at IS
+  'Added 2026-08-31 20:2xZ. Serves the per-snapshot slice used by every saturation diff (WHERE at = $1) and the MAX(at) baseline lookup. Before: Nested Loop with a 3,894-page inner Seq Scan per outer row, 17,733,789 buffers / 71.8 s, observed 4x in one 80-minute window. After: Hash Right Join over two Index Scans, 503 buffers / 351 ms. EXIT: no snapshot-diff query above 100,000 buffers in a pgss diff; FALSIFIED above 1,000,000. Revert: DROP INDEX IF EXISTS public.idx_audit_20260830_pgss_snap_at;';

@@ -1,0 +1,22 @@
+-- Drop the prose-ranking prototype. It targeted the wrong defect.
+--
+-- The prototype graded the prose boost (flat 0.12 -> gated 0.55/0.25) on the
+-- theory that verbatim prose matches were outranked. Measured: it changed
+-- nothing, because ~297 moments each mention "buzzer" exactly once and are
+-- genuinely EQUIVALENT under any text-relevance measure — ts_rank is 0.07599
+-- for nearly all of them. There is no ranking signal to recover; a one-word
+-- query simply has ~297 equally-good answers.
+--
+-- The real defect is TOKEN HANDLING, not ranking. `LIKE ALL (v_pats)` requires
+-- every token verbatim, so one word the prose does not happen to use kills the
+-- whole query:
+--     lillard buzzer         -> 121:4255 found (rank 6)   ✅
+--     lillard game-winning   -> 48:1652  found (rank 2)   ✅
+--     lillard playoff        -> 48:1652  found (rank 5)   ✅
+--     lillard buzzer beater  -> 0 rows                    ❌ ("beater" absent)
+--     lillard game winner    -> target absent             ❌ ("winner" absent;
+--                                                            prose says "game-winning")
+--
+-- Leaving an unused prototype in the schema is exactly the cruft the
+-- shared-deploy-probe note warns about, so it goes now rather than lingering.
+DROP FUNCTION IF EXISTS public.rpc_search_catalog_v2(text, uuid, integer);

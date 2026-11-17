@@ -1,0 +1,14 @@
+-- Drop the token-coverage prototype now that it has served its purpose.
+--
+-- It VALIDATED the design (all 3 failing queries fixed, all 3 working queries
+-- preserved at identical ranks) but it is NOT shippable: to prototype quickly
+-- it implements the edition arm ONLY, dropping the player / set / team arms
+-- entirely. Leaving it in the schema would invite someone to swap it in and
+-- silently lose three quarters of search.
+--
+-- The validated change, for whoever ports it into the real function:
+--   v_need := CASE WHEN v_n >= 3 THEN v_n - 1 ELSE v_n END;
+--   ... replace `LIKE ALL (v_pats)` with a per-token count >= v_need
+--   ... add (tok_hit / v_n) * 0.60 to the score so a FULL match outranks partial
+-- Prototype kept out of the schema per the shared-deploy-probe cruft lesson.
+DROP FUNCTION IF EXISTS public.rpc_search_catalog_v3(text, uuid, integer);

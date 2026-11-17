@@ -1,0 +1,396 @@
+// @vitest-environment jsdom
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import { render, cleanup, waitFor, fireEvent } from "@testing-library/react"
+import WalletPacksView from "@/components/packs/WalletPacksView"
+
+// Drives the collection-scoped Packs body: the wallet-resolution gate (no wallet
+// → CTA, no fetch), the auth-required 401/403 branch (pack P&L is signed-in), the
+// summary hero + history table (status chip, has_buy/sell/rip "—" gating, net P&L
+// from the matched collection row), the Unopened/Opened/Sold sub-filter that
+// re-fetches with the mapped p_status, and the empty/error states. The pure
+// format helpers (fmtPackUsd etc.) are tested separately.
+
+let urlWallet: string | null = null
+let ownerKey = ""
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => ({ get: (k: string) => (k === "wallet" ? urlWallet : null) }),
+}))
+vi.mock("@/lib/owner-key", () => ({ getOwnerKey: () => ownerKey }))
+vi.mock("next/link", () => ({ default: ({ children, ...p }: any) => <a {...p}>{children}</a> }))
+
+let fetchMock: ReturnType<typeof vi.fn>
+const res = (status: number, body: unknown) =>
+  Promise.resolve({ ok: status >= 200 && status < 300, status, json: () => Promise.resolve(body) } as Response)
+
+// Route the two parallel fetches by URL so summary/history stay independent.
+function routeFetch(handlers: { summary: () => Promise<Response>; history: (url: string) => Promise<Response> }) {
+  return vi.fn((url: string) =>
+    url.includes("pack-summary") ? handlers.summary() : handlers.history(url),
+  )
+}
+
+const summaryBody = {
+  wallet: "0xabc",
+  by_collection: [
+    {
+      collection_id: "cid",
+      collection_name: "NBA Top Shot",
+      collection_slug: "nba_top_shot", // must match toDbSlug("nba-top-shot")
+      spent_usd: 250,
+      proceeds_usd: 0,
+      ripped_value_usd: 300,
+      net_pl_usd: 50,
+      activity_total: 5,
+      packs_purchased: 5,
+      packs_ripped: 3,
+      packs_sold: 0,
+    },
+  ],
+  // Fully covered whole-wallet totals: Net P&L publishes (2026-10-18 gate).
+  totals: { packs_purchased: 5, packs_ripped: 3, ripped_value_known_count: 3, primary_spend_unknown_count: 0, inferred_primary_count: 0 },
+}
+const heldRow = {
+  pack_nft_id: "999888777",
+  dist_id: null,
+  pack_name: "Base Pack",
+  pack_image: null,
+  collection_slug: "nba_top_shot",
+  status: "held" as const,
+  has_buy: false,
+  has_rip: false,
+  has_sell: false,
+  buy_price: null,
+  buy_currency: null,
+  sell_price: null,
+  pull_value_usd: null,
+  realized_pl_usd: null,
+  latest_event_at: null,
+}
+
+beforeEach(() => {
+  urlWallet = null
+  ownerKey = ""
+})
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+})
+
+describe("WalletPacksView", () => {
+  it("renders the no-wallet CTA and fetches nothing when no wallet resolves", () => {
+    fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText } = render(<WalletPacksView collection="nba-top-shot" />)
+    expect(getByText("Your sealed packs")).toBeTruthy()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("shows the sign-in branch when pack P&L returns 401 (signed out)", async () => {
+    ownerKey = "0xdead"
+    fetchMock = routeFetch({ summary: () => res(401, {}), history: () => res(401, {}) })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText } = render(<WalletPacksView collection="nba-top-shot" />)
+    await waitFor(() => expect(getByText("Sign in to see pack P&L")).toBeTruthy())
+  })
+
+  // 2026-11-07 (Trevor's own binder): a 403 is "signed in, but this wallet is not on
+  // your account" — telling a signed-in collector to "Sign in" was false.
+  it("a 403 (signed in, not your saved wallet) says so and never says 'Sign in'", async () => {
+    ownerKey = "0xdead"
+    fetchMock = routeFetch({ summary: () => res(403, {}), history: () => res(403, {}) })
+    vi.stubGlobal("fetch", fetchMock)
+    const { findByText, container } = render(<WalletPacksView collection="nba-top-shot" />)
+    expect(await findByText("Pack P&L is for your own wallet")).toBeTruthy()
+    expect(container.textContent).not.toMatch(/Sign in/)
+    expect(container.querySelector('a[href="/dashboard"]')).toBeTruthy()
+  })
+
+  // 2026-11-07: the binder passes the account's saved wallet; it beats this device's
+  // old key (Trevor's laptop held 0x3795…, so the tab asked for the wrong wallet).
+  it("the binder's wallet prop beats the device key; pending shows a loading line and fetches nothing", async () => {
+    ownerKey = "0xdevicekey"
+    fetchMock = routeFetch({ summary: () => res(200, summaryBody), history: () => res(200, { packs: [], total_count: 0 }) })
+    vi.stubGlobal("fetch", fetchMock)
+    const { rerender, getByRole } = render(<WalletPacksView collection="nba-top-shot" wallet={null} walletPending />)
+    expect(getByRole("status").textContent).toMatch(/Loading your wallet/)
+    expect(fetchMock).not.toHaveBeenCalled()
+    rerender(<WalletPacksView collection="nba-top-shot" wallet="0xSAVED" walletPending={false} />)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    const urls = fetchMock.mock.calls.map((c: unknown[]) => String(c[0]))
+    expect(urls.every((u: string) => u.includes("wallet=0xsaved"))).toBe(true)
+    expect(urls.some((u: string) => u.includes("0xdevicekey"))).toBe(false)
+  })
+
+  // 2026-10-18: this tab published the per-collection Net P&L with no coverage gate,
+  // one tab away from the dashboard that withheld the same figure.
+  function netPlTile(container: HTMLElement): string | null {
+    const label = [...container.querySelectorAll("div")].find((d) => d.textContent?.trim() === "Net P&L")
+    return label?.nextElementSibling?.textContent ?? null
+  }
+  it("⚠ WITHHOLDS Net P&L when the wallet's spend side is thin (most packs have no buy row)", async () => {
+    ownerKey = "0xowner"
+    const thin = { ...summaryBody, totals: { ...summaryBody.totals, inferred_primary_count: 40 } }
+    vi.stubGlobal("fetch", routeFetch({ summary: () => res(200, thin), history: () => res(200, { packs: [heldRow], total_count: 1 }) }))
+    const { container, getByText, queryByText } = render(<WalletPacksView collection="nba-top-shot" />)
+    await waitFor(() => expect(getByText("Base Pack")).toBeTruthy())
+    expect(netPlTile(container)).toBe("\u2014")
+    expect(queryByText("$50.00")).toBeNull()
+  })
+  it("⚠ WITHHOLDS this collection's Net P&L when IT has no costed packs, even though the wallet passes (2026-11-14)", async () => {
+    // The live Pinnacle shape: 0 purchased, ripped packs, $0 spent → gross rip value as "profit".
+    ownerKey = "0xowner"
+    const body = {
+      ...summaryBody,
+      by_collection: [{ ...summaryBody.by_collection[0], packs_purchased: 0, packs_ripped: 3, spent_usd: 0, net_pl_usd: 300, ripped_value_usd: 300 }],
+      totals: { packs_purchased: 50, packs_ripped: 3, ripped_value_known_count: 3, primary_spend_unknown_count: 0, inferred_primary_count: 0 },
+    }
+    vi.stubGlobal("fetch", routeFetch({ summary: () => res(200, body), history: () => res(200, { packs: [heldRow], total_count: 1 }) }))
+    const { container, getByText } = render(<WalletPacksView collection="nba-top-shot" />)
+    await waitFor(() => expect(getByText("Base Pack")).toBeTruthy())
+    expect(netPlTile(container)).toBe("\u2014")
+  })
+  it("⚠ a payload with NO totals withholds Net P&L rather than publishing an unchecked figure", async () => {
+    ownerKey = "0xowner"
+    const { totals: _drop, ...noTotals } = summaryBody
+    void _drop
+    vi.stubGlobal("fetch", routeFetch({ summary: () => res(200, noTotals), history: () => res(200, { packs: [heldRow], total_count: 1 }) }))
+    const { container, getByText, queryByText } = render(<WalletPacksView collection="nba-top-shot" />)
+    await waitFor(() => expect(getByText("Base Pack")).toBeTruthy())
+    expect(netPlTile(container)).toBe("\u2014")
+    expect(queryByText("$50.00")).toBeNull()
+  })
+
+  it("renders the hero stats + a history row with has_* gated '—' cells", async () => {
+    ownerKey = "0xowner"
+    fetchMock = routeFetch({
+      summary: () => res(200, summaryBody),
+      history: () => res(200, { packs: [heldRow], total_count: 1 }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText, getAllByText } = render(<WalletPacksView collection="nba-top-shot" />)
+    await waitFor(() => expect(getByText("Base Pack")).toBeTruthy())
+    // hero: packs purchased 5, total spent $250.00, ripped $300.00, net $50.00
+    // (fmtPackUsd renders 2 dp under $1000)
+    expect(getByText("5")).toBeTruthy()
+    expect(getByText("$250.00")).toBeTruthy()
+    expect(getByText("$300.00")).toBeTruthy()
+    expect(getByText("$50.00")).toBeTruthy()
+    // Re-pinned 2026-11-13 (Trevor: "better metrics and columns, depending on what's relevant,
+    // under the unopened, opened, and sold tabs"): one tab is one status, so the status chip
+    // column is gone; the Unopened tab's own columns are what this row carries.
+    for (const h of ["Acquired", "Cost", "Value", "Unrealized", "Market"]) expect(getByText(h)).toBeTruthy()
+    expect(() => getByText("held")).toThrow()
+    // has_buy/has_sell/has_rip all false → three "—" cells + realized P&L "—"
+    expect(getAllByText("—").length).toBeGreaterThanOrEqual(3)
+  })
+
+  // REGRESSION (2026-08-05): the pack name was only a Link when dist_id was set,
+  // and dist_id is NULL for EVERY sealed pack (the Top Shot primary_withdraw
+  // event carries no dist id — it resolves on open). The row <tr> has no
+  // onClick/role/tabIndex either, so the Unopened tab rendered ZERO click
+  // targets. Every row must be reachable.
+  it("links a SEALED pack (dist_id null) to the per-pack lifecycle route", async () => {
+    ownerKey = "0xowner"
+    fetchMock = routeFetch({
+      summary: () => res(200, summaryBody),
+      history: () => res(200, { packs: [heldRow], total_count: 1 }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText } = render(<WalletPacksView collection="nba-top-shot" />)
+    await waitFor(() => expect(getByText("Base Pack")).toBeTruthy())
+    const link = getByText("Base Pack").closest("a")
+    expect(link).toBeTruthy()
+    expect(link!.getAttribute("href")).toBe("/nba-top-shot/pack/999888777")
+  })
+
+  // Re-pinned 2026-11-12 (Trevor): a pack click opens the distribution's DETAIL page; the
+  // simulator is reached only from a link on that page.
+  it("links an OPENED pack (dist_id set) to its distribution detail page, not the simulator", async () => {
+    ownerKey = "0xowner"
+    fetchMock = routeFetch({
+      summary: () => res(200, summaryBody),
+      history: () =>
+        res(200, { packs: [{ ...heldRow, dist_id: "42", status: "ripped" as const }], total_count: 1 }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText } = render(<WalletPacksView collection="nba-top-shot" />)
+    await waitFor(() => expect(getByText("Base Pack")).toBeTruthy())
+    expect(getByText("Base Pack").closest("a")!.getAttribute("href")).toBe(
+      "/nba-top-shot/pack/dist/42"
+    )
+  })
+
+  it("the Opened sub-filter re-fetches pack-history with status=ripped", async () => {
+    ownerKey = "0xowner"
+    const historyUrls: string[] = []
+    fetchMock = routeFetch({
+      summary: () => res(200, summaryBody),
+      history: (url) => {
+        historyUrls.push(url)
+        return res(200, { packs: [heldRow], total_count: 1 })
+      },
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText } = render(<WalletPacksView collection="nba-top-shot" />)
+    await waitFor(() => expect(historyUrls.length).toBe(1))
+    expect(historyUrls[0]).toContain("status=held") // default = unopened
+
+    fireEvent.click(getByText("Opened"))
+    await waitFor(() => expect(historyUrls.length).toBe(2))
+    expect(historyUrls[1]).toContain("status=ripped")
+    expect(historyUrls[1]).toContain("collection=nba_top_shot")
+  })
+
+  it("ignores a stale pack-history response that resolves after a newer filter switch", async () => {
+    ownerKey = "0xowner"
+    // Deferred history responses so we can resolve them out of order. Summary
+    // resolves immediately; the assertion is about which HISTORY response wins.
+    const deferred: Array<{ url: string; resolve: (r: Response) => void }> = []
+    fetchMock = routeFetch({
+      summary: () => res(200, summaryBody),
+      history: (url) =>
+        new Promise<Response>((resolve) => {
+          deferred.push({ url, resolve })
+        }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText, queryByText } = render(<WalletPacksView collection="nba-top-shot" />)
+
+    // Initial load (held). Resolve it so the board renders and tabs are clickable.
+    await waitFor(() => expect(deferred.length).toBe(1))
+    deferred[0].resolve({ ok: true, status: 200, json: () => Promise.resolve({ packs: [heldRow], total_count: 1 }) } as Response)
+    await waitFor(() => expect(getByText("Base Pack")).toBeTruthy())
+
+    // Rapid filter switch: Opened (fetch #2, ripped) then Sold (fetch #3, sold).
+    fireEvent.click(getByText("Opened"))
+    await waitFor(() => expect(deferred.length).toBe(2))
+    fireEvent.click(getByText("Sold"))
+    await waitFor(() => expect(deferred.length).toBe(3))
+
+    const rippedRow = { ...heldRow, pack_nft_id: "111", pack_name: "RIPPED-PACK", status: "ripped" as const }
+    const soldRow = { ...heldRow, pack_nft_id: "222", pack_name: "SOLD-PACK", status: "flipped" as const }
+
+    // Resolve the NEWEST (Sold, #3) first, then the STALE (Opened, #2) last.
+    deferred[2].resolve({ ok: true, status: 200, json: () => Promise.resolve({ packs: [soldRow], total_count: 1 }) } as Response)
+    await waitFor(() => expect(getByText("SOLD-PACK")).toBeTruthy())
+    deferred[1].resolve({ ok: true, status: 200, json: () => Promise.resolve({ packs: [rippedRow], total_count: 1 }) } as Response)
+
+    // The stale Opened response must NOT overwrite the current Sold view.
+    await waitFor(() => expect(getByText("SOLD-PACK")).toBeTruthy())
+    expect(queryByText("RIPPED-PACK")).toBeNull()
+  })
+
+  it("shows the filter-specific empty state", async () => {
+    ownerKey = "0xowner"
+    fetchMock = routeFetch({
+      summary: () => res(200, summaryBody),
+      history: () => res(200, { packs: [], total_count: 0 }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText } = render(<WalletPacksView collection="nba-top-shot" />)
+    await waitFor(() => expect(getByText("No sealed packs held in NBA Top Shot.")).toBeTruthy())
+  })
+
+  it("surfaces a pack-history error", async () => {
+    ownerKey = "0xowner"
+    fetchMock = routeFetch({
+      summary: () => res(200, summaryBody),
+      history: () => res(500, { error: "history exploded" }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText } = render(<WalletPacksView collection="nba-top-shot" />)
+    await waitFor(() => expect(getByText("history exploded")).toBeTruthy())
+  })
+
+  // 2026-11-13 (history v27): the Opened tab shows what each pack yielded that the wallet
+  // STILL holds, at its wallet FMV, and the tab's metrics over every row (tab_totals).
+  it("Opened tab: still-held pulls + their wallet FMV per row, and the tab's metric tiles", async () => {
+    ownerKey = "0xowner"
+    const openedRow = {
+      ...heldRow, pack_nft_id: "555", pack_name: "Rookie Pack", dist_id: "D1", status: "ripped" as const,
+      has_rip: true, has_buy: true, buy_usd: 10, buy_price: 10, pull_value_usd: 20, realized_pl_usd: 10,
+      moments_pulled: 3, pulls_listed: 3, pulls_held: 2, pulls_held_priced: 2, held_fmv_usd: 12.5,
+      ripped_at: "2026-11-01T00:00:00Z",
+    }
+    fetchMock = routeFetch({
+      summary: () => res(200, summaryBody),
+      history: (url: string) =>
+        url.includes("status=ripped")
+          ? res(200, {
+              packs: [openedRow], total_count: 1,
+              tab_totals: { packs: 1, opened_packs: 1, opened_with_pull_list: 1, pulls_listed: 3, pulls_held: 2, pulls_held_priced: 2,
+                            held_fmv_usd: 12.5, pull_value_usd: 20, pull_valued: 1, cost_usd: 10, cost_known: 1,
+                            realized_pl_usd: 10, realized_pl_known: 1 },
+            })
+          : res(200, { packs: [heldRow], total_count: 1 }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText, getAllByText, findByText } = render(<WalletPacksView collection="nba-top-shot" />)
+    await waitFor(() => expect(getByText("Base Pack")).toBeTruthy())
+    fireEvent.click(getByText("Opened"))
+    expect(await findByText("Rookie Pack")).toBeTruthy()
+    for (const h of ["Still held", "Held FMV", "Pull value"]) expect(getAllByText(h).length).toBeGreaterThan(0)
+    expect(getByText("2 of 3")).toBeTruthy()
+    // the row's held FMV and the tile's total are the same $12.50 here
+    expect(getAllByText("$12.50").length).toBe(2)
+    expect(getByText("2 of 3 pulls still held")).toBeTruthy()
+  })
+
+  it("an older payload with no tab_totals renders no metric tiles (and no $0)", async () => {
+    ownerKey = "0xowner"
+    fetchMock = routeFetch({ summary: () => res(200, summaryBody), history: () => res(200, { packs: [heldRow], total_count: 1 }) })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText, queryByLabelText } = render(<WalletPacksView collection="nba-top-shot" />)
+    await waitFor(() => expect(getByText("Base Pack")).toBeTruthy())
+    expect(queryByLabelText("Unopened pack metrics")).toBeNull()
+  })
+
+  // 2026-11-13: a summary timeout (seen live, cold read past its 15 s limit) rendered the
+  // hero as four bare dashes. It now retries once, then SAYS it failed, with a retry.
+  it("a failed summary retries once, then says so with a Retry -- never bare dashes alone", async () => {
+    ownerKey = "0xowner"
+    let sumCalls = 0
+    fetchMock = routeFetch({
+      summary: () => { sumCalls++; return res(503, { error: "timeout" }) },
+      history: () => res(200, { packs: [heldRow], total_count: 1 }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const { findByRole, getByText } = render(<WalletPacksView collection="nba-top-shot" />)
+    const alert = await findByRole("alert")
+    expect(alert.textContent).toMatch(/didn.t load/)
+    expect(sumCalls).toBe(2)
+    expect(getByText("Base Pack")).toBeTruthy() // the tabs are unaffected
+    fireEvent.click(getByText("Retry"))
+    await waitFor(() => expect(sumCalls).toBe(4))
+  })
+
+  it("a summary that fails once and lands on the retry shows its numbers and no alert", async () => {
+    ownerKey = "0xowner"
+    let sumCalls = 0
+    fetchMock = routeFetch({
+      summary: () => (++sumCalls === 1 ? res(503, {}) : res(200, summaryBody)),
+      history: () => res(200, { packs: [heldRow], total_count: 1 }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const { findByText, queryByRole } = render(<WalletPacksView collection="nba-top-shot" />)
+    expect(await findByText("$250.00")).toBeTruthy()
+    expect(queryByRole("alert")).toBeNull()
+  })
+
+  it("switching tabs re-reads the history, never the slow summary", async () => {
+    ownerKey = "0xowner"
+    let sumCalls = 0
+    fetchMock = routeFetch({
+      summary: () => { sumCalls++; return res(200, summaryBody) },
+      history: () => res(200, { packs: [heldRow], total_count: 1 }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText, findByText } = render(<WalletPacksView collection="nba-top-shot" />)
+    await findByText("$250.00")
+    fireEvent.click(getByText("Opened"))
+    fireEvent.click(getByText("Sold"))
+    await waitFor(() => expect(fetchMock.mock.calls.filter((c: unknown[]) => String(c[0]).includes("status=sold_any")).length).toBe(1))
+    expect(sumCalls).toBe(1)
+  })
+})

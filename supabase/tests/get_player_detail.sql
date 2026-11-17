@@ -1,0 +1,467 @@
+-- DB invariant: public.get_player_detail — the player/character hub read behind
+-- /[collection]/player/[slug]. Like get_team_detail it resolves a slug via a
+-- functional regexp, and it must pick the RIGHT player row when a slug is
+-- ambiguous (same name, different teams) — else the page shows the wrong player's
+-- team, editions and FMV.
+--
+-- Pins:
+--   * slug resolved via slugified name; no match -> NULL;
+--   * candidate ranking, in order:
+--       1. CURRENT-TEAM preference — the row whose team matches the team on the
+--          player's most recent moment, but only while the player is still
+--          active (that moment is within 18 months of the collection's newest
+--          moment). This is what stops a TRADED player being pinned forever to
+--          whichever former team they happen to have the most moments for;
+--       2. most team-matching editions (the right answer for a RETIRED player:
+--          their iconic team, not their final-season team);
+--       3. is_active, 4. has-headshot, 5. id.
+--     `game_date` is the recency signal, NOT `first_minted_at` — the latter is
+--     0% populated on Top Shot, so ordering by it was arbitrary.
+--     The horizon is DATA-RELATIVE (collection max(game_date) - 18 months) so it
+--     can never go stale;
+--   * standard aggregation (edition_count / circulation / latest-snapshot FMV +
+--     floor totals) over the player's editions by player_id OR player_name;
+--   * team_slug derivation + is_character flag;
+--   * Pinnacle branch: a character the render catalog names aggregates ITS PINS
+--     from pinnacle_catalog (count, circulation, FMV + floor totals — the same
+--     pins get_player_editions lists); otherwise it falls back to the old
+--     pinnacle_editions aggregate via the FMV-collapse helper (2026-09-26).
+--
+-- The function DDL below is a VERBATIM copy of the committed migration
+-- (supabase/migrations/20260929063531_audit_20260928_pinnacle_entity_totals_say_what_they_sum.sql; was 20260928064804;
+-- before that, 20260926191644_audit_20260926_pinnacle_duo_character_pages_find_their_pins.sql);
+-- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
+--
+-- Re-pinned 2026-10-25 to 20261025221903_audit_20261025_recent_low_totals_ignore_an_ask_far_above_fmv_a.sql (Recent-Low Totals call recent_low_usd).
+-- Re-pinned 2026-11-14 to 20261115043933_audit_20261114_player_totals_and_mint_dates_only_when_complete.sql (totals + dates complete or NULL).
+--
+-- Runs inside a rolled-back transaction so it leaves no residue.
+
+BEGIN;
+
+-- 2026-09-06 (20260906165511): the slug match also tries the UNACCENTED name.
+CREATE SCHEMA IF NOT EXISTS extensions;
+CREATE EXTENSION IF NOT EXISTS unaccent SCHEMA extensions;
+
+-- ── minimal fixtures ─────────────────────────────────────────────────────────
+CREATE TABLE public.collections (id uuid PRIMARY KEY, slug text);
+CREATE TABLE public.players (
+  id uuid PRIMARY KEY, collection_id uuid, name text, team text, is_active boolean,
+  headshot_url text, external_id text, first_name text, last_name text,
+  jersey_number int, position text, player_tier text);
+CREATE TABLE public.editions (
+  id uuid PRIMARY KEY, collection_id uuid, player_id uuid, player_name text,
+  team_name text, circulation_count int, first_minted_at timestamptz,
+  game_date date);
+CREATE TABLE public.fmv_snapshots (
+  edition_id uuid, fmv_usd numeric, floor_price_usd numeric, computed_at timestamptz);
+CREATE TABLE public.pinnacle_editions (
+  id uuid PRIMARY KEY, character_name text, mint_count int, minting_date timestamptz);
+CREATE TABLE public.pinnacle_catalog (
+  render_id text PRIMARY KEY, characters text[], total_minted int, fmv_usd numeric, floor_ask numeric, fmv_confidence text);
+CREATE FUNCTION public.get_pinnacle_edition_fmv_collapsed(p_id uuid)
+ RETURNS TABLE(fmv_usd numeric, floor_usd numeric) LANGUAGE sql STABLE AS $$
+  SELECT 12::numeric, 10::numeric WHERE p_id IS NOT NULL
+$$;
+
+-- 2026-10-20: the name fallback skips an edition linked to ANOTHER PERSON per
+-- player_relations (the helper is copied from 20261021034822; not itself pinned).
+CREATE TABLE public.player_relations (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), collection_id uuid, player_id uuid,
+  related_player_id uuid, relation text, name text, note text);
+CREATE OR REPLACE FUNCTION public.edition_player_is_other_person(p_edition_player_id uuid, p_page_player_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'public'
+AS $function$
+  SELECT p_edition_player_id IS NOT NULL
+     AND p_edition_player_id IS DISTINCT FROM p_page_player_id
+     AND EXISTS (
+       SELECT 1 FROM player_relations r
+        WHERE (r.relation IN ('parent_of', 'namesake')
+               AND ((r.player_id = p_page_player_id AND r.related_player_id = p_edition_player_id)
+                 OR (r.player_id = p_edition_player_id AND r.related_player_id = p_page_player_id)))
+           OR (r.relation = 'name_change' AND r.player_id = p_edition_player_id)
+     )
+$function$;
+
+-- >>> BEGIN verbatim get_player_detail (keep byte-identical to the migration) >>>
+-- recent_low_usd: VERBATIM from supabase/migrations/20261025221903_audit_20261025_recent_low_totals_ignore_an_ask_far_above_fmv_a.sql (pinned by the drift guard).
+CREATE OR REPLACE FUNCTION public.recent_low_usd(p_floor numeric, p_fmv numeric)
+ RETURNS numeric
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE
+AS $function$
+  SELECT CASE
+           WHEN p_floor > 0 AND (p_fmv IS NULL OR p_fmv <= 0 OR p_floor <= 3 * p_fmv) THEN p_floor
+         END
+$function$;
+CREATE OR REPLACE FUNCTION public.get_player_detail(p_collection_id uuid, p_player_slug text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ SET statement_timeout TO '8s'
+AS $function$
+DECLARE
+  v_pinnacle_uuid    CONSTANT uuid := '7dd9dd11-e8b6-45c4-ac99-71331f959714';
+  v_player           RECORD;
+  v_collection_slug  text;
+  v_edition_count    int;
+  v_total_circulation int;
+  v_fmv_total        numeric;
+  v_floor_total      numeric;
+  v_fmv_ask_derived  numeric;
+  v_listed_count     int;
+  v_first_minted     timestamptz;
+  v_last_minted      timestamptz;
+BEGIN
+  SELECT slug INTO v_collection_slug FROM collections WHERE id = p_collection_id;
+
+  WITH cand AS (
+    SELECT p.*,
+      (SELECT count(*) FROM editions e
+         WHERE e.collection_id = p_collection_id
+           AND (e.player_id = p.id OR (e.player_name = p.name AND NOT public.edition_player_is_other_person(e.player_id, p.id)))
+           AND e.team_name IS NOT DISTINCT FROM p.team) AS team_edition_count
+    FROM players p
+    WHERE p.collection_id = p_collection_id
+      AND (regexp_replace(lower(trim(p.name)), '[^a-z0-9]+', '-', 'g') = p_player_slug
+           OR regexp_replace(lower(trim(extensions.unaccent(p.name))), '[^a-z0-9]+', '-', 'g') = p_player_slug)
+  ),
+  recent AS (
+    SELECT e.team_name, e.game_date
+    FROM editions e
+    WHERE e.collection_id = p_collection_id
+      AND e.player_name = (SELECT min(name) FROM cand)
+      AND e.team_name IS NOT NULL
+      AND e.game_date IS NOT NULL
+    ORDER BY e.game_date DESC
+    LIMIT 1
+  ),
+  horizon AS (
+    SELECT max(game_date) AS max_gd
+    FROM editions
+    WHERE collection_id = p_collection_id
+      AND game_date IS NOT NULL
+  )
+  SELECT c.* INTO v_player
+  FROM cand c
+  LEFT JOIN recent r ON true
+  CROSS JOIN horizon h
+  ORDER BY (CASE WHEN r.team_name IS NOT NULL
+                  AND r.game_date >= h.max_gd - interval '18 months'
+                  AND c.team = r.team_name
+                 THEN 1 ELSE 0 END) DESC,
+           c.team_edition_count DESC NULLS LAST,
+           (c.is_active IS TRUE) DESC,
+           (c.headshot_url IS NOT NULL) DESC,
+           c.id
+  LIMIT 1;
+
+  IF v_player IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  IF p_collection_id = v_pinnacle_uuid AND EXISTS (
+       SELECT 1 FROM pinnacle_catalog pc
+       WHERE (EXISTS (SELECT 1 FROM unnest(pc.characters) c WHERE lower(btrim(c)) = lower(btrim(v_player.name)))
+             OR (cardinality(pc.characters) > 1
+                 AND lower(btrim(v_player.name)) IN (lower(array_to_string(pc.characters, ' & ')),
+                                                     lower(array_to_string(pc.characters, ' ')))))
+     ) THEN
+    -- 2026-09-26: the same render catalog get_player_editions lists, so the
+    -- header counts the pins the grid shows. The catalog carries no minting
+    -- date, so this branch publishes none (2026-11-14, below).
+    SELECT
+      COUNT(*),
+      -- 2026-11-14: a total over SOME pins is not the total. NULL unless every pin carries one.
+      CASE WHEN COUNT(*) = COUNT(pc.total_minted) THEN SUM(pc.total_minted) END,
+      SUM(pc.fmv_usd)      FILTER (WHERE pc.fmv_usd > 0),
+      SUM(pc.floor_ask)    FILTER (WHERE pc.floor_ask > 0),
+      SUM(pc.fmv_usd)      FILTER (WHERE pc.fmv_usd > 0 AND pc.fmv_confidence::text = 'ASK_ONLY'),
+      COUNT(*)             FILTER (WHERE pc.floor_ask > 0)
+    INTO v_edition_count, v_total_circulation, v_fmv_total, v_floor_total, v_fmv_ask_derived, v_listed_count
+    FROM pinnacle_catalog pc
+    WHERE (EXISTS (SELECT 1 FROM unnest(pc.characters) c WHERE lower(btrim(c)) = lower(btrim(v_player.name)))
+             OR (cardinality(pc.characters) > 1
+                 AND lower(btrim(v_player.name)) IN (lower(array_to_string(pc.characters, ' & ')),
+                                                     lower(array_to_string(pc.characters, ' ')))));
+    -- 2026-09-27: dates only when EVERY row carries one (Mickey Mouse read
+    -- "first minted" = "last minted" from 1 of 24 rows).
+    -- 2026-11-14: and never from pinnacle_editions at all on this branch. That
+    -- table is SET-LEVEL and keyed by NAME, not by the pins counted above, so
+    -- "every row dated" was every row of a DIFFERENT, smaller subject: Hamm
+    -- showed one date for both from 1 row while the catalog holds 12 of his pins
+    -- (23 characters published such a span). The catalog carries no minting
+    -- date, so the honest answer is none: NULL hides the line.
+    v_first_minted := NULL;
+    v_last_minted  := NULL;
+  ELSIF p_collection_id = v_pinnacle_uuid THEN
+    SELECT
+      COUNT(*),
+      CASE WHEN COUNT(*) = COUNT(pe.mint_count) THEN SUM(pe.mint_count) END,
+      SUM(fmv.fmv_usd)   FILTER (WHERE fmv.fmv_usd > 0),
+      SUM(COALESCE(fmv.floor_usd, fmv.fmv_usd)) FILTER (WHERE COALESCE(fmv.floor_usd, fmv.fmv_usd) > 0),
+      CASE WHEN COUNT(*) = COUNT(pe.minting_date) THEN MIN(pe.minting_date) END,
+      CASE WHEN COUNT(*) = COUNT(pe.minting_date) THEN MAX(pe.minting_date) END
+    INTO v_edition_count, v_total_circulation, v_fmv_total, v_floor_total, v_first_minted, v_last_minted
+    FROM pinnacle_editions pe
+    LEFT JOIN LATERAL public.get_pinnacle_edition_fmv_collapsed(pe.id) fmv ON true
+    WHERE pe.character_name = v_player.name;
+  ELSE
+    SELECT
+      COUNT(*),
+      CASE WHEN COUNT(*) = COUNT(e.circulation_count) THEN SUM(e.circulation_count) END,
+      SUM(fmv.fmv_usd)         FILTER (WHERE fmv.fmv_usd > 0),
+      SUM(COALESCE(public.recent_low_usd(fmv.floor_price_usd, fmv.fmv_usd), fmv.fmv_usd)) FILTER (WHERE COALESCE(public.recent_low_usd(fmv.floor_price_usd, fmv.fmv_usd), fmv.fmv_usd) > 0),
+      CASE WHEN COUNT(*) > 0 AND COUNT(*) = COUNT(e.first_minted_at) THEN MIN(e.first_minted_at) END,
+      CASE WHEN COUNT(*) > 0 AND COUNT(*) = COUNT(e.first_minted_at) THEN MAX(e.first_minted_at) END
+    INTO v_edition_count, v_total_circulation, v_fmv_total, v_floor_total, v_first_minted, v_last_minted
+    FROM editions e
+    LEFT JOIN LATERAL (
+      SELECT fmv_usd, floor_price_usd FROM fmv_snapshots
+      WHERE edition_id = e.id ORDER BY computed_at DESC LIMIT 1
+    ) fmv ON true
+    WHERE e.collection_id = p_collection_id
+      AND (e.player_id = v_player.id OR (e.player_name = v_player.name AND NOT public.edition_player_is_other_person(e.player_id, v_player.id)));
+  END IF;
+
+  RETURN jsonb_build_object(
+    'id',                v_player.id,
+    'collection_id',     p_collection_id,
+    'collection_slug',   v_collection_slug,
+    'player_slug',       p_player_slug,
+    'external_id',       v_player.external_id,
+    'name',              v_player.name,
+    'first_name',        v_player.first_name,
+    'last_name',         v_player.last_name,
+    'team',              v_player.team,
+    'team_slug',         CASE WHEN v_player.team IS NULL THEN NULL
+                              ELSE regexp_replace(lower(trim(v_player.team)), '[^a-z0-9]+', '-', 'g') END,
+    'jersey_number',     v_player.jersey_number,
+    'position',          v_player.position,
+    'player_tier',       v_player.player_tier::text,
+    'is_active',         v_player.is_active,
+    'headshot_url',      v_player.headshot_url,
+    'is_character',      p_collection_id = v_pinnacle_uuid,
+    'edition_count',     v_edition_count,
+    'total_circulation', v_total_circulation,
+    'fmv_total_usd',     v_fmv_total,
+    'floor_total_usd',   v_floor_total,
+    'fmv_ask_derived_usd', v_fmv_ask_derived,
+    'listed_count',      v_listed_count,
+    'first_minted_at',   v_first_minted,
+    'last_minted_at',    v_last_minted
+  );
+END;
+$function$;
+-- <<< END verbatim get_player_detail <<<
+
+\set TS  '''95f28a17-224a-4025-96ad-adf8a4c63bfd'''
+\set PIN '''7dd9dd11-e8b6-45c4-ac99-71331f959714'''
+\set p1  '''11111111-1111-1111-1111-111111111111'''
+\set p2  '''22222222-2222-2222-2222-222222222222'''
+\set p3  '''33333333-3333-3333-3333-333333333333'''
+\set p4  '''44444444-4444-4444-4444-444444444444'''
+\set p5  '''55555555-5555-5555-5555-555555555555'''
+\set p6  '''66666666-6666-6666-6666-666666666666'''
+\set p7  '''77777777-7777-7777-7777-777777777777'''
+
+INSERT INTO public.collections (id, slug) VALUES (:TS::uuid, 'nba_top_shot'), (:PIN::uuid, 'disney_pinnacle');
+
+-- Two players share the slug 'damian-lillard'; p1 (Trail Blazers) has 2 team-
+-- matching editions AND the most recent moment, p2 (Bucks) has none -> p1 wins.
+INSERT INTO public.players (id, collection_id, name, team, is_active, headshot_url, external_id, first_name, last_name, jersey_number, position, player_tier) VALUES
+  (:p1::uuid, :TS::uuid, 'Damian Lillard', 'Trail Blazers', true,  'h1', 'PL1', 'Damian', 'Lillard', 0, 'G', 'star'),
+  (:p2::uuid, :TS::uuid, 'Damian Lillard', 'Bucks',         false, NULL, 'PL2', 'Damian', 'Lillard', 0, 'G', 'star'),
+  (:p3::uuid, :PIN::uuid,'Mickey Mouse',   NULL,            true,  NULL, 'CH1', 'Mickey', 'Mouse',   NULL, NULL, 'chaser'),
+  -- TRADED, still active: 3 moments on the old team, 1 RECENT moment on the new
+  -- team. The old ranking picked p4 (3 > 1); the current-team rule must pick p5.
+  (:p4::uuid, :TS::uuid, 'Traded Player', 'Old Team', true, 'h4', 'PL4', 'Traded', 'Player', 1, 'G', 'star'),
+  (:p5::uuid, :TS::uuid, 'Traded Player', 'New Team', true, 'h5', 'PL5', 'Traded', 'Player', 1, 'G', 'star'),
+  -- RETIRED: last moment is far outside the activity horizon, so the current-team
+  -- preference must NOT fire and the iconic (most-moments) team must win.
+  (:p6::uuid, :TS::uuid, 'Retired Player', 'Iconic Team', false, 'h6', 'PL6', 'Retired', 'Player', 2, 'F', 'star'),
+  (:p7::uuid, :TS::uuid, 'Retired Player', 'Final Team',  false, 'h7', 'PL7', 'Retired', 'Player', 2, 'F', 'star');
+
+INSERT INTO public.editions (id, collection_id, player_id, player_name, team_name, circulation_count, first_minted_at, game_date) VALUES
+  ('e1111111-1111-1111-1111-111111111111'::uuid, :TS::uuid, :p1::uuid, 'Damian Lillard', 'Trail Blazers', 100, now()-interval '10 days', DATE '2026-01-10'),
+  ('e2222222-2222-2222-2222-222222222222'::uuid, :TS::uuid, :p1::uuid, 'Damian Lillard', 'Trail Blazers',  50, now()-interval '2 days',  DATE '2026-01-20'),
+  -- Traded player: 3 old-team moments, then one newer new-team moment.
+  ('e4444444-4444-4444-4444-444444444401'::uuid, :TS::uuid, :p4::uuid, 'Traded Player', 'Old Team', 10, NULL, DATE '2025-11-01'),
+  ('e4444444-4444-4444-4444-444444444402'::uuid, :TS::uuid, :p4::uuid, 'Traded Player', 'Old Team', 10, NULL, DATE '2025-11-02'),
+  ('e4444444-4444-4444-4444-444444444403'::uuid, :TS::uuid, :p4::uuid, 'Traded Player', 'Old Team', 10, NULL, DATE '2025-11-03'),
+  ('e5555555-5555-5555-5555-555555555501'::uuid, :TS::uuid, :p5::uuid, 'Traded Player', 'New Team', 10, NULL, DATE '2026-02-01'),
+  -- Retired player: everything is > 18 months before the collection max (2026-02-01).
+  ('e6666666-6666-6666-6666-666666666601'::uuid, :TS::uuid, :p6::uuid, 'Retired Player', 'Iconic Team', 10, NULL, DATE '2014-01-01'),
+  ('e6666666-6666-6666-6666-666666666602'::uuid, :TS::uuid, :p6::uuid, 'Retired Player', 'Iconic Team', 10, NULL, DATE '2014-02-01'),
+  ('e7777777-7777-7777-7777-777777777701'::uuid, :TS::uuid, :p7::uuid, 'Retired Player', 'Final Team',  10, NULL, DATE '2015-01-01');
+
+INSERT INTO public.fmv_snapshots (edition_id, fmv_usd, floor_price_usd, computed_at) VALUES
+  ('e1111111-1111-1111-1111-111111111111'::uuid, 50, 40, now()),
+  ('e2222222-2222-2222-2222-222222222222'::uuid, 20, 15, now());
+
+-- Pinnacle character with two renders (FMV 12 each via the stub).
+INSERT INTO public.pinnacle_editions (id, character_name, mint_count, minting_date) VALUES
+  ('aa000000-0000-0000-0000-000000000001'::uuid, 'Mickey Mouse', 500, now()-interval '5 days'),
+  ('aa000000-0000-0000-0000-000000000002'::uuid, 'Mickey Mouse', 400, now()-interval '3 days');
+
+-- ── 1. not found -> NULL ─────────────────────────────────────────────────────
+SELECT _assert(public.get_player_detail(:TS::uuid, 'no-one') IS NULL, 'unmatched slug -> NULL');
+
+-- ── 2. ambiguous slug: picks p1 (current team AND more team-matching editions) ─
+SELECT _assert_eq((public.get_player_detail(:TS::uuid,'damian-lillard') ->> 'id'), '11111111-1111-1111-1111-111111111111', 'ranking picks the Trail Blazers row (p1)');
+SELECT _assert_eq((public.get_player_detail(:TS::uuid,'damian-lillard') ->> 'team'), 'Trail Blazers', 'team from the winning candidate');
+SELECT _assert_eq((public.get_player_detail(:TS::uuid,'damian-lillard') ->> 'team_slug'), 'trail-blazers', 'team_slug derived');
+SELECT _assert_eq((public.get_player_detail(:TS::uuid,'damian-lillard') ->> 'is_character'), 'false', 'sports collection -> is_character false');
+
+-- ── 3. aggregation over the player's editions ────────────────────────────────
+SELECT _assert_eq((public.get_player_detail(:TS::uuid,'damian-lillard') ->> 'edition_count'), '2', 'edition_count = 2');
+SELECT _assert_eq((public.get_player_detail(:TS::uuid,'damian-lillard') ->> 'total_circulation'), '150', 'total_circulation = 150');
+SELECT _assert_eq((public.get_player_detail(:TS::uuid,'damian-lillard') ->> 'fmv_total_usd'), '70', 'fmv_total = 50 + 20');
+SELECT _assert_eq((public.get_player_detail(:TS::uuid,'damian-lillard') ->> 'floor_total_usd'), '55', 'floor_total = 40 + 15');
+
+-- ── 4. Pinnacle character branch ─────────────────────────────────────────────
+SELECT _assert_eq((public.get_player_detail(:PIN::uuid,'mickey-mouse') ->> 'is_character'), 'true', 'Pinnacle -> is_character true');
+SELECT _assert_eq((public.get_player_detail(:PIN::uuid,'mickey-mouse') ->> 'edition_count'), '2', 'Pinnacle character: 2 renders');
+SELECT _assert_eq((public.get_player_detail(:PIN::uuid,'mickey-mouse') ->> 'fmv_total_usd'), '24', 'Pinnacle: per-render FMV collapse 12+12');
+
+-- ── 4b. Pinnacle character the render catalog names: counts ITS PINS ──────────
+-- Mickey above has no catalog rows, so it proves the fallback is unchanged.
+INSERT INTO public.players (id, collection_id, name, team, is_active, headshot_url, external_id, first_name, last_name, jersey_number, position, player_tier) VALUES
+  ('a0a0a0a0-0000-4000-8000-000000000001', :PIN::uuid, 'Aurora', 'Sleeping Beauty', true, NULL, 'CH2', NULL, NULL, NULL, NULL, NULL);
+INSERT INTO public.pinnacle_catalog (render_id, characters, total_minted, fmv_usd, floor_ask) VALUES
+  ('LEV1-SLBT-FORE-S6', ARRAY['Aurora'],               500, 12,   10),
+  ('LEV1-SLBT-SPIN-S6', ARRAY[' aurora'],              300, 30,   NULL),
+  ('LEV1-SLBT-DUEL-S6', ARRAY['Maleficent', 'Aurora'],  50, NULL, NULL),
+  ('X-BOREALIS-S1',     ARRAY['Aurora Borealis'],       99, 99,   90);
+INSERT INTO public.pinnacle_editions (id, character_name, mint_count, minting_date) VALUES
+  ('bb000000-0000-0000-0000-000000000001'::uuid, 'Aurora', 7, TIMESTAMPTZ '2025-01-02 00:00:00+00');
+SELECT _assert_eq((public.get_player_detail(:PIN::uuid,'aurora') ->> 'edition_count'), '3', 'catalog character: 3 pins (the two-character pin counts; Aurora Borealis does not)');
+SELECT _assert_eq((public.get_player_detail(:PIN::uuid,'aurora') ->> 'total_circulation'), '850', 'catalog character: circulation from the pins');
+SELECT _assert_eq((public.get_player_detail(:PIN::uuid,'aurora') ->> 'fmv_total_usd'), '42', 'catalog character: FMV 12 + 30, unpriced pin excluded');
+-- 2026-09-28 (#24, INVERTED): the Recent-Low Total sums LIVE asks only. It
+-- used to add the FMV of a pin with no ask (10 + 30 = 40), publishing a
+-- fair-value estimate as a low.
+SELECT _assert_eq((public.get_player_detail(:PIN::uuid,'aurora') ->> 'floor_total_usd'), '10', 'catalog character: live asks only (10); an unlisted pin adds nothing, never its FMV');
+SELECT _assert_eq((public.get_player_detail(:PIN::uuid,'aurora') ->> 'listed_count'), '1', 'catalog character: 1 of 3 pins has a live ask');
+SELECT _assert((public.get_player_detail(:PIN::uuid,'aurora') ->> 'fmv_ask_derived_usd') IS NULL, 'no ASK_ONLY pin -> no ask-derived part');
+UPDATE public.pinnacle_catalog SET fmv_confidence = 'ASK_ONLY' WHERE render_id = 'LEV1-SLBT-SPIN-S6';
+SELECT _assert_eq((public.get_player_detail(:PIN::uuid,'aurora') ->> 'fmv_ask_derived_usd'), '30', 'the ASK_ONLY part of the FMV total is disclosed (30 of 42)');
+-- ⚠ INVERTED 2026-11-14: a catalog character's dates USED to come from
+-- pinnacle_editions by name (Aurora's one dated row -> '2025-01-02'). That table
+-- is set-level and name-keyed, a different subject from the 3 pins counted above
+-- (live: Hamm 1 row vs 12 pins, 23 characters). The catalog has no date: none.
+SELECT _assert((public.get_player_detail(:PIN::uuid,'aurora') ->> 'first_minted_at') IS NULL, 'catalog character: no first-minted date borrowed from the set-level, name-keyed table');
+SELECT _assert((public.get_player_detail(:PIN::uuid,'aurora') ->> 'last_minted_at') IS NULL, 'catalog character: no last-minted date either');
+-- 2026-11-14: a total over SOME pins is not the total. One pin of unknown mint -> NULL ("—").
+INSERT INTO public.players (id, collection_id, name, team, is_active, headshot_url, external_id, first_name, last_name, jersey_number, position, player_tier) VALUES
+  ('a0a0a0a0-0000-4000-8000-000000000006', :PIN::uuid, 'Hamm', 'Toy Story', true, NULL, 'CH6', NULL, NULL, NULL, NULL, NULL);
+INSERT INTO public.pinnacle_catalog (render_id, characters, total_minted, fmv_usd, floor_ask) VALUES
+  ('TS-HAMM-1', ARRAY['Hamm'], 400, 5, NULL),
+  ('TS-HAMM-2', ARRAY['Hamm'], NULL, 5, NULL);
+SELECT _assert((public.get_player_detail(:PIN::uuid,'hamm') ->> 'total_circulation') IS NULL, 'catalog character with a pin of unknown mint: Total Mint is unknown, not 400');
+SELECT _assert_eq((public.get_player_detail(:PIN::uuid,'hamm') ->> 'edition_count'), '2', 'CONTROL: both pins still counted as pins');
+-- A duo character (combined name) counts the pin that lists both characters.
+INSERT INTO public.players (id, collection_id, name, team, is_active, headshot_url, external_id, first_name, last_name, jersey_number, position, player_tier) VALUES
+  ('a0a0a0a0-0000-4000-8000-000000000002', :PIN::uuid, 'Maurice & Cogsworth', NULL, true, NULL, 'CH3', NULL, NULL, NULL, NULL, NULL);
+INSERT INTO public.pinnacle_catalog (render_id, characters, total_minted, fmv_usd, floor_ask) VALUES
+  ('LEV2-BATB-MACO-S2', ARRAY['Maurice', 'Cogsworth'], 250, 6, 5);
+SELECT _assert_eq((public.get_player_detail(:PIN::uuid,'maurice-cogsworth') ->> 'edition_count'), '1', 'duo character: the pin listing both counts');
+
+-- 2026-09-27: dates only when EVERY row carries one. A partly dated character
+-- used to publish the dated few as its span (Mickey: 1 of 24 rows, first = last).
+INSERT INTO public.players (id, collection_id, name, team, is_active, headshot_url, external_id, first_name, last_name, jersey_number, position, player_tier) VALUES
+  ('a0a0a0a0-0000-4000-8000-000000000004', :PIN::uuid, 'Belle', 'Beauty and the Beast', true, NULL, 'CH4', NULL, NULL, NULL, NULL, NULL),
+  ('a0a0a0a0-0000-4000-8000-000000000005', :PIN::uuid, 'Goofy', 'Mickey & Friends', true, NULL, 'CH5', NULL, NULL, NULL, NULL, NULL);
+INSERT INTO public.pinnacle_catalog (render_id, characters, total_minted, fmv_usd, floor_ask) VALUES
+  ('LEV2-BATB-BELL-S2', ARRAY['Belle'], 100, 5, 4);
+INSERT INTO public.pinnacle_editions (id, character_name, mint_count, minting_date) VALUES
+  ('cc000000-0000-0000-0000-000000000001'::uuid, 'Belle', 10, TIMESTAMPTZ '2024-03-01 00:00:00+00'),
+  ('cc000000-0000-0000-0000-000000000002'::uuid, 'Belle', 10, NULL),
+  ('cc000000-0000-0000-0000-000000000003'::uuid, 'Goofy', 10, TIMESTAMPTZ '2024-03-01 00:00:00+00'),
+  ('cc000000-0000-0000-0000-000000000004'::uuid, 'Goofy', 10, NULL);
+SELECT _assert((public.get_player_detail(:PIN::uuid,'belle') ->> 'first_minted_at') IS NULL, 'catalog character, partly dated: no first-minted date (not the dated few)');
+SELECT _assert((public.get_player_detail(:PIN::uuid,'belle') ->> 'last_minted_at') IS NULL, 'catalog character, partly dated: no last-minted date');
+SELECT _assert((public.get_player_detail(:PIN::uuid,'goofy') ->> 'first_minted_at') IS NULL, 'editions-only character, partly dated: no first-minted date');
+-- 2026-11-14: the editions-only (legacy) branch's mint total is complete or NULL too.
+INSERT INTO public.pinnacle_editions (id, character_name, mint_count, minting_date) VALUES
+  ('cc000000-0000-0000-0000-000000000005'::uuid, 'Goofy', NULL, NULL);
+SELECT _assert((public.get_player_detail(:PIN::uuid,'goofy') ->> 'total_circulation') IS NULL, 'editions-only character with an unknown mint count: Total Mint unknown, not 20');
+SELECT _assert_eq((public.get_player_detail(:PIN::uuid,'mickey-mouse') ->> 'total_circulation'), '900', 'CONTROL: a fully counted editions-only character keeps its total (500 + 400)');
+-- CONTROL: fully dated characters keep their span (Mickey: both rows dated).
+SELECT _assert((public.get_player_detail(:PIN::uuid,'mickey-mouse') ->> 'first_minted_at') IS NOT NULL, 'fully dated character keeps its first-minted date');
+SELECT _assert((public.get_player_detail(:PIN::uuid,'mickey-mouse') ->> 'first_minted_at') < (public.get_player_detail(:PIN::uuid,'mickey-mouse') ->> 'last_minted_at'), 'fully dated character: first < last');
+
+-- ── 5. TRADED + still active: current team beats most-moments ────────────────
+-- p4 has 3 team-matching editions and p5 only 1, so the pre-2026-08-01 ladder
+-- returned p4 ("Old Team"). The current-team preference must flip this to p5.
+SELECT _assert_eq((public.get_player_detail(:TS::uuid,'traded-player') ->> 'team'), 'New Team', 'traded active player shows the team of their most recent moment');
+SELECT _assert_eq((public.get_player_detail(:TS::uuid,'traded-player') ->> 'id'), '55555555-5555-5555-5555-555555555555', 'traded active player resolves to the new-team row');
+
+-- ── 6. RETIRED: outside the horizon, iconic (most-moments) team still wins ────
+-- Guards against the naive "always use the latest moment" rule, which would
+-- show a retired player's final-season team instead of the one they are known for.
+SELECT _assert_eq((public.get_player_detail(:TS::uuid,'retired-player') ->> 'team'), 'Iconic Team', 'retired player keeps the most-moments team, not the final-season team');
+SELECT _assert_eq((public.get_player_detail(:TS::uuid,'retired-player') ->> 'id'), '66666666-6666-6666-6666-666666666666', 'retired player resolves to the iconic-team row');
+
+-- ── 7. DIACRITICS (20260906165511): the sitemap emits ASCII slugs ("nikola-jokic")
+-- while the players row carries the accented name ("Nikola Jokić"). Before the
+-- splice that slug 404'd — 57 sitemap player URLs on the 09-06 audit. The exact
+-- slug still resolves; the unaccented slug now resolves too; a wrong slug is NULL.
+INSERT INTO public.players (id, collection_id, name, team, is_active, headshot_url, external_id, first_name, last_name, jersey_number, position, player_tier) VALUES
+  ('99999999-9999-4999-8999-999999999901', :TS::uuid, 'Nikola Jokić', 'Nuggets', true, 'h7', 'PL7', 'Nikola', 'Jokić', 15, 'C', 'star');
+SELECT _assert_eq((public.get_player_detail(:TS::uuid,'nikola-jokic') ->> 'id'), '99999999-9999-4999-8999-999999999901', 'an ASCII slug resolves an accented player name');
+SELECT _assert_eq((public.get_player_detail(:TS::uuid,'nikola-joki-') ->> 'id'), '99999999-9999-4999-8999-999999999901', 'the pre-fix slug shape (accent stripped to a dash) still resolves via the exact-name branch');
+SELECT _assert((public.get_player_detail(:TS::uuid,'nikola-jokicc')) IS NULL, 'a slug that matches neither spelling is still NULL');
+
+-- ── 8. A NAME IS NOT A PERSON (20261021034822) ────────────────────────────────
+-- Live 10-20: /nfl-all-day/player/joey-porter (Sr.) listed Jr.'s 2024 Stadium
+-- edition — linked to Jr.'s player row, but carrying player_name "Joey Porter".
+-- Josh Allen (Bills QB) listed 8 editions of Josh Hines-Allen (played as "Josh
+-- Allen" to 2023). The name fallback must skip an edition linked to a player
+-- player_relations records as ANOTHER person.
+\set AD  '''dee28451-5d62-409e-a1ad-a83f763ac070'''
+INSERT INTO public.collections (id, slug) VALUES (:AD::uuid, 'nfl_all_day');
+INSERT INTO public.players (id, collection_id, name, team, is_active, headshot_url, external_id, first_name, last_name, jersey_number, position, player_tier) VALUES
+  ('d0000000-0000-4000-8000-000000000001', :AD::uuid, 'Joey Porter',      'Steelers', false, NULL, 'JP1', 'Joey', 'Porter', 55, 'LB', NULL),
+  ('d0000000-0000-4000-8000-000000000002', :AD::uuid, 'Joey Porter Jr.',  'Steelers', true,  NULL, 'JP2', 'Joey', 'Porter', 24, 'CB', NULL),
+  ('d0000000-0000-4000-8000-000000000003', :AD::uuid, 'Josh Allen',       'Bills',    true,  NULL, 'JA1', 'Josh', 'Allen', 17, 'QB', NULL),
+  ('d0000000-0000-4000-8000-000000000004', :AD::uuid, 'Josh Hines-Allen', 'Jaguars',  true,  NULL, 'JA2', 'Josh', 'Hines-Allen', 41, 'DE', NULL),
+  ('d0000000-0000-4000-8000-000000000005', :AD::uuid, 'Shell Twin',       'Team',     true,  NULL, 'ST1', NULL, NULL, NULL, NULL, NULL),
+  ('d0000000-0000-4000-8000-000000000006', :AD::uuid, 'Shell Twin.',      'Team',     true,  NULL, 'ST2', NULL, NULL, NULL, NULL, NULL);
+INSERT INTO public.player_relations (collection_id, player_id, related_player_id, relation, name) VALUES
+  (:AD::uuid, 'd0000000-0000-4000-8000-000000000002', 'd0000000-0000-4000-8000-000000000001', 'parent_of', NULL),
+  (:AD::uuid, 'd0000000-0000-4000-8000-000000000004', NULL, 'name_change', 'Josh Allen');
+INSERT INTO public.editions (id, collection_id, player_id, player_name, team_name, circulation_count, first_minted_at, game_date) VALUES
+  ('f0000000-0000-4000-8000-000000000001', :AD::uuid, 'd0000000-0000-4000-8000-000000000001', 'Joey Porter', 'Steelers', 10, NULL, DATE '2008-01-01'),
+  ('f0000000-0000-4000-8000-000000000002', :AD::uuid, 'd0000000-0000-4000-8000-000000000002', 'Joey Porter', 'Steelers', 20, NULL, DATE '2024-10-01'),
+  ('f0000000-0000-4000-8000-000000000003', :AD::uuid, 'd0000000-0000-4000-8000-000000000003', 'Josh Allen',  'Bills',    30, NULL, DATE '2024-10-01'),
+  ('f0000000-0000-4000-8000-000000000004', :AD::uuid, 'd0000000-0000-4000-8000-000000000004', 'Josh Allen',  'Jaguars',  40, NULL, DATE '2022-10-01'),
+  -- an UNLINKED edition still matches by name (the fallback the arm exists for)
+  ('f0000000-0000-4000-8000-000000000005', :AD::uuid, NULL,                                   'Josh Allen',  'Bills',     5, NULL, DATE '2024-10-02'),
+  -- a same-person twin row with no relation keeps matching by name (D26 class, merged separately)
+  ('f0000000-0000-4000-8000-000000000006', :AD::uuid, 'd0000000-0000-4000-8000-000000000006', 'Shell Twin',  'Team',      7, NULL, DATE '2024-10-03');
+SELECT _assert_eq((public.get_player_detail(:AD::uuid,'joey-porter') ->> 'edition_count'), '1', 'Joey Porter (Sr.) does not count Jr.''s edition');
+SELECT _assert_eq((public.get_player_detail(:AD::uuid,'joey-porter') ->> 'total_circulation'), '10', 'Sr.''s circulation is his own');
+SELECT _assert_eq((public.get_player_detail(:AD::uuid,'joey-porter-jr-') ->> 'edition_count'), '1', 'Jr.''s own page keeps his edition');
+SELECT _assert_eq((public.get_player_detail(:AD::uuid,'josh-allen') ->> 'total_circulation'), '35', 'Josh Allen (QB) = his edition + the unlinked one, never Hines-Allen''s (30 + 5)');
+SELECT _assert_eq((public.get_player_detail(:AD::uuid,'josh-hines-allen') ->> 'total_circulation'), '40', 'Hines-Allen keeps the edition labelled with his old name');
+SELECT _assert_eq((public.get_player_detail(:AD::uuid,'shell-twin') ->> 'total_circulation'), '7', 'CONTROL: a twin row with no recorded relation still matches by name');
+
+-- ── 9. A TOTAL OVER SOME EDITIONS IS NOT THE TOTAL (2026-11-14) ───────────────
+INSERT INTO public.editions (id, collection_id, player_id, player_name, team_name, circulation_count, first_minted_at, game_date) VALUES
+  ('f0000000-0000-4000-8000-000000000007', :AD::uuid, 'd0000000-0000-4000-8000-000000000001', 'Joey Porter', 'Steelers', NULL, NULL, DATE '2008-02-01');
+SELECT _assert((public.get_player_detail(:AD::uuid,'joey-porter') ->> 'total_circulation') IS NULL, 'an edition of unknown circulation makes Total Mint unknown, not 10');
+-- Dates: Damian's two editions are both dated, so his span stands (CONTROL);
+-- add an undated one and the span is withheld rather than drawn from the dated few.
+SELECT _assert((public.get_player_detail(:TS::uuid,'damian-lillard') ->> 'first_minted_at') IS NOT NULL, 'CONTROL: fully dated sports player keeps first-minted');
+INSERT INTO public.editions (id, collection_id, player_id, player_name, team_name, circulation_count, first_minted_at, game_date) VALUES
+  ('e3333333-3333-3333-3333-333333333333'::uuid, :TS::uuid, :p1::uuid, 'Damian Lillard', 'Trail Blazers', 10, NULL, DATE '2026-01-05');
+SELECT _assert((public.get_player_detail(:TS::uuid,'damian-lillard') ->> 'first_minted_at') IS NULL, 'partly dated sports player: no first-minted from the dated few');
+
+SELECT '✓ get_player_detail: all assertions passed' AS result;
+
+ROLLBACK;

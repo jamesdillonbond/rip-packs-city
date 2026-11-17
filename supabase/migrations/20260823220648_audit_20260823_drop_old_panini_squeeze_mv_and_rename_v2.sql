@@ -1,0 +1,55 @@
+-- Cutover step 2b: retire the old MV and take its name, so refresh_panini_squeeze()
+-- (which names public.mv_panini_squeeze literally, resolved at execution time) drives
+-- the new one with NO function change and NO cron change.
+--
+-- Safe to drop: panini_squeeze_board was repointed to mv_panini_squeeze_v2 in the
+-- preceding migration and verified there (4,684 rows, security_invoker=on retained,
+-- check_public_security_invariants() = 0 rows). pg_depend showed panini_squeeze_board
+-- as the ONLY dependent of the old MV. Row count before drop: 4,684 (rule: count before
+-- any DROP; n_live_tup is not trusted for this).
+-- Verified immediately before running: no panini query active, jobid 353's last start
+-- was 18m ago, next tick ~12 min out — so no REFRESH ... CONCURRENTLY lock to contend
+-- with. Renaming inside the same transaction leaves no window in which the name
+-- mv_panini_squeeze does not exist, which would otherwise error the next refresh tick.
+--
+-- REVERT (recreates the pre-2026-08-23 state exactly):
+--   ALTER MATERIALIZED VIEW public.mv_panini_squeeze RENAME TO mv_panini_squeeze_v2;
+--   ALTER INDEX public.mv_panini_squeeze_key RENAME TO mv_panini_squeeze_v2_key;
+--   CREATE MATERIALIZED VIEW public.mv_panini_squeeze AS
+--    SELECT e.id, e.external_id, e.collection_id, e.player_name, e.nation, e.set_name,
+--      e.parallel, e.parallel_family, e.rarity_label, e.tier, e.mint_cap, e.pulled_count,
+--      e.still_in_packs,
+--      CASE WHEN COALESCE(e.mint_cap,0) > 0
+--           THEN round(e.pulled_count::numeric / e.mint_cap::numeric * 100::numeric, 1)
+--           ELSE NULL::numeric END AS rip_pct,
+--      e.is_fotl_exclusive,
+--      (EXISTS (SELECT 1 FROM panini_card_serials cs
+--                WHERE cs.edition_external_id = e.external_id
+--                  AND cs.nft_type ~~ '%rookie card%'::text)) AS is_rookie,
+--      (EXISTS (SELECT 1 FROM panini_card_serials cs
+--                WHERE cs.edition_external_id = e.external_id
+--                  AND cs.nft_type ~~ '%debut card%'::text)) AS is_debut,
+--      f.fmv_usd,
+--      round(e.still_in_packs::numeric * f.fmv_usd) AS sealed_fmv_exposure_usd,
+--      f.confidence AS fmv_confidence, e.serial_low_ask_usd, e.thumbnail_url,
+--      (SELECT count(*) FROM panini_card_serials cs
+--        WHERE cs.edition_external_id = e.external_id
+--          AND cs.last_sale_usd IS NOT NULL) AS serials_with_recorded_price,
+--      ca.coverage_flag
+--     FROM panini_editions e
+--       LEFT JOIN LATERAL (SELECT s.fmv_usd, s.confidence FROM panini_fmv_snapshots s
+--                          WHERE s.edition_id = e.id ORDER BY s.computed_at DESC LIMIT 1) f ON true
+--       LEFT JOIN panini_coverage_audit ca ON ca.set_name = e.set_name
+--                 AND NOT ca.parallel_family IS DISTINCT FROM e.parallel_family
+--     WHERE e.mint_cap IS NOT NULL;
+--   CREATE UNIQUE INDEX mv_panini_squeeze_key ON public.mv_panini_squeeze
+--     USING btree (player_name, set_name, tier);
+--   GRANT ALL ON TABLE public.mv_panini_squeeze TO service_role;
+--   CREATE OR REPLACE VIEW public.panini_squeeze_board AS SELECT ... FROM mv_panini_squeeze m;
+--   ALTER VIEW public.panini_squeeze_board SET (security_invoker = on);
+--   ⛔ and expect 234 s / 56,789-block refreshes and ~19% ceiling failures to return.
+DROP MATERIALIZED VIEW public.mv_panini_squeeze;
+
+ALTER MATERIALIZED VIEW public.mv_panini_squeeze_v2 RENAME TO mv_panini_squeeze;
+
+ALTER INDEX public.mv_panini_squeeze_v2_key RENAME TO mv_panini_squeeze_key;

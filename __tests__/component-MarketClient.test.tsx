@@ -1,0 +1,1486 @@
+// @vitest-environment jsdom
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import { render, screen, fireEvent, waitFor, cleanup, within, act } from "@testing-library/react"
+import MarketClient from "@/app/(collections)/[collection]/market/MarketClient"
+
+// `[collection]/market` converted to a `*Client.tsx` so the component gate measures it —
+// ~1,170 lines of filter/sort/pagination state machine and two listing renderers that
+// matched neither gate's include.
+//
+// ⚠ NO NEW DEFECT HERE, and that is worth recording so nobody re-sweeps it. The page is
+// the SHAPE TO COPY for the failed-read class: a strict `loading : error : empty` ladder,
+// so the error branch is consulted BEFORE the empty state and a 503 can never render as
+// "No listings match these filters." Its `?? 0` on `pagination.total` sits inside the
+// non-error branch, so it cannot manufacture a zero, and the thin-volume notice is gated on
+// `healthRow != null` — a failed `/api/ready` read declines to characterise the market
+// rather than calling it thin. All four are pinned below, in both directions, because
+// nothing but a test stops the next edit collapsing them.
+
+const PARAMS: Record<string, string> = { collection: "nba-top-shot" }
+let searchParams = new URLSearchParams()
+const replace = vi.fn()
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), replace, refresh: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
+  usePathname: () => "/nba-top-shot/market",
+  useSearchParams: () => searchParams,
+  useParams: () => PARAMS,
+}))
+vi.mock("next/link", () => ({
+  default: ({ children, href }: { children?: React.ReactNode; href?: string } & Record<string, unknown>) => (
+    <a href={typeof href === "string" ? href : "#"}>{children}</a>
+  ),
+}))
+vi.mock("@/components/packs/PackMarketView", () => ({
+  default: ({ collection }: { collection: string }) => <div data-testid="pack-market">{collection}</div>,
+}))
+vi.mock("@/components/BadgeIcon", () => ({
+  default: ({ slug }: { slug?: string }) => <span data-testid="badge">{slug}</span>,
+}))
+
+let ownerKey: string | null = null
+// Chain-scoped since 2026-09-19 — see lib/owner-key.ts. The Market tab reads the
+// slot belonging to ITS collection's chain, so this mock answers both accessors
+// with the same fixture and the component's own `isValidAddressForChain` check
+// is what decides whether the key is used.
+vi.mock("@/lib/owner-key", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/owner-key")>()),
+  getOwnerKey: () => ownerKey,
+  getOwnerKeyForChain: () => ownerKey,
+}))
+
+const trackOutbound = vi.fn()
+vi.mock("@/lib/track-click", () => ({ trackOutboundClick: (...a: unknown[]) => trackOutbound(...a) }))
+
+function json(status: number, body: unknown, ok = status < 400) {
+  return { ok, status, json: async () => body } as unknown as Response
+}
+
+const LISTING = (over: Record<string, unknown> = {}) => ({
+  id: "l-1",
+  flowId: "9001",
+  momentId: "m-1",
+  playerName: "Damian Lillard",
+  teamName: "Portland Trail Blazers",
+  setName: "Archive Set",
+  seriesName: "Series 1",
+  tier: "RARE",
+  parallel: null,
+  serialNumber: 12,
+  circulationCount: 1000,
+  listedCount: 4,
+  askPrice: 42,
+  fmv: 60,
+  discount: 0.3,
+  lowConfidenceFmv: false,
+  confidence: "HIGH",
+  source: "topshot",
+  buyUrl: "https://nbatopshot.com/moment/abc",
+  thumbnailUrl: "https://assets.nbatopshot.com/x.jpg",
+  badgeSlugs: ["rookie_year"],
+  editionKey: "48:1652",
+  isSpecialSerial: false,
+  listingResourceId: null,
+  storefrontAddress: null,
+  isLocked: false,
+  listedAt: new Date().toISOString(),
+  cachedAt: new Date().toISOString(),
+  collectionId: "nba_top_shot",
+  ...over,
+})
+
+function market(over: Record<string, unknown> = {}) {
+  return {
+    listings: [LISTING()],
+    pagination: { total: 137, page: 1, limit: 50, hasMore: true },
+    clamp: { applied: false, ceilings: {} },
+    diagnostics: { rawCount: 1, postClampCount: 1, postFilterCount: 1 },
+    ...over,
+  }
+}
+
+let marketResponse: () => Response
+let readyResponse: () => Response
+let filterOptionsResponse: () => Response
+let fetchMock: ReturnType<typeof vi.fn>
+
+beforeEach(() => {
+  searchParams = new URLSearchParams()
+  ownerKey = null
+  replace.mockClear()
+  trackOutbound.mockClear()
+  marketResponse = () => json(200, market())
+  filterOptionsResponse = () => json(200, { catalog: true, sets: [], series: [], teams: [], players: [], badges: [] })
+  readyResponse = () => json(200, { per_collection: [{ slug: "nba-top-shot", name: "Top Shot", sales_24h: 900, fmv_coverage_pct: 80 }] })
+  fetchMock = vi.fn(async (input: unknown) => {
+    const url = String(input)
+    if (url.startsWith("/api/ready")) return readyResponse()
+    if (url.startsWith("/api/wallet/edition-counts")) return json(200, { counts: {} })
+    if (url.startsWith("/api/market/filter-options")) return filterOptionsResponse()
+    return marketResponse()
+  })
+  vi.stubGlobal("fetch", fetchMock)
+})
+
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+})
+
+// ─── The honesty ladder ──────────────────────────────────────────────────────
+
+describe("MarketClient — a failed read must not render as an empty market", () => {
+  it("names the failure instead of showing the empty state", async () => {
+    marketResponse = () => json(503, {})
+    render(<MarketClient />)
+    await screen.findByText(/Couldn't load market/)
+    expect(screen.queryByText("No listings match these filters.")).toBeNull()
+  })
+
+  it("carries the status so an operator can tell a 503 from a 500", async () => {
+    marketResponse = () => json(500, {})
+    render(<MarketClient />)
+    const el = await screen.findByText(/Couldn't load market/)
+    expect(el.textContent).toContain("HTTP 500")
+  })
+
+  it("reports a thrown fetch rather than an empty market", async () => {
+    marketResponse = () => { throw new Error("network down") }
+    render(<MarketClient />)
+    const el = await screen.findByText(/Couldn't load market/)
+    expect(el.textContent).toContain("network down")
+  })
+
+  it("shows an ERROR summary line instead of a fabricated result count", async () => {
+    // ⚠ `total` is `data?.pagination.total ?? 0`. It is honest only because the
+    // summary line consults `error` FIRST — collapse that and the page publishes
+    // "0 OF 0 EDITIONS", a claim about the market made out of our own outage.
+    marketResponse = () => json(503, {})
+    render(<MarketClient />)
+    await waitFor(() => expect(screen.getByText(/^ERROR — /)).toBeTruthy())
+    expect(screen.queryByText(/0 OF 0 EDITIONS/)).toBeNull()
+  })
+
+  it("still shows the empty state when the read SUCCEEDS with no listings", async () => {
+    marketResponse = () => json(200, market({ listings: [], pagination: { total: 0, page: 1, limit: 50, hasMore: false } }))
+    render(<MarketClient />)
+    await screen.findByText("No listings match these filters.")
+    expect(screen.queryByText(/Couldn't load market/)).toBeNull()
+  })
+
+  // 2026-09-27: Pinnacle's empty state said "No Disney Pinnacle pins are listed
+  // at the moment" whenever a page came back empty — including a search that
+  // simply matched nothing. With a filter on it must not conclude about the market.
+  it("Pinnacle: a filtered empty page says the FILTERS matched nothing, not that nothing is listed", async () => {
+    PARAMS.collection = "disney-pinnacle"
+    searchParams = new URLSearchParams("tier=Golden")
+    marketResponse = () => json(200, market({ listings: [], pagination: { total: 0, page: 1, limit: 50, hasMore: false } }))
+    try {
+      render(<MarketClient />)
+      await screen.findByText(/No pins match these filters/)
+      expect(screen.queryByText(/No Disney Pinnacle pins are listed/)).toBeNull()
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
+  })
+
+  it("CONTROL: Pinnacle with no filters and no rows keeps its 'nothing listed' state", async () => {
+    PARAMS.collection = "disney-pinnacle"
+    marketResponse = () => json(200, market({ listings: [], pagination: { total: 0, page: 1, limit: 50, hasMore: false } }))
+    try {
+      render(<MarketClient />)
+      await screen.findByText(/No Disney Pinnacle pins are listed/)
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
+  })
+
+  it("hides pagination on a failed read so nothing invites paging through nothing", async () => {
+    marketResponse = () => json(503, {})
+    render(<MarketClient />)
+    await screen.findByText(/Couldn't load market/)
+    expect(screen.queryByRole("button", { name: /next/i })).toBeNull()
+  })
+})
+
+// ─── Thin volume ─────────────────────────────────────────────────────────────
+
+describe("MarketClient — the thin-volume notice", () => {
+  it("declines to characterise the market when /api/ready fails", async () => {
+    // ⚠ `healthRow != null` is the guard. Without it a failed health read would
+    // read `sales_24h` off nothing, score 0 < 10, and tell a collector the
+    // ecosystem is thin — a claim about the market from a failed read of OUR
+    // OWN health endpoint.
+    readyResponse = () => json(503, {})
+    marketResponse = () => json(200, market({ listings: [], pagination: { total: 0, page: 1, limit: 50, hasMore: false } }))
+    render(<MarketClient />)
+    await screen.findByText("No listings match these filters.")
+    expect(screen.queryByText(/Thin-volume ecosystem/)).toBeNull()
+  })
+
+  it("declines when the health payload carries no row for this collection", async () => {
+    readyResponse = () => json(200, { per_collection: [{ slug: "nfl-all-day", name: "All Day", sales_24h: 1, fmv_coverage_pct: 3 }] })
+    marketResponse = () => json(200, market({ listings: [], pagination: { total: 0, page: 1, limit: 50, hasMore: false } }))
+    render(<MarketClient />)
+    await screen.findByText("No listings match these filters.")
+    expect(screen.queryByText(/Thin-volume ecosystem/)).toBeNull()
+  })
+
+  it("says so when the health read genuinely reports thin volume", async () => {
+    // ⚠ Reads `thin_volume`, not `sales_24h`. Since 2026-08-23 `sales_24h` is a
+    // BOUNDED PROBE (exact when <= 10, NULL above) and is no longer comparable
+    // to a threshold — the server does the comparison, because only the server
+    // knows the bound.
+    readyResponse = () => json(200, { per_collection: [{ slug: "nba-top-shot", name: "Top Shot", sales_24h: 2, thin_volume: true }] })
+    marketResponse = () => json(200, market({ listings: [], pagination: { total: 0, page: 1, limit: 50, hasMore: false } }))
+    render(<MarketClient />)
+    await screen.findByText(/Thin-volume ecosystem/)
+  })
+
+  it("a BUSY collection reports sales_24h: null and must NOT read as thin", async () => {
+    // 🚨 THE REGRESSION THIS PAIR EXISTS TO CATCH. The bounded probe returns
+    // NULL above 10, so the pre-2026-08-23 client expression
+    // `(sales_24h ?? 0) < 10` coerces "busy" to 0 and renders
+    // "THIN-VOLUME ECOSYSTEM" on Top Shot — the loudest possible false claim
+    // about the market, produced by a performance fix.
+    readyResponse = () => json(200, { per_collection: [{ slug: "nba-top-shot", name: "Top Shot", sales_24h: null, thin_volume: false }] })
+    marketResponse = () => json(200, market({ listings: [], pagination: { total: 0, page: 1, limit: 50, hasMore: false } }))
+    render(<MarketClient />)
+    await screen.findByText("No listings match these filters.")
+    expect(screen.queryByText(/Thin-volume ecosystem/)).toBeNull()
+  })
+
+  it("an UNKNOWN flag is not a thin claim", async () => {
+    // null/absent means we do not know. `=== true` is what keeps that from
+    // becoming an assertion — the boolean version of the `?? 0` defect.
+    readyResponse = () => json(200, { per_collection: [{ slug: "nba-top-shot", name: "Top Shot", sales_24h: null, thin_volume: null }] })
+    marketResponse = () => json(200, market({ listings: [], pagination: { total: 0, page: 1, limit: 50, hasMore: false } }))
+    render(<MarketClient />)
+    await screen.findByText("No listings match these filters.")
+    expect(screen.queryByText(/Thin-volume ecosystem/)).toBeNull()
+  })
+
+  it("survives a health payload with no per_collection array", async () => {
+    readyResponse = () => json(200, {})
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+  })
+})
+
+// ─── Results ─────────────────────────────────────────────────────────────────
+
+describe("MarketClient — results", () => {
+  it("renders a listing row with its player, set and ask", async () => {
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    expect(screen.getByText("Archive Set")).toBeTruthy()
+    expect(document.body.textContent).toContain("$42")
+  })
+
+  it("states the result count against the true total", async () => {
+    render(<MarketClient />)
+    await waitFor(() => expect(document.body.textContent).toContain("1 OF 137 EDITIONS"))
+  })
+
+  it("prints a WINDOWED total as a floor ('500+'), never as the market's size (2026-09-25)", async () => {
+    // Panini: a 500-row window over a 4,650-row board printed "48 OF 500 EDITIONS".
+    marketResponse = () => json(200, market({ pagination: { total: 500, page: 1, limit: 50, hasMore: true, totalIsExact: false } }))
+    render(<MarketClient />)
+    await waitFor(() => expect(document.body.textContent).toContain("1 OF 500+ EDITIONS"))
+    expect(document.body.textContent).toContain("PAGE 1 / 10+")
+  })
+
+  it("Candy's Market is LISTING grain: its count says LISTINGS, never '500+ EDITIONS' of a 125-edition collection (2026-10-26)", async () => {
+    PARAMS.collection = "candy-mlb"
+    try {
+      marketResponse = () => json(200, market({ pagination: { total: 500, page: 1, limit: 50, hasMore: true, totalIsExact: false } }))
+      render(<MarketClient />)
+      await waitFor(() => expect(document.body.textContent).toContain("1 OF 500+ LISTINGS"))
+      expect(document.body.textContent).not.toContain("EDITIONS")
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
+  })
+
+  it("singularises the count for a one-edition market", async () => {
+    marketResponse = () => json(200, market({ pagination: { total: 1, page: 1, limit: 50, hasMore: false } }))
+    render(<MarketClient />)
+    await waitFor(() => expect(document.body.textContent).toContain("1 OF 1 EDITION"))
+  })
+
+  it("discloses clamped outliers rather than silently dropping them", async () => {
+    marketResponse = () => json(200, market({ diagnostics: { rawCount: 10, postClampCount: 7, postFilterCount: 7 } }))
+    render(<MarketClient />)
+    await waitFor(() => expect(document.body.textContent).toContain("3 OUTLIERS CLAMPED"))
+  })
+
+  it("says nothing about clamping when nothing was clamped", async () => {
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    expect(document.body.textContent).not.toContain("OUTLIERS CLAMPED")
+  })
+
+  it("shows a skeleton before the first payload rather than an empty market", async () => {
+    let release: (r: Response) => void = () => {}
+    fetchMock.mockImplementation((input: unknown) => {
+      const url = String(input)
+      if (url.startsWith("/api/ready")) return Promise.resolve(readyResponse())
+      if (url.startsWith("/api/market/filter-options")) return Promise.resolve(filterOptionsResponse())
+      return new Promise<Response>((res) => { release = res })
+    })
+    const { container } = render(<MarketClient />)
+    await waitFor(() => expect(container.querySelector(".rpc-skeleton")).toBeTruthy())
+    expect(screen.queryByText("No listings match these filters.")).toBeNull()
+    release(json(200, market()))
+    await screen.findByText("Damian Lillard")
+  })
+})
+
+// ─── Filters, sort and URL state ─────────────────────────────────────────────
+
+describe("MarketClient — filters, sort and URL state", () => {
+  it("initialises the view from the URL", async () => {
+    searchParams = new URLSearchParams("view=grid")
+    const { container } = render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    expect(container.querySelector(".rpc-binder")).toBeTruthy()
+  })
+
+  it("defaults to the table view", async () => {
+    const { container } = render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    expect(container.querySelector(".rpc-binder")).toBeNull()
+  })
+
+  it("carries a URL tier filter into the request", async () => {
+    searchParams = new URLSearchParams("tier=RARE")
+    render(<MarketClient />)
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market"))
+      expect(urls.some((u) => u.includes("tier=RARE"))).toBe(true)
+    })
+  })
+
+  it("carries a URL price band into the request", async () => {
+    searchParams = new URLSearchParams("minPrice=10&maxPrice=100")
+    render(<MarketClient />)
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market"))
+      expect(urls.some((u) => u.includes("minPrice=10") && u.includes("maxPrice=100"))).toBe(true)
+    })
+  })
+
+  it("carries a URL sort into the request", async () => {
+    searchParams = new URLSearchParams("sort=price_asc")
+    render(<MarketClient />)
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market"))
+      expect(urls.some((u) => u.includes("sort=price_asc"))).toBe(true)
+    })
+  })
+
+  it("ignores an unrecognised sort rather than forwarding it", async () => {
+    searchParams = new URLSearchParams("sort=chaos")
+    render(<MarketClient />)
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market"))
+      expect(urls.length).toBeGreaterThan(0)
+      expect(urls.every((u) => !u.includes("sort=chaos"))).toBe(true)
+    })
+  })
+
+  it("carries a URL page into the request", async () => {
+    searchParams = new URLSearchParams("page=3")
+    render(<MarketClient />)
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market"))
+      expect(urls.some((u) => u.includes("page=3"))).toBe(true)
+    })
+  })
+
+  it("pushes the selected sort back into the URL so a deep link survives", async () => {
+    searchParams = new URLSearchParams("sort=price_desc")
+    render(<MarketClient />)
+    await waitFor(() => {
+      expect(replace.mock.calls.some((c) => String(c[0]).includes("sort=price_desc"))).toBe(true)
+    })
+  })
+
+  it("writes only the default sort into the URL when no filters are active", async () => {
+    // ⚠ The default sort is `price_asc`, NOT "recent" — Market is the browse
+    // surface and leads cheapest-first, while Sniper owns the recently-listed
+    // default. So the canonical no-filter URL is `?sort=price_asc`, not a bare
+    // `?`; asserting the latter fails against correct code.
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    await waitFor(() => expect(replace.mock.calls.some((c) => String(c[0]) === "?sort=price_asc")).toBe(true))
+    // and nothing else rides along
+    expect(replace.mock.calls.every((c) => !String(c[0]).includes("tier="))).toBe(true)
+  })
+
+  it("defaults to cheapest-first rather than most-recent", async () => {
+    render(<MarketClient />)
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market"))
+      expect(urls.some((u) => u.includes("sort=price_asc"))).toBe(true)
+    })
+  })
+
+  it("advances the page and refetches", async () => {
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    const next = screen.getByRole("button", { name: /next/i })
+    fireEvent.click(next)
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market"))
+      expect(urls.some((u) => u.includes("page=2"))).toBe(true)
+    })
+  })
+
+  it("disables Prev on the first page", async () => {
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    expect((screen.getByRole("button", { name: /prev/i }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it("disables Next when the API says there is no more", async () => {
+    marketResponse = () => json(200, market({ pagination: { total: 1, page: 1, limit: 50, hasMore: false } }))
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    expect((screen.getByRole("button", { name: /next/i }) as HTMLButtonElement).disabled).toBe(true)
+  })
+})
+
+// ─── Owned counts ────────────────────────────────────────────────────────────
+
+describe("MarketClient — owned counts", () => {
+  it("does not request edition counts for a signed-out visitor", async () => {
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    expect(fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u.includes("edition-counts"))).toBe(false)
+  })
+
+  // 2026-09-28 — the device key is written only by a search on THIS device; a
+  // signed-in reader who never searched here got no Owned column.
+  it("no device key, signed in: counts YOUR wallet from the profile", async () => {
+    const base = fetchMock.getMockImplementation() as (input: unknown) => unknown
+    fetchMock.mockImplementation(async (input: unknown) =>
+      String(input).startsWith("/api/profile/me")
+        ? json(200, { user: { id: "u1", wallet_addr: "0x1111222233334444" } })
+        : base(input),
+    )
+    render(<MarketClient />)
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u.includes("edition-counts") && u.includes("wallet=0x1111222233334444"))).toBe(true)
+    })
+  })
+
+  it("requests edition counts for a signed-in collector", async () => {
+    ownerKey = "0xmine"
+    render(<MarketClient />)
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u.includes("edition-counts"))).toBe(true)
+    })
+  })
+
+  it("survives a failed edition-counts read without breaking the market", async () => {
+    ownerKey = "0xmine"
+    fetchMock.mockImplementation(async (input: unknown) => {
+      const url = String(input)
+      if (url.startsWith("/api/ready")) return readyResponse()
+      if (url.startsWith("/api/wallet/edition-counts")) throw new Error("counts down")
+      return marketResponse()
+    })
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+  })
+})
+
+// ─── Pinnacle's own empty state ──────────────────────────────────────────────
+
+describe("MarketClient — the Pinnacle empty state", () => {
+  it("points a Pinnacle visitor at Sniper rather than at a bare 'no listings'", async () => {
+    PARAMS.collection = "disney-pinnacle"
+    try {
+      marketResponse = () => json(200, market({ listings: [], pagination: { total: 0, page: 1, limit: 50, hasMore: false } }))
+      render(<MarketClient />)
+      await screen.findByText("No pin listings right now")
+      expect(screen.getByText(/Open Pinnacle Sniper/)).toBeTruthy()
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
+  })
+
+  it("still shows the FAILURE notice on Pinnacle rather than its empty state", async () => {
+    // The bespoke Pinnacle copy makes a specific claim ("no pins are listed at
+    // the moment"), so it must sit behind the same error gate as the generic one.
+    PARAMS.collection = "disney-pinnacle"
+    try {
+      marketResponse = () => json(503, {})
+      render(<MarketClient />)
+      await screen.findByText(/Couldn't load market/)
+      expect(screen.queryByText("No pin listings right now")).toBeNull()
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
+  })
+})
+
+describe("MarketClient — Pinnacle says Character, not Player", () => {
+  it("labels the filter and the table column Character on Pinnacle", async () => {
+    PARAMS.collection = "disney-pinnacle"
+    try {
+      marketResponse = () => json(200, market({ listings: [LISTING({ playerName: "Grogu", editionKey: "OEEV1-D231-GROG-E2" })] }))
+      const { container } = render(<MarketClient />)
+      await screen.findByText("Grogu")
+      const heads = Array.from(container.querySelectorAll("th")).map((t) => t.textContent)
+      expect(heads).toContain("Character")
+      expect(heads).not.toContain("Player")
+      // Same vocabulary for the scarcity band: Pinnacle calls it a Variant.
+      expect(heads).toContain("Variant")
+      expect(heads).not.toContain("Tier")
+      expect(screen.getAllByText("Character").length).toBeGreaterThanOrEqual(2)
+      expect(screen.queryByText("Player")).toBeNull()
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
+  })
+
+  it("NO-CHANGE CONTROL: a sports collection still says Player", async () => {
+    const { container } = render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    const heads = Array.from(container.querySelectorAll("th")).map((t) => t.textContent)
+    expect(heads).toContain("Player")
+    expect(heads).not.toContain("Character")
+    expect(heads).toContain("Tier")
+    expect(heads).not.toContain("Variant")
+  })
+})
+
+// ─── Controls ────────────────────────────────────────────────────────────────
+
+describe("MarketClient — controls", () => {
+  it("toggles between the table and grid views", async () => {
+    const { container } = render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    expect(container.querySelector(".rpc-binder")).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "grid" }))
+    await waitFor(() => expect(container.querySelector(".rpc-binder")).toBeTruthy())
+    fireEvent.click(screen.getByRole("button", { name: "table" }))
+    await waitFor(() => expect(container.querySelector(".rpc-binder")).toBeNull())
+  })
+
+  it("sends a chosen sort to the API", async () => {
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    fireEvent.change(screen.getByRole("combobox", { name: "Sort editions" }), { target: { value: "fmv_desc" } })
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market"))
+      expect(urls.some((u) => u.includes("sort=fmv_desc"))).toBe(true)
+    })
+  })
+
+  it("sends a typed price band", async () => {
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    fireEvent.change(screen.getByPlaceholderText("Min"), { target: { value: "25" } })
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market"))
+      expect(urls.some((u) => u.includes("minPrice=25"))).toBe(true)
+    })
+  })
+
+  it("sends a typed minimum discount", async () => {
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    fireEvent.change(screen.getByPlaceholderText("e.g. 20"), { target: { value: "30" } })
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market"))
+      expect(urls.some((u) => u.includes("minDiscount=30"))).toBe(true)
+    })
+  })
+
+  it("debounces the player box rather than firing per keystroke", async () => {
+    // ⚠ VIRTUAL TIME, NOT WALL CLOCK. This used to sleep 60ms of real time
+    // inside the component's 350ms window and assert nothing had fired — true
+    // only if fewer than 350ms of real time elapsed, which a loaded CI runner
+    // does not guarantee. Its sibling in component-AdminFeedbackClient reddened
+    // `main` exactly that way on 2026-08-18, on a DOCS-ONLY commit.
+    //
+    // ⚠ act() around both the keystrokes and the advance is load-bearing: without
+    // it the debounce timer is scheduled AFTER the advance, and a 0ms debounce
+    // passes. Verified by mutation — 350 → 0 reds this case.
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    const before = fetchMock.mock.calls.filter((c) => String(c[0]).startsWith("/api/market")).length
+    const box = screen.getByPlaceholderText("Search…")
+    vi.useFakeTimers()
+    try {
+      await act(async () => {
+        for (const v of ["l", "li", "lil"]) fireEvent.change(box, { target: { value: v } })
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60)
+      })
+      expect(fetchMock.mock.calls.filter((c) => String(c[0]).startsWith("/api/market")).length).toBe(before)
+      // Past the window the trailing edge fires; advanced here so the waitFor
+      // below runs against real timers with the request already in flight.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(350)
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market"))
+      expect(urls.some((u) => u.includes("player=lil"))).toBe(true)
+    })
+  })
+
+  it("offers a clear-filters affordance only when a filter is active", async () => {
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    expect(screen.queryByText(/^Clear \d+ filter/)).toBeNull()
+    fireEvent.change(screen.getByPlaceholderText("Min"), { target: { value: "25" } })
+    await screen.findByText(/^Clear 1 filter$/)
+  })
+
+  it("pluralises the clear-filters count", async () => {
+    searchParams = new URLSearchParams("minPrice=5&maxPrice=50")
+    render(<MarketClient />)
+    await screen.findByText(/^Clear 2 filters$/)
+  })
+
+  it("clearing filters resets the request to the unfiltered one", async () => {
+    searchParams = new URLSearchParams("minPrice=5&maxPrice=50")
+    render(<MarketClient />)
+    fireEvent.click(await screen.findByText(/^Clear 2 filters$/))
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market"))
+      expect(urls.some((u) => !u.includes("minPrice="))).toBe(true)
+    })
+  })
+
+  it("opens a multi-select and applies a chosen option", async () => {
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    const setChip = screen.getAllByRole("button", { name: /Any ▾/ })[0]
+    fireEvent.click(setChip)
+    const box = await screen.findByRole("listbox")
+    fireEvent.click(within(box).getByText("Archive Set"))
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market"))
+      expect(urls.some((u) => u.includes("set=Archive"))).toBe(true)
+    })
+  })
+
+  // 2026-09-29 mobile report: the Team list painted SEE-THROUGH over the Owned
+  // chips and was CLIPPED at the filter card's bottom edge.
+  it("opens a multi-select list that is opaque and not clipped by the filter card", async () => {
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    fireEvent.click(screen.getAllByRole("button", { name: /Any ▾/ })[0])
+    const box = await screen.findByRole("listbox")
+    expect(box.style.background).toBe("var(--rpc-surface)")
+    let el: HTMLElement | null = box.parentElement
+    while (el && el !== document.body) {
+      expect(el.style.overflow, "an ancestor of the listbox clips it").not.toBe("hidden")
+      if (el.tagName === "SECTION") break
+      el = el.parentElement
+    }
+  })
+
+  it("loads Top Shot table thumbnails through the resize CDN, not the 2880px master", async () => {
+    const master = "https://assets.nbatopshot.com/editions/6_wnba_2024_common/abc/play_abc_capture_Hero_2880_2880_Transparent.png"
+    marketResponse = () => json(200, market({ listings: [LISTING({ thumbnailUrl: master })] }))
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    const srcs = Array.from(document.querySelectorAll("img")).map((i) => i.getAttribute("src") ?? "")
+    expect(srcs.some((s) => s.includes("/resize/editions/") && s.includes("width=160"))).toBe(true)
+    expect(srcs).not.toContain(master)
+  })
+
+  // 2026-10-14: the Set / Series / Team / Badge lists were built from the 50 listings
+  // on screen, so Portland Fire (70 editions with a live ask) could not be picked.
+  // Options now merge /api/market/filter-options (the catalog), the facets of the
+  // route's whole fetched window, the page, and the selection.
+  const openChip = async (label: string) => {
+    const lab = Array.from(document.querySelectorAll("span.rpc-label")).find((e) => e.textContent === label)!
+    fireEvent.click(within(lab.parentElement as HTMLElement).getByRole("button"))
+    return screen.findByRole("listbox")
+  }
+  const CATALOG = { catalog: true, sets: ["Archive Set", "Metallic Gold LE"], series: ["0", "8"], teams: ["Portland Fire", "Seattle Storm"], players: ["Paige Bueckers"], badges: ["Three-Star Rookie"] }
+
+  it("offers a team that has no listing on the current page", async () => {
+    filterOptionsResponse = () => json(200, CATALOG)
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    const box = await openChip("Team")
+    await within(box).findByText("Portland Fire")
+    expect(within(box).getByText("Portland Trail Blazers")).toBeTruthy()
+  })
+
+  // 2026-10-21 (Trevor): a long list (Team) needs a place to type.
+  it("filters a long multi-select by typing, and keeps a short one plain", async () => {
+    const teams = ["Atlanta Hawks", "Boston Celtics", "Chicago Bulls", "Denver Nuggets", "Golden State Warriors", "Miami Heat", "Portland Fire", "Seattle Storm", "Utah Jazz"]
+    filterOptionsResponse = () => json(200, { ...CATALOG, teams })
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    const box = await openChip("Team")
+    await within(box).findByText("Utah Jazz")
+    const input = screen.getByRole("combobox", { name: "Filter Team options" })
+    fireEvent.change(input, { target: { value: "port" } })
+    expect(within(box).getByRole("option", { name: "Portland Trail Blazers" })).toBeTruthy()
+    expect(within(box).getByRole("option", { name: "Portland Fire" })).toBeTruthy()
+    expect(within(box).queryByRole("option", { name: "Utah Jazz" })).toBeNull()
+    fireEvent.change(input, { target: { value: "zzz" } })
+    expect(screen.getByRole("status").textContent).toMatch(/No match for/)
+    fireEvent.change(input, { target: { value: "seat" } })
+    fireEvent.click(within(box).getByRole("option", { name: "Seattle Storm" }))
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market"))
+      expect(urls.some((u) => u.includes("team=Seattle"))).toBe(true)
+    })
+    fireEvent.keyDown(input, { key: "Escape" })
+    expect(screen.queryByRole("listbox")).toBeNull()
+    await openChip("Set")
+    expect(screen.queryByRole("combobox", { name: /Filter Set options/ })).toBeNull()
+  })
+
+  it("offers a set that has no listing on the current page", async () => {
+    filterOptionsResponse = () => json(200, CATALOG)
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    const box = await openChip("Set")
+    await within(box).findByText("Metallic Gold LE")
+  })
+
+  it("offers badges, sets and teams the fetched window carries beyond the page", async () => {
+    filterOptionsResponse = () => json(200, { catalog: false })
+    marketResponse = () => json(200, market({
+      facets: { sets: ["Deep Set"], series: [], teams: ["Phoenix Mercury"], players: ["Diana Taurasi"], badges: ["Rookie Year", "Top Shot Debut"] },
+    }))
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    expect(within(await openChip("Badges")).getByText("Top Shot Debut")).toBeTruthy()
+    fireEvent.keyDown(document, { key: "Escape" })
+    cleanup()
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    expect(within(await openChip("Team")).getByText("Phoenix Mercury")).toBeTruthy()
+  })
+
+  it("offers every catalog badge, not only badges on the page", async () => {
+    filterOptionsResponse = () => json(200, CATALOG)
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    const box = await openChip("Badges")
+    await within(box).findByText("Three-Star Rookie")
+  })
+
+  it("suggests every catalog player in the Player box", async () => {
+    filterOptionsResponse = () => json(200, CATALOG)
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    const box = screen.getByRole("combobox", { name: /Search by player/i })
+    const suggested = async (q: string) => {
+      fireEvent.change(box, { target: { value: q } })
+      const list = await screen.findByRole("listbox", { name: /suggestions/ })
+      return within(list).getAllByRole("option").map((o) => o.textContent)
+    }
+    // catalog player (not on the page) and page player (not in the catalog) both offered
+    await waitFor(async () => expect(await suggested("paige")).toContain("Paige Bueckers"))
+    expect(await suggested("lillard")).toContain("Damian Lillard")
+  })
+
+  // 2026-10-21: the <datalist> matched accent-SENSITIVELY and the route's ilike is
+  // too, so "doncic" found no listing for "Luka Dončić" and the board read empty.
+  it("suggests the accented catalog spelling for an unaccented query, and picking it sends that spelling", async () => {
+    filterOptionsResponse = () => json(200, { ...CATALOG, players: ["Luka Dončić", "Paige Bueckers"] })
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    const box = screen.getByRole("combobox", { name: /Search by player/i })
+    fireEvent.change(box, { target: { value: "doncic" } })
+    const list = await screen.findByRole("listbox", { name: /suggestions/ })
+    fireEvent.click(within(list).getByRole("option", { name: "Luka Dončić" }))
+    expect((box as HTMLInputElement).value).toBe("Luka Dončić")
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market?"))
+      expect(urls.some((u) => new URL(u, "https://t").searchParams.get("player") === "Luka Dončić")).toBe(true)
+    })
+  })
+
+  it("shows each multi-select pick as a pill that removes just that one", async () => {
+    searchParams = new URLSearchParams("set=Archive+Set&team=Portland+Fire,Seattle+Storm")
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    const pills = screen.getByRole("list", { name: "Active filters" })
+    expect(within(pills).getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Remove Set filter: Archive Set",
+      "Remove Team filter: Portland Fire",
+      "Remove Team filter: Seattle Storm",
+    ])
+    fireEvent.click(within(pills).getByRole("button", { name: "Remove Team filter: Portland Fire" }))
+    await waitFor(() => {
+      const last = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market?")).pop()!
+      const team = new URL(last, "https://t").searchParams.get("team")
+      expect(team).toBe("Seattle Storm")
+      expect(new URL(last, "https://t").searchParams.get("set")).toBe("Archive Set")
+    })
+  })
+
+  it("renders no pill row when nothing is picked", async () => {
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    expect(screen.queryByRole("list", { name: "Active filters" })).toBeNull()
+  })
+
+  // 2026-10-21: the route's ilike is accent-sensitive, so "luka doncic" typed in
+  // full (not picked from the suggestions) read as an empty market for Dončić.
+  it("an empty search offers the accented spelling it missed, and only that", async () => {
+    searchParams = new URLSearchParams("player=luka doncic")
+    filterOptionsResponse = () => json(200, { ...CATALOG, players: ["Luka Dončić", "Luka Garza"] })
+    marketResponse = () => json(200, market({ listings: [] }))
+    render(<MarketClient />)
+    const hint = await screen.findByText(/Nothing matches “luka doncic” as typed/)
+    const box = hint.closest("[role=status]") as HTMLElement
+    expect(within(box).getAllByRole("button").map((b) => b.textContent)).toEqual(["Luka Dončić"])
+    fireEvent.click(within(box).getByRole("button", { name: "Luka Dončić" }))
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market?"))
+      expect(urls.some((u) => new URL(u, "https://t").searchParams.get("player") === "Luka Dončić")).toBe(true)
+    })
+  })
+
+  // #207: the route retried "luka doncic" as "Luka Dončić" — the page must SAY so,
+  // never show another player's listings under the typed name silently.
+  it("says when the route searched a different spelling, and can adopt it", async () => {
+    searchParams = new URLSearchParams("player=luka doncic")
+    marketResponse = () => json(200, market({ playerResolved: { from: "luka doncic", to: "Luka Dončić" } }))
+    render(<MarketClient />)
+    const note = await screen.findByText(/No exact match for/)
+    const box = note.closest("[role=status]") as HTMLElement
+    expect(box.textContent).toMatch(/No exact match for “luka doncic” — showing Luka Dončić\./)
+    fireEvent.click(within(box).getByRole("button", { name: "Use this spelling" }))
+    expect((screen.getByRole("combobox", { name: /Search by player/i }) as HTMLInputElement).value).toBe("Luka Dončić")
+  })
+
+  it("shows no spelling note when the route did not resolve one", async () => {
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    expect(screen.queryByText(/No exact match for/)).toBeNull()
+  })
+
+  it("still offers the page's teams when the catalog cannot be read", async () => {
+    filterOptionsResponse = () => json(503, {})
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    const box = await openChip("Team")
+    expect(within(box).getByText("Portland Trail Blazers")).toBeTruthy()
+    expect(within(box).queryByText("Portland Fire")).toBeNull()
+  })
+
+  it("disables a multi-select that has no options in the current results", async () => {
+    marketResponse = () => json(200, market({ listings: [LISTING({ setName: null, seriesName: null, teamName: null, badgeSlugs: [] })] }))
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    const chips = screen.getAllByRole("button", { name: /Any ▾/ })
+    expect(chips.some((c) => (c as HTMLButtonElement).disabled)).toBe(true)
+  })
+
+  it("shows the owned filter only for a signed-in collector", async () => {
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    expect(screen.queryByRole("button", { name: "Owned" })).toBeNull()
+  })
+
+  it("filters client-side by owned once counts are in", async () => {
+    ownerKey = "0xmine"
+    fetchMock.mockImplementation(async (input: unknown) => {
+      const url = String(input)
+      if (url.startsWith("/api/ready")) return readyResponse()
+      if (url.startsWith("/api/wallet/edition-counts")) return json(200, { editions: { "48:1652": { owned: 2, locked: 0 } } })
+      return marketResponse()
+    })
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    fireEvent.click(await screen.findByRole("button", { name: "Not owned" }))
+    // The row IS owned, so a not-owned filter empties the PAGE. ⚠ RE-PINNED
+    // 2026-09-25 (known-issues #146): the Owned filter runs over this page's
+    // listings only, so the empty must say THAT — not fall through to the
+    // market's empty state, which concludes about listings it never looked at.
+    const note = await screen.findByTestId("owned-filter-page-empty")
+    expect(note.textContent).toMatch(/current page only/)
+    expect(screen.queryByText("No listings match these filters.")).toBeNull()
+  })
+
+  // 2026-10-15: the Owned filter goes to the server, which checks the wallet over
+  // the whole market (Top Shot / All Day); the page no longer filters its 50 rows.
+  it("sends Owned / Not owned and the wallet to /api/market", async () => {
+    ownerKey = "0x1234567890abcdef"
+    fetchMock.mockImplementation(async (input: unknown) => {
+      const url = String(input)
+      if (url.startsWith("/api/ready")) return readyResponse()
+      if (url.startsWith("/api/wallet/edition-counts")) return json(200, { editions: {} })
+      if (url.startsWith("/api/market/filter-options")) return filterOptionsResponse()
+      return marketResponse()
+    })
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    fireEvent.click(await screen.findByRole("button", { name: "Owned" }))
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market?"))
+      expect(urls.some((u) => u.includes("owned=owned") && u.includes("wallet=0x1234567890abcdef"))).toBe(true)
+    })
+  })
+
+  it("does not re-filter rows the server already filtered (ownedApplied)", async () => {
+    ownerKey = "0x1234567890abcdef"
+    marketResponse = () => json(200, market({ ownedApplied: true }))
+    fetchMock.mockImplementation(async (input: unknown) => {
+      const url = String(input)
+      if (url.startsWith("/api/ready")) return readyResponse()
+      // The page's own counts say the row is OWNED (set:play key) — a page-side
+      // "Not owned" filter would hide it. The server said it is not owned.
+      if (url.startsWith("/api/wallet/edition-counts")) return json(200, { editions: { "48:1652": { owned: 2, locked: 0 } } })
+      if (url.startsWith("/api/market/filter-options")) return filterOptionsResponse()
+      return marketResponse()
+    })
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    fireEvent.click(await screen.findByRole("button", { name: "Not owned" }))
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market?"))
+      expect(urls.some((u) => u.includes("owned=not_owned"))).toBe(true)
+    })
+    expect(screen.getByText("Damian Lillard")).toBeTruthy()
+    expect(screen.queryByTestId("owned-filter-page-empty")).toBeNull()
+  })
+})
+
+// ─── Listing renderers ───────────────────────────────────────────────────────
+
+describe("MarketClient — listing renderers", () => {
+  it("renders the grid card with its badge and discount", async () => {
+    searchParams = new URLSearchParams("view=grid")
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    expect(screen.getAllByTestId("badge").length).toBeGreaterThan(0)
+  })
+
+  it("withholds a discount rather than printing one when FMV is unknown", async () => {
+    marketResponse = () => json(200, market({ listings: [LISTING({ fmv: null, discount: null })] }))
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    expect(document.body.textContent).not.toContain("30%")
+  })
+
+  it("renders a listing with no thumbnail without breaking the row", async () => {
+    marketResponse = () => json(200, market({ listings: [LISTING({ thumbnailUrl: null })] }))
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+  })
+
+  it("renders a listing with no player name", async () => {
+    marketResponse = () => json(200, market({ listings: [LISTING({ playerName: null, setName: "Archive Set" })] }))
+    render(<MarketClient />)
+    await screen.findByText("Archive Set")
+  })
+
+  it("marks a locked listing", async () => {
+    marketResponse = () => json(200, market({ listings: [LISTING({ isLocked: true })] }))
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+  })
+
+  it("marks a special serial", async () => {
+    marketResponse = () => json(200, market({ listings: [LISTING({ isSpecialSerial: true, serialNumber: 1 })] }))
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+  })
+
+  it("shows a thin-data FMV's discount plain, with no confidence label (2026-10-18)", async () => {
+    // ⚠ Inverted 2026-10-18 (Trevor: "We shouldn't have anything user-facing
+    // that shows our confidence in the pricing"). The internal confidence
+    // vocabulary (HIGH/MEDIUM/LOW/STALE) was already never rendered; now the
+    // plain-words "thin data" stand-in for it is gone too, and the discount is
+    // shown as for any other listing.
+    marketResponse = () => json(200, market({ listings: [LISTING({ lowConfidenceFmv: true, confidence: "LOW", discount: 30 })] }))
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    expect(screen.queryByText(/thin data/)).toBeNull()
+    expect(document.body.textContent).toContain("-30%")
+    expect(document.body.textContent).not.toContain("LOW")
+    expect(document.body.textContent).not.toMatch(/confidence/i)
+  })
+
+  it("discloses an ask-derived FMV as not a market price", async () => {
+    marketResponse = () => json(200, market({ listings: [LISTING({ confidence: "ASK_ONLY" })] }))
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    expect(document.body.textContent).toMatch(/ask/i)
+  })
+
+  it("records an outbound click on the buy link", async () => {
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    const links = screen.getAllByRole("link").filter((a) => (a.getAttribute("href") ?? "").includes("http"))
+    if (links.length > 0) {
+      fireEvent.click(links[0])
+      await waitFor(() => expect(trackOutbound).toHaveBeenCalled())
+    }
+  })
+})
+
+// ─── Listing shapes the API really produces ──────────────────────────────────
+
+describe("MarketClient — listing shapes", () => {
+  async function withListings(listings: Array<Record<string, unknown>>) {
+    marketResponse = () =>
+      json(200, {
+        listings,
+        pagination: { total: listings.length, page: 1, limit: 50, hasMore: false },
+        clamp: { applied: false, ceilings: {} },
+        diagnostics: { rawCount: listings.length, postClampCount: listings.length, postFilterCount: listings.length },
+      })
+    render(<MarketClient />)
+  }
+
+  it("renders a listing with no ask price without inventing one", async () => {
+    await withListings([LISTING({ askPrice: null })])
+    await screen.findByText("Damian Lillard")
+  })
+
+  it("renders a listing with no serial", async () => {
+    await withListings([LISTING({ serialNumber: null, circulationCount: null })])
+    await screen.findByText("Damian Lillard")
+  })
+
+  it("renders a listing with no set or series", async () => {
+    await withListings([LISTING({ setName: null, seriesName: null })])
+    await screen.findByText("Damian Lillard")
+  })
+
+  it("renders a listing with no tier", async () => {
+    await withListings([LISTING({ tier: null })])
+    await screen.findByText("Damian Lillard")
+  })
+
+  it("renders a listing with no badges", async () => {
+    await withListings([LISTING({ badgeSlugs: [] })])
+    await screen.findByText("Damian Lillard")
+  })
+
+  it("renders a listing with no buy URL — nothing to click, but still a row", async () => {
+    await withListings([LISTING({ buyUrl: null, flowId: null })])
+    await screen.findByText("Damian Lillard")
+  })
+
+  it("renders a parallel listing", async () => {
+    await withListings([LISTING({ parallel: "Hexwave" })])
+    await screen.findByText("Damian Lillard")
+  })
+
+  it("renders a listing with no edition key — it cannot be owned-matched", async () => {
+    await withListings([LISTING({ editionKey: null })])
+    await screen.findByText("Damian Lillard")
+  })
+
+  it("renders many listings in the grid view", async () => {
+    searchParams = new URLSearchParams("view=grid")
+    await withListings([
+      LISTING({ id: "a", playerName: "A" }),
+      LISTING({ id: "b", playerName: "B", isLocked: true }),
+      LISTING({ id: "c", playerName: "C", isSpecialSerial: true, serialNumber: 1 }),
+    ])
+    await screen.findByText("A")
+    expect(screen.getByText("B")).toBeTruthy()
+    expect(screen.getByText("C")).toBeTruthy()
+  })
+
+  it("renders many listings in the table view", async () => {
+    await withListings([
+      LISTING({ id: "a", playerName: "A", discount: 0.5 }),
+      LISTING({ id: "b", playerName: "B", discount: null, fmv: null }),
+    ])
+    await screen.findByText("A")
+    expect(screen.getByText("B")).toBeTruthy()
+  })
+})
+
+// ─── The packs sub-view ──────────────────────────────────────────────────────
+
+describe("MarketClient — the packs sub-view", () => {
+  it("shows the pack market on ?section=packs", async () => {
+    searchParams = new URLSearchParams("section=packs")
+    render(<MarketClient />)
+    expect(await screen.findByTestId("pack-market")).toBeTruthy()
+  })
+
+  it("does not fetch moment listings while the packs sub-view is active", async () => {
+    searchParams = new URLSearchParams("section=packs")
+    render(<MarketClient />)
+    await screen.findByTestId("pack-market")
+    await new Promise((r) => setTimeout(r, 30))
+    expect(fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u.startsWith("/api/market?"))).toBe(false)
+  })
+
+  it("offers no packs toggle for a collection with no pack board", async () => {
+    PARAMS.collection = "ufc"
+    try {
+      render(<MarketClient />)
+      await screen.findByText("Damian Lillard")
+      expect(screen.queryByTestId("pack-market")).toBeNull()
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
+  })
+})
+
+// ─── Outbound clicks and chip interactions ───────────────────────────────────
+
+describe("MarketClient — outbound clicks and chips", () => {
+  it("records a click on a grid card's buy button", async () => {
+    const open = vi.fn()
+    const origOpen = window.open
+    Object.defineProperty(window, "open", { configurable: true, value: open })
+    try {
+      searchParams = new URLSearchParams("view=grid")
+      render(<MarketClient />)
+      await screen.findByText("Damian Lillard")
+      const buy = Array.from(document.querySelectorAll('[tabindex="0"]')).find((n) =>
+        /buy|view listing|topshot/i.test(n.textContent ?? ""),
+      )
+      if (buy) {
+        fireEvent.click(buy)
+        await waitFor(() => expect(trackOutbound).toHaveBeenCalled())
+      }
+    } finally {
+      Object.defineProperty(window, "open", { configurable: true, value: origOpen })
+    }
+  })
+
+  it("opens a buy link from the keyboard too — a click handler alone is not reachable", async () => {
+    const open = vi.fn()
+    const origOpen = window.open
+    Object.defineProperty(window, "open", { configurable: true, value: open })
+    try {
+      searchParams = new URLSearchParams("view=grid")
+      render(<MarketClient />)
+      await screen.findByText("Damian Lillard")
+      const buy = Array.from(document.querySelectorAll('[tabindex="0"]'))[0]
+      if (buy) {
+        fireEvent.keyDown(buy, { key: "Enter" })
+        await waitFor(() => expect(open).toHaveBeenCalled())
+      }
+    } finally {
+      Object.defineProperty(window, "open", { configurable: true, value: origOpen })
+    }
+  })
+
+  it("ignores an unrelated key on a buy affordance", async () => {
+    const open = vi.fn()
+    const origOpen = window.open
+    Object.defineProperty(window, "open", { configurable: true, value: open })
+    try {
+      searchParams = new URLSearchParams("view=grid")
+      render(<MarketClient />)
+      await screen.findByText("Damian Lillard")
+      const buy = Array.from(document.querySelectorAll('[tabindex="0"]'))[0]
+      if (buy) {
+        fireEvent.keyDown(buy, { key: "x" })
+        expect(open).not.toHaveBeenCalled()
+      }
+    } finally {
+      Object.defineProperty(window, "open", { configurable: true, value: origOpen })
+    }
+  })
+
+  it("toggles a tier chip on and off", async () => {
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    const chip = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.trim() === "RARE")
+    if (chip) {
+      fireEvent.click(chip)
+      await waitFor(() => {
+        const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market"))
+        expect(urls.some((u) => u.includes("tier=RARE"))).toBe(true)
+      })
+      fireEvent.click(chip)
+      await waitFor(() => {
+        const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market"))
+        expect(urls.filter((u) => !u.includes("tier=")).length).toBeGreaterThan(1)
+      })
+    }
+  })
+
+  it("clears a multi-select from inside its own dropdown", async () => {
+    searchParams = new URLSearchParams("set=Archive+Set")
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    // The chip summarises the single selection rather than reading "Any".
+    const chip = screen.getAllByRole("button").find((b) => /Archive Set ▾/.test(b.textContent ?? ""))
+    expect(chip).toBeTruthy()
+    fireEvent.click(chip!)
+    await screen.findByRole("listbox")
+    // Clear sits in the dropdown panel beside the list (a button is not a valid listbox child).
+    const clear = screen.getByRole("button", { name: /^clear \(\d+\)$/i })
+    fireEvent.click(clear)
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market"))
+      expect(urls.some((u) => !u.includes("set="))).toBe(true)
+    })
+  })
+
+  it("honours a ?page= deep link instead of snapping back to page 1", async () => {
+    // ⚠ THE DEFECT THIS FOUND. The "snap back to page 1 when a filter changes"
+    // effect also fires on MOUNT, so `?page=3` was read out of the URL by
+    // `useState` and then discarded on the first commit — after which the
+    // URL-sync effect rewrote the address WITHOUT the param, so a shared link
+    // silently lost its page and nothing on screen said so.
+    searchParams = new URLSearchParams("page=3")
+    render(<MarketClient />)
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market"))
+      expect(urls.some((u) => u.includes("page=3"))).toBe(true)
+    })
+    // …and it must still be in the URL afterwards.
+    await waitFor(() => expect(replace.mock.calls.some((c) => String(c[0]).includes("page=3"))).toBe(true))
+  })
+
+  it("still snaps back to page 1 when a filter actually changes", async () => {
+    // The behaviour the guard must NOT break: paging to 3 then narrowing the
+    // filter should not leave you on a page that no longer exists.
+    searchParams = new URLSearchParams("page=3")
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    fireEvent.change(screen.getByPlaceholderText("Min"), { target: { value: "25" } })
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.includes("minPrice=25"))
+      // ⚠ Assert the SETTLED request, not that no intermediate one carried the
+      // old page. React commits the filter change before the reset effect runs,
+      // so one request legitimately goes out on the stale page and is then
+      // superseded — asserting `every` fails against correct code.
+      // ⚠ The API query ALWAYS carries `page=N`; it is only the browser URL
+      // that omits page 1. So the settled request reads `page=1`, not "no page
+      // param" — two different conventions one line apart.
+      expect(urls.some((u) => u.includes("page=1"))).toBe(true)
+    })
+  })
+
+  it("pages backwards from page 2", async () => {
+    searchParams = new URLSearchParams("page=2")
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    // ⚠ Wait for the control to settle before asserting on it. Reading
+    // `.disabled` off a node captured mid-effect flaked once in the full-file
+    // run while passing in isolation — the page re-renders several times as its
+    // legs land, and the button is remounted with them.
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: /prev/i }) as HTMLButtonElement).disabled).toBe(false),
+    )
+    fireEvent.click(screen.getByRole("button", { name: /prev/i }))
+    await waitFor(() => {
+      // ⚠ Page 1 is the DEFAULT, so it is omitted from the query string
+      // entirely — asserting `page=1` fails against correct code.
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market"))
+      expect(urls.some((u) => u.includes("page=1"))).toBe(true)
+    })
+  })
+
+  it("survives a health payload that throws", async () => {
+    readyResponse = () => { throw new Error("ready down") }
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+  })
+})
+
+// ─── Chain-scoped owner key ──────────────────────────────────────────────────
+//
+// ⛔ THE DEFECT THESE PIN. `/api/wallet/edition-counts` was repaired on
+// 2026-09-19 to read a base58 wallet (verified live: editionCount 0 → 5 for a
+// real Candy wallet) — and Candy's Owned/Locked column stayed empty anyway,
+// because THIS component never called it. The effect was gated on
+// `ownerKey.startsWith("0x")` and returned first. Fixing a route does not fix
+// the surface until its caller can reach it, and nothing in the route's own
+// tests could ever have caught that.
+describe("MarketClient — the owned column follows the collection's chain", () => {
+  const MINT = "12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK"
+
+  afterEach(() => { PARAMS.collection = "nba-top-shot" })
+
+  it("requests edition counts for a Candy collector holding a base58 key", async () => {
+    PARAMS.collection = "candy-mlb"
+    ownerKey = MINT
+    render(<MarketClient />)
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u.includes("edition-counts"))).toBe(true)
+    })
+    // ⚠ And it must go up CASE-INTACT. A lowercased base58 mint is not a
+    // different formatting of the key, it is a different key — the read returns
+    // zero rows, which the column renders as "you own none of these".
+    const call = fetchMock.mock.calls.map((c) => String(c[0])).find((u) => u.includes("edition-counts"))!
+    expect(call).toContain(encodeURIComponent(MINT))
+  })
+
+  it("⛔ REFUSES to spend a cross-chain read: a Flow key on the Candy tab asks for nothing", async () => {
+    // The cross-chain query would not error. It would return no rows, and the
+    // Owned column would state a confident zero about a wallet it never looked
+    // at. Absence of the request IS the correct behaviour.
+    PARAMS.collection = "candy-mlb"
+    ownerKey = "0xmine"
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    expect(fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u.includes("edition-counts"))).toBe(false)
+  })
+
+  it("no-change control: a Flow key on a Flow tab still requests counts", async () => {
+    // Without this the two arms above are satisfied by a component that simply
+    // never fetches, and the Flow regression would ship green.
+    ownerKey = "0xmine"
+    render(<MarketClient />)
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u.includes("edition-counts"))).toBe(true)
+    })
+  })
+})
+
+// 2026-09-24 — the Top Shot market table showed raw on-chain series numbers
+// ("SERIES 8") because get_topshot_sniper_deals returns `e.series::text`.
+// The label follows lib/series-label; the value stays raw for the RPC filter.
+describe("marketSeriesLabel", () => {
+  it("maps Top Shot's raw on-chain number to the site-wide label", async () => {
+    const { marketSeriesLabel } = await import("@/app/(collections)/[collection]/market/MarketClient")
+    expect(marketSeriesLabel("8", "nba-top-shot")).toBe("Series 2025-26")
+    expect(marketSeriesLabel("0", "nba-top-shot")).toBe("Series 1")
+    expect(marketSeriesLabel("5", "nba-top-shot")).toBe("Series 4")
+  })
+  it("passes other collections' series names through untouched", async () => {
+    const { marketSeriesLabel } = await import("@/app/(collections)/[collection]/market/MarketClient")
+    expect(marketSeriesLabel("2024 Season", "nfl-all-day")).toBe("2024 Season")
+    expect(marketSeriesLabel("Series 1", "laliga-golazos")).toBe("Series 1")
+    expect(marketSeriesLabel("8", "nfl-all-day")).toBe("8")
+  })
+})
+
+// ─── #146 (1), 2026-09-26 — no "Recently listed" on Top Shot ─────────────────
+// Top Shot's only timestamp is a badge_editions REFRESH stamp (the 500 "most
+// recent" editions fell in one 4-minute refresh tick), so the option could only
+// show an arbitrary batch under a label promising recency. Other collections
+// have real listing times and keep it.
+describe("MarketClient — the sort list is honest per collection", () => {
+  const optionLabels = () =>
+    within(screen.getByDisplayValue(/Price ↑|Recently listed|Price ↓|Discount|FMV/) as HTMLElement)
+      .getAllByRole("option").map((o) => o.textContent)
+
+  it("Top Shot offers no 'Recently listed'", async () => {
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    expect(optionLabels()).not.toContain("Recently listed")
+  })
+
+  it("a Top Shot deep link carrying sort=recent is served — and shown — as the default", async () => {
+    searchParams = new URLSearchParams("sort=recent")
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market"))
+    expect(urls.every((u) => !u.includes("sort=recent"))).toBe(true)
+    expect(urls.some((u) => u.includes("sort=price_asc"))).toBe(true)
+  })
+
+  it("Disney Pinnacle offers no 'Recently listed' either (one sweep stamp on every pin)", async () => {
+    const { sortKeysFor } = await import("@/app/(collections)/[collection]/market/MarketClient")
+    expect(sortKeysFor("disney-pinnacle")).not.toContain("recent")
+    expect(sortKeysFor("nba-top-shot")).not.toContain("recent")
+    // CONTROL: collections with a real listing time keep it.
+    expect(sortKeysFor("nfl-all-day")).toContain("recent")
+    expect(sortKeysFor(null)).toContain("recent")
+  })
+
+  it("All Day keeps 'Recently listed', and a chosen one survives into the URL", async () => {
+    PARAMS.collection = "nfl-all-day"
+    try {
+      searchParams = new URLSearchParams("sort=recent")
+      render(<MarketClient />)
+      await screen.findByText("Damian Lillard")
+      expect(optionLabels()).toContain("Recently listed")
+      // It used to be the one value the URL sync omitted, so a reload read Price ↑.
+      await waitFor(() => expect(replace.mock.calls.some((c) => String(c[0]).includes("sort=recent"))).toBe(true))
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
+  })
+
+  it("clearing filters returns the sort to the page default, not to 'recent'", async () => {
+    PARAMS.collection = "nfl-all-day"
+    try {
+      searchParams = new URLSearchParams("minPrice=5&sort=fmv_desc")
+      render(<MarketClient />)
+      fireEvent.click(await screen.findByText(/^Clear 1 filter$/))
+      await waitFor(() => {
+        const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market"))
+        expect(urls.at(-1)).toContain("sort=price_asc")
+      })
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
+  })
+})
+
+// #215 (2026-10-30) — a capped ASK_ONLY price is a SALES figure; the row must not
+// say "from asks" over it. `fmvCapped` comes from /api/market.
+describe("MarketClient — capped ASK_ONLY marker (#215)", () => {
+  it("a capped ASK_ONLY row reads 'capped at sales', not 'from asks'", async () => {
+    marketResponse = () => json(200, market({ listings: [LISTING({ confidence: "ASK_ONLY", fmvCapped: true })] }))
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    expect(document.body.textContent).toContain("capped at sales")
+    expect(document.body.textContent).not.toContain("from asks")
+  })
+
+  it("CONTROL: an uncapped (or unchecked) ASK_ONLY row keeps 'from asks'", async () => {
+    marketResponse = () => json(200, market({ listings: [LISTING({ confidence: "ASK_ONLY", fmvCapped: null })] }))
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    expect(document.body.textContent).toContain("from asks")
+    expect(document.body.textContent).not.toContain("capped at sales")
+  })
+})
+
+// 2026-11-15: a 503/504 is a bounded read that ran out of time on cold pages; the
+// abandoned query warms them, so the client retries ONCE. A persistent failure must
+// still render the failure (never the empty state), and other statuses never retry.
+describe("MarketClient — one retry on a cold-read 503/504", () => {
+  const marketCalls = () =>
+    fetchMock.mock.calls.filter(([u]) => {
+      const s = String(u)
+      return s.startsWith("/api/market?")
+    }).length
+
+  it("a 503 followed by a good read renders the listings", async () => {
+    // Key the 503 on the /api/market? read itself: marketResponse also answers other
+    // fall-through URLs, so a shared counter could hand the 503 to the wrong request.
+    marketResponse = () => (marketCalls() <= 1 ? json(503, {}) : json(200, market()))
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard", undefined, { timeout: 3000 })
+    expect(screen.queryByText(/Couldn't load market/)).toBeNull()
+    expect(marketCalls()).toBe(2)
+  })
+
+  it("a persistent 503 still names the failure, after exactly two attempts", async () => {
+    marketResponse = () => json(503, {})
+    render(<MarketClient />)
+    const el = await screen.findByText(/Couldn't load market/, undefined, { timeout: 3000 })
+    expect(el.textContent).toContain("HTTP 503")
+    expect(screen.queryByText("No listings match these filters.")).toBeNull()
+    expect(marketCalls()).toBe(2)
+  })
+
+  it("a 500 is not retried", async () => {
+    marketResponse = () => json(500, {})
+    render(<MarketClient />)
+    await screen.findByText(/Couldn't load market/)
+    expect(marketCalls()).toBe(1)
+  })
+})

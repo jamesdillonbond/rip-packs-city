@@ -1,0 +1,33 @@
+-- 20260909003900_audit_20260909_grant_the_sales_backfill_to_cron_heavy_its_scheduler_role
+--
+-- jobid 481's first tick (2026-09-09 00:37:00Z) came back
+--   ERROR: permission denied for function backfill_topshot_sales_from_atlas_events
+-- and `has_function_privilege('cron_heavy', ...)` read FALSE.
+--
+-- ⭐ ROOT CAUSE, and it is this repo's own documented trap: the creating migration ended with
+--   REVOKE EXECUTE ON FUNCTION ... FROM PUBLIC, anon, authenticated;
+-- which is the correct hardening -- but `cron_heavy` held NO EXPLICIT GRANT and was reaching the
+-- function through the PUBLIC grant. Revoking PUBLIC therefore removed the SCHEDULER's access along
+-- with anon's. ⚠ **SECURITY DEFINER governs what a function RUNS AS, not who may CALL it** -- the
+-- caller still needs EXECUTE, and a pg_cron job runs as its `username`, not as the owner.
+--
+-- ⚠ HOW IT PRESENTED, worth knowing: `cron.job_run_details` shows `failed` with the exact message,
+-- but **`pipeline_runs` shows NOTHING** -- the failure happens before the function body can call
+-- `log_pipeline_run`, so a pipeline-level monitor sees SILENCE, not a failure. The discriminator for
+-- "scheduled job that writes no row" is always `cron.job_run_details`, never the pipeline table.
+--
+-- ⚠ GENERAL RULE for any new function a pg_cron job calls: pair the REVOKE with an explicit GRANT to
+-- the job's `username`, in the SAME migration, and assert it with has_function_privilege afterwards.
+-- The REVOKE alone is not a complete ACL -- it is half of one.
+--
+-- Grant is to `cron_heavy` ONLY. anon / authenticated / PUBLIC stay revoked -- this function writes
+-- to `sales`. Verified post-apply: cron_heavy TRUE, anon FALSE, authenticated FALSE,
+-- check_secdef_anon_exec_drift() length 0.
+--
+-- anon-exec: unchanged and still revoked -- this migration only ADDS a grant to the scheduler role.
+--
+-- REVERT: REVOKE EXECUTE ON FUNCTION public.backfill_topshot_sales_from_atlas_events(integer, timestamptz) FROM cron_heavy;
+--         (which re-breaks jobid 481 -- unschedule it too if reverting.)
+
+GRANT EXECUTE ON FUNCTION public.backfill_topshot_sales_from_atlas_events(integer, timestamptz)
+  TO cron_heavy;

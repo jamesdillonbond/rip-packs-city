@@ -1,0 +1,22 @@
+-- snapshot-institutional-wallets pipeline: 2-day complete ok=false (07-23/07-24),
+-- scoped to the single NBATopShotCommunity mega-wallet (0x4d2c9216f1dca098) TopShot
+-- holdings diff (op_label diff_95f28a17). compute_institutional_wallet_diff() loops
+-- over each newly-arrived moment (6,535/day for this churning buyback wallet) doing
+--   EXISTS (SELECT 1 FROM topshot_insider_buybacks
+--           WHERE buyer_address = <wallet> AND moment_id = <arrival>
+--             AND (sold_at AT TIME ZONE 'UTC')::date = today)
+-- The only buyer index was (buyer_address, sold_at DESC) with no moment_id, so each
+-- EXISTS scanned ALL ~24.5k of that buyer's rows: 6,535 * 24,518 ~= 160M row
+-- examinations, blowing past service_role's 30s statement_timeout (elapsed ~150s,
+-- 3 retries, ok=false). Other wallets + buyback inserts unaffected.
+--
+-- This btree (buyer_address, moment_id) turns each EXISTS into a direct index seek
+-- (~0-1 rows, then the cheap date filter). Measured after: hot EXISTS 1.4-2.1 ms;
+-- the whole RPC 388-4,071 ms vs the prior >150s timeout. Idempotent re-run inserts 0.
+--
+-- Applied in prod as CREATE INDEX CONCURRENTLY via execute_sql (CONCURRENTLY cannot
+-- run inside apply_migration's transaction); recorded here as plain
+-- CREATE INDEX IF NOT EXISTS for repo/history parity.
+-- Revert: DROP INDEX IF EXISTS public.idx_topshot_insider_buybacks_buyer_moment;
+CREATE INDEX IF NOT EXISTS idx_topshot_insider_buybacks_buyer_moment
+  ON public.topshot_insider_buybacks (buyer_address, moment_id);

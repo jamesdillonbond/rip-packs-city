@@ -1,0 +1,243 @@
+// app/help/page.tsx — Help & contact (2026-10-24, CX audit P1).
+//
+// Before this page there was no help, FAQ or contact surface: the footer carried
+// About / FMV Methodology / Terms / Privacy, the contact email lived only inside
+// /privacy and /terms, and the only way to report a problem was the AI concierge.
+// Every answer below names a page that exists today; keep it that way when a
+// flow changes (the concierge's explain_ui_field dictionary is the in-chat twin).
+
+import Link from "next/link"
+import type { Metadata } from "next"
+import GlobalSiteHeader from "@/components/GlobalSiteHeader"
+import { PageContentAnchor } from "@/components/SkipToContent"
+import SiteFooter from "@/components/SiteFooter"
+import SupportChatConnected from "@/components/SupportChatConnected"
+import { OG_INHERITED } from "@/lib/seo"
+import { publishedCollections } from "@/lib/collections"
+import { IA_GROUPS, resolveHref, visibleItems, DEFAULT_COLLECTION } from "@/lib/ia"
+
+const CONTACT_EMAIL = "rippackscity@gmail.com"
+
+export function generateMetadata(): Metadata {
+  return {
+    title: "Help & Contact",
+    alternates: { canonical: "https://www.rippackscity.com/help" },
+    description:
+      "Answers to common questions about Rip Packs City — adding your collection, how FMV works, alerts, your account — and how to reach the team.",
+    openGraph: {
+      ...OG_INHERITED,
+      title: "Help & Contact — Rip Packs City",
+      description: "How Rip Packs City works, and how to reach the team.",
+      images: [{ url: "https://www.rippackscity.com/api/og/default", width: 1200, height: 630, alt: "Rip Packs City" }],
+    },
+  }
+}
+
+const COLLECTIONS = new Intl.ListFormat("en", { style: "long", type: "conjunction" }).format(
+  publishedCollections().map((c) => c.label),
+)
+
+type Faq = { q: string; a: React.ReactNode }
+
+const LINK: React.CSSProperties = { color: "var(--rpc-red-text)", textDecoration: "underline", textUnderlineOffset: 3 }
+
+const FAQS: Faq[] = [
+  {
+    q: "What is Rip Packs City?",
+    a: (
+      <>
+        Independent collector intelligence for {COLLECTIONS}: fair market values, live deals below FMV, pack EV,
+        set and team checklists, squeeze and scarcity boards, and wallet breakdowns. It is <strong>read-only</strong> —
+        RPC never holds your moments, never asks for a wallet connection, and you cannot buy or sell here. When you want
+        to buy, our links take you to the marketplace that lists the moment.
+      </>
+    ),
+  },
+  {
+    q: "Where is everything?",
+    a: (
+      <>
+        The header (and the footer, and the phone bottom bar) is organised by what you are trying to do, not by
+        collection — pick the collection once from the chip at the left of the header. Hover any group for its pages:
+        <ul style={{ margin: "8px 0 0", paddingLeft: 18, display: "flex", flexDirection: "column", gap: 4 }}>
+          {IA_GROUPS.filter((g) => !g.auth).map((g) => (
+            <li key={g.id}>
+              <Link href={resolveHref(g.href, DEFAULT_COLLECTION, g.page)} style={LINK}><strong>{g.label}</strong></Link> — {g.job.toLowerCase()}:{" "}
+              {visibleItems(g, false).map((i) => i.label).join(", ")}.
+            </li>
+          ))}
+          <li>
+            <strong>Me</strong> — your <Link href="/dashboard" style={LINK}>dashboard</Link> (Overview · Trophy Cases · Packs
+            · History · Settings), alerts, email settings and API keys for the MCP server (Settings), once you are signed in.
+          </li>
+        </ul>
+      </>
+    ),
+  },
+  {
+    q: "Is it free?",
+    a: <>Yes. Every page is free to browse, and a free account (email sign-in, no invite) adds saved wallets, alerts, watchlists and a public profile.</>,
+  },
+  {
+    q: "How do I see my collection?",
+    a: (
+      <>
+        Without an account, open any collection&apos;s <strong>Collection</strong> tab (for example{" "}
+        <Link href="/nba-top-shot/collection" style={LINK}>NBA Top Shot</Link>) and paste your wallet address or username.
+        To save it, <Link href="/login" style={LINK}>sign in</Link> and add it on your{" "}
+        <Link href="/dashboard" style={LINK}>dashboard</Link>: a Dapper / Top Shot username or Flow address for the Flow
+        collections, a Solana address for Candy MLB, and your Panini username for Panini. RPC only ever needs the
+        identifier — never a password or a wallet connection.
+      </>
+    ),
+  },
+  {
+    q: "How do I verify my wallet?",
+    a: (
+      <>
+        On your <Link href="/dashboard" style={LINK}>dashboard</Link>, press <strong>Verify</strong> on the wallet&apos;s
+        card. RPC picks one of your cheap Top Shot Moments and a price about 100× its value (at least $10, with odd cents),
+        so nobody will buy it. List that Moment on Top Shot at exactly that price, keep the window open, and it verifies
+        on its own; then delist. Verifying puts ✓ VERIFIED on your public profile and gives you your Top Shot username
+        as your handle if it is free. Nothing requires it — every saved wallet already loads in full. It works for Flow
+        wallets that hold a Top Shot Moment; there is no verification for a Solana (Candy MLB) wallet yet.
+      </>
+    ),
+  },
+  {
+    q: "How is FMV calculated?",
+    a: (
+      <>
+        FMV is a modelled value built from real sales — the typical recent sale for that edition — not a listing price.
+        The full method, including how thin and special-serial sales are handled, is on the{" "}
+        <Link href="/legal/fmv-methodology" style={LINK}>FMV methodology</Link> page.
+      </>
+    ),
+  },
+  {
+    q: "Why doesn't a price match the marketplace?",
+    a: (
+      <>
+        FMV is what an edition typically sells for; the marketplace shows what sellers are asking right now. The two
+        differ, especially on editions that rarely trade. Each edition page shows FMV, the low ask and recent sales side
+        by side so you can compare — and the concierge can explain any number on the page.
+      </>
+    ),
+  },
+  {
+    q: "How do alerts work?",
+    a: (
+      <>
+        Set them on <Link href="/alerts" style={LINK}>Alerts</Link> (or the watch button on an edition page) for a price, a
+        discount below FMV, or an FMV move. They arrive by email, Telegram or Discord. Email preferences live under the
+        dashboard&apos;s <Link href="/dashboard?tab=settings" style={LINK}>Settings</Link> tab (
+        <Link href="/dashboard/notifications" style={LINK}>Email settings</Link>). Alert emails also carry a one-tap pause link.
+      </>
+    ),
+  },
+  {
+    q: "Can I trade Moments with another collector?",
+    a: (
+      <>
+        Yes — swaps only, no cash. Find someone on the <Link href="/trades/block" style={LINK}>Trade Block</Link>, then
+        trade in a room on <Link href="/trades" style={LINK}>Trades</Link>: NBA Top Shot, NFL All Day, LaLiga Golazos and
+        UFC Strike Moments, in any mix. Each of you connects a Flow Wallet (it can trade Moments in a Dapper account linked
+        to it), you both accept the exact trade, and both wallets sign one transaction, so either every Moment moves or
+        nothing does. RPC never holds a Moment and charges no fee. Disney Pinnacle pins and packs can&apos;t be traded this
+        way: Dapper&apos;s account linking doesn&apos;t let a wallet move them out of a Dapper account.
+      </>
+    ),
+  },
+  {
+    q: "What are trophy cases and challenges?",
+    a: (
+      <>
+        Signed in, the dashboard&apos;s <Link href="/dashboard?tab=trophy" style={LINK}>Trophy Cases</Link> tab holds your
+        main case — the six Moments or cards you most want to show off, public at{" "}
+        <code>/profile/&lt;username&gt;/trophy-case</code> — and below it <strong>More Trophy Cases</strong> lets you build
+        extra themed cases (up to 10) and enter <strong>challenges</strong>. Every pick saves itself the moment you confirm
+        it; a challenge entry needs no name. The first challenge is{" "}
+        <Link href="/trophy-challenges/dame-time" style={LINK}>Dame Time</Link>: up to six Damian Lillard pieces, NBA Top
+        Shot Moments and Panini cards both count. Only pieces you hold (under your saved wallets or linked Panini username)
+        can go in, and RPC checks each pin. Every extra case and challenge entry shows on your public profile.
+      </>
+    ),
+  },
+  {
+    q: "How do I delete my account or my data?",
+    a: (
+      <>
+        Signed in, go to <Link href="/profile/edit" style={LINK}>Edit profile</Link> and use “Delete account”. You can
+        also clear your concierge history from the chat header. Details are in the{" "}
+        <Link href="/privacy" style={LINK}>privacy policy</Link>.
+      </>
+    ),
+  },
+]
+
+export default function HelpPage() {
+  return (
+    <>
+      <GlobalSiteHeader />
+      <PageContentAnchor />
+      <main style={{ background: "var(--rpc-bg)", color: "var(--rpc-text-primary)", padding: "48px 20px 96px" }}>
+        <article style={{ maxWidth: 720, margin: "0 auto" }}>
+          <h1
+            style={{
+              fontFamily: "var(--font-display)",
+              fontWeight: 900,
+              fontSize: "clamp(36px, 7vw, 56px)",
+              letterSpacing: "0.03em",
+              textTransform: "uppercase",
+              lineHeight: 1,
+              margin: "0 0 12px",
+            }}
+          >
+            Help &amp; contact
+          </h1>
+          <p style={{ fontSize: 16, lineHeight: 1.6, color: "var(--rpc-text-secondary)", margin: "0 0 36px" }}>
+            Quick answers below. For anything else, ask the concierge (the chat button in the corner) — it can explain any
+            number on a page, look up a moment, or log a bug for the team — or email us.
+          </p>
+
+          <section aria-labelledby="contact-h" style={{ border: "1px solid var(--rpc-border-hover)", borderRadius: "var(--radius-md, 10px)", padding: "18px 20px", marginBottom: 40, background: "var(--rpc-surface)" }}>
+            <h2 id="contact-h" style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 22, textTransform: "uppercase", letterSpacing: "0.04em", margin: "0 0 10px" }}>
+              Reach the team
+            </h2>
+            <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.9, fontSize: 15 }}>
+              <li>
+                Email: <a href={`mailto:${CONTACT_EMAIL}`} style={LINK}>{CONTACT_EMAIL}</a> — bugs, data corrections, account or privacy requests.
+              </li>
+              <li>
+                X: <a href="https://twitter.com/RipPacksCity" target="_blank" rel="noopener noreferrer" style={LINK}>@RipPacksCity<span className="sr-only"> (opens in a new tab)</span></a>
+              </li>
+              <li>In the app: open the concierge and choose “Report a bug” — it records the page you were on.</li>
+            </ul>
+            <p style={{ margin: "10px 0 0", fontSize: 13, color: "var(--rpc-text-muted)" }}>
+              RPC sells nothing, so a marketplace purchase, payment or delivery question belongs to that marketplace&apos;s support.
+            </p>
+          </section>
+
+          <h2 style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 28, textTransform: "uppercase", letterSpacing: "0.04em", margin: "0 0 16px" }}>
+            Common questions
+          </h2>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {FAQS.map((f) => (
+              <details key={f.q} style={{ border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm, 6px)", background: "var(--rpc-surface)" }}>
+                <summary style={{ cursor: "pointer", padding: "14px 16px", fontWeight: 700, fontSize: 16, minHeight: 44 }}>{f.q}</summary>
+                <div style={{ padding: "0 16px 16px", fontSize: 15, lineHeight: 1.65, color: "var(--rpc-text-secondary)" }}>{f.a}</div>
+              </details>
+            ))}
+          </div>
+
+          <p style={{ marginTop: 36, fontSize: 14, color: "var(--rpc-text-muted)" }}>
+            See also: <Link href="/about" style={LINK}>About</Link> · <Link href="/terms" style={LINK}>Terms</Link> ·{" "}
+            <Link href="/privacy" style={LINK}>Privacy</Link>. Nothing on RPC is financial advice.
+          </p>
+        </article>
+      </main>
+      <SiteFooter />
+      <SupportChatConnected />
+    </>
+  )
+}

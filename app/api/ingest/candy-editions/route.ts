@@ -1,0 +1,498 @@
+// app/api/ingest/candy-editions/route.ts
+//
+// Item 3 — Candy (Solana / Metaplex Core) editions + serials ingest. Walks the
+// whole Candy collection via DAS getAssetsByGroup, upserting one `editions` row
+// per distinct edition key and one `wallet_moments_cache` row per serial (mint).
+//
+// DISCOVERY COMPLETE 2026-07-17 — CANDY_MLB_COLLECTION_ADDRESS is filled, so this
+// route is now LIVE (candyDiscoveryReady() === true). The Candy collection
+// (id 209ade70...) stays is_active=false and NO cron is wired: run this manually
+// once, verify counts, THEN wire a cron / watchlist row. The collection mixes
+// sealed pack assets (Item Type=Pack) with the ICONs — packs are skipped here.
+
+import { NextRequest, NextResponse, after } from "next/server"
+import { supabaseAdmin } from "@/lib/supabase"
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
+import { paginateGroup, type DasAsset } from "@/lib/chains/solana/das"
+import { hydrateFromJsonUri, isUnhydrated } from "@/lib/chains/solana/hydrate"
+import { attributeEscrowHeldToSellers } from "@/lib/chains/solana/escrow"
+import { CANDY_SETS } from "@/lib/chains/solana/candy-sets"
+import {
+  CANDY_MLB_SLUG,
+  candyDiscoveryReady,
+  isBurnt,
+  isPack,
+  normalizeEdition,
+  normalizePack,
+  normalizeSerial,
+  CANDY_MLB_UUID,
+} from "@/lib/chains/solana/normalize"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
+import { newLockRetryBudget, withLockRetry } from "@/lib/supabase/lock-retry"
+
+export const dynamic = "force-dynamic"
+// 800 is the Vercel Pro hard cap — anything above it sends the DEPLOY to ERROR
+// invisibly (build logs read "Compiled successfully"), so do not raise it further.
+//
+// Raised 300 -> 800 on 2026-08-04 after this route started being KILLED at the
+// wall. The RPC Sentinel reported it as "Pipeline Silence: candy-editions-ingest
+// silent 2337m", which is misleading: the route is not silent, it is dying before
+// it can write its pipeline_runs row, so a hard failure presents as an absence.
+// Same class as the pinnacle-sync after() defect. Vercel runtime errors show
+// "Task timed out after 300 seconds" for this path, and pipeline_runs_daily shows
+// the run time climbing 61.4s -> 68.5s -> 71.4s -> 197.4s -> killed across
+// 07-30..08-03 while rows_found/rows_written stayed byte-identical at
+// 27,876/28,483 — so the slowdown is contention, not data growth.
+//
+// ⚠ pipeline_runs retains only ~73h; read pipeline_runs_daily for this route's
+// history, or a healthy daily cadence looks like a long-dead cron.
+export const maxDuration = 800
+
+const PIPELINE_NAME = "candy-editions-ingest"
+const UPSERT_CHUNK = 500
+
+async function logRun(
+  startedAtIso: string,
+  rowsFound: number,
+  rowsWritten: number,
+  ok: boolean,
+  error: string | null,
+  extra: Record<string, unknown>
+) {
+  try {
+    await (supabaseAdmin as any).rpc("log_pipeline_run", {
+      p_pipeline: PIPELINE_NAME,
+      p_started_at: startedAtIso,
+      p_rows_found: rowsFound,
+      p_rows_written: rowsWritten,
+      p_rows_skipped: 0,
+      p_ok: ok,
+      p_error: error,
+      p_collection_slug: CANDY_MLB_SLUG,
+      p_cursor_before: null,
+      p_cursor_after: null,
+      p_extra: extra,
+    })
+  } catch (e) {
+    console.log(
+      `[${PIPELINE_NAME}] log_pipeline_run failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`
+    )
+  }
+}
+
+// INGEST_SECRET_TOKEN (GitHub Actions / manual / cron-job.org) OR Bearer
+// CRON_SECRET (Vercel cron sends only CRON_SECRET). Both are equivalent-trust
+// server secrets. The GET handler exists so the daily Vercel cron — which always
+// invokes via GET — can drive the refresh; manual/operator runs POST.
+function authed(req: NextRequest): boolean {
+  const header = req.headers.get("authorization") ?? ""
+  const ingest = process.env.INGEST_SECRET_TOKEN
+  const cron = process.env.CRON_SECRET
+  if (ingest && bearerMatches(header, "INGEST_SECRET_TOKEN")) return true
+  if (cron && bearerMatches(header, "CRON_SECRET")) return true
+  return false
+}
+
+export async function GET(req: NextRequest) {
+  return handleIngest(req)
+}
+
+export async function POST(req: NextRequest) {
+  return handleIngest(req)
+}
+
+async function handleIngest(req: NextRequest) {
+  if (!authed(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  const startedAtIso = new Date().toISOString()
+  const startedMs = Date.now()
+
+  // Invocation heartbeat. The real work runs inside `after()` and logs ONLY on
+  // completion, so a killed invocation writes nothing at all and a HARD FAILURE
+  // PRESENTS AS AN ABSENCE — the exact ambiguity the maxDuration note at the top
+  // of this file describes, and the reason the sentinel reported this route as
+  // "silent" when it was in fact being killed at the wall.
+  //
+  // That was not a one-off. It recurred on 2026-08-16: `pipeline_runs` held
+  // nothing newer than 08-15 08:40Z (39.5 h, against an 1800 min cadence arm)
+  // while the candy_mlb data was plainly fresh. Reconciling those two facts
+  // needed a hand query against tables nobody watches; this marker makes it a
+  // lookup.
+  //
+  //   heartbeat + candy-editions-ingest row -> ran to completion
+  //   heartbeat only                        -> after() died, or logRun failed
+  //   neither                               -> route never reached (cron / auth)
+  //
+  // ⚠ WHAT THE 08-16 TICK ACTUALLY SHOWS — and it REFUTES the obvious reading.
+  // The first version of this comment said the tick "died before logging",
+  // i.e. was killed at the wall. Measured, that is not established: the LAST
+  // write of the walk (the wmc upsert below) landed at 08:54:06.286, just
+  // 130 ms after the editions write at 08:54:06.156. **The walk ran to
+  // completion.** So the failure is at or AFTER the walk, and three mechanisms
+  // are consistent with the evidence and indistinguishable from it:
+  //   (a) killed during the wmc metadata denorm that follows the walk,
+  //   (b) killed during logRun itself,
+  //   (c) logRun's RPC failed and was swallowed by its deliberately non-fatal
+  //       catch — a plausible casualty of the same DB saturation.
+  // ⚠ This heartbeat does NOT separate those three; it separates "reached"
+  // from "never reached", which was the state genuinely unavailable before.
+  //
+  // ✅ NARROWED by measurement: (c) is substantially weaker than it looks.
+  // Other processes' log_pipeline_run calls succeeded continuously through that
+  // window — 08:53:20 (-46 s), 08:54:08.86 (+3 s), :14, :18, :37, :43 — so the
+  // telemetry write path was healthy in the very second this route's own logRun
+  // should have fired. A general saturation outage of that path is ruled out
+  // (an isolated failure on one pooled connection is not, so (c) is weakened,
+  // not eliminated). **A kill — (a)/(b) — is the best-supported reading.**
+  // ⚠ The arithmetic only works with cron jitter: `40 8 * * *` + 800 s puts the
+  // wall at 08:53:20, BEFORE the observed 08:54:06 write, so the invocation must
+  // have started after 08:40:00. **This heartbeat now records that start time,
+  // so the next missing terminal row settles it: heartbeat.started_at + 800 s
+  // against the last data write.** Check that before building anything.
+  //
+  // ⚠ SEPARATE pipeline name, never an extra `candy-editions-ingest` row — this
+  // pipeline is on pipeline_cadence_watchlist (1800 min), so a marker under its
+  // own name would refresh `last_run` every tick and silence
+  // detect_stalled_pipelines() on the very outage this exists to expose.
+  // ⚠ `duration_ms` on these heartbeat rows is MEANINGLESS — read `extra`/`ok`,
+  // never the duration. `log_pipeline_run` has no `p_finished_at` parameter, so
+  // the row takes `finished_at DEFAULT now()` and the GENERATED `duration_ms`
+  // becomes this insert's own latency. Both sibling Candy heartbeats have the
+  // identical property; matching them beats diverging here.
+  // 2026-08-20: moved to `lib/pipeline/heartbeat.ts`. This site used the
+  // `log_pipeline_run` RPC, which has NO `p_finished_at` parameter — so
+  // `finished_at` took its `now()` default and `duration_ms` (GENERATED from the
+  // pair) published this call's own latency as a run duration: measured live at
+  // up to 47,462 ms across these three candy markers. The site documented the
+  // trap ("read `extra`/`ok`, never the duration") rather than fixing it,
+  // because from inside the RPC it was unfixable. The helper writes the table
+  // directly, so the duration is a hard 0 and the rows_* columns are NULL rather
+  // than a fabricated 0.
+  //
+  // ⚠ `phase` was `"invoked"` here and `"started"` at the other two sites — a
+  // divergence nobody could see from inside either file, and one that would
+  // silently exclude these rows from any correlation query keyed on the phase.
+  await writeInvocationHeartbeat({
+    pipeline: PIPELINE_NAME,
+    startedAtMs: startedMs,
+    collectionSlug: CANDY_MLB_SLUG,
+  })
+
+  if (!candyDiscoveryReady()) {
+    await logRun(startedAtIso, 0, 0, true, null, {
+      skip_reason: "discovery_pending",
+      note: "CANDY_MLB_COLLECTION_ADDRESS not configured (still a TODO_-prefixed placeholder)",
+    })
+    return NextResponse.json(
+      { accepted: false, skipped: "discovery_pending", collection: CANDY_MLB_SLUG },
+      { status: 202 }
+    )
+  }
+
+  after(async () => {
+    let assetsSeen = 0
+    let editionsWritten = 0
+    let serialsWritten = 0
+    let burntSkipped = 0
+    let packsSkipped = 0
+    // 2026-11-12 (#246 source, still live here): DAS returns some assets without their off-chain JSON; keyed
+    // as-is they FABRICATE a name-only edition (the 30 label-less 2024 Team Ball editions re-seen every run).
+    // The collections census got this fix on 11-09; this registry walk never did. Same rule: hydrate from
+    // json_uri, and a card that cannot be hydrated is SKIPPED — never written under a name-only key.
+    let hydratedFetched = 0
+    let unhydratedSkipped = 0
+    let packRowsWritten = 0
+    // Listed cards sit in Magic Eden's escrow; they are attributed to their
+    // listing's seller before the wmc write (lib/chains/solana/escrow.ts).
+    let escrowRemapped = 0
+    let escrowUnmatched = 0
+    let escrowRemapError: string | null = null
+    // R123 (2026-09-20): every rejected upsert below used to be console.logged and
+    // then the run row claimed ok=true with a hardcoded `true, null`. A rejected
+    // write is non-fatal to the WALK (later chunks and tables still run) but it
+    // is not a success — the run row now says so, naming the table.
+    const writeErrors: string[] = []
+    // wmc chunks retried on a row-lock timeout/deadlock, and how many then landed.
+    const wmcLockRetry = newLockRetryBudget()
+    // DISTINCT catalog counts. editionsWritten/serialsWritten below are
+    // upsert ROWS TOUCHED across DAS page-chunks — the same 125 editions are
+    // re-upserted on every page, so that counter read 3,108 for a 125-edition
+    // catalog (2026-07-26). Keep both, but name them for what they are.
+    const distinctEditionKeys = new Set<string>()
+    const distinctMints = new Set<string>()
+    const distinctPackMints = new Set<string>()
+    const distinctJerseys = new Set<string>()
+    // 2026-11-08: Candy ships each product line as its own Core collection
+    // (lib/chains/solana/candy-sets.ts). Every set is walked; per-set counts land in
+    // `extra.sets` so a set that walks 0 assets is visible, not averaged away.
+    const perSet: Record<string, { assets: number; editions: number; serials: number; packs_skipped: number }> = {}
+    // Packs of a set that does not feed candy_packs (only the Base Series does —
+    // the pack EV model, pack market and treasury label all model THAT pack).
+    let otherSetPacksSkipped = 0
+    let linkResult: unknown = null
+    let linkError: string | null = null
+    try {
+      for (const candySet of CANDY_SETS) {
+      const setEditionKeys = new Set<string>()
+      const setMints = new Set<string>()
+      let setPacks = 0
+      const setAssets = await paginateGroup(candySet.collectionAddress, async (items) => {
+        // Editions: dedup by external_id within the page (many serials share one
+        // edition key) — upserting the same conflict target twice in one batch
+        // is a Postgres error.
+        // Burnt assets (Diamond Economy) never create or refresh rows — their
+        // ownership is stale and the serial has left circulation. Pack assets
+        // (Item Type=Pack) are not editions/moments — skip them too.
+        // Packs are checked FIRST and BEFORE the burnt filter so a burnt pack
+        // would still be recorded. NOTE (verified 2026-07-27 on the first full
+        // walk): opening a Candy pack does NOT burn it — is_burnt is false on
+        // all 2,501 pack assets while ~700+ packs have demonstrably been opened
+        // (an opened pack returns to the treasury). So is_burnt is NOT an
+        // opened-pack signal and candy_pack_market deliberately publishes no
+        // sealed-vs-opened split. Cards keep the old behaviour — a burnt card
+        // never creates or refreshes an editions/wmc row.
+        const raw = items as DasAsset[]
+        const needs = raw.filter((a) => isUnhydrated(a))
+        let pageAssets = raw
+        if (needs.length) {
+          const h = await hydrateFromJsonUri(needs)
+          hydratedFetched += h.hydrated.length
+          unhydratedSkipped += h.failed.length
+          const byId = new Map(h.hydrated.map((a) => [a.id, a]))
+          pageAssets = raw.flatMap((a) => (isUnhydrated(a) ? (byId.has(a.id) ? [byId.get(a.id)!] : []) : [a]))
+        }
+        const packAssets: DasAsset[] = []
+        const live = pageAssets.filter((a) => {
+          if (isPack(a)) {
+            if (candySet.writesPacks) {
+              packsSkipped++
+              packAssets.push(a)
+            } else {
+              otherSetPacksSkipped++
+              setPacks++
+            }
+            return false
+          }
+          if (isBurnt(a)) {
+            burntSkipped++
+            return false
+          }
+          return true
+        })
+
+        // Sealed-pack inventory. The DAS walk already paid for these assets and
+        // used to throw them away, so this is a free feed for candy_pack_market.
+        if (packAssets.length > 0) {
+          const nowIso = new Date().toISOString()
+          const packRows = packAssets.map((a) => ({
+            ...normalizePack(a),
+            last_seen_at: nowIso,
+          }))
+          for (let i = 0; i < packRows.length; i += UPSERT_CHUNK) {
+            const chunk = packRows.slice(i, i + UPSERT_CHUNK)
+            const { data, error } = await (supabaseAdmin as any)
+              .from("candy_packs")
+              .upsert(chunk, { onConflict: "token_mint" })
+              .select("token_mint")
+            if (error) {
+              console.log(`[${PIPELINE_NAME}] candy_packs upsert err: ${error.message}`)
+              writeErrors.push(`candy_packs: ${error.message}`)
+            } else {
+              packRowsWritten += data?.length ?? chunk.length
+              for (const r of chunk) distinctPackMints.add(r.token_mint)
+            }
+          }
+        }
+        const edByKey = new Map<string, ReturnType<typeof normalizeEdition>>()
+        for (const a of live) {
+          const e = normalizeEdition(a)
+          if (e.external_id) {
+            edByKey.set(e.external_id, e)
+            distinctEditionKeys.add(e.external_id)
+            setEditionKeys.add(e.external_id)
+            // Jersey numbers ride the SAME attribute map normalizeEdition already
+            // reads, and land on editions.jersey_number — the platform-wide column
+            // Top Shot and All Day fill, not a Candy-only side table. Counted here
+            // so the run log shows trait coverage without a second query.
+            if (e.jersey_number != null) distinctJerseys.add(e.external_id)
+          }
+        }
+
+        const editionRows = [...edByKey.values()]
+        for (let i = 0; i < editionRows.length; i += UPSERT_CHUNK) {
+          const chunk = editionRows.slice(i, i + UPSERT_CHUNK)
+          const { data, error } = await (supabaseAdmin as any)
+            .from("editions")
+            .upsert(chunk, { onConflict: "external_id,collection_id" })
+            .select("id")
+          if (error) {
+            console.log(`[${PIPELINE_NAME}] editions upsert err: ${error.message}`)
+            writeErrors.push(`editions: ${error.message}`)
+          } else {
+            editionsWritten += data?.length ?? chunk.length
+          }
+        }
+
+        // Serials -> wmc. One row per mint; moment_id is unique so no in-batch
+        // conflict. created_at is DB-defaulted (mirrors the Flow backfills).
+        const now = new Date().toISOString()
+        const serialRows = live
+          .map((a) => {
+            const s = normalizeSerial(a)
+            if (!s.wallet_address || !s.moment_id) return null
+            distinctMints.add(s.moment_id)
+            setMints.add(s.moment_id)
+            return { ...s, last_seen_at: now }
+          })
+          .filter((r): r is NonNullable<typeof r> => r !== null)
+        // A card the chain says Magic Eden's ESCROW holds is a listed card: write
+        // it under its listing's seller, so listing a card does not remove it from
+        // the collector's portfolio (and the one-row-per-card purge keeps the
+        // seller's row, not the escrow's). A failed lookup leaves the page's rows
+        // on the escrow — the pre-existing behaviour — and is recorded.
+        const attributed = await attributeEscrowHeldToSellers(supabaseAdmin as any, serialRows)
+        escrowRemapped += attributed.remapped
+        escrowUnmatched += attributed.unmatched
+        if (attributed.error) escrowRemapError = escrowRemapError ?? attributed.error
+        const writeRows = attributed.rows
+        for (let i = 0; i < writeRows.length; i += UPSERT_CHUNK) {
+          const chunk = writeRows.slice(i, i + UPSERT_CHUNK)
+          // Lock-contention retry (2026-11-11): the every-5-min wmc-fmv-populate Candy
+          // step holds these rows for up to ~42 s and cost the 01:10 UTC tick one
+          // chunk two days running. See lib/supabase/lock-retry.ts.
+          const { data, error } = await withLockRetry<{ moment_id: string }[]>(
+            () =>
+              (supabaseAdmin as any)
+                .from("wallet_moments_cache")
+                .upsert(chunk, { onConflict: "wallet_address,collection_id,moment_id" })
+                .select("moment_id"),
+            wmcLockRetry,
+          )
+          if (error) {
+            console.log(`[${PIPELINE_NAME}] wmc upsert err: ${error.message}`)
+            writeErrors.push(`wallet_moments_cache: ${error.message}`)
+          } else {
+            serialsWritten += data?.length ?? chunk.length
+          }
+        }
+
+        // (The metadata denorm post-pass that sat here now runs ONCE after the
+        // walk — see "Metadata denorm, once per run" below.)
+      })
+      assetsSeen += setAssets
+      perSet[candySet.key] = { assets: setAssets, editions: setEditionKeys.size, serials: setMints.size, packs_skipped: setPacks }
+      }
+
+      // Metadata denorm, once per run (moved 2026-11-08 from inside the page callback).
+      // It is a WHOLE-COLLECTION pass (p_wallet_address NULL), so running it per page
+      // was harmless at 25k Candy rows — but the full-inventory census took Candy wmc
+      // past 1M rows on 11-08 and the 5:10 PM PT run spent ~2 minutes per Base page in
+      // it (~900 rows/2 min in wmc last_seen_at, vs the whole walk in ~1 min the night
+      // before), was killed at the 800 s wall after the Base set, and never reached
+      // All-Star / Gold / Quest / Team Balls — heartbeat only, no completion row.
+      // The original rationale, verbatim:
+      // Metadata denorm post-pass (2026-08-02) — the missing half of the
+      // Candy wmc write path.
+      //
+      // normalizeSerial() emits exactly 6 columns (wallet_address,
+      // collection_id, moment_id, edition_key, serial_number, image_url).
+      // tier / set_name / mint_count / player_name / team_name are NOT in
+      // the payload and were therefore NEVER filled by this route — unlike
+      // every Flow wallet backfill, which calls this same RPC as a post-pass
+      // (see runAllDayDetailsBackfill). Result: 18,932 of 25,375 Candy wmc
+      // rows (74.6%) rendered unlabelled on the PUBLIC /insights/candy-mlb
+      // surface. The 6,443 that were fine had been filled by a one-off
+      // 2026-07-19 parity denorm; everything created after that date was
+      // never enriched by anything.
+      //
+      // This is NOT the `set_name` re-NULLing class fixed on 2026-08-01 —
+      // that was on `editions`. Because these columns are absent from the
+      // upsert payload, PostgREST's ON CONFLICT DO UPDATE never touches
+      // them, so a fill here is durable (verified: all 25,375 rows were
+      // re-upserted 2026-08-02 08:40Z and every already-enriched row kept
+      // its tier). The RPC is COALESCE-guarded — it only ever fills a NULL.
+      try {
+        const { error: denormErr } = await (supabaseAdmin as any).rpc(
+          "backfill_wmc_metadata_from_editions",
+          { p_wallet_address: null, p_collection_id: CANDY_MLB_UUID },
+        )
+        if (denormErr) {
+          console.log(`[${PIPELINE_NAME}] wmc metadata denorm err: ${denormErr.message}`)
+        }
+      } catch (e) {
+        console.log(`[${PIPELINE_NAME}] wmc metadata denorm threw: ${e instanceof Error ? e.message : String(e)}`)
+      }
+
+      // Give every edition a player_id (new sets bring new players). A failure is
+      // recorded and fails the run; it never blocks the census rows already written.
+      {
+        const { data, error } = await (supabaseAdmin as any).rpc("candy_link_catalog")
+        if (error) {
+          linkError = String(error.message ?? error).slice(0, 200)
+          writeErrors.push(`candy_link_catalog: ${linkError}`)
+        } else linkResult = data
+      }
+
+      const hydrateAttempts = hydratedFetched + unhydratedSkipped
+      if (hydrateAttempts > 0 && unhydratedSkipped / hydrateAttempts > 0.1) {
+        writeErrors.push(`metadata fetch failed for ${unhydratedSkipped} of ${hydrateAttempts} unhydrated cards (skipped, not written)`)
+      }
+      await logRun(
+        startedAtIso,
+        assetsSeen,
+        editionsWritten + serialsWritten,
+        writeErrors.length === 0,
+        writeErrors.length ? `${writeErrors.length} rejected write(s): ${writeErrors.slice(0, 3).join(" | ")}`.slice(0, 500) : null,
+        {
+        write_errors: writeErrors.length,
+        assets_seen: assetsSeen,
+        edition_rows_touched: editionsWritten,
+        serial_rows_touched: serialsWritten,
+        editions_distinct: distinctEditionKeys.size,
+        serials_distinct: distinctMints.size,
+        burnt_skipped: burntSkipped,
+        hydrated_fetched: hydratedFetched,
+        unhydrated_skipped: unhydratedSkipped,
+        packs_skipped: packsSkipped,
+        pack_rows_touched: packRowsWritten,
+        packs_distinct: distinctPackMints.size,
+        jerseys_distinct: distinctJerseys.size,
+        escrow_remapped: escrowRemapped,
+        escrow_unmatched: escrowUnmatched,
+        escrow_remap_error: escrowRemapError,
+        wmc_lock_retries: wmcLockRetry.retries,
+        wmc_lock_recovered: wmcLockRetry.recovered,
+        sets: perSet,
+        other_set_packs_skipped: otherSetPacksSkipped,
+        catalog_link: linkResult,
+        catalog_link_error: linkError,
+        duration_ms: Date.now() - startedMs,
+        },
+      )
+    } catch (e) {
+      await logRun(
+        startedAtIso,
+        assetsSeen,
+        editionsWritten + serialsWritten,
+        false,
+        e instanceof Error ? e.message : String(e),
+        {
+          assets_seen: assetsSeen,
+          edition_rows_touched: editionsWritten,
+          serial_rows_touched: serialsWritten,
+          editions_distinct: distinctEditionKeys.size,
+          serials_distinct: distinctMints.size,
+          packs_skipped: packsSkipped,
+          packs_distinct: distinctPackMints.size,
+        }
+      )
+    }
+  })
+
+  return NextResponse.json(
+    { accepted: true, collection: CANDY_MLB_SLUG, started_at: startedAtIso },
+    { status: 202 }
+  )
+}

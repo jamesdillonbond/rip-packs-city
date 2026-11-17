@@ -1,0 +1,10 @@
+name = "reddit-proxy"
+main = "index.js"
+compatibility_date = "2024-01-01"
+
+[vars]
+# PROXY_SECRET is set via: wrangler secret put PROXY_SECRET
+# Use the same TS_PROXY_SECRET value as the other workers (topshot-proxy,
+# pinnacle-proxy, spork-proxy, allday-proxy, odds-proxy, sports-proxy) so a
+# single rotation covers all of them. Reddit-side requests pass the secret
+# via the X-Proxy-Secret header.

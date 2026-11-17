@@ -1,0 +1,54 @@
+name: Mint event walk (name NFTs minted after the newest checkpoint)
+
+# 2026-10-03. Walks Top Shot / All Day mint events on the mainnet28 history node, from its root
+# (137,390,146, 2025-12-29) to past Flowty's last sale (152,500,000, 2026-05-14), and lands the
+# moment -> edition/serial records in public.checkpoint_nft_meta (spork code 128) through
+# public.ingest_mint_walk (migration 20261004034824). ~43k of the Top Shot Flowty sales RPC's own
+# ingest missed in Apr-May 2026 are moments minted after the 2025-12-29 checkpoint; their mint
+# events are the holder-independent name. Resumable per stream; workflow_dispatch only.
+
+on:
+  workflow_dispatch:
+    inputs:
+      rps:
+        description: "requests/second per job"
+        required: false
+        default: "3"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mint-event-walk
+  cancel-in-progress: false
+
+jobs:
+  walk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      matrix:
+        stream: [ts_minted, ts_subedition, ad_minted]
+        range:
+          - { start: 137390146, end: 144945145 }
+          - { start: 144945146, end: 152500000 }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Walk ${{ matrix.stream }} ${{ matrix.range.start }}-${{ matrix.range.end }}
+        env:
+          RPS: ${{ github.event.inputs.rps }}
+          WORKERS: "10"
+          MAX_MINUTES: "320"
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NEXT_PUBLIC_SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "::error::Supabase secrets not configured"; exit 2
+          fi
+          case "${RPS:-}" in (''|*[!0-9.]*) echo "rps must be a number"; exit 2;; esac
+          python3 scripts/flowty-export/test_chain_walk_gha.py
+          cd scripts/flowty-export
+          python3 mint_walk_gha.py "${{ matrix.stream }}" mainnet28 "${{ matrix.range.start }}" "${{ matrix.range.end }}"

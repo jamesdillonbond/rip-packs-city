@@ -1,0 +1,226 @@
+// analytics-fmv-dashboard-compute — pure formatting / threshold / bucketing /
+// query-string logic lifted out of components/analytics/FmvDashboard.tsx so it
+// lands under the vitest coverage `include` (lib/**), which does NOT measure
+// components/**. No React/JSX, no browser globals — behavior is identical to
+// the inline code it replaced.
+
+import type {
+  FmvPipelineCollectionStats,
+  FmvTierPulseRow,
+} from "@/lib/analytics-types"
+import { normalizeTier, titleCaseTier, tierLadder } from "@/lib/tier-order"
+import { usdSignFirst } from "@/lib/usd-format"
+
+export const FMV_COLLECTIONS: Array<{ key: string; label: string }> = [
+  { key: "topshot", label: "Top Shot" },
+  { key: "allday", label: "All Day" },
+  { key: "pinnacle", label: "Pinnacle" },
+  { key: "golazos", label: "Golazos" },
+  { key: "ufc", label: "UFC Strike" },
+]
+
+export const COLLECTION_LABEL: Record<string, string> = {
+  topshot: "Top Shot",
+  allday: "All Day",
+  pinnacle: "Pinnacle",
+  golazos: "Golazos",
+  ufc: "UFC Strike",
+}
+
+// The FMV "Top Movers" card is hidden for these three collections. This is NOT
+// provisional over-caution — verified live 2026-08-10 that analytics_fmv_top_movers
+// (which reads fmv_snapshots_2026 with a non-ASK_ONLY + >=$5 FMV floor + >=5% 7d-move
+// filter) returns ZERO rows for each, so un-gating would render an empty card:
+//   - pinnacle: FMV lives in pinnacle_fmv_history (RENDER-keyed), NOT fmv_snapshots
+//               at all, so the RPC structurally cannot serve it.
+//   - ufc:      market closed since 2026-05 — zero recent fmv_snapshots rows.
+//   - golazos:  has snapshots, but every non-ASK_ONLY edition sits below the $5 FMV
+//               floor (0 of 232 in the last 24h cleared it) — nothing qualifies.
+// Top Shot / All Day are the only supported collections (control returns 25 rows).
+// Re-run analytics_fmv_top_movers(ARRAY['<key>'],7,'gainers',5,25) before adding any.
+export const TOP_MOVERS_UNSUPPORTED = new Set<string>([
+  "pinnacle",
+  "golazos",
+  "ufc",
+])
+
+export const WINDOW_OPTIONS: Array<{ value: 1 | 7 | 30; label: string }> = [
+  { value: 1, label: "1 day" },
+  { value: 7, label: "7 days" },
+  { value: 30, label: "30 days" },
+]
+
+export const MIN_FMV_OPTIONS = [5, 25, 100, 500]
+export const LIMIT_OPTIONS = [25, 50, 100]
+
+// Derived from the one canonical ladder (lib/tier-order.ts) instead of being a
+// fourth hand-maintained copy. This list was TitleCase while
+// analytics_fmv_tier_pulse returns the tier_type enum UPPERCASE, so the
+// `TIER_ORDER.includes(r.tier)` test below was false for EVERY row and the whole
+// dashboard rendered as a single gray "Other" bar (deep-audit D23/D12).
+// Display casing stays TitleCase; the comparison now normalizes.
+// Uncommon (All Day, Golazos) and the three UFC tiers were missing entirely, so
+// those collections had no tier breakdown at all.
+export const TIER_ORDER: string[] = tierLadder("asc", { casing: "title" })
+
+export const TIER_COLOR: Record<string, string> = {
+  Common: "#a1a1aa",
+  Fandom: "#60A5FA",
+  // All Day / Golazos sit where Fandom does on the Top Shot ladder (same
+  // canonical rank, collection-disjoint), so they share its treatment.
+  Uncommon: "#60A5FA",
+  Rare: "#22D3EE",
+  // UFC Strike EPIC — a real on-chain tier (2026-10-18).
+  Epic: "#C084FC",
+  Legendary: "#F59E0B",
+  Ultimate: "#F43F5E",
+  // UFC Strike CHAMPION (on chain). Contender / Challenger are LEGACY labels RPC
+  // fabricated from edition size; kept coloured so an old row never buckets to Other.
+  Contender: "#a1a1aa",
+  Challenger: "#22D3EE",
+  Champion: "#F59E0B",
+  Other: "#52525b",
+}
+
+export const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+export function formatUsd(n: number | null | undefined): string {
+  const neg = usdSignFirst(n, formatUsd); if (neg !== null) return neg
+  if (n == null || !Number.isFinite(n)) return "—"
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`
+  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}k`
+  if (n >= 1) return `$${n.toFixed(2)}`
+  return `$${n.toFixed(2)}`
+}
+
+export function formatNumber(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return "—"
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
+  return n.toString()
+}
+
+export function formatPct(n: number | null | undefined, digits = 1): string {
+  if (n == null || !Number.isFinite(n)) return "—"
+  return `${n.toFixed(digits)}%`
+}
+
+export function formatChangePct(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return "—"
+  const sign = n >= 0 ? "+" : ""
+  return `${sign}${n.toFixed(1)}%`
+}
+
+export function formatChangeUsd(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return "—"
+  const sign = n >= 0 ? "+" : "-"
+  const abs = Math.abs(n)
+  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(2)}M`
+  if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(1)}k`
+  return `${sign}$${abs.toFixed(2)}`
+}
+
+export function formatMinutesAgo(mins: number | null | undefined): string {
+  if (mins == null || !Number.isFinite(mins)) return "—"
+  const m = Math.max(0, Math.floor(mins))
+  if (m < 1) return "just now"
+  if (m < 60) return `${m} min ago`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h ago`
+  const d = Math.floor(h / 24)
+  return `${d}d ago`
+}
+
+// True when an edition_id is a real UUID and can be linked to /edition/<id>.
+export function isLinkableEditionId(editionId: string | null | undefined): boolean {
+  return UUID_RE.test(editionId || "")
+}
+
+// Query-string collections param: the joined list, or "" when nothing active.
+export function buildCollectionsQs(active: string[]): string {
+  return active.length > 0 ? active.join(",") : ""
+}
+
+// Toggle a key in/out of a selection list (immutable).
+export function toggleCollection(curr: string[], key: string): string[] {
+  return curr.includes(key) ? curr.filter((c) => c !== key) : [...curr, key]
+}
+
+// Top Movers is hidden when there is at least one active collection AND every
+// active collection is unsupported by analytics_fmv_top_movers.
+export function shouldHideTopMovers(activeCollections: string[]): boolean {
+  return (
+    activeCollections.length > 0 &&
+    activeCollections.every((c) => TOP_MOVERS_UNSUPPORTED.has(c))
+  )
+}
+
+// Pipeline-health entries to render: filtered by the active-collection selection
+// and restricted to the known FMV collections.
+export function filterHealthEntries(
+  collections: Record<string, FmvPipelineCollectionStats> | null | undefined,
+  activeCollections: string[]
+): Array<[string, FmvPipelineCollectionStats]> {
+  if (!collections) return []
+  return Object.entries(collections)
+    .filter(([key]) =>
+      activeCollections.length === 0 ? true : activeCollections.includes(key)
+    )
+    .filter(([key]) => FMV_COLLECTIONS.some((c) => c.key === key.toLowerCase()))
+}
+
+// Group tier-pulse rows by lowercase collection key, dropping rows with a
+// null / non-positive total FMV.
+export function groupTierPulseByCollection(
+  rows: FmvTierPulseRow[]
+): Map<string, FmvTierPulseRow[]> {
+  const map = new Map<string, FmvTierPulseRow[]>()
+  for (const r of rows) {
+    if (r.total_fmv_usd == null || r.total_fmv_usd <= 0) continue
+    const key = (r.collection || "").toLowerCase()
+    if (!map.has(key)) map.set(key, [])
+    map.get(key)!.push(r)
+  }
+  return map
+}
+
+// Bucket one collection's rows into the canonical tier order (plus "Other"),
+// summing counts/FMV, dropping an empty "Other" bucket, and returning both the
+// visible buckets and the grand total FMV.
+export function bucketCollectionTiers(collectionRows: FmvTierPulseRow[]): {
+  visible: FmvTierPulseRow[]
+  total: number
+} {
+  const tierBuckets = new Map<string, FmvTierPulseRow>()
+  for (const r of collectionRows) {
+    // Normalize before comparing: the RPC emits the enum UPPERCASE ("COMMON"),
+    // this list is TitleCase for display, and the old raw `.includes(r.tier)`
+    // therefore never matched. A genuinely unknown tier (the RPC does emit
+    // "UNKNOWN") still falls to "Other", which is the honest bucket.
+    const canonical = normalizeTier(r.tier)
+    const tierKey = canonical ? titleCaseTier(canonical) : "Other"
+    const existing = tierBuckets.get(tierKey)
+    if (!existing) {
+      tierBuckets.set(tierKey, { ...r, tier: tierKey })
+    } else {
+      existing.edition_count += r.edition_count
+      existing.total_fmv_usd += r.total_fmv_usd
+      existing.high_conf_count += r.high_conf_count
+      existing.low_conf_count += r.low_conf_count
+    }
+  }
+  const orderedTiers = [...TIER_ORDER, "Other"]
+    .map((t) => tierBuckets.get(t))
+    .filter(Boolean) as FmvTierPulseRow[]
+  const visible = orderedTiers.filter(
+    (r) => r.tier !== "Other" || r.edition_count > 0
+  )
+  const total = visible.reduce((s, r) => s + (r.total_fmv_usd ?? 0), 0)
+  return { visible, total }
+}
+
+// Share of a tier's FMV against the collection grand total, as a percent.
+export function tierSharePct(totalFmv: number, grandTotal: number): number {
+  return grandTotal > 0 ? (totalFmv / grandTotal) * 100 : 0
+}

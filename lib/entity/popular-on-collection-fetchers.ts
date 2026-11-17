@@ -1,0 +1,262 @@
+// lib/entity/popular-on-collection-fetchers.ts
+//
+// The two reads behind `components/entity/PopularOnCollection` — the
+// server-rendered internal-link block on each /overview page — lifted out of
+// the component 2026-08-17 so a test can drive them. The component was an async
+// SERVER component holding its own client, which put it outside the
+// server-page ratchet (it walked `page.tsx` only) AND effectively outside the
+// component gate, which cannot render an async server component under jsdom.
+// Nominally ~29% covered; actually undriveable.
+//
+// ⚠ WHAT WAS ACTUALLY WRONG, stated precisely rather than dressed up. This
+// block cannot lie in WORDS — on a failed read the whole section returns null
+// and simply disappears, so no false sentence reaches a reader. What it can do
+// is VANISH SILENTLY, and nothing could tell the two apart:
+//
+//   * `loadHubs` never destructured `error` on either query. It read
+//     `Array.isArray(res?.data) ? res.data : []`, which is the documented
+//     fabricated-empty shape — supabase-js RETURNS `{data:null,error}` for a
+//     statement timeout, so a failed read became an empty list with no trace.
+//   * `loadLinks` collapsed both into one branch: `if (error || !Array.isArray(data)) return []`.
+//   * Both wrapped everything in `catch { return [] }`.
+//
+// The component's own header calls these "the high-leverage internal links that
+// push crawl depth into the corpus". So a timeout quietly removes the crawl
+// path from a server-rendered page that still returns 200 and still looks
+// complete — an SEO regression that is unfalsifiable by construction, which is
+// the sub-class this repo rates worst because its output is silence.
+//
+// ⚠ THE FIX IS NOT TO RENDER AN ERROR. An anonymous crawler has no use for a
+// degraded notice, and there is no honest user-facing claim to make about
+// missing internal links. The fix is to stop DESTROYING the distinction: these
+// return `{ data, ok }` so "empty because the collection has none" and "empty
+// because the read failed" stay separable, and the caller logs the second.
+
+// ⚠ BOTH READS ARE BOUNDED (2026-08-22), and the reason is measured, not
+// precautionary. `PopularOnCollection` is awaited by
+// `app/(collections)/[collection]/overview/layout.tsx` with no Suspense
+// boundary, so a slow read here holds the whole document stream. On 2026-08-22
+// the 13:15Z scheduled DOM smoke failed with `page.goto: Timeout 30000ms` on
+// FOUR collections' /overview at once, and the runtime log for that window says
+// exactly why: `[popular-on-collection] hubs read failed collection=ufc: Timed
+// out acquiring connection from connection pool.` Vercel logged **200** for
+// every one of those requests — the streaming shell answers immediately, so the
+// only visible symptom is a document that never finishes.
+//
+// This is the FOURTH instance of the class `withBoardBudget`'s own docstring
+// describes, on the same error string. Its first three fixes each bounded the
+// ONE page that failed; the guard written to make it shape-level
+// (`__tests__/insights-server-pages-bound-their-reads.test.ts`) derives its
+// population by walking `app/insights`, so this file was outside it BY
+// CONSTRUCTION — the repo's own "ask what a passing guard is structurally
+// SILENT about" rule, again.
+//
+// ⚠ The bound REJECTS, which lands in the `catch` each fetcher already has and
+// produces the same `{ ok:false, reason }` an errored read produces. That is
+// deliberate: a merely-SLOW read errors nowhere, so without this it could not
+// reach the honest-degraded branch documented above. No new failure policy.
+
+import { supabaseAdmin } from "@/lib/supabase"
+import { getCollectionUuid } from "@/lib/collections"
+import { pinnacleFranchiseName } from "@/lib/entity-href"
+import { withBoardBudget } from "@/lib/insights/board-page-fetch"
+
+export type FetchResult<T> = { data: T; ok: boolean; reason?: string }
+
+/**
+ * What a supabase-js query resolves to. Named because the query builder is a
+ * THENABLE rather than a Promise, so `withBoardBudget`'s generic infers
+ * `unknown` through it and `data`/`error` stop existing on the result. The
+ * shape is spelled here once rather than `as any`-ed at each call site — an
+ * `any` there would also swallow a future column-shape mistake.
+ */
+export type SupabaseRows<T> = { data: T[] | null; error: { message: string } | null }
+
+/** Minimal structural shape so tests can inject without the full client type. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type QueryClient = { from: (table: string) => any }
+
+export type RawHubRows = {
+  editions: Array<{ set_name?: string | null; player_name?: string | null; team_name?: string | null }>
+  series: Array<{ display_label?: string | null; series_number?: number | null }>
+}
+
+export type RawLinkRow = {
+  external_id?: string | null
+  id?: string | null
+  player_name?: string | null
+  team_name?: string | null
+  play_type?: string | null
+  set_name?: string | null
+  character_name?: string | null
+  /** Disney Pinnacle: the pin (pinnacle_catalog.render_id) — its page's key. */
+  render_id?: string | null
+  /** Disney Pinnacle: the pin's variant — tells apart pins that share a name and set. */
+  variant?: string | null
+}
+
+const EMPTY_HUB_ROWS: RawHubRows = { editions: [], series: [] }
+
+/**
+ * Bounded, recency-ordered editions sample + the collection's series labels.
+ *
+ * ⚠ Queries are byte-identical to the ones that lived in the component —
+ * columns, filters, ordering (`nullsFirst: false`) and limits. Moving a read
+ * is not licence to retune it; a changed `limit` or a dropped secondary sort
+ * silently changes which links a crawler sees.
+ */
+export async function fetchHubRows(
+  collection: string,
+  client: QueryClient = supabaseAdmin as unknown as QueryClient,
+): Promise<FetchResult<RawHubRows>> {
+  const uuid = getCollectionUuid(collection)
+  // Not a failure: an unknown collection legitimately has no hubs. `ok` stays
+  // true so this can never be mistaken for an outage.
+  if (!uuid) return { data: EMPTY_HUB_ROWS, ok: true }
+  try {
+    const [edRes, seriesRes] = await withBoardBudget(
+      Promise.all([
+        client
+          .from("editions")
+          .select("set_name, player_name, team_name")
+          .eq("collection_id", uuid)
+          .order("last_updated_at", { ascending: false, nullsFirst: false })
+          .limit(1000),
+        client.from("collection_series").select("display_label, series_number").eq("collection_id", uuid).limit(60),
+      ]),
+      `popular-on-collection/hubs ${collection}`,
+      undefined,
+      "",
+    )
+    // ⚠ Destructure the error on BOTH. Either one failing makes the result
+    // partial, and a partial hub set is exactly what used to render as a
+    // complete one.
+    const err = edRes?.error ?? seriesRes?.error
+    if (err) return { data: EMPTY_HUB_ROWS, ok: false, reason: err.message }
+    return {
+      data: {
+        editions: Array.isArray(edRes?.data) ? edRes.data : [],
+        series: Array.isArray(seriesRes?.data) ? seriesRes.data : [],
+      },
+      ok: true,
+    }
+  } catch (e) {
+    return { data: EMPTY_HUB_ROWS, ok: false, reason: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+/**
+ * Disney Pinnacle's hub sample, in the same shape as fetchHubRows: it has 0
+ * `editions` rows, so the sports read returns nothing for it and the overview
+ * used to skip Pinnacle's hubs entirely (2026-09-27 live sweep: no Sets /
+ * Characters / Franchises / Series links anywhere on its overview). Every one
+ * of those pages resolves from the render catalog since 2026-09-26.
+ *
+ * ⚠ CHARACTERS COME FROM THE `characters` TRAIT, NOT `character_name`. The
+ * latter is the PIN's name ("Welcome to Endor" = Ewok + Wicket W. Warrick) and
+ * 266 of its 683 values have no character page; the trait resolves for 508 of
+ * 513 (the five misses minted that afternoon). Franchises drop ™/®/© first —
+ * get_team_detail does, so "Star Wars™" lives at /team/star-wars.
+ * Ordered by 30-day sales, so the links are the collection's busiest.
+ */
+export async function fetchPinnacleHubRows(
+  client: QueryClient = supabaseAdmin as unknown as QueryClient,
+): Promise<FetchResult<RawHubRows>> {
+  const uuid = getCollectionUuid("disney-pinnacle")
+  if (!uuid) return { data: EMPTY_HUB_ROWS, ok: true }
+  try {
+    const [catRes, seriesRes] = await withBoardBudget(
+      Promise.all([
+        client
+          .from("pinnacle_catalog")
+          .select("set_name, characters, franchises")
+          .order("fmv_sales_count_30d", { ascending: false, nullsFirst: false })
+          .order("render_id", { ascending: true })
+          .limit(1000),
+        client.from("collection_series").select("display_label, series_number").eq("collection_id", uuid).limit(60),
+      ]),
+      "popular-on-collection/hubs disney-pinnacle",
+      undefined,
+      "",
+    )
+    const err = catRes?.error ?? seriesRes?.error
+    if (err) return { data: EMPTY_HUB_ROWS, ok: false, reason: err.message }
+    const editions: RawHubRows["editions"] = []
+    for (const r of (Array.isArray(catRes?.data) ? catRes.data : []) as Array<{
+      set_name?: string | null; characters?: string[] | null; franchises?: string[] | null
+    }>) {
+      editions.push({ set_name: r.set_name ?? null })
+      for (const c of r.characters ?? []) editions.push({ player_name: c })
+      for (const f of r.franchises ?? []) editions.push({ team_name: pinnacleFranchiseName(f) })
+    }
+    return {
+      data: { editions, series: Array.isArray(seriesRes?.data) ? seriesRes.data : [] },
+      ok: true,
+    }
+  } catch (e) {
+    return { data: EMPTY_HUB_ROWS, ok: false, reason: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+export { pinnacleFranchiseName }
+
+/** The 18 leaf-edition tiles. Pinnacle reads a different table by design. */
+export async function fetchLinkRows(
+  collection: string,
+  client: QueryClient = supabaseAdmin as unknown as QueryClient,
+): Promise<FetchResult<RawLinkRow[]>> {
+  try {
+    if (collection === "disney-pinnacle") {
+      // ⛔ 2026-09-27 — was `pinnacle_editions`, the last set-level reader #150 missed:
+      // that table is SET-grain (one character per legacy key; CLAUDE.md "Disney
+      // Pinnacle grain"), so each tile named a whole set after one character and
+      // linked /disney-pinnacle/edition/<legacy key>, which only redirects to the
+      // legacy-key list page. A pin is a pinnacle_catalog row; its page is
+      // /pinnacle/moment/<render_id>. "Popular" = most sales in 30 days.
+      const { data, error } = await withBoardBudget<SupabaseRows<RawLinkRow>>(
+        client
+          .from("pinnacle_catalog")
+          .select("render_id, character_name, set_name, variant")
+          .not("thumbnail_url", "is", null)
+          .not("character_name", "is", null)
+          .order("fmv_sales_count_30d", { ascending: false, nullsFirst: false })
+          .order("render_id", { ascending: true })
+          .limit(18),
+        "popular-on-collection/links disney-pinnacle",
+        undefined,
+        "",
+      )
+      if (error) return { data: [], ok: false, reason: error.message }
+      return { data: Array.isArray(data) ? data : [], ok: true }
+    }
+
+    const uuid = getCollectionUuid(collection)
+    if (!uuid) return { data: [], ok: true }
+
+    // Team moments (player_name null — WNBA Skyline, Season Rewind, ...) carry a
+    // team_name + play_type instead of a player; allow them in and render via
+    // tileSubject as "{team} {play}". Player moments keep player_name.
+    const { data, error } = await withBoardBudget<SupabaseRows<RawLinkRow>>(
+      client
+        .from("editions")
+        .select("external_id, player_name, team_name, play_type, set_name")
+        .eq("collection_id", uuid)
+        .not("thumbnail_url", "is", null)
+        .or("player_name.not.is.null,team_name.not.is.null")
+        .not("external_id", "is", null)
+        .order("circulation_count", { ascending: true, nullsFirst: false })
+        // 2026-09-24: 48, not 18 — the component dedupes by SUBJECT, because a
+        // lowest-mint sample of a parallel-heavy catalogue (Candy MLB) is the
+        // same six players' colour variants, and the tiles carry no parallel.
+        // The Candy overview rendered Murakami ×4, Caminero ×5, Trout ×3.
+        .limit(48),
+      `popular-on-collection/links ${collection}`,
+      undefined,
+      "",
+    )
+    if (error) return { data: [], ok: false, reason: error.message }
+    return { data: Array.isArray(data) ? data : [], ok: true }
+  } catch (e) {
+    return { data: [], ok: false, reason: e instanceof Error ? e.message : String(e) }
+  }
+}

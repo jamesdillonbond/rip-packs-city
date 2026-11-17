@@ -1,0 +1,335 @@
+import { describe, it, expect, beforeEach, vi } from "vitest"
+
+// Route integration test for /api/mcp/keys (GET + POST). User-cookie-auth via
+// getCurrentUser; wallet ownership resolved through get_user_saved_wallets.
+// FAIL-CLOSED AUTH is the priority. Mocks @/lib/supabase supabaseAdmin.rpc
+// (dispatched by rpc name) and @/lib/auth/supabase-server.
+
+const auth: { user: any } = { user: null }
+// Keyed by rpc name so a single mock services get_user_saved_wallets / mcp_*.
+const rpcState: Record<string, { data: any; error: any }> = {}
+const rpcCalls: Array<{ name: string; args: any }> = []
+
+vi.mock("@/lib/supabase", () => ({
+  supabaseAdmin: {
+    rpc: async (name: string, args: any) => { rpcCalls.push({ name, args }); return rpcState[name] ?? { data: [], error: null } },
+    from: () => ({ select: () => ({ eq: () => ({ limit: async () => ({ data: [], error: null }) }) }) }),
+  },
+}))
+vi.mock("@/lib/auth/supabase-server", () => ({
+  getCurrentUser: async () => auth.user,
+}))
+// Ownership (security audit 2026-10-25): wallets in `notOwned` belong to ANOTHER
+// account (saved by this one, but someone else verified or saved it first).
+const notOwned = new Set<string>()
+const lookupFails = new Set<string>()
+const ownedChecks: string[] = []
+vi.mock("@/lib/auth/owner-key-guard", () => ({
+  requireOwnedKey: async (w: string) => {
+    ownedChecks.push(w)
+    if (lookupFails.has(w)) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "X-Owner-Check": "unavailable" } })
+    return notOwned.has(w) ? new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 }) : { user: auth.user }
+  },
+  ownerCheckUnavailable: (r: Response) => r.headers.get("X-Owner-Check") === "unavailable",
+}))
+
+import { GET, POST } from "@/app/api/mcp/keys/route"
+
+const req = (body: any = {}) => ({ json: async () => body }) as any
+
+beforeEach(() => {
+  auth.user = null
+  notOwned.clear()
+  ownedChecks.length = 0
+  for (const k of Object.keys(rpcState)) delete rpcState[k]
+  rpcCalls.length = 0
+})
+
+describe("GET /api/mcp/keys", () => {
+  it("401s when unauthenticated", async () => {
+    auth.user = null
+    const res = await GET()
+    expect(res.status).toBe(401)
+    expect((await res.json()).error).toBe("Authentication required")
+  })
+
+  it("returns an empty key list when the user has no saved wallets", async () => {
+    auth.user = { id: "u1" }
+    rpcState["get_user_saved_wallets"] = { data: [], error: null }
+    const res = await GET()
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.ok).toBe(true)
+    expect(body.keys).toEqual([])
+  })
+
+  it("500s when the saved-wallet lookup errors", async () => {
+    auth.user = { id: "u1" }
+    rpcState["get_user_saved_wallets"] = { data: null, error: { message: "down" } }
+    const res = await GET()
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("Saved-wallet lookup failed")
+  })
+})
+
+describe("POST /api/mcp/keys", () => {
+  it("401s when unauthenticated", async () => {
+    auth.user = null
+    const res = await POST(req({}))
+    expect(res.status).toBe(401)
+    expect((await res.json()).error).toBe("Authentication required")
+  })
+
+  it("400s when the user has no saved wallets to attach a key to", async () => {
+    auth.user = { id: "u1" }
+    rpcState["get_user_saved_wallets"] = { data: [], error: null }
+    const res = await POST(req({ label: "cli" }))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe("no_saved_wallets")
+  })
+
+  it("403s when the requested wallet is not saved on the account", async () => {
+    auth.user = { id: "u1" }
+    rpcState["get_user_saved_wallets"] = { data: [{ wallet_addr: "0xaaaa" }], error: null }
+    const res = await POST(req({ wallet_address: "0xbbbb" }))
+    expect(res.status).toBe(403)
+    expect((await res.json()).error).toBe("Wallet not saved on this account")
+  })
+})
+
+// --- wallet resolution, key issuance, and the multi-wallet list merge ---
+
+const SAVED = (...addrs: string[]) => ({
+  data: addrs.map((a) => ({ wallet_addr: a, collection_id: "c", collection_slug: "s", nickname: null })),
+  error: null,
+})
+
+describe("POST /api/mcp/keys — wallet resolution + issuance", () => {
+  beforeEach(() => { auth.user = { id: "u1" } })
+
+  it("500s when the saved-wallet lookup fails", async () => {
+    rpcState.get_user_saved_wallets = { data: null, error: { message: "rpc down" } }
+    const res = await POST(req({}))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("Saved-wallet lookup failed")
+  })
+
+  it("400s with no_saved_wallets when the account has none", async () => {
+    rpcState.get_user_saved_wallets = { data: [], error: null }
+    const res = await POST(req({}))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe("no_saved_wallets")
+  })
+
+  it("defaults to the first saved wallet and normalizes a bare-hex address", async () => {
+    // no 0x prefix on the stored row -> loadUserWallets prepends it
+    rpcState.get_user_saved_wallets = SAVED("BD94CADE097E50AC")
+    rpcState.mcp_issue_api_key = { data: [{ key_id: "k1", raw_key: "rpc_live_x", key_prefix: "rpc_live" }], error: null }
+    const body = await (await POST(req({}))).json()
+    expect(body.ok).toBe(true)
+    expect(body.wallet_address).toBe("0xbd94cade097e50ac")
+    expect(body.raw_key).toBe("rpc_live_x")
+  })
+
+  it("403s when the requested wallet is not saved on the account", async () => {
+    rpcState.get_user_saved_wallets = SAVED("0xaaaaaaaaaaaaaaaa")
+    const res = await POST(req({ wallet_address: "0xbbbbbbbbbbbbbbbb" }))
+    expect(res.status).toBe(403)
+  })
+
+  it("honours a requested wallet that IS saved (case-insensitively)", async () => {
+    rpcState.get_user_saved_wallets = SAVED("0xaaaaaaaaaaaaaaaa")
+    rpcState.mcp_issue_api_key = { data: [{ key_id: "k1", raw_key: "r", key_prefix: "p" }], error: null }
+    const body = await (await POST(req({ wallet_address: "0xAAAAAAAAAAAAAAAA" }))).json()
+    expect(body.wallet_address).toBe("0xaaaaaaaaaaaaaaaa")
+  })
+
+  it("ignores a malformed wallet_address and falls back to the default", async () => {
+    rpcState.get_user_saved_wallets = SAVED("0xaaaaaaaaaaaaaaaa")
+    rpcState.mcp_issue_api_key = { data: [{ key_id: "k1", raw_key: "r", key_prefix: "p" }], error: null }
+    const body = await (await POST(req({ wallet_address: "nope" }))).json()
+    expect(body.wallet_address).toBe("0xaaaaaaaaaaaaaaaa")
+  })
+
+  it("trims and 80-char-truncates the label, and requests read scope only", async () => {
+    rpcState.get_user_saved_wallets = SAVED("0xaaaaaaaaaaaaaaaa")
+    rpcState.mcp_issue_api_key = { data: [{ key_id: "k1", raw_key: "r", key_prefix: "p" }], error: null }
+    await POST(req({ label: "  " + "x".repeat(120) + "  " }))
+    const issue = rpcCalls.find((c) => c.name === "mcp_issue_api_key")!
+    expect(issue.args.p_label).toHaveLength(80)
+    expect(issue.args.p_scopes).toEqual(["read"])
+  })
+
+  it("nulls a whitespace-only label rather than storing blanks", async () => {
+    rpcState.get_user_saved_wallets = SAVED("0xaaaaaaaaaaaaaaaa")
+    rpcState.mcp_issue_api_key = { data: [{ key_id: "k1", raw_key: "r", key_prefix: "p" }], error: null }
+    await POST(req({ label: "   " }))
+    expect(rpcCalls.find((c) => c.name === "mcp_issue_api_key")!.args.p_label).toBeNull()
+  })
+
+  it("500s when issuance errors, and when it returns no raw_key", async () => {
+    rpcState.get_user_saved_wallets = SAVED("0xaaaaaaaaaaaaaaaa")
+    rpcState.mcp_issue_api_key = { data: null, error: { message: "issue down" } }
+    expect((await POST(req({}))).status).toBe(500)
+
+    rpcState.mcp_issue_api_key = { data: [{ key_id: "k1", key_prefix: "p" }], error: null } // no raw_key
+    const res = await POST(req({}))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("Issue returned no key")
+  })
+})
+
+describe("GET /api/mcp/keys — multi-wallet merge", () => {
+  beforeEach(() => { auth.user = { id: "u1" } })
+
+  it("500s when the saved-wallet lookup fails", async () => {
+    rpcState.get_user_saved_wallets = { data: null, error: { message: "down" } }
+    expect((await GET()).status).toBe(500)
+  })
+
+  it("returns an empty key list when the user has no saved wallets", async () => {
+    rpcState.get_user_saved_wallets = { data: [], error: null }
+    expect(await (await GET()).json()).toEqual({ ok: true, keys: [] })
+  })
+
+  it("merges keys across wallets, tags each with its wallet, and sorts newest-first", async () => {
+    rpcState.get_user_saved_wallets = SAVED("0xaaaaaaaaaaaaaaaa", "0xbbbbbbbbbbbbbbbb")
+    rpcState.mcp_list_keys = {
+      data: [
+        { key_id: "old", key_prefix: "p", label: null, plan: "free", status: "active", scopes: ["read"], created_at: "2026-01-01T00:00:00Z", last_used_at: null, expires_at: null },
+        { key_id: "new", key_prefix: "p", label: null, plan: "free", status: "active", scopes: ["read"], created_at: "2026-07-01T00:00:00Z", last_used_at: null, expires_at: null },
+      ],
+      error: null,
+    }
+    const body = await (await GET()).json()
+    // 2 wallets x 2 keys, newest first
+    expect(body.keys).toHaveLength(4)
+    expect(body.keys[0].key_id).toBe("new")
+    expect(new Set(body.keys.map((k: any) => k.wallet_address))).toEqual(
+      new Set(["0xaaaaaaaaaaaaaaaa", "0xbbbbbbbbbbbbbbbb"]),
+    )
+  })
+
+  // INVERTED 2026-10-27: this pinned the defect — a failed listing answered `{ok:true, keys:[]}`, telling the owner
+  // they have no keys. A partial list is never presented as the whole one.
+  it("a wallet whose key listing errors fails the request (503), never an ok empty list", async () => {
+    rpcState.get_user_saved_wallets = SAVED("0xaaaaaaaaaaaaaaaa")
+    rpcState.mcp_list_keys = { data: null, error: { message: "list down" } }
+    const res = await GET()
+    expect(res.status).toBe(503)
+    expect((await res.json()).keys).toBeUndefined()
+  })
+
+  it("a FAILED ownership lookup is a 503, not a silently skipped wallet (2026-10-27)", async () => {
+    rpcState.get_user_saved_wallets = SAVED("0xaaaaaaaaaaaaaaaa")
+    rpcState.mcp_list_keys = { data: [], error: null }
+    lookupFails.add("0xaaaaaaaaaaaaaaaa")
+    try {
+      const res = await GET()
+      expect(res.status).toBe(503)
+    } finally {
+      lookupFails.clear()
+    }
+  })
+
+  it("dedups a wallet saved under multiple collections", async () => {
+    rpcState.get_user_saved_wallets = SAVED("0xaaaaaaaaaaaaaaaa", "0xaaaaaaaaaaaaaaaa")
+    rpcState.mcp_list_keys = { data: [], error: null }
+    await GET()
+    expect(rpcCalls.filter((c) => c.name === "mcp_list_keys")).toHaveLength(1)
+  })
+})
+
+// ── The owned-wallet set does not fabricate an address (2026-09-20) ────────
+//
+// ⛔ `loadUserWallets` built each entry with
+//     r.wallet_addr.startsWith("0x") ? lower : "0x" + lower
+// — the fold-and-prefix shape CLAUDE.md names as a FABRICATION. A base58 saved
+// wallet came out as `0x12j1uh…enak`, an address that exists on no chain, and
+// this set is NOT inert: POST used to default to `userWallets[0]`, so a key
+// could be ISSUED against it, and GET echoes each entry back as
+// `wallet_address`, so it is DISPLAYED.
+//
+// ⚠ LATENT, not live: `saved_wallets` held 135 rows, 0 non-hex, when this was
+// found. It fires on the first Candy wallet saved.
+describe("/api/mcp/keys — a saved base58 wallet is never turned into 0x-garbage", () => {
+  const CANDY = "12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK"
+  const FLOW = "0xBD94CADE097E50AC"
+
+  it("POST refuses with a TRUE reason when no saved wallet is a Flow wallet", async () => {
+    auth.user = { id: "u1" }
+    rpcState["get_user_saved_wallets"] = { data: [{ wallet_addr: CANDY }], error: null }
+    const res = await POST(req({}))
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toBe("no_flow_wallet_saved")
+    // THE ASSERTION IS THE ABSENCE OF THE FALSE CLAIM, twice over: it must not
+    // say the account has no saved wallets, and it must not have issued a key.
+    expect(body.error).not.toBe("no_saved_wallets")
+    expect(rpcCalls.some((c) => c.name === "mcp_issue_api_key")).toBe(false)
+  })
+
+  it("GET never hands a fabricated 0x+base58 address to mcp_list_keys", async () => {
+    auth.user = { id: "u1" }
+    rpcState["get_user_saved_wallets"] = { data: [{ wallet_addr: CANDY }], error: null }
+    await GET()
+    const listed = rpcCalls.filter((c) => c.name === "mcp_list_keys").map((c) => c.args.p_wallet_address)
+    expect(listed).not.toContain("0x" + CANDY.toLowerCase())
+    for (const w of listed) expect(w).not.toMatch(/^0x[0-9a-z]{40,}$/)
+    // The real address is what it uses, if it uses anything at all.
+    if (listed.length > 0) expect(listed).toEqual([CANDY])
+  })
+
+  it("hex no-change arm: a Flow wallet is still lower-cased and still defaults", async () => {
+    auth.user = { id: "u1" }
+    rpcState["get_user_saved_wallets"] = { data: [{ wallet_addr: FLOW }], error: null }
+    rpcState["mcp_issue_api_key"] = { data: { key_id: "k1", raw_key: "sk_x" }, error: null }
+    const res = await POST(req({}))
+    expect(res.status).toBe(200)
+    const issued = rpcCalls.find((c) => c.name === "mcp_issue_api_key")
+    expect(issued?.args.p_wallet_address).toBe("0xbd94cade097e50ac")
+  })
+
+  it("hex no-change arm: a Flow wallet still reaches mcp_list_keys folded", async () => {
+    auth.user = { id: "u1" }
+    rpcState["get_user_saved_wallets"] = { data: [{ wallet_addr: FLOW }], error: null }
+    await GET()
+    const listed = rpcCalls.filter((c) => c.name === "mcp_list_keys").map((c) => c.args.p_wallet_address)
+    expect(listed).toEqual(["0xbd94cade097e50ac"])
+  })
+})
+
+describe("/api/mcp/keys — SAVED is not OWNED (security audit 2026-10-25)", () => {
+  // The MCP plan and daily quota are looked up by wallet, so a key issued against
+  // somebody else's saved address borrowed their plan or burned their quota; a
+  // listing exposed their key ids, which DELETE accepts.
+  it("POST refuses to issue a key against a saved wallet another account owns, and never calls mcp_issue_api_key", async () => {
+    auth.user = { id: "u1" }
+    rpcState["get_user_saved_wallets"] = SAVED("0x1234567890abcdef")
+    notOwned.add("0x1234567890abcdef")
+    const res = await POST(req({ wallet_address: "0x1234567890abcdef" }))
+    expect(res.status).toBe(403)
+    expect((await res.json()).error).toBe("wallet_not_owned")
+    expect(rpcCalls.map((c) => c.name)).not.toContain("mcp_issue_api_key")
+  })
+
+  it("POST still issues for an owned wallet (the check ran on the wallet it issues against)", async () => {
+    auth.user = { id: "u1" }
+    rpcState["get_user_saved_wallets"] = SAVED("0x1234567890abcdef")
+    rpcState["mcp_issue_api_key"] = { data: [{ key_id: "k", raw_key: "rpc_mcp_live_x", key_prefix: "p" }], error: null }
+    const res = await POST(req({ wallet_address: "0x1234567890abcdef" }))
+    expect(res.status).toBe(200)
+    expect(ownedChecks).toEqual(["0x1234567890abcdef"])
+  })
+
+  it("GET lists keys only for wallets this account owns", async () => {
+    auth.user = { id: "u1" }
+    rpcState["get_user_saved_wallets"] = SAVED("0x1111111111111111", "0x2222222222222222")
+    notOwned.add("0x2222222222222222")
+    rpcState["mcp_list_keys"] = { data: [{ key_id: "k1", created_at: "2026-10-01T00:00:00Z" }], error: null }
+    const res = await GET()
+    const body = (await res.json()) as { keys: Array<{ wallet_address: string }> }
+    expect(body.keys.map((k) => k.wallet_address)).toEqual(["0x1111111111111111"])
+    expect(rpcCalls.filter((c) => c.name === "mcp_list_keys").map((c) => c.args.p_wallet_address)).toEqual(["0x1111111111111111"])
+  })
+})

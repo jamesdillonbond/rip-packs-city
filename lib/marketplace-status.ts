@@ -1,0 +1,153 @@
+// lib/marketplace-status.ts
+//
+// Server-side helper backing the per-collection marketplace-status surface.
+// Reads from the `v_collection_marketplace_status` view (one row per
+// collection) and caches with Next.js `unstable_cache` for 5 minutes so we
+// don't slam the DB on every render — the view content changes maybe weekly.
+//
+// The frontend uses hyphen slugs ("nba-top-shot", "ufc"); the DB view uses
+// underscore slugs ("nba_top_shot", "ufc_strike"). This helper accepts either
+// and normalises internally via `SLUG_TO_DB_SLUG`.
+
+import { unstable_cache } from "next/cache"
+import { supabaseAdmin } from "@/lib/supabase"
+import { SLUG_TO_DB_SLUG } from "@/lib/collections"
+import { ownLookup } from "@/lib/safe-lookup"
+
+export type MarketplaceStatusValue =
+  | "healthy"
+  | "degraded"
+  | "dormant"
+  | "shutdown"
+  | "unknown"
+
+export interface MarketplaceStatus {
+  collectionId: string
+  slug: string
+  status: MarketplaceStatusValue
+  buyCtasEnabled: boolean
+  primaryVenue: string | null
+  primaryContract: string | null
+  secondaryVenue: string | null
+  secondaryStatus: string | null
+  packSecondaryVenue: string | null
+  lastVerifiedAt: string | null
+  notes: string | null
+  /**
+   * true when the status READ failed (not "no row"). The values are then the
+   * unknown fallback, which must not be cached or shown as a verdict: the
+   * banner would tell a healthy collection "buy flows are disabled".
+   */
+  readFailed?: boolean
+}
+
+const UNKNOWN_FALLBACK: MarketplaceStatus = {
+  collectionId: "",
+  slug: "",
+  status: "unknown",
+  buyCtasEnabled: false,
+  primaryVenue: null,
+  primaryContract: null,
+  secondaryVenue: null,
+  secondaryStatus: null,
+  packSecondaryVenue: null,
+  lastVerifiedAt: null,
+  notes: null,
+}
+
+/** Map a frontend hyphen-slug ("nba-top-shot", "ufc") to its DB slug. */
+function normaliseSlug(input: string): string {
+  if (!input) return ""
+  const mapped = ownLookup(SLUG_TO_DB_SLUG, input)
+  if (mapped) return mapped
+  // If caller already passed an underscore-slug, accept it as-is.
+  return input.replace(/-/g, "_")
+}
+
+async function readMarketplaceStatus(dbSlug: string): Promise<MarketplaceStatus> {
+  if (!dbSlug) return { ...UNKNOWN_FALLBACK }
+
+  const { data, error } = await (supabaseAdmin as any)
+    .from("v_collection_marketplace_status")
+    .select(
+      "collection_id, slug, status, buy_ctas_enabled, primary_venue, primary_contract, secondary_venue, secondary_status, pack_secondary_venue, last_verified_at, notes"
+    )
+    .eq("slug", dbSlug)
+    .maybeSingle()
+
+  // ⛔ A failed read THROWS so `unstable_cache` does not store it (it caches a
+  // resolved value, never a rejection). Until 2026-10-09 an error returned the
+  // unknown fallback, which was cached for 5 min (then 5 more at the CDN, then
+  // for the session in the client Map) as "Marketplace status uncertain — buy
+  // flows disabled" on healthy collections. A genuinely missing row (`!data`
+  // with no error) is a real answer and stays cached.
+  if (error) throw new Error(`marketplace status read failed: ${error.message ?? "unknown"}`)
+  if (!data) {
+    return { ...UNKNOWN_FALLBACK, slug: dbSlug }
+  }
+
+  return {
+    collectionId: data.collection_id ?? "",
+    slug: data.slug ?? dbSlug,
+    status: (data.status as MarketplaceStatusValue) ?? "unknown",
+    buyCtasEnabled: !!data.buy_ctas_enabled,
+    primaryVenue: data.primary_venue ?? null,
+    primaryContract: data.primary_contract ?? null,
+    secondaryVenue: data.secondary_venue ?? null,
+    secondaryStatus: data.secondary_status ?? null,
+    packSecondaryVenue: data.pack_secondary_venue ?? null,
+    lastVerifiedAt: data.last_verified_at ?? null,
+    notes: data.notes ?? null,
+  }
+}
+
+// Cached per-slug. 5 minute revalidate window. Tagged so we can bust manually
+// if we ever want to ship a `/api/admin/refresh-marketplace-status` endpoint.
+const cachedReadMarketplaceStatus = unstable_cache(
+  async (dbSlug: string) => readMarketplaceStatus(dbSlug),
+  ["marketplace-status-v1"],
+  { revalidate: 300, tags: ["marketplace-status"] }
+)
+
+/**
+ * Read marketplace status for one collection.
+ *
+ * Accepts either the frontend hyphen-slug ("nba-top-shot", "ufc") or the DB
+ * underscore-slug ("nba_top_shot", "ufc_strike"). Returns a permissive
+ * `unknown` fallback when the view row is missing or the read fails so
+ * callers never have to null-check.
+ */
+export async function getMarketplaceStatus(
+  collectionSlug: string
+): Promise<MarketplaceStatus> {
+  const dbSlug = normaliseSlug(collectionSlug)
+  if (!dbSlug) return { ...UNKNOWN_FALLBACK }
+  try {
+    return await cachedReadMarketplaceStatus(dbSlug)
+  } catch {
+    // Not cached anywhere: the caller sees readFailed and must not render a verdict.
+    return { ...UNKNOWN_FALLBACK, slug: dbSlug, readFailed: true }
+  }
+}
+
+/**
+ * Marketplace notices for a CROSS-COLLECTION board (2026-10-27): the per-collection banner lives on collection
+ * pages, so a board mixing several collections (Below FMV) showed frozen asks during Dapper's maintenance with no
+ * word of it. Returns one entry per distinct note among the given collections whose status is degraded / dormant /
+ * shutdown, naming every collection that shares it. A failed status read contributes nothing (never a verdict).
+ */
+export async function nonHealthyMarketNotices(
+  collectionSlugs: readonly string[],
+  displayName: (slug: string) => string,
+): Promise<Array<{ collections: string[]; notes: string }>> {
+  const statuses = await Promise.all(collectionSlugs.map(async (s) => ({ s, st: await getMarketplaceStatus(s) })))
+  const byNote = new Map<string, string[]>()
+  for (const { s, st } of statuses) {
+    if (st.readFailed) continue
+    if (st.status !== "degraded" && st.status !== "dormant" && st.status !== "shutdown") continue
+    const note = (st.notes ?? "").trim()
+    if (!note) continue
+    byNote.set(note, [...(byNote.get(note) ?? []), displayName(s)])
+  }
+  return [...byNote.entries()].map(([notes, collections]) => ({ collections, notes }))
+}

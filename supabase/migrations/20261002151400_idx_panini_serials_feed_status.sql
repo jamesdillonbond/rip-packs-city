@@ -1,0 +1,46 @@
+-- 2026-10-02 · idx_panini_serials_feed_status — the one trust-health breach was a 1.4 GB seq scan
+--
+-- REPO RECORD of an object created OUTSIDE the migration channel. `CREATE INDEX
+-- CONCURRENTLY` cannot run through `apply_migration` (it refuses inside a transaction
+-- block), and this session's `execute_sql` client caps at 60 s, so the index was built
+-- by the one-off pg_cron recipe (job 'zz-panini-feed-status-idx', `* * * * *`, ran once
+-- 8:14:00→8:14:53 AM PT, then unscheduled). This file is its committed record, written
+-- IF NOT EXISTS so it is a no-op on any environment already in this state.
+--
+-- WHY. `v_rpc_trust_health` carried its only breach this morning: `public_board_slow_count = 1`,
+-- the slow board being `panini_sale_feed_status` at 6,007 ms (next-slowest 466 ms; filed by
+-- the Cowork monitor pass 7:45 AM PT). The view is five aggregates over ALL of
+-- `panini_card_serials` — `max(last_sale_at)`, `count(*)`, and three FILTERed counts on
+-- `last_sale_usd` / `last_sale_preserved_at` / `last_sale_at` — which the 2026-08-10 liveness
+-- header measured at 97 ms. The table has since grown to 1,071,821 rows and **1,405 MB of heap**
+-- (the `raw jsonb` column is most of each ~1.3 KB row; relpages 178,332), so the Parallel Seq Scan
+-- read 179,428 buffers. No index covered the three columns, so nothing else could be chosen.
+--
+-- WHAT. A narrow B-tree on `(last_sale_at) INCLUDE (last_sale_usd, last_sale_preserved_at)` over
+-- ALL rows (24 MB) carries every column the view touches, so the planner takes a Parallel Index
+-- Only Scan over it instead of the heap.
+--
+-- MEASURED, EXPLAIN (ANALYZE, BUFFERS) on the LARGE instance, same view, before and after:
+--     Parallel Seq Scan on panini_card_serials ...... 179,428 read + 451 hit ·  7,707 ms (cold)
+--     Parallel Index Only Scan, this index .......... 19,545 read + 63,589 hit ·    724 ms
+--   Heap Fetches: 95,207 — relallvisible/relpages is 95.2 %, so ~9 % of rows still go to the heap;
+--   the next autovacuum pass on the table narrows that further (database.md: "read Heap Fetches
+--   before doubting the index"). The breach clears when `rpc_thp_leg_board_liveness` next
+--   re-measures (6-hourly; the `public_board_liveness_sweep` row refreshes hourly).
+--
+-- READERS: `panini_sale_feed_status` (security_invoker view; anon SELECT false) — read by
+-- `app/api/public/insights/panini-squeeze/route.ts` and by `public_board_liveness_sweep()`.
+-- The index also serves `max(last_sale_at)`-shaped probes directly.
+--
+-- ⚠ Not a VACUUM substitute: last autovacuum 7:37 PM PT 10-01, 6,873 dead tuples — the table is
+-- not bloated; it is simply wide. ⚠ Not an MV: a status board whose own freshness rule is "newest
+-- sale within 3 days" does not need a refresh job and the staleness it would add.
+--
+-- REVERT: DROP INDEX CONCURRENTLY IF EXISTS public.idx_panini_serials_feed_status;
+--   (a DROP cannot be sent through the Supabase MCP unattended — tooling-gotchas.md.)
+--
+-- Verified live after the build: indisvalid = true, indisready = true, 24 MB.
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_panini_serials_feed_status
+  ON public.panini_card_serials (last_sale_at)
+  INCLUDE (last_sale_usd, last_sale_preserved_at);

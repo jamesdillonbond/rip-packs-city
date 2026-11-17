@@ -1,0 +1,102 @@
+name: Offer-Fill Sales Backfill — drain the OffersV2 accepted-offer sale gap
+on:
+  # R61 (decided 2026-10-25): GitHub runs ~7-8 of these a day (scheduler-liveness), not
+  # what the cron asks. The cron is a ceiling, not the cadence; it is NOT lowered to match,
+  # because a lower ask gets fewer runs (8/day asks get 5-7, 4/day asks get 3-4).
+  schedule:
+    # Off-anchor minutes (never :00/:20/:40), clear of the :7,22,37,52
+    # sales-history slots and the :15 TFP/badge slots. Each tick LOOPS bounded
+    # ~20k-block ?sync=1 calls (each ≤~120s, well under the route's
+    # maxDuration=300) until the cursor reaches the frontier or stops advancing.
+    # Lives on GHA (curl, no 30s client cap, no dropped after() tail) — the
+    # route's 202+after() tail is unreliable on Vercel for the ~200s drain.
+    # Handoff: docs/handoff-2026-06-20-offer-fill-backfill-after-unreliable.md
+    - cron: "9,24,39,54 * * * *"
+  workflow_dispatch:
+    inputs:
+      range:
+        description: "max blocks per call (default 20000, cap 300000)"
+        type: string
+        default: ""
+      start_block:
+        description: "one-time cursor start override (applied on the first call only)"
+        type: string
+        default: ""
+      max_iters:
+        description: "max bounded calls this run (default 15)"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+# The route drains behind its own event_cursor and holds no lock, so two
+# overlapping drains (a manual dispatch during a scheduled tick) would walk the
+# same block range twice. Serialise; never cancel a drain mid-loop.
+concurrency:
+  group: offer-fill-backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Drain loop
+        env:
+          RANGE: ${{ github.event.inputs.range }}
+          START_BLOCK: ${{ github.event.inputs.start_block }}
+          MAX_ITERS: ${{ github.event.inputs.max_iters }}
+        run: |
+          BASE="https://www.rippackscity.com/api/admin/backfill-offer-fill-sales"
+          if [ -z "$MAX_ITERS" ]; then MAX_ITERS=15; fi
+          OVERALL=0
+          for i in $(seq 1 "$MAX_ITERS"); do
+            URL="$BASE?sync=1"
+            if [ -n "$RANGE" ]; then URL="$URL&range=$RANGE"; fi
+            # start_block resets the cursor, so only honor it on the first call.
+            if [ "$i" = "1" ] && [ -n "$START_BLOCK" ]; then URL="$URL&start_block=$START_BLOCK"; fi
+            echo "── call $i/$MAX_ITERS  url=$URL"
+            STATUS=$(curl -s -o /tmp/offer-fill.json -w "%{http_code}" -X POST \
+              -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+              --max-time 280 \
+              "$URL") || STATUS=""
+            echo "HTTP $STATUS"
+            cat /tmp/offer-fill.json 2>/dev/null || echo "<no body>"; echo ""
+            if [ "$STATUS" != "200" ]; then
+              echo "::warning::Offer-fill backfill call $i returned $STATUS"
+              OVERALL=1
+              break
+            fi
+            # ⚠ EVERY `run:` BLOCK IS `bash -e`, so a FALLIBLE COMMAND IN AN ASSIGNMENT
+            # ABORTS THE STEP RIGHT HERE. `jq` exits 5 on a non-JSON body, and the
+            # `2>/dev/null` suppresses jq's MESSAGE, not its STATUS — so a 200 carrying
+            # an HTML error page (a streaming shell, a proxy page) killed the step
+            # BEFORE the `::warning::` below that exists to name the failure. The loop
+            # read as coverage and was dead code past this point. (deep-audit R32)
+            #
+            # `X=$(…) || X=""` then check explicitly — the pattern ops-monitor.yml and
+            # migration-parity.yml already use.
+            DONE=$(jq -r '.done // false' /tmp/offer-fill.json 2>/dev/null) || DONE=""
+            CB=$(jq -r '.cursor_before // empty' /tmp/offer-fill.json 2>/dev/null) || CB=""
+            CA=$(jq -r '.cursor_after // empty' /tmp/offer-fill.json 2>/dev/null) || CA=""
+            OK=$(jq -r '.ok // false' /tmp/offer-fill.json 2>/dev/null) || OK=""
+            # An unparseable body is its own outcome and must be NAMED, not inferred
+            # from a downstream `ok != true`: those are different faults and only one
+            # of them means the endpoint answered.
+            if [ -z "$DONE" ] && [ -z "$OK" ]; then
+              echo "::warning::Offer-fill backfill call $i returned HTTP $STATUS with a body jq could not parse — first 200 bytes follow"
+              head -c 200 /tmp/offer-fill.json || true; echo ""
+              OVERALL=1
+              break
+            fi
+            if [ "$OK" != "true" ]; then
+              echo "::warning::Offer-fill backfill call $i logged ok=$OK"
+              OVERALL=1
+              break
+            fi
+            if [ "$DONE" = "true" ]; then echo "caught up (done=true)"; break; fi
+            if [ -n "$CB" ] && [ "$CB" = "$CA" ]; then echo "no cursor progress ($CB) — stopping"; break; fi
+            sleep 2
+          done
+          exit $OVERALL

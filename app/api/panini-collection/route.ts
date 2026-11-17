@@ -1,0 +1,85 @@
+// app/api/panini-collection/route.ts
+//
+// Panini Collection tab backend (2026-09-27). What RPC has SEEN under a Panini
+// username, via panini_owner_cards (migration 20260927183808). The shared
+// Collection tab keys on a wallet ADDRESS in wallet_moments_cache, where Panini
+// has zero rows — a Panini owner is a USERNAME (lib/address.ts isPaniniUsername).
+//
+// ── HONESTY ────────────────────────────────────────────────────────────────
+//   · ⚠ CORRECTED 2026-09-28. This said RPC reads a holder only once a card is
+//     LISTED ("2,552 of 3,266 owners appear only through their own listings").
+//     False: that count keyed on is_listed, which then meant "the serial EXISTS"
+//     (migration 20260929013905). The walk reads the holder of EVERY serial of each
+//     Prizm World Cup edition it tracks; what it does NOT cover is Panini's other
+//     sets and editions not yet indexed. So the payload is still "cards seen under
+//     this username" with its last-read time, never a collection total.
+//   · listed-now counts cards with a buy-now price; burnt serials are excluded.
+//   · A username RPC has never seen is `cardsSeen: 0` — the client says "not
+//     seen", never "holds nothing".
+//   · FMV is the EDITION's current FMV; cards with none are counted
+//     (`fmvPricedCards` < `cardsSeen`), never priced as $0.
+//   · Media paths go through paniniAssetUrl (absolute on the measured host).
+//   · A malformed username is a 400 for the username; a failed read is a 503.
+//
+// ── PROFILE HOLDINGS (2026-09-27, migration 20260927194743) ─────────────────
+// For a username a collector walk has read (linked on an RPC profile, or walked by
+// the box's owner), `profile` carries the cards read off the PUBLIC Panini profile
+// — the whole collection, as of the walk — via panini_profile_holdings. `walk: null`
+// means "never walked", which the tab says, never "holds nothing". Either read
+// failing is a 503: half a collection is not rendered as the collection.
+
+import { NextRequest, NextResponse } from "next/server"
+import { supabaseAdmin } from "@/lib/supabase"
+import { apiErrorResponse } from "@/lib/api-error"
+import { boundedRead } from "@/lib/api/bounded-read"
+import { normalizePaniniUsername } from "@/lib/profile/collector-identities"
+import { parsePaniniOwnerCards, parsePaniniProfileHoldings, parsePaniniValueHistory } from "@/lib/panini/owner-cards"
+
+/** Days of recorded collection value returned (panini_portfolio_daily, newest first). */
+const PANINI_VALUE_HISTORY_DAYS = 30
+
+export const dynamic = "force-dynamic"
+export const maxDuration = 30
+
+export async function GET(req: NextRequest) {
+  const raw = (req.nextUrl.searchParams.get("username") ?? "").trim()
+  if (!raw) {
+    return NextResponse.json({ error: "Enter a Panini username.", code: "bad_request", retryable: false }, { status: 400 })
+  }
+  const username = normalizePaniniUsername(raw)
+  if (!username) {
+    return NextResponse.json(
+      { error: "That doesn't look like a Panini username (2–16 letters, numbers, . _ -).", code: "bad_request", retryable: false },
+      { status: 400 },
+    )
+  }
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabaseAdmin as any
+    const [seen, held, history] = await Promise.all([
+      boundedRead(db.rpc("panini_owner_cards", { p_username: username, p_limit: 200 }), "panini-collection"),
+      boundedRead(db.rpc("panini_profile_holdings", { p_username: username, p_limit: 500 }), "panini-collection-profile"),
+      // 2026-10-26: recorded collection value (panini_portfolio_daily). Its own panel: a failure
+      // here is `valueHistory: null` ("couldn't load"), never a failed collection.
+      boundedRead(
+        db.from("panini_portfolio_daily")
+          .select("day,cards,priced_cards,fmv_usd,walk_complete")
+          .eq("username", username)
+          .order("day", { ascending: false })
+          .limit(PANINI_VALUE_HISTORY_DAYS),
+        "panini-collection-value-history",
+      ),
+    ])
+    if (seen.error) return apiErrorResponse(seen.error, "api/panini-collection", "This collection is unavailable right now.")
+    if (held.error) return apiErrorResponse(held.error, "api/panini-collection", "This collection is unavailable right now.")
+    const parsed = parsePaniniOwnerCards(seen.data)
+    const profile = parsePaniniProfileHoldings(held.data)
+    if (!parsed || !profile) {
+      return apiErrorResponse(new Error("panini collection RPC returned an unexpected shape"), "api/panini-collection", "This collection is unavailable right now.")
+    }
+    const valueHistory = history.error ? null : parsePaniniValueHistory(history.data)
+    return NextResponse.json({ ...parsed, profile, valueHistory }, { headers: { "Cache-Control": "private, no-store" } })
+  } catch (err) {
+    return apiErrorResponse(err, "api/panini-collection", "This collection is unavailable right now.")
+  }
+}

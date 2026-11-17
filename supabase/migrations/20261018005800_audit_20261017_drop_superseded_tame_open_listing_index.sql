@@ -1,0 +1,24 @@
+-- RAN 2026-10-17 5:58 PM PT as one-off pg_cron job 741 (Trevor's go-ahead in chat 5:36 and 5:54 PM PT; the SQL-editor confirm
+-- click was blocked and Chrome then lost the tab). pg_cron sends a single statement on its own libpq connection, outside any
+-- transaction block, which CONCURRENTLY requires. cron.job_run_details: succeeded, 'DROP INDEX', 5:58:00 PM PT; job unscheduled
+-- after. Verified: to_regclass('public.idx_tame_open_listing_by_seen') IS NULL and idx_tame_open_listing_seen_cover indisvalid = true.
+-- schema_migrations row inserted by hand under this version. This file is the RECORD; re-running it is a no-op (IF EXISTS).
+-- Drop the open-listing index that idx_tame_open_listing_seen_cover (20261016163225) superseded.
+--
+-- WHY. idx_tame_open_listing_by_seen (product, last_seen_at, nft_id) WHERE kind='listing' AND NOT
+-- completed AND nft_id IS NOT NULL is a strict subset of the covering index built 10-16, which has
+-- the same keys and predicate plus INCLUDE columns. Its last scan was 10-16 16:31 UTC (the build
+-- moment); the covering index took every scan after that (859 by 10-17 16:21 UTC). It is 183 MB,
+-- and every non-HOT update on topshot_atlas_market_events (~180 k a day) still maintains it.
+--
+-- WHY HERE. Two DROP INDEX CONCURRENTLY attempts through the MCP (10-17 ~9:25 and ~9:48 AM PT)
+-- were held for operator confirmation and timed out with no change. Not retried (tooling-gotchas.md).
+--
+-- PRECONDITION (re-check first; both must hold):
+--   SELECT indisvalid FROM pg_index WHERE indexrelid = 'public.idx_tame_open_listing_seen_cover'::regclass;  -- true
+--   SELECT idx_scan, last_idx_scan FROM pg_stat_user_indexes
+--    WHERE indexrelid = 'public.idx_tame_open_listing_by_seen'::regclass;  -- last_idx_scan still 2026-10-16 16:31Z
+-- CONCURRENTLY: no table lock; must run on its own, outside a transaction block.
+DROP INDEX CONCURRENTLY IF EXISTS public.idx_tame_open_listing_by_seen;
+-- REVERT: CREATE INDEX CONCURRENTLY idx_tame_open_listing_by_seen ON public.topshot_atlas_market_events
+--   USING btree (product, last_seen_at, nft_id) WHERE ((kind = 'listing'::text) AND (NOT completed) AND (nft_id IS NOT NULL));

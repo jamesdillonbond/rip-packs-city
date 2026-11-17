@@ -1,0 +1,2308 @@
+import { readAcquisitionData } from "@/lib/acquisitions/read-acquisition-data"
+import { NextRequest, NextResponse, after } from "next/server"
+import { GQL_BREAKER_REASON, guardTopshotGql } from "@/lib/wallet-search/topshot-gql-breaker"
+import { z } from "zod"
+import fcl from "@/lib/chains/flow/flow"
+import * as t from "@onflow/types"
+import { topshotGraphql } from "@/lib/chains/flow/topshot"
+import { getOrSetCache } from "@/lib/cache"
+import { supabaseAdmin } from "@/lib/supabase"
+import { wholeWalletEditionCounts } from "@/lib/wallet/whole-wallet-edition-counts"
+import {
+  normalizeParallel,
+  normalizeSetName,
+  buildEditionScopeKey,
+} from "@/lib/wallet-normalize"
+import { resolveTopShotUsernameCacheAware } from "@/lib/chains/flow/topshot-username-resolve"
+import { detectAddressChain, normalizeFlowAddressStrict } from "@/lib/address"
+import { getCurrentUser } from "@/lib/auth/supabase-server"
+import { awardPoints } from "@/lib/rewards"
+import { serverMomentToRow, type ServerMoment } from "@/lib/collection/server-moment"
+import { bucketAcquisitionCounts, acquisitionMethodLabel } from "@/lib/analytics/shape"
+import { ownLookup } from "@/lib/safe-lookup"
+import { askCapFlag, type FmvCapFlag } from "@/lib/fmv-basis"
+import { anonIpKey, bumpAnonRates } from "@/lib/abuse/anon-rate"
+import { isSeedableRow, seedTier } from "@/lib/wallet-search/seed-edition"
+import { loadTopshotSubeditionNames, subeditionName, type SubeditionNames } from "@/lib/topshot-subeditions"
+
+type WalletRow = {
+  momentId: string
+  playerName: string
+  team?: string
+  league?: string
+  setName: string
+  series?: string
+  tier?: string
+  serial?: number
+  mintSize?: number
+  serialNumber?: number | null
+  circulationCount?: number | null
+  officialBadges?: string[]
+  specialSerialTraits?: string[]
+  isLocked?: boolean
+  bestAsk?: number | null
+  bestOffer?: number | null
+  lowAsk?: number | null
+  lastPurchasePrice?: number | null
+  acquiredAt?: string | null
+  editionKey?: string | null
+  parallel?: string | null
+  subedition?: string | null
+  editionsOwned?: number
+  editionsLocked?: number
+  flowId?: string | null
+  thumbnailUrl?: string | null
+  tssPoints?: number | null
+  fmv?: number | null
+  marketConfidence?: string | null
+  fmvCapped?: boolean | "comparables" | "offers" | null
+  fmvComputedAt?: string | null
+  acquisitionMethod?: string | null
+  buyPrice?: number | null
+  acquisitionConfidence?: string | null
+  costBasis?: number | null
+  costBasisLabel?: string | null
+  /**
+   * True when per-moment enrichment FAILED for this row, so every field the
+   * enrichment would have supplied (lock state, badges, special-serial traits,
+   * asks/offers) is UNKNOWN rather than measured. Readers must not render an
+   * absent value here as a negative finding — see `isLockKnown` in
+   * lib/collection/helpers.ts.
+   */
+  enrichFailed?: boolean
+  /**
+   * True when the FMV READ for this request failed (an RPC chunk errored or the
+   * enrichment threw), so `fmv` is UNKNOWN, not "no FMV". The cache write must
+   * not persist that null over a cached value (2026-11-02).
+   */
+  fmvReadFailed?: boolean
+  /**
+   * True when `isLocked` on this row came from a source that RECORDS having
+   * checked (today: `wallet_moments_cache.lock_checked_at IS NOT NULL`), so
+   * it is a reading rather than a default. Needed because `enrichFailed`
+   * short-circuits `isLockKnown` — a row whose live enrichment failed can
+   * still have a genuinely known lock from the database.
+   *
+   * ⛔ NEVER set this from `wallet_moments_cache.is_locked` alone. That
+   * column defaults to `false` and 1,160,468 of 1,767,825 Top Shot rows have
+   * never been checked (register #112) — copying it without the timestamp
+   * would import the exact defect this field exists to prevent.
+   */
+  lockKnown?: boolean
+}
+
+type AcquisitionStats = {
+  pack_pull_count: number
+  marketplace_count: number
+  challenge_reward_count: number
+  gift_count: number
+  trade_count: number
+  total_count: number
+  locked_count: number
+  total_spent: number
+}
+
+type WalletSearchResponse = {
+  rows: WalletRow[]
+  walletAddress?: string
+  summary: {
+    totalMoments: number
+    returnedMoments: number
+    remainingMoments: number
+    /** null = no row on this page carried a measured TSS figure (never a fabricated 0). */
+    totalTssPoints?: number | null
+  }
+  acquisitionStats?: AcquisitionStats | null
+  error?: string
+}
+
+type MintedMomentGraphqlData = {
+  getMintedMoment?: {
+    data?: {
+      flowId?: string | null
+      flowSerialNumber?: string | null
+      tier?: string | null
+      forSale?: boolean | null
+      price?: string | number | null
+      lastPurchasePrice?: string | number | null
+      isLocked?: boolean | null
+      createdAt?: string | null
+      badges?: Array<{
+        type?: string | null
+        iconSvg?: string | null
+      }> | null
+      set?: {
+        id?: string | null
+        leagues?: Array<string | null> | null
+      } | null
+      play?: {
+        id?: string | null
+        stats?: { jerseyNumber?: string | null } | null
+      } | null
+      topshotScore?: { score?: number | null } | null
+    } | null
+  } | null
+}
+
+const OWNED_IDS_TTL = 1000 * 60 * 10
+const METADATA_TTL = 1000 * 60 * 30
+const GQL_MOMENT_TTL = 1000 * 60 * 10
+
+function isWalletAddress(value: string) {
+  return /^0x[a-fA-F0-9]{16}$/.test(value.trim())
+}
+
+function ensureFlowPrefix(v: string) {
+  return v.startsWith("0x") ? v : `0x${v}`
+}
+
+function toNum(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
+function formatTier(value: string | null): string | null {
+  if (!value) return null
+  const normalized = value.replace(/_/g, " ").toLowerCase()
+  if (normalized.includes("common")) return "Common"
+  if (normalized.includes("fandom")) return "Fandom"
+  if (normalized.includes("rare")) return "Rare"
+  if (normalized.includes("legendary")) return "Legendary"
+  if (normalized.includes("ultimate")) return "Ultimate"
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1)
+}
+
+function specialSerialTraits(
+  serial: number | null,
+  mint: number | null,
+  graphqlBadgeTypes: string[]
+): string[] {
+  const out: string[] = []
+  if (serial === 1) out.push("#1 Serial")
+  // `mint > 1`: a 1-of-1's serial 1 is the #1, not ALSO a perfect mint
+  // (canonical rule: specialCats in lib/badges/glyphs.ts).
+  if (serial !== null && mint !== null && mint > 1 && serial === mint) {
+    out.push("Original Perfect Mint Serial")
+  }
+  for (const badgeType of graphqlBadgeTypes) {
+    const upper = (badgeType ?? "").toUpperCase()
+    if (upper.includes("JERSEY") && !out.includes("Jersey")) out.push("Jersey")
+    if ((upper === "#1" || upper === "#1_SERIAL" || upper.includes("FIRST_SERIAL")) && !out.includes("#1 Serial")) out.push("#1 Serial")
+    if ((upper.includes("PERFECT_MINT") || upper.includes("PERFECT MINT")) && !out.includes("Original Perfect Mint Serial")) out.push("Original Perfect Mint Serial")
+  }
+  return out
+}
+
+function buildThumbnailUrl(flowId: string | null) {
+  if (!flowId) return null
+  return `https://assets.nbatopshot.com/media/${flowId}/image?width=180`
+}
+
+function cleanErrorMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err)
+
+  if (raw.includes("<html") || raw.includes("<title>") || raw.includes("<!DOCTYPE")) {
+    if (raw.toLowerCase().includes("slow down") || raw.includes("429") || raw.toLowerCase().includes("too many request")) {
+      return "Top Shot is rate limiting requests right now. Wait 30\u201360 seconds and try again."
+    }
+    if (raw.toLowerCase().includes("error") || raw.toLowerCase().includes("unavailable")) {
+      return "Top Shot is temporarily unavailable. Try again in a moment."
+    }
+    return "Top Shot returned an unexpected response. Try again in a moment."
+  }
+
+  if (raw.includes("429") || raw.toLowerCase().includes("too many request") || raw.toLowerCase().includes("rate limit")) {
+    return "Top Shot is rate limiting requests right now. Wait 30\u201360 seconds and try again."
+  }
+
+  if (raw.toLowerCase().includes("could not resolve username")) {
+    return "Username not found. Check the spelling and try again."
+  }
+
+  if (raw.toLowerCase().includes("no collection") || raw.toLowerCase().includes("no nft")) {
+    return "This wallet has no Top Shot moments."
+  }
+
+  return raw
+}
+
+async function withRetry<T>(fn: () => Promise<T>, delayMs = 2000): Promise<T> {
+  try {
+    return await fn()
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (
+      msg.includes("429") ||
+      msg.toLowerCase().includes("too many request") ||
+      msg.toLowerCase().includes("slow down") ||
+      (msg.includes("<html") && msg.toLowerCase().includes("slow down"))
+    ) {
+      await new Promise<void>(function(resolve) { setTimeout(resolve, delayMs) })
+      return await fn()
+    }
+    throw err
+  }
+}
+
+// 2026-09-29 — a username lookup has TWO failure answers, and they need opposite
+// copy. A handle Top Shot does not know is an answer about the handle ("check
+// the spelling"); a lookup that could not reach Top Shot is us failing to look
+// ("try again"). Both used to throw the same error, and the main path turned it
+// into a 500 "Failed to fetch wallet data. Please try again." — advising a retry
+// that can never succeed for a misspelt handle, while the Golazos path said
+// "Could not resolve" for an outage.
+class UsernameLookupError extends Error {
+  constructor(readonly kind: "not_found" | "unavailable") {
+    super(kind === "not_found" ? "Could not resolve username to wallet address." : "Top Shot username lookup unavailable.")
+  }
+}
+
+function usernameLookupResponse(err: UsernameLookupError) {
+  return NextResponse.json(
+    {
+      rows: [],
+      summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
+      ...(err.kind === "not_found"
+        ? { error: "We couldn't find that Top Shot username. Check the spelling, or enter the wallet address.", code: "username_not_found" }
+        : { error: "We couldn't reach Top Shot to look up that username, so this says nothing about it. Try again shortly, or enter the wallet address.", code: "username_lookup_unavailable" }),
+    } satisfies WalletSearchResponse & { code: string },
+    { status: err.kind === "not_found" ? 404 : 503 },
+  )
+}
+
+async function resolveWalletFromInput(input: string): Promise<string> {
+  const trimmed = input.trim()
+  // ⚠ Case-FOLDED (2026-11-07 review): `0xE1F2…` passed isWalletAddress and kept
+  // its case, so every wmc read keyed on the lowercase wallet missed (fill, league
+  // filter, backfill count → a needless walk) and the cache write then started a
+  // SECOND set of rows under the uppercase key. Flow hex is case-insensitive;
+  // lib/address.ts is the one normaliser (CLAUDE.md: never a fresh helper).
+  if (isWalletAddress(trimmed)) return normalizeFlowAddressStrict(trimmed) ?? ensureFlowPrefix(trimmed)
+
+  // Username path. Layered resolver: wallet_usernames → seeded_wallets →
+  // saved_wallets → user_profiles → live Top Shot GQL via topshot-proxy.
+  // Hits at the live layer are written back to wallet_usernames so the next
+  // call short-circuits at layer 1. The 10-min in-process getOrSetCache
+  // wrapper that used to live here is now redundant with the Postgres cache
+  // and was dropped to keep username-to-wallet a single source of truth.
+  const outcome = await resolveTopShotUsernameCacheAware(supabaseAdmin, trimmed)
+  if (outcome.found) return outcome.walletAddress
+  throw new UsernameLookupError(
+    outcome.reason === "username_not_found_on_topshot" || outcome.reason === "empty_username" ? "not_found" : "unavailable",
+  )
+}
+
+async function getOwnedMomentIds(wallet: string): Promise<number[]> {
+  return getOrSetCache(`owned:${wallet}`, OWNED_IDS_TTL, async () => {
+    const cadence = `
+      import TopShot from 0x0b2a3299cc857e29
+      access(all)
+      fun main(address: Address): [UInt64] {
+        let acct = getAccount(address)
+        let col = acct.capabilities.borrow<&{TopShot.MomentCollectionPublic}>(/public/MomentCollection)
+        if col == nil { return [] }
+        return col!.getIDs()
+      }
+    `
+    const result = await fcl.query({
+      cadence,
+      args: (arg: any) => [arg(wallet, t.Address)],
+    })
+    return Array.isArray(result) ? (result as number[]) : []
+  })
+}
+
+async function getAllDayOwnedIds(wallet: string): Promise<number[]> {
+  return getOrSetCache(`owned-allday:${wallet}`, OWNED_IDS_TTL, async () => {
+    const cadence = `
+      import AllDay from 0xe4cf4bdc1751c65d
+      access(all)
+      fun main(address: Address): [UInt64] {
+        let acct = getAccount(address)
+        let col = acct.capabilities.borrow<&{AllDay.MomentNFTCollectionPublic}>(/public/AllDayNFTCollection)
+        if col == nil { return [] }
+        return col!.getIDs()
+      }
+    `
+    const result = await fcl.query({
+      cadence,
+      args: (arg: any) => [arg(wallet, t.Address)],
+    })
+    return Array.isArray(result) ? (result as number[]) : []
+  })
+}
+
+// ⭐ ONE chain script per page, not one per moment (2026-11-15). The per-moment
+// script was the `enrich_moments` stage: 6.0–12.8 s of a 7.5–15 s uncached
+// search (inbox 2026-11-16T0058Z), 8 scripts in flight at a time. A batched
+// script read 17 moments in ~360 ms. ⚠ A SCRIPT HAS A 100,000 COMPUTATION LIMIT:
+// 60 moments used 100,004 and failed (measured 11-15, ~1,700 per moment), 40
+// passed. 25 per script (~42k) leaves ~2.4× headroom; a page's chunks run in
+// parallel, so the default 24-moment page is one script and the 60 cap is three.
+//
+// ⛔ NO "mint" FIELD. TopShotMomentMetadataView.numMomentsInEdition counts the
+// whole set:play FAMILY, parallels included: measured 11-15, every parallel in a
+// sample read 16,000 against its real /500, /2,500 or /4,000, and a base moment
+// read 4,099 for a 4,000 edition. Circulation comes from `editions` (by the
+// subedition-aware key) or the cache, never from here.
+//
+// ⭐ "sub" is TopShot.getMomentsSubedition(): 0 = the base printing, N > 0 = a
+// parallel, whose edition key is `set:play::N` (apis-and-cadence.md, "Reading
+// Top Shot NFT truth from the chain"). Without it every parallel was keyed,
+// priced and cached as its base edition.
+//
+// A moment the collection cannot borrow is absent from the result (the caller
+// treats it as "no nft"); rich fields fall back to MetadataViews.Display's name
+// for moment types without the Top Shot view, exactly as the per-moment script did.
+const METADATA_BATCH = 25
+
+const METADATA_BATCH_CADENCE = `
+  import TopShot from 0x0b2a3299cc857e29
+  import MetadataViews from 0x1d7e57aa55817448
+  access(all)
+  fun main(address: Address, ids: [UInt64]): {UInt64: {String: String}} {
+    let out: {UInt64: {String: String}} = {}
+    let acct = getAccount(address)
+    let col = acct.capabilities.borrow<&{TopShot.MomentCollectionPublic}>(/public/MomentCollection)
+    if col == nil { return out }
+    for id in ids {
+      if let nft = col!.borrowMoment(id: id) {
+        let setID = nft.data.setID.toString()
+        let playID = nft.data.playID.toString()
+        let serial = nft.data.serialNumber.toString()
+        let sub = TopShot.getMomentsSubedition(nftID: id)?.toString() ?? ""
+        if let view = nft.resolveView(Type<TopShot.TopShotMomentMetadataView>()) {
+          let data = view as! TopShot.TopShotMomentMetadataView
+          out[id] = {
+            "player": data.fullName ?? "",
+            "team": data.teamAtMoment ?? "",
+            "setName": data.setName ?? "",
+            "series": data.seriesNumber?.toString() ?? "",
+            "serial": serial,
+            "sub": sub,
+            "playID": playID,
+            "setID": setID
+          }
+        } else {
+          var displayName = ""
+          if let display = nft.resolveView(Type<MetadataViews.Display>()) as? MetadataViews.Display {
+            displayName = display.name
+          }
+          out[id] = {
+            "player": displayName,
+            "team": "",
+            "setName": "",
+            "series": "",
+            "serial": serial,
+            "sub": sub,
+            "playID": playID,
+            "setID": setID
+          }
+        }
+      }
+    }
+    return out
+  }
+`
+
+/**
+ * moment id → chain metadata for every id the wallet holds. A failed chunk
+ * REJECTS (its moments then take the degraded row, as a failed per-moment read
+ * did); a moment absent from a successful chunk is simply not in the map.
+ */
+async function getMomentMetadataBatch(wallet: string, ids: number[]): Promise<Map<string, Record<string, string>>> {
+  const chunks: number[][] = []
+  for (let i = 0; i < ids.length; i += METADATA_BATCH) chunks.push(ids.slice(i, i + METADATA_BATCH))
+  const results = await Promise.all(
+    chunks.map((chunk) =>
+      getOrSetCache(`metadata-batch:${wallet}:${chunk.join(",")}`, METADATA_TTL, async () => {
+        const result = await fcl.query({
+          cadence: METADATA_BATCH_CADENCE,
+          args: (arg: any) => [arg(wallet, t.Address), arg(chunk.map(String), t.Array(t.UInt64))],
+        })
+        return (result && typeof result === "object" ? result : {}) as Record<string, Record<string, string>>
+      }),
+    ),
+  )
+  const out = new Map<string, Record<string, string>>()
+  for (const r of results) for (const [id, meta] of Object.entries(r)) out.set(String(id), meta)
+  return out
+}
+
+/** `set:play` for the base printing, `set:play::N` for parallel N; null without both ids. */
+function chainEditionKey(setId: number | null, playId: number | null, sub: number | null): string | null {
+  if (setId === null || playId === null) return null
+  return sub !== null && sub > 0 ? `${setId}:${playId}::${sub}` : `${setId}:${playId}`
+}
+
+// 2026-11-15: guarded by a dead-host breaker (lib/wallet-search/topshot-gql-breaker.ts).
+async function fetchMomentGraphQL(id: string) {
+  return guardTopshotGql(() => fetchMomentGraphQLUnguarded(id))
+}
+
+async function fetchMomentGraphQLUnguarded(id: string) {
+  return getOrSetCache(`gql-moment:${id}`, GQL_MOMENT_TTL, async () => {
+    const q = `
+      query GetMoment($id: ID!) {
+        getMintedMoment(momentId: $id) {
+          data {
+            flowId flowSerialNumber tier forSale price lastPurchasePrice isLocked createdAt
+            badges { type iconSvg }
+            play { id stats { jerseyNumber } }
+            set { id leagues }
+            topshotScore { score }
+          }
+        }
+      }
+    `
+    const d = await withRetry(function() {
+      return topshotGraphql<MintedMomentGraphqlData>(q, { id })
+    })
+    const m = d?.getMintedMoment?.data
+    return {
+      flowId: m?.flowId ?? null,
+      serial: toNum(m?.flowSerialNumber),
+      tier: formatTier(m?.tier ?? null),
+      bestAsk: m?.forSale ? toNum(m?.price) : null,
+      lowAsk: m?.forSale ? toNum(m?.price) : null,
+      bestOffer: null,
+      lastPurchasePrice: toNum(m?.lastPurchasePrice),
+      // ⚠ undefined, not false, when the answer carried no moment (2026-11-07
+      // review): `!!m?.isLocked` made a null `getMintedMoment.data` a measured
+      // "not locked", which also stopped fillFromWalletCache (it fills only an
+      // UNKNOWN lock) from supplying the checked reading — LOCKED: No on nothing.
+      isLocked: typeof m?.isLocked === "boolean" ? m.isLocked : undefined,
+      acquiredAt: m?.createdAt ?? null,
+      jerseyNumber: m?.play?.stats?.jerseyNumber ? parseInt(m.play.stats.jerseyNumber, 10) : null,
+      league: m?.set?.leagues?.find(Boolean) ?? null,
+      badges: Array.isArray(m?.badges)
+        ? m.badges.map((b) => ({ type: b?.type ?? "UNKNOWN", iconSvg: b?.iconSvg ?? "" }))
+        : [],
+      tssPoints: toNum(m?.topshotScore?.score) ?? null,
+      setID: m?.set?.id ?? null,
+      playID: m?.play?.id ?? null,
+    }
+  })
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length)
+  let nextIndex = 0
+  async function runWorker() {
+    while (true) {
+      const currentIndex = nextIndex++
+      if (currentIndex >= items.length) return
+      results[currentIndex] = await worker(items[currentIndex], currentIndex)
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, () => runWorker())
+  )
+  return results
+}
+
+/**
+ * Fill the fields the DEAD Top Shot GraphQL host used to supply, from data
+ * the platform already maintains.
+ *
+ * ── WHY ────────────────────────────────────────────────────────────────────
+ * `public-api.nbatopshot.com` is decommissioned (530 since ~2026-08-30,
+ * re-verified from a residential IP 2026-09-13 — it is not an outage and it
+ * is not coming back). #65 re-pointed six other consumers onto Atlas-via-DB;
+ * this route's per-moment leg was never among them, so EVERY Top Shot row in
+ * wallet search renders with no thumbnail, no tier and no ask. Verified in
+ * production 2026-09-13 on a real wallet: 5 of 5 rows `enrichFailed`, every
+ * `thumbnailUrl` null.
+ *
+ * `wallet_moments_cache` already carries it for wallets the platform has
+ * walked — whole-table coverage of the 1,767,825 Top Shot rows, measured:
+ * `image_url` 98.9%, `tier` 98.9%, `mint_count` 98.9%, `league` 66.3%.
+ *
+ * ── THE RULES THIS OBEYS ──────────────────────────────────────────────────
+ * ⛔ STRICTLY ADDITIVE. It fills a field only where the row has none, so it
+ *    can never overwrite something the live read actually measured. Worst
+ *    case it does nothing.
+ * ⛔ LOCK STATE NEEDS PROVENANCE. `is_locked` is copied ONLY when
+ *    `lock_checked_at` is non-null, because the column defaults to `false`
+ *    and 65.6% of rows were never checked (#112). Without that gate this
+ *    would publish `LOCKED: No` on 1.16M unexamined moments — the defect
+ *    `eaf0b2b` removed from this very route.
+ * ⚠ A FAILED READ FILLS NOTHING. Three states, not two: row present, row
+ *    genuinely absent (a wallet we have never walked), and read failed. The
+ *    last two both leave the row exactly as it was, which is honest — the
+ *    row keeps saying it does not know.
+ */
+async function fillFromWalletCache(
+  rows: WalletRow[],
+  wallet: string,
+  collectionId: string,
+): Promise<void> {
+  const needy = rows.filter(
+    (r) =>
+      r.thumbnailUrl == null ||
+      r.tier == null ||
+      r.circulationCount == null ||
+      r.league == null ||
+      r.isLocked == null,
+  );
+  if (needy.length === 0) return;
+
+  // ⚠ Top Shot art is NEVER taken from the cache (2026-11-06): the per-Moment
+  // media URL serves for every Moment, while the cached edition HERO assets
+  // (assets.nbatopshot.com/editions/1_*/…Hero_2880_2880_Transparent.png) are
+  // dead for all of Series 1 — 76,047 rows in 194 wallets rendered blank, and
+  // the cache copy below wrote the dead URL BACK on every chain-only walk.
+  // Derive it from the id, cache row or not; the cache stays the art source
+  // only for collections with no derivable URL.
+  // ⚠ BEFORE the cache read (2026-11-07 review): it sat inside the loop that
+  // runs only after a SUCCESSFUL read, so a failed wmc read — a different
+  // source — left every Top Shot tile blank although the URL needs no read.
+  if (collectionId === TOPSHOT_COLLECTION_ID) {
+    for (const row of needy) {
+      if (row.thumbnailUrl == null) row.thumbnailUrl = buildThumbnailUrl(String(row.momentId));
+    }
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("wallet_moments_cache")
+    .select("moment_id, image_url, tier, mint_count, league, is_locked, lock_checked_at")
+    .eq("wallet_address", wallet)
+    .eq("collection_id", collectionId)
+    .in("moment_id", needy.map((r) => String(r.momentId)));
+
+  // ⚠ supabase-js RETURNS errors rather than throwing, so this branch is the
+  // only thing standing between a failed read and a silently unfilled row
+  // that looks identical to a wallet we have never walked. Fill nothing and
+  // say so in the log; the rows already report themselves as unknown.
+  if (error || !Array.isArray(data)) {
+    console.warn(
+      `[wallet-search] wmc fill unavailable for ${wallet.slice(0, 10)}: ${error?.message ?? "no rows payload"}`,
+    );
+    return;
+  }
+
+  const byMoment = new Map<string, Record<string, unknown>>();
+  for (const r of data as Array<Record<string, unknown>>) {
+    byMoment.set(String(r.moment_id), r);
+  }
+
+  for (const row of needy) {
+    const c = byMoment.get(String(row.momentId));
+    if (!c) continue;
+
+    if (row.thumbnailUrl == null && typeof c.image_url === "string" && c.image_url) {
+      row.thumbnailUrl = c.image_url;
+    }
+    if (row.tier == null && typeof c.tier === "string" && c.tier) {
+      row.tier = c.tier;
+    }
+    if (row.league == null && typeof c.league === "string" && c.league) {
+      row.league = c.league;
+    }
+    if (row.circulationCount == null && c.mint_count != null) {
+      const mint = toNum(c.mint_count);
+      if (mint != null) {
+        row.circulationCount = mint;
+        if (row.mintSize == null) row.mintSize = mint;
+      }
+    }
+    // ⛔ The timestamp is the whole gate — see the header and register #112.
+    if (row.isLocked == null && c.lock_checked_at != null && typeof c.is_locked === "boolean") {
+      row.isLocked = c.is_locked;
+      row.lockKnown = true;
+    }
+  }
+}
+
+// Background writes started during the request are handed to after() so Vercel
+// keeps the function alive until they settle (2026-11-07 review: a bare
+// `.catch(() => {})` promise can be frozen with the lambda once the response is
+// sent, and the cache / seed / classify write silently never lands). The work
+// still STARTS where it did; after() only waits for it. Guarded: after() throws
+// outside a request scope, and a background write must never fail the search.
+function keepAlive(p: Promise<unknown>): void {
+  const settled = p.catch(() => {})
+  try {
+    after(settled)
+  } catch {
+    // outside a request scope (tests, scripts): the promise still runs
+  }
+}
+
+async function seedEditionsToSupabase(rows: WalletRow[], collectionId: string) {
+  for (const row of rows) {
+    try {
+      // A degraded row (its metadata read failed) seeds nothing, and an unknown
+      // tier is NULL, never COMMON — lib/wallet-search/seed-edition.ts.
+      if (!isSeedableRow(row)) continue
+      // A parallel (`set:play::N`) is the catalog's to create, with its parallel
+      // name and circulation; this seed knows neither (2026-11-15).
+      if (row.editionKey?.includes("::")) continue
+      const normalizedTier = seedTier(row.tier)
+
+      let playerId: string | null = null
+      {
+        // Canonical resolve-or-create keyed on (collection_id, name-slug).
+        //
+        // This previously upserted `external_id: flow:${playID}` — the SECOND
+        // segment of the `setID:playID` edition key — which is PER-PLAY, not
+        // per-player, so every distinct play by the same athlete minted another
+        // players row. That made this route the sole duplicate factory behind
+        // 3,074 surplus Top Shot rows (LeBron James alone had 32) and forced
+        // get_player_detail to *choose* which row's team a public page shows.
+        // The resolver reuses the existing player and only inserts when the slug
+        // genuinely does not resolve, using the same `<coll_slug>-<name_slug>`
+        // convention ensure_players_from_edition_names uses.
+        // See audit_20260802_players_dedupe_and_canonical_resolver.
+        const { data: resolvedId } = await supabaseAdmin.rpc("resolve_canonical_player", {
+          p_collection_id: collectionId,
+          p_name: row.playerName,
+          p_team: row.team ?? null,
+        })
+        playerId = (resolvedId as string | null) ?? null
+      }
+
+      // INSERT-ONLY (2026-09-25). This used to upsert with ignoreDuplicates:false,
+      // so every Top Shot wallet search re-wrote player_id / name / tier / series /
+      // circulation_count on EXISTING editions from one wallet row — including
+      // NULLs (toNum of a missing series, a missing mintSize) over values the
+      // catalog, the chain fills and the linker had written. A second source's
+      // fill must survive the first source's next write (#137 d). The seed's job
+      // is to make an edition EXIST; it is not an authority on one that does.
+      // write-discarded: insert-only seed (ignoreDuplicates); a failure leaves the edition to the catalog and linker lanes.
+      await supabaseAdmin
+        .from("editions")
+        .upsert(
+          {
+            external_id: row.editionKey,
+            collection_id: collectionId,
+            player_id: playerId,
+            name: `${row.playerName} \u2014 ${row.setName}`,
+            tier: normalizedTier as any,
+            series: toNum(row.series),
+            circulation_count: row.mintSize ?? null,
+          },
+          { onConflict: "external_id,collection_id", ignoreDuplicates: true }
+        )
+      // Sales and FMV snapshots are only written by the real ingest pipeline
+      // and fmv-recalc cron — never seeded from wallet purchase prices.
+    } catch {
+      // Never let seeding errors bubble up to the user
+    }
+  }
+}
+
+// The Top Shot collection uuid (lib/collection-slug.ts carries the same value);
+// used where a wallet_moments_cache write must not touch another collection's
+// row that happens to share the moment id (#142).
+const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+
+async function getCollectionId(): Promise<string | null> {
+  try {
+    const { data } = await supabaseAdmin
+      .from("collections")
+      .select("id")
+      .eq("slug", "nba_top_shot")
+      .single()
+    return data?.id ?? null
+  } catch {
+    return null
+  }
+}
+
+const SLUG_TO_DB_SLUG: Record<string, string> = {
+  "nba-top-shot": "nba_top_shot",
+  "nfl-all-day": "nfl_all_day",
+  "laliga-golazos": "laliga_golazos",
+  "disney-pinnacle": "disney_pinnacle",
+  // The collections row slug is "ufc_strike", not "ufc". This map is currently
+  // unreachable for UFC (the handler redirects collection === "ufc" to
+  // /api/ufc-wallet-scan before getCollectionIdForSlug runs), but the value is
+  // corrected so it resolves the right collection if that guard ever changes.
+  "ufc": "ufc_strike",
+}
+
+const COLLECTION_ID_CACHE = new Map<string, string | null>()
+async function getCollectionIdForSlug(slug?: string): Promise<string | null> {
+  // An ABSENT slug defaults to Top Shot; a PRESENT one this map lacks resolves
+  // nothing (never Top Shot's id under another collection's name).
+  const dbSlug = slug ? ownLookup(SLUG_TO_DB_SLUG, slug) ?? null : "nba_top_shot"
+  if (!dbSlug) return null
+  if (COLLECTION_ID_CACHE.has(dbSlug)) return COLLECTION_ID_CACHE.get(dbSlug) ?? null
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("collections")
+      .select("id")
+      .eq("slug", dbSlug)
+      .single()
+    // Cache only a read that LANDED: until 2026-10-23 a transient error was
+    // cached as null, so one failed lookup dropped acquisition stats from every
+    // later wallet search on that warm instance.
+    if (error) return null
+    const id = data?.id ?? null
+    COLLECTION_ID_CACHE.set(dbSlug, id)
+    return id
+  } catch {
+    return null
+  }
+}
+
+// ── Batch FMV + Ask Enrichment ────────────────────────────────────
+// Resolves integer editionKeys → Supabase edition UUIDs → fmv_snapshots
+// Upserts missing editions so integer-format keys always resolve.
+// Also looks up cached_listings by flowId for low ask prices.
+async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
+  if (!rows.length) return rows
+
+  try {
+    // 1. Collect unique editionKeys and flowIds
+    const editionKeys = [...new Set(rows.map(r => r.editionKey).filter(Boolean))] as string[]
+    const flowIds = [...new Set(rows.map(r => r.flowId).filter(Boolean))] as string[]
+
+    const CHUNK = 50
+
+    // The Top Shot collection id (this enrichment is Top Shot-only: an All Day
+    // row rejects both legs and carries no editionKey). Hoisted so the edition
+    // reads below are scoped by collection — a key is unique only WITHIN one.
+    let collectionId: string | null = null
+    try {
+      collectionId = await getCollectionId()
+    } catch { /* proceed without collection_id */ }
+
+    // 2. Batch upsert any missing editions so integer-format keys exist
+    //    (ignoreDuplicates: true means existing rows are untouched)
+    if (editionKeys.length) {
+      const upsertChunks: Promise<any>[] = []
+      for (let i = 0; i < editionKeys.length; i += CHUNK) {
+        upsertChunks.push(
+          (supabaseAdmin as any)
+            .from("editions")
+            .upsert(
+              editionKeys.slice(i, i + CHUNK).map(k => ({
+                external_id: k,
+                ...(collectionId ? { collection_id: collectionId } : {}),
+              })),
+              { onConflict: "external_id,collection_id", ignoreDuplicates: true }
+            )
+        )
+      }
+      await Promise.all(upsertChunks)
+    }
+
+    // 3. Parallel: resolve editions + fetch cached_listings
+    const editionChunks: Promise<any>[] = []
+    for (let i = 0; i < editionKeys.length; i += CHUNK) {
+      let q = (supabaseAdmin as any)
+        .from("editions")
+        .select("id, external_id, circulation_count")
+        .in("external_id", editionKeys.slice(i, i + CHUNK))
+      // 2026-11-07 review: external_id is unique per (external_id, collection_id).
+      // Every `set:play` key in editions is Top Shot's today, so this is a no-op
+      // for Top Shot — and it stops a colliding key in another collection from
+      // ever resolving here.
+      if (collectionId) q = q.eq("collection_id", collectionId)
+      editionChunks.push(q)
+    }
+
+    const listingChunks: Promise<any>[] = []
+    for (let i = 0; i < flowIds.length; i += CHUNK) {
+      listingChunks.push(
+        (supabaseAdmin as any)
+          .from("cached_listings")
+          .select("flow_id, ask_price, fmv")
+          .in("flow_id", flowIds.slice(i, i + CHUNK))
+      )
+    }
+
+    const [editionResults, listingResults] = await Promise.all([
+      Promise.all(editionChunks),
+      Promise.all(listingChunks),
+    ])
+
+    // 4. Build edition external_id → internal UUID map
+    const extToId = new Map<string, string>()
+    // The edition's own circulation, by the subedition-aware key — the one
+    // circulation source this route trusts (the chain's count is the family).
+    const extToCirc = new Map<string, number>()
+    // ⚠ A failed resolve chunk is NOT "no FMV" (2026-11-07 review): `{ data }`
+    // dropped its error, every row read fmv null with no fmvReadFailed, and the
+    // cache write nulled their cached FMVs — the defect step 6 below fixed for its
+    // own chunks only.
+    let editionResolveFailed = false
+    for (const { data, error } of editionResults) {
+      if (error) editionResolveFailed = true
+      for (const row of (data ?? [])) {
+        extToId.set(row.external_id, row.id)
+        const circ = toNum(row.circulation_count)
+        if (circ !== null && circ > 0) extToCirc.set(row.external_id, circ)
+      }
+    }
+
+    // 5. Build flowId → ask_price map from cached_listings
+    const askMap = new Map<string, number>()
+    for (const { data } of listingResults) {
+      for (const row of (data ?? [])) {
+        if (row.ask_price != null) askMap.set(row.flow_id, Number(row.ask_price))
+      }
+    }
+
+    // 6. Fetch FMV snapshots for resolved edition UUIDs
+    const internalIds = [...new Set(extToId.values())]
+    const fmvMap = new Map<string, { fmv_usd: number; confidence: string; computed_at: string; algo_version?: string | null }>()
+    // A chunk that errors used to be dropped by `{ data }` destructuring, so its
+    // editions read as "no FMV" and the cache write nulled their cached value.
+    let fmvReadError = editionResolveFailed
+
+    if (internalIds.length) {
+      const fmvChunks: Promise<any>[] = []
+      for (let i = 0; i < internalIds.length; i += CHUNK) {
+        fmvChunks.push(
+          // get_editions_latest_fmv_wide = latest snapshot per requested edition
+          // (1 row/edition, every fmv_current column) via a per-id index probe.
+          // 2026-09-19: this WAS `.from("fmv_current").in("edition_id", chunk)`;
+          // a qual on the view's DISTINCT ON key reaches the index but does not
+          // bound rows per group, so each chunk walked ~76 snapshots per edition
+          // (pgss: 6,103 calls at a 6.2 s mean). Same rows (set-diff 0 on 100
+          // ids), 40 ms vs 22–41 s. Migration 20260920044216.
+          (supabaseAdmin as any)
+            .rpc("get_editions_latest_fmv_wide", { p_edition_ids: internalIds.slice(i, i + CHUNK) })
+        )
+      }
+      const fmvResults = await Promise.all(fmvChunks)
+      for (const { data, error } of fmvResults) {
+        if (error) fmvReadError = true
+        for (const row of (data ?? [])) {
+          // Keep only the most recent snapshot per edition
+          if (!fmvMap.has(row.edition_id)) fmvMap.set(row.edition_id, row)
+        }
+      }
+    }
+
+    // 7. Build editionKey → FMV data map.
+    // Defensive ceiling: discard fmv_usd > $10K unless the snapshot is HIGH
+    // confidence with sales_count_30d >= 3. Guards against known FMV pipeline
+    // outliers (12 LaLiga + 11 AllDay editions currently emit $900K-$1M values
+    // from low-data fallbacks).
+    const editionFmvMap = new Map<string, { fmv: number; confidence: string; computedAt: string; capped: FmvCapFlag }>()
+    for (const [extId, intId] of extToId) {
+      const snap = fmvMap.get(intId)
+      if (!snap) continue
+      const raw = Number(snap.fmv_usd)
+      if (!Number.isFinite(raw)) continue
+      const isHigh = String(snap.confidence ?? "").toUpperCase() === "HIGH"
+      const sc = Number((snap as any).sales_count_30d ?? 0)
+      if (raw > 10000 && !(isHigh && sc >= 3)) continue
+      editionFmvMap.set(extId, {
+        fmv: raw,
+        confidence: (snap.confidence ?? "low").toLowerCase(),
+        computedAt: snap.computed_at,
+        capped: askCapFlag(snap.algo_version),
+      })
+    }
+
+    // 7b. Fallback: for edition keys that didn't resolve, try alternate format
+    // Some editions.external_id use UUID format (setUUID:playUUID), while
+    // wallet moments use numeric format (setID:playID). For unmatched numeric
+    // keys, look the edition up by play_id_onchain (typed integer column,
+    // backed by idx_editions_play_id_onchain). Replaces a previous leading-
+    // wildcard ILIKE on external_id that forced a Seq Scan over editions and
+    // was the source of statement-timeout cancellations under smoke-test load.
+    const unmatchedKeys = editionKeys.filter(k => !editionFmvMap.has(k))
+    if (unmatchedKeys.length > 0) {
+      try {
+        const playIds: number[] = []
+        for (const key of unmatchedKeys) {
+          const parts = key.split(":")
+          if (parts.length !== 2) continue
+          const n = parseInt(parts[1], 10)
+          if (Number.isFinite(n)) playIds.push(n)
+        }
+
+        const fallbackChunks: Promise<any>[] = []
+        for (let i = 0; i < playIds.length; i += CHUNK) {
+          let fq = (supabaseAdmin as any)
+            .from("editions")
+            .select("id, set_id_onchain, play_id_onchain")
+            .in("play_id_onchain", playIds.slice(i, i + CHUNK))
+          if (collectionId) fq = fq.eq("collection_id", collectionId)
+          fallbackChunks.push(fq)
+        }
+
+        if (fallbackChunks.length > 0) {
+          const fallbackResults = await Promise.all(fallbackChunks)
+          // ⛔ Keyed on (set, play), never play alone (2026-11-07 review): a play id
+          // repeats across Top Shot sets (306 plays sit in more than one set) and
+          // across collections (6,765 non-Top-Shot editions carry one), and the old
+          // map kept whichever row came LAST — another set's or another
+          // collection's FMV, written into wallet_moments_cache. Every Top Shot
+          // edition with a play id also has its set id (0 missing, read 11-07), so
+          // requiring the set loses no legitimate match.
+          const playIdToEdition = new Map<string, string>()
+          for (const { data, error } of fallbackResults) {
+            if (error) fmvReadError = true
+            for (const row of (data ?? [])) {
+              if (row.play_id_onchain != null && row.set_id_onchain != null && row.id) {
+                playIdToEdition.set(`${row.set_id_onchain}:${row.play_id_onchain}`, row.id)
+              }
+            }
+          }
+
+          // Fetch FMV snapshots for any newly found edition UUIDs
+          const newInternalIds = [...new Set(playIdToEdition.values())]
+            .filter(id => !fmvMap.has(id))
+
+          if (newInternalIds.length > 0) {
+            const newFmvChunks: Promise<any>[] = []
+            for (let i = 0; i < newInternalIds.length; i += CHUNK) {
+              newFmvChunks.push(
+                // Same per-id helper as the primary lookup above (see the note
+                // there); the view read this replaced walked every snapshot.
+                (supabaseAdmin as any)
+                  .rpc("get_editions_latest_fmv_wide", { p_edition_ids: newInternalIds.slice(i, i + CHUNK) })
+              )
+            }
+            const newFmvResults = await Promise.all(newFmvChunks)
+            for (const { data, error } of newFmvResults) {
+              if (error) fmvReadError = true
+              for (const row of (data ?? [])) {
+                if (!fmvMap.has(row.edition_id)) fmvMap.set(row.edition_id, row)
+              }
+            }
+          }
+
+          // Map unmatched numeric keys to FMV via playID. Re-applies the same
+          // sanity ceiling as the primary lookup above.
+          for (const key of unmatchedKeys) {
+            const parts = key.split(":")
+            if (parts.length !== 2) continue
+            const editionUuid = playIdToEdition.get(`${parts[0]}:${parts[1]}`)
+            if (!editionUuid) continue
+            const snap = fmvMap.get(editionUuid)
+            if (!snap) continue
+            const raw = Number(snap.fmv_usd)
+            if (!Number.isFinite(raw)) continue
+            const isHigh = String(snap.confidence ?? "").toUpperCase() === "HIGH"
+            const sc = Number((snap as any).sales_count_30d ?? 0)
+            if (raw > 10000 && !(isHigh && sc >= 3)) continue
+            editionFmvMap.set(key, {
+              fmv: raw,
+              confidence: (snap.confidence ?? "low").toLowerCase(),
+              computedAt: snap.computed_at,
+              capped: askCapFlag(snap.algo_version),
+            })
+          }
+        }
+      } catch (fallbackErr) {
+        fmvReadError = true
+        console.warn("[wallet-search] FMV fallback lookup failed:", fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr))
+      }
+    }
+
+    // 8. Apply FMV + ask data to rows
+    let enrichedCount = 0
+    const enrichedRows = rows.map(row => {
+      const fmvData = row.editionKey ? editionFmvMap.get(row.editionKey) : null
+      const cachedAsk = row.flowId ? askMap.get(row.flowId) : null
+
+      if (fmvData) enrichedCount++
+
+      // The edition's circulation wins over the cache's per-moment copy. The
+      // serial traits that need it are recomputed here, never on a degraded row
+      // (its traits are UNKNOWN, not empty).
+      const circ = row.editionKey ? extToCirc.get(row.editionKey) : undefined
+      const circulation = circ ?? row.circulationCount ?? null
+      const traits = row.enrichFailed
+        ? row.specialSerialTraits
+        : specialSerialTraits(row.serialNumber ?? null, circulation, row.officialBadges ?? [])
+
+      return {
+        ...row,
+        circulationCount: circulation,
+        mintSize: circulation ?? undefined,
+        specialSerialTraits: traits,
+        fmv: fmvData?.fmv ?? null,
+        ...(fmvReadError ? { fmvReadFailed: true } : {}),
+        marketConfidence: fmvData?.confidence ?? null,
+        fmvCapped: fmvData?.capped ?? null,
+        fmvComputedAt: fmvData?.computedAt ?? null,
+        // Use cached_listings ask if available; keep GQL ask as fallback
+        lowAsk: cachedAsk ?? row.lowAsk ?? null,
+      }
+    })
+
+    console.log(`[wallet-search] FMV enrichment: ${enrichedCount}/${rows.length} moments enriched with FMV`)
+    return enrichedRows
+  } catch (err) {
+    console.warn("[wallet-search] FMV/ask enrichment failed:", err instanceof Error ? err.message : String(err))
+    return rows.map((r) => ({ ...r, fmvReadFailed: true }))
+  }
+}
+
+async function enrichWithAcquisitionData(rows: WalletRow[], wallet: string): Promise<WalletRow[]> {
+  if (!rows.length) return rows
+  try {
+    const momentIds = rows.map(r => r.momentId).filter(Boolean)
+    if (!momentIds.length) return rows
+
+    // 2026-11-14: CHUNKED (readAcquisitionData) — a single call clamps at PostgREST's 1,000 rows.
+    // Only the Top Shot path reaches here (Pinnacle/UFC/Golazos return earlier,
+    // All Day skips this call). moment ids collide across collections, INCLUDING inside one wallet (#142; 41 rows / 11 wallets 2026-10-31)
+    const { rows: data, error } = await readAcquisitionData(supabaseAdmin as any, wallet, momentIds, TOPSHOT_COLLECTION_ID)
+
+    if (error) return rows
+
+    const acqMap = new Map<string, { acquisition_method: string; buy_price: number | null; loan_principal: number | null }>()
+    for (const row of data) {
+      // Keep first match per moment (ordered by nft_id in the RPC)
+      if (!acqMap.has(row.moment_id)) {
+        acqMap.set(row.moment_id, row)
+      }
+    }
+
+    return rows.map(row => {
+      const acq = acqMap.get(row.momentId)
+      if (!acq) return row
+      const method = acq.acquisition_method
+      const costBasis = method === "marketplace" ? (acq.buy_price != null ? Number(acq.buy_price) : null)
+        : method === "loan_default" ? (acq.loan_principal != null ? Number(acq.loan_principal) : null)
+        : null
+      return {
+        ...row,
+        acquisitionMethod: method,
+        buyPrice: acq.buy_price != null ? Number(acq.buy_price) : null,
+        costBasis,
+        costBasisLabel: acquisitionMethodLabel(method),
+      }
+    })
+  } catch (err) {
+    console.warn("[wallet-search] Acquisition enrichment failed:", err instanceof Error ? err.message : String(err))
+    return rows
+  }
+}
+
+async function progressivelyClassify(rows: WalletRow[], wallet: string) {
+  try {
+    const walletAddr = wallet.startsWith("0x") ? wallet : "0x" + wallet
+    let marketplaceCount = 0
+    let dateCount = 0
+
+    // 1. Reclassify moments with lastPurchasePrice but unknown/null acquisition
+    const toReclassify = rows.filter(
+      (r) => r.lastPurchasePrice != null && r.lastPurchasePrice > 0 && (!r.acquisitionMethod || r.acquisitionMethod === "unknown")
+    )
+
+    for (const row of toReclassify) {
+      const { error } = await (supabaseAdmin as any)
+        .from("moment_acquisitions")
+        .update({
+          acquisition_method: "marketplace",
+          buy_price: row.lastPurchasePrice,
+          acquired_date: row.acquiredAt ? new Date(row.acquiredAt).toISOString() : null,
+          source: "progressive_classify",
+        })
+        .eq("nft_id", row.momentId)
+        .eq("wallet", walletAddr)
+        .eq("collection_id", TOPSHOT_COLLECTION_ID) // moment ids collide across collections, INCLUDING inside one wallet (#142; 41 rows / 11 wallets 2026-10-31)
+        .eq("acquisition_method", "unknown")
+      if (!error) marketplaceCount++
+    }
+
+    // 2. Fill in acquired_date where GQL has it but moment_acquisitions does not
+    const toDateFill = rows.filter(
+      (r) => r.acquiredAt && r.acquisitionMethod && r.acquisitionMethod !== "unknown"
+    )
+
+    for (const row of toDateFill) {
+      const { error } = await (supabaseAdmin as any)
+        .from("moment_acquisitions")
+        .update({ acquired_date: new Date(row.acquiredAt!).toISOString() })
+        .eq("nft_id", row.momentId)
+        .eq("wallet", walletAddr)
+        .eq("collection_id", TOPSHOT_COLLECTION_ID) // moment ids collide across collections, INCLUDING inside one wallet (#142; 41 rows / 11 wallets 2026-10-31)
+        .is("acquired_date", null)
+      if (!error) dateCount++
+    }
+
+    // 3. Propagate acquiredAt to wallet_moments_cache where missing
+    const toCacheFill = rows.filter((r) => r.acquiredAt && r.momentId)
+    for (const row of toCacheFill) {
+      // write-discarded: fills a NULL acquired_at only (`.is(null)` guard); a failure leaves it NULL for the next search to fill.
+      await (supabaseAdmin as any)
+        .from("wallet_moments_cache")
+        .update({ acquired_at: row.acquiredAt })
+        .eq("collection_id", TOPSHOT_COLLECTION_ID) // this path is Top Shot-only; moment ids collide across collections (#142)
+        .eq("moment_id", row.momentId)
+        .eq("wallet_address", walletAddr)
+        .is("acquired_at", null)
+    }
+
+    console.log(`[wallet-search] Progressive classify: ${marketplaceCount} marketplace, ${dateCount} dates updated`)
+  } catch (err) {
+    // Never let progressive classification crash the response
+    console.warn("[wallet-search] Progressive classify error:", err instanceof Error ? err.message : String(err))
+  }
+}
+
+async function upsertWalletMomentsCache(wallet: string, rows: WalletRow[]) {
+  try {
+    // Always use the resolved 0x address, never a raw username
+    const resolvedAddress = isWalletAddress(wallet) ? wallet : ensureFlowPrefix(wallet)
+    const now = new Date().toISOString()
+    // wmc's unique constraint is the 3-col (wallet_address, collection_id,
+    // moment_id) — there is NO plain (wallet_address, moment_id) index, so a
+    // 2-col onConflict raises 42P10 and silently no-ops. collection_id was
+    // never on baseRow, so these writes broke when the constraint changed
+    // 2026-05-06. Resolve the TS collection id once and key on it. If it can't
+    // be resolved, skip the write entirely rather than insert NULL.
+    const tsCollectionId = await getCollectionId()
+    if (!tsCollectionId) {
+      console.warn("[wallet-search] Cache upsert skipped: could not resolve TS collection id")
+      return
+    }
+    const baseRow = (r: WalletRow) => ({
+      wallet_address: resolvedAddress,
+      collection_id: tsCollectionId,
+      moment_id: r.momentId,
+      fmv_usd: r.fmv ?? null,
+      serial_number: r.serialNumber ?? (r.serial != null ? r.serial : null),
+      last_seen_at: now,
+      tier: r.tier ?? null,
+      acquired_at: r.acquiredAt ?? null,
+      // ⚠ Never persist the load-failure sentinel as a NAME. "Unknown (error
+      // loading)" is the API's honest per-row degradation label, but written into
+      // wallet_moments_cache it became a collector's moment's player on every
+      // surface that reads the cache, and it blocked rpc_wmc_metadata_selfheal
+      // (COALESCE fill-only, so any non-null string is permanent). 101 rows / 9
+      // editions carried it on 2026-09-03 (known-issues #18). NULL is the honest
+      // store value; the self-heal can fill it later.
+      player_name: r.playerName && r.playerName !== "Unknown (error loading)" ? r.playerName : null,
+      // Same rule as the player sentinel: "Unknown Set" is the degraded row's
+      // display label, never a stored set name.
+      set_name: r.setName && r.setName !== "Unknown Set" ? r.setName : null,
+      // ⚠ Not `Number(r.series) || null`: Top Shot's on-chain Series 1 is 0,
+      // and `0 || null` wrote NULL for every Series 1 moment (2026-09-24).
+      series_number: r.series != null && r.series !== "" && Number.isFinite(Number(r.series)) ? Number(r.series) : null,
+      image_url: r.thumbnailUrl ?? null,
+    })
+
+    // May 9 dedup project: prefer canonical UUID-format external_ids over the
+    // integer "set:play" keys we synthesize from on-chain metadata. The
+    // editions table can host both formats for the same edition; picking the
+    // UUID side keeps wmc writes from creating new orphan rows that the
+    // wmc_canonicalize trigger has to chase.
+    const intKeys = Array.from(new Set(
+      rows
+        .map(r => r.editionKey)
+        .filter((k): k is string => !!k && /^\d+:\d+$/.test(k))
+    ))
+    const canonicalKeyByInt = new Map<string, string>()
+    if (intKeys.length > 0) {
+      {
+        for (let i = 0; i < intKeys.length; i += 200) {
+          const chunk = intKeys.slice(i, i + 200)
+          const setPlayPairs = chunk
+            .map(k => k.split(":"))
+            .filter(p => p.length === 2 && p.every(s => /^\d+$/.test(s)))
+            .map(p => ({ set_id_onchain: Number(p[0]), play_id_onchain: Number(p[1]) }))
+          if (setPlayPairs.length === 0) continue
+          const setIds = Array.from(new Set(setPlayPairs.map(p => p.set_id_onchain)))
+          const playIds = Array.from(new Set(setPlayPairs.map(p => p.play_id_onchain)))
+          const { data: edRows } = await (supabaseAdmin as any)
+            .from("editions")
+            .select("external_id, set_id_onchain, play_id_onchain")
+            .eq("collection_id", tsCollectionId)
+            .in("set_id_onchain", setIds)
+            .in("play_id_onchain", playIds)
+          for (const row of (edRows ?? [])) {
+            if (row.set_id_onchain == null || row.play_id_onchain == null) continue
+            const intKey = `${row.set_id_onchain}:${row.play_id_onchain}`
+            const existing = canonicalKeyByInt.get(intKey)
+            // 🚨 A `::N` PARALLEL IS A DIFFERENT PRINTING OF THE SAME set:play,
+            // NEVER A SUBSTITUTE FOR IT. The old test was `/^\d+:\d+$/`, which
+            // is false for `90:3550::1`, so the "prefer the non-int format"
+            // branch treated every parallel as the canonical key and promoted
+            // it over the base edition — for BOTH arrival orders. Every Top Shot
+            // moment of a set:play that has any parallel printing was then
+            // cached against that parallel's edition_key, taking its (small)
+            // circulation and its tier with it.
+            //
+            // Measured 2026-09-11: that produced 337 wmc rows whose serial
+            // EXCEEDED the circulation of the edition they were keyed to —
+            // e.g. a trophy slab rendering `#1017/50` — accruing ~200/day, plus
+            // a larger silent population whose serial happens to fit and so is
+            // wrong without being arithmetically detectable.
+            //
+            // ⚠ AND THE BRANCH'S INTENDED CASE IS UNREACHABLE TODAY: it exists to
+            // let a legacy UUID-keyed edition stand in for the int-pair key, and
+            // Top Shot now has 9,539 base + 4,476 parallel + **0** other-form
+            // external_ids (the uuid fossils were retired). So the only thing the
+            // old test still did was the damage above.
+            //
+            // The rule now states the intent directly: a member of the int
+            // family (base OR parallel) never displaces the key; only a
+            // genuinely non-int-family external_id may.
+            const isIntFamily = /^\d+:\d+(::\d+)?$/.test(String(row.external_id ?? ""))
+            if (isIntFamily) continue
+            if (!existing) {
+              canonicalKeyByInt.set(intKey, String(row.external_id))
+            }
+          }
+        }
+      }
+    }
+    const resolveEditionKey = (k: string | null | undefined): string | null => {
+      if (!k) return null
+      const canonical = canonicalKeyByInt.get(k)
+      return canonical ?? k
+    }
+
+    // Split rows by edition_key availability so that rows that failed to
+    // resolve edition_key don't clobber previously-cached edition_key values.
+    // A row whose per-moment enrichment FAILED is degraded even when a set:play
+    // key was recovered from the fallback (2026-11-02): its acquired_at,
+    // thumbnail, names and series are unread, so it goes to the insert-only set
+    // below, keeping its key for a never-cached moment.
+    const resolvedRows = rows
+      .filter(r => r.momentId && r.editionKey && !r.enrichFailed)
+      .map(r => ({ ...baseRow(r), edition_key: resolveEditionKey(r.editionKey) }))
+    const unresolvedRows = rows
+      .filter(r => r.momentId && (!r.editionKey || r.enrichFailed))
+      .map(r => (r.editionKey ? { ...baseRow(r), edition_key: resolveEditionKey(r.editionKey) } : baseRow(r)))
+    // When the FMV read failed, fmv_usd is unknown on every row: leave the
+    // column out of the merge write so a cached value survives.
+    if (rows.some(r => r.fmvReadFailed)) {
+      for (const row of resolvedRows) delete (row as { fmv_usd?: number | null }).fmv_usd
+    }
+
+    // Best-effort fill (the backfill walks are authoritative), but the log line
+    // is the only record it leaves, so it counts rows WRITTEN, not rows offered
+    // (2026-10-10: it said "Cached N" whether or not any chunk landed).
+    const CHUNK = 200
+    let written = 0
+    let failedChunks = 0
+    let firstError: string | null = null
+    // ⛔ A DEGRADED ROW IS INSERT-ONLY (2026-11-02). An unresolved row is one
+    // whose enrichment FAILED (no edition key), so its fmv_usd / player_name /
+    // tier / set_name / image_url are NULL because we could not read them, not
+    // because they are unknown. A PostgREST upsert overwrites every column it is
+    // given, so writing it with merge semantics nulled the good cached values of
+    // that moment — the same shape fixed for this route's editions seed on
+    // 09-25 (wallet-search-edition-seed-is-insert-only). ignoreDuplicates lets a
+    // never-cached moment still get a bare row (the metadata fill and the walks
+    // complete it) and leaves a cached one untouched. Its count is the rows the
+    // insert RETURNED, not the rows offered.
+    const writeSets: Array<{ rows: Array<ReturnType<typeof baseRow>>; insertOnly: boolean }> = [
+      { rows: resolvedRows, insertOnly: false },
+      { rows: unresolvedRows, insertOnly: true },
+    ]
+    for (const { rows: set, insertOnly } of writeSets) {
+      for (let i = 0; i < set.length; i += CHUNK) {
+        const chunk = set.slice(i, i + CHUNK)
+        if (insertOnly) {
+          const { data, error } = await (supabaseAdmin as any)
+            .from("wallet_moments_cache")
+            .upsert(chunk, { onConflict: "wallet_address,collection_id,moment_id", ignoreDuplicates: true })
+            .select("moment_id")
+          if (error) {
+            failedChunks++
+            firstError ??= error.message
+          } else {
+            written += Array.isArray(data) ? data.length : 0
+          }
+          continue
+        }
+        const { error } = await (supabaseAdmin as any)
+          .from("wallet_moments_cache")
+          .upsert(chunk, { onConflict: "wallet_address,collection_id,moment_id" })
+        if (error) {
+          failedChunks++
+          firstError ??= error.message
+        } else {
+          written += chunk.length
+        }
+      }
+    }
+    console.log(
+      `[wallet-search] Cached ${written}/${resolvedRows.length + unresolvedRows.length} moments for ${resolvedAddress} (${resolvedRows.length} with edition_key)` +
+        (failedChunks ? ` — ${failedChunks} chunk(s) failed: ${firstError}` : ""),
+    )
+    // The same NULL-only post-pass every backfill walk runs. Without it a row
+    // this route inserts for a never-walked wallet carries no league / team /
+    // tier until some walk reaches that wallet (2026-10-31: one such row was
+    // the only NULL-league Top Shot row in wmc, an hour after the #219 backfill
+    // drained the other 603k).
+    if (written > 0) {
+      const { error: fillErr } = await (supabaseAdmin as any).rpc("backfill_wmc_metadata_from_editions", {
+        p_wallet_address: resolvedAddress,
+        p_collection_id: tsCollectionId,
+      })
+      if (fillErr) console.warn(`[wallet-search] metadata fill failed: ${fillErr.message}`)
+    }
+  } catch (err) {
+    console.warn("[wallet-search] Cache upsert failed:", err instanceof Error ? err.message : String(err))
+  }
+}
+
+const walletSearchSchema = z.object({
+  // 200 is far past any Flow address (18), Solana key (44) or Dapper username; the cap
+  // bounds what a Cadence script and a resolver lookup are asked to chew (CISO 2026-11-04).
+  input: z.string().min(1, "Please enter a wallet address or username.").max(200, "That doesn't look like a wallet address or username.").transform(s => s.trim()),
+  offset: z.coerce.number().int().min(0).default(0),
+  limit: z.coerce.number().int().min(1).max(60).default(24),
+  collection: z.string().optional(),
+  // Phase 2 alias — callers can send either collection or collectionId.
+  collectionId: z.string().optional(),
+  // NBA/WNBA filter — only honored for Top Shot. Silently ignored for any
+  // other collection because league has no meaning there. Backed by
+  // wallet_moments_cache.league (NBA, WNBA, or NULL).
+  league: z.enum(["NBA", "WNBA"]).optional(),
+})
+
+// laliga_golazos collection UUID. Mirrors GOLAZOS_COLLECTION_UUID in
+// lib/chains/flow/wallet-backfill-helpers and lib/collections.ts; hardcoded here
+// (as the Pinnacle/UFC wallet routes hardcode theirs) to avoid pulling the heavy
+// Cadence backfill module into this route's bundle. Collection UUIDs never change.
+const GOLAZOS_COLLECTION_UUID = "06248cc4-b85f-47cd-af67-1855d14acd75"
+
+// Fire-and-forget: warm wallet_moments_cache for a Golazos wallet we've never
+// indexed by kicking the collection's on-chain backfill walk (which owns the
+// Cadence). Never blocks or throws into the response path; no-op without the
+// internal token. Mirrors how Top Shot / AllDay self-warm wmc on every walk —
+// Golazos has no inline walk here, so it delegates to its backfill route.
+async function triggerGolazosBackfill(req: NextRequest, wallet: string): Promise<void> {
+  const token = process.env.INGEST_SECRET_TOKEN
+  if (!token) return
+  let origin: string
+  try {
+    origin = new URL(req.url).origin
+  } catch {
+    return
+  }
+  // ⛔ DURABLE DEDUP (2026-10-10). This route is anonymous, and a wallet with no
+  // Golazos rows (any random address — it never fills) re-triggered the backfill
+  // on EVERY search. One dispatch per wallet per 6 h and 300/h globally; a
+  // counter that cannot be read skips the dispatch (fail closed).
+  // The wallet cap is bumped LAST: bumpAnonRates stops at the first refusal, so
+  // a global refusal (or a counter failure) no longer spends the wallet's one
+  // dispatch per 6 h with nothing sent.
+  const verdict = await bumpAnonRates([
+    { bucket: "golazos_backfill:global", key: "*", limit: 300, windowSecs: 3600 },
+    { bucket: "golazos_backfill:wallet", key: wallet, limit: 1, windowSecs: 6 * 3600 },
+  ])
+  if (!verdict.allowed) return
+  // Runs inside after() (the caller), so it is awaited to completion rather than
+  // left pending past the response, where Vercel may freeze the lambda before
+  // the fetch ever starts. 10 s bound: the peer keeps running server-side.
+  await fetch(`${origin}/api/wallet-backfill-golazos`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ wallet }),
+    signal: AbortSignal.timeout(10_000),
+  }).catch(() => {})
+}
+
+// Fire-and-forget: queue the Top Shot on-chain walk for a wallet whose wmc rows
+// cover fewer moments than it owns (2026-10-31). This route caches only the page
+// it serves, so a never-walked wallet stayed at ~24 rows until some cohort walk
+// reached it — and the NBA/WNBA pills skip on any unclassified owned id, so for
+// that wallet the pill did nothing. /api/wallet-backfill walks only uncached ids
+// (skip_cached defaults on), one Cadence call each against the shared Flow REST
+// budget, hence caps tighter than Golazos': one dispatch per wallet per 24 h and
+// 30/h globally. An unreadable wmc count or counter dispatches NOTHING.
+async function triggerTopShotBackfill(req: NextRequest, wallet: string, ownedCount: number): Promise<void> {
+  const token = process.env.INGEST_SECRET_TOKEN
+  if (!token || ownedCount <= 0) return
+  let origin: string
+  try {
+    origin = new URL(req.url).origin
+  } catch {
+    return
+  }
+  const tsCollectionId = await getCollectionId()
+  if (!tsCollectionId) return
+  const { count, error } = await (supabaseAdmin as any)
+    .from("wallet_moments_cache")
+    .select("moment_id", { count: "exact", head: true })
+    .eq("wallet_address", wallet)
+    .eq("collection_id", tsCollectionId)
+  if (error || typeof count !== "number") return
+  if (count >= ownedCount) return
+  const verdict = await bumpAnonRates([
+    { bucket: "topshot_backfill:global", key: "*", limit: 30, windowSecs: 3600 },
+    { bucket: "topshot_backfill:wallet", key: wallet, limit: 1, windowSecs: 24 * 3600 },
+  ])
+  if (!verdict.allowed) return
+  await fetch(`${origin}/api/wallet-backfill`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ wallet }),
+    signal: AbortSignal.timeout(10_000),
+  }).catch(() => {})
+}
+
+export async function POST(req: NextRequest) {
+  // topLevelStage is updated as the handler progresses through phases so the
+  // top-level catch can pin the failure to a specific stage instead of
+  // emitting a generic "[wallet-search] error" line that Vercel truncates
+  // before the cause is visible.
+  let topLevelStage:
+    | "parse_body"
+    | "validate"
+    | "resolve_wallet"
+    | "fetch_owned_ids"
+    | "enrich_moments"
+    | "fill_and_counts"
+    | "fmv_enrich"
+    | "acquisition_enrich"
+    | "respond"
+    = "parse_body"
+  // 2026-11-15: elapsed ms per stage, logged once per successful search, because an
+  // uncached search takes 7–14 s and log timestamps alone mis-attributed where (the
+  // per-moment failure lines are written only after both legs settle).
+  const searchStartedAt = Date.now()
+  let stageEnteredAt = searchStartedAt
+  const stageMs: Record<string, number> = {}
+  const mark = (next: typeof topLevelStage) => {
+    const now = Date.now()
+    stageMs[topLevelStage] = (stageMs[topLevelStage] ?? 0) + (now - stageEnteredAt)
+    stageEnteredAt = now
+    topLevelStage = next
+  }
+  let resolvedInput: string | null = null
+  try {
+    let body: unknown
+    try {
+      body = await req.json()
+    } catch {
+      console.log("[wallet-search] malformed JSON in request body")
+      return NextResponse.json(
+        {
+          error: "Malformed JSON in request body.",
+          rows: [],
+          summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
+        } satisfies WalletSearchResponse,
+        { status: 400 }
+      )
+    }
+    mark("validate")
+
+    if (!body || typeof body !== "object" || !("input" in body) || !(body as any).input || String((body as any).input).trim() === "") {
+      console.log("[wallet-search] missing or empty input field")
+      return NextResponse.json(
+        {
+          error: "input is required",
+          rows: [],
+          summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
+        } satisfies WalletSearchResponse,
+        { status: 400 }
+      )
+    }
+
+    const parsed = walletSearchSchema.safeParse(body)
+
+    if (!parsed.success) {
+      return NextResponse.json(
+        {
+          error: parsed.error.issues[0]?.message ?? "Invalid request.",
+          rows: [],
+          summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
+        } satisfies WalletSearchResponse,
+        { status: 400 }
+      )
+    }
+
+    // CISO 2026-11-04 (API finding 5): this route is anon-public and each call runs Cadence
+    // against the access node and service-role upserts for ANY wallet. The proxy limiter is
+    // per-lambda (a 70-request burst saw zero 429s), so an anonymous caller gets a DURABLE
+    // cap too: 120/h per IP and 3,000/h globally. A signed-in user is not capped here (the
+    // dashboard polls this route). A counter that cannot be read fails CLOSED (429) like
+    // every other anon cap — a read failure is the moment the DB least needs this load.
+    const anonCapVerdict = await (async () => {
+      let signedIn = false
+      try {
+        signedIn = !!(await getCurrentUser())
+      } catch {
+        signedIn = false
+      }
+      if (signedIn) return null
+      const ip = req.headers && typeof req.headers.get === "function" ? anonIpKey(req.headers) : null
+      return bumpAnonRates([
+        { bucket: "wallet_search:global", key: "*", limit: 3000, windowSecs: 3600 },
+        ...(ip ? [{ bucket: "wallet_search:ip", key: ip, limit: 120, windowSecs: 3600 }] : []),
+      ])
+    })()
+    if (anonCapVerdict && !anonCapVerdict.allowed) {
+      return NextResponse.json(
+        {
+          error: "Too many lookups right now. Sign in for more, or try again in a few minutes.",
+          rows: [],
+          summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
+        } satisfies WalletSearchResponse,
+        { status: 429, headers: { "Retry-After": "600" } }
+      )
+    }
+
+
+    const { input, offset, limit, league } = parsed.data
+    resolvedInput = input
+
+    // Soft-recognize Flow EVM addresses (40-hex 0x...) so Beezie-style EVM
+    // wallets don't surface as "Username not found" errors. The structure is
+    // valid, just not supported (2026-10-24: the message no longer promises
+    // EVM collections — none is scheduled; it tells the user what DOES work). Status 200 mirrors the existing
+    // rows:[] + error string contract so the UI's error renderer fires
+    // unchanged without a 4xx redirect.
+    if (detectAddressChain(input) === "evm") {
+      return NextResponse.json(
+        {
+          rows: [],
+          summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
+          error: "Flow EVM wallets aren't supported on RPC. Paste your Dapper account's Flow address (0x followed by 16 characters) or your username instead.",
+        } satisfies WalletSearchResponse,
+        { status: 200 }
+      )
+    }
+
+    // Phase 2: collectionId takes precedence over the legacy collection alias.
+    // Normalize aliases (underscores, ufc-strike, bare names) and REJECT
+    // unknown slugs — before 2026-07-07 an unrecognized collectionId silently
+    // fell through to the Top Shot walk, so "ufc-strike" returned the
+    // caller's TOP SHOT moments labeled as UFC.
+    const rawCollection = parsed.data.collectionId ?? parsed.data.collection
+    const COLLECTION_SLUG_ALIASES: Record<string, string> = {
+      "nba-top-shot": "nba-top-shot", "nba_top_shot": "nba-top-shot", "topshot": "nba-top-shot",
+      "nfl-all-day": "nfl-all-day", "nfl_all_day": "nfl-all-day", "allday": "nfl-all-day",
+      "disney-pinnacle": "disney-pinnacle", "disney_pinnacle": "disney-pinnacle", "pinnacle": "disney-pinnacle",
+      "laliga-golazos": "laliga-golazos", "laliga_golazos": "laliga-golazos", "golazos": "laliga-golazos",
+      "ufc": "ufc", "ufc-strike": "ufc", "ufc_strike": "ufc",
+    }
+    const collection = rawCollection
+      ? ownLookup(COLLECTION_SLUG_ALIASES, rawCollection.toLowerCase().trim())
+      : undefined
+    if (rawCollection && !collection) {
+      return NextResponse.json(
+        {
+          rows: [],
+          summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
+          error: `Unknown collection '${rawCollection}'. Valid: nba-top-shot, nfl-all-day, disney-pinnacle, laliga-golazos, ufc.`,
+        } satisfies WalletSearchResponse,
+        { status: 400 }
+      )
+    }
+    const isAllDay = collection === "nfl-all-day"
+    // league is only meaningful for Top Shot. For other collections wmc.league
+    // is NULL and the filter would produce 0 rows — silently drop instead.
+    const isTopShot = !collection || collection === "nba-top-shot"
+    const effectiveLeague = isTopShot ? (league ?? null) : null
+
+    // Collections with their own dedicated wallet routes shouldn't flow
+    // through here — the response shapes differ. Return an informative
+    // error that tells the UI which route to use instead. (This keeps
+    // wallet-search focused on Top Shot + AllDay without introducing
+    // shape drift for Pinnacle / Golazos / UFC.)
+    if (collection === "disney-pinnacle") {
+      return NextResponse.json(
+        {
+          rows: [],
+          summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
+          error: "Use /api/pinnacle-wallet for Disney Pinnacle wallet lookups.",
+          redirect: "/api/pinnacle-wallet",
+        } satisfies WalletSearchResponse & { redirect?: string },
+        { status: 400 }
+      )
+    }
+    if (collection === "ufc") {
+      return NextResponse.json(
+        {
+          rows: [],
+          summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
+          error: "Use /api/ufc-wallet-scan for UFC Strike wallet scans.",
+          redirect: "/api/ufc-wallet-scan",
+        } satisfies WalletSearchResponse & { redirect?: string },
+        { status: 400 }
+      )
+    }
+    if (collection === "laliga-golazos") {
+      // Golazos wallet analysis is served from wallet_moments_cache via the
+      // shared get_wallet_moments_with_fmv RPC — the same source the collection
+      // page's /api/collection-moments reads, mapped with the same
+      // serverMomentToRow() so the row shape is identical. This route does NOT
+      // walk Golazos on-chain (the Cadence walk is owned by
+      // /api/wallet-backfill-golazos); on a wmc miss we fire that backfill so a
+      // never-seen wallet populates for next time. (Was a "coming soon" stub;
+      // wmc now carries Golazos rows, so the stub was stale.)
+      let gWallet: string
+      try {
+        gWallet = await resolveWalletFromInput(input)
+      } catch (err) {
+        if (err instanceof UsernameLookupError) return usernameLookupResponse(err)
+        throw err
+      }
+
+      const { data: gData, error: gErr } = await (supabaseAdmin as any).rpc(
+        "get_wallet_moments_with_fmv",
+        {
+          p_wallet: gWallet,
+          p_sort_by: "fmv_desc",
+          p_limit: limit,
+          p_offset: offset,
+          p_player: null,
+          p_series: null,
+          p_tier: null,
+          p_collection_id: GOLAZOS_COLLECTION_UUID,
+        }
+      )
+      if (gErr) {
+        console.warn("[wallet-search] golazos wmc read failed:", gErr.message)
+        return NextResponse.json(
+          {
+            rows: [],
+            walletAddress: gWallet,
+            summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
+            error: "Failed to fetch wallet data. Please try again.",
+          } satisfies WalletSearchResponse,
+          { status: 200 }
+        )
+      }
+
+      // PostgREST wraps a RETURNS json function result in a single-element array.
+      const gResult = (Array.isArray(gData) ? gData[0] : gData) as
+        | { moments?: ServerMoment[]; total_count?: number }
+        | null
+      const gMoments = Array.isArray(gResult?.moments) ? gResult!.moments! : []
+      const gTotal = Number(gResult?.total_count ?? 0)
+      const gRows = gMoments.map((m) => serverMomentToRow(m))
+
+      // Genuine miss → warm wmc for next time. Never on a populated wallet, so a
+      // repeated lookup of a real wallet doesn't re-trigger the walk each call.
+      // after(): the cap check is two DB round-trips; work left pending past the
+      // response is not guaranteed to run on Vercel (2026-10-10 review).
+      if (gTotal === 0) after(() => triggerGolazosBackfill(req, gWallet))
+
+      return NextResponse.json(
+        {
+          // gRows is MomentRow[] (the wire shape every wallet-search consumer
+          // reads via lib/collection/types); WalletRow is the route's internal
+          // subset of it, so this is a widening, not a lie about the payload.
+          rows: gRows as unknown as WalletRow[],
+          walletAddress: gWallet,
+          summary: {
+            totalMoments: gTotal,
+            returnedMoments: gRows.length,
+            remainingMoments: Math.max(0, gTotal - offset - gRows.length),
+          },
+        } satisfies WalletSearchResponse,
+        { status: 200 }
+      )
+    }
+
+    let wallet: string
+    let ids: number[]
+    try {
+      mark("resolve_wallet")
+      wallet = await resolveWalletFromInput(input)
+      mark("fetch_owned_ids")
+      ids = isAllDay ? await getAllDayOwnedIds(wallet) : await getOwnedMomentIds(wallet)
+    } catch (err) {
+      if (err instanceof UsernameLookupError) return usernameLookupResponse(err)
+      const detail = err instanceof Error ? err.message : String(err)
+      const computationLimit = /computation limit exceeded|Error Code: 1110/i.test(detail)
+      // 2026-11-03: the computation-limit case is a KNOWN, decided limitation (#138, closed by
+      // decision 09-25: no mega-wallet id source is built), so it logs one WARN line — not the
+      // multi-KB Flow trace as an ERROR, which kept a permanent, already-triaged group at the top
+      // of every Vercel runtime-error read. Every other failure still logs the full detail.
+      if (computationLimit) {
+        console.warn("[wallet-search] owned-id read hit the Flow script computation limit (known, #138)")
+      } else {
+        console.error("[wallet-search] Failed to resolve wallet or fetch owned IDs:", detail)
+      }
+      // ⛔ "Please try again" IS A FALSE CLAIM FOR A COMPUTATION-LIMIT FAILURE.
+      // The unpaginated getIDs() below can blow Flow's per-script computation limit
+      // (production 2026-09-14: 100,134 and 217,993 against a limit of 100,000).
+      // That ceiling is a property of the WALLET and this script, not of the moment,
+      // so the retry the old copy invited could never succeed — the wallet ends up
+      // with zero cached rows, invisible to the platform, retried forever.
+      //
+      // ⚠ DO NOT RE-ADD A CAUSE TO THIS MESSAGE. The first version of this fix said
+      // "holds too many moments", which was inferred from the words "computation
+      // limit" and is FALSE: measured against mainnet the same day, a 39,955-moment
+      // wallet SUCCEEDS (HTTP 200, 1.9 MB of ids) while 0xe1f2a091f7bb5245 FAILS at
+      // 100,134. The discriminator was in the error string all along — the failing
+      // trace goes through TopShotShardedCollection, whose getIDs() walks shards —
+      // so size is not the trigger. The copy now says only what is established:
+      // WE cannot read it, it is our side, and retrying will not help.
+      //
+      // Fixing the plumbing (page getIDs() the way lib/chains/flow/allday-cadence.ts
+      // and cadence/pinnacle-wallet.ts already do) is filed separately.
+      const tooLarge = computationLimit
+      return NextResponse.json(
+        {
+          error: tooLarge
+            ? "We could not read this wallet in one pass. That is a limit on our side, not a problem with the wallet — retrying will not help."
+            : "Failed to fetch wallet data. Please try again.",
+          rows: [],
+          summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
+        } satisfies WalletSearchResponse,
+        { status: 500 }
+      )
+    }
+
+    // ids.length is read NOW: the league filter below narrows `ids`. Guarded:
+    // after() throws outside a request scope, and a fire-and-forget walk must
+    // never be able to fail the search it rides on.
+    if (!isAllDay) {
+      const ownedCount = ids.length
+      const wmcWallet = isWalletAddress(wallet) ? wallet : ensureFlowPrefix(wallet)
+      try {
+        after(() => triggerTopShotBackfill(req, wmcWallet, ownedCount))
+      } catch (err) {
+        console.warn("[wallet-search] backfill trigger not scheduled:", err instanceof Error ? err.message : String(err))
+      }
+    }
+
+    // Rewards: a logged-in user scouting a collector wallet earns scout_wallet
+    // (daily_cap 5). Session-resolved + best-effort; this route is public, so
+    // anon lookups (no session) are simply skipped. Never block the lookup.
+    try {
+      const scout = await getCurrentUser()
+      if (scout) await awardPoints(scout.id, "scout_wallet")
+    } catch { /* rewards must never break wallet-search */ }
+
+    // League filter for Top Shot: intersect on-chain owned ids with wmc rows
+    // for this wallet+collection where league matches. ⚠ `league` is written by
+    // the METADATA FILL (`backfill_wmc_metadata_from_editions`, after each walk,
+    // via `topshot_league_for`) — NOT by this route's upsert, which has only
+    // written keys + serials since 2026-05 (#219: 603k rows sat NULL for five
+    // months and this filter dropped every one of them under either pill). A
+    // row whose edition has no set_name stays NULL. Skipped entirely when the
+    // wmc lookup errors so a transient DB blip doesn't show a false-empty
+    // wallet.
+    //
+    // ⛔ ABSENCE OF A LEAGUE ROW IS NOT "NOT IN THIS LEAGUE" (2026-10-31). The
+    // walk read only `league = <pill>` rows, so an owned moment with NO wmc row
+    // (a wallet no backfill has walked — this route caches only the page it
+    // served) or a NULL league was silently dropped: a first-time search of a
+    // never-walked wallet answered "0 NBA moments". The walk now reads every
+    // CLASSIFIED row (either league) and filters only when every owned id is
+    // classified; any unclassified owned id skips the filter (show all), the
+    // same policy as a read error. Measured that day: 1 of 1,623,615 Top Shot
+    // wmc rows had a NULL league, so the skip is reached only by genuinely
+    // unwalked wallets, not by the by-design NULLs.
+    if (effectiveLeague) {
+      try {
+        const tsCollectionId = await getCollectionId()
+        if (tsCollectionId) {
+          const walletAddr = wallet.startsWith("0x") ? wallet : "0x" + wallet
+          // Page through .range() windows: a whale can own > 1,000 moments in one
+          // league, and PostgREST clamps a bare .limit() to 1,000 — which would
+          // drop the overflow from the `allowed` set and hide moments the user
+          // actually owns. On any page error, abandon the filter entirely (show
+          // all) so a transient DB blip never renders a false-empty wallet.
+          const leagueById = new Map<string, string>()
+          const PAGE = 1000
+          let leagueErr: { message?: string } | null = null
+          // ⚠ The 60,000 ceiling is a runaway guard, not a size: the largest Top
+          // Shot wallet held 61,512 moments (2026-10-09). Leaving the loop with
+          // every page full means `allowed` is a PREFIX, and filtering on it
+          // would hide owned moments. Treat that exit like an error: no filter.
+          let leagueComplete = false
+          for (let from = 0; from < 60000; from += PAGE) {
+            const { data: leagueIds, error } = await (supabaseAdmin as any)
+              .from("wallet_moments_cache")
+              .select("moment_id, league")
+              .eq("wallet_address", walletAddr)
+              .eq("collection_id", tsCollectionId)
+              .not("league", "is", null)
+              .order("moment_id", { ascending: true })
+              .range(from, from + PAGE - 1)
+            if (error) { leagueErr = error; break }
+            const pageRows: Array<{ moment_id: unknown; league: unknown }> = Array.isArray(leagueIds) ? leagueIds : []
+            for (const r of pageRows) {
+              if (typeof r.league === "string" && r.league) leagueById.set(String(r.moment_id), r.league)
+            }
+            if (pageRows.length < PAGE) { leagueComplete = true; break }
+          }
+          if (!leagueErr && !leagueComplete) {
+            leagueErr = { message: `league set exceeded the ${leagueById.size}-row read ceiling; filter skipped` }
+          }
+          if (!leagueErr) {
+            const unclassified = ids.filter((id) => !leagueById.has(String(id))).length
+            if (unclassified > 0) {
+              leagueErr = { message: `${unclassified}/${ids.length} owned moments have no classified wmc row; filter skipped` }
+            }
+          }
+          if (!leagueErr) {
+            ids = ids.filter((id) => leagueById.get(String(id)) === effectiveLeague)
+          } else {
+            console.warn("[wallet-search] league filter wmc lookup failed:", leagueErr.message)
+          }
+        }
+      } catch (err) {
+        console.warn("[wallet-search] league filter threw:", err instanceof Error ? err.message : String(err))
+      }
+    }
+
+    const slice = ids.slice(offset, offset + limit)
+    mark("enrich_moments")
+
+    // One batched chain read for the page (see getMomentMetadataBatch). Started
+    // before the per-moment loop so it overlaps the GraphQL leg; each moment
+    // awaits its own entry. Never created for an All Day page (#142).
+    const metaBatchP = !isAllDay && slice.length > 0 ? getMomentMetadataBatch(wallet, slice) : null
+    // Parallel names, read only when the page holds a parallel. A failed read
+    // leaves the name null (never "Parallel N"); the key is still correct.
+    const subNamesP: Promise<SubeditionNames | null> = metaBatchP
+      ? metaBatchP.then(
+          async (m) => {
+            if (![...m.values()].some((v) => (toNum(v.sub) ?? 0) > 0)) return null
+            const r = await loadTopshotSubeditionNames()
+            return r.ok ? r.names : null
+          },
+          () => null,
+        )
+      : Promise.resolve(null)
+    const metaFor = async (id: number): Promise<Record<string, string>> => {
+      if (!metaBatchP) throw new Error("no metadata read")
+      const meta = (await metaBatchP).get(String(id))
+      if (!meta) throw new Error("no nft")
+      return meta
+    }
+
+    const baseRows = (await mapWithConcurrency(slice, 8, async (id) => {
+      // INVARIANT_SAFE: catch per-moment errors so one bad moment doesn't crash the whole wallet
+      // `stage` tracks which sub-step failed so Vercel logs can identify
+      // whether GQL, Flow metadata, or row assembly blew up.
+      let stage: "enrich-gql" | "flow-metadata" | "assemble" = "enrich-gql"
+      // ⚠ allSettled, NOT all. `Promise.all` rejects on the first failure and
+      // DISCARDS whatever the sibling call returned, so the catch below had to
+      // re-fetch BOTH legs to rebuild the degraded row — two enrichment
+      // round-trips per moment whenever either one failed.
+      //
+      // Measured 2026-09-13, while Top Shot GraphQL was answering 530/429 for
+      // 100% of moments: `/api/wallet-search` averaged 33,559 ms (max 35,505)
+      // and failed 51 of 60 daily smoke runs against cron-job.org's 30 s client
+      // cap, which is why `RPC Smoke Concierge Daily` had no successful run in
+      // retained history. The job NAME misleads — no concierge probe is
+      // implicated; this route alone exceeds the cap.
+      //
+      // ⛔ Dropping the re-fetch is not dropping a retry. `withRetry` owns retry
+      // policy (one 2 s-delayed replay, 429 only) and `topshotGraphql` owns
+      // backoff; the second call was an artifact of the discarded sibling, not a
+      // deliberate second attempt — so on a 429 the old shape slept 2 s TWICE
+      // per moment for nothing. Settling once keeps every value the attempt did
+      // obtain and halves the load this route puts on an upstream that is down.
+      //
+      // ⛔ Both legs are TOP SHOT lookups. On an All Day request `id` is an All
+      // Day id, and a moment id is unique only within a collection (#142): the
+      // Top Shot metadata script cannot find it ("no nft"), and Top Shot GraphQL,
+      // when it answers, returns a DIFFERENT moment that happens to share the
+      // number. So an All Day id never goes to either leg; the row takes the
+      // degraded shape below, which is what it rendered as anyway.
+      const notTopShot = new Error("Top Shot enrichment does not apply to an All Day moment id")
+      const [gqlSettled, metaSettled] = isAllDay
+        ? ([
+            { status: "rejected", reason: notTopShot },
+            { status: "rejected", reason: notTopShot },
+          ] as [PromiseSettledResult<Awaited<ReturnType<typeof fetchMomentGraphQL>>>, PromiseSettledResult<Record<string, string>>])
+        : await Promise.allSettled([
+            fetchMomentGraphQL(String(id)),
+            metaFor(id),
+          ])
+      const subNames = await subNamesP
+      try {
+      if (gqlSettled.status === "rejected") { stage = "enrich-gql"; throw gqlSettled.reason }
+      if (metaSettled.status === "rejected") { stage = "flow-metadata"; throw metaSettled.reason }
+      const gql = gqlSettled.value
+      const meta = metaSettled.value
+      stage = "assemble"
+
+      const serial = toNum(meta.serial)
+      // Circulation is NOT read here (the chain's count is the whole family) —
+      // batchEnrichFmvAndAsks / fillFromWalletCache supply it, and recompute
+      // the serial traits that depend on it.
+      const mint: number | null = null
+      const setId = toNum(meta.setID) ?? toNum(gql.setID)
+      const playId = toNum(meta.playID) ?? toNum(gql.playID)
+      const sub = toNum(meta.sub)
+      const editionKey = chainEditionKey(setId, playId, sub)
+      const normalizedSet = normalizeSetName(meta.setName ?? "Unknown Set")
+      // A parallel whose name is unknown is null, never "Base".
+      const normalizedParallel =
+        sub !== null && sub > 0 ? subeditionName(subNames, sub) : normalizeParallel("")
+      const graphqlBadgeTypes = gql.badges.map((b) => b.type).filter(Boolean)
+
+      return {
+        momentId: String(id),
+        playerName: meta.player ?? "Unknown Player",
+        team: meta.team ?? undefined,
+        league: gql.league ?? undefined,
+        setName: normalizedSet,
+        series: meta.series ?? undefined,
+        tier: gql.tier ?? undefined,
+        serial: serial ?? undefined,
+        mintSize: undefined,
+        serialNumber: serial ?? null,
+        circulationCount: null,
+        officialBadges: graphqlBadgeTypes,
+        specialSerialTraits: specialSerialTraits(serial, mint, graphqlBadgeTypes),
+        isLocked: gql.isLocked,
+        bestAsk: gql.bestAsk,
+        lowAsk: gql.lowAsk,
+        bestOffer: gql.bestOffer,
+        lastPurchasePrice: gql.lastPurchasePrice,
+        acquiredAt: gql.acquiredAt,
+        editionKey,
+        parallel: normalizedParallel,
+        subedition: normalizedParallel,
+        flowId: gql.flowId,
+        thumbnailUrl: buildThumbnailUrl(gql.flowId),
+        tssPoints: gql.tssPoints,
+      } as WalletRow
+      } catch (momentErr: any) {
+        const reason = ((momentErr?.message ?? "unknown") as string).slice(0, 80)
+        const walletShort = wallet ? wallet.slice(0, 10) : "none"
+        // An All Day id skipped the Top Shot legs on purpose — not a failure; nor is a
+        // moment skipped by the open dead-host breaker (one line per moment was 24 a search).
+        if (!isAllDay && reason !== GQL_BREAKER_REASON.slice(0, 80)) console.warn(
+          `[wallet-search] moment-fail momentId=${id} ` +
+            `wallet=${walletShort} ` +
+            `stage=${stage} ` +
+            `reason=${reason}`
+        );
+        // ⭐ No re-fetch: whatever the single attempt above obtained is reused,
+        // and a leg that failed contributes nothing — exactly what its old
+        // `.catch()` fallback value did, at half the upstream cost.
+        const meta =
+          metaSettled.status === "fulfilled"
+            ? metaSettled.value
+            : ({} as Record<string, string>);
+        const gqlFallback: any =
+          gqlSettled.status === "fulfilled"
+            ? gqlSettled.value
+            : { flowId: null, setID: null, playID: null };
+        const setIdFb = toNum(meta.setID) ?? toNum(gqlFallback.setID);
+        const playIdFb = toNum(meta.playID) ?? toNum(gqlFallback.playID);
+        // Subedition-aware like the success path. Without the chain read there is
+        // no `sub`, so the key is the base `set:play` — as it always was here.
+        const editionKeyFb = chainEditionKey(setIdFb, playIdFb, toNum(meta.sub));
+        return {
+          momentId: String(id),
+          playerName: meta.player || "Unknown (error loading)",
+          team: meta.team || undefined,
+          // 2026-11-15: normalised exactly as the success path does. With the GraphQL
+          // host dead every Top Shot row takes THIS branch, and the raw chain name
+          // "Base Set6" reached 28 of 264 sampled production rows.
+          setName: normalizeSetName(meta.setName) || "Unknown Set",
+          series: meta.series || undefined,
+          serial: toNum(meta.serial) ?? undefined,
+          mintSize: undefined,
+          serialNumber: toNum(meta.serial) ?? null,
+          circulationCount: null,
+          // ⛔ NOT `[]` / `false`. This block runs BECAUSE the read failed, so
+          // these are UNKNOWN, and an empty array or a `false` is indistinguishable
+          // from a measured "this moment has no badges / is not locked". Measured
+          // 2026-09-13: Top Shot GraphQL was answering 530 for 100% of moments, so
+          // every Top Shot row in wallet search took this path and the table
+          // rendered LOCKED = "No" on evidence that nothing was read.
+          officialBadges: undefined,
+          specialSerialTraits: undefined,
+          isLocked: undefined,
+          enrichFailed: true,
+          bestAsk: null,
+          lowAsk: null,
+          bestOffer: null,
+          lastPurchasePrice: null,
+          acquiredAt: null,
+          editionKey: editionKeyFb,
+          // The chain read (not the dead GraphQL leg) supplies the subedition, so a
+          // parallel keeps its name here too; a base or unread row stays null.
+          parallel: (toNum(meta.sub) ?? 0) > 0 ? subeditionName(subNames, toNum(meta.sub)!) : null,
+          subedition: (toNum(meta.sub) ?? 0) > 0 ? subeditionName(subNames, toNum(meta.sub)!) : null,
+          flowId: gqlFallback.flowId ?? null,
+          thumbnailUrl: null,
+          tssPoints: null,
+        } as WalletRow;
+      }
+    }))
+
+    mark("fill_and_counts")
+    // Recover what the dead Top Shot host used to supply, from the database.
+    // Runs BEFORE the per-edition tally below so `locked` counts see the
+    // recovered readings. Never throws: a failure here must not cost the
+    // caller the rows it already has.
+    try {
+      const wmcCollectionId = await getCollectionId()
+      // Top Shot cache only — an All Day id would read another collection's row (#142).
+      if (wmcCollectionId && !isAllDay) await fillFromWalletCache(baseRows, wallet, wmcCollectionId)
+    } catch (e) {
+      console.warn(
+        `[wallet-search] wmc fill threw: ${e instanceof Error ? e.message : String(e)}`,
+      )
+    }
+
+    // ⚠ A degraded row with NO edition key has no identity to count by: its scope
+    // key falls back to set + player, and every degraded row shares the same
+    // placeholder pair, so N unrelated moments read "You hold N of this edition"
+    // (2026-11-07 review). Such a row counts as itself only (owned 1 renders no
+    // multiplier) — lib/wallet-search/seed-edition.ts names the placeholders.
+    const uncountable = (row: WalletRow) => !row.editionKey && !isSeedableRow({ ...row, editionKey: "x" })
+    const editionCounts = new Map<string, { owned: number; locked: number }>()
+    for (const row of baseRows) {
+      if (uncountable(row)) continue
+      const key = buildEditionScopeKey({
+        editionKey: row.editionKey,
+        setName: row.setName,
+        playerName: row.playerName,
+        parallel: row.parallel,
+        subedition: row.subedition,
+      })
+      const current = editionCounts.get(key) ?? { owned: 0, locked: 0 }
+      current.owned += 1
+      if (row.isLocked) current.locked += 1
+      editionCounts.set(key, current)
+    }
+
+    const rowsWithCounts = baseRows.map((row) => {
+      const key = buildEditionScopeKey({
+        editionKey: row.editionKey,
+        setName: row.setName,
+        playerName: row.playerName,
+        parallel: row.parallel,
+        subedition: row.subedition,
+      })
+      const counts = (uncountable(row) ? undefined : editionCounts.get(key)) ?? { owned: 1, locked: row.isLocked ? 1 : 0 }
+      return { ...row, editionsOwned: counts.owned, editionsLocked: counts.locked }
+    })
+
+    // "You hold N" over the WHOLE wallet, not this page (2026-11-08): copies of
+    // one edition split across pages under-counted. Top Shot only (an All Day id
+    // would read another collection's row, #142); a failed read keeps the page
+    // counts, and the result is max(page, whole) so it can never be lower.
+    let rowsCounted = rowsWithCounts
+    if (!isAllDay) {
+      try {
+        const cid = await getCollectionId()
+        if (cid) {
+          const whole = await wholeWalletEditionCounts(
+            supabaseAdmin,
+            wallet,
+            cid,
+            rowsWithCounts.filter((r) => !uncountable(r)).map((r) => String(r.momentId)),
+            ids,
+          )
+          if (whole) {
+            rowsCounted = rowsWithCounts.map((r) => {
+              const w = whole.get(String(r.momentId))
+              return w !== undefined && w > (r.editionsOwned ?? 0) ? { ...r, editionsOwned: w } : r
+            })
+          } else {
+            console.warn("[wallet-search] whole-wallet edition counts unavailable; page counts kept")
+          }
+        }
+      } catch (e) {
+        console.warn("[wallet-search] whole-wallet edition counts threw:", e instanceof Error ? e.message : String(e))
+      }
+    }
+
+    // Batch-enrich FMV from fmv_snapshots + low ask from cached_listings
+    mark("fmv_enrich")
+    const fmvEnriched = await batchEnrichFmvAndAsks(rowsCounted)
+
+    // Enrich with acquisition method data
+    mark("acquisition_enrich")
+    // ⛔ Everything from here to the response is keyed to TOP SHOT: the wmc
+    // cache writes below pin the Top Shot collection id, and the acquisition
+    // reads/writes key on a bare moment id. On an All Day request those ids are
+    // All Day ids, so each one read or wrote a Top Shot row for a moment the
+    // wallet does not hold on Top Shot. From 2026-09-07 every All Day collection
+    // page load wrote its 50 ids into the Top Shot cache as nameless
+    // `edition_key IS NULL` "Unknown Set" rows (1,681 by 09-29).
+    const rows = isAllDay ? fmvEnriched : await enrichWithAcquisitionData(fmvEnriched, wallet)
+
+    // Fire-and-forget — progressively reclassify unknown acquisitions
+    if (!isAllDay) keepAlive(progressivelyClassify(rows, wallet))
+
+    // ⚠ null, not 0, when no row carries a measured figure (2026-11-07 review):
+    // every degraded row has tssPoints null, and `?? 0` summed them into a
+    // measured-looking "0 TSS points" (CLAUDE.md: `?? 0` is a fabricated value).
+    const measuredTss = rows.filter((r) => typeof r.tssPoints === "number")
+    const totalTssPoints = measuredTss.length === 0
+      ? null
+      : measuredTss.reduce((sum, r) => sum + (r.tssPoints as number), 0)
+
+    // Fire-and-forget — seeds all editions regardless of price
+    keepAlive(
+      getCollectionId().then((collectionId) =>
+        collectionId && !isAllDay ? seedEditionsToSupabase(rows, collectionId) : undefined,
+      ),
+    )
+
+    // Fire-and-forget — upsert wallet moments into cache for fallback
+    if (!isAllDay) keepAlive(upsertWalletMomentsCache(wallet, rows))
+
+    // Fire-and-forget — persist cost basis from wallet-search purchase data
+    const acquisitionRows = baseRows
+      .filter((r: WalletRow) => r.lastPurchasePrice && r.lastPurchasePrice > 0 && r.flowId)
+      .map((r: WalletRow) => ({
+        nft_id: r.flowId as string,
+        wallet: wallet.startsWith("0x") ? wallet : "0x" + wallet,
+        buy_price: r.lastPurchasePrice as number,
+        acquired_date: r.acquiredAt || new Date().toISOString(),
+        acquired_type: 1,
+        fmv_at_acquisition: (r as any).fmv ?? null,
+        transaction_hash: "ws:" + r.flowId,
+        source: "wallet_search",
+      }))
+    if (acquisitionRows.length > 0) {
+      keepAlive((supabaseAdmin as any)
+        .from("moment_acquisitions")
+        .upsert(acquisitionRows, { onConflict: "nft_id,wallet,transaction_hash", ignoreDuplicates: true })
+        .then(({ error }: { error: any }) => {
+          if (error && !String(error.message ?? "").includes("duplicate")) {
+            console.warn("[wallet-search] Cost basis write error:", error.message)
+          }
+        }))
+    }
+
+    // Second pass — fill in cost basis from the sales table for moments that
+    // did not carry a lastPurchasePrice on the GQL response. The most recent
+    // sale of an nft_id is, by definition, the buy that put the moment into
+    // the current owner's collection.
+    const missingCostBasis = baseRows
+      .filter((r: WalletRow) => r.flowId && (!r.lastPurchasePrice || r.lastPurchasePrice <= 0))
+      .map((r: WalletRow) => r.flowId as string)
+      .filter(Boolean)
+
+    if (missingCostBasis.length > 0) {
+      keepAlive((async () => {
+        try {
+          const { data: salesRows } = await (supabaseAdmin as any)
+            .from("sales")
+            .select("nft_id, price_usd, sold_at, seller_address, transaction_hash")
+            .in("nft_id", missingCostBasis.slice(0, 200))
+            .gt("price_usd", 0)
+            .order("sold_at", { ascending: false })
+
+          if (!salesRows || salesRows.length === 0) return
+
+          const latestSaleByNft = new Map<string, any>()
+          for (const row of salesRows) {
+            if (!latestSaleByNft.has(row.nft_id)) latestSaleByNft.set(row.nft_id, row)
+          }
+
+          const walletAddr = wallet.startsWith("0x") ? wallet : "0x" + wallet
+          const salesAcquisitions = Array.from(latestSaleByNft.entries()).map(([nftId, sale]) => ({
+            nft_id: nftId,
+            wallet: walletAddr,
+            buy_price: sale.price_usd,
+            acquired_date: sale.sold_at,
+            acquired_type: 1,
+            fmv_at_acquisition: null,
+            seller_address: sale.seller_address ?? null,
+            transaction_hash: sale.transaction_hash ?? "backfill:" + nftId,
+            source: "sales_backfill",
+          }))
+
+          if (salesAcquisitions.length === 0) return
+
+          const { error } = await (supabaseAdmin as any)
+            .from("moment_acquisitions")
+            .upsert(salesAcquisitions, { onConflict: "nft_id,wallet,transaction_hash", ignoreDuplicates: true })
+
+          if (error && !String(error.message ?? "").includes("duplicate")) {
+            console.warn("[wallet-search] Sales backfill write error:", error.message)
+          } else {
+            console.log("[wallet-search] Sales backfill: wrote " + salesAcquisitions.length + " acquisitions")
+          }
+        } catch (e) {
+          console.warn("[wallet-search] Sales backfill exception:", e instanceof Error ? e.message : String(e))
+        }
+      })())
+    }
+
+    // Acquisition stats (non-blocking — fail silently if missing)
+    let acquisitionStats: AcquisitionStats | null = null
+    try {
+      const walletAddrForStats = wallet.startsWith("0x") ? wallet : "0x" + wallet
+      const acqParams: Record<string, any> = { p_wallet: walletAddrForStats }
+      const collectionUuid = await getCollectionIdForSlug(collection)
+      // No id (an unmapped slug or a failed lookup) must not fall through to an
+      // UNSCOPED call: that answers every collection's stats under this one's name.
+      if (!collectionUuid) throw new Error("collection id unresolved")
+      acqParams.p_collection_id = collectionUuid
+      const { data: acqRaw, error: acqErr } = await (supabaseAdmin as any).rpc("get_acquisition_stats", acqParams)
+      if (!acqErr && acqRaw) {
+        const result = (Array.isArray(acqRaw) ? acqRaw[0] : acqRaw) as { breakdown?: Array<{ method: string; count: number; total_spent?: number }>; total_moments?: number; total_spent?: number; locked_count?: number }
+        const counts = bucketAcquisitionCounts(result?.breakdown)
+        acquisitionStats = {
+          pack_pull_count: counts.pack_pull,
+          marketplace_count: counts.marketplace,
+          challenge_reward_count: counts.challenge_reward,
+          gift_count: counts.gift,
+          trade_count: counts.trade,
+          total_count: Number(result?.total_moments ?? 0),
+          locked_count: Number(result?.locked_count ?? 0),
+          total_spent: Number(result?.total_spent ?? 0),
+        }
+      }
+    } catch (err) {
+      console.log("[wallet-search] acquisition-stats lookup failed:", err instanceof Error ? err.message : String(err))
+    }
+
+    mark("respond")
+    console.log(
+      `[wallet-search] timing total=${Date.now() - searchStartedAt}ms ` +
+        Object.entries(stageMs).map(([k, v]) => `${k}=${v}ms`).join(" ") +
+        ` moments=${rows.length}`,
+    )
+    return NextResponse.json({
+      rows,
+      walletAddress: wallet,
+      summary: {
+        totalMoments: ids.length,
+        returnedMoments: rows.length,
+        remainingMoments: Math.max(0, ids.length - (offset + rows.length)),
+        totalTssPoints,
+      },
+      acquisitionStats,
+    } satisfies WalletSearchResponse)
+  } catch (e) {
+    const message = cleanErrorMessage(e)
+    // Structured single-line log so a single Vercel-dashboard grep tells the
+    // whole story next time wallet-search 500s. Vercel truncates after ~50
+    // chars on filtered searches; keeping it on one console.log line means
+    // the headline carries stage + input + cause.
+    try {
+      const errCode =
+        (e && typeof e === "object" && "code" in (e as any) ? String((e as any).code) : null) ??
+        (e instanceof Error && (e as any).cause && typeof (e as any).cause === "object" && "code" in ((e as any).cause)
+          ? String(((e as any).cause as any).code)
+          : null)
+      const errName = e instanceof Error ? e.name : null
+      const rawMsg = e instanceof Error ? e.message : String(e)
+      console.log(
+        "[wallet-search] error " +
+          JSON.stringify({
+            stage: topLevelStage,
+            input: resolvedInput,
+            error_message: rawMsg.slice(0, 240),
+            error_code: errCode,
+            error_name: errName,
+          })
+      )
+    } catch { /* logging is best-effort */ }
+    return NextResponse.json(
+      {
+        rows: [],
+        summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
+        error: message,
+      } satisfies WalletSearchResponse,
+      { status: 500 }
+    )
+  }
+}

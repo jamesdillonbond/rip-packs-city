@@ -1,0 +1,18 @@
+-- Applied to prod via Supabase MCP on 2026-07-27. Committed here for parity.
+--
+-- Replaced candy_pack_market's sealed/opened split with columns we can PROVE.
+-- The first full DAS walk settled it: is_burnt is FALSE on all 2,501 pack
+-- assets, so opening a Candy pack does not burn it — publishing
+-- sealed_supply = 2,501 would have claimed every pack ever made is still
+-- sealed while ~7,665 cards sit in collector wallets. An opened pack returns to
+-- the treasury, so treasury_held (2,230) mixes unreleased Drop-3 inventory with
+-- consumed packs and the chain cannot separate them. collector_held (271 across
+-- 108 wallets) is the honest supply signal.
+--
+-- Also surfaces duplicate_serials: serials run 1..2500 with ONE duplicate (#318,
+-- two distinct mints, both treasury-held) which is why 2,501 assets exist for a
+-- declared supply of 2,500. Candy-side mint artifact, not an ingest bug.
+--
+-- REVERT: restore the definition from audit_20260727_candy_pack_market_view.
+-- (Full DDL as applied is reproduced in that MCP migration.)
+SELECT 1;

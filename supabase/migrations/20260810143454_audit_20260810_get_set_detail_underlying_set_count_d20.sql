@@ -1,0 +1,120 @@
+-- audit_20260810_get_set_detail_underlying_set_count_d20
+--
+-- Deep-audit register D20: 299 sets collapse into merged entity pages, but the
+-- set page's "Variants merged" banner keys on set_name_variants.length > 1 — i.e.
+-- only fires when the merged sets have DIFFERENT spellings. The big merges are
+-- name-IDENTICAL seasonal repeats (e.g. AllDay "Draw It Up" = 10 sets across
+-- Series 3-9, one variant name), so the banner is silent on ~every real merge:
+-- measured AllDay 0/81, TS 2/35.
+--
+-- Fix: expose the UNDERLYING SET COUNT (the only key complete by construction —
+-- register measured season-span misses half of AllDay). Computed directly from
+-- the tiny `sets` table (914 rows total) so no MV / refresh_sets_summary() change
+-- is needed. Additive field only; all existing outputs byte-identical. Pinnacle
+-- has no `sets` rows so it returns 0 (banner stays off, same as today).
+--
+-- Revert: CREATE OR REPLACE from the pre-fix body (drop the count block + field).
+
+CREATE OR REPLACE FUNCTION public.get_set_detail(p_collection_id uuid, p_set_slug text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ SET statement_timeout TO '8s'
+AS $function$
+DECLARE
+  v_pinnacle_uuid CONSTANT uuid := '7dd9dd11-e8b6-45c4-ac99-71331f959714';
+  v_set       RECORD;
+  v_fmv_total numeric;
+  v_floor_total numeric;
+  v_editions_with_fmv int;
+  v_edition_count int;
+  v_collection_slug text;
+  v_underlying_set_count int;
+BEGIN
+  SELECT * INTO v_set
+  FROM sets_summary
+  WHERE collection_id = p_collection_id
+    AND set_slug = p_set_slug;
+
+  IF v_set IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  SELECT slug INTO v_collection_slug FROM collections WHERE id = p_collection_id;
+
+  -- The per-edition latest-FMV rollup is the only expensive read here. On the
+  -- largest sets it can exceed the request statement budget cold and would
+  -- otherwise error the whole page (Sentry JAVASCRIPT-NEXTJS-22). Catch that
+  -- cancellation and degrade the header stats to NULL (rendered "-") instead of
+  -- throwing; normal-sized sets finish in a few ms and never trip this.
+  BEGIN
+    IF p_collection_id = v_pinnacle_uuid THEN
+      -- Render-level (per-pin), matching the get_set_editions grid. Joined by
+      -- btrim(set_name) to defuse the catalog leading-space quirk.
+      SELECT
+        COUNT(*),
+        SUM(pc.fmv_usd)                                  FILTER (WHERE pc.fmv_usd > 0),
+        SUM(COALESCE(pc.floor_ask, pc.fmv_usd))          FILTER (WHERE COALESCE(pc.floor_ask, pc.fmv_usd) > 0),
+        COUNT(pc.fmv_usd)                                FILTER (WHERE pc.fmv_usd > 0)
+      INTO v_edition_count, v_fmv_total, v_floor_total, v_editions_with_fmv
+      FROM pinnacle_catalog pc
+      WHERE btrim(pc.set_name) = ANY (SELECT btrim(x) FROM unnest(v_set.set_name_variants) x);
+    ELSE
+      SELECT
+        COUNT(*),
+        SUM(fmv.fmv_usd)                                          FILTER (WHERE fmv.fmv_usd > 0),
+        SUM(COALESCE(fmv.floor_price_usd, fmv.fmv_usd))           FILTER (WHERE COALESCE(fmv.floor_price_usd, fmv.fmv_usd) > 0),
+        COUNT(fmv.fmv_usd)                                        FILTER (WHERE fmv.fmv_usd > 0)
+      INTO v_edition_count, v_fmv_total, v_floor_total, v_editions_with_fmv
+      FROM editions e
+      LEFT JOIN LATERAL (
+        SELECT fmv_usd, floor_price_usd
+        FROM fmv_snapshots
+        WHERE edition_id = e.id
+        ORDER BY computed_at DESC
+        LIMIT 1
+      ) fmv ON true
+      WHERE e.collection_id = p_collection_id
+        AND e.set_name = ANY(v_set.set_name_variants)
+        AND e.thumbnail_url IS NOT NULL;
+    END IF;
+  EXCEPTION WHEN query_canceled THEN
+    -- Rollup blew the request statement budget: return the header with NULL stats
+    -- (page shows "-") rather than throwing the whole page away.
+    v_edition_count := NULL;
+    v_fmv_total := NULL;
+    v_floor_total := NULL;
+    v_editions_with_fmv := NULL;
+  END;
+
+  -- D20: how many underlying `sets` rows merged into this slug. Complete-by-
+  -- construction merge signal (name-identical seasonal repeats included, which
+  -- set_name_variants misses). Reads the 914-row `sets` table — trivially cheap.
+  -- Pinnacle has no `sets` rows → 0 (page keys the banner on > 1).
+  SELECT count(*) INTO v_underlying_set_count
+  FROM sets s
+  WHERE s.collection_id = p_collection_id
+    AND s.name::text = ANY(v_set.set_name_variants);
+
+  RETURN jsonb_build_object(
+    'collection_id',       v_set.collection_id,
+    'collection_slug',     v_collection_slug,
+    'set_slug',            v_set.set_slug,
+    'set_name',            v_set.set_name,
+    'set_name_variants',   v_set.set_name_variants,
+    'underlying_set_count', v_underlying_set_count,
+    'edition_count',       v_edition_count,
+    'editions_with_fmv',   v_editions_with_fmv,
+    'total_circulation',   v_set.total_circulation,
+    'tiers_present',       v_set.tiers_present,
+    'min_series',          v_set.min_series,
+    'max_series',          v_set.max_series,
+    'first_minted_at',     v_set.first_minted_at,
+    'last_updated_at',     v_set.last_updated_at,
+    'fmv_total_usd',       v_fmv_total,
+    'floor_total_usd',     v_floor_total,
+    'summary_computed_at', v_set.computed_at
+  );
+END;
+$function$;

@@ -1,0 +1,675 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
+import { NextRequest } from "next/server"
+import {
+  makeInstrumentedSupabaseFixture,
+  installFetchMock,
+  jsonRoute,
+  type FetchStub,
+} from "./helpers/route-harness"
+import type { ScriptTurn } from "./helpers/anthropic-fixture"
+
+// Concierge TOOL-ARM coverage: drives individual executeTool branches through
+// the real loop and asserts on the tool_result JSON the handler feeds back to
+// the model (captured from the second messages.create call) plus the side
+// effects (Supabase writes, self-API fetches, escalation pages). Complements
+// the loop-mechanics tests (api-support-chat-tool-loop) and streaming tests.
+
+const A = vi.hoisted(() => ({
+  state: { script: [] as ScriptTurn[], cursor: 0 },
+  createCalls: [] as Array<{ messages: Array<{ role: string; content: unknown }> }>,
+  sb: null as unknown,
+  // When set, deriveIdentity sees a signed-in user with this email; the
+  // allow_list fixture then supplies ownerKey/userWallet.
+  authedEmail: null as string | null,
+}))
+
+vi.mock("next/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("next/server")>()
+  return { ...actual, after: () => {} }
+})
+// The reader's session cookie, which the watchlist/alerts tools forward to the
+// cookie-authed self-API (null = no request scope, e.g. a bot DM).
+const H = vi.hoisted(() => ({ cookie: "sb-access-token=reader" as string | null }))
+vi.mock("next/headers", () => ({
+  headers: async () => new Headers(H.cookie ? { cookie: H.cookie } : {}),
+}))
+vi.mock("@/lib/auth/supabase-server", () => ({
+  getSupabaseServer: async () => ({
+    auth: {
+      getUser: async () =>
+        A.authedEmail
+          ? { data: { user: { id: "user-1", email: A.authedEmail } }, error: null }
+          : { data: { user: null }, error: null },
+    },
+  }),
+}))
+vi.mock("@/lib/pro-tier", () => ({
+  checkFeatureQuota: async () => ({ allowed: true, plan: "pro", daily_limit: 200 }),
+  recordFeatureUsage: async () => {},
+}))
+vi.mock("@supabase/supabase-js", () => ({
+  createClient: () =>
+    new Proxy({}, { get: (_t, prop) => (A.sb as Record<PropertyKey, unknown>)[prop] }),
+}))
+vi.mock("@anthropic-ai/sdk", async () => {
+  const { buildAnthropicClass } = await import("./helpers/anthropic-fixture")
+  const Base = buildAnthropicClass(A.state) as new () => {
+    messages: { create: (args: unknown) => Promise<unknown>; stream: (args: unknown) => unknown }
+  }
+  return {
+    default: class {
+      messages = (() => {
+        const inner = new Base().messages
+        return {
+          create: async (args: unknown) => {
+            A.createCalls.push(args as { messages: Array<{ role: string; content: unknown }> })
+            return inner.create(args)
+          },
+          stream: inner.stream,
+        }
+      })()
+    },
+  }
+})
+
+// Escalation channels are read from env INSIDE the tool at call time.
+process.env.ANTHROPIC_API_KEY = "test-key"
+process.env.TELEGRAM_BOT_TOKEN = "tg-token"
+process.env.TELEGRAM_CHAT_ID = "12345"
+process.env.RESEND_API_KEY = "re-key"
+process.env.ALERT_EMAIL = "ops@example.com"
+
+const { POST } = await import("@/app/api/support-chat/route")
+
+type Fixtures = Parameters<typeof makeInstrumentedSupabaseFixture>[0]
+function install(fixtures: Fixtures) {
+  const spy = makeInstrumentedSupabaseFixture(fixtures)
+  A.sb = spy.fixture
+  return spy
+}
+
+function post(message: string, extra: Record<string, unknown> = {}): NextRequest {
+  return new NextRequest("https://t/api/support-chat", {
+    method: "POST",
+    headers: new Headers({ "content-type": "application/json" }),
+    body: JSON.stringify({ message, sessionId: `tool-${Math.random()}`, ...extra }),
+  })
+}
+
+function script(toolName: string, input: unknown) {
+  A.state.script = [{ tools: [{ name: toolName, input }] }, { text: "done" }]
+  A.state.cursor = 0
+}
+
+/** The tool_result JSON the handler produced, as fed to iteration 2. */
+function toolResult(): Record<string, unknown> {
+  const secondCall = A.createCalls.at(-1)
+  const lastMsg = secondCall?.messages.at(-1)
+  const blocks = lastMsg?.content as Array<{ type: string; content: string }>
+  const tr = blocks?.find((b) => b.type === "tool_result")
+  if (!tr) throw new Error("no tool_result in the follow-up model call")
+  return JSON.parse(tr.content)
+}
+
+let fetchMock: ReturnType<typeof installFetchMock> | null = null
+function stubFetch(stubs: FetchStub[]) {
+  fetchMock = installFetchMock(stubs)
+  return fetchMock
+}
+afterEach(() => {
+  fetchMock?.restore()
+  fetchMock = null
+})
+beforeEach(() => {
+  install({})
+  A.createCalls.length = 0
+  A.authedEmail = null
+})
+
+describe("concierge tools — guards and cross-collection honesty", () => {
+  it("get_fmv without any identifier returns the usage error, never a made-up price", async () => {
+    script("get_fmv", {})
+    await POST(post("what's it worth?"))
+    expect(toolResult()).toMatchObject({ status: "error" })
+    expect(String(toolResult().message)).toContain("Provide editionKey")
+  })
+
+  it("manage_watchlist and manage_alerts refuse without a connected wallet", async () => {
+    script("manage_watchlist", { action: "add", edition_key: "3:45" })
+    await POST(post("watch this"))
+    expect(toolResult()).toMatchObject({ status: "error", message: "owner_key_missing" })
+
+    A.createCalls.length = 0
+    script("manage_alerts", { action: "list" })
+    await POST(post("my alerts"))
+    expect(toolResult()).toMatchObject({ status: "error", message: "owner_key_missing" })
+  })
+})
+
+describe("concierge tools — watchlist/alerts self-API bridge", () => {
+  const WALLET = "0xbd94cade097e50ac"
+
+  // userWallet is SERVER-derived (deriveIdentity -> allow_list), never taken
+  // from the request body — sign the session in and let allow_list supply it.
+  function signIn() {
+    A.authedEmail = "collector@example.com"
+    return install({
+      allow_list: { data: { username: "collector", wallet_addr: WALLET }, error: null },
+    })
+  }
+
+  it("watchlist add POSTs the owner-keyed row and reports the added player", async () => {
+    const f = stubFetch([jsonRoute("/api/watchlist", { ok: true, id: 9 })])
+    signIn()
+    script("manage_watchlist", {
+      action: "add",
+      edition_key: "3:45",
+      player_name: "Damian Lillard",
+      set_name: "Base Set",
+      tier: "COMMON",
+    })
+    await POST(post("add dame to my watchlist"))
+
+    expect(toolResult()).toMatchObject({ status: "ok" })
+    expect(String(toolResult().message)).toContain("Added Damian Lillard")
+    const call = f.calls.find((c) => c.url.includes("/api/watchlist") && c.init?.method === "POST")
+    expect(JSON.parse(String(call?.init?.body))).toMatchObject({
+      owner_key: WALLET,
+      edition_key: "3:45",
+      player_name: "Damian Lillard",
+    })
+  })
+
+  it("watchlist list returns the rows; an empty list says so honestly", async () => {
+    signIn()
+    stubFetch([jsonRoute("/api/watchlist", { watchlist: [{ edition_key: "3:45", player_name: "Dame" }] })])
+    script("manage_watchlist", { action: "list" })
+    await POST(post("show my watchlist"))
+    expect((toolResult().results as unknown[]).length).toBe(1)
+
+    A.createCalls.length = 0
+    fetchMock?.restore()
+    signIn()
+    stubFetch([jsonRoute("/api/watchlist", { watchlist: [] })])
+    script("manage_watchlist", { action: "list" })
+    await POST(post("show my watchlist"))
+    expect(String(toolResult().message)).toContain("watchlist is empty")
+  })
+
+  // 2026-09-29 — INVERTED. This case pinned the defect: it asserted the body
+  // carried owner_key and alert_type "below_price", which /api/alerts rejects
+  // (400: its types are price_below | fmv_below | fmv_above | discount_above)
+  // and it keys alerts on the session user, not a body field. With the mock
+  // answering 200, the concierge's "Alert set" was never tested against the
+  // route it calls; fmv_alerts has held zero rows, ever.
+  it("alerts set sends a type the route accepts, the collection, and the reader's cookie", async () => {
+    signIn()
+    const f = stubFetch([jsonRoute("/api/alerts", { id: "a1" }, { status: 201 })])
+    script("manage_alerts", {
+      action: "set",
+      edition_key: "3:45",
+      player_name: "Dame",
+      alert_type: "below_price", // the tool's old name, still accepted
+      threshold: 20,
+      channel: "email",
+    })
+    await POST(post("alert me under $20"))
+
+    expect(toolResult()).toMatchObject({ status: "ok" })
+    const call = f.calls.find((c) => c.url.includes("/api/alerts") && c.init?.method === "POST")
+    const body = JSON.parse(String(call?.init?.body))
+    expect(body).toMatchObject({ edition_key: "3:45", alert_type: "price_below", threshold: 20 })
+    expect(body.owner_key).toBeUndefined()
+    expect(new Headers(call?.init?.headers).get("cookie")).toBe("sb-access-token=reader")
+  })
+
+  it("a refused write is reported as a failure — never 'Added' / 'Alert set'", async () => {
+    signIn()
+    stubFetch([jsonRoute("/api/watchlist", { error: "Authentication required" }, { status: 401 })])
+    script("manage_watchlist", { action: "add", edition_key: "3:45", player_name: "Damian Lillard" })
+    await POST(post("add dame"))
+    expect(toolResult()).toMatchObject({ status: "error" })
+    expect(String(toolResult().message)).toMatch(/not_signed_in.*Nothing was changed/)
+    expect(String(toolResult().message)).not.toContain("Added")
+
+    A.createCalls.length = 0
+    fetchMock?.restore()
+    signIn()
+    stubFetch([jsonRoute("/api/alerts", { error: "bad type" }, { status: 400 })])
+    script("manage_alerts", { action: "set", edition_key: "3:45", player_name: "Dame", alert_type: "price_below", threshold: 20 })
+    await POST(post("alert me"))
+    expect(toolResult()).toMatchObject({ status: "error" })
+    expect(String(toolResult().message)).toContain("HTTP 400")
+    expect(String(toolResult().message)).not.toContain("Alert set")
+  })
+
+  it("a failed list read concludes nothing — never 'Your watchlist is empty'", async () => {
+    signIn()
+    stubFetch([jsonRoute("/api/watchlist", { error: "Authentication required" }, { status: 401 })])
+    script("manage_watchlist", { action: "list" })
+    await POST(post("show my watchlist"))
+    expect(toolResult()).toMatchObject({ status: "error" })
+    expect(String(toolResult().message)).not.toContain("empty")
+    expect(String(toolResult().message)).toContain("says nothing about what is on it")
+  })
+
+  it("alerts remove deletes this edition's alerts BY ID (the route's contract), and reports the count", async () => {
+    signIn()
+    const f = stubFetch([
+      {
+        match: (url, init) => url.includes("/api/alerts") && (init?.method ?? "GET") === "GET",
+        respond: () => ({ json: [{ id: "a1", edition_key: "3:45" }, { id: "a2", edition_key: "9:9" }, { id: "a3", edition_key: "3:45" }] }),
+      },
+      jsonRoute("/api/alerts?id=", { ok: true, deleted: 1 }),
+    ])
+    script("manage_alerts", { action: "remove", edition_key: "3:45" })
+    await POST(post("stop alerting me on dame"))
+    const deletes = f.calls.filter((c) => c.init?.method === "DELETE").map((c) => c.url)
+    expect(deletes.map((u) => new URL(u, "https://t").searchParams.get("id"))).toEqual(["a1", "a3"])
+    expect(toolResult()).toMatchObject({ status: "ok", removed: 2 })
+  })
+
+  // 2026-10-10: an edition key repeats across collections; matching the key alone
+  // deleted the user's alert in ANOTHER collection. A NULL collection_id is Top Shot.
+  it("a scoped alerts remove never deletes the same key's alert in another collection", async () => {
+    signIn()
+    const ALL_DAY = "dee28451-5d62-409e-a1ad-a83f763ac070"
+    const f = stubFetch([
+      {
+        match: (url, init) => url.includes("/api/alerts") && (init?.method ?? "GET") === "GET",
+        respond: () => ({ json: [
+          { id: "ts1", edition_key: "3:45", collection_id: null }, // Top Shot (NULL reads as TS)
+          { id: "ad1", edition_key: "3:45", collection_id: ALL_DAY },
+        ] }),
+      },
+      jsonRoute("/api/alerts?id=", { ok: true, deleted: 1 }),
+    ])
+    script("manage_alerts", { action: "remove", edition_key: "3:45", collectionId: "nfl-all-day" })
+    await POST(post("stop alerting me on that all day moment"))
+    const deletes = f.calls.filter((c) => c.init?.method === "DELETE").map((c) => new URL(c.url, "https://t").searchParams.get("id"))
+    expect(deletes).toEqual(["ad1"])
+  })
+})
+
+describe("concierge tools — data reads", () => {
+  it("get_collection_snapshot summarizes the wallet from the snapshot API", async () => {
+    stubFetch([
+      jsonRoute("/api/collection-snapshot", {
+        totalMoments: 3,
+        totalFmv: 120,
+        topMoments: [
+          { playerName: "Dame", tier: "RARE", fmv: 80 },
+          { playerName: "Scoot", tier: "COMMON", fmv: 25 },
+        ],
+      }),
+    ])
+    script("get_collection_snapshot", { walletAddress: "0xbd94cade097e50ac" })
+    await POST(post("summarize my collection"))
+
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    expect(String(r.summary)).toContain("3 moments, total FMV $120.00")
+    expect(String(r.summary)).toContain("Dame (RARE) — $80.00")
+  })
+
+  it("get_hot_floors shapes the sweep rows with computed avg_paid", async () => {
+    install({
+      "rpc:get_topshot_hot_floors": {
+        data: {
+          editions: [
+            {
+              external_id: "3:45",
+              player_name: "Dame",
+              set_name: "Base",
+              tier: "COMMON",
+              sweep_buyers: 4,
+              swept_sales: 10,
+              swept_spend: 55,
+              floor_ask: 6,
+              fmv_usd: 5.5,
+              last_swept_at: "2026-07-17T12:00:00Z",
+            },
+          ],
+        },
+        error: null,
+      },
+    })
+    script("get_hot_floors", { days: 3 })
+    await POST(post("what's being swept?"))
+
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    const floors = r.hot_floors as Array<Record<string, unknown>>
+    expect(floors[0]).toMatchObject({ edition: "3:45", sweep_buyers: 4, avg_paid_usd: 5.5 })
+  })
+
+  it("get_challenges resolves the wallet, shapes net-EV rows, and says plainly when none exist", async () => {
+    install({
+      "rpc:get_active_challenges": {
+        data: {
+          activeCount: 1,
+          challenges: [
+            {
+              name: "Finals Flash",
+              challengeType: "set",
+              rewardLabel: "Finals Pack",
+              rewardKind: "pack",
+              endsAt: "2026-07-20T00:00:00Z",
+              completionPct: 60,
+              missingCount: 2,
+              totalRequired: 5,
+              costToComplete: 12,
+              rewardValue: 30,
+              netEv: 18,
+              worthIt: true,
+            },
+          ],
+        },
+        error: null,
+      },
+    })
+    script("get_challenges", { walletAddress: "0xbd94cade097e50ac" })
+    await POST(post("any challenges worth doing?"))
+    const r = toolResult()
+    expect(r.active_count).toBe(1)
+    expect((r.challenges as Array<Record<string, unknown>>)[0]).toMatchObject({
+      name: "Finals Flash",
+      net_ev_usd: 18,
+      worth_it: true,
+    })
+
+    A.createCalls.length = 0
+    // The CURRENT-feed arm (see concierge-challenges-empty-is-not-a-market-claim for stale / unknown).
+    install({
+      "rpc:get_active_challenges": { data: { activeCount: 0, challenges: [] }, error: null },
+      pipeline_runs_daily: { data: [{ day: new Date().toISOString().slice(0, 10) }], error: null },
+    })
+    script("get_challenges", {})
+    await POST(post("challenges?"))
+    expect(String(toolResult().note)).toContain("don't invent challenges")
+  })
+
+  it("get_challenges with an unresolvable username asks for the 0x address instead of guessing", async () => {
+    install({ "rpc:resolve_topshot_username": { data: { found: false }, error: null } })
+    script("get_challenges", { walletAddress: "some-username" })
+    await POST(post("challenges for some-username"))
+    expect(toolResult()).toMatchObject({ status: "username_not_resolved" })
+  })
+})
+
+describe("concierge tools — feedback intake + escalation", () => {
+  it("log_bug writes the beta-feedback row with the severity/page details block", async () => {
+    const spy = install({ support_conversations: { data: { id: 77 }, error: null } })
+    script("log_bug", { summary: "Chart broken", details: "FMV chart blank on edition page", severity: "high" })
+    await POST(post("the chart is broken"))
+
+    expect(toolResult()).toMatchObject({ status: "logged", feedback_type: "bug", severity: "high" })
+    const insert = spy.writes.support_conversations?.find((w) => w.method === "insert")
+    expect(insert?.rows[0]).toMatchObject({
+      category: "beta_feedback",
+      feedback_type: "bug",
+      feedback_summary: "Chart broken",
+      feedback_status: "new",
+    })
+    expect(String(insert?.rows[0].feedback_details)).toContain("Severity: high")
+  })
+
+  // 2026-11-09 weekend review: the only human concierge session that weekend was
+  // a SIGNED-OUT visitor filing a real bug, and shipped-notify (which emails
+  // support_conversations.user_email) could never reach them.
+  describe("signed-out 'tell me when it's fixed'", () => {
+    const insertRow = (spy: any) => (spy.writes.support_conversations ?? []).find((w: any) => w.method === "insert" && w.rows?.[0]?.feedback_type)?.rows[0]
+
+    it("a signed-out report carries ONE fix-notice offer and no email", async () => {
+      const spy = install({ support_conversations: { data: { id: 77 }, error: null } })
+      script("log_bug", { summary: "Yan Diomande FMVs look low", details: "user reports $400 /55" })
+      await POST(post("his /55 is at 400 dollars"))
+      const r = toolResult()
+      expect(r).toMatchObject({ status: "logged" })
+      expect(String(r.fix_notice)).toMatch(/SIGNED OUT/)
+      expect(String(r.fix_notice)).toMatch(/ONCE/)
+      expect(insertRow(spy)?.user_email).toBeNull()
+    })
+
+    it("a signed-in report gets NO offer — the account email is already on it", async () => {
+      A.authedEmail = "collector@example.com"
+      const spy = install({ support_conversations: { data: { id: 78 }, error: null } })
+      script("log_bug", { summary: "Chart broken", details: "blank chart", contact_email: "other@example.com" })
+      await POST(post("the chart is broken, other@example.com"))
+      expect(toolResult().fix_notice).toBeUndefined()
+      expect(insertRow(spy)?.user_email).toBe("collector@example.com")
+    })
+
+    it("an address the user TYPED is stored on the report, and no offer is repeated", async () => {
+      const spy = install({ support_conversations: { data: { id: 79 }, error: null } })
+      script("log_bug", { summary: "Chart broken", details: "blank chart", contact_email: "fan@example.com" })
+      await POST(post("chart is broken — email me at fan@example.com when it's fixed"))
+      expect(toolResult().fix_notice).toBeUndefined()
+      expect(insertRow(spy)?.user_email).toBe("fan@example.com")
+    })
+
+    it("⚠ an address the user never typed is NOT stored (the model may relay, never invent)", async () => {
+      const spy = install({ support_conversations: { data: { id: 80 }, error: null } })
+      script("log_bug", { summary: "Chart broken", details: "blank chart", contact_email: "guess@example.com" })
+      await POST(post("the chart is broken"))
+      expect(insertRow(spy)?.user_email).toBeNull()
+    })
+
+    it("the same report again WITH the typed address attaches it to the original — no second row", async () => {
+      const spy = install({ support_conversations: { data: [{ id: 55, feedback_summary: "Yan Diomande FMVs look low" }], error: null } })
+      script("log_bug", { summary: "Yan Diomande FMVs look low", details: "follow-up", contact_email: "fan@example.com" })
+      await POST(post("sure, fan@example.com"))
+      expect(toolResult()).toMatchObject({ status: "already_logged", duplicate_of: 55, email_attached: true })
+      const upd = (spy.writes.support_conversations ?? []).find((w: any) => w.method === "update")
+      expect(upd?.rows[0]).toEqual({ user_email: "fan@example.com" })
+      expect(insertRow(spy)).toBeUndefined()
+    })
+  })
+
+  it("log_feedback without details errors instead of logging an empty row", async () => {
+    const spy = install({})
+    script("log_feedback", { summary: "nice", details: "" })
+    await POST(post("nice site"))
+    expect(toolResult()).toMatchObject({ status: "error" })
+    // No FEEDBACK row. (Since 2026-10-24 the turn's own transcript row is written
+    // before the reply returns, so it is excluded by its missing feedback_type.)
+    const feedbackRows = (spy.writes.support_conversations ?? []).flatMap((w: any) => w.rows ?? []).filter((r: any) => r?.feedback_type)
+    expect(feedbackRows).toHaveLength(0)
+  })
+
+  it("HIGH-urgency escalation pages Telegram and reports paged", async () => {
+    // 2026-10-03: the live page is sign-in gated (isHigh = wantsHigh && !!ctx.userId).
+    A.authedEmail = "collector@example.com"
+    const f = stubFetch([
+      jsonRoute("api.telegram.org", { ok: true }),
+      jsonRoute("api.resend.com", { id: "email-1" }),
+    ])
+    script("escalate_to_human", { reason: "payment stuck", category: "billing", urgency: "high" })
+    const res = await POST(post("I need a human NOW"))
+    const body = await res.json()
+
+    // The loop-level escalation flag + the live page both fired.
+    expect(body.escalated).toBe(true)
+    const tg = f.calls.find((c) => c.url.includes("api.telegram.org"))
+    expect(tg).toBeTruthy()
+    expect(String(tg?.init?.body)).toContain("payment stuck")
+  })
+
+  it("medium-urgency escalation does NOT page live channels", async () => {
+    const f = stubFetch([jsonRoute("api.telegram.org", { ok: true }), jsonRoute("api.resend.com", {})])
+    script("escalate_to_human", { reason: "minor question", category: "general", urgency: "medium" })
+    const res = await POST(post("can someone follow up eventually"))
+    expect((await res.json()).escalated).toBe(true)
+    expect(f.calls.filter((c) => c.url.includes("telegram") || c.url.includes("resend"))).toHaveLength(0)
+  })
+})
+
+describe("concierge tools — market & ecosystem intelligence", () => {
+  it("get_top_sales maps the collection slug and passes window/limit to the public board", async () => {
+    const f = stubFetch([
+      jsonRoute("/api/public/insights/top-sales", {
+        meta: { source: "v_insights_top_sales", total_rows: 1 },
+        rows: [{ player_name: "Dame", price_usd: 5000, buyer_handle: "a", seller_handle: "b" }],
+      }),
+    ])
+    script("get_top_sales", { collectionId: "nba-top-shot", window: "30d", limit: 5 })
+    await POST(post("biggest sales this month"))
+
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    expect((r.rows as unknown[]).length).toBe(1)
+    const call = f.calls.find((c) => c.url.includes("/api/public/insights/top-sales"))
+    expect(call?.url).toContain("collection=nba_top_shot")
+    expect(call?.url).toContain("window=30d")
+    expect(call?.url).toContain("limit=5")
+  })
+
+  // Substitution audit 2026-10-09: a named collection must never widen to the
+  // cross-collection board under its own label.
+  it("get_top_sales maps Candy MLB to its board slug", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/top-sales", { meta: {}, rows: [{ x: 1 }] })])
+    script("get_top_sales", { collectionId: "candy-mlb" })
+    await POST(post("biggest candy sales"))
+    expect(toolResult().status).toBe("ok")
+    expect(f.calls.find((c) => c.url.includes("/api/public/insights/top-sales"))?.url).toContain("collection=candy_mlb")
+  })
+
+  it("get_top_sales reads the DB vocabulary as the collection it names", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/top-sales", { meta: {}, rows: [{ x: 1 }] })])
+    script("get_top_sales", { collectionId: "nfl_all_day" })
+    await POST(post("biggest all day sales"))
+    expect(f.calls.find((c) => c.url.includes("/api/public/insights/top-sales"))?.url).toContain("collection=nfl_all_day")
+  })
+
+  // Re-pinned 2026-10-19 (premise changed, not inverted): "panini-blockchain" left
+  // this list when the top-sales board's own Panini filter (panini_blockchain, live
+  // since 10-10) was mapped. The property — a named collection never widens to the
+  // cross-collection board — is still exercised by the two unknown slugs, and the
+  // Panini arm below asserts it is SCOPED, never widened.
+  it("get_top_sales scopes Panini to the board's panini_blockchain filter, never the all-collection board", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/top-sales", { meta: {}, rows: [{ x: 1 }] })])
+    script("get_top_sales", { collectionId: "panini-blockchain" })
+    await POST(post("biggest panini sales"))
+    expect(toolResult().status).toBe("ok")
+    const url = f.calls.find((c) => c.url.includes("/api/public/insights/top-sales"))?.url ?? ""
+    expect(url).toContain("collection=panini_blockchain")
+  })
+
+  for (const collectionId of ["topshot", "constructor"]) {
+    it(`get_top_sales REFUSES "${collectionId}" instead of answering with every collection`, async () => {
+      const f = stubFetch([jsonRoute("/api/public/insights/top-sales", { meta: {}, rows: [{ player_name: "Dame" }] })])
+      script("get_top_sales", { collectionId })
+      await POST(post("biggest sales"))
+      const r = toolResult()
+      expect(r.status).toBe("unsupported_collection")
+      expect(r.rows).toBeUndefined()
+      expect(f.calls.some((c) => c.url.includes("/api/public/insights/top-sales"))).toBe(false)
+    })
+  }
+
+  it("an unknown slug is refused by get_fmv too — no unscoped catalog read", async () => {
+    const spy = install({})
+    script("get_fmv", { collectionId: "topshot", playerName: "LeBron James" })
+    await POST(post("lebron fmv"))
+    expect(toolResult().status).toBe("unsupported_collection")
+    expect(toolResult().mode).toBeUndefined()
+    expect(spy.rpcCalls.some((c) => c.name === "get_editions_latest_fmv")).toBe(false)
+  })
+
+  it("get_market_movers reads the market-pulse board", async () => {
+    stubFetch([jsonRoute("/api/public/insights/market-pulse", { meta: {}, rows: [{ edition: "3:45", trend: "up" }] })])
+    script("get_market_movers", { limit: 10 })
+    await POST(post("what's moving"))
+    expect(toolResult().status).toBe("ok")
+    expect((toolResult().rows as unknown[]).length).toBe(1)
+  })
+
+  it("get_rookies reads the rookie board and trims rows to the requested limit", async () => {
+    stubFetch([jsonRoute("/api/public/insights/rookies", { rows: [{ p: 1 }, { p: 2 }, { p: 3 }] })])
+    script("get_rookies", { limit: 2 })
+    await POST(post("hot rookies"))
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    expect(r.count).toBe(3)
+    expect((r.rows as unknown[]).length).toBe(2)
+  })
+
+  it("get_premiums routes kind=serial to the serial-premiums board", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/serial-premiums", { meta: {}, rows: [{ x: 1 }] })])
+    script("get_premiums", { kind: "serial" })
+    await POST(post("serial premium?"))
+    expect(toolResult().status).toBe("ok")
+    expect(f.calls.some((c) => c.url.includes("/api/public/insights/serial-premiums"))).toBe(true)
+  })
+
+  it("get_premiums rejects an invalid kind without fetching", async () => {
+    script("get_premiums", { kind: "bogus" })
+    await POST(post("premium?"))
+    expect(toolResult()).toMatchObject({ status: "error" })
+    expect(String(toolResult().message)).toContain("parallel")
+  })
+
+  it("get_ecosystem_stat maps metric=new_collectors to the right board", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/new-collectors", { rows: [{ wallet: "0x1" }] })])
+    script("get_ecosystem_stat", { metric: "new_collectors" })
+    await POST(post("new collectors?"))
+    expect(toolResult().status).toBe("ok")
+    expect(f.calls.some((c) => c.url.includes("/api/public/insights/new-collectors"))).toBe(true)
+  })
+
+  it("get_ecosystem_stat rejects an unknown metric", async () => {
+    script("get_ecosystem_stat", { metric: "nope" })
+    await POST(post("ecosystem?"))
+    expect(toolResult()).toMatchObject({ status: "error" })
+  })
+
+  it("get_insight_board reads a named board (squeeze) and returns its rows", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/squeeze", { meta: {}, rows: [{ edition: "3:45", locked_pct: 40 }] })])
+    script("get_insight_board", { board: "squeeze", limit: 10 })
+    await POST(post("how squeezed is the ecosystem"))
+    expect(toolResult().status).toBe("ok")
+    expect((toolResult().rows as unknown[]).length).toBe(1)
+    expect(f.calls.some((c) => c.url.includes("/api/public/insights/squeeze"))).toBe(true)
+  })
+
+  it("get_insight_board maps an underscored board id to the dashed endpoint path", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/allday-pack-reality", { meta: {}, rows: [{ x: 1 }] })])
+    script("get_insight_board", { board: "allday_pack_reality" })
+    await POST(post("did all day packs pay off"))
+    expect(toolResult().status).toBe("ok")
+    expect(f.calls.some((c) => c.url.includes("/api/public/insights/allday-pack-reality"))).toBe(true)
+  })
+
+  it("get_insight_board rejects an unknown board without fetching", async () => {
+    script("get_insight_board", { board: "not_a_board" })
+    await POST(post("board?"))
+    expect(toolResult()).toMatchObject({ status: "error" })
+  })
+})
+
+describe("concierge — durable per-IP rate limit (anon abuse hardening)", () => {
+  it("returns 429 for an anon IP the durable limiter denies", async () => {
+    install({ "rpc:bump_concierge_ip_rate": { data: { allowed: false, count: 41 }, error: null } })
+    A.createCalls.length = 0
+    const req = new NextRequest("https://t/api/support-chat", {
+      method: "POST",
+      headers: new Headers({ "content-type": "application/json", "x-forwarded-for": "203.0.113.7" }),
+      body: JSON.stringify({ message: "hi", sessionId: `iprl-${Math.random()}` }),
+    })
+    const res = await POST(req)
+    expect(res.status).toBe(429)
+    expect((await res.json()).category).toBe("rate_limit")
+  })
+
+  it("does not block an anon IP the limiter allows, and fails open on limiter error", async () => {
+    // allowed → proceeds to the model loop (200)
+    install({ "rpc:bump_concierge_ip_rate": { data: { allowed: true, count: 3 }, error: null } })
+    A.state.script = [{ text: "ok" }]; A.state.cursor = 0; A.createCalls.length = 0
+    const ok = await POST(new NextRequest("https://t/api/support-chat", {
+      method: "POST",
+      headers: new Headers({ "content-type": "application/json", "x-forwarded-for": "203.0.113.8" }),
+      body: JSON.stringify({ message: "hi", sessionId: `iprl-${Math.random()}` }),
+    }))
+    expect(ok.status).toBe(200)
+  })
+})

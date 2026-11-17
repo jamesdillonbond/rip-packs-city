@@ -1,0 +1,223 @@
+// @vitest-environment jsdom
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest"
+import { render, cleanup, fireEvent, waitFor } from "@testing-library/react"
+
+// GlobalSearch — the site's first catalog search bar.
+//
+// The assertions that matter are the honesty ones: a failed search must render
+// DIFFERENTLY from an empty one (otherwise a database blink tells the user
+// their moment doesn't exist), and the empty state must state what is
+// searchable rather than implying the catalog is complete.
+
+const push = vi.fn()
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }))
+
+import GlobalSearch from "@/components/search/GlobalSearch"
+
+let response: { ok: boolean; body: any }
+let urls: string[]
+
+beforeEach(() => {
+  push.mockReset()
+  urls = []
+  response = { ok: true, body: { results: [], meta: {} } }
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: string) => {
+      urls.push(url)
+      return Promise.resolve({ ok: response.ok, status: response.ok ? 200 : 503, json: async () => response.body } as Response)
+    }),
+  )
+})
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+  vi.useRealTimers()
+})
+
+const hit = (over: Partial<any> = {}) => ({
+  kind: "player",
+  label: "Damian Lillard",
+  sublabel: null,
+  href: "/nba-top-shot/player/damian-lillard",
+  collection: "nba-top-shot",
+  collectionName: "NBA Top Shot",
+  thumbnailUrl: null,
+  editionCount: 65,
+  ...over,
+})
+
+function type(input: HTMLElement, value: string) {
+  fireEvent.focus(input)
+  fireEvent.change(input, { target: { value } })
+}
+
+describe("GlobalSearch", () => {
+  it("does not query the API for a query under 2 characters", async () => {
+    const { container } = render(<GlobalSearch />)
+    type(container.querySelector("input")!, "a")
+    await new Promise((r) => setTimeout(r, 260))
+    expect(urls).toHaveLength(0)
+  })
+
+  it("renders results and navigates on click", async () => {
+    response = { ok: true, body: { results: [hit()], meta: {} } }
+    const { container, findByText } = render(<GlobalSearch />)
+    type(container.querySelector("input")!, "lillard")
+    expect(await findByText("Damian Lillard")).toBeTruthy()
+    fireEvent.click(container.querySelector('[role="option"]')!)
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/nba-top-shot/player/damian-lillard"))
+  })
+
+  it("labels a closest-matches answer (meta.fuzzy) so a typo is never presented as an exact hit", async () => {
+    response = { ok: true, body: { results: [hit()], meta: { fuzzy: { from: "lilard", matched: ["Damian Lillard"] } } } }
+    const { container, findByText, queryByTestId } = render(<GlobalSearch />)
+    type(container.querySelector("input")!, "lilard")
+    expect(await findByText("Damian Lillard")).toBeTruthy()
+    expect(queryByTestId("search-fuzzy-note")?.textContent).toContain("No exact match for “lilard”")
+    // 2026-11-07 review: the disclosure must REACH a screen reader — announced,
+    // never aria-hidden, and outside the listbox (which may own only options).
+    const note = queryByTestId("search-fuzzy-note")!
+    expect(note.closest("[aria-hidden='true']")).toBeNull()
+    expect(note.closest("[role='listbox']")).toBeNull()
+    expect(note.getAttribute("role")).toBe("status")
+    // and an ordinary answer carries no such note
+    response = { ok: true, body: { results: [hit()], meta: {} } }
+    type(container.querySelector("input")!, "lillard")
+    await findByText("Damian Lillard")
+    await waitFor(() => expect(queryByTestId("search-fuzzy-note")).toBeNull())
+  })
+
+  it("shows an UNAVAILABLE message on failure — never 'no matches'", async () => {
+    // The whole point: a 503 must not be indistinguishable from an empty result.
+    response = { ok: false, body: {} }
+    const { container, findByText } = render(<GlobalSearch />)
+    type(container.querySelector("input")!, "lillard")
+    expect(await findByText(/Search is unavailable right now/)).toBeTruthy()
+    expect(container.textContent).not.toMatch(/No matches/)
+  })
+
+  it("renders the API's LIVE coverage note when nothing matches", async () => {
+    // Descriptions ARE searched now, so the old hardcoded "descriptions aren't
+    // in the catalog" copy would be a FALSE statement. The disclosure has to
+    // come from the API's measured note, not a fixed string that goes stale on
+    // the next backfill.
+    response = {
+      ok: true,
+      body: {
+        results: [],
+        meta: { note: "Descriptions cover only part of the catalog — nba_top_shot 44.6% (5885/13197)" },
+      },
+    }
+    const { container, findByText } = render(<GlobalSearch />)
+    type(container.querySelector("input")!, "buzzer beater")
+    expect(await findByText(/No matches for/)).toBeTruthy()
+    await waitFor(() => expect(container.textContent).toMatch(/44\.6%/))
+    expect(container.textContent).toMatch(/only part of the catalog/)
+  })
+
+  it("falls back to a generic capability line when the API sends no note", async () => {
+    response = { ok: true, body: { results: [], meta: {} } }
+    const { container, findByText } = render(<GlobalSearch />)
+    type(container.querySelector("input")!, "zzzz")
+    expect(await findByText(/No matches for/)).toBeTruthy()
+    expect(container.textContent).toMatch(/moment descriptions/i)
+  })
+
+  it("navigates with arrow keys and Enter", async () => {
+    response = {
+      ok: true,
+      body: { results: [hit(), hit({ label: "Lillard Set", href: "/nba-top-shot/set/lillard-set", kind: "set" })], meta: {} },
+    }
+    const { container, findByText } = render(<GlobalSearch />)
+    const input = container.querySelector("input")!
+    type(input, "lillard")
+    await findByText("Damian Lillard")
+    fireEvent.keyDown(input, { key: "ArrowDown" })
+    fireEvent.keyDown(input, { key: "Enter" })
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/nba-top-shot/set/lillard-set"))
+  })
+
+  it("is a combobox: expanded with results, aria-activedescendant follows the arrow keys (2026-11-07)", async () => {
+    response = {
+      ok: true,
+      body: { results: [hit(), hit({ label: "Lillard Set", href: "/nba-top-shot/set/lillard-set", kind: "set" })], meta: {} },
+    }
+    const { container, findByText } = render(<GlobalSearch />)
+    const input = container.querySelector("input")!
+    expect(input.getAttribute("role")).toBe("combobox")
+    expect(input.getAttribute("aria-expanded")).toBe("false")
+    type(input, "lillard")
+    await findByText("Damian Lillard")
+    expect(input.getAttribute("aria-expanded")).toBe("true")
+    const listbox = container.querySelector('[role="listbox"]')!
+    expect(input.getAttribute("aria-controls")).toBe(listbox.id)
+    const first = input.getAttribute("aria-activedescendant")!
+    expect(document.getElementById(first)?.textContent).toContain("Damian Lillard")
+    fireEvent.keyDown(input, { key: "ArrowDown" })
+    const second = input.getAttribute("aria-activedescendant")!
+    expect(second).not.toBe(first)
+    expect(document.getElementById(second)?.textContent).toContain("Lillard Set")
+    expect(document.getElementById(second)?.getAttribute("aria-selected")).toBe("true")
+  })
+
+  it("clamps arrow navigation at both ends of the list", async () => {
+    response = { ok: true, body: { results: [hit()], meta: {} } }
+    const { container, findByText } = render(<GlobalSearch />)
+    const input = container.querySelector("input")!
+    type(input, "lillard")
+    await findByText("Damian Lillard")
+    fireEvent.keyDown(input, { key: "ArrowUp" })
+    fireEvent.keyDown(input, { key: "ArrowDown" })
+    fireEvent.keyDown(input, { key: "ArrowDown" })
+    fireEvent.keyDown(input, { key: "Enter" })
+    // Only one result exists, so every clamp lands on it.
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/nba-top-shot/player/damian-lillard"))
+  })
+
+  it("closes the panel on Escape", async () => {
+    response = { ok: true, body: { results: [hit()], meta: {} } }
+    const { container, findByText } = render(<GlobalSearch />)
+    const input = container.querySelector("input")!
+    type(input, "lillard")
+    await findByText("Damian Lillard")
+    fireEvent.keyDown(input, { key: "Escape" })
+    await waitFor(() => expect(container.querySelector('[role="option"]')).toBeNull())
+  })
+
+  it("debounces — one request per settled query, not one per keystroke", async () => {
+    const { container } = render(<GlobalSearch />)
+    const input = container.querySelector("input")!
+    type(input, "li")
+    type(input, "lil")
+    type(input, "lill")
+    await new Promise((r) => setTimeout(r, 300))
+    expect(urls).toHaveLength(1)
+    expect(urls[0]).toContain("q=lill")
+  })
+
+  it("url-encodes the query", async () => {
+    const { container } = render(<GlobalSearch />)
+    type(container.querySelector("input")!, "trail blazers")
+    await waitFor(() => expect(urls[0]).toContain("q=trail%20blazers"))
+  })
+
+  it("renders a thumbnail when the hit has one", async () => {
+    response = { ok: true, body: { results: [hit({ thumbnailUrl: "https://example.test/a.png" })], meta: {} } }
+    const { container, findByText } = render(<GlobalSearch />)
+    type(container.querySelector("input")!, "lillard")
+    await findByText("Damian Lillard")
+    expect(container.querySelector("img")?.getAttribute("src")).toBe("https://example.test/a.png")
+  })
+
+  it("labels a Pinnacle player as CHARACTER", async () => {
+    response = {
+      ok: true,
+      body: { results: [hit({ label: "Mickey Mouse", collection: "disney-pinnacle", collectionName: "Disney Pinnacle" })], meta: {} },
+    }
+    const { container, findByText } = render(<GlobalSearch />)
+    type(container.querySelector("input")!, "mickey")
+    await findByText("Mickey Mouse")
+    expect(container.textContent).toContain("CHARACTER")
+  })
+})

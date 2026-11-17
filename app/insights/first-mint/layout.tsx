@@ -1,0 +1,70 @@
+// app/insights/first-mint/layout.tsx
+//
+// SEO surface for the public Top Shot first-mint trophy tracker.
+
+import type { Metadata } from "next"
+import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
+
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
+
+export const metadata: Metadata = {
+  // The root metadata template in lib/seo.ts appends " | Rip Packs City",
+  // so baking the brand in here rendered it twice. (deep-audit D24)
+  title: "Top Shot First-Mint Trophy Tracker",
+  description:
+    "Every Top Shot serial #1 sale of the last 90 days, with the multiplier vs the average serial price of the same edition. Trophies aren't a vibe — they're math.",
+  keywords: [
+    "NBA Top Shot serial 1",
+    "Top Shot first mint",
+    "Top Shot trophies",
+    "Jokic Base Set #1",
+    "NBA Top Shot rare serials",
+    "Top Shot trophy market",
+  ].join(", "),
+  alternates: {
+    canonical: `${SITE_URL}/insights/first-mint`,
+  },
+  openGraph: {
+    title: "Top Shot First-Mint Trophy Tracker",
+    // ⚠ No live figures in static metadata (2026-11-08): "Average: 15.8×. Max: 248×." read
+    // 10.4× / 200.7× on the live stats the day the X calendar began linking this page.
+    // The page and OG card carry the live numbers.
+    description:
+      "Every TS serial #1 sale of the last 90 days, with the multiplier vs the average serial of the same edition.",
+    url: `${SITE_URL}/insights/first-mint`,
+    siteName: "Rip Packs City",
+    images: [
+      {
+        url: `${SITE_URL}/api/og/insights/first-mint`,
+        width: 1200,
+        height: 630,
+        alt: "Top Shot First-Mint Trophy Tracker — Rip Packs City",
+      },
+    ],
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    ...TWITTER_INHERITED,
+    card: "summary_large_image",
+    title: "Top Shot First-Mint Trophy Tracker",
+    description:
+      "Trophies aren't a vibe — they're math. Every serial #1 sale, last 90d.",
+    images: [`${SITE_URL}/api/og/insights/first-mint`],
+    creator: "@RipPacksCity",
+  },
+}
+
+export default function FirstMintLayout({ children }: { children: React.ReactNode }) {
+  const jsonLd = insightsBoardJsonLd("first-mint")
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(jsonLd) }}
+      />
+      {children}
+    </>
+  )
+}

@@ -1,0 +1,387 @@
+// app/api/profile/trophy/route.ts
+//
+// Phase 4: auth.uid()-keyed trophy moments. Supports up to 6 pinned slots
+// across all published collections. The collection_id defaults to NBA Top
+// Shot when not supplied, so older clients still work.
+//
+// ⭐ MULTIPLE CASES (2026-11-06). Every verb takes an optional `caseId`
+// (body, or `?caseId=` on GET). Absent = the MAIN case (case_id IS NULL), so
+// every existing client keeps working. ⚠ Every read/write below is scoped by
+// case through `scopeToCase` — an unscoped `.eq("slot", n)` now spans every
+// case the user has, and an unpin would delete one trophy per case.
+// A pin into a CHALLENGE case is checked against that challenge's rules
+// server-side (lib/trophy/challenge-rules.ts) before it is written.
+//
+// Public /profile/[username] lookups go through /api/public/profile/[username]
+// (service-role read). This handler is strictly authenticated.
+
+import { NextRequest, NextResponse } from "next/server";
+import { apiErrorResponse } from "@/lib/api-error";
+import { supabaseAdmin as supabase } from "@/lib/supabase";
+import { requireUser } from "@/lib/auth/supabase-server";
+import { sanitizeTrophyThumbnail } from "@/lib/profile/trophy-thumbnail";
+import { logTrophyFunnelEvent } from "@/lib/trophy/funnel-event";
+import { resolvePaniniTrophyCard, type PaniniTrophyCard } from "@/lib/trophy/panini-card";
+import { PANINI_COLLECTION_ID } from "@/lib/trophy/slab-href";
+import { loadOwnCase, parseCaseId, refuseClosedChallenge, scopeToCase, type OwnCase } from "@/lib/trophy/cases";
+import { checkChallengePin, parseChallengeRules } from "@/lib/trophy/challenge-rules";
+import { warmCardsLater } from "@/lib/og/card-warm";
+
+const BAD_CASE = { error: "caseId must be a trophy case id" };
+const NO_CASE = { error: "That trophy case doesn't exist." };
+
+/**
+ * Resolve the request's case scope. `null` case = main. Returns a Response to
+ * short-circuit on a malformed id, a case the user doesn't own, or a failed read.
+ */
+async function resolveCase(
+  userId: string,
+  raw: unknown
+): Promise<{ caseId: string | null; own: OwnCase | null } | Response> {
+  const caseId = parseCaseId(raw);
+  if (caseId === false) return NextResponse.json(BAD_CASE, { status: 400 });
+  if (caseId == null) return { caseId: null, own: null };
+  const res = await loadOwnCase(supabase, userId, caseId);
+  if (!res.ok) return apiErrorResponse(res.error, "api/profile/trophy");
+  if (!res.case) return NextResponse.json(NO_CASE, { status: 404 });
+  return { caseId, own: res.case };
+}
+
+const NBA_TOP_SHOT_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
+
+export async function GET(req?: NextRequest) {
+  let user;
+  try {
+    user = await requireUser();
+  } catch (res) {
+    return res as Response;
+  }
+
+  const rawCase = req?.nextUrl?.searchParams?.get?.("caseId") ?? null;
+  const scope = await resolveCase(user.id, rawCase);
+  if (scope instanceof Response) return scope;
+
+  const { data, error } = await scopeToCase(
+    supabase
+      .from("trophy_moments")
+      .select("*")
+      .eq("user_id", user.id),
+    scope.caseId
+  ).order("slot", { ascending: true });
+
+  if (error) {
+    console.error("[trophy GET]", error);
+    return apiErrorResponse(error, "api/profile/trophy");
+  }
+  return NextResponse.json({ trophies: data ?? [] });
+}
+
+export async function POST(req: NextRequest) {
+  let user;
+  try {
+    user = await requireUser();
+  } catch (res) {
+    return res as Response;
+  }
+
+  const body = await req.json();
+  const {
+    slot,
+    momentId,
+    collectionId,
+    editionId,
+    playerName,
+    setName,
+    serialNumber,
+    circulationCount,
+    tier,
+    thumbnailUrl,
+    videoUrl,
+    fmv,
+    badges,
+    note,
+    funnel,
+    caseId: rawCaseId,
+  } = body;
+
+  if (!slot || !momentId) {
+    return NextResponse.json(
+      { error: "slot and momentId required" },
+      { status: 400 }
+    );
+  }
+  if (slot < 1 || slot > 6) {
+    return NextResponse.json({ error: "slot must be between 1 and 6" }, { status: 400 });
+  }
+
+  const resolvedCollectionId = collectionId ?? NBA_TOP_SHOT_UUID;
+
+  const scope = await resolveCase(user.id, rawCaseId);
+  if (scope instanceof Response) return scope;
+  const challenge = scope.own?.challenge ?? null;
+  const closed = refuseClosedChallenge(scope.own);
+  if (closed) return closed;
+
+  // ── What the CLIENT may assert, and what it may not ───────────────────────
+  //
+  // Most display fields here are harmless because `get_trophy_slab_data` renders
+  // public slabs with `COALESCE(e.<field>, tm.<field>)` — the live `editions`
+  // row WINS, so a forged player/tier/FMV/badge is overridden as soon as the
+  // edition resolves. Two stored fields are NOT coalesced and go out as-is:
+  // `serial_number` and `thumbnail_url`. Those are the ones handled below.
+  //
+  // ⚠ Re-derive that COALESCE before trusting this comment — it is the whole
+  // reason this fix is two fields rather than the twelve a reading of this
+  // handler alone would suggest.
+  //
+  // SERIAL: resolved from the user-independent moment index when we have it.
+  // A serial is a claim about a specific NFT ("#1 of 15,000" is the trophy), and
+  // it was taken from the request body. Every moment the picker offers is in
+  // wallet_moments_cache, so this closes the forge for the real path; a manual
+  // pin of a moment we have never indexed keeps the submitted value rather than
+  // losing it, which is the status quo and not a regression.
+  // PANINI: every display field is derived server-side from the card the user
+  // holds under a linked Panini username — see lib/trophy/panini-card.ts for why
+  // (most Panini cards have no live `editions` side for the slab to coalesce to).
+  let panini: PaniniTrophyCard | null = null;
+  if (resolvedCollectionId === PANINI_COLLECTION_ID) {
+    const res = await resolvePaniniTrophyCard(supabase, user.id, String(momentId));
+    if (!res.ok) {
+      console.error("[trophy POST] panini card resolve failed");
+      return apiErrorResponse(res.error, "api/profile/trophy", "Couldn't verify that card right now — try again in a moment.");
+    }
+    if (!res.card) {
+      return NextResponse.json(
+        { error: "That card isn't under a Panini username linked to your profile." },
+        { status: 403 }
+      );
+    }
+    panini = res.card;
+  }
+
+  // CHALLENGE RULES — only for a challenge case, after the Panini card (if any)
+  // has been verified, so the player label checked is the server's, never the body's.
+  if (challenge) {
+    const check = await checkChallengePin(supabase, parseChallengeRules(challenge.rules), challenge.title, {
+      userId: user.id,
+      momentId: String(momentId),
+      collectionId: resolvedCollectionId,
+      paniniPlayerName: panini ? panini.playerName : null,
+    });
+    if (check.kind === "unchecked") {
+      console.error("[trophy POST] challenge check failed");
+      return apiErrorResponse(check.error, "api/profile/trophy", "Couldn't check that against the challenge right now — try again in a moment.");
+    }
+    if (check.kind === "ineligible") {
+      return NextResponse.json({ error: check.error, code: "challenge_ineligible" }, { status: check.status });
+    }
+  }
+
+  let verifiedSerial: number | null = null;
+  try {
+    const { data: wmcRow } = await supabase
+      .from("wallet_moments_cache")
+      .select("serial_number")
+      .eq("moment_id", momentId)
+      .eq("collection_id", resolvedCollectionId)
+      .not("serial_number", "is", null)
+      .limit(1)
+      .maybeSingle();
+    if (wmcRow && typeof wmcRow.serial_number === "number") {
+      verifiedSerial = wmcRow.serial_number;
+    }
+  } catch (err) {
+    // A failed lookup must not upgrade the client's claim to "verified", and
+    // must not block the pin either. Fall through to the submitted value.
+    console.error("[trophy POST] serial verify failed:", err instanceof Error ? err.message : err);
+  }
+
+  const { data, error } = await supabase
+    .from("trophy_moments")
+    .upsert(
+      {
+        user_id: user.id,
+        // Explicit even when null: the conflict target below includes it.
+        case_id: scope.caseId,
+        slot,
+        moment_id: momentId,
+        collection_id: resolvedCollectionId,
+        edition_id: panini ? panini.editionId : editionId ?? null,
+        player_name: panini ? panini.playerName : playerName ?? null,
+        set_name: panini ? panini.setName : setName ?? null,
+        serial_number: panini ? panini.serialNumber : verifiedSerial ?? serialNumber ?? null,
+        circulation_count: panini ? panini.circulationCount : circulationCount ?? null,
+        tier: panini ? panini.tier : tier ?? null,
+        // ART: allowlisted. This URL is rendered on a public profile AND fetched
+        // SERVER-SIDE by /api/og/profile/[username], which inlines trophy art as
+        // data URIs — so an arbitrary value is both an arbitrary image on
+        // someone's public page and a server-side fetch of a host they chose.
+        // Rejected values become null and the slab falls back, rather than 400ing
+        // a pin that is otherwise fine.
+        thumbnail_url: sanitizeTrophyThumbnail(panini ? panini.thumbnailUrl : thumbnailUrl),
+        video_url: panini ? null : videoUrl ?? null,
+        fmv: panini ? null : fmv ?? null,
+        badges: panini ? null : badges ?? null,
+        note: note ?? null,
+        pinned_at: new Date().toISOString(),
+      },
+      // (user_id, case_id, slot) is UNIQUE NULLS NOT DISTINCT, so the main case
+      // (case_id NULL) still holds one row per slot.
+      { onConflict: "user_id,case_id,slot" }
+    )
+    .select()
+    .single();
+
+  if (error) {
+    console.error("[trophy POST]", error);
+    return apiErrorResponse(error, "api/profile/trophy");
+  }
+
+  // Campaign attribution (2026-09-27). Only after the pin LANDED. A failed log
+  // does not fail the pin — started/completed milestones come from a DB trigger
+  // on trophy_moments, so what a lost row costs is attribution, not the count.
+  // MAIN case only: the trophy-case campaign measures the main case, and its
+  // milestones trigger counts case_id IS NULL rows only.
+  if (scope.caseId == null) {
+    await logTrophyFunnelEvent(supabase as any, {
+      eventType: "trophy_pinned",
+      userId: user.id,
+      slot,
+      funnel,
+      userAgent: req.headers?.get?.("user-agent") ?? null,
+    });
+  }
+
+  // The card URLs carry the case's contents; render the new one now (lib/og/card-warm).
+  warmCardsLater(supabase, user.id, scope.caseId);
+  return NextResponse.json({ trophy: data });
+}
+
+/** Longest caption the slab can render without clipping. */
+export const MAX_NOTE_LEN = 90;
+
+/**
+ * PATCH — edit the caption on an ALREADY-PINNED slot.
+ *
+ * `note` is the only field on a trophy the collector authors themselves; every
+ * other column is denormalized moment metadata. It has been writable by POST,
+ * stored, returned by the slab RPC and rendered in the trophy-case PDF since
+ * the feature shipped — and no UI ever set it, so all 16 pinned trophies in
+ * production carry a null note. This is the missing write path.
+ *
+ * ⚠ It is a PATCH and not a reuse of POST for a load-bearing reason: POST
+ * UPSERTS THE WHOLE ROW. A client that sent `{slot, momentId, note}` to add a
+ * caption would blank the player name, tier, art and FMV of the trophy it was
+ * captioning. A partial write needs a partial verb.
+ *
+ * ⚠ It also updates, never inserts. `upsert` here would let a caption on an
+ * empty slot conjure a trophy with no moment behind it — a row the slab
+ * renderer has no way to draw. A caption for a slot that holds nothing is a
+ * 404, which is the truth.
+ */
+export async function PATCH(req: NextRequest) {
+  let user;
+  try {
+    user = await requireUser();
+  } catch (res) {
+    return res as Response;
+  }
+
+  const body = await req.json().catch(() => null);
+  const slot = Number(body?.slot);
+  const rawNote = body?.note;
+
+  if (!Number.isInteger(slot) || slot < 1 || slot > 6) {
+    return NextResponse.json({ error: "slot must be between 1 and 6" }, { status: 400 });
+  }
+  if (rawNote != null && typeof rawNote !== "string") {
+    return NextResponse.json({ error: "note must be a string or null" }, { status: 400 });
+  }
+
+  // Collapse whitespace so a caption of spaces/newlines cannot pass the length
+  // check and then render as a blank line under the slab, and so the emptied
+  // case round-trips to NULL rather than "" (the slab branches on presence).
+  const trimmed = typeof rawNote === "string" ? rawNote.replace(/\s+/g, " ").trim() : "";
+  if (trimmed.length > MAX_NOTE_LEN) {
+    return NextResponse.json(
+      { error: `note must be ${MAX_NOTE_LEN} characters or fewer` },
+      { status: 400 }
+    );
+  }
+  const note = trimmed.length > 0 ? trimmed : null;
+
+  const scope = await resolveCase(user.id, body?.caseId);
+  if (scope instanceof Response) return scope;
+  const closedP = refuseClosedChallenge(scope.own);
+  if (closedP) return closedP;
+
+  const { data, error } = await scopeToCase(
+    supabase
+      .from("trophy_moments")
+      .update({ note })
+      .eq("user_id", user.id)
+      .eq("slot", slot),
+    scope.caseId
+  )
+    .select()
+    .maybeSingle();
+
+  if (error) {
+    console.error("[trophy PATCH]", error);
+    return apiErrorResponse(error, "api/profile/trophy");
+  }
+  if (!data) {
+    return NextResponse.json({ error: "No trophy pinned in that slot" }, { status: 404 });
+  }
+  return NextResponse.json({ trophy: data });
+}
+
+export async function DELETE(req: NextRequest) {
+  let user;
+  try {
+    user = await requireUser();
+  } catch (res) {
+    return res as Response;
+  }
+
+  const body = await req.json();
+  const { slot, funnel } = body;
+  if (!slot) {
+    return NextResponse.json({ error: "slot required" }, { status: 400 });
+  }
+
+  const scope = await resolveCase(user.id, body?.caseId);
+  if (scope instanceof Response) return scope;
+  const closedD = refuseClosedChallenge(scope.own);
+  if (closedD) return closedD;
+
+  // `.select("id")` so the event below is logged only when a row was actually
+  // removed — a DELETE of an already-empty slot succeeds with nothing to count.
+  const { data: removed, error } = await scopeToCase(
+    supabase
+      .from("trophy_moments")
+      .delete()
+      .eq("user_id", user.id)
+      .eq("slot", slot),
+    scope.caseId
+  ).select("id");
+
+  if (error) {
+    console.error("[trophy DELETE]", error);
+    return apiErrorResponse(error, "api/profile/trophy");
+  }
+
+  // See POST: logged only after the delete landed, never fails the unpin.
+  if (scope.caseId == null && Array.isArray(removed) && removed.length > 0) {
+    await logTrophyFunnelEvent(supabase as any, {
+      eventType: "trophy_removed",
+      userId: user.id,
+      slot,
+      funnel,
+      userAgent: req.headers?.get?.("user-agent") ?? null,
+    });
+  }
+
+  warmCardsLater(supabase, user.id, scope.caseId);
+  return NextResponse.json({ ok: true });
+}

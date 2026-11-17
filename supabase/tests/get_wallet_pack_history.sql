@@ -1,0 +1,2283 @@
+-- DB invariant: public.get_wallet_pack_history — the per-pack timeline behind
+-- the wallet Packs tabs (/dashboard/packs, the Collection tab's Packs body) and
+-- the sold-packs alert. Three claims it must keep, each of which was FALSE in
+-- production until 2026-09-18:
+--
+--   1. A pack the wallet sold on the Dapper marketplace COUNTS AS SOLD. The
+--      on-chain table records the transaction PAYER (Dapper's escrow) as the
+--      seller, so `pack_purchases.seller_address = wallet` matched 2 rows of
+--      105,505 platform-wide and every wallet read "0 sold". The seller lives in
+--      topshot_pack_sales_history / allday_pack_sales_history.storefront_address.
+--   2. An unknown price is NULL, never 0. Every Top Shot primary drop has
+--      sale_price NULL on chain, and the old body emitted COALESCE(.., 0), so
+--      sealed drop packs rendered "BUY $0" and unvalued rips "PULL VALUE $0".
+--   3. A sealed pack's distribution resolves from ANY marketplace row for that
+--      pack_nft_id, not only from the wallet's own rip — and a pack with no
+--      source at all stays NULL rather than borrowing a neighbour's.
+--   4. (v5, 2026-09-18) A pack Dapper's index says another wallet now holds,
+--      with no sale or rip by this wallet, is TRANSFERRED, never HELD; and the
+--      index is a dist source of last resort (dist_source = 'dapper_index').
+--   5. (v6) A pack the index says the wallet HOLDS with no buy of ours is HELD
+--      (buy NULL, never 0); one it says the wallet OPENED with no rip of ours is
+--      RIPPED with pull value NULL. A sale we hold out-ranks a stale identity.
+--   6. (v7, 2026-09-20) AN OWNERSHIP CLAIM IS ONLY AS GOOD AS THE WALK THAT
+--      CONFIRMED IT. A pack that LEAVES the wallet is never returned by a later
+--      walk, so its index row keeps owner_address = that wallet for ever --
+--      pack_nft_identity_queue only re-checks packs carrying a purchase or a rip
+--      row, so an OPENED pack that leaves is refreshed through its new owner's
+--      purchase while a SEALED one that leaves by transfer has no re-check path
+--      at all. Measured across the 27 saved wallets on 2026-09-20: 23 such rows
+--      on 5 wallets, and 23 OF 23 WERE SEALED -- every one of them rendered to
+--      its owner as an unopened pack they still held. So a row older than
+--      pack_wallet_sync.last_clean_sync_at is NOT a holding: index-only, it
+--      leaves the list entirely; with a buy of ours it is TRANSFERRED, never
+--      HELD; and current_owner goes NULL rather than repeat a name known wrong.
+--      ⚠ The guard is OFF when there is no clean walk to measure against --
+--      never synced, in flight, errored, page-capped -- because suppressing on a
+--      PARTIAL walk is the same defect pointing the other way. P19 is the
+--      no-change control for that, and the fix cannot move it.
+--   7. (v8, 2026-09-26) WIDER AND DEEPER. Golazos and Pinnacle opens (their own
+--      tables; pack_rips holds neither) are RIPPED rows, and Golazos marketplace
+--      buys/sells count like Top Shot's and All Day's. A pack's pull value comes
+--      first from pack_open_pull_values -- priced from the moments Dapper's index
+--      says the pack yielded -- and ONLY for the wallet that opened it; the rip
+--      row's value is the fallback, and pull_value_source says which. A pack whose
+--      pull list is partly priced publishes NULL plus pulls_priced / pulls_total,
+--      never a partial sum.
+--   8. (v9, 2026-09-26) Packs opened with NO pack NFT (custodial Top Shot
+--      packs), rebuilt from moment delivery bursts (wallet_reconstructed_rips),
+--      are RIPPED rows with rip_source = 'reconstructed', a labelled name, and
+--      pull_value_source = 'delivery_burst' -- and ONLY for their own wallet.
+--   9. (v15, 2026-09-28) An All Day pack is minted ON PURCHASE, so its mint in
+--      Dapper's index (pack_index_mints) dates a primary buy we hold no row for
+--      -- a pack the wallet SOLD included -- unless someone else sold it on the
+--      marketplace first (P70-P74). And the index's acquisition date is only
+--      this wallet's while the index names this wallet: on a sold pack it is
+--      the BUYER's (P75).
+--  10. (v16, same night) The wallet's OWN index date outranks the mint: some
+--      All Day drops are pre-minted days before they open (P76).
+--  11. (v17, same night) A mint BEFORE the window is ignored: a pre-minted pack
+--      sold inside its window is judged by the sale, as before the mint arm (P77).
+--  12. (v20, 2026-10-10) A BOUGHT pack the index -- confirmed by the wallet's clean walk --
+--      says this wallet OPENED is ripped, never held (box openings write no rip row);
+--      a stale Opened row is still a departure (BX1-BX3).
+--  13. (v21, 2026-10-10, #187) A pack that came out of a box THIS wallet opened was not bought:
+--      no buy price (source 'box'), never inferred at its own retail, so no P/L of its own --
+--      a sold topper (retail 0) read "buy $0" and its whole sale as profit. Opener-scoped:
+--      another wallet's box contents change nothing here (IB1-IB4).
+--  14. (v22, 2026-10-10) A BOX this wallet opened realizes what its packs became: realized P/L =
+--      sum(each pack's sale or pull value) - the box's buy, only when EVERY pack it yielded is
+--      sold-with-a-price or opened-with-a-value; one still sealed leaves it NULL (IBOX, IBOX2).
+--  15. (v23, 2026-10-11, performance only) A STATUS-FILTERED read returns exactly the rows of that
+--      status the unfiltered read returns, field for field -- the filter now drops rows BEFORE
+--      enrichment, so this is what keeps it honest. A pack out of a box is never dropped early:
+--      under the 'ripped' filter IBOX must still realize $460 from its SOLD packs (FLT1).
+--  16. (v27, 2026-11-13) An OPENED pack says what of it the wallet STILL holds, at the wallet's
+--      own FMV (wallet_moments_cache): pulls named across every pull list, de-duplicated; a
+--      held pull without an FMV is counted and leaves the pack's held FMV NULL, never $0; a
+--      moment id held in ANOTHER collection or by ANOTHER wallet is not held (#142); none held
+--      is a real $0. A SEALED pack carries a value with its basis (ask > last sale > rip EV >
+--      opened avg), and every read returns tab_totals over ALL of the tab's rows, each sum
+--      beside the count it covers (V27-1..V27-4), with tab_totals.packs = total_count (V27-5).
+--  17. (v28, 2026-11-13) ask_checked_at is when the ask was last CONFIRMED: a LISTED row is
+--      confirmed by every complete snapshot walk (pack_ask_snapshot_state.last_ok_at), because
+--      the writer skips an unchanged row and its own last_checked_at is when the ask last
+--      CHANGED (one wallet read "asks checked since Aug 26" off asks re-confirmed every 5 min).
+--      An UNLISTED row keeps its own stamp (V28-1, V28-2).
+--  18. (v29 + wallet_held_pack_value v2, 2026-11-13) tab_totals carries each sealed-pack basis
+--      summed apart, and wallet_held_pack_value reads them in ONE call instead of re-running
+--      this function per 200-row page. For EVERY fixture wallet its fields equal the old
+--      page-by-page sums over the rows (V29-1), so no number moves.
+--
+-- The get_wallet_pack_history DDL below is VERBATIM from the committed migration
+-- (supabase/migrations/20261114044121_audit_20261113_pack_history_held_basis_totals.sql; wallet_held_pack_value from 20261114044351_audit_20261113_held_pack_value_one_read.sql).
+-- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
+--
+-- Runs inside a rolled-back transaction so it leaves no residue.
+
+BEGIN;
+
+CREATE TABLE public.collections (id uuid PRIMARY KEY, slug text UNIQUE, name text);
+CREATE TABLE public.pack_purchases (
+  id uuid DEFAULT gen_random_uuid(), collection_id uuid, pack_nft_id text,
+  buyer_address text, seller_address text, sale_price numeric, sale_currency text,
+  sealed_at timestamptz, is_primary_drop boolean DEFAULT false, event_kind text, pack_dist_id text
+);
+CREATE TABLE public.topshot_pack_sales_history (
+  tx_hash text, pack_nft_id text, sale_price_usd numeric, purchased boolean,
+  buyer_address text, storefront_address text, dist_id text, block_time timestamptz
+);
+CREATE TABLE public.allday_pack_sales_history (LIKE public.topshot_pack_sales_history);
+CREATE TABLE public.pack_rips (
+  id uuid DEFAULT gen_random_uuid(), collection_id uuid, pack_nft_id text, opener_address text,
+  moments_pulled int, sealed_at timestamptz, dist_id text, pull_value_usd numeric
+);
+CREATE TABLE public.pack_distributions (
+  collection_id uuid, dist_id text, title text, image_url text, metadata jsonb,
+  total_sealed int, total_opened int
+);
+CREATE TABLE public.pack_ask_state (
+  collection_slug text, dist_id text, lowest_ask numeric, is_listed boolean, last_checked_at timestamptz
+);
+-- 2026-09-25: the body skips the MV's could-not-price sentinel (gross_ev = 0 AND
+-- edition_count = 0) and rows under 25% FMV coverage; the defaults describe a
+-- normally-priced row so the fixtures below keep their meaning.
+CREATE TABLE public.mv_pack_ev_latest (collection_id uuid, dist_id text, pack_ev numeric, snapshotted_at timestamptz,
+  gross_ev numeric DEFAULT 31.2, edition_count int DEFAULT 10, fmv_coverage_pct numeric DEFAULT 100);
+CREATE TABLE public.pack_nft_identity (
+  collection_id uuid, pack_nft_id text, dist_id text, status text, owner_address text, checked_at timestamptz DEFAULT now(),
+  acquired_at timestamptz,
+  PRIMARY KEY (collection_id, pack_nft_id)
+);
+CREATE TABLE public.pack_wallet_sync (wallet text PRIMARY KEY, requested_at timestamptz, completed_at timestamptz, pages int, packs int, last_error text, last_clean_sync_at timestamptz);
+-- v8 (2026-09-26)
+CREATE TABLE public.golazos_pack_sales_history (LIKE public.topshot_pack_sales_history);
+CREATE TABLE public.golazos_pack_opens (pack_nft_id text, dist_id text, opener_address text, opened_at timestamptz, moments_pulled int, pull_value_usd numeric);
+CREATE TABLE public.pinnacle_pack_opens (LIKE public.golazos_pack_opens);
+CREATE TABLE public.wallet_reconstructed_rips (wallet text, collection_id uuid, burst_id text, opened_at timestamptz,
+  moments_pulled int, nft_ids text[] DEFAULT '{}', n_resolved int, n_priced int, pull_value_usd numeric(14,2));
+CREATE TABLE public.pack_box_contents (collection_id uuid NOT NULL, box_pack_nft_id text NOT NULL, pack_nft_id text NOT NULL,
+  opener_address text NOT NULL, first_seen_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (collection_id, box_pack_nft_id, pack_nft_id));
+CREATE TABLE public.pack_open_pull_values (
+  collection_id uuid, pack_nft_id text, opener_address text, n_pulls int, n_resolved int, n_priced int,
+  pull_value_usd numeric(14,2), priced_at timestamptz DEFAULT now(), n_inferred int NOT NULL DEFAULT 0,
+  PRIMARY KEY (collection_id, pack_nft_id));
+-- v28 (2026-11-13): when each collection's last COMPLETE ask walk finished
+CREATE TABLE public.pack_ask_snapshot_state (collection_slug text PRIMARY KEY, last_ok_at timestamptz, total_listed int);
+-- v27 (2026-11-13): every pull list the body reads, and the wallet's holdings at FMV
+CREATE TABLE public.pack_open_pulls (collection_id uuid, pack_nft_id text, nft_id text, opener_address text,
+  PRIMARY KEY (collection_id, pack_nft_id, nft_id));
+CREATE TABLE public.allday_pack_pull (pack_nft_id text, moment_nft_id text, opener_address text,
+  PRIMARY KEY (pack_nft_id, moment_nft_id));
+CREATE TABLE public.golazos_pack_open_pulls (nft_id text, pack_nft_id text);
+CREATE TABLE public.moment_acquisitions (nft_id text, wallet text, collection_id uuid, source_pack_rip_id uuid);
+-- v30 (2026-11-14): the Top Shot open book -- its lowest ask values one Trade Ticket
+CREATE TABLE public.ts_listings (listing_id text PRIMARY KEY, price_usd numeric);
+CREATE TABLE public.wallet_moments_cache (wallet_address text, collection_id uuid, moment_id text, fmv_usd numeric,
+  PRIMARY KEY (wallet_address, collection_id, moment_id));
+
+-- 2026-09-26 (v10): retail normalisation helper + All Day drop prices
+CREATE OR REPLACE FUNCTION public.pack_retail_usd(p_raw text)
+RETURNS numeric
+LANGUAGE sql
+IMMUTABLE PARALLEL SAFE
+SET search_path TO 'public'
+AS $function$
+  -- A pack's retail price in DOLLARS from pack_distributions.metadata->>'retail_price_usd',
+  -- which carries some Top Shot prices in UFix64 units (x1e8). The estate's rule
+  -- (lib/packs/normalize-retail-price.ts): >= 1,000,000 is UFix64. Unlike that
+  -- helper, unknown stays NULL (never 0); 0 stays 0 (a reward pack's known price).
+  SELECT CASE
+           WHEN p_raw IS NULL OR p_raw !~ '^\s*[0-9]+(\.[0-9]+)?\s*$' THEN NULL
+           WHEN p_raw::numeric >= 1000000 THEN round(p_raw::numeric / 100000000, 2)
+           ELSE p_raw::numeric
+         END
+$function$;
+CREATE TABLE IF NOT EXISTS public.allday_pack_supply (dist_id text PRIMARY KEY, pack_price numeric);
+
+-- 2026-09-26 (v11): title-aware retail + Dapper mint receipts
+CREATE OR REPLACE FUNCTION public.pack_retail_usd(p_raw text, p_title text)
+RETURNS numeric
+LANGUAGE sql
+IMMUTABLE PARALLEL SAFE
+SET search_path TO 'public'
+AS $function$
+  -- A drop's retail in DOLLARS, knowing which drop it is: a Trade Ticket pack is
+  -- bought with Trade Tickets, and its retail_price_usd is the ticket price --
+  -- no dollar amount exists, so NULL (unknown), never the ticket count as $.
+  SELECT CASE WHEN p_title ILIKE '%trade ticket%' THEN NULL
+              ELSE public.pack_retail_usd(p_raw) END
+$function$;
+-- 2026-09-26 (v14): what each drop's opened packs yielded
+CREATE TABLE public.pack_observed_values (collection_id uuid NOT NULL, dist_id text NOT NULL, n_opened int NOT NULL,
+  n_valued int NOT NULL, avg_value_usd numeric(14,2), refreshed_at timestamptz NOT NULL, PRIMARY KEY (collection_id, dist_id),
+  CONSTRAINT pack_observed_values_avg_needs_values CHECK (avg_value_usd IS NULL OR n_valued > 0));
+CREATE TABLE public.pipeline_runs_stub (pipeline text, ok boolean, rows_written int, extra jsonb);
+CREATE FUNCTION public.log_pipeline_run(p_pipeline text, p_started_at timestamptz, p_rows_found int, p_rows_written int,
+  p_rows_skipped int, p_ok boolean, p_error text, p_collection_slug text, p_cursor_before text, p_cursor_after text, p_extra jsonb)
+RETURNS bigint LANGUAGE sql AS $$ INSERT INTO public.pipeline_runs_stub VALUES (p_pipeline, p_ok, p_rows_written, p_extra) RETURNING 1::bigint $$;
+-- 2026-09-26 (v12): All Day drop windows from Dapper
+CREATE TABLE public.allday_drop_windows (dist_id text PRIMARY KEY, start_time timestamptz, end_time timestamptz,
+  price_usd numeric(14,2), title text, fetched_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE public.pack_nft_mints (collection_id uuid, pack_nft_id text, dist_id text, minted_at timestamptz,
+  block_height bigint, tx_id text, first_seen_at timestamptz DEFAULT now(), PRIMARY KEY (collection_id, pack_nft_id));
+-- 2026-09-28 (v15): All Day mints from Dapper's index + the helper that reads them
+CREATE TABLE public.pack_index_mints (collection_id uuid NOT NULL, pack_nft_id text NOT NULL, in_index boolean NOT NULL,
+  minted_at timestamptz, mint_tx text, fetched_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (collection_id, pack_nft_id));
+CREATE OR REPLACE FUNCTION public.allday_pack_primary_minted_at(p_pack_nft_id text, p_wallet text, p_exit_at timestamptz)
+ RETURNS timestamptz
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  SELECT m.minted_at
+  FROM public.pack_index_mints m
+  WHERE m.collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070'
+    AND m.pack_nft_id = p_pack_nft_id
+    AND m.in_index
+    AND m.minted_at IS NOT NULL
+    AND (p_exit_at IS NULL OR m.minted_at <= p_exit_at)
+    -- no one else sold it on the marketplace after the mint and before this
+    -- wallet let it go (the studio row's block_time is the LISTING's: a seller
+    -- who listed before our exit held it before our exit)
+    AND NOT EXISTS (
+      SELECT 1 FROM public.allday_pack_sales_history s
+      WHERE s.pack_nft_id = p_pack_nft_id
+        AND s.purchased
+        AND s.block_time >= m.minted_at
+        AND (p_exit_at IS NULL OR s.block_time < p_exit_at)
+        AND s.storefront_address IS DISTINCT FROM p_wallet)
+$function$;
+
+-- >>> BEGIN verbatim get_wallet_pack_history (body byte-identical to the migration) >>>
+CREATE OR REPLACE FUNCTION public.get_wallet_pack_history(p_wallet text, p_collection_slug text DEFAULT NULL::text, p_status text DEFAULT NULL::text, p_limit integer DEFAULT 50, p_offset integer DEFAULT 0)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ SET statement_timeout TO '20s'
+AS $function$
+DECLARE
+  v_wallet text := lower(coalesce(p_wallet, ''));
+  v_safe_limit  int := LEAST(GREATEST(COALESCE(p_limit, 50), 1), 200);
+  v_safe_offset int := GREATEST(COALESCE(p_offset, 0), 0);
+  v_ts uuid;
+  v_ad uuid;
+  v_gz uuid;
+  v_pin uuid;
+  v_total int;
+  v_packs jsonb;
+  -- v27 (2026-11-13): totals over EVERY row of the requested tab, not just the page
+  v_tab jsonb;
+  -- v27: which tab parts this read needs. Constants to the planner (one-time
+  -- filters), so a Sold read never probes a pull list and an Opened read never
+  -- prices a sealed pack.
+  v_want_pulls boolean := p_status IS NULL OR p_status IN ('all', 'ripped');
+  v_want_held  boolean := p_status IS NULL OR p_status IN ('all', 'held');
+  v_sync jsonb;
+  -- Start of this wallet's most recent CLEAN full walk
+  -- (pack_wallet_sync.last_clean_sync_at). Every pack that walk returned was
+  -- stamped checked_at = now() as it was collected, i.e. at or after this
+  -- instant -- so a row still naming this wallet with an OLDER checked_at is a
+  -- pack the walk no longer found here: one the wallet has parted with.
+  -- NULL when no clean walk has ever finished (never synced, one in flight,
+  -- errored, or the 60-page cap hit). The guards below then trust the index
+  -- as-is, because suppressing on a PARTIAL walk would read every page it
+  -- never reached as a mass departure -- the same defect pointing the other way.
+  v_sync_floor timestamptz;
+BEGIN
+  IF v_wallet = '' THEN
+    RETURN jsonb_build_object('error', 'wallet required');
+  END IF;
+
+  SELECT id INTO v_ts FROM public.collections WHERE slug = 'nba_top_shot';
+  SELECT id INTO v_ad FROM public.collections WHERE slug = 'nfl_all_day';
+  SELECT id INTO v_gz FROM public.collections WHERE slug = 'laliga_golazos';
+  SELECT id INTO v_pin FROM public.collections WHERE slug = 'disney_pinnacle';
+
+  SELECT jsonb_build_object('requested_at', s.requested_at, 'completed_at', s.completed_at,
+                            'pages', s.pages, 'packs', s.packs, 'last_error', s.last_error,
+                            'last_clean_sync_at', s.last_clean_sync_at),
+         s.last_clean_sync_at
+    INTO v_sync, v_sync_floor
+    FROM public.pack_wallet_sync s WHERE s.wallet = v_wallet;
+
+  WITH buy_src AS (
+    -- (1) on-chain, via pack-events-ingest: secondary ListingCompleted rows AND
+    --     primary Withdraw/Mint rows (sale_price NULL on chain -> priced at retail below)
+    SELECT pack_nft_id, collection_id, sale_price AS price, sale_currency AS currency,
+           sealed_at AS at, seller_address AS counterparty, is_primary_drop, event_kind,
+           pack_dist_id AS dist_id, 'onchain'::text AS src, 1 AS pri
+    FROM public.pack_purchases WHERE buyer_address = v_wallet
+    UNION ALL
+    -- (2) Dapper marketplace history (Atlas walker). Buyer-side rows. USD.
+    SELECT pack_nft_id, v_ts, sale_price_usd, 'USD', block_time, storefront_address, false,
+           'secondary_sale', dist_id, 'marketplace', 2
+    FROM public.topshot_pack_sales_history WHERE buyer_address = v_wallet AND purchased
+    UNION ALL
+    SELECT pack_nft_id, v_ad, sale_price_usd, 'USD', block_time, storefront_address, false,
+           'secondary_sale', dist_id, 'marketplace', 2
+    FROM public.allday_pack_sales_history WHERE buyer_address = v_wallet AND purchased
+    UNION ALL
+    -- 2026-09-26: Golazos marketplace history (same walker shape, same meaning).
+    SELECT pack_nft_id, v_gz, sale_price_usd, 'USD', block_time, storefront_address, false,
+           'secondary_sale', dist_id, 'marketplace', 2
+    FROM public.golazos_pack_sales_history WHERE buyer_address = v_wallet AND purchased
+  ),
+  -- One buy per pack. The same purchase is often in BOTH sources with DIFFERENT
+  -- timestamps: the marketplace row carries the sale moment, the on-chain row
+  -- the settlement, which lands later by a median 4 h and a p90 of 9 DAYS
+  -- (31,995 matched Top Shot pairs, Jun-Aug 2026). So rows within 30 days of
+  -- the pack's latest buy row are ONE purchase: price/counterparty come from
+  -- its latest row (on-chain on a tie), bought_at is the EARLIEST of them --
+  -- otherwise a quick flip whose on-chain settlement post-dates the resale
+  -- reads as "bought back" and renders HELD.
+  buy_ranked AS (
+    SELECT b.*, MAX(at) OVER (PARTITION BY collection_id, pack_nft_id) AS max_at
+    FROM buy_src b
+  ),
+  latest_buys AS (
+    SELECT DISTINCT ON (collection_id, pack_nft_id)
+           pack_nft_id, collection_id, price AS buy_price, currency AS buy_currency,
+           MIN(at) FILTER (WHERE at >= max_at - interval '30 days')
+             OVER (PARTITION BY collection_id, pack_nft_id) AS bought_at,
+           counterparty AS bought_from, is_primary_drop AS bought_primary,
+           event_kind AS bought_event_kind, src AS buy_src
+    FROM buy_ranked
+    ORDER BY collection_id, pack_nft_id, at DESC, pri
+  ),
+  buy_dist AS (
+    SELECT collection_id, pack_nft_id, MAX(dist_id) AS dist_id
+    FROM buy_src WHERE dist_id IS NOT NULL GROUP BY 1, 2
+  ),
+  sell_src AS (
+    -- (1) on-chain rows whose seller IS this wallet: rows the worker ingests
+    --     after its Withdraw.from fix, plus the 68,889 historical rows the
+    --     2026-09-18 backfill re-attributed from the marketplace tables.
+    SELECT pack_nft_id, collection_id, sale_price AS price, sale_currency AS currency,
+           sealed_at AS at, buyer_address AS counterparty, pack_dist_id AS dist_id,
+           'onchain'::text AS src, 1 AS pri
+    FROM public.pack_purchases WHERE seller_address = v_wallet
+    UNION ALL
+    -- (2) marketplace history: storefront_address is the SELLING wallet.
+    SELECT pack_nft_id, v_ts, sale_price_usd, 'USD', block_time, buyer_address, dist_id, 'marketplace', 2
+    FROM public.topshot_pack_sales_history WHERE storefront_address = v_wallet AND purchased
+    UNION ALL
+    SELECT pack_nft_id, v_ad, sale_price_usd, 'USD', block_time, buyer_address, dist_id, 'marketplace', 2
+    FROM public.allday_pack_sales_history WHERE storefront_address = v_wallet AND purchased
+    UNION ALL
+    SELECT pack_nft_id, v_gz, sale_price_usd, 'USD', block_time, buyer_address, dist_id, 'marketplace', 2
+    FROM public.golazos_pack_sales_history WHERE storefront_address = v_wallet AND purchased
+  ),
+  latest_sells AS (
+    SELECT DISTINCT ON (collection_id, pack_nft_id)
+           pack_nft_id, collection_id, price AS sell_price, currency AS sell_currency,
+           at AS sold_at, counterparty AS sold_to, src AS sell_src
+    FROM sell_src
+    ORDER BY collection_id, pack_nft_id, at DESC, pri
+  ),
+  sell_dist AS (
+    SELECT collection_id, pack_nft_id, MAX(dist_id) AS dist_id
+    FROM sell_src WHERE dist_id IS NOT NULL GROUP BY 1, 2
+  ),
+  wallet_rips AS (
+    SELECT id, pack_nft_id, collection_id, sealed_at, moments_pulled, dist_id, pull_value_usd,
+           'rip'::text AS rip_source, NULL::int AS rc_pulls, NULL::int AS rc_resolved, NULL::int AS rc_priced
+    FROM public.pack_rips WHERE opener_address = v_wallet
+    UNION ALL
+    -- 2026-09-26: Golazos and Pinnacle opens live in their own tables (pack_rips
+    -- holds neither -- 0 rows each), so the Opened tab never listed them.
+    SELECT NULL::uuid, pack_nft_id, v_gz, opened_at, moments_pulled, dist_id, pull_value_usd,
+           'rip', NULL, NULL, NULL
+    FROM public.golazos_pack_opens WHERE opener_address = v_wallet
+    UNION ALL
+    SELECT NULL::uuid, pack_nft_id, v_pin, opened_at, moments_pulled, dist_id, pull_value_usd,
+           'rip', NULL, NULL, NULL
+    FROM public.pinnacle_pack_opens WHERE opener_address = v_wallet
+    UNION ALL
+    -- 2026-09-26 (v9): packs opened with NO pack NFT (custodial Top Shot packs),
+    -- reconstructed from the wallet's pack-pull delivery bursts
+    -- (wallet_reconstructed_rips). No dist, no price paid; rip_source says so.
+    SELECT NULL::uuid, burst_id, collection_id, opened_at, moments_pulled, NULL::text, pull_value_usd,
+           'reconstructed', moments_pulled, n_resolved, n_priced
+    FROM public.wallet_reconstructed_rips WHERE wallet = v_wallet
+  ),
+  -- (3) Dapper's index of what the wallet HOLDS or OPENED (pack_nft_identity,
+  --     filled by the pack-nft-identity lane's wallet sync): the packs our
+  --     buy/rip tables never saw -- reward packs, boxes and drops from before
+  --     on-chain coverage. Ranked below every sale and rip we hold.
+  index_holds AS (
+    SELECT pack_nft_id, collection_id, acquired_at AS at,  -- 2026-09-24: never the CHECK time (see header)
+           CASE WHEN status = 'Opened'
+                     -- 2026-10-19: a Top Shot 'Revealed' pack WAS opened -- its contents were delivered (see header)
+                     OR (status = 'Revealed' AND collection_id = v_ts) THEN 'idx_open' ELSE 'idx_hold' END AS role
+    FROM public.pack_nft_identity
+    WHERE owner_address = v_wallet
+      AND (status IN ('Sealed', 'Opened') OR (status = 'Revealed' AND collection_id = v_ts))
+      -- ... and this wallet's own last clean walk still found it here. Without
+      -- this arm a pack that LEFT keeps owner_address = this wallet for ever --
+      -- pack_nft_identity_queue only ever enqueues a pack carrying a purchase or
+      -- a rip row, so an OPENED pack that leaves is re-checked through its new
+      -- owner's purchase while a SEALED one that leaves by transfer has no
+      -- re-check path at all -- and the reader publishes it to the user as an
+      -- unopened pack they still own. Measured 2026-09-20 across the 27 saved
+      -- wallets: 23 such rows on 5 wallets, and 23 of 23 were Sealed.
+      AND (v_sync_floor IS NULL OR checked_at >= v_sync_floor)
+  ),
+  events AS (
+    SELECT collection_id, pack_nft_id, bought_at AS event_at, 'buy'::text AS role FROM latest_buys
+    UNION ALL
+    SELECT collection_id, pack_nft_id, sold_at, 'sell' FROM latest_sells
+    UNION ALL
+    SELECT collection_id, pack_nft_id, sealed_at, 'rip' FROM wallet_rips
+    UNION ALL
+    SELECT collection_id, pack_nft_id, at, role FROM index_holds
+  ),
+  dedup AS (
+    SELECT collection_id, pack_nft_id,
+      MAX(event_at)              AS latest_event_at,
+      MIN(event_at)              AS first_event_at,
+      bool_or(role = 'buy')      AS has_buy,
+      bool_or(role = 'sell')     AS has_sell,
+      bool_or(role = 'rip')      AS has_rip,
+      bool_or(role = 'idx_hold') AS has_idx_hold,
+      bool_or(role = 'idx_open') AS has_idx_open
+    FROM events GROUP BY 1, 2
+  ),
+  resolved AS (
+    SELECT
+      d.*,
+      c.slug AS collection_slug, c.name AS collection_name,
+      lb.buy_price, lb.buy_currency, lb.bought_at, lb.bought_from, lb.bought_primary,
+      lb.bought_event_kind, lb.buy_src,
+      ls.sell_price, ls.sell_currency, ls.sold_at, ls.sold_to, ls.sell_src,
+      wr.id AS rip_id, wr.sealed_at AS ripped_at,
+      -- 2026-09-26: what the pack yielded, from Dapper's own list of its moments
+      -- (pack_open_pull_values, the wallet-pack-pulls lane) first; the rip
+      -- record's value only where that list has not been priced. Both are
+      -- current FMV, whole-pack, NULL -- never 0 -- when any pull is unpriced.
+      COALESCE(wr.moments_pulled, pov.n_pulls) AS moments_pulled,
+      COALESCE(pov.pull_value_usd, wr.pull_value_usd) AS pull_value_usd,
+      CASE WHEN pov.pull_value_usd IS NOT NULL THEN 'dapper_pulls'
+           WHEN wr.pull_value_usd IS NOT NULL AND wr.rip_source = 'reconstructed' THEN 'delivery_burst'
+           WHEN wr.pull_value_usd IS NOT NULL THEN 'rip_record'
+      END AS pull_value_source,
+      COALESCE(pov.n_pulls,    wr.rc_pulls)    AS pulls_total,
+      COALESCE(pov.n_resolved, wr.rc_resolved) AS pulls_identified,
+      COALESCE(pov.n_priced,   wr.rc_priced)   AS pulls_priced,
+      -- v18: how many of the pack's pulls are named by inference (id neighbours)
+      pov.n_inferred                           AS pulls_inferred,
+      wr.rip_source,
+      -- Dapper's own index of the pack (pack_nft_identity, filled by the
+      -- pack-nft-identity lane): current owner + Sealed/Opened, as of checked_at.
+      -- TRUE when the index still names this wallet but the wallet's last clean
+      -- walk did not return the pack: it has left. NULL when we cannot tell --
+      -- no identity row, or no clean walk to measure against -- so every arm
+      -- below reads it through coalesce(..., false) and never lets "unknown"
+      -- decide anything.
+      CASE WHEN pi.pack_nft_id IS NULL OR v_sync_floor IS NULL THEN NULL
+           ELSE (pi.owner_address = v_wallet AND pi.checked_at < v_sync_floor)
+      END AS index_departed,
+      -- Once it has left, the index's owner_address is a name we KNOW to be
+      -- wrong, so this says unknown rather than repeating it back.
+      CASE WHEN v_sync_floor IS NOT NULL AND pi.owner_address = v_wallet
+                AND pi.checked_at < v_sync_floor THEN NULL
+           -- 2026-11-06: the index naming the pack's OWN primary distributor
+           -- after that distributor delivered it here is a stale read (#218,
+           -- frozen sealed-pack index), not a holder: 13 of 13 such packs on
+           -- one wallet were on chain in the wallet. Unknown, never "left".
+           WHEN lb.bought_primary IS TRUE AND lb.bought_from IS NOT NULL
+                AND pi.owner_address = lb.bought_from THEN NULL
+           ELSE pi.owner_address
+      END AS current_owner,
+      pi.status        AS identity_status,
+      pi.checked_at    AS identity_checked_at,
+      pi.acquired_at   AS identity_acquired_at,
+      -- distribution: rip > the wallet's own rows > any marketplace row > the index
+      COALESCE(wr.dist_id, bd.dist_id, sd.dist_id, hx.dist_id, NULLIF(pi.dist_id, '0')) AS dist_id,
+      CASE
+        WHEN wr.dist_id IS NOT NULL THEN 'rip'
+        WHEN bd.dist_id IS NOT NULL OR sd.dist_id IS NOT NULL THEN 'own_row'
+        WHEN hx.dist_id IS NOT NULL THEN 'peer_sale'
+        WHEN NULLIF(pi.dist_id, '0') IS NOT NULL THEN 'dapper_index'
+        ELSE NULL
+      END AS dist_source,
+      -- 2026-10-10 (v21, #187): the BOX this wallet opened that yielded this pack, or NULL.
+      -- Such a pack was never bought: its cost is part of the box's price.
+      bxp.box_pack_nft_id AS from_box
+    FROM dedup d
+    JOIN public.collections c ON c.id = d.collection_id
+    LEFT JOIN latest_buys  lb ON lb.collection_id = d.collection_id AND lb.pack_nft_id = d.pack_nft_id
+    LEFT JOIN latest_sells ls ON ls.collection_id = d.collection_id AND ls.pack_nft_id = d.pack_nft_id
+    LEFT JOIN wallet_rips  wr ON wr.collection_id = d.collection_id AND wr.pack_nft_id = d.pack_nft_id
+    LEFT JOIN buy_dist     bd ON bd.collection_id = d.collection_id AND bd.pack_nft_id = d.pack_nft_id
+    LEFT JOIN sell_dist    sd ON sd.collection_id = d.collection_id AND sd.pack_nft_id = d.pack_nft_id
+    LEFT JOIN public.pack_nft_identity pi ON pi.collection_id = d.collection_id AND pi.pack_nft_id = d.pack_nft_id
+    LEFT JOIN public.pack_open_pull_values pov
+      ON pov.collection_id = d.collection_id AND pov.pack_nft_id = d.pack_nft_id AND pov.opener_address = v_wallet
+    LEFT JOIN LATERAL (
+      SELECT h.dist_id FROM public.topshot_pack_sales_history h
+      WHERE d.collection_id = v_ts
+        AND wr.dist_id IS NULL AND bd.dist_id IS NULL AND sd.dist_id IS NULL
+        AND h.pack_nft_id = d.pack_nft_id AND h.dist_id IS NOT NULL
+      UNION ALL
+      SELECT h.dist_id FROM public.allday_pack_sales_history h
+      WHERE d.collection_id = v_ad
+        AND wr.dist_id IS NULL AND bd.dist_id IS NULL AND sd.dist_id IS NULL
+        AND h.pack_nft_id = d.pack_nft_id AND h.dist_id IS NOT NULL
+      UNION ALL
+      SELECT h.dist_id FROM public.golazos_pack_sales_history h
+      WHERE d.collection_id = v_gz
+        AND wr.dist_id IS NULL AND bd.dist_id IS NULL AND sd.dist_id IS NULL
+        AND h.pack_nft_id = d.pack_nft_id AND h.dist_id IS NOT NULL
+      LIMIT 1
+    ) hx ON true
+    LEFT JOIN LATERAL (
+      SELECT bx.box_pack_nft_id FROM public.pack_box_contents bx
+      WHERE bx.collection_id = d.collection_id AND bx.pack_nft_id = d.pack_nft_id
+        AND bx.opener_address = v_wallet
+      LIMIT 1
+    ) bxp ON true
+  ),
+  -- 2026-10-11: status is decided by resolved's columns alone, so it is computed
+  -- HERE and the rows a status filter will drop never reach enriched's per-row
+  -- pricing / inference laterals (a 'held' read of a 38k-row wallet holding 0
+  -- packs cost ~3.6 s, all of it enrichment). A pack out of a box is always kept:
+  -- box_realized sums its sale / pull value into the box's row.
+  pre_status AS (
+    SELECT *,
+      CASE
+        WHEN has_rip                                            THEN 'ripped'
+        WHEN has_sell AND has_buy AND sold_at >= bought_at      THEN 'flipped'
+        WHEN has_sell AND NOT has_buy                           THEN 'sold'
+        -- bought, never sold or opened by this wallet, and Dapper's index says a
+        -- DIFFERENT wallet holds it now: it left by transfer, or by a sale the
+        -- marketplace walker has not reached. Never HELD.
+        -- ... or the index no longer places it here at all. Same outcome, we
+        -- just cannot name who holds it now -- and this arm is the only one that
+        -- can catch it, because a stale row still says the owner IS us, which
+        -- made the test above pass it straight through to HELD.
+        WHEN has_buy AND ((current_owner IS NOT NULL AND current_owner <> v_wallet)
+                          OR coalesce(index_departed, false))
+                                                                THEN 'transferred'
+        -- bought, and Dapper's index -- confirmed by this wallet's own clean walk
+        -- (has_idx_open carries that floor) -- says THIS wallet opened it, with no
+        -- rip row of ours: a box opening, or an open the rip lanes never saw.
+        -- Opened, never HELD (2026-10-10: 22 WNBA boxes on one wallet, ~90 packs
+        -- across 8 of 33 saved wallets, read held while the index said Opened).
+        WHEN has_buy AND has_idx_open                           THEN 'ripped'
+        WHEN has_buy                                            THEN 'held'
+        -- the index alone: opened by this wallet (no rip row of ours) or held
+        WHEN has_idx_open                                       THEN 'ripped'
+        WHEN has_idx_hold                                       THEN 'held'
+        ELSE 'other'
+      END AS status
+    FROM resolved
+  ),
+  enriched AS (
+    SELECT
+      r.*,
+      COALESCE(pd.title, CASE WHEN r.rip_source = 'reconstructed'
+                              THEN r.collection_name || ' pack (no pack NFT, reconstructed)' END) AS pack_name,
+      pd.image_url          AS pack_image,
+      pd.metadata->>'tier'  AS pack_tier,
+      pd.total_sealed       AS dist_total_sealed,
+      pd.total_opened       AS dist_total_opened,
+      rt.retail_usd,
+      mt.minted_at AS minted_to_wallet_at,
+      am.minted_at AS primary_minted_at,
+      -- what the wallet PAID: on-chain/marketplace price for a secondary buy,
+      -- the distribution's retail price for a primary drop, NULL when unknown.
+      -- 2026-09-26 (v10): ... and, for a pack with NO buy row that can only have
+      -- come from Dapper, the drop's retail price, labelled 'retail_inferred'.
+      -- v30 (2026-11-14, Trevor): a pack's cost lives HERE, never on the moments it yields
+      -- (pack_pull moment rows carry $0). A Trade Ticket pack with no buy row is priced at
+      -- tickets x the lowest listed Top Shot moment (rt.ticket_usd); a reward pack (Fast Break,
+      -- challenge / quest / leaderboard / set-completion / chaser rewards) with no buy row is $0.
+      -- v32 (2026-11-14, Trevor 6:56 PM PT): "Reward packs should count as $0 cost unless they were
+      -- purchased off secondary market" -- a reward pack Dapper DELIVERED (a primary drop row, no
+      -- price on chain) is $0 too, never its retail; only a secondary buy keeps the price paid.
+      CASE WHEN r.bought_primary AND rt.is_reward THEN 0::numeric
+           WHEN r.bought_primary THEN COALESCE(rt.retail_usd, rt.ticket_usd)
+           WHEN NOT r.has_buy AND r.from_box IS NULL AND rt.ticket_usd IS NOT NULL THEN rt.ticket_usd
+           WHEN NOT r.has_buy AND r.from_box IS NULL AND rt.is_reward THEN 0::numeric
+           WHEN NOT r.has_buy AND inf.inferable THEN rt.retail_usd
+           ELSE r.buy_price END AS buy_usd,
+      CASE
+        -- v21 (#187): out of a box this wallet opened -- no price of its own (the box carries it)
+        WHEN NOT r.has_buy AND r.from_box IS NOT NULL THEN 'box'
+        WHEN NOT r.has_buy AND rt.ticket_usd IS NOT NULL THEN 'trade_tickets'
+        WHEN NOT r.has_buy AND rt.is_reward THEN 'reward'
+        WHEN NOT r.has_buy AND inf.inferable AND rt.retail_usd IS NOT NULL THEN 'retail_inferred'
+        WHEN NOT r.has_buy THEN NULL
+        WHEN r.bought_primary AND rt.is_reward THEN 'reward'
+        WHEN r.bought_primary AND rt.retail_usd IS NOT NULL THEN 'retail'
+        WHEN r.bought_primary AND rt.ticket_usd IS NOT NULL THEN 'trade_tickets'
+        WHEN r.bought_primary THEN NULL
+        WHEN r.buy_price IS NULL THEN NULL
+        ELSE r.buy_src
+      END AS buy_price_source
+    FROM pre_status r
+    LEFT JOIN public.pack_distributions pd
+      ON pd.dist_id = r.dist_id AND pd.collection_id = r.collection_id
+    -- 2026-09-26: retail in DOLLARS. Top Shot's pack_distributions.metadata
+    -- carries some prices in UFix64 units (x1e8: 109 dists, 371 primary buys
+    -- read as tens of millions of dollars); pack_retail_usd() normalises by the
+    -- estate's rule (>= 1,000,000 -> /1e8). All Day keeps its drop price in
+    -- allday_pack_supply.pack_price, where 0 is "not known", never "free".
+    LEFT JOIN public.allday_pack_supply aps
+      ON r.collection_id = v_ad AND aps.dist_id = r.dist_id
+    -- 2026-09-26 (v12): an All Day distribution Dapper types REWARD cost the
+    -- wallet nothing -- $0, a known price. A price of 0 on any other type stays
+    -- unknown (internal holds like "Jan 29 hold" carry 0 too).
+    CROSS JOIN LATERAL (
+      SELECT CASE WHEN r.collection_id = v_ad AND pd.metadata->>'type' = 'REWARD' THEN 0::numeric
+                  WHEN r.collection_id = v_ad THEN NULLIF(aps.pack_price, 0)
+                  ELSE public.pack_retail_usd(pd.metadata->>'retail_price_usd', pd.title) END AS retail_usd,
+             -- v30: a Top Shot Trade Ticket pack's price is its ticket count (retail_price_usd,
+             -- UFix64-normalised) x the lowest listed Top Shot moment -- Trevor's ticket value.
+             -- The min is uncorrelated (one InitPlan, run only when a ticket pack is reached).
+             CASE WHEN r.collection_id = v_ts AND pd.title ILIKE '%trade ticket%'
+                  THEN round(public.pack_retail_usd(pd.metadata->>'retail_price_usd')
+                             * (SELECT min(l.price_usd) FROM public.ts_listings l WHERE l.price_usd > 0), 2)
+             END AS ticket_usd,
+             coalesce(r.collection_id = v_ts
+                      AND pd.title !~* 'trade ticket'
+                      -- v32: any title naming a Reward (Crafting / Trade-In / Set / Challenge / My Top Fan /
+                      -- Rookie Revelation / Squad Goals ... Reward: 643 dists the v30 list missed), a
+                      -- Chaser pack or an Earnable pack, besides the v30 names. A Fast Break Booster /
+                      -- Roster Booster is SOLD (Top Shot store, $5-$10), so it is never a reward.
+                      -- v32: no retail guard -- a reward pack with a non-zero drop retail is still $0 unless
+                      -- bought on the secondary market (Trevor 6:56 PM PT; withdraws 20261115032000's guard).
+                      AND pd.title ~* '(fast break|\mreward|chaser|earnable|leaderboard|snapshot|favorite team snap)'
+                      AND pd.title !~* 'booster',
+                      false) AS is_reward
+    ) rt
+    -- A pack with no buy row we hold is priced at its drop's retail ONLY when it
+    -- was acquired inside that drop's sale window -- from 1 day before the
+    -- drop's start_time to 30 days after (the acquisition is Dapper's index
+    -- date, else bounded by when the wallet sold or opened it) -- and our
+    -- marketplace history covers that window (every Top Shot PackNFT; an All
+    -- Day drop that started on/after 2022-12-16). An old drop acquired long
+    -- after its sale (All Day Series 1 packs received in 2023-25 with no sale
+    -- on record: rewards, not retail) stays NULL, as does any drop with no
+    -- start_time. A transfer inside the window would read the same. Never a
+    -- reconstructed rip (no distribution).
+    -- 2026-09-26 (v12): an All Day drop's start from Dapper's own distribution
+    -- record (allday_drop_windows) where pack_distributions carries none -- 151
+    -- of 3,228 All Day distributions had start_time.
+    LEFT JOIN public.allday_drop_windows adw
+      ON r.collection_id = v_ad AND adw.dist_id = r.dist_id
+    CROSS JOIN LATERAL (
+      SELECT COALESCE(
+               CASE WHEN pg_input_is_valid(pd.metadata->>'start_time', 'timestamptz')
+                    THEN (pd.metadata->>'start_time')::timestamptz END,
+               adw.start_time) AS drop_start
+    ) ds
+    -- 2026-09-26 (v11): ... OR Dapper MINTED the pack into this wallet at the
+    -- instant its index says the wallet acquired it (pack_nft_mints, read from
+    -- Flow's PackNFT.Minted). A pack minted in never passed through a
+    -- marketplace, so it came from Dapper however long after its drop: a
+    -- custodial pack turned into an NFT (215 of 0xbd94...'s, one PDS mint on
+    -- 2026-04-24) or a drop bought and minted in. Top Shot only -- its reward
+    -- packs carry a retail of 0, so a reward reads "$0 (reward)"; All Day's
+    -- supply price does not mark a reward, and a reward priced as a purchase is
+    -- the Series 1 defect this window exists to prevent.
+    -- 2026-09-28 (v15): the index's acquisition date is THIS wallet's only
+    -- while the index names this wallet (current owner, or the owner it named
+    -- before the pack departed). A pack the wallet SOLD carries its buyer's
+    -- date -- never a fact about this wallet's acquisition.
+    CROSS JOIN LATERAL (
+      SELECT CASE WHEN r.current_owner = v_wallet OR coalesce(r.index_departed, false)
+                  THEN r.identity_acquired_at END AS at
+    ) wa
+    LEFT JOIN LATERAL (
+      SELECT m.minted_at FROM public.pack_nft_mints m
+       WHERE r.collection_id = v_ts
+         AND m.collection_id = r.collection_id AND m.pack_nft_id = r.pack_nft_id
+         AND wa.at IS NOT NULL
+         AND abs(extract(epoch FROM m.minted_at - wa.at)) <= 2
+    ) mt ON true
+    -- 2026-09-28 (v15): an All Day pack's mint in Dapper's index
+    -- (pack_index_mints) dates a pack the wallet has SOLD, which otherwise had
+    -- only "no later than the sale" -- when no one else sold it on the
+    -- marketplace between the mint and this wallet's sale / open
+    -- (allday_pack_primary_minted_at). Mint-on-demand drops mint AT the
+    -- purchase (100/100 = the on-chain primary sale), but some drops are
+    -- PRE-MINTED days before they open, so the wallet's own index date wins
+    -- where we have one (v16): minted inside the window -> acquired inside it
+    -- on 4,868 of 4,913 saved-wallet packs (99.1%); 830 pre-minted packs were
+    -- acquired inside a window their mint precedes.
+    LEFT JOIN LATERAL (
+      SELECT public.allday_pack_primary_minted_at(r.pack_nft_id, v_wallet, LEAST(r.sold_at, r.ripped_at)) AS minted_at
+       WHERE r.collection_id = v_ad AND NOT r.has_buy
+    ) am ON true
+    CROSS JOIN LATERAL (
+      SELECT coalesce(r.dist_id IS NOT NULL
+              AND r.rip_source IS DISTINCT FROM 'reconstructed'
+              -- v21 (#187): a pack a box yielded was not bought at its own retail. A topper or
+              -- premium pack (retail 0, never sold alone) read "buy $0" and its whole sale as P/L.
+              AND r.from_box IS NULL
+              AND ((ds.drop_start IS NOT NULL
+                    AND (r.collection_id = v_ts
+                         OR (r.collection_id = v_ad AND ds.drop_start >= timestamptz '2022-12-16'))
+                    -- v17: the mint only when it lies INSIDE the window. A mint
+                    -- before the window (a pre-minted drop) says nothing about
+                    -- when the wallet got it, so the sale / open bound decides,
+                    -- as it did before v15.
+                    AND COALESCE(wa.at,
+                                 CASE WHEN am.minted_at BETWEEN ds.drop_start - interval '1 day'
+                                                            AND ds.drop_start + interval '30 days'
+                                      THEN am.minted_at END,
+                                 LEAST(r.sold_at, r.ripped_at))
+                          BETWEEN ds.drop_start - interval '1 day' AND ds.drop_start + interval '30 days')
+                   OR mt.minted_at IS NOT NULL), false) AS inferable
+    ) inf
+    WHERE r.from_box IS NOT NULL
+       OR p_status IS NULL
+       OR p_status = 'all'
+       OR (p_status = 'sold_any' AND r.status IN ('flipped', 'sold'))
+       OR r.status = p_status
+  ),
+  classified AS (
+    SELECT * FROM enriched
+  ),
+  -- v22 (2026-10-10, #187 residue): a BOX this wallet opened yields packs, not moments, so its
+  -- own pull value is NULL and it had no P/L. Its realized value is what its packs became:
+  -- each sold (its sale) or opened (its pull value). Only when EVERY pack it yielded is one of
+  -- those -- counted against pack_box_contents, so a pack with no row here (a sale not yet
+  -- ingested, a transfer) or one still sealed leaves the box's P/L NULL, never a partial sum.
+  box_realized AS (
+    SELECT c.collection_id, c.from_box,
+           count(*) FILTER (WHERE (c.status = 'sold' AND c.sell_price IS NOT NULL)
+                               OR (c.status = 'ripped' AND c.pull_value_usd IS NOT NULL)) AS n_realized,
+           sum(CASE WHEN c.status = 'sold' THEN c.sell_price
+                    WHEN c.status = 'ripped' THEN c.pull_value_usd END) AS realized_usd
+    FROM classified c
+    WHERE c.from_box IS NOT NULL
+    GROUP BY 1, 2
+  ),
+  box_yield AS (
+    SELECT bx.collection_id, bx.box_pack_nft_id, count(*) AS n_inner
+    FROM public.pack_box_contents bx
+    WHERE bx.opener_address = v_wallet
+    GROUP BY 1, 2
+  ),
+  with_pl AS (
+    SELECT cl.*,
+      CASE
+        WHEN status = 'ripped' AND by_.n_inner > 0 AND br.n_realized = by_.n_inner AND buy_usd IS NOT NULL
+                                                                                 THEN br.realized_usd - buy_usd
+        WHEN status = 'ripped'  AND pull_value_usd IS NOT NULL AND buy_usd IS NOT NULL THEN pull_value_usd - buy_usd
+        WHEN status = 'flipped' AND sell_price     IS NOT NULL AND buy_usd IS NOT NULL THEN sell_price     - buy_usd
+        -- 2026-09-26: a pack sold with no buy row, priced at its drop's retail
+        WHEN status = 'sold'    AND sell_price     IS NOT NULL AND buy_usd IS NOT NULL
+                                AND buy_price_source IN ('retail_inferred', 'trade_tickets', 'reward')
+                                                                                   THEN sell_price     - buy_usd
+        ELSE NULL
+      END AS realized_pl_usd,
+      -- v22: what the packs this box yielded became (sold + opened), and how many of them
+      -- have, beside how many it yielded -- the box's P/L stands only when they are equal
+      br.realized_usd AS box_realized_usd,
+      COALESCE(br.n_realized, 0)::int AS box_packs_realized
+    FROM classified cl
+    LEFT JOIN box_realized br ON br.collection_id = cl.collection_id AND br.from_box = cl.pack_nft_id
+    LEFT JOIN box_yield by_ ON by_.collection_id = cl.collection_id AND by_.box_pack_nft_id = cl.pack_nft_id
+  ),
+  filtered AS (
+    SELECT * FROM with_pl
+    WHERE (p_collection_slug IS NULL OR collection_slug = p_collection_slug)
+      AND (
+        p_status IS NULL
+        OR p_status = 'all'
+        -- virtual status: every "no longer sealed in this wallet, sold on"
+        -- outcome, regardless of whether a matching buy was attributable
+        OR (p_status = 'sold_any' AND status IN ('flipped', 'sold'))
+        OR status = p_status
+      )
+  ),
+  -- v27 (2026-11-13, Trevor: "packs under my binder should show their own wallet FMV
+  -- for what's still held"): every moment an OPENED pack yielded, from every pull list
+  -- we keep -- Dapper's per-pack list (this opener only), All Day's open record,
+  -- Golazos', Top Shot's rip-linked acquisitions, the reconstructed delivery bursts --
+  -- joined from this tab's own ripped rows only, so a held / sold read pays nothing.
+  pull_list AS (
+    SELECT f.collection_id, f.pack_nft_id, pp.nft_id
+    FROM filtered f
+    JOIN public.pack_open_pulls pp
+      ON pp.collection_id = f.collection_id AND pp.pack_nft_id = f.pack_nft_id AND pp.opener_address = v_wallet
+    WHERE v_want_pulls AND f.status = 'ripped'
+    UNION
+    SELECT f.collection_id, f.pack_nft_id, a.moment_nft_id
+    FROM filtered f
+    JOIN public.allday_pack_pull a ON a.pack_nft_id = f.pack_nft_id
+    WHERE v_want_pulls AND f.status = 'ripped' AND f.collection_id = v_ad
+    UNION
+    SELECT f.collection_id, f.pack_nft_id, g.nft_id
+    FROM filtered f
+    JOIN public.golazos_pack_open_pulls g ON g.pack_nft_id = f.pack_nft_id
+    WHERE v_want_pulls AND f.status = 'ripped' AND f.collection_id = v_gz
+    UNION
+    SELECT f.collection_id, f.pack_nft_id, ma.nft_id
+    FROM filtered f
+    JOIN public.moment_acquisitions ma ON ma.source_pack_rip_id = f.rip_id AND ma.wallet = v_wallet
+    WHERE v_want_pulls AND f.status = 'ripped' AND f.rip_id IS NOT NULL
+    UNION
+    SELECT f.collection_id, f.pack_nft_id, x.nft_id
+    FROM filtered f
+    JOIN public.wallet_reconstructed_rips rr
+      ON rr.wallet = v_wallet AND rr.collection_id = f.collection_id AND rr.burst_id = f.pack_nft_id
+    CROSS JOIN LATERAL unnest(rr.nft_ids) AS x(nft_id)
+    WHERE v_want_pulls AND f.status = 'ripped' AND f.rip_source = 'reconstructed'
+  ),
+  -- ... and which of them this wallet STILL holds, at the wallet's own FMV
+  -- (wallet_moments_cache, the binder's value). A moment id is unique only within
+  -- a collection (#142), so the join carries collection_id. Unpriced held pulls
+  -- are counted, never summed as $0.
+  -- MATERIALIZED: computed once. Inlined, the planner re-ran it per joined row (measured
+  -- 2026-11-13 on a 422-pack wallet: +750 ms on a Unopened read, +73 ms materialized).
+  held_pulls AS MATERIALIZED (
+    SELECT pl.collection_id, pl.pack_nft_id,
+           count(*)::int           AS pulls_listed,
+           count(w.moment_id)::int AS pulls_held,
+           count(w.fmv_usd)::int   AS pulls_held_priced,
+           sum(w.fmv_usd)          AS held_fmv_sum
+    FROM pull_list pl
+    LEFT JOIN public.wallet_moments_cache w
+      ON w.wallet_address = v_wallet AND w.collection_id = pl.collection_id AND w.moment_id = pl.nft_id
+    GROUP BY 1, 2
+  ),
+  -- v27: a SEALED pack's value, one rule for the row and the tab total: the live floor
+  -- ask, else the drop's last secondary sale, else its rip EV, else what its opened
+  -- packs averaged (>= 5) -- the basis always named, NULL when none is known.
+  held_dists AS (
+    SELECT DISTINCT f.collection_id, f.collection_slug, f.dist_id
+    FROM filtered f WHERE v_want_held AND f.status = 'held' AND f.dist_id IS NOT NULL
+  ),
+  dist_market AS MATERIALIZED (
+    SELECT hd.collection_id, hd.dist_id,
+      CASE WHEN pas.is_listed THEN pas.lowest_ask END AS ask_usd,
+      -- v28 (2026-11-13): when the ask was last CONFIRMED. upsert_pack_ask_state skips an
+      -- unchanged listed row (the WAL guard), so its last_checked_at is when the ask last
+      -- CHANGED; every complete 5-min walk that still lists it confirms it, and stamps
+      -- pack_ask_snapshot_state.last_ok_at. An unlisted row keeps its own stamp.
+      CASE WHEN pas.is_listed THEN GREATEST(pas.last_checked_at, ss.last_ok_at)
+           ELSE pas.last_checked_at END AS ask_checked_at,
+      ev.gross_ev         AS rip_ev_usd,
+      obs.avg_value_usd   AS opened_avg_usd,
+      lsale.sale_price    AS last_sale_usd
+    FROM held_dists hd
+    LEFT JOIN public.pack_ask_state pas
+      ON pas.dist_id = hd.dist_id AND pas.collection_slug = replace(hd.collection_slug, '_', '-')
+    LEFT JOIN public.pack_ask_snapshot_state ss ON ss.collection_slug = pas.collection_slug
+    LEFT JOIN public.mv_pack_ev_latest ev
+      ON ev.dist_id = hd.dist_id AND ev.collection_id = hd.collection_id
+     AND NOT (ev.gross_ev = 0 AND ev.edition_count = 0)
+     AND (ev.fmv_coverage_pct IS NULL OR ev.fmv_coverage_pct >= 25)
+    LEFT JOIN public.pack_observed_values obs
+      ON obs.dist_id = hd.dist_id AND obs.collection_id = hd.collection_id AND obs.n_valued >= 5
+    LEFT JOIN LATERAL (
+      SELECT pp.sale_price FROM public.pack_purchases pp
+      WHERE pp.pack_dist_id = hd.dist_id AND pp.collection_id = hd.collection_id
+        AND pp.event_kind = 'secondary_sale' AND pp.sale_price IS NOT NULL
+      ORDER BY pp.sealed_at DESC LIMIT 1
+    ) lsale ON true
+  ),
+  held_valued AS (
+    SELECT f.collection_id, f.pack_nft_id, f.buy_usd, dm.ask_checked_at,
+           -- v29: each basis on its own, for wallet_held_pack_value's separate sums
+           dm.ask_usd, dm.last_sale_usd, dm.rip_ev_usd, dm.opened_avg_usd,
+      COALESCE(dm.ask_usd, dm.last_sale_usd, dm.rip_ev_usd, dm.opened_avg_usd) AS value_usd,
+      CASE WHEN dm.ask_usd IS NOT NULL        THEN 'ask'
+           WHEN dm.last_sale_usd IS NOT NULL  THEN 'last_sale'
+           WHEN dm.rip_ev_usd IS NOT NULL     THEN 'rip_ev'
+           WHEN dm.opened_avg_usd IS NOT NULL THEN 'opened_avg'
+      END AS value_basis
+    FROM filtered f
+    LEFT JOIN dist_market dm ON dm.collection_id = f.collection_id AND dm.dist_id = f.dist_id
+    WHERE v_want_held AND f.status = 'held'
+  ),
+  -- v27: the tab's own metrics over EVERY row of the filter (the page is 25). Every
+  -- sum is paired with how many rows it covers; an unknown never counts as 0.
+  tab_totals AS (
+    SELECT jsonb_build_object(
+      'packs',             (SELECT count(*) FROM filtered),
+      'cost_usd',          (SELECT round(sum(buy_usd)::numeric, 2) FROM filtered),
+      'cost_known',        (SELECT count(buy_usd) FROM filtered),
+      'realized_pl_usd',   (SELECT round(sum(realized_pl_usd)::numeric, 2) FROM filtered),
+      'realized_pl_known', (SELECT count(realized_pl_usd) FROM filtered),
+      -- Unopened
+      'held_packs',        (SELECT count(*) FROM held_valued),
+      'held_value_usd',    (SELECT round(sum(value_usd)::numeric, 2) FROM held_valued),
+      'held_valued',       (SELECT count(value_usd) FROM held_valued),
+      'held_valued_by_ask', (SELECT count(*) FROM held_valued WHERE value_basis = 'ask'),
+      'held_ask_oldest_checked_at', (SELECT min(ask_checked_at) FROM held_valued WHERE value_basis = 'ask'),
+      'held_unrealized_usd', (SELECT round(sum(value_usd - buy_usd)::numeric, 2) FROM held_valued
+                              WHERE value_usd IS NOT NULL AND buy_usd IS NOT NULL),
+      'held_unrealized_n',   (SELECT count(*) FROM held_valued WHERE value_usd IS NOT NULL AND buy_usd IS NOT NULL),
+      -- v29 (2026-11-13): each basis summed apart, over EVERY held row -- what
+      -- wallet_held_pack_value used to rebuild by re-running this function once per
+      -- 200-row page. Per-row rounding first, as the page rows carry them.
+      'held_listed',         (SELECT count(ask_usd) FROM held_valued),
+      'held_floor_ask_usd',  (SELECT round(COALESCE(sum(round(ask_usd::numeric, 2)), 0), 2) FROM held_valued),
+      'held_last_sale_n',    (SELECT count(last_sale_usd) FROM held_valued),
+      'held_last_sale_usd',  (SELECT round(COALESCE(sum(round(last_sale_usd::numeric, 2)), 0), 2) FROM held_valued),
+      'held_rip_ev_n',       (SELECT count(rip_ev_usd) FROM held_valued),
+      'held_rip_ev_usd',     (SELECT round(COALESCE(sum(round(rip_ev_usd::numeric, 2)), 0), 2) FROM held_valued),
+      'held_opened_avg_n',   (SELECT count(*) FROM held_valued WHERE rip_ev_usd IS NULL AND opened_avg_usd IS NOT NULL),
+      'held_opened_avg_usd', (SELECT round(COALESCE(sum(opened_avg_usd) FILTER (WHERE rip_ev_usd IS NULL), 0), 2) FROM held_valued),
+      -- Opened
+      'opened_packs',      (SELECT count(*) FROM filtered WHERE status = 'ripped'),
+      'pull_value_usd',    (SELECT round(sum(pull_value_usd)::numeric, 2) FROM filtered WHERE status = 'ripped'),
+      'pull_valued',       (SELECT count(pull_value_usd) FROM filtered WHERE status = 'ripped'),
+      'opened_with_pull_list', (SELECT count(*) FROM held_pulls),
+      'pulls_listed',      (SELECT COALESCE(sum(pulls_listed), 0) FROM held_pulls),
+      'pulls_held',        (SELECT COALESCE(sum(pulls_held), 0) FROM held_pulls),
+      'pulls_held_priced', (SELECT COALESCE(sum(pulls_held_priced), 0) FROM held_pulls),
+      'held_fmv_usd',      (SELECT round(COALESCE(sum(held_fmv_sum), 0)::numeric, 2) FROM held_pulls),
+      -- Sold
+      'sold_packs',        (SELECT count(*) FROM filtered WHERE status IN ('flipped', 'sold')),
+      'proceeds_usd',      (SELECT round(sum(sell_price)::numeric, 2) FROM filtered WHERE status IN ('flipped', 'sold')),
+      'proceeds_known',    (SELECT count(sell_price) FROM filtered WHERE status IN ('flipped', 'sold'))
+    ) AS t
+  ),
+  page AS (
+    SELECT * FROM filtered
+    ORDER BY latest_event_at DESC NULLS LAST, collection_id, pack_nft_id
+    LIMIT v_safe_limit OFFSET v_safe_offset
+  ),
+  -- market context, PAGE rows only: current floor ask, latest EV snapshot, last
+  -- recorded secondary sale of the same distribution. All NULL when unknown.
+  page_market AS (
+    SELECT
+      p.*,
+      CASE WHEN pas.is_listed THEN pas.lowest_ask END AS lowest_ask_usd,
+      -- v28: last CONFIRMED, not last changed (see dist_market)
+      CASE WHEN pas.is_listed THEN GREATEST(pas.last_checked_at, pss.last_ok_at)
+           ELSE pas.last_checked_at END               AS ask_checked_at,
+      ev.pack_ev                                      AS pack_ev_usd,
+      -- 2026-09-26 (v13): the pack's CONTENTS value -- what ripping it is
+      -- expected to yield. pack_ev is that minus the drop price (net), which
+      -- the row labelled "EV" (Anthology Quick Rip: contents $2.33 read "EV
+      -- -$6.67"). A holder compares this with the floor ask: rip or sell.
+      ev.gross_ev                                     AS pack_gross_ev_usd,
+      -- 2026-09-26 (v14): where the drop has no published pool to model, what
+      -- its opened packs actually yielded -- the mean current value of >= 5
+      -- valued opens (pack_observed_values), with the count behind it.
+      obs.avg_value_usd                               AS pack_opened_avg_usd,
+      obs.n_valued                                    AS pack_opened_n,
+      -- 2026-09-29 (v19): a BOX yields packs, not moments -- how many
+      (SELECT count(*) FROM public.pack_box_contents bx
+        WHERE bx.collection_id = p.collection_id AND bx.box_pack_nft_id = p.pack_nft_id
+          AND bx.opener_address = v_wallet)::int     AS box_packs,
+      ev.snapshotted_at                               AS ev_snapshotted_at,
+      lsale.sale_price                                AS last_sale_usd,
+      lsale.sealed_at                                 AS last_sale_at,
+      -- v27: what this opened pack yielded that the wallet still holds, at its FMV
+      hp.pulls_listed, hp.pulls_held, hp.pulls_held_priced, hp.held_fmv_sum,
+      -- v27: a sealed pack's value under held_valued's rule (same row, same basis)
+      hv.value_usd, hv.value_basis
+    FROM page p
+    LEFT JOIN held_pulls hp ON hp.collection_id = p.collection_id AND hp.pack_nft_id = p.pack_nft_id
+    LEFT JOIN held_valued hv ON hv.collection_id = p.collection_id AND hv.pack_nft_id = p.pack_nft_id
+    LEFT JOIN public.pack_ask_state pas
+      ON p.dist_id IS NOT NULL
+     AND pas.dist_id = p.dist_id
+     AND pas.collection_slug = replace(p.collection_slug, '_', '-')
+    LEFT JOIN public.pack_ask_snapshot_state pss ON pss.collection_slug = pas.collection_slug
+    LEFT JOIN public.mv_pack_ev_latest ev
+      ON p.dist_id IS NOT NULL
+     AND ev.dist_id = p.dist_id AND ev.collection_id = p.collection_id
+     -- 2026-09-24: mirror pack_table_rows' publish gates — the MV's sentinel
+     -- (gross_ev = 0 AND edition_count = 0) is "could not price", not "$0".
+     AND NOT (ev.gross_ev = 0 AND ev.edition_count = 0)
+     AND (ev.fmv_coverage_pct IS NULL OR ev.fmv_coverage_pct >= 25)
+    LEFT JOIN public.pack_observed_values obs
+      ON p.dist_id IS NOT NULL
+     AND obs.dist_id = p.dist_id AND obs.collection_id = p.collection_id
+     AND obs.n_valued >= 5
+    LEFT JOIN LATERAL (
+      SELECT pp.sale_price, pp.sealed_at
+      FROM public.pack_purchases pp
+      WHERE p.dist_id IS NOT NULL
+        AND pp.pack_dist_id = p.dist_id
+        AND pp.collection_id = p.collection_id
+        AND pp.event_kind = 'secondary_sale'
+        AND pp.sale_price IS NOT NULL
+      ORDER BY pp.sealed_at DESC
+      LIMIT 1
+    ) lsale ON true
+  )
+  SELECT
+    (SELECT COUNT(*) FROM filtered),
+    COALESCE(jsonb_agg(
+      jsonb_build_object(
+        'pack_nft_id', pack_nft_id, 'collection_id', collection_id,
+        'collection_slug', collection_slug, 'collection_name', collection_name,
+        'status', status, 'has_buy', has_buy, 'has_sell', has_sell, 'has_rip', has_rip,
+        'latest_event_at', latest_event_at, 'first_event_at', first_event_at,
+        'pack_name', pack_name, 'pack_image', pack_image, 'pack_tier', pack_tier,
+        'dist_id', dist_id, 'dist_source', dist_source,
+        'dist_total_sealed', dist_total_sealed, 'dist_total_opened', dist_total_opened,
+        'current_owner', current_owner, 'identity_status', identity_status,
+        'identity_checked_at', identity_checked_at,
+        -- Provenance for the two fields above. true = the index still names this
+        -- wallet but its last clean walk did not return the pack, so
+        -- identity_status is a LAST-SEEN and not a now; false = that walk
+        -- confirmed it; null = no identity row, or no clean walk to judge by.
+        'identity_departed', index_departed,
+        'rip_id', rip_id, 'ripped_at', ripped_at,
+        -- 'rip' (an open event we hold) | 'reconstructed' (a pack opened with no
+        -- pack NFT, rebuilt from its moment deliveries) | NULL (not opened here)
+        'rip_source', rip_source,
+        'moments_pulled', moments_pulled,
+        'pull_value_usd', CASE WHEN pull_value_usd IS NULL THEN NULL ELSE ROUND(pull_value_usd::numeric, 2) END,
+        -- 'dapper_pulls' | 'rip_record' | NULL; and, when Dapper's list is held,
+        -- how many of the pack's moments are identified / priced (so a NULL
+        -- value can say "3 of 4 priced" instead of nothing).
+        'pull_value_source', pull_value_source,
+        'pulls_total', pulls_total, 'pulls_identified', pulls_identified, 'pulls_priced', pulls_priced,
+        'buy_price', CASE WHEN buy_price IS NULL THEN NULL ELSE ROUND(buy_price::numeric, 2) END,
+        'buy_usd',   CASE WHEN buy_usd   IS NULL THEN NULL ELSE ROUND(buy_usd::numeric, 2) END,
+        'buy_price_source', buy_price_source,
+        'buy_currency', buy_currency, 'bought_at', bought_at, 'bought_from', bought_from,
+        'bought_primary', bought_primary,
+        'event_kind', bought_event_kind,
+        'sell_price', CASE WHEN sell_price IS NULL THEN NULL ELSE ROUND(sell_price::numeric, 2) END,
+        'sell_source', sell_src,
+        'sell_currency', sell_currency, 'sold_at', sold_at, 'sold_to', sold_to,
+        'realized_pl_usd', CASE WHEN realized_pl_usd IS NULL THEN NULL ELSE ROUND(realized_pl_usd::numeric, 2) END,
+        'lowest_ask_usd', CASE WHEN lowest_ask_usd IS NULL THEN NULL ELSE ROUND(lowest_ask_usd::numeric, 2) END,
+        'ask_checked_at', ask_checked_at,
+        'pack_ev_usd', CASE WHEN pack_ev_usd IS NULL THEN NULL ELSE ROUND(pack_ev_usd::numeric, 2) END,
+        'ev_snapshotted_at', ev_snapshotted_at,
+        'last_sale_usd', CASE WHEN last_sale_usd IS NULL THEN NULL ELSE ROUND(last_sale_usd::numeric, 2) END,
+        'last_sale_at', last_sale_at
+      )
+      -- 2026-09-26 (v11): when Dapper minted this pack straight into this
+      -- wallet (Flow PackNFT.Minted at the index's acquisition instant); NULL =
+      -- not known to be (a buy, a transfer, or before the spork floor). A second
+      -- object: the one above is at Postgres's 100-argument limit.
+      || jsonb_build_object('minted_to_wallet_at', minted_to_wallet_at,
+           -- v13: the contents' expected value (gross), beside pack_ev_usd (net of drop price)
+           'pack_gross_ev_usd', CASE WHEN pack_gross_ev_usd IS NULL THEN NULL ELSE ROUND(pack_gross_ev_usd::numeric, 2) END,
+           -- v14: the mean current value of this drop's opened packs (>= 5 valued), and how many
+           'pack_opened_avg_usd', pack_opened_avg_usd, 'pack_opened_n', pack_opened_n,
+           -- v15: an All Day pack's mint in Dapper's index, when no marketplace
+           -- sale by anyone else precedes this wallet's (mint-on-demand drops:
+           -- the purchase itself; a pre-minted drop: days before it opened)
+           'primary_minted_at', primary_minted_at,
+           -- v18: how many of the pack's pulls are named by inference (id neighbours)
+           'pulls_inferred', pulls_inferred,
+           -- v19: packs this BOX yielded (0 = not a box)
+           'box_packs', box_packs,
+           -- v21 (#187): the box this wallet opened that yielded this pack (NULL = not from a box)
+           'from_box_pack_nft_id', from_box,
+           -- v22: a box's packs, realized: their sales + pull values (NULL = none yet), and how many
+           'box_realized_usd', CASE WHEN box_realized_usd IS NULL THEN NULL ELSE ROUND(box_realized_usd::numeric, 2) END,
+           'box_packs_realized', box_packs_realized,
+           -- v27: pulls named for this opened pack / still in this wallet / of those priced,
+           -- and their wallet FMV -- NULL unless every held pull is priced (0 = none held)
+           'pulls_listed', pulls_listed, 'pulls_held', pulls_held, 'pulls_held_priced', pulls_held_priced,
+           'held_fmv_usd', CASE WHEN pulls_held IS NOT NULL AND pulls_held_priced = pulls_held
+                                THEN ROUND(COALESCE(held_fmv_sum, 0)::numeric, 2) END,
+           -- v27: a sealed pack's value and its basis (ask | last_sale | rip_ev | opened_avg)
+           'value_usd', CASE WHEN value_usd IS NULL THEN NULL ELSE ROUND(value_usd::numeric, 2) END,
+           'value_basis', value_basis)
+      ORDER BY latest_event_at DESC NULLS LAST, collection_id, pack_nft_id
+    ), '[]'::jsonb),
+    (SELECT t FROM tab_totals)
+  INTO v_total, v_packs, v_tab
+  FROM page_market;
+
+  RETURN jsonb_build_object(
+    'wallet', v_wallet,
+    'collection_slug', p_collection_slug,
+    'status_filter', p_status,
+    'limit', v_safe_limit,
+    'offset', v_safe_offset,
+    'total_count', v_total,
+    'packs', v_packs,
+    -- v27: the requested tab's metrics over all of its rows (see tab_totals)
+    'tab_totals', v_tab,
+    'identity_sync', v_sync,
+    'coverage', jsonb_build_object(
+      'onchain', 'pack_purchases: Top Shot + All Day, block-indexed from 2026-04; primary drops carry no price on chain',
+      'opens', 'pack_rips (Top Shot, All Day) + golazos_pack_opens + pinnacle_pack_opens',
+      'retail', 'buy_price_source = retail_inferred: a pack with no buy row we hold, priced at its drop''s retail -- only when it was acquired inside the drop''s sale window (start_time - 1 day .. + 30 days; acquisition = Dapper''s index date while the index names this wallet, else -- All Day -- the pack''s mint in Dapper''s index (primary_minted_at) when no one else sold it on the marketplace before this wallet''s sale / open, else bounded by the sale / open) and the marketplace history covers that window (every Top Shot PackNFT; All Day drops from 2022-12-16, dates from Dapper''s distribution record), or -- Top Shot -- Dapper minted it straight into this wallet (minted_to_wallet_at; pack_nft_mints, Flow PackNFT.Minted from the 2025-12-29 spork floor). An old drop acquired long after its sale otherwise stays NULL. A transfer inside the window would read the same. A Trade Ticket pack is priced in tickets: buy_price_source = trade_tickets prices one with no buy row (or a primary buy) at its ticket count x the lowest listed Top Shot moment (ts_listings, live). buy_price_source = reward: a Top Shot reward pack (any title naming a Reward, a Chaser or Earnable pack, Fast Break, leaderboard / snapshot) is $0 unless it was bought on the secondary market -- with no buy row, or delivered by Dapper as a primary drop. A pack''s cost lives on the pack only -- the moments it yields carry $0 in moment P/L. An All Day distribution Dapper types REWARD is $0 (reward); any other All Day price of 0 is unknown. Retail is in dollars (Top Shot UFix64 values normalised; All Day from allday_pack_supply, 0 = unknown)',
+      'reconstructed', 'wallet_reconstructed_rips: Top Shot packs opened with NO pack NFT (custodial packs, 2021 on), rebuilt from the wallet''s pack-pull moment deliveries (a gap > 3 s starts a new reveal; 114 of 115 bursts overlapping a known pack matched its moment list exactly). rip_source = reconstructed; no distribution, no price paid; covers deliveries seeded into moment_acquisitions (through 2026-03)',
+      'pulls', 'pack_open_pull_values: every pack this wallet opened, priced from the moments Dapper''s searchPackNft.nfts says it yielded (current FMV, whole-pack: NULL unless every moment is priced; pulls_priced / pulls_total say how close; pulls_inferred of them are Top Shot pulls no record names, named from the moment ids minted beside them -- both neighbours the same edition within 50 ids, 99 % right when measured). Refreshed by the wallet-pack-pulls lane; pull_value_source = rip_record where only the rip row''s value is held',
+      'box', 'buy_price_source = box: a pack that came out of a box or case this wallet opened (pack_box_contents). It was not bought, so it has no buy price and no P/L of its own; its cost is part of the box''s price',
+      'marketplace', 'topshot_pack_sales_history / allday_pack_sales_history / golazos_pack_sales_history: Dapper marketplace secondary sales (seller = storefront_address), Top Shot from 2023-09, All Day from 2022-12; ingest is bursty and can lag days',
+      'identity', 'pack_nft_identity: Dapper searchPackNft index (dist_id, Sealed/Opened, current owner, acquired_at) filled by the pack-nft-identity lane and the per-wallet sync; identity_sync says when this wallet''s holdings were last confirmed (NULL completed_at = not yet, the list is what we hold so far). An ownership claim is trusted only at or after identity_sync.last_clean_sync_at, the start of the last clean full walk: a row older than that names a pack the wallet no longer holds, is excluded from the held/ripped counts, and carries identity_departed = true'
+    ),
+    'computed_at', now()
+  );
+END;
+$function$;
+-- <<< END verbatim get_wallet_pack_history <<<
+
+-- >>> BEGIN verbatim wallet_held_pack_value (body byte-identical to the migration) >>>
+CREATE OR REPLACE FUNCTION public.wallet_held_pack_value(p_wallet text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ SET statement_timeout TO '20s'
+AS $function$
+DECLARE
+  v_page jsonb;
+  t jsonb;
+  v_total int;
+BEGIN
+  -- The sealed packs this wallet holds, valued at the market -- read THROUGH
+  -- get_wallet_pack_history(status 'held') so "held" means exactly what the
+  -- history lists (identity-sync floor, departures, transfers).
+  -- v2 (2026-11-13): ONE call. The history's tab_totals (v29) sums every held row,
+  -- so the old loop -- the whole classification re-run once per 200-row page, three
+  -- times on a 422-pack wallet, ~90 % of get_wallet_pack_summary -- is gone. Every
+  -- field keeps its meaning; 'complete' is now always true (the totals cover every
+  -- row, where the loop stopped at 25 pages).
+  v_page := public.get_wallet_pack_history(p_wallet, NULL, 'held', 1, 0);
+  IF v_page ? 'error' THEN
+    RETURN jsonb_build_object('error', v_page->>'error');
+  END IF;
+  t := v_page->'tab_totals';
+  IF t IS NULL THEN
+    RETURN jsonb_build_object('error', 'held totals missing from get_wallet_pack_history');
+  END IF;
+  v_total := coalesce((v_page->>'total_count')::int, 0);
+  RETURN jsonb_build_object(
+    'count',                 v_total,
+    'complete',              true,
+    'rows_read',             v_total,
+    'listed_count',          (t->>'held_listed')::int,
+    'floor_ask_usd',         (t->>'held_floor_ask_usd')::numeric,
+    'oldest_ask_checked_at', (t->>'held_ask_oldest_checked_at')::timestamptz,
+    'last_sale_count',       (t->>'held_last_sale_n')::int,
+    'last_sale_usd',         (t->>'held_last_sale_usd')::numeric,
+    'rip_ev_count',          (t->>'held_rip_ev_n')::int,
+    'rip_ev_usd',            (t->>'held_rip_ev_usd')::numeric,
+    -- packs whose drop has no modelled EV, valued at what that drop's opened packs
+    -- yielded on average -- reported apart from rip_ev
+    'opened_avg_count',      (t->>'held_opened_avg_n')::int,
+    'opened_avg_usd',        (t->>'held_opened_avg_usd')::numeric);
+END;
+$function$;
+-- <<< END verbatim wallet_held_pack_value <<<
+
+-- >>> BEGIN verbatim refresh_pack_observed_values (body byte-identical to the migration) >>>
+CREATE OR REPLACE FUNCTION public.refresh_pack_observed_values()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+ SET statement_timeout TO '120s'
+AS $function$
+DECLARE
+  v_started timestamptz := clock_timestamp();
+  v_written int := 0; v_removed int := 0; v_err text := NULL;
+BEGIN
+  IF NOT pg_try_advisory_xact_lock(hashtext('refresh_pack_observed_values')) THEN
+    RETURN jsonb_build_object('ok', true, 'skipped', 'another refresh holds the lock');
+  END IF;
+  BEGIN
+    -- Every opened pack with a distribution: its value is Dapper's pull list
+    -- priced at current FMV (pack_open_pull_values, whole-pack) first, the rip
+    -- row's own value otherwise. NULL (unpriced) packs are counted, never
+    -- averaged in as 0.
+    CREATE TEMP TABLE _pov_new ON COMMIT DROP AS
+    SELECT r.collection_id, r.dist_id,
+           count(*)::int AS n_opened,
+           count(coalesce(v.pull_value_usd, r.pull_value_usd))::int AS n_valued,
+           round(avg(coalesce(v.pull_value_usd, r.pull_value_usd))::numeric, 2) AS avg_value_usd
+      FROM public.pack_rips r
+      LEFT JOIN public.pack_open_pull_values v
+        ON v.collection_id = r.collection_id AND v.pack_nft_id = r.pack_nft_id
+     WHERE r.dist_id IS NOT NULL
+     GROUP BY r.collection_id, r.dist_id;
+
+    -- write first, then delete only what this refresh did not write
+    INSERT INTO public.pack_observed_values (collection_id, dist_id, n_opened, n_valued, avg_value_usd, refreshed_at)
+    SELECT collection_id, dist_id, n_opened, n_valued, avg_value_usd, now() FROM _pov_new
+    ON CONFLICT (collection_id, dist_id) DO UPDATE
+      SET n_opened = EXCLUDED.n_opened, n_valued = EXCLUDED.n_valued,
+          avg_value_usd = EXCLUDED.avg_value_usd, refreshed_at = EXCLUDED.refreshed_at;
+    GET DIAGNOSTICS v_written = ROW_COUNT;
+    DELETE FROM public.pack_observed_values o
+     WHERE NOT EXISTS (SELECT 1 FROM _pov_new n WHERE n.collection_id = o.collection_id AND n.dist_id = o.dist_id);
+    GET DIAGNOSTICS v_removed = ROW_COUNT;
+  -- a statement_timeout kill (57014) is named: WHEN OTHERS cannot see it (R118)
+  EXCEPTION WHEN query_canceled OR OTHERS THEN
+    v_err := left(SQLERRM, 300);
+  END;
+  PERFORM public.log_pipeline_run('pack-observed-values', v_started, v_written, v_written, v_removed,
+    v_err IS NULL, v_err, NULL, NULL, NULL, jsonb_build_object('written', v_written, 'removed', v_removed));
+  RETURN jsonb_build_object('ok', v_err IS NULL, 'written', v_written, 'removed', v_removed, 'error', v_err);
+END;
+$function$;
+-- <<< END verbatim refresh_pack_observed_values <<<
+
+INSERT INTO public.collections VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'nba_top_shot', 'NBA Top Shot'),
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'nfl_all_day', 'NFL All Day'),
+  ('06248cc4-b85f-47cd-af67-1855d14acd75', 'laliga_golazos', 'LaLiga Golazos'),
+  ('7dd9dd11-e8b6-45c4-ac99-71331f959714', 'disney_pinnacle', 'Disney Pinnacle');
+
+INSERT INTO public.pack_distributions VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'D1', 'Fresh Threads Pack', 'https://img/d1.png', '{"retail_price_usd":"10"}', 100, 40),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'D2', 'Quest Reward Pack', 'https://img/d2.png', '{"retail_price_usd":"0"}', 50, 10),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'D3', 'Mystery Pack', NULL, '{}', 10, 1);
+
+-- W bought P1 on chain (primary drop, no price, no dist), never opened it.
+-- Another wallet later BOUGHT P1 on the marketplace FROM W (storefront = W): SOLD.
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sealed_at, is_primary_drop, event_kind)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P1', '0xwallet', '0x0b2a3299cc857e29', NULL, '2026-05-01', true, 'primary_withdraw');
+INSERT INTO public.topshot_pack_sales_history VALUES
+  ('tx-p1', 'P1', 25, true, '0xother', '0xwallet', 'D1', '2026-06-01');
+-- P2: sold by W on the marketplace with NO buy anywhere (pre-coverage primary drop).
+INSERT INTO public.topshot_pack_sales_history VALUES
+  ('tx-p2', 'P2', 40, true, '0xother', '0xwallet', 'D1', '2024-03-01');
+-- P3: on-chain primary drop, sealed, no rip, no marketplace row -> dist unknown.
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sealed_at, is_primary_drop, event_kind)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P3', '0xwallet', '0x0b2a3299cc857e29', NULL, '2026-07-01', true, 'primary_withdraw');
+-- P4: sealed primary drop, dist knowable ONLY from a THIRD-PARTY marketplace row
+-- (someone else sold that pack before W acquired it on chain).
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sealed_at, is_primary_drop, event_kind)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P4', '0xwallet', '0x0b2a3299cc857e29', NULL, '2026-07-02', true, 'primary_withdraw');
+INSERT INTO public.topshot_pack_sales_history VALUES
+  ('tx-p4', 'P4', 12, true, '0xsomeone', '0xelse', 'D2', '2026-01-01');
+-- P5: bought on the marketplace in 2024 (pre on-chain coverage), ripped; the rip
+-- carries no pull value -> pull_value_usd and realized P&L must be NULL, not 0.
+INSERT INTO public.topshot_pack_sales_history VALUES
+  ('tx-p5', 'P5', 30, true, '0xwallet', '0xseller', 'D1', '2024-05-01');
+INSERT INTO public.pack_rips (collection_id, pack_nft_id, opener_address, moments_pulled, sealed_at, dist_id, pull_value_usd)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P5', '0xwallet', 3, '2024-05-02', 'D1', NULL);
+-- P6: the same secondary purchase seen by BOTH sources (same second) -> one row.
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sale_currency, sealed_at, is_primary_drop, event_kind)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P6', '0xwallet', '0x18eb4ee6b3c026d2', 8, 'DUC', '2026-08-01 10:00:00', false, 'secondary_sale');
+INSERT INTO public.topshot_pack_sales_history VALUES
+  ('tx-p6', 'P6', 8, true, '0xwallet', '0xseller', 'D3', '2026-08-01 10:00:00');
+-- P7: sold on the marketplace, then bought back later on chain -> HELD, not FLIPPED.
+INSERT INTO public.topshot_pack_sales_history VALUES
+  ('tx-p7', 'P7', 5, true, '0xother', '0xwallet', 'D1', '2026-03-01');
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sale_currency, sealed_at, is_primary_drop, event_kind)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P7', '0xwallet', '0x18eb4ee6b3c026d2', 6, 'DUC', '2026-08-15', false, 'secondary_sale');
+-- P10: the settlement-lag flip. Bought on the marketplace 06-01, resold 06-05,
+-- and the on-chain record of the BUY settles 06-10 (lag p90 = 9 days). The two
+-- buy rows are one purchase; bought_at is the earliest -> FLIPPED, not held.
+INSERT INTO public.topshot_pack_sales_history VALUES
+  ('tx-p10a', 'P10', 20, true, '0xwallet', '0xseller', 'D1', '2026-06-01'),
+  ('tx-p10b', 'P10', 28, true, '0xother',  '0xwallet', 'D1', '2026-06-05');
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sale_currency, sealed_at, is_primary_drop, event_kind)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P10', '0xwallet', '0x18eb4ee6b3c026d2', 20, 'DUC', '2026-06-10', false, 'secondary_sale');
+-- P11: bought on chain, never sold or ripped here, and Dapper's index says a
+-- DIFFERENT wallet holds it now (opened by them) -> TRANSFERRED, never HELD.
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sealed_at, is_primary_drop, event_kind)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P11', '0xwallet', '0x0b2a3299cc857e29', NULL, '2026-05-28', true, 'primary_withdraw');
+INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P11', 'D1', 'Opened', '0xc5ababe825dc3122', '2026-09-18');
+-- P12: sealed primary drop, still this wallet's per the index, dist known ONLY
+-- from the index -> held, named, dist_source dapper_index.
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sealed_at, is_primary_drop, event_kind)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P12', '0xwallet', '0x0b2a3299cc857e29', NULL, '2026-07-03', true, 'primary_withdraw');
+INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P12', 'D2', 'Sealed', '0xwallet', '2026-09-18');
+-- P13: like P12 but the index only knows dist "0" (uncatalogued) -> stays NULL.
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sealed_at, is_primary_drop, event_kind)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P13', '0xwallet', '0x0b2a3299cc857e29', NULL, '2026-07-04', true, 'primary_withdraw');
+INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P13', '0', 'Sealed', '0xwallet', '2026-09-18');
+-- P14: index-only: the wallet HOLDS it (Sealed), we have no buy/sell/rip -> held,
+-- named from the index, buy NULL (never 0), latest_event_at = acquired_at.
+INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P14', 'D1', 'Sealed', '0xwallet', '2026-09-18', '2024-11-05');
+-- P15: index-only: OPENED by the wallet, no rip row of ours -> ripped, pull NULL.
+INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P15', 'D2', 'Opened', '0xwallet', '2026-09-18', '2025-02-01');
+-- P16: STALE identity (says the wallet still holds it) but we hold a marketplace
+-- SALE by the wallet -> the sale wins: sold, not held.
+INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P16', 'D1', 'Sealed', '0xwallet', '2026-09-01', '2025-03-01');
+INSERT INTO public.topshot_pack_sales_history VALUES
+  ('tx-p16', 'P16', 22, true, '0xother', '0xwallet', 'D1', '2026-09-10');
+-- The wallet's last CLEAN walk started 2026-09-18 00:00, so every identity row
+-- above with checked_at >= that instant (P12..P15) is CONFIRMED and keeps its
+-- v5/v6 verdict unchanged. P16's row is older -- it is genuinely stale, as its
+-- own comment says -- and is now flagged as such, though the sale still wins.
+INSERT INTO public.pack_wallet_sync VALUES ('0xwallet', '2026-09-18 00:00', '2026-09-18 00:05', 4, 375, NULL, '2026-09-18 00:00');
+-- P17: index-only SEALED, still naming this wallet, but the clean walk did not
+-- return it -> the wallet has parted with it. It must leave the list entirely:
+-- before v7 this was a phantom UNOPENED PACK in the user's own inventory, and
+-- it is the exact shape of all 23 rows measured in production.
+INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P17', 'D1', 'Sealed', '0xwallet', '2026-09-01', '2025-06-01');
+-- P18: the same departure, but this one we BOUGHT. The v5 'transferred' arm
+-- could not catch it -- that arm tests current_owner <> wallet, and a stale row
+-- still says the owner IS us -- so it fell through to HELD. Now transferred,
+-- with current_owner NULL because we cannot name who holds it instead.
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sale_currency, sealed_at, is_primary_drop, event_kind, pack_dist_id)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P18', '0xwallet', '0xother', 12, 'DUC', '2026-08-01', false, 'secondary_sale', 'D1');
+INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P18', 'D1', 'Sealed', '0xwallet', '2026-09-01', '2026-08-01');
+-- P19: THE NO-CHANGE CONTROL, and the arm the fix must NOT be able to move.
+-- Same stale shape as P17 -- Sealed, owner = the wallet, checked_at long before
+-- anything -- but on a wallet with NO pack_wallet_sync row at all, so there is
+-- no clean walk to judge by. It must still read HELD. A guard that suppressed
+-- here would turn "we have not looked yet" into "you no longer own it", which
+-- is the same lie in the other direction, and is what a partial or in-flight
+-- walk looks like from inside the reader.
+INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P19', 'D1', 'Sealed', '0xnosync', '2026-09-01', '2025-06-01');
+-- A cancelled listing (purchased=false) must count as nothing.
+INSERT INTO public.topshot_pack_sales_history VALUES
+  ('tx-p8', 'P8', 99, false, '0xother', '0xwallet', 'D1', '2026-08-20');
+-- Market context for D1 on the page rows.
+INSERT INTO public.pack_ask_state VALUES ('nba-top-shot', 'D1', 22.5, true, '2026-09-18');
+INSERT INTO public.mv_pack_ev_latest VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'D1', 31.2, '2026-09-18');
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sale_currency, sealed_at, is_primary_drop, event_kind, pack_dist_id)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P9', '0xa', '0x18eb4ee6b3c026d2', 19, 'DUC', '2026-09-10', false, 'secondary_sale', 'D1');
+
+DO $$
+DECLARE
+  r jsonb;
+  row_ jsonb;
+  sold jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xWALLET', NULL, NULL, 50, 0);
+  -- 15, not 14: P18 joins (bought, then departed -> transferred). P17 does NOT
+  -- -- it is index-only and the walk says it is gone, so there is nothing left
+  -- to report. P19 belongs to another wallet. RE-PINNED for v7, not inverted:
+  -- the premise changed, the claim did not.
+  PERFORM _assert_eq(r->>'total_count', '15', 'P1..P7 + P10..P16 + P18 = 15; P8 cancelled, P17 departed index-only');
+  PERFORM _assert_eq(r->'identity_sync'->>'packs', '375', 'identity_sync carried from pack_wallet_sync');
+
+  -- 1. sold packs come from the marketplace history
+  sold := public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'sold_any', 50, 0);
+  PERFORM _assert_eq(sold->>'total_count', '4', 'sold_any = P1 (flipped) + P2 (sold) + P10 (flipped) + P16 (sold, stale identity)');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P10';
+  PERFORM _assert_eq(row_->>'status', 'flipped', 'P10: on-chain settlement AFTER the resale is still one purchase -> flipped');
+  PERFORM _assert_eq(row_->>'buy_price_source', 'onchain', 'P10 price from the latest (on-chain) row of the purchase');
+  PERFORM _assert_eq(row_->>'bought_at', '2026-06-01T00:00:00+00:00', 'P10 bought_at is the EARLIEST row of the purchase');
+  PERFORM _assert_eq(row_->>'realized_pl_usd', '8.00', 'P10 P&L 28 - 20');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P1';
+  PERFORM _assert_eq(row_->>'status', 'flipped', 'P1: on-chain buy + marketplace sell = flipped');
+  PERFORM _assert_eq(row_->>'sell_price', '25.00', 'P1 sell price from the marketplace row');
+  PERFORM _assert_eq(row_->>'sell_source', 'marketplace', 'P1 sell provenance');
+  PERFORM _assert_eq(row_->>'sold_to', '0xother', 'P1 buyer is the marketplace buyer');
+  PERFORM _assert_eq(row_->>'realized_pl_usd', '15.00', 'P1 P&L = 25 sale - 10 retail (dist from the sale row)');
+  PERFORM _assert_eq(row_->>'buy_price_source', 'retail', 'P1 buy priced at retail');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P2';
+  PERFORM _assert_eq(row_->>'status', 'sold', 'P2: sale with no attributable buy = sold');
+  PERFORM _assert(row_->>'realized_pl_usd' IS NULL, 'P2: no buy leg -> P&L NULL, not the sale price');
+  -- 2026-09-26 (v10): and no inferred retail either -- D1 has no drop start_time,
+  -- so the sale window cannot be checked.
+  PERFORM _assert(row_->>'buy_price_source' IS NULL, 'P2: no drop window -> nothing inferred');
+  PERFORM _assert_eq(row_->>'pack_name', 'Fresh Threads Pack', 'P2 named from the sale row dist');
+
+  -- 2. unknown prices are NULL, never 0
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P3';
+  PERFORM _assert_eq(row_->>'status', 'held', 'P3 sealed primary drop = held');
+  PERFORM _assert(row_->>'buy_price' IS NULL, 'P3 buy_price NULL (never $0) for an unpriced primary drop');
+  PERFORM _assert(row_->>'buy_usd' IS NULL, 'P3 buy_usd NULL when neither price nor retail is known');
+  PERFORM _assert(row_->>'buy_price_source' IS NULL, 'P3 buy_price_source NULL');
+  PERFORM _assert(row_->>'dist_id' IS NULL AND row_->>'pack_name' IS NULL, 'P3 distribution honestly unknown');
+  PERFORM _assert(row_->>'lowest_ask_usd' IS NULL AND row_->>'pack_ev_usd' IS NULL, 'P3 no market data without a dist');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P5';
+  PERFORM _assert_eq(row_->>'status', 'ripped', 'P5 ripped');
+  PERFORM _assert(row_->>'pull_value_usd' IS NULL, 'P5 unvalued rip -> pull_value_usd NULL, not $0');
+  PERFORM _assert(row_->>'realized_pl_usd' IS NULL, 'P5 P&L NULL when the pull value is unknown');
+  PERFORM _assert_eq(row_->>'buy_price', '30.00', 'P5 buy price from a 2024 marketplace row the on-chain table cannot see');
+  PERFORM _assert_eq(row_->>'buy_price_source', 'marketplace', 'P5 buy provenance');
+
+  -- 3. sealed identity from any marketplace row; market context on resolved rows
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P4';
+  PERFORM _assert_eq(row_->>'status', 'held', 'P4 still held (third-party sale predates the buy and is not W''s)');
+  PERFORM _assert_eq(row_->>'dist_id', 'D2', 'P4 dist from a third-party marketplace row');
+  PERFORM _assert_eq(row_->>'dist_source', 'peer_sale', 'P4 dist provenance');
+  PERFORM _assert_eq(row_->>'pack_name', 'Quest Reward Pack', 'P4 named');
+  PERFORM _assert_eq(row_->>'buy_usd', '0.00', 'P4 retail $0 is a KNOWN zero (reward pack), kept');
+  -- v32 (2026-11-14): a reward pack Dapper delivered as a primary drop is labelled reward (still $0), not retail.
+  PERFORM _assert_eq(row_->>'buy_price_source', 'reward', 'P4 a delivered reward pack -> reward provenance');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P1';
+  PERFORM _assert_eq(row_->>'lowest_ask_usd', '22.50', 'D1 floor ask on the page row');
+  PERFORM _assert_eq(row_->>'pack_ev_usd', '31.20', 'D1 EV on the page row');
+  PERFORM _assert_eq(row_->>'last_sale_usd', '19.00', 'D1 last recorded secondary sale (any wallet)');
+  PERFORM _assert_eq(row_->>'dist_total_sealed', '100', 'D1 sealed supply carried');
+
+  -- dedup + time-aware status
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P6';
+  PERFORM _assert_eq(row_->>'status', 'held', 'P6 one purchase, seen by both sources, one row');
+  PERFORM _assert_eq(row_->>'buy_price_source', 'onchain', 'P6 tie -> on-chain row wins');
+  PERFORM _assert_eq(row_->>'dist_id', 'D3', 'P6 dist taken from the marketplace copy of the same purchase');
+  PERFORM _assert(row_->>'pack_image' IS NULL AND row_->>'pack_name' = 'Mystery Pack', 'P6 name without an image stays honest');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P7';
+  PERFORM _assert_eq(row_->>'status', 'held', 'P7 sold then bought back = held');
+
+  -- v5: transferred + the index as a dist source
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P11';
+  PERFORM _assert_eq(row_->>'status', 'transferred', 'P11: another wallet holds it per the index -> transferred, not held');
+  PERFORM _assert_eq(row_->>'current_owner', '0xc5ababe825dc3122', 'P11 current owner carried');
+  PERFORM _assert_eq(row_->>'identity_status', 'Opened', 'P11 index status carried');
+  PERFORM _assert_eq(row_->>'pack_name', 'Fresh Threads Pack', 'P11 named from the index dist');
+  PERFORM _assert(row_->>'realized_pl_usd' IS NULL, 'P11 no P&L: nothing was realised by this wallet');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P12';
+  PERFORM _assert_eq(row_->>'status', 'held', 'P12 still this wallet''s per the index -> held');
+  PERFORM _assert_eq(row_->>'dist_source', 'dapper_index', 'P12 dist from the index, last in the order');
+  PERFORM _assert_eq(row_->>'pack_name', 'Quest Reward Pack', 'P12 named');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P13';
+  PERFORM _assert_eq(row_->>'status', 'held', 'P13 held');
+  PERFORM _assert(row_->>'dist_id' IS NULL AND row_->>'dist_source' IS NULL, 'P13: the index''s dist "0" is not a distribution');
+  -- RE-PINNED for v7: v7 adds a SECOND way to be transferred (P18), so a bare
+  -- count of 1 no longer states the v5 property. Assert P11's MEMBERSHIP
+  -- instead -- that keeps this arm exercised and immune to later additions,
+  -- where a count would just be re-bumped each time and stop meaning anything.
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM jsonb_array_elements((public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'transferred', 50, 0))->'packs') p
+     WHERE p->>'pack_nft_id' = 'P11'
+  ), 'transferred filter still contains P11 -- the index naming ANOTHER owner is its own route to transferred');
+  PERFORM _assert_eq((public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'sold_any', 50, 0))->>'total_count', '4', 'a transferred pack is NOT a sale; P16 IS');
+
+  -- v6: the index as a holdings source
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P14';
+  PERFORM _assert_eq(row_->>'status', 'held', 'P14 index-only holding = held');
+  PERFORM _assert(row_->>'has_buy' = 'false' AND row_->>'buy_usd' IS NULL AND row_->>'buy_price' IS NULL, 'P14 no buy of ours -> buy NULL, never 0');
+  PERFORM _assert_eq(row_->>'pack_name', 'Fresh Threads Pack', 'P14 named from the index');
+  PERFORM _assert_eq(row_->>'dist_source', 'dapper_index', 'P14 provenance');
+  PERFORM _assert_eq(row_->>'latest_event_at', '2024-11-05T00:00:00+00:00', 'P14 when = the index acquisition time');
+  PERFORM _assert(row_->>'realized_pl_usd' IS NULL, 'P14 no P&L');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P15';
+  PERFORM _assert_eq(row_->>'status', 'ripped', 'P15 opened per the index, no rip row of ours -> ripped');
+  PERFORM _assert(row_->>'has_rip' = 'false' AND row_->>'pull_value_usd' IS NULL AND row_->>'rip_id' IS NULL, 'P15 pull value unknown -> NULL');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P16';
+  PERFORM _assert_eq(row_->>'status', 'sold', 'P16 stale identity loses to the sale we hold');
+
+  -- v7: an ownership claim is only as good as the walk that confirmed it
+  PERFORM _assert(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P17'),
+    'P17: index-only SEALED row the clean walk did not return -> gone from the list, NOT an unopened pack in inventory');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P18';
+  PERFORM _assert_eq(row_->>'status', 'transferred', 'P18: bought, then departed per the clean walk -> transferred, never held');
+  PERFORM _assert(row_->>'current_owner' IS NULL, 'P18: current_owner NULL -- the index name is known wrong, and we cannot supply the right one');
+  PERFORM _assert_eq(row_->>'identity_departed', 'true', 'P18 carries its own provenance');
+  PERFORM _assert_eq(row_->>'identity_status', 'Sealed', 'P18 keeps the LAST-SEEN status; identity_departed is what says it is not a now');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P12';
+  PERFORM _assert_eq(row_->>'identity_departed', 'false', 'P12 was confirmed by the same walk -- the guard discriminates, it does not blanket-suppress');
+  PERFORM _assert_eq(r->'identity_sync'->>'last_clean_sync_at', '2026-09-18T00:00:00+00:00', 'the floor is published, so a reader can see what the claim rests on');
+  PERFORM _assert_eq((public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'transferred', 50, 0))->>'total_count', '2', 'transferred = P11 (index names another wallet) + P18 (index names us, and is stale)');
+  PERFORM _assert_eq((public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'sold_any', 50, 0))->>'total_count', '4', 'a departed pack is still NOT a sale');
+
+  -- ... and the control: no clean walk, no suppression.
+  PERFORM _assert_eq((public.get_wallet_pack_history('0xnosync', NULL, 'held', 50, 0))->>'total_count', '1',
+    'P19: same stale shape on a wallet with NO completed walk -> still HELD. Suppressing here would read "we have not looked yet" as "you no longer own it"');
+  SELECT p INTO row_ FROM jsonb_array_elements((public.get_wallet_pack_history('0xnosync', NULL, NULL, 50, 0))->'packs') p WHERE p->>'pack_nft_id' = 'P19';
+  PERFORM _assert(row_->>'identity_departed' IS NULL, 'P19: with no floor to measure against, departure is UNKNOWN -- not false, and not true');
+  PERFORM _assert_eq(row_->>'current_owner', '0xnosync', 'P19: unconfirmed is not disproved -- the index owner still stands');
+
+  -- filters + paging still hold
+  -- STILL 7, and that is the assertion the whole v7 change exists to keep: P17
+  -- and P18 would have made it 9 before the floor guard, both of them packs the
+  -- wallet had already parted with.
+  PERFORM _assert_eq((public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'held', 2, 0))->>'total_count', '7', 'held = P3, P4, P6, P7, P12, P13, P14 -- P17/P18 departed');
+  PERFORM _assert_eq(jsonb_array_length((public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'held', 2, 0))->'packs')::text, '2', 'limit honoured');
+  PERFORM _assert_eq((public.get_wallet_pack_history('0xwallet', 'nfl_all_day', NULL, 50, 0))->>'total_count', '0', 'collection filter');
+  PERFORM _assert_eq((public.get_wallet_pack_history('0xnobody', NULL, NULL, 50, 0))->>'total_count', '0', 'unknown wallet -> empty, not error');
+  PERFORM _assert((public.get_wallet_pack_history('', NULL, NULL, 50, 0))->>'error' = 'wallet required', 'empty wallet -> error');
+END $$;
+
+-- ── v8 (2026-09-26): wider (Golazos/Pinnacle) and deeper (Dapper pull lists) ──
+-- A second wallet so every count above is untouched.
+-- P20: Top Shot rip whose rip row is unvalued; Dapper's pull list prices it.
+INSERT INTO public.pack_rips (collection_id, pack_nft_id, opener_address, moments_pulled, sealed_at, dist_id, pull_value_usd)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P20', '0xwallet2', 3, '2026-09-01', 'D1', NULL),
+-- P21: rip row valued at 7, Dapper's list only 2 of 3 priced -> the rip value stands.
+       ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P21', '0xwallet2', 3, '2026-09-02', 'D1', 7);
+INSERT INTO public.pack_open_pull_values (collection_id, pack_nft_id, opener_address, n_pulls, n_resolved, n_priced, pull_value_usd) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P20', '0xwallet2', 3, 3, 3, 12.50),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P21', '0xwallet2', 3, 3, 2, NULL),
+-- a value keyed to ANOTHER opener must never price this wallet's P5
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P5', '0xsomeoneelse', 3, 3, 3, 99.00),
+  ('06248cc4-b85f-47cd-af67-1855d14acd75', 'G1', '0xwallet2', 4, 4, 4, 5.00);
+-- G1: a Golazos open (golazos_pack_opens); G2 bought / G3 sold on the Golazos market.
+INSERT INTO public.golazos_pack_opens VALUES ('G1', 'GD1', '0xwallet2', '2026-09-03', 4, 4.00);
+INSERT INTO public.golazos_pack_sales_history VALUES
+  ('tx-g2', 'G2', 15, true, '0xwallet2', '0xgzseller', 'GD1', '2026-09-04'),
+  ('tx-g3', 'G3', 21, true, '0xgzbuyer', '0xwallet2', 'GD1', '2026-09-05');
+-- PN1: a Pinnacle open; only the open row's own value is known.
+INSERT INTO public.pinnacle_pack_opens VALUES ('PN1', 'PD1', '0xwallet2', '2026-09-06', 5, 3.30);
+
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xwallet2', NULL, NULL, 50, 0);
+  PERFORM _assert_eq(r->>'total_count', '6', 'P20, P21, G1, G2, G3, PN1');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P20';
+  PERFORM _assert_eq(row_->>'pull_value_usd', '12.50', 'P20 priced from Dapper''s pull list when the rip row is unvalued');
+  PERFORM _assert_eq(row_->>'pull_value_source', 'dapper_pulls', 'P20 provenance');
+  PERFORM _assert_eq(row_->>'realized_pl_usd', NULL, 'P20 no buy leg -> no P&L');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P21';
+  PERFORM _assert_eq(row_->>'pull_value_usd', '7.00', 'P21 a partly priced pull list never overrides a whole rip value');
+  PERFORM _assert_eq(row_->>'pull_value_source', 'rip_record', 'P21 provenance');
+  PERFORM _assert(row_->>'pulls_priced' = '2' AND row_->>'pulls_total' = '3', 'P21 carries how close the pull list is');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'G1';
+  PERFORM _assert(row_->>'status' = 'ripped' AND row_->>'collection_slug' = 'laliga_golazos', 'G1 a Golazos open is RIPPED');
+  PERFORM _assert_eq(row_->>'pull_value_usd', '5.00', 'G1 Dapper pull list first');
+  PERFORM _assert_eq(row_->>'moments_pulled', '4', 'G1 moments from the open row');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'G2';
+  PERFORM _assert(row_->>'status' = 'held' AND row_->>'buy_price' = '15.00' AND row_->>'buy_price_source' = 'marketplace', 'G2 a Golazos market buy is a BUY');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'G3';
+  PERFORM _assert(row_->>'status' = 'sold' AND row_->>'sell_price' = '21.00' AND row_->>'sold_to' = '0xgzbuyer', 'G3 a Golazos market sale is a SALE');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'PN1';
+  PERFORM _assert(row_->>'status' = 'ripped' AND row_->>'collection_slug' = 'disney_pinnacle', 'PN1 a Pinnacle open is RIPPED');
+  PERFORM _assert(row_->>'pull_value_usd' = '3.30' AND row_->>'pull_value_source' = 'rip_record', 'PN1 value from the open row');
+
+  -- the opener scoping: another wallet's pull value never prices P5
+  SELECT p INTO row_ FROM jsonb_array_elements((public.get_wallet_pack_history('0xwallet', NULL, NULL, 50, 0))->'packs') p WHERE p->>'pack_nft_id' = 'P5';
+  PERFORM _assert(row_->>'pull_value_usd' IS NULL AND row_->>'pull_value_source' IS NULL, 'P5 stays NULL: a pull value keyed to another opener is not this wallet''s');
+END $$;
+
+-- ── v9: reconstructed rips (packs opened with no pack NFT) ──
+INSERT INTO public.wallet_reconstructed_rips (wallet, collection_id, burst_id, opened_at, moments_pulled, n_resolved, n_priced, pull_value_usd) VALUES
+  ('0xwallet3', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'burst:111', '2022-06-01', 3, 3, 3, 8.40),
+  ('0xwallet3', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'burst:222', '2022-06-02', 2, 2, 1, NULL),
+  ('0xsomeoneelse', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'burst:333', '2022-06-03', 1, 1, 1, 1.00);
+
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xwallet3', NULL, 'ripped', 50, 0);
+  PERFORM _assert_eq(r->>'total_count', '2', 'both reconstructed rips are RIPPED rows; another wallet''s is not');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'burst:111';
+  PERFORM _assert_eq(row_->>'rip_source', 'reconstructed', 'provenance says reconstructed');
+  PERFORM _assert_eq(row_->>'pack_name', 'NBA Top Shot pack (no pack NFT, reconstructed)', 'a labelled name, never a borrowed distribution');
+  PERFORM _assert(row_->>'dist_id' IS NULL AND row_->>'buy_usd' IS NULL, 'no distribution, no price paid');
+  PERFORM _assert(row_->>'pull_value_usd' = '8.40' AND row_->>'pull_value_source' = 'delivery_burst', 'valued from its own moments');
+  PERFORM _assert_eq(row_->>'moments_pulled', '3', 'moments from the burst');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'burst:222';
+  PERFORM _assert(row_->>'pull_value_usd' IS NULL AND row_->>'pulls_priced' = '1' AND row_->>'pulls_total' = '2', 'partly priced burst: NULL + how close');
+  -- the older rows keep their provenance
+  SELECT p INTO row_ FROM jsonb_array_elements((public.get_wallet_pack_history('0xwallet2', NULL, NULL, 50, 0))->'packs') p WHERE p->>'pack_nft_id' = 'P20';
+  PERFORM _assert_eq(row_->>'rip_source', 'rip', 'a held open event stays rip_source = rip');
+END $$;
+
+-- ── v10 (2026-09-26): retail in dollars; inferred buys only where knowable ──
+INSERT INTO public.pack_distributions VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'D9', 'UFix Pack', NULL, '{"retail_price_usd":"4990000000"}', 1, 1),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'D8', 'No Price Pack', NULL, '{}', 1, 1);
+INSERT INTO public.allday_pack_supply VALUES ('A99', 99), ('A00', 0);
+-- drop windows: All Day A99 / A00 start 2023-12-25; Top Shot D10 ($25) starts 2025-01-01
+INSERT INTO public.pack_distributions VALUES
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'A99', 'AD Drop', NULL, '{"start_time":"2023-12-25T00:00:00Z"}', 1, 1),
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'A00', 'AD Zero', NULL, '{"start_time":"2023-12-25T00:00:00Z"}', 1, 1),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'D10', 'TS Drop', NULL, '{"retail_price_usd":"25","start_time":"2025-01-01T00:00:00Z"}', 1, 1);
+-- P32 TS held, acquired 9 days into the drop -> inferred $25.
+-- P33 TS held, acquired 5 months after the drop -> not a retail buy -> NULL.
+-- P34 TS SOLD 19 days into the drop, no index date -> acquired inside the window -> inferred; P&L = 60 - 25.
+INSERT INTO public.pack_nft_identity VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P32', 'D10', 'Sealed', '0xwallet4', now(), '2025-01-10'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P33', 'D10', 'Sealed', '0xwallet4', now(), '2025-06-01');
+INSERT INTO public.topshot_pack_sales_history VALUES ('tx-p34', 'P34', 60, true, '0xbuyer', '0xwallet4', 'D10', '2025-01-20');
+-- P30: a recorded Top Shot primary buy whose dist stores retail in UFix64 units.
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sealed_at, is_primary_drop, event_kind, pack_dist_id)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P30', '0xwallet4', '0x0b2a3299cc857e29', NULL, '2026-07-01', true, 'primary_withdraw', 'D9');
+-- P31: Top Shot held, index-only, dist with no retail -> unknowable -> NULL.
+-- P41: All Day held, acquired 2024 (after marketplace coverage), price 99 -> inferred.
+-- P42: All Day held, acquired 2022-06 (before coverage) -> NULL.
+-- P43: All Day held, acquired 2024, supply price 0 (= unknown) -> NULL, never $0.
+-- DX1/DX2 (v26, 2026-11-06): THE INDEX NAMING THE DISTRIBUTOR IS NOT A TRANSFER.
+--   DX1: wallet 0xdistw received a primary drop FROM 0x0b2a…7e29 (Top Shot's
+--        distribution account) and Dapper's index, read AFTER the delivery, still
+--        names that distributor as owner (#218's frozen index did this for 194
+--        packs on 12 saved wallets; the chain held 13 of 13 checked) -> HELD,
+--        current_owner NULL, never "transferred".
+--   DX2: the CONTROL the fix must not move: 0xdistw bought a pack on the
+--        marketplace FROM 0xother, and the index names 0xother again -> that is a
+--        real holder, so TRANSFERRED stays, with current_owner = 0xother.
+INSERT INTO public.pack_nft_identity VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P31', 'D8', 'Sealed', '0xwallet4', now(), '2025-01-01'),
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'P41', 'A99', 'Sealed', '0xwallet4', now(), '2024-01-01'),
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'P42', 'A99', 'Sealed', '0xwallet4', now(), '2022-06-01'),
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'P43', 'A00', 'Sealed', '0xwallet4', now(), '2024-01-01');
+-- P40: All Day SOLD with no buy row and no index acquisition -> cannot be inferred.
+INSERT INTO public.allday_pack_sales_history VALUES ('tx-p40', 'P40', 150, true, '0xbuyer', '0xwallet4', 'A99', '2025-03-01');
+
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xwallet4', NULL, NULL, 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P30';
+  PERFORM _assert(row_->>'buy_usd' = '49.90' AND row_->>'buy_price_source' = 'retail', 'P30 a UFix64 retail (4,990,000,000) reads as $49.90, not $4.99bn');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P31';
+  PERFORM _assert(row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' IS NULL, 'P31 no retail known -> NULL, never 0');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P40';
+  PERFORM _assert(row_->>'status' = 'sold' AND row_->>'buy_usd' IS NULL AND row_->>'realized_pl_usd' IS NULL,
+                  'P40 an All Day sale with no knowable acquisition -> no buy leg, P&L NULL, never the sale price');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P41';
+  PERFORM _assert(row_->>'buy_usd' = '99.00' AND row_->>'buy_price_source' = 'retail_inferred', 'P41 All Day acquired 7 days into its drop -> drop price, inferred');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P42';
+  PERFORM _assert(row_->>'buy_usd' IS NULL, 'P42 acquired outside its drop window -> not a retail buy -> NULL');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P32';
+  PERFORM _assert(row_->>'buy_usd' = '25.00' AND row_->>'buy_price_source' = 'retail_inferred', 'P32 TS acquired inside the drop window -> retail, inferred');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P33';
+  PERFORM _assert(row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' IS NULL, 'P33 TS acquired 5 months after its drop -> NULL (a reward or a transfer, not retail)');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P34';
+  PERFORM _assert(row_->>'status' = 'sold' AND row_->>'realized_pl_usd' = '35.00' AND row_->>'buy_price_source' = 'retail_inferred',
+                  'P34 sold inside the window -> acquired inside it -> P&L 60 - 25');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P43';
+  PERFORM _assert(row_->>'buy_usd' IS NULL, 'P43 an All Day drop price of 0 is unknown, never $0');
+END $$;
+
+-- ── v11 (2026-09-26): packs Dapper minted straight into the wallet; Trade Tickets are not dollars ──
+INSERT INTO public.pack_distributions VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'D11', 'Anthology Quick Rip', NULL, '{"retail_price_usd":"9","start_time":"2024-06-06T19:30:00Z"}', 1, 1),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'D12', 'Freshman Gems Trade Ticket Pack', NULL, '{"retail_price_usd":"10","start_time":"2026-02-19T20:00:00Z"}', 1, 1),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'D13', 'Fast Break - WNBA Run 4', NULL, '{"retail_price_usd":"0","start_time":"2025-06-23T04:00:00Z"}', 1, 1),
+  -- v31: a reward-looking title with a real drop retail ($100) -- never priced as a $0 reward
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'D14', 'Fast Break - Rookie Pack', NULL, '{"retail_price_usd":"100","start_time":"2026-04-20T00:00:00Z"}', 1, 1),
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'A11', 'AD Old Drop', NULL, '{"start_time":"2024-01-01T00:00:00Z"}', 1, 1);
+INSERT INTO public.allday_pack_supply VALUES ('A11', 50);
+-- all arrive 2026-04-24 11:15:01.118 UTC -- years after D11's / A11's sale windows
+INSERT INTO public.pack_nft_identity VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P50', 'D11', 'Sealed', '0xwallet5', now(), '2026-04-24 11:15:01.118+00'),  -- minted in
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P51', 'D11', 'Sealed', '0xwallet5', now(), '2026-04-24 11:15:01.118+00'),  -- no mint on record
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P52', 'D11', 'Sealed', '0xwallet5', now(), '2026-04-24 11:15:01.118+00'),  -- minted an hour earlier: transferred in
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'P53', 'A11', 'Sealed', '0xwallet5', now(), '2026-04-24 11:15:01.118+00'),  -- All Day, minted in
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P55', 'D12', 'Sealed', '0xwallet5', now(), '2026-04-24 11:15:01.118+00'),  -- Trade Ticket, minted in
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P56', 'D13', 'Sealed', '0xwallet5', now(), '2026-04-24 11:15:01.118+00'),  -- reward, minted in
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P57', 'D12', 'Sealed', '0xwallet5', now(), '2026-02-25 00:00:00+00'),       -- Trade Ticket inside its window
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P58', 'D14', 'Sealed', '0xwallet5', now(), '2026-04-24 11:15:01.118+00');  -- v31: $100 Fast Break pack inside its window
+INSERT INTO public.pack_nft_mints (collection_id, pack_nft_id, dist_id, minted_at, block_height, tx_id) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P50', 'D11', '2026-04-24 11:15:01.118+00', 149445000, 'tx-mint'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P52', 'D11', '2026-04-24 10:15:00+00',     149440000, 'tx-early'),
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'P53', 'A11', '2026-04-24 11:15:01.118+00', 149445000, 'tx-mint'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P55', 'D12', '2026-04-24 11:15:01.118+00', 149445000, 'tx-mint'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P56', 'D13', '2026-04-24 11:15:01.118+00', 149445000, 'tx-mint');
+-- P54: a RECORDED primary buy of a Trade Ticket pack
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sealed_at, is_primary_drop, event_kind, pack_dist_id)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P54', '0xwallet5', '0x0b2a3299cc857e29', NULL, '2026-02-20', true, 'primary_withdraw', 'D12');
+
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xwallet5', NULL, NULL, 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P50';
+  PERFORM _assert(row_->>'buy_usd' = '9.00' AND row_->>'buy_price_source' = 'retail_inferred' AND row_->>'minted_to_wallet_at' IS NOT NULL,
+                  'P50 minted into the wallet by Dapper years after its drop -> its retail, inferred, and it says it was minted in');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P51';
+  PERFORM _assert(row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' IS NULL AND row_->>'minted_to_wallet_at' IS NULL,
+                  'P51 the same arrival with no mint on record -> NULL (the window rule still holds)');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P52';
+  PERFORM _assert(row_->>'buy_usd' IS NULL AND row_->>'minted_to_wallet_at' IS NULL,
+                  'P52 minted an hour BEFORE it arrived -> minted elsewhere and transferred in -> NULL');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P53';
+  PERFORM _assert(row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' IS NULL,
+                  'P53 an All Day pack minted in is NOT priced: its supply price does not mark a reward');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P54';
+  -- v30 (2026-11-14): with NO open listing there is no ticket value -- NULL, never $0 and never $10
+  PERFORM _assert(row_->>'has_buy' = 'true' AND row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' IS NULL,
+                  'P54 a recorded Trade Ticket primary buy with no listing to value a ticket -> NULL, never $10');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P55';
+  PERFORM _assert(row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' IS NULL, 'P55 a Trade Ticket pack minted in, no listing -> NULL, never $10');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P56';
+  PERFORM _assert(row_->>'buy_usd' = '0.00' AND row_->>'buy_price_source' = 'reward', 'P56 a reward pack (Fast Break) minted in -> $0, labelled reward');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P57';
+  PERFORM _assert(row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' IS NULL, 'P57 a Trade Ticket pack inside its window, no listing -> NULL, never $10');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P58';
+  -- v32 (2026-11-14, Trevor 6:56 PM PT) INVERTS v31: a reward pack is $0 unless bought on the secondary market,
+  -- whatever its drop retail says.
+  PERFORM _assert(row_->>'buy_usd' = '0.00' AND row_->>'buy_price_source' = 'reward',
+                  'P58 (v32) a Fast Break Rookie Pack ($100 drop retail) with no buy row -> $0 reward, never its retail');
+END $$;
+
+-- v30 (2026-11-14, Trevor): a Trade Ticket = the lowest listed Top Shot moment. A $0 row is not an ask.
+INSERT INTO public.ts_listings VALUES ('L1', 0.17), ('L2', 0.15), ('L3', 0), ('L4', 40);
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xwallet5', NULL, NULL, 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P54';
+  PERFORM _assert(row_->>'has_buy' = 'true' AND row_->>'buy_usd' = '1.50' AND row_->>'buy_price_source' = 'trade_tickets',
+                  'P54b a recorded Trade Ticket primary buy -> 10 tickets x $0.15 lowest ask = $1.50, never $10');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P55';
+  PERFORM _assert(row_->>'buy_usd' = '1.50' AND row_->>'buy_price_source' = 'trade_tickets', 'P55b a Trade Ticket pack minted in -> $1.50 (trade_tickets)');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P57';
+  PERFORM _assert(row_->>'buy_usd' = '1.50' AND row_->>'buy_price_source' = 'trade_tickets', 'P57b a Trade Ticket pack inside its window -> $1.50, never $10');
+  -- no-change control: a non-ticket, non-reward pack the listings cannot move
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P50';
+  PERFORM _assert(row_->>'buy_usd' = '9.00' AND row_->>'buy_price_source' = 'retail_inferred', 'P50b retail pack unchanged by the ticket value');
+END $$;
+DELETE FROM public.ts_listings;
+
+-- ── v32 cases (2026-11-14, Trevor 6:56 PM PT): reward packs are $0 unless bought on the secondary market ──
+INSERT INTO public.pack_distributions VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'DRV31', 'Rookie Revelation: Earnable Chance Hit Reward', NULL, '{"retail_price_usd":"20","start_time":"2026-04-20T00:00:00Z"}', 1, 1),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'DRV32', 'Ausar Thompson Ultimate Chaser Pack', NULL, '{"retail_price_usd":"30","start_time":"2026-04-20T00:00:00Z"}', 1, 1),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'DRV33', 'Fast Break - Rookie Pack', NULL, '{"retail_price_usd":"100","start_time":"2026-04-20T00:00:00Z"}', 1, 1),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'DRV34', 'Fast Break Booster Pack', NULL, '{"retail_price_usd":"5","start_time":"2026-04-20T00:00:00Z"}', 1, 1);
+INSERT INTO public.pack_nft_identity VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'PRV31', 'DRV31', 'Sealed', '0xwallet31', now(), '2026-04-24 11:15:01.118+00'),  -- "... Reward" title, minted in
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'PRV32', 'DRV32', 'Sealed', '0xwallet31', now(), '2026-04-24 11:15:01.118+00');  -- Chaser pack, minted in
+INSERT INTO public.pack_nft_mints (collection_id, pack_nft_id, dist_id, minted_at, block_height, tx_id) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'PRV31', 'DRV31', '2026-04-24 11:15:01.118+00', 149445000, 'tx-mint'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'PRV32', 'DRV32', '2026-04-24 11:15:01.118+00', 149445000, 'tx-mint');
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sealed_at, is_primary_drop, event_kind, pack_dist_id) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'PRV33', '0xwallet31', '0x0b2a3299cc857e29', NULL, '2026-04-21', true, 'primary_withdraw', 'DRV33'),   -- reward delivered by Dapper
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'PRV34', '0xwallet31', '0xsomecollector', 12, '2026-04-22', false, 'secondary_sale', 'DRV33'),       -- bought on the marketplace
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'PRV35', '0xwallet31', '0x0b2a3299cc857e29', NULL, '2026-04-21', true, 'primary_withdraw', 'DRV34');  -- a SOLD Fast Break Booster
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xwallet31', NULL, NULL, 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'PRV31';
+  PERFORM _assert(row_->>'buy_usd' = '0.00' AND row_->>'buy_price_source' = 'reward', 'PRV31 a "... Reward" pack (retail $20) minted in -> $0 reward, never retail_inferred');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'PRV32';
+  PERFORM _assert(row_->>'buy_usd' = '0.00' AND row_->>'buy_price_source' = 'reward', 'PRV32 a Chaser pack minted in -> $0 reward');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'PRV33';
+  PERFORM _assert(row_->>'buy_usd' = '0.00' AND row_->>'buy_price_source' = 'reward', 'PRV33 a reward pack Dapper delivered (primary drop, retail $100) -> $0 reward, never $100');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'PRV34';
+  PERFORM _assert(row_->>'buy_usd' = '12.00' AND row_->>'buy_price_source' IS DISTINCT FROM 'reward', 'PRV34 a reward pack bought on the secondary market keeps its $12, never $0');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'PRV35';
+  PERFORM _assert(row_->>'buy_usd' = '5.00' AND row_->>'buy_price_source' = 'retail', 'PRV35 a Fast Break Booster bought from Dapper is a purchase, not a reward -> its $5 retail');
+END $$;
+
+-- ── v12 (2026-09-26): All Day packs judged against Dapper's drop windows; REWARD = $0 ──
+INSERT INTO public.pack_distributions VALUES
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'AW1', 'Rookie Debut Premium Wave 2', NULL, '{"name":"Rookie Debut Premium Wave 2"}', 1, 1),
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'AR1', 'Josh Allen Launch Codes Reward', NULL, '{"type":"REWARD"}', 1, 1),
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'AZ1', 'Jan 29 hold', NULL, '{"type":"DEFAULT"}', 1, 1),
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'AO1', 'Series 1 Premium', NULL, '{}', 1, 1);
+INSERT INTO public.allday_pack_supply VALUES ('AW1', 99), ('AR1', 0), ('AZ1', 0), ('AO1', 249);
+INSERT INTO public.allday_drop_windows (dist_id, start_time, end_time, price_usd, title) VALUES
+  ('AW1', '2024-09-06 00:00:00+00', '2024-09-10 03:30:00+00', 99, 'Rookie Debut Premium - Wave 2 (2024 Season)'),
+  ('AR1', '2025-11-07 00:00:00+00', '2025-11-07 00:00:00+00', 0, 'Josh Allen Launch Codes Sapphire Moment - Instant Reward'),
+  ('AZ1', '2026-01-29 00:00:00+00', NULL, 0, 'Jan 29 hold'),
+  ('AO1', '2022-06-01 00:00:00+00', NULL, 249, 'Series 1 Premium');
+INSERT INTO public.pack_nft_identity VALUES
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'P60', 'AW1', 'Sealed', '0xwallet6', now(), '2024-09-08'),   -- inside its window
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'P61', 'AW1', 'Sealed', '0xwallet6', now(), '2025-06-01'),   -- 9 months later
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'P62', 'AR1', 'Sealed', '0xwallet6', now(), '2025-11-07'),   -- a reward
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'P63', 'AZ1', 'Sealed', '0xwallet6', now(), '2026-01-30'),   -- price 0, not a reward
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'P64', 'AO1', 'Sealed', '0xwallet6', now(), '2022-06-02');   -- before marketplace coverage
+
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xwallet6', NULL, NULL, 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P60';
+  PERFORM _assert(row_->>'buy_usd' = '99.00' AND row_->>'buy_price_source' = 'retail_inferred',
+                  'P60 no start_time in pack_distributions, Dapper''s window says it arrived 2 days into the drop -> $99, inferred');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P61';
+  PERFORM _assert(row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' IS NULL, 'P61 arrived 9 months after its drop -> NULL');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P62';
+  PERFORM _assert(row_->>'buy_usd' = '0.00' AND row_->>'buy_price_source' = 'retail_inferred', 'P62 a REWARD drop is $0 (reward), not unknown');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P63';
+  PERFORM _assert(row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' IS NULL, 'P63 a price of 0 on a non-REWARD drop stays unknown, never $0');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P64';
+  PERFORM _assert(row_->>'buy_usd' IS NULL, 'P64 a 2022-06 All Day drop is before marketplace coverage -> NULL, even inside its window');
+END $$;
+
+-- ── v13 (2026-09-26): contents value on the row; held packs valued at the market ──
+INSERT INTO public.pack_distributions VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'H1', 'Anthology Quick Rip', NULL, '{"retail_price_usd":"9"}', 1, 1),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'H2', 'Unlisted Pack', NULL, '{}', 1, 1),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'H3', 'No Market Pack', NULL, '{}', 1, 1);
+INSERT INTO public.pack_ask_state VALUES ('nba-top-shot', 'H1', 10, true, '2026-09-20'), ('nba-top-shot', 'H2', 5, false, '2026-09-25');
+INSERT INTO public.mv_pack_ev_latest (collection_id, dist_id, pack_ev, snapshotted_at, gross_ev) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'H1', -6.67, '2026-09-25', 2.33);
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sale_currency, sealed_at, is_primary_drop, event_kind, pack_dist_id)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'X9', '0xa', '0x18eb4ee6b3c026d2', 8, 'DUC', '2026-09-24', false, 'secondary_sale', 'H1');
+INSERT INTO public.pack_nft_identity VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'X1', 'H1', 'Sealed', '0xheld', now(), '2026-01-01'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'X2', 'H1', 'Sealed', '0xheld', now(), '2026-01-01'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'X3', 'H2', 'Sealed', '0xheld', now(), '2026-01-01'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'X4', 'H3', 'Sealed', '0xheld', now(), '2026-01-01'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'X5', 'H1', 'Opened', '0xheld', now(), '2026-01-01');
+INSERT INTO public.pack_rips (collection_id, pack_nft_id, opener_address, moments_pulled, sealed_at, dist_id, pull_value_usd)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'X5', '0xheld', 3, '2026-02-01', 'H1', 4);
+
+DO $$
+DECLARE r jsonb; row_ jsonb; v jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xheld', NULL, NULL, 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'X1';
+  PERFORM _assert(row_->>'pack_gross_ev_usd' = '2.33' AND row_->>'pack_ev_usd' = '-6.67',
+                  'X1 the contents value (2.33) rides beside the net-of-drop-price figure (-6.67), never in its place');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'X4';
+  PERFORM _assert(row_->>'pack_gross_ev_usd' IS NULL, 'X4 no EV row -> NULL, never 0');
+
+  v := public.wallet_held_pack_value('0xheld');
+  PERFORM _assert_eq(v->>'count', '4', 'four sealed packs held; the opened X5 is not');
+  PERFORM _assert_eq(v->>'complete', 'true', 'every held row read');
+  PERFORM _assert_eq(v->>'listed_count', '2', 'X1 + X2 listed; H2''s ask is not listed, H3 has none');
+  PERFORM _assert_eq(v->>'floor_ask_usd', '20.00', 'two packs at a $10 floor; an unlisted ask adds nothing');
+  PERFORM _assert_eq(v->>'last_sale_count', '2', 'the last sale covers the two H1 packs');
+  PERFORM _assert_eq(v->>'last_sale_usd', '16.00', '2 x $8');
+  PERFORM _assert(v->>'rip_ev_count' = '2' AND v->>'rip_ev_usd' = '4.66', 'rip EV = contents value, 2 x 2.33, over the 2 it covers');
+  PERFORM _assert_eq(v->>'oldest_ask_checked_at', '2026-09-20T00:00:00+00:00', 'the oldest listed ask it relies on is named');
+  v := public.wallet_held_pack_value('0xnobody00000000');
+  PERFORM _assert(v->>'count' = '0' AND v->>'floor_ask_usd' = '0.00' AND v->>'listed_count' = '0' AND v->>'complete' = 'true', 'a wallet holding nothing: 0 of 0, complete');
+END $$;
+
+-- ── v14 (2026-09-26): a drop with no published pool is valued by what its opened packs yielded ──
+INSERT INTO public.pack_observed_values VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'H2', 9, 6, 7.50, now()),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'H3', 4, 3, 9.00, now());
+DO $$
+DECLARE r jsonb; row_ jsonb; v jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xheld', NULL, NULL, 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'X3';
+  PERFORM _assert(row_->>'pack_opened_avg_usd' = '7.50' AND row_->>'pack_opened_n' = '6' AND row_->>'pack_gross_ev_usd' IS NULL,
+                  'X3 no modelled EV; its drop''s 6 valued opens averaged $7.50 -- said with the count');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'X4';
+  PERFORM _assert(row_->>'pack_opened_avg_usd' IS NULL, 'X4 3 valued opens is too few -> NULL, never a thin average');
+  v := public.wallet_held_pack_value('0xheld');
+  PERFORM _assert(v->>'opened_avg_count' = '1' AND v->>'opened_avg_usd' = '7.50', 'held: X3 valued at its drop''s opened average, apart from rip EV');
+  PERFORM _assert(v->>'rip_ev_count' = '2' AND v->>'rip_ev_usd' = '4.66', 'rip EV unchanged: the modelled figure only');
+END $$;
+
+-- refresh_pack_observed_values: rebuilt from the opens we hold
+INSERT INTO public.pack_rips (collection_id, pack_nft_id, opener_address, moments_pulled, sealed_at, dist_id, pull_value_usd) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'R1a', '0xo', 3, '2026-03-01', 'RD', 10),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'R1b', '0xo', 3, '2026-03-01', 'RD', 99),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'R1c', '0xo', 3, '2026-03-01', 'RD', NULL),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'R1d', '0xo', 3, '2026-03-01', 'RD', NULL);
+-- R1b's Dapper pull list prices it at 20 (wins over its rip row's 99); R1c's at NULL
+INSERT INTO public.pack_open_pull_values (collection_id, pack_nft_id, opener_address, n_pulls, n_resolved, n_priced, pull_value_usd) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'R1b', '0xo', 3, 3, 3, 20),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'R1c', '0xo', 3, 3, 2, NULL);
+INSERT INTO public.pack_observed_values VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'GONE', 5, 5, 1.00, now() - interval '2 days');
+DO $$
+DECLARE v jsonb;
+BEGIN
+  v := public.refresh_pack_observed_values();
+  PERFORM _assert((v->>'ok')::boolean, 'refresh ok');
+  PERFORM _assert((SELECT n_opened = 4 AND n_valued = 2 AND avg_value_usd = 15.00 FROM public.pack_observed_values
+                    WHERE dist_id = 'RD'),
+                  'RD: 4 opened, 2 valued (the pull list''s 20 over the rip''s 99, and 10); unpriced opens are counted, never averaged in as 0');
+  PERFORM _assert(NOT EXISTS (SELECT 1 FROM public.pack_observed_values WHERE dist_id = 'GONE'), 'a drop no longer backed by opens is removed');
+  PERFORM _assert(NOT EXISTS (SELECT 1 FROM public.pack_observed_values WHERE dist_id = 'H2'), 'hand-planted rows with no opens behind them do not survive a rebuild');
+  PERFORM _assert((SELECT ok AND rows_written > 0 FROM public.pipeline_runs_stub WHERE pipeline = 'pack-observed-values' ORDER BY ctid DESC LIMIT 1),
+                  'the pipeline row says what it wrote');
+END $$;
+
+-- ── v15 (2026-09-28): an All Day primary buy dated by its mint; the index date only while it names this wallet ──
+INSERT INTO public.pack_distributions VALUES
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'AM1', 'Rookie Debut Quick Rips', NULL, '{}', 1, 1),
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'AM0', 'Series 1 Standard', NULL, '{}', 1, 1),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'D75', 'TS Window Drop', NULL, '{"retail_price_usd":"25","start_time":"2025-01-01T00:00:00Z"}', 1, 1);
+INSERT INTO public.allday_pack_supply VALUES ('AM1', 9), ('AM0', 50);
+INSERT INTO public.allday_drop_windows (dist_id, start_time, end_time, price_usd, title) VALUES
+  ('AM1', '2024-09-06 00:00:00+00', '2024-09-10 00:00:00+00', 9, 'Rookie Debut Quick Rips'),
+  ('AM0', '2022-06-01 00:00:00+00', NULL, 50, 'Series 1 Standard');
+-- every pack below was SOLD by 0xwallet7 on 2025-03-01 (or 2025-06-01 for P75); no buy row anywhere for the wallet
+INSERT INTO public.allday_pack_sales_history VALUES
+  ('tx-p70', 'P70', 12, true, '0xbuyer', '0xwallet7', 'AM1', '2025-03-01'),
+  ('tx-p71', 'P71', 12, true, '0xbuyer', '0xwallet7', 'AM1', '2025-03-01'),
+  ('tx-p71a', 'P71', 10, true, '0xmid', '0xother', 'AM1', '2024-10-01'),   -- someone ELSE sold it first
+  ('tx-p72', 'P72', 12, true, '0xbuyer', '0xwallet7', 'AM1', '2025-03-01'),
+  ('tx-p73', 'P73', 80, true, '0xbuyer', '0xwallet7', 'AM0', '2025-03-01'),
+  ('tx-p74', 'P74', 12, true, '0xbuyer', '0xwallet7', 'AM1', '2025-03-01');
+INSERT INTO public.pack_index_mints (collection_id, pack_nft_id, in_index, minted_at, mint_tx) VALUES
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'P70', true, '2024-09-07 12:00:00+00', 'tx-mint-70'),   -- minted in the window
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'P71', true, '2024-09-07 12:00:00+00', 'tx-mint-71'),   -- ... but resold by another before us
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'P72', true, '2025-01-01 00:00:00+00', 'tx-mint-72'),   -- minted months after the window
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'P73', true, '2022-06-02 00:00:00+00', 'tx-mint-73'),   -- before marketplace coverage
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'P74', false, NULL, NULL);                               -- the index does not know it
+-- P75: a Top Shot pack the wallet sold 5 months after its drop; the index row names the BUYER, acquired inside the window
+INSERT INTO public.topshot_pack_sales_history VALUES ('tx-p75', 'P75', 40, true, '0xbuyer7', '0xwallet7', 'D75', '2025-06-01');
+INSERT INTO public.pack_nft_identity VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P75', 'D75', 'Sealed', '0xbuyer7', now(), '2025-01-05');
+
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xwallet7', NULL, NULL, 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P70';
+  PERFORM _assert(row_->>'status' = 'sold' AND row_->>'buy_usd' = '9.00' AND row_->>'buy_price_source' = 'retail_inferred'
+                  AND row_->>'realized_pl_usd' = '3.00' AND (row_->>'primary_minted_at')::timestamptz = '2024-09-07 12:00:00+00',
+                  'P70 sold All Day pack minted (= bought) inside its drop window, no other seller -> $9 inferred, P&L 12 - 9, dated by its mint');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P71';
+  PERFORM _assert(row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' IS NULL AND row_->>'primary_minted_at' IS NULL,
+                  'P71 another wallet sold it on the marketplace before we did -> the mint is not our buy -> NULL');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P72';
+  PERFORM _assert(row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' IS NULL,
+                  'P72 minted 4 months after its drop window -> not a retail buy -> NULL');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P73';
+  PERFORM _assert(row_->>'buy_usd' IS NULL, 'P73 a 2022-06 drop is before marketplace coverage -> NULL, even minted in its window');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P74';
+  PERFORM _assert(row_->>'buy_usd' IS NULL AND row_->>'primary_minted_at' IS NULL, 'P74 the index does not know it -> NULL (as P40)');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P75';
+  PERFORM _assert(row_->>'status' = 'sold' AND row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' IS NULL,
+                  'P75 the index''s acquisition date is the BUYER''s -> never evidence of when this wallet acquired it -> NULL');
+END $$;
+
+-- v16: P76 a PRE-MINTED All Day pack (minted 2 days before its drop opened) the wallet
+-- holds, bought 1 minute after the drop opened per the index -> the wallet's own date wins.
+INSERT INTO public.pack_distributions VALUES
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'AM4', 'Rookie Debut Quick Rips Wave 4', NULL, '{}', 1, 1);
+INSERT INTO public.allday_pack_supply VALUES ('AM4', 9);
+INSERT INTO public.allday_drop_windows (dist_id, start_time, end_time, price_usd, title) VALUES
+  ('AM4', '2024-09-19 18:00:00+00', NULL, 9, 'Rookie Debut Quick Rips Wave 4');
+INSERT INTO public.pack_nft_identity VALUES
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'P76', 'AM4', 'Sealed', '0xwallet7', now(), '2024-09-19 18:01:25+00');
+INSERT INTO public.pack_index_mints (collection_id, pack_nft_id, in_index, minted_at, mint_tx) VALUES
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'P76', true, '2024-09-17 21:53:47+00', 'tx-mint-76');
+
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xwallet7', NULL, NULL, 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P76';
+  PERFORM _assert(row_->>'status' = 'held' AND row_->>'buy_usd' = '9.00' AND row_->>'buy_price_source' = 'retail_inferred',
+                  'P76 pre-minted before its drop, bought 1 minute in per the wallet''s own index date -> $9 inferred (the mint must not outrank it)');
+END $$;
+
+-- v17: P77 a PRE-MINTED pack the wallet SOLD 5 days into the drop, no index date of its own.
+INSERT INTO public.allday_pack_sales_history VALUES ('tx-p77', 'P77', 15, true, '0xbuyer', '0xwallet7', 'AM4', '2024-09-24');
+INSERT INTO public.pack_index_mints (collection_id, pack_nft_id, in_index, minted_at, mint_tx) VALUES
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'P77', true, '2024-09-17 21:53:47+00', 'tx-mint-77');
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xwallet7', NULL, NULL, 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P77';
+  PERFORM _assert(row_->>'status' = 'sold' AND row_->>'buy_usd' = '9.00' AND row_->>'realized_pl_usd' = '6.00',
+                  'P77 pre-minted, sold inside the window -> the sale bound still infers $9 (a pre-window mint must not veto it)');
+END $$;
+
+-- v18 (2026-09-29): pulls_inferred rides on the row; 0 when every name is a record.
+UPDATE public.pack_open_pull_values SET n_inferred = 2 WHERE pack_nft_id = 'R1b';
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xo', NULL, NULL, 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'R1b';
+  PERFORM _assert_eq(row_->>'pulls_inferred', '2', 'R1b two of its pulls are named by inference');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'R1c';
+  PERFORM _assert_eq(row_->>'pulls_inferred', '0', 'R1c none');
+END $$;
+
+-- v19 (2026-09-29): a box row says how many packs it yielded; others say 0.
+INSERT INTO public.pack_box_contents (collection_id, box_pack_nft_id, pack_nft_id, opener_address) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'R1a', 'inner1', '0xo'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'R1a', 'inner2', '0xo'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'R1c', 'inner3', '0xsomeoneelse');
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xo', NULL, NULL, 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'R1a';
+  PERFORM _assert_eq(row_->>'box_packs', '2', 'R1a yielded two packs');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'R1c';
+  PERFORM _assert_eq(row_->>'box_packs', '0', 'R1c: another opener''s box contents are not this wallet''s');
+END $$;
+
+-- v20 (2026-10-10): a BOUGHT pack the index (fresh clean walk) says this wallet OPENED is
+-- ripped, not held -- box openings write no rip row. Its own wallet, so no count above moves.
+INSERT INTO public.pack_wallet_sync VALUES ('0xboxw', '2026-09-18 00:00', '2026-09-18 00:05', 1, 2, NULL, '2026-09-18 00:00');
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sealed_at, is_primary_drop, event_kind)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'BX1', '0xboxw', '0xseller', 374, '2026-09-10', false, 'secondary_sale'),
+       ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'BX2', '0xboxw', '0xseller', 359, '2026-09-11', false, 'secondary_sale'),
+       ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'BX3', '0xboxw', '0xseller', 300, '2026-09-12', false, 'secondary_sale');
+INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'BX1', 'D1', 'Opened', '0xboxw', '2026-09-18 01:00', '2026-09-10');
+INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'BX2', 'D1', 'Sealed', '0xboxw', '2026-09-18 01:00', '2026-09-11');
+-- BX3: an OPENED row older than the clean walk -- departed, so it is NOT this wallet's open
+INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'BX3', 'D1', 'Opened', '0xboxw', '2026-09-01', '2026-09-12');
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xboxw', NULL, NULL, 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'BX1';
+  PERFORM _assert_eq(row_->>'status', 'ripped', 'BX1 bought + opened per the confirmed index -> ripped, never held');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'BX2';
+  PERFORM _assert_eq(row_->>'status', 'held', 'BX2 bought + sealed per the index -> held');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'BX3';
+  PERFORM _assert_eq(row_->>'status', 'transferred', 'BX3 a stale Opened row is a departure, not an open');
+  PERFORM _assert_eq((public.get_wallet_pack_history('0xboxw', NULL, 'held', 50, 0))->>'total_count', '1', 'held counts BX2 only');
+END $$;
+
+-- v24 (2026-10-19): a TOP SHOT pack Dapper's index left at 'Revealed' WAS opened -- its contents
+-- were delivered (37 of 37 Revealed boxes: all 259 inner packs exist). Bought + Revealed read HELD
+-- (a Playoffs Box at its $212 market ask). All Day's 'Revealed' is unmeasured and Pinnacle's is a
+-- placeholder, so RV2 (All Day) stays HELD: the no-change control the fix must not move.
+INSERT INTO public.pack_wallet_sync VALUES ('0xrvw', '2026-10-19 00:00', '2026-10-19 00:05', 1, 2, NULL, '2026-10-19 00:00');
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sealed_at, is_primary_drop, event_kind)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'RV1', '0xrvw', '0xseller', 250, '2026-05-20', false, 'secondary_sale'),
+       ('dee28451-5d62-409e-a1ad-a83f763ac070', 'RV2', '0xrvw', '0xseller', 50, '2026-05-21', false, 'secondary_sale');
+INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'RV1', 'D1', 'Revealed', '0xrvw', '2026-10-19 01:00', '2026-05-20');
+INSERT INTO public.pack_nft_identity VALUES ('dee28451-5d62-409e-a1ad-a83f763ac070', 'RV2', NULL, 'Revealed', '0xrvw', '2026-10-19 01:00', '2026-05-21');
+-- RV3: index-only (no buy of ours) Top Shot Revealed -> an open, listed under ripped
+INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'RV3', 'D1', 'Revealed', '0xrvw', '2026-10-19 01:00', '2026-06-01');
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xrvw', NULL, NULL, 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'RV1';
+  PERFORM _assert_eq(row_->>'status', 'ripped', 'RV1 bought + Top Shot Revealed -> opened, never held');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'RV2';
+  PERFORM _assert_eq(row_->>'status', 'held', 'RV2 All Day Revealed is not read as an open (control)');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'RV3';
+  PERFORM _assert_eq(row_->>'status', 'ripped', 'RV3 index-only Top Shot Revealed is listed as an open');
+  PERFORM _assert_eq((public.get_wallet_pack_history('0xrvw', NULL, 'held', 50, 0))->>'total_count', '1', 'held counts RV2 only');
+END $$;
+
+
+-- v26 (2026-11-06): THE INDEX NAMING THE PACK'S OWN DISTRIBUTOR IS NOT A TRANSFER.
+-- 0xdistw has a clean walk (floor 2026-11-06 00:00) so the departure guard is ARMED, which is the
+-- harder case: DX1 was delivered 11-05 by 0x0b2a…7e29 (primary_withdraw) and the index, read 11-06
+-- AFTER the walk, still names that distributor. DX2 is the control: bought on the marketplace from
+-- 0xother, and the index names 0xother again -- a real holder, so transferred stays.
+INSERT INTO public.pack_wallet_sync VALUES ('0xdistw', '2026-11-06 00:00', '2026-11-06 00:05', 1, 2, NULL, '2026-11-06 00:00');
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sale_currency, sealed_at, is_primary_drop, event_kind, pack_dist_id)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'DX1', '0xdistw', '0x0b2a3299cc857e29', NULL, NULL, '2026-11-05 17:33', true, 'primary_withdraw', 'D1'),
+       ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'DX2', '0xdistw', '0xother', 9, 'DUC', '2026-11-05 18:00', false, 'secondary_sale', 'D1');
+INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'DX1', 'D1', 'Sealed', '0x0b2a3299cc857e29', '2026-11-06 01:00', NULL);
+INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'DX2', 'D1', 'Sealed', '0xother', '2026-11-06 01:00', NULL);
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xdistw', NULL, NULL, 50, 0);
+  PERFORM _assert_eq(r->>'total_count', '2', 'DX1 + DX2');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'DX1';
+  PERFORM _assert_eq(row_->>'status', 'held', 'DX1: the index naming the distributor that delivered it is NOT a transfer -> held');
+  PERFORM _assert(row_->>'current_owner' IS NULL, 'DX1: current_owner NULL -- the distributor is a stale read, not a holder we can name');
+  PERFORM _assert_eq(row_->>'identity_departed', 'false', 'DX1: the departure guard did not fire either (the index never named this wallet)');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'DX2';
+  PERFORM _assert_eq(row_->>'status', 'transferred', 'DX2 (control): the index naming the SECONDARY seller again is a real holder -> transferred');
+  PERFORM _assert_eq(row_->>'current_owner', '0xother', 'DX2 keeps the named holder');
+  PERFORM _assert_eq((public.get_wallet_pack_history('0xdistw', NULL, 'held', 50, 0))->>'total_count', '1', 'held = DX1 only');
+  PERFORM _assert_eq((public.get_wallet_pack_history('0xdistw', NULL, 'transferred', 50, 0))->>'total_count', '1', 'transferred = DX2 only');
+END $$;
+
+
+-- v21 (2026-10-10, #187): a pack out of a box THIS wallet opened was not bought -- no buy price,
+-- no P/L. DT0 = a topper (retail 0, never sold alone); DT25 = a standard pack ($25 alone).
+INSERT INTO public.pack_distributions VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'DT0', 'Box Topper', NULL, '{"retail_price_usd":"0","start_time":"2026-06-01T00:00:00Z"}', 1, 1),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'DT25', 'Standard Pack', NULL, '{"retail_price_usd":"25","start_time":"2026-06-01T00:00:00Z"}', 1, 1);
+INSERT INTO public.pack_box_contents (collection_id, box_pack_nft_id, pack_nft_id, opener_address) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'IBOX', 'IB1', '0xibw'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'IBOX', 'IB2', '0xibw'),
+  -- IB3 came out of SOMEONE ELSE's box: for this wallet it is an ordinary pack
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'OBOX', 'IB3', '0xsomeoneelse');
+-- IB1 topper and IB2 standard: sold sealed by the opener a week into the drop
+INSERT INTO public.topshot_pack_sales_history VALUES
+  ('tx-ib1', 'IB1', 120, true, '0xbuyer', '0xibw', 'DT0', '2026-06-08'),
+  ('tx-ib2', 'IB2', 40, true, '0xbuyer', '0xibw', 'DT25', '2026-06-08'),
+  ('tx-ib3', 'IB3', 40, true, '0xbuyer', '0xibw', 'DT25', '2026-06-08');
+-- IB4: a topper out of this wallet's box, opened here (index), its pulls priced
+INSERT INTO public.pack_wallet_sync VALUES ('0xibw', '2026-06-20 00:00', '2026-06-20 00:05', 1, 1, NULL, '2026-06-20 00:00');
+INSERT INTO public.pack_box_contents (collection_id, box_pack_nft_id, pack_nft_id, opener_address) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'IBOX', 'IB4', '0xibw');
+INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'IB4', 'DT0', 'Opened', '0xibw', '2026-06-20 01:00', '2026-06-08');
+INSERT INTO public.pack_open_pull_values (collection_id, pack_nft_id, opener_address, n_pulls, n_resolved, n_priced, pull_value_usd)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'IB4', '0xibw', 1, 1, 1, 300);
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xibw', NULL, NULL, 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'IB1';
+  PERFORM _assert(row_->>'status' = 'sold' AND row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' = 'box'
+                  AND row_->>'realized_pl_usd' IS NULL AND row_->>'from_box_pack_nft_id' = 'IBOX',
+                  'IB1 a topper out of this wallet''s box, sold: no buy, no P/L -- never "buy $0, P/L = the sale"');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'IB2';
+  PERFORM _assert(row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' = 'box' AND row_->>'realized_pl_usd' IS NULL,
+                  'IB2 a standard pack out of the box is not a $25 purchase');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'IB3';
+  PERFORM _assert(row_->>'buy_usd' = '25.00' AND row_->>'buy_price_source' = 'retail_inferred'
+                  AND row_->>'realized_pl_usd' = '15.00' AND row_->>'from_box_pack_nft_id' IS NULL,
+                  'IB3 another opener''s box: unchanged, still inferred at retail (control)');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'IB4';
+  PERFORM _assert(row_->>'status' = 'ripped' AND row_->>'pull_value_usd' = '300.00' AND row_->>'buy_usd' IS NULL
+                  AND row_->>'realized_pl_usd' IS NULL,
+                  'IB4 a topper out of the box, opened: its pull value stands, no P/L against a $0 buy');
+END $$;
+
+-- v22 (2026-10-10): the box itself. IBOX (bought $200, opened) yielded IB1 (sold $120), IB2 (sold
+-- $40) and IB4 (opened, $300): realized $460, P/L +$260. IBOX2 (bought $150, opened) yielded IB5
+-- (sold $60) and IB6 (still sealed in the wallet): not realized -> P/L NULL.
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sealed_at, is_primary_drop, event_kind)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'IBOX', '0xibw', '0xseller', 200, '2026-06-05', false, 'secondary_sale'),
+       ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'IBOX2', '0xibw', '0xseller', 150, '2026-06-05', false, 'secondary_sale');
+INSERT INTO public.pack_nft_identity VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'IBOX',  'DTB', 'Opened', '0xibw', '2026-06-20 01:00', '2026-06-05'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'IBOX2', 'DTB', 'Opened', '0xibw', '2026-06-20 01:00', '2026-06-05'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'IB6',   'DT25', 'Sealed', '0xibw', '2026-06-20 01:00', '2026-06-07');
+INSERT INTO public.pack_box_contents (collection_id, box_pack_nft_id, pack_nft_id, opener_address) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'IBOX2', 'IB5', '0xibw'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'IBOX2', 'IB6', '0xibw');
+INSERT INTO public.topshot_pack_sales_history VALUES ('tx-ib5', 'IB5', 60, true, '0xbuyer', '0xibw', 'DT25', '2026-06-09');
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xibw', NULL, NULL, 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'IBOX';
+  PERFORM _assert(row_->>'status' = 'ripped' AND row_->>'box_realized_usd' = '460.00' AND row_->>'box_packs_realized' = '3'
+                  AND row_->>'realized_pl_usd' = '260.00',
+                  'IBOX: every pack it yielded is sold or opened -> realized $460 - $200 = +$260');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'IBOX2';
+  PERFORM _assert(row_->>'box_packs_realized' = '1' AND row_->>'box_realized_usd' = '60.00' AND row_->>'realized_pl_usd' IS NULL,
+                  'IBOX2: one pack still sealed -> no P/L (never $60 - $150)');
+  -- the packs themselves are unchanged: no P/L of their own
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'IB1';
+  PERFORM _assert(row_->>'realized_pl_usd' IS NULL AND row_->>'box_realized_usd' IS NULL, 'IB1 still carries no P/L of its own');
+END $$;
+
+
+-- v23 (2026-10-11): a status filter must not change any row it keeps. For every wallet in this
+-- fixture and every status, the filtered read == the unfiltered read's rows of that status (same
+-- order, same fields) and the same total; IBOX under 'ripped' keeps its box P/L (+$260), which
+-- needs its SOLD packs IB1/IB2 -- rows the 'ripped' filter would otherwise drop before enrichment.
+DO $$
+DECLARE w text; st text; f jsonb; u jsonb; expect jsonb; n_checked int := 0; n_nonempty int := 0; row_ jsonb;
+BEGIN
+  FOR w IN SELECT DISTINCT x FROM (
+             SELECT buyer_address FROM public.pack_purchases UNION SELECT opener_address FROM public.pack_rips
+             UNION SELECT owner_address FROM public.pack_nft_identity UNION SELECT opener_address FROM public.pack_box_contents
+           ) t(x) WHERE x IS NOT NULL LOOP
+    u := public.get_wallet_pack_history(w, NULL, NULL, 200, 0);
+    FOREACH st IN ARRAY ARRAY['held', 'ripped', 'flipped', 'sold', 'transferred', 'other', 'sold_any'] LOOP
+      f := public.get_wallet_pack_history(w, NULL, st, 200, 0);
+      SELECT COALESCE(jsonb_agg(p ORDER BY o), '[]'::jsonb) INTO expect
+        FROM jsonb_array_elements(u->'packs') WITH ORDINALITY AS e(p, o)
+       WHERE p->>'status' = st OR (st = 'sold_any' AND p->>'status' IN ('flipped', 'sold'));
+      PERFORM _assert(f->'packs' = expect AND (f->>'total_count')::int = jsonb_array_length(expect),
+                      format('FLT1 %s / %s: filtered read == unfiltered rows of that status', w, st));
+      n_checked := n_checked + 1;
+      IF jsonb_array_length(expect) > 0 THEN n_nonempty := n_nonempty + 1; END IF;
+    END LOOP;
+  END LOOP;
+  -- not vacuous: the fixture exercises many (wallet, status) pairs with rows in them
+  PERFORM _assert(n_checked >= 30 AND n_nonempty >= 10, format('FLT1 covered %s pairs, %s non-empty', n_checked, n_nonempty));
+  f := public.get_wallet_pack_history('0xibw', NULL, 'ripped', 200, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(f->'packs') p WHERE p->>'pack_nft_id' = 'IBOX';
+  PERFORM _assert(row_->>'box_realized_usd' = '460.00' AND row_->>'box_packs_realized' = '3' AND row_->>'realized_pl_usd' = '260.00',
+                  'FLT1 IBOX under the ripped filter still realizes its SOLD packs: +$260');
+END $$;
+-- V27 (2026-11-13): what an opened pack yielded that the wallet still holds, at its wallet FMV;
+-- a sealed pack's value + basis; tab totals over every row of the tab.
+INSERT INTO public.pack_rips (id, collection_id, pack_nft_id, opener_address, moments_pulled, sealed_at, dist_id, pull_value_usd) VALUES
+  ('a0000000-0000-0000-0000-000000000027', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'HPK1', '0xv27w', 3, '2026-10-01', NULL, 20),
+  ('b0000000-0000-0000-0000-000000000027', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'HPK2', '0xv27w', 2, '2026-10-02', NULL, NULL),
+  ('c0000000-0000-0000-0000-000000000027', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'HAD1', '0xv27w', 2, '2026-10-04', NULL, 9);
+INSERT INTO public.pack_open_pulls VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'HPK1', 'm1', '0xv27w'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'HPK1', 'm2', '0xv27w'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'HPK1', 'm3', '0xv27w'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'HPK2', 'm5', '0xv27w');
+-- the same pull named twice (Dapper's list + the rip-linked acquisition) counts once; m6 only via the acquisition
+INSERT INTO public.moment_acquisitions VALUES
+  ('m1', '0xv27w', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'a0000000-0000-0000-0000-000000000027'),
+  ('m6', '0xv27w', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'b0000000-0000-0000-0000-000000000027');
+INSERT INTO public.allday_pack_pull VALUES ('HAD1', 'a1', '0xv27w'), ('HAD1', 'a2', '0xv27w');
+INSERT INTO public.wallet_reconstructed_rips (wallet, collection_id, burst_id, opened_at, moments_pulled, nft_ids, n_resolved, n_priced, pull_value_usd)
+VALUES ('0xv27w', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'HBURST', '2026-10-03', 2, ARRAY['m7', 'm8'], 2, 2, 4);
+INSERT INTO public.wallet_moments_cache VALUES
+  ('0xv27w', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'm1', 5),
+  ('0xv27w', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'm2', 7),
+  ('0xv27w', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'm5', NULL),   -- held, no FMV
+  ('0xv27w', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'm6', 3),
+  ('0xv27w', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'm3', 99),     -- same id, ANOTHER collection: not HPK1's m3
+  ('0xother27', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'm3', 50),  -- ANOTHER wallet holds HPK1's m3
+  ('0xv27w', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'a1', 2.5);
+-- sealed: HSP1 bought $10, its drop listed at $25 (ask); HSP2 index-only hold, drop unlisted, last sale $18;
+-- HSP3 bought $4, no distribution known -> no value
+INSERT INTO public.pack_distributions (collection_id, dist_id, title) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'DV27', 'V27 Pack'), ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'DV27B', 'V27 Pack B');
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sealed_at, is_primary_drop, event_kind, pack_dist_id) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'HSP1', '0xv27w', '0xseller', 10, '2026-10-05', false, 'secondary_sale', 'DV27'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'HSP3', '0xv27w', '0xseller', 4, '2026-10-06', false, 'secondary_sale', NULL),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'XSALE', '0xsomeone', '0xseller2', 18, '2026-10-07', false, 'secondary_sale', 'DV27B');
+INSERT INTO public.pack_ask_state VALUES ('nba-top-shot', 'DV27', 25, true, '2026-11-13'), ('nba-top-shot', 'DV27B', 30, false, '2026-11-13');
+INSERT INTO public.pack_nft_identity (collection_id, pack_nft_id, dist_id, status, owner_address, acquired_at) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'HSP2', 'DV27B', 'Sealed', '0xv27w', '2026-10-08');
+DO $$
+DECLARE r jsonb; t jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xv27w', NULL, 'ripped', 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'HPK1';
+  PERFORM _assert(row_->>'pulls_listed' = '3' AND row_->>'pulls_held' = '2' AND row_->>'pulls_held_priced' = '2'
+                  AND row_->>'held_fmv_usd' = '12.00',
+                  'V27-1 HPK1: m1 named twice counts once; m3 is held only in ANOTHER collection / by ANOTHER wallet -> 2 of 3 held, $12');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'HPK2';
+  PERFORM _assert(row_->>'pulls_listed' = '2' AND row_->>'pulls_held' = '2' AND row_->>'pulls_held_priced' = '1'
+                  AND row_->'held_fmv_usd' = 'null'::jsonb,
+                  'V27-2 HPK2: a held pull with no FMV leaves the held FMV NULL, never a partial $3');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'HBURST';
+  PERFORM _assert(row_->>'pulls_listed' = '2' AND row_->>'pulls_held' = '0' AND row_->>'held_fmv_usd' = '0.00',
+                  'V27-2 HBURST: a reconstructed rip whose pulls are all gone holds a real $0');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'HAD1';
+  PERFORM _assert(row_->>'pulls_listed' = '2' AND row_->>'pulls_held' = '1' AND row_->>'held_fmv_usd' = '2.50',
+                  'V27-2 HAD1: All Day pulls from its open record');
+  t := r->'tab_totals';
+  PERFORM _assert(t->>'opened_packs' = '4' AND t->>'pulls_listed' = '9' AND t->>'pulls_held' = '5'
+                  AND t->>'pulls_held_priced' = '4' AND t->>'held_fmv_usd' = '17.50'
+                  AND t->>'pull_value_usd' = '33.00' AND t->>'pull_valued' = '3',
+                  'V27-3 opened totals: 9 pulls named, 5 held, 4 priced = $17.50; pull value $33 over 3 of 4 packs. got ' || t::text);
+
+  r := public.get_wallet_pack_history('0xv27w', NULL, 'held', 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'HSP1';
+  PERFORM _assert(row_->>'value_usd' = '25.00' AND row_->>'value_basis' = 'ask', 'V27-4 HSP1: valued at its live floor ask');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'HSP2';
+  PERFORM _assert(row_->>'value_usd' = '18.00' AND row_->>'value_basis' = 'last_sale',
+                  'V27-4 HSP2: an UNLISTED ask is no value; the last sale is, and says so');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'HSP3';
+  PERFORM _assert(row_->'value_usd' = 'null'::jsonb AND row_->'value_basis' = 'null'::jsonb, 'V27-4 HSP3: no distribution -> no value, never $0');
+  t := r->'tab_totals';
+  PERFORM _assert(t->>'held_packs' = '3' AND t->>'held_value_usd' = '43.00' AND t->>'held_valued' = '2'
+                  AND t->>'held_valued_by_ask' = '1' AND t->>'held_unrealized_usd' = '15.00' AND t->>'held_unrealized_n' = '1'
+                  AND t->>'cost_usd' = '14.00' AND t->>'cost_known' = '2'
+                  -- a held read prices no pull list
+                  AND t->>'pulls_listed' = '0' AND t->>'opened_with_pull_list' = '0',
+                  'V27-4 held totals: $43 over 2 of 3 valued; unrealized +$15 over the 1 with both; cost $14 over 2. got ' || t::text);
+END $$;
+
+-- V27-5: for every wallet and every status the tab totals cover exactly the tab's rows
+DO $$
+DECLARE w text; st text; r jsonb; n int := 0;
+BEGIN
+  FOR w IN SELECT DISTINCT x FROM (
+             SELECT buyer_address FROM public.pack_purchases UNION SELECT opener_address FROM public.pack_rips
+             UNION SELECT owner_address FROM public.pack_nft_identity UNION SELECT wallet FROM public.wallet_reconstructed_rips
+           ) t(x) WHERE x IS NOT NULL LOOP
+    FOREACH st IN ARRAY ARRAY['held', 'ripped', 'sold_any', 'all'] LOOP
+      r := public.get_wallet_pack_history(w, NULL, st, 5, 0);
+      PERFORM _assert((r->'tab_totals'->>'packs')::int = (r->>'total_count')::int,
+                      format('V27-5 %s / %s: tab_totals.packs = total_count', w, st));
+      PERFORM _assert(st NOT IN ('held') OR (r->'tab_totals'->>'held_packs')::int = (r->>'total_count')::int,
+                      format('V27-5 %s / held: held_packs = total_count', w));
+      PERFORM _assert(st NOT IN ('ripped') OR (r->'tab_totals'->>'opened_packs')::int = (r->>'total_count')::int,
+                      format('V27-5 %s / ripped: opened_packs = total_count', w));
+      PERFORM _assert(st NOT IN ('sold_any') OR (r->'tab_totals'->>'sold_packs')::int = (r->>'total_count')::int,
+                      format('V27-5 %s / sold_any: sold_packs = total_count', w));
+      n := n + 1;
+    END LOOP;
+  END LOOP;
+  PERFORM _assert(n >= 40, format('V27-5 covered %s (wallet, tab) pairs', n));
+END $$;
+
+-- V28: a listed ask is confirmed by the last complete walk; an unlisted one keeps its own stamp.
+INSERT INTO public.pack_ask_snapshot_state VALUES ('nba-top-shot', '2026-11-14 03:00:00+00', 2048);
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xv27w', NULL, 'held', 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'HSP1';
+  PERFORM _assert((row_->>'ask_checked_at')::timestamptz = '2026-11-14 03:00:00+00',
+                  'V28-1 HSP1: a LISTED ask unchanged since 11-13 reads the last complete walk (11-14 03:00), not when it last changed. got ' || coalesce(row_->>'ask_checked_at', 'NULL'));
+  PERFORM _assert((r->'tab_totals'->>'held_ask_oldest_checked_at')::timestamptz = '2026-11-14 03:00:00+00',
+                  'V28-1 tab total: the oldest CONFIRMED ask is the walk time');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'HSP2';
+  PERFORM _assert((row_->>'ask_checked_at')::timestamptz = '2026-11-13 00:00:00+00',
+                  'V28-2 HSP2: an UNLISTED ask keeps its own stamp. got ' || coalesce(row_->>'ask_checked_at', 'NULL'));
+END $$;
+
+-- V29-1: wallet_held_pack_value (one read of tab_totals) == the old page-by-page sums, every wallet.
+-- H1 gets an opened average TOO, so a drop with a modelled EV AND an average is in the fixture:
+-- the opened-average sum must skip it (an exclusion only a row carrying both can test).
+INSERT INTO public.pack_observed_values VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'H1', 10, 6, 5.00, now())
+  ON CONFLICT (collection_id, dist_id) DO UPDATE SET n_opened = 10, n_valued = 6, avg_value_usd = 5.00;
+DO $$
+DECLARE w text; v jsonb; rows_ jsonb; n int := 0; nz int := 0;
+BEGIN
+  FOR w IN SELECT DISTINCT x FROM (
+             SELECT buyer_address FROM public.pack_purchases UNION SELECT opener_address FROM public.pack_rips
+             UNION SELECT owner_address FROM public.pack_nft_identity
+           ) t(x) WHERE x IS NOT NULL LOOP
+    v := public.wallet_held_pack_value(w);
+    rows_ := public.get_wallet_pack_history(w, NULL, 'held', 200, 0)->'packs';
+    PERFORM _assert(
+      (v->>'count')::int = jsonb_array_length(rows_)
+      AND (v->>'listed_count')::int = (SELECT count(*) FROM jsonb_array_elements(rows_) e WHERE e->>'lowest_ask_usd' IS NOT NULL)
+      AND (v->>'floor_ask_usd')::numeric = (SELECT round(coalesce(sum((e->>'lowest_ask_usd')::numeric), 0), 2) FROM jsonb_array_elements(rows_) e)
+      AND (v->>'oldest_ask_checked_at') IS NOT DISTINCT FROM
+          (SELECT to_jsonb(min((e->>'ask_checked_at')::timestamptz) FILTER (WHERE e->>'lowest_ask_usd' IS NOT NULL))->>0 FROM jsonb_array_elements(rows_) e)
+      AND (v->>'last_sale_count')::int = (SELECT count(*) FROM jsonb_array_elements(rows_) e WHERE e->>'last_sale_usd' IS NOT NULL)
+      AND (v->>'last_sale_usd')::numeric = (SELECT round(coalesce(sum((e->>'last_sale_usd')::numeric), 0), 2) FROM jsonb_array_elements(rows_) e)
+      AND (v->>'rip_ev_count')::int = (SELECT count(*) FROM jsonb_array_elements(rows_) e WHERE e->>'pack_gross_ev_usd' IS NOT NULL)
+      AND (v->>'rip_ev_usd')::numeric = (SELECT round(coalesce(sum((e->>'pack_gross_ev_usd')::numeric), 0), 2) FROM jsonb_array_elements(rows_) e)
+      AND (v->>'opened_avg_count')::int = (SELECT count(*) FROM jsonb_array_elements(rows_) e WHERE e->>'pack_gross_ev_usd' IS NULL AND e->>'pack_opened_avg_usd' IS NOT NULL)
+      AND (v->>'opened_avg_usd')::numeric = (SELECT round(coalesce(sum((e->>'pack_opened_avg_usd')::numeric) FILTER (WHERE e->>'pack_gross_ev_usd' IS NULL), 0), 2) FROM jsonb_array_elements(rows_) e),
+      format('V29-1 %s: one-read held value == the page-by-page sums. got %s', w, v::text));
+    n := n + 1;
+    IF (v->>'listed_count')::int > 0 THEN nz := nz + 1; END IF;
+  END LOOP;
+  PERFORM _assert(n >= 10 AND nz >= 2, format('V29-1 covered %s wallets, %s with a listed ask', n, nz));
+  -- not vacuous: a held row carrying BOTH a rip EV and an opened average is in the population
+  PERFORM _assert(EXISTS (SELECT 1 FROM jsonb_array_elements(public.get_wallet_pack_history('0xheld', NULL, 'held', 200, 0)->'packs') e
+                          WHERE e->>'pack_gross_ev_usd' IS NOT NULL AND e->>'pack_opened_avg_usd' IS NOT NULL),
+                  'V29-1 the fixture holds a pack with both an EV and an opened average');
+END $$;
+
+ROLLBACK;

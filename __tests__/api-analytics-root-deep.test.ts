@@ -1,0 +1,388 @@
+import { describe, it, expect, beforeEach, vi } from "vitest"
+import { NextRequest } from "next/server"
+
+// GET /api/analytics — the per-wallet portfolio rollup behind the collection
+// Analytics tab. It aggregates a paginated wallet-moments RPC into tier / series
+// / confidence breakdowns, and the two things worth pinning are both HONESTY
+// rules rather than arithmetic:
+//
+//   1. Acquisition history only exists for Top Shot (the TS GraphQL acquisition
+//      timeline). For every other collection the route returns `acquisition:
+//      null` rather than a row of zeros — a zeroed breakdown would read as
+//      "this collector pulled nothing from packs", which is a claim we cannot
+//      make. That branch had no test.
+//   2. portfolio_clarity_score is HIGH+MEDIUM over total. If an unknown
+//      confidence value silently counted as clarity, the score would inflate.
+//
+// Also pinned: the 10-page pagination stop (a whale over 1,000 moments is the
+// only case where page 2 is ever requested) and the series-label map.
+
+const state = vi.hoisted(() => ({
+  acq: null as unknown,
+  pages: [] as unknown[][],
+  rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
+  resolveThrows: null as string | null,
+  resolvedAddress: "0xbd94cade097e50ac" as string | null,
+  acqError: null as unknown,
+  pageErrorAt: null as number | null,
+  totalCount: 0,
+  catalog: [] as Array<{ render_id: string; series_name: string | null }>,
+}))
+
+vi.mock("@/lib/supabase", () => ({
+  supabaseAdmin: {
+    rpc: async (name: string, args: Record<string, unknown>) => {
+      state.rpcCalls.push({ name, args })
+      if (name === "get_acquisition_stats") return { data: state.acqError ? null : state.acq, error: state.acqError }
+      if (name === "get_wallet_moments_with_fmv") {
+        const page = Number(args.p_offset ?? 0) / 1000
+        if (state.pageErrorAt === page) return { data: null, error: { code: "57014", message: "canceling statement due to statement timeout" } }
+        return { data: [{ moments: state.pages[page] ?? [], total_count: state.totalCount }], error: null }
+      }
+      return { data: null, error: null }
+    },
+    from: (table: string) => ({
+      select: () => ({
+        order: () => ({
+          range: async (from: number, to: number) => {
+            state.rpcCalls.push({ name: `from:${table}`, args: { from, to } })
+            return { data: state.catalog.slice(from, to + 1), error: null }
+          },
+        }),
+      }),
+    }),
+  },
+}))
+vi.mock("@/lib/chains/flow/topshot", () => ({
+  topshotGraphql: async () => {
+    if (state.resolveThrows) throw new Error(state.resolveThrows)
+    return { getUserProfileByUsername: { publicInfo: { flowAddress: state.resolvedAddress } } }
+  },
+}))
+
+// 2026-09-29: the route resolves usernames through the shared ladder
+// (lib/chains/flow/flow-resolve → resolveTopShotUsernameCacheAware), so that is
+// the seam mocked here — found / confirmed miss / failure to look.
+vi.mock("@/lib/chains/flow/topshot-username-resolve", () => ({
+  lookupCachedTopShotUsername: async () => null,
+  resolveTopShotUsernameCacheAware: async () => {
+    if (state.resolveThrows) return { found: false, reason: "topshot_gql_error", detail: state.resolveThrows }
+    if (!state.resolvedAddress) return { found: false, reason: "username_not_found_on_topshot" }
+    const a = state.resolvedAddress
+    return { found: true, walletAddress: a.startsWith("0x") ? a : `0x${a}`, username: "u", source: "atlas", cacheLayer: "atlas_live" }
+  },
+}))
+
+const { GET } = await import("@/app/api/analytics/route")
+
+const TS = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+const ALLDAY = "dee28451-5d62-409e-a1ad-a83f763ac070"
+const WALLET = "0xbd94cade097e50ac"
+
+const req = (qs: string) => new NextRequest(`https://t/api/analytics${qs}`)
+
+// ⚠ `lock_known: true` is part of the DEFAULT because it is what the live
+// `get_wallet_moments_with_fmv` returns for a row whose lock was actually
+// read (migration 20260913231500). A fixture without it describes a function
+// that no longer exists, and would quietly assert the pre-#112 behaviour.
+// The unknown case gets its own test below rather than being the default.
+function moment(over: Record<string, unknown> = {}) {
+  return { tier: "MOMENT_TIER_COMMON", fmv_usd: 10, is_locked: false, lock_known: true, confidence: "HIGH", series_number: 4, ...over }
+}
+
+beforeEach(() => {
+  state.acq = null
+  state.pages = [[]]
+  state.rpcCalls = []
+  state.resolveThrows = null
+  state.resolvedAddress = WALLET
+  state.acqError = null
+  state.pageErrorAt = null
+  state.totalCount = 0
+  state.catalog = []
+})
+
+describe("GET /api/analytics — guards + wallet resolution", () => {
+  it("400s without a wallet and without a resolvable collection", async () => {
+    expect((await GET(req(""))).status).toBe(400)
+    expect((await GET(req(`?wallet=${WALLET}`))).status).toBe(400)
+    const bad = await GET(req(`?wallet=${WALLET}&collection_id=not-a-collection`))
+    expect(bad.status).toBe(400)
+    expect((await bad.json()).error).toContain("collection_id required")
+  })
+
+  // 2026-10-10: a bracket lookup answered "constructor" with a function; it
+  // passed the guard, JSON dropped it from the RPC body, and the RPC's Top Shot
+  // default answered. Prototype keys must miss like any unknown slug.
+  for (const key of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+    it(`400s on the prototype key ${key} — never a default-scoped read`, async () => {
+      const res = await GET(req(`?wallet=${WALLET}&collection_id=${key}`))
+      expect(res.status).toBe(400)
+    })
+  }
+
+  it("accepts either a slug or a canonical UUID", async () => {
+    expect((await (await GET(req(`?wallet=${WALLET}&collection_id=nba-top-shot`))).json()).collection_id).toBe(TS)
+    expect((await (await GET(req(`?wallet=${WALLET}&collection_id=${TS}`))).json()).collection_id).toBe(TS)
+    // Whitespace-only is treated as absent, not as a lookup miss.
+    expect((await GET(req(`?wallet=${WALLET}&collection_id=%20%20`))).status).toBe(400)
+  })
+
+  it("passes an 0x address straight through but resolves a username via GQL", async () => {
+    await GET(req(`?wallet=${WALLET}&collection_id=nba-top-shot`))
+    expect(state.rpcCalls[0].args.p_wallet).toBe(WALLET)
+
+    state.rpcCalls = []
+    state.resolvedAddress = "aaaabbbbccccdddd" // no 0x prefix from upstream
+    const body = await (await GET(req("?wallet=@trevor&collection_id=nba-top-shot"))).json()
+    expect(body.wallet).toBe("0xaaaabbbbccccdddd")
+  })
+
+  it("passes a Candy (Solana) base58 wallet straight through VERBATIM — never to the username lookup", async () => {
+    const sol = "BhA2Bfd8t2F2jDiUNdioGRJQt7MiaWo3Ro5H2Yt7APe2"
+    state.resolvedAddress = null // a lookup would be a confirmed miss → 4xx
+    const res = await GET(req(`?wallet=${sol}&collection_id=candy-mlb`))
+    expect(res.status).toBe(200)
+    const call = state.rpcCalls.find((c) => c.name === "get_wallet_moments_with_fmv")
+    expect(call?.args.p_wallet).toBe(sol)
+  })
+
+  it("folds a mixed-case Flow address before the exact-match read", async () => {
+    await GET(req(`?wallet=0xBD94CADE097E50AC&collection_id=nba-top-shot`))
+    expect(state.rpcCalls.find((c) => c.name === "get_wallet_moments_with_fmv")?.args.p_wallet).toBe(WALLET)
+  })
+
+  it("500s and KEEPS our own domain message when the username cannot be resolved", async () => {
+    state.resolvedAddress = null
+    const res = await GET(req("?wallet=ghost&collection_id=nba-top-shot"))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toContain("Could not resolve username")
+
+    // A failure to LOOK is not "could not resolve": 503, concluding nothing.
+    state.resolveThrows = "topshot gql down"
+    const down = await GET(req("?wallet=ghost&collection_id=nba-top-shot"))
+    expect(down.status).toBe(503)
+    expect((await down.json()).error).not.toContain("Could not resolve")
+  })
+})
+
+describe("GET /api/analytics — the acquisition honesty rule", () => {
+  it("reports the Top Shot breakdown, ignoring unknown methods", async () => {
+    state.acq = [{ breakdown: [{ method: "pack_pull", count: 3 }, { method: "sorcery", count: 9 }], total_moments: 4 }]
+    const body = await (await GET(req(`?wallet=${WALLET}&collection_id=nba-top-shot`))).json()
+    expect(body.acquisition).toEqual({
+      pack_pull_count: 3, marketplace_count: 0, challenge_reward_count: 0, gift_count: 0, trade_count: 0, total_tracked: 4,
+    })
+  })
+
+  it("returns NULL rather than a row of zeros for a non-Top-Shot collection with no tracked history", async () => {
+    state.acq = [{ breakdown: [], total_moments: 0 }]
+    const body = await (await GET(req(`?wallet=${WALLET}&collection_id=${ALLDAY}`))).json()
+    // A zeroed breakdown would read as "pulled nothing from packs" — a claim we
+    // cannot make for a collection with no acquisition source.
+    expect(body.acquisition).toBeNull()
+  })
+
+  it("still reports a non-Top-Shot breakdown once real history exists", async () => {
+    state.acq = [{ breakdown: [{ method: "marketplace", count: 2 }], total_moments: 2 }]
+    const body = await (await GET(req(`?wallet=${WALLET}&collection_id=${ALLDAY}`))).json()
+    expect(body.acquisition).toMatchObject({ marketplace_count: 2, total_tracked: 2 })
+  })
+
+  it("reports a zeroed Top Shot breakdown (0 is meaningful there) even with no rows", async () => {
+    state.acq = null
+    const body = await (await GET(req(`?wallet=${WALLET}&collection_id=nba-top-shot`))).json()
+    expect(body.acquisition).toMatchObject({ total_tracked: 0, pack_pull_count: 0 })
+  })
+})
+
+describe("GET /api/analytics — aggregation", () => {
+  it("rolls tiers and locked/unlocked FMV, rounding to cents", async () => {
+    state.pages = [[
+      moment({ tier: "MOMENT_TIER_RARE", fmv_usd: 10.555, is_locked: true }),
+      moment({ tier: "MOMENT_TIER_RARE", fmv_usd: 5, is_locked: false }),
+      moment({ tier: null, fmv_usd: null }),
+    ]]
+    const body = await (await GET(req(`?wallet=${WALLET}&collection_id=nba-top-shot`))).json()
+
+    expect(body.total_moments).toBe(3)
+    expect(body.locked).toMatchObject({ locked_count: 1, unlocked_count: 2, locked_fmv: 10.56, unlocked_fmv: 5 })
+    // Nothing unchecked in this fixture, so the third bucket is genuinely 0.
+    expect(body.locked.lock_unknown_count).toBe(0)
+    expect(body.locked.lock_unknown_fmv).toBe(0)
+    // A null tier becomes UNKNOWN rather than being dropped from the rollup.
+    expect(body.tiers.map((t: { tier: string }) => t.tier).sort()).toEqual(["RARE", "UNKNOWN"])
+    expect(body.total_fmv).toBe(15.56)
+  })
+
+  it("⛔ a moment whose lock was never CHECKED is not counted as sellable (register #112)", async () => {
+    // The defect: `if (locked) … else { unlockedCount++; unlockedFmv += fmv }`.
+    // `wallet_moments_cache.is_locked` defaults to false, and 1,160,468 of
+    // 1,767,936 Top Shot rows were never checked — so under the old tally most
+    // of a wallet counted toward a figure the UI captions "Locked moments
+    // cannot be listed or traded". That is a liquidity claim, and it was wrong
+    // in the flattering direction.
+    state.pages = [[
+      moment({ fmv_usd: 100, is_locked: true, lock_known: true }),
+      moment({ fmv_usd: 10, is_locked: false, lock_known: true }),
+      // Never checked: `is_locked` is the column default, not a reading.
+      moment({ fmv_usd: 1000, is_locked: false, lock_known: false }),
+    ]]
+    const body = await (await GET(req(`?wallet=${WALLET}&collection_id=nba-top-shot`))).json()
+
+    expect(body.locked.locked_count).toBe(1)
+    expect(body.locked.locked_fmv).toBe(100)
+    // ⭐ The $1000 stays OUT of unlocked. Under the old tally `unlocked_fmv`
+    // read 1010 and told the user they could sell all of it.
+    expect(body.locked.unlocked_count).toBe(1)
+    expect(body.locked.unlocked_fmv).toBe(10)
+    expect(body.locked.lock_unknown_count).toBe(1)
+    expect(body.locked.lock_unknown_fmv).toBe(1000)
+  })
+
+  it("treats an ABSENT lock_known as unknown, never as a measured unlock", async () => {
+    // An older deployment of get_wallet_moments_with_fmv omits the key. The
+    // safe direction is to report everything unverified rather than silently
+    // resume the overstatement, so this is pinned rather than left to chance.
+    state.pages = [[{ tier: "MOMENT_TIER_COMMON", fmv_usd: 50, is_locked: false, confidence: "HIGH", series_number: 4 }]]
+    const body = await (await GET(req(`?wallet=${WALLET}&collection_id=nba-top-shot`))).json()
+    expect(body.locked.unlocked_count).toBe(0)
+    expect(body.locked.unlocked_fmv).toBe(0)
+    expect(body.locked.lock_unknown_count).toBe(1)
+    expect(body.locked.lock_unknown_fmv).toBe(50)
+  })
+
+  it("labels series from the map, falls back for an unmapped number, and buckets a null as Unknown", async () => {
+    state.pages = [[
+      moment({ series_number: 0 }), moment({ series_number: 3 }),
+      moment({ series_number: 42 }), moment({ series_number: null }),
+    ]]
+    const body = await (await GET(req(`?wallet=${WALLET}&collection_id=nba-top-shot`))).json()
+    const labels = body.series.map((s: { label: string }) => s.label)
+    // Sorted by seriesNumber, so the null (-1) bucket leads.
+    expect(labels).toEqual(["Unknown", "Series 1", "Summer 2021", "Series 42"])
+  })
+
+  it("labels another collection's raw series as 'Series N' — never through Top Shot's map (2026-11-14)", async () => {
+    // get_wallet_moments_with_fmv remaps 1→0 for Top Shot ONLY; All Day's series 3 is All Day's
+    // series 3, which the route used to print as "Summer 2021".
+    state.pages = [[moment({ series_number: 3 }), moment({ series_number: 4 }), moment({ series_number: 7 })]]
+    const body = await (await GET(req(`?wallet=${WALLET}&collection_id=nfl-all-day`))).json()
+    const labels = body.series.map((s: { label: string }) => s.label)
+    expect(labels).toEqual(["Series 3", "Series 4", "Series 7"])
+    expect(labels).not.toContain("Summer 2021")
+  })
+
+  it("scores clarity as HIGH+MEDIUM over total and files an unknown confidence as NO_DATA", async () => {
+    state.pages = [[
+      moment({ confidence: "HIGH" }), moment({ confidence: "medium" }),
+      moment({ confidence: "LOW" }), moment({ confidence: "SOMETHING_NEW" }),
+    ]]
+    const body = await (await GET(req(`?wallet=${WALLET}&collection_id=nba-top-shot`))).json()
+    expect(body.confidence.HIGH).toBe(1)
+    expect(body.confidence.MEDIUM).toBe(1) // lower-case is upper-cased first
+    // An unrecognised value must NOT inflate clarity.
+    expect(body.confidence.NO_DATA).toBe(1)
+    expect(body.portfolio_clarity_score).toBe(50)
+  })
+
+  it("scores clarity 0 for an empty wallet instead of dividing by zero", async () => {
+    const body = await (await GET(req(`?wallet=${WALLET}&collection_id=nba-top-shot`))).json()
+    expect(body.total_moments).toBe(0)
+    expect(body.portfolio_clarity_score).toBe(0)
+  })
+
+  it("pages a whale past the 1,000-row window and stops on the first short page", async () => {
+    state.pages = [
+      Array.from({ length: 1000 }, () => moment()),
+      Array.from({ length: 4 }, () => moment()),
+    ]
+    const body = await (await GET(req(`?wallet=${WALLET}&collection_id=nba-top-shot`))).json()
+    expect(body.total_moments).toBe(1004)
+    const momentCalls = state.rpcCalls.filter((c) => c.name === "get_wallet_moments_with_fmv")
+    expect(momentCalls).toHaveLength(2) // short page 2 ends the walk
+    expect(momentCalls[1].args.p_offset).toBe(1000)
+  })
+
+  it("scopes every RPC to the resolved wallet AND collection", async () => {
+    await GET(req(`?wallet=${WALLET}&collection_id=${ALLDAY}`))
+    for (const call of state.rpcCalls) {
+      expect(call.args.p_wallet).toBe(WALLET)
+      expect(call.args.p_collection_id).toBe(ALLDAY)
+    }
+  })
+})
+
+// 2026-09-28 — the route discarded the `error` from both reads, so a timeout
+// was published as a measurement: an empty/partial wallet (down to $0) or
+// "acquisition history not yet indexed".
+describe("GET /api/analytics — a failed read is never published as the wallet", () => {
+  const PINNACLE = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
+
+  it("⛔ a failed moments page fails the request — no $0 / partial wallet at 200", async () => {
+    state.pages = [Array.from({ length: 1000 }, () => moment({ fmv_usd: 5 }))]
+    state.pageErrorAt = 1
+    const res = await GET(req(`?wallet=${WALLET}&collection_id=nba-top-shot`))
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    const body = await res.json()
+    expect(body.total_fmv).toBeUndefined()
+    expect(body.total_moments).toBeUndefined()
+  })
+
+  it("⛔ a failed acquisition read is reported as failed, not as 'not tracked'", async () => {
+    state.acqError = { code: "57014", message: "timeout" }
+    state.pages = [[moment()]]
+    const res = await GET(req(`?wallet=${WALLET}&collection_id=nba-top-shot`))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.acquisition_failed).toBe(true)
+    // Not a zeroed Top Shot breakdown built from nothing.
+    expect(body.acquisition).toBeNull()
+    // The rest of the portfolio still renders.
+    expect(body.total_moments).toBe(1)
+  })
+
+  it("CONTROL: a successful acquisition read reports acquisition_failed false", async () => {
+    state.acq = [{ breakdown: [{ method: "pack_pull", count: 1 }], total_moments: 1 }]
+    const body = await (await GET(req(`?wallet=${WALLET}&collection_id=nba-top-shot`))).json()
+    expect(body.acquisition_failed).toBe(false)
+    expect(body.acquisition).toMatchObject({ pack_pull_count: 1 })
+  })
+
+  it("discloses a wallet larger than what was read (truncated + the source's total)", async () => {
+    state.pages = [[moment(), moment()]]
+    state.totalCount = 12000
+    const body = await (await GET(req(`?wallet=${WALLET}&collection_id=nba-top-shot`))).json()
+    expect(body.truncated).toBe(true)
+    expect(body.moments_total).toBe(12000)
+    expect(body.total_moments).toBe(2)
+  })
+
+  it("CONTROL: a fully-read wallet is not truncated", async () => {
+    state.pages = [[moment(), moment()]]
+    state.totalCount = 2
+    const body = await (await GET(req(`?wallet=${WALLET}&collection_id=nba-top-shot`))).json()
+    expect(body.truncated).toBe(false)
+  })
+
+  it("labels Pinnacle series by the pin's catalog year, not one 'Unknown' row", async () => {
+    state.catalog = [
+      { render_id: "r-a", series_name: "2024" },
+      { render_id: "r-b", series_name: "2026" },
+    ]
+    state.pages = [[
+      moment({ series_number: null, render_id: "r-a" }),
+      moment({ series_number: null, render_id: "r-b" }),
+      moment({ series_number: null, render_id: "r-b" }),
+      moment({ series_number: null, render_id: "r-missing" }),
+    ]]
+    const body = await (await GET(req(`?wallet=${WALLET}&collection_id=${PINNACLE}`))).json()
+    const rows = body.series.map((s: { label: string; count: number }) => `${s.label}:${s.count}`)
+    expect(rows).toEqual(["Unknown:1", "2024:1", "2026:2"])
+  })
+
+  it("CONTROL: Top Shot never reads the Pinnacle catalog", async () => {
+    await GET(req(`?wallet=${WALLET}&collection_id=nba-top-shot`))
+    expect(state.rpcCalls.some((c) => c.name.startsWith("from:"))).toBe(false)
+  })
+})

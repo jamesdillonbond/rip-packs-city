@@ -1,0 +1,40 @@
+-- ⚠ NOT MY CHANGE, AND VERIFIED BEFORE TOUCHING. 2026-09-19 ~12:0x PT (Cowork cloud).
+--
+-- `check_public_security_invariants()` went 0 -> 1 between two readings ~25 minutes apart in this
+-- session. The violation: `mv_anon_readable` / `mv_cross_collection_deals`, which came back from
+-- migration `20260919184828` (another session, ~15 min earlier) carrying `anon=rxm`.
+--
+-- ⭐ THIS IS THE DOCUMENTED MV REBUILD FOOTGUN, CAUGHT LIVE: a materialized view CANNOT carry
+-- `security_invoker`, so its grants must be set explicitly on every rebuild and diffed afterwards
+-- — the same way `mv_panini_squeeze` came back `anon=rxm` on 2026-08-23. The proof that this one
+-- is an ACCIDENT and not a design choice is in the same migration: `mv_panini_squeeze` was rebuilt
+-- alongside it and came back correctly as `postgres + service_role` only. One rebuild, two MVs,
+-- one of them handed anon SELECT.
+--
+-- ⛔ REVOKING IS ONLY SAFE BECAUSE OF WHAT THE VIEW ON TOP DOES, AND I CHECKED IT FIRST — the
+-- naive fix here breaks the public deals board. `cross_collection_deals_board` is
+-- `security_invoker=on`, grants anon SELECT, and READS THIS MV. Under `security_invoker`, a view
+-- runs with the CALLER's privileges, so an ANON caller of that view genuinely needs SELECT on the
+-- MV. Revoking blind would have turned the public board into a permission error for that path.
+--
+-- What makes it safe: EVERY reader of that view in this repo is SERVER-SIDE via `supabaseAdmin`
+-- (service role), which keeps `arwdDxtm` here and is unaffected —
+--   · app/api/public/insights/deals/route.ts   (supabaseAdmin)
+--   · app/insights/deals/page.tsx              (supabaseAdmin)
+--   · app/api/support-chat/route.ts            (server)
+--   · app/api/cron/topshot-deal-floor-serials/route.ts (server cron)
+-- and the two client components that name the board (AlertsClient, DealsBoardClient) only mention
+-- it in comments — their data is passed in from the server. No browser-side anon read exists.
+--
+-- ⚠ RESIDUAL, STATED RATHER THAN HIDDEN: the VIEW still grants anon SELECT while being
+-- `security_invoker=on`, so after this revoke a hypothetical anon caller of
+-- `cross_collection_deals_board` gets a permission error instead of rows. Nothing does that today.
+-- Whether the right end state is (a) drop anon from the view too, or (b) make the view DEFINER and
+-- allowlist it, is a design call and is deliberately NOT made here — this migration only restores
+-- the invariant to the state its sibling MV is already in.
+--
+-- REVERT (exact, one statement): grant select on public.mv_cross_collection_deals to anon;
+--
+-- Not a function: no anon-exec marker applies.
+
+revoke all on public.mv_cross_collection_deals from anon;

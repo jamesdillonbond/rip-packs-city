@@ -1,0 +1,708 @@
+# CLAUDE.md — verbatim originals of the sections that were CONDENSED
+
+## ⭐ HOW TO CHOOSE WHAT TO DISPLACE — the test is TOPIC-SPECIFICITY, not importance (established 2026-09-19)
+
+CLAUDE.md's preamble says a new rule must **DISPLACE** one rather than spend room, but it does not say **which** — and "move the least important thing" is the wrong instinct, because the file's most dangerous facts are often its most topic-specific.
+
+⭐ **THE TEST: does a session need this BEFORE it knows what it is working on, or only AFTER?** CLAUDE.md is the *before* file. Anything a reader needs only once they know their topic belongs in `docs/reference/*.md` behind a pointer, **however critical it is** — criticality decides what the pointer SAYS, not whether the block moves.
+
+📏 **Worked example, 2026-09-19 (8 chars of headroom → 120):** `### Series map` and `## Hot wallet & secrets` moved out — both carry severe footguns (a blanket `1 → 0` remap dropped **385,734 rows**; signing with p256 + SHA3-256 instead of `ECDSA_secp256k1 + SHA2_256` was live for months) — **because you cannot hit either unless you already know you are touching series logic or Flow signing.** ⚠ **The two one-line consequences stayed INLINE in the pointers**, precisely because *those* are needed before you know: the remap ban and the curve/hash pair. **The block moves; the trap stays.**
+
+⛔ **AND THE OPPOSITE CASE, so the test is not read as "move the big topic sections":** a rule about how sessions COLLIDE — shared-tree staging, `%an` attribution, contaminated measurement windows — is needed by every session at every moment, so it belongs in CLAUDE.md even though it is long. That is what replaced the two blocks above.
+
+⚠ **A spot-check of facts you thought to name cannot catch the loss of something neither party would have listed** — the two are different questions, and only the orphan count answers the second. ⭐ **The sharper reason: the set you remember to enumerate is the set LEAST likely to contain the thing you dropped.**
+
+⚠ **ONE CAVEAT, so a future session does not panic at a clean result: a line REWORDED IN PLACE reads as removed and will not be found verbatim, producing a FALSE ORPHAN.** So `orphans: 0` is a strong proof and `orphans: N` is a **prompt to look**, not a failure — glance at each one and confirm it was reworded rather than lost. ⭐ **The asymmetry is what makes the check worth running: zero orphans is a guarantee no enumeration can give, and a non-zero count costs only a glance.**
+## Condensed in CLAUDE.md 2026-09-25 (verbatim) — the second confidence vocabulary (Enums bullet)
+
+Same displacement as the entry below. Topic-specific: needed only when writing `nba_player_projections`.
+
+> ⚠ Two confidence vocabularies — `nba_player_projections.confidence` allows only 3-letter `MED`.
+
+## Condensed in CLAUDE.md 2026-09-25 (verbatim) — the `openGraph` half of the `generateMetadata` bullet
+
+Condensed to a pointer to make room for two Panini-publish lessons (a null `dbChain` defaulted to Flow; a new writer bypassing a gated one). A topic-specific rule — needed only once you are writing route metadata:
+
+> ⚠ `openGraph`/`twitter` merge **SHALLOWLY**: a route redefining either key REPLACES the root object, silently dropping `siteName`/`type`/`locale`/`creator`.
+
+## Replaced in CLAUDE.md 2026-09-25 (verbatim) — the last sentence of the Vercel "SEGMENT SEMANTICS" bullet
+
+Replaced at equal length (69 → 69 characters) with *"CI `build-render` renders all routes (09-25); PREVIEW-verify too."* because CI now renders every page route of the built app, signed in and anonymous. With the 09-20 defect re-planted, `next build` exited 0 and that job went red (testing-and-ci.md, top section). The preview advice still holds for anything the job cannot see, such as real data and the real auth provider. Original:
+
+> **Verify `revalidate`/`connection()`/`dynamic` on a PREVIEW deploy.**
+
+## Displaced from CLAUDE.md 2026-09-12 (verbatim) — the strip-comments "blind THREE times" bullet
+
+The guards bullet read, before the 2026-09-12 swap that replaced the un-countable "THREE times"
+with the counted population:
+
+> 🚨 **But USING it is not a guarantee it stripped — blind THREE times** (08-27: nested `${`…`}` BLANKED code AND KEPT comments). **Prefer a check that does not NEED it right.**
+
+⚠ Nothing was lost that is not recorded elsewhere: the 08-27 nested-interpolation mechanism is
+DEFECT 3 in `scripts/lib/strip-comments.mjs`'s own header, and the count it replaced was an
+UNDERSTATEMENT — the population is 10 files, measured 2026-09-12 (register #87,
+[testing-and-ci.md](testing-and-ci.md)).
+
+## 2026-09-10 — condensed to make room for the platform-state and eligibility-vs-gain rules (VERBATIM originals)
+
+The 2026-09-10 session added two rules CLAUDE.md did not carry — **verify platform STATE by a REQUEST,
+never a status field** (`get_project.live:false` and a `domains` list missing both apex hosts read
+IDENTICALLY on a healthy estate; that pair produced a false P0 *and*, an hour after the correction was
+written, a false "still down" report from a second session) and **an ELIGIBILITY count is not a GAIN
+count**. The file was at **39,944 / 40,000** characters, so each addition displaced text. **The three
+fragments shortened that day are reproduced verbatim below.** Links are re-prefixed per the note at the
+top of this file; no other character was changed.
+
+### 1. "Name the caller before you touch the function" — the SIX/SEVENTH/EIGHTH enumeration
+
+> - ⚠ **Name the caller before you touch the function** — an expensive-looking function is not a cost until you have; an afternoon went into one with **zero** callers. Require SIX sources: `pg_proc.prosrc`, `pg_views.definition`, `cron.job.command`, `pg_trigger`, a full-repo grep — ⚠ **and the Cowork artifacts' HTML, outside BOTH repo and catalogue**. ⚠ **A TRIGGER function has no textual caller, and `pg_stat_statements` misleads BOTH ways** ([database.md](../../docs/reference/database.md)). ⚠ **SEVENTH cron-job.org, EIGHTH this box's Task Scheduler (4 prod ingests)** — invisible to all six.
+
+⭐ The enumeration now lives in [cron-and-schedulers.md](../../docs/reference/cron-and-schedulers.md);
+CLAUDE.md keeps the rule, the count (EIGHT) and the sandbox-invisible pair.
+
+### 2. The partitioned-unique-index rule — the #68 case detail
+
+> - ⛔ **A UNIQUE INDEX ON A PARTITIONED TABLE MUST CONTAIN THE PARTITION KEY — a dedupe key that omits it is IMPOSSIBLE at the parent, so index the PARTITIONS.** `sales` is `RANGE (sold_at)`, so its guard carried `sold_at` and two writers dating one transaction ~3.4 s apart slipped **33,000 duplicate sales** past it (#68); ⭐ **the tell was EXACTLY zero violations, not a small count.** ⚠ **A keep-rule is a CLAIM about the data** (mine was wrong) **and a new constraint must be PROVEN to reject.** [database.md](../../docs/reference/database.md)
+
+⭐ The `~3.4 s` two-writer mechanism is now in [database.md](../../docs/reference/database.md); CLAUDE.md
+keeps the rule, the 33,000 count and the zero-violations tell.
+
+### 3. "A filed FINDING is a hypothesis" — the four case clauses
+
+> - ⚠ **A filed FINDING is a hypothesis — re-derive which subsystem it measured before acting.** Several have been refuted; one "fix" would have made an accurate surface inaccurate. ⚠ **So is a filed DECISION NOT TO ACT, and that is the one nobody re-checks** — declining to act reads as the conservative choice. The tell is a cost stated with no number in it. ⚠ **A WEAK one CROWDS OUT the strong one and becomes PERMISSION when it dissolves** — one read `needs its own deploy`; the real reason was ZERO callers. ⚠ **A number is no immunity: re-TEST a stated exit condition, never re-read it** — a "once cleared" 114 was 5.
+
+⭐ All four rules survive in CLAUDE.md; only the "declining to act reads as the conservative choice"
+gloss and the `needs its own deploy` instance were cut.
+
+## 2026-08-26 — condensed to make room for the 08-26 refresh (VERBATIM originals)
+
+The 2026-08-26 memory-file refresh added four things CLAUDE.md did not carry (the client-side
+capture blind spot, `atlas-proxy` becoming the binding half of the listings ingest, the
+re-read `fmv-recalc` figures, and four re-verification dates). The file was at **39,980 / 40,000
+characters**, so each addition displaced text. **Every fragment shortened in CLAUDE.md that day is
+reproduced verbatim below, keyed by what it was.** Nothing here was deleted — if a detail seems
+missing from CLAUDE.md, it is in this block or in the reference file the compressed line points to.
+
+⚠ **These are the OLD texts. Where one carries a number or a status, CLAUDE.md's current line is the
+live one** — several of these were compressed precisely because their numbers had gone stale
+(`9 of 40` listing-ingest fails, `72.7%` wall-kills, the `08-24` purge re-verification).
+
+⚠ **One deviation from verbatim, and it is mechanical:** relative links inside these fragments
+carry CLAUDE.md's repo-root prefix, which is dead from `docs/reference/` — `scripts/check-memory-doc-links.mjs`
+reds on exactly that. **The `](` prefixes below are rewritten to `../../docs/reference/…`; no other
+character was changed.**
+
+### paged-read-#28
+(`/sitemap/3.xml`: **24,000 of 27,246** editions under a **200**). No copy exists to grep — the tell is the control-flow keyword. Throw, or carry `complete:false`. **FIXED #28** (prod-vs-DB set match, 08-24).
+
+### offlimits
+Off-limits (queued, never auto-shipped): hot/payer wallet, secrets/env, auth & lockdown (`proxy.ts`), destructive SQL, FMV/ingest/pricing/pack-EV/concierge/sniper route logic, gated work.
+
+### recent-sessions
+Session entries live in `docs/sessions/`, one file per month — none is needed to start work. **Write new ones into
+
+### npm-ci
+# ⚠ RUN FIRST in a fresh sandbox (no node_modules); without it `npx vitest`/`npx
+                         #   tsc` die on `MODULE_NOT_FOUND … vitest.config.ts` — reads like a broken config.
+
+### rebase-traps
+Three traps, each drawn blood: **anchor the marker check to line start**, **gate the `git add` on the resolver's exit code**, **measure a check's baseline before asserting on it**. Full recipe: [ledger-discipline.md](../../docs/reference/ledger-discipline.md).
+
+### distribution
+(`fmv-recalc`: three failed characterizations in two days from one-instant reads)
+
+### header-instruments
+(4 instruments: [tooling-gotchas.md](../../docs/reference/tooling-gotchas.md); the full case, incl. why size is ANTI-correlated with displaceability: `__tests__/claude-md-stays-under-the-memory-file-limit.test.ts`)
+
+### new-bullet-trim
+ (#37). Read that badge; nothing alerts on it.
+
+### no-push
+- ⚠ **A no-push session's DB reach is narrower than `apply_migration` suggests: a PINNED SQL function is PUSH-GATED** (its `supabase/tests/` copy reds `db-pin-staleness`), and **every `apply_migration` reds the ENFORCING `migration-parity`** until its file is committed. **Real no-push levers: pg_cron schedules, indexes, new objects.** `execute_sql` for SCRATCH DDL — no version row, no parity debt.
+
+### daytime
+- **`rpc-daytime-monitor`** — READ-ONLY, every ~3h. Sweeps health, files candidates to `docs/overnight/inbox/`. Ships nothing.
+
+### shared-state
+Shared state in `docs/overnight/`: `ledger.md` (its **"Declined — do not re-suggest"** heading is Trevor's), `inbox/` (⚠ `INDEX.md` has **4 CI assertions, TWO of them COUNTS** — **archiving one deletes its entry too**), `metrics-latest.json`, `focus.md`, `.lock`. **Skim `ledger.md` before a session**; the night pass will not edit files committed in the last 24–48h.
+
+### idx-trust
+- **`trust-board-and-safety.md`** — trust board (⚠ the arm count drifts, and the view still times out at 60 s — read the sentinel's `Trust Health` check, never this file's number), precompute 8-way split, destructive-op circuit breaker, cross-session coordination.
+
+### idx-honesty
+- **`key-files-and-honesty.md`** — largest and most-read. Key modules + the full **"a failed read must not render as an answer"** canon, leak guards, fabricated-number shapes, OG cards, Workers table.
+
+### idx-testing
+- **`testing-and-ci.md`** — vitest layers, the 3 coverage gates + ratchets, DB-invariant SQL pins, mutation-testing categories, CI jobs (incl. the `bash -e` abort class), Playwright.
+
+### idx-cron
+- **`cron-and-schedulers.md`** — the 4 schedulers, pg_cron mechanics, `pipeline_runs` retention + rollup traps, saturation findings.
+
+### idx-db
+- **`database.md`** — `editions` · `wmc` · `fmv_snapshots` · `sales`, role timeouts, PostgREST caps, `apply_migration` cost, full **Security posture**.
+
+### tagline
+**Tagline** stays "Flow blockchain digital collectibles intelligence platform" until chain two ships visible product. No tweets / Reddit / TC DMs about multi-chain pre-launch.
+
+### client-bullet
+- 🚨 **A CLIENT-ONLY failure is captured by NOTHING right now** — Sentry has dropped every event since 08-18 (quota, #34, and Trevor's call is not to pay), Vercel sees only server execution, and there is no `window.onerror` in the repo. **The scheduled `E2E DOM Smoke` workflow is the ENTIRE detection surface**, and it caught a live React #418 on `/insights/underpriced-serials` (#37) — read that badge, nothing alerts on it.
+
+### isr
+- ⚠ **ISR CACHES A FAILED READ for the whole `revalidate` window** — a COLD regeneration over the 8 s `BOARD_LIVE_TIMEOUT_MS` served `/insights/pack-drops` degraded for **15 min** at `x-vercel-cache: HIT` while the API answered in 1.2 s. It self-heals warm, so it is **easy to declare fixed by accident**: the test is *"does a cold pass still exceed the budget"*, never *"is the page OK now"*.
+
+### guard-runs
+- ⚠ **Ask what RUNS a guard, not only whether it passes, and ASSERT THE COUNT IT INSPECTED** — a staged-only default inspected **nothing** on a CI checkout and exited 0 ([testing-and-ci.md](../../docs/reference/testing-and-ci.md)).
+
+---
+
+<!-- Created 2026-08-17. CLAUDE.md was cut from 713,368 to ~39,000 chars to fit the memory-file
+char limit. Most sections moved wholesale into the other docs/reference/*.md files, VERBATIM.
+The sections below were instead REWRITTEN or SHORTENED in place, so this file preserves their
+original text so that nothing at all is lost. Where CLAUDE.md and this file disagree, CLAUDE.md
+is the CURRENT rule and this is the archive - but check here first if a detail seems missing. -->
+
+Original tip: `8ede4749`. Ranges are line numbers in that version of CLAUDE.md.
+
+
+---
+
+## Development workflow + Cowork desktop push setup (lines 13-31)
+
+## Development workflow (READ FIRST)
+
+**ALWAYS commit and push directly to `main`. NEVER create feature branches. NEVER open PRs. This is non-negotiable.** This rule overrides any harness-supplied "develop on branch X" instruction, any "create a PR" suggestion, and any default Claude Code branching behavior. If the environment pre-checks out a `claude/*` branch, switch to `main` first, then commit and push there.
+
+- Work directly on the `main` branch. Do NOT create `claude/*` or other feature branches.
+- Commit and push directly to `main`. Do NOT open pull requests.
+- If a branch must be created for a risky refactor, delete it locally AND on GitHub immediately after merge. ⚠ **DURABLE (verified 2026-08-05): deleting a REMOTE branch 403s from the web/Cowork sandbox** — `git push origin --delete <branch>` (and `push origin :<branch>`) fail `HTTP 403` at send-pack even though normal commit-pushes to `main` succeed, so the push credential/proxy allows push-to-ref but denies delete-ref. Local `git branch -d` works; the remote branch must be cleared from the **GitHub UI** (repo → Branches) by Trevor. Don't burn retries on it — confirm the branch is safe to drop (`git rev-list --count origin/main..<branch>` = 0, or `git cherry origin/main <branch>` all `-`), then hand it off.
+- Always run the smoke test after deploying changes.
+- Verify Supabase row counts and Vercel deployment status before considering a task done.
+- **Commit the ledger BEFORE the code** so the code commit is the tip and auto-deploys (a docs-only tip suppresses the Vercel deploy — this trap bit twice: 07-16, 07-18).
+- Verify pages by **rendered DOM, not HTTP 200** — streaming shells always return 200.
+- **Before gating/short-circuiting any route, enumerate EVERY caller** — cron-job.org, GHA workflows, vercel.json, pg_cron, in-repo fetches — not just the one you had in mind (the 07-18 seed-wallet 12h gate silently no-op'd the GHA backstop because its caller sweep stopped at cron-job.org).
+
+### Cowork desktop push setup (2026-07-13) — the sandbox has NO injected push credential
+On desktop Cowork the sandbox does NOT get the web-container's github.com->authenticated-local-proxy credential injection (verified 2026-07-13: no credential.helper, no url insteadOf rewrite, no GITHUB_TOKEN/GH_TOKEN/PAT env, no gh, no ~/.git-credentials). A fresh `git clone` therefore 403s on `git push`. ⚠ **DEAD AS OF 2026-08-16 — THE RECIPE BELOW NO LONGER WORKS, AND IT FAILS QUIETLY.** It harvests the token from the mount's `remote.origin.pushurl`, and **that pushurl is now ABSENT** (verified on Trevor's box 2026-08-17: no `pushurl`, `credential.helper = manager`, gh 2.90.0 — push works there via the **Git Credential Manager / gh helper**, whose credential lives in the **Windows credential store, not in the repo**, so a mount cannot see it). The token was removed deliberately on 2026-08-16 because merely *reading* the pushurl prints a live `github_pat_…` into the transcript. So the command below now substitutes an **empty string** and produces a broken remote rather than an error. ⛔ **Do NOT "fix" this by re-embedding a PAT** — that reverts the security fix and loses the `workflow` scope gh provides. ⚠ **Note both sandbox paths are now dead for DIFFERENT reasons: desktop = this harvest source is gone; CLOUD = the git proxy 403s at the repository-authorization layer *before any credential is evaluated* (an embedded PAT gets the identical 403 — upstream `anthropics/claude-code#76248`, open), so no credential fix exists there at all.** The routes that do restore push: **`/web-setup` in a REAL TERMINAL `claude` session** (built-in CLI command — it does NOT fire in a VSCode-extension session; authorizes cloud sessions **at creation**), **creating the session with the repo as its source** (`claude --cloud` from inside the repo, or claude.ai/code with the repo selected — not addable mid-session), **running the task on the computer**, or **shipping a `git format-patch`**. Historical recipe kept below for context only:
+
+    git -C <fresh-clone> remote set-url --push origin "$(git -C /sessions/<sess>/mnt/rip-packs-city config --get remote.origin.pushurl)"
+
+This is INDEPENDENT of the bash/useradd sandbox-disk failure — bash-green does NOT imply push-green. Still never commit from the mount itself; always a fresh clone (deploy-split rule).
+
+---
+
+## Project overview (lines 100-111)
+
+## Project overview
+
+Rip Packs City (RPC) is a production-grade Flow blockchain digital collectibles intelligence platform. It targets serious collectors with analytics, deal-finding, sniper tools, FMV pricing, and badge tracking across all 5 currently published Flow collections (NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, UFC Strike). Trevor (founder) holds an official Portland Trail Blazers Team Captain designation on NBA Top Shot — a key brand differentiator.
+
+Stack: Next.js 16 App Router, React 19, TypeScript 5, Tailwind 4, @onflow/fcl, Supabase (Pro, Small compute), Vercel Pro.
+
+Live: https://www.rippackscity.com
+Repo: github.com/jamesdillonbond/rip-packs-city (public)
+LLC: Oregon, filed May 3 2026.
+
+---
+
+---
+
+## Recent sessions intro (rolling rule + full date-stamping history) (lines 148-153)
+
+## Recent sessions
+
+> Keep only the last ~3 days here. On each refresh, move older `### <date>` entries into `docs/sessions/YYYY-MM.md` (prepend, newest-first) — verbatim, so nothing is lost. Busy days run several entries, so this section may hold a dozen-ish; if it's carrying more than ~3 calendar days, roll the tail.
+>
+> **DATES ARE PACIFIC (Trevor operates in PT). The sandbox/CI clock is UTC — ~7h ahead in summer (PDT), 8h in winter (PST) — so `date -u` on the 29th at 02:54 UTC is still the 28th (19:54) in PT. ALWAYS convert to PT before stamping a `### <date>` here or in `docs/overnight/ledger.md`.** ⚠ **On Trevor's Windows box, run plain `date` (or PowerShell `Get-Date`) — NOT `TZ=America/Los_Angeles date`.** That Git Bash has no `/usr/share/zoneinfo`, so `TZ=<anything> date` silently returns **UTC labelled `GMT`** for every zone (verified 2026-07-31: `America/Los_Angeles`, `America/New_York`, `Asia/Tokyo` and `UTC` all print the same time). It fails silently — you get a plausible timestamp that is 7h ahead — which is exactly how the 07-29→07-30 boundary slip below happened. ⚠ **CORRECTED 2026-08-10 — plain `date` in Git Bash does NOT reliably return local time either; use PowerShell `Get-Date`.** This file used to claim plain `date` "returns the box's real local time and correctly prints `PDT`". Measured the same minute on Trevor's box: Git Bash `date` → `Tue, Aug 11, 2026 5:25:28 AM` with **no zone label**, matching UTC, while PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` → `2026-08-10 22:25 -07:00` (`[TimeZoneInfo]::Local.Id` = `Pacific Standard Time`). So Git Bash was a full calendar DAY ahead — the same silent-plausible-timestamp failure as the `TZ=` trap, and the third recorded instance of this class (07-29→07-30 slip, the M3b/D34 08-11→08-10 mis-stamp). **The single trustworthy command is `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot lie silently.** ⚠ **CORRECTED 2026-08-12 — "the sandbox clock is UTC" is NOT universally true, and assuming it mis-stamped five ledger headings by a full day.** The Claude Code WEB sandbox reads **PDT**: measured in the same minute, `date` → `2026-08-12 07:15 PDT` and `date -u` → `2026-08-12 14:15`, the SAME calendar day. Applying the "subtract 7h from `date -u`" reflex there lands you a day EARLY. This is the fourth instance of one class — a plausible timestamp produced by a clock whose zone was assumed rather than read. **Read the zone before converting:** `date '+%Z'`, or `python3 -c "import datetime,zoneinfo; print(datetime.datetime.now(datetime.timezone.utc).astimezone(zoneinfo.ZoneInfo('America/Los_Angeles')))"`, which is correct in every environment because it converts rather than trusting the local zone. Only where the sandbox really is UTC does subtracting 7h (PDT) / 8h (PST) from `date -u` by hand apply. The overnight-pass entries already show the `HH:MMZ / HH:MM PDT` convention; interactive entries must follow the same PT calendar day.
+
+---
+
+## Older sessions + doc archive layout (lines 567-580)
+
+### Older sessions
+
+Archived to `docs/sessions/` (newest-first within each file):
+
+- `docs/sessions/2026-08.md` — August 14 → August 1 (rolled from Recent sessions; more August entries append here as days roll off).
+- `docs/sessions/2026-07.md` — July 31 → July 1 (overnight passes + daytime CC; Candy MLB + Panini go-lives, FMV 1000-row-cap fix + proxy-auth-wall/edge-Deno CI coverage, Candy chain-two productization/parity, sales-counterparty/Panini readiness, Pack-EV accuracy program, IOPS read-diet, Trophy-case PDF, test-coverage infra, platform audits).
+- `docs/sessions/2026-06.md` — June 30 → June 1 (overnight passes + daytime CC; parallel-conflation program, pack-EV, FMV hardening, Candy/Solana onboarding).
+- `docs/sessions/2026-05.md` — May 31 → May 2 (entity pages, ops/QA pass, FMV recovery, V1 Dapper indexer, multi-collection enrichment).
+- `docs/sessions/2026-04.md` — April 26 / 21 / 10.
+
+**Doc archive layout:** shipped dated handoffs/audits live under `docs/archive/handoffs/` + `docs/archive/audits/`; weekly health snapshots (`PROJECT_HEALTH_*.md`) under `docs/health/`. Links inside `docs/archive/**`, `docs/health/**`, `docs/sessions/**` are frozen history — don't rewrite them.
+
+---
+
+---
+
+## Infrastructure IDs (lines 581-591)
+
+## Infrastructure IDs (required on every tool call)
+
+- Supabase project ID: `bxcqstmqfzmuolpuynti` (Pro plan $25/mo base; **compute = SMALL** — 2 GB RAM / 2-core, `max_connections`=90, verified live 2026-08-08; the old "Micro" label was stale). ⚠ Disk-IO-budget (burst-credit) model → throttles to a **22 MB/s** baseline when depleted; the platform's intermittent saturation is disk-IO-bound, NOT compute-bound — fix expensive queries, don't upgrade the tier (Medium is the same 2 cores for 4×). See the 2026-08-08 Recent-sessions entry.
+- Vercel project ID: `prj_YBJ6Utl32GfyBOIzbsp3kbshJh96`
+- Vercel team ID: `team_YWGCVToPBJSS60NgVh8jiCFV`
+- GitHub repo ID: `1188272071`
+
+Both Vercel IDs are required on every single Vercel API or MCP tool call — never omit teamId.
+
+---
+
+---
+
+## Frequently used commands (lines 631-672)
+
+## Frequently used commands
+
+```bash
+# Development
+npm run dev
+
+# ⚠ A FRESH web/cloud sandbox clones with NO node_modules — run this FIRST.
+# Without it `npx vitest` silently fetches its own vite and dies on
+# `MODULE_NOT_FOUND ... vitest.config.ts`, which reads like a broken config
+# rather than a missing install. `npx tsc` fails the same way.
+npm ci
+
+# TypeScript health check (use before deploying when Vercel rate-limited)
+npx tsc --noEmit
+
+# Tests (see "Testing & CI coverage" for details)
+npm test                 # vitest run — route + lib unit/integration suites
+npx vitest run __tests__/some-file.test.ts   # run a single test file
+npm run test:coverage    # same suites + coverage ratchet (what CI gates on)
+npm run test:cadence     # extract inline Cadence + `flow cadence lint` the fixtures
+npm run test:cadence:escrow  # RPCTradeEscrow `flow test` suite (fetches deps first; NOT in CI)
+
+# Git — always use Git Bash (MINGW64) on Windows
+git status
+git add -A && git commit -m "feat: ..."
+git push origin main
+
+# Vercel redeploy via REST (use PowerShell Invoke-WebRequest — curl fails silently in Git Bash)
+# POST https://api.vercel.com/v13/deployments
+# body: {"name":"rip-packs-city","gitSource":{"type":"github","repoId":"1188272071","ref":"main"}}
+
+# Env var writes also require PowerShell Invoke-WebRequest
+# POST https://api.vercel.com/v10/projects/{projectId}/env?teamId={teamId}
+
+# Wallet backfill ad-hoc (force full re-walk)
+# curl -X POST 'https://www.rippackscity.com/api/wallet-backfill?force=true' \
+#   -H "Authorization: Bearer $INGEST_SECRET_TOKEN" \
+#   -d '{"wallet":"0x..."}'
+```
+
+---
+
+---
+
+## Supabase schema facts + the two collection vocabularies + collection UUIDs (lines 800-825)
+
+## Supabase schema facts (critical — verify before writing queries)
+
+**Volatile facts (table existence, FMV home per collection, enum values, RLS-on count) are generated from the live DB into [docs/reference/schema-truth.md](../../docs/reference/schema-truth.md) — that file wins on any disagreement with the prose below.** It is regenerated by the weekly `rpc-data-quality-sweep` (drift → ledger Queued). The conventions below (the two collection vocabularies, partitioning, UUIDs) are stable; the per-table/enum/count specifics can drift, so confirm against schema-truth.md (or re-query) before relying on them.
+
+### Two collection-string conventions (CRITICAL footgun)
+
+The DB uses **two distinct vocabularies** for identifying collections, and they are not interchangeable. Mixing them up will fail INSERTs against CHECK constraints.
+
+| Vocabulary | Used by | Values |
+|---|---|---|
+| **Long-form** | `sales`, `editions`, `collections.slug` | `nba_top_shot`, `nfl_all_day`, `laliga_golazos`, `disney_pinnacle`, `ufc_strike` |
+| **Short-form** | `flowty_transactions`, `flowty_loans`, `flowty_loan_events` | `topshot`, `allday`, `golazos`, `pinnacle`, `ufc`, `unknown` (the CHECK whitelists exactly these six — NOT `other`, verified live 2026-07-16) |
+
+`flowty_transactions` has a CHECK constraint whitelisting short-form only (live def: `collection IS NULL OR collection = ANY('topshot','allday','golazos','ufc','pinnacle','unknown')`). Writing `'ufc_strike'` to a flowty_* table fails at INSERT — any code writing these tables MUST use short-form (`'ufc'` not `'ufc_strike'`). NOTE: `lib/flowty-tx-classifier.ts` was **removed** in the Flowty-teardown Phase 2 (`36aabf28`, 2026-05-23); the short-form rule still binds any new writer.
+
+The bridge between the two is `analytics_sales` view, which translates long → short via CASE.
+
+### Collection UUIDs
+
+- TopShot: `95f28a17-224a-4025-96ad-adf8a4c63bfd`
+- AllDay: `dee28451-5d62-409e-a1ad-a83f763ac070`
+- Golazos: `06248cc4-b85f-47cd-af67-1855d14acd75`
+- UFC: `9b4824a8-736d-4a96-b450-8dcc0c46b023`
+- Pinnacle: `7dd9dd11-e8b6-45c4-ac99-71331f959714`
+- Candy MLB (`candy_mlb`, unpublished/`is_active=false`): `209ade70-32c5-4470-bc7c-4793d660f713`
+
+---
+
+## Series map (lines 1145-1161)
+
+## Series map (on-chain UInt32 → display name)
+
+- 0 = Series 1 (S1)
+- 2 = Series 2 (S2)
+- 3 = Summer 2021 (Sum 21)
+- 4 = Series 3 (S3)
+- 5 = Series 4 (S4)
+- 6 = Series 2023-24 (23-24)
+- 7 = Series 2024-25 (24-25)
+- 8 = Series 2025-26 (25-26)
+
+There is NO series=1 on-chain. Series 0 IS Series 1. There is NO "Beta".
+
+⚠ **This 0↔1 collision is TOP-SHOT-SPECIFIC — NEVER blanket-remap `1 → 0` across collections.** Two encodings coexist and disagree: `wmc.series_number` is ON-CHAIN (Top Shot Series 1 = `0`) and `editions.series` is DISPLAY (`1` = Series 1). Per live `collection_series`: `nba_top_shot` has NO series 1 (0 = 'Series 1'), but `nfl_all_day` / `laliga_golazos` / `disney_pinnacle` use `1` legitimately and **`ufc_strike` has BOTH 0 and 1** — so a blanket remap corrupts four collections. This footgun caused a real 2026-08-05 incident: `get_wallet_moments_with_fmv` unioned the two encodings via `COALESCE(wmc.series_number, e.series)`, mislabeling same-edition moments AND silently dropping 385,734 TS rows when a "Series 1" filter sent the on-chain `p_series=0`. Fixed by scoping the `1 → 0` fallback remap to the Top Shot uuid only (`audit_20260806_get_wallet_moments_series_topshot_convention`); `wmc.series_number`, when present, still wins. Check `collection_series` for the true per-collection mapping before touching any series logic.
+
+---
+
+---
+
+## Concierge non-negotiable rules (lines 1193-1203)
+
+### Concierge non-negotiable rules
+
+1. **Pinnacle FMV**: NEVER join by `edition_key` alone — always triple (`character_name`, `set_name`, `variant_type`) per `92aab30`. Cadence uses `Int` not `UInt64`.
+2. Memory-FMV banned (`a910745`) — must tool-call same turn.
+3. `get_fmv` reads `editions + fmv_snapshots` primary; returns `p10/p50/p90` + sample shape.
+4. Tier filter: `.eq` not `.ilike` per `f55e022 + e9c90e5`.
+5. `trg_support_conv_updated_at` OWNS `shipped_at / updated_at` — never set manually.
+6. `/api/admin/feedback` GET MUST filter `feedback_type IS NOT NULL`.
+
+---
+
+---
+
+## Code patterns and conventions + Hot wallet & secrets (lines 1346-1367)
+
+## Code patterns and conventions
+
+- Full file replacements only — never snippets or diffs.
+- ⛔ **RETIRED 2026-07-25 — the verbatim line below is HISTORY, not a rule.** Handoffs and Claude Code
+  prompts are read and pasted on **desktop** (PowerShell / Git Bash); normal markdown including fenced
+  code blocks is fine. ⚠ **This file is verbatim history, but CLAUDE.md's index points readers here with
+  *"check here first if a detail seems missing"* — so an unmarked retired rule in it is handed out as a
+  live answer.** Superseded by `RPC_DESIGN_SYSTEM.md` §10 and the `rpc-handoff` skill.
+  <!-- retired-rule:allow handoffs-are-iphone-pasteable -->
+  - *(verbatim, superseded)* Claude Code prompts: plain text, no markdown code blocks (optimized for iPhone copy-paste).
+- `proxy.ts` is the correct Next.js 16 convention (renamed from middleware.ts).
+- Supabase client must be typed as `any` to avoid TypeScript errors in API routes.
+- `generateMetadata` cannot be exported from client components (`"use client"`) — belongs in server-component `layout.tsx`.
+- `useSearchParams` requires a Suspense wrapper — any page using it must be wrapped.
+- Branch fragmentation is a recurring issue — consolidate with cherry-pick onto one canonical branch before merging.
+- Fire-and-forget >30s: `import { after } from 'next/server'`, `after(runX())`, return `{status: accepted}`.
+- `project_knowledge_search` is NOT authoritative against live repo — Claude Code's direct file inspection wins every disagreement; prompts should allow Claude Code to correct false premises.
+
+---
+
+## Hot wallet & secrets
+
+- Flow CLI hot wallet: `0x3aa11c84d776838f` (Key 0, ECDSA_secp256k1, SHA2_256 — BOTH keys re-verified on-chain 2026-07-19 via Flow REST `?expand=keys`). NOT account-linked. `flow.json` gitignored. NEVER use a HybridCustody / linked wallet as the hot wallet. Any code signing as this wallet MUST use secp256k1 + SHA2-256 — `lib/breaks/server-authz.ts` silently used p256 + SHA3-256 until `3b5e62d8` (2026-07-19); tests for signing code must verify signatures cryptographically, never just assert output shape/length.
+- Cadence service payer wallet: `0x73f55c4450b8d466` — the account designated as `payer` (gas) for backend-submitted Cadence transactions; distinct from the hot wallet above (Flow allows a separate proposer/authorizer vs. payer). Monitored every 30min by `/api/cron/cadence-payer-balance-check`, which alerts below 0.05 FLOW. If it runs dry, every Cadence transaction fails pre-execution with `INSUFFICIENT_GAS_FUNDS` (Flow error 1118).
+- Key env vars: `INGEST_SECRET_TOKEN`, `CRON_SECRET`, `FLOWTY_PROXY_TOKEN`, `TS_PROXY_SECRET`, `RPC_ADMIN_TOKEN`, `SPORTS_PROXY_URL`, `SPORTS_PROXY_SECRET`, `ANTHROPIC_API_KEY`.
+
+---
+
+---
+
+## Beta users (lines 1536-1548)
+
+## Beta users (current)
+
+- jamesdillonbond — `0xbd94cade097e50ac` (Trevor)
+- RipPacksCity — `0xb5053ef95e702657`
+- samwise222 — `0xa3d67b29e104e701`
+- Mike Levy — `0x11859edcf2f53edd`
+
+Watch wallets at `priority=3` in `seeded_wallets`:
+- roham — `0x01d7e57aa5598e47`
+- rybaguy — `0xbe9c633840e40df3`
+
+---
+
+## Displaced 2026-08-23 — the "a recorded correction has a shelf life" examples (verbatim)
+
+CLAUDE.md's header keeps the rule and points here for the two shapes that taught it:
+
+> a documented "over-counts by one" is a fixed offset that silently absorbs real growth; a "committed
+> but UNAPPLIED" note goes stale the moment someone applies it
+
+
+
+## Displaced 2026-08-27 — the `REVOKE … FROM PUBLIC` bullet (Database section)
+
+Shortened, not deleted, to pay for two new CLAUDE.md rules on 2026-08-27: the Sentry blackout's
+re-verification stamp, and the promotion of *"a killed `after()` run is ABSENT from
+`pipeline_runs_daily`, so that rollup reads 100% ok while the job dies nightly"*. The verbatim
+pre-condensation text:
+
+> - ⚠ **`REVOKE … FROM PUBLIC` alone is not enough, and neither is `FROM anon, authenticated` alone** — this DB carries both a PUBLIC default and `ALTER DEFAULT PRIVILEGES` grants. Revoke **`FROM PUBLIC, anon, authenticated`** in one statement, and verify with `has_function_privilege`, never the acl text. Re-run `check_secdef_anon_exec_drift()` after creating ANY function.
+
+The condensed line keeps every operative instruction — the one-statement revoke, the
+`has_function_privilege` verification, the `check_secdef_anon_exec_drift()` re-run — and drops only
+the restatement of why. Full case history remains in [database.md](database.md).
+
+
+## Displaced 2026-08-27 — the `LIMIT` bullet (Database section)
+
+Second condensation of the same 2026-08-27 pass, taken because 71 characters of headroom is under one
+emoji of margin (a U+1F6A8 costs two units). Verbatim pre-condensation text:
+
+> - ⚠ **A `LIMIT` bounds a query's OUTPUT, not its COST — "lower the limit" is often not a lever.** `drain_fmv_cold_tail` grouped the WHOLE of `fmv_snapshots` to answer a question about one collection's 518 editions — **66,499 buffers / 38.6 s → 741 / 0.17 s** off one `WHERE collection_id`, identical result (**FIXED 08-25**). Cut ITEMS per tick, not rows per item, and compare **BUFFERS** — a saturation spell confounds every timing, both ways. ⚠ **Scoping an aggregate is an EQUIVALENCE claim: PROVE it over the population** (0 of 1,281,003 rows disagreed); a plan comparison only shows *faster*.
+
+Dropped in the condensation: the `38.6 s → 0.17 s` timing pair (the bullet's own advice is to compare
+buffers, not timings), the "identical result / FIXED 08-25" note, and the `0 of 1,281,003 rows disagreed`
+control figure. All three survive in [database.md](database.md), which the condensed line now points to.
+
+
+## Displaced 2026-08-27 — the "sandbox cannot push" bullet (Development workflow)
+
+Third condensation of the 2026-08-27 pass, and this one was forced by the equilibrium rule working exactly
+as the header describes: **two sessions each spent the same headroom within minutes** (one promoted the
+pooled-rate rule from 350 → 110 units of margin; this pass had already promoted the killed-`after()` rollup
+rule against the same margin), and the merged file landed **107 over the limit**. Verbatim pre-condensation
+text:
+
+> - ⚠ **"The sandbox cannot push" is CONDITIONAL.** A session created **with this repo as its source** pushes fine (verified 08-17); one whose authorized repo set lacks this repo is refused at the **repository-authorization layer, before any credential is evaluated**, so an embedded PAT returns the **identical 403**. **Two tests: `git push --dry-run origin main`, and `curl -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/user`. A **200** there beside a **403** on `/repos/<o>/<r>` proves the credential is FINE; the block is the repo allowlist (08-25; a PUBLIC repo 403s too).**
+
+⚠ **The `curl -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/user` probe is the half that was
+NOT already written down in [tooling-gotchas.md](tooling-gotchas.md)** — that file carries the
+repository-authorization-layer finding but not this two-probe discriminator, so it is preserved here in
+full: a **200** on `/user` beside a **403** on `/repos/<owner>/<repo>` proves the credential is fine and
+the block is the repo allowlist (measured 2026-08-25; a PUBLIC repo 403s too).
+
+
+## Displaced 2026-08-27 (late) — three small condensations that paid for ONE clause
+
+The clause bought: CLAUDE.md's equilibrium rule now reads **"a new durable rule must DISPLACE one, never
+merely SPEND visible room"**. ⭐ **It is the imperative form of the incident recorded two sections above** —
+two sessions each took the same 350-unit margin within ten minutes and only the MERGE was over (107 units),
+green on both sides. The full case stays there; the header carries only the instruction.
+
+⚠ **The first draft of that clause was 151 characters and would have left the file at SIX units of headroom
+— the exact state the header calls five-from-red. It was cut to the imperative rather than paid for with a
+fourth displacement.** Recorded because "promote the lesson" and "keep the file under" pull against each
+other, and the tie-break is that the case history belongs HERE and only the instruction belongs there.
+
+The three payments, none of which lost an instruction:
+
+1. **Honesty-canon instance count** — `(~24 by 08-17, ≥13 more by 08-24 — a count, so already stale)` →
+   `(37+ by 08-24 — a count, so already stale)`. The two dated sub-counts said nothing the
+   "already stale" clause does not; the sum is preserved.
+2. **Frozen-history links** — `**Links inside \`docs/archive/**\`, \`docs/health/**\`, \`docs/sessions/**\` are
+   frozen history — never rewrite them.**` → the same three paths and the same prohibition, phrased once.
+3. **Ledger post-write checks** — the three verifications (heading count rises by exactly the entries added ·
+   `find-swallowed-ledger-headings.awk` still prints **3**, a COUNT, never `| wc -l` ·
+   `find-future-dated-ledger-headings.mjs` prints **0**, dates PT vs CI's UTC) are all still stated, as a
+   semicolon list instead of three sentences. Full recipe: [ledger-discipline.md](ledger-discipline.md).
+
+
+## 2026-09-06 — Code patterns line, parenthetical displaced (verbatim)
+
+> Claude Code prompts: normal markdown, desktop-read (the iPhone rule was RETIRED 07-25).
+
+Displaced to make room for the IYKYK rule on the Team Captain designation (Trevor, 2026-09-06: never lead outreach, copy or a bio with it; the reused RPC brand is the tell).
+
+## 2026-09-10 — the `extra: {}` incidence example, displaced (verbatim)
+
+> - ⚠ **FIXING A GUARD WITHOUT FIXING ITS RECORD leaves the incidence unmeasurable** — 8 of 10 saturation breakers logged `extra: {}`, so the obvious query saw **1** event and a shape-independent one saw **3**. Fix the guard AND the field an observer keys on.
+
+The RULE stays in CLAUDE.md; only the worked numbers moved, and they are also recorded in
+[testing-and-ci.md](testing-and-ci.md) where the bullet now points. Displaced to pay for the
+correlated-scheduler rule (**an alarm sharing its subject's scheduler is no alarm**), which 2026-09-10
+cost 2.8 hours of invisible lane silence: GitHub's scheduler shed every tick and every one of the four
+watchers — `pipeline-sentinel`, `ops-monitor`, `e2e-smoke`, `scheduler-liveness` — is itself a GHA
+`schedule`, so the alarm and its subject failed together. Case: known-issues #80.
+
+## 2026-09-10 (late) — three trims in the Prioritized/Honesty sections, and what they bought
+
+Trimmed, none of them a RULE (so nothing is reproduced verbatim below — these were a stale READING and two
+pointers whose targets are unchanged):
+
+> TS HIGH/MED **50.7% (09-09 01:48Z) — at the bar, but by DENOMINATOR retirement; numerator FELL ~536**
+
+Superseded, not displaced: the reading is now a RANGE (48–55%, swinging on sweep position) and the full
+derivation lives in [roadmap-status.md](roadmap-status.md) and
+[../strategy/go-live-2026-09.md](../strategy/go-live-2026-09.md). It also carried a UTC stamp in memory,
+which the PT rule forbids.
+
+> , **Candy LIVE thin (#63)**, Panini = WC Prizm plane (#64).
+
+Compressed to `(#63 Candy, #64 Panini)` — both are register items, so the content is one lookup away.
+
+> (#8 in [known-issues.md](../../docs/reference/known-issues.md))  ← path as it appeared in CLAUDE.md; rewritten here with `../../` because this file lives in `docs/reference/`, the exact bug the link guard exists for
+
+Compressed to `(#8)`; `known-issues.md` is already in this file's reference index.
+
+**Bought:** the honesty MIRROR in the three-states bullet — *an `unknown` that is actually KNOWN is the
+same defect*. Earned on 2026-09-10 by a watchdog that reported "cannot tell" seven minutes after the proof
+it needed had landed (known-issues #80, mechanism in
+[cron-and-schedulers.md](cron-and-schedulers.md)). **The canon is almost always invoked against a failed
+read rendering as a fact, and the reflex that follows is to widen `unknown`; this records that the mirror
+is also a defect.**
+
+## 2026-09-12 — three trims in "Pushing from a sandbox", to point at the laptop `cowork-push` queue (verbatim originals)
+
+Displaced by the Cowork cloud session that established the third push path (ledger, 2026-09-12 · "a third push path from Cowork"; recipe in [tooling-gotchas.md](tooling-gotchas.md) under *Pushing from a sandbox*). The only fact removed is the stale dated sample "re-verified working 08-27" — the same probe was re-verified on 09-12.
+
+- `- ⚠ **"The sandbox cannot push" is CONDITIONAL — TEST IT, in one command: `git push --dry-run origin main`** (re-verified working 08-27). A session whose authorized repo set lacks this repo is refused at the **repo-authorization layer, before any credential is evaluated**, so a PAT returns the identical 403 — the discriminator and the second probe: tooling-gotchas.md.`
+- `- **When push IS genuinely denied:** repo-as-session-source · `/web-setup` in a REAL TERMINAL session (authorizes at CREATION, so it fixes the NEXT one) · desktop "Run this task" · or **`git format-patch`**, proven end-to-end.`
+- `- Bash-green ≠ push-green; never commit from the mount. Full history: [tooling-gotchas.md](docs/reference/tooling-gotchas.md).`
+
+## Displaced 2026-09-12 — the two CASE-HISTORY parentheticals in CLAUDE.md's "structurally SILENT" guards bullet
+
+Displaced to make room for two rules that came out of the same evening's work (the coverage-gate
+denominator guard and the `main`-was-red pass; ledger 2026-09-12, detail in
+[testing-and-ci.md](testing-and-ci.md)). **Only the two worked EXAMPLES were removed — both rules
+they illustrate stay in CLAUDE.md verbatim**, and the section already ends with a pointer to
+`testing-and-ci.md`, so nothing became unreachable.
+
+- `(one walked `app/api/cron` while the tenth copy sat in the `lib/` module two routes delegate to)`
+- `⚠ **A guard anchored on an OPERATOR is blind to its class HOISTED into a name** (`t = x || 1` then `p / t` — 3 live sites in the divisor ban's OWN roots).`
+
+⚠ The **second** of these is a RULE, not only an example, and it is the one to restore first if the
+character budget ever allows: "a guard anchored on an OPERATOR is blind to its class HOISTED into a
+name" is the shape that defeated both the divisor ban and the PostgREST-cap ban (register #71), and
+it is recorded in full in testing-and-ci.md and in known-issues #71.
+
+---
+
+## Displaced from CLAUDE.md 2026-09-18 (verbatim) — the context-refresh pass
+
+Six fragments were **shortened, not moved**, to fund three stale-fact corrections and one new
+standing rule (the #122 engine-vs-path rule, in `### Measurement discipline`). The file went
+39,993 → 39,993 characters: every addition was paid for. Each original is below, verbatim.
+
+⚠ **Four of the six were shortened only because the receiving doc ALREADY carried the full text —
+verified by grep before the cut, not assumed.** Those four are noted with where they live.
+
+1. **The memory-file limit formula** (preamble). The formula is data and it lives in the test that
+   enforces it (`__tests__/claude-md-stays-under-the-memory-file-limit.test.ts`), which the same
+   paragraph already names.
+
+   > The memory-file limit is `max(40000, contextWindow × 0.05 × charsPerToken)` — **40,000 on a standard 200k session**, which is what the nightly pass, Cowork and every subagent run at.
+
+2. **The honesty section's instance count.** The file's own text called it stale — a count that
+   labels itself stale is not carrying the rule.
+
+   > **The single most productive defect class on this platform (37+ by 08-24 — a count, so already stale).**
+
+3. **The `SET statement_timeout` load-bearing ratio.** A dated ratio, quoted rather than
+   re-derived, against this file's own standing rule. The LOAD-BEARING claim survives without it;
+   re-derive from `pg_proc.proconfig` if the number is ever needed.
+
+   > ⛔ 122 of 195 are load-bearing — do NOT strip.
+
+4. **The Trevor-timezone incident detail.** The rule and its most recent breach date stay in
+   CLAUDE.md; the incident is in [tooling-gotchas.md](tooling-gotchas.md).
+
+   > (asked repeatedly; broken again 09-10, a whole session quoting `03:12Z` at his 8:12pm)
+
+5. **The trust-board arm-count caution** → already in [trust-board-and-safety.md](trust-board-and-safety.md).
+
+   > (⚠ the arm count drifts and the view CAN time out at 60 s — prefer the sentinel's `Trust Health` check to any number there)
+
+6. **The schema-truth staleness incident** → already in [schema-truth.md](schema-truth.md) §"THIS
+   FILE HAS NO GENERATOR SCRIPT", in more detail than the parenthetical carried.
+
+   > (no generator script; it once sat 25 days stale outranking a correct doc)
+
+7. **The inbox `INDEX.md` archival trap** → already in [autonomous-tasks.md](autonomous-tasks.md),
+   which states the same two counts and the conflict that makes them matter.
+
+   > (⚠ `INDEX.md` carries **4 CI assertions, TWO of them COUNTS** — archiving one deletes its entry too)
+
+8. **The push-route recipes** → already in [tooling-gotchas.md](tooling-gotchas.md). The one trap
+   that makes a route counter-intuitive (`/web-setup` authorizes at CREATION, so it fixes the NEXT
+   session, not this one) was KEPT in CLAUDE.md deliberately.
+
+   > - **When push IS genuinely denied:** repo-as-session-source · `/web-setup` in a real terminal (authorizes at CREATION — fixes the NEXT one) · desktop "Run this task" · or **`git format-patch` → the laptop `cowork-push` queue**, proven 3× on 09-12.
+
+### One CORRECTION, not a displacement
+
+The remote-branch-delete rule was **wrong**, not merely long. It read *"Deleting a REMOTE branch
+403s from the sandbox … hand the GitHub-UI deletion to Trevor"* — but on 2026-09-08 a Cowork
+session with a VM device-flow token deleted `claude/todo-implementation-e4tib3` itself, and
+known-issues #22 records the finding in one clause: **"the 403 was the cloud proxy, not GitHub."**
+The rule now says so. ⚠ **This is the class CLAUDE.md warns about in its own header — a recorded
+correction has a shelf life, and "the sandbox cannot do X" is the shape that expires most often.**
+
+
+## 2026-09-18 — ISR bullet parenthetical (Honesty section), displaced for the "DONE stamp" sub-class
+
+Original text of the parenthetical at the end of the ISR bullet, verbatim: (#33; the 15-min `x-vercel-cache: HIT` instance: key-files-and-honesty.md) — shortened to `(#33)`; the 15-minute `x-vercel-cache: HIT` instance lives in key-files-and-honesty.md as before.
+
+
+## 2026-09-19 — ten trims to pay for three new rules (verbatim originals)
+
+The three rules added: the **differential-upsert probes every offered row** bullet (Database traps), the **under an IO spell durations measure the estate** clause (Measurement discipline, in the pooled-rate bullet), and the **VM `git am` push route is back** clause (Pushing from a sandbox). Full case: database.md ("A DIFFERENTIAL UPSERT WRITES THE DELTA…") and tooling-gotchas.md ("THE VM IS BACK").
+
+1. Development workflow, branch bullet — was: `- If a branch must be created for a risky refactor, delete it locally after merge. ⚠ **A REMOTE delete-ref 403s from the CLOUD PROXY, not from GitHub** — a device-flow token did one on 09-08.` The 403 trap's long form is in tooling-gotchas.md (2026-09-08 entries).
+2. Ledger section — was: `🚨 **Purge residue is STILL live though the branch is gone** (blob fetchable BY SHA until GitHub GCs it). Operator-only: #22.` Now `Purge residue: #22.`; the same fact stands verbatim under "Prioritized next actions" (#22) and in known-issues.md.
+3. Frequently used commands, pipe paragraph — was: `⚠ **A pipe reports the LAST command's exit code.** `npx tsc --noEmit 2>&1 | tail -5 && echo "EXIT=$?"` reports **`tail`'s** status — it printed `EXIT=0` from a sandbox with no `node_modules`. Run bare and echo `$?`, or read `${PIPESTATUS[0]}`. ⚠ **`grep <suite-log> && git push` gates on grep FINDING a line, not on the run PASSING** — that pushed a red suite (09-04). Branch on the EXIT value.`
+4. Development workflow, rendered-DOM bullet — was: `⚠ **And platform STATE by a REQUEST, never a status field: `get_project.live:false` + apex hosts absent from `domains` read IDENTICALLY on a healthy estate** (prod hostnames live on the DEPLOYMENT's `alias`) — a false P0 AND a false "still down" in one night (#76).` The displaced detail: prod hostnames live on the DEPLOYMENT's `alias`, so `get_project.domains` lacking the apex hosts is normal.
+5. Measurement discipline, metric-definition bullet — was: `` `MIN_SALES_30D_MEDIUM = 5` was right, but `fmv-recalc` re-fetches THIN editions over **90 days** and ask-corroboration lifts LOW→MEDIUM at **3**: the model read 34% against an observed 53%, and that 19-point miss shipped as a **backwards call on a launch gate.** `` The two code paths the model missed: `fmv-recalc` re-fetches THIN editions over **90 days**, and ask-corroboration lifts LOW→MEDIUM at **3** sales.
+6. Honesty, client-only failure bullet — was: `- 🚨 **A CLIENT-ONLY failure was captured by NOTHING until the 09-07 beacon** — Sentry dark since 08-18 and the SDK is OUT OF THE TREE (09-18, CSP too — #34, decided: no spend); Vercel sees only server execution. Detectors: the `window.onerror`/rejection beacon → `usage_events.client_error` (per-tab `sid`; its alert arm counts only non-bot UAs), plus the scheduled `E2E DOM Smoke` badge (#69).` Displaced detail: Sentry dark since 08-18; the SDK AND its CSP entries left the tree 09-18; the beacon is the `window.onerror`/unhandled-rejection listener, per-tab `sid`, and its alert arm counts only non-bot UAs.
+7. Honesty, fix-per-panel bullet — `(instance six: key-files-and-honesty.md)` → `(key-files-and-honesty.md)`.
+8. Two collection-string conventions — `(verified live 08-22; the other two carry no `collection` CHECK)` → `(verified live 08-22)`. The sentence that follows still states the consequence (silent persistence in `flowty_loans`/`flowty_loan_events`).
+9. Hot wallet — `— `lib/breaks/server-authz.ts` silently used p256 + SHA3-256 for months;` → `(`server-authz.ts` used p256 + SHA3-256 for months);`.
+10. Series map — `— a real 2026-08-05 incident silently dropped 385,734 TS rows.` → `— a 2026-08-05 incident dropped 385,734 TS rows.`; Collection UUIDs — `re-read 2026-09-08: Candy MLB (`solana`) is now` → `09-08: Candy MLB (`solana`) is`; and the stray blank line between Concierge rules 2 and 3.
+
+
+## 2026-09-19 (afternoon) — four trims to pay for the backlog-bound rule (verbatim originals)
+
+Rule added to Measurement discipline: *A shed schedule (6/day for 72) is a defect only if the lane is BACKLOG-BOUND — measure `rows_written × deliveries` against the backlog first (#124).* Case: cron-and-schedulers.md ("GITHUB SHEDS EVERY HIGH-FREQUENCY SCHEDULE…").
+
+1. Autonomous Cowork tasks — was: `Two scheduled Cowork tasks run here — coordinate via the shared ledger so work doesn't collide.`
+2. Autonomous Cowork tasks, nightly bullet — was: `Off-limits (queued, never auto-shipped): hot/payer wallet, secrets/env, auth (`proxy.ts`), destructive SQL, **metered SPEND** — full list in [autonomous-tasks.md](docs/reference/autonomous-tasks.md).` Displaced detail: the list is QUEUED rather than auto-shipped; `auth` means `proxy.ts`; the payer wallet is included with the hot wallet; `secrets/env` covers Vercel env too.
+3. Series map — was: `` `lib/collection/series-param.ts` now resolves BOTH (`fdf84ee4`); which label WINS is still open. `` The resolving commit is `fdf84ee4`.
+4. Two collection-string conventions — was: `persists SILENTLY in `flowty_loans`/`flowty_loan_events`, where it simply never matches.` The two tables are `flowty_loans` and `flowty_loan_events` (named in the bullet above it).
+
+---
+
+## 2026-09-20 — three CLAUDE.md lines condensed to pay for the deploy-gate rule
+
+The Vercel section gained *"A GREEN SUITE IS NOT A DEPLOY GATE FOR SEGMENT SEMANTICS"* after `await connection()` inside a `revalidate = 600` segment raised `DYNAMIC_SERVER_USAGE` and 500'd every `/disney-pinnacle/edition/<render_id>`. Headroom was 23 characters, so it was paid for rather than spent. **Measured: 39,977 → 39,989 of 40,000 (headroom 23 → 11).**
+
+**1. The disk-IO build bullet — DISPLACED, not shortened.** Its full text already lives in `tooling-gotchas.md` (verified, 2 hits), so CLAUDE.md now carries only the pointer. Original:
+
+> - **A disk-IO saturation spell can FAIL THE WHOLE PRODUCTION BUILD** (prerendered `/insights` pages get 60 s each) — now a ban at zero, `insights-server-pages-bound-their-reads`; ⚠ twice the failing page was one the pushing commit never touched. Log traps: tooling-gotchas.md.
+
+**2. The server-seeded-prop bullet — SHORTENED.** Its full case lives in `key-files-and-honesty.md` (verified, 9 hits). Original:
+
+> - ⚠ **A SERVER-SEEDED PROP (`initial={rows}`) is a fifth layer the table does not cover** — `[]` with no provenance, and a mount effect hides it from every client test. Pass `initialFailed`, assert by SSR: key-files-and-honesty.md.
+
+**3. The stale-justification clause — SHORTENED, and this is the one that needed checking.** The RULE is kept in CLAUDE.md; only its worked example was cut, and that example's data lives in `key-files-and-honesty.md` (the buyer-coverage table, `nba_top_shot` **95.2 %**). ⚠ It was added the SAME DAY by another session, so it is recorded here in full rather than trusted to memory. Original:
+
+> ⛔ **And a stale JUSTIFICATION can be INVERTED, not merely out of date — the thing it named may now be the WEAKEST member of the set it excluded** (Top Shot, 95.2%, was gated in as the ONLY collection with buyer coverage). **The tell is a reason citing a SHIP DATE, not a re-runnable probe.**
+
+⚠ **The `get_deployment.state` LAG bullet was AMENDED, not condensed** — "aliases attached" was dropped from its corroboration list because 2026-09-20 proved it can be absent while the domain serves that very build, and the rollback case was added in its place.
+
+## Pushing from a sandbox — pushurl line (condensed 2026-09-24)
+
+Original CLAUDE.md text, replaced by a shorter pointer that also names the working route:
+
+> ⚠ **The DESKTOP `remote.origin.pushurl` harvest is DEAD and fails QUIETLY.**
+
+The replacement names the mount's `.rpc-git-cred` store helper, proven 2026-09-24 from Cowork's local sandbox too; recipe in [tooling-gotchas.md](tooling-gotchas.md) (end of file).
+
+## 2026-09-24 — CI `bash -e` bullet condensed to pay for the default-UI-list rule
+
+CLAUDE.md's Measurement discipline gained *"A DEFAULT UI LIST IS A SAMPLE; a UI CLICK CAN FAIL SILENTLY"* (Panini: the SALES HISTORY tab defaults to TOP sales, and a Playwright pointer click switched it to RECENT on 3 of ~300 cards while a DOM `el.click()` worked every time; full case in [panini-fmv-packev-methodology.md](../strategy/panini-fmv-packev-methodology.md)). Headroom was 13 characters, so the CI bullet below was shortened to a pointer. Its full rule already lives in `testing-and-ci.md` (§ "Every CI `run:` block is `bash -e`"). Original:
+
+> - ⚠ **Every CI `run:` block is `bash -e`: a fallible command in an ASSIGNMENT aborts the step there**, so a retry loop after it is DEAD CODE that reads as coverage. Write `X=$(…) || X=""`, then check — ⛔ `|| X="0"` is WORSE: it reports a clean read of what it never read. testing-and-ci.md.
+
+## Condensed 2026-10-03 (verbatim originals; the CLAUDE.md lines were shortened to make room for the model-comment clause and `npm run ci:guards`)
+
+- Original: `it OOMs at the default heap, and writing that off as "CI will typecheck" put a compile error on `main` (09-19).`
+  Now: `it OOMs at the default heap; skipping it put a compile error on `main` (09-19).`
+- Original: `(moved 2026-09-19 — navigation data; every section below carries its own pointer)`
+  Now: `(navigation data; each section below carries its own pointer)`
+- Original: `**Section moved VERBATIM to [tooling-gotchas.md](docs/reference/tooling-gotchas.md) 2026-09-20.** The three that bite most:`
+  Now: `**Moved VERBATIM to [tooling-gotchas.md](docs/reference/tooling-gotchas.md) 2026-09-20.** The three that bite most:`
+- Original: `(a week of opposite verdicts; a "7-day half-life" that was tiered 3/2/1): testing-and-ci.md.`
+  Now: `(opposite verdicts for a week; a "7-day half-life" that was tiered 3/2/1): testing-and-ci.md.`
+- Original: `Narrating work instead of shipping it angered Trevor ("lazy antics"). Ship first, summarize second, keep talk minimal.`
+  Now: `Narrating instead of shipping angered Trevor ("lazy antics"). Ship first, summarize second, keep talk minimal.`
+- Original: `**Open items** — dated snapshot moved to [roadmap-status.md](docs/reference/roadmap-status.md) 2026-09-19 (status data; goes stale by nature).`
+  Now: `**Open items** — dated snapshot in roadmap-status.md (linked below; goes stale by nature).`
+
+## 2026-10-10 — one trim to pay for the hidden-tab pointer (verbatim original)
+
+- Original (Development workflow, rendered-DOM bullet): `- Verify pages by **rendered DOM, not HTTP 200** — streaming shells always return 200. ⚠ **And platform STATE by a REQUEST, never a status field** — `get_project.live:false` reads IDENTICALLY on a healthy estate; a false P0 and a false "still down" in one night (#76, verbatim: claude-md-condensed-originals.md).`
+  Now: `- Verify pages by **rendered DOM, not HTTP 200** — streaming shells always return 200, and a HIDDEN tab never reveals one (tooling-gotchas.md). ⚠ **And platform STATE by a REQUEST, never a status field** — `get_project.live:false` reads IDENTICALLY on a healthy estate (#76; verbatim: claude-md-condensed-originals.md).`
+  The displaced clause ("a false P0 and a false "still down" in one night") is the #76 story at the top of this file. The added pointer: React 19 reveals a streamed Suspense boundary and hydrates it through `requestAnimationFrame`, which Chrome never fires in a background tab — tooling-gotchas.md "RUN TO GROUND 2026-10-10".
+
+
+## Displaced from CLAUDE.md 2026-10-18 (verbatim; room for concierge rule 3, FMV confidence is internal)
+
+- Project overview: **Tagline** rule: [chain-strategy.md](chain-strategy.md) (end). (link re-pointed for this directory)
+- Two collection-string conventions: Two vocabularies, not interchangeable — mixing them corrupts `flowty_*` writes.

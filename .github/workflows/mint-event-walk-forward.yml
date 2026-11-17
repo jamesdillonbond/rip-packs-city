@@ -1,0 +1,73 @@
+name: Mint event walk — forward (keep chain set/play current)
+
+# 2026-11-02 (#226). The 10-03 mint walk (mint-event-walk.yml) landed MomentMinted / SubeditionAddedToMoment /
+# AllDay MomentNFTMinted records into public.checkpoint_nft_meta (spork 128) up to block 152,500,000
+# (~May 2026) and then stopped. The trigger trg_topshot_subedition_base_from_checkpoint forces
+# topshot_moment_subeditions.base_external_id to the chain's setID:playID WHENEVER a checkpoint record
+# exists — so every Top Shot moment minted after May had no chain truth, and the map copied its base from
+# our own (sometimes wrong) sales/wmc attribution. That is #226's producer loop: 77,151 map rows past the
+# checkpoint's end on 11-02, 1,000+ chain/Atlas-verified wrong.
+#
+# This walks forward from 152,500,001 to the current sealed height every day. It is resumable
+# (mint_walk_covered skips walked windows), so the first runs drain the backlog (~69k windows per stream at
+# 11-02) over a couple of days under MAX_MINUTES, and afterwards each run walks only the new day
+# (~450 windows). Same node (mainnet28; spork root 137,390,146 is still current — rest-mainnet
+# node_version_info, 11-02), same ingest RPC, same per-stream coverage table.
+#
+# Re-keying rows that ALREADY carry a wrong base is a separate step (the trigger fires on insert / base
+# update): audit_173_collect + fix_173_rekey_batch, or the daily reconcile_topshot_map_with_atlas lane.
+
+on:
+  schedule:
+    - cron: "37 12 * * *"   # 4:37 AM PT (PST) — before rpc-topshot-map-atlas-reconcile at 4:47 AM PT
+  workflow_dispatch:
+    inputs:
+      rps:
+        description: "requests/second per job"
+        required: false
+        default: "3"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mint-event-walk
+  cancel-in-progress: false
+
+jobs:
+  walk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      matrix:
+        stream: [ts_minted, ts_subedition, ad_minted]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Walk ${{ matrix.stream }} forward to the sealed head
+        env:
+          RPS: ${{ github.event.inputs.rps || '3' }}
+          WORKERS: "10"
+          MAX_MINUTES: "320"
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NEXT_PUBLIC_SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "::error::Supabase secrets not configured"; exit 2
+          fi
+          case "${RPS:-}" in (''|*[!0-9.]*) echo "rps must be a number"; exit 2;; esac
+          # The sealed head, less a 1,000-block margin so a window never straddles an unsealed edge.
+          # bash -e: a failing detector inside an assignment aborts the step, so each one falls back to
+          # "" and the -z checks below fail LOUDLY with a reason (workflow-curl-assignments-are-guarded).
+          HEAD_JSON=$(curl -fsS --max-time 30 "https://rest-mainnet.onflow.org/v1/blocks?height=sealed") || HEAD_JSON=""
+          if [ -z "$HEAD_JSON" ]; then echo "::error::could not read the sealed head from rest-mainnet"; exit 1; fi
+          HEAD=$(printf '%s' "$HEAD_JSON" | python3 -c 'import json,sys; print(int(json.load(sys.stdin)[0]["header"]["height"]))') || HEAD=""
+          if [ -z "$HEAD" ]; then echo "::error::sealed-head response did not parse"; exit 1; fi
+          END=$((HEAD - 1000))
+          if [ "$END" -le 152500001 ]; then echo "::error::sealed head $HEAD is behind the walk start"; exit 2; fi
+          echo "sealed head $HEAD -> walking 152500001..$END"
+          python3 scripts/flowty-export/test_chain_walk_gha.py
+          cd scripts/flowty-export
+          python3 mint_walk_gha.py "${{ matrix.stream }}" mainnet28 152500001 "$END"

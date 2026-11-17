@@ -1,0 +1,72 @@
+// app/insights/trophies/layout.tsx
+//
+// SEO surface for the public Trophy Room. Server component so the metadata
+// export is honored (a "use client" page.tsx cannot export metadata directly).
+// The canonical is param-stripped (always /insights/trophies) so the
+// ?collection= / ?type= / ?sort= filtered URLs don't index as duplicate
+// content. Mirrors app/insights/squeeze/layout.tsx.
+
+import type { Metadata } from "next"
+import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
+
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
+
+export const metadata: Metadata = {
+  // The root metadata template in lib/seo.ts appends " | Rip Packs City",
+  // so baking the brand in here rendered it twice. (deep-audit D24)
+  title: "The Trophy Room — Rarest Moments on Flow",
+  description:
+    "Every 1-of-1 and top-tier edition across every collection we track — NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, UFC Strike, Candy MLB and Panini — ranked by value. Free. No signup.",
+  keywords: [
+    "NBA Top Shot 1 of 1",
+    "Top Shot Ultimate moments",
+    "rarest Top Shot moments",
+    "NFL All Day 1 of 1",
+    "Flow blockchain grails",
+    "Top Shot trophy moments",
+    "Top Shot Supernova Ultimate",
+  ].join(", "),
+  alternates: {
+    canonical: `${SITE_URL}/insights/trophies`,
+  },
+  openGraph: {
+    title: "The Trophy Room — Rarest Moments on Flow",
+    description:
+      "Every 1-of-1 + top-tier edition across every collection we track, ranked by value.",
+    url: `${SITE_URL}/insights/trophies`,
+    siteName: "Rip Packs City",
+    images: [
+      {
+        url: `${SITE_URL}/api/og/insights/trophies`,
+        width: 1200,
+        height: 630,
+        alt: "The Trophy Room — Rarest Moments on Flow — Rip Packs City",
+      },
+    ],
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    ...TWITTER_INHERITED,
+    card: "summary_large_image",
+    title: "The Trophy Room — Rarest Moments on Flow",
+    description:
+      "Every 1-of-1 + top-tier edition across every collection we track, ranked by value.",
+    images: [`${SITE_URL}/api/og/insights/trophies`],
+    creator: "@RipPacksCity",
+  },
+}
+
+export default function TrophiesLayout({ children }: { children: React.ReactNode }) {
+  const jsonLd = insightsBoardJsonLd("trophies")
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(jsonLd) }}
+      />
+      {children}
+    </>
+  )
+}

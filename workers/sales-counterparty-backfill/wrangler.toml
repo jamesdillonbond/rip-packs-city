@@ -1,0 +1,34 @@
+name = "sales-counterparty-backfill"
+main = "index.ts"
+compatibility_date = "2026-07-18"
+compatibility_flags = ["nodejs_compat"]
+
+# workers_dev = true is REQUIRED. Omitting it leaves the *.workers.dev
+# subdomain unrouted at the Cloudflare edge and every request 404s silently
+# with no log entry (lesson from pinnacle-events-proxy, re-learned by
+# topshot-moments-hydrator).
+workers_dev = true
+
+# Self-scheduling: Cloudflare Cron Triggers, so this needs no cron-job.org
+# entry and is immune to the recurring external-trigger dropout class.
+#
+# CADENCE IS DELIBERATELY CONSERVATIVE. This writes UPDATEs to `sales`, the
+# hottest + most protected table, on an IOPS-constrained Micro instance (see
+# the 2026-07 read-diet work). 120 rows / 5 min = ~34.5k/day, so the ~2.30M
+# decodable NULL-counterparty rows drain in ~9-10 weeks. That is intentional:
+# the walk is NEWEST-FIRST, so live-user value lands in the first days and the
+# long tail is old history nobody is looking at. Raise BATCH_LIMIT or the cron
+# only after watching pipeline_runs + DB load for a day.
+[triggers]
+crons = ["*/5 * * * *"]
+
+# Secrets (write-only after creation):
+#   wrangler secret put SUPABASE_URL               --name sales-counterparty-backfill
+#   wrangler secret put SUPABASE_SERVICE_ROLE_KEY  --name sales-counterparty-backfill
+#   wrangler secret put INGEST_SECRET_TOKEN        --name sales-counterparty-backfill
+#
+# INGEST_SECRET_TOKEN only gates the manual fetch() handler; the scheduled()
+# handler is invoked by Cloudflare itself and is not externally reachable.
+# No TS_PROXY_SECRET here: Flow's public REST endpoint is reachable directly
+# from Cloudflare Workers (verified), so this worker is NOT part of the
+# TS_PROXY_SECRET rotation surface.

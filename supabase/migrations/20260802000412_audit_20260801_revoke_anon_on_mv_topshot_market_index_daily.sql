@@ -1,0 +1,42 @@
+-- audit_20260801_revoke_anon_on_mv_topshot_market_index_daily
+--
+-- CAUSE
+--   The materialized view public.mv_topshot_market_index_daily was directly
+--   SELECTable by anon and authenticated, i.e. reachable raw at
+--   /rest/v1/mv_topshot_market_index_daily. A raw MV should never be a public
+--   PostgREST surface; the view on top of it is the intended shape.
+--
+-- EVIDENCE (before)
+--   has_table_privilege('anon','mv_topshot_market_index_daily','SELECT') = true
+--   has_table_privilege('authenticated', ...)                            = true
+--   Functional probe: SET ROLE anon; SELECT count(*) FROM
+--     public.topshot_market_index_daily  -> 687 rows (succeeded).
+--
+-- LOAD-BEARING CHECK (the reason this is safe)
+--   The view topshot_market_index_daily is security_invoker=on, so an anon
+--   read of the VIEW executes as anon and needs this MV grant. That makes the
+--   grant load-bearing ONLY IF something actually reads it as anon. Nothing
+--   does. Both consumers use the SERVICE-ROLE client:
+--     * app/insights/market/page.tsx:32          -> supabaseAdmin
+--     * app/api/public/insights/market/route.ts  -> imports
+--         `supabaseAdmin as supabase` (line 38) and calls
+--         supabase.from("topshot_market_index_daily") at line 80.
+--   That second one is the exact trap CLAUDE.md warns about: an identifier
+--   named `supabase` that is really the service-role client. It was resolved
+--   by reading the import binding, not the name. No components/** file makes a
+--   direct .rpc()/.from() call against either object.
+--   Dependency sweep: pg_depend shows the view is the ONLY dependent of the
+--   MV, and nothing depends on the view.
+--
+-- EFFECT
+--   Closes BOTH anon paths to this data (the MV directly, and the view via
+--   security_invoker), leaving exactly one public path: the Next.js route
+--   /api/public/insights/market, which reads with the service role. The
+--   /insights/market page is unaffected — it never read as anon.
+--   The view's own anon grant is left in place deliberately: it is now inert
+--   (it cannot read the MV as anon), and revoking it is a separate decision.
+--
+-- REVERT
+--   GRANT SELECT ON public.mv_topshot_market_index_daily TO anon, authenticated;
+
+REVOKE SELECT ON public.mv_topshot_market_index_daily FROM anon, authenticated;

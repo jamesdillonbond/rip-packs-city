@@ -1,0 +1,554 @@
+// lib/sniper/helpers.ts
+//
+// Pure helpers + small color/label lookups for the collection sniper page,
+// extracted verbatim in the Phase 1 structural refactor of
+// app/(collections)/[collection]/sniper/page.tsx. No logic changes.
+
+import type { CSSProperties } from "react";
+import { marketplaceMomentUrl, dapperMarketMomentUrl } from "@/lib/collections";
+import { PINNACLE_VARIANT_COLORS, PINNACLE_VARIANT_LABELS } from "@/lib/pinnacle/pinnacleTypes";
+import { trackOutboundClick } from "@/lib/track-click";
+import type { SniperDeal } from "./types";
+import { textIncludes } from "@/lib/filter-match";
+
+// P2.5 — a deal is "verified" when its FMV is backed by real recent sales
+// (HIGH/MEDIUM confidence) and was NOT thin-data-clamped or ask-fallback.
+// Thin/LOW/ASK_ONLY editions produce the fake "-91% off" bargains (old high
+// sales over-weight the WAP on thin editions), so they're excluded from the
+// headline "hot"/avg-discount stats and demoted below verified deals — the
+// same HIGH+MED gate /insights/deals already applies. Not deleted: with the
+// Verified-FMV-only toggle off they still render, flagged, at the bottom.
+export function isVerifiedDeal(d: SniperDeal): boolean {
+  const c = (d.confidence ?? "").toLowerCase();
+  return (c === "high" || c === "medium") &&
+    d.lowConfidenceFmv !== true &&
+    d.confidenceSource !== "ask_fallback";
+}
+
+// ─── Deal list shaping (filter / demote / stats) ──────────────────────────────
+//
+// Extracted verbatim from the sniper page's render body so the filter predicate,
+// the verified-first demotion, and the headline stats can be unit-tested without
+// mounting the 1,700-line client component. No logic changes.
+
+export type OwnedFilter = "all" | "owned" | "not-owned";
+
+export interface SniperDealFilterOpts {
+  /** free-text query matched (case-insensitive) against player/set/team */
+  search?: string | null;
+  /** Verified-FMV-only toggle — hides thin/LOW/ASK_ONLY/clamped deals */
+  showVerifiedOnly?: boolean;
+  /** owned / not-owned gating; "all" is a no-op */
+  ownedFilter?: OwnedFilter;
+  /** the viewer's owned edition keys (both int-pair and legacy uuid keys) */
+  ownedIds?: Set<string>;
+  /** exact `teamName` match (Team on sports, Franchise on Disney Pinnacle); "all"/empty is a no-op */
+  team?: string | null;
+  /** exact `studio` match (Disney Pinnacle); "all"/empty is a no-op */
+  studio?: string | null;
+  /** keep only chase editions (`isChaser === true`) */
+  chaserOnly?: boolean;
+  /**
+   * Deals-after-fees toggle (2026-10-03, on by default in the sniper UI): hide
+   * a listing whose fee-net margin is <= 0 — i.e. reselling at the
+   * serial-adjusted FMV would not recover the ask once the marketplace takes
+   * its cut. A row with NO fee verdict (`netOfFees` null: the collection has no
+   * verified published rate) is KEPT — absence of a fee table is not evidence
+   * the deal is under water. Pure visibility: never changes discount or order.
+   */
+  afterFeesOnly?: boolean;
+}
+
+/** Fee verdict says this listing loses money on a resale at FMV. Null verdict → false. */
+export function isUnderWaterAfterFees(d: SniperDeal): boolean {
+  const n = d.netOfFees;
+  return !!n && Number.isFinite(n.netMarginUsd) && n.netMarginUsd <= 0;
+}
+
+/** Does the viewer own the edition this deal is for? Checks both key forms. */
+/**
+ * The set of owned edition keys a collection's sniper board may use (2026-11-10).
+ *
+ * `topShotOwned` comes from /api/owned-flow-ids, which only ever holds TOP SHOT keys;
+ * `editionStats` comes from /api/wallet/edition-counts for THIS collection. A board for
+ * any other collection must never be handed the Top Shot set: it would count another
+ * collection's editions as "owned editions tracked" and filter this one's deals by them.
+ */
+export function sniperOwnedEditionKeys(
+  collectionSlug: string,
+  topShotOwned: Set<string>,
+  editionStats: Map<string, { owned: number; locked: number }>,
+): Set<string> {
+  if (collectionSlug === "nba-top-shot") return topShotOwned;
+  const out = new Set<string>();
+  for (const [key, v] of editionStats) {
+    if (v.owned > 0) out.add(key);
+  }
+  return out;
+}
+
+export function isDealOwned(d: SniperDeal, ownedIds: Set<string>): boolean {
+  return (
+    (!!d.intEditionKey && ownedIds.has(d.intEditionKey)) ||
+    (!!d.editionKey && ownedIds.has(d.editionKey))
+  );
+}
+
+// The visibleDeals filter: drop negative-discount rows, apply the search box,
+// the Verified-only toggle, and the owned/not-owned gate. Returns a NEW array.
+/**
+ * The Team / Franchise dropdown's options: every distinct `teamName` on the
+ * board, sorted, with the placeholder "Unknown" left out. A still-selected
+ * value that has dropped off the board stays listed so the control never shows
+ * a selection it cannot display.
+ */
+export function sniperTeamOptions(
+  deals: Pick<SniperDeal, "teamName">[],
+  selected?: string | null,
+  known?: readonly string[] | null,
+): string[] {
+  const set = new Set<string>();
+  // `known` = teams the feed says the collection has (FeedResult.teamOptions),
+  // so a team with no listing on the current board is still pickable.
+  for (const t of known ?? []) if (t && t.trim()) set.add(t.trim());
+  for (const d of deals) {
+    const t = (d.teamName ?? "").trim();
+    if (t && t.toLowerCase() !== "unknown") set.add(t);
+  }
+  if (selected && selected !== "all") set.add(selected);
+  return Array.from(set).sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * The team the CLIENT should still filter the board by. When the feed already
+ * applied this pick server-side (`FeedResult.teamApplied`, franchise-wide — "LA
+ * Clippers" includes "Los Angeles Clippers" rows), re-filtering on the exact
+ * label would drop those rows, so the answer is "all". While a new pick is
+ * still loading, the previous board is filtered here so it never shows other teams.
+ */
+export function sniperClientTeamFilter(teamFilter: string, teamApplied?: string | null): string {
+  return teamApplied && teamApplied === teamFilter ? "all" : teamFilter;
+}
+
+/**
+ * The Sniper filters a link can carry. 2026-09-29: this replaced a "Save search"
+ * button that POSTed to /api/watchlist without the owner_key/edition_key that
+ * route requires — a 400 on every click, shown as "Sign in to save searches" even
+ * to signed-in readers, and no table or reader for saved searches exists. A link
+ * that reopens the board with its filters is the save that actually works.
+ */
+export interface SniperUrlFilters {
+  team?: string
+  player?: string
+  tier?: string
+  maxPrice?: number
+  minDiscount?: number
+  sort?: string
+  /**
+   * Serial search (#12359, Top Shot): every listed Moment with this serial, across
+   * all editions. Deliberately NOT the `serial` param — that one is the board's
+   * all / special / jersey post-filter.
+   */
+  serialNo?: number
+}
+
+export const SNIPER_URL_KEYS = ["team", "player", "tier", "maxPrice", "minDiscount", "sort", "serialNo"] as const
+
+/** A serial-search value the page can apply: a whole number 1–99,999, else undefined. */
+export function parseSerialNo(raw: string | number | null | undefined): number | undefined {
+  if (raw == null) return undefined
+  const s = String(raw).trim().replace(/^#/, "")
+  if (!/^\d{1,5}$/.test(s)) return undefined
+  const n = Number(s)
+  return n >= 1 && n <= 99_999 ? n : undefined
+}
+
+/** Reads the filters from a URL, dropping any value the page could not apply. */
+export function readSniperUrlFilters(
+  sp: Pick<URLSearchParams, "get"> | null | undefined,
+  allowed: { tiers: readonly string[]; sorts: readonly string[] },
+): SniperUrlFilters {
+  const out: SniperUrlFilters = {}
+  if (!sp) return out
+  const text = (k: string) => {
+    const v = sp.get(k)?.trim()
+    return v ? v : undefined
+  }
+  const num = (k: string, max: number) => {
+    const v = Number(sp.get(k))
+    return Number.isFinite(v) && v > 0 && v <= max ? v : undefined
+  }
+  const team = text("team")
+  if (team && team !== "all") out.team = team
+  const player = text("player")
+  if (player) out.player = player
+  const tier = text("tier")
+  const tierMatch = tier ? allowed.tiers.find((t) => t.toLowerCase() === tier.toLowerCase()) : undefined
+  if (tierMatch && tierMatch !== "all") out.tier = tierMatch
+  const maxPrice = num("maxPrice", 10_000_000)
+  if (maxPrice) out.maxPrice = maxPrice
+  const minDiscount = num("minDiscount", 100)
+  if (minDiscount) out.minDiscount = minDiscount
+  const sort = text("sort")
+  if (sort && allowed.sorts.includes(sort)) out.sort = sort
+  const serialNo = parseSerialNo(sp.get("serialNo"))
+  if (serialNo) out.serialNo = serialNo
+  return out
+}
+
+/**
+ * A link to this board with these filters. Keeps unrelated params (e.g.
+ * `section`), drops a one-off deep link (`highlight` / `moment`), and writes only
+ * non-default values so an unfiltered board links as its plain URL.
+ */
+export function sniperShareUrl(
+  href: string,
+  f: { team: string; player: string; tier: string; maxPrice: number; minDiscount: number; sort: string; defaultSort: string; serialNo?: number },
+): string {
+  const url = new URL(href)
+  for (const k of [...SNIPER_URL_KEYS, "highlight", "moment", "momentId"]) url.searchParams.delete(k)
+  if (f.team && f.team !== "all") url.searchParams.set("team", f.team)
+  if (f.player.trim()) url.searchParams.set("player", f.player.trim())
+  if (f.tier && f.tier !== "all") url.searchParams.set("tier", f.tier)
+  if (f.maxPrice > 0) url.searchParams.set("maxPrice", String(f.maxPrice))
+  if (f.minDiscount > 0) url.searchParams.set("minDiscount", String(f.minDiscount))
+  if (f.sort && f.sort !== f.defaultSort) url.searchParams.set("sort", f.sort)
+  const serialNo = parseSerialNo(f.serialNo)
+  if (serialNo) url.searchParams.set("serialNo", String(serialNo))
+  return url.toString()
+}
+
+// The Studio dropdown's options (Disney Pinnacle deals carry `studio`; other
+// collections carry none, so the control hides itself). Same shape as
+// sniperTeamOptions: board-derived, sorted, a stale selection kept selectable.
+export function sniperStudioOptions(deals: Pick<SniperDeal, "studio">[], selected?: string | null): string[] {
+  const set = new Set<string>();
+  for (const d of deals) {
+    const s = (d.studio ?? "").trim();
+    if (s && s.toLowerCase() !== "unknown") set.add(s);
+  }
+  if (selected && selected !== "all") set.add(selected);
+  return Array.from(set).sort((a, b) => a.localeCompare(b));
+}
+
+/** Whether the board lists any chase edition — the Chasers-only toggle shows only then. */
+export function sniperHasChasers(deals: Pick<SniperDeal, "isChaser">[]): boolean {
+  return deals.some((d) => d.isChaser === true);
+}
+
+export function filterSniperDeals(deals: SniperDeal[], opts: SniperDealFilterOpts = {}): SniperDeal[] {
+  const { search, showVerifiedOnly, ownedFilter = "all", ownedIds } = opts;
+  const q = search ? search.toLowerCase() : null;
+  const team = opts.team && opts.team !== "all" ? opts.team.trim().toLowerCase() : null;
+  const studio = opts.studio && opts.studio !== "all" ? opts.studio.trim().toLowerCase() : null;
+  return deals.filter((d) => {
+    if (d.discount < 0) return false;
+    if (team && (d.teamName ?? "").trim().toLowerCase() !== team) return false;
+    if (studio && (d.studio ?? "").trim().toLowerCase() !== studio) return false;
+    if (opts.chaserOnly && d.isChaser !== true) return false;
+    if (q) {
+      if (
+        !textIncludes(d.playerName, q) &&
+        !textIncludes(d.setName, q) &&
+        !textIncludes(d.teamName, q)
+      )
+        return false;
+    }
+    if (showVerifiedOnly && !isVerifiedDeal(d)) return false;
+    if (opts.afterFeesOnly && isUnderWaterAfterFees(d)) return false;
+    if (ownedFilter !== "all") {
+      const owned = isDealOwned(d, ownedIds ?? new Set());
+      if (ownedFilter === "owned" && !owned) return false;
+      if (ownedFilter === "not-owned" && owned) return false;
+    }
+    return true;
+  });
+}
+
+// How many listings pass every filter EXCEPT the Verified-FMV gate — i.e. what
+// that one default-on toggle is hiding right now.
+//
+// Exists because of deep-audit D4: on Top Shot the gate routinely hides the
+// entire board (the feed is dominated by ask-derived rows whose FMV *is* the
+// ask, so the spread is 0% and isVerifiedDeal correctly rejects them), and the
+// empty state blamed "your filters" for a filter the user never set. The gate is
+// right and stays on — headlining a 0%-spread ask-priced row as a "deal" is the
+// fabricated-signal class — but the UI has to name the real cause instead of
+// reading as a dead market.
+//
+// Returns 0 when the gate is off, so the caller needs no separate guard.
+export function countHiddenByVerifiedGate(
+  deals: SniperDeal[],
+  opts: SniperDealFilterOpts = {},
+): number {
+  if (!opts.showVerifiedOnly) return 0;
+  const withGate = filterSniperDeals(deals, opts).length;
+  const withoutGate = filterSniperDeals(deals, { ...opts, showVerifiedOnly: false }).length;
+  return withoutGate - withGate;
+}
+
+// How many listings pass every filter EXCEPT the deals-after-fees gate — what
+// that default-on toggle is hiding. Measured 2026-10-03 on the live Top Shot
+// sniper: the first screen under "Recently Listed" was $0.24–0.33 commons at
+// "net +$0.00 / −$0.01 after 5% fee" — listings that are 2–5% under FMV gross
+// and worth nothing or less once the fee is paid. Same shape as the Verified
+// gate: the toggle is right and stays on, and the empty state must name it.
+// Returns 0 when the gate is off, so the caller needs no separate guard.
+export function countHiddenByFeeGate(
+  deals: SniperDeal[],
+  opts: SniperDealFilterOpts = {},
+): number {
+  if (!opts.afterFeesOnly) return 0;
+  const withGate = filterSniperDeals(deals, opts).length;
+  const withoutGate = filterSniperDeals(deals, { ...opts, afterFeesOnly: false }).length;
+  return withoutGate - withGate;
+}
+
+// Stable demotion of thin/low-confidence deals below verified ones, so real
+// deals lead when the Verified-only toggle is off. Returns a NEW sorted array
+// (Array.prototype.sort is stable, so within each group the input order — the
+// API's sort — is preserved).
+export function sortByVerifiedFirst(deals: SniperDeal[]): SniperDeal[] {
+  return [...deals].sort((a, b) => Number(!isVerifiedDeal(a)) - Number(!isVerifiedDeal(b)));
+}
+
+export interface SniperStats {
+  total: number;
+  hot: number;
+  badge: number;
+  special: number;
+  avgDiscount: number;
+}
+
+// Headline stats. "hot" (discount>=40) and avgDiscount are computed over the
+// VERIFIED subset only, so the top-of-page numbers can't be inflated by thin-FMV
+// fake bargains; `total`/`badge`/`special` reflect the full visible set.
+export function computeSniperStats(visibleDeals: SniperDeal[]): SniperStats {
+  const verified = visibleDeals.filter(isVerifiedDeal);
+  return {
+    total: visibleDeals.length,
+    hot: verified.filter((d) => d.discount >= 40).length,
+    badge: visibleDeals.filter((d) => d.hasBadge).length,
+    special: visibleDeals.filter((d) => d.isSpecialSerial).length,
+    avgDiscount:
+      verified.length > 0 ? verified.reduce((s, d) => s + d.discount, 0) / verified.length : 0,
+  };
+}
+
+// ─── Click tracking helper ────────────────────────────────────────────────────
+
+/** The deal's on-chain moment id, or null when flowId is not one: empty, a
+ *  synthetic "<edition>-<suffix>" key, or equal to the edition key (the All Day
+ *  GraphQL arm sets flowId = editionFlowID). Not a digit test — a Candy MLB
+ *  mint is base58. */
+export function onChainMomentId(deal: Pick<SniperDeal, "flowId" | "editionKey">): string | null {
+  const id = (deal.flowId ?? "").trim();
+  if (!id || /[-:]/.test(id) || id === deal.editionKey) return null;
+  return id;
+}
+
+export interface TrackClickTarget {
+  /** The collection the deal belongs to — the feed's registry id
+   *  ("nba-top-shot", "disney-pinnacle", …). The click-attribution job matches
+   *  on (collection, moment id); a moment id is unique only within a
+   *  collection. Null only when the caller genuinely does not know — never a
+   *  Top Shot default. */
+  collection: string | null;
+  /** The URL actually opened (resolveViewUrl / resolveDapperUrl output) — NOT
+   *  deal.buyUrl, which resolveViewUrl often rejects (Flowty, the dead
+   *  editionFlowID form, Pinnacle's landing page) in favour of another URL. */
+  href: string;
+  /** Which link was clicked. "dapper" = the dapper.market second link. */
+  linkKind: "listing" | "dapper";
+  surface?: string;
+}
+
+// destination: the Dapper link is "dapper_market_listing" (it was logged as
+// "topshot_listing" before — on every collection). The native link keeps the
+// historical per-source labels ("topshot_listing", "flowty_listing", …) and is
+// "native_listing" when the deal carries no source rather than assuming Top
+// Shot.
+export function trackClick(deal: SniperDeal, walletAddress: string | null, target: TrackClickTarget) {
+  const destination =
+    target.linkKind === "dapper"
+      ? "dapper_market_listing"
+      : deal.source
+        ? `${deal.source}_listing`
+        : "native_listing";
+  trackOutboundClick({
+    surface: target.surface ?? "sniper",
+    collection: target.collection,
+    linkKind: target.linkKind,
+    destination,
+    editionKey: deal.editionKey || null,
+    // The ON-CHAIN id (what `sales.nft_id` / `pinnacle_sales.nft_id` hold).
+    // deal.momentId is NOT that on every arm — the Top Shot RPC path sets it to
+    // the edition key (setID:playID) and the All Day GraphQL path to the
+    // editionFlowID — and flowId can be "", a synthetic "<edition>-1" /
+    // "<edition>-jersey", or (All Day GraphQL) the edition id itself. See
+    // onChainMomentId; null sends the attribution job to editionKey instead.
+    momentId: onChainMomentId(deal),
+    playerName: deal.playerName,
+    setName: deal.setName,
+    tier: deal.tier,
+    serial: deal.serial,
+    askPrice: deal.askPrice,
+    fmv: deal.adjustedFmv,
+    discount: deal.discount,
+    walletAddress,
+    buyUrl: target.href,
+  });
+}
+
+// Resolve the outbound marketplace URL for a deal. Prefer the deal's own
+// listing URL when it points at a live native marketplace; Flowty links are
+// dead, so fall back to the collection's native moment page.
+export function resolveViewUrl(deal: SniperDeal, collectionSlug: string): string | null {
+  // Disney Pinnacle's feed sets buyUrl to the marketplace LANDING page for every
+  // row, so it names no pin. The pin's own page is keyed on its flow id.
+  if (collectionSlug === "disney-pinnacle" && deal.flowId && /^\d+$/.test(deal.flowId)) {
+    return marketplaceMomentUrl(collectionSlug, deal.flowId);
+  }
+  const url = deal.buyUrl?.trim();
+  // Reject dead links before returning them: Flowty (marketplace shut down
+  // 2026-05) and the TopShot `listings/p2p?editionFlowID=<setID:playID>` form
+  // the get_topshot_sniper_deals RPC builds — that param carries setID:playID,
+  // NOT TopShot's numeric edition flowID, so the page can't resolve the edition
+  // and the link goes nowhere. Serial-level GQL rows already carry a good
+  // `nbatopshot.com/moment/<flowId>` buyUrl and pass straight through.
+  const isDead =
+    !url ||
+    url.includes("flowty.io") ||
+    url.includes("editionFlowID=") ||
+    url.includes("/listings/p2p");
+  if (url && !isDead) return url;
+  // Fall back to the native moment page only when we hold a real numeric moment
+  // id (serial-level rows). Edition-level RPC rows put a setID:playID key in
+  // momentId, which would just mint another broken URL — return null so the
+  // action cell renders "—" instead of a dead link.
+  if (deal.momentId && /^\d+$/.test(deal.momentId)) {
+    return marketplaceMomentUrl(collectionSlug, deal.momentId);
+  }
+  return null;
+}
+
+// Second-marketplace (dapper.market) link rendered alongside the native one.
+// dapper deep-links need a REAL on-chain moment id, not an edition key — so we
+// return null (skip the link) for edition-level deals rather than mint a wrong
+// one. TopShot real listings carry the moment id in momentId (plain integer);
+// the TS edition-level RPC augment puts a setID:playID key there. AllDay carries
+// the edition id in momentId and the real moment id in flowId, but only when the
+// two differ (edition-level AllDay deals set flowId === momentId).
+export function resolveDapperUrl(deal: SniperDeal, collectionSlug: string): string | null {
+  let momentId: string | null = null;
+  if (deal.source === "allday") {
+    momentId = deal.flowId && deal.flowId !== deal.momentId ? deal.flowId : null;
+  } else {
+    momentId = deal.momentId && /^\d+$/.test(deal.momentId) ? deal.momentId : null;
+  }
+  return dapperMarketMomentUrl(collectionSlug, momentId);
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+export function timeAgo(iso: string | null): string {
+  if (!iso) return "—";
+  const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 0) return "just now";
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return mins + "m ago";
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return hrs + "h ago";
+  return Math.floor(hrs / 24) + "d ago";
+}
+
+export function fmt(n: number, decimals = 2) {
+  return n.toLocaleString("en-US", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+}
+
+// Render a fair-value figure, or an honest em-dash when there isn't one.
+//
+// Feeds are allowed to report "we do not know this edition's FMV" (null), and a
+// snapshot of 0 means the same thing in practice — no sales, nothing to value.
+// Printing "$0.00" reads like a real price of zero, and a substituted number
+// (e.g. borrowing the ask) is worse. An em-dash is always correct when the data
+// is absent. (2026-07-25 — companion to the feed-side null-FMV fixes.)
+export function fmvDisplay(v: number | null | undefined, decimals = 2): string {
+  return typeof v === "number" && Number.isFinite(v) && v > 0 ? `$${fmt(v, decimals)}` : "—";
+}
+
+// Safe percentage-change denominator. `(a - b) / b` with b = 0/null yields
+// Infinity or NaN, which the sniper board turned into a permanent "trending up"
+// arrow. Returns null when no honest ratio exists.
+export function safeRatioDiff(numerator: number | null | undefined, base: number | null | undefined): number | null {
+  if (typeof numerator !== "number" || !Number.isFinite(numerator)) return null;
+  if (typeof base !== "number" || !Number.isFinite(base) || base <= 0) return null;
+  return (numerator - base) / base;
+}
+
+export function tierColor(tier: string): string {
+  switch (tier.toUpperCase()) {
+    case "COMMON":    return "var(--tier-common)";
+    case "FANDOM":    return "var(--tier-fandom)";
+    case "EPIC":      return "var(--tier-epic)";
+    case "RARE":      return "var(--tier-rare)";
+    case "UNCOMMON":  return "var(--tier-uncommon)";
+    case "LEGENDARY": return "var(--tier-legendary)";
+    case "ULTIMATE":  return "var(--tier-ultimate)";
+    case "CHAMPION":   return "var(--tier-champion)";
+    // Legacy RPC-fabricated UFC labels (the chain TIER trait replaced them 2026-10-18).
+    case "CHALLENGER": return "var(--tier-challenger)";
+    case "CONTENDER":  return "var(--tier-contender)";
+    // An unrecognised tier is NOT a COMMON — dressing it up as one invents a
+    // rarity we did not read. Neutral muted, matching lib/market-format.
+    default:          return "var(--rpc-text-muted)";
+  }
+}
+
+// AllDay uses a distinct palette from Top Shot's CSS tokens — green UNCOMMON,
+// blue RARE, amber LEGENDARY, purple ULTIMATE — picked for better contrast
+// against AllDay's blue accent.
+const ALLDAY_TIER_COLORS: Record<string, string> = {
+  COMMON: "#94A3B8",
+  UNCOMMON: "#22C55E",
+  RARE: "#3B82F6",
+  LEGENDARY: "#F59E0B",
+  ULTIMATE: "#A855F7",
+};
+
+export function allDayTierColor(tier: string): string {
+  return ALLDAY_TIER_COLORS[tier?.toUpperCase()] ?? "#94A3B8";
+}
+
+export function resolveTierColor(tier: string, isAllDay: boolean): string {
+  return isAllDay ? allDayTierColor(tier) : tierColor(tier);
+}
+
+export function variantColor(variant: string): string {
+  return PINNACLE_VARIANT_COLORS[variant] ?? "#9CA3AF";
+}
+
+export function variantLabel(variant: string): string {
+  return PINNACLE_VARIANT_LABELS[variant] ?? variant;
+}
+
+export function holoClass(tier: string): string {
+  switch (tier.toUpperCase()) {
+    case "LEGENDARY": return "rpc-holo-legendary";
+    case "ULTIMATE":  return "rpc-holo-ultimate";
+    case "RARE":      return "rpc-holo-rare";
+    default:          return "";
+  }
+}
+
+export function discountColor(pct: number): CSSProperties {
+  if (pct >= 50) return { background: "rgba(239,68,68,0.2)", color: "rgb(252,165,165)", border: "1px solid rgba(239,68,68,0.4)" };
+  if (pct >= 30) return { background: "rgba(249,115,22,0.2)", color: "rgb(253,186,116)", border: "1px solid rgba(249,115,22,0.4)" };
+  if (pct >= 15) return { background: "rgba(234,179,8,0.2)", color: "rgb(253,224,71)", border: "1px solid rgba(234,179,8,0.4)" };
+  if (pct >= 5)  return { background: "rgba(16,185,129,0.2)", color: "rgb(110,231,183)", border: "1px solid rgba(16,185,129,0.4)" };
+  return { border: "1px solid var(--rpc-border)" };
+}

@@ -1,0 +1,45 @@
+import type { Metadata } from "next"
+import type { ReactNode } from "react"
+import Link from "next/link"
+import { collectionHasPage, getCollection } from "@/lib/collections"
+import { pageMetadata, unknownCollectionMetadata } from "@/lib/seo"
+
+export async function generateMetadata(
+  props: { params: Promise<{ collection: string }> }
+): Promise<Metadata> {
+  const { collection: id } = await props.params
+  const collection = getCollection(id)
+  if (!collection) return unknownCollectionMetadata("packs", id)
+  return pageMetadata("packs", collection.label, collection.id)
+}
+
+// The Packs page renders where the registry lists "packs" (Top Shot, All Day,
+// Golazos and Pinnacle on pack_distributions; Panini and Candy on their native
+// pack planes). For other collections, render a graceful "coming soon" shell
+// rather than letting the packs page fetch endpoints that will 404.
+export default async function PacksLayout(props: { children: ReactNode; params: Promise<{ collection: string }> }) {
+  const { collection: id } = await props.params
+  if (collectionHasPage(id, "packs")) {
+    return <>{props.children}</>
+  }
+
+  const collection = getCollection(id)
+  const label = collection?.label ?? "this collection"
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "80px 24px", gap: 14 }}>
+      <div style={{ fontSize: 48 }}>{collection?.icon ?? "\u{1F4E6}"}</div>
+      <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 24, letterSpacing: "0.06em", color: "var(--rpc-text-primary)", textTransform: "uppercase" }}>
+        Pack tools coming soon for {label}
+      </div>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-secondary)", lineHeight: 1.7, maxWidth: 460 }}>
+        Pack EV is a core tool for collections with active pack drops. {label} either doesn&apos;t sell packs today or the pipeline isn&apos;t seeded yet. Use the Sniper and Overview tabs for live deals and market state.
+      </div>
+      <Link
+        href={`/${id}/overview`}
+        style={{ /* brand-exception: white text on the accent button */ display: "inline-block", padding: "10px 24px", background: "var(--rpc-accent, var(--rpc-red-fill))", borderRadius: 6, color: "#fff", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13, letterSpacing: "0.06em", textTransform: "uppercase", textDecoration: "none", marginTop: 8 }}
+      >
+        Back to Overview
+      </Link>
+    </div>
+  )
+}

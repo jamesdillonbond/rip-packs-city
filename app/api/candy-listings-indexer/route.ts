@@ -1,0 +1,878 @@
+// app/api/candy-listings-indexer/route.ts
+//
+// Item A — Candy (Solana) secondary LISTINGS (asks) indexer. Candy had a sales
+// feed (candy-sales-indexer) and a bid feed (candy-offers-indexer) but NO ask
+// feed — which blocked the entire deals / offer-spread / sniper / floor family
+// (every listing table in the DB is Flow/Pinnacle). This lands the ask side.
+//
+// Sweep is simpler than the offers indexer (no per-wallet fan-out): the ME
+// collection listings endpoint returns every active ask directly.
+//   1. Page /v2/collections/<symbol>/listings (CURRENT active listings).
+//   2. Resolve each tokenMint → Candy edition via wmc (moment_id = mint pubkey;
+//      edition_key === editions.external_id by invariant). Non-Candy mints skip.
+//   3. Upsert on pdaAddress; then deactivate active rows the sweep did not see —
+//      ONLY on a complete sweep (any page-fetch failure aborts deactivation, so a
+//      transient error can never wrongly mark a still-standing ask dead), plus
+//      rows whose expiry has passed.
+//
+// While the quest-hold rule keeps Magic Eden listings at 0, every tick is a
+// clean no-op that writes nothing — and captures the first real ask the moment
+// it prints, exactly like candy-sales-indexer.
+//
+// HONESTY CONSTRAINT (do not relax): a listing is an ASK, never FMV. It must not
+// be folded into fmv_snapshots. candy_listing_floor is a floor-ask signal only.
+
+import { NextRequest, NextResponse, after } from "next/server"
+import { supabaseAdmin } from "@/lib/supabase"
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
+import { solUsd } from "@/lib/chains/solana/das"
+import {
+  CANDY_MLB_ME_SYMBOL,
+  CANDY_MLB_SLUG,
+  CANDY_MLB_UUID,
+  candyMeSymbolReady,
+} from "@/lib/chains/solana/normalize"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
+import { CANDY_SETS } from "@/lib/chains/solana/candy-sets"
+
+export const dynamic = "force-dynamic"
+export const maxDuration = 300
+
+const PIPELINE_NAME = "candy-listings-indexer"
+const ME_BASE = "https://api-mainnet.magiceden.dev/v2"
+// ME's /v2/collections/<symbol>/listings endpoint caps `limit` low: limit=500
+// returns HTTP 400 (verified live 2026-07-24 — every prior tick failed here), 100
+// is the accepted max. MAX_PAGES × ME_LIMIT (10,000) bounds the sweep well above
+// any realistic active book so a short/empty page always ends it (and lets the
+// deactivation pass run) rather than truncating at MAX_PAGES.
+const ME_LIMIT = 100
+const MAX_PAGES = 100
+// Sweep-sanity guard: if a complete-looking sweep returns less than this
+// fraction of the book we already hold, treat the feed as degraded and refuse
+// to deactivate. Only applied once the book is big enough for the ratio to mean
+// anything.
+// How many pages of the activities feed to read for listing-ending evidence.
+// 2 x 500 comfortably covers a 3h tick (the busiest observed window ran ~90
+// activities in 2.3h) with headroom for a backlog.
+const ACTIVITY_PAGES = 2
+
+// Listing as returned by /v2/collections/<symbol>/listings. `expiry` is unix
+// seconds (0 = none).
+interface MeListing {
+  pdaAddress?: string
+  tokenMint?: string
+  auctionHouse?: string
+  seller?: string
+  price?: number // SOL
+  tokenSize?: number
+  expiry?: number
+}
+
+function meHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { Accept: "application/json" }
+  const key = process.env.MAGIC_EDEN_API_KEY
+  if (key) headers["Authorization"] = `Bearer ${key}`
+  return headers
+}
+
+// The ACTIVITIES feed is the reliable half of Magic Eden's API for this
+// collection: it returns 500 rows a page and its recency ordering matches the
+// chain (candy-sales-indexer has walked it every 3h without a gap). The
+// LISTINGS endpoint is not — it answered 420, then 7, then 22 for the same book
+// inside six hours on 2026-07-27. So listings are treated as a PRICE REFRESHER
+// and the activities feed as the STATE MACHINE for what is still listed.
+interface MeActivity {
+  type: string
+  tokenMint?: string
+  blockTime?: number
+}
+
+// Per-request cap on every Magic Eden call. `fetch()` HAS NO DEFAULT TIMEOUT, so
+// an upstream that accepts the connection and then holds it open consumes the
+// caller's ENTIRE lambda budget — and this route's budget is 300s.
+//
+// 🚨 That is not hypothetical here; it is the measured cause of a 44-hour
+// blackout on the PUBLIC /insights/candy-mlb board (2026-08-27). The signature:
+// 15 invocation heartbeats in 48h, ONE terminal `pipeline_runs` row, and a
+// Vercel `Task timed out after 300 seconds`. The route's `after()` body has a
+// try/catch that logs an ok:false row, so a THROW would have been recorded —
+// nothing was, which means the tick was KILLED rather than failing. The only
+// unbounded awaits in the path were the two ME fetches below.
+//
+// ⭐ The fix already existed in this codebase and had not spread. `solUsd()` in
+// lib/chains/solana/das.ts — called by this very route, one line above the ME
+// walk — carries an 8s cap and a comment naming this exact failure mode
+// ("CoinGecko rate-limits datacenter egress hard and can hold a connection open
+// indefinitely"). The same reasoning applies to Magic Eden and was never
+// applied. When you find one of these, grep for the EXPRESSION, not the file.
+//
+// ⚠ Egress-dependent, so do not "disprove" it from a laptop. Probed residentially
+// on 2026-08-27 ME answered 200 in 0.1–1.0s with a shallow book (0 rows by
+// offset 2000), i.e. from a home IP there is nothing slow to find. The sibling
+// candy-offers route is simultaneously getting Cloudflare 1015 rate-limits from
+// Vercel. A hang that only appears on datacenter egress is exactly that shape.
+const ME_FETCH_TIMEOUT_MS = 15_000
+
+// Whole-sweep deadline, and it is a SEPARATE guarantee from the per-request cap
+// above — not a belt-and-braces duplicate. ME_FETCH_TIMEOUT_MS bounds ONE call;
+// MAX_PAGES is 100, so per-request caps alone still permit 100 x 15s = 1,500s,
+// five times the 300s `maxDuration`. Without a total budget the route could
+// still be killed before reaching `logRun`, which is the whole defect: a killed
+// tick writes NO terminal row, so the failure is invisible to `pipeline_runs`
+// and reads as "the cron never fired".
+//
+// 🚨 THE VALUE IS 600s, NOT THE 240s YOU WOULD DERIVE FROM `maxDuration = 300`,
+// AND THE DIFFERENCE IS MEASURED. Every SUCCESSFUL run of this sweep in the
+// retained `pipeline_runs` window took **375,699 / 389,236 / 391,226 ms** — all
+// well ABOVE the 300s maxDuration — and all three completed AND wrote their
+// terminal row. `extra.duration_ms` is computed as `Date.now() - startedMs`,
+// the SAME clock this budget uses, so those numbers are directly comparable:
+// **a 240s budget would have truncated every healthy sweep on record.** That
+// was the first value here and it was a regression, caught only by reading the
+// duration distribution instead of reasoning from the declared ceiling.
+//
+// ⭐ The lesson: `maxDuration` is what the platform DECLARES; the success band
+// is what the route actually gets. They disagree here (Fluid Compute does not
+// bill or bound `after()` work the way a naive reading of maxDuration implies),
+// so a deadline derived from the declared ceiling is derived from the wrong
+// number. **Size a budget off the observed distribution of successes, never off
+// the config.**
+//
+// 600s therefore sits ~1.5x above the observed max: it NEVER truncates a healthy
+// sweep, while still capping the aggregate worst case, which per-request timeouts
+// alone cannot (MAX_PAGES 100 x 15s = 1,500s). The per-call
+// ME_FETCH_TIMEOUT_MS above is the real hang protection; this is the backstop
+// for many-slow-calls rather than one-stuck-call.
+//
+// ⚠ SEPARATE, LARGER PROBLEM this budget does NOT solve, stated so nobody reads
+// the timeout work as a fix for it: a ~385s sweep against a 300s maxDuration is
+// OVER BUDGET BY DESIGN, which is why terminal rows are rare and most ticks die.
+// The cost is dominated by per-listing round trips (~1,600 listings x 1-2
+// sequential supabase lookups each); the DB side of each is an Index Only Scan
+// at ~1.4ms, so it is ROUND-TRIP COUNT, not query cost. Batching those lookups
+// is the real fix. Filed, not attempted here.
+//
+// A deadline break refreshes fewer prices and reports `sweep_complete: false`;
+// it cannot destroy data, because deactivation here is evidence-based (an
+// explicit delist or fill from the activities feed), never absence-based, and
+// `sweepComplete` gates nothing but reporting.
+const SWEEP_BUDGET_MS = 600_000
+
+async function fetchActivities(offset: number, symbol: string = CANDY_MLB_ME_SYMBOL): Promise<MeActivity[]> {
+  const url = `${ME_BASE}/collections/${encodeURIComponent(symbol)}/activities?offset=${offset}&limit=500`
+  const resp = await fetch(url, { headers: meHeaders(), signal: AbortSignal.timeout(ME_FETCH_TIMEOUT_MS) })
+  if (!resp.ok) {
+    throw new Error(`ME activities HTTP ${resp.status}: ${(await resp.text().catch(() => "")).slice(0, 200)}`)
+  }
+  const json = await resp.json()
+  return Array.isArray(json) ? (json as MeActivity[]) : []
+}
+
+// Activity types that END a listing: an explicit delist, or a fill.
+const LISTING_ENDING_TYPES = new Set(["delist", "buyNow", "buyNowFill", "acceptBid"])
+
+async function fetchListingsOnce(offset: number, symbol: string = CANDY_MLB_ME_SYMBOL): Promise<MeListing[]> {
+  const url = `${ME_BASE}/collections/${encodeURIComponent(symbol)}/listings?offset=${offset}&limit=${ME_LIMIT}`
+  const resp = await fetch(url, { headers: meHeaders(), signal: AbortSignal.timeout(ME_FETCH_TIMEOUT_MS) })
+  if (!resp.ok) {
+    throw Object.assign(new Error(`ME listings HTTP ${resp.status}: ${(await resp.text().catch(() => "")).slice(0, 200)}`), { status: resp.status })
+  }
+  const json = await resp.json()
+  return Array.isArray(json) ? (json as MeListing[]) : []
+}
+
+// ⭐ ONE RETRY per listings page (2026-10-26). A single page that timed out threw the
+// whole tick: 3 of 8 sweeps on 10-26 (5:35, 8:35, 11:35 AM PT) died "The operation
+// was aborted due to timeout" holding 300–1,100 listings they had already read,
+// and wrote NONE of them — so the book went 9 h without a refresh while the next
+// tick succeeded in 11–45 s. A transient Magic Eden stall is the common case; a
+// second try 1.5 s later is cheap. Retried: a timeout / network error, a 429 and a
+// 5xx. NOT retried: any other 4xx (a wrong request will not fix itself). A second
+// failure throws as before (ok=false, nothing deactivated — deactivation is
+// evidence-based, see below).
+const ME_LISTINGS_RETRY_DELAY_MS = 1_500
+async function fetchListings(offset: number, symbol: string = CANDY_MLB_ME_SYMBOL): Promise<MeListing[]> {
+  try {
+    return await fetchListingsOnce(offset, symbol)
+  } catch (e) {
+    const status = (e as { status?: number }).status
+    const retryable = status == null || status === 429 || status >= 500
+    if (!retryable) throw e
+    console.log(`[${PIPELINE_NAME}] listings page offset=${offset} failed (${e instanceof Error ? e.message.slice(0, 120) : String(e)}); retrying once`)
+    await new Promise((r) => setTimeout(r, ME_LISTINGS_RETRY_DELAY_MS))
+    return await fetchListingsOnce(offset, symbol)
+  }
+}
+
+async function logRun(
+  startedAtIso: string,
+  rowsFound: number,
+  rowsWritten: number,
+  rowsSkipped: number,
+  ok: boolean,
+  error: string | null,
+  extra: Record<string, unknown>
+) {
+  try {
+    await (supabaseAdmin as any).rpc("log_pipeline_run", {
+      p_pipeline: PIPELINE_NAME,
+      p_started_at: startedAtIso,
+      p_rows_found: rowsFound,
+      p_rows_written: rowsWritten,
+      p_rows_skipped: rowsSkipped,
+      p_ok: ok,
+      p_error: error,
+      p_collection_slug: CANDY_MLB_SLUG,
+      p_cursor_before: null,
+      p_cursor_after: null,
+      p_extra: extra,
+    })
+  } catch (e) {
+    console.log(
+      `[${PIPELINE_NAME}] log_pipeline_run failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`
+    )
+  }
+}
+
+// INGEST_SECRET_TOKEN (manual / cron-job.org) OR Bearer CRON_SECRET (Vercel cron
+// sends only CRON_SECRET, via GET). Mirrors app/api/ingest/candy-offers.
+function authed(req: NextRequest): boolean {
+  const header = req.headers.get("authorization") ?? ""
+  const ingest = process.env.INGEST_SECRET_TOKEN
+  const cron = process.env.CRON_SECRET
+  if (ingest && bearerMatches(header, "INGEST_SECRET_TOKEN")) return true
+  if (cron && bearerMatches(header, "CRON_SECRET")) return true
+  return false
+}
+
+export async function GET(req: NextRequest) {
+  return handleSweep(req)
+}
+
+export async function POST(req: NextRequest) {
+  return handleSweep(req)
+}
+
+async function handleSweep(req: NextRequest) {
+  if (!authed(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  const startedAtIso = new Date().toISOString()
+  const startedMs = Date.now()
+
+  // Invocation heartbeat (deep-audit R11, added 2026-08-15). The real work runs
+  // inside `after()` and logs ONLY on completion, so a dropped or killed
+  // invocation wrote nothing at all — indistinguishable from the cron never
+  // firing. That ambiguity was not theoretical: on 2026-08-15 this pipeline read
+  // 1,151 min silent against a 400 min ceiling while `candy_listings.last_seen_at`
+  // showed a sweep HAD run at 06:40Z, and the two facts could not be reconciled
+  // from any available signal. ⚠ It also produced a wrong operator note — "it
+  // runs and writes but does not log", which invites dismissing the alarm —
+  // whereas re-measured the data was ALSO 10 h stale, i.e. later ticks did no
+  // work either. Both readings needed the same missing evidence.
+  //
+  // With this marker the states separate, exactly as for candy-offers-indexer:
+  //   heartbeat + candy-listings-indexer row -> ran to completion
+  //   heartbeat only                          -> after() dropped / killed at 300s
+  //   neither                                 -> route never reached (cron / auth)
+  //
+  // ⚠ SEPARATE pipeline name, not an extra `candy-listings-indexer` row — this
+  // pipeline is on pipeline_cadence_watchlist (400 min), so a marker under its
+  // own name would refresh `last_run` every tick and silence
+  // detect_stalled_pipelines() on the very outage this exists to expose.
+  // ⚠ `duration_ms` on these heartbeat rows is MEANINGLESS — read `extra`/`ok`,
+  // never the duration. `log_pipeline_run` has no `p_finished_at` parameter
+  // (verified against pg_proc: 11 args, no finished_at), so the row takes
+  // `finished_at DEFAULT now()` and the GENERATED `duration_ms` becomes this
+  // insert's own latency. That is the same defect fixed today on
+  // drain-conflated-subeditions and fmv-recalc-heartbeat by pinning
+  // finished_at = started_at; it cannot be pinned through this RPC without a
+  // migration, and the sibling candy-offers-indexer heartbeat has the identical
+  // property. Filed rather than diverging from the established call here.
+  // 2026-08-20: moved to `lib/pipeline/heartbeat.ts`. This site used the
+  // `log_pipeline_run` RPC, which has NO `p_finished_at` parameter — so
+  // `finished_at` took its `now()` default and `duration_ms` (GENERATED from the
+  // pair) published this call's own latency as a run duration: measured live at
+  // up to 47,462 ms across these three candy markers. The site documented the
+  // trap ("read `extra`/`ok`, never the duration") rather than fixing it,
+  // because from inside the RPC it was unfixable. The helper writes the table
+  // directly, so the duration is a hard 0 and the rows_* columns are NULL rather
+  // than a fabricated 0.
+  //
+  // ⚠ `phase` was `"invoked"` here and `"started"` at the other two sites — a
+  // divergence nobody could see from inside either file, and one that would
+  // silently exclude these rows from any correlation query keyed on the phase.
+  await writeInvocationHeartbeat({
+    pipeline: PIPELINE_NAME,
+    startedAtMs: startedMs,
+    collectionSlug: CANDY_MLB_SLUG,
+  })
+
+  if (!candyMeSymbolReady()) {
+    await logRun(startedAtIso, 0, 0, 0, true, null, { skip_reason: "discovery_pending" })
+    return NextResponse.json(
+      { accepted: false, skipped: "discovery_pending", collection: CANDY_MLB_SLUG },
+      { status: 202 }
+    )
+  }
+
+  after(async () => {
+    let found = 0
+    let written = 0
+    let skipped = 0
+    let deactivated = 0
+    let packWritten = 0
+    // R123 (2026-09-20): every rejected write below is collected here and fails
+    // the run row; the sweep itself carries on (a rejected batch is not a reason
+    // to skip the deactivations that follow).
+    const writeErrors: string[] = []
+    let packDeactivated = 0
+    // null until the superseded pass runs (a killed/errored tick never reached it).
+    let superseded: number | null = null
+    // Asks whose token has a recorded SALE after we last saw them (cards + packs).
+    // null = the pass failed; the counts are rows actually retired.
+    let soldSinceSeen: { cards_retired: number; packs_retired: number } | null = null
+    // Asks whose seller no longer owns the token per the on-chain census
+    // (audit_20261108). null = the pass failed.
+    let ownerMoved: { cards_retired: number; packs_retired: number; cards_cleared: number; packs_cleared: number } | null = null
+    // Listings ME returned this sweep that are already retired for a moved owner —
+    // skipped, so the upsert does not re-activate them.
+    let ownerMovedSkipped = 0
+    let sweepComplete = false
+    try {
+      const rate = await solUsd()
+      // tokenMint → edition_id|null (Candy card) or false (not a Candy card)
+      // miss cache. A miss is re-checked against candy_packs: the collection
+      // mixes sealed PACKS in with the cards, and a pack ask used to be dropped
+      // here as "not a Candy mint" because the wmc gate only knows card mints.
+      const editionByMint = new Map<string, string | null | false>()
+      const packMintCache = new Map<string, boolean>()
+      const rows: Record<string, unknown>[] = []
+      const packRows: Record<string, unknown>[] = []
+      const seenPdas = new Set<string>()
+      const seenPackPdas = new Set<string>()
+
+      // Raw ME rows seen before the Candy-mint gate. `found` counts only Candy
+      // listings, so it cannot distinguish "ME returned an empty book" from "ME
+      // returned rows, none of them Candy" — and an empty book while we hold
+      // active asks is an upstream fault, not a market event.
+      let rawSeen = 0
+
+      let budgetExhausted = false
+      // 2026-11-08: every Candy set's book (lib/chains/solana/candy-sets.ts) —
+      // All-Star, Gold Series and Quest-reward asks were never read before. The
+      // mint gate below already admits any card the census knows, whatever its set.
+      // The sweep is complete only if EVERY set's book was read to its end.
+      let pagesWalked = 0
+      let allSetsComplete = true
+      for (const candySet of CANDY_SETS) {
+      let page = 0
+      sweepComplete = false
+      for (; page < MAX_PAGES; page++) {
+        // Stop before the lambda is killed, so logRun below always runs.
+        if (Date.now() - startedMs > SWEEP_BUDGET_MS) {
+          budgetExhausted = true
+          sweepComplete = false
+          break
+        }
+        const listings = await fetchListings(page * ME_LIMIT, candySet.meSymbol)
+        rawSeen += listings.length
+        if (listings.length === 0) {
+          sweepComplete = true
+          break
+        }
+        // ── Batch-resolve this page's unseen mints BEFORE the per-listing loop ──
+        //
+        // 🚨 WHY. This sweep's cost is ROUND-TRIP COUNT, not query cost. The
+        // per-mint lookups below are individually cheap — the wmc probe is an
+        // Index Only Scan on idx_wmc_moment_collection_cover at ~1.4ms / 3
+        // buffers — but issued ONE AT A TIME they are ~1,600 sequential
+        // Vercel→Supabase round trips per sweep. Measured: every successful run
+        // on record took 375–391s against a 300s maxDuration, i.e. the sweep was
+        // OVER BUDGET BY DESIGN and only finished when the platform allowed the
+        // overrun. That is why terminal rows were rare and the PUBLIC
+        // /insights/candy-mlb board went 44h stale.
+        //
+        // ⚠ Do NOT "optimise" this by making the queries cheaper — they are
+        // already index-only. The lever is the number of trips, not the cost of
+        // each. (I falsified "the query is slow" early on and briefly took that
+        // to mean the lookups were not the cost; those are different claims.)
+        //
+        // Equivalence: identical rows, identical mapping. Each cache ends the
+        // page holding exactly what the sequential version would have put there
+        // — `false` for a mint with no wmc row (not a Candy card), the edition id
+        // or null otherwise — so the loop below is unchanged in behaviour.
+        {
+          const pageMints = [
+            ...new Set(
+              listings
+                .filter((l) => l.pdaAddress && l.tokenMint && l.price != null && l.price > 0)
+                .map((l) => l.tokenMint as string)
+                .filter((m) => !editionByMint.has(m)),
+            ),
+          ]
+          if (pageMints.length) {
+            // 1) mint → edition_key. A mint can carry rows for several wallets;
+            //    edition_key is a property of the MOMENT, so first-wins matches
+            //    the .limit(1) this replaces.
+            const keyByMint = new Map<string, string>()
+            for (let i = 0; i < pageMints.length; i += 200) {
+              const { data, error } = await (supabaseAdmin as any)
+                .from("wallet_moments_cache")
+                .select("moment_id, edition_key")
+                .eq("collection_id", CANDY_MLB_UUID)
+                .in("moment_id", pageMints.slice(i, i + 200))
+              // ⚠ THROW, do not swallow. The sequential version destructured only
+              // `data`, so a failed read left `key` undefined and the listing was
+              // silently classified "not a Candy mint" and DROPPED — a failed
+              // read rendering as a fact, on the feed behind a public board.
+              // Failing the sweep is safe: deactivation is evidence-based, so a
+              // thrown sweep deactivates nothing.
+              if (error) throw new Error(`wmc batch lookup failed: ${error.message}`)
+              for (const r of (data ?? []) as Array<{ moment_id: string; edition_key: string | null }>) {
+                if (r.edition_key && !keyByMint.has(r.moment_id)) keyByMint.set(r.moment_id, r.edition_key)
+              }
+            }
+
+            // 2) edition_key → edition id, one trip per chunk of keys.
+            const keys = [...new Set([...keyByMint.values()])]
+            const idByKey = new Map<string, string>()
+            for (let i = 0; i < keys.length; i += 200) {
+              const { data, error } = await (supabaseAdmin as any)
+                .from("editions")
+                .select("id, external_id")
+                .eq("collection_id", CANDY_MLB_UUID)
+                .in("external_id", keys.slice(i, i + 200))
+              if (error) throw new Error(`editions batch lookup failed: ${error.message}`)
+              for (const r of (data ?? []) as Array<{ id: string; external_id: string }>) {
+                if (!idByKey.has(r.external_id)) idByKey.set(r.external_id, r.id)
+              }
+            }
+
+            for (const m of pageMints) {
+              const key = keyByMint.get(m)
+              editionByMint.set(m, key ? (idByKey.get(key) ?? null) : false)
+            }
+
+            // 3) The non-card mints may still be sealed PACKS. Same batching.
+            const notCards = pageMints.filter((m) => editionByMint.get(m) === false && !packMintCache.has(m))
+            for (let i = 0; i < notCards.length; i += 200) {
+              const chunk = notCards.slice(i, i + 200)
+              const { data, error } = await (supabaseAdmin as any)
+                .from("candy_packs")
+                .select("token_mint")
+                .in("token_mint", chunk)
+              if (error) throw new Error(`candy_packs batch lookup failed: ${error.message}`)
+              const present = new Set((data ?? []).map((r: { token_mint: string }) => r.token_mint))
+              for (const m of chunk) packMintCache.set(m, present.has(m))
+            }
+          }
+        }
+
+        // ── OWNER-MOVED listings (audit_20261108) ──────────────────────────────
+        // Magic Eden kept returning ~1,480 asks after Candy's October wallet
+        // migration moved every card to a new owner: ME still reports
+        // `token.owner = seller`, while our on-chain census shows the new wallet.
+        // `candy_retire_listings_owner_moved()` (called below) retires such a row
+        // and stamps `owner_moved_at`; skipping it here keeps the upsert from
+        // re-activating it on every sweep. A failed read throws — never guess.
+        const ownerMovedPdas = new Set<string>()
+        {
+          const pagePdas = [...new Set(listings.map((l) => l.pdaAddress).filter((p): p is string => Boolean(p)))]
+          if (pagePdas.length) {
+            const { data, error } = await (supabaseAdmin as any).rpc("candy_listing_owner_moved_pdas", {
+              p_pdas: pagePdas,
+            })
+            if (error) throw new Error(`owner_moved lookup failed: ${error.message}`)
+            const sellerByPda = new Map(listings.map((l) => [l.pdaAddress, l.seller ?? null]))
+            for (const r of (Array.isArray(data) ? data : []) as Array<{ pda_address: string; seller: string | null }>) {
+              // Same listing account AND same seller: still the stale ask. A
+              // different seller on the same account is new evidence — let it through.
+              if (sellerByPda.has(r.pda_address) && sellerByPda.get(r.pda_address) === r.seller) {
+                ownerMovedPdas.add(r.pda_address)
+              }
+            }
+          }
+        }
+
+        for (const l of listings) {
+          if (!l.pdaAddress || !l.tokenMint || l.price == null || l.price <= 0) continue
+          if (ownerMovedPdas.has(l.pdaAddress)) {
+            ownerMovedSkipped++
+            continue
+          }
+
+          // Candy-mint gate + edition resolution via wmc.
+          let edition = editionByMint.get(l.tokenMint)
+          if (edition === undefined) {
+            const { data: wmcRow } = await (supabaseAdmin as any)
+              .from("wallet_moments_cache")
+              .select("edition_key")
+              .eq("collection_id", CANDY_MLB_UUID)
+              .eq("moment_id", l.tokenMint)
+              .limit(1)
+            const key = wmcRow?.[0]?.edition_key
+            if (!key) {
+              edition = false // not a Candy mint
+            } else {
+              const { data: edRow } = await (supabaseAdmin as any)
+                .from("editions")
+                .select("id")
+                .eq("external_id", key)
+                .eq("collection_id", CANDY_MLB_UUID)
+                .limit(1)
+              edition = (edRow?.[0]?.id ?? null) as string | null
+            }
+            editionByMint.set(l.tokenMint, edition)
+          }
+          if (edition === false) {
+            // Not a card — is it a sealed pack? candy_packs is filled by the
+            // daily DAS walk, so this costs one indexed lookup per new mint and
+            // no extra Magic Eden call.
+            let isPackMint = packMintCache.get(l.tokenMint)
+            if (isPackMint === undefined) {
+              const { data: packRow } = await (supabaseAdmin as any)
+                .from("candy_packs")
+                .select("token_mint")
+                .eq("token_mint", l.tokenMint)
+                .limit(1)
+              isPackMint = Boolean(packRow?.[0]?.token_mint)
+              packMintCache.set(l.tokenMint, isPackMint)
+            }
+            if (!isPackMint) continue // genuinely not a Candy asset
+            if (seenPackPdas.has(l.pdaAddress)) continue
+            seenPackPdas.add(l.pdaAddress)
+            packRows.push({
+              pda_address: l.pdaAddress,
+              token_mint: l.tokenMint,
+              collection_id: CANDY_MLB_UUID,
+              seller: l.seller ?? null,
+              auction_house: l.auctionHouse ?? null,
+              price_sol: l.price,
+              price_usd: rate != null ? Number((l.price * rate).toFixed(2)) : null,
+              expiry: l.expiry && l.expiry > 0 ? new Date(l.expiry * 1000).toISOString() : null,
+              last_seen_at: new Date().toISOString(),
+              is_active: true,
+              // Pinned: the OpenSea listings feed writes pack asks too.
+              venue: "magic_eden",
+            })
+            continue
+          }
+          if (seenPdas.has(l.pdaAddress)) continue
+          seenPdas.add(l.pdaAddress)
+          found++
+
+          rows.push({
+            pda_address: l.pdaAddress,
+            token_mint: l.tokenMint,
+            edition_id: edition,
+            collection_id: CANDY_MLB_UUID,
+            seller: l.seller ?? null,
+            auction_house: l.auctionHouse ?? null,
+            price_sol: l.price,
+            price_usd: rate != null ? Number((l.price * rate).toFixed(2)) : null,
+            token_size: l.tokenSize ?? null,
+            expiry: l.expiry && l.expiry > 0 ? new Date(l.expiry * 1000).toISOString() : null,
+            last_seen_at: new Date().toISOString(),
+            is_active: true,
+            // Pinned, not defaulted: the OpenSea listings feed writes this table
+            // too, and an upsert that omits the column keeps the row's old venue.
+            venue: "magic_eden",
+            // first_seen_at defaulted on insert, preserved on conflict.
+          })
+        }
+        if (listings.length < ME_LIMIT) {
+          sweepComplete = true
+          break
+        }
+      }
+      // Reaching MAX_PAGES without a short/empty page means we truncated — treat
+      // the sweep as incomplete so deactivation is skipped (never deactivate on a
+      // partial view of the book).
+      if (page >= MAX_PAGES) sweepComplete = false
+      pagesWalked += page
+      if (!sweepComplete) allSetsComplete = false
+      if (budgetExhausted) break
+      }
+      sweepComplete = allSetsComplete && !budgetExhausted
+
+      // Upsert pack asks (same all-or-nothing batching rules as the cards).
+      for (let i = 0; i < packRows.length; i += 100) {
+        const batch = packRows.slice(i, i + 100)
+        const { error } = await (supabaseAdmin as any)
+          .from("candy_pack_listings")
+          .upsert(batch, { onConflict: "pda_address" })
+        if (error) {
+          console.log(`[${PIPELINE_NAME}] pack upsert err: ${error.message}`)
+          writeErrors.push(`candy_pack_listings upsert: ${error.message}`)
+        } else packWritten += batch.length
+      }
+
+      // Upsert active listings.
+      // Mints whose CURRENT listing this sweep saw AND wrote. Only these can
+      // supersede an older listing (see the superseded pass below): a mint whose
+      // batch failed keeps its old last_seen_at, so it must not qualify.
+      const liveMints = new Set<string>()
+      for (let i = 0; i < rows.length; i += 100) {
+        const batch = rows.slice(i, i + 100)
+        const { error } = await (supabaseAdmin as any)
+          .from("candy_listings")
+          .upsert(batch, { onConflict: "pda_address" })
+        if (error) {
+          console.log(`[${PIPELINE_NAME}] upsert err: ${error.message}`)
+          writeErrors.push(`candy_listings upsert: ${error.message}`)
+          skipped += batch.length
+        } else {
+          written += batch.length
+          for (const r of batch) {
+            if (typeof r.token_mint === "string" && r.token_size === 1) liveMints.add(r.token_mint)
+          }
+        }
+      }
+
+      // Deactivation is EVIDENCE-BASED, never absence-based.
+      //
+      // The old rule — "any active row this sweep did not see is dead" — is only
+      // sound if the sweep is a census. It is not: on 2026-07-27 Magic Eden
+      // answered 420 listings at 21:38Z, SEVEN at 00:35Z and 22 at 03:35Z for a
+      // book the chain says barely moved (6 delists and 8 sales across the whole
+      // collection in that window). The 00:35Z tick therefore deactivated 419
+      // standing asks and collapsed candy_listing_floor to 7 rows. A ratio guard
+      // was tried first and is NOT enough either — once a bad tick lands, the
+      // "book we already hold" it compares against is itself the damaged number.
+      //
+      // So: only a listing we have POSITIVE evidence about gets deactivated —
+      // an explicit `delist`, or a fill (`buyNow`/`buyNowFill`/`acceptBid`) —
+      // read from the activities feed, plus expiry. A pulled ask we miss stays
+      // live one tick longer; a live ask is never destroyed by a short answer.
+      const endedMints = new Set<string>()
+      let activitiesSeen = 0
+      try {
+        for (const candySet of CANDY_SETS)
+        for (let ap = 0; ap < ACTIVITY_PAGES; ap++) {
+          // Same deadline. No evidence is safer than a killed tick: an empty
+          // endedMints set simply deactivates nothing this pass.
+          if (Date.now() - startedMs > SWEEP_BUDGET_MS) break
+          const acts = await fetchActivities(ap * 500, candySet.meSymbol)
+          activitiesSeen += acts.length
+          for (const a of acts) {
+            if (a.tokenMint && LISTING_ENDING_TYPES.has(a.type)) endedMints.add(a.tokenMint)
+          }
+          if (acts.length < 500) break
+        }
+      } catch (e) {
+        // A failed activities walk means no evidence, which means no
+        // deactivation — never the other way round.
+        console.log(`[${PIPELINE_NAME}] activities walk failed (no deactivation): ${e instanceof Error ? e.message : String(e)}`)
+      }
+
+      // ⚠ supabase-js RETURNS errors, so a timed-out count resolves `{ count: null,
+      // error }` — and `?? 0` published that as "0 active listings before the
+      // sweep", which made `feed_looks_truncated` read false (a 0-baseline can never
+      // be under-fetched) and `active_before: 0` sit in pipeline_runs as a fact. Its
+      // sibling `ingest/candy-offers` already carries `bookSizeUnknown` for this
+      // exact shape; this was the un-swept twin (2026-09-03). `before` is NULL when
+      // unknown, and the truncation metric says unknown rather than false.
+      const { count: activeBefore, error: activeBeforeErr } = await (supabaseAdmin as any)
+        .from("candy_listings")
+        .select("pda_address", { count: "exact", head: true })
+        .eq("is_active", true)
+      const before: number | null = activeBeforeErr ? null : (activeBefore ?? null)
+      if (activeBeforeErr) {
+        console.log(`[${PIPELINE_NAME}] active_before count failed (reported as unknown): ${activeBeforeErr.message}`)
+      }
+
+      const endedList = [...endedMints]
+      for (let i = 0; i < endedList.length; i += 200) {
+        const slice = endedList.slice(i, i + 200)
+        // R123 (2026-09-20): these three deactivations were destructured as
+        // `{ data }` only — a FAILED update read as `[]`, i.e. "nothing to
+        // deactivate", published as `deactivated: 0` on an ok=true run row, and
+        // the dead listing stayed on the board. Same shape as the `?? 0` count
+        // above; this was its un-swept twin.
+        // venue-scoped (2026-10-10): a Magic Eden delist/fill activity is
+        // evidence about the Magic Eden listing only. OpenSea-reported rows
+        // (/api/candy-opensea-listings-indexer) are retired by that route's own
+        // per-order status check, by the supersede pass below, or by a recorded sale.
+        const { data: gone, error: goneErr } = await (supabaseAdmin as any)
+          .from("candy_listings")
+          .update({ is_active: false })
+          .eq("venue", "magic_eden")
+          .eq("is_active", true)
+          .in("token_mint", slice)
+          .lt("last_seen_at", startedAtIso)
+          .select("pda_address")
+        if (goneErr) writeErrors.push(`candy_listings deactivate: ${goneErr.message}`)
+        else deactivated += (gone ?? []).length
+        const { data: packGone, error: packGoneErr } = await (supabaseAdmin as any)
+          .from("candy_pack_listings")
+          .update({ is_active: false })
+          .eq("venue", "magic_eden")
+          .eq("is_active", true)
+          .in("token_mint", slice)
+          .lt("last_seen_at", startedAtIso)
+          .select("pda_address")
+        if (packGoneErr) writeErrors.push(`candy_pack_listings deactivate: ${packGoneErr.message}`)
+        else packDeactivated += (packGone ?? []).length
+      }
+
+      // Expired listings are dead regardless of what the feed said.
+      const nowIso = new Date().toISOString()
+      const { data: expired, error: expiredErr } = await (supabaseAdmin as any)
+        .from("candy_listings")
+        .update({ is_active: false })
+        .eq("is_active", true)
+        .lt("expiry", nowIso)
+        .select("pda_address")
+      if (expiredErr) writeErrors.push(`candy_listings expire: ${expiredErr.message}`)
+      else deactivated += (expired ?? []).length
+
+      // SUPERSEDED listings (known-issues #131, ingest half). A Candy card is a
+      // 1-of-1 token (token_size 1 on every row), so it can carry ONE live
+      // listing. When this sweep saw and wrote a listing for a mint, any OTHER
+      // active row for that mint that this sweep did NOT see is dead: the token
+      // moved, or was relisted under a new listing account. That is POSITIVE
+      // evidence — the current listing — not absence, so it keeps the rule above.
+      // It closes the hole the activities feed leaves: a delist/fill it never
+      // reported. Measured 2026-09-23: 3 mints each held a second active row last
+      // seen 2026-07-29, a DIFFERENT seller at $1.75 / $2.88 / $7.36 against live
+      // asks of $114.36 / $24.73 / $5.72. The boards would have shown a phantom floor.
+      // `.lt(last_seen_at, start)` spares every row this sweep wrote.
+      let supersededCount = 0
+      let supersedeFailed = false
+      const liveMintList = [...liveMints]
+      for (let i = 0; i < liveMintList.length; i += 200) {
+        const slice = liveMintList.slice(i, i + 200)
+        const { data: sup, error: supErr } = await (supabaseAdmin as any)
+          .from("candy_listings")
+          .update({ is_active: false })
+          .eq("is_active", true)
+          .eq("token_size", 1)
+          .in("token_mint", slice)
+          .lt("last_seen_at", startedAtIso)
+          .select("pda_address")
+        if (supErr) {
+          writeErrors.push(`candy_listings supersede: ${supErr.message}`)
+          supersedeFailed = true
+          break
+        }
+        supersededCount += (sup ?? []).length
+      }
+      // Rows actually retired always count toward `deactivated`; `superseded`
+      // itself reads null when the pass did not finish, so a partial number is
+      // never published as the whole pass.
+      deactivated += supersededCount
+      superseded = supersedeFailed ? null : supersededCount
+
+      // SOLD SINCE SEEN (2026-09-25). The activities feed is a 1,000-event window,
+      // so a fill it never shows left the ask "active" forever: measured that day,
+      // 163 card asks and 14 pack asks whose tokens had SOLD after their last
+      // sighting, 20 of 124 edition floors set by one (real floor 1.65x higher),
+      // and the pack floor a July listing. A recorded sale after last_seen_at is
+      // POSITIVE evidence — the same standard as the rule above, from our own
+      // sales tables — and it cannot touch a live relist (new listing account,
+      // first seen after the sale). Migration 20260926020528.
+      const { data: soldData, error: soldErr } = await (supabaseAdmin as any).rpc(
+        "candy_retire_listings_sold_since_seen",
+      )
+      if (soldErr) {
+        writeErrors.push(`sold-since-seen retire: ${soldErr.message}`)
+      } else {
+        const cards = Number(soldData?.cards_retired)
+        const packs = Number(soldData?.packs_retired)
+        if (Number.isFinite(cards) && Number.isFinite(packs)) {
+          soldSinceSeen = { cards_retired: cards, packs_retired: packs }
+          deactivated += cards
+          packDeactivated += packs
+        } else {
+          writeErrors.push("sold-since-seen retire: unreadable result")
+        }
+      }
+
+      // OWNER MOVED (audit_20261108): the census, walked after we first saw the
+      // ask, shows a different owner than the seller — the ask cannot fill.
+      const { data: movedData, error: movedErr } = await (supabaseAdmin as any).rpc(
+        "candy_retire_listings_owner_moved",
+      )
+      if (movedErr) {
+        writeErrors.push(`owner-moved retire: ${movedErr.message}`)
+      } else {
+        const v = {
+          cards_retired: Number(movedData?.cards_retired),
+          packs_retired: Number(movedData?.packs_retired),
+          cards_cleared: Number(movedData?.cards_cleared),
+          packs_cleared: Number(movedData?.packs_cleared),
+        }
+        if (Object.values(v).every(Number.isFinite)) {
+          ownerMoved = v
+          deactivated += v.cards_retired
+          packDeactivated += v.packs_retired
+        } else {
+          writeErrors.push("owner-moved retire: unreadable result")
+        }
+      }
+
+      // A short listings answer is no longer dangerous — it just refreshes
+      // fewer prices — so it is reported as a metric, not a failure.
+      // null = UNKNOWN (the baseline count failed), never false: "not truncated"
+      // is a claim about the feed that a missing baseline cannot support.
+      const feedLooksTruncated: boolean | null = before == null ? null : before >= 20 && rawSeen < before * 0.5
+
+      await logRun(
+        startedAtIso,
+        found,
+        written,
+        skipped,
+        writeErrors.length === 0,
+        writeErrors.length ? `${writeErrors.length} rejected write(s): ${writeErrors.slice(0, 3).join(" | ")}`.slice(0, 500) : null,
+        {
+        write_errors: writeErrors.length,
+        listings_found: found,
+        listings_upserted: written,
+        raw_listings_seen: rawSeen,
+        active_before: before,
+        active_before_error: activeBeforeErr ? String(activeBeforeErr.message ?? activeBeforeErr).slice(0, 200) : null,
+        feed_looks_truncated: feedLooksTruncated,
+        activities_seen: activitiesSeen,
+        listing_ending_mints: endedMints.size,
+        pack_asks_upserted: packWritten,
+        pack_asks_deactivated: packDeactivated,
+        skipped,
+        deactivated,
+        // Subset of `deactivated`: rows retired because this sweep saw a newer
+        // listing for the same 1-of-1 mint. null = the pass failed or never ran.
+        superseded,
+        sold_since_seen_cards: soldSinceSeen?.cards_retired ?? null,
+        sold_since_seen_packs: soldSinceSeen?.packs_retired ?? null,
+        owner_moved_cards: ownerMoved?.cards_retired ?? null,
+        owner_moved_packs: ownerMoved?.packs_retired ?? null,
+        owner_moved_cleared: ownerMoved ? ownerMoved.cards_cleared + ownerMoved.packs_cleared : null,
+        owner_moved_skipped: ownerMovedSkipped,
+        sweep_complete: sweepComplete,
+        // Distinguishes "the book ended" from "we ran out of time". Without it a
+        // budget-truncated sweep and a genuinely short book both read as
+        // sweep_complete:false, which is the same empty-vs-unavailable
+        // conflation this repo fixes everywhere else.
+        budget_exhausted: budgetExhausted,
+        pages_walked: pagesWalked,
+        me_key_present: Boolean(process.env.MAGIC_EDEN_API_KEY),
+        sol_usd: rate,
+        duration_ms: Date.now() - startedMs,
+        },
+      )
+    } catch (e) {
+      await logRun(startedAtIso, found, written, skipped, false, e instanceof Error ? e.message : String(e), {
+        listings_found: found,
+        listings_upserted: written,
+        deactivated,
+        sweep_complete: sweepComplete,
+      })
+    }
+  })
+
+  return NextResponse.json(
+    { accepted: true, collection: CANDY_MLB_SLUG, started_at: startedAtIso },
+    { status: 202 }
+  )
+}

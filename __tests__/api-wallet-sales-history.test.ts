@@ -1,0 +1,248 @@
+import { describe, it, expect, beforeEach, vi } from "vitest"
+
+// Route integration test for GET /api/wallet-sales-history. Two pre-DB 400 guards
+// fire before wallet resolution: missing wallet, and an unknown collection slug.
+// Deep legs added: the Pinnacle branch (pinnacle_sales → pinnacle_editions, text
+// IDs), username resolution via topshotGraphql (hit + unresolved-throw → 500),
+// limit clamping, buy-side attribution, the TopShot "only sells" note, the
+// editions-as-array shape, and both the sales-error and pinnacle-error 500s.
+
+const state: { rows: any; pins: any; pinIn: string[][]; gql: any; orArgs: string[] } = { rows: { data: [], error: null }, pins: { data: [], error: null }, pinIn: [], gql: {}, orArgs: [] }
+
+vi.mock("@/lib/supabase", () => {
+  const b: any = {
+    select: () => b, eq: () => b, or: (f: string) => { state.orArgs.push(f); return b }, order: () => b, limit: () => b,
+    then: (resolve: any) => resolve(state.rows),
+  }
+  // pinnacle_catalog is read separately (by render_id) — its own answer.
+  const pc: any = {
+    select: () => pc, in: (_c: string, ids: string[]) => { state.pinIn.push(ids); return pc },
+    then: (resolve: any) => resolve(state.pins),
+  }
+  return { supabaseAdmin: { from: (t: string) => (t === "pinnacle_catalog" ? pc : b) } }
+})
+vi.mock("@/lib/chains/flow/topshot", () => ({ topshotGraphql: async () => state.gql }))
+// 2026-09-29: the route resolves usernames through the shared ladder
+// (lib/chains/flow/flow-resolve → resolveTopShotUsernameCacheAware), so that is
+// the seam mocked here — found / confirmed miss / failure to look.
+vi.mock("@/lib/chains/flow/topshot-username-resolve", () => ({
+  lookupCachedTopShotUsername: async () => null,
+  resolveTopShotUsernameCacheAware: async () => {
+    if (state.gql?.down) return { found: false, reason: "topshot_gql_error", detail: "atlas: down" }
+    const a = state.gql?.getUserProfileByUsername?.publicInfo?.flowAddress ?? null
+    return a
+      ? { found: true, walletAddress: a.startsWith("0x") ? a : `0x${a}`, username: "u", source: "atlas", cacheLayer: "atlas_live" }
+      : { found: false, reason: "username_not_found_on_topshot" }
+  },
+}))
+
+import { GET } from "@/app/api/wallet-sales-history/route"
+
+const req = (u: string) => ({ nextUrl: new URL(u) }) as any
+
+beforeEach(() => {
+  state.rows = { data: [], error: null }
+  state.pins = { data: [], error: null }
+  state.pinIn = []
+  state.gql = {}
+  state.orArgs = []
+})
+
+describe("GET /api/wallet-sales-history — pre-DB guards", () => {
+  it("400s without a wallet", async () => {
+    expect((await GET(req("https://t/api/wallet-sales-history"))).status).toBe(400)
+  })
+  it("400s on an unknown collection", async () => {
+    const res = await GET(req("https://t/api/wallet-sales-history?wallet=0xabc&collection=not-real"))
+    expect(res.status).toBe(400)
+  })
+})
+
+describe("GET /api/wallet-sales-history — address normalisation", () => {
+  it("reads a Candy (Solana) base58 wallet VERBATIM and attributes its buys", async () => {
+    const sol = "BhA2Bfd8t2F2jDiUNdioGRJQt7MiaWo3Ro5H2Yt7APe2"
+    state.rows = {
+      data: [{ price_usd: 3, sold_at: "2026-10-09T00:00:00Z", marketplace: null, serial_number: 7, buyer_address: sol, seller_address: "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU", editions: { player_name: "P", set_name: "S", tier: "COMMON" } }],
+      error: null,
+    }
+    const res = await GET(req(`https://t/api/wallet-sales-history?wallet=${sol}&collection=candy-mlb`))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.wallet).toBe(sol)
+    expect(body.rows[0].side).toBe("buy")
+    expect(state.orArgs[0]).toBe(`buyer_address.eq.${sol},seller_address.eq.${sol}`)
+  })
+  it("folds a mixed-case Flow address before the exact-match filter", async () => {
+    await GET(req("https://t/api/wallet-sales-history?wallet=0xBD94CADE097E50AC&collection=nba-top-shot"))
+    expect(state.orArgs[0]).toBe("buyer_address.eq.0xbd94cade097e50ac,seller_address.eq.0xbd94cade097e50ac")
+  })
+})
+
+describe("GET /api/wallet-sales-history — sales (uuid) path", () => {
+  it("200s and maps a sale row (seller == wallet → sell)", async () => {
+    state.rows = {
+      data: [
+        {
+          price_usd: 42,
+          sold_at: "2026-07-01T00:00:00Z",
+          marketplace: "flowty",
+          serial_number: 5,
+          buyer_address: "0x0000000000000000",
+          seller_address: "0xbd94cade097e50ac",
+          editions: { player_name: "Ja Morant", set_name: "Base Set", tier: "COMMON" },
+        },
+      ],
+      error: null,
+    }
+    const res = await GET(req("https://t/api/wallet-sales-history?wallet=0xbd94cade097e50ac&collection=nba-top-shot"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.wallet).toBe("0xbd94cade097e50ac")
+    expect(body.rows).toHaveLength(1)
+    expect(body.rows[0].price_usd).toBe(42)
+    expect(body.rows[0].player_name).toBe("Ja Morant")
+    expect(body.rows[0].side).toBe("sell")
+  })
+
+  // 2026-11-03: `Number(r.price_usd) || 0` turned a sale with no recorded price into a $0 sale — and
+  // `Number(null)` is 0, so the old code could not even tell "no price" from "free". A real price survives.
+  it("a sale with no recorded price is null, never a $0 sale; a real price survives (control)", async () => {
+    state.rows = {
+      data: [
+        { price_usd: null, sold_at: "2026-07-02T00:00:00Z", marketplace: "flowty", serial_number: 6, buyer_address: "0x0000000000000000", seller_address: "0xbd94cade097e50ac", editions: { player_name: "Ja Morant", set_name: "Base Set", tier: "COMMON" } },
+        { price_usd: "17.5", sold_at: "2026-07-01T00:00:00Z", marketplace: "flowty", serial_number: 5, buyer_address: "0x0000000000000000", seller_address: "0xbd94cade097e50ac", editions: { player_name: "Ja Morant", set_name: "Base Set", tier: "COMMON" } },
+      ],
+      error: null,
+    }
+    const body = await (await GET(req("https://t/api/wallet-sales-history?wallet=0xbd94cade097e50ac&collection=nba-top-shot"))).json()
+    expect(body.rows[0].price_usd).toBeNull()
+    expect(body.rows[1].price_usd).toBe(17.5)
+  })
+
+  it("attributes a buy when buyer == wallet, and tolerates editions-as-array", async () => {
+    state.rows = {
+      data: [
+        {
+          price_usd: 10,
+          sold_at: "2026-07-02T00:00:00Z",
+          marketplace: null,
+          serial_number: null,
+          buyer_address: "0xBD94CADE097E50AC", // upper-cased → still matches (lowercased compare)
+          seller_address: "0x1111111111111111",
+          editions: [{ player_name: "Anthony Edwards", set_name: "S4", tier: "RARE" }],
+        },
+      ],
+      error: null,
+    }
+    // laliga-golazos → not TopShot, so no note even though a single sell/buy
+    const body = await (await GET(req("https://t/api/wallet-sales-history?wallet=0xbd94cade097e50ac&collection=laliga-golazos"))).json()
+    expect(body.rows[0].side).toBe("buy")
+    expect(body.rows[0].player_name).toBe("Anthony Edwards")
+    expect(body.note).toBeUndefined()
+  })
+
+  it("adds the TopShot 'only sells' note when every row is a sell", async () => {
+    state.rows = {
+      data: [
+        { price_usd: 5, sold_at: "2026-07-03T00:00:00Z", marketplace: "flowty", serial_number: 1, buyer_address: "0x2222222222222222", seller_address: "0xbd94cade097e50ac", editions: null },
+      ],
+      error: null,
+    }
+    const body = await (await GET(req("https://t/api/wallet-sales-history?wallet=0xbd94cade097e50ac&collection=nba-top-shot"))).json()
+    expect(body.note).toMatch(/Buy-side wallet identities/)
+    expect(body.rows[0].player_name).toBeNull() // null edition tolerated
+  })
+
+  it("clamps an out-of-range limit and still returns 200", async () => {
+    const body = await (await GET(req("https://t/api/wallet-sales-history?wallet=0xbd94cade097e50ac&collection=nba-top-shot&limit=9999"))).json()
+    expect(Array.isArray(body.rows)).toBe(true)
+  })
+
+  it("sales error → 500", async () => {
+    state.rows = { data: null, error: { message: "sales down" } }
+    expect((await GET(req("https://t/api/wallet-sales-history?wallet=0xbd94cade097e50ac&collection=nba-top-shot"))).status).toBe(500)
+  })
+})
+
+describe("GET /api/wallet-sales-history — Pinnacle (text id) path", () => {
+  // INVERTED 2026-11-03. This case used to assert the name came from the joined pinnacle_editions
+  // row — which is SET-LEVEL (one character per key), so every pin in a key wore that one name
+  // (live: 19,419 of 24,170 Pinnacle sales in 90 d; a Grogu sale read "Luke Skywalker"). The PIN
+  // is the pinnacle_catalog row its render_id names.
+  const sale = (over: Record<string, unknown> = {}) => ({
+    sale_price_usd: 88,
+    sold_at: "2026-07-04T00:00:00Z",
+    source: "pinnacle-direct",
+    serial_number: 12,
+    buyer_address: "0xbd94cade097e50ac",
+    seller_address: "0x3333333333333333",
+    render_id: "OEV1-D23-GROG-S1",
+    pinnacle_editions: { set_name: "Disney • D23 2026 Vol.1", edition_type: "Open Event Edition" },
+    ...over,
+  })
+  const url = "https://t/api/wallet-sales-history?wallet=0xbd94cade097e50ac&collection=disney-pinnacle"
+
+  it("names a sale from the PIN its render_id names, never the set-level edition's character", async () => {
+    // The set-level row's one character must not reach the response even if the embed carries it.
+    state.rows = { data: [sale({ pinnacle_editions: { character_name: "Luke Skywalker", set_name: "Disney • D23 2026 Vol.1", edition_type: "Open Event Edition" } })], error: null }
+    state.pins = { data: [{ render_id: "OEV1-D23-GROG-S1", character_name: "Grogu", set_name: "Disney • D23 2026 Vol.1", edition_type: "Open Event Edition" }], error: null }
+    const body = await (await GET(req(url))).json()
+    expect(state.pinIn).toEqual([["OEV1-D23-GROG-S1"]])
+    expect(body.rows[0].player_name).toBe("Grogu")
+    expect(JSON.stringify(body)).not.toContain("Luke Skywalker")
+    expect(body.rows[0].set_name).toBe("Disney • D23 2026 Vol.1")
+    expect(body.rows[0].tier).toBe("Open Event Edition")
+    expect(body.rows[0].price_usd).toBe(88)
+    expect(body.rows[0].side).toBe("buy")
+    expect(body.note).toBeUndefined() // Pinnacle never gets the TopShot note
+  })
+
+  it("a sale with no render_id (or no catalog row) has NO character name — set/tier still from its key", async () => {
+    state.rows = { data: [sale({ render_id: null, pinnacle_editions: { character_name: "Luke Skywalker", set_name: "Disney • D23 2026 Vol.1", edition_type: "Open Event Edition" } })], error: null }
+    const body = await (await GET(req(url))).json()
+    expect(state.pinIn).toEqual([]) // nothing to look up
+    expect(body.rows[0].player_name).toBeNull()
+    expect(JSON.stringify(body)).not.toContain("Luke Skywalker")
+    expect(body.rows[0].set_name).toBe("Disney • D23 2026 Vol.1")
+    expect(body.rows[0].tier).toBe("Open Event Edition")
+  })
+
+  it("a failed catalog read fails the request (5xx), never nameless rows", async () => {
+    state.rows = { data: [sale()], error: null }
+    state.pins = { data: null, error: { message: "catalog down" } }
+    const res = await GET(req(url))
+    expect(res.status).toBeGreaterThanOrEqual(500)
+  })
+
+  it("pinnacle error → 500", async () => {
+    state.rows = { data: null, error: { message: "pinnacle down" } }
+    expect((await GET(req("https://t/api/wallet-sales-history?wallet=0xbd94cade097e50ac&collection=disney-pinnacle"))).status).toBe(500)
+  })
+})
+
+describe("GET /api/wallet-sales-history — username resolution", () => {
+  it("resolves a @username to its flowAddress via the shared ladder", async () => {
+    state.gql = { getUserProfileByUsername: { publicInfo: { flowAddress: "bd94cade097e50ac" } } } // no 0x → route prefixes
+    state.rows = { data: [], error: null }
+    const body = await (await GET(req("https://t/api/wallet-sales-history?wallet=@trevor&collection=nba-top-shot"))).json()
+    expect(body.wallet).toBe("0xbd94cade097e50ac")
+  })
+
+  it("400s with actionable copy when the username cannot be resolved", async () => {
+    state.gql = { getUserProfileByUsername: { publicInfo: { flowAddress: null } } }
+    const res = await GET(req("https://t/api/wallet-sales-history?wallet=nobody&collection=nba-top-shot"))
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.code).toBe("not_found")
+    expect(body.error).toMatch(/wallet or username/i)
+  })
+
+  it("503s — concluding nothing about the username — when the lookup cannot reach its source", async () => {
+    state.gql = { down: true }
+    const res = await GET(req("https://t/api/wallet-sales-history?wallet=someone&collection=nba-top-shot"))
+    expect(res.status).toBe(503)
+    const body = await res.json()
+    expect(body.code).toBe("upstream_unavailable")
+    expect(body.error).not.toMatch(/check the spelling/i)
+  })
+})

@@ -1,0 +1,50 @@
+-- ─────────────────────────────────────────────────────────────────────────────
+-- jobid 464: the leg-2 selection query had no index for its third NOT EXISTS.
+--
+-- ── MY OWN FALSIFIER FIRED, AND THIS IS WHERE IT POINTED ────────────────────
+-- Migration 20260920171500 sampled the resolver's 33 s diagnostic count and
+-- predicted the ticks would start surviving. They did not: the 10:09 and 10:14
+-- PT ticks ran with `diag_sampled: false` — no diagnostic at all — and still
+-- died at 120 s. The header of that migration said, in advance, that this
+-- outcome means the cost is elsewhere and that the answer is NOT to re-cut
+-- items. So: not re-cut.
+--
+-- ⭐ What made the diagnosis possible was the OTHER half of that migration. The
+-- run records now read `mapped_from_events: 10, probes_dispatched: 0` on every
+-- killed tick — leg 1 completes, leg 2 dispatches nothing and dies. Before the
+-- R118 handler those ticks logged NOTHING, so this was invisible. The visibility
+-- fix paid for itself even though the performance prediction was wrong.
+--
+-- ── THE ACTUAL COST ─────────────────────────────────────────────────────────
+-- Leg 2's candidate query carries:
+--   NOT EXISTS (SELECT 1 FROM topshot_atlas_market_requests q
+--                WHERE q.error = '__nft__' || us.nft_id AND q.drained_at IS NULL)
+-- and `topshot_atlas_market_requests` carries only a pkey on `request_id` and a
+-- partial on `dispatched_at`. There is NO index on `error`, so that subquery is
+-- a fresh scan of the table for every candidate row — and the candidate set is
+-- the ~16,800-row unresolved backlog. Measured: the leg-2 query alone exceeds
+-- the 120 s gateway budget when run by hand.
+--
+-- ── WHY THIS IS SAFE TO BUILD IN-HOURS, WHEN LAST NIGHT'S WERE NOT ──────────
+-- 2026-09-20 01:14–01:45 PT, index builds on ~300 MB+ tables produced six
+-- whole-minute pg_cron launcher blackouts. The rule taken from that is to size
+-- the build, not to avoid builds. This table is **640 kB heap / 4,614 rows, of
+-- which 2 are open** (`drained_at IS NULL`), so the partial index is a few
+-- kilobytes and the ACCESS EXCLUSIVE lock is held for milliseconds. Plain
+-- CREATE INDEX rather than CONCURRENTLY is deliberate: CIC cannot run inside a
+-- migration transaction, and at this size it would buy nothing.
+--
+-- The index matches the subquery's predicate exactly, so it stays tiny no
+-- matter how large the table's history grows -- only OPEN requests are indexed.
+--
+-- EXIT: jobid 464 ticks stop dying at 120 s; probes_dispatched > 0 on ticks that
+--       previously read 0; logged runs/hour rises toward 12 and open_unresolved
+--       falls faster than the measured -53/h.
+-- FALSIFIER: if ticks still die at 120 s with probes_dispatched = 0, the cost is
+--       one of the other two NOT EXISTS arms (events has idx_tame_nft, so look
+--       at nft_edition_map) or the regex/jsonb filters -- measure before acting.
+-- REVERT: DROP INDEX IF EXISTS public.idx_tamr_error_open;
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE INDEX IF NOT EXISTS idx_tamr_error_open
+  ON public.topshot_atlas_market_requests (error)
+  WHERE drained_at IS NULL;

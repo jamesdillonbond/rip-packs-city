@@ -1,0 +1,59 @@
+name: TopShot Sales History Backfill — drain ASK_ONLY sales-ingest gap
+on:
+  # R61 (decided 2026-10-25): GitHub runs ~7-8 of these a day (scheduler-liveness), not
+  # what the cron asks. The cron is a ceiling, not the cadence; it is NOT lowered to match,
+  # because a lower ask gets fewer runs (8/day asks get 5-7, 4/day asks get 3-4).
+  schedule:
+    # Off-anchor minutes (never :00/:20/:40), clear of the :45 wave slots and the
+    # :15 TFP/badge-tag slots. Each tick drains ≤15 target editions synchronously
+    # (≤~22s) and no-ops fast when the queue is empty. Lives on GHA (curl
+    # --max-time 600), NOT cron-job.org — no 4am console dependency and no 30s
+    # client cap. Handoff: docs/handoff-2026-06-11-askonly-phase2-greenlight.md
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "drain (default) | seed (materialize target set) | dryRun (probe one edition, write nothing)"
+        type: choice
+        options:
+          - drain
+          - seed
+          - dryRun
+        default: drain
+      edition:
+        description: "setID:playID — required only for dryRun"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      # The composite below is local, so the tree must be checked out first.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Resolve the URL for this mode
+        id: url
+        env:
+          MODE: ${{ github.event.inputs.mode }}
+          EDITION: ${{ github.event.inputs.edition }}
+        run: |
+          if [ -z "$MODE" ]; then MODE="drain"; fi
+          BASE="https://www.rippackscity.com/api/cron/topshot-sales-history-backfill"
+          case "$MODE" in
+            seed)   URL="$BASE?seed=true" ;;
+            dryRun) URL="$BASE?dryRun=true&edition=${EDITION}" ;;
+            *)      URL="$BASE" ;;
+          esac
+          echo "mode=$MODE url=$URL"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+      - name: Tick
+        uses: ./.github/actions/rpc-call
+        with:
+          url: ${{ steps.url.outputs.url }}
+          token: ${{ secrets.INGEST_SECRET_TOKEN }}
+          label: TopShot sales-history backfill
+          max-time: "600"

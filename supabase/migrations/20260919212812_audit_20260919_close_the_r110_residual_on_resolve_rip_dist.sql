@@ -1,0 +1,31 @@
+-- R110 residual, closed 2026-09-19 PT. `rpc-allday-resolve-rip-dist-api` (jobid 26)
+-- was the one edge lane left carrying "could not identify its target table", which is
+-- a GAP rather than a decision -- and a gap in a watchlist reads as coverage.
+--
+-- ⚠ What is measured, and what is NOT. I still cannot prove which relation the edge
+-- function writes (its source is not in this repo; `get_edge_function` hands back a live
+-- gate key, so it is not a safe read). What IS measured is that there is no pending work
+-- of this lane's description:
+--
+--   * public.pack_rips for All Day (collection dee28451-...): 2,816,781 rows, of which
+--     2,816,781 carry a dist_id and ZERO do not. The queue a "resolve rip dist" lane
+--     would drain is empty.
+--   * public.allday_dist_opened_expiry holds 104 rows whose newest opened_updated_at is
+--     13.8 h old -- not an hourly lane's output either.
+--   * cron.job_run_details: 46 succeeded / 2 failed in 48 h, last 14:17 PT. ⚠ That is
+--     the DISPATCH succeeding. net.http_get succeeds when the request is ENQUEUED and
+--     says nothing about whether the function did work -- which is the whole reason
+--     this watchlist exists.
+--
+-- ⭐ So the decision is the same one already recorded for its sibling
+-- `rpc-allday-dist-opened-backfill`: an outcome-freshness check here would be
+-- PERMANENTLY STALE, and a permanently-stale instrument is indistinguishable from a
+-- broken one. `observed_via = 'none'` is now a REASONED, DATED decision rather than an
+-- unfinished identification.
+--
+-- ⚠ EXIT CONDITION, so this does not calcify: if All Day rips ever appear with a NULL
+-- dist_id again, this lane HAS a queue, and it should be moved to outcome_freshness on
+-- pack_rips at that point. Re-test with the count above; do not re-read this note.
+UPDATE public.edge_lane_watch
+SET note = 'NO OUTCOME CHECK, and this is a DECISION not a gap (2026-09-19). Target relation still unproven (edge fn source not in repo; get_edge_function leaks a live gate key so it is not a safe read), but there is NO PENDING WORK of its description: pack_rips for All Day is 2,816,781 rows with 2,816,781 dist_id set and ZERO null. An outcome-freshness check would be permanently stale, and a permanently-stale instrument is indistinguishable from a broken one - same call as rpc-allday-dist-opened-backfill. Dispatch is healthy (46 ok / 2 failed in 48h) but net.http_get success only proves the request was ENQUEUED. EXIT CONDITION: if any All Day rip ever shows a NULL dist_id, this lane has a queue - move it to outcome_freshness on pack_rips. Re-test the count; do not re-read this note.'
+WHERE jobname = 'rpc-allday-resolve-rip-dist-api';

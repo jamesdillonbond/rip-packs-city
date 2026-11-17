@@ -1,0 +1,159 @@
+// app/api/cost-basis/route.ts
+//
+// GET /api/cost-basis?wallet=0x...&collection=nfl-all-day
+// Returns per-moment cost basis for a wallet via get_wallet_cost_basis() RPC.
+// Bypasses PostgREST 1000-row cap.
+
+import { readAcquisitionData } from "@/lib/acquisitions/read-acquisition-data"
+import { NextRequest, NextResponse } from "next/server"
+import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
+import { createClient } from "@supabase/supabase-js"
+import { getCollection } from "@/lib/collections"
+import { requireOwnedKey } from "@/lib/auth/owner-key-guard"
+
+/**
+ * Resolve a collection slug to its id.
+ *
+ * ⚠ RETURNS A DISCRIMINATED RESULT BECAUSE `null` MEANT TWO OPPOSITE THINGS.
+ * This used to return `string | null`, and the caller reads a null as "no
+ * collection filter was asked for" — `if (collectionId) rpcParams.p_collection_id = …`.
+ * But a FAILED `collection_config` read also produced null, and the failure mode
+ * that creates is not an empty answer: the cost-basis RPC then runs UNSCOPED and
+ * returns every collection the wallet holds, rendered inside a single-collection
+ * tab. **A different question, answered silently, about the reader's own money.**
+ *
+ * On the live path the two cases are not even close: CollectionTabClient always
+ * sends `&collection=<slug>` taken from the route param, so `slug` is non-null and
+ * `getCollection` resolves — which means a null from here can ONLY be the failed
+ * read. `ok: false` now makes the caller say so instead of widening the scope.
+ */
+async function resolveCollectionId(
+  supabase: any,
+  slug: string | null,
+): Promise<{ id: string | null; ok: boolean; error?: unknown }> {
+  if (!slug) return { id: null, ok: true }
+  const collectionObj = getCollection(slug)
+  const contractName = collectionObj?.flowContractName
+  if (!contractName) return { id: null, ok: true }
+  const { data, error } = await boundedRead(supabase
+    .from("collection_config")
+    .select("collection_id")
+    .eq("flow_contract_name", contractName)
+    .single(), "api/cost-basis/collection_config")
+  if (error) return { id: null, ok: false, error }
+  return { id: data?.collection_id ?? null, ok: true }
+}
+
+export async function GET(req: NextRequest) {
+  const wallet = req.nextUrl.searchParams.get("wallet")?.trim()
+  if (!wallet) {
+    return NextResponse.json({ error: "wallet param required" }, { status: 400 })
+  }
+
+  // ⛔ 2026-10-11 — spend / cost basis is OWNER-ONLY (proxy.ts classifies it so,
+  // and keeps cost-basis-summary off the anon carve-out for that reason), yet
+  // this route took `?wallet=` from any signed-in session with no ownership
+  // check: register, then read anyone's acquisition prices. The guard resolves
+  // the wallet through saved_wallets ownership (verified, else first saver) and
+  // fails CLOSED. The Collection tab's consumer already treats a non-OK answer
+  // as "no cost basis to show" (empty map → panel suppressed, em dashes), so a
+  // 403 on someone else's wallet understates rather than asserts.
+  const gate = await requireOwnedKey(wallet)
+  if (gate instanceof Response) return gate
+
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+
+  const collectionSlug = req.nextUrl.searchParams.get("collection")?.trim() || null
+
+  // ⛔ 2026-09-19 — A COLLECTION WE TRACK NO ACQUISITIONS FOR GOT AN UNTYPED
+  // EMPTY, which reads as "you have no tracked acquisitions" when the truth is
+  // "we do not track acquisitions for this collection at all". Two different
+  // statements; only one of them is about the reader's wallet.
+  //
+  // 📏 Measured 2026-09-19: `moment_acquisitions` holds 1,010,656 rows and
+  // EVERY one belongs to one of the five Flow collections (Top Shot 895,785 ·
+  // All Day 80,917 · Pinnacle 18,757 · Golazos 13,920 · UFC 1,277). Candy MLB
+  // has zero, and no pipeline produces them.
+  //
+  // ⚠ KEYED ON THE COLLECTION, NOT THE ADDRESS, deliberately: the question
+  // "do we have cost basis here" is a fact about the collection, and every
+  // collection we do track is a Flow one. That is also why this is NOT fixing
+  // the `0x` prepend below — with this branch in place a base58 wallet never
+  // reaches it, and "fixing" an unreachable line would be untestable dead code.
+  //
+  // Shape matches the house pattern rather than inventing one: /api/wallet-cost-
+  // basis already answers 200 with `reason: "cost_basis_unavailable"` for a
+  // collection it cannot price. Not-applicable is not an error.
+  if (collectionSlug) {
+    const obj = getCollection(collectionSlug)
+    // An unknown slug is refused, not run unscoped: resolveCollectionId answers
+    // { id: null, ok: true } for it, so every collection's acquisitions came
+    // back under the requested label (2026-10-10 audit).
+    if (!obj) {
+      return NextResponse.json(
+        { error: "unsupported_collection", collection: collectionSlug },
+        { status: 400, headers: { "Cache-Control": "no-store" } },
+      )
+    }
+    if (!obj.flowContractName) {
+      return NextResponse.json(
+        { acquisitions: [], reason: "cost_basis_unavailable", collection: collectionSlug },
+        { headers: { "Cache-Control": "public, max-age=300, stale-while-revalidate=600" } }
+      )
+    }
+  }
+
+  const normalized = wallet.startsWith("0x") ? wallet : "0x" + wallet
+  const resolved = await resolveCollectionId(supabase as any, collectionSlug)
+  if (!resolved.ok) {
+    // Widening the scope is strictly worse than returning nothing here: the caller
+    // would render another collection's cost basis as this one's.
+    return apiErrorResponse(resolved.error, "api/cost-basis")
+  }
+  const collectionId = resolved.id
+
+  const rpcParams: Record<string, any> = { p_wallet: normalized }
+  if (collectionId) rpcParams.p_collection_id = collectionId
+
+  const { data, error } = await boundedRead((supabase as any).rpc("get_wallet_cost_basis", rpcParams), "api/cost-basis/get_wallet_cost_basis")
+
+  // Enrich with acquisition_method from moment_acquisitions
+  if (data && Array.isArray(data)) {
+    const nftIds = data.map((r: any) => r.nft_id).filter(Boolean)
+    if (nftIds.length > 0) {
+      // Deliberately NOT fatal, and the difference from the resolve above is the
+      // point: a missing acquisition_method renders NOTHING in SlabFooter (its
+      // "PACK PULL"/"MINTED" chip is gated on the value being present), so a failed
+      // read here degrades a field without making a false claim. It was silent
+      // though — logging is what was missing, not a status code.
+      // 2026-11-14: CHUNKED. One call with every id (14,888 on a founder wallet) came back
+      // clamped at PostgREST's 1,000 rows, so 13,888 moments lost their acquisition_method and
+      // with it the "Loan Default" label and the trusted P&L basis. See readAcquisitionData.
+      // The SAME scope as the cost-basis read above; NULL (no ?collection) keeps
+      // the wallet-wide read. moment ids collide across collections, INCLUDING inside one wallet (#142; 41 rows / 11 wallets 2026-10-31)
+      const { rows: acqData, error: acqErr } = await readAcquisitionData({ rpc: (fn, args) => boundedRead((supabase as any).rpc(fn, args), "api/cost-basis/get_wallet_acquisition_data_scoped") }, normalized, nftIds, collectionId ?? null)
+      if (acqErr) console.error("[api/cost-basis] acquisition enrich:", acqErr)
+      if (!acqErr) {
+        const acqMap = new Map<string, string>()
+        for (const row of acqData) {
+          if (!acqMap.has(row.moment_id)) acqMap.set(row.moment_id, row.acquisition_method)
+        }
+        for (const item of data) {
+          item.acquisition_method = acqMap.get(item.nft_id) ?? null
+        }
+      }
+    }
+  }
+  if (error) {
+    return apiErrorResponse(error, "api/cost-basis");
+  }
+
+  return NextResponse.json(
+    { acquisitions: data ?? [] },
+    { headers: { "Cache-Control": "private, max-age=60" } }
+  )
+}

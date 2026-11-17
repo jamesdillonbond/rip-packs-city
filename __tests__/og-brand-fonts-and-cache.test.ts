@@ -1,0 +1,371 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import fs from "node:fs"
+import path from "node:path"
+import { repoRelative } from "./helpers/source-files"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
+
+// ─────────────────────────────────────────────────────────────────────────────
+// lib/og/brand-fonts — the shared loader, and a ratchet on the cards using it.
+//
+// Two separate failures live here, and both had already happened once:
+//
+// 1. NO CACHE HEADERS. 42 of 43 cards were `force-dynamic` with no
+//    Cache-Control, so every crawler fetch re-ran a satori render plus its DB
+//    reads. X's crawler abandons a slow image, so this is not just cost — it is
+//    links that unfurl with no picture.
+//
+// 2. THE FONTS SILENTLY NOT LOADING. The loader is fail-soft by contract, so a
+//    card that never gets a font still renders a perfect PNG. Every "does it
+//    render" assertion passes straight through the regression. The per-card
+//    proof (bytes differ with fonts on vs off) lives in
+//    api-og-profile-brand-fonts; here we pin the loader's own contract and
+//    ratchet how many cards are wired to it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const OG_DIR = path.join(process.cwd(), "app", "api", "og")
+
+function ogRouteFiles(dir: string, acc: string[] = []): string[] {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name)
+    if (e.isDirectory()) ogRouteFiles(p, acc)
+    else if (e.name === "route.tsx") acc.push(p)
+  }
+  return acc
+}
+
+const ttf = (n: string) => fs.readFileSync(path.join(process.cwd(), "public", "fonts", n))
+const toAb = (b: Buffer) => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)
+
+function stubFetch(mode: "font" | "html" | "404" | "throw") {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (u: unknown) => {
+      if (mode === "throw") throw new Error("offline")
+      if (mode === "404") return { ok: false, status: 404 } as never
+      const body =
+        mode === "html"
+          ? // The exact shape that broke production: an SSO/login interstitial
+            // served with a 200, which `res.ok` and `byteLength > 0` both accept.
+            Buffer.from("<!DOCTYPE html><html><body>Sign in</body></html>")
+          : ttf(String(u).endsWith("ShareTechMono-Regular.ttf")
+              ? "ShareTechMono-Regular.ttf"
+              : "BarlowCondensed-Black.ttf")
+      return { ok: true, status: 200, arrayBuffer: async () => toAb(body) } as never
+    }),
+  )
+}
+
+async function freshModule() {
+  vi.resetModules()
+  return import("@/lib/og/brand-fonts")
+}
+
+beforeEach(() => {
+  vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://www.rippackscity.com")
+  // The HTTP path under test runs only off the Node runtime; vitest.setup.ts sets
+  // NEXT_RUNTIME=nodejs so the rest of the suite reads fonts from disk. Cleared, not
+  // "edge" (that switches next/og to a wasm build Node cannot load).
+  vi.stubEnv("NEXT_RUNTIME", "")
+})
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
+})
+
+describe("brandFonts", () => {
+  it("returns both faces from real font bytes", async () => {
+    stubFetch("font")
+    const { brandFonts, DISPLAY_FONT, MONO_FONT } = await freshModule()
+    const f = await brandFonts()
+    expect(f?.map((x) => x.name)).toEqual([DISPLAY_FONT, MONO_FONT])
+    expect(f?.every((x) => x.data.byteLength > 10_000)).toBe(true)
+  })
+
+  it("REJECTS an HTML body served with a 200", async () => {
+    // The production incident: /fonts/*.ttf sat behind the auth wall, so the
+    // fetch got the sign-in page. satori then throws `Unsupported OpenType
+    // signature <!DO` from inside the response STREAM — after the handler has
+    // returned, where no try/catch in the route can reach it. Validating the
+    // response was never enough; the bytes have to be checked.
+    stubFetch("html")
+    const { brandFonts } = await freshModule()
+    expect(await brandFonts()).toBeUndefined()
+  })
+
+  it.each([["404"], ["throw"]] as const)("degrades to undefined on %s", async (mode) => {
+    stubFetch(mode)
+    const { brandFonts } = await freshModule()
+    expect(await brandFonts()).toBeUndefined()
+  })
+
+  it("NEVER rejects — 39 call sites rely on this instead of guarding it", async () => {
+    // Each of those call sites briefly carried `.catch(() => undefined)`. It was
+    // unreachable, and 39 dead arrow functions were enough to push the primary
+    // gate's FUNCTION coverage under threshold. Removing them is only safe while
+    // this holds, so it is asserted directly rather than left implied by the
+    // two cases above.
+    stubFetch("throw")
+    const { brandFonts } = await freshModule()
+    await expect(brandFonts()).resolves.toBeUndefined()
+    // ...and the memo must not latch a rejected promise for every later caller.
+    await expect(brandFonts()).resolves.toBeUndefined()
+  })
+
+  it("BOUNDS the fetch — an unbounded one hangs every card until maxDuration", async () => {
+    // The failure mode is a HANG, not a rejection, so the "never rejects"
+    // guarantee above says nothing about it: `catch` cannot catch a stall. The
+    // promise is memoised at module scope and 39 call sites await it, so one
+    // stalled connection takes the whole OG surface down until the lambda dies.
+    //
+    // Observed in CI on 2026-08-29 before this was bounded: the OG render sweep
+    // timed out at 60,000 ms on a card that renders in 83 ms locally.
+    stubFetch("font")
+    const { brandFonts, FONT_FETCH_TIMEOUT_MS } = await freshModule()
+    await brandFonts()
+
+    const calls = (globalThis.fetch as any).mock.calls
+    expect(calls.length).toBeGreaterThan(0)
+    for (const [, init] of calls) {
+      expect(init?.signal, "every font fetch must carry an abort signal").toBeInstanceOf(AbortSignal)
+    }
+    // A bound that is not actually a bound is the thing to guard against: a
+    // signal that never fires is the unbounded case wearing a signal.
+    expect(FONT_FETCH_TIMEOUT_MS).toBeGreaterThan(0)
+    expect(FONT_FETCH_TIMEOUT_MS).toBeLessThanOrEqual(15_000)
+  })
+
+  it("degrades to undefined when the bound fires, exactly as a 404 does", async () => {
+    // What a real timeout produces at the call site. Asserted behaviourally
+    // rather than by waiting 5 real seconds — the point is that an abort lands
+    // in the same catch as every other failure, not that the clock works.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw Object.assign(new Error("The operation was aborted due to timeout"), {
+          name: "TimeoutError",
+        })
+      }),
+    )
+    const { brandFonts } = await freshModule()
+    await expect(brandFonts()).resolves.toBeUndefined()
+  })
+
+  it("memoizes, so a warm invocation pays the fetch once", async () => {
+    stubFetch("font")
+    const { brandFonts } = await freshModule()
+    await brandFonts()
+    const calls = (globalThis.fetch as any).mock.calls.length
+    await brandFonts()
+    expect((globalThis.fetch as any).mock.calls.length).toBe(calls)
+  })
+
+  // 2026-11-02: a FAILED load used to be memoized too, pinning the fallback face on
+  // every card a warm instance rendered until a cold start.
+  it("does NOT memoize a failure: the next call retries and gets the fonts", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 503 }) as never))
+    const { brandFonts } = await freshModule()
+    await expect(brandFonts()).resolves.toBeUndefined()
+    await Promise.resolve()
+    stubFetch("font")
+    const fonts = await brandFonts()
+    expect(fonts).toHaveLength(2)
+  })
+
+  it("brandFamilies falls back to a generic face rather than a missing one", async () => {
+    const { brandFamilies, DISPLAY_FONT, MONO_FONT } = await freshModule()
+    expect(brandFamilies(undefined)).toEqual({ display: "sans-serif", mono: "sans-serif" })
+    const named = brandFamilies([{ name: DISPLAY_FONT }] as never)
+    expect(named).toEqual({ display: DISPLAY_FONT, mono: MONO_FONT })
+  })
+})
+
+describe("brandFonts reads its own disk on the Node runtime (2026-10-04)", () => {
+  // ~75,000 self-fetches a week of /fonts/*.ttf came from our own OG lambdas
+  // (user agent `node`). On the Node runtime the loader now reads public/fonts
+  // from the function's disk; HTTP stays as the fallback and for edge cards.
+  afterEach(() => vi.doUnmock("node:fs/promises"))
+
+  it("on NEXT_RUNTIME=nodejs the faces come from disk and fetch is never called", async () => {
+    vi.stubEnv("NEXT_RUNTIME", "nodejs")
+    stubFetch("throw")
+    const { brandFonts, DISPLAY_FONT, MONO_FONT } = await freshModule()
+    const f = await brandFonts()
+    expect(f?.map((x) => x.name)).toEqual([DISPLAY_FONT, MONO_FONT])
+    expect(f?.[0].data.byteLength).toBe(ttf("BarlowCondensed-Black.ttf").byteLength)
+    expect(f?.[1].data.byteLength).toBe(ttf("ShareTechMono-Regular.ttf").byteLength)
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it("a failed disk read falls back to the HTTP fetch, never to no fonts", async () => {
+    vi.stubEnv("NEXT_RUNTIME", "nodejs")
+    vi.doMock("node:fs/promises", () => ({ readFile: async () => { throw new Error("ENOENT") } }))
+    stubFetch("font")
+    const { brandFonts } = await freshModule()
+    expect((await brandFonts())?.length).toBe(2)
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it("disk bytes that are not a font fall back to HTTP too (validated, like the fetch)", async () => {
+    vi.stubEnv("NEXT_RUNTIME", "nodejs")
+    vi.doMock("node:fs/promises", () => ({ readFile: async () => Buffer.from("<!DOCTYPE html>") }))
+    stubFetch("font")
+    const { brandFonts } = await freshModule()
+    expect((await brandFonts())?.length).toBe(2)
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it("off the Node runtime (edge) it never touches the disk path", async () => {
+    vi.stubEnv("NEXT_RUNTIME", "edge")
+    vi.doMock("node:fs/promises", () => ({ readFile: async () => { throw new Error("must not be called on edge") } }))
+    stubFetch("font")
+    const { brandFonts } = await freshModule()
+    expect((await brandFonts())?.length).toBe(2)
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it("next.config traces both font files into every OG function", () => {
+    const cfg = fs.readFileSync(path.join(process.cwd(), "next.config.ts"), "utf8")
+    expect(cfg).toMatch(/outputFileTracingIncludes/)
+    expect(cfg).toContain('"/api/og/**/*"')
+    expect(cfg).toContain("./public/fonts/BarlowCondensed-Black.ttf")
+    expect(cfg).toContain("./public/fonts/ShareTechMono-Regular.ttf")
+    expect(cfg).toContain('"/api/profile/trophy-case/pdf"')
+  })
+
+  it("the trophy-case PDF reads the same files from disk before it fetches", () => {
+    const src = fs.readFileSync(path.join(process.cwd(), "app/api/profile/trophy-case/pdf/route.tsx"), "utf8")
+    const disk = src.indexOf("await readBrandFontsFromDisk()")
+    const http = src.indexOf("await fetchBytes(`${BASE_URL}/fonts/")
+    expect(disk).toBeGreaterThan(-1)
+    expect(http).toBeGreaterThan(disk)
+  })
+})
+
+describe("OG card adoption ratchet", () => {
+  const files = ogRouteFiles(OG_DIR)
+  const sources = files.map((f) => ({ f, src: fs.readFileSync(f, "utf8") }))
+
+  it("finds the OG tree (not vacuous)", () => {
+    expect(files.length).toBeGreaterThan(40)
+  })
+
+  const branded = sources.filter((s) => s.src.includes("@/lib/og/brand-fonts"))
+  // The five entity cards import nothing themselves — they render through
+  // lib/og/entity-card.tsx, which is branded and asserted below.
+  const viaEntityCard = sources.filter((s) => s.src.includes("@/lib/og/entity-card"))
+  // A thin route that re-serves a SIBLING card (2026-10-27: /allday-squeeze → ../squeeze/route with the
+  // All Day leg) is branded iff the card it delegates to is — resolved and checked, never assumed.
+  const delegateTarget = (s: { f: string; src: string }) => {
+    const m = /from\s+"\.\.\/([a-z0-9-]+)\/route"/.exec(s.src)
+    return m ? sources.find((t) => t.f === path.join(path.dirname(path.dirname(s.f)), m[1], "route.tsx")) : undefined
+  }
+  const viaSharedCard = sources.filter((s) => {
+    const target = delegateTarget(s)
+    return target != null && branded.includes(target)
+  })
+
+  /**
+   * Does this source take the SHARED cache policy?
+   *
+   * ⚠ TWO SPELLINGS, ONE PROPERTY. `OG_CACHE_HEADERS` is the constant; since
+   * 2026-09-13 a card that renders degraded picks between it and the short
+   * policy through `ogCacheHeaders(...)` — the same module, the same decision,
+   * a different call shape. Pinning the constant's NAME reddened on a change
+   * that strictly improved the thing this guard exists to protect, which is the
+   * signature of a guard pinning a spelling rather than a property. The ban on
+   * hand-written headers below is what keeps this pair from becoming a hole.
+   */
+  const usesSharedCachePolicy = (src: string) =>
+    src.includes("OG_CACHE_HEADERS") || src.includes("ogCacheHeaders(")
+
+  it("EVERY OG card is branded, directly or through the shared entity renderer", () => {
+    // ⚠ This started life as a floor ("at least N") while 29 insights cards
+    // were still unconverted. It is a COMPLETENESS check now that the family is
+    // finished, and the upgrade is the point: a floor cannot tell you a NEW
+    // card shipped unbranded, because adding one never lowers the count. Every
+    // social card RPC emits either loads the fonts or delegates to something
+    // that does — and a 44th route has to do one or the other to land.
+    const uncovered = sources
+      .filter((s) => !branded.includes(s) && !viaEntityCard.includes(s) && !viaSharedCard.includes(s))
+      // `process.cwd() + "/"` never matches on Windows (join yields
+      // backslashes), so an offender would have been REPORTED as an absolute
+      // path. Latent rather than failing — this list is empty today — but it is
+      // the same defect that made the entity-sections guard red on this box.
+      .map((s) => repoRelative(s.f))
+    expect(uncovered, `unbranded OG cards: ${uncovered.join(", ")}`).toEqual([])
+  })
+
+  it("the shared entity renderer is itself branded", () => {
+    // Otherwise the exemption above is a hole five cards wide.
+    const entity = fs.readFileSync(path.join(process.cwd(), "lib", "og", "entity-card.tsx"), "utf8")
+    expect(entity).toContain("@/lib/og/brand-fonts")
+    expect(usesSharedCachePolicy(entity)).toBe(true)
+  })
+
+  it("still covers the cards most likely to be shared", () => {
+    // Named explicitly as well as counted, so a refactor that "covers" the
+    // family by loosening the predicate above still has to keep these.
+    const must = [
+      "og/profile",
+      "og/share",
+      "og/moment",
+      "og/deal",
+      "og/collection",
+      "og/default",
+      "og/pack/route",
+      "og/pack/lifecycle",
+      "og/fast-break",
+      "og/insights/deals",
+      "og/insights/top-sales",
+    ]
+    const brandedPaths = branded.map((s) => s.f.replace(/\\/g, "/"))
+    for (const m of must) {
+      expect(
+        brandedPaths.some((p) => p.includes("api/" + m)),
+        `${m} lost its brand fonts`,
+      ).toBe(true)
+    }
+  })
+
+  it("every branded card also sets a shared cache policy", () => {
+    // The two travel together deliberately: a card expensive enough to want
+    // brand fonts is a card no crawler should be re-rendering per fetch.
+    //
+    // ⚠ Asserted on the body with IMPORT LINES STRIPPED. The obvious
+    // `src.includes("OG_CACHE_HEADERS")` is satisfied by the import statement
+    // alone, so deleting the actual `headers:` option left this green — caught
+    // by mutating it, not by reading it. A symbol being imported is not
+    // evidence that it is used.
+    for (const { f, src } of branded) {
+      const body = src.replace(/^import[\s\S]*?from\s+["'][^"']+["'];?$/gm, "")
+      expect(usesSharedCachePolicy(body), `${f} has fonts but no cache headers`).toBe(true)
+    }
+  })
+
+  it("no card writes its OWN cache header instead of taking the shared policy", () => {
+    // ⚠ THE HOLE THE PREDICATE ABOVE OPENED WHEN IT STOPPED NAMING ONE SYMBOL,
+    // closed in the same commit. Accepting two spellings is only safe while
+    // there is no THIRD way to set the header, so the third way is banned
+    // outright: a hand-written `s-maxage=` in a card is a policy nobody can
+    // change centrally — which is exactly how 42 of 43 cards once shipped with
+    // no cache policy at all.
+    // ⚠ COMMENTS STRIPPED FIRST, with the shared stripper rather than a fresh
+    // copy of one: `og/insights/squeeze` DOCUMENTS its upstream API's
+    // `s-maxage=300` in prose, and a raw grep reads that as an offender. A
+    // comment is not a header.
+    for (const { f, src } of sources) {
+      expect(/s-maxage=/.test(stripComments(src)), `${f} hardcodes its own cache header`).toBe(false)
+    }
+  })
+
+  it("no branded card still hardcodes a generic font family", () => {
+    // The exact way a "converted" card silently keeps its old face: the import
+    // lands, the ternary never gets applied to the style.
+    for (const { f, src } of branded) {
+      expect(
+        /fontFamily:\s*"(?:sans-serif|system-ui|monospace)"/.test(src),
+        `${f} imports the brand fonts but still hardcodes a generic family`,
+      ).toBe(false)
+    }
+  })
+})

@@ -1,0 +1,166 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { usdSignFirst } from "@/lib/usd-format"
+
+// Live FMV preview card for the marketing home's depth fold. Fetches the
+// PUBLIC /api/fmv/demo endpoint (real recent snapshots, 1h CDN cache, no auth)
+// and renders a genuine sample — FMV, confidence, and the serial-premium
+// examples the demo computes. Replaces the old hardcoded $148 / "↑12.4% 7D" /
+// fabricated p10·p50·p90 mock, which claimed "LIVE" while showing invented
+// numbers. Falls back to a clearly-labelled SAMPLE card if the fetch fails or
+// the pipeline has no data yet — never blocks render. (2026-05-31, handoff B3.)
+
+interface DemoSample {
+  edition: string;
+  fmv: number;
+  confidence: string;
+  exampleAdjustments?: {
+    serial1?: { adjustedFmv: number; serialMult?: number | null };
+    serial23?: { adjustedFmv: number; serialMult?: number | null };
+  };
+}
+
+// (confColor removed 2026-07-11 with the confidence line.)
+
+function money(n: number): string {
+  const neg = usdSignFirst(n, money); if (neg !== null) return neg
+  return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+export default function HomeFmvPreview() {
+  const [sample, setSample] = useState<DemoSample | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/fmv/demo");
+        if (!res.ok) throw new Error(String(res.status));
+        const data = await res.json();
+        const first = Array.isArray(data?.samples) ? data.samples[0] : null;
+        if (!first || typeof first.fmv !== "number") throw new Error("no sample");
+        if (alive) setSample(first as DemoSample);
+      } catch {
+        if (alive) setFailed(true);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const live = sample !== null;
+  // ⛔ 2026-10-14: these numbers used to render in EVERY state — the server HTML
+  // (all a crawler or no-JS reader ever sees) showed a hardcoded $148.00 and
+  // invented "×12 / ×2.8" serial prices under "LOADING FMV…", and a LIVE sample
+  // missing its adjustments showed fmv × 12 as if computed. Now: LOADING shows
+  // dashes; LIVE shows only what /api/fmv/demo returned (its fitted multiplier,
+  // or a dash); only the clearly-labelled SAMPLE card (fetch failed) carries the
+  // illustrative figures.
+  const sampleCard = failed && !live;
+  const edition = live ? sample!.edition : sampleCard ? "84:2892" : null;
+  const fmv: number | null = live ? sample!.fmv : sampleCard ? 148.0 : null;
+  const adj1 = sample?.exampleAdjustments?.serial1;
+  const adj23 = sample?.exampleAdjustments?.serial23;
+  const s1: number | null = live ? adj1?.adjustedFmv ?? null : sampleCard ? 148.0 * 12 : null;
+  const s23: number | null = live ? adj23?.adjustedFmv ?? null : sampleCard ? 148.0 * 2.8 : null;
+  const multLabel = (m: number | null | undefined, illustrative: number): string => {
+    if (sampleCard) return ` · ${illustrative}×`;
+    return live && typeof m === "number" && Number.isFinite(m) ? ` · ${m}×` : "";
+  };
+  const show = (n: number | null): string => (n == null ? "—" : money(n));
+
+  return (
+    <div
+      style={{
+        background: "var(--rpc-surface-raised)",
+        border: "1px solid var(--rpc-border)",
+        borderRadius: "var(--radius-md)",
+        padding: "20px 18px",
+        minHeight: 360,
+        display: "flex",
+        flexDirection: "column",
+        gap: 14,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          fontFamily: "var(--font-mono)",
+          fontSize: 10,
+          letterSpacing: "0.18em",
+          color: "var(--rpc-text-muted)",
+          textTransform: "uppercase",
+        }}
+      >
+        <span
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            background: live ? "var(--rpc-success)" : "var(--rpc-text-ghost)",
+            boxShadow: live ? "0 0 8px var(--rpc-success)" : "none",
+          }}
+        />
+        {live ? "LIVE FMV PREVIEW" : failed ? "SAMPLE FMV CARD" : "LOADING FMV…"}
+      </div>
+      <div
+        style={{
+          flex: 1,
+          borderRadius: "var(--radius-sm)",
+          background:
+            "repeating-linear-gradient(0deg,transparent 0,transparent 23px,rgba(255,255,255,0.04) 23px,rgba(255,255,255,0.04) 24px),repeating-linear-gradient(90deg,transparent 0,transparent 23px,rgba(255,255,255,0.04) 23px,rgba(255,255,255,0.04) 24px)",
+          border: "1px solid var(--rpc-border)",
+          padding: 16,
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "space-between",
+          gap: 12,
+          fontFamily: "var(--font-mono)",
+          fontSize: 11,
+          color: "var(--rpc-text-muted)",
+        }}
+      >
+        <div>
+          <div style={{ color: "var(--rpc-text-secondary)" }}>EDITION {edition ?? "—"}</div>
+          <div
+            style={{
+              fontFamily: "var(--font-display)",
+              fontSize: 28,
+              fontWeight: 800,
+              color: "var(--rpc-text-primary)",
+              lineHeight: 1.1,
+            }}
+          >
+            {show(fmv)}
+          </div>
+          {/* Confidence line removed 2026-07-11 — build-time signal only. */}
+        </div>
+        {/* Serial-premium examples — the demo computes these from the real FMV. */}
+        <div>
+          <div style={{ color: "var(--rpc-text-muted)", fontSize: 9, letterSpacing: "0.14em", marginBottom: 6 }}>
+            SERIAL-ADJUSTED FMV
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+            <div>
+              <div style={{ color: "var(--rpc-text-muted)" }}>BASE</div>
+              <div style={{ color: "var(--rpc-text-secondary)" }}>{show(fmv)}</div>
+            </div>
+            <div>
+              <div style={{ color: "var(--rpc-text-muted)" }}>#1{multLabel(adj1?.serialMult, 12)}</div>
+              <div style={{ color: "var(--rpc-text-secondary)" }}>{show(s1)}</div>
+            </div>
+            <div>
+              <div style={{ color: "var(--rpc-text-muted)" }}>#23{multLabel(adj23?.serialMult, 2.8)}</div>
+              <div style={{ color: "var(--rpc-text-secondary)" }}>{show(s23)}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

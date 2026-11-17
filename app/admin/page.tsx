@@ -1,0 +1,182 @@
+// app/admin/page.tsx
+// Trevor-only admin index. proxy.ts allows /admin/* through unauthenticated;
+// each linked tool has its own RPC_ADMIN_TOKEN gate.
+
+import Link from "next/link";
+
+export const dynamic = "force-static";
+
+interface Tool {
+  href: string;
+  title: string;
+  blurb: string;
+  /**
+   * Open with a FULL page load. A client-side <Link> keeps THIS page's
+   * Content-Security-Policy, and proxy.ts gives /admin/giveaways its own (the
+   * only policy that allows Flow's wallet picker). Via <Link>, Chrome refused
+   * to frame fcl-discovery.onflow.org under /admin's policy (Trevor, 2026-09-29).
+   */
+  fullLoad?: boolean;
+}
+
+const TOOLS: Tool[] = [
+  {
+    href: "/admin/analytics",
+    title: "Platform Analytics",
+    blurb: "Single-pane users + monetization + pipelines + signals + engagement.",
+  },
+  {
+    href: "/admin/flowty-errors",
+    title: "Error Triage",
+    blurb: "Pipeline + on-chain failure rollup. Refreshed every 30 min.",
+  },
+  {
+    href: "/admin/flowty-analytics",
+    title: "Flowty Analytics",
+    blurb: "Marketplace + lending intelligence across all 5 collections.",
+  },
+  {
+    href: "/admin/feedback",
+    title: "Beta Feedback",
+    blurb: "Triage support_conversations from the AI concierge.",
+  },
+  {
+    href: "/admin/allow-list",
+    title: "Allow List",
+    blurb: "Beta access whitelist + prewarm queue.",
+  },
+  {
+    href: "/admin/beta-activity",
+    title: "Beta Activity",
+    blurb: "Per-user 7d page-view + last-seen + top features rollup.",
+  },
+  {
+    href: "/admin/visitor-journeys",
+    title: "Visitor Journeys",
+    blurb: "One timeline per human visit: source (incl. AI assistants), views, pastes, concierge, returning.",
+  },
+  {
+    href: "/admin/fmv-health",
+    title: "FMV Health",
+    blurb: "Thin-sales guard cap audit — what got downgraded, when, and why.",
+  },
+  {
+    href: "/admin/pipeline-health",
+    title: "Pipeline Health",
+    blurb: "Cron drift surface — every pipeline's last run + cadence vs expected.",
+  },
+  {
+    href: "/admin/listing-retry-queue",
+    title: "Listing Retry Queue",
+    blurb: "listing_resolution_failures backlog + last retry-run outcome. Auto-refreshes 60s.",
+  },
+  {
+    href: "/admin/rewards",
+    title: "Rewards Ops",
+    blurb: "Fulfill redemptions, refund, adjust balances, toggle catalog. Economy liability view.",
+  },
+  {
+    href: "/admin/click-purchases",
+    title: "Click → Purchase",
+    blurb: "RPC marketplace clicks (site + alerts) and the presumed purchases that followed, by confidence.",
+  },
+  {
+    href: "/admin/giveaways",
+    title: "Pack Giveaways",
+    blurb: "Build free packs from your unlocked Top Shot moments, seal, open, close, and verify deliveries on chain.",
+    fullLoad: true,
+  },
+  {
+    href: "/admin/swap-test",
+    title: "Swap Test",
+    blurb: "Admin-only: one swap transaction signed by two of your own Flow Wallets. Simulated on mainnet before you sign.",
+    fullLoad: true,
+  },
+  {
+    href: "/admin/storage-fix",
+    title: "Flow Storage Fix",
+    blurb: "A collector stuck on error 1103? Check the account, see if Dapper already refilled it, and send the fix from your Flow Wallet.",
+    fullLoad: true,
+  },
+];
+
+export default function AdminIndexPage() {
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "var(--rpc-black)",
+        color: "var(--rpc-text-primary)",
+        padding: "60px 24px",
+      }}
+    >
+      <main style={{ maxWidth: 720, margin: "0 auto", display: "flex", flexDirection: "column", gap: 24 }}>
+        <header>
+          <div className="rpc-label">Rip Packs City</div>
+          <div className="rpc-heading" style={{ fontSize: 32, marginTop: 4 }}>
+            Admin Console
+          </div>
+          <div
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              color: "var(--rpc-text-muted)",
+              marginTop: 6,
+            }}
+          >
+            Each tool below has its own RPC_ADMIN_TOKEN sign-in.
+          </div>
+        </header>
+        <section style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {TOOLS.map((tool) => {
+            const cardStyle = {
+              padding: "16px 18px",
+              textDecoration: "none",
+              color: "inherit",
+              display: "block",
+            };
+            const body = (
+              <>
+              <div
+                className="rpc-heading"
+                style={{ fontSize: 18, color: "var(--rpc-red-text)", marginBottom: 4 }}
+              >
+                {tool.title}
+              </div>
+              <div
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 12,
+                  color: "var(--rpc-text-secondary)",
+                }}
+              >
+                {tool.blurb}
+              </div>
+              <div
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 10,
+                  color: "var(--rpc-text-muted)",
+                  marginTop: 6,
+                  letterSpacing: "0.08em",
+                }}
+              >
+                {tool.href}
+              </div>
+              </>
+            );
+            return tool.fullLoad ? (
+              <a key={tool.href} href={tool.href} className="rpc-card" style={cardStyle}>
+                {body}
+              </a>
+            ) : (
+              <Link key={tool.href} href={tool.href} className="rpc-card" style={cardStyle}>
+                {body}
+              </Link>
+            );
+          })}
+        </section>
+      </main>
+    </div>
+  );
+}

@@ -1,0 +1,9 @@
+name = "helius-proxy"
+main = "index.js"
+compatibility_date = "2024-01-01"
+workers_dev = true
+
+[vars]
+# Both are set via wrangler secret put (never commit values):
+#   wrangler secret put HELIUS_PROXY_SECRET   # X-Proxy-Secret gate (own rotation domain)
+#   wrangler secret put HELIUS_RPC_URL        # full keyed DAS endpoint, e.g. https://mainnet.helius-rpc.com/?api-key=...

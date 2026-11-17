@@ -1,0 +1,718 @@
+import { describe, it, expect, beforeEach, vi } from "vitest"
+import { makeSupabaseFixture } from "./helpers/route-harness"
+
+// Deep test for GET /api/market — drives the real board-shaping pipeline (modern
+// sniper-RPC dispatch + reshape, legacy cached_listings path, tier-ceiling clamp,
+// in-app discount computation, editionKey derivation, special-serial detection,
+// discount filter/sort, pagination) that the shallow test (empty 200 + 400 guard)
+// never exercises. Every assertion targets a handler-COMPUTED field, not fixture
+// echo: the recomputed discount, the clamped/derived values, the diagnostics
+// counts, and the TS FMV display-guard clamp.
+
+const state = vi.hoisted(() => ({ sb: null as unknown }))
+
+vi.mock("@/lib/supabase", () => ({
+  supabaseAdmin: new Proxy(
+    {},
+    { get: (_t, prop) => (state.sb as Record<PropertyKey, unknown>)[prop] },
+  ),
+}))
+
+import { GET } from "@/app/api/market/route"
+
+const TS = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+const ALLDAY = "dee28451-5d62-409e-a1ad-a83f763ac070"
+const GOLAZOS = "06248cc4-b85f-47cd-af67-1855d14acd75"
+// 2026-10-18: Golazos has an on-chain edition arm now and never reaches the
+// legacy cached_listings path; UFC (no arm) still does.
+const LEGACY_PATH_COLL = "9b4824a8-736d-4a96-b450-8dcc0c46b023"
+const PINNACLE = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
+
+// Three AllDay editions with DISTINCT ask / fmv / discount / listed-at so every
+// in-memory sort ordering is unambiguous (no ties to make the assertion flaky).
+//   a: ask 100, fmv 200 -> 50% off, listed 07-03
+//   b: ask  40, fmv 100 -> 60% off, listed 07-01
+//   c: ask 240, fmv 300 -> 20% off, listed 07-02
+function threeAllDayRows() {
+  return {
+    "rpc:get_allday_market_editions_v4": {
+      data: [
+        { external_id: "a", floor_ask: 100, fmv_usd: 200, tier: "COMMON", listed_count: 1, circulation_count: 10, last_listed_at: "2026-07-03T00:00:00Z" },
+        { external_id: "b", floor_ask: 40, fmv_usd: 100, tier: "COMMON", listed_count: 1, circulation_count: 10, last_listed_at: "2026-07-01T00:00:00Z" },
+        { external_id: "c", floor_ask: 240, fmv_usd: 300, tier: "COMMON", listed_count: 1, circulation_count: 10, last_listed_at: "2026-07-02T00:00:00Z" },
+      ],
+      error: null,
+    },
+    editions: { data: [], error: null },
+  }
+}
+const keys = (body: { listings: Array<{ editionKey: string }> }) => body.listings.map((r) => r.editionKey)
+
+const req = (u: string) => ({ nextUrl: new URL(u) }) as never
+
+function install(fixtures: Record<string, unknown>) {
+  state.sb = makeSupabaseFixture(fixtures as never)
+}
+
+beforeEach(() => {
+  state.sb = null
+})
+
+describe("GET /api/market — modern AllDay path (edition-level)", () => {
+  it("reshapes get_allday_market_editions rows: strips MOMENT_TIER_, recomputes discount, carries editionKey + edition badges + listed count, drops serial", async () => {
+    install({
+      "rpc:get_allday_market_editions_v4": {
+        data: [
+          {
+            edition_id: "uuid-1",
+            external_id: "allday-ed-1",
+            player_name: "Josh Allen",
+            team_name: "Buffalo Bills",
+            set_name: "Base Set",
+            series_name: "1",
+            tier: "MOMENT_TIER_RARE",
+            circulation_count: 500,
+            floor_ask: 100,
+            listed_count: 12,
+            fmv_usd: 200,
+            discount_pct: 999, // deliberately wrong — handler must recompute from floor/fmv
+            confidence: "HIGH",
+            thumbnail_url: "http://img/1",
+            badges: ["rookie_mint"],
+            last_listed_at: "2026-07-18T00:00:00Z",
+          },
+        ],
+        error: null,
+      },
+      editions: { data: [], error: null },
+    })
+
+    const res = await GET(req(`https://t/api/market?collectionId=${ALLDAY}`))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.diagnostics.source).toBe("modern")
+    expect(body.listings).toHaveLength(1)
+    const row = body.listings[0]
+    expect(row.tier).toBe("RARE") // MOMENT_TIER_ stripped
+    expect(row.askPrice).toBe(100) // floor ask
+    expect(row.fmv).toBe(200)
+    expect(row.discount).toBe(50) // (200-100)/200 = 50.0, recomputed not echoed
+    expect(row.editionKey).toBe("allday-ed-1") // external_id straight from the editions RPC
+    expect(row.badgeSlugs).toEqual(["rookie_mint"]) // edition-wide badges from the RPC
+    expect(row.listedCount).toBe(12)
+    expect(row.serialNumber).toBeNull() // edition grain — no serial
+    expect(row.isSpecialSerial).toBe(false)
+  })
+
+  it("drops editions above their tier ceiling and reports it in diagnostics", async () => {
+    install({
+      "rpc:get_allday_market_editions_v4": {
+        data: [
+          { external_id: "keep", floor_ask: 100, fmv_usd: 200, tier: "RARE", listed_count: 3, circulation_count: 50 },
+          { external_id: "drop", floor_ask: 60000, fmv_usd: 90000, tier: "RARE", listed_count: 1, circulation_count: 50 }, // >= 50k ceiling
+        ],
+        error: null,
+      },
+      editions: { data: [], error: null },
+    })
+
+    const body = await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}`))).json()
+    expect(body.diagnostics).toMatchObject({ rawCount: 2, postClampCount: 1, postFilterCount: 1 })
+    expect(body.listings).toHaveLength(1)
+    expect(body.listings[0].editionKey).toBe("keep")
+  })
+
+  it("applies the minDiscount post-filter to the computed discount", async () => {
+    install({
+      "rpc:get_allday_market_editions_v4": {
+        data: [
+          { external_id: "a", floor_ask: 100, fmv_usd: 200, tier: "RARE", listed_count: 1, circulation_count: 10 }, // 50% off
+          { external_id: "b", floor_ask: 190, fmv_usd: 200, tier: "RARE", listed_count: 1, circulation_count: 10 }, // 5% off
+        ],
+        error: null,
+      },
+      editions: { data: [], error: null },
+    })
+
+    const body = await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&minDiscount=25`))).json()
+    expect(body.listings.map((r: { editionKey: string }) => r.editionKey)).toEqual(["a"])
+  })
+
+  it("orders by discount descending when sort=discount_desc", async () => {
+    install({
+      "rpc:get_allday_market_editions_v4": {
+        data: [
+          { external_id: "small", floor_ask: 180, fmv_usd: 200, tier: "COMMON", listed_count: 1, circulation_count: 9 }, // 10%
+          { external_id: "big", floor_ask: 100, fmv_usd: 200, tier: "COMMON", listed_count: 1, circulation_count: 9 }, // 50%
+        ],
+        error: null,
+      },
+      editions: { data: [], error: null },
+    })
+
+    const body = await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&sort=discount_desc`))).json()
+    expect(body.listings.map((r: { editionKey: string }) => r.editionKey)).toEqual(["big", "small"])
+  })
+})
+
+describe("GET /api/market — legacy cached_listings path", () => {
+  it("collapses cached_listings to one row per edition, prefers cached badge_slugs, and computes diagnostics without a modern source tag", async () => {
+    install({
+      // A collection with no arm (UFC) → fetchModernListings returns null → legacy path.
+      cached_listings: {
+        data: [
+          {
+            id: "c1",
+            flow_id: "gf1",
+            moment_id: "gm1",
+            player_name: "Vinicius",
+            set_name: "Golazos Base",
+            tier: "RARE",
+            serial_number: 1,
+            circulation_count: 1000,
+            ask_price: 30,
+            fmv: 60,
+            badge_slugs: ["cached_badge"],
+          },
+        ],
+        error: null,
+        count: 1,
+      },
+      editions: {
+        data: [
+          {
+            external_id: "golazos-ext-1",
+            collection_id: GOLAZOS,
+            player_name: "Vinicius",
+            set_name: "Golazos Base",
+            set_id_onchain: null,
+            play_id_onchain: null,
+            badges: ["edition_badge"],
+          },
+        ],
+        error: null,
+      },
+    })
+
+    const res = await GET(req(`https://t/api/market?collectionId=${LEGACY_PATH_COLL}`))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.diagnostics.source).toBeUndefined() // legacy path has no source tag
+    expect(body.listings).toHaveLength(1)
+    const row = body.listings[0]
+    expect(row.discount).toBe(50) // (60-30)/60
+    expect(row.editionKey).toBe("golazos-ext-1")
+    expect(row.badgeSlugs).toEqual(["cached_badge"]) // cached wins over editions.badges
+    expect(row.listedCount).toBe(1) // edition grain — group size
+    expect(row.serialNumber).toBeNull() // per-serial fields dropped on Market
+    // The fixture listing is serial #1, so the collapsed edition's REPRESENTATIVE
+    // (floor-ask) listing is a special serial. Before 2026-08-02 collapseToEditions
+    // hardcoded this to false, which made ?specialSerials=true unsatisfiable on the
+    // legacy path; this assertion pinned that bug. See
+    // __tests__/api-market-special-serials.test.ts for the full contract.
+    expect(row.isSpecialSerial).toBe(true)
+    expect(body.diagnostics).toMatchObject({ rawCount: 1, postClampCount: 1, postFilterCount: 1 })
+  })
+
+  it("500s with the DB error message when the cached_listings query fails", async () => {
+    install({
+      cached_listings: { data: null, error: { message: "listings scan timeout" }, count: null },
+      editions: { data: [], error: null },
+    })
+    const res = await GET(req(`https://t/api/market?collectionId=${LEGACY_PATH_COLL}`))
+    expect(res.status).toBe(500)
+    // The driver message must NOT be published — lib/api-error.ts classifies it.
+    expect((await res.json()).error).not.toContain("listings scan timeout")
+  })
+})
+
+describe("GET /api/market — modern in-memory sort ladder", () => {
+  // The upstream sniper RPCs don't reliably honor every sort, so the handler
+  // re-sorts the modern feed in-memory (the switch at route.ts:645). Only
+  // discount_desc was driven, leaving five arms + the `recent` default dark — a
+  // regression there silently ships a feed whose order contradicts its label.
+  it("price_asc / price_desc order by ask", async () => {
+    install(threeAllDayRows())
+    expect(keys(await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&sort=price_asc`))).json())).toEqual(["b", "a", "c"])
+    install(threeAllDayRows())
+    expect(keys(await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&sort=price_desc`))).json())).toEqual(["c", "a", "b"])
+  })
+
+  it("fmv_asc / fmv_desc order by FMV", async () => {
+    install(threeAllDayRows())
+    expect(keys(await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&sort=fmv_asc`))).json())).toEqual(["b", "a", "c"])
+    install(threeAllDayRows())
+    expect(keys(await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&sort=fmv_desc`))).json())).toEqual(["c", "a", "b"])
+  })
+
+  it("discount_asc orders by the recomputed discount ascending", async () => {
+    install(threeAllDayRows())
+    expect(keys(await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&sort=discount_asc`))).json())).toEqual(["c", "a", "b"])
+  })
+
+  it("sort=recent orders by listed-at descending", async () => {
+    install(threeAllDayRows())
+    expect(keys(await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&sort=recent`))).json())).toEqual(["a", "c", "b"])
+  })
+
+  it("with no sort param the feed defaults to price ascending", async () => {
+    install(threeAllDayRows())
+    expect(keys(await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}`))).json())).toEqual(["b", "a", "c"])
+  })
+})
+
+describe("GET /api/market — modern filters + pagination", () => {
+  it("applies the maxDiscount post-filter", async () => {
+    install(threeAllDayRows())
+    const body = await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&maxDiscount=55&sort=discount_desc`))).json()
+    // b is 60% off -> dropped; a (50) and c (20) remain.
+    expect(keys(body).sort()).toEqual(["a", "c"])
+  })
+
+  it("filters to special serials only (none on the edition-grain AllDay feed)", async () => {
+    install(threeAllDayRows())
+    const body = await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&specialSerials=true`))).json()
+    expect(body.listings).toHaveLength(0)
+    expect(body.diagnostics.postFilterCount).toBe(0)
+  })
+
+  it("paginates: limit slices the page and hasMore/total reflect the full set", async () => {
+    install(threeAllDayRows())
+    const body = await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&sort=price_asc&limit=2&offset=0`))).json()
+    expect(keys(body)).toEqual(["b", "a"]) // first 2 of price_asc
+    expect(body.pagination).toMatchObject({ total: 3, limit: 2, hasMore: true })
+  })
+})
+
+describe("GET /api/market — Pinnacle modern (catalog) path", () => {
+  it("reshapes pinnacle_catalog rows: variant→tier, render_id→editionKey, recomputed discount, source 'pinnacle'", async () => {
+    install({
+      pinnacle_catalog: {
+        data: [
+          {
+            render_id: "render-77",
+            character_name: "Mickey Mouse",
+            set_name: "Villains",
+            series_name: "1",
+            variant: "Colored Enamel",
+            total_minted: 250,
+            floor_ask: 30,
+            fmv_usd: 60,
+            fmv_confidence: "MEDIUM",
+            thumbnail_url: "http://img/p",
+            floor_ask_updated_at: "2026-08-07T00:00:00Z",
+          },
+        ],
+        error: null,
+      },
+      editions: { data: [], error: null },
+    })
+    const res = await GET(req(`https://t/api/market?collectionId=${PINNACLE}`))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.diagnostics.source).toBe("modern")
+    expect(body.listings).toHaveLength(1)
+    const row = body.listings[0]
+    expect(row.source).toBe("pinnacle")
+    expect(row.tier).toBe("Colored Enamel") // variant carried as tier, not mangled
+    expect(row.editionKey).toBe("render-77")
+    expect(row.askPrice).toBe(30)
+    expect(row.fmv).toBe(60)
+    expect(row.discount).toBe(50) // (60-30)/60 recomputed downstream
+    expect(row.serialNumber).toBeNull()
+  })
+
+  // ⛔ INVERTED 2026-09-26. This pinned the defect: the error became [] and the
+  // page said "no listings" for a market it never read (cached_listings holds
+  // zero Pinnacle rows, so the fall-through cannot answer either).
+  it("503s when the pinnacle catalog query errors — never an empty market", async () => {
+    install({
+      pinnacle_catalog: { data: null, error: { message: "catalog down" } },
+      editions: { data: [], error: null },
+    })
+    const res = await GET(req(`https://t/api/market?collectionId=${PINNACLE}`))
+    expect(res.status).toBe(503)
+    const body = await res.json()
+    expect(body.listings).toBeUndefined()
+    expect(body.error).toBe("market_unavailable")
+  })
+
+  it("NO-CHANGE CONTROL: a genuinely empty Pinnacle catalog is still a 200 empty board", async () => {
+    install({ pinnacle_catalog: { data: [], error: null }, editions: { data: [], error: null } })
+    const res = await GET(req(`https://t/api/market?collectionId=${PINNACLE}`))
+    expect(res.status).toBe(200)
+    expect((await res.json()).listings).toEqual([])
+  })
+
+  // #146 (1), 2026-09-26 — a discount sort read the 1,000 CHEAPEST renders
+  // (the catalog has no discount column), so 1,357 of 2,357 live renders were
+  // unreachable. It now pages the whole live catalog.
+  it("a discount sort pages past PostgREST's 1,000-row cap and ranks the whole catalog", async () => {
+    const row = (i: number, ask: number, fmv: number) => ({
+      render_id: `r${i}`, character_name: `C${i}`, set_name: "S", series_name: "1", variant: "Standard",
+      total_minted: 100, floor_ask: ask, fmv_usd: fmv, fmv_confidence: "HIGH", thumbnail_url: null,
+      floor_ask_updated_at: "2026-09-26T00:00:00Z",
+    })
+    const page1 = Array.from({ length: 1000 }, (_, i) => row(i, 10, 11)) // ~9% off
+    const page2 = [row(5000, 50, 100)] // 50% off — beyond the first 1,000
+    install({ pinnacle_catalog: [{ data: page1, error: null }, { data: page2, error: null }], editions: { data: [], error: null } })
+    const body = await (await GET(req(`https://t/api/market?collectionId=${PINNACLE}&sort=discount_desc`))).json()
+    expect(body.listings[0].editionKey).toBe("r5000")
+  })
+
+  // 2026-09-28 — every OTHER sort read one 1,000-row page, so with 2,413 pins
+  // listed the board's total stopped at 1,000 and deep pages came back empty.
+  it("a price sort pages past the 1,000-row cap too: the total counts the whole live catalog", async () => {
+    const row = (i: number, ask: number) => ({
+      render_id: `r${String(i).padStart(5, "0")}`, character_name: `C${i}`, set_name: "S", series_name: "1", variant: "Standard",
+      total_minted: 100, floor_ask: ask, fmv_usd: ask * 2, fmv_confidence: "HIGH", thumbnail_url: null,
+      floor_ask_updated_at: "2026-09-26T00:00:00Z",
+    })
+    const page1 = Array.from({ length: 1000 }, (_, i) => row(i, 10))
+    const page2 = Array.from({ length: 5 }, (_, i) => row(5000 + i, 20))
+    install({ pinnacle_catalog: [{ data: page1, error: null }, { data: page2, error: null }], editions: { data: [], error: null } })
+    const body = await (await GET(req(`https://t/api/market?collectionId=${PINNACLE}&sort=price_asc&limit=50`))).json()
+    expect(body.pagination.total).toBe(1005)
+    expect(body.pagination.hasMore).toBe(true)
+  })
+})
+
+describe("GET /api/market — Top Shot FMV display guard", () => {
+  it("clamps an inflated TS FMV to the 90d max and flags low confidence before computing the discount", async () => {
+    install({
+      topshot_fmv_display_guard: {
+        data: [
+          {
+            external_id: "3:45",
+            max_sale_90d: 5,
+            is_thin: false,
+            fmv_exceeds_max: true,
+            fmv_disconnected: false,
+            clamp_target: 0,
+          },
+        ],
+        error: null,
+      },
+      "rpc:get_topshot_sniper_deals_v3": {
+        data: [
+          {
+            moment_id: "3:45",
+            ask_price: 4,
+            fmv_usd: 42, // inflated — guard clamps to max_sale_90d = 5
+            tier: "COMMON",
+            serial_number: 1,
+            circulation_count: 100,
+            player_name: "Dame",
+            set_name: "Base Set",
+          },
+        ],
+        error: null,
+      },
+      editions: {
+        data: [
+          {
+            external_id: "3:45",
+            collection_id: TS,
+            player_name: "Dame",
+            set_name: "Base Set",
+            set_id_onchain: 3,
+            play_id_onchain: 45,
+            badges: [],
+          },
+        ],
+        error: null,
+      },
+    })
+
+    const body = await (await GET(req(`https://t/api/market?collectionId=${TS}`))).json()
+    const row = body.listings[0]
+    expect(row.fmv).toBe(5) // clamped from 42
+    expect(row.lowConfidenceFmv).toBe(true)
+    expect(row.discount).toBe(20) // (5-4)/5, computed off the honest clamped FMV
+    expect(row.editionKey).toBe("3:45") // TS uses set_id_onchain:play_id_onchain
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Candy MLB (Solana) — the only non-Flow arm in this route (2026-09-12)
+//
+// Candy has none of the Flow furniture the rest of the file assumes: no
+// `flow_id`, no listing resource id, no storefront address, no lock. The arm
+// reads `candy_market_board` (every ACTIVE priced listing) and NOT
+// `candy_deals_board`, which keeps only listings below BOTH FMV and the median
+// sale — 233 of the 1,821 active listings measured the day this shipped.
+const CANDY = "209ade70-32c5-4470-bc7c-4793d660f713"
+
+function candyRows() {
+  return {
+    candy_market_board: {
+      data: [
+        { token_mint: "mintA", edition_id: "e1", external_id: "x1", player_name: "Aaron Judge", edition_name: "ICON", set_name: "Series 1", team_name: "NYY", tier: "LEGENDARY", circulation_count: 25, thumbnail_url: "https://img/a.png", serial_number: 7, ask_usd: 120, fmv_usd: 200, confidence: "HIGH", discount_pct: 40, seller: "sellerA", first_seen_at: "2026-09-10T00:00:00Z", last_seen_at: "2026-09-12T00:00:00Z" },
+        { token_mint: "mintB", edition_id: "e2", external_id: "x2", player_name: "Shohei Ohtani", edition_name: "BASE", set_name: "Series 1", team_name: "LAD", tier: "COMMON", circulation_count: 500, thumbnail_url: "https://img/b.png", serial_number: 311, ask_usd: 5, fmv_usd: 4, confidence: "MEDIUM", discount_pct: -25, seller: "sellerB", first_seen_at: "2026-09-11T00:00:00Z", last_seen_at: "2026-09-12T00:00:00Z" },
+      ],
+      error: null,
+    },
+    editions: { data: [], error: null },
+  }
+}
+
+describe("GET /api/market — Candy MLB (Solana) arm", () => {
+  it("serves candy_market_board rows with the Magic Eden buy link and no Flow furniture", async () => {
+    install(candyRows())
+    const body = await (await GET(req(`https://t/api/market?collectionId=${CANDY}`))).json()
+    expect(body.listings.length).toBe(2)
+    const a = body.listings.find((r: any) => r.momentId === "mintA" || r.moment_id === "mintA" || r.id === "mintA")
+    expect(a, "the mint must survive as the listing identity").toBeTruthy()
+    const raw = JSON.stringify(body)
+    expect(raw).toContain("https://magiceden.io/item-details/mintA")
+    // ⚠ token_mint must NOT be smuggled into flow_id: a Solana mint address in a
+    // column that names a Flow NFT flows into every downstream reader that
+    // believes it. Asserted on the payload, because a reshape is exactly where
+    // that kind of substitution happens and nothing else would notice.
+    expect(raw).not.toContain('"flowId":"mintA"')
+    expect(raw).not.toContain('"flow_id":"mintA"')
+  })
+
+  // 2026-10-10 — an ask reported by the OpenSea feed links ONLY to the URL
+  // OpenSea itself returned (venue_url). Without one there is no link at all:
+  // never the Magic Eden page (the ask is not listed there) and never a built
+  // OpenSea URL (RPC could not verify the Solana item-page format).
+  it("an OpenSea ask links to OpenSea's own URL, or to nothing — never to Magic Eden", async () => {
+    const base = { edition_id: "e1", external_id: "x1", player_name: "Aaron Judge", edition_name: "ICON", set_name: "Series 1", team_name: "NYY", tier: "LEGENDARY", circulation_count: 25, thumbnail_url: null, serial_number: 7, ask_usd: 120, fmv_usd: 200, confidence: "HIGH", discount_pct: 40, seller: "s", first_seen_at: "2026-09-10T00:00:00Z", last_seen_at: "2026-09-12T00:00:00Z" }
+    install({
+      candy_market_board: {
+        data: [
+          { ...base, token_mint: "mintOS1", venue: "opensea", venue_url: "https://opensea.io/item/solana/mintOS1" },
+          { ...base, token_mint: "mintOS2", venue: "opensea", venue_url: null },
+          { ...base, token_mint: "mintME", venue: "magic_eden", venue_url: null },
+        ],
+        error: null,
+      },
+      editions: { data: [], error: null },
+    })
+    const body = await (await GET(req(`https://t/api/market?collectionId=${CANDY}`))).json()
+    const raw = JSON.stringify(body)
+    expect(raw).toContain("https://opensea.io/item/solana/mintOS1")
+    expect(raw).toContain("https://magiceden.io/item-details/mintME")
+    expect(raw).not.toContain("magiceden.io/item-details/mintOS1")
+    expect(raw).not.toContain("magiceden.io/item-details/mintOS2")
+    expect(raw).not.toMatch(/opensea\.io[^"]*mintOS2/)
+    expect(raw).toContain('"opensea"')
+  })
+
+  // ⛔ 2026-09-25 — every Candy printing of a player shares player_name AND
+  // set_name, so the shared player+set lookup resolves a Rainbow listing to the
+  // BASE card (it keeps the first row, and "mike-trout" sorts first). A PINK
+  // listing linked to the base page and read the base card's stats. The row
+  // must carry its own edition key.
+  // #146 (1), 2026-09-26 — "FMV ↑" / "Discount ↑" fell through to ask
+  // ascending, so the 500-row window was the cheapest listings, re-sorted.
+  it.each([
+    ["fmv_asc", "fmv_usd"],
+    ["discount_asc", "discount_pct"],
+  ])("orders the Candy read by the sort's OWN key for %s, ascending", async (sortBy, column) => {
+    install(candyRows())
+    const sb = state.sb as { from: (t: string) => Record<string, unknown> }
+    const baseFrom = sb.from.bind(sb)
+    const orders: unknown[][] = []
+    sb.from = (t: string) => {
+      const b = baseFrom(t)
+      if (t === "candy_market_board") {
+        const prev = b.order as (...a: unknown[]) => unknown
+        b.order = (...a: unknown[]) => { orders.push(a); return prev(...a) }
+      }
+      return b
+    }
+    await GET(req(`https://t/api/market?collectionId=${CANDY}&sort=${sortBy}`))
+    expect(orders[0]?.[0]).toBe(column)
+    expect(orders[0]?.[1]).toMatchObject({ ascending: true })
+  })
+
+  it("a Rainbow listing keeps its OWN edition key, never the base card's", async () => {
+    install({
+      candy_market_board: {
+        data: [
+          { token_mint: "mintP", edition_id: "e-pink", external_id: "mike-trout-pink", player_name: "Mike Trout", edition_name: "Mike Trout - PINK", set_name: "Series 1", team_name: "LAA", tier: "LEGENDARY", circulation_count: 15, thumbnail_url: null, serial_number: 3, ask_usd: 90, fmv_usd: 120, confidence: "MEDIUM", discount_pct: 25, seller: "s", first_seen_at: "2026-09-10T00:00:00Z", last_seen_at: "2026-09-12T00:00:00Z" },
+        ],
+        error: null,
+      },
+      editions: {
+        data: [
+          { id: "e-base", external_id: "mike-trout", player_name: "Mike Trout", set_name: "Series 1", badges: null },
+          { id: "e-pink", external_id: "mike-trout-pink", player_name: "Mike Trout", set_name: "Series 1", badges: ["Rookie", "Rainbow (Pink)"] },
+        ],
+        error: null,
+      },
+    })
+    const body = await (await GET(req(`https://t/api/market?collectionId=${CANDY}`))).json()
+    const l = body.listings[0]
+    expect(l.editionKey).toBe("mike-trout-pink")
+    expect(l.editionKey).not.toBe("mike-trout")
+    // Candy's designation rides along; the Rainbow colour is the parallel, not a badge.
+    expect(l.badgeSlugs).toEqual(["Rookie"])
+  })
+
+  // ⚠ Candy is MAGIC EDEN-only in the data, not by assumption: a census of all
+  // 1,821 active listings on 2026-09-12 found a single auction house (Magic Eden
+  // v2). The label is the venue we can observe, not the venue set we hope for.
+  it("labels the source as the one venue actually observed", async () => {
+    install(candyRows())
+    const body = await (await GET(req(`https://t/api/market?collectionId=${CANDY}`))).json()
+    expect(JSON.stringify(body)).toContain("magic_eden")
+  })
+
+  // ⭐⭐ THE ONE THAT MATTERS. The generic path falls through to `cached_listings`
+  // when the modern fetch comes back empty — and `cached_listings` is a FLOW
+  // table with ZERO Candy rows, so for Candy it can only ever return []. Without
+  // the guard, a FAILED READ renders as "no listings": a confident, correct-
+  // looking claim about a market that had 1,821 active listings. An empty market
+  // and a broken market look identical on the page.
+  it("⭐ 503s instead of falling through to cached_listings when the Candy read FAILS", async () => {
+    install({
+      candy_market_board: { data: null, error: { message: "canceling statement due to statement timeout" } },
+      cached_listings: { data: [], error: null },
+      editions: { data: [], error: null },
+    })
+    const res = await GET(req(`https://t/api/market?collectionId=${CANDY}`))
+    expect(res.status).toBe(503)
+    const body = await res.json()
+    expect(body.error).toBe("market_unavailable")
+    expect(body.retry).toBe(true)
+  })
+
+  // 2026-10-09: Top Shot and All Day had the same hole. Their fetchers returned []
+  // on an RPC error, so the handler fell through to cached_listings (0 TS rows,
+  // ~2-week-stale All Day rows) and shipped that with the 90 s success cache.
+  it("503s no-store when the Top Shot modern read FAILS — never a cached legacy board", async () => {
+    install({
+      "rpc:get_topshot_sniper_deals_v3": { data: null, error: { message: "canceling statement due to statement timeout" } },
+      cached_listings: { data: [{ id: "stale" }], error: null },
+      editions: { data: [], error: null },
+    })
+    const res = await GET(req(`https://t/api/market?collectionId=${TS}`))
+    expect(res.status).toBe(503)
+    expect(res.headers.get("Cache-Control")).toBe("no-store")
+    expect((await res.json()).error).toBe("market_unavailable")
+  })
+
+  it("503s no-store when the All Day modern read FAILS", async () => {
+    install({
+      "rpc:get_allday_market_editions_v4": { data: null, error: { message: "read exceeded 8000ms" } },
+      cached_listings: { data: [{ id: "stale" }], error: null },
+      editions: { data: [], error: null },
+    })
+    const res = await GET(req(`https://t/api/market?collectionId=${ALLDAY}`))
+    expect(res.status).toBe(503)
+    expect(res.headers.get("Cache-Control")).toBe("no-store")
+  })
+
+  // The converse: a genuine zero is a 200 with an empty board, and it must carry
+  // the SAME envelope the populated path returns. A flat {total, has_more} would
+  // leave `pagination.total` undefined and the client would render its loading
+  // skeleton forever on an empty market.
+  it("returns an empty board in the NORMAL envelope when the market is genuinely empty", async () => {
+    install({ candy_market_board: { data: [], error: null }, editions: { data: [], error: null } })
+    const res = await GET(req(`https://t/api/market?collectionId=${CANDY}`))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.listings).toEqual([])
+    expect(body.pagination).toBeTruthy()
+    expect(body.pagination.total).toBe(0)
+    expect(body.pagination.hasMore).toBe(false)
+  })
+})
+
+// #146 (1), 2026-09-26 — "FMV ↑" / "Discount ↑" were mapped to listed_desc, so
+// the edition RPCs cut their window by the wrong key (All Day: the 500 most
+// recently listed of ~4,300; Top Shot: the 500 deepest discounts of ~13,700) and
+// the route re-sorted that window. The keys now reach the RPC 1:1.
+// ⚠ LAST in the file: the Top Shot arm loads the FMV display guard into a
+// module-level cache, and an empty guard loaded here would leak into the
+// display-guard test above.
+describe("GET /api/market — ascending sorts reach the edition RPCs", () => {
+  it.each([
+    [ALLDAY, "get_allday_market_editions_v4", "fmv_asc"],
+    [ALLDAY, "get_allday_market_editions_v4", "discount_asc"],
+    [TS, "get_topshot_sniper_deals_v3", "fmv_asc"],
+    [TS, "get_topshot_sniper_deals_v3", "discount_asc"],
+  ])("%s → %s receives p_sort_by=%s", async (collectionId, rpcName, sort) => {
+    install({ [`rpc:${rpcName}`]: { data: [], error: null }, editions: { data: [], error: null } })
+    const sb = state.sb as { rpc: (n: string, a?: Record<string, unknown>) => unknown }
+    const baseRpc = sb.rpc.bind(sb)
+    const calls: Array<{ name: string; args?: Record<string, unknown> }> = []
+    sb.rpc = (n, a) => { calls.push({ name: n, args: a }); return baseRpc(n, a) }
+    await GET(req(`https://t/api/market?collectionId=${collectionId}&sort=${sort}`))
+    const call = calls.find((c) => c.name === rpcName)
+    expect(call, `${rpcName} was not called`).toBeTruthy()
+    expect(call?.args?.p_sort_by).toBe(sort)
+    // Ascending discount is demoted in-app like descending, so it pulls the same 1,000.
+    if (sort === "discount_asc" && rpcName === "get_topshot_sniper_deals_v3") expect(call?.args?.p_limit).toBe(1000)
+  })
+})
+
+// 2026-09-26 — `?collectionId=disney-pinnacle` reached a uuid column raw and
+// 500'd in production (22P02). A known slug resolves; anything else is a 400.
+describe("GET /api/market — collectionId accepts a slug, refuses junk", () => {
+  it("a known slug is served as its collection (not a 500)", async () => {
+    install({ pinnacle_catalog: { data: [], error: null }, editions: { data: [], error: null } })
+    const res = await GET(req("https://t/api/market?collectionId=disney-pinnacle"))
+    expect(res.status).toBe(200)
+    expect((await res.json()).diagnostics?.source).toBe("pinnacle_catalog")
+  })
+
+  it("an unknown non-UUID value is a 400 naming it, never a 500", async () => {
+    install({ editions: { data: [], error: null } })
+    const res = await GET(req("https://t/api/market?collectionId=not-a-collection"))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toContain("not-a-collection")
+  })
+})
+
+
+// 2026-10-26 (Candy parity pass 5) — candy_market_board keeps every `is_active`
+// row, and the sweep does not always flip a listing it stopped seeing: 108 of
+// 1,498 board rows were last re-seen 3+ days ago (oldest 07-26), shown as live
+// asks. The arm gates on "re-seen within 12 h of the book's NEWEST sweep" and
+// fills "# Listed" from candy_listing_floor.
+describe("GET /api/market — Candy listings are LIVE, not merely is_active", () => {
+  function spyGte() {
+    const sb = state.sb as { from: (t: string) => Record<string, unknown> }
+    const baseFrom = sb.from.bind(sb)
+    const gtes: unknown[][] = []
+    sb.from = (t: string) => {
+      const b = baseFrom(t)
+      if (t === "candy_market_board") {
+        const prev = b.gte as (...a: unknown[]) => unknown
+        b.gte = (...a: unknown[]) => { gtes.push(a); return prev(...a) }
+      }
+      return b
+    }
+    return gtes
+  }
+
+  it("filters the board to rows re-seen within 12 h of the book's newest sweep — relative to the BOOK, not the clock", async () => {
+    install({ ...candyRows(), candy_listings: { data: [{ last_seen_at: "2026-09-12T00:00:00.000Z" }], error: null } })
+    const gtes = spyGte()
+    const res = await GET(req(`https://t/api/market?collectionId=${CANDY}`))
+    expect(res.status).toBe(200)
+    expect(gtes).toContainEqual(["last_seen_at", "2026-09-11T12:00:00.000Z"])
+  })
+
+  it("a FAILED book-age read is a failed market read — never an unfiltered (stale) or empty market", async () => {
+    install({ ...candyRows(), candy_listings: { data: null, error: { message: "timeout" } } })
+    const res = await GET(req(`https://t/api/market?collectionId=${CANDY}`))
+    expect(res.status).not.toBe(200)
+  })
+
+  it("# Listed comes from the edition's confirmed listing count; a failed count read is unknown (null), never 0", async () => {
+    install({ ...candyRows(), candy_listing_floor: { data: [{ edition_id: "e1", confirmed_listing_count: 4 }], error: null } })
+    let body = await (await GET(req(`https://t/api/market?collectionId=${CANDY}`))).json()
+    const byMint = (b: any, m: string) => b.listings.find((r: any) => r.momentId === m)
+    expect(byMint(body, "mintA").listedCount).toBe(4)
+    expect(byMint(body, "mintB").listedCount).toBeNull()
+    install({ ...candyRows(), candy_listing_floor: { data: null, error: { message: "x" } } })
+    body = await (await GET(req(`https://t/api/market?collectionId=${CANDY}`))).json()
+    expect(byMint(body, "mintA").listedCount).toBeNull()
+    expect(byMint(body, "mintA").listedCount).not.toBe(0)
+  })
+})

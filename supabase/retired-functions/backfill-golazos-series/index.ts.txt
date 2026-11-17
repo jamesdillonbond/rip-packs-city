@@ -1,0 +1,125 @@
+// ARCHIVED deployed source of `backfill-golazos-series` v52, recovered 2026-10-14 (register R21) by a redacted
+// subagent and kept ONLY as the revert artifact for its retirement. Credential literals are
+// replaced by __REDACTED_SECRET_n__ (they are burned). `.txt` on purpose: no walker, type-checker
+// or deploy picks this up. To revive: copy to supabase/functions/backfill-golazos-series/index.ts, replace the gate
+// with _shared/cron-gate.ts (rpc-edge-fn-deploy skill section 0), fix what the retirement note
+// names, then deploy via edge-fn-deploy.yml.
+// ─────────────────────────────────────────────────────────────
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const FLOW_REST = "https://rest-mainnet.onflow.org/v1/scripts";
+const GOLAZOS_COLLECTION_ID = "06248cc4-b85f-47cd-af67-1855d14acd75";
+
+const supabase = createClient(
+  Deno.env.get("SUPABASE_URL")!,
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+);
+
+function cdcToNative(val: any): any {
+  if (val === null || val === undefined) return null;
+  if (typeof val !== "object") return val;
+  const t = val.type;
+  const v = val.value;
+  if (t === "UInt64" || t === "UInt32" || t === "UInt16" || t === "UInt8" || t === "Int") return parseInt(v, 10);
+  if (t === "String") return v;
+  if (t === "Bool") return v;
+  if (t === "Optional") return v === null ? null : cdcToNative(v);
+  if (t === "Array") return (v as any[]).map(cdcToNative);
+  if (t === "Dictionary") {
+    const obj: Record<string, any> = {};
+    for (const entry of v) {
+      obj[String(cdcToNative(entry.key))] = cdcToNative(entry.value);
+    }
+    return obj;
+  }
+  if (t === "Struct" || t === "Resource") {
+    const obj: Record<string, any> = {};
+    for (const field of v?.fields ?? []) {
+      obj[field.name] = cdcToNative(field.value);
+    }
+    return obj;
+  }
+  return v;
+}
+
+async function runScript(cadence: string): Promise<any> {
+  const res = await fetch(FLOW_REST, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ script: btoa(cadence) }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Flow ${res.status}: ${text.slice(0, 500)}`);
+  }
+  const raw = await res.text();
+  const parsed = JSON.parse(raw);
+  return cdcToNative(parsed);
+}
+
+Deno.serve(async (req: Request) => {
+  const auth = req.headers.get("Authorization");
+  if (auth !== "Bearer __REDACTED_SECRET_1__") {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  const url = new URL(req.url);
+  const startParam = parseInt(url.searchParams.get("start") ?? "0");
+  const batchSize = parseInt(url.searchParams.get("batch") ?? "100");
+
+  const results: any = { version: "v4", start: startParam, batchSize };
+
+  try {
+    const allIds = await runScript(`
+import Golazos from 0x87ca73a41bb50ad5
+access(all) fun main(): [UInt64] {
+  return Golazos.getAllEditionIDs()
+}
+`);
+    results.totalOnChain = allIds.length;
+
+    const batch = allIds.slice(startParam, startParam + batchSize);
+    results.batchCount = batch.length;
+
+    if (batch.length === 0) {
+      results.message = "Done — no more editions";
+      return new Response(JSON.stringify(results, null, 2), { headers: { "Content-Type": "application/json" } });
+    }
+
+    const idsLiteral = batch.map((id: number) => `${id} as UInt64`).join(", ");
+    const seriesMap: Record<string, number> = await runScript(`
+import Golazos from 0x87ca73a41bb50ad5
+access(all) fun main(): {UInt64: UInt64} {
+  let ids: [UInt64] = [${idsLiteral}]
+  let result: {UInt64: UInt64} = {}
+  for id in ids {
+    if let edition = Golazos.getEditionData(id: id) {
+      result[id] = edition.seriesID
+    }
+  }
+  return result
+}
+`);
+    results.mapped = Object.keys(seriesMap).length;
+    results.sample = Object.entries(seriesMap).slice(0, 3);
+
+    let updated = 0;
+    for (const [editionId, seriesId] of Object.entries(seriesMap)) {
+      const { error } = await supabase
+        .from("editions")
+        .update({ series: seriesId })
+        .eq("external_id", String(editionId))
+        .eq("collection_id", GOLAZOS_COLLECTION_ID);
+      if (!error) updated++;
+    }
+    results.updated = updated;
+    results.nextStart = startParam + batchSize;
+
+  } catch (e: any) {
+    results.error = e.message;
+  }
+
+  return new Response(JSON.stringify(results, null, 2), {
+    headers: { "Content-Type": "application/json" },
+  });
+});

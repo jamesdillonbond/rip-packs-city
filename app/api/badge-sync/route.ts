@@ -1,0 +1,903 @@
+import { NextRequest, NextResponse } from "next/server"
+import { topshotGraphql } from "@/lib/chains/flow/topshot"
+import { supabaseAdmin } from "@/lib/supabase"
+import { apiErrorResponse } from "@/lib/api-error"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
+
+// Server-side port of scripts/topshot-badge-sync.js.
+// POST: run the full sweep cycle (Rookie Year / TS Debut / ROTY / Champ Year
+// in parallel, then Rookie Mint as a setplay sweep) and upsert to badge_editions.
+// GET:  read-only — badge_editions count grouped by collection_id.
+
+// Full badge sweeps walk thousands of editions per badge (TS Debut / Rookie
+// Year span all of TS history), so the route needs headroom past Vercel's
+// default function timeout. 300s is well under the Pro 800s hard cap.
+export const maxDuration = 300
+export const dynamic = "force-dynamic"
+
+const COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+
+const BADGE = {
+  ROOKIE_YEAR:        "2dbd4eef-4417-451b-b645-90f02574a401",
+  ROOKIE_PREMIERE:    "0ddb2c58-4385-443b-9c70-239b32cddbd4",
+  TOP_SHOT_DEBUT:     "a75e247a-ecbf-45a6-b1be-58bb07a1b651",
+  ROOKIE_OF_THE_YEAR: "34fe8d3f-681a-42df-856a-e98624f95b11",
+  ROOKIE_MINT:        "24d515af-e967-45f5-a30e-11fc96dc2b62",
+  CHAMPIONSHIP_YEAR:  "f197f60a-b502-4386-b0c0-7f4cde8164ff",
+  INTERACTIVE:        "9bbb6f91-d09a-4d07-ab3d-8402a9c10cf1",
+} as const
+
+const PAGE_LIMIT = 100
+// Headroom, not a forced walk: sweep() breaks naturally on null/repeat cursor
+// or a short page, so each badge stops at its true end. TS Debut / Rookie Year
+// span the full history (thousands of editions) and were truncated at the old
+// 20-page (2,000-edition) cap, starving older Series 1-4 classics of badge rows.
+const MAX_PAGES = 80
+const BATCH_SIZE = 50
+const PAGE_DELAY_MS = 250
+const BATCH_DELAY_MS = 150
+
+const QUERY = `
+  query SearchMarketplaceEditions(
+    $byPlayTagIDs: [ID] = []
+    $bySetPlayTagIDs: [ID] = []
+    $searchInput: BaseSearchInput = {pagination: {direction: RIGHT, limit: 100, cursor: ""}}
+  ) {
+    searchMarketplaceEditions(input: {
+      filters: { byPlayTagIDs: $byPlayTagIDs, bySetPlayTagIDs: $bySetPlayTagIDs }
+      sortBy: EDITION_CREATED_AT_DESC
+      searchInput: $searchInput
+    }) {
+      data {
+        searchSummary {
+          pagination { rightCursor }
+          data {
+            size
+            data {
+              ... on MarketplaceEdition {
+                id
+                assetPathPrefix
+                tier
+                parallelID
+                parallelName
+                set { id flowId flowName flowSeriesNumber }
+                play {
+                  id flowID
+                  stats {
+                    playerName firstName lastName
+                    teamAtMoment teamAtMomentNbaId
+                    nbaSeason jerseyNumber playerID
+                    playCategory dateOfMoment
+                  }
+                  tags { id title visible level }
+                }
+                setPlay {
+                  ID flowRetired
+                  tags { id title visible level }
+                  circulations {
+                    burned circulationCount forSaleByCollectors
+                    hiddenInPacks ownedByCollectors locked effectiveSupply
+                  }
+                }
+                lowAsk highestOffer
+                circulationCount effectiveSupply burned locked owned hiddenInPacks
+                averageSaleData { averagePrice numDays numSales }
+                marketplaceStats {
+                  price averageSalePrice
+                  change24h change7d change30d
+                  volume24h volume7d volume30d
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`
+
+// Catalog-walk query (audit 2026-06-09): the tag-filtered sweeps above only
+// collect editions that carry one of the 5 badge tags, so the ~66% of canonical
+// editions with no rookie/champ tag (veterans' base moments etc.) never got a
+// badge_editions row — no circulation/effective_supply, no burn truth, "no
+// badge data". This empty-filter sweep (`filters: {}`, the topshot-fmv-populate-
+// proven shape that returns the full catalog, not just tag matches) walks every
+// edition so all of them get circulations + whatever real badges they have.
+// Cursored across runs via backfill_state so it sweeps the full catalog over
+// several daily ticks; the tag sweeps stay as the freshness layer.
+const CATALOG_QUERY = `
+  query BadgeCatalogSweep(
+    $searchInput: BaseSearchInput = {pagination: {direction: RIGHT, limit: 100, cursor: ""}}
+  ) {
+    searchMarketplaceEditions(input: {
+      filters: {}
+      sortBy: EDITION_CREATED_AT_DESC
+      searchInput: $searchInput
+    }) {
+      data {
+        searchSummary {
+          pagination { rightCursor }
+          data {
+            size
+            data {
+              ... on MarketplaceEdition {
+                id
+                assetPathPrefix
+                tier
+                parallelID
+                parallelName
+                set { id flowId flowName flowSeriesNumber }
+                play {
+                  id flowID
+                  stats {
+                    playerName firstName lastName
+                    teamAtMoment teamAtMomentNbaId
+                    nbaSeason jerseyNumber playerID
+                    playCategory dateOfMoment
+                  }
+                  tags { id title visible level }
+                }
+                setPlay {
+                  ID flowRetired
+                  tags { id title visible level }
+                  circulations {
+                    burned circulationCount forSaleByCollectors
+                    hiddenInPacks ownedByCollectors locked effectiveSupply
+                  }
+                }
+                lowAsk highestOffer
+                circulationCount effectiveSupply burned locked owned hiddenInPacks
+                averageSaleData { averagePrice numDays numSales }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`
+
+const CATALOG_SWEEP_ID = "topshot-badge-catalog"
+const CATALOG_PIPELINE = "topshot-badge-catalog"
+const CATALOG_MAX_PAGES = 250 // ~25k editions/run; time budget usually stops first
+const CATALOG_TIME_OVERHEAD_MS = 45_000
+
+type Tag = { id: string; title: string; visible: boolean; level?: string }
+type RawEdition = {
+  id: string
+  assetPathPrefix: string | null
+  tier: string | null
+  parallelID: number | null
+  parallelName: string | null
+  set: { id: string; flowId: string | number | null; flowName: string; flowSeriesNumber: number | null } | null
+  play: {
+    id: string; flowID: string | number | null
+    stats: {
+      playerName: string | null; firstName: string | null; lastName: string | null
+      teamAtMoment: string | null; teamAtMomentNbaId: string | null
+      nbaSeason: string | null; jerseyNumber: number | null; playerID: string | null
+      playCategory: string | null; dateOfMoment: string | null
+    } | null
+    tags: Tag[] | null
+  } | null
+  setPlay: {
+    ID: string; flowRetired: boolean
+    tags: Tag[] | null
+    circulations: {
+      burned: number | null; circulationCount: number | null; forSaleByCollectors: number | null
+      hiddenInPacks: number | null; ownedByCollectors: number | null
+      locked: number | null; effectiveSupply: number | null
+    } | null
+  } | null
+  lowAsk: number | null
+  highestOffer: number | null
+  averageSaleData: { averagePrice: string | null } | null
+  circulationCount: number | null
+  effectiveSupply: number | null
+  burned: number | null
+  locked: number | null
+  owned: number | null
+  hiddenInPacks: number | null
+}
+
+type BadgeRow = {
+  id: string
+  collection_id: string
+  external_id: string | null
+  set_id: string | null
+  play_id: string | null
+  player_id: string | null
+  player_name: string | null
+  team: string | null
+  team_nba_id: string | null
+  season: string | null
+  set_name: string | null
+  series_number: number | null
+  tier: string | null
+  parallel_id: number
+  parallel_name: string
+  play_tags: Array<{ id: string; title: string }>
+  set_play_tags: Array<{ id: string; title: string }>
+  is_three_star_rookie: boolean
+  has_rookie_mint: boolean
+  badge_score: number
+  low_ask: number | null
+  highest_offer: number | null
+  avg_sale_price: number | null
+  circulation_count: number
+  effective_supply: number | null
+  burned: number
+  locked: number
+  owned: number
+  hidden_in_packs: number | null
+  burn_rate_pct: number
+  lock_rate_pct: number
+  flow_retired: boolean
+  asset_path_prefix: string | null
+  updated_at: string
+}
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms))
+}
+
+function computeBadgeScore(
+  playTagIds: Set<string>,
+  setPlayTagIds: Set<string>
+): number {
+  let score = 0
+  if (playTagIds.has(BADGE.ROOKIE_YEAR)) score += 1
+  if (playTagIds.has(BADGE.ROOKIE_PREMIERE)) score += 1
+  if (playTagIds.has(BADGE.TOP_SHOT_DEBUT)) score += 1
+  if (setPlayTagIds.has(BADGE.ROOKIE_MINT)) score += 1
+  // Three-Star Rookie = Rookie Year + Rookie Premiere + Rookie Mint (Top Shot's own definition;
+  // see lib/topshot-badges.ts). It was Top Shot Debut in place of Rookie Mint until 2026-11-14.
+  const isThreeStar =
+    playTagIds.has(BADGE.ROOKIE_YEAR) &&
+    playTagIds.has(BADGE.ROOKIE_PREMIERE) &&
+    setPlayTagIds.has(BADGE.ROOKIE_MINT)
+  if (isThreeStar && setPlayTagIds.has(BADGE.ROOKIE_MINT)) score += 4
+  if (playTagIds.has(BADGE.ROOKIE_OF_THE_YEAR)) score += 3
+  if (playTagIds.has(BADGE.CHAMPIONSHIP_YEAR)) score += 2
+  return score
+}
+
+function intLike(v: string | number | null | undefined): string | null {
+  if (v === null || v === undefined) return null
+  const s = String(v).trim()
+  // "0" is Top Shot's "unset" sentinel for flowId on searchMarketplaceEditions
+  // (e.g. Run It Back: Origins returns set.flowId=0), NOT a real on-chain id —
+  // set/play on-chain ids start at 1. Reject it so we fall back to the sets map.
+  if (!/^\d+$/.test(s) || s === "0") return null
+  return s
+}
+
+// Canonical edition key = the on-chain integer pair "setIDonchain:playIDonchain"
+// (== editions.external_id, what get_edition_badges_unified joins on).
+// searchMarketplaceEditions returns set.id / play.id as GQL UUIDs for most
+// editions, so the old `${set.id}:${play.id}` key produced UUID-pair keys that
+// NEVER joined a canonical integer edition — badges invisible. Prefer the
+// integer fields (set.flowId / play.flowID), fall back to an already-integer id
+// (some editions return integers there), then to the sets-table
+// UUID -> set_id_onchain map. A row that can't yield an integer pair is SKIPPED
+// (a UUID-keyed badge row is useless — it can never join).
+function editionKey(e: RawEdition, setMap: Map<string, string>): string | null {
+  const playStr = intLike(e.play?.flowID) ?? intLike(e.play?.id)
+  // Prefer the authoritative sets-table set_id_onchain (keyed by the GQL set
+  // UUID): set.flowId is unreliable here (returns the 0 sentinel for many
+  // classics, which would mis-key them as "0:<play>" and never join). flowId /
+  // an already-integer id are fallbacks for the ~14 sets the map doesn't cover.
+  let setStr: string | null = e.set?.id ? (setMap.get(e.set.id) ?? null) : null
+  if (!setStr) setStr = intLike(e.set?.flowId) ?? intLike(e.set?.id)
+  if (!setStr || !playStr) return null
+  return `${setStr}:${playStr}`
+}
+
+// Sets table is the authoritative UUID -> set_id_onchain bridge for the cases
+// where the GQL set.flowId comes back null (240/254 TS sets carry it).
+async function fetchSetOnchainMap(): Promise<Map<string, string>> {
+  const map = new Map<string, string>()
+  const { data, error } = await (supabaseAdmin as any)
+    .from("sets")
+    .select("external_id, set_id_onchain")
+    .eq("collection_id", COLLECTION_ID)
+    .not("set_id_onchain", "is", null)
+    // A bound above PostgREST's 1,000-row cap is silently clamped, so it is a
+    // claim about the population rather than a limit. Measured 2026-09-09:
+    // 265 Top Shot sets carry set_id_onchain. Comfortably under; page it if
+    // Top Shot's set count ever approaches four figures.
+    .limit(1000)
+  if (error) {
+    console.log("[badge-sync] set onchain map error:", error.message)
+    return map
+  }
+  for (const r of (data as Array<{ external_id: string | null; set_id_onchain: number | null }> | null) ?? []) {
+    if (r.external_id && r.set_id_onchain != null) map.set(r.external_id, String(r.set_id_onchain))
+  }
+  return map
+}
+
+// Merge an edition's (parallel's) play/setPlay tags into an existing row.
+// Badges are play-level (identical across parallels) so union-by-id is lossless;
+// this collapses all parallels of a play into the single per-play row that the
+// (external_id, collection_id) grain demands.
+function mergeTags(existing: BadgeRow, e: RawEdition) {
+  const incomingPlay = (e.play?.tags ?? [])
+    .filter((t) => t.visible && t.id !== BADGE.INTERACTIVE)
+    .map((t) => ({ id: t.id, title: t.title }))
+  const incomingSetPlay = (e.setPlay?.tags ?? [])
+    .filter((t) => t.visible && t.id !== BADGE.INTERACTIVE)
+    .map((t) => ({ id: t.id, title: t.title }))
+  const pIds = new Set(existing.play_tags.map((t) => t.id))
+  for (const t of incomingPlay) if (!pIds.has(t.id)) { existing.play_tags.push(t); pIds.add(t.id) }
+  const sIds = new Set(existing.set_play_tags.map((t) => t.id))
+  for (const t of incomingSetPlay) if (!sIds.has(t.id)) { existing.set_play_tags.push(t); sIds.add(t.id) }
+  if (sIds.has(BADGE.ROOKIE_MINT)) existing.has_rookie_mint = true
+  existing.is_three_star_rookie =
+    pIds.has(BADGE.ROOKIE_YEAR) && pIds.has(BADGE.ROOKIE_PREMIERE) && sIds.has(BADGE.ROOKIE_MINT)
+  existing.badge_score = computeBadgeScore(pIds, sIds)
+}
+
+function normalizeEdition(e: RawEdition, externalId: string | null): BadgeRow {
+  const playTags = (e.play?.tags ?? [])
+    .filter((t) => t.visible && t.id !== BADGE.INTERACTIVE)
+    .map((t) => ({ id: t.id, title: t.title }))
+  const setPlayTags = (e.setPlay?.tags ?? [])
+    .filter((t) => t.visible && t.id !== BADGE.INTERACTIVE)
+    .map((t) => ({ id: t.id, title: t.title }))
+  const pIds = new Set(playTags.map((t) => t.id))
+  const sIds = new Set(setPlayTags.map((t) => t.id))
+  const circ = e.setPlay?.circulations ?? null
+  const totalCirc = circ?.circulationCount ?? 0
+  const burned = circ?.burned ?? 0
+  const locked = circ?.locked ?? 0
+  const owned = circ?.ownedByCollectors ?? 0
+  const set_id = e.set?.id ?? null
+  const play_id = e.play?.id ?? null
+
+  return {
+    id: e.id,
+    collection_id: COLLECTION_ID,
+    external_id: externalId,
+    set_id,
+    play_id,
+    player_id: e.play?.stats?.playerID ?? null,
+    player_name: e.play?.stats?.playerName ?? null,
+    team: e.play?.stats?.teamAtMoment ?? null,
+    team_nba_id: e.play?.stats?.teamAtMomentNbaId ?? null,
+    season: e.play?.stats?.nbaSeason ?? null,
+    set_name: e.set?.flowName ?? null,
+    series_number: e.set?.flowSeriesNumber ?? null,
+    tier: e.tier ?? null,
+    parallel_id: e.parallelID ?? 0,
+    parallel_name: e.parallelName ?? "Standard",
+    play_tags: playTags,
+    set_play_tags: setPlayTags,
+    is_three_star_rookie:
+      pIds.has(BADGE.ROOKIE_YEAR) &&
+      pIds.has(BADGE.ROOKIE_PREMIERE) &&
+      sIds.has(BADGE.ROOKIE_MINT),
+    has_rookie_mint: sIds.has(BADGE.ROOKIE_MINT),
+    badge_score: computeBadgeScore(pIds, sIds),
+    low_ask: e.lowAsk ?? null,
+    highest_offer: e.highestOffer ?? null,
+    avg_sale_price: parseFloat(e.averageSaleData?.averagePrice ?? "0") || null,
+    circulation_count: totalCirc,
+    effective_supply: circ?.effectiveSupply ?? null,
+    burned,
+    locked,
+    owned,
+    hidden_in_packs: circ?.hiddenInPacks ?? null,
+    burn_rate_pct: totalCirc > 0 ? parseFloat(((burned / totalCirc) * 100).toFixed(1)) : 0,
+    lock_rate_pct: owned > 0 ? parseFloat(((locked / owned) * 100).toFixed(1)) : 0,
+    flow_retired: e.setPlay?.flowRetired ?? false,
+    asset_path_prefix: e.assetPathPrefix ?? null,
+    updated_at: new Date().toISOString(),
+  }
+}
+
+async function fetchPage(
+  playTagIDs: string[],
+  setPlayTagIDs: string[],
+  cursor: string
+): Promise<{ editions: RawEdition[]; nextCursor: string | null; total: number }> {
+  type GqlShape = {
+    searchMarketplaceEditions: {
+      data: {
+        searchSummary: {
+          pagination: { rightCursor: string | null }
+          data: { size: number; data: RawEdition[] }
+        }
+      }
+    }
+  }
+  const data = await topshotGraphql<GqlShape>(QUERY, {
+    byPlayTagIDs: playTagIDs,
+    bySetPlayTagIDs: setPlayTagIDs,
+    searchInput: { pagination: { direction: "RIGHT", limit: PAGE_LIMIT, cursor } },
+  })
+  const summary = data?.searchMarketplaceEditions?.data?.searchSummary
+  return {
+    editions: summary?.data?.data ?? [],
+    nextCursor: summary?.pagination?.rightCursor ?? null,
+    total: summary?.data?.size ?? 0,
+  }
+}
+
+/**
+ * Running tally of sweep-level FETCH failures for one run.
+ *
+ * 🚨 WHY THIS EXISTS (2026-08-29). `sweep()` catches a GQL failure, logs it to
+ * `console`, and `break`s — returning whatever it had collected. The caller then
+ * cannot tell "this tag genuinely has no editions" from "the fetch died on page 1",
+ * because both are an empty array. CLAUDE.md names this exact shape: *a PAGED read
+ * that `break`s on error returns a PARTIAL list no caller can distinguish from a
+ * complete one — the tell is the control-flow keyword. Throw, or carry
+ * `complete:false`.*
+ *
+ * ⭐ FOUND BY THE `pipeline_runs` ROW ADDED HOURS EARLIER IN THE SAME SESSION. Its
+ * first live row (20:56:19Z) read `ok: true`, `rows_found: 0` and every one of the
+ * five `sweep_counts` at zero — during a total `public-api.nbatopshot.com` outage.
+ * The telemetry was honest about what it could see; what it could see was already
+ * corrupted one layer down.
+ */
+interface SweepFailures {
+  count: number
+  first: string | null
+}
+
+async function sweep(
+  label: string,
+  playTagIDs: string[],
+  setPlayTagIDs: string[] = [],
+  failures?: SweepFailures
+): Promise<RawEdition[]> {
+  const collected: RawEdition[] = []
+  const seen = new Set<string>()
+  let cursor = ""
+  let page = 0
+
+  while (page < MAX_PAGES) {
+    if (cursor && seen.has(cursor)) break
+    if (cursor) seen.add(cursor)
+
+    try {
+      const { editions, nextCursor } = await fetchPage(playTagIDs, setPlayTagIDs, cursor)
+      page++
+      collected.push(...editions)
+      if (!nextCursor || editions.length < PAGE_LIMIT || nextCursor === cursor) break
+      cursor = nextCursor
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.log(`[badge-sync] ${label} page ${page + 1} fetch error:`, msg)
+      // Carry the failure OUT. The `break` below still banks partial progress —
+      // that part was right — but the caller must know the list is incomplete.
+      if (failures) {
+        failures.count++
+        if (failures.first === null) failures.first = `${label}: ${msg}`.slice(0, 200)
+      }
+      break
+    }
+    await sleep(PAGE_DELAY_MS)
+  }
+
+  console.log(`[badge-sync] sweep "${label}": ${collected.length} editions across ${page} pages`)
+  return collected
+}
+
+async function fetchCatalogPage(
+  cursor: string,
+): Promise<{ editions: RawEdition[]; nextCursor: string | null; total: number }> {
+  type GqlShape = {
+    searchMarketplaceEditions: {
+      data: {
+        searchSummary: {
+          pagination: { rightCursor: string | null }
+          data: { size: number; data: RawEdition[] }
+        }
+      }
+    }
+  }
+  const data = await topshotGraphql<GqlShape>(CATALOG_QUERY, {
+    searchInput: { pagination: { direction: "RIGHT", limit: PAGE_LIMIT, cursor } },
+  })
+  const summary = data?.searchMarketplaceEditions?.data?.searchSummary
+  return {
+    editions: summary?.data?.data ?? [],
+    nextCursor: summary?.pagination?.rightCursor ?? null,
+    total: summary?.data?.size ?? 0,
+  }
+}
+
+// Cursored full-catalog badge/circulation sweep. Walks every edition (not just
+// tag matches), persisting the GQL cursor in backfill_state so a partial run
+// resumes cleanly and the cursor wraps to "" at feed end (continuous refresh).
+async function runCatalogSweep(): Promise<NextResponse> {
+  const startedAt = Date.now()
+  const startedAtIso = new Date(startedAt).toISOString()
+  const supabase: any = supabaseAdmin
+  const timeBudgetMs = maxDuration * 1000 - CATALOG_TIME_OVERHEAD_MS
+
+  const setMap = await fetchSetOnchainMap()
+
+  // Resume cursor.
+  let cursor = ""
+  try {
+    const { data: state } = await supabase
+      .from("backfill_state")
+      .select("cursor")
+      .eq("id", CATALOG_SWEEP_ID)
+      .maybeSingle()
+    cursor = (state?.cursor ?? "") || ""
+  } catch {
+    cursor = ""
+  }
+  const cursorBefore = cursor
+
+  const all = new Map<string, BadgeRow>()
+  const keyedIds = new Set<string>()
+  const seenCursors = new Set<string>()
+  let pagesFetched = 0
+  let nodesFetched = 0
+  let skippedNoKey = 0
+  let sweepComplete = false
+  let terminatedReason = "time_budget_exceeded"
+  let gqlError: string | null = null
+
+  function ingest(e: RawEdition) {
+    const key = editionKey(e, setMap)
+    if (!key) { skippedNoKey++; return }
+    if (e.id) keyedIds.add(e.id)
+    const existing = all.get(key)
+    if (existing) mergeTags(existing, e)
+    else all.set(key, normalizeEdition(e, key))
+  }
+
+  for (let page = 0; page < CATALOG_MAX_PAGES; page++) {
+    if (Date.now() - startedAt > timeBudgetMs) {
+      terminatedReason = "time_budget_exceeded"
+      break
+    }
+    try {
+      const { editions, nextCursor } = await fetchCatalogPage(cursor)
+      pagesFetched++
+      nodesFetched += editions.length
+      for (const e of editions) ingest(e)
+      if (!nextCursor || editions.length === 0 || nextCursor === cursor || seenCursors.has(nextCursor)) {
+        sweepComplete = true
+        terminatedReason = "feed_exhausted"
+        break
+      }
+      seenCursors.add(nextCursor)
+      cursor = nextCursor
+    } catch (err) {
+      gqlError = err instanceof Error ? err.message : String(err)
+      terminatedReason = "gql_error"
+      break
+    }
+    await sleep(PAGE_DELAY_MS)
+  }
+
+  const rows = Array.from(all.values())
+
+  // Same re-key-safe write path as the tag sweep: free the PK for editions we
+  // re-keyed this run, then upsert on (external_id, collection_id).
+  let deletedStaleRows = 0
+  const keyedIdList = Array.from(keyedIds)
+  for (let i = 0; i < keyedIdList.length; i += 150) {
+    const idChunk = keyedIdList.slice(i, i + 150)
+    const { count, error } = await supabase
+      .from("badge_editions")
+      .delete({ count: "exact" })
+      .eq("collection_id", COLLECTION_ID)
+      .in("id", idChunk)
+    if (error) console.log(`[badge-sync] catalog stale-row delete chunk ${i} error:`, error.message)
+    else deletedStaleRows += count ?? 0
+  }
+
+  let upserted = 0
+  let upsertErrors = 0
+  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+    const batch = rows.slice(i, i + BATCH_SIZE)
+    const { error } = await supabase
+      .from("badge_editions")
+      .upsert(batch, { onConflict: "external_id,collection_id" })
+    if (error) {
+      console.log(`[badge-sync] catalog upsert batch ${i} error:`, error.message)
+      upsertErrors++
+    } else {
+      upserted += batch.length
+    }
+    if (i + BATCH_SIZE < rows.length) await sleep(BATCH_DELAY_MS)
+  }
+
+  // Persist cursor (wrap to "" at feed end so the sweep restarts next run).
+  const nextCursor = sweepComplete ? "" : cursor
+  // ⛔ The write's error used to be unreadable (a bare await in a try/catch that
+  // supabase-js never throws into), while cursor_after below reported the new
+  // cursor as a movement. A failed persist now fails the run and logs the cursor
+  // where it IS (2026-10-09).
+  let cursorWriteError: string | null = null
+  try {
+    const { error: cursorErr } = await supabase
+      .from("backfill_state")
+      .upsert(
+        { id: CATALOG_SWEEP_ID, cursor: nextCursor, status: sweepComplete ? "complete" : "pending", last_run_at: new Date().toISOString() },
+        { onConflict: "id" },
+      )
+    if (cursorErr) cursorWriteError = cursorErr.message
+  } catch (e) {
+    cursorWriteError = e instanceof Error ? e.message : String(e)
+  }
+  if (cursorWriteError) console.log(`[badge-sync] catalog cursor update failed: ${cursorWriteError}`)
+
+  const durationMs = Date.now() - startedAt
+  const ok = gqlError === null && upsertErrors === 0 && cursorWriteError === null
+  try {
+    // write-discarded: run telemetry; a failed log row cannot change what the run did, and shows up as a missing run.
+    await supabase.from("pipeline_runs").insert({
+      pipeline: CATALOG_PIPELINE,
+      collection_slug: "nba_top_shot",
+      started_at: startedAtIso,
+      finished_at: new Date().toISOString(),
+      rows_found: nodesFetched,
+      rows_written: upserted,
+      rows_skipped: skippedNoKey,
+      ok,
+      error: gqlError ?? (cursorWriteError ? `catalog cursor persist failed: ${cursorWriteError}` : null),
+      cursor_before: cursorBefore || null,
+      cursor_after: cursorWriteError ? (cursorBefore || null) : (nextCursor || null),
+      extra: {
+        pages_fetched: pagesFetched,
+        nodes_fetched: nodesFetched,
+        distinct_editions: rows.length,
+        upserted,
+        upsert_errors: upsertErrors,
+        deleted_stale_rows: deletedStaleRows,
+        skipped_no_key: skippedNoKey,
+        sweep_complete: sweepComplete,
+        terminated_reason: terminatedReason,
+        duration_ms: durationMs,
+      },
+    })
+  } catch {
+    // best-effort
+  }
+
+  return NextResponse.json({
+    ok,
+    mode: "catalog",
+    pipeline: CATALOG_PIPELINE,
+    pagesFetched,
+    nodesFetched,
+    distinctEditions: rows.length,
+    upserted,
+    upsertErrors,
+    deletedStaleRows,
+    skippedNoKey,
+    sweepComplete,
+    terminatedReason,
+    cursorBefore: cursorBefore || null,
+    cursorAfter: nextCursor || null,
+    durationMs,
+  })
+}
+
+export async function POST(req: NextRequest) {
+  if (!bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN")) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  // Catalog-walk mode (?mode=catalog): cursored full-catalog badge/circulation
+  // sweep. Separate from the default tag sweeps so it doesn't blow the time
+  // budget; operator wires its own cron-job.org entry.
+  if (req.nextUrl.searchParams.get("mode") === "catalog") {
+    return runCatalogSweep()
+  }
+
+  const startedAt = Date.now()
+
+  // Play-level sweeps in parallel
+  const sweepFailures: SweepFailures = { count: 0, first: null }
+  const [rookieYear, tsDebut, roty, champYear] = await Promise.all([
+    sweep("Rookie Year",       [BADGE.ROOKIE_YEAR], [], sweepFailures),
+    sweep("Top Shot Debut",    [BADGE.TOP_SHOT_DEBUT], [], sweepFailures),
+    sweep("ROTY",              [BADGE.ROOKIE_OF_THE_YEAR], [], sweepFailures),
+    sweep("Championship Year", [BADGE.CHAMPIONSHIP_YEAR], [], sweepFailures),
+  ])
+
+  // Rookie Mint is a setplay-level sweep — run last, merge-only
+  const rookieMint = await sweep("Rookie Mint", [], [BADGE.ROOKIE_MINT], sweepFailures)
+
+  const sweepCounts: Record<string, number> = {
+    "Rookie Year": rookieYear.length,
+    "Top Shot Debut": tsDebut.length,
+    "ROTY": roty.length,
+    "Championship Year": champYear.length,
+    "Rookie Mint": rookieMint.length,
+  }
+
+  // UUID -> set_id_onchain bridge for editions whose GQL set.flowId is null.
+  const setMap = await fetchSetOnchainMap()
+
+  // Dedupe by the canonical integer pair (one row per play, badges union across
+  // parallels), NOT by the per-parallel GQL e.id. Rows that can't form an
+  // integer pair are skipped (a UUID-keyed badge row never joins).
+  const all = new Map<string, BadgeRow>()
+  const keyedIds = new Set<string>() // every parallel id that produced a valid integer key
+  let skippedNoKey = 0
+
+  function ingest(e: RawEdition) {
+    const key = editionKey(e, setMap)
+    if (!key) { skippedNoKey++; return }
+    if (e.id) keyedIds.add(e.id)
+    const existing = all.get(key)
+    if (existing) mergeTags(existing, e)
+    else all.set(key, normalizeEdition(e, key))
+  }
+
+  for (const group of [rookieYear, tsDebut, roty, champYear, rookieMint]) {
+    for (const e of group) ingest(e)
+  }
+
+  const rows = Array.from(all.values())
+
+  // Free the PK before upserting: a table row for one of these editions may
+  // carry the same id (e.id) as the integer row we're about to write but a
+  // different external_id (old UUID-pair key, or a bogus "0:<play>" key from a
+  // flowId=0 sentinel), so a plain onConflict:(external_id,collection_id) insert
+  // would PK-collide. Delete every existing row for editions we RE-KEYED this
+  // sweep (id in keyedIds) — each has a fresh replacement in `rows`, so no badge
+  // is dropped without a correctly-keyed copy taking its place. Editions we
+  // skipped (no integer key) keep their existing row untouched.
+  let deletedStaleRows = 0
+  const keyedIdList = Array.from(keyedIds)
+  for (let i = 0; i < keyedIdList.length; i += 150) {
+    const idChunk = keyedIdList.slice(i, i + 150)
+    const { count, error } = await (supabaseAdmin as any)
+      .from("badge_editions")
+      .delete({ count: "exact" })
+      .eq("collection_id", COLLECTION_ID)
+      .in("id", idChunk)
+    if (error) console.log(`[badge-sync] stale-row delete chunk ${i} error:`, error.message)
+    else deletedStaleRows += count ?? 0
+  }
+
+  let upserted = 0
+  let upsertErrors = 0
+
+  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+    const batch = rows.slice(i, i + BATCH_SIZE)
+    const { error } = await (supabaseAdmin as any)
+      .from("badge_editions")
+      .upsert(batch, { onConflict: "external_id,collection_id" })
+    if (error) {
+      console.log(`[badge-sync] upsert batch ${i} error:`, error.message)
+      upsertErrors++
+    } else {
+      upserted += batch.length
+    }
+    if (i + BATCH_SIZE < rows.length) await sleep(BATCH_DELAY_MS)
+  }
+
+  // Refresh Golazos badges via its seed endpoint (pattern-based classification
+  // over editions.set_name — no GQL sweep required).
+  // NFL All Day badges are NO LONGER seeded here: seed-allday-badges was a
+  // set-name heuristic that smeared one guess across moments that differ. Real
+  // per-moment AllDay badges now come from the residential Atlas
+  // EditionService ingest (/api/cron/allday-badge-ingest, driven by
+  // scripts/ingest-allday-badges.mjs). Re-adding seed-allday-badges here would
+  // clobber those real badges with the heuristic on every TS badge-sync tick.
+  const baseUrl = req.nextUrl.origin
+  const token = process.env.INGEST_SECRET_TOKEN ?? ""
+  const seedResults: Record<string, unknown> = {}
+  for (const slug of ["seed-golazos-badges"] as const) {
+    try {
+      const res = await fetch(`${baseUrl}/api/${slug}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      seedResults[slug] = res.ok ? await res.json() : { status: res.status }
+    } catch (err) {
+      seedResults[slug] = { error: err instanceof Error ? err.message : String(err) }
+    }
+  }
+
+  const durationMs = Date.now() - startedAt
+  // ⚠ `ok` WAS HARDCODED `true` HERE, including on a sweep whose every upsert
+  // failed. The GHA caller only checks the HTTP status (never `body.ok`), so
+  // nothing read it — but it is the value this route asserts about itself, and a
+  // sweep that collected rows and wrote none is not a success.
+  // ⚠ THREE WAYS TO FAIL, AND THE THIRD IS THE ONE THE FIRST LIVE ROW EXPOSED.
+  // A sweep that FETCHED NOTHING because every upstream page errored is not an
+  // empty sweep — it is a blind one, and reporting it green is how a total outage
+  // reads as "no badged editions changed".
+  // ⚠ `rows.length === 0` is required: a run that collected editions despite one
+  // tag failing made real progress and stays green, with the failure recorded in
+  // `extra`. A genuinely empty sweep with NO fetch errors also stays green.
+  const blindSweep = sweepFailures.count > 0 && rows.length === 0
+  const ok = upsertErrors === 0 && !(rows.length > 0 && upserted === 0) && !blindSweep
+
+  // ── Durable run record (2026-08-29) ──────────────────────────────────────
+  // 🚨 THIS LANE WROTE NO `pipeline_runs` ROW AT ALL. Its CATALOG sibling
+  // (`topshot-badge-catalog`, ?mode=catalog) has always logged one, so a query
+  // for "is badge-sync running?" returned rows for the catalog walk and NOTHING
+  // for the six-hourly tag sweep — the lane that actually maintains
+  // `badge_editions.low_ask`. That is not "it is dead"; it is UNOBSERVABLE, and
+  // I nearly recorded the former from the latter.
+  //
+  // ⚠ WHAT IS MEASURABLE WITHOUT IT, AND WHY THIS MATTERS: the OUTPUT says the
+  // asks are not being refreshed regardless of run status. Measured 2026-08-29,
+  // `badge_editions` age by collection — All Day median 0.4 h (it has a dedicated
+  // `allday-badge-low-ask-refresh`, 143 runs), Top Shot median **107.2 h** with
+  // **all 1,651 ask-bearing rows over 12 h** and **no Top Shot equivalent of that
+  // refresher**. `badge_editions` is the FALLBACK ask for readers the
+  // `edition_offers` sweep has not reached, so those surfaces (watchlist, badges,
+  // set-plan) serve Top Shot asks a median 4.5 days old.
+  //
+  // The row cannot fix the staleness. It makes the lane answerable — "did it run,
+  // and did it write?" — which is the precondition for anyone noticing.
+  // In a try/catch so telemetry can never break the sweep it measures.
+  try {
+    // write-discarded: run telemetry; a failed log row cannot change what the run did, and shows up as a missing run.
+    await (supabaseAdmin as any).from("pipeline_runs").insert({
+      pipeline: "topshot-badge-sync",
+      collection_slug: "nba_top_shot",
+      started_at: new Date(startedAt).toISOString(),
+      finished_at: new Date().toISOString(),
+      rows_found: rows.length,
+      rows_written: upserted,
+      rows_skipped: skippedNoKey,
+      ok,
+      error:
+        upsertErrors > 0
+          ? `upsert_errors=${upsertErrors}`
+          : blindSweep
+            ? `sweeps blind: ${sweepFailures.count} tag sweep(s) failed to fetch and the run collected 0 editions; first: ${sweepFailures.first ?? "unknown"}`.slice(0, 500)
+            : null,
+      extra: {
+        upsert_errors: upsertErrors,
+        // Always emitted, including as 0 — an absent key cannot answer "was the
+        // sweep empty, or blind?", which is the whole reason it exists.
+        sweep_failures: sweepFailures.count,
+        first_sweep_error: sweepFailures.first,
+        deleted_stale_rows: deletedStaleRows,
+        sweep_counts: sweepCounts,
+        duration_ms: durationMs,
+      },
+    })
+  } catch (e) {
+    console.log(`[badge-sync] pipeline_runs insert failed: ${e instanceof Error ? e.message : e}`)
+  }
+
+  return NextResponse.json({
+    ok,
+    collected: rows.length,
+    upserted,
+    upsertErrors,
+    skippedNoKey,
+    deletedStaleRows,
+    sweepCounts,
+    seedResults,
+    durationMs,
+  })
+}
+
+export async function GET() {
+  const { data, error } = await (supabaseAdmin as any).rpc("badge_editions_counts")
+  if (error) {
+  // ⚠ UNGATED GET sitting in a file whose POST *is* token-gated, so a
+  // FILE-level auth grep vouches for this handler and should not. Raw
+  // `error.message` here is the /api/sets leak, reachable by anyone.
+    return apiErrorResponse(error, "api/badge-sync GET")
+  }
+  const counts: Record<string, number> = {}
+  let total = 0
+  for (const row of (data as Array<{ collection_id: string | null; count: number | string }> | null) ?? []) {
+    const k = row.collection_id ?? "null"
+    const n = Number(row.count) || 0
+    counts[k] = n
+    total += n
+  }
+  return NextResponse.json({ counts, total })
+}

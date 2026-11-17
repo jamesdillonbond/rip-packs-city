@@ -1,0 +1,8 @@
+name = "odds-proxy"
+main = "index.ts"
+compatibility_date = "2026-05-06"
+
+# Secrets are write-only after creation:
+#   wrangler secret put PROXY_SECRET   # equals TS_PROXY_SECRET (single-rotation)
+#   wrangler secret put ODDS_API_KEY   # the-odds-api.com key (worker-only;
+#                                      # must NEVER be exposed to Vercel)

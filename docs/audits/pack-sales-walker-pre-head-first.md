@@ -1,0 +1,81 @@
+# Pack-sales indexers — pre-head-first bodies (revert path)
+
+Deployed bodies replaced on 2026-09-23 by the head-first walker
+(`supabase/functions/_shared/pack-sales-walker.ts`). Read from the deployed
+functions with `get_edge_function` (neither carries a credential literal — both
+read `PACK_SALES_GATE_KEY` from env). To revert, deploy the body below as that
+function's `index.ts` with `verify_jwt: false` and no import map.
+
+- `backfill-topshot-pack-sales` v32, ezbr_sha256 `c1976d0a45c821aaa06a789378732890ad29090f74aa7b0ab35ab573c9890ff5`
+- `backfill-allday-pack-sales` v33, ezbr_sha256 `80a3f0a71319bd9fbd36a7c94097f002ba387a4f0f3f9e5ed4e8ca43691dd3ef`
+
+The two bodies are identical except for four literals:
+
+| | Top Shot | All Day |
+|---|---|---|
+| type const | `TS_PACK="A.0b2a3299cc857e29.PackNFT.NFT"` | `ALLDAY_PACK="A.e4cf4bdc1751c65d.PackNFT.NFT"` |
+| default `pages` | `"40"` | `"30"` |
+| table | `topshot_pack_sales_history` | `allday_pack_sales_history` |
+| cursor table | `topshot_pack_sales_cursor` | `allday_pack_sales_cursor` |
+
+## Top Shot body (v32)
+
+```ts
+// backfill-topshot-pack-sales — complete Top Shot pack SALES history from Dapper searchPackMarketplaceHistory
+// (filter base_filter.nft_type = TS PackNFT). Captures nft{dist_id,status} per sale. Cursored; durable
+// topshot_pack_sales_history. Gated ?key=. ?reset=1 restarts. Mirrors backfill-allday-pack-sales.
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+const GATE = Deno.env.get("PACK_SALES_GATE_KEY") ?? ""
+const GATE_OLD = Deno.env.get("PACK_SALES_GATE_KEY_OLD") ?? ""
+const EP="https://api.production.studio-platform.dapperlabs.com/graphql"
+const TS_PACK="A.0b2a3299cc857e29.PackNFT.NFT"
+const sb=createClient(Deno.env.get("SUPABASE_URL")??"",Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")??"")
+const H={"Content-Type":"application/json","Origin":"https://nflallday.com","Referer":"https://nflallday.com/","User-Agent":"RipPacksCity/1.0"}
+const Q=`query($i: SearchPackMarketplaceHistoryInput!){ searchPackMarketplaceHistory(searchInput:$i){ totalCount pageInfo{ endCursor hasNextPage } edges{ node{ nft_id listing_resource_id sales_price purchased receiver_address storefront_address custom_id nft{ dist_id status } created_at{ block_height block_time transaction_hash } } } } }`
+const sleep=(ms:number)=>new Promise(r=>setTimeout(r,ms))
+function addr(a:string|null){ if(!a) return null; return a.startsWith("0x")?a:"0x"+a }
+async function gql(after:string|null){
+  const variables={ i:{ first:100, after, filters:[{ base_filter:{ nft_type:{ eq: TS_PACK } } }] } }
+  for(let attempt=1;attempt<=4;attempt++){
+    try{ const r=await fetch(EP,{method:"POST",headers:H,body:JSON.stringify({query:Q,variables}),signal:AbortSignal.timeout(25000)})
+      if(!r.ok){ if((r.status===429||r.status>=500)&&attempt<4){await sleep(1000*attempt);continue} return {ok:false as const,error:`HTTP ${r.status}`} }
+      const j=await r.json(); if(j.errors?.length) return {ok:false as const,error:j.errors[0].message}
+      return {ok:true as const,data:j.data?.searchPackMarketplaceHistory} }
+    catch(e){ if(attempt<4){await sleep(1000*attempt);continue} return {ok:false as const,error:String(e)} }
+  }
+  return {ok:false as const,error:"retries"}
+}
+Deno.serve(async(req)=>{
+  const url=new URL(req.url)
+  // Fail CLOSED: an unset secret must never mean "accept anything".
+  if(!GATE) return new Response("gate not configured",{status:500})
+  const k=url.searchParams.get("key")
+  if(k!==GATE && !(GATE_OLD && k===GATE_OLD)) return new Response(JSON.stringify({error:"forbidden"}),{status:403})
+  const reset=url.searchParams.get("reset")==="1"
+  const budget=Math.min(60,Math.max(1,Number(url.searchParams.get("pages")||"40")))
+  if(reset){ await sb.from("topshot_pack_sales_cursor").upsert({id:1,after_cursor:null,done:false,updated_at:new Date().toISOString()}) }
+  let after:string|null=null
+  if(!reset){ const {data:st}=await sb.from("topshot_pack_sales_cursor").select("after_cursor,done").eq("id",1).maybeSingle(); if((st as any)?.done) return new Response(JSON.stringify({done:true}),{headers:{"content-type":"application/json"}}); after=(st as any)?.after_cursor??null }
+  let pages=0, written=0, total=0, hasNext=true, lastCursor=after, oldest:string|null=null, err:string|null=null
+  for(; pages<budget && hasNext; pages++){
+    const r=await gql(lastCursor); if(!r.ok){ err=String(r.error); break }
+    total=r.data?.totalCount??total
+    const byKey=new Map<string,any>()
+    for(const e of (r.data?.edges??[])){ const n=e.node; const ci=n.created_at||{}; const tx=ci.transaction_hash; if(!tx||!n.nft_id) continue
+      byKey.set(tx+"|"+n.nft_id,{ tx_hash:tx, pack_nft_id:String(n.nft_id), listing_resource_id:n.listing_resource_id?String(n.listing_resource_id):null,
+        sale_price_usd: n.sales_price!=null? Number(n.sales_price)/1e8 : null, purchased: n.purchased===true,
+        buyer_address: addr(n.receiver_address), storefront_address: addr(n.storefront_address), custom_id: n.custom_id??null,
+        dist_id: n.nft?.dist_id?String(n.nft.dist_id):null, nft_status: n.nft?.status??null,
+        block_height: ci.block_height!=null?Number(ci.block_height):null, block_time: ci.block_time??null }) }
+    const rows=Array.from(byKey.values())
+    if(rows.length){ const {error}=await sb.from("topshot_pack_sales_history").upsert(rows,{onConflict:"tx_hash,pack_nft_id"}); if(error){ err="upsert: "+error.message; break } written+=rows.length; const t=rows[rows.length-1].block_time; if(t) oldest=t }
+    hasNext=r.data?.pageInfo?.hasNextPage===true; lastCursor=r.data?.pageInfo?.endCursor??lastCursor; await sleep(120)
+  }
+  await sb.from("topshot_pack_sales_cursor").upsert({id:1,after_cursor:lastCursor,done:!hasNext&&!err,total_seen:total,updated_at:new Date().toISOString()})
+  const {count}=await sb.from("topshot_pack_sales_history").select("*",{count:"estimated",head:true})
+  return new Response(JSON.stringify({pages,written,total_api:total,rows_in_table:count,hasNext,oldest_block_time_this_run:oldest,err}),{headers:{"content-type":"application/json"}})
+})
+```
+
+For All Day, substitute the four literals in the table above (the v2 header comment
+reads "backfill-allday-pack-sales v2 — complete AllDay pack SALES history …").

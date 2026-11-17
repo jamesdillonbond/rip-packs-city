@@ -1,0 +1,97 @@
+name: DB pin staleness
+
+# Weekly check that every DB-invariant pin still matches the LIVE database
+# definition — the one rot class the blocking `db-tests` CI job structurally
+# CANNOT catch.
+#
+# WHY THIS EXISTS (see scripts/check-db-pin-staleness.mjs header for the full
+# story): __tests__/db-invariants-drift-guard.test.ts keeps each supabase/tests
+# /*.sql copy honest against THE MIGRATION IT NAMES — repo-vs-repo. But when a
+# pinned function is redefined and applied via MCP without a committed migration
+# file, the pin, the SQL test, and the drift guard all stay green while the test
+# validates a definition that no longer runs in production. On 2026-07-31 three
+# pins were in exactly that state. Only the live DB can answer this, and the
+# check needs SUPABASE_SERVICE_ROLE_KEY, so it can't live in the DB-less
+# `unit-tests` job — it belongs in a periodic secret-bearing sweep. This is it.
+#
+# The check READS ONLY pg_proc — it mutates nothing.
+#
+# OPERATOR NOTE: this job only enforces once two repo secrets exist —
+# NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY. Until they're added it
+# SOFT-SKIPS (warning + green), the same "don't fail on an unconfigured signal"
+# posture ops-monitor.yml's ci-status job uses — so this workflow landing doesn't
+# turn the repo red before the operator opts in. Add the secrets under
+# Settings → Secrets and variables → Actions, then it runs for real.
+
+on:
+  schedule:
+    # Daily 07:20 UTC. Moved from weekly (Mon) to daily 2026-08-10: the drift
+    # class this catches — a pinned function redefined via MCP with no committed
+    # migration file — leaves the repo, the SQL test, and the in-CI drift guard
+    # all green, so ONLY this live check sees it. Weekly meant up to 7 days of
+    # silent drift on prod-critical functions (FMV writers, serial guards, the
+    # destructive-op circuit breaker); daily closes that to ≤24h. It reads only
+    # pg_proc (mutates nothing) and soft-skips without secrets, so the extra
+    # cadence adds a ~30s read-only run/day and can never red the build on its
+    # own. Sits off the top of the hour and 20 min ahead of migration-parity
+    # (07:40) so the two live-DB sweeps don't overlap.
+    - cron: '20 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pin-staleness:
+    name: Compare DB-invariant pins against live
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Check pin staleness against the live DB
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NEXT_PUBLIC_SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "::warning::NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not configured as repo secrets — skipping the live pin-staleness check. Add them to enforce it (see this workflow's header)."
+            exit 0
+          fi
+          # The script sets exit 1 on a stale pin, exit 2 on a config/query error.
+          npm run db:pins:check
+
+      # ── Badge-art registry drift ────────────────────────────────────────────
+      # Same class as the pin check above and the same reason it lives HERE: the
+      # static registry in lib/badges/official-art.ts can only be compared to the
+      # live DB by something holding the service-role key, so in-tree CI cannot
+      # see this drift at all. It rides this job because the secrets, the
+      # soft-skip posture and the read-only contract are already established.
+      #
+      # ⚠ IT WAS WIRED INTO NOTHING UNTIL 2026-09-19, and its live query was
+      # broken from the day it was written, so it had never once run to
+      # completion. Both halves are fixed; this step is the half that makes the
+      # result observable.
+      #
+      # ⚠ AND THIS IS "RUNNABLE AND VISIBLE", NOT "CONTINUOUSLY WATCHED". GitHub
+      # does not honour this repo's daily schedules (register #80 — DAILY fired 0
+      # of 73), so in practice this runs on workflow_dispatch. That is still
+      # strictly better than a guard no path can reach, but do not read a green
+      # history here as evidence the check has been running.
+      - name: Check badge-art registry drift against the live DB
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NEXT_PUBLIC_SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "::warning::Supabase secrets not configured — skipping the badge-art drift check."
+            exit 0
+          fi
+          # exit 1 on drift, exit 2 on a config/query error or an empty read.
+          npm run badges:art:check

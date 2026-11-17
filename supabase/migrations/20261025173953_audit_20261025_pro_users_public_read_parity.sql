@@ -1,0 +1,11 @@
+-- Security audit 2026-10-25 (S9 leftover / repo-prod parity).
+-- 20260404010000_pro_users.sql creates policy "pro_users_public_read" USING (true),
+-- which let anon enumerate subscriber wallets of a removed feature. Production had
+-- already dropped it (verified 2026-10-25: only pro_users_own_read and
+-- service_role_write_pro_users exist), but no committed migration did, so a fresh
+-- `supabase db reset` would re-open it. This states the drop in the tree.
+-- Applied 2026-10-25 ~10:42 AM PT as a one-off pg_cron job (apply_migration holds
+-- any DROP from a cloud session); schema_migrations row inserted by hand.
+-- Live effect: none (IF EXISTS on an absent policy).
+-- Revert (not recommended): CREATE POLICY "pro_users_public_read" ON public.pro_users FOR SELECT USING (true);
+DROP POLICY IF EXISTS "pro_users_public_read" ON public.pro_users;

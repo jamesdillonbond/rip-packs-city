@@ -1,0 +1,330 @@
+// lib/chains/flow/allday-edition-onchain.ts
+//
+// On-chain AllDay edition-resolution helpers, factored out of the
+// allday-sales-indexer so the dedicated unmapped-sales resolver
+// (/api/cron/allday-resolve-unmapped) can reuse the SAME proven path.
+//
+// Why on-chain (and not AllDay's marketplace GraphQL): nflallday.com's
+// Cloudflare WAF now serves a "Blocked" challenge to Cloudflare-Worker and
+// Supabase-edge egress (verified 2026-06-16), which silently broke the old
+// consumer-GQL `searchMomentNFTsV2(byFlowIDs)` resolver. The chain is the
+// canonical, WAF-proof source of truth: a moment's `editionID` is immutable
+// and readable by borrowing the NFT from a current holder (the sale's buyer,
+// recovered from the tx's AllDay.Deposit.to event). This is exactly how the
+// wallet-backfill already populates wallet_moments_cache.edition_key.
+//
+// These run on Vercel egress (Flow REST is reachable there, unlike the
+// AllDay GQL via worker), matching the healthy allday-fmv-populate path.
+
+import { normalizeFlowEventAddress } from "@/lib/address"
+import { parseGameDate } from "@/lib/game-date"
+
+export const FLOW_REST = "https://rest-mainnet.onflow.org"
+export const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070"
+export const COLLECTION_SLUG = "nfl_all_day"
+export const ALLDAY_DEPOSIT_EVENT = "A.e4cf4bdc1751c65d.AllDay.Deposit"
+export const ALLDAY_WITHDRAW_EVENT = "A.e4cf4bdc1751c65d.AllDay.Withdraw"
+
+const SCRIPT_TIMEOUT_MS = 15_000
+
+// Addresses that appear in every Flowty/Dapper purchase envelope but are never
+// the buyer. Normalised to 0x + 16-hex-chars for set lookups.
+//
+// These are also used to sanitise a sale row's STORED buyer_address, not just
+// tx-envelope candidates — see the AllDay contract entry below.
+export const EXCLUDED_ADDRESSES = new Set<string>([
+  "0x3cdbb3d569211ff3", // Flowty storefront escrow / seller
+  "0x18eb4ee6b3c026d2", // Flowty fee payer
+  "0xead892083b3e2c6c", // Dapper DUC co-signer
+  // The AllDay CONTRACT account itself. Added 2026-07-26: it is by far the most
+  // common buyer_address on open AllDay unmapped_sales (4,816 rows, and the only
+  // value still arriving today), because the sale indexer records the contract
+  // rather than an end-user wallet on this path. It is not a wallet — it has no
+  // /public/AllDayNFTCollection to borrow from — so borrowing against it always
+  // returns nil. Worse, its mere PRESENCE used to suppress the tx-decode
+  // fallback (the gate was "only decode when we have no buyer at all"), which
+  // is the leg that produces ~100% of on-chain resolutions. Excluding it here
+  // hands those rows to the decode path.
+  "0xe4cf4bdc1751c65d", // NFL All Day contract account
+])
+
+// The one copy lives in lib/address.ts (2026-10-15); kept under this name for its importers.
+export const normalizeAddress = normalizeFlowEventAddress
+
+// Cadence JSON-CDC unwrapper (mirrors the indexer / dapper-v1-tx-decode copy).
+function unwrapCdc(node: unknown): unknown {
+  if (node === null || node === undefined) return node
+  if (Array.isArray(node)) return node.map(unwrapCdc)
+  if (typeof node !== "object") return node
+  const { type, value } = node as { type?: string; value?: unknown }
+  if (type !== undefined && value !== undefined) {
+    switch (type) {
+      case "Optional":
+        return value === null ? null : unwrapCdc(value)
+      case "Array":
+        return (value as unknown[]).map(unwrapCdc)
+      case "Dictionary": {
+        const out: Record<string, unknown> = {}
+        for (const kv of value as Array<{ key: unknown; value: unknown }>) {
+          out[String(unwrapCdc(kv.key))] = unwrapCdc(kv.value)
+        }
+        return out
+      }
+      case "Struct":
+      case "Resource":
+      case "Event":
+      case "Contract":
+      case "Enum": {
+        const out: Record<string, unknown> = {}
+        const fields = (value as { fields?: Array<{ name: string; value: unknown }> }).fields ?? []
+        for (const f of fields) out[f.name] = unwrapCdc(f.value)
+        return out
+      }
+      case "Type":
+        return { staticType: (value as { staticType?: unknown }).staticType }
+      default:
+        return value
+    }
+  }
+  return node
+}
+
+// AllDay-typed borrow: the public capability at /public/AllDayNFTCollection is
+// published as a `&AllDay.Collection` (the contract's concrete collection
+// resource). Borrowing the concrete type lets us call the AllDay-specific
+// `borrowMomentNFT(id:)` accessor, which returns `&AllDay.NFT?` directly with
+// editionID + serialNumber exposed. Returns nil if the wallet no longer holds
+// the moment (re-sold since the sale) — handled as a retryable miss.
+export const BORROW_MOMENT_SCRIPT = `
+import AllDay from 0xe4cf4bdc1751c65d
+access(all) fun main(buyer: Address, id: UInt64): {String: String}? {
+  let col = getAccount(buyer).capabilities.borrow<&AllDay.Collection>(/public/AllDayNFTCollection)
+  if col == nil { return nil }
+  let nft = col!.borrowMomentNFT(id: id)
+  if nft == nil { return nil }
+  return {
+    "id": nft!.id.toString(),
+    "editionID": nft!.editionID.toString(),
+    "serialNumber": nft!.serialNumber.toString(),
+    "mintingDate": nft!.mintingDate.toString()
+  }
+}
+`
+
+// ⛔ THE ONE COPY (2026-11-15). This script and two private copies (allday-sales-indexer,
+// allday-sales-history-backfill) had NEVER type-checked against the deployed AllDay
+// contract: getEditionData / getPlayData / getSetData / getSeriesData return NON-optional
+// values (they panic on an unknown id), EditionData.tier is a non-optional String (so
+// `ed.tier ?? "COMMON"` is a type error), and SetData has no seriesID (the edition does).
+// Every call threw, so the chain fallback for an edition the hydrator missed never created
+// one. Play metadata keys are playerFirstName / playerLastName / gameDate (MM/DD/YYYY) —
+// there is no playerFullName or dateOfMoment. An unknown id fails with
+// "pre-condition failed: Cannot borrow edition, no such id"; callers catch it.
+// Verified on mainnet 11-15 (editions 255 and 5223). Both routes import this constant.
+export const GET_EDITION_DATA_SCRIPT = `
+import AllDay from 0xe4cf4bdc1751c65d
+access(all) fun main(editionID: UInt64): {String: String}? {
+  let ed = AllDay.getEditionData(id: editionID)
+  var result: {String: String} = {
+    "playID": ed.playID.toString(),
+    "setID": ed.setID.toString(),
+    "seriesID": ed.seriesID.toString(),
+    "tier": ed.tier,
+    "maxMintSize": ed.maxMintSize?.toString() ?? "",
+    "numMinted": ed.numMinted.toString()
+  }
+  let meta = AllDay.getPlayData(id: ed.playID).metadata
+  let first = meta["playerFirstName"] ?? ""
+  let last = meta["playerLastName"] ?? ""
+  if first != "" && last != "" {
+    result["playerName"] = first.concat(" ").concat(last)
+  } else {
+    result["playerName"] = first.concat(last)
+  }
+  result["teamName"] = meta["teamName"] ?? ""
+  result["playType"] = meta["playType"] ?? ""
+  result["dateOfMoment"] = meta["gameDate"] ?? ""
+  result["awayTeamName"] = meta["awayTeamName"] ?? ""
+  result["homeTeamName"] = meta["homeTeamName"] ?? ""
+  result["setName"] = AllDay.getSetData(id: ed.setID).name
+  result["seriesName"] = AllDay.getSeriesData(id: ed.seriesID).name
+  return result
+}
+`
+
+export async function runAllDayScript(
+  code: string,
+  args: Array<{ type: string; value: unknown }>,
+): Promise<unknown> {
+  const body = {
+    script: Buffer.from(code, "utf8").toString("base64"),
+    arguments: args.map((a) => Buffer.from(JSON.stringify(a), "utf8").toString("base64")),
+  }
+  const res = await fetch(`${FLOW_REST}/v1/scripts?block_height=sealed`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(SCRIPT_TIMEOUT_MS),
+  })
+  if (!res.ok) throw new Error(`script HTTP ${res.status}`)
+  const json = (await res.json()) as { value?: string } | string
+  let raw: string
+  if (typeof json === "string") raw = json
+  else raw = String(json.value ?? "")
+  if (!raw) return null
+  const trimmed = raw.trim().replace(/^"|"$/g, "")
+  const decoded = JSON.parse(Buffer.from(trimmed, "base64").toString("utf8"))
+  return unwrapCdc(decoded)
+}
+
+// Flow REST /v1/events caps each query at a 250-block range.
+const EVENTS_RANGE_MAX = 250
+
+// Scan AllDay.Deposit events forward from `startHeight` over `windowBlocks`,
+// returning every recipient (`to`) of `nftId` in chronological (block-ascending)
+// order. Why: a sale's recorded buyer_address is a Dapper settlement
+// intermediate that re-deposits the moment into the real end-user wallet
+// ~hundreds of blocks (~minutes) after the sale, so borrowing against the
+// buyer_address returns nil (the moment is gone). The end-user typically holds,
+// so the latest in-window recipient is the current holder we can borrow from.
+// `onChunk` is invoked once per HTTP range request so the caller can enforce a
+// per-run scan budget. Transport/parse errors on a chunk are skipped (best
+// effort) — a missed chunk just means fewer recipient candidates — but they are
+// now REPORTED via `onError` rather than swallowed.
+//
+// Why onError exists (added 2026-07-26): this function used to do
+// `if (res.ok) blocks = ...` inside a bare `catch {}` with no error signal at
+// all. `runAllDayScript` correctly throws on `!res.ok`, but this helper did not,
+// so a Flow REST `/v1/events` outage (403, 429, 5xx) would make every scan
+// silently return `[]`. The caller would then count the row as `onchain_nil`
+// ("the buyer just moved the moment") instead of `onchain_err` ("the chain is
+// unreachable") — exactly the shape that hides a genuinely broken transport
+// behind a normal-looking, ok=true pipeline run. A non-2xx response is a
+// reportable error, not an empty result set.
+export async function scanAllDayDepositsForNft(
+  nftId: string,
+  startHeight: number,
+  windowBlocks: number,
+  onChunk?: () => void,
+  onError?: (err: unknown) => void,
+): Promise<Array<{ block: number; to: string }>> {
+  const out: Array<{ block: number; to: string }> = []
+  const end = startHeight + windowBlocks
+  let h = startHeight
+  while (h <= end) {
+    const hi = Math.min(h + EVENTS_RANGE_MAX - 1, end)
+    onChunk?.()
+    let blocks: Array<{ block_height?: string | number; events?: Array<{ payload?: string }> }> = []
+    try {
+      const res = await fetch(
+        `${FLOW_REST}/v1/events?type=${ALLDAY_DEPOSIT_EVENT}&start_height=${h}&end_height=${hi}`,
+        { signal: AbortSignal.timeout(12_000) },
+      )
+      if (res.ok) blocks = (await res.json()) as typeof blocks
+      // A non-2xx is a transport failure, NOT "no deposits in this range".
+      else onError?.(new Error(`events HTTP ${res.status}`))
+    } catch (err) {
+      /* skip this chunk on transport error, but surface it to the caller */
+      onError?.(err)
+    }
+    for (const b of blocks ?? []) {
+      for (const ev of b.events ?? []) {
+        if (!ev.payload) continue
+        try {
+          const payload = unwrapCdc(JSON.parse(Buffer.from(ev.payload, "base64").toString("utf8"))) as
+            | { id?: unknown; to?: unknown }
+            | null
+          if (payload && String(payload.id) === String(nftId) && payload.to) {
+            out.push({ block: Number(b.block_height), to: normalizeAddress(String(payload.to)) })
+          }
+        } catch {
+          /* ignore malformed event payload */
+        }
+      }
+    }
+    h = hi + 1
+  }
+  return out
+}
+
+// Recover buyer/proposer/payer candidates from a tx envelope, minus the known
+// non-buyer escrow/fee addresses. Used when the unmapped row has no
+// buyer_address and decodeV1SaleTx couldn't pin AllDay.Deposit.to.
+export async function fetchTxBuyers(txId: string): Promise<string[]> {
+  try {
+    const clean = txId.replace(/^0x/, "")
+    const res = await fetch(`${FLOW_REST}/v1/transactions/${clean}`, {
+      signal: AbortSignal.timeout(8000),
+    })
+    if (!res.ok) return []
+    const json = (await res.json()) as {
+      proposal_key?: { address?: string }
+      authorizers?: string[]
+      payer?: string
+    }
+    const candidates = new Set<string>()
+    if (json.proposal_key?.address) candidates.add(normalizeAddress(json.proposal_key.address))
+    for (const a of json.authorizers ?? []) candidates.add(normalizeAddress(a))
+    if (json.payer) candidates.add(normalizeAddress(json.payer))
+    return Array.from(candidates).filter((a) => !EXCLUDED_ADDRESSES.has(a))
+  } catch {
+    return []
+  }
+}
+
+function normalizeTier(raw: string | undefined | null): string | null {
+  if (!raw) return null
+  const t = String(raw).toUpperCase()
+  if (t.includes("ULTIMATE")) return "ULTIMATE"
+  if (t.includes("LEGENDARY")) return "LEGENDARY"
+  if (t.includes("RARE")) return "RARE"
+  if (t.includes("COMMON")) return "COMMON"
+  return null
+}
+
+// Build an `editions` upsert row from a GET_EDITION_DATA_SCRIPT result, so a
+// just-resolved edition that the catalog never seeded exists before
+// promote_unmapped_sales tries to join nft_edition_map → editions.
+export function buildOnChainEditionRow(
+  editionID: string,
+  data: Record<string, string>,
+  now: string,
+): Record<string, unknown> {
+  const playerName = (data.playerName ?? "").trim() || null
+  const setName = (data.setName ?? "").trim() || null
+  const teamName = (data.teamName ?? "").trim() || null
+  const numMinted = Number(data.numMinted)
+  const maxMint = Number(data.maxMintSize)
+  const circulation = Number.isFinite(maxMint) && maxMint > 0
+    ? maxMint
+    : Number.isFinite(numMinted) && numMinted > 0
+    ? numMinted
+    : null
+  const seriesID = Number(data.seriesID)
+  const setIdOnchain = Number(data.setID)
+  const playIdOnchain = Number(data.playID)
+  // The chain gives MM/DD/YYYY; parseGameDate normalises it and drops sentinel dates.
+  const gameDate = parseGameDate(data.dateOfMoment)
+  const composedName =
+    playerName && setName ? `${playerName} — ${setName}` : playerName ?? setName
+
+  return {
+    external_id: editionID,
+    collection_id: ALLDAY_COLLECTION_ID,
+    collection: COLLECTION_SLUG,
+    name: composedName,
+    player_name: playerName,
+    set_name: setName,
+    team_name: teamName,
+    tier: normalizeTier(data.tier),
+    series: Number.isFinite(seriesID) && seriesID > 0 ? seriesID : null,
+    circulation_count: circulation,
+    set_id_onchain: Number.isFinite(setIdOnchain) ? setIdOnchain : null,
+    play_id_onchain: Number.isFinite(playIdOnchain) ? playIdOnchain : null,
+    play_type: (data.playType ?? "").trim() || null,
+    game_date: gameDate,
+    home_team: (data.homeTeamName ?? "").trim() || null,
+    away_team: (data.awayTeamName ?? "").trim() || null,
+    updated_at: now,
+  }
+}

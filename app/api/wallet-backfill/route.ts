@@ -1,0 +1,856 @@
+import { NextRequest, NextResponse, after } from "next/server"
+import fcl from "@/lib/chains/flow/flow"
+import * as t from "@onflow/types"
+import { supabaseAdmin } from "@/lib/supabase"
+import { refreshSavedCardsForWallet } from "@/lib/wallet/saved-card-refresh"
+import {
+  isWalletAddress,
+  resolveTopShotUsernameCacheAware,
+} from "@/lib/chains/flow/topshot-username-resolve"
+import { isStorageLimitError, isComputationLimitError, isNoCollectionCapabilityError } from "@/lib/chains/flow/wallet-backfill-helpers"
+// Imported from its own module for the same reason as the chunk writer below:
+// this route's suite stubs wallet-backfill-helpers wholesale, and a delete
+// routed through that stub would never run on the Top Shot path.
+import { deleteUnseenWmcRows, unseenDeleteExtra, type UnseenDeleteOutcome } from "@/lib/chains/flow/wmc-unseen-delete"
+import { proveCollectionEmpty, readCollectionCount } from "@/lib/chains/flow/wmc-empty-proof"
+// Imported from the writer module directly, not re-exported through
+// wallet-backfill-helpers: this route's test suite stubs that module wholesale,
+// and going through it would put the stub — not the real chunk writer — on the
+// Top Shot path, which is exactly how the duplicate loop survived.
+import {
+  newChunkTally,
+  chunkFailureError,
+  chunkFailureExtra,
+  upsertWmcChunkWithRetry,
+} from "@/lib/chains/flow/wmc-chunk-upsert"
+import { claimPipelineLockDetailed, releasePipelineLock, skippedReasonFor, walletBackfillLockKey } from "@/lib/wallet-backfill-lock"
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
+import { dispatchContinuation, type ContinuationDispatch } from "@/lib/chains/flow/wallet-backfill-continuation"
+import { enqueueResume } from "@/lib/chains/flow/wallet-backfill-resume"
+
+export const dynamic = "force-dynamic"
+export const maxDuration = 300
+
+const BATCH_SIZE = 20
+const CONCURRENCY = 8
+const UPSERT_CHUNK = 200
+const COLLECTION_SLUG = "nba_top_shot"
+const NBA_TOP_SHOT_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+// Stop the inner walk before Vercel kills the function so the upserts that
+// already landed are not abandoned mid-batch and the pipeline_runs row gets
+// a clean "timeout" termination_reason instead of a generic 504.
+const SOFT_DEADLINE_MS = 260_000
+// Defensive cap. Largest known TopShot wallet is ~70k; 200k leaves room and
+// also short-circuits any pathological response. Beyond this we mark the
+// run safety_ceiling and stop walking.
+const MAX_MOMENTS_PER_RUN = 200_000
+// A walk cut at the soft deadline that still made progress re-dispatches itself
+// (2026-11-08, Dame Time): rrx69's 3,884-Moment wallet needs ~4 walks of ~850
+// metadata reads each, and nothing else re-walks a wallet sooner than the next
+// 6 h sweep. With the key-aware skip set each continuation starts where the last
+// stopped. Bounded: a chain stops at this depth, or when a walk adds nothing.
+const MAX_CONTINUATIONS = 8
+
+async function getOwnedMomentIds(wallet: string): Promise<number[]> {
+  const cadence = `
+    import TopShot from 0x0b2a3299cc857e29
+    access(all)
+    fun main(address: Address): [UInt64] {
+      let acct = getAccount(address)
+      let col = acct.capabilities.borrow<&{TopShot.MomentCollectionPublic}>(/public/MomentCollection)
+      if col == nil { return [] }
+      return col!.getIDs()
+    }
+  `
+  const result = await fcl.query({
+    cadence,
+    args: (arg: any) => [arg(wallet, t.Address)],
+  })
+  return Array.isArray(result) ? (result as number[]) : []
+}
+
+async function getMomentMetadata(wallet: string, id: number): Promise<Record<string, string>> {
+  const cadence = `
+    import TopShot from 0x0b2a3299cc857e29
+    import MetadataViews from 0x1d7e57aa55817448
+    access(all)
+    fun main(address: Address, id: UInt64): {String:String} {
+      let acct = getAccount(address)
+      let col = acct.capabilities.borrow<&{TopShot.MomentCollectionPublic}>(/public/MomentCollection)
+        ?? panic("no collection")
+      let nft = col.borrowMoment(id:id) ?? panic("no nft")
+      let view = nft.resolveView(Type<TopShot.TopShotMomentMetadataView>()) ?? panic("no metadata")
+      let data = view as! TopShot.TopShotMomentMetadataView
+      return {
+        "player": data.fullName ?? "",
+        "team": data.teamAtMoment ?? "",
+        "setName": data.setName ?? "",
+        "series": data.seriesNumber?.toString() ?? "",
+        "serial": data.serialNumber.toString(),
+        "mint": data.numMomentsInEdition?.toString() ?? "",
+        "playID": data.playID.toString(),
+        "setID": data.setID.toString()
+      }
+    }
+  `
+  const result = await fcl.query({
+    cadence,
+    args: (arg: any) => [arg(wallet, t.Address), arg(String(id), t.UInt64)],
+  })
+  return result as Record<string, string>
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length)
+  let nextIndex = 0
+  async function runWorker() {
+    while (true) {
+      const currentIndex = nextIndex++
+      if (currentIndex >= items.length) return
+      results[currentIndex] = await worker(items[currentIndex], currentIndex)
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, () => runWorker())
+  )
+  return results
+}
+
+async function logRun(args: {
+  startedAt: string
+  wallet: string
+  rowsFound: number
+  rowsWritten: number
+  rowsSkipped: number
+  ok: boolean
+  error?: string | null
+  extra: Record<string, unknown>
+}) {
+  try {
+    await (supabaseAdmin as any).rpc("log_pipeline_run", {
+      p_pipeline: "wallet-backfill",
+      p_started_at: args.startedAt,
+      p_rows_found: args.rowsFound,
+      p_rows_written: args.rowsWritten,
+      p_rows_skipped: args.rowsSkipped,
+      p_ok: args.ok,
+      p_error: args.error ?? null,
+      p_collection_slug: "nba_top_shot",
+      p_cursor_before: null,
+      p_cursor_after: null,
+      p_extra: { wallet: args.wallet, ...args.extra },
+    })
+  } catch (err) {
+    console.warn(
+      `[wallet-backfill] log_pipeline_run failed: ${err instanceof Error ? err.message : String(err)}`
+    )
+  }
+}
+
+// Returns EVERY cached id (`all` — the unseen-delete's presence snapshot) and
+// the subset already ENRICHED with an edition_key (`enriched` — what the skip
+// may skip).
+//
+// ⛔ 2026-11-08 (Dame Time): this was a presence-only Set, so a Moment whose
+// metadata read failed once kept edition_key NULL FOREVER — the row existed, so
+// every later skip_cached walk skipped it. 2,987 Top Shot Moments in saved
+// wallets sat unnamed and unsearchable; collectors could not find their own
+// Dame commons in the challenge picker. The multi-collection walkers were
+// fixed for exactly this class on 2026-08-02 (loadCachedMomentIdsAndKeys in
+// lib/chains/flow/wallet-backfill-helpers.ts); the Top Shot route never was.
+async function loadCachedMomentIds(wallet: string): Promise<{ all: Set<string>; enriched: Set<string> }> {
+  const ids = new Set<string>()
+  const enriched = new Set<string>()
+  const PAGE = 1000
+  // Keyset paging on moment_id over the unique (wallet, collection, moment_id)
+  // index — LIMIT/OFFSET re-walked the prefix on every page (O(n²) on whales).
+  // Mirrors loadCachedMomentIds in lib/chains/flow/wallet-backfill-helpers.ts.
+  let after: string | null = null
+  while (true) {
+    let q = (supabaseAdmin as any)
+      .from("wallet_moments_cache")
+      .select("moment_id, edition_key")
+      .eq("wallet_address", wallet)
+      .eq("collection_id", NBA_TOP_SHOT_UUID)
+    if (after != null) q = q.gt("moment_id", after)
+    const { data, error } = await q.order("moment_id", { ascending: true }).limit(PAGE)
+    if (error) {
+      console.warn(`[wallet-backfill] cached-id read failed: ${error.message}`)
+      return { all: ids, enriched }
+    }
+    const rows = (data ?? []) as Array<{ moment_id: string; edition_key: string | null }>
+    for (const r of rows) {
+      ids.add(String(r.moment_id))
+      if (r.edition_key) enriched.add(String(r.moment_id))
+    }
+    if (rows.length < PAGE) break
+    after = String(rows[rows.length - 1].moment_id)
+  }
+  return { all: ids, enriched }
+}
+
+// How stale a wallet's cross-collection stats may get when a run changed
+// nothing. Mirrors lib/chains/flow/wallet-backfill-helpers.ts.
+const STATS_MAX_AGE_MS = 6 * 60 * 60 * 1000
+
+// refresh_seeded_wallet_stats writes the legacy single-timestamp +
+// cached_moment_count. The per-collection jsonb gets its top-shot slug
+// bumped here so the multi-collection cron can find stale wallets per
+// collection independently.
+//
+// `changedRows` gates the EXPENSIVE half. refresh_seeded_wallet_stats wraps
+// holdings_summary(), which aggregates every collection the wallet holds — yet
+// it was called at the end of each per-collection backfill, so it ran ~11x per
+// wallet per day recomputing the same cross-collection number (~290 ms typical,
+// ~21 s / 247 MB of reads on a 152,806-moment whale, the largest single
+// consumer of DB time in pg_stat_statements).
+//
+// 76.6% of Top Shot backfill runs write zero rows, and a run that wrote nothing
+// cannot have changed holdings. cached_fmv_usd still drifts on its own as FMV
+// is repriced, so the skip is bounded by STATS_MAX_AGE_MS rather than being
+// unconditional. Any run that DID write rows always refreshes immediately, so
+// a real holdings change is never delayed. Full rationale — including why this
+// is not a plain time debounce and not an orchestrator-level hook — is on the
+// helpers copy in lib/chains/flow/wallet-backfill-helpers.ts.
+async function stampLastRefreshed(wallet: string, changedRows?: number) {
+  // A collector's saved cards follow the walk that changed their cache (2026-11-07:
+  // a signup's NBA card sat at the 50-row first-paint count for ~6 h). No-op on 0.
+  await refreshSavedCardsForWallet(wallet, changedRows)
+  let refreshStats = true
+  if (changedRows === 0) {
+    try {
+      // ⓘ `error` is DELIBERATELY not checked here, and this is the one read in
+      // this sweep that should fail open. A missing/unreadable `last_refreshed_at`
+      // makes `lastMs` NaN, which sends the wallet down the FULL-walk path — more
+      // work, never less, and never a wrong answer. Contrast every other lookup in
+      // these routes, where an unread table becomes "not found" and lands on a
+      // retirement, a dropped row or a NULL foreign key. The discriminator is not
+      // the expression; it is where `not found` LANDS.
+      const { data } = await (supabaseAdmin as any)
+        .from("seeded_wallets")
+        .select("last_refreshed_at")
+        .eq("wallet_address", wallet)
+        .limit(1)
+      const raw = Array.isArray(data) ? data[0]?.last_refreshed_at : null
+      const lastMs = raw ? Date.parse(String(raw)) : NaN
+      // Fail-open: an unparseable/absent timestamp means "never refreshed".
+      refreshStats = !Number.isFinite(lastMs) || Date.now() - lastMs > STATS_MAX_AGE_MS
+    } catch {
+      refreshStats = true
+    }
+  }
+  if (refreshStats) {
+    try {
+      await (supabaseAdmin as any).rpc("refresh_seeded_wallet_stats", { p_wallet_address: wallet })
+    } catch { /* swallow */ }
+  }
+  try {
+    // write-discarded: a "we checked" stamp; its one reader (seed-wallet-refresh lastWalkMs) takes the max, so a failure only walks the wallet sooner.
+    await (supabaseAdmin as any)
+      .from("seeded_wallets")
+      .update({ last_refreshed_per_collection: { [COLLECTION_SLUG]: new Date().toISOString() } })
+      .eq("wallet_address", wallet)
+  } catch { /* swallow */ }
+}
+
+async function runBackfill(
+  startedAtIso: string,
+  startedMs: number,
+  wallet: string,
+  skipCached: boolean
+): Promise<{ rowsFound: number; scanned: boolean; continueWalk?: boolean }> {
+  let totalFetched = 0
+  let totalUpserted = 0
+  let postPassUpdated = 0
+  let batchesFetched = 0
+  let totalSkippedCached = 0
+  // wallet_moments_cache upsert-chunk failures. These used to be console.error'd
+  // and then swallowed — no counter, not in rows_skipped, run still ok:true — so
+  // chunk-level data loss was structurally invisible (3,497 runs reported 0
+  // failures across a window that dropped ~37 chunks of up to 200 rows). Mirrors
+  // lib/chains/flow/wallet-backfill-helpers.ts's ChunkFailureTally and
+  // app/api/cron/ufc-enrichment-drain/route.ts's write-error surfacing.
+  // Shared with lib/chains/flow/wallet-backfill-helpers.ts rather than
+  // re-declared: this route had its own copy of the counters AND its own copy of
+  // the bare .rpc() upsert, so the 2026-08-28 retry fix would have landed on the
+  // other four collections and silently missed Top Shot. One mechanism, one set
+  // of edge cases.
+  const chunkTally = newChunkTally()
+  // ⚠ THE DENOMINATOR, and this lane was the only one without it. deep-audit R30
+  // asks for chunk loss judged PER ROW ATTEMPTED, never as an absolute count —
+  // an absolute zero is nearly guaranteed on a day the cache is caught up and
+  // only a handful of rows are handed to the writer. Every sibling lane emits
+  // `rows_to_write`; this route buffers and flushes its own chunks, so it had
+  // no single `rows` array to measure and emitted nothing. Without it the
+  // biggest lane's loss RATE is not computable at all.
+  let totalRowsAttempted = 0
+  let terminatedReason:
+    | "no_more_moments"
+    | "safety_ceiling"
+    | "timeout"
+    | "error" = "no_more_moments"
+
+  // Concurrency guard (audit_20260627_pipeline_run_locks_concurrency_guard):
+  // a concurrent invocation for the same wallet (cron-job.org wave overlapping
+  // the GHA backstop, or an onboarding prewarm racing a cron wave) no-ops
+  // instead of paying a 2nd full on-chain Cadence walk. Fail-open, except that
+  // a claim refused by a SATURATED database skips this tick (see the helper).
+  const lockKey = walletBackfillLockKey(COLLECTION_SLUG, wallet)
+  const lockClaim = await claimPipelineLockDetailed(lockKey)
+  if (!lockClaim.claimed) {
+    const terminatedReason = skippedReasonFor(lockClaim)
+    await logRun({
+      startedAt: startedAtIso,
+      wallet,
+      rowsFound: 0,
+      rowsWritten: 0,
+      rowsSkipped: 0,
+      ok: true,
+      extra: {
+        terminated_reason: terminatedReason,
+        skip_cached: skipCached,
+        elapsed_ms: Date.now() - startedMs,
+      },
+    })
+    console.log(
+      lockClaim.reason === "db_saturated"
+        ? `[wallet-backfill] ${terminatedReason} wallet=${wallet} — lock claim hit a saturated database; the next cohort cycle retries`
+        : `[wallet-backfill] ${terminatedReason} wallet=${wallet} — concurrent run holds the lock`,
+    )
+    return { rowsFound: 0, scanned: false }
+  }
+
+  try {
+    const onChainIds = await getOwnedMomentIds(wallet)
+    if (onChainIds.length === 0) {
+      // An empty list is NOT proof the wallet emptied (a nil capability reads the
+      // same). Ask the chain separately; only "collection present, 0 ids" retires
+      // the cached rows. prune_stale_wmc() skips seeded wallets, so without this a
+      // tracked wallet that sold out kept its moments forever (2026-10-14:
+      // 0x8e655887a360cc3f 137 rows, 0x4ab8b294112f182c 54). wmc-empty-proof.ts.
+      const emptyProof = await proveCollectionEmpty(wallet, "nba_top_shot")
+      const unseen: UnseenDeleteOutcome =
+        emptyProof === "proven_empty"
+          ? await deleteUnseenWmcRows({
+              wallet,
+              collectionUuid: NBA_TOP_SHOT_UUID,
+              observedIds: new Set<string>(),
+              pipelineName: "wallet-backfill",
+              emptyProven: true,
+            })
+          : { deleted: 0, skippedReason: `empty_${emptyProof}` }
+      await stampLastRefreshed(wallet, unseen.deleted)
+      await logRun({
+        startedAt: startedAtIso,
+        wallet,
+        rowsFound: 0,
+        rowsWritten: 0,
+        rowsSkipped: 0,
+        // A failed retire is a failed run: the rows it meant to remove are still there.
+        ok: !unseen.error,
+        error: unseen.error ? `unseen-delete: ${unseen.error}` : null,
+        extra: {
+          on_chain_count: 0,
+          pages_fetched: 0,
+          total_moments_seen: 0,
+          terminated_reason: "no_more_moments",
+          skip_cached: skipCached,
+          empty_proof: emptyProof,
+          ...unseenDeleteExtra(unseen),
+          elapsed_ms: Date.now() - startedMs,
+        },
+      })
+      // An empty getIDs() is a measurement only when the proof read agrees (or the wallet has no collection,
+      // or no proof script exists for it): "not_empty" contradicts it and "read_failed" proves nothing.
+      return { rowsFound: 0, scanned: !unseen.error && (emptyProof === "proven_empty" || emptyProof === "no_collection" || emptyProof === "no_proof_script") }
+    }
+
+    // THE CACHE-SKIP PATH IS AN OWNERSHIP VERIFICATION, NOT A GAP.
+    //
+    // onChainIds above is the wallet's COMPLETE on-chain id set. Every cached id
+    // that appears in it has just been confirmed still owned; skip_cached only
+    // suppresses the (expensive) metadata re-walk. Those rows are therefore
+    // verified and NOT written — so wallet_moments_cache.last_seen_at does not
+    // advance for them, and neither does upsert_wmc_batch's change-detect path
+    // for rows whose edition_key/serial are unchanged.
+    //
+    // Do NOT read an old last_seen_at as "unverified". Measured 2026-07-25:
+    // 2,390,895 such confirmations in 24h against ~291,192/day needed to honour a
+    // 7-day promise across 2,048,775 rows (~8.2x surplus), and 250 distinct
+    // wallets walked in 72h vs 246 distinct Top Shot wmc wallets — i.e. every
+    // wallet every <=3 days. last_seen_at nonetheless showed 1,188,087 Top Shot
+    // rows older than 30 days. That gap is the METRIC, not the pipeline: it was
+    // filed as a 79%-stale crisis and retired on 2026-07-25.
+    //
+    // Bumping last_seen_at here would be ~2.39M UPDATEs/day on a 2.05M-row /
+    // ~800MB table on the hot write path — more than a full table rewrite per day
+    // in heap churn + WAL. The correct grain already exists and is already
+    // written every run: wallet_backfill_state.last_scanned_at, per wallet +
+    // collection (record_wallet_backfill_scan below). Read ownership freshness
+    // with check_wmc_ownership_freshness() — set-returning, 0 rows = clean.
+    const cached = skipCached ? await loadCachedMomentIds(wallet) : { all: new Set<string>(), enriched: new Set<string>() }
+    const cachedIds = cached.all
+    // Skip only rows that already HAVE an edition_key; a key-less row is walked
+    // again until its metadata lands (see loadCachedMomentIds).
+    const idsToWalk = skipCached
+      ? onChainIds.filter((id) => !cached.enriched.has(String(id)))
+      : onChainIds
+    totalSkippedCached = onChainIds.length - idsToWalk.length
+
+    if (idsToWalk.length > MAX_MOMENTS_PER_RUN) {
+      terminatedReason = "safety_ceiling"
+      idsToWalk.length = MAX_MOMENTS_PER_RUN
+    }
+
+    const now = new Date().toISOString()
+    const allRows: Array<Record<string, unknown>> = []
+
+    for (let batchStart = 0; batchStart < idsToWalk.length; batchStart += BATCH_SIZE) {
+      if (Date.now() - startedMs > SOFT_DEADLINE_MS) {
+        terminatedReason = "timeout"
+        break
+      }
+
+      const batch = idsToWalk.slice(batchStart, batchStart + BATCH_SIZE)
+      batchesFetched++
+
+      const metadataResults = await mapWithConcurrency(batch, CONCURRENCY, async (id) => {
+        try {
+          return await getMomentMetadata(wallet, id)
+        } catch (err) {
+          console.warn(
+            `[wallet-backfill] meta fail momentId=${id} wallet=${wallet.slice(0, 10)} reason=${
+              err instanceof Error ? err.message : String(err)
+            }`
+          )
+          return null
+        }
+      })
+
+      for (let i = 0; i < batch.length; i++) {
+        const meta = metadataResults[i]
+        if (!meta) continue
+        totalFetched++
+
+        const setID = meta.setID ?? null
+        const playID = meta.playID ?? null
+        const editionKey = setID && playID ? `${setID}:${playID}` : ""
+        const serial = meta.serial ? parseInt(meta.serial, 10) : null
+        const seriesNum = meta.series ? parseInt(meta.series, 10) : null
+
+        allRows.push({
+          wallet_address: wallet,
+          collection_id: NBA_TOP_SHOT_UUID,
+          moment_id: String(batch[i]),
+          edition_key: editionKey,
+          serial_number: Number.isFinite(serial) ? serial : null,
+          player_name: meta.player || null,
+          set_name: meta.setName || null,
+          tier: null,
+          series_number: Number.isFinite(seriesNum) ? seriesNum : null,
+          acquired_at: null,
+          fmv_usd: null,
+          last_seen_at: now,
+        })
+      }
+
+      // Flush in flight whenever we cross the chunk threshold so partial
+      // progress is durable even if the function is killed mid-walk.
+      // Change-detecting RPC (audit_20260610_upsert_wmc_batch_change_detect):
+      // skips unchanged rows (same edition_key + serial, last_seen <24h)
+      // instead of a full per-row rewrite of ~1.58M rows every 6h wave.
+      // totalUpserted now counts rows ACTUALLY written (insert + real update).
+      if (allRows.length >= UPSERT_CHUNK) {
+        const chunk = allRows.splice(0, allRows.length)
+        totalRowsAttempted += chunk.length
+        totalUpserted += await upsertWmcChunkWithRetry(
+          chunk,
+          "wallet-backfill",
+          chunkTally,
+          `batch=${batchesFetched}`
+        )
+      }
+
+      if (totalFetched > 0 && totalFetched % 200 < BATCH_SIZE) {
+        console.log(
+          `[wallet-backfill] progress wallet=${wallet.slice(0, 10)} fetched=${totalFetched}/${idsToWalk.length}`
+        )
+      }
+    }
+
+    // Flush whatever's still buffered. Same change-detecting RPC as above.
+    if (allRows.length > 0) {
+      totalRowsAttempted += allRows.length
+      totalUpserted += await upsertWmcChunkWithRetry(
+        allRows,
+        "wallet-backfill",
+        chunkTally,
+        "final"
+      )
+    }
+
+    // Post-pass JOIN UPDATE: upsert_wmc_batch is authoritative only for
+    // edition_key / serial_number / last_seen_at, so tier / player_name /
+    // set_name are filled here NULL-only against editions (mirrors the
+    // wallet-backfill-helpers details path). Without this, new TS rows would
+    // wait for the platform-wide wmc-fmv-populate cron to fill metadata.
+    try {
+      const { data: updResult, error: updErr } = await (supabaseAdmin as any).rpc(
+        "backfill_wmc_metadata_from_editions",
+        { p_wallet_address: wallet, p_collection_id: NBA_TOP_SHOT_UUID }
+      )
+      if (updErr) {
+        console.warn(`[wallet-backfill] post-pass update failed: ${updErr.message}`)
+      } else if (updResult != null) {
+        postPassUpdated = Number(updResult) || 0
+      }
+    } catch (err) {
+      console.warn(
+        `[wallet-backfill] post-pass update threw: ${err instanceof Error ? err.message : String(err)}`
+      )
+    }
+
+    // Delete-not-seen. onChainIds is the wallet's COMPLETE on-chain id set (see
+    // the cache-skip comment above), so any cached id absent from it has left the
+    // wallet. Gated on terminated_reason === "no_more_moments": a "timeout" or
+    // "safety_ceiling" run broke out of the METADATA walk, and while its id set is
+    // in fact complete, tying the trigger to the run's own completeness claim
+    // keeps a future change to either loop from silently licensing a delete on a
+    // partial pass. Those wallets prune on their next clean run.
+    const unseen =
+      terminatedReason === "no_more_moments"
+        ? await deleteUnseenWmcRows({
+            wallet,
+            collectionUuid: NBA_TOP_SHOT_UUID,
+            observedIds: new Set(onChainIds.map(String)),
+            pipelineName: "wallet-backfill",
+            // Reuse the skip-filter's snapshot rather than paging the cache twice.
+            cachedIds: skipCached ? cachedIds : undefined,
+            // Past the >90 % cap, an independent count equal to this walk's proves
+            // it complete (2026-10-14: six tracked wallets cap-blocked forever).
+            confirmCompleteness: () => readCollectionCount(wallet, "nba_top_shot"),
+          })
+        : { deleted: 0, skippedReason: `incomplete_pass_${terminatedReason}` }
+
+    // Refresh the seeded_wallets stats so cached_moment_count reflects the
+    // new cache total + stamp last_refreshed_per_collection so the
+    // multi-collection cron can find stale wallets per collection.
+    await stampLastRefreshed(wallet, totalUpserted + postPassUpdated + unseen.deleted)
+
+    await logRun({
+      startedAt: startedAtIso,
+      wallet,
+      rowsFound: idsToWalk.length,
+      rowsWritten: totalUpserted,
+      // Lost chunk rows were found but never written — count them as skipped.
+      rowsSkipped: totalSkippedCached + chunkTally.chunkRowsLost,
+      ok: chunkTally.chunkErrors === 0,
+      error: chunkFailureError(chunkTally),
+      extra: {
+        on_chain_count: onChainIds.length,
+        pages_fetched: batchesFetched,
+        total_moments_seen: totalFetched,
+        skipped_cached: totalSkippedCached,
+        rows_to_write: totalRowsAttempted,
+        ...chunkFailureExtra(chunkTally),
+        ...unseenDeleteExtra(unseen),
+        post_pass_metadata_updated: postPassUpdated,
+        terminated_reason: terminatedReason,
+        skip_cached: skipCached,
+        elapsed_ms: Date.now() - startedMs,
+      },
+    })
+    // A scan is a FINISHED walk: not cut at the soft deadline or the safety ceiling, every metadata read landed
+    // (a per-moment failure degrades that row, but the wallet was then not fully read), every chunk written.
+    return {
+      rowsFound: onChainIds.length,
+      scanned: terminatedReason === "no_more_moments" && totalFetched === idsToWalk.length && chunkTally.chunkErrors === 0,
+      // Cut by the clock, but it named Moments and wrote them: there is more to do
+      // and the next walk will start past what this one wrote.
+      continueWalk: terminatedReason === "timeout" && totalFetched > 0 && totalUpserted > 0 && chunkTally.chunkErrors === 0,
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    const elapsedMs = Date.now() - startedMs
+    // Cadence error 1106 ("max interaction with storage") is a permanent
+    // property of mega-wallets — log as ok:true with a sharded-scan flag so
+    // it stops counting as a pipeline failure. See lib/wallet-backfill-helpers.
+    //
+    // ⚠ 2026-09-25 — Cadence 1110 (COMPUTATION limit) is the same permanent
+    // property on this collection and was falling through to `ok:false`: the
+    // TopShotShardedCollection `getIDs()` concatenates every bucket, and two
+    // seeded wallets (TopShot_Buyback_2 0xe1f2a091f7bb5245, >80k Moments;
+    // 0x0d744d23165bfb6c, ~158k) crossed the 100k budget — 22 "failed" runs in
+    // 73 h, five re-dispatches a day, each a 5 s script that cannot succeed.
+    // MEASURED before this shipped: a `forEachID` page costs ~1 unit per id
+    // SKIPPED as well as read (offset 60k + 20k passed, offset 80k + 20k
+    // failed), so offset paging is O(N²) and no single script can enumerate a
+    // wallet past ~100k on the public access node. The classifier is the same
+    // one the Pinnacle / All Day walkers use; the reason names the limit.
+    if (isStorageLimitError(err) || isComputationLimitError(err)) {
+      const terminated = isStorageLimitError(err) ? "storage_limit_exceeded" : "computation_limit_exceeded"
+      await logRun({
+        startedAt: startedAtIso,
+        wallet,
+        rowsFound: totalFetched,
+        rowsWritten: totalUpserted,
+        // ⚠ LOST CHUNK ROWS COUNT AS SKIPPED HERE TOO. The success path already
+        // adds them; these exit paths did not, so a run that lost chunks and
+        // THEN hit one of them under-reported both the loss and the attempt —
+        // the run most likely to have lost rows was the one that hid it.
+        rowsSkipped: totalSkippedCached + chunkTally.chunkRowsLost,
+        ok: true,
+        extra: {
+          pages_fetched: batchesFetched,
+          total_moments_seen: totalFetched,
+          rows_to_write: totalRowsAttempted,
+          ...chunkFailureExtra(chunkTally),
+          terminated_reason: terminated,
+          flagged_for_sharded_scan: true,
+          skip_cached: skipCached,
+          elapsed_ms: elapsedMs,
+          error_excerpt: msg.slice(0, 200),
+        },
+      })
+      console.log(`[wallet-backfill] wallet_too_large wallet=${wallet} — flagged for future sharded scan`)
+      return { rowsFound: totalFetched, scanned: false }
+    }
+    // Wallet has no /public/MomentCollection capability — uncommon for TopShot
+    // (it would mean a Flow account that has never touched TopShot at all)
+    // but possible if a discovery iterator surfaces a non-collector wallet.
+    // Same pattern as the AllDay reproducer 0xb6f2481eba4df97b.
+    if (isNoCollectionCapabilityError(err, elapsedMs)) {
+      await logRun({
+        startedAt: startedAtIso,
+        wallet,
+        rowsFound: totalFetched,
+        rowsWritten: totalUpserted,
+        rowsSkipped: totalSkippedCached + chunkTally.chunkRowsLost,
+        ok: true,
+        extra: {
+          pages_fetched: batchesFetched,
+          total_moments_seen: totalFetched,
+          rows_to_write: totalRowsAttempted,
+          ...chunkFailureExtra(chunkTally),
+          terminated_reason: "no_collection_capability",
+          flagged_for_no_capability: true,
+          skip_cached: skipCached,
+          elapsed_ms: elapsedMs,
+          error_excerpt: msg.slice(0, 200),
+        },
+      })
+      console.log(`[wallet-backfill] no_collection_capability wallet=${wallet} — wallet lacks TopShot collection capability`)
+      return { rowsFound: 0, scanned: true }
+    }
+    terminatedReason = "error"
+    await logRun({
+      startedAt: startedAtIso,
+      wallet,
+      rowsFound: totalFetched,
+      rowsWritten: totalUpserted,
+      rowsSkipped: totalSkippedCached + chunkTally.chunkRowsLost,
+      ok: false,
+      error: msg,
+      extra: {
+        pages_fetched: batchesFetched,
+        total_moments_seen: totalFetched,
+        rows_to_write: totalRowsAttempted,
+        ...chunkFailureExtra(chunkTally),
+        terminated_reason: terminatedReason,
+        skip_cached: skipCached,
+        elapsed_ms: elapsedMs,
+      },
+    })
+    console.error(`[wallet-backfill] error during backfill for ${wallet}: ${msg}`)
+    return { rowsFound: totalFetched, scanned: false }
+  } finally {
+    await releasePipelineLock(lockKey)
+  }
+}
+
+async function recordScan(wallet: string, foundCount: number) {
+  try {
+    await (supabaseAdmin as any).rpc("record_wallet_backfill_scan", {
+      p_wallet: wallet,
+      p_collection_slug: COLLECTION_SLUG,
+      p_found_count: foundCount,
+    })
+  } catch (err) {
+    console.warn(
+      `[wallet-backfill] record_wallet_backfill_scan failed wallet=${wallet}: ${err instanceof Error ? err.message : String(err)}`
+    )
+  }
+}
+
+/**
+ * Record a continuation that could not be dispatched directly.
+ *
+ * 2026-11-11: a 508 the resume queue CAUGHT is a DEFERRED continuation, not a broken
+ * chain. Before this, every such row was ok=false, so the `wallet-backfill-continuation`
+ * failure_rate arm read HIGH (5/5, then 3/3 on 11-11) on chains the queue had already
+ * re-dispatched within 2–4 min — 0x32c66e4278279976 hit three 508s that afternoon and
+ * walked on each time. The row now says what happened:
+ *   • queued  → ok=true, extra.deferred_to = "resume_queue" (the 508 detail is kept);
+ *   • NOT queued → ok=false: nothing will resume it, the chain IS broken.
+ * A queued continuation that later cannot be dispatched is still loud: the resume cron
+ * marks its own run ok=false on a requeue or a drop (lib/chains/flow/wallet-backfill-resume.ts).
+ */
+async function logContinuationOutcome(
+  startedAt: string,
+  wallet: string,
+  d: ContinuationDispatch,
+  queued: { ok: boolean; error: string | null },
+) {
+  const dispatchError = `continuation ${d.depth} not dispatched after ${d.attempts} attempt(s): ${d.error}`
+  try {
+    const { error } = await (supabaseAdmin as any).rpc("log_pipeline_run", {
+      p_pipeline: "wallet-backfill-continuation",
+      p_started_at: startedAt,
+      p_rows_found: 0,
+      p_rows_written: 0,
+      p_rows_skipped: 0,
+      p_ok: queued.ok,
+      p_error: queued.ok ? null : `${dispatchError}; resume queue write failed: ${queued.error}`,
+      p_collection_slug: "nba_top_shot",
+      p_cursor_before: null,
+      p_cursor_after: null,
+      p_extra: {
+        wallet,
+        depth: d.depth,
+        attempts: d.attempts,
+        status: d.status,
+        dispatch_error: dispatchError,
+        deferred_to: queued.ok ? "resume_queue" : null,
+        queue_error: queued.error,
+      },
+    })
+    if (error) console.warn(`[wallet-backfill] continuation row not written: ${error.message}`)
+  } catch (err) {
+    console.warn(`[wallet-backfill] continuation row threw: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
+export async function POST(req: NextRequest) {
+  const authHeader = req.headers.get("authorization")
+  const expectedToken = process.env.INGEST_SECRET_TOKEN
+  if (!expectedToken || !bearerMatches(authHeader, "INGEST_SECRET_TOKEN")) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  let body: { wallet?: string; skip_cached?: boolean; continuation?: number }
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
+  }
+
+  const rawInput = body.wallet?.trim()
+  if (!rawInput) {
+    return NextResponse.json({ error: "wallet field required" }, { status: 400 })
+  }
+  // skip_cached defaults true so cron-driven re-runs only enrich the diff.
+  // Callers that want a forced full re-walk pass skip_cached: false.
+  const skipCached = body.skip_cached !== false
+
+  // Resolve username → 0x before kicking off Cadence. Pre-fix the route would
+  // pass `jamesdillonbond` straight into the script and Flow would reject with
+  // "invalid address prefix: expected 0x, got ja". Layered cache resolver
+  // hits wallet_usernames first (fast) and only falls back to live TopShot
+  // GQL when nothing has been seen before.
+  let wallet: string
+  if (isWalletAddress(rawInput)) {
+    wallet = rawInput.startsWith("0x") ? rawInput : `0x${rawInput}`
+  } else {
+    const outcome = await resolveTopShotUsernameCacheAware(supabaseAdmin, rawInput)
+    if (!outcome.found) {
+      return NextResponse.json(
+        { error: "could not resolve username", input: rawInput, reason: outcome.reason },
+        { status: 400 }
+      )
+    }
+    wallet = outcome.walletAddress
+  }
+
+  const startedMs = Date.now()
+  const startedAtIso = new Date(startedMs).toISOString()
+
+  // Run the heavy walk on the after() background lifetime so the caller
+  // (cron-job.org / seed-wallet-refresh) gets a fast 202 even when the
+  // wallet has 30k+ moments. Vercel's after() inherits maxDuration, so the
+  // soft deadline above keeps the walk under that ceiling.
+  after(async () => {
+    // Invocation heartbeat, written BEFORE the work and awaited.
+    //
+    // ⚠ `try/catch` CANNOT catch a `maxDuration` kill: the platform terminates the
+    // function and takes `logRun()` with it, while the 202 below has already told
+    // cron-job.org / seed-wallet-refresh this succeeded. Without a marker written
+    // first, a killed tick is indistinguishable from a cron that never fired.
+    //
+    // ⭐ SELECTED ON SEVERITY AND MEASURED MARGIN. `wallet-backfill` is one of the
+    // few `pipeline_cadence_watchlist` rows at severity **high** (800 min), and
+    // over the 73 h `pipeline_runs` retains (read 2026-09-02) its longest recorded
+    // tick is **261,273 ms against this route's 300,000 ms wall — 87%**, one
+    // second past SOFT_DEADLINE_MS. p90 is a comfortable 48,222 ms, so the risk is
+    // not the typical wallet: it is the whale, where the deadline is what stops
+    // the walk and the terminal write has ~39 s to land. 30 of 1,556 ticks already
+    // record `ok=false`; a killed one records nothing at all.
+    //
+    // ⚠ `extra.wallet` matters more here than on a cron route. This pipeline is
+    // keyed per wallet, so a marker with no wallet cannot be correlated against
+    // the terminal row `logRun()` writes — the correlation query matches on
+    // `started_at`, and several wallets can be in flight in the same second.
+    //
+    // ⚠ The `-heartbeat` suffix is added by the helper, never by the caller: a
+    // marker under the REAL name would refresh `last_run` on every tick and
+    // silence `detect_stalled_pipelines()` on exactly the outage it exposes.
+    await writeInvocationHeartbeat({
+      pipeline: "wallet-backfill",
+      startedAtMs: startedMs,
+      collectionSlug: "nba_top_shot",
+      extra: { wallet, skip_cached: skipCached, soft_deadline_ms: SOFT_DEADLINE_MS },
+    })
+    const { rowsFound, scanned, continueWalk } = await runBackfill(startedAtIso, startedMs, wallet, skipCached)
+    const depth = Number.isInteger(body.continuation) && (body.continuation as number) > 0 ? (body.continuation as number) : 0
+    // ⛔ NOT gated on `skipCached` (2026-11-09): a new user's FIRST walk is sent
+    // with skip_cached=false, so that gate stopped geds' 9,112-Moment signup walk
+    // at 900 named and left 7,027 unnamed — his Dame Moments unsearchable in the
+    // picker. A continuation always walks with skip_cached=true, so it starts
+    // where this walk stopped whatever this walk's own mode was.
+    // A failed walk must not record a scan: it would stamp the wallet freshly verified
+    // (BackfillRunResult.scanned in lib/chains/flow/wallet-backfill-helpers.ts, 2026-10-27).
+    // Recorded BEFORE the dispatch (2026-11-09) so a dispatch near the wall cannot take it down.
+    if (scanned) await recordScan(wallet, rowsFound)
+    if (continueWalk && depth < MAX_CONTINUATIONS) {
+      const d = await dispatchContinuation(req.url, wallet, depth + 1)
+      console.log(
+        `[wallet-backfill] continuation wallet=${wallet} depth=${d.depth} ok=${d.ok} attempts=${d.attempts} status=${d.status ?? "none"}${d.error ? ` error=${d.error}` : ""}`,
+      )
+      if (!d.ok) {
+        // #245 (2026-11-10): Vercel refuses a deep self-dispatch chain with 508; retrying the same
+        // path cannot succeed. Queue it — /api/cron/wallet-backfill-resume dispatches it from a
+        // fresh (cron) request at the same depth. Queued FIRST so the row can say whether the
+        // chain was deferred or broken (2026-11-11).
+        const failedAt = new Date().toISOString()
+        const q = await enqueueResume(supabaseAdmin, wallet, d.depth, d.error)
+        console.log(`[wallet-backfill] continuation queued wallet=${wallet} depth=${d.depth} ok=${q.ok}${q.error ? ` error=${q.error}` : ""}`)
+        await logContinuationOutcome(failedAt, wallet, d, q)
+      }
+    }
+  })
+
+  return NextResponse.json(
+    {
+      accepted: true,
+      wallet_address: wallet,
+      input: rawInput,
+      skip_cached: skipCached,
+      started_at: startedAtIso,
+    },
+    { status: 202 }
+  )
+}

@@ -1,0 +1,499 @@
+// lib/alerts/format.ts
+//
+// Per-channel message formatting for alert deliveries. A sender groups the
+// pending rows for one (owner, channel) and renders ONE digest message so a
+// user with 8 matching deals gets a single notification, not 8.
+//
+// Pure formatting — no DB, no network. Safe to import anywhere server-side.
+
+import type { Delivery, DealPayload, FmvPayload } from "@/lib/alerts";
+import { marketplaceMomentUrl } from "@/lib/collections";
+import { askAgeHours, askStampKind, fmtAskAge, isAskStale } from "@/lib/market/ask-freshness";
+import { usdSignFirst } from "@/lib/usd-format"
+import { fmtPer100, fmtVsLaunch } from "@/lib/packs/chase-odds"
+import type { PackChasePayload } from "@/lib/packs/chase-alerts"
+import { TELEGRAM_TEXT_LIMIT } from "@/lib/telegram-message"
+
+const SITE = "https://www.rippackscity.com";
+
+function isDeal(d: Delivery): d is Delivery & { payload: DealPayload } {
+  return d.alert_kind === "deal";
+}
+function isFmv(d: Delivery): d is Delivery & { payload: FmvPayload } {
+  return d.alert_kind === "fmv";
+}
+// Pack-chase watch fired (lib/packs/chase-alerts.ts). 'pack_digest' is the outbox kind.
+function isPackChase(d: Delivery): d is Delivery & { payload: PackChasePayload } {
+  return d.alert_kind === "pack_digest" && typeof (d.payload as { dist_id?: unknown })?.dist_id === "string";
+}
+function tierWord(t: string): string {
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+/** "1 Legendary left in 18 sealed packs — 5.6 per 100 (launch 0.42, 13× launch rate)". A density, never a %. */
+export function packChaseLine(p: PackChasePayload): string {
+  return `${p.remaining.toLocaleString("en-US")} ${tierWord(p.tier)} left in ${p.unopened.toLocaleString("en-US")} sealed packs — ${fmtPer100(p.per100_now)} per 100 (launch ${fmtPer100(p.per100_launch)}, ${fmtVsLaunch(p.vs_launch)})`;
+}
+function packChaseUrl(p: PackChasePayload): string {
+  return `${SITE}/nba-top-shot/pack/dist/${encodeURIComponent(p.dist_id)}`;
+}
+
+function money(n: number | null | undefined): string {
+  const neg = usdSignFirst(n, money); if (neg !== null) return neg
+  if (n === null || n === undefined || !Number.isFinite(n)) return "—";
+  return `$${Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+function pct(n: number | null | undefined): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return "—";
+  return `${Math.round(Number(n))}%`;
+}
+function absUrl(detail: string | null | undefined): string {
+  if (!detail) return SITE;
+  return detail.startsWith("http") ? detail : `${SITE}${detail}`;
+}
+
+export type Deal = DealPayload["deal"];
+
+// ── Buy links go through a TRACKED redirect (audit_20260930) ─────────────────
+// Every marketplace link in an alert is `/go/a/<delivery id>?l=buy|dapper`. That
+// route re-derives the destination from the delivery row (nativeBuyLink / dapperUrl
+// below — never from the URL, so it is not an open redirect), records the click in
+// outbound_clicks (source "alert"), and 302s. Without it an alert-driven purchase is
+// invisible: alert links went straight to the marketplace and logged nothing.
+// The RPC detail link stays direct on purpose — it is the first link in a Telegram
+// message, so it is the one the link-preview bot fetches.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export function trackedHref(d: Delivery, kind: "buy" | "dapper", direct: string): string {
+  // A delivery without a real id (never in production — the id is the row's PK)
+  // keeps the direct link rather than a redirect that could not resolve.
+  return UUID_RE.test(String(d.id ?? "")) ? `${SITE}/go/a/${d.id}?l=${kind}` : direct;
+}
+
+// ── Per-source field resolvers ───────────────────────────────────────────────
+// The `deal` payload comes from two boards (edition-level + per-serial), so
+// resolve the headline values with per-source fallback rather than assuming one
+// shape. Per-serial deals carry ask_usd / serial_fmv_usd / moment_url; the
+// edition-level board carries low_ask / fmv_usd / detail_url.
+
+export function dealAsk(d: Deal): number | null | undefined {
+  return d.ask_usd ?? d.low_ask;
+}
+export function dealFmv(d: Deal): number | null | undefined {
+  return d.serial_fmv_usd ?? d.fmv_usd;
+}
+export function dealDetailUrl(d: Deal): string {
+  return absUrl(d.moment_url ?? d.detail_url);
+}
+function dealSerialTag(d: Deal): string {
+  if (d.serial_number === null || d.serial_number === undefined) return "";
+  return `#${d.serial_number}`;
+}
+// Rarity tier — NBA/UFC tiers arrive as upper-case enums (RARE, LEGENDARY,
+// EPIC); render title-cased ("Rare"). Pinnacle's "tier" column is actually
+// its already-proper-cased variant (Colored Enamel, Golden) — leave mixed-case
+// strings untouched so they don't get mangled to "Colored enamel".
+function dealTier(d: Deal): string {
+  if (!d.tier) return "";
+  if (d.tier === d.tier.toUpperCase()) {
+    return d.tier.charAt(0).toUpperCase() + d.tier.slice(1).toLowerCase();
+  }
+  return d.tier;
+}
+// Formal parallel / variant — the dispatcher sources real named values only
+// (TS Galactic/Diced etc.; Pinnacle Colored Enamel/Golden/…), null for base, so
+// the segment simply doesn't render on ordinary editions.
+function dealParallel(d: Deal): string {
+  const p = d.parallel;
+  if (!p) return "";
+  // Pinnacle's tier column already carries the variant, so don't double-print it
+  // (TS parallels like Galactic/Diced differ from the RARE/LEGENDARY tier and
+  // still render).
+  if (d.tier && p.toLowerCase() === d.tier.toLowerCase()) return "";
+  return p;
+}
+// Mint / circulation — "/222" style; omitted when unknown.
+function dealMint(d: Deal): string {
+  return d.circulation_count ? `/${d.circulation_count}` : "";
+}
+// "#1 · Rare · Set · Diced · /222 · Collection" — serial tag only on per-serial
+// deals, collection_name only on edition-level deals (the serial board is
+// TS-only). Tier + parallel + mint give the full edition identity a collector
+// needs to value the deal.
+function dealSubline(d: Deal): string {
+  return [dealSerialTag(d), dealTier(d), d.set_name, dealParallel(d), dealMint(d), d.collection_name]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+// Outbound native-marketplace buy link for the cheapest matching moment. Both
+// TS per-serial deals AND AllDay edition deals carry the on-chain moment id
+// (nft_id) — TS from its serial board, AllDay from allday_edition_floor_ask's
+// floor_flow_id — so resolve the COLLECTION's native moment URL rather than
+// hardcoding Top Shot. DB slugs arrive in two forms ('nba_top_shot' from the
+// edition board, 'nba-top-shot' from the serial board), so normalize '_'→'-' to
+// the registry id marketplaceMomentUrl expects. Pinnacle deals carry no nft_id,
+// so they get no buy link (their detail page carries its own links).
+const BUY_LABELS: Record<string, string> = {
+  "nba-top-shot": "Top Shot",
+  "nfl-all-day": "All Day",
+  "laliga-golazos": "Golazos",
+  "disney-pinnacle": "Pinnacle",
+};
+export function nativeBuyLink(d: Deal): { url: string; label: string } | null {
+  if (!d.nft_id) return null;
+  const regId = (d.collection_slug ?? "").replace(/_/g, "-");
+  const url = marketplaceMomentUrl(regId, String(d.nft_id));
+  if (!url) return null;
+  return { url, label: BUY_LABELS[regId] ?? "Marketplace" };
+}
+// Dapper marketplace listing (per-serial deals only; already absolute).
+export function dapperUrl(d: Deal): string | null {
+  return d.listing_url && d.listing_url.startsWith("http") ? d.listing_url : null;
+}
+function dealTitle(d: Deal): string {
+  return d.player_name || d.name || d.external_id || "Moment";
+}
+
+// ── Price-only deals carry NO FMV, and that is the point ─────────────────────
+//
+// A subscription that says only "≤ $0.60" has no FMV condition, so the scanner
+// serves it from `edition_current_ask`, where fmv_usd / discount_pct are NULL by
+// design (audit_20260816 — the FMV lateral measured 28s vs 320ms on the cheapest
+// possible slice, for a column that is not a condition). Every render site below
+// used to interpolate `${pct(discount_pct)} below FMV ${money(fmv)}`
+// unconditionally, which on such a row reads "— below FMV —": an em-dash
+// sentence that looks like a broken template, and invites the reader to think we
+// know an FMV and failed to show it.
+//
+// ⚠ THE DISCRIMINATOR IS THE VALUE, NOT THE `price_only` FLAG, on purpose. The
+// question this asks is "is there an FMV to state at all" — so it also covers a
+// legacy deals-board row that arrives with a null FMV, which the flag would miss
+// and render as an em-dash. The flag stays on the payload because it records the
+// scanner's INTENT (no FMV was ever sought) for anyone reading a delivery row,
+// but intent is not the same question as availability.
+function hasFmvContext(d: Deal): boolean {
+  const fmv = dealFmv(d);
+  return fmv !== null && fmv !== undefined && Number.isFinite(Number(fmv));
+}
+// "25% below FMV $8.00", or null when there is no FMV to compare against.
+function dealFmvClause(d: Deal): string | null {
+  if (!hasFmvContext(d)) return null;
+  return `${pct(d.discount_pct)} below FMV ${money(dealFmv(d))}`;
+}
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// ── The ask's AGE travels with the alert, and is said (2026-09-04) ───────────
+//
+// `ask_updated_at` was SELECTed by every view and function in the deal-alert
+// chain and never used as a predicate or rendered — so "25% below FMV, go buy
+// it" could be computed from an ask last seen 23 hours earlier (inbox
+// 2026-08-29T1605Z: no freshness gate anywhere in the chain; an alert's output
+// is silence, so a wrong one is unfalsifiable). Whether a stale ask should be
+// DROPPED is a product threshold (Trevor's); saying how old it is is not.
+//
+// ⚠ Neutral wording on purpose: the stamp means "verified" on the Top Shot and
+// Pinnacle branches and "listed" on the All Day branch, so a blended "checked N
+// ago" would publish a new falsehood for a third of the board. "Seen" is true
+// of all three. An unknown stamp renders NOTHING — it must not manufacture an
+// age, and it must not read as fresh.
+// Threshold and age formatting are the boards' own (`lib/market/ask-freshness`:
+// 12 h, the marker every ask-age caption on the site already uses) so an alert
+// and the board it points at cannot disagree about what "stale" means.
+function askAgeClause(d: Deal, now: Date): string | null {
+  const hours = askAgeHours(d.ask_updated_at, now.getTime());
+  if (hours === null) return null;
+  const h = Math.max(0, hours);
+  const age = h < 1 ? `${Math.round(h * 60)}m` : fmtAskAge(h);
+  // 2026-10-20: on a LISTED branch the stamp is when the seller POSTED the listing,
+  // not when we last saw it — say "listed". (All Day was one until its board arm moved
+  // to floor_ask_verified_at the same evening; it now reads "seen", like Top Shot.)
+  if (askStampKind(d.collection_slug) === "listed") return `ask listed ${age} ago`;
+  const stale = isAskStale(d.ask_updated_at, now.getTime());
+  return `ask seen ${age} ago${stale ? " — may be gone" : ""}`;
+}
+
+// ── Telegram (HTML parse_mode) ───────────────────────────────────────────────
+
+export function buildTelegramMessage(deliveries: Delivery[], now: Date = new Date()): string {
+  const deals = deliveries.filter(isDeal);
+  const fmvs = deliveries.filter(isFmv);
+  const lines: string[] = [];
+
+  if (deals.length) {
+    lines.push(`🎯 <b>${deals.length} new deal${deals.length === 1 ? "" : "s"} match your alerts</b>`);
+    for (const d of deals.slice(0, 20)) {
+      const deal = d.payload.deal;
+      const title = esc(dealTitle(deal));
+      const sub = esc(dealSubline(deal));
+      const native = nativeBuyLink(deal);
+      const dapper = dapperUrl(deal);
+      const buyLinks = [
+        native ? `<a href="${trackedHref(d, "buy", native.url)}">Buy on ${native.label} ↗</a>` : "",
+        dapper ? `<a href="${trackedHref(d, "dapper", dapper)}">Dapper ↗</a>` : "",
+      ].filter(Boolean);
+      lines.push(
+        `\n<a href="${dealDetailUrl(deal)}">${title}</a>` +
+          (sub ? `\n${sub}` : "") +
+          `\n${money(dealAsk(deal))} ask${dealFmvClause(deal) ? ` · ${dealFmvClause(deal)}` : ""}` +
+          (askAgeClause(deal, now) ? `\n${esc(askAgeClause(deal, now)!)}` : "") +
+          (buyLinks.length ? `\n${buyLinks.join(" · ")}` : "")
+      );
+    }
+    if (deals.length > 20) lines.push(`\n…and ${deals.length - 20} more.`);
+  }
+
+  if (fmvs.length) {
+    if (lines.length) lines.push("");
+    lines.push(`🔔 <b>${fmvs.length} FMV alert${fmvs.length === 1 ? "" : "s"} triggered</b>`);
+    for (const d of fmvs.slice(0, 20)) {
+      const p = d.payload;
+      const title = esc(p.player_name || p.edition_key || "Edition");
+      lines.push(`\n${title}\nAsk ${money(p.lowest_ask)} · FMV ${money(p.current_fmv)}`);
+    }
+  }
+
+  const chases = deliveries.filter(isPackChase);
+  if (chases.length) {
+    if (lines.length) lines.push("");
+    lines.push(`📦 <b>${chases.length} pack chase alert${chases.length === 1 ? "" : "s"}</b>`);
+    for (const d of chases.slice(0, 20)) {
+      const p = d.payload;
+      lines.push(`\n<a href="${packChaseUrl(p)}">${esc(p.title)}</a>\n${esc(packChaseLine(p))}`);
+    }
+  }
+
+  lines.push(`\n\nManage: ${SITE}/alerts`);
+  return lines.join("\n");
+}
+
+// ── Discord embeds (max 10 per message) ──────────────────────────────────────
+
+const RPC_RED = 0xe03a2f;
+
+export function buildDiscordEmbeds(deliveries: Delivery[], now: Date = new Date()): any[] {
+  const embeds: any[] = [];
+  for (const d of deliveries.slice(0, 10)) {
+    if (isDeal(d)) {
+      const deal = d.payload.deal;
+      const native = nativeBuyLink(deal);
+      const dapper = dapperUrl(deal);
+      // Discord embed field VALUES render markdown links; field NAMES don't.
+      // FMV + Discount are OMITTED, not em-dashed, on a price-only deal — a
+      // field reading "—" is worse than an absent field. See dealFmvClause.
+      const fields: any[] = [{ name: "Ask", value: money(dealAsk(deal)), inline: true }];
+      if (hasFmvContext(deal)) {
+        fields.push({ name: "FMV", value: money(dealFmv(deal)), inline: true });
+        fields.push({ name: "Discount", value: pct(deal.discount_pct), inline: true });
+      }
+      const buyLinks = [
+        native ? `[${native.label} ↗](${trackedHref(d, "buy", native.url)})` : "",
+        dapper ? `[Dapper ↗](${trackedHref(d, "dapper", dapper)})` : "",
+      ].filter(Boolean);
+      if (buyLinks.length) fields.push({ name: "Buy", value: buyLinks.join(" · "), inline: true });
+      // The ask's age, when known — a 23-hour-old ask is a different claim from
+      // a 5-minute-old one, and the reader is about to act on it.
+      const askAge = askAgeClause(deal, now);
+      if (askAge) {
+        const listed = askAge.startsWith("ask listed ");
+        fields.push({ name: listed ? "Ask listed" : "Ask seen", value: askAge.replace(/^ask (seen|listed) /, ""), inline: true });
+      }
+      embeds.push({
+        title: dealTitle(deal),
+        url: dealDetailUrl(deal),
+        description: dealSubline(deal) || undefined,
+        color: RPC_RED,
+        thumbnail: deal.thumbnail_url ? { url: absUrl(deal.thumbnail_url) } : undefined,
+        fields,
+        footer: { text: "Rip Packs City · /alerts to manage" },
+      });
+    } else if (isFmv(d)) {
+      const p = d.payload;
+      embeds.push({
+        title: p.player_name || p.edition_key || "FMV alert",
+        color: RPC_RED,
+        fields: [
+          { name: "Ask", value: money(p.lowest_ask), inline: true },
+          { name: "FMV", value: money(p.current_fmv), inline: true },
+        ],
+        footer: { text: "Rip Packs City · /alerts to manage" },
+      });
+    } else if (isPackChase(d)) {
+      const p = d.payload;
+      embeds.push({
+        title: p.title,
+        url: packChaseUrl(p),
+        description: packChaseLine(p),
+        color: RPC_RED,
+        footer: { text: "Rip Packs City · /alerts to manage" },
+      });
+    }
+  }
+  return embeds;
+}
+
+// ── Email (Resend) ───────────────────────────────────────────────────────────
+
+export function buildEmailMessage(deliveries: Delivery[], now: Date = new Date(), opts: { pauseUrl?: string | null } = {}): {
+  subject: string;
+  html: string;
+  text: string;
+} {
+  const deals = deliveries.filter(isDeal);
+  const fmvs = deliveries.filter(isFmv);
+  const chases = deliveries.filter(isPackChase);
+  const total = deals.length + fmvs.length + chases.length;
+
+  const subject =
+    chases.length && !deals.length && !fmvs.length
+      ? `${chases.length} pack chase alert${chases.length === 1 ? "" : "s"} from Rip Packs City`
+      : deals.length && !fmvs.length && !chases.length
+      ? `${deals.length} new deal${deals.length === 1 ? "" : "s"} match your Rip Packs City alert`
+      : `${total} Rip Packs City alert${total === 1 ? "" : "s"}`;
+
+  const dealRows = deals
+    .map((d) => {
+      const deal = d.payload.deal;
+      const native = nativeBuyLink(deal);
+      const dapper = dapperUrl(deal);
+      const thumb = deal.thumbnail_url
+        ? `<img src="${absUrl(deal.thumbnail_url)}" width="48" height="48" style="border-radius:8px;display:block;" alt=""/>`
+        : "";
+      const buyLinks = [
+        native
+          ? `<a href="${trackedHref(d, "buy", native.url)}" style="color:#e55a4c;font-size:12px;font-weight:700;text-decoration:none;">Buy on ${native.label} ↗</a>`
+          : "",
+        dapper
+          ? `<a href="${trackedHref(d, "dapper", dapper)}" style="color:#e55a4c;font-size:12px;font-weight:700;text-decoration:none;">Dapper ↗</a>`
+          : "",
+      ].filter(Boolean);
+      return `
+        <tr>
+          <td style="padding:12px 0;border-bottom:1px solid #27272a;vertical-align:top;width:60px;">${thumb}</td>
+          <td style="padding:12px 0;border-bottom:1px solid #27272a;">
+            <a href="${dealDetailUrl(deal)}" style="color:#fafafa;font-weight:700;text-decoration:none;font-size:15px;">${esc(dealTitle(deal))}</a>
+            <div style="color:rgba(255,255,255,0.5);font-size:12px;margin-top:2px;">${esc(dealSubline(deal))}</div>
+            ${buyLinks.length ? `<div style="margin-top:4px;">${buyLinks.join(' <span style="color:rgba(255,255,255,0.5);">·</span> ')}</div>` : ""}
+          </td>
+          <td style="padding:12px 0;border-bottom:1px solid #27272a;text-align:right;white-space:nowrap;">
+            <div style="color:#34d399;font-weight:800;font-size:15px;">${money(dealAsk(deal))}</div>
+            ${dealFmvClause(deal) ? `<div style="color:rgba(255,255,255,0.5);font-size:12px;">${dealFmvClause(deal)}</div>` : ""}
+            ${askAgeClause(deal, now) ? `<div style="color:rgba(255,255,255,0.5);font-size:12px;">${esc(askAgeClause(deal, now)!)}</div>` : ""}
+          </td>
+        </tr>`;
+    })
+    .join("");
+
+  const fmvRows = fmvs
+    .map((d) => {
+      const p = d.payload;
+      return `
+        <tr>
+          <td style="padding:12px 0;border-bottom:1px solid #27272a;">
+            <span style="color:#fafafa;font-weight:700;font-size:15px;">${esc(p.player_name || p.edition_key || "Edition")}</span>
+          </td>
+          <td style="padding:12px 0;border-bottom:1px solid #27272a;text-align:right;white-space:nowrap;">
+            <div style="color:#34d399;font-weight:800;">${money(p.lowest_ask)}</div>
+            <div style="color:rgba(255,255,255,0.5);font-size:12px;">FMV ${money(p.current_fmv)}</div>
+          </td>
+        </tr>`;
+    })
+    .join("");
+
+  const chaseRows = chases
+    .map((d) => {
+      const p = d.payload;
+      return `
+        <tr>
+          <td style="padding:12px 0;border-bottom:1px solid #27272a;">
+            <a href="${packChaseUrl(p)}" style="color:#fafafa;font-weight:700;text-decoration:none;font-size:15px;">${esc(p.title)}</a>
+            <div style="color:rgba(255,255,255,0.5);font-size:12px;margin-top:2px;">${esc(packChaseLine(p))}</div>
+          </td>
+        </tr>`;
+    })
+    .join("");
+
+  const html = `<!doctype html><html><head><meta name="color-scheme" content="dark"><meta name="supported-color-schemes" content="dark"></head><body style="margin:0;background:#0a0a0a;color:#fafafa;font-family:-apple-system,Segoe UI,Roboto,sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:32px 16px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#18181b;border:1px solid #27272a;border-radius:14px;">
+        <tr><td style="padding:28px 28px 8px 28px;">
+          <div style="font-size:11px;letter-spacing:0.22em;text-transform:uppercase;color:#e55a4c;font-weight:700;margin-bottom:8px;">Rip Packs City</div>
+          <h1 style="margin:0 0 4px 0;font-size:22px;">${esc(subject)}</h1>
+        </td></tr>
+        <tr><td style="padding:8px 28px 24px 28px;">
+          ${deals.length ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${dealRows}</table>` : ""}
+          ${chases.length ? `<div style="margin-top:16px;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:rgba(255,255,255,0.5);font-weight:700;">Pack chase</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${chaseRows}</table>` : ""}
+          ${fmvs.length ? `<div style="margin-top:16px;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:rgba(255,255,255,0.5);font-weight:700;">FMV alerts</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${fmvRows}</table>` : ""}
+          <p style="margin:22px 0 0 0;text-align:center;">
+            <a href="${SITE}/alerts" style="color:rgba(255,255,255,0.55);font-size:12px;text-decoration:underline;">Manage your alerts</a>
+            ${opts.pauseUrl ? `<span style="color:rgba(255,255,255,0.55);font-size:12px;"> · </span><a href="${esc(opts.pauseUrl)}" style="color:rgba(255,255,255,0.55);font-size:12px;text-decoration:underline;">Pause alert emails</a>` : ""}
+          </p>
+          <p style="margin:10px 0 0 0;text-align:center;color:rgba(255,255,255,0.55);font-size:11px;line-height:1.5;">
+            You get this because you turned on email alerts at Rip Packs City. Rip Packs City is read-only collector intelligence; nothing here is financial advice.
+          </p>
+        </td></tr>
+      </table>
+    </td></tr></table>
+  </body></html>`;
+
+  const textLines: string[] = [subject, ""];
+  for (const d of deals) {
+    const deal = d.payload.deal;
+    const native = nativeBuyLink(deal);
+    const dapper = dapperUrl(deal);
+    const sub = dealSubline(deal);
+    const clause = dealFmvClause(deal);
+    textLines.push(`• ${dealTitle(deal)}${sub ? ` (${sub})` : ""} — ${money(dealAsk(deal))}${clause ? ` (${clause})` : ""}`);
+    textLines.push(`  Details: ${dealDetailUrl(deal)}`);
+    if (native) textLines.push(`  Buy on ${native.label}: ${trackedHref(d, "buy", native.url)}`);
+    if (dapper) textLines.push(`  Dapper: ${trackedHref(d, "dapper", dapper)}`);
+  }
+  for (const d of fmvs) {
+    const p = d.payload;
+    textLines.push(`• ${p.player_name || p.edition_key} — ask ${money(p.lowest_ask)} / FMV ${money(p.current_fmv)}`);
+  }
+  for (const d of chases) {
+    const p = d.payload;
+    textLines.push(`• ${p.title} — ${packChaseLine(p)}`);
+    textLines.push(`  Details: ${packChaseUrl(p)}`);
+  }
+  textLines.push("", `Manage: ${SITE}/alerts`);
+  if (opts.pauseUrl) textLines.push(`Pause alert emails: ${opts.pauseUrl}`);
+
+  return { subject, html, text: textLines.join("\n") };
+}
+
+// ── Batching (2026-11-07 review) ─────────────────────────────────────────────
+// Discord renders at most 10 embeds per message and the Telegram builder at most
+// 20 rows per section, then fitTelegramText cuts at 4,096 chars — but the sender
+// marked EVERY claimed delivery in the group as sent, so a user owed 30 alerts
+// saw 10 and the other 20 were recorded delivered. Split a group into messages
+// that render every row they carry; the sender marks a row sent only with ITS
+// message.
+export const DISCORD_EMBEDS_PER_MESSAGE = 10
+const TELEGRAM_ROWS_PER_MESSAGE = 20
+
+export function messageBatches(channel: "email" | "telegram" | "discord", group: Delivery[], now: Date = new Date()): Delivery[][] {
+  if (group.length === 0) return []
+  if (channel === "email") return [group]
+  if (channel === "discord") {
+    const out: Delivery[][] = []
+    for (let i = 0; i < group.length; i += DISCORD_EMBEDS_PER_MESSAGE) out.push(group.slice(i, i + DISCORD_EMBEDS_PER_MESSAGE))
+    return out
+  }
+  // telegram: greedy — add rows while the rendered text still fits, one row minimum
+  const out: Delivery[][] = []
+  let cur: Delivery[] = []
+  for (const d of group) {
+    const next = [...cur, d]
+    if (cur.length > 0 && (next.length > TELEGRAM_ROWS_PER_MESSAGE || buildTelegramMessage(next, now).length > TELEGRAM_TEXT_LIMIT)) {
+      out.push(cur)
+      cur = [d]
+    } else {
+      cur = next
+    }
+  }
+  if (cur.length) out.push(cur)
+  return out
+}
+

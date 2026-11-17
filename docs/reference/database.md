@@ -1,0 +1,3328 @@
+<!-- Extracted from CLAUDE.md on 2026-08-17 to bring that file under the memory-file
+char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
+Same rules apply: every number here is a dated sample - re-measure before quoting. -->
+
+## 🚨 AN UPSERT THAT CONFLICTS ON A NON-PK UNIQUE KEY **RE-ASSERTS THE PRIMARY KEY** — and an inbound FK with NO ACTION on update turns that into a whole-statement abort (2026-09-20, register R120)
+
+`.upsert(rows, { onConflict: "external_id,collection_id" })` becomes `INSERT … ON CONFLICT (external_id, collection_id) DO UPDATE SET <every supplied column> = excluded.*` — **and that includes `id`.** If the incoming `id` differs from the stored one, the statement tries to **change the primary key**. Postgres then consults every inbound FK:
+
+- `ON UPDATE CASCADE` (`confupdtype = 'c'`) → children follow, the write succeeds.
+- **`NO ACTION` / `RESTRICT` (`confupdtype = 'a'` / `'r'`) → REJECTED, and because the write is one multi-row `INSERT … ON CONFLICT`, the ENTIRE BATCH is lost, not just the offending row.**
+
+⚠ **This is silent when the id is normally stable.** `panini_editions.id` is upstream's serial-level `sku`, identical on almost every pass — so 5,071 of 5,074 rows re-asserted the same value and nothing happened. **Three hand-seeded rows carried a different id convention (`id = external_id`, no `__<span>_<cap>` suffix), and those three aborted their batch on every walk for 66 days.**
+
+### The estate-wide shape, measured — the precondition is TWO keys, not one
+
+The defect needs **both** (a) a text PK a writer re-asserts from upstream data, and (b) **another unique constraint the upsert can conflict on instead**. Exactly **two** tables in `public` have that shape:
+
+| table | text PK | other unique | inbound FKs | inbound FKs with NO ACTION |
+|---|---|---:|---:|---:|
+| `panini_editions` | `id` | 1 | 1 | **0 (fixed 2026-09-20)** |
+| `pinnacle_editions` | `id` | 1 | 1 | **1** |
+
+⭐ **`pinnacle_editions` has the SHAPE but NOT the DEFECT, and the reason is worth recording rather than re-deriving:** its second unique key is `UNIQUE (external_id)`, and **`external_id` is NULL on 539 of its 570 rows**, so it cannot serve as a conflict target for 94.6% of the table — the writer must key on the PK itself, and a PK conflict target never rewrites the PK.
+
+⛔ **Do NOT blanket-apply `ON UPDATE CASCADE` to `pinnacle_sales_edition_id_fkey` on the strength of the Panini fix.** For Panini the id rewrite is CORRECT (the id legitimately tracks upstream). Where a rewrite would be a BUG, `NO ACTION` failing loudly is the better behaviour, and cascading would silently propagate the bug to **198,024** child rows. **The constraint choice follows from whether the PK is derived or minted, not from a house style.**
+
+### How to tell which you have, before changing anything
+
+1. `SELECT conname, pg_get_constraintdef(oid), confupdtype FROM pg_constraint WHERE confrelid = '<parent>'::regclass AND contype='f';` — read `confupdtype`, not the printed clause alone (`ON DELETE CASCADE` prints; NO ACTION on update does **not**, so the definition text looks complete while the gap is invisible).
+2. Ask whether the PK is **derived from upstream data** (mutable) or **locally minted** (stable). Only the first needs CASCADE.
+3. ⭐ **The observable, needing no new instrument: a tick where one write count is 0 while a SIBLING count in the same run is not.** Here `editions: 0` beside `serials: 55` — 12 of 459 runs in 24 h.
+
+**Before/after is ONE TICK, not an aggregate:** the same tick that had written `editions: 0 / serials: 55` on every previous walk wrote `editions: 3 / serials: 55` immediately after the constraint change, healing two of the three rows inside it. Coverage: `editions_stale_45d` 3 → 1, p50 62.6 → 60.1 h, and zero aborted ticks since.
+
+## ⭐⭐ A DIFFERENTIAL UPSERT WRITES THE DELTA BUT PROBES EVERY OFFERED ROW — pre-filter with a LEFT JOIN, and judge the fix on `pg_stat_statements` blocks/call, never on cron durations (2026-09-19, register R101 v2)
+
+**The shape.** `INSERT INTO target SELECT … FROM wanted ON CONFLICT (key) DO UPDATE SET … WHERE (target.a, target.b) IS DISTINCT FROM (EXCLUDED.a, EXCLUDED.b)` looks incremental — it *writes* only rows that changed. But `ON CONFLICT` has to find the conflicting row for **every** offered row (one unique-index probe + one heap fetch each) before the `WHERE` can decide to skip it. Offer 55k rows to write 60 and you pay 55k probes.
+
+**Measured on the Atlas listing tick** (`atlas_listing_verify_tick`, jobid 466, every 2 min). The tick read **927,297 shared buffers per call**. The 09-18 R101 v1 found ~160k of that in the three open-book builds; v2 found where the other ~700k went — the two upsert arms in `sync_ts_listings_from_atlas` / `sync_cached_listings_from_atlas`, each pushing the whole ~55,655-row wanted set through ON CONFLICT to write ~60.
+
+**The fix (`20260919152824`), behaviour-preserving by construction:** a `LEFT JOIN target t ON t.key = w.key` in the source query, keeping only `t.key IS NULL OR (t.a, t.b) IS DISTINCT FROM (w.a::<target type>, w.b::<target type>)` — the comparison **cast to the target column types**, or an integer-vs-numeric mismatch re-offers every row. The conflict arm's own `WHERE` guard is **kept verbatim**, so the pre-filter can only narrow, never change, what is written. Equivalence proven on prod read-only before the apply: wanted set 55,655 = 55,655 (EXCEPT 0); pre-filter offers **725 rows (538 new + 187 changed) instead of 55,655**; cast/uncast agree 187 = 187.
+
+**Result, same instrument both sides** — `(shared_blks_hit+shared_blks_read)/calls` for queryid `-3354316985779850203` (userid = postgres), pre-window vs wholly-post window (change point 15:28:24Z): blocks/call **927,297 → 196,978 (−79 %, n=35)**; physical reads/call **26,438 → 17,919 (−32 %)**. A bounded memory grant (`temp_buffers 48MB` on the tick, `work_mem` 16/32 MB on the syncs — `20260919160033`, `20260919162927`) then took temp blocks written/call **3,998 → 0** (n=21).
+
+⛔ **What NOT to judge it on, and this is the durable half.** The estate ran io_wait 7–20 of 8–23 active backends all morning. The tick's wall-clock completion rate in the post window was **21/48** with the no-change control `464` at **8/19** — i.e. the completion rate measured the **estate**, not the function. **R101 v1 was reverted on 09-18 on exactly that instrument (8 of 10 ticks timed out after the apply) and exonerated 26 minutes later** when the reading turned out to be a 23-minute autovacuum spanning the window. A cancelled statement is not recorded in `pg_stat_statements`, so its counters move only on completed ticks — which is the point: **blocks/call isolates the work; durations are load-sensitive.** Split the counters at the change point (pre cumulative vs live), never pool.
+
+**Where this leaves the lane:** per-tick work is a quarter of what it was and its temp-file traffic is gone; its *completion rate* is still set by the estate's IO, and the next lever is the next big reader (`refresh_wmc_fmv_changed`, jobid 303 — 411 MB physical per call, #1 since the 08-12 reset), not this function. Three sessions have now micro-optimised this tick; the ledger and register R101 carry the readings.
+
+## 🚨 A pg_cron COMMAND WITH ANY PREFIX RUNS IN A TRANSACTION BLOCK — so `CREATE INDEX CONCURRENTLY` cannot (2026-09-19, register R108)
+
+A probe job ran `SET statement_timeout = '900s'; CREATE INDEX CONCURRENTLY …` and failed in **0.4 s**:
+
+> `ERROR: CREATE INDEX CONCURRENTLY cannot run inside a transaction block`
+
+⇒ **A MULTI-STATEMENT pg_cron command is wrapped in a transaction block.** The standing note that
+*"a one-off pg_cron job CAN run CIC — fresh libpq connection, no transaction block, no 60 s client
+cap"* holds **only for a command that is ONE statement with NO prefix.**
+
+⛔ **So the build budget cannot be bought with a `SET` prefix — the prefix is precisely what
+destroys the property CIC requires.** Both jaws of the R108 pincer are now measured, not assumed:
+
+| role | owns `topshot_atlas_market_events` | role-level `statement_timeout` |
+|---|---|---|
+| `postgres` | **yes** | **none** — inherits the cluster file default |
+| `cron_heavy` | no | **600 s** |
+
+⚠ **And the 120 s that kills the build is NOT a role default.** `pg_settings` reports
+`statement_timeout = 120000`, `source = 'configuration file'`,
+`/etc/postgresql-custom/platform-defaults.conf` — a Supabase platform default. Precedence is
+file < database < **role** < session `SET`, which is why `cron_heavy` gets 600 s and `postgres`
+does not.
+
+👉 **The only remaining route is a SINGLE-STATEMENT job under a role that BOTH owns the table AND
+carries a role-level timeout above the build time.** Today no such role exists, so it needs a
+deliberate, bounded, supervised `ALTER ROLE … SET statement_timeout` window with a `RESET`
+afterwards — which widens the guardrail for **every new session of that role** while it is open.
+**Do NOT re-try the SET-prefix form; it is refuted.**
+
+## The two cross-collection mats have a freshness guard as of 2026-09-19
+
+`check_cross_collection_mat_staleness(p_max_hours numeric DEFAULT 26)` — BAN-AT-ZERO, returns a
+**jsonb ARRAY** (clean is `jsonb_array_length() = 0`, **never** `count(*) = 1`), called from
+`rpc_ops_snapshot()` under the key `cross_collection_mat_staleness`.
+
+It covers `cross_collection_cohort_mat` (rebuilt by `rpc-ccm-step1`) and
+`cross_collection_ts_set_overlap_mat` (`rpc-ccm-step2`). **Neither had any freshness arm** —
+`board_mv_refresh_stale_hours` guards the board MVs, not these — which is how the cohort mat
+reached **53.5 h stale on 09-18 and 61.0 h on 09-19** behind `/insights/cross-collection` with
+nothing alarming.
+
+⭐ **It shipped with its control pair already in the data, no synthetic setup:** at install time the
+cohort mat was 61.0 h old and the overlap mat 12.7 h old, so a correct guard at 26 h had to return
+**exactly one entry, naming the cohort mat and not the overlap mat.** It did. At
+`p_max_hours = 1000` it returns 0, so its non-empty reading is not vacuous.
+
+⚠ **Expect the key NON-EMPTY until R109 is fixed** — `refresh_cross_collection_cohort_step1()`
+cannot complete inside its 600 s ceiling. That is the guard working. **Do not widen the threshold
+to silence it.** 26 h is sized from the TRUE cron cadence (daily ⇒ ~24 h healthy maximum, 2 h slack).
+
+⚠ **Why not a `v_rpc_trust_health` arm, which is where the filing asked for it:** measured rather
+than asserted — that view is **48,766 chars across 37 `UNION ALL` branches**, and
+`rpc_trust_health_precompute (metric, value, computed_at, duration_ms)` has **no `breach_at`
+column**, so every threshold lives in the view text and there is no data-driven path. Rewriting
+48,766 chars to add six lines, on the surface that gates public trust, is a worse trade than adding
+a key to the 5,991-char `rpc_ops_snapshot()` that every session already reads first. The trust arm
+remains the right long-term home.
+
+
+# Supabase / Postgres reference
+
+> Collection UUIDs and the two collection-string vocabularies stay in CLAUDE.md (small, stable, used constantly). Everything else lives here.
+
+### editions table (36 columns — verified live 2026-08-14; 32 on 2026-07-16, + `description` 2026-08-12, + the three player-bio columns 2026-08-14)
+
+Columns: id (uuid), external_id (varchar), collection_id (uuid), player_id (uuid), set_id (uuid), name (varchar), tier (enum), series (smallint), edition_kind (enum), circulation_count (int), badges (text[]), reward_indicators (text[]), thumbnail_url (text), video_url (text), play_type (varchar), play_category (varchar), game_date (date), home_team (varchar), away_team (varchar), first_minted_at (timestamptz), last_updated_at (timestamptz), created_at (timestamptz), updated_at (timestamptz), set_id_onchain (int), play_id_onchain (int), collection (text), player_name (text), set_name (text), team_name (text), **jersey_number (smallint)**, **subedition_id (smallint)**, **subedition_name (text)**, **description (text)**, **player_birthdate (date)**, **player_birthplace (text)**, **player_draft_year (smallint)**. ⚠ **Those last two types were WRONG here until 2026-08-15** — this list said `player_birthdate (text)` and `player_draft_year (int)`. Live and the recovered DDL both say **`date`** and **`smallint`**, so a session writing a date predicate or a TS type off the old line would have got both wrong. Verified against `information_schema` while recovering the migration file (D31).
+
+The three `player_*` bio columns (added 2026-08-14) come from the same Top Shot catalog walk as `description` and cover almost exactly the same rows — measured 2026-08-15 after the first cron tick that carried them: **9,082 / 9,082 / 9,037 of 13,208** canonical Top Shot editions against `description`'s 9,128. ⚠ **They are on `Play.stats` (PlayStats), NOT on `Play` — unlike `description`**, which is the mirror image of the trap that shipped a 422 in August; get either one on the wrong type and the WHOLE query is invalid, Top Shot answers HTTP 422, and the walker completes reporting `ok: true` having written nothing. Values are sentinel-normalized through `isSentinel()` (`draftYear: 0`, `"N/A"` → null), so a NULL means genuinely absent, never a placeholder.
+
+⚠ **They feed `lib/serials/fun-patterns.ts` and NOTHING ELSE — and for the first two hours they existed they fed nothing at all.** `classifySerial` can only emit its `jersey_match` / `birthday_match` / `draft_year_match` quirks when a caller passes the context, and both callers were passing only `circulationCount`, so three of its eleven quirk kinds were **structurally unreachable in production** however correct the pure function was. **Wiring a capability to its data is a separate act from shipping either one** — this repo has now paid for that lesson twice in two days (the concierge did not reach the new catalog search for free either). The concierge tool is wired (`find_quirky_serials`, via a chunked `editions` lookup keyed on the wallet's `edition_key`s, fail-soft so a bio-read failure degrades to serial-only quirks). **`MomentDetailModal` is wired too as of 2026-08-14** (this bullet said "is NOT wired" until then), so all eleven kinds are now reachable on both surfaces — but by a DIFFERENT mechanism, and the difference is the point. The modal fetches the bio **lazily on open** from `/api/entity/edition?part=bio&editionKey=…`, rather than threading it through the wallet-moments and sniper-feed queries: the collection table routinely holds hundreds of rows and a collector opens one, so a per-row join pays for bio nobody sees. ⚠ **That arm is keyed on `editionKey` (= `editions.external_id`), NOT on the route slug every other `part` uses** — `get_edition_detail` returns `route_slug` and `external_id` as separate fields and they are not interchangeable. It is scoped by `collection_id` because `external_id` is not unique across collections, it caches (a bio is a catalog fact, not a price), and a failed read is an ERROR rather than three nulls — all-null is exactly what an edition genuinely without a bio returns, so publishing it on an outage would make the two indistinguishable. The client half is fail-soft in the other direction: any failure leaves the serial-intrinsic chips standing, because **a missing chip understates, which is the safe direction** for a claim like "this serial is their jersey number".
+
+`description` (added 2026-08-12) is the upstream prose the moment page renders — the ONLY narrative text in the catalog and what makes a query like "game winner" answerable. ⚠ **It comes from Top Shot `play.description`, NOT `play.stats.description`** — putting it inside `stats { }` makes the WHOLE GraphQL query invalid, Top Shot answers HTTP 422, and `backfill-topshot-catalog` completes reporting `ok: true` having upserted ZERO editions. That regression shipped and was caught only because `gql_calls` exactly equalled `sets_processed` (one call per set = every call died on its first page; a healthy walk needs multiple pages).
+
+⚠ **The reason that was invisible is fixed, and the fix is the transferable part (`9909f27d`, 2026-08-13).** `fetchEditionsPage` returned `… | null`, collapsing **"this set has no editions"** and **"we could not ask"** into one value — so a total upstream refusal was indistinguishable from an empty catalog, and the walk logged `ok: true`. It now returns a discriminated `PageFetch` carrying a **fault string** (HTTP status + body, or the GQL error message — for a malformed query the upstream body NAMES the offending field, which was being thrown away), `walkSet` propagates `fault` alongside `editions`, and a new **`sets_faulted`** counter lands in the `pipeline_runs` extra + the HTTP payload. ⚠ `ok` deliberately does NOT redden on a SINGLE fault — Top Shot GQL is intermittently flaky and a chronically-red pipeline trains the operator to skim past it, the exact cost this repo already paid with `ufc_fmv_stale_hours`; it reddens on an upsert error or on **every** walked set faulting, which cannot be upstream noise. **Read `editions_upserted` / `sets_faulted`, never the HTTP status** — a sweep that upserted nothing still returns 200.
+
+⚠ **The cost of that correct decision: NO instrument reads `sets_faulted`, so the fault rate can drift from 4% to 100% and only `editions_upserted` flattening would ever show it.** Filed, not fixed: [inbox 2026-08-14T2300Z](../../docs/overnight/inbox/2026-08-14T2300Z-topshot-catalog-walk-faulted-11-sets-and-nothing-watches.md). **The fault set is STABLE, not flaky** — re-verified live 2026-08-14: the 08-14 and 08-15 02:12Z ticks are **byte-identical** at `editions_upserted 9396 / sets_processed 258 / gql_calls 541 / sets_faulted 11`, two independent runs a day apart. That matters before anyone builds a retry: a stable 11 is a catalog property (11 sets whose `searchSetPlays` refuses), not transient GQL flakiness, so a blind retry loop would burn calls and change nothing. ⚠ **Measure it from `pipeline_runs` within ~73 h or not at all** — the `errors_sample` set ids that would identify WHICH 11 are pruned with the row, and `pipeline_runs_daily` does not carry them. The same query also shows the 422 regression's signature preserved on the 2026-08-12 row (`editions_upserted 0`, `gql_calls 257` == `sets_processed 257`), which is the cleanest available example of that tell.
+
+**It is now ON A CRON (supersedes the "on no cron" note in the dated Aug-12/13 entry):** Vercel cron `12 2 * * *` → **`/api/cron/topshot-catalog-backfill`**, a thin wrapper, because `/api/admin/backfill-topshot-catalog` is guarded by `verifyAdminRequest` which accepts ONLY `RPC_ADMIN_TOKEN` while Vercel cron injects `CRON_SECRET` — a direct `vercel.json` line would have 401'd every tick, and **a 401 writes no `pipeline_runs` row, so it looks exactly like "never scheduled"** (the same invisible-failure shape as the 08-11 gate-key outage, and the trap that killed the old `pinnacle-sync` entry). The wrapper takes the canonical **dual secret** (`CRON_SECRET` or `INGEST_SECRET_TOKEN`) and calls the admin handler **in-process** rather than self-fetching — a self-fetch needs a correct absolute base URL in every environment, burns a second lambda, and fails closed on SSO-protected previews. It logs nothing itself; the walker writes its own `pipeline_runs` row (`topshot-catalog-backfill`), and two rows per tick would double-count.
+
+The last three were added with the parallel/subedition + jersey-match work: `jersey_number` drives the JERSEY-MATCH special-serial chip (trophy case / special-serial boards); `subedition_id` / `subedition_name` carry the TopShot parallel printing (e.g. Hexwave/Jukebox) on `setID:playID::subID` editions.
+
+The denormalised `player_name` / `set_name` / `tier` / `team_name` / `circulation_count` columns DO exist on this table — safe to select directly.
+
+Pinnacle editions live in parallel table `pinnacle_editions` with different schema: id (text), external_id (text), edition_key (text), character_name, franchise, set_name, variant_type, edition_type, mint_count, is_chaser, thumbnail_url, ask_price, ask_source, plus 10+ Pinnacle-native columns (studio, materials, effects, size, color, thickness). `edition_key` format: `royalty_code || ':' || variant_type || ':' || printing`. ⛔ **That key is SET-LEVEL — one row names ONE character and ONE franchise for a key that can span several pins. A PIN is a `pinnacle_catalog` row (`render_id`); per-pin ownership is `wallet_moments_cache.render_id`, and `external_id` matches NO key a wallet holds** (2026-09-26): [schema-truth.md § Disney Pinnacle grain](schema-truth.md#disney-pinnacle-grain--which-table-answers-which-question-2026-09-26).
+
+### Pinnacle catalog: Dapper's search can lag the chain — the backfill fills from the contract (2026-11-09)
+
+- **The trap:** `pinnacle_catalog` is copied from Dapper's `searchPinnacleEditions`. On 11-08 a 30-render drop (Walt Disney Mugs Vol.1 + 5 Friends-Giving Vol.2 chasers) was on chain but absent from BOTH `searchPinnacleEditions` and `searchPinnacleNft` a day later, so 961 wallet pins had no name, set or value. The mint-gap check (`pinnacle_minted_renders_missing_from_catalog`) caught it; nothing filled it.
+- **The authority:** the Pinnacle contract (`0xedf9df96c92f4595`) holds everything a catalog row needs — `getEdition → getShape → getSet → getSeries → getEditionType` — and `pinnacle_mint_events.edition_id` IS the catalog's `edition_id` (394/394 checked). `lib/pinnacle/chain-catalog.ts` reads up to 60 missing renders per full backfill run in one Cadence script via rest-mainnet, inserts them FILL-ONLY (`ignoreDuplicates`, `source = 'flow-chain'`), and Dapper's row replaces a chain row on the first sweep that returns it. The run fails only on what is still missing.
+- **The naming trap:** the hourly `pinnacle-wmc-render-id` lane calls `derive_pinnacle_wmc_from_catalog()` ONLY in an hour that resolved new render ids — a pin whose `render_id` landed before its catalog row existed is never re-derived. After any catalog fill, run the derive (the backfill now does after a chain fill; `chain_wmc_derived` in its run log).
+
+### Disney Pinnacle has THREE transaction types, not two (2026-08-22)
+
+⚠ **A Pinnacle Pin changes hands three ways, and until 2026-08-22 only two were tracked.** Reading Pinnacle "market activity" off `pinnacle_sales` alone under-counts the market by roughly HALF.
+
+| type | table | on-chain signature | writer |
+|---|---|---|---|
+| storefront **SALE** (priced) | `pinnacle_sales` | `NFTStorefrontV2.ListingCompleted` | `/api/pinnacle-sales-indexer` |
+| primary **MINT** (pack/airdrop/primary-buy — indistinguishable on chain, so labelled `mint`, never `pack_pull`) | `pinnacle_mint_events` | `Pinnacle.PinNFTMinted` + same-tx `Deposit` | `supabase/functions/ingest-pinnacle-mints` |
+| peer-to-peer **TRADE** (no price) | `pinnacle_trade_events` | ≥1 `Pinnacle.Withdraw` + ≥1 `Deposit`, **exactly two wallets, each on BOTH sides**, one atomic tx | `/api/cron/pinnacle-trades-indexer` |
+
+⚠ **The trade rule is geometric and needs no storefront or mint lookup** — a mint emits a Deposit with **no** Withdraw, and a sale's seller appears only as `from` while its buyer appears only as `to`. Measured over two independent 10,000-block windows (2026-08-22) and validated in both directions against `/v1/transaction_results`: geometry=TRADE → 14 tx / 77 Pins, storefront events in **0**; geometry=NOT-trade → 26 tx, storefront events in **26 of 26**. **In the same windows 77 Pins moved by trade against 79 by sale.**
+
+⚠ **"Two wallets and several Pins" is NOT the rule.** A bulk one-way transfer of 25 Pins is two wallets and many Pins and is not a trade. The test is that **both** wallets appear on **both** sides. Rule + fixtures: `lib/pinnacle/trade-classifier.ts`.
+
+⚠ **`pinnacle_trade_events.pins_in_trade` is trade SIZE, not trade count** — a 25-Pin swap is 25 rows and ONE trade. `count(*)` gives Pins moved; group by `transaction_id` (or read `pins_in_trade`) for trades.
+
+⚠ **A trade has NO price and no path here invents one.** `backfill_pinnacle_trade_acquisitions` (pg_cron `23 */3`) omits `buy_price` from its INSERT column list entirely — the same asymmetry the mint path uses, because a 0 renders a 100%-profit moment forever. `acquisition_method = 'trade'` labels as **"Traded"**, never "Bought": `resolveMomentPnlBasis()` trusts only `Bought`/`Loan` as a cost basis.
+
+⚠ **`pinnacle_ownership_snapshots` is NOT a transaction log and cannot count trades** — it is a latest-owner MAP, upserted one row per `nft_id`, with no counterparty and no tx, and its `observed_at` is write time (the backfill scan writes it too), not market time. A 7-day `observed_at` window returned rows spanning ~16.7M blocks.
+
+⚠ **History before block 162,153,000 is NOT backfilled.** The forward cursor was seeded at that floor; a downward backfill is a separate unbuilt workstream, so a trade-volume series has a hard left edge there.
+
+### wallet_moments_cache (wmc)
+
+UNIQUE constraint: `(wallet_address, collection_id, moment_id)` — the cross-collection-safe shape (replaced the old `(wallet_address, moment_id)` on May 6). Columns include `edition_key`, `serial_number`, `tier`, `set_name`, `player_name`, `character_name`, `mint_count`, all populated by JOIN-to-editions backfill RPCs.
+
+⛔ **A `moment_id` IS UNIQUE ONLY WITHIN A COLLECTION — every read of this table keyed on `moment_id` must carry `collection_id` (or `wallet_address`) in the SAME chain (2026-09-25, #142).** Top Shot nft `6024287` and All Day nft `6024287` are two moments; the Top Shot on-chain sales indexer's unscoped `.in("moment_id", …)` took an All Day row's SERIAL for a Top Shot sale (the edition fell through to `moments` and landed right, so the wrong serial was invisible unless it exceeded the print run) — 339 sales repaired from `moments` / the Top Shot cache row / the chain (`20260926044333`, backup table kept). Guard: `wallet-moments-cache-moment-id-reads-are-collection-scoped.test.ts` (tree walk, planted-defect proven). The same holds for `moments.nft_id` joins and any other per-collection id used as a global key.
+
+**`fmv_confidence` (added 2026-08-11, `6bd15560`) — wmc is the portfolio store and ~34 DB functions sum `wmc.fmv_usd`, but until then the table carried the VALUE with no LABEL**, so `fmv_current.confidence` was structurally unavailable at the point a portfolio total is computed and `get_wallet_collection_snapshot` (behind the anon-public `/share/[wallet]`) emitted per-collection FMV with no confidence field at all. Typed `public.fmv_confidence`, nullable/no-default (metadata-only on a ~2.3 GB table) and **deliberately unindexed** — `idx_wmc_cohort_cover` already INCLUDEs `fmv_usd` and the table's HOT ratio is 1.8%, so an index would cost writes for no read benefit. `populate_wmc_fmv_from_snapshots` writes it in both paths **from the same snapshot row as the value**; its force-path change-detection was widened to fire on a differing LABEL too, else already-correct rows keep a NULL label forever. Bounded backfill: `backfill_wmc_fmv_confidence(uuid, int)`.
+
+⚠ **DURABLE — the FMV propagation path had NO DB-visible failure signal, so no monitor could ever have alerted on it (`cd1018f0`, 2026-08-12).** `refresh_wmc_fmv_changed` + `refresh_wmc_fmv_drift_active` were failing `57014` on EVERY 5-minute tick for 10+ hours while `pipeline_runs` showed **988 runs and ZERO failures**: the per-collection rows come from `runOne` (which succeeds), the route returns **202 by design**, and the RPCs' only failure signal was `console.log`. The drift ran long enough to reach Top Shot **7% exact-match** and AllDay **p95 14.2×** against `fmv_current`. Both RPCs now log their own `pipeline_runs` rows. **A route that returns 202 and a wrapper that succeeds do not make the work inside observable — give each failing unit its own row.**
+
+⚠ **DURABLE — `last_seen_at` CANNOT ANSWER "DID THIS PASS SEE THE MOMENT", AND A PRUNE KEYED ON IT DELETES REAL HOLDINGS (2026-09-14).** `upsert_wmc_batch` is change-detecting: its `ON CONFLICT DO UPDATE` fires only `where edition_key is distinct from … or serial_number is distinct from … or w.last_seen_at < now() - interval '24 hours'` (read live from `pg_get_functiondef`, not from prose). **So a moment re-confirmed inside 24h is skipped entirely and its `last_seen_at` is NOT advanced** — after a complete, fully-successful pass a still-held moment and one sold yesterday carry IDENTICAL timestamps. Measured the same day on `0xba1a13299beb4b19` (All Day): a complete pass logged `rows_found=50, rows_written=0`, so the rule *"delete rows whose `last_seen_at` predates this pass"* would have deleted **all 50 real holdings**. ⭐ **The only safe key is the OBSERVED ID-SET** — the ids the pass actually got back from chain, ∪ the All Day studio custody walk (a locked All Day moment is structurally absent from `getIDs()`, so a degraded custody walk's silence reads as a sale). ⛔ **That set exists ONLY inside the backfill process, so this CANNOT be a pg_cron / DB-only prune — do not build one.** Shipped as `deleteUnseenWmcRows()` in `lib/chains/flow/wmc-unseen-delete.ts`, called on all five complete-pass exits; it refuses on an empty observed set, on an incomplete pass, on a degraded custody walk, and on a diff >90% of a >100-row wallet. Until it shipped, nothing removed a wmc row when a moment LEFT a wallet: `prune_stale_wmc()` (weekly, 14 days) was the only cleanup, so the dashboard, `/share` card and `saved_wallets.cached_moment_count` overcounted for **~14–21 days** — an account-level false claim. ⚠ **GENERALISES: a CHANGE-DETECTING WRITER DESTROYS ITS OWN TIMESTAMP AS A LIVENESS SIGNAL.** Wherever a writer skips unchanged rows, `*_at` means *"last time this row CHANGED"*, not *"last time we LOOKED"*, and the two are indistinguishable afterwards — the same family as the `col_description()` rule. The honest freshness grain here is `wallet_backfill_state.last_scanned_at` (per wallet + collection).
+
+🚨 **THE SAME FACT, MISSED FOR SEVEN WEEKS, FROM THE OTHER SIDE (2026-11-02, #227): the prune named above as "the only cleanup" WAS ITSELF DELETING REAL HOLDINGS.** `prune_stale_wmc()` keys on `last_seen_at < now() - 14 days` and exempted only ACTIVE seeded wallets — so every collector's SAVED wallet (25 of 37 not seeded) lost the moments a skip-cached walk had not re-written for 14 days (11-02: a walk found 50 of 1,109 still cached), and the Sunday-night portfolio snapshot summed the hole (9 owner-days in 60, e.g. 356 vs 3,164 moments). The 09-14 paragraph said the timestamp cannot answer "did this pass see it" — and the weekly prune kept asking exactly that. Fixed `20261102214905` (saved wallets exempt). ⭐ **When a timestamp is found to be a non-signal, grep EVERY reader of it the same day, not just the writer you came for** — `pg_proc` regex `last_seen_at\s*[<>]` over bodies that mention the table, plus the TS `.lt/.gt/.gte("last_seen_at"` callers.
+
+### Account linking (May 8; rebuilt 2026-09-29)
+
+- `linked_accounts(parent_addr text, child_addr text)` — PK on the pair. 113 links as of 2026-07-16 (was 6 at the May 8 note); **1,319 rows on 2026-09-29** after the child-side backfill (211 `source='event'`, 1,108 `source='script'`). Re-derive; do not quote.
+- ⛔ **It holds CHAIN ACCOUNTS, not RPC users.** Any address with a Hybrid Custody link is in it. A reader that treats "in `linked_accounts`" as "is a user" is wrong at this size — `get_lock_check_batch` did, and handed a whole Top Shot batch to one trader (fixed `20260929235000`: user tier = `saved_wallets` + the ACTIVE counterparts OF a saved wallet).
+- RPCs: `get_linked_parents(addr)`, `get_linked_children(addr)`, `get_all_linked_addresses(addr)`, `resolve_canonical_owner(addr)` (child → one active parent, `ORDER BY last_event_at DESC`), `linked_accounts_summary()`.
+- View: `analytics_sales_resolved` — re-projects `analytics_sales` through canonical-owner resolution (no app reader as of 2026-09-29).
+- **Two writers, both through `record_link_state()`:**
+  - `hybrid-custody-events` (edge fn; `AccountUpdated` events; cron-job.org every 20 min; cursor `event_cursor.id='hybrid_custody_events'`, started at block 151,110,101 = 2026-05-10). Complete inside its window (8/8 events checked 2026-09-29). It cannot see a link made before the cursor.
+  - `hybrid-custody-backfill` (edge fn; reads current chain state for candidates). ⚠ **Until 2026-09-29 it read only the PARENT side** (does the candidate hold a `Manager`?), but candidates are Dapper addresses = CHILDREN, so it found 6 pairs and 140 of 147 redeemed links on saved+seeded wallets were missing. It now also reads the CHILD side (`OwnedAccount` redeemed parents). Scheduled: pg_cron job 642 daily 13:19 UTC (`scope=wallets`), jobs 646/647/648 Sunday 10:23/10:33/10:43 UTC (`scope=all`, offsets 0/2950/5900, limit 3000; the last page has `last_page=1` and reports `ok=false` naming the unread count if the set outgrows it). Auth: `?key=cron_gate_key('hybrid-custody-backfill')` (Vault, generated in-DB) or Bearer `INGEST_SECRET_TOKEN`.
+- ⛔ **`record_link_state`: `last_event_at/tx/block` change ONLY on an event (non-NULL `p_event_block`) or on first insert** (`20260929235500`). Before, a NULL block counted as newest, so a script write wiped an event row's provenance (36 rows on 2026-09-29, restored from chain: `docs/audits/linked-accounts-event-provenance-restore-2026-09-29.md`). For a `script` row, `first_linked_at`/`last_event_at` = first PROBE time, not link time.
+- **Boards that group by `resolve_canonical_owner` DISPLAY the member holding the most of the group's moments, not the canonical parent** (`get_edition_top_owners`, `topshot_rookie_collector_leaderboard_mv`; `20260929235800`). The parent is a Flow Wallet with no Top Shot username (903 of 1,124 linked children are named; 5 parents are).
+- Multi-parent children (139 on 2026-09-29) map to ONE parent; connected-component grouping was measured unnecessary: 0 components are split among addresses that hold Top Shot moments. Re-measure before building it.
+
+### fmv_snapshots table
+
+Wide table — full column set (verified live 2026-07-16): id, edition_id, collection_id, fmv_usd, floor_price_usd, asp_usd, confidence, top_shot_ask, flowty_ask, cross_market_ask, sales_count_7d, sales_count_30d, unique_buyers_30d, offer_count, listing_count, days_since_sale, velocity_factor, utility_factor, loan_factor, algo_version, computed_at, collection, liquidity_rating, asp_without_outliers, ask_proxy_fmv. Key ones: `edition_id`, `fmv_usd`, `confidence`, `computed_at`. **NO `source` column** (still true — do not filter on one).
+`confidence` is enum `fmv_confidence` UPPERCASE: `HIGH`, `MEDIUM`, `LOW`, `NO_DATA`, `ASK_ONLY`, `SALES_ONLY`, `STALE`. Never use `.eq("confidence", "high")` — always uppercase, and never use `.ilike` on enum columns (use `.eq` per `f55e022 + e9c90e5` fix).
+
+**Two confidence vocabularies (footgun):** `fmv_snapshots.confidence` accepts `HIGH | MEDIUM | LOW`, but `nba_player_projections.confidence` is gated by a different CHECK that allows only `HIGH | MED | LOW` (3-letter MED).
+
+**How a sales-priced edition earns MEDIUM (`lib/fmv-confidence.ts`, re-read 2026-10-11):** ≥ 5 sales in 30 d gives MEDIUM. With ≥ 7, a serial-residual dispersion ≥ 0.35 **demotes to LOW** despite the volume (pinned in `fmv-confidence-boundaries.test.ts`). The way back is **ask-corroboration**: ≥ 3 sales whose median is within ±25 % of a live ask under 7 days old lifts LOW → MEDIUM, and never anything higher. Ask sources, each written with its AGE as a pair (no age → withholds): Top Shot `edition_offers.low_ask` (age = last seen), All Day `allday_edition_floor_ask` (age = listings-feed lag), **Candy `candy_listing_floor.confirmed_floor_usd` (age = `last_seen_at`; since 2026-10-11, it used to only CAP)**. Pinnacle (triple grain), Golazos (no sales) and UFC (no feed) have none. Measured out of sample when Candy was wired: the editions it lifts priced at MdAPE 19.2 % vs 20.0 % for Candy MEDIUM and 27.3 % for the LOW that stays LOW (ledger 2026-10-11).
+
+`fmv_snapshots` is partitioned. `CREATE INDEX CONCURRENTLY` runs ONLY from a one-statement pg_cron job (libpq) — `execute_sql` and `apply_migration` both wrap in a transaction; see General rules. FMV write pattern: delete-then-insert NEVER upsert; `collection_id NOT NULL`. Daily duplicates are intentional history, not a bug.
+
+⚠ **DURABLE — `fmv_snapshots` history only begins 2026-03-31, while `sales` goes back to 2020-07-28.** So NO long-horizon view can be built from FMV: the edition chart's `365d` chip had never once shown a year — it silently showed the ~4.5 months that exist. Any window longer than that must read **actual sale prints** instead (`get_edition_sale_history` → `/api/entity/edition?part=sale-history`, added 2026-08-11 in `9d6e2408`; median/low/high/count per bucket, grain adapts day→week→month and is RETURNED on every row so the axis label is measured rather than assumed). ⚠ **The two series must NOT be merged — an FMV estimate and a median print are different quantities**; the chart switches source per window rather than stitching them. Also note the sale-history clamp floors at **0** (`days<=0` = all time) and deliberately does NOT reuse the fmv-history floor of 7, which would turn ALL into a week.
+
+⚠ **`fmv_snapshots_2025` and `_2027` hold ZERO rows and 0 bytes, and probing them is not free** (measured 2026-08-14). A per-row correlated lookup walks an `Append` over EVERY partition, and an empty partition's index root still costs **2 buffers per probe** — on `get_pack_detail_bundle`'s 1,531-edition hero leg that was **3,062 buffers, ~33% of the leg, for nothing**. Adding **`and fs.computed_at <= now()`** hands the planner the partition key and it prunes at RUNTIME (`Subplans Removed: 1`), taking that leg 9,131 → 6,308 buffers on the SAME index. It is semantically a no-op (a snapshot cannot be computed in the future; 0 future-dated rows), and when 2027 begins it simply stops pruning — **it degrades, it never breaks**. Reach for this on any per-row `fmv_snapshots` lookup.
+
+⚠ **DO NOT "fix" a slow `fmv_snapshots` lookup by adding `collection_id` to reach the covering index — that was measured and REJECTED.** It does exactly what it promises (`Index Only Scan` on `fmv_snapshots_2026_coll_ed_ct_fmv_idx`, planner cost 2906 → 1948) and is still worse: that index is **113 MB with 15,621 lifetime scans** against the **61 MB / 38.9M-scan** `edition_id_computed_at` index the lookup uses today, so on a **2 GB** instance it evicts the hottest index on the platform — measured cold it read **1,630 pages against 137**, and cold is precisely the case that times out. ⚠ **And "Index Only Scan" is a misnomer on this table: `Heap Fetches: 1,292` of 1,531**, because the delete-then-insert FMV write pattern keeps pages non-all-visible. **That is exactly why the estimate and the measurement disagree — the planner's cost model assumes the visibility map pays off, and on `fmv_snapshots` it does not.** A cost estimate is not a measurement.
+
+Most recent FMV per edition:
+```sql
+SELECT DISTINCT ON (edition_id) ... ORDER BY edition_id, computed_at DESC
+```
+⚠ **Prefer the `fmv_current` VIEW over a hand-rolled version of that query, and NEVER dedup raw `fmv_snapshots` in JS.** At a measured **40.7 snapshots per edition**, PostgREST's 1000-row cap covers only ~25 editions of a DESC read, so a "latest per edition" assembled client-side silently answers for a fraction of the batch — and, because the missing rows look like absence, publishes **"No FMV data yet" for editions we have priced**. That is deep-audit **D27**, and it was still live on **`/api/fmv` — the DOCUMENTED PRODUCT API** — until 2026-08-15 (`8f59749b`), covering **50 of a 100-edition batch**, while two sibling routes had already fixed it and left comments citing D27. Fixed by reading `fmv_current` with 500-chunked `.in()`. ⚠ **Copying the sibling fix verbatim 400s the route: `fmv_current` exposes `wap_usd` DIRECTLY and has NO `asp_usd`**, so the `wap_usd:asp_usd` alias the snapshots query used does not carry over — verify against `information_schema` rather than the sibling. *Reading the sibling is not reading the file.*
+
+⚠ **THE `fmv-recalc` SWEEP IS DEGRADED AND HAS BEEN ALL MONTH — do not read a green-looking FMV surface as proof it is healthy (measured live 2026-08-15).** The trust arm **`fmv_sweep_wedge_hours` is BREACHED and ACCELERATING — 4.30 → 4.68 → 7.40 h over ~8 h on 2026-08-15, against a breach_at of 3** — and the daily rollup shows why:
+
+| day | runs | fail | fail % | rows written |
+|---|---|---|---|---|
+| 08-07 | 125 | 1 | 0.8% | 59,803 |
+| 08-11 | 92 | 10 | 10.9% | 44,674 |
+| 08-13 | 93 | 7 | 7.5% | 45,054 |
+| **08-14** | **41** | **21** | **51.2%** | **10,684** |
+| 08-15 (part) | 48 | 13 | 27.1% | 19,216 |
+
+⚠ **Read the current day as PARTIAL — `pipeline_runs_daily` accumulates, so quoting today's row beside finished days understates it and reads as recovery.** The 08-15 row was 40/6/18,720 at 12:30 PT and 48/13/19,216 at 15:20 PT: **8 more runs produced 7 more failures and only 496 more rows.** Against 08-13's finished 93 runs / 45,054 rows the shortfall is the story, not the fail percentage.
+
+⚠ **THE "RUNS HALVED" HALF IS SOLVED, AND THIS FILE'S FIRST READING OF IT WAS WRONG (measured 2026-08-15).** It said the halved run count was "NOT explained by the failure rate — fewer runs were *started*, so look at the scheduler". **`pipeline_runs` counts SURVIVORS, not invocations**: `fmv-recalc` writes its terminal row at the END, so a run killed at the 300 s cap writes *nothing* — it is not a failure, it vanishes. The route's own **`fmv-recalc-heartbeat`** marker (added 2026-06-11) plus the NOT-EXISTS correlation documented in its comment settles it:
+
+| day | terminal rows | **killed at maxDuration** | total invocations | **% killed** |
+|---|---|---|---|---|
+| 08-12 | 87 | 54 | 141 | 38.3% |
+| 08-13 | 93 | 69 | 162 | 42.6% |
+| **08-14** | **41** | **124** | **165** | **75.2%** |
+| 08-15 | 40 | 69 | 109 | 63.3% |
+
+⚠ **RE-MEASURED 2026-08-16 19:10Z — IMPROVING, STILL LOSING MORE THAN HALF, AND THIS IS NOW A WATCHED ARM:** 08-14 **65.3%** (176 invocations) · 08-15 **54.1%** (209) · 08-16-to-date **53.4%** (161). The direction is real but the level is not survivable: **over half of every invocation is still killed.** ⚠ Two caveats on the numbers. My correlation window was ±10 min against the heartbeat, so these differ from the 75.2% row above (a different pairing) — **use one method or the other, do not mix rows across the table**; and **08-13 is retention-truncated** (heartbeat rows prune at ~73 h), so its apparent 80.6% is a partial sample and must not be read as a peak. ⚠ **The "nothing watches this" line below is now OUT OF DATE: `fmv_sweep_stall_pct_24h` exists on the trust board and BREACHED on 08-16 at exactly 50 against `breach_at` 50** — it is measuring precisely this stall rate, so the ~50% plateau and the new breach are one fact, not two. Treat it and `fmv_sweep_wedge_hours` (12.17, risen at eight consecutive readings) as a single signal for this subsystem.
+
+**Total invocations are FLAT — the scheduler never changed; the COMPLETION rate collapsed.** So there is ONE regression (saturation), not two. ⚠ **Killed runs still do real work but record none of it**, so `rows_written` undercounts actual repricing by roughly the kill rate — do not read 10,684 as total throughput. ⚠ **Nothing watches this**: the kill-detection query exists only as a COMMENT, and cadence-based monitors cannot see it because the cron fires perfectly — it is the work inside that dies. ⚠ **Do not "fix" it by raising `maxDuration`** (800 s is a hard cap whose breach ERRORs the deploy invisibly, and a longer run holds a pooled connection longer on the very instance that is saturating); the lever is page size per invocation. Filed: [inbox 2026-08-15T1600Z](../../docs/overnight/inbox/2026-08-15T1600Z-fmv-recalc-is-not-running-less-it-is-being-killed.md). The **chronic ~8–13%/day failure rate** since ≥08-08 is the separate, still-open half. Within the ~73 h `pipeline_runs` window: 156 ok / 41 failed, by `extra->>'stage'` — `step1b_refetch_empty` **30**, `step3_today_purge` **7**, `step1a_edition_page` **4**. Every recorded `last_error` is **saturation-class** (`sales_refetch_failed: … (saturation-class)`, `step3_delete_chunk_failed: canceling statement due to lock timeout`, `edition_page_fetch: Timed out acquiring connection from connection pool`), which converges with the entity-page and insights-cache findings on one root cause: **concurrent connections against a 2 GB instance**, not individual query plans. ⚠ **Reading this arm has a trap: `fmv-recalc`'s `extra` carries NO `cursor_before` / `cursor_after` keys on ANY row** (successful runs carry `has_more` / `page_size` / `edition_limit`; failed runs carry only `algo_version` + `stage`), so a cursor-advance query against `extra` returns NULLs that mean *the key is absent*, not *the cursor did not move*. ⚠ **But cursor progress IS measurable and an earlier version of this line implied otherwise — `cursor_before` / `cursor_after` are real COLUMNS on `pipeline_runs`**, populated on 201/201 and 194/201 `fmv-recalc` rows with 157 showing an advance. **Read the columns, not `extra`.** ⚠ **AND THEY ARE `text`, SO `max(cursor_after)` IS A LEXICOGRAPHIC MAX AND SILENTLY REPORTS THE WRONG CURSOR (measured 2026-08-17).** `max()` over the last 7 h of `fmv-recalc` returns **`'9500'`**, because `'9500' > '11500'` as a string; `max(cursor_after::numeric)` returns **11500**. The failure mode is the dangerous direction: it makes a **wedged** sweep look like an advancing one — it reported a cursor of 9500 against a pipeline pinned at 2500 for four hours, and combined with an `ok`-count over a window that straddles the previous cycle's successes it produced a confident "the wedge cleared" reading that was flatly wrong. **Cast to numeric, or read the rows in `started_at` order rather than aggregating.** Same family as the `?? 0`/`|| 1` class: a plausible number manufactured by an operation that was never valid on that type. For throughput use `rows_written` in `pipeline_runs_daily`, which is also the only place the pre-08-12 history survives the 73 h prune — bearing in mind it counts survivors only.
+
+⚠ **DURABLE, AND IT ALREADY COST A WRONG DIAGNOSIS — a `phase: "started"` marker row publishes a `duration_ms` that is NOT the run's duration.** `pipeline_runs.duration_ms` is **`GENERATED ALWAYS AS (finished_at - started_at)`** and **`finished_at` is `NOT NULL DEFAULT now()`**, so any marker that omits `finished_at` silently publishes **the latency of its own INSERT**. Deep-audit run 2 read drain-conflated-subeditions' 147/176/185 ms as the route "dying instantly"; it is in fact running to its 300 s ceiling and being killed — **the opposite conclusion, pointing at a different fix**. Both marker writers now pin `finished_at = started_at` so `duration_ms` is a hard **0**, an obvious sentinel (fixed 2026-08-15; 514 `fmv-recalc-heartbeat` rows had been publishing 42 ms–56 s of pure insert cost). Guarded by `__tests__/pipeline-start-marker-duration-is-not-a-measurement.test.ts`, which **scans for the marker pattern rather than naming files**, so a new marker writer is covered the day it lands. **On any unfinished row, read `extra`/`ok`, never `duration_ms`.**
+
+### sales table
+
+Year-partitioned: `sales_2020` through `sales_2027` (8 partitions, verified live 2026-07-16 — `sales_2027` is pre-created for next year). Dedup on `transaction_hash` (unique index in sales_2026).
+
+⚠ **DURABLE — there is NO index on `sales.ingested_at`** (verified live 2026-08-08; every sales index is keyed on `sold_at` / `collection_id` / `edition_id`). So ANY predicate on `ingested_at` — even a small window — **seq-scans the multi-million-row partitions** and times out under pooler saturation (a 24h/7d group-by on it blew the 60s MCP budget). Query recent sales by **`sold_at`** and **filter by `collection_id`** so it rides `sales_2026_collection_id_sold_at_idx (collection_id, sold_at DESC)`; a bare `sold_at > now()-interval` with no collection filter also seq-scans (no leading-`sold_at` full index — the `sold_at DESC` ones are all partial `WHERE price_usd…`). ⚠ **The sentinel's `Sales Ingest (2h)` check is NOT superseded by the per-collection arm below, and must not be deleted as redundant** (this line used to say "left as-is, superseded by the per-collection arm" — corrected 2026-08-13 after nearly acting on it). The two answer different questions: `sentinel_sales_ingest_health()` keys entirely on **`sold_at`** (market time), while this keys on **`ingested_at`** (did we WRITE anything), so a history backfill landing rows dated months ago is invisible to one and plainly visible to the other — the same asymmetry that makes the `sold_at` keying load-bearing for `ufc_flow_revival_sales_30d`. It is also the only sales-ingest tripwire that reads the sales TABLE rather than `pipeline_runs`, and that independence is the point: a 403'd edge fn writes no `pipeline_runs` row at all. **Its cost WAS the problem and is now mostly fixed** (`app/api/sentinel/route.ts`, 2026-08-13): measured at ~2.2 GB/call, 11.7% buffer hit, 28.3 GB over 39.7 h — the largest low-hit-ratio reader on the instance — it now bounds **`sold_at` (the partition key)** so the planner prunes 6 of 8 partitions (`EXPLAIN` cost **212,454 → 107,025**), which also makes it STRICTER: a lone history backfill used to satisfy it while every forward indexer was dead. The unbounded scan still runs, but **only when the bounded one reads zero**, where it earns its cost by separating "forward ingest is dead" from "everything is dead" — a distinction the old check could not make. The year floor carries a 45-day offset so there is no New Year cliff. Do not "finish" this by dropping the check or the second probe. **Per-collection + per-source sales-ingest health** (2026-08-08): `sentinel_sales_ingest_health()` (SECDEF, service-role-only, index-bounded per collection) + config table `sentinel_ingest_watch` (per-collection silence-ceiling + loudness: **page** TS/AllDay, **warn** Candy/Golazos/Pinnacle, **off** UFC — its revival is caught by `v_rpc_trust_health.ufc_flow_revival_sales_30d`). Ceilings are calibrated from each collection's worst normal 14d inter-sale gap; Pinnacle is folded in from its separate `pinnacle_sales` table. Surfaced as the sentinel's `Sales Ingest by Collection` + `Sales Ingest by Source` checks so a single collection/lane silently ceasing to land rows (indexer green, aggregate masked by TS's ~92%) finally pages instead of hiding.
+
+### badge_editions table
+
+Has (verified live 2026-07-16): player_name, series_number, tier, parallel_id, parallel_name, play_tags, set_play_tags, low_ask, highest_offer, avg_sale_price, circulation_count, badge_score, collection_id, external_id, set_id, play_id, … There is **NO `badge_type` column** (the earlier note was wrong) — badge tag slugs live in `play_tags` / `set_play_tags`. Use `.or()` with ilike for case-insensitive player name matching. Always `.trim()` player names.
+
+### flowty_transactions table
+
+- `flowty_transactions.failure_category` is unconstrained TEXT and now **historical/frozen** — it was populated by `lib/flowty-tx-classifier.ts`, which was removed in the Flowty-teardown Phase 2 (`36aabf28`, 2026-05-23). The old `FailureCategory` union + first-match-wins `RULES` ordering (specific before broad, e.g. INSUFFICIENT_GAS_FUNDS before INSUFFICIENT_BALANCE) survives only in git history + `docs/flowty-classifier-coverage-findings.md`. (`flowty_loan_events` has been cold since 2026-05-11; this whole subsystem is dead history — distinct from the LIVE Flowty *listing-cache* ingest, see Known issues #1.)
+- Flow Error Code 1118 is a payer-gas error (pre-execution), distinct from in-execution Cadence errors. Categorized as `INSUFFICIENT_GAS_FUNDS`.
+- ⚠ **`flowty_transactions` RECENCY IS A LYING INSTRUMENT — the whole feed stopped ~2026-05-24 for EVERY collection, so a per-collection `max()` reads as that collection's last trade.** Measured 2026-08-18 while testing whether UFC Strike is dormant: `max(created_at)` for `ufc` = **2026-05-23**, which is TEN DAYS LATER than UFC's last row in `sales` (2026-05-13) and therefore reads exactly like *the sales indexer is missing trades*. **It is not.** The control: `max(created_at)` for `topshot` = **2026-05-24**, while `sales` for `nba_top_shot` was current to the minute. **The table died a day after that UFC row, across the board.** ⚠ Never read a last-activity date out of this table without the same-table control from a collection you KNOW is live — the failure inverts the conclusion rather than merely weakening it. (Short-form vocabulary here: `topshot`/`allday`/`golazos`/`pinnacle`/`ufc`.)
+- ⚠ **`cached_listings_v2` is NOT an order-book instrument for every collection** — it holds rows for `disney_pinnacle`, `laliga_golazos` and `nfl_all_day` only. **Top Shot listings live in `topshot_active_listings` / `ts_listings`, and UFC has no listing ingest at all.** So "collection X has no rows here" means *not ingested*, not *no live listings* — measured 2026-08-18, when the UFC-dormancy question nearly took the empty result as evidence. ⚠ **And an OPEN row is not necessarily a buyable listing** (2026-09-25): All Day's `source='direct'` rows were Flowty-fork listings whose `purchase()` is disabled on-chain (closed `unpurchasable`), and the event indexers never close ghosts or listings whose ListingCompleted they missed. `completed_status` now also takes `ghosted` / `vanished` / `unpurchasable`; `verified_at` = last storefront-walk confirmation. Source map + reconciler: apis-and-cadence.md, "Storefront listings".
+
+- ⚠ **AN "INDEX ONLY SCAN" DEGRADES SILENTLY WHEN THE VISIBILITY MAP ROTS, AND ON A CHURN-HEAVY TABLE DEFAULT AUTOVACUUM CANNOT KEEP UP.** Measured 2026-08-18 on `wallet_moments_cache` (2.28M rows, 16.5M lifetime updates, 10.1% dead): the covering `idx_wmc_cohort_cover` was doing **1,056 Heap Fetches on a 1,498-row wallet — 9.3 s** under concurrent disk-IO saturation, so `reconcile_all_saved_wallet_stats` (pg_cron jobid 259, hourly) hit the 120 s hard `statement_timeout` on a whale wallet and had been **truncating for over a week**: every saved wallet's `cached_moment_count` / `cached_fmv_usd` was frozen at its Aug 9 value on the dashboard, profile and share cards. **The fix was not a query rewrite** — VACUUM (ANALYZE) plus a durable `ALTER TABLE public.wallet_moments_cache SET (autovacuum_vacuum_scale_factor=0.02, autovacuum_analyze_scale_factor=0.02, autovacuum_vacuum_insert_scale_factor=0.05)` took the same wallet to **292 Heap Fetches / 796 ms (~12×)**. ⚠ **The default 20% scale factor is the trap**: on a table with this much update churn the VM is stale long before autovacuum fires. ⚠ A manual pg_cron `VACUUM` died at the role's 120 s timeout but *triggered* the autovacuum that finished the job — so "the VACUUM failed" did not mean the table was untouched. Revert: `ALTER TABLE … RESET (…)`.
+
+### General rules
+
+- ⚠ **AN A/B QUERY BENCHMARK MUST BE WARM-VS-WARM, OR THE CACHE ORDER PICKS THE WINNER.** Measured 2026-08-18 rewriting `get_fmv_coverage()`: the candidate ran FIRST (cold, `read=9,579`) at **8,197 ms** and the incumbent ran SECOND (warm, `read=802`) at **1,470 ms**, which reads as *the rewrite is 5.6× SLOWER* and would have killed a correct change. Re-running the candidate warm inverted it — **909 ms vs 1,470 ms**. ⚠ **BUFFERS are the load-independent number and they were stable across every run (196,106 → 100,014); the milliseconds moved 9× on cache state alone.** Protocol: run each shape at least twice, compare only same-warmth runs, quote buffers as the result and timings as corroboration. This is the DB analogue of the recorded HTTP rule that a byte-identical response is as much a cache hit as a correct change.
+- ⛔ **TIME A FUNCTION WITH `EXPLAIN (ANALYZE, BUFFERS) SELECT f(…)` OR A DO-BLOCK `clock_timestamp()` PAIR — NEVER `SELECT w, (SELECT clock_timestamp() - t0 FROM (SELECT clock_timestamp() t0) a, LATERAL (SELECT f(w)) b) FROM …`.** Measured 2026-10-11 on `get_wallet_pack_summary`: that correlated form read 15.4 s per wallet before AND after a fix that EXPLAIN put at 2.75 s (DO block: 3.6 / 2.7 s). The false "15.4 s cold" went into a ledger entry, an inbox filing and an md5-pinned migration header before the second instrument caught it. An uncorrelated variant is no control: Postgres evaluates it once and reuses it.
+- ⭐ **AND WITHIN ONE PLAN, TOTAL BUFFERS RANKS LEGS BY WORK WHILE `read` BUFFERS RANKS THEM BY COST — quote the SPLIT, not the total** (measured 2026-08-29, and it reconciled two sessions that measured the same view and disagreed). `candy_special_serials_board`, cold: the per-serial `sales` LATERAL took **36,410 hit / 142 read → 2,229 ms**, while the `candy_treasury_wallet` InitPlan took **16,429 hit / 5,269 read / 1,415 dirtied → 42,817 ms**. **2.0 ms per buffer against 0.06 — a 33× difference that the cold-read column explains entirely.** ⚠ **Ranking by TOTAL buffers puts the sales leg first; ranking by WALL CLOCK puts the treasury leg first; both were reported, by different sessions, as the answer.** ⛔ Wall clock remains the wrong unit (it moves 9× on cache state — see the bullet above), **but a bare buffer total silently treats a cache hit and a cold random read as the same event, and on this instance they are not.** 👉 **Read `hit` and `read` separately from every `EXPLAIN (ANALYZE, BUFFERS)` leg, and say which one you ranked on.** Case: [inbox 2026-08-29T0432Z](../overnight/inbox/2026-08-29T0432Z-candy_treasury_wallet-costs-21698-buffers-per-render-and-is-the-whole-residual.md).
+- ⚠ **`%%%` IN A PL/pgSQL `raise` RENDERS THE PERCENT SIGN BEFORE THE VALUE, NOT AFTER IT.** The format string is scanned left to right, so `%%%` is `%%` (a literal `%`) followed by `%` (a placeholder) — `raise … '%%% of rows', v_pct` prints **`%24.9 of rows`**. ⛔ **There is no three-character spelling for placeholder-then-literal**: `% %%` is the same three characters and parses the same way. 👉 **Write the word** (`'stale share is % percent'`) or move the sign into a pre-formatted text variable. Caught 2026-09-20 in review before the Panini bridge gate shipped; the message would have been wrong only in the failure path, i.e. exactly when someone is reading it under pressure.
+
+- ⛔ **NEVER MEASURE VIEW DEFINITIONS THROUGH `information_schema.views` — `view_definition` IS NULL FOR ANY VIEW YOU DO NOT OWN, so the query returns a clean empty result having inspected NOTHING.** Measured 2026-09-20 asking "what reads `collection_chains`?": the `information_schema` form returned `[]` and the correct form returned `[]` *for consumers* while reporting **176 views inspected** — identical answers, one of them meaningless. ✅ **Use `pg_get_viewdef` over `pg_class` (`relkind in ('v','m')`) and ALWAYS return the inspected count beside the finding**, which is CLAUDE.md's *"ASSERT THE COUNT IT INSPECTED"* in its most literal form:
+
+```sql
+select count(*) filter (where def ilike '%<needle>%') as hits, count(*) as inspected
+from (select pg_get_viewdef(c.oid) as def from pg_class c join pg_namespace n on n.oid=c.relnamespace
+      where n.nspname='public' and c.relkind in ('v','m')) d;
+```
+
+- 🚨 **A PER-KEY `LATERAL` PROBE IS NOT AUTOMATICALLY CHEAPER — IF THE INDEX DOES NOT CARRY THE PAYLOAD COLUMN IT HEAP-FETCHES PER ROW AND LOSES.** This is the COUNTERWEIGHT to the rule beside it (CLAUDE.md: *"for an id list, one `LATERAL … ORDER BY ts DESC LIMIT 1` probe per key beats a table-streaming `DISTINCT ON`"*), which held in 5 instances and then failed in the 6th. Measured 2026-09-20 building the Panini card-stats instrument, three forms of the SAME question (*"editions whose newest serial capture is newer than `last_seen_at`"*), all cold on the same box:
+
+| form | buffers | wall |
+|---|---:|---:|
+| `group by` over `panini_card_serials` (113,521 rows) | **22,095** (~177 MB) | 11.6 s |
+| bounded `LATERAL max(captured_at)` per edition, 790 probed | **15,814** | **43.8 s** |
+| the shipped form — read `panini_editions` ALONE | **330** | instant |
+
+⭐ **The probe form is 28% fewer buffers and almost 4× SLOWER**, because `idx_panini_serials_edition` carries `edition_external_id` and **not** `captured_at`: each of the 790 probes index-scans, then cold-heap-fetches ~18 rows for the aggregated column (`Buffers: shared hit=5279 read=10205 written=1194` — the `written` is hint bits, i.e. the probe DIRTIES pages too). 👉 **Before reaching for the probe shape, check the index actually COVERS the column being aggregated — `EXPLAIN` for `Index Only Scan` vs `Index Scan`, and read the `read` column, not the total** (the split rule above). ⛔ **And the cheapest form was neither: the question was re-asked against a 5,074-row table with a marker that made the join unnecessary. A 67× win came from dropping a table from the query, not from tuning the join.**
+
+- ⚠ **A FILING'S PROPOSED FIX CAN BE RIGHT WHILE ITS DIAGNOSIS IS WRONG — ship the fix on its own merits and do NOT let it inherit the diagnosis's credit.** Same case: the filing said `get_fmv_coverage()`'s duplicated `EXISTS` "took the whole data-integrity monitor down (did not finish in 55s)". In a quiet window the OLD body ran in **~1.5 s** — the 55 s was measured *during* a saturation spell. The rewrite was still worth shipping (2× the buffers for one number), but it is **not** the timeout's fix, and recording it as one would have retired a live risk on paper. **Re-measure the INCIDENT claim separately from the WASTE claim; they are different assertions and only one of them was true.**
+- ⚠ **Measure in a quiet window and PROVE it was quiet, with a number.** The cheap check, all from `pg_stat_activity`: active sessions, of those `wait_event_type='IO'`, and `backend_type='autovacuum worker'` (plus the autovacuum's target table). 2026-08-18 read **14 active / 9 IO-wait / 2 autovacuums** in the afternoon and **3 / 1 / 0** two hours later — the same query, the same day, and the second is the only one worth timing on.
+
+- `apply_migration` for DDL; `execute_sql` for reads/verification.
+- 🚨 **CORRECTION 2026-09-13 — THE "not `execute_sql`" HALF OF THE BULLET BELOW IS RETRACTED. `CREATE INDEX CONCURRENTLY` RUNS FINE VIA `execute_sql`.** Proven twice tonight, building `idx_sales_2026_nullseller_soldat` (308 MB heap) and `idx_sales_2027_nullseller_soldat`, both `indisvalid=true` after; and once on 09-09 (105 MB). CLAUDE.md already carries this retraction — **this file did not, so a reader here would build a pg_cron job for nothing.** The pg_cron recipe below still works and is still the right tool when you need a >120 s `statement_timeout`; it is no longer the ONLY channel. `apply_migration` remains genuinely impossible (it wraps in a transaction).
+  - 🔁 **QUALIFIED 2026-09-13, and the qualifier is the whole story: `execute_sql` runs CIC only if the build FINISHES INSIDE THE CLIENT'S 60 s.** Both 09-13 successes above were small and fast. On a saturated instance (autovacuum 765 s, `refresh_wmc_fmv_changed` 273 s, every backend on `IO: DataFileRead`) a 32 kB partial index on `sales_2025` did NOT finish, the MCP client returned its 60 s timeout, and **the abort left the index behind**. ⭐ **So "it runs via `execute_sql`" and "it is safe to start one via `execute_sql`" are different claims** — the second depends on instance load, which is exactly the thing you cannot predict from the index's size. **If the client times out, POLL `pg_index.indisvalid` — do NOT retry**, the build may still be running server-side.
+  - ⚠ **A CIC aborted this way leaves a SECOND stub shape, different from the one below:** `indisvalid = false` but **`indisready = TRUE`** and a non-zero size (32 kB here). The planner ignores it; **every write to the table still maintains it**. ⭐ It cleared with a **single-statement** `DROP INDEX CONCURRENTLY IF EXISTS …` and no lock trouble at all (0 leftover `pg_class` rows verified) — ⚠ **the multi-statement form fails `25001 … cannot run inside a transaction block`, so do not prefix it with `SET lock_timeout`.** That is the opposite experience from the `indisready=false` 0-byte stub below, which needed `ACCESS EXCLUSIVE` — **read `indisready` before choosing how to drop one.**
+  - ⚠ **CIC BLOCKS ON `Lock / virtualxid` BEHIND EVERY OPEN TRANSACTION, SO ITS WALL TIME IS SET BY THE LONGEST ONE RUNNING — NOT BY INDEX SIZE.** On this instance `wallet-backfill*` runs reach **610 s**, and an `execute_sql` CIC on the **EMPTY** `sales_2027` partition therefore blew the 60 s PostgREST window. **Do not read a slow CIC as a big build**; read `pg_stat_activity` for what it is waiting on. (Register #104 measures what that fan-out costs everything else.)
+  - ⭐ **A CLIENT TIMEOUT IS NOT A CANCELLATION, and the difference decides what you do next.** When the MCP call timed out, the backend **kept building** — `pg_stat_activity` showed it live and `pg_index` read `indisready=true, indisvalid=false` mid-protocol, then went valid on its own. **Poll `pg_index.indisvalid`; do NOT re-issue** (that races a live build) **and do not assume nothing happened.** ⚠ This is the benign twin of the stub trap two bullets down: a genuinely CANCELLED CIC leaves an INVALID stub that `IF NOT EXISTS` will then silently no-op against. **Same observable (`indisvalid=false`), opposite handling — so check whether a backend is still running before deciding which one you have.**
+- ⚠ **`CREATE INDEX CONCURRENTLY` IS REACHABLE FROM HERE — via a ONE-STATEMENT pg_cron job, not `execute_sql`. The recorded "no channel can run CIC" is OVERTURNED (proven end-to-end 2026-08-18 building `idx_wmc_fmv_conf_null` on `wallet_moments_cache`).** `SHOW cron.use_background_workers` = **`off`**, so pg_cron connects over **libpq** and sends the job command as a simple query; a **single-statement** command is then its own implicit transaction, which is exactly what `CONCURRENTLY` requires. The `25001 cannot run inside a transaction block` that earlier sessions hit is real but is a property of **multi-statement** commands (`SET …; CREATE INDEX CONCURRENTLY …`), which libpq wraps — as are `execute_sql`, `apply_migration`, and any function body. **One statement, no wrapper, no error.** This matters because the fallback — a plain non-concurrent build — takes `ACCESS EXCLUSIVE` on the target table for the build's whole duration, and on `wallet_moments_cache` that blocks every read of the hottest table product-wide.
+  - **Recipe.** (1) `ALTER ROLE postgres IN DATABASE postgres SET statement_timeout = '30min';` — the global default is **120000 ms from `/etc/postgresql-custom/platform-defaults.conf`** and `postgres` carries no `rolconfig` override, so a fresh pg_cron libpq login inherits **2 min** and the build dies there. ⚠ It is applied at **LOGIN**, so it must be set BEFORE the job fires, and **reverted immediately after** (`RESET statement_timeout`). (2) `cron.schedule('<name>','<minute> * * * *','<ONE statement>')`. (3) The moment the run appears in `pg_stat_progress_create_index`, `cron.alter_job(<id>, schedule := '55 5 1 1 *')` so it cannot re-fire — **do not `cron.unschedule` a job whose run is in flight**. (4) Verify `indisvalid AND indisready`, then `cron.unschedule` and revert the role setting. Observed: `DROP INDEX CONCURRENTLY` ~90 s (all of it `Lock/virtualxid`, waiting out open transactions — it blocks nobody); `CREATE INDEX CONCURRENTLY` ~2 m 20 s over a 874 MB / 113,729-block heap.
+  - ✅ **RE-CONFIRMED 2026-09-19 — the recipe above works EXACTLY as written, and it is what finally built R108's `idx_tame_nfl_nft_seen`** after five failed attempts across three sessions: `ALTER ROLE postgres IN DATABASE postgres SET statement_timeout='900s'` → one-statement pg_cron job → **succeeded in 71.0 s**, `indisvalid=true` → `RESET` → unschedule. ⚠ **THE LESSON IS NOT THE RECIPE, IT IS THAT THE RECIPE WAS ALREADY HERE.** Three sessions read CLAUDE.md's condensed line — *"its budget must come from a ROLE default (postgres owns but has no role timeout; cron_heavy has 600 s but no ownership)"* — as a **DEAD END** describing a pincer, when this file's own bullet directly above prescribes **setting that role default temporarily**. ⭐ **A condensed pointer that states a constraint without its remedy reads as "impossible"; check the reference file before concluding a thing cannot be done.**
+  - 🚨 **`ALTER ROLE postgres RESET ALL` WOULD DESTROY THIS CLUSTER'S `search_path` — NEVER USE IT HERE. The correct inverse is `RESET statement_timeout`.** Measured 2026-09-19: `postgres` carries an **ALL-DATABASES** `pg_db_role_setting` row holding `search_path="$user", public, extensions`, and **no database-scoped row at all**. `ALTER ROLE … IN DATABASE postgres SET …` therefore writes a **SEPARATE** db-scoped row; `RESET statement_timeout` removes only that GUC and Postgres drops the now-empty row, leaving the ALL-DATABASES row intact. ⚠ **Read `pg_db_role_setting` BEFORE and AFTER** — nothing announces a clobbered `search_path`, and every SECURITY DEFINER function on this estate depends on it.
+  - ⚠ **WHY THE WINDOW MUST STILL BE SHORT AND SHED, i.e. the role raise is bounded rather than free:** measured 2026-09-19, **72 of 94 active postgres-owned cron jobs carry NO in-command `statement_timeout`** and lean on the 120 s cluster cap as their only brake, so while it is raised those lanes lose it. ⭐ **But the blast radius is far narrower than "all cron jobs": `cron_heavy` carries its OWN 600 s role default and cannot see the change at all**, and the only postgres lanes that actually approach 120 s are themselves **sheddable** (the Atlas/wmc/hydrate group). Shed those, raise, build, `RESET`, restore — and arm a self-restoring net carrying **both** the `RESET` and the lane restores FIRST, so nothing strands. ⛔ **Every jobid in that net must be one the net's own role owns** — a `cron_heavy` jobid in a postgres-run net aborts the whole multi-statement command in one transaction and restores NOTHING.
+  - ⚠ **A cancelled CIC leaves an INVALID 0-byte stub, and `IF NOT EXISTS` then silently no-ops and reports success against a dead index.** Drop it first and build **without** `IF NOT EXISTS`. ⚠ **A plain `DROP INDEX` of that stub still needs `ACCESS EXCLUSIVE`** — it `55P03`'d under `lock_timeout='3s'` even though the stub is inert (`indisready=false`, 0 bytes). Drop it `CONCURRENTLY` via the same route.
+- ⚠ **INDEX DDL CAUSES NO `PGRST002` BURST — the "every migration costs 10–20 s of 500s" rule does NOT apply to it** (read from source 2026-08-18). `pgrst_ddl_watch` notifies only for an explicit command-tag list (`CREATE`/`ALTER SCHEMA`, `TABLE`, `FOREIGN TABLE`, `VIEW`, `MATERIALIZED VIEW`, `FUNCTION`, `TRIGGER`, `TYPE`, `RULE`, `COMMENT`) and `pgrst_drop_watch` for object types `schema/table/foreign table/view/materialized view/function/trigger/type/rule`. **`CREATE INDEX`, `DROP INDEX` and the object type `index` are on NEITHER list.** So index work is free of the schema-cache outage — check the two watch functions before assuming any given DDL pays it.
+- ⚠ **A FUNCTION-LEVEL `SET statement_timeout` IS INERT, AND THE POPULATION IS 195 FUNCTIONS — this file has recorded the trap THREE TIMES as an anecdote ("second instance of that trap", "the function-proconfig trap again") and never once measured how many objects carry it (sized 2026-08-16).** A `SET statement_timeout` in `proconfig` **does not bind the statements inside that function**; this repo proved it twice with live probes (300 ms declared, `pg_sleep(5)` ran to completion; and a 500 ms declaration whose second `pg_sleep(3)` ran unbounded after a caught cancel) — those two measurements are the grounding, and **this pass did not re-probe**, it counted. Live:
+  | | |
+  |---|---|
+  | `public` functions declaring a `statement_timeout` | **195** |
+  | …declaring **more than** the global 120 s | **47** |
+  | …declaring more than the highest ROLE ceiling (600 s) | **1** — `fmv_thin_sale_ask_disclosure_refresh` at **900 s** |
+
+  ⚠ **READ THE NEXT TWO BULLETS BEFORE USING THIS TABLE — these are LOGIN-time settings, and `service_role`'s 30 s provably does NOT bind on the PostgREST path (measured 2026-08-17).** They are correct for pg_cron (which logs in as its job owner) and misleading for `supabaseAdmin`. ✅ **SETTLED FOR `anon` 2026-08-17 — AND THE ANSWER IS THE BAD ONE THIS BULLET PREDICTED: anon's 3 s DOES NOT BIND.** Measured directly, modelling the real request path (`SET LOCAL statement_timeout = '8s'` — what `authenticator`'s LOGIN supplies — then `SET LOCAL ROLE anon`): `current_user` becomes **`anon`** while `statement_timeout` stays at **`8s`**. The declared 3 s never applies, exactly as the `SET ROLE`-does-not-inherit-`rolconfig` mechanism predicts. ⚠ **The pivot nobody had noticed is that `authenticator` carries its OWN `statement_timeout=8s`** — and *that* one binds, because `rolconfig` applies at LOGIN and PostgREST logs in as `authenticator`. Corroborated at scale: authenticator-attributed statements in `pg_stat_statements` show **max 7,474 ms with 3 over 3 s and ZERO over 8 s** — a distribution clipped by an 8 s ceiling. ⚠ **So `authenticated`'s declared 8 s is correct BY COINCIDENCE, not because its rolconfig binds** — it simply equals authenticator's. ⚠ **Do NOT conclude the universal effective ceiling is 8 s**, because `service_role`-attributed statements demonstrably reach **352 s** on the same pool; whatever raises it for that path is NOT established from here (it needs the PostgREST/Supabase per-request config, which is unreadable from this sandbox). **What is proven is the negative, and that is the load-bearing half: there is no 3 s bound on unauthenticated compute.** ⚠ **CONSEQUENCE — the anon-executable-function findings under Security posture get WORSE, as predicted:** the argument for leaving **78** anon-executable invoker functions in place leaned on unauthenticated work being cut off at 3 s. It is at least **8 s (2.67×)** and possibly far more, so a heavy anon-callable function (the revoked `compute_pack_ev_from_pool_tier_weighted` measured **45.8 s / ~17.4 GB**) would not have been clipped anywhere near as early as assumed. ⚠ The anon-attributed sample is still small (10 statements, max 207 ms, none over 3 s) — that is consistent with the finding and does **not** independently confirm the effective ceiling; **the mechanism is what is measured, not the ceiling.**
+  **The binding budget comes from the CALLER'S ROLE, or from the global when no role config applies** — `anon` **3 s** · `authenticated`/`authenticator` **8 s** · `service_role` **30 s** · `cron_heavy` **600 s** · global **120 s** (`pg_settings`, source = configuration file). So one function declaring `300s` gets 30 s from a `supabaseAdmin` call, 600 s from a `cron_heavy` pg_cron job, and 120 s otherwise — **and never the 300 s it declares.** ⚠ **The 47 that declare ABOVE the global are the actively misleading ones**: each reads, to anyone opening the function, as a granted budget that no caller can ever supply, so a session diagnosing a timeout there computes against a ceiling that does not exist. **This is not a tidy-up item — it is why three separate investigations (`8918307c`'s drain seeders, the eight `rpc_thp_leg_*` legs, and `match_topshot_players_run`) each independently reached for "raise the declared timeout" and each would have changed nothing.** ⚠ **Do NOT mass-strip the declarations**: a `CREATE OR REPLACE FUNCTION` touching 195 objects is a large blast radius for a cosmetic win, and the declaration is harmless where it is *below* the binding budget. **Read the role ceiling, not the function header**, and treat any timeout fix that only edits `proconfig` as a no-op by construction.
+
+  ⚠ **BUT THE RULE HAS A TESTED HALF AND AN UNTESTED HALF, AND THERE IS LIVE COUNTER-EVIDENCE ON THE UNTESTED ONE — do not weaken the rule on it, and do not treat it as settled either (2026-08-16).** Re-probed live, both directions, and the rule **reproduces exactly**: a function declaring `1s` around a `pg_sleep(3)` under a 2 min outer budget **slept fine** (a LOWER declaration is inert), and with the session set to `1s` a function declaring `30s` around a `pg_sleep(3)` **was canceled** (a HIGHER declaration is inert too). ⚠ **Both probes share one limitation, and it is the whole point: the timer was ALREADY ARMED by an outer `SELECT` before the function was entered.** PostgreSQL arms `statement_timeout` at the start of a **top-level statement** and does not re-arm when the GUC changes mid-statement — so those probes only establish the nested case, which is the pg_cron / `CALL` / SQL-inside-SQL path. **The PostgREST path was NOT tested and cannot be tested from an MCP connection** (which runs as `postgres` on the 2 min global budget and cannot model `authenticator` → `SET LOCAL ROLE service_role`). ⚠ **The counter-evidence: `wallet_usernames_unresolved` declares `statement_timeout=60s`, is called by a bare `supabaseAdmin.rpc()` (so `service_role`'s 30 s should bind), and its `pg_stat_statements` `max_exec_time` is 58,206 ms** with failures landing at 60.1–62.2 s. Retry, `maxDuration`, and every role ceiling are ruled out (none is 60). **If the declaration DOES bind through PostgREST, this rule is right for the cron path and wrong for the route path — which is most of the product.** The decisive experiment (two throwaway SECDEF `pg_sleep(45)` functions, one declaring 60 s and one bare, called **through HTTP with the service-role key**) is filed at [inbox 2026-08-17T0440Z](../../docs/overnight/inbox/2026-08-17T0440Z-wallet-username-resolver-dies-in-its-candidate-selection-and-the-proconfig-rule-has-an-untested-half.md).
+
+  ✅ **RESOLVED 2026-08-17 — THE RULE HOLDS FOR ROUTES TOO, AND THE "cannot be tested from MCP" PREMISE WAS WRONG.** No HTTP was needed: a PostgREST RPC is just `SELECT fn(...)` as a **top-level statement**, and there is no way to call a function *except* from a top-level statement — so the "timer already armed by an outer `SELECT`" caveat does not describe a distinct case, it describes every case. Probed in `pg_temp` (⚠ deliberately: `extensions.pgrst_ddl_watch()` and `pgrst_drop_watch()` both skip `pg_temp` explicitly, so a temp probe causes **no schema-cache reload and no user-facing 500s burst** — a `public` probe would have). Both directions, on a **SECURITY DEFINER** function, executing **as `service_role`**:
+  | probe | session budget | function declares | sleep | result |
+  |---|---|---|---|---|
+  | higher declaration (the `wallet_usernames_unresolved` shape) | 2 s | 60 s | 5 s | **canceled at 2 s** |
+  | lower declaration | 120 s | 2 s | 5 s | **ran to completion** |
+
+  **Inert in both directions.** So `proconfig` never binds anywhere, and the "keep reading the role ceiling" half of this bullet is right for cron — but ⚠ **the role ceiling itself turned out to be the real error; see the next bullet.**
+
+  ⚠ **THIS RULE WAS RE-DERIVED WRONGLY ON 2026-08-17 AND CAME ONE INFERENCE FROM BEING OVERTURNED — recognise the bad argument by shape, because it is reproducible.** A filed correction claimed `proconfig` **BINDS** on the PostgREST path and overrides `service_role`'s 30 s, "at least 15 functions depend on it", on the evidence that `pg_stat_statements` maxima **cluster just under** declared values (600→352,318 · 300→297,653 · 120→118,038 · 60→58,206). ⚠ **That is SELECTION BIAS — it never queried for EXCEEDANCES.** Filtered to statements matching exactly ONE declaring function and read WITH their query text, the direct single-function invocations blow straight through: `SELECT public.refresh_mv_pack_ev_latest()` declares **120 s**, maxes at **586,784 ms** over 258 calls; `refresh_atlas_pack_ev` 120 s → 583,629; `backfill_nft_edition_map_from_sales` 120 s → 570,910; `dedup_allday_cross_source_sales` 120 s → 536,759; `promote_unmapped_sales` 300 s → 500,478 over 235 calls; `refresh_allday_badge_low_ask` 60 s → 274,393 over 276 calls. **If `proconfig` bound, every one is impossible.** The clustering is real and means only that whoever wrote those declarations picked a number matching a genuine CLIENT bound — so declared and actual agree *by construction* in that subset.
+  ✅ **The same table run correctly gives the POSITIVE result, which is the half worth keeping:** those declarations span **60/90/120/180/240/300 s**, the observed maxima span **99,180 → 586,784 ms**, and **every one lands under 600,000 ms** — `cron_heavy`'s role-level ceiling. **The declaration predicts nothing; the CALLER'S ROLE predicts the cap.**
+  ⚠ **TWO JOIN TRAPS PRODUCED A WRONG FIRST REFUTATION OF IT, so use this query shape.** (1) Joining `pg_stat_statements` on *"the function name appears anywhere in `query`"* bills ONE row to several functions: `detect_stalled_pipelines` (declares 8 s) was published at 102,513 ms as a "12.8×" exceedance, and that identical figure also sat under `get_pipeline_alerts` — ⚠ **the same `max_exec_time` to the millisecond under two names is the signature of a bad join, never a coincidence.** The row was a health composite merely MENTIONING both, and `get_pipeline_alerts` does not call `detect_stalled_pipelines` at all. (2) ⚠ **`pg_stat_statements.track = top`**, so a nested call never gets its own row and a name-in-text join silently bills a CALLER's cost to a CALLEE. **Match exactly one declaring function, read the `query` text to confirm the function IS the whole statement, and discard `calls = 1` rows** — those are ad-hoc diagnostics, and one offender was literally an `explain (analyze)`.
+  ⚠ **The live falsifier, still unexplained and deliberately not explained away:** `wallet_usernames_unresolved` maxes at **58,206 ms** against a declared 60 s under a route declaring `maxDuration = 120`. Nothing at 60 s accounts for it; it is called a coincidence in the next bullet and no better account exists. **One unexplained point does not outweigh a direct control plus a corrected exceedance table** — but it is where to start if anyone reopens this.
+
+⚠ **`service_role`'s 30 s DOES NOT BIND ON THE POSTGREST PATH, AND THIS FILE TREATS IT AS A HARD CEILING IN SEVERAL DIAGNOSES (measured 2026-08-17).** `rolconfig` (`ALTER ROLE … SET`) applies **at LOGIN**, and PostgREST logs in as **`authenticator`** and then issues `SET LOCAL ROLE service_role` per request — and a `SET ROLE` does **not** pick up the target role's `rolconfig`. Measured directly: `SET ROLE service_role;` then `current_setting('statement_timeout')` still reads **`2min`**, with `current_user` = `service_role`. Corroborated at scale from `pg_stat_statements` joined to `pg_roles` (it is keyed per user, so it names the caller): across **871** distinct `service_role` PostgREST statements — recognisable by the `WITH pgrst_source` wrapper — **244 exceed 8 s, 39 exceed 30 s, 28 exceed 60 s, 10 exceed the 120 s global, and the worst is 352,318 ms (5.9 minutes)**, several with a **mean** over 100 s. ⚠ **So no Postgres-side timeout bounds a `supabaseAdmin` RPC; the effective bound is the CLIENT** — the cluster at **297–300 s** is Vercel's `maxDuration`, not a database ceiling. **Consequences worth acting on:** (1) the `wallet_usernames_unresolved` "counter-evidence" needs no exotic explanation at all — nothing was stopping it at 30 s, and **its 58.2 s runtime matching its declared 60 s is a COINCIDENCE** that came within one inference of overturning a correct rule; (2) ⚠ **the entity-page bullet's supporting argument is UNSOUND** — *"a request that dies at 45 s without Postgres having killed it at 30 s was not executing a statement"* rests on a 30 s kill that does not happen, so that reasoning must not be reused (its conclusion may still hold on other grounds; **re-derive it**). ⚠ **What the ~60 s client-side bound on that route IS remains UNIDENTIFIED and is deliberately not guessed here** — it is not `maxDuration` (that route declares **120**), not `rpcWithRetry`'s 45 s, and not any role ceiling; the leading candidate is the Supabase API gateway's own request timeout, **unverified from this sandbox** (no egress to `*.supabase.co`, no service-role key).
+  ⚠ **THE EXPOSURE THIS OPENS IS THE SATURATION STORY, SO SIZE IT BEFORE DISMISSING IT AS ACADEMIC.** Over the **5.58 days** since `pg_stat_statements` was reset (read `pg_stat_statements_info.stats_reset` — without it the totals below are uninterpretable), `service_role` PostgREST statements consumed **389.5 connection-hours** (~70 h/day, i.e. ~2.9 connections continuously busy against `max_connections=90`). **16 distinct statements have a MEAN over 30 s and 6 have a mean over 60 s**; those 16 alone account for **37.4 connection-hours across 2,297 calls** — every one of them running with **no server-side statement bound at all** on a 2 GB disk-IO-throttled instance. ⚠ **So the platform's heaviest caller class has no backstop**, and the only thing that ends a runaway `supabaseAdmin` RPC is the lambda dying at `maxDuration` — after which, note, the statement can keep running server-side. **This is a lever on the documented saturation that is not "fix the query": a real `statement_timeout` for `service_role` would have to be set by the CLIENT or by PostgREST config, because the role-level setting provably does not reach it.**
+
+⚠ **THE SELECTION QUERY IS THE EXPENSIVE PART — a third instance, and it is now a recognised shape (2026-08-16).** `wallet-username-resolver` fails **75.6% of runs** (68/90 over 2 days) and **none of them reach its work loop**: the route opens with one bare `.rpc("wallet_usernames_unresolved", { p_limit: 300 })` and returns early on error, so every failed run reports `rows_found: 0 / resolved: 0 / errored: 0` because it never got the list. That one call measures **mean 16,811 ms, max 58,206 ms, 2.23 M blocks read, 65.2% buffer hit** — to gate work that, on the runs that DO succeed, resolves **0–5 addresses out of a 300 batch in 9.6–33.7 s**. Same shape as `topshot-wmc-fossil-drain` (its `targets:` step is what times out) and the retired `topshot-flowty-unmapped-drain` (where proving emptiness scanned the whole open backlog every tick — **an empty result is the most expensive case**). ⚠ **When a pipeline times out with `rows_found: 0`, suspect the CANDIDATE SELECTION before the work**, and check whether a `LIMIT` bounds rows EXAMINED rather than rows RETURNED — the `backfill_wmc_fmv_confidence` repair (2:13 → 3.5 s from one cron argument) is the precedent. ⛔ **Do not raise its declared timeout**: inert at best, and at worst it holds a pooled connection longer on the instance whose saturation is the root cause.
+- ⭐⭐ **SETTLED 2026-08-27 — THE DECISIVE EXPERIMENT DESIGNED ON 08-17 HAS NOW BEEN RUN, AND BOTH SIDES OF THIS FILE'S ARGUMENT WERE RIGHT ABOUT THEIR OWN EVIDENCE. `proconfig` IS PATH- AND DIRECTION-DEPENDENT.** The bullet above prescribed it exactly — *"two throwaway SECDEF `pg_sleep(45)` functions, one declaring 60 s and one bare, called **through HTTP with the service-role key**"* — and said it could not be run from the sandbox (no egress, no service-role key). **Trevor's box has both.** Run 2026-08-27 07:0x PT, two `SECURITY INVOKER` probes identical but for the declaration, both sleeping **40 s**, both POSTed to `/rest/v1/rpc/…` with the service-role key:
+
+  | probe | declares | result |
+  |---|---|---|
+  | bare | *nothing* | **HTTP 500 at 31 s** — `57014 canceling statement due to statement timeout` |
+  | declaring | `SET statement_timeout TO '60s'` | **HTTP 200 at 41 s** — completed, `current_setting` reads `1min` |
+
+  ✅ Reproduced on the real object: `wallet_usernames_unresolved(300)` (declares 60 s) returns **500 at 61 s** through the same path. **Both probes dropped afterwards; `check_secdef_anon_execute_violations()` = `[]`.**
+
+  ⭐ **THE RECONCILIATION, and it is the whole value of this entry: the 08-17 refutation's exceedances are ALL on the OTHER path.** That analysis was right to demand exceedances and right that it found them — but every one it named is a **pg_cron** call. Re-derived by joining `pg_stat_statements` to `pg_roles` and splitting on the `pgrst_source` wrapper that marks a PostgREST statement:
+
+  | caller shape | statements | exceeding their declaration | worst exceedance |
+  |---|---|---|---|
+  | **bare `SELECT public.fn()`** (pg_cron / `postgres`) | 248 | **44** | **596,559 ms** vs a 120 s declaration |
+  | **`WITH pgrst_source …`** (PostgREST) | 106 | **2** | 20,704 ms |
+
+  Every one of the top 12 overruns is `caller_role = cron_heavy` (11) or `postgres` (1), `is_postgrest_shape = false`. **So "if `proconfig` bound, every one is impossible" was true of the sample and the sample was one path.**
+
+  ⚠ **AND THE TWO PostgREST EXCEPTIONS ARE NOT NOISE — THEY GIVE THE SECOND HALF OF THE RULE.** `get_pack_detail` declares **8 s** and reaches **20,704 ms** over 14,033 calls; `get_set_detail` declares **8 s** and reaches **13,167 ms** over 8,127 calls (both `service_role`, both matching exactly one declaring function, so the attribution is clean). **Both declare BELOW `service_role`'s 30 s.** Together with the A/B: **on the PostgREST path a HIGHER declaration RAISES the ceiling; a LOWER one is still inert.** A declaration can buy time, never give it back.
+
+  ⛔ **THE ACTIONABLE CONSEQUENCE, and it is the opposite of the one #43 warns about.** **195 `public` functions declare a `statement_timeout` (parsed to seconds — ⚠ `max()` on the raw text is LEXICOGRAPHIC and reports `'90s' > '600s'`), range 3 s–900 s, and 122 of them declare MORE than `service_role`'s 30 s** — led by `fmv_thin_sale_ask_disclosure_refresh` at **900 s** and four board refreshes at **600 s**. #43 rightly says do not *make the declarations real* as a batch. **The live hazard is the mirror image: a cleanup that strips them as proven no-ops would cap 122 functions at 30 s**, including every board refresh that legitimately runs for minutes.
+
+  ✅ **This also closes the question this file left open twice.** (1) *"What the ~60 s client-side bound on that route IS remains UNIDENTIFIED"* — **there is no client bound; it is the callee's own 60 s declaration.** (2) *"its 58.2 s runtime matching its declared 60 s is a COINCIDENCE"* — **it is not a coincidence; it is the mechanism.** ⚠ And CLAUDE.md's *"no Postgres timeout bounds a `supabaseAdmin` RPC — the bound is the client (worst observed 352 s)"* is **refuted as stated and explained**: the bound is the callee's declaration, and 352 s is what you get when the callee declares 600 s.
+
+  ⛔ **THE MECHANISM IS DELIBERATELY NOT CLAIMED.** A session-level `SET statement_timeout = '3s'` followed by a call to a function declaring `60s` around a `pg_sleep(6)` **still dies at 3 s** — i.e. the 08-16 nested-case probes reproduce exactly. So a higher declaration extends through PostgREST and does *not* extend behind a session `SET`, and **what selects between them is not established here.** Four data points, no unifying story: writing one would be the "a plausible mechanism is not a measurement" error this file exists to prevent. ⚠ **`anon`/`authenticated` were NOT re-probed** — testing them needs an anon-executable sleep function, which is a DoS primitive on a public API and would trip the SECDEF-anon-exec sentinel. The `authenticator` 8 s finding above stands untouched. Filing: [inbox 2026-08-27T1404Z](../overnight/inbox/2026-08-27T1404Z-a-function-statement-timeout-is-INERT-on-pg-cron-and-BINDS-via-postgrest.md).
+
+  ⭐⭐ **ADDENDUM ~07:55 PT — THERE IS A THIRD CEILING ABOVE BOTH OF THESE, AND IT CORRECTS THE PARAGRAPH ABOVE.** *"A `supabaseAdmin` RPC is bounded by its callee's declaration"* is true **only up to ~120 s**. One function declaring `SET statement_timeout TO '600s'`, called through `/rest/v1/rpc/…` with the service-role key, at two sleep lengths:
+
+  | sleep | result |
+  |---|---|
+  | **110 s** | **HTTP 200 after 111 s** — `COMPLETED 110s; timeout=10min` |
+  | **150 s** | **HTTP 504 after 125 s** — body `upstream request timeout` |
+
+  ⭐ **The 110 s run is the positive control and it is what makes the 150 s run readable**: it proves the 600 s declaration really was in force (`service_role`'s 30 s would have killed it at 30) and that nothing else was broken. The 150 s run then dies at **125 s with a 504** — an HTTP status, not a Postgres SQLSTATE. **The Supabase gateway hard-caps a PostgREST request at ~120 s regardless of role or declaration.**
+
+  ⛔ **The two ceilings compose and the lower wins, so a declaration above ~120 s is unreachable on BOTH paths** — inert where pg_cron calls it, gateway-killed where PostgREST does. **48 of 196 declaring functions sit in that band** (up to 900 s: `fmv_thin_sale_ask_disclosure_refresh`, plus four board refreshes at 600 s). ⚠ **This does NOT make them safe to strip** — the load-bearing warning above applies to the **75 declaring 30–120 s**, which are exactly the ones the gateway still lets through. **The two groups need opposite treatment and the 120 s line is what separates them.**
+
+  ⓘ **It also gives six failing pipelines ONE root.** `upstream request timeout` is the gateway's string, not Postgres's. Over 24 h: `run-insider-detectors` **5/24**, `lock-check-batch` **9/46**, `compute-allday-pack-ev` **6/46**, `allday-unmapped-resolver` **8/76**, `populate-pinnacle-wmc-fmv` **2/23**. **One ceiling, six symptoms.** ⚠ Their `duration_ms` exceeding 125 s does not contradict it — several issue one RPC per collection, so a tick can burn ~120 s more than once (`lock-check-batch` avg 142 s, max 295 s, and its error names two collections).
+
+  ⓘ **Mechanical note:** a function created with `execute_sql` is **invisible to PostgREST until the schema cache reloads** (`PGRST202 … no matches were found in the schema cache`); `NOTIFY pgrst, 'reload schema'` fixes it in seconds. That asymmetry is exactly why `apply_migration` causes the documented PGRST002 burst and `execute_sql` DDL does not — only one of them reloads.
+
+- ⚠ **`match-topshot-players` HAS FAILED 100% OF ITS DAILY RUNS SINCE 2026-08-14 AND NOTHING WATCHES IT — and it hid because its healthy state and its broken state are identical on the metric everyone reads (found 2026-08-16 by sweeping `pipeline_runs_daily` for sustained-zero-output pipelines, not by an alert).** Verified live: 08-11/12/13 `ok`, `rows_found` **1417**, `rows_written` **0**; 08-14/15/16 **FAIL**, `rpc_failed: upstream request timeout`, ~126 s. It is on **no `pipeline_cadence_watchlist` arm**. ⚠ **`rows_written = 0` IS NOT THE BUG, BUT THE REASON GIVEN FOR IT — BY THE FILING AND BY THE FIRST VERSION OF THIS BULLET — IS WRONG, AND THE CORRECTION CHANGES THE RECOMMENDATION (measured 2026-08-16).** Both said the residual 1,417 names are the leftovers after "every uniquely-matchable name was aliased long ago". **Nothing was ever auto-aliased: `nba_player_aliases` holds 7 rows and ALL 7 are `source = 'manual'` — there is not one `source = 'auto'` row in the table**, and `auto` is the only source this function writes. **So it has produced zero output for its entire existence, not zero output *lately*.** The mechanism is its INPUT: it matches against `nba_players`, which holds **174 players across 19 of 30 teams, last synced 2026-05-07 — 101 days stale**. Against ~1,417 distinct Top Shot names, almost nothing *can* reach `candidate_count = 1`, so `rows_written = 0` is correct but for the opposite reason to the one recorded. **A pipeline correctly reporting "nothing is auto-resolvable" is byte-identical, on throughput, to one that has stopped running** — so this had to be found on `ok`/`last_error`, never on `rows_written`. ⚠ **It did not "break" on 08-14; it crossed a line it had been approaching for weeks** — healthy durations swung **12.8 s → 113.4 s** against a 120 s ceiling, tracking whatever else was competing for IO, and `wallet_moments_cache` only grows, so expect it to stay failing. Its first statement alone seq-scans **1.67 M** rows (563 k discarded by filter), reads ~**827 MB** off the IO-budgeted instance and spills a **70 MB** external merge sort, for **32.7 s** — with the planner off by **3×** on its row estimate. ⚠ **Its declared `statement_timeout=300s` is inert (see the bullet above), so raising it is the one guaranteed no-op.** Preferred fix, no schema change and no write cost: `owners` is a `COUNT(DISTINCT wallet_address)` computed for **every** distinct player name but consumed only for the `needs_review` ordering, so resolve against `nba_players`/`nba_player_aliases` FIRST and count owners only for the small unresolved remainder. ⚠ **The obvious index (`collection_id, player_name, wallet_address`) is deliberately NOT the recommendation** — wmc already carries 14 indexes over ~1.6 GB and is the most write-heavy table on the platform, the same reason `fmv_confidence` was left unindexed. ⚠ **BUT DO NOT SHIP THAT PERF FIX FIRST — IT CANNOT PRODUCE A SINGLE ALIAS, BECAUSE THE STARVED INPUT IS UPSTREAM AND THESE ARE ONE INCIDENT, NOT TWO.** `nba_players` is written by **`sync-nba-projections`** — the pipeline in Known issues #8 that has failed 100% of its runs for 13 days on a sports-proxy **403**. So one root cause has three downstream symptoms that were being triaged separately: the projections are 27.4 days stale, the **player catalogue is 101 days stale at 174 players / 19 of 30 teams**, and this matcher grinds 1.67 M rows a day against that stub and has produced **zero** auto-aliases ever. **Fast Break reads the same catalogue** (`app/api/fast-break/{today,uses,optimize}`), so it is running on a 19-team roster. **The lever is the 403, not the query plan** — optimizing this function would change its runtime and nothing a user can see. ⚠ The perf restructure remains correct and worth doing *after* the catalogue is fed; **it was deliberately NOT shipped this pass** because (a) it is unverifiable here — the measurement query for its own inputs **timed out at the 60 s MCP budget**, which is itself a demonstration of the cost, and shipping an unmeasured change to the platform's most write-heavy table on a saturated instance is what this file warns against, and (b) the function is **NOT PINNED and has no committed migration**, so changing it also means authoring a snapshot for a definition nobody could verify. ⚠ The fix is in the **DB function**, not the `supabase/functions/match-topshot-players` edge function, so it carries no `import_map` redeploy risk. Filed: [inbox 2026-08-17T0200Z](../../docs/overnight/inbox/2026-08-17T0200Z-match-topshot-players-has-failed-every-run-since-08-14-and-its-300s-budget-is-inert.md).
+- ⚠ **`rows_written = 0` IS A NULL INSTRUMENT WITH THREE INCOMPATIBLE MEANINGS, AND THE "FIND INERT CRONS" SWEEP CANNOT TELL THEM APART — all three were found on 2026-08-16, by the same sweep, within hours of each other.** A `sum(rows_written) = 0 over 14 days` query returns a tidy ranking that reads as a retirement list. It is not one:
+  | pipeline | what 0 meant | the pipeline was |
+  |---|---|---|
+  | `match-topshot-players` | **CORRECT** — nothing was auto-resolvable, by design | **BROKEN** (100% timeouts since 08-14) |
+  | `drain-fmv-cold-tail` | **WRONG** — the `pipeline_runs` insert omitted the column; real count sat in `extra.results[].data.processed` (live: 63, 16, 12, 11, 9, 5, 2) | **HEALTHY**, repricing 5–71 editions a tick |
+  | `sync-nba-projections` | **CORRECT** — there was genuinely nothing to write | **FAILING** on a real upstream 403 |
+
+  ⚠ **The near-miss is the point: that sweep ranked `drain-fmv-cold-tail` near the top of the "inert" list at 614 runs / 120 minutes, and it is a live FMV WRITER** — it inserts `algo_version = 'cold-tail-1.0'` snapshots whose confidence labels feed the roadmap's headline HIGH/MEDIUM-share accuracy metric. Retiring it on that evidence would have silently degraded the platform's headline number. **Read `extra` and `last_error` before concluding a pipeline does nothing, and never retire on `rows_written` alone.** ⚠ **`ok` does not rescue you either** — it is `true` for the healthy-but-unreported case and `true` for the correctly-idle case. The only sound reading is per-pipeline: find where the work is counted, which for `after()`-based routes is usually `extra`. (Fixed for `drain-fmv-cold-tail` in `3a41f56e`. ✅ **`pinnacle-listings-retry` was investigated as a possible fourth and SETTLED 2026-08-16 — NOT a defect, do not "fix" it.** Reading the route end to end: `rowsFound = queue.length` and `rowsWritten++` fires only on the `cached_listings_v2.edition_id` backfill, which **is** the product write. The other two updates per tick are on `listing_resolution_failures` — setting `resolved_at` and bumping `retry_count` — i.e. bookkeeping on the retry QUEUE itself. So `rows_written: 0` correctly means "no edition_id was backfilled this tick", and counting queue bookkeeping as product rows would make the metric *less* honest, not more.)
+  ⚠ **`ok = false` IS OVERLOADED THE SAME WAY, so the mirror sweep ("rank by failure rate") mis-reads too.** `reconcile-saved-wallet-stats` reports **78.1% "failed"** over 14 days — every one of them `soft_deadline_reached_partial_sweep_committed`, on runs that WROTE rows (live: 23, 6, 16). That is the procedure's designed graceful degradation: a soft deadline with per-wallet `COMMIT`s, so a "failure" is a partial sweep whose work is durably committed and whose next tick resumes. **It is making progress on 78% of the runs a failure-rate ranking calls broken.** (Worth knowing rather than fixing: a 78% soft-deadline rate does suggest it is under-provisioned for its window, but it never loses work.)
+  ⚠ **And the reason these keep being found by accident is that the watchlist does not cover them: 139 pipelines ran in the last 14 days and only 86 are on a `pipeline_cadence_watchlist` arm (61.9%).** Seven unwatched pipelines are failing ≥25%: `sync-nba-projections` **87.6%** · `reconcile-saved-wallet-stats` 78.1% · `allday-unmapped-resolver-tail` 34.3% · `refresh_wmc_fmv_changed` 32.6% · `refresh_wmc_fmv_drift_active` 32.2% · `allday-buyer-backfill` 31.3% · `golazos-buyer-backfill` 28.6%. ⚠ **Three of those seven are already documented in this file as EXPECTED** (the tail resolver's exhausted backlog, and the two `wmc` FMV propagators whose cost is the price of the denormalization), and a fourth is the soft-deadline case above — **so the raw ranking is ~57% false positives, which is precisely why nobody acts on it.** The two worth triaging are `sync-nba-projections` (Known issues #8) and the two buyer-backfills, which are unexamined.
+- ⚠ **AN EXPLICIT `NULL` FROM THE APP DEFEATS A COLUMN `DEFAULT`, so "add a DEFAULT and backfill" is often INERT ON THE MAIN WRITE PATH while looking correct in the schema (2026-08-16).** Postgres applies a `DEFAULT` only when the column is OMITTED from the INSERT; `... ?? null` sends an explicit NULL and wins. This killed the obvious implementation of the RPC-logo avatar default — `app/api/profile/bio/route.ts` POSTs `avatar_url: avatarUrl ?? null`, so `ALTER COLUMN … SET DEFAULT` would have fired for **no new signup**, leaving a permanent backfill obligation to paper over a default that reads as working. **Check what the writer actually sends before reaching for a column DEFAULT**; a render-time default also keeps NULL meaning "the user has not chosen", which is the only way to later answer "who has actually personalised?" — a distinction a backfill destroys irreversibly.
+- ⚠ **EVERY `apply_migration` CAUSES A ~10-20 SECOND BURST OF USER-FACING 500s. Prefer a low-traffic window** (measured 2026-08-13). Applying a migration invalidates PostgREST's schema cache, and every request served during the re-introspection fails `PGRST002 — Could not query the database for the schema cache. Retrying.`, which the entity/pack pages surface as a thrown "… detail unavailable" and a 500. **Measured causally, not inferred:** every schema-cache event in a 24 h window fell inside ONE 11-second span (17:20:15/:21/:23/:26 Z, across the pack, edition and player pages) and `schema_migrations` shows the migration applied at **17:20:05 Z** — first error +10 s, last +21 s — a handful of real visitors caught per reload, across many migrations (3 landed within 11 minutes on 08-13 alone). ⚠ **THE CAUSAL MEASUREMENT ABOVE STANDS; ITS SENTRY ATTRIBUTION WAS WRONG AND IS CORRECTED HERE (2026-08-15).** This bullet used to call the burst "the entire explanation for `JAVASCRIPT-NEXTJS-1Z` accruing 81 users / 84 events". It is not. Read live from Sentry, **`NEXTJS-1Z` is titled `pack detail bundle unavailable: TimeoutError: The operation was aborted due to timeout`**, culprit `GET /[collection]/pack/dist/[distId]`, now **86 users / 92 events** and still firing — an ABORT on a slow read, not `PGRST002`. **Sentry groups by title, so schema-cache events were never in that issue at all.** The tell was inside this very file: a second bullet, written a day later, independently identified `NEXTJS-1Z` as *"pack detail bundle unavailable, 40 users"* and profiled the RPC at 18,951 ms cold — **two bullets attributing one issue ID to two different causes, and neither noticed the other**. ⚠ **The generalizable trap: an issue ID is not a diagnosis.** Both attributions were reached by finding a real defect and then reaching for the biggest ID on the board to attach it to; the migration bursts and the pack-detail timeouts are both real and are different incidents. **Read the issue TITLE and culprit before claiming an ID** — one query would have caught this a day earlier, twice. ⚠ **`rpcWithRetry` does NOT save you from the schema-cache burst either** — it classifies `PGRST002` as transient (correct, `4f303102`) but retries 3× at 50 ms + 200 ms ≈ **250 ms**, entirely inside the first quarter-second of a twenty-second outage. ⚠ And do **not** "fix" it by making those pages fail soft — the throw is deliberate (deep-audit D10) so a transient failure renders a retryable error boundary rather than a soft-404 that invites Google to drop a real page. Batching several migrations into one window costs one burst instead of N. Full analysis + the filed options: [inbox 2026-08-13T2320Z](../../docs/overnight/inbox/2026-08-13T2320Z-the-schema-cache-500s-are-self-inflicted-by-our-own-migrations.md).
+- ⭐ **THE BURST IS NOT ONLY USER-FACING — IT LANDS INSIDE `wallet-backfill*` AS `rows_lost`, AND THE WORST WINDOW IS NAMEABLE (measured 2026-08-29).** `PGRST002` hits `upsert_wmc_batch` exactly like it hits a page read, and the wallet-backfill wrapper records it as data loss rather than as an outage: `wmc_upsert_chunk_failures=2 rows_lost=400 first=Could not query the database for the schema cache` at **01:29:03.974Z / 01:29:04Z**, against migration `20260829012854` applied at **01:28:54Z** — nine seconds. Two runs, **511 rows**. ⚠ **So "prefer a low-traffic window" has a specific meaning here: the `wallet-backfill*` waves run ONLY in UTC hours 0, 1, 12 and 13** (`app/api/seed-wallet-refresh/route.ts` gates on `utcHour % 12 >= 2`), and those are the hours where a migration costs internal rows on top of visitor 500s. ⚠ **Suggestive, not proven — n is 1 in-wave against 3 out-of-wave.** Three migrations applied the same night at 01:39Z, 02:49Z and 04:15Z (all outside a wave) produced **zero** schema-cache failures anywhere in `pipeline_runs`. The mechanism is not in doubt; the effect size is one observation. 👉 **Rule of thumb: apply migrations OUTSIDE UTC 00–01 and 12–13, and batch them.** ⚠ And note the reporting shape — a burst that lands here is recorded as `rows_lost`, **not** as an error anyone would attribute to a migration.
+- ⚠ **When an error looks like random infrastructure noise, check whether it tracks OUR OWN migrations or deploys before blaming the platform.** The finding above came from correlating two clocks nobody had put side by side: Sentry event timestamps and `supabase_migrations.schema_migrations.version`, which encodes the applied time as `YYYYMMDDHH24MISS`.
+- ⚠ **VERIFYING A DB CHANGE THROUGH A PUBLIC ROUTE: a BYTE-IDENTICAL response is the signature of a CACHE HIT at least as much as of a correct change (2026-08-15, `fe30d979`).** After repairing the two deals views I confirmed the board by re-fetching it and getting "byte-identical 30,856 bytes" — **but the response also carried an `elapsed_ms` identical to the millisecond (5833 twice), which no independent execution produces.** I had compared a cached response to itself. Every `/api/public/insights/**` route sets a public `s-maxage` of 300–3600 on success, so on those routes the cache reading is the LIKELIER one. **Re-run with a cache-busting query param** and confirm the payload genuinely re-executes (it did: same row set, `elapsed_ms` 5455). The generalizable tell is a metric that *cannot* repeat exactly — a duration, a timestamp — coming back identical.
+- ⚠ **When pages are timing out, ask `pg_stat_statements` what is eating the IO budget BEFORE optimising the page that hurts.** Ranking by `shared_blks_read` on 2026-08-14 put a **backfill** first at **113 GB** — the timeouts were collateral. This has now paid off twice: the same method found `count_insider_detector_candidates` burning ~27 GB/day of pure telemetry with no consumer.
+  ⚠ **And the defect is often the CALLER'S ARGUMENT, not the function.** `backfill_wmc_fmv_confidence` was fine; the cron passed it a collection whose backlog was exhausted, so its `LIMIT`-ed batch query — on a column deliberately left unindexed — seq-scanned all **2.3 GB** of `wallet_moments_cache` finding nothing, **every five minutes**. Same function unscoped: **87 buffers, 45 ms**; live ticks went **2:13 → 3.5 s** for one `cron.alter_job`. **A batch query that stops early only stops early when the batch EXISTS** — the moment a queue drains, its "cheap" scan becomes a full one, which is also why such a job must be RETIRED when it finishes rather than left running (the tell is the duration climbing back from seconds to minutes).
+  ⚠ **Test the tidy hypothesis before acting on it.** The obvious story there was zombie rows that could never satisfy the join; a 200-row sample said **200/200 would be updated**. A cheap sample is worth more than a plausible mechanism.
+- ⛔ **AN EXPENSIVE-LOOKING FUNCTION IS NOT A COST UNTIL YOU HAVE NAMED ITS CALLER — this is the rule the bullet above is missing, and it cost a full afternoon on 2026-08-17.** A session diagnosed, fixed, applied, committed and reported an early win on `get_unmapped_resolver_targets`, then discovered it has **ZERO callers**: 0 calls in `pg_stat_statements` over 5.6 days with **`pg_stat_statements_info.dealloc = 0`** (so the absence is real, not a truncated window), no `pg_proc.prosrc` caller, no `cron.job.command`, no view definition, no repo reference — and `unmapped_sales_resolution_failures`, which its retry guard reads, is **entirely empty**. The change was correct on its own terms and a **NO-OP in production**; the causal story in its header ("re-scanned the same slice every 30 min", "inflow outpaced outflow") described properties of the function's **OUTPUT**, from which a consuming caller was *assumed*. **Measuring what a function returns tells you nothing about whether anything calls it.** ⚠ **`pg_stat_statements` ALONE IS NOT ENOUGH, in either direction, because `track = top` records only top-level statements**: a nested caller is invisible, so zero calls does not prove orphanhood, and `pg_proc.prosrc` is the load-bearing check. Pair this with the four-source orphan rule under Security posture — that one guards against wrongly declaring an orphan (**32 of 37** functions report zero DB callers yet are live product RPCs called from Next.js); this one guards against wrongly declaring a *cost*. **Both errors are one missing step: name the caller before you touch the function.** ⚠ Note what a purpose-built index does and does not tell you: `idx_unmapped_sales_tail_resolver_targets` correctly pointed at the predicate to use, but it was built for the **tail** resolver — the component that actually runs — so it identified the live path while the fix was applied to the dead one. **A design document tells you the right shape, not the right object.**
+
+  ⚠ **ALSO DISPLACED VERBATIM FROM that same rule (2026-08-23), to make room for the production-caller control below — two fragments, in full:** *"(8 artifact-only views; a sweep without it breaks 3 live boards)"* (i.e. when enumerating callers, the Cowork artifacts' HTML is a source outside BOTH the repo and the catalogue, and a sweep that omits it breaks three live boards) and, on the seventh source, *"; the 08-22 canary greps ZERO callers, runs every 30 min"* (an EDGE function invisible to all six sources *and* to `cron.job`, because cron-job.org drives it).
+
+
+### Audit tables self-heal their RLS — hourly, and you should still not rely on it
+
+`public.selfheal_audit_table_rls()` (pg_cron **jobid 232**, `47 * * * *`) walks every
+`public.audit\_%` table and, for any that is missing it, runs `ALTER TABLE … ENABLE ROW LEVEL
+SECURITY` and `REVOKE ALL … FROM anon, authenticated`. **This is why the great majority of
+migrations that create an `audit_*` table carry no inline RLS statement and are still compliant in
+production** — 13 such files as of 2026-09-04, all clean.
+
+⚠ **It bounds the window; it does not remove it.** A table created at `:50` is anon-readable until
+`:47` the next hour. On 2026-09-04 two audit tables were created at 06:18Z/06:20Z and the GHA
+`smoke` check's `rpc:check_public_security_invariants` went **red** on them at 06:25Z — correctly,
+because a deploy landed inside the gap. They were closed by hand at 06:28Z (`20260905062849`); the
+healer would have closed them at 06:47Z regardless.
+
+⚠ **A COUNT TAKEN THROUGH A FAN-OUT JOIN IS NOT A COUNT (2026-09-13).** Sizing a defect in `audit_topshot_sale_drain_remap_20260621`, joining its rows to `sales` on **`nft_id`** returned **330 sales rows**; joining on the audit's own **`sale_id`** returned **140**. The audit holds one row per SALE, so the first join multiplied by every sale each nft ever had — a **2.4× overstatement that was published** before it was caught. ⭐ **The tell needed no re-query: 330 sales rows cannot come from 124 nfts in a one-row-per-sale table.** When an audit table carries the key of the thing it audits, JOIN ON THAT KEY; a natural-looking business key is a fan-out waiting to happen. ⚠ **And a fixture's column type is not a schema claim** — `sale_id`/`moment_pk` are `uuid` in production while the DB-invariant pin's fixtures declare `bigint` (legitimate inside a self-contained harness); a migration written against the fixture failed on `42804`. Read `information_schema` for a table you have only seen in a test.
+
+⭐ **So the honest reading of a red `rls_off_base_table` on an `audit_*` table is "a deploy landed
+inside the heal window", not "the estate is missing a rule".** Fix it forward with an
+`ALTER TABLE … ENABLE ROW LEVEL SECURITY` + `REVOKE`, and prefer putting those two lines in the
+migration that creates the table so the window never opens at all.
+
+🔁 **THIRD INSTANCE, 2026-09-13 — and its failure mode is different from the two above, which is
+why it is worth a line.** `audit_20260913_parallel_downgrade_restore` shipped from a bare
+`CREATE TABLE IF NOT EXISTS`, red on the smoke gate 7 minutes later, fixed forward by
+`20260913184500`. ⛔ **The migration did not merely OMIT the two lines — its header asserted they
+were unnecessary**, in these words: *"the new audit table is created with no grants, which leaves
+it service-role only by default."* **That is false: `public` carries a PUBLIC default SELECT, so
+"no grants" means anon CAN read it.** ⭐ **A plausible mechanism written confidently into a header
+is worse than an omission** — an omission is caught by the guard and forgotten, while a stated
+reason gets copied into the next migration by whoever reads it. The correction is appended to that
+file rather than replacing the sentence, so both the claim and its refutation stay readable.
+
+
+### ⛔ Atlas is NOT a complete census of Top Shot editions — never reconcile by deleting
+
+`api.production.atlas.dapperlabs.com` `EditionService/SearchEditions` is the authority this
+platform now uses for tier, badges, mint, prose and CDN media, and as of 2026-09-04 every edition
+it lists is in `editions` (`badge_editions` rows absent from `editions`: **0**). ⚠ **The reverse is
+not true and must not be treated as drift.**
+
+**Measured 2026-09-05: 100 canonical Top Shot editions are in `editions` and NOT in Atlas's
+results — and they are real.** 50 have holders in `wallet_moments_cache`, 59 have sales.
+
+| printing | rows | holder rows | sales |
+|---|---|---|---|
+| **Club Collection** | 30 | **183** | **429** |
+| (base) | 27 | 2 | 0 |
+| Bit | 13 | 0 | 0 |
+| Vortex · Rippled | 16 | 15 | 63 |
+| Explosion · Torn | 10 | 161 | 20 |
+| Hardcourt · Hexwave · Jukebox · Blockchain | 4 | 9 | 47 |
+
+⭐ **The dominant class is `Club Collection`** — a printing Atlas's public search simply does not
+return, with 183 holdings and 429 sales behind it. The 27 base rows share a single seeding date
+(2026-05-08) and are ordinary Moments (The Anthology: LeBron/Durant/Curry, the Fit Check team
+Moments, NBA Cup, Holo Icon, `152:5366`/`152:5372` from the Honors-Diced set whose Atlas
+`total_count` reads **0**).
+
+⚠ **In every one of these sets our walk is COMPLETE** — `atlas_set_refresh_state.total_count`
+equals the rows harvested — so this is Atlas omitting editions, not our pagination missing them.
+
+🚨 **Therefore: a "reconcile `editions` against Atlas" job that deletes anything Atlas does not
+list would destroy 100 real editions, 183 holdings and 429 sales.** Use Atlas to ADD and to
+CORRECT, never to REMOVE. An edition absent from Atlas is not evidence the edition is not real.
+
+### ⛔ `atlas_set_refresh_state.total_count` is NOT a per-set census — do not build a completeness check on it
+
+Measured 2026-09-05. A naive "are we complete?" query — our `editions` count per set against
+`atlas_set_refresh_state.total_count` — reports **20 sets where we exceed Atlas (124 rows) and 2
+where Atlas exceeds us (30 rows)**. Both directions are artifacts.
+
+**The 2 "Atlas exceeds us" sets are one finding, and it is an Atlas quirk.** Sets **241** and **260**
+are both named *Signature Series*, and `SearchEditions` with `setId: ["241"]` returns **30 rows
+spanning BOTH sets** — 15 with `setId 241` and 15 with `setId 260` — reporting
+`totalCount: 30, hasMore: false`. The drain stores that 30 against each set, so each looks 15 short
+forever. **Nothing is missing:** all 30 are in `badge_editions` and all 30 are in `editions`, 15
+under each set id. ⚠ A completeness check built on `total_count` would report a permanent phantom
+gap here and send the next reader hunting for editions that already exist.
+
+**The other direction is the `Club Collection` class above, plus set 152**, whose `total_count`
+reads **0** while we hold 23 of its rows.
+
+⭐ **The reliable completeness instrument is the row-level anti-join, not the reported total:**
+
+```sql
+-- 0 means every edition Atlas lists is in our catalogue.
+SELECT count(*) FROM public.badge_editions be
+ WHERE be.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'
+   AND NOT EXISTS (SELECT 1 FROM public.editions e
+                    WHERE e.collection_id = be.collection_id AND e.external_id = be.external_id);
+```
+
+### ⚠ The four health checks disagree about what "clean" looks like — read the VALUE, not the row count
+
+`count(*)` over these is wrong for three of the four, and it manufactures a finding out of a clean
+answer. Verified against `pg_proc.proretset` on 2026-09-05:
+
+| function | shape | clean reads |
+|---|---|---|
+| `check_public_security_invariants()` | **set-returning** `TABLE(kind, object_name)` | **0 rows** (a scalar subquery over it reads `NULL`, not `[]`) |
+| `detect_stalled_pipelines()` | scalar `jsonb` | **one row containing `[]`** — so `count(*)` = **1** |
+| `check_secdef_anon_execute_violations()` | scalar `jsonb` | **one row containing `[]`** — so `count(*)` = **1** |
+| `get_pipeline_alerts()` | scalar `jsonb` | one row containing a `[]`/array |
+
+⚠ This has caught the same reader twice in one night. The safe form:
+
+```sql
+SELECT (SELECT count(*) FROM public.check_public_security_invariants()) AS sec_violations, -- 0 = clean
+       jsonb_array_length(public.detect_stalled_pipelines())            AS stalled,        -- 0 = clean
+       jsonb_array_length(public.check_secdef_anon_execute_violations()) AS secdef;        -- 0 = clean
+```
+
+⛔ **CAUGHT A THIRD READER 2026-09-19, and the heading is why: "the four" is a CURATED LIST, and
+the reader who got it wrong had read this page's own warning earlier the same session.** The
+population is not four. Walked live that day over `pg_proc` for every `check_*` / `detect_*` /
+`get_pipeline_alerts*` function in `public`: **42 functions — 4 set-returning, 38 scalar.**
+
+**The four set-returning ones, in full** (these are the ones where `count(*)` is CORRECT and
+`jsonb_array_length` fails):
+
+`check_anon_write_surface` · `check_pgcron_recent_failures` · `check_public_security_invariants` ·
+`check_wmc_ownership_freshness`
+
+**Everything else in that family returns a scalar** `jsonb` / `json` / `boolean`, so `count(*)`
+over it is **always 1** and is a false finding — including `check_secdef_anon_execute_violations`,
+`check_wall_kills`, `check_zero_yield_lanes`, `check_pipeline_cadence_collapse`,
+`detect_stalled_pipelines`, `detect_pipelines_without_success` and the rest.
+
+⭐ **The rule beats the list, and the database already states it — nobody asks.** The shape is in
+the catalog, exactly, so there is no need to trust any roster including this one:
+
+```sql
+-- Ask before you count. proretset = true -> count(*); false -> jsonb_array_length(...).
+SELECT proname, proretset, pg_get_function_result(oid) AS returns
+  FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname = '<the function>';
+```
+
+⚠ **Do NOT "fix" this by adding a COMMENT to each function restating its shape** — that was
+considered and rejected the same day: it would duplicate a fact `pg_proc` already holds
+authoritatively, and a duplicated fact is one that can go stale while the catalog cannot.
+
+## 🚨 A DENORMALISED CACHE KEYED ON A COLUMN ITS WRITER DOES NOT BUMP ROTS INVISIBLY — and the tell is it disagreeing with the row it NAMES, not with `now()` (2026-09-18, register R107)
+
+**Displaced here from CLAUDE.md 2026-09-18 to pay for the one-line rule that replaced it.** The
+CLAUDE.md bullet now reads: *"A `*_at` name is not its contract — it is its WRITER's, so REPLACING a
+writer REDEFINES the column while the name holds (4 surfaces, 1 PRICING). ⛔ A CACHE keyed on one
+rots INVISIBLY — the tell is it disagreeing with the row it NAMES (R107)."* The instance detail it
+used to carry — `edition_offers.updated_at` going confirmed→changed on 2026-08-28, and the
+`sales` partitioned-index case (#68, 33,000 dupes) — is already recorded elsewhere in this file.
+
+### The shape
+
+⚠ **An in-place `UPDATE fmv_snapshots` (a re-price migration) is invisible to the incremental refresh for the same reason** — it does not move `computed_at`, so the cache keeps the old price until the daily full reconcile. Write `edition_fmv_current` in the same migration, guarded on the value replaced (`20261105014011`, 2026-11-04).
+
+⛔ **A RE-PRICE MIGRATION MUST ALSO INSERT ITS ROWS INTO `fmv_restatements` (#233, 2026-11-04)** — `(source = the migration name, collection_slug, ext_id, old_fmv_usd, new_fmv_usd, restated_at)`; `ext_id` is `editions.external_id` (`pinnacle_catalog.render_id` for Pinnacle). The market-cap 7-day change adds `sum(new − old) × collector_held` over restatements dated after its baseline day, so a rule change does not publish as a market move for a week. Skip it and the cap/floor/algorithm change prints as a 7-day crash or rally (Drake Maye read −69 % from one 10-29 cap; Top Shot −8.1 % from 11-04's caps, −0.2 % once netted). Seed pattern: `20261105043000_audit_20261104_market_cap_7d_change_nets_out_fmv_restatements`.
+
+⚠ **A data-quality class keyed on ONE identifier is blind to rows where that identifier is NULL.** #232's "seller kept the moment" class keyed on `moment_id`; 754 more fake sales had NULL `moment_id` and surfaced only as 7 of the top 8 survivors, then matched on `nft_id`. Read the join key's NULL rate before calling a class complete.
+
+`edition_fmv_current` is a latest-FMV-per-edition cache. `refresh_edition_fmv_current()` is its
+ONLY writer and its `DISTINCT ON (edition_id) ORDER BY computed_at DESC` is **correct**. The defect
+is the incremental window:
+
+```sql
+v_cutoff := v_watermark - interval '2 hours';   -- v_watermark = max(computed_at) in the cache
+...  WHERE s.computed_at > v_cutoff
+```
+
+**FMV writes in this repo are DELETE-THEN-INSERT.** A later pass can replace a snapshot while KEEPING
+its original `computed_at`. Once the watermark has moved more than 2 h past that stamp, the
+replacement never re-enters the window and the cache holds the superseded value **forever**. The
+`WHERE EXCLUDED.computed_at >= t.computed_at` guard cannot help — the row is never read at all.
+
+### ⭐ Why the ordinary staleness check misses it
+
+A cache is normally audited against the CLOCK: *how old is `refreshed_at`?* That question returns
+"fresh" here, because the refresher runs hourly and touches thousands of rows. **The rotted rows are
+not old — they are WRONG**, and the only question that finds them is *does this row still agree with
+the row it NAMES?*
+
+```sql
+-- the diagnostic, and the guard's predicate
+SELECT count(*) FROM edition_fmv_current f
+JOIN fmv_snapshots fs ON fs.edition_id = f.edition_id AND fs.computed_at = f.computed_at
+WHERE fs.fmv_usd IS DISTINCT FROM f.fmv_usd;
+```
+
+⚠ Join on **(key, the stamp the cache claims to be from)**. Joining on the key alone, or re-deriving
+"latest" with a LATERAL, answers a different question and hides the defect behind the refresh lag.
+
+### What it cost, measured 2026-09-18
+
+85 rows across three collections — `nfl_all_day` 53, `nba_top_shot` 26, `laliga_golazos` 6,
+Candy and Pinnacle 0 — **all skewed HIGH**, net +$36,658, max single delta $4,049.55. The cache was
+publishing the **pre-haircut ask** (`ask_proxy_fmv`, `algo_version ultimate-v1_haircut`) as FMV on
+11 public insight boards, at exactly 0.55× disagreement.
+
+🚨 **AND THE PRODUCT CONTRADICTED ITSELF, which is what made it actionable rather than a judgement
+call:** the same edition read through `fmv_current` (the DISTINCT ON view behind 18 app routes)
+returned 4,949.45 while the cache returned 8,999.00. **The cache was the only surface carrying the
+wrong number** — the source, the view, and most of the product already agreed.
+
+### The guard, and the one design decision worth copying
+
+`check_edition_fmv_current_source_drift(p_sample_mod)` — ban-at-zero, jsonb ARRAY, output capped at
+50 (**read its length as a FLOOR: it returned 50 against a true 85**). Full form costs **86,963
+buffers / 6,261 ms** warm, which is why it is NOT in `rpc_ops_snapshot()` — the threshold was set
+at "under ~2 s" BEFORE measuring, and it missed by 3×.
+
+⭐ **It deliberately covers only the CHEAP, UNAMBIGUOUS half.** Rows whose `(edition_id,
+computed_at)` pointer resolves to NOTHING (527 of them) are not offenders: most are merely behind,
+and separating the ~136 that would change value needs a per-row LATERAL costing far more. **Widening
+a guard until it covers everything is how it becomes too expensive to run.** Write a second one.
+
+### ⛔ The fix is the refresh, and it is still owed
+
+A one-off UPDATE was applied on 2026-09-18 (migration
+`audit_20260918_edition_fmv_current_stops_contradicting_the_rest_of_the_product_on_85_prices`,
+exact pre-values in `audit_20260918_efc_fmv_repair_backup`) **only because the guard already
+existed** — with it, patching sets a clean zero baseline and makes the RE-DIVERGENCE RATE
+measurable. Without the guard it would simply have erased the evidence. The window is untouched, so
+it will come back. The two real fixes: a periodic FULL reconcile (the function has the branch, but
+~1.23M rows and "minutes when cold" — measure it on this IO-bound instance first), or an
+`updated_at`/version column on `fmv_snapshots` for the incremental refresh to key on.
+
+---
+
+## 🚨 `pg_stat_statements` IS NOT KEYED ON `queryid` — and two snapshots joined on it alone FABRICATE a rate (2026-09-14, caught by a sanity re-read one step before filing)
+
+Ranking pgss by `shared_blks_read` is how every saturation filing here starts, and the column is **CUMULATIVE since `stats_reset`**. The right instrument is two snapshots and a delta. **Both steps of building that delta have a trap, and I hit both in one pass.**
+
+**TRAP 1 — the key.** `pg_stat_statements` returns one row per **`(userid, dbid, queryid, toplevel)`**, so the SAME `queryid` legitimately appears several times in one snapshot under different roles. Measured live: **25 duplicate `queryid`s in a single 4,832-row snapshot.** A snapshot keyed on `queryid` alone, joined to another the same way, is a **cross product**, and it invents traffic that never happened:
+
+- `SELECT public.refresh_mv_pack_ev_latest()` appeared twice — `calls` 1,497 and 3. The fan-out paired B(1,497) with A(3) and reported **+1,494 calls and +17.4 M reads in a 10-minute window — 52.9 % of all window reads**, for a function that is scheduled **`3,33 * * * *`**, i.e. twice an hour, and whose true delta was **0**.
+- ⭐ **The tell was available without re-querying: 1,494 calls of a materialized-view refresh in 10 minutes is not a plausible number.** A cron schedule is a cheap upper bound on a call rate — check the ranking against it before believing it.
+
+**TRAP 2 — the join type.** `LEFT JOIN … COALESCE(a.calls, 0)` treats *absent from snapshot A* as *zero at snapshot A*, so an entry **evicted and readmitted** between the two snapshots contributes its whole lifetime as window traffic. This instance evicts: `pg_stat_statements_info.dealloc` was **58**, **20 entries appeared in B that were not in A**, and **43 entries had `calls` go BACKWARDS** between snapshots. ⭐ **A backwards counter is the readmission tell** — an entry that was merely quiet holds its value exactly, which is what makes the [pack-sales finding](../overnight/inbox/2026-09-14T1330Z-the-platforms-largest-io-waste-is-already-over-and-the-priority-it-set-dissolves.md) safe.
+
+**The shape that is correct:**
+
+```sql
+-- snapshot (twice, N minutes apart), keyed as pgss keys itself
+create table audit_pgss_snap (
+  snap_label text, snap_at timestamptz default now(),
+  userid oid, dbid oid, queryid bigint, toplevel boolean,
+  calls bigint, total_exec_ms double precision, shared_blks_read bigint, query_head text,
+  primary key (snap_label, userid, dbid, queryid, toplevel));
+
+-- delta: INNER join on the full key, and drop any row whose counters went backwards
+select b.shared_blks_read - a.shared_blks_read as d_reads, b.calls - a.calls as d_calls, b.query_head
+from audit_pgss_snap b
+join audit_pgss_snap a using (userid, dbid, queryid, toplevel)
+where b.snap_label = 'B' and a.snap_label = 'A' and b.calls >= a.calls
+order by d_reads desc limit 20;
+```
+
+⚠ **AND THE WINDOW LENGTH IS PART OF THE RESULT.** A 10-minute window cannot rank a 6-hourly job — it will show zero for the fleet's heaviest work and rank whatever happened to fire. ⛔ **Your own probes land in the ranking too:** one `cron.job_run_details` query of mine was the **#3 reader in its own window at 9.0 %**. **Freeze the tree, then measure** applies to the instrument as well as the subject.
+
+## ⛔ A SIZE COMPARISON ACROSS TWO DIFFERENT SIZE FUNCTIONS IS NOT A MEASUREMENT OF GROWTH (2026-09-13, a false correction caught one step before filing)
+
+Diagnosing why `refresh_cross_collection_cohort_step2()` timed out, I read `pg_total_relation_size('wallet_moments_cache')` = **2,507 MB** against the function's own code comment, which had justified its plan fix against a **"927 MB table"**. That reads as **2.7x growth in three weeks** — and I was one step from filing *"the table grew, the median has left 25 s, bound the aggregate now"*, **a correction that would have overturned a correct conclusion and sent the next session rewriting a working query.**
+
+⭐ **The apples-to-apples check refuted it in one query:**
+
+```sql
+select pg_size_pretty(pg_relation_size('wallet_moments_cache'))       as heap_only,  -- 940 MB
+       pg_size_pretty(pg_indexes_size('wallet_moments_cache'))        as indexes,    -- 1567 MB
+       pg_size_pretty(pg_total_relation_size('wallet_moments_cache')) as total;      -- 2507 MB
+```
+
+**The heap is 940 MB against that comment's 927 MB — flat, +1.4 % in three weeks.** The 2,507 MB is heap **plus 1,567 MB of indexes**, and the comment had been measuring the heap. **Nothing grew.**
+
+⚠ **THE GENERAL RULE: a recorded size figure rarely says WHICH function produced it**, and on an index-heavy table the three differ by more than 2x. Before comparing against any historical size, read **all three** for the current object and ask which one the old number could have been. The comparison is only meaningful within one function. Same family as the standing rule *never pair a count from one table with a property from another*.
+
+⚠ **Corollary, from the same table:** `pg_indexes_size` **exceeds** `pg_relation_size` here (1,567 MB of indexes on a 940 MB heap), so "total size" is **dominated by indexes** and moves whenever someone adds one. ⭐ **An index build looks exactly like data growth in a `pg_total_relation_size` trend** — which matters on this estate, where index builds are a routine lever and DB size is a watched number.
+
+⚠ **Cheaper still, and do it FIRST: `EXPLAIN` without `ANALYZE` to confirm the PLAN has not changed** before theorising about volume at all. Here it had not — Hash Joins throughout and the intended `Index Only Scan` on `idx_wmc_wallet_coll_ek_fmv`, i.e. the `SET LOCAL enable_nestloop = off` in the function body was still doing its job, which alone ruled out "the planner flipped back to a nested loop".
+
+## 🚨 A SELF-HEAL CAN BE THE BUG AND THE `BEFORE` TRIGGER THE PROTECTION — an impossible value has TWO causes and the obvious repair fixes the wrong one (2026-09-12, register #82)
+
+**`observed > capacity` never tells you which side is wrong.** It can mean capacity is understated, or
+that the observation belongs to a different row. A repair function encodes one of those readings and is
+structurally silent about the other — and the prose around it will restate its assumption as a finding.
+
+**The case.** `raise_impossible_parallel_circ()` read `sales.serial_number >
+editions.circulation_count` on a Top Shot **parallel** as *"circulation is stale, raise it"*, ran
+4×/day for months and logged **274 repairs**. The condition was a **MIS-KEYED SALE**:
+
+- The canonical map `moments.nft_id → edition_id` **disagrees with the sale** on both adjudicable rows
+  and names the **BASE** printing: nft `52643519` serial 2042 (sale says `258:9009::16`, moments says
+  `258:9009`); nft `52549592` serial 140 (sale says `270:8973::17`, moments says `270:8973`).
+- **Every offender's serial fits inside its base edition's circulation, 6 of 6** — `258:8892::16`
+  circulation **99**, wanted **3002**, base **4000**; `90:4055::1` 500/2048/8000; `258:9009::16`
+  99/2042/4000; `250:8813::18` 50/829/1000; `258:8904::16` 99/688/4000; `270:8973::17` 99/140/1000.
+- Atlas (`badge_editions`) is internally consistent on each — `effective_supply + burned =
+  circulation` (492+8=500, 99+0=99, 24+1=25, 92+7=99) — so nothing indicts Atlas's number.
+
+⭐⭐ **THE INVERSION, which is the part to carry: a `BEFORE` trigger had been silently reverting every
+raise, and the trigger was RIGHT.** For a day the register called the trigger the blocker and the
+self-heal the thwarted fix. In fact raising circulation to match would have **corrupted an
+Atlas-verified figure by up to 30×**. ⚠ **A mechanism that keeps undoing your repair is a hypothesis,
+not an obstacle — read it before routing around it.** This one said so in its own comment:
+*"Parallel: Atlas is the only per-printing authority, in both directions."*
+
+🚨 **The protection was incomplete in the revealing direction: where the authority had NO row, nothing
+clamped and one raise LANDED** — `171:5972::16`, 93 → **1270**, with `atlas_circ` NULL and its nft
+absent from `moments`, so it cannot be adjudicated either way (serial 1270 fits the base's 4,000).
+⛔ **A guard that only fires when a reference value exists leaves precisely the unverifiable rows
+unprotected.**
+
+**What to do with one of these**
+
+- Name the two causes, then find an **independent** adjudicating map. For Top Shot that is
+  `moments.nft_id → edition_id`.
+- ⚠ **Measure a corroboration guard's COVERAGE before shipping it, or it silently becomes a no-op.**
+  Requiring the canonical map here discriminates correctly — positive control on **249** hash-sampled
+  recent Top Shot sales: **121** nfts present in `moments`, **120 agree**, 1 disagrees — but `moments`
+  covers only **~49%** of sale nfts, so the guard fails closed on half. **With the authority already
+  neutralising every raise, a guarded function is a more elaborate way of doing nothing** — the job was
+  retired instead (`20260912144225`, jobid 219 unscheduled; function and pin kept).
+- ⭐ **Keep the detector and RELABEL it.** The trust metric `topshot_impossible_parallel_serials` was
+  correct all along: it is a **mis-keyed-sales detector**, not a "circulation needs raising" signal. It
+  stays breached either way — retiring the repair moved no metric, because the repair never moved a row.
+- ⚠ **Making a liar honest is not the same as making it right.** The 09-11 fix made this function's
+  audit truthful (`attempted` / `raised` / `reverted_by_trigger`); one day later that truthful audit is
+  what proved it should not run. Both steps were needed, in that order.
+- ⛔ The remaining repair — fixing the mis-keyed `sales` rows and the one corrupted `editions` row — is
+  a bulk `UPDATE`, the destructive class, and is the owner's call.
+
+
+## ⭐⭐ WHERE THE DISK IO ACTUALLY GOES: THREE TABLES HOLDING 5.7 GB ARE 60 % OF IT, AND THEY ARE ONE CHAIN (2026-09-12)
+
+Saturation on this instance is **IO-bound, not CPU-bound** (CLAUDE.md), so "which query is slow" is the wrong first question and "which table is being read off disk" is the right one. From `pg_statio_user_tables`:
+
+| table | on disk | disk reads | share of all user-table reads |
+|---|---:|---:|---:|
+| **`wallet_moments_cache`** | 3,292 MB | 11,401 GB | **33.0 %** |
+| **`fmv_snapshots_2026`** | 950 MB | 4,817 GB | **13.9 %** |
+| **`sales_2026`** | 1,419 MB | 4,425 GB | **12.8 %** |
+| `net._http_response` | 11 GB | 1,493 GB | 4.3 % |
+| `panini_card_serials` | 186 MB | 1,030 GB | 3.0 % |
+
+⭐ **The top three are 59.7 % and hold 5.7 GB between them** — `wallet_moments_cache` is read roughly **3,450 times over**. ⭐ **And they are one chain: `sales` → `fmv_snapshots` → `wallet_moments_cache`. The FMV recompute path is about sixty per cent of this database's disk IO**, which is the quantified form of CLAUDE.md's *"fmv-recalc … owns the DB's #1 reader"*. Nothing else reaches 5 %, so **any saturation fix that does not touch the FMV chain is trimming 40 % of the problem** — state that when you ship one.
+
+⚠ **WINDOW CAVEAT, and it decides how these may be quoted.** `pg_stat_database.stats_reset` is **NULL** here, so these counters have no known start. They are **not** the `pg_stat_statements` window (which carries its own `stats_reset`), and the two totals differ (34,824 GB vs 24,820 GB). ⛔ **Quote the SHARES — they are window-independent while the mix is stable — never the absolute GB as a rate.** Both columns come from the same instrument, which is what makes the share honest.
+
+⚠ **`pg_statio_user_tables` sorts NULLs FIRST under `ORDER BY … DESC`.** `idx_blks_read` is NULL for a table with no indexes, so `heap_blks_read + idx_blks_read` is NULL for those rows and a naive descending sort puts **16 kB tables at the top and buries the 11 TB one.** `coalesce(...,0)` every term. This produced a completely inverted first reading on 2026-09-12.
+
+⭐ **AN INDEX'S GB-PER-SCAN SPLITS A SEEK FROM A FULL SCAN, AND `idx_scan` ALONE CANNOT.** On `wallet_moments_cache` (19 indexes, ~2.3 GB): `idx_wmc_moment_collection_cover` does **314 M scans for 840 GB — 2.7 kB per scan**, a healthy point lookup. `idx_wmc_cohort_cover` does **13,157 scans for 636 GB — 48 MB per scan on a 340 MB index**, i.e. it is read end-to-end nearly every time. Same for `idx_wmc_lockcheck_order` (24 MB/scan on 39 MB) and `idx_wmc_collection_id` (10.5 MB/scan on 43 MB) — **860 GB from three indexes nobody seeks into.** ⚠ **Which statements drive them is NOT established** — `pg_stat_statements` does not attribute per index, so that needs `auto_explain` or a live `pg_stat_activity` catch; naming a query without one is a guess.
+
+Full readings, and the four levers considered and declined with reasons: [inbox 2026-09-12T1500Z](../overnight/inbox/2026-09-12T1500Z-the-quiet-window-ranking-that-found-a-36-percent-consumer.md). Register **#85**.
+
+
+## ⭐ A HEAP'S STATS DEFECT DOES NOT IMPLY ITS TOAST WAS FIXED WITH IT (2026-09-12)
+
+**They are SEPARATE relations with separate stats and separate autovacuum triggers — and the bloat
+is usually in the one nobody names**, because every query, every `\dt` and every monitoring view
+reports the heap.
+
+Register **#75** found `net._http_response`'s `n_dead_tup` pinned at 0, which makes autovacuum's
+trigger unreachable by construction, and fixed it with an hourly `ANALYZE` (pg_cron jobid 482).
+**That fix is verified end-to-end and it treats 0.17 % of the problem:** `ANALYZE
+net._http_response` analyses the **17 MB heap**. The bloat is in `pg_toast.pg_toast_51873`, which
+reads **`autovacuum_count` 0 · `last_autovacuum` NULL · `n_dead_tup` 0** — never autovacuumed, stats
+pinned at zero exactly as the heap's were — at **10 GB holding 418 MB of live content (~96 % dead)**,
+still growing ~1.6 GB per 9 h, the same rate as before the fix.
+
+**The check, whenever a stats or vacuum defect is found on a heap:**
+
+```sql
+select c.relname, pg_size_pretty(pg_relation_size(c.oid)),
+       s.n_live_tup, s.n_dead_tup, s.autovacuum_count, s.last_autovacuum
+from pg_class c join pg_stat_all_tables s on s.relid = c.oid
+where c.oid = (select reltoastrelid from pg_class where oid='<schema>.<table>'::regclass);
+```
+
+⚠ **And do not score the fix from the heap's counters.** They were healthy the whole time — that is
+precisely what made this invisible.
+
+⛔ **`pgstattuple` is installed, and on a multi-GB relation it is the wrong instrument here.** A full
+scan of 10 GB against this tier's **22 MB/s** budget is ~7.5 minutes of the ENTIRE instance's IO —
+it would manufacture a saturation spell to refine a ratio that `sum(pg_column_size(<toasted col>))`
+against `pg_relation_size` already gives for free.
+
+⚠ **A manual `VACUUM` is unthrottled only because `vacuum_cost_delay` defaults to 0** — that is a
+default, not a constraint. `SET vacuum_cost_delay = 2; VACUUM <table>;` throttles it exactly as
+autovacuum is throttled, and a parent `VACUUM` **does** process its TOAST. ⛔ Neither reclaims space
+to the OS: that needs `VACUUM FULL` (ACCESS EXCLUSIVE) or `pg_repack`.
+
+⭐ **`VACUUM FULL` costs the LIVE set, not the file — measured 2026-10-02 (PT).** #75 priced the
+reclaim at "13 GB ÷ 22 MB/s ≈ 10 min of the instance's IO". It does not read the dead TOAST: it
+rewrites the heap (17 MB) and fetches only the live rows' chunks. `VACUUM FULL net._http_response`
+took the store **12 GB → 460 MB in 7.7 s** (Large tier, 432 MB live), and 14 s on 09-27. So the
+lock window and the IO scale with `sum(pg_column_size(content))`, and the file size is irrelevant.
+The same night showed the TOAST's own stats pinned again (`pg_toast_51873` `n_dead_tup` 0 against
+12 M deletes, no autovacuum since 09-20), growing ~2 GB/day, so the job (jobid 542) now runs
+**daily** at 2:16 AM PT (`20261003033000`). ⚠ Before pricing any FULL, measure the live content,
+not `pg_total_relation_size`.
+
+## ⭐ READ `pg_stat_progress_vacuum` BEFORE BLAMING A LANE FOR A SPELL — a saturation spell's cause can be MAINTENANCE, and maintenance was invisible to every instrument (2026-09-13)
+
+**The instance:** from ~10:37 AM PT the estate read like a lane defect — `rpc-ts-listings-atlas-sync` failed **30 of 35 ticks** from 10:58, each cancelled at the 120 s budget on a DIFFERENT statement every time (`count(*)`, `CREATE TEMP TABLE _tsl_want`, `_cl_want`, the `floor` CTE, the `up` INSERT); `pg_cron Failures (6h)` 268; Trust Health / Pipeline Success / Sniper Feed INCONCLUSIVE; `/api/market` 503s; 8–19 client backends in `IO/DataFileRead`. The sentinel 504'd at its own wall. A cadence cut for the lane was one decision away.
+
+**The cause, read by hand:** `pg_stat_progress_vacuum` showed **the FIRST-EVER autovacuum of `pg_toast.pg_toast_51873`** — `net._http_response`'s 12.4 GB TOAST (register #75, the relation whose stats had been pinned at zero) — `vacuuming heap`, all 1,627,612 blocks scanned, 6.4 M dead item ids collected, **57 min in `IO/DataFileRead`** and, at the throttled autovacuum rate, hours to go. Its start matched the lane's first failure to the minute. `wallet_moments_cache` and later `sales_2026` were being autovacuumed alongside it.
+
+**Two tells that it is whole-instance IO and not one bad query:** (1) the SAME job dies on a DIFFERENT statement each tick — a bad query dies on the same one; (2) `pg_stat_activity` shows the waiters in `IO/DataFileRead`, zero on any lock. **The error string is identical in both cases** (`canceling statement due to statement timeout`), which is why the duration and the string cannot settle it; only the wait state and the progress views can.
+
+**What was done, and what was not:** the autovacuum was left to finish (cancelling wastes the work and it restarts); two lanes that were pure load under it (56 busy-minutes/hour, verifying nothing) were paused with a **self-restoring pg_cron one-off scheduled BEFORE the pause**; and the sentinel gained the instrument that was missing — the **`Maintenance Load` arm** (`check_maintenance_load()`, catalog views only, placed right after `pg_cron Failures` so the wall budget cannot refuse it) that names every running vacuum / `VACUUM FULL` / index build with phase, percent and minutes in the same digest as the symptoms.
+
+⚠ **Autovacuum throughput here is small and sets the spell's LENGTH:** `autovacuum_vacuum_cost_delay = 2 ms`, `vacuum_cost_limit = 200` — the toast's heap pass moved ~29k–90k blocks per 10 min, so a 12 GB relation is a multi-hour event on this tier. That is also why a manual `VACUUM FULL` (unthrottled, `vacuum_cost_delay = 0`) needs a role with no statement timeout and is a 10–30 min ACCESS EXCLUSIVE window: sized in #75, not guessed.
+
+
+## 🚨 `EXCEPTION WHEN OTHERS` DOES NOT CATCH A STATEMENT TIMEOUT — so an isolation block built on it cannot survive the only failure this instance actually produces (promoted here 2026-08-26)
+
+**PostgreSQL: *"the special condition name `OTHERS` matches every error type EXCEPT `QUERY_CANCELED`
+and `ASSERT_FAILURE`"*, and a `statement_timeout` raises exactly `query_canceled` (57014).**
+Re-verified on this instance 2026-08-26, both directions, on a scratch function dropped afterwards:
+
+| probe | result |
+|---|---|
+| `BEGIN … EXCEPTION WHEN OTHERS` around a cancelled `pg_sleep` | **escaped the handler** — 57014 propagated |
+| the same block with `WHEN query_canceled THEN` | **caught** |
+
+⚠ **THIS IS NOT NEW — it was established 2026-08-15 — AND IT RECURRED ANYWAY, WHICH IS WHY IT IS
+HERE.** The original analysis lives in
+[trust-board-and-safety.md](trust-board-and-safety.md) under the 999-sentinel bullet, filed as a
+**trust-board** fact. It is not a trust-board fact; it is a **PL/pgSQL** fact. Eight days later
+`refresh_series_detail_rollup` shipped a `BEGIN … EXCEPTION WHEN OTHERS` block whose stated purpose
+is *"Isolated so it cannot take the job down"* — and it is structurally incapable of catching the
+only error that job has ever had. ⭐ **A rule filed under the subsystem where it was found is
+invisible to the next subsystem that needs it.**
+
+**The two live instances, measured 2026-08-26:**
+
+- **`refresh_series_detail_rollup`** — 72 ticks over 3 days, **71 ok / 1 failed**, and the failure is
+  `57014` propagating **from the protected line itself** (`refresh_edition_fmv_current() line 8` →
+  `refresh_series_detail_rollup() line 16 at assignment`). The isolation is claimed to keep 26
+  indexable series pages served from the previous hour's copy; on a timeout it does not run.
+- **`public_board_liveness_sweep`** — its per-board handler comments *"A TIMEOUT is SLOW, not
+  EMPTY"* and branches on `v_sqlst = '57014'`. **`public_board_liveness_history` holds 1,601 rows
+  with ZERO `err` values ever recorded, and zero beginning `57014`.** That branch has never fired
+  and cannot. ⓘ **No outcome impact** — the sibling `elapsed_ms > max_ms` path still counts slow
+  boards — but it reads as a safety net that is not one.
+
+🔄 **SUPERSEDED 2026-09-20 (R118) — this section used to read "⛔ DO NOT FIX IT BY WIDENING THE
+CLAUSE TO `WHEN query_canceled OR OTHERS`". That ban is now WRONG as stated, and a reader following
+it would revert 36 live functions.** The paragraph is rewritten rather than deleted, because the
+measurement under it is correct and still load-bearing — only the RULE drawn from it was too broad.
+
+**What shipped.** R118 rewrote **35 handlers** to `WHEN query_canceled OR OTHERS` in four migrations
+(`20260920140611` five pg_cron wrappers · `20260920143546` sixteen unpinned · `20260920143959`
+fourteen pinned, all 8 `rpc_thp_leg_*` legs among them · `20260920144120` the
+`check_when_others_timeout_blind()` instrument). The reason is the defect this whole section
+describes: a handler that promises a `pipeline_runs` row or a 999 sentinel and **cannot see the one
+failure it exists for** is not a safety net, and on the trust board it was actively dishonest — a
+killed 6-hourly leg left its metric frozen and `v_rpc_trust_health` republished it as current
+(no per-metric age column; its only staleness rule is `computed_at < now() - 24h → 999`).
+
+📏 **THE 2026-08-15 MECHANISM REPRODUCES — re-measured 2026-09-20 independently, not re-read.**
+After a cancel is caught the timer is **not** re-armed: with `statement_timeout` at 700 ms armed as
+its own statement *before* the block, a `pg_sleep(2)` placed **after** the catch **ran to
+completion**. The trade the revert named is real and permanent.
+
+⭐ **What changed is not the mechanism — it is the SIZE OF WHAT RUNS AFTERWARDS.** In 2026-08-15 the
+eight legs ran inside ONE orchestrator call, so a caught cancel in leg N let legs N+1..8 run with the
+timer spent: unbounded work measured in minutes. The **2026-08-16 8-way cron split** ended that. Each
+leg is now its own top-level statement, and everything after a catch is one `ON CONFLICT` upsert
+into a ~29-row table plus one `log_pipeline_run` row.
+
+👉 **THE RULE IS THEREFORE CONDITIONAL, AND THE CONDITION IS THE HANDLER BODY, NOT THE CLAUSE.**
+Widen to `WHEN query_canceled OR OTHERS` only where everything after the catch is **bounded by
+construction** — a fixed-size write, no loop, no unbounded scan, no onward call into a heavy path.
+⛔ **It binds FUTURE edits hardest: work ADDED to a handler that catches `query_canceled` runs with
+NO statement timeout at all.** A one-line addition to such a handler is how this comes back.
+⚠ **14 functions are deliberately still on bare `WHEN OTHERS`** (live count 2026-09-20; the
+batch-two header argues 12 of them) — mostly handlers inside LOOPs, where a caught cancel would let
+the remaining iterations run unbounded. **That is the rule working, not an unfinished sweep**: do not
+"complete" it without reading `20260920143546`'s header. The two instances named above
+(`refresh_series_detail_rollup`, `public_board_liveness_sweep`) are among them and remain as
+described.
+
+🔎 **Instrument:** `check_when_others_timeout_blind()` — `[]` when clean (verified `[]` 2026-09-20).
+⭐ **Run it in the SAME turn you create any plpgsql function with a record-and-exit handler** — on
+2026-09-24 it caught a brand-new bounded batch walker (`backfill_wmc_series_batch`, one write + one
+`log_pipeline_run` after the catch) written on plain `WHEN OTHERS` an hour after it shipped
+(`20260925063955` fixed it). A new handler is the one place the 2026-09-20 sweep cannot have reached.
+⚠ **It does NOT answer the question this section now turns on.** It finds handlers blind to a kill;
+it cannot find handlers that do **unbounded work after catching one**, which is the failure mode the
+conditional rule above exists to prevent. That one is still read by eye.
+
+⚠ **PROBE-HARNESS TRAP — it produced a full false negative on 2026-09-20 before it was caught.**
+`SET LOCAL statement_timeout` *inside* the plpgsql block under test does **not** arm the timer for
+that block: the timeout is armed when the **top-level statement** starts. A probe that sets it inline
+watches `pg_sleep(3)` run to completion under a 700 ms budget and reads as *"no cancel fires"* —
+which looks like a clean negative result and is measuring nothing. **Arm it as its own statement
+before the block**, then `WHEN OTHERS` → handler never runs / cancel escapes, and
+`WHEN query_canceled OR OTHERS` → handler runs, with `1/0` still caught.
+
+➡ **The structural remedy still applies and is still FIRST choice: give the fragile step its own
+TOP-LEVEL statement** (a separate pg_cron entry), so it gets a fresh budget, its timeout cannot
+reach its neighbours, and `cron.job_run_details` names it directly. ⚠ Check `cron.job.username`
+first — a `cron_heavy`-owned job cannot be rescheduled from any session-reachable role.
+
+## 🚨 A ROUTINE WITH AN ATTACHED `SET` CLAUSE CANNOT `COMMIT` — and that makes SECURITY DEFINER and transaction control MUTUALLY EXCLUSIVE here (2026-08-23, re-confirmed 2026-08-26)
+
+**PostgreSQL refuses `COMMIT`/`ROLLBACK` inside any routine carrying an attached `SET` config clause**
+(`SET search_path = …`), with `2D000 invalid transaction termination`. It has cost once and nearly cost twice:
+
+- **It cost, 2026-08-23.** A `search_path`-hardening pass ran `ALTER PROCEDURE
+  public.reconcile_all_saved_wallet_stats(int,int,int) SET search_path = public` on a procedure that
+  **COMMITs per wallet**. Every tick after the ALTER died at `line 30 at COMMIT` — not a timeout, an
+  immediate error before any work. The hourly saved-wallet cache stopped refreshing. ⚠ **The hardening
+  was right in general and the wrong tool on this one routine.**
+- **It nearly cost again, 2026-08-26.** The board-watchdog filing prescribed converting
+  `public_board_liveness_sweep` to *"a PROCEDURE with a `COMMIT` after each board"*. That function is
+  **`prosecdef = true` with `proconfig = {search_path=public, pg_temp}`**, so the conversion as written
+  would have raised `invalid transaction termination` on the first COMMIT and taken the watchdog **fully
+  dark** — worse than the one-tick-in-eight it was meant to fix.
+
+### ⚠ HOW TO READ `get_advisors` — EVERY CHECK TESTS A SHAPE, AND THE PROPERTY YOU CARE ABOUT IS ONE STEP AWAY (2026-09-03)
+
+Full sweep that day: **security 230 lints — 0 ERROR, 9 WARN, 221 INFO; performance 335 — 0 ERROR, 0
+WARN, 335 INFO.** Nothing needed fixing. ⭐ **But three of its four check types over-report in the same
+way, and it is the same way every time**, so read the level first and then ask what the check actually
+tested:
+
+| check | what it tests | the property you care about |
+|---|---|---|
+| `function_search_path_mutable` | `proconfig IS NULL` | is it `SECURITY DEFINER`, and can `anon`/`authenticated` EXECUTE it? **Both flagged routines are INVOKER with no grant — and pinning them is impossible, see below** |
+| `no_primary_key` | no PK **constraint** | is uniqueness enforced AT ALL? `fmv_thin_sale_ask_disclosure_cache` is flagged and carries `CREATE UNIQUE INDEX … (edition_id)`, so it is constrained and safe to `.range()` |
+| `unused_index` | `idx_scan` counters | whether the index is COLD — ⛔ **scan counts lie about that**, see the 2026-09-02 `wmc` filing (19 indexes) |
+| `rls_enabled_no_policy` | RLS on, 0 policies | 221 of these are the audit scratch tables the 2026-09-02 filing already priced at 221 MB of 14 GB |
+
+⚠ **Worked example of the `no_primary_key` trap, all eight non-scratch rows, three different reasons and
+zero findings:** one has uniqueness via a `…_pkey`-named unique index with no constraint behind it; one
+(`candy_treasury_wallet_cache`) holds **one row**, where a PK is meaningless; and the rest —
+`sales_ingest_recovered` and the three `audit_lt_*` LiveToken audit tables — are **empty**.
+⭐ **Check rows and indexes before treating a missing PK as a defect.**
+
+ⓘ `auth_db_connections_absolute` (Auth capped at 10 connections) is a real setting and a **non-issue
+here** — monetization is tabled until 50+ weekly actives, so nothing is near that bound. Do not pass it
+on as a recommendation.
+
+### ⚠ `get_advisors` WILL KEEP TELLING YOU TO MAKE THIS EXACT MISTAKE (2026-09-03)
+
+**The Supabase security advisor reports `function_search_path_mutable` on both of the routines that
+must NOT be pinned**, and its remediation link says to pin them. Acting on it repeats the 08-23 outage.
+
+⭐ **The equivalence is provable over the population rather than a coincidence.** `public` holds **three**
+procedures; all three contain the word *commit*; and the two the advisory flags are **exactly** the two
+with real `COMMIT;` statements and no `SET` clause:
+
+| procedure | `proconfig` | real `COMMIT;` | advisory |
+|---|---|---:|---|
+| `reconcile_all_saved_wallet_stats` | none | **3** | ⚠ flagged |
+| `rpc_trust_health_precompute_refresh_p` | none | **8** | ⚠ flagged |
+| `reconcile_all_seeded_wallet_stats` | `search_path=public, pg_temp` | **0** | clean |
+
+**So the advisory's WARN list IS the "cannot be pinned" list.** ⓘ Both are also `prosecdef = false` with
+`has_function_privilege('anon'/'authenticated', …) = false`, so there is no escalation path either way —
+and ⓘ `prosecdef AND proconfig IS NULL` is **0** across all of `public`: every SECURITY DEFINER function
+already carries a pinned `search_path`, which is the population that actually matters.
+
+⚠ **A word-count on `prosrc` nearly turned this into an incident report.** `prosrc ~* '\mcommit\M'`
+matches `ON COMMIT`, prose and comments, and it said all three procedures COMMIT — which reads as *"one
+of them is in the broken state RIGHT NOW."* Counting statements instead — `(^|;|\s)commit\s*;` — split
+them 3 / 0 / 8. **Count the statement, never the word.** ⚠ And note the two `reconcile_all_*_wallet_stats`
+names are one word apart (`saved` vs `seeded`), the shape this repo records as having produced opposite
+conclusions from two objects one suffix apart.
+
+⭐ **The check that settles it in one query, and it is a SHAPE, not a rule to remember:** every routine on
+this database that actually commits reads **`prokind='p'`, `prosecdef=false`, `proconfig=null`**
+(`reconcile_all_saved_wallet_stats`, `rpc_trust_health_precompute_refresh_p` — both, 2026-08-26). **If a
+routine needs transaction control, it cannot also carry a pinned `search_path`, and therefore should not be
+SECURITY DEFINER.** Read `prosecdef` and `proconfig` from `pg_proc` **before** designing any per-item-commit
+fix; a durability design that assumes COMMIT is available is blocked before it is written.
+
+⚠ **And you cannot test the construct through `execute_sql`** — it wraps every statement in a transaction, so
+a scratch `CALL` returns the same `2D000` from the **harness**, which is not evidence about the routine. Same
+limitation as `CREATE INDEX CONCURRENTLY`: a real answer needs a one-statement pg_cron job, or the live
+`proconfig`/`prosecdef` read above, which is cheaper and sufficient.
+
+➡ **The usual escape is not a COMMIT at all: SLICE THE SCHEDULE.** Each pg_cron tick is already its own
+transaction, so running a rotating sweep more often with a smaller budget gives the same "completed work
+survives a timeout" property with no procedure conversion, no `search_path` strip and no privilege change.
+Weigh it against the added IO on this IO-bound instance (R46).
+
+## ⚠ A FUNCTION'S `SET statement_timeout` IS INERT **ON THE pg_cron PATH** — and `current_setting()` REPORTS THE LIE BACK TO YOU (proven 2026-08-26, **SCOPED 2026-08-27 — read the correction below FIRST**)
+
+> 🚨 **THE ORIGINAL HEADING OF THIS SECTION SAID "DOES NOTHING — in EITHER direction". THAT IS
+> WRONG AND IS RETRACTED.** The A/B run on Trevor's box on 2026-08-27 (recorded ~140 lines above,
+> *"`proconfig` IS PATH- AND DIRECTION-DEPENDENT"*) shows that **via PostgREST a HIGHER declaration
+> RAISES the ceiling** (30 s → 60 s, measured), so **122 functions declaring more than
+> `service_role`'s 30 s are LOAD-BEARING and must not be stripped as no-ops.** ⛔ **Do not act on
+> this section without reading that one.** What survives here: the declaration is inert **on the
+> pg_cron path** (44/248 overruns), a LOWER declaration is inert on both paths, and the
+> `current_setting()` trap below is real on every path.
+>
+> ⭐⭐ **AND THE REASON I OVER-GENERALISED IS NAMED BY A HEADING IN THIS VERY FILE, ~78 LINES BELOW:
+> "A CONTROL THAT DOES NOT USE THE PRODUCTION CALLER IS NOT A CONTROL (2026-08-23)."** My four
+> probes below sent `SET …; SELECT fn()` as **one multi-statement batch through the admin SQL
+> path** — a caller no production code uses. The A/B that settled it used `SECURITY INVOKER`
+> functions POSTed to `/rest/v1/rpc/…` with the service-role key, i.e. **exactly how every
+> `supabaseAdmin` RPC actually runs.** ⭐ **A synthetic path can prove a mechanism and still be
+> silent about the ceiling that binds in production — and a result from one is not licence to say
+> "in either direction" about paths you did not test.**
+
+**`statement_timeout` arms a timer ONCE, when the top-level statement begins, from the value in
+effect at that moment. Changing the GUC inside a function — by `proconfig` (`SET … TO …` on the
+routine) or by `set_config(…, is_local => true)` in the body — does NOT re-arm it.**
+
+Proven by four probes on this instance, not inferred — ⚠ **all four issued through the admin SQL
+path, which is the confound named above; they establish the timer mechanism, not the production
+ceiling:**
+
+| probe | setup | result |
+|---|---|---|
+| **A — can proconfig RAISE?** | fn with `SET statement_timeout TO '10s'`, sleeps 4 s, session at **2 s** | ⛔ **killed at 2 s** |
+| **B — can `set_config(…, true)` RAISE?** | same, set from inside the body | ⛔ **killed at 2 s** |
+| **C — can proconfig LOWER?** | fn with `SET statement_timeout TO '1s'`, sleeps 4 s, session at **20 s** | ✅ **FINISHED** |
+| **D — does a leading `SET` work?** | `SET statement_timeout='2s'; SET …='9s'; SELECT pg_sleep(4)` | ✅ completed, effective `9s` |
+
+🚨 **In probe C, `current_setting('statement_timeout')` read `1s` from inside a function that had
+already been running for four seconds.** ⭐ **So the obvious diagnostic — ask the session what
+timeout it is under — returns a value that is true about the GUC and false about the behaviour.**
+That is why this class of bug survives: every check anyone can run says the setting is applied.
+
+⭐ **THE ONLY FORM THAT WORKS is a leading `SET` as its own TOP-LEVEL statement**, which is why the
+pg_cron two-statement command works:
+
+```sql
+SET statement_timeout = '900s'; SELECT public.my_heavy_function();
+```
+
+pg_cron runs both in one implicit transaction with the `SET` as its own top-level command, so the
+session value is already changed when the `SELECT` arms its timer.
+
+**What actually governs a pg_cron job with no leading `SET`: the job's ROLE.** `cron_heavy.rolconfig`
+is `statement_timeout=600s`; `postgres` has none, so those fall to the cluster default. Measured
+2026-08-26: **48 active jobs declare a proconfig timeout that is inert** — and the fiction runs both
+ways, with **26 `cron_heavy` jobs declaring 60–480 s while actually free to run to 600 s.**
+
+⛔ **Do not read a routine's `proconfig` as a budget** — not in review, not in an incident, not when
+tuning. ⛔ **And do not "make the declarations real" as a batch:** several jobs have SUCCEEDED well
+past their declared value (jobid 217 declares 120 s and has succeeded at 595 s), so enforcing them
+would convert working runs into failures. See known-issues **#43**.
+
+### Displaced from CLAUDE.md 2026-09-07 (verbatim) — the timeouts bullet and the `net._http_response` clause, to pay for the bounded-queue-walk rule
+
+- ⚠ **Timeouts (A/B 08-27): a function's `SET statement_timeout` is inert on pg_cron (44/248 overrun) but via PostgREST a HIGHER one RAISES it** (30→60 s; lower inert) — **and the Supabase GATEWAY hard-caps that path at ~120 s (`504 upstream request timeout`), so 48 declarations >120 s are unreachable on BOTH paths.** ⛔ **122 of 195 exceed 30 s: load-bearing, do NOT strip as no-ops.** ⚠ `anon`/`auth` not re-probed; `authenticator`'s 8 s stands (**no 3 s bound on anon compute**). [database.md](database.md) (this file).
+
+⚠ **For a pg_cron `net.http_get` pipeline, `net._http_response` splits dispatched / killed / answered with NO deploy.**
+
+## ⚠ A STABLE HELPER IN A PREDICATE IS NOT EVALUATED ONCE — a SQL-language helper INLINES into its caller and re-runs per scanned row; the form that runs it once is `= ANY (ARRAY(SELECT unnest(fn(…))))` (2026-09-25, batch 62)
+
+The first apply of the franchise migration hit a 57014 in its own post-conditions. `team_historic_slugs` called `team_franchise_primary_name` (a `LANGUAGE sql` STABLE function) per label; that body inlined into the caller, and inside it `… IN (SELECT unnest(team_franchise_slugs(p_collection_id, p_team_slug)))` became a subplan correlated on the caller's per-row label — so `team_franchise_slugs` (then ~70 ms: a DISTINCT over 6,153 editions plus a per-label `league_team_abbr` lateral) ran once per scanned edition row. 6,153 × 70 ms is the timeout.
+
+Three things fixed it, and each is a rule on its own:
+
+- **Key a helper that will sit in a predicate from the REGISTRIES, not from the table being scanned.** `team_franchise_slugs` now reads `league_team_abbr` + `teams_master` (~11 ms) and never `editions`.
+- **Write a helper that another function calls in plpgsql when you need it to be a CALL.** `LANGUAGE sql` single-SELECT bodies are inlined by the planner, which is exactly what you want for a thin wrapper and exactly what you do not want when the body carries its own expensive subplan.
+- **In the caller, `col = ANY (ARRAY(SELECT unnest(public.fn($1, $2))))`.** The `ARRAY(SELECT …)` is an uncorrelated InitPlan — evaluated once per statement, its result a runtime array key for the functional index (`idx_editions_collection_team_slug`). A bare `col = ANY (public.fn($1, $2))` is a per-row call whenever the planner puts the predicate in a Filter rather than an Index Cond, and `col = ANY ((SELECT public.fn($1, $2)))` does not parse as an array at all (`operator does not exist: text = text[]`).
+
+Measured after the rewrite (live, 8:35 PM PT): helpers 11 ms, `get_team_detail` LA Clippers 178 ms, `get_team_players` 133 ms, `team_historic_slugs` Top Shot 284 ms. ⚠ **A correctness probe is silent about cost by construction (CLAUDE.md, Measurement discipline)** — the post-conditions that passed on the slow draft (`get_team_detail`, `get_team_top_editions`) passed because those callers happened to get an Index Cond; the one that got a Filter timed out. Read the plan, not the pass.
+
+## 🚨 A CORRELATED SUBQUERY AGAINST A `DISTINCT ON` VIEW RE-MATERIALISES THE WHOLE VIEW ONCE PER OUTER ROW (measured 2026-09-02)
+
+**The shape.** `pack_ev_latest` is a view of `pack_ev_history` with
+`DISTINCT ON (pack_listing_id) … ORDER BY pack_listing_id, snapshotted_at DESC`. A
+scalar subquery correlated on `dist_id` cannot push that predicate through the
+DISTINCT, so Postgres evaluates the ENTIRE view for every outer row.
+
+Measured in `refresh_challenge_costs()` (EXPLAIN ANALYZE, BUFFERS, warm, **31** outer
+rows):
+
+| form | time | buffers |
+|---|---|---|
+| correlated scalar subquery | **40,716 ms** | **21,094,324** |
+| hoisted once into a temp table | **1,220 ms** | **681,430** |
+
+**31× the buffers, 33× the time, for 31 rows** — the multiplier is exactly the outer
+row count, which is the tell. The view's own `pack_ask_state` `NOT EXISTS` subplan ran
+**3,849,487 times** and accounted for 11.4M of those buffers on its own.
+
+⚠ **This was 99.7% of that function's cost and the arm produced NOTHING.** `rows=0` on
+all 31 loops: of the 29 distinct `challenges.reward_pack_dist_id`, all 29 are in
+`pack_distributions` and **zero** have any row in `pack_ev_history` — challenge reward
+packs are rewards, not listings, and that table is keyed on `pack_listing_id`. Checked
+both alternative explanations first: not the view's filters (the base table has no rows
+either) and not a vocabulary mismatch (same numeric-string id space, and the history's
+max dist id is *higher* than the challenges').
+
+⛔ **The fix was to HOIST, not to DELETE the arm.** It is empty for a structural reason
+today, but a reward pack that ever gets listed would populate it, and the cost was never
+the arm — it was evaluating it 31 times. Pinned by
+`__tests__/challenge-costs-pack-ev-lookup-stays-hoisted.test.ts`, because the correlated
+form is the one a reader reaches for: shorter, natural next to the sibling COALESCE
+arms, and **nothing about it looks expensive**.
+
+⚠ **The consequence was a silent daily outage, not slowness.** pg_cron jobid 87
+`rpc-refresh-challenge-costs` died at exactly **120.0 s** on **8 of its last 52 runs
+(15.4%)**, and both UPDATEs live in one `SELECT refresh_challenge_costs()`, so the
+timeout rolled back the cost refresh as well — on those days *nothing* was refreshed.
+⭐ **120 s is this cluster's DEFAULT `statement_timeout` (`120000`), which is what a
+`postgres`-owned pg_cron job runs under** — known-issues #43 established that those 12
+jobs "run at the cluster default" without naming the number. Now it is named.
+
+⚠ **AND THE FIRST VERSION OF THE MIGRATION'S OWN CONTROL WAS WRONG — it asserted that
+no `cached_reward_value` changed, and 18 of 31 changed.** The stored values came from
+the last SUCCESSFUL cron run, a day or more earlier; arms 2–4 read `pack_purchases` and
+`fmv_snapshots`, which move daily. **A before/after comparison spanning a refresh window
+measures the DATA moving and reports it as a code difference.** The honest control was
+narrower: only arm 1 changed, and the two forms of arm 1 differ only where a reward dist
+appears in the view — so `overlap = 0` is a complete equivalence proof, at 1.2 s instead
+of the 40 s an old-vs-new A/B would have cost. Migration `20260902120329`.
+
+## 🚨 A GATEWAY `504 upstream request timeout` ON A **WRITE** RPC IS A ROLLBACK — you pay the full cost and keep nothing (proven by control 2026-09-02)
+
+The ~120 s Supabase gateway cap is already documented above (known-issues #43, third
+ceiling). What was **not** written down is what happens to the WORK when it fires, and
+the existing prose could be read the wrong way: the `match-topshot-players` entry notes
+that "the statement keeps running server-side after the client has already given up",
+which is true about **cost** and says nothing about **commit**.
+
+**It does not commit.** The control is an audit table the function writes on its own
+success path, compared day-by-day against `pipeline_runs_daily.last_error` for
+`topshot-misattrib-drain` (daily, Vercel cron → PostgREST → `remap_topshot_from_onchain_map()`):
+
+| day | `pipeline_runs` error | rows added to `audit_topshot_sale_drain_remap_20260621` |
+|---|---|---|
+| 08-23 | `rekey: upstream request timeout` | **0** |
+| 08-24 | `rekey: upstream request timeout` | **0** |
+| 08-25 | `rekey: upstream request timeout` | **0** |
+| 08-26 | `rekey: upstream request timeout` | **0** |
+| 08-27 | (ok) | 673 sales / 107 moments |
+| 08-28 | `rekey: upstream request timeout` | **0** |
+| 08-31 | `HTTP 530 ×3` (GQL leg only — the re-key ran) | 335 sales / 7 moments |
+| 09-01 | `HTTP 530 ×3` | 60 sales |
+| 09-02 | `HTTP 530 ×3` | 70 sales |
+
+Five for five: every gateway timeout wrote **nothing**. The connection close propagates
+to the backend, the transaction aborts, and the ~1.4 GB of reads it had already done on
+a **22 MB/s** instance buys zero rows.
+
+⚠ **Both halves are true and they compound — this is the worst possible shape.** The
+statement burns a pooled connection and the IO budget for its full server-side duration,
+*and* the result is discarded. Treat any `upstream request timeout` on a write path as
+**"it did not happen"**, and never as "the response was lost but the write landed".
+
+⚠ **The read/write asymmetry is why this was missable.** On a READ RPC a gateway timeout
+costs you the answer and nothing else, so the six `upstream request timeout` pipelines
+already catalogued above read as "slow, needs work". On a WRITE RPC the same string means
+the pipeline **is not doing its job at all** on those ticks — and if the work is
+idempotent (as this re-key is) the next successful run silently catches up, so the
+backlog never grows and no downstream metric ever shows it. **Nothing but the audit table
+could tell the two apart.**
+
+⭐ **VERIFIED SAME DAY, AND THE NUMBER IS THE ARGUMENT.** The first successful run of the
+relocated job (`run_topshot_onchain_rekey()`, 2026-09-02 11:35:48→11:37:04Z) took
+**75,803 ms** — `ok`, `rows_written 0`, `moments_deferred_conflict 10`. That is **63% of
+the ~120 s gateway cap and 13% of `cron_heavy`'s 600 s**. A job sitting at 63% of its
+ceiling does not fail half the time because it is broken; it fails half the time because
+IO contention is worth more than 37%.
+
+⚠ **AND ONE SCOPE CORRECTION, LEARNED BY GETTING IT WRONG IN THE SAME HOUR: "the client
+gave up" DOES NOT IMPLY A ROLLBACK, and the discriminator is WHICH client.** That same
+call was issued through the Supabase **MCP** `execute_sql` tool, which gave up at its own
+**60 s** budget. The statement kept running and **COMMITTED at 75.8 s** — the row above is
+its row. I read `pipeline_runs` at ~11:36, saw zero rows, and briefly recorded that as a
+second replication of the rollback finding. It was a **reading taken while its subject was
+still changing**, which this file already warns is not a reading at all.
+- **Supabase gateway 504 (`upstream request timeout`, PostgREST path): ABORTS.** Evidence
+  is the 5-for-5 audit-table control above, not a mechanism.
+- **MCP `execute_sql` 60 s tool timeout: DOES NOT ABORT.** Evidence is the committed row.
+👉 So never "just run it once to check" through MCP and read the absence of a row as
+proof of anything — **wait past the statement's own duration before concluding**, and do
+not carry either result across to the other layer.
+
+👉 **The fix is the CALLER, not the clock.** `cron_heavy` carries
+`statement_timeout = 600s` as a role config, five times the gateway cap and with no
+gateway in the path at all, which is why the sibling re-key (jobid 62) has never had this
+problem. Moving the call there is a scheduler change, not a query change — see
+[cron-and-schedulers.md](cron-and-schedulers.md) for the worked example (jobid 434).
+⛔ **Do not reach for "make the query faster" first**: measured the same day, the sales
+leg of that re-key scans 3,198,302 Top Shot rows for **174,820 buffers / 9.0 s warm**, and
+the planner's hash join is the RIGHT plan — forcing the nested loop over the
+per-partition `nft_id` indexes costs **1,315,991 buffers / 33.3 s**, 7.5× worse.
+
+## 🚨 A PARTIAL INDEX WHOSE PREDICATE SAYS `col IS NOT NULL` ON A `NOT NULL` COLUMN IS UNREACHABLE ON PG 17 (2026-08-23)
+
+This DB is **PostgreSQL 17.6**. PG 17 removes a redundant `col IS NOT NULL` qual when `col` is declared
+`NOT NULL` — correct as a *filter*, but it happens **before partial-index predicate proving**, and the prover
+reasons over clauses, not over column constraints. The index's own predicate then cannot be proven, so the
+planner **drops it from the candidate set entirely**. It is not out-costed; it is invisible. It becomes
+reachable again only if the query supplies some other **strict** clause on that column (`col = $1`,
+`col <> $1`, …), because a strict operator clause does prove `col IS NOT NULL`.
+
+- ⚠ **This is why `idx_sales_2026_fmv_recalc_window` has `idx_scan = 0` at 98 MB** while
+  `fmv_recalc_edition_page` — the function it is named for, whose predicate it matches exactly — times out.
+  Measured on `sales_2026`, same 30-day window, same 128,534 output rows, both plans non-parallel: as the
+  function writes it, **50,471 ms / 97,669 buffers**; with one redundant `edition_id <> '000…'::uuid` added,
+  **17,425 ms / 48,494 buffers** via `Index Only Scan` — **2.9× faster on 2.0× fewer buffers**. At the real
+  90-day window the as-written form did not complete in 60 s (twice) against ~16 s reachable.
+- ⚠ **The estimate over-promises: the planner said 7.4×, the measurement said 2.9×.** The index-only scan
+  still did **46,625 heap fetches** — `sales_2026` is 99.7% all-visible *overall*, but the last 90 days are
+  the part autovacuum has not caught up on, and that is exactly the range this query reads.
+- ⚠ **`idx_scan > 0` DOES NOT MEAN REACHABLE.** `idx_sales_2026_top_sales_board` carries 502 recorded scans
+  and is unreachable today (bitmap+sort at cost 28,149 where the index costs 9.75 once a strict qual on
+  `edition_id` is added). **A scan count is a claim about the past.** The unused-index advisor is structurally
+  blind to this class on exactly the indexes that used to work.
+- **Controls, both directions, all measured:** same predicate shape on a NULLABLE column is chosen instantly
+  (`sales_2026_tx_nft_sold_idx`, cost 0.55); a NOT NULL column whose predicate also carries a strict clause is
+  chosen with no residual filter (`unmapped_sales_sold_at_unresolved_idx`, via `nft_id <> ''`); one index goes
+  both ways in one session (`pack_drop_pool_edition_idx`: bare `IS NOT NULL` seq-scans, `edition_id = $1`
+  index-scans); and an index with no `IS NOT NULL` conjunct at all is fine
+  (`idx_sales_2026_ts_otherserial_cover`), which rules out `price_usd > 0` as the blocker.
+- **Current population: 6 partial indexes in `public` carry the shape** (`pg_index.indpred` ×
+  `pg_attribute.attnotnull`). Two measured unreachable, three reachable via a strict clause, one predicted
+  unreachable and not measured (`idx_pinnacle_editions_set_name`). **The repair is free of behaviour change** —
+  the conjunct excludes zero rows — but it is an index rebuild, so it is DDL: `CREATE INDEX CONCURRENTLY` is
+  reachable here only via a one-statement pg_cron job, and every `apply_migration` costs a ~10–20 s
+  `PGRST002` burst.
+
+Full evidence, plans and the enumerated population:
+`docs/overnight/inbox/2026-08-23T2130Z-postgres-17-makes-partial-indexes-with-is-not-null-predicates-unreachable.md`.
+
+## 🚨 A CONTROL THAT DOES NOT USE THE PRODUCTION CALLER IS NOT A CONTROL (2026-08-23)
+
+**Both Pinnacle TRADE cron jobs failed on EVERY run from creation and it went unnoticed for hours**, because the check that was supposed to prove they worked used the wrong caller.
+
+    rpc-backfill-pinnacle-trade-acquisitions  (23 */3)    ERROR: permission denied for function
+    rpc-backfill-pinnacle-trade-editions      (41 * * *)  ERROR: permission denied for function
+
+⚠ **EXECUTE is checked against the CALLER even on a `SECURITY DEFINER` function.** Both were scheduled under `cron_heavy`. Their migrations did the correct anon-safety revoke — `REVOKE EXECUTE … FROM PUBLIC, anon, authenticated` — then `GRANT … TO postgres, service_role`. ⚠ **A new function gets `EXECUTE TO PUBLIC` by default and `cron_heavy` was silently relying on it**; revoking PUBLIC removed the scheduler's only grant and the explicit list did not name it. Measured: `has_function_privilege('cron_heavy', …)` was FALSE for both, and **TRUE for the sibling `backfill_pinnacle_mint_acquisitions`**, which is scheduled identically and works *only* because it still carries that PUBLIC grant.
+
+🚨 **THE REASON IT SURVIVED "VERIFICATION": the functions were tested by calling them over the Supabase MCP, which connects as `postgres` — a role that HAS execute.** They returned clean JSON and were recorded as working. Neither writes `pipeline_runs`, so the permission failure happened *before* any logging and presented as **silence**, not failure; the session even reasoned "`updated: 0` is correct right now", which was true for entirely the wrong reason. **The only witness was `cron.job_run_details`, which nothing watches.**
+
+⚠ **A concurrent session hit the IDENTICAL trap the same night** (`20260823032000_audit_20260823_series_rollup_cron_heavy_execute_grant.sql`). Two independent instances in one night is not a coincidence — it is the default behaviour of the correct anon revoke.
+
+🚨 **FOURTH INSTANCE, 2026-09-02 — AND IT HAPPENED TO SOMEONE WHO HAD THIS PARAGRAPH
+AVAILABLE AND DID NOT READ IT.** `run_topshot_onchain_rekey()` (jobid 434) shipped with the
+correct `REVOKE … FROM PUBLIC, anon, authenticated` and no `cron_heavy` grant; its first
+tick died in 0.0 s with the same `permission denied for function`. The migration that
+shipped it (`20260902113501`) even asserts in its own header that "nothing said so" —
+**which is false, and the correction belongs here rather than in that applied file: this
+paragraph has said so since 2026-08-23.**
+
+⭐ **THAT IS THE ACTUAL FINDING. Three documented instances did not prevent a fourth,
+because the record is PROSE — read after a session already knows its topic — and the trap
+fires at the moment you are thinking about anon safety, not about scheduling.** What was
+missing was never knowledge; it was a CHECK. `check_cron_heavy_job_exec_drift()`
+(migration `20260902113501`) is that check: it walks `cron.job` for active `cron_heavy`
+rows, extracts every `public.<fn>(` named in each command, and returns
+`{inspected, offenders}` — offenders being names no overload of which `cron_heavy` may
+execute. `inspected` exists so a walk that matched nothing cannot read as a clean bill of
+health. Live at creation: **inspected 56, offenders 0**.
+✅ **AND IT IS WIRED, same session** — an unrun check is the shape this repo calls theatre.
+It is an arm of `/api/smoke-test` (`cron_heavy can execute every function it is scheduled
+to call`), which runs on **every push to `main`**, daily at 12:11 UTC via
+`smoke-tests.yml`, and 6×/day on the Vercel cron `17 */4 * * *`. It is HARD (it pages), it
+fails closed on any payload that is not `{inspected, offenders}`, and an `inspected` below
+20 is reported as a BROKEN GUARD rather than a clean run. Still call it by hand after
+creating any function you intend to schedule — same reflex as re-running
+`check_secdef_anon_exec_drift()` — but nothing now depends on remembering to.
+
+**THE RULE, both halves:**
+1. **After scheduling any pg_cron job under a non-`postgres` role, assert `has_function_privilege('<role>', '<fn>(<args>)', 'EXECUTE')`** — scheduling a job does not imply permission to execute what it calls.
+2. **Exercise it AS that role before calling it done**: `SET LOCAL ROLE cron_heavy; SELECT <fn>(…);`. Doing that here returned `updated: 1044` on the first successful run — the backlog the broken cron had silently accumulated.
+
+⚠ **Generalises past pg_cron.** Any check run through a more-privileged path than production uses proves nothing about production: an MCP/`postgres` call for a `cron_heavy` job, a service-role query for an `anon` surface, a local run for a Lambda. **Ask which principal runs it in production, and use that one.**
+
+⚠ **And the failure shape is the dangerous part**: a permission error on a function that does its own logging happens *before* the log, so it is indistinguishable from "there was nothing to do". Where a job cannot log its own failure, `cron.job_run_details` is the only instrument — check it.
+
+  ⚠ **DISPLACED VERBATIM FROM CLAUDE.md's six-source caller rule (2026-08-22), condensed there to a pointer — the two clauses in full:** *"⚠ **A TRIGGER function has NO textual caller anywhere**: 33 of the 38 live attached ones read as dead without `pg_trigger` (2 delete). ⚠ `pg_stat_statements` alone is insufficient in *both* directions (`track = top` hides nested callers): **32 of 37** functions reporting zero DB callers are live product RPCs called from Next.js."*
+
+  🚨 **THE SIX-SOURCE RULE IS COMPLETE FOR DB FUNCTIONS AND SILENTLY INCOMPLETE FOR EDGE FUNCTIONS — a SEVENTH source, `cron-job.org`, is invisible to every one of them (measured 2026-08-22).** Establishing it did not need an inference: `ufc-stub-thumbnail-resolver` has **ZERO in-repo callers**, **no `cron.job` row**, and no `pg_proc`/view/trigger reference — and `pipeline_runs` shows it executing **every 30 minutes, 1,143 times all-time**. **An external scheduler holds the only reference, and nothing readable from the repo or the catalogue records that it exists.** ⚠ **Consequence for any edge-function sweep: "nothing calls it" is not a conclusion the six sources can support.** Of the 24 functions in known-issues #23, six grep to zero callers and must still be treated as live. ⚠ **The second blind spot is `pipeline_runs` itself: 8 of those 24 never call `log_pipeline_run`**, so they report zero runs however often they execute — four of them sit on user-facing or cron paths (`/api/ufc-wallet-scan`, `/api/ufc-sales-indexer`, `/api/cron/ufc-enrichment-drain`, a GHA workflow). **Absence from that table is blindness, not dormancy.** 🚨 **AND THERE IS A THIRD BLIND SPOT THAT DEFEATS THE OBVIOUS WORKAROUND: `pipeline_runs.pipeline` IS NOT THE EDGE-FUNCTION SLUG.** A function self-reports under whatever string its own `p_pipeline` argument carries, and **4 of the 24 in known-issues #23 differ from their slug**: `backfill-topshot-subeditions` → `topshot-subedition-backfill`, `backfill-allday-listing-serials` → `allday-listing-serial-backfill`, `backfill-topshot-base-parallel-probe` → `topshot-base-parallel-probe`, `ingest-topshot-atlas-pool` → `topshot-atlas-pool-ingest`. ⚠ **A slug-keyed query returns zero rows and NO error — byte-identical to dormancy.** Measured 2026-08-22: keying on slugs put `backfill-allday-listing-serials` in a "never ran" list when it has **186 runs and had run that same day**, and `backfill-topshot-subeditions` alongside it when it ran the day before. **The mapping exists only in the function source, so it is invisible to every query** — read `p_pipeline` (or the `PIPELINE` const) out of `index.ts` before keying `pipeline_runs` on anything, and treat a zero-row result as unmeasured until you have. ✅ **What the table CAN support, with its own positive control:** `pipeline_runs_daily` is a **superset** of the live table (170 distinct pipelines vs 162) and retains indefinitely, so for a function that *does* self-report, never appearing there is real evidence of dormancy — 7 of the 24 qualify.
+- ⚠ **Index hygiene: "unused" and "safe to drop" are DIFFERENT CLAIMS — require both a statistical and a structural ground.** `idx_wmc_wallet_collection` (72 MB) was dropped on 2026-08-14 because it had **0 scans** with `pg_stat_database.stats_reset` **NULL** and the postmaster up since 2026-06-12 (63 days, on a table whose other indexes show up to 48.7M scans) **AND** because it is a strict *prefix* of `idx_wmc_cohort_cover (wallet_address, collection_id) INCLUDE (fmv_usd)`, so anything it could serve, that one serves. ⚠ **Eleven more unused indexes >10 MB (~311 MB) were deliberately LEFT**: `idx_sales_*_nullseller_soldat` back the seller-recovery backfill that is **INERT pending `DUNE_SALES_SELLER_QUERY_ID`** (dropping them breaks that job the day it is switched on), and `idx_sales_2026_fmv_recalc_window` is *named* for a job that runs constantly, so its 0 scans mean the planner **rejects** it — a different question from whether it is wanted. Check each one's caller. Worth doing at all because `wallet_moments_cache` carries 14 indexes over ~1.6 GB and is the most write-heavy table on the platform. Revert is exact: recreate the index `CONCURRENTLY` via a one-statement pg_cron job (NOT `execute_sql` — see General rules).
+- ⭐ **RE-MEASURED 2026-09-02 — `refresh_wmc_fmv_changed` now averages 15 s, not 330 s.** Over the 66.6 h after the 2026-08-30 18:26Z change point it ran **398 times at a mean of 15 s**, against **400 runs at a mean of 210 s** in the matched window before it (see the fleet-scale write-up in [cron-and-schedulers.md](cron-and-schedulers.md)). ⚠ **Every figure in the bullet below is from the OLD regime and must not be quoted as current** — including any `pg_stat_statements` ranking, whose stats were last reset 2026-08-12, so ~85% of that window predates the fix. The bullet's REASONING (the cost is the UPDATE fan-out of the `wmc.fmv_usd` denormalization, not the `DISTINCT ON` build) is unaffected and is why it is kept verbatim.
+- ⚠ **`refresh_wmc_fmv_changed` is the #2 disk reader (112 GB, mean 330 s) and is NOT a defect** — do not spend a session "fixing" it. Its `DISTINCT ON` temp build reads **2,568 buffers in 90 ms** over a 24-hour window; the genuinely redundant FMV re-lookup inside it prices at **0.24%**. The cost is the **UPDATE fan-out** — propagating one edition's FMV touches every row of every wallet holding it. **112 GB is the price of the `wmc.fmv_usd` denormalization**, and the lever is the denormalization. Details + the measurement plan (and the cutoff feedback loop to watch): [inbox 2026-08-15T0350Z](../../docs/overnight/inbox/2026-08-15T0350Z-refresh-wmc-fmv-changed-is-the-price-of-the-wmc-denormalization.md).
+- Always query `information_schema.columns` before writing route handlers to confirm exact column names.
+- RLS check: `SELECT array_agg(tablename) FROM pg_tables WHERE schemaname = 'public' AND rowsecurity = false`. Currently 0 rows — RLS on every public table (**367 public tables + 136 views** re-verified live 2026-08-16 ~23:57Z — views 134 on 08-13 → 135 → **136**, the newest being `v_rpc_trust_health_freshness`; the invariant is "0 rows", not the count — see [schema-truth.md](../../docs/reference/schema-truth.md)). ⚠ **The view count moves whenever anyone applies a migration, so treat it as a dated sample and re-query it; the tables figure has been the stable one.** ⚠ **That view figure EXCLUDES materialized views, which are a separate ~30** — `pg_views` and `information_schema.views` agree with each other and neither counts a matview, so a `pg_class` sweep over relkind `v` **and** `m` legitimately returns ~166 and is not a discrepancy. RLS-on is not the whole posture: also check `check_public_security_invariants()` and `check_anon_write_surface()` (both **0 rows**, re-verified 2026-08-16), since the default anon grant survives `REVOKE … FROM PUBLIC`.
+- `health_check()` RPC function is the single source of truth for platform state.
+- `pipeline_runs` uses `pipeline` text column (not `function_name`) and `ok` boolean (not `status` text); `extra` is JSONB — use `extra->>'key'` for text extraction.
+- ⚠ **A WRONG ARGUMENT NAME ON `log_pipeline_run` MAKES A PIPELINE VANISH FROM TELEMETRY, SILENTLY (2026-08-15).** Every one of the ~128 call sites wraps the RPC in a deliberately **non-fatal** try/catch — telemetry must never break the work it measures — and PostgREST resolves an overload by its argument-NAME **set**. So one invented parameter means the call matches no overload, throws, is swallowed, and the pipeline simply never appears in `pipeline_runs`: **indistinguishable from "it was never invoked."** `/api/cron/stale-fmv-monitor` passed `p_duration_ms` and had therefore written **zero rows, ever**, while running on schedule via `ops-monitor.yml` — a monitor that could not be checked for having run. The live 11-arg signature is `p_pipeline, p_started_at, p_rows_found, p_rows_written, p_rows_skipped, p_ok, p_error, p_collection_slug, p_cursor_before, p_cursor_after, p_extra` (plus a 3-arg `(text, boolean, jsonb)` convenience overload). ⚠ **`p_duration_ms` can never be right** — `duration_ms` is a GENERATED column; pass `p_started_at` and it computes itself. Pinned by `__tests__/log-pipeline-run-args-match-the-function.test.ts`. ⚠ **Its parser reads DEPTH-1 keys only, and that is load-bearing**: `p_extra` nests arbitrary snake_case keys, and counting those reported **9 broken pipelines that were logging normally** — the live row counts contradicted it, which is how the bad parser was caught. *When a guard and a measurement disagree, believe the measurement.*
+- ⚠ **A route whose work runs inside `after()` needs an INVOCATION HEARTBEAT, or a killed tick is indistinguishable from a cron that never fired.** `candy-offers-indexer`, `fmv-recalc`, `candy-listings-indexer` (2026-08-15) and `candy-editions-ingest` (2026-08-16) all write one — **that is all four `after()`-based ingest routes, so the set is CLOSED as of 2026-08-16; a new `after()` route joins it or the class reopens.** The truth table is the point: *heartbeat + terminal row* = ran to completion · *heartbeat only* = the run did not reach its terminal log · *neither* = route never reached (cron/auth). ⚠ **Always under a SEPARATE `<pipeline>-heartbeat` name** — a marker written under the pipeline's own name refreshes `last_run` every tick and silences `detect_stalled_pipelines()` on exactly the outage it exists to expose. (None of the four heartbeat names is on `pipeline_cadence_watchlist`, verified 2026-08-16 — the watchlist is explicit per-pipeline with no pattern matching, so adding a heartbeat creates no new arm.)
+  ⚠ **"HEARTBEAT ONLY" IS THREE STATES, NOT ONE, AND THIS BULLET SAID "`after()` dropped or killed" UNTIL 2026-08-16 — WHICH IS THE MOST LIKELY WAY TO MISREAD ONE.** Every one of these routes wraps its `log_pipeline_run` call in a **deliberately non-fatal try/catch** (telemetry must never break the work it measures), so a missing terminal row means the run did not reach *or did not complete* its own logging — which is satisfied by (a) killed mid-`after()`, (b) killed during any post-walk step, **and (c) the work finishing normally and the logging RPC itself failing, swallowed by that catch.** ⚠ **(c) is the case where the pipeline is HEALTHY and only the telemetry is lost — the opposite operational conclusion to a kill**, and it is a plausible casualty of the same DB saturation that produces the kills, so it is not a remote possibility. **Do not report "heartbeat only" as a maxDuration kill without separate evidence.**
+  ✅ **AND HERE IS THE CHEAP EVIDENCE, because (c) is testable in one query: ask whether OTHER processes' `log_pipeline_run` calls succeeded in the same window.** They all write the same row to the same table through the same pooler, so a saturation outage of the telemetry path is visible platform-wide, not per-route. Run on the 2026-08-16 `candy-editions-ingest` case it was decisive: writes landed at 08:53:20 (-46 s), **08:54:08.86 (+3 s from the route's own final data write)**, :14, :18 ×2, :37, :43 — i.e. the telemetry path was healthy in the very second that route's `logRun` should have fired, which **removes the mechanism that makes (c) plausible and leaves a kill as the best-supported reading**. ⚠ It weakens (c) rather than eliminating it — an isolated failure on one pooled connection is untouched by this evidence — so say "weakened", not "ruled out". **This is the first thing to run on any heartbeat-only tick; it costs one query and it decides which half of the problem you have.**
+  ⚠ **The evidence that separates them is the LAST write of the run, not the first — and getting this wrong cost a wrong published diagnosis on 2026-08-16.** `candy-editions-ingest` was reported "silent 39.5 h", then diagnosed as killed at the wall off `editions.updated_at` being fresh. The walk's actual final write (`wallet_moments_cache`) landed **130 ms later**, proving the walk *completed* and moving the failure to at-or-after `logRun`. **Read the write that the route performs LAST** (check the source order — here `candy_packs` → `editions` → `wmc`, all inside the page loop), and note that a route with a post-walk step has a whole phase after its last data write in which it can die silently. Narrowing (a)/(b)/(c) needs a post-walk phase marker or a retry on the logging call; **neither is taken on any of the four.**
+  ⚠ **Adding a heartbeat to a route RETARGETS every positional assertion in its tests.** The heartbeat is written before `after()`, so it becomes `st.runs[0]` on every accepted request, and the terminal row every existing test meant to inspect shifts down — silently, onto a row where `p_ok` is always `true` and `p_extra` carries none of the fields under test. Eleven assertions in `api-ingest-candy-editions.test.ts` had to move from `st.runs[0]` to a **by-name selector** (`st.runs.find(r => r.p_pipeline === …)`). **Select telemetry rows by pipeline name, never by index**, in any test for a route that logs more than one row.
+- Supabase MCP multi-statement queries return only last result — use single statements per call.
+- PostgREST caps reads at 1000 rows and CLAMPS explicit `.limit()` above that — paginate with `.range()` or use an RPC for larger reads. A **bare unbounded `.select()`** clamps at 1000 too (sneakier than `.limit(N>1000)`), and dedup-latest-per-edition **in JS over raw `fmv_snapshots` DESC** is a trap — the 1000-row window only covers a few hundred editions (~4,200 TS snaps/day), so use the `fmv_current` view (DISTINCT ON latest-per-edition) instead. **The count-vs-length trap:** requesting `{ count: "exact", head: false }` then reading `rows.length` for a total silently caps that "total" at 1000 — read the returned `count` (with `head: true`) instead. (Both fixed live 2026-07-19/20: lock-roi/market/sets-db truncations + market-pulse `snapshotsToday` 4× undercount.)
+- ⚠ **AND ANY `.range()` PAGINATION MUST CARRY A DETERMINISTIC `.order()`, OR IT READS THE RIGHT NUMBER OF ROWS AND THE WRONG ROWS (2026-08-16).** Postgres guarantees no row order without `ORDER BY`, so offset-paging an unordered query returns some rows on two pages and some on none. `lib/supabase-paginate.ts` has stated this rule verbatim since it was written; `snapshot-institutional-wallets` **hand-rolled its own paging loop** instead of calling `fetchAllPaged` and broke it — for three months. ⚠ **The tell is a DISTINCT count, never a total**: `wallet_moments_cache` holds `UNIQUE(wallet_address, collection_id, moment_id)` so the source cannot contain duplicates (52,120 rows / 52,120 distinct), yet the snapshot it wrote held **52,123 entries / 45,059 distinct** — ~7,064 read twice, ~7,061 missed. **The duplicates and omissions CANCEL, so the count came out within 3 of the truth and every count-based check passed.** ⚠ **The pack-inventory wallet `0xb6f2481eba4df97b` is the cleaner demonstration and confirms `moment_count` is NOT inflated: wmc holds 11,800 / 11,800 distinct, and the snapshot wrote 11,800 entries / 8,960 distinct — the total matched EXACTLY while 24% of the membership was wrong.** Its 43,675 `direct_transfer` rows are therefore the same artifact class, which also dissolves the separate question of why none of them resolve to an edition: they are fabricated events, so the missing `edition_id` is a property of data that should not exist. Downstream, a day-over-day diff read each day's missing ~7k as departures and the next day's different ~7k as arrivals: **161,366 fabricated "buyback acquisitions", of which 41,301 of 41,307 distinct moments had been in the wallet since the first snapshot.** ⚠ **The same bug is harmless or catastrophic depending on the CONSUMER** — the identical defect on the identical table in `wallet-backfill-helpers.ts` cost only redundant idempotent re-upserts, because its Set decides what to SKIP: absence there means "do more work", not "an event happened". Guarded by `__tests__/paginated-range-requires-order-ratchet.test.ts`, now a **BAN at ZERO** — the population was driven 13 → 11 → **0** in the same session, so a new unordered `.range()` fails CI outright. ⚠ **AN EXPECTATION OF MINE WAS WRONG AND IS WORTH THE SPACE: I recorded that a single `.range(0, N)` used as a "first N" limit is a lower-priority member of this population, since it cannot duplicate or drop across pages. Triaged one by one, **ALL 11 remaining sites were genuine multi-page paging loops** (`while (true)` / `for (…; offset += PAGE)`) — the distinction is real in principle and described NONE of the code. Do not assume a flagged site is benign; open it.** ⚠ **Pick the order column from a UNIQUE key, not merely a selected one** — a non-unique order leaves ties between pages and reintroduces the defect. `moment_acquisitions.nft_id` looks like the natural key and is not (unique is `(nft_id, wallet, transaction_hash)`), so those sites order by the PK `id`. ⚠ **Adding `.order()` breaks every test stub that does not implement it** — six stubs across five files had to gain `order: () => b`; a chain method missing from a mock fails the whole query, not the ordering.
+- **A batch `.insert()` is ALL-OR-NOTHING — never swallow `23505` on one.** A single duplicate row fails the whole statement and writes NONE of the batch, so `if (err.code === "23505") { /* dupes */ }` silently discards every co-batched **new** row. On a cursored indexer this is *permanent* loss: nothing lands ⇒ the cursor advances past those rows anyway ⇒ they are never retried. Always log only non-dupe errors (`code !== "23505"`) and fall through to a row-by-row retry, so real dupes fail individually while new rows land. **Also note supabase-js RETURNS errors rather than throwing** — a row-by-row fallback placed only in a `catch` block is unreachable for a 23505 (this was `sales-indexer`'s worse variant). Eradicated across all 5 forward sales indexers 2026-07-25 (candy, golazos, allday, ufc ×2 each on `sales`+`unmapped_sales`, plus topshot `sales-indexer`) and pinned by `__tests__/sales-batch-insert-23505-guard.test.ts` (directory-driven over `app/api/*sales-indexer/route.ts`, so new indexers are covered automatically). **NOT the same thing:** the `cron/*-sales-history-backfill` routes' `else if (code === "23505") { ...row-by-row... }` is CORRECT (the positive branch *is* the retry) — don't "fix" those; `pinnacle-sales-indexer` is safe via `.upsert(..., ignoreDuplicates: true)`.
+- `players` + `sets`: composite `UNIQUE(external_id, collection_id)`.
+- `execute_sql(query text) RETURNS void`, SECDEF, service_role only.
+- `tier_type` enum (full live set, re-read 2026-10-20): `ULTIMATE / LEGENDARY / EPIC / RARE / UNCOMMON / FANDOM / COMMON / CHAMPION / CHALLENGER / CONTENDER` (`EPIC` added 2026-10-18, 40 UFC Strike editions). Top Shot uses `COMMON / FANDOM / RARE / LEGENDARY / ULTIMATE`; UFC Strike uses `CHALLENGER / CONTENDER / FANDOM`. (`UNCOMMON` / `CHAMPION` exist in the enum too — see [schema-truth.md](../../docs/reference/schema-truth.md).)
+- **Slug-keyed entity lookups need a FUNCTIONAL expression index, or they full-scan the collection.** Any RPC that resolves a URL slug via `regexp_replace(lower(trim(<name>)),'[^a-z0-9]+','-','g') = <slug>` (e.g. `get_team_detail`, `get_player_detail`) cannot use a plain btree — the slug is computed, so the planner scans every row in the collection applying the regexp as a filter. Cold, that page-read amplification (Knicks: 18,121 rows / 8,186 heap fetches / 6,703 buffers) balloons to seconds and HOLDS the pooled connection, surfacing as **"Timed out acquiring connection from connection pool"** on the entity page (Sentry NEXTJS-1Y team + NEXTJS-20 player). Fix is an expression index on the exact immutable expression: `players` has `idx_players_collection_name_slug`; `editions` has `idx_editions_collection_team_slug` (team_name, partial `WHERE team_name IS NOT NULL`, added 2026-07-26 — variant lookup 60→3.5ms, buffers 6,703→501). **A pool-acquire timeout is a SATURATION symptom, not proof of an inherently slow query — profile warm vs cold first** (these RPCs are 23–110ms warm); the lever is cutting the cold-scan that holds the connection, not rewriting the whole fn.
+
+### Security posture (May 3 audit)
+
+0 security ERRORs. SECDEF anon-revoke complete — 10 previously anon-callable fns now `postgres + service_role` only (incl. `query_sql`, `save_user_wallet`, `upsert_wallet_moments`, `pinnacle_upsert_nft_map`, `activate_pro_from_payment`, `classify_acquisition`). RLS on every public table (0 with `rowsecurity=false`). 17 SECDEF views dropped.
+
+**`REVOKE … FROM PUBLIC` does NOT strip Supabase's default per-role `anon`/`authenticated` grant — and this applies to TABLES and VIEWS, not just SECDEF functions** (learned the hard way 2026-07-19: the entire "gated" Panini+Candy dataset — 17 objects incl. `panini_card_serials` with 1,011 collector usernames — was anon-readable via PostgREST because `proxy.ts` gates only the HTTP routes while the tables carried the default `anon` grant). Always `REVOKE SELECT … FROM anon` (and `authenticated` if pre-launch) **explicitly**, and verify with `has_table_privilege('anon', '<obj>'::regclass, 'SELECT')` or a functional `SET LOCAL ROLE anon` probe — **never** by reading `information_schema.role_table_grants`, which still listed `anon` after a successful revoke. **Route-gating ≠ data-gating:** anything staged behind a `proxy.ts` line is still queryable at `/rest/v1/<table>` unless the anon/authenticated grant is explicitly revoked. **MV-derived surfaces need the predicate IN THE VIEW, not RLS** — `refresh_sets_summary()` runs under pg_cron as a `rolbypassrls` role, so an RLS policy on the base table can't filter what lands in `sets_summary`; gate the view arm on `collections.is_active` instead. **FUNCTIONS are the MIRROR case (learned 2026-07-26 clearing the `secdef-anon-exec-drift` sentinel on two new `serial_fmv_estimate` overloads): a new function's default EXECUTE grant is to `PUBLIC` (`=X/postgres` in `proacl`), so `REVOKE EXECUTE … FROM anon, authenticated` removes the explicit rows but `has_function_privilege('anon', …)` STAYS true via the surviving PUBLIC grant — you must `REVOKE EXECUTE … FROM PUBLIC`.** ⚠ **AND THE CONVERSE IS EQUALLY TRUE — `FROM PUBLIC` ALONE IS NOT ENOUGH EITHER; REVOKE BOTH HALVES IN ONE STATEMENT (learned the hard way 2026-08-15, by doing exactly what the sentence above says and still shipping a drift).** This database also carries `ALTER DEFAULT PRIVILEGES` granting EXECUTE to `anon` + `authenticated` on new functions in `public`, so those arrive as **explicit acl rows a PUBLIC revoke does not touch**. A new SECDEF helper created with `REVOKE EXECUTE … FROM PUBLIC` measured `has_function_privilege('anon', …) = true` immediately after apply, and `check_secdef_anon_exec_drift()` went **0 → 1**. The correct form is `REVOKE EXECUTE ON FUNCTION … FROM PUBLIC, anon, authenticated;`. ⚠ **And this is the case that proves the "verify with `has_function_privilege`, never the acl text" rule rather than merely restating it**: the PUBLIC row really was gone from `proacl`, so the acl text looked clean while the function was still anon-executable. **Re-run `check_secdef_anon_exec_drift()` after creating ANY function — a drift you introduce yourself looks exactly like one you inherited.** `postgres` (owner) + `service_role` carry explicit grants and survive a PUBLIC revoke, so internal SECDEF callers and `supabaseAdmin` RPC keep working; verify with `has_function_privilege('anon'/'service_role', '<sig>', 'EXECUTE')`, not the ACL text. For a SECDEF fn only reached by service_role clients (`supabaseAdmin`) or by other SECDEF fns (which run as their definer), **revoke** rather than allowlist in `secdef_anon_exec_allowlist` — the drift check (`check_secdef_anon_exec_drift()`) only flags fns that ARE anon/auth-executable, so removing the grant clears it and shrinks the anon surface.
+
+⚠ **A THIRD CASE, 2026-09-24: RE-CREATING A MATERIALIZED VIEW (DROP + CREATE) RE-GRANTS THE DEFAULT PRIVILEGES.** Rebuilding `mv_candy_holder_board` gave the new object `anon=rxm, authenticated=rxtm`. The migration's `REVOKE ALL … FROM PUBLIC` left those explicit rows in place, and `check_public_security_invariants()` returned `(mv_anon_readable, mv_candy_holder_board)` within a minute. It was fixed by `20260924141217`. An MV cannot be `ALTER`ed, so every definition change is a re-create and meets this every time. **Before the DROP, read `relacl`. After the CREATE, `REVOKE ALL … FROM PUBLIC, anon, authenticated`, re-grant exactly the prior ACL, `ASSERT` it inside the migration, and re-run `check_public_security_invariants()`.** Its dependent views are re-created by the CASCADE too, so they need the same treatment, plus `security_invoker = on`.
+
+⚠ **`check_secdef_anon_exec_drift()` IS STRUCTURALLY BLIND TO SECURITY *INVOKER* FUNCTIONS, AND THAT BLIND SPOT HID TWO UNAUTHENTICATED 40-SECOND QUERIES (measured + fixed 2026-08-16).** It considers `prosecdef = true` only, so every INVOKER function in `public` is outside it **by construction**, however often it runs green — the guard-scope class this file documents elsewhere, met on the security surface. **84 anon-executable INVOKER functions** existed; **8 were orphaned** (no caller in `pg_proc`, no view, no cron, no repo) and two were pathological to invoke:
+
+| function | measured | callers |
+|---|---|---|
+| `compute_pack_ev_from_pool_tier_weighted` | **45,762 ms · ~2.29M buffers (~17.4 GB)** | none |
+| `get_wallet_cache_count` | **39,450 ms** (only ~7.2k buffers — **IO STARVATION, not a bad plan**) | none |
+
+Both confirmed reachable by a functional `SET LOCAL ROLE anon` probe, not inferred: the anon key ships in the browser bundle and PostgREST exposes every public function at `/rest/v1/rpc/<name>`. ⚠ **Severity is AVAILABILITY, not confidentiality** — INVOKER means the caller's own RLS applies, so nothing leaks that an anon visitor cannot already read; what it offers is unauthenticated compute against the heaviest tables on a 2 GB IO-budgeted instance, where a handful of concurrent calls is an outage for free. All 8 revoked (`audit_20260816_revoke_anon_exec_on_zero_caller_pack_fns`, `audit_20260816_revoke_anon_exec_on_six_orphaned_wallet_fns`); population **84 → 78**.
+
+⚠ **A DB-SIDE CALLER SWEEP ALONE IS NOT EVIDENCE OF ORPHANHOOD AND WOULD HAVE BEEN CATASTROPHIC HERE.** Of the 37 anon-executable invoker functions touching heavy tables, **32 report ZERO DB callers** — including `get_wallet_moments_with_fmv`, `get_top_sales` and `get_market_pulse`, which are **live product RPCs** called from Next.js routes Postgres cannot see. Revoking on DB evidence would have taken down the wallet and analytics surfaces. **Require FOUR sources before calling one orphaned**: `pg_proc.prosrc`, `pg_views.definition`, `cron.job.command`, and a full-repo grep. ⚠ The **views** arm is load-bearing, not ceremony — a `security_invoker=true` view executes its callee AS THE CALLER, which is exactly why `serial_fmv_estimate` must stay anon-executable. ⚠ And match on word boundaries: `get_pack_detail` reads as called when every hit is the different, live `get_pack_detail_bundle`.
+
+⚠ **NEVER AGGREGATE A PRIVILEGE CHECK OVER AN OVERLOADED FUNCTION.** A post-apply verification using `bool_and(has_function_privilege('anon', …))` for `serial_fmv_estimate` returned **false** and read as "a load-bearing public path just broke". Nothing had. There are **FOUR overloads**: two anon-executable (the 6- and 7-arg forms, reached by `get_wallet_moments_with_fmv` and `topshot_underpriced_serials_board`) and two deliberately revoked in the 2026-07-26 drift clearing. `bool_and` collapses a **per-signature** fact into one boolean. **Read it per `oid::regprocedure`.**
+
+**The population is now frozen repo-side by `__tests__/migration-new-function-states-its-anon-exec-decision.test.ts`**: a new migration creating a `public` function must either revoke (naming **PUBLIC, anon, authenticated** — a PUBLIC-only revoke is explicitly rejected, per the paragraph above) or carry an `-- anon-exec: …` marker naming the function. Silence is not a decision. ⚠ Its cutoff is **forward-looking (`20260817000000`) so the in-scope population is currently ZERO** — setting it at "today" was measured and rejected because it would immediately red ~10 concurrent sessions' migrations — so it asserts **the walk and the detector** against synthetic fixtures rather than a non-empty population. ⚠ **A SNAPSHOT migration must use the MARKER, never a revoke**: unlike views and reloptions, `CREATE OR REPLACE FUNCTION` does **not** reset a function's ACL, so a revoke there changes production while pretending to be a byte-identical no-op. **The remaining 78 are deliberately NOT swept** — most are legitimately anon-reachable — ranking method filed at [inbox 2026-08-16T1910Z](../../docs/overnight/inbox/2026-08-16T1910Z-86-anon-executable-invoker-fns-are-invisible-to-the-secdef-drift-check.md).
+
+⚠ **`CREATE OR REPLACE VIEW` WITH NO `WITH` CLAUSE SILENTLY STRIPS `security_invoker=on` — it RESETS reloptions, and this has now happened FOUR times (fixed + guarded 2026-08-15, `9da83e21`).** Verified empirically on the live instance rather than inferred:
+
+```sql
+create view pg_temp.zz with (security_invoker=on) as select 1;  -- security_invoker=on
+create or replace view pg_temp.zz as select 1;                  -- options GONE
+```
+
+**A view's security mode does not appear in its OUTPUT**, so every correctness check passes identically either way: migration `20260815153324` recreated `topshot_deals_vs_fmv` + `cross_collection_deals_board` for a genuine perf win and verified output md5, row count, buffers and `Subplans Removed` — while both dropped to definer mode. `check_public_security_invariants()` caught it, but only on the next monitor sweep ~3 h later, and **nothing failed CI at all**. Four rules came out of it:
+- **`ALTER VIEW … SET (security_invoker = on)` is the repair, never `CREATE OR REPLACE`** — an ALTER cannot drift the query definition while fixing the option.
+- ⚠ **AND `CREATE OR REPLACE VIEW` CANNOT RENAME OR REORDER COLUMNS AT ALL — it errors `42P16`, and the SQL test CANNOT catch it (2026-08-16).** Rebuilding `v_pack_pipeline_health` changed the column list, so the apply failed outright: *"cannot change name of view column `pipeline` to `collection_slug`"*. ⚠ **`supabase/tests/*.sql` builds each object in a ROLLED-BACK transaction where no prior definition exists**, so the compatibility constraint against the LIVE view is invisible to it by construction — the test was green while the apply errored. **A green rolled-back DB test is not evidence that a migration APPLIES**; that is only learned from the apply. Use `DROP VIEW IF EXISTS` + `CREATE VIEW` (verify zero `pg_depend`/`pg_rewrite` dependents and zero repo consumers first, and restate `WITH (security_invoker = on)` — it does not survive the drop). ⚠ **The REVERT BODY needs the same DROP**: reverting renames the columns back and hits the identical 42P16, so a `CREATE OR REPLACE` revert fails **exactly when it is needed**.
+- **Invoker is the fix, NOT an allowlist entry.** The invariant's own arm-(b) comment says it exists to catch "a hardened (invoker) view silently reverting to definer", so allowlisting would accept the exact regression it was built to detect.
+- ⚠ **Do not inherit a "benign" verdict by ANALOGY.** The monitor called this benign by comparison to the Candy views — but those have anon SELECT revoked and so are not the same case. Here nothing leaked, but only because every base table is catalog/market data with no user-scoped rows, i.e. there was no per-user RLS to bypass. That is a fact you check, not one you assume from a neighbouring incident.
+- ⚠ **A clean invariant does not prove the view still WORKS.** A broken invoker view regresses by returning nothing, so the repair was confirmed by re-fetching the public board anonymously end-to-end (same 50/50 rows, all three collection legs) — see the cache caveat under DB "General rules" for how that check itself first fooled me.
+
+Guarded repo-side by `__tests__/migration-view-security-invoker-guard.test.ts`: every NEW migration creating a `public` view must either carry `security_invoker` in its own `WITH`, re-assert it with a matching `ALTER VIEW`, or carry the explicit `definer-view: intentional` opt-out — **silence is not a decision**. ⚠ It is keyed **per VIEW NAME, not per file**, because `20260801012254` creates two views and hardens only one though its header says it meant to do both — a file hardening view A must not vouch for view B. It **strips SQL comments first** (the offending migration quotes its own `CREATE OR REPLACE VIEW` in its header). The pre-existing `GRANDFATHERED` set is deliberately not re-litigated — an applied migration is history and editing it cannot change production — but **it must stop growing**.
+
+⚠ **`proxy.ts` SENDS AN ENUMERATED `img-src` CSP, SO AN IMAGE ON AN UNLISTED HOST DOES NOT RENDER — AND IT FAILS LOOKING EXACTLY LIKE A DEAD LINK (found 2026-08-16).** The directive names our catalogue CDNs (`assets.nbatopshot.com`, `media.nflallday.com`, `ipfs.io`, …) plus `'self' data: blob:`. **Anything else is refused by the browser before a byte moves**, so a perfectly valid image URL renders as the element's fallback and nothing on any surface says why. This bit on collector AVATARS: `https://i2c.seadn.io/…` could never have displayed. ⚠ **There are TWO CSP headers** — a permissive `img-src 'self' data: blob: https:` from `next.config.ts` and this restrictive one — and **browsers enforce multiple CSP headers as an INTERSECTION**, so the restrictive one governs; do not read the permissive one and conclude any host works. **The fix for a third-party image is to serve it from our own origin** (`'self'` is in every policy we send), which is what `app/api/public/avatar-media` does, rather than widening `img-src` host by host forever. ⚠ **Its host allowlist IS its SSRF guard** — the same shape as `/api/public/ipfs-media/[cid]`, whose header says the CID regex is the guard *because the upstream host is fixed*; an avatar has no fixed host, so the bound has to come from an allowlist. **An any-host proxy was rejected on merit**: DNS rebinding means a name can resolve public when you validate it and private when `fetch` re-resolves it, and closing that needs IP-pinned connections `fetch` does not expose. ⚠ **NEVER re-serve `image/svg+xml` from our origin** — an SVG is a document that can carry `<script>`, so same-origin it runs with the session: **stored XSS delivered as a profile picture.** That is why the content-type check is an ALLOWLIST and not `startsWith("image/")`, which admits it. ⚠ And match hostnames EXACTLY: a mutation swapping `includes()` for `endsWith()` **survived** the first test suite, because every bypass fixture ended in some *other* domain — **`evilarweave.net` is the case with teeth**, since it ends with an allowlisted host and anyone can register it.
+
+**Auditing "who can actually call this?" — three traps, all hit on 2026-07-31 (client-executable SECDEF taken 61 → 4, client-executable WRITERS → 0).** (1) ⚠ **An identifier named `supabase` is USUALLY THE SERVICE-ROLE CLIENT in this repo.** `lib/supabase.ts` exports both (`supabase` = anon, `supabaseAdmin` = service role), but **9+ files import `supabaseAdmin as supabase`**, and several API routes build their own `createClient(url, SUPABASE_SERVICE_ROLE_KEY)` and name it `supabase`. So `supabase.rpc(...)` proves nothing about the effective role, and **"server-side" ≠ "service role"** — resolve the *binding*, never the name. Resolving all of them showed the entire browser/anon + session RPC surface is **two functions**, and `components/**` makes **zero** direct `.rpc()` calls (the browser reaches data through `/api/*` routes). (2) **A direct-caller sweep is NOT sufficient to justify a revoke — check INVOKER-mode callers too.** A `SECURITY INVOKER` function or a `security_invoker=true` **view** executes its callee **as the caller**, so an anon-reachable invoker keeps an anon EXECUTE grant load-bearing even when every *code* caller is service-role. This is why `serial_fmv_estimate` must stay anon-executable (reached via `get_wallet_moments_with_fmv` and the view `topshot_underpriced_serials_board`); revoking on direct-caller evidence alone would have broken the wallet-moments read and a public board. Sweep dynamic `.rpc(var)` sites and direct `/rest/v1/rpc/` fetches as well as literal `.rpc("name")`. (3) **A green drift check says "unchanged since the baseline", NOT "safe"** — the 07-20 baseline accepted 49 rows under one bulk note and an unauthorized writer rode along inside it. `secdef_anon_exec_allowlist` now enforces `secdef_allowlist_note_is_a_real_reason` (note ≥ 40 chars, no `baseline%`), so each acceptance must state which client reaches the fn and why that is safe.
+
+---
+
+
+
+---
+
+## ⭐⭐ WARM-vs-WARM IS NOT ONLY AN ANTI-FOOLING RULE — IT **DIAGNOSES**, AND IT SELECTS THE REMEDY (2026-09-14, `rpc_ops_snapshot`)
+
+A leg that is **expensive WARM** is **COMPUTE-bound**: caching cannot help it, an index cannot help it, and a **precompute or rewrite is the only lever**.
+A leg that is **cheap warm and expensive COLD** is **IO-bound**: the query is fine, the data simply is not resident — **an index will NOT help, and neither will rewriting the query.**
+
+Measured on `rpc_ops_snapshot()` in a genuinely quiet window (positive control `pg_stat_activity` io_wait 2 / active 4):
+
+| leg | cold | warm | bound by | lever |
+|---|---|---|---|---|
+| `fmv_by_collection` (5× `sentinel_fmv_confidence_rows`) | 32.58 s | **32.50 s** | **COMPUTE** | precompute — **shipped `20260914215000`** |
+| `v_rpc_trust_health` (38 arms) | **21.65 s** | 0.00 s | IO | precompute / RAM — **not an index** |
+| `pipeline_fails_24h` | **12.13 s** | **0.00 s** | IO | ⛔ **not an index** (see below) |
+| security block (5 `check_*`) | — | 0.00 s | — | none needed |
+| `get_pipeline_alerts()` | — | 0.00 s | — | none needed |
+
+⛔ **THE NEGATIVE RESULT IS THE VALUABLE ONE, because it is the action a reader would otherwise take.** `pipeline_fails_24h` took **12.13 s cold** and matches **84 rows out of 58,789 on a 51 MB table that already carries six indexes, including `pipeline_runs_started_at_idx` and `pipeline_runs_ok_finished_idx`.** That reads exactly like a missing index. **It is not.** Warm, the identical query returns in **0.00 s**. The 12 s was the cold read of a table that is simply not resident on a 2 GB-RAM instance. **Adding an index would have cost a migration, an `apply_migration` PGRST002 burst and a write-path penalty, and bought nothing.**
+
+🚨 **AND THE UNIFYING CONSEQUENCE FOR ANY LOW-FREQUENCY INSTRUMENT HERE: a function called every few hours is ALWAYS cold.** Nothing it touches survives in 2 GB of shared buffers between calls, so its cold number *is* its real number and every warm reading of it is a fiction. **Do not tune such a function by re-measuring it twice in a row** — the second reading is warm and will tell you the problem is solved.
+
+⚠ **This is also why a per-leg timing harness must force evaluation order.** `SELECT (SELECT ... FROM (SELECT clock_timestamp() s, f() ) q)` reports **0.00 s for everything** because the timestamp and the call are evaluated together. The form that works is `WITH t AS (SELECT clock_timestamp() s), x AS (<leg>) SELECT EXTRACT(EPOCH FROM (clock_timestamp()-t.s)) FROM t, x`. A harness that reports zero for every leg is broken, not evidence the legs are free.
+
+---
+
+## ⛔ TWO SAME-DAY MIGRATIONS THAT BOTH FULL-BODY-REWRITE ONE FUNCTION ARE ORDERED BY **FILENAME**, AND APPLY-ORDER IS NOT FILENAME-ORDER (2026-09-14, caught one step before it shipped)
+
+**The sibling trap to the one below, and it survives a correct `CREATE OR REPLACE`.** On 2026-09-14 two migrations both did a full-body `CREATE OR REPLACE FUNCTION public.rpc_ops_snapshot()`:
+
+- `20260914190000_..._the_search_path_class_gets_a_guard_...` — 14 keys, the LIVE FMV leg
+- `20260914183500_..._the_fmv_confidence_split_moves_to_a_precompute_...` — 15 keys, reads the precompute
+
+**Production was applied in the right order and was correct.** But `183500` sorts BEFORE `190000`, so **any replay of the migration directory runs the precompute FIRST and the 14-key body LAST — silently reverting a shipped fix and its provenance key.** Nothing reds: both files are valid, both applied, `migration-parity` keys on the migration NAME and is satisfied, and the live DB disagrees with a from-scratch rebuild only after someone rebuilds.
+
+⭐ **THE RULE: version a migration for its place in the REPLAY, not for the clock.** When you write the second same-day rewrite of one object, its filename must sort AFTER every other migration that touches that object. Renaming is free and safe — **parity matches on NAME, not version, so the applied row is not orphaned.**
+
+⚠ **Why the ordinary discipline does not catch it.** Re-reading the live object before a `CREATE OR REPLACE` (below) protects you against clobbering *the current state*. It says nothing about what a **later-sorting file** will do to you afterwards. The check is: `grep -l "CREATE OR REPLACE FUNCTION public.<name>" supabase/migrations/*.sql | sort | tail -1` — **that file must be yours.**
+
+---
+
+## 🚨 `CREATE OR REPLACE` IS A FULL-BODY WRITE — RE-READ THE LIVE OBJECT IMMEDIATELY BEFORE ONE (2026-09-12, near-miss)
+
+**Nothing was broken. It was one verification away from being broken, and the failure would have been invisible.**
+
+Shipping a one-line change to `get_trophy_slab_data` (art resolves live when a pin stored none): the definition was dumped with `pg_get_functiondef`, the migration was written on it, the `supabase/tests/*.sql` pin was rewritten to match, and the drift guard went green. About forty minutes elapsed between the dump and the apply. In that window a **concurrent session applied `20260911093000`** — the impossible-serial guard (`refuse a serial above its own edition's circulation`) — to the same function.
+
+⛔ **Applying the draft would have silently reverted it.** Not "conflicted": reverted. There is no diff to review, because `CREATE OR REPLACE FUNCTION` replaces the whole body; no error, because the SQL is valid; and **no failing test, because the same change rewrites the pin file that would otherwise have disagreed.** The other session's migration would still sit in `supabase/migrations/` and in `schema_migrations`, describing behaviour the database no longer had.
+
+⭐ **What caught it was a LENGTH, not a diff.** Re-reading `length(pg_get_functiondef(oid))` immediately before the apply returned **3,873** against the **3,077** the draft was built on. The fix was to rebase: extract the live definition, re-apply the one-line change on top, rebuild the migration AND the pin from that, re-run the DB-invariant test.
+
+**The rule, stated so it generalises past this object:**
+
+- **Before any `CREATE OR REPLACE` (function, view, trigger, policy), re-read the LIVE object — not the repo, not your own earlier dump.** A cheap discriminator is enough: `length(pg_get_functiondef(...))` or an `md5()` of it, captured at dump time and compared at apply time.
+- **The repo is not the authority on what production runs.** A committed migration proves someone intended a state, not that the state is current — and the concurrent session's file was on `main` before its change was applied, so even a fresh `git pull` would not have revealed it.
+- ⚠ **This is strictly worse than a git conflict, because every instrument agrees with you afterwards.** The pin file, the drift guard and the migration history all describe your version. The only witness is the object itself.
+
+**The same lesson in miniature, five minutes later.** The new DB-invariant fixture was named `mC` — and `mC` already existed in that file, added by the same concurrent session's test block, with a `wallet_moments_cache` row pointing it at a different edition. The assertion failed against `edthumb3` instead of passing wrongly, which is the only reason it surfaced. **Two fixture blocks in one file share one namespace.**
+
+### Displaced from CLAUDE.md 2026-09-12 (verbatim) — the `CREATE OR REPLACE VIEW` bullet, to pay for the full-body-write rule above
+
+- ⚠ **`CREATE OR REPLACE VIEW` with no `WITH` clause RESETS reloptions and silently strips `security_invoker=on`** (four occurrences). `ALTER VIEW … SET (security_invoker = on)` is the repair. It also **cannot rename or reorder columns** (`42P16`) — and the rolled-back SQL test cannot catch that, because it builds the object where no prior definition exists.
+
+### Displaced from CLAUDE.md 2026-09-12 (verbatim) — the `check_*` bullet's long form, condensed there to a pointer
+
+- ⚠ **`check_*` functions have MIXED return shapes.** A jsonb-array one returns `count(*) = 1` when CLEAN — read the array LENGTH; a SETOF one returns **zero rows** when clean. **Check the return type before interpreting the count** (which is which: below).
+
+---
+
+## ⭐ `trophy_moments.thumbnail_url` — why the SNAPSHOT wins where every sibling field loses (2026-09-12)
+
+`get_trophy_slab_data` resolves every display field as `COALESCE(editions.<live>, trophy_moments.<snapshot>)` — player, set, tier, circulation, video, FMV, badges. **`thumbnail_url` had no live side at all**, so a pin that stored a junk URL had nothing to fall back to and published "ART UNAVAILABLE" forever. `lib/profile/trophy-thumbnail.ts` had already recorded that the field was not coalesced, while its own docstring promised a rejected pin "simply falls back" — **a comment that names a gap is not a guard against it.**
+
+⛔ **The consistent-looking fix is a regression.** Making art live-first like its neighbours was measured over the 22 live trophy rows: 13 store art identical to the edition's, 1 has no edition to resolve, and **8 differ — of which 7 store `assets.nbatopshot.com/media/<nft_id>/image?width=180|512`, a per-serial derivative of ~31 KB, against an `editions` master that is a 2880×2880 PNG of 4–7 MB.** Live-first would swap eight working thumbnails for eight masters, several over the OG card's own byte cap.
+
+So it ships as `COALESCE(tm.thumbnail_url, e.thumbnail_url)` — **a fallback, not a preference.** Zero rows changed on the day (no row had a NULL thumbnail); what it buys is that `sanitizeTrophyThumbnail()` rejecting a URL now degrades to the edition's own art. Both directions are pinned in `supabase/tests/get_trophy_slab_data.sql`, and each control fails the OTHER spelling.
+
+⚠ **The writer-side rule is keyed on the `play_` segment, not on the extension.** "An `/editions/` path must end in an image extension" would have rejected **all 6,190 NFL All Day editions**, which address art as the perfectly valid extensionless `/editions/<n>/media/image`. A `play_…` segment is what marks a Top Shot / Golazos STATIC filename, and a static filename that is not the last path segment has been truncated.
+
+---
+
+## Preserved from the 2026-08-17 CLAUDE.md restructure
+
+> These lines were condensed or dropped in CLAUDE.md when it was cut to fit the memory-file
+> char limit. They are kept here verbatim so nothing is lost.
+
+## Supabase schema facts (critical — verify before writing queries)
+
+**Volatile facts (table existence, FMV home per collection, enum values, RLS-on count) are generated from the live DB into [docs/reference/schema-truth.md](../../docs/reference/schema-truth.md) — that file wins on any disagreement with the prose below.** It is regenerated by the weekly `rpc-data-quality-sweep` (drift → ledger Queued). The conventions below (the two collection vocabularies, partitioning, UUIDs) are stable; the per-table/enum/count specifics can drift, so confirm against schema-truth.md (or re-query) before relying on them.
+
+## Re-pinning a stale DB-invariant pin — the recipe, and what six of them taught (2026-08-22)
+
+All six pins in known-issues #24 were closed this day. **No DB or prod state was changed by any of them:** a
+snapshot migration is a byte-identical capture of what prod already runs, and applying it buys nothing while
+costing a ~10–20 s user-facing `PGRST002` burst. **Leave them unapplied** — `migration-parity` checks
+applied→file, so an unapplied file is invisible to it.
+
+**The recipe:**
+1. `pg_get_functiondef()` the live definition. ⚠ **Verify the transcription against the DB's own
+   `md5(pg_get_functiondef(...))`, never by eye.**
+2. Diff it against the pinned copy (embedded between the `>>> BEGIN verbatim` markers in
+   `supabase/tests/<fn>.sql`) — the checker compares `prosrc` under two normalizations (whitespace-collapsed,
+   and comment-stripped), so a STALE verdict is real logic drift, not formatting.
+3. Replace the test's verbatim block, write the snapshot migration, repoint the PINS entry in
+   `__tests__/db-invariants-drift-guard.test.ts`.
+4. **The assertion review IS the work** — the checker's own remedy says *"a stale pin usually means the
+   assertions describe old behaviour."* 🚨 **Repointing without it converts a loud, correct alarm into a
+   silent green**, which is strictly worse than the red.
+5. Verify: the body must hash **identically across live `prosrc`, the test and the migration**; then run the
+   pin's SQL test and all 178 DB-invariant files locally (recipe in [testing-and-ci.md](testing-and-ci.md)).
+
+⚠ **An IN-PLACE SPLICE is a redefinition too (2026-10-20).** A migration that rewrites a pinned function with a DO block (`replace()` over `pg_get_functiondef`, then `EXECUTE`) leaves NO full body in the repo: `20261019181549` did this to `get_platform_stats` and `analytics_fmv_tier_pulse`, and the daily live check went red the next morning. The repair is this recipe: snapshot `20261020150000` rebuilt each body from the pinned file plus the splice's own anchors, with `prosrc` and full `pg_get_functiondef` md5-checked against live. The splice no longer gets through silently: `db-pin-points-at-the-newest-defining-migration` reds the push unless the splice names the file carrying its resulting body. **So write the snapshot in the same push as the splice.**
+
+⚠ **A snapshot migration must state its anon-execute decision with the MARKER, never a REVOKE** — the guard
+enforces this and it caught the first attempt. `CREATE OR REPLACE FUNCTION` does **not** reset a function's
+ACL, so a REVOKE there would CHANGE production while presenting itself as a no-op. Confirm the real state
+with `has_function_privilege`, not the acl text (all six: anon false, authenticated false, service_role true).
+
+🔑 **The finding that held for all six: NOT ONE was what the register implied.** "6 stale pins" reads as
+uniform rot. They were — a misleading header over a one-feature drift (`get_set_detail`, D20
+`underlying_set_count`); a **correct** pin the checker could not parse because it is a PROCEDURE
+(`reconcile_all_saved_wallet_stats`, no content change needed at all); a deliberate feature addition
+(`public_board_liveness_sweep` — rotation + predictive skip); a sargability rewrite that looked like a live
+pricing defect (`get_active_challenges`); its sibling whose body got shorter while gaining logic
+(`get_challenge_plan`); and a partition-pruning predicate whose "no-op" rested on an unstated data
+assumption (`get_pack_detail_bundle`). **A count of stale pins is a work-queue length, never a description of
+the work** — and two of the six would have shipped wrong without a cheap positive control.
+
+⚠ **The `lower(col) = lower(arg)` → `col IN (arg, lower(arg))` rewrite** (both challenge functions) is
+sargable but **narrower**: a stored address whose case differs from BOTH the argument and its lowercase form
+no longer matches, so slots read as UNOWNED and `costToComplete` reads as full price. **Measured harmless
+2026-08-22** — 25,447 mixed-case rows across 384 wallets in `wallet_moments_cache`, none with a lowercase
+duplicate; 436 wallets own a challenge slot edition all-time; **the two sets are DISJOINT**. 🚨 **The first
+impact query returned "0 affected wallets" and was VACUOUS** — there are zero active challenges, so it could
+not have returned anything else. The 436 is the positive control that makes the zero mean something. **One
+query separated a finding from a scare.** Both pinned tests now assert the case semantics explicitly.
+
+---
+
+## Displaced from CLAUDE.md — measurement traps that cost a wrong conclusion (verbatim, 2026-08-22)
+
+### Displaced from CLAUDE.md 2026-08-27 (verbatim) — the directional-claim bullet, to pay for the UTF-16 clause in its header
+
+⚠ **A directional claim needs a distribution, not a snapshot** (`fmv-recalc`: 3 failed characterizations in 2 days off one-instant reads), and **compare against the series' own history before calling something a regression** — a "collapse" turned out to be its rate for three weeks. Read a current-day rollup row as PARTIAL. ⚠ **A delta between two STOCKS across an unknown interval is neither a rate nor a sign** — a burst read as a trend, retracted at the third reading; measure the FLOW (`created_at` on the same predicate). ⚠ Aggregating a `text` column (`max(cursor_after)`) is a lexicographic max — it reported `'9500' > '11500'` and made a **wedged** sweep look like an advancing one.
+
+⭐ **Why it moved:** CLAUDE.md's own header requires a new durable rule to DISPLACE one, and the rule
+being added there — that Python's `len()` counts code points, not UTF-16 units — belongs in the
+header itself, beside the `wc -c` warning it extends. This bullet's home was always the trap series
+above.
+
+
+The bullet below was condensed to a one-line rule in CLAUDE.md on 2026-08-22 to make room for the
+DEFEATED-purge correction and the built-bundle instrument gap. The rule stands; only the cases moved.
+
+> - ⚠ **A byte-identical HTTP response is as much the signature of a CACHE HIT as of a correct change**
+>   (`/api/public/insights/**` sets a public `s-maxage`; the tell was an `elapsed_ms` identical to the
+>   millisecond — re-run with a cache-buster) — ⚠ **and its DB analogue: an A/B benchmark must be
+>   WARM-vs-WARM** (a cold candidate against a warm incumbent read as *5.6× slower* and nearly killed a
+>   correct rewrite; **buffers held while the ms moved 9×**). And **an unordered `LIMIT` is not a sample**
+>   but physical order — it reported 0.1% against a true 22%. Use `abs(hashtext(k)) % N`.
+
+### 🚨 A SIXTH way a measurement lies: A GUARD THAT READS THE WORKING TREE IS BLIND IN A FRESH CLONE (2026-08-27)
+
+⛔ **Both instances below are mine, from one session, and both were reported as green.**
+
+**(a) The untracked file a clean clone cannot see.** `inbox-index-lists-every-filing` walks
+`docs/overnight/inbox/` **on disk**. I verified a patch by `git am`-ing it onto a **fresh clone of
+`origin/main`** and running the guard there: **5/5 green.** On the working tree that matters it was
+**2/5 RED** — an untracked `2026-08-27T1808Z-daytime-monitor.md`, present on disk, absent from
+`INDEX.md`. **An untracked file does not clone**, so the clean-clone run was structurally incapable
+of failing.
+
+⭐ **The rule: a clean-clone run proves the COMMITTED state and is silent about the LOCAL state the
+same guard fails on. Any guard that reads the filesystem rather than the git index must be run where
+the files actually are.** ⚠ **And the aggravating detail: I had singled that guard out as "the one I
+ran deliberately this time," because it was the guard my previous patch tripped. Naming a check as
+the one you were careful about does not make the environment you ran it in the right one** — it just
+makes a blind result carry more weight than it earned.
+
+ⓘ Its two assertions are separate and the second is the easy half to miss: every filing must be
+listed **and** the header count must match. A new filing needs both the entry and the count bump.
+
+**(b) `len()` is not `String.length` — code points vs UTF-16 units.** I reported CLAUDE.md at
+**39,970**; the binding number is **39,974**. Neither reader is broken: Python's `len()` counts
+**code points**, Node's `String.length` counts **UTF-16 code units**, and CLAUDE.md contains
+**exactly four astral characters — four `🚨` (U+1F6A8), 2 units each.** ⭐ **So the delta was not
+noise, it was the astral count, exactly.**
+
+⛔ **The guard is a vitest test, so Node's number is the one that reds CI — and with 26 characters of
+headroom, ONE `🚨` costs 2 of them, not 1.** A Python count of 39,996 can sit under the limit while
+the guard is already over.
+
+🚨 **And the file already said so.** `__tests__/claude-md-stays-under-the-memory-file-limit.test.ts`
+carries the comment *"Node's `String.length` is the binding instrument"* — and records that `wc -c`
+once read 40,086 on the same file. **I ran that test and measured with a different tool anyway.**
+⭐ **Use the instrument the GUARD uses, not an equivalent-looking one; "characters" is three different
+quantities (bytes, code points, UTF-16 units) and they diverge on exactly the emoji this repo's docs
+are made of.**
+
+### 🚨 A FIFTH way a measurement lies: A PARAMETERISED FUNCTION DOES NOT PLAN LIKE THE SAME TEXT INLINE (2026-08-27)
+
+⛔ **This one was paid for in production.** `get_lock_check_batch`'s hot-wallet branch is a
+`CROSS JOIN LATERAL` **per hot wallet**, each with its own `LIMIT p_limit` — the plan says it plainly:
+**`Limit (actual rows=81 loops=574)`, i.e. 574 hot wallets and 46,320 rows read to return 200.**
+Replacing it with a single scan filtered by `wallet_address IN (hot)` measured, **warm-vs-warm in one
+session, with the slug and limit written as LITERALS**:
+
+| form (inline CTE, literals) | buffers | time |
+|---|---|---|
+| lateral-per-wallet (current) | 49,438 | 56,421 ms |
+| single scan (rewrite) | **232** | **15.3 ms** |
+
+⭐ **And the baseline was independently corroborated** — the inline old-form 56,421 ms reproduced the
+production mean of **51,041 ms over 694 calls**. Every methodological box was ticked: same session, warm
+both sides, same predicate, real population, baseline cross-checked against production.
+
+⛔ **Applied as the FUNCTION, it was WORSE:** **127,501 buffers / 73,486 ms**, then **127,534 buffers /
+114,531 ms on a warm re-run** — ~2.6x the buffers of the form it replaced. Reverted ~4 minutes later
+(revert proven exact by whitespace-collapsed md5 against the definition captured before the change).
+
+⭐⭐ **THE RULE: measure the FUNCTION, by calling the FUNCTION.** With `p_collection_slug` and `p_limit`
+as **parameters** the planner has no constants to prune with and can choose a completely different plan
+from the same SQL text with literals substituted. **An inline CTE is a measurement of a query you are
+not going to run.** ⚠ **The tell is not in the numbers — it is structural**: if the thing you are
+optimising is a function whose *parameters appear in the predicates you are relying on for the win*,
+the inline measurement cannot be trusted, however clean the A/B.
+
+⚠ **Two corollaries worth keeping.** (1) **Run the suspicious result twice.** The first post-apply run
+(73 s) dirtied 14,157 pages and was dismissible as a cold cache; **the warm re-run at 114 s is what made
+it unambiguous.** (2) **What made trying it in production acceptable was that the function is
+SELECT-only** — it picks candidates and writes nothing — so the worst case was a slower selection for one
+tick. **Check that property BEFORE applying, not after**; here it also turned out that no tick ran during
+the 4-minute window at all, which was luck rather than design. Ledger: 2026-08-27.
+
+### 🚨 A FOURTH way a measurement lies: the PROJECTION can change the PLAN (2026-08-26)
+
+⚠ **Isolating a sub-expression to price it is only valid if you isolate it with the REAL query's output
+columns.** Measured while attributing the cost of `topshot_serial_board_candidates`:
+
+| what was measured | plan | buffers |
+|---|---|---:|
+| the CTE alone, selecting only `edition_id` | **Index Only Scan** | **32,641** |
+| the same CTE as the function runs it (also selects `fmv_usd`, `confidence`) | **Index Scan** | **818,698** |
+
+**A 25× difference produced entirely by the projection**, because `edition_id` is covered by the
+index and `confidence` is not — one uncovered column forces a heap fetch on every entry. The isolate
+was then subtracted from the whole call, which produced the confident and exactly wrong conclusion that
+the `serial_fmv_estimate` calls were ~96% of the cost when they are ~9%.
+
+⭐ **The shape to recognise: a number, a control, and a subtraction, all measuring a plan the code never
+runs.** The arithmetic is sound and the answer is inverted. **Price a sub-expression by REMOVING work from
+the real query** (here: run the CTE + its join with the function calls deleted, which gave the true 90.7%),
+never by re-writing it standalone. ⓘ This is the same family as the WARM-vs-WARM rule above — both are
+cases of the A and the B not being the same query.
+
+ⓘ Case, with the fix: ledger 2026-08-26 (the covering index), known-issues #30, and
+[inbox 2026-08-26T1500Z](../overnight/inbox/2026-08-26T1500Z-the-targets-rpc-is-50s-of-DISTINCT-ON-and-edition-fmv-current-is-NOT-a-drop-in.md).
+
+**Which `check_*` shape is which** (displaced from CLAUDE.md 2026-08-22, verbatim): a jsonb-array one
+(`check_secdef_anon_exec_drift`, `…_execute_violations`, `check_edge_fn_http_failures`) returns
+`count(*) = 1` when CLEAN — read the array LENGTH; a SETOF one (`check_public_security_invariants`,
+`check_anon_write_surface`) returns **zero rows** when clean.
+
+### ⚠ The "degraded band" is a CLOCK correlation, not a saturation guarantee (2026-08-23)
+
+R6 has carried *"a degraded-band re-measure is still owed before closing"* since 08-22, naming the window
+**16:20–18:05Z**. Measured **17:55–17:58Z, inside that window**, the database was **NOT saturated**:
+`4 active · 1 IO waiter · longest active query 1.9 s`, against the audit's degraded reading of
+*31 active / 30 IO waiters*.
+
+🚨 **So an in-band reading does NOT discharge an owed saturation measurement, and any exit condition worded
+"re-measure in-band" is under-specified.** "During the band" and "during saturation" are different asks and
+only the second tests the claim. Re-word such an exit condition to name SATURATION — otherwise it gets
+discharged by a quiet reading and a P1 closes on it. **Check `pg_stat_activity` (active / `wait_event_type='IO'`)
+and state the reading alongside any timing taken "in-band".**
+
+⚠ **A cold direct timing is not comparable to a warm production one, and mixing them fabricates a headline.**
+The same day, a direct timing of AllDay's per-edition FMV lateral read **40,229 ms** — which cannot be its cost,
+because the AllDay HTTP endpoint had returned **200 with real data two minutes earlier**. **A DB A/B must be
+WARM-vs-WARM**; at ~74 ms per disk read a cold run measures the buffer cache, not the query. Discarded, and
+recorded so nobody re-derives it and believes it.
+
+---
+
+## Compute-tier IO budgets — what the 22 MB/s floor actually is (2026-08-23, R46)
+
+⚠ **CLAUDE.md's Infrastructure bullet points here.** It used to read *"fix expensive queries, don't upgrade (Medium is the same 2 cores for 4×)"*. **The policy is unchanged — don't upgrade — but two of its facts were wrong and are corrected below.** Trevor's call 2026-08-23: correct the facts, keep the policy.
+
+**The 22 MB/s is a COMPUTE-TIER budget, not a disk property.** Settled two ways: the Management API reports `ci_small: { baseline_disk_io_mbs: 174, max_disk_io_mbs: 2085 }` — ⚠ **that field is MEGABITS and reads like megabytes**; 174/8 = 21.75 MB/s and 2085/8 = 260.6 MB/s, which reproduces the published table exactly. Taken at face value it overstates headroom **8×**. The published [Compute and Disk](https://supabase.com/docs/guides/platform/compute-and-disk) table is the independent second instrument and agrees.
+
+| tier | baseline MB/s | burst MB/s | baseline IOPS | RAM | CPU | $/mo |
+|---|---:|---:|---:|---:|---|---:|
+| **Small (current)** | **22** | 261 | 1,000 | 2 GB | 2-core shared | $15 |
+| Medium | 43 | 261 | 2,000 | 4 GB | 2-core shared | $60 |
+| Large | **79** | **594** | 3,600 | 8 GB | **2-core DEDICATED** | $110 |
+| XL | 149 | 594 | 6,000 | 16 GB | 4-core dedicated | $210 |
+
+- ⛔ **No disk change lifts this instance.** *"The effective throughput is the lower of the throughput supported by the compute size and the provisioned throughput of the disk."* gp3's 125 MB/s default is capped by Small's 22. ⚠ **And provisioning extra IOPS/throughput at all "requires Large compute size or above"** — on Small the purchase is not offered. Two independent reasons; a gp2→gp3 migration was filed as a "$0 lever" and is **void**.
+- ⚠ **"Same 2 cores" is true of Medium ONLY.** Large flips `cpu_dedicated` false→true. Small and Medium are burstable; the docs: *"Once burst capacity is exhausted, performance returns to baseline. If you need consistent disk performance, consider upgrading your compute size."* **Medium keeps Small's 261 MB/s ceiling and shared CPU — the same failure mechanism, later, not half a fix.**
+- 💡 **Why this box looked correctly sized for months:** Supabase's guidance is `Max DB Size (Recommended)` = **50 GB** for Small, and this DB is **13.5 GB** — 27% of it. **The vendor's sizing metric is DATABASE SIZE, not WORKING SET.** The 6.5 GB hot set against 2 GB RAM is invisible to the number anyone would naturally check. ⚠ Generalisable: *"within the recommended size"* says nothing about whether the hot set is resident.
+- ⓘ Vendor's own upgrade criterion, recorded as an input and not an argument: *"Projects that use any disk IO budget are good candidates for upgrading to a larger compute instance."* This instance does not dip into the budget — **exhausting it IS the 22 MB/s throttle.**
+
+⛔ **DECIDED 2026-08-23 20:48 PT — Trevor: stay on Small. No spend, permanently, not "for now".** $96/mo (Large) declined = **$1,152/yr**. 🚨 **The operational consequence is the part to carry into other work: the IO budget is now at 100% BY CHOICE, so every new cron job, refresh, or index build spends headroom that does not exist — state its steady-state IO cost and what it displaces before proposing it.** ⛔ Do not re-suggest the upgrade except on a production build failing on a board read · first revenue or 50+ WAU · a public page serving degraded copy to anon visitors for a sustained window · the hot set passing ~8 GB. **E declined the SPEND, not the free work** — a zero-extra-IO piggyback is still on the table.
+
+Full analysis, the numbered cost of declining, and the standing-rule collision: `docs/overnight/inbox/2026-08-23T1610Z-R46-…md`.
+
+## ⛔ A lagging materialisation is unsafe as a FILTER for a predicate over the columns it lags on (2026-08-23)
+
+Measured on `fmv_apply_thin_sale_haircut`'s Top Shot leg, in a genuinely quiet window
+(`io_wait 8 / active 9 / total 47`). Full write-up:
+`docs/overnight/inbox/2026-08-24T0455Z-the-fmv-haircut-topshot-leg-costs-800k-buffers-and-the-obvious-fix-loses-71pct-of-it.md`.
+
+**The cost.** The read half alone, columns already narrowed to the eight the function uses:
+
+```
+Execution Time: 101,425 ms
+Buffers: shared hit=780218 read=20327     (800,545 ≈ 6.25 GB)
+Index Scan  fmv_snapshots_2026_collection_id_edition_id_computed_at_idx
+  850,490 rows  →  Unique 19,667 editions  →  filter passes 14
+```
+
+**101 s and ~6.25 GB to locate 14 rows**, and the function runs that `DISTINCT ON` **twice** (measurement
+CTE + `UPDATE ... FROM latest`), so the leg is ~200 s against a ~120 s cap. ⚠ **Column projection is NOT
+the lever** — the unnarrowed `SELECT DISTINCT ON (edition_id) *` timed out at 110 s and the narrowed
+eight-column version still took **101.4 s**. The cost is walking 850,490 index entries. This is R46
+reproduced at function scope.
+
+⚠ **The failure is the GATEWAY, not `statement_timeout`.** `1/7 legs failed: nba_top_shot: upstream
+request timeout` is the Supabase gateway's ~120 s cap. The route's own comment block attributes it to the
+global 120 s `statement_timeout` — the two bounds are within seconds of each other, which is exactly the
+confusion this file warns about. It matters practically: on the gateway path **the statement is not
+cancelled when the client gives up**, so a failed nightly run leaves ~100 s of scan still burning after
+the failure has already been recorded.
+
+**⛔ The obvious fix, and why it is wrong.** `edition_fmv_current` (13 MB, 27,075 rows, 5 collections)
+materialises exactly the latest-per-edition this scan recomputes, and as a candidate source it is
+**771× cheaper**: 1,038 buffers / 363 ms vs 800,545 / 101,425 ms. It also **loses 71% of the rows.**
+Both shapes in ONE statement sharing ONE MVCC snapshot, diffing the SET rather than the count:
+
+```
+old_rows 14 · new_rows 4 · in_old_not_new 10 · in_new_not_old 0
+```
+
+**Mechanism:** `edition_fmv_current` stores its own copies of `fmv_usd`, `floor_price_usd` and
+`confidence` as of the last refresh. The haircut predicate `abs(fmv_usd - floor_price_usd) < 0.01` is
+evaluated at step 1 against those **stale** copies, so an edition whose TRUE latest snapshot qualifies is
+dropped before step 2 can re-derive it. Safe as a display source; **unsafe as a filter for a predicate
+over the columns it lags on.** Zero false positives is what makes it dangerous — both versions return a
+small plausible number and no error.
+
+⚠ **This nearly shipped on a moving target.** The first two readings were **1** row and then **4**, taken
+13 minutes apart; the eligible population moved 1 → 14 within the hour because `/api/fmv-recalc` rewrites
+it continuously. Comparing those two counts would have called the cheap shape "close enough". **Only the
+same-snapshot set difference exposed it** — which is this file's own "diff the SET, not the count" rule
+and its "a DB A/B must be warm-vs-warm" rule combining into a stronger one: **for a volatile population,
+an A/B must share a snapshot, not merely a warm cache.**
+
+## Caller enumeration — the SEVENTH and EIGHTH sources (2026-08-23)
+
+CLAUDE.md requires **six** sources before believing a function has no caller (`pg_proc.prosrc`, `pg_views.definition`, `cron.job.command`, `pg_trigger`, a full-repo grep, and the Cowork artifacts' HTML), plus a **seventh** for edge functions: **cron-job.org**, invisible to all six *and* to `cron.job`.
+
+🚨 **There is an EIGHTH, and it runs production ingests: Windows Task Scheduler on Trevor's box.**
+
+| task | cadence | script |
+|---|---|---|
+| `RPC Deal Board Ingest` | every 3 h from 00:13 PT | `scripts/run-active-listings-ingest.ps1` |
+| ~~`RPC Pinnacle Render Cache Fill`~~ — **DELETED 2026-10-04** (retired by known-issues #90; it was still firing every 15 min, logging `needed=0`) | was every 15 min | `scripts/pinnacle-render-cache-fill.mjs` |
+| `RPC Panini Ingest` | every 4 h → **every 2 h from 2026-10-03** (once `scripts/panini-schedule-every-2h.ps1` is run on the box): FULL runs at 2/6/10 AM-PM PT, WALK-only runs (cards, no grids/packs) at 12/4/8 AM-PM PT — `lib/chains/panini/run-mode.ts` | `scripts/panini-run.bat` → `scripts/ingest-panini-runner.mjs` |
+| `RPC AllDay Badge Ingest` | daily 05:37 PT | `scripts/run-allday-badge-ingest.ps1` |
+| `RPC Panini Team Walk` (added 2026-09-24; **staging only** — writes `panini_team_listings`, hidden until the accuracy gate) | daily 03:35 PT, 5 stalest teams | `scripts/panini-team-walk.bat` · [franchise-hubs.md](../features/franchise-hubs.md) |
+
+⚠ **A laptop lane going SILENT is first a question about the LAPTOP (2026-11-01).** `panini-ingest-enum` read ~947 min silent (inbox `2026-11-01T1545Z`) with every run ok: every RPC task showed the SAME `LastRunTime` (7:17:17 AM PT, the catch-up burst Windows fires on wake), so the box had been off/asleep since ~5 PM — the lane resumed at 7:59 AM on its own. **Before diagnosing a laptop lane, read `Get-ScheduledTaskInfo` for ALL the RPC tasks:** one shared LastRunTime = the box was down (no fix; the `info` alert was right); other tasks running while one lane is silent = a real stall (a hung `IgnoreNew` instance, a dead Chrome — see testing-and-ci.md). `LastTaskResult 0x800710E0` = a run Windows refused to start, not a script failure.
+
+Enumerate with `Get-ScheduledTask | Where-Object { $_.TaskName -match 'RPC' }`. ⚠ **Read the cadence from `$t.Triggers[0].Repetition.Interval`** — `StartBoundary` alone shows only the first fire and hides a `PT3H`/`PT15M` repetition entirely. Logs are under `%LOCALAPPDATA%\<task-name>\`; ⚠ they carry NUL bytes so `grep` calls them binary — pipe through `tr -d '\000'`.
+
+💡 **This is where "residential Atlas ingest" physically happens** — a phrase carried in the notes for months with no location attached. Atlas WAF-blocks GitHub runners and Vercel egress but not Trevor's home IP, so for `topshot-active-listings-ingest` **the local task is the arm that works and the GitHub Actions workflow is the arm that never could**. A GHA-only reading of that pipeline measures the arm that was never going to succeed (known-issues #30).
+
+### ⚠ A failure rate is a claim about a POPULATION — ask where the telemetry is written
+
+Three instruments gave three rates for that one pipeline and **none was wrong about its own population**: ~60% `egress_blocked` (a 5-of-7 `pipeline_runs` sample), 80% (all of `pipeline_runs`), 22.5% (GitHub Actions run conclusions).
+
+🚨 **`pipeline_runs` was blind to the dominant failure by construction:** the route writes `log_pipeline_run` in its **POST** phase and the failure killed the run in the **GET** phase, so the table held only runs that had already survived the thing that stops the pipeline. Inside that filtered population `egress_blocked` genuinely is ~80%. ⓘ The tell was arithmetic: two callers × 8/day should leave ~48 runs in the 73 h retention window; it held **7**.
+
+➡ **Before quoting a pipeline's failure rate, ask (a) which callers exist and (b) at what point in the run the telemetry is written.** A rate from the pipeline's self-report and a rate from its scheduler are not comparable, and neither is "the pipeline's rate". **`max(last_seen_at)` on the OUTCOME table is the only instrument that sees every arm** — it is what refuted a "100% red for 5 days" claim in one query.
+
+---
+
+## Scoping an aggregate is an EQUIVALENCE claim — the `drain_fmv_cold_tail` fix, and the two ways it could have been mis-shipped (2026-08-25)
+
+**The defect, and the cleanest instance of "a `LIMIT` bounds OUTPUT, not COST" this repo has.**
+`drain_fmv_cold_tail`'s candidate query opened with
+
+```sql
+WITH latest AS (
+  SELECT edition_id, MAX(computed_at) FROM fmv_snapshots GROUP BY edition_id   -- every row, every collection
+)
+```
+
+and only then LEFT JOINed it to `editions` filtered to one collection. Draining a **518-edition** collection
+therefore grouped **~1.28M** snapshot rows, and the `LIMIT p_limit` sat *above* the aggregate where it could
+not help. Fixed by one `WHERE collection_id = v_collection_id` inside the CTE.
+
+**Measured 2026-08-26 ~04:15Z, `ufc_strike`, `EXPLAIN (ANALYZE, BUFFERS)`, instance at io_wait 8 / active 11
+(deliberately not in a saturation spell — a spell confounds every timing in BOTH directions):**
+
+| | buffers | snapshot rows | time | result |
+|---|---:|---:|---:|---|
+| as-written (unscoped) | 66,499 | ~1,281,000 | 38,615 ms | 0 rows |
+| scoped (shipped) | 741 | 4,391 | 173 ms | 0 rows |
+| | **~90×** | ~292× | ~223× | **IDENTICAL** |
+
+Both plans report *"Rows Removed by Filter: 518"* — same editions examined, same zero candidates. Served by
+the **already-existing** `fmv_snapshots_2026_collection_id_edition_id_computed_at_idx` as an Index Only Scan,
+so **no index was built** — which matters on an instance whose IO budget is at 100% by choice (R46).
+
+### ⭐ The durable rule: PROVE the equivalence over the population, do not argue it from the plan
+
+Scoping an aggregate changes the *answer* whenever the scoping column can disagree with the grouping key's
+own row. Here: a snapshot's `collection_id` versus its edition's. **Measured across every row —
+1,281,003 snapshots joined to editions, 0 with a differing `collection_id`, 0 NULL.**
+
+⚠ **This is the step that made it shippable rather than merely plausible.** The A/B alone proves the new form
+is *faster*; it proves nothing about whether it is the *same query*. Two plans returning the same rows on one
+collection at one instant is a sample, not an equivalence. **Run the disagreement count before you ship a
+scope, and record it — it is the only artifact a reverter can check.**
+
+### ⚠ A `CREATE OR REPLACE FUNCTION` does NOT reset the function's ACL — so the migration carries a MARKER, not a REVOKE
+
+`drain_fmv_cold_tail` is already anon/authenticated-revoked in prod. Re-issuing the body leaves that intact
+(verified live before and after: `has_function_privilege` anon=false, authenticated=false, service_role=true).
+**A defensive `REVOKE` in the migration would therefore have been the one statement in it that actually
+changed production** — a scope widening disguised as caution. The migration records an `anon-exec:` decision
+line instead. ⓘ Post-flight on any function change: `prosecdef`, `proconfig`, the three
+`has_function_privilege` reads, `check_secdef_anon_exec_drift()` (**read its jsonb array's LENGTH, not
+`count(*)`**) and `check_public_security_invariants()` (**0 rows when clean**).
+
+### ⛔ The near-mis-claim: a scheduled tick is only a control if it ran on the NEW body
+
+A `drain-fmv-cold-tail` tick at **04:17:14Z** wrote **89 rows, ok=true** against 6 and 13 on the two prior
+ticks — and it was tempting to publish that as validation. **It was not: the migration applied as version
+`20260826041837` = 04:18:37Z, so that tick ran on the OLD body.** ➡ **Compare the tick's timestamp against
+the migration's VERSION STRING, which is a UTC stamp of the apply, not against your memory of when you ran
+it.** The same rule as the production-caller control above: a manual invocation proves the function works,
+never that the *scheduled* caller does.
+
+⚠ **And "fast at doing nothing" is not a fix.** The first post-apply run (`ufc_strike`) returned
+`processed: 0` — correct, and evidence of speed only. A **write control** was run separately
+(`nfl_all_day`, limit 3 → `processed: 3, ask_only: 2, stale: 1`) and the rows confirmed **from outside the
+function** in `fmv_snapshots` at the run's exact `computed_at`.
+
+### 🚨 The cost was never "slow" — it was THREE COLLECTIONS SKIPPED, under `ok: true`
+
+Measured only *after* shipping the fix, which is the wrong order and worth admitting: the route
+`drain-fmv-cold-tail` sweeps **four** collections in one tick against a **45,000 ms budget**, calling the
+function once per slug and recording `skipped` / `slugs_attempted` / `deadline_hit` in `extra`. The unscoped
+aggregate cost ~38.6 s **per call**, so a tick that ran it cold burned the entire budget on the FIRST
+collection and abandoned the other three.
+
+**Baseline over the whole 73 h `pipeline_runs` window, everything strictly before the migration
+(`started_at < 2026-08-26 04:18:37+00`): 134 ticks · 42 `deadline_hit` (31.3%) · 415 slugs attempted ·
+121 slugs SKIPPED (22.6% of the 536 collection-slots).**
+
+⚠ **Every one of those 134 ticks recorded `ok: true`.** The 04:17:14Z tick reads
+`ok: true, rows_written: 89` — and its `extra` says `slugs_attempted: 1`,
+`skipped: ["nfl_all_day","laliga_golazos","ufc_strike"]`. ➡ **Same family as the `rows_written = 0` null
+instrument: a multi-arm pipeline's `ok` flag describes the ROUTE, not the arms.** For any budgeted
+fan-out route, read `deadline_hit` and the length of `skipped`, and treat a rising `rows_written` on a tick
+that attempted one arm as evidence of *starvation*, not throughput.
+
+⚠ **It also explains an anomaly that looked like the fix working.** The 89-row tick stood out against 6 and
+13 — but it is the *deadline-hit* signature (one collection given the whole budget), not the fix; the fix
+applied 83 seconds later. **The number that moved was a symptom of the defect, not of its removal.**
+
+### ⓘ Negative control: the defect did NOT spread — population is ONE
+
+The standing rule after finding a defect is *grep for the EXPRESSION, not the file*, because this one has
+spread by copy-paste five times. Swept `pg_proc.prosrc` for the same shape across the whole schema:
+
+- **`FROM fmv_snapshots` + `GROUP BY edition_id` → 3 functions.** `detect_floor_drops` scopes both its
+  snapshot CTEs with `WHERE collection_id = v_collection_id` (its `GROUP BY edition_id` is on `sales`, also
+  scoped); `get_topshot_hot_floors` reads snapshots through a per-edition `LATERAL … ORDER BY computed_at
+  DESC LIMIT 1`. **Both already correct.**
+- **`FROM fmv_snapshots` at all → 76 functions**, of which only **3** never mention `collection_id`:
+  `analytics_pipeline_health` (every read is `ORDER BY … DESC LIMIT 1` behind a window predicate, with a
+  comment saying so), `analytics_fmv_pipeline_health` (bounded by `computed_at >= now() - 48h` and
+  collection-agnostic **by design** — it reports per-collection health) and `analytics_fmv_top_movers`.
+
+⚠ **The `mentions_collection_id` heuristic is COARSE and must not be quoted as a clean bill** —
+`drain_fmv_cold_tail` itself mentioned `collection_id` twice while its aggregate ignored it. The predicate
+that actually finds this defect is *"is the aggregate's own FROM clause scoped"*, which only a read of the
+body answers. **3 bodies were read; 76 were not.**
+
+
+## PG17 partial-index reachability — a DECIDABLE rule, and two null instruments found proving it
+
+*Added 2026-08-25 (PT). Supersedes the "reachability is per-index and only an EXPLAIN settles it"
+conclusion in `docs/overnight/inbox/2026-08-23T1910Z-…`, which was true but stopped one step short.*
+
+### The rule
+
+> A partial index whose predicate contains `<col> IS NOT NULL`, where `<col>` is declared
+> `NOT NULL`, is reachable **iff the QUERY independently supplies something the planner can prove
+> implies `<col> IS NOT NULL`** — a strict-operator clause on that column (`col = x`, `col <> x`,
+> `col > x`), or an **inner join** on it. It is unreachable when the ONLY source of that qual was
+> the query's own literal `col IS NOT NULL`, because PG17 constant-folds that away *before*
+> predicate proving.
+
+⭐ **Why the predicate SHAPE was never a usable selector:** the shape describes the INDEX, and
+reachability is a property of the **query/index pair**. The rule above makes it decidable by
+reading the query, without an EXPLAIN per index — though an EXPLAIN is still the confirmation.
+
+**Proven both directions on a scratch table (PG 17.6), 2026-08-25:**
+
+| index predicate | plan |
+|---|---|
+| `WHERE (price_usd > 0 AND edition_id IS NOT NULL)` | **Seq Scan even under `enable_seqscan = off`** |
+| `WHERE (price_usd > 0)` | `Index Only Scan`, chosen with seqscan enabled |
+
+The negative control is the strong one: the planner would rather do the thing it was explicitly
+told not to do than use the index.
+
+**All six `public` partial indexes of this shape, classified — 5 reachable, 1 not:**
+
+| index | what supplies the proof | verdict |
+|---|---|---|
+| `pack_drop_pool_edition_idx` | `WHERE edition_id = $1` | reachable |
+| `idx_sales_2026_top_sales_board` | `v_insights_top_sales` does `JOIN editions e ON e.id = s.edition_id` | reachable |
+| `unmapped_sales_resolver_targets_idx` | its own sibling conjunct `nft_id <> ''` is strict | reachable |
+| `unmapped_sales_sold_at_unresolved_idx` | same | reachable |
+| `idx_pinnacle_editions_set_name` | `WHERE set_name = $1` | reachable |
+| `idx_sales_2026_fmv_recalc_window` | **nothing** — `GROUP BY edition_id` is not a strict clause | **unreachable — REPAIRED 2026-08-25** |
+
+### ⚠ Two null instruments, both of which read as an answer
+
+1. **A cumulative `idx_scan` is a claim about the PAST.** But a **paired delta** does settle
+   current reachability: over one 4-minute window `pack_drop_pool_edition_idx` moved
+   420,894 → 420,898 while `idx_sales_2026_fmv_recalc_window` held flat at 3. Same instrument,
+   same window, opposite answers. That is the cheap test — one index alone tells you nothing.
+2. 🚨 **`n_live_tup` is an ESTIMATE, and on a never-analyzed relation it reads 0 — which is
+   indistinguishable from empty.** `sales_2022` reported `n_live_tup = 0` and was proposed for
+   index cleanup as "an empty partition"; `count(*)` returns **750,702** rows and its indexes carry
+   **43,815,424** scans. It reads 0 because `n_tup_ins/upd/del = 0` and `last_autoanalyze IS NULL`,
+   so the estimate was never set. **Any emptiness claim must come from `count(*)`** — or at minimum
+   be corroborated by `pg_relation_size` (one index there is 78 MB, which no empty table produces).
+
+### The repair, and its measured limit
+
+`idx_sales_2026_fmv_recalc_window` rebuilt without the redundant conjunct via the one-off pg_cron
+`CREATE INDEX CONCURRENTLY` recipe (202 s). On the **unmodified** production query the plan node
+went **51,040.92 → 15,264.74** and `EXPLAIN (ANALYZE, BUFFERS)` read **18,124 ms** against the
+**50,471 ms** on record — ~2.8x, reproducing the predicted 2.9x.
+
+⚠ **The BUFFER half of the prediction did not reproduce: 84,667 measured against ~48,494
+predicted, and `Heap Fetches: 82,082` is the entire gap.** An Index Only Scan falls back to the
+heap wherever the visibility map is unset; `relallvisible/relpages` was **83.2%**, and a
+`VACUUM (INDEX_CLEANUP OFF, ANALYZE)` took it to **88.6%**. ⭐ **Generalisable: when an
+Index-Only-Scan win under-delivers on buffers, read `Heap Fetches` before doubting the index.**
+
+
+## 🚨 The 45-second sniper timeout was a DISTINCT ON pushdown (2026-09-02) — 274,519 rows per page
+
+`/api/sniper-feed?collection=nfl-all-day` produced two production errors that turn out to be one
+request: `AD fmv_current error @0: canceling statement due to statement timeout` and
+`Vercel Runtime Timeout Error: Task timed out after 45 seconds`, on the **same deployment and the same
+second**. ⭐ **Correlating a pair of errors by deployment + timestamp is what turned an unexplained
+lambda timeout into a one-query diagnosis** — neither line alone said anything about the other.
+
+### The rule, with the number attached
+
+`fmv_current` is `DISTINCT ON (edition_id) … FROM fmv_snapshots ORDER BY edition_id, computed_at DESC`.
+**A qual on the DISTINCT ON KEY pushes down into the index; a qual on any other column does not.** The
+read filtered on `collection_id`. One page, measured live:
+
+```
+Limit  (actual time=5.438..19528.379 rows=1000)
+  Buffers: shared hit=233394 read=29998
+  ->  Unique  (rows=5248)
+        ->  Merge Append  (rows=274519)      ← the whole view, per page
+Execution Time: 19529.331 ms
+```
+
+Six pages, OFFSET growing → **~1.84M buffers, ~136 s of DB work for one user request**, against a 45 s
+lambda budget and a statement timeout. Both ceilings were hit, which is why both errors appeared.
+
+### The fix is an ORDER, not a bound
+
+Read the collection's `editions` first (keyset on `id` — indexed, plain table), then ask for FMV by
+edition id, which IS the DISTINCT ON key. ⚠ **That was shipped as `fmv_current.in("edition_id", …)`
+and then shipped AGAIN, hours later, as `get_editions_latest_fmv(ids)`** — see
+"reaching the index is not the same as being cheap" below. The first version took the request from
+~1.84M buffers to 424k (4.3×); the second took it to 24.8k (a further 17×). **The first fix was
+right and captured under a quarter of the available win, which is exactly the state that reads as
+"done".**
+
+### ⚠ MEASURE THE PRODUCTION CALLER'S SHAPE, NOT A CONVENIENT ONE
+
+Forms of "the same" filter give different plans:
+
+| form | plan | cost, 500 editions |
+|---|---|---|
+| `.eq(collection_id)` + `.range()` | Merge Append over the whole view | 263,392 buffers / 19,529 ms **per page** |
+| `IN (SELECT … ORDER BY external_id LIMIT 500)` | **Hash** Semi Join → whole view | **1,336,516 buffers / 34,633 ms** |
+| `IN (SELECT … ORDER BY id LIMIT 500)` | **Merge** Semi Join, early-terminating | 152,869 buffers / 318 ms |
+| `IN (SELECT id FROM editions WHERE collection_id …)` | Merge Semi Join | 35,868 buffers / 125 ms |
+| `IN (<literal uuids>)` | `Index Cond: (edition_id = ANY (...))` | 35,852 buffers |
+| `= ANY(ARRAY[<literals>])` | same | 35,852 buffers |
+| `= ANY($1)`, bound array ← **what PostgREST actually sends** | same | 35,017 buffers / 58 ms |
+
+⚠ **Rows two and three differ by ONE WORD** — the ORDER BY inside the id subquery — and by **8.7×**.
+Order the inner set by `edition_id` and the planner can merge-join against the view's own sort order
+and stop early; order it by anything else (`external_id`, a relevance score, nothing at all) and it
+falls back to a **hash** semi-join, which has to build the entire `DISTINCT ON` first. **The tell is
+the join NODE, not the qual.** Neither row is what a PostgREST client provokes: an array constant
+becomes an index condition, so there is no join to pick a strategy for.
+
+⭐ **CORRECTED 2026-09-02, same day, by two sessions measuring the same swap and disagreeing by 15×.**
+Both were wrong, in opposite directions, and both errors are the same error — *a probe whose harness
+differs from production in the one dimension the answer depends on*:
+
+- **"`IN (<literal uuids>)` ← what PostgREST sends" was wrong.** It sends
+  `edition_id = ANY($1)` with a **bound array parameter**. Read it off
+  `pg_stat_statements` (`WHERE query LIKE 'WITH pgrst_source%'`) rather than guessing — the
+  normalised text shows the parameter. It happens to plan identically to the literal list here, so the
+  conclusion survived; the *reason to trust it* did not exist until it was checked.
+- **A 249× "before/after" for the same swap was an artifact of its own harness.** That arm expressed
+  the id list as `IN (SELECT … FROM ids)` over a CTE ordered by `external_id`, which becomes a hash
+  semi-join over the fully materialised view — a shape PostgREST never sends. The real ratio is
+  **17×**, not 249×. ⚠ **When a benchmark's "before" arm is 38× worse than the same query issued the
+  production way, the harness is the finding.** Reproduced and isolated to the one ORDER BY, so this
+  is a measurement, not a theory about one.
+- Id **spread does not matter**: 500 contiguous ids and 500 scattered ids (`ORDER BY md5(id::text)`)
+  cost 35,852 vs 35,012 buffers. Only the wall clock moves, with cache warmth.
+
+### 🚨 REACHING THE INDEX IS NOT THE SAME AS BEING CHEAP
+
+The bigger correction. `edition_id = ANY(...)` *does* push into
+`fmv_snapshots_<year>_edition_id_computed_at_*` — and still costs **~70 buffers per edition**, because
+**the view has no per-group `LIMIT`**: the index-cond scan reads EVERY snapshot row for each edition
+(~35 of them, and growing daily) and `Unique` throws all but the newest away. A per-id
+`LATERAL … ORDER BY computed_at DESC LIMIT 1` stops at the first row: **~4 buffers per edition**.
+
+Measured warm-vs-warm, same session, same id lists, 2026-09-02:
+
+| id list | `fmv_current WHERE edition_id = ANY($1)` | per-id LATERAL `LIMIT 1` |
+|---|---|---|
+| 500 Top Shot | 25,330 buffers / 1,070 ms | 2,002 buffers / 4.0 ms |
+| 500 All Day | 35,017 buffers / 58 ms | 2,001 buffers / 4.1 ms |
+| **all 6,190 All Day** | **424,475 buffers / 631 ms** | **24,760 buffers / 51 ms** |
+
+👉 So the pushdown rule needs a second clause: **a qual on the DISTINCT ON key reaches the index; it
+does not bound the rows per group.** For a bounded id list prefer
+`public.get_editions_latest_fmv(uuid[])` (added 2026-09-02, service_role only, byte-identical
+selection rule) over the view. `/api/sniper-feed`'s All Day leg and the concierge's FMV distribution
+both call it. ⚠ Its own `COMMENT ON FUNCTION` still carries the 249× figure — **17× is the number**;
+correct the comment on the next migration that touches FMV rather than burning a
+`PGRST002` burst on a comment.
+
+⚠ **Cost is linear in the id count in every pushed-down form** — 40 / 200 / 500 ids measured 2,894 /
+14,624 / 35,852 buffers, ~72 each — so **chunk size is a round-trip decision, not a cost decision**.
+Chunk at ≤1000 because PostgREST's row cap applies to an RPC result set too, not because a bigger
+chunk is more expensive.
+
+### ⭐ A CORRECT SIBLING IS NOT A GUARD
+
+`fetchFmvBatch`, one function away in the same file, has always used `.in("edition_id", …)` on
+`fmv_current` for the Top Shot leg. The right pattern sat beside the wrong one for months. When you
+fix a read shape, **grep for the shape across the file and its siblings** — this was the third
+instance in one day of a fix applied per-file leaving a sibling behind.
+
+⚠ **And then the "correct" sibling became the remaining instance.** `fetchFmvBatch` still reads the
+view, because it needs `wap_usd / floor_price_usd / days_since_sale / sales_count_30d` and
+`get_editions_latest_fmv` returns four columns. **15 `.in("edition_id", …)` reads of `fmv_current`
+remain across 13 files** (2026-09-02 count — re-derive; ⚠ a naive grep counts 16, because
+`lib/concierge/fmv-distribution.ts` names the shape in a *comment* telling you not to use it). Nine
+select only columns the helper already returns; five (`fetchFmvBatch`, `api/fmv`, `wallet-search` ×2,
+`cache-refresh`) would need a WIDER helper.
+
+### ⛔ …AND THEY ARE NOT WORTH A MIGRATION. RANK BY OBSERVED TOTAL, NOT BY PER-CALL WORST CASE.
+
+`pg_stat_statements` since its 2026-08-12 reset, all PostgREST reads of `fmv_current`:
+
+| shape | calls | total blocks | per call |
+|---|---|---|---|
+| **collection-scoped** (the sniper All Day read, now fixed) | **43** | **31,052,866** | 722,160 |
+| id list, 5 cols (`wallet-search` / `cache-refresh`) | 3,786 | 7,731,152 | 2,042 |
+| id list, 2 cols | 614 | 445,851 | 726 |
+| id list, 3 cols | 13 | 424,578 | 32,660 |
+| id list, other | 30 | 89,925 | ~3,000 |
+
+⭐ **One shape, 43 calls, out-read every id-list call in the product combined by 3.6×** (31.05M against
+8.69M over 4,443 calls). **The thing worth fixing was never the shape that appears in thirteen files;
+it was the one that appears in one and materialises the view. A file count is not a cost model.**
+
+⚠ **And 2,042 blocks/call is ~29 editions — this file previously said "`wallet-search` on a
+5,000-moment wallet is ~350k buffers" as though that were a measurement. It was a projection, and the
+observed average is two orders of magnitude smaller.** The tail is real but is not what the route
+mostly does: over 1,165 wallets, distinct editions run **p50 50 · p90 3,196 · p99 7,674 · max
+11,349**, with 223 wallets over 1,000 and 52 over 5,000 — so a p90 wallet does cost ~224k buffers on
+the view. **Convert these when a wider helper exists for another reason, or if the large-wallet tail
+becomes the common case; not before.** `recent-sales` is capped at 50 ids and should be left alone.
+
+⭐ **2026-09-19 — the wider helper now exists, and the verdict above was re-litigated on TIME, not
+blocks.** Re-read 9:40 PM PT: the 5-column id-list shape is **6,103 calls · mean 6,204 ms · 631 min
+of DB time · 1,203 physical blocks/call**, the 8-column shape 902 calls at 6,046 ms. Blocks per call
+fell since 09-02 (2,042 → 1,203) while seconds per call went to six, because this week the estate's
+bottleneck is disk IO under contention (#126, R109, R117), and a read that touches ~7,400 buffers
+per 100 ids with ~5,500 of them physical is exactly the kind that queues. Hand A/B on a fixed 100
+Top Shot ids: view **40.9 s cold / 22.6 s warm, ~7,400 buffers**; `get_editions_latest_fmv_wide`
+**40 ms, 1,617 buffers**; set difference on `(edition_id, fmv_usd, computed_at)` **0 both ways**.
+Migration `20260920044216` adds `public.get_editions_latest_fmv_wide(uuid[])` — the narrow helper's
+selection rule returning **all 15 view columns** (`wap_usd` = `asp_usd`), service_role only.
+`wallet-search` ×2 and `cache-refresh` were repointed the same night (fixtures moved to the
+harness's `rpc:` key, mutation-checked); **`fetchFmvBatch` (sniper-feed, 500 ids per call) and
+`/api/fmv` (both reads, with a `fromWideRows()` shim: the helper's `asp_without_outliers` is the
+route's `wap_without_outliers`) followed 09-20 8:0x AM PT** — the five hottest id-list readers are
+on the helper. **Twelve `fmv_current` readers remain on the view**, each small-list or capped:
+`allday-pack-ev`, `pack-ev`, `golazos-sniper-feed`, `allday-wallet-search`, `wallet/seed`,
+`profile/watchlist` + `watchlist` (via the chunked helper), `alerts`, `support-chat`, `rtr/lock-roi`,
+`recent-sales` (capped 50 — leave it) and `lib/market-sources.ts`. Convert one when
+`pg_stat_statements` ranks it, not before (`fmv-current-reads-are-keyed-on-edition-id` pins the
+floor at 8 sites). The rule stands — *rank by observed total* — it is the total that moved.
+
+⚠ Both readings above carry one caveat: `pg_stat_statements` sits at **4,905 of 5,000 entries**, so it
+is evicting and every total here is a LOWER BOUND. It is the right instrument for reading what a
+client actually sends; it is not one for concluding a query never ran.
+
+### ⭐ THIS IS NOW THREE INSTANCES — treat it as a root cause, not a coincidence
+
+1. **`pack_ev_latest`** in `refresh_challenge_costs` — the arm-1 hoist (migration `20260902120329`).
+   Before: 4 timeouts in 11 daily runs (36%), successes trending 57 → 74 → 81 → **101** s against a
+   120 s ceiling. After: **1.208 s**.
+2. **`fmv_current`** in `/api/sniper-feed`'s All Day leg — this section. 274,519 rows per page,
+   19.5 s, six pages, paired statement-timeout + 45 s lambda kill.
+3. **`fmv_current`** in the same route's `computeAllDaySniperFeed`, the read `fetchFmvBatch` two
+   functions away had always done correctly.
+4. **`refresh_edition_fmv_current(true)`** — R107's daily full reconcile (2026-09-20): the streaming
+   `DISTINCT ON` over ~1.2 M snapshots died at 600 s on its first cold tick after a 45 s WARM control;
+   re-shaped to `editions e CROSS JOIN LATERAL (… WHERE fs.edition_id = e.id ORDER BY computed_at
+   DESC LIMIT 1)` — 74.7 s cold, 51 s control (`20260920095145`).
+5. **`get_editions_latest_fmv_wide(uuid[])`** — the id-list readers of `v_fmv_current_wide` /
+   `fmv_current` (100 ids: 40 ms via the per-id probe against 22–41 s through the view).
+
+⭐ **The general shape, five times now: when the caller has an id list or a bounded slice, one
+ordered index probe per key (`LATERAL … ORDER BY ts DESC LIMIT 1`) beats a `DISTINCT ON` that streams
+the whole table, and the gap grows with cache pressure — a warm A/B hides it entirely.** ⚠ **The
+"warm number" trap that shipped R107 wrong:** a control run right after another job streamed the
+same rows is a warm measurement of a read that will run cold. Measure after an eviction, or state
+the cache state with the number.
+
+### ⛔ "THE DB SIDE IS ALREADY CLEAN" — the sweep that said so MISSED TWO LIVE INSTANCES IN app/
+
+Swept it 2026-09-02. **21 views use `DISTINCT ON`.** Of the callers:
+
+- ⛔ **"App/lib callers: every one filters on the view's own key" WAS FALSE, and a re-sweep the same
+  evening found the two it missed.** `allday_edition_floor_ask` and `golazos_edition_floor_ask` are
+  fine. `fmv_current` was not:
+
+  | site | shape | measured (warm) | now |
+  |---|---|---|---|
+  | `/api/overview-stats` | `count .eq(collection_id).eq(confidence)` | **1,331,923 buffers / 14,085 ms** | `edition_fmv_current`, **909 / 39 ms** |
+  | `/api/support-chat` (`get_edition_listings`) | `.select("… editions!inner(external_id)").eq("editions.external_id", k)` | **933,871 buffers / 1,390 ms** | `.eq("edition_id", edition.id)`, **6 / 0.06 ms** |
+
+  ⚠ **The second is why the first sweep missed both: the offending column is not in the read's own
+  table.** A grep for `collection_id` beside `fmv_current` cannot see an embedded-resource filter,
+  and the edition UUID it needed was already in hand two statements above — so the join was never
+  necessary, and it was also less correct (it matched `external_id` with no collection scope, and
+  Top Shot stores every moment twice). ⭐ **A sweep that enumerates the WRONG columns is bounded by
+  the last incident; assert the RIGHT one is present instead.** Now a ban at zero:
+  `__tests__/fmv-current-reads-are-keyed-on-edition-id.test.ts` walks `app/` and `lib/`, requires an
+  `edition_id` qual on every `.from("fmv_current")` call site, and asserts the COUNT it inspected.
+  ⚠ Note also that `/api/overview-stats` **has no caller at all** — nothing in the repo fetches it and
+  production logged zero requests in 72h (the five collection `/overview` PAGES logged 5,824) — so its
+  14 s was a landmine, not a wait anyone endured.
+  Second time in two days that "name the caller" changed what a finding meant (the first:
+  `health_check`).
+- ⚠ And keyed-on-`edition_id` is **not** the same as cheap — see "reaching the index is not the same
+  as being cheap" above. Read the remaining keyed callers as "none provokes the full-view pass",
+  never as "none is worth optimising".
+- **SQL functions reading `fmv_current`**: **8**, and every one is either keyed on `edition_id`
+  (`compute_pack_ev_from_pool_tier_weighted`, `sentinel_edition_coverage`,
+  `sentinel_fmv_confidence_canonical_ts`) or has ALREADY been converted to a LATERAL with the reason
+  in the source:
+  - `compute_pack_ev_from_pool` — *"LATERAL instead of the fmv_current view (a full 1.31M-row pass per join)"*
+  - `compute_pack_ev_per_edition_weighted` — *"the planner cannot push a join key into DISTINCT ON, so every call walked all 1.31M fmv_snapshots rows"*
+  - `backfill_pack_rip_metadata` — *"LATERAL instead of LEFT JOIN fmv_current (the DISTINCT ON view, a full pass over every snapshot per call)"*
+  - `health_check` reads it unqualified — **and has ZERO callers.** ⚠ I first cleared this as "the
+    full set is the intent"; the real reason is better and was one query away. **0 pg_cron jobs
+    reference it**, and all three in-repo mentions are comments describing migrations *away* from
+    it: `data-integrity` (*"the previous version called the full health_check() aggregate
+    (~14.7s…)"* → now `get_fmv_coverage()`) and `stale-fmv-monitor` (*"reads the inputs we need
+    directly"*). So it is a dead ~14.7 s aggregate, not a live full scan — **nothing to optimise,
+    and nothing to worry about.** ⭐ Second time in one day that "name the caller" changed the
+    answer rather than merely confirming it.
+
+⭐ **So the SQL layer learned this lesson thoroughly and the TypeScript layer never heard it.** Three
+functions carry explicit comments about the DISTINCT ON pushdown; the route-side read in
+`/api/sniper-feed` was making the identical mistake with no comment anywhere in `app/`. **A lesson
+can be completely absorbed in one layer of a codebase and completely absent from another** — the
+same family as "a correct sibling is not a guard", one level up. When you fix a query-shape bug,
+ask which OTHER LANGUAGE in the repo issues the same query.
+
+### ⭐ AND THERE IS ALREADY A MATERIALISED ANSWER FOR THE COLLECTION-SCOPED CASE
+
+**`edition_fmv_current`** — a real table (`relkind='r'`, 27,179 rows), described in
+`get_market_summary` as *"the same latest-row-per-edition set as the fmv_current view, materialised
+hourly"*, refreshed by `refresh_edition_fmv_current`. It carries `collection_id`, so **you can filter
+it by collection**. Five functions already use it (`get_series_editions`, `get_series_rollups`,
+`get_topshot_sniper_deals`, `refresh_series_detail_rollup`, `get_market_summary`).
+
+👉 **"All FMVs for collection X" should read `edition_fmv_current`, not `fmv_current`.** Use the view
+only when you have edition ids, or when hourly staleness is unacceptable.
+
+⚠ **And a screen for this has to use word boundaries.** `'%fmv_current%'` also matches
+`edition_fmv_current`, which turned 8 real view-readers into a list of 13 and produced two confident
+false positives before I noticed. Use `prosrc ~ '\mfmv_current\M'`.
+
+👉 **Whenever you filter a `DISTINCT ON (k)` view by anything other than `k`, assume it materialises
+the whole view and measure it.** The tell in the plan is a `Subquery Scan` with a `Filter:` on your
+column sitting above a `Unique` whose row count is the WHOLE table, not your slice. Grep for views
+with `DISTINCT ON` and check what their callers filter on:
+
+```sql
+SELECT viewname FROM pg_views
+WHERE schemaname = 'public' AND definition ILIKE '%DISTINCT ON%';
+```
+
+### ⚠ Inverting the order MOVES the cap
+
+The 1000-row cap lands on `editions` instead, so that read has to be paged in the same change or the
+fix trades one silent truncation for another.
+
+---
+
+## A TRAILING-WINDOW rate LAGS a collapsed process, and the figure derived from it drifts in the REASSURING direction (2026-09-03)
+
+Filed under measurement discipline because it generalises past the one alert it was found in.
+
+`refresh_unmapped_backlog_growth` computed `days_to_drain = actionable_pile / outflow_24h`, where
+`outflow_24h` is a **trailing 24-hour count**. When a drain stops, that count keeps reporting the burst
+for a full day.
+
+🚨 **THE TELL, AND IT IS COUNTER-INTUITIVE: the published ETA went UP while the true rate went DOWN.**
+25.1 days at 14:30Z, **32.6 days** three hours later — because the numerator barely moves and the stale
+burst ages out slowly, so the quotient *rises* as the window empties. **On a decaying series the number
+therefore looks plausible at every single refresh, and it errs toward reassurance.** Measured against
+the same table and the same column over a shorter window: **`outflow_3h` = 10** against 1,263/24h,
+where steady state gives ~158 — **6% of the 24h average**, and an honest ETA nearer **526 days**.
+
+**The remedy that does not need a second instrument:** compare the metric to ITSELF over two windows.
+Steady state puts an eighth of a 24h count in any 3h window, so `outflow_3h * 16 < outflow_24h` says
+the current rate is below **half** the trailing average. ⚠ **Same table, same column, two windows —
+this is one instrument compared against itself, NOT the banned pairing of a count from one table with a
+property from another.**
+
+⚠ **THE SUPPRESSION SELF-HEALS, AND THAT WILL LOOK LIKE A REGRESSION.** It fires only while the two
+windows DISAGREE. Once the burst ages out, they converge and a large, honest figure is published again.
+**Do not read a reappearing ETA as the fix failing, and do not widen the predicate. Sanity-check the
+SHORT-window number, never the derived one.**
+
+⭐ **Generalisation: any figure of the form `stock / trailing-window-flow` inherits this.** Before
+quoting one, ask what the flow looked like in the last fraction of its own window. A snapshot cannot
+answer it; a distribution can — hourly `rows_written` for the resolver fell **1,031 → 17** candidates
+per hour with nearly all returning `onchain_nil`, which is what established *healthy and out of
+tractable work* rather than *broken*.
+
+Ledger 2026-09-03; register R83; migrations `20260903174421` + `20260903174608`.
+
+## ⚠ Re-reading the mixed-return-shape rule the hard way (2026-09-03)
+
+`check_cursor_stall_threshold_drift()` returns **one row**, which under the SETOF convention reads as a
+finding. It is the **jsonb-array** shape and that row holds `[]`. `pg_get_function_result` says `jsonb`;
+`jsonb_array_length` says **0**; it is CLEAN. **Read the return TYPE before interpreting the count — a
+row count is not a finding count for half of these functions**, and the misreading direction here is
+toward a false incident report.
+
+
+## 🚨 A correlated `EXISTS` evaluated BEFORE a `DISTINCT ON` (2026-09-05) — 128,911 probes to return zero rows every time
+
+`pack_ev_latest` filtered on `NOT (collection_id = <ts> AND EXISTS (SELECT 1 FROM pack_ask_state a WHERE … AND h.gross_ev > 3 * a.lowest_ask))`. Because the predicate is **correlated on the outer row's `gross_ev`**, the planner cannot hash it, so it ran once per `pack_ev_history` row — **before** the `DISTINCT ON` reduced 314,130 rows to 4,642:
+
+```
+SubPlan 3 -> Index Scan pack_ask_state_pkey
+    loops = 128,911     buffers = 382,519     rows = 0 on every loop
+```
+
+**382,519 buffers — 54% of the query — for nothing**, against a `pack_ask_state` of 3,028 rows in which the same `dist_id` was re-probed thousands of times.
+
+### The rewrite, and the two things that make it sound
+
+A `LEFT JOIN`. ⚠ **Sound ONLY because `pack_ask_state_pkey` is UNIQUE on `(collection_slug, dist_id)`** — with a non-unique key the join multiplies rows and the counts silently change.
+
+```
+EXISTS (... AND h.gross_ev > 3 * a.lowest_ask)
+  ==  a.dist_id IS NOT NULL AND COALESCE(h.gross_ev > 3 * a.lowest_ask, false)
+```
+
+⚠ **THE `COALESCE` IS LOAD-BEARING.** On a NULL `gross_ev` the two forms DIVERGE: the subquery returns no rows so `NOT(true AND false)` = true and the row is **KEPT**; the join yields `NOT(true AND NULL)` = NULL and `WHERE` **DROPS** it. There are 0 NULLs today — which is exactly why this would have shipped as equivalent-by-luck.
+
+⛔ **What must NOT change: the filters still run BEFORE the `DISTINCT ON`.** Moving them after is a *semantic* change — filter-then-distinct keeps the newest row *that qualifies*; distinct-then-filter drops a key entirely when its newest row fails but an older one passes.
+
+**Measured:** 707,048 → 10,898 buffers (65×). ⚠ **The honest cost:** it trades the index-ordered scan for a Seq Scan + **external merge sort spilling ~28–49 MB** per execution, because the hash join destroys the ordering the `DISTINCT ON` was riding. Total I/O still falls ~30×. Size the caller rate before accepting that trade.
+
+## 🚨 `pg_stat_statements WHERE query ILIKE '%name%'` cannot tell an object from every object CONTAINING its name (2026-09-05)
+
+Sizing the change above, `ILIKE '%pack_ev_latest%'` returned `refresh_mv_pack_ev_latest()` as the top hit and it was read as the dominant caller. **It is not a caller at all** — the pattern matched **`mv_pack_ev_latest`**, which does not reference the view (`position('pack_ev_latest' in pg_get_viewdef('mv_pack_ev_latest')) = 0`).
+
+- Use a word boundary: `query ~ '(^|[^_a-z])pack_ev_latest'`.
+- Better, for "who consumes this object": **resolve it from `pg_depend`**, not from query text.
+
+```sql
+SELECT DISTINCT dc.relname, dc.relkind
+FROM pg_depend d
+JOIN pg_rewrite r ON r.oid = d.objid
+JOIN pg_class dc ON dc.oid = r.ev_class
+JOIN pg_class sc ON sc.oid = d.refobjid
+JOIN pg_namespace n ON n.oid = sc.relnamespace
+WHERE n.nspname = 'public' AND sc.relname = '<object>' AND dc.oid <> sc.oid;
+```
+
+⭐ The conclusion happened to survive; **the citation did not**, and a wrong citation in a shipped migration header is worse than no citation.
+
+## ⭐ Measuring a post-change effect: a SINGLE-CALL DELTA, never a pooled mean (2026-09-05)
+
+Three MV refreshers showed **55,463 s ≈ 15.4 hours** pooled and **707,481 blocks/call** — which reads as enormous reclaimable headroom. Their **recent runs are 1.5–9.7 seconds**: the mean is pooled since the 2026-08-12 stats reset and dominated by a slower era. **A pooled mean spanning a fix measures the fix's absence.**
+
+The instrument that works:
+
+1. Snapshot `calls, shared_blks_hit, shared_blks_read, total_exec_time, temp_blks_written` for the exact `queryid`.
+2. Wait for **one** scheduled run.
+3. Difference, and divide by `calls_after - calls_before`.
+
+Result for jobid 245: **15,329 blocks / 1,734 ms for that one call.** ⭐ And the positive control that matters more than the ratio: `temp_blks_written` was **0 across all 548 prior calls and 3,967 on the first post-change call** — the new external sort appearing exactly where predicted, proving the new path is the one running rather than inferring it from timing.
+
+## ⚠ `public_board_slow_count`'s probe is `count(*)`, which PRUNES (2026-09-05)
+
+The board-liveness probe times `SELECT count(*) FROM <view>`, and the planner drops CTEs the count does not need — on `topshot_2025_rookie_cohort_stats` the `player_editions` CTE reads **`never executed`**. So the probe's number is **not what a real caller pays**, in either direction. It is only comparable **to itself**: 5,133 ms at 11:28Z vs 10 ms later, same pruned shape, is evidence of **load, not structure**.
+
+⚠ Also check `sweep_age_min` from `public_board_liveness_probe()` before acting — the probe reads `public_board_liveness_state`, whose sweep was **209 minutes stale** when this breach was investigated, so the breach described a window that had already passed.
+
+## 🚨 A `*_at` COLUMN NAME IS NOT ITS CONTRACT — read `col_description()` before treating a timestamp as freshness (2026-09-07)
+
+**Cost: a finding filed, pushed, and retracted four hours later. Acting on it would have hidden 2,876 genuinely-live asks** — the "one *fix* would have made an accurate surface inaccurate" failure CLAUDE.md's first measurement-discipline bullet names, arriving exactly as advertised.
+
+**What I claimed** (inbox `2026-09-07T1603Z`, first version): *"`pack_ask_state` holds 1,995 rows `is_listed = TRUE` with a `lowest_ask` but only 96 checked in the last 48 h, so ~1,899 rows assert 'listed at $X' on evidence up to 11 days old. Gate on `last_checked_at`, never on `is_listed` alone."* Every number in that sentence is correct. **The conclusion is wrong**, because `last_checked_at` does not mean what it is named.
+
+**What refuted it, in the order a re-derivation should go:**
+
+1. **The writer's own telemetry.** `snapshot-pack-asks` runs **every 5 min**, `ok=true`, ~3 s, and `extra.per_collection` reports `total_listed` **1,995** (nba-top-shot) and **981** (nfl-all-day) — *exactly* the `is_listed = TRUE` counts — with **`dropped: 0` on every tick**. A tick at 21:08Z recorded `changed: 3`, so change-detection is live rather than wedged.
+2. **The demotion path is the positive control.** `upsert_pack_ask_state` ends with `UPDATE … SET is_listed = false … WHERE NOT EXISTS (SELECT 1 FROM _fresh f WHERE f.dist_id = s.dist_id)`. So **`dropped: 0` is proof the entire population was present upstream that tick** — not an absence of evidence.
+3. **The column stopped meaning "checked" in migration `20260827030000`.** That migration made the upsert change-detected — `WHERE s.is_listed = false OR s.lowest_ask IS DISTINCT FROM EXCLUDED.lowest_ask OR s.pack_listing_id IS DISTINCT FROM EXCLUDED.pack_listing_id` — because rewriting every listed row every tick to bump one timestamp cost **386 MB of WAL/day, 99 blocks dirtied per call to maintain a 4 MB table: "the worst WAL-per-unit-of-information ratio measured on this instance."** An unchanged row keeps its old stamp **by design**.
+4. 🚨 **The column carries a COMMENT that says all of this, and I measured before reading it.** `col_description()` returns: *"MEANING CHANGED 2026-08-26: this is now 'last CHANGED', not 'last checked'. The upsert is change-detected, so an unchanged row keeps its old stamp. **Do NOT hang a staleness or freshness monitor on this column** — the same trap as `saved_wallets.cache_updated_at` and `edition_fmv_current.refreshed_at`. For sweep freshness read `pipeline_runs` where `pipeline = 'snapshot-pack-asks'`, which is written on every tick. Six caller sources were swept when this changed … and NOTHING reads this column."*
+
+⚠ **THE FALSE CORROBORATION IS THE PART TO INTERNALISE.** The oldest stamp reads **2026-08-27 02:58Z**, and I was already holding a story about the Top Shot GraphQL host dying on ~08-28. Two unrelated facts one day apart looked like one mechanism. **That date is migration `20260827030000`'s own apply time** — the last moment every row was unconditionally rewritten. A timestamp that matches your hypothesis is not evidence for it until you know what writes it.
+
+**THE RULE.** Before treating any `*_at` as freshness: read `col_description('public.<table>'::regclass, <ordinal>)` (or `\d+`). Then find the **writer's** freshness signal instead — for a per-tick sweep that is its `pipeline_runs` row, one per tick, not a stamp on 2,981 rows. ⭐ **Three columns on this database carry this trap and the comment names all three:** `pack_ask_state.last_checked_at`, `saved_wallets.cache_updated_at`, `edition_fmv_current.refreshed_at`.
+
+### ⛔ RETRACTED WITHIN FOUR HOURS OF BEING FILED — the "fourth `*_at` case" was my own missing grep (2026-09-10 PT filed, 2026-09-11 02:1x PT retracted, #81)
+
+**This section previously claimed `edition_offers.updated_at` was a fourth and worst `*_at` case: that `offers-sweep` was Top Shot's only writer of `highest_offer`, that it had not written for 13 days, and that `topshot-deal-floor-serials` was stamping `updated_at` while leaving the offer stale. The load-bearing claim was false and the rest collapses with it.** Kept rather than deleted, because the way it failed is the lesson.
+
+🚨 **I grepped `app/` and `lib/` for writers. TWO WRITERS LIVE IN THE DATABASE and a repo grep cannot see either:**
+
+1. **`raise_edition_offers_from_chain()`** — pg_cron **jobid 216, hourly at :34**. Reads `offers` (fed by `topshot-offers-indexer`, measured 48/48 ok, 1,474 rows in 24 h) and upserts `highest_offer`. ⚠ **It is a RATCHET:** `SET highest_offer = GREATEST(COALESCE(existing,0), EXCLUDED.highest_offer) … WHERE EXCLUDED.highest_offer > COALESCE(existing,0)`. **It can only ever RAISE — never lower, never clear.**
+2. **`sync_edition_offers_from_atlas()`** — no cron entry of its own; called by **`atlas_listing_verify_tick`, pg_cron jobid 466, every 2 minutes**. This one is AUTHORITATIVE: `SET highest_offer = EXCLUDED.highest_offer` (absolute, not GREATEST) **and `SET highest_offer = NULL` when the edition verifies complete with no open offer.** It corrects downward and clears. Same for `low_ask`.
+
+⛔ **`v_offer_sanity_flags` IS NOT A LIST OF WRONG "BEST OFFER" CELLS — do not "close" it with a GREATEST raise (measured 2026-10-20 ~10:30 AM PT, Cowork cloud).** The weekly data-quality sweep reads its count (1,431 editions, ~$42.3K summed gap, +15 % w/w) as creep and names a GREATEST-based `edition_offers` raise as the fix. Classified by the TYPE of each flagged edition's top open `offers` row: **1,100 (77 %, $34.2K) are SERIAL bids** — an offer on one moment (#1 McGrady `210:8455` $3,666 vs the edition-wide $213; LeBron `100:3919` jersey #8 $6,000 vs $3,500) — which are not edition-wide bids, so the page's "Best offer" is CORRECT and raising it would publish a one-serial bid as the edition's; **232 are parallel bids keyed on the parallel's own `::` edition**, whose page already shows them; **83 ($2.3K, max $505) are `subedition` bids stored on a BASE edition** — either the Standard printing's bid (subeditionId 0, which the page should count) or an uncatalogued parallel that fell back to base (`lib/chains/flow/topshot-offer-available.ts`; it should not), and the `offers` row keeps no subedition id to tell them apart; **11 are edition-type, $16 total.** Growth in the count tracks serial-offer volume, not a pricing gap. The only defensible fix would be for those 83: store the subedition id on the offer and count `sub = 0` on the base page.
+
+**Measured coverage (2026-09-11 ~02:10 PT):** of 7,250 Top Shot rows carrying a `highest_offer`, **5,912 verified within 7 days, 1,927 within 24 h, and ZERO older than 7 days** — the Atlas rotation completes well inside a week. **1,338 have never been Atlas-verified**; those are reachable only by the ratchet, so structurally they can rise and never fall. That structural point survives; its size does not.
+
+⚠ **AND THE NUMBER I REACHED FOR TO SIZE IT WAS AN ARTIFACT — the control refuted it.** "Displays a `highest_offer` with no matching open offer in `offers`" gave **329 / 1,338 = 24.6%** for the never-verified cohort, which looked like measured wrongness. The no-change control — the same predicate over the **verified** cohort, which the healthy path actively corrects — reads **2,273 / 5,912 = 38.4%**, *higher*. So the predicate measures `offers`-table COVERAGE, not staleness, and **there is currently NO measured evidence of user-facing wrongness in Top Shot best-offer data.** This is this file's own rule landing on its author: *never pair a count from one table with a property from another*, and *a POSITIVE needs a no-change control the fix cannot move*.
+
+⭐ **WHAT SURVIVES, and it is worth more than the retracted claim.** Both Top Shot **marketplace-GraphQL** lanes died the same day and for the same reason: `offers-sweep` and `topshot-deal-floor-serials` each last wrote **2026-08-28**, and the live error (captured 2026-09-11 00:28:47 PT by the backstop step added hours earlier) is `Top Shot GraphQL failed with 530`. Both call the same `topshotGraphql` helper and the same URL; the healthy Top Shot GQL caller differs only in QUERY (`searchMintedMoments` works, `searchMarketplaceEditions` 530s). **The reason nobody noticed for 12 days is that the two DB-side writers above kept `edition_offers` moving without the marketplace API** — the masking is the real finding. What has genuinely had no writer since 08-28 is `low_ask_serial` / `low_ask_nft_id`, floor-serials' unique output.
+
+⛔ **THE RULE, and it is now in CLAUDE.md: to find a table's WRITERS, grep the DATABASE as well as the repo** —
+`SELECT proname FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.prosrc ~* '<table>'` — then read each one's conflict clause, because *which direction it can move a value* is the whole contract. A repo grep answered "who writes this?" with high confidence and was wrong.
+## 🚨 Pointing a NEW SCOPE at a shared, collection-scoped function fires EVERY branch it has — including the destructive one, retroactively (2026-09-08)
+
+`promote_unmapped_sales(p_collection_id, p_max)` is the drain for `unmapped_sales`. Its call sites
+all pass an explicit collection id, and until 2026-09-08 **none of them passed Top Shot**. Adding
+pg_cron `rpc-topshot-promote-unmapped` (jobid 474, hourly) to drain the newly-parked Top Shot rows
+therefore did something nobody was thinking about: its **first tick reported `archived: 24583`**.
+
+The function carries a retention arm alongside the promote:
+
+```sql
+DELETE FROM public.unmapped_sales
+ WHERE resolved_at IS NOT NULL
+   AND resolved_at < now() - interval '7 days'
+   AND (p_collection_id IS NULL OR collection_id = p_collection_id)
+```
+
+That arm had never executed for `nba_top_shot`, so the **entire Dec-2025/Jan-2026 resolved cohort was
+reaped the instant a drain existed** — eight months of rows, in one tick, from a job whose stated
+purpose was to promote.
+
+✅ **It was safe, and that was CHECKED rather than assumed:** every deleted row had
+`resolved_at IS NOT NULL` (i.e. was already promoted), and `sales` holds **73,660** `nba_top_shot`
+rows spanning exactly that cohort's window (2025-12-29 → 2026-01-16). The deletions were staging
+duplicates of data that lives in `sales`.
+
+⭐ **THE RULE: a collection-scoped shared function is not dormant for an unused scope — it is a
+LOADED ARM whose predicate has simply never been evaluated there.** Before pointing a new scope at
+one, read every statement in its body, not just the one you want. The blast radius is that scope's
+ENTIRE history, because the age predicate has had years to accumulate matches while nothing ran.
+
+⚠ Corollary for the reverse direction: `unmapped_sales` deletes **only resolved** rows, so an
+unresolved parked row has no deadline — UFC still holds 1,070 unresolved rows from 2025-12-30 and
+Golazos 20 from 2025-12-29. Parking is durable; promotion is what starts the 7-day clock.
+
+⚠ **Re-measured 2026-09-29:** UFC holds 1,054 unresolved rows (2025-12-30 → 2026-04-18), all marked `promote_blocked = no_resolution_path_all_four_branches_empty` (migration 20260824033743). No promoter leg runs for UFC any more (0 `promote_unmapped_sales` runs for it in 24 h), so they cost nothing; leave them.
+
+### `unmapped_sales` has NO uniqueness beyond `id` (2026-09-28/29)
+
+- **A `23505` fallback never fires there.** Two leaks followed: a sale already recorded in `sales` was parked anyway and never cleared (16,373 All Day + 54 Golazos copies), and a re-scanned range parked the same sale again. Closed 09-28 with hint `resolved_by = dedupe_already_in_sales_20260928`; the backfills now call `lib/ingest/already-recorded.ts` (`dropAlreadyRecorded`, scoped by `collection_id`, THROWS on a failed read) before parking.
+- **Duplicates also block claim RPCs that expect one row per tx** (`tx_rows = 1`): the All Day price recovery found 0 candidates while 1,000+ rows waited, until the copies were removed. ⚠ Nothing alarms on "0 candidates while rows wait" (known-issues #160).
+- **Multi-NFT V1 carts are priced per SEGMENT** (`attributeV1MultiSalePrices` in `lib/chains/flow/dapper-v1-tx-decode.ts`): each ListingAvailable → payment → ListingCompleted segment gets a price only with exactly one contract-sourced payment whose splits match within 1¢, and the tx total must reconcile; otherwise the row is stamped `multi_price_attempted_at` + `multi_price_reason` and left unpriced. Priced rows carry `price_source = v1_multi_nft_segment`. Driver: `/api/admin/recover-v1-budget-exhausted` via `claim_allday_v1_multi_price_recovery_candidates`.
+- **pg_net is the DB's egress** to Flow REST and Atlas (`net.http_get/http_post`, answers in `net._http_response`, which ages out after hours). ⛔ **A stamp written at DISPATCH records the attempt, not the outcome**: both Atlas probe legs (Top Shot 09-08, All Day 09-29) store `resolution_hint.atlas_probe_req` and re-probe when that response is a non-200 or timed out. `atlas_market_drain()` overwrites a failed request's `__nft__<id>` marker, so the request row cannot tell you which nft failed.
+
+## 🚨 A PARTIAL unique index is not a dedup guarantee — two writers of the same row can BOTH satisfy it and never collide (2026-09-08)
+
+Found minutes after `83820bd8` made the Top Shot indexer park unresolvable sales. Two lanes now write
+the same Top Shot listing sale:
+
+| writer | `transaction_hash` |
+|---|---|
+| the parked row, promoted by `promote_unmapped_sales` | **present** (the on-chain tx) |
+| `sync_sales_from_atlas` (jobid 471), ~2 h later | **NULL** — Atlas does not carry one |
+
+The promoter's only duplicate guard is `ON CONFLICT DO NOTHING` on `idx_sales_tx_nft_sold`, which is
+**PARTIAL: `WHERE transaction_hash IS NOT NULL`**. The Atlas row does not satisfy the predicate, so it
+is not in the index, so **it can never conflict with the promoted row** — and the one cross-source
+twin trigger on `sales` (`trg_zzz_allday_cross_source_dedup`) is All Day only. Sequence: parked within
+minutes → Atlas row at +2 h (its own ±10 min check finds nothing yet) → nft resolves → promoter
+inserts a SECOND row. **Every FMV reads `sales`; a duplicated sale is fabricated volume.**
+
+Closed in the lane that already dedupes (`20260908030456`): `sync_sales_from_atlas` marks an open
+parked twin resolved against its own row, so the promoter never sees it. The reverse race is covered
+by that lane's existing ±10 min dedupe against `sales`.
+
+⭐ **THE RULE: when a change creates a NEW writer of an existing row, enumerate every OTHER writer of
+that row and check the dedup key each one actually uses.** A unique index guarantees uniqueness only
+across rows that satisfy its predicate — and here the row being added satisfied it while the row it
+would collide with did not. **Reading "there is a unique index on (tx, nft, sold_at)" is not enough;
+read its `WHERE`.**
+
+⚠ **And when hunting the resulting duplicates, a ±10 min twin is a CANDIDATE, not a finding.** A
+6-hour scan returned exactly 1 pair on this market and it was a REAL double sale — nft `52212786`
+sold twice **94 seconds apart at $0.30 then $1.00**, both `onchain`, both with distinct tx hashes.
+Rapid flips exist here; discriminate on the tx hash and the price, not the interval.
+
+## 🚨 A `REVOKE … FROM PUBLIC` on a NEW function silently orphans the pg_cron job that calls it (2026-09-09)
+
+The standing rule here is *revoke `FROM PUBLIC, anon, authenticated` in ONE statement*. That is right,
+and it is **half of an ACL**. A new function created for a scheduled job needs the other half:
+
+```sql
+REVOKE EXECUTE ON FUNCTION public.<fn>(<args>) FROM PUBLIC, anon, authenticated;
+GRANT  EXECUTE ON FUNCTION public.<fn>(<args>) TO cron_heavy;   -- ← the job's `username`
+```
+
+Measured 2026-09-09: `backfill_topshot_sales_from_atlas_events` shipped with the REVOKE only. Its
+job (**481**) failed on its first tick with `ERROR: permission denied for function …`, and
+`has_function_privilege('cron_heavy', …)` read **false** — `cron_heavy` had no explicit grant and had
+been reaching the function through the PUBLIC grant the REVOKE removed.
+
+⚠ **`SECURITY DEFINER` does NOT cover this.** It governs what the function RUNS AS once entered; the
+CALLER still needs EXECUTE to enter it, and a pg_cron job runs as its `cron.job.username`, not as the
+function's owner. A SECDEF function with a correct owner and a revoked PUBLIC is still uncallable by
+the scheduler.
+
+🚨 **AND IT PRESENTS AS SILENCE, NOT FAILURE, IN THE PLACE YOU WOULD LOOK.** The permission error
+happens *before* the body runs, so `log_pipeline_run` is never reached: `cron.job_run_details` shows
+`failed` with the exact message, while **`pipeline_runs` shows NOTHING AT ALL**. A pipeline-level
+monitor, a cadence watchlist and `detect_stalled_pipelines` all see a job that simply never reported
+— indistinguishable from a schedule that never fired. ⭐ **For any "scheduled job wrote no row", the
+discriminator is `cron.job_run_details`, never the pipeline table.**
+
+**How to apply:** in the SAME migration that creates a function for a scheduled job, pair the REVOKE
+with the GRANT to the job's role, and assert it afterwards with `has_function_privilege` rather than
+reading the acl text — then confirm on the job's next natural tick, because a `GRANT` that names the
+wrong role is invisible until then.
+
+---
+
+## `sales` is PARTITIONED, and that is why a unique index could not dedupe it (#68, 2026-09-08/09)
+
+**CLAUDE.md carries the claim; this is the measurement behind it.**
+
+### The defect
+
+`public.sales` is `RANGE (sold_at)`-partitioned across eight partitions (`sales_2020` … `sales_2027`).
+Postgres requires that **a unique index on a partitioned parent contain the partition key**, so the
+duplicate guard that existed — `idx_sales_tx_nft_sold (transaction_hash, nft_id, sold_at)` — was not a
+design choice, it was the only shape the parent would accept.
+
+⛔ **And it could never fire.** The two writers that ingested the same Top Shot transaction disagree
+about `sold_at` by ~3.4 s on average (`topshot_gql` stamps its own fetch-adjacent time; the on-chain and
+`offer_fill` lanes carry the block time), so every duplicate pair differed in the third index column.
+⭐ **The tell was that the constraint had recorded EXACTLY ZERO violations — not a small number.** A
+guard whose violation count is precisely zero over years of a write-heavy table is far more likely to be
+structurally unable to fire than to be perfectly obeyed.
+
+`app/api/sales-indexer/route.ts` had been written expecting the opposite: its batch insert falls back to
+`insertIndividually(batch)` and treats `23505` as an expected, unlogged outcome. The route was correct;
+the index it relied on could not deliver.
+
+### What it cost
+
+**33,000 duplicate rows** inside `public.sales`, of which ~20,780 sat inside the live 30-day FMV window
+and inflated `sales_count_30d` on 598 editions across the MEDIUM threshold. Top Shot sales went
+3,216,034 → 3,183,200 on the drain.
+
+By source of the row that was REMOVED: `topshot_gql` 30,093 · NULL 1,852 · `ts_history_backfill_v1` 545 ·
+`topshot_marketplace` 326 · `historical_2020_import` 184. **No `onchain` or `offer_fill` row was
+removed.**
+
+### How it was found
+
+By WIDENING a falsifier past the change that had just been made. The cross-source duplicate check
+written for the parked-sale resolver read 0 for the rows that lane wrote; re-running it without the
+`sold_at >` clause that scoped it to my own change surfaced 27,608 pairs going back years.
+
+### The keep-rule, and why the first one was wrong
+
+The rule filed with the issue — "keep the row with the richer fields" — was a **guess**, and measurement
+refuted it: buyer, seller, serial number and edition are **100% present on every source**. The real
+discriminator is `block_height`, which only the chain-derived lanes carry. The shipped ordering:
+
+```sql
+ORDER BY CASE COALESCE(s.source, '~')
+           WHEN 'onchain' THEN 1 WHEN 'offer_fill' THEN 2
+           WHEN 'topshot_gql' THEN 3 WHEN 'ts_history_backfill_v1' THEN 4
+           ELSE 5 END, s.sold_at, s.id
+```
+
+⚠ **A keep-rule is a claim about the data and has to be measured like one.** Deleting on an unmeasured
+keep-rule is the same class of error as acting on an unmeasured finding.
+
+### The fix, and the fix that was IMPOSSIBLE
+
+Recommended three times before it was checked: "re-cut the index without `sold_at`". **That cannot
+exist on the parent** — see the partition-key rule above — and it would additionally have refused 1,607
+legitimate `historical_2020_import` rows that genuinely share `(tx, nft, price)`.
+
+What shipped instead indexes the **partitions** directly, which is valid because a duplicate pair is
+same-partition by construction (both rows date the same transaction):
+
+```sql
+CREATE UNIQUE INDEX IF NOT EXISTS sales_2026_tx_nft_price_uidx
+  ON public.sales_2026 (transaction_hash, nft_id, price_usd)
+  WHERE transaction_hash IS NOT NULL;   -- built CONCURRENTLY, 105 MB, indisvalid
+CREATE UNIQUE INDEX IF NOT EXISTS sales_2027_tx_nft_price_uidx
+  ON public.sales_2027 (transaction_hash, nft_id, price_usd)
+  WHERE transaction_hash IS NOT NULL;
+```
+
+⭐ **`CREATE INDEX CONCURRENTLY` ran via `execute_sql`.** CLAUDE.md had claimed it was reachable only
+from a one-statement pg_cron job; that claim is retracted. It is `apply_migration` that cannot take it,
+because that path is transactional. The `IF NOT EXISTS` migration
+(`20260909002014_audit_20260909_sales_tx_nft_price_unique_per_partition.sql`) records the built indexes
+so the change is not fileless and `migration-parity` stays green.
+
+The constraint was then **proved to reject**: a real duplicate was inserted, `unique_violation` caught,
+transaction rolled back. An untested constraint is exactly as untrustworthy as an untested monitor.
+
+### Backup and revert
+
+Every deleted row was copied first into `public.audit_20260908_ts_dupe_sales`
+(`LIKE public.sales INCLUDING DEFAULTS`, plus `kept_sale_id uuid` and `backed_up_at`, RLS on,
+service_role only) — **33,000 rows**, so the drain is reversible row-for-row. The drain function
+`dedupe_topshot_dupe_sales(p_from, p_to, p_max)` carries three roll-back assertions; the load-bearing
+one is *"any survivor missing from `sales` afterwards"*, which is what catches a keep-rule that deletes
+the row it meant to keep. Result: 0 survivors missing, 0 groups left.
+
+### The watch
+
+`check_topshot_dupe_sales(p_hours DEFAULT 7)` (pg_cron jobid 480, `38 3,9,15,21`) counts groups on
+`(nft_id, transaction_hash, price_usd)` and logs `ok = (v_err IS NULL AND v_groups = 0)`, so the existing
+`failure_rate` arm of `get_pipeline_alerts_core()` reports it with no edit to that function.
+
+⚠ **Its window was chosen by MEASUREMENT, not by taste.** A 45-day window costs 75,473 buffers /
+23,700 disk reads / 14.2 s on an instance whose binding constraint is disk reads — refused. The 7-hour
+window costs **429 buffers / 48 ms**. The detector was verified to FIRE by running it at `p_hours => 288`
+while the pre-drain window was still reachable (1 group, `ok=false`, correct message) before being left
+at its default.
+
+## ⭐ A LOOSE INDEX SCAN is the cheap way to get a COMPLETE distinct-key list — and `DISTINCT ON` is the expensive way that looks like the obvious one (2026-09-11)
+
+Measured on `wallet_moments_cache` (2.3 M rows, 3,275 MB), the Pinnacle slice being **56,440 rows
+holding only 419 distinct composite `edition_key`s**, all on an idle instance (1 active backend, 0 IO
+waiters):
+
+| shape | buffers | time |
+|---|---|---|
+| `select distinct on (edition_key) … order by edition_key, id` | **38,398** | 8,076 ms (external merge sort, 4.8 MB) |
+| recursive "next key strictly greater than the last" | **2,154** | **255 ms** |
+
+**18× fewer buffers for the same answer**, because the skip scan touches ~1 index page per KEY while
+`DISTINCT ON` reads every ROW and then sorts them. The shape:
+
+```sql
+with recursive k as (
+  (select edition_key from wallet_moments_cache
+    where collection_id = $1 and edition_key is not null
+    order by edition_key limit 1)
+  union all
+  (select (select w.edition_key from wallet_moments_cache w
+            where w.collection_id = $1 and w.edition_key > k.edition_key
+            order by w.edition_key limit 1)
+     from k where k.edition_key is not null)
+)
+select edition_key from k where edition_key is not null;
+```
+
+⚠ **It needs a B-tree whose leading columns are `(scope, the key)`** — here
+`idx_wmc_coll_ek_serial_cover` `(collection_id, edition_key, serial_number) INCLUDE (moment_id)`, which
+also makes the walk **index-only**. Check for one before prescribing a new index; this estate already
+had it.
+
+⭐ **Why it matters beyond cost: it is what makes COMPLETE coverage affordable.** The read it replaced
+was a PostgREST `.limit(5000)` clamped to 1,000 **unordered** rows — an undefined physical head of a
+56,440-row pool that never moved, so 6 of 9 work items were permanently unreachable (register **#71**).
+"Page the whole pool" was the other option and it is worse: the full `wallet_moments_cache ×
+pinnacle_nft_map` join costs **213,341 buffers / 12.1 s** as a nested loop and **145,054 / 28.1 s**
+with `enable_nestloop = off` — ⚠ so forcing a hash/merge here HALVED the buffers and more than DOUBLED
+the time. Neither is payable hourly on a 2-core / 22 MB/s instance.
+
+⭐ **And when a per-tick walk must still be bounded, slice on KEY BOUNDARIES, not on a row count.**
+One key held **1,510** rows, so a 1,000-row page would split it and let rows fall between slices,
+which no count-based check can see (the duplicates and omissions cancel — the `.range()` trap in a
+different costume). Take the next N keys, scan each whole, persist the last key as the cursor, wrap to
+NULL at the end. Measured at 25 keys / 1,280 rows: **5,966 buffers / 877 ms**, and a full pass over
+419 keys is ~17 ticks for ~100k buffers — **half the buffers of the single full join it replaces,
+while being bounded per tick.**
+
+## 🚨 A COMPLETENESS PREDICATE ITS OWN REPAIRING WRITER CAN UN-SATISFY IS AN INFINITE LOOP — and it presents as a healthy lane writing rows forever (2026-09-11)
+
+`/api/cron/pinnacle-metadata-backfill` Q4 selected catalog rows to repair with *"`character_name` is
+`'Unknown'` therefore incomplete"*, and its repair writes `info.characterName || "Unknown"` —
+deliberately, because it must not invent a name. **So for any edition whose on-chain shape metadata
+carries no character, the repair writes the exact value that re-selects it on the next tick.** Three
+rows were re-upserted hourly forever, with real on-chain mint counts (270 / 299 / 148) and `updated_at`
+stamps sitting on recent ticks as the fingerprint.
+
+⭐ **The tell is free and general: read the WRITER's fallback, then ask whether the SELECTOR's predicate
+can be satisfied by that fallback.** If the writer's own output lands in the rejected state, the queue
+cannot terminate — no amount of capacity helps, and every instrument reads healthy (`ok = true`, a
+non-zero `rows_written`, a non-empty eligible count, every tick, indefinitely).
+
+**The fix is to key completeness on PROVENANCE, not on a value the writer controls.** Here: *written
+from chain* = `edition_key IS NOT NULL AND mint_count IS NOT NULL`. ⚠ **Publish what the narrowed
+predicate excludes** (`q4_unknown_name_chain_written` = 3) — an exclusion nobody can count is how a
+guard goes quietly blind. ⛔ **And state the cost:** those three are now never re-read, so a later
+upstream fix for them will not be picked up.
+
+⚠ **Corollary on the instrument:** this was invisible because the lane's `extra` published two of its
+five write counters — the two that were moving. A per-step count with no sibling count cannot show a
+step that never fires (**#70**, one level down). Publish every counter that feeds `rows_written`, and
+publish the POPULATION next to any capped list, or "the cap is binding" and "the backlog is not
+shrinking" are the same reading.
+
+## ⚠⚠ ON THIS TIER, AN EXPLORATORY QUERY IS PRODUCTION LOAD — THE MEASUREMENT CAN BE THE CHANGE (2026-09-12)
+
+CLAUDE.md already says *"a reading taken while its SUBJECT CHANGED is not a reading — freeze the tree, then measure."* **This is the sharper case: the probe and the subject share one IO budget, so investigating a saturation defect makes the instance saturate, and the instrument then reports your own probes as the fix failing.**
+
+**What happened.** After shipping the `atlas_listing_verify_dispatch` fix (#85), three successive `pg_stat_statements` deltas on `atlas_listing_verify_tick` read **3.9 s / 32.5 MB (n=2) → 4.79 s / 65.4 MB (n=5) → 18.38 s / 100.4 MB (n=9)** — apparently regressing past the pre-fix pooled 16.37 s. It was not regressing. In that window I was running several **unbounded 55-second scans of `pack_rips`** (2 GB, 3.7 M rows) plus repeated temp-table samples, investigating a different item, on a **2-core instance whose saturation is IO- not CPU-bound**.
+
+⭐ **`cron.job_run_details` shows it exactly:** 15:00→15:12Z every tick **3.6–6.2 s, all succeeded** · 15:14 **33.8 s** · 15:16 **34.3 s** · **15:18 / 15:20 / 15:22 → 120.0 s FAILED ×3** · 15:24 67.5 s · 15:26 **6.1 s**. **The failures start and stop with the scans.** A session investigating production degraded it into three real pipeline failures.
+
+**The rules this earns:**
+- ⛔ **Never quote a `pg_stat_statements` delta taken while you were running heavy ad-hoc queries.** Snapshot, stop probing, then read.
+- ⚠ **When a post-change reading drifts the WRONG way, check your own session before you check the change.** The natural reading — "the fix stopped working" — was available, wrong, and would have triggered a revert.
+- ✅ **Bound every probe**: a `LIMIT`ed temp sample, `reltuples` from `pg_class` instead of `count(*)`, a partial index's own range, `EXPLAIN` without `ANALYZE` for plan shape. ⚠ **And `ORDER BY … LIMIT n` on a big table is not a bounded probe** — it sorts the whole matching set first; several 55 s timeouts here were exactly that.
+- ⭐ **Prefer an instrument the probe cannot move.** `cron.job_run_details` durations were contaminated too, but they carry per-run timestamps, so the clean window is *visible and separable*; a cumulative counter has no such seam.
+
+### Displaced from CLAUDE.md 2026-09-12 (verbatim) — the clock-sweep instance, to pay for the your-own-probe clause
+
+The FOUR-ways-a-measurement-lies bullet used to carry this instance of *"a reading taken while its SUBJECT CHANGED is not a reading"*:
+
+> — 3 of 4 clock-sweep runs measured the instrument, not the suite.
+
+It was displaced by the sharper case from the same day — **the probe and the subject share one IO budget, so the measurement can BE the change** — recorded in full under *"ON THIS TIER, AN EXPLORATORY QUERY IS PRODUCTION LOAD"* above. Both are the same rule; the new instance is the one with production failures attached.
+
+## A unique index on a partitioned table — the two clauses displaced from CLAUDE.md (2026-09-13)
+
+Moved here verbatim when CLAUDE.md hit its character limit; the rule itself still lives there with a
+pointer to this file. Both clauses come from #68 (`sales` is `RANGE (sold_at)`; **33,000 duplicates
+slipped past** a unique key that omitted the partition key, so the constraint was IMPOSSIBLE at the
+parent and had to be built on the PARTITIONS):
+
+- ⭐ **The tell was EXACTLY zero violations, not a small count.** A dedupe check that reports a clean
+  zero against a population you know to be dirty is reporting that it could not be applied, not that
+  the data is clean. A small count would have been believable; zero was the signal.
+- ⚠ **A keep-rule is a CLAIM about the data and a new constraint must be PROVEN to reject.** Adding a
+  constraint that never fires is indistinguishable from adding no constraint at all — demonstrate the
+  rejection on a real duplicate before trusting it.
+
+## 🚨 THE THREE ASK STAMPS MEAN THREE DIFFERENT THINGS (2026-09-13, audit_20260913)
+
+⛔ **Do not read any `*_ask_updated_at` / `updated_at` on an ask as "we checked it then" without
+looking at the WRITER.** Three arms, three meanings, one shared helper that used to treat them alike:
+
+| arm | column | what it ACTUALLY means | why |
+|---|---|---|---|
+| NBA Top Shot | `edition_offers.updated_at` | **LAST CHANGED** | `sync_edition_offers_from_atlas()` upserts under `ON CONFLICT … WHERE low_ask IS DISTINCT FROM EXCLUDED.low_ask` — re-observing the same price writes nothing. `raise_edition_offers_from_chain()` also bumps it when the **offer** rises, which is not the ask at all. |
+| Disney Pinnacle | `pinnacle_catalog.floor_ask_updated_at` | **LAST CHECKED** | `pinnacle_catalog_set_floor_asks()` writes `floor_ask_updated_at = p_checked_at` on EVERY row every sweep; its own inline comment says `= freshness`. |
+| All Day / Golazos | `cached_listings_v2.listed_at` | **WHEN THE SELLER POSTED IT** | `DISTINCT ON (edition_id)` over an event-sourced OPEN-listing index (`completed_at IS NULL AND (expiry_at IS NULL OR expiry_at > now())`) — a row LEAVES when the listing closes, so an old `listed_at` describes a LIVE listing. |
+
+⭐ **THE PROMOTABLE PART IS HOW THE TOP SHOT ONE CHANGED MEANING WITH NOBODY EDITING ANYTHING.** Until
+2026-08-28 `offers-sweep` wrapped the catalogue 8–18×/day and stamped every row it touched, so
+"last confirmed" was TRUE and `ASK_STALE_HOURS = 12` in `lib/market/ask-freshness.ts` was calibrated
+against it. That lane has written nothing since (#81), the Atlas writer replaced it, and the column
+became a last-changed stamp. **A column's contract lives in its writer; replacing the writer
+redefines the column, and no guard fires because the NAME is unchanged.** `col_description()` on it
+was EMPTY, which is exactly why three separate pieces of work read the name and believed it — the
+comment is now written (`audit_20260913`).
+
+⚠ **Consequences that were live before this was found, all since 2026-08-28:**
+- The ask-age tooltip on the edition page, the deals board and the Bid-vs-Floor board said *"We last
+  confirmed this ask Nh ago; normally every edition is re-checked about hourly"* — **both halves
+  false for Top Shot.** Fixed by `askStampKind()` + a `kind`-parameterised `askAgeTitle()`; the
+  cadence claim is now BANNED by test, because a cadence promise is a claim about a LANE and a lane
+  can die.
+- The deals board carried a **hardcoded duplicate** of that sentence rather than calling the shared
+  helper, which is how it kept a claim the shared module would later be corrected out of.
+- `audit_20260912`'s alert gate was justified as "never alert on an unconfirmed ask". On Top Shot it
+  really means "the floor changed inside 12 h" — defensible for an alert and still the fix for the
+  four-nights-running repeat, but not the claim that was made. Corrected in place.
+
+⚠ **A control that does NOT settle liveness, recorded so nobody re-runs it as if it did:**
+`topshot_atlas_market_events` looks like the way to ask "is this listing still open" — it reads 57 of
+3,092 gate-blocked rows and 211 of 769 passed rows as live. **Both numbers are meaningless**: that
+table covers **2,794 distinct editions in 24 h against 12,940 rows with an ask (~22 %)**, so it is
+measuring firehose COVERAGE, not liveness. *A control whose population does not cover the set is not
+a control.*
+
+## Displaced from CLAUDE.md, 2026-09-19 (VERBATIM)
+
+The memory file reached 39,997 of its 40,000-character limit, so these three bullets moved
+here **whole** rather than being shortened. Nothing was deleted; CLAUDE.md keeps a one-line
+pointer to each. ⚠ **The ONE deviation from verbatim: relative link paths.** They were
+written for CLAUDE.md's depth at the repo root and would be dead from inside `docs/reference/`
+(`check-memory-doc-links.mjs` fails on exactly that, and caught it here). ⚠ Per that file's own rule, every figure below is a DATED SAMPLE —
+re-derive before quoting.
+
+### `apply_migration` / `execute_sql` / `CREATE INDEX CONCURRENTLY`
+
+- **`apply_migration` for DDL; `execute_sql` for reads/verification.** ⚠ `CREATE INDEX CONCURRENTLY` needs `execute_sql` and runs **only if it FINISHES inside the 60 s client cap** — a timeout ABORTS it, leaving an `indisvalid=false` index. Record it with an `IF NOT EXISTS` migration so it is not fileless. ⚠ **A `SET …;` prefix puts a pg_cron command in a TRANSACTION BLOCK — CIC cannot: budget it as a TEMPORARY role default + a ONE-statement job, then `RESET statement_timeout`, ⛔ never `RESET ALL` (drops `search_path`).** FMV writes are delete-then-insert, NEVER upsert. MCP + schema gotchas: [tooling-gotchas.md](tooling-gotchas.md).
+
+### The differential upsert (R101 v2)
+
+- ⚠ **A differential upsert (`ON CONFLICT DO UPDATE … WHERE row IS DISTINCT FROM EXCLUDED`) WRITES the delta but PROBES every offered row** — 55k probes to write ~60 were ~700k of a tick's 927k buffers. LEFT JOIN the target first (cast to ITS types) and offer only the delta: −79 %/call (R101 v2, database.md).
+
+### `apply_migration`'s PGRST002 burst
+
+- ⚠ **Every `apply_migration` causes a ~10–20 s burst of user-facing `PGRST002` 500s** (schema-cache re-introspection). Prefer a low-traffic window and batch migrations. `rpcWithRetry` does not save you — it retries for ~250 ms of a twenty-second outage.
+
+---
+
+### Series map (on-chain UInt32 → display name) — MOVED VERBATIM from CLAUDE.md 2026-09-19 to restore memory-file headroom
+
+*Nothing was deleted or reworded. CLAUDE.md carries a one-line pointer here. This is topic-specific: it is only needed once a session knows it is touching series logic, which is why it moved.*
+
+`0 = S1` · `2 = S2` · `3 = Summer 2021` · `4 = S3` · `5 = S4` · `6 = 2023-24` · `7 = 2024-25` · `8 = 2025-26`. **There is NO series=1 on-chain. Series 0 IS Series 1. There is NO "Beta".** ⚠ **2026-10-03 (#168): `sets.series` carried 1 on all 23 Series-1 sets and every editions writer copied it — 378 editions / 375 badge_editions / 2,012 wmc rows read 1 and every Series-1 filter dropped them. Fixed by `20261003174441` (Top Shot only); `check_topshot_series_orphans()` → `[]` is the standing instrument — a non-empty result names the table a writer re-created a 1 in. `topshot_ipfs_assets.series` is a separate 1-based convention (1..8, no 0); leave it.** ⚠ **These are the REPO's names; the live `collection_series.display_label` reads `Series 5/6/7` for 6/7/8 (re-verified 08-24) and drives the Collection tab filter via `/api/collection-series`** — check which convention your surface parses. `series-param.ts` resolves BOTH; which label WINS is open.
+
+⚠ **This 0↔1 collision is TOP-SHOT-SPECIFIC — NEVER blanket-remap `1 → 0` across collections.** `wmc.series_number` is ON-CHAIN; `editions.series` is DISPLAY. All Day / Golazos / Pinnacle use `1` legitimately and **`ufc_strike` has BOTH 0 and 1**, so a blanket remap corrupts four collections — a 2026-08-05 incident dropped 385,734 TS rows. Check `collection_series` before touching any series logic.
+
+---
+
+## Displaced from CLAUDE.md — 2026-09-20 (verbatim)
+
+Moved here to make room for cross-cutting rules under the 40,000-character memory-file limit (headroom was 142). **Nothing was edited — these are the exact CLAUDE.md lines.** They are subsystem-specific: a session needs them once it is writing a `check_*` function, a partitioned index, or reading `pipeline_runs`, not before it knows its topic.
+
+- ⚠ **`check_*` return shapes are MIXED: a jsonb-array one reads CLEAN as `count(*) = 1` (read the LENGTH), a SETOF one as ZERO rows. Check the return type before interpreting a count** (which is which: database.md).
+- ⛔ **A UNIQUE INDEX ON A PARTITIONED TABLE MUST CONTAIN THE PARTITION KEY — one that omits it is IMPOSSIBLE at the parent, so index the PARTITIONS.** ⭐ **The tell was EXACTLY zero violations** (#68: see the partitioned-index section above).
+- **`pipeline_runs` retains ~73h** — a missing record is usually a RETENTION ARTIFACT; `pipeline_runs_daily` is indefinite but **six-hourly**: never for RECENCY, the only long BASELINE. ⭐ **`rows_found` vs `rows_written` there splits *writer broke* from *upstream gives less*** (#70).
+
+---
+
+## Two free catalog checks that unblocked a lane (2026-09-20)
+
+Both were found on jobid 464's leg-2 candidate query, which exceeded the 120 s gateway when run by hand and ended at **9.8 s**. Neither needed a schema redesign.
+
+### 1. A `NOT EXISTS` on a COMPUTED key needs its own index, and nothing warns you
+
+```sql
+NOT EXISTS (SELECT 1 FROM topshot_atlas_market_requests q
+             WHERE q.error = '__nft__' || us.nft_id AND q.drained_at IS NULL)
+```
+
+`topshot_atlas_market_requests` carried only a pkey on `request_id` and a partial on `dispatched_at` — **no index on `error`** — so this re-scanned the table for every candidate row across a ~16,800-row backlog.
+
+Fix: `CREATE INDEX idx_tamr_error_open ON topshot_atlas_market_requests (error) WHERE drained_at IS NULL;` — matching the subquery's predicate exactly keeps it a few kB no matter how the table's history grows (only **2** rows were open).
+
+⭐ **SIZE AN INDEX BUILD; DO NOT REFUSE ONE.** The 2026-09-20 01:14–01:45 launcher blackouts were builds on ~300 MB+ tables, and the lesson taken from them is often over-generalised into "never build in-hours". This table is **640 kB / 4,614 rows**, so a plain `CREATE INDEX` held ACCESS EXCLUSIVE for milliseconds. Check `pg_relation_size` first. (`CONCURRENTLY` is not available inside a migration transaction anyway, and at this size buys nothing.)
+
+### 2. ⛔ Check `last_vacuum` AND `last_autovacuum` for NULL — not just the visibility percentage
+
+`nft_edition_map` had **both NULL — it had never been vacuumed, ever** — at 78.1 % visible. That turned its Index Only Scan into **46,674 heap fetches on 66,544 rows / 43,736 buffers**.
+
+One `VACUUM (ANALYZE)` (19 MB, seconds): **78.1 % → 100.0 % visible, dead tuples 3,992 → 64, heap fetches 46,674 → 19, that node's buffers 43,736 → 907.**
+
+```sql
+select c.relname, c.relpages, c.relallvisible,
+       round(100.0*c.relallvisible/nullif(c.relpages,0),1) as pct_visible,
+       s.n_dead_tup, s.last_vacuum, s.last_autovacuum
+from pg_class c join pg_stat_user_tables s on s.relid = c.oid
+where c.relname in (...);
+```
+
+**The tell inside a plan is `Heap Fetches` large relative to rows on an Index Only Scan.**
+
+### Whole-query effect, with the caveat stated
+
+**>120 s (timeout) → 34.2 s (index) → 9.8 s (vacuum)**; total buffers **100,428 → 62,639**, read 6,298 → 422.
+
+⚠ **The 34 s and 9.8 s runs are both WARM and the planner launched 1 worker then 0, so the TIMES are not a clean A/B.** Quote the **buffer and heap-fetch counts**, which are structural. And verify with the **production caller** — here, the cron tick that then succeeded in 73.9 s with 10 probes dispatched, not the hand-run query.
+
+---
+
+## `check_*` invariants: THREE return shapes, and LENGTH IS NOT SEVERITY (2026-09-20)
+
+CLAUDE.md long carried *"`check_*` return shapes are MIXED: a jsonb-array one reads CLEAN as `count(*) = 1` (read the LENGTH), a SETOF one as ZERO rows."* **That is right but incomplete, and the missing third shape errors outright.** Swept all 36 `check_*` functions in `public` on 2026-09-20; the shapes actually in use are:
+
+| shape | clean reads as | how to read it |
+|---|---|---|
+| **SETOF / TABLE** | **0 rows** | `SELECT count(*) FROM public.check_x()` |
+| **jsonb ARRAY** | `[]` | `jsonb_array_length(public.check_x())` — ⛔ `count(*)` is **1** either way |
+| **jsonb OBJECT** | a report, no "clean" value | read the payload; ⛔ `jsonb_array_length` raises **`22023 cannot get array length of a non-array`** |
+
+Shape-agnostic reader, which is what to use when sweeping several at once:
+
+```sql
+SELECT name, jsonb_typeof(v) AS shape,
+       CASE WHEN jsonb_typeof(v)='array' THEN jsonb_array_length(v)::text
+            ELSE left(v::text, 220) END AS verdict
+FROM (VALUES ('x', public.check_x()), ('y', public.check_y())) AS t(name, v);
+```
+
+⛔ **And a non-zero LENGTH is not a violation count.** `check_unmapped_backlog_growth()` returns **2**, which is *two collections reported* — **both `severity: info`**, one of them a perfectly healthy draining backlog. Reading the count instead of the payload would have filed a false alarm. **`severity` is the function's own verdict; do not overrule it from outside on a row count.** This is the same family as *"`count(*)` over a function that returns ONE ROW is not a measurement — read the payload."*
+
+Check the return type first: `SELECT proname, proretset, pg_get_function_result(oid) FROM pg_proc WHERE proname LIKE 'check\_%'`.
+
+### ⚠ A guard EXISTING is not a guard being READ — and `grep -l` will lie to you about it
+
+Of the 36, two were red. Both turned out to be genuinely surfaced (`check_pipelines_running_but_not_succeeding` is called by `get_pipeline_alerts()`), **but two others have no caller at all**: `check_unmapped_backlog_growth()` and `check_wmc_ownership_freshness()` — no route, no cron, no other function.
+
+🚨 **`grep -rl <fn> app lib scripts .github` returned a count of 1 for `check_wmc_ownership_freshness`, which reads exactly like a reader. It is a COMMENT** (`app/api/wallet-backfill/route.ts:343`, *"with check_wmc_ownership_freshness() — set-returning, 0 rows = clean"*). **Grep the call, not the name** — `grep -rn` and look at the line, or check `pg_proc.prosrc` and `cron.job.command` for DB-side callers.
+
+**Dated clean snapshot (2026-09-20 ~10:55 PT)** — 15 clean, incl. every security and search-path invariant: `check_secdef_anon_exec_drift` · `check_secdef_anon_execute_violations` · `check_public_security_invariants` · `check_anon_write_surface` · `check_function_search_path_drift` · `check_procedure_search_path_unpinned_drift` · `check_procedure_transaction_control_pin_drift` · `check_when_others_timeout_blind` · `check_wallet_pack_sync_floor_drift` · `check_backward_cursor_rewind` · `check_cursor_stall_threshold_drift` · `check_suppression_parked_claim_drift` · `check_cron_heavy_job_exec_drift` · `check_edge_lane_observability` · `check_maintenance_load`. ⚠ Dated sample — re-run, do not quote.
+
+## Grants and REVOKE (displaced from CLAUDE.md 2026-09-20 — verbatim)
+
+Needed when authoring a migration that changes function privileges; not before a session knows its topic.
+
+- ⚠ **Revoke `FROM PUBLIC, anon, authenticated` in ONE statement** — either half alone leaves a grant (PUBLIC default AND `ALTER DEFAULT PRIVILEGES`). 🚨 **That REVOKE ORPHANS a pg_cron caller holding no explicit grant — `GRANT` to the job's role in the SAME migration (SECDEF is what it RUNS AS, not who may CALL it), and it fails as SILENCE: `cron.job_run_details` shows it, `pipeline_runs` never does.** Verify with `has_function_privilege`, never acl text; re-run `check_secdef_anon_exec_drift()` after creating ANY function.
+
+## The compute resize of 2026-09-20, and the instrument that dates one (verbatim context for every pre-09-20 number here)
+
+📏 **`pg_postmaster_start_time()` = 2026-09-20 10:39:57 AM PT** — `max_connections 160 · shared_buffers 2GB · work_mem 12MB`: the **Small → LARGE** resize (8 GB / 2 dedicated vCPU, sustained **79 MB/s / 3,600 IOPS** against Small's 22 MB/s).
+
+🚨 **A CALM box and the SAME box are different claims.** On 09-20 three ledger entries attributed a 17×–25× swing to ambient IO settling; the change point was a hardware resize 27 minutes earlier. **Read `pg_postmaster_start_time()` before attributing any fleet-wide performance change** — a resize restarts Postgres, so uptime dates it for free.
+
+⭐ **The two-change-point split that resolved #126**, recorded because the method is the reusable part. 09-20 busy-seconds per PT hour from `cron.job_run_details`, run counts flat throughout (so this is the COST of identical work):
+
+| PT hour | runs | busy-seconds | avg per job |
+|---|---|---|---|
+| 00–09 (after the pg_net `VACUUM FULL` of 09-19 19:09:34 PT **and** the 16 migrations of 09-19 17:16–19:44 PT) | ~406/h | ~14,500/h | **34.5 s** |
+| 10 (resize at :39) | 372 | 6,607 | 17.8 s |
+| 11 (fully post-resize) | 340 | **472** | **1.39 s** |
+
+⛔ **Ten clean hours after the reclaim show NO improvement; one hour after the resize shows a ~25× step.** That vindicates #75's refusal reason (dead pages nobody reads cost ≈ 0 IO) and moves the cause to instance capacity.
+
+⚠ **A DAILY total could not have shown this** — 09-20 straddles two change points, so its daily figure belongs to neither band of #126's falsifier and means nothing. **Split on the change point at the resolution the change happened at.**
+
+⛔ **Every figure elsewhere in this file citing the 22 MB/s floor, 512 MB `shared_buffers`, or a per-job multiple measured before 09-20 is a SMALL-tier sample. Re-derive; do not quote.**
+---
+
+## Verifying a base before `CREATE OR REPLACE`: compare `prosrc`, not `functiondef` (2026-09-20)
+
+CLAUDE.md's rule is *re-read the live object immediately before a `CREATE OR REPLACE`*. **How you compare matters, and getting it wrong costs a day.**
+
+- The 2026-08 case that put the rule there: a draft off a 40-minute-old dump would have reverted another session's guard silently — you rewrite its pin too, so nothing reds — and **`pg_get_functiondef` LENGTH caught it**. That is still a fine *drift alarm*.
+- ⛔ **But `pg_get_functiondef` is the WRONG thing to diff against a migration file.** It RECONSTRUCTS the header: ` RETURNS jsonb`, ` LANGUAGE plpgsql` and the `SET` lines come back with leading spaces the authored SQL never had. On `collect_pack_nft_identity` that showed a **4–5 character** difference against both committed copies, which read as "no committed copy is byte-identical to live" — and was used to defer a one-line fix as a risky 15.6 KB hot-lane rewrite.
+- ⭐ **`prosrc` is stored VERBATIM.** Extract the migration's body between its `$function$` tags and md5 it: on the same function that read **15,432 chars / `d951ad91e2a1829d2b7bacefbb0c6dd0`**, exactly equal to live `prosrc`. The base was verified all along.
+
+```bash
+# base check — body of the migration vs live prosrc
+node -e 'const fs=require("fs"),c=require("crypto");const s=fs.readFileSync(F,"utf8");
+const b=s.indexOf("AS $function$")+13, e=s.indexOf("\n$function$;",b);
+console.log(c.createHash("md5").update(s.slice(b,e+1)).digest("hex"))'
+# compare with: SELECT md5(prosrc) FROM pg_proc WHERE proname='…';
+```
+
+⭐ **And prove the RESULT, not just the input:** apply the migration to a throwaway local Postgres, read `md5(prosrc)` there, and compare it to live after apply. Equal md5 means the database holds *exactly the committed file*, not merely something equivalent — here `9217c411a9e17fc38e8508947f6bd362` / 15,849 chars on both.
+
+---
+
+## Displaced from CLAUDE.md — 2026-09-20 (compute tier specs, verbatim)
+
+Pure lookup data, moved to keep the memory file under its character limit. CLAUDE.md keeps the project ID, the tier name and the re-measure warning, and points here.
+
+- Supabase project ID: `bxcqstmqfzmuolpuynti` (Pro; **compute = LARGE** since 2026-09-20 — 8 GB RAM / 2 dedicated vCPU, `max_connections`=160, `shared_buffers`=2 GB, `work_mem`=12 MB). Sustained disk **79 MB/s / 3,600 IOPS**. ⚠ Pre-09-20 findings citing the **22 MB/s floor** are the OLD Small tier — re-measure. Tiers: database.md.
+
+---
+
+## Displaced from CLAUDE.md — 2026-09-20, third pass (verbatim)
+
+Moved to make room for the marginal-cost / cap-is-not-a-rate rule while keeping CLAUDE.md under its character limit. Content is VERBATIM; CLAUDE.md keeps each rule and points here for the case.
+
+- Same shape: `prosrc ILIKE '%lower(%'` said a function folded its wallet; the matching LINES showed `player_name` and `tier`. **Print the lines, not the predicate.**
+- `/api/wallet/edition-counts` was repaired and **verified live (0 → 5)** while the client that renders it still returned early on `!ownerKey.startsWith("0x")` — the column stayed empty all day and **no route-level test could have caught it**.
+
+## Displaced from CLAUDE.md 2026-09-20 (verbatim) — LATERAL per key vs a streaming DISTINCT ON
+
+⭐ **For an id list, one `LATERAL … ORDER BY ts DESC LIMIT 1` probe per key beats a table-streaming `DISTINCT ON` (5 instances; 40 ms vs 22–41 s) — and only a COLD A/B shows it. ⛔ ONLY IF THE INDEX CARRIES THE AGGREGATED COLUMN** — else it heap-fetches per key and **LOSES** (15,814 vs 22,095 buffers, 4× slower; database.md).
+
+
+## Displaced from CLAUDE.md 2026-09-20 (verbatim) — `count(*)` over a function that returns ONE ROW
+
+Displaced for space when two rules earned the same day were added (a filed CORRECTION is a hypothesis; a job whose PERIOD outruns its instrument’s WINDOW). **Still in force — moved, not retired**, and it lands here because this is where RPC measurement lives.
+
+⛔ **`count(*)` OVER A FUNCTION THAT RETURNS ONE ROW IS NOT A MEASUREMENT** — most RPCs here return ONE row whose VALUE is the result, so every variant answers `1` and a live defect reads as "no difference" (3× in one pass, 09-19). **Read the payload.** ⚠ Same shape on a `prosrc ILIKE` grep: **print the LINES, not the predicate** (case: database.md).
+
+## Displaced from CLAUDE.md 2026-09-20 (verbatim) — two bullets moved to pay for the read-layer/write-layer rule
+
+Moved to buy the headroom for the honesty rule register #128 earned (*a fix at the READ layer does not
+close a fabrication the WRITE layer can re-create*). Nothing was deleted; CLAUDE.md carries a one-line
+pointer to each. Both are still binding.
+
+- ⚠ **A differential upsert WRITES the delta but PROBES every offered row** — 55k probes to write ~60 were ~700k of a tick's 927k buffers. LEFT JOIN the target first (cast to ITS types), offer only the delta: −79 %/call (R101 v2, database.md).
+- 🚨 **`EXCEPTION WHEN OTHERS` DOES NOT CATCH A 57014 KILL (R118, 35 handlers were blind).** A record-and-exit handler says `WHEN query_canceled OR OTHERS` — and ONLY where its tail is bounded: the timer is NOT re-armed after the catch. Loop handlers stay bare. `check_when_others_timeout_blind()` → `[]`; a forward-only migration guard (database.md).
+
+### Also displaced from CLAUDE.md 2026-09-20 (verbatim) — three PostgREST/write bullets
+
+Moved in the same pass, to pay for the read-layer/write-layer honesty rule. Still binding.
+
+- ⚠ **Any `.range()` pagination MUST carry a deterministic `.order()`** on a UNIQUE key, or it reads the right *number* of rows and the wrong *rows*. The duplicates and omissions **cancel**, so every count-based check passes — only a DISTINCT count or a set comparison sees it. Now a **ban at zero**.
+- **A batch `.insert()` is ALL-OR-NOTHING — never swallow `23505` on one.** One duplicate fails the whole statement and writes none of the batch; on a cursored indexer that is permanent loss.
+- ⚠ **Every `apply_migration` causes a ~10–20 s burst of user-facing `PGRST002` 500s** (schema-cache re-introspection) — batch them, prefer a low-traffic window, and `rpcWithRetry` does NOT save you (database.md).
+
+- 🚨 **A data-modifying statement plans SERIALLY, so a parallel `SELECT` is not a cost model for the `INSERT … SELECT` that wraps it** (2026-09-22, `refresh_allday_listings_sold_after_listing`). The SELECT measured 1.75 s (1 worker); the INSERT's serial plan hashed every All Day sale: 757k buffers, 18–25 s per pg_cron run. Measure with `max_parallel_workers_per_gather = 0` or EXPLAIN the INSERT. `CROSS JOIN LATERAL (… LIMIT 1)` forces a per-row probe: 0.3–0.6 s. Ledger 2026-09-22.
+
+## A name key that drops non-ASCII letters mints duplicate entities (2026-09-25, PT; #137 (a))
+
+`resolve_canonical_player` built its name slug with `[^a-z0-9]+ → '-'` on the raw name, so "Dennis Schröder" slugged to `dennis-schr-der`, missed `dennis-schroder`, and the no-match branch inserted a second player. 17 accent/case pairs were merged on `lower(unaccent(name))` (`20260925101708`). The fix belongs in the **writer** (`20260925101847`), not in a one-off merge.
+
+- ⚠ **Every name matcher over the same entity must fold the same way.** The exact-name linker left 13 editions `player_id NULL` for good, and search's player arm matched the raw name. After the merge, "doncic" returned 20 editions and **no player**: removing the duplicates also removed the only row the unfolded search could still find (`20260925102428`). **After a dedupe merge, re-run the searches that used to hit the losing rows.**
+- ⚠ Do not add a UNIQUE index on (collection, name-slug) without first changing the writer. It inserts `ON CONFLICT (external_id)`, so a second unique index would turn its race condition into an exception.
+- Two different NAMES for one person (Steph / Stephen Curry) are not a folding problem. Trevor has to pick the name (#137 (a)).
+
+### Writers that could undo the 09-25 fills — swept 2026-09-25 ~6:50 AM PT (a dated sample)
+
+This sweep follows the pack-dist seeder wiping the chain-filled names (#137 (d); [apis-and-cadence.md](apis-and-cadence.md)).
+
+- **Live DB:** `prosrc` of every public function that INSERTs into `editions` / `sets` / `players` / `wallet_moments_cache` / `pack_distributions` with an `= EXCLUDED.` clause. **Positive control:** the query does find `sync_panini_editions_to_shared`, `bridge_pinnacle_editions_to_main` and `upsert_wmc_batch`, so it can see these writers. None of them overwrite a Top Shot `name` / `series` / `player_id` / `team_name` / `series_number`. `catalog_topshot_from_atlas` only inserts or fills NULLs.
+- ⚠ **App-side, the one live risk:** `seedEditionsToSupabase` in `app/api/wallet-search/route.ts` runs fire-and-forget on every Top Shot wallet search and upserts each row with `ignoreDuplicates: false` over `player_id`, `name`, `tier`, `series` (`toNum(row.series)`, which can be NULL) and `circulation_count` (`row.mintSize`, which can be NULL). **Measured, no damage yet:** 0 of the 154 chain-filled series, 0 of the 3,568 linked `player_id`s and 0 of the 443 filled names read NULL. 26 links point to a different player than at link time, consistent with the accent merge repointing 55 editions. It has not been fixed because no damage has been measured. It is the first writer to check if a fill regresses. ✅ **Fixed later the same morning (~7:15 AM PT):** the seed is insert-only (`ignoreDuplicates: true`), pinned by `__tests__/wallet-search-edition-seed-is-insert-only.test.ts`.
+
+## 🚨 TWO WRITERS ON ONE POPULATION WITH TWO ESTIMATORS IS AN OSCILLATOR, NOT A PRICE — and its tell is a "24H CHANGE" with no sale behind it (2026-09-25, PT)
+
+`fmv_recalc_historical_candidates` (fmv-recalc Step 5b, algo `1.7.0`) and `drain_fmv_cold_tail` (`cold-tail-1.0`) both own "no snapshot for 7 days, no sale for 30". The first returned `AVG(price_usd)` over EVERY sale the edition ever had; the second writes the MEDIAN of the last 30. Each treats the other's row as fresh for 7 days, then re-prices with its own number, so the FMV alternated weekly: David García Talentos (Golazos 354) $3.32 → $1.00 → $3.32 → $1.00 with no sale in 1,070 days, and the edition page printed **"24H CHANGE +232%"**. Measured over 21 days: 1,012 editions carried both writers' STALE rows, **797 with different values**; 1.7.0's value WAS the all-time mean (917 of 1,012) and cold-tail's WAS the last-30 median (928); mean ÷ median ran 1.69× on UFC (p90 6.1× — ~1,942 sales each, the 2022 prices still in the mean) and 1.35× on Golazos. **An all-time mean is not a price** — it is dominated by the hype years and cannot fall as the market does. Fix `20260925135620`: the candidate function returns the last-30 median/min/count (column names kept for the route), so the two writers agree and the flip converges within one 7-day cycle. Rule: **when two writers share a population, they share ONE estimator — grep `algo_version` on the same edition before trusting a 24h delta**, and read a "24H CHANGE" beside "30D SALES 0" as the instrument's own confession.
+
+### A second NAME for one person is an alias, not a merge (2026-09-25 PT; #137 (a))
+
+Accent and case variants fold (`unaccent` + `lower`). Two different names for one person ("Steph" / "Stephen Curry") cannot fold, and merging the rows alone does not hold: every writer resolves on the name slug, so the next "Stephen Curry" from wallet-search or the daily `ensure_players_from_edition_names` mints the row again. **Register the second spelling in `public.player_name_aliases` (collection_id, alias_slug → player_id).** `resolve_canonical_player`, `ensure_players_from_edition_names`, `link_editions_to_players_by_name` and `get_player_alias_target` (the player layout's 308) read it. The FK to players has no cascade, so a later merge that deletes an alias target fails loudly. **Pick the canonical name the SOURCES mostly use**, or every refresh re-splits the labels: Top Shot's metadata says "Steph" on 111 of 124 assets, so "Steph Curry" is the one that holds. Then make every surface say it: the BEFORE trigger `normalize_player_name_alias()` rewrites an alias spelling on write to editions (label included), wallet_moments_cache, cached_listings, badge_editions and ts_listings, and `rpc_search_catalog`'s player arm matches aliases so the other spelling still finds the player (search matches tokens as substrings, so without it "stephen curry" would find nothing). ⚠ **In a trigger shared by tables with different columns, NEST the column-specific IF — PL/pgSQL does not short-circuit `AND`**, so `TG_TABLE_NAME = 'editions' AND NEW.name …` raised `record "new" has no field "name"` on the cache tables (caught by the pin before it shipped).
+
+## Displaced from CLAUDE.md 2026-09-25 (verbatim; still binding)
+
+- ⛔ **`last_vacuum` AND `last_autovacuum` both NULL = NEVER vacuumed** — heap fetches 46,674 → 19. ⚠ **A fresh stamp is not enough — read `relallvisible`/`relpages`:** a degraded visibility map turns an Index Only Scan into heap fetches, so *"not a missing index"* can be one word short (#121, 41× blocks/call). ⭐ **BLOCKS TOUCHED is the cache-independent discriminator.** ⭐ **SIZE an index build (640 kB = ms; 300 MB+ = spell).** *(displaced 09-25 ~10:20 PM PT to pay for the `moment_id` / InitPlan bullet)*
+- ⚠ **Cursor paging needs a UNIQUE sort tiebreak**; `totalCount` falling faster than rows read is the skip tell: apis-and-cadence.md.
+- ⚠ **WRITE THE MIGRATION FILE BEFORE `apply_migration`, not after (2026-09-26).** A session that can apply DDL is not necessarily one that can commit the file: in a web session the permission layer refused the file write after the apply had succeeded, leaving production ahead of `supabase/migrations/` (migration-parity red for the next pusher) until a human approved. Draft the file first, apply, then write the applied version into its name — never the reverse.
+
+## Displaced from CLAUDE.md 2026-09-27 (verbatim; still binding)
+
+- ⚠ **A `*_at` name is its WRITER's contract — REPLACING the writer REDEFINES the column while the name holds**; ⛔ **a CACHE keyed on one rots INVISIBLY — the tell is it disagreeing with the row it NAMES** (R107). `col_description()` first: database.md.
+
+## Added 2026-09-28 — a stream filtered by a MEMBER SET costs window ÷ density
+
+- ⚠ **`ORDER BY sold_at DESC LIMIT n` over a `(collection_id, sold_at)` index, filtered by `edition_id = ANY(<set>)`, heap-checks rows until it has n matches, so its cost is roughly n ÷ (the set's share of the collection).** It is cheap for a busy set and walks the whole window for a quiet one. `get_set_activity` on Top Shot `2022-23-season-rewind` (77 of 1.1M yearly sales) cost 421,711 buffers and hit the 8 s timeout cold. Base Set (dense) cost 2,225. **Measure the SPARSEST member of the population, not the biggest**; the author measured Base Set and wrote "a cold wide set would walk deeper". Fix pattern (migration `20260928143942`): one pass over the newest N index rows keeping the set's rows. If the window filled, or the pass covered the whole range, those rows are the answer. Otherwise use a per-member `LATERAL … LIMIT n` with the same floor as an index bound. It was proved equal over all 735 sets before shipping.
+
+## ⚠ A per-target correlated look-up scales with the TARGET table — index its (key, time) pair early (2026-09-30)
+
+`panini_sales_fmv_backtest` (a view: for each of ~14k target sales, the median of the edition's prior ≤3 sales) answered in seconds on 09-28 and was cancelled at a 55 s timeout on 09-30, once `panini_sales` reached ~91k rows, exactly when enough data had arrived to make the decision it exists for. EXPLAIN showed the serial-side look-up as a **BitmapAnd of two single-column indexes** (`edition_external_id` and `last_sale_at`): ~10.9k index rows per target, 460k buffers. A partial composite index `(edition_external_id, last_sale_at DESC) WHERE last_sale_at IS NOT NULL` turned it into a few-row index scan, and the whole view fell to 0.7 s with identical output (`20260930144208`). **The tell is a BitmapAnd inside a `loops=N` subplan.** A CTE referenced from inside a correlated subquery (`NOT EXISTS (SELECT 1 FROM special …)`) is the second shape to replace, with a probe on the unique key.
+
+
+## ⭐ A SQL-language function with a heavy-tailed parameter is planned for the AVERAGE key — measure `SELECT fn(whale)`, never the body with a literal (2026-10-02)
+
+`get_wallet_intel_summary` and `get_wallet_collection_snapshot` (the two RPCs behind `/share/[wallet]`) read
+**420,797 and 744,517 buffers** for one 43k-row wallet through `SELECT fn(…)`, while the IDENTICAL body run as a
+statement with the wallet written in read 38,087 and 178,715. Inside the function the wallet is a parameter, the
+planner estimates a typical wallet (a few hundred cache rows) and joins `editions` / `badge_editions` /
+`edition_fmv_current` by per-row NESTED LOOPS — right for most wallets, 4–11× the buffers for a whale, where hash
+joins over the 14k Top Shot editions are cheap. Cold, that was the 8 s `RPC_READ_TIMEOUT` pair in the Vercel log.
+
+- **Fix shape:** a plpgsql wrapper that runs the body via `EXECUTE $q$ … WHERE wallet_address = $1 … $q$ INTO v USING
+  p_wallet`. `EXECUTE` plans every call with the parameter's VALUE, so the estimate — and the join strategy — is the
+  wallet's own (migrations `20261002152419`, `20261002153028`). Keep the body unchanged; the wrapper is the fix.
+- **Measurement trap:** an `EXPLAIN` on the body with a literal measures a plan the function NEVER runs. The
+  10-02 first attempt optimised a leg 5× (50.6k → 10.5k) and moved the whole function by ~0 %, because the
+  function's plan was not the body's plan. `EXPLAIN (ANALYZE, BUFFERS) SELECT fn('<whale>')` is the only honest
+  before/after; the body's plan is a floor, not a forecast.
+- **Two per-row legs that hide in a CTE-heavy body:** a labelling function called per MOMENT when the distinct
+  values number 8 (`series_display_label`, 38,666 calls → 77.5k buffers; aggregate the distinct keys first), and a
+  LATERAL `LIMIT 1` probe per moment into a table whose key is UNIQUE (resolve once per distinct key in a CTE and
+  join — same row by construction). Both were in a PINNED function: the pin's verbatim DDL block, its registration
+  in `db-invariants-drift-guard`, and a local throwaway PG 16 run of the pin (tooling-gotchas recipe; the
+  `postgres` user cannot traverse the scratchpad, so the data dir went under `/tmp`) are the three moves.
+- **Equivalence on production, not on fixtures:** run the OLD body as a statement and the NEW function in ONE
+  statement and compare `jsonb_each` key by key (a whole-document md5 across two statements differs on FMV refresh
+  timing and on tie order in `ORDER BY fmv_usd DESC LIMIT 5`, and reads as a defect that is not there).
+- ⭐ **A cheap pre-filter in front of the EXACT predicate keeps the semantics and drops the probes (2026-10-02, `get_pack_lifecycle_row`).** The "packs sealed" anti-join probed a UNIQUE index once per purchased pack (22k probes × 4 buffers). Restricting the anti-join to the dist's OWN rips would be 20× cheaper but is a semantic claim — measured: 0.5 % of a dist's rips carry another dist, and they would read as sealed. Instead: `cand AS MATERIALIZED` drops every pack with a same-dist rip (one hash anti-join), then the ORIGINAL any-dist predicate runs on the survivors only. Identical by construction (a pack with no rip has no same-dist rip either); 97k → 29k buffers. **Measure the premise of the cheap form before shipping it, and when it fails, run it as a pre-filter in front of the exact one rather than giving it up.**
+
+- ⚠ **A LATERAL whose OUTPUT the WHERE tests runs for EVERY row, before the filter can drop any (2026-11-09, `v_insights_trophies`).** Adding `AND h.n < 2` (a held-count lateral) to the admission WHERE made the planner run the latest-FMV lateral for all 82,130 editions instead of the ~7.5k candidates: 523k buffers / 6.8 s vs 58k. Admit candidates in a `MATERIALIZED` CTE first, then the new lateral, then the expensive one, and filter on the CTE's column: 92.7k / 451 ms. **Read the plan of a view change before applying, not just its row count** (`20261110034117`).
+- ⛔ **`CREATE OR REPLACE FUNCTION` REPLACES the function's `SET` options with the ones in the NEW header (2026-11-09).** `get_user_top_owned_moments` carried `plan_cache_mode = force_custom_plan` from a separate `ALTER FUNCTION` (`20261109051044`); a replace copied from the previous migration's header (which lacked it) would have dropped it silently. Read `proconfig` before the replace and restate every option; read it back after (`20261110025023`). ⭐ Verify the base on raw `md5(prosrc)` — a whitespace-normalising regex in SQL vs JS gave different hashes for the same body.
+- ⚠ **An OR in a JOIN condition is neither hash- nor merge-joinable, so it runs as a nested loop over EVERY pair — and a `normalize_name()` in it runs PER PAIR, not per row (2026-10-11, `get_relative_deals`).** `normalize_name` carries `SET search_path`, so it is never inlined. `external_id = moment_id OR (normalize_name(a)=normalize_name(b) AND …)` cost 890 ms of a 1.3 s call on 100 × 575 pairs (Top Shot: 367M pairs, never finishes). Fix: normalize once per row in MATERIALIZED CTEs and UNION two equi-joins; the pair set is the same, so a `DISTINCT ON` with the same ORDER BY picks the same row — VERIFY it (0 diffs over 265 listings). 1,325 ms / 30k buffers → 49 ms / 2k. Migration `20261011194733`.
+
+- ⚠ **`WHERE a > x OR b > x` under a `DISTINCT ON … ORDER BY` can plan as a full ordered walk, even with an index on each column (2026-10-02, `refresh_edition_fmv_current`).** The incremental window `computed_at > cutoff OR updated_at > cutoff` became `Merge Append` over the whole 1.87 M-row partition in (edition_id, computed_at) order with a Filter: 1.78 M buffers, 6 s hot, 1,890,838 rows removed. The same rows as `SELECT … WHERE computed_at > cutoff UNION SELECT … WHERE updated_at > cutoff` (each leg on its own index) then `DISTINCT ON` over the union: 1,534 buffers / 35 ms — better than the old single-key form (20,615 / 122 ms). **An OR of two range predicates is a UNION of two index scans; write it that way when the ORDER BY would otherwise pull the planner onto the ordering index.**
+- ⭐ **A new "touched-at" column on a hot table, added without re-reading it:** `ADD COLUMN x timestamptz` (no default — existing rows stay NULL) **then** `ALTER COLUMN x SET DEFAULT now()`; a default on the ADD stamps every existing row with the migration time (attmissingval) and the first window keyed on it pulls the whole table. Index it partially (`WHERE x IS NOT NULL`) so the index holds only post-migration rows. Writers that insert with an explicit column list need no change; check `prosrc` for `INSERT … SELECT *` and for in-place `UPDATE`s (none on `fmv_snapshots`) before relying on the default. Split a hot-table `ALTER` out of a long migration with `SET LOCAL lock_timeout = '8s'` — the combined attempt sat 60 s behind a reader's lock.
+- ⚠ **A covering index's COLD gain is bounded by the visibility map, and a table the walks rewrite daily never keeps a complete one.** `panini_card_serials` read 95.2 % all-visible in the morning and 84.9 % at 7:19 PM (the walks rewrite ~14 % of rows a day); an Index Only Scan then pays a heap fetch per row on the ~29 k not-all-visible pages — 114,751 fetches on a 143,749-row recency window — and on a cold cache each fetch is a disk read. Quote the hot buffer count AND the heap-fetch count, and expect the cold reduction to oscillate with the writer's cadence (`20261003012100` / `20261003012400`).
+- ⚠ **A CTE's cost measured STANDALONE, or a function's FIRST call in a session, is not its per-call cost inside the function (2026-10-02, `get_edition_recent_sales`).** `sub_names` read 2.1k buffers run on its own and the function's first call read 5.5k — mostly plpgsql planning every statement once per session. Measured as **N calls minus 1 call, same statement** (`select f(...) from generate_series(1,21)` vs `(1,1)`): old body 388 buffers / 2.1 ms per call, rewrite 440 / 1.7 ms — neutral, and the predicted saving did not exist. PostgREST's pooled connections pay the steady-state number, so that is the one to compare; an old body can be measured beside the live one as a `pg_temp` function in the same statement. ⭐ The same session's real win was the opposite case: an InitPlan its own comment said "a normal page load never pays for" ran at 3,806 buffers per EXECUTION (visible in the inline plan) — an expression index made it 5 (`20261003033052`).
+  ⛔ **And one edition is not a population (same evening).** The busiest edition said the `sub_names` rewrite was neutral (388 → 440 buffers/call); the same comparison over 80 editions (40 busiest + 40 random, 3 calls each, both warm) said **36 % fewer buffers, 14 % faster** (310,816 → 199,369; 956 → 826 ms). The busiest key is the most likely to be the OUTLIER for a per-key cost — sample the mix. And order the A/B so neither side pays the other's cold reads (the first run here read 3,539 blocks and looked 2.5× slower).
+
+## ⛔ SCRATCH TABLES NEVER GO IN `public` (2026-10-03, PT)
+
+A table `CREATE`d in `public` by `postgres` has RLS **off** and inherits the default anon/authenticated grants, so PostgREST serves it to anyone with the anon key the moment it exists. On 10-03 a session's `public.scratch_flip_probe` (88 rows: one wallet's NFT ids, sale and arrival transactions) was anon-readable from ~8:53 AM PT. The smoke test's `check_public_security_invariants` caught it within minutes (`rls_off_base_table`), and it was closed at ~9:10 AM PT by `ENABLE ROW LEVEL SECURITY` + `REVOKE ALL … FROM PUBLIC, anon, authenticated`. Data kept: owner and `service_role` bypass RLS.
+
+**The convention every other scratch table already follows:** create it in `flowty_archive` (or another non-exposed schema), named `scratch_<yyyymmdd>_<what>`, RLS on. All eight 10-02 export tables are there. If a scratch table must be in `public`, the SAME statement batch enables RLS and revokes anon/authenticated. ⚠ A red `rls_off_base_table:scratch_*` smoke row is a REAL anon read, not noise: verify with `has_table_privilege('anon', '<t>', 'SELECT')`. And read `check_public_security_invariants()` as a SET (`select count(*) from check_public_security_invariants()`): in scalar position it returns NULL whether or not there are violations.
+
+## ⚠ HOT pruning can starve autovacuum on a hot-updated table, and the index-only scans on it quietly stop being index-only (2026-10-03, PT)
+
+`panini_sale_feed_status` (a public board) went 0.72 s → 4.2 s a day after a covering index fixed it. The plan still used the index — `Parallel Index Only Scan` — but read **Heap Fetches 280,877**: only 163,007 of 208,004 pages were all-visible. The Panini walks UPDATE `panini_card_serials` all day (3.0 M updates, 1.2 M HOT); every update clears its page's visibility bit, and only VACUUM sets it back. HOT pruning reclaims most dead tuples in-line, so `n_dead_tup` sat near 9 k, under the ~25 k trigger even at `autovacuum_vacuum_scale_factor = 0.02`, and autovacuum had not run for ~36 h.
+
+**The tell:** an index-only scan with Heap Fetches in the hundreds of thousands, and `relallvisible / relpages` well under 100 %. **The fix is a scheduled plain `VACUUM (ANALYZE)`**, not a lower scale factor (the dead-tuple count is not what is missing). It scans only the not-all-visible pages: 16 s here, 211,623 / 211,623 visible after, view 364 ms, Heap Fetches 0. `maint-vacuum-panini-card-serials` (`4 11,19 * * *`, `20261003132500`), the same pattern as `maint-vacuum-sales-hot-partition`. ⚠ Check any other covering index on a walk-updated table the same way before trusting its first timing.
+
+### Supply partition — minted = burned + issuer-held + collector-held (measured 2026-10-03)
+
+- ⭐ **Atlas partitions every minted Top Shot / All Day Moment EXACTLY:** `numMinted = numBurned + numOwned + numLocked + numListed + numHiddenInPacks` on **51,743 / 51,743** edition payloads (24 h of `atlas_edition_requests` responses). `numMinted` always equals `maxMintSize` — Top Shot mints the full run up front (on-chain count = edition size on 873/957 audited editions incl. parallels).
+- ⭐ **`numListed` is DERIVABLE EXACTLY from `badge_editions` — no column or lane needed (verified 2026-10-03 ~6:05 PM PT):** `listed = circulation_count − burned − locked − owned − hidden_in_packs` matched Atlas's raw `numListed` on **1,207 / 1,207** Top Shot standard editions whose raw `atlas_edition_requests` response carried the same snapshot (Σ 129,697 vs 129,698; the one-unit gap is the one edition read from a different snapshot). All five fields come from ONE response (`circulation_count` IS `numMinted`). NULL when `hidden_in_packs` is NULL (23 TS rows); 1 TS row reads negative (snapshot skew). Top Shot Σ ≈ 2.03 M, All Day Σ ≈ 360 K on 10-03. ⚠ Join raw responses on `set:play` + parallel within the collection — a bare Atlas `id` collides across All Day / Golazos / Pinnacle.
+- ⚠ **`badge_editions` stores four of the five** — `numListed` is dropped by `atlas_editions_drain`, which is why `circulation - burned - owned - hidden_in_packs` leaves a residual (TS 7.85M on 10-03 = locked 5.83M + listed ~2.0M). `owned` EXCLUDES locked and listed.
+- ⚠ **`hidden_in_packs` is everything the ISSUER still holds** — sealed packs, unsold packs AND reserve never packed. Atlas does not split them. `topshot_pack_supply.remaining_by_tier` cannot split them either until its unit is proven: dist 1762 shows remaining 61,392 against 20,347 sealed packs, and the per-tier comparison goes negative for Rare/Legendary.
+- ⚠ **All Day `effective_supply` is NULL on 5,600 of 5,607 rows** — derive `circulation - burned`; never sum that column for All Day.
+- **Panini:** `mint_cap = pulled_count (WITH COLLECTORS) + still_in_packs (unopened) + burned_count` on 13,115 / 13,181. `pulled_count` already IS collector-held (burned can exceed it).
+- **Golazos + Pinnacle (since 2026-10-03):** Atlas EditionService answers product **`laliga`** (519 of our 575 Golazos editions, partition exact 505/519) and **`disney`** (Pinnacle, keyed `pinnacle_catalog.edition_id`, 2,771/2,771, exact 2,771/2,771), page size capped at 100. Ingested into `atlas_edition_supply` by `atlas_supply_dispatch`/`_drain` (every 6 h); readers ignore a split older than 3 days. ⚠ Golazos's 218 `badge_editions` rows are seeded fabricated zeros (`app/api/seed-golazos-badges`) — never read them. Golazos's public GraphQL is a dead nginx 404.
+- **Candy MLB:** `mv_candy_scarcity_board` — `sealed` = held by the treasury (issuer), `circulating` = everyone else; sealed + circulating = circulation on 125/125 (burnt assets skipped at ingest).
+- **No source:** UFC Strike only — every Atlas product name tried (`ufc`, `strike`, `ufcstrike`, `ufc_strike`) 400s. ⚠ **And the chain has no counter to read instead (checked 2026-10-03 ~6:00 PM PT, contract source fetched via pg_net from `rest-mainnet.onflow.org/v1/accounts/0x329feb3ab062d289?expand=contracts`):** `UFC_NFT` keeps `numberEditionsMintedPerSet` and `maxEditions` but NO burned or total-supply counter. A burn is visible only as the `NFTDestroyed(id)` event from `burnCallback`, so a burn count needs a full event scan, and Flow REST is pruned (see apis-and-cadence.md). Issuer-held needs an owner census of Dapper's UFC accounts, which we do not have either (`wallet_moments_cache` holds 5,229 UFC rows across 128 wallets against ~1.98 M minted). UFC stays "Unknown" with the minted-supply upper bound; do not re-chase Atlas product names.
+- ✅ **CORRECTED 2026-10-03 ~3:45 PM PT — there IS a live source, and it is now ingested.** Top Shot's own site reads pack supply from Atlas **`atlas.v1.DistributionService`**: `GetDistributionContentSummary {product:'nba', distributionId}` → `unopenedCount`, `ownedCount`, `totalPackCount`, `remainingByTier` / `originalCountsByTier` (Moments); `GetDistributionEditions {…, limit≤100, offset, hideOpened:true}` → per-edition `originalCount` / `remainingCount` + `totalCount` (8617: Σ per tier == remainingByTier exactly). ⭐ Atlas's `remaining` EXCLUDES never-sold listing inventory (3092: 2,574 = 858 unopened × 3, where the dead GraphQL said 651,115), so hidden − Σ remaining IS the reserve. Lane: `topshot_pack_supply_tick` (pg_cron every minute, ≤ 2 req/min, backs off while the market lane is mostly 403s) → `topshot_atlas_dists` / `topshot_atlas_dist_editions`; readers `get_topshot_issuer_held_split()` (per tier) and `topshot_issuer_held_split_editions()` (per edition), NULL until a full pass is complete and fresh. Migration `20261003224608`. The paragraph below is the superseded finding, kept verbatim. ⛔ **(superseded) Splitting issuer-held into "inside sealed packs" vs "reserve never packed" has NO live source (checked 2026-10-03 PT).** Top Shot `getPackListing` (the only feed of `remainingByTier`, which IS Moments — validated against `pack_rips` on 8617 / 8643 / 8609) has answered HTTP 530 since 08-26 (#81), so `topshot_pack_supply` is frozen at 06-28..08-26 stamps for 2,083 of ~3,066 dists. Atlas `DistributionService/SearchDistributions` lists 4,100 Top Shot drops but returns `totalPackCount = 0` on every one (no counts at all). `pack_nft_identity` is a 176k-pack lookup sample, not a census; `pack_purchases` has no Top Shot `primary_mint` rows. A real split needs a PackNFT mint census (on-chain mint events per dist) minus `pack_rips` opens. All Day: Σ (packnft_total − opened) × slots ≈ Atlas hidden (2,147,957 vs 2,117,395) — reserve ≈ 0 there.
+- **Consumers:** `market_cap_edition_rows()` (one row set) → `get_market_cap_board()`, and `refresh_market_cap_current()` (every 2 h) → `market_cap_current` (entity tiles via `get_market_cap_entity`) + PT-dated `market_cap_daily` (7-day change). Collector-held = minted − burned − issuer-held; unknown split → NULL cap, never 0. `market_cap_current` ranks each grain WITHIN a collection, so its collection-grain rows all read rank 1 of 1; the overview tile's cross-collection rank is computed in `fetchCollectionMarketCapTile` over KNOWN caps only (an unknown cap gets no rank and is not counted). Stall watches: `pipeline_cadence_watchlist` rows `market-cap-refresh` (270 min) and `atlas-edition-supply` (400 / 780 min). ⚠ The series + Pinnacle character/franchise grains of the refresh are NOT live — known-issues #170.
+
+## ⛔ A PRICE OR BUYER SIGNAL READS `sales_market`, NEVER `sales` — and a hand-kept wallet list beside a registry is the bug, not the fix (2026-10-03, PT, #169)
+
+`sales` holds issuer buy-backs: Dapper buying at its own offer, 710 of 79,292 Top Shot sales in 30 d,
+and 4,987 in 90 d for `0xe1f2…` alone, in bursts after drops. Counting them as market sales gave
+**64 editions with no collector sale at all a MEDIUM or LOW FMV**. Eight buyer signals also each kept a
+`NOT IN` list of system wallets, and **none** carried the buy-back wallet. It stayed out of their output
+only by luck: a quiet week. The fix is one view over the existing `buyback_wallets` registry, plus a
+guard. Rules: an FMV, price or buyer-behaviour reader reads `sales_market`. A selector or a display of
+real transactions reads `sales`. A new system wallet goes into the registry, never into a function.
+Table + guard: [schema-truth.md](schema-truth.md) (end).
+
+⚠ **A view over an RLS-protected registry must not be granted to a role that cannot see the
+registry.** `security_invoker=on` evaluates the `NOT EXISTS` as the caller. A caller blocked by RLS
+sees an EMPTY registry and gets every row back, with no error. Grant such a view to the roles that
+bypass RLS only, so the failure is LOUD.
+
+⭐ **Re-pointing N live functions without hand-copying them:** `regexp_replace(pg_get_functiondef(oid), …)`
+inside a `DO` block, guarded by `md5(prosrc)` before (base = the committed migration's body) and after
+(result = the new file's body), raising on any mismatch. First prove the regex on live with a read-only
+`md5(regexp_replace(prosrc, …))` against the file's md5s. 12 + 9 + 2 functions shipped this way on
+10-03 with zero transcription. Postgres's word boundary is `\y`; `\b` there is BACKSPACE, so a `\b`
+pattern matches nothing.
+
+
+## ⚠ Rewriting a query's TEXT so it "drives from the small table" fixes no join order — growth undoes it; a `MATERIALIZED` CTE pins it (2026-10-04, PT)
+
+`fmv_backfill_candidates` returns editions with a positive-price sale and NO `fmv_snapshots` row. The
+true answer is ZERO, so a `LIMIT` never binds and every tick pays the whole plan. The 09-12 rewrite
+(`20260912063341`) reordered the SQL to "drive from `editions`" and measured ~149 ms warm. By 10-04
+`editions` had grown 21,423 → ~39,600, and the planner had chosen a Merge Semi Join of `editions_pkey`
+against a Merge Append over ALL EIGHT `sales_<year>` partition indexes (~7.07 M entries), applying the
+snapshot anti-join last. The lane took 15–60 s a run, and 2 of 10 runs hit its 60 s
+`statement_timeout`. Fix `20261005001848`: `WITH unpriced AS MATERIALIZED (editions with no snapshot)`,
+then `EXISTS`-probe `sales` for those 61 rows only. Same set by construction. Generic plan > 55 s →
+441 ms; the first production run took 4.4 s (was 15–60 s).
+
+Rules:
+- When one side of an anti/semi join is SELECTIVE and the other is a partitioned giant, put the
+  selective side in a `MATERIALIZED` CTE. Then the order is a property of the query, not of today's
+  statistics.
+- Measure a SET-carrying `LANGUAGE sql` function the way it runs: `PREPARE` + `SET plan_cache_mode =
+  force_generic_plan` + `EXPLAIN ANALYZE EXECUTE`. A literal-parameter `EXPLAIN` of the body measures a
+  custom plan the function never gets.
+- A zero-result lane is the worst case for any plan whose cost lives under a `LIMIT`. Re-measure it
+  when the driving table has roughly doubled, not only when it times out.
+
+- ⚠ **"FAST ALONE, SLOW IN A LOOP" IS THE PL/pgSQL PLAN CACHE (2026-10-09, `20261009165544`).** A plpgsql function timed standalone runs on a CUSTOM plan; called ≥6 times in ONE session it may switch to a cached GENERIC plan built for an average argument. `rebuild_wallet_reconstructed_rips` went 0.08 → 1.01 s, 0.34 → 4.13 s on calls 6–7 and a 32k-pull wallet hung >60 s on call 11 (1.86 s with `force_custom_plan`) — the 5-night `rpc-chain-arrival-pack-pulls` wedge. **Time a per-key function the way its caller calls it (N calls, one session), or A/B with `set_config('plan_cache_mode','force_custom_plan',true)`; the remedy is `SET plan_cache_mode TO 'force_custom_plan'` on the function** (also 20260901203559). Read past the MCP's 60 s cap with `RAISE LOG` lines in a rolled-back DO block, then `query_logs` on `postgres_logs`.
+
+## ⚠ A paged reader's ceiling is a bet on the population, and populations grow past it (2026-10-09, PT)
+
+⚠ **Second instance, 2026-10-14 — the SITEMAP, twice over, both days out.** `lib/sitemap-data.ts` `fetchAllByCollection` threw at `maxRows = 60000` while segment 3 reads EVERY edition row (52,187 on 10-14, Panini adding ~1,400/day): every set/player/team URL was ~6 days from a permanent 503. And Google's own ceiling — 50,000 URLs per sitemap file, past which the WHOLE file is rejected — was ~9 days out on segment 2 (37,659, 30,251 of them Panini). Fixed by raising the safety net to 250,000 (each page re-sorts the set, ~86 ms at 52K — the walk is the real limit), moving Panini to four uuid-range shards (segments 5–8, stable assignment), and refusing (503) any segment over 50,000. ⭐ **A growing population has TWO ceilings to watch: ours (`maxRows`) and the consumer's (Google's 50K) — measure the growth RATE against both, not just today's count.**
+
+`fetchAllPaged` (`lib/supabase-paginate.ts`) defaults to **20 pages = 20,000 rows** and reports `truncated` honestly. That only helps if the caller acts on it. `panini_editions` passed 20k on 10-06 (22,110 by 10-09), so `/api/cron/panini-ingest`'s walk-order served `complete:false` on every run for three days: new grid discoveries were not promoted, bootstrap was off, and Vercel logged `hit maxPages=20; result is partial` each run. The cap is now 100 pages. `/api/sets-db` had its own pager that stopped at 60,000 rows and **returned what it had**, while the largest wallets hold 69,520 All Day and 61,512 Top Shot moments. It now reads 200,000 and throws at the ceiling. **When a paged read hits its ceiling, it must fail or say partial, never return a short list as the whole.** Size the ceiling against the live population (`count(*)` and the largest per-key group), not today's typical case. Every other `fetchAllPaged` caller was checked 10-09: all are under cap (largest `pinnacle_catalog`, 2,812 of 10,000).
+
+⚠ **Also 10-09: the accuracy-gate backtests (`fmv_sales_backtest`, `topshot_fmv_backtest`) were the last hand-kept buy-back list** (one Top Shot wallet against a 3-wallet registry). They now read `sales_market` (`20261009212009`), and their guard suppressions are gone. See the `sales_market` section above.
+
+⚠ **A ROW'S `updated_at` IS NOT A FRESHNESS STAMP FOR ONE OF ITS FIELDS (2026-10-10, known-issues #184).** `edition_offers.updated_at` moves when the floor CHANGES and also when the same row's `highest_offer` changes; an ask re-observed unchanged keeps its old stamp. So "`low_ask` with `updated_at` ≤ 7 d" both dropped 2,490 asks seen this week and passed 350 nobody had seen for ~10 days (31 of them below the live badge ask, which they outranked). The field's own observation time is `low_ask_confirmed_at`. Before writing "fresh within N days" on a multi-field row, read the WRITER and find the column that means "this field was last seen" — and if none exists, the rule cannot be written honestly.
+
+⛔ **`editions.updated_at` HAS TOUCH SEMANTICS, AND ONE READER DEPENDS ON THEM (2026-10-14).** `trg_editions_updated` → `update_updated_at()` stamps `now()` on EVERY update, including a no-op upsert: `/api/ingest/candy-editions` re-upserts all 125 Candy editions each run, so every Candy edition reads "changed today" daily (and so does its sitemap `<lastmod>`). **Do NOT make the trigger skip no-op updates:** `get_topshot_stub_targets` orders least-recently-ATTEMPTED first and its own comment says *"every attempt bumps updated_at via trg_editions_updated, so this rotates the whole queue"* — a skip would pin that walk on its own head (the stalled-walk class, #128). If a true change stamp is ever needed, add a separate column; and `check_suppression_count_predicate_drift` also counts TS `updated_at` in 24 h.
+
+### ⚠ An index fixes a FILTERED read, never a whole-table aggregate (2026-10-10)
+
+`panini_sale_feed_status` (five aggregates incl. `count(*)` over all of `panini_card_serials`) went 7.7 s → 0.72 s with
+a covering index on 10-02, then back to 4.8 s by 10-09: the table grew 1.07 M → 2.48 M rows and an index-only scan
+still reads every entry (270k buffers). **A status/summary row over a growing table wants a STORED row refreshed on
+a schedule, with a freshness-gated LIVE fallback** (`20261010053847`: snapshot served only while < 75 min old, else
+computed live, and `status_source` says which). Staleness then degrades to slow-but-true, never fast-but-frozen, and a
+dead refresher resurfaces as the same slow-board alarm.
+
+### ⭐ A one-predicate change to a PINNED function: literal DDL in the file, a guarded replace for the apply, md5 to prove they match (2026-10-10, `20261011022738`)
+
+The drift guard needs the migration FILE to hold literal `CREATE OR REPLACE` bodies identical to the pins. That does not mean the APPLY has to re-transcribe ~29 KB through the MCP. The sequence that worked:
+
+1. Prove pin == live: `md5(trim(regexp_replace(prosrc,'\s+',' ','g')))` against the same normalisation of the pin's `$function$` body.
+2. Edit the pins and add the failing case. Run it locally (red on the old body), then fix it (green).
+3. Write the file from the pin blocks (literal DDL plus `anon-exec:` markers).
+4. Apply with a DO block that `EXECUTE`s `replace(pg_get_functiondef(fn), old, new)` and **RAISEs unless `old` occurs exactly once**. `pg_get_functiondef` keeps the SET clauses (`search_path`, `statement_timeout=90s`), the SECDEF flag and the ACL.
+5. Read live `md5(prosrc)` and require it to equal the FILE's bodies. Then `git mv` the file to the version `apply_migration` actually recorded, and repoint the drift-guard registry.
+
+`migration-parity` matches by name, so the different apply text is invisible to it. The md5 in step 5 is what makes the two provably the same.
+
+## ⭐ The Top Shot `offers` table — what it holds, how it is kept complete, and how a fill joins its offer (2026-10-10)
+
+`offers` is written by `app/api/topshot-offers-indexer` (Dapper OffersV2 `0xb8ea91944fd51c43`, TopShot.NFT
+only, every ~20 min, cursor `event_cursor.topshot_offers`). `status='open'` rows ARE the live bid book that
+`raise_edition_offers_from_chain`, `get_edition_offers`, `get_moment_best_offer`, `topshot_offer_depth` and
+the rest read; `filled` / `cancelled` are terminal. Rows from the history walks carry
+`source='onchain_backfill'` (chain walks) or `'atlas_backfill'` (Atlas-sourced, NULL `tx_hash`); the live
+indexer writes `'onchain'`; no reader filters on `source`.
+
+- **A same-tick create+complete is written with its FINAL status** (since `70ea59110`). Before that it was
+  skipped as "not open" and never recorded — the flip in step 4 no-op'd on the absent row.
+- **Edition resolution is one shared function**, `resolveOfferTargets` in
+  `lib/chains/flow/topshot-offer-available.ts` (live indexer + both backfills): alias table → `editions` by
+  `setId:playId(::sub)` → serial offers via `moments`, then `wallet_moments_cache` (`moment_id` = nft id,
+  `edition_key` = `editions.external_id`, verified), then `checkpoint_nft_meta` (`c='ts'`: `a`=setID,
+  `b`=playID, `serial`; `c='tssub'`: `a`=subedition; latest spork wins), then (since 10-11) Top Shot's Atlas
+  feed (`atlas_edition_id` -> `topshot_atlas_edition_map`, only when ALL the nft's Atlas events name one
+  edition; `extra.resolved_via_atlas`). ⛔ The checkpoint path builds a key
+  ONLY when the subedition is known (a `tssub` row or a non-NULL `topshot_moment_subeditions` row), and a
+  parallel whose `::` edition is uncatalogued stays unresolved — no base fallback. Every read throws.
+  Per-run `extra`: `unresolved_by_type`, `resolved_via_wallet_cache`, `resolved_via_checkpoint`,
+  `unresolved_serial_nft_sample` (≤10 nft ids).
+- **`sales.offer_id`** (`20261011001215`) is the on-chain offerId on every `source='offer_fill'` sale (Top
+  Shot and, since #70, All Day). **Join a fill to its offer with `sales.offer_id = offers.offer_id`**;
+  `offers.fill_tx_hash` exists only where the indexer saw the creation, so a join on it undercounts.
+  `sales.offer_id` has no index; join from `sales` (filtered) into `uq_offers_offer_id`.
+- **Recovery tables:** `topshot_offer_fill_missing_offers` (snapshot of accepted offers whose offerId has no
+  `offers` row, `20261011044422`) drives `/api/admin/backfill-topshot-missing-fill-offers` (OfferAvailable
+  only, from the mainnet28 root 137,390,146). `audit_20261010_offers_open_rows_that_filled` holds the 45 open
+  rows a fill proved filled (`20261011015351`).
+  Result (10-10 ~11:15 PM PT): 17,257 of 21,372 recovered; **13,621 of them were created before the
+  indexer began (06-03), median 58 days open** — most "fill with no offer row" was a long-lived bid that
+  predates the indexer. The 4,115 left predate the 2025-12-29 spork. On 10-11, 877 of those were recovered from Atlas
+  (`20261011141132`, `source='atlas_backfill'`: one purchased Atlas offer on the same nft + price within
+  15 min of the fill; `created_at` = Atlas `listed_at`; `tx_hash` NULL because the creation tx is unknown).
+  3,243 / 81,720 fills remain without an offer row.
+- **OffersV2 offerIds are 10–15 digits** — not a time-ordered counter; do not split "before / after" by
+  numeric offerId.
+- **Old open bids are real.** Top Shot offers do not appear to expire: 500/500 open edition bids > 30 days
+  old are still open on Atlas's own feed (below). An old `created_at` on an open row is not a staleness signal.
+- **Atlas's offer feed** is `topshot_atlas_market_events` `kind='offer'` (`offer_type` EDITION / SERIAL /
+  PARALLEL, `completed`, `purchased`, from 2022-05). Its `uuid` is NOT the on-chain offerId. Match on buyer
+  (Atlas stores it without `0x`) + `price_cents` + `set_id_onchain:play_id_onchain` + `listed_at` ± 10 min,
+  and trust only ONE-TO-ONE buckets: one buyer routinely places identical bids minutes apart (205 of 209
+  "Atlas says completed" matches were such collisions).
+
+## ⚠ Three plan lessons from the 10-15 IO pass (Claude Code cloud, 9:06 AM PT)
+
+### ⛔ `EXPLAIN ANALYZE` EXECUTES — read a function's body for writes BEFORE profiling it
+Profiling `run_all_insider_detectors` one detector at a time ran five VOLATILE functions that `INSERT INTO topshot_insider_alerts`. They happened to dedupe (no rows landed — checked against the hourly cron's 8:26 AM PT rows), but nothing in the method guaranteed it. Before `EXPLAIN ANALYZE SELECT fn(...)`: `SELECT provolatile, strpos(lower(prosrc),'insert into')>0 FROM pg_proc WHERE proname = ...`; for a writer, profile its read-only CTEs as a plain SELECT, or a `pg_temp` copy that ends in `SELECT count(*)` (same PL/pgSQL parameterisation, so the plan matches).
+
+### ⭐ A planner misestimate from CORRELATED predicates is fixed by a partial index whose predicate IS the query's
+`backfill-topshot-buyers`' exhausted-count (`buyer IS NULL AND payer IS NOT NULL AND tx IS NOT NULL AND collection = TS`) walked the `payer_address` indexes (36,278 blocks) because the planner priced the existing null-buyer partial index at ~125k rows when it held ~45 — the predicates are correlated and stats were fresh, so ANALYZE cannot help. A 16 kB index with exactly that predicate took it to 10 blocks (`20261015152521`). Mirror the sibling partitions too: `sales_2023` lacked the TS null-buyer index `sales_2024` had, and every run seq-scanned it.
+
+### ⭐ An EXPRESSION index cannot give an index-only scan on its own column — INCLUDE the base column
+`idx_panini_serials_owner_lower (lower(owner))` served `count(*) WHERE lower(owner) = x` only as a plain Index Scan (~1 heap block per card: 5,156 blocks for one owner): the planner needs `owner` itself. `(lower(owner)) INCLUDE (owner)` made it index-only on a 98 %-all-visible table; with a LATERAL per candidate username, `panini_collector_rotation_targets` went 593,854 → ~48k blocks, 36 s → 157 ms (`20261015151449`). An INCLUDE index cannot deduplicate: 39 MB → 114 MB.
+
+### ⭐ A per-row helper that MISSES for a whole collection costs its full plan every call — gate it on the collection its consumers use
+`entity_rep_nft_id` (a `LANGUAGE sql` helper with `SET search_path`, so never inlined) is called once per edition by `get_set_editions`, `get_player_editions`, `get_team_top_editions`, `get_series_editions` and `get_pack_contents`. On Top Shot its first COALESCE arm hits (0.44 ms a call). On Panini all three arms miss, and the last one (`sales` by `edition_id`, eight yearly partitions) cost ~13.5 ms a call, mostly planning (18 ms plan vs 0.65 ms execution in isolation): 1,348 ms of a 2,476 ms set-editions read, on 10.4k buffers, i.e. CPU, not IO. That set page hit the 8 s timeout on 10-19. Every consumer of the value builds a Top Shot media URL and gates on `nba-top-shot` first, so the helper now returns NULL off Top Shot (`20261019233902`): 2,476 → 42 ms. ⚠ A low buffer count on a slow read points at planning or per-row function calls, not at missing indexes; time the helper alone over the picked rows before touching the outer query.
+
+- ⚠ **A SCRATCH TABLE IN `public` IS A PUBLIC TABLE (2026-10-19).** `CREATE TABLE public.scratch_… AS SELECT …` lands with RLS OFF, and `/api/smoke-test` reds `rls_off_base_table` within the half hour (10 hard failures, 9:42–10:34 PM PT, until RLS was enabled by hand). Create a before/after baseline with `ALTER TABLE … ENABLE ROW LEVEL SECURITY` in the same statement batch, or keep it out of `public`. ⚠ And plan its removal up front: `execute_sql` holds a `DROP` for user confirmation, which times out (60 s) in an unattended session — the table outlives the session.
+
+- ⚠ **A plpgsql `RECORD` filled by TWO branches must carry the SAME column TYPES in both (2026-10-21, #204).** `get_set_detail` fills `v_set` from `sets_summary` (`total_circulation bigint`, `min_series smallint`) on one path and from an `editions` aggregate on the other; a field whose type differs between calls on ONE connection fails the cached plan — `type of parameter 34 (bigint) does not match that when preparing the plan (integer)` — and pooled connections serve both paths. Cast every column of the second SELECT to the first source's types, and make the test FIXTURE use the live types (an `int` fixture column is what surfaced it; prod's `bigint` would have hidden it until a type ever diverged).
+
+### ⚠ A SUMMARY TABLE DISAGREEING WITH ITS SOURCE IS A DELETER'S FOOTPRINT (2026-10-23)
+`edition_fmv_current` is a mark-and-sweep copy of the newest `fmv_snapshots` row. On 10-23 it held a 2:47 AM PT drain re-stamp (computed_at 09:47Z, $193.50) that `fmv_snapshots` no longer had — the newest surviving snapshot was a stale 10-20 row. A copy can only be AHEAD of its source if something deleted from the source after the copy ran, so the diff `edition_fmv_current.computed_at` with no matching `fmv_snapshots` row is a direct census of delete-without-replace (2 of 10,244 Top Shot rows that day). It named the cause in minutes: `fmv-recalc` Step 3 purged today's rows for every page edition BEFORE Step 4 decided which to write. Fixed by order (insert first, `purge_fmv_snapshots_today_except` deletes only the replaced rows — `c22d58963`). ⭐ When a writer is delete-then-insert, run that diff after any change to it; a non-zero count is the window reopening.
+
+### ⚠ A supabase-js query builder MUTATES in place — rebuild it for a retry (2026-10-23)
+
+`q.ilike(...)` returns the SAME builder with the filter appended, not a copy. A retry
+written as `q.ilike("player_name", label)` on the builder that already carries
+`.ilike("player_name", typed)` STACKS both filters, and the retry can never match
+(caught in review on the concierge's special-serial listings path, #207). Every retry
+takes a `run(…)` that builds the query afresh — the pattern in `lib/search/player-search-retry.ts`
+and `lib/search/accent-regex.ts`. The same holds for `.or()`, `.in()`, `.order()` and `.limit()`.
+
+### ⚠ "Non-ASCII" is not an accent test (2026-10-23)
+
+`~ '[^\x01-\x7e]'` also matches separators: Panini's set names carry " · ", so a
+"which labels are accented?" function returned 2,829 rows — over PostgREST's 1,000-row cap
+— instead of 12. Test for accented LETTERS: `~ '[À-ÖØ-öø-ɏ’‘]'` (Latin-1 Supplement and
+Latin Extended-A/B, without × and ÷, plus curly apostrophes). Measured populations
+(2026-10-23): 194 player names, 7 team labels, 5 set names, 10 Pinnacle characters,
+163 pack titles; joiners (• ·) in exactly 1 of 9,079 player names (WALL•E).
+
+
+## ⚠ `pg_stat_statements` HAS NOT BEEN RESET SINCE 2026-08-12 — its means pool 2.5+ months (read 2026-10-25)
+
+`select stats_reset from pg_stat_statements_info` → `2026-08-12 01:33Z`. Every `mean_exec_time` / `max_exec_time` / blocks-per-call is therefore an average across the pre-09-20 **Small** compute era, every IO spell since, and every fix shipped since — a mean read today cannot show a fix landing (the "rate pooled across a fix" trap). **Justify a perf change on TODAY's evidence** — a fresh `EXPLAIN (ANALYZE, BUFFERS)` (cold and warm) and the live Vercel error groups — and verify it the same way. ⛔ Do not `pg_stat_statements_reset()` to get a clean window: other sessions' instruments read these rows. To see a change, diff two snapshots of `calls` / `total_exec_time` for the one `queryid`.
+
+## ⛔ A CRON REFRESH WRAPPER MUST NOT SWALLOW ITS FAILURE (2026-10-25)
+
+`refresh_panini_league_coverage` wraps its refresh in `EXCEPTION WHEN OTHERS → log ok=false, return` — copied into `refresh_topshot_pack_rip_values` (`20261025170047`), that turned a broken refresh (e.g. a dropped unique index → 55000 forever) into a `succeeded` row in `cron.job_run_details`. Caught before push by the DB pin `supabase/tests/mv_refresh_wrappers.sql`; fixed by `20261025170715`. **Log the SUCCESS, let the failure raise**: nothing reads a failure row anyway (a freshness gate reads ok rows; the cadence watchlist pages on the silence), and `log_pipeline_run` shares the refresh's transaction, so a raise leaves no half-logged state. The pin now probes this wrapper with a dropped index.
+
+### ⚠ A `SET search_path` on a per-row SQL helper is a PERF regression, not free hygiene (2026-10-25)
+
+A `SET` clause (any GUC) makes a `LANGUAGE sql` function **non-inlinable**, so every row pays a real
+function call. Measured on `recent_low_usd` over 61,372 rows: **27–36 ms inlined vs 366–375 ms pinned
+(~13×)**, same result. `check_function_search_path_drift()` prescribes exactly that ALTER, so since
+`20261026001535` it skips a function that is LANGUAGE sql, carries a COMMENT starting
+`search_path-exempt (inlined SQL helper):` with its reason, and is not executable by anon/authenticated
+(its callers are SECURITY DEFINER with a pinned path, which is where the inlined body is planned).
+The curated list IS those comments: `select oid::regprocedure from pg_proc where obj_description(oid,'pg_proc') like 'search_path-exempt%'`.
+Measure before pinning any SQL helper that runs inside an aggregate.
+
+### ⚠ Two views sharing ONE body cost the body twice — and in parallel on a cold cache they time out together (2026-10-26)
+`panini_deal_board` is `panini_deal_board_all` filtered to one product, but the filter sits OUTSIDE a `MATERIALIZED` CTE, so it cannot push down: each read pays the whole body (~240k buffers; 0.8 s warm, 15–29 s cold). The hourly warm fired both reads together and both hit the 30 s `service_role` statement_timeout on cold pages (10-25 9:52 PM, 10-26 5:07 PM PT). Fix shipped in `lib/insights/panini-more-boards.ts`: read the all-product board first, then the filtered one, so the second finds the pages warm. Before parallelising reads, check whether they share a body. A matview (one compute per hour for all three readers, incl. `refresh_panini_public_deals`) is the next lever if the cost ever matters; not needed at Large.
+
+### ⚠ A keyset predicate written `(p_after IS NULL OR key > p_after)` is a FILTER, not an index condition — every later page re-walks from the start (2026-10-26)
+`panini_collection_export` paged 1,000 cards at a time with `(p_after_sku IS NULL OR s.sku > p_after_sku)`. Even with a `(lower(owner), sku)` index the OR arm cannot become an index bound, so page *k* scanned the owner's range from its first row and threw away what earlier pages returned: a page past the end of an 89k-card owner cost **47.6 s / 88k buffers**. `s.sku > coalesce(p_after_sku, '')` (same set — 0 empty keys) seeks: **14 ms / 2.6k**. Page 1 alone looks fine either way, so **probe the LAST page, not the first**, before calling a keyset walk bounded. Also needed the composite index: the only owner index was `(lower(owner))`, so even page 1 fetched and sorted the whole holding (28.5 s). Ledger 10-26 "Panini full-collection CSV export".
+
+### ⚠ `x = ANY((SELECT arr FROM cte))` is a ROW-SUBQUERY `ANY`, not an array test — cast the subquery `::text[]` (2026-10-28)
+Writing the analytics-smoke recorded-outage arm (`20261029045355`), a one-row CTE `outage(a text[])` was read as `slug = ANY((SELECT a FROM outage))`. Postgres parses `ANY (subquery)` as "compare to each ROW", so the row value is the whole array: `ERROR 42883: operator does not exist: text = text[]`. **`slug = ANY((SELECT a FROM outage)::text[])`** — the cast turns the scalar subquery into an array EXPRESSION — works, and so does `to_jsonb((SELECT a FROM outage)::text[])`. It was caught only because the new clause was run STANDALONE against live data before the md5-gated anchor rewrite: an anchor rewrite asserts the anchors match, not that the replacement parses, and inside a `DO … EXECUTE` the failure surfaces only at apply. **Run the replacement SQL on its own first.**
+
+### ⚠ A BULK upsert writes NULL for a key one row lacks — group rows by SHAPE (2026-10-29)
+supabase-js sends an array upsert with the UNION of every row's keys and `Prefer: missing=default` (`defaultToNull: true`), so a row that omits `sample` or `last_grid_sport` while another row in the same batch carries it is written as NULL, and on conflict that NULL overwrites the stored value. `/api/cron/panini-ingest`'s registry upsert promised "an absent sample never erases the previous one" and broke it in every mixed batch. `defaultToNull: false` does not rescue it: the missing column takes its DEFAULT, which `ON CONFLICT DO UPDATE` still writes. **Fix: one upsert per key set** (`Object.keys(r).sort().join(",")`). A single-row upsert is safe: it sends only its own keys.
+
+### ⚠ A STAGED migration is a claim about the state ON THE DAY IT WAS STAGED — run its post-check as a READ before applying, and check `schema_migrations` by NAME before trusting "NOT APPLIED" (2026-10-30)
+Two cases from one evening. (1) `cadence-bridge-chain-arrivals-STAGED-MIGRATION.sql` part 2 asserted `expired_exemptions = 0` after deleting one lapsed bridge. Between staging (10-29) and applying (10-30) a SECOND bridge (`chain-arrival-flips`, review_by 10-30) lapsed, so the file as written would have raised and rolled back. Running its `DO` assertion as a plain read first showed the drift; the applied migration (`20261031000654`) retired both, after checking that neither lane read degraded. (2) `serial-fmv-power-model-STAGED-MIGRATION.sql` said "STAGED — NOT APPLIED" for four months while `schema_migrations` held `20260617221746 audit_20260617_serial_fmv_power_model`. The live `serial_fmv_estimate` had been rewritten since, so applying the file would have REVERTED later work. Check before trusting the header: `select version, name from supabase_migrations.schema_migrations where name ilike '%<slug>%'`. Note too: a staged DELETE stuck on an MCP approval prompt in a cloud session went through first time from the local VS Code session, where the prompt is shown.
+
+### ⚠ The daily `db_size_mb` delta is a SAWTOOTH — judge growth over ≥ 5 days, never one day (2026-10-30)
+`metrics-latest.json` read 41,801 → 42,761 (+960) → 42,097 (−664) → 42,133 (+36) → 43,185 (+1,052) MB from 10-26 to 10-30. The size includes dead tuples, so autovacuum reclaim swings it about 1 GB either way. A "+36 normal" day followed by a "+1,052 WATCH" day is one oscillation, not a 30× regression. The net over the five days is ~280 MB/day; the largest table, `panini_card_serials`, grew 9,031 → 9,218 MB. Compare a ≥ 5-day net, and per-table `pg_total_relation_size` against an older read, before calling growth a runaway.
+
+### ⛔ A `moment_id` collides INSIDE ONE WALLET — wallet scope is not collection scope (2026-11-01, #142 → #223)
+Displaced verbatim from CLAUDE.md's #142 line when it was corrected: "an unscoped read took an All Day SERIAL for a Top Shot sale (#142; tree-walk guard)". The line also said "(or wallet)" — **wrong**. One Flow wallet holds Top Shot, All Day and UFC moments, and their numeric ids collide within it: 41 `wallet_moments_cache` rows in 11 wallets matched another collection's `moment_acquisitions` row (2026-10-31). The binder joined acquisitions on `(nft_id, wallet)` and rendered All Day 10565124 as "Paid $65" — Top Shot 10565124's price; `export_wallet_csv` exported 443 moments twice (one row per acquisition row) on the same join; `backfill_cost_basis_from_ids` priced 168 rows from another collection's sale by `nft_id` alone (4 turned out to be real All Day purchases, re-tagged; 164 quarantine pending — known-issues #223). **Every read or write keyed on `moment_id` / `nft_id` carries `collection_id`, whatever else it carries.** Also: `moment_acquisitions.collection_id` DEFAULTS to Top Shot, so a writer that omits it silently tags everything Top Shot — pass it explicitly. And a trigger on a per-YEAR sales partition (`sales_2026`) sees EVERY collection: gate it (the insider-buyback trigger had no gate; latent, fixed `20261101160652`).
+
+⚠ **A caller census by `prosrc ILIKE '%fn_name%'` is WRONG for any name containing `_` — `_` is LIKE's one-character wildcard (2026-11-02).** `ILIKE '%classify_acquisition%'` matched the pipeline-name string `'classify-acquisitions-multicollection'` inside `get_pipeline_alerts_core`, and a morning session KEPT `classify_acquisition` on that "caller"; the evening one nearly reported a caller from the same query. Use `strpos(prosrc, 'fn_name') > 0` (literal) or escape it (`ILIKE '%classify\_acquisition%'`), and print the MATCHING LINE (`regexp_matches(prosrc, '(.{0,60}fn_name.{0,60})','g')`) before calling anything a caller — the standing rule (print the lines, not a boolean) would have caught it.
+
+### ⭐ A WIDE per-wallet aggregate: aggregate from a COVERING INDEX, fetch display columns per top-N KEY (2026-11-03, #228)
+`get_wallet_collection_snapshot` read ten wmc columns per moment, so the largest wallet's cold read touched every heap page its 70k rows sit on (~47k) and timed out the route's 8 s bound. **Narrowing the column list alone buys nothing** — the heap pages are the cost, not the bytes — unless EVERY column the aggregates read is in one index: then the scan is index-only (heap fetches only for pages the visibility map has not marked all-visible; on wmc that is whatever the 10-min FMV refresh dirtied, 0–14k of 70k rows measured). The wide columns (names, images) are then read for the handful of DISPLAY rows only, fetched by key: "top 5 moments by FMV ⊆ rows of the top 5 editions by max FMV" is exact up to ties. Measured: 75.2k buffers + 14.8k temp → 44.9k, no temp.
+- ⛔ **Do not substitute a catalog column for a per-moment one to dodge the index**: `editions.series` / `circulation_count` were NOT equivalent to wmc's `series_number` / `mint_count` (Pinnacle has no `editions` rows; 22 Top Shot series differ in two wallets) — prove the equivalence over the population first, as for any scoping claim.
+- ⚠ **An `OR` on a nullable join key (`m.k = k.k OR (k.k IS NULL AND m.k IS NULL)`) drops the OTHER key columns from the index condition** — the planner fell back to a BitmapOr of `(wallet, edition_key)` and `edition_key IS NULL`, probing the wallet's whole index range per key (~2.1k buffers per probe). Split it into a `UNION ALL` of an equality arm and an `IS NULL` arm; each keeps the full index condition.
+- ⚠ **From the MCP, `CREATE INDEX CONCURRENTLY` ran without an approval prompt (finished < 60 s, 189 MB on a 940 MB heap, quiet instance), but `DROP INDEX CONCURRENTLY` RAISED the destructive-statement prompt** — unanswered in an unattended session, and the tool then forbids further `execute_sql` for the turn. Build the new index and switch readers first; stage the drop for a human (`docs/proposals/wmc-snapshot-cover-index-swap-STAGED.sql` — ran 11-04 via the dashboard SQL editor; runbook now in `supabase/migrations/20261104161510_audit_20261104_wmc_snapshot_cover_takes_the_tier_index_name.sql`).
+
+### ⭐ A DRIFTED function: edit the LIVE definition in place, never full-body-replace from a stale file (2026-11-03)
+`rpc_search_catalog` and `ensure_players_from_edition_names` had live bodies that matched NO committed copy (`prosrc` md5 vs the newest migration's body). A full-body `CREATE OR REPLACE` from the repo would have silently reverted whatever the live body carries. For a one-expression change, the migration reads the live object and edits it: `v_def := pg_get_functiondef('<sig>'::regprocedure)`, count the occurrences of the exact old text and `RAISE` unless it is **exactly 1**, then `EXECUTE replace(v_def, v_old, v_new)` (`20261104044435`, `20261104050155`). It fails loudly if the base moved instead of guessing. ⚠ It does not close the drift — the repo still holds no full copy; record the post-apply `prosrc` md5 in the header and start the next full-body change from `pg_get_functiondef`.
+
+### ⭐ Prove a guard on PRODUCTION with a probe that rolls itself back: one DO block that ends in RAISE (2026-11-03)
+`execute_sql` returns only the last statement's result, so `BEGIN; …; SELECT …; ROLLBACK;` hides the evidence. Instead run both arms inside ONE `DO` block — plant the input (`UPDATE` a real row), call the function, count the outcome, then `RAISE EXCEPTION 'RESULT control=% probe=%', …`. The exception carries the numbers back AND aborts the transaction, so nothing persists by construction (verify with a follow-up count anyway). Include a positive control in the same block (an ordinary input the function must still act on) — `20261104050155`'s proof read `control_minted=1 placeholder_minted=0`.
+
+### ⭐ A route's READ BUDGET can be the defect, not the query: pgss COMPLETIONS past the budget prove it (2026-11-04, #228)
+`boundedRead` abandons the WAIT, not the query (supabase-js has no cancel), so a read that overruns the route's 8 s default still runs to completion in Postgres. **The tell: `pg_stat_statements` `max_exec_time` / per-row times ABOVE the route budget for a function the route calls** — #228 held snapshot calls of 8.4 s and 11.3 s while every one of them had already been answered as a 503. Those were slow SUCCESSES turned into errors, and the first visitor paid while the abandoned query warmed the pages for the next. Before reaching for a warmer, a cache or more SQL, compare the observed completion times with the budget and with the caller's own deadline (`/share/<wallet>`'s server fetch has none; `ogFetch` 10 s; the concierge its own). The lever was one argument: a 20 s route budget under the role's 30 s `statement_timeout`, with `maxDuration = 30`. A read past the new budget is still an honest retryable 503. ⚠ Check every caller's OWN deadline — a larger route budget is useless to a caller that gives up first (the concierge was raised to 22 s the same morning, `d3a2cb2`).
+
+⚠ **A LISTING STAYS "OPEN" IN OUR ATLAS COPY AFTER ITS MOMENT SELLS (2026-11-04).** `topshot_atlas_market_events` kept `completed = false` on the listing row after the NFT sold (the sale reaches `sales` from the on-chain indexer; nothing joined it back), so 1,933 of 13,794 Top Shot `edition_offers` asks (14 %) named a `low_ask_nft_id` already sold after `low_ask_confirmed_at` — 12 % even among asks confirmed < 24 h ago. `close_sold_topshot_listings_and_floors()` (pg_cron `rpc-ts-sold-floor-clear`, jobid 825) now closes any open listing whose NFT has a Top Shot sale after `listed_at` (a buyer's RELIST has `listed_at` after the sale, so it is never closed), NULLs a floor whose NFT sold after its confirmation (old values in `topshot_sold_floor_clears`), and re-verifies the edition on Atlas (10 per tick). Measured after the first two ticks: 0 of 12,063 asks proven sold. Trust arm `topshot_sold_floor_asks_found` (breach 50). Migrations `20261104153550` / `153603` / `155229` / `155301` / `173141` (the last retries a probe that drained non-200 — 12 × 403 and 17 status-less of the first 152 — up to 3 attempts, ≥ 10 min apart); revert `docs/audits/2026-11-04-topshot-sold-floor-clear-revert.sql`.
+
+### `fmv_snapshots.algo_version` suffixes and the guards that write them (2026-11-04)
+
+- ⛔ **A BEFORE INSERT guard on `fmv_snapshots` cannot see a writer that UPDATEs the row after the insert.** The thin-sale haircut (`fmv_apply_thin_sale_haircut` and its fmv-recalc twin `_for_editions`) is an in-place UPDATE. It pushed a just-floored Top Shot price back under the live bid (Cowork, 11-04). Fixed by putting the same bid stop inside the haircut (`20261105044500`). **A rule that must hold for the published price must live in EVERY writer of the column**, the guard and the post-insert writers alike: grep the column's writers.
+- ⛔ **A new `algo_version` suffix is appended after the existing ones**, e.g. `…_salescap_bidfloor` or `…_haircut_bidfloor`. That breaks every reader anchored on the old suffix with `$`. `get_edition_detail.basis_capped` and `isSalesCappedAlgo` both read `_(salescap|histcap)$` and stopped seeing 71 capped rows (`20261105063000` + `lib/fmv-basis.ts`). **Before adding a suffix, `grep -rn "salescap\|histcap\|haircut" lib app` and search `prosrc` for the same.**
+- The suffixes in use, in order of application: `_compcap` (All Day only, 11-12) → `_histcap` / `_salescap` → `_stalecap` (BEFORE INSERT caps) → `_bidfloor` (BEFORE INSERT offer floor, Top Shot and, since 11-12, All Day) → `_bidpull` (BEFORE INSERT, Top Shot ASK_ONLY / LOW, 11-12 evening) → `_haircut` / `_haircut_bidfloor` (the post-insert UPDATE).
+- ⛔ **2026-11-14 — the offer pull needs a REAL offer on a SALES-based price (`20261114132054`).** A LOW Top Shot price is pulled only when the best open offer is ≥ 25 % of it; ASK_ONLY keeps the 10 % floor. The 11-12 backtest pooled the band where the offer is far below the price (~5 % of pulled rows) with the rest; split out (45 d, three windows) a LOW price pulled toward an offer < 25 % of it scored within ±25 % of the next sale 8 / 0 / 22 % vs 17 / 29 / 22 % unpulled, WAPE worse in 2 of 3 windows — while ASK_ONLY there still gained in WAPE every window. First live rows after the change: Ryan Rollins MGLE /25 $6.26 → $20.40 (sales $24 / $18 / $29), Lindy Waters III Base /99 $1.50 → $5.00 (sales $5 / $5 / $7). ⚠ **A pooled backtest can hide a band where the rule is harmful — before shipping a pull/cap, split the result by the ratio that drives it and by the confidence that produced the input.**
+- **2026-11-12 (evening) — the Top Shot offer pull (`_bidpull`, `fmv_snapshots_pull_topshot_thin_to_best_offer`).** A thin Top Shot edition with a standing offer BELOW its price sells at the offer: 57 % of next sales on such ASK_ONLY editions print at exactly the bid. Rule: ASK_ONLY / LOW, best open unexpired edition / subedition offer with 10 % ≤ bid / price < 1 → `price^0.25 × bid^0.75`. Backtest (clean rows, three 10-day windows): ASK_ONLY within ±25 % 49.7 / 38.3 / 40.3 → 50.8 / 68.3 / 60.4; LOW 51.6 / 46.8 / 38.9 → 49.5 / 58.6 / 61.3; WAPE never worse. Weight 0.75, not the 0.85 that wins the last 20 days, because the earliest window clears above the bid. The trigger name sorts after every cap and after the offer floor, so `_bidpull` is the last insert-time suffix — except that the SAME function then holds a NEVER-SOLD ask-only edition to its comparable estimate (`…_compcap` / `…_bidpull_compcap`, set basis ≥ 3 set-mates, never below the bid; first sales n 94: ratio 1.99 → 1.10, WAPE 105 → 67), which reads as `basis_comparables`; readers key on `_bidpull$` (`get_edition_detail.basis_offer`, `askCapFlag` → `"offers"`, marker "between offer and ask"). A pulled row no longer equals `floor_price_usd`, so the thin-sale haircut skips it. ⛔ All Day has NO bid history (`allday_open_offers` holds open rows only), so the same rule could not be backtested there — `allday_best_offer_daily` + `capture_allday_best_offers()` (11-12) exist to capture the book once a day so it can be; scheduled 11-12 6:58 PM PT as pg_cron jobid 871 (`20 13 * * *`, via the dashboard SQL editor on Trevor's instruction), watched as `allday-best-offer-daily`. Run the All Day backtest once ~2 weeks of days exist.
+- **2026-11-12 — two things beside the suffix chain that a reader of `fmv_snapshots` needs.** (1) **The hot lane:** `fmv_recalc_hot_editions(pinnacle_id, limit)` returns editions with a `sales_market` sale in the last 36 h that is NEWER than their latest snapshot and whose latest confidence is not HIGH / MEDIUM, newest sale first; `/api/fmv-recalc` (Step 1a′) appends up to 150 to each run's pricing set without moving the cursor, and records `extra.hot_lane_editions` / `extra.hot_lane_error` (a failed read prices the page only — never a silent 0). So a thin edition's snapshot is normally minutes behind its sale, not a sweep behind; a STALE or ASK_ONLY row with a newer sale under it is now a defect, not lag. (2) **Offer history exists only from 11-12:** `allday_best_offer_daily` and `panini_best_offer_daily` (one row per edition per PT day; pg_cron 871 / 873). Top Shot's `offers` keeps created / resolved / expires and can be reconstructed for any past day; ⛔ All Day's `allday_open_offers` and Panini's `panini_card_serials.best_offer_usd` are CURRENT STATE ONLY — a backtest that needs "the bid in force before the sale" must read the daily tables, and cannot go back before 11-12. Backtest shape for any offer rule: `sales_market` (or `panini_sales`), serial > 25, snapshot in force ≥ 1 day before the sale, NO sale between that snapshot and the scored sale, bid as of one day before the sale; split into at least three windows before trusting a weight (the earliest Top Shot window disagreed with the last two).
+- **2026-11-12 — All Day's three guards and why they are shaped this way.** (1) `_compcap` (`fmv_snapshots_cap_allday_thin_to_comparables`): an ASK_ONLY / STALE price is held to `fmv_comparable_estimates.est_usd` (set basis, ≥ 3 priced set-mates, estimate < 3 days old; fails OPEN). Its trigger name (`…cap_allday_a_comparables_trg`) sorts BEFORE the sales-cap trigger **on purpose**: BEFORE triggers fire in NAME order, so `_salescap` / `_stalecap` stay the LAST suffix and every `$`-anchored reader keeps working. A row whose last cap was the estimate reads `basis_comparables` in `get_edition_detail` and `"comparables"` from `askCapFlag` ("held to comparables") — neither "from asks" nor "capped at sales" is true of it. (2) `_bidfloor` on All Day reads `allday_open_offers` (⛔ `offers` holds Top Shot rows ONLY — an empty `offers` is not "this collection has no bids"). (3) The same function is ALSO a BEFORE UPDATE OF `fmv_usd` trigger, which is the other way to satisfy the first bullet above: instead of copying the bid stop into each post-insert writer (two pinned haircut bodies), the table refuses a CUT below `least(bid, old price)`. It never raises on update. **Prefer the table-level form when the rule is a bound on the column and the writers are pinned.**
+- ⛔ **`edition_fmv_estimates` (09-30, parallel ratio) and `fmv_comparable_estimates` (11-12, set-mates × player; comp-1.1 blends the parallel ratio in) are ESTIMATES with ONE app reader, `lib/fmv/edition-estimate.ts`** — never FMV, never joined into totals, boards, pack EV or alerts. Before building a predictive table, `select relname from pg_class where relname ilike '%estimate%'`: the first one was missed for an hour on 11-12.
+- ⛔ **(2026-11-13) Two guards on the estimates, both found by an independent review of the 11-12 FMV commits.** (1) **No comparable estimate for a 1/1** (`20261113201624`): the set baseline ignores circulation, so a one-of-one was priced at its set-mates' level — Trevor's parallel-estimate rule ("every Omega is one") now binds `refresh_fmv_comparable_estimates` too (`est_usd`/`parallel_est_usd` NULL when `circulation_count = 1`; ~150 1/1s had shown an "Estimated value"). (2) **All Day's `_compcap` cut stops at the best open offer** (`20261113195740`, pinned): triggers fire in NAME order and the later bid floor's 3× guard saw the already-cut price, so a 10× cut published far under a live bid (6 editions; 6023 at $24.44 vs a $111 offer). ⚠ **When two BEFORE triggers compose, a guard in the second one is evaluated against the FIRST one's output — check a relative bound ("≤ 3× the price") against the price it was MEANT to see.**
+
+### ⭐ Newest row per key from a `DISTINCT ON` view: walk the history index, copy the view's WHERE VERBATIM, and GUARD the copy (2026-11-06, `20261107000456`)
+`get_pack_realized_ev_row`'s `ev` leg read `pack_ev_latest` (a `DISTINCT ON (pack_listing_id)` view) for ONE dist's newest row: its InitPlan touched every history row of the dist (644 rows on 653 cold heap blocks) and the view re-read them — 3,354 buffers / 1.47 s cold, growing per snapshot. The fix walks `(collection_id, dist_id, snapshotted_at DESC)` with the view's `FROM … WHERE` copied verbatim + `LIMIT 1`: 17 buffers / 0.95 ms. **Valid only when** every guard sits in the view's WHERE (before the `DISTINCT ON`) and a key never spans two outer keys (0 listings with > 1 dist, read live) — then "newest view row of the dist" = "newest passing history row of the dist". **Prove it over the population**, not by argument (one statement over every Top Shot dist: 0 diffs, 0 ties; the only one-sided rows were `dist_id IS NULL`). ⛔ A copied guard set is how `get_pack_market_row` drifted, so it ships with `__tests__/pack-realized-ev-row-ev-leg-mirrors-pack-ev-latest.test.ts`, which reds when the view's newest migration changes its `FROM … WHERE` or `gross_ev` expression without the function following (planted view change and a dropped guard line each red it). Reuse that test's shape for any other copied view guard.
+
+### ⭐ Production reads 5–10× their measured cost: the IO instrument, and the load you caused (2026-11-08, `20261108081650`)
+- **`track_io_timing` is ON per role** (`authenticator` = PostgREST, `postgres` = pg_cron). `ALTER DATABASE … SET` is refused (42501); per-ROLE works for anything in `supautils.privileged_role_allowed_configs` (read it: `auto_explain.*`, `log_*`, `pg_stat_statements.*`, `track_io_timing`, …). PostgREST picks a role setting up only on reconnect — `NOTIFY pgrst, 'reload schema'` re-inits its pool (check `pg_stat_activity.backend_start` for `usename='authenticator'`).
+- **Read it as a split:** `shared_blk_read_time / total_exec_time` in `pg_stat_statements` for the slow statement (diff two snapshots; an errored DO block is not recorded), and `I/O Timings: shared read=` in EXPLAIN. A high share = disk; ~0 on a 15 s call = the time was outside the read path. auto_explain logs no buffers here (`log_analyze` off — turning it on instruments EVERY statement).
+- **Attribute the CALLER before the cause:** the 11-07 "analytics group stalls" (117 slow `analytics_packs_summary` / 24 h, 7 × 500) were mostly `e2e-smoke.yml` — on every production `deployment_status` it loads all five `/<collection>/analytics` pages, and Vercel's CDN cache is PER DEPLOYMENT, so each deploy hits the DB cold. The tell in Vercel runtime logs: `topshot → allday → golazos → pinnacle → ufc` ~4–5 s apart, one region, a new `dep=` per sweep. A 10-deploy night is 10 sweeps.
+- **Refuted for that case, cheaply, in this order:** the SQL (literal + `force_generic_plan` both < 250 ms), a plpgsql/SQL plan flip (8 calls in one session flat), heavyweight locks (`log_lock_waits` is on — silence means none ≥ 1 s), a DB-wide freeze (pg_cron jobs completed inside the window), PostgREST schema reloads (`postgrest_logs`), checkpoints (`checkpoint complete` — write spread 270 s, sync ≤ 0.08 s).
+- **Vercel strips `s-maxage` / `stale-while-revalidate` from the response** (the client sees `cache-control: public`). Prove a CDN window by `x-vercel-cache` (`HIT` / `STALE` / `MISS`) plus `age` past the OLD window's edge, never by the header.
+
+## "Is this piece still HELD?" over wallet_moments_cache (2026-11-09, Dame Time autofill / fill route / nudge read)
+
+- **A wmc row is the moment as of its wallet's last walk, not now.** A row the latest walk did not re-see may be sold. The test used by `fill_partial_challenge_cases`, `/api/profile/trophy-cases/fill` (`lib/trophy/fill-case.ts`) and `scripts/challenge-nudge-targets.sql`: held = `last_seen_at` within a day of the wallet's NEWEST row, OR `is_locked` with `lock_checked_at` < 14 d (a locked moment cannot leave). edogg1976's 48 Dames were all last seen in Jun–Aug yet all locked with lock checks 11-02..11-04 — the lock branch is what made them usable; a wallet with no readable newest row offers only the lock branch (stricter, never looser).
+- **The mirror: a piece BOUGHT after the last walk is not in wmc at all** (2026-11-10, spitehouse 5 of 6 holding a sixth). Every challenge path read only wmc, so it was invisible to the picker, `checkChallengePin` and both fills. `get_unwalked_topshot_buys(wallet)` lists Top Shot buys since (newest row − 1 h, ≤ 30 d) not in wmc — CANDIDATES, not holdings; `record_verified_topshot_buys(wallet, held_ids, locked_ids)` writes only ids that are both re-derived candidates AND confirmed held on-chain by the caller (`lib/trophy/recent-buys.ts` → `readTopShotHoldings`). ⚠ It stamps `last_seen_at` = the wallet's EXISTING newest row, never now(): a now() stamp becomes the new newest and every older row of a wallet walked >1 day ago then FAILS the freshness test above. Callers: the fill route, `POST /api/profile/trophy-cases/sync-buys` (picker, once per challenge-case open) and the hourly `/api/cron/challenge-wallet-refresh` (entrants with an unfinished case on an open challenge). Top Shot only — a Panini buy after the walk is still invisible.
+- ⚠ **Compute "newest row per wallet" only for wallets that have a candidate row.** Over every saved wallet first it hit `57014`; filtering to the eligible rows first returned in seconds. Inside plpgsql the same correlated `max()` per scanned row also timed out — pre-compute it per wallet (a CTE), never per row.
+- ⚠ **A "held" count must still list a PARTIAL entrant whose walk is too old to re-prove anything** — samwise222 (4 pinned, 0 provably held) fell out of the first draft; union the entrants back in, and count a PINNED piece toward 6.
+
+### ⚠ Two writers of the SAME column in OPPOSITE lock order deadlock — the one that can wait takes `SKIP LOCKED` (2026-11-10)
+
+`resync_stuck_wmc_fmv` (hourly :33 until 2026-11-13, every 2 h `33 */2` since — #248; edition order) and `reconcile_saved_wallets_wmc_fmv` (:06/:36, wallet order) both write `wallet_moments_cache.fmv_usd/fmv_confidence` from `edition_fmv_current`; once the resync's p50 grew to 170 s every run overlapped the :36 one and 6 of 48 runs died `40P01` (whole run rolled back). Fix: the lane whose contract already tolerates an hour's delay locks `FOR UPDATE OF w SKIP LOCKED` in a MATERIALIZED CTE and updates by primary key — **a transaction that never waits on a tuple cannot be in a deadlock cycle**. Find the partner from the postgres log (`parsed.detail` "Process holding the lock: N", then that pid's `parsed.query`), never from the schedule. Local two-session control: new body skipped the held row in 39 ms; old body died at its 5 s `lock_timeout`.
+
+### ⚠ A 429 back-off that PAUSES without NARROWING resumes at the rate that drew the 429 (2026-11-10)
+
+The Candy census's shared cool-down (11-09) paused all 48 workers and resumed all 48; every run after still lost 450–660 cards to HTTP 429 after 700–1,500 retries. `hydrateFromJsonUri` now gates gateway rounds behind an AIMD in-flight limit (halve on an all-429 round, +1 per full window of clean rounds, floor 4); a 429 on a round admitted before the latest cut is stale and is not charged as a retry. On a model gateway capped at 6 concurrent: 0–1 of 120 lost vs 78–90 at fixed width (`__tests__/lib-solana-hydrate.test.ts`).
+
+### ⚠ An `EXISTS` probe whose OUTER set grows will flip to a full scan of the inner table — `CROSS JOIN LATERAL (… LIMIT 1)` cannot (2026-11-10)
+
+`fmv_backfill_candidates` flipped plans three times as its tables grew (09-11, 10-04, 11-10). On 11-10 the outer set (editions with no snapshot) jumped to 21,326 when the Candy census created editions, and the planner rewrote `EXISTS (SELECT 1 FROM sales …)` as a hash semi-join over **all 7.55M sales rows — 3.0M buffers for an answer of zero** — until the job hit its 60 s timeout. A `LATERAL` with `LIMIT 1` is not flattened into a join, so it stays one index probe per outer row (617k buffers / 1.4 s warm). Same set by construction. Use it where a per-key probe is the intended plan and the outer set can grow. Same day, same shape: `seed_saved_wallet_chain_arrivals` ran a per-row `flow_height_estimate` on 142,250 groups BEFORE its exclusions left 11,658 — **put the exclusions first and keep the expensive projection in a MATERIALIZED CTE after them.** And read a pg_cron failure's CONTEXT line as truncated: "SQL function … statement 1 / WITH w AS (SELECT DISTINCT …" named the outer statement, not the cost.
+
+## ⚠ A PostgREST FILTER ON A SET-RETURNING FUNCTION RUNS AFTER THE WHOLE FUNCTION — and `SET search_path` guarantees it never inlines (2026-11-10)
+
+`db.rpc("fn", args).eq("col", v)` does not push `col = v` into `fn`. A `LANGUAGE sql` function is inlined (and the filter pushed down) only when it carries **no** `SET` clause, is not SECURITY DEFINER, and is a single SELECT — and this estate's convention puts `SET search_path = public` on nearly every function, so effectively **every RPC is a black box: it computes its whole result, then PostgREST filters it.** `EXPLAIN` of the caller shows a bare `Function Scan` with a default `rows=1000` estimate — the tell.
+
+Measured on the Panini Sets tab (inbox `2026-11-10T1910Z`, migration `20261110195805`): the route read one product via `panini_set_progress_all(user).eq("product_set_id", X)`, which computed all ~112 products' sets *and* the market-wide 7-day low ask over ~296k listed serials (64k buffers) for every call; the product picker wrapped the same function and never used an ask at all. **Fix shape:** pass the scope as an ARGUMENT (`panini_set_progress_for_product(user, product)`), filter inside before the expensive CTEs, and give each caller only the columns it needs. Prove the rewrite with `EXCEPT` both ways against the live function over several argument sets, including a NULL one.
+
+A second lesson from the same item: a `(lower(owner))` key with `INCLUDE (owner)` turns "what does this user hold" into one heap fetch per held row — 141k cards = 195k blocks / 84 s on a 10 GB table. **Cover the columns the per-owner reads use** (here `edition_external_id, captured_at, serial_state`), and the read is index-only (4,795 blocks).
+
+⚠ **A GIVEAWAY DELIVERY IS A TRANSFER, NOT A SALE — nothing caches it for the winner by itself** (2026-11-10, Dame Time packs). No sales lane sees a vault send, and a profile walk with Top Shot GraphQL down caches the new ids as bare "Unknown Set" stubs. `verifyDeliveries` now writes every chain-held delivered Moment into the winner's wmc (lib/giveaways/wallet-cache.ts: the wallet's existing walk anchor, never now(); names a NULL-key stub only). Any NEW path that moves a Moment into a user's wallet needs the same write.
+
+⚠ **A delivered giveaway Moment can leave the winner's wallet for THEIR OWN linked wallet — "neither holds it" after a confirmed delivery is not a failed delivery** (2026-11-10, spitehouse). Verify reads only the claim wallet and the vault. A Dapper account linked to a Flow Wallet (HybridCustody) can send Moments to its PARENT with Top Shot's ordinary "send a Moment" transaction (Dapper's fee payer `0x18eb4ee6b3c026d2` pays the gas; no payment events), and Top Shot shows that parent by address only, so it reads like a stranger. `verifyDeliveries` reports such rows as `moved_on` (a row with `delivered_at` set); `missing` means never confirmed. To trace one: scan `TopShot.Withdraw`/`Deposit` from the delivery block (REST `/v1/events`, 250-block pages), read the tx script, and run a script borrowing `HybridCustody.OwnedAccount.getParentAddresses()` / `Manager.getChildAddresses()` on both accounts. RPC tracks only the Dapper wallet, so Moments parked in a parent never show on the user's RPC collection, and the old wmc rows go only on the next COMPLETE walk (`deleteUnseenWmcRows`).
+
+⚠ **A slug matched by an EXPRESSION needs an index on that EXPRESSION — and a plpgsql function's buffer count is mostly PLANNING over partitions** (2026-11-10). Eleven functions match a set by `regexp_replace(lower(set_name), '[^a-z0-9]+', '-', 'g') = slug`; `idx_editions_collection_set_name` cannot serve it, so each call regexp-filtered the whole collection (Candy: 21,115 rows / 4,862 buffers to find 256) and ran `get_set_activity` past 8 s cold. `idx_editions_collection_set_slug` (non-partial, the twin of `idx_editions_collection_team_slug`): 4,862 → 44 buffers, matched id sets md5-identical. The function as a whole still showed ~10k buffers; EXPLAIN of its pieces put ~4k per statement in PLANNING (catalog hits over the `sales` partitions) and only 631 in the "duplicate" 5,000-row count (index-only) — so no rewrite. **Split a function's buffers into its statements before calling the remainder a cost.**
+
+### ⚠ A PostgREST `head:true` count can seq-scan in production where every SQL replica uses the index (2026-11-10)
+The Top Shot buyer-backfill's `select("id", { count: "exact", head: true })` over `sales` read 176,178 blocks / 14 s per call — exactly the heap pages of `sales_2023..2025`, all three `last_seq_scan` at the same instant — while the same statement from SQL (custom plan, forced generic plan, untyped `$n`, `EXPLAIN (GENERIC_PLAN)` on the VERBATIM PostgREST text, as `service_role`) used the partial null-buyer indexes at ~100 buffers. Cause not found. **Measure a PostgREST read in pgss (per-call blocks, by queryid) and `pg_stat_user_tables.last_seq_scan`, never by replaying it**; if they disagree, move the read into a SQL function whose plan you control (`topshot_buyer_backfill_window_counts`, `20261111004919`).
+
+### ⚠ Rewriting a big view from its live text: assert the OLD fragment is gone, not the new one present (2026-11-10)
+For a one-fragment change to a large unpinned view, `replace(pg_get_viewdef(v, true), old, new)` + `EXECUTE 'CREATE OR REPLACE VIEW …'` inside a DO block guarded by the live md5 and an exactly-once count is safe — but Postgres RE-RENDERS the new fragment on read-back (`CASE` gains parentheses/line breaks), so a post-check searching for the new text fails and rolls the whole block back. Check `position(old in pg_get_viewdef(...)) = 0` instead (`20261111032656`, `pack_table_rows`).
+
+
+## ⛔ LOCK WHAT YOU WILL WRITE, NOT WHAT YOU READ — `LIMIT … FOR UPDATE SKIP LOCKED` before the filter holds rows you never touch (2026-11-11)
+
+`populate_wmc_fmv_from_snapshots`'s NULL-only path took `SELECT … WHERE fmv_usd IS NULL LIMIT 5000 FOR UPDATE SKIP LOCKED` and only THEN joined the latest snapshot to see what it could fill. Candy MLB held **1,293,541** NULL-fmv rows and **0** fillable, so every run (every 5 minutes, not hourly — read the cadence from `pipeline_runs`, not from the rows of one window) locked 5,000 Candy rows for up to **67 s**, wrote 0, and made `candy-editions-ingest` lose a wmc chunk to `lock timeout` at 5:13 PM PT two days running. `SKIP LOCKED` makes the LOCKER polite; it does nothing for the OTHER writer, which waits up to `authenticator`'s `lock_timeout` (8 s) and dies.
+**Fix shape (`20261111172832`):** read candidates unlocked → match in a `MATERIALIZED` CTE (without it the planner fetched 5,000 cold heap rows before the match: 5.8 s) → `FOR UPDATE OF <t> SKIP LOCKED` only on matched rows, re-checking the NULL under the lock. Same buffers as the old read (57,773 vs 57,669), **0 rows locked**. Driving from editions-with-FMV instead was 3× the buffers and was rejected — measure both.
+⭐ **The lock property is invisible to a single-session pin.** Prove it with two sessions on local Postgres: A runs the function in an open transaction + `pg_sleep`, B tries `SELECT … FOR UPDATE NOWAIT` on an UNFILLABLE row — old body: `could not obtain lock`; new body: locks. Sweep 11-11: of the 7 wmc functions that lock, this was the only lock-before-filter one (`backfill_wmc_fmv_confidence`, `resync_stuck_wmc_fmv` already filter first).
+
+### ⚠ `pack_ask_state.last_checked_at` on a LISTED row is when the ask last CHANGED, not when it was last checked (2026-11-13)
+
+`upsert_pack_ask_state`'s WAL guard skips an unchanged listed row, so its `last_checked_at` freezes at the last price change (24 of one wallet's dists read 2026-08-26 while the 5-min `snapshot-pack-asks` walk re-confirmed them). A dist missing from a complete walk is flipped `is_listed = false`, and only a complete walk stamps `pack_ask_snapshot_state.last_ok_at` — so a listed row is CONFIRMED as of `GREATEST(last_checked_at, last_ok_at)`; an unlisted row keeps its own stamp. `get_wallet_pack_history` v28 reads it that way (`ask_checked_at`). Any new reader of "how fresh is this ask" must too.
+
+### ⚠ A CTE referenced ONCE is INLINED — measure a new CTE inside the real function, not standalone (2026-11-13)
+
+`get_wallet_pack_history` v27's `dist_market` (66 dists, 4 ms standalone) cost +750 ms inside the function: joined into the page via a once-referenced CTE, the planner re-ran it per joined row. `AS MATERIALIZED` brought it to +73 ms. A standalone EXPLAIN of the same SQL cannot see this; time the function on a scratch copy against the production wallet.
+
+
+### `get_wallet_pack_history` v27–v29 payload (2026-11-13/14) — what each new field means
+- Per **opened** row: `pulls_listed` (pulls named across every pull list we keep, de-duped: Dapper per-pack list for this opener, `allday_pack_pull`, `golazos_pack_open_pulls`, `moment_acquisitions.source_pack_rip_id`, `wallet_reconstructed_rips.nft_ids`), `pulls_held` (still in `wallet_moments_cache`, collection-scoped #142), `pulls_held_priced`, `held_fmv_usd` (NULL unless every held pull is priced; 0 = none held). `pulls_listed < moments_pulled` means a partial list — the UI says "named".
+- Per **sealed** row: `value_usd` + `value_basis` (`ask` > `last_sale` > `rip_ev` > `opened_avg`), NULL when none is known — never 0.
+- `tab_totals`: the requested tab over ALL its rows (the page is 25), each sum beside its count; v29 adds each sealed basis summed apart (`held_listed`, `held_floor_ask_usd`, …), which `wallet_held_pack_value` v2 reads in ONE call. `v_want_pulls` / `v_want_held` make the parts one-time filters per status; `held_pulls` / `dist_market` are `MATERIALIZED` on purpose (see the CTE-inlining note above).
+- `pull_value_usd` is current FMV maintained by jobid 810 (drift > 1.5×, rips ≥ $100) and the ~55-day stale leg — it is NOT "value at rip".
+
+## Is an `offers` row with `status='open'` really open? (2026-11-14, Cowork cloud)
+
+- **Test:** compare it against Atlas's COMPLETE edition books, `topshot_atlas_edition_verified` (`complete`, `open_offers`), joined through `topshot_atlas_edition_map.rpc_edition_id`.
+- **Result on 11-14:** over 3,381 complete books verified in the last 3 days, our open Top Shot offers exceeded Atlas's count on 329 editions. That is at most 693 of 9,488 rows (7 %).
+- **Age does not predict a phantom:** 51 of the 787 offers older than 90 d sat in those editions.
+- **Why counts differ:** Atlas's count also includes pre-06-03 offers, which the forward-only indexer never saw. So "fewer than Atlas" is expected; only "more than Atlas" can indicate a missed close.
+- **Second check:** Claude Code's step 0 (buyer + set:play + price + listed_at ± 10 min against Atlas offer rows) found 0 closed among the 10 oldest, and 2 of 300 random offers older than 90 d.
+- **Consequence:** open offers ship as open, with no "unconfirmed" age chip (`get_topshot_wallet_open_offers`).
+
+### ⛔ `fmv_snapshots` IS NOT A HISTORY — "the previous snapshot" is not what a reader last saw (2026-11-14, #248)
+
+`fmv-recalc` is delete-then-insert per edition per DAY (`purge_fmv_snapshots_today*`): each recalc erases that edition's earlier same-day snapshot. So an intraday price can reach a downstream copy (wmc, a cache, an alert) and then VANISH from `fmv_snapshots`, leaving the day-before row as "the previous price". Any rule of the form "new snapshot = previous snapshot ⇒ nothing changed" is unsound exactly then. Measured on `refresh_wmc_fmv_changed`: 1.7 % of re-priced editions missed, 72 % of them this pattern; holders kept the erased price 6–8 h. ⭐ **Compare against what the CONSUMER last applied, recorded by the consumer** (`rwfc_applied`, `20261114171317`) — never against a reconstruction from a table someone else deletes from. ⭐ Diagnostic that found it: `xmin` of the stale rows equalled the subtransaction xid right after the backstop's own `pipeline_runs` row (`xmin` of a neighbouring `pipeline_runs` row dates any write to the minute — there is no `track_commit_timestamp`).
+
+### ⭐ Applying a large pinned function change without transcribing it: the md5-asserted `replace()` DO block (2026-11-13, 2026-11-14)
+
+A 50 KB migration (two pinned deal-alert bodies plus new helpers) cannot safely be hand-copied into `apply_migration`, because a one-character slip ships a different body than the committed file. The pattern used twice: (1) assert each live `prosrc` md5 equals the base the file was derived from; (2) rebuild the new body as a chain of `replace(v_new, $q$old$q$, $q$new$q$)` from the LIVE `prosrc` (anchors generated from a line diff, each grown until unique, applied last-to-first); (3) `IF md5(v_new) <> '<file body md5>' THEN RAISE`; (4) `EXECUTE replace(pg_get_functiondef(oid), v_old, v_new)`, which keeps SECURITY DEFINER, `SET search_path` and `SET statement_timeout` verbatim; (5) re-read `md5(prosrc)`. A transcription slip can then only ABORT. ⭐ **Rehearse it on local Postgres first** (`SET check_function_bodies = off`, load the base bodies from the previous migration, run the block, compare md5s): the first generated block failed there on a non-unique anchor (`END IF;` × 8), not on production. The committed migration file stays the plain `CREATE OR REPLACE` (the pins' drift guard compares against it); its header says how it was applied.
+
+### ⛔ Filtering a UNION ALL VIEW: only LITERALS prune its branches — a JOIN or a generic parameter computes it whole (2026-11-14)
+
+`edition_current_ask` is four `UNION ALL` branches, each with a constant `collection_slug`. `dispatch_due_deal_alerts` filled its price pool with `WHERE low_ask <= v_price_cap`. At a $0.60 cap the bound pushed into every branch's index (~55k buffers per tick). At a $10,000 cap (one Pinnacle alert) it read 21k rows (~92k). Three fixes, measured rolled back on the same instrument:
+- (1) a correlated `EXISTS` over `alert_subscriptions` per ask row: **~150k**, worse;
+- (2) a per-collection caps sub-query JOINed to the view: pool 21k → 8k but **~83–92k**, because the view was still computed whole;
+- (3) a loop over the caps with `EXECUTE format('… WHERE a.collection_slug = %L AND a.low_ask <= %L::numeric', …)`: **~55–65k**.
+
+⭐ **Only (3) gives the planner constants to drop the other branches and push the bound inside.** A plpgsql variable is no substitute, because after 5 executions the cached plan may go generic and lose the pruning. ⭐ **And the ROW COUNT was never the cost**: a pool 2.6× smaller in (2) cost the same. Read BUFFERS, not rows.
+
+## `moment_acquisitions.acquired_date` — what the date MEANS depends on the row (2026-11-16)
+
+The binder's Acquired column is `COALESCE(moment_acquisitions.acquired_date, wmc.acquired_at)` from the row with the newest `created_at` (`get_wallet_moments_with_fmv`). ⚠ **Measure coverage there, never on `wallet_moments_cache.acquired_at`** — it was NULL on 13,220 of one wallet's 15,793 rows while the binder showed a date on 2,000 / 2,000. Three meanings live in one column:
+
+- **An exact event time** — a purchase (`sold_at`), an accepted offer, a pack open (`golazos_pack_opens.opened_at`, `pinnacle_pack_opens.opened_at`, `allday_pack_pull.sealed_at` — ⚠ despite the name, `sealed_at` is the `block_timestamp` of the block holding the PackNFT **open** event, `ingest-allday-pack-opens`).
+- **A calendar DATE stored as midnight UTC** — every Dune-derived row (`topshot_arrival_provenance.arrival_date` is a `date`; sources `chain_arrival_*`, `dune_deposit_tx`). Format it in UTC or it reads a day early in PT (`formatAcquiredAt` does this for any value at exactly 00:00:00.000Z).
+- **An upper bound** — `acquisition_method = 'unknown'`: either a first-seen placeholder (`cache_refresh` / `wallet_search`, dated when WE noticed it, buy_price NULL) or a bare on-chain arrival with no settlement (`chain_arrival_transfer` / `_no_withdraw` / `_non_usd_sale`). Rendered "by <date>"; never a claimed method.
+
+**Writers, and the rule they share:** prove before placeholding — `/api/cache-refresh` calls `fill_acquisitions_for_moments` (sale TO the wallet → marketplace/offer at sale price+time; pack this wallet opened → pack_pull) and writes an `unknown` placeholder only for ids it could not prove; jobid 886 `refresh_saved_wallet_acquisitions` upgrades lone `unknown` rows on saved wallets every 2 h. ⛔ **A proven `pack_pull` row written WITHOUT its date is a defect, and it was the norm** (31,230 rows on 11-16, from both pull writers): the BEFORE INSERT trigger `trg_moment_acq_pack_pull_date` now fills `acquired_date` from `pack_pull_open_time()` on any pull inserted undated — a WRITE-side fix, so no future writer can re-create it. Where no open time exists (All Day pulls proven only via `pack_open_pulls`), it stays NULL — honest "—". Open remainder: known-issues #261.

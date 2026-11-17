@@ -1,0 +1,247 @@
+// components/entity/TeamHero.tsx
+// Team Hub Phase 1 (C1) + Phase 4 (F1/F2). Branded hero for /[collection]/team/[slug].
+// Server component (no "use client"); the interactive bits are delegated to
+// client islands: TeamLogo (logo onError fallback) and TeamFollowButton (the
+// per-league favorite toggle).
+//
+// When the team is present in teams_master (primaryColor set), renders a
+// team-colored banner with the official logo (NBA CDN, else initials), the
+// team name, and abbreviation + league chips. When it is not (NFL/Golazos
+// teams not yet in teams_master, or Pinnacle franchises), it falls back to the
+// original plain-text hero markup so nothing regresses.
+//
+// Phase 4 adds, in both variants: a live-game chip (F2, in-season only, self-
+// hides when nextGame is null) and a Follow control (F1, rendered only for teams
+// that carry a teams_master short slug + league).
+//
+// Team colors arrive as data props (team identity, not RPC brand) — this is the
+// one sanctioned place to use non-token colors. Everything else uses var(--rpc-*).
+
+import type { CSSProperties } from "react"
+import TeamLogo from "./TeamLogo"
+import TeamFollowButton from "./TeamFollowButton"
+import { relTime } from "./_shared"
+import { teamLogoUrl } from "@/lib/fan-teams-format"
+
+export interface TeamNextGame {
+  opponent_abbr: string | null
+  home_away: "home" | "away" | null
+  tipoff_at: string | null
+  game_date: string | null
+  status: string | null
+  is_playoff: boolean | null
+  series_label: string | null
+  team_score: number | null
+  opp_score: number | null
+}
+
+interface TeamHeroProps {
+  teamName: string
+  noun: string
+  abbreviation?: string | null
+  primaryColor?: string | null
+  secondaryColor?: string | null
+  leagueLabel?: string | null
+  externalId?: string | null
+  isFranchise: boolean
+  // Phase 4
+  nextGame?: TeamNextGame | null
+  followLeague?: string | null
+  followShortSlug?: string | null
+  teamPath?: string
+}
+
+const H1_STYLE: CSSProperties = {
+  margin: 0,
+  fontFamily: "var(--font-display)",
+  fontWeight: 900,
+  fontSize: 32,
+  letterSpacing: "0.04em",
+  lineHeight: 1.05,
+  textTransform: "uppercase",
+}
+
+function Chip({ children }: { children: React.ReactNode }) {
+  return (
+    <span
+      className="rpc-mono"
+      style={{
+        display: "inline-block",
+        padding: "2px 8px",
+        borderRadius: 4,
+        fontSize: 10,
+        letterSpacing: "0.12em",
+        textTransform: "uppercase",
+        color: "#fff",
+        background: "rgba(0,0,0,0.30)",
+        border: "1px solid rgba(255,255,255,0.25)",
+      }}
+    >
+      {children}
+    </span>
+  )
+}
+
+/**
+ * A row still `scheduled` whose tipoff is well in the past is a STALE feed, not an
+ * upcoming game. 2026-10-20 live sweep: /nba-top-shot/team/los-angeles-lakers read
+ * "🏀 Playoffs · Plays @ SAC · 15 days ago" off a 10-06 row the dead NBA games sync
+ * never closed (13 such rows, 0 future games). We know neither the result nor the
+ * next game, so the chip is dropped rather than worded.
+ */
+export const STALE_SCHEDULED_GRACE_MS = 6 * 3600 * 1000
+export function isStaleScheduledGame(g: Pick<TeamNextGame, "status" | "tipoff_at">, now: number = Date.now()): boolean {
+  if ((g.status ?? "").toLowerCase() !== "scheduled" || !g.tipoff_at) return false
+  const t = Date.parse(g.tipoff_at)
+  return Number.isFinite(t) && now - t > STALE_SCHEDULED_GRACE_MS
+}
+
+/**
+ * A FINISHED game older than this is not "the last game" worth a chip. 2026-10-21 sweep:
+ * /nba-top-shot/team/cleveland-cavaliers read "Playoffs · Last: vs NY" — a 2026-05-26 final with
+ * no score, five months old, on the night the new season tipped off. The scheduled rule above only
+ * drops rows still marked "scheduled", so an old final went through. Dropped, not reworded.
+ */
+export const STALE_FINISHED_MS = 14 * 24 * 3600 * 1000
+export function isStaleFinishedGame(g: Pick<TeamNextGame, "status" | "tipoff_at">, now: number = Date.now()): boolean {
+  if ((g.status ?? "").toLowerCase() === "scheduled" || !g.tipoff_at) return false
+  const t = Date.parse(g.tipoff_at)
+  return Number.isFinite(t) && now - t > STALE_FINISHED_MS
+}
+
+function gameLabel(g: TeamNextGame): string {
+  const opp = g.opponent_abbr ?? "TBD"
+  const vs = g.home_away === "away" ? "@" : "vs"
+  const scheduled = (g.status ?? "").toLowerCase() === "scheduled"
+  if (scheduled) {
+    const when = g.tipoff_at ? ` · ${relTime(g.tipoff_at)}` : ""
+    return `Plays ${vs} ${opp}${when}`
+  }
+  if (g.team_score != null && g.opp_score != null) {
+    const won = g.team_score > g.opp_score
+    return `${won ? "Beat" : "Lost to"} ${opp} ${g.team_score}–${g.opp_score}`
+  }
+  return `Last: ${vs} ${opp}`
+}
+
+// Live-game chip (F2). Rendered only when a game row exists; off-season this is
+// null for everyone and the chip is absent — expected, not a bug.
+function GameChip({ game, dark }: { game: TeamNextGame; dark: boolean }) {
+  return (
+    <span
+      className="rpc-mono"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "5px 12px",
+        borderRadius: 6,
+        fontSize: 11,
+        letterSpacing: "0.04em",
+        color: dark ? "#fff" : "var(--rpc-text-primary)",
+        // The non-dark arm sits on an .rpc-card (theme-aware): tokens, not white
+        // alphas that vanish in light mode (2026-10-11). The dark arm is on the
+        // team-colour gradient and stays white by design.
+        background: dark ? "rgba(0,0,0,0.30)" : "var(--rpc-bg-elev)",
+        border: `1px solid ${dark ? "rgba(255,255,255,0.25)" : "var(--rpc-border)"}`,
+      }}
+    >
+      {game.is_playoff ? "🏀 Playoffs · " : "🏀 "}{gameLabel(game)}
+    </span>
+  )
+}
+
+function HeroExtras({
+  dark,
+  nextGame,
+  followLeague,
+  followShortSlug,
+  teamPath,
+}: {
+  dark: boolean
+  nextGame?: TeamNextGame | null
+  followLeague?: string | null
+  followShortSlug?: string | null
+  teamPath?: string
+}) {
+  const showFollow = !!followLeague && !!followShortSlug && !!teamPath
+  if (nextGame && (isStaleScheduledGame(nextGame) || isStaleFinishedGame(nextGame))) nextGame = null
+  if (!nextGame && !showFollow) return null
+  return (
+    <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", alignItems: "center" }}>
+      {nextGame && <GameChip game={nextGame} dark={dark} />}
+      {showFollow && (
+        <TeamFollowButton league={followLeague!} teamShortSlug={followShortSlug!} teamPath={teamPath!} dark={dark} />
+      )}
+    </div>
+  )
+}
+
+export default function TeamHero({
+  teamName,
+  noun,
+  abbreviation,
+  primaryColor,
+  secondaryColor,
+  leagueLabel,
+  externalId,
+  nextGame,
+  followLeague,
+  followShortSlug,
+  teamPath,
+}: TeamHeroProps) {
+  // ── Fallback: plain-text hero (unbranded teams / franchises) ──────────────
+  if (!primaryColor) {
+    return (
+      <section className="rpc-card" style={{ padding: 18 }}>
+        <div
+          className="rpc-mono"
+          style={{ fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.18em", textTransform: "uppercase", marginBottom: 8 }}
+        >
+          {noun}
+        </div>
+        <h1 style={{ ...H1_STYLE, color: "var(--rpc-text-primary)" }}>{teamName}</h1>
+        <HeroExtras dark={false} nextGame={nextGame} followLeague={followLeague} followShortSlug={followShortSlug} teamPath={teamPath} />
+      </section>
+    )
+  }
+
+  // ── Branded banner ────────────────────────────────────────────────────────
+  // Official CDN logos: NBA + WNBA share the same id family and path shape on
+  // their respective CDNs. Every other league (NFL/LaLiga) has no external_id
+  // and falls back to the initials badge inside TeamLogo.
+  const league = (leagueLabel ?? "").toUpperCase()
+  // One source for the URL (lib/fan-teams-format): same-origin and rasterized, because Chrome fails
+  // the NBA/WNBA CDNs directly with ERR_HTTP2_PROTOCOL_ERROR (2026-09-29).
+  const logoUrl = teamLogoUrl({ league, external_id: externalId ?? null })
+  const accent = secondaryColor || "var(--rpc-red)"
+  // The banner's text is white by design, so the gradient must end DARK in both
+  // themes. It ended at var(--rpc-surface), which is #F7F7F5 in light mode — the
+  // right half of a long team name sat white-on-near-white (2026-10-11).
+  // #0D0D0D is the dark --rpc-surface value, so dark mode is unchanged.
+  const gradient = `linear-gradient(105deg, ${primaryColor} 0%, #0D0D0D 88%)`
+
+  return (
+    <section className="rpc-card" style={{ padding: 0, overflow: "hidden", borderTop: `3px solid ${accent}` }}>
+      <div style={{ background: gradient, padding: 18, display: "flex", gap: 16, alignItems: "center" }}>
+        <TeamLogo logoUrl={logoUrl} abbreviation={abbreviation ?? null} secondaryColor={secondaryColor ?? null} />
+        <div style={{ minWidth: 0 }}>
+          <div
+            className="rpc-mono"
+            style={{ fontSize: 10, color: "rgba(255,255,255,0.78)", letterSpacing: "0.18em", textTransform: "uppercase", marginBottom: 8 }}
+          >
+            {noun}
+          </div>
+          <h1 style={{ ...H1_STYLE, color: "#fff", textShadow: "0 1px 8px rgba(0,0,0,0.45)" }}>{teamName}</h1>
+          {(abbreviation || leagueLabel) && (
+            <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+              {abbreviation && <Chip>{abbreviation}</Chip>}
+              {leagueLabel && <Chip>{leagueLabel}</Chip>}
+            </div>
+          )}
+          <HeroExtras dark={true} nextGame={nextGame} followLeague={followLeague} followShortSlug={followShortSlug} teamPath={teamPath} />
+        </div>
+      </div>
+    </section>
+  )
+}

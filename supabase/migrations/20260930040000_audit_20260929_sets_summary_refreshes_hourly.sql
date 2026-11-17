@@ -1,0 +1,11 @@
+-- 2026-09-29 (PT): sets_summary (the materialized view get_set_detail resolves set pages from) refreshes
+-- HOURLY, up from 4x a day (20260929233000). Still not enough: a second link crawl the same evening found
+-- /panini-blockchain/set/hand-crafted-holo-gold 404ing from Dirk Nowitzki's player page. 57 Panini sets
+-- (79 editions) had arrived at 6:54 PM PT, four minutes after the 6:50 PM refresh, and the next refresh
+-- was 1:50 AM: player pages and the sitemap (built from live editions) link a set up to ~7 h before its
+-- page exists. All 57 missing sets were created after the last refresh (0 missing for any other reason).
+-- Cost, measured: the view's defining query is CPU-bound, ~8.9k buffers (65 disk reads) and ~17.9 s, so
+-- 24 runs/day is ~7 min of one core a day; REFRESH ... CONCURRENTLY does not block readers. Same minute
+-- as before (:50). A manual refresh was run alongside this migration.
+-- Revert: SELECT cron.alter_job(37, schedule => '50 1,7,13,19 * * *');
+SELECT cron.alter_job(37, schedule => '50 * * * *');

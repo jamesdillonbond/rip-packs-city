@@ -1,0 +1,1620 @@
+-- DB invariant: public.dispatch_due_deal_alerts(integer) → jsonb — the SENDING
+-- half of the deal-alert pipeline (its preview sibling is pinned in
+-- supabase/tests/build_deal_alerts_for_subscription.sql). This is the function
+-- that writes rows a human then receives, so it is the one where being wrong is
+-- expensive in both directions: a miss is silent, and a duplicate is spam.
+--
+-- ⚠ WHY THIS ONE, AND WHY AN ALERT IS THE WORST THING TO LEAVE UNPINNED. An
+-- alert's failure mode is SILENCE, so it is unfalsifiable from outside: nobody
+-- can tell "no deals matched" from "the scanner could not see them". That is not
+-- hypothetical here — the 2026-08-16 migration this DDL comes from exists
+-- because a saved, confirmed-live "$0.60 or less" alert was structurally
+-- INCAPABLE of firing for weeks: both passes read cross_collection_deals_board,
+-- which carries a $5 floor and FMV gates, so the price intersected an empty set
+-- while 2,640 Top Shot asks at or below $0.60 sat in the raw ask table.
+--
+--
+-- ⛔ CORRECTED 2026-09-13 (audit_20260913_the_ask_stamp_means_three_different_things):
+-- "re-confirmed" is TRUE for Pinnacle and FALSE for Top Shot. `edition_offers.updated_at`
+-- is bumped ONLY WHEN THE FLOOR CHANGES (the Atlas writer's ON CONFLICT carries an
+-- IS DISTINCT FROM guard), so on that arm this file pins "the floor CHANGED inside
+-- ASK_STALE_HOURS". The assertions and the body are unchanged and still correct; the
+-- WORD was wrong. It was a confirmation stamp until offers-sweep died on 2026-08-28 —
+-- the column's meaning changed with its WRITER while its name stayed put.
+-- Pinned here:
+--   1. PRICE-POOL CONSTRUCTION IS CONDITIONAL AND BOUNDED. The raw-ask pool is
+--      built only when some active sub is price-only (max_price set AND
+--      min_discount = 0), and only up to the largest such max_price. With no
+--      price-only sub, price_pool_size is 0 and no raw ask can reach anyone.
+--   2. A PRICE-ONLY SUB ACTUALLY RECEIVES ONE — the defect the migration fixed.
+--   3. AN ORDINARY DISCOUNT SUB DOES NOT. The pools are mutually exclusive per
+--      subscription; a price row must not leak into a deals subscription.
+--   4. DEDUPE IS REAL AND `enqueued` COUNTS ONLY NEW ROWS. A second run in the
+--      same dedup_bucket enqueues 0 — the ON CONFLICT DO NOTHING makes FOUND
+--      false, so the counter must not advance. ⚠ A counter that advanced anyway
+--      would report a healthy send on a run that delivered nothing new, which is
+--      the `rows_written`-as-null-instrument shape this repo already documents.
+--   5. NO VERIFIED CHANNEL ⇒ NO DELIVERY. An unverified row is skipped, not
+--      written with a null target.
+--   6. NO ACTIVE SUBSCRIPTIONS ⇒ skipped: 'no_active_subscriptions', a stated
+--      reason rather than a silent zero that reads as "nothing matched".
+--   7. AN UNCONFIRMED ASK IS NEVER SENT (added 2026-09-13, audit_20260912). Both
+--      passes and both pools refuse a row whose ask nobody has re-confirmed
+--      inside ASK_STALE_HOURS; a NULL stamp fails CLOSED; the exempt arms
+--      (nfl_all_day / laliga_golazos, whose stamp is a LISTING date over an
+--      open-listing index) still deliver at six weeks old; and the suppression is
+--      COUNTED in the return jsonb rather than silent. Asserted in both
+--      directions — the same rows deliver once re-stamped — and at the boundary
+--      (13 h blocked, 11 h delivered), so a widened window cannot pass.
+--   8. A FILTER NEVER RUNS BEHIND A CAP (added 2026-10-01, audit_20261001, #165).
+--      Team and badge subs each receive their one match from behind 501 cheaper
+--      unrelated asks, and ONLY that match. The old body (LIMIT 500 before the
+--      team/parallel/badge filters) fails both.
+--
+-- ⚠ NOT pinned, recorded so nobody adds a vacuous version: `bucket` is
+-- to_char(now(),'YYYY-MM-DD'), so a same-transaction second call always lands in
+-- the same bucket. That makes case 4 airtight HERE and says nothing about the
+-- day rollover, which no rolled-back test can reach.
+--
+-- ⚠ ONE MUTATION DELIBERATELY SURVIVES, AND THE REASON IS A PROPERTY OF THE
+-- FUNCTION RATHER THAN A HOLE IN THIS FILE. Replacing `IF v_price_cap IS NOT
+-- NULL THEN` with `IF true THEN` changes nothing observable: the INSERT it
+-- guards filters on `a.low_ask <= v_price_cap`, and `<= NULL` is NULL, so the
+-- pool comes back empty either way. The `IF` is belt-and-braces over the NULL
+-- comparison — it saves a scan, it does not decide the outcome. Documented
+-- rather than chased with a contrived assertion, because the load-bearing
+-- predicate is the one selecting v_price_cap, and THAT mutation is killed
+-- (case 1). Do not "fix" this by asserting on the IF.
+
+-- 🚨 ONE MUTATION SURVIVED WHEN CASE 7 WAS FIRST WRITTEN, AND THE FIX WAS THE
+-- FIXTURE. This file had NO serial-board rows, so `serial_pool_size` was 0 and
+-- removing `WHERE b.alertable` from pass 2 changed nothing anywhere: a gate over
+-- an empty population reads as covered from every angle. Two serial rows (one
+-- seen now, one seen 20 h ago) were added for exactly that reason, and the
+-- mutation is killed with them present. Do not "simplify" them away.
+--
+-- Mutation-verified 2026-08-17, and again 2026-09-13 for case 7. Each of these
+-- fails a NAMED assertion:
+--   • price-cap predicate drops `COALESCE(min_discount, 25) = 0`   → case 1
+--   • pass 1 reads both pools instead of `pool = CASE WHEN …`      → case 3
+--   • `IF v_target IS NULL THEN CONTINUE` removed                  → case 5
+--   • `IF FOUND THEN v_enqueued := …` counts matches not writes    → case 4
+--   • the no-active-subscriptions early return removed             → case 6
+--   • `AND p.alertable` dropped from pass 1                       → case 7
+--   • `WHERE b.alertable` dropped from pass 2                     → case 7 (serial)
+--   • either pool's `alertable` column hardcoded to `true`        → case 7
+--   • (2026-10-01) the 20260913061500 body, i.e. the pre-filter cap → case 8
+--
+-- The function DDL below is a VERBATIM copy of the committed migration
+-- (supabase/migrations/20261113184535_audit_20261113_deal_alert_serial_filters_bind_pass_one.sql since
+-- 2026-11-13; before it 20261015002500_audit_20261014_deal_alerts_fire_once_per_listing.sql
+-- since 2026-10-14; before it 20261011022738, 20261001030000; originally
+-- 20260816161500_audit_20260816_price_only_alerts.sql);
+-- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from
+-- it. Verified 2026-08-17 that the migration's body is byte-identical to the
+-- LIVE prosrc (md5 24ab9e7953c0005b10e987cbea62307e, 13,203 chars). Re-verified
+-- 2026-09-30 PT after the audit_20261001 apply: live = migration = this copy,
+-- md5 6efaab1e6571d5e207683aed9ea79c4e, 15,876 chars.
+--
+-- Runs inside a rolled-back transaction so it leaves no residue.
+
+BEGIN;
+
+CREATE TABLE collections (id uuid PRIMARY KEY, slug text, is_active boolean);
+
+CREATE TABLE editions (
+  id            uuid PRIMARY KEY,
+  collection_id uuid,
+  external_id   text,
+  player_name   text,
+  set_name      text,
+  team_name     text,
+  jersey_number integer
+);
+
+CREATE TABLE badge_editions (external_id text, parallel_name text);
+
+CREATE TABLE alert_subscriptions (
+  id                     uuid PRIMARY KEY,
+  owner_key              text,
+  label                  text,
+  channels               text[],
+  collection_ids         uuid[],
+  min_discount           numeric,
+  max_price              numeric,
+  tiers                  text[],
+  cadence                text,
+  active                 boolean,
+  created_at             timestamptz,
+  updated_at             timestamptz,
+  last_run_at            timestamptz,
+  player_names           text[],
+  set_names              text[],
+  team_names             text[],
+  min_price              numeric,
+  min_serial             integer,
+  max_serial             integer,
+  require_jersey_serial  boolean,
+  require_last_mint      boolean,
+  require_never_sold     boolean,
+  require_low_ask        boolean,
+  badges                 text[],
+  parallel_names         text[],
+  serial_only            boolean,
+  -- audit_20261014: the repeat policy the dispatcher reads (case 9).
+  notify_mode            text NOT NULL DEFAULT 'new_listing'
+);
+
+CREATE TABLE notification_channels (
+  id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_key            text,
+  channel              text,
+  channel_user_id      text,
+  channel_username     text,
+  verified             boolean,
+  link_code            text,
+  link_code_expires_at timestamptz,
+  created_at           timestamptz,
+  verified_at          timestamptz,
+  last_used_at         timestamptz
+);
+
+CREATE TABLE alert_deliveries (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_key       text,
+  channel         text,
+  channel_user_id text,
+  alert_kind      text,
+  subject_key     text,
+  dedup_bucket    text,
+  payload         jsonb,
+  status          text,
+  attempts        integer,
+  created_at      timestamptz DEFAULT now(),
+  sent_at         timestamptz,
+  last_error      text
+);
+
+-- ⚠ The ON CONFLICT target. Without this unique constraint the INSERT raises
+-- 42P10 rather than de-duplicating, so case 4 would fail for the wrong reason —
+-- and a version of this file that dropped the constraint to "make it pass"
+-- would silently stop testing dedupe at all.
+CREATE UNIQUE INDEX alert_deliveries_dedup
+  ON alert_deliveries (owner_key, channel, alert_kind, subject_key, dedup_bucket);
+
+-- The two alert pools plus the serial board, same shapes as the live catalog
+-- (2026-08-17). Identical column lists are what make the UNION-by-INSERT legal.
+CREATE TABLE cross_collection_deals_board (
+  external_id text, name text, player_name text, set_name text, tier text,
+  circulation_count integer, fmv_usd numeric, confidence text, low_ask numeric,
+  discount_pct numeric, discount_usd numeric, ask_updated_at timestamptz,
+  collection_slug text, collection_name text, render_id text, detail_url text,
+  thumbnail_url text, low_ask_serial integer, low_ask_nft_id text,
+  low_confidence_fmv boolean
+);
+
+CREATE TABLE edition_current_ask (
+  external_id text, name text, player_name text, set_name text, tier text,
+  circulation_count integer, fmv_usd numeric, confidence text, low_ask numeric,
+  discount_pct numeric, discount_usd numeric, ask_updated_at timestamptz,
+  collection_slug text, collection_name text, render_id text, detail_url text,
+  thumbnail_url text, low_ask_serial integer, low_ask_nft_id text,
+  low_confidence_fmv boolean
+);
+
+CREATE TABLE topshot_underpriced_serials_board (
+  edition_id uuid, edition_key text, external_id text, player_name text,
+  set_name text, tier text, circulation_count integer, thumbnail_url text,
+  nft_id text, serial_number integer, ask_usd numeric, listing_resource_id text,
+  listing_url text, listed_at timestamptz, last_seen_at timestamptz,
+  edition_fmv_usd numeric, confidence text, serial_bucket text,
+  serial_fmv_usd numeric, serial_multiplier numeric, discount_usd numeric,
+  discount_pct numeric, estimate_quality text
+);
+
+-- Minimal shape for the Pinnacle parallel lookup in pass 1. Not exercised by any
+-- case below (every fixture row is Top Shot with a NULL render_id), but plpgsql
+-- plans the whole statement, so the relation must exist.
+CREATE TABLE pinnacle_catalog (render_id text, variant text);
+
+-- Only reached through `require_never_sold`, which no case below sets — but
+-- plpgsql plans the whole statement, so it must exist.
+CREATE TABLE sales (nft_id text);
+
+-- Dependency stub: the badge branch is guarded by `badges IS NULL`, but plpgsql
+-- PLANS the whole statement, so the function must EXIST or every case fails on
+-- planning rather than on its invariant. No case below sets `badges`.
+CREATE OR REPLACE FUNCTION public.get_edition_badges_unified(p_edition_id uuid)
+RETURNS jsonb LANGUAGE sql IMMUTABLE AS $$ SELECT '[]'::jsonb $$;
+
+-- audit_20261114 (pass 3, exact-serial listings): the relations topshot_exact_serial_alert_deals reads,
+-- and its two functions VERBATIM from 20261114171316 (registered in the drift guard for this file).
+ALTER TABLE editions ADD COLUMN tier text, ADD COLUMN circulation_count integer, ADD COLUMN thumbnail_url text;
+CREATE TABLE topshot_atlas_market_events (
+  uuid text PRIMARY KEY DEFAULT gen_random_uuid()::text, product text, kind text, nft_id text, price_cents bigint,
+  listed_at timestamptz, last_seen_at timestamptz, serial_number integer, atlas_edition_id text, parallel text,
+  tier text, completed boolean DEFAULT false
+);
+CREATE TABLE topshot_atlas_edition_map (atlas_edition_id text PRIMARY KEY, rpc_edition_id uuid, external_id text);
+CREATE TABLE fmv_snapshots (collection_id uuid, edition_id uuid, fmv_usd numeric, confidence text, computed_at timestamptz);
+CREATE TABLE topshot_thin_fmv_editions (edition_id uuid);
+CREATE TABLE topshot_conflated_editions (edition_id uuid);
+CREATE TABLE IF NOT EXISTS sales (nft_id text);
+
+CREATE OR REPLACE FUNCTION public.alert_sub_is_exact_serial(p_min_serial integer, p_max_serial integer, p_collection_ids uuid[])
+ RETURNS boolean
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  -- A NARROW serial window (1–10 serials) on a subscription that includes Top Shot.
+  SELECT p_min_serial IS NOT NULL AND p_max_serial IS NOT NULL
+     AND p_max_serial >= p_min_serial AND p_max_serial - p_min_serial < 10
+     AND (p_collection_ids IS NULL OR '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid = ANY(p_collection_ids))
+$function$;
+
+CREATE OR REPLACE FUNCTION public.topshot_exact_serial_alert_deals(p_subscription_id uuid)
+ RETURNS SETOF jsonb
+ LANGUAGE plpgsql
+ STABLE
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  c_ts constant uuid := '95f28a17-224a-4025-96ad-adf8a4c63bfd';
+  v_sub public.alert_subscriptions%ROWTYPE;
+  v_price_only boolean;
+BEGIN
+  SELECT * INTO v_sub FROM public.alert_subscriptions WHERE id = p_subscription_id;
+  IF NOT FOUND OR NOT public.alert_sub_is_exact_serial(v_sub.min_serial, v_sub.max_serial, v_sub.collection_ids) THEN
+    RETURN;
+  END IF;
+  v_price_only := (v_sub.max_price IS NOT NULL AND COALESCE(v_sub.min_discount, 25) = 0);
+
+  RETURN QUERY
+  WITH ev AS (
+    -- Every open Atlas listing of the window's serials, one per Moment (its newest listing —
+    -- the ts_listings rule), seen in the last 24 h (idx_tame_open_listing_serial).
+    SELECT DISTINCT ON (x.nft_id)
+           x.nft_id, x.price_cents, x.listed_at, x.last_seen_at, x.serial_number, x.atlas_edition_id, x.parallel, x.tier
+      FROM public.topshot_atlas_market_events x
+     WHERE x.product = 'nba' AND x.kind = 'listing' AND NOT x.completed AND x.nft_id IS NOT NULL
+       AND x.price_cents > 0
+       AND x.serial_number BETWEEN v_sub.min_serial AND v_sub.max_serial
+       AND x.last_seen_at > now() - interval '24 hours'
+     ORDER BY x.nft_id, x.listed_at DESC NULLS LAST, x.last_seen_at DESC
+  ),
+  cand AS (
+    SELECT ev.*, round(ev.price_cents::numeric / 100, 2) AS ask_usd,
+           m.external_id AS ext, e.id AS edition_id, e.player_name, e.team_name, e.set_name,
+           e.tier::text AS e_tier, e.circulation_count, e.jersey_number, e.thumbnail_url
+      FROM ev
+      JOIN public.topshot_atlas_edition_map m ON m.atlas_edition_id = ev.atlas_edition_id
+      JOIN public.editions e ON e.id = m.rpc_edition_id AND e.collection_id = c_ts
+     -- A NEW listing only (listed in the last 24 h): this is a "tell me when it is listed" alert,
+     -- not a digest of the standing book (that is the Sniper's Serial # search).
+     WHERE ev.listed_at > now() - interval '24 hours'
+       -- Confirmed recently enough to wake a human: the serial-board window (12 h).
+       AND public.ask_is_alertable('nba_top_shot:serial', ev.last_seen_at)
+  ),
+  priced AS (
+    SELECT c.*, f.fmv_usd, f.confidence,
+           (EXISTS (SELECT 1 FROM public.topshot_thin_fmv_editions tf WHERE tf.edition_id = c.edition_id)
+            OR EXISTS (SELECT 1 FROM public.topshot_conflated_editions cf WHERE cf.edition_id = c.edition_id)) AS fmv_untrusted
+      FROM cand c
+      LEFT JOIN LATERAL (
+        SELECT fs.fmv_usd, fs.confidence
+          FROM public.fmv_snapshots fs
+         WHERE fs.collection_id = c_ts AND fs.edition_id = c.edition_id AND fs.computed_at <= now()
+         ORDER BY fs.computed_at DESC
+         LIMIT 1
+      ) f ON true
+  ),
+  scored AS (
+    SELECT p.*,
+           CASE WHEN p.fmv_usd > 0 THEN round((p.fmv_usd - p.ask_usd) / p.fmv_usd * 100, 1) END AS discount_pct,
+           CASE WHEN p.fmv_usd > 0 THEN round(p.fmv_usd - p.ask_usd, 2) END AS discount_usd
+      FROM priced p
+  )
+  SELECT jsonb_build_object(
+           'external_id', s.ext, 'player_name', COALESCE(s.player_name, s.team_name), 'set_name', s.set_name,
+           'tier', COALESCE(s.tier, s.e_tier), 'collection_slug', 'nba-top-shot',
+           'circulation_count', s.circulation_count, 'nft_id', s.nft_id, 'serial_number', s.serial_number,
+           'kind', 'exact_serial',
+           'ask_usd', s.ask_usd,
+           -- Edition FMV: an arbitrary serial carries no serial premium model; the discount is vs this.
+           'fmv_usd', CASE WHEN v_price_only THEN NULL ELSE s.fmv_usd END,
+           'edition_fmv_usd', s.fmv_usd,
+           'discount_pct', CASE WHEN v_price_only THEN NULL ELSE s.discount_pct END,
+           'discount_usd', CASE WHEN v_price_only THEN NULL ELSE s.discount_usd END,
+           'price_only', v_price_only,
+           'listing_url', 'https://dapper.market/nba/moment/' || s.nft_id,
+           'moment_url', '/moment/' || s.nft_id,
+           'thumbnail_url', s.thumbnail_url,
+           'ask_updated_at', s.last_seen_at,
+           'listed_at', s.listed_at,
+           'parallel', NULLIF(NULLIF(s.parallel, ''), 'Standard')
+         )
+    FROM scored s
+   WHERE (v_price_only OR (
+            s.fmv_usd > 0 AND s.confidence IN ('HIGH', 'MEDIUM') AND NOT s.fmv_untrusted
+            AND s.discount_pct >= COALESCE(v_sub.min_discount, 25)))
+     AND (v_sub.max_price IS NULL OR s.ask_usd <= v_sub.max_price)
+     AND (v_sub.min_price IS NULL OR s.ask_usd >= v_sub.min_price)
+     AND (v_sub.tiers IS NULL OR COALESCE(s.tier, s.e_tier) = ANY(v_sub.tiers))
+     AND (v_sub.player_names IS NULL OR lower(COALESCE(s.player_name, s.team_name)) = ANY(ARRAY(SELECT lower(y) FROM unnest(v_sub.player_names) y)))
+     AND (v_sub.set_names IS NULL OR EXISTS (
+       SELECT 1 FROM unnest(v_sub.set_names) sx WHERE lower(s.set_name) LIKE '%' || lower(sx) || '%'
+     ))
+     AND (v_sub.parallel_names IS NULL OR lower(s.parallel) = ANY(ARRAY(SELECT lower(y) FROM unnest(v_sub.parallel_names) y)))
+     AND (v_sub.team_names IS NULL OR lower(s.team_name) = ANY(ARRAY(SELECT lower(y) FROM unnest(v_sub.team_names) y)))
+     AND (NOT COALESCE(v_sub.require_last_mint, false) OR (s.circulation_count > 1 AND s.serial_number = s.circulation_count))
+     AND (NOT COALESCE(v_sub.require_jersey_serial, false) OR s.jersey_number = s.serial_number)
+     AND (NOT COALESCE(v_sub.require_never_sold, false) OR NOT EXISTS (
+       SELECT 1 FROM public.sales sa WHERE sa.nft_id = s.nft_id
+     ))
+     AND (v_sub.badges IS NULL OR EXISTS (
+       SELECT 1 FROM jsonb_array_elements(public.get_edition_badges_unified(s.edition_id)) AS bj(elem)
+        WHERE regexp_replace(lower(bj.elem->>'title'), '[^a-z0-9]', '', 'g') = ANY(v_sub.badges)
+     ))
+   ORDER BY s.discount_pct DESC NULLS LAST, s.ask_usd ASC, s.nft_id
+   LIMIT 25;
+END
+$function$;
+
+-- >>> BEGIN verbatim dispatch_due_deal_alerts (keep byte-identical to the migration) >>>
+-- The gate the scanner below calls. Verbatim from the same migration and
+-- registered in __tests__/db-invariants-drift-guard.test.ts under its own PINS
+-- entry for THIS file, so this copy cannot drift either.
+CREATE OR REPLACE FUNCTION public.ask_is_alertable(
+  p_collection_slug text,
+  p_ask_at          timestamptz,
+  p_now             timestamptz DEFAULT now()
+)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SET search_path TO 'public', 'pg_temp'
+AS $function$
+  SELECT CASE
+    -- CANDIDATE SCAN ONLY (audit_20260930): alert_candidate_verify_dispatch()
+    -- sets this transaction-locally to ask the preview which asks WOULD match a
+    -- subscription at any age, so it can re-check them on Atlas BEFORE they are
+    -- sent. It never sends anything; the sender never sets it.
+    WHEN current_setting('rpc.alert_candidate_scan', true) = 'on' THEN true
+    -- EXEMPT: event-sourced open-listing books. The stamp is the seller's
+    -- listing date, not a confirmation, and the row leaves the view when the
+    -- listing closes. See the header -- gating these deletes correct rows.
+    WHEN p_collection_slug IN ('nfl_all_day', 'laliga_golazos') THEN true
+    -- Top Shot EDITION asks: confirmed within ALERT_TOPSHOT_ASK_MAX_AGE_HOURS
+    -- (1 h, lib/market/ask-freshness.ts). The stamp is
+    -- edition_offers.low_ask_confirmed_at, which the alert-candidate re-check
+    -- lane refreshes. Both spellings, so a convention slip is STRICTER, not looser.
+    WHEN p_collection_slug IN ('nba_top_shot', 'nba-top-shot') THEN
+      p_ask_at IS NOT NULL AND p_ask_at > p_now - interval '1 hours'
+    -- Everything else (Pinnacle, the Top Shot serial board 'nba_top_shot:serial',
+    -- anything new) must have been CONFIRMED inside ASK_STALE_HOURS (12 h,
+    -- lib/market/ask-freshness.ts). Unknown (NULL) is not alertable.
+    ELSE p_ask_at IS NOT NULL AND p_ask_at > p_now - interval '12 hours'
+  END
+$function$;
+
+CREATE OR REPLACE FUNCTION public.dispatch_due_deal_alerts(p_max integer DEFAULT 1000)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+ SET statement_timeout TO '90s'
+AS $function$
+DECLARE
+  v_ts uuid := '95f28a17-224a-4025-96ad-adf8a4c63bfd';
+  v_sub record;
+  v_deal jsonb;
+  v_channel text;
+  v_target text;
+  v_subject text;
+  v_bucket text := to_char(now(),'YYYY-MM-DD');
+  v_enqueued int := 0;
+  v_subs int := 0;
+  v_serial_enqueued int := 0;
+  v_slugs text[];
+  v_deal_pool int := 0;
+  v_serial_pool int := 0;
+  v_price_pool int := 0;
+  v_price_cap numeric;
+  v_price_only boolean;
+  -- audit_20261114 (pool caps per collection)
+  v_cap record;
+  v_cap_rows int;
+  -- How many of the rows we BUILT are barred from alerting because nobody has
+  -- re-confirmed the ask. Reported so "quiet" and "quiet because the upstream
+  -- ask lane is behind" are distinguishable from outside (audit_20260912).
+  v_deal_pool_unconfirmed int := 0;
+  v_price_pool_unconfirmed int := 0;
+  v_serial_pool_unconfirmed int := 0;
+  -- audit_20261014: per-subscription repeat policy (alert_subscriptions.notify_mode).
+  v_mode text;
+  v_fp text;
+  v_dedup text;
+  v_prev jsonb;
+  v_suppressed int := 0;
+  -- audit_20261114: pass 3 (exact-serial listings, Top Shot) — see topshot_exact_serial_alert_deals.
+  v_exact boolean;
+  v_exact_enqueued int := 0;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.alert_subscriptions WHERE active = true) THEN
+    RETURN jsonb_build_object(
+      'subscriptions_scanned', 0,
+      'enqueued', 0,
+      'serial_enqueued', 0,
+      'deal_pool_size', 0,
+      'serial_pool_size', 0,
+      'price_pool_size', 0,
+      'deal_pool_unconfirmed', 0,
+      'serial_pool_unconfirmed', 0,
+      'price_pool_unconfirmed', 0,
+      'suppressed_unchanged', 0,
+      'bucket', v_bucket,
+      'ran_at', now(),
+      'skipped', 'no_active_subscriptions'
+    );
+  END IF;
+
+  -- ⚠ `alertable` is computed ONCE here rather than in each per-subscription
+  -- WHERE: the price pool can be thousands of rows and the loop runs per sub, and
+  -- it also makes the unconfirmed counts exact rather than a second scan of a
+  -- view whose Top Shot leg is the expensive one.
+  DROP TABLE IF EXISTS tmp_deal_pool;
+  CREATE TEMP TABLE tmp_deal_pool ON COMMIT DROP AS
+    SELECT 'deals'::text AS pool, b.*,
+           public.ask_is_alertable(b.collection_slug, b.ask_updated_at) AS alertable
+    FROM public.cross_collection_deals_board b
+    WHERE b.low_ask > 0 AND b.fmv_usd > 0;
+  GET DIAGNOSTICS v_deal_pool = ROW_COUNT;
+
+  -- Price-only rows are appended to the SAME temp table under a different tag,
+  -- so pass 1 keeps one loop body and existing subs keep reading pool='deals'
+  -- unchanged. Built only when a price-only sub exists, and bounded by the
+  -- largest max_price in play -- with none, this costs one aggregate.
+  SELECT max(max_price) INTO v_price_cap
+  FROM public.alert_subscriptions
+  WHERE active = true AND max_price IS NOT NULL AND COALESCE(min_discount, 25) = 0;
+
+  IF v_price_cap IS NOT NULL THEN
+    -- audit_20261114 (pool caps per collection): a row enters the pool only if SOME active
+    -- price-only sub could read it in pass 1 — at or under the highest max_price among the
+    -- price-only subs that read ITS collection, never counting an exact-serial sub on Top Shot
+    -- (pass 1 skips Top Shot for those; pass 3 serves them). One INSERT per collection, built with
+    -- LITERAL slug and cap (EXECUTE format %L): edition_current_ask is a UNION ALL of per-collection
+    -- branches, and only literals let the planner drop the other branches and push the price bound
+    -- into the one it keeps. Measured forms (rolled back, same instrument): unscoped at a $10,000 cap
+    -- ~92k buffers; a correlated EXISTS per ask row (20261114184324) ~150k; a caps JOIN ~83-92k.
+    v_price_pool := 0;
+    FOR v_cap IN
+      SELECT sl.slug, max(s.max_price) AS cap
+        FROM public.alert_subscriptions s
+        CROSS JOIN LATERAL (
+          SELECT c.slug FROM public.collections c
+           WHERE (s.collection_ids IS NULL AND c.is_active = true) OR c.id = ANY(s.collection_ids)
+        ) sl
+       WHERE s.active = true AND s.max_price IS NOT NULL AND COALESCE(s.min_discount, 25) = 0
+         AND NOT (sl.slug = 'nba_top_shot'
+                  AND public.alert_sub_is_exact_serial(s.min_serial, s.max_serial, s.collection_ids))
+       GROUP BY sl.slug
+    LOOP
+      EXECUTE format(
+        'INSERT INTO tmp_deal_pool
+         SELECT %L::text, a.*, public.ask_is_alertable(a.collection_slug, a.ask_updated_at)
+           FROM public.edition_current_ask a
+          WHERE a.collection_slug = %L AND a.low_ask > 0 AND a.low_ask <= %L::numeric',
+        'price', v_cap.slug, v_cap.cap);
+      GET DIAGNOSTICS v_cap_rows = ROW_COUNT;
+      v_price_pool := v_price_pool + v_cap_rows;
+    END LOOP;
+  END IF;
+
+  SELECT count(*) FILTER (WHERE pool = 'deals' AND NOT alertable),
+         count(*) FILTER (WHERE pool = 'price' AND NOT alertable)
+    INTO v_deal_pool_unconfirmed, v_price_pool_unconfirmed
+  FROM tmp_deal_pool;
+
+  DROP TABLE IF EXISTS tmp_serial_pool;
+  -- audit_20260930: the serial pool passes 'nba_top_shot:serial', not
+  -- 'nba_top_shot'. Its stamp is topshot_active_listings.last_seen_at, written by
+  -- a 3-hourly sweep the edition re-check lane cannot refresh, so it keeps the
+  -- 12 h window; the 1 h Top Shot window is for EDITION asks only.
+  CREATE TEMP TABLE tmp_serial_pool ON COMMIT DROP AS
+    SELECT s.*,
+           public.ask_is_alertable('nba_top_shot:serial', s.last_seen_at) AS alertable
+    FROM public.topshot_underpriced_serials_board s
+    WHERE s.estimate_quality = 'tight' AND s.ask_usd > 0;
+  GET DIAGNOSTICS v_serial_pool = ROW_COUNT;
+
+  SELECT count(*) FILTER (WHERE NOT alertable)
+    INTO v_serial_pool_unconfirmed
+  FROM tmp_serial_pool;
+
+  FOR v_sub IN SELECT * FROM public.alert_subscriptions WHERE active = true LOOP
+    v_subs := v_subs + 1;
+    -- 🚨 audit_20261014 — THE REPEAT. dedup_bucket alone is the UTC calendar day,
+    -- so a listing that never changed was "new" every midnight: two subscribers
+    -- got the same edition 14 days running (nba_top_shot:58:1975 and
+    -- 236:7937::17, 09-30 → 10-13), and webz_80 reported it twice (beta 10792,
+    -- 10795). The alerts form offered "Daily / Weekly digest" and nothing read
+    -- it. notify_mode is now the honoured policy:
+    --   new_listing (default) — fire when the LISTING differs from the last one
+    --     sent for this subject on this channel: another moment (nft_id, or
+    --     serial when no id is on the row) or another ask price. Unchanged ⇒
+    --     suppressed and counted. Read from alert_deliveries, so the switch-over
+    --     did not re-send every standing listing once more.
+    --   once — first delivery per subject per channel, never again.
+    --   daily — the old behaviour, kept for whoever wants the reminder.
+    v_mode := COALESCE(v_sub.notify_mode, 'new_listing');
+
+    IF v_sub.collection_ids IS NULL THEN
+      v_slugs := ARRAY(SELECT slug FROM public.collections WHERE is_active = true);
+    ELSE
+      v_slugs := ARRAY(SELECT slug FROM public.collections WHERE id = ANY(v_sub.collection_ids));
+    END IF;
+
+    -- "Just a price, no FMV condition."
+    v_price_only := (v_sub.max_price IS NOT NULL AND COALESCE(v_sub.min_discount, 25) = 0);
+    -- audit_20261114: a NARROW serial window (<= 10 serials) on Top Shot is served by pass 3 from
+    -- every open listing of those serials, so pass 1 stops offering Top Shot edition low asks to it
+    -- (the same listing would otherwise arrive twice under two subject keys).
+    v_exact := public.alert_sub_is_exact_serial(v_sub.min_serial, v_sub.max_serial, v_sub.collection_ids);
+
+    -- Pass 1: edition-level deals (skipped entirely for serial-only subs).
+    -- 2026-07-11: team_names + badges now filter pass 1 too (previously serial-
+    -- pass-only, so a team/badge sub got unfiltered edition deals = spam).
+    -- audit_20261001: every filter but badges runs before any truncation, and
+    -- badges (the one per-row function) runs last, lazily, under LIMIT 25.
+    IF NOT COALESCE(v_sub.serial_only, false) THEN
+    FOR v_deal IN
+      SELECT jsonb_build_object(
+        'external_id', b.external_id, 'name', b.name,
+        'player_name', b.player_name, 'set_name', b.set_name, 'tier', b.tier,
+        'collection_slug', b.collection_slug, 'collection_name', b.collection_name,
+        'circulation_count', b.circulation_count, 'fmv_usd', b.fmv_usd, 'confidence', b.confidence,
+        'low_ask', b.low_ask, 'discount_pct', b.discount_pct, 'discount_usd', b.discount_usd,
+        'detail_url', b.detail_url, 'thumbnail_url', b.thumbnail_url, 'ask_updated_at', b.ask_updated_at,
+        'serial_number', b.low_ask_serial, 'nft_id', b.low_ask_nft_id,
+        -- Tells the formatter this row carries no FMV BY DESIGN, so it omits
+        -- the "below FMV" clause instead of rendering an em-dash for it.
+        'price_only', (b.pool = 'price'),
+        'parallel', COALESCE(
+          (SELECT NULLIF(be.parallel_name,'') FROM public.badge_editions be
+             WHERE be.external_id = b.external_id
+               AND be.parallel_name IS NOT NULL
+               AND be.parallel_name NOT IN ('', 'Standard')
+             LIMIT 1),
+          (SELECT pc.variant FROM public.pinnacle_catalog pc
+             WHERE pc.render_id = b.render_id
+               AND pc.variant IS NOT NULL
+               AND pc.variant <> 'Standard'
+             LIMIT 1)
+        )
+      ) AS d
+      FROM (
+        SELECT * FROM tmp_deal_pool p
+        WHERE p.pool = CASE WHEN v_price_only THEN 'price' ELSE 'deals' END
+          -- An ask nobody has re-confirmed inside ASK_STALE_HOURS does not get
+          -- to wake a human. This is the ONLY predicate standing between the
+          -- 2026-09-09 $0.50 Lillard ask and its fourth consecutive nightly
+          -- delivery on 09-13, by which time the floor was $1.03
+          -- (audit_20260912).
+          AND p.alertable
+          AND p.collection_slug = ANY(v_slugs)
+          AND NOT (v_exact AND p.collection_slug = 'nba_top_shot')
+          -- NULL >= 0 is NULL, not true, so a price-only sub must SKIP this
+          -- predicate rather than relax it.
+          AND (v_price_only OR p.discount_pct >= COALESCE(v_sub.min_discount, 25))
+          AND NOT COALESCE(p.low_confidence_fmv, false)
+          AND (v_sub.max_price IS NULL OR p.low_ask <= v_sub.max_price)
+          AND (v_sub.min_price IS NULL OR p.low_ask >= v_sub.min_price)
+          AND (v_sub.tiers IS NULL OR p.tier = ANY(v_sub.tiers))
+          AND (v_sub.player_names IS NULL OR lower(p.player_name) = ANY(ARRAY(SELECT lower(x) FROM unnest(v_sub.player_names) x)))
+          -- CONTAINMENT, not equality -- "Archive" must match "Archive Set".
+          AND (v_sub.set_names IS NULL OR EXISTS (
+            SELECT 1 FROM unnest(v_sub.set_names) sx
+            WHERE lower(p.set_name) LIKE '%' || lower(sx) || '%'
+          ))
+          -- audit_20261001: team + parallel filter HERE, before anything can
+          -- truncate. Until now they ran AFTER a LIMIT 500 over the cheap
+          -- predicates, so a team sub silently lost every match ranked below the
+          -- 500th row of the WHOLE collection: live, a $0.25 Blazers rookie ask
+          -- sat behind 504 cheaper Top Shot asks and was never sent.
+          AND (v_sub.parallel_names IS NULL OR lower(COALESCE(
+                (SELECT NULLIF(be.parallel_name,'') FROM public.badge_editions be
+                   WHERE be.external_id = p.external_id AND be.parallel_name NOT IN ('','Standard') LIMIT 1),
+                CASE WHEN p.collection_slug = 'disney_pinnacle' THEN p.tier END
+              )) = ANY(ARRAY(SELECT lower(x) FROM unnest(v_sub.parallel_names) x)))
+          AND (v_sub.team_names IS NULL OR EXISTS (
+            SELECT 1 FROM public.editions e
+            JOIN public.collections c ON c.id = e.collection_id
+            WHERE e.external_id = p.external_id
+              AND c.slug = p.collection_slug
+              AND lower(e.team_name) = ANY(ARRAY(SELECT lower(x) FROM unnest(v_sub.team_names) x))
+          ))
+          -- audit_20261113: a SERIAL constraint binds pass 1 too. Pass 1 sends the
+          -- edition's lowest ask and labels it with that listing's serial, but it
+          -- never read min_serial / max_serial / require_last_mint /
+          -- require_jersey_serial — so a "serial 111" alert received every
+          -- discounted edition in the collection, each with a random serial
+          -- (support_conversations 12524, 11-11). The listing pass 1 offers is the
+          -- low ask, so the constraint is tested on low_ask_serial; a NULL serial
+          -- (unknown, e.g. most Pinnacle asks) cannot satisfy one, so nothing is
+          -- sent rather than a guess. Same predicates as pass 2.
+          AND (v_sub.min_serial IS NULL OR p.low_ask_serial >= v_sub.min_serial)
+          AND (v_sub.max_serial IS NULL OR p.low_ask_serial <= v_sub.max_serial)
+          AND (NOT COALESCE(v_sub.require_last_mint, false)
+               OR (p.circulation_count > 1 AND p.low_ask_serial = p.circulation_count))
+          AND (NOT COALESCE(v_sub.require_jersey_serial, false) OR EXISTS (
+            SELECT 1 FROM public.editions e
+            JOIN public.collections c ON c.id = e.collection_id
+            WHERE e.external_id = p.external_id
+              AND c.slug = p.collection_slug
+              AND e.jersey_number = p.low_ask_serial
+          ))
+        ORDER BY p.discount_pct DESC NULLS LAST,
+                 (CASE WHEN v_price_only THEN p.low_ask END) ASC
+        -- ⚠ OFFSET 0 is a FENCE, not a no-op: it stops the planner pushing the
+        -- per-row badge function below into this scan, so badges are evaluated
+        -- only on rows that survived every cheaper filter, in rank order, and
+        -- the outer LIMIT 25 can stop as soon as 25 match. There is NO cap here
+        -- on purpose -- a cap ahead of a filter is the defect being removed.
+        OFFSET 0
+      ) b
+      WHERE (v_sub.badges IS NULL OR EXISTS (
+          SELECT 1 FROM public.editions e
+          JOIN public.collections c ON c.id = e.collection_id
+          CROSS JOIN LATERAL jsonb_array_elements(public.get_edition_badges_unified(e.id)) AS bj(elem)
+          WHERE e.external_id = b.external_id
+            AND c.slug = b.collection_slug
+            AND regexp_replace(lower(bj.elem->>'title'), '[^a-z0-9]', '', 'g') = ANY(v_sub.badges)
+        ))
+      ORDER BY b.discount_pct DESC NULLS LAST,
+               (CASE WHEN v_price_only THEN b.low_ask END) ASC
+      LIMIT 25
+    LOOP
+      v_subject := (v_deal->>'collection_slug') || ':' || (v_deal->>'external_id');
+      FOREACH v_channel IN ARRAY v_sub.channels LOOP
+        SELECT channel_user_id INTO v_target
+        FROM public.notification_channels
+        WHERE owner_key = v_sub.owner_key AND channel = v_channel
+          AND verified = true AND channel_user_id IS NOT NULL
+        LIMIT 1;
+
+        IF v_target IS NULL THEN CONTINUE; END IF;
+
+        -- The listing's identity: the moment on the ask (pass 2 always has
+        -- nft_id; pass 1 has low_ask_nft_id where the board carries one) and the
+        -- ask itself (low_ask in pass 1, ask_usd in pass 2), to the cent.
+        v_fp := COALESCE(v_deal->>'nft_id', '#' || COALESCE(v_deal->>'serial_number', ''))
+                || '@' || COALESCE(round(COALESCE(v_deal->>'low_ask', v_deal->>'ask_usd')::numeric, 2)::text, '');
+        IF v_mode = 'daily' THEN
+          v_dedup := v_bucket;
+        ELSE
+          SELECT d.payload->'deal' INTO v_prev
+          FROM public.alert_deliveries d
+          WHERE d.owner_key = v_sub.owner_key AND d.channel = v_channel
+            AND d.alert_kind = 'deal' AND d.subject_key = v_subject
+            AND d.status IS DISTINCT FROM 'failed'
+          ORDER BY d.created_at DESC
+          LIMIT 1;
+          IF v_prev IS NOT NULL AND (
+               v_mode = 'once'
+               OR (COALESCE(v_prev->>'nft_id', '#' || COALESCE(v_prev->>'serial_number', ''))
+                   || '@' || COALESCE(round(COALESCE(v_prev->>'low_ask', v_prev->>'ask_usd')::numeric, 2)::text, '')) = v_fp
+             ) THEN
+            v_suppressed := v_suppressed + 1;
+            CONTINUE;
+          END IF;
+          -- The day stays in the key so two overlapping ticks still collide on
+          -- the unique index; the fingerprint lets a CHANGED listing through the
+          -- same day.
+          v_dedup := CASE WHEN v_mode = 'once' THEN 'once' ELSE v_bucket || ':' || v_fp END;
+        END IF;
+
+        INSERT INTO public.alert_deliveries
+          (owner_key, channel, channel_user_id, alert_kind, subject_key, dedup_bucket, payload)
+        VALUES (
+          v_sub.owner_key, v_channel, v_target, 'deal',
+          v_subject, v_dedup,
+          jsonb_build_object('subscription_id', v_sub.id, 'label', v_sub.label, 'deal', v_deal)
+        )
+        ON CONFLICT (owner_key, channel, alert_kind, subject_key, dedup_bucket) DO NOTHING;
+
+        IF FOUND THEN v_enqueued := v_enqueued + 1; END IF;
+      END LOOP;
+    END LOOP;
+    END IF;
+
+    -- Pass 2: per-serial underpriced deals (unchanged apart from set match).
+    IF v_sub.collection_ids IS NULL OR (v_ts = ANY(v_sub.collection_ids)) THEN
+      FOR v_deal IN
+        SELECT jsonb_build_object(
+          'external_id', b.external_id, 'player_name', b.player_name, 'set_name', b.set_name, 'tier', b.tier,
+          'collection_slug', 'nba-top-shot', 'circulation_count', b.circulation_count,
+          'nft_id', b.nft_id, 'serial_number', b.serial_number,
+          'kind', CASE WHEN b.serial_number = 1 THEN 'first' ELSE 'perfect' END,
+          'ask_usd', b.ask_usd, 'serial_fmv_usd', b.serial_fmv_usd, 'edition_fmv_usd', b.edition_fmv_usd,
+          'confidence', b.confidence, 'estimate_quality', b.estimate_quality,
+          'discount_pct', b.discount_pct, 'discount_usd', b.discount_usd,
+          'listing_url', COALESCE(b.listing_url, 'https://dapper.market/nba/moment/' || b.nft_id),
+          'moment_url', '/moment/' || b.nft_id, 'thumbnail_url', b.thumbnail_url,
+          'parallel', (SELECT NULLIF(be.parallel_name,'') FROM public.badge_editions be
+                         WHERE be.external_id = b.external_id
+                           AND be.parallel_name IS NOT NULL
+                           AND be.parallel_name NOT IN ('', 'Standard')
+                         LIMIT 1)
+        ) AS d
+        FROM tmp_serial_pool b
+        WHERE b.alertable
+          AND b.discount_pct >= COALESCE(v_sub.min_discount, 25)
+          AND (v_sub.max_price IS NULL OR b.ask_usd <= v_sub.max_price)
+          AND (v_sub.min_price IS NULL OR b.ask_usd >= v_sub.min_price)
+          AND (v_sub.tiers IS NULL OR b.tier = ANY(v_sub.tiers))
+          AND (v_sub.player_names IS NULL OR lower(b.player_name) = ANY(ARRAY(SELECT lower(x) FROM unnest(v_sub.player_names) x)))
+          -- CONTAINMENT, not equality -- "Archive" must match "Archive Set".
+          AND (v_sub.set_names IS NULL OR EXISTS (
+            SELECT 1 FROM unnest(v_sub.set_names) sx
+            WHERE lower(b.set_name) LIKE '%' || lower(sx) || '%'
+          ))
+          AND (v_sub.parallel_names IS NULL OR EXISTS (
+            SELECT 1 FROM public.badge_editions be
+            WHERE be.external_id = b.external_id
+              AND be.parallel_name NOT IN ('','Standard')
+              AND lower(be.parallel_name) = ANY(ARRAY(SELECT lower(x) FROM unnest(v_sub.parallel_names) x))
+          ))
+          AND (v_sub.min_serial IS NULL OR b.serial_number >= v_sub.min_serial)
+          AND (v_sub.max_serial IS NULL OR b.serial_number <= v_sub.max_serial)
+          AND (NOT COALESCE(v_sub.require_last_mint, false) OR (b.circulation_count > 1 AND b.serial_number = b.circulation_count))
+          AND (v_sub.team_names IS NULL OR EXISTS (
+            SELECT 1 FROM public.editions e
+            WHERE e.external_id = b.external_id
+              AND e.collection_id = v_ts
+              AND lower(e.team_name) = ANY(ARRAY(SELECT lower(x) FROM unnest(v_sub.team_names) x))
+          ))
+          AND (NOT COALESCE(v_sub.require_jersey_serial, false) OR EXISTS (
+            SELECT 1 FROM public.editions e
+            WHERE e.external_id = b.external_id
+              AND e.collection_id = v_ts
+              AND e.jersey_number = b.serial_number
+          ))
+          AND (NOT COALESCE(v_sub.require_never_sold, false) OR NOT EXISTS (
+            SELECT 1 FROM public.sales s WHERE s.nft_id = b.nft_id
+          ))
+          AND (v_sub.badges IS NULL OR EXISTS (
+            SELECT 1
+            FROM public.editions e
+            CROSS JOIN LATERAL jsonb_array_elements(public.get_edition_badges_unified(e.id)) AS bj(elem)
+            WHERE e.external_id = b.external_id
+              AND e.collection_id = v_ts
+              AND regexp_replace(lower(bj.elem->>'title'), '[^a-z0-9]', '', 'g') = ANY(v_sub.badges)
+          ))
+        ORDER BY b.discount_pct DESC
+        LIMIT 25
+      LOOP
+        v_subject := (v_deal->>'collection_slug') || ':' || (v_deal->>'external_id')
+                     || ':#' || (v_deal->>'serial_number');
+        FOREACH v_channel IN ARRAY v_sub.channels LOOP
+          SELECT channel_user_id INTO v_target
+          FROM public.notification_channels
+          WHERE owner_key = v_sub.owner_key AND channel = v_channel
+            AND verified = true AND channel_user_id IS NOT NULL
+          LIMIT 1;
+
+          IF v_target IS NULL THEN CONTINUE; END IF;
+
+          -- The listing's identity: the moment on the ask (pass 2 always has
+          -- nft_id; pass 1 has low_ask_nft_id where the board carries one) and the
+          -- ask itself (low_ask in pass 1, ask_usd in pass 2), to the cent.
+          v_fp := COALESCE(v_deal->>'nft_id', '#' || COALESCE(v_deal->>'serial_number', ''))
+                  || '@' || COALESCE(round(COALESCE(v_deal->>'low_ask', v_deal->>'ask_usd')::numeric, 2)::text, '');
+          IF v_mode = 'daily' THEN
+            v_dedup := v_bucket;
+          ELSE
+            SELECT d.payload->'deal' INTO v_prev
+            FROM public.alert_deliveries d
+            WHERE d.owner_key = v_sub.owner_key AND d.channel = v_channel
+              AND d.alert_kind = 'deal' AND d.subject_key = v_subject
+              AND d.status IS DISTINCT FROM 'failed'
+            ORDER BY d.created_at DESC
+            LIMIT 1;
+            IF v_prev IS NOT NULL AND (
+                 v_mode = 'once'
+                 OR (COALESCE(v_prev->>'nft_id', '#' || COALESCE(v_prev->>'serial_number', ''))
+                     || '@' || COALESCE(round(COALESCE(v_prev->>'low_ask', v_prev->>'ask_usd')::numeric, 2)::text, '')) = v_fp
+               ) THEN
+              v_suppressed := v_suppressed + 1;
+              CONTINUE;
+            END IF;
+            -- The day stays in the key so two overlapping ticks still collide on
+            -- the unique index; the fingerprint lets a CHANGED listing through the
+            -- same day.
+            v_dedup := CASE WHEN v_mode = 'once' THEN 'once' ELSE v_bucket || ':' || v_fp END;
+          END IF;
+
+          INSERT INTO public.alert_deliveries
+            (owner_key, channel, channel_user_id, alert_kind, subject_key, dedup_bucket, payload)
+          VALUES (
+            v_sub.owner_key, v_channel, v_target, 'deal',
+            v_subject, v_dedup,
+            jsonb_build_object('subscription_id', v_sub.id, 'label', v_sub.label, 'deal', v_deal)
+          )
+          ON CONFLICT (owner_key, channel, alert_kind, subject_key, dedup_bucket) DO NOTHING;
+
+          IF FOUND THEN
+            v_enqueued := v_enqueued + 1;
+            v_serial_enqueued := v_serial_enqueued + 1;
+          END IF;
+        END LOOP;
+      END LOOP;
+    END IF;
+
+    -- Pass 3 (audit_20261114): EXACT-SERIAL LISTINGS. A narrow serial window on Top Shot
+    -- ("alert me when #111 is listed") is matched against every open Atlas listing of those
+    -- serials (topshot_exact_serial_alert_deals), not just each edition's lowest ask. Same
+    -- subject key and fingerprint as pass 2, so a listing both passes find is sent once.
+    IF v_exact THEN
+      FOR v_deal IN SELECT x FROM public.topshot_exact_serial_alert_deals(v_sub.id) x LOOP
+        v_subject := (v_deal->>'collection_slug') || ':' || (v_deal->>'external_id')
+                     || ':#' || (v_deal->>'serial_number');
+        FOREACH v_channel IN ARRAY v_sub.channels LOOP
+          SELECT channel_user_id INTO v_target
+          FROM public.notification_channels
+          WHERE owner_key = v_sub.owner_key AND channel = v_channel
+            AND verified = true AND channel_user_id IS NOT NULL
+          LIMIT 1;
+
+          IF v_target IS NULL THEN CONTINUE; END IF;
+
+          v_fp := COALESCE(v_deal->>'nft_id', '#' || COALESCE(v_deal->>'serial_number', ''))
+                  || '@' || COALESCE(round(COALESCE(v_deal->>'low_ask', v_deal->>'ask_usd')::numeric, 2)::text, '');
+          IF v_mode = 'daily' THEN
+            v_dedup := v_bucket;
+          ELSE
+            SELECT d.payload->'deal' INTO v_prev
+            FROM public.alert_deliveries d
+            WHERE d.owner_key = v_sub.owner_key AND d.channel = v_channel
+              AND d.alert_kind = 'deal' AND d.subject_key = v_subject
+              AND d.status IS DISTINCT FROM 'failed'
+            ORDER BY d.created_at DESC
+            LIMIT 1;
+            IF v_prev IS NOT NULL AND (
+                 v_mode = 'once'
+                 OR (COALESCE(v_prev->>'nft_id', '#' || COALESCE(v_prev->>'serial_number', ''))
+                     || '@' || COALESCE(round(COALESCE(v_prev->>'low_ask', v_prev->>'ask_usd')::numeric, 2)::text, '')) = v_fp
+               ) THEN
+              v_suppressed := v_suppressed + 1;
+              CONTINUE;
+            END IF;
+            v_dedup := CASE WHEN v_mode = 'once' THEN 'once' ELSE v_bucket || ':' || v_fp END;
+          END IF;
+
+          INSERT INTO public.alert_deliveries
+            (owner_key, channel, channel_user_id, alert_kind, subject_key, dedup_bucket, payload)
+          VALUES (
+            v_sub.owner_key, v_channel, v_target, 'deal',
+            v_subject, v_dedup,
+            jsonb_build_object('subscription_id', v_sub.id, 'label', v_sub.label, 'deal', v_deal)
+          )
+          ON CONFLICT (owner_key, channel, alert_kind, subject_key, dedup_bucket) DO NOTHING;
+
+          IF FOUND THEN
+            v_enqueued := v_enqueued + 1;
+            v_exact_enqueued := v_exact_enqueued + 1;
+          END IF;
+        END LOOP;
+      END LOOP;
+    END IF;
+
+    UPDATE public.alert_subscriptions SET last_run_at = now() WHERE id = v_sub.id;
+    EXIT WHEN v_enqueued >= p_max;
+  END LOOP;
+
+  RETURN jsonb_build_object(
+    'subscriptions_scanned', v_subs,
+    'enqueued', v_enqueued,
+    'serial_enqueued', v_serial_enqueued,
+    'deal_pool_size', v_deal_pool,
+    'serial_pool_size', v_serial_pool,
+    'price_pool_size', v_price_pool,
+    'deal_pool_unconfirmed', v_deal_pool_unconfirmed,
+    'serial_pool_unconfirmed', v_serial_pool_unconfirmed,
+    'price_pool_unconfirmed', v_price_pool_unconfirmed,
+    'suppressed_unchanged', v_suppressed,
+    'exact_serial_enqueued', v_exact_enqueued,
+    'bucket', v_bucket,
+    'ran_at', now()
+  );
+END;
+$function$;
+-- <<< END verbatim dispatch_due_deal_alerts <<<
+
+-- ── fixture data ───────────────────────────────────────────────────────────
+INSERT INTO collections (id, slug, is_active) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'nba_top_shot', true);
+
+INSERT INTO cross_collection_deals_board
+  (external_id, name, player_name, set_name, tier, circulation_count, fmv_usd,
+   confidence, low_ask, discount_pct, discount_usd, ask_updated_at,
+   collection_slug, collection_name, render_id, detail_url, thumbnail_url,
+   low_ask_serial, low_ask_nft_id, low_confidence_fmv)
+VALUES
+  ('73:2785', 'Lillard Deal', 'Damian Lillard', 'Archive Set', 'COMMON', 12000,
+   40.00, 'HIGH', 20.00, 50.0, 20.00, now(),
+   'nba_top_shot', 'NBA Top Shot', NULL, '/nba-top-shot/edition/73%3A2785', NULL,
+   NULL, NULL, false),
+  -- ⚠ A SECOND deals row, priced UNDER the price-only sub's cap. Without it the
+  -- pool guard is untestable: the first row is $20 and the price-only cap is
+  -- $0.60, so the PRICE FILTER excludes it either way and a mutation dropping
+  -- `pool = CASE WHEN v_price_only …` survives. This row is cheap enough to pass
+  -- that filter, so the only thing keeping it away from a price-only subscriber
+  -- is the pool guard itself. (Verified: the mutation is killed with this row
+  -- present and survives without it.)
+  ('73:4242', 'Cheap Deal', 'Damian Lillard', 'Archive Set', 'COMMON', 12000,
+   2.00, 'HIGH', 0.50, 75.0, 1.50, now(),
+   'nba_top_shot', 'NBA Top Shot', NULL, '/nba-top-shot/edition/73%3A4242', NULL,
+   NULL, NULL, false);
+
+-- The raw ask a price-only alert exists for: cheap, and with no fmv at all, so
+-- it can never appear on the deals board.
+INSERT INTO edition_current_ask
+  (external_id, name, player_name, set_name, tier, circulation_count, fmv_usd,
+   confidence, low_ask, discount_pct, discount_usd, ask_updated_at,
+   collection_slug, collection_name, render_id, detail_url, thumbnail_url,
+   low_ask_serial, low_ask_nft_id, low_confidence_fmv)
+VALUES
+  ('73:9001', 'Cheap Lillard', 'Damian Lillard', 'Archive Set', 'COMMON', 12000,
+   NULL, NULL, 0.33, NULL, NULL, now(),
+   'nba_top_shot', 'NBA Top Shot', NULL, '/nba-top-shot/edition/73%3A9001', NULL,
+   NULL, NULL, false);
+
+INSERT INTO notification_channels (owner_key, channel, channel_user_id, verified)
+VALUES ('owner-price', 'email', 'price@example.test', true),
+       ('owner-deals', 'email', 'deals@example.test', true),
+       ('owner-unver', 'email', 'unver@example.test', false);
+
+-- ── (6) no active subscriptions must SAY so ────────────────────────────────
+DO $$
+DECLARE r jsonb;
+BEGIN
+  r := public.dispatch_due_deal_alerts();
+  PERFORM _assert_eq((r->>'skipped'), 'no_active_subscriptions',
+    'with nothing active the run states its reason rather than returning a bare zero');
+  PERFORM _assert_eq((r->>'enqueued'), '0', 'and enqueues nothing');
+  RAISE NOTICE '✓ dispatch_due_deal_alerts: an empty run names its reason';
+END $$;
+
+-- ── (1) the price pool is CONDITIONAL ──────────────────────────────────────
+-- One ordinary discount subscription, no price-only sub anywhere.
+--
+-- ⚠ IT CARRIES A max_price, AND THAT IS THE WHOLE POINT OF THE FIXTURE. "At
+-- least 25% off AND under $50" is an ordinary subscription, and it is the only
+-- shape that can tell the real predicate from a plausible wrong one: the raw
+-- pool is gated on max_price IS NOT NULL **AND min_discount = 0**, so a version
+-- that forgot the second clause would build the pool for THIS sub and could
+-- deliver an ask with no FMV to someone who asked for a discount.
+--
+-- ⚠ The first version of this file used a max_price-less sub here and BOTH
+-- mutations survived — dropping the min_discount clause changed nothing,
+-- because the only row carrying a max_price was the price-only one. That is the
+-- "fixture cannot distinguish the two implementations" vacuity shape, and it is
+-- invisible until the mutation is actually run.
+INSERT INTO alert_subscriptions (id, owner_key, channels, collection_ids, min_discount, max_price, active, serial_only)
+VALUES ('22222222-2222-2222-2222-222222222222', 'owner-deals', ARRAY['email'],
+        ARRAY['95f28a17-224a-4025-96ad-adf8a4c63bfd']::uuid[], 25, 50.00, true, false);
+
+DO $$
+DECLARE r jsonb;
+BEGIN
+  r := public.dispatch_due_deal_alerts();
+  PERFORM _assert_eq((r->>'price_pool_size'), '0',
+    'with no price-only subscription the raw-ask pool is never built');
+  PERFORM _assert_eq((r->>'deal_pool_size'), '2', 'the deals pool still is');
+  PERFORM _assert_eq((r->>'enqueued'), '2', 'the discount sub gets both deals-board rows');
+  -- (3) exclusion: the raw ask must not reach a deals subscription at all.
+  PERFORM _assert(NOT EXISTS (
+    SELECT 1 FROM alert_deliveries WHERE subject_key LIKE '%73:9001'),
+    'a raw ask must never be delivered to an ordinary discount subscription');
+  PERFORM _assert_eq((SELECT count(*)::text FROM alert_deliveries), '2', 'exactly two rows written');
+  PERFORM _assert(EXISTS (SELECT 1 FROM alert_subscriptions
+                          WHERE id = '22222222-2222-2222-2222-222222222222' AND last_run_at IS NOT NULL),
+    'the subscription is stamped as run');
+
+  -- (4) DEDUPE. A second run in the same bucket must enqueue NOTHING, and the
+  -- counter must not advance -- an `enqueued` that counted matches rather than
+  -- writes would report a healthy send on a run that delivered nothing.
+  r := public.dispatch_due_deal_alerts();
+  PERFORM _assert_eq((r->>'enqueued'), '0', 'a second run in the same bucket enqueues nothing');
+  PERFORM _assert_eq((SELECT count(*)::text FROM alert_deliveries), '2', 'and writes no further rows');
+
+  RAISE NOTICE '✓ dispatch_due_deal_alerts: pool gating, exclusion and dedupe';
+END $$;
+
+-- ── (9) audit_20261014: ONCE PER LISTING, NOT ONCE PER DAY ────────────────
+--
+-- 🚨 THE DEFECT. dedup_bucket used to be the UTC day and nothing else, so an
+-- unchanged listing was new again every midnight: two subscribers received the
+-- same edition 14 days running (09-30 → 10-13) and webz_80 reported it. Case 4
+-- could never see it — both of its runs fall inside one day. This case moves the
+-- rows case 1 wrote into YESTERDAY, which is exactly what a real night does, and
+-- the old body re-sends both there (verified: enqueued 2, this case fails).
+--
+-- ⚠ AND THE OTHER DIRECTION, because the cheap wrong fix is "never repeat a
+-- subject": a CHANGED listing (here, a new ask) must still fire. Then the two
+-- other modes, so neither is a label over the default: 'once' stays silent
+-- through a price change, 'daily' keeps the old re-send.
+DO $$
+DECLARE r jsonb;
+BEGIN
+  UPDATE alert_deliveries
+     SET dedup_bucket = dedup_bucket || ':aged', created_at = now() - interval '1 day'
+   WHERE owner_key = 'owner-deals';
+
+  r := public.dispatch_due_deal_alerts();
+  PERFORM _assert_eq((r->>'enqueued'), '0',
+    'an UNCHANGED listing is not re-sent on a new day (the old body sends both again)');
+  PERFORM _assert_eq((r->>'suppressed_unchanged'), '2',
+    'and the skips are COUNTED, so a quiet night is distinguishable from nothing matching');
+
+  UPDATE cross_collection_deals_board SET low_ask = 19.00, discount_pct = 52.5
+   WHERE external_id = '73:2785';
+  r := public.dispatch_due_deal_alerts();
+  PERFORM _assert_eq((r->>'enqueued'), '1', 'a NEW ASK on the same edition does fire');
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-deals' AND subject_key = 'nba_top_shot:73:2785'
+      AND (payload->'deal'->>'low_ask')::numeric = 19.00),
+    'and it carries the new price');
+  r := public.dispatch_due_deal_alerts();
+  PERFORM _assert_eq((r->>'enqueued'), '0', 'then the new listing is itself sent only once');
+
+  UPDATE alert_subscriptions SET notify_mode = 'once'
+   WHERE id = '22222222-2222-2222-2222-222222222222';
+  UPDATE cross_collection_deals_board SET low_ask = 18.00, discount_pct = 55.0
+   WHERE external_id = '73:2785';
+  r := public.dispatch_due_deal_alerts();
+  PERFORM _assert_eq((r->>'enqueued'), '0', 'notify once: a price change does NOT re-fire a subject already sent');
+
+  UPDATE alert_subscriptions SET notify_mode = 'daily'
+   WHERE id = '22222222-2222-2222-2222-222222222222';
+  r := public.dispatch_due_deal_alerts();
+  PERFORM _assert_eq((r->>'enqueued'), '2', 'daily: the old reminder behaviour is kept for whoever picks it');
+  r := public.dispatch_due_deal_alerts();
+  PERFORM _assert_eq((r->>'enqueued'), '0', 'and still at most once per day');
+
+  -- Restore what later cases read.
+  UPDATE alert_subscriptions SET notify_mode = 'new_listing'
+   WHERE id = '22222222-2222-2222-2222-222222222222';
+  UPDATE cross_collection_deals_board SET low_ask = 20.00, discount_pct = 50.0
+   WHERE external_id = '73:2785';
+  RAISE NOTICE '✓ dispatch_due_deal_alerts: once per listing, and all three repeat modes';
+END $$;
+
+-- ── (2) a price-only subscription receives the raw ask ─────────────────────
+INSERT INTO alert_subscriptions (id, owner_key, channels, collection_ids, min_discount, max_price, active, serial_only)
+VALUES ('11111111-1111-1111-1111-111111111111', 'owner-price', ARRAY['email'],
+        ARRAY['95f28a17-224a-4025-96ad-adf8a4c63bfd']::uuid[], 0, 0.60, true, false);
+
+DO $$
+DECLARE r jsonb;
+BEGIN
+  r := public.dispatch_due_deal_alerts();
+  PERFORM _assert_eq((r->>'price_pool_size'), '1',
+    'a price-only subscription makes the raw-ask pool get built');
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-price' AND subject_key = 'nba_top_shot:73:9001'),
+    'and the $0.33 ask is actually delivered -- the defect the migration fixed');
+  -- ⚠ Assert on the CHEAP deals row, not the $20 one. The $20 row is excluded by
+  -- the sub's own max_price whatever the pool guard does, so asserting on it
+  -- would pass against a mutation that unioned both pools. `73:4242` is $0.50,
+  -- inside the $0.60 cap, so ONLY the pool guard keeps it away.
+  PERFORM _assert(NOT EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-price' AND subject_key = 'nba_top_shot:73:4242'),
+    'a deals-board row does NOT reach a price-only subscriber even when it is under their cap');
+  RAISE NOTICE '✓ dispatch_due_deal_alerts: a price-only subscription receives a raw ask';
+END $$;
+
+-- ── (5) an unverified channel produces no delivery ─────────────────────────
+INSERT INTO alert_subscriptions (id, owner_key, channels, collection_ids, min_discount, active, serial_only)
+VALUES ('33333333-3333-3333-3333-333333333333', 'owner-unver', ARRAY['email'],
+        ARRAY['95f28a17-224a-4025-96ad-adf8a4c63bfd']::uuid[], 25, true, false);
+
+DO $$
+BEGIN
+  PERFORM public.dispatch_due_deal_alerts();
+  PERFORM _assert(NOT EXISTS (SELECT 1 FROM alert_deliveries WHERE owner_key = 'owner-unver'),
+    'an unverified channel is skipped, not written with a null target');
+  -- Positive control: the same subscription shape DOES deliver once verified,
+  -- so the case above is a real gate and not a broken fixture.
+  UPDATE notification_channels SET verified = true WHERE owner_key = 'owner-unver';
+  PERFORM public.dispatch_due_deal_alerts();
+  PERFORM _assert(EXISTS (SELECT 1 FROM alert_deliveries WHERE owner_key = 'owner-unver'),
+    'and delivers once the channel is verified');
+  RAISE NOTICE '✓ dispatch_due_deal_alerts: verification gates delivery';
+END $$;
+
+-- ── (7) AN UNCONFIRMED ASK IS NEVER SENT, AND THE EXEMPTION IS REAL ────────
+--
+-- 🚨 THE CASE THIS FUNCTION EXISTS TO NOT REPEAT. On 2026-09-12 PT Trevor was
+-- sent "Damian Lillard #5735 — $0.50 ask" for the FOURTH night running, off an
+-- `ask_updated_at` frozen at 09-10 04:48Z, while the live floor read $1.03 and
+-- the listing was the one he had already bought. The message was not lying — it
+-- even rendered "ask seen 3d ago — may be gone" — but a notification is the one
+-- surface that cannot report-and-let-the-reader-judge.
+--
+-- ⭐ THIS CASE ALSO PINS THE REPEAT, WITHOUT PINNING THE DEDUPE. `dedup_bucket`
+-- is one calendar day, so ANY row that stays in the pool re-fires nightly for
+-- ever; the rows that do that are exactly the ones nobody re-confirms. Gate the
+-- confirmation and the repeat has no fuel. A future "simplification" that drops
+-- the gate brings BOTH defects back, and case 4 above cannot see either.
+INSERT INTO collections (id, slug, is_active) VALUES
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'nfl_all_day', true);
+
+INSERT INTO notification_channels (owner_key, channel, channel_user_id, verified)
+VALUES ('owner-fresh', 'email', 'fresh@example.test', true);
+
+INSERT INTO edition_current_ask
+  (external_id, name, player_name, set_name, tier, circulation_count, fmv_usd,
+   confidence, low_ask, discount_pct, discount_usd, ask_updated_at,
+   collection_slug, collection_name, render_id, detail_url, thumbnail_url,
+   low_ask_serial, low_ask_nft_id, low_confidence_fmv)
+VALUES
+  -- Top Shot, last confirmed 3 days ago: the exact shape of the row that was
+  -- delivered four times.
+  ('73:9002', 'Stale Lillard', 'Damian Lillard', 'Archive Set', 'COMMON', 12000,
+   NULL, NULL, 0.40, NULL, NULL, now() - interval '3 days',
+   'nba_top_shot', 'NBA Top Shot', NULL, '/nba-top-shot/edition/73%3A9002', NULL,
+   NULL, NULL, false),
+  -- Top Shot with NO stamp at all. ⚠ "Unknown is not stale" is the right rule
+  -- for RENDERING an age marker and the WRONG one for deciding to wake someone
+  -- up, so this must fail CLOSED.
+  ('73:9003', 'Unstamped Lillard', 'Damian Lillard', 'Archive Set', 'COMMON', 12000,
+   NULL, NULL, 0.41, NULL, NULL, NULL,
+   'nba_top_shot', 'NBA Top Shot', NULL, '/nba-top-shot/edition/73%3A9003', NULL,
+   NULL, NULL, false),
+  -- All Day, listed six weeks ago and STILL OPEN. 🚨 THE EXEMPTION, ASSERTED
+  -- POSITIVELY: that arm's stamp is `cached_listings_v2.listed_at` — when the
+  -- seller listed it — over an index a row LEAVES when the listing closes. A
+  -- blanket recency predicate would have deleted 1,937 of 1,956 correct All Day
+  -- rows (measured 2026-09-13) to fix the Top Shot ones.
+  ('9:1234', 'Open All Day Ask', 'Ja Marr Chase', 'Base Set', 'COMMON', 9000,
+   NULL, NULL, 0.42, NULL, NULL, now() - interval '42 days',
+   'nfl_all_day', 'NFL All Day', NULL, '/nfl-all-day/edition/9%3A1234', NULL,
+   NULL, NULL, false);
+
+-- A deals-board row whose ask is 13 h old — just past the 12 h marker. Paired
+-- with the 11 h re-stamp below, this pins the THRESHOLD rather than the idea.
+INSERT INTO cross_collection_deals_board
+  (external_id, name, player_name, set_name, tier, circulation_count, fmv_usd,
+   confidence, low_ask, discount_pct, discount_usd, ask_updated_at,
+   collection_slug, collection_name, render_id, detail_url, thumbnail_url,
+   low_ask_serial, low_ask_nft_id, low_confidence_fmv)
+VALUES
+  ('73:5555', 'Stale Deal', 'Damian Lillard', 'Archive Set', 'COMMON', 12000,
+   20.00, 'HIGH', 5.00, 75.0, 15.00, now() - interval '13 hours',
+   'nba_top_shot', 'NBA Top Shot', NULL, '/nba-top-shot/edition/73%3A5555', NULL,
+   NULL, NULL, false);
+
+-- ⚠ TWO SERIAL-BOARD ROWS, BECAUSE PASS 2 HAS ITS OWN GATE AND THIS FILE USED TO
+-- HAVE NO SERIAL FIXTURE AT ALL. Measured 2026-09-13: with the board empty, the
+-- mutation that removes `WHERE b.alertable` from the serial pass SURVIVED every
+-- assertion in this file — `serial_pool_size` was 0, so the pass ran over nothing
+-- and read as covered. A gate over an empty population is not a tested gate.
+-- ⭐ `last_seen_at` on this board IS a confirmation stamp (the verify lane
+-- re-reads the listing), unlike All Day's listed_at — which is why the two
+-- columns get opposite treatment three fixtures apart.
+INSERT INTO topshot_underpriced_serials_board
+  (edition_id, edition_key, external_id, player_name, set_name, tier,
+   circulation_count, thumbnail_url, nft_id, serial_number, ask_usd,
+   listing_resource_id, listing_url, listed_at, last_seen_at, edition_fmv_usd,
+   confidence, serial_bucket, serial_fmv_usd, serial_multiplier, discount_usd,
+   discount_pct, estimate_quality)
+VALUES
+  (gen_random_uuid(), '73:7777', '73:7777', 'Damian Lillard', 'Archive Set', 'COMMON',
+   12000, NULL, 'nft-fresh', 1, 10.00, NULL, NULL, now(), now(), 20.00,
+   'HIGH', 'first', 20.00, 2.0, 10.00, 50.0, 'tight'),
+  (gen_random_uuid(), '73:7778', '73:7778', 'Damian Lillard', 'Archive Set', 'COMMON',
+   12000, NULL, 'nft-stale', 2, 10.00, NULL, NULL, now() - interval '20 hours',
+   now() - interval '20 hours', 25.00,
+   'HIGH', 'perfect', 25.00, 2.5, 15.00, 60.0, 'tight');
+
+-- collection_ids NULL => every ACTIVE collection, so this one subscription sees
+-- the Top Shot rows and the All Day row and can test the asymmetry in one run.
+INSERT INTO alert_subscriptions (id, owner_key, channels, collection_ids, min_discount, max_price, active, serial_only)
+VALUES ('44444444-4444-4444-4444-444444444444', 'owner-fresh', ARRAY['email'],
+        NULL, 0, 0.60, true, false);
+
+DO $$
+DECLARE r jsonb;
+BEGIN
+  r := public.dispatch_due_deal_alerts();
+
+  PERFORM _assert(NOT EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-fresh' AND subject_key = 'nba_top_shot:73:9002'),
+    'an ask last confirmed 3 days ago is NOT sent');
+  PERFORM _assert(NOT EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-fresh' AND subject_key = 'nba_top_shot:73:9003'),
+    'an ask with no confirmation stamp at all is NOT sent -- unknown fails CLOSED');
+  PERFORM _assert(NOT EXISTS (
+    SELECT 1 FROM alert_deliveries WHERE subject_key = 'nba_top_shot:73:5555'),
+    'a deals-board row whose ask is 13 h old is NOT sent either -- the gate is not price-pool-only');
+
+  -- POSITIVE CONTROLS, both of them. Without these the case above would pass
+  -- against a function that had simply stopped delivering.
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-fresh' AND subject_key = 'nba_top_shot:73:9001'),
+    'the freshly confirmed $0.33 ask IS still sent');
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-fresh' AND subject_key = 'nfl_all_day:9:1234'),
+    'and an All Day listing open since six weeks ago IS sent -- listed_at is not a confirmation');
+
+  -- ⭐ THE SUPPRESSION IS COUNTED, NOT SILENT. Fixing a guard without fixing the
+  -- field an observer keys on leaves the incidence unmeasurable: these ride into
+  -- pipeline_runs.extra so "the alerts went quiet" can be told apart from "86% of
+  -- the Top Shot board is unconfirmed".
+  PERFORM _assert_eq((r->>'price_pool_unconfirmed'), '2',
+    'the two barred raw asks are COUNTED, not silently dropped');
+  PERFORM _assert_eq((r->>'deal_pool_unconfirmed'), '1',
+    'and so is the barred deals-board row');
+  PERFORM _assert_eq((r->>'price_pool_size'), '4',
+    'while *_pool_size keeps its old meaning -- rows BUILT -- so its history stays comparable');
+
+  -- PASS 2 CARRIES THE SAME RULE. `owner-deals` (25% off, under $50) is the sub
+  -- that can see these; both rows clear its filters, so only the gate separates
+  -- them.
+  PERFORM _assert(NOT EXISTS (
+    SELECT 1 FROM alert_deliveries WHERE subject_key = 'nba-top-shot:73:7778:#2'),
+    'a serial listing last seen 20 h ago is NOT sent');
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM alert_deliveries WHERE subject_key = 'nba-top-shot:73:7777:#1'),
+    'while the one seen just now IS -- so pass 2 is gated, not switched off');
+  PERFORM _assert_eq((r->>'serial_pool_unconfirmed'), '1',
+    'and the serial suppression is counted too');
+
+  RAISE NOTICE '✓ dispatch_due_deal_alerts: an unconfirmed ask is never sent';
+END $$;
+
+-- ── (7b) THE GATE IS A GATE, NOT A DELETION — the other direction ──────────
+-- Re-stamp the same rows as confirmed; nothing else changes. All must now
+-- deliver. ⚠ audit_20260930: Top Shot EDITION asks have a 1 h window, the
+-- serial board keeps 12 h under its own token ('nba_top_shot:serial'). So:
+--   · the price row is first re-stamped to 2 h and must STILL be barred (an
+--     edition ask inside 12 h but outside 1 h), then to now() and delivers;
+--   · the deals row goes to 59 min, not now(), so 2 h blocked / 59 min sent
+--     pins the 1 h edge in the SENDER, not just in the gate's own pin;
+--   · the serial row goes to 11 h, not now(), and must deliver — the 1 h
+--     window must not leak onto the board whose sweep runs every 3 h.
+DO $$
+BEGIN
+  UPDATE edition_current_ask SET ask_updated_at = now() - interval '2 hours' WHERE external_id = '73:9002';
+  PERFORM public.dispatch_due_deal_alerts();
+  PERFORM _assert(NOT EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-fresh' AND subject_key = 'nba_top_shot:73:9002'),
+    'a Top Shot edition ask confirmed 2 h ago is NOT sent -- inside the old 12 h, outside the 1 h window');
+
+  UPDATE edition_current_ask SET ask_updated_at = now() WHERE external_id = '73:9002';
+  UPDATE cross_collection_deals_board SET ask_updated_at = now() - interval '59 minutes'
+   WHERE external_id = '73:5555';
+  UPDATE topshot_underpriced_serials_board SET last_seen_at = now() - interval '11 hours' WHERE nft_id = 'nft-stale';
+  PERFORM public.dispatch_due_deal_alerts();
+
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-fresh' AND subject_key = 'nba_top_shot:73:9002'),
+    'the same row delivers once it is confirmed again -- the gate is freshness, not the row');
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM alert_deliveries WHERE subject_key = 'nba_top_shot:73:5555'),
+    'and a 59 min old deals-board ask is INSIDE the 1 h window -- so the window is a threshold, not a blanket ban');
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM alert_deliveries WHERE subject_key = 'nba-top-shot:73:7778:#2'),
+    'and a serial listing seen 11 h ago delivers -- the serial board keeps its 12 h window');
+  PERFORM _assert(NOT EXISTS (
+    SELECT 1 FROM alert_deliveries WHERE subject_key = 'nba_top_shot:73:9003'),
+    'the unstamped row is still barred -- re-stamping its neighbours did not relax it');
+
+  RAISE NOTICE '✓ dispatch_due_deal_alerts: the freshness gate opens as well as closes';
+END $$;
+
+-- ── (8) A FILTER MUST NOT RUN BEHIND A CAP (audit_20261001) ────────────────
+--
+-- 🚨 THE LIVE MISS, REPRODUCED. Until 2026-10-01 pass 1 took the collection-wide
+-- top 500 of the cheap predicates and only THEN applied team / parallel /
+-- badges, so a filtered sub saw only the matches ranked inside that 500. On
+-- 2026-09-30 a "Blazers rookie ≤ $0.50" sub missed a $0.25 Greg Brown III ask
+-- because 504 cheaper Top Shot asks filled every slot.
+--
+-- ⚠ 501 FILLER ROWS, NOT 500: the target must rank strictly OUTSIDE the old cap
+-- or this case passes against the defect. The fillers belong to no team and
+-- carry no badge, so only the filters stand between them and the two subs.
+-- Mutation-verified: restoring the 20260913061500 body fails BOTH assertions.
+INSERT INTO edition_current_ask
+  (external_id, name, player_name, set_name, tier, circulation_count, fmv_usd,
+   confidence, low_ask, discount_pct, discount_usd, ask_updated_at,
+   collection_slug, collection_name, render_id, detail_url, thumbnail_url,
+   low_ask_serial, low_ask_nft_id, low_confidence_fmv)
+SELECT '900:' || g, 'Filler', 'Filler Player ' || g, 'Base Set', 'COMMON', 50000,
+       NULL, NULL, 0.05, NULL, NULL, now(),
+       'nba_top_shot', 'NBA Top Shot', NULL, NULL, NULL, NULL, NULL, false
+FROM generate_series(1, 501) g;
+
+INSERT INTO edition_current_ask
+  (external_id, name, player_name, set_name, tier, circulation_count, fmv_usd,
+   confidence, low_ask, discount_pct, discount_usd, ask_updated_at,
+   collection_slug, collection_name, render_id, detail_url, thumbnail_url,
+   low_ask_serial, low_ask_nft_id, low_confidence_fmv)
+VALUES
+  ('901:1', 'Team Target', 'Greg Brown III', 'Hustle and Show', 'COMMON', 9000,
+   NULL, NULL, 0.25, NULL, NULL, now(),
+   'nba_top_shot', 'NBA Top Shot', NULL, NULL, NULL, NULL, NULL, false),
+  ('901:2', 'Badge Target', 'Some Rookie', 'Base Set', 'COMMON', 9000,
+   NULL, NULL, 0.26, NULL, NULL, now(),
+   'nba_top_shot', 'NBA Top Shot', NULL, NULL, NULL, NULL, NULL, false);
+
+INSERT INTO editions (id, collection_id, external_id, player_name, set_name, team_name)
+VALUES
+  ('aaaaaaaa-0000-0000-0000-000000000001', '95f28a17-224a-4025-96ad-adf8a4c63bfd',
+   '901:1', 'Greg Brown III', 'Hustle and Show', 'Portland Trail Blazers'),
+  ('aaaaaaaa-0000-0000-0000-000000000002', '95f28a17-224a-4025-96ad-adf8a4c63bfd',
+   '901:2', 'Some Rookie', 'Base Set', 'Somewhere Else');
+
+-- The stub above returns '[]' for every edition; give exactly ONE a badge.
+CREATE OR REPLACE FUNCTION public.get_edition_badges_unified(p_edition_id uuid)
+RETURNS jsonb LANGUAGE sql IMMUTABLE AS $$
+  SELECT CASE WHEN p_edition_id = 'aaaaaaaa-0000-0000-0000-000000000002'
+              THEN '[{"title":"Rookie Year"}]'::jsonb ELSE '[]'::jsonb END $$;
+
+INSERT INTO notification_channels (owner_key, channel, channel_user_id, verified)
+VALUES ('owner-team', 'email', 'team@example.test', true),
+       ('owner-badge', 'email', 'badge@example.test', true);
+
+INSERT INTO alert_subscriptions (id, owner_key, channels, collection_ids, min_discount, max_price, active, serial_only, team_names, badges)
+VALUES ('88888888-8888-8888-8888-888888888881', 'owner-team', ARRAY['email'],
+        ARRAY['95f28a17-224a-4025-96ad-adf8a4c63bfd']::uuid[], 0, 0.50, true, false,
+        ARRAY['Portland Trail Blazers'], NULL),
+       ('88888888-8888-8888-8888-888888888882', 'owner-badge', ARRAY['email'],
+        ARRAY['95f28a17-224a-4025-96ad-adf8a4c63bfd']::uuid[], 0, 0.50, true, false,
+        NULL, ARRAY['rookieyear']);
+
+DO $$
+BEGIN
+  PERFORM public.dispatch_due_deal_alerts();
+
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-team' AND subject_key = 'nba_top_shot:901:1'),
+    'a team-filtered sub receives its match even with 501 cheaper asks ranked ahead of it');
+  PERFORM _assert_eq((SELECT count(*)::text FROM alert_deliveries WHERE owner_key = 'owner-team'), '1',
+    'and receives ONLY that match -- the team filter still excludes the fillers');
+
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-badge' AND subject_key = 'nba_top_shot:901:2'),
+    'a badge-filtered sub receives its match from behind the same 501 rows');
+  PERFORM _assert_eq((SELECT count(*)::text FROM alert_deliveries WHERE owner_key = 'owner-badge'), '1',
+    'and ONLY that match -- the badge filter still excludes everything else');
+
+  RAISE NOTICE '✓ dispatch_due_deal_alerts: filters run before any truncation';
+END $$;
+
+-- ── A 1-OF-1 IS NOT A PERFECT MINT (audit_20261010) ────────────────────────
+-- The sender's half of the same rule the preview pins: "perfect mints only"
+-- must not deliver a /1 edition's serial 1. The #50/50 row is the positive
+-- control — without it this passes against a filter that delivers nothing.
+INSERT INTO topshot_underpriced_serials_board
+  (edition_id, edition_key, external_id, player_name, set_name, tier,
+   circulation_count, thumbnail_url, nft_id, serial_number, ask_usd,
+   listing_resource_id, listing_url, listed_at, last_seen_at, edition_fmv_usd,
+   confidence, serial_bucket, serial_fmv_usd, serial_multiplier, discount_usd,
+   discount_pct, estimate_quality)
+VALUES
+  (gen_random_uuid(), '950:1', '950:1', 'Last Mint Test', 'LM Set', 'ULTIMATE',
+   1, NULL, 'nft-one-of-one', 1, 50.00, NULL, NULL, now(), now(), 40.00,
+   'HIGH', 'first', 100.00, 2.5, 50.00, 50.0, 'tight'),
+  (gen_random_uuid(), '950:2', '950:2', 'Last Mint Test', 'LM Set', 'RARE',
+   50, NULL, 'nft-perfect', 50, 50.00, NULL, NULL, now(), now(), 40.00,
+   'HIGH', 'perfect', 100.00, 2.5, 50.00, 50.0, 'tight');
+
+INSERT INTO notification_channels (owner_key, channel, channel_user_id, verified)
+VALUES ('owner-lastmint', 'email', 'lastmint@example.test', true);
+
+INSERT INTO alert_subscriptions (id, owner_key, channels, collection_ids, min_discount, active, serial_only, player_names, require_last_mint)
+VALUES ('99999999-9999-9999-9999-999999999991', 'owner-lastmint', ARRAY['email'],
+        ARRAY['95f28a17-224a-4025-96ad-adf8a4c63bfd']::uuid[], 25, true, false,
+        ARRAY['Last Mint Test'], true);
+
+DO $$
+BEGIN
+  PERFORM public.dispatch_due_deal_alerts();
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-lastmint' AND subject_key = 'nba-top-shot:950:2:#50'),
+    'perfect-mints-only delivers the real perfect mint (#50/50)');
+  PERFORM _assert(NOT EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-lastmint' AND subject_key = 'nba-top-shot:950:1:#1'),
+    'and never the 1-of-1 -- a /1 serial 1 is the #1, not a last mint');
+  RAISE NOTICE '✓ dispatch_due_deal_alerts: a 1-of-1 is not a perfect mint';
+END $$;
+
+-- ── A SERIAL FILTER BINDS PASS 1 (audit_20261113) ─────────────────────────
+-- The live miss: "Min serial = Max serial = 111" received every discounted
+-- edition, each labelled with whatever serial was the low ask (support
+-- conversation 12524, 11-11). 73:5111's low ask IS serial 111 (the positive
+-- control — without it this passes against a pass 1 that sends nothing);
+-- 73:5222's is serial 222, and the older rows' serials are NULL (unknown).
+INSERT INTO cross_collection_deals_board
+  (external_id, name, player_name, set_name, tier, circulation_count, fmv_usd,
+   confidence, low_ask, discount_pct, discount_usd, ask_updated_at,
+   collection_slug, collection_name, render_id, detail_url, thumbnail_url,
+   low_ask_serial, low_ask_nft_id, low_confidence_fmv)
+VALUES
+  ('73:5111', 'Serial Hit', 'Serial Test', 'Serial Set', 'COMMON', 4000,
+   40.00, 'HIGH', 20.00, 50.0, 20.00, now(),
+   'nba_top_shot', 'NBA Top Shot', NULL, '/nba-top-shot/edition/73%3A5111', NULL,
+   111, 'nft-s111', false),
+  ('73:5222', 'Serial Miss', 'Serial Test', 'Serial Set', 'COMMON', 4000,
+   40.00, 'HIGH', 20.00, 50.0, 20.00, now(),
+   'nba_top_shot', 'NBA Top Shot', NULL, '/nba-top-shot/edition/73%3A5222', NULL,
+   222, 'nft-s222', false),
+  -- last mint: serial 50 of 50 (hit) vs serial 49 of 50 (miss)
+  ('73:5350', 'Last Mint Hit', 'Last Mint Pass1', 'Serial Set', 'RARE', 50,
+   40.00, 'HIGH', 20.00, 50.0, 20.00, now(),
+   'nba_top_shot', 'NBA Top Shot', NULL, '/nba-top-shot/edition/73%3A5350', NULL,
+   50, 'nft-lm50', false),
+  ('73:5349', 'Last Mint Miss', 'Last Mint Pass1', 'Serial Set', 'RARE', 50,
+   40.00, 'HIGH', 20.00, 50.0, 20.00, now(),
+   'nba_top_shot', 'NBA Top Shot', NULL, '/nba-top-shot/edition/73%3A5349', NULL,
+   49, 'nft-lm49', false);
+
+INSERT INTO notification_channels (owner_key, channel, channel_user_id, verified)
+VALUES ('owner-serial', 'email', 'serial@example.test', true),
+       ('owner-lm-pass1', 'email', 'lm1@example.test', true);
+
+INSERT INTO alert_subscriptions (id, owner_key, channels, collection_ids, min_discount, active, serial_only, min_serial, max_serial)
+VALUES ('99999999-9999-9999-9999-999999999992', 'owner-serial', ARRAY['email'],
+        ARRAY['95f28a17-224a-4025-96ad-adf8a4c63bfd']::uuid[], 25, true, false, 100, 200);
+-- ⚠ 2026-11-14: was 111..111. A window that narrow on Top Shot is now served by PASS 3 (the case at
+-- the end of this file), so this case uses a WIDE window (100–200, still excluding 222) to keep pass 1's
+-- serial binding exercised.
+INSERT INTO alert_subscriptions (id, owner_key, channels, collection_ids, min_discount, active, serial_only, player_names, require_last_mint)
+VALUES ('99999999-9999-9999-9999-999999999993', 'owner-lm-pass1', ARRAY['email'],
+        ARRAY['95f28a17-224a-4025-96ad-adf8a4c63bfd']::uuid[], 25, true, false, ARRAY['Last Mint Pass1'], true);
+
+DO $$
+BEGIN
+  PERFORM public.dispatch_due_deal_alerts();
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-serial' AND subject_key = 'nba_top_shot:73:5111'),
+    'a serial 100–200 alert receives the edition whose low ask IS serial 111');
+  PERFORM _assert(NOT EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-serial' AND subject_key IN ('nba_top_shot:73:5222', 'nba_top_shot:73:2785', 'nba_top_shot:73:5350')),
+    'and NOT an edition whose low ask is another serial, or an unknown one');
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-lm-pass1' AND subject_key = 'nba_top_shot:73:5350'),
+    'require_last_mint in pass 1 receives #50/50');
+  PERFORM _assert(NOT EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-lm-pass1' AND subject_key = 'nba_top_shot:73:5349'),
+    'and not #49/50');
+  RAISE NOTICE '✓ dispatch_due_deal_alerts: a serial filter binds pass 1';
+END $$;
+
+-- ── PASS 3: EXACT-SERIAL LISTINGS (audit_20261114) ─────────────────────────
+-- "Tell me when #111 is listed" is served from EVERY open listing of #111, not just each edition's
+-- low ask (the 11-13 limit). Edition 80:111's LOW ASK is a different listing (x-lowask, on the deals
+-- board) — pass 1 must NOT send it to this sub (it would arrive twice under two keys); pass 3 sends
+-- x-hit, a #111 that is NOT the low ask. Every other row is one reason pass 3 must refuse.
+INSERT INTO editions (id, collection_id, external_id, player_name, set_name, team_name, jersey_number, tier, circulation_count)
+VALUES ('aaaaaaaa-0000-0000-0000-000000000111', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '80:111', 'Exact Hit', 'Exact Set', 'Team X', NULL, 'COMMON', 4000),
+       ('aaaaaaaa-0000-0000-0000-000000000222', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '80:222', 'Exact Other', 'Exact Set', 'Team X', NULL, 'COMMON', 4000),
+       ('aaaaaaaa-0000-0000-0000-000000000333', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '80:333', 'Exact Thin', 'Exact Set', 'Team X', NULL, 'COMMON', 4000);
+INSERT INTO topshot_atlas_edition_map VALUES
+  ('A111', 'aaaaaaaa-0000-0000-0000-000000000111', '80:111'),
+  ('A222', 'aaaaaaaa-0000-0000-0000-000000000222', '80:222'),
+  ('A333', 'aaaaaaaa-0000-0000-0000-000000000333', '80:333');
+INSERT INTO fmv_snapshots VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'aaaaaaaa-0000-0000-0000-000000000111', 40, 'HIGH', now() - interval '1 hour'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'aaaaaaaa-0000-0000-0000-000000000222', 40, 'HIGH', now() - interval '1 hour'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'aaaaaaaa-0000-0000-0000-000000000333', 40, 'HIGH', now() - interval '1 hour');
+INSERT INTO topshot_thin_fmv_editions VALUES ('aaaaaaaa-0000-0000-0000-000000000333');
+INSERT INTO topshot_atlas_market_events (product, kind, nft_id, price_cents, listed_at, last_seen_at, serial_number, atlas_edition_id, parallel, tier, completed) VALUES
+  ('nba', 'listing', 'x-hit',      2000, now() - interval '2 hours',  now() - interval '10 minutes', 111, 'A111', 'Standard', 'COMMON', false), -- SENT: 50% under
+  ('nba', 'listing', 'x-serial112',2000, now() - interval '2 hours',  now() - interval '10 minutes', 112, 'A111', 'Standard', 'COMMON', false), -- other serial
+  ('nba', 'listing', 'x-old',      2000, now() - interval '3 days',   now() - interval '10 minutes', 111, 'A222', 'Standard', 'COMMON', false), -- not a NEW listing
+  ('nba', 'listing', 'x-stale',    2000, now() - interval '20 hours', now() - interval '13 hours',   111, 'A222', 'Standard', 'COMMON', false), -- not seen in 12 h
+  ('nba', 'listing', 'x-pricey',   3900, now() - interval '1 hour',   now() - interval '5 minutes',  111, 'A222', 'Standard', 'COMMON', false), -- 2.5% < 25%
+  ('nba', 'listing', 'x-closed',   1000, now() - interval '1 hour',   now() - interval '5 minutes',  111, 'A222', 'Standard', 'COMMON', true),  -- closed
+  ('nba', 'listing', 'x-thin',     1000, now() - interval '1 hour',   now() - interval '5 minutes',  111, 'A333', 'Standard', 'COMMON', false), -- thin FMV
+  ('nfl', 'listing', 'x-nfl',      1000, now() - interval '1 hour',   now() - interval '5 minutes',  111, 'A111', 'Standard', 'COMMON', false); -- All Day row
+INSERT INTO cross_collection_deals_board
+  (external_id, name, player_name, set_name, tier, circulation_count, fmv_usd,
+   confidence, low_ask, discount_pct, discount_usd, ask_updated_at,
+   collection_slug, collection_name, render_id, detail_url, thumbnail_url,
+   low_ask_serial, low_ask_nft_id, low_confidence_fmv)
+VALUES ('80:111', 'Exact Hit', 'Exact Hit', 'Exact Set', 'COMMON', 4000,
+   40.00, 'HIGH', 15.00, 62.5, 25.00, now(),
+   'nba_top_shot', 'NBA Top Shot', NULL, '/nba-top-shot/edition/80%3A111', NULL,
+   111, 'x-lowask', false);
+INSERT INTO alert_subscriptions (id, owner_key, channels, collection_ids, min_discount, active, serial_only, min_serial, max_serial)
+VALUES ('99999999-9999-9999-9999-999999999994', 'owner-exact', ARRAY['email'],
+        ARRAY['95f28a17-224a-4025-96ad-adf8a4c63bfd']::uuid[], 25, true, false, 111, 111);
+INSERT INTO notification_channels (owner_key, channel, channel_user_id, verified)
+VALUES ('owner-exact', 'email', 'exact@example.test', true);
+
+DO $$
+DECLARE r jsonb;
+BEGIN
+  r := public.dispatch_due_deal_alerts();
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-exact' AND subject_key = 'nba-top-shot:80:111:#111'
+      AND payload->'deal'->>'nft_id' = 'x-hit' AND payload->'deal'->>'kind' = 'exact_serial'),
+    'an exact-serial alert receives a #111 that is NOT its edition''s low ask');
+  PERFORM _assert_eq((SELECT count(*)::text FROM alert_deliveries WHERE owner_key = 'owner-exact'), '1',
+    'and nothing else: not #112, a 3-day-old listing, one unseen for 13 h, a 2.5% discount, a closed one, a thin-FMV edition or an All Day row');
+  PERFORM _assert(NOT EXISTS (
+    SELECT 1 FROM alert_deliveries WHERE owner_key = 'owner-exact' AND subject_key = 'nba_top_shot:80:111'),
+    'pass 1 does not ALSO send the edition low ask to an exact-serial sub');
+  PERFORM _assert_eq((r->>'exact_serial_enqueued'), '1', 'exact_serial_enqueued counts the pass-3 write');
+  r := public.dispatch_due_deal_alerts();
+  PERFORM _assert_eq((r->>'exact_serial_enqueued'), '0', 'and a second run sends the unchanged listing again to nobody');
+  RAISE NOTICE '✓ dispatch_due_deal_alerts: pass 3 sends every new listing of the exact serial, once';
+END $$;
+
+-- ── THE PRICE POOL HOLDS ONLY ROWS SOME PRICE-ONLY SUB CAN READ (audit_20261114, pool scope) ──
+-- One $10,000 Pinnacle alert used to pull EVERY collection's asks under $10,000 into the pool
+-- (21,145 rows live, +66 % buffers per tick), and an exact-serial Top Shot sub at $10,000 raised the
+-- same cap while reading no pool row at all. A $50 Top Shot ask (no price-only Top Shot sub reaches
+-- $50 except the exact-serial one, which pass 1 skips) must stay OUT; a $50 Pinnacle ask comes IN
+-- and is still delivered.
+INSERT INTO collections (id, slug, is_active) VALUES ('bbbbbbbb-0000-0000-0000-0000000000aa', 'disney_pinnacle', true)
+  ON CONFLICT (id) DO NOTHING;
+INSERT INTO notification_channels (owner_key, channel, channel_user_id, verified)
+VALUES ('owner-pin-price', 'email', 'pinprice@example.test', true),
+       ('owner-exact-price', 'email', 'exactprice@example.test', true);
+INSERT INTO alert_subscriptions (id, owner_key, channels, collection_ids, min_discount, max_price, active, serial_only)
+VALUES ('99999999-9999-9999-9999-999999999995', 'owner-pin-price', ARRAY['email'],
+        ARRAY['bbbbbbbb-0000-0000-0000-0000000000aa']::uuid[], 0, 10000, true, false);
+INSERT INTO alert_subscriptions (id, owner_key, channels, collection_ids, min_discount, max_price, active, serial_only, min_serial, max_serial)
+VALUES ('99999999-9999-9999-9999-999999999996', 'owner-exact-price', ARRAY['email'],
+        ARRAY['95f28a17-224a-4025-96ad-adf8a4c63bfd']::uuid[], 0, 10000, true, false, 777, 777);
+
+DO $$
+DECLARE r jsonb; v_before int;
+BEGIN
+  r := public.dispatch_due_deal_alerts();
+  v_before := (r->>'price_pool_size')::int;
+  INSERT INTO edition_current_ask
+    (external_id, name, player_name, set_name, tier, circulation_count, fmv_usd, confidence, low_ask,
+     discount_pct, discount_usd, ask_updated_at, collection_slug, collection_name, render_id, detail_url,
+     thumbnail_url, low_ask_serial, low_ask_nft_id, low_confidence_fmv)
+  VALUES
+    ('99:50', 'TS Fifty', 'TS Fifty', 'Set', 'RARE', 100, NULL, NULL, 50.00, NULL, NULL, now(),
+     'nba_top_shot', 'NBA Top Shot', NULL, '/nba-top-shot/edition/99%3A50', NULL, 777, 'nft-ts50', false),
+    ('pin-50', 'Pin Fifty', 'Pin Fifty', 'Set', 'Golden', 100, NULL, NULL, 50.00, NULL, NULL, now(),
+     'disney_pinnacle', 'Disney Pinnacle', NULL, '/pinnacle/moment/pin-50', NULL, NULL, NULL, false);
+  r := public.dispatch_due_deal_alerts();
+  PERFORM _assert_eq(((r->>'price_pool_size')::int - v_before)::text, '1',
+    'only the $50 Pinnacle ask joins the pool — not the $50 Top Shot ask nobody''s pass 1 can read');
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM alert_deliveries WHERE owner_key = 'owner-pin-price' AND subject_key = 'disney_pinnacle:pin-50'),
+    'and the Pinnacle price-only sub still receives it');
+  PERFORM _assert(NOT EXISTS (
+    SELECT 1 FROM alert_deliveries WHERE owner_key = 'owner-exact-price' AND subject_key = 'nba_top_shot:99:50'),
+    'an exact-serial Top Shot sub never receives a pass-1 Top Shot row, even when its serial is the low ask');
+  RAISE NOTICE '✓ dispatch_due_deal_alerts: the price pool holds only rows a price-only sub can read';
+END $$;
+
+ROLLBACK;

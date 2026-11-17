@@ -1,0 +1,64 @@
+# Overnight pass — 2026-10-09
+
+⚙️ **Environment scope:** Genuine overnight, **PUSH-CAPABLE** run (Cowork cloud, unattended, laptop VM linked). Real time from DB `now()` 08:08Z = **~1:08 AM PT**; shell `date -u` agreed within <1 min — no clock skew. `pg_postmaster_start_time()` 2026-09-20 17:39Z confirms the LARGE instance since 09-20. Push went through the **desktop-VM clone + `.rpc-git-cred`** path (`git push --dry-run origin HEAD:refs/heads/main` exit 0 at run start; `.rpc-git-cred` present, VM reaches GitHub, 5.9 G free on `/sessions`). The cloud-container `add_repo` path was not needed. **This push constraint is specific to THIS cloud session — Trevor's machine and Claude Code push normally via Git Credential Manager; commit these files as usual.**
+
+**Verdict: GREEN, 0 shipped, 0 reverted.** Security / structural / trust-integrity all clean (0 trust breaches, 38/38 arms ok). FMV accuracy gate GREEN (TS published ratio 1.000, All Day 1.000 — both inside the 0.90–1.10 band). Sentry-dark zero corroborated real by a Vercel 24h board that is entirely chronic / by-design / single-occurrence (no new sustained group). Two known anomalies persist — the `chain-arrival-pack-pulls` wedge (5th consecutive night; durable bound off-limits, queued P1) and a 2nd self-resolved recurrence of the `topshot-sellback-walk` nft_id-null regression — **both off-limits (ingest route-logic) and already queued; nothing new cleared the "clearly-safe + net-positive" bar.** A quiet, honest night.
+
+## Reviewed
+
+- **Inbox:** NO filing newer than the last pass in origin or on the mount (newest anywhere is `2026-10-08T0010Z-chain-arrival-pack-pulls-re-wedged-…`, already folded by the 10-08 pass). 5 mount-only monitor filings (`2026-10-05T1512Z`, `…1809Z`, `…2106Z`, `2026-10-06T1510Z`, `2026-10-08T0010Z`) remain mount-only by precedent — they are the monitor's files and hand-committing them to origin would red the `inbox-index-lists-every-filing` CI guard; all five are already dispositioned in the 10-07/10-08 handoffs + ledger. Inbox is append-only + CI-pinned (not archived).
+- **Collision gate:** `origin/main` = `6a875161b` at run start and unchanged at write time (no concurrent push). No code file has a commit in the last 48 h (only ledger/handoff/metrics/session docs + the biweekly hygiene roll).
+- **Post-ship watch (previous ships / carried watches):**
+  - **chain-arrival-pack-pulls (10-07 hand-drain, last write):** `source='chain_history'` `moment_acquisitions` max = `2026-10-07 08:22:48Z` = **~47.8 h stale** — no drain since 10-07, exactly as the 10-08 pass decided. `rpc-chain-arrival-pack-pulls` 24/24 recent ticks failed at the flat 120.0 s statement-timeout wall (last 07:41Z today). Expected; durable bound queued, not shipped.
+  - **allday-lock-refresh (10-04):** ✅ target met — 24 runs/24 h, **425,818 rows/day** (was ~2.6 M/day pre-fix; matches 10-07's 428 k). `wmc-reindex-verify` sentinel clears on the weekly run Sat 10-10 9:03 PM PT.
+  - **fmv-backfill `20261005001848`:** ✅ holding — 4 runs/24 h, 0 failed, avg 1.18 s, max 1.76 s (last 06:47Z). `fmv_sweep_wedge_hours` 0.07.
+  - **topshot-pack-supply-backfill:** still 100 % HTTP 530, 0 rows (daily ~08:15Z; last 10-08 08:15Z 37 s; today's ~08:15Z run had not yet fired at sweep time 08:12Z). Carried queued (5 nights).
+- **Artifacts:** none flagged broken/stale in the inbox this pass; not re-enumerated (consistent with recent passes — the weekly surface-QA owns the full artifact audit).
+
+## Health-drift findings + deltas
+
+- **Security invariants:** clean — `invariants []`, `anon_write_holes []`, `rls_off_base_tables []`, `secdef_anon_violations []`.
+- **Structural:** clean — `function_search_path_drift`, `procedure_txn_control_pins`, `procedure_search_path_unpinned`, `cross_collection_mat_staleness`, `backward_cursor_rewinds`, `wmc_null_edition_key`, `suppression_parked_claim_drift` all `[]`.
+- **Trust health:** **0 breaches** (38/38 arms `ok`). `trust_precompute_max_age_hours` 5.4 (ok, breach_at 13). `edition_integrity_flags` 8 (ok, breach_at 250). `public_board_slow_count` 0, `public_board_empty_count` 0, `fmv_sanity_flags` 0, `topshot_impossible_parallel_serials` 0. R118 `check_when_others_timeout_blind` = 0.
+- **Stalled pipelines:** `[]`. Sentinel `ts_uuid_editions_48h` 0, `ts_uuid_dupes_created_24h` 0.
+- **pg_cron recent failures:** `rpc-chain-arrival-pack-pulls` only (24/24, last 07:41Z — the recurring wedge, below). No other pg_cron failures.
+- **zero-yield lanes:** 6 offenders, all exhausted/standby backfills (last find 09-28→10-01) — `pinnacle-pull-chain`, `ingest-pinnacle-mints-backfill`, `pack-index-mints`, `topshot-wmc-null-key-heal`, `wmc-edition-key-reconcile`, `golazos-sales-history-backfill`. Write 0 because their source is drained, not because they're broken. Noted only (disabling an ingest/backfill lane without confirming retirement is not clearly-safe).
+- **pipeline_alerts:** `atlas-edition-supply` failure_rate HIGH (7/9 = CF-403 pages re-read next cycle; **freshness clean — 0 of 282 sets un-walked >6 h, oldest 1.6 h**; known-class do-not-reflag, WATCH — escalates only if the un-walked count goes non-zero). `panini-collector-walk` medium (per-walk 10-min cap, by design). `unmapped-sales-nfl_all_day` INFO (5,484 open, ~1.6 d to clear; down from 7,963 on 10-08 — draining). All `atlas-*-upstream-403` / `flow-rest-moment-moved-400` INFO by-design.
+- **pipeline_fails_24h:** `topshot-sellback-walk` 360 (the nft_id-null recurrence, self-resolved — below); `topshot-pack-supply-atlas` 146 (CF-403 single-request partials, by design); `sync-nba-projections` 8 (muted to 10-28); `wallet-backfill-golazos` 5 (Golazos market-limited); the rest ≤4 by-design/upstream; `topshot-pack-supply-backfill` 1 (the 530).
+- **Vercel 24h:** 19 runtime-error groups, **all chronic / by-design / single-occurrence, NO new sustained group** — the pack-detail `read exceeded 5000ms` family (get_pack_sales_history 65, pack_drop_pool 65, pack_realized_ev 38, pack_lifecycle 38, ev_contributors 35, pack_market ×2, allday_pack_* ×3, allday_corrected_ev 5) all first-seen 2026-08-23 (chronic capacity, not a missing index — ledger do-not-add-index); ipfs-media 12 s (chronic 09-03, 14); panini-ingest walk-order maxPages partial (by design, 12); insights/pack-drops composition timeout (chronic 09-25, 3); edition special-serials degrade (chronic 07-31, 1); collection-snapshot RPC_READ_TIMEOUT (chronic 09-11, 1); 4 single-occurrence blips (2 market-cap tile edition reads, 1 panini-collector-walk 57014 cap, 1 pack_realized_ev fetch-failed). Production serving **dpl_BxonUaB5 (101f9c18) READY**; the 3 newer production deploys are CANCELED because they are the doc-only `[ledger-roll]` / hygiene / 10-08-handoff commits Vercel correctly skips (no un-deployed code). Client-error beacon 24h = **4** (normal).
+- **Accuracy gate (7 d `fmv_sales_backtest`):** GREEN.
+  - `nba_top_shot` published ALL ratio **1.000**, MdAPE 12.0 %, within±25 % 73.3 %, $0.03; HIGH ratio 0.955, 8.7 %, 88.9 %.
+  - `nfl_all_day` published ALL ratio **1.000**, MdAPE 23.1 %, within±25 % 52.7 %, $0.05; HIGH ratio 1.000, 15.0 %, 74.8 %. (High err % is the sub-dollar market — $0.03–$0.05 abs. The published STALE ratio 6.0 / ASK_ONLY 1.8 are tiny-n sub-dollar noise, n=5 and n=66, not the ALL gate.)
+  - Verdict: **GREEN** — both estimators inside the acceptance band.
+- **Deltas vs 10-08:** db_size 35,812 → **35,773 MB (−39, flat)**. FMV HIGH+MED: topshot 8,301 → 8,316, panini 6,221 → 6,222 (editions 22,110 steady), pinnacle 861 → 853, nfl_all_day 1,663 → 1,650, candy 24 → 26, golazos 6, ufc 0. unmapped-sales-nfl_all_day 7,963 → 5,484 (draining). Trust breaches 0 → 0. Client beacon 0 → 4.
+
+## Shipped
+
+**None.** Health was GREEN and no candidate cleared the "clearly-safe + net-positive" bar. Both active anomalies are off-limits (ingest route-logic, owner's lane) and already queued; all other open items are operator-gated or Claude-Code-owned. Nothing was manufactured to look busy.
+
+### ⛔ Deliberately NOT done: a 6th chain-arrival hand-drain (2nd consecutive decline)
+
+The lane has re-wedged every day since the daily 11:13Z `chain-arrivals-seed` re-accumulates a backlog the 120 s-capped hourly apply cannot drain whole. Nights 10-04/05/06/07 each hand-drained it; the 10-08 pass declined the 5th drain and escalated the durable bound. The same reasoning holds tonight: a drain restores freshness only for the ~08:30–11:13Z window (re-wedges on the next seed, hours before Trevor wakes), so it provides no durable value and masks a ~16–24 h/day stall behind a GREEN headline. Blast radius of leaving it: `wallet_reconstructed_rips` / pack-history freshness for ~27–33 seeded/saved wallets only — **no site outage, no security / trust / FMV impact.** Declined on purpose; the durable bound (P1 below) is the only real fix.
+
+## Queued for Trevor / Claude Code (not auto-shipped)
+
+1. **[P1, recurring — 5 nights] `chain-arrival-pack-pulls` durable BOUND** — off-limits (ingest route-logic, owner's lane). `apply_chain_arrival_pack_pulls()` does insert-all + rebuild-all-touched-wallets in ONE transaction; the pg_cron job hits a hard 120 s wall below the function's own (inert-under-pg_cron) `SET statement_timeout='300s'`, so any non-empty backlog rolls back whole and never self-recovers, and the daily 11:13Z seed re-accumulates it. **Fix (ready to build, 3-file: migration + pin + drift-guard):** chunk into bounded committed batches with a cursor / per-tick wallet cap or time budget, plus a durable `needs_rebuild` marker so a partial tick commits progress and the seed can't re-wedge it. ⛔ Do NOT lengthen the function-header `statement_timeout` — measured inert under pg_cron (10-02/10-04). **Acceptance:** a `:41` tick finishes well under 120 s on a full post-seed pending set, and `source='chain_history'` `moment_acquisitions` max stays within ~2 h of now across the 11:13Z seed. Hand-draining is proven futile (4 nights drained, 2 nights declined). If a one-off freshness restore is ever wanted before the bound ships, the proven data-only drain recipe is in the 10-07 handoff.
+
+2. **[P2, 2nd recurrence, self-resolved] `topshot-sellback-walk` nft_id-null regression** — off-limits (ingest route-logic). **Recurred again this window:** 360 ticks failed **2026-10-08 11:30Z–17:29Z** on `null value in column "nft_id" of relation "topshot_sellback_walk_purchases" violates not-null constraint`, then self-resolved — **0 fails in the ~14.7 h since, last ok 01:03Z 10-09** (770 oks in the 26 h window). This is the 2nd confirmed recurrence (first was 10-06 09:00Z–15:45Z), exactly as the 10-07 queue predicted ("recurs on the next un-id'd payload window"). While live, a single NULL-id event rolls back the whole tick's `INSERT … ON CONFLICT (tx,nft_id) DO NOTHING`, dropping every sell-back/burn event in that tick. **Ready fix:** add `WHERE (…id extraction…) IS NOT NULL` (skip-and-log) to `run_topshot_sellback_walk` + the sibling backfill fns so a tick commits the rest. The repeat recurrence strengthens the case to ship it; not currently live so not urgent, but it will recur again on the next such payload window.
+
+3. **[P3, recurring — 5 nights] `topshot-pack-supply-backfill` HTTP 530** — upstream endpoint 100 % 530 since 10-03 (daily ~08:15Z, 0 rows written). 530 = Cloudflare origin-unreachable, distinct from the 403 challenges the healthy live supply lane absorbs. Decide: repoint a moved endpoint / retire the backfill if the live `topshot-pack-supply-atlas` lane covers steady-state / add retry-backoff so a 530 day stops reading as 100 %. Backfill-only, no user-facing or accuracy impact. Needs Trevor's repoint-vs-retire call (code).
+
+4. **[operator-gated] dedupe + scratch-drop SQL** (`2026-10-05T0410Z` inbox / 0410Z ledger) — `dedupe_tx_lane_20261004.sql` then `drop_scratch_20261004.sql` (both guarded, Trevor-authorized). Destructive → `execute_sql` / `apply_migration` are held for operator confirmation this headless session cannot answer; must run in the Supabase SQL editor. Reclaims ~185 MB.
+
+5. **[Claude Code] #173** `topshot_moment_subeditions` conflated bases — exact-count + writer-attribution + re-key. Sizing in the 10-05 handoff. Do not ship from a night pass.
+
+## Failed / blocked / reverted
+
+None. No production change was attempted this pass.
+
+## Notes / deviations
+
+- **Session entry** → `docs/sessions/2026-10.md` (per CLAUDE.md §Recent sessions, which says write there, never into CLAUDE.md; prompt-vs-CLAUDE.md conflict → CLAUDE.md wins).
+- **Handoff mirrored to the claude.ai Project** (`project_write`) per the skill's remote-devices-drop resilience note.
+- **Inbox NOT archived** (append-only since 08-17, CI-pinned). The 5 mount-only monitor filings left as-is.
+- **Lock:** taken on the mount at run start (`OVERNIGHT PASS ACTIVE 2026-10-09T08:09Z run 4421d1898704`), released (RELEASED marker) at end.

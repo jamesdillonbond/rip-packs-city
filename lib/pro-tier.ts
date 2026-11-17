@@ -1,0 +1,150 @@
+// lib/pro-tier.ts
+//
+// Server-side Pro tier helpers. All functions take a wallet address and
+// dispatch through the Postgres source-of-truth RPCs:
+//   - get_user_plan(wallet) → 'free' | 'founding' | 'moments_payment'
+//                           | 'pro_grandfather' | 'pro_paid' | 'pro_trial'
+//                           | 'admin'
+//   - check_feature_quota(wallet, feature) → { allowed, plan, used_today,
+//                                              daily_limit, remaining,
+//                                              reason }
+//   - record_feature_usage(wallet, feature, metadata?)
+//
+// `feature_quotas` is the data-driven source of caps. The same shape powers
+// concierge daily limits, saved-wallet caps, custom alert caps, and api
+// requests. Quota check is `unlimited` for founding/admin/pro_*; free
+// users get the row from `feature_quotas WHERE plan='free'`.
+
+import { supabaseAdmin } from "@/lib/supabase"
+import { normalizeFlowAddressStrict } from "@/lib/address"
+import { USER_QUOTA_KEY_RE, userQuotaKey } from "@/lib/user-quota-key"
+
+export { userQuotaKey }
+
+export type UserPlan =
+  | "free"
+  | "founding"
+  | "moments_payment"
+  | "pro_grandfather"
+  | "pro_paid"
+  | "pro_trial"
+  | "admin"
+
+const PRO_PLANS: ReadonlySet<UserPlan> = new Set([
+  "founding",
+  "moments_payment",
+  "pro_grandfather",
+  "pro_paid",
+  "pro_trial",
+  "admin",
+])
+
+export interface QuotaResult {
+  allowed: boolean
+  plan: UserPlan
+  used_today: number
+  daily_limit: number | null
+  remaining: number | null
+  reason: string
+}
+
+// The `0x` is REQUIRED here, as it always was: lib/address.ts normalizeFlowAddressStrict.
+// 2026-10-31: a signed-in account with no wallet is keyed `user:<auth uuid>` (lib/user-quota-key.ts).
+// Without it every account since open signup (no allow_list wallet) had no per-user concierge quota.
+function normalizeWallet(v: string | null | undefined): string | null {
+  if (typeof v === "string" && USER_QUOTA_KEY_RE.test(v.trim())) return v.trim().toLowerCase()
+  return normalizeFlowAddressStrict(v)
+}
+
+export async function getUserPlan(walletAddress: string | null | undefined): Promise<UserPlan> {
+  const wallet = normalizeWallet(walletAddress)
+  if (!wallet) return "free"
+  // deno-lint-ignore no-explicit-any
+  const { data, error } = await (supabaseAdmin as any).rpc("get_user_plan", { p_wallet: wallet })
+  if (error || typeof data !== "string") return "free"
+  const plan = data as UserPlan
+  return plan
+}
+
+export async function isProUser(walletAddress: string | null | undefined): Promise<boolean> {
+  const plan = await getUserPlan(walletAddress)
+  return PRO_PLANS.has(plan)
+}
+
+// Check daily-usage quota for a feature. The RPC returns `allowed: true`
+// for any plan with `daily_limit IS NULL` (founding, admin, and most pro
+// plans for unlimited features). Free + pro_trial users get a finite cap.
+export async function checkFeatureQuota(
+  walletAddress: string | null | undefined,
+  featureName: string
+): Promise<QuotaResult> {
+  const wallet = normalizeWallet(walletAddress)
+  if (!wallet) {
+    // Anonymous / malformed wallet — treat as free, blocked at the cap so
+    // the response still carries a usable "upgrade" message. Falls through
+    // to the RPC with a sentinel zero address; that returns the free-plan
+    // row from feature_quotas without ever incrementing usage_events.
+    // deno-lint-ignore no-explicit-any
+    const { data, error } = await (supabaseAdmin as any).rpc("check_feature_quota", {
+      p_wallet: "0x0000000000000000",
+      p_feature: featureName,
+    })
+    if (error || !data) {
+      return {
+        allowed: false, plan: "free",
+        used_today: 0, daily_limit: 0, remaining: 0,
+        reason: "rpc_error",
+      }
+    }
+    return data as QuotaResult
+  }
+
+  // deno-lint-ignore no-explicit-any
+  const { data, error } = await (supabaseAdmin as any).rpc("check_feature_quota", {
+    p_wallet: wallet, p_feature: featureName,
+  })
+  if (error || !data) {
+    // Visible, not silent (2026-09-26): a quota that fails open with no log is
+    // a guard nobody can see fail.
+    console.error(
+      `[pro-tier] check_feature_quota failed for ${featureName} (failing OPEN):`,
+      error?.message ?? "no data returned",
+    )
+    // Fail-open for known-good wallets: if the RPC is unreachable we don't
+    // want to wedge the product. Free callers get the same zero-quota
+    // shape they'd see on a true block; everyone else is treated as
+    // unlimited until the RPC recovers.
+    return {
+      allowed: true, plan: "free",
+      used_today: 0, daily_limit: null, remaining: null,
+      reason: "rpc_error_failopen",
+    }
+  }
+  return data as QuotaResult
+}
+
+// Fire-and-forget usage record. Should be called AFTER the feature has
+// been served. Failures are logged but never block the user response.
+export async function recordFeatureUsage(
+  walletAddress: string | null | undefined,
+  featureName: string,
+  metadata?: Record<string, unknown>
+): Promise<void> {
+  const wallet = normalizeWallet(walletAddress)
+  if (!wallet) return
+  try {
+    // deno-lint-ignore no-explicit-any
+    await (supabaseAdmin as any).rpc("record_feature_usage", {
+      p_wallet: wallet, p_feature: featureName,
+      p_metadata: metadata ?? null,
+    })
+  } catch (err) {
+    console.warn(
+      `[pro-tier] record_feature_usage failed wallet=${wallet} feature=${featureName} err=${err instanceof Error ? err.message : String(err)}`
+    )
+  }
+}
+
+// requirePro (a 402 "available to RPC Pro members" guard) was removed
+// 2026-09-25: it had no callers, and no paid tier is gated or mentioned
+// anywhere until 100 weekly active users.

@@ -1,0 +1,288 @@
+"use client"
+
+import type { ReactNode } from "react"
+import { formatCurrency, formatCount } from "@/lib/format"
+import FmvDisclaimer from "@/components/legal/FmvDisclaimer"
+import { closedMarket, formatClosedOn } from "@/lib/market-closed"
+import { collectionHasLocking } from "@/lib/collections"
+import { FLOW_MIGRATE_NOTE, isUfcAptosBinder } from "@/lib/ufc-aptos"
+
+// Shared four-tile wallet analytics row used by every collection's
+// /[collection]/collection page (and the standalone Pinnacle page until
+// it migrates onto the dynamic route).
+//
+// Value semantics:
+//   null  → em-dash ("—") — not loaded yet OR concept doesn't apply
+//   0     → "$0"          — real, computed zero (e.g. wallet has no locked moments)
+//   N     → "$N" with thousands separators
+//
+// For Pinnacle (no locking concept) the Unlocked and Locked tiles are not
+// rendered at all (collectionHasLocking, 2026-09-27) — an em-dash there still
+// implied a lock state we did not know.
+//
+// loadProgress is optional. When provided AND loaded < total, the
+// Wallet FMV caption swaps from "N moments" to a small progress bar
+// showing how much of the wallet has been hydrated.
+
+export type WalletStatRowProps = {
+  walletFmv: number | null
+  unlockedFmv: number | null
+  lockedFmv: number | null
+  bestOfferTotal: number | null
+  momentCount: number | null
+  unlockedCount: number | null
+  lockedCount: number | null
+  /**
+   * FMV whose lock state was NEVER CHECKED, and its count. Disclosed under the
+   * Unlocked tile, never added into it: `wallet_moments_cache.is_locked`
+   * defaults to `false`, so counting an unchecked moment as unlocked told the
+   * collector they could sell something nobody had verified (register #112).
+   * Null means the authoritative summary has not loaded — not that the figure
+   * is zero.
+   */
+  lockUnknownFmv?: number | null
+  lockUnknownCount?: number | null
+  /** FMV of the moments the offer total covers, minus their offers (2026-11-14) — never the whole wallet's. */
+  spreadGap: number | null
+  /** How many moments the Best Offer Total covers (null when unknown). */
+  bestOfferCount?: number | null
+  /** What bestOfferCount counts: one bid per edition (wallet-wide read) or loaded moments. */
+  bestOfferUnit?: "editions" | "moments"
+  /** Locked / Unlocked are netted of the stale share, so they sum to the headline (2026-11-14). */
+  staleNetted?: boolean
+  /** Stale-priced share excluded from walletFmv; disclosed under the headline when > 0. */
+  staleFmv?: number
+  staleCount?: number
+  /** The headline is a raw total because the stale split never arrived — say so. */
+  staleUnknown?: boolean
+  collectionSlug: string
+  loading?: boolean
+  loadProgress?: { loaded: number; total: number; pct: number } | null
+  walletFmvAccessory?: ReactNode
+}
+
+const PULSE_DOT_STYLE = {
+  background: "var(--rpc-text-muted)",
+  animation: "skeletonPulse 1.5s ease-in-out infinite",
+} as const
+
+function PulseDot() {
+  return (
+    <span
+      className="inline-block h-1.5 w-1.5 rounded-full"
+      style={PULSE_DOT_STYLE}
+      aria-hidden="true"
+    />
+  )
+}
+
+function unitNoun(slug: string): string {
+  return slug === "disney-pinnacle" ? "pins" : "moments"
+}
+
+// 2026-11-09: a null count read "n/a for this collection" — but this tile only renders when the
+// collection HAS locking (`hasLocking`), so the phrase was never true where it showed. It printed
+// on Top Shot for the first seconds of every load, before the summary arrived. Null is "not known
+// yet", the same em dash the Unlocked tile uses.
+function lockedCaption(count: number | null): string {
+  if (count === null) return "—"
+  return formatCount(count) + " locked"
+}
+
+function unlockedCaption(count: number | null): string {
+  if (count === null) return "—"
+  return formatCount(count) + " unlocked"
+}
+
+export default function WalletStatRow(props: WalletStatRowProps) {
+  const {
+    walletFmv,
+    unlockedFmv,
+    lockedFmv,
+    bestOfferTotal,
+    momentCount,
+    unlockedCount,
+    lockedCount,
+    lockUnknownFmv,
+    lockUnknownCount,
+    spreadGap,
+    bestOfferCount,
+    bestOfferUnit,
+    staleNetted,
+    staleFmv,
+    staleCount,
+    staleUnknown,
+    collectionSlug,
+    loading,
+    loadProgress,
+    walletFmvAccessory,
+  } = props
+
+  const showProgress = loadProgress && loadProgress.loaded < loadProgress.total
+  // Disney Pinnacle pins cannot be locked, so the Unlocked / Locked split is not
+  // a thing to show — not even as an em-dash (lib/collections.ts).
+  const hasLocking = collectionHasLocking(collectionSlug)
+  const noun = unitNoun(collectionSlug)
+
+  // Closed-market collections (e.g. UFC Strike, Flow market closed 2026-05-13)
+  // have no current value, so we must NOT show a wallet total — the honest
+  // signal is a count + a closure note. Fall through to the normal tiles once
+  // the count has loaded so we never render a bare "market closed" with no data.
+  const closed = closedMarket(collectionSlug)
+  // UFC Strike (2026-11-16, Trevor's gate C): moments still on Flow are valued at the edition's
+  // current FMV with a migrate note, and the Aptos half renders in its own section
+  // (components/collection/UfcAptosHoldings.tsx). Every UFC snapshot is STALE while the Flow
+  // market is marked closed, so the summary puts the whole value in the stale share; the tile
+  // shows headline + stale (= the summary's total), never the netted near-$0 headline.
+  if (isUfcAptosBinder(collectionSlug) && !loading) {
+    const flowTotal = walletFmv === null ? null : walletFmv + (typeof staleFmv === "number" ? staleFmv : 0)
+    // A collector who has migrated everything has nothing on Flow: no "$0", and no "migrate"
+    // instruction about moments that are not there (live, 2026-11-16: a fully migrated wallet
+    // read "$0 · 0 moments · Still on Flow — migrate"). Worded as what our read found.
+    const noneOnFlow = momentCount === 0
+    return (
+      <div>
+        <div className="rpc-stat-tile" data-testid="ufc-flow-holdings-tile">
+          <div className="rpc-stat-eyebrow">
+            <span>On Flow · current FMV</span>
+            {walletFmvAccessory}
+          </div>
+          <div className="rpc-stat-value">{noneOnFlow || flowTotal === null ? "—" : formatCurrency(flowTotal)}</div>
+          <div className="rpc-stat-caption" style={{ lineHeight: 1.5 }}>
+            {noneOnFlow
+              ? `No UFC Strike ${noun} found on Flow for this wallet`
+              : <>{formatCount(momentCount)} {noun} · {FLOW_MIGRATE_NOTE}</>}
+          </div>
+        </div>
+      </div>
+    )
+  }
+  if (closed && !loading) {
+    return (
+      <div>
+        <div className="rpc-stat-tile">
+          <div className="rpc-stat-eyebrow">
+            <span>Your Holdings</span>
+            {walletFmvAccessory}
+          </div>
+          <div className="rpc-stat-value">{formatCount(momentCount)} {noun}</div>
+          <div className="rpc-stat-caption" style={{ lineHeight: 1.5 }}>
+            Market closed {formatClosedOn(closed.closedOn)} — no current total. Prices
+            are the last values observed before the {closed.venue} market closed and
+            are historical, not a portfolio value.
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Best Offer caption: only render the FMV gap when both sides are
+  // genuinely-positive numbers; otherwise stay quiet.
+  const showSpreadGap =
+    typeof walletFmv === "number" && walletFmv > 0 &&
+    typeof bestOfferTotal === "number" && bestOfferTotal > 0 &&
+    typeof spreadGap === "number"
+
+  return (
+    <div>
+    <div className={hasLocking ? "grid gap-3 grid-cols-2 xl:grid-cols-4" : "grid gap-3 grid-cols-2"}>
+      <div className="rpc-stat-tile">
+        <div className="rpc-stat-eyebrow">
+          <span>Wallet FMV</span>
+          {loading && <PulseDot />}
+          {walletFmvAccessory}
+        </div>
+        <div className="rpc-stat-value">{formatCurrency(walletFmv)}</div>
+        {showProgress ? (
+          <div className="rpc-stat-caption">
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span>{formatCount(loadProgress.loaded)} / {formatCount(loadProgress.total)} {noun}</span>
+              <span>·</span>
+              <span>{loadProgress.pct}%</span>
+            </div>
+            <div
+              style={{
+                marginTop: 4,
+                height: 2,
+                width: "100%",
+                background: "var(--rpc-border)",
+                borderRadius: 1,
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  height: "100%",
+                  width: Math.max(0, Math.min(100, loadProgress.pct)) + "%",
+                  background: "var(--rpc-red)",
+                  transition: "width 0.3s",
+                }}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="rpc-stat-caption">
+            {formatCount(momentCount)} {noun}
+            {typeof staleFmv === "number" && staleFmv > 0 ? (
+              <span style={{ display: "block" }}>
+                + {formatCurrency(staleFmv)} across {formatCount(staleCount ?? 0)} stale-priced
+              </span>
+            ) : staleUnknown && walletFmv !== null ? (
+              <span style={{ display: "block" }}>
+                raw total — stale-priced split unavailable
+              </span>
+            ) : null}
+          </div>
+        )}
+      </div>
+
+      {hasLocking && (<>
+      <div className="rpc-stat-tile">
+        <div className="rpc-stat-eyebrow">
+          <span>Unlocked FMV</span>
+          {loading && <PulseDot />}
+        </div>
+        <div className="rpc-stat-value">{formatCurrency(unlockedFmv)}</div>
+        <div className="rpc-stat-caption">{unlockedCaption(unlockedCount)}</div>
+        {/* ⛔ Disclosed, never added in. This figure is what the collector is
+            told they could sell, so an unverified moment must not inflate it. */}
+        {lockUnknownCount != null && lockUnknownCount > 0 && (
+          <div className="rpc-stat-caption">
+            {formatCount(lockUnknownCount)} not checked
+            {lockUnknownFmv != null ? ` (${formatCurrency(lockUnknownFmv)})` : ""}
+          </div>
+        )}
+      </div>
+
+      <div className="rpc-stat-tile">
+        <div className="rpc-stat-eyebrow">
+          <span>Locked FMV</span>
+          {loading && <PulseDot />}
+        </div>
+        <div className="rpc-stat-value">{formatCurrency(lockedFmv)}</div>
+        <div className="rpc-stat-caption">{lockedCaption(lockedCount)}</div>
+        {/* 2026-11-09: Wallet FMV leaves stale-priced moments out and names them beside it; the
+            locked / unlocked split counts them. On a real wallet that read Locked $54,437 above
+            a Wallet FMV of $52,275 with nothing saying why. Say it where the sum is visible. */}
+        {typeof staleFmv === "number" && staleFmv > 0 && !staleNetted && (
+          <div className="rpc-stat-caption">locked + unlocked include the stale-priced</div>
+        )}
+      </div>
+      </>)}
+
+      <div className="rpc-stat-tile">
+        <div className="rpc-stat-eyebrow">Best Offer Total</div>
+        <div className="rpc-stat-value">{formatCurrency(bestOfferTotal)}</div>
+        <div className="rpc-stat-caption">
+          {typeof bestOfferCount === "number" && bestOfferCount > 0
+            ? "on " + formatCount(bestOfferCount) + " " + (bestOfferUnit === "editions" ? (bestOfferCount === 1 ? "edition" : "editions") : noun) + (showSpreadGap ? " · vs their FMV: " + formatCurrency(-(spreadGap as number)) : "")
+            : showSpreadGap ? "vs their FMV: " + formatCurrency(-(spreadGap as number)) : ""}
+        </div>
+      </div>
+    </div>
+    <div style={{ marginTop: 8 }}>
+      <FmvDisclaimer variant="short" />
+    </div>
+    </div>
+  )
+}

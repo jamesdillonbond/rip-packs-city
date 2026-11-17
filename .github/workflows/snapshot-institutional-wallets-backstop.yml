@@ -1,0 +1,90 @@
+name: Snapshot Institutional Wallets Backstop
+# Concurrency-guard + GHA backstop (handoff 2026-06-27, follow-on to Item 4):
+# the daily institutional-wallet snapshot (pipeline_runs
+# `snapshot-institutional-wallets`) is triggered ONLY by cron-job.org today
+# ("RPC Snapshot Institutional Wallets", daily 06:37 UTC). cron-job.org
+# auto-disables a job that persistently fails its 30s client cap, so a single
+# bad window can silently kill the daily snapshot.
+#
+# This workflow is a REDUNDANT BACKSTOP, not a replacement. The snapshot is
+# READ-only against wallet_moments_cache (no Cadence) AND the edge function's
+# runWork is concurrency-guarded by claim_pipeline_lock
+# (audit_20260627_pipeline_run_locks_concurrency_guard): if the primary fire
+# is still running, this backstop fire no-ops (logged skipped_in_progress).
+# The snapshot upserts on (wallet,collection,snapshot_at) and
+# compute_institutional_wallet_diff is EXISTS-guarded, so a redundant fire is
+# idempotent regardless.
+#
+# Cadence: daily at 07:29 UTC. Minute moved :07 -> :29 on 2026-07-26 because
+# :07 is the single heaviest minute across all four schedulers (11 jobs --
+# topshot-sales-history-backfill.yml's 7,22,37,52 hourly set, ufc-enrichment-
+# drain, allday-offers-indexer, golazos-listings-indexer, pinnacle-sync,
+# snapshot-institutional-wallets itself, EF allday-pack-ev, EF nba-proj, ...).
+# :29 carries only alerts-dispatch.
+#
+# STALE-RATIONALE NOTE (2026-07-26): the comment above described this as "~30
+# min after the 06:37 primary", but the cron-job.org primary "RPC Snapshot
+# Institutional Wallets" MOVED to daily 10:07 UTC (see
+# docs/operations/cron-schedule.md), so this backstop now LEADS the primary by
+# ~2h38m instead of trailing it. That is still a working backstop -- the route
+# is read-only, claim_pipeline_lock-guarded, and upserts on
+# (wallet,collection,snapshot_at), so firing early is idempotent and a silently
+# disabled primary still yields today's snapshot. Whether to re-trail it (e.g.
+# 10:37 UTC) is a deliberate cadence decision, NOT a collision fix, so it is
+# left alone here and flagged instead.
+#
+# CORRECTION (2026-09-11 PT, MEASURED): the note above reasons from the NOMINAL
+# cron, and the nominal cron is not when this runs. GitHub does not honour this
+# schedule -- 8 consecutive fires landed 11:18Z / 11:41Z / 12:10Z / 12:11Z /
+# 12:15Z / 12:16Z / 12:23Z / 13:34Z against a nominal 07:29Z, a delay of +3h49m
+# to +6h05m. So this backstop does NOT lead the 10:07Z primary by 2h38m; it
+# TRAILS it by roughly 2h, and it lands inside the instance's documented morning
+# IO-saturation window.
+#
+# WHY THAT MATTERS, and it is not cosmetic. On 2026-09-11 the primary did not
+# fire at all and this backstop was the only chance at that day's snapshot. It
+# DID fire (12:15:15Z), the route returned 202 {"accepted":true,"message":
+# "queued"}, the edge function reached runWork (cron_heartbeats shows
+# `edge_runwork_start`) -- and then produced NO pipeline_runs row and NO
+# wallet_holdings_snapshot rows. A wall-clock kill of the EdgeRuntime.waitUntil
+# task cannot be caught by the function's try/catch or its .catch(), so it is
+# silent by construction. 2026-09-11 has no institutional-wallet snapshot and
+# never will: snapshot_at is the UTC date AT RUN TIME, so holdings for a past
+# day cannot be captured after the fact.
+#
+# POSITIVE CONTROL (same day, 20:49 PT, quiet instance): a workflow_dispatch of
+# THIS workflow completed ok=true, rows_written=3, elapsed_ms=58639, 257 pages
+# walked. The path is sound; the scheduled fire time is the problem. Healthy
+# runs take 58-72s, so the margin to the wall is what saturation eats.
+#
+# ⛔ DO NOT "fix" this by re-timing the nominal cron without measuring: the
+# observed delay spread is over two hours wide, so no nominal minute maps to a
+# predictable fire time. The lever, if one is wanted, is making the walk
+# resumable rather than all-or-nothing. Detection already works -- the pipeline
+# watchlist flagged the silence as `high` on its own.
+on:
+  schedule:
+    - cron: "29 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot-institutional-wallets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # The composite below is local, so the tree must be checked out first.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Snapshot institutional wallets (backstop trigger)
+        continue-on-error: true
+        uses: ./.github/actions/rpc-call
+        with:
+          url: https://www.rippackscity.com/api/cron/snapshot-institutional-wallets
+          token: ${{ secrets.INGEST_SECRET_TOKEN }}
+          label: snapshot-institutional-wallets
+          accept: "200,202"
+          retries: "3"
+          max-time: "60"
+          fail-on-auth: "false"

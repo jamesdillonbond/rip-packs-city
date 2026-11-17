@@ -1,0 +1,69 @@
+// app/insights/squeeze/layout.tsx
+//
+// SEO surface for the public lock-rate squeeze board. Server component so the
+// metadata export is honored (a "use client" page.tsx cannot export metadata
+// directly). Mirrors the pattern used by app/nba/fast-break/layout.tsx.
+
+import type { Metadata } from "next"
+import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
+
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
+
+export const metadata: Metadata = {
+  // The root metadata template in lib/seo.ts appends " | Rip Packs City",
+  // so baking the brand in here rendered it twice. (deep-audit D24)
+  title: "Top Shot Lock-Rate Squeeze Board",
+  description:
+    "Top Shot displays circulation. We display effective supply. The lock-rate squeeze board ranks NBA Top Shot editions by how locked + burned their circulation actually is. Free. No signup.",
+  keywords: [
+    "NBA Top Shot squeeze",
+    "Top Shot lock rate",
+    "Top Shot effective supply",
+    "Top Shot burned moments",
+    "Top Shot challenge lock",
+    "NBA Top Shot moments locked",
+  ].join(", "),
+  alternates: {
+    canonical: `${SITE_URL}/insights/squeeze`,
+  },
+  openGraph: {
+    title: "Top Shot Lock-Rate Squeeze Board",
+    description:
+      "Top Shot shows circulation. We show effective supply — the moments actually purchasable after locks + burns.",
+    url: `${SITE_URL}/insights/squeeze`,
+    siteName: "Rip Packs City",
+    images: [
+      {
+        url: `${SITE_URL}/api/og/insights/squeeze`,
+        width: 1200,
+        height: 630,
+        alt: "Top Shot Lock-Rate Squeeze Board — Rip Packs City",
+      },
+    ],
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    ...TWITTER_INHERITED,
+    card: "summary_large_image",
+    title: "Top Shot Lock-Rate Squeeze Board",
+    description:
+      "Top Shot shows circulation. We show effective supply — the moments actually purchasable after locks + burns.",
+    images: [`${SITE_URL}/api/og/insights/squeeze`],
+    creator: "@RipPacksCity",
+  },
+}
+
+export default function SqueezeLayout({ children }: { children: React.ReactNode }) {
+  const jsonLd = insightsBoardJsonLd("squeeze")
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(jsonLd) }}
+      />
+      {children}
+    </>
+  )
+}

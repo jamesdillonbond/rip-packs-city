@@ -1,0 +1,293 @@
+import { describe, it, expect } from "vitest"
+import {
+  fetchPaniniMoreBoards,
+  PANINI_BOARD_LIMIT,
+  OFFER_SPREAD_MIN_ASK,
+  HOLDER_MIN_COPIES,
+  HOLDER_STACKED_SHARE,
+  HOLDER_CORNERED_SHARE,
+} from "@/lib/insights/panini-more-boards"
+
+/**
+ * The Panini more-boards snapshot. Stated as absences: a failed board read is
+ * flagged (never an empty list), a payload missing any board is never cached
+ * (`ok:false`), no Panini username leaves the fetcher, and a full page says it
+ * is capped.
+ */
+
+type Res = { data?: unknown; error?: unknown; count?: number | null }
+function db(over: Record<string, Res> = {}) {
+  const selects: Record<string, string[]> = {}
+  const orders: Record<string, string[]> = {}
+  const eqs: Record<string, string[]> = {}
+  const base: Record<string, Res> = {
+    panini_deal_board: { data: [{ sku: "a", deal_basis: "fmv_and_recent_sales" }] },
+    panini_deal_board_all: { data: [{ sku: "a", deal_basis: "fmv_and_recent_sales", sport: "Soccer" }, { sku: "b", deal_basis: "fmv_and_recent_sales", sport: "Football" }] },
+    panini_pack_ev_board: { data: [{ pack_type: "hobby" }] },
+    panini_special_serials_board: { data: [{ sku: "s" }], count: 10 },
+    panini_player_board: { data: [{ player_name: "P" }] },
+    panini_coverage_summary: { data: [{ total_editions: 5094, pct_trustworthy: 35.1 }] },
+    mv_panini_holder_concentration: { data: [{ external_id: "packcard-1", top1_share: 0.4, top3_share: 0.6 }], count: 7 },
+    mv_panini_offer_spread: { data: [{ external_id: "packcard-2", ask_usd: 21, best_offer_usd: 19, offer_pct_of_ask: 90.5 }], count: 4575 },
+    mv_panini_floor_movers: { data: [{ external_id: "packcard-3", direction: "rise", change_pct: 12.5 }], count: 382 },
+    ...over,
+  }
+  return {
+    selects,
+    eqs,
+    orders,
+    from(table: string) {
+      const b: any = {
+        select: (cols: string, opts?: { head?: boolean }) => {
+          ;(selects[table] ??= []).push(cols)
+          if (opts?.head && base[`${table}:head`]) b.key = `${table}:head`
+          return b
+        },
+        eq: (col: string, v: unknown) => {
+          ;(eqs[table] ??= []).push(`${col}=${String(v)}`)
+          return b
+        },
+        in: (col: string, v: unknown[]) => {
+          ;(eqs[table] ??= []).push(`${col} in ${v.join("|")}`)
+          return b
+        },
+        gte: (col: string, v: unknown) => {
+          ;(eqs[table] ??= []).push(`${col}>=${String(v)}`)
+          return b
+        },
+        order: (col: string) => {
+          ;(orders[table] ??= []).push(col)
+          return b
+        },
+        limit: () => b,
+        then: (resolve: any) => resolve({ data: null, error: null, count: null, ...base[b.key ?? table] }),
+      }
+      return b
+    },
+  }
+}
+
+describe("fetchPaniniMoreBoards", () => {
+  it("orders sale-backed deals FIRST so the cap can only cut FMV-only rows (2026-09-25)", async () => {
+    const d = db() as any
+    await fetchPaniniMoreBoards(d)
+    expect(d.orders.panini_deal_board?.[0]).toBe("deal_basis")
+    // ...and the enum's string order puts the sale-backed basis first.
+    expect(["fmv_only_no_recent_sales", "fmv_and_recent_sales"].sort()[0]).toBe("fmv_and_recent_sales")
+  })
+
+
+  // 2026-10-26: both deal boards are the same view body; fired together they raced for the same cold
+  // pages and BOTH hit the 30 s statement timeout. The WC read must not START until the all-product
+  // read has finished.
+  it("starts the WC deal read only after the all-product deal read has finished", async () => {
+    const d = db() as any
+    const started: string[] = []
+    let release!: () => void
+    const gate = new Promise<void>((r) => { release = r })
+    const from0 = d.from.bind(d)
+    d.from = (table: string) => {
+      started.push(table)
+      const b = from0(table)
+      if (table === "panini_deal_board_all") {
+        const then0 = b.then
+        b.then = (resolve: any, reject: any) => gate.then(() => then0(resolve, reject))
+      }
+      return b
+    }
+    const p = fetchPaniniMoreBoards(d)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(started).toContain("panini_deal_board_all")
+    expect(started).not.toContain("panini_deal_board")
+    release()
+    const r = await p
+    expect(started.indexOf("panini_deal_board")).toBeGreaterThan(started.indexOf("panini_deal_board_all"))
+    expect(r.ok).toBe(true)
+  })
+
+  it("assembles all four boards + coverage and is cacheable when every read succeeds", async () => {
+    const r = await fetchPaniniMoreBoards(db())
+    expect(r.ok).toBe(true)
+    expect(r.payload.deals).toHaveLength(1)
+    expect(r.payload.packs).toHaveLength(1)
+    expect(r.payload.specials).toHaveLength(1)
+    expect(r.payload.players).toHaveLength(1)
+    expect(r.payload.coverage).toMatchObject({ pct_trustworthy: 35.1 })
+    expect(r.payload.deals_error).toBe(false)
+  })
+
+  it("a FAILED board is flagged, not an empty list — and the payload is NOT cached", async () => {
+    const r = await fetchPaniniMoreBoards(db({ panini_deal_board: { data: null, error: { message: "57014" } } }))
+    expect(r.payload.deals).toBeNull()
+    expect(r.payload.deals_error).toBe(true)
+    expect(r.ok).toBe(false)
+    expect(r.error).toContain("panini_deal_board")
+    // The other boards still arrive for the live render.
+    expect(r.payload.packs).toHaveLength(1)
+  })
+
+  it("never selects a Panini username", async () => {
+    const d = db()
+    await fetchPaniniMoreBoards(d)
+    for (const cols of Object.values(d.selects).flat()) expect(cols).not.toMatch(/\bowner\b/)
+  })
+
+  it("a full page says it is capped", async () => {
+    const full = Array.from({ length: PANINI_BOARD_LIMIT }, (_, i) => ({ sku: String(i) }))
+    const r = await fetchPaniniMoreBoards(db({ panini_deal_board: { data: full } }))
+    expect(r.payload.deals_capped).toBe(true)
+  })
+})
+
+// Multi-product (2026-09-28): panini_pack_ev_board now also carries packs the model does not price.
+// This snapshot feeds the WC Pack EV board, so it must read only modeled rows — by the view's own
+// discriminator — AND on the WC product since 2026-09-30, when a second product (2420, 2026 Prizm
+// WNBA) got a model: ev_modeled=true alone would put a WNBA pack on this WC board.
+describe("fetchPaniniMoreBoards — pack EV rows are the modeled product's only", () => {
+  it("carries the all-product deal board (with product + sport) beside the WC one, sale-backed first", async () => {
+    const d = db() as any
+    const r = await fetchPaniniMoreBoards(d)
+    const p = r.payload as any
+    expect(p.deals).toHaveLength(1)
+    expect(p.deals_all.map((x: any) => x.sport)).toEqual(["Soccer", "Football"])
+    expect(p.deals_all_error).toBe(false)
+    expect(d.selects.panini_deal_board_all[0]).toContain("product_name")
+    expect(d.selects.panini_deal_board_all[0]).toContain("sport")
+    expect(d.orders.panini_deal_board_all?.[0]).toBe("deal_basis")
+  })
+
+  it("a failed all-product deal read is flagged (not 'no deals') and the payload is not cached", async () => {
+    const d = db({ panini_deal_board_all: { data: null, error: { message: "timeout" } } }) as any
+    const r = await fetchPaniniMoreBoards(d)
+    expect((r.payload as any).deals_all).toBeNull()
+    expect((r.payload as any).deals_all_error).toBe(true)
+    expect(r.ok).toBe(false)
+  })
+
+  it("filters the pack board on ev_modeled=true AND the WC product AND the Hobby/FOTL types", async () => {
+    const d = db()
+    await fetchPaniniMoreBoards(d as any)
+    // 2026-10-10: a WC secondary pack priced from its guaranteed contents (1043) is ev_modeled too;
+    // the type keeps it off this Hobby/FOTL-legs tab.
+    expect(d.eqs.panini_pack_ev_board).toEqual(["ev_modeled=true", "product_set_id=2332", "pack_type in hobby|fotl"])
+  })
+})
+
+
+// Holders (2026-10-21, ripz.one "Chokehold" parity): the MV holds counts only, so no handle can leave;
+// shares are shown only over a complete census with enough owned copies; a failed read is flagged.
+describe("fetchPaniniMoreBoards — holders", () => {
+  it("reads only complete-census editions with >= HOLDER_MIN_COPIES owned, biggest single holder first", async () => {
+    const d = db() as any
+    const r = await fetchPaniniMoreBoards(d)
+    const p = r.payload as any
+    expect(p.holders).toHaveLength(1)
+    expect(p.holders_error).toBe(false)
+    expect(d.eqs.mv_panini_holder_concentration).toEqual(
+      expect.arrayContaining(["census_complete=true", `owned_copies>=${HOLDER_MIN_COPIES}`]),
+    )
+    expect(d.orders.mv_panini_holder_concentration?.[0]).toBe("top1_share")
+    expect(p.holders_eligible).toBe(7)
+    expect(p.holders_stacked).toBe(7)
+    expect(p.holders_cornered).toBe(7)
+  })
+
+  it("the stacked / cornered counts use the exported thresholds", async () => {
+    const d = db() as any
+    await fetchPaniniMoreBoards(d)
+    expect(d.eqs.mv_panini_holder_concentration).toEqual(
+      expect.arrayContaining([`top1_share>=${HOLDER_STACKED_SHARE}`, `top3_share>=${HOLDER_CORNERED_SHARE}`]),
+    )
+  })
+
+  it("never selects a holder handle from the concentration view", async () => {
+    const d = db() as any
+    await fetchPaniniMoreBoards(d)
+    for (const cols of d.selects.mv_panini_holder_concentration ?? []) expect(cols).not.toMatch(/\bowner\b/)
+  })
+
+  it("a failed holders read is flagged, not 'none', and the payload is not cached", async () => {
+    const r = await fetchPaniniMoreBoards(db({ mv_panini_holder_concentration: { data: null, error: { message: "has not been populated" } } }))
+    expect((r.payload as any).holders).toBeNull()
+    expect((r.payload as any).holders_error).toBe(true)
+    expect(r.ok).toBe(false)
+  })
+})
+
+describe("fetchPaniniMoreBoards — Bid vs Floor (2026-10-25)", () => {
+  it("reads the floor-copy view, tightest first, asks under the minimum left out", async () => {
+    const d = db() as any
+    const r = await fetchPaniniMoreBoards(d)
+    expect(r.ok).toBe(true)
+    expect(d.orders.mv_panini_offer_spread?.[0]).toBe("offer_pct_of_ask")
+    expect(d.eqs.mv_panini_offer_spread).toContain(`ask_usd>=${OFFER_SPREAD_MIN_ASK}`)
+    expect(r.payload.offer_spread).toHaveLength(1)
+    expect(r.payload.offer_spread_error).toBe(false)
+    expect(r.payload.offer_spread_total).toBe(4575)
+  })
+  it("a failed spread read is flagged, never an empty board, and the payload is not cached", async () => {
+    const r = await fetchPaniniMoreBoards(db({ mv_panini_offer_spread: { data: null, error: { message: "boom" } } }))
+    expect(r.payload.offer_spread).toBeNull()
+    expect(r.payload.offer_spread_error).toBe(true)
+    expect(r.ok).toBe(false)
+  })
+  it("selects no owner column", async () => {
+    const d = db() as any
+    await fetchPaniniMoreBoards(d)
+    expect((d.selects.mv_panini_offer_spread ?? []).join(",")).not.toMatch(/owner/)
+  })
+})
+
+describe("fetchPaniniMoreBoards — Bid vs Floor 'more floors' claim follows the exact count (2026-10-27)", () => {
+  const full = Array.from({ length: PANINI_BOARD_LIMIT }, (_, i) => ({ external_id: `packcard-${i}`, ask_usd: 21, best_offer_usd: 19, offer_pct_of_ask: 90 }))
+  it("exactly PANINI_BOARD_LIMIT qualifying floors is NOT 'more'", async () => {
+    const r = await fetchPaniniMoreBoards(db({ mv_panini_offer_spread: { data: full, count: PANINI_BOARD_LIMIT } }))
+    expect(r.payload.offer_spread_capped).toBe(false)
+  })
+  it("CONTROL: a count above the page says 'more'", async () => {
+    const r = await fetchPaniniMoreBoards(db({ mv_panini_offer_spread: { data: full, count: PANINI_BOARD_LIMIT + 1 } }))
+    expect(r.payload.offer_spread_capped).toBe(true)
+  })
+})
+
+describe("fetchPaniniMoreBoards — Floor movers · 7 days (2026-11-04)", () => {
+  const rows = [{ external_id: "packcard-9", direction: "rise", ask_then_usd: 10, ask_now_usd: 15, change_pct: 50, window_complete: true }]
+  it("reads rises biggest-first and falls biggest-first from the daily MV, each capped, with exact totals", async () => {
+    const d = db({ mv_panini_floor_movers: { data: rows, count: 382 } }) as any
+    const r = await fetchPaniniMoreBoards(d)
+    expect(r.ok).toBe(true)
+    expect(d.eqs.mv_panini_floor_movers).toEqual(expect.arrayContaining(["direction=rise", "direction=fall"]))
+    expect(d.orders.mv_panini_floor_movers?.[0]).toBe("change_pct")
+    expect(r.payload.floor_rises).toHaveLength(1)
+    expect(r.payload.floor_falls).toHaveLength(1)
+    expect(r.payload.floor_movers_error).toBe(false)
+    expect(r.payload.floor_rises_total).toBe(382)
+    expect(r.payload.floor_falls_total).toBe(382)
+  })
+  it("a failed movers read is flagged — both lists null, never an empty board — and the payload is not cached", async () => {
+    const r = await fetchPaniniMoreBoards(db({ mv_panini_floor_movers: { data: null, error: { message: "has not been populated" } } }))
+    expect(r.payload.floor_rises).toBeNull()
+    expect(r.payload.floor_falls).toBeNull()
+    expect(r.payload.floor_movers_error).toBe(true)
+    expect(r.ok).toBe(false)
+  })
+  it("a failed LIST read alone (counts fine) still keeps the payload out of the cache", async () => {
+    const r = await fetchPaniniMoreBoards(db({
+      mv_panini_floor_movers: { data: null, error: { message: "boom" } },
+      "mv_panini_floor_movers:head": { data: null, error: null, count: 382 },
+    }))
+    expect(r.payload.floor_movers_error).toBe(true)
+    expect(r.ok).toBe(false)
+  })
+  it("an ok empty read is two empty lists, not a failure", async () => {
+    const r = await fetchPaniniMoreBoards(db({ mv_panini_floor_movers: { data: [], count: 0 } }))
+    expect(r.payload.floor_rises).toEqual([])
+    expect(r.payload.floor_movers_error).toBe(false)
+    expect(r.ok).toBe(true)
+  })
+  it("selects no owner column", async () => {
+    const d = db({ mv_panini_floor_movers: { data: rows, count: 1 } }) as any
+    await fetchPaniniMoreBoards(d)
+    expect((d.selects.mv_panini_floor_movers ?? []).join(",")).not.toMatch(/owner/)
+  })
+})

@@ -1,0 +1,91 @@
+name: Edge function deploy drift
+
+# Nightly check that every DEPLOYED Supabase edge function is a build of the
+# current repo source — the one rot class nothing else here can see.
+#
+# WHY THIS EXISTS (full argument in scripts/check-edge-fn-drift.mjs):
+# `edge-deno` type-checks the SOURCE. `edge-inline-copy-drift-guard` and
+# `db-invariants-drift-guard` are repo-vs-repo. There is NO repo<->deployed
+# comparator anywhere, so an edge function can be fixed, reviewed, tested,
+# merged — and still never run, silently, while every in-repo signal reads
+# green. Measured 2026-08-07: ingest-allday-pack-opens had been running
+# 11-day-old code, missing a budget-checkpoint fix, so production kept silently
+# dropping AllDay pack opens; a fleet sweep put 31 of 35 eligible functions in
+# that state.
+#
+# This is the edge-function twin of db-pin-staleness.yml, and deliberately the
+# same shape: a periodic, secret-bearing, READ-ONLY fleet-state sweep. It is
+# NOT a pull_request gate — drift is a property of production, not of a diff,
+# so failing a PR on it would block unrelated work for a condition the PR did
+# not cause.
+#
+# OPERATOR NOTE: this job only enforces once two repo secrets exist —
+# SUPABASE_ACCESS_TOKEN (a `sbp_…` Management API PAT; the service-role key
+# CANNOT list functions) and SUPABASE_PROJECT_ID. Until they're added it
+# SOFT-SKIPS (warning + green), the same posture db-pin-staleness.yml used
+# before its secrets landed, so this workflow landing cannot turn the repo red
+# before the operator opts in. Add them under
+# Settings → Secrets and variables → Actions, then it runs for real.
+#
+# ⚠ WHEN IT REPORTS DRIFT, DO NOT MASS-REDEPLOY. Every function this repo ships
+# except flowty-proxy and sync-nba-games imports by BARE specifier, so a deploy
+# that omits `deno.json` + `import_map_path` BOOT-FAILS it — converting a
+# silently-stale function into a hard-down one. Per function: content-diff →
+# deploy WITH the import map → verify a real invocation logged
+# `pipeline_runs.ok = true`, not merely that the deploy returned success.
+
+on:
+  schedule:
+    # 06:40 UTC daily — off the top of the hour, clear of the daily 07:20
+    # db-pin-staleness sweep (weekly -> daily 2026-08-10).
+    - cron: '40 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  edge-drift:
+    name: Compare deployed edge functions against repo source
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Check edge-function deploy drift
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ] || [ -z "${SUPABASE_PROJECT_ID:-}" ]; then
+            echo "::warning::SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_ID not configured as repo secrets — skipping the edge-function drift check. Add them to enforce it (see this workflow's header)."
+            exit 0
+          fi
+          # exit 1 = drift found, exit 2 = config error OR a REJECTED token.
+          #
+          # BASELINE — the value the check must reproduce. Measured 2026-08-07 and
+          # again 2026-08-08, both 31 proven-drifted of 37 repo functions, with the
+          # same 5 clean (the ones deployed WITH import_map_path) and 1
+          # unclassifiable (sync-nba-games, url-only in both places). A detector
+          # with no expected value is not yet an instrument: if the first armed run
+          # reports anything other than 31, debug the DETECTOR before believing the
+          # finding. 31 is a LOWER BOUND -- "proven drifted by an argument that
+          # cannot produce a false positive" -- never "the number of drifted fns".
+          npm run edge:drift:check
+
+      # Retain the POPULATION, not just the count. On 2026-08-08 a sweep recorded
+      # 67 deployed functions one day and 66 the next and could not say which one
+      # changed, because only the count was kept. The series is the product.
+      - name: Upload per-slug drift report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: edge-fn-drift-report
+          path: edge-fn-drift-report.json
+          if-no-files-found: ignore
+          retention-days: 90

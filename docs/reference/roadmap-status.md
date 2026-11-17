@@ -1,0 +1,1189 @@
+<!-- Extracted from CLAUDE.md on 2026-08-17 to bring that file under the memory-file
+char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
+Same rules apply: every number here is a dated sample - re-measure before quoting. -->
+
+## Displaced from CLAUDE.md 2026-09-08 (verbatim) — the fmv-recalc sizing figures
+
+CLAUDE.md keeps the verdict (*wasteful, NOT broken, SIZED*); the numbers behind it live here so that
+line stays short. Verbatim, as it stood in CLAUDE.md before the 2026-09-08 documentation pass:
+
+> - `fmv-recalc` — wasteful, NOT broken, now SIZED: `query_sql` is the DB's **#1 reader** (12.1M
+>   blocks/24h), owned by this route's 7 inline scans (inbox `2026-09-04T0500Z`).
+
+⚠ Dated sample (2026-09-04) — re-measure before quoting it. The filing is
+`docs/overnight/inbox/2026-09-04T0500Z-*`.
+
+## Displaced from CLAUDE.md 2026-09-04 (verbatim) — the one measured-but-unshipped DB fix
+
+> - **The one measured-but-unshipped DB fix is LOW-STAKES now (re-derived 2026-09-02): every caller is
+>   PER-DIST, and a whole 57-dist tick costs 1.75 s / 152,542 buffers** — the 1,046,192-buffer premise is
+>   a bulk-join shape nothing runs. ⭐ Another stated blocker was a MEASUREMENT — **re-read a "blocked"
+>   item's blocker before inheriting it.**
+
+Also displaced the same day, from the "Prioritized next actions" list: the sports-proxy bullet's detail
+(*"ESPN 403s residentially too; the 'no alert' gap is a MYTH"*) — it already lives in full at #8 in
+[known-issues.md](known-issues.md) — and the `fmv-recalc` line's stale wall-kill note, replaced by the
+2026-09-04 sizing: `query_sql` is the database's #1 reader (2,171 calls / 12.1M blocks in 24 h) and
+`fmv-recalc`'s seven inline scans over 153 daily runs own it (inbox `2026-09-04T0500Z`).
+
+## ⭐ RE-DERIVED 2026-09-02 — the "one measured-but-unshipped DB fix" is LOW-STAKES, because its cost premise is not a production shape
+
+CLAUDE.md carried this for weeks as the single remaining measured DB fix, *"blocked on a DECISION not a
+diagnosis"*: replacing `compute_pack_ev_per_edition_weighted`'s `fmv_current` leg, filed at
+**18,766 vs 1,046,192 buffers**, held up because the change re-seeds a pinned fixture (Trevor's call). ✅ **10-18 ~12:14 PM PT: already shipped 2026-08-30 (`20260830152806`, LATERAL per edition); 9,528 buffers per call measured 10-18.**
+
+**Re-read the blocker, as this file's own rule says to, and the cost half of it has gone.**
+
+**1. The 1,046,192 figure is a BULK-JOIN shape that nothing calls.** The ledger entry it comes from
+measured `LEFT JOIN fmv_current` over **3,097 edition ids at once**. Every real caller invokes the
+function **per dist**: DB-side `refresh_atlas_pack_ev` (jobid 217) and
+`backfill_topshot_historical_pack_ev` (jobid 71); repo-side the `compute-topshot-pack-ev` and
+`compute-allday-pack-ev` edge functions, both one RPC per dist. There is no bulk call site.
+
+**2. Measured at the real call site, 2026-09-02 (EXPLAIN ANALYZE, BUFFERS, warm), driving the exact
+57-dist atlas set jobid 217 uses:**
+
+| what | ms | buffers |
+|---|---:|---:|
+| all 57 dists in one pass | **1,746** | **152,542** |
+| the driver seq scan alone | 116 | 2,898 |
+| ⇒ per function call | ~29 | **~2,625** |
+
+A single call measured separately: **141 ms / 3,600 buffers**, of which 285 buffers were the probe's
+own `dist_id` lookup.
+
+**3. Corroborated from the other side by the fleet numbers.** After the 2026-08-30 top-consumer drain,
+jobid 217 runs a full 57-dist tick in **~2 s** (mean 195 s → 2 s at unchanged run count) and jobid 71
+in **~1 s** (178 s → 1 s). A function costing ~1M buffers per call could not produce those times.
+
+👉 **So the decision is no longer "accept a fixture re-seed to win 55× on the platform's hottest
+compute".** The win at the real call sites is small, and the change was already verified
+value-identical against the live view (0 mismatches). ⛔ **This is NOT a recommendation to close the
+item** — Trevor still owns the fixture question, and the leg remains the more correct shape. It is a
+correction of the STAKES, so nobody spends a session unblocking a lever that is now worth little.
+
+⚠ **And the transferable half:** the filed figure was never wrong — it measured a shape that was
+never run. **A cost figure is only actionable together with the CALL SITE it was measured at**, and
+neither the ledger entry nor the CLAUDE.md pointer carried one.
+
+## How to read this file (added 2026-08-27)
+
+**Newest first, and only the FIRST dated block is current.** Every other headline block carries
+**[SUPERSEDED]** in its heading — they are kept because their *reasoning* is often still right even when
+their *values* are not, which is this file's standing convention. ⚠ **A superseded block's numbers must
+never be quoted; its cautions still apply.**
+
+⭐ **DECIDED 2026-08-28 (Trevor, deep-audit run-4 follow-up): the accuracy-gate metric's Top Shot denominator is ALL ROWS, not canonical-only.** The gate figure is therefore **39.2%** as of 2026-08-27 (canonical was 55.0 the same day — quote it only WITH the "canonical" label). ~~The `rpc_thp_leg_fmv_coverage` precompute still publishes canonical-only until its re-point ships (register R41 carries the owed consequences).~~ 🚨 **CORRECTED 2026-08-30 (PT) — THAT SENTENCE IS STALE AND WAS ACTIVELY MISLEADING: the re-point HAS shipped, and the precompute publishes ALL ROWS.** Read from live `prosrc`, not inferred: the leg's `elig` CTE is now a bare `SELECT l.collection_id, l.edition_id, l.computed_at, l.confidence FROM latest l` — **no filter at all** (a vestigial pass-through where the canonical restriction used to be), so its denominator is every latest-per-`(collection_id, edition_id)` row in `fmv_snapshots`. ⚠ **The consequence, which is why this is worth a correction rather than a tidy-up: anyone following the old sentence would label the precompute's figure "canonical" — and canonical was 55.0 against all-rows 39.2 the same day, so it mislabels the single headline gate metric by ~16 points.** ⭐ Two independent lines agree: the source has no canonical predicate, and the published value tracks the all-rows series (39.2 on 08-27 → 39.9 on 08-29 → **38.5** live) rather than the canonical one (55.0). ⓘ Stated as source-derived — the figure was **not** independently recomputed, deliberately: that recomputation IS jobid 325, which costs 411 s and has hit the 600 s ceiling. ⚠ **AND `pinnacle_fmv_high_med_share_pct` IS NOT WRITTEN BY THIS LEG AT ALL** — `rpc_thp_leg_pinnacle_fmv_share` writes it from a **different table, key and column** (`pinnacle_fmv_history`, `DISTINCT ON (render_id)`, `fmv_confidence`). That is correct for Pinnacle's data model, but it means **43.6 is not interchangeable with the other five and must never be folded into an estate-wide average** — which is what "Pinnacle remains in neither total" is protecting. This closes R41's standing "two figures, no denominator" ambiguity: one gate, stated denominator. ⚠ **The 39.2 is a DATED SAMPLE and has already moved — see the first `⭐ HEADLINE METRIC` block for the live figure and for the ~68.3% CEILING this basis carries.**
+
+⚠ **The section immediately below — "Prioritized next actions" — is the OLDEST material in this file
+(2026-08-03 framing with a 2026-08-13 update), and it sits first for historical reasons, not because it is
+current.** Its *framing* still binds (intelligence-first; read-only product; monetization tabled until 50+
+WAU); its *measurements* were superseded five times over. **For any number, scroll to the first
+`⭐ HEADLINE METRIC` block instead.**
+
+| what you want | where it is |
+|---|---|
+| the current accuracy / demand / ops numbers | the first `⭐ HEADLINE METRIC …` block below |
+| the standing product framing and gates | "Prioritized next actions", immediately below |
+| the plan itself | [docs/strategy/roadmap-2026-10-17.md](../strategy/roadmap-2026-10-17.md) (canonical since 2026-10-17; per-collection and per-feature roadmaps under `docs/strategy/collections/` and `docs/strategy/features/`). The 08-03 plan it supersedes keeps the thesis: [roadmap-2026-08-03.md](../strategy/roadmap-2026-08-03.md) |
+| open defects and their status | [known-issues.md](known-issues.md) (it now carries a STATUS INDEX) |
+
+---
+
+## Prioritized next actions
+
+**[SUPERSEDED as the plan pointer 2026-10-17 → [roadmap-2026-10-17.md](../strategy/roadmap-2026-10-17.md); the text below is the 08-03 framing, kept for the record.]** **The canonical forward plan was [docs/strategy/roadmap-2026-08-03.md](../../docs/strategy/roadmap-2026-08-03.md) (supersedes roadmap-2026-07-18).** Its thesis: **accuracy is the GATE, not a phase** — "zero users is the correct output of the current input," so every growth tactic is removed rather than demoted until the data beats the sites collectors already use. The new **headline metric is the share of prices at HIGH/MEDIUM confidence** (measured 08-03: Golazos 0.7%, AllDay 6.3%, UFC 3.2%, Top Shot 17.3%, Candy 60.8%). The $0.50 dust-floor removal (`3809425b`) was the first big accuracy lever landed under this framing — it reached only ~1,000 editions until 2026-08-03 because the `fmv-recalc` sweep cursor never advanced past page 0 (`484d08d7`), so measure any accuracy number AFTER a full sweep completes, not before. **✅ The sweep is now confirmed COMPLETE and roadmap §5.1 "dust-floor post-ship verification" is CLOSED (`cbe019fb`, 2026-08-04) — this was the only item blocking Gate 1.** In the trailing 24h **13,605 distinct editions** recalced (> the ~11,606 traded population), and the full-cohort ratios landed on the unfloored `cold-tail` control: Top Shot 4,295 eds **median 1.000 / p90 1.176 / >2× 16 (0.37%)** (was 1.110 / 2.576 / 461 floored), All Day 0.979 / 1.333 / 1.2%, Candy 1.051 / 1.151 / 0. The `fmv_apply_thin_sale_haircut` cohorts converged (TS 249→13 eds, ratio 1.800→0.717), confirming the haircut was a symptom not a second defect; this also resolves the §5.3 "9.2% of liquid TS editions >2×" item to **0.37%**. ✅ **The HIGH/MEDIUM confidence SHARES have now BEEN re-measured (2026-08-13) and the 08-03 figures above are the stale baseline, not current.** The flag this line used to carry — "still pre-sweep and genuinely due a re-measure" — is CLOSED: `cbe019fb` had re-measured the FMV-vs-median accuracy RATIOS, not this. Post-sweep: **Top Shot 17.3% → 54.5%**, **All Day 6.3% → 27.7%**, Candy 60.8% → 60.0%, Golazos 0.7% → 0.9%, UFC 3.2% → 0.0%, plus **Disney Pinnacle 30.3%** (never previously measured). Top Shot's `% priced >30d stale` also went **19.8% → 0.0%**. ⚠ **Read it from `public.rpc_trust_health_precompute`** (metrics `<collection>_fmv_high_med_share_pct`, written by `rpc_thp_leg_fmv_coverage`) — **do NOT call `rpc_fmv_confidence_share()` to refresh it**, which blows a 60 s statement budget on the live instance and is exactly why the precompute leg exists; a value of **999 is that leg's failure sentinel, not a percentage**. ⚠ **UFC's 0.0% is NOT a regression to fix** — the market closed and 96.3% of its prices are >30 d stale, so zero IS the honest confidence label; the roadmap's "the only correct product answer is a label" stands. ⚠ **And roadmap §6's target moved with the metric**: "All Day → the Top Shot band or better" is still OPEN despite All Day quadrupling, because Top Shot tripled in the same window — the gap is still ~2×. Full dated block + the denominator caveat: [roadmap §3.1](../../docs/strategy/roadmap-2026-08-03.md). Gate-1 status re-verified live 2026-08-03 evening: Candy `wmc.fmv_usd` denorm **DONE** (25,375 rows, 0 NULL); Golazos shells **draining** (4,249 → 3,905); UFC dead-market labelling is shipped for SEO (`lib/market-closed.ts` → `lib/seo.ts`) and the rendered `MarketplaceStatusBanner` covers overview/collection/sniper/edition — the residual gap is only UFC's `analytics` + `sets` tabs. Prior framing still binds where not superseded: go-live is DONE (public un-gate 2026-07-17); no paywall/Stripe until 50+ WAU; no infra spend pre-revenue; verify pages by **rendered DOM, not HTTP 200** (streaming shells always return 200).
+
+**Framing (2026-05-24, still binding):** RPC is committed **intelligence-first** — the goal is a product genuinely more useful than nbatopshot.com itself. Cart / live-buy is shelved (see Open #1). **Monetization — the Pro paywall, Stripe — is tabled until RPC has 50+ weekly active users.** Do not prioritize or propose it before that bar is met.
+
+1. ✅ **EXECUTED 2026-10-30 — the Flowty API went dark 10-27 ~9:20 PM PT and the three listing-cache lanes, `/api/listing-cache`, `golazos-sniper-feed`, their schedulers, the Flowty rows and `flowty-proxy` (now a 410 tombstone) are retired; record: [flowty-retirement-runbook.md](../operations/flowty-retirement-runbook.md) § Execution record.** 🔔 **UPDATE 2026-09-25 (Trevor): Flowty will turn its API endpoints off "soon" — the 07-07 "API is alive, do NOT tear down" note below becomes false on that day.** Live Flowty consumers re-measured 09-25: `topshot-/allday-/golazos-listing-cache` (216 runs / 72 h each, ~7k rows/day each, via the `flowty-proxy` edge fn) → legacy `cached_listings` (`source='flowty'`). `pinnacle-sync` no longer touches Flowty (since 06-08); the Pinnacle sniper's Flowty leg is dormant. **Already safe for the cutover:** the routes preserve the prior cache on a failed sweep, `purge-stale-listings` deletes rows > 48 h daily (04:00 UTC), and `fmv_from_cached_listings` prices only listings ≤ 2 h old (`20260925152928`), so nothing is re-stamped as fresh. **On the day it goes dark:** (a) confirm by the routes' own `pageErrors`, not one probe; (b) retire the Flowty sweeps in the three listing-cache routes + their schedulers and `flowty-proxy`, rather than letting failure alarms fire; (c) check every reader of `cached_listings` Flowty rows renders an honest "no listing source" state once they purge — **Golazos is covered — ⚠ CORRECTED the same day:** an earlier line here said its listings had no other source and that its `cached_listings_v2` rows were frozen at 08-01. **Both wrong** — that date was `collections.updated_at` leaking through a join (`cached_listings_v2` has no `updated_at`), and a storefront walk found **1,391 live Golazos listings across 442 editions** on Dapper's NFTStorefrontV2, far more than Flowty's 67 moments. `golazos-storefront-reconcile` (Vercel cron, every 2 h, shipped 09-25) now keeps them in `cached_listings_v2`; and since 2026-09-25 ~4:00 PM PT Golazos ASK_ONLY is priced from it (`refresh_golazos_ask_fmv_from_listings`, pg_cron 614, 6 h `verified_at` bound; `fmv_from_cached_listings` prices no Golazos) — so Flowty going dark costs Golazos nothing; (d) Top Shot's 51k `source='topshot'` rows are Atlas-fed and unaffected. ⭐ **Also resolved 2026-09-25: All Day.** Flowty's storefront FORK has purchases disabled on-chain, and its 27,406 "open" All Day listings had been setting All Day's ask floor (the FMV ceiling) for 2,724 editions; closed `unpurchasable` (`20260925230134`). The storefront reconciler now covers All Day too, so after the cutover All Day and Golazos asks both come from Dapper's own storefronts. What is left for the day Flowty goes dark is (b) retiring the Flowty sweeps and `flowty-proxy` — no data dependency remains. ✅ **Re-verified 2026-10-03** (Cowork proposed a Flowty-independence build; see the disposition in `docs/handoff-2026-10-03-flowty-independence.md`): 0 current HIGH/MEDIUM/ASK_ONLY editions carry a Flowty-derived ask. The one remaining Flowty-fed WRITE into a priced column — `golazos-listing-cache` → `update_badge_low_ask_from_cached_listings` (compound key, 10 of 24 values above the real floor, reverted every 30 min by `refresh_golazos_badge_low_ask`) — was removed the same day; the SQL function stays (no caller). Teardown checklist: the three `*-listing-cache` sweeps + their schedulers (Top Shot: vercel.json — its GHA workflow is dispatch-only, re-read 2026-10-18; All Day/Golazos: cron-job.org, confirmed in cron-schedule.md 10-18; the full runbook is docs/operations/flowty-retirement-runbook.md), `flowty-proxy`, and the v1 display readers (`get_cross_collection_deals`, `get_platform_stats`).
+   - 📏 **2026-10-15 — what the shutdown will look like on our side (Claude Code cloud, 9:05 AM PT):** still alive today (TS / All Day / Golazos lanes 72/72 ok per 24 h, ~7k rows/day each, min 300 fetched per run in 3 days). An off switch answering `200 []` used to log `ok` with 0 rows (Top Shot even marked the sweep complete); since `f0b7f7ba5` a sweep that fetched ZERO is a failed run ("upstream returned an empty book", `lib/pipeline/empty-book.ts`), so it reaches the failure-rate alarm on the first tick. A non-2xx was already a failed run. Nothing is purged by a failing lane (the purge needs an upsert), so the last Flowty rows stay in `cached_listings` until `purge-stale-listings` deletes rows older than **48 h** — the bound on how long dead Flowty asks can show. When it happens: retire the three lanes and drop the `flowty` rows deliberately rather than waiting out the 48 h.
+1. ~~Flowty teardown~~ — **RE-SCOPED 2026-07-07 (verified live): the teardown premise is OBSOLETE.** `api2.flowty.io` is ALIVE and serving CURRENT listings (Series 8 probe 200 OK), and the listing-cache pipelines (`topshot/golazos/allday/ufc-listing-cache`, ~475 runs/wk each, ok=true) actively ingest it and feed cached_listings + ASK FMV + fmv-recalc chaining TODAY. Flowty's trading FRONTEND shut May 2026, but its API infrastructure lives on (now behind dapper.market). Do NOT delete the listing caches, flowty-proxy edge fn, or the ingest chain — they are live production ingest. The 2026-07-07 cleanup removed only the true zero-importer orphans (bot-prerender quote lib, flowty deep-link builder, Firestore offers lib, superseded allday/ufc sniper-feed routes, pinnacle debug route). Remaining candidates (edition-floor's Flowty leg, cart make-offer-flowty) are LIVE-reachable or Cart-gated — touch only with a product decision.
+2. Harden the core intelligence surfaces — FMV, wallet/portfolio analytics, the concierge, pack EV — so RPC is genuinely differentiated from Top Shot's own site.
+
+*Done — the Market/Sniper reframe to outbound "View Listing" links shipped 2026-05-23 (commit `b19d8f2`); the AllDay `unmapped_sales` resolver was rewritten + un-starved 2026-05-25; see Recent sessions.*
+
+---
+
+
+---
+
+## ⭐ NEW 2026-11-09 — GIVEAWAY INSTANT DELIVERY: SHIPPED, CONFIGURED, NOT YET EXERCISED (read live 2026-11-09 ~9:10 PM PT)
+
+- **Shipped 11-08** (migration `20261108231643`, code `9a8eed2`): a funded drop's Moments are sent from the giveaway vault by the server seconds after each claim. Mechanics and bounds: [concierge.md](concierge.md) (exceptions); design notes: the 11-08 addendum in [free-packs-reassessment-2026-09-29.md](../strategy/free-packs-reassessment-2026-09-29.md).
+- **Configured 11-08 ~4:05 PM PT:** vault `0x38300125d58f76d1` (fresh Flow Wallet account "RPC Vault", one key, index 0, ECDSA_secp256k1/SHA2_256); `GIVEAWAY_VAULT_ADDR`, `GIVEAWAY_VAULT_KEY_INDEX`, `RPC_GIVEAWAY_INSTANT_DELIVERY=1` added by Claude, `GIVEAWAY_VAULT_PRIVATE_KEY` (Sensitive) by Trevor; Production build `8e4facc` picked them up.
+- **Not yet exercised (on-chain read 11-09):** the vault holds **no Top Shot collection** (status script `-1`) and its balance is unchanged at 4.001 FLOW, so "Set up the vault's Top Shot collection" has not been pressed; no drop has `vault_address` set and no `delivery_attempted_at` exists. **Next, Trevor's (admin token + his wallet):** press setup on `/admin/giveaways` → seal a 1-pack × 1-Moment drop with a common → "Fund for instant delivery" → claim to a Dapper account → confirm Delivered within ~1 min. Until then the path is proven only by tests and simulations, not by a live send.
+- **2026-11-10 (dated sample, ~3:30 PM PT):** the vault's Top Shot collection is set up; the first funded drop, `dame-time-challenge-reward-pack` (27 packs × 2, balanced, claimable only by Dame Time finishers), was opened at 3:21 PM PT with `vault_address` set and 0 claims at the read. The claim page's opening was rebuilt the same afternoon (v3: [free-packs addendum 11-10](../strategy/free-packs-reassessment-2026-09-29.md)). The "not yet exercised" line above is the 11-09 state; a first delivered claim is still the thing to confirm.
+- **2026-11-10 later (~3:45 PM PT):** each drop now carries a pack design (`pack_theme`, seven designs) and an opening-sound switch (`opening_sound`), set per drop on `/admin/giveaways`; migration `20261110234256`. All four existing drops read classic + silent after the apply, the open Dame Time drop among them (Trevor: leave it as is).
+- **2026-11-10 ~4:30 PM PT, readiness read for the Dame Time reward drop:** vault holds 54 / 54 pool Moments unlocked; 27 finishers, each with one saved Top Shot wallet that can receive; a rolled-back claim run gave 27 distinct packs; the board links finishers to the packs and the claim page names who can claim (ledger 11-10). **Still unproven: one real vault send** — the first claim is the test; watch it flip to Delivered.
+- **2026-11-10 ~8:15 PM PT (dated sample) — instant delivery is PROVEN live:** the Dame Time drop had 16 of 27 packs claimed, every one delivered by the vault within seconds and cached named in the winner's wallet (`lib/giveaways/wallet-cache.ts`). The 11 unclaimed finishers had never opened the giveaway page; Trevor: no reminders. One winner (spitehouse) later sent both Moments to his own linked Flow Wallet, which Verify reports as `moved_on`, not `missing` (database.md, end). The "unproven" lines above are history.
+- **Re-derive before quoting:** vault state is one Flow script (`VAULT_STATUS_SCRIPT`, `lib/giveaways/vault-cadence.ts`) plus `select slug, vault_address from giveaway_drops`.
+
+## ⭐ PRICE ACCURACY — the second number, measured 2026-11-04 evening (Claude Code cloud; Trevor: "pricing is the anchor of everything we do")
+
+The M1/M2 metric below is a confidence SHARE: a count of labels, not a measured accuracy. Since 11-04 there is an instrument for accuracy itself: **`fmv_accuracy_weekly`**. It stores each market sale against the price published ≥ 1 day before it, with one row per collection × PT week × confidence × last-sale age × depth × price band. It is filled every Monday at 3:37 AM PT (Top Shot only for now). Full record: known-issues **#234**.
+
+- **Baseline, week of 10-26 (pre-11-04 prices), Top Shot, n 11,041, within ±25 %:** ALL 68.2 · HIGH 74.3 · MEDIUM 69.1 · LOW 54.9 · ASK_ONLY 48.6.
+- **Ceiling:** on liquid editions (HIGH/MEDIUM, 5+ sales in 30 d), the best sale-history estimator tried reaches ~72 % (the published price, 70.6 %). The rest of the miss is market dispersion, not model error.
+- **The 11-04 changes target the thin tail:** ask-only capped at the last sale; a floor at the best open edition offer; the haircut stops at that bid; All Day LOW haircut 0.75. Read their effect in the **11-09 week**, which first fills Mon 11-16.
+- **2026-11-16 ~9:20 PM PT — the 11-09 week (first post-11-04 week) read (dated sample; detail known-issues #234):** Top Shot within ±25 ALL **70.3** · HIGH **80.1** · MEDIUM **74.1** · LOW 57.0 · ASK_ONLY 18.4 — the ASK_ONLY cell is the 11-11 drop scored against launch-hour asks (established editions 60.9, up from ~49); All Day ALL 62.8 · HIGH 76.8.
+- **Next:** relabel by measured segment accuracy from that week. ✅ *All Day is already in the weekly job* (pg_cron 829 `rpc-fmv-accuracy-weekly-allday`, Mon 3:45 AM PT, `20261105194500`; re-read 2026-11-10 ~12:10 PM PT — this line said "add All Day" for five days after it shipped).
+- **2026-11-12 — a second round on the thin tail, each decided on a backtest (ledger 11-12; Project `claude/fmv-engine-open-items-2026-11-12.md` is the one-page status).** Scoreboard that day (14 d, within ±25 %): Top Shot 69.5 (ASK_ONLY 39.6), All Day 59.0, Pinnacle 71.8, Panini 45.0, Golazos ASK_ONLY 50.4. Shipped: comparable-edition estimates for unpriced editions (Top Shot / All Day / Golazos); All Day thin prices capped at the estimate and floored at the best open offer; **Top Shot ASK_ONLY / LOW pulled toward a standing offer below the price** (`_bidpull`; ASK_ONLY 38–50 → 51–68 across three windows) and never-sold ask-only editions capped at the estimate; Panini's live-ask ceiling on every sale tier; the fmv-recalc **hot lane** (a freshly sold thin edition is re-priced on the next run; sale → price lag was p50 8–9 h). **Read these in the 11-09 and 11-16 weeks** (rows land Mon 11-16 and 11-23): falsifiers are Top Shot ASK_ONLY below 39.6 or LOW below 54.9 two weeks running. ⚠ `fmv_accuracy_weekly` covers Top Shot and All Day only — Panini / Pinnacle / Golazos have no weekly row (their sales live outside `sales_market` or are too few). **Waiting on data (~11-26):** an offer rule for All Day and Panini, from the two daily offer captures (pg_cron 871 / 873). Panini's 45 % is its scarce cards (cap 100+ scores 57–62 %; cap ≤ 25 scores 26 %).
+
+## ⭐ HEADLINE METRIC — re-read live 2026-11-07 ~10:45 AM PT from `rpc_trust_health_history`, BY PT WEEK (supersedes the 10-29 block below)
+
+Same instrument (six-hourly legs `<coll>_fmv_high_med_share_pct`, `value <> 999`, weekly mean, weeks start Monday PT). Wk 10-19 re-derives exactly as the 10-29 block (44.7 / 27.4 / 33.4 / 55.5 / 43.8). Wk 10-26 is now complete (28–29 legs); **wk 11-02 is partial: 21–22 legs, Monday → Saturday 11-07 morning.** Claude Code cloud, read-only.
+
+| collection | bar | wk 10-19 | wk 10-26 | wk 11-02 (partial) | spread wk 11-02 |
+|---|---|---:|---:|---:|---|
+| Top Shot (M1) | ≥ 50 % | 44.7 | **44.9** | **45.6** 🔴 by decision | 45.0–46.5 |
+| All Day (M2) | ≥ 30 % | 27.4 | **27.1** | **26.8** 🔴 | 26.3–27.8 |
+| Pinnacle (own leg, never average it) | — | 33.4 | 33.5 | 32.7 | 31.9–33.2 |
+| Candy MLB | — | 55.5 | 57.7 | **48.1 ⬇ window draining** | **30.4**–56.0 |
+| Panini | — | 43.8 | 45.9 | 45.7 | 45.5–45.8 |
+| Golazos | — | 0.2 | 0.2 | 0.2 | — |
+| UFC | — | 0.0 | 0.0 | 0.0 (closed: honest) | — |
+
+- **Top Shot edges up (+0.7)** in the first week under the 11-04 evening price changes (ask-only capped at the last sale, bid floor, haircut-stops-at-bid). Those change PRICES, not the label rule, so a share move here is composition (more editions with 5+ sales in 30 d as Series 2026-27 trades), not the fixes. The fixes' own read is accuracy, in `fmv_accuracy_weekly` from the 11-09 week (first fills Mon 11-16) — #234.
+- **All Day drifts DOWN 0.3 a week** (27.4 → 27.1 → 26.8), 3.2 under its bar. The 10-29 block's "edges up 0.4 a week" did not hold. The 11-04 LOW haircut 0.55 → 0.75 changes prices, not labels, so it cannot move this number either; M2 moves only through LOW → MEDIUM (nfl-all-day.md, 10-18 read).
+- **Candy's fall has started, on schedule:** its newest indexed sale is 10-11 8:21 PM PT, so the 30-day window drains as the early-October sales age out — 56.0 on 11-02, 49.6 on 11-03, 39.2 on 11-06, **30.4 at 5:50 AM PT 11-07**. Expect ~0 by ~11-11, when 10-11's sales leave the window. Not a defect: the label is honest about a market with no sales (#58 re-verify ~11-27).
+- Panini flat (45.5–45.8, 22 legs). Pinnacle −0.8, inside its usual spread.
+
+## ⭐ HEADLINE METRIC — re-read live 2026-10-29 ~8:58 AM PT from `rpc_trust_health_history`, BY PT WEEK (supersedes the 10-22 block below) [SUPERSEDED by the 11-07 block above]
+
+Same instrument (six-hourly legs `<coll>_fmv_high_med_share_pct`, `value <> 999`, weekly mean, weeks start Monday PT). Wk 10-19 is now complete (28 legs); **wk 10-26 is partial: 13–14 legs, Monday → Thursday 10-29 morning.** Claude Code cloud, read-only.
+
+| collection | bar | wk 10-12 | wk 10-19 | wk 10-26 (partial) | spread wk 10-26 |
+|---|---|---:|---:|---:|---|
+| Top Shot (M1) | ≥ 50 % | 54.8 | **44.7** | **45.0** 🔴 by decision | 44.4–45.4 |
+| All Day (M2) | ≥ 30 % | 26.7 | **27.4** | **27.8** 🔴 | 27.3–28.1 |
+| Pinnacle (own leg, never average it) | — | 32.8 | 33.4 | 33.3 | 32.1–34.1 |
+| Candy MLB | — | 56.0 | 55.5 | 58.2 ⚠ relabel, frozen market | 56.0–60.0 |
+| Panini | — | 29.0 (18 legs) | 43.8 | 45.9 | 45.9–46.0 |
+| Golazos | — | 1.0 | 0.2 | 0.2 | — |
+| UFC | — | 0.0 | 0.0 | 0.0 (closed: honest) | — |
+
+- **Flat across the Dapper outage (10-27 → 10-29).** Top Shot holds at the level 1.8.2 predicted (44–45); All Day edges up 0.4 a week, still 2.2 under its bar. Neither moved through two days with All Day and Pinnacle markets closed: confidence is graded on the 30/90-day window, so a two-day stop does not show here. Expect it in the backtests instead (see #208's 10-29 read).
+- **Candy 58.2 is still the 10-11 relabel on a frozen market** (no sale since 10-11); the fall predicted for ~11-10 has not started.
+- **Panini 45.9, flat (0.1 spread over 13 legs)** since the 1.3.x re-grade finished. Separately, the residential runner went quiet at ~6 AM PT 10-29 (no `panini-ingest` tick after 13:00 UTC, collector walk last at 12:49 UTC); legs after that read a stalled input until the box is back.
+- Pricing-accuracy exits read the same morning (known-issues #208 / #209 / #210 / #213; ledger 10-29).
+
+## ⭐ HEADLINE METRIC — re-read live 2026-10-22 ~9:30 PM PT from `rpc_trust_health_history`, BY PT WEEK (supersedes the 10-17 block below)
+
+Same instrument (six-hourly precompute legs, weekly mean; weeks start Monday). **Wk 10-19 is PARTIAL: 16 legs, Monday 10-19 → Thursday 10-22 ~6:50 PM PT.** Values are `value <> 999` legs only. Cowork cloud, read-only.
+
+| collection | bar | wk 10-05 | wk 10-12 | wk 10-19 (partial, 16 legs) | spread (lo–hi) |
+|---|---|---:|---:|---:|---|
+| Top Shot (M1) | ≥ 50 % | 57.1 | 54.8 | **44.5** 🔴 by decision | 44.0–44.7 |
+| All Day (M2) | ≥ 30 % | 27.2 | 26.7 | **27.3** 🔴 | 27.0–27.6 |
+| Pinnacle (own leg, never average it) | — | 31.5 | 32.8 | **33.4** | 32.9–34.6 |
+| Candy MLB | — | 23.0 | 56.0 | **54.1** ⚠ relabel, frozen market | 49.6–57.6 |
+| Panini | — | — | 29.0 (18 legs) | **42.4** | 36.4–45.2 |
+| Golazos | — | 1.0 | 1.0 | **0.1** | 0–0.2 |
+| UFC | — | 0.0 | 0.0 | **0.0** (closed: honest) | — |
+
+- 🔴 **M1 is under its bar for the first time since 09-21, and this was DECIDED, not discovered.** 1.8.2 (`gateMediumToRecentSale`, 10-17 ~9:35 PM PT, Trevor delegated) makes MEDIUM need a usable sale in 30 days; the decision record priced it at "M1 reads ~44 % until more editions trade". The 10-19 week landed at 44.5 with a 0.7-point spread — the predicted level, flat, not drifting. The accuracy half did not move: Top Shot 7-day backtest 10-22, HIGH 10.0 % MdAPE / 81.4 % within ±25 % (naive 10.0 / 81.9), ALL 16.0 / 65.1 (naive 15.0 / 66.8). ⚠ **New this week: the published ratio reads 0.952** (HIGH 0.960, MEDIUM 0.952; was 1.000 on 10-17) while naive last-3 reads 1.000 — Series 2026-27 launch week, where a 7-sale median lags a rising market more than a 3-sale one. Split by PT day (~10:50 PM PT): the dip is **10-19 and 10-20 only** (MEDIUM published 0.880 / 0.833 while naive last-3 also fell to 0.958 / 0.920 — a two-day price jump at Series 2026-27 tip-off that both estimators trailed); 10-21 and 10-22 read 1.000 again. Explained, not acted on. The bar question itself waits for the 30-day window to turn over (~11-17).
+- **M2 27.3, flat.** 0 legs at the bar this week. ASK_ONLY accuracy was addressed 10-22 (#208: ask × 0.90 capped at the edition's last-3 sales within 180 d, backtested 1.80 → 1.00 ratio) — that moves All Day's realised-sales error, not its HIGH/MEDIUM share.
+- **Panini 42.4** is the 1.3.x re-grade finishing (done ~10-20 evening) plus coverage growth, not a backtested gain; its live 1.3.0 read (10-21 morning) put HIGH at 56.0 % within ±25 % vs naive 67.3 on the same sales. **Golazos 0.1**: its newest sale (10-01) left the 30-day window — honest. **Candy 54.1**: the 10-11 relabel, still unscored (market frozen since 10-11 8:21 PM PT, #58); expect the fall from ~11-10.
+- **Demand**: unchanged from the 10-22 morning read (block below); next re-read on/after 10-29.
+
+## ⭐ HEADLINE METRIC — re-read live 2026-10-17 ~6 PM PT from `rpc_trust_health_history`, BY PT WEEK (supersedes the 10-10 block below) [SUPERSEDED by the 10-22 block above]
+
+Same instrument as 10-10 (six-hourly precompute legs, weekly mean; weeks start Monday; wk 10-12 = 23 legs to the 12:50 PM PT leg). The plan these feed: [roadmap-2026-10-17.md](../strategy/roadmap-2026-10-17.md) §2.
+
+| collection | bar | wk 09-21 | wk 09-28 | wk 10-05 | wk 10-12 |
+|---|---|---:|---:|---:|---:|
+| Top Shot (M1) | ≥ 50 % | 55.2 | 56.7 | 57.1 | **55.8** 🟢 |
+| All Day (M2) | ≥ 30 % | 27.9 | 26.3 | 27.2 | **26.3** 🔴 |
+| Pinnacle (own leg, never average it) | — | 28.3 | 31.5 | 31.5 | **32.6** (latest leg 33.9) |
+| Candy MLB | — | 21.4 | 23.4 | 23.0 | **57.1** ⚠ |
+| Panini | — | — | — | — | **27.2** (13 legs; leg is new) |
+| Golazos | — | 0.7 | 0.8 | 1.0 | **1.0** |
+| UFC | — | 0.0 | 0.0 | 0.0 | **0.0** (market closed: honest) |
+
+- ⚠ **Candy's 57 % is a RELABEL, not a pricing gain.** One leg stepped 27.2 → 54.4 at 10-11 6:50 PM PT. The denominator was 125 editions throughout (0.8-point steps before and after). The cause is deploy `a56214193` (ledger 10-11): a confirmed listing floor within ±25 % of the sales median now lifts LOW → MEDIUM, where it used to only cap the price. That lift was backtested before shipping (19.2 % MdAPE vs MEDIUM 20.0 / LOW 27.3). But the market has been frozen since the newest sale (10-11 8:21 PM PT), so nothing has scored it since, and the share should fall from ~11-10 as pre-freeze sales leave the 30 d window. That fall will be honest. Detail: [candy-mlb.md](../strategy/collections/candy-mlb.md).
+- ⚠ **Pinnacle: the "flat at 31.5" line in the 10-10 block is stale** (latest leg 33.9 at 2:55 PM PT 10-17). An unexplained slide of 44.7 → 27.5 between 09-11 and 09-18 sits under that baseline. ⭐ **Pinnacle's realised-sales accuracy, measured for the first time ~7:30 PM PT** (#193): level with a naive last-3 median overall (14 d: within ±25 % 62.5 vs 66.0, WAPE 26.9 vs 30.3). But HIGH trails a last-5 median (since 10-11, n 163: 68.1 vs 74.2, WAPE 31.7 vs 22.9), and MEDIUM (76.3) beats HIGH. Fix proposed, gated on n ≥ 500 ([disney-pinnacle.md](../strategy/collections/disney-pinnacle.md)).
+- **Backtest, Top Shot 7 d (Cowork, 10-17 afternoon):** published 14.3 % MdAPE, ratio 1.000. The gate holds.
+- **Demand:** external signed-in users per PT week, 09-14 → 10-12: 1 · 3 · 12 · 5 · 5 (`usage_events` minus `internal_accounts`). The 10-15 block below was the baseline; **re-read 10-22** (block above it, by `scripts/demand-read.sql`): 7 external signed-in users and 2 signups in PT week 10-15..10-21, the first share-CTA conversion; next re-read on/after 10-29.
+- ✅ **M11's zero is explained, not blind** (re-read ~7 PM PT 10-17). `cron.job_run_details` has 0 `failed` runs on every PT day 10-10 → 10-17, against 5–24/day 10-03 → 10-09. Of the 111 statement timeouts in 16 days, 99 were job 637 `rpc-chain-arrival-pack-pulls` waiting on dark nodes, last one 10-09 9:41 AM PT. They ended at ~10:00 AM PT 10-09 by `20261009162222` (each probe checked once): 9:41 AM failed at the 120 s cap, 10:41 AM and every hourly run since succeeded (0.1 s). It was NOT the #181 parking (`20261010142634`, 10-10 ~7:27 AM PT), which landed ~21 h after the last timeout. Positive control 10-17 6:51 PM PT: a one-off `SELECT 1/0` job recorded `failed` and `check_pgcron_recent_failures()` returned it at once; the only deleter of the table is jobid 512 (age > 30 d, never by status). Job 637 now runs ≤ 6 s (168 runs/7 d). The other failure kinds (startup timeout 10-06, cancel 10-04, deadlock 10-03) are recorded in the same table, so the instrument still records failures.
+
+## ⭐ NEW 2026-10-17 — SERIES 2026-27 LAUNCH READINESS (Top Shot; tip-off 2026-10-20, Rookie Debut 2026-11-11)
+
+Done 10-15 → 10-17 (Claude Code cloud, session_014vWuubmVKLyyyMQAwWzT2W; Trevor: "Dig into this" → "Keep going"). Mechanics and the cost model: [topshot-ownership-index.md](topshot-ownership-index.md).
+- **Ownership index made launch-ready:**
+  - It counts walk-confirmed holdings only (`walk_missed_at`).
+  - It indexes every non-Dune set from 219 up, finds new collectors hourly, and backfilled 7,455 never-walked Series 8-era collectors.
+  - It hydrates and predicts the ids it cannot place, with the stock counts sampled and 60 ids per run.
+  - It grew 280,837 → 527,228 rows; squeeze-board census-complete 2,260 → 2,272 after the first backfill run (~8 more runs to go).
+- **Series 9 labels and circulation are covered** (series maps + guard; Atlas cap). Do NOT extend `topshot_normalize_circulation` to series 9 (/500 Rookie Debut vs its 1,000 floor).
+- 🔜 **Owed 2026-10-20 ~7 PM PT:** a fresh-session scheduled task verifies series-9 ingest end to end (sets, `collection_series` 9, circulation vs Atlas, index rows, pack labels).
+- ✅ **VERIFIED 2026-11-11 ~6:20 PM PT (Claude Code cloud, scheduled): the Top Shot set is really named `Rookie Debut` (Series 9, set 281, `sets.id 2615be23…`), and the class is 38, not ~60** — 38 plays in Dapper's own Collector Pack pool for set 281 (all 125 atlas editions mapped), 152 RPC editions (4 parallels each), 25 of them added 11-09; `topshot_2026_rookie_players` = 38 and `/api/public/insights/rookies?class=2026` serves 38 rows (cohort 718 sales / $35.9k 30-day GMV). No view change needed; the "~60" was an estimate. New Series 9 set `Rookie Ultimate` (3 players, all already in the class). Pack-side detail (dists 8916–8919, 8926–8928, chain attribution, the 30-day Atlas park found on 8918, fixed by the hourly `rpc-atlas-rearm-minted-dists`, `20261112031831`): docs/strategy/features/pack-ev.md, Open issues 11-11.
+- ✅ **RE-READ 2026-11-02 ~7:30 AM PT (Claude Code cloud): already built — `topshot_2026_rookie_players` is a VIEW over Series 9 set `Rookie Debut` (4 players today: the Tip-Off pack rookies), and `topshot_2026_rookie_index` / `_cohort_stats`, `topshot_rookie_edition_board` and `topshot_rookie_collector_leaderboard_mv` all read it; `/api/public/insights/rookies?class=2026` serves it since 10-22. It fills itself when Rookie Debut mints. Owed now is only a VERIFY on 11-11 (scheduled task 6:17 PM PT 11-11): the count reaches ~60, and the set is really named `Rookie Debut` (else the view needs the real name).** Original line, kept: ~~Owed on/after 2026-11-11: build the 2026 rookie class from Series 9 rookie sets~~ (the 2025 list is a VIEW over Series 8 set names) and point the rookie boards at it. Do not seed it from the draft or the four announced partners: 4 of ~60 would silently drop the rest.
+- ❓ **Needs Trevor:** how the 2026-27 Yearbook / Blue Chip / Squad Goals leaderboards are scored. RPC will not publish its own rank as Top Shot's. The board worth building is "cost to climb into the top N", and it needs the official scoring.
+- **Tracked since 2026-10-19:** `editions.autographed_at` (from Atlas `autographedAt`, swept daily by pg_cron `rpc-autograph-sweep`; 236 Top Shot + 226 All Day signed editions at the census). Partner-athlete status itself is still not stored: Atlas's `activePartnerAthlete` flag marks only 4 players and is not the signer list. Research: [autographs-topshot-allday-2026-10-19.md](../research/autographs-topshot-allday-2026-10-19.md). **Not tracked yet:** Constellations trade-ins burn older-season Rares that the index does not walk (Dune-era sets), so holder counts there lag.
+
+## ⭐ NEW 2026-11-13 — DEMAND RE-READ, WEEK OF 11-05..11-11 PT (by `scripts/demand-read.sql`, params 11-05 08:00 UTC → 11-12 08:00 UTC; Claude Code cloud, ~10:30 AM PT)
+
+Baseline re-run with the SAME file (crawler rule included): 10-29..11-04 reproduces the 11-07 block on every row (69 / 149, 5 signed-in, 1 signup, direct 105 (72), Google 20 (15), ChatGPT 15 (4), X 5 (3), wallet pastes 37 (6), share views 13, email prompt 29 (17)) — the 11-10 crawler rule removes nothing from that week.
+
+| PT week (Thu 07/08:00 UTC →) | 10-29..11-04 | **11-05..11-11** |
+|---|---:|---:|
+| human browsers / visits | 69 / 149 | **252 / 538** (580 crawler-burst visits excluded) |
+| external signed-in users | 5 | **35** |
+| signups (minus internal) | 1 | **20** |
+| visits by source (one-page) | direct 105 (72) · Google 20 (15) · ChatGPT 15 (4) · X 5 (3) · Bing 3 (2) · other 1 | **direct 424 (297) · X 86 (62) · ChatGPT 13 (4) · Google 12 (9) · Bing 2 (0) · other 1** |
+| wallet pastes (browsers) | 37 (6) | **121 (22)** |
+| share views, browser × page | 13 | **14** (26 raw) |
+| sign-in clicks (`funnel_events`, human) | home_header 1 · share_cta 1 | **challenge_board_signup 10** · site_header 6 · site_header_signup 6 · home_hero_signup 4 · home_header_signup 2 · home_pricing 2 · share_cta 2 |
+| email prompt shown (browsers) | 29 (17) | **133 (43)** |
+| `magic-link-requested` (carrying a challenge) | 2 (0) | **46 (11)** |
+| challenge cases created / complete (minus internal) | 0 / 0 | **27 / 27** |
+| concierge human messages (sessions) | 2 (2) | **16 (3)** |
+
+**Read:**
+- ⭐ **The Dame Time week is the first regular week where acquisition AND activation both moved:** signed-in 5 → 35, signups 1 → 20, 27 challenge cases (all complete), X 5 → 86 visits; the challenge board is the top sign-in surface (10 clicks). This is the same population the 11-10 off-cycle review counted (that window overlaps 11-05..11-09), so it is a confirmation by the regular instrument, not a second wave.
+- ⚠ **`direct` is still an UPPER BOUND, inflated two ways.** (1) A **slow tail of the 11-09 crawler** passes the hour × section ≥ 8 rule: 659 direct one-page `/panini-blockchain/*` landings, every one a fresh browser, only 580 excluded — the other ~79 arrive 1–4 per hour (mostly `/edition/`, no ref, no second event, never seen again), concentrated 11-09 6–7 AM PT and all through 11-11. A real visitor from a Discord/app link also has no ref, so this is a heuristic, NOT a script change. (2) **Two internal browsers** (both load `/admin/*`) carry 63 visits. Taking both out: ~173 browsers / ~396 visits, direct ~282.
+- **Search still did not grow:** Google 20 → 12, ChatGPT 15 → 13. Acquisition this week was X + direct (the challenge), not organic.
+- **Wallet pastes 37 → 121 (6 → 22 browsers)** and email prompt 17 → 43 browsers — new members exploring their own holdings after sign-up; share views flat (14).
+- 🔜 **Next re-read: on/after 2026-11-19** (params 11-12 08:00 UTC → 11-19 08:00 UTC) — the first week AFTER the challenge locked (11-10): the honest test of whether the 20 signups return. Check the `/panini-blockchain` lone-visit tail again before reading `direct`; if it persists, give the crawler rule a per-day bucket in the script (a rule change, so re-run the baseline with it).
+
+## ⭐ NEW 2026-11-10 — OFF-CYCLE ACTIVITY REVIEW, 11-03..11-09 PT (by `scripts/demand-read.sql`, params 11-03 08:00 UTC → 11-10 08:00 UTC; Claude Code cloud, ~1:45 PM PT; full report: Project doc `claude/activity-review-2026-11-10-week.md`)
+
+Not the regular Thursday week (that one is 11-05..11-11, owed on/after 11-12 — see the 11-07 block). Compared with the 10-27..11-02 window by the same file.
+
+| | 10-27..11-02 | **11-03..11-09** |
+|---|---:|---:|
+| human browsers / visits (crawler rule below) | 70 / 134 | **184 / 419** (580 crawler visits excluded) |
+| external signed-in users | 5 | **33** |
+| signups (minus internal) | 1 | **17** (19 counting 11-10 to 1:40 PM PT) |
+| Dame Time cases created / complete | — | **26 / 26** (27 / 27 by 11-10 noon) |
+| sign-in clicks (human) | home_pricing 3 · home_header 1 · share_cta 1 | **challenge_board_signup 8** · site_header 5 · site_header_signup 5 · home_hero_signup 4 · home_pricing 2 · home_header_signup 2 · share_cta 2 |
+| concierge human messages (sessions) | 9 (4) | **10 (2)** |
+
+**Read:**
+- ⭐ **Dame Time (11-06 → locked 11-10) is the first thing that moved acquisition AND activation together:** X 81 visits (5 the week before), its board the top sign-up surface; of the 19 who signed up through 11-10 1:40 PM PT, 9 came back on a second day. 6 of 19 never made a trophy case (5 of them hold Dames).
+- ⚠ **New instrument rule — crawler bursts.** A JS-running crawler (11-09 4–7 AM PT, ~580 single-page `/panini-blockchain/*` visits, a fresh vid each) passed the human-visit rule and read as 772 browsers. `demand-read.sql` now drops lone, no-ref, never-seen-again visits in an hour × section bucket of ≥ 8 and reports them as their own row; over 10-13..11-10 only this crawler hit it.
+- **Shipped against it (11-10):** feedback loop for relayed feedback + new-member concierge identity, closed-board next step, alert card waits for a second visit, dashboard concierge pills, 14,214 stale Panini HIGH labels re-labelled (ledger 11-10).
+- 🔜 **The 11-12 regular re-read** runs with the crawler rule; compare script against script (re-run 10-29..11-04 with the new file first — it should match the 11-07 block, since no crawler burst fell in it).
+
+## ⭐ NEW 2026-11-07 — DEMAND RE-READ, WEEK OF 10-29..11-04 PT (by `scripts/demand-read.sql`, params 10-29 07:00 UTC → 11-05 08:00 UTC — 169 h, PDT ended 11-01; Claude Code cloud, ~10:40 AM PT)
+
+Baseline re-run with the SAME file (script against script, never the prose block): 10-22..10-28 reproduces the 10-29 block on every row.
+
+| PT week (Thu 07:00 UTC →) | 10-22..10-28 | **10-29..11-04** |
+|---|---:|---:|
+| human browsers / visits | 63 / 98 | **69 / 149** |
+| external signed-in users | 2 | **5** |
+| signups (minus internal) | 0 | **1** |
+| visits by source (one-page) | direct 59 (37) · Google 25 (22) · ChatGPT 11 (5) · Bing 2 (0) · X 1 (1) | **direct 105 (72) · Google 20 (15) · ChatGPT 15 (4) · X 5 (3) · Bing 3 (2) · other 1** |
+| Google one-page share | 22 / 25 (88 %) | **15 / 20 (75 %)** |
+| wallet pastes (browsers) | 38 (4) | **37 (6)** |
+| share views, browser × page | 9 | **13** (22 raw page-view events) |
+| sign-in clicks (`funnel_events`, human) | home_pricing 3 · home_header 1 | **home_header 1 · share_cta 1** |
+| email prompt shown (browsers) | 15 (9) | **29 (17)** |
+| `magic-link-requested` | 1 | **2** |
+
+**Read:**
+- ⚠ **The visit jump is mostly OUR OWN browsers, not demand.** The +46 visits sit almost entirely in `direct` (59 → 105), and the heaviest direct browsers are internal by what they load: three browsers hit `/admin/*` (feedback, swap-test) for 24 visits, and the single heaviest browser (21 visits, 17 direct one-page) lives on `/trades/<room>` and `/dashboard` — the trade room went live 10-31 and was being tested all week. Excluding only the three `/admin` browsers (a heuristic, NOT a script change): 125 visits / 66 browsers, direct 81 (56 one-page). The script has no internal-browser exclusion (`internal_accounts` is keyed by user, and most of these visits are anonymous), so **a QA-heavy week inflates `direct` by construction** — read direct as an upper bound.
+- **Search did not grow.** Google 25 → 20 landings (one-page share 88 % → 75 %), ChatGPT 11 → 15, X 1 → 5 (small n). Nothing moves the acquisition read.
+- **Small activation signal, n tiny:** signed-in 2 → 5, one external signup, email prompt seen by 17 browsers (from 9), one share-CTA sign-in click (0 the week before). The Dapper outage confound of the prior week (10-27 → 10-28) is gone from this one, so part of the rebound is the market reopening.
+- 🔜 **Next re-read: on/after 2026-11-12** (params 11-05 08:00 UTC → 11-12 08:00 UTC). ⚠ That week holds the IA re-launch (11-06 evening) and the 11-07 mobile-bar re-slot, and also heavy cloud QA sweeps (#235's second control: our own Playwright walks) — split by `metadata.automated` AND check the heaviest-browser list before reading any rise as the IA working.
+
+## ⭐ NEW 2026-10-29 — DEMAND RE-READ, WEEK OF 10-22..10-28 PT (by `scripts/demand-read.sql`, params 10-22 07:00 UTC → 10-29 07:00 UTC; Claude Code cloud, ~8:32 AM PT)
+
+| PT week (Thu 07:00 UTC →) | 10-15..10-21 | **10-22..10-28** |
+|---|---:|---:|
+| human browsers / visits | 66 / 110 | **63 / 98** |
+| external signed-in users | 7 | **2** |
+| signups (minus internal) | 2 | **0** |
+| visits by source (one-page) | direct 76 (52) · Google 23 (16) · ChatGPT 5 (2) · Bing 4 (4) · X 1 · other 1 | **direct 59 (37) · Google 25 (22) · ChatGPT 11 (5) · Bing 2 (0) · X 1 (1)** |
+| Google one-page share | 16 / 23 (70 %) | **22 / 25 (88 %)** |
+| wallet pastes (browsers) | 40 (7) | **38 (4)** |
+| share views, browser × page | 6 | **9** (17 raw page-view events — the reload loop is gone) |
+| sign-in clicks (`funnel_events`, human) | share_cta 1 · home_header 0 | **home_pricing 3 · home_header 1** · share_cta 0 |
+| email prompt shown (browsers) | 19 (9) | **15 (9)** |
+| `magic-link-requested` | 5 | **1** |
+
+**Read:**
+- **Flat acquisition, no activation this week.** Visits and browsers are level. Google landings are unchanged (25), but more of them saw one page (88 %, from ~70 %). ChatGPT doubled (5 → 11, small n). Signed-in users 7 → 2 and signups 2 → 0. Four sign-in clicks (3 from the home page's FREE block, `home_pricing`, which shows no price; 1 from the header) produced one magic-link request and no new account.
+- ⚠ **Confounded, so not a trend:** the Dapper outage began 10-27 (~9:30 AM PT; markets closed on All Day / Pinnacle, Top Shot back late 10-28). Two of the seven PT days had no live market to look at, and the most active user last week (sniper filters) had nothing to snipe. Read the next week before calling the signed-in drop real.
+- The share card's reload loop (fixed 10-22) is gone from the data: 9 browser × page share views from 17 raw events (last week 6 from 72).
+- The 10-22 falsifier ("activation, not acquisition, is the lever": more share-CTA clicks per share view with flat Google) got no support this week: 9 share views, 0 share-CTA clicks. n is tiny either way.
+- 🔜 **Next re-read: on/after 2026-11-05** (params 10-29 07:00 UTC → 11-05 08:00 UTC: PDT ends 11-01, so this week is 169 h long; the script header says to switch to 08:00 UTC after the November change).
+
+## ⭐ NEW 2026-10-22 — DEMAND RE-READ, WEEK OF 10-15..10-21 PT (vs 10-08..10-14, both by `scripts/demand-read.sql`)
+
+**Method, now codified:** [`scripts/demand-read.sql`](../../scripts/demand-read.sql) — every definition is written in its header (human visit = a `sid` with a `vid` and a page-view, which discounts the unflagged headless fingerprint; source = the `ref` of the visit's first page-view; signed-in minus `user_activity.is_internal`). Both weeks below were run through it, so they compare like for like. ⚠ The 10-15 prose block further down was hand-counted and differs from the script on visits (~94 vs 88), Google (26 / 19 one-page vs 24 / 18) and pastes ("10" vs 27 events); **quote the script's row, never the prose.**
+
+| PT week (Thu 07:00 UTC →) | 10-08..10-14 | **10-15..10-21** |
+|---|---:|---:|
+| human browsers / visits | 61 / 88 | **66 / 110** |
+| external signed-in users | 6 | **7** (shashmeister, blaise_27, TrustProcess, webz_80, sdb, Awesemo, banana_boat) |
+| signups (minus internal) | 1 | **2** |
+| visits by source (one-page) | direct 60 (30) · Google 24 (18) · ChatGPT 4 (2) | **direct 76 (52) · Google 23 (16) · ChatGPT 5 (2) · Bing 4 (4) · X 1 · other 1** |
+| Google one-page share | 18 / 24 (75 %) | **16 / 23 (70 %)** |
+| wallet pastes (browsers) | 27 (13) | **40 (7)** |
+| share views, browser × page | 8 | **6** (72 raw page-view events — inflated by a reload loop, below) |
+| sign-in clicks (`funnel_events`, human) | home_header 2 · share_cta 0 | **share_cta 1** · home_header 0 |
+| email prompt shown (browsers) | 16 (7) | **19 (9)** — `deal-watch-shown` 8 + new `first-alert-prompt-shown` 11 |
+| `magic-link-requested` | — (beacon shipped 10-14) | **5, all `sent`** |
+
+**Read:**
+- ⭐ **The share-card sign-up CTA (shipped 10-14) produced its first conversion.** shashmeister, 10-21 8:44 AM PT: Google → `/` → their own `/share/<wallet>` card → `signin_click share_cta` → `/login?next=/share/…` → magic link sent 8:50 → signed in 8:51 → the week's most active user (124 events, sniper filters). n = 1, so it says the path WORKS, not that it converts at a rate.
+- 🐛 **…and the same visit exposed a bug, fixed 10-22 (`demand-read` ledger entry):** their share card RELOADED ~every 9 s for 6 minutes (36 page-views) before they signed up. `/api/collection-snapshot` CDN-cached a 0-moment snapshot for 300 s; the empty state's poll (cache-busted) saw moments and reloaded, the page's server fetch got the cached 0, and the remount restarted the poll at attempt 0. Fixed at both ends: an empty snapshot is `no-store`, and the empty state auto-reloads at most twice per wallet per 10 min, then offers a button.
+- ⚠ **Two instrument corrections:** (1) `signin_click` lives in `funnel_events`, not `usage_events` — the 10-15 block's and the 10-22 night pass's "0 sign-in clicks" both read the wrong table (the baseline week actually had 2, from the home header); (2) share-view EVENTS are not share views while the reload loop existed — count browser × page.
+- **Acquisition is flat; activation moved.** Google is unchanged (24 → 23 visits, ~70 % see one page); direct rose 60 → 76 (mostly one-page); ChatGPT and Bing are small. Signed-in users 6 → 7 and signups 1 → 2. Falsifier for "activation, not acquisition, is the lever": if the next weeks show more share-CTA clicks per share view with flat Google, it holds; if signups stay at the level of new search landings, acquisition is the binding problem after all.
+- **Still not measured:** whether the magic-link sends become sessions (5 sent; 2 became new accounts this week, the others were returning users).
+- 🔜 **Next re-read: on/after 2026-10-29** with `scripts/demand-read.sql` (params 10-22 07:00 UTC → 10-29 07:00 UTC; PDT holds until 11-01). ✅ Done 10-29 (block above).
+
+## ⭐ NEW 2026-10-15 — DEMAND READ, WEEK OF 10-08..10-14 PT (baseline for the next one)
+
+- **Human traffic:** ~61 browsers / 94 visits (`usage_events` minus `metadata.automated`; 29,580 of 29,914 beacons were automated). **6 external signed-in users** (notwhitelisted, mavhill (new 10-10), webz_80, awesemo, banana_boat, tomwagmi); 1 signup. Vercel Web Analytics said 5,710 visitors, almost all headless (schema-truth.md).
+- **Sources (first page of each visit):** direct 60 (all 25 signed-in visits), **Google 26** (all anon, long-tail: ~12 Panini pack cards, TS editions/packs/players, Pinnacle, rookie board; **19 of 26 saw one page**), **ChatGPT 4**, and ChatGPT produced the week's only signup (mavhill: ChatGPT → `/insights/account-value` → share card → collection → `/login` → account a minute later). No social referrers.
+- **Funnel:** 10 wallet pastes → 10 share views → **0 sign-in clicks**; email capture shown 16× to 7, 0 submitted; 16 anon views of 8 collectors' share links. `/login`: 7 visitors, the 2 real ones both succeeded, the rest bots, so the login page is not where people drop off.
+- **What people use:** alerts (all 4 signed-in outbound clicks; the one real concierge conversation, webz_80's repeat-alert bug, shipped 10-14).
+- **Shipped 10-14 against it:** Panini username band; share-card sign-up with `next=/share/<wallet>` + `signin_click share_cta`; share-card own-collection lookup; dashboard first-alert card; `/login` `magic-link-requested` beacon. No outreach, by Trevor's decision.
+- 🔜 **OWED: re-read 10-15..10-21 on or after 2026-10-22.** Same queries, discount the unflagged headless fingerprint, and report the new surfaces' counts against this baseline (Google one-page share 19/26; paste → sign-in click 10 → 0). A fresh-session scheduled task could not be armed from the 10-14 thread: it gets no Supabase connector from there, so it would run blind. Create it from the claude.ai routines UI with the Supabase connector attached, or run it by hand.
+
+## ⭐ NEW 2026-10-03 — TOP SHOT FMV MEASURED OUT OF SAMPLE FOR THE FIRST TIME: the published price trails a naive last-3-sales median every week, and ran high in a falling market
+
+**The gate metric M1 is a confidence SHARE — a property of the population sampled. This is the first
+measurement of the PRICE against what collectors actually paid.** Instrument: `topshot_fmv_backtest(p_days)`
+(`20261003223807`, ops-only; register R125). Each Top Shot sale (serial > 25, Dapper sell-backs to
+`0xe1f2…` excluded) is compared with the FMV we had published ≥ 1 day before it, and with a naive
+comparator — the median of the edition's last 3 prior sales in the 30 days before the same cut-off.
+
+| PT week (2026-10-03) | n | published: median abs err / median ratio | last-3 median: err / ratio |
+|---|---|---|---|
+| week 0 (last 7 d) | 17,134 | **14.3 % / 1.000** | 12.5 % / 1.000 |
+| week 1 | 13,835 | 15.0 % / 1.045 | 13.0 % / 1.000 |
+| week 2 | 14,163 | 17.6 % / 1.100 | 13.0 % / 1.000 |
+| week 3 | 17,722 | 24.8 % / 1.200 | 17.5 % / 1.100 |
+| week 4 | 16,274 | 20.0 % / 1.136 | 15.0 % / 1.042 |
+
+By tier, last 7 d (published vs last-3): **HIGH 10.0 % / 84.0 % within ±25 % vs 9.1 % / 82.5 % — parity**;
+MEDIUM 15.0 / 67.9 vs 13.0 / 69.8; LOW 21.8 / 56.4 vs 16.7 / 63.0; ASK_ONLY 54.9 % at ratio **1.549**.
+
+⭐ **Two readings, one unsettled.** (1) The confidence tiers ORDER correctly — HIGH is the most
+accurate, ASK_ONLY the least — so the label is not overclaiming the way Panini's was (09-23). (2) The
+published FMV trails the naive comparator by 2–7 pts every week, and the gap lives in MEDIUM / LOW —
+the thin editions where non-sale inputs (asks) carry weight — while the four weeks before this one ran
+5–20 % HIGH. **Attributed the same hour — it is NOT the ask blend.** Over weeks 1–4 (46,897 sales) 98.9 % of the
+matched snapshots carried no `top_shot_ask`, and `published / asp_usd` = **1.000** at the median in every
+liquidity band: **the published Top Shot FMV is the WAP** — read against `app/api/fmv-recalc/route.ts`,
+`fmv_usd` = `wapWithoutOutliers` (recency-weighted average, 7-day half-life, 30-day window) and `asp_usd`
+is the same WAP unfiltered, so a 1.000 ratio says the outlier filter removes almost nothing. A 7-day-half-life
+MEAN still lags a falling market and is pulled up by high prints — `asp / realized price` 1.18 for editions
+with ≥ 10 sales / 30 d, 1.20 for 3–9, 1.375 for < 3 — which is exactly where the last-3 MEDIAN wins. The
+lever is a shorter half-life and/or a median, not the ask.
+
+**All Day, same instrument (`fmv_sales_backtest('nfl_all_day', 7)`, `20261003224946`):** 93 % of All Day sales are
+under $1 (daily median price $0.15–0.50, 5-cent ticks), so the PERCENT error misreads a penny market — read the
+dollar column. Week 0 (n 4,992): published median abs error 26.7 % = **$0.05**, ratio 1.200; week 1 25.0 % / 0.882;
+**week 2 (09-12 → 09-19, the drop week, n 5,759): 45.0 % / ratio 0.571** — the published price was 43 % BELOW what
+collectors paid across 2,800+ editions, liquid ones included ($0.75 low on $1–5 items, $4 low on ≥ $5 items);
+week 3 33.3 % / 0.741. Snapshots were fresh (median 1.5 d) and sales ingestion lag is minutes, so this is the
+estimator lagging a market that moved ~2× in days around a drop — not a pipeline artefact. The last-3 median
+lagged too (0.789 that week), only less. ⭐ **M2's bar is a confidence share; this says the All Day PRICE is
+systematically wrong in drop weeks regardless of the share.**
+🔧 **MODEL CHANGE SHIPPED ~4:50 PM PT the same day — FMV 1.7.0 → 1.8.0: the sales-only FMV is the MEDIAN of the
+edition's 7 most recent typical sales** (`lib/fmv-recalc-math.ts` `medianOfMostRecent`, `FMV_RECENT_SALES_N = 7 =
+MIN_SALES_30D_HIGH`; `FMV_ALGO_VERSION` is now the one place the version lives). Chosen by measurement: med3 / med5 /
+med7 / med10 read identically out of sample (14 d, n 4,194: 13.0 % / ratio 1.000 each; published WAP 15.0 % / 1.045),
+so N = 7 was taken for robustness (3 bad prints) and coherence with the HIGH floor. The WAP lag is structural —
+`weightedAveragePrice` is tiered 3/2/1 over 0–7/7–14/14–30 d (the header's "7-day half-life exponential" was never the
+code; its dead constant is gone), so a 29-day print still carries a third of today's weight. Unchanged: `capValue`,
+the ask ceiling, every guard, confidence grading, the cold/thin SQL writers, and `asp_usd` / `asp_without_outliers`
+(raw / filtered WAP) — so `fmv_usd / asp_without_outliers` is now a per-edition read of what the change did.
+`/legal/fmv-methodology` states the rule (its prior copy also misdescribed 1.7.0). ⚠ **The accuracy metric M1 is a
+confidence SHARE and does not move with this; the out-of-sample backtest is the instrument that does — read
+`fmv_sales_backtest('nba_top_shot', 7)` from ~10-06, when every matched snapshot is 1.8.0.** Decided under the standing
+delegation, as #140's recency window was on 09-25. Revert: `git revert` the 1.8.0 commit; the sweep re-prices in ~1.5 d.
+
+## ⭐ NEW 2026-09-20 — A REFRESH-ORDER CHANGE MOVES A CONFIDENCE SHARE WITHOUT ANY PRICING CHANGE (Panini, measured; a trap for every other collection)
+
+🚨 **The finding in one line: Panini's HIGH/MEDIUM share fell 83–93% → ~61% in one day, NO pricing
+code changed, and the drop is entirely COMPOSITION.** On 2026-09-19 the Panini walk stopped taking
+its refresh queue from the grid enumeration and started taking it from our own catalogue,
+stalest-first (`8e40e742d`, `878ec188e`). Daily `panini_fmv_snapshots` confidence, PT:
+
+| day | 09-04 → 09-18 | 09-19 | 09-20 |
+|---|---|---|---|
+| HIGH/MED share | **83 – 93%** (15 days) | **62.6%** | **60.7%** |
+| ASK_ONLY share | ~5 – 10% | 22.5% | 19.9% |
+
+⭐ **THE COHORT SPLIT IS THE CONTROL, AND IT IS WHAT MAKES THIS A MEASUREMENT RATHER THAN A STORY.**
+Measured over the 30 h to 2026-09-20 11:xx PT, splitting the editions priced by whether they had
+been priced at all in the prior 15 days:
+
+| cohort | editions | HIGH/MED | ASK_ONLY |
+|---|---|---|---|
+| **repeat** (already in rotation) | 509 | **83.3%** | 10.2% |
+| **newly reached** (unlocked by the fix) | 1,674 | **55.4%** | 25.1% |
+
+The repeat cohort is a **no-change arm the fix cannot move** and it sits exactly on the old plateau.
+**77% of what we now price is the illiquid tail that was never being priced before**, so the
+aggregate fell by mix alone. ⛔ **Do NOT read the pre-09-19 ~87.5% as a level to return to** — it was
+the share of the easy slice the walk kept re-pricing. The honest catalogue-wide number is ~61% and
+will drift further toward the tail's true rate as coverage completes.
+
+⚠ **THE GENERALIZABLE TRAP, which is the reason this block is in this file.** The same mechanism will
+fire on ANY collection whose refresh order is changed from "what the marketplace surfaces" to
+"stalest-first", and it will look exactly like an accuracy regression on M1/M2. **A confidence share
+is a property of the POPULATION SAMPLED, not only of the pricing model** — so before attributing any
+step in a `*_fmv_high_med_share_pct` to pricing, split the window into repeat-vs-newly-reached and
+check whether the repeat arm moved. If the repeat arm is flat, nothing regressed.
+
+⚠ **Panini is NOT in the headline table above, and that is a real instrumentation gap, not an
+omission from this block.** `rpc_trust_health_precompute` carries **no `panini_fmv_high_med_share_pct`
+metric at all** — verified live 2026-09-20, Panini's only two metrics there are
+`panini_sale_field_mapping_shortfall` and `panini_sale_price_capture_dry_days`. So this step was
+invisible to every standing instrument and was found only by the `panini-freshness-check` scheduled
+task. **Panini's confidence share has no owner in the trust-health precompute — that is the open
+item this block raises.** Nothing about M1/M2 changed; Panini never fed them.
+
+✅ **CLOSED 2026-10-14 ~8:00 PM PT:** `rpc_thp_leg_panini_fmv_share` (migration `20261015025957`, pinned) writes
+`panini_fmv_high_med_share_pct` six-hourly (`57 3,9,15,21` UTC, cron_heavy) over the latest
+`panini_fmv_snapshots` row per edition; first value **23.7 %** (HIGH 2,122 + MEDIUM 5,104 of ~30.5k). It is
+now a row in the public `/legal/fmv-methodology` accuracy table.
+
+⚠ **Panini FMV findings from the same review (2026-10-14, all point-in-time against the next real sale):**
+- **The labels are not monotone in accuracy.** panini-1.2.0, 45 d, within ±25 %: HIGH 67.7 %, **LOW 59.3 %,
+  MEDIUM 46.8 %**; under $5 MEDIUM 47 % vs LOW 63 %, and at $100+ HIGH is the WORST tier (37 %, median
+  ratio 0.88). Relabelling (e.g. 1-recent-sale → LOW) would cut the headline share — a Trevor call, not shipped.
+- **A between-walk "reprice from new panini_sales" refresher was tested and REFUTED.** It looked like
+  +15 pts until the sales were filtered by `first_seen_at`: Panini sales reach the DB a median **53 h**
+  (p90 144 h) after `sold_at`, because they arrive with the walk. Point-in-time it is 55 % vs 56 % — no gain.
+  ⛔ **Any Panini backtest must gate inputs on `first_seen_at`, not `sold_at`.** The real lever is
+  ingest latency (the laptop walk's edition age, p50 ~89 h), not the estimator.
+- **A DISPERSION-based confidence rule — ✅ SHIPPED 2026-10-15 as FMV engine `panini-1.3.0` (Trevor: "Do what makes sense on these"); `PANINI_FMV_ENGINE=1.2` is the kill switch. Prices unchanged; labels re-grade as editions are re-walked (~4 days). Measure it live in `panini_published_fmv_backtest` (algo_version `panini-1.3.0`).** Original proposal:
+  Measured 2026-10-14 ~10:30 PM PT, panini-1.2.0 snapshots vs the next real sale (14 d, inputs gated on
+  `first_seen_at` / `last_sale_at <= computed_at`), within ±25 % by the spread of the edition's last 3 sales
+  (panini_sales ∪ serial last sales):
+
+  | last-3 spread | HIGH | MEDIUM | LOW |
+  |---|---|---|---|
+  | ≤ 1.5× ("tight") | 74 % (n 1,939) | 65 % (954) | **74 % (1,372)** |
+  | 1.5–3× | 63 % (1,433) | 30 % (615) | 38 % (496) |
+  | > 3× | 29 % (102) | 27 % (200) | 31 % (204) |
+
+  Spread predicts accuracy within every current label; the current labels do not order it. Proposal:
+  **HIGH = tight; MEDIUM = ≥3 recent sales with a 1.5–3× spread; else LOW** (ASK_ONLY / NO_DATA unchanged)
+  → about 72 % / 63 % / ~35 % within ±25 % — monotone. Sized on a hash-sampled quarter of the catalogue
+  (7,608 editions): HIGH+MEDIUM share **23.1 % → ~42 %**. ⚠ Caveat before shipping: "tight" LOW editions
+  include old sales; the backtest only scores editions that went on to sell, so add a recency bound (or
+  re-measure on editions with a sale > 90 d old) before trusting the 74 % for the stale tail.
+  ⤷ **Re-measured the same night (half-sample by sku hash, 2,125 tight-spread targets): the stale tail is
+  NOT worse — newest sale < 30 d: 68 %, 30–90 d: 73 %, > 90 d: 86 %.** Likely confound: old tight editions
+  are cheap commons at a stable floor. So no recency bound is needed for accuracy; the remaining caveat is
+  only selection (editions that never sell again are never scored).
+- **ASK_ONLY pricing — measured, deliberately NOT changed (2026-10-15).** Over 662 ASK_ONLY targets (45 d) the
+  next sale was a median 0.33× the floor ask (p25 0.17×, p75 0.50×) — but re-scaling the 0.5 multiplier to fit
+  that median LOWERS accuracy (within ±25 %: 32 % today vs 23–24 % at 0.25–0.35), because the spread is wide.
+  Only 4 targets had a $1,000+ ask, too few to fit an outlier cap on (the $1M-ask Dembele /12 → $500K case).
+  The boards already label these "from asks" and call the total an upper bound. Revisit with ≥ 50 big-ask sales.
+  ⤷ **Revisited 2026-10-19 ~1:15 PM PT: 72 big-ask targets; no multiplier beats 0.5 within ±25 % (23.6 % vs 16.7–22.2 %). No change** (panini.md Open issues).
+- **Ingest latency (sales land ~53 h late) — left as is.** The fix is a faster/cloud walk: infra spend
+  (pre-revenue rule) or an untestable-from-here change to the laptop runner.
+
+## [SUPERSEDED] ⭐ HEADLINE METRIC — re-read live 2026-10-10 ~3:05 PM PT from `rpc_trust_health_history`, BY PT WEEK (supersedes the 09-18 block below)
+
+Same instrument as 09-18 (the six-hourly precompute legs; never mixed with a hand-derivation). Weeks start Monday.
+
+| gate | bar | wk 09-14 | wk 09-21 | wk 09-28 | wk 10-05 (23 legs) | verdict |
+|---|---|---|---|---|---|---|
+| **M1** Top Shot HIGH/MED | ≥ 50 % | 50.7 (18/28 legs at bar) | 55.2 (28/28) | 56.7 (28/28) | **57.2 (23/23)** | 🟢 **MET: 79 of 79 legs since 09-21** |
+| **M2** All Day HIGH/MED | ≥ 30 % | 28.6 (9/28) | 27.9 (7/28) | 26.3 (0/28) | **27.3 (0/23)** | 🔴 **NOT MET, and further from it than on 09-18: 0 legs at bar in two weeks** |
+
+⛔ **The 09-18 block's hope that M2 was crossing the bar did not hold.** NFL season volume arrived and M2 still settled at 26–28 %. The binding constraint is no longer volume alone; re-cost a lever from All Day's actual LOW / ASK_ONLY population before pulling one.
+
+**That population, sized the same afternoon** (latest snapshot per edition, last 3 days, 4,605 editions): HIGH 130 · MEDIUM 1,516 · LOW 1,661 · STALE 607 · ASK_ONLY 483 · NO_DATA 204. Of the LOW: **1,307 have only 1–4 sales in 30 d** (a volume floor no code moves), 66 have none, and **269 have 7+ sales but fail the 0.35 dispersion gate**. Those 269 have a median FMV of about $1, where one-cent ticks are a large share of the price. So the only code-shaped lever is that dispersion arm, and loosening it for cheap editions would trade an honest label for a share point: a 5-cent miss on a 20-cent moment IS 25 %. That is a product decision, not a fix. ✅ **DECIDED 2026-10-10 ~3:15 PM PT under Trevor's "do what you think is best": the gate stays as it is.** M2 is met by real accuracy or by more sales, not by relabelling a 25 % miss as MEDIUM. 📏 **Measured the same hour** (All Day market sales, 7 d, each against the latest snapshot ≥ 1 day earlier; median absolute error · share within ±25 %): HIGH 13.3 % · 74.6 % (n 338) — MEDIUM 20.0 % · 60.5 % (n 2,405) — **LOW with 7+ sales (the dispersion-gated set) 25.0 % · 50.8 % (n 463)** — LOW with fewer sales 30.5 % · 45.9 % (n 791) — ASK_ONLY 72.5 % (n 81). The gated set really is worse than MEDIUM, and every tier ranks in order. Re-open only if a later backtest puts that set level with MEDIUM. STALE (median FMV $72.90) is the illiquid high end, and only sales move it.
+
+**Accuracy against realised sales, the other half of "accuracy is the gate"** (`fmv_sales_backtest`, R125; median absolute error, published vs a naive last-3 median):
+- Top Shot, since 10-05: 13.0 % vs 13.0 % overall; MEDIUM 13.0 vs 14.8; LOW 25.0 vs 24.4.
+- All Day: 21.1 % vs 25.0 %.
+- Candy (14 d): 26.8 % vs 31.1 %.
+
+On every collection measured, the published FMV now matches or beats the naive estimator.
+
+**The other three:**
+- **Pinnacle:** 31.5 % (flat for three weeks).
+- **Golazos:** 1.0 %.
+- **Candy MLB:** 21.4 %. ⚠ This is DOWN from ~60 % before 09-20, and it is NOT a defect. Same algorithm (1.7.0), but on 09-20 PT (154 Candy sales that day) about 55 editions went MEDIUM/HIGH → LOW while their sales counts held and their last sale got MORE recent. That is `escalateConfidence`'s dispersion arm: 7+ sales and price dispersion ≥ 0.35 gives LOW ("noisy despite volume"). Candy's LOW prices really are the worse ones (27.0 % error vs MEDIUM 19.4 %, 14 d, n 588 / 78), so the label tells the truth. ⛔ Do not "fix" the share by loosening the gate for Candy.
+
+## [SUPERSEDED] ⭐ HEADLINE METRIC — re-read live 2026-09-18 as a **27-LEG SERIES**, and **THE 09-10 BLOCK'S CENTRAL CLAIM HAS REVERSED** (supersedes the 09-10 22:34 PT block below)
+
+🚨 **READ THE SERIES, NOT THE LEG — and this block exists because the leg I first wrote it from was
+misleading.** `public.rpc_trust_health_history` (pg_cron jobid 488) has been capturing every
+six-hourly leg since 09-12, so for the first time a WEEK can be stated instead of a reading.
+**27 legs, 2026-09-12 00:48 → 2026-09-18 12:48 PT:**
+
+| gate | bar | mean | range | legs at/over bar | verdict |
+|---|---|---|---|---|---|
+| **M1** Top Shot HIGH/MED | ≥ 50% | **53.1%** | 44.8 – 59.2 | **23 of 27** | 🔵 **MET on the series** |
+| **M2** All Day HIGH/MED | ≥ 30% | **28.7%** | 24.3 – 31.7 | **6 of 27** | 🔴 **NOT MET — but it now TOUCHES the bar** |
+
+⛔ **WHAT A SINGLE LEG WOULD HAVE TOLD YOU, AND WHY THIS BLOCK NEARLY SHIPPED WRONG.** The
+2026-09-18 12:48 PM PT leg reads **M1 51.7 / M2 26.7**; a hand-derivation over `fmv_snapshots` at
+**5:49 PM PT** the same day reads **51.4 / 31.1**. Off those two numbers this block first claimed
+*"M2 is above the bar for the first time"* — **the series falsifies it: 09-15 12:48 PT hit 31.7 and
+five other legs cleared 30.** ⭐ **The correction is the finding: a hand-derivation and a precompute
+leg are two instruments, and on All Day the hand runs 1.7–4.4 points ABOVE the leg (27.5 vs 25.8 on
+09-10; 31.1 vs 26.7 today). Never mix them in one series, and never book a gate off the higher one.**
+
+⚠ **The 09-18 legs sit at the bottom of M1's week (51.8 / 51.7, after 44.8 at 00:48).** The
+#122 outage cost DB read-availability ~5:45 AM → 12:01 PM PT that day, but **the 44.8/44.9 pair
+PRE-DATES the outage window**, so do not attribute the dip to it without a control.
+
+### 🚨 THE 09-10 BLOCK SAID "M2 IS GATED ON ALL DAY SALES VOLUME". THE VOLUME CAME BACK.
+
+That block's measurement was right and **its sample expired in one week.** Weekly `sales` for
+`nfl_all_day`, re-derived 2026-09-18 ~6:0x PM PT:
+
+| wk of | 08-03 | 08-10 | 08-17 | 08-24 | 08-31 | 09-07 | 09-14 |
+|---|---|---|---|---|---|---|---|
+| sales | 1,609 | 2,479 | 3,012 | 1,291 | **938** | **5,269** | 2,840 *(5 of 7 days)* |
+
+⛔ **The 938 was the TROUGH, not a step down to a new level** — the 09-10 block was written inside
+it and read it as the binding constraint. The next week was **5,269**, and the week of 09-14 is at
+2,840 through five days (~3,976/wk run-rate). Trailing windows the same instant: **11,761 sales /
+30 d · 5,842 / 7 d** (~835/day, against ~392/day averaged over the 30). **This is the NFL season
+arriving — the one lever nobody here can pull and nobody needed to.**
+
+⭐ **So M2's stated blocker is no longer what it was, and the number moved with it: the six
+at-or-over-bar legs are all 09-14 or later.** ⚠ **That is a trend claim off 27 points and it is
+NOT a pass** — 21 of 27 are still under 30. **The honest next step is to re-read the series after
+a full NFL week with no outage in it, from `rpc_trust_health_history`, and book M2 then.**
+
+⛔ **And the 09-10 block's code-side sizing is still binding and still small** — ~+0.1 pt from
+finishing the sweep, ~+1.5 pt from a perfect confidence-rule lift, +1.1–2.7 pt from the missing
+accepted-offer lane. **Nothing in that arithmetic changed; the denominator's liquidity did.** Do
+not re-cost a code lever off this move.
+
+### The other four, from the 2026-09-18 12:48 PM PT leg (hand-derivation at 5:49 PM in brackets)
+
+| collection | share | priced | swept 24 h | HIGH/MED among SWEPT |
+|---|---|---|---|---|
+| Candy MLB | 58.4% [60.8] | 125 | 99.2% | 58.9% |
+| Pinnacle | 28.5% (2:55 PM PT leg, own schedule/table) | — | no sweep metric (keyed on the triple, not `edition_id`) | — |
+| Golazos | 0.7% [0.7] | 575 | 40.5% | 1.7% |
+| UFC | 0.0% [0.0] | 518 | 0.0% | **-1** (cannot-compute SENTINEL, never a percentage) |
+
+### ⛔ CORRECTION — "UFC is 96.3% of prices >30 d stale" IS EXPIRED, AND THE REASON MATTERS
+
+Every collection reads **0.0% `*_fmv_pct_stale_30d`**, hand-confirmed: UFC's newest FMV snapshot is
+**2026-09-16**, two days old. **UFC's prices are FRESHLY COMPUTED and permanently LOW.** The cause
+is not staleness — it is that `sales` holds **ZERO UFC rows in 90 days** (the collection does not
+appear in a 90-day group-by at all). ⚠ **So the 0.0% share is a CONFIDENCE FLOOR on a market with
+no trades, not a pricing defect and not a freshness defect** — the roadmap's "the only correct
+product answer is a label" still stands, but quote the reason correctly. ⭐ **This is the `*_at`
+rule in miniature: "stale" in the metric name means `computed_at` age, and the 96.3% figure was
+about a different property. Two names, one word, opposite conclusions.**
+
+Golazos is the same shape one notch up: 0.7% on 575 priced editions, and **66 sales in 30 days, 38
+of them in the last 7**. Not a pricing problem.
+
+## [SUPERSEDED] ⭐ HEADLINE METRIC — re-read live 2026-09-10 22:34 PT, WITH SWEEP POSITION (supersedes the 09-08 20:4x PT block below)
+
+**First reading taken with the sweep-completeness metrics shipped earlier the same night, which is what
+every previous reading in this file was missing.** `rpc_trust_health_precompute`, 20:42 PT leg, plus a
+hand-derivation at 22:34 PT:
+
+| collection | HIGH/MED share (all priced) | swept in 24 h | HIGH/MED among the SWEPT |
+|---|---|---|---|
+| Top Shot | **52.5%** (hand 54.6%) | 77.0% | **68.1%** |
+| All Day | **25.8%** (hand 27.5%) | 55.2% | **46.7%** |
+| Candy MLB | 59.2% | 100.0% | 59.2% |
+| Golazos | 0.5% | 50.8% | 1.0% |
+| UFC | 0.0% | 0.0% | **-1** (cannot-compute SENTINEL for an empty fresh cohort — never read it as a percentage) |
+
+⭐ **THE SPLIT EXPLAINS THE NUMBER: in both gated collections the UNSWEPT cohort is ~0% HIGH/MED** (Top
+Shot's stale 23% ≈ 0.3%; All Day's stale 44.8% ≈ 0.04%), so the headline is arithmetically
+`sweep% × fresh-rate`. **Which makes "just finish the sweep" look like a free +21 points on All Day.**
+
+🚨 **IT IS NOT, AND THIS IS THE MEASUREMENT THAT SETTLES IT (2026-09-10 22:34 PT).** Cohorted against the
+LIVE `sales` table — not the recorded `sales_count_30d`, which is exactly as stale as the snapshot
+carrying it:
+
+| All Day cohort | editions | HIGH/MED | ≥5 sales in 30 d | not HIGH/MED but ≥5 sales |
+|---|---|---|---|---|
+| swept < 24 h | 3,384 | 1,701 | 642 | **91** |
+| stale | 2,806 | **2** | **6** | **6** |
+
+⛔ **The stale tail is unswept BECAUSE IT IS ILLIQUID — 6 of 2,806 have ≥5 sales in 30 days — so
+completing the sweep lifts ~6 editions, +0.1 pt.** The sweep is prioritising correctly.
+⛔ **And the other lever is bounded too: 91 fresh editions carry ≥5 sales/30d without being HIGH/MED, so
+a perfect confidence-rule lift is ~+1.5 pt → ~29%, still short of the 30% bar.** ⚠ **91 is a PROXY and
+should be read as an order of magnitude, not a target** — the real rule re-fetches thin editions over 90
+days and lifts LOW→MEDIUM on ask corroboration at 3 sales, so eligibility is broader than `≥5/30d` while
+realised gain is narrower (the ELIGIBILITY-is-not-GAIN rule; the 09-09 sizing showed 173 eligible → 54
+real → +0.9 pt).
+
+⭐ **SO THE HONEST ANSWER TO "HOW DO WE MOVE M2" IS: NOT WITH CODE.** Both code-side levers together are
+~+1.6 pt. **M2 is gated on All Day sales volume**, which stepped down at the week of 08-24 (weekly series
+2,578 · 6,772 · 2,984 · 2,626 · 1,609 · 2,479 · 3,012 → 1,291 · 938). **Liquidity cannot be manufactured
+by a faster sweep or a looser threshold, and any future M2 proposal should be checked against these three
+numbers — 6 · 91 · +1.6 pt — before it is costed.**
+
+⚠ **AND M1 SHOULD BE STATED AS A RANGE, NOT A POINT.** The same day produced **47.9 twice** and
+**52.5–54.6** tonight, purely on cursor position; 68.1% (the fresh cohort) is the ceiling the pricing
+logic can actually reach. **A single leg is not a pass and not a fail.**
+
+## [SUPERSEDED] ⭐ HEADLINE METRIC — re-read live 2026-09-08 20:4x PT (2026-09-09 03:4xZ) (supersedes the 09-01 20:5x PT block below)
+
+**All-rows basis (Trevor's 08-28 decision), and the basis MEANS SOMETHING DIFFERENT NOW than it did in the
+block below: the 6,597 non-canonical Top Shot editions were RETIRED on 2026-09-08
+(`20260908035228`), so "all rows" and "canonical" have converged for Top Shot.** Read the documented way —
+`public.rpc_trust_health_precompute` (`<collection>_fmv_high_med_share_pct`, written by
+`rpc_thp_leg_fmv_coverage`), never by calling `rpc_fmv_confidence_share()`. Leg age at read: **1.9 h** for the
+five shared collections (01:48:00Z), **5.8 h** for Pinnacle (21:55:00Z, jobid 331's own schedule). An
+independent hand-derivation over `fmv_snapshots` (latest per `(collection_id, edition_id)`) is quoted beside
+it as a cross-check, not as the source.
+
+| collection | priced | HIGH/MEDIUM | share (hand) | precompute | vs 09-01 |
+|---|---:|---:|---:|---:|---:|
+| nba_top_shot | 14,015 | 7,186 | **51.3%** | 50.7% | **+11.4 pt — but see the warning below** |
+| nfl_all_day | 6,190 | 1,252 | **20.2%** | 20.3% | **−5.2 pt, −322 rows** on an unchanged denominator |
+| laliga_golazos | 575 | 1 | 0.2% | 0.2% | −1 row |
+| ufc_strike | 518 | 0 | 0.0% | 0.0% | flat |
+| candy_mlb | 125 | 75 | 60.0% | 60.0% | −4 rows, −3.2 pt |
+| **estate-wide** | **21,423** | **8,514** | **39.7%** | — | denominator −5,756, numerator −1,026 |
+| *disney_pinnacle (separate leg)* | — | — | — | *45.3%* | *+0.3 pt* |
+
+🚨🚨 **THE TOP SHOT RISE IS A DENOMINATOR EVENT, NOT AN ACCURACY GAIN — AND THE NUMERATOR IS FALLING.**
+This is the single most important line in this block, because every surface that quotes M1 will read the
++11.4 pt as progress. Measured against the retirement's own backup tables rather than assumed:
+`audit_20260908_ts_noncanonical_fmv_snapshots` holds **6,426 priced editions of which only 163 were
+HIGH/MEDIUM**. So the retirement took **6,426 off the denominator and 163 off the numerator**. Reconciled
+like-for-like against the 09-01 block:
+
+| | 09-01 | retirement | 09-01 rebased | today | Δ on the same population |
+|---|---:|---:|---:|---:|---:|
+| priced | 19,771 | −6,426 | 13,345 | 14,015 | **+670** (newly priced canonical editions) |
+| HIGH/MEDIUM | 7,885 | −163 | 7,722 | 7,186 | **−536** |
+
+⭐ **So the count of Top Shot editions carrying a trustworthy price FELL by ~536 over the week while the
+published share rose 11.4 points.** The share moved because 6,426 dead rows left the denominator — which
+was the right thing to do, and R41's intent is better served by an honest denominator — but **it is not
+evidence that pricing improved, and M1 reading at its bar must not be cited as though it were.** The
+numerator's fall is the 08-28 → 09-06 sales hole (#67) working through the rolling 30-day window.
+
+⚠ **STATED AS A READING, NOT A TREND, because the instrument is mid-flight.** `fmv_current` shows **8,857 of
+14,015** Top Shot editions (63%) recomputed since the #68 drain landed at 00:24Z; `min(computed_at)` is still
+2026-09-02, so the sweep has NOT completed and the −536 is measured across a mixed population. The 6,589
+recovered Atlas sales (ledger 2026-09-08) were measured at the SALES level as **+425 editions at
+MEDIUM-or-better**, and most of that has not reached `fmv_snapshots` yet. **The honest statement is: the
+numerator is down 536 on an incomplete sweep with a known upward correction still propagating.** Re-read
+after `min(computed_at)` on Top Shot `fmv_current` passes 2026-09-09 00:24Z.
+
+⚠ **ALL DAY IS THE UNWATCHED REGRESSION — down 5.2 points (1,574 → 1,252 rows) on an unchanged 6,190
+denominator, so this one IS a real numerator loss and not a denominator artifact.** Its go-live bar (M2) is
+≥ 30%; it was 27.7% on 08-13, 25.4% on 09-01 and is **20.2%** now — a monotonic slide across three readings
+with nothing on the register naming it. **This is the finding this pass would not have made if it had only
+re-read the Top Shot number everyone is watching.**
+
+⭐ **THE WRITER IS NOT THE PROBLEM — `pipeline_runs_daily` settles that, and it is the only instrument that
+can (indefinite retention, against `pipeline_runs`' ~73 h).** `allday-sales-indexer` **`rows_found` falls in
+lockstep with `rows_written`**: ~300–460/day through 08-24, then 83 · 248 · 122 · 83 · 177 · 231 · 146 · 104
+· 135 · 63 · 215 · 224 · 51 · 264 · 167 from 08-25 on, with `rows_skipped` small and 0–2 failures a day.
+⛔ **The lane is not dropping what it finds; it is finding less.** ⚠ **That does NOT establish the market
+halved** — `rows_found` is what OUR query of the upstream returns, so an upstream coverage narrowing has an
+identical signature. **The open question is an UPSTREAM probe, not another pipeline read** (egress is blocked
+from a sandbox, so it is a prod-caller item).
+
+🚨 **CORRECTION, SAME PASS, AGAINST THIS BLOCK'S FIRST VERSION.** It originally read *"~333/day (08-19..24)
+→ ~153/day (09-01..08)"* — **a delta between two hand-picked windows, which is precisely what this file's own
+measurement rules forbid** (*a directional claim needs a DISTRIBUTION, not a snapshot*). The weekly series is
+the honest instrument and it changes the reading: All Day runs **2,578 · 6,772 · 2,984 · 2,626 · 1,609 ·
+2,479 · 3,012 → 1,291 (wk 08-24) · 938 (wk 08-31)** — roughly flat and volatile, then a **STEP**, not a smooth
+halving. ⚠ **And the cross-collection control is AMBIGUOUS rather than supporting:** every collection is down
+on the two-window comparison (All Day −55.5 %, Top Shot −40.7 %, Candy −37.5 %), and Candy shares no ingest
+path with All Day at all — but Candy's weekly shape is a **monotonic decay from a late-July launch peak**,
+not a step, so it does not corroborate. A market-wide decline cannot be excluded; it also is not shown.
+
+🚨 **COINCIDENT AND UNEXPLAINED: the indexer's daily RUN COUNT fell ~100–110 → ~78 around 08-26/27** and has
+stayed there. Named as a coincidence, not a cause (`rows_skipped` stayed small, and a cursored indexer should
+not lose rows to fewer ticks) — but it sits at almost exactly the change point and nothing read so far
+explains it. Full item, with falsifiers: register **#70**.
+
+⚠ **Candy is at 60.0%, below the 63.2% of 09-01 and below the 65.6% the go-live doc quotes** — on a fixed
+125-edition denominator, so it is 4 editions moving, i.e. noise at this population size. Do not read a trend
+into a 125-row base.
+
+## [SUPERSEDED] ⭐ HEADLINE METRIC — re-read live 2026-09-01 20:5x PT (2026-09-02 03:5xZ) (supersedes the 08-29 17:25 PT block below)
+
+**All-rows basis (Trevor's 08-28 decision). Read THE DOCUMENTED WAY — straight from
+`public.rpc_trust_health_precompute` (`<collection>_fmv_high_med_share_pct`, written by
+`rpc_thp_leg_fmv_coverage`), never by calling `rpc_fmv_confidence_share()`.** Leg age at read: **2.2 h**
+for the five shared collections (01:48:00Z), **0.0 h** for Pinnacle (03:55:00Z, jobid 331's own
+schedule). ⓘ An independent hand-derivation over `fmv_snapshots` agreed to the decimal on all five
+shared collections — recorded as a cross-check of the precompute, not as the source.
+
+| collection | priced | HIGH/MEDIUM | share | vs 08-29 |
+|---|---:|---:|---:|---:|
+| nba_top_shot | 19,771 | 7,885 | **39.9%** | **FLAT** (+29 denom, +17 rows) |
+| nfl_all_day | 6,190 | 1,574 | **25.4%** | +53 rows, +0.8 pt on an unchanged denominator |
+| laliga_golazos | 575 | 2 | 0.3% | flat |
+| ufc_strike | 518 | 0 | 0.0% | flat |
+| candy_mlb | 125 | 79 | 63.2% | +3 rows, +2.4 pt |
+| **estate-wide** | **27,179** | **9,540** | **35.1%** | **+73 rows, +0.2 pt** |
+| *disney_pinnacle (separate leg)* | — | — | *45.0%* | *+1.2 pt vs 08-27's 43.8%* |
+
+🚨 **THE GATE HAS NOT MOVED IN 3.5 DAYS.** Top Shot is 39.9% on 08-29 and 39.9% now — the +278-row
+attributable jump the 08-29 block records was a one-off re-grade from that day's ask-corroboration work,
+and nothing has replaced it since. **Estate-wide +0.2 pt over 3.5 days is not progress toward the gate;
+it is drift.** ⚠ Stated because the 08-29 entry reads as momentum and a reader could extrapolate it.
+
+⛔ **AND NOTHING SHIPPED 2026-08-31/09-01 WAS AIMED AT THIS METRIC, deliberately.** That session's work —
+the fmv-recalc historical fallback, the LATERAL rewrites, the UFC RPC, the pack-reality honesty fix —
+writes only `ASK_ONLY`/`SALES_ONLY`/`STALE`/`LOW` labels or changes copy, **so it cannot move HIGH/MEDIUM
+by construction and must not be credited with the +0.2 pt.** The levers that move this metric are
+sales-density and ask-corroboration, not pipeline reliability.
+
+## [SUPERSEDED] ⭐ HEADLINE METRIC + DEMAND + OPS — re-read live 2026-08-29 17:25 PT (2026-08-30 00:25Z) (supersedes the 08-28 16:20 PT block below)
+
+**All-rows basis (Trevor's 08-28 decision). Fresh `fmv_current` read; numerators and denominators recorded, per the 08-28 rule.**
+
+| collection | priced | HIGH/MEDIUM | share | vs 08-28 |
+|---|---:|---:|---:|---:|
+| nba_top_shot | 19,742 | **7,868** | **39.9%** | +278 rows, +1.5 pts on an UNCHANGED denominator |
+| nfl_all_day | 6,190 | 1,521 | 24.6% | flat |
+| laliga_golazos | 575 | 2 | 0.3% | flat |
+| ufc_strike | 518 | 0 | 0.0% | flat |
+| candy_mlb | 125 | 76 | 60.8% | −3 rows |
+| **estate-wide** | **27,150** | **9,467** | **34.9%** | **+275 rows, +1.0 pt** |
+
+⭐ **The Top Shot move is attributable this time, because the denominator did not move:** +278 HIGH/MEDIUM rows on the same 19,742 is the day's ask-corroboration work (the 7-day ask age gate `c537b390d`, the 30 h ask-staleness markers) re-grading rows, not new pricing. It is the first same-denominator delta this file has recorded. ⚠ Still n = 2 same-basis points; not yet a trend. Pinnacle remains in neither total.
+
+**DEMAND — 23 accounts · newest 2026-08-25 · WAU 2 · 104 saved wallets.** Fourth consecutive confirmation of the 08-26 reading. The 50+ WAU gate has not moved. Same single-instrument caution as every prior block.
+
+**OPS, same pass (desktop-VM Cowork session WITH git — the first Cowork pass that could both apply and commit):**
+- 🚨→✅ **`/api/analytics/sales/leaderboard`**, the one user-facing route failing on the day, is fixed at the mechanism (collection push-down, `20260829234203`): ufc 41,361 → 2,194 buffers, topshot 162,717 → 27,642. Known-issues **#49** carries the residual (the all-collections leg) and the watch.
+- ✅ **Sentinel**: all four WARN arms addressed at the mechanism, not the threshold — grail-MV refresh moved to pg_cron (jobid 384) so lambda kills stop reading as silence; board-liveness sweeps moved off the 12Z/18Z truncation hours (jobid 288 → `28 0,6,11,20`, probe window 600); log purges off the 09Z storm band (jobid 198 → 11:46Z); fmv-recalc un-wedged on its own. `unmapped_resolution_backlog_max` stays red **on purpose** (D37 is a real backlog).
+- ✅ **jobid 380 → 383**: the never-completed sales_2026 vacuum is re-owned to cron_heavy at `53 10,20`.
+- ✅ **Migration parity**: 13 drifted Cowork migrations + 6 new committed byte-exact (`scripts/recover-fileless-migrations.mjs`, 19/19 md5-verified). Drift is ZERO at `2307184`.
+- ✅ **Git push from Cowork is durable** (Trevor-approved): `<repo>/.rpc-git-cred`, recipe in `docs/reference/tooling-gotchas.md`. Cloud passes still cannot push.
+- 🟡 **Open, user-visible next:** **#50** `/insights/pack-reality` top-EV ranker drains to zero rows within ~20 h (dead pack-ask source — Trevor's source decision) · **#51** the pg_net 4xx detector cannot attribute its own probes · `topshot-active-listings-ingest` GHA is 12/12 red (WAF block via Atlas, #20, operator) · Sentry still dark (#34, operator).
+
+---
+
+## [SUPERSEDED] ⭐ HEADLINE METRIC + DEMAND — re-read live 2026-08-28 16:20 PT (23:20Z) (supersedes the 08-27 20:45 PT block below)
+
+**On Trevor's 08-28 ALL-ROWS decision, which is the gate basis. Every figure below is a fresh
+`fmv_current` read, not a re-quote.**
+
+| collection | priced | HIGH/MEDIUM | share |
+|---|---:|---:|---:|
+| nba_top_shot | 19,742 | 7,590 | **38.4%** |
+| nfl_all_day | 6,190 | 1,521 | 24.6% |
+| laliga_golazos | 575 | 2 | 0.3% |
+| ufc_strike | 518 | 0 | 0.0% |
+| candy_mlb | 125 | 79 | 63.2% |
+| **estate-wide** | **27,150** | **9,192** | **33.9%** |
+
+⚠ **Pinnacle is still in NEITHER total** — zero rows in `fmv_current`, priced through its own
+triple-keyed path. This covers four of five published collections, as every prior capture has warned.
+
+🚨 **NEW, AND IT IS A CEILING ON THE GATE ITSELF — the all-rows basis has a ~32.5% floor-drag that NO
+pricing work can move.** Decomposing Top Shot by the canonical predicate:
+
+| Top Shot rows | count | share of denominator | HIGH/MEDIUM |
+|---|---:|---:|---:|
+| canonical `^[0-9]+:[0-9]+(::[0-9]+)?$` | 13,316 | 67.5% | **55.8%** |
+| non-canonical (dupe residue) | 6,426 | **32.5%** | **2.5%** |
+
+⭐ **So if canonical pricing reached a PERFECT 100%, Top Shot's all-rows gate figure would read
+(13,316 + 163) / 19,742 = 68.3%, not 100%.** The residue is a third of the denominator and contributes
+163 HIGH/MEDIUM rows in total. **This is not an argument to switch bases** — Trevor's decision stands and
+the reasoning for it (pricing dupe residue is not an accuracy achievement) is sound. It is an argument
+that **the gate's practical ceiling is ~68% on this basis, and a plan that treats 100% as the target is
+mis-scaled.** Whoever sets the next accuracy milestone should set it against 68.3, not 100.
+
+⭐ **THE RESIDUE IS NOT GROWING RIGHT NOW, which changes what to do about it.** New non-canonical Top
+Shot editions by day: **27 on 08-18, 9 on 08-20, and ZERO on every one of the eight days since**
+(08-21 → 08-28, while 79 canonical editions were created). So the source is **sporadic, not continuous**
+— a de-duplication backfill would not be immediately re-polluted, and there is no active leak to chase
+first. ⛔ Do NOT read "zero for 8 days" as "fixed": two bursts in ten days is a low-frequency event, not
+an absence, and nothing here identifies what produced them.
+
+⚠ **I COULD NOT DECOMPOSE THE 39.2 → 38.4 MOVE, AND THE REASON IS A LESSON ABOUT THIS FILE.** The two
+bases moved in OPPOSITE directions since 08-27 (all-rows 39.2 → 38.4, canonical 55.0 → **55.8**).
+Arithmetically that requires the residue's share or its quality to have shifted — but **the 08-27 entry
+recorded the RATIOS and not the numerators and denominators**, so the move cannot be attributed without
+re-deriving a stock that no longer exists. ⛔ **New rule for whoever writes the next block: record
+`priced` and `high_med` alongside every percentage.** A ratio on its own cannot be differenced later —
+CLAUDE.md's "a delta between two STOCKS is neither a rate nor a sign", met in the wild. **⚠ Do not treat
+the −0.8 as a regression: with n = 1 prior point and no denominators it is not yet a direction.**
+
+**DEMAND — 23 accounts · +2 in 7 d (newest 2026-08-25) · WAU 2 · MAU 4.** ⭐ **Identical to both the
+08-26 and 08-27 readings — that is a THIRD consecutive confirmation, not a new number.** The roadmap gate
+is 50+ WAU; it has not moved. ⛔ Standing caution unchanged: `funnel_events` sessions are NOT users
+(wrong by ~3 orders of magnitude) and Vercel Web Analytics is still not enabled, so this remains an
+uncorroborated single instrument.
+
+---
+
+## [SUPERSEDED] ⭐ HEADLINE METRIC + DEMAND + OPS — re-read live 2026-08-27 20:45 PT (2026-08-28 03:45Z) (supersedes the 08-27 09:55 PT block below)
+
+Read the documented way, straight from `public.rpc_trust_health_precompute`
+(`<collection>_fmv_high_med_share_pct`, written by `rpc_thp_leg_fmv_coverage`) — **never by calling
+`rpc_fmv_confidence_share()`**, which blows a 60 s budget. Leg age at read time: **1.9 h** for the five
+shared collections (01:48:00Z) and **5.8 h** for Pinnacle (21:55:00Z, jobid 331's own schedule).
+
+| collection | 08-27 20:45 | 08-27 09:55 | 08-26 19:00 | 08-24 15:35Z | 08-22 | range, 5 samples |
+|---|---:|---:|---:|---:|---:|---|
+| `nba_top_shot` | **55.0%** | 55.4% | 57.8% | 57.2% | 49.6% | 49.6 – 57.8 |
+| `candy_mlb` | **63.2%** | 64.0% | 63.2% | 62.4% | 59.2% | 59.2 – 64.0 |
+| `disney_pinnacle` | **43.8%** | 43.8% | 43.8% | 43.4% | 43.2% | 43.2 – 43.8 |
+| `nfl_all_day` | **23.4%** | 25.2% | 26.7% | 27.0% | 22.5% | 22.5 – 27.0 |
+| `laliga_golazos` | **0.2%** | 0.3% | 0.3% | 0.2% | 0.0% | 0.0 – 0.3 |
+| `ufc_strike` | **0.0%** | 0.0% | 0.0% | 0.0% | 0.0% | 0.0 |
+
+⛔ **Every one of today's readings sits INSIDE its own five-sample range, so nothing here is a move.**
+The standing rule holds in both directions: a directional claim needs a distribution.
+
+⭐ **The one directional claim the 08-27 09:55 block did make is FALSIFIED at the fifth sample, and it is
+recorded here rather than quietly dropped.** That block singled out Candy as *"the only collection that has
+moved monotonically across all four samples"* (59.2 → 62.4 → 63.2 → 64.0) and named it "the one worth
+watching for a real trend". The fifth reading is **63.2** — the run is broken. ⛔ **That is not a decline
+either**; it is the same two-instants trap pointing the other way, on the smallest population on the board.
+The honest statement is the range: **Candy has read 59.2–64.0 across 08-22 → 08-27.**
+⭐ **Durable: a monotonic run over four instants is not a trend, and naming one invites the next reader to
+treat the fifth sample as news.** Do not re-open Candy on this.
+
+### The all-keys denominator, re-derived the same instant — 30.1% (08-24) → **33.4%**
+
+From `rpc_ops_snapshot()`'s `fmv_by_collection` block, which counts every key rather than the canonical
+subset — **a different instrument from the precompute leg above, and it agrees with it in direction**:
+
+| collection | keys | HIGH+MEDIUM | share | 08-24 |
+|---|---:|---:|---:|---:|
+| `nba_top_shot` | 19,735 | 7,571 | **38.4%** | 34.3% |
+| `nfl_all_day` | 6,190 | 1,461 | **23.6%** | 21.4% |
+| `laliga_golazos` | 575 | 1 | 0.2% | 0.0% |
+| `ufc_strike` | 518 | 0 | **0.0%** | 0.0% |
+| **total** | **27,018** | **9,033** | **33.4%** | 30.1% |
+
+⚠ **Candy is ABSENT from that block** (it is in `editions_by_collection` at 125 editions but carries no
+`fmv_by_collection` key), so this total covers four collections where the 08-24 all-keys total covered
+five; adding Candy at its own leg's 63.2% of 125 moves it to ~33.6%, i.e. **under 0.2 pt either way**.
+⚠ **`disney_pinnacle` reads `{}` here, exactly as documented** — it prices through the triple-keyed
+`pinnacle_catalog` path and has zero rows in the `fmv_snapshots` family. Three denominators still exist and
+**a share is meaningless without naming one**.
+
+### Demand — re-read the same instant from `auth.users`, and it CONFIRMS 08-26 rather than superseding it
+
+**23 accounts · 2 signups in 7 d (newest 2026-08-25) · WAU 2 · MAU 4** — identical on all four figures to
+the 2026-08-26 capture. ⚠ **A confirmation is worth stamping precisely because the next reader cannot tell
+a stale number from a re-verified one.** n = 2 is still 4% of the 50+ WAU gate and moves nothing.
+
+### Ops, same instant (`rpc_ops_snapshot()`, generated 2026-08-28T03:45:19Z)
+
+- **Trust board: 38 arms, 3 BREACHED.** ⭐ **Diff the SET, not the count: it was TWO on 08-26 19:10 PT**
+  (`public_board_slow_count`, `unmapped_resolution_backlog_max`) **and the third is `board_mv_refresh_stale_hours`
+  at 9.57 h against a `breach_at` of 8** — the arm [trust-board-and-safety.md](trust-board-and-safety.md)
+  records as *"all clear in this sample"* three days ago. ⛔ **It is the documented cadence-vs-threshold
+  mismatch, not a new incident:** its refresher is a **6-hourly** job against an **8-hour** threshold, so a
+  single missed cycle guarantees a breach. The other two: `public_board_slow_count` **5** (breach 1) and
+  `unmapped_resolution_backlog_max` **338** (breach 100, and the one arm still climbing — 258 → 291 → 338).
+- ✅ **Two arms this file has spent pages on are GREEN in the same sample and their history should not be
+  re-quoted as current:** `fmv_sweep_wedge_hours` **0.16** (breach 3; it read 12.17 on 08-16) and
+  `fmv_sweep_stall_pct_24h` **6.2** (breach 50; it read 50 on 08-16). `panini_sale_price_capture_dry_days`
+  is **0** (it read 19–20 breaching in mid-August).
+- **DB size 14,055 MB (14.06 GB).** ⚠ **Do NOT quote known-issues #13's "13.8 → 6.5 GB" as the current
+  size** — that is the May 2026 post-prune figure and the database has since more than doubled past it.
+- **Editions by collection:** Top Shot **19,906** · All Day 6,190 · Golazos 575 · UFC 518 · Candy 125.
+
+---
+
+## [SUPERSEDED] ⭐ HEADLINE METRIC — re-read live 2026-08-27 09:55 PT (16:55Z) (supersedes the 08-26 block below)
+
+Read the documented way: straight from `public.rpc_trust_health_precompute`
+(`<collection>_fmv_high_med_share_pct`, written by `rpc_thp_leg_fmv_coverage`) — **never by calling
+`rpc_fmv_confidence_share()`**, which blows a 60 s budget. ⚠ **Leg age at read time: 3.1 h for the five
+shared collections** (13:48:00Z) **and 1.0 h for Pinnacle** (15:55:00Z, its own jobid 331 schedule). **That
+is 12× staler than the 08-26 read’s 15 minutes — the figures below are a 3-hour-old instant, not a live one.**
+
+| collection | 08-27 09:55 PT | 08-26 19:00 PT | 08-24 15:35Z | 08-22 |
+|---|---:|---:|---:|---:|
+| `nba_top_shot` | **55.4%** | 57.8% | 57.2% | 49.6% |
+| `candy_mlb` | **64.0%** | 63.2% | 62.4% | 59.2% |
+| `disney_pinnacle` | **43.8%** | 43.8% | 43.4% | 43.2% |
+| `nfl_all_day` | **25.2%** | 26.7% | 27.0% | 22.5% |
+| `laliga_golazos` | **0.3%** | 0.3% | 0.2% | 0.0% |
+| `ufc_strike` | **0.0%** | 0.0% | 0.0% | 0.0% |
+
+⛔ **Top Shot 57.8 → 55.4 and All Day 26.7 → 25.2 are NOT a decline — they are two instants, and this
+file’s own rule is that a directional claim needs a distribution.** The honest statement remains a RANGE:
+**Top Shot has read between 49.6% and 57.8% across 08-22 → 08-27, and All Day between 22.5% and 27.0%.
+Today’s readings sit INSIDE both ranges**, on a population `/api/fmv-recalc` rewrites continuously. ✅
+**Corroborated independently the same morning** by the nightly pass, which recorded HIGH+MED **counts**
+moving Top Shot 7,631 → 7,502 and All Day 1,579 → 1,519 and classified both as *normal recompute churn*
+with `*_fmv_stale_hours` = 0.1 — i.e. **fresh, not a coverage loss**. Two instruments, same conclusion.
+
+⚠ **Candy is the only collection that has moved monotonically across all four samples** (59.2 → 62.4 →
+63.2 → 64.0) and is the one worth watching for a real trend — **but four instants is still not a
+distribution, and it is the smallest population here.** ⛔ **UFC 0.0% remains CORRECT and permanent**
+(market closed) and **Golazos ~0.3% remains a liquidity ceiling, not a defect.** Neither is a queue.
+
+## [SUPERSEDED] ⭐ HEADLINE METRIC + DEMAND — re-read live 2026-08-26 19:00 PT (supersedes the 08-24 canonical block below)
+
+Read straight from `public.rpc_trust_health_precompute` (`<collection>_fmv_high_med_share_pct`, written by
+`rpc_thp_leg_fmv_coverage`) — **never by calling `rpc_fmv_confidence_share()`**, which blows a 60 s budget on
+the live instance and is exactly why the precompute leg exists. Leg age at read time: **15 minutes** for five
+collections, **4.1 h** for Pinnacle (its own leg, jobid 331, runs on a different quarter-day schedule).
+
+| collection | canonical-only HIGH/MEDIUM share | 08-24 15:35Z | 08-22 |
+|---|---:|---:|---:|
+| `nba_top_shot` | **57.8%** | 57.2% | 49.6% |
+| `candy_mlb` | **63.2%** | 62.4% | 59.2% |
+| `disney_pinnacle` | **43.8%** | 43.4% | 43.2% |
+| `nfl_all_day` | **26.7%** | 27.0% | 22.5% |
+| `laliga_golazos` | **0.3%** | 0.2% | 0.0% |
+| `ufc_strike` | **0.0%** | 0.0% | 0.0% |
+
+⛔ **DO NOT READ THAT AS A FOUR-DAY TREND — the columns are three instants, and this file's own rule is that a
+directional claim needs a distribution.** The honest statement is a RANGE: **the Top Shot canonical leg has
+read between 49.6% and 57.8% across 08-22 → 08-26**, on a population `/api/fmv-recalc` rewrites continuously
+(24,959 rows in the trailing 24 h). ⚠ **Still the canonical-only denominator** — not comparable to the
+**30.1% all-keys** figure below, which answers a different question over a set that excludes Pinnacle entirely.
+⛔ **UFC's 0.0% remains CORRECT and permanent** (market closed) and **Golazos' ~0% remains a liquidity ceiling,
+not a defect.** Neither is a queue.
+
+⚠ **`<collection>_fmv_pct_stale_30d` reads `0.0` for EVERY collection in the same sample, and the metric's
+NAME invites exactly the wrong reading.** A zero-everywhere metric looked like a broken leg, so it was
+re-derived from `prosrc` and from the table: **it measures the age of the FMV COMPUTATION**
+(`latest.computed_at < now() - 30 days`), **not the age of the market data underneath it.** Control run on the
+collection where the two readings must diverge most — UFC, market closed since May 2026: **518 priced
+editions, 0 computed more than 30 d ago (oldest snapshot 2026-08-24), and 381 `STALE` + 137 `NO_DATA` by
+confidence.** So `0.0` is CORRECT and simply says *the recalc sweep is reaching everything*; the 08-13 line
+below reading *"UFC 96.3% of its prices are >30 d stale"* is a **different measurement** and the two must never
+be quoted as the same series. ⭐ **The durable lesson is the naming: `pct_stale_30d` is a PIPELINE-freshness
+metric wearing a PRICE-freshness name**, and the only reason it was not filed as a broken leg is that someone
+read its source instead of its title.
+
+### Demand — re-captured 2026-08-26 (first movement since 2026-08-08)
+
+Read from `auth.users`, the same instrument as the 08-24 capture:
+
+| | 2026-08-26 | 2026-08-24 |
+|---|---:|---:|
+| accounts | **23** | 21 |
+| signups in 7 d | **2** (newest 2026-08-25) | 0 |
+| signed-in in 7 d (WAU) | **2** | 0 |
+| signed-in in 30 d (MAU) | **4** | 2 |
+
+⚠ **n = 2 is not a trend and does not move the gate** — 50+ WAU is the bar, and this is 4% of it. What it does
+change is one dated claim: *"0 signups in 7 d, newest 2026-08-08"* is **no longer true**, and a session
+quoting it would be publishing a stale zero about the reader's own product — the same class this codebase
+polices everywhere else. ⛔ **`funnel_events` sessions are still NOT users** (wrong by ~3 orders of magnitude)
+and **Vercel Web Analytics is still not enabled**, so there is still no independent corroborator for traffic.
+
+---
+
+## [SUPERSEDED] ⭐ CANONICAL-LEG RE-READ, 2026-08-24 ~15:35Z (08:35 PT) — a same-day second sample, and it MOVED
+
+Read straight from `rpc_trust_health_precompute` (`<collection>_fmv_high_med_share_pct`, written by
+`rpc_thp_leg_fmv_coverage`, 1.75 h old at read time) — **never by calling `rpc_fmv_confidence_share()`**,
+which blows a 60 s budget on the live instance and is why the precompute leg exists.
+
+| collection | canonical-only HIGH/MEDIUM share |
+|---|---:|
+| `nba_top_shot` | **57.2%** |
+| `candy_mlb` | 62.4% |
+| `disney_pinnacle` | **43.4%** |
+| `nfl_all_day` | **27.0%** |
+| `laliga_golazos` | 0.2% |
+| `ufc_strike` | **0.0%** |
+
+⚠ **THIS IS THE CANONICAL-ONLY DENOMINATOR AND IT IS NOT COMPARABLE TO THE 30.1% ALL-KEYS HEADLINE BELOW.**
+Same day, same instance, different question. The block below records the canonical leg at **49.6%** for Top
+Shot at ~03:35Z; it reads **57.2%** at ~15:35Z. ⛔ **Do NOT call that a 7.6-point gain — it is two snapshots
+of a population `/api/fmv-recalc` rewrites continuously**, and this file's own standing rule is that a
+directional claim needs a distribution, not two instants. The honest statement is: *the canonical leg has
+read between 49.6 and 57.2 on 2026-08-24*, and anyone who needs the trend must read the series.
+
+⚠ **Pinnacle is present here (43.4%) and ABSENT from the all-keys table below**, because `fmv_current` carries
+zero Pinnacle rows — so the two denominators do not even cover the same set of collections.
+⛔ **UFC's 0.0% is still CORRECT and permanent** (market closed since May 2026), and Golazos' ~0% is still a
+liquidity ceiling, not a defect — do not chase either.
+
+---
+
+## [SUPERSEDED] ⭐ Headline metric AND demand — measured 2026-08-24 02:00–03:35Z (supersedes 08-22 for the all-keys denominator)
+
+### The accuracy gate, all-keys denominator (`fmv_current`)
+
+| collection | priced editions | HIGH/MEDIUM | share |
+|---|---:|---:|---:|
+| `nba_top_shot` | 19,667 | 6,740 | **34.3%** |
+| `nfl_all_day` | 6,190 | 1,323 | **21.4%** |
+| `candy_mlb` | 125 | 77 | 61.6% |
+| `laliga_golazos` | 575 | **0** | **0.0%** |
+| `ufc_strike` | 518 | **0** | **0.0%** |
+| **total** | **27,075** | **8,140** | **30.1%** |
+
+⚠ **THREE DENOMINATORS, and the number is meaningless without naming one.** This is **all-keys**, and it
+**reproduces the 08-22 all-keys Top Shot figure (34.2% → 34.3%)**. The canonical-only precompute leg reads
+**49.6%** — a different question, not a better one. And ⚠ **`fmv_current` carries ZERO Pinnacle rows**
+(measured, against 2,564 in `pinnacle_catalog`; it prices through the triple-keyed path), so this denominator
+covers **four of five** published collections while the precompute leg's includes Pinnacle at 43.2%.
+
+⛔ **UFC's 0.0% is CORRECT and permanent** — 381 `STALE` + 137 `NO_DATA`, market closed since May 2026.
+It can never improve and drags the headline; **excluding it, 30.7%.**
+⛔ **Golazos' 0.0% is MARKET, not model** — 62 sales/30 d across **46 editions** (8% of its 575), and **not
+one that sold has more than THREE sales in a month** (avg 1.4). **Do not chase it with a threshold.**
+
+### The gate is mostly a LIQUIDITY CEILING — confirmed at the edition level
+
+All Day, every edition with a sale in 30 d, by assigned confidence: **HIGH avg 11.8 sales, 100% have ≥5** ·
+MEDIUM 5.5 · LOW 2.6. Monotonic. **The estimator is not the binding constraint for most of the catalogue.**
+
+⚠ **The apparent exception is not one.** ~1,000 editions publish LOW while trading MORE than the MEDIUM
+cohort (Top Shot: 368 at a **true 39.6 sales/30 d** vs MEDIUM's 22.2). Cause measured:
+`MEDIUM_MAX_DISPERSION = 0.35` demotes MEDIUM→LOW once count ≥7, so **only high-volume editions are eligible
+to be demoted at all**. **LOW avg CV 0.731 (76% over the ceiling) vs HIGH 0.222 (10%)** — working as written.
+⛔ **A "sub-dollar tick" explanation was tested and FALSIFIED**: HIGH has the **lowest** median price ($0.31)
+and the **most** sub-dollar editions (72%). **Do not build a tick-aware dispersion measure on it.**
+⭐ **What survives: `LOW` conflates *"almost no data"* with *"643 sales that disagree"*** — opposite messages
+to a collector. Splitting the label is a product decision, not a data problem.
+
+### Demand — first capture since 2026-07-26
+
+**21 accounts** (+1 in four weeks) · **0 signups in 7 d** (newest 2026-08-08) · **signed-in WAU = 0** ·
+MAU 2 · all 21 have a saved wallet. Gate is 50+ WAU.
+
+⛔ **`funnel_events` sessions are NOT users — wrong by ~3 orders of magnitude.** 16,463 weekly "non-bot"
+sessions of which **99.67% fire exactly one event and never return**; **4 `wallet_paste` sessions, 0
+`signin_click`, 0 `account_created`**. ⚠ **Vercel Web Analytics is NOT enabled**, so that table has no
+independent corroborator. ⚠ **`bot_ua` is only meaningful from 2026-08-23 02:00Z forward** — before that the
+column exists with no UA to classify (100% of rows carry one after, zero before), so `false` means *"never
+saw one"*, not *"human"*.
+
+⚠ Dated samples. `fmv_current` is delete-then-insert and the LOW cohort churns ±10% over hours. Re-derive.
+
+## [SUPERSEDED] Headline metric — re-measured 2026-08-22 (supersedes the 08-13 figures above)
+
+⚠ **The 2026-08-13 shares quoted earlier in this file are now the stale baseline.** Read live from
+`public.rpc_trust_health_precompute` (metrics `<collection>_fmv_high_med_share_pct`, written by
+`rpc_thp_leg_fmv_coverage`) at **2026-08-22 19:45 PT**:
+
+| collection | HIGH/MED share | 08-13 baseline |
+|---|---:|---:|
+| nba_top_shot | **49.6%** | 54.5% |
+| candy_mlb | **59.2%** | 60.0% |
+| disney_pinnacle | **43.2%** | 30.3% |
+| nfl_all_day | **22.5%** | 27.7% |
+| laliga_golazos | **0.0%** | 0.9% |
+| ufc_strike | **0.0%** | 0.0% |
+
+⚠ **Do not read the Top Shot and All Day deltas as a regression without a distribution** — these are two
+instants, and this file's own rule (a directional claim needs a series, not a snapshot) applies to its own
+table. The metric legs' `computed_at` at read time were **19:48Z / 21:09Z**, i.e. **5–7 h old**; the
+2026-08-22T1745Z filing measures the leg as unreadable ~20 h a day for structural reasons, so an age of
+hours is the normal case, not a fault.
+
+⚠ **TWO honest figures exist for Top Shot and neither is fabricated (deep-audit R41).** The precompute leg
+filters Top Shot to canonical `setID:playID` keys (dated in its own comment 2026-08-04, *"the TopShot leg
+is CANONICAL-ONLY"*) and reads **49.6–49.7%**; a direct all-keys measure over `fmv_snapshots` reads
+**34.2%**. The instruments agree on the other four collections. **Always state the denominator with the
+number.**
+
+⚠ **STRUCTURAL FINDING that qualifies the Gate-2 target: accuracy tracks LIQUIDITY, not the pricing code.**
+Ordering the four `fmv_snapshots` collections by sales per edition per month reproduces the accuracy
+ordering with no inversions — Top Shot 5.51 → 34.2% · All Day 1.69 → 22.7% · Golazos 0.17 → 0.0% · UFC
+0.00 → 0.0% (measured 2026-08-21T0256Z filing). **An edition with 0.17 sales a month cannot reach a
+sales-based HIGH/MEDIUM however good the estimator is**, so roadmap §6's *"All Day → the Top Shot band or
+better"* is bounded by market depth, and Golazos/UFC's zeros are the honest label rather than a defect
+queue. ⚠ **Pinnacle is read from `pinnacle_catalog.fmv_confidence`, NOT `fmv_snapshots`, and its sales are
+in `pinnacle_sales`** — querying the usual tables for all five returns NULL/0 for Pinnacle and reads as
+"Pinnacle is broken".
+
+## Displaced from CLAUDE.md 2026-09-06 (verbatim; the self-link re-pointed to this file so the link guard resolves it)
+
+- **The one measured-but-unshipped DB fix is LOW-STAKES** (numbers: [roadmap-status.md](roadmap-status.md)). ⭐ Another stated blocker was itself a MEASUREMENT — **re-read a "blocked" item's blocker before inheriting it.**
+
+## Decisions waiting on a person — re-read from known-issues.md 2026-09-25 (PT)
+
+A dated snapshot. The item text in [known-issues.md](known-issues.md) wins over this list.
+
+✅ **All five settled ~7:30 AM PT the same day** (Trevor: "Steph Curry", "-$50"): #137 (a) merged with a name alias, (b) sign-first everywhere, (c) drop scheduled for 10-02 by pg_cron, #136 verified and closed, #138 decided (flipper deactivated, no mega-wallet source for now). The list below is kept as it stood.
+
+- **#137 (a), Trevor:** Top Shot has two player rows for one person, "Steph Curry" (74 editions) and "Stephen Curry" (23). Top Shot's official spelling is "Stephen Curry". Once the name is chosen, the merge is a one-line data migration.
+- **#137 (b), Trevor:** one sign convention for negative dollars. `lib/usd-format.ts` pins "$-50.34" while `lib/analytics/format` renders "-$42.00". Re-pin the tests after choosing.
+- **#138, decision:** where to get the ids for a Top Shot wallet above ~100k moments (an access node with a higher computation limit, an indexer, or deposit/withdraw events), or deactivate the two seeded rows. Nothing user-facing is wrong today.
+- **#137 (c), after 10-01:** drop the `audit_20260924_*` / `audit_20260925_*` backup tables and the retired `wmc_series_backfill_state` + `backfill_wmc_series_batch`.
+- **#136:** closes once the Maradona Silver re-walk is verified. The week-one Panini review is scheduled for 09-30 9 AM PT.
+
+## Panini FMV decisions — made 2026-09-30 ~8 PM PT (Trevor, asked by Cowork)
+
+- **FMV input switch (below): NO — keep serials.** Re-read 8 PM PT: covered n=744, 16.7 % vs 16.1 % MdAPE, still a tie; the only gain is 194 more targets at 28.6 %. Re-open when covered n is materially larger or the tie breaks.
+  ⤷ **Re-read 2026-10-19 ~1:20 PM PT: n 27,746; `panini_sales` 11.8 % / 60.9 % vs serials 13.4 % / 59.4 % — the tie broke narrowly toward `panini_sales`. Held for Trevor** (panini.md Next 7).
+- **LOW tier: SHIPPED as engine `panini-1.2.0`.** LOW (sales exist, none in 30 d) now prices at the median of the edition's last <=3 non-special sales at ANY age (`panini_last_sales_fmv`, migration `20261001030131`), not Panini's lifetime `avg_sale`. Backtest, 45 d, targets whose edition had no sale in the prior 30 d — fully-read editions n=597: lifetime avg MdAPE 82.5 % / ratio 1.83 / 22 % within ±25 → last-3 median 15.0 % / 1.00 / 55 %; partially-read n=1,871: 70.4 % / 1.68 → 66.7 % / 1.65. On sales of $10+ the two are about equal (both ~1.14×), so the gain is mostly on cheap cards. Kill switch `PANINI_FMV_ENGINE=1.1`. Re-measure at the 10-07 review, including the Hobby/FOTL pack EV the LOW tier dominated.
+
+## Decisions taken — the 10-19 thread's open items (2026-10-19 ~10:20 PM PT; Trevor: "Make decisions on these yourself")
+
+- ✅ **SHIPPED 2026-10-24 ~9:00 AM PT (`20261024152200` + route; kill switch `PANINI_FMV_ENGINE=1.3.1`).** **Panini 30-day FMV input → `panini_sales` (`panini-1.4.0`): YES, ship on or after 10-24, not now.** The gate is met (MdAPE 11.8 vs 13.4 %, ±25 % 60.9 vs 59.4, n 27,746; plus 4,871 recent-sale targets serials cannot see). It waits because `panini-1.3.0/1.3.1` shipped 10-18/10-19 and their first live read is due 10-22..10-24 (panini.md Now 1); re-pricing most of the catalogue before that read would pool two engine changes into one window, which measures neither. Ship it as `panini-1.4.0` with `PANINI_FMV_ENGINE=1.3.1` as the kill switch, then read it on its own window. Owner: the first interactive session on/after 10-24, after the 1.3.x read.
+- **`lib/warmup/WarmupContext.tsx` `react-hooks/refs` (the last one): NO rewrite.** Fixing it unmasks a `set-state-in-effect` that needs a `useSyncExternalStore` rewrite of the shared client cache every warm page reads; a lint-only gain does not justify that blast radius. It stays in the ratchet baseline. Revisit only if the hook is rewritten for a functional reason.
+- **Remaining unused variables: DONE, not deferred** (ledger 10-19 ~10:30 PM PT). What stays are locals whose initialiser does work (hook state, computed values) where removal is a behaviour question, not a lint one.
+- **Panini Market Activity on team pages: NO for now.** Panini editions carry no `team_name`, so there is no team page to put it on; this is parity work, sequenced behind the accuracy gate (roadmap 08-03 §6). Nothing false renders today (the section hides when empty).
+- **Not decidable under delegation (needs Trevor's accounts or legal identity), unchanged:** #22 credential purge, C2 postal address (`RPC_SENDER_POSTAL_ADDRESS`), S1/S3/S6 token rotation, `OPENSEA_API_KEY`.
+
+## Decisions taken — the docs-refresh open list (2026-10-17 ~8 PM PT; Trevor: "RWA can be a future add, but not right now. Do what makes sense to you and make your own decisions for the rest")
+
+- **RWA Vaulted: a FUTURE ADD (Trevor).** The registry slot stays `published: false`, with no DB row, lanes or route work. Its partner label ("Courtyard / Beezie") rendered on the signed-in "Coming Soon" banner; it is now "Real-world assets", because Beezie is retired and Courtyard was never evaluated. **Revisit when:** Trevor scopes it, and pick the partner then.
+- **Pinnacle gets NO confidence-share gate bar.** Its labels misrank (MEDIUM beats HIGH against realised sales, #193), so a HIGH/MED share bar would reward the wrong thing. Pinnacle is gated on realised-sales accuracy instead: the #193 re-measure, then a standing backtest. **Revisit when:** #193's fix ships and the tiers rank in order.
+- **2026-27 leaderboard boards (Yearbook / Blue Chip / Squad Goals): NOT built until Top Shot publishes the official scoring.** RPC will not publish its own rank as Top Shot's. **Revisit when:** the scoring is public.
+- ✅ **RETIRED 2026-10-24 ~11:30 AM PT (Cowork, under Trevor's delegation "what's best for RPC long term and for our users"): labelled red fills now use `--rpc-red-fill` `#D93529` (white 4.68:1), hover `--rpc-red-fill-hover` `#C42B22`; `#E03A2F` stays the brand accent. Tree-walk guard: `__tests__/red-fill-contrast.test.ts`.** Original entry: **Brand red on small text: KEEP `#E03A2F` fills as an accepted exception before launch.** White on it is 4.36:1, 0.14 short of AA for small text and AA for large text. The 10-12 token work already moved red TEXT to `--rpc-red-text`. **Revisit at the marketing gate** (go-live §6): then darken button fills or enlarge their labels. ↳ ⚠ **CORRECTED 2026-10-17 ~9:25 PM PT (Claude Code, Windows box): "already moved red TEXT" was FALSE** — a census found **2** `color:` sites on `--rpc-red-text` and **334** still on `--rpc-red` (101 files), plus **213** `color: var(--rpc-text-ghost)` sites (1.78:1, footer/nav labels on every page). The non-blocking nightly axe job had read `serious · color-contrast` on 4 of 5 routes all week while the workflow stayed green. All 547 swapped to `--rpc-red-text` / `--rpc-text-muted` in one commit, pinned at zero by `__tests__/text-color-uses-text-safe-tokens.test.ts`. The FILL exception above is unchanged (white on `#E03A2F` buttons stay).
+- **#17: CLOSED by decision** (the low-severity tail; reopen item by item).
+- **OpenSea key (#58): still shelved.** Candy's freeze and a venue move look the same from here, but the honest response to a freeze (the share decays from ~11-10) needs no key. **Revisit if** Candy still has 0 indexed sales on 11-10. Then the key is the cheapest way to tell the two apart, and only Trevor can create it.
+- ✅ **DONE 2026-10-18 ~7:15 AM PT** (disabled + cadence arms off; ledger). **UFC zero-yield lanes (`ufc-enrichment-drain`, `ufc-stub-thumbnail-resolver`): RETIRE them**, but only from the cron-job.org console, which no session here can read. Each run costs 30–500 ms, so this is housekeeping for the next console session. Slow `wallet-backfill-ufc` there too; it still catches real holdings changes.
+- **Tagline (#63): CHANGED to chain-neutral.** The rule's condition ("until chain two ships") was met when Candy went live 09-06. Root title is now "Rip Packs City — The Intelligence Layer for Digital Collectibles", and the OG alt, early-access and blog self-descriptions are chain-neutral. Per-page titles that name Flow describe their own scope and were left. ⛔ The no-multi-chain-outreach half still binds.
+- **UFC malformed rows (`KHABIB-TIME-901`, `YOU-SUCK-2-0-750`): left as they are.** Their true names cannot be verified on a closed market, and a guessed UPDATE would fabricate a label. Repair them only from source metadata.
+- **#114 (15 live Cowork dashboards): not Trevor's decision.** It is work for the next desktop Cowork session, the only place that can reach the store. ✅ **Done 2026-10-20:** a cloud session linked to Trevor's computer could list and stage the store (11 dashboards by then); all 11 were ported to claude.ai artifacts with throwing helpers (known-issues #114).
+- **Still Trevor-only, because each needs his account or legal identity:** #22 (GitHub Support ticket + Dapper session rotation), C2 postal address (digests stay off; no users depend on them), S1/S3/S6 console rotation (do it before marketing starts; nothing public depends on it today).
+
+## Decisions taken — the rest of the 10-17 open list (2026-10-17, PT; Trevor: "Make your own decisions on this and take care of it")
+
+- **#172 desktop giveaway stall: the PHONE is the delivery path; not chased further.** It reproduces only in Trevor's browser extension (not reachable from code), and the mobile path works. Reopen if a phone delivery stalls.
+- **#190 pre-2023 Top Shot pack-open history: DECLINED.** Every free source is ruled out, and the keyed ones are infra spend, held at zero pre-revenue. Reopen with revenue or a paying user's ask.
+- **R130 the 17 uncalled deployed edge functions: KEPT.** They have no caller on any source (10-17 census), cost nothing, and deletion is irreversible; the only deleting credential is a GitHub Actions secret. Revisit if the dashboard list ever gets in the way.
+- **OPENSEA_API_KEY: unchanged** (decided above): it needs an account and a secret, which only Trevor can create.
+- **D25 parallel `#N / M`: RESOLVED.** It means the moment's own serial over its own run (Top Shot numbers serials per subedition). Impossible pairs are at 0: the last 10 were 109 cross-set mis-keys, verified on-chain and re-keyed (`20261017211515`). The reverse direction (parallels filed as base, 0.75 % of a May-era sample) is now seeded without skips (`20261017211832`).
+
+## Decisions taken — achievements scope + OpenSea key (2026-10-17, PT; Trevor: "Do what makes sense")
+
+- **Achievements stay computed ONLY for owners already in `profile_achievements` (2); not every user.** `compute-achievements` was repaired 10-17 (ledger), so widening is now a one-line change to its weekly key list. **Chosen:** do not widen. The roadmap keeps engagement/gamification surfaces off until the accuracy gate passes, and the public achievements UI is unmounted (`ProfileClient.tsx` comment; `AchievementsCard` has no mount), so widening would only add badges to profile OG share cards: a growth surface, not an intelligence one. **Given up:** earned badges on other collectors' share cards. **Falsifier / revisit when:** the achievements UI is mounted, or the accuracy gate is declared passed; then widen the weekly run to every `profile_bio` user with saved wallets (cost measured: ~16 cheap probes per user, 4.8 s for 2 users).
+- **`OPENSEA_API_KEY` (#58): no change.** Needs an account + secret only Trevor can create; the 10-13 decision (three Candy OpenSea lanes UNSCHEDULED until a key exists) stands. Nothing fails meanwhile. **Revisit when:** Trevor sets the key; then re-schedule the three lanes and add watchlist rows the same turn.
+
+## Decision taken — Panini FMV input (added 2026-09-30, PT; see above)
+
+- **Switch `panini_recent_sales_fmv` from `panini_card_serials` (one last sale per serial) to `panini_sales` (every sale the walk reads)?** Measured by `panini_sales_fmv_backtest` 2026-09-30 7:45 AM PT on covered editions: n=677, MdAPE 16.7 % vs 16.2 %, within-25 % 62.9 vs 61.9, p90 67 vs 68 — a TIE. The only gain is COVERAGE: 187 more covered targets priced (+28 %) at 28.6 % MdAPE / 48.7 % within-25. `chain-strategy.md` forbids switching on the superset argument alone, so it is held for Trevor: is +28 % priced at ~29 % MdAPE worth it? Re-read the view (0.7 s since `20260930144208`) before deciding — covered n grows ~1,800 editions/day.
+- **Not a decision, a date:** the Panini Analytics daily chart stays "building" until the walk re-reads editions (1,800 of ~4,900 active read by 09-30, none re-read; a full pass ≈ 5 days), so the first complete days should appear ~Oct 3–4. If it is still "building" after ~Oct 6, check `panini_sales_reads` for `last_recent_read_at > first_recent_read_at` (re-reads) before anything else.
+
+## LOW-label split — decided 2026-09-25 (Trevor: split; the per-edition badge half deferred, "do what you think is best")
+
+- **Shipped:** the public FMV methodology page states both meanings of LOW ("too few sales" / "sales disagree") with thresholds read from `lib/fmv-confidence.ts` (`7e0d670cb`). Public per-edition confidence chips stay banned (`invariants-no-confidence-chips`); busy LOW editions already show the cleaned 30d range there.
+- **Deferred — the per-edition "sales disagree" pill** on the two signed-in analytics tables (`EditionGrid` on `/analytics/sets/[set_id]`, the top-movers table on `/analytics/fmv`). Signed-in WAU is 0, so it serves nobody yet. **Revisit when the analytics area has weekly signed-in users, or if chips ever return publicly.**
+- ⛔ **How to build it when it is revisited: the WRITER must record the reason.** In `fmv-recalc` a LOW row is "sales disagree" exactly when `escalateConfidence` returned LOW with the gate's sample `>= MIN_SALES_30D_HIGH` (the only LOW path at that size). **No stored field recovers it:** the gate counts the cleaned, possibly 90d-widened sample while `sales_count_30d` is the true 30d count (34 LOW rows sit at 5–6), and Step 5b historical-fallback LOW rows carry a high `liquidity_rating` with 0 sales in 30 d. A proxy on either field labels some "too few sales" editions "sales disagree" — a false claim.
+
+## Open items — re-read live 2026-10-17 ~6 PM PT (supersedes the verbatim 09-19 list below)
+
+The 09-19 list below is kept as moved. Four of its lines are stale: #55 is closed, #8 is reworded, the go-live numbers have moved, and fmv-recalc broke today. Current state, each item re-derived from the live system (read-only):
+
+- **#22 credential purge: GitHub half DONE 2026-10-20** (ticket #4811268 solved; the commit no longer fetches by sha — git `not our ref`, API 422/404; PRs #8–15 refs gone; github.com commit page 404; never archived by Software Heritage). **Still Trevor-only:** rotate the Dapper session regardless.
+- **#8 NBA projections: FED BY A FREE SOURCE since 2026-10-23** — ESPN via the DB's pg_net egress (`nba-espn-projections`, hourly; Fast Break reads it since `0262dd4`, verified live `dataStatus: "ok"`). ~~Still Trevor's: disable the old edge lane's cron-job.org job 7568448~~ — done 10-23 ~10:10 PM PT (Claude in Chrome; ledger 10-23), and `sync-nba-projections` has written no `pipeline_runs` row since (re-checked 10-27 ~10:15 AM PT), so the suppression lapsing 10-27 5:00 PM PT has nothing left to suppress. ⓘ Was: SHELVED (no paid provider pre-revenue), 0/16 ok in 48 h.
+- **#55 two-hourly Routines: CLOSED 09-23** (deleted; both ids not-found 10-17). Drop it from any open list.
+- **fmv-recalc: it wedged ~12:48 → ~5:25 PM PT 10-17** (`fmv_sweep_wedge_hours` breach). The cursor-advance fix is live (5:35 PM run `cursor_held=false`). 24 h sweep coverage reads 78.2 %, still depressed by the wedge; confirm recovery over the next day. ✅ **Recovered (re-read 10-18 ~1:05 PM PT, Cowork): every catalogue-sweep run since noon PT wrote 499–1,493 rows; the 10-17 inbox HIGH is marked closed.** The "wasteful, SIZED" note stands.
+- **Go-live:** M1 MET (55.8 %, 23/23 legs, wk 10-12). M2 NOT MET (26.3 %, 0 legs at bar for three weeks). Full table in the 10-17 headline block above and [roadmap-2026-10-17.md](../strategy/roadmap-2026-10-17.md) §2.
+- **Needs Trevor, not code:** #22 · C2 CAN-SPAM postal address (digests stay flag-off) · the brand-red small-text contrast call (white on `#E03A2F`, ≤ 4.36:1) · S1/S3/S6 (S1's `INGEST_SECRET_TOKEN`/`CRON_SECRET` rotation is NOT closed by the D2b Vault-key rotation, a different secret) · #58 `OPENSEA_API_KEY` (revisit trigger live: Candy has 0 indexed sales since 10-11) · #114 (15 Cowork dashboards, desktop session only) · #66 external links (only once the gate passes) · the 2026-27 leaderboard scoring question (10-17 block above).
+- **Dated, owed:** 10-20 8:13 PM PT first `allday-storefront-reconcile` run on `f9c8d29bd` — expect `ok=true`, `sellers_unreadable_foreign_storefront` 1, `sellers_walk_errors` 0 (a self check-in is armed for 8:20 PM PT; if this thread is archived first, the night pass reads it) · ~10-30 Pinnacle #193 reaches its n ≥ 500 HIGH gate (348 on 10-20 6:35 PM PT, ~16/day) · 10-20 ~7 PM PT series-9 verify (scheduled task armed) · 10-21 8:17 AM PT `refresh-conflated-editions` first run on its 300 s budget (`4392d28`; killed at 120 s 10-20) — confirm a run row with `lanes_failed` [] · 10-27 ~8:24 AM PT #198 first real dispatch of the All Day V1 re-verify (pg_cron 762) — `dispatched` > 0, `drained` matching, `closed_dead` near ~1 %/month · 10-22 demand re-read (handed to the night pass via `docs/overnight/focus.md` (steer 10-17 ~7:40 PM PT)) · 10-24 #181 retire/keep · 10-26/10-28 Pinnacle cadence exemption · 10-27 #8 suppression lapse · 10-28 #66 Search Console re-read · 10-29 drop `pinnacle_sales_studio_twins_20260928` · ~11-10 Candy share expected to fall (honest) · ~10-31 #193 Pinnacle HIGH re-measure (handed to the night pass via `docs/overnight/focus.md` (steer 10-17 ~7:40 PM PT)) · 11-11 2026 rookie class.
+
+## Open items (moved verbatim from CLAUDE.md's "Prioritized next actions", 2026-09-19)
+
+**Open items, stated rather than quietly dropped:**
+
+- **sports-proxy `403` — ⛔ "PROXY ESPN" IS MEASURED DEAD** (#8). ⚠ **2026-10-23: ESPN answers the DATABASE's pg_net egress** (not the edge, not Vercel) — that is the lane #8 now runs on.
+- `fmv-recalc` — wasteful, NOT broken, SIZED (it owns the DB's #1 reader): roadmap-status.md.
+- 🚨 **Needs TREVOR, not code — two:** the **credential-purge residue** (branch deleted 09-07; ask GitHub to **GC** the unreachable objects, **rotate regardless** — #22) · ⛔ **both 2-hourly Routines STILL DISABLED, no approval card — re-verified live 09-18, last fire 09-01, 17 days dead** (#55). **Added 2026-10-13 from the 10-11 platform review (audit doc, status paragraph):** the CAN-SPAM postal address (C2; digests stay flag-off until it exists) · the brand-red-on-small-text contrast call (white on `#E03A2F` 4.36:1, a brand decision) · S1 rotation / S3 admin-via-session / S6 verified rate tier (cron-job.org + GHA + Vercel env) · `OPENSEA_API_KEY` (#58; Candy OpenSea indexers unscheduled until it exists).
+- **GO-LIVE bars + blockers: [go-live-2026-09.md](../strategy/go-live-2026-09.md)** — verification gate DROPPED (#59), beacon LIVE (its "first real finding" was RETRACTED — a crawler, #69), **M1 53.1 / M2 28.7 mean, 27 legs to 09-18 (23/27 ≥50 · 6/27 ≥30) — READ THE SERIES (`rpc_trust_health_history`), NEVER A LEG; M2's blocker RELAXED (NFL season)** (#63, #64).

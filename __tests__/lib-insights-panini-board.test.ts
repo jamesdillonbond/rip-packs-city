@@ -1,0 +1,149 @@
+import { describe, it, expect } from "vitest"
+import { fetchPaniniSqueezeDefault } from "@/lib/insights/panini-board"
+
+// Paginated query-builder fake. `panini_squeeze_board` is fetched via
+// .from().select().not().order().range(from,to); we serve pages from a fixture list and
+// can inject an error at a given page index to exercise the truncation gate. The two
+// summary tables use .from().select().limit(1).
+function fakeDb(opts: {
+  boardPages?: any[][] // one array per .range() page
+  boardErrorAtPage?: number // page index that returns an error
+  orders?: Array<[string, unknown]> // records every .order() call
+  coverage?: { data: any; error: any }
+  totals?: { data: any; error: any }
+}) {
+  const boardPages = opts.boardPages ?? [[]]
+  const make = (table: string) => {
+    if (table === "panini_squeeze_board") {
+      // Derive the page index from range()'s `from` offset so it is correct even though
+      // fetchRows calls db.from() fresh on every page (which would reset a local counter).
+      const qb: any = {
+        select: () => qb,
+        not: () => qb,
+        order: (col: string, o: unknown) => {
+          opts.orders?.push([col, o])
+          return qb
+        },
+        range: (from: number) => {
+          const i = Math.floor(from / 1000)
+          if (opts.boardErrorAtPage === i) {
+            return Promise.resolve({ data: null, error: { message: "57014 timeout" } })
+          }
+          return Promise.resolve({ data: boardPages[i] ?? [], error: null })
+        },
+      }
+      return qb
+    }
+    const res =
+      table === "panini_coverage_summary"
+        ? opts.coverage ?? { data: [{ total_editions: 10 }], error: null }
+        : opts.totals ?? { data: [{ editions: 10 }], error: null }
+    const qb: any = { select: () => qb, limit: () => Promise.resolve(res) }
+    return qb
+  }
+  return { from: (t: string) => make(t) } as any
+}
+
+const rows = (n: number) => Array.from({ length: n }, (_, i) => ({ fmv_usd: 1000 - i }))
+
+describe("fetchPaniniSqueezeDefault", () => {
+  // 2026-10-10: fmv_usd ties are the norm on this board (4,988 of 5,217 rows),
+  // so paging needs a unique tiebreak or pages repeat and skip rows.
+  it("pages on fmv_usd DESC with the unique id as a tiebreak", async () => {
+    const orders: Array<[string, unknown]> = []
+    await fetchPaniniSqueezeDefault(fakeDb({ boardPages: [rows(1000), rows(10)], orders }))
+    const cols = orders.map(([c]) => c)
+    expect(cols.slice(0, 2)).toEqual(["fmv_usd", "id"])
+  })
+
+  it("assembles a COMPLETE board (short final page) and is ok", async () => {
+    // page 0 = 1000 rows, page 1 = 200 rows (short → stop). Complete.
+    const res = await fetchPaniniSqueezeDefault(fakeDb({ boardPages: [rows(1000), rows(200)] }))
+    expect(res.ok).toBe(true)
+    expect(res.rowCount).toBe(1200)
+    const p = res.payload as any
+    expect(p.initialRows.length).toBe(1200)
+    expect(p.coverage).toEqual({ total_editions: 10 })
+    expect(p.totals).toEqual({ editions: 10 })
+    expect(p.degraded).toBeNull() // complete → no notice
+  })
+
+  it("is NOT ok when a later page errors (truncated ranking must never be cached)", async () => {
+    // page 0 ok (1000), page 1 errors → partial truncation.
+    const res = await fetchPaniniSqueezeDefault(
+      fakeDb({ boardPages: [rows(1000), rows(1000)], boardErrorAtPage: 1 })
+    )
+    expect(res.ok).toBe(false) // the whole point: a truncated ranking is not cacheable
+    const p = res.payload as any
+    // A truncated ranking is emptied, not rendered as if whole — the live-degraded
+    // render path hands this payload back verbatim, so partial rows here would be a lie.
+    expect(p.initialRows).toEqual([])
+    expect(res.rowCount).toBe(1000) // telemetry still reports what was actually fetched
+    expect(p.degraded).not.toBeNull() // ...and it still says it's degraded (truncated)
+    expect(p.degraded.truncated).toContain("Squeeze board")
+  })
+
+  it("is NOT ok when the FIRST page errors (absent board)", async () => {
+    const res = await fetchPaniniSqueezeDefault(
+      fakeDb({ boardPages: [rows(1000)], boardErrorAtPage: 0 })
+    )
+    expect(res.ok).toBe(false)
+    const p = res.payload as any
+    expect(p.initialRows).toEqual([])
+    expect(p.degraded.failed).toContain("Squeeze board")
+  })
+
+  // pipeline_runs telemetry. The sibling boards name their driver text; a fixed
+  // "query failed" here would leave the one board whose failure is NOT known to be
+  // a timeout as the only one undiagnosable from the pipeline row.
+  it("reports WHICH page failed and why, in the telemetry reason", async () => {
+    const res = await fetchPaniniSqueezeDefault(
+      fakeDb({ boardPages: [rows(1000), rows(1000)], boardErrorAtPage: 1 })
+    )
+    expect(res.error).toContain("panini_squeeze_board")
+    expect(res.error).toContain("page 1")
+    expect(res.error).toContain("57014 timeout")
+  })
+
+  // The two ways this board declines to cache are DIFFERENT failures that imply
+  // different fixes (fix the view vs raise MAX_PAGES), and were indistinguishable
+  // in telemetry before 2026-08-12.
+  it("distinguishes a page-capped ranking from a failed query", async () => {
+    // Every page full, cap reached → complete-looking but truncated.
+    // 10 full pages = the MAX_PAGES cap with more rows behind it.
+    const pages = Array.from({ length: 12 }, () => rows(1000))
+    const res = await fetchPaniniSqueezeDefault(fakeDb({ boardPages: pages }))
+    expect(res.ok).toBe(false)
+    expect(res.error).toContain("partial ranking")
+    expect(res.error).not.toContain("page 0:")
+    // ⚠ THE ASSERTION WHOSE ABSENCE SHIPPED A DEFECT. Not caching the truncated
+    // ranking is only half the job: the payload empties its rows, so without a
+    // notice the reader gets a blank board that reads as "nothing matched".
+    // summarizeDegraded skips any status with ok:true, and a page-capped read is
+    // ok:true — so the first version of this fix produced exactly that.
+    const p2 = res.payload as any
+    expect(p2.initialRows).toEqual([])
+    expect(p2.degraded).not.toBeNull()
+    expect(p2.degraded.truncated).toContain("Squeeze board")
+  })
+
+  it("a healthy board carries no telemetry reason", async () => {
+    const res = await fetchPaniniSqueezeDefault(fakeDb({ boardPages: [rows(50)] }))
+    expect(res.ok).toBe(true)
+    expect(res.error).toBeUndefined()
+  })
+
+  it("stays ok with a complete board even if coverage/totals fall back to null", async () => {
+    const res = await fetchPaniniSqueezeDefault(
+      fakeDb({
+        boardPages: [rows(50)],
+        coverage: { data: null, error: { message: "x" } },
+        totals: { data: null, error: { message: "y" } },
+      })
+    )
+    expect(res.ok).toBe(true) // ranking is complete; summaries have their own fallbacks
+    const p = res.payload as any
+    expect(p.coverage).toBeNull()
+    expect(p.totals).toBeNull()
+  })
+})

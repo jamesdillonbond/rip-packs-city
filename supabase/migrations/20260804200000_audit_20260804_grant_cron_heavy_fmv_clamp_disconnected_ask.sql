@@ -1,0 +1,22 @@
+-- Restore the standing EXECUTE grant to cron_heavy on fmv_clamp_disconnected_ask(uuid, boolean).
+--
+-- Regression introduced 2026-08-04: the all-collections rewrite
+-- (audit_20260804_fmv_clamp_disconnected_ask_all_collections) recreated the SECDEF
+-- function granting EXECUTE only to service_role, postgres. The companion repoint
+-- (audit_20260804_drop_fmv_clamp_disconnected_ask_topshot) granted cron_heavy EXECUTE
+-- only TRANSIENTLY to run cron.alter_job, then revoked it -- but the daily job
+-- rpc-fmv-clamp-disconnected-ask (jobid 69, '55 8 * * *') EXECUTES *as* cron_heavy every
+-- day, so it needs a STANDING grant. Result: the job succeeded 22 consecutive days
+-- (07-13 -> 08-03) then failed 08-04 08:55Z with "permission denied for function
+-- fmv_clamp_disconnected_ask", silently disabling the full-scope daily clamp backstop
+-- (the fmv-recalc route still clamps freshly-written editions per-collection via
+-- service_role, so only the daily full-scope catch-up sweep was lost).
+--
+-- Every other cron_heavy-invoked function carries {..., cron_heavy=X/postgres}; this
+-- function was the sole outlier. cron_heavy is an internal pg_cron role (never
+-- anon/authenticated), so this does NOT re-open the anon-exec surface the 08-04 rewrite
+-- closed -- REVOKE ... FROM PUBLIC, anon, authenticated stays in force and
+-- check_secdef_anon_exec_drift() is unaffected. No function body / FMV math changes.
+--
+-- Revert: REVOKE EXECUTE ON FUNCTION public.fmv_clamp_disconnected_ask(uuid, boolean) FROM cron_heavy;
+GRANT EXECUTE ON FUNCTION public.fmv_clamp_disconnected_ask(uuid, boolean) TO cron_heavy;

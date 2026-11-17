@@ -1,0 +1,61 @@
+// app/(collections)/[collection]/player/[slug]/layout.tsx
+//
+// Existence gate for /<collection>/player/<slug>, and the ONLY place it can live.
+//
+// This segment ships a `loading.tsx`, which makes Next wrap the PAGE in an
+// implicit <Suspense>: the document shell + fallback are flushed (committing a
+// **200** status line) before the page's own `notFound()` ever runs, so an
+// unknown slug answered HTTP 200 with a not-found body — a soft-404. Google
+// treats those as thin duplicates, and ~20,500 sitemap URLs sit on the five
+// entity routes. A layout is part of the shell, so Next must await it BEFORE the
+// first flush; putting the gate here commits a real 404 and KEEPS the skeleton.
+// Same pattern as app/moment/[id]/layout.tsx (e835882c). Full rationale + the
+// four-variant Next 16.2.9 probe: lib/entity-detail-gate.ts.
+//
+// Safety: the gate calls the same `get_player_detail` the page 404s on, via the
+// cache()'d shared fetch — so it is a STRICT SUBSET of the page's own condition
+// (it cannot invent a 404) and it costs no extra round trip. It FAILS OPEN on
+// any RPC error.
+
+import { notFound, permanentRedirect } from "next/navigation"
+import { getCollectionByUrlSlug } from "@/lib/collection-slug"
+import { entityResolves, decodeSlugOrNull, resolvePlayerAlias } from "@/lib/entity-detail-gate"
+import { playerPagePath } from "@/lib/player-route"
+
+interface LayoutProps {
+  children: React.ReactNode
+  params: Promise<{ collection: string; slug: string }>
+}
+
+export default async function PlayerSegmentLayout({ children, params }: LayoutProps) {
+  const { collection, slug: rawSlug } = await params
+
+  // A malformed percent-escape means we cannot reproduce the key the page will
+  // use — fail open rather than 404 on a guess.
+  const slug = decodeSlugOrNull(rawSlug)
+  if (slug === null) return <>{children}</>
+
+  const coll = getCollectionByUrlSlug(collection)
+  if (!coll) notFound()
+
+  if (!(await entityResolves("player", coll.id, slug))) {
+    // A second NAME for one person (player_name_aliases, e.g. "stephen-curry"
+    // after the 2026-09-25 merge into Steph Curry) answers 308 to the canonical
+    // page instead of 404ing a URL search engines and collectors already hold.
+    const alias = await resolvePlayerAlias(coll.id, slug)
+    // A failed alias read must not become a 404 for a URL that may be real.
+    if (!alias.ok) throw new Error(`player alias lookup unavailable for ${slug}`)
+    if (alias.target && alias.target !== slug) {
+      permanentRedirect(playerPagePath(collection, alias.target))
+    }
+    // The slug rule turns a "Jr." / "Sr." suffix into a trailing dash ("marvin-harrison-jr-"), so the URL a person types or
+    // another site links — "…/marvin-harrison-jr" — 404'd (2026-10-21 sweep: Marvin Harrison Jr.,
+    // Tim Hardaway Jr.). Only on the 404 path, one extra lookup through the same cached gate.
+    if (!slug.endsWith("-") && (await entityResolves("player", coll.id, `${slug}-`))) {
+      permanentRedirect(playerPagePath(collection, `${slug}-`))
+    }
+    notFound()
+  }
+
+  return <>{children}</>
+}

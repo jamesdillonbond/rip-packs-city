@@ -1,0 +1,429 @@
+// app/api/support-chat/context/route.ts
+// Provides pre-load context for the chat widget on open.
+// Returns: dailyDeal, marketPulse, returningUser, returningBetaTester,
+// conversationCount, lastTopics, lastPlayerSearched, lastOpenFeedback,
+// pageWelcome, pageSuggestions.
+//
+// User-attribution fix (B3, 2026-05-09): chat_sessions rows used to be
+// created here with all user_wallet / user_email / owner_key columns
+// NULL because the route only trusted the client-passed ?ownerKey
+// querystring. We now derive identity server-side from the auth cookie
+// (same pattern as /api/support-chat) and populate all three columns on
+// both the initial upsert and the update path. The client-supplied
+// ownerKey is ignored — never trusted.
+
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServer } from "@/lib/auth/supabase-server";
+import { isWellFormedSessionId, isBotSessionId } from "@/lib/concierge/request-guards";
+import { profileUsernameFor } from "@/lib/concierge/identity";
+import { anonTelemetryAllowed } from "@/lib/abuse/anon-rate";
+import { ilikeLiteral } from "@/lib/db/ilike-literal";
+
+export const maxDuration = 10;
+// force-dynamic is REQUIRED, not decorative: GET reads req.nextUrl.searchParams,
+// and `revalidate` without it invites Next to evaluate this route at build time,
+// where the Supabase env + auth cookie are absent — that exact shape baked a 500
+// into the first snapshot of /api/analytics/health (2026-07-28). Per-request
+// execution; the 5-minute figure is kept only as the intended client-side reuse
+// window for the widget's pre-load call.
+export const dynamic = "force-dynamic";
+export const revalidate = 300; // intended client cache window, 5 min
+
+const supabase: any = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+
+type AuthedIdentity = {
+  email: string | null;
+  ownerKey: string | null;
+  userWallet: string | null;
+};
+
+async function deriveIdentity(): Promise<AuthedIdentity> {
+  try {
+    const sb = await getSupabaseServer();
+    const { data, error } = await sb.auth.getUser();
+    const email = data?.user?.email ?? null;
+    if (error || !email) {
+      return { email: null, ownerKey: null, userWallet: null };
+    }
+    const { data: row } = await supabase
+      .from("allow_list")
+      .select("username, wallet_addr")
+      .ilike("email", ilikeLiteral(email))
+      .limit(1)
+      .maybeSingle();
+    // 2026-11-10: new members have no allow_list row — fall back to their own
+    // profile username so "welcome back" and "your feedback shipped" reach them
+    // (lib/concierge/identity.ts). The wallet stays allow_list-only.
+    let ownerKey: string | null = row?.username ?? null;
+    const uid = data?.user?.id ?? null;
+    if (!ownerKey && uid) ownerKey = await profileUsernameFor(supabase, uid);
+    return {
+      email,
+      ownerKey,
+      userWallet: row?.wallet_addr ?? null,
+    };
+  } catch {
+    return { email: null, ownerKey: null, userWallet: null };
+  }
+}
+
+function tierLabel(raw: string): string {
+  return (
+    raw.replace("MOMENT_TIER_", "").charAt(0).toUpperCase() +
+    raw.replace("MOMENT_TIER_", "").slice(1).toLowerCase()
+  );
+}
+
+export async function GET(req: NextRequest) {
+  // Only the web widget calls this route. The session id keys a chat_sessions
+  // read + upsert, so it is bounded to the widget's own shape and the bot
+  // bridge's `tg:` / `dc:` DM keys are refused — a web caller must not read
+  // or bump another user's DM session row (2026-10-03 audit).
+  const rawSessionId = req.nextUrl.searchParams.get("sessionId");
+  const sessionId = isWellFormedSessionId(rawSessionId) && !isBotSessionId(rawSessionId) ? rawSessionId : null;
+  // Beta posture: market-status / movers / dailyDeal are NOT included by default.
+  // The chat widget no longer auto-fires a market-pulse follow-up message after
+  // the greeting, and the bot can fetch live market data via its existing tools
+  // when the user asks for deals. To opt back in (e.g. for an explicit "market
+  // pulse" widget), pass includeMarketStatus=true.
+  const includeMarketStatus =
+    req.nextUrl.searchParams.get("includeMarketStatus") === "true";
+
+  // Server-derived identity wins over any client-passed value.
+  const identity = await deriveIdentity();
+  const ownerKey = identity.ownerKey;
+  const userWallet = identity.userWallet;
+  const userEmail = identity.email;
+
+  // ── 1. Per-session continuity (chat_sessions) ──────────────────────────────
+  let returningUser = false;
+  let lastTopics: string[] = [];
+  let lastPlayerSearched: string | null = null;
+  let conversationCount = 0;
+
+  if (sessionId) {
+    const { data: session } = await supabase
+      .from("chat_sessions")
+      .select("last_topics, last_player_searched, conversation_count, last_seen_at")
+      .eq("session_id", sessionId)
+      .maybeSingle();
+
+    if (session) {
+      returningUser = true;
+      lastTopics = session.last_topics ?? [];
+      lastPlayerSearched = session.last_player_searched ?? null;
+      conversationCount = session.conversation_count ?? 1;
+
+      // Update path — only overwrite identity columns when we have a value
+      // so an authenticated row doesn't get clobbered when the user later
+      // opens the chat from an unauthed surface.
+      const update: Record<string, unknown> = {
+        last_seen_at: new Date().toISOString(),
+        conversation_count: (session.conversation_count ?? 1) + 1,
+      };
+      if (ownerKey) update.owner_key = ownerKey;
+      if (userWallet) update.user_wallet = userWallet;
+      if (userEmail) update.user_email = userEmail;
+
+      // write-discarded: conversation-memory telemetry; a failure only loses topic context for the next turn.
+      await supabase
+        .from("chat_sessions")
+        .update(update)
+        .eq("session_id", sessionId);
+    } else if (await anonTelemetryAllowed(req.headers, "support-chat-context")) {
+      // CISO 2026-11-04 (API finding 6): an anonymous GET created a chat_sessions row for any
+      // well-formed session id with only the per-lambda limiter in front. A NEW row is now
+      // behind the durable per-IP / global beacon cap; a refusal skips the write (the chat
+      // still works, it just starts without memory). An EXISTING session's update is untouched.
+      // write-discarded: conversation-memory telemetry; a failure only loses topic context for the next turn.
+      await supabase.from("chat_sessions").upsert(
+        {
+          session_id: sessionId,
+          last_seen_at: new Date().toISOString(),
+          first_seen_at: new Date().toISOString(),
+          conversation_count: 1,
+          owner_key: ownerKey,
+          user_wallet: userWallet,
+          user_email: userEmail,
+        },
+        { onConflict: "session_id" }
+      );
+    }
+  }
+
+  // ── 1b. Cross-session continuity for signed-in beta testers ────────────────
+  // When ownerKey is present, override conversationCount with the owner_key
+  // total (cross-session) so a returning beta tester sees a warm welcome
+  // even on a fresh sessionStorage. Also surface their most recent open
+  // feedback row from beta_feedback_inbox.
+  let returningBetaTester = false;
+  let lastOpenFeedback: {
+    id: number;
+    feedback_type: string | null;
+    feedback_summary: string | null;
+    feedback_status: string | null;
+    created_at: string | null;
+  } | null = null;
+  if (ownerKey) {
+    try {
+      const { count } = await supabase
+        .from("support_conversations")
+        .select("*", { count: "exact", head: true })
+        .eq("owner_key", ownerKey);
+      if (typeof count === "number") {
+        conversationCount = count;
+        returningBetaTester = count > 0;
+      }
+    } catch (err) {
+      console.error("[context] cross-session count error:", err);
+    }
+    try {
+      const { data: feedbackRow } = await supabase
+        .from("beta_feedback_inbox")
+        .select("id, feedback_type, feedback_summary, feedback_status, created_at")
+        .eq("owner_key", ownerKey)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (feedbackRow) lastOpenFeedback = feedbackRow;
+    } catch (err) {
+      console.error("[context] last open feedback lookup error:", err);
+    }
+  }
+
+  // ── 1c. What shipped since the reader was last here ────────────────────────
+  // The greeting named only the LAST row logged (by created_at): a tester whose
+  // twelve requests shipped in one day was told the newest one "is still in
+  // the queue" (2026-10-03). This read answers the question a returning reader
+  // actually has. "Last here" = the owner's latest support_conversations row:
+  // this fetch runs before the first message of THIS visit, so the latest row
+  // is the previous visit's last turn; a reader with no prior turn gets the
+  // last 14 days. A failed read is `null` (unknown) — never `{ count: 0 }`,
+  // which would read "nothing shipped for you".
+  let recentlyShipped: {
+    count: number;
+    since: string;
+    items: { id: number; feedback_type: string | null; feedback_summary: string; shipped_at: string | null }[];
+  } | null = null;
+  if (ownerKey) {
+    try {
+      const { data: lastTurn, error: lastErr } = await supabase
+        .from("support_conversations")
+        .select("created_at")
+        .eq("owner_key", ownerKey)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (lastErr) throw lastErr;
+      const lastAt = lastTurn && typeof lastTurn.created_at === "string" ? Date.parse(lastTurn.created_at) : NaN;
+      const since = new Date(Number.isFinite(lastAt) ? lastAt : Date.now() - 14 * 86_400_000).toISOString();
+      const { data, error, count } = await supabase
+        .from("support_conversations")
+        .select("id, feedback_type, feedback_summary, shipped_at", { count: "exact" })
+        .eq("owner_key", ownerKey)
+        .eq("feedback_status", "shipped")
+        .not("feedback_type", "is", null)
+        .not("feedback_summary", "is", null)
+        .gt("shipped_at", since)
+        .order("shipped_at", { ascending: false })
+        .limit(20);
+      if (error) throw error;
+      type ShippedRow = { id: number; feedback_type: string | null; feedback_summary: string | null; shipped_at: string | null };
+      const rows = ((Array.isArray(data) ? data : []) as ShippedRow[]).filter(
+        (r) => typeof r?.feedback_summary === "string" && r.feedback_summary.trim().length > 0,
+      );
+      recentlyShipped = {
+        count: typeof count === "number" ? count : rows.length,
+        since,
+        items: rows.slice(0, 3).map((r) => ({
+          id: r.id,
+          feedback_type: r.feedback_type ?? null,
+          feedback_summary: String(r.feedback_summary).trim(),
+          shipped_at: r.shipped_at ?? null,
+        })),
+      };
+    } catch (err) {
+      console.error("[context] recently-shipped lookup error:", err);
+      recentlyShipped = null;
+    }
+  }
+
+  // ── 2 + 3. Market context (gated behind includeMarketStatus) ───────────────
+  // During beta the chat opens with a personalized greeting only — no
+  // auto-firing market-pulse / dailyDeal follow-up. The bot still has live
+  // market tools (search_live_deals, get_fmv) and uses them when the user asks.
+  let dailyDeal: object | null = null;
+  let marketPulse: string | null = null;
+
+  if (includeMarketStatus) {
+    try {
+      const base =
+        process.env.NEXT_PUBLIC_SITE_URL ||
+        (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://www.rippackscity.com");
+      const sniperRes = await fetch(
+        `${base}/api/sniper-feed?limit=1&minDiscount=15&sortBy=discount`,
+        { signal: AbortSignal.timeout(6000) }
+      );
+      if (sniperRes.ok) {
+        const sniperData = await sniperRes.json();
+        const deals = sniperData.deals ?? [];
+        if (deals.length > 0) {
+          const d = deals[0];
+          dailyDeal = {
+            player_name: d.playerName,
+            low_ask: d.askPrice,
+            discount_pct: Math.round(d.discount),
+            tier: tierLabel(d.tier ?? "COMMON"),
+            source: d.source ?? "topshot",
+            set_name: d.setName,
+            series: d.seriesName ?? null,
+            fmv: d.adjustedFmv ?? d.baseFmv,
+            buy_url: d.buyUrl ?? null,
+          };
+        }
+      }
+    } catch (err) {
+      console.error("[context] dailyDeal sniper-feed error:", err);
+    }
+
+    if (!dailyDeal) {
+      try {
+        const { data: fallbackRows } = await supabase
+          .from("cached_listings")
+          .select("player_name, set_name, series_name, tier, ask_price, fmv, discount, badge_slugs, buy_url")
+          .gt("discount", 10)
+          .not("fmv", "is", null)
+          .lt("ask_price", 500)
+          .order("discount", { ascending: false })
+          .limit(1);
+        if (fallbackRows && fallbackRows.length > 0) {
+          const r = fallbackRows[0];
+          dailyDeal = {
+            player_name: r.player_name,
+            tier: tierLabel(r.tier ?? "COMMON"),
+            set_name: r.set_name,
+            series: r.series_name ?? null,
+            low_ask: Number(r.ask_price),
+            fmv: Number(r.fmv),
+            discount_pct: Math.round(Number(r.discount)),
+            badges: r.badge_slugs ?? [],
+            buy_url: r.buy_url ?? null,
+          };
+        }
+      } catch (err) {
+        console.error("[context] dailyDeal fallback error:", err);
+      }
+    }
+
+    try {
+      const { data: pulse } = await supabase.rpc("get_market_pulse");
+      const { deals_below_20, deals_below_30, total_tracked } = pulse?.[0] ?? {};
+
+      if (deals_below_30 && deals_below_30 > 0) {
+        marketPulse = `${deals_below_30} moment${deals_below_30 !== 1 ? "s" : ""} listed 30%+ below FMV right now`;
+      } else if (deals_below_20 && deals_below_20 > 0) {
+        marketPulse = `${deals_below_20} moment${deals_below_20 !== 1 ? "s" : ""} listed 20%+ below FMV right now`;
+      } else if (total_tracked) {
+        marketPulse = `${total_tracked} moments tracked — FMV data fresh`;
+      }
+    } catch (err) {
+      console.error("[context] marketPulse RPC error:", err);
+    }
+
+    try {
+      const { data: movers } = await supabase.rpc("get_fmv_movers", {
+        lookback_interval: "24 hours",
+        min_fmv: 2,
+        limit_count: 3,
+      });
+      if (movers && movers.length > 0) {
+        const hot = movers.filter((m: any) => m.pct_change > 20);
+        if (hot.length > 0) {
+          const moverStr = hot
+            .map((m: any) => `${m.player_name} up ${Math.round(m.pct_change)}% today`)
+            .join(", ");
+          marketPulse = (marketPulse ?? "Market active") + ` · \u{1F525} ${moverStr}`;
+        }
+      }
+    } catch (err) {
+      console.error("[context] fmv_movers error:", err);
+    }
+
+    if (!marketPulse) {
+      try {
+        const { count } = await supabase
+          .from("cached_listings")
+          .select("*", { count: "exact", head: true })
+          .gte("discount", 30);
+        if (count && count > 0) {
+          marketPulse = `${count} moment${count !== 1 ? "s" : ""} listed 30%+ below FMV right now`;
+        }
+      } catch (err) {
+        console.error("[context] marketPulse fallback error:", err);
+      }
+    }
+  }
+
+  // ── 4. Welcome message + page suggestions (beta posture) ───────────────────
+  // The bot's static welcome is rendered client-side in SupportChat for instant
+  // paint; this pageWelcome is a server-side fallback for clients that consume
+  // the field. We keep it terse and beta-flavored so it can't override the
+  // client-side voice.
+
+  let pageWelcome = "I can price a moment, find listings under FMV, break down a wallet, pull live market data (top sales, movers, rookies, scarcity) — or log a bug or idea for the team.";
+  // A shipped item is news ONCE. recentlyShipped (counted since the reader's
+  // previous turn) is that news; when it read OK and found nothing, the newest
+  // shipped row is OLD and was already announced — 10-24 the widget greeted a
+  // returning tester with a July ship (#4692) three months on. Only fall back to
+  // the newest row's status when the recentlyShipped read FAILED (null).
+  const lastIsShipped = String(lastOpenFeedback?.feedback_status ?? "new") === "shipped";
+  if (returningBetaTester && recentlyShipped && recentlyShipped.count > 0) {
+    pageWelcome = `Welcome back. ${shippedSinceLine(recentlyShipped)}`;
+  } else if (returningBetaTester && lastOpenFeedback?.feedback_summary && !(lastIsShipped && recentlyShipped)) {
+    const status = String(lastOpenFeedback.feedback_status ?? "new");
+    if (status === "shipped") {
+      pageWelcome = `Welcome back. Your feedback "${lastOpenFeedback.feedback_summary}" shipped — thanks for the catch.`;
+    } else if (status === "in_progress") {
+      pageWelcome = `Welcome back. Your feedback "${lastOpenFeedback.feedback_summary}" is in progress.`;
+    } else {
+      pageWelcome = `Welcome back. Your last feedback "${lastOpenFeedback.feedback_summary}" is still in the queue.`;
+    }
+  } else if (returningUser && lastPlayerSearched) {
+    pageWelcome = `Welcome back. Last time you were looking at ${lastPlayerSearched} — anything to follow up on, or something new?`;
+  }
+
+  // Beta-flavored suggestions. Return the same shape SupportChat already
+  // expects; the client-side PAGE_DEFAULTS map provides per-page fallbacks
+  // before this fetch lands, so these can stay generic.
+  const suggestions = returningBetaTester
+    ? ["Report a bug", "Suggest a feature", "Share feedback", "Find me a deal"]
+    : ["Report a bug", "Suggest a feature", "Something looks off", "How does X work?"];
+
+  return NextResponse.json({
+    dailyDeal,
+    marketPulse,
+    returningUser,
+    returningBetaTester,
+    conversationCount,
+    lastTopics,
+    lastPlayerSearched,
+    lastOpenFeedback,
+    recentlyShipped,
+    pageWelcome,
+    pageSuggestions: suggestions,
+  });
+}
+
+/** "Since your last visit, 3 of your requests shipped: "A", "B" (+1 more)." — the
+ *  count is the DB's, the quoted items are the newest three. */
+function shippedSinceLine(rs: { count: number; items: { feedback_summary: string }[] }): string {
+  const n = rs.count;
+  const named = rs.items.map((i) => `"${i.feedback_summary}"`);
+  const more = n - named.length;
+  const list = named.length ? `: ${named.join(", ")}${more > 0 ? ` (+${more} more)` : ""}` : "";
+  return `Since your last visit, ${n} of your request${n === 1 ? "" : "s"} shipped${list}. Ask me "what shipped?" for the full list.`;
+}

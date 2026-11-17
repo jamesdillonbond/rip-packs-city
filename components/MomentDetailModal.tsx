@@ -1,0 +1,613 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { useModalA11y } from "@/lib/hooks/useModalA11y";
+import { fmvBasis } from "@/lib/fmv-basis";
+import { classifySerial } from "@/lib/serials/fun-patterns";
+import { trackOutboundClick } from "@/lib/track-click";
+import { accentText } from "@/lib/accent-text";
+import { loanWalletHref } from "@/lib/analytics/wallet-href";
+
+// Was HALF migrated: the three UFC tiers read tokens while the six Flow tiers
+// were still literals -- and literals that disagreed with every other surface
+// (LEGENDARY #fbbf24 vs --tier-legendary #FFD700, ULTIMATE #c084fc purple vs
+// --tier-ultimate #FF6B35, FANDOM #60a5fa blue vs --tier-fandom #34D399). The
+// modal opens FROM the sniper and collection tables, which already render the
+// token colours, so the same moment changed colour on click. Tokens throughout
+// as of 2026-08-02. Both consumers use the value as a plain border/color, so no
+// alpha composition is involved here.
+const TIER_COLORS: Record<string, string> = {
+  COMMON: "var(--tier-common)",
+  UNCOMMON: "var(--tier-uncommon)",
+  FANDOM: "var(--tier-fandom)",
+  RARE: "var(--tier-rare)",
+  LEGENDARY: "var(--tier-legendary)",
+  ULTIMATE: "var(--tier-ultimate)",
+  CHALLENGER: "var(--tier-challenger)",
+  CONTENDER: "var(--tier-contender)",
+  CHAMPION: "var(--tier-champion)",
+};
+
+const BADGE_ICONS: Record<string, string> = {
+  "Rookie Year": "⭐",
+  "Rookie Premiere": "🌟",
+  "Top Shot Debut": "✨",
+  "Rookie of the Year": "🏆",
+  "Rookie Mint": "💎",
+  "Championship Year": "👑",
+  "3 Star Rookie": "⭐⭐⭐",
+  // Signed edition: "Autographed" from the Collection tab, "Auto" from the Sniper.
+  "Autographed": "✍",
+  "Auto": "✍",
+};
+
+export interface MomentDetailModalProps {
+  moment: {
+    flowId?: string | null;
+    playerName: string;
+    setName?: string;
+    tier?: string | null;
+    serialNumber?: number | null;
+    mintSize?: number | null;
+    fmv?: number | null;
+    dealRating?: number | null;
+    listingPrice?: number | null;
+    bestOffer?: number | null;
+    marketConfidence?: string | null;
+    /** #215: the ASK_ONLY FMV is capped at the edition's sales (not one seller's ask). */
+    fmvCapped?: boolean | "comparables" | "offers" | null;
+    badgeTitles?: string[];
+    officialBadges?: string[];
+    imageUrlPrefix?: string | null;
+    buyUrl?: string | null;
+    acquisitionMethod?: string | null;
+    sourceAddress?: string | null;
+    loanPrincipal?: number | null;
+    /**
+     * `editions.external_id` for this moment. Optional, and used for ONE thing:
+     * looking up the player bio that unlocks the jersey / birthday / draft-year
+     * quirk chips. A caller that omits it still gets every serial-intrinsic
+     * quirk (palindrome, repdigit, meme, first / last mint).
+     */
+    editionKey?: string | null;
+  } | null;
+  /**
+   * URL slug of the active collection (`nba-top-shot`, `nfl-all-day`, …).
+   * Required alongside `moment.editionKey` for the bio lookup — the bio lives
+   * on `editions` scoped by `collection_id`, and an unscoped `external_id` is
+   * not unique across collections.
+   */
+  collectionUrlSlug?: string | null;
+  /**
+   * Where buyUrl originates. When 'flowty' the Buy CTA is hidden (that
+   * marketplace shut down May 2026).
+   * Undefined is treated as 'topshot' to preserve behavior for non-Flowty
+   * callers (e.g. native Top Shot buy URLs).
+   */
+  marketplaceSource?: "topshot" | "flowty";
+  /**
+   * Optional second-marketplace (dapper.market) link rendered beside the native
+   * buy CTA — fills the slot Flowty used to occupy. Null/undefined hides it.
+   */
+  dapperUrl?: string | null;
+  onClose: () => void;
+}
+
+// Outbound click → outbound_clicks. `collectionUrlSlug` is the caller's
+// active collection (registry id); passed through as-is, never defaulted —
+// a moment id is unique only within a collection.
+function trackModalClick(
+  moment: NonNullable<MomentDetailModalProps["moment"]>,
+  collection: string | null,
+  href: string,
+  kind: "listing" | "dapper",
+) {
+  trackOutboundClick({
+    surface: "moment_modal",
+    collection,
+    linkKind: kind,
+    destination: kind === "dapper" ? "dapper_market_listing" : "native_listing",
+    editionKey: moment.editionKey ?? null,
+    momentId: moment.flowId ?? null,
+    playerName: moment.playerName,
+    setName: moment.setName ?? null,
+    tier: moment.tier ?? null,
+    serial: moment.serialNumber ?? null,
+    askPrice: moment.listingPrice ?? null,
+    fmv: moment.fmv ?? null,
+    buyUrl: href,
+  })
+}
+
+function truncateAddress(addr: string): string {
+  const a = addr.trim();
+  if (a.length <= 12) return a;
+  return a.slice(0, 6) + "…" + a.slice(-4);
+}
+
+function getImageUrl(prefix: string | null | undefined): string | null {
+  if (!prefix) return null;
+  const resizePrefix = prefix.replace(
+    "https://assets.nbatopshot.com/editions/",
+    "https://assets.nbatopshot.com/resize/editions/"
+  );
+  return `${resizePrefix}Hero_2880_2880_Transparent.png?format=webp&quality=80&width=600`;
+}
+
+function getVideoUrl(prefix: string | null | undefined): string | null {
+  if (!prefix) return null;
+  return `${prefix}Animated_1080_1080_Black.mp4`;
+}
+
+interface SerialBio {
+  jerseyNumber: number | null;
+  birthdate: string | null;
+  draftYear: number | null;
+}
+
+export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl, collectionUrlSlug, onClose }: MomentDetailModalProps) {
+  const [hovered, setHovered] = useState(false);
+  const [bio, setBio] = useState<SerialBio | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  // Modal a11y: escape-to-close, focus trap, restore focus on close (Moment V3).
+  // Attach modalRef to the dialog content container below.
+  const modalRef = useModalA11y<HTMLDivElement>(!!moment, onClose);
+
+  const editionKey = moment?.editionKey ?? null;
+
+  // Player bio for the three CONTEXT-dependent quirk kinds (jersey_match,
+  // birthday_match, draft_year_match). Without it those three are structurally
+  // unreachable here however correct `classifySerial` is — the pure function
+  // and the columns that feed it shipped a day apart and nothing joined them.
+  //
+  // Fetched lazily on open rather than threaded through the wallet-moments and
+  // sniper-feed queries: the collection table routinely holds hundreds of rows
+  // and a collector opens one, so a per-row join would pay for bio nobody sees.
+  //
+  // ⚠ FAIL-SOFT BY DESIGN. Any failure leaves `bio` null and the chips degrade
+  // to the serial-intrinsic set. The answer is smaller, never wrong — and a
+  // missing chip understates, which is the safe direction for a claim like
+  // "this serial is their jersey number".
+  useEffect(() => {
+    setBio(null);
+    if (!editionKey || !collectionUrlSlug) return;
+    let cancelled = false;
+    const qs = `collection=${encodeURIComponent(collectionUrlSlug)}&part=bio&editionKey=${encodeURIComponent(editionKey)}`;
+    fetch(`/api/entity/edition?${qs}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (cancelled || !j || typeof j !== "object") return;
+        setBio({
+          jerseyNumber: typeof j.jerseyNumber === "number" ? j.jerseyNumber : null,
+          birthdate: typeof j.birthdate === "string" ? j.birthdate : null,
+          draftYear: typeof j.draftYear === "number" ? j.draftYear : null,
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [editionKey, collectionUrlSlug]);
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (hovered) v.play().catch(() => {});
+    else {
+      v.pause();
+      v.currentTime = 0;
+    }
+  }, [hovered]);
+
+  if (!moment) return null;
+
+  const tierKey = (moment.tier || "").toUpperCase();
+  const tierColor = TIER_COLORS[tierKey] || "var(--tier-common)";
+  const imgUrl =
+    getImageUrl(moment.imageUrlPrefix) ||
+    (moment.flowId ? `/api/moment-thumbnail?flowId=${encodeURIComponent(moment.flowId)}&width=600` : null);
+  const videoUrl = getVideoUrl(moment.imageUrlPrefix);
+  const dealRating = typeof moment.dealRating === "number" ? Math.max(0, Math.min(1, moment.dealRating)) : null;
+  const dealColor =
+    dealRating === null ? "#6b7280" : dealRating >= 0.7 ? "#22c55e" : dealRating >= 0.4 ? "#eab308" : "#ef4444";
+
+  const badges = [...(moment.badgeTitles || []), ...(moment.officialBadges || [])];
+
+  return (
+    <div
+      role="presentation"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "var(--rpc-scrim)",
+        zIndex: 1000,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 20,
+        animation: "fadeIn 0.15s ease both",
+      }}
+    >
+      <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="moment-modal-title"
+        tabIndex={-1}
+        style={{
+          background: "var(--rpc-surface, #0f0f0f)",
+          border: "1px solid var(--rpc-border, rgba(255,255,255,0.08))",
+          borderRadius: 10,
+          maxWidth: 640,
+          width: "100%",
+          maxHeight: "90vh",
+          overflow: "hidden",
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          color: "var(--rpc-text-primary)",
+          outline: "none",
+          position: "relative",
+        }}
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label={`Close ${moment.playerName} details`}
+          style={{
+            position: "absolute",
+            top: 8,
+            right: 10,
+            zIndex: 2,
+            background: "var(--rpc-scrim-soft)",
+            // brand-exception: dark scrim pill with a white ✕ + light edge over the art, both themes
+            color: "#fff",
+            border: "1px solid rgba(255,255,255,0.18)",
+            borderRadius: 4,
+            fontFamily: "var(--font-mono)",
+            fontSize: 12,
+            padding: "4px 8px",
+            cursor: "pointer",
+          }}
+        >
+          ✕
+        </button>
+        <div
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
+          style={{
+            position: "relative",
+            background: "var(--rpc-bg)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            minHeight: 320,
+          }}
+        >
+          {imgUrl && (
+            <img
+              src={imgUrl}
+              alt={moment.playerName}
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "contain",
+                opacity: hovered && videoUrl ? 0 : 1,
+                transition: "opacity 0.15s",
+              }}
+            />
+          )}
+          {videoUrl && (
+            <video
+              ref={videoRef}
+              src={videoUrl}
+              muted
+              loop
+              playsInline
+              aria-hidden="true"
+              style={{
+                position: "absolute",
+                inset: 0,
+                width: "100%",
+                height: "100%",
+                objectFit: "contain",
+                opacity: hovered ? 1 : 0,
+                transition: "opacity 0.15s",
+              }}
+            />
+          )}
+        </div>
+
+        <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 12, overflowY: "auto" }}>
+          <div
+            id="moment-modal-title"
+            style={{
+              fontFamily: "var(--font-display)",
+              fontWeight: 900,
+              fontSize: 26,
+              lineHeight: 1.1,
+              textTransform: "uppercase",
+            }}
+          >
+            {moment.playerName}
+          </div>
+          {moment.setName && (
+            <div style={{ fontSize: 12, color: "var(--rpc-text-secondary)" }}>{moment.setName}</div>
+          )}
+
+          {moment.tier && (
+            <div>
+              <span
+                style={{
+                  display: "inline-block",
+                  padding: "2px 8px",
+                  border: `1px solid ${tierColor}`,
+                  color: accentText(tierColor),
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: "0.1em",
+                  borderRadius: 3,
+                  textTransform: "uppercase",
+                }}
+              >
+                {moment.tier}
+              </span>
+            </div>
+          )}
+
+          {(moment.serialNumber != null || moment.mintSize != null) && (
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: 13 }}>
+              #{moment.serialNumber ?? "?"}
+              {moment.mintSize != null && <span style={{ color: "var(--rpc-text-muted)" }}> / {moment.mintSize}</span>}
+            </div>
+          )}
+
+          {/*
+            Quirky-serial chips — palindromes, repdigits, meme serials, first /
+            last mint. Passive discovery: the collector never has to ask, they
+            just notice it while looking at the moment.
+
+            ⚠ Styled NEUTRALLY on purpose. FMV renders green (#22c55e) a few
+            lines below, and green reads as MONEY in this UI — these carry no
+            value premium whatsoever (they are novelty, not a price signal, and
+            they are deliberately excluded from `specialSerialTraits`, which
+            feeds applySerialPremium). A chip that looks like the FMV colour
+            would imply a premium the data does not support. Muted surface +
+            secondary text keeps it legible without pricing it.
+
+            Each chip carries its own `why` as a title, because "palindrome" on
+            its own is unverifiable at a glance.
+          */}
+          {(() => {
+            const quirks = classifySerial(moment.serialNumber, {
+              circulationCount: moment.mintSize,
+              // Null until the bio lookup lands (or forever, if it fails or the
+              // collection has no bio source) — every one of these is optional
+              // in SerialContext, so the chip set simply grows when it arrives.
+              jerseyNumber: bio?.jerseyNumber ?? null,
+              birthdate: bio?.birthdate ?? null,
+              draftYear: bio?.draftYear ?? null,
+            });
+            if (quirks.length === 0) return null;
+            return (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }} aria-label="Serial number quirks">
+                {quirks.map((q) => (
+                  <span
+                    key={q.kind}
+                    title={q.why}
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 600,
+                      color: "var(--rpc-text-secondary)",
+                      background: "var(--rpc-surface-raised)",
+                      border: "1px solid var(--rpc-border)",
+                      padding: "2px 7px",
+                      borderRadius: 4,
+                      fontFamily: "var(--font-mono)",
+                    }}
+                  >
+                    {q.label}
+                  </span>
+                ))}
+              </div>
+            );
+          })()}
+
+          {moment.fmv != null && (() => {
+            // "from asks" plain-words marker for an ASK_ONLY FMV (0.9x a single
+            // seller's ask, never traded) — the only sanctioned per-value FMV
+            // honesty marker (lib/fmv-basis.ts). Never the confidence enum.
+            const askBasis = fmvBasis(moment.marketConfidence, moment.fmvCapped ?? null);
+            return (
+              <div>
+                <div style={{ fontSize: 10, color: "var(--rpc-text-secondary)", letterSpacing: "0.1em" }}>FMV</div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: accentText("#22c55e"), fontFamily: "var(--font-mono)" }}>
+                  ${moment.fmv.toFixed(2)}
+                </div>
+                {askBasis && (
+                  <div title={askBasis.title} style={{ fontSize: 10, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", marginTop: 2 }}>
+                    {askBasis.label}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {moment.listingPrice != null && (
+            <div>
+              <div style={{ fontSize: 10, color: "var(--rpc-text-secondary)", letterSpacing: "0.1em" }}>LIST PRICE</div>
+              <div style={{ fontSize: 16, fontFamily: "var(--font-mono)" }}>
+                ${moment.listingPrice.toFixed(2)}
+              </div>
+            </div>
+          )}
+
+          {moment.bestOffer != null && moment.bestOffer > 0 && (
+            <div>
+              <div style={{ fontSize: 10, color: "var(--rpc-text-secondary)", letterSpacing: "0.1em" }}>BEST OFFER</div>
+              <div style={{ fontSize: 16, fontFamily: "var(--font-mono)" }}>
+                ${moment.bestOffer.toFixed(2)}
+              </div>
+            </div>
+          )}
+
+          {dealRating !== null && (
+            <div>
+              <div
+                style={{
+                  fontSize: 10,
+                  color: "var(--rpc-text-secondary)",
+                  letterSpacing: "0.1em",
+                  marginBottom: 4,
+                }}
+              >
+                DEAL RATING
+              </div>
+              <div
+                style={{
+                  height: 6,
+                  background: "var(--rpc-surface-hover)",
+                  borderRadius: 3,
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    width: `${dealRating * 100}%`,
+                    height: "100%",
+                    background: dealColor,
+                    transition: "width 0.2s",
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* CONFIDENCE row removed 2026-07-11 — build-time signal only. */}
+
+          {badges.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {badges.map((b) => (
+                <span
+                  key={b}
+                  title={b}
+                  style={{
+                    fontSize: 11,
+                    padding: "2px 8px",
+                    background: "var(--rpc-surface-hover)",
+                    border: "1px solid var(--rpc-border)",
+                    borderRadius: 3,
+                  }}
+                >
+                  <span style={{ marginRight: 4 }}>{BADGE_ICONS[b] || "●"}</span>
+                  {b}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {moment.acquisitionMethod === "loan_default" && (
+            <div
+              style={{
+                fontSize: 11,
+                padding: "8px 10px",
+                background: "rgba(239,68,68,0.10)",
+                border: "1px solid rgba(239,68,68,0.35)",
+                borderRadius: 4,
+                color: "var(--rpc-text-primary)",
+                lineHeight: 1.4,
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 9,
+                  letterSpacing: "0.12em",
+                  color: accentText("#ef4444"),
+                  marginBottom: 4,
+                  textTransform: "uppercase",
+                }}
+              >
+                Loan Default
+              </div>
+              {moment.sourceAddress ? (
+                <div>
+                  Defaulted by{" "}
+                  <a
+                    href={loanWalletHref(moment.sourceAddress)}
+                    style={{ color: "var(--rpc-text-primary)", fontFamily: "var(--font-mono)", textDecoration: "underline" }}
+                  >
+                    {truncateAddress(moment.sourceAddress)}
+                  </a>
+                </div>
+              ) : null}
+              <div style={{ marginTop: 4, color: "var(--rpc-text-secondary)" }}>
+                Displayed price is the loan principal in USDCF (1:1 USD)
+                {typeof moment.loanPrincipal === "number" && moment.loanPrincipal > 0
+                  ? `: $${moment.loanPrincipal.toFixed(2)}`
+                  : "."}
+              </div>
+            </div>
+          )}
+
+          {moment.buyUrl && (marketplaceSource === "flowty" ? (
+            null
+          ) : (
+            <a
+              href={moment.buyUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => trackModalClick(moment, collectionUrlSlug ?? null, moment.buyUrl!, "listing")}
+              style={{
+                marginTop: "auto",
+                display: "inline-block",
+                textAlign: "center",
+                background: "var(--rpc-red-fill)",
+                // brand-exception: white label on the red CTA — theme-independent
+                color: "#fff",
+                padding: "10px 16px",
+                borderRadius: 4,
+                fontFamily: "var(--font-display)",
+                fontWeight: 800,
+                fontSize: 13,
+                letterSpacing: "0.12em",
+                textDecoration: "none",
+                textTransform: "uppercase",
+              }}
+            >
+              View Listing →
+            </a>
+          ))}
+
+          {dapperUrl && (
+            <a
+              href={dapperUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => trackModalClick(moment, collectionUrlSlug ?? null, dapperUrl, "dapper")}
+              style={{
+                marginTop: moment.buyUrl ? 8 : "auto",
+                display: "inline-block",
+                textAlign: "center",
+                background: "transparent",
+                color: "var(--rpc-red-text)",
+                border: "1px solid var(--rpc-red)",
+                padding: "10px 16px",
+                borderRadius: 4,
+                fontFamily: "var(--font-display)",
+                fontWeight: 800,
+                fontSize: 13,
+                letterSpacing: "0.12em",
+                textDecoration: "none",
+                textTransform: "uppercase",
+              }}
+            >
+              View on Dapper ↗
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

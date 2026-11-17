@@ -1,0 +1,10 @@
+name = "spork-proxy"
+main = "index.ts"
+compatibility_date = "2024-10-01"
+
+# No routes — this worker is invoked manually via its *.workers.dev URL
+# from Supabase edge functions. No custom domain binding.
+
+[vars]
+# SPORK_PROXY_SECRET is set via:
+#   wrangler secret put SPORK_PROXY_SECRET

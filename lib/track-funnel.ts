@@ -1,0 +1,261 @@
+// lib/track-funnel.ts
+//
+// Client-side helper to log a top-of-funnel event (anon arrivals: home /
+// share / insights views + wallet-pastes) to funnel_events via
+// POST /api/track-funnel. Fire-and-forget: it must never block render or a
+// user interaction, and every failure is swallowed.
+//
+// Mirrors lib/track-click.ts (outbound_clicks) and DELIBERATELY reuses the
+// same "rpc_sess" sessionStorage key so a visitor's funnel events and their
+// outbound clicks reconcile to one session_id.
+
+// Must match the funnel_events CHECK constraint event_type allowlist exactly.
+export type FunnelEventType =
+  | "home_view"
+  | "wallet_paste"
+  | "share_view"
+  | "share_cta_click"
+  | "insights_view"
+  | "insights_card_click"
+  | "collection_view"
+  // Public profile + its trophy-case sub-page (2026-09-12). ONE type — the
+  // sub-page is carried in `surface` (the pathname), same as collection_view
+  // carries its tab, so adding a sub-route needs no new type or CHECK change.
+  // This is the landing page for every share link the product emits, and it
+  // fired nothing until now: 0 of 28,129 rows had a profile surface.
+  | "profile_view"
+  // signup funnel (2026-07-20): CTA intent, auth-confirm success, email capture
+  | "signin_click"
+  | "account_created"
+  | "email_capture_submitted"
+
+export type FunnelEventPayload = {
+  eventType: FunnelEventType
+  walletAddress?: string | null
+  surface?: string | null
+  referrer?: string | null
+  sessionId?: string | null
+}
+
+const ENDPOINT = "/api/track-funnel"
+
+// Same key as lib/track-click.getSessionId so sessions reconcile across the
+// two instrumentation sinks. Stored in sessionStorage (cleared on tab close).
+function getSessionId(): string | null {
+  try {
+    if (typeof window === "undefined") return null
+    const KEY = "rpc_sess"
+    let id = window.sessionStorage.getItem(KEY)
+    if (!id) {
+      const cryptoObj = window.crypto
+      id =
+        cryptoObj && "randomUUID" in cryptoObj
+          ? cryptoObj.randomUUID()
+          : `s_${Date.now().toString(36)}_${Math.floor(Math.random() * 1e9).toString(36)}`
+      window.sessionStorage.setItem(KEY, id)
+    }
+    return id
+  } catch {
+    return null
+  }
+}
+
+// ── Campaign attribution ────────────────────────────────────────
+// Traffic has measured ~100% referrer-less at every check (990 of 1,086
+// funnel_events rows had a null/empty referrer on 2026-07-25, and zero carried
+// a utm_*), so if anything is ever promoted the arrival is unattributable. We
+// resolve attribution ONCE per session — the first event of a session is the
+// landing hit — and reuse it for every later event, because document.referrer
+// degrades to our own origin the moment the visitor navigates internally.
+//
+// PRIVACY: our own campaign params and the referring page only. utm values are
+// stripped to a conservative token charset and capped; the referrer is reduced
+// to origin+pathname so a referring URL's query string (which we do not control
+// and which can carry personal data) is never stored. Same-origin referrers are
+// dropped — this column answers "where did they come from", which is only
+// meaningful for external arrivals. Nothing user-identifying is captured, and
+// no user data is ever placed in a URL.
+const ATTR_KEY = "rpc_attr"
+const UTM_KEYS = ["utm_source", "utm_medium", "utm_campaign"] as const
+
+// The sharer's own id, carried as `&ref=` by ShareProfileButtons. Channel
+// attribution (utm_source=share) answers "did X send traffic"; this answers
+// "WHICH collector is recruiting", which is the number that matters for a
+// referral push. It is our own param, not third-party data.
+//
+// ⚠ STORED UNDER A DIFFERENT KEY THAN IT ARRIVES. The attribution string
+// already spends `ref=` on the external document.referrer below, so copying
+// the URL's `ref` verbatim would put two `ref=` keys in one string and make
+// `split_part(referrer,'ref=',2)` ambiguous — silently mixing sharer ids and
+// referring URLs in the same column. It is written as `share_ref=` instead.
+const SHARE_REF_PARAM = "ref"
+const SHARE_REF_KEY = "share_ref"
+
+function utmToken(raw: string): string {
+  return raw.replace(/[^A-Za-z0-9._~-]/g, "").slice(0, 64)
+}
+
+function refOriginAndPath(href: string, selfOrigin: string): string {
+  try {
+    if (!href) return ""
+    const u = new URL(href)
+    if (u.protocol !== "http:" && u.protocol !== "https:") return ""
+    if (u.origin === selfOrigin) return ""
+    return `${u.origin}${u.pathname}`.slice(0, 300)
+  } catch {
+    return ""
+  }
+}
+
+// Returns e.g.
+//   "utm_source=share&utm_medium=x&share_ref=<sharer-id>&ref=https://t.co/abc".
+// `share_ref` is OUR sharer id from the link; `ref` is the external referring
+// page. Two different questions, two different keys — see SHARE_REF_KEY.
+// "" is a valid resolved answer (no campaign, no external referrer) and is
+// cached as such, so we never re-read a now-internal document.referrer.
+function getAttribution(): string | null {
+  try {
+    if (typeof window === "undefined") return null
+    const cached = window.sessionStorage.getItem(ATTR_KEY)
+    if (cached !== null) return cached || null
+
+    const parts: string[] = []
+    const params = new URLSearchParams(window.location.search)
+    for (const k of UTM_KEYS) {
+      const v = utmToken(params.get(k) ?? "")
+      if (v) parts.push(`${k}=${v}`)
+    }
+    // Sharer attribution. Same conservative token charset and cap as the utm
+    // values — and note the key rename (SHARE_REF_KEY), which is what keeps
+    // this out of the `ref=` namespace the referrer below occupies.
+    const shareRef = utmToken(params.get(SHARE_REF_PARAM) ?? "")
+    if (shareRef) parts.push(`${SHARE_REF_KEY}=${shareRef}`)
+    const ref =
+      typeof document !== "undefined"
+        ? refOriginAndPath(document.referrer || "", window.location.origin)
+        : ""
+    if (ref) parts.push(`ref=${ref}`)
+
+    const value = parts.join("&").slice(0, 512)
+    window.sessionStorage.setItem(ATTR_KEY, value)
+    return value || null
+  } catch {
+    return null
+  }
+}
+
+// ── Returning-visitor id (2026-10-03) ───────────────────────────
+// rpc_sess dies with the tab, so a collector who comes back tomorrow is a new
+// stranger and "do anon visitors return?" was unanswerable. rpc_vid is a random
+// first-party id in localStorage — no fingerprinting, no third party, nothing
+// derived from the device — that lets visits from the same browser be counted
+// as one visitor. Disclosed on /privacy ("Cookies and storage").
+//
+// Honours Global Privacy Control and Do Not Track: with either set we neither
+// mint nor send one (an id minted before the signal was turned on is dropped).
+const VISITOR_KEY = "rpc_vid"
+const VISITOR_RE = /^[A-Za-z0-9_-]{8,64}$/
+
+function privacySignalSet(): boolean {
+  try {
+    if (typeof navigator === "undefined") return false
+    const nav = navigator as Navigator & { globalPrivacyControl?: boolean }
+    return nav.globalPrivacyControl === true || nav.doNotTrack === "1"
+  } catch {
+    return false
+  }
+}
+
+export function getVisitorId(): string | null {
+  try {
+    if (typeof window === "undefined") return null
+    if (privacySignalSet()) {
+      try { window.localStorage.removeItem(VISITOR_KEY) } catch { /* ignore */ }
+      return null
+    }
+    let id = window.localStorage.getItem(VISITOR_KEY)
+    if (!id || !VISITOR_RE.test(id)) {
+      const cryptoObj = window.crypto
+      id =
+        cryptoObj && "randomUUID" in cryptoObj
+          ? cryptoObj.randomUUID()
+          : `v_${Date.now().toString(36)}_${Math.floor(Math.random() * 1e9).toString(36)}`
+      window.localStorage.setItem(VISITOR_KEY, id)
+    }
+    return id
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The session's resolved campaign attribution (utm_* / share_ref / ref=<external
+ * origin+path>), or null when there is none or it cannot be read. Exported for
+ * the first-touch capture (components/FirstTouchCapture.tsx, 2026-11-09).
+ */
+export function getCampaignAttribution(): string | null {
+  return getAttribution()
+}
+
+/** GPC / DNT is set: no persistent identifier and no first-touch record. */
+export function hasPrivacySignal(): boolean {
+  return privacySignalSet()
+}
+
+/**
+ * Just the two join keys (visit + returning visitor), for stamping onto every
+ * usage_events beacon (lib/telemetry/track.ts). Never throws.
+ */
+export function getVisitIds(): { sessionId: string | null; visitorId: string | null } {
+  return { sessionId: getSessionId(), visitorId: getVisitorId() }
+}
+
+/**
+ * The session id + resolved campaign attribution, for a SERVER route that logs
+ * its own funnel event (trophy_pinned / trophy_removed — the public beacon may
+ * not write those; the DB policy refuses them from anon/authenticated). Sent in
+ * the request body so the server row joins the same session as the beacons.
+ * Never throws; either field is null when unavailable.
+ */
+export function getFunnelContext(): {
+  sessionId: string | null
+  referrer: string | null
+  visitorId: string | null
+} {
+  return { sessionId: getSessionId(), referrer: getAttribution(), visitorId: getVisitorId() }
+}
+
+export function trackFunnelEvent(payload: FunnelEventPayload): void {
+  try {
+    if (typeof window === "undefined") return
+    const event: FunnelEventPayload & { sessionId?: string | null; visitorId?: string | null } = {
+      sessionId: getSessionId(),
+      ...payload,
+    }
+    const visitorId = getVisitorId()
+    if (visitorId) event.visitorId = visitorId
+    // An explicit referrer from the caller wins; otherwise stamp the session's
+    // resolved campaign attribution onto every event.
+    if (event.referrer == null) {
+      const attr = getAttribution()
+      if (attr) event.referrer = attr
+    }
+    const body = JSON.stringify(event)
+
+    if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
+      const blob = new Blob([body], { type: "application/json" })
+      const ok = navigator.sendBeacon(ENDPOINT, blob)
+      if (ok) return
+    }
+
+    // Fallback — keepalive lets the request outlive a navigation.
+    void fetch(ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+      keepalive: true,
+    }).catch(() => {})
+  } catch {
+    // Never let instrumentation break render or a click.
+  }
+}

@@ -1,0 +1,290 @@
+-- DB invariant: public.save_fast_break_lineup(uuid,text,uuid,date,jsonb,uuid,jsonb)
+-- — the Fast Break game lineup writer. Pinned game-integrity properties:
+-- (1) a cross-user AUTHZ guard — when auth.uid() is set it must equal p_user_id or
+-- the call RAISEs forbidden_cross_user (42501); (2) the per-run USE BUDGET — a
+-- Moment player can only be played as many times as its tier allows, so adding a
+-- player whose (times_used + 1) exceeds total_allowed returns exceeds_use_budget
+-- and writes NOTHING; (3) idempotent re-saves don't re-increment uses; and (4)
+-- removing a player decrements its use count.
+--
+-- The function DDL below is a VERBATIM copy of the committed migration
+-- (supabase/migrations/20260802000500_audit_20260802_snapshot_save_fast_break_lineup.sql);
+-- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
+--
+-- auth.uid() is a Supabase runtime function, STUBBED here to read a session GUC so
+-- the authz branch is exercisable on a vanilla Postgres. tier_type is created too.
+--
+-- Runs inside a rolled-back transaction so it leaves no residue.
+
+BEGIN;
+
+CREATE TYPE tier_type AS ENUM ('COMMON','FANDOM','RARE','LEGENDARY','ULTIMATE','UNCOMMON','CHAMPION','CHALLENGER','CONTENDER');
+
+CREATE SCHEMA IF NOT EXISTS auth;
+CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$
+  SELECT nullif(current_setting('test.auth_uid', true), '')::uuid
+$$;
+
+CREATE TABLE fast_break_lineups (
+  id                    uuid DEFAULT gen_random_uuid(),
+  user_id               uuid,
+  wallet_addr           text,
+  run_id                uuid,
+  game_date             date,
+  players               jsonb,
+  captain_nba_player_id uuid,
+  status                text,
+  created_at            timestamptz,
+  updated_at            timestamptz,
+  UNIQUE (user_id, run_id, game_date)
+);
+CREATE TABLE fast_break_player_uses (
+  user_id            uuid,
+  run_id             uuid,
+  nba_player_id      uuid,
+  highest_tier_owned tier_type,
+  total_allowed      smallint,
+  times_used         int,
+  dates_used         date[],
+  best_moment_id     text,
+  best_serial        int,
+  updated_at         timestamptz,
+  UNIQUE (user_id, run_id, nba_player_id)
+);
+
+-- >>> BEGIN verbatim save_fast_break_lineup (keep byte-identical to the migration) >>>
+CREATE OR REPLACE FUNCTION public.save_fast_break_lineup(p_user_id uuid, p_wallet_addr text, p_run_id uuid, p_game_date date, p_players jsonb, p_captain_nba_player_id uuid, p_eligibility jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_existing_lineup fast_break_lineups%ROWTYPE;
+  v_existing_player_ids uuid[];
+  v_new_player_ids uuid[];
+  v_added uuid[];
+  v_removed uuid[];
+  v_lineup_id uuid;
+  v_idempotent boolean := false;
+  v_overage_player uuid;
+  v_overage_times_used int;
+  v_overage_total_allowed int;
+  v_now timestamptz := now();
+BEGIN
+  -- AUTHZ: caller must be the user they claim to be (service_role bypasses)
+  IF auth.uid() IS NOT NULL AND auth.uid() <> p_user_id THEN
+    RAISE EXCEPTION 'forbidden_cross_user' USING ERRCODE = '42501';
+  END IF;
+
+  SELECT COALESCE(array_agg((p->>'nbaPlayerId')::uuid), ARRAY[]::uuid[])
+    INTO v_new_player_ids
+    FROM jsonb_array_elements(p_players) AS p;
+
+  SELECT * INTO v_existing_lineup
+    FROM fast_break_lineups
+   WHERE user_id = p_user_id AND run_id = p_run_id AND game_date = p_game_date
+     FOR UPDATE;
+
+  IF FOUND THEN
+    SELECT COALESCE(array_agg((p->>'nbaPlayerId')::uuid), ARRAY[]::uuid[])
+      INTO v_existing_player_ids
+      FROM jsonb_array_elements(v_existing_lineup.players) AS p;
+  ELSE
+    v_existing_player_ids := ARRAY[]::uuid[];
+  END IF;
+
+  SELECT COALESCE(array_agg(x ORDER BY x), ARRAY[]::uuid[]) INTO v_added
+    FROM unnest(v_new_player_ids) AS x
+   WHERE NOT (x = ANY(v_existing_player_ids));
+  SELECT COALESCE(array_agg(x ORDER BY x), ARRAY[]::uuid[]) INTO v_removed
+    FROM unnest(v_existing_player_ids) AS x
+   WHERE NOT (x = ANY(v_new_player_ids));
+
+  v_idempotent := (cardinality(v_added) = 0
+                   AND cardinality(v_removed) = 0
+                   AND cardinality(v_existing_player_ids) > 0);
+
+  IF cardinality(v_added) + cardinality(v_removed) > 0 THEN
+    PERFORM 1
+      FROM fast_break_player_uses
+     WHERE user_id = p_user_id AND run_id = p_run_id
+       AND nba_player_id = ANY(v_added || v_removed)
+     FOR UPDATE;
+  END IF;
+
+  IF cardinality(v_added) > 0 THEN
+    SELECT a.player_id,
+           COALESCE(u.times_used, 0),
+           COALESCE(u.total_allowed, e_map.e_total_allowed, 0)
+      INTO v_overage_player, v_overage_times_used, v_overage_total_allowed
+      FROM unnest(v_added) AS a(player_id)
+      LEFT JOIN (
+        SELECT (e->>'nba_player_id')::uuid AS player_id,
+               (e->>'total_allowed')::smallint AS e_total_allowed,
+               e->>'highest_tier' AS e_highest_tier
+          FROM jsonb_array_elements(p_eligibility) AS e
+      ) e_map ON e_map.player_id = a.player_id
+      LEFT JOIN fast_break_player_uses u
+             ON u.user_id = p_user_id AND u.run_id = p_run_id
+            AND u.nba_player_id = a.player_id
+     WHERE COALESCE(u.times_used, 0) + 1 > COALESCE(u.total_allowed, e_map.e_total_allowed, 0)
+     LIMIT 1;
+    IF v_overage_player IS NOT NULL THEN
+      RETURN jsonb_build_object(
+        'error', 'exceeds_use_budget',
+        'player_id', v_overage_player,
+        'times_used', v_overage_times_used,
+        'total_allowed', v_overage_total_allowed
+      );
+    END IF;
+  END IF;
+
+  INSERT INTO fast_break_lineups (
+    user_id, wallet_addr, run_id, game_date, players,
+    captain_nba_player_id, status, created_at, updated_at
+  )
+  VALUES (
+    p_user_id, p_wallet_addr, p_run_id, p_game_date, p_players,
+    p_captain_nba_player_id, 'planned', v_now, v_now
+  )
+  ON CONFLICT (user_id, run_id, game_date) DO UPDATE
+    SET players = EXCLUDED.players,
+        captain_nba_player_id = EXCLUDED.captain_nba_player_id,
+        wallet_addr = EXCLUDED.wallet_addr,
+        updated_at = v_now
+  RETURNING id INTO v_lineup_id;
+
+  IF cardinality(v_added) > 0 THEN
+    INSERT INTO fast_break_player_uses (
+      user_id, run_id, nba_player_id, highest_tier_owned, total_allowed,
+      times_used, dates_used, best_moment_id, best_serial, updated_at
+    )
+    SELECT
+      p_user_id, p_run_id, a.player_id,
+      COALESCE((e->>'highest_tier')::tier_type, 'COMMON'::tier_type),
+      COALESCE((e->>'total_allowed')::smallint, 1::smallint),
+      1,
+      ARRAY[p_game_date]::date[],
+      p_in->>'momentId',
+      NULLIF(p_in->>'serial', '')::int,
+      v_now
+    FROM unnest(v_added) AS a(player_id)
+    JOIN jsonb_array_elements(p_players) AS p_in
+      ON (p_in->>'nbaPlayerId')::uuid = a.player_id
+    LEFT JOIN jsonb_array_elements(p_eligibility) AS e
+      ON (e->>'nba_player_id')::uuid = a.player_id
+    ON CONFLICT (user_id, run_id, nba_player_id) DO UPDATE
+      SET times_used = fast_break_player_uses.times_used + 1,
+          dates_used = array_remove(fast_break_player_uses.dates_used, p_game_date) || ARRAY[p_game_date]::date[],
+          best_moment_id = COALESCE(fast_break_player_uses.best_moment_id, EXCLUDED.best_moment_id),
+          best_serial = COALESCE(fast_break_player_uses.best_serial, EXCLUDED.best_serial),
+          updated_at = v_now;
+  END IF;
+
+  IF cardinality(v_removed) > 0 THEN
+    UPDATE fast_break_player_uses
+       SET times_used = GREATEST(0, times_used - 1),
+           dates_used = array_remove(dates_used, p_game_date),
+           updated_at = v_now
+     WHERE user_id = p_user_id AND run_id = p_run_id
+       AND nba_player_id = ANY(v_removed);
+  END IF;
+
+  RETURN jsonb_build_object(
+    'ok', true,
+    'idempotent', v_idempotent,
+    'lineup_id', v_lineup_id,
+    'added', to_jsonb(v_added),
+    'removed', to_jsonb(v_removed),
+    'use_counts', (
+      SELECT COALESCE(jsonb_agg(jsonb_build_object(
+        'nba_player_id', nba_player_id,
+        'times_used', times_used,
+        'total_allowed', total_allowed
+      )), '[]'::jsonb)
+      FROM fast_break_player_uses
+      WHERE user_id = p_user_id AND run_id = p_run_id
+        AND nba_player_id = ANY(v_new_player_ids)
+    )
+  );
+END;
+$function$;
+-- <<< END verbatim save_fast_break_lineup <<<
+
+-- Player/user/run ids used throughout.
+--   U  = aaaa… (the acting user)   OTHER = bbbb…
+--   R1 = 1111…  P1 = 2222… (allowed 3)  P2 = 3333… (allowed 1)
+
+-- ── cross-user AUTHZ: auth.uid() != p_user_id → forbidden_cross_user ────────
+SET test.auth_uid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+DO $$
+BEGIN
+  PERFORM save_fast_break_lineup(
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','0xw','11111111-1111-1111-1111-111111111111',
+    DATE '2026-01-01', '[]'::jsonb, NULL, '[]'::jsonb);
+  PERFORM _assert(false, 'cross-user save should have raised');
+EXCEPTION WHEN others THEN
+  PERFORM _assert(SQLERRM = 'forbidden_cross_user', 'raises forbidden_cross_user: '||SQLERRM);
+  PERFORM _assert(SQLSTATE = '42501', 'raises with 42501: '||SQLSTATE);
+END $$;
+
+-- From here the caller IS the user (auth.uid() = p_user_id) — the allowed path.
+SET test.auth_uid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+
+-- ── new lineup on D1 with P1 (allowed 3) + P2 (allowed 1) ───────────────────
+SELECT _assert_eq(
+  (save_fast_break_lineup(
+     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','0xw','11111111-1111-1111-1111-111111111111',
+     DATE '2026-01-01',
+     '[{"nbaPlayerId":"22222222-2222-2222-2222-222222222222","momentId":"mom1","serial":"5"},
+       {"nbaPlayerId":"33333333-3333-3333-3333-333333333333","momentId":"mom2","serial":"10"}]'::jsonb,
+     '22222222-2222-2222-2222-222222222222',
+     '[{"nba_player_id":"22222222-2222-2222-2222-222222222222","total_allowed":3,"highest_tier":"RARE"},
+       {"nba_player_id":"33333333-3333-3333-3333-333333333333","total_allowed":1,"highest_tier":"COMMON"}]'::jsonb
+   )->>'ok'), 'true', 'new lineup saved');
+SELECT _assert_eq((SELECT times_used::text FROM fast_break_player_uses WHERE nba_player_id='22222222-2222-2222-2222-222222222222'), '1', 'P1 used once');
+SELECT _assert_eq((SELECT times_used::text FROM fast_break_player_uses WHERE nba_player_id='33333333-3333-3333-3333-333333333333'), '1', 'P2 used once');
+
+-- ── idempotent re-save (same lineup) does NOT re-increment ──────────────────
+SELECT _assert_eq(
+  (save_fast_break_lineup(
+     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','0xw','11111111-1111-1111-1111-111111111111',
+     DATE '2026-01-01',
+     '[{"nbaPlayerId":"22222222-2222-2222-2222-222222222222","momentId":"mom1","serial":"5"},
+       {"nbaPlayerId":"33333333-3333-3333-3333-333333333333","momentId":"mom2","serial":"10"}]'::jsonb,
+     '22222222-2222-2222-2222-222222222222',
+     '[]'::jsonb
+   )->>'idempotent'), 'true', 'unchanged re-save is idempotent');
+SELECT _assert_eq((SELECT times_used::text FROM fast_break_player_uses WHERE nba_player_id='33333333-3333-3333-3333-333333333333'), '1', 'P2 not re-incremented on idempotent save');
+
+-- ── USE BUDGET: P2 (allowed 1, used 1) added on a new date D2 → rejected ─────
+SELECT _assert_eq(
+  (save_fast_break_lineup(
+     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','0xw','11111111-1111-1111-1111-111111111111',
+     DATE '2026-01-02',
+     '[{"nbaPlayerId":"33333333-3333-3333-3333-333333333333","momentId":"mom2","serial":"10"}]'::jsonb,
+     '33333333-3333-3333-3333-333333333333',
+     '[{"nba_player_id":"33333333-3333-3333-3333-333333333333","total_allowed":1,"highest_tier":"COMMON"}]'::jsonb
+   )->>'error'), 'exceeds_use_budget', 'over-budget add rejected');
+SELECT _assert_eq((SELECT count(*)::text FROM fast_break_lineups WHERE game_date=DATE '2026-01-02'), '0',
+  'rejected over-budget save writes NO lineup');
+SELECT _assert_eq((SELECT times_used::text FROM fast_break_player_uses WHERE nba_player_id='33333333-3333-3333-3333-333333333333'), '1',
+  'rejected over-budget save does not bump the use count');
+
+-- ── removal decrements the use count ────────────────────────────────────────
+SELECT _assert_eq(
+  (save_fast_break_lineup(
+     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','0xw','11111111-1111-1111-1111-111111111111',
+     DATE '2026-01-01',
+     '[{"nbaPlayerId":"22222222-2222-2222-2222-222222222222","momentId":"mom1","serial":"5"}]'::jsonb,
+     '22222222-2222-2222-2222-222222222222',
+     '[{"nba_player_id":"22222222-2222-2222-2222-222222222222","total_allowed":3,"highest_tier":"RARE"}]'::jsonb
+   )->>'ok'), 'true', 'lineup edited to drop P2');
+SELECT _assert_eq((SELECT times_used::text FROM fast_break_player_uses WHERE nba_player_id='33333333-3333-3333-3333-333333333333'), '0',
+  'removing P2 decrements its use count to 0');
+SELECT _assert_eq((SELECT times_used::text FROM fast_break_player_uses WHERE nba_player_id='22222222-2222-2222-2222-222222222222'), '1',
+  'P1 (kept) use count unchanged');
+
+SELECT '✓ save_fast_break_lineup invariants pass' AS result;
+ROLLBACK;

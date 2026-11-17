@@ -1,0 +1,145 @@
+"use client";
+
+import { useState, type ReactNode } from "react";
+import { heroSrcSet } from "@/lib/hero-srcset";
+import { usePrefersReducedMotion } from "@/lib/a11y/prefers-reduced-motion";
+
+// MomentHeroMedia — resilient hero media for the /moment/[id] page.
+//
+// Why this exists (2026-06-13 audit, Item 1): the moment hero rendered
+// editions.video_url / editions.thumbnail_url directly. Those are constructed
+// `assets.nbatopshot.com/editions/<set>/<play>/…Transparent.png` (+ Animated mp4)
+// URLs that 404 on the CDN for a large set of legacy (Series 1-4) Top Shot
+// editions — ~30% of premium moment pages rendered a blank black hero. The
+// per-moment `media/<momentId>/image` CDN form works on all of them (it's what
+// the trophy slabs already use).
+//
+// Strategy: an ordered list of image candidates is the always-present base
+// layer; on a load error we advance to the next candidate, finally falling to a
+// "No media" placeholder. The edition video (when present) overlays the base
+// image; if it 404s it hides itself, revealing the image underneath. So a
+// failing video or a failing primary image never leaves an empty box.
+export default function MomentHeroMedia({
+  imageCandidates,
+  videoUrl,
+  alt,
+  placeholder,
+  sizes,
+}: {
+  imageCandidates: string[];
+  videoUrl: string | null;
+  alt: string;
+  // Rendered when every image candidate has failed and there's no playable
+  // video. Defaults to a "No media" text chip; the edition page passes its
+  // branded "RPC / No preview" card so artless editions keep their styling.
+  placeholder?: ReactNode;
+  // The hero box's rendered width (an <img sizes> value). When given, a resizable
+  // candidate (our IPFS resizer, Top Shot's media CDN) gets a srcset so a phone
+  // fetches the width it paints, not 960 px (lib/hero-srcset.ts, 2026-10-21).
+  sizes?: string;
+}) {
+  const candidates = imageCandidates.filter(Boolean);
+  const [imgIdx, setImgIdx] = useState(0);
+  const [videoFailed, setVideoFailed] = useState(false);
+
+  const currentImg = imgIdx < candidates.length ? candidates[imgIdx] : null;
+  // With a srcset the browser picks the file, so a poster naming currentImg (the
+  // fixed-width src) is a SECOND download of the same picture — measured
+  // 2026-10-21: ?width=640 (img) + ?width=1080 (poster) on every Top Shot
+  // edition. The poster takes the file the <img> actually loaded (currentSrc,
+  // already cached) once it has; until then the image underneath shows.
+  const srcSet = sizes ? heroSrcSet(currentImg) : null;
+  const [loadedSrc, setLoadedSrc] = useState<{ for: string; src: string } | null>(null);
+  const poster = srcSet
+    ? (loadedSrc && loadedSrc.for === currentImg ? loadedSrc.src : undefined)
+    : (currentImg ?? undefined);
+  // An SSR image can finish loading before hydration, so its onLoad never
+  // reaches React; the ref callback reads the element when it attaches.
+  const captureLoaded = (el: HTMLImageElement | null) => {
+    if (!el || !srcSet || !currentImg || loadedSrc?.for === currentImg) return;
+    if (el.complete && el.naturalWidth > 0) setLoadedSrc({ for: currentImg, src: el.currentSrc || currentImg });
+  };
+  // Reduced motion: the poster stands in for the looping clip (2026-11-07) —
+  // the hero was the one auto-starting video with no motion guard.
+  const reducedMotion = usePrefersReducedMotion();
+  const showVideo = !!videoUrl && !videoFailed && !reducedMotion;
+
+  if (!currentImg && !showVideo) {
+    if (placeholder !== undefined) return <>{placeholder}</>;
+    return (
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "var(--rpc-text-muted)",
+          fontFamily: "var(--font-mono)",
+          fontSize: "var(--text-xs, 12px)",
+          letterSpacing: "0.2em",
+          textTransform: "uppercase",
+        }}
+      >
+        No media
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {currentImg ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={currentImg}
+          ref={captureLoaded}
+          srcSet={srcSet ?? undefined}
+          sizes={srcSet ? sizes : undefined}
+          onLoad={(e) => { if (srcSet && currentImg) setLoadedSrc({ for: currentImg, src: e.currentTarget.currentSrc || currentImg }) }}
+          alt={alt}
+          loading="eager"
+          fetchPriority="high"
+          decoding="async"
+          onError={() => setImgIdx((i) => i + 1)}
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+          }}
+        />
+      ) : null}
+      {showVideo ? (
+        <video
+          src={videoUrl!}
+          poster={poster}
+          // preload="none" (2026-07-27): this was the ONLY autoplaying <video>
+          // in the app without it — every sibling clip surface (TrophySlab,
+          // EditionsGridPaginated, MomentMedia, the profile trophy tiles) is
+          // hover-mounted and/or preload="none". Without it the browser pulls
+          // the ENTIRE clip on every /moment/[id] render whether or not anyone
+          // watches, and Top Shot / UFC clips are 16-23 MB IPFS objects too
+          // large for the edge cache to store (see the ipfs-media route header),
+          // so each render was an unamortised full-size transfer. The poster —
+          // which DOES cache — still paints immediately, so the visible result
+          // is unchanged for a real viewer; autoplay simply fetches on play
+          // intent rather than on mount.
+          preload="none"
+          autoPlay
+          loop
+          muted
+          playsInline
+          onError={() => setVideoFailed(true)}
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+          }}
+        />
+      ) : null}
+    </>
+  );
+}

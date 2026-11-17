@@ -1,0 +1,169 @@
+// app/api/wallet/pack-lifecycle/route.ts
+//
+// GET /api/wallet/pack-lifecycle?wallet=<addr>&packNftId=<id>[&collection=<slug>]
+//
+// Auth: requires a Supabase user session; verifies the requested wallet
+// belongs to the user. Backs the inline-expand row in /dashboard/packs by
+// calling get_pack_lifecycle(p_pack_nft_id text). The public lifecycle page
+// at /[collection]/pack/[id] is anon-safe, but the dashboard view is keyed
+// to the signed-in user's wallets so we gate it the same way as the summary
+// and history endpoints — defense-in-depth.
+//
+// 2026-09-26: the PULLS come from get_wallet_pack_pulls when `collection` is
+// given — Dapper's list of what THIS pack yielded for THIS wallet, or the
+// wallet's reconstructed rip (packNftId "burst:<nft>", which has no lifecycle
+// of its own). get_pack_lifecycle's pull list joins moment_acquisitions on
+// source_pack_rip_id and listed 95 "pulls" for a 3-moment pack, so it is kept
+// only where its count equals the rip's moments_pulled; otherwise pulls are
+// [] with pulls_source NULL — "not identified", never a guess.
+
+import { normalizeAddress } from "@/lib/address"
+import { NextRequest, NextResponse } from "next/server"
+import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
+import { supabaseAdmin } from "@/lib/supabase"
+import { requireUser } from "@/lib/auth/supabase-server"
+import { getCollectionByDbSlug, getCollectionByUrlSlug } from "@/lib/collection-slug"
+import { isFiledUnderAnotherCollection, lifecycleRpcFor } from "@/lib/pack-detail/lifecycle-rpc"
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const sb: any = supabaseAdmin
+
+export async function GET(req: NextRequest) {
+  let user
+  try {
+    user = await requireUser()
+  } catch (res) {
+    return res as Response
+  }
+
+  // normalizeAddress, never a bare fold: a saved Candy (Solana) key is base58 and
+  // case-sensitive, so a folded copy matches no saved_wallets row and reads as
+  // "wallet not saved on this account". Hex is folded exactly as before.
+  const wallet = normalizeAddress(req.nextUrl.searchParams.get("wallet") ?? "")
+  const packNftId = (req.nextUrl.searchParams.get("packNftId") ?? "").trim()
+  const collection = (req.nextUrl.searchParams.get("collection") ?? "").trim()
+  if (!wallet || !packNftId) {
+    return NextResponse.json({ error: "wallet and packNftId required" }, { status: 400 })
+  }
+
+  // 2026-09-06 (Trevor delegated the decision): the gate is "SAVED on this
+  // account", no longer "VERIFIED". Verification-by-listing has had no live data
+  // source since ~08-28 (public-api.nbatopshot.com is gone), so 0 wallets could
+  // verify and this route was unreachable for every new user — while everything
+  // it returns is public on-chain data. Ownership of the READ still requires the
+  // wallet to be on the caller's account. known-issues #59.
+  const { data: matches, error: lookupErr } = await boundedRead(sb
+    .from("saved_wallets")
+    .select("wallet_addr")
+    .eq("user_id", user.id)
+    .eq("wallet_addr", wallet)
+    .limit(1), "api/wallet/pack-lifecycle/saved-wallets")
+
+  if (lookupErr) {
+    return apiErrorResponse(lookupErr, "api/wallet/pack-lifecycle");
+  }
+  if (!matches || matches.length === 0) {
+    return NextResponse.json({ error: "wallet not saved on this account" }, { status: 403 })
+  }
+
+  try {
+    // A reconstructed rip is not a pack id: there is no lifecycle to read.
+    const isBurst = packNftId.startsWith("burst:")
+    let lifecycle: Record<string, unknown> = { pack_nft_id: packNftId, status: "ripped" }
+    const collectionUuid = collection
+      ? (getCollectionByUrlSlug(collection) ?? getCollectionByDbSlug(collection))?.id ?? null
+      : null
+    if (!isBurst) {
+      // ⛔ Pack NFT ids are per-contract (2,294 Golazos ids are also All Day
+      // rips): with a collection, read its own lifecycle RPC and never return a
+      // pack filed under another collection (lib/pack-detail/lifecycle-rpc.ts).
+      // The dashboard sends the history row's DB slug (laliga_golazos); accept
+      // the URL form too, as get_wallet_pack_pulls does.
+      const rpc = lifecycleRpcFor(collectionUuid)
+      const { data, error } = await boundedRead(sb.rpc(rpc, { p_pack_nft_id: packNftId }), `api/wallet/pack-lifecycle/${rpc}`)
+      if (error) {
+        console.error("[wallet/pack-lifecycle]", error.message)
+        return apiErrorResponse(error, "api/wallet/pack-lifecycle");
+      }
+      lifecycle = isFiledUnderAnotherCollection(data, collectionUuid)
+        ? { pack_nft_id: packNftId, status: "unknown" }
+        : { ...(data ?? {}) }
+    }
+
+    let pullsSource: string | null = null
+    let pullCounts: Record<string, unknown> = {}
+    let walletPulls: unknown[] | null = null
+    if (collection) {
+      const { data: wp, error: wpErr } = await boundedRead(
+        sb.rpc("get_wallet_pack_pulls", { p_wallet: wallet, p_collection_slug: collection, p_pack_nft_id: packNftId }),
+        "api/wallet/pack-lifecycle/get_wallet_pack_pulls",
+      )
+      // A failed read must not fall back to the linkage it replaces.
+      if (wpErr) {
+        console.error("[wallet/pack-lifecycle] pulls", wpErr.message)
+        return apiErrorResponse(wpErr, "api/wallet/pack-lifecycle");
+      }
+      if (wp && typeof wp === "object" && wp.source) {
+        pullsSource = String(wp.source)
+        walletPulls = Array.isArray(wp.pulls) ? wp.pulls : []
+        pullCounts = { pulls_total: wp.pulls_total ?? null, pulls_identified: wp.pulls_identified ?? null, pulls_priced: wp.pulls_priced ?? null }
+      }
+    }
+
+    if (walletPulls) {
+      lifecycle.pulls = walletPulls
+    } else {
+      // Keep the lifecycle list only when it is the size of the pack.
+      const pulls = Array.isArray(lifecycle.pulls) ? lifecycle.pulls : []
+      const rip = lifecycle.rip as { moments_pulled?: number | null } | null | undefined
+      const expected = typeof rip?.moments_pulled === "number" ? rip.moments_pulled : null
+      if (pulls.length > 0 && expected != null && pulls.length === expected) {
+        pullsSource = "rip_record"
+      } else {
+        lifecycle.pulls = []
+      }
+    }
+
+    // 2026-11-13 (Trevor): which of these pulls this wallet STILL holds, at its own FMV
+    // (wallet_moments_cache, the binder's value). Scoped by collection_id: a moment id is
+    // unique only within a collection (#142), so with no collection there is no answer.
+    // A failed read says the check did not happen (holdings_checked false) and drops the
+    // flags -- it never marks a pull as gone, and never fails the lifecycle itself.
+    let holdingsChecked: boolean | null = null
+    const pullList = Array.isArray(lifecycle.pulls) ? (lifecycle.pulls as Array<Record<string, unknown>>) : []
+    const pullIds = pullList.map((p) => (p?.nft_id == null ? "" : String(p.nft_id))).filter(Boolean)
+    if (collectionUuid && pullIds.length > 0) {
+      const { data: held, error: heldErr } = await boundedRead(
+        sb.from("wallet_moments_cache")
+          .select("moment_id, fmv_usd")
+          .eq("wallet_address", wallet)
+          .eq("collection_id", collectionUuid)
+          .in("moment_id", pullIds),
+        "api/wallet/pack-lifecycle/wallet_moments_cache",
+      )
+      if (heldErr || !Array.isArray(held)) {
+        console.error("[wallet/pack-lifecycle] holdings", heldErr?.message ?? "no rows array")
+        holdingsChecked = false
+      } else {
+        const fmvById = new Map<string, number | null>()
+        for (const h of held as Array<{ moment_id: string; fmv_usd: number | string | null }>) {
+          fmvById.set(String(h.moment_id), h.fmv_usd == null ? null : Number(h.fmv_usd))
+        }
+        lifecycle.pulls = pullList.map((p) => {
+          const id = p?.nft_id == null ? "" : String(p.nft_id)
+          if (!id) return p
+          const stillHeld = fmvById.has(id)
+          return { ...p, still_held: stillHeld, wallet_fmv_usd: stillHeld ? fmvById.get(id) ?? null : null }
+        })
+        holdingsChecked = true
+      }
+    }
+
+    return NextResponse.json({ ...lifecycle, pulls_source: pullsSource, ...pullCounts, holdings_checked: holdingsChecked }, {
+      headers: { "Cache-Control": "no-cache, no-store, must-revalidate" },
+    })
+  } catch (err) {
+    return apiErrorResponse(err, "api/wallet/pack-lifecycle");
+  }
+}

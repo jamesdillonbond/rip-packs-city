@@ -1,0 +1,195 @@
+// app/api/support-chat/search-deals/route.ts
+// Internal endpoint: searches badge_editions + fmv_snapshots for deals matching bot queries.
+// Called by the support-chat route as a fallback when the live sniper feed is unavailable.
+// NOT rate-limited (internal use only) — keep it server-side only.
+//
+// 2026-10-03: "server-side only" was a comment, not a check. proxy.ts marks
+// every /api/support-chat/* path public, the concierge route no longer calls
+// this one, and a live anonymous POST returned 200 — so any caller could drive
+// get_top_deals with an unbounded p_limit. It now requires the server secret
+// pair (Bearer INGEST_SECRET_TOKEN or CRON_SECRET, constant-time) and clamps
+// its inputs; nothing user-facing reaches it.
+
+import { NextRequest, NextResponse } from "next/server";
+import { retryEmptyPlayerSearch } from "@/lib/search/player-search-retry";
+import { getCollectionUuid } from "@/lib/collections";
+import { createClient } from "@supabase/supabase-js";
+import { safeApiError, statusForSafeError } from "@/lib/api-error";
+import { secretEquals } from "@/lib/concierge/request-guards";
+
+function isServerCaller(req: NextRequest): boolean {
+  const auth = req.headers.get("authorization") ?? "";
+  const presented = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+  if (!presented) return false;
+  return secretEquals(presented, process.env.INGEST_SECRET_TOKEN) || secretEquals(presented, process.env.CRON_SECRET);
+}
+
+export const maxDuration = 15;
+
+// Real status + classified body, so a caller can tell a failure from an empty
+// result set. `deals` is deliberately OMITTED (not `[]`) — an absent field
+// cannot be mistaken for "we looked and found nothing".
+function dealsUnavailable(err: unknown) {
+  const safe = safeApiError(err, "Deal search isn't available right now.");
+  return NextResponse.json(safe, {
+    status: statusForSafeError(safe),
+    headers: {
+      "Cache-Control": "no-store",
+      ...(safe.retryable ? { "Retry-After": "30" } : {}),
+    },
+  });
+}
+
+const supabase: any = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+
+interface SearchDealsParams {
+  player?: string;
+  team?: string;
+  tier?: string; // "common" | "rare" | "legendary" | "ultimate" | "fandom"
+  maxPrice?: number;
+  minDiscount?: number; // pct below FMV, e.g. 15 = 15%
+  hasBadge?: boolean;
+  limit?: number;
+}
+
+function normalizeTier(raw: string): string {
+  const map: Record<string, string> = {
+    common: "MOMENT_TIER_COMMON",
+    rare: "MOMENT_TIER_RARE",
+    legendary: "MOMENT_TIER_LEGENDARY",
+    ultimate: "MOMENT_TIER_ULTIMATE",
+    fandom: "MOMENT_TIER_FANDOM",
+  };
+  return map[raw.toLowerCase()] ?? raw;
+}
+
+function seriesLabel(n: number): string {
+  const map: Record<number, string> = {
+    0: "S1",
+    2: "S2",
+    3: "Sum 21",
+    4: "S3",
+    5: "S4",
+    6: "23-24",
+    7: "24-25",
+    8: "25-26",
+    9: "26-27",
+  };
+  return map[n] ?? `S${n}`;
+}
+
+function tierLabel(raw: string): string {
+  return (
+    raw.replace("MOMENT_TIER_", "").charAt(0).toUpperCase() +
+    raw.replace("MOMENT_TIER_", "").slice(1).toLowerCase()
+  );
+}
+
+export async function POST(req: NextRequest) {
+  if (!isServerCaller(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  try {
+    const body: SearchDealsParams = await req.json();
+    const str = (v: unknown, max = 80): string | undefined =>
+      typeof v === "string" && v.trim() ? v.trim().slice(0, max) : undefined;
+    const num = (v: unknown): number | undefined =>
+      typeof v === "number" && Number.isFinite(v) ? v : undefined;
+    const player = str(body.player);
+    const team = str(body.team);
+    const tier = str(body.tier, 20);
+    const maxPrice = num(body.maxPrice);
+    const minDiscount = num(body.minDiscount) ?? 0;
+    const hasBadge = body.hasBadge === true;
+    const limit = Math.min(Math.max(Math.trunc(num(body.limit) ?? 8), 1), 40);
+
+    // Use get_top_deals RPC instead of broken nested select
+    const topDeals = (p: string | null) => supabase.rpc("get_top_deals", {
+      p_player: p,
+      p_team: team ?? null,
+      p_tier: tier ? normalizeTier(tier) : null,
+      p_max_price: maxPrice ?? null,
+      p_min_discount: minDiscount ?? 0,
+      p_has_badge: hasBadge ?? false,
+      p_limit: limit,
+    });
+    // #207: get_top_deals ILIKEs p_player accent-sensitively ("doncic" → none); an
+    // empty answer is retried with the resolver's single spelling (Top Shot, the
+    // RPC's default collection) and reported as player_resolved.
+    const { data, error, playerResolved } = await retryEmptyPlayerSearch({
+      supabase,
+      collectionUuid: getCollectionUuid("nba-top-shot"),
+      typed: player,
+      first: await topDeals(player ?? null),
+      run: (label) => topDeals(label),
+    });
+
+    // A failed search must NOT look like a successful empty search.
+    //
+    // WHY (deep-audit D11 class). This used to return `{ deals: [], error }` at
+    // status 200 — byte-identical in shape to the genuine "no deals matched"
+    // response ten lines below. A caller that reads `deals` and ignores `error`
+    // (the normal thing to do when the status says 200) reports "no deals found"
+    // for a database outage: a fabricated answer produced from a failure. It
+    // also published `error.message`, i.e. Postgres's own text (the D3 leak).
+    if (error) {
+      console.error("[search-deals] Supabase RPC error:", error);
+      return dealsUnavailable(error);
+    }
+
+    if (!data || data.length === 0) {
+      return NextResponse.json({ deals: [] });
+    }
+
+    // A row with no positive ask is not a deal, and an unknown discount is null —
+    // `parseFloat(low_ask ?? "0")` and `: 0` once published a $0 ask at "0% off"
+    // (2026-10-19).
+    const deals = data
+      .filter((row: any) => {
+        const a = row.low_ask == null ? NaN : parseFloat(row.low_ask);
+        return Number.isFinite(a) && a > 0;
+      })
+      .map((row: any) => {
+        const fmv = row.fmv_usd ? parseFloat(row.fmv_usd) : null;
+        const ask = parseFloat(row.low_ask);
+        const discount: number | null =
+          row.discount_pct ?? (fmv && ask ? Math.round(((fmv - ask) / fmv) * 100) : null);
+        const badges: string[] = Array.isArray(row.play_tags)
+          ? row.play_tags.map((t: any) => t.title ?? t).filter(Boolean)
+          : [];
+
+        return {
+          player_name: row.player_name,
+          team: row.team ?? null,
+          tier: tierLabel(row.tier),
+          set_name: row.set_name,
+          series: seriesLabel(row.series_number),
+          low_ask: ask,
+          fmv,
+          confidence: row.confidence ?? null,
+          discount_pct: discount == null ? null : Math.round(discount),
+          circulation: row.circulation_count ?? null,
+          badges,
+          edition_key: row.external_id ?? "",
+          rpc_url: `https://www.rippackscity.com/nba-top-shot/sniper`,
+          buy_url: `https://www.nbatopshot.com`,
+        };
+      })
+      .slice(0, limit);
+
+    const totalDeals = deals.length;
+    const known = deals.filter((d: any) => d.discount_pct != null);
+    const avgDiscount =
+      known.length > 0
+        ? Math.round(known.reduce((s: number, d: any) => s + d.discount_pct, 0) / known.length)
+        : null;
+
+    return NextResponse.json({ deals, meta: { total: totalDeals, avgDiscount, ...(playerResolved ? { player_resolved: playerResolved } : {}) } });
+  } catch (err: any) {
+    console.error("[search-deals] Unexpected error:", err);
+    return dealsUnavailable(err);
+  }
+}

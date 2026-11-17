@@ -1,0 +1,21 @@
+-- audit_20261109_candy_census_pages_by_das_cursor
+--
+-- WHY. 2026-11-09 (Claude Code cloud; Trevor: "work on these sentinel issues"). The sentinel
+-- paged candy-collections-census failure_rate 10/13. The last four runs (1:57, 2:57, 3:57 and
+-- 4:57 AM PT) all failed at the SAME place: "2022 Leadoff ICONs: page 228: DAS getAssetsByGroup
+-- error: Database Error: ... canceling statement due to statement timeout" -- the provider's own
+-- timeout. DAS serves `page=N` as an OFFSET, so its cost grows with N; page 228 (~227k items in)
+-- is past what it can answer, so that walk could never finish and every run filed ok=false.
+-- (The earlier wallet_moments_cache lock-timeout fails on 11-09 were at pages 66/227 and had
+-- stopped; this is a different, deterministic wall.)
+--
+-- WHAT. candy_collections.census_cursor: the DAS keyset cursor (sortBy id asc) the census resumes
+-- from. lib/candy/collections-census.ts now pages by cursor; census_page stays as the walk's page
+-- COUNTER. A walk left in flight in page mode (census_page > 1, census_cursor NULL) restarts from
+-- the top -- writes are insert-only, so a re-read costs index probes, not rewrites.
+--
+-- anon-exec: n/a (column add only).
+-- Revert: ALTER TABLE public.candy_collections DROP COLUMN census_cursor; (and revert the
+--   collections-census.ts commit, which reads it).
+
+ALTER TABLE public.candy_collections ADD COLUMN IF NOT EXISTS census_cursor text;

@@ -1,0 +1,31 @@
+-- ⛔ SECURITY FIX for a regression THIS SESSION introduced 12 minutes earlier, caught in
+-- post-ship verification rather than by a monitor.
+--
+-- The retired mv_panini_squeeze carried exactly two grants:
+--   postgres=arwdDxtm/postgres | service_role=arwdDxtm/postgres
+-- Its replacement came out of CREATE MATERIALIZED VIEW carrying four:
+--   postgres=... | anon=rxm/postgres | authenticated=rxtm/postgres | service_role=...
+-- I granted only service_role. The `anon=r` (SELECT) and `authenticated=r` arrived from
+-- Supabase's ALTER DEFAULT PRIVILEGES on schema public, which apply to every newly
+-- created relation. **Replacing an object does not inherit the original's ACL — it
+-- inherits the schema's default privileges**, and those are strictly wider here.
+--
+-- ⚠ WHY THIS MATTERS EVEN THOUGH THE DATA IS "PUBLIC": panini_squeeze_board itself is
+-- NOT anon-readable (postgres + service_role only) — the board is served to users
+-- server-side. So for the 12 minutes between the two migrations, the underlying MV was
+-- directly readable by anon through PostgREST while the surface built on it was not.
+-- That is a widening of the public attack surface, not a no-op.
+--
+-- ⛔ AND check_public_security_invariants() RETURNED 0 ROWS THROUGHOUT. It is blind to
+-- this class: it checks RLS on base tables, security_invoker on views, and anon EXECUTE
+-- on destructive functions — it does not compare a replaced object's ACL against the one
+-- it replaced, and a materialized view is not covered by the base-table RLS arm. The
+-- monitor being green is not evidence the grant is right; the only check that would have
+-- caught this is diffing relacl before and after, which is now in the checklist below.
+--
+-- 👉 RULE, for any future object swap: capture `relacl` from the object being replaced
+-- and reapply it explicitly, then diff. Never assume CREATE reproduces it.
+--
+-- REVERT: GRANT SELECT ON TABLE public.mv_panini_squeeze TO anon, authenticated;
+--         (do not — this restores the leak)
+REVOKE ALL ON TABLE public.mv_panini_squeeze FROM anon, authenticated;

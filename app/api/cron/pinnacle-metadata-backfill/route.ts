@@ -1,0 +1,906 @@
+import { NextRequest, NextResponse, after } from "next/server"
+import { tokenMatches } from "@/lib/auth/bearer-secret"
+import { omitUnread } from "@/lib/db/omit-unread"
+import { createClient } from "@supabase/supabase-js"
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
+
+// Pinnacle metadata + catalog backfill via on-chain Cadence reads.
+//
+// Background: the Pinnacle public GQL endpoint (public-api.disneypinnacle.com)
+// returns 404 from every IP we control — re-verified 2026-05-16 against
+// pinnacle-proxy.tdillonbond.workers.dev. The existing
+// scripts/fetch-missing-pinnacle-editions.ts left mint_count permanently NULL
+// because it only had Flowty's per-NFT REST surface (which doesn't expose
+// numberMinted) and the dead GQL path.
+//
+// This route routes around the dead GQL by reading the exact same data
+// straight off Flow mainnet via Cadence:
+//   - Pinnacle.NFT.editionID  → on-chain edition resource id
+//   - Pinnacle.getEdition(id).numberMinted / maxMintSize / variant / printing / isChaser
+//   - Pinnacle.getShape(edition.shapeID).getMetadata()["RoyaltyCodes" | "Characters" | "Franchises"]
+//   - Pinnacle.getSet(edition.setID).name           (set_name)
+//   - Pinnacle.getEditionType(edition.editionTypeID).name  (edition_type)
+//
+// edition_key is reconstructed as `${RoyaltyCodes[0]}:${variant}:${printing}`
+// matching the existing convention used by buildEditionKey() and
+// fetch-missing-pinnacle-editions.ts.
+//
+// ── IMAGES ARE A DOCUMENTED DEAD-END (verified on-chain 2026-06-05) ──────────
+// This route does NOT and CANNOT fill thumbnail_url. The Pinnacle contract
+// (0xedf9df96c92f4595) carries NO per-edition image on-chain: both
+// NFT.resolveDisplayView().thumbnail and resolveMediasView() return the single
+// hardcoded generic placeholder "https://assets.disneypinnacle.com/on-chain/pinnacle.jpg"
+// for every NFT (contract source lines ~1604/1665/1765). The only per-edition
+// image identifier is `renderID` (e.g. "OEV1-SWHM-BOUS-S2"/"OEV2-FROZ-ANNA-S3"),
+// an opaque slug whose uniqueness the contract explicitly does NOT guarantee and
+// for which no URL template is exposed — so it cannot deterministically build a
+// real per-edition image URL without fabricating a CDN path (forbidden).
+// The ~82 catalog rows that DO have a real http thumbnail are legacy artifacts
+// from when the Pinnacle GQL / Flowty per-NFT REST were alive (both dead now:
+// GQL 404 since 2026-05-16, Flowty marketplace shut 2026-05-13). With all three
+// image sources dead, the ~396 NULL thumbnails will NOT grow from any source we
+// control. Per the handoff: report the dead-end, never fabricate. Do not
+// re-litigate a "GQL re-fetch" or "renderID → URL" approach — both verified dead.
+//
+// Four queues, sequential:
+//   Q1: pinnacle_editions where mint_count IS NULL  (cap 100)
+//   Q2: wallet_moments_cache (Pinnacle collection) where edition_key IS NULL  (cap 50)
+//   Q3: composite edition_key disagreements between wmc and pinnacle_nft_map  (cap 25)
+//   Q4: catalog create/repair — held wmc composite edition_keys with NO complete
+//       pinnacle_editions row (missing entirely, OR a fetch-missing stub with
+//       character_name='Unknown' / edition_key NULL). Upserts the row from
+//       on-chain text (character/franchise/set/variant/edition_type/printing/
+//       mint_count/is_serialized/is_chaser). thumbnail_url is NEVER written —
+//       new rows keep the NULL default, existing rows keep their value.  (cap 60)
+//
+// Serials are filled opportunistically for any moment fetched for Q1-Q4, since
+// every borrowed NFT carries its serialNumber. (A dedicated Q5 serial-backfill
+// leg was retired 2026-06-07: all 32,451 serial-NULL Pinnacle wmc rows join to
+// limited_edition=false Open Editions, which have no on-chain serial by design,
+// and the studio-platform remap already filled 100% of limited-edition serials,
+// so Q5 selected only unfillable rows and had written 0 serials ever.)
+//
+// All five queues share one Cadence script and dispatch per-wallet so a
+// single Flow REST call covers up to PER_CADENCE_CHUNK moments for a wallet.
+//
+// Bearer auth on INGEST_SECRET_TOKEN. Trevor schedules at cron-job.org hourly
+// at :22 (offset from populate-pinnacle-wmc-fmv and listing-alert).
+
+// 30 → 120 on 2026-09-13. The caller is cron-job.org, which drops the
+// connection at 30 s and AUTO-DISABLES an entry after enough of those (register
+// #76: nine entries died that way on 09-10). Under the day's IO spell this
+// route 504'd at its own 30 s wall on three consecutive hourly ticks (16:22,
+// 17:22, 18:22Z), wrote no terminal row (the kill runs neither branch), and was
+// one more tick from being switched off by its scheduler. So the response and
+// the work are now separated: the work gets a real wall, the caller gets an
+// answer inside its 30 s — see GET.
+export const maxDuration = 120
+export const dynamic = "force-dynamic"
+
+// How long GET waits for the work before answering 202 and letting after()
+// carry it. cron-job.org's client timeout is 30 s; 20 s leaves the response
+// its own margin. Overridable for tests only, so the deferral can be proven
+// without a twenty-second wait.
+const SYNC_BUDGET_MS_DEFAULT = 20_000
+function syncBudgetMs(): number {
+  const raw = Number(process.env.PINNACLE_BACKFILL_SYNC_BUDGET_MS ?? "")
+  return Number.isFinite(raw) && raw > 0 ? raw : SYNC_BUDGET_MS_DEFAULT
+}
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+) as any
+
+const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
+const PIPELINE_NAME = "pinnacle-metadata-backfill"
+const PINNACLE_COLLECTION_ID = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
+const FLOW_REST = "https://rest-mainnet.onflow.org/v1/scripts?block_height=sealed"
+
+// ── Terminal row on EVERY exit ─────────────────────────────────────────────
+//
+// 🚨 WHY THIS EXISTS. Between 2026-09-19 21:22 PT and 2026-09-20 08:22 PT this
+// lane went ELEVEN consecutive hourly ticks writing its `-heartbeat` row and no
+// terminal row at all. `detect_stalled_pipelines` could therefore only classify
+// it `invoked_but_never_logged` with 11 uncorrelated heartbeats — it was invoked,
+// it did something, and NOTHING in the database said what. The last terminal row
+// before the silence was ok=true in 31.7 s, so the lane had not been failing
+// loudly; it simply stopped reporting.
+//
+// ⭐ The cause was structural, not incidental: `runBackfill` had FIVE early
+// `return NextResponse.json(..., 500)` exits — q1 load, q1 wmc lookup, q2 load,
+// discovery error, discovery empty-payload — and every one of them returned
+// BEFORE the `log_pipeline_run` call at the end of the function. On the deferred
+// path (work > the 20 s sync budget, which the 31.7 s run already used) that 500
+// response is handed to `after()` and DISCARDED, so the failure left no trace in
+// `pipeline_runs` and no trace in the HTTP response the scheduler saw either.
+// A thrown error was the same shape: `after()`'s catch console.errored it.
+//
+// ⚠ This is CLAUDE.md's rule one level down — "give each failing unit its own
+// row", and "`rows_written = 0` is a null instrument with three incompatible
+// meanings". A lane that reports NOTHING is strictly worse than one reporting
+// zero: zero is falsifiable, silence is not.
+//
+// Non-fatal by construction, like the heartbeat above it: telemetry must never
+// be able to kill the lane it measures.
+async function logTerminalFailure(
+  step: string,
+  message: string,
+  started: number,
+  startedAtIso: string,
+): Promise<void> {
+  try {
+    await supabaseAdmin.rpc("log_pipeline_run", {
+      p_pipeline: PIPELINE_NAME,
+      p_started_at: startedAtIso,
+      p_rows_found: null,
+      p_rows_written: null,
+      p_rows_skipped: null,
+      p_ok: false,
+      p_error: `${step}: ${message}`,
+      p_collection_slug: "disney_pinnacle",
+      p_cursor_before: null,
+      p_cursor_after: null,
+      p_extra: { duration_ms: Date.now() - started, failed_step: step },
+    })
+  } catch (e: any) {
+    console.error(`[${PIPELINE_NAME}] terminal-failure log threw:`, e?.message ?? e)
+  }
+}
+
+const Q1_CAP = 100
+const Q2_CAP = 50
+const Q3_CAP = 25
+const Q4_CAP = 60
+// How many DISTINCT edition_keys the Q3 disagreement walk covers per tick. The
+// cursor advances on key boundaries, so a full pass over the collection's 423
+// keys (measured 2026-09-11) takes ~17 hourly ticks. Measured cost of one 25-key
+// slice on an idle instance: 1,280 rows, 5,966 buffers, 877 ms cold.
+const Q3_KEYS_PER_TICK = 25
+const PER_CADENCE_CHUNK = 50
+const PER_CALL_TIMEOUT_MS = 15_000
+const SOFT_DEADLINE_MS = 25_000
+
+const PINNACLE_METADATA_SCRIPT = `
+import NonFungibleToken from 0x1d7e57aa55817448
+import Pinnacle from 0xedf9df96c92f4595
+
+access(all) struct PinInfo {
+    access(all) let editionId: Int
+    access(all) let royaltyCode: String
+    access(all) let variant: String
+    access(all) let printing: UInt64
+    access(all) let numberMinted: UInt64
+    access(all) let maxMintSize: UInt64
+    access(all) let isLimited: Bool
+    access(all) let isChaser: Bool
+    access(all) let characterName: String
+    access(all) let franchise: String
+    access(all) let setName: String
+    access(all) let editionType: String
+    // Per-NFT serial number. nil for open (non-limited) editions - those have
+    // no serial on-chain (Pinnacle.NFT.serialNumber: UInt64?).
+    access(all) let serialNumber: UInt64?
+
+    init(editionId: Int, royaltyCode: String, variant: String, printing: UInt64, numberMinted: UInt64, maxMintSize: UInt64, isLimited: Bool, isChaser: Bool, characterName: String, franchise: String, setName: String, editionType: String, serialNumber: UInt64?) {
+        self.editionId = editionId
+        self.royaltyCode = royaltyCode
+        self.variant = variant
+        self.printing = printing
+        self.numberMinted = numberMinted
+        self.maxMintSize = maxMintSize
+        self.isLimited = isLimited
+        self.isChaser = isChaser
+        self.characterName = characterName
+        self.franchise = franchise
+        self.setName = setName
+        self.editionType = editionType
+        self.serialNumber = serialNumber
+    }
+}
+
+// Pull the first element of a string-array metadata value (Characters/Franchises),
+// tolerating a bare String or a missing key.
+access(all) fun firstStr(_ v: AnyStruct?): String {
+    if v == nil { return "" }
+    if let a = v! as? [String] { return a.length > 0 ? a[0] : "" }
+    if let s = v! as? String { return s }
+    return ""
+}
+
+access(all) fun main(addr: Address, ids: [UInt64]): {UInt64: PinInfo} {
+    let acct = getAccount(addr)
+    let capRef = acct.capabilities
+        .borrow<&{NonFungibleToken.CollectionPublic}>(/public/PinnacleCollection)
+    if capRef == nil { return {} }
+    let cap = capRef!
+    let out: {UInt64: PinInfo} = {}
+    for id in ids {
+        let nftRef = cap.borrowNFT(id)
+        if nftRef == nil { continue }
+        let pinRef = nftRef! as! &Pinnacle.NFT
+        let edition = Pinnacle.getEdition(id: pinRef.editionID)
+        if edition == nil { continue }
+        let shape = Pinnacle.getShape(id: edition!.shapeID)
+        if shape == nil { continue }
+        let meta = shape!.getMetadata()
+        let royaltyArr = meta["RoyaltyCodes"]! as! [String]
+        let royaltyCode = royaltyArr.length > 0 ? royaltyArr[0] : ""
+        let set = Pinnacle.getSet(id: edition!.setID)
+        let et = Pinnacle.getEditionType(id: edition!.editionTypeID)
+        out[id] = PinInfo(
+            editionId: pinRef.editionID,
+            royaltyCode: royaltyCode,
+            variant: edition!.variant ?? "",
+            printing: edition!.printing,
+            numberMinted: edition!.numberMinted,
+            maxMintSize: edition!.maxMintSize ?? 0,
+            isLimited: edition!.maxMintSize != nil,
+            isChaser: edition!.isChaser,
+            characterName: firstStr(meta["Characters"]),
+            franchise: firstStr(meta["Franchises"]),
+            setName: set == nil ? "" : set!.name,
+            editionType: et == nil ? "" : et!.name,
+            serialNumber: pinRef.serialNumber
+        )
+    }
+    return out
+}
+`.trim()
+
+interface PinInfo {
+  editionId: number
+  royaltyCode: string
+  variant: string
+  printing: number
+  numberMinted: number
+  maxMintSize: number
+  isLimited: boolean
+  isChaser: boolean
+  characterName: string
+  franchise: string
+  setName: string
+  editionType: string
+  // null for open (non-limited) editions — those have no on-chain serial.
+  serialNumber: number | null
+}
+
+// Flow JSON-CDC unwrapper. The shape we expect is:
+//   { type: "Dictionary", value: [{ key, value }, ...] }
+// where each inner value is { type: "Struct", value: { id, fields: [...] } }
+// Returns plain JS objects.
+function decodeJsonCdc(raw: any): any {
+  if (raw == null) return null
+  if (typeof raw !== "object") return raw
+  switch (raw.type) {
+    case "Dictionary": {
+      const out: Record<string, any> = {}
+      for (const entry of raw.value ?? []) {
+        out[String(decodeJsonCdc(entry.key))] = decodeJsonCdc(entry.value)
+      }
+      return out
+    }
+    case "Struct":
+    case "Resource":
+    case "Event": {
+      const out: Record<string, any> = {}
+      for (const field of raw.value?.fields ?? []) {
+        out[field.name] = decodeJsonCdc(field.value)
+      }
+      return out
+    }
+    case "Optional":
+      return raw.value == null ? null : decodeJsonCdc(raw.value)
+    case "Array":
+      return (raw.value ?? []).map(decodeJsonCdc)
+    case "Bool":
+      return Boolean(raw.value)
+    case "Int":
+    case "UInt":
+    case "UInt8":
+    case "UInt16":
+    case "UInt32":
+    case "UInt64":
+    case "Int8":
+    case "Int16":
+    case "Int32":
+    case "Int64":
+      // Numeric Cadence types serialize their value as a decimal string.
+      return Number(raw.value)
+    default:
+      return raw.value
+  }
+}
+
+async function runCadenceFetch(wallet: string, ids: string[]): Promise<Record<string, PinInfo>> {
+  const out: Record<string, PinInfo> = {}
+  for (let i = 0; i < ids.length; i += PER_CADENCE_CHUNK) {
+    const chunk = ids.slice(i, i + PER_CADENCE_CHUNK)
+    const body = {
+      script: Buffer.from(PINNACLE_METADATA_SCRIPT, "utf8").toString("base64"),
+      arguments: [
+        btoa(JSON.stringify({ type: "Address", value: wallet })),
+        btoa(JSON.stringify({
+          type: "Array",
+          value: chunk.map((id) => ({ type: "UInt64", value: String(id) })),
+        })),
+      ],
+    }
+    const res = await fetch(FLOW_REST, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(PER_CALL_TIMEOUT_MS),
+    })
+    if (!res.ok) {
+      // Keep the whole cause: Flow nests it (e.g. "[Error Code: 1110] computation limit exceeded") ~400 chars in.
+      throw new Error(`Flow ${res.status}: ${(await res.text()).slice(0, 2000)}`)
+    }
+    const raw = await res.text()
+    const decoded = JSON.parse(atob(raw.trim().replace(/^"|"$/g, "")))
+    const dict = decodeJsonCdc(decoded) as Record<string, PinInfo>
+    for (const [k, v] of Object.entries(dict)) {
+      out[k] = v
+    }
+  }
+  return out
+}
+
+function buildEditionKey(p: PinInfo): string {
+  return `${p.royaltyCode}:${p.variant}:${p.printing}`
+}
+
+/** Payload of the `pinnacle_metadata_discovery` RPC (see its migration). */
+interface DiscoveryPayload {
+  q3?: Array<{
+    wmc_id: string
+    wallet_address: string
+    moment_id: string
+    wmc_key: string
+    map_key: string
+  }>
+  q4?: Array<{ edition_key: string; wallet_address: string; moment_id: string }>
+  /** Distinct keys covered by THIS tick's Q3 slice. */
+  q3_keys_scanned?: number
+  q3_cursor_before?: string | null
+  q3_cursor_after?: string | null
+  q3_wrapped?: boolean
+  q3_pass?: number
+  /** COMPLETE count of Q4 targets, not just the capped list above. */
+  q4_targets_total?: number
+  /**
+   * Catalog rows the Q4 predicate deliberately EXCLUDES: chain-written
+   * (edition_key + mint_count) but carrying the literal character_name
+   * 'Unknown', because the chain supplies no character for them. Published so
+   * the exclusion is countable — three of these were being re-upserted forever
+   * under the old `character_name <> 'Unknown'` completeness rule.
+   */
+  q4_unknown_name_chain_written?: number
+  distinct_edition_keys?: number
+}
+
+interface WorkItem {
+  wallet: string
+  momentId: string
+  // What this lookup is for. A single moment_id can serve multiple queues if
+  // it happens to hit; we tag here for the apply phase.
+  jobs: Array<
+    | { kind: "mint_count"; edition_pk: string; edition_key: string }
+    | { kind: "edition_key_resolve"; wmc_id: string }
+    | { kind: "disagreement"; wmc_id: string; wmc_edition_key: string; map_edition_key: string }
+    | { kind: "catalog_upsert"; wmc_edition_key: string }
+  >
+}
+
+export async function GET(req: NextRequest) {
+  const auth = req.headers.get("authorization") ?? ""
+  const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : ""
+  const tokenQuery = req.nextUrl.searchParams.get("token") ?? ""
+  if (!TOKEN || (!tokenMatches(bearer, "INGEST_SECRET_TOKEN") && !tokenMatches(tokenQuery, "INGEST_SECRET_TOKEN"))) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  const started = Date.now()
+  const startedAtIso = new Date(started).toISOString()
+
+  // Invocation marker BEFORE any work: a maxDuration kill runs neither the
+  // success path nor a catch, so without this row a killed tick is
+  // indistinguishable from a tick that never fired (CLAUDE.md, after()
+  // routes). The helper is non-fatal by construction; guarded here anyway so
+  // telemetry can never stop the lane it measures.
+  try {
+    await writeInvocationHeartbeat({
+      pipeline: PIPELINE_NAME,
+      startedAtMs: started,
+      extra: { source: "cron-job.org", event: "hourly" },
+    })
+  } catch (e: any) {
+    console.error(`[${PIPELINE_NAME}] heartbeat threw:`, e?.message ?? e)
+  }
+
+  // Answer inside the caller's 30 s, whatever the database is doing. If the
+  // work finishes within the sync budget the response is exactly what it was
+  // (200 + the corrections body); if it does not, after() carries it to its
+  // terminal row and the caller gets a 202 dispatch receipt — which carries NO
+  // counts, because a receipt rendered as a result is the same lie as a failed
+  // read rendered as an answer.
+  // ⚠ `.catch` here, not a try/catch around the await: on the DEFERRED path the
+  // 202 has already gone out and `work` sits pending until `after()` attaches to
+  // it, so a rejection in that window would be an unhandled rejection. Catching
+  // at creation records the failure AND resolves the promise, so every exit —
+  // early return, throw, or success — ends in a terminal row.
+  const work = runBackfill(started, startedAtIso).catch(async (e: any) => {
+    const message = e?.message ?? String(e)
+    await logTerminalFailure("unhandled", message, started, startedAtIso)
+    return NextResponse.json({ ok: false, error: `unhandled: ${message}` }, { status: 500 })
+  })
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const budget = new Promise<"deferred">((resolve) => {
+    timer = setTimeout(() => resolve("deferred"), syncBudgetMs())
+  })
+  const outcome = await Promise.race([work.then((res) => ({ res })), budget])
+  if (timer) clearTimeout(timer)
+  if (outcome !== "deferred") return outcome.res
+
+  after(async () => {
+    try {
+      await work
+    } catch (e: any) {
+      // The 202 has gone out; a throw here would otherwise vanish.
+      console.error(`[${PIPELINE_NAME}] deferred run threw:`, e?.message ?? e)
+    }
+  })
+  return NextResponse.json(
+    {
+      accepted: true,
+      deferred: true,
+      pipeline: PIPELINE_NAME,
+      started_at: startedAtIso,
+      sync_budget_ms: syncBudgetMs(),
+      note: "work exceeded the sync budget and continues in after(); the outcome lands in pipeline_runs, not in this body",
+    },
+    { status: 202 },
+  )
+}
+
+async function runBackfill(started: number, startedAtIso: string): Promise<NextResponse> {
+  // ── Build work list ────────────────────────────────────────────────────
+  const workByWallet = new Map<string, Map<string, WorkItem>>()
+  const tagJob = (wallet: string, momentId: string, job: WorkItem["jobs"][number]) => {
+    const wmap = workByWallet.get(wallet) ?? new Map<string, WorkItem>()
+    const existing = wmap.get(momentId)
+    if (existing) {
+      existing.jobs.push(job)
+    } else {
+      wmap.set(momentId, { wallet, momentId, jobs: [job] })
+    }
+    workByWallet.set(wallet, wmap)
+  }
+
+  // Q1: pinnacle_editions where mint_count IS NULL. We need a sample wmc row
+  // per edition_key so we can borrow the NFT on-chain.
+  const q1: Array<{ id: string; edition_key: string }> = []
+  const q1Skipped: Array<{ edition_pk: string; reason: string }> = []
+  {
+    const { data: peRows, error } = await supabaseAdmin
+      .from("pinnacle_editions")
+      .select("id, edition_key")
+      .is("mint_count", null)
+      .not("edition_key", "is", null)
+      .order("created_at", { ascending: true })
+      .limit(Q1_CAP)
+    if (error) {
+      await logTerminalFailure("q1 load", error.message, started, startedAtIso)
+      return NextResponse.json({ ok: false, error: `q1 load: ${error.message}` }, { status: 500 })
+    }
+    const candidates = (peRows ?? []) as Array<{ id: string; edition_key: string }>
+    if (candidates.length > 0) {
+      const keys = candidates.map((r) => r.edition_key)
+      const { data: wmcRows, error: wmcErr } = await supabaseAdmin
+        .from("wallet_moments_cache")
+        .select("wallet_address, moment_id, edition_key")
+        .eq("collection_id", PINNACLE_COLLECTION_ID)
+        .in("edition_key", keys)
+        .limit(keys.length * 5)
+      if (wmcErr) {
+        await logTerminalFailure("q1 wmc lookup", wmcErr.message, started, startedAtIso)
+      return NextResponse.json({ ok: false, error: `q1 wmc lookup: ${wmcErr.message}` }, { status: 500 })
+      }
+      const sampleByKey = new Map<string, { wallet: string; momentId: string }>()
+      for (const row of (wmcRows ?? []) as Array<{ wallet_address: string; moment_id: string; edition_key: string }>) {
+        if (!sampleByKey.has(row.edition_key)) {
+          sampleByKey.set(row.edition_key, { wallet: row.wallet_address, momentId: row.moment_id })
+        }
+      }
+      for (const pe of candidates) {
+        const sample = sampleByKey.get(pe.edition_key)
+        if (!sample) {
+          q1Skipped.push({ edition_pk: pe.id, reason: "no_sample_wmc_row" })
+          continue
+        }
+        q1.push({ id: pe.id, edition_key: pe.edition_key })
+        tagJob(sample.wallet, sample.momentId, {
+          kind: "mint_count",
+          edition_pk: pe.id,
+          edition_key: pe.edition_key,
+        })
+      }
+    }
+  }
+
+  // Q2: wmc where edition_key IS NULL on the Pinnacle collection.
+  const q2: Array<{ wmc_id: string; wallet: string; momentId: string }> = []
+  {
+    const { data, error } = await supabaseAdmin
+      .from("wallet_moments_cache")
+      .select("id, wallet_address, moment_id")
+      .eq("collection_id", PINNACLE_COLLECTION_ID)
+      .is("edition_key", null)
+      .order("last_seen_at", { ascending: false })
+      .limit(Q2_CAP)
+    if (error) {
+      await logTerminalFailure("q2 load", error.message, started, startedAtIso)
+      return NextResponse.json({ ok: false, error: `q2 load: ${error.message}` }, { status: 500 })
+    }
+    for (const row of (data ?? []) as Array<{ id: string; wallet_address: string; moment_id: string }>) {
+      q2.push({ wmc_id: row.id, wallet: row.wallet_address, momentId: row.moment_id })
+      tagJob(row.wallet_address, row.moment_id, { kind: "edition_key_resolve", wmc_id: row.id })
+    }
+  }
+
+  // Q3 + Q4 discovery — one RPC, `pinnacle_metadata_discovery`.
+  //
+  // These two queues used to read their own candidate pools over PostgREST with
+  // `.limit(5000)` / `.limit(8000)` and NO `.order()`. Measured 2026-09-11: the
+  // matching population is 56,440 rows, so PostgREST returned its 1,000-row cap
+  // and the effective pool was an UNDEFINED physical head that never moved. The
+  // lane's own numbers say what that cost: `q4_eligible` 2-3 and `q3_eligible` 0
+  // on every one of the last 63 hourly runs, while the collection actually holds
+  // 9 Q4 targets and 5 Q3 disagreements. The unreachable ones were unreachable
+  // forever.
+  //
+  // The RPC replaces both reads with a loose index scan over the collection's
+  // distinct edition_keys (423 keys, 2,154 buffers / 255 ms — 18x cheaper than a
+  // DISTINCT ON over the same pool): Q4's coverage is now COMPLETE, and Q3 walks
+  // the same key list behind a persisted cursor, a bounded slice per tick, so a
+  // full pass takes ~17 ticks instead of never finishing. Key-boundary slicing
+  // means a key is always scanned whole; no row can fall between two slices.
+  //
+  // An errored discovery is a 500, never an empty queue — a failed read that
+  // renders as "no work to do" is this platform's most productive defect class,
+  // and here it would additionally advance nothing while reporting ok.
+  const q3: Array<{ wmc_id: string; wallet: string; momentId: string; wmcKey: string; mapKey: string }> = []
+  const q4: Array<{ wmc_edition_key: string; wallet: string; momentId: string }> = []
+  let discovery: DiscoveryPayload
+  {
+    const { data, error } = await supabaseAdmin.rpc("pinnacle_metadata_discovery", {
+      p_q3_keys: Q3_KEYS_PER_TICK,
+      p_q3_limit: Q3_CAP,
+      p_q4_limit: Q4_CAP,
+    })
+    if (error) {
+      await logTerminalFailure("discovery", error.message, started, startedAtIso)
+      return NextResponse.json({ ok: false, error: `discovery: ${error.message}` }, { status: 500 })
+    }
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      // A null payload is not an empty backlog. Discriminate on the SHAPE, not on
+      // the array lengths inside it, or a dropped response reads as "nothing to do".
+      // `Array.isArray` is not belt-and-braces: `typeof [] === "object"`, so an
+      // array-shaped body (what PostgREST returns for a SET-returning function,
+      // and what a wrong rpc name can yield) would otherwise pass this check and
+      // then read as two empty queues.
+      await logTerminalFailure("discovery", "empty payload (no rows and no error)", started, startedAtIso)
+      return NextResponse.json(
+        { ok: false, error: "discovery: empty payload (no rows and no error)" },
+        { status: 500 },
+      )
+    }
+    discovery = data as DiscoveryPayload
+
+    for (const row of discovery.q3 ?? []) {
+      if (q3.length >= Q3_CAP) break
+      q3.push({
+        wmc_id: row.wmc_id,
+        wallet: row.wallet_address,
+        momentId: row.moment_id,
+        wmcKey: row.wmc_key,
+        mapKey: row.map_key,
+      })
+      tagJob(row.wallet_address, row.moment_id, {
+        kind: "disagreement",
+        wmc_id: row.wmc_id,
+        wmc_edition_key: row.wmc_key,
+        map_edition_key: row.map_key,
+      })
+    }
+
+    for (const row of discovery.q4 ?? []) {
+      if (q4.length >= Q4_CAP) break
+      q4.push({ wmc_edition_key: row.edition_key, wallet: row.wallet_address, momentId: row.moment_id })
+      tagJob(row.wallet_address, row.moment_id, { kind: "catalog_upsert", wmc_edition_key: row.edition_key })
+    }
+  }
+
+  // ── Fan out Cadence reads, then apply per-queue updates ───────────────
+  const corrections: {
+    mint_count_filled: Array<{ edition_pk: string; mint_count: number; is_serialized: boolean }>
+    edition_keys_resolved: Array<{ wmc_id: string; moment_id: string; edition_key: string }>
+    disagreements_corrected: Array<{ wmc_id: string; moment_id: string; from: string; to: string; corrected_side: "wmc" | "map" }>
+    catalog_upserted: Array<{ edition_key: string; character_name: string; mint_count: number; created_or_repaired: string }>
+    serials_filled: Array<{ wmc_id: string; moment_id: string; serial_number: number }>
+  } = { mint_count_filled: [], edition_keys_resolved: [], disagreements_corrected: [], catalog_upserted: [], serials_filled: [] }
+  let gqlErrors = 0
+  const errorSamples: Array<{ wallet: string; error: string }> = []
+  // Every correction write's { error } lands here (2026-09-26). The per-lane
+  // counts were already honest (pushed only on success), but a failed write
+  // was invisible: ok was gqlErrors === 0 alone, and the pinnacle_nft_map
+  // upsert's result was not read at all — so an edition_key_resolve that
+  // fixed wmc but not the map (the exact disagreement this job repairs) was
+  // published as resolved on an ok:true run.
+  let writeErrors = 0
+  // Catalog jobs skipped because the metadata named no character or set.
+  let catalogSkippedUnnamed = 0
+  const writeErrorSamples: Array<{ lane: string; error: string }> = []
+  const noteWriteError = (lane: string, err: { message?: string } | null | undefined) => {
+    if (!err) return
+    writeErrors++
+    if (writeErrorSamples.length < 3) writeErrorSamples.push({ lane, error: err.message ?? String(err) })
+  }
+
+  for (const [wallet, wmap] of workByWallet.entries()) {
+    if (Date.now() - started > SOFT_DEADLINE_MS) break
+    const ids = Array.from(wmap.keys())
+    let result: Record<string, PinInfo> = {}
+    try {
+      result = await runCadenceFetch(wallet, ids)
+    } catch (e) {
+      gqlErrors++
+      if (errorSamples.length < 3) {
+        errorSamples.push({ wallet, error: e instanceof Error ? e.message : String(e) })
+      }
+      continue
+    }
+
+    for (const [momentId, item] of wmap.entries()) {
+      const info = result[momentId]
+      if (!info) continue
+      const authoritativeKey = buildEditionKey(info)
+
+      // Opportunistic serial fill: every borrowed NFT exposes its serialNumber
+      // (nil for open editions). Fill wmc.serial_number wherever it's still NULL
+      // for this wallet+moment — covers any moment fetched for Q1-Q4.
+      // NULL-guarded so it never clobbers an existing serial; open editions
+      // (serialNumber null) are left untouched.
+      if (info.serialNumber != null && info.serialNumber > 0) {
+        const { data: serUpd, error: serErr } = await supabaseAdmin
+          .from("wallet_moments_cache")
+          .update({ serial_number: info.serialNumber })
+          .eq("collection_id", PINNACLE_COLLECTION_ID)
+          .eq("wallet_address", wallet)
+          .eq("moment_id", momentId)
+          .is("serial_number", null)
+          .select("id")
+        noteWriteError("serial", serErr)
+        if (!serErr && serUpd && serUpd.length > 0) {
+          corrections.serials_filled.push({
+            wmc_id: (serUpd[0] as { id: string }).id,
+            moment_id: momentId,
+            serial_number: info.serialNumber,
+          })
+        }
+      }
+
+      for (const job of item.jobs) {
+        if (job.kind === "mint_count") {
+          if (info.numberMinted == null) continue
+          const { error } = await supabaseAdmin
+            .from("pinnacle_editions")
+            .update({
+              mint_count: info.numberMinted,
+              is_serialized: info.isLimited,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", job.edition_pk)
+          noteWriteError(job.kind, error)
+          if (!error) {
+            corrections.mint_count_filled.push({
+              edition_pk: job.edition_pk,
+              mint_count: info.numberMinted,
+              is_serialized: info.isLimited,
+            })
+          }
+        } else if (job.kind === "edition_key_resolve") {
+          if (!info.royaltyCode || !info.variant) continue
+          const { error: wmcUpErr } = await supabaseAdmin
+            .from("wallet_moments_cache")
+            .update({ edition_key: authoritativeKey })
+            .eq("id", job.wmc_id)
+          if (wmcUpErr) {
+            noteWriteError("edition_key_resolve:wmc", wmcUpErr)
+            continue
+          }
+          const { error: mapUpErr } = await supabaseAdmin
+            .from("pinnacle_nft_map")
+            .upsert({ nft_id: momentId, edition_key: authoritativeKey }, { onConflict: "nft_id" })
+          if (mapUpErr) {
+            noteWriteError("edition_key_resolve:map", mapUpErr)
+            continue
+          }
+          corrections.edition_keys_resolved.push({
+            wmc_id: job.wmc_id,
+            moment_id: momentId,
+            edition_key: authoritativeKey,
+          })
+        } else if (job.kind === "disagreement") {
+          if (!info.royaltyCode || !info.variant) continue
+          if (authoritativeKey === job.wmc_edition_key && authoritativeKey === job.map_edition_key) continue
+          if (authoritativeKey === job.wmc_edition_key) {
+            // wmc is right, map is wrong
+            const { error } = await supabaseAdmin
+              .from("pinnacle_nft_map")
+              .update({ edition_key: authoritativeKey })
+              .eq("nft_id", momentId)
+            noteWriteError(job.kind, error)
+            if (!error) {
+              corrections.disagreements_corrected.push({
+                wmc_id: job.wmc_id,
+                moment_id: momentId,
+                from: job.map_edition_key,
+                to: authoritativeKey,
+                corrected_side: "map",
+              })
+            }
+          } else {
+            // map is right OR both wrong — overwrite wmc with authoritative
+            const { error } = await supabaseAdmin
+              .from("wallet_moments_cache")
+              .update({ edition_key: authoritativeKey })
+              .eq("id", job.wmc_id)
+            noteWriteError(job.kind, error)
+            if (!error) {
+              corrections.disagreements_corrected.push({
+                wmc_id: job.wmc_id,
+                moment_id: momentId,
+                from: job.wmc_edition_key,
+                to: authoritativeKey,
+                corrected_side: "wmc",
+              })
+            }
+          }
+        } else if (job.kind === "catalog_upsert") {
+          // Need the core key components to form a valid composite row.
+          if (!info.royaltyCode || !info.variant) continue
+          // ⛔ No invented names (2026-11-03): character_name and set_name are NOT
+          // NULL with no default, and this used to send "Unknown" for a missing
+          // trait — creating a fake row, or OVERWRITING a real name on conflict
+          // (148 set_name='Unknown' rows, all April 2026, carry that shape). A job whose
+          // metadata lacks either is skipped and counted; an existing row keeps
+          // what it has. franchise / edition_type are omitted when unread, so a
+          // conflict-update keeps the stored value.
+          const characterName = info.characterName?.trim() || null
+          const setName = info.setName?.trim() || null
+          if (!characterName || !setName) {
+            catalogSkippedUnnamed++
+            continue
+          }
+          // NOTE: thumbnail_url is intentionally omitted — never written here.
+          // On INSERT it keeps the NULL default; on UPDATE (stub repair) the
+          // existing value is preserved (supabase-js upsert only sets supplied
+          // columns). Images are a documented dead-end (see header).
+          const catalogRow = omitUnread(
+            {
+              id: authoritativeKey,
+              edition_key: authoritativeKey,
+              character_name: characterName,
+              franchise: info.franchise?.trim() || null,
+              set_name: setName,
+              royalty_code: info.royaltyCode,
+              variant_type: info.variant,
+              edition_type: info.editionType?.trim() || null,
+              printing: info.printing,
+              mint_count: info.numberMinted,
+              is_serialized: info.isLimited,
+              is_chaser: info.isChaser,
+              updated_at: new Date().toISOString(),
+            },
+            ["franchise", "edition_type"],
+          )
+          const { error } = await supabaseAdmin
+            .from("pinnacle_editions")
+            .upsert(catalogRow as any, { onConflict: "id" })
+          noteWriteError(job.kind, error)
+          if (!error) {
+            corrections.catalog_upserted.push({
+              edition_key: authoritativeKey,
+              character_name: characterName,
+              mint_count: info.numberMinted,
+              created_or_repaired: authoritativeKey === job.wmc_edition_key ? "match" : "remapped",
+            })
+          }
+        }
+      }
+    }
+  }
+
+  // ── Log pipeline run ───────────────────────────────────────────────────
+  const durationMs = Date.now() - started
+  await supabaseAdmin.rpc("log_pipeline_run", {
+    p_pipeline: PIPELINE_NAME,
+    p_started_at: startedAtIso,
+    p_rows_found: q1.length + q2.length + q3.length + q4.length,
+    p_rows_written:
+      corrections.mint_count_filled.length +
+      corrections.edition_keys_resolved.length +
+      corrections.disagreements_corrected.length +
+      corrections.catalog_upserted.length +
+      corrections.serials_filled.length,
+    p_rows_skipped: q1Skipped.length,
+    p_ok: gqlErrors === 0 && writeErrors === 0,
+    p_error: errorSamples[0]
+      ? `cadence: ${errorSamples[0].error}`
+      : writeErrorSamples[0]
+        ? `write (${writeErrorSamples[0].lane}): ${writeErrorSamples[0].error}`
+        : null,
+    p_collection_slug: "disney_pinnacle",
+    p_cursor_before: null,
+    p_cursor_after: null,
+    p_extra: {
+      duration_ms: durationMs,
+      wallets_touched: workByWallet.size,
+      q1_eligible: q1.length,
+      q2_eligible: q2.length,
+      q3_eligible: q3.length,
+      q4_eligible: q4.length,
+      // Every per-queue WRITE counter, not just two of them. Until 2026-09-11
+      // `extra` published catalog_upserted and serials_filled only, so the three
+      // queues below could report eligible work and write NOTHING on every run
+      // and no instrument could see it — which is exactly what Q1/Q2 were doing
+      // (rows_written matched catalog_upserted alone on all 63 retained runs).
+      // A per-step count with no sibling count is the #70 trap one level down.
+      mint_count_filled: corrections.mint_count_filled.length,
+      edition_keys_resolved: corrections.edition_keys_resolved.length,
+      disagreements_corrected: corrections.disagreements_corrected.length,
+      catalog_upserted: corrections.catalog_upserted.length,
+      catalog_skipped_unnamed: catalogSkippedUnnamed,
+      serials_filled: corrections.serials_filled.length,
+      q1_skipped_no_sample: q1Skipped.length,
+      // Discovery telemetry: the POPULATION next to the capped list, so a reader
+      // can tell "the cap is binding" from "the backlog is not shrinking", and
+      // the cursor position, so a stalled Q3 walk is visible rather than inferred.
+      q4_targets_total: discovery.q4_targets_total ?? null,
+      q4_unknown_name_chain_written: discovery.q4_unknown_name_chain_written ?? null,
+      distinct_edition_keys: discovery.distinct_edition_keys ?? null,
+      q3_keys_scanned: discovery.q3_keys_scanned ?? null,
+      q3_cursor_after: discovery.q3_cursor_after ?? null,
+      q3_wrapped: discovery.q3_wrapped ?? null,
+      q3_pass: discovery.q3_pass ?? null,
+      // thumbnail_url is never filled — Pinnacle images are a documented
+      // dead-end (no per-edition image on-chain; GQL 404; Flowty dead).
+      images_filled: 0,
+      gql_errors: gqlErrors,
+      error_samples: errorSamples,
+      write_errors: writeErrors,
+      write_error_samples: writeErrorSamples,
+    },
+  })
+
+  return NextResponse.json({
+    ok: gqlErrors === 0 && writeErrors === 0,
+    write_errors: writeErrors,
+    mint_count_filled: corrections.mint_count_filled.length,
+    edition_keys_resolved: corrections.edition_keys_resolved.length,
+    disagreements_corrected: corrections.disagreements_corrected.length,
+    catalog_upserted: corrections.catalog_upserted.length,
+    serials_filled: corrections.serials_filled.length,
+    images_filled: 0, // dead-end: no per-edition Pinnacle image exists on-chain
+    gql_errors: gqlErrors,
+    samples: {
+      mint_count: corrections.mint_count_filled.slice(0, 3),
+      edition_key: corrections.edition_keys_resolved.slice(0, 3),
+      disagreement: corrections.disagreements_corrected.slice(0, 3),
+      catalog: corrections.catalog_upserted.slice(0, 5),
+      serial: corrections.serials_filled.slice(0, 3),
+    },
+    duration_ms: durationMs,
+  })
+}

@@ -1,0 +1,41 @@
+-- Repo record of audit_20260803_revoke_anon_exec_backfill_acquisitions_for_collection,
+-- applied to prod via the Supabase MCP on 2026-08-03. Idempotent.
+--
+-- WHAT: public.backfill_acquisitions_for_collection(uuid, integer, timestamptz) is
+-- SECURITY DEFINER and WRITES moment_acquisitions, but returned
+-- has_function_privilege('anon', ..., 'EXECUTE') = true. Live ACL was:
+--   {=X/postgres, postgres=X/postgres, anon=X/postgres,
+--    authenticated=X/postgres, service_role=X/postgres}
+--
+-- WHY IT APPEARED: audit_20260803_backfill_acquisitions_bounded_window added the
+-- `p_since timestamptz` parameter, which DROPs the (uuid,integer) overload and
+-- CREATEs a NEW function object. A new function gets the default PUBLIC EXECUTE
+-- grant (`=X/postgres`), and Supabase's ALTER DEFAULT PRIVILEGES additionally grants
+-- EXECUTE to anon + authenticated.
+--
+-- ⚠ DURABLE: changing a SECDEF function's SIGNATURE silently re-opens its exec
+-- surface, even if the previous signature had been revoked. Any migration that adds
+-- or changes a parameter on a SECDEF function must re-apply the revokes.
+--
+-- ⚠ REVOKING FROM PUBLIC ALONE IS NOT ENOUGH HERE. Both forms were present: the
+-- PUBLIC default AND explicit anon/authenticated rows. Revoking only PUBLIC leaves
+-- has_function_privilege('anon', ...) true via the explicit grant; revoking only
+-- anon/authenticated leaves it true via PUBLIC. Both are required.
+--
+-- SAFE TO REVOKE (not allowlist) — callers audited both ways per CLAUDE.md:
+--   * Direct: the ONLY caller is app/api/cron/classify-acquisitions-multicollection,
+--     which uses `supabaseAdmin` (a genuine service-role import, not an aliased
+--     name) behind Bearer INGEST_SECRET_TOKEN.
+--   * Invoker-mode: zero. No function body, no view definition (security_invoker or
+--     otherwise), and no cron.job command references it, so no anon-reachable
+--     SECURITY INVOKER path keeps the grant load-bearing.
+-- postgres (owner) and service_role hold explicit grants that survive both revokes.
+--
+-- Verified after: ACL {postgres=X/postgres,service_role=X/postgres};
+-- anon/authenticated EXECUTE false; service_role + owner true;
+-- check_secdef_anon_exec_drift() -> []; check_public_security_invariants() 0.
+--
+-- REVERT (restores the hole — only if a genuine anon caller is ever found):
+--   GRANT EXECUTE ON FUNCTION public.backfill_acquisitions_for_collection(uuid, integer, timestamptz) TO anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.backfill_acquisitions_for_collection(uuid, integer, timestamptz) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.backfill_acquisitions_for_collection(uuid, integer, timestamptz) FROM anon, authenticated;

@@ -1,0 +1,123 @@
+// lib/swap-test/relay.ts
+//
+// Server side of the co-signer relay (migration 20261004023000). The initiator's
+// browser (wallet A) posts the signable FCL built for wallet B; the co-signer's
+// browser reads it, has wallet B sign, and posts the signature back. Only the
+// swap-test transaction can travel through here: a signable carrying any other
+// Cadence is refused, so the relay can never be used to collect a signature on
+// something else. Service role only, behind RPC_ADMIN_TOKEN.
+
+import type { SupabaseClient } from "@supabase/supabase-js"
+import { SWAP_CADENCE } from "@/lib/swap-test/swap-cadence"
+import { SwapTestError } from "@/lib/swap-test/plan"
+
+/** A transaction's reference block expires after ~600 blocks (~10 min); keep a little slack. */
+export const RELAY_TTL_MS = 15 * 60 * 1000
+const MAX_SIGNABLE_CHARS = 200_000
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+const FLOW_ADDRESS = /^0x[0-9a-f]{16}$/
+
+export interface RelayRow {
+  id: string
+  /** Present on trade_room_relay rows only. */
+  room_id?: string
+  cosigner: string
+  signable: Record<string, unknown>
+  signature: string | null
+  key_id: number | null
+  created_at: string
+  signed_at: string | null
+}
+
+const sansPrefix = (a: string) => a.toLowerCase().replace(/^0x/, "")
+
+/**
+ * Refuses anything that isn't wallet B's signable for one of the `allowed` swap transactions
+ * (the admin swap test: SWAP_CADENCE only; trade rooms also allow the multi-collection swap).
+ */
+export function checkSignable(cosigner: string, signable: unknown, allowed: readonly string[] = [SWAP_CADENCE]): Record<string, unknown> {
+  if (!FLOW_ADDRESS.test(cosigner)) throw new SwapTestError("The co-signer is not a Flow 0x address.", 400, "bad_cosigner")
+  if (!signable || typeof signable !== "object" || Array.isArray(signable)) {
+    throw new SwapTestError("The signable is missing.", 400, "bad_signable")
+  }
+  const s = signable as Record<string, unknown>
+  if (JSON.stringify(s).length > MAX_SIGNABLE_CHARS) throw new SwapTestError("The signable is too large.", 413, "too_large")
+  if (typeof s.cadence !== "string" || !allowed.includes(s.cadence)) throw new SwapTestError("Only the swap-test transaction can be relayed.", 400, "wrong_cadence")
+  if (typeof s.message !== "string" || !/^[0-9a-f]+$/.test(s.message)) throw new SwapTestError("The signable has no payload message.", 400, "bad_signable")
+  if (typeof s.addr !== "string" || sansPrefix(s.addr) !== sansPrefix(cosigner)) {
+    throw new SwapTestError("The signable is not addressed to the co-signer.", 400, "wrong_signer")
+  }
+  return s
+}
+
+export function isExpired(createdAt: string, now: number): boolean {
+  const t = Date.parse(createdAt)
+  return !Number.isFinite(t) || now - t > RELAY_TTL_MS
+}
+
+/** Relay rows are kept a day (for debugging a failed run), then removed. */
+export const RELAY_KEEP_MS = 24 * 60 * 60 * 1000
+
+/**
+ * Which relay table a call uses. The admin swap test and the user trade rooms
+ * (lib/trade-room, 2026-10-31) carry the SAME transaction through the SAME code; a
+ * trade-room relay row also names its room, which the trade-room store checks.
+ */
+export type RelayTable = "swap_test_relay" | "trade_room_relay"
+
+export async function postSignable(
+  db: SupabaseClient,
+  cosigner: string,
+  signable: unknown,
+  now: number,
+  opts: { table?: RelayTable; extra?: Record<string, unknown>; allowed?: readonly string[] } = {},
+): Promise<string> {
+  const table = opts.table ?? "swap_test_relay"
+  const s = checkSignable(cosigner, signable, opts.allowed)
+  // housekeeping: a row outlives its transaction by far; a failed cleanup is logged and never blocks a swap
+  const { error: cleanupError } = await db.from(table).delete().lt("created_at", new Date(now - RELAY_KEEP_MS).toISOString())
+  if (cleanupError) console.warn(`[swap-test/relay] cleanup of old ${table} rows failed:`, cleanupError.message)
+  const { data, error } = await db.from(table).insert({ ...(opts.extra ?? {}), cosigner, signable: s }).select("id").single()
+  if (error) throw error
+  const id = (data as { id?: unknown } | null)?.id
+  if (typeof id !== "string") throw new Error(`${table} insert returned no id`)
+  return id
+}
+
+export async function getRelay(db: SupabaseClient, id: string, now: number, table: RelayTable = "swap_test_relay"): Promise<RelayRow> {
+  if (!UUID.test(id)) throw new SwapTestError("Not a relay id.", 400, "bad_relay")
+  const { data, error } = await db
+    .from(table)
+    .select("id, cosigner, signable, signature, key_id, created_at, signed_at" + (table === "trade_room_relay" ? ", room_id" : ""))
+    .eq("id", id)
+    .maybeSingle()
+  if (error) throw error
+  if (!data) throw new SwapTestError("No such relay.", 404, "no_relay")
+  const row = data as unknown as RelayRow
+  if (isExpired(row.created_at, now)) throw new SwapTestError("This swap request expired; start a new one.", 410, "expired")
+  return row
+}
+
+export async function postSignature(
+  db: SupabaseClient,
+  id: string,
+  signature: unknown,
+  keyId: unknown,
+  now: number,
+  table: RelayTable = "swap_test_relay",
+): Promise<void> {
+  const sig = typeof signature === "string" ? signature.trim().toLowerCase().replace(/^0x/, "") : ""
+  if (!/^[0-9a-f]{128}$/.test(sig)) throw new SwapTestError("The signature is not 64 bytes of hex.", 400, "bad_signature")
+  const k = Number(keyId)
+  if (!Number.isInteger(k) || k < 0) throw new SwapTestError("The key id is not a key index.", 400, "bad_key")
+  await getRelay(db, id, now, table)
+  const { data, error } = await db
+    .from(table)
+    .update({ signature: sig, key_id: k, signed_at: new Date(now).toISOString() })
+    .eq("id", id)
+    .is("signature", null)
+    .select("id")
+  if (error) throw error
+  // the update matched nothing: someone already signed this relay (never overwrite a signature)
+  if (!Array.isArray(data) || data.length !== 1) throw new SwapTestError("This swap request was already signed.", 409, "already_signed")
+}

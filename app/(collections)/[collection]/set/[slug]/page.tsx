@@ -1,0 +1,505 @@
+// app/(collections)/[collection]/set/[slug]/page.tsx
+// Phase 1C. Set detail page across all 5 published collections.
+//
+// Data: get_set_detail(collection_id, set_slug) + get_set_editions(...,100,0).
+// Aggregate stats + tier mix + paginated edition grid.
+
+import type { Metadata } from "next"
+import { seriesDisplay } from "@/lib/series-label"
+import Link from "next/link"
+import { paniniProductHref, paniniProductSlug } from "@/lib/panini/product-url"
+import { notFound } from "next/navigation"
+import { getCollectionByUrlSlug, isPinnacleUrlSlug } from "@/lib/collection-slug"
+import { getEntityLabels } from "@/lib/entity-labels"
+import { fetchFullTierMix, buildTierMixRows } from "@/lib/set-detail/tier-mix"
+import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
+import { sectionRows, sectionRowsResult, structuralSection } from "@/lib/entity-section-rpc"
+import { setPageMetadata, collectionEntityJsonLd, collectionDisplayName, entityUrl, NOT_FOUND_METADATA } from "@/lib/seo"
+import { Section, SectionUnavailable, StatCell, RECENT_LOW_TOTAL_LABEL, fmvTotalSub, recentLowTotalSub, fmtCount, fmtUsd, relTime } from "@/components/entity/_shared"
+import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
+import TeamActivity, { type ActivityRow } from "@/components/entity/TeamActivity"
+import Breadcrumbs from "@/components/entity/Breadcrumbs"
+import HeroMontage from "@/components/entity/HeroMontage"
+import { fetchPaniniSetSales, fetchPaniniProductSetSales, type PaniniSetSales } from "@/lib/panini/set-sales"
+import PaniniSetSalesBody from "@/components/entity/PaniniSetSales"
+import { Suspense } from "react"
+import MarketCapTile from "@/components/entity/MarketCapTile"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
+
+export const revalidate = 600
+export const dynamicParams = true
+
+export async function generateStaticParams() {
+  return [] as Array<{ collection: string; slug: string }>
+}
+
+interface SetDetail {
+  set_name: string
+  set_name_variants: string[] | null
+  underlying_set_count: number | null
+  /** Panini only (2026-10-21, #204): the PRODUCTS behind a shared set name, largest first, each with its own page's slug. */
+  underlying_sets?: PaniniProductRef[] | null
+  /**
+   * Panini only (2026-10-21, #204 design half): set when the slug names ONE product's set (a
+   * `sets` row) — every stat, the grid, the tier mix and the sales are then that row's alone.
+   */
+  set_id?: string | null
+  product_name?: string | null
+  /** The product page's canonical slug; the layout 308s any other spelling to it. */
+  canonical_slug?: string | null
+  /** The OTHER products that share this set name, each with its page's slug. */
+  related_products?: PaniniProductRef[] | null
+  edition_count: number | null
+  editions_with_fmv: number | null
+  total_circulation: number | null
+  tiers_present: string[] | null
+  min_series: number | null
+  max_series: number | null
+  fmv_total_usd: number | null
+  floor_total_usd: number | null
+  /** Pinnacle only: pins with a live ask / the ASK_ONLY part of fmv_total_usd. */
+  listed_count?: number | null
+  fmv_ask_derived_usd?: number | null
+  summary_computed_at: string | null
+}
+
+interface PaniniProductRef {
+  name: string | null
+  editions: number
+  slug?: string | null
+}
+
+const PAGE_SIZE = 100
+
+/**
+ * The title of a Panini product's set page. Several products share a set name, so the bare
+ * name would give their pages one title; the product disambiguates it. Every other page (and a
+ * Panini set name only one product carries) keeps the bare name.
+ */
+function setTitleName(detail: Pick<SetDetail, "set_name" | "set_id" | "product_name" | "related_products">): string {
+  if (detail.set_id && detail.product_name && Array.isArray(detail.related_products) && detail.related_products.length > 0) {
+    return `${detail.set_name} · ${detail.product_name}`
+  }
+  return detail.set_name
+}
+
+// Routed through the shared cache()'d fetch so the segment layout's 404 gate,
+// generateMetadata and this render collapse into ONE get_set_detail call per
+// request. See lib/entity-detail-gate.ts.
+async function fetchDetail(collectionId: string, slug: string): Promise<SetDetail | null> {
+  const { data, error } = await fetchEntityDetailRaw("set", collectionId, slug)
+  if (error) {
+    // Transient RPC failure (statement timeout under contention) must NOT
+    // render as not-found — that soft-404s real pages (same class fixed on
+    // pack/team 2026-07-14). Throw -> retryable error boundary.
+    console.error("[set] detail error", error.message)
+    throw new Error(`set detail unavailable: ${error.message}`)
+  }
+  if (!data) return null
+  if (Array.isArray(data)) return (data[0] as SetDetail) ?? null
+  return data as SetDetail
+}
+
+// 2026-09-25 — the set page's recent-sales panel (get_set_activity, the team
+// function's shape keyed on the set). Three-state: TeamActivity's empty copy
+// CONCLUDES ("No recent sales."), so a failed read must reach it as `ok:false`,
+// never as `[]`. Pinnacle's sales live in their own tables; it is not asked.
+async function fetchActivity(collectionId: string, slug: string, limit: number): Promise<{ rows: ActivityRow[]; ok: boolean }> {
+  return sectionRowsResult<ActivityRow>("set activity", "get_set_activity", { p_collection_id: collectionId, p_set_slug: slug, p_limit: limit, p_offset: 0 })
+}
+
+// The editions grid is STRUCTURAL — a set page whose grid silently renders
+// empty is indistinguishable from a set we have no data for, and it is the
+// reason the page exists. Retries connection-class errors, then throws.
+// See lib/entity-section-rpc.ts.
+async function fetchEditions(collectionId: string, slug: string, limit: number, offset: number): Promise<EditionTile[]> {
+  return sectionRows<EditionTile>("set editions", "get_set_editions", { p_collection_id: collectionId, p_set_slug: slug, p_limit: limit, p_offset: offset }, { structural: true })
+}
+
+// Phase 7 (2026-05-26): the full-set tier mix moved to lib/set-detail/tier-mix.ts
+// so it is measured by the primary coverage gate and so its FAILURE is
+// expressible — it used to return a bare [] on a query error, which this page
+// read as the legitimate "no full-set count, sample the first page" fallback.
+// See that module's header.
+
+
+// ── Metadata ────────────────────────────────────────────────────────────────
+
+export async function generateMetadata(props: { params: Promise<{ collection: string; slug: string }> }): Promise<Metadata> {
+  const { collection, slug: rawSlug } = await props.params
+  const slug = decodeURIComponent(rawSlug)
+  const coll = getCollectionByUrlSlug(collection)
+  if (!coll) return NOT_FOUND_METADATA
+  let detail: Awaited<ReturnType<typeof fetchDetail>> = null
+  try {
+    detail = await fetchDetail(coll.id, slug)
+  } catch {
+    // Transient failure: generic non-404 title so crawlers never cache a
+    // not-found signal for a real page.
+    return { title: { absolute: `${slug.replace(/-/g, " ")} | ${coll.displayName} | Rip Packs City` } }
+  }
+  if (!detail) return NOT_FOUND_METADATA
+  return setPageMetadata({ ...(detail as unknown as Record<string, unknown>), set_name: setTitleName(detail) }, collection, slug)
+}
+
+// ── Page ────────────────────────────────────────────────────────────────────
+
+export default async function SetPage(props: { params: Promise<{ collection: string; slug: string }> }) {
+  const { collection, slug: rawSlug } = await props.params
+  const slug = decodeURIComponent(rawSlug)
+  const coll = getCollectionByUrlSlug(collection)
+  if (!coll) notFound()
+
+  // ⚠ BOUNDED READ (deep-audit R19). This was a bare `await fetchDetail(...)`.
+  // Observed live 2026-08-22: /nba-top-shot/set/base-set returned a bare
+  // "500: This page couldn't load" after 18 s under DB load.
+  //
+  // ⚠ AND AN error.tsx BOUNDARY DOES NOT CATCH IT. This route is ISR
+  // (`revalidate = 600`, `dynamicParams = true`), so the throw happens while the
+  // page is being GENERATED, not while a mounted tree renders — Next serves its
+  // own default error page and the segment boundary never runs. Verified: the
+  // boundary IS in the deployed bundle and the 500 was still Next's default.
+  // `generateMetadata` above already degrades; only the page body did not.
+  //
+  // ⚠ A FAILED READ MUST NOT BECOME notFound(). `!detail` means the RPC answered
+  // and this set does not exist — a 404 is then true. A THROW means we could not
+  // ask, and rendering 404 there would tell a crawler a real set is gone.
+  let detail: Awaited<ReturnType<typeof fetchDetail>> = null
+  let detailFailed = false
+  try {
+    detail = await fetchDetail(coll.id, slug)
+  } catch {
+    detailFailed = true
+  }
+  if (detailFailed) return <SetUnavailable collection={collection} slug={slug} />
+  if (!detail) notFound()
+
+  const setNames = [detail.set_name, ...(detail.set_name_variants ?? [])]
+  // ⚠ THE SECOND HALF OF THE BOUND, and the first fix was incomplete without it.
+  // Guarding only the detail read above left THIS unguarded, and these are the
+  // HEAVY reads — verified live: with the detail read already bounded and
+  // deployed, the page still served Next's default 500, because the throw was
+  // here. Fixing the first read and stopping is the same partial-fix shape that
+  // turned D12 into D12b.
+  //
+  // ⚠ PER-SECTION, NOT PER-PAGE (R19, 2026-08-23). This used to catch the
+  // structural throw here and return `SetUnavailable`, discarding the hero, the
+  // merged-sets disclosure and the whole stat strip — all of them already read
+  // from `get_set_detail`, which is a different query with a different cost and
+  // routinely succeeds when `get_set_editions` times out. The reader now keeps
+  // everything the detail row carries, and the grid says for itself that it did
+  // not come back.
+  //
+  // ⚠ It also rejected the shared `Promise.all` and threw away the TIER MIX,
+  // which had already been fetched and already reports its own `ok`.
+  //
+  // ⚠ The outer try is a LAST RESORT, not the rung-2 catch it replaced. A
+  // decorative section fetcher cannot throw by policy and `structuralSection`
+  // absorbs the one that can — but an unexpected throw (a client-level error the
+  // section policy does not model) would still reject the whole `Promise.all`,
+  // and on an ISR route error.tsx does not run. So the catch marks EVERY section
+  // failed and lets the page render; it must never return a whole-page view.
+  let editionsRes: { rows: EditionTile[]; ok: boolean } = { rows: [], ok: false }
+  let tierMix: Awaited<ReturnType<typeof fetchFullTierMix>> = { rows: [], ok: false }
+  let activityRes: { rows: ActivityRow[]; ok: boolean } = { rows: [], ok: false }
+  // Panini (2026-09-27): get_set_activity reads `sales` (0 Panini rows), and a
+  // failed read would render "couldn't load" over a feed that does not exist.
+  const isPanini = collection === "panini-blockchain"
+  const wantsActivity = !isPinnacleUrlSlug(collection) && !isPanini
+  // Panini's own sales (2026-09-30): panini_sales via panini_set_sales. Bounded and never throws;
+  // null = the read failed, and the section says so.
+  // 2026-10-21 (#204): a PRODUCT's page (set_id) reads that `sets` row's sales, tier mix and grid,
+  // never the set name's — a name several products share would pour their sales into this one.
+  const productSetId = isPanini && detail.set_id ? detail.set_id : null
+  const paniniSalesP: Promise<PaniniSetSales | null> | null = isPanini
+    ? (productSetId ? fetchPaniniProductSetSales(productSetId) : fetchPaniniSetSales(setNames))
+    : null
+  try {
+    ;[editionsRes, tierMix, activityRes] = await Promise.all([
+      structuralSection<EditionTile>("set editions", fetchEditions(coll.id, slug, PAGE_SIZE, 0)),
+      fetchFullTierMix(coll.id, setNames, undefined, productSetId),
+      wantsActivity ? fetchActivity(coll.id, slug, 20) : Promise.resolve({ rows: [], ok: true }),
+    ])
+  } catch (e) {
+    console.error("[set] section fan-out threw outside the section policy", e instanceof Error ? e.message : String(e))
+  }
+  const editions = editionsRes.rows
+  const editionsOk = editionsRes.ok
+  const paniniSales = paniniSalesP ? await paniniSalesP : null
+
+  const minLabel = detail.min_series !== null ? seriesDisplay(detail.min_series, collection) : null
+  const maxLabel = detail.max_series !== null ? seriesDisplay(detail.max_series, collection) : null
+  const seriesLabel = minLabel !== null && maxLabel !== null
+    ? (minLabel === maxLabel ? minLabel : `${minLabel} – ${maxLabel}`)
+    : null
+
+  // Phase 7: the bar is built from the full-set count, falling back to the
+  // first-page sample when that read SUCCEEDED and returned nothing (a
+  // collection whose editions are not reachable by set_name).
+  //
+  // ⚠ On a FAILED read the section is withheld entirely. The bar prints
+  // ABSOLUTE COUNTS with no provenance, so sampling 100 of a ~3,600-edition set
+  // renders "COMMON · 62 · 62.0%" against a true ~2,200 — a wrong number
+  // presented identically to a right one. Showing nothing is the honest
+  // outcome; the editions grid below still carries the page.
+  //
+  // ⚠ `editionsOk` gates the SAMPLE leg too. `buildTierMixRows` falls back to
+  // counting the fetched page when the full-set read came back empty, and on a
+  // FAILED editions read that page is `[]` — which would render the bar off a
+  // sample of nothing.
+  const tierMixRows = tierMix.ok && editionsOk ? buildTierMixRows(tierMix.rows, editions) : []
+  const titleName = setTitleName(detail)
+  const related = Array.isArray(detail.related_products) ? detail.related_products : []
+  // market_cap_current groups by set NAME, so on a product page whose name other products share
+  // its figure is all of them — withheld rather than shown as this product's.
+  const showMarketCap = !(productSetId && related.length > 0)
+  // Panini (2026-10-25): this set's product page — one page per product NAME, slugified by the rollup's own rule.
+  const productSlug = productSetId && detail.product_name ? paniniProductSlug(detail.product_name) : null
+
+  return (
+    <div>
+      {/* ⚠ OMITTED, not emitted-with-zero, when the editions read failed:
+          `collectionEntityJsonLd` publishes `numberOfItems: items.length`, so a
+          failed read would hand a crawler a machine-readable "this set holds no
+          editions". No claim beats a false one.
+          ⚠ The THIRD state — a read that SUCCEEDED and returned nothing — is
+          handled inside `collectionEntityJsonLd` (2026-09-18, R58 residual a):
+          it omits the ItemList rather than publish `numberOfItems: 0`, and
+          keeps the CollectionPage + breadcrumb, which are true regardless. */}
+      {editionsOk && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: jsonLdScript(collectionEntityJsonLd({ name: titleName, url: entityUrl(collection, "set", slug), collectionUrlSlug: collection, eds: editions as unknown as Array<Record<string, unknown>>, crumbName: titleName })) }}
+        />
+      )}
+      <Breadcrumbs
+        items={[
+          { name: "Home", href: "/" },
+          { name: collectionDisplayName(collection), href: `/${collection}/overview` },
+          { name: titleName },
+        ]}
+      />
+      {/* ── Hero ─────────────────────────────────────────────────────────── */}
+      <section className="rpc-card" style={{ padding: 18, display: "flex", gap: 18, alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap" }}>
+        <div style={{ minWidth: 0, flex: "1 1 auto" }}>
+        <h1 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 32, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", lineHeight: 1.05, textTransform: "uppercase" }}>
+          {detail.set_name}
+        </h1>
+        {productSetId && detail.product_name && (
+          <div data-testid="set-product-name" className="rpc-mono" style={{ marginTop: 6, fontSize: 12, color: "var(--rpc-text-secondary)", letterSpacing: "0.04em" }}>
+            {/* 2026-10-25: the product has its own page (/panini-blockchain/product/<id>-<slug>). */}
+            {productSlug ? (
+              <Link href={paniniProductHref(collection, productSlug)} data-testid="set-product-link" style={{ color: "inherit" }}>
+                {detail.product_name}
+              </Link>
+            ) : (
+              detail.product_name
+            )}
+          </div>
+        )}
+        {related.length > 0 && (
+          // 2026-10-21 (#204 design half): this page is ONE product's set; the others sharing the
+          // name have their own pages, linked here rather than merged in.
+          <div data-testid="set-related-products" className="rpc-mono" style={{ marginTop: 6, fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.6 }}>
+            Also a set in:{" "}
+            {related.map((u, i) => (
+              <span key={u.slug ?? i}>
+                {i > 0 ? " · " : ""}
+                <ProductLink collection={collection} product={u} />
+              </span>
+            ))}
+          </div>
+        )}
+        {/* D20: disclose merged sets. The big merges are name-IDENTICAL seasonal
+            repeats (e.g. AllDay "Draw It Up" = 10 sets across S3–9), which produce
+            a single spelling variant — so key the banner on the underlying set
+            COUNT, not on distinct spellings. Falls back to the old spellings
+            banner only if the count field is absent (old RPC during a deploy). */}
+        {Array.isArray(detail.underlying_sets) && detail.underlying_sets.length > 1 ? (
+          // 2026-10-21 (#204): a Panini set name spans PRODUCTS (Base Prizms Blue: the 2026 World Cup
+          // catalog, 2022-23 Basketball and the 2022 World Cup), so the grid mixed sports with no word
+          // of it. Name each product; its "<product> · <set>" name drops the repeated set suffix.
+          <div data-testid="set-products-banner" className="rpc-mono" style={{ marginTop: 6, fontSize: 11, color: "var(--rpc-text-muted)" }}>
+            Combined view: {detail.underlying_sets.length} products share this set name —{" "}
+            {detail.underlying_sets.map((u, i) => (
+              <span key={u.slug ?? i}>
+                {i > 0 ? " · " : ""}
+                <ProductLink collection={collection} product={u} />
+              </span>
+            ))}
+            . Editions, sales and totals below are combined across all of them; each product links its own set page.
+          </div>
+        ) : detail.underlying_set_count != null && detail.underlying_set_count > 1 ? (
+          <div className="rpc-mono" style={{ marginTop: 6, fontSize: 11, color: "var(--rpc-text-muted)" }}>
+            Combined view: {detail.underlying_set_count} sets share this name
+            {seriesLabel ? ` (${seriesLabel})` : ""}
+            {detail.set_name_variants && detail.set_name_variants.length > 1
+              ? ` — spellings: ${detail.set_name_variants.join(" · ")}`
+              : ""}
+            . Edition count, completion % and FMV totals are combined across all of them.
+          </div>
+        ) : detail.underlying_set_count == null && detail.set_name_variants && detail.set_name_variants.length > 1 ? (
+          <div className="rpc-mono" style={{ marginTop: 6, fontSize: 11, color: "var(--rpc-text-muted)" }}>
+            Variants merged: {detail.set_name_variants.join(" · ")}
+          </div>
+        ) : null}
+        {seriesLabel && (
+          <div className="rpc-mono" style={{ marginTop: 6, fontSize: 12, color: "var(--rpc-text-secondary)", letterSpacing: "0.06em" }}>
+            Part of {seriesLabel}
+          </div>
+        )}
+        {detail.summary_computed_at && (
+          <div className="rpc-mono" style={{ marginTop: 8, fontSize: 10, color: "var(--rpc-text-muted)" }}>
+            Updated {relTime(detail.summary_computed_at)}
+          </div>
+        )}
+        </div>
+        <HeroMontage items={editions} collectionUrlSlug={collection} />
+      </section>
+
+      {/* ── Stat strip ───────────────────────────────────────────────────── */}
+      <section style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
+        <StatCell label="Editions" value={fmtCount(detail.edition_count)} sub={detail.editions_with_fmv !== null ? `${fmtCount(detail.editions_with_fmv)} with FMV` : undefined} />
+        <StatCell label="Total Mint" value={fmtCount(detail.total_circulation)} />
+        <StatCell label="FMV Total" value={fmtUsd(detail.fmv_total_usd)} sub={fmvTotalSub(detail)} />
+        {/* Panini: floor_total_usd is FMV restated (no floor source) — not a recent low. */}
+        {!isPanini && <StatCell label={RECENT_LOW_TOTAL_LABEL} value={fmtUsd(detail.floor_total_usd)} sub={recentLowTotalSub(detail)} />}
+      </section>
+      {isPanini && (
+        <div className="rpc-mono" style={{ marginTop: 8, padding: "0 4px", fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.6 }}>
+          Panini publishes no checklist, so this is every edition of the set RPC has seen listed — a floor, not a census.{" "}
+          <Link href={`/${collection}/sets`} style={{ color: "var(--rpc-red-text)", textDecoration: "none" }}>Cost to finish each set →</Link>
+        </div>
+      )}
+
+      {/* ── Market cap (market_cap_current; streamed, renders nothing without a row) ── */}
+      {showMarketCap && (
+        <Suspense fallback={null}>
+          <MarketCapTile group="set" collectionDbSlug={coll.dbSlug} match={slug} />
+        </Suspense>
+      )}
+
+      {/* ── Tier mix bar ─────────────────────────────────────────────────── */}
+      {tierMixRows.length > 0 && (
+        <Section title={`${getEntityLabels(collection).tier} Mix`}>
+          <div style={{ display: "flex", height: 14, borderRadius: 4, overflow: "hidden", border: "1px solid var(--rpc-border)" }}>
+            {tierMixRows.map(r => (
+              <div key={r.tier} title={`${r.tier} — ${r.n} (${r.pct.toFixed(1)}%)`} style={{
+                width: `${r.pct}%`,
+                background: tierBgFor(r.tier),
+                minWidth: r.pct > 0 ? 2 : 0,
+              }} />
+            ))}
+          </div>
+          <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 10 }}>
+            {tierMixRows.map(r => (
+              <div key={r.tier} className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-secondary)", display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ width: 8, height: 8, background: tierBgFor(r.tier), borderRadius: 2 }} />
+                {r.tier} · {r.n} · {r.pct.toFixed(1)}%
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {/* ── Recent sales (2026-09-25) ────────────────────────────────────────
+          Rendered when there are rows OR the read FAILED (TeamActivity then says
+          so in the shared wording); a set that genuinely has no recent sales
+          omits the section, as the team page does. Pinnacle is never asked.
+          Titled "Market Activity", as on the team page: TeamActivity carries
+          its own "Recent sales" / "Largest of the last N sales" sub-heads, so a
+          "Recent Sales" section title read as a doubled heading (seen 09-25). */}
+      {wantsActivity && (activityRes.rows.length > 0 || !activityRes.ok) && (
+        <Section title="Market Activity">
+          <TeamActivity collectionUrlSlug={collection} rows={activityRes.rows} ok={activityRes.ok} />
+        </Section>
+      )}
+
+      {/* ── Panini: sales on record (2026-09-30) ─────────────────────────── */}
+      {isPanini && (
+        <Section title="Sales">
+          <PaniniSetSalesBody collection={collection} res={paniniSales} />
+        </Section>
+      )}
+
+      {/* ── Editions grid ────────────────────────────────────────────────── */}
+      <Section title="Editions">
+        {editionsOk ? (
+          <EditionsGridPaginated
+            collectionUrlSlug={collection}
+            fetchUrl={`/api/entity/set?collection=${encodeURIComponent(collection)}&slug=${encodeURIComponent(slug)}`}
+            initial={editions}
+            pageSize={PAGE_SIZE}
+            showSetLink={false}
+            showSort
+          />
+        ) : (
+          <SectionUnavailable noun="the editions in this set" />
+        )}
+      </Section>
+    </div>
+  )
+}
+
+// One product of a Panini set name: "<product> (N editions)", linked to its own set page when the
+// read carried the slug (an old RPC during a deploy did not — the text then stands unlinked).
+function ProductLink({ collection, product }: { collection: string; product: PaniniProductRef }) {
+  const label = `${product.name ?? "Unnamed product"} (${product.editions.toLocaleString("en-US")} edition${product.editions === 1 ? "" : "s"})`
+  if (!product.slug) return <>{label}</>
+  return (
+    <Link href={`/${collection}/set/${encodeURIComponent(product.slug)}`} style={{ color: "var(--rpc-red-text)", textDecoration: "none" }}>
+      {label}
+    </Link>
+  )
+}
+
+function tierBgFor(tier: string): string {
+  const k = tier.toUpperCase()
+  switch (k) {
+    case "ULTIMATE":   return "var(--tier-ultimate)"
+    case "LEGENDARY":  return "var(--tier-legendary)"
+    case "CHAMPION":   return "var(--tier-champion)"
+    case "EPIC":       return "var(--tier-epic)"
+    // Legacy RPC-fabricated UFC labels (chain TIER trait replaced them 2026-10-18).
+    case "CHALLENGER": return "var(--tier-challenger)"
+    case "CONTENDER":  return "var(--tier-contender)"
+    case "RARE":       return "var(--tier-rare)"
+    case "FANDOM":     return "var(--tier-fandom)"
+    case "UNCOMMON":   return "var(--tier-uncommon)"
+    case "COMMON":     return "var(--tier-common)"
+    default:           return "var(--rpc-text-ghost)"
+  }
+}
+
+// Top Shot's series decode lives in lib/series-label.ts (seriesDisplay). This file kept
+// its own copy of the map until 2026-11-14 — a hardcoded copy beside the shared map goes
+// stale silently (series 10 added there would read "Series 10" here).
+
+// Rendered when get_set_detail could not be READ — distinct from a set that does
+// not exist (that still 404s above). Reports our failure and makes no claim
+// about the set's contents; a heavy page under load must degrade in brand rather
+// than bail to Next's unbranded default.
+function SetUnavailable({ collection, slug }: { collection: string; slug: string }) {
+  const name = slug.replace(/-/g, " ")
+  return (
+    <main style={{ minHeight: "60vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 24px", gap: 16 }}>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.3em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
+        Set unavailable
+      </div>
+      <h1 style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: "clamp(28px, 5vw, 44px)", letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--rpc-text-primary)", margin: 0, textAlign: "center" }}>
+        Couldn&rsquo;t load {name}
+      </h1>
+      <p style={{ color: "var(--rpc-text-secondary)", maxWidth: 520, textAlign: "center", margin: 0, lineHeight: 1.5 }}>
+        The set data didn&rsquo;t come back in time, so nothing is shown rather than a partial view.
+        This is a problem on our side &mdash; it does not mean the set is empty or gone. Reloading often works.
+      </p>
+      <a
+        href={`/${collection}/sets`}
+        style={{ marginTop: 8, padding: "10px 18px", border: "1px solid var(--rpc-red-border)", color: "var(--rpc-red-text)", background: "transparent", fontFamily: "var(--font-mono)", letterSpacing: "0.2em", textTransform: "uppercase", fontSize: 12, textDecoration: "none" }}
+      >
+        All sets
+      </a>
+    </main>
+  )
+}
+

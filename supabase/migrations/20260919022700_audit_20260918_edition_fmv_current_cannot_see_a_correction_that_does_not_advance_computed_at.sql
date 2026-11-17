@@ -1,0 +1,89 @@
+-- audit_20260918_edition_fmv_current_cannot_see_a_correction_that_does_not_advance_computed_at
+--
+-- ============================================================================
+-- WHY. This started as R50's next board: swap `v_topshot_parallel_premiums`
+-- (calm p50 6,437 ms, p90 60,054 ms, worst 93,725 ms — over the 60 s prerender
+-- ceiling) off its two per-row `fmv_snapshots` LATERALs and onto
+-- `edition_fmv_current`, the exact recipe that took `allday_scarcity_board` from
+-- 22,742 to 8,888 buffers on 2026-09-02.
+--
+-- ⭐ THE EQUIVALENCE CHECK THAT WAS SUPPOSED TO BE A FORMALITY FAILED, AND THAT
+-- IS THE FINDING. Comparing the cache against the truth for the 14,016 Top Shot
+-- editions the board touches turned up a max |Δ| of $4,049.55 — far outside the
+-- $47.70 the 09-02 precedent recorded. It is NOT the hourly lag:
+--
+--   edition 151:5629 (Angel Reese)
+--     newest fmv_snapshots row : computed_at 2026-09-18 06:45:00.19936Z
+--                                fmv_usd 4,949.45 · ask_proxy_fmv 8999
+--                                floor_price_usd 8999 · ASK_ONLY
+--                                algo_version `ultimate-v1_haircut`
+--     edition_fmv_current      : computed_at 2026-09-18 06:45:00.19936Z  ← SAME
+--                                fmv_usd 8,999.00
+--
+--   Same edition, same computed_at, different value — and every one of the top
+--   offenders is off by EXACTLY 0.55×, i.e. the cache is serving the
+--   PRE-HAIRCUT ask as FMV.
+--
+-- THE MECHANISM. `refresh_edition_fmv_current()` is the ONLY writer (verified by
+-- scanning every routine body for INSERT/UPDATE against this table) and its
+-- `DISTINCT ON (edition_id) ORDER BY computed_at DESC` logic is CORRECT. The
+-- defect is its INCREMENTAL WINDOW: it reads only
+--     computed_at > max(computed_at in edition_fmv_current) - interval '2 hours'
+-- FMV writes in this repo are DELETE-THEN-INSERT (CLAUDE.md), so a later pass can
+-- replace a snapshot while KEEPING its original `computed_at`. Once the watermark
+-- has advanced more than 2 h past that stamp, the replacement is never re-read and
+-- the cache holds the superseded value indefinitely. The `WHERE EXCLUDED.computed_at
+-- >= t.computed_at` guard does not help — the row never enters the window at all.
+--
+-- ============================================================================
+-- 📏 BLAST RADIUS, Top Shot, measured against the exact source row each cached row
+-- NAMES (join on edition_id + computed_at, not a LATERAL — so this tests the
+-- cache's own pointer):
+--
+--   efc rows                                        14,016
+--   pointer still resolves to a live source row     13,489
+--     ...of which fmv_usd DISAGREES                     26   net +$46,060.16
+--                                                            max |Δ| $4,049.55
+--   pointer resolves to NOTHING (row was replaced)     527
+--     ...edition has no snapshot at all                   0   ✅ nothing priced from nothing
+--     ...has a NEWER snapshot (cache simply behind)     469
+--     ...cache is AHEAD of the newest source             58
+--     ...would CHANGE VALUE on refresh                  136   max |Δ| $254.85
+--
+--   ⇒ 162 of 14,016 (1.16%) publish a value their own source contradicts,
+--     and the skew is HIGH.
+--
+-- ⚠ NOT MEASURED: the other four collections. The all-collections version of the
+-- query statement-timed out at 120 s; only Top Shot is bounded here. Do not quote
+-- a platform-wide number from this row.
+--
+-- ============================================================================
+-- WHAT. The table comment only. No behaviour, no grant, no data, no schedule.
+--
+-- ⛔ AND WHAT WAS DELIBERATELY NOT DONE, because it would have propagated this:
+-- the parallel-premiums swap is NOT shipped. That board reads `fmv_snapshots`
+-- directly today, which is the ACCURATE source; pointing it at the cache would
+-- have made a public pricing board faster and wronger. R50's recipe is still
+-- right about cost and now carries a correctness precondition.
+--
+-- ⛔ AND NO DATA PATCH. Aligning the 162 rows with one UPDATE would clear today's
+-- symptom, leave the mechanism intact, and make the incidence unmeasurable — the
+-- "fix the guard without fixing its record" failure this repo already files.
+--
+-- 👉 THE REAL FIX, for a session with a measurement window and a human on it:
+--   (a) a periodic FULL reconcile — `refresh_edition_fmv_current()` already has a
+--       full-rebuild branch, but its own comment says ~1.23M rows and "minutes when
+--       cold", so it needs a cost measurement on this IO-bound instance first; or
+--   (b) an `updated_at`/version column on `fmv_snapshots` that the incremental
+--       refresh can key on instead of `computed_at`.
+-- Either one changes what users are told a moment is worth. Not unsupervised.
+--
+-- REVERT: COMMENT ON TABLE public.edition_fmv_current IS NULL;  (it had none)
+-- ============================================================================
+
+COMMENT ON TABLE public.edition_fmv_current IS
+'Latest-FMV-per-edition cache (21,424 rows, 13 MB, PK on edition_id), refreshed by public.refresh_edition_fmv_current() — the ONLY writer. It is what R50 pointed eleven public insight boards at, in place of DISTINCT ON over the whole fmv_snapshots partition set, and it is also read by refresh_series_detail_rollup().
+🚨 KNOWN STALENESS CLASS, measured 2026-09-19 (audit_20260918): THE INCREMENTAL REFRESH CANNOT SEE A CORRECTION THAT DOES NOT ADVANCE computed_at. The incremental branch only reads snapshots with computed_at > (max(computed_at) in this table) - 2 hours. FMV writes in this repo are DELETE-THEN-INSERT, and a later pass can replace a snapshot while keeping its original computed_at — once the watermark has moved more than 2 h past that stamp, the replacement is never re-read and this cache keeps the superseded value indefinitely.
+📏 TOP SHOT, measured against the exact source row each cached row names (join on edition_id + computed_at): of 14,016 rows, 13,489 still match a live source row and 26 of those disagree on fmv_usd — net +$46,060 OVERSTATED, max single delta $4,049.55 (edition 151:5629 published 8,999.00 against a source fmv_usd of 4,949.45; the source row carries ask_proxy_fmv 8999 and algo_version ultimate-v1_haircut, so the cache is serving the PRE-HAIRCUT ask as FMV). The other 527 rows point at a (edition_id, computed_at) pair that no longer exists: 0 of those editions lack a snapshot entirely, 469 have a NEWER snapshot, 58 have this cache AHEAD of the newest source, and 136 would change value on refresh (max delta $254.85). ⇒ 162 of 14,016 Top Shot editions (1.16%) currently publish a value their own source contradicts, skewed HIGH.
+⛔ DO NOT POINT MORE BOARDS AT THIS TABLE UNTIL THAT IS FIXED. R50''s recipe ("read edition_fmv_current instead of the snapshot LATERAL") is sound on cost and currently imports this defect. v_topshot_parallel_premiums was a candidate on 2026-09-18 and was DELIBERATELY NOT SWAPPED for this reason — it reads fmv_snapshots directly today, which is the accurate source.
+👉 THE FIX IS THE REFRESH, NOT A DATA PATCH: a one-off UPDATE aligning the cache to source leaves the mechanism intact and the incidence unmeasurable. Candidates: a periodic FULL reconcile (the function already has a full-rebuild branch, ~1.23M rows and minutes when cold — needs a cost measurement on this IO-bound instance first), or an updated_at/version column on fmv_snapshots that the refresh can key on. Neither is an unsupervised change: this table sets prices users read.';

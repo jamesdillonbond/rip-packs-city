@@ -1,0 +1,236 @@
+﻿# dependencies
+node_modules/
+/.pnp
+.pnp.js
+
+# next.js
+/.next/
+/out/
+# Ignore any leaf files under app/out/ (legacy static-export artifacts) but
+# keep the Next.js route handler tree. Git can't un-ignore a file whose
+# parent directory is ignored, so we excluded directories instead of the
+# directory itself.
+app/out/*
+!app/out/flowty/
+!app/out/flowty/**
+
+# production
+/build
+
+# local env files — NEVER COMMIT
+.env
+.env*.local
+.env.local
+.env.development.local
+.env.production.local
+
+# credentials — NEVER COMMIT
+creds.json
+*creds*.json
+*-creds.json
+scripts/*creds*.json
+flowty-locker-test.json
+nftlocker-contract.json
+nftlocker-full.json
+
+# vercel
+.vercel/
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+# Ad-hoc per-folder tsc verification configs — kept out of git
+tsconfig.*.json
+!tsconfig.json
+
+# editor / IDE
+.vscode/
+.idea/
+.cursorignore
+
+# Claude / AI tooling — ignore local state, but track the shared session-sync hook
+.claude/*
+!.claude/settings.json
+# Project subagents (2026-11-09): read-only helpers pinned to Haiku.
+!.claude/agents/
+.claude/agents/*
+!.claude/agents/Explore.md
+!.claude/agents/log-reader.md
+!.claude/hooks/
+.claude/hooks/*
+!.claude/hooks/session-start.sh
+!.claude/hooks/ledger-reminder.sh
+!.claude/hooks/origin-drift.sh
+.mcp.json
+
+# Flow CLI
+emulator-account.pkey
+imports/
+README_flow.md
+flow.json
+# root-only: the Flow CLI binary. A bare "flow" matched lib/chains/flow/** too
+# (Phase-D-tracked code), silently un-adding new files there.
+/flow
+
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# misc
+.DS_Store
+*.pem
+Thumbs.db
+
+supabase/.temp/
+
+scripts/allday-moments.json
+scripts/*.json
+
+# local CSV data (wallet exports, PII) — NEVER COMMIT
+scripts/data/
+
+# local log dumps (one-off Supabase Logs API exports etc.)
+logs/
+*.patch
+
+# Sentry Config File
+.env.sentry-build-plugin
+.env.production
+sweep-*.log
+
+# Worker package-lock.json files — workers manage their own deps inline
+workers/**/package-lock.json
+
+# one-off harvest fixtures / scratch dumps (audit 2026-05-20 - git rm --cached, then delete)
+livetoken-portfolio*.json
+test-gql.json
+sniper.json
+/Invoke-RestMethod
+/main
+
+# overnight autonomous-pass concurrency guard — transient, never commit
+docs/overnight/.lock
+
+# local-only reference docs / scratch captures kept on disk but never published
+# (public repo — do not commit binary reference dumps or throwaway screenshots)
+flowty-asset-inventory-doc.pdf
+/_c*.png
+
+# vitest coverage output — generated, never commit. The two gates (primary +
+# components) must run into SEPARATE reportsDirectory dirs or they corrupt each
+# other's coverage/.tmp, so ignore any coverage-* sibling too.
+/coverage
+/coverage-*
+# vitest blob reports from local shard runs (CI uploads them as artifacts).
+/.vitest-reports*/
+
+# Panini runner local capture backups (residential box only)
+# Covers panini-capture* and panini-ops-capture*, incl. rotated .jsonl.1 backups
+panini*capture*.jsonl*
+
+# Playwright smoke artifacts
+e2e-results.json
+a11y-summary.md
+playwright-report/
+test-results/
+
+# ⚠ `supabase/functions/deno.lock` USED TO BE IGNORED HERE, and it is now COMMITTED.
+# The rule that stood until 2026-09-02 read: "Deliberately NOT committed: CI has
+# never validated against one, and adding it introduces a lock-mismatch failure
+# mode on remote-dep drift for a gate that is now blocking."
+#
+# That is a cost stated with no number in it, and the other side of the trade now
+# has one. Without a lock the edge-deno job RE-RESOLVES the whole graph on every
+# run, so it is wall-clock dependent: Deno refuses any version published inside
+# its minimum-dependency-age window (default 24 h), and it does not backtrack to
+# an older parent when a required sub-dependency is still too young. supabase-js
+# 2.113.0 aged in at 2026-09-03T06:04:34Z and its own auth-js 2.113.0 at
+# 06:05:01Z, so for those 27 seconds there was NO resolvable graph — measured, one
+# hard failure at 06:04:15Z in the last 60 runs, self-healing, and it recurs on
+# every Supabase release whose sub-packages publish seconds apart.
+#
+# The claimed cost does not materialise: `deno check` is NOT frozen, so it
+# rewrites a drifted lock rather than failing on it. Measured with Deno 2.9.6
+# against a control the repo can re-run: a floating `^3` range locked to a
+# version only 11 h old still resolves and passes under the DEFAULT 24 h policy,
+# while the same version with no lock is a hard error. See
+# `__tests__/edge-function-deps-are-locked.test.ts`.
+
+# `git format-patch` hand-offs from Cowork sessions that cannot push land here as
+# an untracked directory at the repo ROOT (e.g. "Rip Packs City/cowork-2026-08-25/").
+# Once the patches are applied their content lives in git history, so the directory
+# is pure redundancy — but until someone deletes it, a `git add -A` would commit the
+# patch files themselves. Ignore it rather than rely on everyone using explicit paths.
+Rip Packs City/
+
+# Cowork desktop-VM push credential (2026-08-29): never commit, never print
+.rpc-git-cred
+
+# 🚨 NOTHING UNDER docs/ MAY BE SILENTLY IGNORED — added 2026-09-03 after an incident.
+#
+# A parking commit wrote docs/overnight/handoffs/<name>.patch, ran `git add -A`, saw a
+# clean `git status`, and pushed. `*.patch` above swallowed the file SILENTLY: the commit
+# carried only the README, whose "Live" entry then pointed at nothing and whose ledger
+# entry said "the patch is committed". The next session found a promise, not an artifact.
+#
+# ⚠ `git add` does not report what an ignore rule skipped, and a clean `git status`
+# afterwards is CONSISTENT with the file having been added. The two observations a writer
+# naturally makes cannot tell the two outcomes apart — which is why this is a rule and not
+# a note telling people to look harder.
+#
+# ⭐ AND `*.patch` WAS NOT THE ONLY TRAP. Measured the same day, every one of these would
+# have been swallowed under docs/: `logs/` (so docs/logs/ entirely), `imports/`,
+# `sweep-*.log`, `*.pem`, `*creds*.json`. Six of six are addable after this rule.
+#
+# docs/ exists to be READ FROM THE REPO. A file there that only the authoring sandbox can
+# see is worse than absent, because it reads as present to its author.
+# ⚠ MUST STAY ABOVE THE SECRET RE-ASSERTION BELOW, and below everything it overrides:
+# a negation only overrides patterns that come BEFORE it.
+!docs/**
+
+# ⛔ …BUT NEVER SECRETS, EVEN UNDER docs/. Re-asserted AFTER the negation, because a blanket
+# `!docs/**` would otherwise make an `.env.local`, a `*creds*.json` or a `*.pem` dropped in
+# docs/ committable. This repo has already paid for a credential leak once (the 2026-08-03
+# filter-repo purge), so the convenience rule above must not quietly widen that surface.
+# ⚠ These duplicate patterns above ON PURPOSE — a duplicate is the mechanism, not an
+# oversight, and deleting one as redundant re-opens the hole under docs/.
+.env*.local
+*creds*.json
+*-creds.json
+*.pem
+
+# ⚠ And the overnight-pass concurrency guard, re-asserted for the same reason: `!docs/**`
+# un-ignored it (a RELEASED lock surfaced as untracked on 2026-09-03), and a committed lock
+# reads as a HELD lock to the next run. Duplicates the rule above on purpose.
+docs/overnight/.lock
+
+# 2026-09-06 CISO pass: `.env.staging` / `.env.development` (no `.local` suffix) and any
+# `*.pkey` beyond the one named above were NOT ignored. Broaden; keep the example file.
+.env*
+!.env.example
+*.pkey
+*.pem
+
+# Cowork QA scratch on the device mount (screenshots, patch bundles) — never part of the tree
+_to_delete/
+
+# Python bytecode — never committed (a .pyc carries NUL bytes; the tree-corruption guard reads it as corruption)
+__pycache__/
+*.pyc
+
+# Credential files (security audit 2026-10-25, finding 14). Nothing tracked matches these.
+service-account*.json
+*-adminsdk-*.json
+*.key
+*.p12
+*.pfx
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+# .npmrc IS tracked since 2026-11-04 (ignore-scripts + min-release-age — CISO pass).
+# It must never carry an _authToken: __tests__/npmrc-carries-no-credential.test.ts
+# allow-lists its keys, and GitHub push protection catches an npm_ token anyway.
+!.npmrc

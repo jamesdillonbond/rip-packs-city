@@ -1,0 +1,550 @@
+// lib/pipeline/kill-rate.ts
+//
+// Classify a heartbeated `after()` route's kill record.
+//
+// ── WHY THIS EXISTS (2026-08-28, written the same night it was needed) ─────
+// `lib/pipeline/heartbeat.ts` explains how a killed `after()` route is read:
+// by correlating a heartbeat row against a terminal row. That correlation is
+// the ONLY instrument on this platform that can see such a kill — and it lived
+// nowhere, so it was re-derived ad hoc every time it was wanted.
+//
+// It got re-derived wrong. A sweep on 2026-08-28 produced this table:
+//
+//   pipeline                    heartbeats  killed     %
+//   candy-listings-indexer              25      14   56.0
+//
+// and that 56 % was filed as "still killed on 56 % of ticks after the 08-26
+// fix — its own investigation". ⛔ WRONG. The kills are a CONTIGUOUS BLOCK
+// that ENDED. Splitting the same rows at the deploy that landed 08-27 03:48Z:
+//
+//   PRE-fix    16 ticks   14 killed   87.5 %   avg  322 s   (of a 300 s wall)
+//   POST-fix    9 ticks    0 killed    0.0 %   avg 28.5 s
+//
+// The fix worked — 11x faster, zero kills, holding at the peak hour. The
+// pooled rate was measuring the fix's ABSENCE and reading as its FAILURE,
+// because it averaged a broken era together with a healthy one.
+//
+// ⭐ THE LESSON, which is what this module encodes: A KILL RATE WITHOUT A
+// RECENCY DISCRIMINATOR CANNOT TELL "BROKEN NOW" FROM "WAS BROKEN, FIXED, AND
+// THE POOLED RATE STILL CARRIES THE CORPSE." Two of the six flagged pipelines
+// flipped verdict once recency was added. `count` and `%` are not enough, and
+// the fix date was sitting in the filing that pooled across it.
+//
+// So `classifyKillRecord` does not accept a rate. It requires the tick
+// sequence, and it derives recency from that sequence — there is no way to
+// call it with the two columns that misled.
+//
+// ── THE DISCRIMINATOR IS A TEST, NOT A THRESHOLD ──────────────────────────
+// "How many clean ticks mean recovered?" has no good constant answer: 9 clean
+// ticks is strong for a pipeline that was failing 87 % of the time and weak
+// for one that was failing 20 %. So instead we ask the falsifiable question:
+//
+//   If NOTHING changed, how likely is this run of consecutive successes?
+//
+// p = (1 - killRate) ^ cleanTicks, under the null that ticks are independent
+// at the pooled historical rate. Small p => the record changed => `recovered`.
+//
+// ⚠ The pooled rate is used deliberately, and it is the CONSERVATIVE choice:
+// pooling the healthy era in DEFLATES the null kill rate (56 % rather than the
+// broken era's 87.5 %), which RAISES p and makes `recovered` HARDER to reach.
+// The test can therefore under-call a recovery; it will not manufacture one.
+//
+// 🚨 WHAT `killed` ACTUALLY MEANS, AND THE CASE THAT NARROWS IT (2026-09-03).
+// `killed` is "no terminal row correlated to this marker" — which is NOT the
+// same as "the platform did not kill this invocation". Measured, one tick:
+// `cron/evm-transfers-ingest` at 2026-09-03 07:34:26Z carries a Vercel
+// `Task timed out after 60 seconds` AND a marker AND a terminal row with
+// ok = true and duration_ms = 60,464 against a 60,000 ms wall. ⭐ The terminal
+// write raced the wall and won, so this classifier scores that tick CLEAN.
+//
+// ⚠ So a `healthy` verdict is a statement about terminal rows landing, not about
+// invocations surviving, and the under-count is silent. The discriminator that
+// catches it is `duration_ms` at or beyond the ROUTE'S OWN `maxDuration`, and
+// since 2026-09-03 the walls ARE read from source (`lib/pipeline/route-walls.ts`)
+// and can be handed to `correlateRuns` as a per-pipeline map. What that adds is
+// a SEPARATE counter, `wallClipped` — never a redefinition of `killed`: the
+// recovery test's null rate depends on `killed` meaning "no terminal row", and
+// folding clipped ticks into it would move every verdict in the fleet at once.
+//
+// ⚠ And a wall map can be WRONG for a pipeline (the route mapped is not the
+// writer — the first fleet sweep found four of those, reading 1.9× to 21.7× their
+// mapped wall). Comparing against a wrong wall would manufacture clipped ticks
+// out of thin air, a worse instrument than none, so above MAP_IS_WRONG_ABOVE the
+// pipeline is reported UNMAPPABLE and its clipped count is null, not a number.
+//
+// ⚠ WHAT THIS DOES NOT DO. It is a description of a record, not a diagnosis.
+// `recovered` means the kills stopped, never that anyone knows why — attribute
+// a cause by naming the deploy, as the header above does. And independence is
+// an assumption: kills cluster by hour and by deploy, so p is indicative, not
+// a real significance level. It is a discriminator, not a proof.
+
+// ⚠ The `.ts` extension is load-bearing: `scripts/analysis/killed-after-routes.mjs`
+// runs this module under Node's native type stripping, which resolves only
+// explicit paths (no tsx/ts-node here). tsconfig's `allowImportingTsExtensions`
+// lets tsc accept it. Drop the extension and the script dies with
+// ERR_MODULE_NOT_FOUND while every test stays green.
+import { CENSORED_AT, MAP_IS_WRONG_ABOVE, wallFraction } from './route-walls.ts'
+
+/** One tick of a heartbeated route, oldest-first or newest-first — either is fine. */
+export type KillTick = {
+  /** When the heartbeat row was written. */
+  startedAt: Date
+  /** True when no terminal row correlated to this heartbeat: the `after()` body was killed. */
+  killed: boolean
+  /**
+   * `duration_ms` of the terminal row that correlated to this heartbeat. `null`
+   * when the tick was killed (there is no terminal row) or the row carried none.
+   * Read only against the route's OWN wall — see `wallClipped`.
+   */
+  durationMs?: number | null
+}
+
+/**
+ * Whether a pipeline's wall is known, and whether it can be trusted.
+ *   unmapped    — no wall was supplied for this pipeline; nothing is said about clipping.
+ *   mapped      — a wall was supplied and every recorded duration is consistent with it.
+ *   unmappable  — a recorded duration exceeds the wall by more than MAP_IS_WRONG_ABOVE:
+ *                 the mapped route is not the writer, so the wall is not this pipeline's ceiling.
+ */
+export type WallStatus = 'unmapped' | 'mapped' | 'unmappable'
+
+export type KillVerdict =
+  /** No kill has ever been recorded in the window. */
+  | 'healthy'
+  /** The most recent tick was killed. Failing right now, whatever the rate. */
+  | 'failing'
+  /** Kills stopped, and the clean run is too long to be chance at the historical rate. */
+  | 'recovered'
+  /** Kills are present and the record does not separate — genuinely intermittent, or too few ticks to tell. */
+  | 'intermittent'
+  /**
+   * NOTHING correlated, because there is no terminal writer to correlate AGAINST.
+   * ⚠ This is not a rate of 100% — it is the absence of the evidence a rate needs.
+   * See the UNVERIFIED block below for why it is a verdict and not a filter.
+   */
+  | 'unverified'
+
+export type KillRecord = {
+  pipeline: string
+  ticks: number
+  killed: number
+  /** Pooled over the whole window. ⚠ Never interpret without `verdict`. */
+  killRatePct: number
+  /** Consecutive most-recent ticks with no kill. */
+  cleanTicks: number
+  lastKillAt: Date | null
+  lastOkAt: Date | null
+  verdict: KillVerdict
+  /**
+   * P(this clean run | nothing changed), at the pooled rate. `null` when there
+   * is no clean run, or when there are no kills to form a null rate from.
+   */
+  chanceRunIsLuck: number | null
+  /** The route wall this record was read against, seconds; null when none was supplied. */
+  wallSec: number | null
+  /** See WallStatus. */
+  wallStatus: WallStatus
+  /**
+   * Ticks whose terminal row landed at or beyond CENSORED_AT of the wall — the
+   * "terminal write raced the wall and won" shape (evm-transfers-ingest, 60,464 ms
+   * against 60,000). A SEPARATE counter from `killed`: these ticks stay clean in
+   * the kill record. `null` when the wall is unmapped or unmappable — never 0,
+   * because 0 would read as "measured, none".
+   */
+  wallClipped: number | null
+  /** One line naming the evidence, safe to print verbatim. */
+  note: string
+}
+
+/** A clean run this unlikely under the null is treated as a real change. */
+export const RECOVERY_P_THRESHOLD = 0.05
+
+/**
+ * Read the ticks' terminal durations against the route's wall. Pure; never
+ * touches `killed`. Returns the three wall fields of a KillRecord plus a note
+ * fragment (empty when there is nothing to say).
+ */
+function readWall(
+  ticks: readonly KillTick[],
+  wallSec: number | null | undefined,
+): { wallSec: number | null; wallStatus: WallStatus; wallClipped: number | null; wallNote: string } {
+  if (wallSec == null || wallSec <= 0) {
+    return { wallSec: null, wallStatus: 'unmapped', wallClipped: null, wallNote: '' }
+  }
+  const fractions = ticks
+    .map((t) => wallFraction(t.durationMs ?? null, wallSec))
+    .filter((f): f is number => f !== null)
+  const worst = fractions.length ? Math.max(...fractions) : null
+  if (worst !== null && worst > MAP_IS_WRONG_ABOVE) {
+    return {
+      wallSec,
+      wallStatus: 'unmappable',
+      wallClipped: null,
+      wallNote:
+        ` ⛔ wall UNMAPPABLE: a terminal row ran ${worst.toFixed(2)}× the mapped ${wallSec} s wall, ` +
+        `so the mapped route is not this pipeline's writer — clipped count withheld`,
+    }
+  }
+  const clipped = fractions.filter((f) => f >= CENSORED_AT).length
+  return {
+    wallSec,
+    wallStatus: 'mapped',
+    wallClipped: clipped,
+    wallNote: clipped
+      ? ` ⚠ ${clipped} tick(s) landed at ≥${CENSORED_AT} of the ${wallSec} s wall — terminal writes that RACED the wall; not counted as killed`
+      : '',
+  }
+}
+
+/**
+ * Classify one pipeline's tick sequence.
+ *
+ * ⚠ Pass EVERY tick in the window, not a filtered subset: the clean run is
+ * counted from the end of the sequence, so a filtered tail invents a recovery.
+ *
+ * `wallSec` is the route's own `maxDuration` when known. It feeds ONLY the
+ * `wall*` fields; the kill verdict is computed exactly as it was without it.
+ */
+export function classifyKillRecord(
+  pipeline: string,
+  ticks: readonly KillTick[],
+  wallSec: number | null = null,
+  terminalRowsInWindow: number | null = null,
+): KillRecord {
+  const ordered = [...ticks].sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime())
+  const total = ordered.length
+  const killed = ordered.filter((t) => t.killed).length
+  const wall = readWall(ordered, wallSec)
+  const wallFields = { wallSec: wall.wallSec, wallStatus: wall.wallStatus, wallClipped: wall.wallClipped }
+
+  if (total === 0) {
+    // ⚠ Not `healthy`. No ticks is an absence of evidence — a route that never
+    // ran looks identical to one that never failed, and calling that healthy is
+    // the "failed read renders as an answer" defect in instrument form.
+    return {
+      pipeline,
+      ticks: 0,
+      killed: 0,
+      killRatePct: 0,
+      cleanTicks: 0,
+      lastKillAt: null,
+      lastOkAt: null,
+      verdict: 'intermittent',
+      chanceRunIsLuck: null,
+      ...wallFields,
+      note: 'no heartbeats in the window — nothing is known about this pipeline, not even that it is idle',
+    }
+  }
+
+  const killRate = killed / total
+  const killRatePct = Math.round(killRate * 1000) / 10
+  const lastKillAt = ordered.filter((t) => t.killed).at(-1)?.startedAt ?? null
+  const lastOkAt = ordered.filter((t) => !t.killed).at(-1)?.startedAt ?? null
+
+  let cleanTicks = 0
+  for (let i = ordered.length - 1; i >= 0 && !ordered[i].killed; i--) cleanTicks++
+
+  if (killed === 0) {
+    return {
+      pipeline,
+      ticks: total,
+      killed: 0,
+      killRatePct: 0,
+      cleanTicks,
+      lastKillAt,
+      lastOkAt,
+      verdict: 'healthy',
+      chanceRunIsLuck: null,
+      ...wallFields,
+      note: `${total} ticks, no kills` + wall.wallNote,
+    }
+  }
+
+  // ── UNVERIFIED: no writer to correlate AGAINST (2026-09-20) ────────────────
+  // 🚨 THE DIVERGENCE THAT FOUND THIS. `check_wall_kills()` — the SQL arm whose
+  // header says it MIRRORS this module — has carried this rule since 2026-09-13.
+  // This module never got it. Read live on 2026-09-20 within a minute of each
+  // other, against the same `pipeline_runs` rows:
+  //
+  //   check_wall_kills()   dead-lane-backstop → `unverified`, 8 heartbeats, NOT an offender
+  //   correlateRuns()      dead-lane-backstop → `failing`, 15/15 = 100%, TOP OF THE LIST
+  //
+  // Same table, same correlation, opposite verdict — and the divergent one is
+  // the operator-facing CLI, `npm run pipelines:kills`, whose exit code is 1 on
+  // any `failing` record. `dead-lane-backstop` is a GitHub-Actions
+  // scheduler-liveness probe: `.github/workflows/dead-lane-backstop.yml` writes
+  // `dead-lane-backstop-heartbeat` and BY DESIGN never writes a terminal row.
+  // There is nothing to fix in that lane, so the script exits 1 on every run,
+  // forever — and CLAUDE.md's rule is that a permanently-red instrument is
+  // indistinguishable from a broken one and stops being read.
+  //
+  // ⭐ THE DEFECT IS THE HONESTY ONE, not a cosmetic verdict name. What the
+  // correlation OBSERVED is "no terminal row". That has two incompatible
+  // meanings — the tick was killed, or this lane has no terminal writer at all —
+  // and `failing` publishes one of them as a fact. A marker with no writer to
+  // correlate against is UNPROVEN, not dead.
+  //
+  // ⚠ THE DISCRIMINATOR IS THE DATA, NEVER A NAME ALLOWLIST — the same rule the
+  // `-dispatch` convention below already follows. A writer is PROVEN by a
+  // terminal row for this base existing anywhere in the window, not by what the
+  // pipeline is called. So a lane that really is killed on every tick still
+  // reads `failing` as long as ONE terminal row exists to prove the writer runs.
+  // That arm is kept alive in the tests by a subject that genuinely has one.
+  //
+  // ⚠ THE PRICE, stated rather than discovered later: a lane whose FIRST kill
+  // arrives before its first success, and a lane killed on every tick for the
+  // whole ~73 h window, both read `unverified` instead of `failing`. That is a
+  // downgrade from alarm to warning, NOT to silence — `unverified` is a verdict,
+  // it is NAMED in the report with its heartbeat count, and it sorts above
+  // `recovered` and `healthy`. It is also the same trade this file already makes
+  // for `-dispatch` markers (see DISPATCH_SUFFIX), where it is currently a
+  // DROP-OUT: there the lane vanishes from the report entirely. The instrument
+  // that covers a lane which never produces output is the sentinel's silence
+  // arm, not this one.
+  //
+  // ⚠ `terminalRowsInWindow === null` means the caller did not say. Then the only
+  // evidence available is the correlation itself, and every marker being
+  // unmatched is exactly "no terminal row was seen" — so it reads `unverified`
+  // too. A caller that CAN count terminal rows (correlateRuns does) overrides
+  // that with the stronger fact, in both directions.
+  const writerProven = terminalRowsInWindow === null ? killed < total : terminalRowsInWindow > 0
+  if (!writerProven) {
+    return {
+      pipeline,
+      ticks: total,
+      killed,
+      killRatePct,
+      cleanTicks: 0,
+      lastKillAt,
+      lastOkAt,
+      verdict: 'unverified',
+      chanceRunIsLuck: null,
+      ...wallFields,
+      note:
+        `${total} markers, NOT ONE with a terminal row anywhere in the window — so there is no ` +
+        `writer to correlate against and ${killRatePct}% is NOT a kill rate, it is the absence of ` +
+        `the evidence a rate needs. Either this lane writes a marker and no terminal row by design ` +
+        `(dead-lane-backstop does), or it has been killed on every tick for the whole window. ` +
+        `This instrument cannot tell those apart; the silence/zero-yield arms can.` + wall.wallNote,
+    }
+  }
+
+  if (cleanTicks === 0) {
+    return {
+      pipeline,
+      ticks: total,
+      killed,
+      killRatePct,
+      cleanTicks: 0,
+      lastKillAt,
+      lastOkAt,
+      verdict: 'failing',
+      chanceRunIsLuck: null,
+      ...wallFields,
+      note: `the most recent tick was KILLED (${killed}/${total} = ${killRatePct}% over the window)` + wall.wallNote,
+    }
+  }
+
+  // ── WHY THIS CANNOT DIVIDE BY A DEGENERATE NULL (checked 2026-09-20) ───────
+  // A pooled rate of EXACTLY 1.0 would make `(1 - r) ** n` exactly 0 and hand a
+  // `recovered` verdict — the strongest possible claim — to a single clean tick.
+  // It cannot happen HERE, and the reason is structural rather than lucky:
+  // `killRate` is killed/total over the WHOLE sequence, so `killRate === 1`
+  // implies `cleanTicks === 0`, and that case already returned `failing` above.
+  // Reaching this line therefore guarantees 0 < killed < total.
+  //
+  // ⚠ Worth stating because the trap is real one level up: computing the null
+  // from one window (say, everything before a change point) and the clean run
+  // from ANOTHER does reach r = 1, and reads p = 0. An ad-hoc split-window script
+  // did exactly that on 2026-09-20 and briefly had `classify-acquisitions-
+  // multicollection` filed as recovered on two ticks. If you want a before/after
+  // rate, hand the FULL sequence to this function and let it pool — do not feed
+  // it two windows and call the result a p-value.
+  const chanceRunIsLuck = Math.pow(1 - killRate, cleanTicks)
+  const recovered = chanceRunIsLuck < RECOVERY_P_THRESHOLD
+
+  return {
+    pipeline,
+    ticks: total,
+    killed,
+    killRatePct,
+    cleanTicks,
+    lastKillAt,
+    lastOkAt,
+    verdict: recovered ? 'recovered' : 'intermittent',
+    chanceRunIsLuck,
+    ...wallFields,
+    note:
+      (recovered
+        ? `kills STOPPED — ${cleanTicks} clean ticks after ${killed}/${total} killed; p=${chanceRunIsLuck.toExponential(1)} that this run is luck. ` +
+          `⚠ the ${killRatePct}% pooled rate is HISTORICAL — do not report it as current`
+        : `${killed}/${total} = ${killRatePct}% killed, ${cleanTicks} clean since; p=${chanceRunIsLuck.toFixed(2)} that the run is luck — NOT enough to call it recovered`) +
+      wall.wallNote,
+  }
+}
+
+/**
+ * A `pipeline_runs` row, reduced to what the correlation needs. `duration_ms`
+ * is optional so every existing caller keeps working; without it no wall
+ * reading is possible and every record comes back `unmapped`.
+ */
+export type PipelineRunRow = { pipeline: string; started_at: string; duration_ms?: number | null }
+
+/** Per-pipeline route wall in seconds (null = the route sets no maxDuration). */
+export type WallMap = ReadonlyMap<string, number | null>
+
+/**
+ * The suffix `lib/pipeline/heartbeat.ts` appends to form a marker row's name.
+ * ⚠ Changing it here does not change the writer — this must track that module.
+ */
+export const HEARTBEAT_SUFFIX = '-heartbeat'
+
+/**
+ * ⚠ THE SECOND MARKER CONVENTION, and why this is not scope creep.
+ *
+ * `app/api/wallet-backfill-multicollection` predates `lib/pipeline/heartbeat.ts`
+ * and hand-rolled the same idea under different names: a `-dispatch` row written
+ * as the first statement of `after()`, and a `-complete` row written at the end.
+ * That is exactly the heartbeat correlation, and the route's own comment says so:
+ * *"dispatch row with no matching complete row within ~15min = killed lambda —
+ * that's the visibility we want."*
+ *
+ * 🚨 Keying only on `-heartbeat` made this instrument SILENT about the fleet's
+ * highest-volume killed pipeline — 2,339 dispatches, 41.5% with no complete,
+ * measured 2026-08-28 within an hour of shipping the `-heartbeat`-only version.
+ * An instrument that looks like it covers the fleet and quietly omits its worst
+ * case is the defect class this module exists for, so it is fixed rather than
+ * documented as a limitation.
+ *
+ * ⚠ THE DISCRIMINATOR IS STRUCTURAL, NOT A NAME ALLOWLIST. `alerts-dispatch` is
+ * a REAL PIPELINE whose name merely ends in `-dispatch`; treating the suffix as
+ * proof of a marker would invent a 100%-killed pipeline out of a healthy one. A
+ * `-dispatch` name is a marker only when a `-complete` sibling actually exists in
+ * the same data. That property is asserted in the tests with `alerts-dispatch`
+ * itself as the negative control.
+ *
+ * ⚠ THE PRICE OF THAT RULE, pinned in the tests rather than left to be
+ * rediscovered: with no `-complete` row anywhere in the window there is nothing
+ * to prove the `-dispatch` is a marker, so a dispatch pipeline killed on EVERY
+ * tick drops out of the report instead of reading 100%. It needs ~73 unbroken
+ * hours of kills to happen, and the script's header already states that absence
+ * from the report carries no information — but it is the worst case going quiet,
+ * so it is written down. The fix, if it ever fires, is to derive marker names
+ * from the route sources; it is NOT to add a list of names.
+ */
+export const DISPATCH_SUFFIX = '-dispatch'
+export const COMPLETE_SUFFIX = '-complete'
+
+/**
+ * A terminal row counts as the same invocation as a heartbeat within this window.
+ * The heartbeat is the first statement of the `after()` body and the terminal row
+ * the last, so they share a start timestamp to within write latency. 5 s is
+ * generous and still far below the tightest cadence in use (2 min).
+ */
+export const CORRELATION_WINDOW_MS = 5_000
+
+/**
+ * Turn raw `pipeline_runs` rows into one classified record per heartbeated pipeline.
+ *
+ * ⚠ Pass the FULL window. This is the step that was re-derived by hand and got
+ * it wrong; the classifier's recency test is only as good as the sequence it is
+ * handed, and a truncated input fabricates a clean run.
+ *
+ * ⚠ Pipelines with NO heartbeat row are absent from the result, and that absence
+ * carries no information: un-heartbeated, idle, and never-firing all look the
+ * same here. Do not read a short list as a clean bill of health.
+ *
+ * ⛔ IN FLIGHT IS NOT KILLED (2026-11-09). A marker whose terminal row has not landed YET has
+ * no match either, so a tick younger than its route’s wall was scored killed — and, being the
+ * most recent, made the pipeline FAILING (topshot-circulation-onchain, read at 8:07 PM PT, 3 min
+ * into a ~256 s tick). A marker younger than MAX_WALL_S + IN_FLIGHT_MARGIN_MS is left out — neither killed nor clean. `nowMs` is injectable for tests.
+ */
+export const IN_FLIGHT_MARGIN_MS = 60_000
+/** The Vercel Pro maxDuration cap (CLAUDE.md): no after() body can outlive it. */
+export const MAX_WALL_S = 800
+
+export function correlateRuns(rows: readonly PipelineRunRow[], walls?: WallMap, nowMs: number = Date.now()): KillRecord[] {
+  const heartbeats = new Map<string, Date[]>()
+  const terminals = new Map<string, Array<{ at: number; durationMs: number | null }>>()
+
+  // A `-dispatch` name is only a marker when its `-complete` sibling exists.
+  // Derived from the data, never from a list of names — see DISPATCH_SUFFIX.
+  const completeBases = new Set<string>()
+  for (const r of rows) {
+    if (r.pipeline.endsWith(COMPLETE_SUFFIX)) {
+      completeBases.add(r.pipeline.slice(0, -COMPLETE_SUFFIX.length))
+    }
+  }
+
+  const push = (m: Map<string, Date[]>, k: string, v: Date) => {
+    const list = m.get(k)
+    if (list) list.push(v)
+    else m.set(k, [v])
+  }
+  const pushTerm = (k: string, at: number, durationMs: number | null) => {
+    const list = terminals.get(k)
+    const v = { at, durationMs }
+    if (list) list.push(v)
+    else terminals.set(k, [v])
+  }
+
+  for (const r of rows) {
+    const at = new Date(r.started_at)
+    const durationMs = typeof r.duration_ms === 'number' && Number.isFinite(r.duration_ms) ? r.duration_ms : null
+    if (r.pipeline.endsWith(HEARTBEAT_SUFFIX)) {
+      push(heartbeats, r.pipeline.slice(0, -HEARTBEAT_SUFFIX.length), at)
+      continue
+    }
+    if (r.pipeline.endsWith(DISPATCH_SUFFIX)) {
+      const base = r.pipeline.slice(0, -DISPATCH_SUFFIX.length)
+      // `alerts-dispatch` lands here and has no `-complete` sibling, so it falls
+      // through to be treated as an ordinary terminal row, which is what it is.
+      if (completeBases.has(base)) {
+        push(heartbeats, base, at)
+        continue
+      }
+    }
+    if (r.pipeline.endsWith(COMPLETE_SUFFIX)) {
+      const base = r.pipeline.slice(0, -COMPLETE_SUFFIX.length)
+      pushTerm(base, at.getTime(), durationMs)
+      continue
+    }
+    pushTerm(r.pipeline, at.getTime(), durationMs)
+  }
+
+  // ⚠ `unverified` outranks `recovered`: "I cannot tell" needs a reader more than
+  // "it stopped" does, and burying it under the healthy tail is how the SQL arm's
+  // rule would have gone unnoticed here for another week.
+  const rank: Record<KillVerdict, number> = {
+    failing: 0,
+    intermittent: 1,
+    unverified: 2,
+    recovered: 3,
+    healthy: 4,
+  }
+
+  return [...heartbeats.entries()]
+    .map(([pipeline, allBeats]) => {
+      // The platform cap, not the route’s mapped wall: a mapped wall can be wrong (the
+      // "wall UNMAPPABLE" case — terminal rows at 2.26x it), and a tick still inside the
+      // cap may yet write its row.
+      const settledBefore = nowMs - (MAX_WALL_S * 1000 + IN_FLIGHT_MARGIN_MS)
+      return [pipeline, allBeats.filter((b) => b.getTime() <= settledBefore)] as const
+    })
+    .filter(([, beats]) => beats.length > 0)
+    .map(([pipeline, beats]) => {
+      const term = terminals.get(pipeline) ?? []
+      const ticks: KillTick[] = beats.map((startedAt) => {
+        const match = term.find((t) => Math.abs(t.at - startedAt.getTime()) < CORRELATION_WINDOW_MS)
+        return { startedAt, killed: !match, durationMs: match ? match.durationMs : null }
+      })
+      // ⚠ `walls.get` returning undefined (pipeline not in the map) and a mapped
+      // null (route sets no maxDuration) both mean "no wall to read against".
+      // ⚠ `term.length` is the count of terminal rows for this base ANYWHERE in the
+      // window, which is a strictly stronger fact than "every marker was unmatched":
+      // a lane whose terminal rows all land outside the ±5 s window has a writer,
+      // and must keep reading `failing` rather than being excused as unverified.
+      return classifyKillRecord(pipeline, ticks, walls?.get(pipeline) ?? null, term.length)
+    })
+    .sort((a, b) => rank[a.verdict] - rank[b.verdict] || b.killRatePct - a.killRatePct)
+}

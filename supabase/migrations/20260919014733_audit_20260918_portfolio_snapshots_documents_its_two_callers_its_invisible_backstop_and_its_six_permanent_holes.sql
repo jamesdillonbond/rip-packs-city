@@ -1,0 +1,47 @@
+-- audit_20260918_portfolio_snapshots_documents_its_two_callers_its_invisible_backstop_and_its_six_permanent_holes
+--
+-- WHY. The sentinel's "Pipeline Success Coverage" arm warned
+-- `daily-portfolio-snapshot 0/1 ok, 0 rows — canceling statement due to statement
+-- timeout`. Re-derived 2026-09-18 evening PT, that reading is TRUE about the lane
+-- and MISLEADING about the outcome, and nothing in the database said so.
+--
+-- MEASURED, not inferred:
+--   · PRIMARY (external caller, 07:05Z daily, logs as `daily-portfolio-snapshot`)
+--     died at 120,135 ms on 2026-09-18 — against 11,839 ms and ok on 09-17.
+--   · BACKSTOP `rpc-portfolio-snapshot-retry` (pg_cron jobid 490, 11:17Z daily,
+--     calls `snapshot_all_user_portfolios()` directly) SUCCEEDED in 23.6 s.
+--   · OUTCOME TABLE: snapshot_date 2026-09-18 has 27 rows, all written
+--     11:17:00Z. THE DAY IS NOT MISSING.
+--   The backstop writes NO `pipeline_runs` row, so the coverage arm cannot see it.
+--   This is the repo's own rule in the mirror: measure the OUTCOME table, not the
+--   self-report — here the self-report is missing for the writer that succeeded.
+--
+-- AND A REAL FINDING THE ALARM COULD NOT HAVE SURFACED: over the 30 days to
+-- 2026-09-18, SIX days have zero rows — 08-20, 08-21, 08-23, 08-26, 08-30, 09-12.
+-- ⛔ They are NOT backfillable. A portfolio snapshot is a point-in-time valuation;
+-- reconstructing one today would put fabricated history into a user-facing chart.
+-- ⭐ EVERY hole predates jobid 490 (first run 2026-09-14) and there has been none
+-- since, so this is a closed gap with a working fix, not an open leak.
+--
+-- WHAT. The table comment only. No behaviour, grant, schedule or data changed.
+--
+-- 👉 WHY THE OBVIOUS FIX IS NOT SHIPPED. Wrapping `snapshot_all_user_portfolios()`
+-- in a function that logs to `pipeline_runs` looks like the answer and is not: the
+-- failure mode is a `statement_timeout`; an `EXCEPTION WHEN OTHERS` handler cannot
+-- isolate one, because the recovery path needs budget the timeout already spent;
+-- and on pg_cron a function's proconfig `statement_timeout` is INERT, so the
+-- wrapper cannot buy itself headroom either. It would log nothing in exactly the
+-- case it was built for — the same defect documented the same evening for
+-- `atlas_listing_verify_tick`. A correct version needs a command-level
+-- `SET statement_timeout` on the cron entry, or the `cron_heavy` role, and that is
+-- a change to a backstop that has just proven its worth. Not an unsupervised one.
+--
+-- ⚠ ALSO RECORDED: on a normal day the retry inserts 0 (the primary already wrote
+-- the rows, and every writer is ON CONFLICT DO NOTHING against the UNIQUE
+-- (owner_key, snapshot_date)), so its healthy return is `{"inserted": 0}` — a
+-- measured zero indistinguishable from a failure. Read whether the DAY has rows.
+--
+-- REVERT: COMMENT ON TABLE public.portfolio_snapshots IS NULL;  (it had none)
+
+COMMENT ON TABLE public.portfolio_snapshots IS
+'One row per (owner_key, snapshot_date) — UNIQUE, and every writer inserts ON CONFLICT DO NOTHING, so the day is write-once and any number of re-runs is safe. TWO CALLERS, and only one of them is visible to the pipeline instruments. PRIMARY: an external caller at 07:05Z daily, which logs to pipeline_runs as "daily-portfolio-snapshot". BACKSTOP: pg_cron jobid 490 "rpc-portfolio-snapshot-retry" at 11:17Z daily, calling snapshot_all_user_portfolios() directly — it writes NO pipeline_runs row at all. ⚠ SO THE SENTINEL''S "Pipeline Success Coverage: daily-portfolio-snapshot 0/1 ok" IS A TRUE STATEMENT ABOUT THE PRIMARY AND A MISLEADING ONE ABOUT THE OUTCOME: the coverage arm is structurally blind to the backstop. Positive control, 2026-09-18: the 07:05Z primary died at 120,135 ms on a statement timeout, the 11:17Z retry succeeded in 23.6 s, and 27 rows landed for snapshot_date 2026-09-18. Check this table before concluding a day was lost. ⚠ SECOND TRAP: on a normal day the retry inserts 0 rows because the primary already wrote them, so its healthy return is {"inserted": 0} — a measured zero that is indistinguishable from a failure. Never read the retry''s "inserted" as a health signal; read whether the DAY has rows. 🕳 SIX PERMANENT HOLES in the 30 days to 2026-09-18: 08-20, 08-21, 08-23, 08-26, 08-30 and 09-12 have ZERO rows. ⛔ These are NOT backfillable — a snapshot is a point-in-time portfolio valuation and cannot be reconstructed after the fact; any "backfill" would be fabricated history in a user-facing chart. EVERY hole predates jobid 490 (first run 2026-09-14), and there has been none since, so the backstop is doing its job. ⛔ DO NOT "fix" the coverage alarm by wrapping snapshot_all_user_portfolios() in a logging function: the failure mode is a statement_timeout, an EXCEPTION WHEN OTHERS handler cannot isolate one (the recovery path needs budget the timeout already spent), and on pg_cron a function''s proconfig statement_timeout is inert — so the wrapper would log nothing in exactly the case you built it for. That is the same defect documented for atlas_listing_verify_tick on 2026-09-18. audit_20260918.';

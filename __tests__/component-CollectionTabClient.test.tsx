@@ -1,0 +1,2297 @@
+// @vitest-environment jsdom
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import { render, screen, fireEvent, waitFor, cleanup, act } from "@testing-library/react"
+import CollectionTabClient from "@/app/(collections)/[collection]/collection/CollectionTabClient"
+import { _resetSignedInForTests } from "@/lib/auth/signed-in-client"
+
+// `[collection]/collection` converted to a `*Client.tsx` so the component gate measures it —
+// ~1,330 lines of wallet-search state machine (saved wallets, badge enrichment, batched FMV,
+// cost basis, server pagination) that matched neither gate's include.
+//
+// ⚠ NO NEW DEFECT, and the reason is worth recording so nobody re-sweeps it: the *rendering*
+// of this page's claims already lives in `CollectionMomentTable` and `PortfolioSummary`, both
+// of which the component gate has measured for some time. What was unmeasured is the
+// ORCHESTRATION — which is where the failure this file pins actually lives:
+//
+//   `fetchPaginatedMoments` THROWS on a non-2xx, and `runSearch` catches it into `error`
+//   while leaving `rows` empty and `hasSearched` FALSE. That last part is load-bearing: the
+//   table's "no moments found" copy is gated on `hasSearched`, so a failed read renders the
+//   pre-search state plus an error banner, never "this wallet holds nothing".
+//
+// The heavy children are mocked to markers; this drives the page's own logic.
+
+const PARAMS: Record<string, string> = { collection: "nba-top-shot" }
+let searchParams = new URLSearchParams()
+const replace = vi.fn()
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), replace, refresh: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
+  usePathname: () => "/nba-top-shot/collection",
+  useSearchParams: () => searchParams,
+  useParams: () => PARAMS,
+}))
+vi.mock("next/link", () => ({
+  default: ({ children, href }: { children?: React.ReactNode; href?: string } & Record<string, unknown>) => (
+    <a href={typeof href === "string" ? href : "#"}>{children}</a>
+  ),
+}))
+
+vi.mock("@/components/collection/CollectionMomentTable", () => ({
+  default: (p: Record<string, unknown>) => (
+    <div
+      data-testid="moment-table"
+      data-rows={Array.isArray(p.filteredRows) ? p.filteredRows.length : 0}
+      data-ids={
+        Array.isArray(p.filteredRows)
+          ? (p.filteredRows as Array<{ momentId?: string }>).map((r) => r.momentId).join(",")
+          : ""
+      }
+      data-badges={
+        Array.isArray(p.filteredRows)
+          ? (p.filteredRows as Array<{ badgeInfo?: { badge_titles?: string[] } | null }>)
+              .map((r) => (r.badgeInfo ? (r.badgeInfo.badge_titles ?? []).join("+") : "none"))
+              .join(",")
+          : ""
+      }
+      data-has-searched={String(p.hasSearched)}
+      data-loading={String(p.loading)}
+      data-show-debug={String(p.showDebug)}
+      /* The cost-basis map, surfaced so a claim ABOUT it can be asserted. The
+         two pre-existing cost-basis cases below asserted only `data-rows`,
+         which passes identically whether the map arrives, arrives wrong, or
+         never arrives at all — the vacuous shape CLAUDE.md names: a title
+         carrying a claim over an assertion that does not keep it. */
+      data-cost-basis-ids={
+        p.costBasis instanceof Map ? Array.from(p.costBasis.keys()).sort().join(",") : ""
+      }
+    >
+      <button
+        data-testid="expand-first"
+        onClick={() => {
+          const rows = p.filteredRows as Array<{ momentId?: string }>
+          if (rows[0]?.momentId) (p.toggleExpanded as (id: string) => void)(rows[0].momentId as string)
+        }}
+      />
+    </div>
+  ),
+}))
+vi.mock("@/components/collection/PortfolioSummary", () => ({
+  default: (p: Record<string, unknown>) => (
+    <div data-testid="portfolio" data-total={String(p.paginatedTotal)} data-has-searched={String(p.hasSearched)}
+      data-summary-fmv={String((p.walletSummary as { wallet_fmv?: number } | null)?.wallet_fmv ?? "")} />
+  ),
+}))
+vi.mock("@/components/collection/CollectionFilterBar", () => ({
+  default: (p: Record<string, unknown>) => (
+    <div data-testid="filter-bar">
+      <button
+        data-testid="set-player-filter"
+        onClick={() => (p.dispatchView as (a: unknown) => void)({ type: "SET", field: "playerFilter", value: "Damian Lillard" })}
+      />
+      <button
+        data-testid="set-rarity-filter"
+        onClick={() => (p.dispatchView as (a: unknown) => void)({ type: "SET", field: "rarityFilter", value: "RARE" })}
+      />
+    </div>
+  ),
+}))
+// ⚠ The sort bar owns the CSV export, the seed-copy and the debug toggle, so a
+// marker-only mock leaves all three unreachable. Expose the callbacks instead.
+vi.mock("@/components/collection/CollectionSortBar", () => ({
+  default: (p: Record<string, unknown>) => (
+    <div data-testid="sort-bar" data-debug-mode={String(p.debugMode)} data-show-csv={String(p.showCsvButtons)}>
+      <button data-testid="toggle-debug" onClick={p.onToggleShowDebug as () => void} />
+      <button data-testid="export-csv" onClick={p.onExportCsv as () => void} />
+      <button data-testid="copy-seeds" onClick={p.onCopySeeds as () => void} />
+      <button data-testid="toggle-sort" onClick={() => (p.toggleSort as (k: string) => void)("fmv")} />
+    </div>
+  ),
+}))
+vi.mock("@/components/collection/CollectionRecentSales", () => ({ default: () => <div data-testid="recent-sales" /> }))
+vi.mock("@/components/collection/WalletSoldMomentsView", () => ({ default: () => <div data-testid="sold-view" /> }))
+vi.mock("@/components/packs/WalletPacksView", () => ({ default: () => <div data-testid="packs-view" /> }))
+vi.mock("@/components/MomentDetailModal", () => ({ default: () => null }))
+vi.mock("@/components/wallet-stat-row", () => ({ default: () => <div data-testid="stat-row" /> }))
+vi.mock("@/components/marketplace-status", () => ({ MarketplaceStatusBanner: () => <div data-testid="mp-banner" /> }))
+
+let savedWallet: string | null = null
+// 2026-11-07: the real saved-wallet lookup is two round trips (/api/profile/me, then
+// saved-wallets) — slower than the device-key seed. A test can model that.
+let savedWalletDelayMs = 0
+vi.mock("@/lib/profile/saved-wallet-for-collection", () => ({
+  fetchSavedWalletForCollection: async () => {
+    if (savedWalletDelayMs) await new Promise((r) => setTimeout(r, savedWalletDelayMs))
+    return savedWallet
+  },
+}))
+
+let ownerKey = ""
+// ⚠ The owner key is CHAIN-SCOPED (lib/owner-key.ts, 2026-09-19): one global
+// slot cannot hold a Flow address and a Solana address at once. The mock records
+// every write with the chain it was scoped to, so a test can assert not just
+// THAT the key was synced but INTO WHICH chain's slot — which is the whole
+// property, since the bug this replaced was a Flow key being clobbered.
+const ownerKeyWrites: Array<{ chain: string | null | undefined; key: string }> = []
+// ⚠ `importOriginal` on purpose: only the localStorage ACCESSORS are faked.
+// `ownerKeyMatchesChain` is the real implementation, because it is the predicate
+// under test — a hand-written stub of it would let the component and the guard
+// drift apart and still pass.
+vi.mock("@/lib/owner-key", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/owner-key")>()),
+  getOwnerKey: () => ownerKey,
+  onOwnerKeyChange: () => () => {},
+  getOwnerKeyForChain: () => ownerKey,
+  setOwnerKeyForChain: (chain: string | null | undefined, key: string) => {
+    ownerKeyWrites.push({ chain, key })
+  },
+  onOwnerKeyChangeForChain: () => () => {},
+}))
+
+// ⚠ `useWarmCache` is a DATA hook returning `{ data }`, not a cache object. A
+// mock that returns `{ read, write }` never invokes the fetcher, so the saved
+// wallets read is silently never made and a test asserting it fails against
+// correct code. Drive the fetcher for real.
+vi.mock("@/lib/warmup/WarmupContext", async () => {
+  const React = await import("react")
+  return {
+    useWarmCache: <T,>(
+      _key: string,
+      fetcher: () => Promise<T>,
+      opts?: { enabled?: boolean },
+    ) => {
+      const [data, setData] = React.useState<T | null>(null)
+      React.useEffect(() => {
+        if (opts?.enabled === false) return
+        let cancelled = false
+        fetcher()
+          .then((d) => { if (!cancelled) setData(d) })
+          .catch(() => {})
+        return () => { cancelled = true }
+      }, [fetcher, opts?.enabled])
+      return { data }
+    },
+    usePrefetch: () => (_k: string, fn: () => Promise<unknown>) => { void fn().catch(() => {}) },
+    useWarmup: () => ({
+      read: () => null,
+      write: () => {},
+      fetchOrJoin: async (_url: string, fn: () => Promise<unknown>) => fn(),
+    }),
+  }
+})
+
+const track = vi.fn()
+vi.mock("@/lib/telemetry/track", () => ({ track: (...a: unknown[]) => track(...a) }))
+
+function json(status: number, body: unknown, ok = status < 400) {
+  return { ok, status, json: async () => body } as unknown as Response
+}
+
+/** One `/api/cost-basis` acquisition row, keyed by the nft_id the map uses. */
+const ACQUISITION = (nftId: string) => ({
+  nft_id: nftId,
+  buy_price: "20",
+  acquired_date: "2026-01-01",
+  fmv_at_acquisition: "18",
+  acquisition_method: "marketplace",
+})
+
+const MOMENT = (over: Record<string, unknown> = {}) => ({
+  moment_id: "9001",
+  edition_key: "48:1652",
+  player_name: "Damian Lillard",
+  set_name: "Archive Set",
+  series: 0,
+  tier: "RARE",
+  serial_number: 12,
+  circulation_count: 1000,
+  fmv: 60,
+  acquired_at: new Date().toISOString(),
+  ...over,
+})
+
+let momentsResponse: () => Response
+let fetchMock: ReturnType<typeof vi.fn>
+
+beforeEach(() => {
+  // signedInOnce() memoises for 60 s at module level — never carry one test's
+  // identity answer into the next.
+  _resetSignedInForTests()
+  searchParams = new URLSearchParams()
+  savedWallet = null
+  savedWalletDelayMs = 0
+  ownerKey = ""
+  replace.mockClear()
+  track.mockClear()
+  momentsResponse = () =>
+    json(200, {
+      moments: [MOMENT()],
+      wallet: "0xmine",
+      page: 1,
+      total_count: 137,
+      total_pages: 3,
+      total_fmv: 8400,
+    })
+  fetchMock = vi.fn(async (input: unknown) => {
+    const url = String(input)
+    if (url.startsWith("/api/collection-moments")) return momentsResponse()
+    if (url.startsWith("/api/collection-series")) return json(200, { series: [] })
+    if (url.startsWith("/api/profile/saved-wallets")) return json(200, { wallets: [] })
+    if (url.startsWith("/api/badges")) return json(200, { editions: [] })
+    if (url.startsWith("/api/fmv")) return json(200, { results: [] })
+    if (url.startsWith("/api/best-offers")) return json(200, { offers: [] })
+    if (url.startsWith("/api/cost-basis")) return json(200, { rows: [] })
+    if (url.startsWith("/api/cache-refresh")) return json(200, {})
+    if (url.startsWith("/api/wallet-summary")) return json(200, { wallet_fmv: 8400 })
+    return json(200, {})
+  })
+  vi.stubGlobal("fetch", fetchMock)
+  Object.defineProperty(window, "localStorage", {
+    configurable: true,
+    value: { getItem: () => null, setItem: () => {}, removeItem: () => {}, clear: () => {} },
+  })
+})
+
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+})
+
+/**
+ * Run the component's async work to a FIXED POINT under fake timers.
+ *
+ * ⚠ A fixed point, not a guessed tick count. The chains are several awaits
+ * deep (moments -> badges -> fmv), each of which can start another fetch, and
+ * auto-paginate sleeps 300 ms between pages. Looping until the fetch count
+ * stops changing settles whatever depth the component actually has; a
+ * hardcoded number of ticks is the same guess-the-timing bug in a new costume.
+ *
+ * ⚠ Inside act(): advancing the timers resolves the fetch chains, but without
+ * act() React never flushes the resulting state into the DOM, so the rows land
+ * and the button under test is still not there to click.
+ *
+ * ⚠ Requires vi.useFakeTimers(). Under real timers it returns almost
+ * immediately and guarantees nothing.
+ */
+async function settleAll(maxRounds = 30): Promise<void> {
+  let stable = 0
+  for (let i = 0; i < maxRounds && stable < 2; i++) {
+    const before = fetchMock.mock.calls.length
+    // ⚠ Inside act(): advancing the timers resolves the fetch chains, but
+    // without act() React never flushes the resulting state into the DOM, so
+    // the rows land and the Load More button is still not there to click.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400)
+    })
+    stable = fetchMock.mock.calls.length === before ? stable + 1 : 0
+  }
+}
+
+// ─── The orchestration failure ───────────────────────────────────────────────
+
+describe("CollectionTabClient — a failed wallet read must not read as an empty wallet", () => {
+  it("surfaces the API's own message and leaves the table pre-search", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    momentsResponse = () => json(500, { error: "wallet cache unavailable" })
+    render(<CollectionTabClient />)
+    await screen.findByText("wallet cache unavailable")
+    // ⚠ `hasSearched` staying FALSE is what stops the table claiming the wallet
+    // holds nothing — the "no moments found" copy is gated on it.
+    await waitFor(() =>
+      expect(screen.getByTestId("moment-table").getAttribute("data-has-searched")).toBe("false"),
+    )
+    expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("0")
+  })
+
+  it("falls back to a generic message when the failure body carries none", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    momentsResponse = () => json(503, {})
+    render(<CollectionTabClient />)
+    await screen.findByText("Failed to load moments")
+  })
+
+  it("reports a thrown fetch rather than an empty wallet", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    momentsResponse = () => { throw new Error("network down") }
+    render(<CollectionTabClient />)
+    await screen.findByText("network down")
+    expect(screen.getByTestId("moment-table").getAttribute("data-has-searched")).toBe("false")
+  })
+
+  it("marks the search complete on a successful read so the empty state becomes reachable", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    momentsResponse = () => json(200, { moments: [], wallet: "0xmine", page: 1, total_count: 0, total_pages: 0 })
+    render(<CollectionTabClient />)
+    await waitFor(() =>
+      expect(screen.getByTestId("moment-table").getAttribute("data-has-searched")).toBe("true"),
+    )
+  })
+
+  it("announces the result politely — a count on success, no count on a failed read (2026-11-07)", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    momentsResponse = () =>
+      json(200, { moments: [MOMENT()], wallet: "0xmine", page: 1, total_count: 1, total_pages: 1 })
+    const { unmount } = render(<CollectionTabClient />)
+    const status = await screen.findByTestId("binder-result-status")
+    expect(status.getAttribute("role")).toBe("status")
+    expect(status.textContent).toBe("Loaded 1 moment")
+    unmount()
+    // MIRROR: a failed read must not be announced as a result
+    momentsResponse = () => json(500, { error: "wallet cache unavailable" })
+    render(<CollectionTabClient />)
+    await screen.findByText("wallet cache unavailable")
+    expect(screen.queryByTestId("binder-result-status")).toBeNull()
+  })
+
+  it("clears a previous error when a later search succeeds", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    momentsResponse = () => json(500, { error: "wallet cache unavailable" })
+    render(<CollectionTabClient />)
+    await screen.findByText("wallet cache unavailable")
+    momentsResponse = () =>
+      json(200, { moments: [MOMENT()], wallet: "0xmine", page: 1, total_count: 1, total_pages: 1 })
+    const box = screen.getByPlaceholderText(/Top Shot username or wallet address/)
+    fireEvent.change(box, { target: { value: "0xother" } })
+    fireEvent.keyDown(box, { key: "Enter" })
+    await waitFor(() => expect(screen.queryByText("wallet cache unavailable")).toBeNull())
+  })
+})
+
+// ─── Search entry ────────────────────────────────────────────────────────────
+
+describe("CollectionTabClient — search entry", () => {
+  it("auto-searches the wallet named in the URL", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    render(<CollectionTabClient />)
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+      expect(urls.some((u) => u.includes("/api/collection-moments") && u.includes("wallet=0xmine"))).toBe(true)
+    })
+  })
+
+  it("accepts the legacy ?q= spelling", async () => {
+    searchParams = new URLSearchParams("q=collector")
+    render(<CollectionTabClient />)
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+      expect(urls.some((u) => u.includes("wallet=collector"))).toBe(true)
+    })
+  })
+
+  it("falls back to the signed-in collector's saved wallet when the URL names none", async () => {
+    savedWallet = "0xsaved"
+    render(<CollectionTabClient />)
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+      expect(urls.some((u) => u.includes("wallet=0xsaved"))).toBe(true)
+    })
+  })
+
+  it("never seeds the device's last wallet when the URL names one — 2026-09-25", async () => {
+    // /candy-mlb/collection?wallet=0xbd94… rendered the chain-check refusal
+    // ABOVE the device's saved Candy wallet's $4,285: the localStorage seed
+    // fired before the Suspense-wrapped URL reader mounted. A URL wallet owns
+    // the page; the seed must not run whatever the URL search's outcome.
+    // The race is reproduced by leaving the URL reader's params EMPTY (it has
+    // not mounted yet) while the address bar names a wallet — the seed reads
+    // the address bar, not the hook.
+    const store: Record<string, string> = { rpc_last_wallet: "0xa1b2c3d4e5f60718" }
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (k: string) => store[k] ?? null,
+        setItem: (k: string, v: string) => { store[k] = v },
+        removeItem: () => {}, clear: () => {},
+      },
+    })
+    window.history.replaceState({}, "", "/nba-top-shot/collection?wallet=0xurlwallet")
+    try {
+      render(<CollectionTabClient />)
+      await new Promise((r) => setTimeout(r, 60))
+      const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+      expect(urls.some((u) => u.includes("/api/collection-moments") && u.includes("wallet=0xa1b2c3d4e5f60718"))).toBe(false)
+    } finally {
+      window.history.replaceState({}, "", "/nba-top-shot/collection")
+    }
+    // Control: with no wallet in the address bar the same seed DOES run.
+    cleanup()
+    fetchMock.mockClear()
+    render(<CollectionTabClient />)
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+      expect(urls.some((u) => u.includes("/api/collection-moments") && u.includes("wallet=0xa1b2c3d4e5f60718"))).toBe(true)
+    })
+  })
+
+  it("searches nothing when there is neither a URL wallet nor a saved one", async () => {
+    render(<CollectionTabClient />)
+    await new Promise((r) => setTimeout(r, 30))
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+    expect(urls.some((u) => u.startsWith("/api/collection-moments"))).toBe(false)
+  })
+
+  // 2026-11-07: before a wallet is loaded there is nothing to filter or sort —
+  // the bars wait, so the wallet box and the "enter a username" line are the
+  // first thing a phone visitor sees on MY BINDER. They appear once a search
+  // has run (even one that found an empty wallet).
+  it("hides the filter and sort bars until a wallet has been searched", async () => {
+    render(<CollectionTabClient />)
+    await new Promise((r) => setTimeout(r, 30))
+    expect(screen.queryByTestId("filter-bar")).toBeNull()
+    expect(screen.queryByTestId("sort-bar")).toBeNull()
+    expect(screen.getByTestId("moment-table")).toBeTruthy()
+  })
+
+  it("shows the filter and sort bars once a wallet has been searched", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("filter-bar")).toBeTruthy())
+    expect(screen.getByTestId("sort-bar")).toBeTruthy()
+  })
+
+  it("ignores a blank submission rather than searching for nothing", async () => {
+    // ⚠ `runSearch`'s own `if (!query.trim()) return` is REDUNDANT behind the
+    // keydown handler's `input.trim()` and unobservable from any live call
+    // site — AutoSearchReader also only fires on a non-empty query. Mutating it
+    // away SURVIVES, and that is correct rather than a gap: this asserts the
+    // behaviour a user can produce. Delete the keydown guard and this reds.
+    render(<CollectionTabClient />)
+    const box = await screen.findByPlaceholderText(/Top Shot username or wallet address/)
+    fireEvent.change(box, { target: { value: "   " } })
+    fireEvent.keyDown(box, { key: "Enter" })
+    await new Promise((r) => setTimeout(r, 30))
+    expect(fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u.startsWith("/api/collection-moments"))).toBe(false)
+  })
+
+  it("trims the typed query before searching", async () => {
+    render(<CollectionTabClient />)
+    const box = await screen.findByPlaceholderText(/Top Shot username or wallet address/)
+    fireEvent.change(box, { target: { value: "  0xpadded  " } })
+    fireEvent.keyDown(box, { key: "Enter" })
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+      expect(urls.some((u) => u.includes("wallet=0xpadded"))).toBe(true)
+    })
+  })
+
+  it("records the search and classifies address vs username", async () => {
+    render(<CollectionTabClient />)
+    const box = await screen.findByPlaceholderText(/Top Shot username or wallet address/)
+    fireEvent.change(box, { target: { value: "0xmine" } })
+    fireEvent.keyDown(box, { key: "Enter" })
+    await waitFor(() => expect(track).toHaveBeenCalled())
+    expect(track.mock.calls[0][1]).toMatchObject({ input_kind: "address" })
+  })
+
+  it("classifies a non-0x query as a username", async () => {
+    render(<CollectionTabClient />)
+    const box = await screen.findByPlaceholderText(/Top Shot username or wallet address/)
+    fireEvent.change(box, { target: { value: "collector" } })
+    fireEvent.keyDown(box, { key: "Enter" })
+    await waitFor(() => expect(track).toHaveBeenCalled())
+    expect(track.mock.calls[0][1]).toMatchObject({ input_kind: "username" })
+  })
+
+  it("puts the searched wallet in the URL so the view is shareable", async () => {
+    render(<CollectionTabClient />)
+    const box = await screen.findByPlaceholderText(/Top Shot username or wallet address/)
+    fireEvent.change(box, { target: { value: "0xmine" } })
+    fireEvent.keyDown(box, { key: "Enter" })
+    await waitFor(() => expect(replace.mock.calls.some((c) => String(c[0]).includes("wallet=0xmine"))).toBe(true))
+  })
+})
+
+// ─── Results and pagination ──────────────────────────────────────────────────
+
+describe("CollectionTabClient — results and pagination", () => {
+  it("passes the loaded rows to the table", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1"))
+  })
+
+  it("reports the wallet-wide total, not the page length", async () => {
+    // ⚠ The page holds 1 row and the wallet holds 137. Publishing the page
+    // length as the total is the `meta.total_rows` defect in another costume.
+    searchParams = new URLSearchParams("wallet=0xmine")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("portfolio").getAttribute("data-total")).toBe("137"))
+  })
+
+  it("offers Load More while pages remain, naming how many are left", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    render(<CollectionTabClient />)
+    await screen.findByText(/Load More \(136 remaining\)/)
+  })
+
+  it("appends the next page rather than replacing the loaded rows", async () => {
+    // ⚠ THIS TEST PASSED WITHOUT EXERCISING LOAD MORE AT ALL, and the coverage
+    // gate is how it surfaced. The auto-paginate effect appends the remaining
+    // pages by itself after a 300 ms sleep. On a busy runner that can beat the
+    // click: `paginatedPage` reaches `paginatedTotalPages`, the button unmounts
+    // (the `paginatedPage < paginatedTotalPages` ternary), the click lands on a
+    // detached node, `handleLoadMore` never runs — and the id assertion below
+    // STILL PASSES, because auto-paginate appended 9002 on its own.
+    //
+    // Measured 2026-08-17 over three full component-gate runs: `handleLoadMore`
+    // and the anonymous append callback were covered 1 / 1 / 0, moving the
+    // gate's `functions` number by 2 and leaving `component-tests` 0.004pt
+    // above its threshold — a coin flip whose next red would have been read as
+    // somebody's own regression.
+    //
+    // ⚠ FREEZING THE CLOCK IS NOT ENOUGH ON ITS OWN, and that is worth knowing
+    // before "simplifying" this: the effect calls `setLoadingMore(true)`
+    // BEFORE its sleep, so holding time below 300 ms leaves the button
+    // permanently disabled and relabelled, and it can never be clicked. The
+    // deterministic route is to let auto-paginate run and drive it into a dead
+    // end: its page-2 read returns NO moments, so the loop breaks without
+    // advancing `paginatedPage`, and Load More is then the only path to page 2.
+    vi.useFakeTimers()
+    try {
+      searchParams = new URLSearchParams("wallet=0xmine")
+      // ⚠ Keyed on the `page` PARAM plus how many page-2 reads have happened —
+      // NOT on raw call order. The initial search issues more than one
+      // `/api/collection-moments` request on its own (a second lands once the
+      // series options resolve), so a plain call counter puts the dead-end
+      // payload on the initial search and auto-paginate then runs to
+      // completion. Measured: that mistake ends at "All 137 moments loaded"
+      // with no button at all.
+      let pageTwoReads = 0
+      const payload = (moments: unknown[], page: number) =>
+        json(200, { moments, wallet: "0xmine", page, total_count: 137, total_pages: 3 })
+      // ⚠ Cast required: getMockImplementation() is typed as a union that
+      // includes a constructor signature, so it is not directly callable.
+      // vitest does not typecheck, so only `tsc --noEmit` catches this.
+      const realFetch = fetchMock.getMockImplementation() as (input: unknown, init?: unknown) => Promise<Response>
+      fetchMock.mockImplementation(async (input: unknown, init?: unknown) => {
+        const url = String(input)
+        if (!url.startsWith("/api/collection-moments")) return realFetch(input, init)
+        const page = Number(new URLSearchParams(url.split("?")[1] ?? "").get("page") ?? "1")
+        if (page === 1) return payload([MOMENT()], 1)
+        if (page !== 2) return payload([], page)
+        pageTwoReads += 1
+        // First page-2 read is auto-paginate's: hand it nothing, so its loop
+        // breaks without advancing `paginatedPage` and Load More survives.
+        // The second is the click, and it is the one that must append.
+        return pageTwoReads === 1 ? payload([], 2) : payload([MOMENT({ moment_id: "9002" })], 2)
+      })
+
+      render(<CollectionTabClient />)
+      await settleAll()
+
+      // Auto-paginate has run and broken on the empty page, so this is the
+      // enabled button and not the disabled "loading" relabel.
+      const more = screen.getByText(/Load More/)
+      expect(pageTwoReads, "auto-paginate did not take its one attempt").toBe(1)
+
+      fireEvent.click(more)
+      await settleAll()
+
+      // The click is what fetched page 2. Without this the test cannot tell a
+      // real Load More from auto-paginate having done the work, which is
+      // exactly how it went green while covering nothing.
+      expect(pageTwoReads, "the click never reached handleLoadMore").toBe(2)
+
+      // ⚠ Assert the IDS, not the count. A count-only assertion is satisfied by
+      // "page 2 replaced page 1" whenever both pages are the same size, so the
+      // mutation that drops the append survived `data-rows === "2"`. What
+      // append promises is that the first page is STILL THERE.
+      const ids = screen.getByTestId("moment-table").getAttribute("data-ids") ?? ""
+      expect(ids.split(",").filter(Boolean).sort()).toEqual(["9001", "9002"])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("auto-paginates the rest of the wallet without waiting for a click", async () => {
+    // The behaviour that makes the Load-More button mostly redundant, and the
+    // reason a page-2 fixture lands even when nothing is clicked.
+    searchParams = new URLSearchParams("wallet=0xmine")
+    let call = 0
+    fetchMock.mockImplementation(async (input: unknown) => {
+      const url = String(input)
+      if (url.startsWith("/api/collection-moments")) {
+        call += 1
+        return json(200, {
+          moments: [MOMENT({ moment_id: String(9000 + call) })],
+          wallet: "0xmine",
+          page: call,
+          total_count: 3,
+          total_pages: 3,
+        })
+      }
+      return json(200, {})
+    })
+    render(<CollectionTabClient />)
+    await waitFor(() => {
+      const ids = (screen.getByTestId("moment-table").getAttribute("data-ids") ?? "").split(",").filter(Boolean)
+      expect(ids.length).toBeGreaterThan(1)
+    })
+  })
+
+  it("offers no Load More when the wallet fits on one page", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    momentsResponse = () =>
+      json(200, { moments: [MOMENT()], wallet: "0xmine", page: 1, total_count: 1, total_pages: 1 })
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1"))
+    expect(screen.queryByText(/Load More/)).toBeNull()
+  })
+
+  it("survives a payload with no moments array at all", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    momentsResponse = () => json(200, { wallet: "0xmine", page: 1 })
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-has-searched")).toBe("true"))
+  })
+})
+
+// ─── Sub-navigation ──────────────────────────────────────────────────────────
+
+describe("CollectionTabClient — sub-navigation", () => {
+  it("shows the Moments body by default", async () => {
+    render(<CollectionTabClient />)
+    expect(await screen.findByTestId("moment-table")).toBeTruthy()
+    expect(screen.queryByTestId("packs-view")).toBeNull()
+    expect(screen.queryByTestId("sold-view")).toBeNull()
+  })
+
+  it("shows the packs view on ?section=packs", async () => {
+    searchParams = new URLSearchParams("section=packs")
+    render(<CollectionTabClient />)
+    expect(await screen.findByTestId("packs-view")).toBeTruthy()
+    expect(screen.queryByTestId("moment-table")).toBeNull()
+  })
+
+  it("shows the sold view on ?moments=sold", async () => {
+    searchParams = new URLSearchParams("moments=sold")
+    render(<CollectionTabClient />)
+    expect(await screen.findByTestId("sold-view")).toBeTruthy()
+    expect(screen.queryByTestId("moment-table")).toBeNull()
+  })
+
+  it("switching to Sold is URL-driven so the view stays deep-linkable", async () => {
+    render(<CollectionTabClient />)
+    fireEvent.click(await screen.findByRole("button", { name: "Sold" }))
+    await waitFor(() => expect(replace.mock.calls.some((c) => String(c[0]).includes("moments=sold"))).toBe(true))
+  })
+
+  it("switching back to Owned drops the param rather than setting moments=owned", async () => {
+    searchParams = new URLSearchParams("moments=sold")
+    render(<CollectionTabClient />)
+    fireEvent.click(await screen.findByRole("button", { name: "Owned" }))
+    await waitFor(() => expect(replace).toHaveBeenCalled())
+    expect(replace.mock.calls.every((c) => !String(c[0]).includes("moments=owned"))).toBe(true)
+  })
+
+  it("marks the active sub-tab for assistive tech", async () => {
+    render(<CollectionTabClient />)
+    expect((await screen.findByRole("button", { name: "Owned" })).getAttribute("aria-pressed")).toBe("true")
+    expect(screen.getByRole("button", { name: "Sold" }).getAttribute("aria-pressed")).toBe("false")
+  })
+
+  // 2026-10-18 RE-PINNED: Golazos was the subject here, but its pack history is
+  // attributed to collectors (collectionHasWalletPackHistory), so it now has the
+  // sub-nav. UFC is a collection that genuinely has no wallet pack history.
+  it("offers no packs sub-nav for a collection with no pack board", async () => {
+    PARAMS.collection = "ufc"
+    try {
+      render(<CollectionTabClient />)
+      await screen.findByTestId("moment-table")
+      expect(screen.queryByText("Packs")).toBeNull()
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
+  })
+
+  it("offers the packs sub-nav for Golazos", async () => {
+    PARAMS.collection = "laliga-golazos"
+    try {
+      render(<CollectionTabClient />)
+      await screen.findByTestId("moment-table")
+      expect(screen.queryByText("Packs")).not.toBeNull()
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
+  })
+})
+
+// ─── Collection-specific behaviour ───────────────────────────────────────────
+
+describe("CollectionTabClient — collection-specific behaviour", () => {
+  it("scans the chain first for a UFC wallet, then reads the cache", async () => {
+    PARAMS.collection = "ufc"
+    try {
+      searchParams = new URLSearchParams("wallet=0xmine")
+      render(<CollectionTabClient />)
+      await waitFor(() => {
+        const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+        expect(urls.some((u) => u.includes("/api/ufc-wallet-scan"))).toBe(true)
+        expect(urls.some((u) => u.startsWith("/api/collection-moments"))).toBe(true)
+      })
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
+  })
+
+  it("does not scan the chain for a non-UFC collection", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-has-searched")).toBe("true"))
+    expect(fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u.includes("ufc-wallet-scan"))).toBe(false)
+  })
+
+  it("still reads the cache when the UFC scan itself fails", async () => {
+    // ⚠ The scan is an enrichment, not a precondition. Letting its failure stop
+    // the cache read would turn a slow chain into an empty wallet.
+    PARAMS.collection = "ufc"
+    try {
+      searchParams = new URLSearchParams("wallet=0xmine")
+      fetchMock.mockImplementation(async (input: unknown) => {
+        const url = String(input)
+        if (url.includes("ufc-wallet-scan")) throw new Error("scan down")
+        if (url.startsWith("/api/collection-moments")) return momentsResponse()
+        return json(200, {})
+      })
+      render(<CollectionTabClient />)
+      await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-has-searched")).toBe("true"))
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
+  })
+
+  it("does not scan the chain for a UFC USERNAME — the scan needs an address", async () => {
+    PARAMS.collection = "ufc"
+    try {
+      searchParams = new URLSearchParams("wallet=collector")
+      render(<CollectionTabClient />)
+      await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-has-searched")).toBe("true"))
+      expect(fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u.includes("ufc-wallet-scan"))).toBe(false)
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
+  })
+})
+
+// ─── Debug mode ──────────────────────────────────────────────────────────────
+
+describe("CollectionTabClient — debug mode", () => {
+  it("stays off without ?debug=1", async () => {
+    // The sort bar waits for a search since 2026-11-07, so load a wallet first.
+    searchParams = new URLSearchParams("wallet=0xmine")
+    render(<CollectionTabClient />)
+    await screen.findByTestId("sort-bar")
+    expect(screen.queryByText("Scope Key")).toBeNull()
+  })
+
+  it("survives a collection-series read failure without blocking the page", async () => {
+    fetchMock.mockImplementation(async (input: unknown) => {
+      const url = String(input)
+      if (url.startsWith("/api/collection-series")) throw new Error("series down")
+      if (url.startsWith("/api/collection-moments")) return momentsResponse()
+      return json(200, {})
+    })
+    searchParams = new URLSearchParams("wallet=0xmine")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1"))
+  })
+})
+
+// ─── Enrichment chain ────────────────────────────────────────────────────────
+
+describe("CollectionTabClient — enrichment", () => {
+  function withRoutes(over: Record<string, () => Response>) {
+    fetchMock.mockImplementation(async (input: unknown) => {
+      const url = String(input)
+      const key = Object.keys(over).find((k) => url.startsWith(k))
+      if (key) return over[key]()
+      if (url.startsWith("/api/collection-moments")) return momentsResponse()
+      return json(200, {})
+    })
+  }
+
+  it("attaches badge info by EDITION, never another edition of the same player + series", async () => {
+    // ⛔ 2026-10-10: badges were keyed player::series and kept the highest
+    // badge_score, so a Donovan Clingan #1/1 Ultimate wore his Rookie Debut's
+    // "Top Shot Debut". The decoy below is the same player AND series with a
+    // higher score; under the old keying it wins. The row's own edition must.
+    searchParams = new URLSearchParams("wallet=0xmine")
+    withRoutes({
+      "/api/badges": () =>
+        json(200, {
+          editions: [
+            { external_id: "99:9999", player_name: "Damian Lillard", series_number: 0, badge_score: 9, badge_titles: ["Top Shot Debut"] },
+            { external_id: "48:1652", player_name: "Damian Lillard", series_number: 0, badge_score: 3, badge_titles: ["Rookie Premiere", "Rookie Year"] },
+          ],
+        }),
+    })
+    render(<CollectionTabClient />)
+    await waitFor(() =>
+      expect(screen.getByTestId("moment-table").getAttribute("data-badges")).toBe("Rookie Premiere+Rookie Year"),
+    )
+  })
+
+  it("a moment whose edition has no badge row gets NO badges, not a sibling's", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    withRoutes({
+      "/api/badges": () =>
+        json(200, {
+          editions: [
+            { external_id: "99:9999", player_name: "Damian Lillard", series_number: 0, badge_score: 9, badge_titles: ["Top Shot Debut"] },
+          ],
+        }),
+    })
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1"))
+    // Let the badge leg land, then assert the decoy never attached.
+    await new Promise((r) => setTimeout(r, 50))
+    expect(screen.getByTestId("moment-table").getAttribute("data-badges")).toBe("none")
+  })
+
+  it("survives a badges leg that 4xxs — the moments must still render", async () => {
+    // ⚠ Enrichment is additive. A failed badge read must cost badges, never the
+    // wallet: dropping the rows would tell a collector they hold nothing.
+    searchParams = new URLSearchParams("wallet=0xmine")
+    withRoutes({ "/api/badges": () => json(500, {}) })
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1"))
+  })
+
+  it("survives a thrown badges fetch", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    withRoutes({ "/api/badges": () => { throw new Error("badges down") } })
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1"))
+  })
+
+  it("applies batched FMV to the rows", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    withRoutes({
+      "/api/fmv": () =>
+        json(200, { results: [{ edition: "48:1652", fmv: 61.5, confidence: "HIGH", updatedAt: "2026-08-16" }] }),
+    })
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1"))
+  })
+
+  it("survives an FMV leg that fails", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    withRoutes({ "/api/fmv": () => json(503, {}) })
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1"))
+  })
+
+  it("survives an FMV body that is not the expected shape", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    withRoutes({ "/api/fmv": () => json(200, { results: "not-an-array" }) })
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1"))
+  })
+
+  it("survives a cost-basis leg that fails", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    withRoutes({ "/api/cost-basis": () => json(503, {}) })
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1"))
+  })
+
+  it("applies cost basis when it loads", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    withRoutes({ "/api/cost-basis": () => json(200, { acquisitions: [ACQUISITION("9001")] }) })
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1"))
+    // The assertion the title promises. Without it this case passed with the
+    // cost-basis read deleted entirely.
+    await waitFor(() =>
+      expect(screen.getByTestId("moment-table").getAttribute("data-cost-basis-ids")).toBe("9001"),
+    )
+  })
+
+  it("a USERNAME search reads cost basis for the address it resolved to, never \"0x\"+username (2026-11-14)", async () => {
+    searchParams = new URLSearchParams("wallet=damefan")
+    momentsResponse = () => json(200, { moments: [MOMENT()], wallet: "0xabc1230000000000", page: 1, total_count: 1, total_pages: 1 })
+    withRoutes({ "/api/cost-basis": () => json(200, { acquisitions: [ACQUISITION("9001")] }) })
+    render(<CollectionTabClient />)
+    await waitFor(() =>
+      expect(screen.getByTestId("moment-table").getAttribute("data-cost-basis-ids")).toBe("9001"),
+    )
+    const costUrls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/cost-basis"))
+    expect(costUrls.length).toBeGreaterThan(0)
+    expect(costUrls.every((u) => u.includes("wallet=0xabc1230000000000"))).toBe(true)
+    expect(costUrls.some((u) => u.includes("damefan"))).toBe(false)
+  })
+
+  it("🚨 a FAILED cost-basis read on a NEW wallet must not leave the PREVIOUS wallet's numbers on screen", async () => {
+    // The defect: the effect cleared the map only for the empty-wallet case
+    // (`if (!activeWallet) { setCostBasis(new Map()); return }`), and both a
+    // non-ok response (`r.ok ? r.json() : null`) and a thrown fetch left state
+    // untouched. So switching wallet A -> wallet B while /api/cost-basis is
+    // down kept A's acquisitions in state and rendered them against B's rows —
+    // a cost basis and a P&L attributed to Moments the reader does not own,
+    // which is the worst sub-class in the canon: a false claim about the
+    // reader's own account that is ACTIONABLE.
+    //
+    // Clearing is the honest direction rather than merely the safe one: an
+    // empty map suppresses PortfolioSummary's cost/P&L panel outright and
+    // renders an em dash in the table's Cost column, so the failure understates
+    // instead of asserting.
+    searchParams = new URLSearchParams("wallet=0xmine")
+    let costBasisUp = true
+    withRoutes({
+      "/api/cost-basis": () =>
+        costBasisUp ? json(200, { acquisitions: [ACQUISITION("9001")] }) : json(503, {}),
+    })
+    render(<CollectionTabClient />)
+    await waitFor(() =>
+      expect(screen.getByTestId("moment-table").getAttribute("data-cost-basis-ids")).toBe("9001"),
+    )
+
+    costBasisUp = false
+    const box = screen.getByPlaceholderText(/Top Shot username or wallet address/)
+    fireEvent.change(box, { target: { value: "0xother" } })
+    fireEvent.keyDown(box, { key: "Enter" })
+
+    await waitFor(() =>
+      expect(screen.getByTestId("moment-table").getAttribute("data-cost-basis-ids")).toBe(""),
+    )
+  })
+
+  it("CONTROL: a SUCCESSFUL cost-basis read on a new wallet replaces the map rather than clearing it", async () => {
+    // Without this, "clear the map on every wallet change" would pass the case
+    // above by simply never populating it again.
+    searchParams = new URLSearchParams("wallet=0xmine")
+    let nftId = "9001"
+    withRoutes({ "/api/cost-basis": () => json(200, { acquisitions: [ACQUISITION(nftId)] }) })
+    render(<CollectionTabClient />)
+    await waitFor(() =>
+      expect(screen.getByTestId("moment-table").getAttribute("data-cost-basis-ids")).toBe("9001"),
+    )
+
+    nftId = "9002"
+    const box = screen.getByPlaceholderText(/Top Shot username or wallet address/)
+    fireEvent.change(box, { target: { value: "0xother" } })
+    fireEvent.keyDown(box, { key: "Enter" })
+
+    await waitFor(() =>
+      expect(screen.getByTestId("moment-table").getAttribute("data-cost-basis-ids")).toBe("9002"),
+    )
+  })
+
+  it("survives a cache-refresh leg that fails", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    withRoutes({ "/api/cache-refresh": () => { throw new Error("refresh down") } })
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1"))
+  })
+
+  it("reads the wallet-wide FMV total from its own probe", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    render(<CollectionTabClient />)
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+      expect(urls.some((u) => u.includes("limit=1&page=1"))).toBe(true)
+    })
+  })
+
+  it("survives a wallet-summary leg that fails", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    withRoutes({ "/api/wallet-summary": () => json(503, {}) })
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1"))
+  })
+
+  it("ignores a wallet-summary body carrying an error key", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    withRoutes({ "/api/wallet-summary": () => json(200, { error: "timeout" }) })
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1"))
+  })
+})
+
+// ─── Saved wallets ───────────────────────────────────────────────────────────
+
+describe("CollectionTabClient — saved wallets", () => {
+  it("reads the collector's saved wallets when signed in", async () => {
+    ownerKey = "0xmine"
+    render(<CollectionTabClient />)
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+      expect(urls.some((u) => u.startsWith("/api/profile/saved-wallets"))).toBe(true)
+    })
+  })
+
+  it("does not read saved wallets for a signed-out visitor", async () => {
+    render(<CollectionTabClient />)
+    await new Promise((r) => setTimeout(r, 40))
+    expect(fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u.startsWith("/api/profile/saved-wallets"))).toBe(false)
+  })
+
+  it("survives a saved-wallets read that fails", async () => {
+    ownerKey = "0xmine"
+    searchParams = new URLSearchParams("wallet=0xmine")
+    fetchMock.mockImplementation(async (input: unknown) => {
+      const url = String(input)
+      if (url.startsWith("/api/profile/saved-wallets")) return json(503, {})
+      if (url.startsWith("/api/collection-moments")) return momentsResponse()
+      return json(200, {})
+    })
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1"))
+  })
+})
+
+// ─── Wallet prefetch ─────────────────────────────────────────────────────────
+
+describe("CollectionTabClient — saved-wallet prefetch", () => {
+  it("prefetches every OTHER saved wallet so a sidebar click feels instant", async () => {
+    ownerKey = "0xmine"
+    searchParams = new URLSearchParams("wallet=0xmine")
+    fetchMock.mockImplementation(async (input: unknown) => {
+      const url = String(input)
+      if (url.startsWith("/api/profile/saved-wallets")) {
+        return json(200, { wallets: [{ wallet_addr: "0xmine" }, { wallet_addr: "0xother" }, { username: "collector" }] })
+      }
+      if (url.startsWith("/api/collection-moments")) return momentsResponse()
+      return json(200, {})
+    })
+    render(<CollectionTabClient />)
+    await waitFor(() => {
+      const bodies = prefetchBodies()
+      // ⚠ The CURRENTLY-VIEWED wallet must be skipped — prefetching the page
+      // you are already on is a duplicate whale-wallet query for nothing.
+      expect(bodies.some((b) => b.includes("0xother"))).toBe(true)
+      expect(bodies.some((b) => b.includes("collector"))).toBe(true)
+      expect(bodies.every((b) => !b.includes("0xmine"))).toBe(true)
+    })
+  })
+
+  /**
+   * ⚠ The page ALSO fires `/api/wallet-search` for the wallet currently on
+   * screen, from a different code path — its body carries a `collection` key
+   * where a prefetch body does not. A test that counts every wallet-search call
+   * is asserting about two unrelated features at once and fails against correct
+   * code; this isolates the prefetches.
+   */
+  function prefetchBodies(): string[] {
+    return fetchMock.mock.calls
+      .filter((c) => String(c[0]).startsWith("/api/wallet-search"))
+      .map((c) => String((c[1] as RequestInit)?.body))
+      .filter((b) => !b.includes("\"collection\""))
+  }
+
+  it("skips rows carrying neither an address nor a username", async () => {
+    ownerKey = "0xmine"
+    fetchMock.mockImplementation(async (input: unknown) => {
+      const url = String(input)
+      if (url.startsWith("/api/profile/saved-wallets")) return json(200, { wallets: [{}, { wallet_addr: "0xok" }] })
+      if (url.startsWith("/api/collection-moments")) return momentsResponse()
+      return json(200, {})
+    })
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(prefetchBodies().length).toBe(1))
+    expect(prefetchBodies()[0]).toContain("0xok")
+  })
+
+  it("prefetches nothing when the collector has saved no wallets", async () => {
+    ownerKey = "0xmine"
+    fetchMock.mockImplementation(async (input: unknown) => {
+      const url = String(input)
+      if (url.startsWith("/api/profile/saved-wallets")) return json(200, { wallets: [] })
+      if (url.startsWith("/api/collection-moments")) return momentsResponse()
+      return json(200, {})
+    })
+    render(<CollectionTabClient />)
+    await new Promise((r) => setTimeout(r, 40))
+    expect(prefetchBodies().length).toBe(0)
+  })
+
+  it("swallows a failed prefetch — it is a warm-up, not a result", async () => {
+    ownerKey = "0xmine"
+    searchParams = new URLSearchParams("wallet=0xmine")
+    fetchMock.mockImplementation(async (input: unknown) => {
+      const url = String(input)
+      if (url.startsWith("/api/profile/saved-wallets")) return json(200, { wallets: [{ wallet_addr: "0xother" }] })
+      if (url.startsWith("/api/wallet-search")) return json(500, {})
+      if (url.startsWith("/api/collection-moments")) return momentsResponse()
+      return json(200, {})
+    })
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1"))
+  })
+})
+
+// ─── Filters reaching the server ─────────────────────────────────────────────
+
+describe("CollectionTabClient — server-side filters", () => {
+  it("asks the server for the whole wallet when no filter is set", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    render(<CollectionTabClient />)
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/collection-moments?w"))
+      expect(urls.length).toBeGreaterThan(0)
+      expect(urls.every((u) => !u.includes("player=") && !u.includes("tier="))).toBe(true)
+    })
+  })
+
+  it("sends the page size and sort the server needs", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    render(<CollectionTabClient />)
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.includes("sortBy="))
+      expect(urls.length).toBeGreaterThan(0)
+      expect(urls[0]).toContain("limit=50")
+    })
+  })
+
+  it("scopes every request to the active collection", async () => {
+    PARAMS.collection = "nfl-all-day"
+    try {
+      searchParams = new URLSearchParams("wallet=0xmine")
+      render(<CollectionTabClient />)
+      await waitFor(() => {
+        const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/collection-moments"))
+        expect(urls.length).toBeGreaterThan(0)
+        expect(urls.every((u) => u.includes("collection=nfl-all-day"))).toBe(true)
+      })
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
+  })
+})
+
+// ─── Persisted view state, seeds and exports ─────────────────────────────────
+
+describe("CollectionTabClient — persisted view state and operator affordances", () => {
+  function withStorage(store: Record<string, string>) {
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (k: string) => store[k] ?? null,
+        setItem: (k: string, v: string) => { store[k] = v },
+        removeItem: (k: string) => { delete store[k] },
+        clear: () => { for (const k of Object.keys(store)) delete store[k] },
+      },
+    })
+  }
+
+  it("restores the saved sort, filters and toggles from storage", async () => {
+    withStorage({
+      "rpc_collection_sortKey": JSON.stringify("fmv"),
+      "rpc_collection_sortDirection": JSON.stringify("asc"),
+      "rpc_collection_playerFilter:nba-top-shot": JSON.stringify("Damian Lillard"),
+      "rpc_collection_setFilter:nba-top-shot": JSON.stringify("Archive Set"),
+      "rpc_collection_seriesFilter:nba-top-shot": JSON.stringify("Series 1"),
+      "rpc_collection_rarityFilter:nba-top-shot": JSON.stringify("RARE"),
+      "rpc_collection_lockedFilter:nba-top-shot": JSON.stringify("all"),
+      "rpc_collection_badgeFilter:nba-top-shot": JSON.stringify(true),
+    })
+    searchParams = new URLSearchParams("wallet=0xmine")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-has-searched")).toBe("true"))
+  })
+
+  it("⚠ a filter saved on one collection is NOT restored on another, and the old shared key is dropped", async () => {
+    // 2026-11-10: `rpc_collection_playerFilter` was one key for all seven collections, so a
+    // Top Shot player filter emptied the Golazos binder ("No moments match your current filters").
+    const store: Record<string, string> = {
+      "rpc_collection_playerFilter:nba-top-shot": JSON.stringify("Damian Lillard"),
+      "rpc_collection_playerFilter": JSON.stringify("Luka Dončić"),
+    }
+    withStorage(store)
+    const before = PARAMS.collection
+    PARAMS.collection = "laliga-golazos"
+    try {
+      searchParams = new URLSearchParams("wallet=0xmine")
+      render(<CollectionTabClient />)
+      await waitFor(() => expect(store["rpc_collection_playerFilter:laliga-golazos"]).toBe(JSON.stringify("all")))
+      expect(store["rpc_collection_playerFilter:nba-top-shot"]).toBe(JSON.stringify("Damian Lillard"))
+      expect("rpc_collection_playerFilter" in store).toBe(false)
+    } finally {
+      PARAMS.collection = before
+    }
+  })
+
+  it("survives unparseable stored view state rather than blanking the page", async () => {
+    // ⚠ Every restore is a `JSON.parse` of a string we do not control once a
+    // browser has it. One corrupt entry must not take the tab down.
+    withStorage({ "rpc_collection_sortKey": "{not json" })
+    searchParams = new URLSearchParams("wallet=0xmine")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1"))
+  })
+
+  it("survives localStorage throwing outright (Safari private mode)", async () => {
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: () => { throw new Error("blocked") },
+        setItem: () => { throw new Error("blocked") },
+        removeItem: () => {},
+        clear: () => {},
+      },
+    })
+    searchParams = new URLSearchParams("wallet=0xmine")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1"))
+  })
+
+  it("marks a username-searched wallet as pre-seeded only when the cache is fresh", async () => {
+    ownerKey = "collector"
+    fetchMock.mockImplementation(async (input: unknown) => {
+      const url = String(input)
+      if (url.startsWith("/api/seeded-wallets")) {
+        return json(200, { wallets: [{ last_refreshed_at: new Date().toISOString() }] })
+      }
+      if (url.startsWith("/api/collection-moments")) return momentsResponse()
+      return json(200, {})
+    })
+    render(<CollectionTabClient />)
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u.startsWith("/api/seeded-wallets"))).toBe(true)
+    })
+  })
+
+  it("does not claim a pre-seeded cache when the refresh is stale", async () => {
+    ownerKey = "collector"
+    const old = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString()
+    fetchMock.mockImplementation(async (input: unknown) => {
+      const url = String(input)
+      if (url.startsWith("/api/seeded-wallets")) return json(200, { wallets: [{ last_refreshed_at: old }] })
+      if (url.startsWith("/api/collection-moments")) return momentsResponse()
+      return json(200, {})
+    })
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-has-searched")).toBe("true"))
+    expect(screen.queryByTitle(/refreshed every 2 hours/)).toBeNull()
+  })
+
+  it("does not probe the seeded cache for an address query — the probe is by username", async () => {
+    ownerKey = "0xmine"
+    render(<CollectionTabClient />)
+    await new Promise((r) => setTimeout(r, 40))
+    expect(fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u.startsWith("/api/seeded-wallets"))).toBe(false)
+  })
+
+  it("survives a failed seeded-wallets probe", async () => {
+    ownerKey = "collector"
+    fetchMock.mockImplementation(async (input: unknown) => {
+      const url = String(input)
+      if (url.startsWith("/api/seeded-wallets")) throw new Error("seeded down")
+      if (url.startsWith("/api/collection-moments")) return momentsResponse()
+      return json(200, {})
+    })
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-has-searched")).toBe("true"))
+  })
+
+  it("reloads page 1 when the background cache refresh finds new moments", async () => {
+    // ⚠ A collector who just ripped a pack should not have to reload. The probe
+    // is fire-and-forget, so its only observable effect is the extra request.
+    searchParams = new URLSearchParams("wallet=0xmine")
+    fetchMock.mockImplementation(async (input: unknown) => {
+      const url = String(input)
+      if (url.startsWith("/api/cache-refresh")) return json(200, { new_stubs_inserted: 3 })
+      if (url.startsWith("/api/collection-moments")) return momentsResponse()
+      return json(200, {})
+    })
+    render(<CollectionTabClient />)
+    await waitFor(() => {
+      const n = fetchMock.mock.calls.filter((c) => String(c[0]).startsWith("/api/collection-moments?wallet=0xmine&page=1")).length
+      expect(n).toBeGreaterThan(1)
+    })
+  })
+
+  // 2026-09-26 — the client-error beacon recorded `unhandledrejection: SyntaxError:
+  // failed to parse` on /nfl-all-day/collection. The reload fired from the cache
+  // refresh was a FLOATING promise inside `.then`, so the chain's `.catch` never
+  // saw its rejection. The page already shows page 1, so a failed background
+  // reload must be handled — never escape as an unhandled rejection.
+  it("a failed background reload after a cache refresh is handled, not an unhandled rejection", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    const unhandled: unknown[] = []
+    const onUnhandled = (reason: unknown) => { unhandled.push(reason) }
+    process.on("unhandledRejection", onUnhandled)
+    try {
+      let momentsCalls = 0
+      fetchMock.mockImplementation(async (input: unknown) => {
+        const url = String(input)
+        if (url.startsWith("/api/cache-refresh")) return json(200, { new_stubs_inserted: 2 })
+        if (url.startsWith("/api/collection-moments?wallet=0xmine&page=1")) {
+          momentsCalls++
+          if (momentsCalls > 1) {
+            return { ok: true, status: 200, json: async () => { throw new SyntaxError("failed to parse") } } as unknown as Response
+          }
+          return momentsResponse()
+        }
+        if (url.startsWith("/api/collection-moments")) return momentsResponse()
+        return json(200, {})
+      })
+      render(<CollectionTabClient />)
+      await waitFor(() => expect(momentsCalls).toBeGreaterThan(1))
+      // Let the rejected reload settle, then give the runtime a turn to report it.
+      await new Promise((r) => setTimeout(r, 50))
+      expect(unhandled.filter((e) => String(e).includes("failed to parse"))).toHaveLength(0)
+      // Page 1 is still on screen.
+      expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1")
+    } finally {
+      process.off("unhandledRejection", onUnhandled)
+    }
+  })
+
+  it("does not reload when the cache refresh finds nothing new", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    fetchMock.mockImplementation(async (input: unknown) => {
+      const url = String(input)
+      if (url.startsWith("/api/cache-refresh")) return json(200, { new_stubs_inserted: 0 })
+      if (url.startsWith("/api/collection-moments")) return momentsResponse()
+      return json(200, {})
+    })
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-has-searched")).toBe("true"))
+    await new Promise((r) => setTimeout(r, 40))
+    const n = fetchMock.mock.calls.filter((c) => String(c[0]).startsWith("/api/collection-moments?wallet=0xmine&page=1")).length
+    expect(n).toBe(1)
+  })
+})
+
+// ─── Best-offer enrichment ───────────────────────────────────────────────────
+
+describe("CollectionTabClient — best-offer enrichment", () => {
+  it("costs ONE offers request for a whole page of rows, not one per row", async () => {
+    // ⚠ An earlier version asserted that NOTHING had fired yet, right after the
+    // rows landed. That is a race against a 2s timer, and it flaked under full
+    // suite load while passing in isolation — a negative assertion whose truth
+    // depends on how busy the machine is. The batching property is the same
+    // claim, stated in a way the clock cannot invalidate.
+    vi.useFakeTimers()
+    try {
+      searchParams = new URLSearchParams("wallet=0xmine")
+      momentsResponse = () =>
+        json(200, {
+          moments: [MOMENT({ moment_id: "1" }), MOMENT({ moment_id: "2" }), MOMENT({ moment_id: "3" })],
+          wallet: "0xmine",
+          page: 1,
+          total_count: 3,
+          total_pages: 1,
+        })
+      render(<CollectionTabClient />)
+      await vi.advanceTimersByTimeAsync(200)
+      await vi.advanceTimersByTimeAsync(200)
+      await vi.advanceTimersByTimeAsync(3000)
+      // ⚠ Assert the BODY carries all three moments, not that exactly one call
+      // was made. A call COUNT is order-dependent under full-suite conditions
+      // (a second flush can be triggered by a later enrichment pass), and that
+      // flaked while passing in isolation. The batching property — one request
+      // carrying the whole page — is what the timer exists for, and it is
+      // stated here in a form the scheduler cannot invalidate.
+      const offerCalls = fetchMock.mock.calls.filter((c) => String(c[0]).startsWith("/api/best-offers"))
+      expect(offerCalls.length).toBeGreaterThan(0)
+      const batched = offerCalls.map((c) => JSON.parse(String((c[1] as RequestInit).body)) as { momentIds: string[] })
+      // ⚠ Identify THIS test's batch by its contents. Two weaker forms flaked
+      // under full-suite load while passing in isolation:
+      //   * bounding the CALL COUNT — the auto-paginate loop can flush again;
+      //   * asserting EVERY batch is size 3 — the component does not clear its
+      //     offer timer on unmount, so a PREVIOUS test's pending 2s flush fires
+      //     into this test's fetch mock carrying that test's rows.
+      // The batching property is "one request carried the whole page", and the
+      // page is identifiable, so say so.
+      expect(batched.some((b) => ["1", "2", "3"].every((id) => b.momentIds.includes(id)))).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("flushes the offer batch once the timer elapses", async () => {
+    vi.useFakeTimers()
+    try {
+      searchParams = new URLSearchParams("wallet=0xmine")
+      render(<CollectionTabClient />)
+      await vi.advanceTimersByTimeAsync(200)
+      await vi.advanceTimersByTimeAsync(200)
+      await vi.advanceTimersByTimeAsync(3000)
+      expect(fetchMock.mock.calls.some((c) => String(c[0]).startsWith("/api/best-offers"))).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("survives a failed offers read — offers are additive, the rows are not", async () => {
+    vi.useFakeTimers()
+    try {
+      searchParams = new URLSearchParams("wallet=0xmine")
+      fetchMock.mockImplementation(async (input: unknown) => {
+        const url = String(input)
+        if (url.startsWith("/api/best-offers")) throw new Error("offers down")
+        if (url.startsWith("/api/collection-moments")) return momentsResponse()
+        return json(200, {})
+      })
+      render(<CollectionTabClient />)
+      await vi.advanceTimersByTimeAsync(200)
+      await vi.advanceTimersByTimeAsync(3000)
+      // ⚠ Not `=== "1"`: advancing the clock also lets the auto-paginate effect
+      // pull the remaining pages, so the row count is legitimately higher. What
+      // matters is that the rows SURVIVED the failed offers read.
+      expect(Number(screen.getByTestId("moment-table").getAttribute("data-rows"))).toBeGreaterThan(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+// ─── Operator affordances: debug, CSV, seeds ─────────────────────────────────
+
+describe("CollectionTabClient — debug table, CSV and seeds", () => {
+  function setUrl(search: string) {
+    window.history.replaceState({}, "", `/nba-top-shot/collection${search}`)
+  }
+
+  afterEach(() => setUrl(""))
+
+  it("keeps debug mode off without ?debug=1", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("sort-bar").getAttribute("data-debug-mode")).toBe("false"))
+  })
+
+  it("enables debug mode from ?debug=1 in the address bar", async () => {
+    // ⚠ Read from `window.location.search`, not from the `useSearchParams`
+    // mock — the component reads the real address bar here, so stubbing the
+    // hook alone leaves this branch unreachable.
+    setUrl("?wallet=0xmine&debug=1")
+    searchParams = new URLSearchParams("wallet=0xmine&debug=1")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("sort-bar").getAttribute("data-debug-mode")).toBe("true"))
+  })
+
+  it("renders the debug table only once the operator asks for it", async () => {
+    setUrl("?wallet=0xmine&debug=1")
+    searchParams = new URLSearchParams("wallet=0xmine&debug=1")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1"))
+    expect(screen.queryByText("Scope Key")).toBeNull()
+    fireEvent.click(screen.getByTestId("toggle-debug"))
+    await screen.findByText("Scope Key")
+    expect(screen.getByText("FMV Method")).toBeTruthy()
+    // 2026-10-18 (Trevor): FMV confidence is internal — not even the ?debug=1
+    // table (reachable by any visitor) shows the tier column.
+    expect(screen.queryByText("Confidence")).toBeNull()
+    expect(screen.queryByText("HIGH")).toBeNull()
+  })
+
+  it("collapses the debug table again", async () => {
+    setUrl("?wallet=0xmine&debug=1")
+    searchParams = new URLSearchParams("wallet=0xmine&debug=1")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1"))
+    fireEvent.click(screen.getByTestId("toggle-debug"))
+    await screen.findByText("Scope Key")
+    fireEvent.click(screen.getByTestId("toggle-debug"))
+    await waitFor(() => expect(screen.queryByText("Scope Key")).toBeNull())
+  })
+
+  it("exports the loaded rows as CSV", async () => {
+    const created: string[] = []
+    const origCreate = URL.createObjectURL
+    const origRevoke = URL.revokeObjectURL
+    URL.createObjectURL = ((b: Blob) => { created.push(String(b.type)); return "blob:x" }) as typeof URL.createObjectURL
+    URL.revokeObjectURL = (() => {}) as typeof URL.revokeObjectURL
+    try {
+      searchParams = new URLSearchParams("wallet=0xmine")
+      render(<CollectionTabClient />)
+      await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1"))
+      fireEvent.click(screen.getByTestId("export-csv"))
+      await waitFor(() => expect(created.length).toBeGreaterThan(0))
+      expect(created[0]).toContain("csv")
+    } finally {
+      URL.createObjectURL = origCreate
+      URL.revokeObjectURL = origRevoke
+    }
+  })
+
+  it("copies edition seed candidates to the clipboard", async () => {
+    const writeText = vi.fn(async () => {})
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } })
+    searchParams = new URLSearchParams("wallet=0xmine")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1"))
+    fireEvent.click(screen.getByTestId("copy-seeds"))
+    await waitFor(() => expect(writeText).toHaveBeenCalled())
+  })
+
+  it("re-sorts through the server rather than only in the browser", async () => {
+    // ⚠ The rows are server-paginated, so a client-only sort would order the
+    // LOADED PAGE and silently present it as the wallet's ordering.
+    searchParams = new URLSearchParams("wallet=0xmine")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1"))
+    const before = fetchMock.mock.calls.filter((c) => String(c[0]).includes("sortBy=")).length
+    fireEvent.click(screen.getByTestId("toggle-sort"))
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.filter((c) => String(c[0]).includes("sortBy=")).length).toBeGreaterThan(before),
+    )
+  })
+
+  it("filters the LOADED rows client-side rather than re-querying", async () => {
+    // ⚠ Corrects an assumption worth recording: changing a filter does NOT fire
+    // a new request. `fetchPaginatedMoments` reads the filter state, but it is
+    // only called by a search, a Load More, or the auto-paginate loop — so a
+    // filter narrows what is on screen and reaches the server on the NEXT
+    // search. Asserting a refetch here fails against correct code.
+    searchParams = new URLSearchParams("wallet=0xmine")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1"))
+    const before = fetchMock.mock.calls.filter((c) => String(c[0]).startsWith("/api/collection-moments?wallet")).length
+    fireEvent.click(screen.getByTestId("set-rarity-filter"))
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1"))
+    // Scoped to the MOMENTS query — other background legs (offers, summary)
+    // keep ticking and a total-call count would be measuring those.
+    const after = fetchMock.mock.calls.filter((c) => String(c[0]).startsWith("/api/collection-moments?wallet")).length
+    expect(after).toBe(before)
+  })
+
+  it("narrows the rows when the active filter excludes them", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    momentsResponse = () =>
+      json(200, {
+        moments: [MOMENT({ tier: "COMMON" })],
+        wallet: "0xmine",
+        page: 1,
+        total_count: 1,
+        total_pages: 1,
+      })
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1"))
+    fireEvent.click(screen.getByTestId("set-rarity-filter"))
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("0"))
+  })
+
+  it("carries the active filter into the NEXT server query", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1"))
+    fireEvent.click(screen.getByTestId("set-player-filter"))
+    const box = screen.getByPlaceholderText(/Top Shot username or wallet address/)
+    fireEvent.change(box, { target: { value: "0xother" } })
+    fireEvent.keyDown(box, { key: "Enter" })
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+      expect(urls.some((u) => u.includes("player=Damian"))).toBe(true)
+    })
+  })
+
+  it("opens the moment detail modal for a row", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1"))
+    fireEvent.click(screen.getByTestId("expand-first"))
+    await waitFor(() => expect(screen.getByTestId("moment-table")).toBeTruthy())
+  })
+})
+
+// ─── Offers applied, sets, packs and sharing ─────────────────────────────────
+
+describe("CollectionTabClient — offers, sets, packs and sharing", () => {
+  it("applies a returned best offer to the matching row", async () => {
+    vi.useFakeTimers()
+    try {
+      searchParams = new URLSearchParams("wallet=0xmine")
+      fetchMock.mockImplementation(async (input: unknown) => {
+        const url = String(input)
+        if (url.startsWith("/api/best-offers")) {
+          return json(200, { results: [{ momentId: "9001", bestOffer: 55, bestOfferType: "edition" }] })
+        }
+        if (url.startsWith("/api/collection-moments")) return momentsResponse()
+        return json(200, {})
+      })
+      render(<CollectionTabClient />)
+      await vi.advanceTimersByTimeAsync(200)
+      await vi.advanceTimersByTimeAsync(3000)
+      expect(Number(screen.getByTestId("moment-table").getAttribute("data-rows"))).toBeGreaterThan(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("ignores a zero or negative offer rather than writing it as a bid", async () => {
+    // ⚠ A "$0 best offer" on a moment page is a claim nobody has bid — the
+    // absence of a bid and a bid of nothing are different things.
+    vi.useFakeTimers()
+    try {
+      searchParams = new URLSearchParams("wallet=0xmine")
+      fetchMock.mockImplementation(async (input: unknown) => {
+        const url = String(input)
+        if (url.startsWith("/api/best-offers")) {
+          return json(200, { results: [{ momentId: "9001", bestOffer: 0, bestOfferType: "serial" }] })
+        }
+        if (url.startsWith("/api/collection-moments")) return momentsResponse()
+        return json(200, {})
+      })
+      render(<CollectionTabClient />)
+      await vi.advanceTimersByTimeAsync(200)
+      await vi.advanceTimersByTimeAsync(3000)
+      expect(Number(screen.getByTestId("moment-table").getAttribute("data-rows"))).toBeGreaterThan(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("survives an offers body that is not the expected shape", async () => {
+    vi.useFakeTimers()
+    try {
+      searchParams = new URLSearchParams("wallet=0xmine")
+      fetchMock.mockImplementation(async (input: unknown) => {
+        const url = String(input)
+        if (url.startsWith("/api/best-offers")) return json(200, { results: "nope" })
+        if (url.startsWith("/api/collection-moments")) return momentsResponse()
+        return json(200, {})
+      })
+      render(<CollectionTabClient />)
+      await vi.advanceTimersByTimeAsync(200)
+      await vi.advanceTimersByTimeAsync(3000)
+      expect(Number(screen.getByTestId("moment-table").getAttribute("data-rows"))).toBeGreaterThan(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("loads near-complete sets and sealed pack titles alongside the moments", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    render(<CollectionTabClient />)
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+      expect(urls.some((u) => u.startsWith("/api/sets?wallet="))).toBe(true)
+      expect(urls.some((u) => u.startsWith("/api/wallet-packs?wallet="))).toBe(true)
+    })
+  })
+
+  it("does NOT ask the Top Shot set tracker on another collection's tab (substitution, 2026-09-25)", async () => {
+    PARAMS.collection = "laliga-golazos"
+    try {
+      searchParams = new URLSearchParams("wallet=0xmine")
+      render(<CollectionTabClient />)
+      await waitFor(() => {
+        const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+        expect(urls.some((u) => u.startsWith("/api/collection-moments"))).toBe(true)
+      })
+      const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+      expect(urls.some((u) => u.startsWith("/api/sets?wallet="))).toBe(false)
+      expect(screen.queryByText(/CLOSE TO COMPLETING/i)).toBeNull()
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
+  })
+
+  it("asks All Day's OWN set tracker on the All Day tab, never Top Shot's (2026-10-26)", async () => {
+    PARAMS.collection = "nfl-all-day"
+    try {
+      searchParams = new URLSearchParams("wallet=0xmine")
+      render(<CollectionTabClient />)
+      await waitFor(() => {
+        const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+        expect(urls.some((u) => u.startsWith("/api/allday-set-progress?wallet="))).toBe(true)
+      })
+      const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+      expect(urls.some((u) => u.startsWith("/api/sets?wallet="))).toBe(false)
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
+  })
+
+  it("survives a failed sets or packs read — both are side panels, not the wallet", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    fetchMock.mockImplementation(async (input: unknown) => {
+      const url = String(input)
+      if (url.startsWith("/api/sets?") || url.startsWith("/api/wallet-packs")) throw new Error("side panel down")
+      if (url.startsWith("/api/collection-moments")) return momentsResponse()
+      return json(200, {})
+    })
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1"))
+  })
+
+  it("applies the sealed pack titles when they arrive", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    fetchMock.mockImplementation(async (input: unknown) => {
+      const url = String(input)
+      if (url.startsWith("/api/wallet-packs")) return json(200, { packsByTitle: { "Archive Set": 2 } })
+      if (url.startsWith("/api/collection-moments")) return momentsResponse()
+      return json(200, {})
+    })
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1"))
+  })
+
+  it("offers a share link once a wallet has loaded, and confirms the copy", async () => {
+    // ⚠ Declare the parameter. A zero-arg `vi.fn` infers an EMPTY tuple for
+    // `mock.calls`, so `writeText.mock.calls[0][0]` is a `tsc` TS2493 while
+    // vitest stays green — this repo's most-repeated CI breakage.
+    const writeText = vi.fn(async (_text: string) => {})
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } })
+    searchParams = new URLSearchParams("wallet=0xmine")
+    render(<CollectionTabClient />)
+    const share = await screen.findByTitle(/Copy shareable collection card link/)
+    fireEvent.click(share)
+    await waitFor(() => expect(writeText).toHaveBeenCalled())
+    expect(String(writeText.mock.calls[0][0])).toContain("/share/0xmine")
+    await screen.findByText("Link copied!")
+  })
+
+  it("unmounting during the 2 s 'copied' flash leaves no timer behind (CI flake 2026-11-07)", async () => {
+    const writeText = vi.fn(async (_text: string) => {})
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } })
+    searchParams = new URLSearchParams("wallet=0xmine")
+    const clearSpy = vi.spyOn(globalThis, "clearTimeout")
+    const { unmount } = render(<CollectionTabClient />)
+    fireEvent.click(await screen.findByTitle(/Copy shareable collection card link/))
+    await screen.findByText("Link copied!")
+    const before = clearSpy.mock.calls.length
+    unmount()
+    // the flash's own timer is cleared on unmount, not left to fire into a torn-down tree
+    expect(clearSpy.mock.calls.length).toBeGreaterThan(before)
+    clearSpy.mockRestore()
+  })
+
+  it("offers no share link before a wallet has loaded", async () => {
+    render(<CollectionTabClient />)
+    await screen.findByTestId("moment-table")
+    expect(screen.queryByTitle(/Copy shareable collection card link/)).toBeNull()
+  })
+
+  it("skips the wallet-search summary leg for UFC, which has no UFC path", async () => {
+    PARAMS.collection = "ufc"
+    try {
+      searchParams = new URLSearchParams("wallet=0xmine")
+      render(<CollectionTabClient />)
+      await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-has-searched")).toBe("true"))
+      const bodies = fetchMock.mock.calls
+        .filter((c) => String(c[0]).startsWith("/api/wallet-search"))
+        .map((c) => String((c[1] as RequestInit)?.body))
+      expect(bodies.every((b) => !b.includes('"collection":"ufc"'))).toBe(true)
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
+  })
+})
+
+// ─── Row shapes the API really produces ──────────────────────────────────────
+
+describe("CollectionTabClient — row shapes", () => {
+  async function withMoments(moments: Array<Record<string, unknown>>) {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    momentsResponse = () =>
+      json(200, { moments, wallet: "0xmine", page: 1, total_count: moments.length, total_pages: 1 })
+    render(<CollectionTabClient />)
+    await waitFor(() =>
+      expect(screen.getByTestId("moment-table").getAttribute("data-has-searched")).toBe("true"),
+    )
+  }
+
+  it("keeps a moment whose series arrives as a STRING", async () => {
+    // ⚠ Badge matching parses `series` per row because the API is not
+    // consistent about the type; a row that fails to parse must keep its place
+    // in the wallet, just without badges.
+    await withMoments([MOMENT({ series: "0" })])
+    expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1")
+  })
+
+  it("keeps a moment whose series is absent entirely", async () => {
+    await withMoments([MOMENT({ series: null })])
+    expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1")
+  })
+
+  it("keeps a moment with no edition key — it just cannot be priced", async () => {
+    await withMoments([MOMENT({ edition_key: null })])
+    expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1")
+  })
+
+  it("keeps a moment with no player name", async () => {
+    await withMoments([MOMENT({ player_name: null })])
+    expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1")
+  })
+
+  it("keeps a moment with no id rather than dropping the row", async () => {
+    await withMoments([MOMENT({ moment_id: null })])
+    expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1")
+  })
+
+  it("does not ask for badges when no row carries an edition key", async () => {
+    // ⚠ RE-PINNED 2026-10-17: badges are looked up by EDITION now, so the
+    // premise moved from "no player name" to "no edition key". The old
+    // assertion (`!u.includes("players=Damian")`) would pass vacuously under
+    // the new lookup, which never sends `players=` at all.
+    await withMoments([MOMENT({ edition_key: null })])
+    const badgeCalls = fetchMock.mock.calls
+      .map((c) => String(c[0]))
+      .filter((u) => u.startsWith("/api/badges"))
+    expect(badgeCalls).toEqual([])
+  })
+
+  it("asks for badges by the rows' own edition keys, not by player name", async () => {
+    // A row with NO player name still has an edition, and still gets asked for
+    // — the name was never the identity (1.1 % of one wallet's rows lost their
+    // badges to a spelling difference under the player-name lookup).
+    await withMoments([MOMENT({ player_name: null })])
+    const badgeCalls = fetchMock.mock.calls
+      .map((c) => String(c[0]))
+      .filter((u) => u.startsWith("/api/badges"))
+    expect(badgeCalls.length).toBeGreaterThan(0)
+    const qs = new URLSearchParams(badgeCalls[0].split("?")[1])
+    expect(qs.get("editions")).toBe("48:1652")
+    expect(qs.has("players")).toBe(false)
+  })
+
+  it("does not ask for FMV when no row carries an edition key", async () => {
+    await withMoments([MOMENT({ edition_key: null })])
+    expect(fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u === "/api/fmv")).toBe(false)
+  })
+
+  it("handles an entirely empty wallet without asking for enrichment", async () => {
+    await withMoments([])
+    expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("0")
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+    expect(urls.some((u) => u.startsWith("/api/badges"))).toBe(false)
+  })
+})
+
+// ─── Chain-scoped owner key ──────────────────────────────────────────────────
+//
+// ⛔ This component is the ONLY writer of the collector's owner key, and the
+// write was gated on `startsWith("0x")` against a single global slot. Both
+// halves broke the day a second chain shipped a Collection tab: a Candy base58
+// address was never written (so the Market tab's Owned column had no wallet to
+// count), and simply dropping the gate would have let a Candy search CLOBBER a
+// Flow collector's key, blanking every `0x`-gated Flow surface. The three arms
+// below are the three cases that has to distinguish.
+describe("CollectionTabClient — the owner key follows the collection's chain", () => {
+  const MINT = "12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK"
+
+  afterEach(() => { PARAMS.collection = "nba-top-shot" })
+
+  it("writes a Candy wallet into the SOLANA slot", async () => {
+    PARAMS.collection = "candy-mlb"
+    ownerKeyWrites.length = 0
+    momentsResponse = () =>
+      json(200, { moments: [MOMENT()], wallet: MINT, page: 1, total_count: 5, total_pages: 1, total_fmv: 42 })
+    searchParams = new URLSearchParams(`wallet=${MINT}`)
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(ownerKeyWrites.length).toBeGreaterThan(0))
+    // ⚠ The CHAIN is asserted, not just the key. A write of the right address
+    // into the wrong slot is the clobber this change exists to prevent.
+    expect(ownerKeyWrites[0]).toEqual({ chain: "solana", key: MINT })
+  })
+
+  it("⛔ does NOT write a Flow-shaped wallet while on the Candy tab", async () => {
+    // Whatever the route returns, a Cadence address must never land in the
+    // Solana slot — from there it would be handed to Candy's reads, which
+    // answer with nothing, which renders as a zero.
+    PARAMS.collection = "candy-mlb"
+    ownerKeyWrites.length = 0
+    momentsResponse = () =>
+      json(200, { moments: [MOMENT()], wallet: "0xa1b2c3d4e5f60718", page: 1, total_count: 1, total_pages: 1 })
+    searchParams = new URLSearchParams("wallet=0xa1b2c3d4e5f60718")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-has-searched")).toBe("true"))
+    expect(ownerKeyWrites).toEqual([])
+  })
+
+  it("no-change control: a Top Shot search still writes the FLOW slot, loose shape and all", async () => {
+    // `0xmine` is the long-standing fixture here and it is NOT a canonical
+    // 16-hex address. That is deliberate: the Cadence arm of the predicate was
+    // kept loose so no existing collector's stored key stops working, and this
+    // is the arm that proves it.
+    ownerKeyWrites.length = 0
+    searchParams = new URLSearchParams("wallet=0xmine")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(ownerKeyWrites.length).toBeGreaterThan(0))
+    expect(ownerKeyWrites[0]).toEqual({ chain: "flow", key: "0xmine" })
+  })
+
+  it("the search box stops advertising a username on a collection that has none", async () => {
+    // ⛔ The placeholder read "Enter Top Shot username or wallet address" on
+    // EVERY collection's tab. On Candy it invited an input the tab cannot
+    // resolve: the username path here is Top Shot GraphQL, and RPC's identity
+    // rule for Candy is an address.
+    PARAMS.collection = "candy-mlb"
+    render(<CollectionTabClient />)
+    expect(await screen.findByPlaceholderText(/wallet address/)).toBeTruthy()
+    expect(screen.queryByPlaceholderText(/username/)).toBeNull()
+  })
+
+  it("no-change control: a Flow collection still offers the username it can actually resolve", async () => {
+    render(<CollectionTabClient />)
+    expect(await screen.findByPlaceholderText(/username or wallet address/)).toBeTruthy()
+  })
+
+  it("\u26d4 does NOT auto-search a leftover FLOW wallet on the Candy tab", async () => {
+    // `rpc_last_wallet` is one global slot holding the raw last input. Opening
+    // /candy-mlb/collection after searching a Top Shot wallet auto-ran that Flow
+    // address against Candy, got zero rows, and rendered an EMPTY WALLET \u2014 a
+    // fabricated absence about a wallet Candy was never asked about.
+    PARAMS.collection = "candy-mlb"
+    const store: Record<string, string> = { rpc_last_wallet: "0xa1b2c3d4e5f60718" }
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (k: string) => store[k] ?? null,
+        setItem: (k: string, v: string) => { store[k] = v },
+        removeItem: () => {}, clear: () => {},
+      },
+    })
+    render(<CollectionTabClient />)
+    await new Promise((r) => setTimeout(r, 60))
+    expect(fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u.startsWith("/api/collection-moments"))).toBe(false)
+  })
+
+  it("\u26d4 does NOT auto-search a leftover USERNAME on a collection that cannot resolve one", async () => {
+    PARAMS.collection = "candy-mlb"
+    const store: Record<string, string> = { rpc_last_wallet: "collector" }
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (k: string) => store[k] ?? null,
+        setItem: (k: string, v: string) => { store[k] = v },
+        removeItem: () => {}, clear: () => {},
+      },
+    })
+    render(<CollectionTabClient />)
+    await new Promise((r) => setTimeout(r, 60))
+    expect(fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u.startsWith("/api/collection-moments"))).toBe(false)
+  })
+
+  it("DOES auto-search a Candy wallet on the Candy tab", async () => {
+    // The arms above are satisfied by a component that never auto-searches at
+    // all; this is what says the guard is a filter and not an off switch.
+    PARAMS.collection = "candy-mlb"
+    const store: Record<string, string> = { rpc_last_wallet: MINT }
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (k: string) => store[k] ?? null,
+        setItem: (k: string, v: string) => { store[k] = v },
+        removeItem: () => {}, clear: () => {},
+      },
+    })
+    render(<CollectionTabClient />)
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u.startsWith("/api/collection-moments"))).toBe(true)
+    })
+  })
+
+  it("no-change control: a Flow tab still auto-searches BOTH a wallet and a username", async () => {
+    for (const seed of ["0xmine", "collector"]) {
+      cleanup()
+      fetchMock.mockClear()
+      const store: Record<string, string> = { rpc_last_wallet: seed }
+      Object.defineProperty(window, "localStorage", {
+        configurable: true,
+        value: {
+          getItem: (k: string) => store[k] ?? null,
+          setItem: (k: string, v: string) => { store[k] = v },
+          removeItem: () => {}, clear: () => {},
+        },
+      })
+      render(<CollectionTabClient />)
+      await waitFor(() => {
+        expect(
+          fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u.startsWith("/api/collection-moments")),
+          seed,
+        ).toBe(true)
+      })
+    }
+  })
+
+  it("classifies a base58 address as an address, not a username", async () => {
+    // `search-executed` is the only instrument that says whether Candy search is
+    // used at all, and with the old `startsWith("0x")` test it reported 100% of
+    // Candy searches as usernames.
+    PARAMS.collection = "candy-mlb"
+    render(<CollectionTabClient />)
+    const box = await screen.findByPlaceholderText(/wallet address/)
+    fireEvent.change(box, { target: { value: MINT } })
+    fireEvent.keyDown(box, { key: "Enter" })
+    await waitFor(() => expect(track).toHaveBeenCalled())
+    expect(track.mock.calls[0][1]).toMatchObject({ input_kind: "address" })
+  })
+
+  // 2026-11-16: search-executed said a search RAN, never whether the wallet LOADED
+  it("records the search outcome: the server's total on a load, ok:false on a failed one", async () => {
+    render(<CollectionTabClient />)
+    const box = await screen.findByPlaceholderText(/wallet address/)
+    fireEvent.change(box, { target: { value: "0xa1b2c3d4e5f60718" } })
+    fireEvent.keyDown(box, { key: "Enter" })
+    await waitFor(() => expect(track.mock.calls.some((c) => c[0] === "search-result")).toBe(true))
+    const ok = track.mock.calls.find((c) => c[0] === "search-result")![1]
+    expect(ok).toMatchObject({ ok: true, total: 137 })
+    expect(typeof ok.ms).toBe("number")
+    cleanup()
+    track.mockClear()
+    momentsResponse = () => json(503, { error: "unavailable" })
+    render(<CollectionTabClient />)
+    const box2 = await screen.findByPlaceholderText(/wallet address/)
+    fireEvent.change(box2, { target: { value: "0xa1b2c3d4e5f60718" } })
+    fireEvent.keyDown(box2, { key: "Enter" })
+    await waitFor(() => expect(track.mock.calls.some((c) => c[0] === "search-result")).toBe(true))
+    expect(track.mock.calls.find((c) => c[0] === "search-result")![1]).toMatchObject({ ok: false })
+  })
+})
+
+// 2026-11-07 (Trevor, screenshots of his own binder): a signed-in collector whose SAVED
+// wallet auto-loaded saw "This device's wallet 0xbd94…50ac · the wallet you load here
+// becomes this device's profile" above an address box with Search / Share / "✓ Saved to
+// profile" — a page that is already their binder asking them who they are. Both collapse
+// for that reader; a signed-out visitor, a signed-in reader with no saved wallet, and a
+// ?wallet= the reader typed all keep the search row.
+// 2026-11-16 (save vs follow): a signed-in collector looking at a FRIEND's wallet
+// must not make the friend "this device's profile" — Sets read that key before the
+// saved wallet and edition grids counted the friend's moments as owned. Signed in
+// with an account wallet, the search writes the ACCOUNT wallet (repairing a device
+// an earlier search pointed elsewhere) and the device chip stays hidden.
+describe("CollectionTabClient — looking at a friend signed in leaves the device key yours", () => {
+  const withProfile = (body: unknown) => {
+    const base = fetchMock.getMockImplementation() as (input: unknown) => Promise<Response>
+    fetchMock.mockImplementation(async (input: unknown) =>
+      String(input).startsWith("/api/profile/me") ? json(200, body) : base(input),
+    )
+  }
+
+  it("signed in with an account wallet: the device key gets the ACCOUNT wallet, not the friend's; no chip", async () => {
+    withProfile({ user: { id: "u1", wallet_addr: "0xAAAAAAAAAAAAAAAA" } })
+    ownerKeyWrites.length = 0
+    ownerKey = "0xfriendfriendfrie"
+    momentsResponse = () =>
+      json(200, { moments: [MOMENT()], wallet: "0xbbbbbbbbbbbbbbbb", page: 1, total_count: 1, total_pages: 1 })
+    searchParams = new URLSearchParams("wallet=0xbbbbbbbbbbbbbbbb")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(ownerKeyWrites.length).toBeGreaterThan(0))
+    expect(ownerKeyWrites.map((w) => w.key)).not.toContain("0xbbbbbbbbbbbbbbbb")
+    expect(ownerKeyWrites[ownerKeyWrites.length - 1]).toEqual({ chain: "flow", key: "0xaaaaaaaaaaaaaaaa" })
+    expect(screen.queryByText(/This device/)).toBeNull()
+  })
+
+  it("no-change control: signed OUT, the searched wallet still becomes the device key", async () => {
+    withProfile({ user: null })
+    ownerKeyWrites.length = 0
+    ownerKey = ""
+    momentsResponse = () =>
+      json(200, { moments: [MOMENT()], wallet: "0xbbbbbbbbbbbbbbbb", page: 1, total_count: 1, total_pages: 1 })
+    searchParams = new URLSearchParams("wallet=0xbbbbbbbbbbbbbbbb")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(ownerKeyWrites.length).toBeGreaterThan(0))
+    expect(ownerKeyWrites).toEqual([{ chain: "flow", key: "0xbbbbbbbbbbbbbbbb" }])
+  })
+
+  it("signed in, own binder visit with a device key left on a friend: the key is set back to the account wallet", async () => {
+    withProfile({ user: { id: "u1", wallet_addr: "0xaaaaaaaaaaaaaaaa" } })
+    ownerKeyWrites.length = 0
+    ownerKey = "0xbbbbbbbbbbbbbbbb"
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(ownerKeyWrites).toContainEqual({ chain: "flow", key: "0xaaaaaaaaaaaaaaaa" }))
+    expect(ownerKeyWrites.map((w) => w.key)).not.toContain("0xbbbbbbbbbbbbbbbb")
+  })
+})
+
+describe("CollectionTabClient — a signed-in collector's own binder shows no address box", () => {
+  const withProfile = (body: unknown) => {
+    const base = fetchMock.getMockImplementation() as (input: unknown) => Promise<Response>
+    fetchMock.mockImplementation(async (input: unknown) =>
+      String(input).startsWith("/api/profile/me") ? json(200, body) : base(input),
+    )
+  }
+
+  it("signed in + saved wallet loaded: no address box, no device-wallet chip, Share stays", async () => {
+    withProfile({ user: { id: "u1" } })
+    savedWallet = "0xsaved"
+    ownerKey = "0xsaved"
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("wallet=0xsaved"))).toBe(true))
+    await waitFor(() => expect(screen.getByRole("button", { name: /share my collection/i })).toBeTruthy())
+    expect(screen.queryByPlaceholderText(/wallet address/)).toBeNull()
+    expect(screen.queryByText(/This device/)).toBeNull()
+    expect(screen.queryByRole("button", { name: /^Search$/ })).toBeNull()
+  })
+
+  it("signed OUT with the same device key: the address box and the chip stay", async () => {
+    withProfile({ user: null })
+    searchParams = new URLSearchParams("wallet=0xsaved")
+    ownerKey = "0xsaved"
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("wallet=0xsaved"))).toBe(true))
+    expect(await screen.findByPlaceholderText(/wallet address/)).toBeTruthy()
+    await waitFor(() => expect(screen.queryByText(/This device/)).toBeTruthy())
+  })
+
+  it("signed in but a ?wallet= the reader typed (not their saved one): the box stays", async () => {
+    withProfile({ user: { id: "u1" } })
+    savedWallet = "0xsaved"
+    searchParams = new URLSearchParams("wallet=0xsomeoneelse")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("wallet=0xsomeoneelse"))).toBe(true))
+    expect(await screen.findByPlaceholderText(/wallet address/)).toBeTruthy()
+  })
+
+  // 2026-11-07: the binder writes ?wallet= into the URL, so a RELOAD of your own binder
+  // arrives as a typed wallet — it is still yours, and the box stays hidden.
+  it("signed in + ?wallet= that IS the saved wallet (a reload): no address box", async () => {
+    withProfile({ user: { id: "u1" } })
+    savedWallet = "0xsaved"
+    searchParams = new URLSearchParams("wallet=0xsaved")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByRole("button", { name: /share my collection/i })).toBeTruthy())
+    expect(screen.queryByPlaceholderText(/wallet address/)).toBeNull()
+  })
+
+  // 2026-11-07 (Trevor's laptop): the device seed searched an OLD 0x3795… key in
+  // parallel with the saved wallet — last response wins. A signed-in reader with a
+  // saved wallet gets ONLY the saved wallet searched.
+  it("signed in + saved wallet + a different device key: only the saved wallet is ever searched", async () => {
+    withProfile({ user: { id: "u1" } })
+    savedWallet = "0xsaved"
+    savedWalletDelayMs = 40 // the account lookup lands AFTER the device seed would fire
+    ownerKey = "0xdeadbeefdeadbeef"
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("wallet=0xsaved"))).toBe(true))
+    await new Promise((r) => setTimeout(r, 50))
+    const searched = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.includes("collection-moments"))
+    expect(searched.some((u) => u.includes("0xdeadbeefdeadbeef"))).toBe(false)
+  })
+
+  it("signed in with NO saved wallet: the device key is still the fallback", async () => {
+    withProfile({ user: { id: "u1" } })
+    savedWallet = null
+    ownerKey = "0xdeadbeefdeadbeef"
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("0xdeadbeefdeadbeef"))).toBe(true))
+  })
+
+  it("a FAILED identity read is unknown, not signed-in: the box stays", async () => {
+    withProfile({})
+    savedWallet = "0xsaved"
+    const base = fetchMock.getMockImplementation() as (input: unknown) => Promise<Response>
+    fetchMock.mockImplementation(async (input: unknown) =>
+      String(input).startsWith("/api/profile/me") ? json(500, {}) : base(input),
+    )
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("wallet=0xsaved"))).toBe(true))
+    expect(await screen.findByPlaceholderText(/wallet address/)).toBeTruthy()
+  })
+})
+
+// 2026-09-29 — the binder's ONE account-level fallback is AutoSearchReader's
+// saved wallet. A profile-wallet seed (added 09-28) served 0 extra accounts and
+// raced it to a DIFFERENT wallet for 1, so it was removed. This pins the removal:
+// a profile wallet alone never triggers a binder search.
+describe("CollectionTabClient — no second account-level seed", () => {
+  it("signed in with a profile wallet but no saved wallet: the profile wallet is never searched", async () => {
+    PARAMS.collection = "nba-top-shot"
+    const OWN = "0x1111222233334444"
+    const base = fetchMock.getMockImplementation() as (input: unknown) => unknown
+    fetchMock.mockImplementation(async (input: unknown) =>
+      String(input).startsWith("/api/profile/me")
+        ? json(200, { user: { id: "u1", wallet_addr: OWN } })
+        : base(input),
+    )
+    render(<CollectionTabClient />)
+    // (fetchSavedWalletForCollection is mocked above — no request to await.)
+    await new Promise((r) => setTimeout(r, 150))
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+    expect(urls.some((u) => u.startsWith("/api/collection-moments?") && u.includes(`wallet=${OWN}`))).toBe(false)
+  })
+})
+
+// 2026-10-18: cost-basis, cache-refresh and wallet-packs are session-gated, so for
+// a signed-out visitor (a pasted wallet) each fired a guaranteed 401 — a red
+// console error per Collection-tab view. Skipped only on a DEFINITE signed-out;
+// an unknown identity read still fetches, so a signed-in reader loses nothing.
+describe("CollectionTabClient — session-gated reads wait for a signed-in answer", () => {
+  const GATED = ["/api/cost-basis", "/api/cache-refresh", "/api/wallet-packs"]
+  const withProfile = (body: unknown) => {
+    const base = fetchMock.getMockImplementation() as (input: unknown) => Promise<Response>
+    fetchMock.mockImplementation(async (input: unknown) =>
+      String(input).startsWith("/api/profile/me") ? json(200, body) : base(input),
+    )
+  }
+  const urls = () => fetchMock.mock.calls.map((c) => String(c[0]))
+
+  it("a signed-out visitor fires none of them, and the wallet still loads", async () => {
+    withProfile({ user: null })
+    searchParams = new URLSearchParams("wallet=0xbd94cade097e50ac")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(urls().some((u) => u.startsWith("/api/collection-moments"))).toBe(true))
+    await waitFor(() => expect(urls().some((u) => u.startsWith("/api/profile/me"))).toBe(true))
+    await new Promise((r) => setTimeout(r, 50))
+    for (const g of GATED) expect(urls().filter((u) => u.startsWith(g)), g).toEqual([])
+  })
+
+  it.each([
+    ["signed in", { user: { id: "u1" } }],
+    ["UNKNOWN (no user key)", {}],
+  ])("%s → all three still fire", async (_l, body) => {
+    withProfile(body)
+    searchParams = new URLSearchParams("wallet=0xbd94cade097e50ac")
+    render(<CollectionTabClient />)
+    for (const g of GATED) {
+      await waitFor(() => expect(urls().some((u) => u.startsWith(g)), g).toBe(true))
+    }
+  })
+})
+
+// 2026-10-18: a failed /api/badges chunk left its rows pill-less with nothing on
+// screen saying so — and a badge filter then dropped them as "no badges".
+describe("CollectionTabClient — a failed badge read is said, not shown as no badges", () => {
+  const withBadges = (res: () => Response) => {
+    const base = fetchMock.getMockImplementation() as (input: unknown) => Promise<Response>
+    fetchMock.mockImplementation(async (input: unknown) =>
+      String(input).startsWith("/api/badges") ? res() : base(input),
+    )
+  }
+
+  it("a 500 from /api/badges shows the partial-badges note", async () => {
+    withBadges(() => json(500, { error: "boom" }))
+    searchParams = new URLSearchParams("wallet=0xbd94cade097e50ac")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("badges-partial-note")).toBeTruthy())
+  })
+
+  it("a THROWN badge read shows it too", async () => {
+    withBadges(() => { throw new Error("network") })
+    searchParams = new URLSearchParams("wallet=0xbd94cade097e50ac")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("badges-partial-note")).toBeTruthy())
+  })
+
+  it("NO-CHANGE CONTROL: a healthy badge read shows no note", async () => {
+    searchParams = new URLSearchParams("wallet=0xbd94cade097e50ac")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).startsWith("/api/badges"))).toBe(true))
+    await new Promise((r) => setTimeout(r, 50))
+    expect(screen.queryByTestId("badges-partial-note")).toBeNull()
+  })
+})
+
+// ─── Late answers (2026-11-14) ───────────────────────────────────────────────
+
+describe("CollectionTabClient — a late wallet-summary answer for an earlier search", () => {
+  it("does not overwrite the newer wallet's totals", async () => {
+    let releaseWhale: (r: Response) => void = () => {}
+    const base = fetchMock.getMockImplementation() as (input: unknown) => Promise<Response>
+    fetchMock.mockImplementation(async (input: unknown) => {
+      const url = String(input)
+      if (url.startsWith("/api/wallet-summary") && url.includes("0xwhale")) {
+        return new Promise<Response>((resolve) => { releaseWhale = resolve })
+      }
+      if (url.startsWith("/api/wallet-summary")) return json(200, { wallet_fmv: 4321, total_moments: 1 })
+      return base(input)
+    })
+    searchParams = new URLSearchParams("wallet=0xwhale")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).startsWith("/api/wallet-summary") && String(c[0]).includes("0xwhale"))).toBe(true))
+    const box = screen.getByPlaceholderText(/Top Shot username or wallet address/)
+    fireEvent.change(box, { target: { value: "0xsmall" } })
+    fireEvent.keyDown(box, { key: "Enter" })
+    await waitFor(() => expect(screen.getByTestId("portfolio").getAttribute("data-summary-fmv")).toBe("4321"))
+    await act(async () => { releaseWhale(await json(200, { wallet_fmv: 987654, total_moments: 15000 })) })
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)) })
+    // The whale's summary arrived last; the newer wallet's must still be the one shown.
+    expect(screen.getByTestId("portfolio").getAttribute("data-summary-fmv")).toBe("4321")
+  })
+})

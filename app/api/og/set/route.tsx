@@ -1,0 +1,64 @@
+// app/api/og/set/route.tsx
+// Branded per-set OG card (2x2 montage). GET /api/og/set?collection=<slug>&slug=<setSlug>
+import { NextRequest } from "next/server"
+import { supabaseAdmin } from "@/lib/supabase"
+import { getCollectionByUrlSlug } from "@/lib/collection-slug"
+import { getCollection } from "@/lib/collections"
+import { renderEntityOg } from "@/lib/og/entity-card"
+import { boundedRead } from "@/lib/api/bounded-read"
+import { OG_FETCH_TIMEOUT_MS } from "@/lib/og/og-fetch"
+import { usdSignFirst } from "@/lib/usd-format"
+
+export const runtime = "nodejs"
+export const dynamic = "force-dynamic"
+
+function fmtUsd(n: number | null | undefined): string {
+  const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
+  if (n == null || !Number.isFinite(n)) return ""
+  if (Math.abs(n) >= 1000) return "$" + Math.round(n).toLocaleString("en-US")
+  return "$" + n.toFixed(2)
+}
+function thumbs(rows: unknown): string[] {
+  if (!Array.isArray(rows)) return []
+  return rows.map((r) => (r && typeof r === "object" ? (r as Record<string, unknown>).thumbnail_url : null)).filter((u): u is string => typeof u === "string")
+}
+
+export async function GET(req: NextRequest) {
+  const sp = req.nextUrl.searchParams
+  const collection = sp.get("collection") || ""
+  const slug = sp.get("slug") || ""
+  const coll = getCollectionByUrlSlug(collection)
+  const accent = getCollection(collection)?.accent ?? null
+  const label = coll?.displayName ?? "Rip Packs City"
+  if (!coll || !slug) return renderEntityOg({ eyebrow: "RIP PACKS CITY", title: label, images: [], accent })
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sb = supabaseAdmin as any
+  let detail: Record<string, any> | null = null
+  let images: string[] = []
+  // A failed detail read is not "no such set": its placeholder must not be cached for a day.
+  let readFailed = false
+  try {
+    const [d, eds] = await Promise.all([
+      boundedRead(sb.rpc("get_set_detail", { p_collection_id: coll.id, p_set_slug: slug }), "og/set/get_set_detail", OG_FETCH_TIMEOUT_MS),
+      boundedRead(sb.rpc("get_set_editions", { p_collection_id: coll.id, p_set_slug: slug, p_limit: 4, p_offset: 0 }), "og/set/get_set_editions", OG_FETCH_TIMEOUT_MS),
+    ])
+    if (d.error) readFailed = true
+    detail = Array.isArray(d.data) ? (d.data[0] ?? null) : (d.data ?? null)
+    images = thumbs(eds.data)
+  } catch { readFailed = true }
+
+  if (!detail) return renderEntityOg({ eyebrow: label.toUpperCase(), title: "Set", images, accent, readFailed })
+
+  const edCount = detail.edition_count != null ? Number(detail.edition_count) : null
+  const fmvTotal = detail.fmv_total_usd != null ? Number(detail.fmv_total_usd) : null
+  return renderEntityOg({
+    eyebrow: `${label.toUpperCase()} · SET`,
+    title: detail.set_name ?? "Set",
+    subtitle: edCount ? `${edCount.toLocaleString("en-US")} ${edCount === 1 ? "edition" : "editions"}` : null,
+    accent,
+    images,
+    statLabel: fmvTotal && fmvTotal > 0 ? "Aggregate FMV" : null,
+    statValue: fmvTotal && fmvTotal > 0 ? fmtUsd(fmvTotal) : null,
+  })
+}

@@ -1,0 +1,1959 @@
+// workers/pack-events-ingest/index.ts
+//
+// Pack lifecycle classifier — advances multiple cursors in event_cursor,
+// indexes pack purchases (TS secondary + TS primary + AllDay primary) and
+// TS pack opens, then backfills moment_acquisitions with verified pack_rip
+// provenance (replacing the 'cache-refresh:%' placeholders left by earlier
+// wallet-walk ingest).
+//
+// Auth:    POST /          Bearer INGEST_SECRET_TOKEN  (live ingest)
+//          POST /backfill  Bearer INGEST_SECRET_TOKEN  (historical backfill)
+// Health:  GET  /health    unauthenticated; returns {ok: true, ...}
+//
+// Live mode (POST /) advances three cursors toward sealed tip:
+//   topshot_pack_purchases   — TS secondary (ListingCompleted) + TS primary
+//                              (PackNFT.Withdraw from contract self-address)
+//   topshot_pack_opens       — TS pack opens (PackNFT.Opened + moment splits)
+//   allday_pack_purchases    — AllDay primary (PackNFT.Mint)
+//
+// Backfill mode (POST /backfill) advances four cursors. The first two
+// retain the original TARGET_END_BLOCK boundary; the latter two have their
+// own per-cursor stop conditions:
+//   topshot_pack_purchases_backfill           — full TS coverage; stops at
+//                                               TARGET_END_BLOCK (151_610_000)
+//   topshot_pack_opens_backfill               — TS opens; stops at
+//                                               TARGET_END_BLOCK
+//   topshot_pack_purchases_primary_backfill   — TS primary-only gap-fill,
+//                                               148_969_696 → 151_848_205.
+//                                               Secondary rows in this range
+//                                               are already covered by the
+//                                               forward cursor's prior runs,
+//                                               so this cursor only queries
+//                                               PackNFT.Withdraw + Deposit.
+//                                               Once cursor >= end block,
+//                                               the worker logs "primary
+//                                               backfill complete" and skips
+//                                               the cursor on subsequent
+//                                               runs.
+//   allday_pack_purchases_backfill            — AllDay backfill, walks
+//                                               forward from 148_969_696
+//                                               until within 1000 blocks
+//                                               of the live AllDay forward
+//                                               cursor; then logs "allday
+//                                               backfill caught up to
+//                                               forward cursor" and skips
+//                                               on subsequent runs.
+//
+// Cursor ordering inside an invocation matters when several cursors share
+// SOFT_BUDGET_MS. Backfill mode runs the NEW cursors first because the
+// existing topshot_pack_purchases_backfill has millions of blocks left to
+// grind and would otherwise starve them every tick. Live mode keeps the
+// existing ordering — the TS forward cursors are typically within
+// CAUGHT_UP_THRESHOLD of tip and yield quickly, leaving the bulk of the
+// budget for allday_pack_purchases.
+//
+// Response payload (always 200, even on per-cursor failure so cron retries
+// cleanly):
+//   {
+//     ok: boolean,                  // false iff any cursor errored
+//     purchases:        {...},      // TS forward purchases (both modes)
+//     opens:            {...},      // TS opens (both modes)
+//     allday_forward:   {...},      // live mode only
+//     primary_backfill: {...},      // backfill mode only
+//     allday_backfill:  {...},      // backfill mode only
+//     sealed_tip:       number,
+//     duration_ms:      number,
+//     errors?:          [{ cursor, message }],
+//   }
+//
+// Subrequest budget: all Supabase writes batched per cursor. Each cursor
+// accumulates rows in-memory during its chunk loop, then flushes in a
+// single batch upsert after the loop exits. Cursor advance is deferred
+// to the very end and runs across all cursors in parallel via
+// allSettled. If a batch flush throws, that cursor does NOT advance and
+// the next cron tick re-attempts the entire accumulated range
+// (idempotent because pack_purchases uses ON CONFLICT
+// (tx_hash, pack_nft_id) DO NOTHING).
+//
+// Stop conditions per cursor's chunk loop:
+//   live cursors (effectiveEnd = null):
+//     (a) within CAUGHT_UP_THRESHOLD of sealed tip,
+//     (b) shared SOFT_BUDGET_MS exhausted across this invocation,
+//     (c) MAX_CHUNKS_PER_CURSOR_LIVE chunks processed,
+//     (d) chunk threw.
+//   backfill cursors (effectiveEnd = some number):
+//     (a) cursor >= effectiveEnd,
+//     (b) shared SOFT_BUDGET_MS exhausted,
+//     (c) MAX_CHUNKS_PER_CURSOR_BACKFILL chunks processed,
+//     (d) chunk threw.
+// caught_up in the response means the cursor reached its stop block.
+
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { deriveCurrency } from "./currency";
+import { unwrapCdc, extractTypeId } from "./cdc";
+import { nextChunkBounds, clampChunkTarget } from "./chunk-bounds";
+
+interface Env {
+  INGEST_SECRET_TOKEN: string;
+  SUPABASE_URL: string;
+  SUPABASE_SERVICE_ROLE_KEY: string;
+}
+
+type Mode = "live" | "backfill";
+
+const FLOW_REST = "https://rest-mainnet.onflow.org";
+const COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"; // Top Shot
+const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070";
+const CHUNK_SIZE = 250;
+const REQUEST_TIMEOUT_MS = 20_000;
+// 20s (was 25s): the live path now runs in-request, so the loop budget + the
+// post-loop flush/cursor/log must mostly fit under cron-job.org's 30s client
+// cap. 20s leaves ~10s headroom for the (chunked) flush; an overrun still
+// completes server-side, it just shows a cosmetic cron "timeout".
+const SOFT_BUDGET_MS = 20_000;
+// Live-mode staged per-leg budgets (2026-06-26). The live legs run in a fixed
+// order (purchases -> opens -> allday_forward) sharing one SOFT_BUDGET_MS. That
+// assumed purchases finishes near tip in a few hundred ms. A large primary pack
+// drop (e.g. ~19:00Z 2026-06-25: 4,938 primary_withdraw rows) puts purchases
+// perpetually chunk-capped, so it consumed the WHOLE budget every invocation and
+// opens + allday_forward hit the loop's budget guard immediately and bailed with
+// chunks_processed:0 (cursors frozen, ok=true, no error). Staged deadlines give
+// purchases the first 60% but RESERVE a slice for opens (up to 80%) and
+// allday_forward (the remainder), guaranteeing forward progress on every leg
+// each invocation. When purchases is caught up (the normal case) it returns in
+// <1s and the later legs still get nearly the full budget, unchanged from before.
+const LIVE_BUDGET_PURCHASES_MS = 12_000; // 60% of SOFT_BUDGET_MS
+const LIVE_BUDGET_OPENS_MS = 16_000; // 80% — opens runs from purchases-end..16s
+const MAX_CHUNKS_PER_CURSOR_LIVE = 20;
+const MAX_CHUNKS_PER_CURSOR_BACKFILL = 40;
+const CAUGHT_UP_THRESHOLD = 50;
+const SEALED_TIP_TTL_MS = 60_000;
+
+// Seed point of the live TS purchases/opens cursors. The existing TS
+// backfill stops here so historical and live ranges never overlap. The
+// new primary-only backfill extends PAST this boundary up to
+// TS_PRIMARY_BACKFILL_END_BLOCK — that's deliberate, since the live
+// forward cursor has already covered the slice
+// (151_610_000 → 151_848_205) and the (tx_hash, pack_nft_id) ON CONFLICT
+// target makes the overlap idempotent.
+const TARGET_END_BLOCK = 151_610_000;
+
+// Hard stop for the TS primary-only backfill cursor. Once
+// last_processed_block >= this, the cursor is skipped on subsequent
+// invocations with a single "primary backfill complete" log line.
+const TS_PRIMARY_BACKFILL_END_BLOCK = 151_848_205;
+
+// AllDay backfill auto-stop threshold. When
+// allday_pack_purchases_backfill.last_processed_block >=
+// allday_pack_purchases.last_processed_block - ALLDAY_BACKFILL_CATCHUP_THRESHOLD,
+// the backfill cursor has effectively caught up to the live cursor and
+// is skipped on subsequent invocations with a single
+// "allday backfill caught up to forward cursor" log line.
+const ALLDAY_BACKFILL_CATCHUP_THRESHOLD = 1000;
+
+const CURSOR_PURCHASES = "topshot_pack_purchases";
+const CURSOR_OPENS = "topshot_pack_opens";
+const CURSOR_PURCHASES_BACKFILL = "topshot_pack_purchases_backfill";
+const CURSOR_OPENS_BACKFILL = "topshot_pack_opens_backfill";
+const CURSOR_TS_PRIMARY_BACKFILL = "topshot_pack_purchases_primary_backfill";
+const CURSOR_ALLDAY_FORWARD = "allday_pack_purchases";
+const CURSOR_ALLDAY_BACKFILL = "allday_pack_purchases_backfill";
+
+const EVT_LISTING_COMPLETED = "A.4eb8a10cb9f87357.NFTStorefrontV2.ListingCompleted";
+const EVT_PACKNFT_DEPOSIT = "A.0b2a3299cc857e29.PackNFT.Deposit";
+const EVT_PACKNFT_WITHDRAW = "A.0b2a3299cc857e29.PackNFT.Withdraw";
+const EVT_PACKNFT_OPENED = "A.0b2a3299cc857e29.PackNFT.Opened";
+const EVT_TOPSHOT_DEPOSIT = "A.0b2a3299cc857e29.TopShot.Deposit";
+const EVT_TOPSHOT_WITHDRAW = "A.0b2a3299cc857e29.TopShot.Withdraw";
+const PACK_NFT_TYPE_ID = "A.0b2a3299cc857e29.PackNFT.NFT";
+
+// AllDay PackNFT (NFL All Day). Every PackNFT.Mint emission is by
+// definition a primary Studio drop — the AllDay contract is the only
+// thing that can emit Mint, so no signer/from filter is required (unlike
+// Top Shot's Withdraw path, where the same event also fires on secondary
+// sales and must be filtered by from = contract addr). The Mint event
+// carries {id: UInt64, commitHash: String, distId: String}; buyer
+// address comes from the matching same-tx PackNFT.Deposit. seller_address
+// is NULL because Mint has no prior holder; the
+// pack_purchases.seller_address_format CHECK accepts NULL or a real Flow
+// address, and the row trigger flips is_primary_drop based on
+// event_kind = 'primary_mint'.
+const EVT_ALLDAY_PACKNFT_MINT = "A.e4cf4bdc1751c65d.PackNFT.Mint";
+const EVT_ALLDAY_PACKNFT_DEPOSIT = "A.e4cf4bdc1751c65d.PackNFT.Deposit";
+// 2026-09-27: the All Day secondary seller. Same shape as Top Shot's fix
+// (2026-09-18): on a marketplace sale the pack is withdrawn FROM THE SELLER
+// inside the purchase tx, so Withdraw.from IS the seller, while the payer is
+// Dapper's escrow. Verified on-chain against allday_pack_sales_history
+// .storefront_address for txs f7477d3f… and 785243fa… (both exact matches).
+const EVT_ALLDAY_PACKNFT_WITHDRAW = "A.e4cf4bdc1751c65d.PackNFT.Withdraw";
+
+// Secondary AllDay pack sales route through the same V2 Dapper
+// NFTStorefrontV2 contract as TopShot pack secondaries (the address +
+// contract are identical; only the nftType filter changes). Verified
+// 2026-05-18 via Trevor's $1 Regal Rookie pack purchase, customID =
+// "DAPPER_MARKETPLACE". The AllDay PackNFT type identifies the
+// listed asset.
+const ALLDAY_PACK_NFT_TYPE_ID = "A.e4cf4bdc1751c65d.PackNFT.NFT";
+
+// Top Shot PackNFT contract self-address. A PackNFT.Withdraw event whose
+// `from` field equals this address means the pack is being delivered out
+// of the reserve held in the contract account itself — i.e. a primary
+// drop from Top Shot Studio, not a seller's storefront. Confirmed via
+// tx 114ca189f266eaeab87eac2f218cc57a3b31630fdf1a61333d7eb249394dffd7.
+const TS_PACKNFT_CONTRACT_ADDR = "0x0b2a3299cc857e29";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HTTP helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+function jsonError(status: number, error: string, extra?: Record<string, unknown>): Response {
+  return new Response(JSON.stringify({ error, ...extra }), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+// Deploy verification sentinel. Bumped any time meaningful behavior changes
+// in this file so curl /health proves which generation is actually on the
+// edge — wrangler reports a deploy as successful even when it uploads a
+// stale bundle (observed 2026-05-18: deployed binary kept emitting the
+// Prompt-13-removed legacy lookup throw despite source on main being clean).
+// Format: ISO-date + short tag.
+const WORKER_BUILD_TAG = "2026-06-11-p26-sync-inrequest-chunked";
+
+function healthOk(): Response {
+  return new Response(
+    JSON.stringify({
+      ok: true,
+      worker: "pack-events-ingest",
+      build_tag: WORKER_BUILD_TAG,
+      cursors: [
+        CURSOR_PURCHASES,
+        CURSOR_OPENS,
+        CURSOR_PURCHASES_BACKFILL,
+        CURSOR_OPENS_BACKFILL,
+        CURSOR_TS_PRIMARY_BACKFILL,
+        CURSOR_ALLDAY_FORWARD,
+        CURSOR_ALLDAY_BACKFILL,
+      ],
+      block_chunk_size: CHUNK_SIZE,
+      // Prompt 13: pack_rips lookup chunking — these constants need to be
+      // present on the deployed binary for backfill to drain past 100+ tx
+      // hashes per invocation. If they're missing from /health, the worker
+      // is running pre-Prompt-13 code regardless of what wrangler reported.
+      pack_rips_lookup_chunk_size: PACK_RIPS_LOOKUP_CHUNK_SIZE,
+      pack_rips_lookup_concurrency: PACK_RIPS_LOOKUP_CONCURRENCY,
+      // Prompt 17: moment_acquisitions placeholder delete chunking. Same
+      // architectural pattern as Prompt 13. If this field is missing, the
+      // deployed binary is pre-Prompt-17 and backfill will throw at the
+      // ~2500-pair URL-length limit just like it threw at ~800 hashes
+      // pre-Prompt-13.
+      moment_acquisitions_delete_chunk_size: MOMENT_ACQUISITIONS_DELETE_CHUNK_SIZE,
+      collection_id: COLLECTION_ID,
+      allday_collection_id: ALLDAY_COLLECTION_ID,
+      target_end_block: TARGET_END_BLOCK,
+      ts_primary_backfill_end_block: TS_PRIMARY_BACKFILL_END_BLOCK,
+      allday_backfill_catchup_threshold: ALLDAY_BACKFILL_CATCHUP_THRESHOLD,
+    }),
+    { status: 200, headers: { "Content-Type": "application/json" } },
+  );
+}
+
+function zeroPurchases() {
+  return {
+    from_block: 0,
+    to_block: 0,
+    chunks_processed: 0,
+    events_processed: 0,
+    rows_inserted: 0,
+    secondary_rows: 0,
+    primary_withdraw_rows: 0,
+    primary_mint_rows: 0,
+    caught_up: false,
+  };
+}
+
+function zeroOpens() {
+  return {
+    from_block: 0,
+    to_block: 0,
+    chunks_processed: 0,
+    rips_inserted: 0,
+    moments_linked: 0,
+    caught_up: false,
+  };
+}
+
+function zeroAllDayForward() {
+  return {
+    from_block: 0,
+    to_block: 0,
+    chunks_processed: 0,
+    events_processed: 0,
+    rows_inserted: 0,
+    primary_mint_rows: 0,
+    caught_up: false,
+  };
+}
+
+function zeroPrimaryBackfill() {
+  return {
+    from_block: 0,
+    to_block: 0,
+    chunks_processed: 0,
+    events_processed: 0,
+    rows_inserted: 0,
+    primary_withdraw_rows: 0,
+    complete: false,
+    end_block: TS_PRIMARY_BACKFILL_END_BLOCK,
+  };
+}
+
+function zeroAllDayBackfill() {
+  return {
+    from_block: 0,
+    to_block: 0,
+    chunks_processed: 0,
+    events_processed: 0,
+    rows_inserted: 0,
+    primary_mint_rows: 0,
+    caught_up_to_forward: false,
+    catchup_target_block: 0,
+    allday_forward_cursor: 0,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cadence JSON decoder (mirrors lib/cdc and pinnacle-events-ingest cron) — moved
+// to ./cdc so unwrapCdc/extractTypeId are unit-testable; imported at the top.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Take the substring after the last dot in salePaymentVaultType with the
+// trailing `.Vault` stripped, then map the known contract names to the
+// canonical RPC short codes.
+// deriveCurrency moved to ./currency so the vault-type → currency mapping is
+// unit-testable — imported at the top of this file.
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Flow REST fetchers
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface FlowEventBlock {
+  block_height: string;
+  block_timestamp: string;
+  events?: Array<{ payload: string; transaction_id: string; event_index: number; type: string }>;
+}
+
+interface FlatEvent {
+  block_height: number;
+  block_timestamp: string;
+  transaction_id: string;
+  event_index: number;
+  type: string;
+  decoded: Record<string, unknown>;
+}
+
+async function fetchEventChunk(
+  eventType: string,
+  start: number,
+  end: number,
+): Promise<FlatEvent[]> {
+  const url =
+    `${FLOW_REST}/v1/events?type=${encodeURIComponent(eventType)}` +
+    `&start_height=${start}&end_height=${end}`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+  if (!res.ok) {
+    throw new Error(
+      `flow rest /v1/events HTTP ${res.status} type=${eventType} range=${start}..${end}: ${(await res.text()).slice(0, 200)}`,
+    );
+  }
+  const blocks = (await res.json()) as FlowEventBlock[];
+  const flat: FlatEvent[] = [];
+  for (const blk of Array.isArray(blocks) ? blocks : []) {
+    const bh = Number(blk.block_height);
+    const bts = blk.block_timestamp;
+    for (const evt of blk.events ?? []) {
+      let decoded: Record<string, unknown> = {};
+      try {
+        const bytes = Uint8Array.from(atob(evt.payload), (c) => c.charCodeAt(0));
+        const utf8 = new TextDecoder().decode(bytes);
+        decoded = unwrapCdc(JSON.parse(utf8)) as Record<string, unknown>;
+      } catch {
+        // leave decoded as {} — caller will skip rows with missing fields
+      }
+      flat.push({
+        block_height: bh,
+        block_timestamp: bts,
+        transaction_id: evt.transaction_id,
+        event_index: evt.event_index,
+        type: evt.type,
+        decoded,
+      });
+    }
+  }
+  return flat;
+}
+
+async function getSealedHeight(): Promise<number> {
+  const res = await fetch(`${FLOW_REST}/v1/blocks?height=sealed`, {
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  if (!res.ok) throw new Error(`flow rest /v1/blocks?height=sealed HTTP ${res.status}`);
+  const json = (await res.json()) as Array<{ header: { height: string } }>;
+  return Number(json[0]?.header?.height ?? 0);
+}
+
+// FALLBACK for seller_address when the purchase tx carries no same-tx
+// PackNFT.Withdraw for the pack (the spec's original "the transaction's payer
+// field"). On Dapper the payer is the ESCROW account, not the seller; see
+// withdrawByTxAndId in fetchTopShotPurchasesChunk (2026-09-18).
+const txPayerCache = new Map<string, string | null>();
+async function getTransactionPayer(txId: string): Promise<string | null> {
+  if (txPayerCache.has(txId)) return txPayerCache.get(txId) ?? null;
+  try {
+    const res = await fetch(`${FLOW_REST}/v1/transactions/${txId}`, {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      txPayerCache.set(txId, null);
+      return null;
+    }
+    const json = (await res.json()) as { payer?: string };
+    const payer = typeof json.payer === "string" ? json.payer : null;
+    txPayerCache.set(txId, payer);
+    return payer;
+  } catch {
+    txPayerCache.set(txId, null);
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cursor read / write — batched read at start, single write per cursor at end
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function readCursors(sb: SupabaseClient, ids: string[]): Promise<Record<string, number>> {
+  const { data, error } = await sb
+    .from("event_cursor")
+    .select("id, last_processed_block")
+    .in("id", ids);
+  if (error) throw new Error(`event_cursor batch read: ${error.message}`);
+  const map: Record<string, number> = {};
+  for (const row of (data ?? []) as Array<{ id: string; last_processed_block: number }>) {
+    map[row.id] = Number(row.last_processed_block);
+  }
+  for (const id of ids) {
+    if (map[id] === undefined) {
+      throw new Error(`event_cursor row missing for id=${id} — seed it before deploying`);
+    }
+  }
+  return map;
+}
+
+async function writeCursor(sb: SupabaseClient, id: string, height: number): Promise<void> {
+  const { error } = await sb
+    .from("event_cursor")
+    .upsert({ id, last_processed_block: height, updated_at: new Date().toISOString() });
+  if (error) throw new Error(`event_cursor write ${id} -> ${height}: ${error.message}`);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Purchase-row builders. Three fetchers share the PurchaseRow shape:
+//   fetchTopShotPurchasesChunk    — TS secondary (ListingCompleted) + TS
+//                                   primary (PackNFT.Withdraw from contract)
+//   fetchTopShotPrimaryOnlyChunk  — TS primary only (PackNFT.Withdraw +
+//                                   Deposit). Used by the primary-only
+//                                   backfill cursor that fills the historical
+//                                   gap below TS_PRIMARY_BACKFILL_END_BLOCK
+//                                   without re-processing secondary sales
+//                                   the forward cursor already covered.
+//   fetchAllDayPurchasesChunk     — AllDay primary (PackNFT.Mint + Deposit).
+//                                   Used by both AllDay forward and backfill
+//                                   cursors.
+// All three return a flat array of PurchaseRow + events_processed count.
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface PurchaseRow {
+  collection_id: string;
+  pack_nft_id: string;
+  buyer_address: string;
+  seller_address: string | null;
+  storefront_resource_id: string | null;
+  listing_resource_id: string | null;
+  sale_price: number | null;
+  sale_currency: string | null;
+  payment_vault_type: string | null;
+  custom_id: string | null;
+  commission_amount: number | null;
+  pack_name: null;
+  tx_hash: string;
+  block_height: number;
+  sealed_at: string;
+  event_kind: "secondary_sale" | "primary_withdraw" | "primary_mint";
+  pack_dist_id: string | null;
+}
+
+interface PurchasesChunkResult {
+  rows: PurchaseRow[];
+  events_processed: number;
+}
+
+async function fetchTopShotPurchasesChunk(
+  fromBlock: number,
+  toBlock: number,
+): Promise<PurchasesChunkResult> {
+  if (fromBlock > toBlock) {
+    return { rows: [], events_processed: 0 };
+  }
+
+  // Three parallel event scans cover the full TS pack-purchase universe:
+  //   ListingCompleted    → secondary marketplace sales
+  //   PackNFT.Deposit     → buyer-side address resolution
+  //   PackNFT.Withdraw    → primary Studio drops (from = contract addr)
+  const [listings, packDeposits, packWithdraws] = await Promise.all([
+    fetchEventChunk(EVT_LISTING_COMPLETED, fromBlock, toBlock),
+    fetchEventChunk(EVT_PACKNFT_DEPOSIT, fromBlock, toBlock),
+    fetchEventChunk(EVT_PACKNFT_WITHDRAW, fromBlock, toBlock),
+  ]);
+
+  // Index PackNFT.Deposit by (tx_id, nft_id) so each ListingCompleted
+  // (secondary) and each contract-self PackNFT.Withdraw (primary) can pair
+  // with the same-tx deposit that hands the pack to the buyer.
+  const depositByTxAndId = new Map<string, FlatEvent>();
+  for (const dep of packDeposits) {
+    const nftId = dep.decoded["id"];
+    if (nftId === undefined || nftId === null) continue;
+    depositByTxAndId.set(`${dep.transaction_id}:${String(nftId)}`, dep);
+  }
+  // 2026-09-18: index PackNFT.Withdraw the same way. On a marketplace sale the
+  // pack is withdrawn FROM THE SELLER'S collection inside the purchase tx, so
+  // Withdraw.from IS the seller. The transaction payer, which seller_address
+  // used until now, is Dapper's escrow (0x18eb4ee6b3c026d2) on 103,396 of
+  // 103,398 Top Shot secondary rows: a column that named the seller on exactly
+  // two sales platform-wide. The payer stays as the fallback only.
+  const withdrawByTxAndId = new Map<string, FlatEvent>();
+  for (const wd of packWithdraws) {
+    const nftId = wd.decoded["id"];
+    if (nftId === undefined || nftId === null) continue;
+    withdrawByTxAndId.set(`${wd.transaction_id}:${String(nftId)}`, wd);
+  }
+
+  const rows: PurchaseRow[] = [];
+  let eventsProcessed = 0;
+
+  // ── Secondary sales: ListingCompleted + matching PackNFT.Deposit ────
+  for (const lc of listings) {
+    eventsProcessed++;
+    const d = lc.decoded;
+    const nftTypeId = extractTypeId(d["nftType"]);
+    if (nftTypeId !== PACK_NFT_TYPE_ID) continue;
+    if (d["purchased"] !== true) continue;
+
+    const nftID = d["nftID"];
+    if (nftID === undefined || nftID === null) continue;
+    const nftIdStr = String(nftID);
+
+    const dep = depositByTxAndId.get(`${lc.transaction_id}:${nftIdStr}`);
+    if (!dep) continue; // pack handover never deposited — not a real purchase
+    const buyerAddress = dep.decoded["to"];
+    if (typeof buyerAddress !== "string") continue;
+
+    const wdFrom = withdrawByTxAndId.get(`${lc.transaction_id}:${nftIdStr}`)?.decoded["from"];
+    const sellerAddress =
+      typeof wdFrom === "string" && wdFrom.toLowerCase() !== TS_PACKNFT_CONTRACT_ADDR
+        ? wdFrom.toLowerCase()
+        : await getTransactionPayer(lc.transaction_id);
+
+    const vaultTypeId = extractTypeId(d["salePaymentVaultType"]);
+    const salePrice = d["salePrice"] === undefined || d["salePrice"] === null
+      ? null
+      : parseFloat(String(d["salePrice"]));
+    const commissionAmount = d["commissionAmount"] === undefined || d["commissionAmount"] === null
+      ? null
+      : parseFloat(String(d["commissionAmount"]));
+
+    rows.push({
+      collection_id: COLLECTION_ID,
+      pack_nft_id: nftIdStr,
+      buyer_address: buyerAddress,
+      seller_address: sellerAddress,
+      storefront_resource_id: d["storefrontResourceID"] != null ? String(d["storefrontResourceID"]) : null,
+      listing_resource_id: d["listingResourceID"] != null ? String(d["listingResourceID"]) : null,
+      sale_price: Number.isFinite(salePrice as number) ? salePrice : null,
+      sale_currency: deriveCurrency(vaultTypeId),
+      payment_vault_type: vaultTypeId ?? null,
+      custom_id: d["customID"] != null ? String(d["customID"]) : null,
+      commission_amount: Number.isFinite(commissionAmount as number) ? commissionAmount : null,
+      pack_name: null,
+      tx_hash: lc.transaction_id,
+      block_height: lc.block_height,
+      sealed_at: lc.block_timestamp,
+      event_kind: "secondary_sale",
+      pack_dist_id: null,
+    });
+  }
+
+  // ── Primary drops: PackNFT.Withdraw where from = contract self-addr ──
+  for (const wd of packWithdraws) {
+    eventsProcessed++;
+    const row = buildTopShotPrimaryRow(wd, depositByTxAndId);
+    if (row) rows.push(row);
+  }
+
+  return { rows, events_processed: eventsProcessed };
+}
+
+async function fetchTopShotPrimaryOnlyChunk(
+  fromBlock: number,
+  toBlock: number,
+): Promise<PurchasesChunkResult> {
+  if (fromBlock > toBlock) {
+    return { rows: [], events_processed: 0 };
+  }
+
+  // Two parallel event scans — secondary (ListingCompleted) is intentionally
+  // omitted because the forward cursor already covered this block range and
+  // re-processing would be wasted subrequest budget. PackNFT.Withdraw fires
+  // on BOTH primary and secondary, but the from = TS_PACKNFT_CONTRACT_ADDR
+  // filter inside buildTopShotPrimaryRow strips secondaries cleanly.
+  const [packDeposits, packWithdraws] = await Promise.all([
+    fetchEventChunk(EVT_PACKNFT_DEPOSIT, fromBlock, toBlock),
+    fetchEventChunk(EVT_PACKNFT_WITHDRAW, fromBlock, toBlock),
+  ]);
+
+  const depositByTxAndId = new Map<string, FlatEvent>();
+  for (const dep of packDeposits) {
+    const nftId = dep.decoded["id"];
+    if (nftId === undefined || nftId === null) continue;
+    depositByTxAndId.set(`${dep.transaction_id}:${String(nftId)}`, dep);
+  }
+
+  const rows: PurchaseRow[] = [];
+  let eventsProcessed = 0;
+  for (const wd of packWithdraws) {
+    eventsProcessed++;
+    const row = buildTopShotPrimaryRow(wd, depositByTxAndId);
+    if (row) rows.push(row);
+  }
+
+  return { rows, events_processed: eventsProcessed };
+}
+
+// Pair a PackNFT.Withdraw with its same-tx PackNFT.Deposit and emit a
+// primary_withdraw row. Returns null if the withdraw is a secondary
+// (from != contract), or if the deposit/buyer can't be resolved. seller is
+// the contract self-address since the pack came from the on-chain reserve;
+// price/vault are null because primary sales settle off-chain via Dapper.
+function buildTopShotPrimaryRow(
+  wd: FlatEvent,
+  depositByTxAndId: Map<string, FlatEvent>,
+): PurchaseRow | null {
+  const from = wd.decoded["from"];
+  if (typeof from !== "string" || from !== TS_PACKNFT_CONTRACT_ADDR) return null;
+
+  const nftID = wd.decoded["id"];
+  if (nftID === undefined || nftID === null) return null;
+  const nftIdStr = String(nftID);
+
+  const dep = depositByTxAndId.get(`${wd.transaction_id}:${nftIdStr}`);
+  if (!dep) return null; // withdraw without matching deposit — pack didn't land
+  const buyerAddress = dep.decoded["to"];
+  if (typeof buyerAddress !== "string") return null;
+
+  return {
+    collection_id: COLLECTION_ID,
+    pack_nft_id: nftIdStr,
+    buyer_address: buyerAddress.toLowerCase(),
+    seller_address: TS_PACKNFT_CONTRACT_ADDR, // contract reserve = "seller"
+    storefront_resource_id: null,
+    listing_resource_id: null,
+    sale_price: null,                          // off-chain Dapper purchase
+    sale_currency: null,
+    payment_vault_type: null,
+    custom_id: null,
+    commission_amount: null,
+    pack_name: null,
+    tx_hash: wd.transaction_id,
+    block_height: wd.block_height,
+    sealed_at: wd.block_timestamp,
+    event_kind: "primary_withdraw",
+    pack_dist_id: null, // dist_id resolves at pack-open time via pack_rips
+  };
+}
+
+async function fetchAllDayPurchasesChunk(
+  fromBlock: number,
+  toBlock: number,
+): Promise<PurchasesChunkResult> {
+  if (fromBlock > toBlock) {
+    return { rows: [], events_processed: 0 };
+  }
+
+  // Three parallel event scans — AllDay packs land via two distinct paths:
+  //   primary_mint: PackNFT.Mint (Studio drop) + same-tx PackNFT.Deposit
+  //   secondary_sale: V2 Dapper NFTStorefrontV2.ListingCompleted filtered
+  //     to AllDay PackNFT type + same-tx PackNFT.Deposit for buyer
+  // The Mint and Listing scans share the AllDay PackNFT.Deposit index for
+  // buyer resolution so we only fetch it once.
+  const [alldayMints, alldayDeposits, listings, alldayWithdraws] = await Promise.all([
+    fetchEventChunk(EVT_ALLDAY_PACKNFT_MINT, fromBlock, toBlock),
+    fetchEventChunk(EVT_ALLDAY_PACKNFT_DEPOSIT, fromBlock, toBlock),
+    fetchEventChunk(EVT_LISTING_COMPLETED, fromBlock, toBlock),
+    fetchEventChunk(EVT_ALLDAY_PACKNFT_WITHDRAW, fromBlock, toBlock),
+  ]);
+
+  // Same-tx Withdraw.from names the seller of a secondary sale (see
+  // EVT_ALLDAY_PACKNFT_WITHDRAW). The payer stays as the fallback only.
+  const alldayWithdrawByTxAndId = new Map<string, FlatEvent>();
+  for (const wd of alldayWithdraws) {
+    const nftId = wd.decoded["id"];
+    if (nftId === undefined || nftId === null) continue;
+    alldayWithdrawByTxAndId.set(`${wd.transaction_id}:${String(nftId)}`, wd);
+  }
+
+  const alldayDepositByTxAndId = new Map<string, FlatEvent>();
+  for (const dep of alldayDeposits) {
+    const nftId = dep.decoded["id"];
+    if (nftId === undefined || nftId === null) continue;
+    alldayDepositByTxAndId.set(`${dep.transaction_id}:${String(nftId)}`, dep);
+  }
+
+  const rows: PurchaseRow[] = [];
+  let eventsProcessed = 0;
+
+  // ── Primary mints ───────────────────────────────────────────────────
+  for (const mint of alldayMints) {
+    eventsProcessed++;
+    const nftID = mint.decoded["id"];
+    if (nftID === undefined || nftID === null) continue;
+    const nftIdStr = String(nftID);
+
+    const dep = alldayDepositByTxAndId.get(`${mint.transaction_id}:${nftIdStr}`);
+    if (!dep) continue; // mint without matching deposit — pack didn't land
+    const buyerAddress = dep.decoded["to"];
+    if (typeof buyerAddress !== "string") continue;
+
+    const distId = mint.decoded["distId"];
+    const distIdStr = distId === undefined || distId === null ? null : String(distId);
+
+    rows.push({
+      collection_id: ALLDAY_COLLECTION_ID,
+      pack_nft_id: nftIdStr,
+      buyer_address: buyerAddress.toLowerCase(),
+      seller_address: null,                       // no prior holder
+      storefront_resource_id: null,
+      listing_resource_id: null,
+      sale_price: null,                           // off-chain Dapper purchase
+      sale_currency: null,
+      payment_vault_type: null,
+      custom_id: null,
+      commission_amount: null,
+      pack_name: null,
+      tx_hash: mint.transaction_id,
+      block_height: mint.block_height,
+      sealed_at: mint.block_timestamp,
+      event_kind: "primary_mint",
+      pack_dist_id: distIdStr,
+    });
+  }
+
+  // ── Secondary sales (V2 Dapper NFTStorefrontV2 ListingCompleted) ────
+  // Same contract that handles TS pack secondaries; only the nftType
+  // filter distinguishes AllDay pack listings from TS pack listings.
+  for (const lc of listings) {
+    eventsProcessed++;
+    const d = lc.decoded;
+    const nftTypeId = extractTypeId(d["nftType"]);
+    if (nftTypeId !== ALLDAY_PACK_NFT_TYPE_ID) continue;
+    if (d["purchased"] !== true) continue;
+
+    const nftID = d["nftID"];
+    if (nftID === undefined || nftID === null) continue;
+    const nftIdStr = String(nftID);
+
+    const dep = alldayDepositByTxAndId.get(`${lc.transaction_id}:${nftIdStr}`);
+    if (!dep) continue; // pack handover never deposited — not a real purchase
+    const buyerAddress = dep.decoded["to"];
+    if (typeof buyerAddress !== "string") continue;
+
+    const wdFrom = alldayWithdrawByTxAndId.get(`${lc.transaction_id}:${nftIdStr}`)?.decoded["from"];
+    const sellerAddress =
+      typeof wdFrom === "string"
+        ? wdFrom.toLowerCase()
+        : await getTransactionPayer(lc.transaction_id);
+
+    const vaultTypeId = extractTypeId(d["salePaymentVaultType"]);
+    const salePrice = d["salePrice"] === undefined || d["salePrice"] === null
+      ? null
+      : parseFloat(String(d["salePrice"]));
+    const commissionAmount = d["commissionAmount"] === undefined || d["commissionAmount"] === null
+      ? null
+      : parseFloat(String(d["commissionAmount"]));
+
+    rows.push({
+      collection_id: ALLDAY_COLLECTION_ID,
+      pack_nft_id: nftIdStr,
+      buyer_address: buyerAddress.toLowerCase(),
+      seller_address: sellerAddress,
+      storefront_resource_id: d["storefrontResourceID"] != null ? String(d["storefrontResourceID"]) : null,
+      listing_resource_id: d["listingResourceID"] != null ? String(d["listingResourceID"]) : null,
+      sale_price: Number.isFinite(salePrice as number) ? salePrice : null,
+      sale_currency: deriveCurrency(vaultTypeId),
+      payment_vault_type: vaultTypeId ?? null,
+      custom_id: d["customID"] != null ? String(d["customID"]) : null,
+      commission_amount: Number.isFinite(commissionAmount as number) ? commissionAmount : null,
+      pack_name: null,
+      tx_hash: lc.transaction_id,
+      block_height: lc.block_height,
+      sealed_at: lc.block_timestamp,
+      event_kind: "secondary_sale",
+      pack_dist_id: null,
+    });
+  }
+
+  return { rows, events_processed: eventsProcessed };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cursor 2: topshot_pack_opens — pure event-fetch, no DB writes
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface RipRow {
+  collection_id: string;
+  pack_nft_id: string;
+  opener_address: string;
+  moments_pulled: number;
+  total_fmv_at_rip: null;
+  tx_hash: string;
+  block_height: number;
+  sealed_at: string;
+}
+
+interface MomentTemplate {
+  nft_id: string;
+  wallet: string;
+  source_address: string | null;
+  rip_tx_hash: string;     // join key for source_pack_rip_id resolution
+  acquired_date: string;
+}
+
+interface PlaceholderPair {
+  nft_id: string;
+  wallet: string;
+}
+
+interface OpensChunkResult {
+  rips: RipRow[];
+  momentTemplates: MomentTemplate[];
+  placeholders: PlaceholderPair[];
+}
+
+async function fetchOpensChunk(
+  fromBlock: number,
+  toBlock: number,
+): Promise<OpensChunkResult> {
+  if (fromBlock > toBlock) {
+    return { rips: [], momentTemplates: [], placeholders: [] };
+  }
+
+  // TopShot.Withdraw is fetched alongside Deposit so each minted moment
+  // can be tagged with its reveal-custody source_address. The custody
+  // account is typically 0xb6f2481eba4df97b for current pack types but
+  // may vary by pack format, so we always read it from the event.
+  const [openedEvents, tsDeposits, tsWithdraws] = await Promise.all([
+    fetchEventChunk(EVT_PACKNFT_OPENED, fromBlock, toBlock),
+    fetchEventChunk(EVT_TOPSHOT_DEPOSIT, fromBlock, toBlock),
+    fetchEventChunk(EVT_TOPSHOT_WITHDRAW, fromBlock, toBlock),
+  ]);
+
+  // Group same-tx events. A pack open transaction emits:
+  //   1× PackNFT.Opened
+  //   N× TopShot.Withdraw (from custody)
+  //   N× TopShot.Deposit  (to opener)
+  const depositsByTx = new Map<string, FlatEvent[]>();
+  for (const ev of tsDeposits) {
+    (depositsByTx.get(ev.transaction_id) ?? depositsByTx.set(ev.transaction_id, []).get(ev.transaction_id)!).push(ev);
+  }
+  const withdrawsByTx = new Map<string, FlatEvent[]>();
+  for (const ev of tsWithdraws) {
+    (withdrawsByTx.get(ev.transaction_id) ?? withdrawsByTx.set(ev.transaction_id, []).get(ev.transaction_id)!).push(ev);
+  }
+
+  const rips: RipRow[] = [];
+  const momentTemplates: MomentTemplate[] = [];
+  const placeholders: PlaceholderPair[] = [];
+
+  for (const opened of openedEvents) {
+    const txDeposits = depositsByTx.get(opened.transaction_id) ?? [];
+    if (txDeposits.length === 0) continue; // pack opened with no minted moments — skip
+
+    const opener = txDeposits[0].decoded["to"];
+    if (typeof opener !== "string") continue;
+
+    const packNftId = opened.decoded["id"];
+    if (packNftId === undefined || packNftId === null) continue;
+
+    rips.push({
+      collection_id: COLLECTION_ID,
+      pack_nft_id: String(packNftId),
+      opener_address: opener,
+      moments_pulled: txDeposits.length,
+      total_fmv_at_rip: null,
+      tx_hash: opened.transaction_id,
+      block_height: opened.block_height,
+      sealed_at: opened.block_timestamp,
+    });
+
+    // Index Withdraw events by moment id so each Deposit can find its source.
+    const withdrawsForTx = withdrawsByTx.get(opened.transaction_id) ?? [];
+    const withdrawByMomentId = new Map<string, FlatEvent>();
+    for (const wd of withdrawsForTx) {
+      const wid = wd.decoded["id"];
+      if (wid !== undefined && wid !== null) withdrawByMomentId.set(String(wid), wd);
+    }
+
+    for (const dep of txDeposits) {
+      const momentId = dep.decoded["id"];
+      if (momentId === undefined || momentId === null) continue;
+      const nftIdStr = String(momentId);
+
+      const withdraw = withdrawByMomentId.get(nftIdStr);
+      const sourceAddress = withdraw && typeof withdraw.decoded["from"] === "string"
+        ? (withdraw.decoded["from"] as string)
+        : null;
+
+      placeholders.push({ nft_id: nftIdStr, wallet: opener });
+      momentTemplates.push({
+        nft_id: nftIdStr,
+        wallet: opener,
+        source_address: sourceAddress,
+        rip_tx_hash: opened.transaction_id,
+        acquired_date: opened.block_timestamp,
+      });
+    }
+  }
+
+  return { rips, momentTemplates, placeholders };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Batch flushers — one Supabase write per group, called after the chunk loop
+// ─────────────────────────────────────────────────────────────────────────────
+
+// PostgREST .in() lives in the URL query string. Backfill mode accumulates
+// hundreds of pack-open tx hashes over its 40-chunk budget (one observed run
+// posted 829 tx_hashes), which blows past the URL-length limit and comes back
+// as a 400/HTTP-414 Bad Request. Cap each lookup at 100 tx hashes and run up
+// to 4 in parallel so the wall-clock cost stays bounded.
+const PACK_RIPS_LOOKUP_CHUNK_SIZE = 100;
+const PACK_RIPS_LOOKUP_CONCURRENCY = 4;
+
+// Same URL-length problem hits the moment_acquisitions placeholder delete:
+// .or() encodes each (nft_id, wallet) pair as ~100 chars of query string, so
+// 2533 pairs (observed 2026-05-18 03:16 UTC) is ~250KB of URL and gets
+// rejected as Bad Request. Same fix: chunk the pairs at 100 per DELETE,
+// dispatch waves of 4, collect partial failures into chunk_errors so the
+// cursor still advances. Leftover placeholder rows from a failed chunk are
+// orphaned-but-harmless: moment_acquisitions writes use
+// onConflict='nft_id,wallet,transaction_hash' and the new rip rows carry a
+// real tx hash (not 'cache-refresh:%'), so they don't collide.
+const MOMENT_ACQUISITIONS_DELETE_CHUNK_SIZE = 100;
+
+// 2026-06-11 (pack-events re-wedge fix): the pack_purchases / pack_rips /
+// moment_acquisitions writes were single multi-row upserts of the WHOLE
+// accumulated batch. Under DB saturation a large batch (observed: a 1796-row
+// pack_purchases INSERT...ON CONFLICT) deterministically hit the statement
+// timeout, threw, and PERMANENTLY wedged the cursor leg — the same oversized
+// batch failed every tick (event_cursor topshot_pack_purchases stuck at
+// 154385136 / 21:24Z while the cron showed green). Chunk every write so one
+// oversized batch can't wedge a cursor: each chunk is its own statement, and
+// ignoreDuplicates:true makes a re-run idempotent, so partial progress on an
+// earlier chunk is never lost or double-counted.
+const WRITE_UPSERT_CHUNK_SIZE = 400;
+
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  if (size <= 0) return [arr];
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+async function lookupPackRipIdsByTxHash(
+  sb: SupabaseClient,
+  txHashes: string[],
+): Promise<{ ripIdByTx: Map<string, string>; chunkErrors: Array<{ source: string; message: string }> }> {
+  const ripIdByTx = new Map<string, string>();
+  const chunkErrors: Array<{ source: string; message: string }> = [];
+  if (txHashes.length === 0) return { ripIdByTx, chunkErrors };
+
+  const chunks = chunkArray(txHashes, PACK_RIPS_LOOKUP_CHUNK_SIZE);
+  // Process chunks in waves of PACK_RIPS_LOOKUP_CONCURRENCY. Promise.allSettled
+  // ensures one chunk's failure doesn't sink siblings — partial results still
+  // attribute moment_acquisitions for the rips that did resolve.
+  for (let i = 0; i < chunks.length; i += PACK_RIPS_LOOKUP_CONCURRENCY) {
+    const wave = chunks.slice(i, i + PACK_RIPS_LOOKUP_CONCURRENCY);
+    const settled = await Promise.allSettled(
+      wave.map(async (chunk) => {
+        const { data, error } = await sb
+          .from("pack_rips")
+          .select("id, tx_hash")
+          .in("tx_hash", chunk);
+        if (error) throw new Error(error.message);
+        return { chunk, rows: (data ?? []) as Array<{ id: string; tx_hash: string }> };
+      }),
+    );
+    for (let j = 0; j < settled.length; j++) {
+      const r = settled[j];
+      const chunk = wave[j];
+      if (r.status === "fulfilled") {
+        for (const row of r.value.rows) ripIdByTx.set(row.tx_hash, row.id);
+      } else {
+        const msg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+        chunkErrors.push({
+          source: "pack_rips_lookup_chunk",
+          message:
+            `size=${chunk.length} first=${chunk[0]} last=${chunk[chunk.length - 1]}: ${msg}`.slice(0, 300),
+        });
+      }
+    }
+  }
+  return { ripIdByTx, chunkErrors };
+}
+
+// Chunked DELETE for the moment_acquisitions placeholder cleanup. Same
+// architectural shape as lookupPackRipIdsByTxHash — PostgREST .or() encodes
+// each (nft_id, wallet) pair as ~100 chars of query string, so a 2533-pair
+// delete generated ~250KB of URL and returned Bad Request (observed
+// 2026-05-18 03:16 UTC). Per-chunk failures are collected for
+// pipeline_runs.extra rather than aborting; leftover placeholder rows are
+// orphaned-but-harmless because the downstream moment_acquisitions insert
+// uses onConflict='nft_id,wallet,transaction_hash' and the new row's tx
+// hash is the real rip tx, not 'cache-refresh:%'.
+async function deleteMomentAcquisitionsPlaceholders(
+  sb: SupabaseClient,
+  pairs: PlaceholderPair[],
+): Promise<{ chunkErrors: Array<{ source: string; message: string }> }> {
+  const chunkErrors: Array<{ source: string; message: string }> = [];
+  if (pairs.length === 0) return { chunkErrors };
+
+  const chunks = chunkArray(pairs, MOMENT_ACQUISITIONS_DELETE_CHUNK_SIZE);
+  for (let i = 0; i < chunks.length; i += PACK_RIPS_LOOKUP_CONCURRENCY) {
+    const wave = chunks.slice(i, i + PACK_RIPS_LOOKUP_CONCURRENCY);
+    const settled = await Promise.allSettled(
+      wave.map(async (chunk) => {
+        const orFilter = chunk
+          .map((p) => `and(nft_id.eq.${p.nft_id},wallet.eq.${p.wallet})`)
+          .join(",");
+        const { error } = await sb
+          .from("moment_acquisitions")
+          .delete()
+          .like("transaction_hash", "cache-refresh:%")
+          .or(orFilter);
+        if (error) throw new Error(error.message);
+      }),
+    );
+    for (let j = 0; j < settled.length; j++) {
+      const r = settled[j];
+      const chunk = wave[j];
+      if (r.status === "rejected") {
+        const msg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+        const first = chunk[0] ? `${chunk[0].nft_id}:${chunk[0].wallet}` : "?";
+        const last = chunk[chunk.length - 1]
+          ? `${chunk[chunk.length - 1].nft_id}:${chunk[chunk.length - 1].wallet}`
+          : "?";
+        chunkErrors.push({
+          source: "moment_acquisitions_placeholder_delete_chunk",
+          message: `size=${chunk.length} first=${first} last=${last}: ${msg}`.slice(0, 300),
+        });
+      }
+    }
+  }
+  return { chunkErrors };
+}
+
+interface PurchasesFlushCounts {
+  total: number;
+  secondary: number;
+  primary_withdraw: number;
+  primary_mint: number;
+}
+
+const EMPTY_PURCHASES_COUNTS: PurchasesFlushCounts = {
+  total: 0,
+  secondary: 0,
+  primary_withdraw: 0,
+  primary_mint: 0,
+};
+
+async function flushPurchases(
+  sb: SupabaseClient,
+  rows: PurchaseRow[],
+): Promise<PurchasesFlushCounts> {
+  if (rows.length === 0) {
+    return { ...EMPTY_PURCHASES_COUNTS };
+  }
+  // Conflict target switched from (tx_hash, listing_resource_id) to
+  // (tx_hash, pack_nft_id) — necessary because primary drops have NULL
+  // listing_resource_id and NULL-vs-NULL never compares equal in a unique
+  // index, so re-runs would dup primary rows under the old key. Migration
+  // 2026-05-18 added idx_pack_purchases_tx_pack to back this conflict
+  // target. Secondary rows are also uniquely identified by this pair.
+  // Chunked so a large accumulated batch can't time out and wedge the cursor
+  // (see WRITE_UPSERT_CHUNK_SIZE). Each chunk is idempotent on
+  // (tx_hash, pack_nft_id) with ignoreDuplicates, so counts stay exact.
+  const counts: PurchasesFlushCounts = { ...EMPTY_PURCHASES_COUNTS };
+  for (const chunk of chunkArray(rows, WRITE_UPSERT_CHUNK_SIZE)) {
+    const { data, error } = await sb
+      .from("pack_purchases")
+      .upsert(chunk, { onConflict: "tx_hash,pack_nft_id", ignoreDuplicates: true })
+      .select("event_kind");
+    if (error) throw new Error(`pack_purchases batch upsert (${chunk.length} rows): ${error.message}`);
+    for (const r of (data ?? []) as Array<{ event_kind: string }>) {
+      counts.total++;
+      if (r.event_kind === "secondary_sale") counts.secondary++;
+      else if (r.event_kind === "primary_withdraw") counts.primary_withdraw++;
+      else if (r.event_kind === "primary_mint") counts.primary_mint++;
+    }
+  }
+  return counts;
+}
+
+async function flushOpens(
+  sb: SupabaseClient,
+  rips: RipRow[],
+  momentTemplates: MomentTemplate[],
+  placeholders: PlaceholderPair[],
+): Promise<{
+  rips_inserted: number;
+  moments_linked: number;
+  chunk_errors: Array<{ source: string; message: string }>;
+}> {
+  if (rips.length === 0) return { rips_inserted: 0, moments_linked: 0, chunk_errors: [] };
+
+  // (1) Upsert all rips. ignoreDuplicates: true preserves the existing
+  //     semantic that rips_inserted counts only newly inserted rows.
+  let ripsInserted = 0;
+  for (const ripChunk of chunkArray(rips, WRITE_UPSERT_CHUNK_SIZE)) {
+    const { data: insertedRips, error: ripErr } = await sb
+      .from("pack_rips")
+      .upsert(ripChunk, { onConflict: "tx_hash", ignoreDuplicates: true })
+      .select("id, tx_hash");
+    if (ripErr) {
+      throw new Error(`pack_rips batch upsert (${ripChunk.length} rows): ${ripErr.message}`);
+    }
+    ripsInserted += insertedRips?.length ?? 0;
+  }
+
+  // (2) SELECT IDs for ALL rip tx_hashes — conflict-skipped rows weren't
+  //     returned by the upsert, but moment_acquisitions still needs their
+  //     source_pack_rip_id. Chunked + bounded-concurrency so URL-length
+  //     limits don't sink the whole batch (~3M-block backfill iterations
+  //     can accumulate 800+ tx_hashes in a single 25s window). Individual
+  //     chunk failures are collected and returned for pipeline_runs.extra
+  //     rather than aborting downstream moment_acquisitions writes — a
+  //     partial result is better than zero progress.
+  const allTxHashes = Array.from(new Set(rips.map((r) => r.tx_hash)));
+  const lookup = await lookupPackRipIdsByTxHash(sb, allTxHashes);
+  const ripIdByTx = lookup.ripIdByTx;
+  const chunkErrors = lookup.chunkErrors;
+
+  // (3) Delete all cache-refresh placeholders via chunked DELETE waves so
+  //     a 2533-pair payload doesn't bust the PostgREST URL-length limit.
+  //     Per-chunk failures land in chunkErrors (source =
+  //     'moment_acquisitions_placeholder_delete_chunk') and the cursor still
+  //     advances — leftover placeholder rows are orphaned-but-harmless per
+  //     deleteMomentAcquisitionsPlaceholders' header comment.
+  if (placeholders.length > 0) {
+    const delResult = await deleteMomentAcquisitionsPlaceholders(sb, placeholders);
+    for (const ce of delResult.chunkErrors) chunkErrors.push(ce);
+  }
+
+  // (4) Build moment_acquisitions rows now that we have rip IDs and
+  //     insert them in one batch upsert.
+  const momentRows: Array<Record<string, unknown>> = [];
+  for (const t of momentTemplates) {
+    const ripId = ripIdByTx.get(t.rip_tx_hash);
+    if (!ripId) continue; // rip somehow missing — skip rather than corrupt FK
+    momentRows.push({
+      nft_id: t.nft_id,
+      collection_id: COLLECTION_ID,
+      wallet: t.wallet,
+      acquisition_method: "pack_pull",
+      acquisition_confidence: "verified",
+      acquired_date: t.acquired_date,
+      transaction_hash: t.rip_tx_hash,
+      source_address: t.source_address,
+      source_pack_rip_id: ripId,
+    });
+  }
+
+  let momentsLinked = 0;
+  for (const momentChunk of chunkArray(momentRows, WRITE_UPSERT_CHUNK_SIZE)) {
+    const { data: insertedMoments, error: insErr } = await sb
+      .from("moment_acquisitions")
+      .upsert(momentChunk, { onConflict: "nft_id,wallet,transaction_hash", ignoreDuplicates: true })
+      .select("id");
+    if (insErr) {
+      throw new Error(
+        `moment_acquisitions batch upsert (${momentChunk.length} rows): ${insErr.message}`,
+      );
+    }
+    momentsLinked += insertedMoments?.length ?? 0;
+  }
+
+  return { rips_inserted: ripsInserted, moments_linked: momentsLinked, chunk_errors: chunkErrors };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared per-cursor loop. Iterates 250-block chunks from initialCursor
+// toward either sealed tip (effectiveEndBlock = null) or a fixed end
+// (effectiveEndBlock = number). The caller passes a processChunk callback
+// that owns its own accumulator; processCursor only manages the loop,
+// the shared time budget, and the chunk cap. Cursor advance is the
+// caller's responsibility — this function returns the final cursor value
+// reached.
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function processCursor(
+  cursorId: string,
+  initialCursor: number,
+  startedMs: number,
+  maxChunks: number,
+  effectiveEndBlock: number | null,
+  getCurrentSealedTip: () => Promise<number>,
+  processChunk: (from: number, to: number) => Promise<void>,
+  budgetMs: number = SOFT_BUDGET_MS,
+  // 2026-06-26: optional per-chunk commit. When provided, processCursor
+  // flushes + advances the cursor AFTER EACH CHUNK (commitChunk does the
+  // write + clears the caller's accumulator) instead of the caller doing one
+  // batched flush at the end of the leg. This is what lets a hot-drop backlog
+  // SELF-DRAIN: each ~CHUNK_SIZE-block chunk is durably committed, so a run
+  // killed by the CF wall-clock/CPU limit (or a downstream leg) keeps every
+  // chunk it finished — instead of timing out and committing NOTHING (the
+  // observed wedge: opens/allday frozen + no pipeline_runs row). It also moves
+  // the flush cost INSIDE the loop, so the budgetMs guard finally accounts for
+  // it — fixing the prior bug where the purchases flush (between legs) ate the
+  // opens budget window and left opens at chunks:0. `target` only advances past
+  // a chunk once commitChunk(to) resolves; if it throws, we stop at the last
+  // committed block (the cursor is never ahead of durably-written data).
+  commitChunk?: (toBlock: number) => Promise<void>,
+): Promise<{ target: number; chunks: number; errorMsg: string | null }> {
+  let target = initialCursor;
+  let chunks = 0;
+  let errorMsg: string | null = null;
+
+  try {
+    while (true) {
+      if (Date.now() - startedMs >= budgetMs) break;
+      if (chunks >= maxChunks) break;
+
+      const tip = effectiveEndBlock === null ? await getCurrentSealedTip() : null;
+      const bounds = nextChunkBounds(
+        target,
+        effectiveEndBlock,
+        tip,
+        CHUNK_SIZE,
+        CAUGHT_UP_THRESHOLD,
+      );
+      if (!bounds) break;
+      const { from, to } = bounds;
+
+      await processChunk(from, to);
+      // Defensive clamp: the last chunk must never overshoot effectiveEnd.
+      // `to` is already clamped above, but re-applying min here is cheap
+      // and survives any future change that loosens the inner clamp.
+      const chunkTarget = clampChunkTarget(to, effectiveEndBlock);
+      if (commitChunk) await commitChunk(chunkTarget);
+      target = chunkTarget;
+      chunks++;
+    }
+  } catch (err) {
+    errorMsg = err instanceof Error ? err.message : String(err);
+    console.log(`[pack-events-ingest] ${cursorId} fetch error: ${errorMsg}`);
+  }
+
+  return { target, chunks, errorMsg };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// pipeline_runs telemetry (2026-05-17)
+//
+// Both modes (live / backfill) write exactly one row to public.pipeline_runs
+// per invocation, fire-and-forget at the end of runIngest. The watchlist
+// keys on pipeline=`pack-events-ingest` (live) and
+// pipeline=`pack-events-ingest-backfill`. cursor_before / cursor_after carry
+// the purchases cursor; extra.opens_* + extra.allday_forward / extra.primary_backfill
+// / extra.allday_backfill carry the parallel cursors.
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function logPipelineRun(
+  sb: SupabaseClient,
+  args: {
+    pipeline: string;
+    startedAtIso: string;
+    rowsFound: number;
+    rowsWritten: number;
+    rowsSkipped: number;
+    ok: boolean;
+    error: string | null;
+    cursorBefore: string | null;
+    cursorAfter: string | null;
+    extra: Record<string, unknown>;
+  },
+): Promise<void> {
+  try {
+    const { error } = await sb.rpc("log_pipeline_run", {
+      p_pipeline: args.pipeline,
+      p_started_at: args.startedAtIso,
+      p_rows_found: args.rowsFound,
+      p_rows_written: args.rowsWritten,
+      p_rows_skipped: args.rowsSkipped,
+      p_ok: args.ok,
+      p_error: args.error,
+      p_collection_slug: "nba_top_shot",
+      p_cursor_before: args.cursorBefore,
+      p_cursor_after: args.cursorAfter,
+      p_extra: args.extra,
+    });
+    if (error) {
+      console.log(`[${args.pipeline}] log_pipeline_run err: ${error.message}`);
+    }
+  } catch (err) {
+    console.log(
+      `[${args.pipeline}] log_pipeline_run threw: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared request handler — picks cursor set by mode, runs each cursor's
+// chunk loop, flushes accumulators, advances cursors, returns the same
+// response shape from POST / and POST /backfill.
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Response> {
+  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
+    return jsonError(500, "supabase_env_missing", {
+      hint: "wrangler secret put SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY",
+    });
+  }
+
+  const pipeline = mode === "live" ? "pack-events-ingest" : "pack-events-ingest-backfill";
+  const startedAtIso = new Date(startedMs).toISOString();
+  const purchasesCursorId = mode === "live" ? CURSOR_PURCHASES : CURSOR_PURCHASES_BACKFILL;
+  const opensCursorId = mode === "live" ? CURSOR_OPENS : CURSOR_OPENS_BACKFILL;
+  const maxChunks = mode === "live" ? MAX_CHUNKS_PER_CURSOR_LIVE : MAX_CHUNKS_PER_CURSOR_BACKFILL;
+  // Existing-cursor effective end: null for live (sealed-tip), TARGET_END_BLOCK
+  // for backfill. The new cursors compute their own ends below.
+  const existingEffectiveEnd = mode === "live" ? null : TARGET_END_BLOCK;
+
+  const sb = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  // Shared sealed-tip cache. Refetched only when older than
+  // SEALED_TIP_TTL_MS so a busy invocation doesn't hammer the
+  // access node once per chunk. Both modes fetch it once at the start
+  // so the response always carries a real sealed_tip value; backfill
+  // never re-fetches because its stop condition is a fixed end block.
+  let cachedSealedTip = await getSealedHeight();
+  let lastTipFetchMs = Date.now();
+  const getCurrentSealedTip = async (): Promise<number> => {
+    if (Date.now() - lastTipFetchMs > SEALED_TIP_TTL_MS) {
+      cachedSealedTip = await getSealedHeight();
+      lastTipFetchMs = Date.now();
+    }
+    return cachedSealedTip;
+  };
+
+  const errors: Array<{ cursor: string; message: string }> = [];
+
+  // Cursor IDs to read up front (single batched select).
+  //   live mode:     purchases, opens, allday_forward
+  //   backfill mode: purchases_backfill, opens_backfill, ts_primary_backfill,
+  //                  allday_backfill, allday_forward (read-only, for
+  //                                                   catchup threshold)
+  const cursorsToRead = mode === "live"
+    ? [CURSOR_PURCHASES, CURSOR_OPENS, CURSOR_ALLDAY_FORWARD]
+    : [
+        CURSOR_PURCHASES_BACKFILL,
+        CURSOR_OPENS_BACKFILL,
+        CURSOR_TS_PRIMARY_BACKFILL,
+        CURSOR_ALLDAY_BACKFILL,
+        CURSOR_ALLDAY_FORWARD,
+      ];
+
+  let initialCursors: Record<string, number>;
+  try {
+    initialCursors = await readCursors(sb, cursorsToRead);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.log(`[pack-events-ingest] cursor read fatal: ${msg}`);
+    await logPipelineRun(sb, {
+      pipeline,
+      startedAtIso,
+      rowsFound: 0,
+      rowsWritten: 0,
+      rowsSkipped: 0,
+      ok: false,
+      error: `cursor_read: ${msg}`,
+      cursorBefore: null,
+      cursorAfter: null,
+      extra: {
+        mode,
+        sealed_tip: cachedSealedTip,
+        purchases_cursor_id: purchasesCursorId,
+        opens_cursor_id: opensCursorId,
+        duration_ms: Date.now() - startedMs,
+      },
+    });
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        purchases: zeroPurchases(),
+        opens: zeroOpens(),
+        ...(mode === "live" ? { allday_forward: zeroAllDayForward() } : {}),
+        ...(mode === "backfill"
+          ? { primary_backfill: zeroPrimaryBackfill(), allday_backfill: zeroAllDayBackfill() }
+          : {}),
+        sealed_tip: cachedSealedTip,
+        duration_ms: Date.now() - startedMs,
+        errors: [{ cursor: "cursor_read", message: msg }],
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
+  // ── Backfill mode: run the NEW cursors first ─────────────────────────
+  //
+  // topshot_pack_purchases_backfill has millions of blocks left to grind
+  // and would otherwise exhaust the shared 25s budget every tick, starving
+  // the new cursors. Running ts_primary_backfill + allday_backfill first
+  // guarantees they advance at least one chunk per invocation. Existing
+  // cursors then absorb whatever budget remains.
+  //
+  // Live mode keeps the original ordering — the TS forward cursors are
+  // typically within CAUGHT_UP_THRESHOLD of tip and finish their loop in
+  // a few hundred ms, leaving the bulk of the budget for allday_forward.
+
+  // ── (A) TS primary-only backfill (backfill only) ───────────────────
+  let primaryBackfillInitial = 0;
+  let primaryBackfillTarget = 0;
+  let primaryBackfillChunks = 0;
+  let primaryBackfillEvents = 0;
+  let primaryBackfillComplete = false;
+  let primaryBackfillActualCursor = 0;
+  let primaryBackfillCounts: PurchasesFlushCounts = { ...EMPTY_PURCHASES_COUNTS };
+  const primaryBackfillAccumulated: PurchaseRow[] = [];
+
+  if (mode === "backfill") {
+    primaryBackfillInitial = initialCursors[CURSOR_TS_PRIMARY_BACKFILL];
+    primaryBackfillTarget = primaryBackfillInitial;
+    primaryBackfillActualCursor = primaryBackfillInitial;
+
+    if (primaryBackfillInitial >= TS_PRIMARY_BACKFILL_END_BLOCK) {
+      console.log(
+        `[pack-events-ingest] ${CURSOR_TS_PRIMARY_BACKFILL} primary backfill complete (cursor=${primaryBackfillInitial} >= end=${TS_PRIMARY_BACKFILL_END_BLOCK})`,
+      );
+      primaryBackfillComplete = true;
+    } else {
+      const loop = await processCursor(
+        CURSOR_TS_PRIMARY_BACKFILL,
+        primaryBackfillInitial,
+        startedMs,
+        maxChunks,
+        TS_PRIMARY_BACKFILL_END_BLOCK,
+        getCurrentSealedTip,
+        async (from, to) => {
+          const chunk = await fetchTopShotPrimaryOnlyChunk(from, to);
+          for (const row of chunk.rows) primaryBackfillAccumulated.push(row);
+          primaryBackfillEvents += chunk.events_processed;
+        },
+      );
+      primaryBackfillTarget = loop.target;
+      primaryBackfillChunks = loop.chunks;
+      if (loop.errorMsg) errors.push({ cursor: CURSOR_TS_PRIMARY_BACKFILL, message: loop.errorMsg });
+      if (primaryBackfillTarget >= TS_PRIMARY_BACKFILL_END_BLOCK) primaryBackfillComplete = true;
+    }
+
+    if (primaryBackfillTarget > primaryBackfillInitial) {
+      try {
+        primaryBackfillCounts = await flushPurchases(sb, primaryBackfillAccumulated);
+        primaryBackfillActualCursor = primaryBackfillTarget;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(`[pack-events-ingest] ${CURSOR_TS_PRIMARY_BACKFILL} flush error: ${msg}`);
+        errors.push({ cursor: CURSOR_TS_PRIMARY_BACKFILL, message: msg });
+      }
+    }
+  }
+
+  // ── (B) AllDay backfill (backfill only) ────────────────────────────
+  let alldayBackfillInitial = 0;
+  let alldayBackfillTarget = 0;
+  let alldayBackfillChunks = 0;
+  let alldayBackfillEvents = 0;
+  let alldayBackfillCaughtUp = false;
+  let alldayBackfillCatchupTarget = 0;
+  let alldayBackfillActualCursor = 0;
+  let alldayBackfillCounts: PurchasesFlushCounts = { ...EMPTY_PURCHASES_COUNTS };
+  const alldayBackfillAccumulated: PurchaseRow[] = [];
+
+  if (mode === "backfill") {
+    alldayBackfillInitial = initialCursors[CURSOR_ALLDAY_BACKFILL];
+    alldayBackfillTarget = alldayBackfillInitial;
+    alldayBackfillActualCursor = alldayBackfillInitial;
+    const alldayForwardCursor = initialCursors[CURSOR_ALLDAY_FORWARD];
+    alldayBackfillCatchupTarget = alldayForwardCursor - ALLDAY_BACKFILL_CATCHUP_THRESHOLD;
+
+    if (alldayBackfillInitial >= alldayBackfillCatchupTarget) {
+      console.log(
+        `[pack-events-ingest] ${CURSOR_ALLDAY_BACKFILL} allday backfill caught up to forward cursor (cursor=${alldayBackfillInitial} >= forward-${ALLDAY_BACKFILL_CATCHUP_THRESHOLD}=${alldayBackfillCatchupTarget})`,
+      );
+      alldayBackfillCaughtUp = true;
+    } else {
+      const loop = await processCursor(
+        CURSOR_ALLDAY_BACKFILL,
+        alldayBackfillInitial,
+        startedMs,
+        maxChunks,
+        alldayBackfillCatchupTarget,
+        getCurrentSealedTip,
+        async (from, to) => {
+          const chunk = await fetchAllDayPurchasesChunk(from, to);
+          for (const row of chunk.rows) alldayBackfillAccumulated.push(row);
+          alldayBackfillEvents += chunk.events_processed;
+        },
+      );
+      alldayBackfillTarget = loop.target;
+      alldayBackfillChunks = loop.chunks;
+      if (loop.errorMsg) errors.push({ cursor: CURSOR_ALLDAY_BACKFILL, message: loop.errorMsg });
+      if (alldayBackfillTarget >= alldayBackfillCatchupTarget) alldayBackfillCaughtUp = true;
+    }
+
+    if (alldayBackfillTarget > alldayBackfillInitial) {
+      try {
+        alldayBackfillCounts = await flushPurchases(sb, alldayBackfillAccumulated);
+        alldayBackfillActualCursor = alldayBackfillTarget;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(`[pack-events-ingest] ${CURSOR_ALLDAY_BACKFILL} flush error: ${msg}`);
+        errors.push({ cursor: CURSOR_ALLDAY_BACKFILL, message: msg });
+      }
+    }
+  }
+
+  // ── (C) TS forward purchases (both modes) ──────────────────────────
+  const purchasesInitial = initialCursors[purchasesCursorId];
+  let purchasesEvents = 0;
+  const purchasesAccumulated: PurchaseRow[] = [];
+  let purchasesActualCursor = purchasesInitial;
+  let purchasesCounts: PurchasesFlushCounts = { ...EMPTY_PURCHASES_COUNTS };
+  // Live: commit each chunk (flush + advance cursor) so a hot-drop backlog
+  // self-drains and a killed run never loses finished chunks. Backfill keeps
+  // the single end-of-leg flush below.
+  const purchasesCommit = mode === "live"
+    ? async (toBlock: number) => {
+        if (purchasesAccumulated.length > 0) {
+          const c = await flushPurchases(sb, purchasesAccumulated);
+          purchasesCounts.total += c.total;
+          purchasesCounts.secondary += c.secondary;
+          purchasesCounts.primary_withdraw += c.primary_withdraw;
+          purchasesCounts.primary_mint += c.primary_mint;
+          purchasesAccumulated.length = 0;
+        }
+        await writeCursor(sb, purchasesCursorId, toBlock);
+        purchasesActualCursor = toBlock;
+      }
+    : undefined;
+  const purchasesLoop = await processCursor(
+    purchasesCursorId,
+    purchasesInitial,
+    startedMs,
+    maxChunks,
+    existingEffectiveEnd,
+    getCurrentSealedTip,
+    async (from, to) => {
+      const chunk = await fetchTopShotPurchasesChunk(from, to);
+      for (const row of chunk.rows) purchasesAccumulated.push(row);
+      purchasesEvents += chunk.events_processed;
+    },
+    // Live: cap purchases at 60% so a hot drop can't starve opens/allday_forward.
+    // Backfill: full budget (the new backfill cursors already ran first).
+    mode === "live" ? LIVE_BUDGET_PURCHASES_MS : SOFT_BUDGET_MS,
+    purchasesCommit,
+  );
+  if (purchasesLoop.errorMsg) {
+    errors.push({ cursor: purchasesCursorId, message: purchasesLoop.errorMsg });
+  }
+  const purchasesTarget = purchasesLoop.target;
+  const purchasesChunks = purchasesLoop.chunks;
+
+  // Backfill mode only: single batched flush (live already committed per chunk).
+  if (mode !== "live" && purchasesTarget > purchasesInitial) {
+    try {
+      purchasesCounts = await flushPurchases(sb, purchasesAccumulated);
+      purchasesActualCursor = purchasesTarget;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.log(`[pack-events-ingest] ${purchasesCursorId} flush error: ${msg}`);
+      errors.push({ cursor: purchasesCursorId, message: msg });
+    }
+  }
+
+  // ── (D) TS opens (both modes) ──────────────────────────────────────
+  const opensInitial = initialCursors[opensCursorId];
+  const opensRips: RipRow[] = [];
+  const opensTemplates: MomentTemplate[] = [];
+  const opensPlaceholders: PlaceholderPair[] = [];
+
+  let opensActualCursor = opensInitial;
+  let ripsInserted = 0;
+  let momentsLinked = 0;
+  // Live: per-chunk flush + cursor advance (see purchases above). flushOpens
+  // is the heaviest flush (per-tx-hash pack_rips lookups), so committing each
+  // chunk keeps any single flush small and durably banks progress.
+  const opensCommit = mode === "live"
+    ? async (toBlock: number) => {
+        if (opensRips.length > 0) {
+          const result = await flushOpens(sb, opensRips, opensTemplates, opensPlaceholders);
+          ripsInserted += result.rips_inserted;
+          momentsLinked += result.moments_linked;
+          for (const ce of result.chunk_errors) {
+            console.log(`[pack-events-ingest] ${opensCursorId} ${ce.source}: ${ce.message}`);
+            errors.push({ cursor: opensCursorId, message: `${ce.source}: ${ce.message}` });
+          }
+          opensRips.length = 0;
+          opensTemplates.length = 0;
+          opensPlaceholders.length = 0;
+        }
+        await writeCursor(sb, opensCursorId, toBlock);
+        opensActualCursor = toBlock;
+      }
+    : undefined;
+  const opensLoop = await processCursor(
+    opensCursorId,
+    opensInitial,
+    startedMs,
+    maxChunks,
+    existingEffectiveEnd,
+    getCurrentSealedTip,
+    async (from, to) => {
+      const chunk = await fetchOpensChunk(from, to);
+      for (const r of chunk.rips) opensRips.push(r);
+      for (const t of chunk.momentTemplates) opensTemplates.push(t);
+      for (const p of chunk.placeholders) opensPlaceholders.push(p);
+    },
+    // Live: opens runs from purchases-end..80%, reserving the tail for
+    // allday_forward. Backfill: full budget.
+    mode === "live" ? LIVE_BUDGET_OPENS_MS : SOFT_BUDGET_MS,
+    opensCommit,
+  );
+  if (opensLoop.errorMsg) {
+    errors.push({ cursor: opensCursorId, message: opensLoop.errorMsg });
+  }
+  const opensTarget = opensLoop.target;
+  const opensChunks = opensLoop.chunks;
+
+  // Backfill mode only: single batched flush (live already committed per chunk).
+  if (mode !== "live" && opensTarget > opensInitial) {
+    try {
+      const result = await flushOpens(sb, opensRips, opensTemplates, opensPlaceholders);
+      ripsInserted = result.rips_inserted;
+      momentsLinked = result.moments_linked;
+      // pack_rips_lookup_chunk failures are partial — the surviving chunks
+      // still attribute moment_acquisitions correctly, so we surface them
+      // through pipeline_runs.extra.errors but advance the cursor normally.
+      for (const ce of result.chunk_errors) {
+        console.log(`[pack-events-ingest] ${opensCursorId} ${ce.source}: ${ce.message}`);
+        errors.push({ cursor: opensCursorId, message: `${ce.source}: ${ce.message}` });
+      }
+      opensActualCursor = opensTarget;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.log(`[pack-events-ingest] ${opensCursorId} flush error: ${msg}`);
+      errors.push({ cursor: opensCursorId, message: msg });
+    }
+  }
+
+  // ── (E) AllDay forward (live only) ─────────────────────────────────
+  let alldayForwardInitial = 0;
+  let alldayForwardTarget = 0;
+  let alldayForwardChunks = 0;
+  let alldayForwardEvents = 0;
+  let alldayForwardActualCursor = 0;
+  const alldayForwardCounts: PurchasesFlushCounts = { ...EMPTY_PURCHASES_COUNTS };
+  const alldayForwardAccumulated: PurchaseRow[] = [];
+
+  if (mode === "live") {
+    alldayForwardInitial = initialCursors[CURSOR_ALLDAY_FORWARD];
+    alldayForwardTarget = alldayForwardInitial;
+    alldayForwardActualCursor = alldayForwardInitial;
+    // Per-chunk flush + cursor advance (live-only leg; gets the budget tail).
+    const alldayCommit = async (toBlock: number) => {
+      if (alldayForwardAccumulated.length > 0) {
+        const c = await flushPurchases(sb, alldayForwardAccumulated);
+        alldayForwardCounts.total += c.total;
+        alldayForwardCounts.secondary += c.secondary;
+        alldayForwardCounts.primary_withdraw += c.primary_withdraw;
+        alldayForwardCounts.primary_mint += c.primary_mint;
+        alldayForwardAccumulated.length = 0;
+      }
+      await writeCursor(sb, CURSOR_ALLDAY_FORWARD, toBlock);
+      alldayForwardActualCursor = toBlock;
+    };
+    const loop = await processCursor(
+      CURSOR_ALLDAY_FORWARD,
+      alldayForwardInitial,
+      startedMs,
+      maxChunks,
+      null,
+      getCurrentSealedTip,
+      async (from, to) => {
+        const chunk = await fetchAllDayPurchasesChunk(from, to);
+        for (const row of chunk.rows) alldayForwardAccumulated.push(row);
+        alldayForwardEvents += chunk.events_processed;
+      },
+      SOFT_BUDGET_MS,
+      alldayCommit,
+    );
+    alldayForwardTarget = loop.target;
+    alldayForwardChunks = loop.chunks;
+    if (loop.errorMsg) errors.push({ cursor: CURSOR_ALLDAY_FORWARD, message: loop.errorMsg });
+  }
+
+  // ── Cursor advance: dispatch all eligible writes in parallel ────────
+  const cursorWrites: Array<{ cursor: string; promise: Promise<void> }> = [];
+  if (purchasesActualCursor > purchasesInitial) {
+    cursorWrites.push({
+      cursor: purchasesCursorId,
+      promise: writeCursor(sb, purchasesCursorId, purchasesActualCursor),
+    });
+  }
+  if (opensActualCursor > opensInitial) {
+    cursorWrites.push({
+      cursor: opensCursorId,
+      promise: writeCursor(sb, opensCursorId, opensActualCursor),
+    });
+  }
+  if (mode === "live" && alldayForwardActualCursor > alldayForwardInitial) {
+    cursorWrites.push({
+      cursor: CURSOR_ALLDAY_FORWARD,
+      promise: writeCursor(sb, CURSOR_ALLDAY_FORWARD, alldayForwardActualCursor),
+    });
+  }
+  if (mode === "backfill" && primaryBackfillActualCursor > primaryBackfillInitial) {
+    cursorWrites.push({
+      cursor: CURSOR_TS_PRIMARY_BACKFILL,
+      promise: writeCursor(sb, CURSOR_TS_PRIMARY_BACKFILL, primaryBackfillActualCursor),
+    });
+  }
+  if (mode === "backfill" && alldayBackfillActualCursor > alldayBackfillInitial) {
+    cursorWrites.push({
+      cursor: CURSOR_ALLDAY_BACKFILL,
+      promise: writeCursor(sb, CURSOR_ALLDAY_BACKFILL, alldayBackfillActualCursor),
+    });
+  }
+  if (cursorWrites.length > 0) {
+    const results = await Promise.allSettled(cursorWrites.map((w) => w.promise));
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      if (r.status === "rejected") {
+        const msg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+        console.log(`[pack-events-ingest] cursor advance ${cursorWrites[i].cursor} failed: ${msg}`);
+        errors.push({ cursor: cursorWrites[i].cursor, message: `cursor advance: ${msg}` });
+      }
+    }
+  }
+
+  const isCaughtUpExisting = (cursor: number) =>
+    mode === "live"
+      ? cachedSealedTip - cursor <= CAUGHT_UP_THRESHOLD
+      : cursor >= TARGET_END_BLOCK;
+
+  const purchasesResult = {
+    from_block: purchasesInitial,
+    to_block: purchasesActualCursor,
+    chunks_processed: purchasesChunks,
+    events_processed: purchasesEvents,
+    rows_inserted: purchasesCounts.total,
+    secondary_rows: purchasesCounts.secondary,
+    primary_withdraw_rows: purchasesCounts.primary_withdraw,
+    // AllDay primary_mint rows now flow through CURSOR_ALLDAY_FORWARD /
+    // CURSOR_ALLDAY_BACKFILL — kept at 0 here for response-shape stability
+    // with the pre-Prompt-18 payload that watchers may key on.
+    primary_mint_rows: purchasesCounts.primary_mint,
+    caught_up: isCaughtUpExisting(purchasesActualCursor),
+  };
+  const opensResult = {
+    from_block: opensInitial,
+    to_block: opensActualCursor,
+    chunks_processed: opensChunks,
+    rips_inserted: ripsInserted,
+    moments_linked: momentsLinked,
+    caught_up: isCaughtUpExisting(opensActualCursor),
+  };
+  const alldayForwardResult = mode === "live" ? {
+    from_block: alldayForwardInitial,
+    to_block: alldayForwardActualCursor,
+    chunks_processed: alldayForwardChunks,
+    events_processed: alldayForwardEvents,
+    rows_inserted: alldayForwardCounts.total,
+    primary_mint_rows: alldayForwardCounts.primary_mint,
+    // Prompt 23 (2026-05-18): secondary AllDay pack sales now flow through
+    // this cursor too via V2 Dapper NFTStorefrontV2.ListingCompleted +
+    // PackNFT.Deposit pairing. Verified via Trevor's $1 Regal Rookie pack.
+    secondary_sale_rows: alldayForwardCounts.secondary,
+    caught_up: cachedSealedTip - alldayForwardActualCursor <= CAUGHT_UP_THRESHOLD,
+  } : null;
+  const primaryBackfillResult = mode === "backfill" ? {
+    from_block: primaryBackfillInitial,
+    to_block: primaryBackfillActualCursor,
+    chunks_processed: primaryBackfillChunks,
+    events_processed: primaryBackfillEvents,
+    rows_inserted: primaryBackfillCounts.total,
+    primary_withdraw_rows: primaryBackfillCounts.primary_withdraw,
+    complete: primaryBackfillComplete,
+    end_block: TS_PRIMARY_BACKFILL_END_BLOCK,
+  } : null;
+  const alldayBackfillResult = mode === "backfill" ? {
+    from_block: alldayBackfillInitial,
+    to_block: alldayBackfillActualCursor,
+    chunks_processed: alldayBackfillChunks,
+    events_processed: alldayBackfillEvents,
+    rows_inserted: alldayBackfillCounts.total,
+    primary_mint_rows: alldayBackfillCounts.primary_mint,
+    secondary_sale_rows: alldayBackfillCounts.secondary,
+    caught_up_to_forward: alldayBackfillCaughtUp,
+    catchup_target_block: alldayBackfillCatchupTarget,
+    allday_forward_cursor: initialCursors[CURSOR_ALLDAY_FORWARD] ?? 0,
+  } : null;
+
+  const durationMs = Date.now() - startedMs;
+  const totalRowsFound =
+    purchasesEvents +
+    ripsInserted +
+    alldayForwardEvents +
+    primaryBackfillEvents +
+    alldayBackfillEvents;
+  const totalRowsWritten =
+    purchasesCounts.total +
+    momentsLinked +
+    alldayForwardCounts.total +
+    primaryBackfillCounts.total +
+    alldayBackfillCounts.total;
+
+  await logPipelineRun(sb, {
+    pipeline,
+    startedAtIso,
+    rowsFound: totalRowsFound,
+    rowsWritten: totalRowsWritten,
+    rowsSkipped: 0,
+    ok: errors.length === 0,
+    error: errors.length > 0 ? errors.map((e) => `${e.cursor}: ${e.message}`).join(" | ").slice(0, 500) : null,
+    cursorBefore: String(purchasesInitial),
+    cursorAfter: String(purchasesActualCursor),
+    extra: {
+      mode,
+      sealed_tip: cachedSealedTip,
+      duration_ms: durationMs,
+      purchases: purchasesResult,
+      opens: opensResult,
+      ...(alldayForwardResult ? { allday_forward: alldayForwardResult } : {}),
+      ...(primaryBackfillResult ? { primary_backfill: primaryBackfillResult } : {}),
+      ...(alldayBackfillResult ? { allday_backfill: alldayBackfillResult } : {}),
+      purchases_cursor_id: purchasesCursorId,
+      opens_cursor_id: opensCursorId,
+      target_end_block: mode === "backfill" ? TARGET_END_BLOCK : null,
+      errors: errors.length > 0 ? errors.slice(0, 5) : undefined,
+    },
+  });
+
+  return new Response(
+    JSON.stringify({
+      ok: errors.length === 0,
+      purchases: purchasesResult,
+      opens: opensResult,
+      ...(alldayForwardResult ? { allday_forward: alldayForwardResult } : {}),
+      ...(primaryBackfillResult ? { primary_backfill: primaryBackfillResult } : {}),
+      ...(alldayBackfillResult ? { allday_backfill: alldayBackfillResult } : {}),
+      sealed_tip: cachedSealedTip,
+      duration_ms: durationMs,
+      ...(errors.length > 0 ? { errors } : {}),
+    }),
+    { status: 200, headers: { "Content-Type": "application/json" } },
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Entrypoint
+// ─────────────────────────────────────────────────────────────────────────────
+
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const startedMs = Date.now();
+    try {
+      const url = new URL(request.url);
+
+      if (request.method === "GET" && (url.pathname === "/health" || url.pathname === "/")) {
+        return healthOk();
+      }
+
+      const isLive = request.method === "POST" && url.pathname === "/";
+      const isBackfill = request.method === "POST" && url.pathname === "/backfill";
+      if (!isLive && !isBackfill) {
+        return jsonError(405, "method_or_path_not_allowed", {
+          hint:
+            "POST / (live) or POST /backfill (historical) with Bearer INGEST_SECRET_TOKEN; GET /health for liveness",
+        });
+      }
+
+      const auth = request.headers.get("Authorization") ?? "";
+      const expected = `Bearer ${env.INGEST_SECRET_TOKEN}`;
+      if (!env.INGEST_SECRET_TOKEN || !safeEqual(auth, expected)) {
+        return jsonError(401, "unauthorized");
+      }
+
+      // 2026-06-11 (Item 9 rollback): the 2026-06-10 d198e68 "ack-early"
+      // change ran the ingest under ctx.waitUntil and returned 202 instantly,
+      // to dodge cron-job.org's 30s client cap. But Cloudflare kills a
+      // post-response waitUntil task on its own background wall-clock budget —
+      // routinely BEFORE runIngest reached its end-of-run flush + cursor
+      // advance + pipeline_runs write. Result: "Successful 843ms" cron ticks
+      // with a FROZEN cursor and silent pipeline_runs (topshot_pack_purchases
+      // stuck 21:24Z→01:12Z). Roll back to running runIngest IN-REQUEST: the
+      // request handler keeps executing to completion even after the cron
+      // client gives up at 30s (Cloudflare doesn't kill an in-flight request
+      // on client disconnect), so the cursor + log always settle. SOFT_BUDGET
+      // bounds the loop; chunked writes (p25) keep the flush from wedging. The
+      // only cost is the cron dashboard may show "Failed (timeout)" on a long
+      // tick — cosmetic, and far better than a silent data-ingest wedge.
+      const mode: Mode = isBackfill ? "backfill" : "live";
+      return await runIngest(env, mode, startedMs);
+    } catch (err) {
+      // Fatal pre-processing error (auth, sealed-tip fetch, etc.) — still
+      // return 200 so cron-job.org keeps retrying without flagging the job.
+      const msg = err instanceof Error ? err.message : String(err);
+      console.log(`[pack-events-ingest] fatal: ${msg}`);
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          purchases: zeroPurchases(),
+          opens: zeroOpens(),
+          sealed_tip: 0,
+          duration_ms: Date.now() - startedMs,
+          errors: [{ cursor: "pre_processing", message: msg }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+  },
+};
+
+// Constant-time compare (security audit 2026-10-25, R138f).
+function safeEqual(a: string, b: string): boolean {
+  const len = Math.max(a.length, b.length);
+  let diff = a.length ^ b.length;
+  for (let i = 0; i < len; i++) diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+  return diff === 0;
+}

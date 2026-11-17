@@ -1,0 +1,212 @@
+<title>Rookie Supply Ladder</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: one column of three panels — the rookie's leaderboard lines, his supply by printing, the whole class's Rookie Debut supply. Estate brand: single-theme dark, RPC red. */
+:root{
+  color-scheme:dark;
+  --bg:#0c0c0e; --panel:#15151a; --raise:#1c1c22; --line:rgba(255,255,255,.09);
+  --fg:#ECEAE3; --muted:#9A968C; --accent:#E03A2F;
+  --ok:#5fd6a0; --okbg:rgba(46,160,110,.18); --warn:#e0a64b; --warnbg:rgba(186,117,23,.2); --bad:#e88a8a; --badbg:rgba(163,45,45,.22);
+  --display:"Arial Narrow","Roboto Condensed","Helvetica Neue",Arial,sans-serif;
+  --body:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{background:var(--bg);color:var(--fg)}
+body{font:14px/1.45 var(--body)}
+.wrap{max-width:1040px;margin:0 auto;padding-block:20px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:18px}
+header{display:grid;gap:6px}
+h1{font:700 22px/1.1 var(--display);letter-spacing:.07em;text-transform:uppercase;margin:0;padding-bottom:8px;border-bottom:3px solid var(--accent);justify-self:start;text-wrap:balance}
+.sub{color:var(--muted);font-size:12.5px;max-width:70ch}
+.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+label{font:600 11px var(--display);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+select{background:var(--raise);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:7px 10px;font:14px var(--body);max-width:100%}
+select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 15px;min-width:0;display:grid;gap:10px}
+h2{font:700 13px var(--display);letter-spacing:.09em;text-transform:uppercase;margin:0;color:#D8D5CC;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+h2 .note{font:400 11.5px var(--body);letter-spacing:0;text-transform:none;color:var(--muted)}
+.lines{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.line{background:var(--raise);border:1px solid var(--line);border-radius:8px;padding:11px 12px;display:grid;gap:4px}
+.line .rk{font:700 11px var(--display);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.line .v{font:600 22px var(--mono);color:var(--accent);font-variant-numeric:tabular-nums}
+.line .m{font:12px var(--mono);color:var(--muted)}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
+th{font:700 10.5px var(--display);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);text-align:right;padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.14);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right;font-family:var(--mono);white-space:nowrap}
+td:first-child{font-family:var(--body);white-space:normal;min-width:160px}
+.pill{font:700 10px var(--display);letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.ok{color:var(--ok);background:var(--okbg)} .warn{color:var(--warn);background:var(--warnbg)} .bad{color:var(--bad);background:var(--badbg)}
+.err{color:var(--bad);background:var(--badbg);border-radius:8px;padding:10px 12px;font-size:13px}
+.load{color:var(--muted);font-size:13px}
+.foot{color:var(--muted);font-size:11.5px;line-height:1.6;max-width:90ch}
+.burn{color:var(--accent)}
+@media (prefers-reduced-motion:no-preference){section{transition:opacity .2s}}
+</style>
+
+<script>
+/* Port shim (copied from docs/cowork-skills/rpc-qa-scorecard.html, #114). Every failure THROWS,
+   so a query that did not run can never render as an empty result set. */
+(function(){
+  var mcpP = (window.claude && typeof window.claude.use === "function") ? window.claude.use("mcp") : Promise.resolve(null);
+  var FIX = {
+    needs_reauth: "Reconnect {s} in claude.ai Settings, Connectors, then Reload.",
+    server_not_connected: "Add the {s} connector in claude.ai Settings, Connectors, then Reload.",
+    selection_required: "Choose which {s} connector this page should use, then Reload.",
+    not_in_manifest: "{s} is not allowed for this page. Allow it from the artifact's Permissions menu, then Reload.",
+    approval_required: "This page needs your approval to read from {s}. Reload and choose Allow.",
+    blocked_by_policy: "Your organization's policy blocks this {s} tool.",
+    server_unavailable: "{s} did not answer in time. Try Reload in a minute.",
+    not_granted: "Connectors are not available in this view. Open the page in claude.ai.",
+    capability_disabled: "Connectors are not available in this view. Open the page in claude.ai."
+  };
+  function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+  async function call(mcp, s, name, args, retried){
+    try { return await mcp.callTool(s, name, args, { cache: false }); }
+    catch (e) {
+      var c = (e && e.code) || "upstream_error";
+      if (e && e.retryable && !retried) { await sleep(Math.min(e.retryAfterMs || 0, 15000) + 600 + Math.random() * 900); return call(mcp, s, name, args, true); }
+      var hint = (FIX[c] || "").replace("{s}", s);
+      var msg = s + " query did not run (" + c + ")" + (hint ? ". " + hint : (e && e.message ? ": " + String(e.message).slice(0, 240) : ""));
+      var err = new Error(msg); err.code = c; throw err;
+    }
+  }
+  window.cowork = { callMcpTool: async function(tool, args){
+    var mcp = await mcpP;
+    if (!mcp) throw new Error("Live data is not available in this view. Open the page in claude.ai with the Supabase connector connected.");
+    var s = "Supabase", name = String(tool).split("__").pop();
+    var res = await call(mcp, s, name, args, false);
+    var p = res && res.payload;
+    if (p && typeof p === "object" && !Array.isArray(p) && p.error && typeof p.error === "object")
+      throw new Error(s + " query failed: " + String(p.error.message || p.error.name || "error").slice(0, 300));
+    var out = { content: (res && res.content) || [] };
+    if (res && typeof res.structuredContent !== "undefined") out.structuredContent = res.structuredContent;
+    return out;
+  } };
+})();
+</script>
+
+<div class="wrap">
+  <header>
+    <h1>Rookie Supply Ladder</h1>
+    <div class="sub">2025 Top Shot rookie class. How much of each rookie exists after trade-in burns, who holds it, and what it takes to sit 1st, 3rd, 10th or 26th on his board. Top Shot's own pack-distribution and buyback accounts are left out of every collector count.</div>
+    <div class="controls">
+      <label for="player">Rookie</label>
+      <select id="player" aria-label="Choose a rookie"><option>Loading rookies…</option></select>
+    </div>
+  </header>
+
+  <section id="linesSec" aria-live="polite">
+    <h2>Board lines <span class="note">value is RPC FMV of every walk-confirmed holding; Top Shot ranks locked Top Shot Score</span></h2>
+    <div id="lines" class="load">Loading…</div>
+  </section>
+
+  <section id="supplySec" aria-live="polite">
+    <h2>Supply by edition <span class="note" id="supplyNote"></span></h2>
+    <div id="supply" class="load">Loading…</div>
+  </section>
+
+  <section id="classSec" aria-live="polite">
+    <h2>Class totals · Series 2025-26 Rookie Debut</h2>
+    <div id="cls" class="load">Loading…</div>
+  </section>
+
+  <div class="foot" id="foot">Sources: <code>get_topshot_player_rank_thresholds</code>, <code>get_topshot_supply_breakdown</code> (burned and locked from Atlas; held from the walk-confirmed ownership index), <code>topshot_rookie_collector_leaderboard_mv</code> refreshed daily by pg_cron job 40. A "—" burned means Atlas has not reported it, not zero. "Census" is complete when the index holds 98–102 % of live supply; below that, Top Shot-held and collector-held describe only what is indexed.</div>
+</div>
+
+<script>
+const SB="execute_sql";
+const PROJECT="bxcqstmqfzmuolpuynti";
+
+function extractRows(raw){
+  if(raw==null) return [];
+  if(Array.isArray(raw)) return raw;
+  if(typeof raw==="object"){
+    // A FAILED READ MUST NOT RENDER AS AN EMPTY RESULT SET (#114).
+    if(raw.isError===true||(raw.error&&typeof raw.error==="object")) throw new Error(String((raw.error&&(raw.error.message||raw.error.name))||(Array.isArray(raw.content)?raw.content.map(c=>(c&&c.text)||"").join(" "):"")||"tool returned an error"));
+    if(Array.isArray(raw.content)) return extractRows(raw.content.map(c=>typeof c==="string"?c:(c&&c.text)||"").join("\n"));
+    if(typeof raw.result==="string") return extractRows(raw.result);
+    if(typeof raw.text==="string") return extractRows(raw.text);
+    if(typeof raw.data!=="undefined") return extractRows(raw.data);
+    return [raw];
+  }
+  if(typeof raw==="string"){ let s=raw.trim(); try{ return extractRows(JSON.parse(s)); }catch(e){} const m=s.match(/\[[\s\S]*\]/); if(m){ try{ return JSON.parse(m[0]); }catch(e){} } const o=s.match(/\{[\s\S]*\}/); if(o){ try{ return [JSON.parse(o[0])]; }catch(e){} } if(!s) return []; throw new Error("unreadable tool response: "+s.slice(0,160)); }
+  return [];
+}
+async function sb(sql){ return extractRows(await window.cowork.callMcpTool(SB,{project_id:PROJECT,query:sql})); }
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+const lit=s=>"'"+String(s).replace(/'/g,"''")+"'";
+function n(x){ return x==null||x===""||isNaN(x)?"—":Number(x).toLocaleString(); }
+function usd(x){ return x==null||x===""||isNaN(x)?"—":"$"+Number(x).toLocaleString(undefined,{maximumFractionDigits:Number(x)<100?2:0}); }
+function pct(a,b){ if(a==null||b==null||isNaN(a)||isNaN(b)||Number(b)<=0) return "—"; return (100*Number(a)/Number(b)).toFixed(1)+"%"; }
+function fail(id,e){ document.getElementById(id).innerHTML='<div class="err">Could not load this panel. '+esc(e&&e.message||e)+'</div>'; }
+function pt(iso){ if(!iso) return "—"; const d=new Date(iso); if(isNaN(d)) return "—"; return d.toLocaleString("en-US",{timeZone:"America/Los_Angeles",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})+" PT"; }
+
+async function loadPlayers(){
+  const rows=await sb("select player_name, count(*)::int collectors, max(est_value_usd) top_value from topshot_rookie_collector_leaderboard_mv group by 1 order by top_value desc nulls last, 1");
+  if(!rows.length) throw new Error("The rookie leaderboard returned no players. Its refresh (pg_cron job 40) may have failed.");
+  const sel=document.getElementById("player");
+  sel.innerHTML=rows.map(r=>'<option value="'+esc(r.player_name)+'">'+esc(r.player_name)+'</option>').join("");
+  let saved=null; try{ saved=localStorage.getItem("rsl.player"); }catch(e){}
+  if(saved && rows.some(r=>r.player_name===saved)) sel.value=saved;
+  sel.addEventListener("change",()=>{ try{ localStorage.setItem("rsl.player",sel.value); }catch(e){} loadPlayer(sel.value); });
+  return sel.value;
+}
+
+async function loadLines(p){
+  const el=document.getElementById("lines"); el.className="load"; el.textContent="Loading…";
+  try{
+    const rows=await sb("select * from get_topshot_player_rank_thresholds("+lit(p)+")");
+    if(rows.length!==4) throw new Error("expected 4 rank lines, got "+rows.length);
+    const coll=rows[0].collectors;
+    const name={1:"1st",3:"3rd · Blue Chip line",10:"10th",26:"26th · Yearbook line"};
+    el.className="lines";
+    el.innerHTML=rows.map(r=>'<div class="line"><div class="rk">'+esc(name[r.rank_cutoff]||("#"+r.rank_cutoff))+'</div><div class="v">'+(r.est_value_usd==null?"—":usd(r.est_value_usd))+'</div><div class="m">'+(r.moments_held==null?"fewer collectors than this":n(r.moments_held)+" Moments")+'</div></div>').join("")
+      +'<div class="line"><div class="rk">Collectors on the board</div><div class="v">'+n(coll)+'</div><div class="m">system accounts excluded</div></div>';
+  }catch(e){ fail("lines",e); }
+}
+
+async function loadSupply(p){
+  const el=document.getElementById("supply"); el.className="load"; el.textContent="Loading…";
+  try{
+    const rows=await sb("select * from get_topshot_supply_breakdown("+lit(p)+", null, null) where series = 8");
+    if(!rows.length){ el.textContent="No minted 2025-26 editions found for this rookie."; return; }
+    let asof=null; rows.forEach(r=>{ if(r.burned_as_of && (!asof || r.burned_as_of>asof)) asof=r.burned_as_of; });
+    document.getElementById("supplyNote").textContent="burns as of "+pt(asof);
+    const body=rows.map(r=>{
+      const c=r.census_complete===true||r.census_complete==="true";
+      return '<tr><td>'+esc(r.set_name)+' · '+esc(r.printing)+'</td><td>'+n(r.minted)+'</td><td class="burn">'+n(r.burned)+'</td><td>'+pct(r.burned,r.minted)+'</td><td>'+n(r.live_supply)+'</td><td>'+n(r.locked)+'</td><td>'+n(r.top_shot_held)+'</td><td>'+n(r.collector_held)+'</td><td>'+n(r.collectors)+'</td><td><span class="pill '+(c?"ok":"warn")+'">'+(c?"complete":"partial")+'</span></td></tr>';
+    }).join("");
+    el.className="scroll";
+    el.innerHTML='<table><thead><tr><th>Edition</th><th>Minted</th><th>Burned</th><th>Burn %</th><th>Live</th><th>Locked</th><th>Top Shot</th><th>Collectors hold</th><th>Collectors</th><th>Census</th></tr></thead><tbody>'+body+'</tbody></table>';
+  }catch(e){ fail("supply",e); }
+}
+
+async function loadClass(){
+  try{
+    const rows=await sb("select printing, count(*)::int eds, sum(minted)::int minted, sum(burned)::int burned, count(burned)::int burned_reported, sum(live_supply)::int live, sum(locked)::int locked, sum(top_shot_held)::int ts, sum(collector_held)::int coll, count(*) filter (where census_complete)::int complete from get_topshot_supply_breakdown(null, 'Rookie Debut', 8) group by 1 order by 3 desc");
+    if(!rows.length) throw new Error("no Rookie Debut editions returned for Series 2025-26");
+    const body=rows.map(r=>'<tr><td>'+esc(r.printing)+' <span class="m" style="color:var(--muted)">('+n(r.eds)+' editions)</span></td><td>'+n(r.minted)+'</td><td class="burn">'+n(r.burned)+(r.burned_reported<r.eds?' <span class="pill warn">'+(r.eds-r.burned_reported)+' unreported</span>':'')+'</td><td>'+pct(r.burned,r.minted)+'</td><td>'+n(r.live)+'</td><td>'+n(r.locked)+'</td><td>'+pct(r.locked,r.live)+'</td><td>'+n(r.ts)+'</td><td>'+n(r.coll)+'</td><td>'+n(r.complete)+' / '+n(r.eds)+'</td></tr>').join("");
+    const el=document.getElementById("cls"); el.className="scroll";
+    el.innerHTML='<table><thead><tr><th>Printing</th><th>Minted</th><th>Burned</th><th>Burn %</th><th>Live</th><th>Locked</th><th>Locked %</th><th>Top Shot</th><th>Collectors hold</th><th>Census complete</th></tr></thead><tbody>'+body+'</tbody></table>';
+  }catch(e){ fail("cls",e); }
+}
+
+async function loadRefresh(){
+  try{
+    const r=await sb("select max(d.start_time) filter (where d.status='succeeded') ok_at, (array_agg(d.status order by d.start_time desc))[1] last_status from cron.job_run_details d where d.jobid = 40 and d.start_time > now() - interval '3 days'");
+    const row=r[0]||{};
+    const f=document.getElementById("foot");
+    f.innerHTML+=' Leaderboard last refreshed '+esc(pt(row.ok_at))+(row.last_status&&row.last_status!=="succeeded"?' · <span class="pill bad">last run '+esc(row.last_status)+'</span>':'')+'.';
+  }catch(e){ document.getElementById("foot").innerHTML+=' <span class="pill bad">refresh time unavailable: '+esc(e.message)+'</span>'; }
+}
+
+function loadPlayer(p){ return Promise.all([loadLines(p), loadSupply(p)]); }
+
+(async function(){
+  loadClass(); loadRefresh();
+  try{ const p=await loadPlayers(); await loadPlayer(p); }
+  catch(e){ fail("lines",e); fail("supply",e); }
+})();
+</script>

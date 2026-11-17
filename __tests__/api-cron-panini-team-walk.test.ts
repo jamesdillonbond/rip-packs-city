@@ -1,0 +1,223 @@
+// __tests__/api-cron-panini-team-walk.test.ts
+//
+// POST /api/cron/panini-team-walk — the receiver for scripts/panini-team-walk.mjs.
+// What must hold:
+//   - no bearer, no write (401);
+//   - a malformed body is a 400 that names the problem, before any DB call;
+//   - an ingest reports what the RPC WROTE, and a failed or count-less write is a
+//     non-2xx — the walker reads that as a failed flush and withholds `complete`,
+//     which is what stops a partial walk from retiring live listings.
+
+import { beforeEach, describe, expect, it, vi } from "vitest"
+
+const calls: Array<{ fn: string; args: Record<string, unknown> }> = []
+const rpcResult: { data: unknown; error: unknown } = { data: null, error: null }
+const heartbeat = { landed: true, opts: null as unknown }
+
+vi.mock("@/lib/supabase", () => ({
+  supabaseAdmin: {
+    rpc: async (fn: string, args: Record<string, unknown>) => {
+      calls.push({ fn, args })
+      return { data: rpcResult.data, error: rpcResult.error }
+    },
+  },
+}))
+vi.mock("@/lib/pipeline/heartbeat", () => ({
+  writeInvocationHeartbeat: async (opts: unknown) => {
+    heartbeat.opts = opts
+    return heartbeat.landed
+  },
+}))
+
+import { POST } from "@/app/api/cron/panini-team-walk/route"
+import { parseTeamWalkBody } from "@/lib/chains/panini/team-walk"
+
+const TOKEN = "t0ken"
+const base = { sport: "Basketball", team: "Portland Trail Blazers", walk_started_at: "2026-09-24T14:32:27.599Z" }
+const req = (body: unknown, auth = `Bearer ${TOKEN}`) =>
+  ({
+    headers: new Headers(auth ? { authorization: auth } : {}),
+    json: async () => {
+      if (body === "BAD") throw new Error("bad json")
+      return body
+    },
+  }) as never
+
+beforeEach(() => {
+  process.env.INGEST_SECRET_TOKEN = TOKEN
+  calls.length = 0
+  rpcResult.data = null
+  rpcResult.error = null
+  heartbeat.landed = true
+  heartbeat.opts = null
+})
+
+describe("auth + validation", () => {
+  it("401s without the bearer and never touches the DB", async () => {
+    expect((await POST(req({ op: "heartbeat", ...base }, ""))).status).toBe(401)
+    expect((await POST(req({ op: "heartbeat", ...base }, "Bearer nope"))).status).toBe(401)
+    expect(calls).toHaveLength(0)
+  })
+  it("400s a non-JSON body and a bad op, before any DB call", async () => {
+    expect((await POST(req("BAD"))).status).toBe(400)
+    const r = await POST(req({ op: "delete", ...base }))
+    expect(r.status).toBe(400)
+    expect((await r.json()).error).toMatch(/op must be/)
+    expect(calls).toHaveLength(0)
+  })
+  it("parseTeamWalkBody names each rejection", () => {
+    expect(parseTeamWalkBody(null)).toMatchObject({ ok: false })
+    expect(parseTeamWalkBody({ ...base, op: "heartbeat", sport: "Soccer" })).toMatchObject({ ok: false, reason: /sport/ })
+    expect(parseTeamWalkBody({ ...base, op: "heartbeat", team: "  " })).toMatchObject({ ok: false, reason: /team/ })
+    expect(parseTeamWalkBody({ ...base, op: "heartbeat", walk_started_at: "yesterday" })).toMatchObject({ ok: false, reason: /walk_started_at/ })
+    expect(parseTeamWalkBody({ ...base, op: "ingest", rows: {}, complete: false })).toMatchObject({ ok: false, reason: /rows/ })
+    expect(parseTeamWalkBody({ ...base, op: "ingest", rows: new Array(1001).fill({}), complete: false })).toMatchObject({ ok: false, reason: /at most/ })
+    expect(parseTeamWalkBody({ ...base, op: "ingest", rows: [], complete: "yes" })).toMatchObject({ ok: false, reason: /complete/ })
+    expect(parseTeamWalkBody({ ...base, op: "finish", pages: -1, listings_seen: 0, written: 0, ok: true })).toMatchObject({ ok: false, reason: /non-negative/ })
+    expect(parseTeamWalkBody({ ...base, op: "finish", pages: 1, listings_seen: 0, written: 0, ok: "true" })).toMatchObject({ ok: false, reason: /ok must/ })
+  })
+})
+
+describe("heartbeat", () => {
+  it("writes the panini-team-walk marker at the walk's start", async () => {
+    const r = await POST(req({ op: "heartbeat", ...base }))
+    expect(r.status).toBe(200)
+    expect(heartbeat.opts).toMatchObject({ pipeline: "panini-team-walk", startedAtMs: Date.parse(base.walk_started_at) })
+  })
+  it("a heartbeat that did not land is a 503, not a 200", async () => {
+    heartbeat.landed = false
+    expect((await POST(req({ op: "heartbeat", ...base }))).status).toBe(503)
+  })
+})
+
+describe("ingest", () => {
+  it("passes the flush through and reports what the RPC WROTE", async () => {
+    rpcResult.data = { written: 2, mapped: 2, unmapped: 0, retired: 0, retire_skipped: false, seen: 0, active_before: 0 }
+    const r = await POST(req({ op: "ingest", ...base, rows: [{ sku: "a", psku: "p" }], complete: false }))
+    expect(r.status).toBe(200)
+    expect(await r.json()).toEqual({ written: 2, mapped: 2, unmapped: 0, retired: 0, retire_skipped: false, seen: 0, active_before: 0 })
+    expect(calls[0]).toEqual({
+      fn: "panini_team_listings_ingest",
+      args: { p_sport: "Basketball", p_team_raw: "Portland Trail Blazers", p_walk_started_at: base.walk_started_at, p_rows: [{ sku: "a", psku: "p" }], p_complete: false },
+    })
+  })
+  it("an RPC error is a non-2xx and publishes no driver message", async () => {
+    rpcResult.error = { message: 'relation "panini_team_listings" does not exist', code: "42P01" }
+    const r = await POST(req({ op: "ingest", ...base, rows: [], complete: true }))
+    expect(r.status).toBeGreaterThanOrEqual(400)
+    expect(JSON.stringify(await r.json())).not.toMatch(/panini_team_listings/)
+  })
+  it("an answer with no write count is a 502, never a success", async () => {
+    rpcResult.data = {}
+    expect((await POST(req({ op: "ingest", ...base, rows: [], complete: false }))).status).toBe(502)
+  })
+})
+
+describe("finish", () => {
+  it("logs the run with the walker's own ok and counts", async () => {
+    const r = await POST(
+      req({ op: "finish", ...base, pages: 12, listings_seen: 340, written: 340, ok: false, error: "page 13: no readable products response", extra: { complete: false } }),
+    )
+    expect(r.status).toBe(200)
+    expect(calls[0].fn).toBe("log_pipeline_run")
+    expect(calls[0].args).toMatchObject({
+      p_pipeline: "panini-team-walk",
+      p_rows_found: 340,
+      p_rows_written: 340,
+      p_ok: false,
+      p_error: "page 13: no readable products response",
+      p_extra: { complete: false, target: "Basketball:Portland Trail Blazers", pages: 12 },
+    })
+  })
+  it("a failed run-log write is a non-2xx", async () => {
+    rpcResult.error = { message: "boom" }
+    expect((await POST(req({ op: "finish", ...base, pages: 0, listings_seen: 0, written: 0, ok: true }))).status).toBeGreaterThanOrEqual(400)
+  })
+})
+
+describe("plan (rotation mode)", () => {
+  it("returns the plan's targets and passes the limit through", async () => {
+    rpcResult.data = [
+      { sport: "Basketball", team: "Atlanta Hawks", last_complete_at: null, last_attempt_at: null },
+      { sport: "Baseball", team: "Detroit", last_complete_at: "2026-09-24T23:22:49Z", last_attempt_at: "2026-09-24T23:22:49Z" },
+    ]
+    const r = await POST(req({ op: "plan", limit: 5 }))
+    expect(r.status).toBe(200)
+    expect((await r.json()).targets).toEqual([
+      { sport: "Basketball", team: "Atlanta Hawks", last_complete_at: null },
+      { sport: "Baseball", team: "Detroit", last_complete_at: "2026-09-24T23:22:49Z" },
+    ])
+    // 2026-10-23 re-pin: the plan is filtered by sport; a walker naming none is a
+    // pre-10-23 walker and gets the two sports it can walk.
+    expect(calls[0]).toEqual({ fn: "panini_team_walk_plan_for", args: { p_limit: 5, p_sports: ["Basketball", "Baseball"] } })
+  })
+  // ⚠ Load-bearing (2026-10-23): the pre-10-23 laptop walker DROPS any other sport's
+  // targets client-side, and the plan hands out never-attempted rows first — a dropped
+  // row is never stamped, so it would stay stalest forever and starve the rotation.
+  it("never hands a walker that names no sports a Football or WNBA target", async () => {
+    rpcResult.data = []
+    await POST(req({ op: "plan", limit: 5 }))
+    const sports = calls[0].args.p_sports as string[]
+    expect(sports).not.toContain("Football")
+    expect(sports).not.toContain("Womens Basketball")
+  })
+  it("passes the sports a walker names", async () => {
+    rpcResult.data = []
+    await POST(req({ op: "plan", limit: 5, sports: ["Basketball", "Football", "Womens Basketball", "Football"] }))
+    expect(calls[0]).toEqual({ fn: "panini_team_walk_plan_for", args: { p_limit: 5, p_sports: ["Basketball", "Football", "Womens Basketball"] } })
+  })
+  it("rejects an unknown, empty or malformed sports list before any DB call", async () => {
+    for (const sports of [["Soccer"], [], "Football", [1]]) {
+      expect((await POST(req({ op: "plan", limit: 5, sports }))).status).toBe(400)
+    }
+    expect(calls).toHaveLength(0)
+  })
+  it("accepts a Football target on the walk ops", async () => {
+    rpcResult.data = true
+    const r = await POST(req({ op: "heartbeat", sport: "Football", team: "Kansas City Chiefs", walk_started_at: base.walk_started_at }))
+    expect(r.status).not.toBe(400)
+  })
+  it("rejects a limit outside 1..50 before any DB call", async () => {
+    for (const limit of [0, 51, 2.5, "5", undefined]) {
+      expect((await POST(req({ op: "plan", limit }))).status).toBe(400)
+    }
+    expect(calls).toHaveLength(0)
+  })
+  it("a failed plan read is a non-2xx, and a non-list answer is a 502", async () => {
+    rpcResult.error = { message: "timeout" }
+    expect((await POST(req({ op: "plan", limit: 5 }))).status).toBeGreaterThanOrEqual(400)
+    rpcResult.error = null
+    rpcResult.data = { not: "a list" }
+    expect((await POST(req({ op: "plan", limit: 5 }))).status).toBe(502)
+  })
+})
+
+describe("roster stamps", () => {
+  it("heartbeat stamps the attempt (ok = null)", async () => {
+    rpcResult.data = true
+    const r = await POST(req({ op: "heartbeat", ...base }))
+    expect(await r.json()).toEqual({ landed: true, noted: true })
+    expect(calls[0]).toEqual({ fn: "panini_team_walk_note", args: { p_sport: "Basketball", p_team: "Portland Trail Blazers", p_ok: null, p_listings: null } })
+  })
+  it("finish stamps completion only through the walker's own ok", async () => {
+    rpcResult.data = true
+    await POST(req({ op: "finish", ...base, pages: 203, listings_seen: 6031, written: 6031, ok: true }))
+    expect(calls[1]).toEqual({ fn: "panini_team_walk_note", args: { p_sport: "Basketball", p_team: "Portland Trail Blazers", p_ok: true, p_listings: 6031 } })
+  })
+  it("a roster stamp that did not land is reported, never turned into a failed op", async () => {
+    rpcResult.data = null
+    const r = await POST(req({ op: "finish", ...base, pages: 1, listings_seen: 0, written: 0, ok: false }))
+    expect(r.status).toBe(200)
+    expect(await r.json()).toEqual({ logged: true, noted: false })
+    expect(calls).toHaveLength(2)
+  })
+})
+
+describe("retirement guard pass-through", () => {
+  it("reports the DB refusing to retire, so the walker can fail the run", async () => {
+    rpcResult.data = { written: 0, mapped: 0, unmapped: 0, retired: 0, retire_skipped: true, seen: 0, active_before: 6031 }
+    const r = await POST(req({ op: "ingest", ...base, rows: [], complete: true }))
+    expect(r.status).toBe(200)
+    expect(await r.json()).toMatchObject({ retired: 0, retire_skipped: true, seen: 0, active_before: 6031 })
+  })
+})

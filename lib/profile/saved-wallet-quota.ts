@@ -1,0 +1,138 @@
+// lib/profile/saved-wallet-quota.ts
+//
+// Saved-wallet cap arithmetic (5 wallets + linked usernames per account).
+//
+// THE BUG THIS EXISTS TO PREVENT: saved_wallets stores ONE ROW PER
+// (user_id, wallet_addr, collection_id), so a single Dapper wallet lands 5 rows
+// (Top Shot, All Day, Golazos, Pinnacle, UFC). Counting ROWS against
+// feature_quotas.saved_wallets_max therefore reads 5 for a free user whose cap
+// is 1 — blocking them immediately after their FIRST wallet, with a
+// "Free plan supports 1 saved wallet" message that is true but misapplied.
+// The cap is about PHYSICAL WALLETS, so it must be measured on distinct
+// wallet_addr. This mirrors groupWalletsByAddress() on the dashboard, which
+// already groups the same rows the same way for display.
+//
+// Kept in lib/ (not inlined in the routes) because BOTH write paths need it —
+// /api/profile/saved-wallets POST and /api/profile/resolve-and-associate, the
+// latter being the primary "Load my collection" path that had no cap check at
+// all and so bypassed the limit entirely.
+
+import { isCadenceAddress, normalizeAddress } from "@/lib/address";
+
+/**
+ * Saved wallets + linked usernames per account. ONE number for every account —
+ * Trevor, 2026-09-25: "5 wallets for any account", and no plan (paid or
+ * otherwise) is considered anywhere until RPC reaches 100 weekly active users.
+ * This replaced a per-plan lookup of feature_quotas.saved_wallets_max.
+ */
+export const SAVED_WALLET_LIMIT = 5;
+
+/** The refusal copy every save path shows at the cap. No plan, no upgrade. */
+export function savedWalletLimitMessage(limit: number = SAVED_WALLET_LIMIT): string {
+  return `You can save up to ${limit} wallets and linked usernames. Remove one to add another.`;
+}
+
+/** Minimal shape needed to count distinct wallets. */
+export interface SavedWalletAddrRow {
+  wallet_addr: string | null;
+}
+
+/**
+ * Distinct physical wallets in a set of saved_wallets rows.
+ * Hex addresses are compared case-insensitively — the DB stores lower-case, but
+ * a caller that skipped normalization must not be able to double-count `0xAB`
+ * and `0xab` and thereby inflate a user past their cap.
+ *
+ * ⚠ base58 (Candy/Solana) is NOT folded: two Solana addresses that differ only
+ * in case are two different wallets, and folding them UNDER-counted a user —
+ * the mirror of `walletAlreadySaved`'s bug. normalizeAddress folds hex exactly
+ * as `.toLowerCase()` did, so the Flow arm is byte-identical.
+ */
+export function countDistinctWallets(rows: readonly SavedWalletAddrRow[] | null | undefined): number {
+  if (!rows) return 0;
+  const set = new Set<string>();
+  for (const r of rows) {
+    const addr = r?.wallet_addr;
+    if (typeof addr === "string" && addr.trim() !== "") set.add(normalizeAddress(addr));
+  }
+  return set.size;
+}
+
+/**
+ * True when `candidate` is already one of the user's saved wallets, i.e. this
+ * write is a RE-SAVE and must skip the cap (otherwise a user at their limit
+ * could never refresh or re-associate the wallet they already own).
+ */
+export function walletAlreadySaved(
+  rows: readonly SavedWalletAddrRow[] | null | undefined,
+  candidate: string
+): boolean {
+  // ⚠ Chain-scoped on BOTH sides. Folding both looks symmetrical and is still
+  // wrong for base58: two DIFFERENT Candy wallets that happen to differ only in
+  // case would compare equal, and this function's `true` BLOCKS the save. The
+  // failure is a refusal to store a wallet the collector really owns.
+  const want = normalizeAddress(candidate);
+  if (want === "") return false;
+  return (rows ?? []).some(
+    (r) => typeof r?.wallet_addr === "string" && normalizeAddress(r.wallet_addr) === want
+  );
+}
+
+/**
+ * Decide whether adding `candidate` would exceed the saved-wallet cap.
+ *
+ * `maxAllowed` is SAVED_WALLET_LIMIT at every call site; `null` (no cap) is
+ * kept only so the arithmetic stays total. Returns the numbers the caller needs
+ * for its refusal body so the message can state the real count, not a row count.
+ */
+export function evaluateSavedWalletCap(
+  rows: readonly SavedWalletAddrRow[] | null | undefined,
+  candidate: string,
+  maxAllowed: number | null,
+  // Linked non-address identities (a Panini username, saved_collector_identities)
+  // count toward the same cap: Trevor 2026-09-25, "allow 5 wallets per user" —
+  // a username is a wallet as far as the collector is concerned.
+  linkedIdentityCount = 0
+): { allowed: boolean; distinctCount: number; isReSave: boolean } {
+  const distinctCount = countDistinctWallets(rows) + Math.max(0, linkedIdentityCount);
+  const isReSave = walletAlreadySaved(rows, candidate);
+  if (isReSave || maxAllowed === null) {
+    return { allowed: true, distinctCount, isReSave };
+  }
+  return { allowed: distinctCount < maxAllowed, distinctCount, isReSave };
+}
+
+// ── One Dapper wallet per account (Trevor, 2026-11-07) ───────────────────────
+//
+// A Dapper (Flow / Cadence) wallet is the collector: it spans Top Shot, All Day,
+// Golazos, Pinnacle and UFC at once. Letting an account save a second one made the
+// dashboard a wallet-management tool ("+ Add another wallet", an "Advanced: wallet
+// address" form) for a product that asks for one identifier. The 5-slot cap above
+// still bounds Candy (Solana) wallets and linked Panini usernames; THIS rule says
+// the Flow slot is single. Switching = remove the saved one, then add.
+
+export const DAPPER_WALLET_LIMIT = 1;
+
+export function dapperWalletLimitMessage(): string {
+  return "One Dapper wallet per account. Remove the saved one to switch to another.";
+}
+
+/**
+ * The Dapper wallet this account already has, when `candidate` is a Cadence
+ * address that is NOT it. `null` when the candidate is not a Cadence address, when
+ * no Flow wallet is saved, or when the candidate IS the saved one (a re-save).
+ * Rows carry mixed chains; only hex `0x` + 16 hex (Cadence) rows count here.
+ */
+export function otherDapperWalletSaved(
+  rows: readonly SavedWalletAddrRow[] | null | undefined,
+  candidate: string
+): string | null {
+  const want = normalizeAddress(candidate);
+  if (!isCadenceAddress(want)) return null;
+  for (const r of rows ?? []) {
+    const addr = typeof r?.wallet_addr === "string" ? normalizeAddress(r.wallet_addr) : "";
+    if (addr === "" || !isCadenceAddress(addr)) continue;
+    if (addr !== want) return addr;
+  }
+  return null;
+}

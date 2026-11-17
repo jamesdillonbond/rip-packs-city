@@ -1,0 +1,19 @@
+-- Applied live via Supabase MCP (audit_20260803_revoke_anon_mv_topshot_pack_realized_ev);
+-- this file is the idempotent repo record. REVOKE ALL is a no-op if already revoked.
+--
+-- mv_topshot_pack_realized_ev was materialized during the 2026-08-02 pack-reality
+-- un-break but, unlike its siblings mv_topshot_pack_reality_stats / _top_ev
+-- (revoked in 20260802045654, lines 135/197), kept the default anon/authenticated
+-- SELECT grant a materialized view receives on creation. That left it directly
+-- selectable at /rest/v1/mv_topshot_pack_realized_ev (Supabase security advisor:
+-- materialized_view_in_api).
+--
+-- Its only consumers read the security_invoker VIEW public.v_topshot_pack_realized_ev
+-- via the service-role client (app/api/public/insights/pack-reality) or a SECDEF
+-- RPC (the pack/dist page), so anon/authenticated never need direct MV access;
+-- service_role keeps its explicit SELECT (verified: view still reads 184 rows under
+-- `SET ROLE service_role` after the revoke). Mirrors the mv_topshot_market_index_daily
+-- revoke (2026-08-01) and the sibling MV revokes in 20260802045654.
+--
+-- Rollback: GRANT SELECT ON public.mv_topshot_pack_realized_ev TO anon, authenticated;
+REVOKE ALL ON public.mv_topshot_pack_realized_ev FROM anon, authenticated;

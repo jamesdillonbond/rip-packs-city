@@ -1,0 +1,939 @@
+// app/api/candy-sales-indexer/route.ts
+//
+// Item 4 — Candy (Solana) secondary-sales indexer. Polls Magic Eden's
+// collection `activities` feed (newest-first), resolves each sale's mint to an
+// RPC edition via DAS, and writes a `sales` row in USD.
+//
+// ⛔ COVERAGE, stated up front because the row fields understate it: this route
+// sees MAGIC EDEN ONLY. OpenSea added Solana NFT trading ~2026-08-31 with Candy
+// Digital as a NAMED LAUNCH PARTNER, and a Candy trade clearing there is captured
+// NOWHERE by RPC. Confirmed rather than inferred: count(distinct marketplace) = 1
+// across every Candy sale ever recorded. Candy is small (~3,041 sales / $25,115
+// per 30d) so this is an accuracy gap, not an emergency — but the LISTINGS side is
+// sharper, since Magic Eden lists ~0 Candy items under the quest-hold rule, so an
+// empty deals/sniper/floor board can mean "we are blind", not "no market".
+// See docs/overnight/inbox/2026-09-02T0400Z-candy-secondary-is-no-longer-magic-eden-only-*.md
+//
+// ARMED 2026-07-19: CANDY_MLB_ME_SYMBOL is filled with the verified live symbol
+// and a Vercel cron drives this every 3h. Magic Eden currently lists 0 Candy items
+// (quest-hold rule) so every tick is a 1-call no-op; the first printed secondary
+// sale is captured automatically. The candyMeSymbolReady() short-circuit is kept
+// as a guard for any future placeholder state.
+//
+// Incremental cursor: ME activities are newest-first, so we stop once we cross
+// the most-recent already-recorded Candy sale (`sold_at`). The unique tx-hash
+// index on sales_2026 is the dedup backstop (23505 swallowed).
+
+import { canonicalCandyEditionKey } from "@/lib/candy/edition-key-aliases"
+import { NextRequest, NextResponse, after } from "next/server"
+import { supabaseAdmin } from "@/lib/supabase"
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
+import { getAsset, primeSolUsdFromTable, primeSolUsdHistory, solUsd, solUsdOn } from "@/lib/chains/solana/das"
+import {
+  CANDY_MLB_ME_SYMBOL,
+  CANDY_MLB_SLUG,
+  CANDY_MLB_UUID,
+  candyMeSymbolReady,
+  editionKeyFromAsset,
+  isPack,
+  normalizeSerial,
+} from "@/lib/chains/solana/normalize"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
+import { loadCandyCollections } from "@/lib/candy/collections"
+import { hydrateFromJsonUri, isUnhydrated } from "@/lib/chains/solana/hydrate"
+import { CANDY_BASE_SET_ID, CANDY_SETS, candySaleSerialOptional } from "@/lib/chains/solana/candy-sets"
+
+export const dynamic = "force-dynamic"
+export const maxDuration = 300
+
+const PIPELINE_NAME = "candy-sales-indexer"
+const ME_BASE = "https://api-mainnet.magiceden.dev/v2"
+const ME_LIMIT = 500
+const MAX_PAGES = 40
+// Per-request cap on each Magic Eden call. See the note at the fetch itself.
+const ME_FETCH_TIMEOUT_MS = 15_000
+// Whole-sweep deadline, and a SEPARATE guarantee from the per-request cap — not
+// a duplicate of it. ME_FETCH_TIMEOUT_MS bounds ONE call; MAX_PAGES is 40, so
+// per-request caps alone still permit 40 x 15s = 600s, twice this route's 300s
+// maxDuration. Without a total budget the sweep can still be killed before
+// reaching logRun, which is the whole defect being fixed: a killed tick writes
+// no terminal row, so the failure is invisible to pipeline_runs.
+//
+// 240s leaves ~60s for the asset-resolution, drain and logging phases that
+// follow the walk. Stopping early just leaves sales for the next tick — the
+// cursor only advances over pages actually processed, and unresolved rows are
+// retried by design.
+const SWEEP_BUDGET_MS = 240_000
+// Bound DAS getAsset() calls per tick (edition + serial resolution) so a large
+// backlog can't blow the lambda budget — unresolved sales are retried next tick.
+const ASSET_FETCH_BUDGET = 400
+// Dead-letter drain: rows re-attempted per tick, and the attempt ceiling after
+// which a row stops consuming budget (it stays open and countable, it just
+// stops being retried).
+//
+// 300 since 2026-11-08 (was 60): the census now holds every Candy card, so a drained row
+// resolves from wallet_moments_cache + one editions read with NO DAS call, and 60 rows
+// per 3-hourly tick put a 2,267-sale backlog ~5 days from the board. DAS-resolved rows
+// stay bounded by ASSET_FETCH_BUDGET, and the drain stops at DRAIN_DEADLINE_MS so it
+// cannot carry the run past maxDuration (a kill writes no terminal row).
+const DRAIN_LIMIT = 300
+const DRAIN_DEADLINE_MS = 270_000
+const MAX_PARK_ATTEMPTS = 25
+// A sealed-pack sale is permanently unresolvable as an EDITION sale (packs are
+// not editions). Parked and closed in the same breath: the row is kept as the
+// only record RPC has of Candy pack secondary pricing, but never retried.
+const PACK_SKIP = "pack_asset"
+// 2026-09-23: a pack sale whose candy_pack_sales write FAILED is not closed out
+// as PACK_SKIP (which is terminal — the sale would be lost with the run still
+// reporting it "seen"). It parks under this NON-terminal reason so the dead-
+// letter drain retries the write, and the run reports the failure.
+const PACK_WRITE_FAILED_SKIP = "pack_sale_write_failed"
+const DUST_SKIP = "dust_price_rounds_to_zero"
+// Skips that can NEVER succeed on a retry: the input itself is terminal, not
+// missing. Parked, then closed in the same pass so they don't burn drain budget
+// (or sit in the dead letter forever once attempts hit MAX_PARK_ATTEMPTS).
+const TERMINAL_SKIPS = new Set([PACK_SKIP, DUST_SKIP])
+// 2026-11-16: a DAS read of a card in an edition-key-PREFIXED collection that came back
+// name-only (no traits, no image) and whose off-chain JSON could not be read. Keyed from
+// the name alone it would drop the rarity and land on the wrong edition (or none) —
+// docs/reference/chain-strategy.md "Never key a card from a name alone". Parked, retried.
+const UNHYDRATED_SKIP = "unhydrated_asset"
+
+interface MeActivity {
+  signature: string
+  type: string
+  tokenMint?: string
+  buyer?: string | null
+  seller?: string | null
+  price?: number // SOL
+  blockTime?: number // unix seconds
+  source?: string
+}
+
+// Sale activity types ME emits for a completed purchase. "list" is a listing,
+// not a sale — excluded.
+const SALE_TYPES = new Set(["buyNow", "buyNowFill", "acceptBid"])
+
+// A sale seen on the feed that could not be turned into a `sales` row this
+// tick. Shape mirrors public.candy_sales_unresolved.
+interface ParkedSale {
+  signature: string
+  token_mint: string
+  block_time: string | null
+  price_sol: number | null
+  buyer: string | null
+  seller: string | null
+  reason: string
+}
+
+async function fetchActivities(offset: number, symbol: string = CANDY_MLB_ME_SYMBOL): Promise<MeActivity[]> {
+  const headers: Record<string, string> = { Accept: "application/json" }
+  const key = process.env.MAGIC_EDEN_API_KEY
+  if (key) headers["Authorization"] = `Bearer ${key}`
+  const url = `${ME_BASE}/collections/${encodeURIComponent(symbol)}/activities?offset=${offset}&limit=${ME_LIMIT}`
+  // 15s cap. `fetch()` has no default timeout, and this route runs inside
+  // `after()` with maxDuration 300 — so an upstream that accepts the connection
+  // and holds it open consumes the whole budget, and a maxDuration kill writes
+  // NO terminal pipeline_runs row, making the outage invisible. Measured on the
+  // sibling /api/candy-listings-indexer 2026-08-27 (15 heartbeats, ONE terminal
+  // row in 48h, public board 44h stale) and fixed there the same evening.
+  //
+  // ⚠ This route is the one already observed taking Cloudflare 1015 rate-limits
+  // (HTTP 429) from Vercel against this same Magic Eden host, so it is the most
+  // exposed caller of the pattern, not a speculative one.
+  const resp = await fetch(url, { headers, signal: AbortSignal.timeout(ME_FETCH_TIMEOUT_MS) })
+  if (!resp.ok) {
+    throw new Error(`ME activities HTTP ${resp.status}: ${(await resp.text().catch(() => "")).slice(0, 200)}`)
+  }
+  const json = await resp.json()
+  return Array.isArray(json) ? (json as MeActivity[]) : []
+}
+
+async function logRun(
+  startedAtIso: string,
+  rowsFound: number,
+  rowsWritten: number,
+  rowsSkipped: number,
+  ok: boolean,
+  error: string | null,
+  cursorBefore: string | null,
+  cursorAfter: string | null,
+  extra: Record<string, unknown>
+) {
+  try {
+    await (supabaseAdmin as any).rpc("log_pipeline_run", {
+      p_pipeline: PIPELINE_NAME,
+      p_started_at: startedAtIso,
+      p_rows_found: rowsFound,
+      p_rows_written: rowsWritten,
+      p_rows_skipped: rowsSkipped,
+      p_ok: ok,
+      p_error: error,
+      p_collection_slug: CANDY_MLB_SLUG,
+      p_cursor_before: cursorBefore,
+      p_cursor_after: cursorAfter,
+      p_extra: extra,
+    })
+  } catch (e) {
+    console.log(
+      `[${PIPELINE_NAME}] log_pipeline_run failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`
+    )
+  }
+}
+
+// INGEST_SECRET_TOKEN (GitHub Actions / manual / cron-job.org) OR Bearer
+// CRON_SECRET (Vercel cron sends only CRON_SECRET). Both are equivalent-trust
+// server secrets. The GET handler exists so the Vercel cron — which always invokes
+// via GET — can drive the poll; manual/operator runs POST. Mirrors the auth shape
+// of app/api/ingest/candy-editions/route.ts.
+function authed(req: NextRequest): boolean {
+  const header = req.headers.get("authorization") ?? ""
+  const ingest = process.env.INGEST_SECRET_TOKEN
+  const cron = process.env.CRON_SECRET
+  if (ingest && bearerMatches(header, "INGEST_SECRET_TOKEN")) return true
+  if (cron && bearerMatches(header, "CRON_SECRET")) return true
+  return false
+}
+
+export async function GET(req: NextRequest) {
+  return handleIndex(req)
+}
+
+export async function POST(req: NextRequest) {
+  return handleIndex(req)
+}
+
+async function handleIndex(req: NextRequest) {
+  if (!authed(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  const startedAtIso = new Date().toISOString()
+  const startedMs = Date.now()
+
+  if (!candyMeSymbolReady()) {
+    await logRun(startedAtIso, 0, 0, 0, true, null, null, null, {
+      skip_reason: "discovery_pending",
+      note: "CANDY_MLB_ME_SYMBOL not configured (still a TODO_-prefixed placeholder)",
+    })
+    return NextResponse.json(
+      { accepted: false, skipped: "discovery_pending", collection: CANDY_MLB_SLUG },
+      { status: 202 }
+    )
+  }
+
+  after(async () => {
+    // Invocation heartbeat, FIRST statement of after(): a `maxDuration` kill
+    // runs neither the success path nor the catch, so without this marker a
+    // killed tick is indistinguishable from a cron that never fired — and this
+    // pipeline is on `pipeline_cadence_watchlist`, so the two produce the same
+    // alert and need opposite responses. The separate `-heartbeat` name is
+    // required: a marker under the REAL name would refresh `last_run` every
+    // tick and silence `detect_stalled_pipelines()` on the outage it exposes.
+    await writeInvocationHeartbeat({ pipeline: PIPELINE_NAME, startedAtMs: Date.parse(startedAtIso) })
+    let found = 0
+    let written = 0
+    let skipped = 0
+    let assetFetches = 0
+    let packSales = 0
+    // Trade days primed into the SOL/USD day cache from one range call before the drain.
+    let solDaysPrimed = 0
+    // Trade days primed from public.sol_usd_daily (DB egress), and that read's error if it failed.
+    let solDaysPrimedDb = 0
+    let solDbError: string | null = null
+    let packWriteErrors = 0
+    let cursorAfter: string | null = null
+    try {
+      // 2026-11-10: CoinGecko history fails from this egress (sol_days_primed = 0 on every
+      // drain); the DB's daily table carries the same 00:00 UTC basis. One cheap read
+      // covers the live walk's past-day sales too. Fails soft (see primeSolUsdFromTable).
+      {
+        const p0 = await primeSolUsdFromTable(supabaseAdmin, Date.now() - 120 * 86_400_000)
+        solDaysPrimedDb += p0.primed
+        solDbError = p0.error
+      }
+      // Incremental high-water mark: the most recent Candy sale we already have.
+      // ⛔ SCOPED TO magic_eden (2026-10-10). /api/candy-opensea-sales-indexer
+      // writes Candy sales too; an unscoped max(sold_at) would let a newer
+      // OpenSea sale jump this cursor past Magic Eden trades it has not read yet.
+      // ⛔ AND SCOPED TO THE BASE SET (2026-11-08). This walk reads the Base Series feed
+      // only, but max(sold_at) over every Candy Magic Eden sale let the later sets move it:
+      // on 11-08 the newest Base sale was 10-11 8:21 PM PT and the cursor stood on an
+      // All-Star sale at 10-12 7:57 AM PT, so a Base sale between the two was skipped for
+      // good — and the non-registry collections lane (candy-collections-market) now feeds
+      // sales of ~400 more collections through the drain. Same per-set high water the
+      // later-set walks below use.
+      const { data: latestHw, error: latestErr } = await (supabaseAdmin as any).rpc("candy_sales_high_water", {
+        p_set_id: CANDY_BASE_SET_ID,
+      })
+      const latest = typeof latestHw === "string" && latestHw ? [{ sold_at: latestHw }] : []
+      // ⛔ THIS READ IS THE CURSOR. supabase-js RETURNS its errors, so a failed
+      // read fell through to `cursorBeforeMs = 0` — indistinguishable from "we
+      // have no Candy sales yet" — and the sweep would then walk the WHOLE
+      // activities feed from the beginning against a bounded page budget,
+      // exhausting it on history it already has and reporting the result as a
+      // normal short sweep. Throwing leaves the high-water mark untouched.
+      if (latestErr) throw new Error(`sales high-water read failed: ${latestErr.message}`)
+      const cursorBeforeMs: number = latest?.[0]?.sold_at
+        ? new Date(latest[0].sold_at).getTime()
+        : 0
+      const cursorBefore = cursorBeforeMs ? new Date(cursorBeforeMs).toISOString() : null
+
+      const rate = await solUsd()
+      // 2026-11-16: register every catalogued Candy collection (candy_collections) with the
+      // normalizer, as the census and wallet reads already do. The DAS path below keys a card
+      // from its collection's edition prefix; without this, a card of a non-registry collection
+      // (2022 Leadoff ICONs, 2023 Rookie ICONs, …) that the census never holds — every BURNT
+      // card, since the census skips burnt assets — keyed as a bare Base-style slug that no
+      // edition carries, and parked as edition_not_ingested for good (143 sales, 11-16).
+      // A failed read registers nothing and is reported; those cards park as before.
+      const catalog = await loadCandyCollections(supabaseAdmin)
+      const prefixedCollections = new Set(
+        [...CANDY_SETS, ...catalog.sets]
+          .filter((s) => s.editionKeyPrefix && s.collectionAddress)
+          .map((s) => s.collectionAddress as string),
+      )
+      let saleHydrated = 0
+      let saleUnhydrated = 0
+      // edition_key → editions.id cache (so repeat keys cost one query).
+      const edIdByKey = new Map<string, string | null>()
+      // mint → census edition_key/serial (null = not in the census; use DAS).
+      const wmcByMint = new Map<string, { key: string; serial: number | null } | null>()
+      let censusResolved = 0
+
+      // A sale we SEE but cannot write used to be counted `skipped` and then
+      // dropped. ME only re-offers it while it is still newer than
+      // max(sold_at), so the moment ANY newer sale lands the cursor steps over
+      // it and it is gone for good — 37 of 359 activities across the first 25
+      // runs, invisibly, under ok=true. Park it instead; the drain below
+      // re-attempts the backlog every tick.
+      const parked: ParkedSale[] = []
+      const park = (
+        signature: string,
+        tokenMint: string,
+        tMs: number,
+        price: number | null | undefined,
+        buyer: string | null | undefined,
+        seller: string | null | undefined,
+        reason: string
+      ) => {
+        skipped++
+        parked.push({
+          signature,
+          token_mint: tokenMint,
+          block_time: tMs ? new Date(tMs).toISOString() : null,
+          price_sol: price ?? null,
+          buyer: buyer ?? null,
+          seller: seller ?? null,
+          reason,
+        })
+      }
+
+      const parkRpc = async (p: ParkedSale) => {
+        await (supabaseAdmin as any).rpc("candy_park_unresolved_sale", {
+          p_signature: p.signature,
+          p_token_mint: p.token_mint,
+          p_block_time: p.block_time,
+          p_price_sol: p.price_sol,
+          p_buyer: p.buyer,
+          p_seller: p.seller,
+          p_skip_reason: p.reason,
+        })
+      }
+
+      const closeParked = async (signature: string, tokenMint: string, resolution: string) => {
+        // write-discarded: a row left open is re-drained next tick, and the sale insert it resolves to is deduped, so a failure only repeats work.
+        await (supabaseAdmin as any)
+          .from("candy_sales_unresolved")
+          .update({ resolved_at: new Date().toISOString(), resolution })
+          .eq("signature", signature)
+          .eq("token_mint", tokenMint)
+      }
+
+      // Resolve one ME sale into a `sales` row, or say why it cannot be. Shared
+      // by the live walk and the dead-letter drain so both classify identically.
+      async function buildSaleRow(
+        signature: string,
+        tokenMint: string,
+        tMs: number,
+        price: number | null | undefined,
+        buyer: string | null | undefined,
+        seller: string | null | undefined
+      ): Promise<{ row: Record<string, unknown> } | { skip: string }> {
+        if (price == null || price <= 0) return { skip: "no_price" }
+        // Price this sale on the SOL/USD rate that prevailed on its OWN trade day
+        // (spot only for a same-day or <24 h-old sale). A days-old sale whose
+        // historical close is unavailable gets null → "no_sol_rate" → parked and
+        // retried, never priced at a different week's spot (solUsdOnWithBasis).
+        const saleRate = await solUsdOn(tMs)
+        if (saleRate == null) return { skip: "no_sol_rate" }
+        // Every downstream consumer reads price_usd, which is price*rate ROUNDED to
+        // cents — so a positive-but-dust SOL amount still lands as 0.00 and the
+        // `price <= 0` guard above does not catch it. This is not hypothetical: the
+        // single candy row that reached `sales` at price_usd = 0 was 0.00000100 SOL
+        // (~$0.000076) on 2026-07-23 — one microSOL of wash/dust, not a price.
+        // `sales` has no CHECK (price_usd > 0) to stop it, and a $0 sale drags every
+        // average that reads the edition. Guard the ROUNDED value: that also filters
+        // sub-half-cent dust by construction, with no invented threshold.
+        const priceUsd = Number((price * saleRate).toFixed(2))
+        if (!(priceUsd > 0)) return { skip: DUST_SKIP }
+        // ⭐ CENSUS FIRST (2026-11-08). Every Candy card mint is already in
+        // wallet_moments_cache with its edition_key and serial (the daily DAS walk
+        // over every set), so a DAS round trip per sale is only needed for a mint
+        // the census has not seen — a pack, or a card minted since the last walk.
+        // Without this a new set's backlog (~2,000 All-Star sales) would spend the
+        // 400-call DAS budget per tick and drain at 60/tick for days.
+        let known = wmcByMint.get(tokenMint)
+        if (known === undefined) {
+          const { data: wr, error: we } = await (supabaseAdmin as any)
+            .from("wallet_moments_cache")
+            .select("edition_key, serial_number")
+            .eq("collection_id", CANDY_MLB_UUID)
+            .eq("moment_id", tokenMint)
+            .limit(1)
+          if (we) throw new Error(`wmc read failed for ${tokenMint}: ${we.message}`)
+          const r0 = wr?.[0]
+          known =
+            r0?.edition_key && (r0.serial_number != null || candySaleSerialOptional(String(r0.edition_key)))
+              ? { key: r0.edition_key as string, serial: r0.serial_number != null ? Number(r0.serial_number) : null }
+              : null
+          wmcByMint.set(tokenMint, known)
+        }
+        if (known) {
+          censusResolved++
+          return await rowFromKey(signature, tokenMint, tMs, price, priceUsd, buyer, seller, known.key, known.serial)
+        }
+
+        if (assetFetches >= ASSET_FETCH_BUDGET) return { skip: "asset_budget_exhausted" }
+
+        // Resolve mint → edition via DAS.
+        let asset
+        try {
+          asset = await getAsset(tokenMint)
+          assetFetches++
+        } catch {
+          return { skip: "das_fetch_failed" }
+        }
+        // DAS sometimes returns a Candy asset with its on-chain name only (burnt cards
+        // included). Read its off-chain JSON before classifying or keying it — the same
+        // repair the census applies (lib/chains/solana/hydrate.ts).
+        if (isUnhydrated(asset) && typeof asset.content?.json_uri === "string") {
+          try {
+            const h = await hydrateFromJsonUri([asset], { concurrency: 1, rateLimitRetries: 1 })
+            if (h.hydrated[0]) {
+              asset = h.hydrated[0]
+              saleHydrated++
+            }
+          } catch {
+            // fall through: the gate below parks a prefixed card it could not hydrate
+          }
+        }
+        {
+          const coll = asset.grouping?.find((g: { group_key: string }) => g.group_key === "collection")?.group_value
+          if (coll && prefixedCollections.has(coll) && isUnhydrated(asset)) {
+            saleUnhydrated++
+            return { skip: UNHYDRATED_SKIP }
+          }
+        }
+        // The ME collection MIXES sealed PACK assets (Item Type=Pack) with the
+        // individual ICONs, and packs are deliberately not editions — so a pack
+        // sale can NEVER resolve. Classify it so it neither masquerades as a
+        // catalog gap nor burns the drain budget forever. Verified live
+        // 2026-07-27: the first three rows the dead letter caught were all
+        // sealed packs trading at 0.39-0.45 SOL (~$30-34) against $10 retail.
+        if (isPack(asset)) {
+          // Record it. A pack has no edition, so it can never be a `sales` row —
+          // but the price is real market signal (the first three we caught were
+          // 0.39-0.45 SOL against a $10 retail pack) and candy_pack_market is
+          // the only place it is published. NEVER folded into fmv_snapshots.
+          const { error: pe } = await (supabaseAdmin as any)
+            .from("candy_pack_sales")
+            .upsert(
+              {
+                transaction_hash: signature,
+                token_mint: tokenMint,
+                collection_id: CANDY_MLB_UUID,
+                serial_number: normalizeSerial(asset).serial_number,
+                price_sol: price,
+                price_usd: priceUsd,
+                buyer: buyer ?? null,
+                seller: seller ?? null,
+                // Pinned, not defaulted: /api/candy-opensea-sales-indexer writes
+                // this table too (marketplace 'opensea').
+                marketplace: "magic_eden",
+                sold_at: new Date(tMs).toISOString(),
+              },
+              { onConflict: "transaction_hash,token_mint" }
+            )
+          if (pe) {
+            console.log(`[${PIPELINE_NAME}] candy_pack_sales upsert err: ${pe.message}`)
+            packWriteErrors++
+            return { skip: PACK_WRITE_FAILED_SKIP }
+          }
+          return { skip: PACK_SKIP }
+        }
+
+        const key = editionKeyFromAsset(asset)
+        const serial = normalizeSerial(asset).serial_number
+        if (!key || (serial == null && !candySaleSerialOptional(key))) return { skip: "unresolvable_serial" }
+        return await rowFromKey(signature, tokenMint, tMs, price, priceUsd, buyer, seller, key, serial)
+      }
+
+      // The edition lookup + `sales` row, shared by the census-first path and the
+      // DAS path so both write identical rows.
+      async function rowFromKey(
+        signature: string,
+        tokenMint: string,
+        tMs: number,
+        price: number,
+        priceUsd: number,
+        buyer: string | null | undefined,
+        seller: string | null | undefined,
+        key: string,
+        serial: number | null,
+      ): Promise<{ row: Record<string, unknown> } | { skip: string }> {
+
+        let editionId = edIdByKey.get(key)
+        if (editionId === undefined) {
+          const { data: edRow, error: edErr } = await (supabaseAdmin as any)
+            .from("editions")
+            .select("id")
+            .eq("external_id", key)
+            .eq("collection_id", CANDY_MLB_UUID)
+            .limit(1)
+          // ⛔ A failed read here is not "no such edition": it would be CACHED as
+          // null in `edIdByKey` for the rest of the sweep, so every later sale on
+          // the same edition inherits one failed read and lands unlinked.
+          if (edErr) throw new Error(`editions read failed for ${key}: ${edErr.message}`)
+          editionId = edRow?.[0]?.id ?? null
+          // #247 (2026-11-13): an alias key's edition row is deleted once its card moved to the canonical key —
+          // a miss tries the canonical before "not ingested" (a failed alias read throws, like the read above).
+          if (!editionId) {
+            const canon = await canonicalCandyEditionKey(supabaseAdmin, key)
+            if (canon) {
+              const { data: cRow, error: cErr } = await (supabaseAdmin as any)
+                .from("editions")
+                .select("id")
+                .eq("external_id", canon)
+                .eq("collection_id", CANDY_MLB_UUID)
+                .limit(1)
+              if (cErr) throw new Error(`editions read failed for ${canon}: ${cErr.message}`)
+              editionId = cRow?.[0]?.id ?? null
+            }
+          }
+          edIdByKey.set(key, editionId ?? null)
+        }
+        if (!editionId) {
+          // Edition not ingested yet — the daily editions ingest fills it and
+          // the drain re-attempts this sale on a later tick.
+          return { skip: "edition_not_ingested" }
+        }
+
+        return {
+          row: {
+            id: crypto.randomUUID(),
+            edition_id: editionId,
+            collection_id: CANDY_MLB_UUID,
+            collection: CANDY_MLB_SLUG,
+            nft_id: tokenMint,
+            serial_number: serial,
+            price_usd: priceUsd,
+            price_native: price,
+            currency: "SOL",
+            // ⚠ BOTH OF THESE ARE NARROWER THAN THEY LOOK. Read this before drawing
+            // any conclusion about Candy market coverage from a `sales` row.
+            //
+            // `marketplace` is HARDCODED, not detected: every row this route writes
+            // says magic_eden because Magic Eden is the only venue it reads. So
+            // `count(distinct marketplace)` on Candy is 1 by CONSTRUCTION — it is a
+            // fact about this indexer, never about the market. It cannot show
+            // coverage loss, which is exactly why the 2026-08-31 OpenSea/Solana
+            // launch (Candy is a named launch partner) was invisible here.
+            //
+            // ⛔ `source: "solana_das"` NAMES THE RESOLVER, NOT THE SALES SOURCE.
+            // DAS only maps mint -> edition (see getAsset above). The SALES come
+            // from Magic Eden's HTTP activities feed (ME_BASE /activities). It
+            // reads like on-chain provenance and is not: a 2026-09-02 audit nearly
+            // concluded "sales are on-chain, so OpenSea trades are captured for
+            // free" from this tag alone. They are not captured at all.
+            //
+            // ⚠ DO NOT RENAME THIS TAG. `solana_das` is load-bearing downstream:
+            // docs/overnight/flow-ecosystem-watch.md carries "no new source tag vs
+            // baseline" as a standing check and lists `candy_mlb solana_das` as
+            // known, so a rename reads as a NEW VENUE APPEARING. It would also
+            // split ~6,600 historical rows and break two tests. Add a second
+            // source instead; leave this one alone.
+            marketplace: "magic_eden",
+            source: "solana_das",
+            transaction_hash: signature,
+            sold_at: new Date(tMs).toISOString(),
+            buyer_address: buyer ?? null,
+            seller_address: seller ?? null,
+            ingested_at: new Date().toISOString(),
+          },
+        }
+      }
+
+      // A batch insert is all-or-nothing: a SINGLE duplicate transaction_hash
+      // (23505) — or any other row-level error — fails the whole statement and
+      // writes NONE of the batch, silently dropping the co-batched NEW sales.
+      // (Reachable during offset-pagination overlap and for multi-item ME txns
+      // that share a signature.) Retry row-by-row so genuine dupes are skipped
+      // individually while the new rows still land.
+      async function insertSales(rows: Record<string, unknown>[]) {
+        for (let i = 0; i < rows.length; i += 100) {
+          const batch = rows.slice(i, i + 100)
+          const { error } = await (supabaseAdmin as any).from("sales").insert(batch)
+          if (error) {
+            if (error.code !== "23505") {
+              console.log(`[${PIPELINE_NAME}] sales insert err: ${error.message}`)
+            }
+            for (const row of batch) {
+              const { error: se } = await (supabaseAdmin as any).from("sales").insert(row)
+              if (!se) {
+                written++
+              } else if (se.code !== "23505") {
+                // A non-duplicate row-level failure: the cursor is about to step
+                // past this sale, so dropping it here is PERMANENT loss. Park it
+                // to the dead letter (reason insert_failed:<code>) so the drain
+                // path retries it on a later tick — mirroring how the drain loop
+                // below already handles the same failure.
+                park(
+                  String(row.transaction_hash),
+                  String(row.nft_id),
+                  row.sold_at ? new Date(String(row.sold_at)).getTime() : 0,
+                  typeof row.price_native === "number" ? row.price_native : null,
+                  (row.buyer_address as string | null) ?? null,
+                  (row.seller_address as string | null) ?? null,
+                  `insert_failed:${se.code ?? "unknown"}`
+                )
+              }
+              // else: a genuine 23505 duplicate — already recorded, skip silently.
+            }
+          } else {
+            written += batch.length
+          }
+        }
+      }
+
+      let activitiesSeen = 0
+      // What the walk actually SAW, by type and time. "500 activities, 0 sales"
+      // alone cannot tell a market with no buyers from a sale emitted under a
+      // type name SALE_TYPES does not list (2026-10-19: a week of 0 sales with
+      // 360 listings ending on the same feed, and nothing recorded which).
+      const activityTypes: Record<string, number> = {}
+      let newestActivityMs: number | null = null
+      let oldestActivityMs: number | null = null
+      let reachedKnown = false
+      let budgetExhausted = false
+      for (let page = 0; page < MAX_PAGES && !reachedKnown; page++) {
+        // Stop before the lambda is killed, so logRun below always runs.
+        if (Date.now() - startedMs > SWEEP_BUDGET_MS) {
+          budgetExhausted = true
+          break
+        }
+        const acts = await fetchActivities(page * ME_LIMIT)
+        activitiesSeen += acts.length
+        if (acts.length === 0) break
+
+        const salesRows: Record<string, unknown>[] = []
+        for (const a of acts) {
+          const tMs = (a.blockTime ?? 0) * 1000
+          const typeKey = typeof a.type === "string" && a.type ? a.type : "(none)"
+          activityTypes[typeKey] = (activityTypes[typeKey] ?? 0) + 1
+          if (a.blockTime) {
+            if (newestActivityMs === null || tMs > newestActivityMs) newestActivityMs = tMs
+            if (oldestActivityMs === null || tMs < oldestActivityMs) oldestActivityMs = tMs
+          }
+          // Stop once we cross into already-recorded territory (with the page
+          // still processed up to the boundary; DB dedup covers any overlap).
+          if (cursorBeforeMs && tMs <= cursorBeforeMs) {
+            reachedKnown = true
+            continue
+          }
+          if (!SALE_TYPES.has(a.type) || !a.tokenMint || !a.signature) continue
+          found++
+          if (tMs > (cursorAfter ? new Date(cursorAfter).getTime() : 0)) {
+            cursorAfter = new Date(tMs).toISOString()
+          }
+
+          const built = await buildSaleRow(a.signature, a.tokenMint, tMs, a.price, a.buyer, a.seller)
+          if ("skip" in built) {
+            park(a.signature, a.tokenMint, tMs, a.price, a.buyer, a.seller, built.skip)
+            if (built.skip === PACK_SKIP) packSales++
+            continue
+          }
+          salesRows.push(built.row)
+        }
+
+        await insertSales(salesRows)
+
+        if (acts.length < ME_LIMIT) break
+      }
+
+      // ── Candy's LATER SETS (2026-11-08) ─────────────────────────────────────
+      // All-Star, Gold Series and Quest-reward ICONs trade under their own Magic
+      // Eden symbols (lib/chains/solana/candy-sets.ts) and none was read before
+      // today. Each set walks its own feed against its OWN high-water mark
+      // (candy_sales_high_water(set_id)): a shared cursor would let the Base
+      // Series' newest sale end a younger set's walk before its history landed.
+      // The walk above (Base) keeps the pipeline's cursor fields; these report
+      // per set in `extra.sets`. A set whose walk throws fails the run, named.
+      const setReports: Record<string, {
+        activities_seen: number
+        sales_found: number
+        cursor_before: string | null
+        reached_known: boolean
+        budget_exhausted: boolean
+        error: string | null
+      }> = {}
+      const setErrors: string[] = []
+      for (const candySet of CANDY_SETS) {
+        if (candySet.editionKeyPrefix === null) continue // the Base walk above
+        const rep = {
+          activities_seen: 0,
+          sales_found: 0,
+          cursor_before: null as string | null,
+          reached_known: false,
+          budget_exhausted: false,
+          error: null as string | null,
+        }
+        setReports[candySet.key] = rep
+        try {
+          // Wait for the set's catalog: until the daily census has written its
+          // editions, every sale would park as edition_not_ingested and re-walk the
+          // whole feed each tick. A set with no editions yet is SKIPPED, said so.
+          const { count: edCount, error: edCountErr } = await (supabaseAdmin as any)
+            .from("editions")
+            .select("id", { count: "exact", head: true })
+            .eq("collection_id", CANDY_MLB_UUID)
+            .eq("set_id", candySet.setId)
+          if (edCountErr) throw new Error(`catalog check failed: ${edCountErr.message}`)
+          if (!edCount) {
+            rep.error = null
+            ;(rep as Record<string, unknown>).skipped = "catalog_not_ingested"
+            continue
+          }
+          const { data: hw, error: hwErr } = await (supabaseAdmin as any).rpc("candy_sales_high_water", {
+            p_set_id: candySet.setId,
+          })
+          if (hwErr) throw new Error(`high-water read failed: ${hwErr.message}`)
+          const setCursorMs = hw ? new Date(hw as string).getTime() : 0
+          rep.cursor_before = setCursorMs ? new Date(setCursorMs).toISOString() : null
+          for (let page = 0; page < MAX_PAGES && !rep.reached_known; page++) {
+            if (Date.now() - startedMs > SWEEP_BUDGET_MS) {
+              rep.budget_exhausted = true
+              break
+            }
+            const acts = await fetchActivities(page * ME_LIMIT, candySet.meSymbol)
+            rep.activities_seen += acts.length
+            if (acts.length === 0) break
+            const salesRows: Record<string, unknown>[] = []
+            for (const a of acts) {
+              const tMs = (a.blockTime ?? 0) * 1000
+              if (setCursorMs && tMs <= setCursorMs) {
+                rep.reached_known = true
+                continue
+              }
+              if (!SALE_TYPES.has(a.type) || !a.tokenMint || !a.signature) continue
+              found++
+              rep.sales_found++
+              const built = await buildSaleRow(a.signature, a.tokenMint, tMs, a.price, a.buyer, a.seller)
+              if ("skip" in built) {
+                park(a.signature, a.tokenMint, tMs, a.price, a.buyer, a.seller, built.skip)
+                if (built.skip === PACK_SKIP) packSales++
+                continue
+              }
+              salesRows.push(built.row)
+            }
+            await insertSales(salesRows)
+            if (acts.length < ME_LIMIT) break
+          }
+        } catch (e) {
+          rep.error = (e instanceof Error ? e.message : String(e)).slice(0, 200)
+          setErrors.push(`${candySet.key}: ${rep.error}`)
+        }
+      }
+
+      // Park (or re-park, incrementing attempts) everything this tick saw and
+      // could not write.
+      // A pack sale is closed out in the same pass — recorded, never retried.
+      for (const p of parked) {
+        await parkRpc(p)
+        if (TERMINAL_SKIPS.has(p.reason)) await closeParked(p.signature, p.token_mint, p.reason)
+      }
+
+      // Drain the dead letter with whatever asset budget the live walk left —
+      // live capture always has first claim on it. Oldest first: those are the
+      // rows the cursor has already stepped past, so nothing else will re-offer
+      // them.
+      let drainAttempted = 0
+      let drainResolved = 0
+      const { data: owed, error: owedErr } = await (supabaseAdmin as any)
+        .from("candy_sales_unresolved")
+        .select("signature, token_mint, block_time, price_sol, buyer, seller")
+        .is("resolved_at", null)
+        .lt("attempts", MAX_PARK_ATTEMPTS)
+        // Fewest attempts first (2026-11-08): `attempts` is the column this drain
+        // WRITES, so a row that keeps failing steps behind rows not yet retried.
+        // Ordered on block_time alone, 43 `edition_not_ingested` rows from 08-12
+        // held the head of every 60-row batch while 2,200 priceable sales waited
+        // until those 43 hit the attempt ceiling (~3 days at the 3-hourly cadence).
+        .order("attempts", { ascending: true })
+        .order("block_time", { ascending: true })
+        .limit(DRAIN_LIMIT)
+      // ⛔ A failed read of the park queue reads as "nothing owed", so the drain
+      // silently does nothing and the run still reports success. The queue is the
+      // whole point of the drain; its absence must not be inferred from a failure.
+      if (owedErr) throw new Error(`candy_sales_unresolved read failed: ${owedErr.message}`)
+      // One range call primes every trade day this batch spans, so the drain
+      // does not make one throttled /history call per day (2026-11-08: 2,273
+      // sales over 48 days parked `no_sol_rate`). Days it cannot prime fall back
+      // to the per-day call, unchanged — see primeSolUsdHistory.
+      const owedTimes = (owed ?? [])
+        .map((r: { block_time?: string | null }) => (r.block_time ? new Date(r.block_time).getTime() : NaN))
+        .filter((t: number) => Number.isFinite(t))
+      if (owedTimes.length > 0) {
+        const pDb = await primeSolUsdFromTable(supabaseAdmin, Math.min(...owedTimes), Math.max(...owedTimes))
+        solDaysPrimedDb += pDb.primed
+        if (pDb.error) solDbError = pDb.error
+        solDaysPrimed = await primeSolUsdHistory(Math.min(...owedTimes), Math.max(...owedTimes))
+      }
+      for (const r of owed ?? []) {
+        if (assetFetches >= ASSET_FETCH_BUDGET) break
+        if (Date.now() - startedMs > DRAIN_DEADLINE_MS) break
+        drainAttempted++
+        const tMs = r.block_time ? new Date(r.block_time).getTime() : 0
+        const price = r.price_sol == null ? null : Number(r.price_sol)
+        const built = await buildSaleRow(r.signature, r.token_mint, tMs, price, r.buyer, r.seller)
+        if ("skip" in built) {
+          await parkRpc({
+            signature: r.signature,
+            token_mint: r.token_mint,
+            block_time: r.block_time ?? null,
+            price_sol: price,
+            buyer: r.buyer ?? null,
+            seller: r.seller ?? null,
+            reason: built.skip,
+          })
+          if (TERMINAL_SKIPS.has(built.skip)) {
+            await closeParked(r.signature, r.token_mint, built.skip)
+            if (built.skip === PACK_SKIP) packSales++
+          }
+          continue
+        }
+        const { error } = await (supabaseAdmin as any).from("sales").insert(built.row)
+        if (!error) {
+          written++
+          drainResolved++
+          await closeParked(r.signature, r.token_mint, "written")
+        } else if (error.code === "23505") {
+          // `sales` dedups on transaction_hash alone, so a second item under the
+          // same ME signature can never land. Close it out rather than retry it
+          // to the attempt ceiling.
+          await closeParked(r.signature, r.token_mint, "duplicate_tx_hash")
+        } else {
+          await parkRpc({
+            signature: r.signature,
+            token_mint: r.token_mint,
+            block_time: r.block_time ?? null,
+            price_sol: price,
+            buyer: r.buyer ?? null,
+            seller: r.seller ?? null,
+            reason: `insert_failed:${error.code ?? "unknown"}`,
+          })
+        }
+      }
+
+      const { count: unresolvedOpen, error: unresolvedOpenErr } = await (supabaseAdmin as any)
+        .from("candy_sales_unresolved")
+        .select("signature", { count: "exact", head: true })
+        .is("resolved_at", null)
+      // ⚠ `?? 0` ON A SUPABASE COUNT IS THE FABRICATED-NUMBER SHAPE. supabase-js
+      // resolves a failed count as `{ count: null, error }`, so `unresolvedOpen
+      // ?? 0` published a MEASURED ZERO — "the park queue is empty" — out of a
+      // read that never happened, on the one field an observer would use to see
+      // the backlog growing. This one does NOT throw: it runs after every write
+      // of the sweep, so failing the run here would discard real work to report a
+      // statistic. It reports `null` plus a discriminator instead.
+      if (unresolvedOpenErr) {
+        console.log(`[${PIPELINE_NAME}] unresolved_open count failed: ${unresolvedOpenErr.message}`)
+      }
+
+      // An entirely empty activities response is an upstream fault, not a quiet
+      // market: this collection prints mints/bids/lists continuously, and ME's
+      // public arms for this symbol are known to serve degraded answers (its
+      // /stats arm echoes `listedCount: 0` for ANY symbol). Reporting ok=true on
+      // it is the silent-degradation shape — found=0, written=0, "healthy".
+      // ⚠ `budgetExhausted` must be excluded here, and this is not a nicety.
+      // If the sweep deadline fires before the first page lands, activitiesSeen
+      // is 0 for a reason that has NOTHING to do with the upstream — and this
+      // line would then publish "upstream fault" about OUR OWN timeout. That is
+      // the honesty canon inverted: not a failed read rendering as a fact, but a
+      // local failure rendering as someone else's fault. The two states get
+      // different messages, and `budget_exhausted` in `extra` carries the
+      // distinction for anything querying it.
+      const feedErr = budgetExhausted
+        ? "sweep budget exhausted before the activities walk completed — no upstream claim implied"
+        : activitiesSeen === 0
+          ? "ME activities feed returned 0 rows — upstream fault, not a quiet market"
+          : packWriteErrors > 0
+            ? `${packWriteErrors} Candy pack sale write(s) failed — parked for retry, see logs`
+            : setErrors.length
+              ? `later-set walk failed: ${setErrors.join(" | ")}`.slice(0, 500)
+              : null
+
+      await logRun(startedAtIso, found, written, skipped, feedErr === null, feedErr, cursorBefore, cursorAfter, {
+        sales_found: found,
+        sales_written: written,
+        skipped,
+        // Distinguishes "we walked the whole feed" from "we ran out of time".
+        // Without it a time-truncated sweep and a genuinely short feed report
+        // identically — the empty-vs-unavailable conflation in a new place.
+        budget_exhausted: budgetExhausted,
+        parked: parked.length,
+        pack_sales_seen: packSales,
+        sol_days_primed: solDaysPrimed,
+        sol_days_primed_db: solDaysPrimedDb,
+        sol_db_error: solDbError,
+        pack_sales_write_errors: packWriteErrors,
+        drain_attempted: drainAttempted,
+        drain_resolved: drainResolved,
+        // null, never 0 — see the count read above.
+        unresolved_open: unresolvedOpenErr ? null : (unresolvedOpen ?? 0),
+        unresolved_open_error: unresolvedOpenErr ? unresolvedOpenErr.message : null,
+        activities_seen: activitiesSeen,
+        // Every activity walked this tick, counted by its `type`; a sale type
+        // missing from SALE_TYPES shows up here instead of vanishing.
+        activity_types: activityTypes,
+        newest_activity_at: newestActivityMs === null ? null : new Date(newestActivityMs).toISOString(),
+        oldest_activity_at: oldestActivityMs === null ? null : new Date(oldestActivityMs).toISOString(),
+        asset_fetches: assetFetches,
+        // Sales resolved from the census without a DAS call (2026-11-08).
+        census_resolved: censusResolved,
+        // candy_collections registered for the DAS path (2026-11-16); null count when the read failed.
+        catalog_collections: catalog.error ? null : catalog.sets.length,
+        catalog_error: catalog.error,
+        // DAS reads repaired from off-chain JSON / prefixed cards parked because they could not be.
+        sale_hydrated: saleHydrated,
+        sale_unhydrated: saleUnhydrated,
+        // One entry per later Candy set (All-Star, Gold, Quest rewards).
+        sets: setReports,
+        me_key_present: Boolean(process.env.MAGIC_EDEN_API_KEY),
+        sol_usd: rate,
+        duration_ms: Date.now() - startedMs,
+      })
+    } catch (e) {
+      await logRun(startedAtIso, found, written, skipped, false, e instanceof Error ? e.message : String(e), null, cursorAfter, {
+        sales_found: found,
+        sales_written: written,
+        skipped,
+      })
+    }
+  })
+
+  return NextResponse.json(
+    { accepted: true, collection: CANDY_MLB_SLUG, started_at: startedAtIso },
+    { status: 202 }
+  )
+}

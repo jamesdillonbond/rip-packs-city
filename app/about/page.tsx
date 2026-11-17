@@ -1,0 +1,225 @@
+import Link from "next/link";
+import SupportChatConnected from "@/components/SupportChatConnected";
+import type { Metadata } from "next";
+import RpcLogo from "@/components/RpcLogo";
+import SiteFooter from "@/components/SiteFooter";
+import { OG_INHERITED, organizationEntityJsonLd } from "@/lib/seo"
+import { publishedCollections } from "@/lib/collections"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
+
+// 2026-10-15 (deep audit run 6, P2): this page named five collections while the
+// home page — which reads the registry — said seven. Read the registry here too.
+const TRACKED = new Intl.ListFormat("en", { style: "long", type: "conjunction" }).format(
+  publishedCollections().map((c) => c.label),
+)
+
+export function generateMetadata(): Metadata {
+  return {
+    title: "About",
+    alternates: { canonical: "https://www.rippackscity.com/about" },
+    description:
+      "Rip Packs City is independent collector intelligence for the Flow blockchain — built in Portland, Oregon by an active community member.",
+    openGraph: {
+      ...OG_INHERITED,
+      title: "About — Rip Packs City",
+      description:
+        `Born in Rip City. Built for every collector community we track — ${TRACKED}.`,
+      // 2026-10-14 (live audit): /about had twitter:image (inherited) but NO
+      // og:image — this openGraph object replaces the root's, images included.
+      images: [{ url: "https://www.rippackscity.com/api/og/default", width: 1200, height: 630, alt: "Rip Packs City" }],
+    },
+  };
+}
+
+export default function AboutPage() {
+  return (
+    <div
+      style={{
+        background: "var(--rpc-surface)",
+        color: "var(--rpc-text-primary)",
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
+      <PageHeader />
+
+      {/* The one page ABOUT the organisation carries the one Organization node
+          with `logo` + `sameAs` (lib/seo.ts RPC_ORGANIZATION). The root layout's
+          node is a WebApplication whose creator is a bare {name,url}, so until
+          2026-10-11 nothing told a crawler which X account is ours. */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(organizationEntityJsonLd) }}
+      />
+
+      <main style={{ flex: 1, padding: "64px 24px 96px" }}>
+        <article style={{ maxWidth: 640, margin: "0 auto" }}>
+          {/* This page shipped a run of <h2> section titles under no <h1> at all, so its
+              document outline started at level 2 with nothing to hang off. sr-only rather
+              than a visible title: the design intentionally opens straight into "Born in
+              Rip City", and the fix here is the outline, not the layout. */}
+          <h1 className="sr-only">About Rip Packs City</h1>
+          <Section title="Born in Rip City">
+            <p>
+              Rip Packs City was built in Portland, Oregon by an active
+              member of the collector community. Every line of code, every
+              analytics query, every late-night data fix happens within
+              sight of the Willamette.
+            </p>
+            <p>
+              The name pays homage to the call broadcaster Bill Schonely
+              improvised on February 18, 1971 — a phrase that became
+              inseparable from Portland itself. Half a century later it
+              still belongs to this city, and to the collectors who carry
+              that energy onto Flow.
+            </p>
+          </Section>
+
+          <Section title="Built for every collection">
+            <p>
+              While the soul of the project is rooted in Rip City, the
+              platform serves every collector community it tracks
+              equally — {TRACKED} — with analytics, FMV pricing, and
+              tooling regardless of which fandom a collector calls home.
+            </p>
+          </Section>
+
+          <Section title="Independent">
+            <p>
+              Rip Packs City is built and operated by a single developer.
+              It is not affiliated with Dapper Labs, Panini America, Candy
+              Digital, Disney, the UFC, the NBA, NFL, MLB, LaLiga, their
+              players&apos; associations, or any league, team or platform it
+              covers (the full list is in the Terms). The platform exists to serve
+              collectors with honest pricing and analytics — nothing more
+              and nothing less.
+            </p>
+          </Section>
+
+          <SchonelyQuote />
+        </article>
+      </main>
+
+      <SiteFooter />
+
+      {/* Concierge, added 2026-09-02 with the /insights + home mounts: /about is
+          where a stranger reads what RPC is, and it had no way to ask a follow-up
+          question. No sub-layout here carries the launcher, so there is no
+          double-mount. Revert: delete this line and the import. */}
+      <SupportChatConnected />
+    </div>
+  );
+}
+
+function PageHeader() {
+  return (
+    <header
+      style={{
+        background: "var(--rpc-surface)",
+        borderBottom: "1px solid var(--rpc-border)",
+        position: "sticky",
+        top: 0,
+        zIndex: 100,
+        backdropFilter: "blur(20px)",
+      }}
+    >
+      <div
+        style={{
+          maxWidth: "var(--max-width)",
+          margin: "0 auto",
+          padding: "0 20px",
+          height: 56,
+          display: "flex",
+          alignItems: "center",
+          gap: 16,
+        }}
+      >
+        <Link
+          href="/"
+          style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}
+        >
+          <RpcLogo size={32} />
+        </Link>
+        <Link
+          href="/"
+          style={{
+            marginLeft: "auto",
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            letterSpacing: "0.12em",
+            textTransform: "uppercase",
+            color: "var(--rpc-text-secondary)",
+            textDecoration: "none",
+          }}
+        >
+          &larr; Back
+        </Link>
+      </div>
+    </header>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section style={{ marginBottom: 56 }}>
+      <h2
+        style={{
+          fontFamily: "var(--font-display)",
+          fontWeight: 800,
+          fontSize: 36,
+          textTransform: "uppercase",
+          letterSpacing: "0.04em",
+          color: "var(--rpc-text-primary)",
+          margin: "0 0 20px",
+          lineHeight: 1.05,
+        }}
+      >
+        {title}
+      </h2>
+      <div
+        style={{
+          fontFamily: "var(--font-body)",
+          fontSize: 16,
+          lineHeight: 1.7,
+          color: "var(--rpc-text-primary)",
+          display: "flex",
+          flexDirection: "column",
+          gap: 16,
+        }}
+      >
+        {children}
+      </div>
+    </section>
+  );
+}
+
+function SchonelyQuote() {
+  return (
+    <footer
+      style={{
+        marginTop: 64,
+        paddingTop: 24,
+        borderTop: "1px solid var(--rpc-border-subtle)",
+        fontFamily: "var(--font-mono)",
+        fontSize: "var(--text-sm)",
+        lineHeight: 1.6,
+        letterSpacing: "0.06em",
+      }}
+    >
+      <div style={{ color: "var(--rpc-text-secondary)" }}>
+        &ldquo;<span style={{ color: "var(--rpc-red-text)" }}>Rip City</span>! All right!&rdquo;
+      </div>
+      <div
+        style={{
+          marginTop: 6,
+          color: "var(--rpc-text-muted)",
+          fontSize: "var(--text-xs)",
+          letterSpacing: "0.1em",
+        }}
+      >
+        — Bill Schonely, February 18, 1971
+      </div>
+    </footer>
+  );
+}

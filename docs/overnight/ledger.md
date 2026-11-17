@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-17 ~6:22 AM PT — RESTORED `main`: the overnight pass's commit `2e021e372` deleted 9,617 tracked files (Claude Code cloud; Trevor: "Approve and proceed")
+
+- `2e021e372` ("docs: 2026-11-17 overnight autonomous pass") was made from a `--depth=1 --no-checkout` shallow clone with a selective checkout, so every file it did not check out was committed as DELETED: `main` held 6 files (no `app/`, `.github/`, `CLAUDE.md`, `supabase/`). Its Vercel build ERRORed (prod stayed on the last good deploy; no outage). This commit restores the full tree of `17f49aec2` and keeps that pass's 4 real changes (its handoff, ledger entry, metrics-latest.json, sessions entry); `git diff 17f49aec2` = exactly those 4 files.
+- ⛔ Lesson (for tooling-gotchas.md): a no-checkout / sparse clone must commit with `git commit <paths>` or a temp index built from `HEAD` — never `git add -A` / a full-tree commit. Check `git diff --stat HEAD~1 | tail -1` before pushing: thousands of deletions means stop.
+- Revert: none wanted (reverting re-deletes the repo).
+
 ### 2026-11-17 ~1:16 AM PT — Quiet GREEN overnight pass; nothing shipped (Cowork cloud, VM shallow-clone + .rpc-git-cred push; scheduled autonomous pass)
 
 - **Shipped: nothing.** No live inbox candidate since the 11-16 evening Claude Code pass (drained everything ~2.5 h earlier); only open queued item (#261 acquisition dates for ~11.4k pulls + ~18k held moments) is blocked on Dune credits until 2026-12-14; focus steer (#253 job-714 read) not due until ~11-19; collision gate covers every recently-touched file.

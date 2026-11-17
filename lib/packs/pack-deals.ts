@@ -1,0 +1,471 @@
+// lib/packs/pack-deals.ts
+//
+// PACK SNIPER deal feed — the shared server-side logic that joins LIVE sealed-pack
+// secondary asks (Dapper Studio, via lib/packs/live-pack-listings.ts) to the
+// pack EV view (pack_table_rows) and applies honesty gates, then orders the deal
+// set by RECENCY (ask changed-at) with value as the tie-break.
+//
+// Consumed by:
+//   - app/api/public/insights/pack-sniper/route.ts  (public board data source)
+//   - app/insights/pack-sniper/page.tsx             (server-rendered default view)
+//   - app/(collections)/[collection]/pack-sniper/page.tsx
+//
+// RECENCY OVERLAY (2026-06-21). The Dapper Studio aggregation has no per-listing
+// timestamp, so /api/cron/snapshot-pack-asks diffs the live book over time into
+// public.pack_ask_state. This module LEFT-JOINs that state (is_listed=true) to
+// flag NEW / price-dropped packs and to order the board "as they get listed".
+// The join is non-fatal: before the snapshot cron runs (or if it errors) the
+// recency fields are null and the board degrades to value order. This module
+// only READS pack_table_rows + pack_ask_state; it changes no EV/FMV/pricing.
+//
+// RANK, DON'T PRICE (2026-05-29 research thread). gross_ev is a drop-weighted
+// EXPECTATION, not a typical outcome. For chance-hit / single-chase packs the
+// distribution is wildly skewed, so we:
+//   1. NEVER score against the cached/stale view ask — always the live ask.
+//   2. Flag high-variance packs (gross_ev > 3 × ask, depletion >= 60,
+//      coverage < 80, single-slot chase). The board hides these by default.
+//   3. Surface the FMV-coverage chip + a detail-page link on every row.
+
+import { supabaseAdmin } from "@/lib/supabase"
+import {
+  isSupportedPackCollection,
+  type PackCollectionSlug,
+} from "@/lib/packs/live-pack-listings"
+import { fetchPackBook, type PackBookSource } from "@/lib/packs/pack-book-source"
+import { topshotPackUrl, dapperMarketPackUrl } from "@/lib/pack-urls"
+import { EV_SNAPSHOT_MAX_AGE_HOURS } from "@/lib/pack-dist-verdict"
+import { getCollectionUuid } from "@/lib/collections"
+
+export type PackDeal = {
+  distId: string
+  title: string
+  tier: string
+  imageUrl: string
+  slots: number
+  lowestAsk: number
+  grossEV: number
+  /** gross_ev / live lowest ask. > 1 means EV exceeds the live ask. */
+  liveValueRatio: number
+  /** 1 - (ask / gross_ev), clamped to [0,1). */
+  discountPct: number
+  fmvCoveragePct: number
+  evSnapshottedAt: string | null
+  editionCount: number | null
+  depletionPct: number | null
+  highVariance: boolean
+  highVarianceReasons: string[]
+  buyUrl: string
+  dapperUrl: string
+  detailHref: string
+  // ── Recency overlay (from pack_ask_state; null until the snapshot cron runs) ──
+  /** When this dist's lowest ask last changed (new listing or price move). Drives "Recently Listed". */
+  askChangedAt: string | null
+  /** When this dist's current listed run began (reset when it re-lists after going unlisted). */
+  askFirstSeenAt: string | null
+  /** The lowest ask immediately before the most recent change (enables the ▼ badge). */
+  prevAsk: number | null
+  /** Listed (or re-listed) within RECENCY_WINDOW. */
+  isNew: boolean
+  /** Lowest ask dropped vs prevAsk within RECENCY_WINDOW (and not brand-new). */
+  isPriceDrop: boolean
+  /** 1 - (ask / prevAsk) when isPriceDrop, else null. */
+  askDropPct: number | null
+  // ── Rolling lows (from pack_ask_state; the rolling-low cron fills them over 24h/7d) ──
+  /** Lowest ask RPC has snapshotted for this dist in the last 24h. Null until the trend cron runs. */
+  lowAsk24h: number | null
+  /** Lowest ask RPC has snapshotted for this dist in the last 7d. Null until the trend cron runs. */
+  lowAsk7d: number | null
+  /** Current live ask is at/below the rolling 24h min (small float epsilon). */
+  atLow24h: boolean
+}
+
+/**
+ * Is the ask BOOK itself current? (2026-10-30, #218.) Every ask on this board
+ * comes from Dapper Studio's pack index, diffed into pack_ask_state. When that
+ * index freezes, the board keeps rendering yesterday's book under "Live asks":
+ * nothing failed, the reads all return rows, and packs that SOLD hours ago are
+ * still offered as deals. The independent witness is the chain: pack_purchases
+ * (secondary_sale) keeps arriving from Flow events. If the book has not changed
+ * in BOOK_STALE_AFTER_MS while the chain recorded >= FROZEN_MIN_CHAIN_SALES
+ * secondary pack sales since, the book is frozen, not quiet.
+ *
+ * Three states: frozen=true (proven stale) · frozen=false with chainSalesSince
+ * set (checked, book is current or merely quiet) · chainSalesSince=null (not
+ * checked or the witness read failed; never claims either way).
+ */
+export type BookFreshness = {
+  /** Newest ask change / first-seen across the collection's book. Null when no recency state. */
+  lastChangedAt: string | null
+  /** Secondary pack sales on chain since lastChangedAt. Null when not checked or the read failed. */
+  chainSalesSince: number | null
+  frozen: boolean
+  /** Which index the asks came from (#218). Absent on surfaces that do not read the book itself. */
+  source?: PackBookSource
+  /** Atlas book: when its last complete walk finished. */
+  asOf?: string | null
+}
+
+export const BOOK_STALE_AFTER_MS = 2 * 60 * 60 * 1000
+export const FROZEN_MIN_CHAIN_SALES = 10
+
+export type PackDealsResult = {
+  collection: PackCollectionSlug
+  deals: PackDeal[]
+  book: BookFreshness
+  stats: {
+    liveListings: number
+    gatedEvRows: number
+    matched: number
+    positiveEv: number
+    highVariance: number
+    returned: number
+  }
+}
+
+const MIN_FMV_COVERAGE = 80
+// ⚠ Imported, not redeclared: this is the platform's single pack-EV freshness
+// bar, shared with the pack DETAIL page's staleness suppression. It used to be a
+// local `= 72` here while the detail page had no bar at all, which is how a
+// 105.9h-stale Pinnacle EV stayed excluded from deals and still headlined "+EV"
+// on the pack page.
+const EV_FRESH_HOURS = EV_SNAPSHOT_MAX_AGE_HOURS
+const MAX_DEPLETION_PCT = 90
+
+const HIGH_VARIANCE_RATIO = 3
+const HIGH_VARIANCE_DEPLETION = 60
+
+// How long a freshly-listed / price-dropped pack wears its NEW / ▼ badge. The
+// snapshot cron resolves changes at its cadence (~5m); this is the display
+// window, not the detection resolution.
+const RECENCY_WINDOW_MS = 120 * 60 * 1000
+
+type EvRow = {
+  dist_id: string
+  gross_ev: number | null
+  fmv_coverage_pct: number | null
+  ev_snapshotted_at: string | null
+  is_rare_single_pack: boolean | null
+  depletion_pct: number | null
+  edition_count: number | null
+  slots: number | null
+  title: string | null
+  tier: string | null
+  image_url: string | null
+}
+
+type AskStateRow = {
+  dist_id: string
+  lowest_ask: number | null
+  prev_ask: number | null
+  ask_first_seen_at: string | null
+  ask_changed_at: string | null
+  low_ask_24h: number | null
+  low_ask_7d: number | null
+}
+
+function leagueFor(collection: PackCollectionSlug): "nba" | "nfl" {
+  return collection === "nfl-all-day" ? "nfl" : "nba"
+}
+
+function buyUrlFor(
+  collection: PackCollectionSlug,
+  distId: string,
+  packListingId: string,
+): string {
+  if (collection === "nfl-all-day") {
+    return dapperMarketPackUrl({ league: "nfl", distId })
+  }
+  const uuid = packListingId && packListingId !== distId ? packListingId : null
+  return topshotPackUrl({ distId, packListingUuid: uuid })
+}
+
+/**
+ * Build the recency-ordered Pack Sniper deal feed for a collection.
+ *
+ * @param collection  "nba-top-shot" | "nfl-all-day"
+ * @param opts.limit  max deals to return (default 50, capped 200)
+ * @param opts.includeHighVariance  when false, high-variance packs are dropped.
+ */
+export async function getPackDeals(
+  collection: string,
+  opts: { limit?: number; includeHighVariance?: boolean } = {},
+): Promise<PackDealsResult> {
+  if (!isSupportedPackCollection(collection)) {
+    throw new Error(`Unsupported collection '${collection}'`)
+  }
+  const limit = Math.max(1, Math.min(200, opts.limit ?? 50))
+  const includeHighVariance = opts.includeHighVariance ?? true
+
+  const evCutoff = new Date(Date.now() - EV_FRESH_HOURS * 3600 * 1000).toISOString()
+
+  // Pull live listings + gated EV rows + recency state in parallel.
+  const [{ listings, source: bookSource, asOf: bookAsOf }, evRes, askRes] = await Promise.all([
+    // #218: Studio, or Atlas while Studio's pack index is behind (lib/packs/pack-book-source.ts).
+    fetchPackBook(collection),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabaseAdmin as any)
+      .from("pack_table_rows")
+      .select(
+        "dist_id, gross_ev, fmv_coverage_pct, ev_snapshotted_at, is_rare_single_pack, depletion_pct, edition_count, slots, title, tier, image_url",
+      )
+      .eq("collection_slug", collection)
+      .not("gross_ev", "is", null)
+      .gte("fmv_coverage_pct", MIN_FMV_COVERAGE)
+      .eq("is_rare_single_pack", false)
+      .gte("ev_snapshotted_at", evCutoff)
+      .lt("depletion_pct", MAX_DEPLETION_PCT)
+      // ⚠ The old .limit(2000) was clamped to 1,000 by PostgREST anyway, so it
+      // stated a bound that did not exist — the same trap the comment directly
+      // below describes for the recency map. Measured 2026-09-09, the widest
+      // this filter can return is one collection's pack_table_rows with a
+      // non-null gross_ev and is_rare_single_pack = false: TS 516, AD 470,
+      // Golazos 33. Under the cap, and this is a per-collection read.
+      .limit(1000),
+    // Recency state via the one-row jsonb RPC (get_pack_ask_state_map) instead of
+    // a table read — PostgREST clamps any select to 1000 rows and TS has ~1,900
+    // listed dists, so a .from().limit() silently dropped ~half the recency map.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabaseAdmin as any).rpc("get_pack_ask_state_map", { p_collection_slug: collection }),
+  ])
+
+  if (evRes.error) {
+    throw new Error(`pack_table_rows read failed: ${evRes.error.message}`)
+  }
+
+  const evByDist = new Map<string, EvRow>()
+  for (const row of (evRes.data ?? []) as EvRow[]) {
+    if (row.dist_id) evByDist.set(String(row.dist_id), row)
+  }
+
+  // NFL All Day (2026-11-14): pack_table_rows.gross_ev is the flat trimmed mean
+  // that ignores pull odds and over-states rare-heavy packs (a $4 pack modelled
+  // at $430). /api/packs, the dist page and the OG card all replace it with the
+  // odds/median-corrected EV; this board ranked and labelled All Day packs by the
+  // raw number, so its "EV / ask" disagreed with the page it links to. A FAILED
+  // correction read fails the board, exactly like the EV read above — never the
+  // inflated fallback.
+  if (collection === "nfl-all-day" && evByDist.size > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const corrRes = await (supabaseAdmin as any)
+      .from("v_allday_pack_detail_ev")
+      .select("dist_id, corrected_gross_ev")
+      .in("dist_id", Array.from(evByDist.keys()))
+    if (corrRes.error) {
+      throw new Error(`v_allday_pack_detail_ev read failed: ${corrRes.error.message}`)
+    }
+    for (const c of (corrRes.data ?? []) as Array<{ dist_id: string | number; corrected_gross_ev: number | string | null }>) {
+      const row = evByDist.get(String(c.dist_id))
+      if (row && c.corrected_gross_ev != null) evByDist.set(String(c.dist_id), { ...row, gross_ev: Number(c.corrected_gross_ev) })
+    }
+  }
+
+  // Recency overlay is non-fatal — a read error just means no NEW/▼ flags today.
+  // askRes.data is a clamp-proof jsonb object keyed by dist_id (one row, from
+  // get_pack_ask_state_map) → build the map from its entries.
+  const askByDist = new Map<string, AskStateRow>()
+  if (!askRes?.error && askRes?.data && typeof askRes.data === "object") {
+    for (const [distId, v] of Object.entries(
+      askRes.data as Record<string, Omit<AskStateRow, "dist_id">>,
+    )) {
+      askByDist.set(String(distId), { dist_id: String(distId), ...v })
+    }
+  }
+
+  let matched = 0
+  let positiveEv = 0
+  let highVarianceCount = 0
+  const deals: PackDeal[] = []
+  const nowMs = Date.now()
+
+  for (const lst of listings) {
+    if (lst.lowestAsk <= 0) continue
+    const ev = evByDist.get(String(lst.distId))
+    if (!ev || ev.gross_ev == null) continue
+    matched += 1
+
+    const grossEV = Number(ev.gross_ev)
+    const liveValueRatio = grossEV / lst.lowestAsk
+    // Show the WHOLE live + gated pack market ranked by value (not only EV>ask deals) so the
+    // board is never empty when packs are listed; genuine deals (ratio>1) are flagged in the UI.
+    if (liveValueRatio > 1) positiveEv += 1
+
+    const coverage = ev.fmv_coverage_pct ?? 0
+    const depletion = ev.depletion_pct ?? 0
+    // ⚠ A live node with no distribution reports placeholders, not facts:
+    // "Pack #<id>", tier "common", no image and ONE slot. The old
+    // `lst.momentsPerPack ?? ev.slots ?? 1` never reached ev.slots (the
+    // placeholder 1 is not null), so a 10-slot rare box ("Run It Back:
+    // Origins Premium Pack") was published as an untitled 1-slot common and
+    // flagged single_slot_chase (2026-10-17: 30 of 50 Top Shot rows). The
+    // stored row fills only the fields Dapper did not send; live still wins.
+    const live = lst.liveFields
+    const slots = live && !live.slots ? (ev.slots ?? lst.momentsPerPack ?? 1) : (lst.momentsPerPack ?? ev.slots ?? 1)
+    const title = live && !live.title ? (ev.title || lst.title) : lst.title
+    const tier = live && !live.tier ? (ev.tier || lst.tier) : lst.tier
+    const imageUrl = lst.imageUrl || ev.image_url || ""
+
+    const reasons: string[] = []
+    if (liveValueRatio > HIGH_VARIANCE_RATIO) reasons.push("ev_gt_3x_ask")
+    if (depletion >= HIGH_VARIANCE_DEPLETION) reasons.push("depleted_60pct")
+    if (coverage < 80) reasons.push("thin_fmv_coverage")
+    if (slots <= 1) reasons.push("single_slot_chase")
+    const highVariance = reasons.length > 0
+    if (highVariance) highVarianceCount += 1
+
+    if (!includeHighVariance && highVariance) continue
+
+    // ── Recency overlay ──
+    const askState = askByDist.get(String(lst.distId))
+    const askChangedAt = askState?.ask_changed_at ?? null
+    const askFirstSeenAt = askState?.ask_first_seen_at ?? null
+    const prevAsk = askState?.prev_ask != null ? Number(askState.prev_ask) : null
+    const firstSeenMs = askFirstSeenAt ? Date.parse(askFirstSeenAt) : NaN
+    const changedMs = askChangedAt ? Date.parse(askChangedAt) : NaN
+    const isNew = Number.isFinite(firstSeenMs) && nowMs - firstSeenMs <= RECENCY_WINDOW_MS
+    const isPriceDrop =
+      !isNew &&
+      prevAsk != null &&
+      lst.lowestAsk < prevAsk &&
+      Number.isFinite(changedMs) &&
+      nowMs - changedMs <= RECENCY_WINDOW_MS
+    const askDropPct =
+      isPriceDrop && prevAsk ? Math.max(0, Math.min(0.9999, 1 - lst.lowestAsk / prevAsk)) : null
+
+    // Rolling lows (filled by the 15-min roll cron; equal to lowest_ask at cold start).
+    const lowAsk24h = askState?.low_ask_24h != null ? Number(askState.low_ask_24h) : null
+    const lowAsk7d = askState?.low_ask_7d != null ? Number(askState.low_ask_7d) : null
+    // "at its 24h low" — current ask is at/below the rolling 24h min (small epsilon for float).
+    const atLow24h = lowAsk24h != null && lst.lowestAsk <= lowAsk24h + 0.001
+
+    deals.push({
+      distId: lst.distId,
+      title,
+      tier,
+      imageUrl,
+      slots,
+      lowestAsk: lst.lowestAsk,
+      grossEV,
+      liveValueRatio,
+      discountPct: Math.max(0, Math.min(0.9999, 1 - lst.lowestAsk / grossEV)),
+      fmvCoveragePct: coverage,
+      evSnapshottedAt: ev.ev_snapshotted_at,
+      editionCount: ev.edition_count,
+      depletionPct: ev.depletion_pct,
+      highVariance,
+      highVarianceReasons: reasons,
+      buyUrl: buyUrlFor(collection, lst.distId, lst.packListingId),
+      dapperUrl: dapperMarketPackUrl({ league: leagueFor(collection), distId: lst.distId }),
+      detailHref: `/${collection}/pack/dist/${lst.distId}`,
+      askChangedAt,
+      askFirstSeenAt,
+      prevAsk,
+      isNew,
+      isPriceDrop,
+      askDropPct,
+      lowAsk24h,
+      lowAsk7d,
+      atLow24h,
+    })
+  }
+
+  // Default order = recency ("as they get listed"): most-recently-changed ask
+  // first, value as the tie-break. Before the snapshot cron populates
+  // pack_ask_state every ask_changed_at is null -> this degrades to value order.
+  // The client re-sorts the returned set for the other sort options, so as long
+  // as `limit` (>= 200 from the callers) exceeds the deal count it has the full
+  // set to sort. If the deal count ever exceeds the limit, the LEAST-recent
+  // deals are dropped — raise the caller limit if that ever bites.
+  deals.sort((a, b) => {
+    const at = a.askChangedAt ? Date.parse(a.askChangedAt) : 0
+    const bt = b.askChangedAt ? Date.parse(b.askChangedAt) : 0
+    if (bt !== at) return bt - at
+    return b.liveValueRatio - a.liveValueRatio
+  })
+  const returned = deals.slice(0, limit)
+
+  const book = { ...(await readBookFreshness(collection, askByDist, nowMs)), source: bookSource, asOf: bookAsOf }
+
+  return {
+    collection,
+    deals: returned,
+    book,
+    stats: {
+      liveListings: listings.length,
+      gatedEvRows: evByDist.size,
+      matched,
+      positiveEv,
+      highVariance: highVarianceCount,
+      returned: returned.length,
+    },
+  }
+}
+
+async function readBookFreshness(
+  collection: PackCollectionSlug,
+  askByDist: Map<string, AskStateRow>,
+  nowMs: number,
+): Promise<BookFreshness> {
+  let lastMs = 0
+  for (const row of askByDist.values()) {
+    for (const ts of [row.ask_changed_at, row.ask_first_seen_at]) {
+      const t = ts ? Date.parse(ts) : NaN
+      if (Number.isFinite(t) && t > lastMs) lastMs = t
+    }
+  }
+  return judgeBook(collection, lastMs, nowMs)
+}
+
+/**
+ * Book freshness for surfaces that do not hold the whole ask map — the pack
+ * DETAIL page anchors its EV verdict on the same pack_ask_state ask (via
+ * pack_table_rows), so a frozen book makes its "+EV" a claim about yesterday.
+ * Never throws: any failed read returns the "unchecked" state.
+ */
+export async function getPackBookFreshness(collection: string): Promise<BookFreshness> {
+  const unchecked: BookFreshness = { lastChangedAt: null, chainSalesSince: null, frozen: false }
+  if (!isSupportedPackCollection(collection)) return unchecked
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res = await (supabaseAdmin as any)
+      .from("pack_ask_state")
+      .select("ask_changed_at")
+      .eq("collection_slug", collection)
+      .not("ask_changed_at", "is", null)
+      .order("ask_changed_at", { ascending: false })
+      .limit(1)
+    if (res?.error || !Array.isArray(res?.data)) return unchecked
+    const t = res.data[0]?.ask_changed_at ? Date.parse(res.data[0].ask_changed_at) : NaN
+    return await judgeBook(collection, Number.isFinite(t) ? t : 0, Date.now())
+  } catch {
+    return unchecked
+  }
+}
+
+async function judgeBook(
+  collection: PackCollectionSlug,
+  lastMs: number,
+  nowMs: number,
+): Promise<BookFreshness> {
+  if (lastMs === 0) return { lastChangedAt: null, chainSalesSince: null, frozen: false }
+  const lastChangedAt = new Date(lastMs).toISOString()
+  if (nowMs - lastMs < BOOK_STALE_AFTER_MS) {
+    return { lastChangedAt, chainSalesSince: null, frozen: false }
+  }
+  const collectionId = getCollectionUuid(collection)
+  if (!collectionId) return { lastChangedAt, chainSalesSince: null, frozen: false }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const res = await (supabaseAdmin as any)
+    .from("pack_purchases")
+    .select("id", { count: "exact", head: true })
+    .eq("collection_id", collectionId)
+    .eq("event_kind", "secondary_sale")
+    .gt("sealed_at", lastChangedAt)
+  if (res?.error || typeof res?.count !== "number") {
+    return { lastChangedAt, chainSalesSince: null, frozen: false }
+  }
+  return {
+    lastChangedAt,
+    chainSalesSince: res.count,
+    frozen: res.count >= FROZEN_MIN_CHAIN_SALES,
+  }
+}

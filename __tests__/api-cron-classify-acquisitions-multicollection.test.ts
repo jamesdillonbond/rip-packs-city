@@ -1,0 +1,388 @@
+import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest"
+import { makeReq } from "./cron-req-helper"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
+
+// Route integration test for POST /api/cron/classify-acquisitions-multicollection.
+// Data seam: supabaseAdmin from @/lib/supabase. Auth compares the Bearer token
+// to a MODULE-captured `TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""`, so we
+// exercise BOTH regimes by resetting modules between them:
+//   A. secret DELETED → TOKEN === "" → every request 401s (fail-closed `!TOKEN`).
+//   B. secret SET      → wrong/no token 401s, correct token reaches the 202
+//      { ok, accepted, pipeline } accept. The 3-collection classify loop is
+//      after()-deferred; after() is stubbed no-op so the accept is observable
+//      without any DB I/O.
+
+const cap = vi.hoisted(() => ({ fn: null as null | (() => Promise<void>) }))
+const cst = vi.hoisted(() => ({
+  bySlug: {} as Record<string, any>,
+  runs: [] as any[],
+  // The invocation marker is a `pipeline_runs` INSERT under
+  // `<pipeline>-heartbeat` since 2026-08-20 (lib/pipeline/heartbeat.ts). Under
+  // the pipeline's OWN name it refreshed `last_run` every tick and the 180-min
+  // stall arm could never fire — 70 markers against 122 total rows here.
+  hbRows: [] as any[],
+  logThrows: false,
+  calls: [] as Array<{ slug: string; limit: number; since: string | null }>,
+}))
+vi.mock("next/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("next/server")>()
+  return { ...actual, after: (fn: any) => { cap.fn = fn } }
+})
+// Factory must be self-contained: vi.mock is hoisted above any module-scope
+// const, so the stub is built inside it (TDZ otherwise).
+vi.mock("@/lib/supabase", () => {
+  const sb: any = {}
+  for (const m of ["from","select","eq","in","order","limit","gte","lte","lt","gt","is","not","or","range","match","insert","update","upsert","delete","returns"]) sb[m] = () => sb
+  const origFrom = sb.from
+  sb.from = (table?: string) => {
+    if (table === "pipeline_runs") {
+      return { insert: async (row: any) => { cst.hbRows.push(row); return { error: null } } }
+    }
+    return origFrom(table)
+  }
+  sb.single = async () => ({ data: {}, error: null })
+  sb.maybeSingle = async () => ({ data: {}, error: null })
+  const BY_ID: Record<string, string> = {
+    "dee28451-5d62-409e-a1ad-a83f763ac070": "nfl_all_day",
+    "06248cc4-b85f-47cd-af67-1855d14acd75": "laliga_golazos",
+    "9b4824a8-736d-4a96-b450-8dcc0c46b023": "ufc_strike",
+  }
+  sb.rpc = async (name: string, args: any) => {
+    if (name === "log_pipeline_run") {
+      if (cst.logThrows) throw new Error("log down")
+      cst.runs.push(args)
+      return { data: null, error: null }
+    }
+    const slug = BY_ID[args?.p_collection_id] ?? "unknown"
+    cst.calls.push({ slug, limit: args?.p_limit, since: args?.p_since ?? null })
+    const outcome = cst.bySlug[slug]
+    if (outcome === undefined) return { data: { scanned: 10, classified: 8, skipped: 2 }, error: null }
+    if (outcome === "throw") throw new Error(`${slug} exploded`)
+    return outcome
+  }
+  sb.then = (resolve: any) => resolve({ data: [], error: null })
+  return { supabaseAdmin: sb, supabase: sb }
+})
+
+const url = "https://t/api/cron/classify-acquisitions-multicollection"
+
+describe("POST /api/cron/classify-acquisitions-multicollection — no secret configured (fail-closed)", () => {
+  let POST: (req: any) => Promise<Response>
+  beforeAll(async () => {
+    vi.resetModules()
+    delete process.env.INGEST_SECRET_TOKEN
+    const mod = await import("@/app/api/cron/classify-acquisitions-multicollection/route")
+    POST = mod.POST as any
+  })
+
+  it("401s fail-closed with no secret configured and no token", async () => {
+    const res = await POST(makeReq({ url }))
+    expect(res.status).toBe(401)
+    expect((await res.json()).error).toBe("Unauthorized")
+  })
+
+  it("401s fail-closed even with a bearer token when no secret is configured", async () => {
+    expect((await POST(makeReq({ url, auth: "Bearer anything" }))).status).toBe(401)
+  })
+})
+
+describe("POST /api/cron/classify-acquisitions-multicollection — secret configured (success path)", () => {
+  const TOKEN = "classify-ingest-token"
+  let POST: (req: any) => Promise<Response>
+  beforeAll(async () => {
+    vi.resetModules()
+    process.env.INGEST_SECRET_TOKEN = TOKEN
+    const mod = await import("@/app/api/cron/classify-acquisitions-multicollection/route")
+    POST = mod.POST as any
+  })
+
+  it("401s with no authorization header", async () => {
+    expect((await POST(makeReq({ url }))).status).toBe(401)
+  })
+
+  it("401s with a wrong bearer token", async () => {
+    expect((await POST(makeReq({ url, auth: "Bearer wrong-token" }))).status).toBe(401)
+  })
+
+  it("202s and reports accepted with the correct bearer token", async () => {
+    const res = await POST(makeReq({ url, auth: `Bearer ${TOKEN}` }))
+    expect(res.status).toBe(202)
+    const body = await res.json()
+    expect(body.ok).toBe(true)
+    expect(body.accepted).toBe(true)
+    expect(body.pipeline).toBe("classify-acquisitions-multicollection")
+  })
+})
+
+// --- the after() classify loop: per-collection tallies + failure isolation ---
+
+describe("POST /api/cron/classify-acquisitions-multicollection — deferred classify loop", () => {
+  let POST: (req: any) => Promise<Response>
+  beforeAll(async () => {
+    vi.resetModules()
+    process.env.INGEST_SECRET_TOKEN = "loop-token"
+    POST = (await import("@/app/api/cron/classify-acquisitions-multicollection/route")).POST as any
+  })
+
+  // The route logs TWICE per tick: a synchronous `phase:"invoked"` marker before
+  // any work (so a dropped after() is distinguishable from a cron that never
+  // fired), then the terminal tally inside after(). Assertions below are about
+  // the TERMINAL row, so select it explicitly by shape rather than by index —
+  // indexing would silently start asserting against the marker.
+  async function run() {
+    cst.runs = []
+    cst.hbRows = []
+    cst.calls = []
+    cap.fn = null
+    await POST(makeReq({ url, method: "POST", auth: "Bearer loop-token" }))
+    expect(cap.fn).toBeTypeOf("function")
+    await cap.fn!()
+    const terminal = cst.runs.filter((r) => r?.p_extra?.phase !== "invoked")
+    expect(terminal).toHaveLength(1)
+    return terminal[0]
+  }
+
+  beforeEach(() => {
+    cst.bySlug = {}
+    cst.logThrows = false
+  })
+
+  it("classifies all three collections and sums the tallies", async () => {
+    const run1 = await run()
+    expect(run1.p_pipeline).toBe("classify-acquisitions-multicollection")
+    expect(run1.p_ok).toBe(true)
+    expect(run1.p_error).toBeNull()
+    expect(run1.p_rows_found).toBe(30)   // 3 x scanned 10
+    expect(run1.p_rows_written).toBe(24) // 3 x classified 8
+    expect(run1.p_rows_skipped).toBe(6)  // 3 x skipped 2
+    expect(Object.keys(run1.p_extra.per_collection)).toEqual([
+      "nfl_all_day", "laliga_golazos", "ufc_strike",
+    ])
+  })
+
+  it("caps AllDay at 80/tick and uses the 500 default elsewhere", async () => {
+    await run()
+    expect(cst.calls.map((c) => ({ slug: c.slug, limit: c.limit }))).toEqual([
+      { slug: "nfl_all_day", limit: 80 },
+      { slug: "laliga_golazos", limit: 500 },
+      { slug: "ufc_strike", limit: 500 },
+    ])
+  })
+
+  // Regression guard for the 2026-08-03 timeout fix. The All Day candidate scan
+  // drives off the partitioned `sales` table oldest-first, so WITHOUT a sold_at
+  // bound it burned the fn's 90s statement_timeout proving the ~612k already
+  // classified 2022-2025 rows were empty and died before reaching current data
+  // (measured: unbounded TIMEOUT, 45d 34.8s, 14d 3.5s). Dropping p_since here
+  // silently restores the hang, so pin that All Day gets a window and that the
+  // other two stay unbounded.
+  it("passes a bounded sold_at window for the two expensive collections", async () => {
+    const before = Date.now()
+    await run()
+    const after = Date.now()
+
+    const byslug = Object.fromEntries(cst.calls.map((c) => [c.slug, c.since]))
+    // Golazos is 0.2s unbounded — it keeps draining its full history.
+    expect(byslug.laliga_golazos).toBeNull()
+
+    // All Day (was a TIMEOUT) and UFC (68.3s/tick on a market closed since
+    // 2026-05-13) must both be windowed, or the after() loop reclaims enough of
+    // the 120s maxDuration to be killed before log_pipeline_run again.
+    const DAY = 24 * 60 * 60 * 1000
+    for (const slug of ["nfl_all_day", "ufc_strike"]) {
+      expect(typeof byslug[slug]).toBe("string")
+      const since = Date.parse(byslug[slug] as string)
+      expect(Number.isNaN(since)).toBe(false)
+      expect(since).toBeGreaterThanOrEqual(before - 14 * DAY - 1000)
+      expect(since).toBeLessThanOrEqual(after - 14 * DAY + 1000)
+    }
+  })
+
+  // The whole point of the marker: a tick that dies inside after() must still
+  // leave evidence it was invoked, so a slow query can never be misread as a
+  // cron that never fired.
+  it("writes a synchronous invoked-marker before any classify work", async () => {
+    cst.runs = []
+    cst.hbRows = []
+    cst.calls = []
+    cap.fn = null
+    await POST(makeReq({ url, method: "POST", auth: "Bearer loop-token" }))
+
+    // after() has NOT run yet — this is the state a killed lambda leaves behind.
+    expect(cst.calls).toEqual([])
+    // ⚠ The marker must NOT be an own-name row. It was until 2026-08-20, and
+    // that is strictly worse than no marker: `detect_stalled_pipelines()` takes
+    // max(started_at) with no phase filter, so the marker refreshed `last_run`
+    // every tick and suppressed the 180-min arm on every dead after().
+    // Asserting the ABSENCE of the own-name row is the load-bearing half.
+    expect(cst.runs, "no own-name row until the classify loop completes").toHaveLength(0)
+    expect(cst.hbRows).toHaveLength(1)
+    expect(cst.hbRows[0].pipeline).toBe("classify-acquisitions-multicollection-heartbeat")
+    expect(cst.hbRows[0].extra.phase).toBe("started")
+    expect(cst.hbRows[0].ok).toBe(true)
+    expect(cst.hbRows[0].rows_written, "a marker measures nothing").toBeNull()
+  })
+
+  it("accepts the alternate RPC counter key names", async () => {
+    cst.bySlug = {
+      nfl_all_day: { data: { rows_found: 5, rows_written: 4, rows_skipped: 1 }, error: null },
+      laliga_golazos: { data: { scanned: 1, inserted: 1, skipped: 0 }, error: null },
+      ufc_strike: { data: {}, error: null },
+    }
+    const r = await run()
+    expect(r.p_rows_found).toBe(6)
+    expect(r.p_rows_written).toBe(5)
+    expect(r.p_rows_skipped).toBe(1)
+  })
+
+  it("isolates a per-collection RPC error — the others still classify", async () => {
+    cst.bySlug = { laliga_golazos: { data: null, error: { message: "golazos down" } } }
+    const r = await run()
+    expect(r.p_ok).toBe(false)
+    expect(r.p_error).toBe("laliga_golazos: golazos down")
+    expect(r.p_extra.per_collection.laliga_golazos).toEqual({ ok: false, error: "golazos down" })
+    // the other two still contributed
+    expect(r.p_rows_found).toBe(20)
+    expect(r.p_extra.per_collection.ufc_strike.ok).toBe(true)
+  })
+
+  it("isolates a thrown RPC the same way", async () => {
+    cst.bySlug = { ufc_strike: "throw" }
+    const r = await run()
+    expect(r.p_ok).toBe(false)
+    expect(r.p_error).toBe("ufc_strike: ufc_strike exploded")
+    expect(r.p_extra.per_collection.ufc_strike.ok).toBe(false)
+    expect(r.p_rows_found).toBe(20)
+  })
+
+  it("keeps only the FIRST error when several collections fail", async () => {
+    cst.bySlug = {
+      nfl_all_day: { data: null, error: { message: "allday down" } },
+      ufc_strike: "throw",
+    }
+    const r = await run()
+    expect(r.p_error).toBe("nfl_all_day: allday down")
+    expect(r.p_ok).toBe(false)
+  })
+
+  it("swallows a log_pipeline_run failure without escaping after()", async () => {
+    cst.logThrows = true
+    cap.fn = null
+    await POST(makeReq({ url, method: "POST", auth: "Bearer loop-token" }))
+    await expect(cap.fn!()).resolves.toBeUndefined()
+  })
+})
+
+// ── The WALL. Why these arms exist ─────────────────────────────────────────
+//
+// 🚨 CONFIRMED LIVE 2026-09-20: `Vercel Runtime Timeout Error: Task timed out
+// after 120 seconds` at 15:06:20Z, matching this pipeline's heartbeat to the
+// second, with detect_stalled_pipelines reporting `invoked_but_never_logged`,
+// 4 uncorrelated heartbeats, silent 299 minutes.
+//
+// The 2026-08-03 per-leg windows were real fixes and did not fix THIS: the legs
+// run sequentially and nothing bounded their TOTAL, so three legs may each run
+// to the function's 90 s statement_timeout — 270 s against a 120 s maxDuration.
+// A maxDuration kill runs neither the success path nor a catch, so the tick
+// dies before log_pipeline_run and leaves no terminal row at all.
+//
+// ⚠ These arms assert the HONEST PARTIAL, not merely "it finished": a tick that
+// classified one of three collections must say WHICH two did not run, because
+// p_rows_found is a sum and cannot distinguish a skipped leg from an empty one.
+describe("POST /api/cron/classify-acquisitions-multicollection — the wall budget", () => {
+  let POST: (req: any) => Promise<Response>
+
+  beforeAll(async () => {
+    vi.resetModules()
+    process.env.INGEST_SECRET_TOKEN = "loop-token"
+    // A wall small enough that the first hanging leg exhausts it. Production
+    // never sets this; it exists so the budget path costs milliseconds.
+    process.env.CLASSIFY_WALL_MS = "600"
+    const mod = await import("@/app/api/cron/classify-acquisitions-multicollection/route")
+    POST = mod.POST as any
+  })
+
+  beforeEach(() => {
+    cst.bySlug = {}
+    cst.runs = []
+    cst.hbRows = []
+    cst.calls = []
+    cst.logThrows = false
+    cap.fn = null
+  })
+
+  async function runTerminal() {
+    await POST(makeReq({ url, method: "POST", auth: "Bearer loop-token" }))
+    expect(cap.fn).toBeTypeOf("function")
+    await cap.fn!()
+    const terminal = cst.runs.filter((r) => r?.p_extra?.phase !== "invoked")
+    expect(terminal, "the tick must still reach its terminal row").toHaveLength(1)
+    return terminal[0]
+  }
+
+  it("a leg that HANGS is abandoned at the remaining budget and the tick still lands a terminal row", async () => {
+    // Never resolves — the shape a 90 s statement_timeout has from here. Before
+    // the wall this consumed the whole maxDuration and the lambda was killed.
+    cst.bySlug = { nfl_all_day: new Promise(() => {}) }
+    const r = await runTerminal()
+    expect(r.p_ok, "an abandoned leg is not a clean tick").toBe(false)
+    expect(String(r.p_error)).toContain("nfl_all_day")
+    expect(r.p_extra.per_collection.nfl_all_day.ok).toBe(false)
+  }, 20_000)
+
+  it("legs that never ran are NAMED, not counted — a sum cannot tell skipped from empty", async () => {
+    cst.bySlug = { nfl_all_day: new Promise(() => {}) }
+    const r = await runTerminal()
+    const skipped = r.p_extra.skipped_for_budget as string[]
+    expect(skipped, "the two legs after the hang must be named").toEqual([
+      "laliga_golazos",
+      "ufc_strike",
+    ])
+    expect(r.p_extra.legs_total).toBe(3)
+    expect(r.p_extra.legs_attempted).toBe(1)
+    // ⚠ The no-change control: the skipped legs were never CALLED, so a reader
+    // cannot mistake "we asked and got nothing" for "we never asked".
+    expect(cst.calls.map((c) => c.slug)).toEqual(["nfl_all_day"])
+  }, 20_000)
+
+  it("the wall must stay MEANINGFULLY under maxDuration — a wall equal to its ceiling is not a wall", () => {
+    // 🚨 THE ARM THAT THIS FIX'S OWN FIRST VERSION WOULD HAVE FAILED. The wall
+    // originally shipped at 120_000 — EQUAL to maxDuration — with only
+    // TERMINAL_RESERVE_MS carved out, so the deadline sat 8 % under the very
+    // ceiling it exists to stay beneath. That leaves nothing for the platform's
+    // own overhead, and `after()` is not documented to receive the full
+    // maxDuration at all. Live outcome: the 2026-09-20 10:06 PT tick ran that
+    // code, returned 202, was NOT killed (zero Vercel runtime errors for the
+    // route) and still wrote no terminal row.
+    //
+    // ⭐ The working precedent is drain-fmv-cold-tail: 45 s inside a 60 s
+    // maxDuration, a 25 % margin. This asserts the SHAPE (a real margin), not a
+    // specific number, so retuning either constant stays legal and only
+    // collapsing the margin goes red.
+    const src = readFileSync(
+      join(process.cwd(), "app/api/cron/classify-acquisitions-multicollection/route.ts"),
+      "utf8",
+    )
+    const wall = Number(/const WALL_MS_DEFAULT = ([0-9_]+)/.exec(src)?.[1]?.replace(/_/g, ""))
+    const maxD = Number(/export const maxDuration = ([0-9_]+)/.exec(src)?.[1]?.replace(/_/g, ""))
+    expect(Number.isFinite(wall) && wall > 0, "could not read WALL_MS_DEFAULT").toBe(true)
+    expect(Number.isFinite(maxD) && maxD > 0, "could not read maxDuration").toBe(true)
+    const maxDurationMs = maxD * 1000
+    expect(
+      wall,
+      `the wall (${wall} ms) must leave at least 20 % of maxDuration (${maxDurationMs} ms) as margin — ` +
+        "a wall set to its own ceiling cannot stop the platform killing the run before the terminal row",
+    ).toBeLessThanOrEqual(maxDurationMs * 0.8)
+  })
+
+  it("CONTROL: with every leg fast, nothing is skipped and the tick is clean", async () => {
+    // Without this arm the fix could be "skip everything", which would satisfy
+    // both arms above while destroying the pipeline.
+    const r = await runTerminal()
+    expect(r.p_extra.skipped_for_budget).toEqual([])
+    expect(r.p_extra.legs_attempted).toBe(3)
+    expect(r.p_ok).toBe(true)
+    expect(cst.calls.map((c) => c.slug)).toEqual(["nfl_all_day", "laliga_golazos", "ufc_strike"])
+  })
+})

@@ -1,0 +1,1862 @@
+// proxy.ts
+//
+// Next.js 16 root middleware (the "proxy.ts" convention replaces the legacy
+// "middleware.ts" filename in Next.js 16). Site-wide auth + allow-list gate.
+//
+// Order of operations on every matched request:
+//   1. CORS preflight (OPTIONS) for the public-CORS API paths.
+//   2. Bypass-token check — if Authorization: Bearer <X> OR ?token=<X> carries
+//      INGEST_SECRET_TOKEN or CRON_SECRET, short-circuit ALL further middleware
+//      logic. Keeps cron-job.org and internal pipeline jobs reachable
+//      (/api/seed-wallet-refresh, /api/ingest, /api/listing-cache*,
+//      /api/sales-indexer*, /api/flowty-tx-scanner, /api/fmv-recalc, etc.),
+//      regardless of whether the cron is configured with a header or a query
+//      param.
+//   3. Per-IP rate limiting on /api/* (existing behaviour — preserved).
+//   4. Public-bypass paths (homepage, /login, /early-access, /auth, /admin,
+//      the marketing-surface API routes, /_next, static assets).
+//   5. Authenticated Supabase session check (else → /login?next=<path>).
+//   6. Allow-list cache (cookie) → service-role check_email_allowed RPC.
+//      On revocation: signOut + /login?error=access_revoked.
+//
+// The allow-list cookie `rpc_al_check` carries { email, expiresAt, sig } JSON for
+// 60s, httpOnly + sameSite=lax + secure, and since 2026-10-27 HMAC-SIGNED
+// (lib/auth/allow-cookie.ts). Unsigned, a removed user could rewrite a fresh
+// 60 s expiry on every request and never meet check_email_allowed again. A
+// missing or bad signature reads as no cookie (one RPC). The `email` match
+// guard still prevents using one user's cached cookie under another session.
+
+import { NextRequest, NextResponse } from "next/server"
+import { challengePreviewTarget } from "@/lib/routing/link-preview-bot"
+import { createServerClient } from "@supabase/ssr"
+import { createClient } from "@supabase/supabase-js"
+import { CANDY_MLB_PUBLIC, PANINI_PUBLIC } from "@/lib/launch-flags"
+import { ALLOWED_ORIGINS } from "@/lib/allowed-origins"
+import { bearerMatches, tokenMatches as secretTokenMatches } from "@/lib/auth/bearer-secret"
+import { isRoutableFirstSegment } from "@/lib/routing/known-top-level"
+import { decodeAllowCookie, encodeAllowCookie, type AllowCacheEntry } from "@/lib/auth/allow-cookie"
+
+const CORS_API_PATHS = ["/api/fmv", "/api/sniper-feed", "/api/health"]
+
+const ALLOWLIST_COOKIE = "rpc_al_check"
+const ALLOWLIST_TTL_SECONDS = 60
+
+// Static assets that bypass auth at the in-middleware level.
+//
+// ⚠ AN EXACT SET, NOT A PATTERN, AND THAT IS THE WHOLE POINT. Until 2026-08-13
+// this was an unanchored suffix test — `/\.(?:png|jpe?g|svg|webp|ico|css|js)$/i`
+// — which matched ANY path ending in one of those extensions, including a gated
+// route whose trailing segment a visitor controls.
+//
+// ✅ CONFIRMED LIVE, on evidence that survives a control: anonymously,
+// `GET /api/mcp/keys/<uuid>` answers 307 → /login, while the same path with a
+// `.png` suffix answers **405 Method Not Allowed**. A 405 cannot come from this
+// wall — the wall's answer is the 307 — so the suffixed request reached the
+// handler. That is the whole finding, and it is enough to justify the fix.
+//
+// ⛔ IT IS DEFENSE-IN-DEPTH, NOT A CONFIRMED BREACH, and two separate sessions
+// first recorded it as a breach off the same bad inference. Both reported that
+// `GET /topshot.png` (and later `/profile/edit.css`) "served a gated page to an
+// anonymous visitor". Neither did. The bypass buys the next hop, and the next hop
+// was already public BY DESIGN — `/[collection]/overview` since the 2026-07-17
+// un-gate, `/profile/[username]` always. The controls settle it: with NO
+// extension and NO bypass, `/totally-bogus-slug/overview` returns the same page,
+// and `/profile/zzz-no-such-user-9931` returns MORE bytes than the "leak" did.
+// **A 200 next to a 307 proves nothing until you show the 200 needed the bypass.**
+// Every gated dynamic route the suffix currently reaches carries its own auth
+// check — good habits plus luck, not architecture. Fix the wall anyway; that is
+// what defense in depth means.
+//
+// ⛔ DO NOT "fix" this by anchoring the regex to a single root segment
+// (`/^\/[^/]+\.(?:png|...)$/`). That was tried first and it is NOT sufficient:
+// the collection pages live at the URL ROOT (`/[collection]`), the same
+// namespace as the root static assets, so `/topshot.png` still matches. Only an
+// exact allowlist separates the two, because nothing about the SHAPE of the path
+// distinguishes an asset from a collection slug.
+//
+// Cost of this design: a new file dropped into `public/` root is gated until it
+// is added here. That is the correct trade for a namespace shared with a dynamic
+// route — prefer putting new assets under `/img/`, which the matcher at the
+// bottom of this file already excludes from the proxy entirely.
+//
+// ⚠ NARROWING THIS FROM A SUFFIX TEST TO A SET REMOVES `.js`/`.css` FROM THE
+// PUBLIC SET, so the question "what else did the regex keep reachable?" has to be
+// answered before shipping, not after. Measured 2026-08-15, and the one real
+// candidate came back CLEAR: `@vercel/analytics` and `@vercel/speed-insights` are
+// both mounted in `app/layout.tsx` and load `/_vercel/{insights,speed-insights}/
+// script.js` — paths that match neither the `/_next/` check below nor the
+// matcher's exclusions, and which the old regex published by side effect. They
+// are NOT affected, because Vercel serves them at the platform edge and this
+// proxy never runs on them. The discriminator is `applySecurityHeaders`: live,
+// `/window.svg` and `/login` come back with `X-Frame-Options: DENY` +
+// `X-Content-Type-Options: nosniff` while both `/_vercel/*` scripts carry
+// NEITHER header — proof of non-interception, where a 200 alone proves nothing
+// (a 302 to /login also answers 200). No allowlist entry is added for them on
+// purpose: a line that never executes reads as protection and is not.
+//
+// Everything else in `public/` is already accounted for: `*.json`, `offline.html`
+// and the `fonts/OFL-*.txt` licenses do not match the old regex either, so they
+// were gated before this change and stay gated after it. Sweep with
+// `find public -type f | sed 's/.*\.//' | sort -u` when adding an asset type.
+const STATIC_ROOT_ASSETS = new Set([
+  "/rip-packs-city-logo.png",
+  "/file.svg",
+  "/globe.svg",
+  "/next.svg",
+  "/vercel.svg",
+  "/window.svg",
+  "/favicon.ico",
+])
+
+// The vendored brand fonts under `public/fonts`.
+//
+// ⚠ THIS WAS MISSING UNTIL 2026-08-13 AND IT WAS A LIVE PRODUCT BUG. The matcher
+// at the bottom of this file does not exclude `/fonts/`, and `ttf` was not one of
+// the extensions in `STATIC_EXT_RX` (the suffix test that preceded
+// `STATIC_ROOT_ASSETS` above — the name is kept here only as history; do not go
+// looking for it), so every request for a vendored font ran the auth
+// gate, failed `isPublicPath`, and was 302'd to /login. Two SERVER-SIDE
+// consumers fetch these files over HTTP with no session — the OG profile card
+// (`runtime = "edge"`, so it CANNOT read them off disk) and the trophy-case PDF
+// — and a followed redirect hands both an HTML document at status 200. satori
+// then throws `Unsupported OpenType signature <!DO` (the first four bytes of
+// `<!DOCTYPE`) from inside the ImageResponse STREAM, after GET has returned,
+// where that route's try/catch cannot reach it; that reddened CI on 2026-08-13,
+// and the PDF had been silently unbranded since it shipped.
+//
+// ⚠ DELIBERATELY NARROWER THAN ADDING THE EXTENSIONS TO THE OLD `STATIC_EXT_RX`,
+// which is what the first version of this fix did. That regex matched ANY path
+// ending in the extension, so it would also have published a gated route whose
+// trailing dynamic segment a visitor controls (`/whatever/<user-supplied>.ttf`).
+// ⚠ THE ORIGINAL VERSION OF THIS NOTE THEN SAID "the existing entries carry that
+// property for `js|css|png|…` already; there is no reason to widen the class
+// further" — TRUE WHEN WRITTEN, AND IT WAS DESCRIBING A HOLE IN THE AUTH WALL AS
+// AN ACCEPTED COST. Two days later that hole was confirmed reachable (the 405
+// above). The precedent was the bug. Reasoning
+// "the neighbouring rule is already this loose" argues for fixing the neighbour,
+// never for matching it. Directory AND extension, both required, single level.
+const FONT_ASSET_RX = /^\/fonts\/[^/]+\.(?:ttf|otf|woff2?)$/i
+
+// ── Rate limiting (in-memory, per-IP) ────────────────────────────────────────
+// ⚠ These Maps are MODULE-SCOPE, i.e. PER-LAMBDA-INSTANCE on serverless. The
+// effective global ceiling is therefore (max × warm instances), not `max`.
+// This is a burst cap that bounds a single hot IP; it is NOT a global limit.
+// A real global limit needs shared state (KV/Redis/Upstash) — tracked as the
+// follow-on to this change. Do not read these numbers as absolute guarantees.
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
+const pageRateLimitMap = new Map<string, { count: number; resetAt: number }>()
+const RATE_LIMIT_WINDOW_MS = 60_000
+const RATE_LIMIT_MAX_REQUESTS = 60
+
+// Page routes get their own, more generous ceiling and their own counter, so
+// page traffic never consumes the API budget (or vice versa). Next.js prefetch
+// fires an RSC request per hovered link, so a real reader skimming a catalog
+// page legitimately bursts well past the 60/min API budget — 60 here would
+// throw 429s at humans. 120/min ≈ 2 req/s sustained, which no human browsing
+// session reaches but which does bound an unauthenticated crawler hammering a
+// single IP (the 2026-08-06 crawl ran ~38 req/min sustained on one route with
+// nothing in front of it).
+const PAGE_RATE_LIMIT_MAX_REQUESTS = 120
+
+// ── API budget shaping (2026-09-06) ──────────────────────────────────────────
+// Measured on a 510-page QA sweep from ONE IP: the 60/min API budget was spent
+// by `/api/profile/me` (17× 429), `/api/telemetry` (7×), `/api/track-funnel`
+// (5×) and `/api/public/pinnacle-image` (3×) — i.e. by the per-page chrome
+// and by IMAGES, not by anything a person types. A Pinnacle render page alone
+// issues 4–5 proxied images + 3 chrome calls, so a collector opening ~6 such
+// pages in a minute would start seeing blank art and a dead profile pill —
+// and a SIGNED-IN dashboard user, whose page polls, was under the same 60.
+//
+//   • Media proxies get their own counter and a 10× ceiling: an image is one
+//     tile, not one API call, and a 429 there renders as a broken thumbnail
+//     that no error surface reports (the client-only failure class, #34/#37).
+//   • A signed-in reader gets 4× the anonymous API ceiling, mirroring the page
+//     limiter's "a signed-in reader is never throttled" posture without going
+//     fully unmetered on a mutable surface.
+// Still per-lambda, still a burst cap, still not a global limit (see above).
+const MEDIA_PROXY_PREFIXES = [
+  "/api/public/pinnacle-image",
+  "/api/public/ipfs-media",
+  "/api/public/ipfs-thumb",
+  "/api/public/arweave-thumb",
+  "/api/public/team-logo",
+  "/api/public/avatar-media",
+  "/api/badge-image",
+  "/api/moment-thumbnail",
+  "/api/og",
+] as const
+const mediaRateLimitMap = new Map<string, { count: number; resetAt: number }>()
+const MEDIA_RATE_LIMIT_MAX_REQUESTS = 600
+const SIGNED_IN_API_RATE_LIMIT_MAX_REQUESTS = 240
+
+export function isMediaProxyPath(pathname: string): boolean {
+  return MEDIA_PROXY_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"))
+}
+
+/** The API burst ceiling that applies to this request (exported for the test). */
+export function apiRateLimitFor(pathname: string, signedIn: boolean): { max: number; bucket: "media" | "api" } {
+  if (isMediaProxyPath(pathname)) return { max: MEDIA_RATE_LIMIT_MAX_REQUESTS, bucket: "media" }
+  return { max: signedIn ? SIGNED_IN_API_RATE_LIMIT_MAX_REQUESTS : RATE_LIMIT_MAX_REQUESTS, bucket: "api" }
+}
+
+// Page routes worth metering: DB-backed public surfaces that render server-side.
+// Keyed on the SECOND path segment for /<collection>/<page> (segment 0 is the
+// collection slug), plus three top-level surfaces matched by prefix.
+const RATE_LIMITED_COLLECTION_PAGES = new Set([
+  "collection",
+  "edition",
+  "player",
+  "character",
+  "team",
+  "set",
+  "series",
+  "pack",
+  "moment",
+  "product",
+])
+
+export function isRateLimitedPageRoute(pathname: string): boolean {
+  if (pathname.startsWith("/profile/")) return true
+  if (pathname.startsWith("/moment/")) return true
+  // Franchise hubs fan out one get_team_detail per collection — DB-backed, enumerable.
+  if (pathname.startsWith("/teams/")) return true
+  // Player hubs (2026-10-22) fan out one get_player_detail per collection — same shape.
+  if (pathname.startsWith("/players/")) return true
+  if (pathname === "/special-serial-owners") return true
+
+  const segments = pathname.split("/").filter(Boolean)
+  return segments.length >= 2 && RATE_LIMITED_COLLECTION_PAGES.has(segments[1])
+}
+
+// Cheap, cookie-only signed-in check — deliberately NOT a session lookup (no
+// network on the hot path). Supabase SSR writes `sb-<project-ref>-auth-token`,
+// chunked as `.0`, `.1`, … on a large session, valued `base64-<base64url JSON>`
+// (older clients: raw JSON). It decides whether this request is EXEMPT from the
+// anonymous page cap and gets the larger signed-in API budget; the real auth
+// gate still runs downstream.
+//
+// ⛔ 2026-10-10 (known-issues #180 item 2): this used to accept ANY cookie whose
+// name started with `sb-` and contained `auth-token`, with any value, so a
+// scraper adding `sb-x-auth-token=1` went unmetered on every page and got 4x
+// the API budget. It now requires THIS project's cookie, decoding to a session
+// whose access token is a JWT for role `authenticated` issued by this project,
+// not expired by more than 7 days (an expired access token with a live refresh
+// token is a real returning user; the SSR client refreshes it downstream). The
+// signature is NOT verified (no key on this path), so a forger who builds that
+// shape still passes, but an arbitrary cookie no longer does. Anything that
+// does not parse is treated as anonymous: rate-limited, never blocked.
+const AUTH_COOKIE_MAX_EXPIRED_S = 7 * 24 * 3600
+
+function supabaseProjectRef(): string | null {
+  try {
+    const host = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").hostname
+    const ref = host.split(".")[0]
+    return ref && /^[a-z0-9]+$/.test(ref) ? ref : null
+  } catch {
+    return null
+  }
+}
+
+function decodeBase64Url(s: string): string {
+  const b64 = s.replace(/-/g, "+").replace(/_/g, "/")
+  return atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4))
+}
+
+export function hasAuthCookie(request: NextRequest): boolean {
+  const ref = supabaseProjectRef()
+  if (!ref) return false
+  const base = `sb-${ref}-auth-token`
+  const cookies = request.cookies.getAll()
+  let raw = cookies.find((c) => c.name === base)?.value ?? ""
+  if (!raw) {
+    const chunks = cookies
+      .map((c) => ({ c, m: c.name.startsWith(base + ".") ? /^\d+$/.exec(c.name.slice(base.length + 1)) : null }))
+      .filter((x) => x.m)
+      .sort((a, b) => Number(a.m![0]) - Number(b.m![0]))
+    raw = chunks.map((x) => x.c.value).join("")
+  }
+  if (!raw) return false
+  try {
+    const json = raw.startsWith("base64-") ? decodeBase64Url(raw.slice(7)) : decodeURIComponent(raw)
+    const session = JSON.parse(json) as { access_token?: unknown; refresh_token?: unknown }
+    if (typeof session?.access_token !== "string" || typeof session?.refresh_token !== "string") return false
+    const parts = session.access_token.split(".")
+    if (parts.length !== 3) return false
+    const claims = JSON.parse(decodeBase64Url(parts[1])) as { role?: unknown; iss?: unknown; exp?: unknown }
+    if (claims.role !== "authenticated") return false
+    if (typeof claims.iss !== "string" || !claims.iss.includes(ref)) return false
+    if (typeof claims.exp !== "number" || claims.exp * 1000 < Date.now() - AUTH_COOKIE_MAX_EXPIRED_S * 1000) return false
+    return true
+  } catch {
+    return false
+  }
+}
+
+function getRateLimitKey(request: NextRequest): string {
+  return (
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    request.headers.get("x-real-ip") ||
+    "unknown"
+  )
+}
+
+function isRateLimited(
+  key: string,
+  map: Map<string, { count: number; resetAt: number }> = rateLimitMap,
+  max: number = RATE_LIMIT_MAX_REQUESTS
+): boolean {
+  const now = Date.now()
+  const entry = map.get(key)
+  if (!entry || now > entry.resetAt) {
+    map.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS })
+    return false
+  }
+  entry.count++
+  return entry.count > max
+}
+
+function cleanupRateLimitMap() {
+  const now = Date.now()
+  for (const map of [rateLimitMap, pageRateLimitMap, mediaRateLimitMap]) {
+    for (const [key, entry] of map) {
+      if (now > entry.resetAt) {
+        map.delete(key)
+      }
+    }
+  }
+}
+
+let lastCleanup = Date.now()
+
+// ── Bypass-token helper ────────────────────────────────────────────────────
+// Returns true iff EITHER:
+//   • Authorization: Bearer <X> where X matches INGEST_SECRET_TOKEN or
+//     CRON_SECRET, OR
+//   • ?token=<X> where X matches the same.
+// NEVER logs the token value. Returns false silently for any other shape —
+// missing/wrong header and missing/wrong query param all fall through to the
+// normal middleware path so attackers can't probe for a valid token via
+// response-shape diffing. Does NOT consume or strip either input — downstream
+// routes still see the original Authorization header and ?token= query param
+// for their own re-validation.
+function tokenMatches(token: string): boolean {
+  // Constant-time, fail-closed (lib/auth/bearer-secret.ts; review S4 2026-10-11).
+  return secretTokenMatches(token, "INGEST_SECRET_TOKEN", "CRON_SECRET")
+}
+
+function hasValidBypassToken(request: NextRequest): boolean {
+  // Header form
+  const authHeader = request.headers.get("authorization") || ""
+  if (authHeader.startsWith("Bearer ")) {
+    if (tokenMatches(authHeader.slice(7))) return true
+  }
+  // R133 (security audit 2026-10-25) — the `?token=` query-param form is
+  // RETIRED (2026-11-04). It logged `[proxy] query-token presented ok=<bool>`
+  // from 2026-10-25 1:18 PM PT; Vercel runtime logs 10-25 → 11-04 held ZERO
+  // `ok=true` lines beside live `ok=false` lines (the positive control), and
+  // the caller enumeration (repo, pg_cron, vercel.json, cron-job.org on
+  // headers since 06-07) found none. A secret in a URL lands in access logs,
+  // browser history and Referer headers; only the header form is accepted.
+  return false
+}
+
+// ── Public-bypass logic ─────────────────────────────────────────────────────
+// Paths listed here skip both the session check and the allow-list check.
+// Order doesn't matter — first match wins. `method` is consulted only by the
+// handful of entries that mix safe (GET/HEAD) and mutating (POST/PATCH/DELETE)
+// handlers under one path.
+//
+// Exported SOLELY so __tests__/proxy-is-public-path.test.ts can pin the
+// public/gated boundary as a (pathname, method) table — this is the app's
+// security wall, and every incident in the ledger where a "gated" surface was
+// anon-reachable (or a launch flag silently no-op'd) is a bug in THIS function.
+// Next.js middleware only consumes the `proxy` + `config` exports, so an extra
+// named export changes no runtime behaviour.
+// Thin collections × the feature tabs they do NOT have. Kept literal (no
+// registry import at the edge). Extend the alternation when a second thin
+// collection publishes; SHRINK it when Candy gains a real tab.
+//
+// ⚠ SHRUNK 2026-09-12: `market` is GONE from this list because Candy now has a
+// real Market tab — /api/market dispatches its collection id to
+// fetchCandyMarketListings → candy_market_board (1,821 active listings). Leaving
+// it here would 302 /candy-mlb/market to /login, and the tab is in the sitemap
+// the moment it enters `pages`, so Googlebot would have been handed a login
+// redirect for a page that renders fine. That is not hypothetical — it is what
+// __tests__/sitemap-urls-are-anon-public.test.ts reported the first time the tab
+// was switched on, before this line changed.
+//
+// ⚠ SHRUNK AGAIN 2026-09-20: `analytics` is GONE for the same reason `market`
+// was. Candy's Analytics tab is now in `pages`, and every panel on it was read
+// against Candy live before the tab was switched on — 31 daily volume rows,
+// 1,564 sales / $7,063 in 30 d, 125 priced editions, ~1,900 live asks. Leaving
+// `analytics` here would 302 /candy-mlb/analytics to /login while the sitemap
+// advertises it, which is precisely the Googlebot-gets-a-login-redirect failure
+// the 09-12 note above describes.
+//
+// ⚠ SHRUNK A FOURTH TIME 2026-09-25: `packs` is GONE — Candy's Packs tab reads
+// its native pack plane through /api/candy-pack-market (anon-public below).
+//
+// ⚠ SHRUNK A THIRD TIME 2026-09-25: `sets` is GONE. Candy's Sets tab is in
+// `pages` with its own Solana backend (/api/candy-set-progress, anon-public
+// below), so leaving it here would 302 a sitemap URL to /login.
+//
+// ⚠ THE INVARIANT IS THAT THIS ALTERNATION IS THE COMPLEMENT OF THE REGISTRY'S
+// `pages`. A tab added to lib/collections.ts and not removed here is silently
+// unreachable to anonymous visitors AND still listed for crawlers; a tab removed
+// there and not added here serves a soft-404. Both directions are pinned in
+// __tests__/proxy-is-public-path.test.ts.
+// ── Mixed-case URLs fold to the lowercase canonical (2026-11-06) ──────────────
+// /NBA-Top-Shot/overview, /nba-top-shot/player/Jamal-Murray and
+// /nba-top-shot/set/2025-NBA-Playoffs-Common all 404'd (measured live) while the
+// lowercase forms are the pages — every collection, tab, player, team, set,
+// character, series and product slug this site mints is lowercase, and so are
+// /players and /teams hub slugs. A capitalised link someone typed or pasted is
+// the same page; answer 308 to it. Scoped on purpose: the first segment must be
+// a published collection or a hub root, and an EDITION slug is never folded —
+// UFC edition keys are uppercase by construction (…/edition/DIEGO-FERREIRA-…).
+// Wallet-bearing paths (/share/<addr>, /moment/<id>) do not start with these
+// segments, so a case-sensitive Solana address is never touched.
+// Loop-safe: the target has no uppercase letter, so it cannot match again.
+const CASE_FOLD_ROOTS = new Set(["nba-top-shot", "nfl-all-day", "laliga-golazos", "disney-pinnacle", "ufc", "candy-mlb", "panini-blockchain", "players", "teams"])
+const CASE_FOLD_ENTITY_TABS = new Set(["player", "team", "set", "character", "series", "product", "pack"])
+export function caseFoldedPath(pathname: string): string | null {
+  if (!/[A-Z]/.test(pathname)) return null
+  const seg = pathname.split("/")
+  const root = (seg[1] ?? "").toLowerCase()
+  if (!CASE_FOLD_ROOTS.has(root)) return null
+  const out = [...seg]
+  out[1] = root
+  if (root === "players" || root === "teams") {
+    for (let i = 2; i < out.length; i++) out[i] = out[i].toLowerCase()
+  } else {
+    if (out[2] !== undefined) out[2] = out[2].toLowerCase()
+    // /pack/dist/<id> and /pack/<id>: ids are numeric or lowercase; fold too.
+    if (out[3] !== undefined && CASE_FOLD_ENTITY_TABS.has(out[2])) {
+      for (let i = 3; i < out.length; i++) out[i] = out[i].toLowerCase()
+    }
+  }
+  const folded = out.join("/")
+  return folded === pathname ? null : folded
+}
+
+export const THIN_COLLECTION_MISSING_TABS =
+  /^\/(candy-mlb)\/(sniper|badges|challenges|hot-floors|pack-sniper|fast-break|road-to-the-ring|play|series|profile)(?:\/|$)/
+
+// A PUBLISHED collection that has most tabs but not this one. The thin regex
+// above covers overview-only collections; this covers the partial case, and the
+// first entry is UFC's sniper, retired 2026-09-06 (Trevor) because UFC Strike's
+// Flow market closed 13 May 2026.
+//
+// ⚠ WHY A REDIRECT AND NOT `FeatureTabGate`. That component renders a 200 "not
+// available" page, which is a SOFT-404 — and /ufc/sniper is anon-public (the
+// feature-tab regex below) and has been in the sitemap, so it is indexed. This
+// repo has paid for soft-404s twice already (the entity layout gate, the
+// moment-uuid 301). A redirect is the honest status line.
+//
+// ⚠ 307, NOT 308, DELIBERATELY. Trevor's words were "there is no market
+// CURRENTLY". A 308 is cached hard by browsers and treated as permanent by
+// Google; if UFC's market reopens, the tab would be un-retirable for months
+// from caches we do not control. Temporary is the true claim.
+//
+// Set of "slug/tab" rather than a regex: the pin can then assert exact SET
+// EQUALITY against the registry instead of parsing an alternation out of a
+// regex source, and adding a collection cannot silently widen a character class.
+// Kept literal (no registry import at the edge), pinned in BOTH directions by
+// __tests__/proxy-is-public-path.test.ts.
+// ⚠ SCOPED DELIBERATELY TO WHAT WAS ASKED FOR, and the restraint is recorded
+// because the wider version is tempting and wrong to ship silently. UFC is
+// anon-public on TEN feature-tab URLs (see the feature-tab regex below) and has
+// only four tabs, so /ufc/market, /ufc/packs, /ufc/play, /ufc/pack-sniper,
+// /ufc/challenges and /ufc/hot-floors all serve a 200 FeatureTabGate shell —
+// soft-404s that PREDATE this change, and the same is true of nfl-all-day,
+// disney-pinnacle and laliga-golazos (~19 URLs in total). Redirecting all of
+// them is a defensible cleanup and is NOT this change: it would swap a
+// deliberate UX shell for a redirect on four collections nobody asked about.
+// Filed instead — docs/overnight/inbox/2026-09-07T0330Z-*.
+//
+// 2026-09-25 — PANINI joins, with every tab it lacks. It published with
+// `pages: ["overview", "market"]`, and — unlike Candy — its missing set includes
+// tabs Candy HAS (collection, sets, packs, analytics), so it cannot share
+// THIN_COLLECTION_MISSING_TABS' single tab alternation without redirecting live
+// Candy tabs. A per-pair set is exactly the shape that cannot widen by accident.
+// Pinned one-way by __tests__/ufc-sniper-is-retired.test.ts (no entry may name a
+// tab the collection ships) and the other way by
+// __tests__/panini-publish-routes.test.ts (every tab Panini lacks is here).
+export const RETIRED_COLLECTION_TABS: ReadonlySet<string> = new Set([
+  "ufc/sniper",
+  ...[
+    // `packs` left 2026-09-27: Panini's Packs tab is in `pages` (native pack plane).
+    // `sets` left 2026-09-27: Panini's Sets tab is in `pages` (/api/panini-set-progress).
+    // `collection` left 2026-09-27: by username (/api/panini-collection).
+    // `sniper` left 2026-09-28: the hourly panini-boards deal snapshot.
+    // `analytics` left 2026-09-28: sales analytics over panini_sales.
+    // `hot-floors` left 2026-10-25: sweeps over panini_sales (get_panini_hot_floors).
+    "pack-sniper", "challenges",
+    "play", "badges", "fast-break", "road-to-the-ring", "series", "profile",
+  ].map((tab) => `panini-blockchain/${tab}`),
+])
+
+export function isPublicPath(pathname: string, method: string): boolean {
+  // ── Panini WC Prizm surfaces — gated iff `PANINI_PUBLIC` is false (live since 2026-08-01) ──
+  // Gates the page (/insights/panini-squeeze), its public JSON
+  // (/api/public/insights/panini-squeeze) and its OG card (/api/og/insights/panini-squeeze) — all match
+  // `…/panini`. Returning false routes them to the auth + allow-list gate, so only signed-in allow-listed
+  // users can preview. Authed cron/ingest is unaffected (bearer-token bypass runs before this in proxy()).
+  // GO-LIVE = flip PANINI_PUBLIC to `true` in lib/launch-flags.ts — ONE line, which simultaneously
+  // un-gates these three routes, adds the sitemap slug, adds the /insights hub card, drops the layout
+  // robots:noindex and arms the smoke check. Do NOT delete this line; the flag is what makes the
+  // launch atomic. (Before 2026-07-28 this was a bare regex with no flag behind it, so flipping
+  // PANINI_PUBLIC would have silently changed nothing — the trap this wiring removes.)
+  if (!PANINI_PUBLIC && /^\/(?:insights|api\/public\/insights|api\/og\/insights)\/panini/.test(pathname))
+    return false
+  // ── Candy MLB ICONs (chain two, Solana) — gated iff `CANDY_MLB_PUBLIC` is false (live since 2026-07-31) ──
+  // Gates /insights/candy-mlb + /api/public/insights/candy-mlb + /api/og/insights/candy-mlb.
+  // GO-LIVE = flip CANDY_MLB_PUBLIC to `true` in lib/launch-flags.ts — ONE line, which
+  // simultaneously un-gates these three routes, adds the sitemap slug, adds the /insights hub
+  // card, drops the layout robots:noindex and arms the smoke check. Do NOT delete this line;
+  // the flag is what makes the launch atomic. `candy_mlb.is_active` and the registry's
+  // `published` flag are SEPARATE switches — see docs/candy-go-live-flip-2026-07-25.md.
+  if (!CANDY_MLB_PUBLIC && /^\/(?:insights|api\/public\/insights|api\/og\/insights)\/candy/.test(pathname))
+    return false
+  // Exact-match singletons
+  // `/` (root) is public: it serves the marketing landing (HomePageMarketing)
+  // to anonymous visitors so the canonical URL converts instead of bouncing
+  // straight to /login. Signed-in users are redirected to /dashboard inside
+  // the page component itself. This reverses the earlier closed-beta lockdown
+  // as a deliberate funnel decision (2026-05-30) — the front door now shows
+  // the value prop + links to the free /insights wedge surfaces.
+  if (pathname === "/") return true
+  if (pathname === "/favicon.ico") return true
+  if (pathname === "/robots.txt") return true
+  // ⚠ `/llms.txt` (the AI-crawler sibling of robots.txt, shipped in `public/`)
+  // was 302'ing to /login — `.txt` is not a static-allowlist extension and there
+  // was no exact entry, so the one file whose entire purpose is to be fetched by
+  // an anonymous crawler was the one file they could not read. Found by sweeping
+  // `public/` for extensions the allowlist does not cover, after the same
+  // omission was traced as the cause of the /fonts/*.ttf outage. Kept as an
+  // EXACT path rather than allowlisting `.txt`, which would also publish the OFL
+  // license files by side effect rather than by decision.
+  if (pathname === "/llms.txt") return true
+  if (pathname === "/sitemap.xml") return true
+  // /feed.xml — the blog's RSS 2.0 feed (app/feed.xml/route.ts, 2026-10-11).
+  // Fetched by feed readers and crawlers with no session; a 307→/login here is
+  // an invalid feed, not a gated one. EXACT path, same reasoning as /llms.txt.
+  if (pathname === "/feed.xml") return true
+  // Segment children of the sitemap index (generateSitemaps, 2026-07-11):
+  // /sitemap/0.xml … /sitemap/4.xml must be anon-fetchable or Googlebot gets
+  // 302→/login on every child the index advertises.
+  if (/^\/sitemap\/\d+\.xml$/.test(pathname)) return true
+
+  // ── Marketing / auth surface pages ───────────────────────────────────
+  // /login + subpaths
+  if (pathname === "/login" || pathname.startsWith("/login/")) return true
+  // /early-access + subpaths
+  if (pathname === "/early-access" || pathname.startsWith("/early-access/")) return true
+  // /pricing — redirects home since 2026-09-25 (no paid tier is mentioned
+  // until 100 WAU); stays public so an old link reaches "/", not /login.
+  if (pathname === "/pricing" || pathname.startsWith("/pricing/")) return true
+  // /about — marketing surface
+  if (pathname === "/about" || pathname.startsWith("/about/")) return true
+  // /help — help, FAQ and contact (2026-10-24). A visitor who cannot sign in is
+  // exactly who needs it, so it must never bounce to /login.
+  if (pathname === "/help" || pathname.startsWith("/help/")) return true
+  // /sniper — the cross-collection Sniper hub, the bottom bar's SNIPER tab
+  // (2026-09-28). Exact match: collection snipers live at /{collection}/sniper.
+  if (pathname === "/sniper") return true
+  // /market — the cross-collection Market hub, the bottom bar's MARKET tab.
+  if (pathname === "/market") return true
+  // /giveaways/<slug> + /api/giveaways/<slug> — community pack giveaways
+  // (2026-09-29). Anyone may READ a drop. A claim (POST) needs a signed-in
+  // account, which the route checks itself (401 "Sign in to claim") — it does
+  // NOT need allow-list approval: a giveaway is how someone new arrives.
+  // Drafts are 404 in the route; the admin surface is /api/admin/giveaways.
+  if (pathname.startsWith("/giveaways/")) return true
+  // Trophy-case challenge boards (2026-11-06, /trophy-challenges/dame-time) —
+  // public like /profile/<u>: they show only what profiles already show. The
+  // data route is /api/public/trophy-challenges/<slug> (public above). Entering
+  // a challenge happens on /dashboard via /api/profile/trophy-cases (signed in).
+  if (pathname.startsWith("/trophy-challenges/")) return true
+  if (pathname.startsWith("/api/giveaways/")) return true
+  // /trades/block + /trades/block/<code> — the Trade Block's browse and listing pages
+  // (Trevor, 2026-11-02: "Browsing can be public"). EXACT shapes: /trades itself, the trade
+  // rooms (/trades/<code>) and /trades/block/mine stay signed-in. Their data comes from
+  // /api/public/trade-block (public above); every action is /api/trade-block (signed in).
+  if (pathname === "/trades/block" || /^\/trades\/block\/[a-z0-9]{10}$/.test(pathname)) return true
+  // /trades/compare — two usernames in, what each could trade the other (2026-11-16). Reads only
+  // (/api/public/trades/compare, public above); "Start a trade room" posts to /api/trade-room,
+  // which stays signed-in. EXACT path.
+  if (pathname === "/trades/compare") return true
+  // /blog + subpaths — force-static long-form marketing content built for SEO.
+  // Linked from the public TopNav, so anon clicks must not bounce to /login.
+  // Read-only static; sitemap lists the index + posts. (2026-06-08)
+  if (pathname === "/blog" || pathname.startsWith("/blog/")) return true
+  // /privacy + /terms — legal pages. Must be publicly readable (and crawlable;
+  // app/sitemap.ts lists them) — without this anon visitors + Googlebot get
+  // 302→/login on the privacy policy / terms of service. (2026-05-31)
+  if (pathname === "/privacy" || pathname.startsWith("/privacy/")) return true
+  if (pathname === "/terms" || pathname.startsWith("/terms/")) return true
+  // /legal/* — legal-disclosure pages (e.g. /legal/fmv-methodology). Linked from
+  // the public SiteFooter on every surface AND from the /pricing page ("How is
+  // FMV calculated?"), so anon visitors + Googlebot must read them without a
+  // 302→/login. Read-only static content; same risk profile as /privacy + /terms.
+  // (2026-06-08)
+  if (pathname === "/legal" || pathname.startsWith("/legal/")) return true
+  // /.well-known/security.txt — RFC 9116 vulnerability-disclosure contact
+  // (app/.well-known/security.txt/route.ts). Read by scanners and researchers
+  // with no session; a 307→/login here is indistinguishable from "no policy".
+  // Exact path, not the prefix: nothing else under /.well-known/ exists, and a
+  // prefix would publish whatever lands there next. (2026-10-11)
+  if (pathname === "/.well-known/security.txt") return true
+  // /auth + subpaths (covers /auth/confirm and similar)
+  if (pathname === "/auth" || pathname.startsWith("/auth/")) return true
+  // /admin pages — enforce their own RPC_ADMIN_TOKEN bearer auth at the page
+  // / route-handler level, so they bypass the user-session middleware. Note:
+  // this covers /admin/allow-list, /admin/feedback, etc.
+  if (pathname === "/admin" || pathname.startsWith("/admin/")) return true
+
+  // ── API routes that anon clients are allowed to hit ──────────────────
+  // /api/auth + subpaths (sign-in flow)
+  if (pathname === "/api/auth" || pathname.startsWith("/api/auth/")) return true
+  // /api/early-access + subpaths (waitlist intake)
+  if (pathname === "/api/early-access" || pathname.startsWith("/api/early-access/")) return true
+  // /api/admin — has its own RPC_ADMIN_TOKEN bearer check
+  if (pathname === "/api/admin" || pathname.startsWith("/api/admin/")) return true
+  // /api/cron — external cron services hit these with CRON_SECRET
+  if (pathname === "/api/cron" || pathname.startsWith("/api/cron/")) return true
+  // /api/public/* — explicitly anon-safe routes (e.g. /api/public/profile/<u>
+  // for the demo profile lookup the homepage links to)
+  if (pathname === "/api/public" || pathname.startsWith("/api/public/")) return true
+  // /api/wallet-search — exact path only; the marketing search box hits it
+  if (pathname === "/api/wallet-search") return true
+  // /api/candy/wallet-refresh (2026-11-08) — the Candy MLB Collection tab's live read of
+  // a pasted Candy Wallet address. POST-only by its handler; it writes ONLY what the
+  // chain says that wallet holds (wallet_moments_cache rows, via a complete DAS walk),
+  // takes no session, and is bounded by a per-client limit, a per-wallet cooldown and a
+  // walk time budget in the route.
+  if (pathname === "/api/candy/wallet-refresh") return true
+  // /api/teams/follow — per-league favorite toggle on the team hub. Public at
+  // the proxy so the anon mount-check (GET -> {authed:false}) resolves without a
+  // login bounce; the route ITSELF enforces auth (getUser -> 401) on POST/DELETE
+  // and writes through the user's RLS session, so this adds no anon write access.
+  if (pathname === "/api/teams/follow") return true
+  // /api/players/follow (2026-10-31) — the player follow toggle; same shape and
+  // reasoning as /api/teams/follow: anon GET -> {authed:false}, POST/DELETE 401
+  // in the route, writes through the user's RLS session.
+  if (pathname === "/api/players/follow") return true
+  // /api/rewards/track — the ONLY client-triggerable earn (fixed event string
+  // mapped server-side to a daily-capped rule). Fired fire-and-forget from two
+  // PUBLIC surfaces (the /insights/squeeze board on mount; the profile share
+  // buttons), whose own comments assume an anon caller "just gets a 401".
+  // Without this bypass the anonymous POST was 307d to /login, which rejects
+  // POST with 405 — measured live 2026-08-28 in a clean anonymous browser:
+  // every anon squeeze view logged `POST /login?next=%2Fapi%2Frewards%2Ftrack 405`.
+  // The route ITSELF enforces auth (requireUser -> 401 JSON) and awards only to
+  // the session-resolved user id, so this adds no anon write access — same
+  // shape as /api/teams/follow above. The /api/ rate limiter still applies.
+  if (pathname === "/api/rewards/track") return true
+  // /api/track-click — fire-and-forget outbound-click logger. Anon visitors on
+  // the public /insights surfaces (and the marketing home) fire it when they
+  // click an outbound marketplace / View Listing link, so it must bypass the
+  // auth gate. The route clamps + validates every field server-side; the
+  // proxy /api/ rate limiter (60/min/IP) still applies.
+  if (pathname === "/api/track-click") return true
+  // /go/a/<alert delivery id> — the tracked redirect behind every alert buy link
+  // (audit_20260930). Tapped from Telegram / Discord / email by people who are
+  // usually NOT signed in on that device, so it must bypass the auth gate. The
+  // route reads only a UUID and a two-value switch, re-derives the destination
+  // from the delivery row (not an open redirect), and writes one outbound_clicks row.
+  if (pathname.startsWith("/go/a/")) return true
+  // /api/track-funnel — fire-and-forget top-of-funnel logger (home / share /
+  // insights views + wallet-pastes). Anon visitors on the marketing home and
+  // public surfaces fire it, so it must bypass the auth gate. The route
+  // allowlists event_type + clamps every field server-side; the proxy /api/
+  // rate limiter (60/min/IP) still applies.
+  if (pathname === "/api/track-funnel") return true
+  // /api/telemetry — fire-and-forget feature beacon behind lib/telemetry/track.ts.
+  // Anon visitors fire it on public surfaces (found live on /insights/pack-sniper),
+  // and without this bypass the unauthenticated POST is caught by the session gate,
+  // 302'd to /login, and /login rejects POST with 405 — so the beacon is dropped and
+  // the ENTIRE anonymous telemetry stream is lost. Positive control at the time of
+  // the fix: usage_events held 10 `user:%` rows and ZERO `anon` rows over 14 days.
+  // The route resolves the caller server-side (session -> wallet, else `user:<id>`,
+  // else "anon"), clamps feature to 80 chars and metadata to 4 KB, writes only
+  // usage_events, and ALWAYS returns 204 with a null body — so it is not an oracle.
+  // The proxy /api/ rate limiter (60/min/IP) still applies: it runs BEFORE this
+  // public-bypass block and exempts only /api/cron, /api/ingest and bot-token calls.
+  // Same risk profile as track-click / track-funnel / subscribe above.
+  if (pathname === "/api/telemetry") return true
+  // /api/subscribe + subpaths — anon email / early-access capture (POST) plus
+  // the email-link verify / unsubscribe GETs. The marketing home and /insights
+  // lead-capture band hit POST /api/subscribe unauthenticated.
+  if (pathname === "/api/subscribe" || pathname.startsWith("/api/subscribe/")) return true
+  // /api/support-chat + subpaths — concierge is intentionally public so
+  // unsigned visitors can ask questions and convert
+  if (pathname === "/api/support-chat" || pathname.startsWith("/api/support-chat/")) return true
+  // /api/og + subpaths — social-share crawlers (Twitter / Slack / Discord
+  // / iMessage) need the OG card endpoints unauthenticated to render
+  // preview cards. Without this they see a 307→/login redirect and pull a
+  // generic Vercel auth thumbnail instead of the branded RPC card.
+  if (pathname === "/api/og" || pathname.startsWith("/api/og/")) return true
+  // /api/badge-image — GET-only edge proxy that serves the official Top Shot
+  // badge SVGs (7-slug allowlist, no user data). The public /moment + entity
+  // detail pages render real badge artwork via <img src="/api/badge-image?...">;
+  // without this anon visitors (and the BadgeIcon/BadgeRow client surfaces when
+  // logged out) get 307→/login and a broken image instead of the badge. Same
+  // read-only asset-proxy risk profile as /api/og. (2026-06-15)
+  if (pathname === "/api/badge-image") return true
+  // /api/moment-thumbnail — the SAME shape as /api/badge-image above, missed when that one was
+  // opened on 2026-06-15. GET-only edge proxy of `assets.nbatopshot.com` (a public CDN), no
+  // session, no cookies, `flowId` validated against /^[a-zA-Z0-9_-]{1,80}$/ as its SSRF guard,
+  // 8 s bound, soft-fails to 502 for an <img onError>. Decorative image bytes, nothing else.
+  //
+  // ⚠ MEASURED 2026-09-04 on the PUBLIC collection tab (/nba-top-shot/collection?q=<user>, which
+  // the feature-tab regex below opens to anon): **26 of 374 tiles were broken**, every one an
+  // `<img src="/api/moment-thumbnail?...">` that 307'd to /login and rendered **21 KB of login
+  // HTML as an image**. Only 26 because most tiles carry a direct CDN URL and this endpoint is
+  // the fallback for Moments that do not — so the failure is invisible on a spot check and
+  // permanent for the Moments that need it.
+  //
+  // Fourth instance of this class today after badge-taxonomy/profile-me, the Pinnacle sniper feed
+  // and pack-listings. The pairing test is the ratchet: an anon-public page must not call an API
+  // that is not.
+  //
+  // ⛔ GET/HEAD ONLY, unlike the badge-image line above. That one is method-blind; this is not,
+  // because there is no reason for a read-only asset proxy to accept a POST through the gate and
+  // "the route only exports GET so a POST would 405 anyway" is a claim about the route, not about
+  // the gate. Strict here costs nothing.
+  if ((method === "GET" || method === "HEAD") && pathname === "/api/moment-thumbnail") return true
+  // /api/health — uptime/smoke probes hit this anonymously
+  if (pathname === "/api/health") return true
+  // /api/bots/* — the Telegram + Discord bot webhooks. They authenticate every
+  // request themselves (Telegram: the echoed X-Telegram-Bot-Api-Secret-Token
+  // header == TELEGRAM_WEBHOOK_SECRET; Discord: Ed25519 signature verify against
+  // DISCORD_PUBLIC_KEY), so they must bypass the user-session gate — the inbound
+  // caller is a bot platform, not a signed-in RPC user. (2026-06-16)
+  if (pathname === "/api/bots/telegram" || pathname === "/api/bots/discord") return true
+  // /api/alerts/channels/verify-email — GET target of the alert-email
+  // confirmation link (renders a Confirm button) and the POST that button
+  // submits (the claim; 2026-11-07), from a mail client with no RPC session cookie.
+  // Security rests on the one-time, 15-min-TTL code bound to (owner,email) at
+  // creation. EXACT path only — /api/alerts/channels and /api/alerts/subscriptions
+  // stay session-gated. (2026-06-16)
+  if (pathname === "/api/alerts/channels/verify-email") return true
+  // /api/fmv/demo — GET-only public FMV demo (5 real samples + API usage docs,
+  // 1hr CDN cache, service-role read, no user data). Documented as a public
+  // no-auth endpoint; linking it (pricing page, docs, social) must not bounce
+  // to /login. (2026-10-10: /api/fmv itself is public too -- it is in the read-only GET/POST
+  // allowlist further down; the "stays gated" note that stood here was stale.) (2026-06-13)
+  if (pathname === "/api/fmv/demo") return true
+  // /api/collection-snapshot — GET-only, wallet-keyed read backing the public
+  // /share/<wallet> card (Total FMV + top moments). The /share server
+  // component fetches this server-side WITHOUT a user cookie, so without this
+  // bypass it 307→/login and every share card renders the empty "not found"
+  // state — defeating the wallet-paste funnel that lands anon here. Read-only,
+  // service-role-backed (wallet_moments_cache + fmv_snapshots), no write
+  // handler exists, no user-private data beyond the public collection snapshot.
+  if (
+    pathname === "/api/collection-snapshot" &&
+    (method === "GET" || method === "HEAD")
+  ) {
+    return true
+  }
+  // /api/teams — league reference data, served to anon visitors and the
+  // CDN-cached server-component fetch from /profile/[username].
+  if (pathname === "/api/teams") return true
+  // /api/leaderboard/teams — public favorite-team fan counts; same caller
+  // shape as /api/teams (anon + server-fetched).
+  if (pathname === "/api/leaderboard/teams") return true
+  // /api/profile/teams — GET reads any user's selected favorite teams
+  // (public, by ownerKey); POST mutates user_favorite_teams for the signed-
+  // in caller and MUST stay auth-gated. HEAD is included because it's a
+  // semantic GET without body (curl -I, CDN warmers).
+  if (
+    pathname === "/api/profile/teams" &&
+    (method === "GET" || method === "HEAD")
+  ) {
+    return true
+  }
+  // /api/profile/trophy-slabs — GET ?username=<u> is the public read backed
+  // by the SECDEF get_trophy_slab_data_by_username RPC granted to anon;
+  // GET ?mine=1 is owner-scoped and self-gates inside the handler (401 on
+  // no session). The route only exports GET so an exact-path allowlist is
+  // sufficient. Without this entry, anon visitors to /profile/<u> see a
+  // perpetual loading skeleton because the trophy-slab fetch 307→/login.
+  if (pathname === "/api/profile/trophy-slabs") return true
+  // /api/profile/trophy-case/pdf — GET ?username=<u> exports the SAME public
+  // trophy-case data as /api/profile/trophy-slabs (same anon-granted SECDEF
+  // RPC) as a branded downloadable PDF. GET/HEAD-only read; nothing beyond
+  // what /profile/<u> already shows anonymously. (2026-07-07)
+  if (
+    pathname === "/api/profile/trophy-case/pdf" &&
+    (method === "GET" || method === "HEAD")
+  ) {
+    return true
+  }
+  // /api/profile/portfolio-history — GET ?wallet= derives daily FMV totals
+  // from fmv_snapshots (public on-chain holdings, anon-safe). GET ?ownerKey=
+  // is owner-only since 2026-11-14: the ROUTE gates it with requireOwnedKey
+  // (401 signed out), so this carve-out must stay for the ?wallet= branch.
+  // POST upserts a daily snapshot and MUST stay auth-gated.
+  if (
+    pathname === "/api/profile/portfolio-history" &&
+    (method === "GET" || method === "HEAD")
+  ) {
+    return true
+  }
+  // /api/profile/{collection-breakdown,top-movers,tier-breakdown} — GET reads
+  // a target collector's PUBLIC holdings by ?ownerKey=<username> (resolved
+  // through profile_bio, same as teams/portfolio-history). Holdings are public
+  // on a collector showcase; without this carve-out anon visitors to
+  // /profile/<u> get empty cards (the fetch 307→/login) and Top Movers reads
+  // empty. All three are GET-only routes (no write handler). NOTE: cost-basis-
+  // summary is intentionally NOT here — spend/P-L is private (owner-only,
+  // stays auth-gated).
+  if (
+    (pathname === "/api/profile/collection-breakdown" ||
+      pathname === "/api/profile/top-movers" ||
+      pathname === "/api/profile/tier-breakdown") &&
+    (method === "GET" || method === "HEAD")
+  ) {
+    return true
+  }
+  // /api/profile/market-pulse — GET-only aggregate floor/index reader,
+  // scoped by ?collectionId. Anon-safe; no write handler exists.
+  if (pathname === "/api/profile/market-pulse") return true
+  // /api/nba/fast-break/optimize — public Fast Break optimizer endpoint.
+  // Backed by SECDEF optimize_fast_break_lineup RPC granted to anon, so
+  // the route handler does not need a user session. Used by the public
+  // /nba/fast-break page and the home-page widget. (Cache-Control:
+  // public, max-age=900 lives on the route response.)
+  if (pathname === "/api/nba/fast-break/optimize") return true
+
+  // ── Public Fast Break optimizer surface ──────────────────────────────
+  // /nba/fast-break is the public, SEO-targeted Fast Break lineup
+  // optimizer. Anyone (signed-in or not) can reach it.
+  if (pathname === "/nba/fast-break" || pathname.startsWith("/nba/fast-break/")) return true
+
+  // ── Public insights surface ──────────────────────────────────────────
+  // /insights/* is the no-auth-friction public intelligence surface
+  // (squeeze board, rookie index, pack reality) launched per the
+  // 2026-05-29 4-week launch plan. Anyone (signed-in or not) can reach
+  // these pages — they are the wedge content driving Twitter / Reddit
+  // distribution. Backing JSON lives under /api/public/insights/* which
+  // is already covered by the /api/public/* bypass above.
+  if (pathname === "/insights" || pathname.startsWith("/insights/")) return true
+
+  // ── Public per-collection overview landing ───────────────────────────
+  // /<collection>/overview is the per-collection landing the marketing home's
+  // collection tiles (HomePageMarketing) and the (collections) 404 fallback
+  // link to. It's a read-only summary surface: KPIs + top sales + top sniper
+  // deals from /api/collection-stats (collection-level aggregate, no
+  // user-private data) plus static About copy. The wallet-lookup CTA on it
+  // pushes to the auth-gated /dashboard, so connecting a wallet still requires
+  // sign-in — but anon visitors get a compelling per-collection landing
+  // instead of bouncing to /login at the first click. GET/HEAD only; the
+  // in-app feature pages (/collection, /sniper, /sets, /market, /packs,
+  // /analytics) stay behind the funnel. (2026-05-31)
+  if (
+    (method === "GET" || method === "HEAD") &&
+    /^\/[^/]+\/overview$/.test(pathname)
+  ) {
+    return true
+  }
+  // /api/collection-stats — GET-only collection-level aggregate (edition
+  // count, FMV confidence %, 24h volume, top sales, top sniper deals) backing
+  // the public /<collection>/overview landing above. Service-role read, no
+  // wallet/user data, no write handler. Without this the anon overview page
+  // renders its graceful "couldn't load stats" error state.
+  if (
+    pathname === "/api/collection-stats" &&
+    (method === "GET" || method === "HEAD")
+  ) {
+    return true
+  }
+  // /api/marketplace-status — GET-only collection-scoped marketplace health
+  // (?collection=<slug>), 5-min CDN-cached, no user data. Backs the honest
+  // informational banner on the public /<collection>/overview (e.g. "UFC
+  // migrated to Aptos — trade is historical"). Without this, anon visitors get
+  // a silent gap where that context should be. (2026-06-13)
+  if (
+    pathname === "/api/marketplace-status" &&
+    (method === "GET" || method === "HEAD")
+  ) {
+    return true
+  }
+  // /api/insider-signals — the COLLECTION-SCOPED GET (?collection=<slug>) is
+  // public market-intelligence (squeeze/volume/whale alerts via the SECDEF
+  // get_insider_signals_top_n RPC, no user data) backing the overview's
+  // InsiderSignalsPanel — the funnel's wedge content. The route itself still
+  // requires a session on its legacy no-param pool read. (2026-06-13)
+  if (
+    pathname === "/api/insider-signals" &&
+    (method === "GET" || method === "HEAD")
+  ) {
+    return true
+  }
+
+  // ── Public moment / edition detail pages ─────────────────────────────
+  // /moment/<id> resolves flow_id | moment_uuid | edition_uuid through
+  // the SECDEF get_moment_detail RPC. Linked from Trophy Slab QR codes,
+  // Insider Signals cards, and (in Phase 2) Fast Break lineup rows.
+  // Public so social-share links work without an account.
+  if (pathname === "/moment" || pathname.startsWith("/moment/")) return true
+  if (pathname === "/api/moment" || pathname.startsWith("/api/moment/")) return true
+  // /pinnacle/moment/<id> — Pinnacle-specific per-edition detail page
+  // (Pinnacle uses pinnacle_editions, separate from the shared editions
+  // table the /moment route reads). Linked from /insights/pinnacle-
+  // scarcity per-row drill-downs. Same public-share rationale.
+  if (pathname.startsWith("/pinnacle/moment/")) return true
+  // /teams/<league>/<slug> — franchise hub (2026-09-23): one public, read-only
+  // page per real-world team gathering every collection that carries it. The
+  // shape is exact (two segments) so /teams alone, or deeper paths, stay gated.
+  if (/^\/teams\/[a-z]+\/[^/]+\/?$/.test(pathname)) return true
+  // /teams — the hub directory (2026-09-25): every registered franchise by
+  // league, read-only, one get_teams_for_league per league. GET/HEAD only.
+  if ((method === "GET" || method === "HEAD") && /^\/teams\/?$/.test(pathname)) return true
+  // /players/<slug> — player hub (2026-10-22): one public, read-only page per
+  // player name gathering every collection that carries it (Lillard = Top Shot
+  // + Panini). Exactly one segment, so /players alone or deeper paths stay gated.
+  if (/^\/players\/[^/]+\/?$/.test(pathname)) return true
+
+  // ── Public entity detail pages ───────────────────────────────────────
+  // /<collection>/{edition,set,player,team,series,pack}/<slug> — the
+  // read-only, indexable per-entity detail surfaces (Phase 1B–1F). They are
+  // backed by the same service-role detail RPCs as /moment, carry no
+  // user-private data, and app/sitemap.ts already advertises ~20.5K of these
+  // URLs to crawlers — so they must be reachable anonymously or Googlebot
+  // gets 302→/login (the SEO thesis these pages exist for). GET/HEAD only.
+  // Singular segments only: this opens /…/set/<slug> but NOT the in-app
+  // /…/sets, /…/packs, /…/market, /…/sniper feature pages (those stay behind
+  // the funnel). Unknown collection segments fall through to notFound() in
+  // the page, so no data leaks even on a bogus prefix. (2026-05-30)
+  //
+  // `moment` added 2026-07-25: /<collection>/moment/<id> is the shape a developer
+  // or crawler guesses, but it was the one entity segment missing here, so every
+  // such url 307'd anonymous traffic to /login (live: /nfl-all-day/moment/374,
+  // /disney-pinnacle/moment/GEN-DPIN-SIMB-S0). The route is a pure resolver — it
+  // only redirects to /moment/<id> or /<collection>/overview and renders nothing
+  // — and both of its destinations are already public above, so this leaks no
+  // data it wasn't already serving; it just stops the bounce.
+  if (
+    (method === "GET" || method === "HEAD") &&
+    /^\/[^/]+\/(?:edition|set|player|character|team|series|pack|moment|product)\//.test(pathname)
+  ) {
+    return true
+  }
+  // `product` added 2026-10-25: Panini PRODUCT pages (/panini-blockchain/product/<slug>, the series-page
+  // counterpart) and their index (/panini-blockchain/product, exact). Same read-only, sitemap-advertised
+  // shape as the entity pages above; any collection without the registry's `productPages` switch 404s there.
+  if ((method === "GET" || method === "HEAD") && /^\/[^/]+\/product\/?$/.test(pathname)) return true
+  // /api/entity/* — GET-only offset pagination backing the entity-detail
+  // grids ("Load more" on set/player/series/team editions). Read-only,
+  // service-role-backed RPCs (get_set_editions, get_team_top_editions, …);
+  // no write handlers. Without this, anon "Load more" fetches 302→/login.
+  if (
+    (method === "GET" || method === "HEAD") &&
+    (pathname === "/api/entity" || pathname.startsWith("/api/entity/"))
+  ) {
+    return true
+  }
+  // /api/search — the global catalog search backing the header search bar.
+  // GET-only, read-only, service-role-backed (rpc_search_catalog), no write
+  // handler. It indexes ONLY data that is already anonymously readable: the
+  // collection tabs were un-gated 2026-07-17 and the player/set/team/edition
+  // pages it links to are in the sitemap, so this adds no data exposure — it
+  // makes already-public content findable. Gating it would leave anonymous
+  // visitors a search box that 302s to /login on every keystroke.
+  if ((method === "GET" || method === "HEAD") && pathname === "/api/search") {
+    return true
+  }
+  // GET /api/profile/follows — the follow-state probe behind the Follow button
+  // on the anon-readable /profile/<username> page.
+  //
+  // Without this the proxy 302s anon to /login and the button receives ~50KB of
+  // login HTML at status 200 on every anonymous profile view. The button
+  // survives it (r.json() throws and its catch falls back to the sign-in CTA),
+  // so this is a waste-and-honesty fix rather than a broken-UI one: it lets the
+  // route return the { authed: false } it was written to return.
+  //
+  // Safe because the route gates ITSELF, per form: the ?username= probe reveals
+  // only whether the CURRENT viewer follows someone (anon → authed:false, no
+  // data), and the listing form (no query param) still calls requireUser() and
+  // 401s. isPublicPath sees no query string, so both forms bypass the proxy and
+  // the route's own guard is what protects the listing. GET/HEAD only — the
+  // POST/DELETE writers stay fully gated here.
+  if ((method === "GET" || method === "HEAD") && pathname === "/api/profile/follows") {
+    return true
+  }
+  // GET /api/profile/followed-wallets — the same probe shape for following a
+  // WALLET (2026-11-16): the Follow button beside a searched binder / share card
+  // asks { authed, following, own } on mount. Gated here, an anonymous visitor's
+  // probe got login HTML and the button read "Follow unavailable" instead of
+  // "+ Follow (sign in)" (caught live the minute it shipped). The route gates
+  // itself per form: the ?wallet= probe answers anon authed:false with no data;
+  // the listing calls requireUser() and 401s. POST/DELETE stay gated here.
+  if ((method === "GET" || method === "HEAD") && pathname === "/api/profile/followed-wallets") {
+    return true
+  }
+
+  // ── Public share cards ───────────────────────────────────────────────
+  // /share/<wallet> — the wallet-keyed, read-only collection-snapshot card
+  // (Total FMV hero + top moments). It's the public landing the marketing
+  // home routes anon wallet-paste to, and the target of shared links — both
+  // break if anon gets 302→/login. Read-only, service-role-backed via
+  // /api/collection-snapshot; same share rationale as /profile/<u> and
+  // /moment. GET/HEAD only (the page is a server component, no mutations).
+  // (robots.txt still disallows /share/ so Google doesn't index per-wallet
+  // cards — that's an indexing decision, independent of anon reachability.)
+  if (
+    (method === "GET" || method === "HEAD") &&
+    (pathname === "/share" || pathname.startsWith("/share/"))
+  ) {
+    return true
+  }
+
+  // ── Public profile pages ─────────────────────────────────────────────
+  // /profile/<username> — shareable read-only profile cards. /profile/edit
+  // is the signed-in user's own bio editor and stays auth-gated. The
+  // dynamic route is hit by anonymous visitors clicking a shared link, so
+  // sending them to /login defeats the share flow.
+  // ⚠ BARE `/profile` — EXACT MATCH, added 2026-08-29 (register R36). The
+  // prefix test below does NOT cover it (`"/profile".startsWith("/profile/")`
+  // is false), so this path fell through to the gate and 302'd to /login. It is
+  // now served by `app/profile/page.tsx`, a SERVER component that redirects a
+  // signed-in visitor to /dashboard and renders a public, no-account wallet
+  // lookup for everyone else.
+  // ⛔ THIS WIDENS THE PUBLIC SURFACE BY EXACTLY ONE PATH STRING and by design
+  // cannot widen it further: it is `===`, not a prefix, so it cannot reach
+  // `/profile/edit`, `/dashboard`, or anything else. The page itself renders
+  // NOTHING user-specific on the anonymous branch — that is what makes the
+  // un-gate safe, and `__tests__/proxy-profile-entry-is-public-but-nothing-else.test.ts`
+  // pins both halves so a later prefix "tidy-up" cannot quietly open /profile/edit.
+  if (pathname === "/profile") return true
+
+  if (
+    pathname.startsWith("/profile/") &&
+    pathname !== "/profile/edit" &&
+    !pathname.startsWith("/profile/edit/")
+  ) {
+    return true
+  }
+
+  // ── Public feature-tab surfaces (un-gate 2026-07-17, soft launch) ─────
+  // Open the read-only feature tabs + their service-role-backed read APIs to
+  // anonymous visitors. This walls PERSONALIZATION, not CONTENT: cost-basis /
+  // P&L, saved wallets, watchlist, portfolio export, wallet-cache WRITES, and
+  // every mutation API stay behind sign-in (they are NOT enumerated here, so the
+  // fail-closed allow-by-explicit-list model keeps gating them). Scoped to the 5
+  // PUBLISHED Flow collection slugs only — Panini/Candy tabs stay gated (no
+  // multi-chain pre-launch). GET/HEAD only for the pages; the in-app writes and
+  // /dashboard/* personalization surfaces remain behind the funnel.
+  // Anon-safety of every read API below was audited 2026-07-17: all are
+  // service-role-backed reads over PUBLIC market / on-chain-holdings data (the
+  // same holdings already exposed anonymously via /share + /profile +
+  // /api/collection-snapshot), with no session-scoped or private-cost data.
+  if (
+    (method === "GET" || method === "HEAD") &&
+    /^\/(?:nba-top-shot|nfl-all-day|laliga-golazos|disney-pinnacle|ufc)\/(?:collection|market|sniper|sets|packs|pack-sniper|challenges|hot-floors|play|analytics)$/.test(pathname)
+  ) {
+    return true
+  }
+
+  // /analytics and /analytics/** — anon-public 2026-10-25 (Trevor: "Do what you think is
+  // best" on the question this section raised). It was the last read-only surface left
+  // behind the 2026-05-31 sign-up funnel after the 07-17 un-gating of the feature tabs, and
+  // the gate contradicted the product: its /analytics/api page documents a FREE PUBLIC FMV
+  // API that a visitor had to sign in to read; the pages carry SEO metadata and JSON-LD;
+  // public pages linked wallet names into /analytics/wallets/*. Anon-safety: NO new API
+  // surface — every endpoint these pages call (the /api/analytics subtree, /api/fmv) is
+  // already anon-public and audited (aggregate market + loan-book data; wallet pages read
+  // public on-chain activity by address). Wallet profile pages are ISR-cached (revalidate
+  // 600) per address, so a crawl costs one render per address per 10 min. GET/HEAD only.
+  if (
+    (method === "GET" || method === "HEAD") &&
+    (pathname === "/analytics" || pathname.startsWith("/analytics/"))
+  ) {
+    return true
+  }
+
+  // /<collection>/packs/simulator/<distId> — the per-row "Simulate" CTA, anon-public 2026-10-04.
+  // The public /insights/pack-sniper board (every row) and the public /<collection>/packs tab
+  // (its table) both link here, and an anonymous click got 307 → /login: a link crawl of the
+  // public surfaces found 19 such CTAs on the Pack Sniper alone. The page is a server shell over
+  // a client that calls /api/pack-simulator (allowlisted below) and samples the PUBLIC drop pool
+  // in the browser — no session, no wallet, nothing personal, the same anon-safety class the
+  // 2026-07-17 audit cleared for /packs. One segment exactly, GET/HEAD only, the same five Flow
+  // slugs as the feature-tab rule above.
+  if (
+    (method === "GET" || method === "HEAD") &&
+    /^\/(?:nba-top-shot|nfl-all-day|laliga-golazos|disney-pinnacle|ufc)\/packs\/simulator\/[^/]+$/.test(pathname)
+  ) {
+    return true
+  }
+
+  // Candy MLB's Market tab — anon-public, 2026-09-12. Collection joined it
+  // 2026-09-19; see the dated note below.
+  //
+  // ⚠ ITS OWN RULE, NOT candy-mlb APPENDED TO THE ALTERNATION ABOVE. Adding the
+  // slug there would open TEN Candy URLs at once, and eight of them are tabs
+  // Candy does not have — `/candy-mlb/sniper`, `/candy-mlb/packs` and the rest
+  // are Flow-dispatched pages with no Solana arm. They are redirected today by
+  // THIN_COLLECTION_MISSING_TABS, so the widening would be invisible right up
+  // until someone shrinks that regex for the NEXT real tab and silently un-gates
+  // the others along with it. One tab, one rule.
+  //
+  // Anon-safety is the same argument as the five above and was re-checked, not
+  // inherited: /api/market's Candy arm is a service-role read of
+  // `candy_market_board` — public Magic Eden listing data plus on-chain holdings
+  // that /share and /profile already expose anonymously. No session-scoped data,
+  // no cost basis, no saved wallets. The comment above says "Panini/Candy tabs
+  // stay gated (no multi-chain pre-launch)"; that was written on 2026-07-17,
+  // before Candy published on 09-06. (Panini published 2026-09-25 with its own rule above.)
+  //
+  // 2026-09-19 — COLLECTION joins MARKET here, and it is added to THIS SET rather
+  // than by appending `candy-mlb` to the Flow alternation above, for exactly the
+  // reason the paragraph above gives: that would open ten Candy URLs at once,
+  // eight of which are still tabs Candy does not have. One tab, one rule — the
+  // set simply has two members now.
+  //
+  // Anon-safety RE-CHECKED for this tab, not inherited from Market. What an
+  // anonymous visitor can reach is a wallet's holdings and FMV — the same
+  // surface `/share/<wallet>` already exposes anonymously, from the same
+  // `wallet_moments_cache` rows. The session-scoped parts are gated elsewhere
+  // and stay gated: `/api/cost-basis` is behind the auth wall (verified: it 307s
+  // to /login for an anonymous caller), and saved wallets require a session.
+  // Sets and cost-basis therefore render as absent for an anon reader, never as
+  // a zero.
+  //
+  // 2026-09-25 — PACKS joins them. Anon-safety RE-CHECKED: its only fetch is
+  // /api/candy-pack-market — GET-only, service-role read of public Magic Eden
+  // pack asks/sales, the chain's pack inventory, and (with ?wallet=) the count of
+  // sealed packs a PUBLIC address holds. No session, no cost basis.
+  //
+  // 2026-09-25 — SETS joins them. Anon-safety RE-CHECKED: its only fetch is
+  // /api/candy-set-progress, a GET-only service-role read of the public
+  // checklist, public Magic Eden floors and on-chain holdings — the same
+  // wallet_moments_cache rows /share/<wallet> already exposes. No session.
+  //
+  // 2026-09-20 — ANALYTICS joins them, same set, same "one tab, one rule".
+  //
+  // Anon-safety RE-CHECKED, and this tab is the easiest of the three to clear
+  // because it adds NO new API surface: every endpoint the tab calls
+  // (/api/market-analytics, the /api/analytics subtree, /api/ready) is already
+  // anon-public and already serves all five published Flow collections' analytics tabs
+  // anonymously — the only new thing is Candy's collection id in the query
+  // string. All of it is aggregate market data: daily volume by marketplace,
+  // tier and series rollups, the FMV liquidity grid, an order-book summary and a
+  // buyer/seller volume leaderboard over public Magic Eden + on-chain activity.
+  // The tab's optional wallet-lookup box reads the same public holdings
+  // /share/<wallet> already exposes. Nothing session-scoped: cost basis and
+  // saved wallets are gated elsewhere and stay gated.
+  // Panini's Market tab — anon-public, 2026-09-25, its own rule for the same
+  // "one tab, one rule" reason as Candy's below. Anon-safety checked, not
+  // inherited: /api/market's Panini arm is a service-role read of
+  // `panini_market_board` — public asks seen on Panini's marketplace plus bridged
+  // FMV. No wallet, no session, no cost basis (Panini has no wallet concept).
+  // 2026-09-27 — PACKS joins it. Anon-safety checked: its only fetch is
+  // /api/panini-pack-market, a GET-only service-role read of Panini's own public
+  // pack market stats + the pack-EV model + the coverage summary. No wallet, no
+  // session. SETS joins too (2026-09-27): its only fetch is
+  // /api/panini-set-progress, a GET-only service-role read of the public
+  // listing-fed catalogue, public asks and the public holder names Panini's own
+  // marketplace shows. The username is typed by the reader; no session.
+  if (
+    (method === "GET" || method === "HEAD") &&
+    (pathname === "/panini-blockchain/market" ||
+      pathname === "/panini-blockchain/packs" ||
+      pathname === "/panini-blockchain/sets" ||
+      pathname === "/panini-blockchain/collection" ||
+      pathname === "/panini-blockchain/sniper" ||
+      pathname === "/panini-blockchain/analytics" ||
+      pathname === "/panini-blockchain/hot-floors")
+  ) {
+    return true
+  }
+
+  if (
+    (method === "GET" || method === "HEAD") &&
+    (pathname === "/candy-mlb/market" ||
+      pathname === "/candy-mlb/collection" ||
+      pathname === "/candy-mlb/sets" ||
+      pathname === "/candy-mlb/packs" ||
+      pathname === "/candy-mlb/analytics")
+  ) {
+    return true
+  }
+  // ⚠ ORDER IS LOAD-BEARING: this block must stay BELOW the feature-tab regex
+  // above. __tests__/public-wallet-surface-contract.test.ts extracts "the public
+  // collection-page regex" by matching the FIRST /^\/(?:nba-top-shot|… literal in
+  // this file, and both regexes open with those five slugs — put this one first
+  // and that test reads the roots as the tab list and fails on a missing tab.
+  // The bare collection root (`/nba-top-shot`) is a server redirect to that
+  // same `/overview` page (app/(collections)/[collection]/page.tsx does nothing
+  // else) — but it was gated here, so the redirect never ran for an anonymous
+  // visitor: every entity page's breadcrumb ("Home › NBA Top Shot › …") and its
+  // BreadcrumbList JSON-LD link the collection name to `/<collection>`, and the
+  // 2026-09-04 sweep measured all five roots 307-ing to /login for the SEO
+  // traffic those pages exist for. Published slugs only, GET/HEAD only — the
+  // same set the feature tabs above open.
+  // candy-mlb joined 2026-09-06 (published, overview-only) — its root is the
+  // breadcrumb + BreadcrumbList JSON-LD target, so an anon 307 there is a
+  // crawl dead-end. panini-blockchain joined 2026-09-25 (published, Overview +
+  // Market), same reason.
+  if (
+    (method === "GET" || method === "HEAD") &&
+    /^\/(?:nba-top-shot|nfl-all-day|laliga-golazos|disney-pinnacle|ufc|candy-mlb|panini-blockchain)$/.test(pathname)
+  ) {
+    return true
+  }
+  // GET/HEAD read APIs backing those tabs. wallet-cache is GET-only here (its
+  // POST calls upsert_wmc_batch — a write — and stays gated).
+  //
+  // 2026-07-26: /api/pinnacle-wallet was MISSING from this set while
+  // /disney-pinnacle/collection sat in the public PAGE regex above — so an
+  // anonymous visitor could load the wedge surface, paste a wallet, and get
+  // bounced to /login by the only API the page calls. Its exact Top Shot
+  // analogue (/api/collection-moments) was already public, and it is the same
+  // anon-safety class the 2026-07-17 audit cleared: GET-only, service-role read
+  // over public market + on-chain holdings data, nothing session-scoped. Same
+  // conversion-leak shape as /overview pointing anonymous users at the
+  // auth-gated /dashboard.
+  const PUBLIC_READ_APIS = new Set([
+    "/api/market", "/api/sniper-feed", "/api/packs", "/api/edition-stats",
+    "/api/sets", "/api/sets-db", "/api/recent-sales", "/api/collection-moments",
+    "/api/collection-series", "/api/badges", "/api/relative-deals",
+    "/api/tier-pricing-benchmarks", "/api/edition-history", "/api/market-analytics",
+    "/api/marketplace-breakdown", "/api/pinnacle-sniper", "/api/pinnacle-wallet",
+    // 2026-09-04: the two remaining anon-307s on anon-public pages, found by loading each
+    // collection's /sniper and /packs signed-out in a real browser.
+    //
+    // `/api/pinnacle-sniper-feed` is LITERALLY `export { GET } from "../pinnacle-sniper/route"` —
+    // the same handler, one line above on this list, gated only under its alias name. Anonymous
+    // /disney-pinnacle/sniper (anon-public by the feature-tab regex below) called it, got 307 →
+    // /login, and rendered "FMV coverage unavailable — discount and FMV show once the feed loads"
+    // permanently. Not a degraded read: a page waiting for a response that can never arrive.
+    //
+    // `/api/pack-listings` is GET-only, takes no session (no getCurrentUser/cookies), validates
+    // `collection` against SUPPORTED_PACK_COLLECTIONS, and returns 2-minute-cached PUBLIC Dapper
+    // marketplace pack listings — the same anon-safety class as /api/sniper-feed and /api/market
+    // already here. /nba-top-shot/packs and /nfl-all-day/packs still render 500 rows without it
+    // (the table is server-rendered), so this one costs a wasted login-HTML download and a console
+    // error per anon load rather than a broken page — the same class as the badge-taxonomy and
+    // profile/me fixes of 2026-09-03.
+    //
+    // ⚠ NOT added: `/api/golazos-sniper-feed` and `/api/allday-pack-listings`. Both also 307, and
+    // both were left alone because no anon-public page calls them — /laliga-golazos/sniper fires
+    // ZERO 307s and renders 54 rows, verified live. Widening the allowlist for a route with no
+    // caller is how the surface grows without anyone deciding to grow it.
+    "/api/pinnacle-sniper-feed", "/api/pack-listings",
+    // 2026-10-04: the simulator's only data call (see the page rule above). GET-only, no session
+    // read, service-role call of get_pack_for_simulator over the public drop pool — measured 14 ms
+    // mean / 55 ms and ~4.9k buffers on the largest dist (8552). /api/* stays rate-limited.
+    "/api/pack-simulator",
+    "/api/allday-set-progress",
+    // 🚨 2026-09-20: `/api/pinnacle-set-progress` shipped the SAME DAY as
+    // Pinnacle's Sets tab and was missing from this set — the identical shape
+    // this file's header already names ("a public PAGE whose only backing API
+    // was still gated (pinnacle-wallet)"), and the identical shape as
+    // `/api/pinnacle-sniper-feed` two entries above. `/disney-pinnacle/sets` is
+    // anon-public by the feature-tab regex below AND is now in the sitemap, so
+    // an anonymous reader's only fetch would have 307'd to /login and the Set
+    // Tracker would have rendered an error for a wallet that resolves fine.
+    // Same anon-safety class as its four siblings here: GET-only, no session,
+    // service-role read over the public catalog plus on-chain holdings.
+    // ⚠ Caught by fetching the deployed route, not by the test suite — which is
+    // why `set-tracker-backends-are-anon-public.test.ts` now derives this list
+    // from the client's dispatch instead of trusting a fifth hand-kept row.
+    "/api/pinnacle-set-progress",
+    // 2026-09-25: Candy MLB's Set Tracker backend, added in the SAME commit as
+    // the tab — the omission this block's 09-20 note records for Pinnacle.
+    "/api/candy-set-progress",
+    // 2026-09-25: Candy MLB's Packs tab backend — same commit as the tab.
+    "/api/candy-pack-market",
+    // 2026-09-27: Panini's Packs tab backend — same commit as the tab.
+    "/api/panini-pack-market",
+    // 2026-09-27: Panini's Sets tab backend — same commit as the tab.
+    "/api/panini-set-progress",
+    // 2026-09-27: Panini's Collection tab backend (username → cards RPC has seen;
+    // the same public listing data Panini's marketplace shows) — same commit.
+    "/api/panini-collection",
+    // 2026-10-26: the same tab's "Download all N cards (CSV)" link — same data as the route
+    // above, every card instead of the top 500; GET-only, no session. Same commit as the link.
+    // It pages up to 40 reads of ~0.4 s each, so the /api/* per-IP limiter is its ceiling.
+    "/api/panini-collection/export",
+    // 2026-09-25: the Candy Collection tab's SNS name → wallet lookup. GET-only,
+    // no session, no DB — a public on-chain name resolution.
+    "/api/candy/resolve-name",
+    "/api/ufc-set-progress", "/api/topshot/challenge-plan", "/api/topshot/challenges",
+    "/api/wallet-summary", "/api/seeded-wallets", "/api/owned-flow-ids",
+    "/api/wallet/edition-counts", "/api/wallet-cache", "/api/ready",
+    // 2026-09-04: the route itself answers `{ user: null }` for anon by design
+    // ("never 401s — so public pages can call this unconditionally"), but the
+    // proxy 307'd it to /login first, so every anonymous insights/profile/home
+    // load downloaded the login HTML once and `.json()` threw. Session-derived
+    // data only ever leaves for a signed-in caller (getCurrentUser gates it).
+    "/api/profile/me",
+    // 2026-10-14: the Market tab's full Set / Series / Team / Player lists
+    // (distinct editions values for a known collection). GET-only, no session,
+    // public catalog data — the same class as /api/market. Replaced the same-day
+    // /api/market/teams, which anon visitors got 307'd to /login on.
+    "/api/market/filter-options",
+    // 2026-11-01: the packs board's two view-mode reads. PUBLIC_READ_APIS is an
+    // EXACT-path set, so "/api/packs" above never covered its subpaths: an anon
+    // visitor on the (public) /<collection>/packs page who clicked "Grails" got
+    // 307 → login HTML, and the new Top Shot "Chase left" view would have too.
+    // Both handlers verified GET-only, service-role reads of public pack data
+    // (pack_grail_metrics_mv / pack_table_rows / topshot_atlas_dists), no
+    // session, no write path.
+    "/api/packs/grails",
+    "/api/packs/chase",
+    // 2026-11-14 (#12359): the Top Shot Sniper's "Serial #" mode reads this instead of
+    // /api/sniper-feed. The Sniper page is anon-public, so a gated route 307'd every
+    // anonymous serial search to /login (caught by fetching the deployed route). GET-only,
+    // no session, service-role read of public Atlas listing rows — /api/sniper-feed's class.
+    "/api/topshot-serial-search",
+    // 2026-11-16: the UFC binder's "On Aptos" section (components/collection/UfcAptosHoldings.tsx).
+    // The Collection tab is anon-public, so a gated route 307'd every anonymous binder's read to
+    // /login and the section silently never appeared (caught by fetching the deployed route, again).
+    // GET-only, no session, service-role read of public chain-derived holdings; returns no Aptos
+    // address and no link confidence.
+    "/api/ufc/aptos-holdings",
+  ])
+  if ((method === "GET" || method === "HEAD") && PUBLIC_READ_APIS.has(pathname)) {
+    return true
+  }
+  // Analytics read routes (/api/analytics + its subtree) — all GET-only
+  // ecosystem aggregates (sales / fmv / packs / sets / pulse / loans / wallet-
+  // scoped by address param), no private or session-derived data (audited).
+  if (
+    (method === "GET" || method === "HEAD") &&
+    (pathname === "/api/analytics" || pathname.startsWith("/api/analytics/"))
+  ) {
+    return true
+  }
+  // Batch read-compute endpoints that use POST purely to carry a request body
+  // (stateless reads — FMV lookup, best-offers, edition-floor, pack-EV compute).
+  // No user data; the 60/min/IP limiter still applies to anon.
+  //
+  // ⚠ This comment used to assert "No writes" outright, and that was FALSE for
+  // /api/edition-floor: its caller-controlled `?persist=1` / `{persist:true}`
+  // ran a SERVICE_ROLE delete-then-insert over today's `fmv_snapshots` rows for
+  // up to 50 editions, reachable with no auth at all (deep-audit R2). The flag
+  // now requires the operator bearer secret; the read path is genuinely
+  // read-only. Opening a route here does NOT make its handler read-only —
+  // verify every write path in the handler before adding a path to this list,
+  // because a confident safety comment is what kept this one from being read.
+  //
+  // 2026-09-04: /api/badge-taxonomy joins the list — a POST that only carries a
+  // `titles[]` body to a service-role read of the static badge taxonomy (module-
+  // cached, no user data, no write path). Anonymous collection/sniper/profile
+  // pages call it for every badge chip; before this line each call was
+  // 307 → POST /login → 405 (7 console errors per anon sniper load, measured),
+  // and the badge art/tooltips never arrived for signed-out visitors.
+  //
+  // 2026-10-10: /api/best-asks joins it (#182) — the binder's live-ask batch read,
+  // the twin of /api/best-offers. Verified: its handler only reads (editions,
+  // edition_fmv_current, the ask tables), no write path, and it refuses an
+  // unknown collection.
+  if (
+    (pathname === "/api/fmv" ||
+      pathname === "/api/best-offers" ||
+      pathname === "/api/best-asks" ||
+      pathname === "/api/edition-floor" ||
+      pathname === "/api/pack-ev" ||
+      pathname === "/api/badge-taxonomy") &&
+    (method === "GET" || method === "HEAD" || method === "POST")
+  ) {
+    return true
+  }
+
+  // ── Framework + static ───────────────────────────────────────────────
+  if (pathname === "/_next" || pathname.startsWith("/_next/")) return true
+  if (STATIC_ROOT_ASSETS.has(pathname)) return true
+  if (FONT_ASSET_RX.test(pathname)) return true
+
+  return false
+}
+
+// ── Security headers applied to every response ──────────────────────────────
+// The giveaway pages are the ONLY pages that connect a wallet: the admin console
+// signs deliveries (Trevor, 2026-09-29; lib/giveaways/admin-wallet.ts) and the
+// public claim page lets a winner pick their Flow Wallet or a linked account
+// (2026-10-03; lib/giveaways/claim-wallet.ts — connect only, never signs).
+// Flow's wallet picker is an iframe on fcl-discovery.onflow.org. Only these
+// pages' policies gain the host.
+// + /trades (2026-10-31): the user trade room connects Flow Wallet (with the account
+// proof) and, once the live swap test has sealed and RPC_TRADE_ROOM_EXECUTE is set,
+// signs the two-authorizer swap. Same wallet hosts, same signing pages rule.
+// + /admin/storage-fix (2026-11-05): the admin's own Flow Wallet signs one pinned FLOW refill
+// for a collector stuck on storage (lib/storage-fix/wallet.ts). Admin-only, like the swap test.
+const WALLET_DISCOVERY_PAGES = ["/admin/giveaways", "/giveaways", "/admin/swap-test", "/admin/storage-fix", "/trades"]
+const WALLET_DISCOVERY_HOST = "https://fcl-discovery.onflow.org"
+// WalletConnect (lists the Flow Wallet mobile app): relay + RPC, the verify
+// iframe, and the QR modal's API/images. Same one page only.
+const WALLETCONNECT_CONNECT =
+  "wss://relay.walletconnect.com wss://relay.walletconnect.org https://rpc.walletconnect.com https://rpc.walletconnect.org https://verify.walletconnect.com https://verify.walletconnect.org https://pulse.walletconnect.org https://api.web3modal.org https://api.web3modal.com"
+// FCL watches a signed transaction until it SEALS over a WebSocket to the access
+// node (`fcl.tx(id).onceSealed()` → wss://rest-mainnet.onflow.org/v1/ws); the
+// https:// entry above does not cover the wss:// scheme. Signing pages only.
+const FLOW_TX_STATUS_STREAM = "wss://rest-mainnet.onflow.org"
+// Flow Wallet's own signing API: over WalletConnect, FCL POSTs the transaction's
+// pre-authz (who pays, who authorizes) to web.api.wallet.flow.com from THIS page.
+// Blocked, a delivery dies before the wallet prompt as a bare "Load failed"
+// (Trevor's iPhone, test2, 2026-10-03 — named by the console's network trace).
+// It also still pays the network fee through its former Lilico domain: FCL POSTs
+// the payer step to lilico.app/api/wc/payer (the next block on test2, 9:10 PM PT).
+const FLOW_WALLET_API = "https://wallet.flow.com https://*.wallet.flow.com https://lilico.app https://*.lilico.app"
+// Flow Wallet's own logo, shown by FCL while it waits for the wallet. Signing pages only.
+const FLOW_WALLET_IMAGES = "https://wallet.flow.com https://*.wallet.flow.com https://lilico.app https://*.lilico.app"
+const WALLETCONNECT_FRAMES = "https://verify.walletconnect.com https://verify.walletconnect.org"
+const WALLETCONNECT_IMAGES = "https://api.web3modal.org https://api.web3modal.com https://explorer-api.walletconnect.com"
+
+export function walletDiscoveryAllowed(pathname: string | undefined): boolean {
+  return !!pathname && WALLET_DISCOVERY_PAGES.some((p) => pathname === p || pathname.startsWith(p + "/"))
+}
+
+// ── Third-party bytes served from OUR origin (security audit 2026-10-25) ─────
+// The MEDIA_PROXY_PREFIXES routes stream media fetched from IPFS gateways, NFT
+// image hosts and Dapper's CDNs (or render OG PNGs). As subresources (<img>/<video>) their content can never
+// run script — but a VISITOR SENT STRAIGHT TO THE URL gets the bytes rendered as
+// a document on rippackscity.com, and an IPFS object is attacker-choosable
+// (anyone can pin HTML or an SVG with <script>). Under the site policy
+// (`script-src 'self' 'unsafe-inline'`) that script would run same-origin, with
+// the visitor's cookies and the admin session in localStorage. This policy has
+// no script source at all and `sandbox` (no allow-scripts), so a document
+// rendered from these paths cannot execute anything. Subresource loads are
+// unaffected: a response's own CSP does not govern how a page embeds it.
+export const MEDIA_PROXY_CSP =
+  "default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'; sandbox; frame-ancestors 'none'"
+
+function applySecurityHeaders(response: NextResponse, pathname?: string) {
+  const wallet = walletDiscoveryAllowed(pathname)
+  response.headers.set("X-Frame-Options", "DENY")
+  response.headers.set("X-Content-Type-Options", "nosniff")
+  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin")
+  response.headers.set(
+    "Permissions-Policy",
+    "camera=(), microphone=(), geolocation=(), payment=()"
+  )
+  response.headers.set(
+    "Strict-Transport-Security",
+    "max-age=63072000; includeSubDomains; preload"
+  )
+  // media-src gained arweave.net + *.arweave.net 2026-09-25 for Candy MLB clips:
+  // every Candy edition's video_url is https://arweave.net/<id>, which 302s to a
+  // per-transaction *.arweave.net host serving video/mp4 (5 of 5 sampled via
+  // pg_net that day, base and Rainbow). Both hosts are needed — the redirect
+  // target is the one that actually serves the bytes.
+  // connect-src DROPPED the pinnacle-proxy and topshot-proxy workers 2026-10-25
+  // (security audit): every caller is a server route holding TS_PROXY_SECRET, and
+  // no client bundle fetches either host, so browsers never needed them.
+  // img-src + media-src gained assets.paniniamerica.net 2026-09-27 for Panini
+  // card art, clips and pack art (host measured, not guessed — lib/panini/assets.ts).
+  const policy = (scriptSrc: string) =>
+    [
+      "default-src 'self'",
+      scriptSrc,
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "img-src 'self' data: blob: https://assets.nbatopshot.com https://asset-preview.nbatopshot.com https://assets.nflallday.com https://asset-preview.nflallday.com https://media.nflallday.com https://assets.laligagolazos.com https://asset-preview.laligagolazos.com https://assets.disneypinnacle.com https://asset-preview.disneypinnacle.com https://asset-preview.ufcstrike.com https://ipfs.dapperlabs.com https://gateway.pinata.cloud https://ipfs.io https://storage.googleapis.com https://cdn.nba.com https://cdn.wnba.com https://*.supabase.co https://arweave.net https://*.arweave.net https://assets.paniniamerica.net" + (wallet ? ` ${WALLETCONNECT_IMAGES} ${FLOW_WALLET_IMAGES}` : ""),
+      "media-src 'self' data: blob: https://assets.nbatopshot.com https://asset-preview.nbatopshot.com https://assets.nflallday.com https://asset-preview.nflallday.com https://media.nflallday.com https://assets.laligagolazos.com https://asset-preview.laligagolazos.com https://assets.disneypinnacle.com https://asset-preview.disneypinnacle.com https://asset-preview.ufcstrike.com https://ipfs.dapperlabs.com https://gateway.pinata.cloud https://ipfs.io https://storage.googleapis.com https://arweave.net https://*.arweave.net https://assets.paniniamerica.net",
+      "font-src 'self' https://fonts.gstatic.com",
+      "connect-src 'self' https://*.supabase.co https://public-api.nbatopshot.com https://public-api.nflallday.com https://public-api.laligagolazos.com https://api2.flowty.io https://rest-mainnet.onflow.org https://access-mainnet.onflow.org wss://*.supabase.co" +
+        (wallet ? ` ${WALLET_DISCOVERY_HOST} ${WALLETCONNECT_CONNECT} ${FLOW_TX_STATUS_STREAM} ${FLOW_WALLET_API}` : ""),
+      ...(wallet ? [`frame-src 'self' ${WALLET_DISCOVERY_HOST} ${WALLETCONNECT_FRAMES}`] : []),
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+    ].join("; ")
+  // R135 (security audit 2026-10-25): 'unsafe-eval' DROPPED. Measured first with
+  // a report-only twin: a Playwright walk of 28 production pages logged ONE
+  // violation — asn1.js `_createNamed` via the vm-browserify polyfill
+  // (crypto-browserify → parse-asn1), which wraps the eval in try/catch and falls
+  // back to a plain function. The same pages with the no-eval policy ENFORCED
+  // (route-swapped headers) rendered with 0 page errors, and a scan of every
+  // built client chunk found no other unguarded eval / new Function (the rest
+  // are core-js/regenerator feature probes behind globalThis or try/catch, and
+  // function-bind's shim, which only runs where native bind is missing).
+  // 'unsafe-inline' stays: Next.js inlines its bootstrap scripts, and the only
+  // way off it is a nonce, which forces every page to render dynamically.
+  response.headers.set(
+    "Content-Security-Policy",
+    pathname && isMediaProxyPath(pathname) ? MEDIA_PROXY_CSP : policy("script-src 'self' 'unsafe-inline'"),
+  )
+  return response
+}
+
+// ── Supabase SSR client (anon key, reads/refreshes auth cookies) ────────────
+function makeSupabase(req: NextRequest, res: NextResponse) {
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return req.cookies.getAll().map((c) => ({ name: c.name, value: c.value }))
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            res.cookies.set({ name, value, ...options })
+          })
+        },
+      },
+    }
+  )
+}
+
+// ── Service-role client used solely for the allow-list RPC ─────────────────
+// `check_email_allowed` is restricted to service-role and cannot be called
+// from the user-scoped anon SSR client.
+function makeAdminClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+}
+
+function readAllowCookie(request: NextRequest): AllowCacheEntry | null {
+  // Signed since 2026-10-27: only a value this proxy wrote verifies (lib/auth/allow-cookie.ts).
+  const parsed = decodeAllowCookie(request.cookies.get(ALLOWLIST_COOKIE)?.value, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  if (!parsed) return null
+  // Defence in depth, kept from the 10-25 audit (finding 12): never trust an expiry further out than one TTL.
+  if (parsed.expiresAt > Date.now() + (ALLOWLIST_TTL_SECONDS + 60) * 1000) return null
+  return parsed
+}
+
+function writeAllowCookie(response: NextResponse, email: string) {
+  const expiresAt = Date.now() + ALLOWLIST_TTL_SECONDS * 1000
+  const value = encodeAllowCookie(email, expiresAt, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  if (!value) return // no key to sign with: no cache, every request asks the RPC
+  response.cookies.set({
+    name: ALLOWLIST_COOKIE,
+    value,
+    httpOnly: true,
+    sameSite: "lax",
+    secure: true,
+    path: "/",
+    maxAge: ALLOWLIST_TTL_SECONDS,
+  })
+}
+
+function clearAllowCookie(response: NextResponse) {
+  response.cookies.set({
+    name: ALLOWLIST_COOKIE,
+    value: "",
+    httpOnly: true,
+    sameSite: "lax",
+    secure: true,
+    path: "/",
+    maxAge: 0,
+  })
+}
+
+// Carry any cookies queued on `source` over onto `target` so signOut /
+// auth-refresh writes survive a redirect.
+function carryCookies(target: NextResponse, source: NextResponse) {
+  source.cookies.getAll().forEach((c) => {
+    target.cookies.set({
+      name: c.name,
+      value: c.value,
+      ...(c.path !== undefined ? { path: c.path } : {}),
+      ...(c.domain !== undefined ? { domain: c.domain } : {}),
+      ...(c.maxAge !== undefined ? { maxAge: c.maxAge } : {}),
+      ...(c.expires !== undefined ? { expires: c.expires } : {}),
+      ...(c.httpOnly !== undefined ? { httpOnly: c.httpOnly } : {}),
+      ...(c.secure !== undefined ? { secure: c.secure } : {}),
+      ...(c.sameSite !== undefined ? { sameSite: c.sameSite } : {}),
+    })
+  })
+}
+
+// CORS-on-success header writer (factored so the bypass and the gated-pass
+// paths share identical handling).
+function applyCorsHeaders(request: NextRequest, response: NextResponse, isCorsApiRoute: boolean) {
+  if (!isCorsApiRoute) return
+  const origin = request.headers.get("origin") || ""
+  const isAllowed = ALLOWED_ORIGINS.includes(origin) || !origin
+  if (isAllowed && origin) {
+    response.headers.set("Access-Control-Allow-Origin", origin)
+    response.headers.set("Vary", "Origin")
+  }
+}
+
+export async function proxy(request: NextRequest) {
+  const { pathname, search } = request.nextUrl
+
+  // ── A backslash in the path is never a page ──────────────────────────────
+  // Bots request things like `/api/og/insights%5C`; the URL-encoded backslash
+  // decodes to a path segment no route can own and reached the pages router as
+  // a 500 "Cannot find module" (4 hits in the 2026-09-03 health pass). A 404
+  // here costs nothing and keeps the error groups honest. Checked on the raw
+  // URL as well as the decoded pathname so neither encoding slips through.
+  if (pathname.includes("\\") || /%5c/i.test(request.url)) {
+    return new NextResponse(null, { status: 404 })
+  }
+
+  // ── Mixed-case collection / hub URL → its lowercase page (308) ──────────
+  if (request.method === "GET" || request.method === "HEAD") {
+    const folded = caseFoldedPath(pathname)
+    if (folded) {
+      const url = request.nextUrl.clone()
+      url.pathname = folded
+      return NextResponse.redirect(url, 308)
+    }
+  }
+
+  // ── Thin collections: a tab that does not exist redirects to the overview ──
+  // Candy MLB (published 2026-09-06, `pages: ["overview"]`) is the first
+  // collection whose feature tabs are NOT built — they are Flow-dispatched
+  // components with no Solana arm. The mobile bottom bar and old links still
+  // form `/candy-mlb/sniper` etc.; without this, anon 307s to /login and a
+  // signed-in reader gets a FLOW sniper rendered for a Solana collection. The
+  // registry is not imported here (edge bundle), so the thin set is literal —
+  // `__tests__/proxy-is-public-path.test.ts` pins it against lib/collections.
+  const thinTab = THIN_COLLECTION_MISSING_TABS.exec(pathname)
+  if (thinTab && (request.method === "GET" || request.method === "HEAD")) {
+    const url = request.nextUrl.clone()
+    url.pathname = `/${thinTab[1]}/overview`
+    url.search = ""
+    return NextResponse.redirect(url, 307)
+  }
+
+  // ── A published collection's retired / never-built tab → its overview ──────
+  // Second root of the same property (see RETIRED_COLLECTION_TABS): the thin
+  // regex above only knows overview-only collections, so a partial one like UFC
+  // fell through and served a 200 gate shell — a soft-404 on an anon-public,
+  // indexed URL. The completeness pin asserts these TWO mechanisms together
+  // cover every published collection × every public tab it lacks, so neither can
+  // quietly stop contributing.
+  if (request.method === "GET" || request.method === "HEAD") {
+    const seg = pathname.split("/")
+    // ["", slug, tab, …] — a deeper path (/ufc/edition/x) has seg.length > 3 and
+    // is left alone; entity routes are not tabs.
+    if (seg.length === 3 || (seg.length === 4 && seg[3] === "")) {
+      if (RETIRED_COLLECTION_TABS.has(`${seg[1]}/${seg[2]}`)) {
+        const url = request.nextUrl.clone()
+        url.pathname = `/${seg[1]}/overview`
+        url.search = ""
+        return NextResponse.redirect(url, 307)
+      }
+    }
+  }
+
+  // Periodic in-memory rate-limit map cleanup.
+  if (Date.now() - lastCleanup > 300_000) {
+    cleanupRateLimitMap()
+    lastCleanup = Date.now()
+  }
+
+  const isCorsApiRoute = CORS_API_PATHS.some((p) => pathname.startsWith(p))
+
+  // ── CORS preflight handling for public API paths ────────────────────────
+  if (isCorsApiRoute && request.method === "OPTIONS") {
+    const origin = request.headers.get("origin") || ""
+    const isAllowed = ALLOWED_ORIGINS.includes(origin) || !origin
+    return new NextResponse(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": isAllowed ? origin || "*" : "",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Access-Control-Max-Age": "86400",
+      },
+    })
+  }
+
+  // ── Bypass-token short-circuit (header OR query param) ──────────────────
+  // Cron-job.org and internal pipeline jobs hit /api/seed-wallet-refresh,
+  // /api/ingest, /api/listing-cache*, /api/sales-indexer*, /api/fmv-recalc,
+  // /api/flowty-tx-scanner, etc. with INGEST_SECRET_TOKEN (or CRON_SECRET for
+  // generic crons). Production cron config is mixed: some send the secret as
+  // an Authorization: Bearer header, others as a ?token=… query param.
+  // Without this short-circuit the auth gate redirects every cron call to
+  // /login and the data pipeline silently dies within ~30 min. Runs BEFORE
+  // rate limiting, public-path check, and any session lookup. Neither input
+  // is consumed or stripped — downstream route handlers still see and
+  // re-validate them for defense-in-depth.
+  if (hasValidBypassToken(request)) {
+    const passResponse = NextResponse.next()
+    applyCorsHeaders(request, passResponse, isCorsApiRoute)
+    return applySecurityHeaders(passResponse, pathname)
+  }
+
+  // ── Rate limiting for /api/ routes ──────────────────────────────────────
+  // Existing behaviour preserved. Bot/cron requests carrying valid tokens
+  // already returned above, so this only constrains anonymous + user traffic.
+  if (pathname.startsWith("/api/")) {
+    const authHeader = request.headers.get("authorization") || ""
+    const isBotRequest = bearerMatches(authHeader, "INGEST_SECRET_TOKEN")
+    // ⛔ 2026-10-11 (review S4) — `/api/cron` and `/api/ingest` were exempt
+    // from the limiter even WITHOUT a valid token. Every legitimate caller of
+    // those lanes (Vercel cron with CRON_SECRET, cron-job.org and GHA with
+    // INGEST_SECRET_TOKEN, header or ?token=) has already returned through
+    // hasValidBypassToken above, so the exemption only ever applied to
+    // requests holding a WRONG token — an unmetered 401 oracle against the
+    // shared secret. They now count against the per-IP cap like any other
+    // anonymous /api/ hit.
+    if (!isBotRequest) {
+      const clientKey = getRateLimitKey(request)
+      const { max, bucket } = apiRateLimitFor(pathname, hasAuthCookie(request))
+      if (isRateLimited(clientKey, bucket === "media" ? mediaRateLimitMap : rateLimitMap, max)) {
+        return NextResponse.json(
+          { error: `Rate limit exceeded. Max ${max} requests per minute.` },
+          { status: 429, headers: { "Retry-After": "60", "Cache-Control": "no-store" } }
+        )
+      }
+    }
+  } else if (
+    // ── Rate limiting for expensive PAGE routes (2026-08-07) ──────────────
+    // The limiter above was /api/-only, so every server-rendered, DB-backed
+    // page route was unmetered. Measured 2026-08-06: ~78k page requests /12h
+    // from the post-2026-08-01 AI-crawler unblock, none of it rate limited,
+    // against a Micro instance — the proximate cause of the pooler exhaustion,
+    // the 504s on the cron layer, and the statement-timeout 500s on pack pages.
+    //
+    // Scope is deliberately narrow:
+    //   • GET/HEAD only — never meter a mutation.
+    //   • Anonymous only — a signed-in reader is never throttled.
+    //   • Enumerated DB-backed surfaces only — /, /login, /pricing etc. are
+    //     cheap or static and stay unmetered.
+    // Bot/cron traffic with a valid token already short-circuited above.
+    //
+    // ⚠ Do NOT "fix" crawler load by re-adding a blanket AI-crawler block to
+    // app/robots.ts. That block was removed 2026-08-01 as a deliberate traffic
+    // decision (Trevor); re-adding it is a traffic call, not cleanup.
+    (request.method === "GET" || request.method === "HEAD") &&
+    isRateLimitedPageRoute(pathname) &&
+    !hasAuthCookie(request)
+  ) {
+    const clientKey = getRateLimitKey(request)
+    if (isRateLimited(clientKey, pageRateLimitMap, PAGE_RATE_LIMIT_MAX_REQUESTS)) {
+      // Plain-text, explicitly uncacheable: a 429 must never be stored by the
+      // CDN and replayed to the next visitor as if it were the page.
+      return new NextResponse("Too Many Requests", {
+        status: 429,
+        headers: { "Retry-After": "60", "Cache-Control": "no-store" },
+      })
+    }
+  }
+
+  // ── Public-bypass paths skip auth + allow-list ──────────────────────────
+  if (isPublicPath(pathname, request.method)) {
+    const passResponse = NextResponse.next()
+    applyCorsHeaders(request, passResponse, isCorsApiRoute)
+    return applySecurityHeaders(passResponse, pathname)
+  }
+
+  // ── Site-wide auth gate ─────────────────────────────────────────────────
+  const response = NextResponse.next()
+  const supabase = makeSupabase(request, response)
+  const { data: userData } = await supabase.auth.getUser()
+  const user = userData?.user
+
+  if (!user) {
+    // ── An anonymous fetch() to a gated /api/* path gets a 401, not a 307 ──
+    // A redirect to /login is right for a NAVIGATION (the reader sees the
+    // sign-in page with ?next=). It is wrong for a programmatic fetch: the
+    // browser FOLLOWS the 307, `POST /login` answers 405, `GET /login` answers
+    // the login page's HTML as if it were JSON, and the caller — which is
+    // waiting for a 401 to know it should ask the reader to sign in — waits
+    // forever. Measured 2026-09-06 on public pages, signed out, real Chromium:
+    // `/api/profile/saved-wallets`, `/api/wallet/profile`, `/api/wallet-cache`,
+    // `/api/cost-basis`, `/api/cache-refresh` all 307→405 (a console error per
+    // page, and the WatchEditionButton-class "wait for 401" bug on every one).
+    // `sec-fetch-dest: empty` is what every fetch()/XHR sends and no navigation
+    // does, so the split is exact; an old client without the header keeps the
+    // redirect. Uncacheable so the CDN never replays a 401 to a signed-in reader.
+    if (pathname.startsWith("/api/") && request.headers.get("sec-fetch-dest") === "empty") {
+      const unauth = NextResponse.json(
+        { error: "unauthorized", message: "Sign in to use this." },
+        { status: 401, headers: { "Cache-Control": "no-store", "WWW-Authenticate": "Session" } }
+      )
+      carryCookies(unauth, response)
+      return applySecurityHeaders(unauth, pathname)
+    }
+    // ── A path no route serves gets Next's 404, not a sign-in wall (2026-10-15) ──
+    // lib/routing/known-top-level.ts: an unknown first segment cannot reach a gated
+    // page, so redirecting it to /login only hid a 404 behind a login (and read to
+    // crawlers as a soft 404). Navigations only; known routes keep the gate below.
+    if ((request.method === "GET" || request.method === "HEAD") && !isRoutableFirstSegment(pathname)) {
+      const pass = NextResponse.next()
+      carryCookies(pass, response)
+      return applySecurityHeaders(pass, pathname)
+    }
+    // ── A link-preview crawler on the challenge deep link (2026-11-07) ──────
+    // /dashboard?…&challenge=<slug> is what gets shared; a crawler is never
+    // signed in, so it unfurled as /login. Send IT (only it) to the public
+    // challenge board, whose card is the challenge's own. People still get
+    // /login?next=… below. lib/routing/link-preview-bot.ts
+    if (request.method === "GET" || request.method === "HEAD") {
+      const target = challengePreviewTarget(pathname, search, request.headers.get("user-agent"))
+      if (target) {
+        const toBoard = NextResponse.redirect(new URL(target, request.url))
+        carryCookies(toBoard, response)
+        return applySecurityHeaders(toBoard, pathname)
+      }
+    }
+    const loginUrl = new URL("/login", request.url)
+    loginUrl.searchParams.set("next", pathname + search)
+    const redirectResp = NextResponse.redirect(loginUrl)
+    carryCookies(redirectResp, response)
+    return applySecurityHeaders(redirectResp, pathname)
+  }
+
+  const userEmail = (user.email || "").toLowerCase()
+
+  // ── Allow-list: cache check first, then RPC fallback ────────────────────
+  const cached = readAllowCookie(request)
+  const cacheValid =
+    !!cached &&
+    cached.email.toLowerCase() === userEmail &&
+    cached.expiresAt > Date.now()
+
+  if (!cacheValid) {
+    const admin = makeAdminClient()
+    const { data: allowedRaw, error: rpcError } = await admin.rpc("check_email_allowed", {
+      p_email: userEmail,
+    })
+
+    if (rpcError) {
+      // Fail-closed — RPC unavailable shouldn't grant access. Bounce to
+      // /login with a distinct error so the page can show "service
+      // temporarily down" instead of "your access was revoked".
+      console.error("[proxy] check_email_allowed error", rpcError)
+      const loginUrl = new URL("/login", request.url)
+      loginUrl.searchParams.set("error", "allowlist_unavailable")
+      const redirectResp = NextResponse.redirect(loginUrl)
+      carryCookies(redirectResp, response)
+      clearAllowCookie(redirectResp)
+      return applySecurityHeaders(redirectResp, pathname)
+    }
+
+    if (allowedRaw !== true) {
+      // Revoked or never approved — sign them out server-side, clear the
+      // cached allow-list cookie, and bounce to /login?error=access_revoked.
+      try {
+        await supabase.auth.signOut()
+      } catch {
+        // Ignore — we're redirecting either way; the auth cookies will be
+        // cleared at next sign-in even if this fails here.
+      }
+      const loginUrl = new URL("/login", request.url)
+      loginUrl.searchParams.set("error", "access_revoked")
+      const redirectResp = NextResponse.redirect(loginUrl)
+      carryCookies(redirectResp, response)
+      clearAllowCookie(redirectResp)
+      return applySecurityHeaders(redirectResp, pathname)
+    }
+
+    writeAllowCookie(response, userEmail)
+  }
+
+  applyCorsHeaders(request, response, isCorsApiRoute)
+  return applySecurityHeaders(response, pathname)
+}
+
+// Permissive matcher — the in-function `isPublicPath` check carries the
+// authoritative bypass logic. The matcher below excludes the highest-volume
+// static prefixes purely as a perf optimization so the function isn't even
+// invoked for them.
+export const config = {
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|img/).*)"],
+}

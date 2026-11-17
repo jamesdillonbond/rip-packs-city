@@ -1,0 +1,363 @@
+// app/teams/[league]/[slug]/page.tsx
+//
+// Franchise hub (2026-09-23): one page per real-world team, gathering every
+// collection that carries it. /teams/nba/blazers, /teams/mlb/tigers.
+//
+// Registry: teams_master + league_collections via get_franchise_hub. Panels:
+// the SAME get_team_detail the per-collection team page reads, so the hub and
+// the page it links to cannot disagree. Data layer: lib/franchise-hub.ts.
+//
+// ⚠ Today every league maps to ONE enabled collection in league_collections.
+// Since 2026-10-22 a SECOND panel comes from Panini, outside that registry:
+// Panini editions carry no team, so the team walk's franchise match
+// (get_panini_franchise_panel, lib/franchise-hub.ts) feeds it — today all 30
+// NBA franchises. Until a hub gathers 2+ collections it is noindex (see
+// hubIsIndexable).
+//
+// ⚠ A FAILED READ MUST NOT BECOME notFound() — only a clean NULL from
+// get_franchise_hub 404s. And a failed PANEL renders as unavailable, never as
+// "no cards" (three states, lib/franchise-hub.ts).
+
+import type { Metadata } from "next"
+import { cache, type ReactNode } from "react"
+import Link from "next/link"
+import { notFound, permanentRedirect } from "next/navigation"
+import { isExhibitionTeamSlug } from "@/lib/team-denylist"
+import { NOT_FOUND_METADATA, franchiseHubMetadata, franchiseHubJsonLd } from "@/lib/seo"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
+import { LEAGUES, type League } from "@/lib/teams"
+import {
+  HUB_TOP_EDITIONS,
+  fetchFranchiseHub,
+  fetchHubPanelExtras,
+  fetchHubPanels,
+  fetchPaniniHubPanel,
+  franchiseHubPath,
+  hubIsIndexable,
+  paniniCoverage,
+  parseHubParams,
+  resolveFranchiseHubLongSlug,
+  type FranchiseHub,
+  type HubPanel,
+  type HubPanelExtras,
+  type PaniniHubPanel,
+} from "@/lib/franchise-hub"
+import { Section, SectionUnavailable, StatCell, fmtCount, fmtUsd } from "@/components/entity/_shared"
+import Breadcrumbs from "@/components/entity/Breadcrumbs"
+import TeamHero from "@/components/entity/TeamHero"
+import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
+import TeamActivity, { type ActivityRow } from "@/components/entity/TeamActivity"
+
+export const revalidate = 600
+export const dynamicParams = true
+
+export async function generateStaticParams() {
+  return [] as Array<{ league: string; slug: string }>
+}
+
+const SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
+
+function leagueLabel(league: string): string {
+  return LEAGUES.find((l) => l.value === league)?.label ?? league
+}
+
+function num(v: number | string | null | undefined): number | null {
+  if (v == null) return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
+// ── Metadata ────────────────────────────────────────────────────────────────
+
+// ⚠ ONE hub read per request, shared by generateMetadata and the page body.
+// 2026-09-25: /teams/nba/clippers served "Team Hub | Rip Packs City" (noindex)
+// above a fully rendered body for over an hour — the metadata's own read had
+// failed its 4 s budget on a cold ISR render, the body's separate read
+// succeeded, and the entry cached that split until the next deploy. With the
+// read deduplicated, metadata and body always describe the same outcome.
+const fetchFranchiseHubOnce = cache((league: League, slug: string) => fetchFranchiseHub(league, slug))
+// 2026-10-22: the Panini panel decides indexability too, so it is shared the same way.
+const fetchPaniniHubPanelOnce = cache((league: League, slug: string) => fetchPaniniHubPanel({ league, team_slug: slug }))
+
+export async function generateMetadata(props: { params: Promise<{ league: string; slug: string }> }): Promise<Metadata> {
+  const { league: rawLeague, slug: rawSlug } = await props.params
+  const key = parseHubParams(rawLeague, rawSlug)
+  if (!key) return NOT_FOUND_METADATA
+  const { hub, ok } = await fetchFranchiseHubOnce(key.league, key.slug)
+  if (!ok) {
+    // Could not ask: a generic, non-404 title so crawlers never cache a
+    // not-found signal for a real franchise.
+    return { title: { absolute: "Team Hub | Rip Packs City" }, robots: { index: false, follow: true } }
+  }
+  if (!hub) return NOT_FOUND_METADATA
+  const canonical = `${SITE}${franchiseHubPath(hub.league, hub.team_slug)}`
+  return {
+    // openGraph/twitter via the shared builder: a route that sets neither falls
+    // through to the ROOT metadata and unfurls as the homepage.
+    ...franchiseHubMetadata({
+      name: `${hub.team_name} Collectibles Hub | ${leagueLabel(hub.league)}`,
+      description: `Every ${hub.team_name} digital collectible Rip Packs City tracks, gathered in one place — editions, fair market value and 30-day market activity per collection.`,
+      canonical,
+    }),
+    robots: hubIsIndexable(hub, await fetchPaniniHubPanelOnce(key.league, key.slug)) ? { index: true, follow: true } : { index: false, follow: true },
+  }
+}
+
+// ── Page ────────────────────────────────────────────────────────────────────
+
+export default async function FranchiseHubPage(props: { params: Promise<{ league: string; slug: string }> }) {
+  const { league: rawLeague, slug: rawSlug } = await props.params
+  const key = parseHubParams(rawLeague, rawSlug)
+  if (!key) notFound()
+
+  const { hub, ok } = await fetchFranchiseHubOnce(key.league, key.slug)
+  if (!ok) return <HubUnavailable />
+  if (!hub) {
+    // 2026-10-25: the collection team pages use the full name's slug
+    // (/nba-top-shot/team/portland-trail-blazers); the same slug here 308s to
+    // the hub's short one (/teams/nba/blazers) instead of 404ing.
+    const alias = await resolveFranchiseHubLongSlug(key.league, key.slug)
+    if (!alias.ok) return <HubUnavailable />
+    if (alias.slug) permanentRedirect(franchiseHubPath(key.league, alias.slug))
+    notFound()
+  }
+
+  const [panels, panini] = await Promise.all([fetchHubPanels(hub), fetchPaniniHubPanelOnce(key.league, key.slug)])
+  // 2026-09-24: the cards themselves — top editions + recent sales per
+  // collection, from the same RPCs the per-collection team page reads.
+  const extras = await fetchHubPanelExtras(hub, panels)
+  const hubPath = franchiseHubPath(hub.league, hub.team_slug)
+
+  return (
+    <div>
+      {/* SportsTeam + BreadcrumbList (2026-11-06) — the per-collection team
+          pages carry this; the hub did not. */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(franchiseHubJsonLd({ name: hub.team_name, path: hubPath, league: hub.league })) }}
+      />
+      <Breadcrumbs items={[{ name: "Home", href: "/" }, { name: hub.team_name }]} />
+      <TeamHero
+        teamName={hub.team_name}
+        noun="Team"
+        abbreviation={hub.abbreviation}
+        primaryColor={hub.primary_color}
+        secondaryColor={hub.secondary_color}
+        leagueLabel={hub.league}
+        externalId={hub.external_id}
+        isFranchise={false}
+        followLeague={hub.league}
+        followShortSlug={hub.team_slug}
+        teamPath={hubPath}
+      />
+
+      <Section title={`${hub.team_name} across collections`}>
+        {panels.length === 0 && panini.state === "absent" ? (
+          // Every mapped collection is one the app cannot route to. That is a
+          // registry gap, not a catalogue fact — say what we know.
+          <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-muted)" }}>
+            No collection pages are available for this team yet.
+          </div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))", gap: 14 }}>
+            {panels.map((p) => (
+              <CollectionPanel key={p.collection.id} panel={p} hub={hub} extras={extras.get(p.collection.id) ?? null} />
+            ))}
+            {panini.state !== "absent" && <PaniniPanel panel={panini} hub={hub} />}
+          </div>
+        )}
+      </Section>
+    </div>
+  )
+}
+
+function CollectionPanel({ panel, hub, extras }: { panel: HubPanel; hub: FranchiseHub; extras: HubPanelExtras | null }) {
+  const name = panel.collection.displayName
+  const teamHref = isExhibitionTeamSlug(hub.route_slug)
+    ? null
+    : `/${panel.collection.urlSlug}/team/${encodeURIComponent(hub.route_slug)}`
+
+  return (
+    <div className="rpc-card" style={{ padding: 16, borderTop: `3px solid ${hub.secondary_color || "var(--rpc-red)"}` }}>
+      <div
+        className="rpc-mono"
+        style={{ fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--rpc-text-muted)", marginBottom: 12 }}
+      >
+        {name}
+      </div>
+
+      {panel.state === "failed" && <SectionUnavailable noun={`${hub.team_name} on ${name}`} />}
+
+      {panel.state === "empty" && (
+        // The read ANSWERED with no team detail — a measured absence, not a timeout.
+        <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-muted)" }}>
+          No {name} editions for {hub.team_name} in our catalogue.
+        </div>
+      )}
+
+      {panel.state === "ok" && (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 10 }}>
+            <StatCell label="Editions" value={fmtCount(panel.detail.edition_count)} />
+            <StatCell label="Players" value={fmtCount(panel.detail.player_count)} />
+            <StatCell label="FMV Total" value={fmtUsd(num(panel.detail.fmv_total_usd))} />
+            <StatCell label="30d Sales" value={fmtCount(panel.detail.sales_30d)} />
+            <StatCell label="30d Volume" value={fmtUsd(num(panel.detail.volume_30d_usd))} />
+          </div>
+          {/* 2026-10-24 (webz_80: "I can't see the checklist from the team hub"):
+              the ONLY route to the checklist was a link at the very bottom of the
+              panel, under the paginated editions grid and the sales list, and the
+              word "checklist" appeared nowhere on the page. It now leads the panel. */}
+          {teamHref && (
+            <Link
+              href={teamHref}
+              className="rpc-mono"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+                marginTop: 12,
+                minHeight: 44,
+                padding: "10px 14px",
+                border: "1px solid var(--rpc-red-border)",
+                background: "var(--rpc-red-bg)",
+                borderRadius: "var(--radius-sm)",
+                color: "var(--rpc-red-text)",
+                fontSize: 12,
+                letterSpacing: "0.04em",
+                textDecoration: "none",
+              }}
+            >
+              <span>
+                <strong style={{ letterSpacing: "0.08em", textTransform: "uppercase" }}>{hub.team_name} checklist</strong>
+                <span style={{ color: "var(--rpc-text-secondary)" }}> · every edition, what you own, cost to complete</span>
+              </span>
+              <span aria-hidden="true">→</span>
+            </Link>
+          )}
+          {/* Top editions — three-state: unavailable / measured absence (omitted) / grid. */}
+          {extras && (extras.topEditions.rows.length > 0 || !extras.topEditions.ok) && (
+            <div style={{ marginTop: 16 }}>
+              <PanelLabel>Top editions</PanelLabel>
+              {!extras.topEditions.ok ? (
+                <SectionUnavailable noun={`${hub.team_name}\u2019s ${name} editions`} />
+              ) : (
+                <EditionsGridPaginated
+                  collectionUrlSlug={panel.collection.urlSlug}
+                  fetchUrl={`/api/entity/team-editions?collection=${encodeURIComponent(panel.collection.urlSlug)}&slug=${encodeURIComponent(hub.route_slug)}`}
+                  initial={extras.topEditions.rows as EditionTile[]}
+                  initialFailed={false}
+                  pageSize={HUB_TOP_EDITIONS}
+                  showSetLink
+                />
+              )}
+            </div>
+          )}
+
+          {/* Recent sales — same three states. */}
+          {extras && (extras.activity.rows.length > 0 || !extras.activity.ok) && (
+            <div style={{ marginTop: 16 }}>
+              <TeamActivity collectionUrlSlug={panel.collection.urlSlug} rows={extras.activity.rows as ActivityRow[]} ok={extras.activity.ok} />
+            </div>
+          )}
+
+          {teamHref && (
+            <Link
+              href={teamHref}
+              className="rpc-mono"
+              style={{ display: "inline-block", marginTop: 14, fontSize: 12, color: "var(--rpc-red-text)", letterSpacing: "0.04em", textDecoration: "none" }}
+            >
+              Open the full {hub.team_name} checklist on {name} →
+            </Link>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+// Panini cards (2026-10-22). Matched to the franchise by the team walk — Panini's
+// editions carry no team of their own — so the panel says how much of the
+// league's Panini catalogue that match covers. No per-collection team page
+// exists for Panini, so the cards themselves are the links.
+function PaniniPanel({ panel, hub }: { panel: Exclude<PaniniHubPanel, { state: "absent" }>; hub: FranchiseHub }) {
+  const name = "Panini Blockchain"
+  return (
+    <div className="rpc-card" style={{ padding: 16, borderTop: `3px solid ${hub.secondary_color || "var(--rpc-red)"}` }}>
+      <div
+        className="rpc-mono"
+        style={{ fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--rpc-text-muted)", marginBottom: 12 }}
+      >
+        {name}
+      </div>
+
+      {panel.state === "failed" && <SectionUnavailable noun={`${hub.team_name} on ${name}`} />}
+
+      {panel.state === "ok" && (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 10 }}>
+            <StatCell label="Editions" value={fmtCount(panel.detail.edition_count)} />
+            <StatCell label="Players" value={fmtCount(panel.detail.player_count)} />
+            <StatCell label="FMV Total" value={fmtUsd(num(panel.detail.fmv_total_usd))} />
+          </div>
+          <div className="rpc-mono" style={{ marginTop: 10, fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.6 }}>
+            {(() => {
+              const cov = paniniCoverage(panel.detail.coverage)
+              return (
+                <>
+                  Matched to the {hub.team_name} by Panini&rsquo;s marketplace team filter or the team Panini prints on the card; a card with neither takes its team from the same player&rsquo;s other cards in that product, or for NFL and MLB from the same player&rsquo;s cards in other products of the same season, or for NFL and WNBA from the team the player&rsquo;s own NFL All Day / Top Shot WNBA moments show that season, and a card with no match is not counted.
+                  {cov ? <> Together these place {fmtCount(cov.mapped)} of the {fmtCount(cov.catalogued)} Panini {cov.noun} cards we track on a team ({cov.pct}%).</> : null}
+                </>
+              )
+            })()}
+          </div>
+          {(panel.editions.rows.length > 0 || !panel.editions.ok) && (
+            <div style={{ marginTop: 16 }}>
+              <PanelLabel>Top editions</PanelLabel>
+              {!panel.editions.ok ? (
+                <SectionUnavailable noun={`${hub.team_name}\u2019s ${name} editions`} />
+              ) : (
+                <EditionsGridPaginated
+                  collectionUrlSlug="panini-blockchain"
+                  fetchUrl={`/api/entity/panini-team-editions?league=${encodeURIComponent(hub.league)}&team=${encodeURIComponent(hub.team_slug)}`}
+                  initial={panel.editions.rows as EditionTile[]}
+                  initialFailed={false}
+                  pageSize={HUB_TOP_EDITIONS}
+                  showSetLink
+                />
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+function PanelLabel({ children }: { children: ReactNode }) {
+  return (
+    <div
+      className="rpc-mono"
+      style={{ fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--rpc-text-muted)", marginBottom: 8 }}
+    >
+      {children}
+    </div>
+  )
+}
+
+// Rendered when get_franchise_hub could not be READ — distinct from a team that
+// does not exist (that 404s). Makes no claim about the team.
+function HubUnavailable() {
+  return (
+    // A <div>, not a <main>: app/teams/layout.tsx supplies the page's <main> (2026-09-25).
+    <div style={{ minHeight: "60vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 24px", gap: 16 }}>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.3em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
+        Team hub unavailable
+      </div>
+      <p style={{ color: "var(--rpc-text-secondary)", maxWidth: 520, textAlign: "center", margin: 0, lineHeight: 1.5 }}>
+        The team data didn&rsquo;t come back in time. This is a problem on our side &mdash; it says nothing about the team. Reloading often works.
+      </p>
+    </div>
+  )
+}

@@ -1,0 +1,73 @@
+-- audit_20260831: backfill_wmc_metadata_from_editions was the instance's #1
+-- exec-time consumer -- 511.9 s per 2 h -- and it spent almost all of it
+-- rejecting rows it had already fetched from the heap.
+--
+-- SHAPE OF THE DEFECT. The function joins wallet_moments_cache to editions on
+-- (collection_id, edition_key) and then filters on five NULL-vs-NOT-NULL pairs
+-- (tier, player_name, set_name, mint_count, team_name). The join was served by
+-- idx_wmc_coll_ek_serial_cover (collection_id, edition_key, serial_number)
+-- INCLUDE (moment_id) -- 202 MB -- which carries NONE of the five filter
+-- columns, so every candidate row cost a heap fetch purely to be discarded.
+--
+-- MEASURED 2026-08-31 11:0xZ, EXPLAIN (ANALYZE, BUFFERS), collection
+-- 209ade70 (Candy/Pinnacle-side, the call in pipeline_runs.extra at read time):
+--   BEFORE: Index Scan using idx_wmc_coll_ek_serial_cover, 125 edition probes
+--           x ~203 wmc rows, "Rows Removed by Filter: 203" on every loop,
+--           shared hit=12,885 read=11,023 = 23,908 buffers, 7,560 ms, rows=0.
+--   AFTER : Index Scan using idx_wmc_metadata_fillable, same 125 probes,
+--           shared hit=432 read=27 = 459 buffers, 17.3 ms, rows=0.
+-- ⚠ The claim is the 52x drop in TOTAL BUFFERS TOUCHED -- a plan change, which
+-- a warm cache cannot fake. The 437x wall-clock figure is warm-vs-cold and is
+-- NOT the claim. Identical row count both ways (0), so nothing is skipped.
+--
+-- WHY THE PARTIAL PREDICATE MATCHES. The planner already extracts
+-- ((tier IS NULL) OR (player_name IS NULL) OR (set_name IS NULL) OR
+--  (mint_count IS NULL) OR (team_name IS NULL))
+-- as a standalone conjunct on wmc -- it is visible in the BEFORE plan's Filter
+-- line -- so predicate_implied_by matches this index predicate by exact
+-- expression. Correctness is provable independently of the prover: every
+-- disjunct of the query's filter requires at least one of the five columns to
+-- be NULL, so the index predicate is implied by the query and no qualifying
+-- row can be excluded. Confirmed on the productive collections, where the new
+-- plan reports "Rows Removed by Filter: 0" -- the index returns only rows that
+-- qualify.
+--
+-- HOUSE PATTERN, NOT A NEW ONE. wallet_moments_cache already carries three
+-- partial NULL indexes keyed exactly this way: idx_wmc_fmv_null (1,440 kB),
+-- idx_wmc_fmv_conf_null (7,152 kB), idx_wmc_image_url_null (14 MB). This is a
+-- fourth of the same family. 224,646 of 2,506,620 rows (9.0%) qualify; the
+-- built index is 2,400 kB against the 202 MB index it displaces in this plan.
+--
+-- WHAT WAS DONE LIVE (this file records it; on prod the statement below is a
+-- no-op): built CONCURRENTLY 2026-08-31 11:09:00-11:09:36Z (35.9 s) by a
+-- one-off postgres-owned pg_cron job, jobname
+-- tmp-idxbuild-wmc-metadata-fillable, jobid 425, status succeeded, return
+-- message "CREATE INDEX"; unscheduled immediately after. indisvalid = true,
+-- indisready = true, zero invalid indexes on wallet_moments_cache, zero
+-- tmp-idxbuild% jobs left in cron.job. It ran as postgres because CREATE INDEX
+-- requires the table owner and cron_heavy is not it.
+-- On a fresh database this file builds the index plainly.
+-- anon-exec: none (no function created or replaced).
+--
+-- ⚠ NOT FIXED HERE, AND IT IS THE BIGGER FINDING: this makes the scan cheap,
+-- it does not make the pipeline productive. wmc-fmv-populate ran 1,991 times
+-- in 24 h and only 65 runs (3.3%) updated any row -- 6,846 rows total -- while
+-- the same EXPLAIN on the Top Shot collection (95f28a17) reports ~145,988 rows
+-- that ARE fillable right now, at 198,866 buffers / 18.6 s to enumerate. Three
+-- of the seven collections it cycles (06248cc4 Golazos, 7dd9dd11 Pinnacle,
+-- d1a0a7f5) updated ZERO rows across ~850 runs. Why a 146k-row backlog is
+-- draining at ~1,900 rows/day is NOT characterised and is filed, not fixed.
+--
+-- Exit (24 h): backfill_wmc_metadata_from_editions mean falls from 7,209 ms
+-- and its blocks/call from 2,174, in a pg_stat_statements diff against the
+-- audit_20260830_pgss_snap row at 2026-08-31 11:11:22Z, joined on
+-- (userid, dbid, toplevel, queryid) -- never on queryid alone.
+-- Falsifier: unchanged mean => the cost is in the UPDATE's index maintenance,
+-- not the scan, and the next lever is the write path, not another index.
+-- Revert: DROP INDEX CONCURRENTLY public.idx_wmc_metadata_fillable;
+
+CREATE INDEX IF NOT EXISTS idx_wmc_metadata_fillable
+  ON public.wallet_moments_cache USING btree (collection_id, edition_key)
+  WHERE (edition_key IS NOT NULL
+     AND (tier IS NULL OR player_name IS NULL OR set_name IS NULL
+          OR mint_count IS NULL OR team_name IS NULL));

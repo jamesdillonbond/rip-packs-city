@@ -1,0 +1,49 @@
+// ARCHIVED deployed source of `scan-allday-wallet` v76, recovered 2026-10-14 (register R21) by a redacted
+// subagent and kept ONLY as the revert artifact for its retirement. Credential literals are
+// replaced by __REDACTED_SECRET_n__ (they are burned). `.txt` on purpose: no walker, type-checker
+// or deploy picks this up. To revive: copy to supabase/functions/scan-allday-wallet/index.ts, replace the gate
+// with _shared/cron-gate.ts (rpc-edge-fn-deploy skill section 0), fix what the retirement note
+// names, then deploy via edge-fn-deploy.yml.
+// ─────────────────────────────────────────────────────────────
+Deno.serve(async (req: Request) => {
+  const auth = req.headers.get("Authorization");
+  if (auth !== "Bearer __REDACTED_SECRET_1__") return new Response("Unauthorized", { status: 401 });
+  const results: any = {};
+
+  // The listing-cache route uses Flowty's storefront listings endpoint
+  // Let's try every plausible Flowty endpoint variant
+
+  const endpoints = [
+    // V1 style
+    { name: "v1_storefront", url: "https://api2.flowty.io/v1/storefront/0xe4cf4bdc1751c65d.AllDay?limit=2" },
+    // Direct storefront
+    { name: "storefront", url: "https://api2.flowty.io/storefront/0xe4cf4bdc1751c65d.AllDay?limit=2" },
+    // Listings endpoint
+    { name: "listings", url: "https://api2.flowty.io/listings?collection=0xe4cf4bdc1751c65d.AllDay&limit=2" },
+    // NFTs for a collection
+    { name: "nfts", url: "https://api2.flowty.io/nfts?collection=0xe4cf4bdc1751c65d.AllDay&limit=2" },
+    // Market listings
+    { name: "market", url: "https://api2.flowty.io/market/0xe4cf4bdc1751c65d/AllDay?limit=2" },
+    // Try POST with User-Agent
+    { name: "post_ua", method: "POST", url: "https://api2.flowty.io/collection/0xe4cf4bdc1751c65d/AllDay", body: JSON.stringify({ searchConfig: { limit: 2, offset: 0 }, sort: { listingKind: "storefront", path: "salePrice", direction: "asc" } }), headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" } },
+    // POST with Referer
+    { name: "post_referer", method: "POST", url: "https://api2.flowty.io/collection/0xe4cf4bdc1751c65d/AllDay", body: JSON.stringify({ searchConfig: { limit: 2, offset: 0 }, sort: { listingKind: "storefront", path: "salePrice", direction: "asc" } }), headers: { "Referer": "https://www.flowty.io/" } },
+    // Try with x-flowty-api header
+    { name: "post_xflowty", method: "POST", url: "https://api2.flowty.io/collection/0xe4cf4bdc1751c65d/AllDay", body: JSON.stringify({ searchConfig: { limit: 2, offset: 0 }, sort: { listingKind: "storefront", path: "salePrice", direction: "asc" } }), headers: { "x-api-key": "flowty" } },
+  ];
+
+  for (const ep of endpoints) {
+    try {
+      const hdrs: Record<string,string> = { "Origin": "https://www.flowty.io", "Content-Type": "application/json", ...(ep as any).headers };
+      const opts: any = { headers: hdrs };
+      if ((ep as any).method === "POST") { opts.method = "POST"; opts.body = (ep as any).body; }
+      const res = await fetch(ep.url, opts);
+      const txt = await res.text();
+      let nftCount = null;
+      try { const j = JSON.parse(txt); nftCount = j.nfts?.length ?? j.data?.length ?? j.results?.length ?? null; } catch {}
+      results[ep.name] = { status: res.status, nftCount, preview: txt.substring(0, 200) };
+    } catch (e: any) { results[ep.name] = { error: e.message }; }
+  }
+
+  return new Response(JSON.stringify(results, null, 2), { headers: { "Content-Type": "application/json" } });
+});

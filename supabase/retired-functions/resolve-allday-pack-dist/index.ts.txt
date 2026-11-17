@@ -1,0 +1,55 @@
+// ARCHIVED deployed source of `resolve-allday-pack-dist` v33, recovered 2026-10-14 (register R21) by a redacted
+// subagent and kept ONLY as the revert artifact for its retirement. Credential literals are
+// replaced by __REDACTED_SECRET_n__ (they are burned). `.txt` on purpose: no walker, type-checker
+// or deploy picks this up. To revive: copy to supabase/functions/resolve-allday-pack-dist/index.ts, replace the gate
+// with _shared/cron-gate.ts (rpc-edge-fn-deploy skill section 0), fix what the retirement note
+// names, then deploy via edge-fn-deploy.yml.
+// ─────────────────────────────────────────────────────────────
+// resolve-allday-pack-dist — attribute opened AllDay packs to their distribution by scanning
+// PackNFT.Mint{id,distId} (authoritative; pool-overlap is ambiguous for AllDay). TARGETED:
+// only resolves opened packs (pack_rips, dist_id NULL), writes pack_rips.dist_id, stops when found.
+// Bounded sweep tip-of-mint-era -> floor, then IDLES (re-arm by setting state.next_height). Gated ?key=.
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+const GATE="__REDACTED_SECRET_1__"
+const REST="https://rest-mainnet.onflow.org"
+const ALLDAY="dee28451-5d62-409e-a1ad-a83f763ac070"
+const MINT="A.e4cf4bdc1751c65d.PackNFT.Mint"
+const FLOOR_DEFAULT=148900000
+const sb=createClient(Deno.env.get("SUPABASE_URL")??"",Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")??"")
+const sleep=(ms:number)=>new Promise(r=>setTimeout(r,ms))
+async function j(url:string){ const r=await fetch(url,{headers:{"Accept":"application/json"},signal:AbortSignal.timeout(15000)}); if(!r.ok) return {ok:false as const,status:r.status}; return {ok:true as const,data:await r.json()} }
+function dec(b64:string){ try{return JSON.parse(atob(b64))}catch{return null} }
+function field(ev:any,n:string){ return ev?.value?.fields?.find((x:any)=>x.name===n)?.value?.value }
+
+Deno.serve(async(req)=>{
+  const url=new URL(req.url)
+  if(url.searchParams.get("key")!==GATE) return new Response(JSON.stringify({error:"forbidden"}),{status:403})
+  const floor=Number(url.searchParams.get("floor")||String(FLOOR_DEFAULT))
+  const budget=Math.min(400,Math.max(1,Number(url.searchParams.get("budget")||"250")))
+
+  const { data:tg }=await sb.from("pack_rips").select("pack_nft_id").eq("collection_id",ALLDAY).is("dist_id",null).limit(5000)
+  const targets=new Set((tg??[]).map((r:any)=>String(r.pack_nft_id)))
+  if(targets.size===0) return new Response(JSON.stringify({idle:true,note:"no targets"}),{headers:{"content-type":"application/json"}})
+
+  // resolve start: explicit ?cursor= wins; else persisted state; idle if state already swept to floor
+  const explicit=Number(url.searchParams.get("cursor")||"0")
+  let start=explicit
+  if(!start){ const { data:st }=await sb.from("allday_mint_scan_state").select("next_height").eq("id",1).maybeSingle(); start=Number((st as any)?.next_height||0) }
+  if(start>0 && start<=floor) return new Response(JSON.stringify({idle:true,note:"sweep complete",remaining:targets.size}),{headers:{"content-type":"application/json"}})
+  if(!start){ const tip=await j(`${REST}/v1/blocks?height=sealed`); start=tip.ok?Number(tip.data[0].header.height):0 }
+  if(!start) return new Response(JSON.stringify({error:"no start"}),{status:200})
+
+  let found=0, scanned=0, end=start
+  for(let w=0; w<budget && end>floor && targets.size>0; w++){
+    const hi=end, lo=Math.max(floor,hi-249); scanned+=(hi-lo+1)
+    const res=await j(`${REST}/v1/events?type=${encodeURIComponent(MINT)}&start_height=${lo}&end_height=${hi}`)
+    if(res.ok){ for(const blk of (res.data??[])){ for(const ev of (blk.events??[])){
+      const p=dec(ev.payload); const id=String(field(p,"id")); const distId=field(p,"distId")
+      if(targets.has(id) && distId!=null){ await sb.from("pack_rips").update({dist_id:String(distId)}).eq("collection_id",ALLDAY).eq("pack_nft_id",id); targets.delete(id); found++ }
+    } } }
+    end=lo-1; await sleep(40)
+  }
+  const next = (targets.size===0 || end<=floor) ? floor : end   // floor = sentinel 'swept'
+  await sb.from("allday_mint_scan_state").upsert({id:1,next_height:next,updated_at:new Date().toISOString()})
+  return new Response(JSON.stringify({found,remaining:targets.size,scanned,from:start,to:end,swept:next<=floor,next}),{headers:{"content-type":"application/json"}})
+})

@@ -1,0 +1,31 @@
+-- A set page's slug lookup read every edition in the collection.
+--
+-- Eleven functions find a set's editions by its URL slug:
+--   WHERE collection_id = $1
+--     AND regexp_replace(lower(set_name), '[^a-z0-9]+', '-', 'g') = $2
+-- (get_set_activity, get_edition_detail, get_pack_contents, get_player_checklist,
+-- get_player_editions, get_series_editions, get_series_rollups, get_team_checklist,
+-- get_team_sets, get_team_top_editions, market_cap_edition_rows). The slug is a
+-- functional expression with no matching index, so each call bitmap-scans the whole
+-- collection's editions and evaluates the regexp on every row.
+--
+-- The case (2026-11-10, Vercel runtime errors): /candy-mlb/set/2025-mlb-starting-9-icons
+-- showed "Recent sales couldn't be loaded" — get_set_activity hit its 8 s
+-- statement_timeout cold (3 occurrences in 24 h, latest 8:15 PM PT). Measured warm:
+--   Candy MLB  2025 MLB Starting 9 Icons: 21,115 editions read, 20,859 removed by the
+--              regexp, 4,862 buffers, 102 ms — to find 256 rows;
+--   Top Shot   Metallic Gold LE: 14,962 read, 13,939 removed, 5,178 buffers, 70 ms.
+-- Cold, that read amplification is what ran the function past 8 s.
+--
+-- This is the set-name twin of idx_editions_collection_team_slug (20260726170000,
+-- 6,703 -> 501 buffers on the team lookup). NOT partial: some callers omit
+-- `set_name IS NOT NULL`, and a partial index would be invisible to them; a NULL
+-- set_name indexes as NULL and costs nothing. No function body changes, so no
+-- result can change — verified by md5 of the matched edition-id sets before/after.
+--
+-- Applied in prod as CREATE INDEX CONCURRENTLY via execute_sql (CONCURRENTLY cannot
+-- run inside apply_migration's transaction); recorded here as plain
+-- CREATE INDEX IF NOT EXISTS for repo/history parity (no-op where it already exists).
+-- Revert: DROP INDEX IF EXISTS public.idx_editions_collection_set_slug;
+CREATE INDEX IF NOT EXISTS idx_editions_collection_set_slug
+  ON public.editions (collection_id, (regexp_replace(lower(set_name), '[^a-z0-9]+', '-', 'g')));

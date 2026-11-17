@@ -1,0 +1,1342 @@
+"use client"
+
+// app/insights/squeeze/SqueezeBoardClient.tsx
+//
+// Client interactivity layer for the public lock-rate squeeze board. The
+// server component (page.tsx) fetches the default-view rows server-side and
+// passes them in as `initialRows`, so the ranked table + per-row entity
+// drill-down links render in the raw server HTML (crawlable) instead of only
+// after JS. This component layers on the filter / sort / drill-down behavior
+// as progressive enhancement and only refetches when the user changes the
+// sort or arrives via a set/player drill-down — the default view never
+// refetches on mount.
+//
+// See app/insights/squeeze/page.tsx for the data source + server fetch.
+//
+// 2026-10-27 (All Day ↔ Top Shot parity pass 6): a collection toggle
+// (`?collection=nfl-all-day`) reads allday_squeeze_board through the same
+// route. The server seed is always Top Shot's, so the rows, KPIs and stamp on
+// screen are gated on the collection the rows were READ for — Top Shot's never
+// show under the All Day toggle, not while its read is in flight, not after it
+// fails. All Day has no owner census, so the Top-5 column and sort are hidden.
+
+import { useEffect, useMemo, useRef, useState } from "react"
+import Link from "next/link"
+import { setWithParallel } from "@/lib/edition-parallel"
+import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
+import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
+import type { DegradedSummary } from "@/lib/insights/board-status"
+import { sectionUnavailableCopy } from "@/lib/entity/section-empty-copy"
+import { usdSignFirst } from "@/lib/usd-format"
+import { accentText } from "@/lib/accent-text"
+import PlayerResolvedNote from "@/components/filters/PlayerResolvedNote"
+import { SQUEEZE_COLLECTIONS, SQUEEZE_LABEL, SQUEEZE_LEAGUES, SQUEEZE_TIERS, isSqueezeCollection, squeezeBoardPath, type SqueezeCollection } from "@/lib/insights/squeeze-collections"
+import { onTablistKeyDown } from "@/lib/a11y/tablist-keys"
+
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
+
+export type Row = {
+  edition_id: string
+  external_id: string | null
+  player_name: string | null
+  set_name: string | null
+  /** A Top Shot parallel's name; null for a standard print (2026-10-29). Absent on rows cached before it. */
+  subedition_name?: string | null
+  tier: string | null
+  circulation: number | null
+  locked: number | null
+  burned: number | null
+  lock_pct: number | null
+  burn_pct: number | null
+  squeeze_pct: number | null
+  effectively_buyable: number | null
+  low_ask: number | null
+  /** TRUE when low_ask is >10x FMV — a listing that must not be read as a
+   *  market price (troll ask, or a stale FMV; we do not claim which).
+   *  Computed in the view: audit_20260801_squeeze_board_flag_disconnected_low_ask. */
+  low_ask_disconnected?: boolean | null
+  fmv_usd: number | null
+  confidence: string | null
+  game_date: string | null
+  thumbnail_url: string | null
+  /** Appended 2026-10-03 (team filter, beta feedback 10253). Absent on rows cached before it. */
+  team_name?: string | null
+  /** Appended 2026-10-03 (beta feedback 10256): the top 5 COLLECTOR wallets' combined
+   *  share of circulation, from the on-chain owner census. NULL = no complete census
+   *  for this edition yet (unknown, never 0). Pack-distribution + buyback sinks excluded. */
+  top5_share_pct?: number | null
+  /** Distinct collector wallets holding the edition; NULL without a complete census. */
+  holders?: number | null
+  /** Appended 2026-10-30 (beta feedback 11682): NBA / WNBA on Top Shot, NFL on All Day. Absent on rows cached before it. */
+  league?: string | null
+}
+
+type ApiResponse = {
+  meta: {
+    fetched_at: string
+    total_rows: number
+    elapsed_ms: number
+    filters?: { team?: string | null; team_resolution?: { status: string; current_name: string | null; labels: number } | null }
+    player_resolved?: { from: string; to: string }
+  }
+  rows: Row[]
+}
+
+// Per-collection vocabularies: SQUEEZE_TIERS (All Day has UNCOMMON, no FANDOM).
+type TierFilter = string
+type SortKey = "squeeze" | "circulation" | "fmv" | "buyable" | "concentration"
+
+// Normalize the dirty tier vocabulary in the view. Some rows are tagged with
+// MOMENT_TIER_RARE / MOMENT_TIER_LEGENDARY (older catalog inserts); collapse
+// them to the canonical tier set so the tier pill filter works.
+function normalizeTier(t: string | null): string | null {
+  if (!t) return null
+  return t.replace(/^MOMENT_TIER_/, "")
+}
+
+
+function fmtPct(n: number | null): string {
+  if (n == null) return "—"
+  return `${Math.round(Number(n))}%`
+}
+
+function fmtUsd(n: number | null): string {
+  const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
+  if (n == null) return "—"
+  const v = Number(n)
+  if (v >= 1000) return `$${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k`
+  if (v >= 100) return `$${v.toFixed(0)}`
+  return `$${v.toFixed(2)}`
+}
+
+function fmtInt(n: number | null): string {
+  if (n == null) return "—"
+  return Number(n).toLocaleString("en-US")
+}
+
+function median(values: number[]): number {
+  if (values.length === 0) return 0
+  const sorted = [...values].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+}
+
+function tierColor(tier: string | null): string {
+  switch (normalizeTier(tier)) {
+    case "LEGENDARY":
+      return "var(--tier-legendary)"
+    case "ULTIMATE":
+      return "var(--tier-ultimate)"
+    case "RARE":
+      return "var(--tier-rare)"
+    case "UNCOMMON":
+      return "var(--tier-uncommon)"
+    case "FANDOM":
+      return "var(--tier-fandom)"
+    case "COMMON":
+      return "var(--tier-common)"
+    default:
+      return "var(--rpc-text-muted)"
+  }
+}
+
+type Props = {
+  initialRows: Row[]
+  initialFetchedAt: string | null
+  /** Non-null only when the server-side default fetch FAILED (not when it was empty). */
+  initialDegraded?: DegradedSummary | null
+  /**
+   * The collection `initialRows` were read for, on a page that IS one collection's board
+   * (/insights/allday-squeeze, 2026-10-27). Set: `?collection=` is ignored and the toggle
+   * navigates to the other board's own page. Unset (/insights/squeeze): the seed is Top
+   * Shot's and the toggle switches in place, as before.
+   */
+  initialCollection?: SqueezeCollection
+}
+
+
+/** Hover help for the circulation pills (beta feedback 11686): circulation is the minted count, never reduced by locks or burns. */
+const MAX_MINT_HELP =
+  "Caps the edition's circulation — the number minted, which locks and burns never reduce. ≤ 100 is the band collectors call trophy circ."
+const MIN_MINT_HELP =
+  "Floors the edition's circulation — the number minted — so 1/1s and low-mint parallels drop out of the ranking."
+
+export default function SqueezeBoardClient({
+  initialRows,
+  initialFetchedAt,
+  initialDegraded = null,
+  initialCollection,
+}: Props) {
+  const seedCollection: SqueezeCollection = initialCollection ?? "nba-top-shot"
+  const [rows, setRows] = useState<Row[]>(initialRows)
+  // Which collection `rows` were read for (the server seed's).
+  const [rowsCollection, setRowsCollection] = useState<SqueezeCollection>(seedCollection)
+  const [collection, setCollection] = useState<SqueezeCollection>(seedCollection)
+  const isTopShot = collection === "nba-top-shot"
+  const label = SQUEEZE_LABEL[collection]
+  // Held in state, not read straight from the prop, so a successful sort/drill-down
+  // refetch CLEARS it — the rows on screen are then complete and the notice would
+  // be describing a failure the user is no longer looking at.
+  const [degraded, setDegraded] = useState<DegradedSummary | null>(initialDegraded)
+  // We already have the default-view rows from the server, so the table is
+  // not "loading" on first paint — loading only flips true on a sort/filter
+  // refetch.
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [fetchedAt, setFetchedAt] = useState<string | null>(initialFetchedAt)
+
+  const [tier, setTier] = useState<TierFilter>("ALL")
+  const [maxBuyable, setMaxBuyable] = useState<number | null>(null)
+  // Trophy-circulation filter — exposes the API's max_circulation param so
+  // users can drill straight to LEGENDARY / ULTIMATE-size editions.
+  const [maxCirculation, setMaxCirculation] = useState<number | null>(null)
+  // Floors (beta feedback 10250/10252, 2026-10-03): the top of the board is
+  // 1/1s and Ultimates that are 100 % squeezed by arithmetic — not a signal.
+  // Two separate floors, as asked: TOTAL mint and the supply actually buyable.
+  const [minCirculation, setMinCirculation] = useState<number | null>(null)
+  const [minBuyable, setMinBuyable] = useState<number | null>(null)
+  // Team (beta feedback 10253): typed text, resolved on the SERVER to the
+  // franchise's every label (historic names included) — a label is not a
+  // franchise. `teamInput` is what the box shows; `teamFilter` is what was sent.
+  const [teamInput, setTeamInput] = useState("")
+  const [teamFilter, setTeamFilter] = useState<string | null>(null)
+  const [teamResolution, setTeamResolution] = useState<{ status: string; current_name: string | null; labels: number } | null>(null)
+  // Player (beta feedback 11684, 2026-10-30): a typed box feeding the same
+  // `playerFilter` the rookies / first-mint drill-downs set via ?player=, so one
+  // path serves both (server ilike + the #207 accent retry). `playerInput` is
+  // what the box shows; `playerFilter` is what was sent.
+  const [playerInput, setPlayerInput] = useState("")
+  // League (beta feedback 11682): NBA / WNBA on Top Shot, a column of the view.
+  // "ALL" sends nothing; All Day has no vocabulary, so the pills are not shown there.
+  const [league, setLeague] = useState<string>("ALL")
+  const [sort, setSort] = useState<SortKey>("squeeze")
+  // Pre-filter to a specific set or player when arriving from another
+  // surface (set-squeeze / cross-collection / rookies / first-mint).
+  // Read from window.location on mount (one-shot — page re-mounts on
+  // hard-link nav).
+  const [setFilter, setSetFilter] = useState<string | null>(null)
+  const [playerFilter, setPlayerFilter] = useState<string | null>(null)
+  const [playerResolved, setPlayerResolved] = useState<{ from: string; to: string } | null>(null)
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href)
+      const s = url.searchParams.get("set")
+      const p = url.searchParams.get("player")
+      const c = url.searchParams.get("collection")
+      // A dedicated board page is its collection; only /insights/squeeze reads the param.
+      if (!initialCollection && isSqueezeCollection(c)) setCollection(c)
+      if (s) setSetFilter(s)
+      if (p) {
+        setPlayerFilter(p)
+        setPlayerInput(p)
+      }
+      const lg = url.searchParams.get("league")?.trim().toUpperCase()
+      // The collection this mount will show: a dedicated page's own, else the URL's, else Top Shot.
+      const mountCollection: SqueezeCollection = initialCollection ?? (isSqueezeCollection(c) ? c : "nba-top-shot")
+      if (lg && SQUEEZE_LEAGUES[mountCollection].includes(lg)) setLeague(lg)
+      const t = url.searchParams.get("team")?.trim()
+      if (t) {
+        setTeamInput(t)
+        setTeamFilter(t)
+      }
+      const mc = Number(url.searchParams.get("min_circulation"))
+      if (Number.isFinite(mc) && mc > 0) setMinCirculation(mc)
+      const mb = Number(url.searchParams.get("min_buyable"))
+      if (Number.isFinite(mb) && mb > 0) setMinBuyable(mb)
+    }
+  },[initialCollection])
+
+  // Rewards: a logged-in user viewing the squeeze board earns view_squeeze_board
+  // (daily_cap 1, enforced server-side). This is a public surface: before
+  // 2026-09-04 the earn fired for EVERY visitor and every anonymous load logged
+  // a `POST /api/rewards/track 401` console error (the DB monitor is blind to
+  // this class). `/api/profile/me` is a public read that answers `{ user: null }`
+  // for anon, so ask it first and only fire the earn for a signed-in viewer.
+  // Fire-and-forget either way; nothing here blocks the page.
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      const r = await fetch("/api/profile/me", { cache: "no-store" })
+      // A failed identity read is not "anonymous" — it is unknown, and an earn
+      // is not worth guessing about. Skip; nothing is rendered from this.
+      if (!r.ok) return
+      const me = await r.json()
+      if (!alive || !me?.user) return
+      await fetch("/api/rewards/track", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event: "view_squeeze" }),
+      })
+    })().catch(() => {})
+    return () => { alive = false }
+  }, [])
+
+  // Skip the very first fetch when the params match the server-fetched default
+  // view (sort=squeeze, no set/player drill-down) — the server already gave us
+  // those rows. Any sort change or drill-down arrival refetches normally.
+  // #33 (2026-11-02): ISR can serve a cached FAILED regeneration for the whole revalidate window. A board
+  // whose server seed failed must refetch on mount instead of trusting it as the default view.
+  const seedFailedOnArrival = useRef((initialDegraded?.failed?.length ?? 0) > 0)
+  const isFirstRun = useRef(true)
+
+  useEffect(() => {
+    if (isFirstRun.current) {
+      isFirstRun.current = false
+      if (seedFailedOnArrival.current) { /* refetch: the seed failed */ } else if (collection === seedCollection && sort === "squeeze" && !setFilter && !playerFilter && !teamFilter && league === "ALL" && minCirculation == null && minBuyable == null) {
+        return
+      }
+    }
+    const ctrl = new AbortController()
+    async function run() {
+      setLoading(true)
+      setError(null)
+      try {
+        const params = new URLSearchParams()
+        params.set("limit", "200")
+        params.set("sort", sort)
+        if (collection !== "nba-top-shot") params.set("collection", collection)
+        // Default min_squeeze = 50 (the "squeeze board" framing). When the
+        // user arrives via a player or set drill-down, drop the floor to 0
+        // so they see ALL of that player/set's editions, not just the
+        // squeezed ones — e.g. a rookie with max squeeze 48% deserves to
+        // be visible.
+        params.set("min_squeeze", setFilter || playerFilter ? "0" : "50")
+        // Every filter is server-side. ⚠ Tier / buyable / circulation used to
+        // run in the browser over the already-fetched 200 — out of ~5,600
+        // editions at >=50% squeeze (2026-09-25) — so "Legendary" showed only
+        // the Legendaries that happened to rank in the overall top 200, and
+        // could conclude "No editions match" while hundreds exist.
+        if (setFilter) params.set("set", setFilter)
+        if (playerFilter) params.set("player", playerFilter)
+        if (tier !== "ALL") params.set("tier", tier)
+        if (maxBuyable != null) params.set("max_buyable", String(maxBuyable))
+        if (maxCirculation != null) params.set("max_circulation", String(maxCirculation))
+        if (minCirculation != null) params.set("min_circulation", String(minCirculation))
+        if (minBuyable != null) params.set("min_buyable", String(minBuyable))
+        if (teamFilter) params.set("team", teamFilter)
+        if (league !== "ALL") params.set("league", league)
+        const r = await fetch(`/api/public/insights/squeeze?${params.toString()}`, {
+          signal: ctrl.signal,
+          cache: "no-store",
+        })
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        const j = (await r.json()) as ApiResponse
+        setRows(j.rows ?? [])
+        setRowsCollection(collection)
+        setPlayerResolved(j.meta?.player_resolved ?? null)
+        setFetchedAt(j.meta?.fetched_at ?? null)
+        setTeamResolution(teamFilter ? (j.meta?.filters?.team_resolution ?? null) : null)
+        setDegraded(null)
+      } catch (e: unknown) {
+        if ((e as { name?: string })?.name === "AbortError") return
+        setError(e instanceof Error ? e.message : "Failed to load")
+      } finally {
+        setLoading(false)
+      }
+    }
+    run()
+    return () => ctrl.abort()
+  }, [collection, seedCollection, sort, setFilter, playerFilter, tier, maxBuyable, maxCirculation, minCirculation, minBuyable, teamFilter, league])
+
+  // Switching collection resets the tier (different vocabularies) and the census sort All Day lacks.
+  function pickCollection(c: SqueezeCollection) {
+    // From a dedicated page, the other collection's board is its own page.
+    if (initialCollection && c !== initialCollection) {
+      if (typeof window !== "undefined") window.location.assign(squeezeBoardPath(c))
+      return
+    }
+    setCollection(c)
+    setTier("ALL")
+    setLeague("ALL")
+    if (c !== "nba-top-shot" && sort === "concentration") setSort("squeeze")
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href)
+      if (c === "nba-top-shot") url.searchParams.delete("collection")
+      else url.searchParams.set("collection", c)
+      window.history.replaceState({}, "", url.toString())
+    }
+  }
+
+  // The rows on screen must be THIS collection's — never the seed's under another toggle.
+  const pending = rowsCollection !== collection
+  const shownRows = useMemo(() => (pending ? [] : rows), [pending, rows])
+
+  const filtered = useMemo(() => {
+    return shownRows.filter((r) => {
+      if (tier !== "ALL" && normalizeTier(r.tier) !== tier) return false
+      if (maxBuyable != null && (r.effectively_buyable ?? Infinity) > maxBuyable) return false
+      if (maxCirculation != null && (r.circulation ?? Infinity) > maxCirculation) return false
+      if (minCirculation != null && (r.circulation ?? -Infinity) < minCirculation) return false
+      if (minBuyable != null && (r.effectively_buyable ?? -Infinity) < minBuyable) return false
+      return true
+    })
+  }, [shownRows, tier, maxBuyable, maxCirculation, minCirculation, minBuyable])
+
+  // Persist the new filters in the URL the way set/player already are, so a
+  // filtered board is shareable and survives a reload.
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const url = new URL(window.location.href)
+    const setOrDel = (k: string, v: string | null) => (v ? url.searchParams.set(k, v) : url.searchParams.delete(k))
+    setOrDel("team", teamFilter)
+    setOrDel("player", playerFilter)
+    setOrDel("league", league === "ALL" ? null : league)
+    setOrDel("min_circulation", minCirculation != null ? String(minCirculation) : null)
+    setOrDel("min_buyable", minBuyable != null ? String(minBuyable) : null)
+    if (url.toString() !== window.location.href) window.history.replaceState({}, "", url.toString())
+  }, [teamFilter, playerFilter, league, minCirculation, minBuyable])
+
+  function applyTeam() {
+    const t = teamInput.trim()
+    setTeamFilter(t === "" ? null : t)
+  }
+
+  function applyPlayer() {
+    const p = playerInput.trim()
+    setPlayerFilter(p === "" ? null : p)
+  }
+
+  // "N of M" rows carrying a holder census — counted from the rows in hand,
+  // never baked (the census grows weekly; a baked number would rot).
+  const censusCoverage = useMemo(() => {
+    if (filtered.length === 0) return null
+    const n = filtered.filter((r) => typeof r.top5_share_pct === "number").length
+    return `${fmtInt(n)} of ${fmtInt(filtered.length)}`
+  }, [filtered])
+
+  const kpis = useMemo(() => {
+    // ⛔ A FAILED READ HAS NO KPIs. Screenshot-verified in production during the
+    // 2026-09-18 outage (#122) at 11:41 AM PT: directly under this board's own
+    // banner — "treat the affected sections as unknown rather than zero" — the
+    // strip read EDITIONS 0 · MEDIAN SQUEEZE 0% · MEDIAN BUYABLE 0 · TOTAL LOCKED 0.
+    //
+    // ⚠ The zeros below are NOT a bug in the empty branch: a read that SUCCEEDED
+    // and matched nothing genuinely IS 0 editions, and must keep saying so. What
+    // was missing is the THIRD state — the branch could not tell "no rows matched"
+    // from "we never got rows" because it only ever looked at `filtered.length`.
+    // `degraded.failed` is the only thing that carries that provenance.
+    if ((degraded?.failed?.length ?? 0) > 0) {
+      return { count: null, medianSqueeze: null, medianBuyable: null, totalLocked: null }
+    }
+    if (filtered.length === 0) {
+      return { count: 0, medianSqueeze: 0, medianBuyable: 0, totalLocked: 0 }
+    }
+    const squeezes = filtered.map((r) => Number(r.squeeze_pct ?? 0))
+    const buyables = filtered.map((r) => Number(r.effectively_buyable ?? 0))
+    const totalLocked = filtered.reduce((acc, r) => acc + Number(r.locked ?? 0), 0)
+    return {
+      count: filtered.length,
+      medianSqueeze: median(squeezes),
+      medianBuyable: median(buyables),
+      totalLocked,
+    }
+  }, [filtered, degraded])
+
+  // ⚠ COUNTED FROM THE ROWS IN HAND, never baked. The Methodology block used to
+  // read "this affects 10 of the 8,859 editions that carry a live ask" — two
+  // hardcoded population figures. Measured live 2026-08-26 the board's own view
+  // holds 2,944 rows with a live ask of which 12 are disconnected, so BOTH
+  // numbers had drifted and the denominator was ~3x too large.
+  //
+  // Deriving from `rows` rather than re-baking a fresher constant is what makes
+  // it stay true: the sentence now describes exactly the set the reader is
+  // looking at, and it says so ("the rows loaded here") rather than implying an
+  // estate-wide census the board never had. Renders nothing at all when no row
+  // carries an ask — a "0 of 0" sentence is noise, not information.
+  const askDisconnect = useMemo(() => {
+    let withAsk = 0
+    let disconnected = 0
+    for (const r of shownRows) {
+      if (r.low_ask == null) continue
+      withAsk++
+      if (r.low_ask_disconnected) disconnected++
+    }
+    return { withAsk, disconnected }
+  }, [shownRows])
+
+  const tweetIntent = useMemo(() => {
+    const text = `${label} displays circulation. We display effective supply.\n\nThe lock-rate squeeze board — what's actually buyable after locks + burns:`
+    // Each collection's own page: its metadata and OG card are that collection's (the
+    // ?collection= toggle URL previews with Top Shot's — 10-27 review).
+    const url = `${SITE_URL}${squeezeBoardPath(collection)}`
+    return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`
+  }, [label, collection])
+
+  return (
+    <main style={styles.page}>
+      <style>{CSS}</style>
+
+      <section className="rpc-sq-hero">
+        <div className="rpc-sq-eyebrow">RPC Insights · Public</div>
+        <h1 className="rpc-sq-h1">The Lock-Rate Squeeze Board</h1>
+        <p className="rpc-sq-lede">
+          {label}&apos;s marketplace shows you <em>circulation</em>. We show
+          you <strong>effective supply</strong> — circulation minus the
+          moments {isTopShot ? "locked in challenges" : "locked by their owners"} and the moments already burned.
+          Editions with 50%+ squeeze are tighter than the listing page lets on.
+        </p>
+        <div className="rpc-sq-meta-row">
+          <span className="rpc-sq-meta">
+            Updated <FreshnessStamp iso={pending ? null : fetchedAt} />
+          </span>
+          <span className="rpc-sq-meta-sep">·</span>
+          <span className="rpc-sq-meta">{isTopShot ? "Refreshes hourly" : "Lock + burn counts refresh daily"}</span>
+          <span className="rpc-sq-meta-sep">·</span>
+          <span className="rpc-sq-meta">No signup</span>
+        </div>
+      </section>
+
+      <DegradedDataNotice summary={degraded} />
+
+      {/* #207: an accent-only miss ("doncic") was retried with the catalog spelling — say so. */}
+      {playerResolved && (
+        <PlayerResolvedNote resolved={playerResolved} onUse={(n) => setPlayerFilter(n)} />
+      )}
+
+      {setFilter || playerFilter ? (
+        <section className="rpc-sq-active-filter" aria-label="Active drill-down filter">
+          {setFilter ? (
+            <>
+              <span className="rpc-sq-active-label">FILTERED TO SET</span>
+              <span className="rpc-sq-active-value">{setFilter}</span>
+              <button
+                type="button"
+                className="rpc-sq-active-clear"
+                onClick={() => {
+                  setSetFilter(null)
+                  if (typeof window !== "undefined") {
+                    const url = new URL(window.location.href)
+                    url.searchParams.delete("set")
+                    window.history.replaceState({}, "", url.toString())
+                  }
+                }}
+              >
+                Clear ✕
+              </button>
+            </>
+          ) : null}
+          {playerFilter ? (
+            <>
+              <span className="rpc-sq-active-label">FILTERED TO PLAYER</span>
+              <span className="rpc-sq-active-value">{playerFilter}</span>
+              <button
+                type="button"
+                className="rpc-sq-active-clear"
+                onClick={() => {
+                  setPlayerFilter(null)
+                  setPlayerInput("")
+                  if (typeof window !== "undefined") {
+                    const url = new URL(window.location.href)
+                    url.searchParams.delete("player")
+                    window.history.replaceState({}, "", url.toString())
+                  }
+                }}
+              >
+                Clear ✕
+              </button>
+            </>
+          ) : null}
+        </section>
+      ) : null}
+
+      {/* ── Filter row ────────────────────────────────────────────────── */}
+      <section className="rpc-sq-controls" aria-label="Filters">
+        <div className="rpc-sq-pill-group" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Collection">
+          {SQUEEZE_COLLECTIONS.map((c) => (
+            <button
+              key={c}
+              role="tab"
+              aria-selected={collection === c}
+              data-testid={`sq-collection-${c}`}
+              className={`rpc-sq-pill ${collection === c ? "rpc-sq-pill-active" : ""}`}
+              onClick={() => pickCollection(c)}
+            >
+              {SQUEEZE_LABEL[c]}
+            </button>
+          ))}
+        </div>
+
+        <div className="rpc-sq-pill-group" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Tier">
+          {["ALL", ...SQUEEZE_TIERS[collection]].map((t) => (
+            <button
+              key={t}
+              role="tab"
+              aria-selected={tier === t}
+              className={`rpc-sq-pill ${tier === t ? "rpc-sq-pill-active" : ""}`}
+              onClick={() => setTier(t)}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+
+        {SQUEEZE_LEAGUES[collection].length > 0 ? (
+          <div className="rpc-sq-pill-group" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="League">
+            <span className="rpc-sq-pill-label">LEAGUE</span>
+            {["ALL", ...SQUEEZE_LEAGUES[collection]].map((lg) => (
+              <button
+                key={lg}
+                role="tab"
+                aria-selected={league === lg}
+                data-testid={`sq-league-${lg}`}
+                className={`rpc-sq-pill ${league === lg ? "rpc-sq-pill-active" : ""}`}
+                onClick={() => setLeague(lg)}
+              >
+                {lg}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="rpc-sq-pill-group" aria-label="Max effectively buyable">
+          <span className="rpc-sq-pill-label">MAX BUYABLE</span>
+          {[null, 25, 10, 5].map((m) => (
+            <button
+              key={String(m)}
+              className={`rpc-sq-pill ${maxBuyable === m ? "rpc-sq-pill-active" : ""}`}
+              onClick={() => setMaxBuyable(m)}
+            >
+              {m == null ? "Any" : `≤ ${m}`}
+            </button>
+          ))}
+        </div>
+
+        {/* Beta feedback 11686 (2026-10-27): "TROPHY-CIRC" read as a mystery — is it the
+            original mint before burns? It caps CIRCULATION, the minted count, which locks
+            and burns never reduce. Named for what it does; the ≤ 100 band is what Top Shot
+            collectors call trophy circ, so that word stays as the hint. */}
+        <div className="rpc-sq-pill-group" aria-label="Max circulation">
+          <span className="rpc-sq-pill-label" title={MAX_MINT_HELP}>MAX MINT</span>
+          {[
+            { val: null, label: "Any" },
+            { val: 100, label: "≤ 100 (trophy circ)" },
+            { val: 75, label: "≤ 75 (Legendary)" },
+            { val: 10, label: "≤ 10 (Ultimate)" },
+          ].map((m) => (
+            <button
+              key={String(m.val)}
+              title={MAX_MINT_HELP}
+              className={`rpc-sq-pill ${maxCirculation === m.val ? "rpc-sq-pill-active" : ""}`}
+              onClick={() => setMaxCirculation(m.val)}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="rpc-sq-pill-group" aria-label="Min circulation">
+          <span className="rpc-sq-pill-label" title={MIN_MINT_HELP}>MIN MINT</span>
+          {[
+            { val: null, label: "Any" },
+            // ≥ 10 and ≥ 50 (beta feedback 11683, 2026-10-27): ≥ 100 sits above the
+            // circulation of nearly every Legendary, so it could not cut the 1/1s and
+            // low-mint parallels out of a Legendary view.
+            { val: 10, label: "≥ 10" },
+            { val: 50, label: "≥ 50" },
+            { val: 100, label: "≥ 100" },
+            { val: 500, label: "≥ 500" },
+            { val: 1000, label: "≥ 1K" },
+            { val: 5000, label: "≥ 5K" },
+          ].map((m) => (
+            <button
+              key={String(m.val)}
+              className={`rpc-sq-pill ${minCirculation === m.val ? "rpc-sq-pill-active" : ""}`}
+              onClick={() => setMinCirculation(m.val)}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="rpc-sq-pill-group" aria-label="Min effectively buyable">
+          <span className="rpc-sq-pill-label">MIN BUYABLE</span>
+          {[
+            { val: null, label: "Any" },
+            { val: 10, label: "≥ 10" },
+            { val: 50, label: "≥ 50" },
+            { val: 250, label: "≥ 250" },
+          ].map((m) => (
+            <button
+              key={String(m.val)}
+              className={`rpc-sq-pill ${minBuyable === m.val ? "rpc-sq-pill-active" : ""}`}
+              onClick={() => setMinBuyable(m.val)}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+
+        <form
+          className="rpc-sq-team"
+          aria-label="Team"
+          onSubmit={(e) => {
+            e.preventDefault()
+            applyTeam()
+          }}
+        >
+          <span className="rpc-sq-pill-label">TEAM</span>
+          <input
+            className="rpc-sq-team-input"
+            type="search"
+            placeholder={isTopShot ? "e.g. Clippers" : "e.g. Chiefs"}
+            aria-label="Team name"
+            value={teamInput}
+            onChange={(e) => setTeamInput(e.target.value)}
+            onBlur={applyTeam}
+          />
+          {teamFilter ? (
+            <button
+              type="button"
+              className="rpc-sq-active-clear"
+              onClick={() => {
+                setTeamInput("")
+                setTeamFilter(null)
+              }}
+            >
+              Clear ✕
+            </button>
+          ) : null}
+        </form>
+
+        <form
+          className="rpc-sq-team"
+          aria-label="Player"
+          onSubmit={(e) => {
+            e.preventDefault()
+            applyPlayer()
+          }}
+        >
+          <span className="rpc-sq-pill-label">PLAYER</span>
+          <input
+            className="rpc-sq-team-input"
+            type="search"
+            placeholder={isTopShot ? "e.g. Ausar Thompson" : "e.g. Mahomes"}
+            aria-label="Player name"
+            value={playerInput}
+            onChange={(e) => setPlayerInput(e.target.value)}
+            onBlur={applyPlayer}
+          />
+          {playerFilter ? (
+            <button
+              type="button"
+              className="rpc-sq-active-clear"
+              onClick={() => {
+                setPlayerInput("")
+                setPlayerFilter(null)
+              }}
+            >
+              Clear ✕
+            </button>
+          ) : null}
+        </form>
+
+        <label className="rpc-sq-sort">
+          <span className="rpc-sq-pill-label">SORT</span>
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as SortKey)}
+            className="rpc-sq-select"
+          >
+            <option value="squeeze">Squeeze % (desc)</option>
+            <option value="buyable">Effectively buyable (asc)</option>
+            <option value="circulation">Circulation (asc)</option>
+            <option value="fmv">FMV (desc)</option>
+            {isTopShot ? <option value="concentration">Top-5 holder share (desc)</option> : null}
+          </select>
+        </label>
+      </section>
+
+      {teamFilter && !loading && !error && teamResolution ? (
+        <div className="rpc-sq-team-note rpc-mono" aria-live="polite">
+          {teamResolution.status === "one"
+            ? `Team: ${teamResolution.current_name ?? teamFilter} — every label this franchise has minted under${teamResolution.labels > 1 ? ` (${teamResolution.labels} names, historic included)` : ""}.`
+            : teamResolution.status === "many"
+              ? `“${teamFilter}” matches several teams — showing all of them (${teamResolution.labels} labels). Type the full name to narrow.`
+              : `No ${label} team matches “${teamFilter}” — nothing is substituted.`}
+        </div>
+      ) : null}
+
+      {/* ── KPI strip ─────────────────────────────────────────────────── */}
+      <section className="rpc-sq-kpi-row" aria-label="Summary">
+        <div className="rpc-sq-kpi">
+          <div className="rpc-sq-kpi-label">Editions</div>
+          <div className="rpc-sq-kpi-value">{loading || pending ? "—" : fmtInt(kpis.count)}</div>
+        </div>
+        <div className="rpc-sq-kpi">
+          <div className="rpc-sq-kpi-label">Median squeeze</div>
+          <div className="rpc-sq-kpi-value">{loading || pending ? "—" : fmtPct(kpis.medianSqueeze)}</div>
+        </div>
+        <div className="rpc-sq-kpi">
+          <div className="rpc-sq-kpi-label">Median buyable</div>
+          <div className="rpc-sq-kpi-value">{loading || pending ? "—" : fmtInt(kpis.medianBuyable == null ? null : Math.round(kpis.medianBuyable))}</div>
+        </div>
+        <div className="rpc-sq-kpi">
+          <div className="rpc-sq-kpi-label">Total locked</div>
+          <div className="rpc-sq-kpi-value">{loading || pending ? "—" : fmtInt(kpis.totalLocked)}</div>
+        </div>
+      </section>
+
+      {/* ── Table ─────────────────────────────────────────────────────── */}
+      <section className="rpc-sq-table-wrap" aria-label="Squeeze board">
+        {error ? (
+          <div className="rpc-sq-state">Failed to load: {error}</div>
+        ) : loading || pending ? (
+          <div className="rpc-sq-state">Loading…</div>
+        ) : filtered.length === 0 ? (
+          <div className="rpc-sq-state">
+            {/* ⚠ The KPI strip above already knew this was a failed read (R94);
+                the empty state did not, and told the reader "No editions match
+                those filters." under the failed-read banner — found by the
+                2026-10-03 cold pass of the built app. Same helper as the
+                scarcity boards' empty states. */}
+            {(degraded?.failed?.length ?? 0) > 0
+              ? sectionUnavailableCopy("Squeeze board")
+              : teamFilter && teamResolution?.status === "none"
+                ? `No ${label} team matches “${teamFilter}”.`
+                : "No editions match those filters."}
+          </div>
+        ) : (
+          <table className="rpc-sq-table">
+            <thead>
+              <tr>
+                <th scope="col" className="rpc-sq-th-player">Edition</th>
+                <th scope="col" className="rpc-sq-th-num">Tier</th>
+                <th scope="col" className="rpc-sq-th-num">Circ</th>
+                <th scope="col" className="rpc-sq-th-num">Locked</th>
+                <th scope="col" className="rpc-sq-th-num">Burned</th>
+                <th scope="col" className="rpc-sq-th-num rpc-sq-th-emph">Squeeze</th>
+                <th scope="col" className="rpc-sq-th-num rpc-sq-th-emph">Buyable</th>
+                {isTopShot ? (
+                  <th scope="col" className="rpc-sq-th-num" title="Combined share of circulation held by the 5 largest collector wallets (on-chain owner census; unopened-pack and buyback accounts excluded). — = no complete census for this edition yet.">Top 5 hold</th>
+                ) : null}
+                <th scope="col" className="rpc-sq-th-num">FMV</th>
+                <th scope="col" className="rpc-sq-th-num">Low ask</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((r) => {
+                // Prefer the canonical edition page (corpus internal link);
+                // fall back to /moment/<uuid> when external_id is absent.
+                const href = r.external_id
+                  ? `/${collection}/edition/${encodeURIComponent(r.external_id)}`
+                  : `/moment/${r.edition_id}`
+                return (
+                <tr
+                  key={r.edition_id}
+                  onClick={() => {
+                    window.location.href = href
+                  }}
+                  className="rpc-sq-row"
+                >
+                  <td className="rpc-sq-td-player">
+                    <Link href={href} className="rpc-sq-edition-link" onClick={(e) => e.stopPropagation()}>
+                      {/* Team reels / redemptions have no individual player
+                          (editions.player_name is NULL) — fall back to the set
+                          name as the primary label instead of a bare "—", and
+                          drop the duplicate set line when it'd just repeat it. */}
+                      <div className="rpc-sq-edition-name">{r.player_name || r.set_name || "—"}</div>
+                      {r.player_name && r.set_name ? (
+                        <div className="rpc-sq-edition-set">{setWithParallel(r.set_name, r.subedition_name)}</div>
+                      ) : null}
+                    </Link>
+                  </td>
+                  <td className="rpc-sq-td-num">
+                    <span className="rpc-sq-tier-chip" style={{ color: accentText(tierColor(r.tier)) }}>
+                      {normalizeTier(r.tier) ?? "—"}
+                    </span>
+                  </td>
+                  <td className="rpc-sq-td-num">{fmtInt(r.circulation)}</td>
+                  <td className="rpc-sq-td-num">{fmtInt(r.locked)}</td>
+                  <td className="rpc-sq-td-num">{fmtInt(r.burned)}</td>
+                  <td className="rpc-sq-td-num rpc-sq-td-emph">{fmtPct(r.squeeze_pct)}</td>
+                  <td className="rpc-sq-td-num rpc-sq-td-emph">{fmtInt(r.effectively_buyable)}</td>
+                  {/* Holder concentration (beta feedback 10256). A missing census is
+                      UNKNOWN and reads as an em-dash with a reason — never as 0 %. */}
+                  {isTopShot ? (
+                  <td className="rpc-sq-td-num" data-testid="top5-share">
+                    {/* 2026-10-25: a complete census with 0 collector holders (every copy in
+                        an unopened-pack / vault account; 35 editions at the time) read a bare
+                        "0%" beside Locked 1 — true by the definition, unreadable without it. */}
+                    {r.holders === 0 && typeof r.top5_share_pct === "number" ? (
+                      <span title="No collector holds a copy: every one sits in a system account (unopened pack or platform vault), which this share excludes.">none held</span>
+                    ) : typeof r.top5_share_pct === "number" ? (
+                      <span title={`${fmtPct(r.top5_share_pct)} of circulation is held by the 5 largest collector wallets${typeof r.holders === "number" ? ` · ${fmtInt(r.holders)} holders` : ""}`}>
+                        {fmtPct(r.top5_share_pct)}
+                      </span>
+                    ) : (
+                      <span className="rpc-sq-census-missing" title="No complete on-chain owner census for this edition yet — the share is unknown, not zero.">—</span>
+                    )}
+                  </td>
+                  ) : null}
+                  <td className="rpc-sq-td-num">{fmtUsd(r.fmv_usd)}</td>
+                  {/* A raw troll ask used to render here as if it were the
+                      market: "2022-23 Season Rewind" LEGENDARY showed $5000k
+                      beside an FMV of $200 (25,000x). Show the em-dash + a
+                      hover explanation instead — the ROW is still listed, so
+                      nothing is silently dropped, and the 10x rule is stated in
+                      the Methodology block below. */}
+                  <td className="rpc-sq-td-num">
+                    {r.low_ask_disconnected ? (
+                      <span
+                        className="rpc-sq-ask-disconnected"
+                        title={`Listed at ${fmtUsd(r.low_ask)} — more than 10x this edition's FMV of ${fmtUsd(r.fmv_usd)}. Not shown as a market price.`}
+                      >
+                        — <span className="rpc-sq-ask-flag">ask ≫ FMV</span>
+                      </span>
+                    ) : (
+                      fmtUsd(r.low_ask)
+                    )}
+                  </td>
+                </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      {/* ── Footer ────────────────────────────────────────────────────── */}
+      <section className="rpc-sq-footer">
+        <div className="rpc-sq-method">
+          <h2 className="rpc-sq-h3">Methodology</h2>
+          <p>
+            <strong>Squeeze %</strong> = (locked + burned) / circulation.
+            Lock %, burn %, and effectively-buyable % all share the same
+            denominator (original circulation), so they sum to 100%.
+            Squeeze % is bounded to [50%, 100%].
+          </p>
+          <p>
+            <strong>Effectively buyable</strong> = circulation − locked −
+            burned. {isTopShot
+              ? "Lock + burn data refreshes hourly from on-chain badge event ingestion."
+              : "All Day's lock + burn counts refresh daily from its marketplace's edition data; the low ask is the edition's lowest listing as last verified on chain."} FMV is RPC&rsquo;s sales model
+            (the median of the edition&rsquo;s most recent typical sales, special
+            serials and grail spikes set aside); <em>—</em> indicates too few
+            recent sales to price the edition.
+          </p>
+          <p>
+            <strong>MAX MINT</strong> and <strong>MIN MINT</strong> cap and floor
+            <em> circulation</em> &mdash; the number minted, which locks and burns
+            never reduce (so &ldquo;&le; 100&rdquo; keeps every edition minted at
+            100 or fewer, however many are locked). &le; 100 is the band
+            collectors call <em>trophy circ</em>. The buyable caps and floors
+            use <em>effectively buyable</em> instead.
+            {isTopShot ? (
+              <>
+                {" "}
+                <strong>LEAGUE</strong> reads NBA or WNBA from the edition&rsquo;s
+                team and set, so WNBA moments in a mixed set (Fresh Gems, Level Up,
+                Road To Royalty&hellip;) still count as WNBA.
+              </>
+            ) : null}
+          </p>
+          {isTopShot ? (
+          <p>
+            <strong>Top 5 hold</strong> = the combined share of circulation held
+            by the five largest <em>collector</em> wallets, from the on-chain
+            owner census (Top Shot&rsquo;s unopened-pack account and Dapper&rsquo;s
+            buyback account are excluded &mdash; neither is a collector). It is
+            shown only for editions whose census is complete
+            {censusCoverage ? ` (${censusCoverage} of the rows shown)` : ""};
+            an em-dash means the census has not reached that edition yet, which
+            is unknown, not 0%. Refreshed every 6 hours.
+          </p>
+          ) : null}
+          <p>
+            <strong>Low ask</strong> is the lowest live listing. A listing more
+            than <strong>10&times; this edition&rsquo;s FMV</strong> is shown as
+            <em> &mdash; &ldquo;ask &#8811; FMV&rdquo;</em> rather than as a price:
+            at that distance it is either a troll listing or a stale FMV, and
+            either way it is not what the moment trades for. The row itself is
+            never removed &mdash; hover the flag to see the listed number.
+            {askDisconnect.withAsk > 0 ? (
+              <>
+                {" "}
+                On the rows loaded here that affects{" "}
+                {askDisconnect.disconnected.toLocaleString("en-US")} of{" "}
+                {askDisconnect.withAsk.toLocaleString("en-US")} editions carrying
+                a live ask.
+              </>
+            ) : null}
+          </p>
+          <p>
+            We start at 50% squeeze because below that, the marketplace UI
+            is already close to honest. The interesting tail is the editions
+            where {label} says &ldquo;229 minted&rdquo; and only 12 of them
+            are actually purchasable.
+          </p>
+        </div>
+
+        <div className="rpc-sq-share">
+          <a
+            href={tweetIntent}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rpc-sq-share-btn"
+          >
+            Share on Twitter
+          </a>
+          <Link href="/insights" className="rpc-sq-back">
+            More public insights →
+          </Link>
+        </div>
+      </section>
+    </main>
+  )
+}
+
+const styles: Record<string, React.CSSProperties> = {
+  page: {
+    minHeight: "100vh",
+    background: "var(--rpc-black)",
+    color: "var(--rpc-text-primary)",
+    fontFamily: "var(--font-body)",
+    padding: "32px 20px 80px",
+  },
+}
+
+const CSS = `
+.rpc-sq-hero {
+  max-width: 1180px;
+  margin: 0 auto 28px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--rpc-border-subtle);
+}
+.rpc-sq-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: var(--rpc-red-text);
+  margin-bottom: 12px;
+}
+.rpc-sq-h1 {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(38px, 6vw, 64px);
+  letter-spacing: 0.5px;
+  line-height: 1.02;
+  margin: 0 0 14px;
+  text-transform: uppercase;
+}
+.rpc-sq-lede {
+  font-family: var(--font-body);
+  font-size: 18px;
+  line-height: 1.55;
+  color: var(--rpc-text-secondary);
+  max-width: 780px;
+  margin: 0 0 16px;
+}
+.rpc-sq-lede strong { color: var(--rpc-text-primary); }
+.rpc-sq-lede em { color: var(--rpc-text-primary); font-style: normal; text-decoration: underline; text-decoration-color: var(--rpc-red-muted); text-underline-offset: 3px; }
+.rpc-sq-meta-row {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--rpc-text-muted);
+}
+.rpc-sq-meta-sep { margin: 0 8px; color: var(--rpc-text-muted); }
+
+.rpc-sq-active-filter {
+  max-width: 1180px;
+  margin: 0 auto 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--rpc-red-bg);
+  border: 1px solid var(--rpc-red-border);
+  border-radius: 2px;
+}
+.rpc-sq-active-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--rpc-red-text);
+}
+.rpc-sq-active-value {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--rpc-text-primary);
+  font-weight: 700;
+}
+.rpc-sq-active-clear {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  background: transparent;
+  border: 1px solid var(--rpc-red-border);
+  color: var(--rpc-red-text);
+  padding: 4px 8px;
+  border-radius: 2px;
+  cursor: pointer;
+  margin-left: 4px;
+}
+.rpc-sq-active-clear:hover { background: var(--rpc-red-fill); color: #fff; }
+
+.rpc-sq-controls {
+  max-width: 1180px;
+  margin: 0 auto 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+  align-items: center;
+}
+.rpc-sq-pill-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.rpc-sq-pill-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--rpc-text-muted);
+  margin-right: 4px;
+}
+.rpc-sq-pill {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  padding: 7px 14px;
+  border: 1px solid var(--rpc-border);
+  background: transparent;
+  color: var(--rpc-text-secondary);
+  cursor: pointer;
+  border-radius: 2px;
+  transition: border-color 120ms, color 120ms, background 120ms;
+}
+.rpc-sq-pill:hover {
+  border-color: var(--rpc-border-hover);
+  color: var(--rpc-text-primary);
+}
+.rpc-sq-pill-active {
+  background: var(--rpc-red-bg);
+  border-color: var(--rpc-red);
+  color: var(--rpc-red-text);
+}
+/* min-width: 0 on both — a <select>'s intrinsic width is its LONGEST option
+   ("Top-5 holder share (desc)" in mono + tracking ≈ 280px) and a flex item
+   never shrinks below that by default, so at 320 px the SORT control pushed
+   the layout viewport to 347 px (measured 10-31; every other board read 320). */
+.rpc-sq-sort { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-width: 0; }
+.rpc-sq-team { display: inline-flex; align-items: center; gap: 8px; }
+.rpc-sq-census-missing { color: var(--rpc-text-muted); cursor: help; }
+.rpc-sq-team-input {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 1px;
+  background: transparent;
+  border: 1px solid var(--rpc-border);
+  color: var(--rpc-text-primary);
+  padding: 7px 10px;
+  border-radius: 2px;
+  width: 150px;
+}
+.rpc-sq-team-note {
+  max-width: 1180px;
+  margin: -8px auto 14px;
+  font-size: 11px;
+  color: var(--rpc-text-muted);
+}
+.rpc-sq-select {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 1px;
+  background: transparent;
+  border: 1px solid var(--rpc-border);
+  color: var(--rpc-text-primary);
+  padding: 7px 10px;
+  border-radius: 2px;
+  cursor: pointer;
+  min-width: 0;
+  max-width: 100%;
+  flex: 1 1 auto;
+}
+
+.rpc-sq-kpi-row {
+  max-width: 1180px;
+  margin: 0 auto 18px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.rpc-sq-kpi {
+  border: 1px solid var(--rpc-border-subtle);
+  background: var(--rpc-surface-raised);
+  padding: 14px 16px;
+  border-radius: 2px;
+}
+.rpc-sq-kpi-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: var(--rpc-text-muted);
+  margin-bottom: 6px;
+}
+.rpc-sq-kpi-value {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 30px;
+  color: var(--rpc-red-text);
+  letter-spacing: 0.5px;
+}
+
+.rpc-sq-table-wrap {
+  max-width: 1180px;
+  margin: 0 auto;
+  border: 1px solid var(--rpc-border-subtle);
+  background: var(--rpc-surface);
+  overflow-x: auto;
+  border-radius: 2px;
+}
+.rpc-sq-state {
+  padding: 32px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--rpc-text-muted);
+}
+.rpc-sq-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.rpc-sq-table th {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: var(--rpc-text-muted);
+  text-align: left;
+  padding: 14px 12px;
+  border-bottom: 1px solid var(--rpc-border-subtle);
+  background: var(--rpc-surface-raised);
+  white-space: nowrap;
+}
+.rpc-sq-th-num { text-align: right; }
+.rpc-sq-th-emph { color: var(--rpc-red-text); }
+.rpc-sq-row {
+  cursor: pointer;
+  border-bottom: 1px solid var(--rpc-border-subtle);
+  transition: background 100ms;
+}
+.rpc-sq-row:hover { background: var(--rpc-surface-hover); }
+.rpc-sq-table td { padding: 12px; vertical-align: middle; }
+.rpc-sq-td-player { min-width: 260px; }
+.rpc-sq-edition-link { text-decoration: none; color: inherit; display: block; }
+.rpc-sq-edition-name {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--rpc-text-primary);
+  line-height: 1.25;
+}
+.rpc-sq-edition-set {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--rpc-text-muted);
+  margin-top: 2px;
+}
+.rpc-sq-td-num {
+  text-align: right;
+  font-family: var(--font-mono);
+  color: var(--rpc-text-primary);
+  white-space: nowrap;
+}
+.rpc-sq-td-emph { color: var(--rpc-red-text); font-weight: 700; }
+.rpc-sq-tier-chip {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+/* Disconnected (>10x FMV) low ask — rendered instead of the raw number so a
+   troll listing never reads as a market price. Muted, with a cursor-help flag
+   carrying the listed value in its title. */
+.rpc-sq-ask-disconnected {
+  color: var(--rpc-text-muted);
+  cursor: help;
+  white-space: nowrap;
+}
+.rpc-sq-ask-flag {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: rgb(252, 211, 77);
+  margin-left: 4px;
+}
+
+.rpc-sq-footer {
+  max-width: 1180px;
+  margin: 36px auto 0;
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 32px;
+}
+.rpc-sq-method h3 {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin: 0 0 10px;
+}
+.rpc-sq-method p {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--rpc-text-secondary);
+  margin: 0 0 12px;
+}
+.rpc-sq-method strong { color: var(--rpc-text-primary); }
+.rpc-sq-method em { color: var(--rpc-text-primary); font-style: italic; }
+
+.rpc-sq-share {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: stretch;
+}
+.rpc-sq-share-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--rpc-red-fill);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  padding: 13px 18px;
+  border-radius: 2px;
+  text-decoration: none;
+  transition: background 120ms;
+}
+.rpc-sq-share-btn:hover { background: var(--rpc-red-fill-hover); }
+.rpc-sq-back {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--rpc-text-secondary);
+  text-decoration: none;
+  padding: 10px;
+  text-align: center;
+}
+.rpc-sq-back:hover { color: var(--rpc-red-text); }
+
+@media (max-width: 760px) {
+  .rpc-sq-kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rpc-sq-footer { grid-template-columns: 1fr; }
+  .rpc-sq-table { font-size: 13px; }
+  .rpc-sq-td-player { min-width: 180px; }
+}
+`

@@ -1,0 +1,705 @@
+// @vitest-environment jsdom
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react"
+import PackHistoryClient from "@/app/dashboard/packs/PackHistoryClient"
+import CollectionOverviewClient from "@/app/(collections)/[collection]/overview/CollectionOverviewClient"
+
+// Two more client pages converted for coverage. NEITHER carried a new defect — both were
+// already hardened, and that is the point of recording it here: the next sweep should not
+// re-derive them.
+//
+// `[collection]/overview` is the page deep-audit D11, R1 and R4 each fixed one layer of, and
+// it now carries a THREE-way distinction that nothing but a source grep was pinning:
+//   read failed          → "Couldn't load this right now"  (about US)
+//   read ok, 0 rows      → "No sales in the last 24h"      (about the MARKET)
+//   read ok, 0 NAMEABLE  → "N recent sales not yet matched to a moment" (about our CATALOG)
+// The third exists because Disney Pinnacle traded 960 times in 24h with 60% of rows carrying
+// a NULL edition_id — a catalog-coverage gap, not an ingest regression, so the copy has to
+// survive it rather than wait for a fix.
+//
+// `dashboard/packs` carries the sibling of the copy-pasted saved-wallets defect: a failed
+// read must not tell a collector who HAS verified a wallet that they have none and send them
+// to the dashboard to redo finished work.
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
+  usePathname: () => "/dashboard/packs",
+  useSearchParams: () => new URLSearchParams(),
+  useParams: () => ({}),
+}))
+vi.mock("next/link", () => ({
+  default: ({ children, href }: { children?: React.ReactNode; href?: string } & Record<string, unknown>) => (
+    <a href={typeof href === "string" ? href : "#"}>{children}</a>
+  ),
+}))
+vi.mock("@/components/InsiderSignalsPanel", () => ({ default: () => <div data-testid="insider" /> }))
+vi.mock("@/components/marketplace-status", () => ({ MarketplaceStatusBanner: () => null }))
+
+function json(status: number, body: unknown, ok = status < 400) {
+  return { ok, status, json: async () => body, text: async () => JSON.stringify(body) } as unknown as Response
+}
+
+beforeEach(() => vi.useRealTimers())
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe("PackHistoryClient", () => {
+  const WALLETS = { wallets: [{ wallet_addr: "0xmine", verified_at: new Date().toISOString() }] }
+  const SUMMARY = {
+    wallet: "0xmine",
+    totals: {
+      packs_purchased: 12, packs_ripped: 7, packs_sold: 3, primary_drops: 5,
+      // ⚠ FULL coverage on BOTH sides deliberately — 0 unpriced buys and all 7
+      // rips valued — so the baseline fixture exercises the "we can state this"
+      // branch. The partial-coverage cases get their own tests below; without
+      // this the whole file would silently move onto the withheld branch.
+      ripped_value_known_count: 7,
+      secondary_buys: 7, primary_spent_usd: 90, primary_spend_unknown_count: 0,
+      spent_usd: 120, sold_proceeds_usd: 40, ripped_value_usd: 55, net_pl_usd: -25,
+      first_event_at: new Date().toISOString(), last_event_at: new Date().toISOString(),
+    },
+    by_currency: { USD: { spent: 120, proceeds: 40, purchases: 12, sales: 3 } },
+    by_collection: [{
+      collection_id: "c1", collection_name: "NBA Top Shot", collection_slug: "nba_top_shot",
+      spent_usd: 120, proceeds_usd: 40, ripped_value_usd: 55, net_pl_usd: -25,
+      activity_total: 12, packs_purchased: 12, packs_ripped: 7, packs_sold: 3,
+    }],
+  }
+  const ROW = (over: Record<string, unknown> = {}) => ({
+    pack_nft_id: "p1", dist_id: "77", pack_name: "Series 5 Base", pack_tier: "base",
+    pack_image: null, collection_id: "c1", collection_name: "NBA Top Shot",
+    collection_slug: "nba_top_shot", status: "ripped", has_buy: true, has_rip: true,
+    has_sell: false, buy_price: 9, buy_currency: "USD", bought_at: new Date().toISOString(),
+    bought_from: null, sell_price: null, sold_at: null, ripped_at: new Date().toISOString(),
+    pull_value_usd: 14, moments_pulled: 3, ...over,
+  })
+
+  function mount(opts: {
+    wallets?: () => Response
+    summary?: () => Response
+    history?: () => Response
+    lifecycle?: () => Response
+  } = {}) {
+    const f = vi.fn(async (input: unknown, _init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes("saved-wallets")) return (opts.wallets ?? (() => json(200, WALLETS)))()
+      if (url.includes("pack-summary")) return (opts.summary ?? (() => json(200, SUMMARY)))()
+      if (url.includes("pack-lifecycle")) return (opts.lifecycle ?? (() => json(200, { pulls: [], ownership_chain: [] })))()
+      if (url.includes("pack-history")) return (opts.history ?? (() => json(200, { packs: [ROW()], total_count: 1 })))()
+      return json(200, {})
+    })
+    vi.stubGlobal("fetch", f)
+    render(<PackHistoryClient />)
+    return f
+  }
+
+  // ⚠ Sibling of the copy-pasted saved-wallets defect. "No verified wallets yet … Verify a
+  // wallet from your dashboard, then come back here" plus an Open dashboard button is
+  // actionable in the worst way: it sends a collector to redo work they already finished.
+  it.each([
+    ["a non-2xx", () => json(500, {}, false)],
+    ["a 401", () => json(401, {}, false)],
+  ])("does not say the account has no verified wallets after %s", async (_l, r) => {
+    mount({ wallets: r as () => Response })
+    await waitFor(() => expect(document.body.textContent).not.toMatch(/Loading wallets/))
+    expect(document.body.textContent).not.toMatch(/No saved wallets yet/)
+    expect(document.body.textContent).not.toMatch(/Open dashboard/)
+  })
+
+  it("does not say the account has no verified wallets after a thrown fetch", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (_i: unknown, _init?: RequestInit) => {
+      throw new Error("network down")
+    }))
+    render(<PackHistoryClient />)
+    await waitFor(() => expect(document.body.textContent).not.toMatch(/Loading wallets/))
+    expect(document.body.textContent).not.toMatch(/No saved wallets yet/)
+  })
+
+  it("does say the account has no saved wallets when the read succeeded with none", async () => {
+    mount({ wallets: () => json(200, { wallets: [] }) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/No saved wallets yet/))
+  })
+
+  // 2026-11-13 (history v27): the "Still held" column -- an opened pack's pulls still in the
+  // wallet at wallet FMV, a sealed pack's value with its basis, and nothing for a pack that left.
+  it("Still held: opened -> held FMV + count, sealed -> value + basis, sold -> a dash; no payload field -> no $0", async () => {
+    mount({
+      history: () => json(200, {
+        packs: [
+          ROW({ pack_nft_id: "o1", pack_name: "Opened One", pulls_listed: 3, pulls_held: 2, pulls_held_priced: 2, held_fmv_usd: 12.5 }),
+          ROW({ pack_nft_id: "h1", pack_name: "Sealed One", status: "held", has_rip: false, pull_value_usd: null, value_usd: 25, value_basis: "ask" }),
+          ROW({ pack_nft_id: "s1", pack_name: "Sold One", status: "flipped", has_rip: false, has_sell: true, sell_price: 30, pull_value_usd: null }),
+          ROW({ pack_nft_id: "o2", pack_name: "Old Payload" }),
+        ],
+        total_count: 4,
+      }),
+    })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Opened One/))
+    const cellOf = (name: string) => {
+      const tr = Array.from(document.querySelectorAll("tr")).find((r) => r.textContent?.includes(name))!
+      const tds = tr.querySelectorAll("td")
+      return tds[tds.length - 1].textContent ?? ""
+    }
+    expect(cellOf("Opened One")).toBe("$12.502 of 3 pulls")
+    expect(cellOf("Sealed One")).toBe("$25.00 · floor ask")
+    expect(cellOf("Sold One")).toBe("—")
+    expect(cellOf("Old Payload")).toBe("—")
+  })
+
+  it("renders the summary and the pack table for the active wallet", async () => {
+    mount()
+    await waitFor(() => expect(document.body.textContent).toMatch(/Series 5 Base/))
+    expect(document.body.textContent).toMatch(/NBA Top Shot/)
+  })
+
+  it("names the RPC's UNKNOWN-currency bucket (drops / rewards) and withholds its measured-zero spend", async () => {
+    // 2026-09-24: primary drops and reward packs carry no price on chain; the
+    // RPC sums COALESCE(price, 0) for them, so the strip said "UNKNOWN · 101
+    // buys · 0 sells · spent $0 · in $0" — a $0 that was never measured.
+    mount({
+      summary: () => json(200, {
+        ...SUMMARY,
+        by_currency: {
+          USD: { spent: 120, proceeds: 40, purchases: 12, sales: 3 },
+          UNKNOWN: { spent: 0, proceeds: 0, purchases: 101, sales: 0 },
+        },
+      }),
+    })
+    await waitFor(() => expect(document.body.textContent).toMatch(/DROPS \/ REWARDS/))
+    const txt = document.body.textContent!
+    expect(txt).toMatch(/101 received · 0 sells · price not on chain/)
+    expect(txt).not.toMatch(/UNKNOWN/)
+    expect(txt).not.toMatch(/101 buys/)
+    // the priced bucket is unchanged
+    expect(txt).toMatch(/12 buys · 3 sells · spent \$120/)
+  })
+
+  it("folds the RPC's DUC bucket into USD — the strip never says DUC (Trevor, 2026-09-25)", async () => {
+    // DUC is pegged 1:1 to the dollar; the summary RPC buckets by sale_currency,
+    // so the founder's strip read "DUC 33 buys · 7 sells · spent $303.00 · in
+    // $463.00" beside "USD 120 buys · 495 sells …". One dollar bucket, summed.
+    mount({
+      summary: () => json(200, {
+        ...SUMMARY,
+        by_currency: {
+          DUC: { spent: 303, proceeds: 463, purchases: 33, sales: 7 },
+          USD: { spent: 120, proceeds: 40, purchases: 12, sales: 3 },
+          FLOW: { spent: 5, proceeds: 0, purchases: 1, sales: 0 },
+        },
+      }),
+    })
+    await waitFor(() => expect(document.body.textContent).toMatch(/45 buys · 10 sells · spent \$423\.00 · in \$503\.00/))
+    const txt = document.body.textContent!
+    expect(txt).not.toMatch(/\bDUC\b/)
+    expect(txt).not.toMatch(/33 buys/)
+    expect(txt).toMatch(/FLOW/)
+    expect(txt).toMatch(/1 buys · 0 sells · spent \$5\.00/)
+  })
+
+  // A summary failure and a history failure are separate reads and must fail independently —
+  // one broken panel must not blank the other.
+  it("keeps the pack table when only the summary read fails", async () => {
+    mount({ summary: () => json(500, { error: "summary unavailable" }, false) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/summary unavailable/))
+    expect(document.body.textContent).toMatch(/Series 5 Base/)
+  })
+
+  it("does not say there is no pack activity when the history read failed", async () => {
+    mount({ history: () => json(500, { error: "history unavailable" }, false) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/history unavailable/))
+    expect(document.body.textContent).not.toMatch(/No pack activity for this filter/)
+  })
+
+  it("does say there is no pack activity when the read succeeded with none", async () => {
+    mount({ history: () => json(200, { packs: [], total_count: 0 }) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/No pack activity for this filter/))
+  })
+
+  it("renders the hero stats from the summary", async () => {
+    mount()
+    await waitFor(() => expect(document.body.textContent).toMatch(/Packs purchased/))
+    expect(document.body.textContent).toMatch(/5 Studio · 7 marketplace/)
+    expect(document.body.textContent).toMatch(/Net P&L|Net P&amp;L/)
+  })
+
+  // ⚠ THE HONEST HALF OF THE SPEND FIGURE. A primary drop whose retail price never resolved
+  // contributes NOTHING to "Total spent", so without this disclosure a collector reads a
+  // spend total that silently omits packs they really bought — and then a Net P&L derived
+  // from it. It is a floor, and it has to say so.
+  it("discloses primary drops whose price could not be resolved", async () => {
+    mount({ summary: () => json(200, { ...SUMMARY, totals: { ...SUMMARY.totals, primary_spend_unknown_count: 3 } }) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/\+3 unpriced/))
+  })
+
+  it("does not print the unpriced note when every primary drop resolved", async () => {
+    mount()
+    await waitFor(() => expect(document.body.textContent).toMatch(/Packs purchased/))
+    expect(document.body.textContent).not.toMatch(/unpriced/)
+  })
+
+  // ── Coverage on the money tiles (2026-09-12) ──────────────────────────────
+  //
+  // Measured on 0xbd94cade097e50ac the day these landed: the history list holds
+  // 598 packs, the hero said "PACKS PURCHASED 133", TOTAL SPENT $398 covered 47
+  // of them, and RIPPED VALUE $241.40 was the sum over 50 of 503 rips. NET P&L
+  // then subtracted the first from the second and published -$156.60 as if it
+  // were a measured result. Product-wide `pack_rips.pull_value_usd` is populated
+  // on 8.5% of 3,685,458 rows, so the rip side understates for EVERY user.
+
+  /** The rendered value of a hero tile, found by its label. A body-wide regex
+   *  cannot distinguish the Net P&L TILE from the collection TAB, which renders
+   *  the same figure — and the tab was the second place this false claim lived. */
+  function tileValue(label: string): string | null {
+    const el = [...document.querySelectorAll("div")].find((d) => d.textContent?.trim() === label)
+    return el?.nextElementSibling?.textContent ?? null
+  }
+
+  it("renders PACKS RIPPED — the count the RPC always returned and the page never showed", async () => {
+    mount()
+    await waitFor(() => expect(document.body.textContent).toMatch(/Packs ripped/i))
+    // The tile, not an incidental match elsewhere on the page.
+    expect(tileValue("Packs ripped")).toBe("7")
+  })
+
+  it("⚠ says how many packs the spend figure actually covers", async () => {
+    mount({ summary: () => json(200, { ...SUMMARY, totals: { ...SUMMARY.totals, primary_spend_unknown_count: 5 } }) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/across 7 of 12 packs with a known price/))
+  })
+
+  it("⚠ says how many rips the ripped-value figure actually covers", async () => {
+    mount({ summary: () => json(200, { ...SUMMARY, totals: { ...SUMMARY.totals, ripped_value_known_count: 2 } }) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/from 2 of 7 rips/))
+  })
+
+  it("⚠ WITHHOLDS Net P&L when the rip side is a thin sample, instead of publishing it", async () => {
+    mount({ summary: () => json(200, { ...SUMMARY, totals: { ...SUMMARY.totals, ripped_value_known_count: 1 } }) })
+    await waitFor(() => expect(tileValue("Net P&L")).toBeTruthy())
+    // The false claim is the FIGURE. Assert its absence, not the presence of copy.
+    expect(tileValue("Net P&L")).toBe("\u2014")
+    expect(document.body.textContent).toMatch(/needs a price on most packs/)
+    // …and the collection TAB must not publish it either.
+    expect(document.body.textContent).not.toMatch(/\$-25/)
+  })
+
+  it("⚠ WITHHOLDS Net P&L when the spend side is a thin sample", async () => {
+    mount({ summary: () => json(200, { ...SUMMARY, totals: { ...SUMMARY.totals, primary_spend_unknown_count: 9 } }) })
+    await waitFor(() => expect(tileValue("Net P&L")).toBeTruthy())
+    expect(tileValue("Net P&L")).toBe("\u2014")
+    expect(document.body.textContent).not.toMatch(/\$-25/)
+  })
+
+  it("⚠ WITHHOLDS Net P&L when most packs behind the rips/sales have NO buy row (inferred drop cost kept out of spend)", async () => {
+    // 2026-10-18: 252 of 261 purchases priced passed the floor while 486 more packs
+    // (inferred_primary_count) carried no cost at all, and +$45,491 was published.
+    mount({ summary: () => json(200, { ...SUMMARY, totals: { ...SUMMARY.totals, inferred_primary_count: 40, inferred_primary_spent_usd: 900 } }) })
+    await waitFor(() => expect(tileValue("Net P&L")).toBeTruthy())
+    expect(tileValue("Net P&L")).toBe("\u2014")
+    expect(document.body.textContent).not.toMatch(/\$-25/)
+  })
+
+  it("CONTROL: a few inferred packs beside a fully priced spend side still publish Net P&L", async () => {
+    mount({ summary: () => json(200, { ...SUMMARY, totals: { ...SUMMARY.totals, inferred_primary_count: 1, inferred_primary_spent_usd: 10 } }) })
+    await waitFor(() => expect(tileValue("Net P&L")).toBeTruthy())
+    expect(tileValue("Net P&L")).toBe("-$25.00")
+  })
+
+  it("⚠ an OLDER payload with no ripped_value_known_count withholds rather than guesses", async () => {
+    const totals: Record<string, unknown> = { ...SUMMARY.totals }
+    delete totals.ripped_value_known_count
+    mount({ summary: () => json(200, { ...SUMMARY, totals }) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/pull values are incomplete/))
+    expect(tileValue("Net P&L")).toBe("\u2014")
+    expect(document.body.textContent).not.toMatch(/\$-25/)
+  })
+
+  it("publishes Net P&L when both sides are fully covered", async () => {
+    mount()
+    await waitFor(() => expect(tileValue("Net P&L")).toBeTruthy())
+    expect(tileValue("Net P&L")).toBe("-$25.00")
+    expect(document.body.textContent).not.toMatch(/needs a price on most packs/)
+  })
+
+  it("renders the per-currency breakdown", async () => {
+    mount()
+    await waitFor(() => expect(document.body.textContent).toMatch(/USD/))
+  })
+
+  it("renders a lifecycle with its pulls and ownership chain", async () => {
+    mount({
+      lifecycle: () => json(200, {
+        pulls: [{ player_name: "Damian Lillard", fmv_usd: 12, thumbnail_url: null }],
+        ownership_chain: [{ address: "0xmine", acquired_at: new Date().toISOString() }],
+      }),
+    })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Series 5 Base/))
+    fireEvent.click(screen.getByText(/Series 5 Base/))
+    await waitFor(() => expect(document.body.textContent).toMatch(/Pulls \(1\)/))
+    expect(document.body.textContent).toMatch(/Damian Lillard/)
+    expect(document.body.textContent).toMatch(/Ownership chain/)
+  })
+
+  // 2026-11-13 (Trevor): the expanded pack marks which pulls the wallet still holds.
+  it("expanded pack: still-held pulls are marked, gone ones say so, and the heading counts them", async () => {
+    mount({
+      lifecycle: () => json(200, {
+        holdings_checked: true,
+        pulls: [
+          { nft_id: "a", player_name: "Damian Lillard", fmv_usd: 12, still_held: true, wallet_fmv_usd: 11.5 },
+          { nft_id: "b", player_name: "Anfernee Simons", fmv_usd: 3, still_held: false, wallet_fmv_usd: null },
+        ],
+        ownership_chain: [],
+      }),
+    })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Series 5 Base/))
+    fireEvent.click(screen.getByText(/Series 5 Base/))
+    await waitFor(() => expect(document.body.textContent).toMatch(/1 of 2 still held · \$11\.50 wallet FMV/))
+    expect(document.querySelector('[data-still-held="yes"]')?.textContent).toMatch(/Damian Lillard.*\$11\.50.*Held/)
+    expect(document.querySelector('[data-still-held="no"]')?.textContent).toMatch(/No longer held/)
+  })
+
+  it("expanded pack: a failed holdings check says so and marks no pull as gone", async () => {
+    mount({ lifecycle: () => json(200, { holdings_checked: false, pulls: [{ nft_id: "a", player_name: "Damian Lillard", fmv_usd: 12 }], ownership_chain: [] }) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Series 5 Base/))
+    fireEvent.click(screen.getByText(/Series 5 Base/))
+    await waitFor(() => expect(document.body.textContent).toMatch(/couldn't check which of these you still hold/))
+    expect(document.body.textContent).not.toMatch(/No longer held/)
+  })
+
+  // ⚠ A pull with no name must render an em-dash, not an empty cell — a blank tile beside
+  // a price reads as a rendering fault rather than a catalog gap.
+  it("renders an em-dash for a pull we cannot name", async () => {
+    mount({ lifecycle: () => json(200, { pulls: [{ player_name: null, character_name: null, fmv_usd: 12 }], ownership_chain: [] }) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Series 5 Base/))
+    fireEvent.click(screen.getByText(/Series 5 Base/))
+    await waitFor(() => expect(document.body.textContent).toMatch(/Pulls \(1\)/))
+    expect(document.body.textContent).toMatch(/—/)
+  })
+
+  it.each([
+    ["held", "held"],
+    ["sold", "sold"],
+    ["flipped", "flipped"],
+    ["other", "other"],
+  ])("renders a %s pack row", async (_l, status) => {
+    mount({ history: () => json(200, { packs: [ROW({ status, has_rip: false, ripped_at: null, pull_value_usd: null, moments_pulled: null })], total_count: 1 }) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Series 5 Base/))
+    expect((document.body.textContent ?? "").toLowerCase()).toContain(status)
+  })
+
+  // ⚠ A nameless pack falls back to its nft id, never a blank cell — an unlabelled row in a
+  // table of money reads as a rendering fault. Asserted on the POSITIVE marker: the first
+  // draft awaited the ABSENCE of "Loading packs…", which is satisfied by the pre-effect
+  // render before anything has been fetched at all (two conditions true at different
+  // moments do not prove they are ever true together).
+  it("renders a pack with no name using its nft id rather than a blank cell", async () => {
+    mount({ history: () => json(200, { packs: [ROW({ pack_name: null, pack_nft_id: "abcdef123456" })], total_count: 1 }) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Pack #123456/))
+  })
+
+  it("filters by status and resets to the first page", async () => {
+    const f = mount({ history: () => json(200, { packs: [ROW()], total_count: 200 }) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Series 5 Base/))
+    fireEvent.click(screen.getAllByRole("button").find((b) => /next/i.test(b.textContent ?? ""))!)
+    await waitFor(() => expect(f.mock.calls.some((c) => /offset=50\b/.test(String(c[0])))).toBe(true))
+
+    const sold = screen.getAllByRole("button").find((b) => /^sold$/i.test((b.textContent ?? "").trim()))
+    expect(sold).toBeTruthy()
+    fireEvent.click(sold!)
+    // ⚠ Without the reset the new filter is read at the OLD offset, so a collector
+    // switching to a filter with three results is shown an empty page and told they have
+    // no such packs.
+    // 2026-09-26: and it asks for sold_any (sold + flipped) — 'sold' alone hid every
+    // pack the wallet had also bought (17 of 396 Top Shot sales on 0xbd94…).
+    await waitFor(() =>
+      expect(f.mock.calls.some((c) => /offset=0\b/.test(String(c[0])) && /status=sold_any\b/.test(String(c[0])))).toBe(true),
+    )
+    expect(f.mock.calls.some((c) => /status=sold(&|$)/.test(String(c[0])))).toBe(false)
+  })
+
+  it("filters by collection", async () => {
+    const f = mount()
+    await waitFor(() => expect(document.body.textContent).toMatch(/Series 5 Base/))
+    const tab = screen.getAllByRole("button").find((b) => /^NBA Top Shot$/i.test((b.textContent ?? "").trim()))
+    if (tab) {
+      fireEvent.click(tab)
+      await waitFor(() => expect(f.mock.calls.some((c) => /collection=/.test(String(c[0])))).toBe(true))
+    }
+  })
+
+  it("expands a row and fetches its lifecycle once", async () => {
+    const f = mount({ lifecycle: () => json(200, { pulls: [{ player_name: "Damian Lillard", fmv_usd: 12 }], ownership_chain: [] }) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Series 5 Base/))
+    fireEvent.click(screen.getByText(/Series 5 Base/))
+    await waitFor(() => expect(f.mock.calls.some((c) => String(c[0]).includes("pack-lifecycle"))).toBe(true))
+    const before = f.mock.calls.filter((c) => String(c[0]).includes("pack-lifecycle")).length
+    // Collapse and re-expand: the cache must serve it, not a second request.
+    fireEvent.click(screen.getByText(/Series 5 Base/))
+    fireEvent.click(screen.getByText(/Series 5 Base/))
+    await waitFor(() => expect(document.body.textContent).toMatch(/Series 5 Base/))
+    expect(f.mock.calls.filter((c) => String(c[0]).includes("pack-lifecycle")).length).toBe(before)
+  })
+
+  // 2026-09-26: a NON-2XX lifecycle read used to be swallowed, leaving the row on
+  // "Loading lifecycle…" for ever. It must say it failed.
+  it("states a failed (non-2xx) lifecycle read instead of loading for ever", async () => {
+    mount({ lifecycle: () => json(500, { error: "x" }, false) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Series 5 Base/))
+    fireEvent.click(screen.getByText(/Series 5 Base/))
+    await waitFor(() => expect(document.body.textContent).toMatch(/Couldn.t load this pack.s details/))
+    expect(document.body.textContent).not.toMatch(/Loading lifecycle/)
+  })
+
+  it("asks for the pack's collection, prices a pull from current_fmv, and says where the pulls came from", async () => {
+    const f = mount({ lifecycle: () => json(200, { pulls: [{ player_name: "Scoot Henderson", current_fmv: 7.5 }], pulls_source: "dapper_pulls", ownership_chain: [] }) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Series 5 Base/))
+    fireEvent.click(screen.getByText(/Series 5 Base/))
+    await waitFor(() => expect(document.body.textContent).toMatch(/Scoot Henderson/))
+    expect(document.body.textContent).toMatch(/\$7\.50/)
+    expect(document.body.textContent).toMatch(/from Dapper.s record of this pack/)
+    expect(f.mock.calls.some((c) => String(c[0]).includes("collection=nba_top_shot"))).toBe(true)
+  })
+
+  it("says a ripped pack's pulls are not identified rather than showing an empty panel", async () => {
+    mount({ lifecycle: () => json(200, { pulls: [], pulls_source: null, ownership_chain: [] }) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Series 5 Base/))
+    fireEvent.click(screen.getByText(/Series 5 Base/))
+    await waitFor(() => expect(document.body.textContent).toMatch(/isn.t identified yet/))
+  })
+
+  // ⚠ A lifecycle that failed must SAY so inside the expanded row. Rendering the empty
+  // "no pulls" shape would tell a collector their pack produced nothing.
+  it("states a lifecycle failure inside the expanded row", async () => {
+    mount({ lifecycle: () => json(200, { error: "lifecycle unavailable" }) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Series 5 Base/))
+    fireEvent.click(screen.getByText(/Series 5 Base/))
+    await waitFor(() => expect(document.body.textContent).toMatch(/lifecycle unavailable/))
+  })
+
+  it("cannot page backwards off the first page", async () => {
+    const f = mount({ history: () => json(200, { packs: [ROW()], total_count: 200 }) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Series 5 Base/))
+    const prev = screen.getAllByRole("button").find((b) => /prev/i.test(b.textContent ?? ""))!
+    expect(prev.hasAttribute("disabled")).toBe(true)
+    const before = f.mock.calls.length
+    fireEvent.click(prev)
+    expect(f.mock.calls.length).toBe(before)
+  })
+
+  it("stops at the last page rather than paging off the end", async () => {
+    const f = mount({ history: () => json(200, { packs: [ROW()], total_count: 100 }) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Series 5 Base/))
+    const nextBtn = () => screen.getAllByRole("button").find((b) => /next/i.test(b.textContent ?? ""))!
+    expect(nextBtn().hasAttribute("disabled")).toBe(false)
+    fireEvent.click(nextBtn())
+    await waitFor(() => expect(f.mock.calls.some((c) => /offset=50\b/.test(String(c[0])))).toBe(true))
+    expect(nextBtn().hasAttribute("disabled")).toBe(true)
+    const before = f.mock.calls.length
+    fireEvent.click(nextBtn())
+    expect(f.mock.calls.length).toBe(before)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe("CollectionOverviewClient — the three-way sales claim", () => {
+  const SALE = (over: Record<string, unknown> = {}) => ({
+    edition_name: "Damian Lillard — Archive", player_name: "Damian Lillard",
+    character_name: null, price: 120, sold_at: new Date().toISOString(),
+    tier: "LEGENDARY", set_name: "Archive Set", serial_number: 12, circulation_count: 1000,
+    ...over,
+  })
+  const STATS = (over: Record<string, unknown> = {}) => ({
+    edition_count: 19769, fmv_pct: 54.5, volume_24h: 4200, fmv_age_minutes: 12,
+    sniper_deals: [], top_sales: [SALE()], ...over,
+  })
+
+  const mount = (r: () => Response | Promise<Response>, collection = "nba-top-shot") => {
+    vi.stubGlobal("fetch", vi.fn(async (_i: unknown, _init?: RequestInit) => r()))
+    render(<CollectionOverviewClient collection={collection} />)
+  }
+
+  it("renders the KPI band and the top sales", async () => {
+    mount(() => json(200, STATS()))
+    await waitFor(() => expect(document.body.textContent).toMatch(/Damian Lillard/))
+    expect(document.body.textContent).toMatch(/19,769/)
+    expect(document.body.textContent).toMatch(/\$4,200/)
+  })
+
+  // State 2: the read succeeded and the market genuinely did nothing. An honest claim.
+  it("says 'no sales in the last 24h' when the read succeeded with none", async () => {
+    mount(() => json(200, STATS({ top_sales: [] })))
+    await waitFor(() => expect(document.body.textContent).toMatch(/No sales (indexed )?in the last 24h/))
+    expect(document.body.textContent).not.toMatch(/not yet matched to a moment/)
+  })
+
+  // ⚠ STATE 3, and it is the one a naive fix erases. These sales were READ SUCCESSFULLY —
+  // the market traded and our catalog cannot name it — so routing them into state 2 would
+  // publish a claim about the MARKET manufactured from a gap in OUR data. Measured live on
+  // Disney Pinnacle: 960 sales in 24h, 60% with a NULL edition_id.
+  it("says the sales are unmatched — not that there were none — when no row can be named", async () => {
+    mount(() => json(200, STATS({
+      top_sales: [
+        SALE({ edition_name: null, player_name: null, character_name: null }),
+        SALE({ edition_name: null, player_name: null, character_name: null }),
+      ],
+    })))
+    await waitFor(() => expect(document.body.textContent).toMatch(/2 recent sales not yet matched to a moment/))
+    expect(document.body.textContent).not.toMatch(/No sales (indexed )?in the last 24h/)
+  })
+
+  it("uses the singular for one unmatched sale", async () => {
+    mount(() => json(200, STATS({ top_sales: [SALE({ edition_name: null, player_name: null, character_name: null })] })))
+    await waitFor(() => expect(document.body.textContent).toMatch(/1 recent sale not yet matched/))
+    expect(document.body.textContent).not.toMatch(/1 recent sales/)
+  })
+
+  // ⚠ A PARTIALLY nameable window is the case that silently serves a 3-row "Top 5" as the
+  // complete ranking. The shortfall is DISCLOSED beneath the rows rather than dropped.
+  it("discloses the unnamed remainder beneath a partially-nameable top sales list", async () => {
+    mount(() => json(200, STATS({
+      top_sales: [SALE(), SALE({ edition_name: null, player_name: null, character_name: null })],
+    })))
+    await waitFor(() => expect(document.body.textContent).toMatch(/Damian Lillard/))
+    expect(document.body.textContent).toMatch(/1 more sale in this window not yet matched to a moment/)
+  })
+
+  it("does not disclose a remainder when every sale is nameable", async () => {
+    mount(() => json(200, STATS({ top_sales: [SALE(), SALE()] })))
+    await waitFor(() => expect(document.body.textContent).toMatch(/Damian Lillard/))
+    expect(document.body.textContent).not.toMatch(/more sale.? in this window/)
+  })
+
+  // ── "Priced from Recent Sales" must be THAT metric or nothing ─────────────────────
+  // #205 (Trevor 2026-10-21): the cell reads `recent_sale_pct` — the share of editions
+  // with a market sale in the last 30 days. It used to read `fmv_high_medium_pct` (the
+  // HIGH/MEDIUM confidence share, 0 % on Golazos beside 84 editions sold this month),
+  // and before that fell back to `fmv_pct` (87.3 % vs a true 0.3 %, 2026-09-02). Neither
+  // may ever be published under this label.
+  it("renders the recent-sale share, not either confidence metric", async () => {
+    mount(() => json(200, STATS({ fmv_pct: 87.3, fmv_high_medium_pct: 0.3, recent_sale_pct: 41.6 })), "laliga-golazos")
+    await waitFor(() => expect(document.body.textContent).toMatch(/Priced from Recent Sales/))
+    expect(document.body.textContent).toMatch(/42%/)
+    expect(document.body.textContent).not.toMatch(/87%/)
+  })
+
+  // ⚠ ASSERTED AS AN ABSENCE. The failure this prevents is not an error message
+  // going missing — it is a DIFFERENT number being published under this label.
+  it("publishes no priced-from-sales figure at all when the recent-sale share is missing", async () => {
+    mount(() => json(200, STATS({ fmv_pct: 87.3, fmv_high_medium_pct: 37.2, recent_sale_pct: null, recent_sale_failed: true })), "laliga-golazos")
+    await waitFor(() => expect(document.body.textContent).toMatch(/Priced from Recent Sales/))
+    expect(document.body.textContent).not.toMatch(/87%/)
+    expect(document.body.textContent).not.toMatch(/37%/)
+  })
+
+  // 2026-10-20 sweep: /ufc/overview (market closed 13 May 2026) rendered "Insider Signals —
+  // Anomalies in the last 24h", a live-trading monitor over a market with no trades.
+  it("renders no Insider Signals panel on a closed market, and keeps it on an open one", async () => {
+    mount(() => json(200, STATS({ fmv_pct: 73.6, fmv_high_medium_pct: 0 })), "ufc-strike")
+    await waitFor(() => expect(document.body.textContent).toMatch(/Priced from Recent Sales/))
+    expect(document.querySelector('[data-testid="insider"]')).toBeNull()
+    cleanup()
+    mount(() => json(200, STATS({})), "nba-top-shot")
+    await waitFor(() => expect(document.body.textContent).toMatch(/Priced from Recent Sales/))
+    expect(document.querySelector('[data-testid="insider"]')).not.toBeNull()
+  })
+
+  // Zero is a measurement, not an absence — UFC Strike's market closed, so its share is genuinely 0.0%.
+  it("renders a genuine zero share as 0%", async () => {
+    mount(() => json(200, STATS({ fmv_pct: 73.6, fmv_high_medium_pct: 0, recent_sale_pct: 0 })), "ufc-strike")
+    await waitFor(() => expect(document.body.textContent).toMatch(/Priced from Recent Sales/))
+    expect(document.body.textContent).toMatch(/0%/)
+    expect(document.body.textContent).not.toMatch(/74%/)
+  })
+
+  // ⚠ A 200 CARRYING AN `error` KEY is a failure, not a collection with no data. Storing it
+  // makes `stats` truthy and every KPI reads `stats ? (x ?? 0) : null` — so the whole band
+  // would render as "0 editions / 0% priced / $0" instead of em-dashes. That is deep-audit
+  // D11, and the guard is kept precisely so no future 200-with-error-body can resurrect it.
+  it("treats a 200 carrying an error key as a failure, not as an empty collection", async () => {
+    mount(() => json(200, { error: "statement timeout" }))
+    await waitFor(() => expect(document.body.textContent).toMatch(/Couldn’t load/))
+    expect(document.body.textContent).not.toMatch(/No sales (indexed )?in the last 24h/)
+    // The KPI band must not publish a zero edition count out of the failure.
+    expect(document.body.textContent).not.toMatch(/\b0 editions\b/)
+  })
+
+  it("does not publish a market claim after a thrown fetch", async () => {
+    mount(() => { throw new Error("network down") })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Couldn’t load/))
+    expect(document.body.textContent).not.toMatch(/No sales (indexed )?in the last 24h/)
+    expect(document.body.textContent).not.toMatch(/No deals/)
+  })
+
+  it("renders a deal when the sniper feed has one, and an honest empty state when it does not", async () => {
+    mount(() => json(200, STATS({
+      sniper_deals: [{
+        edition_name: "Damian Lillard — Archive", player_name: "Damian Lillard", character_name: null,
+        price: 5, fmv: 20, discount_pct: 75, tier: "LEGENDARY", set_name: "Archive Set",
+        serial_number: 1, circulation_count: 1000, marketplace: "topshot", listing_url: "https://example.test",
+      }],
+    })))
+    await waitFor(() => expect(document.body.textContent).toMatch(/Damian Lillard/))
+    cleanup()
+    mount(() => json(200, STATS({ sniper_deals: [], top_sales: [] })))
+    await waitFor(() => expect(document.body.textContent).toMatch(/No sales (indexed )?in the last 24h/))
+  })
+
+  // UFC's Flow market is frozen by design, so a red OUTDATED pill would be permanently wrong
+  // — the cry-wolf outcome this repo already paid for with `ufc_fmv_stale_hours`.
+  it("does not flag stale FMV as an outage for the frozen UFC market", async () => {
+    mount(() => json(200, STATS({ fmv_age_minutes: 100_000 })), "ufc")
+    await waitFor(() => expect(document.body.textContent).toMatch(/Damian Lillard/))
+    expect(document.body.textContent).not.toMatch(/OUTDATED/i)
+  })
+
+  // 2026-10-29 sweep: the writers re-stamp UFC snapshots, so the newest write is minutes old
+  // and the box read "FMV Data Age: just now" over prices fixed at the 13 May 2026 close.
+  // ⚠ ASSERTED AS AN ABSENCE of the fresh-age claim, and the close date in its place.
+  it("states a closed market's close date, never a fresh write age", async () => {
+    mount(() => json(200, STATS({ fmv_age_minutes: 0 })), "ufc-strike")
+    await waitFor(() => expect(document.querySelector('[data-testid="closed-market-prices-as-of"]')).not.toBeNull())
+    expect(document.querySelector('[data-testid="closed-market-prices-as-of"]')!.textContent).toBe("13 May 2026")
+    // The Pipeline Status card (the fixture's top sales carry their own "just now" ages).
+    const card = document.querySelector('[data-testid="closed-market-prices-as-of"]')!.closest("section")!
+    expect(card.textContent).not.toMatch(/just now/i)
+    expect(card.textContent).not.toMatch(/FMV Data Age/)
+    expect(card.textContent).not.toMatch(/< 30 min/)
+    cleanup()
+    mount(() => json(200, STATS({ fmv_age_minutes: 0 })), "nba-top-shot")
+    await waitFor(() => expect(document.body.textContent).toMatch(/FMV Data Age/))
+    expect(document.querySelector('[data-testid="closed-market-prices-as-of"]')).toBeNull()
+  })
+})
+
+describe("CollectionOverviewClient — server-seeded first frame (review E2, 2026-10-13)", () => {
+  const STATS = (over: Record<string, unknown> = {}) => ({
+    edition_count: 19769, fmv_pct: 54.5, volume_24h: 4200, fmv_age_minutes: 12,
+    sniper_deals: [], top_sales: [], ...over,
+  })
+
+  it("paints the seeded KPIs before any client read resolves, then takes the live numbers", async () => {
+    let resolveLive!: (r: Response) => void
+    const pending = new Promise<Response>((res) => { resolveLive = res })
+    const f = vi.fn(async () => pending)
+    vi.stubGlobal("fetch", f)
+    render(<CollectionOverviewClient collection="nba-top-shot" initialStats={STATS() as never} />)
+    // Synchronously, with the live read still pending: the seed is on screen.
+    expect(document.body.textContent).toMatch(/19,769/)
+    expect(document.body.textContent).toMatch(/\$4,200/)
+    // The live refresh still runs — a seed is a head start, never the final word.
+    expect(f).toHaveBeenCalledTimes(1)
+    resolveLive(json(200, STATS({ edition_count: 19801, volume_24h: 5100 })))
+    await waitFor(() => expect(document.body.textContent).toMatch(/19,801/))
+    expect(document.body.textContent).toMatch(/\$5,100/)
+    expect(document.body.textContent).not.toMatch(/19,769/)
+  })
+
+  it("NO-CHANGE CONTROL: without a seed the band loads exactly as before (no numbers until the read)", () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Promise<Response>(() => {})))
+    render(<CollectionOverviewClient collection="nba-top-shot" />)
+    expect(document.body.textContent).not.toMatch(/19,769/)
+  })
+})

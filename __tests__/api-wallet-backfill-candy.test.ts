@@ -1,0 +1,353 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import { makeReq } from "./cron-req-helper"
+
+// Route integration test for POST /api/wallet-backfill-candy (Solana/Candy).
+// Bearer INGEST_SECRET_TOKEN gated → fail-closed 401. Once authed the route
+// validates a base58 wallet (400 otherwise), then either short-circuits to a
+// discovery-pending 202 (INERT until CANDY_MLB_COLLECTION_ADDRESS is filled) or,
+// when discovery is ready, returns the fire-and-forget accept 202 with the DAS
+// walk deferred to after() (stubbed no-op). candyDiscoveryReady is mocked via a
+// hoisted flag so both 202 shapes are covered. Mocks supabaseAdmin + the Solana
+// DAS/normalize libs.
+//
+// 2026-11-08: the route now delegates to lib/candy/refresh-wallet.ts (the shared walk). These
+// tests deliberately run THROUGH it — only the data sources are mocked — so every property
+// below (collection filter, burnt/pack skip, owner stamping, write and listings honesty, the
+// 429 retry) is still proven at the route, and retirement runs only behind a complete walk.
+
+// The real Base Series address: membership is decided by lib/chains/solana/candy-sets.ts (2026-11-08).
+const COLL = "JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n"
+const state = vi.hoisted(() => ({
+  ready: false,
+  captured: null as null | (() => Promise<void>),
+  pages: [] as any[][],
+  paginateThrows: false,
+  upsert: { data: [{ moment_id: "m1" }] as { moment_id: string }[] | null, error: null as any },
+  runs: [] as any[],
+  listings: { data: [] as any[] | null, error: null as any },
+  assets: {} as Record<string, any>,
+  upserted: [] as any[][],
+  throttleOnce: new Set<string>(),
+  otherRpcs: [] as string[],
+}))
+
+vi.mock("next/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("next/server")>()
+  return { ...actual, after: (fn: any) => { state.captured = fn } }
+})
+vi.mock("@/lib/supabase", () => ({
+  supabaseAdmin: {
+    rpc: async (n: string, args: any) => {
+      if (n === "log_pipeline_run") state.runs.push(args)
+      else state.otherRpcs.push(n)
+      return { data: null, error: null }
+    },
+    from: (table: string) => {
+      if (table === "candy_listings") {
+        const b: any = { select: () => b, eq: () => b, order: () => b, limit: async () => state.listings }
+        return b
+      }
+      if (table === "editions") {
+        const b: any = {
+          select: () => b, eq: () => b, in: async () => ({ data: [], error: null }),
+          upsert: (rows: any[]) => ({ select: async () => ({ data: rows.map((r) => ({ external_id: r.external_id })), error: null }) }),
+        }
+        return b
+      }
+      return { upsert: (rows: any[]) => { state.upserted.push(rows); return { select: async () => state.upsert } } }
+    },
+  },
+}))
+vi.mock("@/lib/chains/solana/das", () => ({
+  getAssetsByOwner: async (_w: string, page: number) => {
+    if (state.paginateThrows) throw new Error("DAS down")
+    return { items: state.pages[page - 1] ?? [], total: 0, limit: 1000, page }
+  },
+  getAssetBatch: async () => [],
+  getAsset: async (id: string) => {
+    if (state.throttleOnce.has(id)) { state.throttleOnce.delete(id); throw new Error("DAS getAsset HTTP 429: Too Many Requests") }
+    if (!(id in state.assets)) throw new Error("no asset " + id)
+    return state.assets[id]
+  },
+}))
+vi.mock("@/lib/chains/solana/normalize", () => ({
+  CANDY_MLB_COLLECTION_ADDRESS: "TODO_1_CANDY_CORE_COLLECTION_ADDRESS",
+  CANDY_MLB_SLUG: "candy_mlb",
+  candyDiscoveryReady: () => state.ready,
+  isBurnt: (a: any) => a.kind === "burnt",
+  isPack: (a: any) => a.kind === "pack",
+  normalizeSerial: (a: any) => ({ moment_id: a.m ?? null, wallet_address: a.owner ?? null, collection_id: "c1" }),
+  normalizeEdition: (a: any) => ({ external_id: "k-" + (a.m ?? "x"), collection_id: "c1" }),
+  CANDY_MLB_UUID: "c1",
+}))
+// 2026-11-12: refreshCandyWallet keeps (never writes) a card DAS returned without metadata. These fixtures
+// carry no attributes/image, so the real isUnhydrated would read them all as bare; only `bare: true` is.
+vi.mock("@/lib/chains/solana/hydrate", () => ({ isUnhydrated: (a: any) => a.bare === true }))
+vi.mock("@/lib/candy/collections", () => ({ loadCandyCollections: async () => ({ sets: [], error: null }) }))
+
+import { POST } from "@/app/api/wallet-backfill-candy/route"
+
+const url = "https://t/api/wallet-backfill-candy"
+const VALID_SOL = "So11111111111111111111111111111111111111112"
+const req = (headers: Record<string, string> = {}, body: any = {}) =>
+  ({ headers: new Headers(headers), json: async () => body }) as any
+
+describe("POST /api/wallet-backfill-candy — fail-closed auth", () => {
+  beforeEach(() => { delete process.env.INGEST_SECRET_TOKEN })
+  it("401s without the bearer token", async () => {
+    expect((await POST(req())).status).toBe(401)
+  })
+  it("401s with a bogus token", async () => {
+    expect((await POST(req({ authorization: "Bearer x" }))).status).toBe(401)
+  })
+})
+
+describe("POST /api/wallet-backfill-candy — secret configured (success + body guards)", () => {
+  const TOKEN = "test-ingest-secret"
+  beforeEach(() => { process.env.INGEST_SECRET_TOKEN = TOKEN; state.ready = false })
+  afterEach(() => { delete process.env.INGEST_SECRET_TOKEN; state.ready = false })
+
+  it("still 401s with a wrong bearer token", async () => {
+    expect((await POST(makeReq({ url, auth: "Bearer wrong", body: { wallet: VALID_SOL } }))).status).toBe(401)
+  })
+
+  it("400s on malformed JSON when authed", async () => {
+    const res = await POST(makeReq({ url, auth: `Bearer ${TOKEN}`, badJson: true }))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe("Invalid JSON body")
+  })
+
+  it("400s on a missing wallet field when authed", async () => {
+    const res = await POST(makeReq({ url, auth: `Bearer ${TOKEN}`, body: {} }))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe("wallet field required")
+  })
+
+  it("400s on a non-base58 (Flow 0x) wallet when authed", async () => {
+    const res = await POST(makeReq({ url, auth: `Bearer ${TOKEN}`, body: { wallet: "0xbd94cade097e50ac" } }))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe("wallet is not a base58 Solana address")
+  })
+
+  it("202 discovery-pending short-circuit while discovery is not ready", async () => {
+    state.ready = false
+    const res = await POST(makeReq({ url, auth: `Bearer ${TOKEN}`, body: { wallet: VALID_SOL } }))
+    expect(res.status).toBe(202)
+    const body = await res.json()
+    expect(body.accepted).toBe(false)
+    expect(body.skipped).toBe("discovery_pending")
+    expect(body.collection).toBe("candy_mlb")
+  })
+
+  it("202-accepts once discovery is ready (DAS walk deferred to after())", async () => {
+    state.ready = true
+    const res = await POST(makeReq({ url, auth: `Bearer ${TOKEN}`, body: { wallet: VALID_SOL } }))
+    expect(res.status).toBe(202)
+    const body = await res.json()
+    expect(body.accepted).toBe(true)
+    expect(body.collection).toBe("candy_mlb")
+    expect(body.wallet_address).toBe(VALID_SOL)
+  })
+})
+
+// --- the deferred DAS walk: collection gate, burnt/pack skip, owner stamping ---
+
+const asset = (over: any = {}) => ({
+  kind: "icon", m: "m1", owner: "STALE_OWNER",
+  grouping: [{ group_key: "collection", group_value: COLL }],
+  ...over,
+})
+
+describe("POST /api/wallet-backfill-candy — deferred DAS walk", () => {
+  beforeEach(() => {
+    process.env.INGEST_SECRET_TOKEN = "tok"
+    state.ready = true
+    state.captured = null
+    state.pages = []
+    state.paginateThrows = false
+    state.upsert = { data: [{ moment_id: "m1" }], error: null }
+    state.runs = []
+    state.otherRpcs = []
+    state.listings = { data: [], error: null }
+    state.assets = {}
+    state.upserted = []
+  })
+
+  async function accept(body: any = { wallet: VALID_SOL }) {
+    const res = await POST(makeReq({ url, auth: "Bearer tok", body }))
+    return res
+  }
+
+  it("filters to the Candy collection and drops burnt + pack assets", async () => {
+    state.pages = [[
+      asset({ m: "m1" }),
+      asset({ m: "m2", kind: "burnt" }),
+      asset({ m: "m3", kind: "pack" }),
+      asset({ m: "m4", grouping: [{ group_key: "collection", group_value: "SOME_OTHER" }] }),
+      asset({ m: null }), // no moment_id -> dropped
+    ]]
+    await accept()
+    await state.captured!()
+    const run = state.runs.at(-1)
+    expect(run.p_ok).toBe(true)
+    expect(run.p_rows_found).toBe(1) // only the live in-collection asset with a moment id
+    expect(run.p_extra.wallet).toBe(VALID_SOL)
+  })
+
+  it("keeps a wallet's All-Star and Gold Series ICONs too — every Candy set, not the Base collection alone (2026-11-08)", async () => {
+    state.pages = [[
+      asset({ m: "base1" }),
+      asset({ m: "asg1", grouping: [{ group_key: "collection", group_value: "YTAPbbkLY6cqskMCtBfQXtN1x1a8smiKiM99svzQAvX" }] }),
+      asset({ m: "gold1", grouping: [{ group_key: "collection", group_value: "8BvHMsQZ2vihNBWFw3NcLYdpJzKsuz3kSrJUUwC5Lx4K" }] }),
+      asset({ m: "x1", grouping: [{ group_key: "collection", group_value: "SOME_OTHER" }] }),
+    ]]
+    await accept()
+    await state.captured!()
+    expect(state.runs.at(-1).p_rows_found).toBe(3)
+  })
+
+  it("stamps the QUERIED wallet so a stale DAS owner can't misattribute the row", async () => {
+    let upserted: any[] = []
+    state.pages = [[asset({ m: "m1", owner: "STALE_OWNER" })]]
+    // capture what reached the upsert
+    const { supabaseAdmin } = await import("@/lib/supabase")
+    const orig = (supabaseAdmin as any).from
+    ;(supabaseAdmin as any).from = () => ({
+      upsert: (rows: any[]) => { upserted = rows; return { select: async () => state.upsert } },
+    })
+    try {
+      await accept()
+      await state.captured!()
+    } finally {
+      ;(supabaseAdmin as any).from = orig
+    }
+    expect(upserted).toHaveLength(1)
+    expect(upserted[0].wallet_address).toBe(VALID_SOL) // not STALE_OWNER
+  })
+
+  // INVERTED 2026-09-20 (R123): was "run still ok" — it pinned the swallowed-write
+  // defect. The walk survives a rejected chunk; the run row must not call it a
+  // success. Mutation-checked: restoring the hardcoded `true, null` reds p_ok.
+  it("a rejected wmc upsert is non-fatal to the walk but FAILS the run row (written stays 0)", async () => {
+    state.pages = [[asset()]]
+    state.upsert = { data: null, error: { message: "wmc down" } }
+    await accept()
+    await state.captured!()
+    const run = state.runs.at(-1)
+    expect(run.p_ok).toBe(false)
+    expect(String(run.p_error)).toContain("wallet_moments_cache: wmc down")
+    expect(run.p_rows_written).toBe(0)
+    expect(run.p_extra.write_errors).toBe(1)
+  })
+
+  it("logs ok:false when the DAS walk throws", async () => {
+    state.paginateThrows = true
+    await accept()
+    await state.captured!()
+    const run = state.runs.at(-1)
+    expect(run.p_ok).toBe(false)
+    expect(run.p_error).toContain("DAS down")
+  })
+
+  // 2026-11-08: via the shared walk, a saved wallet's sold cards are retired — but ONLY
+  // behind a complete walk; a failed DAS walk retires nothing.
+  it("retires the wallet's unseen rows after a complete walk, and never after a failed one", async () => {
+    state.pages = [[asset({ m: "m1" })]]
+    await accept()
+    await state.captured!()
+    expect(state.otherRpcs).toContain("candy_retire_wallet_unseen")
+    expect(state.otherRpcs).toContain("purge_candy_wmc_ghost_rows_for")
+    expect(state.runs.at(-1).p_ok).toBe(true)
+
+    state.otherRpcs = []
+    state.paginateThrows = true
+    await accept()
+    await state.captured!()
+    expect(state.otherRpcs).not.toContain("candy_retire_wallet_unseen")
+    expect(state.runs.at(-1).p_ok).toBe(false)
+    expect(state.runs.at(-1).p_error).toMatch(/walk incomplete: DAS down/)
+  })
+
+  it("carries the force flag from the body and from ?force=true", async () => {
+    state.pages = []
+    const b = await (await accept({ wallet: VALID_SOL, force: true })).json()
+    expect(b.force).toBe(true)
+    const q = await (await POST(makeReq({ url: url + "?force=true", auth: "Bearer tok", body: { wallet: VALID_SOL } }))).json()
+    expect(q.force).toBe(true)
+  })
+
+  it("does not schedule a walk when discovery is still pending", async () => {
+    state.ready = false
+    state.captured = null
+    const res = await accept()
+    expect((await res.json()).skipped).toBe("discovery_pending")
+    expect(state.captured).toBeNull()
+    expect(state.runs.at(-1).p_extra.skip_reason).toBe("discovery_pending")
+  })
+
+  // #145 (2026-09-26): a card the wallet has LISTED on Magic Eden sits in the
+  // escrow, so the owner walk cannot see it. The backfill reads the wallet's
+  // active listings and writes those cards back under the wallet.
+  const ESCROW = "1BWutmTvYPwDtmw9abTkS4Ssr8no61spGAvW1X6NDix"
+
+  it("writes an escrow-held card the wallet has listed under the wallet (not the escrow)", async () => {
+    state.pages = [[asset({ m: "m1" })]]
+    state.listings = { data: [{ token_mint: "m9" }], error: null }
+    state.assets = { m9: asset({ m: "m9", ownership: { owner: ESCROW } }) }
+    state.upsert = { data: [{ moment_id: "x" }], error: null }
+    await accept()
+    await state.captured!()
+    const run = state.runs.at(-1)
+    expect(run.p_ok).toBe(true)
+    expect(run.p_extra.escrow_listed_written).toBe(1)
+    const escrowWrite = state.upserted.flat().find((r: any) => r.moment_id === "m9")
+    expect(escrowWrite.wallet_address).toBe(VALID_SOL)
+  })
+
+  it("skips a listing whose card the escrow no longer holds (sold or delisted since)", async () => {
+    state.pages = []
+    state.listings = { data: [{ token_mint: "m9" }], error: null }
+    state.assets = { m9: asset({ m: "m9", ownership: { owner: "SOMEONE_ELSE" } }) }
+    await accept()
+    await state.captured!()
+    const run = state.runs.at(-1)
+    expect(run.p_ok).toBe(true)
+    expect(run.p_extra.escrow_listed_stale).toBe(1)
+    expect(state.upserted.flat().some((r: any) => r.moment_id === "m9")).toBe(false)
+  })
+
+  it("a failed listings read FAILS the run instead of reporting the holdings complete", async () => {
+    state.pages = [[asset({ m: "m1" })]]
+    state.listings = { data: null, error: { message: "listings down" } }
+    await accept()
+    await state.captured!()
+    const run = state.runs.at(-1)
+    expect(run.p_ok).toBe(false)
+    expect(String(run.p_error)).toContain("escrow-listed read failed: listings down")
+  })
+
+  it("more active listings than the read cap fails the run as incomplete (never reported complete)", async () => {
+    state.pages = []
+    const mints = Array.from({ length: 1001 }, (_, i) => `mm${i}`)
+    state.listings = { data: mints.map((token_mint) => ({ token_mint })), error: null }
+    state.assets = Object.fromEntries(mints.map((m) => [m, asset({ m, ownership: { owner: "SOLD_TO_SOMEONE" } })]))
+    await accept()
+    await state.captured!()
+    const run = state.runs.at(-1)
+    expect(run.p_ok).toBe(false)
+    expect(run.p_extra.escrow_listed_capped).toBe(true)
+    expect(String(run.p_error)).toContain("incomplete")
+  })
+
+  it("a DAS 429 on one read is retried once, not reported as a failed run", async () => {
+    state.pages = []
+    state.listings = { data: [{ token_mint: "m9" }], error: null }
+    state.assets = { m9: asset({ m: "m9", ownership: { owner: ESCROW } }) }
+    state.throttleOnce = new Set(["m9"])
+    await accept()
+    await state.captured!()
+    const run = state.runs.at(-1)
+    expect(run.p_ok).toBe(true)
+    expect(run.p_extra.escrow_listed_written).toBe(1)
+  }, 10_000)
+})

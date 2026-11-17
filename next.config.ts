@@ -1,0 +1,175 @@
+import type { NextConfig } from "next"
+
+const nextConfig: NextConfig = {
+  // 2026-10-03 — DEP0169 (`url.parse()`), Vercel's top runtime-error group for
+  // months (1,828 events / 7 d), on every route whose graph loads `@onflow/fcl`.
+  // The emitter is node-fetch@2: `@onflow/transport-http` and `fcl-core` fetch
+  // through cross-fetch@4, whose Node build is node-fetch, whose `parseURL()`
+  // calls `Url.parse` on EVERY request. Node 24 suppresses DEP0169 when the
+  // caller sits inside `node_modules` — so it is silent locally and fired only
+  // because Next BUNDLED node-fetch into `.next/server`, erasing that path
+  // (proved by running the identical file from outside node_modules: it warns).
+  // Externalizing loads the same code from node_modules at runtime. Requests are
+  // unchanged; only the noise that buried real errors goes.
+  serverExternalPackages: ["node-fetch"],
+  // 2026-10-04 — ship the two brand fonts INSIDE the OG lambdas, so
+  // lib/og/brand-fonts.ts reads them from disk instead of fetching our own
+  // /fonts/*.ttf over HTTP (~75k self-requests a week, 5.5 GB). Vercel does not
+  // put `public/` in a function unless it is traced; if this include ever stops
+  // matching, the loader falls back to the HTTP fetch, never to system-ui.
+  outputFileTracingIncludes: {
+    "/api/og/**/*": ["./public/fonts/BarlowCondensed-Black.ttf", "./public/fonts/ShareTechMono-Regular.ttf", "./public/rip-packs-city-logo.png"],
+    "/api/profile/trophy-case/pdf": ["./public/fonts/BarlowCondensed-Black.ttf", "./public/fonts/ShareTechMono-Regular.ttf"],
+  },
+  images: {
+    remotePatterns: [
+      // Top Shot — primary CDN + the preview/thumbnail host used by pack OG cards
+      { protocol: "https", hostname: "assets.nbatopshot.com", pathname: "/**" },
+      { protocol: "https", hostname: "asset-preview.nbatopshot.com", pathname: "/**" },
+      // NFL All Day
+      { protocol: "https", hostname: "media.nflallday.com", pathname: "/**" },
+      // LaLiga Golazos
+      { protocol: "https", hostname: "assets.laligagolazos.com", pathname: "/**" },
+      // IPFS gateways used for older Pinnacle / UFC artifacts
+      { protocol: "https", hostname: "ipfs.io", pathname: "/**" },
+      { protocol: "https", hostname: "gateway.pinata.cloud", pathname: "/**" },
+    ],
+  },
+  // ⛔ 2026-10-11 — the `headers()` Content-Security-Policy that lived here was
+  // REMOVED. proxy.ts `applySecurityHeaders` sets the real one: path-aware
+  // (wallet-connect hosts only on the giveaway/admin surfaces), host-pinned
+  // img/media/connect lists, `frame-ancestors 'none'`, `base-uri`,
+  // `form-action`, pinned by __tests__/proxy-dispatch.test.ts. This file's copy
+  // was a SECOND, DIFFERENT policy on every document: browsers enforce the
+  // intersection of all CSP headers, so a host the proxy deliberately allowed
+  // (a wallet frame, a Supabase websocket) was reachable only where this blanket
+  // `https:` happened to cover it, and every tightening of the proxy's list was
+  // silently widened or narrowed by a header nobody re-read. One source of truth;
+  // the proxy runs on every document response (its matcher excludes only hashed
+  // static chunks, the image optimizer, the favicon and /img/).
+  async redirects() {
+    return [
+      // Canonical-host redirect (2026-07-20): the bare production alias
+      // rip-packs-city.vercel.app served the full site alongside the apex,
+      // diluting SEO with duplicate content. 308 every path on that host to the
+      // canonical www domain. Scoped by Host header, so the real domain and the
+      // hashed preview deploy URLs are untouched.
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "rip-packs-city.vercel.app" }],
+        destination: "https://www.rippackscity.com/:path*",
+        permanent: true,
+      },
+      { source: "/wallet",  destination: "/nba-top-shot/collection", permanent: false },
+      { source: "/packs",   destination: "/nba-top-shot/packs",      permanent: false },
+      { source: "/sets",    destination: "/nba-top-shot/sets",       permanent: false },
+      { source: "/undefined/:path*", destination: "/nba-top-shot/:path*", permanent: false },
+      // 2026-09-03: the public trophy case lives at /profile/<u>/trophy-case, but
+      // the short form /trophy-case/<u> is what people type and share; it used
+      // to fall through to the auth gate and 307 to /login. Alias, not a page.
+      { source: "/trophy-case/:username", destination: "/profile/:username/trophy-case", permanent: false },
+      // Audit 2026-05-20 (F7): canonical UFC route is /ufc; /ufc-strike rendered a broken hybrid.
+      { source: "/ufc-strike/:path*", destination: "/ufc/:path*", permanent: true },
+      // 2026-07-25: `pinnacle` is NOT a registered collection slug (the
+      // canonical one is `disney-pinnacle`), but the dynamic
+      // app/(collections)/[collection]/* tree still matched /pinnacle/<tab>
+      // because app/pinnacle/ only defines `page` + `moment/[id]`. The result:
+      // /pinnacle/overview|collection|market rendered real Disney Pinnacle data
+      // under NBA Top Shot chrome — getCollection("pinnacle") returns undefined,
+      // so the segment layout fell back to the first published collection for
+      // the header/pill/breadcrumb while the pages fetched by the raw slug.
+      // Redirect the feature tabs + entity routes to the canonical slug.
+      // DELIBERATELY NOT a blanket /pinnacle/:path* rule: /pinnacle/moment/<render_id>
+      // is a real, working, sitemap'd surface (~2,412 URLs, lib/sitemap-data.ts
+      // segment 4) and must keep resolving. Hence the explicit page allowlist.
+      // Bare tab first: the `/:rest*` rule below compiles an empty `rest` to a
+      // TRAILING SLASH ("/disney-pinnacle/overview/"), which then needs a second
+      // 308 to drop it. Matching the no-sub-path case here makes it one hop.
+      // 2026-10-31: /pinnacle/player/<slug> goes straight to the character page (one
+      // hop) instead of /disney-pinnacle/player/<slug> → a second 308. Must precede
+      // the /:rest+ rule below, which would otherwise match it first.
+      {
+        source: "/pinnacle/player/:slug",
+        destination: "/disney-pinnacle/character/:slug",
+        permanent: true,
+      },
+      {
+        source:
+          "/pinnacle/:page(overview|collection|market|sniper|analytics|sets|packs|pack-sniper|challenges|hot-floors|play|badges)",
+        destination: "/disney-pinnacle/:page",
+        permanent: true,
+      },
+      {
+        source:
+          "/pinnacle/:page(overview|collection|market|sniper|analytics|sets|packs|pack-sniper|challenges|hot-floors|play|badges|edition|set|series|player|character|team|pack|profile)/:rest+",
+        destination: "/disney-pinnacle/:page/:rest+",
+        permanent: true,
+      },
+      // 2026-07-25: the REVERSE hop for moments only, closing the dead end left by
+      // the deliberate asymmetry above. /disney-pinnacle/moment/<render_id> is the
+      // shape a developer or crawler guesses from the canonical collection slug,
+      // but the dynamic [collection]/moment resolver forwards to /moment/<id>,
+      // whose get_moment_detail resolver only knows pinnacle_editions.id — NOT the
+      // pinnacle_catalog.render_id these urls carry (verified: render_id
+      // GEN-DPIN-SIMB-S0 has 1 row in pinnacle_catalog, 0 in pinnacle_editions).
+      // So it dead-ended on a not-found page. Only /pinnacle/moment/<id> reads
+      // pinnacle_catalog, so send the guessable url there.
+      //
+      // Direction chosen deliberately: /pinnacle/moment/* is the canonical
+      // surface. It ships ~2,412 sitemap urls (lib/sitemap-data.ts segment 4) and
+      // the page self-canonicals to /pinnacle/moment/<render_id>, so redirecting
+      // the other way would churn every indexed url and contradict its own
+      // canonical tag. This way those 2,412 stay untouched 200s.
+      //
+      // No loop: `moment` is deliberately absent from BOTH /pinnacle/:page
+      // allowlists above, so the destination is never re-matched. next.config
+      // redirects also run BEFORE the proxy.ts auth gate (verified live:
+      // /pinnacle/overview 308s cleanly instead of bouncing to /login), so an
+      // anonymous crawler gets one hop straight to the rendered page.
+      // 2026-10-31 (Trevor: Pinnacle assets are CHARACTERS): the character page lives at
+      // /disney-pinnacle/character/<slug> (app/(collections)/[collection]/character, the
+      // shared player page under Pinnacle's vocabulary). Every old /player/ URL — links we
+      // don't own, the sitemap Google already holds — 308s there before the page runs.
+      {
+        source: "/disney-pinnacle/player/:slug",
+        destination: "/disney-pinnacle/character/:slug",
+        permanent: true,
+      },
+      {
+        source: "/disney-pinnacle/moment/:id",
+        destination: "/pinnacle/moment/:id",
+        permanent: true,
+      },
+      // 2026-09-27: the edition route too. app/(collections)/[collection]/edition
+      // permanentRedirects EVERY Pinnacle slug to /pinnacle/moment/<slug>, but from
+      // inside a streamed page — so the reader got a 200 placeholder plus a client
+      // hop and a crawler a contentless 200 (live sweep). Here it is a real 308,
+      // before the page runs. In-app links go straight to the pin already
+      // (lib/entity-href editionRouteHref); this covers every link we don't own.
+      {
+        source: "/disney-pinnacle/edition/:id",
+        destination: "/pinnacle/moment/:id",
+        permanent: true,
+      },
+      // ⛔ REMOVED 2026-09-25: `/panini-blockchain/:path*` → /insights/panini-squeeze.
+      // Panini PUBLISHED on the shared [collection] routes (Overview + Market), and a
+      // next.config redirect runs BEFORE the proxy and every page — left in place it
+      // would have made the published collection unreachable. Its missing tabs now
+      // 307 to its overview from proxy.ts (RETIRED_COLLECTION_TABS), like UFC's sniper.
+      // ⛔ REMOVED 2026-08-29 (register R36): `/profile` → `/dashboard` was a
+      // PERMANENT redirect into an auth-gated page, so the leftmost mobile tab
+      // sent every anonymous first-run visitor `/profile` → 308 → `/dashboard`
+      // → 307 → `/login`. `app/profile/page.tsx` now serves that path and does
+      // the signed-in redirect ITSELF, on the server — see the header there for
+      // why fixing the destination is safe where fixing the nav was not.
+      // ⚠ It was `permanent: true` (308), which browsers and crawlers CACHE.
+      // Anyone who hit it before this ships may keep skipping the new page until
+      // that cache expires; the page is correct for them the moment it does.
+    ]
+  },
+}
+
+// Sentry's build-plugin wrapper (`withSentryConfig`) was removed 2026-09-18
+// (known-issues #34): the SDK it injected into every client bundle had stored
+// nothing since 2026-08-18. Plain config export; nothing else changed.
+export default nextConfig

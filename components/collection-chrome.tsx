@@ -1,0 +1,190 @@
+// components/collection-chrome.tsx
+//
+// Shared collection header chrome (ticker + breadcrumb/header/tabs banner) used by
+// BOTH the generic /[collection]/layout.tsx and the bespoke Disney Pinnacle layout
+// (which serves the Pinnacle collection + sniper tabs from their own page dirs).
+// Extracted 2026-07-17 (H3) so the header/ticker is byte-identical across every
+// tab — previously the Pinnacle layout hardcoded dark hex and omitted the
+// CollectionSwitcher, so the header visibly re-skinned when switching tabs.
+
+import Link from "next/link"
+import { type Collection } from "@/lib/collections"
+import { CollectionTabBar } from "@/components/collection-tab-bar"
+import CollectionSwitcher from "@/components/CollectionSwitcher"
+import CollectionHeading from "@/components/CollectionHeading"
+import { tickerItems, tickerStatusLabel } from "@/lib/collection/closed-market-chrome"
+import { ownLookup } from "@/lib/safe-lookup"
+import { accentText } from "@/lib/accent-text"
+
+// ── Ticker ─────────────────────────────────────────────────────────────────────
+const TICKER_ITEMS: Record<string, string[]> = {
+  "nba-top-shot": [
+    "⚡ COLLECTION ANALYZER — FMV + marketplace asks + badge intel",
+    "⚡ PACK EV CALCULATOR — expected value vs price",
+    "⚡ SNIPER — real-time deals below FMV",
+    "⚡ BADGE FILTERS — filter any view by Top Shot Debut · Fresh · Rookie Year",
+    "⚡ SET TRACKER — completion + bottleneck finder",
+  ],
+  "nfl-all-day": [
+    "⚡ COLLECTION ANALYZER — FMV + marketplace asks + badge intel",
+    "⚡ PACK EV CALCULATOR — expected value vs drop price",
+    "⚡ SNIPER — live deals below FMV",
+    "⚡ BADGE FILTERS — Debut · Rookie Year · Rookie Mint, on any view",
+    "⚡ SET TRACKER — completion progress + bottleneck finder",
+  ],
+  "disney-pinnacle": [
+    "✨ COLLECTION ANALYZER — FMV + active listing prices",
+    "✨ SNIPER — pins priced below market",
+    "✨ MARKET — sortable feed of every listing, filter by variant",
+    "✨ ANALYTICS — tier + franchise volume trends",
+    // 2026-10-22: was "THIN-VOLUME MODEL — relative deal scoring", which is the GOLAZOS sniper's
+    // mechanism; Pinnacle's discounts against FMV and refuses a one-sale price as an anchor
+    // (lib/sniper/pinnacle.ts).
+    "✨ THIN-SALE GUARD — a pin priced from one sale never anchors a deal",
+  ],
+  "laliga-golazos": [
+    "⚽ COLLECTION ANALYZER — relative deal scoring + FMV",
+    "⚽ SNIPER — floor deals with 100x-floor outlier filter",
+    "⚽ MARKET — sort every listing by discount, price, or recency",
+    "⚽ ANALYTICS — tier + club volume trends",
+    // 2026-10-22: was "growing" — Golazos HIGH/MEDIUM has sat at ~1 % for weeks by design (an
+    // illiquid market is labelled, not forced; roadmap §2).
+    "⚽ FMV — from real Flow sales where Golazos trades; thin editions labelled",
+  ],
+  "ufc": [
+    "⚡ COLLECTION ANALYZER — FMV + active listing prices",
+    "⚡ SNIPER — fight moments below market",
+    "⚡ ANALYTICS — portfolio tracking",
+  ],
+  // 2026-09-25: two lines here had gone false. "The highest sales-backed share
+  // on the platform" read 18.4% HIGH/MEDIUM against Top Shot's 55.1% (a floor
+  // dump on 09-20/21 made recent sales disagree), and "wallet + pack tools —
+  // coming" sat on every tab after both tabs had shipped. The list now names
+  // tools that exist and makes no comparative a later reading can falsify.
+  "candy-mlb": [
+    // 2026-10-22: was "every edition priced from real secondary sales" — Candy also prices from a
+    // confirmed live ask, and no Candy sale has been indexed since 10-11 (#58).
+    // 2026-11-09: "every edition priced" and "FMV on every card" went false on 11-08, when every
+    // legacy Candy collection was catalogued: 190 of ~22.8k Candy editions carry a price (a Candy
+    // edition is priced once it has a sale). The lines now say what a price is built from.
+    "⚾ CANDY MLB ON SOLANA — prices come from each edition's own secondary sales or a confirmed ask",
+    "⚾ COLLECTION ANALYZER — paste a Solana wallet to see every card, with FMV where one exists",
+    "⚾ SET TRACKER — 100-player checklist + cost to finish from live asks",
+    "⚾ PACK MARKET — confirmed floor, recent pack sales and pull value",
+    "⚾ LIVE BOARD — floors, asks and 24h sales on the Candy MLB insights board",
+  ],
+  // 2026-09-25 — rewritten at publish. The old four described the OpenSea
+  // Ethereum bridge plane RPC holds zero rows from (a live "MARKET SNIPER —
+  // OpenSea floor", five sports, a "coming soon" analyzer). Panini's published
+  // tabs are the WC Prizm plane; every line names a tool that exists.
+  "panini-blockchain": [
+    "🃏 PANINI PRIZM WORLD CUP 2026 — every edition RPC has seen listed, priced",
+    "🃏 MARKET — lowest confirmed ask per edition vs FMV",
+    "🃏 SQUEEZE BOARD — which cards are still sealed in packs",
+    "🃏 LISTING-BASED COVERAGE — a floor, not a census",
+  ],
+}
+
+export function CollectionTicker({ collection }: { collection: Collection }) {
+  // ⛔ Every string in this bar is server-rendered on EVERY tab, and the lists
+  // above are written for a venue that is trading. On a closed market both the
+  // pill and the items are replaced — see lib/collection/closed-market-chrome.ts
+  // for the production measurement that prompted it.
+  // No Top Shot fallback: a collection without its own list (e.g. "rwa")
+  // rendered Top Shot's badge-filter copy under its own name (2026-10-10).
+  const liveItems = ownLookup(TICKER_ITEMS, collection.id) ?? [`⚡ ${collection.label.toUpperCase()} — COLLECTOR INTELLIGENCE`]
+  const items = tickerItems(collection.id, liveItems)
+  const statusLabel = tickerStatusLabel(collection.id)
+  const doubled = [...items, ...items]
+  return (
+    <div style={{ background: "var(--rpc-surface)", borderBottom: "1px solid rgba(224,58,47,0.2)", overflow: "hidden", height: 28, display: "flex", alignItems: "center" }}>
+      {/* brand-exception: white pill text on the red pill — theme-independent.
+          ⛔ The label is DERIVED, never the literal "LIVE": on a closed market
+          this pill was asserting a trading venue in brand red at the top of
+          every tab. */}
+      <div style={{ background: "var(--rpc-red-fill)", padding: "0 12px", fontSize: 9, fontFamily: "var(--font-mono)", letterSpacing: "0.15em", color: "#fff", height: "100%", display: "flex", alignItems: "center", flexShrink: 0, fontWeight: 700 }}>{statusLabel}</div>
+      {/* minWidth: 0 — a flex item never shrinks below its nowrap track's min-content width
+          by default, so the whole ticker row widened a 320 px phone's layout viewport to
+          335 px on /nba-top-shot/packs (measured 10-31). */}
+      <div style={{ overflow: "hidden", flex: 1, minWidth: 0 }}>
+        {/* 2026-10-24 (WCAG 2.2.2): pauses on hover / keyboard focus and stops
+            under prefers-reduced-motion (.rpc-ticker-track in app/globals.css);
+            the second copy exists only to make the loop seamless, so it is
+            hidden from screen readers rather than read twice. */}
+        <div className="rpc-ticker-track" style={{ display: "flex", gap: 64, animation: "ticker 38s linear infinite", whiteSpace: "nowrap", paddingLeft: 24 }}>
+          {doubled.map((item, i) => (
+            <span key={i} aria-hidden={i >= items.length ? true : undefined} style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--rpc-text-muted)", letterSpacing: "0.07em" }}>{item}</span>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Collection banner (breadcrumb + header + tabs) ────────────────────────────
+export function CollectionBanner({ collection }: { collection: Collection }) {
+  // Keyed on the ROADMAP tag (`chain`) with `dbChain` winning when it names a
+  // real network: "candy" once mapped to "Root Network", which the registry
+  // records as dead — Candy is Solana (2026-09-06 go-live).
+  const chainLabel: Record<string, string> = {
+    flow: "Flow", evm: "EVM", panini: "Panini Chain",
+    candy: "Solana", rwa: "Multi-Chain",
+    solana: "Solana", ethereum: "Ethereum", polygon: "Polygon", flow_evm: "Flow EVM",
+  }
+
+  return (
+    <div style={{ background: "var(--rpc-header-bg)", borderBottom: `1px solid ${collection.accent}33` }}>
+      <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 24px" }}>
+        <div style={{ padding: "10px 0 0", display: "flex", alignItems: "center", gap: 6 }}>
+          <Link href="/" className="rpc-tap44" style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--rpc-text-muted)", letterSpacing: "0.1em", textDecoration: "none" }}>RPC</Link>
+          <span style={{ color: "var(--rpc-text-muted)", fontSize: 10 }}>›</span>
+          <span style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--rpc-text-secondary)", letterSpacing: "0.1em" }}>{collection.label}</span>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0 0" }}>
+          <span style={{ fontSize: 22 }}>{collection.icon}</span>
+          {collection.badge && (
+            <span
+              style={{
+                background: `${collection.badge === "ALPHA" ? "var(--rpc-red)" : collection.accent}33`,
+                color: "var(--rpc-text-primary)",
+                border: `1px solid ${collection.badge === "ALPHA" ? "var(--rpc-red)" : collection.accent}66`,
+                borderRadius: 4,
+                padding: "2px 6px",
+                fontFamily: "var(--font-mono)",
+                fontSize: 9,
+                letterSpacing: "0.15em",
+                textTransform: "uppercase",
+              }}
+            >
+              {collection.badge}
+            </span>
+          )}
+          <div>
+            {/* Renders an <h1> on the tab routes (which shipped zero headings of any
+                level) and a plain styled <div> on the entity routes beneath them, which
+                already own a specific h1. Visible output is identical either way — see
+                components/CollectionHeading.tsx for the full rationale. */}
+            <CollectionHeading collection={collection} />
+            <div style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "var(--rpc-text-muted)", letterSpacing: "0.15em", marginTop: 2 }}>
+              {collection.partner} · {collection.sport}
+            </div>
+          </div>
+          {/* The anon "Sign in" pill that sat here (07-17 un-gate) duplicated the
+              global header's SIGN IN one row above it on every collection page;
+              that button now carries the ?next= return path the pill existed for
+              (components/auth/SignOutButton.tsx, 2026-11-06). */}
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ background: `${collection.accent}18`, border: `1px solid ${collection.accent}44`, borderRadius: 4, padding: "2px 8px", fontSize: 9, fontFamily: "var(--font-mono)", color: accentText(collection.accent), letterSpacing: "0.12em", textTransform: "uppercase" }}>
+              {(collection.dbChain && chainLabel[collection.dbChain]) ?? chainLabel[collection.chain] ?? collection.chain}
+            </div>
+          </div>
+        </div>
+
+        <CollectionSwitcher activeCollectionId={collection.id} />
+
+        <CollectionTabBar collection={collection} />
+      </div>
+    </div>
+  )
+}

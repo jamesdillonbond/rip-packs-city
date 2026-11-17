@@ -1,0 +1,15 @@
+# panini-proxy — Cloudflare Worker config (DRAFT / not deployed)
+name = "panini-proxy"
+main = "index.js"
+compatibility_date = "2026-06-25"
+
+# Secrets are set out-of-band (NOT in this file):
+#   wrangler secret put PANINI_PROXY_SECRET --name panini-proxy
+# This secret is its OWN rotation surface — never reuse TS_PROXY_SECRET or
+# INGEST_SECRET_TOKEN (see "Worker auth surfaces (3 rotation domains)" in CLAUDE.md).
+#
+# After deploy the worker lives at https://panini-proxy.tdillonbond.workers.dev
+# Set the matching Vercel envs so lib/chains/panini/feed.ts (mode 'onepanini') can reach it:
+#   PANINI_PROXY_URL    = https://panini-proxy.tdillonbond.workers.dev
+#   PANINI_PROXY_SECRET = <same value as the worker secret>
+#   PANINI_FEED_MODE    = onepanini   (only flip this at go-live)

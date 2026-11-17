@@ -1,0 +1,249 @@
+// app/api/admin/pipeline-health/route.ts
+//
+// GET /api/admin/pipeline-health
+// Authorization: Bearer <RPC_ADMIN_TOKEN | INGEST_SECRET_TOKEN>
+//
+// Cron drift surface for /admin/pipeline-health. For each known pipeline,
+// compares its most recent pipeline_runs row against the expected cadence
+// and tags drift severity (green / yellow / red). Includes a list of
+// "expected but missing" pipelines that should be running but have no
+// rows in the trailing 24h window.
+
+import { NextRequest, NextResponse } from "next/server";
+import { bearerMatches } from "@/lib/auth/bearer-secret";
+import { supabaseAdmin } from "@/lib/supabase";
+
+export const maxDuration = 30;
+export const dynamic = "force-dynamic";
+
+// Expected cadence per pipeline. Sourced from CLAUDE.md ("23 active
+// pipelines, */20 cadence dominant") + the cron-job.org schedule. When in
+// doubt we err on the side of "less frequently than reality" so a pipeline
+// hitting its expected cadence reads as green, not red.
+const EXPECTED_INTERVAL_MIN: Record<string, number> = {
+  // Listings — high cadence
+  "ts-listing-ingest": 20,
+  "allday-listings-indexer": 20,
+  // topshot-listing-cache(-v2), allday-listing-cache and golazos-listing-cache removed 2026-10-30:
+  // the Flowty API went dark 10-27 and the lanes were retired (docs/operations/flowty-retirement-runbook.md).
+  // ufc-listing-cache and ufc-sales-indexer removed 2026-10-18: routes deleted with the
+  // dead UFC route code (market closed May 2026; 0 runs), same rule as Pinnacle below.
+  // pinnacle-listing-cache retired 2026-06-09 (Flowty teardown; cron-job.org
+  // entry deleted, route removed). Its on-chain successor
+  // pinnacle-listings-reconcile was itself retired 2026-07-17 and its route
+  // deleted 2026-08-21 (zero runs in pipeline_runs_daily, no pg_cron job), so
+  // NEITHER belongs in this map: an entry here for a pipeline with no cron and
+  // no route reads as a false "expected but missing" red. Pinnacle ASK is now
+  // the render floor pinnacle_catalog.floor_ask, rewritten daily by
+  // pinnacle_catalog_set_floor_asks.
+  "sync-flowty-listings": 20,
+  // Sales indexers
+  "topshot-sales-indexer": 20,
+  "allday-sales-indexer": 20,
+  "golazos-sales-indexer": 20,
+  "pinnacle-resolve-buyers": 20,
+  "pinnacle-nft-resolver": 5,
+  "promote_unmapped_sales": 5,
+  "allday-unmapped-resolver": 20,
+  "allday-edition-resolver": 20,
+  // FMV
+  "wmc-fmv-populate": 5,
+  "allday-fmv-populate": 20,
+  "fmv-recalc": 20,
+  "ultimate-fmv-recalc-v1": 60,
+  // Pack EV
+  // compute-topshot-pack-ev removed 2026-10-18: its cron-job.org entry was paused
+  // 2026-08-30 (public-api.nbatopshot.com dead; watchlist arm inactive since) and
+  // Top Shot EV is written by topshot-atlas-pack-ev / topshot-container-pack-ev
+  // (pg_cron). 0 runs in the pipeline_runs window, no pg_cron or DB caller -> same
+  // rule as the Pinnacle note above.
+  "topshot-atlas-pack-ev": 60, // pg_cron rpc-atlas-pack-ev `25 * * * *` (24/24 ok, 10-18)
+  "topshot-container-pack-ev": 60, // pg_cron rpc-container-pack-ev `28 * * * *`
+  "compute-allday-pack-ev": 60,
+  // Owner-side
+  "pinnacle-owner-discovery": 60,
+  "pinnacle-owner-discovery-forward": 30,
+  "hybrid_custody_events": 20,
+  // Wallet backfill chain
+  "wallet-backfill": 360,
+  "wallet-backfill-allday": 360,
+  "wallet-backfill-pinnacle": 360,
+  "wallet-backfill-golazos": 360,
+  "wallet-backfill-ufc": 360,
+  // Other
+  "classify-acquisitions": 20,
+  "check-alerts": 20,
+  "editions-hydrate-at-insert": 30,
+  "sync-nba-projections": 60,
+  // ESPN DB lane (known-issues #8, 2026-10-23): pg_cron dispatch :18, drain logs
+  // at :21 hourly — 90 min allows one late drain before it reads stale.
+  "nba-espn-projections": 90,
+  "sync-nba-odds": 60,
+  // ⚠ NAME IS VESTIGIAL — READ THE SCHEDULE, NOT THE NAME. These two look
+  // identical and only one was right. Verified against cron.job 2026-08-25:
+  //   weekly-db-maintenance -> jobid 198 `rpc-weekly-log-purges` @ `40 9 * * *`  = DAILY
+  //   weekly-wmc-prune      -> jobid 199 `rpc-weekly-wmc-prune`  @ `20 10 * * 0` = WEEKLY (Sun)
+  // The first was declared at 7 DAYS for a job that runs every 24h.
+  "weekly-db-maintenance": 60 * 24,
+  "weekly-wmc-prune": 60 * 24 * 8,
+  "allow-list-reconcile": 60 * 6,
+  "listing-divergence-snapshot": 360,
+  "apply-fmv-haircut": 60,
+};
+
+function isAuthorized(req: NextRequest): boolean {
+  // Constant-time, fail-closed (lib/auth/bearer-secret.ts; security audit 2026-10-25, R134 step 1).
+  return bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN", "RPC_ADMIN_TOKEN");
+}
+
+interface PipelineRow {
+  pipeline: string;
+  runs_6h: number;
+  fails_6h: number;
+  last_run: string | null;
+  expected_min: number | null;
+  minutes_since: number | null;
+  drift: "green" | "yellow" | "red";
+  expected_but_missing: boolean;
+}
+
+export async function GET(req: NextRequest) {
+  if (!isAuthorized(req)) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  const sb = supabaseAdmin as any;
+
+  // Single SQL pull — last 24h of pipeline_runs aggregated per pipeline.
+  // We need 24h to detect "expected but no run in window," but only the 6h
+  // counts go into the visible "runs/fails" columns.
+  const { data: rowsRaw, error } = await sb.rpc("query_sql", {
+    query: `
+      SELECT
+        pipeline,
+        MAX(started_at) AS last_run,
+        COUNT(*) FILTER (WHERE started_at > now() - interval '6 hours') AS runs_6h,
+        COUNT(*) FILTER (WHERE started_at > now() - interval '6 hours' AND NOT ok) AS fails_6h
+      FROM pipeline_runs
+      WHERE started_at > now() - interval '24 hours'
+      GROUP BY pipeline
+    `,
+  });
+
+  if (error) {
+    return NextResponse.json(
+      { error: error.message, code: (error as { code?: string }).code ?? null },
+      { status: 500 }
+    );
+  }
+
+  const seenInWindow = new Map<
+    string,
+    { runs6h: number; fails6h: number; lastRun: string | null }
+  >();
+  for (const r of (rowsRaw ?? []) as Array<{
+    pipeline: string;
+    last_run: string | null;
+    runs_6h: number;
+    fails_6h: number;
+  }>) {
+    seenInWindow.set(r.pipeline, {
+      runs6h: Number(r.runs_6h ?? 0),
+      fails6h: Number(r.fails_6h ?? 0),
+      lastRun: r.last_run ?? null,
+    });
+  }
+
+  const now = Date.now();
+  function classify(pipeline: string, lastRun: string | null, expectedMin: number | null): {
+    drift: "green" | "yellow" | "red";
+    minutesSince: number | null;
+    expectedButMissing: boolean;
+  } {
+    if (!lastRun) {
+      return { drift: "red", minutesSince: null, expectedButMissing: true };
+    }
+    const minutesSince = Math.floor((now - new Date(lastRun).getTime()) / 60000);
+    if (expectedMin == null) {
+      // Unknown cadence — only red if we haven't heard from it in 24h.
+      return {
+        drift: minutesSince > 24 * 60 ? "red" : "green",
+        minutesSince,
+        expectedButMissing: false,
+      };
+    }
+    // ⚠ THE 24h FLOOR APPLIES ONLY TO PIPELINES EXPECTED TO RUN AT LEAST DAILY.
+    //
+    // It used to fire unconditionally, BEFORE the multiples below — which made it
+    // override every long-cadence expectation in the table. For any entry with
+    // expectedMin >= 720 the yellow branch could never be reached at all (2x is
+    // already >= 24h), so the declared cadence was inert and a genuinely WEEKLY
+    // pipeline was marked RED from 24h after each run until its next one:
+    // red ~6 days in every 7, BY CONSTRUCTION, while running perfectly.
+    //
+    // Measured 2026-08-25: `weekly-wmc-prune` (jobid 199, `20 10 * * 0`) ran
+    // exactly on schedule on Sunday 08-23 10:20Z and read RED ~65h later. A
+    // permanently-red instrument is indistinguishable from a broken one at a
+    // glance, which is how a real outage gets skimmed past.
+    //
+    // For every entry with expectedMin <= 288 the floor was already redundant —
+    // 5x is under 24h, so the multiple fires first. It only ever CHANGED the
+    // answer for the long-cadence entries, and there it was wrong.
+    if (expectedMin <= 24 * 60 && minutesSince > 24 * 60) {
+      return { drift: "red", minutesSince, expectedButMissing: false };
+    }
+    if (minutesSince > expectedMin * 5) return { drift: "red", minutesSince, expectedButMissing: false };
+    if (minutesSince > expectedMin * 2) return { drift: "yellow", minutesSince, expectedButMissing: false };
+    return { drift: "green", minutesSince, expectedButMissing: false };
+  }
+
+  // Union of "we expected this pipeline to run" + "we saw it run."
+  const allPipelineNames = new Set<string>([
+    ...Object.keys(EXPECTED_INTERVAL_MIN),
+    ...seenInWindow.keys(),
+  ]);
+
+  const out: PipelineRow[] = [];
+  for (const name of allPipelineNames) {
+    const seen = seenInWindow.get(name);
+    const expectedMin = EXPECTED_INTERVAL_MIN[name] ?? null;
+    const lastRun = seen?.lastRun ?? null;
+    const { drift, minutesSince, expectedButMissing } = classify(name, lastRun, expectedMin);
+    out.push({
+      pipeline: name,
+      runs_6h: seen?.runs6h ?? 0,
+      fails_6h: seen?.fails6h ?? 0,
+      last_run: lastRun,
+      expected_min: expectedMin,
+      minutes_since: minutesSince,
+      drift,
+      // expected_but_missing means: we have a cadence expectation AND no run
+      // in the last 24h. That's distinct from generic red.
+      expected_but_missing: expectedMin != null && expectedButMissing,
+    });
+  }
+
+  // Sort red first, then yellow, then green. Within each bucket the
+  // longest-stale one floats up.
+  const driftRank: Record<PipelineRow["drift"], number> = { red: 0, yellow: 1, green: 2 };
+  out.sort((a, b) => {
+    const dr = driftRank[a.drift] - driftRank[b.drift];
+    if (dr !== 0) return dr;
+    const am = a.minutes_since ?? Number.MAX_SAFE_INTEGER;
+    const bm = b.minutes_since ?? Number.MAX_SAFE_INTEGER;
+    return bm - am;
+  });
+
+  const summary = {
+    red: out.filter((r) => r.drift === "red").length,
+    yellow: out.filter((r) => r.drift === "yellow").length,
+    green: out.filter((r) => r.drift === "green").length,
+    expected_but_missing: out.filter((r) => r.expected_but_missing).length,
+  };
+
+  return NextResponse.json({
+    generated_at: new Date().toISOString(),
+    summary,
+    rows: out,
+  });
+}

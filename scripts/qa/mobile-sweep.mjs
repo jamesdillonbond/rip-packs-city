@@ -1,0 +1,270 @@
+#!/usr/bin/env node
+// scripts/qa/mobile-sweep.mjs — the TRUE-MOBILE QA instrument (2026-09-06).
+//
+// WHY THIS EXISTS. Nothing in the CI gates measures LAYOUT (jsdom boxes are
+// zero) and the Cowork/Claude-in-Chrome window cannot resize below ~738 px,
+// so "mobile QA" through the extension was a desktop page squinted at. This
+// script drives a REAL Chromium at a real phone viewport (Playwright's
+// `iPhone 13` descriptor: 390 × 844, DPR 3, touch, mobile UA) against the
+// live site, records per-page facts a reviewer cannot get from HTTP 200, and
+// writes a screenshot per page that a Cowork session can stage and LOOK at.
+//
+// It ran 510 entity pages + 32 surfaces × 5 collections on 2026-09-06 from the
+// Cowork device VM (Trevor's box) — the recipe that reaches prod when the cloud
+// sandbox's proxy resets the TLS tunnel.
+//
+// USAGE
+//   node scripts/qa/mobile-sweep.mjs <paths.txt> <out.jsonl> [shotdir] [mobile|desktop]
+//
+//   paths.txt   one site path per line (e.g. /nba-top-shot/market)
+//   out.jsonl   one JSON record per page, appended
+//   shotdir     optional; a PNG per page lands here (put it under
+//               _to_delete/qa-shots-<date>/ so the tree stays clean and a Cowork
+//               session can stage the PNGs and view them with Read)
+//   mode        mobile (default, 390 × 844) · narrow (320 × 568, same touch
+//               emulation — the width a responsive layout must survive) · desktop
+//
+// ENV
+//   RPC_QA_BASE      base URL (default https://www.rippackscity.com)
+//   RPC_QA_STATE     a Playwright storageState JSON to run SIGNED IN
+//                    (create one by logging in once through a magic link in a
+//                    headed/headless context and calling ctx.storageState())
+//   RPC_QA_CONC      pages in flight (default 3 — the site's own API budget
+//                    starves images above ~4)
+//   RPC_QA_SETTLE_MS extra settle before measuring (default 8000; the sweep
+//                    already waits 20 s on collection/market/sniper paths)
+//   PLAYWRIGHT_BROWSERS_PATH / LD_LIBRARY_PATH as the VM recipe requires.
+//   RPC_QA_CHROME    an explicit Chromium binary (2026-09-25: the cloud sandbox
+//                    pre-installs /opt/pw-browsers/chromium-<rev>/chrome-linux/chrome
+//                    under a DIFFERENT revision than the repo's Playwright expects,
+//                    and `playwright install` is forbidden there — this is how the
+//                    sweep runs from the cloud at all).
+//
+// WHAT A RECORD CARRIES (all measured in the page, none inferred from HTTP):
+//   status · ms · iw/sw (sw > iw is a horizontal-overflow defect) · widest
+//   (the first element poking past the viewport that no ancestor clips) ·
+//   textLen · imgs · broken (complete && naturalWidth === 0, i.e. the browser
+//   TRIED and failed — a lazy image that never loaded is NOT counted) · dead
+//   ([data-rpc-dead-art] count from DeadImageGuard) · unknown/undef/dollarZero
+//   copy counters (each is a HYPOTHESIS — "$0" is legitimate on a market-closed
+//   tile) · rows/cards · errCopy (honest-error phrases, so a degraded page is
+//   visible without a screenshot) · scanning (stuck on the route-level
+//   LoadingState) · console errors · failed (4xx/5xx responses, sentry excluded)
+//   · api (every /api/* response the page made) · snippet.
+//
+// READ THE OUTPUT WITH THE MEASUREMENT RULES: a counter is a hypothesis, the
+// screenshot is the evidence; verify a "defect" in a second run before filing —
+// a reading taken while the SUBJECT changed (a deploy mid-sweep) is not a
+// reading.
+
+import { chromium, devices } from "playwright";
+import fs from "node:fs";
+import path from "node:path";
+
+const [, , file, out, shotdir, modeArg] = process.argv;
+if (!file || !out) {
+  console.error("usage: node scripts/qa/mobile-sweep.mjs <paths.txt> <out.jsonl> [shotdir] [mobile|narrow|desktop]");
+  process.exit(2);
+}
+// narrow = 320x568 with touch. 320 is the floor a responsive layout is
+// expected to survive, and it is where a fixed-width element, a min-width on a
+// table cell or a long unbroken string shows up FIRST — 390 can hide all three.
+//
+// ⓘ This mode is the instrument behind e2e/mobile-layout.spec.ts's 320px loop
+// (shipped 064930d5f, 2026-09-20). That spec pins SIX public routes; this sweeps
+// the whole path list, so it is the WIDER measurement the pin was taken from —
+// and the one to re-run before adding a route to that pin. Until 09-20 the spec
+// only CLAIMED 320 in a comment while its loop ran 390 alone; shipping the loop
+// without the instrument that measured it would leave the same gap one level
+// down, which is why this lands even though the pin already has.
+const mode = modeArg === "desktop" ? "desktop" : modeArg === "narrow" ? "narrow" : "mobile";
+const BASE = (process.env.RPC_QA_BASE || "https://www.rippackscity.com").replace(/\/$/, "");
+const CONC = Math.max(1, Number(process.env.RPC_QA_CONC) || 3);
+const SETTLE = Math.max(0, Number(process.env.RPC_QA_SETTLE_MS) || 8000);
+const paths = fs.readFileSync(file, "utf8").split("\n").map((s) => s.trim()).filter((s) => s && !s.startsWith("#"));
+if (shotdir) fs.mkdirSync(shotdir, { recursive: true });
+
+const browser = await chromium.launch({
+  args: ["--no-sandbox"],
+  ...(process.env.RPC_QA_CHROME ? { executablePath: process.env.RPC_QA_CHROME } : {}),
+});
+const ctx = await browser.newContext({
+  ...(mode === "mobile"
+    ? devices["iPhone 13"]
+    : mode === "narrow"
+      // Same touch/mobile emulation as iPhone 13 — only the box is smaller, so a
+      // difference between the two runs is WIDTH and nothing else.
+      ? { ...devices["iPhone 13"], viewport: { width: 320, height: 568 } }
+      : { viewport: { width: 1280, height: 900 } }),
+  // Self-identify (2026-09-30), same as playwright.config.ts: without this every
+  // sweep page view landed in funnel_events as bot_ua=false, i.e. as a human.
+  userAgent: `${mode === "desktop" ? devices["Desktop Chrome"].userAgent : devices["iPhone 13"].userAgent} RPC-QA-MobileSweep (playwright)`,
+  locale: "en-US",
+  timezoneId: "America/Los_Angeles",
+  ...(process.env.RPC_QA_STATE ? { storageState: process.env.RPC_QA_STATE } : {}),
+});
+
+function shotName(p) {
+  return `${mode}-${p.replace(/[^a-z0-9]+/gi, "_").slice(0, 70)}.png`;
+}
+
+async function one(sitePath) {
+  const page = await ctx.newPage();
+  const rec = { path: sitePath, mode, console: [], failed: [], api: [] };
+  page.on("console", (m) => { if (m.type() === "error") rec.console.push(m.text().slice(0, 140)); });
+  page.on("response", (r) => {
+    const s = r.status();
+    const u = r.url().replace(BASE, "");
+    if (s >= 400 && !u.includes("sentry")) rec.failed.push(`${s} ${u.slice(0, 110)}`);
+    if (u.startsWith("/api/")) rec.api.push(`${s} ${u.slice(0, 80)}`);
+  });
+  const t0 = Date.now();
+  try {
+    const r = await page.goto(BASE + sitePath, { waitUntil: "domcontentloaded", timeout: 60000 });
+    rec.status = r ? r.status() : null;
+    // Read BEFORE the settle. preLen small + textLen large = the page streamed in
+    // normally; preLen small + textLen small = it never arrived. Without this the
+    // two are the same record, and the repo has twice filed the first as the second.
+    rec.preLen = await page.evaluate(() => ((document.querySelector("main") || document.body).innerText || "").length).catch(() => null);
+    const heavy = /collection\?|sniper|market/.test(sitePath);
+    await page.waitForTimeout(heavy ? Math.max(SETTLE, 20000) : SETTLE);
+    for (let i = 0; i < 3; i++) { await page.mouse.wheel(0, 1500); await page.waitForTimeout(700); }
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.waitForTimeout(500);
+    const measured = await Promise.race([
+      page.evaluate(() => {
+        const main = document.querySelector("main") || document.body;
+        const t = main.innerText;
+        const imgs = [...document.images];
+        let widest = null;
+        for (const el of document.querySelectorAll("body *")) {
+          const b = el.getBoundingClientRect();
+          if (b.right > innerWidth + 2 && b.width > 0) {
+            let contained = false;
+            for (let q = el.parentElement; q; q = q.parentElement) {
+              const ox = getComputedStyle(q).overflowX;
+              if (ox === "auto" || ox === "scroll" || ox === "hidden" || ox === "clip") { contained = true; break; }
+            }
+            if (!contained) { widest = { tag: el.tagName, cls: String(el.className || "").slice(0, 60), right: Math.round(b.right) }; break; }
+          }
+        }
+        return {
+          iw: innerWidth,
+          sw: document.documentElement.scrollWidth,
+          widest,
+          h1: (document.querySelector("h1") || {}).innerText || null,
+          textLen: t.length,
+          imgs: imgs.length,
+          broken: imgs.filter((i) => i.complete && i.naturalWidth === 0 && i.src && !i.src.startsWith("data:")).map((i) => i.src.slice(0, 80)).slice(0, 3),
+          dead: document.querySelectorAll("[data-rpc-dead-art]").length,
+          unknown: (t.match(/\bUnknown\b/g) || []).length,
+          undef: (t.match(/undefined|NaN|\[object/g) || []).length,
+          // ⚠ 2026-09-28: counted over text OUTSIDE <svg>. A chart's y-axis starts
+          // at "$0.00", so every page with an FMV chart read dollarZero ≥ 1 and the
+          // count could not tell a baseline tick from a "$0" sale (the real one it
+          // caught that day: a $0.36 Candy sale rendered "$0" on the Overview).
+          dollarZero: (() => {
+            let n = 0;
+            const w = document.createTreeWalker(main, NodeFilter.SHOW_TEXT);
+            for (let node = w.nextNode(); node; node = w.nextNode()) {
+              if (node.parentElement && node.parentElement.closest("svg")) continue;
+              n += ((node.textContent || "").match(/\$0(\.00)?(?![\d.,])/g) || []).length;
+            }
+            return n;
+          })(),
+          rows: document.querySelectorAll("table tbody tr").length,
+          cards: document.querySelectorAll("[class*=card]").length,
+          errCopy: (t.match(/unavailable|couldn.t load|try again|something went wrong|degraded/gi) || []).slice(0, 4),
+          scanning: t.includes("SCANNING"),
+          // ── added 2026-09-20: the three mobile properties the sweep could not see ──
+          // A CENSUS, not an assertion. e2e/mobile-layout.spec.ts pins only what is
+          // currently true; 86 controls were measured under the floor on 2026-08-22
+          // and asserting them would make that monitor permanently red. This counts
+          // them per page so the backlog can be drained route by route.
+          tapSmall: (() => {
+            const out = [];
+            for (const el of document.querySelectorAll("a,button,input,select,textarea,[role=button],[role=tab],[role=link]")) {
+              const b = el.getBoundingClientRect();
+              if (b.width === 0 || b.height === 0) continue;
+              // .rpc-tap44 grows the hit box with an invisible ::after — the
+              // effective box is the union, same rule the spec uses.
+              const af = getComputedStyle(el, "::after");
+              const w = Math.max(b.width, parseFloat(af.width) || 0);
+              const h = Math.max(b.height, parseFloat(af.height) || 0);
+              if (w < 44 || h < 44) {
+                const label = (el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 24) || el.getAttribute("aria-label") || el.tagName;
+                out.push(label + " " + Math.round(w) + "x" + Math.round(h));
+              }
+            }
+            return { n: out.length, sample: out.slice(0, 8) };
+          })(),
+          // iOS Safari ZOOMS THE PAGE when a control under 16px takes focus, and
+          // never zooms back out. Chromium will not reproduce it, so measure the
+          // cause rather than the symptom.
+          zoomInputs: (() => {
+            const out = [];
+            // Only TEXT-ENTRY controls zoom on focus. A checkbox, radio, range, button or
+            // color input has no caret, so its font size never triggers it: the 09-29 narrow
+            // sweep's only two "hits" were 11-12px checkboxes (a false positive, 2 of 148 pages).
+            const NO_ZOOM = new Set(["checkbox", "radio", "range", "button", "submit", "reset", "color", "file", "image", "hidden"]);
+            for (const el of document.querySelectorAll("input,select,textarea")) {
+              if (el.tagName === "INPUT" && NO_ZOOM.has((el.type || "").toLowerCase())) continue;
+              const b = el.getBoundingClientRect();
+              if (b.width === 0 || b.height === 0) continue;
+              const fs = parseFloat(getComputedStyle(el).fontSize) || 0;
+              if (fs && fs < 16) out.push(el.tagName.toLowerCase() + (el.type ? "[" + el.type + "]" : "") + " " + fs + "px");
+            }
+            return { n: out.length, sample: out.slice(0, 6) };
+          })(),
+          // 100vh is not the visible height on mobile Safari — the address bar
+          // overlays it. WARNING: v1 of this scanned stylesheet TEXT and matched
+          // Tailwind's @layer utilities blob (the .h-screen DEFINITION) on all 56
+          // pages — a 100% hit rate that measured nothing. Measure USED values on
+          // rendered elements instead: an element whose box equals the viewport.
+          vh100: (() => {
+            const sample = []; let n = 0;
+            for (const el of document.querySelectorAll("body *")) {
+              const b = el.getBoundingClientRect();
+              if (b.height < innerHeight - 1 || b.height > innerHeight + 1) continue;
+              if (getComputedStyle(el).position === "fixed") continue;
+              n++;
+              if (sample.length < 4) sample.push(el.tagName.toLowerCase() + "." + String(el.className || "").slice(0, 50));
+            }
+            return { n: n, sample: sample };
+          })(),
+          snippet: t.replace(/\s+/g, " ").slice(0, 500),
+        };
+      }),
+      new Promise((_, rej) => setTimeout(() => rej(new Error("evaluate-timeout")), 15000)),
+    ]);
+    Object.assign(rec, measured);
+    if (shotdir) await page.screenshot({ path: path.join(shotdir, shotName(sitePath)) }).catch(() => {});
+  } catch (e) {
+    rec.err = String(e && e.message ? e.message : e).slice(0, 150);
+  }
+  rec.ms = Date.now() - t0;
+  fs.appendFileSync(out, JSON.stringify(rec) + "\n");
+  await page.close();
+}
+
+let idx = 0;
+await Promise.all(Array.from({ length: CONC }, async () => { while (idx < paths.length) await one(paths[idx++]); }));
+await browser.close();
+
+// A one-line tally so a caller can see the shape without opening the JSONL.
+const recs = fs.readFileSync(out, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+const mine = recs.filter((r) => paths.includes(r.path) && r.mode === mode);
+const tally = {
+  pages: mine.length,
+  errored: mine.filter((r) => r.err).length,
+  non200: mine.filter((r) => r.status && r.status !== 200).length,
+  overflow: mine.filter((r) => r.sw > r.iw).length,
+  scanning: mine.filter((r) => r.scanning).length,
+  withConsoleErrors: mine.filter((r) => r.console.length).length,
+  withBrokenImgs: mine.filter((r) => r.broken && r.broken.length).length,
+  withErrCopy: mine.filter((r) => r.errCopy && r.errCopy.length).length,
+  tapTargetsUnder44: mine.reduce((a, r) => a + ((r.tapSmall && r.tapSmall.n) || 0), 0),
+  withZoomInputs: mine.filter((r) => r.zoomInputs && r.zoomInputs.n).length,
+  withVh100: mine.filter((r) => r.vh100 && r.vh100.n).length,
+};
+console.log(JSON.stringify(tally));

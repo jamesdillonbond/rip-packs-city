@@ -1,0 +1,23 @@
+name = "rpc-mcp"
+main = "index.ts"
+compatibility_date = "2026-05-12"
+
+# Required: without this, deploys succeed silently with no public URL.
+workers_dev = true
+
+# Build SHA is overridden at deploy time:
+#   wrangler deploy --var BUILD_SHA:$(git rev-parse --short HEAD)
+# Left empty here so the absence is visible on /health if the deployer
+# forgot to pass it through.
+[vars]
+BUILD_SHA = ""
+
+# Secrets — provisioned out of band, never written to disk:
+#   wrangler secret put SUPABASE_URL --name rpc-mcp
+#   wrangler secret put SUPABASE_SERVICE_ROLE_KEY --name rpc-mcp
+#   wrangler secret put MCP_INTERNAL_SECRET --name rpc-mcp
+#
+# MCP_INTERNAL_SECRET is reserved for future inter-worker calls
+# (e.g. dashboard /api/mcp/keys -> worker for cache flush after revoke).
+# It is provisioned now so the rotation surface exists, but the v1
+# worker code path does not consume it.

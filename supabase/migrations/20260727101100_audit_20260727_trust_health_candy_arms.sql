@@ -1,0 +1,25 @@
+-- Applied to prod via Supabase MCP on 2026-07-27. Committed here for parity.
+-- Full spliced DO block is in the MCP migration of the same name; this file
+-- records WHAT changed and how to revert, since the splice reads the live
+-- definition and cannot be replayed verbatim from a file.
+--
+-- Added three Candy arms to v_rpc_trust_health (20 -> 23 metrics). Top Shot,
+-- All Day, Golazos, Pinnacle and UFC all had freshness metrics; Candy had NONE,
+-- so chain two would have gone public with no trust instrumentation.
+--
+--   candy_fmv_stale_hours    breach 30  — all Candy FMV writers stalled
+--   candy_sales_stale_hours  breach 30  — the ME sales indexer stalled (7d p95
+--                                         inter-sale gap 0.91h, avg 0.30h)
+--   candy_ask_book_drop_pct  breach 60  — the 2026-07-27 incident metric: ME
+--                                         served 7 listings against a 426-ask
+--                                         book and the sweep killed 419 (98%);
+--                                         ordinary churn runs under ~20%
+--
+-- The splice used pg_get_viewdef + replace with an exactly-once anchor guard.
+-- CREATE OR REPLACE VIEW wiped the view's reloptions, so security_invoker was
+-- restored immediately afterwards (audit_20260727_trust_health_restore_security_invoker).
+--
+-- REVERT: restore public.audit_20260727_trust_health_candy_arms_prior.prior_def
+--         via CREATE OR REPLACE VIEW, then re-apply
+--         ALTER VIEW public.v_rpc_trust_health SET (security_invoker = on);
+SELECT 1;

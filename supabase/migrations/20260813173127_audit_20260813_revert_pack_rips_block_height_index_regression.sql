@@ -1,0 +1,33 @@
+-- REVERT of idx_pack_rips_collection_block_height, built earlier this session.
+--
+-- The index did exactly what it was designed to do and the design was WRONG.
+-- It let the planner switch get_allday_unresolved_pulls() from
+--   seq scan x2 + 497k-row sort   (Limit cost 237,181)
+-- to
+--   ordered Index Scan on pack_rips -> nested loop into
+--   idx_allday_pack_pull_unresolved   (Limit cost 579)
+-- i.e. a 409x lower ESTIMATED cost, on the assumption that the LIMIT 300 would
+-- be satisfied after a short walk of the newest AllDay rips.
+--
+-- MEASURED, and the assumption is false: of the newest 20,000 AllDay pack_rips
+-- by block_height, **ZERO** have an unresolved pull (edition_id IS NULL). The
+-- drain has resolved the entire recent frontier; every remaining unresolved
+-- pull is deep in history. So the nested loop cannot stop early -- it must walk
+-- a very long prefix of already-resolved rips doing a random index probe per
+-- row. A bounded probe over the newest 250,000 rips exceeded a 50 s
+-- statement_timeout, against the pre-index plan's measured 11.2 s mean.
+-- The planner's own full-execution estimate agrees: 1,628,640 vs 294,269.
+--
+-- So: the seq scan + sort is the CORRECT plan for "the 300 newest rows of a set
+-- whose members are all old". Random-probe I/O on a throttled instance is worse
+-- than one sequential 958 MB read, even though it touches far fewer bytes.
+--
+-- The real lever is the QUERY SHAPE, not an index -- see
+-- docs/overnight/inbox/2026-08-13T1730Z-disk-read-ranking-and-the-pack-rips-plan-defect.md
+--
+-- Restores pack_rips to its 2026-08-13 index set exactly.
+-- Revert of this revert: rebuild via the one-off pg_cron CIC recipe --
+--   CREATE INDEX CONCURRENTLY idx_pack_rips_collection_block_height
+--     ON public.pack_rips USING btree (collection_id, block_height DESC)
+--     WHERE block_height IS NOT NULL;   -- built in 3m41s on 2026-08-13
+DROP INDEX IF EXISTS public.idx_pack_rips_collection_block_height;

@@ -1,0 +1,23 @@
+-- candy_market_board was created without stating a security mode, so it runs as
+-- its OWNER (postgres). Caught by __tests__/migration-view-security-invoker-guard.
+--
+-- The live EXPOSURE was already closed by 20260913001600 (revoke anon +
+-- authenticated), so this is not a hole today: measured before this migration,
+-- anon SELECT = false, authenticated SELECT = false, reloptions = NULL. What it
+-- removes is the LATENT hazard -- the day anyone re-grants SELECT on this view,
+-- a definer view joining wallet_moments_cache hands out wmc-derived per-serial
+-- data past RLS, through a view nobody would think to audit.
+--
+-- Behaviour-preserving: /api/market reads this with the service role, which
+-- bypasses RLS either way, so invoker rights change nothing for the only caller.
+--
+-- Fixed FORWARD with an ALTER rather than by editing the applied file, which is
+-- this repo's established convention for an already-applied migration (see
+-- 20260815190500_audit_20260815_restore_security_invoker_on_deals_views.sql).
+--
+-- Verified after applying: candy_market_board reloptions = {security_invoker=on},
+-- identical to its sibling candy_deals_board; anon/authenticated SELECT still
+-- false, service_role SELECT still true.
+--
+-- Revert: ALTER VIEW public.candy_market_board RESET (security_invoker);
+alter view public.candy_market_board set (security_invoker = on);

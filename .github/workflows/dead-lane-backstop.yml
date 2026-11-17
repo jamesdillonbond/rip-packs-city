@@ -1,0 +1,357 @@
+name: Dead Lane Backstop
+
+# WHY THIS EXISTS (2026-09-10, register #76).
+# ------------------------------------------------------------------------
+# The Vercel project was paused ~14:00Z on 2026-09-10 and serving was restored
+# between 21:46Z and 00:01Z. Every lane on a 4-hourly or 6-hourly cadence came
+# back on its FIRST slot after recovery — candy-sales 00:20Z, candy-listings
+# 00:35Z, candy-offers 00:50Z, 3 of 3. **Not one lane on a 1-15 minute cadence
+# came back at all**, 649-682 minutes silent and counting, with 3 to 50 of their
+# own slots passed since the site returned.
+#
+# ⭐ THE SPLIT IS ALONG CADENCE, AND THAT IS THE TELL. These lanes have no
+# scheduler but cron-job.org — their own route headers say so
+# (`alerts-send` line 12: "Cron-job.org: every ~5 min"; `alerts-dispatch` line 8:
+# "Cron-job.org: every ~15 min"). cron-job.org auto-disables a job after a run of
+# consecutive failures, so across a ~10-hour outage a 4-hourly job banked 2-3
+# failures and survived while a 1-minute job banked ~640 and did not.
+#
+# 🚨 THIS REPO HAS ALREADY BEEN BITTEN BY EXACTLY THIS. sales-indexers-backstop.yml's
+# own header: "cron-job.org auto-disables a job that persistently fails its 30s
+# client cap, so a single bad window can silently kill sales ingest (the
+# 2026-05-31 topshot-sales-indexer 01:32-08:02 UTC outage)." The four sales lanes
+# got a backstop then. **These ten never did, and that is the whole difference
+# between a lane that recovered by itself and a lane still dead 11 hours later.**
+#
+# ⚠ WHAT THIS IS AND IS NOT. It is a FLOOR, not a restoration. GitHub
+# deprioritises `schedule` and drops most of it — measured on this repo
+# 2026-08-27, 16 of 48 scheduled runs delivered (one third), max gap 191.9m. So a
+# lane whose primary is a 5-minute cron gets, from here, something closer to
+# 45-minute cover. ⛔ Do NOT "fix" that by tightening the cron: GitHub drops the
+# extra fires too, and sales-indexers-backstop.yml records that lesson already.
+# **The real fix is re-enabling the cron-job.org entries, which is an operator
+# action.** This exists so that the next time they die, the lanes degrade instead
+# of stopping.
+#
+# ⚠⚠ SECOND DATED SAMPLE, 2026-09-12 (PT) — THE COVER THIS ACTUALLY BUYS IS
+# ~4x THINNER THAN THE PARAGRAPH ABOVE ESTIMATES, AND THE 45-MINUTE FIGURE
+# SHOULD NOT BE QUOTED. Measured over the 24 h to 2026-09-12 19:37 PT: this
+# workflow delivered **8 of 96 scheduled fires (~8%)**, not one third, with a
+# largest gap of **4 h 49 m** against the 08-27 sample's 191.9 m. Neither
+# number is wrong — they are two dated samples of a rate GitHub sets — but a
+# reader sizing the floor from the 08-27 one will be out by 3-4x. So the honest
+# statement of the floor is **~9 ticks a day, average spacing ~2.7 h, holes up
+# to ~5 h**, whatever the cron here says.
+#
+# 🚨 AND THE SAME MEASUREMENT SETTLES A QUESTION THIS HEADER COULD ONLY ASSUME:
+# THREE DAYS ON, NINE OF THE TEN LANES ARE RECEIVING NOTHING BUT THIS WORKFLOW.
+# The control is exact rather than suggestive — each lane's `pipeline_runs` count
+# equals THIS WORKFLOW'S run count, manual dispatches included: 2026-09-11,
+# 13 runs here (6 scheduled + 7 `workflow_dispatch`) and 13 rows for each of
+# alerts-dispatch, alerts-send, allday-listings-{indexer,retry},
+# golazos-listings-indexer, pinnacle-{events-ingest,listings-retry} and
+# snapshot-pack-asks. If cron-job.org were contributing even one tick, a lane
+# count would EXCEED this one. None does. ⭐ So the operator action named above
+# is not merely still open — it is the ONLY thing running these nine lanes.
+#
+# ⚠ TWO LANES EXCEED THE BACKSTOP COUNT, AND BOTH ARE EXPLAINED RATHER THAN
+# WAVED THROUGH — an unexplained exception would undercut the control above.
+#   ownership-onchain-walk  10 vs 9: one extra fire a day at 13:30Z, on no tick
+#                           of this workflow, so it keeps one other caller.
+#   wmc-fmv-populate        60 vs 9: NOT 60 invocations — the route logs ~7
+#                           `pipeline_runs` rows per call, and every group sits
+#                           on a tick of this workflow. ⭐ But it is separately
+#                           NOT STARVED: pg_cron jobid 486
+#                           (`rpc-wmc-fmv-populate-backstop`, 4,24,44 * * * *)
+#                           succeeded 65 times in the same 24 h. It writes no
+#                           `pipeline_runs` row, so the self-report understates
+#                           it — measure the outcome, not the log.
+#
+# ⛔ WHY THE pg_cron SUBSTRATE THAT SAVES THAT ONE LANE CANNOT SIMPLY BE COPIED
+# FOR THE OTHER NINE, since it is the obvious next move. Job 486 is a pure in-DB
+# call (`SELECT public.<fn>()` — no `net.http`, no credential), and Postgres is
+# the one plane that survived the 09-10 outage, so it is a strictly better
+# substrate than GitHub. The other nine are **Vercel HTTP routes behind
+# INGEST_SECRET_TOKEN**, so a pg_cron lane for them would have to hold that token
+# where `cron.job.command` or a function body can be read back — which is exactly
+# how this estate has burned credentials before. 🚨 **That is a secrets decision
+# for Trevor, not a 2am refactor**: either re-enable the cron-job.org entries (the
+# real fix), or authorise the token into Supabase Vault so a pg_net backstop can
+# replace this one.
+#
+# ⚠ EVERY ROUTE HERE WAS CHECKED FOR IDEMPOTENCY BEFORE BEING ADDED, because a
+# backstop that double-writes is worse than a dead lane:
+#   alerts-dispatch      enqueues alert_deliveries DEDUPED (its own header)
+#   alerts-send          "claims pending alert_deliveries for a channel (atomic)
+#                         ... then marks each row sent/failed" — cannot double-send
+#   *-listings-indexer   block-cursor (`event_cursor`) + upsert onConflict
+#   *-listings-retry     `.update()` only, no inserts
+#   snapshot-pack-asks   upsert_pack_ask_state (upsert by key)
+#   wmc-fmv-populate     populate_* RPCs (write-in-place)
+#   pinnacle-events-ingest / ownership-onchain-walk  cursor + onConflict
+# All ten are `after()` fire-and-forget behind INGEST_SECRET_TOKEN, so a
+# duplicate tick advances a cursor or no-ops.
+#
+# ⚠ Minutes 12/27/42/57 are GHA-EMPTY on this repo (derived from every `cron:` in
+# .github/workflows, not assumed). Two jobs so the user-facing alert lanes cannot
+# be starved by a slow ingest step ahead of them in the same job.
+#
+# ⚠ Every step is `continue-on-error` with `fail-on-status: false`: this is a
+# backstop, and a red badge here would compete with the real alarm
+# (pipeline-sentinel) rather than add to it. Whether the lanes actually ran is
+# read from `pipeline_runs`, not from this workflow's badge.
+on:
+  # R61 (decided 2026-10-25): GitHub runs ~7-8 of these a day (scheduler-liveness), not
+  # what the cron asks. The cron is a ceiling, not the cadence; it is NOT lowered to match,
+  # because a lower ask gets fewer runs (8/day asks get 5-7, 4/day asks get 3-4).
+  schedule:
+    - cron: "12,27,42,57 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  alerts:
+    name: Alert delivery lanes (user-facing)
+    runs-on: ubuntu-latest
+    # 2 steps x (1 retry x 60s + backoff) — generous headroom over ~4 min.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # ⭐ THE SCHEDULER-LIVENESS PROBE (added 2026-09-10 PT). This workflow shipped
+      # earlier tonight and its coverage claim rested on TWO hand-fired dispatches;
+      # by 04:12Z it had missed SIX consecutive scheduled slots, and GitHub had
+      # delivered ZERO scheduled runs repo-wide since 01:30Z against a 7-hour
+      # baseline of ~4.3/hour. Nothing in the database could tell that apart from
+      # ordinary shedding, because a dispatched run and a scheduled run wrote
+      # identical rows — and the only watcher that could have noticed,
+      # `pipeline-sentinel`, is itself a GHA `schedule` and died in the same
+      # stall. Correlated alarm and subject: the failure this estate keeps
+      # repeating.
+      #
+      # ⭐ WHY HERE AND NOT ONLY ON THE SENTINEL: sampling rate. The sentinel is
+      # hourly and GitHub's measured delivery on this repo is ~1 in 3, so a
+      # 3-hour gap there is unremarkable and an alarm keyed on it cannot fire
+      # quickly without crying wolf. This workflow fires 4x/hour, so the same
+      # window carries 12 slots — zero delivered is ~0.8% under the 1-in-3 model
+      # instead of ~30%. `rpc_gha_schedule_watchdog()` (pg_cron, every 30 min,
+      # an INDEPENDENT scheduler) reads these rows.
+      #
+      # ⚠ IT MUST NEVER FAIL THE JOB, for the same reason the sentinel's must
+      # not: this is telemetry about a backstop, and a broken instrument that
+      # reds a badge masks the signal it exists to record. Missing credentials
+      # warn and exit 0; the lane calls below still run.
+      #
+      # ⚠ rows_* stay NULL, never 0 — a heartbeat has measured NOTHING, while a
+      # lane writes 0 because it genuinely moved no rows.
+      - name: Record which trigger delivered this tick
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_KEY" ]; then
+            echo "::warning::No Supabase credentials on this runner — no heartbeat was written, so for THIS run a shed tick and a delivered one stay indistinguishable."
+            exit 0
+          fi
+
+          STARTED=$(date -u +%Y-%m-%dT%H:%M:%SZ) || STARTED=""
+
+          PAYLOAD=$(printf '{"p_pipeline":"dead-lane-backstop-heartbeat","p_started_at":"%s","p_rows_found":null,"p_rows_written":null,"p_rows_skipped":null,"p_ok":true,"p_error":null,"p_collection_slug":null,"p_cursor_before":null,"p_cursor_after":null,"p_extra":{"source":"github-actions","event":"%s","run_id":"%s","run_attempt":"%s"}}' "$STARTED" "${EVENT:-unknown}" "$RUN_ID" "$RUN_ATTEMPT") || PAYLOAD=""
+
+          RESP=$(curl -s --max-time 20 -X POST "$SUPABASE_URL/rest/v1/rpc/log_pipeline_run" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" \
+            -w "\n%{http_code}") || RESP=""
+
+          CODE=$(printf '%s' "$RESP" | tail -1) || CODE=""
+          case "$CODE" in
+            2*) echo "dead-lane-backstop-heartbeat written (HTTP $CODE), event=${EVENT:-unknown}" ;;
+            *)  echo "::warning::heartbeat NOT written (HTTP ${CODE:-none}) — for THIS run a shed tick and a delivered one stay indistinguishable." ;;
+          esac
+      # Dispatch BEFORE send: dispatch fills the outbox, send drains it. Reversed,
+      # a backstop tick delivers nothing until the following tick.
+      - name: alerts-dispatch — backstop trigger
+        continue-on-error: true
+        uses: ./.github/actions/rpc-call
+        with:
+          url: https://www.rippackscity.com/api/cron/alerts-dispatch
+          token: ${{ secrets.INGEST_SECRET_TOKEN }}
+          label: alerts-dispatch
+          accept: "200,202"
+          retries: "1"
+          max-time: "60"
+          fail-on-auth: "false"
+      - name: alerts-send — backstop trigger
+        continue-on-error: true
+        uses: ./.github/actions/rpc-call
+        with:
+          url: https://www.rippackscity.com/api/cron/alerts-send
+          token: ${{ secrets.INGEST_SECRET_TOKEN }}
+          label: alerts-send
+          accept: "200,202"
+          retries: "1"
+          max-time: "60"
+          fail-on-auth: "false"
+
+  ingest:
+    name: High-frequency ingest lanes
+    runs-on: ubuntu-latest
+    # 8 steps x (1 retry x 60s + backoff) ~= 16 min worst case.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: allday-listings-indexer — backstop trigger
+        continue-on-error: true
+        uses: ./.github/actions/rpc-call
+        with:
+          url: https://www.rippackscity.com/api/allday-listings-indexer
+          token: ${{ secrets.INGEST_SECRET_TOKEN }}
+          label: allday-listings-indexer
+          accept: "200,202"
+          retries: "1"
+          max-time: "60"
+          fail-on-auth: "false"
+      - name: allday-listings-retry — backstop trigger
+        continue-on-error: true
+        uses: ./.github/actions/rpc-call
+        with:
+          url: https://www.rippackscity.com/api/allday-listings-retry
+          token: ${{ secrets.INGEST_SECRET_TOKEN }}
+          label: allday-listings-retry
+          accept: "200,202"
+          retries: "1"
+          max-time: "60"
+          fail-on-auth: "false"
+      - name: golazos-listings-indexer — backstop trigger
+        continue-on-error: true
+        uses: ./.github/actions/rpc-call
+        with:
+          url: https://www.rippackscity.com/api/golazos-listings-indexer
+          token: ${{ secrets.INGEST_SECRET_TOKEN }}
+          label: golazos-listings-indexer
+          accept: "200,202"
+          retries: "1"
+          max-time: "60"
+          fail-on-auth: "false"
+      - name: pinnacle-listings-retry — backstop trigger
+        continue-on-error: true
+        uses: ./.github/actions/rpc-call
+        with:
+          url: https://www.rippackscity.com/api/pinnacle-listings-retry
+          token: ${{ secrets.INGEST_SECRET_TOKEN }}
+          label: pinnacle-listings-retry
+          accept: "200,202"
+          retries: "1"
+          max-time: "60"
+          fail-on-auth: "false"
+      - name: pinnacle-events-ingest — backstop trigger
+        continue-on-error: true
+        uses: ./.github/actions/rpc-call
+        with:
+          url: https://www.rippackscity.com/api/cron/pinnacle-events-ingest
+          token: ${{ secrets.INGEST_SECRET_TOKEN }}
+          label: pinnacle-events-ingest
+          accept: "200,202"
+          retries: "1"
+          max-time: "60"
+          fail-on-auth: "false"
+      - name: snapshot-pack-asks — backstop trigger
+        continue-on-error: true
+        uses: ./.github/actions/rpc-call
+        with:
+          url: https://www.rippackscity.com/api/cron/snapshot-pack-asks
+          token: ${{ secrets.INGEST_SECRET_TOKEN }}
+          label: snapshot-pack-asks
+          accept: "200,202"
+          retries: "1"
+          max-time: "60"
+          fail-on-auth: "false"
+      - name: wmc-fmv-populate — backstop trigger
+        continue-on-error: true
+        uses: ./.github/actions/rpc-call
+        with:
+          url: https://www.rippackscity.com/api/wmc-fmv-populate
+          token: ${{ secrets.INGEST_SECRET_TOKEN }}
+          label: wmc-fmv-populate
+          accept: "200,202"
+          retries: "1"
+          max-time: "60"
+          fail-on-auth: "false"
+      - name: ownership-onchain-walk — backstop trigger
+        continue-on-error: true
+        uses: ./.github/actions/rpc-call
+        with:
+          url: https://www.rippackscity.com/api/cron/ownership-onchain-walk
+          token: ${{ secrets.INGEST_SECRET_TOKEN }}
+          label: ownership-onchain-walk
+          accept: "200,202"
+          retries: "1"
+          max-time: "60"
+          fail-on-auth: "false"
+
+      # ⛔⛔ THE ELEVENTH LANE IS DISABLED (2026-09-11 PT). It was added 09-10 on a
+      # premise that MEASUREMENT REFUTES, and it cannot do anything but fail.
+      #
+      # 🚨 THE CLAIM THAT JUSTIFIED IT — "IT IS THE ONLY WRITER OF
+      # `edition_offers.highest_offer` FOR TOP SHOT. Grep-verified across app/ and
+      # lib/" — IS FALSE, AND THE WORD `app/ and lib/` IS WHY.
+      # `public.raise_edition_offers_from_chain()` writes `highest_offer` and is on
+      # pg_cron as `rpc-raise-edition-offers-backstop [34 * * * *]`; its last six runs
+      # all `succeeded` (most recent 09-11 21:34 PT), and 7,433 of 13,054 Top Shot
+      # rows carry a `highest_offer`. `public.sync_edition_offers_from_atlas()` writes
+      # it too. **A repo grep cannot see a DATABASE writer** — CLAUDE.md states this
+      # exact rule ("a TABLE's writers the same — grep the DB"), and this is its
+      # second recorded instance after #81. Query that settles it:
+      #   SELECT proname, prosrc ILIKE '%highest_offer%' FROM pg_proc p
+      #   JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public'
+      #     AND p.prosrc ILIKE '%edition_offers%';
+      #
+      # ⛔ AND THE LANE CANNOT WRITE ANYTHING EVEN IF IT RAN. `offers-sweep` is
+      # Top-Shot-only (`COLLECTION_ID = 95f28a17…`, one arm) and calls
+      # `https://public-api.nbatopshot.com/graphql`, which is DECOMMISSIONED and
+      # answers Cloudflare **530** — the host CLAUDE.md flags and that register #65
+      # re-pointed to Atlas on 09-07, the same night `offers-sweep` (cron-job.org job
+      # 7712610) was deliberately made **INACTIVE** and its watchlist row retired.
+      # ⭐ So this step was resurrecting a lane that had been retired ON PURPOSE three
+      # days earlier, using a rationale the register had already superseded.
+      #
+      # THE MEASUREMENT, from `pipeline_runs_daily` (the 73h live table cannot see it):
+      #   08-25..08-27  209,521 / 215,517 / 209,808 rows written, 0 failures
+      #   08-28         145,056 written, 22 failures  ← the decommission lands
+      #   08-29         70 runs, 0 ok, 0 written
+      #   08-30..09-06  72 runs/day, exactly 36 ok / 36 fail, 0 written, every day
+      #   09-11         6 runs, 0 ok — this step re-firing it
+      # ⚠ The 36/36 split is NOT a fabricated green: it is the route's own half-open
+      # `OUTAGE_BREAKER_WINDOW_MS = 30 min` breaker logging `ok=true, skipped` against
+      # a ~20 min cadence. The breaker is behaving exactly as designed.
+      #
+      # ⚠ WHAT IS **NOT** SETTLED, stated so nobody reads this as a full all-clear:
+      # whether the on-chain writer reaches the same COVERAGE the marketplace sweep
+      # did. It cannot be measured from the schema — `edition_offers` has ONE shared
+      # `updated_at` and no per-column stamp, so a fresh timestamp vouches for
+      # `low_ask` and `highest_offer` indistinguishably (the previous note was right
+      # about that, and it is the one claim here that survives). ⛔ Re-pointing the
+      # sweep at Atlas is the open work; re-enabling it against the dead host is not.
+      #
+      # Re-enable by uncommenting ONLY after the route reads Atlas instead of
+      # public-api.nbatopshot.com. Until then this step can only add 6 failing
+      # invocations a day and noise in `pipeline_runs`.
+      #
+      # - name: offers-sweep — backstop trigger
+      #   continue-on-error: true
+      #   uses: ./.github/actions/rpc-call
+      #   with:
+      #     url: https://www.rippackscity.com/api/cron/offers-sweep
+      #     token: ${{ secrets.INGEST_SECRET_TOKEN }}
+      #     label: offers-sweep
+      #     accept: "200,202"
+      #     retries: "1"
+      #     max-time: "60"
+      #     fail-on-auth: "false"

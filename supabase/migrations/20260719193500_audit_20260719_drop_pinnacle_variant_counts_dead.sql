@@ -1,0 +1,21 @@
+-- Retire get_pinnacle_variant_counts: superseded by get_pinnacle_variant_breakdown
+-- (audit_20260719_pinnacle_variant_breakdown_fmv), which returns the same per-
+-- variant counts PLUS total_fmv. The pinnacle-wallet route was its only caller
+-- and now uses the breakdown RPC; grep confirms zero remaining code callers.
+--
+-- Reversal (recreate the exact prior definition):
+--   CREATE OR REPLACE FUNCTION public.get_pinnacle_variant_counts(p_wallet text)
+--    RETURNS json LANGUAGE sql STABLE SET search_path TO 'public','pg_temp'
+--   AS $function$
+--     SELECT COALESCE(json_object_agg(tier, cnt ORDER BY rank), '{}'::json)
+--     FROM (
+--       SELECT tier, count(*)::int AS cnt, pinnacle_variant_rank(tier) as rank
+--       FROM wallet_moments_cache
+--       WHERE wallet_address = p_wallet
+--         AND collection_id = '7dd9dd11-e8b6-45c4-ac99-71331f959714'
+--         AND tier IS NOT NULL
+--       GROUP BY tier
+--     ) sub;
+--   $function$;
+
+DROP FUNCTION IF EXISTS public.get_pinnacle_variant_counts(text);

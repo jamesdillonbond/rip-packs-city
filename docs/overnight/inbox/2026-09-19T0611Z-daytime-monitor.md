@@ -1,0 +1,26 @@
+# Daytime monitor candidates — 2026-09-19T06:11Z (~11:11 PM PT 09-18)
+
+Context: read-only daytime tick, the LAST before the ~1 AM PT nightly pass. Lock is RELEASED (nightly `np-20260918-sbx` ended ~08:00 PT, monitor-only). **This file is the "re-read at the next tick" the 02:45Z io-saturation filing explicitly asked for** — its last reading was 8:40 PM PT and it said: *"Re-read the table above at the next tick; if the fourth column has recovered this was a spell and the night pass can proceed. If not, read pg_stat_progress_vacuum / autovacuum / IO waits first."* Answer below. **No NEW candidate is raised — every failing lane is already-filed collateral of the evening saturation, the atlas ratchet, or the cohort lane, all dated in the last 24 h. This is a continuity/state datapoint so the 1 AM pass does not read a transient calm as recovery.**
+
+## §1c — I am near/in a spell; everything below is a SYMPTOM, causes deferred to a quiet window
+Positive control (`pg_stat_activity`, non-backend) read TWICE, ~6 min apart:
+- **23:05 PT: io_wait 4 / active 4 / total 39** (calm)
+- **23:10 PT: io_wait 11 / active 10** (pressured)
+
+The estate is **bouncing**, exactly the "easing then relapsing" shape the 02:45Z filing recorded at 8:08→8:10 PM PT. **So the answer to 02:45Z is: NOT recovered — the saturation has persisted ~4.5 h past its last documented reading (6:30 PM PT onset → still live at 11:10 PM PT).** ⚠ Per §1c I did NOT run a heavy `cron.job_run_details` aggregation (02:45Z proved my own aggregation of that 189 MB table is a top-5 reader under load) — durations this tick are uninterpretable; re-measure in a quiet window.
+
+## What was confirmed (light single-job / pipeline_runs reads only)
+- **`rpc-ts-listings-atlas-sync` (jobid 466) has NOT recovered on `*/6`.** The concurrent session's `*/2`→`*/6` change (migration `20260919064000`, 22:45 PT / 05:45Z) has **4 runs / 4 failed** since apply, all at the 120 s ceiling; `ts_listings.max(ingested_at)` is **04:55Z = 71.8 min stale**, frozen ~69,111 rows. ✅ This is the **pre-fired falsifier** — the ledger entry already says early ticks would fail and set a **2-hour bound tested by scheduled task `trig_013cySF1yhVjqeaLb32GSn5Y` at 00:45 PT**. We are only ~25 min past the change; **do NOT read this as the falsifier tripping yet.** `detect_stalled_pipelines()` returns it at `silent_minutes` 71 vs a 20 threshold — the same known escalation (inbox 0531Z + ledger). Not re-filed.
+- **`check_pgcron_recent_failures()`** — 4 jobs listed, all accounted for, none a new finding: `rpc-ts-listings-atlas-sync` (the ratchet, above); `rpc-allday-dist-opened-expiry` (3/12 timeouts, in ledger + inbox 2026-09-13; recurring under-load timeout, not new); `rpc-refresh-set-completers` (single `job startup timeout` at **09-18 12:20Z**, predates any fix — stale saturation collateral, already noted inbox 0011Z); `rpc-ccm-step1` (timeout at **23:10Z** = the OLD schedule's last run before tonight's `2 10 UTC` reschedule; **predates the fix**, clears on next tick — the cohort lane is exhaustively covered in inbox 0310Z, whose OWN pre-fired falsifier says step1 will still time out even idle at ~27 min extrapolated).
+- **`pipeline_runs ok=false` last 6 h** — broad statement/lock-timeout signature across ~13 lanes (`refresh_wmc_fmv_changed`, `refresh_wmc_fmv_drift_active`, `pinnacle-nft-resolver`, `lock-check-batch`, `backfill-pack-rip-metadata`, `price-snapshots`, `allday-buyer-backfill`/`allday-price-recover`), plus known upstream/by-design (`atlas-market-feed`/`atlas-editions-refresh` Cloudflare, `sync-nba-projections` #8-dead, `wallet-backfill` Flow Access API). **All are the evening-saturation umbrella (02:45Z) or documented chronic/upstream (0310Z "not re-filed"). Nothing anomalous in ROWS — an IO ceiling reached, not one runaway.**
+- **`check-alerts`** — timed out ONCE (05:35Z, in the spell); **0 fails in every other hour of the last 30 h and already back to passing** (05:00Z hour: 2 ok / 1 fail). Spell collateral, self-recovered — **not** a chronic alarm-shedding gap. Recorded so the next pass doesn't re-chase it.
+
+## Clean this tick
+- **Security 4/4:** `check_public_security_invariants()` `[]`, RLS-off public tables **0**, anon/authenticated write-holes on RLS-off tables **0**.
+- No FREEZE file. Lock RELEASED.
+
+## Note for the 1 AM nightly pass (the 02:45Z warning, restated because it is now live)
+🚨 A **HEALTHY verdict tonight would be the "sweep ok ≠ lanes ok" shape.** The estate is actively saturated (bouncing io_wait 4↔11), the largest single consumer (atlas lane) is at ~100 % duty producing zero, and step1 cannot complete even idle. The Measurement-Blackout / saturation sentinel arms should read INCONCLUSIVE. Proceed only on the strength of the pre-fired falsifiers already in place (atlas 00:45 PT self-test; cohort falsifier); do **not** ship into an ingest lane under this state, and take a fresh `pg_stat_activity` positive control before interpreting any duration.
+
+## 1b artifact validation
+Skipped this tick: the local artifact manifest lives outside this session's connected folders (same as the 0310Z tick). Validated the DATA LAYER instead — security/trust surface reads returned clean; the sources those artifacts read are green. Heavy embedded payload queries were deliberately NOT run under the current io_wait.

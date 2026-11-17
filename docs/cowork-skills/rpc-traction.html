@@ -1,0 +1,335 @@
+<title>RPC Traction</title>
+<style>:root{color-scheme:dark}</style>
+<script>
+/* Port shim (2026-10-20, known-issue #114). These dashboards were written for the
+   desktop Cowork bridge (window.cowork.callMcpTool). On claude.ai they read through
+   the page's `mcp` capability instead. Every failure THROWS here, so a query that
+   did not run can never render as an empty result set. */
+(function(){
+  var mcpP = (window.claude && typeof window.claude.use === "function") ? window.claude.use("mcp") : Promise.resolve(null);
+  var FIX = {
+    needs_reauth: "Reconnect {s} in claude.ai Settings, Connectors, then Reload.",
+    server_not_connected: "Add the {s} connector in claude.ai Settings, Connectors, then Reload.",
+    selection_required: "Choose which {s} connector this page should use, then Reload.",
+    not_in_manifest: "{s} is not allowed for this page. Allow it from the artifact's Permissions menu, then Reload.",
+    approval_required: "This page needs your approval to read from {s}. Reload and choose Allow.",
+    blocked_by_policy: "Your organization's policy blocks this {s} tool.",
+    server_unavailable: "{s} did not answer in time. Try Reload in a minute.",
+    not_granted: "Connectors are not available in this view. Open the page in claude.ai.",
+    capability_disabled: "Connectors are not available in this view. Open the page in claude.ai."
+  };
+  function serverFor(t){ return /list_deployments$/.test(t) ? "Vercel" : "Supabase"; }
+  function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+  async function call(mcp, s, name, args, retried){
+    try { return await mcp.callTool(s, name, args, { cache: false }); }
+    catch (e) {
+      var c = (e && e.code) || "upstream_error";
+      if (e && e.retryable && !retried) { await sleep(Math.min(e.retryAfterMs || 0, 15000) + 600 + Math.random() * 900); return call(mcp, s, name, args, true); }
+      var hint = (FIX[c] || "").replace("{s}", s);
+      var msg = s + " query did not run (" + c + ")" + (hint ? ". " + hint : (e && e.message ? ": " + String(e.message).slice(0, 240) : ""));
+      var err = new Error(msg); err.code = c; throw err;
+    }
+  }
+  window.cowork = { callMcpTool: async function(tool, args){
+    var mcp = await mcpP;
+    if (!mcp) throw new Error("Live data is not available in this view. Open the page in claude.ai with the Supabase connector connected.");
+    var s = serverFor(tool), name = String(tool).split("__").pop();
+    var res = await call(mcp, s, name, args, false);
+    var p = res && res.payload;
+    if (p && typeof p === "object" && !Array.isArray(p) && p.error && typeof p.error === "object")
+      throw new Error(s + " query failed: " + String(p.error.message || p.error.name || "error").slice(0, 300));
+    var out = { content: (res && res.content) || [] };
+    if (res && typeof res.structuredContent !== "undefined") out.structuredContent = res.structuredContent;
+    return out;
+  } };
+})();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js" integrity="sha384-iU8HYtnGQ8Cy4zl7gbNMOhsDTTKX02BTXptVP/vqAWIaTfM7isw76iyZCsjL2eVi" crossorigin="anonymous"></script>
+<script>if(window.Chart){Chart.defaults.color="#9A968C";Chart.defaults.borderColor="rgba(255,255,255,0.12)";try{Chart.defaults.scale.grid.color="rgba(255,255,255,0.06)";}catch(e){}}</script>
+<style>
+  :root{ color-scheme: light; --rpc-red:#E03A2F; --ink:#15171a; --muted:#6b7280; --line:#e6e8eb; --card:#fff; --bg:#f7f8fa; --ok:#15803d; --warn:#b45309; --crit:#b91c1c; }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  body{ background:var(--bg); color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; padding:20px; font-size:14px; line-height:1.45; }
+  h1,h2,h3{ text-transform:uppercase; letter-spacing:.05em; font-weight:700; }
+  .header{ display:flex; align-items:center; justify-content:space-between; border-bottom:3px solid var(--rpc-red); padding-bottom:12px; margin-bottom:8px; }
+  .header h1{ font-size:24px; letter-spacing:.06em; }
+  .updated{ font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .subtitle{ font-size:12px; color:var(--muted); margin-bottom:16px; max-width:800px; line-height:1.5; }
+  .grid{ display:grid; gap:14px; }
+  .kpi-row{ grid-template-columns:repeat(auto-fit,minmax(165px,1fr)); }
+  .card{ background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px 16px; }
+  .card .label{ font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; font-weight:700; }
+  .card .value{ font-size:30px; margin-top:6px; color:var(--rpc-red); font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-variant-numeric:tabular-nums; }
+  .card .value.ok{ color:var(--ok); } .card .value.warn{ color:var(--warn); }
+  .card .sub{ font-size:11px; color:var(--muted); margin-top:4px; line-height:1.4; }
+  .section{ margin-top:24px; }
+  .section h2{ font-size:16px; margin-bottom:10px; border-left:3px solid var(--rpc-red); padding-left:10px; letter-spacing:.05em; }
+  .panel{ background:var(--card); border:1px solid var(--line); border-radius:8px; padding:16px; }
+  table{ width:100%; border-collapse:collapse; font-size:13px; }
+  th{ text-align:left; text-transform:uppercase; letter-spacing:.05em; font-size:11px; color:var(--muted); border-bottom:1px solid var(--line); padding:8px 6px; font-weight:700; }
+  td{ padding:8px 6px; border-bottom:1px solid var(--line); }
+  td.num{ text-align:right; font-family:ui-monospace,Menlo,Consolas,monospace; font-variant-numeric:tabular-nums; }
+  .refresh-btn{ background:var(--rpc-red); color:#fff; border:none; padding:8px 14px; border-radius:6px; text-transform:uppercase; letter-spacing:.05em; cursor:pointer; font-size:13px; font-weight:700; }
+  .note{ font-size:11px; color:var(--muted); margin-top:8px; line-height:1.5; }
+  .banner{ background:#fff7ed; border:1px solid rgba(180,83,9,.4); border-radius:8px; padding:14px 16px; margin-bottom:4px; }
+  .banner .bt{ text-transform:uppercase; letter-spacing:.05em; color:var(--warn); font-size:14px; margin-bottom:6px; font-weight:700; }
+  .banner .bb{ font-size:12px; color:var(--ink); line-height:1.5; }
+  .pill{ display:inline-block; font-size:10px; padding:2px 7px; border-radius:999px; border:1px solid var(--line); color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
+  .two-col{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media (max-width:720px){ .two-col{ grid-template-columns:1fr; } }
+  canvas{ max-height:260px; }
+  /* === RPC DARK THEME (2026-06-15) === */
+  :root{color-scheme:dark!important;}
+  html,body{background:#0c0c0e!important;color:#ECEAE3!important;}
+  .wrap,.container,main{background:transparent!important;}
+  .card,.panel,.box,.tile,section.card{background:#16161a!important;border-color:rgba(255,255,255,0.10)!important;}
+  .kpi,.stat,.metric{background:#1b1b20!important;border-color:rgba(255,255,255,0.08)!important;}
+  .muted,.sub,.spinner,.legend,.tinyw,.kpi .lbl,.stat .lbl,small{color:#9A968C!important;}
+  h1{color:#F2F0EA!important;}
+  h2,h3,h4{color:#D8D5CC!important;}
+  table{color:#E4E2DB!important;}
+  th{color:#9A968C!important;border-bottom-color:rgba(255,255,255,0.12)!important;}
+  td{border-bottom-color:rgba(255,255,255,0.07)!important;}
+  tr:hover td{background:rgba(255,255,255,0.03)!important;}
+  .tab{border-color:rgba(255,255,255,0.18)!important;color:#CFCAC4!important;background:transparent!important;}
+  .tab.active{background:var(--rpc-red,#E03A2F)!important;color:#fff!important;border-color:var(--rpc-red,#E03A2F)!important;}
+  button{color:#ECEAE3;}
+  button.refresh{background:rgba(224,58,47,0.16)!important;}
+  input,select,textarea{background:#16161a!important;color:#ECEAE3!important;border-color:rgba(255,255,255,0.15)!important;}
+  a{color:#7FB2F0;}
+  .pill.HIGH{background:rgba(46,160,110,0.22)!important;color:#5fd6a0!important;}
+  .pill.MEDIUM{background:rgba(55,138,221,0.22)!important;color:#74b6ef!important;}
+  .pill.LOW{background:rgba(186,117,23,0.24)!important;color:#e0a64b!important;}
+  .pill.STALE{background:rgba(255,255,255,0.10)!important;color:#b9b6ad!important;}
+  .pill.NO_DATA{background:rgba(163,45,45,0.24)!important;color:#e88a8a!important;}
+  .pill.ASK_ONLY{background:rgba(83,74,183,0.26)!important;color:#a39df0!important;}
+  .pill.SALES_ONLY{background:rgba(156,42,111,0.26)!important;color:#e487bb!important;}
+  /* keep red accents */
+  .kpi .val,.stat .val,.metric .val{color:var(--rpc-red,#E03A2F)!important;}
+  /* traction extras */
+  .banner{background:#1b1b20!important;border-color:rgba(255,255,255,0.12)!important;}
+  .banner .bt{color:var(--rpc-red,#E03A2F)!important;}
+  .banner .bb{color:#ECEAE3!important;}
+  body{background:#0c0c0e!important;}
+  .updated,.subtitle,.note{color:#9A968C!important;}
+  .card .label{color:#9A968C!important;}
+  .card .value{color:var(--rpc-red,#E03A2F)!important;}
+  .card .sub{color:#9A968C!important;}
+  .pill{background:#1b1b20!important;color:#9A968C!important;border-color:rgba(255,255,255,0.15)!important;}
+  .refresh-btn{background:var(--rpc-red,#E03A2F)!important;}
+</style>
+
+
+<div class="header">
+  <div>
+    <h1>RPC — Traction &amp; Funnel</h1>
+    <div class="updated" id="updated">Loading…</div>
+  </div>
+  <button class="refresh-btn" onclick="loadAll()">&#8635; Refresh</button>
+</div>
+<div class="subtitle">
+  The 50-WAU instrument. <b>Numbers exclude smoke-test rows</b>. Catches the <i>first real</i> anon signal once distribution starts. Front door + click/email capture live 2026-05-30; anon wallet-paste &rarr; /share + 33K-URL sitemap shipped 2026-05-30/31; top-of-funnel events (home/paste/share/insights) instrumented 2026-05-31.
+</div>
+
+<div id="state-banner"></div>
+
+<div class="section" style="margin-top:14px">
+  <h2>Users &amp; signups <span class="pill">allow_list</span></h2>
+  <div class="grid kpi-row" id="userKpis"><div class="card"><div class="label">Loading…</div></div></div>
+</div>
+
+<div class="section">
+  <h2>Top-of-funnel (anon) <span class="pill">funnel_events · 7d</span></h2>
+  <div class="grid kpi-row" id="funnelKpis"><div class="card"><div class="label">Loading…</div></div></div>
+  <div class="note">The anon activation path: <b>home view &rarr; wallet paste &rarr; share view</b> (+ insights views), then signup above. All ~0 until distribution starts — this is where the new front-door traffic shows up first.</div>
+</div>
+
+<div class="section">
+  <h2>Engagement <span class="pill">concierge · email · clicks</span></h2>
+  <div class="grid kpi-row" id="kpis"><div class="card"><div class="label">Loading…</div></div></div>
+</div>
+
+<div class="section">
+  <h2>Real conversations / day <span class="pill">30d · smoke excluded</span></h2>
+  <div class="panel"><canvas id="conviChart"></canvas>
+    <div class="note">Real user conversations only. Near-zero by design until distribution starts — clearest "is it working yet?" signal.</div>
+  </div>
+</div>
+
+<div class="two-col section">
+  <div>
+    <h2>What real users ask <span class="pill">90d · smoke excluded</span></h2>
+    <div class="panel"><table id="catTable"><tbody><tr><td>Loading…</td></tr></tbody></table></div>
+  </div>
+  <div>
+    <h2>Outbound clicks by surface <span class="pill">all-time</span></h2>
+    <div class="panel"><table id="clickTable"><tbody><tr><td>Loading…</td></tr></tbody></table>
+      <div class="note" id="clickNote"></div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Funnel capture status</h2>
+  <div class="panel">
+    <table id="funnelTable"><tbody><tr><td>Loading…</td></tr></tbody></table>
+    <div class="note">Top-of-funnel (home/paste/share/insights views) instrumented 2026-05-31 via funnel_events; the await-insert fix that day also revived outbound_clicks (non-awaited inserts never flushed on Vercel). Conversions (signups/clicks/concierge) + arrivals (funnel_events) are now both captured.</div>
+  </div>
+</div>
+
+<script>
+const MCP = "mcp__24ab6d77-3292-4646-b039-669cc9535ef8__execute_sql";
+const PROJECT = "bxcqstmqfzmuolpuynti";
+const SMOKE = "is_smoke_test IS NOT TRUE";
+let chartRef = null;
+
+function extractRows(raw){
+  if(raw==null) return [];
+  if(Array.isArray(raw)) return raw;
+  if(typeof raw==="object"){ if(raw.isError===true||(raw.error&&typeof raw.error==="object")) throw new Error(String((raw.error&&(raw.error.message||raw.error.name))||(Array.isArray(raw.content)?raw.content.map(c=>(c&&c.text)||"").join(" "):"")||"tool returned an error")); 
+    if(typeof raw.structuredContent!=="undefined") return extractRows(raw.structuredContent);
+    if(Array.isArray(raw.content)) return extractRows(raw.content.map(c=>typeof c==="string"?c:(c&&c.text)||"").join("\n"));
+    if(typeof raw.result==="string") return extractRows(raw.result);
+    if(typeof raw.text==="string") return extractRows(raw.text);
+    if(typeof raw.data!=="undefined") return extractRows(raw.data);
+    return [raw];
+  }
+  if(typeof raw==="string"){ let s=raw.trim(); try{return extractRows(JSON.parse(s));}catch(e){} const m=s.match(/\[[\s\S]*\]/); if(m){try{return JSON.parse(m[0]);}catch(e){}} if(!s) return []; throw new Error("unreadable tool response: "+s.slice(0,160)); }
+  return [];
+}
+async function runSQL(query){ if(!(window.cowork&&window.cowork.callMcpTool)) throw new Error("MCP bridge unavailable (open inside Cowork)."); const r=await window.cowork.callMcpTool(MCP,{project_id:PROJECT,query}); if(r&&r.isError) throw new Error(String((r.content&&r.content[0]&&r.content[0].text)||"query failed").slice(0,200)); return extractRows(r); }
+const n = (v) => (v == null ? "—" : Number(v).toLocaleString());
+const ago = (ts) => { if(!ts) return "—"; const d=Math.floor((Date.now()-new Date(ts).getTime())/86400000); return d<=0?"today":(d+"d ago"); };
+
+const PAYLOAD_QUERY = `
+SET LOCAL statement_timeout = '60s';
+SELECT jsonb_build_object(
+  'snap', (SELECT get_rpc_traction_snapshot()),
+  'kpis', (SELECT to_jsonb(t) FROM (
+    SELECT
+      count(*) FILTER (WHERE ${SMOKE} AND created_at > now()-interval '7 days') AS real_7d,
+      count(*) FILTER (WHERE ${SMOKE} AND created_at > now()-interval '30 days') AS real_30d,
+      count(DISTINCT session_id) FILTER (WHERE ${SMOKE} AND created_at > now()-interval '30 days') AS real_sessions_30d,
+      (SELECT count(*) FROM email_subscribers) AS email_total,
+      (SELECT count(*) FROM outbound_clicks WHERE created_at > now()-interval '7 days') AS clicks_7d,
+      (SELECT count(*) FROM outbound_clicks) AS clicks_total
+    FROM support_conversations
+  ) t),
+  'convos_by_day', (SELECT COALESCE(jsonb_agg(t),'[]'::jsonb) FROM (
+    SELECT to_char(date_trunc('day', created_at),'MM-DD') AS day, count(*) AS real
+    FROM support_conversations WHERE ${SMOKE} AND created_at > now()-interval '30 days' GROUP BY 1 ORDER BY 1
+  ) t),
+  'categories', (SELECT COALESCE(jsonb_agg(t),'[]'::jsonb) FROM (
+    SELECT coalesce(nullif(category,''),'(uncategorized)') AS category, count(*) AS n
+    FROM support_conversations WHERE ${SMOKE} AND created_at > now()-interval '90 days'
+    AND category NOT IN ('concierge_unavailable','concierge_rate_limited') GROUP BY 1 ORDER BY 2 DESC LIMIT 10
+  ) t),
+  'clicks', (SELECT COALESCE(jsonb_agg(t),'[]'::jsonb) FROM (
+    SELECT coalesce(nullif(surface,''),'(none)') AS surface, count(*) AS n, max(created_at)::date AS last
+    FROM outbound_clicks GROUP BY 1 ORDER BY 2 DESC LIMIT 12
+  ) t),
+  'funnel', (SELECT to_jsonb(t) FROM (
+    SELECT
+      (SELECT count(*) FROM email_subscribers) AS email_total,
+      (SELECT count(*) FROM email_subscribers WHERE created_at > now()-interval '7 days') AS email_7d,
+      (SELECT count(*) FROM outbound_clicks) AS clicks_total,
+      (SELECT count(*) FROM outbound_clicks WHERE created_at > now()-interval '7 days') AS clicks_7d,
+      (SELECT count(*) FROM funnel_events WHERE created_at > now()-interval '7 days') AS funnel_7d,
+      (SELECT count(*) FILTER (WHERE ${SMOKE}) FROM support_conversations WHERE created_at > now()-interval '7 days') AS convo_7d
+  ) t)
+) AS payload`;
+
+function renderUsersAndFunnel(snap) {
+  snap = snap || {};
+  const src = snap.users_by_source || {};
+  const srcLine = Object.keys(src).sort((a,b)=>src[b]-src[a]).map(k=>k+": "+src[k]).join(" · ") || "—";
+  document.getElementById("userKpis").innerHTML = `
+    <div class="card"><div class="label">Total users</div><div class="value">${n(snap.users_total)}</div><div class="sub">${n(snap.users_active)} active</div></div>
+    <div class="card"><div class="label">Signups · 7d</div><div class="value ${Number(snap.signups_7d)>0?'ok':''}">${n(snap.signups_7d)}</div><div class="sub">30d: ${n(snap.signups_30d)}</div></div>
+    <div class="card"><div class="label">Last signup</div><div class="value">${ago(snap.last_signup_at)}</div><div class="sub">awaiting new signups</div></div>
+    <div class="card"><div class="label">Profiles</div><div class="value">${n(snap.profiles_with_username)}</div><div class="sub">${n(snap.users_who_saved)} saved a wallet</div></div>
+    <div class="card"><div class="label">By source</div><div class="value" style="font-size:14px;line-height:1.4">${srcLine}</div></div>`;
+  const f7 = snap.funnel_7d || {}, f30 = snap.funnel_30d || {};
+  const stage = (label, key) => `<div class="card"><div class="label">${label} · 7d</div><div class="value ${Number(f7[key]||0)>0?'ok':''}">${n(f7[key]||0)}</div><div class="sub">30d: ${n(f30[key]||0)}</div></div>`;
+  document.getElementById("funnelKpis").innerHTML =
+    stage('Home views','home_view') + stage('Wallet pastes','wallet_paste') + stage('Share views','share_view') + stage('Insights views','insights_view') +
+    `<div class="card"><div class="label">Funnel sessions · 7d</div><div class="value ${Number(snap.funnel_sessions_7d)>0?'ok':''}">${n(snap.funnel_sessions_7d)}</div><div class="sub">distinct · last ${ago(snap.funnel_last_event_at)}</div></div>`;
+}
+
+function renderKpis(r) {
+  r = r || {};
+  document.getElementById("kpis").innerHTML = `
+    <div class="card"><div class="label">Real convos · 7d</div><div class="value">${n(r.real_7d)}</div><div class="sub">smoke-test excluded</div></div>
+    <div class="card"><div class="label">Real convos · 30d</div><div class="value">${n(r.real_30d)}</div><div class="sub">${n(r.real_sessions_30d)} distinct sessions</div></div>
+    <div class="card"><div class="label">Email subscribers</div><div class="value ${Number(r.email_total)>0?'ok':''}">${n(r.email_total)}</div><div class="sub">capture live 2026-05-30</div></div>
+    <div class="card"><div class="label">Outbound clicks · 7d</div><div class="value">${n(r.clicks_7d)}</div><div class="sub">${n(r.clicks_total)} all-time</div></div>`;
+  const banner = document.getElementById("state-banner");
+  const real7 = Number(r.real_7d||0), email = Number(r.email_total||0), clicks7 = Number(r.clicks_7d||0);
+  if (real7 + email + clicks7 === 0) {
+    banner.innerHTML = `<div class="banner"><div class="bt">Pre-traction — instrument armed, awaiting first real signal</div><div class="bb">Zero real user activity in the last 7 days (smoke excluded). Instrumentation has been live since 2026-05-30/31 (funnel + SEO fixes, top-of-funnel events); no public distribution push has happened yet, so pre-traction is expected. The moment a real anon visitor pastes a wallet, hits /share, asks the concierge, or clicks out, it shows here. Watch the 7d numbers.</div></div>`;
+  } else {
+    banner.innerHTML = `<div class="banner" style="border-color:rgba(21,128,61,0.4);background:#eafaf0"><div class="bt" style="color:var(--ok)">First real signal detected</div><div class="bb">Real activity in the last 7d: ${n(real7)} convos · ${n(email)} email subs · ${n(clicks7)} outbound clicks. Distribution is landing — track the trend.</div></div>`;
+  }
+}
+
+function renderConviChart(rows) {
+  rows = rows || [];
+  const labels = rows.map(r=>r.day), real = rows.map(r=>Number(r.real));
+  if (chartRef) chartRef.destroy();
+  chartRef = new Chart(document.getElementById("conviChart"), {
+    type: "bar",
+    data: { labels, datasets: [ { label: "Real conversations", data: real, backgroundColor: "#E03A2F" } ] },
+    options: { responsive: true, maintainAspectRatio: false,
+      scales: { x: { ticks:{color:"#9A968C"}, grid:{color:"rgba(255,255,255,0.07)"} }, y: { beginAtZero:true, ticks:{color:"#9A968C",precision:0}, grid:{color:"rgba(255,255,255,0.07)"} } },
+      plugins: { legend: { labels: { color:"#9A968C" } } } }
+  });
+}
+
+function renderCategories(rows) {
+  rows = rows || [];
+  document.getElementById("catTable").innerHTML =
+    "<thead><tr><th>Category</th><th class='num'>Convos</th></tr></thead><tbody>" +
+    (rows.length? rows.map(r=>`<tr><td>${r.category}</td><td class='num'>${n(r.n)}</td></tr>`).join("") : "<tr><td colspan=2>No real conversations in 90d yet</td></tr>") +
+    "</tbody>";
+}
+
+function renderClicks(rows) {
+  rows = rows || [];
+  document.getElementById("clickTable").innerHTML =
+    "<thead><tr><th>Surface</th><th class='num'>Clicks</th><th class='num'>Last</th></tr></thead><tbody>" +
+    (rows.length? rows.map(r=>`<tr><td>${r.surface}</td><td class='num'>${n(r.n)}</td><td class='num'>${r.last||"—"}</td></tr>`).join("") : "<tr><td colspan=3>No clicks captured yet</td></tr>") +
+    "</tbody>";
+  document.getElementById("clickNote").textContent = "Revived 2026-05-31 (await-insert fix; clicks had silently not flushed since 2026-04-25). Repopulates as anon traffic arrives.";
+}
+
+function renderFunnel(r) {
+  r = r || {};
+  document.getElementById("funnelTable").innerHTML =
+    "<thead><tr><th>Signal</th><th class='num'>All-time</th><th class='num'>7d</th><th>Status</th></tr></thead><tbody>" +
+    `<tr><td>Top-of-funnel events</td><td class='num'>—</td><td class='num'>${n(r.funnel_7d)}</td><td>${Number(r.funnel_7d)>0?'capturing arrivals':'live, awaiting anon arrivals'}</td></tr>` +
+    `<tr><td>Concierge (real)</td><td class='num'>—</td><td class='num'>${n(r.convo_7d)}</td><td>${Number(r.convo_7d)>0?'live traffic':'awaiting anon visitors'}</td></tr>` +
+    `<tr><td>Email subscribers</td><td class='num'>${n(r.email_total)}</td><td class='num'>${n(r.email_7d)}</td><td>${Number(r.email_total)>0?'capturing':'awaiting first signup'}</td></tr>` +
+    `<tr><td>Outbound clicks</td><td class='num'>${n(r.clicks_total)}</td><td class='num'>${n(r.clicks_7d)}</td><td>${Number(r.clicks_7d)>0?'capturing':'live, awaiting anon clicks'}</td></tr>` +
+    "</tbody>";
+}
+
+async function loadAll() {
+  document.getElementById("updated").textContent = "Refreshing…";
+  try {
+    const rows = await runSQL(PAYLOAD_QUERY);
+    let payload = rows[0] && rows[0].payload;
+    if (typeof payload === "string") payload = JSON.parse(payload);
+    if (!payload) throw new Error("Empty payload from query");
+    renderUsersAndFunnel(payload.snap);
+    renderKpis(payload.kpis);
+    renderConviChart(payload.convos_by_day);
+    renderCategories(payload.categories);
+    renderClicks(payload.clicks);
+    renderFunnel(payload.funnel);
+    document.getElementById("updated").textContent = "Updated " + new Date().toLocaleString();
+  } catch (e) {
+    document.getElementById("updated").textContent = "Error: " + String(e).slice(0,120);
+  }
+}
+loadAll();
+</script>

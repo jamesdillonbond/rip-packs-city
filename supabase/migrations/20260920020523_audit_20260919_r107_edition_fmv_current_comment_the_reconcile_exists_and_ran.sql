@@ -1,0 +1,12 @@
+-- The table comment on edition_fmv_current carried a ⛔ "DO NOT POINT MORE BOARDS AT THIS TABLE UNTIL
+-- THAT IS FIXED" written 2026-09-19 morning. The fix landed the same evening (20260920020102) and the
+-- first full reconcile ran at 7:03 PM PT. This rewrites the comment so the next reader gets the
+-- current state, keeping the mechanism paragraph verbatim (it is still true of the INCREMENTAL path).
+-- REVERT: re-apply the COMMENT ON TABLE from 20260919022626.
+
+COMMENT ON TABLE public.edition_fmv_current IS
+'Latest-FMV-per-edition cache (21,424 rows, 13 MB, PK on edition_id), refreshed by public.refresh_edition_fmv_current(p_full boolean DEFAULT false) — the ONLY writer. It is what R50 pointed eleven public insight boards at, in place of DISTINCT ON over the whole fmv_snapshots partition set, and it is also read by refresh_series_detail_rollup().
+🚨 KNOWN STALENESS CLASS of the INCREMENTAL path, measured 2026-09-19 (audit_20260918): THE INCREMENTAL REFRESH CANNOT SEE A CORRECTION THAT DOES NOT ADVANCE computed_at. The incremental branch only reads snapshots with computed_at > (max(computed_at) in this table) - 2 hours. FMV writes in this repo are DELETE-THEN-INSERT, and a later pass can replace a snapshot while keeping its original computed_at — once the watermark has moved more than 2 h past that stamp, the replacement is never re-read by the incremental path.
+✅ BOUNDED SINCE 2026-09-19 7:03 PM PT (R107, migration 20260920020102): a FULL reconcile (refresh_edition_fmv_current(true) — DISTINCT ON over all of fmv_snapshots + a prune of editions with no snapshot) runs DAILY as pg_cron rpc-edition-fmv-current-full-reconcile (cron_heavy, 36 9 UTC = 2:36 AM PT) through run_edition_fmv_current_full_reconcile_job(), which writes pipeline_runs edition-fmv-current-full-reconcile. First run: 45.0 s, 21,424 upserted, 0 pruned; afterwards check_edition_fmv_current_source_drift(1) = [] and 0 cached rows named a missing (edition_id, computed_at) pair (was 105) — 15 prices changed, net -$271, max single correction -$1,349.55. So a delete-then-insert correction is now visible within 24 h (the incremental path sees ordinary advances within the hour).
+⚠ Before pointing a NEW board at this table, read check_edition_fmv_current_source_drift(1) (ban-at-zero) and the age of the last edition-fmv-current-full-reconcile row; a board that needs sub-day correction latency still belongs on fmv_snapshots directly (v_topshot_parallel_premiums stays there).
+Pre-reconcile copy: audit_20260919_efc_full_reconcile_backup (drop after 2026-10-19).';

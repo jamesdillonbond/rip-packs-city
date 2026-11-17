@@ -1,0 +1,207 @@
+#!/usr/bin/env python3
+"""Offline test for chain_walk_gha.parse on a REAL mainnet26 /v1/events response (blocks
+100,000,011 and 100,000,016, read 2026-10-03): one purchased listing, one delisted one.
+Run: python3 scripts/flowty-export/test_chain_walk_gha.py"""
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from chain_walk_gha import parse
+
+P1 = "eyJ2YWx1ZSI6eyJpZCI6IkEuM2NkYmIzZDU2OTIxMWZmMy5ORlRTdG9yZWZyb250VjIuTGlzdGluZ0NvbXBsZXRlZCIsImZpZWxkcyI6W3sidmFsdWUiOnsidmFsdWUiOiI0NjE3OTQ4OTYwMTQ4OCIsInR5cGUiOiJVSW50NjQifSwibmFtZSI6Imxpc3RpbmdSZXNvdXJjZUlEIn0seyJ2YWx1ZSI6eyJ2YWx1ZSI6IjEyMTg4NDQ2NzgiLCJ0eXBlIjoiVUludDY0In0sIm5hbWUiOiJzdG9yZWZyb250UmVzb3VyY2VJRCJ9LHsidmFsdWUiOnsidmFsdWUiOnsidmFsdWUiOiIweGU0ZGI5YzY0MGM2ZTUwYmEiLCJ0eXBlIjoiQWRkcmVzcyJ9LCJ0eXBlIjoiT3B0aW9uYWwifSwibmFtZSI6InN0b3JlZnJvbnRBZGRyZXNzIn0seyJ2YWx1ZSI6eyJ2YWx1ZSI6dHJ1ZSwidHlwZSI6IkJvb2wifSwibmFtZSI6InB1cmNoYXNlZCJ9LHsidmFsdWUiOnsidmFsdWUiOiJBLjBiMmEzMjk5Y2M4NTdlMjkuVG9wU2hvdC5ORlQiLCJ0eXBlIjoiU3RyaW5nIn0sIm5hbWUiOiJuZnRUeXBlIn0seyJ2YWx1ZSI6eyJ2YWx1ZSI6Ijc0NzY2NzkxODQ1MDQ4IiwidHlwZSI6IlVJbnQ2NCJ9LCJuYW1lIjoibmZ0VVVJRCJ9LHsidmFsdWUiOnsidmFsdWUiOiI0NzkwNjIzMiIsInR5cGUiOiJVSW50NjQifSwibmFtZSI6Im5mdElEIn0seyJ2YWx1ZSI6eyJ2YWx1ZSI6IkEuZWFkODkyMDgzYjNlMmM2Yy5EYXBwZXJVdGlsaXR5Q29pbi5WYXVsdCIsInR5cGUiOiJTdHJpbmcifSwibmFtZSI6InNhbGVQYXltZW50VmF1bHRUeXBlIn0seyJ2YWx1ZSI6eyJ2YWx1ZSI6IjAuMjYwMDAwMDAiLCJ0eXBlIjoiVUZpeDY0In0sIm5hbWUiOiJzYWxlUHJpY2UifSx7InZhbHVlIjp7InZhbHVlIjpudWxsLCJ0eXBlIjoiT3B0aW9uYWwifSwibmFtZSI6ImN1c3RvbUlEIn0seyJ2YWx1ZSI6eyJ2YWx1ZSI6IjAuMDA2NTAwMDAiLCJ0eXBlIjoiVUZpeDY0In0sIm5hbWUiOiJjb21taXNzaW9uQW1vdW50In0seyJ2YWx1ZSI6eyJ2YWx1ZSI6eyJ2YWx1ZSI6IjB4M2NkYmIzZDU2OTIxMWZmMyIsInR5cGUiOiJBZGRyZXNzIn0sInR5cGUiOiJPcHRpb25hbCJ9LCJuYW1lIjoiY29tbWlzc2lvblJlY2VpdmVyIn0seyJ2YWx1ZSI6eyJ2YWx1ZSI6IjE3MzkyNTA1NTQiLCJ0eXBlIjoiVUludDY0In0sIm5hbWUiOiJleHBpcnkifSx7InZhbHVlIjp7InZhbHVlIjp7InZhbHVlIjoiMHgwZDc0NGQyMzE2NWJmYjZjIiwidHlwZSI6IkFkZHJlc3MifSwidHlwZSI6Ik9wdGlvbmFsIn0sIm5hbWUiOiJidXllciJ9XX0sInR5cGUiOiJFdmVudCJ9Cg=="
+P2 = "eyJ2YWx1ZSI6eyJpZCI6IkEuM2NkYmIzZDU2OTIxMWZmMy5ORlRTdG9yZWZyb250VjIuTGlzdGluZ0NvbXBsZXRlZCIsImZpZWxkcyI6W3sidmFsdWUiOnsidmFsdWUiOiIxNzgxMjA4ODQ5MzQ4MjAiLCJ0eXBlIjoiVUludDY0In0sIm5hbWUiOiJsaXN0aW5nUmVzb3VyY2VJRCJ9LHsidmFsdWUiOnsidmFsdWUiOiIxMjE4ODQ0Njc4IiwidHlwZSI6IlVJbnQ2NCJ9LCJuYW1lIjoic3RvcmVmcm9udFJlc291cmNlSUQifSx7InZhbHVlIjp7InZhbHVlIjpudWxsLCJ0eXBlIjoiT3B0aW9uYWwifSwibmFtZSI6InN0b3JlZnJvbnRBZGRyZXNzIn0seyJ2YWx1ZSI6eyJ2YWx1ZSI6ZmFsc2UsInR5cGUiOiJCb29sIn0sIm5hbWUiOiJwdXJjaGFzZWQifSx7InZhbHVlIjp7InZhbHVlIjoiQS4wYjJhMzI5OWNjODU3ZTI5LlRvcFNob3QuTkZUIiwidHlwZSI6IlN0cmluZyJ9LCJuYW1lIjoibmZ0VHlwZSJ9LHsidmFsdWUiOnsidmFsdWUiOiI1OTM3MzYyOTEyNTMwMCIsInR5cGUiOiJVSW50NjQifSwibmFtZSI6Im5mdFVVSUQifSx7InZhbHVlIjp7InZhbHVlIjoiNDgyNzcxNDIiLCJ0eXBlIjoiVUludDY0In0sIm5hbWUiOiJuZnRJRCJ9LHsidmFsdWUiOnsidmFsdWUiOiJBLmVhZDg5MjA4M2IzZTJjNmMuRGFwcGVyVXRpbGl0eUNvaW4uVmF1bHQiLCJ0eXBlIjoiU3RyaW5nIn0sIm5hbWUiOiJzYWxlUGF5bWVudFZhdWx0VHlwZSJ9LHsidmFsdWUiOnsidmFsdWUiOiI0My42MzAwMDAwMCIsInR5cGUiOiJVRml4NjQifSwibmFtZSI6InNhbGVQcmljZSJ9LHsidmFsdWUiOnsidmFsdWUiOm51bGwsInR5cGUiOiJPcHRpb25hbCJ9LCJuYW1lIjoiY3VzdG9tSUQifSx7InZhbHVlIjp7InZhbHVlIjoiMS4wOTA3NTAwMCIsInR5cGUiOiJVRml4NjQifSwibmFtZSI6ImNvbW1pc3Npb25BbW91bnQifSx7InZhbHVlIjp7InZhbHVlIjpudWxsLCJ0eXBlIjoiT3B0aW9uYWwifSwibmFtZSI6ImNvbW1pc3Npb25SZWNlaXZlciJ9LHsidmFsdWUiOnsidmFsdWUiOiIxNzM5MDQ5NDY1IiwidHlwZSI6IlVJbnQ2NCJ9LCJuYW1lIjoiZXhwaXJ5In0seyJ2YWx1ZSI6eyJ2YWx1ZSI6bnVsbCwidHlwZSI6Ik9wdGlvbmFsIn0sIm5hbWUiOiJidXllciJ9XX0sInR5cGUiOiJFdmVudCJ9Cg=="
+BODY = [
+    {"block_height": "100000011", "block_timestamp": "2025-01-12T23:06:08.184692711Z", "events": [
+        {"type": "A.3cdbb3d569211ff3.NFTStorefrontV2.ListingCompleted", "payload": P1, "event_index": "18",
+         "transaction_id": "54bbbb8bb284d17a116a7dbcc9ef1078db536a9c395f2df604663a448af4e075"}]},
+    {"block_height": "100000016", "block_timestamp": "2025-01-12T23:06:11.895246621Z", "events": [
+        {"type": "A.3cdbb3d569211ff3.NFTStorefrontV2.ListingCompleted", "payload": P2, "event_index": "0",
+         "transaction_id": "83fc986d35619d278ad480a73204a827a3f870de70417875ea060dd41b85c386"}]},
+    {"block_height": "100000017", "block_timestamp": "2025-01-12T23:06:12Z", "events": []},
+]
+
+n_all, ev = parse(BODY)
+assert n_all == 2, n_all                         # both events counted toward the window
+assert len(ev) == 1, ev                          # the delisting (purchased=false) is NOT a sale
+e = ev[0]
+assert e["tx_hash"].startswith("54bbbb8b") and e["event_index"] == 18 and e["block_height"] == 100000011
+assert e["listing_resource_id"] == "46179489601488" and e["nft_id"] == "47906232"
+assert e["seller"] == "0xe4db9c640c6e50ba" and e["buyer"] == "0x0d744d23165bfb6c"   # Optional<Address> unwrapped
+assert e["price"] == "0.26000000" and e["payment_vault"].endswith("DapperUtilityCoin.Vault")
+assert e["custom_id"] is None and e["commission_receiver"] == "0x3cdbb3d569211ff3"
+assert parse([]) == (0, [])                      # an empty window is a real, recordable answer
+print("ok")
+
+# ── chain_verify_tx_gha.verdict on the same real event, as a /v1/transaction_results body ──
+from chain_verify_tx_gha import verdict
+res = {"block_id": "6a4c", "status": "Sealed", "error_message": "",
+       "events": [{"type": "A.3cdbb3d569211ff3.NFTStorefrontV2.ListingCompleted", "payload": P1, "event_index": "18"}]}
+row = {"listing": "46179489601488", "nft_id": "47906232", "price": 0.26, "buyer": "0x0d744d23165bfb6c",
+       "seller": "0xe4db9c640c6e50ba", "vault": "A.ead892083b3e2c6c.DapperUtilityCoin.Vault"}
+ok, d = verdict(row, res); assert ok and d["event_index"] == 18, d
+ok, d = verdict({**row, "price": 0.27}, res); assert not ok and d["mismatch"] == ["price"], d
+ok, d = verdict({**row, "buyer": "0x0000000000000001"}, res); assert not ok and d["mismatch"] == ["buyer"], d
+ok, d = verdict(row, {**res, "status": "Pending"}); assert not ok and d["reason"] == "not_sealed", d   # wrong-spork answer
+ok, d = verdict({**row, "listing": "1"}, res); assert not ok and d["reason"] == "no_listing_completed_for_listing", d
+ok, d = verdict(row, {**res, "error_message": "panic"}); assert not ok and d["reason"] == "tx_error", d
+print("verdict ok")
+
+# ── mint_walk_gha.records: JSON-CDC events shaped like the deployed signatures (read 2026-10-03) ──
+import base64 as _b64, json as _json
+from mint_walk_gha import records
+def _ev(eid, fields):
+    p = {"value": {"id": eid, "fields": [{"name": k, "value": {"type": t, "value": v}} for k, t, v in fields]}, "type": "Event"}
+    return {"type": eid, "payload": _b64.b64encode(_json.dumps(p).encode()).decode()}
+TSM = "A.0b2a3299cc857e29.TopShot.MomentMinted"
+body = [{"block_height": "140000001", "events": [
+    _ev(TSM, [("momentID", "UInt64", "50800001"), ("playID", "UInt32", "9001"), ("setID", "UInt32", "300"), ("serialNumber", "UInt32", "17"), ("subeditionID", "UInt32", "0")]),
+    _ev(TSM, [("momentID", "UInt64", "50800002"), ("playID", "UInt32", "9001"), ("setID", "UInt32", "300"), ("serialNumber", "UInt32", "4"), ("subeditionID", "UInt32", "3")])]}]
+n, recs = records("ts_minted", body)
+assert n == 2 and {"c": "ts", "id": 50800001, "set": 300, "play": 9001, "serial": 17} in recs
+assert {"c": "tssub", "id": 50800002, "sub": 3} in recs
+assert not any(r["c"] == "tssub" and r["id"] == 50800001 for r in recs)      # subedition 0 = Standard: no tssub row
+n, recs = records("ts_subedition", [{"events": [_ev("A.0b2a3299cc857e29.TopShot.SubeditionAddedToMoment",
+    [("momentID", "UInt64", "50800001"), ("subeditionID", "UInt32", "5"), ("setID", "UInt32", "300"), ("playID", "UInt32", "9001")])]}])
+assert recs == [{"c": "tssub", "id": 50800001, "sub": 5}]
+n, recs = records("ad_minted", [{"events": [_ev("A.e4cf4bdc1751c65d.AllDay.MomentNFTMinted",
+    [("id", "UInt64", "11000001"), ("editionID", "UInt64", "4500"), ("serialNumber", "UInt64", "88")])]}])
+assert recs == [{"c": "ad", "id": 11000001, "ed": 4500, "serial": 88}]
+assert records("ad_minted", []) == (0, [])
+print("mint records ok")
+
+# A truncated chunked body (http.client.IncompleteRead, not an OSError) is a free retry, not a crash:
+# it killed the mainnet26 88.2M job on 2026-10-04 with 963 windows unwalked.
+import http.client as _hc, chain_walk_gha as _W, chain_verify_tx_gha as _V
+class _R:
+    def __init__(self, b): self.b = b
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+    def read(self): return self.b
+def _flaky(body):
+    calls = []
+    def urlopen(*a, **k):
+        calls.append(1)
+        if len(calls) == 1: raise _hc.IncompleteRead(b"x" * 10)
+        return _R(body)
+    return urlopen, calls
+class _L:
+    def wait(self): pass
+_orig_sleep = _W.time.sleep; _W.time.sleep = lambda s: None
+try:
+    _W.urllib.request.urlopen, c = _flaky(b"[]")
+    assert _W.get_window("mainnet26", 1, 250, _L()) == [] and len(c) == 2
+    _V.urllib.request.urlopen, c = _flaky(b'{"status": "Sealed"}')
+    assert _V.get_result("ab", _L()) == {"status": "Sealed"} and len(c) == 2
+finally:
+    _W.time.sleep = _orig_sleep
+print("incomplete-read retry ok")
+
+# ── chain_verify_dapper_gha.verdict: shapes of two real mainnet28 transactions read 2026-10-04 ──
+# (Top Shot DAPPER_MARKETPLACE listing 4a313047…, All Day OffersV2 accept 929428ae…; Flowty's index
+# had buyer NULL / seller '' on the first and seller == buyer on the second.)
+import chain_verify_dapper_gha as _D
+def _opt_addr(a): return {"type": "Address", "value": a}
+def _rtype(tid): return {"staticType": {"kind": "Resource", "type": "", "typeID": tid, "fields": [], "initializers": []}}
+DUC = "A.ead892083b3e2c6c.DapperUtilityCoin.Vault"
+TSN, ADN = "A.0b2a3299cc857e29.TopShot.NFT", "A.e4cf4bdc1751c65d.AllDay.NFT"
+lst = {"status": "Sealed", "error_message": "", "block_id": "acd5", "events": [
+    _ev("A.0b2a3299cc857e29.TopShot.Withdraw", [("id", "UInt64", "52284157"), ("from", "Optional", _opt_addr("0xd13c52b7bedcae01"))]),
+    _ev("A.1d7e57aa55817448.NonFungibleToken.Withdrawn", [("type", "String", TSN), ("id", "UInt64", "52284157"), ("from", "Optional", _opt_addr("0xd13c52b7bedcae01"))]),
+    {**_ev(_D.LISTING, [("listingResourceID", "UInt64", "8796095714525"), ("purchased", "Bool", True), ("nftType", "Type", _rtype(TSN)),
+        ("nftID", "UInt64", "52284157"), ("salePaymentVaultType", "Type", _rtype(DUC)), ("salePrice", "UFix64", "0.30000000"),
+        ("customID", "Optional", {"type": "String", "value": "DAPPER_MARKETPLACE"})]), "event_index": "20"},
+    _ev("A.1d7e57aa55817448.NonFungibleToken.Deposited", [("type", "String", TSN), ("id", "UInt64", "52284157"), ("to", "Optional", _opt_addr("0x0d744d23165bfb6c"))]),
+    _ev("A.0b2a3299cc857e29.TopShot.Deposit", [("id", "UInt64", "52284157"), ("to", "Optional", _opt_addr("0x0d744d23165bfb6c"))])]}
+row = {"kind": "listing", "listing": "8796095714525", "nft_id": "52284157", "nft_type": TSN, "price": "0.3", "vault": DUC}
+ok, d = _D.verdict(row, lst)
+assert ok and d["seller"] == "0xd13c52b7bedcae01" and d["buyer"] == "0x0d744d23165bfb6c" and d["custom_id"] == "DAPPER_MARKETPLACE", d
+assert not _D.verdict({**row, "price": "0.25"}, lst)[0]
+assert _D.verdict({**row, "listing": "1"}, lst)[1]["reason"] == "no_event_for_id"
+no_dep = {**lst, "events": [e for e in lst["events"] if "Deposit" not in e["type"]]}
+assert _D.verdict(row, no_dep)[1]["mismatch"] == ["transfer"]            # a sale with no buyer on chain is not promoted
+
+cap = {"staticType": {"kind": "Capability", "type": {"kind": "Reference", "type": {"kind": "Resource", "type": "", "typeID": DUC}}}}
+off = {"status": "Sealed", "error_message": "", "block_id": "3bb8", "events": [
+    _ev("A.e4cf4bdc1751c65d.AllDay.Withdraw", [("id", "UInt64", "4968648"), ("from", "Optional", _opt_addr("0x48a41b559e58e780"))]),
+    _ev("A.e4cf4bdc1751c65d.AllDay.Deposit", [("id", "UInt64", "4968648"), ("to", "Optional", _opt_addr("0x53ea34e5d325ec7c"))]),
+    _ev(_D.OFFER, [("purchased", "Bool", True), ("acceptingAddress", "Optional", _opt_addr("0x48a41b559e58e780")),
+        ("offerAddress", "Address", "0x53ea34e5d325ec7c"), ("offerId", "UInt64", "269380350325364"), ("nftType", "Type", _rtype(ADN)),
+        ("offerAmount", "UFix64", "20.00000000"), ("paymentVaultType", "Type", cap), ("nftId", "Optional", {"type": "UInt64", "value": "4968648"})])]}
+orow = {"kind": "offer", "listing": "269380350325364", "nft_id": "4968648", "nft_type": ADN, "price": "20", "vault": DUC}
+ok, d = _D.verdict(orow, off)
+assert ok and d["seller"] == "0x48a41b559e58e780" and d["buyer"] == "0x53ea34e5d325ec7c", d
+swapped = {**off, "events": [_ev("A.e4cf4bdc1751c65d.AllDay.Withdraw", [("id", "UInt64", "4968648"), ("from", "Optional", _opt_addr("0x53ea34e5d325ec7c"))])] + off["events"][1:]}
+assert "transfer" in _D.verdict(orow, swapped)[1]["mismatch"]
+assert _D.verdict(orow, {"status": "NotFound"})[1]["reason"] == "not_sealed"
+assert _D.nodes_for("2024-01-01 00:00:00+00")[0] == "mainnet24" and _D.nodes_for("2026-07-04T19:57:48Z")[0] == "mainnet28"
+assert _D.nodes_for("2025-11-01T00:00:00")[0] == "mainnet27" and len(set(_D.nodes_for("2025-11-01"))) == 5
+print("dapper verdict ok")
+# mainnet24-era OffersV2 (tx 61584a18…, read 2026-10-04): paymentVaultType is a Capability to a RESTRICTED
+# reference whose Restriction node has its own typeID "…Vault{Provider,Balance}"; the vault is the inner type.
+rcap = {"staticType": {"kind": "Capability", "type": {"kind": "Reference", "type": {"kind": "Restriction",
+        "typeID": DUC + "{A.f233dcee88fe0abe.FungibleToken.Provider,A.f233dcee88fe0abe.FungibleToken.Balance}",
+        "type": {"kind": "Resource", "type": "", "typeID": DUC}, "restrictions": []}, "authorized": False}}}
+assert _D.type_id(rcap) == DUC
+old24 = {**off, "events": off["events"][:2] + [_ev(_D.OFFER, [("purchased", "Bool", True), ("acceptingAddress", "Optional", _opt_addr("0x48a41b559e58e780")),
+        ("offerAddress", "Address", "0x53ea34e5d325ec7c"), ("offerId", "UInt64", "269380350325364"), ("offerAmount", "UFix64", "20.00000000"),
+        ("paymentVaultType", "Type", rcap), ("nftId", "Optional", {"type": "UInt64", "value": "4968648"})])]}
+assert _D.verdict(orow, old24)[0]
+print("restricted vault type ok")
+
+# ── sale_block_read_gha: decode a script's JSON-Cadence dictionary, group candidates per script call ──
+import sale_block_read_gha as _S
+def _dict(entries, t):
+    return [{"key": {"type": "UInt64", "value": str(k)}, "value": {"type": "Array", "value": [{"type": t, "value": str(x)} for x in v]}} for k, v in entries]
+r = _S.records("ts", _dict([(41617071, [90, 3566, 1234, 3]), (5, [2, 217, 9, 0])], "UInt32"))
+assert r[41617071] == [{"c": "ts", "id": 41617071, "set": 90, "play": 3566, "serial": 1234}, {"c": "tssub", "id": 41617071, "sub": 3}]
+assert r[5] == [{"c": "ts", "id": 5, "set": 2, "play": 217, "serial": 9}]          # subedition 0 = Standard: no tssub row
+assert _S.records("ad", _dict([(4968648, [4500, 88])], "UInt64")) == {4968648: [{"c": "ad", "id": 4968648, "ed": 4500, "serial": 88}]}
+assert _S.records("ufc", _dict([(7, [52, 10])], "UInt32")) == {7: [{"c": "ufc", "id": 7, "set": 52, "serial": 10}]}
+cands = [{"k": "ts:1:aa", "c": "ts", "id": 1, "buyer": "0xb", "node": "mainnet24", "block_id": "blk", "block_height": None},
+         {"k": "ts:2:aa", "c": "ts", "id": 2, "buyer": "0xb", "node": "mainnet24", "block_id": "blk", "block_height": None},
+         {"k": "ad:3:cc", "c": "ad", "id": 3, "buyer": "0xb", "node": "mainnet24", "block_id": "blk", "block_height": None}]
+gs = _S.groups_of(cands)
+assert sorted(len(g["ids"]) for g in gs) == [1, 2]                                  # same block + buyer + collection share a script
+v = _S.verdict_rows([g for g in gs if len(g["ids"]) == 2][0], {1: [{"c": "ts", "id": 1}]})
+assert v == [{"k": "ts:1:aa", "found": True, "meta": [{"c": "ts", "id": 1}]}, {"k": "ts:2:aa", "found": False, "meta": []}]
+assert set(_S.SCRIPTS) == {(c, e) for c in ("ts", "ad", "ufc") for e in (_S.PRE, _S.C1)}
+assert all("pub fun" in _S.SCRIPTS[(c, _S.PRE)] and "access(all)" in _S.SCRIPTS[(c, _S.C1)] for c in ("ts", "ad", "ufc"))
+print("sale-block reads ok")
+# All Day view fallback (mainnet24 wallets with a generic capability): a real response for nft 300097, read 2026-10-04.
+fb = [{"key": {"type": "UInt64", "value": "300097"}, "value": {"type": "Array", "value": [
+      {"type": "String", "value": "https://media.nflallday.com/editions/395/media/image?format=jpeg&width=512"}, {"type": "String", "value": "4396"}]}}]
+assert _S.records("ad", fb) == {300097: [{"c": "ad", "id": 300097, "ed": 395, "serial": 4396}]}
+assert _S.records("ad", _dict([(1, ["4500", "88"])], "String")) == {1: [{"c": "ad", "id": 1, "ed": 4500, "serial": 88}]}
+try:
+    _S.records("ad", [{"key": {"type": "UInt64", "value": "2"}, "value": {"type": "Array", "value": [{"type": "String", "value": "https://elsewhere/x"}, {"type": "String", "value": "1"}]}}]); raise SystemExit("bad url accepted")
+except ValueError: pass
+print("all day view fallback ok")
+# per-node adaptive pacing: a 429 doubles the gap (capped at 10 s), successes ease it back to the floor
+L = _S.AdaptiveLimiter(4)
+assert abs(L.gap - 0.25) < 1e-9
+L.throttled(); L.throttled(); assert abs(L.gap - 1.0) < 1e-9
+for _ in range(200): L.ok()
+assert abs(L.gap - 0.25) < 1e-9
+for _ in range(20): L.throttled()
+assert L.gap == 10.0
+print("adaptive limiter ok")
+# run_script: a deterministic 500 (mainnet24, 2026-10-04) gives up after 3 calls with no verdict; a 200 parses.
+import io, urllib.error, urllib.request
+class _Fast:
+    def wait(self): pass
+    def ok(self): pass
+    def throttled(self): pass
+_calls = []
+def _fail(req, timeout=None):
+    _calls.append(1); raise urllib.error.HTTPError(req.full_url, 500, "ise", {}, io.BytesIO(b""))
+_real_open, _real_sleep = urllib.request.urlopen, _S.time.sleep
+urllib.request.urlopen, _S.time.sleep = _fail, (lambda s: None)
+g = {"key": ("mainnet24", "blk", None, "0xb", "ad"), "ids": [1], "ks": [("ad:1:x", 1)]}
+assert _S.run_script(g, _Fast()) is None and len(_calls) == 3
+class _Resp(io.BytesIO):
+    def __enter__(self): return self
+    def __exit__(self, *a): pass
+import base64 as _b64, json as _json
+_ok = _json.dumps(_b64.b64encode(_json.dumps({"type": "Dictionary", "value": _dict([(1, ["4500", "88"])], "String")}).encode()).decode()).encode()
+urllib.request.urlopen = lambda req, timeout=None: _Resp(_ok)
+assert _S.run_script(g, _Fast()) == {1: [{"c": "ad", "id": 1, "ed": 4500, "serial": 88}]}
+urllib.request.urlopen, _S.time.sleep = _real_open, _real_sleep
+print("run_script 500 strikes ok")

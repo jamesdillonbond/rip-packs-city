@@ -1,0 +1,652 @@
+import { describe, it, expect, beforeEach, vi } from "vitest"
+import { NextRequest } from "next/server"
+import { makeInstrumentedSupabaseFixture } from "./helpers/route-harness"
+import type { ScriptTurn } from "./helpers/anthropic-fixture"
+
+// Concierge TOOL-ARM coverage, wave 4 — the arms the first three populated
+// waves left dark. `app/api/support-chat/route.ts` is the single largest
+// uncovered-branch file in the primary coverage gate (453 uncovered branches
+// measured 2026-08-11, ~2× the next file), and the densest remaining cluster
+// sits in the special-serial tools and the deal-subscription CRUD.
+//
+// What is NEW here (deliberately NOT re-covering wave 2's team/badge
+// post-filter, or wave 3's escalate_to_human / board readers):
+//   - search_serial_deals: the 'perfect' tag, which is a JS filter rather than a
+//     SQL column (serial == circulation); the tight-before-coarse SORT; the
+//     limit clamp; the HONEST no_results exit; and the listedOnly path with its
+//     handler-COMPUTED discount and the embedded-editions array/object shape.
+//   - get_special_serial_owners: row mapping + the deliberate custody caveat.
+//   - manage_deal_subscriptions: list / pause / resume / delete / create,
+//     including the rookie-badge expansion and the not_linked guard.
+//
+// Assertions target handler-COMPUTED values (discount maths, ordering, derived
+// booleans), never a fixture echoed straight back — an echo test passes even if
+// the shaping logic is deleted.
+
+const A = vi.hoisted(() => ({
+  state: { script: [] as ScriptTurn[], cursor: 0 },
+  createCalls: [] as Array<{ messages: Array<{ role: string; content: unknown }> }>,
+  sb: null as unknown,
+  authedEmail: null as string | null,
+  userId: null as string | null,
+}))
+
+vi.mock("next/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("next/server")>()
+  return { ...actual, after: () => {} }
+})
+vi.mock("@/lib/auth/supabase-server", () => ({
+  getSupabaseServer: async () => ({
+    auth: {
+      getUser: async () =>
+        A.authedEmail
+          ? { data: { user: { id: A.userId ?? "user-1", email: A.authedEmail } }, error: null }
+          : { data: { user: null }, error: null },
+    },
+  }),
+}))
+vi.mock("@/lib/pro-tier", () => ({
+  checkFeatureQuota: async () => ({ allowed: true, plan: "pro", daily_limit: 200 }),
+  recordFeatureUsage: async () => {},
+}))
+vi.mock("@supabase/supabase-js", () => ({
+  createClient: () =>
+    new Proxy({}, { get: (_t, prop) => (A.sb as Record<PropertyKey, unknown>)[prop] }),
+}))
+vi.mock("@anthropic-ai/sdk", async () => {
+  const { buildAnthropicClass } = await import("./helpers/anthropic-fixture")
+  const Base = buildAnthropicClass(A.state) as new () => {
+    messages: { create: (args: unknown) => Promise<unknown>; stream: (args: unknown) => unknown }
+  }
+  return {
+    default: class {
+      messages = (() => {
+        const inner = new Base().messages
+        return {
+          create: async (args: unknown) => {
+            A.createCalls.push(args as { messages: Array<{ role: string; content: unknown }> })
+            return inner.create(args)
+          },
+          stream: inner.stream,
+        }
+      })()
+    },
+  }
+})
+
+process.env.ANTHROPIC_API_KEY = "test-key"
+
+const { POST } = await import("@/app/api/support-chat/route")
+
+type Fixtures = Parameters<typeof makeInstrumentedSupabaseFixture>[0]
+function install(fixtures: Fixtures) {
+  const spy = makeInstrumentedSupabaseFixture(fixtures)
+  A.sb = spy.fixture
+  return spy
+}
+function post(message: string, extra: Record<string, unknown> = {}): NextRequest {
+  return new NextRequest("https://t/api/support-chat", {
+    method: "POST",
+    headers: new Headers({ "content-type": "application/json" }),
+    body: JSON.stringify({ message, sessionId: `pop4-${Math.random()}`, ...extra }),
+  })
+}
+function script(toolName: string, input: unknown) {
+  A.state.script = [{ tools: [{ name: toolName, input }] }, { text: "done" }]
+  A.state.cursor = 0
+}
+function toolResult(): Record<string, unknown> {
+  const secondCall = A.createCalls.at(-1)
+  const blocks = secondCall?.messages.at(-1)?.content as Array<{ type: string; content: string }>
+  const tr = blocks?.find((b) => b.type === "tool_result")
+  if (!tr) throw new Error("no tool_result in the follow-up model call")
+  return JSON.parse(tr.content)
+}
+
+beforeEach(() => {
+  install({})
+  A.createCalls.length = 0
+  A.authedEmail = null
+  A.userId = null
+})
+
+/** A row of topshot_underpriced_serials_board. */
+function boardRow(over: Record<string, unknown> = {}) {
+  return {
+    player_name: "Damian Lillard",
+    set_name: "Base Set",
+    tier: "RARE",
+    serial_number: 7,
+    circulation_count: 1000,
+    ask_usd: 50,
+    serial_fmv_usd: 100,
+    edition_fmv_usd: 80,
+    serial_multiplier: 1.25,
+    discount_pct: 50,
+    estimate_quality: "coarse",
+    confidence: "MEDIUM",
+    nft_id: "111",
+    edition_key: "1:2",
+    external_id: "1:2",
+    ...over,
+  }
+}
+
+describe("search_serial_deals — board path shaping", () => {
+  it("derives is_first_mint / is_perfect_mint rather than trusting the row", async () => {
+    install({
+      topshot_underpriced_serials_board: { data: [
+        boardRow({ serial_number: 1, nft_id: "n1" }),
+        boardRow({ serial_number: 1000, circulation_count: 1000, nft_id: "n2" }),
+        boardRow({ serial_number: 7, nft_id: "n3" }),
+      ], error: null },
+    })
+    script("search_serial_deals", {})
+    await POST(post("find serial deals"))
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    expect(r.source).toBe("underpriced_serials_board")
+    const rows = r.rows as Array<Record<string, unknown>>
+    expect(rows.find((x) => x.serial === 1)?.is_first_mint).toBe(true)
+    // serial === circulation is a "perfect mint" and must be COMPUTED — the
+    // board carries no such column.
+    expect(rows.find((x) => x.serial === 1000)?.is_perfect_mint).toBe(true)
+    expect(rows.find((x) => x.serial === 7)?.is_first_mint).toBe(false)
+    expect(rows.find((x) => x.serial === 7)?.is_perfect_mint).toBe(false)
+  })
+
+  it("filters tag='perfect' in JS (serial === circulation), since it is not a SQL column", async () => {
+    install({
+      topshot_underpriced_serials_board: { data: [
+        boardRow({ serial_number: 500, circulation_count: 1000, nft_id: "no" }),
+        boardRow({ serial_number: 1000, circulation_count: 1000, nft_id: "yes" }),
+      ], error: null },
+    })
+    script("search_serial_deals", { tag: "perfect" })
+    await POST(post("perfect mints"))
+    const rows = toolResult().rows as Array<Record<string, unknown>>
+    expect(rows).toHaveLength(1)
+    expect(rows[0].serial).toBe(1000)
+  })
+
+  it("sorts TIGHT estimates ahead of coarse ones regardless of discount", async () => {
+    install({
+      topshot_underpriced_serials_board: { data: [
+        boardRow({ estimate_quality: "coarse", discount_pct: 90, player_name: "Coarse Deep", nft_id: "c" }),
+        boardRow({ estimate_quality: "tight", discount_pct: 20, player_name: "Tight Shallow", nft_id: "t" }),
+      ], error: null },
+    })
+    script("search_serial_deals", {})
+    await POST(post("serial deals"))
+    const rows = toolResult().rows as Array<Record<string, unknown>>
+    // A tight estimate at 20% must outrank a coarse one at 90%: the ordering
+    // encodes confidence, not headline discount. Sorting by discount alone
+    // would surface the least trustworthy number first.
+    expect(rows[0].player).toBe("Tight Shallow")
+    expect(rows[0].estimate_quality).toBe("tight")
+  })
+
+  it("clamps limit into 1..25", async () => {
+    install({ topshot_underpriced_serials_board: { data: Array.from({ length: 40 }, (_, i) => boardRow({ nft_id: `n${i}` })), error: null } })
+    script("search_serial_deals", { limit: 999 })
+    await POST(post("lots of deals"))
+    expect((toolResult().rows as unknown[]).length).toBeLessThanOrEqual(25)
+  })
+
+  it("returns an HONEST no_results instead of silently widening to all listings", async () => {
+    install({ topshot_underpriced_serials_board: { data: [], error: null } })
+    script("search_serial_deals", { player: "Nobody" })
+    await POST(post("deals for nobody"))
+    const r = toolResult()
+    // The distinction that matters: "nothing is listed below serial-FMV" is a
+    // real answer about the market. Falling back to every listing would answer
+    // a question the user did not ask and imply discounts that do not exist.
+    expect(r.status).toBe("no_results")
+    expect(r.source).toBe("underpriced_serials_board")
+    expect(String(r.message)).toMatch(/listedOnly=true/)
+    // ⚠ THIS ASSERTION IS INVERTED FROM ITS FIRST VERSION. It used to require
+    // the copy "this is not an error" — a hard-coded claim that the feed is
+    // HEALTHY, emitted regardless of whether it was. Measured 2026-08-16:
+    // topshot-active-listings-ingest fails `egress_blocked` most sweeps and on
+    // 2026-08-12 wrote ZERO rows across all 5 runs of the day, so on a dead-feed
+    // day this told a collector nothing was listed AND reassured them nothing
+    // was wrong. The tool cannot observe its own health; it can only report how
+    // old the data is.
+    expect(String(r.message)).not.toMatch(/not an error/i)
+    expect(r).toHaveProperty("feed_age_hours")
+    expect(r).toHaveProperty("feed_stale")
+  })
+
+  // Every exit of this tool makes a claim whose validity depends on how old the
+  // snapshot is — the empty ones claim the market is quiet, the populated ones
+  // can send a collector to a listing that has already sold. All four carry the
+  // age; sweeping the read rather than the one exit that failed.
+  it("carries feed age on a POPULATED result too, not just an empty one", async () => {
+    install({
+      topshot_underpriced_serials_board: { data: [boardRow()], error: null },
+      topshot_active_listings: { data: { last_seen_at: new Date(Date.now() - 5 * 3600_000).toISOString() }, error: null },
+    })
+    script("search_serial_deals", {})
+    await POST(post("serial deals"))
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    expect(r.feed_age_hours).toBeCloseTo(5, 0)
+    expect(r.feed_stale).toBe(false)
+    expect(String(r.note)).toMatch(/last refreshed/i)
+  })
+
+  it("flags a feed well past its normal range as stale rather than calling the market quiet", async () => {
+    install({
+      topshot_underpriced_serials_board: { data: [], error: null },
+      topshot_active_listings: { data: { last_seen_at: new Date(Date.now() - 40 * 3600_000).toISOString() }, error: null },
+    })
+    script("search_serial_deals", {})
+    await POST(post("serial deals"))
+    const r = toolResult()
+    expect(r.feed_stale).toBe(true)
+    expect(String(r.message)).toMatch(/beyond its normal range|looks stale/i)
+  })
+
+  // ⚠ A FAILED freshness read must not become "age 0" or a confident silence —
+  // supabase-js RETURNS errors, so branching on the row instead of the error is
+  // exactly how a failed read turns into a fabricated fact.
+  it("reports an unknown feed age as unknown when the freshness read fails", async () => {
+    install({
+      topshot_underpriced_serials_board: { data: [], error: null },
+      topshot_active_listings: { data: null, error: { message: "boom" } },
+    })
+    script("search_serial_deals", {})
+    await POST(post("serial deals"))
+    const r = toolResult()
+    expect(r.feed_age_hours).toBeNull()
+    expect(r.feed_stale).toBe(false)
+    expect(String(r.message)).toMatch(/could not determine/i)
+  })
+
+  it("surfaces a board error as status=error", async () => {
+    install({ topshot_underpriced_serials_board: { data: null, error: { message: "boom" } } })
+    script("search_serial_deals", {})
+    await POST(post("serial deals"))
+    const r = toolResult()
+    expect(r.status).toBe("error")
+    // The driver message must NOT be published — lib/api-error.ts classifies it.
+    expect(String(r.message)).not.toContain("boom")
+  })
+})
+
+describe("search_serial_deals — listedOnly path", () => {
+  function listing(over: Record<string, unknown> = {}) {
+    return {
+      serial_number: 1,
+      nft_id: "L1",
+      ask_usd: 60,
+      serial_fmv_usd: 100,
+      edition_key: "1:2",
+      edition_id: "e1",
+      editions: {
+        player_name: "Dame",
+        set_name: "Base Set",
+        tier: "RARE",
+        circulation_count: 1000,
+        collection_id: "95f28a17-224a-4025-96ad-adf8a4c63bfd",
+        team_name: "Portland Trail Blazers",
+        external_id: "1:2",
+      },
+      ...over,
+    }
+  }
+
+  it("computes discount_pct from ask vs serial_fmv", async () => {
+    install({ topshot_active_listings: { data: [listing()], error: null } })
+    script("search_serial_deals", { listedOnly: true })
+    await POST(post("all listed special serials"))
+    const rows = toolResult().rows as Array<Record<string, unknown>>
+    // (100-60)/100 = 40.0%, rounded to one decimal by the handler.
+    expect(rows[0].discount_pct).toBe(40)
+    expect(rows[0].player).toBe("Dame")
+    expect(rows[0].is_first_mint).toBe(true)
+  })
+
+  it("accepts the embedded editions relation as an ARRAY as well as an object", async () => {
+    // PostgREST returns an embedded relation as an array or an object depending
+    // on the join; the handler normalises both. A shape change must not blank
+    // every display field.
+    install({ topshot_active_listings: { data: [listing({ editions: [listing().editions] })], error: null } })
+    script("search_serial_deals", { listedOnly: true })
+    await POST(post("all listed"))
+    const rows = toolResult().rows as Array<Record<string, unknown>>
+    expect(rows[0].player).toBe("Dame")
+    expect(rows[0].set).toBe("Base Set")
+  })
+
+  it("leaves discount null when serial_fmv is absent rather than inventing 0%", async () => {
+    install({ topshot_active_listings: { data: [listing({ serial_fmv_usd: null })], error: null } })
+    script("search_serial_deals", { listedOnly: true })
+    await POST(post("all listed"))
+    const rows = toolResult().rows as Array<Record<string, unknown>>
+    // A missing FMV means "unknown discount". Rendering 0% would assert the ask
+    // is exactly fair — a fabricated claim.
+    expect(rows[0].discount_pct).toBeNull()
+    expect(rows[0].serial_fmv).toBeNull()
+  })
+
+  it("surfaces a listings error as status=error", async () => {
+    install({ topshot_active_listings: { data: null, error: { message: "listings down" } } })
+    script("search_serial_deals", { listedOnly: true })
+    await POST(post("all listed"))
+    expect(toolResult().status).toBe("error")
+  })
+})
+
+describe("get_special_serial_owners", () => {
+  it("maps rows and keeps the custody caveat attached", async () => {
+    install({
+      "rpc:get_special_serial_owners_board": {
+        data: [
+          {
+            player_name: "Dame",
+            set_name: "Base Set",
+            tier: "RARE",
+            serial: 1,
+            circulation_count: 1000,
+            tag: "#1",
+            holder_address: "0xbd94cade097e50ac",
+            edition_fmv: 250,
+            edition_key: "1:2",
+          },
+        ],
+        error: null,
+      },
+    })
+    script("get_special_serial_owners", { tag: "#1" })
+    await POST(post("who owns the #1s"))
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    const rows = r.rows as Array<Record<string, unknown>>
+    expect(rows[0].kind).toBe("#1")
+    expect(rows[0].edition_fmv).toBe(250)
+    expect(String(rows[0].edition_url)).toContain("/nba-top-shot/edition/")
+    // The caveat is load-bearing: wmc holder is "latest seen", not live custody.
+    // Dropping it would let the model state ownership as present fact.
+    expect(String(r.note)).toMatch(/not a present-custody guarantee/i)
+  })
+
+  it("returns status=error when the RPC fails", async () => {
+    install({ "rpc:get_special_serial_owners_board": { data: null, error: { message: "rpc down" } } })
+    script("get_special_serial_owners", { tag: "#1" })
+    await POST(post("who owns the #1s"))
+    expect(toolResult().status).toBe("error")
+  })
+})
+
+describe("manage_deal_subscriptions", () => {
+  it("refuses without a resolved session, with bot-DM-specific wording", async () => {
+    script("manage_deal_subscriptions", { action: "list" })
+    await POST(post("list my alerts", { pageContext: "bot_dm" }))
+    const r = toolResult()
+    // owner_key is the auth uid and is NEVER client-supplied; with no session
+    // the only correct answer is "link your account first".
+    expect(r.status).toBe("not_linked")
+    expect(String(r.message)).toMatch(/\/link/)
+  })
+
+  it("lists the caller's subscriptions with the repeat-policy note", async () => {
+    A.authedEmail = "t@example.com"
+    A.userId = "user-1"
+    install({
+      alert_subscriptions: {
+        data: [
+          { id: "s1", label: "Dame deals", active: true, channels: ["email"], notify_mode: "new_listing", min_discount: 20 },
+        ],
+        error: null,
+      },
+    })
+    script("manage_deal_subscriptions", { action: "list" })
+    await POST(post("list my alerts"))
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    expect(r.total).toBe(1)
+    // audit_20261014: the note used to promise "once per day per channel" —
+    // the daily repeat a collector reported as a bug. It must now explain the
+    // modes, and never state the old daily repeat as the rule.
+    expect(String(r.note)).toMatch(/new_listing = once per listing/)
+    expect(String(r.note)).not.toMatch(/once per day per channel/i)
+  })
+
+  // ⚠ A PRICE IS THE USER'S THRESHOLD — do not add an FMV one on top.
+  // "alert me any time a Damian Lillard Archive moment lists for $0.60 or less"
+  // was SAVED as `max_price 0.60 AND min_discount 25`, a condition the user
+  // never named, while the confirmation said "whenever one lists at $0.60 or
+  // under". The alert was strictly narrower than the sentence describing it, so
+  // its silence was indistinguishable from "nothing has listed" (Trevor,
+  // 2026-08-16).
+  it("does not add a 25% FMV condition when the user named only a price", async () => {
+    A.authedEmail = "t@example.com"
+    A.userId = "user-1"
+    const spy = install({
+      alert_subscriptions: { data: { id: "s9", label: "L", channels: ["telegram"] }, error: null },
+      notification_channels: { data: [{ channel: "telegram" }], error: null },
+    })
+    script("manage_deal_subscriptions", {
+      action: "create",
+      players: ["Damian Lillard"],
+      sets: ["Archive"],
+      max_price: 0.6,
+    })
+    await POST(post("alert me when a Lillard Archive lists at $0.60 or less"))
+    const written = spy.writes["alert_subscriptions"]?.[0]?.rows?.[0] as Record<string, unknown>
+    expect(written.max_price).toBe(0.6)
+    // ⚠ 0, never null: the column is NOT NULL DEFAULT 25, so null throws 23502
+    // and no alert is created at all — worse than the bug being fixed.
+    expect(written.min_discount).toBe(0)
+  })
+
+  it("a failed channel read refuses to save, never falls through to an email-only alert", async () => {
+    A.authedEmail = "t@example.com"
+    A.userId = "user-1"
+    const spy = install({
+      alert_subscriptions: { data: { id: "s12", label: "L", channels: ["email"] }, error: null },
+      notification_channels: { data: null, error: { message: "statement timeout" } },
+    })
+    script("manage_deal_subscriptions", { action: "create", sets: ["Base Set"] })
+    await POST(post("alert me on good Base Set deals"))
+    expect(toolResult().status).toBe("error")
+    expect(spy.writes["alert_subscriptions"] ?? []).toEqual([])
+  })
+
+  // audit_20261014: the repeat policy. A collector asked to be told ONCE; the
+  // concierge must be able to save that, state it back, and refuse a value the
+  // dispatcher does not implement rather than silently saving the default.
+  it("saves notify_mode on create and states the repeat policy back", async () => {
+    A.authedEmail = "t@example.com"
+    A.userId = "user-1"
+    const spy = install({
+      alert_subscriptions: { data: { id: "s20", label: "L", channels: ["telegram"] }, error: null },
+      notification_channels: { data: [{ channel: "telegram" }], error: null },
+    })
+    script("manage_deal_subscriptions", { action: "create", sets: ["Base Set"], notify_mode: "once" })
+    await POST(post("alert me once on Base Set deals"))
+    const written = spy.writes["alert_subscriptions"]?.[0]?.rows?.[0] as Record<string, unknown>
+    expect(written.notify_mode).toBe("once")
+    expect(written).not.toHaveProperty("cadence")
+    const r = toolResult()
+    expect((r.repeat_policy as Record<string, unknown>).notify_mode).toBe("once")
+  })
+
+  // 2026-11-13 (support_conversations 12524): the /alerts form could save a
+  // serial range and the concierge could not, so "alert me when serial 111
+  // lists" had no faithful answer by chat. A single serial is min = max; the
+  // read-back must state that edition deals test the CHEAPEST listing's serial.
+  it("saves a single-serial alert and states its reach back", async () => {
+    A.authedEmail = "t@example.com"
+    A.userId = "user-1"
+    const spy = install({
+      alert_subscriptions: { data: { id: "s30", label: "L", channels: ["telegram"] }, error: null },
+      notification_channels: { data: [{ channel: "telegram" }], error: null },
+    })
+    script("manage_deal_subscriptions", { action: "create", sets: ["Base Set"], min_serial: 111, max_serial: 111 })
+    await POST(post("alert me when serial 111 of a Base Set moment lists"))
+    const written = spy.writes["alert_subscriptions"]?.[0]?.rows?.[0] as Record<string, unknown>
+    expect(written.min_serial).toBe(111)
+    expect(written.max_serial).toBe(111)
+    const applied = (toolResult().applied_filters as string[]).join(" | ")
+    expect(applied).toMatch(/serial #111 only/)
+    expect(applied).toMatch(/cheapest listing/)
+  })
+
+  it("orders swapped bounds and never saves a coerced 0 or junk as a serial", async () => {
+    A.authedEmail = "t@example.com"
+    A.userId = "user-1"
+    const spy = install({
+      alert_subscriptions: { data: { id: "s31", label: "L", channels: ["telegram"] }, error: null },
+      notification_channels: { data: [{ channel: "telegram" }], error: null },
+    })
+    script("manage_deal_subscriptions", { action: "create", sets: ["Base Set"], min_serial: 500, max_serial: 100 })
+    await POST(post("alert me on serials 100 to 500"))
+    const w1 = spy.writes["alert_subscriptions"]?.[0]?.rows?.[0] as Record<string, unknown>
+    expect([w1.min_serial, w1.max_serial]).toEqual([100, 500])
+  })
+
+  it("an empty or non-integer serial is absent, not 0 (control: no serial filter stated)", async () => {
+    A.authedEmail = "t@example.com"
+    A.userId = "user-1"
+    const spy = install({
+      alert_subscriptions: { data: { id: "s32", label: "L", channels: ["telegram"] }, error: null },
+      notification_channels: { data: [{ channel: "telegram" }], error: null },
+    })
+    script("manage_deal_subscriptions", { action: "create", sets: ["Base Set"], min_serial: "", max_serial: 12.5 })
+    await POST(post("alert me on Base Set deals"))
+    const w = spy.writes["alert_subscriptions"]?.[0]?.rows?.[0] as Record<string, unknown>
+    expect(w.min_serial).toBeNull()
+    expect(w.max_serial).toBeNull()
+    expect((toolResult().applied_filters as string[]).join(" | ")).not.toMatch(/serial/)
+  })
+
+  it("refuses an unknown notify_mode on create instead of saving the default", async () => {
+    A.authedEmail = "t@example.com"
+    A.userId = "user-1"
+    const spy = install({
+      alert_subscriptions: { data: { id: "s21", label: "L", channels: ["telegram"] }, error: null },
+      notification_channels: { data: [{ channel: "telegram" }], error: null },
+    })
+    script("manage_deal_subscriptions", { action: "create", sets: ["Base Set"], notify_mode: "hourly" })
+    await POST(post("alert me hourly on Base Set deals"))
+    expect(toolResult().status).toBe("error")
+    expect(spy.writes["alert_subscriptions"] ?? []).toEqual([])
+  })
+
+  it("set_notify_mode changes an existing alert's repeat policy, scoped to the caller", async () => {
+    A.authedEmail = "t@example.com"
+    A.userId = "user-1"
+    const spy = install({
+      alert_subscriptions: { data: [{ id: "s1", label: "Dame deals", notify_mode: "once" }], error: null },
+    })
+    script("manage_deal_subscriptions", { action: "set_notify_mode", subscription_id: "s1", notify_mode: "once" })
+    await POST(post("only tell me once about Dame deals"))
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    expect(String(r.meaning)).toMatch(/first time/)
+    const w = spy.writes["alert_subscriptions"]?.[0]
+    expect((w?.rows?.[0] as Record<string, unknown>).notify_mode).toBe("once")
+  })
+
+  it("set_notify_mode refuses an unknown mode without writing", async () => {
+    A.authedEmail = "t@example.com"
+    A.userId = "user-1"
+    const spy = install({ alert_subscriptions: { data: [], error: null } })
+    script("manage_deal_subscriptions", { action: "set_notify_mode", subscription_id: "s1", notify_mode: "weekly" })
+    await POST(post("weekly digest please"))
+    expect(toolResult().status).toBe("error")
+    expect(spy.writes["alert_subscriptions"] ?? []).toEqual([])
+  })
+
+  it("still applies the 25% default when NO price was given", async () => {
+    // The default earns its place on an open-ended request, where a threshold
+    // is the only thing between an alert and a firehose.
+    A.authedEmail = "t@example.com"
+    A.userId = "user-1"
+    const spy = install({
+      alert_subscriptions: { data: { id: "s10", label: "L", channels: ["telegram"] }, error: null },
+      notification_channels: { data: [{ channel: "telegram" }], error: null },
+    })
+    script("manage_deal_subscriptions", { action: "create", sets: ["Base Set"] })
+    await POST(post("alert me on good Base Set deals"))
+    const written = spy.writes["alert_subscriptions"]?.[0]?.rows?.[0] as Record<string, unknown>
+    expect(written.min_discount).toBe(25)
+  })
+
+  it("reports every saved filter back, and states that a price-only alert ignores FMV", async () => {
+    A.authedEmail = "t@example.com"
+    A.userId = "user-1"
+    install({
+      alert_subscriptions: { data: { id: "s11", label: "L", channels: ["telegram"] }, error: null },
+      notification_channels: { data: [{ channel: "telegram" }], error: null },
+    })
+    script("manage_deal_subscriptions", { action: "create", players: ["Damian Lillard"], max_price: 0.6 })
+    await POST(post("alert me at $0.60"))
+    const r = toolResult()
+    const filters = (r.applied_filters as string[]).join(" | ")
+    expect(filters).toMatch(/at or below \$0\.6/i)
+    expect(filters).toMatch(/Damian Lillard/)
+    // ⚠ THIS ASSERTION IS INVERTED FROM ITS FIRST VERSION, ON PURPOSE. It used
+    // to require the disclosure "at or below FMV — the deal scanner is
+    // FMV-based …", which was TRUE when written: both scanners read
+    // cross_collection_deals_board, so even min_discount 0 kept an FMV gate.
+    // audit_20260816_price_only_alerts removed that gate — a price-only sub is
+    // served from `edition_current_ask`. Keeping the old assertion would have
+    // pinned a caveat that now UNDERSTATES the alert, telling the user it is
+    // narrower than it is; that is the same failure as the invisible filter,
+    // pointing the other way.
+    expect(filters).toMatch(/FMV is NOT a condition/i)
+    expect(filters).not.toMatch(/at or below FMV/i)
+    expect(String(r.applied_filters_note)).toMatch(/State EVERY entry/i)
+  })
+
+  // The scanner matches set names by containment since audit_20260816 ("Archive"
+  // matches "Archive Set"), which is the whole reason Trevor's alert could not
+  // fire even once the price gate was removed. The confirmation has to say so —
+  // `set: Archive` implies an exact match the scanner does not perform.
+  it("describes a set filter as containment, not equality", async () => {
+    A.authedEmail = "t@example.com"
+    A.userId = "user-1"
+    install({
+      alert_subscriptions: { data: { id: "s12", label: "L", channels: ["telegram"] }, error: null },
+      notification_channels: { data: [{ channel: "telegram" }], error: null },
+    })
+    script("manage_deal_subscriptions", { action: "create", sets: ["Archive"], max_price: 0.6 })
+    await POST(post("alert me on Archive at $0.60"))
+    const filters = (toolResult().applied_filters as string[]).join(" | ")
+    expect(filters).toMatch(/set name contains: Archive/i)
+  })
+
+  // ⚠ BOTH DIRECTIONS. An ordinary discount alert must NOT claim FMV is ignored
+  // — it is the alert's main condition. A fix that emitted the new line
+  // unconditionally would be a fresh false statement, not a smaller one.
+  it("a discount alert states its FMV threshold and never claims FMV is ignored", async () => {
+    A.authedEmail = "t@example.com"
+    A.userId = "user-1"
+    install({
+      alert_subscriptions: { data: { id: "s13", label: "L", channels: ["telegram"] }, error: null },
+      notification_channels: { data: [{ channel: "telegram" }], error: null },
+    })
+    script("manage_deal_subscriptions", { action: "create", players: ["Damian Lillard"], min_discount: 30 })
+    await POST(post("alert me on 30% off Lillard"))
+    const filters = (toolResult().applied_filters as string[]).join(" | ")
+    expect(filters).toMatch(/at least 30% below FMV/i)
+    expect(filters).not.toMatch(/FMV is NOT a condition/i)
+  })
+
+  it("surfaces a list error rather than an empty subscription set", async () => {
+    A.authedEmail = "t@example.com"
+    A.userId = "user-1"
+    install({ alert_subscriptions: { data: null, error: { message: "table gone" } } })
+    script("manage_deal_subscriptions", { action: "list" })
+    await POST(post("list my alerts"))
+    const r = toolResult()
+    // An outage must not read as "you have no alerts" — that would invite the
+    // user to recreate subscriptions they already own.
+    expect(r.status).toBe("error")
+    // The driver message must NOT be published — lib/api-error.ts classifies it.
+    expect(String(r.message)).not.toContain("table gone")
+  })
+})

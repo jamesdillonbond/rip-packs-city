@@ -1,0 +1,180 @@
+// app/(collections)/[collection]/hot-floors/page.tsx
+//
+// "Hot Floors" — Top Shot editions whose floor is being actively SWEPT right now.
+// Novel intelligence from the bulk-buy (Quick Buy) reverse-engineering: the
+// get_topshot_hot_floors RPC sessionizes the Dapper Quick-Buy path per buyer and
+// surfaces which editions are under the most sweep pressure (distinct sweepers,
+// swept sales, swept spend) over the last few days — accumulation signal that
+// neither Top Shot nor the Sets page shows. Server component, service-role RPC.
+
+import Link from "next/link"
+import { getCollection } from "@/lib/collections"
+import { fetchHotFloors } from "@/lib/hot-floors/fetchers"
+import { fetchPaniniHotFloors, PANINI_HOT_FLOORS_DAYS } from "@/lib/hot-floors/panini"
+import PaniniHotFloors from "@/components/collection/PaniniHotFloors"
+import { fetchAllDayHotFloors, ALLDAY_HOT_FLOORS_DAYS } from "@/lib/hot-floors/allday"
+import AllDayHotFloors from "@/components/collection/AllDayHotFloors"
+import { fetchPinnacleHotFloors, PINNACLE_HOT_FLOORS_DAYS } from "@/lib/hot-floors/pinnacle"
+import PinnacleHotFloors from "@/components/collection/PinnacleHotFloors"
+import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
+import { usdSignFirst } from "@/lib/usd-format"
+import { accentText } from "@/lib/accent-text"
+import { scrollRegion } from "@/lib/a11y/scroll-region"
+
+export const revalidate = 300
+
+
+const TIER_COLOR: Record<string, string> = {
+  COMMON: "#9ca3af",
+  FANDOM: "#22d3ee",
+  RARE: "#a78bfa",
+  LEGENDARY: "#f59e0b",
+  ULTIMATE: "#ef4444",
+}
+
+function usd(n: number | null | undefined): string {
+  const neg = usdSignFirst(n, usd); if (neg !== null) return neg
+  if (n == null || !Number.isFinite(Number(n))) return "—"
+  const v = Number(n)
+  return v < 1 ? `$${v.toFixed(2)}` : `$${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+function relTime(iso: string | null): string {
+  if (!iso) return "—"
+  const diff = Date.now() - new Date(iso).getTime()
+  if (!Number.isFinite(diff)) return "—"
+  const m = Math.floor(diff / 60000)
+  if (m < 1) return "just now"
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h ago`
+  return `${Math.floor(h / 24)}d ago`
+}
+
+export default async function HotFloorsPage(props: { params: Promise<{ collection: string }> }) {
+  const { collection: collectionId } = await props.params
+  const collection = getCollection(collectionId)
+  const accent = collection?.accent ?? "var(--rpc-red)"
+
+  // Panini (Top Shot parity, 2026-10-25): its own sweep read over panini_sales — Panini has no Quick Buy,
+  // so a sweep is one buyer taking 3+ copies within 60-minute gaps (get_panini_hot_floors).
+  if (collectionId === "panini-blockchain") {
+    const r = await fetchPaniniHotFloors()
+    return <PaniniHotFloors collection={collectionId} editions={r.editions} ok={r.ok} days={PANINI_HOT_FLOORS_DAYS} newestSaleAt={r.newestSaleAt} computedAt={r.computedAt} />
+  }
+  // NFL All Day (Top Shot parity, 2026-10-26): its sales carry no Quick-Buy proposer, so a sweep is one
+  // collector taking 3+ copies within 60-minute gaps over sales_market (get_allday_hot_floors).
+  if (collectionId === "nfl-all-day") {
+    const r = await fetchAllDayHotFloors()
+    return <AllDayHotFloors collection={collectionId} editions={r.editions} ok={r.ok} days={ALLDAY_HOT_FLOORS_DAYS} newestSaleAt={r.newestSaleAt} computedAt={r.computedAt} />
+  }
+  // Disney Pinnacle (Top Shot parity, 2026-10-26): pins (render_id) where one collector took 3+ copies within
+  // 60-minute gaps over pinnacle_sales (get_pinnacle_hot_floors) — Pinnacle sales carry no Quick-Buy proposer.
+  if (collectionId === "disney-pinnacle") {
+    const r = await fetchPinnacleHotFloors()
+    return <PinnacleHotFloors editions={r.editions} ok={r.ok} days={PINNACLE_HOT_FLOORS_DAYS} newestSaleAt={r.newestSaleAt} />
+  }
+  // Every other collection: the Quick-Buy proposer account is Top Shot-specific.
+  if (collectionId !== "nba-top-shot") {
+    return (
+      <div style={{ padding: "48px 8px", color: "var(--rpc-text-secondary)", fontFamily: "var(--font-mono)", fontSize: 14 }}>
+        Hot Floors is a Top Shot feature. <Link href="/nba-top-shot/hot-floors" style={{ color: accentText(accent) }}>View Top Shot Hot Floors →</Link>
+      </div>
+    )
+  }
+
+  // ⚠ The read lives in lib/ so it is BOUNDED and TESTABLE — see that module's
+  // header. The `errored` distinction below is unchanged; what changed is that a
+  // read which merely HANGS can now reach it.
+  const { editions, ok, computedAt } = await fetchHotFloors()
+  const errored = !ok
+
+  return (
+    <div style={{ padding: "8px 0 40px" }}>
+      <header style={{ marginBottom: 20 }}>
+        <h1 style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 26, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--rpc-text-primary)", margin: 0 }}>
+          Hot Floors
+        </h1>
+        <p style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--rpc-text-secondary)", lineHeight: 1.6, margin: "8px 0 0", maxWidth: 720 }}>
+          Editions whose floor is being actively <strong style={{ color: "var(--rpc-text-primary)" }}>swept</strong> — bought in bulk via Top Shot&rsquo;s Quick Buy over the last 3 days.
+          Ranked by distinct sweepers. High sweep pressure on a common often precedes a floor move.
+        </p>
+        {computedAt && (
+          <p data-testid="topshot-hot-floors-updated" style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-muted)", margin: "6px 0 0" }}>
+            Board updated {relTime(computedAt)}.
+          </p>
+        )}
+      </header>
+
+      {errored && (
+        <div style={{ color: accentText("#fecaca"), fontFamily: "var(--font-mono)", fontSize: 13, padding: 16 }}>
+          Couldn&rsquo;t load hot floors right now. Try again shortly.
+        </div>
+      )}
+
+      {!errored && editions.length === 0 && (
+        <div style={{ color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 13, padding: 16 }}>
+          No active sweeps detected in the last 3 days.
+        </div>
+      )}
+
+      {editions.length > 0 && (
+        <div {...scrollRegion("Hot floors")} style={{ overflowX: "auto", border: "1px solid var(--rpc-border)", borderRadius: 10 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 13, minWidth: 720 }}>
+            <thead>
+              <tr style={{ textAlign: "left", color: "var(--rpc-text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", fontSize: 11 }}>
+                <th scope="col" style={{ padding: "10px 12px" }}>#</th>
+                <th scope="col" style={{ padding: "10px 12px" }}>Moment</th>
+                <th scope="col" style={{ padding: "10px 12px", textAlign: "right" }}>Sweepers</th>
+                <th scope="col" style={{ padding: "10px 12px", textAlign: "right" }}>Swept sales</th>
+                <th scope="col" style={{ padding: "10px 12px", textAlign: "right" }}>Swept $</th>
+                <th scope="col" style={{ padding: "10px 12px", textAlign: "right" }}>Avg paid</th>
+                <th scope="col" style={{ padding: "10px 12px", textAlign: "right" }}>Floor</th>
+                <th scope="col" style={{ padding: "10px 12px", textAlign: "right" }}>FMV</th>
+                <th scope="col" style={{ padding: "10px 12px", textAlign: "right" }}>Last</th>
+              </tr>
+            </thead>
+            <tbody>
+              {editions.map((e, i) => {
+                const tier = (e.tier ?? "").toUpperCase()
+                return (
+                  <tr key={e.external_id} style={{ borderTop: "1px solid var(--rpc-border)" }}>
+                    <td style={{ padding: "10px 12px", color: "var(--rpc-text-muted)" }}>{i + 1}</td>
+                    <td style={{ padding: "8px 12px" }}>
+                      <Link href={`/nba-top-shot/edition/${encodeURIComponent(e.external_id)}`} style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--rpc-text-primary)", textDecoration: "none" }}>
+                        <span style={{ width: 34, height: 44, flexShrink: 0, borderRadius: 4, overflow: "hidden", background: "var(--rpc-surface-hover)", display: "inline-block" }}>
+                          {e.thumbnail_url && (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={proxyIpfsImageUrl(e.thumbnail_url, 160) ?? undefined} alt="" width={34} height={44} style={{ objectFit: "cover", width: 34, height: 44 }} />
+                          )}
+                        </span>
+                        <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                          <span style={{ fontWeight: 600 }}>{e.player_name ?? "—"}</span>
+                          <span style={{ fontSize: 11, color: "var(--rpc-text-muted)" }}>
+                            {e.set_name ?? "—"}
+                            {tier && (
+                              <span style={{ marginLeft: 6, color: accentText(TIER_COLOR[tier]) ?? "var(--rpc-text-muted)", fontWeight: 700 }}>{tier}</span>
+                            )}
+                          </span>
+                        </span>
+                      </Link>
+                    </td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: accentText(accent) }}>{e.sweep_buyers}</td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{e.swept_sales}</td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{usd(e.swept_spend)}</td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", color: "var(--rpc-text-primary)" }}>
+                      {e.swept_sales > 0 && e.swept_spend != null ? usd(Number(e.swept_spend) / e.swept_sales) : "—"}
+                    </td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{usd(e.floor_ask)}</td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", color: "var(--rpc-text-muted)" }}>{usd(e.fmv_usd)}</td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", color: "var(--rpc-text-muted)" }}>{relTime(e.last_swept_at)}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}

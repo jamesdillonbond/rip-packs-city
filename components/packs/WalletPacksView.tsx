@@ -1,0 +1,626 @@
+"use client"
+
+// WalletPacksView — the "Packs" body under the Collection tab (2026-07-18 IA
+// reorg). It shows the connected/searched wallet's SEALED-PACK activity scoped
+// to the current collection: a compact P&L hero + a pack timeline, reusing the
+// existing (tested) /api/wallet/pack-summary + /api/wallet/pack-history
+// endpoints. Wallet resolves from ?wallet=/?address= (the same params the
+// Collection Moments view's AutoSearchReader reads) or the local owner key.
+//
+// This is deliberately lean — the full expand-to-lifecycle view lives at
+// /dashboard/packs; here we surface the collection-scoped summary + list and
+// link out to the deep view. Gated to Top Shot + NFL All Day (the only
+// collections with meaningful pack-ownership data).
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import Link from "next/link"
+import { useSearchParams } from "next/navigation"
+import { getOwnerKey } from "@/lib/owner-key"
+import { getCollection, toDbSlug } from "@/lib/collections"
+import {
+  fmtPackUsd,
+  identitySyncNote,
+  netPlTint,
+  packBuyLabel,
+  packPullLabel,
+  packDisplayName,
+  packIdentityNote,
+  packMarketLabel,
+  packStatusColor,
+  realizedPlTint,
+  relativePackTime,
+  packValueLabel,
+  packUnrealizedUsd,
+  packHeldPullsLabel,
+  packHeldFmvLabel,
+  packRoiLabel,
+  packHoldLabel,
+  packTabMetrics,
+  packMetricTint,
+  type PackTabTotals,
+  PACK_FILTERS,
+  PACK_FILTER_LABEL,
+  PACK_FILTER_STATUS,
+  type PackFilter,
+  collectionPlWithheld,
+  type PackCoverageTotals,
+} from "@/lib/packs-wallet-view-format"
+import { accentText, labelOn, accentFill } from "@/lib/accent-text"
+import { currencySuffix } from "@/lib/usd-format"
+
+interface SummaryCollection {
+  collection_id: string
+  collection_name: string
+  collection_slug: string
+  spent_usd: number
+  proceeds_usd: number
+  ripped_value_usd: number
+  net_pl_usd: number
+  activity_total: number
+  packs_purchased: number
+  packs_ripped: number
+  packs_sold: number
+  /** Purchases with no known price (the row's own spend coverage, collectionPlWithheld). */
+  primary_spend_unknown_count?: number
+}
+
+interface Summary {
+  wallet: string
+  by_collection: SummaryCollection[]
+  /** Whole-wallet totals; carry the coverage counts Net P&L is gated on. */
+  totals?: PackCoverageTotals
+}
+
+interface HistoryRow {
+  pack_nft_id: string
+  dist_id: string | null
+  pack_name: string | null
+  pack_image: string | null
+  collection_slug: string
+  status: "ripped" | "flipped" | "sold" | "held" | "transferred" | "other"
+  has_buy: boolean
+  has_rip: boolean
+  has_sell: boolean
+  buy_price: number | null
+  buy_currency: string | null
+  sell_price: number | null
+  pull_value_usd: number | null
+  // 2026-09-26 (v8): pull_value_source + how many of the pack's moments are priced.
+  pull_value_source?: "dapper_pulls" | "rip_record" | "delivery_burst" | null
+  rip_source?: "rip" | "reconstructed" | null
+  pulls_total?: number | null
+  pulls_priced?: number | null
+  pulls_inferred?: number | null
+  box_packs?: number | null
+  box_packs_realized?: number | null
+  box_realized_usd?: number | null
+  realized_pl_usd: number | null
+  latest_event_at: string | null
+  // 2026-09-18 (get_wallet_pack_history v4) — every one optional so an older
+  // payload still renders. NULL means unknown; the RPC never emits 0 for it.
+  buy_usd?: number | null
+  buy_price_source?: "onchain" | "marketplace" | "retail" | "retail_inferred" | "box" | "trade_tickets" | "reward" | null
+  sell_source?: "onchain" | "marketplace" | null
+  dist_source?: "rip" | "own_row" | "peer_sale" | null
+  lowest_ask_usd?: number | null
+  pack_ev_usd?: number | null
+  /** 2026-09-26 (history v13): the contents' expected value (gross). */
+  pack_gross_ev_usd?: number | null
+  /** 2026-09-26 (history v14): mean current value of this drop's opened packs (>= 5), and how many. */
+  pack_opened_avg_usd?: number | null
+  pack_opened_n?: number | null
+  last_sale_usd?: number | null
+  current_owner?: string | null
+  /** 2026-09-26 (v11): Dapper minted this pack straight into the wallet (Flow PackNFT.Minted). */
+  minted_to_wallet_at?: string | null
+  identity_status?: string | null
+  // 2026-11-13 (history v27) — all optional: an older payload renders "—".
+  bought_at?: string | null
+  sold_at?: string | null
+  ripped_at?: string | null
+  sell_currency?: string | null
+  moments_pulled?: number | null
+  /** Pulls named for this opened pack / still in this wallet / of those with an FMV. */
+  pulls_listed?: number | null
+  pulls_held?: number | null
+  pulls_held_priced?: number | null
+  /** Wallet FMV of the pulls still held; NULL when one of them has no FMV. */
+  held_fmv_usd?: number | null
+  /** A sealed pack's value and what it rests on (ask | last_sale | rip_ev | opened_avg). */
+  value_usd?: number | null
+  value_basis?: string | null
+}
+
+interface History {
+  packs: HistoryRow[]
+  total_count: number
+  /** 2026-11-13 (history v27): the tab's metrics over every row, not just this page. */
+  tab_totals?: PackTabTotals | null
+  // 2026-09-18: when this wallet's holdings were last confirmed with Dapper's
+  // pack index (null = never; completed_at null = in flight).
+  identity_sync?: {
+    requested_at?: string | null
+    completed_at?: string | null
+    pages?: number | null
+    packs?: number | null
+    last_error?: string | null
+  } | null
+}
+
+const PAGE_SIZE = 25
+const mono = "var(--font-mono)"
+const display = "var(--font-display)"
+
+export type { PackFilter }
+
+export default function WalletPacksView({ collection, wallet: walletProp, walletPending = false }: { collection: string; wallet?: string | null; walletPending?: boolean }) {
+  const searchParams = useSearchParams()
+  const accent = getCollection(collection)?.accent ?? "var(--rpc-red)"
+  const dbSlug = toDbSlug(collection)
+
+  const [wallet, setWallet] = useState<string | null>(null)
+  useEffect(() => {
+    // 2026-11-07: the BINDER's wallet first. This view used to re-derive its own from
+    // ?wallet= or the device key, so a signed-in collector whose saved wallet the
+    // Moments tab had just loaded saw the Packs tab ask for a DIFFERENT wallet (this
+    // device's old key) — and, 403'd on it, read "Sign in" while signed in.
+    const fromUrl = searchParams.get("wallet") || searchParams.get("address")
+    const owner = getOwnerKey()
+    if (walletPending) return // the binder is still resolving the account's saved wallet
+    const resolved = (walletProp || fromUrl || owner || "").trim().toLowerCase()
+    setWallet(resolved && resolved.startsWith("0x") ? resolved : null)
+  }, [searchParams, walletProp, walletPending])
+
+  const [summaryRow, setSummaryRow] = useState<SummaryCollection | null>(null)
+  // 2026-10-18: Net P&L is withheld on the SAME coverage rule as the dashboard's
+  // Pack History (lib/packs-wallet-view-format.ts packCoverage). This tab published
+  // the per-collection subtraction with no check — "Fix per PANEL, not per page".
+  // No totals in the payload = coverage unknown = withheld.
+  const [plWithheld, setPlWithheld] = useState(true)
+  // 2026-11-13: the summary has its own state. It used to ride the history fetch, so (1) a
+  // summary timeout (a cold read past its 15 s limit, seen live 8:13 PM PT) rendered the hero
+  // as four bare dashes -- a failed read reading as "unknown" -- and (2) every tab switch
+  // and page turn re-ran the slowest read on the page. It depends on the wallet alone.
+  const [summaryState, setSummaryState] = useState<"idle" | "loading" | "ok" | "error">("idle")
+  const [summaryAttempt, setSummaryAttempt] = useState(0)
+  const [history, setHistory] = useState<History | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [authRequired, setAuthRequired] = useState(false)
+  // 401 = signed out; 403 = signed in, but this wallet is not saved on the account.
+  const [notYourWallet, setNotYourWallet] = useState(false)
+  const [page, setPage] = useState(0)
+
+  // ── Opened | Unopened sub-filter (Trevor 2026-07-18) ─────────────────────
+  // Maps onto get_wallet_pack_history's existing p_status rather than
+  // filtering client-side, so server-side pagination + total_count stay
+  // correct for the active tab.
+  //   Unopened -> 'held'     (still sealed in the wallet)
+  //   Opened   -> 'ripped'   (has a pack_rips row)
+  //   Sold     -> 'sold_any' (flipped + sold — sold on while still sealed)
+  // Together these cover every status the classifier can emit except 'other',
+  // which is degenerate (no buy, no sell, no rip) and measured empty
+  // platform-wide. Verified on this wallet: held 94 + ripped 117 = 211 = all.
+  const [packFilter, setPackFilter] = useState<PackFilter>("unopened")
+
+  useEffect(() => { setPage(0) }, [wallet, collection, packFilter])
+
+  // Monotonic request id — only the newest load()'s response is applied.
+  const reqIdRef = useRef(0)
+
+  const load = useCallback(async () => {
+    if (!wallet) { setSummaryRow(null); setHistory(null); return }
+    // Stale-response guard. `page` is reset to 0 in a separate effect on a
+    // filter/wallet change, so a filter switch while on page ≥ 1 issues two
+    // overlapping fetches (stale offset, then offset 0). Without a guard a slow
+    // stale response can land last and paint page-2 rows under a "Showing 1–25"
+    // footer, or the wrong filter's rows. Only the newest request applies —
+    // same reqIdRef pattern the sibling TeamChecklist loader uses.
+    const myReq = ++reqIdRef.current
+    setLoading(true)
+    setError(null)
+    setAuthRequired(false)
+    setNotYourWallet(false)
+    try {
+      const [histRes] = await Promise.all([
+        fetch(
+          "/api/wallet/pack-history?" +
+            new URLSearchParams({
+              wallet,
+              status: PACK_FILTER_STATUS[packFilter],
+              limit: String(PAGE_SIZE),
+              offset: String(page * PAGE_SIZE),
+              ...(dbSlug ? { collection: dbSlug } : {}),
+            }).toString(),
+          { cache: "no-store" },
+        ),
+      ])
+      if (myReq !== reqIdRef.current) return // superseded by a newer load
+      // Pack P&L (buy price / realized P&L) stays behind sign-in per the un-gate
+      // policy — a 401/403 means "sign in", not a hard error.
+      if (histRes.status === 401 || histRes.status === 403) {
+        const signedOut = histRes.status === 401
+        setAuthRequired(signedOut)
+        setNotYourWallet(!signedOut)
+        setHistory(null)
+        return
+      }
+      const histJson = await histRes.json().catch(() => null)
+      if (myReq !== reqIdRef.current) return // superseded during body parse
+      // A 200 whose body did not parse is a FAILED read, not "no pack sales" (2026-11-02).
+      if (!histRes.ok || histJson == null) {
+        setError(histJson?.error ?? "Failed to load pack history")
+        setHistory(null)
+      } else {
+        setHistory(histJson as History)
+      }
+    } catch (err) {
+      if (myReq === reqIdRef.current) setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      if (myReq === reqIdRef.current) setLoading(false)
+    }
+  }, [wallet, dbSlug, page, packFilter])
+
+  useEffect(() => { load() }, [load])
+
+  // The hero summary: once per wallet (+ a manual retry), never per tab or page. A failed
+  // read retries once on its own -- the first read of a big wallet can run cold past the
+  // summary's limit and the second, warm, lands -- and then says it failed, with a retry.
+  useEffect(() => {
+    if (!wallet) { setSummaryRow(null); setSummaryState("idle"); return }
+    let cancelled = false
+    setSummaryState("loading")
+    ;(async () => {
+      for (let tryNo = 0; tryNo < 2 && !cancelled; tryNo++) {
+        try {
+          const res = await fetch("/api/wallet/pack-summary?wallet=" + encodeURIComponent(wallet), { cache: "no-store" })
+          if (res.status === 401 || res.status === 403) break // the history read owns the auth branches
+          const json = res.ok ? await res.json().catch(() => null) : null
+          if (cancelled) return
+          if (res.ok && json && Array.isArray((json as Summary).by_collection)) {
+            const sum = json as Summary
+            const row = sum.by_collection.find((c) => c.collection_slug === dbSlug || c.collection_slug === collection) ?? null
+            setSummaryRow(row)
+            // 2026-11-14: THIS collection's coverage too, not only the wallet's — a well-covered
+            // Top Shot wallet published its Pinnacle row ($0 spent, 2,651 rips) as +$111,399.85.
+            setPlWithheld(collectionPlWithheld(sum.totals, row))
+            setSummaryState("ok")
+            return
+          }
+        } catch {
+          // fall through to the retry / error state
+        }
+      }
+      if (!cancelled) { setSummaryRow(null); setPlWithheld(true); setSummaryState("error") }
+    })()
+    return () => { cancelled = true }
+  }, [wallet, dbSlug, collection, summaryAttempt])
+
+  const totalPages = useMemo(
+    () => (history ? Math.max(1, Math.ceil(history.total_count / PAGE_SIZE)) : 1),
+    [history],
+  )
+
+  // ── No wallet: honest CTA ──────────────────────────────────────────────
+  if (walletPending && !wallet) {
+    return (
+      <div className="rpc-card rpc-mono" role="status" style={{ padding: 24, fontSize: 12, color: "var(--rpc-text-muted)" }}>
+        Loading your wallet…
+      </div>
+    )
+  }
+
+  if (!wallet) {
+    return (
+      <div className="rpc-card" style={{ padding: 32, textAlign: "center", display: "flex", flexDirection: "column", gap: 12, alignItems: "center" }}>
+        <div style={{ fontSize: 30, color: "var(--rpc-text-muted)" }}>📦</div>
+        <div className="rpc-heading" style={{ fontSize: 16 }}>Your sealed packs</div>
+        <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-muted)", maxWidth: 460, lineHeight: 1.7 }}>
+          Search a wallet on the <strong>Moments</strong>{" "}tab to see its pack buys, rips,
+          flips, and realized P&amp;L for {getCollection(collection)?.label ?? "this collection"}.
+        </div>
+        <Link href="/dashboard/packs" className="rpc-chip" style={{ marginTop: 4, color: accentText(accent), borderColor: accent }}>
+          Full pack history →
+        </Link>
+      </div>
+    )
+  }
+
+  // ── Auth required: pack P&L is a signed-in feature ─────────────────────
+  if (notYourWallet) {
+    return (
+      <div className="rpc-card" style={{ padding: 32, textAlign: "center", display: "flex", flexDirection: "column", gap: 12, alignItems: "center" }}>
+        <div style={{ fontSize: 30, color: "var(--rpc-text-muted)" }}>🔒</div>
+        <div className="rpc-heading" style={{ fontSize: 16 }}>Pack P&amp;L is for your own wallet</div>
+        <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-muted)", maxWidth: 460, lineHeight: 1.7 }}>
+          This wallet isn&apos;t the one saved on your account, so its buy prices and P&amp;L stay private.
+        </div>
+        <Link href="/dashboard" className="rpc-chip" style={{ marginTop: 4, color: accentText(accent), borderColor: accent }}>
+          Your saved wallet →
+        </Link>
+      </div>
+    )
+  }
+
+  if (authRequired) {
+    return (
+      <div className="rpc-card" style={{ padding: 32, textAlign: "center", display: "flex", flexDirection: "column", gap: 12, alignItems: "center" }}>
+        <div style={{ fontSize: 30, color: "var(--rpc-text-muted)" }}>🔒</div>
+        <div className="rpc-heading" style={{ fontSize: 16 }}>Sign in to see pack P&amp;L</div>
+        <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-muted)", maxWidth: 460, lineHeight: 1.7 }}>
+          Pack buy prices, rips, and realized P&amp;L are part of your personal dashboard. Sign in to view the
+          full pack history for this wallet.
+        </div>
+        <Link href="/login" className="rpc-chip" style={{ marginTop: 4, color: accentText(accent), borderColor: accent }}>
+          Sign in →
+        </Link>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* Collection-scoped hero */}
+      <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+        <Stat label="Packs purchased" value={summaryState === "loading" ? "…" : summaryRow ? summaryRow.packs_purchased.toLocaleString("en-US") : "—"} tint="var(--rpc-text-primary)" />
+        <Stat label="Total spent" value={summaryState === "loading" ? "…" : fmtPackUsd(summaryRow?.spent_usd)} tint="var(--rpc-text-primary)" />
+        <Stat label="Ripped value" value={summaryState === "loading" ? "…" : fmtPackUsd(summaryRow?.ripped_value_usd)} tint="#34D399" />
+        <Stat
+          label="Net P&L"
+          value={summaryState === "loading" ? "…" : plWithheld ? "\u2014" : fmtPackUsd(summaryRow?.net_pl_usd)}
+          tint={plWithheld ? "var(--rpc-text-muted)" : summaryRow ? netPlTint(summaryRow.net_pl_usd) : "var(--rpc-red)"}
+          title={plWithheld ? "Withheld: too few of this wallet's packs have a known buy price and pull value for a P&L to mean anything" : undefined}
+        />
+      </section>
+      {summaryState === "error" && (
+        <div role="alert" style={{ display: "flex", alignItems: "center", gap: 10, fontFamily: mono, fontSize: 11, color: "var(--rpc-danger-text)" }}>
+          <span>These totals didn&apos;t load. The tabs below are unaffected.</span>
+          <button type="button" className="rpc-chip" onClick={() => setSummaryAttempt((n) => n + 1)}>Retry</button>
+        </div>
+      )}
+
+      {/* Opened | Unopened sub-filter */}
+      <div style={{ display: "flex", gap: 6 }}>
+        {PACK_FILTERS.map((f) => {
+          const on = packFilter === f
+          return (
+            <button
+              key={f}
+              type="button"
+              onClick={() => setPackFilter(f)}
+              aria-pressed={on}
+              style={{
+                fontFamily: display,
+                fontWeight: 700,
+                fontSize: 11,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                padding: "6px 14px",
+                minHeight: 32,
+                borderRadius: 4,
+                cursor: "pointer",
+                background: on ? accentFill(accent) : "transparent",
+                color: on ? labelOn(accent) : "var(--rpc-text-muted)",
+                border: `1px solid ${on ? accent : "var(--rpc-border)"}`,
+              }}
+            >
+              {PACK_FILTER_LABEL[f]}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* 2026-11-13: the tab's own metrics, over every row of the tab (not just this page) */}
+      {history && !loading && !error && history.tab_totals && (
+        <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 }} aria-label={`${PACK_FILTER_LABEL[packFilter]} pack metrics`}>
+          {packTabMetrics(packFilter, history.tab_totals).map((m) => (
+            <div key={m.label} className="rpc-card" style={{ padding: "10px 12px" }}>
+              <div style={{ fontFamily: mono, fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase" }}>{m.label}</div>
+              <div style={{ fontFamily: display, fontWeight: 800, fontSize: 20, lineHeight: 1.15, color: packMetricTint(m.tone), marginTop: 3 }}>{m.value}</div>
+              {m.caption && <div style={{ fontFamily: mono, fontSize: 9, color: "var(--rpc-text-muted)", marginTop: 3, lineHeight: 1.4 }}>{m.caption}</div>}
+            </div>
+          ))}
+        </section>
+      )}
+
+      {/* History table */}
+      <section className="rpc-card" style={{ padding: 0, overflow: "hidden" }}>
+        {loading ? (
+          <div style={{ padding: 24, textAlign: "center", fontFamily: mono, fontSize: 12, color: "var(--rpc-text-muted)" }}>Loading packs…</div>
+        ) : error ? (
+          <div style={{ padding: 16, fontFamily: mono, fontSize: 12, color: "var(--rpc-danger-text)" }}>{error}</div>
+        ) : !history || history.packs.length === 0 ? (
+          <div style={{ padding: 26, textAlign: "center", fontFamily: mono, fontSize: 12, color: "var(--rpc-text-muted)" }}>
+            {packFilter === "unopened"
+              ? `No sealed packs held in ${getCollection(collection)?.label ?? "this collection"}.`
+              : packFilter === "opened"
+                ? `No opened packs for this wallet in ${getCollection(collection)?.label ?? "this collection"}.`
+                : `No marketplace pack sales recorded for this wallet in ${getCollection(collection)?.label ?? "this collection"}. Sales are read from the Dapper marketplace history, which can lag a few days.`}
+          </div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", minWidth: 760, borderCollapse: "collapse", fontFamily: mono, fontSize: 11 }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid var(--rpc-border)", color: "var(--rpc-text-muted)", textTransform: "uppercase", letterSpacing: "0.1em", fontSize: 9 }}>
+                  <Th>Pack</Th>
+                  {packFilter === "unopened" && (
+                    <>
+                      <Th>Acquired</Th>
+                      <Th right>Cost</Th>
+                      <Th right>Value</Th>
+                      <Th right>Unrealized</Th>
+                      <Th right>Market</Th>
+                    </>
+                  )}
+                  {packFilter === "opened" && (
+                    <>
+                      <Th>Opened</Th>
+                      <Th right>Cost</Th>
+                      <Th right>Pull value</Th>
+                      <Th right>Still held</Th>
+                      <Th right>Held FMV</Th>
+                      <Th right>P&L</Th>
+                    </>
+                  )}
+                  {packFilter === "sold" && (
+                    <>
+                      <Th>Sold</Th>
+                      <Th right>Cost</Th>
+                      <Th right>Sold for</Th>
+                      <Th right>P&L</Th>
+                      <Th right>ROI</Th>
+                      <Th right>Held</Th>
+                    </>
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {history.packs.map((row) => {
+                  const sc = packStatusColor(row.status)
+                  const plTint = realizedPlTint(row.realized_pl_usd)
+                  const packName = packDisplayName(row.pack_name, row.pack_nft_id)
+                  const note = packIdentityNote(row)
+                  const market = packMarketLabel(row)
+                  return (
+                    <tr key={row.pack_nft_id} style={{ borderBottom: "1px solid var(--rpc-border)" }}>
+                      <td style={{ padding: "9px 12px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          {/* Sealed packs have no distribution linked yet (the
+                              Top Shot primary_withdraw event carries no dist id
+                              — it resolves on open), so pack_image is NULL for
+                              them. Render a pack glyph rather than an empty
+                              grey square so an unopened row reads as "sealed",
+                              not "broken image". */}
+                          <span style={{ width: 34, height: 34, borderRadius: 4, background: "var(--rpc-surface-hover)", overflow: "hidden", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 15, color: "var(--rpc-text-muted)" }}>
+                            {row.pack_image ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={row.pack_image} alt="" width={34} height={34} style={{ objectFit: "cover", width: 34, height: 34 }} />
+                            ) : (
+                              <span aria-hidden>📦</span>
+                            )}
+                          </span>
+                          {/* EVERY row is reachable. dist_id is NULL for every
+                              sealed pack (the Top Shot primary_withdraw event
+                              carries no dist id — it resolves on open), so
+                              gating the only interactive element on dist_id
+                              left the Unopened tab with ZERO click targets.
+                              Fall back to the per-pack lifecycle route, which
+                              is keyed on the pack_nft_id we already have and
+                              308-redirects to the distribution page when the
+                              lifecycle data is thin. */}
+                          <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                            {row.dist_id ? (
+                              <Link prefetch={false}
+                                href={`/${collection}/pack/dist/${encodeURIComponent(row.dist_id)}`}
+                                style={{ color: "var(--rpc-text-primary)", textDecoration: "none", fontFamily: display, fontWeight: 700, fontSize: 12 }}
+                              >
+                                {packName}
+                              </Link>
+                            ) : (
+                              <Link prefetch={false}
+                                href={`/${collection}/pack/${encodeURIComponent(row.pack_nft_id)}`}
+                                title="Sealed pack — which distribution it came from is only recorded when the pack is opened or resold on the marketplace."
+                                style={{ color: "var(--rpc-text-primary)", textDecoration: "none", fontFamily: display, fontWeight: 700, fontSize: 12 }}
+                              >
+                                {packName}
+                              </Link>
+                            )}
+                            {/* 2026-09-18: a sealed primary-drop pack has NO
+                                distribution recorded anywhere on the platform
+                                until it is opened or resold, so "Pack #394446"
+                                is an id fragment, not a name. Say so. */}
+                            {note && (
+                              <span style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>{note}</span>
+                            )}
+                          </span>
+                        </div>
+                      </td>
+                      {/* 2026-11-13: one tab, one status -- the status chip only says
+                          something when the row is not the tab's plain case. */}
+                      <td style={{ padding: "9px 12px", color: "var(--rpc-text-secondary)", whiteSpace: "nowrap" }}>
+                        {relativePackTime(
+                          packFilter === "opened" ? (row.ripped_at ?? row.latest_event_at)
+                            : packFilter === "sold" ? (row.sold_at ?? row.latest_event_at)
+                              : (row.bought_at ?? row.latest_event_at),
+                        )}
+                        {packFilter === "sold" && row.status === "flipped" && (
+                          <span style={{ marginLeft: 6, padding: "1px 6px", borderRadius: 3, fontSize: 9, letterSpacing: "0.06em", textTransform: "uppercase", background: sc + "22", color: sc, border: `1px solid ${sc}66` }}>flip</span>
+                        )}
+                      </td>
+                      {/* NULL price -> "—". The RPC no longer coalesces an
+                          unknown primary-drop price to 0, and a retail-priced
+                          drop is tagged so "$0 (reward)" reads as a fact. */}
+                      <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{packBuyLabel(row)}</td>
+                      {packFilter === "unopened" && (() => {
+                        const unrl = packUnrealizedUsd(row)
+                        return (
+                          <>
+                            <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-primary)", fontFamily: display, fontWeight: 700, whiteSpace: "nowrap" }}>{packValueLabel(row)}</td>
+                            <td style={{ padding: "9px 12px", textAlign: "right", color: realizedPlTint(unrl), fontFamily: display, fontWeight: 700 }}>{fmtPackUsd(unrl)}</td>
+                            <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-secondary)", whiteSpace: "nowrap" }}>{market || "—"}</td>
+                          </>
+                        )
+                      })()}
+                      {packFilter === "opened" && (
+                        <>
+                          <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{packPullLabel(row)}</td>
+                          <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-secondary)", whiteSpace: "nowrap" }}>{packHeldPullsLabel(row)}</td>
+                          <td style={{ padding: "9px 12px", textAlign: "right", color: row.held_fmv_usd != null && row.held_fmv_usd > 0 ? "#34D399" : "var(--rpc-text-secondary)", fontFamily: display, fontWeight: 700, whiteSpace: "nowrap" }}>{packHeldFmvLabel(row)}</td>
+                          <td style={{ padding: "9px 12px", textAlign: "right", color: plTint, fontFamily: display, fontWeight: 700 }}>{fmtPackUsd(row.realized_pl_usd)}</td>
+                        </>
+                      )}
+                      {packFilter === "sold" && (
+                        <>
+                          <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-primary)" }}>{row.has_sell ? fmtPackUsd(row.sell_price) + currencySuffix(row.sell_currency) : "—"}</td>
+                          <td style={{ padding: "9px 12px", textAlign: "right", color: plTint, fontFamily: display, fontWeight: 700 }}>{fmtPackUsd(row.realized_pl_usd)}</td>
+                          <td style={{ padding: "9px 12px", textAlign: "right", color: plTint }}>{packRoiLabel(row)}</td>
+                          <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{packHoldLabel(row.bought_at, row.sold_at)}</td>
+                        </>
+                      )}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {history && history.total_count > PAGE_SIZE && (
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderTop: "1px solid var(--rpc-border)", fontFamily: mono, fontSize: 11, color: "var(--rpc-text-muted)" }}>
+            <span>Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, history.total_count)} of {history.total_count}</span>
+            <span style={{ display: "flex", gap: 6 }}>
+              <button type="button" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))} className="rpc-chip" style={{ opacity: page === 0 ? 0.4 : 1 }}>← Prev</button>
+              <button type="button" disabled={page + 1 >= totalPages} onClick={() => setPage((p) => p + 1)} className="rpc-chip" style={{ opacity: page + 1 >= totalPages ? 0.4 : 1 }}>Next →</button>
+            </span>
+          </div>
+        )}
+      </section>
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        {/* The Unopened list is only as complete as the last holdings sync:
+            packs acquired before on-chain coverage exist only in Dapper's
+            index. Say how fresh that is instead of letting the tab read as
+            complete. */}
+        {history && !loading && !error && (
+          <span style={{ fontFamily: mono, fontSize: 10, color: "var(--rpc-text-muted)" }}>{identitySyncNote(history.identity_sync)}</span>
+        )}
+        <Link href="/dashboard/packs" className="rpc-chip" style={{ color: accentText(accent), borderColor: accent }}>
+          Full pack history + lifecycle →
+        </Link>
+      </div>
+    </div>
+  )
+}
+
+function Stat({ label, value, tint, title }: { label: string; value: string; tint: string; title?: string }) {
+  return (
+    <div className="rpc-card" style={{ padding: "12px 14px" }} title={title}>
+      <div style={{ fontFamily: mono, fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase" }}>{label}</div>
+      <div style={{ fontFamily: display, fontWeight: 800, fontSize: 26, lineHeight: 1.1, color: tint, marginTop: 4 }}>{value}</div>
+    </div>
+  )
+}
+
+function Th({ children, right }: { children: React.ReactNode; right?: boolean }) {
+  return <th scope="col" style={{ padding: "9px 12px", textAlign: right ? "right" : "left", fontWeight: 700 }}>{children}</th>
+}

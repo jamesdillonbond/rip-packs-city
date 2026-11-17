@@ -1,0 +1,190 @@
+<title>Tracked Wallet FMV Confidence</title>
+<style>:root{color-scheme:dark}</style>
+<script>
+/* Port shim (2026-10-20, known-issue #114). These dashboards were written for the
+   desktop Cowork bridge (window.cowork.callMcpTool). On claude.ai they read through
+   the page's `mcp` capability instead. Every failure THROWS here, so a query that
+   did not run can never render as an empty result set. */
+(function(){
+  var mcpP = (window.claude && typeof window.claude.use === "function") ? window.claude.use("mcp") : Promise.resolve(null);
+  var FIX = {
+    needs_reauth: "Reconnect {s} in claude.ai Settings, Connectors, then Reload.",
+    server_not_connected: "Add the {s} connector in claude.ai Settings, Connectors, then Reload.",
+    selection_required: "Choose which {s} connector this page should use, then Reload.",
+    not_in_manifest: "{s} is not allowed for this page. Allow it from the artifact's Permissions menu, then Reload.",
+    approval_required: "This page needs your approval to read from {s}. Reload and choose Allow.",
+    blocked_by_policy: "Your organization's policy blocks this {s} tool.",
+    server_unavailable: "{s} did not answer in time. Try Reload in a minute.",
+    not_granted: "Connectors are not available in this view. Open the page in claude.ai.",
+    capability_disabled: "Connectors are not available in this view. Open the page in claude.ai."
+  };
+  function serverFor(t){ return /list_deployments$/.test(t) ? "Vercel" : "Supabase"; }
+  function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+  async function call(mcp, s, name, args, retried){
+    try { return await mcp.callTool(s, name, args, { cache: false }); }
+    catch (e) {
+      var c = (e && e.code) || "upstream_error";
+      if (e && e.retryable && !retried) { await sleep(Math.min(e.retryAfterMs || 0, 15000) + 600 + Math.random() * 900); return call(mcp, s, name, args, true); }
+      var hint = (FIX[c] || "").replace("{s}", s);
+      var msg = s + " query did not run (" + c + ")" + (hint ? ". " + hint : (e && e.message ? ": " + String(e.message).slice(0, 240) : ""));
+      var err = new Error(msg); err.code = c; throw err;
+    }
+  }
+  window.cowork = { callMcpTool: async function(tool, args){
+    var mcp = await mcpP;
+    if (!mcp) throw new Error("Live data is not available in this view. Open the page in claude.ai with the Supabase connector connected.");
+    var s = serverFor(tool), name = String(tool).split("__").pop();
+    var res = await call(mcp, s, name, args, false);
+    var p = res && res.payload;
+    if (p && typeof p === "object" && !Array.isArray(p) && p.error && typeof p.error === "object")
+      throw new Error(s + " query failed: " + String(p.error.message || p.error.name || "error").slice(0, 300));
+    var out = { content: (res && res.content) || [] };
+    if (res && typeof res.structuredContent !== "undefined") out.structuredContent = res.structuredContent;
+    return out;
+  } };
+})();
+</script>
+<style>
+:root { color-scheme: light; --rpc-red: #E03A2F; --rpc-red-bg: rgba(224,58,47,0.08); --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace; }
+body, html { margin: 0; padding: 0; background: transparent; color: #1a1a1a; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 14px; line-height: 1.5; letter-spacing: 0.005em; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 16px 20px 40px; }
+h1 { font-size: 26px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; line-height: 1.1; margin: 0 0 6px; }
+h1::after { content: ""; display: block; width: 56px; height: 3px; background: var(--rpc-red); margin-top: 8px; }
+h2 { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #2a2a2a; margin: 26px 0 8px; }
+.muted { color: #6b6b66; font-size: 12px; }
+.muted.note { margin-top: 18px; font-family: var(--font-mono); line-height: 1.6; }
+.section-head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+button.refresh { border: 1px solid var(--rpc-red); background: var(--rpc-red-bg); color: var(--rpc-red); font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; padding: 6px 14px; font-size: 10px; border-radius: 4px; cursor: pointer; font-family: var(--font-mono); }
+button.refresh:hover { background: var(--rpc-red); color: #fff; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 14px; }
+.kpi { background: #fafaf7; border: 0.5px solid rgba(0,0,0,0.12); border-radius: 8px; padding: 10px 12px; }
+.kpi .lbl { text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700; font-size: 10px; color: #6b6b66; }
+.kpi .val { font-size: 22px; font-weight: 600; margin-top: 3px; color: var(--rpc-red); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.kpi .sub { color: #6b6b66; font-size: 11px; font-family: var(--font-mono); margin-top: 1px; }
+.card { background: #fff; border: 0.5px solid rgba(0,0,0,0.12); border-radius: 12px; padding: 14px 16px; margin-top: 14px; }
+.chart-wrap { position: relative; height: 260px; }
+.legend { font-family: var(--font-mono); font-size: 11px; color: #444; margin-top: 10px; display: flex; flex-wrap: wrap; gap: 12px; }
+.legend .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 4px; }
+th, td { text-align: right; padding: 6px 8px; border-bottom: 0.5px solid rgba(0,0,0,0.08); font-variant-numeric: tabular-nums; font-family: var(--font-mono); }
+th { text-transform: uppercase; letter-spacing: 0.08em; font-size: 10px; color: #6b6b66; font-family: inherit; font-weight: 700; }
+td.lead, th.lead { text-align: left; font-family: inherit; }
+td.hm { color: var(--rpc-red); font-weight: 600; }
+.spinner { color: #6b6b66; font-family: var(--font-mono); font-size: 12px; margin-top: 14px; }
+/* === RPC DARK THEME (2026-06-15) === */
+:root{color-scheme:dark!important;}
+html,body{background:#0c0c0e!important;color:#ECEAE3!important;}
+.wrap,.container,main{background:transparent!important;}
+.card,.panel,.box,.tile,section.card{background:#16161a!important;border-color:rgba(255,255,255,0.10)!important;}
+.kpi,.stat,.metric{background:#1b1b20!important;border-color:rgba(255,255,255,0.08)!important;}
+.muted,.sub,.spinner,.legend,.tinyw,.kpi .lbl,.stat .lbl,small{color:#9A968C!important;}
+h1{color:#F2F0EA!important;}
+h2,h3,h4{color:#D8D5CC!important;}
+table{color:#E4E2DB!important;}
+th{color:#9A968C!important;border-bottom-color:rgba(255,255,255,0.12)!important;}
+td{border-bottom-color:rgba(255,255,255,0.07)!important;}
+tr:hover td{background:rgba(255,255,255,0.03)!important;}
+.tab{border-color:rgba(255,255,255,0.18)!important;color:#CFCAC4!important;background:transparent!important;}
+.tab.active{background:var(--rpc-red,#E03A2F)!important;color:#fff!important;border-color:var(--rpc-red,#E03A2F)!important;}
+button{color:#ECEAE3;}
+button.refresh{background:rgba(224,58,47,0.16)!important;}
+input,select,textarea{background:#16161a!important;color:#ECEAE3!important;border-color:rgba(255,255,255,0.15)!important;}
+a{color:#7FB2F0;}
+.pill.HIGH{background:rgba(46,160,110,0.22)!important;color:#5fd6a0!important;}
+.pill.MEDIUM{background:rgba(55,138,221,0.22)!important;color:#74b6ef!important;}
+.pill.LOW{background:rgba(186,117,23,0.24)!important;color:#e0a64b!important;}
+.pill.STALE{background:rgba(255,255,255,0.10)!important;color:#b9b6ad!important;}
+.pill.NO_DATA{background:rgba(163,45,45,0.24)!important;color:#e88a8a!important;}
+.pill.ASK_ONLY{background:rgba(83,74,183,0.26)!important;color:#a39df0!important;}
+.pill.SALES_ONLY{background:rgba(156,42,111,0.26)!important;color:#e487bb!important;}
+/* keep red accents */
+.kpi .val,.stat .val,.metric .val{color:var(--rpc-red,#E03A2F)!important;}
+/* tracked-fmv-confidence extras */
+button.refresh:hover{background:var(--rpc-red,#E03A2F)!important;color:#fff!important;}
+body,html{background:#0c0c0e!important;color:#ECEAE3!important;}
+.kpi{background:#1b1b20!important;border-color:rgba(255,255,255,0.08)!important;}
+.kpi .lbl{color:#9A968C!important;}
+.kpi .sub{color:#9A968C!important;}
+.card{background:#16161a!important;border-color:rgba(255,255,255,0.10)!important;}
+.legend{color:#9A968C!important;}
+.muted{color:#9A968C!important;}
+.spinner{color:#9A968C!important;}
+h2{color:#D8D5CC!important;}
+</style>
+
+
+<div class="wrap">
+  <div class="section-head">
+    <h1>Tracked-Wallet FMV Confidence</h1>
+    <button class="refresh" onclick="load()">Refresh</button>
+  </div>
+  <p class="muted">FMV confidence of the editions actually <b>held by the active seeded/beta wallets</b> &mdash; what users see on login. Live from <code>v_tracked_wallet_fmv_confidence</code>. <span id="updated"></span></p>
+  <div id="kpis" class="kpis"></div>
+  <div id="msg" class="spinner">Loading live data&hellip;</div>
+  <div class="card" id="chartcard" style="display:none">
+    <div class="chart-wrap"><canvas id="chart"></canvas></div>
+    <div id="legend" class="legend"></div>
+  </div>
+  <h2>Detail &mdash; held editions by confidence</h2>
+  <div id="table"></div>
+  <p class="muted note">
+    Goal: every held edition shows an accurate, confident FMV on login. The Step-6 &ldquo;fossil&rdquo; freshness bug (re-stamping stale LOW computations as fresh and pinning actively-traded editions at LOW) was fixed 2026-05-30 in fmv-recalc, and ASK_ONLY ask-corroboration is live. The 2026-06-15 dense-LOW investigation found most of the remaining held-LOW on high-volume editions is <i>honest</i> wide sale-dispersion (~5.6&times; cleaned band), not a pipeline defect &mdash; so HIGH+MED here now reflects genuine market quality rather than a gate to chase. Stacked bars are normalized to 100% so confidence <i>quality</i> compares across collections of different sizes.<br>
+    Pinnacle FMV is tracked separately (<code>pinnacle_fmv_history</code>, per-render engine pinnacle-2.0.0-render) and not shown here. Docs: <code>fmv-held-low-rootcause-2026-06-04.md</code>, <code>fmv-confidence-strategy-2026-06-04.md</code>, <code>handoff-2026-06-15-dense-low-fmv-findings.md</code>.
+  </p>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js" integrity="sha384-iU8HYtnGQ8Cy4zl7gbNMOhsDTTKX02BTXptVP/vqAWIaTfM7isw76iyZCsjL2eVi" crossorigin="anonymous"></script>
+<script>if(window.Chart){Chart.defaults.color="#9A968C";Chart.defaults.borderColor="rgba(255,255,255,0.12)";try{Chart.defaults.scale.grid.color="rgba(255,255,255,0.06)";}catch(e){}}</script>
+<script>
+const PROJECT_ID = "bxcqstmqfzmuolpuynti";
+const COL_ORDER = ["HIGH","MEDIUM","LOW","ASK_ONLY","SALES_ONLY","STALE","NO_DATA","NO_SNAPSHOT"];
+const COLORS = { HIGH:"#1d9e75", MEDIUM:"#378add", LOW:"#bA7517", ASK_ONLY:"#534ab7", SALES_ONLY:"#9C2A6F", STALE:"#888780", NO_DATA:"#d3d1c7", NO_SNAPSHOT:"#bdbbb2" };
+const DISPLAY = { nba_top_shot:"NBA Top Shot", nfl_all_day:"NFL All Day", ufc_strike:"UFC Strike", laliga_golazos:"LaLiga Golazos", disney_pinnacle:"Disney Pinnacle" };
+let chart;
+
+function extractRows(raw){ if(raw==null)return[]; if(Array.isArray(raw))return raw; if(typeof raw==="object"){ if(raw.isError===true||(raw.error&&typeof raw.error==="object")) throw new Error(String((raw.error&&(raw.error.message||raw.error.name))||(Array.isArray(raw.content)?raw.content.map(c=>(c&&c.text)||"").join(" "):"")||"tool returned an error"));  if(Array.isArray(raw.content))return extractRows(raw.content.map(c=>typeof c==="string"?c:(c&&c.text)||"").join("\n")); if(typeof raw.result==="string")return extractRows(raw.result); if(typeof raw.text==="string")return extractRows(raw.text); if(typeof raw.data!=="undefined")return extractRows(raw.data); return [raw]; } if(typeof raw==="string"){ let s=raw.trim(); try{return extractRows(JSON.parse(s));}catch(e){} const m=s.match(/\[[\s\S]*\]/); if(m){try{return JSON.parse(m[0]);}catch(e){}} if(!s) return []; throw new Error("unreadable tool response: "+s.slice(0,160)); } return []; }
+async function sql(query){ const r = await window.cowork.callMcpTool("mcp__24ab6d77-3292-4646-b039-669cc9535ef8__execute_sql", { project_id: PROJECT_ID, query }); if(r && r.isError) throw new Error(JSON.stringify(r)); return extractRows(r); }
+
+function pct(n,d){ return d ? Math.round(100*n/d) : 0; }
+
+async function load(){
+  document.getElementById("msg").style.display = "block";
+  document.getElementById("msg").textContent = "Loading live data…";
+  try {
+    const rows = await sql("SELECT collection, confidence, held_editions FROM public.v_tracked_wallet_fmv_confidence");
+    const byCol = {};
+    for (const r of rows){ const c=r.collection; (byCol[c]=byCol[c]||{})[r.confidence]=Number(r.held_editions)||0; }
+    const cols = Object.keys(byCol).sort((a,b)=> (sum(byCol[b])-sum(byCol[a])) );
+
+    let kp = "";
+    for (const c of cols){ const t=sum(byCol[c]); const hm=(byCol[c].HIGH||0)+(byCol[c].MEDIUM||0); kp += `<div class="kpi"><div class="lbl">${DISPLAY[c]||c}</div><div class="val">${pct(hm,t)}%</div><div class="sub">${hm.toLocaleString()} / ${t.toLocaleString()} HIGH+MED</div></div>`; }
+    document.getElementById("kpis").innerHTML = kp;
+
+    const present = COL_ORDER.filter(k => cols.some(c => (byCol[c][k]||0) > 0));
+    const datasets = present.map(k => ({ label:k, backgroundColor:COLORS[k], data: cols.map(c => { const t=sum(byCol[c]); return t ? +(100*(byCol[c][k]||0)/t).toFixed(1) : 0; }), stack:"s" }));
+    const labels = cols.map(c => DISPLAY[c]||c);
+    if (chart) chart.destroy();
+    chart = new Chart(document.getElementById("chart"), {
+      type:"bar",
+      data:{ labels, datasets },
+      options:{ indexAxis:"y", responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:(x)=>`${x.dataset.label}: ${x.raw}%` } } },
+        scales:{ x:{ stacked:true, max:100, ticks:{ callback:v=>v+"%", color:"#9A968C" }, grid:{color:"rgba(255,255,255,0.07)"} }, y:{ stacked:true, ticks:{color:"#9A968C"}, grid:{color:"rgba(255,255,255,0.07)"} } } }
+    });
+    document.getElementById("legend").innerHTML = present.map(k=>`<span><span class="swatch" style="background:${COLORS[k]}"></span>${k}</span>`).join("");
+    document.getElementById("chartcard").style.display = "block";
+
+    let th = `<tr><th class="lead">Collection</th>` + present.map(k=>`<th>${k}</th>`).join("") + `<th>Total</th><th>HIGH+MED</th></tr>`;
+    let tb = "";
+    for (const c of cols){ const t=sum(byCol[c]); const hm=(byCol[c].HIGH||0)+(byCol[c].MEDIUM||0);
+      tb += `<tr><td class="lead">${DISPLAY[c]||c}</td>` + present.map(k=>`<td>${(byCol[c][k]||0).toLocaleString()}</td>`).join("") + `<td>${t.toLocaleString()}</td><td class="hm">${pct(hm,t)}%</td></tr>`; }
+    document.getElementById("table").innerHTML = `<table>${th}${tb}</table>`;
+
+    document.getElementById("updated").textContent = "Updated " + new Date().toLocaleString();
+    document.getElementById("msg").style.display = "none";
+  } catch(e){
+    document.getElementById("msg").textContent = "Error loading data: " + (e && e.message ? e.message : e);
+  }
+}
+function sum(o){ return Object.values(o||{}).reduce((s,v)=>s+(Number(v)||0),0); }
+load();
+</script>

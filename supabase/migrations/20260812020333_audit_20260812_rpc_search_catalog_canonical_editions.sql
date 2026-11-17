@@ -1,0 +1,22 @@
+-- audit_20260812_rpc_search_catalog_canonical_editions
+--
+-- SAME-SESSION ITERATION of rpc_search_catalog, not an independent change.
+-- The function was built and corrected in one sitting on 2026-08-11 (PT); each
+-- correction had to be a full CREATE OR REPLACE, so prod recorded four
+-- migration names minutes apart. This file exists so `migration-parity` can
+-- match that name to a committed file.
+--
+-- WHAT THIS STEP FIXED: Applied the platform canonical-edition predicate. `editions` stores Top Shot
+--   moments under two key conventions (int 'setID:playID' and a UUID pair) for the
+--   SAME moment, so every Top Shot result came back TWICE and edition_count was
+--   roughly doubled (Damian Lillard read 95; the real canonical count is 65).
+--   Now matches rpc_fmv_confidence_share / the trust-health precompute legs.
+--
+-- THE AUTHORITATIVE, CURRENTLY-LIVE DEFINITION IS:
+--   supabase/migrations/20260812020000_audit_20260812_rpc_search_catalog.sql
+-- That file carries the final body — the one that converged after all four
+-- steps — so read and edit it, not this stub. Re-running this stub is a no-op.
+--
+-- Revert path for the whole function (all four steps):
+--   DROP FUNCTION IF EXISTS public.rpc_search_catalog(text, uuid, int);
+--   DROP INDEX CONCURRENTLY IF EXISTS public.idx_editions_team_name_trgm;

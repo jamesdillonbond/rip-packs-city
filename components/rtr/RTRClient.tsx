@@ -1,0 +1,737 @@
+"use client"
+// components/rtr/RTRClient.tsx
+//
+// The interactive heart of /[collection]/road-to-the-ring. Three
+// sections, top-to-bottom:
+//   1. Tonight's Pick   — GET /api/rtr/picks/today (odds-derived, 60s warm cache)
+//   2. Tier Progress    — GET / POST /api/rtr/state
+//   3. Lock ROI         — POST /api/rtr/lock-roi (5-min server cache)
+//
+// Inherits useWarmCache, design tokens, and the gate pattern from
+// FastBreakClient.tsx. RTR state TTL 60s, lock-roi TTL 300s (matches
+// the route's in-process cache).
+
+import { useCallback, useMemo, useState } from "react"
+import { useWarmCache } from "@/lib/warmup/WarmupContext"
+import {
+  tierFor,
+  computeTierProgress,
+  relativeTimeAgo,
+  formatOddsAge,
+  formatAmericanOdds,
+  formatTipoff,
+  validateRtrInputs,
+  computeLivePickView,
+  sortLockRoiRows,
+  type TierName,
+  type LockRoiSortKey,
+  type LockRoiSortDir,
+} from "@/lib/rtr-client-compute"
+
+// ── Tonight's Pick ────────────────────────────────────────────────────
+
+interface LivePick {
+  gameId: string
+  homeTeam: string
+  awayTeam: string
+  recommendedSide: "home_ml" | "away_ml"
+  impliedProbability: number
+  rationale: string
+  homeML: number
+  awayML: number
+  tipoffAt: string | null
+  bookmaker: string | null
+  oddsLastSyncedAt: string
+}
+
+interface PicksResponse {
+  picks: LivePick[]
+  message?: string
+  note?: string
+}
+
+// ── Tier Progress ─────────────────────────────────────────────────────
+
+interface RtrState {
+  reportedTotalPoints: number
+  reportedSpendableBalance: number
+  currentTier: TierName
+  reportedAt: string | null
+  updatedAt: string | null
+}
+
+// ── Lock ROI ─────────────────────────────────────────────────────────
+
+interface LockRoiRow {
+  momentId: string
+  playerName: string | null
+  setName: string | null
+  currentFmvUsd: number
+  isLocked: boolean
+  estimatedPlayoffPoints: number
+  pointsPerDollar: number
+  serialNumber: number | null
+  tier: string | null
+}
+
+interface LockRoiResponse {
+  walletAddr: string
+  rowCount: number
+  totalAvailable: number
+  moments: LockRoiRow[]
+}
+
+// ── Shared styles ────────────────────────────────────────────────────
+
+const SECTION_HEADER: React.CSSProperties = {
+  fontFamily: "var(--font-display)",
+  fontWeight: 900,
+  fontSize: 14,
+  letterSpacing: "0.12em",
+  textTransform: "uppercase",
+  color: "var(--rpc-text-secondary)",
+  margin: "0 0 12px",
+}
+
+const CARD_STYLE: React.CSSProperties = {
+  background: "var(--rpc-surface)",
+  border: "1px solid var(--rpc-border)",
+  borderRadius: "var(--radius-lg)",
+  padding: 20,
+}
+
+// ── Component ────────────────────────────────────────────────────────
+
+export default function RTRClient({ walletAddr }: { walletAddr: string }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <TonightsPickSection />
+      <TierProgressSection walletAddr={walletAddr} />
+      <LockRoiSection walletAddr={walletAddr} />
+    </div>
+  )
+}
+
+// ── Section 1: Tonight's Pick ───────────────────────────────────────
+// NOT a stub (the "stub until the Odds API is wired" note here was stale): this
+// fetches /api/rtr/picks/today, renders LivePick rows via computeLivePickView,
+// and handles the `no_fresh_odds` case by SAYING so rather than rendering an
+// empty card — an absent pick must not read as "no game is worth playing".
+
+function TonightsPickSection() {
+  const [whyOpen, setWhyOpen] = useState(false)
+
+  const picks = useWarmCache<PicksResponse>(
+    "rtr-picks-today",
+    async () => {
+      const res = await fetch("/api/rtr/picks/today")
+      if (!res.ok) throw new Error(`picks ${res.status}`)
+      return (await res.json()) as PicksResponse
+    },
+    { ttlMs: 60_000 },
+  )
+
+  const top: LivePick | null = picks.data?.picks?.[0] ?? null
+  // 2026-11-02: a FAILED read is not "no odds" — it gets its own branch below.
+  const failed = !picks.loading && !picks.data && picks.error != null
+  const isEmpty = !picks.loading && !top && !failed
+  const noFreshNote = picks.data?.message === "no_fresh_odds" ? picks.data?.note ?? null : null
+
+  return (
+    <div style={CARD_STYLE}>
+      <div style={SECTION_HEADER}>Tonight&apos;s Pick</div>
+      {picks.loading && !picks.data ? (
+        <div style={{ height: 60, background: "rgba(255,255,255,0.04)", borderRadius: "var(--radius-md)" }} />
+      ) : failed ? (
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-danger-text)", lineHeight: 1.6 }}>
+          Tonight&apos;s pick couldn&apos;t be loaded — that is our side, not a quiet slate.{" "}
+          <button onClick={picks.refresh} className="rpc-btn-ghost" style={{ marginLeft: 8 }}>Retry</button>
+        </div>
+      ) : isEmpty ? (
+        <div
+          style={{
+            display: "flex", alignItems: "flex-start", gap: 14, padding: 18,
+            background: "rgba(224,58,47,0.05)",
+            border: "1px dashed var(--rpc-red-border)",
+            borderRadius: "var(--radius-md)",
+          }}
+        >
+          <div
+            aria-hidden
+            style={{
+              flexShrink: 0, width: 36, height: 36, borderRadius: 999,
+              background: "var(--rpc-red-bg)", border: "1px solid var(--rpc-red-border)",
+              color: "var(--rpc-red-text)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18,
+            }}
+          >
+            ⚡
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 16, color: "var(--rpc-text-primary)", letterSpacing: "0.04em", marginBottom: 4 }}>
+              No game odds available right now
+            </div>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)", lineHeight: 1.7 }}>
+              {noFreshNote ?? "Odds refresh hourly during NBA active hours. Check back closer to tipoff for tonight's recommended pick."}
+            </div>
+          </div>
+        </div>
+      ) : top ? (
+        <LivePickCard pick={top} whyOpen={whyOpen} setWhyOpen={setWhyOpen} />
+      ) : null}
+    </div>
+  )
+}
+
+function LivePickCard({
+  pick, whyOpen, setWhyOpen,
+}: { pick: LivePick; whyOpen: boolean; setWhyOpen: (v: boolean | ((prev: boolean) => boolean)) => void }) {
+  const { sideTeam, opposingTeam, sideMl, pct } = computeLivePickView(pick)
+  const tipoffLabel = pick.tipoffAt ? formatTipoff(pick.tipoffAt) : null
+  const oddsAge = formatOddsAge(pick.oddsLastSyncedAt)
+
+  return (
+    <div
+      style={{
+        display: "flex", flexDirection: "column", gap: 14, padding: 18,
+        background: "rgba(224,58,47,0.06)",
+        border: "1px solid var(--rpc-red-border)",
+        borderRadius: "var(--radius-md)",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+        <div
+          aria-hidden
+          style={{
+            flexShrink: 0, width: 44, height: 44, borderRadius: 999,
+            background: "var(--rpc-red-fill)", color: "#fff",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 18, letterSpacing: "0.02em",
+          }}
+        >
+          {sideTeam.slice(0, 3).toUpperCase()}
+        </div>
+        <div style={{ flex: 1, minWidth: "min(200px, 100%)" }}>
+          <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 22, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", textTransform: "uppercase" }}>
+            {sideTeam} ML
+          </div>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)", letterSpacing: "0.06em", marginTop: 4 }}>
+            vs {opposingTeam}
+            {tipoffLabel ? ` · ${tipoffLabel}` : ""}
+          </div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 28, color: "var(--rpc-red-text)", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+            {pct}%
+          </div>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase", marginTop: 4 }}>
+            de-vigged
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+        <span>ML {formatAmericanOdds(sideMl)}</span>
+        {pick.bookmaker && <span>· via {pick.bookmaker}</span>}
+        <span>· odds {oddsAge}</span>
+      </div>
+
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)", lineHeight: 1.7 }}>
+        {pick.rationale}
+      </div>
+
+      <div>
+        <button
+          onClick={() => setWhyOpen(v => !v)}
+          className="rpc-btn-ghost"
+          aria-expanded={whyOpen}
+          style={{ padding: "4px 10px", fontSize: 10 }}
+        >
+          {whyOpen ? "Hide explanation" : "Why does this matter?"}
+        </button>
+        {whyOpen && (
+          <div
+            style={{
+              marginTop: 12, padding: 12,
+              background: "rgba(255,255,255,0.03)",
+              border: "1px solid var(--rpc-border)",
+              borderRadius: "var(--radius-md)",
+              fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)", lineHeight: 1.7,
+            }}
+          >
+            Picks are pure +EV with a downside floor: a wrong answer refunds your full balance, while a correct answer pays out. The optimal v1 strategy is therefore &quot;all-in on the night&apos;s highest-implied-probability outcome.&quot; Splitting becomes useful only once we model covariance across same-night games — out of scope for v1.
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Section 2: Tier Progress ─────────────────────────────────────────
+
+function TierProgressSection({ walletAddr: _walletAddr }: { walletAddr: string }) {
+  const [pointsInput, setPointsInput] = useState("")
+  const [balanceInput, setBalanceInput] = useState("")
+  const [saving, setSaving] = useState(false)
+  const [optimisticState, setOptimisticState] = useState<RtrState | null>(null)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+
+  const state = useWarmCache<RtrState>(
+    "rtr-state",
+    async () => {
+      const res = await fetch("/api/rtr/state")
+      if (!res.ok) throw new Error(`state ${res.status}`)
+      return (await res.json()) as RtrState
+    },
+    { ttlMs: 60_000 },
+  )
+
+  const current = optimisticState ?? state.data
+  const pointsForBar = current?.reportedTotalPoints ?? 0
+  const { currentTier, nextTier, lower, upper, progressPct } = computeTierProgress(pointsForBar)
+
+  const save = useCallback(async () => {
+    const { valid, points, balance } = validateRtrInputs(pointsInput, balanceInput)
+    if (!valid) {
+      setErrorMsg("Enter non-negative numbers for both fields")
+      return
+    }
+    setErrorMsg(null)
+    setSaving(true)
+
+    const optimistic: RtrState = {
+      reportedTotalPoints: Math.floor(points),
+      reportedSpendableBalance: Math.floor(balance),
+      currentTier: tierFor(points).name,
+      reportedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+    setOptimisticState(optimistic)
+
+    try {
+      const res = await fetch("/api/rtr/state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reportedTotalPoints: Math.floor(points),
+          reportedSpendableBalance: Math.floor(balance),
+        }),
+      })
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        throw new Error(j?.error ?? `save_failed_${res.status}`)
+      }
+      const fresh = (await res.json()) as RtrState
+      setOptimisticState(fresh)
+      setPointsInput("")
+      setBalanceInput("")
+      // Reconcile the warm cache on a short delay so the GET returns
+      // the freshly-saved row instead of the pre-save snapshot.
+      setTimeout(() => {
+        state.refresh()
+        setOptimisticState(null)
+      }, 500)
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "save failed")
+      setOptimisticState(null)
+    } finally {
+      setSaving(false)
+    }
+  }, [pointsInput, balanceInput, state])
+
+  return (
+    <div style={CARD_STYLE}>
+      <div style={SECTION_HEADER}>Tier Progress</div>
+
+      {state.loading && !state.data ? (
+        <div style={{ height: 96, background: "rgba(255,255,255,0.04)", borderRadius: "var(--radius-md)" }} />
+      ) : state.error != null && !current ? (
+        // 2026-11-02: a failed read used to render the lowest tier at "0 pts" — a claim about the user's run.
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-danger-text)", lineHeight: 1.6 }}>
+          Your tier progress couldn&apos;t be loaded — that is our side; your points are not zero.{" "}
+          <button onClick={state.refresh} className="rpc-btn-ghost" style={{ marginLeft: 8 }}>Retry</button>
+        </div>
+      ) : (
+        <>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+            <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 22, letterSpacing: "0.04em", color: "var(--rpc-text-primary)" }}>
+              {currentTier.name}
+            </div>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)", letterSpacing: "0.06em" }}>
+              {pointsForBar.toLocaleString("en-US")} pts
+              {nextTier ? ` · ${(nextTier.min - pointsForBar).toLocaleString("en-US")} to ${nextTier.name}` : " · max tier"}
+            </div>
+          </div>
+
+          <div
+            role="progressbar"
+            aria-valuenow={Math.round(progressPct)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label={`Progress to ${nextTier?.name ?? "max tier"}`}
+            style={{
+              position: "relative",
+              height: 10,
+              background: "rgba(255,255,255,0.05)",
+              border: "1px solid var(--rpc-border)",
+              borderRadius: 999,
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                bottom: 0,
+                width: `${progressPct}%`,
+                background: "linear-gradient(90deg, var(--rpc-red), var(--rpc-red-hover))",
+                transition: "width 0.4s ease",
+              }}
+            />
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: "0.12em", color: "var(--rpc-text-muted)", textTransform: "uppercase" }}>
+            <span>{lower.toLocaleString("en-US")}</span>
+            <span>{nextTier ? upper.toLocaleString("en-US") : "∞"}</span>
+          </div>
+
+          <div style={{ marginTop: 18, padding: 14, background: "rgba(255,255,255,0.03)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-md)" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+              <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--rpc-text-primary)" }}>
+                Refresh my balance
+              </div>
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.06em" }}>
+                Last reported: {relativeTimeAgo(current?.reportedAt ?? null)}
+              </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 10, alignItems: "end" }}>
+              <NumberInput
+                label="Total Playoffs Points"
+                value={pointsInput}
+                onChange={setPointsInput}
+                placeholder={String(current?.reportedTotalPoints ?? 0)}
+              />
+              <NumberInput
+                label="Spendable Balance"
+                value={balanceInput}
+                onChange={setBalanceInput}
+                placeholder={String(current?.reportedSpendableBalance ?? 0)}
+              />
+              <button
+                onClick={save}
+                disabled={saving || !pointsInput || !balanceInput}
+                className="rpc-btn-primary"
+                style={{ opacity: saving || !pointsInput || !balanceInput ? 0.6 : 1, height: 38 }}
+              >
+                {saving ? "Saving…" : "Save"}
+              </button>
+            </div>
+            {errorMsg && (
+              <div style={{ marginTop: 8, fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-danger-text)" }}>
+                {errorMsg}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function NumberInput({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
+  return (
+    <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: "0.12em", color: "var(--rpc-text-muted)", textTransform: "uppercase" }}>
+        {label}
+      </span>
+      <input
+        type="number"
+        inputMode="numeric"
+        min={0}
+        max={10_000_000}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        style={{
+          background: "var(--rpc-surface)",
+          border: "1px solid var(--rpc-border)",
+          borderRadius: "var(--radius-sm)",
+          padding: "8px 10px",
+          color: "var(--rpc-text-primary)",
+          fontFamily: "var(--font-mono)",
+          fontSize: 12,
+          height: 38,
+        }}
+      />
+    </label>
+  )
+}
+
+// ── Section 3: Lock ROI ──────────────────────────────────────────────
+
+function LockRoiSection({ walletAddr }: { walletAddr: string }) {
+  const [sortKey, setSortKey] = useState<LockRoiSortKey>("pointsPerDollar")
+  const [sortDir, setSortDir] = useState<LockRoiSortDir>("desc")
+
+  const data = useWarmCache<LockRoiResponse>(
+    `rtr-lock-roi:${walletAddr}`,
+    async () => {
+      const res = await fetch("/api/rtr/lock-roi", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletAddr }),
+      })
+      if (!res.ok) throw new Error(`lock-roi ${res.status}`)
+      return (await res.json()) as LockRoiResponse
+    },
+    { ttlMs: 300_000 },
+  )
+
+  const sorted = useMemo(
+    () => sortLockRoiRows(data.data?.moments ?? [], sortKey, sortDir),
+    [data.data, sortKey, sortDir],
+  )
+
+  const topAccentSet = useMemo(() => new Set(sorted.slice(0, 5).map(m => m.momentId)), [sorted])
+  // Only highlight a distinct "worst 5" once there are at least 10 rows. Below
+  // that the top/bottom slices overlap and — since the row-accent ternary checks
+  // top (green) first — the bottom (red) set is masked, so a 6-row wallet would
+  // paint 5 green + 1 red and call the single last row "the worst 5".
+  const bottomAccentSet = useMemo(
+    () => new Set((sorted.length >= 10 ? sorted.slice(-5) : []).map(m => m.momentId)),
+    [sorted],
+  )
+
+  function setSort(key: LockRoiSortKey) {
+    if (key === sortKey) {
+      setSortDir(d => (d === "asc" ? "desc" : "asc"))
+    } else {
+      setSortKey(key)
+      setSortDir("desc")
+    }
+  }
+
+  return (
+    <div style={CARD_STYLE}>
+      <div style={{ ...SECTION_HEADER, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span>Lock ROI</span>
+        {data.data && (
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: "0.1em", color: "var(--rpc-text-muted)", textTransform: "none" }}>
+            {data.data.rowCount} of {data.data.totalAvailable} moments
+          </span>
+        )}
+      </div>
+
+      <div
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 11,
+          color: "var(--rpc-text-muted)",
+          marginBottom: 12,
+          lineHeight: 1.6,
+        }}
+      >
+        Estimates are approximate. Points are derived from FMV and scaled by tier rarity and serial scarcity, then ranked by points per dollar — an interim heuristic we&apos;ll calibrate against real Top Shot Run 2 scoring data as it&apos;s collected.
+      </div>
+
+      {data.loading && !data.data ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} style={{ height: 32, background: "rgba(255,255,255,0.05)", borderRadius: 4 }} />
+          ))}
+        </div>
+      ) : data.error != null && !data.data ? (
+        // 2026-11-02: a failed read used to say the WALLET had no usable moments and send the user to re-run a search.
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-danger-text)", lineHeight: 1.6 }}>
+          Lock ROI couldn&apos;t be loaded — that is our side, not your wallet.{" "}
+          <button onClick={data.refresh} className="rpc-btn-ghost" style={{ marginLeft: 8 }}>Retry</button>
+        </div>
+      ) : sorted.length === 0 ? (
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-secondary)" }}>
+          No moments with usable FMV in your wallet yet. Run the wallet search on /nba-top-shot/collection to populate the cache.
+        </div>
+      ) : (
+        <>
+          {/* Mobile sort dropdown — visible below 768px via @media in
+              the inline style block below. */}
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }} className="rpc-rtr-mobile-sort">
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.12em", color: "var(--rpc-text-muted)", textTransform: "uppercase" }}>
+              Sort
+              <select
+                value={`${sortKey}-${sortDir}`}
+                onChange={e => {
+                  const [k, d] = e.target.value.split("-") as [LockRoiSortKey, LockRoiSortDir]
+                  setSortKey(k)
+                  setSortDir(d)
+                }}
+                style={{
+                  background: "var(--rpc-surface)",
+                  border: "1px solid var(--rpc-border)",
+                  borderRadius: "var(--radius-sm)",
+                  color: "var(--rpc-text-primary)",
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
+                  padding: "4px 8px",
+                }}
+              >
+                <option value="pointsPerDollar-desc">Points / $ (highest first)</option>
+                <option value="pointsPerDollar-asc">Points / $ (lowest first)</option>
+                <option value="currentFmvUsd-desc">FMV (highest first)</option>
+                <option value="currentFmvUsd-asc">FMV (lowest first)</option>
+                <option value="estimatedPlayoffPoints-desc">Est points (highest first)</option>
+                <option value="playerName-asc">Player (A → Z)</option>
+              </select>
+            </label>
+          </div>
+
+          {/* Desktop: sortable table */}
+          <div className="rpc-rtr-table-wrap" style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 11 }}>
+              <thead>
+                <tr style={{ color: "var(--rpc-text-muted)", textAlign: "left", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                  <SortHeader label="Player"     col="playerName"             sortKey={sortKey} sortDir={sortDir} onClick={setSort} />
+                  <SortHeader label="Set"        col="setName"                sortKey={sortKey} sortDir={sortDir} onClick={setSort} />
+                  <SortHeader label="Current FMV" col="currentFmvUsd"          sortKey={sortKey} sortDir={sortDir} onClick={setSort} align="right" />
+                  <th scope="col" style={{ padding: "8px 10px" }}>Locked?</th>
+                  <SortHeader label="Est Pts"    col="estimatedPlayoffPoints" sortKey={sortKey} sortDir={sortDir} onClick={setSort} align="right" />
+                  <SortHeader label="Pts / $"    col="pointsPerDollar"        sortKey={sortKey} sortDir={sortDir} onClick={setSort} align="right" />
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map(m => {
+                  const accent = topAccentSet.has(m.momentId)
+                    ? "var(--rpc-success)"
+                    : bottomAccentSet.has(m.momentId)
+                      ? "var(--rpc-danger)"
+                      : "transparent"
+                  return (
+                    <tr
+                      key={m.momentId}
+                      style={{
+                        borderBottom: "1px solid var(--rpc-border)",
+                        borderLeft: `3px solid ${accent}`,
+                      }}
+                    >
+                      <td style={{ padding: "8px 10px", color: "var(--rpc-text-primary)", fontFamily: "var(--font-display)", fontWeight: 700 }}>
+                        {m.playerName ?? "—"}
+                        {m.serialNumber != null && (
+                          <span style={{ color: "var(--rpc-text-muted)", marginLeft: 6, fontFamily: "var(--font-mono)", fontSize: 10 }}>#{m.serialNumber}</span>
+                        )}
+                      </td>
+                      <td style={{ padding: "8px 10px", color: "var(--rpc-text-secondary)" }}>{m.setName ?? "—"}</td>
+                      <td style={{ padding: "8px 10px", textAlign: "right", color: "var(--rpc-text-primary)" }}>${m.currentFmvUsd.toLocaleString("en-US", { maximumFractionDigits: 0 })}</td>
+                      <td style={{ padding: "8px 10px" }}>
+                        <span
+                          style={{
+                            display: "inline-block",
+                            padding: "2px 8px",
+                            borderRadius: 999,
+                            fontSize: 9,
+                            letterSpacing: "0.12em",
+                            textTransform: "uppercase",
+                            background: m.isLocked ? "rgba(52,211,153,0.1)" : "rgba(255,255,255,0.05)",
+                            color: m.isLocked ? "var(--rpc-success-text)" : "var(--rpc-text-muted)",
+                            border: `1px solid ${m.isLocked ? "rgba(52,211,153,0.3)" : "var(--rpc-border)"}`,
+                          }}
+                        >
+                          {m.isLocked ? "Locked" : "Unlocked"}
+                        </span>
+                      </td>
+                      <td style={{ padding: "8px 10px", textAlign: "right" }}>{m.estimatedPlayoffPoints.toLocaleString("en-US")}</td>
+                      <td style={{ padding: "8px 10px", textAlign: "right", color: "var(--rpc-red-text)", fontWeight: 700 }}>
+                        {m.pointsPerDollar.toFixed(3)}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile card list — driven by @media in <style> below. */}
+          <div className="rpc-rtr-card-list" style={{ display: "none", flexDirection: "column", gap: 8 }}>
+            {sorted.map(m => {
+              const accent = topAccentSet.has(m.momentId)
+                ? "var(--rpc-success)"
+                : bottomAccentSet.has(m.momentId)
+                  ? "var(--rpc-danger)"
+                  : "transparent"
+              return (
+                <div
+                  key={m.momentId}
+                  style={{
+                    padding: 12,
+                    background: "rgba(255,255,255,0.03)",
+                    border: "1px solid var(--rpc-border)",
+                    borderLeft: `3px solid ${accent}`,
+                    borderRadius: "var(--radius-md)",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
+                    <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 14, color: "var(--rpc-text-primary)" }}>
+                      {m.playerName ?? "—"}
+                      {m.serialNumber != null && <span style={{ color: "var(--rpc-text-muted)", marginLeft: 6, fontFamily: "var(--font-mono)", fontSize: 10 }}>#{m.serialNumber}</span>}
+                    </div>
+                    <div style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "var(--rpc-red-text)" }}>{m.pointsPerDollar.toFixed(3)}</div>
+                  </div>
+                  <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)", marginTop: 2 }}>{m.setName ?? "—"}</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 8, fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)" }}>
+                    <span>FMV ${m.currentFmvUsd.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
+                    <span>· {m.estimatedPlayoffPoints.toLocaleString("en-US")} est pts</span>
+                    <span>· {m.isLocked ? "Locked" : "Unlocked"}</span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          <style>{`
+            @media (max-width: 640px) {
+              .rpc-rtr-table-wrap { display: none !important; }
+              .rpc-rtr-card-list { display: flex !important; }
+            }
+            @media (min-width: 641px) {
+              .rpc-rtr-mobile-sort { display: none !important; }
+            }
+          `}</style>
+        </>
+      )}
+    </div>
+  )
+}
+
+function SortHeader({
+  label,
+  col,
+  sortKey,
+  sortDir,
+  onClick,
+  align = "left",
+}: {
+  label: string
+  col: LockRoiSortKey
+  sortKey: LockRoiSortKey
+  sortDir: LockRoiSortDir
+  onClick: (col: LockRoiSortKey) => void
+  align?: "left" | "right"
+}) {
+  const active = col === sortKey
+  return (
+    <th scope="col"
+      onClick={() => onClick(col)}
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(col) } }}
+      style={{
+        padding: "8px 10px",
+        cursor: "pointer",
+        userSelect: "none",
+        textAlign: align,
+        color: active ? "var(--rpc-text-primary)" : undefined,
+      }}
+      aria-sort={active ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+    >
+      {label}
+      {active && <span style={{ marginLeft: 4 }}>{sortDir === "asc" ? "▲" : "▼"}</span>}
+    </th>
+  )
+}
