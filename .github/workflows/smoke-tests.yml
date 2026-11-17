@@ -108,3 +108,4 @@ jobs:
           # route never emits, so it passed unconditionally; the gate now fails
           # loudly if any expected key is absent. See scripts/smoke-gate.py.
           echo "$BODY" | python3 scripts/smoke-gate.py
+# 2026-11-17: touched so GitHub re-registers this schedule after the 6:22 AM PT tree restore (ledger 11-17).

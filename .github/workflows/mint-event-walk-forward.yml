@@ -71,3 +71,4 @@ jobs:
           python3 scripts/flowty-export/test_chain_walk_gha.py
           cd scripts/flowty-export
           python3 mint_walk_gha.py "${{ matrix.stream }}" mainnet28 152500001 "$END"
+# 2026-11-17: touched so GitHub re-registers this schedule after the 6:22 AM PT tree restore (ledger 11-17).
