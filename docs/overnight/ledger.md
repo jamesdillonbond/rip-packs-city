@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~5:59 PM PT — Concierge can compare two collectors; /trades/compare in the E2E smoke (Claude Code cloud; Trevor: "Keep going and working on what you can")
+- CODE: the compare moved from the route into `lib/trade-compare/run.ts` (`runCompare`, behaviour unchanged; the route keeps its rate limits, budget, walk dispatch and HTTP shapes). New concierge tool `compare_collections` (you · partner · collection; omits `you` → the signed-in collector's wallet) calls it directly — not through the public route, so concierge users don't share one per-IP cap; unknown name = not_found by name, failed lookup/chain read = retryable error, never "holds nothing"; budget 30 s. Prompt names the tool and /trades/compare. `/trades/compare` added to `e2e/smoke.spec.ts` (run here against production: passed).
+- Tests: +4 concierge (ecosystem-tools); the hook-arrow guard caught a `beforeEach(() => mock.mockReset())` — fixed. Full preflight green.
+- Revert: `git revert` this commit (no DB change).
+
 ### 2026-11-16 ~5:55 PM PT — Shared-link previews: the last six edge OG cards (profile, share, collection, deal, pack, pack lifecycle) move to the Node runtime (Cowork cloud; Trevor: "Keep going")
 
 - Measured live 5:40 PM PT: first fetch of `/api/og/profile/<user>` on a cold edge isolate 6.5 s (then 0.7–1.6 s); the old edge default card was 6.1 s; Node cards (e.g. `/api/og/insights`) 1.6 s cold. Edge reads the brand fonts over HTTP from our own origin each cold isolate; Node reads them off disk (already traced for `/api/og/**/*`). No edge-only API in any of the six (profile's `waitUntil` is `after()`); the old /share note about a Node 500 was the opengraph-image file convention, not route handlers.
