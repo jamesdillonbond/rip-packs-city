@@ -37,7 +37,7 @@ vi.mock("@/components/packs/GrailsView", () => ({
   default: () => <div data-testid="grails-view">grails</div>,
 }))
 
-import PackPageClient from "@/components/packs/PackPageClient"
+import PackPageClient, { activeFilterTotal } from "@/components/packs/PackPageClient"
 
 function apiRow(over: Record<string, unknown> = {}) {
   return {
@@ -321,5 +321,42 @@ describe("PackPageClient — Grails toggle only where a drop pool exists", () =>
     const { queryByText } = render(<PackPageClient {...baseProps} collection="disney-pinnacle" />)
     expect(queryByText("Grails")).toBeNull()
     expect(queryByText("Standard")).not.toBeNull()
+  })
+})
+
+// 2026-11-16: on a phone the filter rows filled the first screen. They fold behind a
+// "Filters" button below md (CSS `hidden md:block`); the button counts what is set.
+describe("PackPageClient — phone filter fold", () => {
+  it("the Filters button toggles the folded rows and says how many filters are on", () => {
+    warm.packs = { data: { rows: [apiRow()], total: 1 }, loading: false, error: null }
+    const { getByRole, getByText, container } = render(<PackPageClient {...baseProps} />)
+    const btn = getByRole("button", { name: /^Filters/ })
+    const panel = container.querySelector("#rpc-pack-filters") as HTMLElement
+    expect(btn.getAttribute("aria-expanded")).toBe("false")
+    expect(panel.className).toMatch(/(^|\s)hidden(\s|$)/)
+    expect(panel.className).toContain("md:block")
+    fireEvent.click(btn)
+    expect(btn.getAttribute("aria-expanded")).toBe("true")
+    expect(panel.className).not.toMatch(/(^|\s)hidden(\s|$)/)
+    expect(btn.textContent).toMatch(/^Filters[^·]*$/)
+    fireEvent.click(getByText("+EV only"))
+    fireEvent.click(getByText("Almost sold out"))
+    expect(btn.textContent).toContain("Filters · 2 on")
+  })
+
+  it("search and sort stay outside the fold", () => {
+    warm.packs = { data: { rows: [apiRow()], total: 1 }, loading: false, error: null }
+    const { getByLabelText, container } = render(<PackPageClient {...baseProps} />)
+    const panel = container.querySelector("#rpc-pack-filters") as HTMLElement
+    expect(panel.contains(getByLabelText("Search packs"))).toBe(false)
+    expect(panel.contains(getByLabelText("Sort packs"))).toBe(false)
+  })
+
+  it("activeFilterTotal counts each set filter once (a price range counts once)", () => {
+    const none = { tier: "all", packType: "all", posEvOnly: false, hasChasers: false, almostSoldOut: false, showZeroValue: false, priceMinInput: "", priceMaxInput: "" }
+    expect(activeFilterTotal(none)).toBe(0)
+    expect(activeFilterTotal({ ...none, tier: "RARE", packType: "box", priceMinInput: "5", priceMaxInput: "20" })).toBe(3)
+    expect(activeFilterTotal({ ...none, priceMaxInput: "  " })).toBe(0)
+    expect(activeFilterTotal({ ...none, posEvOnly: true, hasChasers: true, almostSoldOut: true, showZeroValue: true })).toBe(4)
   })
 })

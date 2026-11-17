@@ -286,6 +286,18 @@ function toPackRow(
   }
 }
 
+/** How many of the folded (phone) filters are set — shown on the Filters button. */
+export function activeFilterTotal(f: {
+  tier: string; packType: string; posEvOnly: boolean; hasChasers: boolean; almostSoldOut: boolean
+  showZeroValue: boolean; priceMinInput: string; priceMaxInput: string
+}): number {
+  return (
+    (f.tier !== 'all' ? 1 : 0) + (f.packType !== 'all' ? 1 : 0) +
+    (f.posEvOnly ? 1 : 0) + (f.hasChasers ? 1 : 0) + (f.almostSoldOut ? 1 : 0) + (f.showZeroValue ? 1 : 0) +
+    (f.priceMinInput.trim() || f.priceMaxInput.trim() ? 1 : 0)
+  )
+}
+
 function parsePriceInput(s: string): number | null {
   const t = s.trim()
   if (!t) return null
@@ -323,6 +335,10 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
   const isGolazos = collection === 'laliga-golazos'
   const hideZeroByDefault = isPinnacle || isGolazos
   const [showZeroValue, setShowZeroValue] = useState(false)
+  // 2026-11-16: on a 390 px phone the tier / quick / type / price rows filled the whole
+  // first screen, so the first pack sat below the fold. Below md they fold behind a
+  // "Filters" button (search + sort stay up); desktop is unchanged.
+  const [filtersOpen, setFiltersOpen] = useState(false)
 
   // Debounce search input → search state
   useEffect(() => {
@@ -462,6 +478,8 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
   const chipBase = 'rounded-lg px-2.5 py-1 text-xs font-semibold transition'
   const chipInactive = 'border border-[color:var(--rpc-border)] text-[color:var(--rpc-text-secondary)] hover:bg-[color:var(--rpc-surface-hover)]'
 
+  const activeFilterCount = activeFilterTotal({ tier, packType, posEvOnly, hasChasers, almostSoldOut, showZeroValue, priceMinInput, priceMaxInput })
+
   return (
     <div className="mx-auto max-w-[1400px] px-3 py-4 md:px-6">
       {/* Header */}
@@ -567,6 +585,20 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
           </div>
         </div>
 
+        {/* Phone only: the rows below fold behind this button. It says how many are set,
+            so a narrowed list never looks like the whole catalogue. */}
+        <button
+          type="button"
+          onClick={() => setFiltersOpen((v) => !v)}
+          aria-expanded={filtersOpen}
+          aria-controls="rpc-pack-filters"
+          className="md:hidden w-full rounded-lg border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--rpc-text-secondary)] flex items-center justify-between"
+        >
+          <span>Filters{activeFilterCount > 0 ? ` · ${activeFilterCount} on` : ''}</span>
+          <span aria-hidden>{filtersOpen ? '▲' : '▼'}</span>
+        </button>
+
+        <div id="rpc-pack-filters" className={(filtersOpen ? 'block' : 'hidden') + ' md:block space-y-3'}>
         {/* Row 2: tier chips */}
         <div className="flex flex-wrap items-center gap-1">
           <span className="text-[10px] uppercase tracking-wide text-[color:var(--rpc-text-muted)] mr-1">Tier</span>
@@ -706,6 +738,7 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
               </button>
             )}
           </div>
+        </div>
         </div>
       </div>
 
