@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~5:35 PM PT — Homepage link preview: default OG card prerendered (no 6 s cold render), root description 235 → 154 chars, card URL cache-busted (Cowork cloud; Trevor: "I approve you getting access and doing it yourself")
+
+- Measured first: a cold `/api/og/default` took 6.1 s (edge cold start + HTTP font/logo fetches), a HIT 0.25 s; iMessage/WhatsApp/X drop the image past a few seconds. `app/api/og/default/route.tsx` → Node runtime, `force-static` + `revalidate = 3600` (build prints `○ /api/og/default 1h 1y`), logo read from disk as a data URI (traced in `next.config.ts`), short cache on a fontless render via `ogCacheHeaders(!fonts)`. Prerendered PNG checked by eye: identical card, brand fonts + logo.
+- `lib/seo.ts` ROOT_DESCRIPTION: still registry-driven, now `Live FMV, deals, pack EV and wallet analytics for <published labels>.` (154). Root OG/Twitter image → `ROOT_OG_IMAGE = '/api/og/default?v=2'` so unfurl caches refetch. Guard `seo-root-description-fits-an-unfurl.test.ts` (≤155, every published label named, three blocks agree; planted MAX=100 → red).
+- Footer `BUILT ON FLOW + SOLANA` deliberately unchanged — registry-derived and pinned by `published-flip-cannot-widen-the-site-wide-chain-claim`.
+- Revert: `git revert` the code commit (no DB half).
+
 ### 2026-11-16 ~5:30 PM PT — UFC: 458 editions re-priced from their Aptos sales; reopen flip HELD (dormant market); #256 → low (Claude Code, laptop; Trevor: "Do what you think is best, or hand off to cowork if you need for qa")
 - DB (prod, applied ~5:13 PM PT): migration `20261117011341` audit_20261116_ufc_aptos_fmv_catchup — one STALE `fmv_snapshots` row per UFC edition whose newest snapshot predated its backfilled Aptos sales (458), the same row `drain_fmv_cold_tail` would write ~11-20..11-22 (history median, `cold-tail-1.0`). Insert-only; 62 unchanged, 140 up > 2x, 23 down > 2x; sum $2,941 → $5,130. Verified: 458 audited, Khabib UFC 205 /148 $0.01 → $25.20, Moreno /517 $0.10 → $12.80; audit table RLS on, anon SELECT false; applied statement md5 = file.
 - Decision: UFC reopen flip HELD — Aptos lane at chain head, newest Aptos UFC sale 10-22, 1 edition sold in 30 days. Resume at ≥ 20 Aptos UFC sales in the trailing 30 days (focus.md, ufc-strike.md).
