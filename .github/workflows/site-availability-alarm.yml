@@ -224,3 +224,4 @@ jobs:
           PAGE_TITLE: ${{ steps.avail.outputs.page_title }}
           PAGE_BODY: ${{ steps.avail.outputs.page_body }}
         run: bash scripts/ci/page-via-github-issue.sh
+# 2026-11-17: edited on github.com by the repo owner's session so GitHub re-registers this schedule.
