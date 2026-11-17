@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~5:00 PM PT — Weekly Top Shot missing-fill offers walk retries a failed call instead of ending the run (Claude Code, laptop; Trevor: "Keep going")
+- Today's scheduled run (3:25 PM PT) stopped at call 33 of 200 on one upstream `fetch failed`, so blocks 136,690,658 onward were not walked this week (48 offers recovered before it stopped). `.github/workflows/topshot-offers-history-backfill.yml` now re-sends a failed call up to 3 times (30 s, 60 s apart). Safe because the route throws before its cursor write and is insert-only; a persistent failure still ends the run red. Simulated under `bash -e` with a fake curl/jq: fail → timeout → ok recovers (exit 0); 3 failures exit 1.
+- Revert: `git revert` the commit "ci: weekly Top Shot missing-fill walk retries a failed call".
+
 ### 2026-11-16 ~3:20 PM PT — Dropped the unused Top Shot-only Compare function (Claude Code cloud; Trevor: "Do what you think is best")
 - DB (prod, applied ~3:16 PM PT): `DROP FUNCTION public.get_topshot_trade_compare(text, text, int)` — migration `20261116231611`. Replaced by `get_trade_compare` (live in c44fd21 and verified on all three collections first); no caller in code, cron.job or any function body. Verified after: old 0, new 1.
 - Revert: re-apply the function block of `20261116180340`.
