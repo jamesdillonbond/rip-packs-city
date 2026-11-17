@@ -258,6 +258,10 @@ const TABLE: Row[] = [
   ["/api/profile/follows", "GET", true],
   ["/api/profile/follows", "POST", false, "follow write stays gated"],
   ["/api/profile/follows", "DELETE", false, "unfollow write stays gated"],
+  // 2026-11-16: the follow-a-wallet probe, same shape; writers stay gated.
+  ["/api/profile/followed-wallets", "GET", true],
+  ["/api/profile/followed-wallets", "POST", false, "follow-wallet write stays gated"],
+  ["/api/profile/followed-wallets", "DELETE", false, "unfollow-wallet write stays gated"],
 
   // ── Share cards + public profiles ────────────────────────────────────────────
   ["/share/0xabc", "GET", true],

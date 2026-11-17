@@ -985,6 +985,16 @@ export function isPublicPath(pathname: string, method: string): boolean {
   if ((method === "GET" || method === "HEAD") && pathname === "/api/profile/follows") {
     return true
   }
+  // GET /api/profile/followed-wallets — the same probe shape for following a
+  // WALLET (2026-11-16): the Follow button beside a searched binder / share card
+  // asks { authed, following, own } on mount. Gated here, an anonymous visitor's
+  // probe got login HTML and the button read "Follow unavailable" instead of
+  // "+ Follow (sign in)" (caught live the minute it shipped). The route gates
+  // itself per form: the ?wallet= probe answers anon authed:false with no data;
+  // the listing calls requireUser() and 401s. POST/DELETE stay gated here.
+  if ((method === "GET" || method === "HEAD") && pathname === "/api/profile/followed-wallets") {
+    return true
+  }
 
   // ── Public share cards ───────────────────────────────────────────────
   // /share/<wallet> — the wallet-keyed, read-only collection-snapshot card
