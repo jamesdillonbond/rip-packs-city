@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~5:55 PM PT — Shared-link previews: the last six edge OG cards (profile, share, collection, deal, pack, pack lifecycle) move to the Node runtime (Cowork cloud; Trevor: "Keep going")
+
+- Measured live 5:40 PM PT: first fetch of `/api/og/profile/<user>` on a cold edge isolate 6.5 s (then 0.7–1.6 s); the old edge default card was 6.1 s; Node cards (e.g. `/api/og/insights`) 1.6 s cold. Edge reads the brand fonts over HTTP from our own origin each cold isolate; Node reads them off disk (already traced for `/api/og/**/*`). No edge-only API in any of the six (profile's `waitUntil` is `after()`); the old /share note about a Node 500 was the opengraph-image file convention, not route handlers.
+- Verified: `next build` + `next start`, all six render 200 `image/png` with brand fonts (viewed profile + collection); 85 OG test files / 1,183 tests green; tsc clean; lint ratchet 150 = baseline. `grep 'runtime = "edge"' app/api/og` → 0.
+- Revert: `git revert` the code commit (no DB half).
+
 ### 2026-11-16 ~5:41 PM PT — Phone packs list: filters fold behind a "Filters" button (Claude Code cloud; Trevor: "Do what you think is best for the user UI")
 - Measured live (390 × 844, signed out, /nba-top-shot/packs): the tier / quick / type / price rows filled the first screen; the first pack card started at 861 px, below the fold. Packs pages were the top section for engaged visitors last week (/nba-top-shot/packs 16).
 - CODE: `components/packs/PackPageClient.tsx` — below `md`, those rows sit behind a full-width "Filters" button (aria-expanded/controls) that shows "· N on" when any are set (`activeFilterTotal`), so a narrowed list never reads as the whole catalogue. Search + sort stay visible. Desktop unchanged (`md:block`). Applies to every collection's packs page.
