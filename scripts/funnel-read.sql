@@ -26,6 +26,9 @@
 --                        (#12359), open offers (#12361)
 --   wallet search outcome collection-page wallet searches by result (search-result, 11-16):
 --                        loaded with moments · loaded empty · failed read
+--   save vs follow       the "Is @handle your wallet?" confirm (shown · yes · cancel) and wallet
+--                        Follow clicks (follow · unfollow), per surface (11-16). A high cancel
+--                        share = people were about to save a wallet that wasn't theirs.
 --
 -- Traps (measured 2026-11-16):
 --   * magic-link-requested browsers that "never signed in" are NOT lost signups:
@@ -123,4 +126,23 @@ UNION ALL SELECT '13 wallet search outcome (loaded · empty · failed) · ' || c
     AND coalesce(ue.metadata->>'automated', 'false') <> 'true'
     AND (ue.user_id IS NULL OR NOT EXISTS (SELECT 1 FROM internal_accounts ia WHERE ia.user_id = ue.user_id))
   GROUP BY ue.metadata->>'collection'
+-- 14: save-as-mine confirm and wallet Follow (from 2026-11-16), per surface (binder | share).
+-- ⚠ track() coalesces one feature name per 350 ms, so a step undone faster than that is lost.
+UNION ALL SELECT '14 own-wallet confirm (shown · yes · cancel) · ' || coalesce(ue.metadata->>'surface', '?'),
+       count(*) FILTER (WHERE ue.metadata->>'step' = 'shown')::text || ' · ' ||
+       count(*) FILTER (WHERE ue.metadata->>'step' = 'yes')::text || ' · ' ||
+       count(*) FILTER (WHERE ue.metadata->>'step' = 'cancel')::text
+  FROM usage_events ue, params p
+  WHERE ue.occurred_at >= p.s AND ue.occurred_at < p.e AND ue.feature_name = 'own-wallet-confirm'
+    AND coalesce(ue.metadata->>'automated', 'false') <> 'true'
+    AND (ue.user_id IS NULL OR NOT EXISTS (SELECT 1 FROM internal_accounts ia WHERE ia.user_id = ue.user_id))
+  GROUP BY ue.metadata->>'surface'
+UNION ALL SELECT '14 wallet follow (follow · unfollow) · ' || coalesce(ue.metadata->>'surface', '?'),
+       count(*) FILTER (WHERE ue.metadata->>'on' = 'true')::text || ' · ' ||
+       count(*) FILTER (WHERE ue.metadata->>'on' = 'false')::text
+  FROM usage_events ue, params p
+  WHERE ue.occurred_at >= p.s AND ue.occurred_at < p.e AND ue.feature_name = 'wallet-follow'
+    AND coalesce(ue.metadata->>'automated', 'false') <> 'true'
+    AND (ue.user_id IS NULL OR NOT EXISTS (SELECT 1 FROM internal_accounts ia WHERE ia.user_id = ue.user_id))
+  GROUP BY ue.metadata->>'surface'
 ORDER BY 1;
