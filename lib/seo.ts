@@ -53,7 +53,18 @@ export function publishedCollectionsPhrase(): string {
   return parts.length > 1 ? `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}` : parts[0]
 }
 
-const ROOT_DESCRIPTION = `Real-time FMV, deal sniping, wallet analytics, badge tracking, pack tools, and set intelligence for collectors of ${publishedCollectionsPhrase()}.`
+// ⚠ KEEP IT UNDER ~155 CHARACTERS (2026-11-16). iMessage, Slack, X, Facebook and
+// Google all cut a description off around 150–160; the old 235-char sentence
+// lost its last two collections in every unfurl. Still registry-driven, so a
+// newly published collection is named here without an edit — the guard in
+// __tests__/seo-root-description-fits-an-unfurl.test.ts fails if that pushes it
+// past the limit, which is the moment to shorten the lead-in, not drop a name.
+export const ROOT_DESCRIPTION_MAX = 155
+const ROOT_DESCRIPTION = `Live FMV, deals, pack EV and wallet analytics for ${listPhrase(COLLECTIONS.filter((c) => c.published).map((c) => c.label))}.`
+
+function listPhrase(items: string[]): string {
+  return items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}` : (items[0] ?? '')
+}
 
 // The one place the brand suffix is spelled. Any segment that sets a plain
 // string `title` is formatted by the NEAREST ANCESTOR template and provides no
@@ -75,12 +86,16 @@ export const BRAND_TITLE_TEMPLATE = '%s | Rip Packs City'
 //
 // The three INHERITED fields (type/locale/siteName) are deliberately NOT in here
 // — see the note in the openGraph block below, and OG_INHERITED further down.
+export const ROOT_OG_IMAGE = '/api/og/default?v=2'
+
 export const ROOT_OG_CONTENT = {
   title: ROOT_TITLE,
   description: ROOT_DESCRIPTION,
   images: [
     {
-      url: '/api/og/default',
+      // ?v= is a cache-buster for the unfurl caches (Facebook, X, iMessage,
+      // LinkedIn) that key on the URL; bump it when the card's look changes.
+      url: ROOT_OG_IMAGE,
       width: 1200,
       height: 630,
       alt: 'Rip Packs City — digital collectibles intelligence',
@@ -134,7 +149,7 @@ export const rootMetadata: Metadata = {
     creator: '@RipPacksCity',
     title: ROOT_TITLE,
     description: ROOT_DESCRIPTION,
-    images: [{ url: '/api/og/default', alt: 'Rip Packs City — digital collectibles intelligence' }],
+    images: [{ url: ROOT_OG_IMAGE, alt: 'Rip Packs City — digital collectibles intelligence' }],
   },
   robots: {
     index: true,

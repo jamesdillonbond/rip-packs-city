@@ -18,7 +18,7 @@ const nextConfig: NextConfig = {
   // put `public/` in a function unless it is traced; if this include ever stops
   // matching, the loader falls back to the HTTP fetch, never to system-ui.
   outputFileTracingIncludes: {
-    "/api/og/**/*": ["./public/fonts/BarlowCondensed-Black.ttf", "./public/fonts/ShareTechMono-Regular.ttf"],
+    "/api/og/**/*": ["./public/fonts/BarlowCondensed-Black.ttf", "./public/fonts/ShareTechMono-Regular.ttf", "./public/rip-packs-city-logo.png"],
     "/api/profile/trophy-case/pdf": ["./public/fonts/BarlowCondensed-Black.ttf", "./public/fonts/ShareTechMono-Regular.ttf"],
   },
   images: {
