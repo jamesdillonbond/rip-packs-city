@@ -47,6 +47,18 @@ export function parseOverwrittenPaths(stderr) {
   return out;
 }
 
+// 2026-11-17: `2e021e372` on main deleted 9,617 of 9,623 tracked files; this script fast-forwarded
+// to it at 5:15 AM and took `app/`, `scripts/` and the runners' own code off the laptop for five
+// hours. A fast-forward that deletes this much of the tree is refused: a real change never does.
+export const MASS_DELETE_MIN = 500;
+export const MASS_DELETE_SHARE = 0.2;
+
+/** True when `deleted` paths out of `tracked` is too large to be a real change. */
+export function isMassDeletion(deleted, tracked) {
+  if (!Number.isFinite(deleted) || !Number.isFinite(tracked) || tracked <= 0) return false;
+  return deleted >= MASS_DELETE_MIN && deleted / tracked >= MASS_DELETE_SHARE;
+}
+
 /** The changed paths that are Windows launchers (rewriting one mid-run breaks cmd.exe). */
 export function launcherChanges(changedPaths) {
   return changedPaths.filter((p) => LAUNCHER_RE.test(p.replace(/\\/g, "/")));
@@ -82,6 +94,14 @@ function main() {
     const behind = Number(git(["rev-list", "--count", "HEAD..origin/main"]));
     if (ahead > 0) { log(`HEAD ${start} is ${ahead} ahead of origin/main — not touching local commits`); return; }
     if (behind === 0) { log(`HEAD ${start} up to date`); return; }
+
+    const deleted = git(["diff", "--name-only", "--diff-filter=D", "--no-renames", "HEAD", "origin/main"]).split("\n").filter(Boolean).length;
+    const tracked = git(["ls-files"]).split("\n").filter(Boolean).length;
+    if (isMassDeletion(deleted, tracked)) {
+      log(`FAILED: REFUSED — origin/main deletes ${deleted} of ${tracked} tracked files; not fast-forwarding (a bad commit on main, 2026-11-17 class). HEAD stays ${start}`);
+      process.exitCode = 3;
+      return;
+    }
 
     if (fromLauncher) {
       const changed = git(["diff", "--name-only", "HEAD", "origin/main"]).split("\n").filter(Boolean);

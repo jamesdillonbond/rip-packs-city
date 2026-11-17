@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { launcherChanges, parseOverwrittenPaths } from "../scripts/laptop-tree-ff.mjs";
+import { isMassDeletion, launcherChanges, parseOverwrittenPaths } from "../scripts/laptop-tree-ff.mjs";
 
 describe("laptop-tree-ff: which files block a fast-forward", () => {
   it("reads the untracked-files refusal (the 11-13 laptop case, outside docs/)", () => {
@@ -52,5 +52,31 @@ describe("laptop-tree-ff: a running launcher is never rewritten mid-run", () => 
     const ingest = bat.indexOf("node scripts\\ingest-panini-runner.mjs");
     expect(pull).toBeGreaterThan(-1);
     expect(ingest).toBeGreaterThan(pull);
+  });
+});
+
+describe("laptop-tree-ff: a fast-forward that deletes most of the tree is refused (2026-11-17)", () => {
+  it("refuses the real case: 9,617 of 9,623 tracked files deleted by one commit on main", () => {
+    expect(isMassDeletion(9617, 9623)).toBe(true);
+  });
+
+  it("lets ordinary changes through, including a large but proportionate cleanup", () => {
+    expect(isMassDeletion(0, 9623)).toBe(false);
+    expect(isMassDeletion(40, 9623)).toBe(false);
+    expect(isMassDeletion(499, 600)).toBe(false); // under the absolute floor
+    expect(isMassDeletion(600, 9623)).toBe(false); // over the floor, under a fifth of the tree
+  });
+
+  it("does not refuse on an unreadable count (the merge itself still decides)", () => {
+    expect(isMassDeletion(Number.NaN, 9623)).toBe(false);
+    expect(isMassDeletion(9617, 0)).toBe(false);
+  });
+
+  it("the guard runs BEFORE the merge in main()", () => {
+    const src = readFileSync("scripts/laptop-tree-ff.mjs", "utf8");
+    const guard = src.indexOf("if (isMassDeletion(deleted, tracked))");
+    const merge = src.indexOf('git(["merge", "--ff-only"');
+    expect(guard).toBeGreaterThan(0);
+    expect(merge).toBeGreaterThan(guard);
   });
 });
