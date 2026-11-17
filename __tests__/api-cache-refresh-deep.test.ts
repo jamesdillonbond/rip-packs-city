@@ -62,6 +62,13 @@ function req(qs: string): NextRequest {
   return new NextRequest(`https://t/api/cache-refresh${qs}`, { method: "GET" })
 }
 
+function flowLockReply(locks: Record<string, boolean>): string {
+  return btoa(JSON.stringify({
+    type: "Dictionary",
+    value: Object.entries(locks).map(([k, v]) => ({ key: { type: "UInt64", value: k }, value: { type: "Bool", value: v } })),
+  }))
+}
+
 let fetchMock: ReturnType<typeof installFetchMock> | null = null
 afterEach(() => {
   fetchMock?.restore()
@@ -72,6 +79,9 @@ beforeEach(() => {
   state.fclThrows = false
   state.metadataById = {}
   fetchMock = installFetchMock([
+    // 2026-11-16: the refreshLocked=1 lane reads TopShotLocking.isLocked ON CHAIN (the
+    // GraphQL host is decommissioned). Flow REST answers a JSON string of base64 JSON-CDC.
+    jsonRoute("rest-mainnet.onflow.org", flowLockReply({ "101": true })),
     jsonRoute("public-api.nbatopshot.com", {
       data: { getMintedMoment: { data: { flowId: "102", tier: "TIER_COMMON", isLocked: true } } },
     }),
@@ -262,6 +272,28 @@ describe("cache-refresh — diff + enrichment", () => {
       .find((r) => "is_locked" in r && "lock_checked_at" in r)
     expect(lockedUpdate?.is_locked).toBe(true)
     expect(typeof lockedUpdate?.lock_checked_at).toBe("string")
+  })
+
+  it("refreshLocked=1 stamps NOTHING when the on-chain lock read fails (a failed read is not 'unlocked')", async () => {
+    fetchMock?.restore()
+    fetchMock = installFetchMock([jsonRoute("rest-mainnet.onflow.org", { message: "upstream" }, { status: 503 })])
+    state.ownedIds = ["101"]
+    const spy = install({
+      wallet_moments_cache: [
+        { data: [], error: null },
+        { data: [{ moment_id: "101" }], error: null },
+        { count: 1, error: null } as never,
+        { data: [{ moment_id: "101" }], count: 1, error: null } as never,
+      ],
+    })
+    const res = await GET(req(`?wallet=${WALLET}&refreshLocked=1`))
+    expect(res.status).toBe(200)
+    const lockWrite = spy.writes.wallet_moments_cache
+      ?.filter((w) => w.method === "update")
+      .flatMap((w) => w.rows)
+      .find((r) => "lock_checked_at" in r)
+    expect(lockWrite).toBeUndefined()
+    expect(fetchMock.calls.some((c) => c.url.includes("public-api.nbatopshot.com"))).toBe(false)
   })
 
   it("refreshLocked=1 early-outs (no GQL, no write) when the wallet has no stale locks", async () => {

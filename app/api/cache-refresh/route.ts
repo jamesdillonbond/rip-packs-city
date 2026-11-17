@@ -5,6 +5,7 @@ import { createClient } from "@supabase/supabase-js"
 import { makeInstanceRateLimiter, clientKeyFrom } from "@/lib/http/instance-rate-limit"
 import { ownLookup } from "@/lib/safe-lookup"
 import { bearerMatches } from "@/lib/auth/bearer-secret"
+import { readTopShotLocks, TOPSHOT_LOCK_CHUNK } from "@/lib/chains/flow/topshot-lock"
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -835,14 +836,24 @@ export async function GET(req: NextRequest) {
         }
         const nowIso = new Date().toISOString()
 
-        // Batch GQL in groups of 10, concurrency 5
+        // 2026-11-16: read lock state ON CHAIN (TopShotLocking.isLocked at a sealed block) —
+        // this used fetchMomentGql, whose host is decommissioned, so every lookup missed and
+        // nothing was ever stamped here: a just-arrived moment read "Lock ?" until the 7-day
+        // sweep reached it (lib/chains/flow/topshot-lock.ts). Chunks of 50, concurrency 3.
         const batches: string[][] = []
-        for (let i = 0; i < toRefreshLocked.length; i += 10) {
-          batches.push(toRefreshLocked.slice(i, i + 10))
+        for (let i = 0; i < toRefreshLocked.length; i += TOPSHOT_LOCK_CHUNK) {
+          batches.push(toRefreshLocked.slice(i, i + TOPSHOT_LOCK_CHUNK))
         }
 
-        await mapWithConcurrency(batches, 5, async function(batch) {
-          const results = await Promise.all(batch.map(function(id) { return fetchMomentGql(id) }))
+        await mapWithConcurrency(batches, 3, async function(batch) {
+          let reading: Map<string, boolean>
+          try {
+            reading = await readTopShotLocks(wallet, batch)
+          } catch (e: any) {
+            // Read failed → stamp NOTHING, so a later view retries these rows.
+            console.error("[cache-refresh] is_locked backfill: on-chain read failed for " + batch.length + " moment(s): " + (e?.message ?? String(e)))
+            return
+          }
           // Group the batch by the value being written so it costs at most TWO
           // statements instead of one per moment. Each single-row UPDATE here
           // filtered on (wallet_address, moment_id) with no collection_id, so it
@@ -855,13 +866,12 @@ export async function GET(req: NextRequest) {
           // update (20260809010000_audit_20260809_allday_lock_picker_skipscan.sql).
           const lockedIds: string[] = []
           const unlockedIds: string[] = []
-          for (let j = 0; j < batch.length; j++) {
-            const gqlData = results[j]
-            // GQL miss → leave the row stale + unstamped so a later view retries it,
-            // rather than stamping an unverified value.
-            if (gqlData == null) continue
-            if (gqlData.isLocked === true) lockedIds.push(batch[j])
-            else unlockedIds.push(batch[j])
+          for (const id of batch) {
+            // Absent from the reading = not found in this wallet's collection → leave the
+            // row stale + unstamped rather than stamping an unverified value.
+            const v = reading.get(id)
+            if (v === true) lockedIds.push(id)
+            else if (v === false) unlockedIds.push(id)
           }
           const lockGroups = [
             { locked: true, ids: lockedIds },

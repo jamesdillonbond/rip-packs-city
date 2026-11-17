@@ -150,6 +150,16 @@ function NotSerialised() {
   )
 }
 
+// One labelled number on the mobile card's stat grid (Team / FMV / Low Ask / …).
+function MobileStat({ label, testId, children }: { label: string; testId: string; children: React.ReactNode }) {
+  return (
+    <div className="min-w-0" data-rpc-card-stat={testId}>
+      <dt className="text-[9px] font-mono uppercase tracking-wider text-[color:var(--rpc-text-muted)]">{label}</dt>
+      <dd className="m-0 min-w-0">{children}</dd>
+    </div>
+  )
+}
+
 // Lock state pill (mobile cards + desktop rows) — THREE states, never two.
 // `getLocked` alone collapses an unread lock into `false`, which would print
 // "Unlocked" about a moment we never checked (a false claim about whether the
@@ -316,6 +326,11 @@ export default function CollectionMomentTable(props: {
               const mIsThreeStar = !!row.badgeInfo?.is_three_star_rookie
               const supaBadgesMraw = (row.badgeInfo?.badge_titles ?? []).filter(function(t) { return BADGE_PILL_TITLES.has(t) })
               const supaBadges = mIsThreeStar ? supaBadgesMraw.filter(function(t) { return !ROOKIE_BADGES_HIDDEN_WHEN_THREE_STAR.has(t) }) : supaBadgesMraw
+              // Official on-chain badge types, same derivation as the desktop row.
+              const mOfficialBadges = (row.officialBadges ?? [])
+                .map(function(b) { return BADGE_TYPE_TO_TITLE[b] ?? null })
+                .filter(function(t: string | null): t is string { return t !== null && BADGE_PILL_TITLES.has(t) })
+                .filter(function(t: string) { return !mIsThreeStar || !ROOKIE_BADGES_HIDDEN_WHEN_THREE_STAR.has(t) })
               const scopeKey = buildEditionScopeKey({ editionKey: row.editionKey, setName: row.setName, playerName: row.playerName, parallel: row.parallel, subedition: row.subedition })
               const editionCounts = { owned: row.editionsOwned ?? batchEditionStats.get(scopeKey)?.owned ?? 0, locked: row.editionsLocked ?? batchEditionStats.get(scopeKey)?.locked ?? 0 }
               const cbMap = costBasis.get(row.flowId ?? "")
@@ -437,12 +452,28 @@ export default function CollectionMomentTable(props: {
                       )}
                     </div>
                     <div className="flex items-center gap-1 flex-wrap justify-center">
-                      {supaBadges.map(function(title) { return <BadgeIcon key={"m-" + title} title={title} collectionId={badgeCollectionId} /> })}
+                      {mOfficialBadges.map(function(title) { return <BadgeIcon key={"m-official-" + title} title={title} collectionId={badgeCollectionId} /> })}
+                      {supaBadges.filter(function(t) { return !mOfficialBadges.includes(t) }).map(function(title) { return <BadgeIcon key={"m-" + title} title={title} collectionId={badgeCollectionId} /> })}
+                      {/* 2026-11-16 (Trevor, "badges look incorrect"): the card HID Rookie Year /
+                          Premiere / Mint on a three-star rookie but never drew the Three-Star badge
+                          that replaces them, so a 3★ rookie read as a bare Top Shot Debut. The
+                          desktop row always drew it; the card now matches. */}
+                      {mIsThreeStar && row.badgeInfo?.has_rookie_mint && (
+                        <BadgeIcon key="m-three-star" title="Three-Star Rookie" collectionId={badgeCollectionId} />
+                      )}
                     </div>
                   </div>
-                  {/* Row 4: FMV, Low Ask, Cost/P&L */}
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="flex flex-col items-start gap-0.5">
+                  {/* Row 4 (2026-11-16, Trevor): the six numbers a collector checks, on the card itself
+                      — Team · FMV · Low Ask · High Offer · Paid · Acquired — so nothing needs a tap.
+                      Every cell has THREE states: a value, a plain-words chip (Pack / Gift / …), or "—".
+                      "—" means we hold no reading; it never stands in for a zero. */}
+                  <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 m-0" data-rpc-mobile-card-stats="">
+                    {!isPinnacle && (
+                      <MobileStat label="Team" testId="team">
+                        <span className="text-xs text-[color:var(--rpc-text-primary)] truncate block">{row.team ?? "—"}</span>
+                      </MobileStat>
+                    )}
+                    <MobileStat label="FMV" testId="fmv">
                       <span
                         className={"text-sm font-mono " + (fmv.muted && !fmv.stale ? "text-[color:var(--rpc-text-muted)]" : "text-green-400")}
                         title={fmv.stale ? "No sales in 30+ days" : undefined}
@@ -452,63 +483,59 @@ export default function CollectionMomentTable(props: {
                       <AskDerivedMark show={fmv.askDerived} capped={fmv.askCapped} />
                       {row.serialFmv ? <SerialFmvBadge data={row.serialFmv} /> : null}
                       {row.priceBand30d ? <PriceBand30dBadge data={row.priceBand30d} /> : null}
-                    </span>
-                    {row.lowAsk != null ? (
-                      <span className="text-xs text-[color:var(--rpc-text-secondary)]">Ask ${row.lowAsk.toFixed(2)}</span>
-                    ) : row.editionLowAsk != null ? (
-                      <span className="text-xs text-[color:var(--rpc-text-secondary)]" title="The edition's lowest live listing">Floor ${row.editionLowAsk.toFixed(2)}</span>
-                    ) : row.recentLow30d != null ? (
-                      <span className="text-xs text-[color:var(--rpc-text-muted)]" title="Lowest sale in the FMV window (30 days, widened to 90 for thin editions; older for a stale one) — not a listing">Recent low ${row.recentLow30d.toFixed(2)}</span>
-                    ) : null}
-                    {cb ? (function() {
-                      const label = cb.costBasisLabel
-                      if (label === "Pack") return <span className="inline-block rounded border border-[color:var(--rpc-border-hover)] bg-[var(--rpc-surface-raised)] px-1.5 py-0.5 font-mono text-[10px] text-[color:var(--rpc-text-muted)]">PACK</span>
-                      if (label === "Gift") return <span className="inline-block rounded border border-blue-900 bg-blue-900 px-1.5 py-0.5 font-mono text-[10px] text-blue-300">GIFT</span>
-                      if (label === "Reward") return <span className="inline-block rounded border border-purple-900 bg-purple-900 px-1.5 py-0.5 font-mono text-[10px] text-purple-300">REWARD</span>
-                      if (label === "Airdrop") return <span className="inline-block rounded border border-green-900 bg-green-900 px-1.5 py-0.5 font-mono text-[10px] text-green-400">AIRDROP</span>
-                      // ⚠ This used to be `label === "Loan" ? cb.buyPrice : cb.buyPrice`
-                      // — a ternary whose branches are identical, i.e. `cb.buyPrice`
-                      // unconditionally. That silently DIVERGED from the desktop P&L
-                      // column, which derives its basis through the shared, named
-                      // resolveMomentPnlBasis(): only a "Bought"/"Loan" cost-basis
-                      // amount is trusted as a purchase price, and anything else falls
-                      // back to lastPurchasePrice. So a row carrying a cost-basis
-                      // amount with NO label — the shape the `cb` fallback just above
-                      // constructs from row.costBasis when row.costBasisLabel is null —
-                      // produced one P&L on a phone and a different one on a desktop,
-                      // for the same moment. The helper was written for the desktop
-                      // column and never applied here.
-                      // Desktop splits these across TWO columns: a Cost cell that
-                      // shows any positive buyPrice, and a P&L cell whose basis comes
-                      // from resolveMomentPnlBasis (only "Bought"/"Loan" are trusted as
-                      // a purchase price, else lastPurchasePrice). The mobile card
-                      // renders both in one block, so it needs both numbers — deriving
-                      // one from the other is what made the two layouts disagree.
-                      const pnlBasis = resolveMomentPnlBasis(label, cb.buyPrice, row.lastPurchasePrice)
-                      if (pnlBasis > 0 && row.fmv) {
-                        const basis = pnlBasis
-                        const { pl, plPct, positive } = computeMomentPnl(row.fmv, basis)
-                        const color = pnlColorClass(positive)
+                    </MobileStat>
+                    <MobileStat label="Low Ask" testId="low-ask">
+                      {(function() {
+                        const own = row.lowAsk ?? getBestAsk(row)
+                        if (own != null) return <span className="text-xs font-mono text-[color:var(--rpc-text-primary)]">{formatCurrency(own)}</span>
+                        if (row.editionLowAsk != null) {
+                          return <span className="text-xs font-mono text-[color:var(--rpc-text-primary)]" title="The edition's lowest live listing">{formatCurrency(row.editionLowAsk)} <span className="text-[10px] text-[color:var(--rpc-text-muted)]">floor</span></span>
+                        }
+                        // A past SALE is not a listing — it never fills the Low Ask cell. Shown
+                        // beside the dash, labelled, so the number is not lost.
                         return (
-                          <div className="text-right">
-                            <div className="text-xs font-mono text-[color:var(--rpc-text-secondary)]" title={label === "Loan" ? "Acquired via loan default. The displayed price is the principal that was lent against this moment in USDCF (1:1 USD)." : undefined}>{label === "Loan" ? <span className="text-red-400">Loan Default </span> : null}${basis.toFixed(2)}</div>
-                            <div className={"text-[10px] font-mono " + color}>{fmtSignedFixed(pl, 2)} ({fmtSignedFixed(plPct, 0)}%)</div>
-                          </div>
+                          <span className="text-xs font-mono text-[color:var(--rpc-text-muted)]">
+                            —{row.recentLow30d != null ? <span className="block text-[10px]" title="Lowest sale in the FMV window (30 days, widened to 90 for thin editions; older for a stale one) — not a listing">recent low {formatCurrency(row.recentLow30d)}</span> : null}
+                          </span>
                         )
-                      }
-                      // No trusted P&L basis, but there IS a cost figure. Desktop's Cost
-                      // cell still shows it, so the card does too — omitting it entirely
-                      // would hide a real number rather than avoid a fabricated one.
-                      if (cb.buyPrice > 0) {
+                      })()}
+                    </MobileStat>
+                    <MobileStat label="High Offer" testId="high-offer">
+                      {(function() {
+                        const best = resolveMomentBestOffer({ bestOffer: row.bestOffer, editionOffer: row.editionOffer, editionBestOffer: row.editionBestOffer, bestOfferType: row.bestOfferType })
+                        if (!best) return <span className="text-xs font-mono text-[color:var(--rpc-text-muted)]">—</span>
+                        return <span className="text-xs font-mono text-[color:var(--rpc-text-primary)]">{formatCurrency(best.val)} <span className="text-[10px] text-[color:var(--rpc-text-muted)]">{best.label}</span></span>
+                      })()}
+                    </MobileStat>
+                    <MobileStat label="Paid" testId="paid">
+                      {(function() {
+                        const label = cb?.costBasisLabel ?? null
+                        if (label === "Pack") return <span className="inline-block rounded border border-[color:var(--rpc-border-hover)] bg-[var(--rpc-surface-raised)] px-1.5 py-0.5 font-mono text-[10px] text-[color:var(--rpc-text-muted)]">PACK</span>
+                        if (label === "Gift") return <span className="inline-block rounded border border-blue-900 bg-blue-900 px-1.5 py-0.5 font-mono text-[10px] text-blue-300">GIFT</span>
+                        if (label === "Reward") return <span className="inline-block rounded border border-purple-900 bg-purple-900 px-1.5 py-0.5 font-mono text-[10px] text-purple-300">REWARD</span>
+                        if (label === "Airdrop") return <span className="inline-block rounded border border-green-900 bg-green-900 px-1.5 py-0.5 font-mono text-[10px] text-green-400">AIRDROP</span>
+                        // Desktop splits these across TWO columns: a Cost cell that shows any
+                        // positive buyPrice, and a P&L cell whose basis comes from
+                        // resolveMomentPnlBasis (only "Bought"/"Loan" are trusted as a purchase
+                        // price, else lastPurchasePrice). The card renders both in one cell, so it
+                        // derives each the same way — deriving one from the other is what once made
+                        // the two layouts disagree (component-CollectionMomentTable-pnl-parity).
+                        const shown = cb && cb.buyPrice > 0 ? cb.buyPrice : (row.lastPurchasePrice != null && row.lastPurchasePrice > 0 ? row.lastPurchasePrice : null)
+                        if (shown == null) return <span className="text-xs font-mono text-[color:var(--rpc-text-muted)]">—</span>
+                        const pnlBasis = resolveMomentPnlBasis(label, cb?.buyPrice, row.lastPurchasePrice)
+                        const pnl = pnlBasis > 0 && row.fmv ? computeMomentPnl(row.fmv, pnlBasis) : null
                         return (
-                          <div className="text-right">
-                            <div className="text-xs font-mono text-[color:var(--rpc-text-secondary)]">${cb.buyPrice.toFixed(2)}</div>
-                          </div>
+                          <span className="block" title={label === "Loan" ? "Acquired via loan default. The displayed price is the principal that was lent against this moment in USDCF (1:1 USD)." : undefined}>
+                            <span className="text-xs font-mono text-[color:var(--rpc-text-primary)]">{label === "Loan" ? <span className="text-red-400">Loan Default </span> : null}{formatCurrency(pnl ? pnlBasis : shown)}</span>
+                            {pnl ? <span className={"block text-[10px] font-mono " + pnlColorClass(pnl.positive)}>{fmtSignedFixed(pnl.pl, 2)} ({fmtSignedFixed(pnl.plPct, 0)}%)</span> : null}
+                          </span>
                         )
-                      }
-                      return null
-                    })() : null}
-                  </div>
+                      })()}
+                    </MobileStat>
+                    <MobileStat label="Acquired" testId="acquired">
+                      <span className="text-xs font-mono text-[color:var(--rpc-text-primary)]">{formatAcquiredAt(row.acquiredAt || cb?.acquiredDate || null)}</span>
+                    </MobileStat>
+                  </dl>
                   </div>
                   </div>
                   {/* Expanded content */}
