@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~6:50 PM PT — Docs: OG card speed lesson + stale "edge" notes corrected (Cowork cloud; Trevor: "update any relevant documentation before I archive this thread")
+
+- key-files-and-honesty.md gains "OG cards: a slow FIRST fetch is a broken preview"; brand-auth-proxy.md and the avatar note no longer say the profile card is edge; session entry in docs/sessions/2026-11.md. Docs only. Revert: `git revert` the commit.
+
 ### 2026-11-16 ~6:37 PM PT — Docs: 11-16 funnel-pass lessons + session entry (Claude Code cloud; Trevor: "update any relevant documentation")
 - `docs/reference/key-files-and-honesty.md` (end): five lessons — hiding an offer ≠ refusing the action; a start event can't report the read; `automated` misses the Panini crawler; the `Date.now()` ratchet counts handlers; propose-first write routes are live-verifiable. `docs/sessions/2026-11.md`: the 9:50 AM → 6:45 PM PT entry (decisions, reward-email outcome, five ships).
 - Docs only — no code or DB change. Revert: `git revert` this commit.
