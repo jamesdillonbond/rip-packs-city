@@ -178,7 +178,7 @@ git commit -F msg && git push origin HEAD:main
 
 Verified 11-17 ~7:08 AM PT on a local clone: without `read-tree` every file is staged as deleted; with it, the staged diff is exactly the edited file. `git status` still lists every file as missing from the (empty) worktree — expected; only the STAGED diff is committed.
 
-**The gate before any push, from any clone:** `git diff --stat HEAD~1 HEAD | tail -1` — a deletion count in the hundreds or thousands means STOP; reset to `origin/main` and redo. The `/sessions` disk itself (85 stale `rcw-*` homes, owned by `nobody`) needs Trevor on the laptop; see `docs/handoff-2026-11-17-overnight-pass.md`.
+**The gate before any push, from any clone:** `git diff --stat HEAD~1 HEAD | tail -1` — a deletion count in the hundreds or thousands means STOP; reset to `origin/main` and redo. The `/sessions` disk itself (85 stale `rcw-*` homes, owned by `nobody`) needed Trevor on the laptop; see `docs/handoff-2026-11-17-overnight-pass.md`. **Trevor reports it cleared (11-17 morning, not yet verified from a VM).** Next pass on the VM: run `df -h /sessions` first and record the free space in the handoff; with room, use a NORMAL full clone and keep the recipe above only as the low-disk fallback.
 
 ## The two tasks, in one line each (moved verbatim from CLAUDE.md, 2026-09-19)
 
