@@ -12,6 +12,7 @@ import { buildEditionScopeKey } from "@/lib/wallet-normalize"
 import { buildEditionSeedCandidate } from "@/lib/edition-market-seed"
 import { getOwnerKeyForChain, setOwnerKeyForChain, onOwnerKeyChangeForChain, ownerKeyMatchesChain } from "@/lib/owner-key"
 import { detectAddressChain, isSupportedAddress, isValidAddressForChain, truncateAddressForDisplay } from "@/lib/address"
+import { deviceOwnerKeyAfterSearch } from "@/lib/owner-key"
 import { parseSnsName } from "@/lib/chains/solana/sns"
 import { getCollection, COLLECTION_UUID_BY_SLUG, collectionHasLocking, collectionHasWalletPackHistory } from "@/lib/collections"
 import { useWarmCache, usePrefetch, useWarmup } from "@/lib/warmup/WarmupContext"
@@ -134,6 +135,24 @@ function WalletMomentsBody() {
   // IS their binder. Anyone else (signed out, no saved wallet, or a ?wallet= they typed)
   // keeps the search row. Display state only; the server stays the trust boundary.
   const sessionOwner = useSessionOwner()
+  // Read inside the async search (whose closure predates the session answer).
+  const sessionOwnerRef = useRef(sessionOwner)
+  sessionOwnerRef.current = sessionOwner
+  // A search's wallet parked while the session is still unknown (see the device-key
+  // write in the search). Also: a signed-in collector's device key is set back to
+  // their own wallet whenever this page knows it (repairs an earlier friend search).
+  const pendingDeviceKeyRef = useRef<string | null>(null)
+  useEffect(function() {
+    if (sessionOwner.loading) return
+    const chain = collectionObj?.dbChain
+    const pending = pendingDeviceKeyRef.current
+    pendingDeviceKeyRef.current = null
+    try {
+      const current = getOwnerKeyForChain(chain)
+      const next = deviceOwnerKeyAfterSearch(pending ?? current, sessionOwner, chain)
+      if (next && next !== current) setOwnerKeyForChain(chain, next)
+    } catch {}
+  }, [sessionOwner, collectionObj])
   const [savedWalletLoaded, setSavedWalletLoaded] = useState<string | null>(null)
   // 2026-11-07: did AutoSearchReader find NO saved wallet? Until it answers, the
   // device-key seed below must not fire for a signed-in reader — on Trevor's laptop it
@@ -761,8 +780,26 @@ function WalletMomentsBody() {
     }
     try {
       if (resolvedWallet && ownerKeyMatchesChain(resolvedWallet, ownerKeyChain)) {
-        if (getOwnerKeyForChain(ownerKeyChain) !== resolvedWallet) {
-          setOwnerKeyForChain(ownerKeyChain, resolvedWallet)
+        // 2026-11-16 (save vs follow): for a SIGNED-IN collector the device key is
+        // their OWN wallet, never the wallet on screen. Looking at a friend used to
+        // make the friend "this device's profile": Sets read it before the saved
+        // wallet (friend's set progress as yours), edition grids counted the
+        // friend's moments as owned, the warm-up preloaded the friend. Write the
+        // account's Flow wallet instead — which also repairs a device a past
+        // search already pointed at someone else. Signed out, unknown (degraded)
+        // or no account wallet: unchanged.
+        // Candy (Solana slot): the account wallet is Flow, so it cannot fill that
+        // slot and the searched wallet is kept, as before.
+        // ⚠ The search can land BEFORE the session answers: then the wallet is
+        // parked, and the effect below writes it (signed out) or the account
+        // wallet (signed in) once the session is known — never the friend first.
+        if (sessionOwnerRef.current.loading) {
+          pendingDeviceKeyRef.current = resolvedWallet
+        } else {
+          const next = deviceOwnerKeyAfterSearch(resolvedWallet, sessionOwnerRef.current, ownerKeyChain)
+          if (getOwnerKeyForChain(ownerKeyChain) !== next) {
+            setOwnerKeyForChain(ownerKeyChain, next)
+          }
         }
       }
     } catch {}
@@ -1420,7 +1457,9 @@ function WalletMomentsBody() {
 
         {/* Profile key indicator — hidden for a signed-in collector: their saved
             wallet (not a device key) is what this page shows. */}
-        {ownerKey && !signedInOwnBinder && (
+        {/* 2026-11-16: hidden for ANY signed-in viewer (Trevor 11-07: the chip "brings
+            no value for a signed-in user"); it showed while looking at someone else. */}
+        {ownerKey && !signedInOwnBinder && !(sessionOwner.userId && !sessionOwner.degraded) && (
           <div
             className="mb-4 flex items-center gap-2 px-3 py-2"
             style={{

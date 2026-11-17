@@ -173,3 +173,25 @@ describe("clearAllOwnerKeys — sign-out has to take every chain with it", () =>
     expect(store["rpc_owned_0xaaa"]).toBe("[]")
   })
 })
+
+// 2026-11-16 (save vs follow): what a binder search leaves in the device key.
+import { deviceOwnerKeyAfterSearch } from "@/lib/owner-key"
+describe("deviceOwnerKeyAfterSearch", () => {
+  const FRIEND = "0xbbbbbbbbbbbbbbbb"
+  const signedIn = { userId: "u1", degraded: false, walletAddr: "AAAAAAAAAAAAAAAA" }
+  it("signed in with an account wallet: the account wallet (normalised), never the friend's", () => {
+    expect(deviceOwnerKeyAfterSearch(FRIEND, signedIn, "flow")).toBe("0xaaaaaaaaaaaaaaaa")
+  })
+  it("signed out, degraded session or no account wallet: the searched wallet, as before", () => {
+    expect(deviceOwnerKeyAfterSearch(FRIEND, { userId: null, degraded: false, walletAddr: null }, "flow")).toBe(FRIEND)
+    expect(deviceOwnerKeyAfterSearch(FRIEND, { ...signedIn, degraded: true }, "flow")).toBe(FRIEND)
+    expect(deviceOwnerKeyAfterSearch(FRIEND, { ...signedIn, walletAddr: null }, "flow")).toBe(FRIEND)
+  })
+  it("a slot the Flow account wallet cannot fill (Candy/Solana) keeps the searched wallet", () => {
+    const MINT = "12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK"
+    expect(deviceOwnerKeyAfterSearch(MINT, signedIn, "solana")).toBe(MINT)
+  })
+  it("an account wallet that is not a Flow address is not written", () => {
+    expect(deviceOwnerKeyAfterSearch(FRIEND, { ...signedIn, walletAddr: "not-a-wallet" }, "flow")).toBe(FRIEND)
+  })
+})

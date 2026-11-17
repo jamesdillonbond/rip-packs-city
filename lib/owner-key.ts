@@ -2,6 +2,12 @@
 // Shared utility for reading and writing the RPC profile key from localStorage.
 // Used by wallet, sets, sniper, packs pages to auto-populate the signed-in user.
 //
+// ⚠ SIGNED IN, THE KEY IS THE ACCOUNT'S OWN WALLET (2026-11-16): a binder search
+// writes deviceOwnerKeyAfterSearch(), which returns the account's Flow wallet for
+// a signed-in collector — looking at a friend no longer makes the friend "this
+// device's profile" (Sets read the key first; edition grids counted the friend's
+// moments as owned). Signed out it is still the last searched wallet.
+//
 // ⚠ DEVICE-LOCAL, NOT ACCOUNT STATE (measured 2026-09-28): the only writer is
 // CollectionTabClient's post-search sync, so the key exists only on a device
 // that has run a search. A signed-in reader on a new device has NONE. A surface
@@ -11,7 +17,7 @@
 // DISAGREE (allow_list wallet ≠ saved wallet), and then they race. One account
 // did until its allow_list row was corrected 2026-09-29.
 
-import { chainKindForDbChain, isValidAddressForChain } from "@/lib/address";
+import { chainKindForDbChain, isValidAddressForChain, normalizeFlowAddress } from "@/lib/address";
 
 export const OWNER_KEY_STORAGE = "rpc_owner_key";
 
@@ -148,4 +154,26 @@ export function onOwnerKeyChange(callback: (key: string) => void): () => void {
   }
   window.addEventListener("storage", handler);
   return function() { window.removeEventListener("storage", handler); };
+}
+
+/**
+ * What the device key should hold after a binder search (2026-11-16, save vs
+ * follow). Signed out, session unknown (degraded) or no account wallet: the
+ * searched wallet, as always — that is the anonymous "this device's profile".
+ * SIGNED IN with an account wallet: the ACCOUNT's wallet, never the one on
+ * screen. Looking at a friend used to make the friend "you" on this device:
+ * Sets read the key before the saved wallet, edition grids counted the friend's
+ * moments as owned, the warm-up preloaded them. Returning the account wallet
+ * also repairs a device an earlier search pointed at someone else. A slot the
+ * account wallet cannot fill (Candy's Solana slot; the account wallet is Flow)
+ * keeps the searched wallet.
+ */
+export function deviceOwnerKeyAfterSearch(
+  searched: string,
+  session: { userId: string | null; degraded: boolean; walletAddr: string | null },
+  dbChain: string | null | undefined,
+): string {
+  if (!session.userId || session.degraded || !session.walletAddr) return searched;
+  const account = normalizeFlowAddress(session.walletAddr);
+  return account && ownerKeyMatchesChain(account, dbChain) ? account : searched;
 }

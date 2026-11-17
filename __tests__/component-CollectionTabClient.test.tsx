@@ -2041,6 +2041,55 @@ describe("CollectionTabClient — the owner key follows the collection's chain",
 // profile" — a page that is already their binder asking them who they are. Both collapse
 // for that reader; a signed-out visitor, a signed-in reader with no saved wallet, and a
 // ?wallet= the reader typed all keep the search row.
+// 2026-11-16 (save vs follow): a signed-in collector looking at a FRIEND's wallet
+// must not make the friend "this device's profile" — Sets read that key before the
+// saved wallet and edition grids counted the friend's moments as owned. Signed in
+// with an account wallet, the search writes the ACCOUNT wallet (repairing a device
+// an earlier search pointed elsewhere) and the device chip stays hidden.
+describe("CollectionTabClient — looking at a friend signed in leaves the device key yours", () => {
+  const withProfile = (body: unknown) => {
+    const base = fetchMock.getMockImplementation() as (input: unknown) => Promise<Response>
+    fetchMock.mockImplementation(async (input: unknown) =>
+      String(input).startsWith("/api/profile/me") ? json(200, body) : base(input),
+    )
+  }
+
+  it("signed in with an account wallet: the device key gets the ACCOUNT wallet, not the friend's; no chip", async () => {
+    withProfile({ user: { id: "u1", wallet_addr: "0xAAAAAAAAAAAAAAAA" } })
+    ownerKeyWrites.length = 0
+    ownerKey = "0xfriendfriendfrie"
+    momentsResponse = () =>
+      json(200, { moments: [MOMENT()], wallet: "0xbbbbbbbbbbbbbbbb", page: 1, total_count: 1, total_pages: 1 })
+    searchParams = new URLSearchParams("wallet=0xbbbbbbbbbbbbbbbb")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(ownerKeyWrites.length).toBeGreaterThan(0))
+    expect(ownerKeyWrites.map((w) => w.key)).not.toContain("0xbbbbbbbbbbbbbbbb")
+    expect(ownerKeyWrites[ownerKeyWrites.length - 1]).toEqual({ chain: "flow", key: "0xaaaaaaaaaaaaaaaa" })
+    expect(screen.queryByText(/This device/)).toBeNull()
+  })
+
+  it("no-change control: signed OUT, the searched wallet still becomes the device key", async () => {
+    withProfile({ user: null })
+    ownerKeyWrites.length = 0
+    ownerKey = ""
+    momentsResponse = () =>
+      json(200, { moments: [MOMENT()], wallet: "0xbbbbbbbbbbbbbbbb", page: 1, total_count: 1, total_pages: 1 })
+    searchParams = new URLSearchParams("wallet=0xbbbbbbbbbbbbbbbb")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(ownerKeyWrites.length).toBeGreaterThan(0))
+    expect(ownerKeyWrites).toEqual([{ chain: "flow", key: "0xbbbbbbbbbbbbbbbb" }])
+  })
+
+  it("signed in, own binder visit with a device key left on a friend: the key is set back to the account wallet", async () => {
+    withProfile({ user: { id: "u1", wallet_addr: "0xaaaaaaaaaaaaaaaa" } })
+    ownerKeyWrites.length = 0
+    ownerKey = "0xbbbbbbbbbbbbbbbb"
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(ownerKeyWrites).toContainEqual({ chain: "flow", key: "0xaaaaaaaaaaaaaaaa" }))
+    expect(ownerKeyWrites.map((w) => w.key)).not.toContain("0xbbbbbbbbbbbbbbbb")
+  })
+})
+
 describe("CollectionTabClient — a signed-in collector's own binder shows no address box", () => {
   const withProfile = (body: unknown) => {
     const base = fetchMock.getMockImplementation() as (input: unknown) => Promise<Response>
