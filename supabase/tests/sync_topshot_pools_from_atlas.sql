@@ -12,9 +12,11 @@
 --      than the pool it would replace still had drawable (weight > 0), keeps what it has;
 --   4. a re-run with no newer Atlas pass writes nothing; a newer pass re-weights the Atlas pool;
 --   5. a failure is caught, logged ok=false, and the function still returns.
+--   6. an edition list fetched > 7 days ago still counts as fresh when a later summary carried
+--      that same reconciled pass forward (2026-11-16); an unreconciled one does not.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261113195652_audit_20261113_topshot_atlas_pool_fills_new_dists_without_an_ask.sql).
+-- (supabase/migrations/20261117054311_audit_20261116_atlas_pool_sync_trusts_a_reconfirmed_edition_list.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 
 BEGIN;
@@ -27,6 +29,8 @@ CREATE TABLE public.pack_ask_state (collection_slug text, dist_id text, is_liste
 CREATE TABLE public.topshot_atlas_dist_editions (dist_id text, atlas_edition_id text, pass bigint, set_id int, play_id int,
   parallel text, tier text, original_count bigint, remaining_count bigint, hidden_at_fetch bigint, fetched_at timestamptz);
 CREATE TABLE public.editions (id uuid PRIMARY KEY, collection_id uuid, external_id text);
+CREATE TABLE public.topshot_atlas_dists (dist_id text PRIMARY KEY, editions_pass bigint, editions_done_at timestamptz,
+  edition_remaining_sum bigint, remaining_total bigint, summary_fetched_at timestamptz);
 CREATE TABLE public.v_topshot_parallel_premiums (subedition_name text, subedition_id int);
 CREATE TABLE public._runs (pipeline text, ok boolean, err text, extra jsonb);
 CREATE FUNCTION public.log_pipeline_run(text, timestamptz, integer, integer, integer, boolean, text, text, text, text, jsonb)
@@ -62,8 +66,20 @@ BEGIN
       SELECT dist_id, count(*) FILTER (WHERE drop_weight > 0) AS n_live, bool_and(pool_source = 'gql') AS all_gql,
              bool_and(pool_source = 'atlas') AS all_atlas, max(last_refreshed_at) AS refreshed
         FROM public.pack_drop_pool WHERE collection_id = v_cid GROUP BY dist_id
-    ), lp AS (
+    ), lp0 AS (
       SELECT dist_id, max(pass) AS p, max(fetched_at) AS f FROM public.topshot_atlas_dist_editions GROUP BY dist_id
+    ), lp AS (
+      -- 2026-11-16: an edition list is CURRENT, not only recently fetched, when a later summary
+      -- carried that same reconciled pass forward (topshot_pack_supply_tick re-reads an unchanged
+      -- drop's summary every 40 h without re-fetching its pages). 11 listed packs (WNBA Base Set
+      -- R1/R5, Run It Back: Origins, Two Moment Common Pack, ...) had no pool because their pages
+      -- were fetched > 7 days ago. The 7-day gate reads `fresh`; the 'refresh' test keeps `f`, so
+      -- an unchanged Atlas pool is not rewritten every 40 h.
+      SELECT lp0.dist_id, lp0.p, lp0.f,
+             CASE WHEN t.editions_pass = lp0.p AND t.editions_done_at IS NOT NULL
+                       AND t.edition_remaining_sum IS NOT DISTINCT FROM t.remaining_total
+                  THEN greatest(lp0.f, t.summary_fetched_at) ELSE lp0.f END AS fresh
+        FROM lp0 LEFT JOIN public.topshot_atlas_dists t ON t.dist_id = lp0.dist_id
     ), cand AS (
       -- a catalogued dist with a fresh Atlas edition list and EITHER no pool at all and a live
       -- secondary ask or a first sighting in the last 7 days ('fill'), OR a pool written only by the GraphQL lane, dormant since
@@ -75,7 +91,7 @@ BEGIN
         FROM lp
         JOIN public.pack_distributions pd ON pd.collection_id = v_cid AND pd.dist_id = lp.dist_id
         LEFT JOIN pool ON pool.dist_id = lp.dist_id
-       WHERE lp.f > now() - interval '7 days'
+       WHERE lp.fresh > now() - interval '7 days'
          AND ((pool.dist_id IS NULL
                AND (EXISTS (SELECT 1 FROM public.pack_ask_state pas
                              WHERE pas.collection_slug = 'nba-top-shot' AND pas.dist_id = lp.dist_id
@@ -196,6 +212,17 @@ INSERT INTO public.topshot_atlas_dist_editions VALUES
   ('D_EMPTY','d1',1,10,2,'Standard','COMMON',90,0,0, now() - interval '1 hour'),
 -- D_SHRINK: GraphQL pool has 2 editions, Atlas lists 1
   ('D_SHRINK','f1',1,20,1,'Standard','COMMON',90,9,0, now() - interval '1 hour');
+-- claim 6 (2026-11-16): pages fetched 20 days ago, but a summary 1 h ago carried that reconciled
+-- pass forward -> the list is current, D_OLDLIST fills; D_UNRECON's carried pass does not
+-- reconcile (remaining 9 vs pages 7) -> still too old, no fill
+INSERT INTO public.pack_distributions SELECT '95f28a17-224a-4025-96ad-adf8a4c63bfd', d FROM unnest(ARRAY['D_OLDLIST','D_UNRECON']) d;
+INSERT INTO public.pack_ask_state SELECT 'nba-top-shot', d, true, 5 FROM unnest(ARRAY['D_OLDLIST','D_UNRECON']) d;
+INSERT INTO public.topshot_atlas_dist_editions VALUES
+  ('D_OLDLIST','g1',5,10,2,'Standard','COMMON',70,7,0, now() - interval '20 days'),
+  ('D_UNRECON','h1',6,10,2,'Standard','COMMON',70,7,0, now() - interval '20 days');
+INSERT INTO public.topshot_atlas_dists VALUES
+  ('D_OLDLIST', 5, now() - interval '20 days', 7, 7, now() - interval '1 hour'),
+  ('D_UNRECON', 6, now() - interval '20 days', 7, 9, now() - interval '1 hour');
 INSERT INTO public.pack_drop_pool VALUES
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd','D_UP','00000000-0000-0000-0000-0000000000e4','20:1',0.5,'default','gql','2026-08-28',50),
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd','D_UP','00000000-0000-0000-0000-0000000000e6','20:9',0.5,'default','gql','2026-08-28',50),
@@ -213,6 +240,12 @@ SELECT _assert_eq((SELECT orig_drop_weight::text FROM pack_drop_pool WHERE dist_
 SELECT _assert_eq((SELECT string_agg(DISTINCT pool_source, ',') FROM pack_drop_pool WHERE dist_id = 'D_FILL'), 'atlas', 'c1 source atlas');
 SELECT _assert_eq((SELECT count(*)::text FROM pack_drop_pool WHERE dist_id = 'D_NOASK'), '0', 'c1 no live ask -> no fill');
 SELECT _assert_eq((SELECT string_agg(pool_source || ':' || round(drop_weight, 2)::text, ',') FROM pack_drop_pool WHERE dist_id = 'D_NEW'), 'atlas:1.00', 'c1 new dist with no ask fills');
+
+-- claim 6
+SELECT _assert_eq((SELECT string_agg(pool_source || ':' || round(drop_weight, 2)::text, ',') FROM pack_drop_pool WHERE dist_id = 'D_OLDLIST'),
+  'atlas:1.00', 'c6 an old list re-confirmed by a reconciled summary fills');
+SELECT _assert_eq((SELECT count(*)::text FROM pack_drop_pool WHERE dist_id = 'D_UNRECON'), '0',
+  'c6 CONTROL: an old list whose carried pass does not reconcile does not fill');
 
 -- claim 2
 SELECT _assert_eq((SELECT count(*)::text FROM pack_drop_pool WHERE dist_id = 'D_UP'), '4', 'c2 nothing deleted');
