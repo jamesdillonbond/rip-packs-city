@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~9:50 PM PT — followed_wallets RLS evaluates auth.uid() once per statement (Claude Code cloud; Trevor: "work autonomously")
+
+- **Migration `20261117054858` `audit_20261116_followed_wallets_rls_initplan`**: the Supabase `auth_rls_initplan` advisory flagged the three policies added this evening (`20261117024128`) — `auth.uid()` per row. Now `(select auth.uid())`, the form every other policy uses; same predicate/roles/commands, read back from `pg_policies`. Security advisors otherwise reviewed: the 6 search-path and 7 anon-SECDEF findings are all documented exemptions (inlined SQL helpers, COMMIT-ing procedures, allowlisted public readers). Revert: the ALTER POLICYs in the file header.
+
 ### 2026-11-16 ~10:45 PM PT — Atlas pool sync: an edition list re-confirmed by a reconciled summary counts as fresh (11 listed Top Shot packs had no EV) (Claude Code cloud; Trevor: "work autonomously")
 
 - ⚠ **Time correction:** this heading's time was assumed, not read; the DB clock puts this entry at **~9:44 PM PT** 11-16.
