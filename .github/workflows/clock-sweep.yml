@@ -56,4 +56,3 @@ jobs:
       - run: npm ci
       - name: Sweep
         run: node scripts/clock-sweep.mjs
-# 2026-11-17: touched so GitHub re-registers this schedule after the 6:22 AM PT tree restore (ledger 11-17).
