@@ -849,7 +849,7 @@ export default function CollectionMomentTable(props: {
                         {(function() {
                           const ask = getBestAsk(row)
                           if (!shouldShowAskBadge(ask, row.fmv)) return null
-                          return <div className="text-[10px] text-[color:var(--rpc-text-muted)] font-mono">Ask {"$" + (ask as number).toFixed(2)}</div>
+                          return <div className="text-[10px] text-[color:var(--rpc-text-muted)] font-mono">Ask {formatCurrency(ask as number)}</div>
                         })()}
                         {row.lastPurchasePrice != null && row.lastPurchasePrice > 0 && (
                           <div className="text-[9px] text-[color:var(--rpc-text-muted)] font-mono">Paid {formatCurrency(row.lastPurchasePrice)}</div>
@@ -867,13 +867,13 @@ export default function CollectionMomentTable(props: {
                           }
                           if (cb) {
                             const label = cb.costBasisLabel
-                            if (label === "Bought" && cb.buyPrice > 0) return <span className="font-mono text-[color:var(--rpc-text-primary)]">${cb.buyPrice.toFixed(2)}{sourcePill}</span>
+                            if (label === "Bought" && cb.buyPrice > 0) return <span className="font-mono text-[color:var(--rpc-text-primary)]">{formatCurrency(cb.buyPrice)}{sourcePill}</span>
                             if (label === "Pack") return <span className="inline-block rounded border border-[color:var(--rpc-border-hover)] bg-[var(--rpc-surface-raised)] px-1.5 py-0.5 font-mono text-[10px] text-[color:var(--rpc-text-muted)]">PACK</span>
-                            if (label === "Loan" && cb.buyPrice > 0) return <span className="font-mono"><span className="text-red-400">Loan Default</span> <span className="text-[color:var(--rpc-text-primary)]">${cb.buyPrice.toFixed(2)}</span>{sourcePill}</span>
+                            if (label === "Loan" && cb.buyPrice > 0) return <span className="font-mono"><span className="text-red-400">Loan Default</span> <span className="text-[color:var(--rpc-text-primary)]">{formatCurrency(cb.buyPrice)}</span>{sourcePill}</span>
                             if (label === "Gift") return <span className="inline-block rounded border border-blue-900 bg-blue-900 px-1.5 py-0.5 font-mono text-[10px] text-blue-300">GIFT</span>
                             if (label === "Reward") return <span className="inline-block rounded border border-purple-900 bg-purple-900 px-1.5 py-0.5 font-mono text-[10px] text-purple-300">REWARD</span>
                             if (label === "Airdrop") return <span className="inline-block rounded border border-green-900 bg-green-900 px-1.5 py-0.5 font-mono text-[10px] text-green-400">AIRDROP</span>
-                            if (cb.buyPrice > 0) return <span className="font-mono text-[color:var(--rpc-text-primary)]">${cb.buyPrice.toFixed(2)}{sourcePill}</span>
+                            if (cb.buyPrice > 0) return <span className="font-mono text-[color:var(--rpc-text-primary)]">{formatCurrency(cb.buyPrice)}{sourcePill}</span>
                           }
                           if (row.lastPurchasePrice != null && row.lastPurchasePrice > 0) return <span className="font-mono text-[color:var(--rpc-text-secondary)]">{formatCurrency(row.lastPurchasePrice)}{sourcePill}</span>
                           return <span className="text-[color:var(--rpc-text-muted)]">—</span>
@@ -900,16 +900,16 @@ export default function CollectionMomentTable(props: {
                       <td className="rpc-table-cell--mono text-sm hidden lg:table-cell">
                         {row.lowAsk != null ? (
                           <span style={{ color: row.fmv && row.lowAsk < row.fmv ? accentText("#22c55e") : accentText("#9ca3af") }}>
-                            ${row.lowAsk.toFixed(2)}
+                            {formatCurrency(row.lowAsk)}
                           </span>
                         ) : row.editionLowAsk != null ? (
                           <span style={{ color: row.fmv && row.editionLowAsk < row.fmv ? accentText("#22c55e") : accentText("#9ca3af") }}>
-                            ${row.editionLowAsk.toFixed(2)}
+                            {formatCurrency(row.editionLowAsk)}
                             <span className="ml-1 text-[10px] text-[color:var(--rpc-text-muted)]">floor</span>
                           </span>
                         ) : row.recentLow30d != null ? (
                           <span className="text-[color:var(--rpc-text-muted)]" title="Lowest sale in the FMV window (30 days, widened to 90 for thin editions; older for a stale one) — not a listing">
-                            ${row.recentLow30d.toFixed(2)}
+                            {formatCurrency(row.recentLow30d)}
                             <span className="ml-1 text-[10px] text-[color:var(--rpc-text-muted)]">recent low</span>
                           </span>
                         ) : (

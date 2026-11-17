@@ -7,6 +7,7 @@ import { classifySerial } from "@/lib/serials/fun-patterns";
 import { trackOutboundClick } from "@/lib/track-click";
 import { accentText } from "@/lib/accent-text";
 import { loanWalletHref } from "@/lib/analytics/wallet-href";
+import { formatCurrency } from "@/lib/format";
 
 // Was HALF migrated: the three UFC tiers read tokens while the six Flow tiers
 // were still literals -- and literals that disagreed with every other surface
@@ -423,7 +424,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
               <div>
                 <div style={{ fontSize: 10, color: "var(--rpc-text-secondary)", letterSpacing: "0.1em" }}>FMV</div>
                 <div style={{ fontSize: 22, fontWeight: 700, color: accentText("#22c55e"), fontFamily: "var(--font-mono)" }}>
-                  ${moment.fmv.toFixed(2)}
+                  {formatCurrency(moment.fmv)}
                 </div>
                 {askBasis && (
                   <div title={askBasis.title} style={{ fontSize: 10, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", marginTop: 2 }}>
@@ -438,7 +439,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
             <div>
               <div style={{ fontSize: 10, color: "var(--rpc-text-secondary)", letterSpacing: "0.1em" }}>LIST PRICE</div>
               <div style={{ fontSize: 16, fontFamily: "var(--font-mono)" }}>
-                ${moment.listingPrice.toFixed(2)}
+                {formatCurrency(moment.listingPrice)}
               </div>
             </div>
           )}
@@ -447,7 +448,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
             <div>
               <div style={{ fontSize: 10, color: "var(--rpc-text-secondary)", letterSpacing: "0.1em" }}>BEST OFFER</div>
               <div style={{ fontSize: 16, fontFamily: "var(--font-mono)" }}>
-                ${moment.bestOffer.toFixed(2)}
+                {formatCurrency(moment.bestOffer)}
               </div>
             </div>
           )}

@@ -21,10 +21,12 @@
 --       PREMIUM serial (#1, the jersey number, the last mint) — a newer low-serial sale (#9) DOES set the cap;
 --   R8. ...and the premium serials themselves (#1, jersey, last mint) do not;
 --   R9. an All Day edition with circulation > 50 keeps the serial > 25 rule;
---   R10. a Top Shot edition with circulation <= 50 keeps the serial > 25 rule (scope is All Day by measurement).
+--   R10. (2026-11-17) a Top Shot edition with circulation <= 50 takes the same premium-serial rule (inverted: it kept
+--        serial > 25, which saw no sale on a /28 edition);
+--   R11. a Top Shot edition over circulation 50 keeps the serial > 25 rule.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261105213600_audit_20261105_allday_stale_cap_skips_premium_serials.sql); __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts.
+-- (supabase/migrations/20261117153744_audit_20261117_topshot_stale_cap_skips_premium_serials.sql); __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
 
@@ -59,12 +61,14 @@ BEGIN
      AND NEW.fmv_usd IS NOT NULL
      AND NEW.edition_id IS NOT NULL
   THEN
-    IF NEW.collection_id = c_allday THEN
+    -- 2026-11-17: Top Shot too (was All Day only) — a /28 Top Shot edition has no serial above 25, so its
+    -- STALE price was never capped (backtest circ <= 50, n 597: within +/-25 26.1 -> 38.5, WAPE 1.28 -> 0.49).
+    IF NEW.collection_id IN (c_allday, c_topshot) THEN
       SELECT e.circulation_count, e.jersey_number INTO v_circ, v_jersey
         FROM public.editions e WHERE e.id = NEW.edition_id;
     END IF;
 
-    IF NEW.collection_id = c_allday AND v_circ IS NOT NULL AND v_circ <= 50 THEN
+    IF v_circ IS NOT NULL AND v_circ <= 50 THEN
       -- 2026-11-05 (#213): on a small All Day edition, skip only the PREMIUM serials
       -- (#1, the jersey number, the last mint) — serial > 25 ignores most of the supply.
       SELECT y.price_usd
@@ -145,7 +149,8 @@ INSERT INTO editions VALUES
   ('00000000-0000-0000-0000-000000000007', 30, 95),
   ('00000000-0000-0000-0000-000000000008', 30, 12),
   ('00000000-0000-0000-0000-000000000009', 100, 7),
-  ('00000000-0000-0000-0000-00000000000a', 30, 3);
+  ('00000000-0000-0000-0000-00000000000a', 30, 3),
+  ('00000000-0000-0000-0000-00000000000b', 100, 3);
 INSERT INTO sales_market VALUES
   ('00000000-0000-0000-0000-000000000007', now() - interval '640 days', 520, 26),
   ('00000000-0000-0000-0000-000000000007', now() - interval '280 days',  69, 9),
@@ -156,12 +161,15 @@ INSERT INTO sales_market VALUES
   ('00000000-0000-0000-0000-000000000009', now() - interval '200 days', 300, 40),
   ('00000000-0000-0000-0000-000000000009', now() - interval '20 days',   69, 9),
   ('00000000-0000-0000-0000-00000000000a', now() - interval '200 days', 300, 40),
-  ('00000000-0000-0000-0000-00000000000a', now() - interval '20 days',   69, 9);
+  ('00000000-0000-0000-0000-00000000000a', now() - interval '20 days',   69, 9),
+  ('00000000-0000-0000-0000-00000000000b', now() - interval '200 days', 300, 40),
+  ('00000000-0000-0000-0000-00000000000b', now() - interval '20 days',   69, 9);
 INSERT INTO fmv_snapshots VALUES
   ('00000000-0000-0000-0000-000000000007', 'dee28451-5d62-409e-a1ad-a83f763ac070', 600, 'STALE', 'thin-sales-guard-v3'),
   ('00000000-0000-0000-0000-000000000008', 'dee28451-5d62-409e-a1ad-a83f763ac070', 900, 'STALE', 'thin-sales-guard-v3'),
   ('00000000-0000-0000-0000-000000000009', 'dee28451-5d62-409e-a1ad-a83f763ac070', 500, 'STALE', 'thin-sales-guard-v3'),
-  ('00000000-0000-0000-0000-00000000000a', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 500, 'STALE', '1.8.3');
+  ('00000000-0000-0000-0000-00000000000a', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 500, 'STALE', '1.8.3'),
+  ('00000000-0000-0000-0000-00000000000b', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 500, 'STALE', '1.8.3');
 
 SELECT _assert_eq((SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots WHERE edition_id = '00000000-0000-0000-0000-000000000007'),
                   '69.00|thin-sales-guard-v3_stalecap', 'R7: a small All Day edition is capped at its newest non-premium sale (#9 at 69), not the old #26 at 520');
@@ -170,7 +178,11 @@ SELECT _assert_eq((SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshot
 SELECT _assert_eq((SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots WHERE edition_id = '00000000-0000-0000-0000-000000000009'),
                   '300.00|thin-sales-guard-v3_stalecap', 'R9: an All Day edition over circulation 50 keeps the serial > 25 rule (#40 at 300, not #9 at 69)');
 SELECT _assert_eq((SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots WHERE edition_id = '00000000-0000-0000-0000-00000000000a'),
-                  '300.00|1.8.3_stalecap', 'R10: a small Top Shot edition keeps the serial > 25 rule (scope is All Day)');
+                  '69.00|1.8.3_stalecap', 'R10: a small Top Shot edition is capped at its newest non-premium sale (#9 at 69), like All Day');
+-- Inverted 2026-11-17: R10 read 300.00 ("keeps the serial > 25 rule"); on a /28 Top Shot edition that rule saw no
+-- sale at all, so the STALE price was never capped. R11 holds the old rule where it still applies (over /50).
+SELECT _assert_eq((SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots WHERE edition_id = '00000000-0000-0000-0000-00000000000b'),
+                  '300.00|1.8.3_stalecap', 'R11: a Top Shot edition over circulation 50 keeps the serial > 25 rule (#40 at 300, not #9 at 69)');
 
 SELECT '✓ fmv_snapshots_cap_stale_to_last_sale invariants pass' AS result;
 

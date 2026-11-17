@@ -8,6 +8,7 @@ import { parseRichText, parseRichBlocks, isExternalHref, isOffSiteHref } from "@
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media";
 import { trackOutboundClick } from "@/lib/track-click";
 import { accentText } from "@/lib/accent-text"
+import { formatCurrency } from "@/lib/format";
 
 interface MomentCard {
   playerName: string; setName?: string; tier?: string; series?: string;
@@ -102,10 +103,10 @@ function MomentCardUI({ card }: { card: MomentCard }) {
           )}
         </div>
         <div style={{ textAlign: "right", flexShrink: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--rpc-text-primary)" }}>${card.price?.toFixed(2)}</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--rpc-text-primary)" }}>{formatCurrency(card.price)}</div>
           {card.fmv && card.discountPct && card.discountPct > 0 ? (
             <div style={{ fontSize: 11, color: "var(--rpc-success-text)", fontWeight: 600, marginTop: 2 }}>{card.discountPct}% below FMV</div>
-          ) : card.fmv ? (<div style={{ fontSize: 11, color: "var(--rpc-text-secondary)", marginTop: 2 }}>FMV ${card.fmv.toFixed(2)}</div>) : null}
+          ) : card.fmv ? (<div style={{ fontSize: 11, color: "var(--rpc-text-secondary)", marginTop: 2 }}>FMV {formatCurrency(card.fmv)}</div>) : null}
         </div>
       </div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 12px 10px", gap: 6 }}>

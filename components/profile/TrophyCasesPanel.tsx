@@ -25,6 +25,7 @@ import { challengeAnchorId, challengeCaseSharePath, challengeFocusFromUrl, chall
 import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
 import ChallengeCountdown from "@/components/profile/ChallengeCountdown";
 import { pinsToken } from "@/lib/og/card-url";
+import { formatCurrency } from "@/lib/format";
 
 const condensedFont = "var(--font-display)";
 // A visitor taking the wheel ends the deep-link re-alignment.
@@ -86,7 +87,7 @@ export type FillPick = { slot: number; player_name: string | null; set_name: str
 /** The confirm text for "Fill my case". Pure, so every outcome is pinned. */
 export function fillConfirmCopy(title: string, picks: FillPick[], short: number): string {
   const lines = picks.map((p) => {
-    const price = typeof p.fmv === "number" ? ` · $${p.fmv.toFixed(2)}` : "";
+    const price = typeof p.fmv === "number" ? ` · ${formatCurrency(p.fmv)}` : "";
     const serial = typeof p.serial_number === "number" ? ` #${p.serial_number}` : "";
     return `Slot ${p.slot}: ${p.set_name ?? p.player_name ?? "Moment"}${serial}${price}`;
   });

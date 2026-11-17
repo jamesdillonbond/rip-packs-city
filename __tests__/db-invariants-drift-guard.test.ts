@@ -2463,7 +2463,8 @@ const PINS = [
     fn: "fmv_snapshots_cap_stale_to_last_sale",
     test: "supabase/tests/fmv_snapshots_cap_stale_to_last_sale.sql",
     // 2026-11-05 (#213): All Day circulation <= 50 caps at the last NON-PREMIUM sale (not #1 / jersey / last mint).
-    migration: "supabase/migrations/20261105213600_audit_20261105_allday_stale_cap_skips_premium_serials.sql",
+    // Re-pinned 2026-11-17: Top Shot circulation <= 50 takes the same rule.
+    migration: "supabase/migrations/20261117153744_audit_20261117_topshot_stale_cap_skips_premium_serials.sql",
   },
   {
     // 2026-10-26 (#202, panini-1.4.1): a Panini LOW price is capped at the edition's lowest live ask.
