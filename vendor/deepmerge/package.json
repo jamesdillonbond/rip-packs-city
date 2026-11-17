@@ -1,9 +1,0 @@
-{
-  "name": "deepmerge",
-  "version": "4.3.1-rpc.1",
-  "description": "RPC-vendored deepmerge 4.3.1 with the GHSA-gcqx-w48m-w2h4 prototype-poisoning fix. See index.js header.",
-  "main": "index.js",
-  "types": "index.d.ts",
-  "license": "MIT",
-  "private": true
-}
