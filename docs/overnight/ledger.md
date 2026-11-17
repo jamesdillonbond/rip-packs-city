@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~9:40 PM PT — Signed in, looking at a friend no longer makes them "this device's profile"; save-follow layout QA script (Claude Code cloud; Trevor: "Keep working through anything left unresolved")
+
+- `lib/owner-key.ts` `deviceOwnerKeyAfterSearch`: a binder search writes the ACCOUNT's Flow wallet into the device key for a signed-in collector (signed out unchanged; Candy's Solana slot unchanged); a search landing before the session answers is parked; any binder visit sets a drifted key back. The "This device's wallet" chip is hidden for every signed-in viewer. Why: `/sets` read the key before the saved wallet and edition grids counted owned moments from it, so viewing @sdb made sdb's progress "yours". Tests: 3 new (planted defect fails all 3); component suites 156/156, walkers 241/241, lint ratchet 150/150, component coverage 90.94 %.
+- `scripts/qa/save-follow-layout.mjs` (signed-in render with no account, writes aborted) — 390/767/1280 all pass. Docs: features/wallet-and-portfolio.md, scripts/qa/README.md, sessions/2026-11.md. Revert: `git revert` the code commit (no DB part).
+
 ### 2026-11-16 ~9:25 PM PT — Cold-tail FMV drain: a red run says why in its `error` column (Claude Code cloud; Trevor: "work autonomously")
 
 - `/api/admin/drain-fmv-cold-tail` terminal `pipeline_runs` row now sets `error` to the failing slugs' messages when `ok=false` (the 5:17 PM PT 11-16 row read ok=false / error NULL; its cause, `nba_top_shot read exceeded 42782ms`, was only in `extra.results`). Test pins both arms (planted defect verified). Code only. Revert: `git revert` the code commit.

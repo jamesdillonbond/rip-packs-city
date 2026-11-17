@@ -263,3 +263,13 @@ The opening (`app/giveaways/[slug]/PackRevealClient.tsx`) only renders for an ac
 Traps met: the sealed pack floats, so `locator.click()` waits forever on "element is not stable" — click with `{ force: true }`. Run it **four ways**, because the first pass shipped a defect two of them would have caught: dark, `data-theme="light"` on `<html>`, `reducedMotion: "reduce"`, and with `assets.nbatopshot.com` blocked (art that fails to load). Capture frames **during** the flip, not only after it: a mirrored face mid-flip is invisible in a settled screenshot.
 
 ⛔ **A promo or sample opening must never show a REAL pack of a LIVE drop** (Trevor, 2026-11-10: "we shouldn't do that again"). The Dame Time promo video filmed pack #2 with its real contents — the Run It Back: Origins chase — while pack #2 was unclaimed, so the post told everyone which pack held the chase. The draw is random, so nothing could be gamed, but it reveals what a sealed pack holds. Film a made-up pack number and a mix of pool pieces that is not any one sealed pack (or a closed drop), and never label a sample with a real pack number.
+
+## Rendering a signed-in control without an account (2026-11-16)
+
+`save-follow-layout.mjs` is the pattern: Playwright **answers** the identity reads inside the browser — `/api/profile/me` → `{ user: { id } }`, `/api/profile/saved-wallets` GET → `{ wallets: [] }`, the probe the control asks — and **aborts every write** (`r.request().method() !== "GET"`, plus a catch-all `**/api/profile/**` registered LAST so it runs first and `fallback()`s GETs to the specific answers). The signed-in branch renders against live prod data and nothing reaches RPC. Use it for layout of signed-in-only UI; it proves nothing about the server side.
+
+Three things the 11-16 save-confirm fix taught about layout fixes:
+
+- **Fix the container that HOLDS the items.** The first `flex-wrap` went on the binder's outer search row; the buttons live in an inner `flex gap-2` row, so nothing changed. Read the live parent in the DOM (`el.parentElement.className`) before choosing where the class goes.
+- **A `max-width` clamps a `flex-basis: 100%`.** A card with basis 100 % and max-width 420 px still fits on a line beside 300 px of buttons, so it never wraps — and the row's `align-items: stretch` then stretches its neighbours to the card's height. Give the 100 % basis to an OUTER element and put the width cap on an inner one.
+- **A backgrounded tab in Trevor's Chrome stops painting** (screenshots time out, React never mounts the late controls). For a post-deploy layout check, grep the served chunk for the class string next to a nearby label instead — that is what proved the wrap shipped.
