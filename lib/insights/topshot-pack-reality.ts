@@ -13,7 +13,8 @@
 //   topshot_pack_reality_dist               — pull-value histogram (6 buckets)
 //   topshot_pack_reality_top_ev             — top +EV TS packs with a high-variance flag
 //   v_topshot_pack_realized_ev              — per-dist modeled-vs-realized EV (n_opens >= 10)
-//   v_topshot_pack_reality_ranker_staleness — why an empty ranker is empty (#118)
+//   mv_topshot_pack_reality_ranker_staleness — why an empty ranker is empty (#118); a 2-hourly
+//     snapshot of v_topshot_pack_reality_ranker_staleness (the live view runs 11–18 s, 2026-11-17)
 //
 // PARTIAL FAILURE IS NOT AN OUTAGE. Each of the four named legs degrades
 // independently and is NAMED in `errors`; `totalOutage` is true only when all
@@ -142,7 +143,10 @@ export async function readTopshotPackReality(
   // keeps "not needed" apart from "failed", which both leave the object null.
   const rankerNeedsExplaining = topEvRes.error == null && (topEvRes.data ?? []).length === 0
   const rankerStaleRes = rankerNeedsExplaining
-    ? await boundedRead(supabase.from("v_topshot_pack_reality_ranker_staleness").select("*").limit(1), "api/public/insights/pack-reality/v_topshot_pack_reality_ranker_staleness")
+    // 2026-11-17: the SNAPSHOT of the view (mv_…, refreshed :38 every 2 h, 4 min after the ranker).
+    // The live view took 11–18 s against this 8 s bound and failed on every visit (failures are
+    // no-store, so nothing cached it) — the explanation below could never render.
+    ? await boundedRead(supabase.from("mv_topshot_pack_reality_ranker_staleness").select("*").limit(1), "api/public/insights/pack-reality/mv_topshot_pack_reality_ranker_staleness")
     : null
 
   // PARTIAL FAILURE IS NOT A 500. Until 2026-08-02 the first three legs were
@@ -253,7 +257,7 @@ export async function readTopshotPackReality(
     candidates_adjudicated?: number | null
   } | null
   if (rankerStaleRes?.error) {
-    console.error("[public/insights/pack-reality] v_topshot_pack_reality_ranker_staleness", rankerStaleRes.error)
+    console.error("[public/insights/pack-reality] mv_topshot_pack_reality_ranker_staleness", rankerStaleRes.error)
   }
   // 2026-09-20 (#118): `stale_count` is now ADJUDICATED, not assumed — the view
   // recomputes each candidate's EV live and requires the pack to be listed right

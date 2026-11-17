@@ -51,7 +51,7 @@ describe("GET /api/public/insights/pack-reality", () => {
   // had moved +7.73 -> -1.68 since August, so the board overstated by one in the
   // direction that flatters a buy.
   it("carries the adjudicated count AND whether the verdict was complete", async () => {
-    tables.v_topshot_pack_reality_ranker_staleness = {
+    tables.mv_topshot_pack_reality_ranker_staleness = {
       data: [{
         qualifying_ignoring_freshness: 2,
         newest_qualifying_snapshot: "2026-08-28T10:07:13.756Z",
@@ -73,7 +73,7 @@ describe("GET /api/public/insights/pack-reality", () => {
     // considered > adjudicated: the live re-check stopped at the cap, so the count
     // is a LOWER BOUND. A caller with no way to tell this from a complete verdict
     // would publish a floor as a total.
-    tables.v_topshot_pack_reality_ranker_staleness = {
+    tables.mv_topshot_pack_reality_ranker_staleness = {
       data: [{
         qualifying_ignoring_freshness: 60,
         newest_qualifying_snapshot: "2026-09-20T00:00:00.000Z",
@@ -92,7 +92,7 @@ describe("GET /api/public/insights/pack-reality", () => {
   // must be NULL — "unknown" — never `true`. A missing field defaulting to the
   // reassuring value is this panel's entire defect class.
   it("a pre-migration view shape yields verdict_complete null, never true", async () => {
-    tables.v_topshot_pack_reality_ranker_staleness = {
+    tables.mv_topshot_pack_reality_ranker_staleness = {
       data: [{ qualifying_ignoring_freshness: 3, newest_qualifying_snapshot: "2026-08-28T10:07:13.756Z" }],
       error: null,
     }
@@ -112,7 +112,7 @@ describe("GET /api/public/insights/pack-reality", () => {
   it("does NOT read the staleness view when the ranker has rows", async () => {
     tables.topshot_pack_reality_top_ev = { data: [{ pack_listing_id: "p1", pack_ev: 3 }], error: null }
     const body = await (await GET(req(base))).json()
-    expect(queried).not.toContain("v_topshot_pack_reality_ranker_staleness")
+    expect(queried).not.toContain("mv_topshot_pack_reality_ranker_staleness")
     expect(body.meta.ranker_staleness).toBeNull()
     expect(body.meta.ranker_staleness_status).toBe("not_needed")
   })
@@ -120,23 +120,23 @@ describe("GET /api/public/insights/pack-reality", () => {
   it("does NOT read it when the ranker itself failed (nothing to explain)", async () => {
     tables.topshot_pack_reality_top_ev = { data: null, error: { message: "top_ev down" } }
     const body = await (await GET(req(base))).json()
-    expect(queried).not.toContain("v_topshot_pack_reality_ranker_staleness")
+    expect(queried).not.toContain("mv_topshot_pack_reality_ranker_staleness")
     expect(body.meta.ranker_staleness_status).toBe("not_needed")
   })
 
   it("reads it when the ranker loaded EMPTY, and says so", async () => {
-    tables.v_topshot_pack_reality_ranker_staleness = {
+    tables.mv_topshot_pack_reality_ranker_staleness = {
       data: [{ qualifying_ignoring_freshness: 2, newest_qualifying_snapshot: "2026-10-10T00:00:00Z", candidates_considered: 3, candidates_adjudicated: 3 }],
       error: null,
     }
     const body = await (await GET(req(base))).json()
-    expect(queried).toContain("v_topshot_pack_reality_ranker_staleness")
+    expect(queried).toContain("mv_topshot_pack_reality_ranker_staleness")
     expect(body.meta.ranker_staleness.stale_count).toBe(2)
     expect(body.meta.ranker_staleness_status).toBe("read")
   })
 
   it("a failed staleness read leaves ranker_staleness null rather than a 0 count", async () => {
-    tables.v_topshot_pack_reality_ranker_staleness = { data: null, error: { message: "boom" } }
+    tables.mv_topshot_pack_reality_ranker_staleness = { data: null, error: { message: "boom" } }
     const res = await GET(req(base))
     expect(res.status).toBe(200)
     const body = await res.json()
