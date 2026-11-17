@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~5:10 PM PT — /trades/compare Quick Trade finds two-for-one swaps; live end-to-end check of a planned room (Claude Code cloud; Trevor: "Keep going")
+- CODE: `quickTrade` now also tries two-for-one in either direction (two DIFFERENT editions for one), still HIGH/MEDIUM-priced only and within $1 or 10 %; the most valuable wins, ties to fewer Moments, then closest. `quick_trade.a` / `.b` are arrays (route, page and tests moved together). Why: one-for-one found nothing in every live compare on 11-16. Spec: trading.md §4.
+- Tests: +3 lib, +1 component; planted defects (one edition counted twice in a pair; the closeness check removed) each red the lib tests.
+- Live check (no code change): in Trevor's Chrome, Compare (Jamesdillonbond vs Samwise222) → LeBron #6/17 → "Start a trade room" opened room 9u4m2khvhl showing "Planned on Compare with @Samwise222" and "Connect your Flow Wallet below…" (side not yet proven); the test room was then CANCELLED (no partner had joined, so no email).
+- Revert: `git revert` this commit (no DB change).
+
 ### 2026-11-16 ~5:00 PM PT — Weekly Top Shot missing-fill offers walk retries a failed call instead of ending the run (Claude Code, laptop; Trevor: "Keep going")
 - Today's scheduled run (3:25 PM PT) stopped at call 33 of 200 on one upstream `fetch failed`, so blocks 136,690,658 onward were not walked this week (48 offers recovered before it stopped). `.github/workflows/topshot-offers-history-backfill.yml` now re-sends a failed call up to 3 times (30 s, 60 s apart). Safe because the route throws before its cursor write and is insert-only; a persistent failure still ends the run red. Simulated under `bash -e` with a fake curl/jq: fail → timeout → ok recovers (exit 0); 3 failures exit 1.
 - Revert: `git revert` the commit "ci: weekly Top Shot missing-fill walk retries a failed call".
