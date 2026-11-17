@@ -168,6 +168,17 @@ describe("shouldShowAskBadge", () => {
   })
 })
 
+describe("fmtSignedUsd — a P&L in dollars, sign after rounding, thousands separators", () => {
+  it("carries a $ and commas, and never reads -$0.00", async () => {
+    const { fmtSignedUsd } = await import("@/lib/collection-moment-cells")
+    expect(fmtSignedUsd(0)).toBe("$0.00")
+    expect(fmtSignedUsd(-0.004)).toBe("$0.00")
+    expect(fmtSignedUsd(1234.5)).toBe("+$1,234.50")
+    expect(fmtSignedUsd(-12)).toBe("-$12.00")
+    expect(fmtSignedUsd(-2100)).not.toBe("-2100.00")
+  })
+})
+
 describe("fmtSignedFixed — the sign is chosen after rounding", () => {
   it("never renders -0 / -0.00 for a value that rounds to zero", async () => {
     const { fmtSignedFixed } = await import("@/lib/collection-moment-cells")

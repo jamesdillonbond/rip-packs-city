@@ -322,14 +322,14 @@ describe("CollectionMomentTable — cost basis / P&L / ask cells", () => {
   it("shows a positive P&L for a moment worth more than its basis", () => {
     // basis 20, fmv 42 -> +22.00 / +110%
     const { container } = desk({ costBasisLabel: "Bought", costBasis: 20, fmv: 42 })
-    expect(container.textContent).toContain("+22.00")
+    expect(container.textContent).toContain("+$22.00")
     expect(container.textContent).toContain("110%")
   })
 
   it("shows a negative P&L for a moment worth less than its basis", () => {
     // basis 42, fmv 20 -> -22.00 / -52%
     const { container } = desk({ costBasisLabel: "Bought", costBasis: 42, fmv: 20 })
-    expect(container.textContent).toContain("-22.00")
+    expect(container.textContent).toContain("-$22.00")
     expect(container.textContent).toContain("-52%")
   })
 

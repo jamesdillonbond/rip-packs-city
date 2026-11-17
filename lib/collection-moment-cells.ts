@@ -82,6 +82,18 @@ export function fmtSignedFixed(v: number, digits: number): string {
   return (r > 0 ? "+" : "") + r.toFixed(digits)
 }
 
+/**
+ * A signed dollar amount for a P&L cell (2026-11-17, Trevor's binder screenshot read "0.00 (0%)"): the same
+ * sign-after-rounding rule as fmtSignedFixed, with a "$" and thousands separators like every other money cell —
+ * "+$1,234.56", "-$12.00", "$0.00" (never "-$0.00").
+ */
+export function fmtSignedUsd(v: number): string {
+  const r = Number(v.toFixed(2))
+  const abs = Math.abs(r).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  if (r === 0) return "$" + abs
+  return (r > 0 ? "+$" : "-$") + abs
+}
+
 export function pnlColorClass(positive: boolean): string {
   return positive ? "text-emerald-400" : "text-red-400"
 }

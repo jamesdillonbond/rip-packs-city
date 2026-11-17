@@ -100,8 +100,8 @@ describe("the two layouts agree on the P&L basis", () => {
     const { desktopText, mobileText } = bothLayouts(
       row({ costBasis: 50, costBasisLabel: null, fmv: 200 })
     )
-    expect(mobileText).not.toMatch(/\+150\.00|\+300%/)
-    expect(desktopText).not.toMatch(/\+150\.00|\+300%/)
+    expect(mobileText).not.toMatch(/\+\$150\.00|\+300%/)
+    expect(desktopText).not.toMatch(/\+\$150\.00|\+300%/)
   })
 
   it("falls back to lastPurchasePrice identically on both", () => {
@@ -110,16 +110,16 @@ describe("the two layouts agree on the P&L basis", () => {
     const { desktopText, mobileText } = bothLayouts(
       row({ costBasis: 50, costBasisLabel: null, lastPurchasePrice: 100, fmv: 200 })
     )
-    expect(mobileText).toMatch(/\+100\.00/)
-    expect(desktopText).toMatch(/\+100\.00/)
+    expect(mobileText).toMatch(/\+\$100\.00/)
+    expect(desktopText).toMatch(/\+\$100\.00/)
   })
 
   it('reports the same P&L for a "Bought" moment on both', () => {
     const { desktopText, mobileText } = bothLayouts(
       row({ costBasis: 100, costBasisLabel: "Bought", fmv: 250 })
     )
-    expect(mobileText).toMatch(/\+150\.00/)
-    expect(desktopText).toMatch(/\+150\.00/)
+    expect(mobileText).toMatch(/\+\$150\.00/)
+    expect(desktopText).toMatch(/\+\$150\.00/)
   })
 
   it('reports the same P&L for a "Loan" default on both', () => {
@@ -129,8 +129,8 @@ describe("the two layouts agree on the P&L basis", () => {
     const { desktopText, mobileText } = bothLayouts(
       row({ costBasis: 80, costBasisLabel: "Loan", fmv: 40 })
     )
-    expect(mobileText).toMatch(/-40\.00/)
-    expect(desktopText).toMatch(/-40\.00/)
+    expect(mobileText).toMatch(/-\$40\.00/)
+    expect(desktopText).toMatch(/-\$40\.00/)
     expect(mobileText).toContain("Loan Default")
   })
 })
@@ -155,7 +155,7 @@ describe("acquisition chips suppress P&L rather than inventing a gain", () => {
       )
       const t = container.textContent ?? ""
       expect(t).toContain(chip)
-      expect(t).not.toMatch(/\+200\.00|\+\d+%|Infinity|NaN/)
+      expect(t).not.toMatch(/\+\$200\.00|\+\d+%|Infinity|NaN/)
     })
   }
 
@@ -169,7 +169,7 @@ describe("acquisition chips suppress P&L rather than inventing a gain", () => {
         })}
       />
     )
-    expect(container.textContent).not.toMatch(/-100\.00|\+0\.00/)
+    expect(container.textContent).not.toMatch(/-\$100\.00|[+-]\$0\.00/)
   })
 
   it("never emits NaN or Infinity from a zero basis", () => {
