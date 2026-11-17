@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~8:05 PM PT — Save-vs-follow follow-through: usage events, concierge knows Follow, share-card copy, docs (Claude Code cloud; Trevor: "Keep going")
+
+- Usage events `own-wallet-confirm` {step shown|yes|cancel, surface} and `wallet-follow` {on, surface}; concierge prompt: never tell a collector to save a friend's wallet, Follow it; share card's signed-out copy says Follow needs a free account (anon still sees no buttons there — that island's contract is pinned). Docs: features/wallet-and-portfolio.md 11-16 section, brand-auth-proxy.md carve-out note. Revert: `git revert` the code commit.
+
 ### 2026-11-16 ~9:15 PM PT — New moments get their real acquisition (sale / pack) at first sight, not a first-seen placeholder (Claude Code cloud; Trevor: "Do it all")
 - **DB (applied):** migration `audit_20261116_fill_acquisitions_for_arriving_moments` → `fill_acquisitions_for_moments(wallet, collection, nft_ids[])` (≤500 ids; service_role only): the three fact-only arms of `backfill_acq_own_history_20261114` (A sale TO the wallet → marketplace/offer at sale price+time; B lone `unknown` → same; C pack this wallet opened → pack_pull $0), scoped to the ids passed, source `arrival_fill`, archived in `flowty_archive.acq_own_history_backfill_20261114` (arms `*_arrival`).
 - **Data:** run once on 0xbd94: Clayton #34 → offer_accepted $13.00 @ 6:13 PM PT, Bühner #46 → offer_accepted $7.00 @ 6:59 PM PT (both were `unknown` placeholders; B arm).
