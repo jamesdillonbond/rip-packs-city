@@ -2440,7 +2440,8 @@ const PINS = [
     // Re-pinned 2026-11-04 evening: a Top Shot ask with a 180-day sale is capped at the LAST sale (_salescap).
     fn: "fmv_snapshots_cap_allday_ask_only_to_recent_sales",
     test: "supabase/tests/fmv_snapshots_cap_allday_ask_only_to_recent_sales.sql",
-    migration: "supabase/migrations/20261105024000_audit_20261104_topshot_ask_only_last_sale_cap.sql",
+    // Re-pinned 2026-11-16: Top Shot old-sale arm = last sale of any age (#260; applied 2026-11-17).
+    migration: "supabase/migrations/20261117144056_audit_20261116_topshot_ask_only_old_sale_cap.sql",
   },
   {
     // 2026-11-04 evening: a Top Shot FMV is floored at the best OPEN edition-level offer (<= 3x), _bidfloor.

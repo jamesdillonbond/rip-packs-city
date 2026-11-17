@@ -1,6 +1,6 @@
 # Handoff 2026-11-16 — Top Shot ask-only: cap at the last sale of ANY age (known-issues #260)
 
-**Status:** written, measured, pin-tested locally — **NOT applied.** The cloud session's auto-mode classifier refused `apply_migration` (it re-prices ~170 live rows). Needs Trevor's go, then a session that can apply it.
+**Status:** ✅ **APPLIED 2026-11-17 ~6:41 AM PT** (`20261117144056`, Trevor: "Approve and proceed"; 151 rows, verified — see known-issues #260). ~~written, measured, pin-tested locally — NOT applied.~~ The cloud session's auto-mode classifier refused `apply_migration` (it re-prices ~170 live rows). Needs Trevor's go, then a session that can apply it.
 
 ## The defect
 
