@@ -558,7 +558,34 @@ export async function GET(req: NextRequest) {
         if (row.nft_id) existingAcqIds.add(String(row.nft_id))
       }
     }
-    const acqNewIds = acqReadFailed ? [] : newIds.filter(function(id) { return !existingAcqIds.has(id) })
+    const acqCandidateIds = acqReadFailed ? [] : newIds.filter(function(id) { return !existingAcqIds.has(id) })
+
+    // 2026-11-16: PROVE the arrival before writing a placeholder. fill_acquisitions_for_moments
+    // writes a real row for each id it can prove from our own tables — a sale TO this wallet
+    // (price + sale time) or a pack this wallet opened — and returns those ids. Only the rest
+    // get the 'unknown' first-seen row below. Before this, a moment bought minutes ago showed a
+    // blank Paid and a first-seen date until the 2-hourly saved-wallet fill (jobid 886) caught
+    // up — and unsaved wallets never did. A failed call is logged and the placeholders are
+    // written as before ('unknown' is an honest "not proven yet").
+    const provenIds = new Set<string>()
+    let arrivalFillError: string | null = null
+    for (let i = 0; i < acqCandidateIds.length; i += 500) {
+      const chunk = acqCandidateIds.slice(i, i + 500)
+      const { data: fillData, error: fillErr } = await supabase.rpc("fill_acquisitions_for_moments", {
+        p_wallet: wallet,
+        p_collection_id: collectionId,
+        p_nft_ids: chunk,
+      })
+      if (fillErr) {
+        arrivalFillError = fillErr.message
+        console.log("[cache-refresh] arrival fill failed, writing placeholders: " + fillErr.message)
+        break
+      }
+      for (const id of ((fillData as { filled_ids?: unknown } | null)?.filled_ids as string[] | undefined) ?? []) {
+        provenIds.add(String(id))
+      }
+    }
+    const acqNewIds = acqCandidateIds.filter(function(id) { return !provenIds.has(id) })
 
     for (let i = 0; i < acqNewIds.length; i += 200) {
       const chunk = acqNewIds.slice(i, i + 200)
@@ -905,6 +932,8 @@ export async function GET(req: NextRequest) {
       total_on_chain: onChainIds.length,
       total_cached: cachedIds.size + stubsInserted,
       new_stubs_inserted: stubsInserted,
+      acquisitions_proven: provenIds.size,
+      acquisitions_proven_error: arrivalFillError,
       enriched,
       removed_count: removedCount,
       last_seen_touched: lastSeenTouched,

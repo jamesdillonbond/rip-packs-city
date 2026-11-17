@@ -350,3 +350,50 @@ describe("GET /api/cache-refresh — refreshLocked=1 with a FAILED stale count",
     expect(body.locked_backfill.total).toBe(0)
   })
 })
+
+// ── 2026-11-16: a new moment's arrival is PROVEN before a placeholder is written ─
+// fill_acquisitions_for_moments writes the real row (sale TO this wallet / a pack it
+// opened) and returns the ids it wrote; only the unproven ones get the 'unknown'
+// first-seen row. A failed fill must not lose the placeholder.
+describe("cache-refresh — arrival fill runs before the 'unknown' placeholder", () => {
+  function setup(rpc: { data: unknown; error: unknown }) {
+    state.ownedIds = ["101", "102", "103"]
+    for (const id of ["102", "103"]) {
+      state.metadataById[id] = { player: "Damian Lillard", team: "Portland Trail Blazers", setName: "Base Set", series: "5", serial: "12", mint: "15000", playID: "45", setID: "3", tier: "Common" }
+    }
+    return install({
+      wallet_moments_cache: [
+        { data: [], error: null },
+        { data: [{ moment_id: "101" }], error: null },
+        { count: 1, error: null } as never,
+        { data: null, error: null },
+        { data: null, error: null },
+        { data: null, error: null },
+      ],
+      moment_acquisitions: { data: [], error: null },
+      editions: { data: [], error: null },
+      "rpc:fill_acquisitions_for_moments": rpc as never,
+    } as never)
+  }
+
+  it("writes a placeholder only for the moment the fill could NOT prove", async () => {
+    const spy = setup({ data: { a_buys: 1, b_unknown_to_buy: 0, c_pulls: 0, filled_ids: ["102"] }, error: null })
+    const res = await GET(req(`?wallet=${WALLET}`))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.acquisitions_proven).toBe(1)
+    expect(body.acquisitions_proven_error).toBeNull()
+    const placeholders = (spy.writes.moment_acquisitions ?? []).filter((w) => w.method === "insert").flatMap((w) => w.rows)
+    expect(placeholders.map((r) => r.nft_id)).toEqual(["103"])
+  })
+
+  it("a FAILED fill still writes every placeholder and reports the error", async () => {
+    const spy = setup({ data: null, error: { message: "statement timeout" } })
+    const res = await GET(req(`?wallet=${WALLET}`))
+    const body = await res.json()
+    expect(body.acquisitions_proven).toBe(0)
+    expect(body.acquisitions_proven_error).toContain("statement timeout")
+    const placeholders = (spy.writes.moment_acquisitions ?? []).filter((w) => w.method === "insert").flatMap((w) => w.rows)
+    expect(placeholders.map((r) => r.nft_id).sort()).toEqual(["102", "103"])
+  })
+})
