@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-17 ~1:44 PM PT — Catch-up sweep of the 11-13 → 11-17 handoffs; GitHub-only lanes dispatched by hand again (Claude Code, laptop; Trevor: "make sure we're all caught up and recent handoffs are fully processed")
+
+- **Read clean:** every "staged, needs apply" filing 11-13 → 11-17 is applied (arrival transfers `20261117044500`, #248 fix, activity gap, sets_summary_prev dropped, Candy aliases/residual, R153, hybrid-custody 90 s); the 11-16 10:12 PM PostgREST burst is in known-issues (#249). `detect_stalled_pipelines()` `[]`, trust 0 not-ok. Laptop runners on cadence (panini-ingest live at 1:43 PM; listings every 3 h; team walk daily ~3:30 AM).
+- **Still open (P1):** 0 schedule-triggered GitHub runs since 12:59 AM PT. `92e051756` (1:25 PM PT, another session; no ledger entry of its own) is the seventh re-registration attempt — all 30 crons rewritten `m` → `m-m`, pushed with the owner's credential. Next step if still dark by ~4 PM PT: GitHub Support (per handoff addendum 3).
+- **Done:** dispatched by hand at 1:42 PM PT (last cover was 9:43 AM): `topshot-sales-history-backfill` and `pinnacle-owner-discovery` (both dark since ~6 PM 11-16 PT, never dispatched today), plus ufc-aptos-sales-ingest, dead-lane-backstop, site-availability-alarm, pipeline-sentinel, sales-indexers-backstop, migration-autorecover, scheduler-liveness, ops-monitor, offer-fill-backfill, rpc-pipeline.
+- Revert: n/a (manual dispatches; docs).
+
 ### 2026-11-17 ~12:55 PM PT — Docs: the small-edition FMV caps written up (Claude Code cloud; Trevor: "work through anything still unresolved … update any relevant documentation")
 
 - known-issues #260 and #213 carry the 11-17 follow-ups (index regenerated: 2 lines changed, 0 rows lost); `docs/reference/database.md` gains the per-edition "ordinary sale" rule and the suffix-reader contract; `docs/strategy/features/fmv-pricing.md` shipped line; `docs/sessions/2026-11.md` entry with four lessons. Project doc `claude/fmv-engine-open-items-2026-11-12.md` updated (11-17 section, new falsifier row, 11-23 split note).
