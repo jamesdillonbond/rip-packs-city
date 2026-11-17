@@ -77,10 +77,21 @@ export interface CompareEdition {
   blocked: { locked: number; listed: number; gone: number }
 }
 
+export interface QuickItem {
+  edition_key: string
+  moment_id: string
+  serial_number: number | null
+  player_name: string | null
+  set_name: string | null
+  fmv_usd: number
+}
+
 export interface QuickTrade {
-  a: { edition_key: string; moment_id: string; serial_number: number | null; player_name: string | null; set_name: string | null; fmv_usd: number }
-  b: { edition_key: string; moment_id: string; serial_number: number | null; player_name: string | null; set_name: string | null; fmv_usd: number }
-  /** a.fmv − b.fmv, to the cent. */
+  /** What the first collector gives: one Moment, or two (a two-for-one). */
+  a: QuickItem[]
+  /** What the second collector gives. */
+  b: QuickItem[]
+  /** Σa − Σb, to the cent. */
   difference_usd: number
 }
 
@@ -161,8 +172,11 @@ export function closeEnough(a: number, b: number): boolean {
 }
 
 /**
- * The Quick Trade: one Moment each way, both CONFIDENTLY priced, close in value — and among
- * those the most valuable pair (by the smaller side), ties to the closest. Null when no pair
+ * The Quick Trade: Moments each way, every one CONFIDENTLY priced, the two sides close in value —
+ * one-for-one, or two-for-one in either direction (2026-11-16: one-for-one alone found nothing in
+ * every live compare that day). Among qualifying trades the most valuable wins (by the smaller
+ * side's total), ties to the one with fewer Moments, then to the closest. Two Moments on one side
+ * are always two DIFFERENT editions (one copy per edition is offered). Null when nothing
  * qualifies; the page then says so rather than inventing one.
  */
 export function quickTrade(
@@ -171,41 +185,77 @@ export function quickTrade(
   aConfident: ReadonlySet<string>,
   bConfident: ReadonlySet<string>,
 ): QuickTrade | null {
-  const pa = a.filter((e) => aConfident.has(e.edition_key) && e.fmv_usd != null && e.fmv_usd > 0 && e.tradeable.length > 0)
-  const pb = b.filter((e) => bConfident.has(e.edition_key) && e.fmv_usd != null && e.fmv_usd > 0 && e.tradeable.length > 0)
-  if (!pa.length || !pb.length) return null
-  // two-pointer over FMV-sorted lists: O(n log n), fine for the 800-row cap
-  const sa = [...pa].sort((x, y) => (x.fmv_usd as number) - (y.fmv_usd as number))
-  const sb = [...pb].sort((x, y) => (x.fmv_usd as number) - (y.fmv_usd as number))
-  let best: { ea: CompareEdition; eb: CompareEdition; floor: number; diff: number } | null = null
-  for (const ea of sa) {
-    const va = ea.fmv_usd as number
-    // binary search the nearest b at or above va, and look one either side
+  const priced = (eds: readonly CompareEdition[], ok: ReadonlySet<string>) =>
+    eds
+      .filter((e) => ok.has(e.edition_key) && e.fmv_usd != null && e.fmv_usd > 0 && e.tradeable.length > 0)
+      .sort((x, y) => (x.fmv_usd as number) - (y.fmv_usd as number))
+  const sa = priced(a, aConfident)
+  const sb = priced(b, bConfident)
+  if (!sa.length || !sb.length) return null
+
+  type Pick = { ga: CompareEdition[]; gb: CompareEdition[]; floor: number; diff: number; n: number }
+  let best: Pick | null = null
+  const consider = (ga: CompareEdition[], gb: CompareEdition[]) => {
+    const va = ga.reduce((t, e) => t + (e.fmv_usd as number), 0)
+    const vb = gb.reduce((t, e) => t + (e.fmv_usd as number), 0)
+    if (!closeEnough(va, vb)) return
+    const cand: Pick = { ga, gb, floor: Math.min(va, vb), diff: Math.abs(va - vb), n: ga.length + gb.length }
+    if (
+      !best ||
+      cand.floor > best.floor + 1e-9 ||
+      (Math.abs(cand.floor - best.floor) <= 1e-9 && (cand.n < best.n || (cand.n === best.n && cand.diff < best.diff)))
+    ) {
+      best = cand
+    }
+  }
+
+  // one-for-one: binary-search the nearest value on the other side
+  const nearest = (sorted: CompareEdition[], v: number): number => {
     let lo = 0
-    let hi = sb.length
+    let hi = sorted.length
     while (lo < hi) {
       const mid = (lo + hi) >> 1
-      if ((sb[mid].fmv_usd as number) < va) lo = mid + 1
+      if ((sorted[mid].fmv_usd as number) < v) lo = mid + 1
       else hi = mid
     }
-    for (const j of [lo - 1, lo]) {
-      const eb = sb[j]
-      if (!eb) continue
-      const vb = eb.fmv_usd as number
-      if (!closeEnough(va, vb)) continue
-      const floor = Math.min(va, vb)
-      const diff = Math.abs(va - vb)
-      if (!best || floor > best.floor || (floor === best.floor && diff < best.diff)) best = { ea, eb, floor, diff }
+    return lo
+  }
+  for (const ea of sa) {
+    const at = nearest(sb, ea.fmv_usd as number)
+    for (const j of [at - 1, at]) if (sb[j]) consider([ea], [sb[j]])
+  }
+
+  // two-for-one: for each single on one side, a two-pointer walk over pairs on the other
+  const pairs = (two: CompareEdition[], one: CompareEdition[], twoIsA: boolean) => {
+    if (two.length < 2) return
+    for (const single of one) {
+      const target = single.fmv_usd as number
+      let i = 0
+      let k = two.length - 1
+      while (i < k) {
+        const sum = (two[i].fmv_usd as number) + (two[k].fmv_usd as number)
+        if (twoIsA) consider([two[k], two[i]], [single])
+        else consider([single], [two[k], two[i]])
+        if (sum < target) i++
+        else k--
+      }
     }
   }
+  pairs(sa, sb, true)
+  pairs(sb, sa, false)
+
   if (!best) return null
-  const ca = best.ea.tradeable[0]
-  const cb = best.eb.tradeable[0]
-  return {
-    a: { edition_key: best.ea.edition_key, moment_id: ca.moment_id, serial_number: ca.serial_number, player_name: best.ea.player_name, set_name: best.ea.set_name, fmv_usd: best.ea.fmv_usd as number },
-    b: { edition_key: best.eb.edition_key, moment_id: cb.moment_id, serial_number: cb.serial_number, player_name: best.eb.player_name, set_name: best.eb.set_name, fmv_usd: best.eb.fmv_usd as number },
-    difference_usd: round2((best.ea.fmv_usd as number) - (best.eb.fmv_usd as number)),
-  }
+  const chosen = best as Pick
+  const item = (e: CompareEdition): QuickItem => ({
+    edition_key: e.edition_key,
+    moment_id: e.tradeable[0].moment_id,
+    serial_number: e.tradeable[0].serial_number,
+    player_name: e.player_name,
+    set_name: e.set_name,
+    fmv_usd: e.fmv_usd as number,
+  })
+  const sum = (g: CompareEdition[]) => g.reduce((t, e) => t + (e.fmv_usd as number), 0)
+  return { a: chosen.ga.map(item), b: chosen.gb.map(item), difference_usd: round2(sum(chosen.ga) - sum(chosen.gb)) }
 }
 
 /** Index coverage of one wallet: RPC's indexed count against the chain's getIDs() length. */

@@ -186,10 +186,19 @@ export default function CompareClient() {
 
   const loadQuick = (q: QuickTrade) => {
     if (!data) return
-    const ea = data.a.editions.find((e) => e.edition_key === q.a.edition_key)
-    const eb = data.b.editions.find((e) => e.edition_key === q.b.edition_key)
-    if (!ea || !eb) return
-    setPicks([toPick("a", ea, { moment_id: q.a.moment_id, serial_number: q.a.serial_number }), toPick("b", eb, { moment_id: q.b.moment_id, serial_number: q.b.serial_number })])
+    const toPicks = (side: "a" | "b", eds: CompareEdition[], items: QuickTrade["a"]): Pick[] | null => {
+      const out: Pick[] = []
+      for (const it of items) {
+        const e = eds.find((x) => x.edition_key === it.edition_key)
+        if (!e) return null
+        out.push(toPick(side, e, { moment_id: it.moment_id, serial_number: it.serial_number }))
+      }
+      return out
+    }
+    const pa = toPicks("a", data.a.editions, q.a)
+    const pb = toPicks("b", data.b.editions, q.b)
+    if (!pa || !pb) return
+    setPicks([...pa, ...pb])
   }
 
   const planUrl = useMemo(() => {
@@ -307,8 +316,8 @@ export default function CompareClient() {
                   <QuickSide who={data.b.username} q={data.quick_trade.b} />
                 </div>
                 <div style={muted}>
-                  Close in value on RPC&apos;s FMV ({data.quick_trade.difference_usd === 0 ? "the same price" : `${fmtUsd(Math.abs(data.quick_trade.difference_usd))} apart`}). Picked from
-                  the most valuable pair that is within $1 or 10 % of each other.
+                  Close in value on RPC&apos;s FMV ({data.quick_trade.difference_usd === 0 ? "the same price" : `${fmtUsd(Math.abs(data.quick_trade.difference_usd))} apart`}). The most
+                  valuable one-for-one or two-for-one swap whose sides are within $1 or 10 % of each other.
                 </div>
                 <div>
                   <button type="button" style={btn} onClick={() => loadQuick(data.quick_trade as QuickTrade)}>
@@ -317,7 +326,7 @@ export default function CompareClient() {
                 </div>
               </>
             ) : (
-              <div style={muted}>No one-for-one pair is close enough in value with confident prices on both sides. Build a trade from the lists below.</div>
+              <div style={muted}>No one-for-one or two-for-one swap is close enough in value with confident prices on both sides. Build a trade from the lists below.</div>
             )}
           </section>
 
@@ -462,15 +471,20 @@ function CoverageNotes({ side, collection }: { side: Side; collection: Slug }) {
 }
 
 function QuickSide({ who, q }: { who: string; q: QuickTrade["a"] }) {
+  const total = Math.round(q.reduce((t, i) => t + i.fmv_usd, 0) * 100) / 100
   return (
     <div style={{ flex: "1 1 220px", border: "1px solid var(--rpc-border)", borderRadius: 6, padding: 10 }}>
       <div style={{ ...label, marginBottom: 4 }}>@{who} gives</div>
-      <div style={{ fontWeight: 700 }}>{q.player_name ?? "Moment"}</div>
-      <div style={muted}>
-        {q.set_name}
-        {q.serial_number != null ? ` · #${q.serial_number}` : ""}
-      </div>
-      <div style={{ fontFamily: MONO, marginTop: 4 }}>{fmtUsd(q.fmv_usd)}</div>
+      {q.map((i) => (
+        <div key={i.moment_id} style={{ marginBottom: 4 }}>
+          <div style={{ fontWeight: 700 }}>{i.player_name ?? "Moment"}</div>
+          <div style={muted}>
+            {i.set_name}
+            {i.serial_number != null ? ` · #${i.serial_number}` : ""} · <span style={{ fontFamily: MONO }}>{fmtUsd(i.fmv_usd)}</span>
+          </div>
+        </div>
+      ))}
+      {q.length > 1 ? <div style={{ fontFamily: MONO, marginTop: 4 }}>Total {fmtUsd(total)}</div> : null}
     </div>
   )
 }

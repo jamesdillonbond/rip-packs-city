@@ -127,8 +127,8 @@ describe("CompareClient", () => {
 
   it("Quick Trade loads into the builder; serial chips toggle; the plan link carries the picks", async () => {
     const qt = {
-      a: { edition_key: "227:7560", moment_id: "50452811", serial_number: 135, player_name: "Tre Mann", set_name: "Equinox", fmv_usd: 4.23 },
-      b: { edition_key: "13:89", moment_id: "999", serial_number: 101, player_name: "Andre Iguodala", set_name: "With the Strip", fmv_usd: 6 },
+      a: [{ edition_key: "227:7560", moment_id: "50452811", serial_number: 135, player_name: "Tre Mann", set_name: "Equinox", fmv_usd: 4.23 }],
+      b: [{ edition_key: "13:89", moment_id: "999", serial_number: 101, player_name: "Andre Iguodala", set_name: "With the Strip", fmv_usd: 6 }],
       difference_usd: -1.77,
     }
     compareWith({ status: 200, body: result({ quick_trade: qt }) })
@@ -186,6 +186,23 @@ describe("CompareClient", () => {
     saved = true
     fireEvent.click(screen.getByRole("button", { name: "Start a trade room" }))
     await waitFor(() => expect(nav.push).toHaveBeenCalledWith("/trades/abcdefghij"))
+  })
+
+  it("a two-for-one Quick Trade shows both Moments and its total, and loads all three into the builder", async () => {
+    const qt = {
+      a: [
+        { edition_key: "227:7560", moment_id: "50452811", serial_number: 135, player_name: "Tre Mann", set_name: "Equinox", fmv_usd: 4.23 },
+        { edition_key: "x:2", moment_id: "4242", serial_number: 9, player_name: "Second", set_name: "Set", fmv_usd: 2 },
+      ],
+      b: [{ edition_key: "13:89", moment_id: "999", serial_number: 101, player_name: "Andre Iguodala", set_name: "With the Strip", fmv_usd: 6 }],
+      difference_usd: 0.23,
+    }
+    compareWith({ status: 200, body: result({ quick_trade: qt, a: side("Jamesdillonbond", [ed(), ed({ edition_key: "x:2", player_name: "Second", fmv_usd: 2, from_asks: false, tradeable: [{ moment_id: "4242", serial_number: 9 }] })]) }) })
+    render(<CompareClient />)
+    submit()
+    await screen.findByText("Total $6.23")
+    fireEvent.click(screen.getByRole("button", { name: "Load into the trade builder" }))
+    for (const s of ["135", "9", "101"]) expect(screen.getByRole("button", { name: `Remove serial ${s} from the trade` })).toBeTruthy()
   })
 
   it("filters: series, league, Rookie Debut only", async () => {

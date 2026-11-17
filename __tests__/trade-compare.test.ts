@@ -105,17 +105,59 @@ describe("quickTrade", () => {
       row({ moment_id: "3", edition_key: "y", fmv_usd: 100, owned: 3 }),
     ])
     const b = side([row({ moment_id: "2", edition_key: "z", fmv_usd: 6.5, owned: 3 }), row({ moment_id: "4", edition_key: "w", fmv_usd: 95, owned: 3 })])
-    const q = quickTrade(a.editions, b.editions, a.confident, b.confident)!
-    expect(q.a.edition_key).toBe("y")
-    expect(q.b.edition_key).toBe("w")
+    // (only w on b's side here: with z too, z + w = $101.50 for y is a two-for-one, tested below)
+    const q = quickTrade(a.editions, b.editions.filter((e) => e.edition_key === "w"), a.confident, b.confident)!
+    expect(q.a.map((i) => i.edition_key)).toEqual(["y"])
+    expect(q.b.map((i) => i.edition_key)).toEqual(["w"])
     expect(q.difference_usd).toBe(5)
     const q2 = quickTrade(a.editions.filter((e) => e.edition_key === "x"), b.editions.filter((e) => e.edition_key === "z"), a.confident, b.confident)!
-    expect(q2.a.moment_id).toBe("1b")
+    expect(q2.a[0].moment_id).toBe("1b")
   })
 
   it("refuses a pair that is not close (a $5.2M side made of one $100,000 ask cannot happen here)", () => {
     const a = side([row({ moment_id: "1", edition_key: "x", fmv_usd: 10 })])
     const b = side([row({ moment_id: "2", edition_key: "y", fmv_usd: 100_000 })])
+    expect(quickTrade(a.editions, b.editions, a.confident, b.confident)).toBeNull()
+  })
+
+  it("two-for-one when no single matches: two DIFFERENT editions on one side for one on the other, in either direction", async () => {
+    const a = side([row({ moment_id: "1", edition_key: "x", fmv_usd: 30, owned: 3 }), row({ moment_id: "2", edition_key: "y", fmv_usd: 20, owned: 3 })])
+    const b = side([row({ moment_id: "3", edition_key: "z", fmv_usd: 51, owned: 3 })])
+    const q = quickTrade(a.editions, b.editions, a.confident, b.confident)!
+    expect(q.a.map((i) => i.edition_key).sort()).toEqual(["x", "y"])
+    expect(q.b.map((i) => i.edition_key)).toEqual(["z"])
+    expect(q.difference_usd).toBe(-1)
+    const r = quickTrade(b.editions, a.editions, b.confident, a.confident)!
+    expect(r.a.map((i) => i.edition_key)).toEqual(["z"])
+    expect(r.b).toHaveLength(2)
+    // one edition is never counted twice: a lone $25 cannot make "2 × $25" for a $50
+    const lone = side([
+      row({ moment_id: "9", edition_key: "solo", fmv_usd: 25, owned: 5 }),
+      row({ moment_id: "9b", edition_key: "solo", fmv_usd: 25, owned: 5 }),
+      row({ moment_id: "7", edition_key: "penny", fmv_usd: 1, owned: 3 }),
+    ])
+    const fifty = side([row({ moment_id: "8", edition_key: "f", fmv_usd: 50, owned: 3 })])
+    expect(quickTrade(lone.editions, fifty.editions, lone.confident, fifty.confident)).toBeNull()
+  })
+
+  it("a more valuable two-for-one beats a cheap one-for-one; at equal value the one-for-one wins", async () => {
+    const a = side([
+      row({ moment_id: "1", edition_key: "cheap", fmv_usd: 2, owned: 3 }),
+      row({ moment_id: "2", edition_key: "x", fmv_usd: 60, owned: 3 }),
+      row({ moment_id: "3", edition_key: "y", fmv_usd: 40, owned: 3 }),
+    ])
+    const b = side([row({ moment_id: "4", edition_key: "cheap2", fmv_usd: 2, owned: 3 }), row({ moment_id: "5", edition_key: "big", fmv_usd: 100, owned: 3 })])
+    const q = quickTrade(a.editions, b.editions, a.confident, b.confident)!
+    expect(q.b.map((i) => i.edition_key)).toEqual(["big"])
+    expect(q.a).toHaveLength(2)
+    const one = side([row({ moment_id: "6", edition_key: "hundred", fmv_usd: 100, owned: 3 })])
+    const q2 = quickTrade([...a.editions, ...one.editions], b.editions, new Set([...a.confident, ...one.confident]), b.confident)!
+    expect(q2.a.map((i) => i.edition_key)).toEqual(["hundred"])
+  })
+
+  it("a two-for-one never mixes in an unconfident price", async () => {
+    const a = side([row({ moment_id: "1", edition_key: "x", fmv_usd: 30, owned: 3 }), row({ moment_id: "2", edition_key: "y", fmv_usd: 20, owned: 3, fmv_confidence: "LOW" })])
+    const b = side([row({ moment_id: "3", edition_key: "z", fmv_usd: 50, owned: 3 })])
     expect(quickTrade(a.editions, b.editions, a.confident, b.confident)).toBeNull()
   })
 

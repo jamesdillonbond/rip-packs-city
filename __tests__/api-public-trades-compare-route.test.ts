@@ -69,7 +69,7 @@ describe("GET /api/public/trades/compare", () => {
     expect(r.status).toBe(200)
     const body = await r.json()
     expect(body.a.username).toBe("Jamesdillonbond")
-    expect(body.quick_trade.a.moment_id).toBe("11")
+    expect(body.quick_trade.a[0].moment_id).toBe("11")
     const text = JSON.stringify(body)
     expect(text).not.toContain(A)
     expect(text).not.toContain(B)
