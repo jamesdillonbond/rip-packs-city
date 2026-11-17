@@ -37,7 +37,7 @@ behavior, actionable by the night pass. One new candidate.
 - `candy_sales_stale_hours` now ok (48.7 h, breach_at 730) — the 11-16 burnt-card resolution
   (`7c437d4da`) closed the `edition_not_ingested` leg that breached overnight.
 
-## ✅ RESOLVED 2026-11-16 ~10:35 PM PT (Claude Code cloud, autonomous pass)
+## ✅ RESOLVED 2026-11-16 ~9:38 PM PT (Claude Code cloud, autonomous pass)
 
 - Recipes seeded per the runbook: migration `20261117052750` (Box 8934 = Topper 8939 ×1 + Collector 8937 ×5 → 6 packs / 36 Moments; Case 8933 = Topper 8932 ×1 + Premium 8938 ×1 + Collector 8937 ×10 → 12 / 78; DO block reconciled both).
 - **The containers still cannot price yet, and that exposed a second defect:** none of the drop's inner packs had a pool or EV, because `topshot_pack_supply_tick` read their summaries at 10:34 AM PT before any pack was minted and parked all nine dists for 30 days. Fixed `20261117053146` (a new unminted dist is re-read every 2 h); verified live at 9:35 PM PT — all nine re-read, next due ~11:35 PM PT. Container EV follows once the drop mints and the inner packs price.
