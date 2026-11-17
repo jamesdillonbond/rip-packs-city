@@ -8,7 +8,9 @@
 -- allday-listing-ask-v1), which is why it lives in the DB and not in each caller.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (20261117160528_audit_20261117_ask_only_low_mint_cap_to_50_and_allday: the low-mint rule widened to circulation
+-- (20261117162830_audit_20261117_allday_ask_only_old_sale_cap: an All Day ASK_ONLY price with no 180-day sale is capped
+-- at its LAST sale of any age, replacing the 3x bound — n 1,096, 24 moved, 23 closer / 1 further. Before it,
+-- 20261117160528_audit_20261117_ask_only_low_mint_cap_to_50_and_allday: the low-mint rule widened to circulation
 -- <= 50 and to All Day (Top Shot /29-/50 n 598: WAPE 0.77 -> 0.37; All Day <= /50 n 373: WAPE 3.33 -> 1.93). Before it,
 -- 20261117150011_audit_20261117_topshot_ask_only_low_mint_cap: on a Top Shot edition of 28 or fewer an ordinary
 -- sale is any serial but #1, the jersey number and the last mint — serial > 25 saw none, so no cap ever applied
@@ -70,7 +72,6 @@ DECLARE
   -- the 10-29 3x bound left a cliff: a price tripled the day its last sale turned 181 days old).
   c_topshot constant uuid := '95f28a17-224a-4025-96ad-adf8a4c63bfd';
   v_med numeric;
-  v_hist numeric;
   v_last numeric;
   -- 2026-11-17: a Top Shot edition of 28 or fewer has NO serial above 25 (or only 1-3 of them), so the serial > 25
   -- "ordinary sale" filter saw no sales at all and every cap above was skipped (Lillard Legacies Legendary /28:
@@ -154,22 +155,23 @@ BEGIN
         NEW.algo_version := COALESCE(NEW.algo_version, '') || '_histcap';
       END IF;
     ELSIF v_med IS NULL AND NEW.collection_id = c_allday THEN
-      -- 2026-10-29: no sale in 180 days, but an older history bounds the ask at 3x its last-3 median.
-      SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY q.price_usd)
-        INTO v_hist
-        FROM (
-          SELECT y.price_usd
-            FROM public.sales_market y
-           WHERE y.edition_id = NEW.edition_id
-             AND y.price_usd > 0
-             AND CASE WHEN v_lowmint THEN y.serial_number IS NOT NULL AND y.serial_number <> 1
+      -- 2026-11-17: All Day with no sale in 180 days is capped at its LAST market sale of any age, marked
+      -- _histcap — Top Shot's rule since 11-16 (#260). It replaces the 10-29 bound of 3x the last-3 median, which
+      -- left an ask standing up to 3x the edition's sales. Measured on All Day ASK_ONLY snapshots of the last 60
+      -- days against each next ordinary sale, keeping the 180-day median arm: n 1,096, 24 moved, 23 closer and
+      -- 1 further; WAPE <= /50 3.11 -> 2.96, > /50 0.96 -> 0.88.
+      SELECT y.price_usd
+        INTO v_last
+        FROM public.sales_market y
+       WHERE y.edition_id = NEW.edition_id
+         AND y.price_usd > 0
+         AND CASE WHEN v_lowmint THEN y.serial_number IS NOT NULL AND y.serial_number <> 1
                  AND y.serial_number IS DISTINCT FROM v_jersey AND y.serial_number <> v_circ
             ELSE COALESCE(y.serial_number, 999999) > 25 END
-           ORDER BY y.sold_at DESC
-           LIMIT 3
-        ) q;
-      IF v_hist IS NOT NULL AND v_hist > 0 AND NEW.fmv_usd > 3 * v_hist THEN
-        NEW.fmv_usd := round(3 * v_hist, 2);
+       ORDER BY y.sold_at DESC
+       LIMIT 1;
+      IF v_last IS NOT NULL AND v_last > 0 AND NEW.fmv_usd > v_last THEN
+        NEW.fmv_usd := round(v_last, 2);
         NEW.algo_version := COALESCE(NEW.algo_version, '') || '_histcap';
       END IF;
     END IF;
@@ -260,7 +262,8 @@ INSERT INTO sales_market VALUES
   ('e1000000-0000-0000-0000-000000000022', now() - interval '10 days',  2.00, 5),
   ('e1000000-0000-0000-0000-000000000022', now() - interval '20 days',  3.00, 7),
   ('e1000000-0000-0000-0000-000000000022', now() - interval '30 days',  4.00, 9),
-  ('e1000000-0000-0000-0000-000000000023', now() - interval '10 days',  2.00, 5);
+  ('e1000000-0000-0000-0000-000000000023', now() - interval '10 days',  2.00, 5),
+  ('e1000000-0000-0000-0000-000000000024', now() - interval '300 days', 20.00, 500);
 
 -- Every row is written the way the writers write it: ask × 0.90, ask kept beside it.
 INSERT INTO fmv_snapshots VALUES
@@ -287,6 +290,7 @@ INSERT INTO fmv_snapshots VALUES
   ('e1000000-0000-0000-0000-000000000021', 'dee28451-5d62-409e-a1ad-a83f763ac070',  8.10, 'ASK_ONLY', 'allday-listing-ask-v1', 8.10, 9.00),
   ('e1000000-0000-0000-0000-000000000022', '06248cc4-b85f-47cd-af67-1855d14acd75',  8.10, 'ASK_ONLY', 'golazos-listing-ask-v1', 8.10, 9.00),
   ('e1000000-0000-0000-0000-000000000023', 'dee28451-5d62-409e-a1ad-a83f763ac070',  8.10, 'ASK_ONLY', 'allday-listing-ask-v1', 8.10, 9.00),
+  ('e1000000-0000-0000-0000-000000000024', 'dee28451-5d62-409e-a1ad-a83f763ac070',  8.10, 'ASK_ONLY', 'cold-tail-1.0', 8.10, 9.00),
   -- Top Shot, same edition as e12 but a SALES label: the cap is for ASK_ONLY only
   ('e1000000-0000-0000-0000-000000000012', '95f28a17-224a-4025-96ad-adf8a4c63bfd',  8.10, 'LOW',      '1.8.3', 8.10, 9.00),
   -- Golazos with a sales label: out of scope like All Day's
@@ -321,11 +325,14 @@ SELECT _assert_eq(
 SELECT _assert_eq(
   (SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots
     WHERE edition_id = 'e1000000-0000-0000-0000-000000000003'),
-  '3.00|1.8.3_histcap', 'with no sale in 180 days, an ask above 3x the older last-3 median is capped there and marked _histcap');
+  '1.00|1.8.3_histcap', 'with no sale in 180 days, an All Day ask is capped at its LAST sale of any age and marked _histcap');
+-- Re-pinned 2026-11-17: e3 read 3.00 (3x the older last-3 median); All Day now takes Top Shot's last-sale rule.
 SELECT _assert_eq(
   (SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots
     WHERE edition_id = 'e1000000-0000-0000-0000-000000000009'),
-  '8.10|cold-tail-1.0', 'an ask under 3x the older sales is left alone (the bound never raises a price)');
+  '5.00|cold-tail-1.0_histcap', 'an All Day ask under 3x its older sales is still capped at the last sale (5.00)');
+-- Inverted 2026-11-17: e9 asserted "an ask under 3x the older sales is left alone"; the 3x slack is what let an ask
+-- stand far above every sale. The never-raises property moves to e24 (an old sale above the ask).
 SELECT _assert_eq(
   (SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots
     WHERE edition_id = 'e1000000-0000-0000-0000-000000000010'),
@@ -443,8 +450,13 @@ SELECT _assert_eq(
     WHERE edition_id = 'e1000000-0000-0000-0000-000000000023'),
   '8.10|allday-listing-ask-v1', 'an All Day edition over circulation 50 keeps the serial > 25 rule');
 
+SELECT _assert_eq(
+  (SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots
+    WHERE edition_id = 'e1000000-0000-0000-0000-000000000024'),
+  '8.10|cold-tail-1.0', 'an All Day ask BELOW its old last sale is never raised to it');
+
 -- Nothing in the guard writes anywhere else: the sales table is read-only to it.
-SELECT _assert_eq((SELECT count(*)::text FROM sales_market), '57', 'the guard reads sales_market and never writes it (57 = the 57 fixture rows inserted above)');
+SELECT _assert_eq((SELECT count(*)::text FROM sales_market), '58', 'the guard reads sales_market and never writes it (58 = the 58 fixture rows inserted above)');
 
 SELECT '✓ fmv_snapshots_cap_allday_ask_only_to_recent_sales invariants pass' AS result;
 ROLLBACK;
