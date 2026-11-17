@@ -259,7 +259,8 @@ const PINS = [
     // the market-403 back-off counts every drained market request.
     // 2026-10-14: a new list pass keeps list_done_at; readers gate on its age.
     // 2026-10-31: a 403/408/429/5xx/no-response is CHALLENGED (re-asked), not a failed run.
-    migration: "supabase/migrations/20261101032444_audit_20261031_pack_supply_tick_counts_a_challenge_as_reasked_not_failed.sql",
+    // 2026-11-16: a new drop read before any pack is minted is re-read in 2 h, not parked 30 days.
+    migration: "supabase/migrations/20261117053146_audit_20261116_pack_supply_tick_rereads_an_unminted_new_drop.sql",
   },
   {
     // Added 2026-10-03. Per-edition issuer-held split (in sealed packs vs reserve):

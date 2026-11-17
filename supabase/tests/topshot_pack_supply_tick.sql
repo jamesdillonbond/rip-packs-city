@@ -2,6 +2,8 @@
 -- (topshot_issuer_held_split_editions, get_topshot_issuer_held_split). Pins:
 --   · a summary 200 writes the counts and opens an edition pass only when Moments are
 --     left; a fully-opened, closed drop is re-checked in 30 days, an open one in 20 h;
+--   · a NEW drop (first seen ≤ 14 d) whose summary reads 0 packs minted is re-read in 2 h,
+--     never parked 30 days (2026-11-16, 20261117053146);
 --   · a summary UNCHANGED since a pass that reconciled exactly keeps that pass (no
 --     edition pages) and is re-read in 40 h; a changed one opens a new pass;
 --   · edition pages land under their pass; a page from a superseded pass is recorded,
@@ -20,7 +22,8 @@
 --     disclosed; more in packs than issuer-held is "contradicted", not a negative.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (all three: supabase/migrations/20261015001336_audit_20261014_issuer_held_split_survives_the_daily_list_rewalk.sql);
+-- (topshot_pack_supply_tick: supabase/migrations/20261117053146_audit_20261116_pack_supply_tick_rereads_an_unminted_new_drop.sql;
+--  the two readers: supabase/migrations/20261015001336_audit_20261014_issuer_held_split_survives_the_daily_list_rewalk.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if a copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -45,6 +48,7 @@ INSERT INTO public.collections VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '
 CREATE TABLE public.editions (collection_id uuid, subedition_id integer, subedition_name text);
 INSERT INTO public.editions VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 9, 'Bit');
 CREATE TABLE public.badge_editions (collection_id uuid, external_id text, tier text, hidden_in_packs integer, updated_at timestamptz);
+CREATE TABLE public.pack_distributions (collection_id uuid, dist_id text, first_seen_at timestamptz);
 
 -- >>> BEGIN table DDL (copied from the migration) >>>
 CREATE TABLE IF NOT EXISTS public.topshot_atlas_pack_state (
@@ -260,8 +264,16 @@ BEGIN
              edition_rows = CASE WHEN v_same THEN t.edition_rows WHEN v_n > 0 THEN NULL ELSE 0 END,
              edition_remaining_sum = CASE WHEN v_same THEN t.edition_remaining_sum WHEN v_n > 0 THEN NULL ELSE 0 END,
              -- Nothing left in a closed drop: re-check monthly. Unchanged: in 40 h.
-             -- Anything else: daily.
-             next_due_at = now() + CASE WHEN v_n = 0 AND coalesce(t.available_supply, 0) = 0
+             -- Anything else: daily. A NEW drop read before any pack is minted (totalPackCount 0,
+             -- first seen within 14 days) is re-read in 2 h (2026-11-16: the WNBA Finals drop read
+             -- 0 at 10:34 AM PT and was parked 30 days, so no pool or EV until 12-16).
+             next_due_at = now() + CASE WHEN coalesce(nullif(v_body ->> 'totalPackCount', '')::bigint, 0) = 0
+                                             AND EXISTS (SELECT 1 FROM public.pack_distributions pd
+                                                          WHERE pd.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'
+                                                            AND pd.dist_id = t.dist_id
+                                                            AND pd.first_seen_at > now() - interval '14 days')
+                                        THEN interval '2 hours'
+                                        WHEN v_n = 0 AND coalesce(t.available_supply, 0) = 0
                                              AND coalesce(t.for_sale_supply, 0) = 0
                                              AND (t.end_time IS NULL OR t.end_time < now())
                                         THEN interval '30 days'
@@ -792,6 +804,29 @@ SELECT _assert_eq((SELECT pipeline || '/' || ok FROM pipeline_log ORDER BY ctid 
   'a tick whose only miss is a challenge IS ok');
 SELECT _assert((SELECT next_due_at > now() + interval '25 minutes' FROM topshot_atlas_dists WHERE dist_id = '100'),
   'the challenged summary is still re-asked in 30 min');
+
+-- ── a new drop read before any pack is minted is re-read in 2 h, not parked (2026-11-16) ──
+-- The WNBA Finals drop (8932-8940) was first summarised at 10:34 AM PT, before any pack existed
+-- (totalPackCount 0), and the 30-day branch parked every dist until 12-16: no pool, no EV.
+INSERT INTO pack_distributions VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '8937', now() - interval '11 hours'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '8001', now() - interval '200 days'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '8002', now() - interval '2 days');
+INSERT INTO topshot_atlas_dists (dist_id, title) VALUES ('8937', 'new, unminted'), ('8001', 'old, never minted'), ('8002', 'new, sold out');
+INSERT INTO topshot_atlas_pack_requests (request_id, kind, dist_id, dispatched_at) VALUES
+  (9902, 'summary', '8937', now()), (9903, 'summary', '8001', now()), (9904, 'summary', '8002', now());
+INSERT INTO net._http_response VALUES
+  (9902, 200, NULL, '{"distributionId":"8937","unopenedCount":"0","remainingByTier":{"common":"0"},"originalCountsByTier":{},"totalPackCount":"0","ownedCount":"0","unavailableCount":"0"}'),
+  (9903, 200, NULL, '{"distributionId":"8001","unopenedCount":"0","remainingByTier":{"common":"0"},"originalCountsByTier":{},"totalPackCount":"0","ownedCount":"0","unavailableCount":"0"}'),
+  (9904, 200, NULL, '{"distributionId":"8002","unopenedCount":"0","remainingByTier":{"common":"0"},"originalCountsByTier":{"common":"40"},"totalPackCount":"10","ownedCount":"0","unavailableCount":"0"}');
+SELECT topshot_pack_supply_tick(0);
+SELECT _assert((SELECT next_due_at BETWEEN now() + interval '110 minutes' AND now() + interval '130 minutes'
+                  FROM topshot_atlas_dists WHERE dist_id = '8937'),
+  'a new drop with no pack minted yet is re-read in 2 h, not parked 30 days');
+SELECT _assert((SELECT next_due_at > now() + interval '29 days' FROM topshot_atlas_dists WHERE dist_id = '8001'),
+  'CONTROL: an OLD never-minted drop is still re-checked monthly');
+SELECT _assert((SELECT next_due_at > now() + interval '29 days' FROM topshot_atlas_dists WHERE dist_id = '8002'),
+  'CONTROL: a new drop that has packs and is fully opened is still settled monthly');
 
 SELECT '✓ topshot_pack_supply_tick + issuer-held split readers: all assertions passed' AS result;
 
