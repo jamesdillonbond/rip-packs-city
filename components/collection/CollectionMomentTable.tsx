@@ -365,11 +365,13 @@ export default function CollectionMomentTable(props: {
                         data-rpc-mobile-thumb=""
                       >
                         {mThumb ? (
+                          // object-contain (2026-11-17, Trevor): the art is wider than this 104px
+                          // column, and object-cover cut both edges off the Moment.
                           <img
                             src={mThumb}
                             alt={row.playerName ?? ""}
                             loading="lazy"
-                            className="absolute inset-0 h-full w-full object-cover text-transparent"
+                            className="absolute inset-0 h-full w-full object-contain text-transparent"
                             onError={function(e) {
                               const img = e.target as HTMLImageElement
                               img.style.display = "none"
@@ -696,7 +698,7 @@ export default function CollectionMomentTable(props: {
                                         width={48}
                                         height={64}
                                         loading="lazy"
-                                        className="rounded object-cover cursor-pointer"
+                                        className="rounded object-contain cursor-pointer"
                                         style={{ width: 48, height: 64, background: "var(--rpc-surface)" }}
                                         onError={function(e) {
                                           const img = e.target as HTMLImageElement

@@ -209,6 +209,11 @@ describe("fmvDisplay", () => {
     expect(fmvDisplay(row({ fmv: 42 }))).toEqual({ text: "$42.00", muted: false, stale: false, askDerived: false, askCapped: false })
   })
 
+  it("puts thousands separators in an FMV of $1,000 or more, like every other money cell (2026-11-17)", () => {
+    expect(fmvDisplay(row({ fmv: 2100 })).text).toBe("$2,100.00")
+    expect(fmvDisplay(row({ fmv: 2100 })).text).not.toBe("$2100.00")
+  })
+
   it("falls back to fmvUsd and marks stale confidence muted", () => {
     expect(fmvDisplay(row({ fmvUsd: 10, marketConfidence: "stale" }))).toEqual({
       text: "$10.00",

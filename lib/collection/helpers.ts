@@ -4,6 +4,7 @@
 import { normalizeParallel } from "@/lib/wallet-normalize"
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { isAskDerivedFmv } from "@/lib/fmv-basis"
+import { formatCurrency } from "@/lib/format"
 import type { MomentRow, CollectionSeriesEntry, SortKey } from "./types"
 
 export const ROOKIE_BADGES_HIDDEN_WHEN_THREE_STAR = new Set(["Rookie Year", "Rookie Premiere", "Rookie Mint"])
@@ -279,5 +280,7 @@ export function fmvDisplay(row: MomentRow): { text: string; muted: boolean; stal
   const askCapped = askDerived
     ? (row.fmvCapped === true ? true : row.fmvCapped === "comparables" || row.fmvCapped === "offers" ? row.fmvCapped : false)
     : false
-  return { text: "$" + fmv.toFixed(2), muted: stale, stale, askDerived, askCapped }
+  // 2026-11-17 (Trevor's binder screenshot): formatCurrency, so FMV carries thousands separators like every
+  // other money cell on the card ("$2100.00" sat beside Paid "$2,100.00").
+  return { text: formatCurrency(fmv), muted: stale, stale, askDerived, askCapped }
 }

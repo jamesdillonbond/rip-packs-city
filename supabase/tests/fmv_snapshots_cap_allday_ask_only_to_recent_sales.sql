@@ -8,7 +8,11 @@
 -- allday-listing-ask-v1), which is why it lives in the DB and not in each caller.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (20261117144056_audit_20261116_topshot_ask_only_old_sale_cap: a Top Shot ASK_ONLY price with NO 180-day sale is
+-- (20261117150011_audit_20261117_topshot_ask_only_low_mint_cap: on a Top Shot edition of 28 or fewer an ordinary
+-- sale is any serial but #1, the jersey number and the last mint — serial > 25 saw none, so no cap ever applied
+-- (Lillard Legacies /28: $1,800 published, last sales $900-$1,011); n 780 / 420 moved: within +/-25 20.6 -> 33.2,
+-- ratio 2.00 -> 1.41, WAPE 1.54 -> 0.76. Before it,
+-- 20261117144056_audit_20261116_topshot_ask_only_old_sale_cap: a Top Shot ASK_ONLY price with NO 180-day sale is
 -- capped at its LAST market sale of any age, marked _histcap — replacing the 3x bound that tripled a price the
 -- day its last sale turned 181 days old; post-10-29 snapshots with an older last sale, n 32 / 14 moved: within
 -- +/-25 43.8 -> 53.1, ratio 1.44 -> 1.20, WAPE 0.52 -> 0.39. Before it,
@@ -36,6 +40,13 @@ CREATE TABLE sales_market (
 CREATE TABLE fmv_snapshots (
   edition_id uuid, collection_id uuid, fmv_usd numeric, confidence text,
   algo_version text, ask_proxy_fmv numeric, floor_price_usd numeric);
+CREATE TABLE editions (id uuid, circulation_count integer, jersey_number smallint);
+-- 2026-11-17: the low-mint arm reads circulation and jersey. Only e17-e19 have rows; every other fixture edition
+-- has none, so v_lowmint stays false for it and its serial > 25 rule is exercised unchanged.
+INSERT INTO editions VALUES
+  ('e1000000-0000-0000-0000-000000000017', 28, 0),
+  ('e1000000-0000-0000-0000-000000000018', 28, 7),
+  ('e1000000-0000-0000-0000-000000000019', 28, 0);
 
 -- >>> BEGIN verbatim fmv_snapshots_cap_allday_ask_only_to_recent_sales (keep byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.fmv_snapshots_cap_allday_ask_only_to_recent_sales()
@@ -55,12 +66,26 @@ DECLARE
   v_med numeric;
   v_hist numeric;
   v_last numeric;
+  -- 2026-11-17: a Top Shot edition of 28 or fewer has NO serial above 25 (or only 1-3 of them), so the serial > 25
+  -- "ordinary sale" filter saw no sales at all and every cap above was skipped (Lillard Legacies Legendary /28:
+  -- published $1,800 from a $2,000 ask, its last six sales $900-$1,011). On those editions an ordinary sale is any
+  -- serial except #1, the jersey number and the last mint — the same special serials as specialCats().
+  v_lowmint boolean := false;
+  v_circ integer;
+  v_jersey integer;
 BEGIN
   IF NEW.collection_id IN (c_allday, c_golazos, c_topshot)
      AND NEW.confidence = 'ASK_ONLY'
      AND NEW.fmv_usd IS NOT NULL
      AND NEW.edition_id IS NOT NULL
   THEN
+    IF NEW.collection_id = c_topshot THEN
+      SELECT e.circulation_count, NULLIF(e.jersey_number, 0)
+        INTO v_circ, v_jersey
+        FROM public.editions e
+       WHERE e.id = NEW.edition_id;
+      v_lowmint := v_circ IS NOT NULL AND v_circ <= 28;
+    END IF;
     SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY q.price_usd)
       INTO v_med
       FROM (
@@ -69,7 +94,9 @@ BEGIN
          WHERE y.edition_id = NEW.edition_id
            AND y.sold_at > now() - interval '180 days'
            AND y.price_usd > 0
-           AND COALESCE(y.serial_number, 999999) > 25
+           AND CASE WHEN v_lowmint THEN y.serial_number IS NOT NULL AND y.serial_number <> 1
+                 AND y.serial_number IS DISTINCT FROM v_jersey AND y.serial_number <> v_circ
+            ELSE COALESCE(y.serial_number, 999999) > 25 END
          ORDER BY y.sold_at DESC
          LIMIT 3
       ) q;
@@ -88,7 +115,9 @@ BEGIN
        WHERE y.edition_id = NEW.edition_id
          AND y.sold_at > now() - interval '180 days'
          AND y.price_usd > 0
-         AND COALESCE(y.serial_number, 999999) > 25
+         AND CASE WHEN v_lowmint THEN y.serial_number IS NOT NULL AND y.serial_number <> 1
+                 AND y.serial_number IS DISTINCT FROM v_jersey AND y.serial_number <> v_circ
+            ELSE COALESCE(y.serial_number, 999999) > 25 END
        ORDER BY y.sold_at DESC
        LIMIT 1;
       IF v_last IS NOT NULL AND v_last > 0 AND NEW.fmv_usd > v_last THEN
@@ -106,7 +135,9 @@ BEGIN
         FROM public.sales_market y
        WHERE y.edition_id = NEW.edition_id
          AND y.price_usd > 0
-         AND COALESCE(y.serial_number, 999999) > 25
+         AND CASE WHEN v_lowmint THEN y.serial_number IS NOT NULL AND y.serial_number <> 1
+                 AND y.serial_number IS DISTINCT FROM v_jersey AND y.serial_number <> v_circ
+            ELSE COALESCE(y.serial_number, 999999) > 25 END
        ORDER BY y.sold_at DESC
        LIMIT 1;
       IF v_last IS NOT NULL AND v_last > 0 AND NEW.fmv_usd > v_last THEN
@@ -122,7 +153,9 @@ BEGIN
             FROM public.sales_market y
            WHERE y.edition_id = NEW.edition_id
              AND y.price_usd > 0
-             AND COALESCE(y.serial_number, 999999) > 25
+             AND CASE WHEN v_lowmint THEN y.serial_number IS NOT NULL AND y.serial_number <> 1
+                 AND y.serial_number IS DISTINCT FROM v_jersey AND y.serial_number <> v_circ
+            ELSE COALESCE(y.serial_number, 999999) > 25 END
            ORDER BY y.sold_at DESC
            LIMIT 3
         ) q;
@@ -203,7 +236,13 @@ INSERT INTO sales_market VALUES
   ('e1000000-0000-0000-0000-000000000015', now() - interval '20 days',  1.00, 501),
   ('e1000000-0000-0000-0000-000000000016', now() - interval '181 days', 2.00, 500),
   ('e1000000-0000-0000-0000-000000000016', now() - interval '300 days', 4.00, 501),
-  ('e1000000-0000-0000-0000-000000000016', now() - interval '400 days', 5.00, 502);
+  ('e1000000-0000-0000-0000-000000000016', now() - interval '400 days', 5.00, 502),
+  ('e1000000-0000-0000-0000-000000000017', now() - interval '10 days',  1.00, 18),
+  ('e1000000-0000-0000-0000-000000000017', now() - interval '40 days',  2.00, 23),
+  ('e1000000-0000-0000-0000-000000000018', now() - interval '10 days',  0.50, 1),
+  ('e1000000-0000-0000-0000-000000000018', now() - interval '20 days',  0.60, 7),
+  ('e1000000-0000-0000-0000-000000000018', now() - interval '30 days',  0.70, 28),
+  ('e1000000-0000-0000-0000-000000000019', now() - interval '400 days', 3.00, 12);
 
 -- Every row is written the way the writers write it: ask × 0.90, ask kept beside it.
 INSERT INTO fmv_snapshots VALUES
@@ -223,6 +262,9 @@ INSERT INTO fmv_snapshots VALUES
   ('e1000000-0000-0000-0000-000000000014', '95f28a17-224a-4025-96ad-adf8a4c63bfd',  8.10, 'ASK_ONLY', '1.8.3', 8.10, 9.00),
   ('e1000000-0000-0000-0000-000000000015', '95f28a17-224a-4025-96ad-adf8a4c63bfd',  8.10, 'ASK_ONLY', '1.8.3', 8.10, 9.00),
   ('e1000000-0000-0000-0000-000000000016', '95f28a17-224a-4025-96ad-adf8a4c63bfd',  8.10, 'ASK_ONLY', 'cold-tail-1.0', 8.10, 9.00),
+  ('e1000000-0000-0000-0000-000000000017', '95f28a17-224a-4025-96ad-adf8a4c63bfd',  8.10, 'ASK_ONLY', '1.8.3', 8.10, 9.00),
+  ('e1000000-0000-0000-0000-000000000018', '95f28a17-224a-4025-96ad-adf8a4c63bfd',  8.10, 'ASK_ONLY', '1.8.3', 8.10, 9.00),
+  ('e1000000-0000-0000-0000-000000000019', '95f28a17-224a-4025-96ad-adf8a4c63bfd',  8.10, 'ASK_ONLY', 'cold-tail-1.0', 8.10, 9.00),
   -- Top Shot, same edition as e12 but a SALES label: the cap is for ASK_ONLY only
   ('e1000000-0000-0000-0000-000000000012', '95f28a17-224a-4025-96ad-adf8a4c63bfd',  8.10, 'LOW',      '1.8.3', 8.10, 9.00),
   -- Golazos with a sales label: out of scope like All Day's
@@ -347,8 +389,22 @@ SELECT _assert_eq(
     WHERE edition_id = 'e1000000-0000-0000-0000-000000000001' AND confidence = 'ASK_ONLY' AND fmv_usd IS NULL AND algo_version = '1.8.3'),
   '1', 'a NULL fmv_usd is passed through unchanged');
 
+-- 2026-11-17 low-mint arm (Lillard Legacies Legendary /28: every sale was serial <= 25, so serial > 25 saw none).
+SELECT _assert_eq(
+  (SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots
+    WHERE edition_id = 'e1000000-0000-0000-0000-000000000017'),
+  '1.00|1.8.3_salescap', 'a /28 Top Shot ask is capped at its last ordinary sale even though that serial is <= 25');
+SELECT _assert_eq(
+  (SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots
+    WHERE edition_id = 'e1000000-0000-0000-0000-000000000018'),
+  '8.10|1.8.3', 'on a /28 edition sales of #1, the jersey serial and the last mint are special: never a cap');
+SELECT _assert_eq(
+  (SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots
+    WHERE edition_id = 'e1000000-0000-0000-0000-000000000019'),
+  '3.00|cold-tail-1.0_histcap', 'a /28 edition with only a 400-day-old ordinary sale takes the any-age _histcap arm');
+
 -- Nothing in the guard writes anywhere else: the sales table is read-only to it.
-SELECT _assert_eq((SELECT count(*)::text FROM sales_market), '42', 'the guard reads sales_market and never writes it (42 = the 42 fixture rows inserted above)');
+SELECT _assert_eq((SELECT count(*)::text FROM sales_market), '48', 'the guard reads sales_market and never writes it (48 = the 48 fixture rows inserted above)');
 
 SELECT '✓ fmv_snapshots_cap_allday_ask_only_to_recent_sales invariants pass' AS result;
 ROLLBACK;

@@ -2441,7 +2441,8 @@ const PINS = [
     fn: "fmv_snapshots_cap_allday_ask_only_to_recent_sales",
     test: "supabase/tests/fmv_snapshots_cap_allday_ask_only_to_recent_sales.sql",
     // Re-pinned 2026-11-16: Top Shot old-sale arm = last sale of any age (#260; applied 2026-11-17).
-    migration: "supabase/migrations/20261117144056_audit_20261116_topshot_ask_only_old_sale_cap.sql",
+    // Re-pinned 2026-11-17: on a Top Shot edition of <= 28 an ordinary sale is any serial but #1/jersey/last mint.
+    migration: "supabase/migrations/20261117150011_audit_20261117_topshot_ask_only_low_mint_cap.sql",
   },
   {
     // 2026-11-04 evening: a Top Shot FMV is floored at the best OPEN edition-level offer (<= 3x), _bidfloor.
