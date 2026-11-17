@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~6:50 PM PT — Docs: /trades/compare thread wrap-up + #260 handoff (Claude Code cloud; Trevor: "Keep working through anything unresolved … update any relevant documentation")
+
+- Docs only: trading.md §4 known gaps + files; known-issues #260 (Top Shot ask-only price triples when its last sale turns 181 d — fix measured, NOT applied: auto-mode refused the re-pricing apply_migration); handoff `docs/handoff-2026-11-16-topshot-ask-only-old-sale-cap.md` (SQL + pin diff + revert); session entry. No prod change. Revert: `git revert` this commit.
+
 ### 2026-11-16 ~6:50 PM PT — Docs: OG card speed lesson + stale "edge" notes corrected (Cowork cloud; Trevor: "update any relevant documentation before I archive this thread")
 
 - key-files-and-honesty.md gains "OG cards: a slow FIRST fetch is a broken preview"; brand-auth-proxy.md and the avatar note no longer say the profile card is edge; session entry in docs/sessions/2026-11.md. Docs only. Revert: `git revert` the commit.
