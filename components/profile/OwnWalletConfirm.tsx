@@ -45,6 +45,12 @@ export default function OwnWalletConfirm({
     cursor: "pointer",
   }
   return (
+    // Outer: a full-width line of its own, LAST in a wrapping button row (binder
+    // search row, share actions). Seen live 11-16: squeezed beside the input it
+    // was ~120px wide, and on a shared line it stretched Search/Share to its
+    // height. A max-width on this element would clamp the 100% basis and let it
+    // share the line again, so the card's width cap lives on the inner element.
+    <div style={{ flexBasis: "100%", order: 1, display: "flex", justifyContent: align === "center" ? "center" : "flex-start" }}>
     <div
       role="group"
       aria-label={`Confirm ${label} is your wallet`}
@@ -60,13 +66,7 @@ export default function OwnWalletConfirm({
         borderRadius: "var(--radius-md)",
         background: "var(--rpc-surface)",
         maxWidth: 420,
-        // Its own line inside a wrapping button row (binder search row, share
-        // actions): squeezed beside the input it was ~120px wide at 767px.
-        flexBasis: "100%",
         boxSizing: "border-box",
-        // Last in the row: on a line of its own after the other buttons, so it
-        // does not stretch Search/Share to its height (seen live 11-16).
-        order: 1,
       }}
     >
       <div style={{ fontSize: "var(--text-sm)", fontWeight: 700, color: "var(--rpc-text-primary)" }}>
@@ -99,6 +99,7 @@ export default function OwnWalletConfirm({
           Cancel
         </button>
       </div>
+    </div>
     </div>
   )
 }
