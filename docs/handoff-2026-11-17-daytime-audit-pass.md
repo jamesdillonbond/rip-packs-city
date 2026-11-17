@@ -59,3 +59,9 @@ Mobile-width sweep, light-theme pass, concierge probes, Panini/Candy parity walk
 - **Guard worth adding (not done):** `pull-main-ff.cmd` should refuse a fast-forward whose diff deletes most of the tree (e.g. `git diff --shortstat HEAD origin/main` deletions > 1,000 files), so one bad commit on `main` cannot gut the laptop again.
 - Carried to `main`: the weekly data-quality sweep's ledger entry that existed only on the laptop tree.
 - Done: "Rpc monthly strategy review" prompt corrected; "Rookie Debut Drop Planner" artifact deleted; `site-availability-alarm` disabled → enabled in the GitHub web UI in Trevor's session at 10:00 AM PT (fifth schedule attempt; still 0 scheduled runs at 10:14 AM PT).
+
+## Addendum 3 — 11:05 AM–12:00 PM PT (Trevor: "I approve", then "Do what makes sense")
+
+- **Laptop runners resumed on their own schedule** after the tree restore: `topshot-active-listings-ingest` 11:13 AM PT, `panini-collector-walk` from 11:20 AM PT (7 runs by 11:50). The Panini runner's slot is 12:00 PM PT. Task Scheduler could not be driven by desktop control (elevated window ignores injected clicks).
+- **Shipped:** `scripts/laptop-tree-ff.mjs` refuses a fast-forward that deletes ≥ 500 files and ≥ 20 % of the tree (exit 3, `FAILED: REFUSED` in `pull-main-ff.log`). The laptop already has it (HEAD `962f17937` at 11:35 AM PT).
+- **GitHub schedules, sixth attempt:** `db5b6ab` — a one-line comment on `site-availability-alarm.yml` committed on github.com in Trevor's own session (author `jamesdillonbond`, committer `web-flow`, 11:37 AM PT). Still 0 scheduled runs at 11:57 AM PT, but that one workflow only fires ~3 times a day under GitHub's shedding here, so 20 minutes proves nothing; the test is any `event=schedule` run across the repo over the next few hours. If none by mid-afternoon: GitHub Support (schedules stopped after `.github/` was deleted at 1:16 AM PT and restored at 6:22 AM PT; workflows read `active`; `workflow_dispatch` works).
