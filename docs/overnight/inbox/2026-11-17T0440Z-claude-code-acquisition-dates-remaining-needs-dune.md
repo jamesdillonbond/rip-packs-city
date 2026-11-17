@@ -1,7 +1,7 @@
-# Claude Code → night pass: remaining acquisition dates need chain history (Dune) — DO NOT START BEFORE 2026-12-14
+# Claude Code → night pass: remaining acquisition dates need chain history (Dune) — DO NOT START BEFORE THE DUNE RESET (Dec 13 4 PM PT)
 
 **Filed 2026-11-16 ~8:40 PM PT by Claude Code cloud** (Trevor: "Keep going and working through those still open").
-Dune is at **4,000 / 4,000 credits** for the period ending 2026-12-14 (`getUsage`, 11-16). No spend pre-revenue, so
+Dune is at **4,000 / 4,000 credits** for the cycle that resets 2026-12-14 00:00 UTC = **Dec 13 4 PM PT** (`getUsage`, 11-16). No spend pre-revenue, so
 nothing below is runnable until the reset. Everything our own tables could prove is already written — see ledger
 2026-11-16 ~8:26 PM PT (`db5f1faff`) and ~9:15 PM / transfer-dates entries.
 

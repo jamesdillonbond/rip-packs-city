@@ -508,7 +508,7 @@ Source of truth for the trade room's multi-collection swap (`lib/trade-room/mult
 
 Dated samples; re-derive before quoting.
 
-- **Plan:** Analyst, 4,000 credits per cycle; the cycle resets on the 14th at 00:00 UTC (= the 13th, 4 PM PT). `dune_budget_state.paused` is the kill switch the #190 stage route honours.
+- **Plan:** Analyst, 4,000 credits per cycle; the cycle resets on the 14th at 00:00 UTC (= the 13th, 4 PM PT). `dune_budget_state.paused` is the kill switch the #190 stage route honours. ⚠ **2026-11-16: the 11-14 → 12-14 cycle was EXHAUSTED by 11-16** (`getUsage`: 4,000/4,000 — the #190 arrival-provenance stage + the 9129613 inequality join spent it). Any query, even a one-tx probe, then fails `[internal] Not enough credits`. Next usable: **Dec 13 4 PM PT**. Queued for it: known-issues #261.
 - ⛔ **Dune strips leading zeros from Flow addresses** (`0x026ae10d4d65856f` is stored as `0x26ae10d4d65856f`). A `to IN (<our wallets>)` filter must match BOTH spellings (`'0x' || ltrim(substr(w, 3), '0')`), and every address read back must be padded (`padFlowAddress` in `lib/dune/arrival-provenance.ts`). Query 9129456 silently covered 53 of 56 saved wallets because of this.
 - **Privacy:** a NON-temp private query is capped (the team is at its cap); a **temp** query can still be created `is_private=true` and run through the API. A saved-wallet list goes ONLY into a private query.
 - **Cost has two meters.** Execution (one full-history `TopShot.Deposit` scan ≈ 80 credits on medium; a wallet-scoped classification over all saved wallets ≈ 184) AND result reads (≈ 2 credits per 1,000 rows of ~8 columns, measured: 494k rows ≈ 640 credits). Size the OUTPUT before running: a correct query that returns 1.9M rows is unaffordable to read.

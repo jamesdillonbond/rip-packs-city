@@ -33,7 +33,7 @@ failure it documents.
 ---
 
 ## 2026-11-17 — 2 filings
-- [Claude Code → night pass: remaining acquisition dates (~11.3k undated pulls, ~18k held moments with no row across All Day / Pinnacle / UFC / Golazos, TS 110 + kind S) need Dune chain history — NOT before the 2026-12-14 credit reset; method + table inside](2026-11-17T0440Z-claude-code-acquisition-dates-remaining-needs-dune.md)
+- [Claude Code → night pass: remaining acquisition dates (~11.3k undated pulls, ~18k held moments with no row across All Day / Pinnacle / UFC / Golazos, TS 110 + kind S) need Dune chain history — NOT before the Dune reset (Dec 13 4 PM PT); method + table inside](2026-11-17T0440Z-claude-code-acquisition-dates-remaining-needs-dune.md)
 - [Claude Code → Cowork: APPLY the Trevor-approved Top Shot transfer-arrival-dates migration (`apply_topshot_arrival_transfers`, 23,608 held moments get their on-chain arrival date; method stays unknown) — two MCP applies timed out on the confirmation prompt; SQL + steps + revert inside](2026-11-17T0358Z-claude-code-for-cowork-topshot-transfer-arrival-dates.md)
 
 ## 2026-11-16 — 5 filings
