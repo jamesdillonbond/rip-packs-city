@@ -1510,7 +1510,7 @@ function WalletMomentsBody() {
               <span aria-hidden>⚡</span> Pre-loaded
             </span>
           )}
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={handleSearch}
               disabled={loading || !input.trim()}
