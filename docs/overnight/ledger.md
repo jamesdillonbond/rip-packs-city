@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~5:30 PM PT — UFC: 458 editions re-priced from their Aptos sales; reopen flip HELD (dormant market); #256 → low (Claude Code, laptop; Trevor: "Do what you think is best, or hand off to cowork if you need for qa")
+- DB (prod, applied ~5:13 PM PT): migration `20261117011341` audit_20261116_ufc_aptos_fmv_catchup — one STALE `fmv_snapshots` row per UFC edition whose newest snapshot predated its backfilled Aptos sales (458), the same row `drain_fmv_cold_tail` would write ~11-20..11-22 (history median, `cold-tail-1.0`). Insert-only; 62 unchanged, 140 up > 2x, 23 down > 2x; sum $2,941 → $5,130. Verified: 458 audited, Khabib UFC 205 /148 $0.01 → $25.20, Moreno /517 $0.10 → $12.80; audit table RLS on, anon SELECT false; applied statement md5 = file.
+- Decision: UFC reopen flip HELD — Aptos lane at chain head, newest Aptos UFC sale 10-22, 1 edition sold in 30 days. Resume at ≥ 20 Aptos UFC sales in the trailing 30 days (focus.md, ufc-strike.md).
+- Decision: #256 (Candy OpenSea capture) → 🟢 partial/low, as proposed after the 11-16 on-chain census; index regenerated (1 row changed).
+- Revert: `DELETE FROM public.fmv_snapshots f USING public.audit_20261116_ufc_aptos_fmv_catchup a WHERE f.id = a.snapshot_id AND f.computed_at = a.computed_at;` Docs: `git revert` the commit "ufc: re-price 458 editions from Aptos history; hold reopen flip; #256 to low".
+
 ### 2026-11-16 ~5:15 PM PT — Pack pages: "1 slots" / "— slots" / "Reward slots" copy (Claude Code cloud; Trevor: "Keep going")
 - Measured live (390 px phone, signed out): the Top Shot packs list cards read "1 slots" and "— slots", because the mobile card appended " slots" to `fmtSlots` (which returns a count, a pack-type label or a dash). Pack detail /nba-top-shot/pack/dist/5032 read "1 slots/pack" and "across 1 slots". No horizontal overflow on either page.
 - CODE: `lib/pack-table-format.ts` `fmtSlotsLine` (1 slot / N slots / label alone / null → item dropped); `components/packs/PackTable.tsx` mobile card uses it; `app/(collections)/[collection]/pack/dist/[distId]/page.tsx` pluralizes both lines.
