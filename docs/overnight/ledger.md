@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~7:45 PM PT — Phone binder card: six numbers on the card, Three-Star Rookie badge, on-chain lock refresh (Claude Code cloud; Trevor: "How come it shows lock? … badges look incorrect … show Team, FMV, Low Ask, High Offer, Acquisition Price, Acquisition Date")
+- **Lock ?**: the on-view lock refresh (`/api/cache-refresh?refreshLocked=1`) read `isLocked` from Top Shot GraphQL (decommissioned) → every lookup missed, nothing stamped; just-arrived moments (Clayton #34, Bühner #46, wmc rows created ~7:01 PM PT) sat at `lock_checked_at` NULL until the 7-day sweep. Now reads `TopShotLocking.isLocked` on chain via new `lib/chains/flow/topshot-lock.ts` (read failure / id absent → stamp nothing).
+- **Badges**: mobile card hid Rookie Year/Premiere/Mint on a 3★ rookie but never drew Three-Star Rookie (desktop did) → Clayton/Bühner read as bare Top Shot Debut. Card now draws it + official on-chain badge types like desktop. Cole Anthony (Rookie Year + Rookie Mint) was already correct.
+- **Card**: labelled 2-col grid Team · FMV · Low Ask (own ask → edition floor → "—"; a past sale never fills it) · High Offer · Paid (+P&L) · Acquired; Team hidden on Pinnacle.
+- Tests: new `component-CollectionMomentTable-mobile-card-stats`, `topshot-lock-reader`; `api-cache-refresh-deep` mocks Flow + a failed-read-stamps-nothing case. tsc 0, lint ratchet 150=baseline. No DB change. Revert: `git revert` the code commit.
+
 ### 2026-11-16 ~7:05 PM PT — Docs: weekly Top Shot offers re-walk finished green (163 rows); #259 at 11 editions; UFC wallet links met (Claude Code, laptop; Trevor: "update any relevant documentation before I archive this thread")
 - Re-dispatched missing-fill offers walk (run 43992054752, from block 136,690,658): 174 calls, done=true, **163 `offers` rows recovered**, 0 failed calls and 0 retries fired (the retry loop from the ~5:00 PM entry was in place, unused). This week's walk is complete.
 - #259 re-measure: 14 → **11 editions / 33 cards**; the 5:57 PM census run re-read 88 with 0 hydrate failures. Still draining; close on 0.
