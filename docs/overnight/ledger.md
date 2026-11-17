@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-17 ~3:11 PM PT — Dependency audit red on a new picomatch advisory: baselined with its reason; all 30 scheduled workflows dispatched by hand (Cowork cloud; Trevor: "Keep going and doing what you can in the meantime")
+
+- **Found by the manual dispatch** (the audit's own schedule has not fired today): `npm audit --omit=dev` reports GHSA-fc5q-39xc-vjpf, picomatch ReDoS, high, range `*`, "No fix available". It is in the tree only through `@onflow/fcl-wc` → `postcss-cli` and `@walletconnect/keyvaluestorage` → `unstorage`; the attack needs an attacker-supplied glob pattern and nothing in `app/`, `lib/`, `scripts/`, `components/` or `workers/` imports a glob matcher. Added to `prod-dep-audit-baseline.json` with that reason; the gate reds again the day npm stops reporting it.
+- **Schedules:** still 0 scheduled runs at 3:00 PM PT, 95 minutes after the cron rewrite `92e0517` (yesterday 10 fired in that stretch) — the seventh attempt did not work either. All 30 scheduled workflows were dispatched by hand at 3:01 PM PT: 25 passed, 4 still running at 3:09 PM, 1 failed (this audit).
+- Revert: `git revert` the commit that follows (baseline file only).
+
 ### 2026-11-17 ~3:05 PM PT — Panini team walk: a FAILED walk is retried within ~2 nights instead of waiting a full ~23-day cycle (Claude Code, laptop; Trevor: "Keep going and doing what you can")
 
 - **Migration `20261117230420` `audit_20261117_team_walk_plan_retries_a_failed_walk`:** `panini_team_walk_plan_for` ranked by `last_attempt_at`, which the receiver stamps on every walk, so a walk that stopped at a flaky page went to the back of the rotation. 9 of 108 enabled targets last ended on a failed walk. 5 NFL teams (Denver, Indianapolis, Pittsburgh, Seattle, Washington; first tried 10-29 → 11-09) had NEVER completed and none was retried; Oklahoma City last completed 10-22. Key is now `greatest(last_complete_at, last_attempt_at − 21 days)`: healthy targets keep their order, and a failure heads the plan again within ~2 nights. Plan(8) after apply opens with the 5 NFL teams. ACL unchanged (anon false). The daytime monitor's "28.6 % failure rate" LOW is the input that led here.
