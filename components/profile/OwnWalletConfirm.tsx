@@ -64,6 +64,9 @@ export default function OwnWalletConfirm({
         // actions): squeezed beside the input it was ~120px wide at 767px.
         flexBasis: "100%",
         boxSizing: "border-box",
+        // Last in the row: on a line of its own after the other buttons, so it
+        // does not stretch Search/Share to its height (seen live 11-16).
+        order: 1,
       }}
     >
       <div style={{ fontSize: "var(--text-sm)", fontWeight: 700, color: "var(--rpc-text-primary)" }}>
