@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~8:30 PM PT — Top Shot transfer arrivals: 23,608 held moments get their on-chain arrival date ("by <date>") (Cowork cloud via Trevor's Chrome; Trevor: "Can you use chrome to do this?")
+
+- Applied `audit_20261116_topshot_transfer_arrival_dates` (`20261117044500`) through the dashboard SQL editor — body checked against the inbox note (md5 `fb1e4951…`, SHA-256 in-page before `setValue`), destructive-ops dialog confirmed, `schema_migrations` row in the same Run. `apply_topshot_arrival_transfers(integer)` live, anon/authenticated EXECUTE revoked.
+- Backfill via `execute_sql`, 6 calls of ≤5,000: **20,950 inserted + 2,658 lone-`unknown` rows re-dated = 23,608** (exact match to the 7:40 PM dry run); last call returned `candidates 0`. Archive `flowty_archive.acq_chain_arrival_20261114`: `transfer_insert` 20,950 · `transfer_update_unknown` 2,658. Method stays `unknown`, `buy_price` NULL, source `chain_arrival_transfer`.
+- Live check: wallet 0x16d7df1713d6cce7 binder Acquired column shows "by Oct 23, 2026" for nft 48258745 (the newest written row), 15 "by <date>" cells on the page.
+- Revert: the REVERT block in the migration header (DELETE `transfer_insert` rows via the archive; restore `transfer_update_unknown` from `prior`; clear `applied_at`/`applied_result` for both arms; DROP FUNCTION). Inbox note `2026-11-17T0358Z-…-topshot-transfer-arrival-dates.md` marked ✅ RESOLVED.
+
 ### 2026-11-16 ~8:25 PM PT — Binder search row wraps; save confirm takes its own line (Claude Code cloud; Trevor: "Keep going")
 
 - Signed-in walk in Trevor's Chrome (767 px): "This is my collection" → "Is @sdb your wallet?" → Cancel, then + Follow → ✓ Following → row in `followed_wallets` → dashboard Friend Activity listed @sdb and "@sdb sold Steph Curry #1075" → ✕ unfollow → 0 rows. The confirm panel squeezed to ~120 px beside the input and the button labels wrapped to 3 lines; the row now wraps (`sm:flex-wrap`), the confirm takes its own line, the buttons don't wrap. Revert: `git revert` the code commit.
