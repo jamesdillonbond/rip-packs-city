@@ -15,7 +15,7 @@ import { formatClosedOn } from "@/lib/market-closed"
 import { fmvBasis } from "@/lib/fmv-basis"
 import { buildSeriesBarsFrom, compactSeriesLabel, closedMarketNote, shareHeadline, fullCollectionHref, shareCollectionFmvLabel, shareMomentFmvLabel } from "@/lib/share-card-view"
 import { OG_INHERITED } from "@/lib/seo"
-import { normalizeAddress } from "@/lib/address"
+import { normalizeAddress, truncateAddressForDisplay } from "@/lib/address"
 import { momentSubjectName } from "@/lib/entity-href"
 import { accentText } from "@/lib/accent-text"
 import { resolveUsernames, nameKey } from "@/lib/flowty-username"
@@ -638,7 +638,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
             Free account
           </div>
           <div style={{ fontSize: 16, color: "var(--rpc-text-secondary)", lineHeight: 1.5, maxWidth: 540, margin: "0 auto 16px" }}>
-            This is a snapshot. A free account saves this wallet, tracks its FMV over time, badges and set completion, and sends price alerts on the moments you watch.
+            This is a snapshot. If it&apos;s your wallet, a free account saves it, tracks its FMV over time, badges and set completion, and sends price alerts on the moments you watch. A friend&apos;s? Follow it to see their buys and sells on your dashboard.
           </div>
           <ShareSignUpLink wallet={wallet} />
         </div>
@@ -646,7 +646,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
         {/* Action buttons */}
         <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginBottom: 32 }}>
           <ShareButton wallet={wallet} />
-          <SaveToCollectionCTA wallet={wallet} />
+          <SaveToCollectionCTA wallet={wallet} owner={owner.startsWith("@") ? owner : truncateAddressForDisplay(owner)} />
           <a
             href={`/insights/tc-report?wallet=${encodeURIComponent(wallet)}`}
             style={{ padding: "12px 24px", border: "1px solid var(--rpc-red)", borderRadius: 8, color: "var(--rpc-red-text)", fontWeight: 700, fontSize: 14, textDecoration: "none", letterSpacing: "0.04em" }}

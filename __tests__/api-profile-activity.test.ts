@@ -33,6 +33,11 @@ vi.mock("@/lib/supabase", () => ({
   },
 }))
 
+vi.mock("@/lib/flowty-username", () => ({
+  resolveUsernames: async (addrs: string[]) => new Map(addrs.filter((a) => a === "0xbbbbbbbbbbbbbbbb").map((a) => [a, "FriendHandle"])),
+  nameKey: (a: string) => a.toLowerCase(),
+}))
+
 vi.mock("@/lib/auth/supabase-server", () => ({
   requireUser: async () => {
     if (!state.user) {
@@ -274,5 +279,45 @@ describe("GET /api/profile/activity", () => {
     const res = await GET()
     expect(res.status).toBe(200)
     expect((await res.json()).activity).toEqual([])
+  })
+})
+
+// 2026-11-16: follow a WALLET (followed_wallets) — a friend need not be a member,
+// and following them must never require saving their wallet as your own.
+describe("GET /api/profile/activity — directly followed wallets", () => {
+  it("a FAILED followed_wallets read fails the request — never an empty feed", async () => {
+    state.user = { id: "u1" }
+    state.tables.follows = { data: [], error: null }
+    state.tables.followed_wallets = { data: null, error: { message: "boom" } }
+    const res = await GET()
+    expect(res.status).not.toBe(200)
+    expect(await res.json()).not.toHaveProperty("activity")
+  })
+
+  it("follows nobody AND no wallets → empty feed", async () => {
+    state.user = { id: "u1" }
+    state.tables.follows = { data: [], error: null }
+    state.tables.followed_wallets = { data: [], error: null }
+    const res = await GET()
+    expect((await res.json()).activity).toEqual([])
+  })
+
+  it("a followed wallet's sale shows with its on-chain handle, in any collection, with no member follow", async () => {
+    state.user = { id: "u1" }
+    state.tables.follows = { data: [], error: null }
+    state.tables.followed_wallets = { data: [{ wallet_addr: "0xBBBBBBBBBBBBBBBB" }], error: null }
+    state.tables.sales = {
+      data: [
+        { sold_at: "2026-11-16T10:00:00Z", price_usd: 12, collection_id: "c9", edition_id: "e1", moment_id: "m1", seller_address: "0xcccccccccccccccc", buyer_address: "0xbbbbbbbbbbbbbbbb", serial_number: 7 },
+        { sold_at: "2026-11-16T09:00:00Z", price_usd: 3, collection_id: "c9", edition_id: "e1", moment_id: "m2", seller_address: "0xdddddddddddddddd", buyer_address: "0xeeeeeeeeeeeeeeee", serial_number: 8 },
+      ],
+      error: null,
+    }
+    state.tables.editions = { data: [{ id: "e1", player_name: "Damian Lillard", set_name: "S1 Base", tier: "COMMON", thumbnail_url: null }], error: null }
+    const res = await GET()
+    expect(res.status).toBe(200)
+    const { activity } = await res.json()
+    expect(activity).toHaveLength(1)
+    expect(activity[0]).toMatchObject({ followee_username: "FriendHandle", followee_wallet: true, role: "buyer", wallet_addr: "0xbbbbbbbbbbbbbbbb", player_name: "Damian Lillard" })
   })
 })

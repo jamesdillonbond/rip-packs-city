@@ -23,6 +23,9 @@ vi.mock("@/lib/auth/supabase-client", () => ({
 
 import SaveToCollectionCTA from "@/app/share/[wallet]/SaveToCollectionCTA"
 
+// 2026-11-16: the save is two clicks — "This is my wallet", then the
+// "Is <owner> your wallet?" confirm — because a share card is often a friend's.
+const SAVE = "This is my wallet — save it"
 const FLOW = "0xBA14E24D976F8484" // mixed case on purpose: must be saved normalized
 type Call = { url: string; init?: RequestInit }
 let calls: Call[]
@@ -62,11 +65,23 @@ describe("SaveToCollectionCTA", () => {
   it("signed in: one click saves a Flow wallet via resolve-and-associate with the NORMALIZED address", async () => {
     auth.user = { id: "u1" }
     const { findByRole, findByText } = render(<SaveToCollectionCTA wallet={FLOW} />)
-    fireEvent.click(await findByRole("button", { name: "Save to my collection" }))
+    fireEvent.click(await findByRole("button", { name: SAVE }))
+    fireEvent.click(await findByRole("button", { name: /Yes, it.s mine/ }))
     await findByText(/Saved — indexing your moments/)
     const post = calls.find((c) => c.init?.method === "POST")!
     expect(post.url).toBe("/api/profile/resolve-and-associate")
     expect(JSON.parse(String(post.init!.body))).toEqual({ address: "0xba14e24d976f8484" })
+  })
+
+  it("the first click only asks 'Is @owner your wallet?' — no POST until confirmed; Cancel backs out", async () => {
+    auth.user = { id: "u1" }
+    const { findByRole, findByText } = render(<SaveToCollectionCTA wallet={FLOW} owner="@friend" />)
+    fireEvent.click(await findByRole("button", { name: SAVE }))
+    expect(await findByText("Is @friend your wallet?")).toBeTruthy()
+    expect(calls.filter((c) => c.init?.method === "POST")).toEqual([])
+    fireEvent.click(await findByRole("button", { name: "Cancel" }))
+    expect(await findByRole("button", { name: SAVE })).toBeTruthy()
+    expect(calls.filter((c) => c.init?.method === "POST")).toEqual([])
   })
 
   it("a wallet already on the account says so and offers the dashboard, not a second save", async () => {
@@ -81,7 +96,7 @@ describe("SaveToCollectionCTA", () => {
     auth.user = { id: "u1" }
     savedListStatus = 500
     const { findByRole, queryByText } = render(<SaveToCollectionCTA wallet={FLOW} />)
-    expect(await findByRole("button", { name: "Save to my collection" })).toBeTruthy()
+    expect(await findByRole("button", { name: SAVE })).toBeTruthy()
     expect(queryByText(/In your collection/)).toBeNull()
   })
 
@@ -89,7 +104,8 @@ describe("SaveToCollectionCTA", () => {
     auth.user = { id: "u1" }
     postStatus = 503
     const { findByRole } = render(<SaveToCollectionCTA wallet={FLOW} />)
-    fireEvent.click(await findByRole("button", { name: "Save to my collection" }))
+    fireEvent.click(await findByRole("button", { name: SAVE }))
+    fireEvent.click(await findByRole("button", { name: /Yes, it.s mine/ }))
     const alert = await findByRole("alert")
     expect(alert.textContent).toMatch(/Couldn.t save just now/)
     expect(alert.textContent).toMatch(/says nothing about the wallet/)
@@ -103,7 +119,8 @@ describe("SaveToCollectionCTA", () => {
     postStatus = 409
     postBody = { error: "dapper_wallet_already_saved", message: "One Dapper wallet per account. Remove the saved one to switch to another." }
     const { findByRole, findByText } = render(<SaveToCollectionCTA wallet={FLOW} />)
-    fireEvent.click(await findByRole("button", { name: "Save to my collection" }))
+    fireEvent.click(await findByRole("button", { name: SAVE }))
+    fireEvent.click(await findByRole("button", { name: /Yes, it.s mine/ }))
     const alert = await findByRole("alert")
     expect(alert.textContent).toMatch(/One Dapper wallet per account/)
     expect(alert.textContent).not.toMatch(/try again/i)
@@ -114,7 +131,8 @@ describe("SaveToCollectionCTA", () => {
     auth.user = { id: "u1" }
     postStatus = 401
     const { findByRole, findByText } = render(<SaveToCollectionCTA wallet={FLOW} />)
-    fireEvent.click(await findByRole("button", { name: "Save to my collection" }))
+    fireEvent.click(await findByRole("button", { name: SAVE }))
+    fireEvent.click(await findByRole("button", { name: /Yes, it.s mine/ }))
     expect((await findByText("Sign in again")).getAttribute("href")).toBe("/login")
   })
 

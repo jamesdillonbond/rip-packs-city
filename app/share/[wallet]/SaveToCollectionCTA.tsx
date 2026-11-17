@@ -21,11 +21,19 @@ import { getSupabaseBrowser } from "@/lib/auth/supabase-client"
 import { detectAddressChain, normalizeAddress } from "@/lib/address"
 import { getPublishedCollection } from "@/lib/collections"
 import { fetchJson } from "@/lib/analytics/fetch-json"
+import OwnWalletConfirm from "@/components/profile/OwnWalletConfirm"
+import WalletFollowButton from "@/components/profile/WalletFollowButton"
+
+// 2026-11-16: a share card is very often a FRIEND's (they sent the link). The
+// save now says "This is my wallet" and asks "Is <owner> your wallet?" before
+// saving; Follow beside it is the friend path (followed_wallets → Friend
+// Activity) and never makes the wallet yours.
 
 type State =
   | { kind: "unknown" } // session not known yet — render nothing (no flash)
   | { kind: "anon" } // render nothing
   | { kind: "ready" }
+  | { kind: "confirming" }
   | { kind: "already" } // this wallet is already on the viewer's account
   | { kind: "saving" }
   | { kind: "saved" }
@@ -35,7 +43,7 @@ type State =
   | { kind: "refused"; message: string }
   | { kind: "failed" }
 
-export default function SaveToCollectionCTA({ wallet }: { wallet: string }) {
+export default function SaveToCollectionCTA({ wallet, owner }: { wallet: string; owner?: string }) {
   const [state, setState] = useState<State>({ kind: "unknown" })
   const address = normalizeAddress(wallet)
   const chain = detectAddressChain(address)
@@ -138,10 +146,16 @@ export default function SaveToCollectionCTA({ wallet }: { wallet: string }) {
     )
   }
 
+  if (state.kind === "confirming") {
+    return <OwnWalletConfirm label={owner ?? "this"} onConfirm={save} onCancel={() => setState({ kind: "ready" })} align="center" />
+  }
+
   return (
+    <>
+    <WalletFollowButton wallet={address} label={owner} size="lg" />
     <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
       <button
-        onClick={save}
+        onClick={() => setState({ kind: "confirming" })}
         disabled={state.kind === "saving"}
         style={{
           padding: "12px 24px",
@@ -157,7 +171,7 @@ export default function SaveToCollectionCTA({ wallet }: { wallet: string }) {
           opacity: state.kind === "saving" ? 0.7 : 1,
         }}
       >
-        {state.kind === "saving" ? "Saving…" : "Save to my collection"}
+        {state.kind === "saving" ? "Saving…" : "This is my wallet — save it"}
       </button>
       {state.kind === "refused" && (
         <span role="alert" style={{ fontSize: 12, color: "var(--rpc-text-muted)" }}>
@@ -172,5 +186,6 @@ export default function SaveToCollectionCTA({ wallet }: { wallet: string }) {
         </span>
       )}
     </span>
+    </>
   )
 }

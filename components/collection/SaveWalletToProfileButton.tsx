@@ -18,16 +18,24 @@
 import { useEffect, useState } from "react"
 import { normalizeAddress, isValidAddressForChain } from "@/lib/address"
 import { fetchJson } from "@/lib/analytics/fetch-json"
+import OwnWalletConfirm from "@/components/profile/OwnWalletConfirm"
 
-type State = "unknown" | "hidden" | "can-save" | "saving" | "saved" | "error"
+// 2026-11-16: "confirming" — the button sits beside a wallet the collector is
+// LOOKING at, often a friend's. Saving makes it theirs on RPC, so a click asks
+// "Is @handle your wallet?" first (components/profile/OwnWalletConfirm.tsx),
+// and the label says "This is my collection", not a generic "Save".
+type State = "unknown" | "hidden" | "can-save" | "confirming" | "saving" | "saved" | "error"
 
 export default function SaveWalletToProfileButton({
   wallet,
   collectionUuid,
   dbChain,
   via = "saved-wallets",
+  label,
 }: {
   wallet: string
+  /** "@handle" or a shortened address — named in the confirm step. */
+  label?: string
   collectionUuid: string
   dbChain: string | null | undefined
   /**
@@ -132,15 +140,25 @@ export default function SaveWalletToProfileButton({
     )
   }
 
+  if (state === "confirming") {
+    return (
+      <OwnWalletConfirm
+        label={label ?? "this"}
+        onConfirm={save}
+        onCancel={() => setState("can-save")}
+      />
+    )
+  }
+
   return (
     <span style={{ display: "inline-flex", flexDirection: "column", gap: 4 }}>
       <button
-        onClick={save}
+        onClick={() => setState("confirming")}
         disabled={state === "saving"}
-        title={via === "flow-associate" ? "Save this wallet to your dashboard — it is added to every Flow collection RPC tracks" : "Save this wallet to your RPC profile and dashboard"}
+        title={via === "flow-associate" ? "Your own wallet? Save it to your dashboard — it is added to every Flow collection RPC tracks" : "Your own wallet? Save it to your RPC profile and dashboard"}
         style={{ ...baseStyle, cursor: state === "saving" ? "wait" : "pointer" }}
       >
-        {state === "saving" ? "Saving…" : via === "flow-associate" ? "Save as my collection" : "Save to my profile"}
+        {state === "saving" ? "Saving…" : "This is my collection"}
       </button>
       {message && (
         <span role="alert" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-danger-text)", maxWidth: 280 }}>

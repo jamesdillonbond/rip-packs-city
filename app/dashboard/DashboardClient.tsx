@@ -15,7 +15,8 @@ import { trophyComparator, TROPHY_SORTS, type TrophySortKey } from "@/lib/trophy
 import PaniniUsernamesPanel from "@/components/profile/PaniniUsernamesPanel";
 import { sumMoments, sumFmv, sumStaleFmv, sumStaleCount, countActiveCollections, groupWalletsByAddress } from "@/lib/dashboard/aggregate";
 import { publishedCollections, getPublishedCollection } from "@/lib/collections";
-import { detectAddressChain, isCadenceAddress, isSolanaAddress, normalizeAddress } from "@/lib/address";
+import { detectAddressChain, isCadenceAddress, isSolanaAddress, normalizeAddress, truncateAddressForDisplay } from "@/lib/address";
+import FollowedWalletsList from "@/components/profile/FollowedWalletsList";
 import {
   fmtUsd,
   truncateAddress,
@@ -112,6 +113,8 @@ interface Favorite {
 interface Activity {
   followee_username: string | null;
   followee_display_name: string | null;
+  /** true when the row comes from a directly followed wallet (followed_wallets), not a followed member. */
+  followee_wallet?: boolean;
   role: "seller" | "buyer";
   wallet_addr: string;
   collection_id: string;
@@ -1218,7 +1221,7 @@ function ProfilePageInner() {
           <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", marginBottom: 8, lineHeight: 1.5 }}>
             {hasDapperWallet
               ? "Your Dapper wallet is saved (one per account). Enter a Solana address to add your Candy MLB collection."
-              : "Add a wallet by entering your Dapper username or a wallet address — we\u2019ll associate a Dapper username or Flow address with NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle and UFC Strike automatically, and a Solana address with Candy MLB."}
+              : "Add YOUR wallet by entering your Dapper username or a wallet address you own (to watch a friend\u2019s, look it up and press Follow instead) — we\u2019ll associate a Dapper username or Flow address with NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle and UFC Strike automatically, and a Solana address with Candy MLB."}
           </div>
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
@@ -1301,6 +1304,7 @@ function ProfilePageInner() {
         {/* ── Friend Activity ── */}
         <section className="rpc-section">
           <div className="rpc-section-title">Friend Activity</div>
+          <FollowedWalletsList />
           {activityFailed ? (
             <div role="status" style={{ fontFamily: monoFont, fontSize: 12, color: "var(--rpc-text-secondary)", lineHeight: 1.6 }}>
               Couldn&apos;t load friend activity. This is a loading problem, not an
@@ -1308,10 +1312,10 @@ function ProfilePageInner() {
             </div>
           ) : activity.length === 0 ? (
             <div style={{ fontFamily: monoFont, fontSize: 12, color: "var(--rpc-text-muted)", lineHeight: 1.6 }}>
-              Follow other collectors to see their sales here.
+              No buys or sells from people you follow in the last 7 days.
               <br />
-              Open a collector&rsquo;s profile at <span style={{ color: "var(--rpc-text-secondary)" }}>/profile/&lt;username&gt;</span> and hit{" "}
-              <span style={{ color: "var(--rpc-text-secondary)" }}>+ FOLLOW</span>.
+              To watch a friend, look up their username or wallet and press{" "}
+              <span style={{ color: "var(--rpc-text-secondary)" }}>+ Follow</span> — it doesn&rsquo;t add their wallet to your collection.
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1322,7 +1326,7 @@ function ProfilePageInner() {
                     {a.thumbnail_url && <img src={proxyIpfsImageUrl(a.thumbnail_url, 160) ?? undefined} alt="" style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 4, flexShrink: 0 }} />}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {a.followee_username ?? "someone"} {a.role === "seller" ? "sold" : "bought"} {a.player_name ?? "a moment"}{a.serial_number ? ` #${a.serial_number}` : ""}
+                        {a.followee_username ? (a.followee_wallet ? "@" + a.followee_username : a.followee_username) : a.followee_wallet ? truncateAddressForDisplay(a.wallet_addr) : "someone"} {a.role === "seller" ? "sold" : "bought"} {a.player_name ?? "a moment"}{a.serial_number ? ` #${a.serial_number}` : ""}
                       </div>
                       <div style={{ fontFamily: monoFont, fontSize: 10, color: "var(--rpc-text-muted)", display: "flex", gap: 8, marginTop: 2 }}>
                         {cMeta && <span style={{ color: accentText(cMeta.accent) }}>{cMeta.shortLabel}</span>}
@@ -1640,7 +1644,8 @@ function SignInBanner({
         Paste {accepted.slice(0, -1).join(", ")}
         {accepted.length > 1 ? ", or " : ""}
         {accepted[accepted.length - 1]}. RPC reads public blockchain data only —
-        we never ask you to connect or sign a wallet.
+        we never ask you to connect or sign a wallet. Only your own: to watch a
+        friend&apos;s wallet, look it up and press Follow.
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>

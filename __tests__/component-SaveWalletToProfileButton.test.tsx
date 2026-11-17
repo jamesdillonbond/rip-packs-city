@@ -31,6 +31,13 @@ function stubFetch(handler: (url: string, init?: RequestInit) => Response) {
   return calls
 }
 
+// 2026-11-16: a save is two clicks — "This is my collection", then the
+// "Is <wallet> your wallet?" confirm. One click must not save a friend's wallet.
+async function saveAndConfirm() {
+  fireEvent.click(await screen.findByText("This is my collection"))
+  fireEvent.click(await screen.findByText(/Yes, it.s mine/))
+}
+
 const mount = (wallet = CANDY, dbChain: string | null = "solana") =>
   render(<SaveWalletToProfileButton wallet={wallet} collectionUuid={CANDY_UUID} dbChain={dbChain} />)
 
@@ -40,16 +47,26 @@ describe("SaveWalletToProfileButton — flow-associate", () => {
   it("posts the address to resolve-and-associate, not saved-wallets", async () => {
     const calls = stubFetch((_url, init) => (init?.method === "POST" ? json({ ok: true }) : json({ wallets: [] })))
     render(<SaveWalletToProfileButton wallet="0xBD94CADE097E50AC" collectionUuid="95f28a17-224a-4025-96ad-adf8a4c63bfd" dbChain="flow" via="flow-associate" />)
-    fireEvent.click(await screen.findByText("Save as my collection"))
+    await saveAndConfirm()
     expect(await screen.findByText(/Saved to profile/)).toBeTruthy()
     const post = calls.find((c) => c.init?.method === "POST")!
     expect(post.url).toBe("/api/profile/resolve-and-associate")
     expect(JSON.parse(String(post.init!.body))).toEqual({ address: "0xbd94cade097e50ac" })
   })
+  it("the first click only asks — nothing is POSTed until 'Yes, it's mine'", async () => {
+    const calls = stubFetch((_url, init) => (init?.method === "POST" ? json({ ok: true }) : json({ wallets: [] })))
+    render(<SaveWalletToProfileButton wallet="0xbd94cade097e50ac" label="@friend" collectionUuid="95f28a17-224a-4025-96ad-adf8a4c63bfd" dbChain="flow" via="flow-associate" />)
+    fireEvent.click(await screen.findByText("This is my collection"))
+    expect(await screen.findByText("Is @friend your wallet?")).toBeTruthy()
+    expect(calls.filter((c) => c.init?.method === "POST")).toEqual([])
+    fireEvent.click(screen.getByText("Cancel"))
+    expect(await screen.findByText("This is my collection")).toBeTruthy()
+    expect(calls.filter((c) => c.init?.method === "POST")).toEqual([])
+  })
   it("shows the route's error text when the save is refused", async () => {
     stubFetch((_url, init) => (init?.method === "POST" ? json({ error: "Wallet limit reached" }, 402) : json({ wallets: [] })))
     render(<SaveWalletToProfileButton wallet="0xbd94cade097e50ac" collectionUuid="95f28a17-224a-4025-96ad-adf8a4c63bfd" dbChain="flow" via="flow-associate" />)
-    fireEvent.click(await screen.findByText("Save as my collection"))
+    await saveAndConfirm()
     expect(await screen.findByText("Wallet limit reached")).toBeTruthy()
   })
 })
@@ -90,13 +107,13 @@ describe("SaveWalletToProfileButton", () => {
   it("a different-case base58 wallet is NOT treated as already saved", async () => {
     stubFetch(() => json({ wallets: [{ wallet_addr: CANDY.slice(0, -1) + "k" }] }))
     mount()
-    expect(await screen.findByText("Save to my profile")).toBeTruthy()
+    expect(await screen.findByText("This is my collection")).toBeTruthy()
   })
 
   it("posts the base58 address verbatim and flips to Saved", async () => {
     const calls = stubFetch((_url, init) => (init?.method === "POST" ? json({ wallet: {} }) : json({ wallets: [] })))
     mount()
-    fireEvent.click(await screen.findByText("Save to my profile"))
+    await saveAndConfirm()
     expect(await screen.findByText(/Saved to profile/)).toBeTruthy()
     const post = calls.find((c) => c.init?.method === "POST")!
     expect(JSON.parse(String(post.init!.body))).toEqual({ walletAddr: CANDY, collectionId: CANDY_UUID })
@@ -109,7 +126,7 @@ describe("SaveWalletToProfileButton", () => {
         : json({ wallets: [] }),
     )
     mount()
-    fireEvent.click(await screen.findByText("Save to my profile"))
+    await saveAndConfirm()
     expect(await screen.findByText(/Free plan supports 5/)).toBeTruthy()
   })
 })

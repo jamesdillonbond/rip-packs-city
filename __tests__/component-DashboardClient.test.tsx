@@ -1031,6 +1031,7 @@ describe("DashboardClient — Friend Activity distinguishes empty from unreadabl
   //
   // A failed /api/profile/activity read leaves `activity` at [], and the empty
   // state then says "Follow other collectors to see their sales here … hit
+  // (2026-11-16: now "To watch a friend, look up … press + Follow" — re-pinned)
   // + FOLLOW". That is the /my-teams "Follow a team to build your hub"
   // incident verbatim: a false claim about the reader's OWN account on a
   // signed-in surface, and ACTIONABLE — it tells someone who already follows
@@ -1042,7 +1043,7 @@ describe("DashboardClient — Friend Activity distinguishes empty from unreadabl
     await waitFor(() => expect(fetchMock).toHaveBeenCalled())
     await new Promise((r) => setTimeout(r, 30))
     // Assert the ABSENCE OF THE FALSE CLAIM, not the presence of an error.
-    expect(screen.queryByText(/Follow other collectors/i)).toBeNull()
+    expect(screen.queryByText(/To watch a friend/i)).toBeNull()
     expect(screen.getByText(/loading problem, not an empty feed/i)).toBeTruthy()
   })
 
@@ -1053,7 +1054,7 @@ describe("DashboardClient — Friend Activity distinguishes empty from unreadabl
     render(<DashboardClient />)
     await waitFor(() => expect(fetchMock).toHaveBeenCalled())
     await new Promise((r) => setTimeout(r, 30))
-    expect(screen.getByText(/Follow other collectors/i)).toBeTruthy()
+    expect(screen.getByText(/To watch a friend/i)).toBeTruthy()
     expect(screen.queryByText(/loading problem, not an empty feed/i)).toBeNull()
   })
 })

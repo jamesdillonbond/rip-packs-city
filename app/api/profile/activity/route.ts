@@ -1,7 +1,9 @@
 // app/api/profile/activity/route.ts
 //
 // Returns last 20 sales over the past 7 days for wallets in saved_wallets
-// of users the current user follows. Used on /profile under "Friend Activity".
+// of users the current user follows, PLUS wallets the user follows directly
+// (followed_wallets, 2026-11-16 — a friend who never signed up can be followed
+// without saving their wallet as your own). Used on /dashboard "Friend Activity".
 
 import { NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api-error";
@@ -10,6 +12,8 @@ import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { isOnChainAddress } from "@/lib/postgrest-safe";
 import { normalizeAddress } from "@/lib/address";
+import { resolveUsernames, nameKey } from "@/lib/flowty-username";
+import { MAX_FOLLOWED_WALLETS } from "@/lib/profile/followed-wallets";
 
 export async function GET() {
   let user;
@@ -19,17 +23,28 @@ export async function GET() {
     return res as Response;
   }
 
-  // 1) Who do I follow?
-  const { data: follows, error: fErr } = await boundedRead(supabase
-    .from("follows")
-    .select("followee_user_id")
-    .eq("follower_user_id", user.id), "api/profile/activity/follows");
-  if (fErr) {
-    console.error("[activity follows]", fErr);
-    return apiErrorResponse(fErr, "api/profile/activity");
+  // 1) Who do I follow — members AND bare wallets. Either read failing is a
+  // failed request: an empty half would render "follow someone" to a follower.
+  const [{ data: follows, error: fErr }, { data: followedWallets, error: fwErr }] = await Promise.all([
+    boundedRead(supabase
+      .from("follows")
+      .select("followee_user_id")
+      .eq("follower_user_id", user.id), "api/profile/activity/follows"),
+    boundedRead(supabase
+      .from("followed_wallets")
+      .select("wallet_addr")
+      .eq("follower_user_id", user.id)
+      .limit(MAX_FOLLOWED_WALLETS), "api/profile/activity/followed_wallets"),
+  ]);
+  if (fErr || fwErr) {
+    console.error("[activity follows]", fErr ?? fwErr);
+    return apiErrorResponse(fErr ?? fwErr, "api/profile/activity");
   }
   const followeeIds = (follows ?? []).map((f: any) => f.followee_user_id);
-  if (followeeIds.length === 0) {
+  const directWallets = Array.from(
+    new Set(((followedWallets ?? []) as { wallet_addr: string }[]).map((w) => normalizeAddress(String(w.wallet_addr))))
+  ).filter(isOnChainAddress);
+  if (followeeIds.length === 0 && directWallets.length === 0) {
     return NextResponse.json({ activity: [] });
   }
 
@@ -38,12 +53,13 @@ export async function GET() {
   // 200 `{activity:[]}` and the dashboard told a collector who follows six people to "Follow other
   // collectors to see their sales here". The wallets read decides the answer: its failure is a
   // failed request. The bios read only names the rows: logged, non-fatal.
+  const noRows = Promise.resolve({ data: [] as any[], error: null });
   const [{ data: wallets, error: wErr }, { data: bios, error: bErr }] = await Promise.all([
-    boundedRead(supabase
+    followeeIds.length === 0 ? noRows : boundedRead(supabase
       .from("saved_wallets")
       .select("user_id, wallet_addr, collection_id")
       .in("user_id", followeeIds), "api/profile/activity/saved_wallets"),
-    boundedRead(supabase
+    followeeIds.length === 0 ? noRows : boundedRead(supabase
       .from("profile_bio")
       .select("user_id, username, display_name")
       .in("user_id", followeeIds), "api/profile/activity/profile_bio"),
@@ -56,7 +72,7 @@ export async function GET() {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const walletRows = (wallets ?? []) as any[];
-  if (walletRows.length === 0) {
+  if (walletRows.length === 0 && directWallets.length === 0) {
     return NextResponse.json({ activity: [] });
   }
 
@@ -77,7 +93,7 @@ export async function GET() {
   // for a Candy wallet — the empty-vs-absent confusion, on a social surface
   // where "no activity" reads as a fact about your friends.
   const addresses = Array.from(
-    new Set(walletRows.map((w: any) => normalizeAddress(String(w.wallet_addr))))
+    new Set([...walletRows.map((w: any) => normalizeAddress(String(w.wallet_addr))), ...directWallets])
   ).filter(isOnChainAddress);
   if (addresses.length === 0) {
     return NextResponse.json({ activity: [] });
@@ -132,6 +148,18 @@ export async function GET() {
     }
   }
 
+  // Directly followed wallets match in ANY collection (one Dapper wallet spans
+  // all five Flow collections) and are named by their on-chain handle.
+  const directSet = new Set(directWallets);
+  let directNames = new Map<string, string>();
+  if (directWallets.length > 0) {
+    try {
+      directNames = await resolveUsernames(directWallets);
+    } catch (e) {
+      console.error("[activity followed wallet names] unavailable:", e);
+    }
+  }
+
   const items: any[] = [];
   for (const s of salesRows) {
     // Both sides of this join must normalize the SAME way, or a Candy row that
@@ -141,7 +169,30 @@ export async function GET() {
     const seller = s.seller_address ? addressOwner.get(matchKey(s.seller_address)) : null;
     const buyer = s.buyer_address ? addressOwner.get(matchKey(s.buyer_address)) : null;
     const owner = seller || buyer;
-    if (!owner) continue;
+    if (!owner) {
+      const sellerAddr = s.seller_address ? normalizeAddress(String(s.seller_address)) : null;
+      const buyerAddr = s.buyer_address ? normalizeAddress(String(s.buyer_address)) : null;
+      const direct = sellerAddr && directSet.has(sellerAddr) ? sellerAddr : buyerAddr && directSet.has(buyerAddr) ? buyerAddr : null;
+      if (!direct) continue;
+      const edition = editionMap.get(s.edition_id);
+      items.push({
+        followee_username: directNames.get(nameKey(direct)) ?? null,
+        followee_display_name: null,
+        followee_wallet: true,
+        role: direct === sellerAddr ? "seller" : "buyer",
+        wallet_addr: direct,
+        collection_id: s.collection_id,
+        player_name: edition?.player_name ?? null,
+        set_name: edition?.set_name ?? null,
+        tier: edition?.tier ?? null,
+        thumbnail_url: edition?.thumbnail_url ?? null,
+        serial_number: s.serial_number ?? null,
+        price_usd: s.price_usd ?? null,
+        sold_at: s.sold_at,
+      });
+      if (items.length >= 20) break;
+      continue;
+    }
 
     const bio = bioMap.get(owner.user_id);
     const edition = editionMap.get(s.edition_id);

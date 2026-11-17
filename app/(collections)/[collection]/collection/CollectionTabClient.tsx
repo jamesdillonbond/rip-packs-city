@@ -11,7 +11,7 @@ import WalletPacksView from "@/components/packs/WalletPacksView"
 import { buildEditionScopeKey } from "@/lib/wallet-normalize"
 import { buildEditionSeedCandidate } from "@/lib/edition-market-seed"
 import { getOwnerKeyForChain, setOwnerKeyForChain, onOwnerKeyChangeForChain, ownerKeyMatchesChain } from "@/lib/owner-key"
-import { detectAddressChain, isSupportedAddress, isValidAddressForChain } from "@/lib/address"
+import { detectAddressChain, isSupportedAddress, isValidAddressForChain, truncateAddressForDisplay } from "@/lib/address"
 import { parseSnsName } from "@/lib/chains/solana/sns"
 import { getCollection, COLLECTION_UUID_BY_SLUG, collectionHasLocking, collectionHasWalletPackHistory } from "@/lib/collections"
 import { useWarmCache, usePrefetch, useWarmup } from "@/lib/warmup/WarmupContext"
@@ -32,6 +32,7 @@ import { useSessionOwner } from "@/lib/hooks/useSessionOwner"
 import { fetchSavedWalletForCollection } from "@/lib/profile/saved-wallet-for-collection"
 import PortfolioSummary from "@/components/collection/PortfolioSummary"
 import SaveWalletToProfileButton from "@/components/collection/SaveWalletToProfileButton"
+import WalletFollowButton from "@/components/profile/WalletFollowButton"
 import CollectionRecentSales from "@/components/collection/CollectionRecentSales"
 import { collectionViewStorageKey, legacySharedFilterKey, SCOPED_VIEW_FIELDS, type ViewField } from "@/lib/collection-view-storage"
 import DealWatchCapture from "@/components/DealWatchCapture"
@@ -1550,10 +1551,15 @@ function WalletMomentsBody() {
             {/* Candy (Solana): a per-collection save. Flow wallets (below) go
                 through the dashboard's resolve-and-associate, which fans one Dapper
                 wallet out across all five Flow collections. */}
+            {/* 2026-11-16: the wallet on screen is often a FRIEND's. Saving ("This
+                is my collection") asks "Is <handle> your wallet?" first; Follow is
+                the friend path and never touches saved_wallets. A username search
+                carries its resolved address, so both work for it too. */}
             {collectionObj?.dbChain === "solana" && collectionObj.supabaseCollectionId && activeWallet && rows.length > 0 && (
               <SaveWalletToProfileButton
                 key={activeWallet}
                 wallet={activeWallet}
+                label={searchedWalletLabel(activeWallet, resolvedAddress)}
                 collectionUuid={collectionObj.supabaseCollectionId}
                 dbChain={collectionObj.dbChain}
               />
@@ -1562,8 +1568,13 @@ function WalletMomentsBody() {
                   own username here with no way to keep it. Saved the dashboard's way
                   (all Flow collections at once); hidden when signed out. */}
               {collectionObj?.dbChain === "flow" && collectionObj.supabaseCollectionId && activeWallet && rows.length > 0 && (
-                <SaveWalletToProfileButton key={`flow-${activeWallet}`} wallet={activeWallet}
+                <SaveWalletToProfileButton key={`flow-${resolvedAddress || activeWallet}`} wallet={resolvedAddress || activeWallet}
+                  label={searchedWalletLabel(activeWallet, resolvedAddress)}
                   collectionUuid={collectionObj.supabaseCollectionId} dbChain={collectionObj.dbChain} via="flow-associate" />
+              )}
+              {(collectionObj?.dbChain === "flow" || collectionObj?.dbChain === "solana") && activeWallet && rows.length > 0 && (
+                <WalletFollowButton key={`follow-${resolvedAddress || activeWallet}`} wallet={resolvedAddress || activeWallet}
+                  label={searchedWalletLabel(activeWallet, resolvedAddress)} />
               )}
           </div>
         </div>
@@ -1910,4 +1921,11 @@ export default function CollectionTabClient() {
       <CollectionSection />
     </Suspense>
   )
+}
+
+/** "@handle" for a username search, else the shortened address — for the save confirm. */
+function searchedWalletLabel(searched: string, resolved: string): string {
+  const raw = searched.trim()
+  if (raw && !isSupportedAddress(raw)) return "@" + raw.replace(/^@/, "")
+  return truncateAddressForDisplay(resolved || raw)
 }

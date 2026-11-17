@@ -43,7 +43,7 @@ export default function ShareHeroSignUp({ wallet }: { wallet: string }) {
       }}
     >
       <span style={{ fontSize: 14, color: "var(--rpc-text-secondary)", lineHeight: 1.4 }}>
-        Track this collection&apos;s value on your own dashboard.
+        Is this your collection? Track its value on your own dashboard.
       </span>
       <ShareSignUpLink wallet={wallet} surface="share_hero" label="Save it to a free account →" />
     </div>
