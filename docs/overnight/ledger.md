@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~5:15 PM PT — Pack pages: "1 slots" / "— slots" / "Reward slots" copy (Claude Code cloud; Trevor: "Keep going")
+- Measured live (390 px phone, signed out): the Top Shot packs list cards read "1 slots" and "— slots", because the mobile card appended " slots" to `fmtSlots` (which returns a count, a pack-type label or a dash). Pack detail /nba-top-shot/pack/dist/5032 read "1 slots/pack" and "across 1 slots". No horizontal overflow on either page.
+- CODE: `lib/pack-table-format.ts` `fmtSlotsLine` (1 slot / N slots / label alone / null → item dropped); `components/packs/PackTable.tsx` mobile card uses it; `app/(collections)/[collection]/pack/dist/[distId]/page.tsx` pluralizes both lines.
+- Tests: 3 unit tests. Full `npm run preflight` green.
+- Revert: `git revert` this commit (no DB half).
+
 ### 2026-11-16 ~5:10 PM PT — /trades/compare Quick Trade finds two-for-one swaps; live end-to-end check of a planned room (Claude Code cloud; Trevor: "Keep going")
 - CODE: `quickTrade` now also tries two-for-one in either direction (two DIFFERENT editions for one), still HIGH/MEDIUM-priced only and within $1 or 10 %; the most valuable wins, ties to fewer Moments, then closest. `quick_trade.a` / `.b` are arrays (route, page and tests moved together). Why: one-for-one found nothing in every live compare on 11-16. Spec: trading.md §4.
 - Tests: +3 lib, +1 component; planted defects (one edition counted twice in a pair; the closeness check removed) each red the lib tests.
