@@ -579,7 +579,7 @@ export default function PackHistoryClient() {
                     /* 2026-11-14: and per ROW — a collection with no costed packs (Pinnacle: no
                        pack-buy source) published its gross rip value as profit whenever the
                        wallet as a whole passed the floor. */
-                    sub={collectionPlWithheld(t, c) ? `${c.activity_total} activity` : `${c.activity_total} · ${fmtUsd(c.net_pl_usd)}`}
+                    sub={collectionPlWithheld(t, c) ? `${Number(c.activity_total).toLocaleString("en-US")} activity` : `${Number(c.activity_total).toLocaleString("en-US")} · ${fmtUsd(c.net_pl_usd)}`}
                     pl={collectionPlWithheld(t, c) ? undefined : c.net_pl_usd}
                     onClick={() => setCollection(c.collection_slug)}
                   />

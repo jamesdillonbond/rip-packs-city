@@ -16,6 +16,13 @@ const COLLECTION_IDS: Record<string, string> = {
 
 const ALLOWED_TIERS = new Set(["COMMON", "UNCOMMON", "RARE", "LEGENDARY", "ULTIMATE"])
 const DAILY_IP_LIMIT_PER_PACK = 20
+// The per-pack cap alone is no brake: packListingId is caller-supplied, so a
+// client rotating ids wrote without limit (2026-11-17 security pass). This is
+// the cap that does not depend on anything the caller chooses.
+const DAILY_IP_LIMIT_ALL_PACKS = 100
+// A listing id is a short opaque key (uuid / dist id). Bounded so the anonymous
+// insert cannot be used to store arbitrary text.
+const PACK_LISTING_ID_SHAPE = /^[A-Za-z0-9:_.-]{1,80}$/
 
 function hashIp(req: NextRequest): string {
   const fwd = req.headers.get("x-forwarded-for") ?? ""
@@ -62,6 +69,7 @@ export async function POST(req: NextRequest) {
   const collectionSlug: string = String(body.collection ?? "nba-top-shot")
 
   if (!packListingId) return NextResponse.json({ error: "packListingId is required" }, { status: 400 })
+  if (!PACK_LISTING_ID_SHAPE.test(packListingId)) return NextResponse.json({ error: "Invalid packListingId" }, { status: 400 })
   if (!ALLOWED_TIERS.has(tierRaw)) return NextResponse.json({ error: "Invalid tier" }, { status: 400 })
 
   // Own keys only: "constructor" resolved to a function, passed this check, and
@@ -90,6 +98,19 @@ export async function POST(req: NextRequest) {
   }
   if (count >= DAILY_IP_LIMIT_PER_PACK) {
     return NextResponse.json({ error: "Rate limit: max 20 pulls per pack per day" }, { status: 429 })
+  }
+
+  const { count: ipCount, error: ipCountErr } = await supabase
+    .from("pack_pull_log")
+    .select("*", { count: "exact", head: true })
+    .eq("ip_hash", ipHash)
+    .gte("submitted_at", startOfDay.toISOString())
+  if (ipCountErr || ipCount == null) {
+    console.warn(`[pack-pulls] rate-limit check unavailable: ${ipCountErr?.message ?? "no count returned"}`)
+    return NextResponse.json({ error: "Submissions are temporarily unavailable — try again shortly" }, { status: 503 })
+  }
+  if (ipCount >= DAILY_IP_LIMIT_ALL_PACKS) {
+    return NextResponse.json({ error: "Rate limit: max 100 pulls per day" }, { status: 429 })
   }
 
   const serialNumber = serialRaw != null && serialRaw !== "" ? parseInt(String(serialRaw), 10) : null

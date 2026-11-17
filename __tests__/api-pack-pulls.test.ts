@@ -7,27 +7,36 @@ import { NextRequest } from "next/server"
 // JSON 400, missing packListingId 400, invalid tier 400, unknown collection
 // 400, and the rate-limited insert happy 200.
 
-const state: { rpc: any; rpcErr: any; count: number; countErr: any; insertErr: any; inserted: unknown[] } = {
+const state: { rpc: any; rpcErr: any; count: number; ipCount: number | null; countErr: any; insertErr: any; inserted: unknown[] } = {
   rpc: [],
   rpcErr: null,
   count: 0,
+  // The all-packs count for the IP; null = same as `count` (the old single-query shape).
+  ipCount: null,
   countErr: null,
   insertErr: null,
   inserted: [],
 }
 
 vi.mock("@supabase/supabase-js", () => {
-  const builder: any = {
-    select: () => builder,
-    eq: () => builder,
-    gte: () => builder,
-    insert: async (row: unknown) => { state.inserted.push(row); return { error: state.insertErr } },
-    then: (resolve: any) => resolve({ count: state.count, error: state.countErr }),
+  // One builder per from(): the per-pack count filters on pack_listing_id, the
+  // all-packs count does not — that is how the two reads are told apart.
+  const makeBuilder = () => {
+    let perPack = false
+    const builder: any = {
+      select: () => builder,
+      eq: (col: string) => { if (col === "pack_listing_id") perPack = true; return builder },
+      gte: () => builder,
+      insert: async (row: unknown) => { state.inserted.push(row); return { error: state.insertErr } },
+      then: (resolve: any) =>
+        resolve({ count: perPack || state.ipCount == null ? state.count : state.ipCount, error: state.countErr }),
+    }
+    return builder
   }
   return {
     createClient: () => ({
       rpc: async () => ({ data: state.rpc, error: state.rpcErr }),
-      from: () => builder,
+      from: () => makeBuilder(),
     }),
   }
 })
@@ -48,6 +57,7 @@ beforeEach(() => {
   state.rpc = []
   state.rpcErr = null
   state.count = 0
+  state.ipCount = null
   state.countErr = null
   state.inserted = []
   state.insertErr = null
@@ -117,6 +127,24 @@ describe("POST /api/pack-pulls", () => {
     state.countErr = { message: "canceling statement due to statement timeout" }
     const res = await POST(post({ packListingId: "abc", tier: "RARE" }))
     expect(res.status).toBe(503)
+    expect(state.inserted).toHaveLength(0)
+  })
+
+  // 2026-11-17: the per-pack cap is keyed on a caller-supplied id, so rotating
+  // ids wrote without limit. The all-packs cap does not depend on the id.
+  it("429s on the all-packs daily cap even when THIS pack is under its own cap, and inserts nothing", async () => {
+    state.count = 0
+    state.ipCount = 100
+    const res = await POST(post({ packListingId: "a-fresh-id", tier: "RARE" }))
+    expect(res.status).toBe(429)
+    expect(state.inserted).toHaveLength(0)
+  })
+
+  it("400s on a packListingId that is not a short key (length / charset), and inserts nothing", async () => {
+    for (const bad of ["x".repeat(81), "abc def", "<script>", "a/b"]) {
+      const res = await POST(post({ packListingId: bad, tier: "RARE" }))
+      expect(res.status).toBe(400)
+    }
     expect(state.inserted).toHaveLength(0)
   })
 })
