@@ -3,7 +3,7 @@ on:
   schedule:
     # Every 6 hours (00:15, 06:15, 12:15, 18:15 UTC). The :15 offset keeps it
     # off the busy :00/:20/:40 slots already used by rpc-pipeline + alerts.
-    - cron: "15 */6 * * *"
+    - cron: "15-15 */6 * * *"
     # Catalog-walk sweep (audit 2026-06-09, handoff 2026-06-10 Item 4): drains
     # badge_editions coverage 3,138 -> ~9,136 canonical TS editions via the
     # cursored ?mode=catalog pass. 4 ticks/day at :45 (off the :00/:20/:40
@@ -14,7 +14,7 @@ on:
     # cron-job.org (30s client cap would mark every run failed + risk
     # auto-disable). Once coverage converges this becomes the continuous
     # circulations/burns refresher.
-    - cron: "45 2,8,14,20 * * *"
+    - cron: "45-45 2,8,14,20 * * *"
   workflow_dispatch:
     inputs:
       catalog:

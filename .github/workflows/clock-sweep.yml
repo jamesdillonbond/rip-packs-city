@@ -34,7 +34,7 @@ name: Clock sweep (wall-clock-dependent tests)
 on:
   schedule:
     # 08:20 UTC — off the top of the hour and clear of the other scheduled jobs.
-    - cron: "20 8 * * *"
+    - cron: "20-20 8 * * *"
   workflow_dispatch:
 
 permissions:

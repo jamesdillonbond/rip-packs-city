@@ -22,7 +22,7 @@ on:
     # 15-18 min Atlas sweep was starting inside the fullest window of the hour.
     # :29 carries only alerts-dispatch. Nothing downstream depends on the
     # minute -- the runner curls Atlas and POSTs to a Bearer-auth route.
-    - cron: "29 */3 * * *"
+    - cron: "29-29 */3 * * *"
   workflow_dispatch:
     inputs:
       floor:

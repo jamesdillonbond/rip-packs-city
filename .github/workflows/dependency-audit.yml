@@ -20,7 +20,7 @@ on:
   # own run, never on an unrelated push, so the original objection does not
   # apply to it. Daily 14:17 UTC (06:17 PT) — the liveness detector scores daily shapes; a weekly day-of-week form is not parseable by it.
   schedule:
-    - cron: "17 14 * * *"
+    - cron: "17-17 14 * * *"
   push:
     branches: [main]
     paths:

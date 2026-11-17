@@ -12,7 +12,7 @@ name: IPFS thumb mirror
 
 on:
   schedule:
-    - cron: '47 10 * * *'
+    - cron: '47-47 10 * * *'
   workflow_dispatch:
     inputs:
       cid:

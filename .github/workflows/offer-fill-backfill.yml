@@ -11,7 +11,7 @@ on:
     # Lives on GHA (curl, no 30s client cap, no dropped after() tail) — the
     # route's 202+after() tail is unreliable on Vercel for the ~200s drain.
     # Handoff: docs/handoff-2026-06-20-offer-fill-backfill-after-unreliable.md
-    - cron: "9,24,39,54 * * * *"
+    - cron: "9-9,24,39,54 * * * *"
   workflow_dispatch:
     inputs:
       range:

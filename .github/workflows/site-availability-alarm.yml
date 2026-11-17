@@ -52,7 +52,7 @@ name: Site Availability Alarm
 # .github/workflows rather than assumed, and re-derived by the test.
 on:
   schedule:
-    - cron: "3,19,33,49 * * * *"
+    - cron: "3-3,19,33,49 * * * *"
   workflow_dispatch:
 
 permissions:

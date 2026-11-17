@@ -19,7 +19,7 @@ name: UFC Strike Aptos sales ingest
 on:
   schedule:
     # Off-anchor minutes, 4×/day. The market is thin (≈0–10 UFC sales/month), so a few runs a day is plenty.
-    - cron: "37 1,7,13,19 * * *"
+    - cron: "37-37 1,7,13,19 * * *"
   workflow_dispatch:
     inputs:
       apply:

@@ -88,9 +88,9 @@ name: Migration auto-recover
 
 on:
   schedule:
-    - cron: '25 7 * * *'
-    - cron: '35 15 * * *'
-    - cron: '35 23 * * *'
+    - cron: '25-25 7 * * *'
+    - cron: '35-35 15 * * *'
+    - cron: '35-35 23 * * *'
   workflow_dispatch:
     inputs:
       window_days:

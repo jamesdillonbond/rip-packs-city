@@ -61,7 +61,7 @@ on:
   schedule:
     # 07:40 UTC — after db-pin-staleness's 07:20 slot so the two secret-bearing DB
     # sweeps never overlap.
-    - cron: '40 7 * * *'
+    - cron: '40-40 7 * * *'
     # ── 15:50 + 23:50 added 2026-08-24: DAILY WAS A 14-HOUR BLIND WINDOW ───────
     # The 2026-08-23 filing measured it: two independent drift batches opened and
     # one closed inside twelve hours, and the second batch (applied 17:29-19:28Z)
@@ -84,8 +84,8 @@ on:
     # ⚠ Minutes chosen to dodge the busy slots, not by taste: ops-monitor runs at
     # :13/:43 every hour and e2e-smoke at :41 every 6h (00:41,06:41,12:41,18:41), so :50
     # clears both with room either side. Re-check that list before adding a fourth.
-    - cron: '50 15 * * *'
-    - cron: '50 23 * * *'
+    - cron: '50-50 15 * * *'
+    - cron: '50-50 23 * * *'
   workflow_dispatch:
     inputs:
       window_days:

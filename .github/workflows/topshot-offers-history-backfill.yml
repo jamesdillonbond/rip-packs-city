@@ -27,7 +27,7 @@ name: Top Shot Offers History Backfill — recover same-tick offers
 # the older bids.
 on:
   schedule:
-    - cron: "23 14 * * 1"
+    - cron: "23-23 14 * * 1"
   workflow_dispatch:
     inputs:
       target:

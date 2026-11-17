@@ -12,7 +12,7 @@ on:
   # what the cron asks. The cron is a ceiling, not the cadence; it is NOT lowered to match,
   # because a lower ask gets fewer runs (8/day asks get 5-7, 4/day asks get 3-4).
   schedule:
-    - cron: "5,25,45 * * * *"
+    - cron: "5-5,25,45 * * * *"
   workflow_dispatch:
 
 permissions:

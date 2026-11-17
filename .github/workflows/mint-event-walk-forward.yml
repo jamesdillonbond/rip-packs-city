@@ -19,7 +19,7 @@ name: Mint event walk — forward (keep chain set/play current)
 
 on:
   schedule:
-    - cron: "37 12 * * *"   # 4:37 AM PT (PST) — before rpc-topshot-map-atlas-reconcile at 4:47 AM PT
+    - cron: "37-37 12 * * *"   # 4:37 AM PT (PST) — before rpc-topshot-map-atlas-reconcile at 4:47 AM PT
   workflow_dispatch:
     inputs:
       rps:

@@ -19,7 +19,7 @@ name: Player identities sync — league ids from nflverse
 
 on:
   schedule:
-    - cron: "17 10 * * *"
+    - cron: "17-17 10 * * *"
   workflow_dispatch:
     inputs:
       league:

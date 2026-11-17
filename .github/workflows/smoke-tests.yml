@@ -26,7 +26,7 @@ name: Smoke Tests
 on:
   deployment_status:
   schedule:
-    - cron: '11 12 * * *'
+    - cron: '11-11 12 * * *'
   workflow_dispatch:
 
 permissions:

@@ -72,7 +72,7 @@ name: Wallet Backfill Backstop
 # is ever removed from the route, ?force=1 becomes a harmless no-op param.
 on:
   schedule:
-    - cron: "38 2,8,14,20 * * *"
+    - cron: "38-38 2,8,14,20 * * *"
   workflow_dispatch:
 
 permissions:

@@ -9,7 +9,7 @@ on:
     # (≤~22s) and no-ops fast when the queue is empty. Lives on GHA (curl
     # --max-time 600), NOT cron-job.org — no 4am console dependency and no 30s
     # client cap. Handoff: docs/handoff-2026-06-11-askonly-phase2-greenlight.md
-    - cron: "7,22,37,52 * * * *"
+    - cron: "7-7,22,37,52 * * * *"
   workflow_dispatch:
     inputs:
       mode:

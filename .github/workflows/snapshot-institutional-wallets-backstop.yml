@@ -64,7 +64,7 @@ name: Snapshot Institutional Wallets Backstop
 # watchlist flagged the silence as `high` on its own.
 on:
   schedule:
-    - cron: "29 7 * * *"
+    - cron: "29-29 7 * * *"
   workflow_dispatch:
 
 permissions:

@@ -20,7 +20,7 @@ name: Player stats sync — ESPN season stats through the league-id crosswalk
 
 on:
   schedule:
-    - cron: "23 */6 * * *"
+    - cron: "23-23 */6 * * *"
   workflow_dispatch:
     inputs:
       leagues:

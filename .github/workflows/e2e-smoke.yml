@@ -30,7 +30,7 @@ name: E2E DOM Smoke
 on:
   deployment_status:
   schedule:
-    - cron: '51 */6 * * *' # every 6h, off the top of the hour; :51 is free — :41 collided with ops-monitor's 06:41 data-integrity lambda (2026-09-04)
+    - cron: '51-51 */6 * * *' # every 6h, off the top of the hour; :51 is free — :41 collided with ops-monitor's 06:41 data-integrity lambda (2026-09-04)
   workflow_dispatch:
     inputs:
       base_url:

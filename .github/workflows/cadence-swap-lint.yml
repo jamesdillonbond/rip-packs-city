@@ -24,7 +24,7 @@ name: Cadence swap lint (trade room transactions vs deployed contracts)
 on:
   schedule:
     # Mondays 17:41 UTC — off the hour, clear of the other scheduled jobs.
-    - cron: "41 17 * * 1"
+    - cron: "41-41 17 * * 1"
   push:
     branches: [main]
     paths:
