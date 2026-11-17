@@ -52,3 +52,10 @@ Mobile-width sweep, light-theme pass, concierge probes, Panini/Candy parity walk
 - **Refused for this session (needs Trevor's explicit yes):** rewriting the "Rpc monthly strategy review" prompt (the corrected text is ready: trade room live since 10-31, UFC on Aptos).
 - **Scheduled tasks read so far (18):** nothing failing among the recurring ones read (daily X draft, monthly deep audit, context hygiene, strategy review, memory consolidation, daytime monitor). Several are pinned to an older model; not changed.
 - **Decided not to do:** `/giveaways/<unknown>` stays 200 — the whole route is `noindex, nofollow` by design; JSON-LD on the collection tool tabs stays off (the 10-21 decision moved it to `/overview` on purpose).
+
+## Addendum 2 — 9:58–10:15 AM PT (Trevor: "I approve you doing everything mentioned", then "I approve")
+
+- **🚨 Found and repaired: the laptop repo tree was gutted at 5:15 AM PT.** Its own 2-hourly pull fast-forwarded to `2e021e372`, deleting `app/`, `.github/` and most of `scripts/` locally; the residential runners stopped (`topshot-active-listings-ingest` 5:13 AM, `panini-collector-walk` 5:17 AM, `panini-ingest` 5:46 AM PT). Restored to `origin/main` at ~10:07 AM PT (batched checkout + `update-ref`, then `--ff-only`; 0 behind, no locks). **Open:** the Windows Task Scheduler runners had not restarted by 10:14 AM PT — read `pipeline_runs` for `panini-ingest` after the next scheduled start; if still silent, run the tasks by hand on the laptop.
+- **Guard worth adding (not done):** `pull-main-ff.cmd` should refuse a fast-forward whose diff deletes most of the tree (e.g. `git diff --shortstat HEAD origin/main` deletions > 1,000 files), so one bad commit on `main` cannot gut the laptop again.
+- Carried to `main`: the weekly data-quality sweep's ledger entry that existed only on the laptop tree.
+- Done: "Rpc monthly strategy review" prompt corrected; "Rookie Debut Drop Planner" artifact deleted; `site-availability-alarm` disabled → enabled in the GitHub web UI in Trevor's session at 10:00 AM PT (fifth schedule attempt; still 0 scheduled runs at 10:14 AM PT).
