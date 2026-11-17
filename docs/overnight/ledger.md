@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~9:25 PM PT — Cold-tail FMV drain: a red run says why in its `error` column (Claude Code cloud; Trevor: "work autonomously")
+
+- `/api/admin/drain-fmv-cold-tail` terminal `pipeline_runs` row now sets `error` to the failing slugs' messages when `ok=false` (the 5:17 PM PT 11-16 row read ok=false / error NULL; its cause, `nba_top_shot read exceeded 42782ms`, was only in `extra.results`). Test pins both arms (planted defect verified). Code only. Revert: `git revert` the code commit.
+
 ### 2026-11-16 ~8:35 PM PT — Save confirm sits last in its row (Claude Code cloud; Trevor: "Keep going")
 
 - `OwnWalletConfirm` takes `order: 1`, so it opens on its own line after Search / Share / Follow instead of stretching them to its height (seen live in Trevor's Chrome). Revert: `git revert` the code commit.
