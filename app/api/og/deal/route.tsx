@@ -17,7 +17,11 @@ import { NextRequest } from "next/server";
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts";
 import { OgMark } from "@/lib/og/marks";
 
-export const runtime = "edge";
+// Node, not edge (2026-11-16): on edge the brand fonts come over HTTP from our own
+// origin on every cold isolate — the first unfurl of a shared link measured
+// 6.1–6.5 s, past where iMessage / WhatsApp / X give up on the image. On Node
+// lib/og/brand-fonts reads them off the function's disk (traced in next.config.ts).
+export const runtime = "nodejs";
 
 export async function GET(req: NextRequest) {
   // Brand typography + a long shared cache. `brandFonts` never rejects and

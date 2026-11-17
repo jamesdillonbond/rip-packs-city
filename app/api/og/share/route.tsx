@@ -1,7 +1,7 @@
 /**
  * app/api/og/share/route.tsx
  *
- * OG card for /share/<wallet>, served as an edge route handler.
+ * OG card for /share/<wallet>, served as a route handler (Node runtime since 2026-11-16).
  *
  * The previous app/share/[wallet]/opengraph-image.tsx (the Next metadata
  * file convention) rendered a 0-byte PNG on the edge runtime and threw a 500 on
@@ -18,7 +18,11 @@ import { brandFonts, brandFamilies, ogCacheHeaders } from "@/lib/og/brand-fonts"
 import { ogFetch } from "@/lib/og/og-fetch"
 import { shareHeadline } from "@/lib/share-card-view"
 
-export const runtime = "edge"
+// Node, not edge (2026-11-16): on edge the brand fonts come over HTTP from our own
+// origin on every cold isolate — the first unfurl of a shared link measured
+// 6.1–6.5 s, past where iMessage / WhatsApp / X give up on the image. On Node
+// lib/og/brand-fonts reads them off the function's disk (traced in next.config.ts).
+export const runtime = "nodejs"
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 

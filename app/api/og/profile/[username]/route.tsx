@@ -72,7 +72,11 @@ import { OgMark, type MarkName } from "@/lib/og/marks";
 import { ogFetch } from "@/lib/og/og-fetch";
 import { normalizeAddress } from "@/lib/address";
 
-export const runtime = "edge";
+// Node, not edge (2026-11-16): on edge the brand fonts come over HTTP from our own
+// origin on every cold isolate — the first unfurl of a shared link measured
+// 6.1–6.5 s, past where iMessage / WhatsApp / X give up on the image. On Node
+// lib/og/brand-fonts reads them off the function's disk (traced in next.config.ts).
+export const runtime = "nodejs";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";

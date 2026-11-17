@@ -117,7 +117,9 @@ export const BRAND_FONT_FILES = ["BarlowCondensed-Black.ttf", "ShareTechMono-Reg
  *
  * ⚠ NODE RUNTIME ONLY. `process.env.NEXT_RUNTIME === "nodejs"` is the guard
  * Next uses to drop the branch from edge bundles, so the `node:fs` import never
- * reaches the 7 edge cards (they keep the HTTP path: ~520 requests a week).
+ * reaches an edge card. Since 2026-11-16 no OG card runs on edge (the last seven
+ * moved to Node: an edge cold start paid 6+ s for the HTTP font fetch); the HTTP
+ * path stays as the fallback when the disk read fails.
  * The files ship inside the lambda via `outputFileTracingIncludes` in
  * next.config.ts — Vercel does not put `public/` in a function otherwise.
  *

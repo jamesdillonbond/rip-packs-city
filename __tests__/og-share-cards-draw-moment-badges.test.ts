@@ -172,8 +172,9 @@ describe("the glyphs cost NO network, which is the whole reason they exist", () 
   })
 
   it("⚠ percent-encodes rather than base64s, so it cannot depend on Buffer", () => {
-    // `/api/og/profile/[username]` is `edge`. An encoder that works in vitest
-    // and throws in production is the worst failure mode available here.
+    // `/api/og/profile/[username]` ran on `edge` until 2026-11-16 and could again;
+    // an encoder that works in vitest and throws in production is the worst
+    // failure mode available here, so the glyphs stay runtime-neutral.
     expect(glyphDataUri(glyphSvg("<circle/>", "#fff"))).toContain("%3Csvg")
     expect(glyphDataUri(glyphSvg("<circle/>", "#fff"))).not.toContain("base64")
   })
