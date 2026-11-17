@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-17 ~9:30 AM PT — Binder P&L reads in dollars with commas ("+$1,234.56", was "0.00 (0%)" / "+1234.56") (Claude Code cloud; Trevor: "Keep going")
+
+- **Code:** `fmtSignedUsd` in `lib/collection-moment-cells.ts` (sign after rounding, never "-$0.00") replaces `fmtSignedFixed(pl, 2)` for the P&L amount on the binder card and the desktop P&L column; the % stays `fmtSignedFixed`. Tests re-pinned to the dollar form; three negative assertions moved to the new spelling so they still guard (a "+150.00"-style absence check would now pass vacuously).
+- **Checked, nothing to ship:** today's low-mint caps survive live repricing — every new low-mint ASK_ONLY/STALE row since 7:05 AM is capped or already at/below its last ordinary sale; Lillard holds $1,011. The two "stuck" hot-lane parallels from 11-16 (`219:7408::18`, `281:9355::21`) aged out of the 36 h window; one equals its sale, the other is within 9 %.
+- Revert: `git revert` this commit.
+
 ### 2026-11-17 ~9:25 AM PT — Concierge knows UFC Strike moved to Aptos; alarm cron change (and the 12 minutes it reddened `main`) (Cowork cloud; Trevor: "Keep going and doing all you can")
 
 - **Concierge prompt (code):** asked "is UFC Strike still tradeable", the live concierge answered only that the Flow market closed 13 May and nothing can be bought or sold. The prompt now states that UFC Strike moved to Aptos, that a Flow-held Moment trades only after its owner migrates it, and that `/ufc/collection` shows both halves; it must not characterise Aptos activity without a tool result. The reopen flip stays HELD (11-16 decision) — this changes no label or price.
