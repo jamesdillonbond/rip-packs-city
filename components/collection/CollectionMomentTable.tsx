@@ -533,7 +533,7 @@ export default function CollectionMomentTable(props: {
                       })()}
                     </MobileStat>
                     <MobileStat label="Acquired" testId="acquired">
-                      <span className="text-xs font-mono text-[color:var(--rpc-text-primary)]">{formatAcquiredAt(row.acquiredAt || cb?.acquiredDate || null)}</span>
+                      <span className="text-xs font-mono text-[color:var(--rpc-text-primary)]">{row.acquiredAt ? formatAcquiredAt(row.acquiredAt, row.acquisitionMethod) : formatAcquiredAt(cb?.acquiredDate || null, cb?.acquisitionMethod)}</span>
                     </MobileStat>
                   </dl>
                   </div>
@@ -931,7 +931,7 @@ export default function CollectionMomentTable(props: {
                         })()}
                       </td>
                       <td className="rpc-table-cell--muted text-xs hidden xl:table-cell">
-                        <div>{formatAcquiredAt(row.acquiredAt)}</div>
+                        <div>{formatAcquiredAt(row.acquiredAt, row.acquisitionMethod)}</div>
                         {(() => {
                           const acqPillMap: Record<string, { label: string; cls: string; title?: string }> = {
                             pack_pull:        { label: "PACK",         cls: "bg-green-950 text-green-300 border border-green-800" },
@@ -1089,7 +1089,7 @@ export default function CollectionMomentTable(props: {
                                 </div>
                                 <div className="rpc-expand-field">
                                   <div className="rpc-expand-field-label">Acquired</div>
-                                  <div className="rpc-expand-field-value rpc-table-cell--mono">{formatAcquiredAt(row.acquiredAt)}</div>
+                                  <div className="rpc-expand-field-value rpc-table-cell--mono">{formatAcquiredAt(row.acquiredAt, row.acquisitionMethod)}</div>
                                 </div>
                                 {hasLocking && (
                                 <div className="rpc-expand-field">

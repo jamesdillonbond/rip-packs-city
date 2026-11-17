@@ -59,7 +59,7 @@ export function buildCollectionCsv(
       r.lowAsk != null ? r.lowAsk.toFixed(2) : "",
       r.bestOffer != null ? r.bestOffer.toFixed(2) : "",
       (r.badgeInfo?.badge_titles ?? []).join("; "),
-      formatAcquiredAt(r.acquiredAt),
+      formatAcquiredAt(r.acquiredAt, r.acquisitionMethod),
     ]
       .map(csvCell)
       .join(","),

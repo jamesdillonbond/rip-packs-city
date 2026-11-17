@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, beforeAll, afterAll } from "vitest"
 import {
   seriesDisplayLabel,
   seriesFilterLabel,
@@ -70,6 +70,28 @@ describe("formatAcquiredAt", () => {
     const out = formatAcquiredAt("2026-07-04T12:00:00Z")
     expect(out).not.toBe("—")
     expect(out).toMatch(/2026/)
+  })
+})
+
+describe("formatAcquiredAt — day-only dates and first-seen stamps (2026-11-16)", () => {
+  // Pinned to Pacific: in a UTC runner (CI) midnight UTC is already the right day, so the
+  // day-early defect would pass unseen. Node re-reads process.env.TZ on each Date call.
+  let prevTz: string | undefined
+  beforeAll(() => { prevTz = process.env.TZ; process.env.TZ = "America/Los_Angeles" })
+  afterAll(() => { if (prevTz === undefined) delete process.env.TZ; else process.env.TZ = prevTz })
+  it("a day-only value (midnight UTC) keeps its calendar day in every time zone", () => {
+    // dune_deposit_tx stores 2026-04-18 as 2026-04-18T00:00:00Z; in Pacific time that is Apr 17 evening.
+    expect(formatAcquiredAt("2026-04-18T00:00:00+00:00")).toBe("Apr 18, 2026")
+  })
+  it("a timestamp with a time of day is NOT forced to UTC", () => {
+    const iso = "2026-04-18T00:00:01Z"
+    const local = new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    expect(formatAcquiredAt(iso)).toBe(local)
+  })
+  it("a first-seen stamp (acquisition_method 'unknown') reads as an upper bound, not an acquisition date", () => {
+    expect(formatAcquiredAt("2026-11-17T12:00:00Z", "unknown")).toMatch(/^by Nov 1[67], 2026$/)
+    expect(formatAcquiredAt("2026-11-17T12:00:00Z", "marketplace")).not.toMatch(/^by /)
+    expect(formatAcquiredAt(null, "unknown")).toBe("—")
   })
 })
 

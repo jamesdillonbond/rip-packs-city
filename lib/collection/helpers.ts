@@ -81,11 +81,27 @@ export function seriesIntToSeason(seriesRaw: string | undefined | null, seriesMa
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-export function formatAcquiredAt(iso: string | null | undefined): string {
+/**
+ * The Acquired date as shown on the binder.
+ *
+ * ⚠ 2026-11-16: some sources record only the DAY (`dune_deposit_tx`,
+ * `chain_arrival_dune_*` — stored as midnight UTC; 1,329 of one founder wallet's
+ * first 2,000 binder rows). Rendered in a Pacific browser, midnight UTC is the
+ * PREVIOUS evening, so every one of them showed a day early. A value at exactly
+ * 00:00:00.000 UTC is treated as a calendar date and formatted in UTC.
+ *
+ * `acquisitionMethod === "unknown"` means the date is when WE FIRST SAW the moment
+ * in the wallet (cache_refresh / wallet_search stamp), not when it was acquired —
+ * it is an upper bound, so it reads "by <date>". The saved-wallet acquisition fill
+ * (pg_cron, every 2 h) upgrades such a row to the real sale date when it can.
+ */
+export function formatAcquiredAt(iso: string | null | undefined, acquisitionMethod?: string | null): string {
   if (!iso) return "—"
   const d = new Date(iso)
   if (isNaN(d.getTime())) return "—"
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+  const dayOnly = d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0 && d.getUTCMilliseconds() === 0
+  const text = d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", ...(dayOnly ? { timeZone: "UTC" } : {}) })
+  return acquisitionMethod === "unknown" ? "by " + text : text
 }
 
 export function compareText(a?: string | null, b?: string | null) { return (a ?? "").localeCompare(b ?? "") }
