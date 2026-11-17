@@ -4,6 +4,12 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-11-17 ~7:25 AM PT (Claude Code cloud) — three dated reads from the 11-16 evening / 11-17 morning thread (thread archived)
+
+- **11-18 after ~2 PM PT (the WNBA Finals sale windows end 11-18 noon–2 PM PT) — the drop's EV.** `select dist_id, total_pack_count, next_due_at from topshot_atlas_dists where dist_id between '8932' and '8940'` → expect `total_pack_count > 0` once minted (the lane re-reads every 2 h, `20261117053146`); then `pack_drop_pool` rows for 8932/8937/8938/8939 (`rpc-topshot-pool-from-atlas`, :17) and `mv_pack_ev_latest` rows for the inner packs and for Box 8934 / Case 8933 (`rpc-container-pack-ev`, :28). Still 0 minted on 11-19 → read the Atlas summary body for one dist before touching the lane. A still-unminted dist returns to the 30-day re-check after 14 days by design.
+- **First VM pass after 11-17 — the laptop `/sessions` disk.** Trevor reports it cleared. Record `df -h /sessions` in the handoff, use a normal full clone, and confirm `git diff --stat HEAD~1 HEAD` on your own push before calling it done (autonomous-tasks.md, the 11-17 no-checkout rule).
+- **Mon 11-23 run of `fmv_accuracy_weekly` — #234's earliest relabel.** Score ASK_ONLY on established editions only (first sale older than the 1-day embargo + the week); the 11-09 week's all-editions ASK_ONLY cell (18.4) is the 11-11 drop scored against launch-hour asks. #66's accuracy half is already met (HIGH 75.5, 80.1).
+
 ## STEER — added 2026-11-16 ~10:58 AM PT (Claude Code cloud) — one dated read (#253 slot move; thread archived)
 
 - **After ~11-19 — job 714 at `:53` (`20261116184451`).** Read: `select extract(hour from start_time)::int % 2 = 0 as even_utc, count(*), count(*) filter (where status <> 'succeeded') kills, percentile_cont(0.5) within group (order by extract(epoch from end_time-start_time)) p50 from cron.job_run_details where jobid = 714 and start_time > '2026-11-16 18:50Z' group by 1`. **Pass:** both parities median ≲ 35 s (was even 50 / odd 27) and kills at or under ~3/week. First tick 11-16 10:53 AM PT: 51 s, even hour (the :14 even-hour runs over the prior day were 77–117 s). If kills continue at the odd-hour rate, #253's writer-maintained counter is the lever. Close the steer and note the outcome in known-issues #253.

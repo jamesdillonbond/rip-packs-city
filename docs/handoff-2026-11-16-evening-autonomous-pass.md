@@ -44,3 +44,17 @@ Not queued, decided earlier and re-confirmed: Pinnacle drops since mid-August ha
 - `20261117054311`: re-apply the function block of `20261113195652`.
 
 ⚠ Time stamps: two ledger headings from this pass read ~10:35 / ~10:45 PM PT; the DB clock puts them at ~9:38 / ~9:44 PM PT (assumed, not read). A correction bullet sits under each; headings are append-only.
+
+## Addendum — 2026-11-17 morning (~6:20–7:30 AM PT, same thread)
+
+1. **Repo restored.** The 11-17 overnight pass's `2e021e372` (shallow `--no-checkout` clone) committed 9,617 files as deleted; `main` held 6 files. Restored by `22814c462` (tree of `17f49aec2` + that pass's 4 doc files). Its Vercel build had ERRORed, so prod never changed; `57d1e7d8f` then built READY. Safe low-disk recipe (verified on a local clone) + push gate: `docs/reference/autonomous-tasks.md`; lesson in `tooling-gotchas.md`; correction banner on `docs/handoff-2026-11-17-overnight-pass.md`. Trevor reports the laptop `/sessions` disk cleared — unverified from the cloud; focus.md steer asks the next VM pass to record `df -h /sessions`.
+2. **#260 applied** on Trevor's go — `20261117144056`: 151 Top Shot ask-only prices restated ($37,623.78 → $21,073.88), `fmv_restatements` 151, Jokić Cosmic /49 `8:37` $2,199. Live md5 = pin; drift guard re-registered. Revert: the migration header.
+3. **#249 burst case** recorded: the 11-16 10:12 PM PT sitemap crawl produced ~100 cached panel timeouts in two minutes. The throw-on-failed-regeneration fix still needs a preview-verified render (not possible from a main-only session).
+4. **Recurring shared cron stalls (open, low impact):** a few times a day, unrelated pg_cron jobs started at :06 or :26 all END at the same instant ~50 s later (e.g. 11-17 3:26:50.34 AM PT: ten jobs incl. the chain-arrival lanes, ESPN search, sales sync, `allday-first-mint-mv`). Every run still succeeds. A live `pg_stat_activity` sample at 7:26:22 AM PT caught no stall (they are intermittent) — only `mv_candy_scarcity_board`'s IO-bound refresh. **To attribute:** sample `pg_stat_activity` (`wait_event_type`, `pg_blocking_pids`) at :06:30 / :26:30 across several hours; the shared release instant says one lock or one IO freeze, not ten slow queries.
+
+### Still open after this thread
+
+- WNBA Finals container + inner-pack EV — waits on minting (sale windows end 11-18); dated read in `docs/overnight/focus.md`.
+- #249 fix — preview-verified render needed.
+- #234 relabel — earliest after Mon 11-23; must score ASK_ONLY on established editions only.
+- #261 acquisition dates — Dune credits until 12-14.
