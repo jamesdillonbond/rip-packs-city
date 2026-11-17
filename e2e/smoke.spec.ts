@@ -102,6 +102,9 @@ const PAGES: PageCheck[] = [
   { path: "/insights/parallel-premiums", name: "insights · parallel premiums" },
   { path: "/insights/autographs", name: "insights · autographs" },
   { path: "/insights/trade-in", name: "insights · trade-in" },
+  // 2026-11-16: public at the proxy (exact path); the form renders without a read, so a broken
+  // client bundle or layout shows here before any compare is run.
+  { path: "/trades/compare", name: "trades · compare collections", expectText: /Compare collections/i },
   { path: "/insights/pinnacle-scarcity", name: "insights · pinnacle scarcity" },
   { path: "/insights/rookie-board", name: "insights · rookie board" },
   { path: "/insights/rookies", name: "insights · rookies" },

@@ -21,6 +21,10 @@
 // "jamesdillonbond" because it wanted "Jamesdillonbond"); the reply carries the canonical spelling.
 // No wallet address ever leaves the server. FMV confidence tiers never leave the server.
 //
+// The compare itself lives in lib/trade-compare/run.ts (2026-11-16 evening), shared with the
+// concierge's compare_collections tool; this route keeps the rate limits, the budget, the walk
+// dispatch and the HTTP shapes.
+//
 // Durable anon caps (lib/abuse/anon-rate.ts, fail closed): one compare fans out to ~25 Flow REST
 // calls, so per IP 30/h and globally 600/h. When a wallet's index is SHORT of its on-chain count,
 // the Top Shot walk is dispatched (per wallet once per 6 h, globally 60/h) and the page says so.
@@ -29,24 +33,16 @@ import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { boardUnavailable } from "@/lib/insights/board-error"
 import { anonIpKey, bumpAnonRates } from "@/lib/abuse/anon-rate"
-import { isWalletAddress, resolveTopShotUsernameCacheAware } from "@/lib/chains/flow/topshot-username-resolve"
-import { buildSide, coverage, quickTrade, type CompareEdition, type Coverage } from "@/lib/trade-compare/compare"
-import { compareCollection, readCandidates, readChain, readOnChainCount, CANDIDATE_LIMIT } from "@/lib/trade-compare/read"
+import { compareCollection } from "@/lib/trade-compare/read"
+import { isCompareIdentifier, runCompare, UpstreamError } from "@/lib/trade-compare/run"
 import type { SwapCollection } from "@/lib/trade-room/multi-swap-cadence"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
+
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
 /** The whole compare (DB + ~25 chain calls) is bounded under maxDuration so the 503 can still be sent. */
 const COMPARE_BUDGET_MS = 50_000
-
-const NAME = /^@?[A-Za-z0-9_.-]{1,40}$/
-
-type Who = { address: string; username: string }
-
-/** A transient failure outside our DB (the chain, Dapper's username lookup, the rate counter): a
- *  retryable 503 in our own words. apiErrorResponse() would call an unrecognised Error a permanent 500. */
-class UpstreamError extends Error {}
 
 function upstream503(message: string): NextResponse {
   return NextResponse.json(
@@ -55,43 +51,10 @@ function upstream503(message: string): NextResponse {
   )
 }
 
-function upstream<T>(p: Promise<T>, what: string): Promise<T> {
-  return p.catch((e: unknown) => {
-    throw new UpstreamError(`${what}: ${e instanceof Error ? e.message : String(e)}`)
-  })
-}
-
-async function resolve(raw: string): Promise<Who | "not_found" | "failed"> {
-  const v = raw.trim()
-  if (isWalletAddress(v)) {
-    const address = v.toLowerCase()
-    // show the collector's name when RPC knows it; an address otherwise (never echoed back as a wallet field)
-    const { data } = await supabaseAdmin.from("wallet_usernames").select("username").eq("wallet_addr", address).maybeSingle()
-    const name = (data as { username?: string } | null)?.username
-    return { address, username: name ?? `${address.slice(0, 6)}…${address.slice(-4)}` }
-  }
-  const r = await resolveTopShotUsernameCacheAware(supabaseAdmin, v)
-  if (r.found) {
-    const address = r.walletAddress.toLowerCase()
-    return { address, username: await displaySpelling(address, r.username) }
-  }
-  return r.reason === "topshot_gql_error" ? "failed" : "not_found"
-}
-
-/**
- * Top Shot's own capitalisation of a username. The resolver's cache can hold the spelling a
- * visitor TYPED ("jamesdillonbond" for "Jamesdillonbond"); a saved wallet carries the spelling
- * the collector's own account resolved. Same name ignoring case → that spelling; anything else
- * (no row, a read error) keeps the resolver's — display only, never a lookup key.
- */
-async function displaySpelling(address: string, resolved: string): Promise<string> {
-  const { data, error } = await supabaseAdmin.from("saved_wallets").select("username").eq("wallet_addr", address).not("username", "is", null).limit(10)
-  if (error || !Array.isArray(data)) return resolved
-  const match = (data as Array<{ username: string | null }>).map((r) => r.username).find((u) => u && u !== resolved && u.toLowerCase() === resolved.toLowerCase())
-  return match ?? resolved
-}
-
-async function dispatchWalk(req: NextRequest, wallet: string): Promise<boolean> {
+async function dispatchWalk(req: NextRequest, wallet: string, c: SwapCollection): Promise<boolean> {
+  // the walk dispatched here is Top Shot's (fire-and-forget); All Day's is a long SYNC walk owned
+  // by the multicollection orchestrator, so a short All Day / Golazos index is said, not walked
+  if (c.slug !== "nba-top-shot") return false
   const token = process.env.INGEST_SECRET_TOKEN
   if (!token) return false
   const verdict = await bumpAnonRates([
@@ -116,21 +79,6 @@ async function dispatchWalk(req: NextRequest, wallet: string): Promise<boolean> 
   return true
 }
 
-export interface CompareSide {
-  username: string
-  editions: CompareEdition[]
-  /** Editions with at least one tradeable copy (all of them are in `editions`). */
-  editions_total: number
-  /** Candidate Moments the index offered before the chain read. */
-  candidates_total: number
-  /** True when the index held more candidates than were read (highest FMV first). */
-  capped: boolean
-  blocked: { locked: number; listed: number; gone: number }
-  coverage: Coverage
-  /** The Top Shot walk was dispatched (or already ran in the last 6 h) because the index is short. */
-  indexing: boolean
-}
-
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams
   const u1 = (sp.get("u1") ?? "").trim()
@@ -138,7 +86,7 @@ export async function GET(req: NextRequest) {
   const c = compareCollection(sp.get("c") ?? "nba-top-shot")
   if (!c) return NextResponse.json({ error: "Compare covers NBA Top Shot, NFL All Day and LaLiga Golazos.", code: "bad_collection" }, { status: 400 })
   for (const u of [u1, u2]) {
-    if (!u || !(NAME.test(u) || isWalletAddress(u))) {
+    if (!u || !isCompareIdentifier(u)) {
       return NextResponse.json({ error: "Enter two Top Shot usernames.", code: "bad_input" }, { status: 400 })
     }
   }
@@ -165,63 +113,12 @@ export async function GET(req: NextRequest) {
 }
 
 async function compare(req: NextRequest, c: SwapCollection, u1: string, u2: string): Promise<NextResponse> {
-  {
-    const [ra, rb] = await Promise.all([resolve(u1), resolve(u2)])
-    for (const [r, raw] of [[ra, u1], [rb, u2]] as const) {
-      if (r === "failed") throw new UpstreamError(`username lookup failed for ${raw}`)
-      if (r === "not_found") {
-        return NextResponse.json({ error: `No Top Shot collector named "${raw.replace(/^@/, "")}".`, code: "not_found", username: raw }, { status: 404 })
-      }
-    }
-    const a = ra as Who
-    const b = rb as Who
-    if (a.address === b.address) {
-      return NextResponse.json({ error: "Those are the same collector. Enter two different usernames.", code: "same_wallet" }, { status: 400 })
-    }
-
-    const [raw, countA, countB] = await Promise.all([
-      readCandidates(supabaseAdmin, c.collectionId, a.address, b.address),
-      readOnChainCount(a.address, c),
-      readOnChainCount(b.address, c),
-    ])
-    const [chainA, chainB] = await Promise.all([
-      upstream(readChain(supabaseAdmin, c, a.address, raw.a_rows), "chain read A"),
-      upstream(readChain(supabaseAdmin, c, b.address, raw.b_rows), "chain read B"),
-    ])
-
-    const sideA = buildSide(raw.a_rows, chainA)
-    const sideB = buildSide(raw.b_rows, chainB)
-    const covA = coverage(raw.a_indexed, countA)
-    const covB = coverage(raw.b_indexed, countB)
-    // the walk dispatched here is Top Shot's (fire-and-forget); All Day's is a long SYNC walk owned
-    // by the multicollection orchestrator, so a short All Day / Golazos index is said, not walked
-    const walks = c.slug === "nba-top-shot"
-    const [indexingA, indexingB] = await Promise.all([
-      walks && covA.complete === false ? dispatchWalk(req, a.address) : Promise.resolve(false),
-      walks && covB.complete === false ? dispatchWalk(req, b.address) : Promise.resolve(false),
-    ])
-
-    const side = (who: Who, s: typeof sideA, total: number, rows: number, cov: Coverage, indexing: boolean): CompareSide => ({
-      username: who.username,
-      editions: s.editions,
-      editions_total: s.editions.length,
-      candidates_total: total,
-      capped: total > rows,
-      blocked: s.blocked,
-      coverage: cov,
-      indexing,
-    })
-
-    return NextResponse.json(
-      {
-        collection: c.slug,
-        a: side(a, sideA, raw.a_total, raw.a_rows.length, covA, indexingA),
-        b: side(b, sideB, raw.b_total, raw.b_rows.length, covB, indexingB),
-        quick_trade: quickTrade(sideA.editions, sideB.editions, sideA.confident, sideB.confident),
-        candidate_limit: CANDIDATE_LIMIT,
-        checked_at: new Date().toISOString(),
-      },
-      { headers: { "Cache-Control": "no-store" } },
-    )
+  const out = await runCompare(supabaseAdmin, c, u1, u2, { onShortIndex: (wallet, coll) => dispatchWalk(req, wallet, coll) })
+  if (out.kind === "not_found") {
+    return NextResponse.json({ error: `No Top Shot collector named "${out.username}".`, code: "not_found", username: out.username }, { status: 404 })
   }
+  if (out.kind === "same_wallet") {
+    return NextResponse.json({ error: "Those are the same collector. Enter two different usernames.", code: "same_wallet" }, { status: 400 })
+  }
+  return NextResponse.json(out.result, { headers: { "Cache-Control": "no-store" } })
 }

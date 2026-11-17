@@ -33,6 +33,8 @@ vi.mock("@/lib/auth/supabase-server", () => ({
     },
   }),
 }))
+const runCompareMock = vi.hoisted(() => vi.fn())
+vi.mock("@/lib/trade-compare/run", async (orig) => ({ ...(await orig<typeof import("@/lib/trade-compare/run")>()), runCompare: runCompareMock }))
 vi.mock("@/lib/pro-tier", () => ({
   checkFeatureQuota: async () => ({ allowed: true, plan: "pro", daily_limit: 200 }),
   recordFeatureUsage: async () => {},
@@ -789,5 +791,86 @@ describe("concierge — the non-streamed reply keeps text written before a tool 
     expect(body.response).toContain("Open the Team checklists card")
     expect(body.response).toContain("I've also logged")
     expect(body.response!.indexOf("Team checklists")).toBeLessThan(body.response!.indexOf("also logged"))
+  })
+})
+
+// 2026-11-16 evening: Compare collections in the concierge — the page's own compare, called
+// directly; unknown names and failed reads are said, never "they hold nothing".
+describe("concierge — compare_collections (2026-11-16)", () => {
+  const ed = (o: Record<string, unknown> = {}) => ({
+    edition_key: "227:7560",
+    player_name: "Tre Mann",
+    set_name: "Equinox",
+    tier: "RARE",
+    series_number: 8,
+    league: "NBA",
+    image_url: null,
+    fmv_usd: 4.23,
+    from_asks: true,
+    owned: 2,
+    tradeable: [{ moment_id: "50452811", serial_number: 135 }],
+    blocked: { locked: 0, listed: 0, gone: 0 },
+    ...o,
+  })
+  const side = (username: string, editions: unknown[], o: Record<string, unknown> = {}) => ({
+    username,
+    editions,
+    editions_total: editions.length,
+    candidates_total: editions.length,
+    capped: false,
+    blocked: { locked: 1, listed: 0, gone: 0 },
+    coverage: { indexed: 10, on_chain: 10, complete: true },
+    indexing: false,
+    ...o,
+  })
+  beforeEach(() => {
+    runCompareMock.mockReset()
+  })
+
+  it("relays both sides, the Quick Trade and the page link — no wallet, no tier", async () => {
+    runCompareMock.mockResolvedValue({
+      kind: "ok",
+      result: {
+        collection: "nfl-all-day",
+        a: side("Jamesdillonbond", [ed()]),
+        b: side("roham", [ed({ player_name: "Josh Allen", fmv_usd: null, from_asks: false })], { coverage: { indexed: 5, on_chain: 9, complete: false } }),
+        quick_trade: { a: [{ edition_key: "x", moment_id: "1", serial_number: 9, player_name: "A", set_name: "S", fmv_usd: 5 }], b: [{ edition_key: "y", moment_id: "2", serial_number: 8, player_name: "B", set_name: "S", fmv_usd: 5.5 }], difference_usd: -0.5 },
+        candidate_limit: 600,
+        checked_at: "2026-11-16T00:00:00Z",
+      },
+    })
+    const r = await drive("compare_collections", { you: "jamesdillonbond", partner: "roham", collection: "nfl-all-day" })
+    expect((runCompareMock.mock.calls[0] as unknown[])[1]).toMatchObject({ slug: "nfl-all-day" })
+    expect(r).toMatchObject({ status: "ok", collection: "All Day", page: "/trades/compare?u1=Jamesdillonbond&u2=roham&c=nfl-all-day" })
+    const b = r.b as { editions: Array<{ fmv_usd: number | null }>; coverage_note: string }
+    expect(b.editions[0].fmv_usd).toBeNull()
+    expect(b.coverage_note).toMatch(/5 of 9/)
+    expect((r.quick_trade as { difference_usd: number }).difference_usd).toBe(-0.5)
+    expect(JSON.stringify(r)).not.toMatch(/0x[0-9a-f]{16}|confidence|"HIGH"|"MEDIUM"/)
+  })
+
+  it("an unknown name is not_found by name; a failed chain read is a retryable error, never an empty compare", async () => {
+    runCompareMock.mockResolvedValueOnce({ kind: "not_found", username: "nobody" })
+    const r = await drive("compare_collections", { you: "jamesdillonbond", partner: "nobody" })
+    expect(r).toMatchObject({ status: "not_found", username: "nobody" })
+    expect(String(r.message)).toMatch(/never say that collector holds nothing/)
+    const { UpstreamError } = await vi.importActual<typeof import("@/lib/trade-compare/run")>("@/lib/trade-compare/run")
+    runCompareMock.mockRejectedValueOnce(new UpstreamError("Flow script HTTP 503"))
+    const e = await drive("compare_collections", { you: "jamesdillonbond", partner: "roham" })
+    expect(e).toMatchObject({ status: "error", retryable: true })
+    expect(e.a).toBeUndefined()
+  })
+
+  it("refuses a collection Compare doesn't cover and asks for a name it doesn't have — without reading anything", async () => {
+    expect(await drive("compare_collections", { you: "a", partner: "b", collection: "ufc" })).toMatchObject({ status: "unsupported_collection" })
+    expect(await drive("compare_collections", { partner: "roham" })).toMatchObject({ status: "need_username" })
+    expect(await drive("compare_collections", { you: "a b", partner: "roham" })).toMatchObject({ status: "bad_input" })
+    expect(runCompareMock).not.toHaveBeenCalled()
+  })
+
+  it("an empty compare says neither has a tradeable duplicate the other lacks — not that they hold nothing", async () => {
+    runCompareMock.mockResolvedValue({ kind: "ok", result: { collection: "nba-top-shot", a: side("x", []), b: side("y", []), quick_trade: null, candidate_limit: 600, checked_at: "2026-11-16T00:00:00Z" } })
+    const r = await drive("compare_collections", { you: "x", partner: "y" })
+    expect(String(r.message)).toMatch(/not that either holds nothing/)
   })
 })
