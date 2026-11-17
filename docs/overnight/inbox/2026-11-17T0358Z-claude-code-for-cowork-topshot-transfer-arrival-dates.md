@@ -166,3 +166,9 @@ $fn$;
 REVOKE ALL ON FUNCTION public.apply_topshot_arrival_transfers(integer) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.apply_topshot_arrival_transfers(integer) TO service_role;
 ```
+
+## ✅ RESOLVED 2026-11-16 ~8:30 PM PT (Cowork cloud, via Trevor's Chrome)
+
+Applied through the dashboard SQL editor as `20261117044500` (body md5 matched `fb1e4951…`; `schema_migrations` row in
+the same Run). Backfill: 20,950 inserted + 2,658 re-dated = **23,608**, last batch `candidates 0`; archive counts match.
+Binder for 0x16d7df1713d6cce7 reads "by Oct 23, 2026" on the newest written row. Migration file committed; ledger entry added.
