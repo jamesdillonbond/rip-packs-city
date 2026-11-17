@@ -48,11 +48,11 @@ name: Site Availability Alarm
 # Being told a few times a day that the site is down is what is actually on
 # offer; the 2026-09-10 failure was silence, not noise.
 #
-# ⚠ Minutes 4/19/33/49 are GHA-EMPTY on this repo, derived from every `cron:` in
+# ⚠ Minutes 3/19/33/49 are GHA-EMPTY on this repo, derived from every `cron:` in
 # .github/workflows rather than assumed, and re-derived by the test.
 on:
   schedule:
-    - cron: "5,20,34,50 * * * *"
+    - cron: "3,19,33,49 * * * *"
   workflow_dispatch:
 
 permissions:
