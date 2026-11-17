@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-17 ~6:42 AM PT — #260 applied: Top Shot ask-only with no 180-day sale capped at its last sale of any age (Claude Code cloud; Trevor: "Approve and proceed")
+
+- **Migration `20261117144056` `audit_20261116_topshot_ask_only_old_sale_cap`** (staged 11-16 by the /trades/compare thread; handoff `docs/handoff-2026-11-16-topshot-ask-only-old-sale-cap.md`): BEFORE-INSERT guard `fmv_snapshots_cap_allday_ask_only_to_recent_sales` gains the Top Shot `_histcap` last-sale arm (replaces the 3× bound that tripled Jokić Cosmic /49 to $7,500 the day its last sale turned 181 days). One-time restatement: 151 latest ASK_ONLY rows $37,623.78 → $21,073.88 (backup `audit_20261116_topshot_ask_only_old_sale_cap_backup`), `edition_fmv_current` 151, `fmv_restatements` 151 (#233). md5-guarded on the 20261105024000 body; live md5 `069d776f…` = pin; pin passes locally; drift guard re-registered. `8:37` reads $2,199.00.
+- Revert: the REVERT block in the migration header (re-apply the 20261105024000 body; restore from the backup table).
+
 ### 2026-11-17 ~6:22 AM PT — RESTORED `main`: the overnight pass's commit `2e021e372` deleted 9,617 tracked files (Claude Code cloud; Trevor: "Approve and proceed")
 
 - `2e021e372` ("docs: 2026-11-17 overnight autonomous pass") was made from a `--depth=1 --no-checkout` shallow clone with a selective checkout, so every file it did not check out was committed as DELETED: `main` held 6 files (no `app/`, `.github/`, `CLAUDE.md`, `supabase/`). Its Vercel build ERRORed (prod stayed on the last good deploy; no outage). This commit restores the full tree of `17f49aec2` and keeps that pass's 4 real changes (its handoff, ledger entry, metrics-latest.json, sessions entry); `git diff 17f49aec2` = exactly those 4 files.
