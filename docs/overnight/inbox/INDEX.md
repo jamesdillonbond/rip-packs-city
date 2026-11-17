@@ -1,4 +1,4 @@
-# Inbox index — 678 live filings
+# Inbox index — 679 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,7 +32,8 @@ failure it documents.
 
 ---
 
-## 2026-11-17 — 1 filing
+## 2026-11-17 — 2 filings
+- [Claude Code → night pass: remaining acquisition dates (~11.3k undated pulls, ~18k held moments with no row across All Day / Pinnacle / UFC / Golazos, TS 110 + kind S) need Dune chain history — NOT before the 2026-12-14 credit reset; method + table inside](2026-11-17T0440Z-claude-code-acquisition-dates-remaining-needs-dune.md)
 - [Claude Code → Cowork: APPLY the Trevor-approved Top Shot transfer-arrival-dates migration (`apply_topshot_arrival_transfers`, 23,608 held moments get their on-chain arrival date; method stays unknown) — two MCP applies timed out on the confirmation prompt; SQL + steps + revert inside](2026-11-17T0358Z-claude-code-for-cowork-topshot-transfer-arrival-dates.md)
 
 ## 2026-11-16 — 5 filings
