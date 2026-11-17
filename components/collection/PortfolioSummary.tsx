@@ -47,6 +47,7 @@ type WalletSummary = {
   current_fmv: number
   pnl: number
   moments_with_cost?: number
+  stale_with_cost_count?: number
   lock_unknown_fmv?: number
   lock_unknown_count?: number
 } | null
@@ -211,7 +212,7 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
         {hasSearched && !isMarketClosed(collectionSlug) && (walletSummary?.cost_basis ? walletSummary.cost_basis > 0 : (costBasis.size > 0 || rows.some(function(r) { return r.costBasis != null }))) && (function() {
           const summary = computeCostBasisSummary(walletSummary, rows, costBasis, paginatedTotal)
           if (!summary) return null
-          const { totalCost, totalFmv, totalPl, plPct, count, walletWide, partial } = summary
+          const { totalCost, totalFmv, totalPl, plPct, count, walletWide, partial, staleExcluded } = summary
           const plColor = totalPl >= 0 ? "text-emerald-400" : "text-red-400"
           return (
             <div className="flex flex-wrap gap-6 items-center mb-4 p-3 rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] text-sm font-mono">
@@ -219,7 +220,7 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
               <div><span className="text-[color:var(--rpc-text-muted)]">Current FMV:</span> <span className="text-[color:var(--rpc-text-primary)]">{fmtUsd2(totalFmv)}</span></div>
               <div><span className="text-[color:var(--rpc-text-muted)]">P&amp;L:</span> <span className={plColor}>{totalPl >= 0 ? "+" : "-"}{fmtUsd2(Math.abs(totalPl))} ({fmtSignedFixed(plPct, 0)}%)</span></div>
               {walletWide
-                ? <div className="text-[color:var(--rpc-text-muted)] text-xs">{count > 0 ? `${count.toLocaleString("en-US")} ${count === 1 ? "moment" : "moments"} with a known cost` : "moments with a known cost"} — FMV here is theirs, not the whole wallet</div>
+                ? <div className="text-[color:var(--rpc-text-muted)] text-xs">{count > 0 ? `${count.toLocaleString("en-US")} ${count === 1 ? "moment" : "moments"} with a known cost` : "moments with a known cost"} — FMV here is theirs, not the whole wallet{staleExcluded > 0 ? ` · ${staleExcluded.toLocaleString("en-US")} stale-priced left out` : ""}</div>
                 : partial
                   // 2026-11-14: a page's sum, not the wallet's — the wallet-wide summary is
                   // still loading or failed. It read as the wallet's P&L before.

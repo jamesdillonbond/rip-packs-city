@@ -331,6 +331,20 @@ describe("computeLoanDefaults", () => {
 describe("computeCostBasisSummary", () => {
   const emptyMap = new Map<string, { buyPrice: number }>()
 
+  // 2026-11-17: the P&L set leaves STALE-priced moments out (get_wallet_summary
+  // 20261117215147); the panel must SAY how many, and only on the wallet-wide figure.
+  it("carries the stale-priced moments left out of a wallet-wide P&L", () => {
+    const s = computeCostBasisSummary({ ...fullSummary!, moments_with_cost: 15463, stale_with_cost_count: 7 }, [], emptyMap)
+    expect(s!.walletWide).toBe(true)
+    expect(s!.staleExcluded).toBe(7)
+  })
+
+  it("reports no stale exclusion on the per-row fallback, or when the field is absent", () => {
+    const rows: PortfolioMomentRow[] = [{ flowId: "a", fmv: 50, costBasis: 40 }]
+    expect(computeCostBasisSummary(null, rows, emptyMap)!.staleExcluded).toBe(0)
+    expect(computeCostBasisSummary({ ...fullSummary!, moments_with_cost: 10 }, rows, emptyMap)!.staleExcluded).toBe(0)
+  })
+
   // 2026-11-09 RE-PIN: the wallet-wide branch used to count the LOADED rows, which printed
   // "27 moments with a known cost" under a total summed over 6,628. The count is the RPC's.
   it("uses authoritative wallet-wide totals and the RPC's own count, never the loaded rows", () => {

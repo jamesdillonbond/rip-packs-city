@@ -231,6 +231,8 @@ function WalletMomentsBody() {
     // taught computeCostBasisSummary to read it, but this mapping dropped the field, so
     // the line rendered with no number. Absent → undefined, never 0.
     moments_with_cost?: number
+    // 2026-11-17: moments with a cost the P&L leaves out because their price is STALE.
+    stale_with_cost_count?: number
     lock_unknown_fmv?: number
     lock_unknown_count?: number
     // 2026-09-06: the stale split get_wallet_summary now carries, so the headline
@@ -1021,6 +1023,7 @@ function WalletMomentsBody() {
             current_fmv: Number(json.current_fmv) || 0,
             pnl: Number(json.pnl) || 0,
             moments_with_cost: typeof json.moments_with_cost === "number" ? json.moments_with_cost : undefined,
+            stale_with_cost_count: typeof json.stale_with_cost_count === "number" ? json.stale_with_cost_count : undefined,
             // Same class: the "N not checked" lock line never rendered here because these two
             // were dropped. null from the route (older function) stays undefined, never 0.
             lock_unknown_fmv: typeof json.lock_unknown_fmv === "number" ? json.lock_unknown_fmv : undefined,

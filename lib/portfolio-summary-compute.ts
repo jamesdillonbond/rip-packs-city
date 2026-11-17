@@ -40,6 +40,9 @@ export type WalletSummary = {
   // How many moments the wallet-wide cost_basis / current_fmv / pnl cover (get_wallet_summary).
   // Optional: an older deployment does not send it.
   moments_with_cost?: number
+  // 2026-11-17: moments with a cost left OUT of cost_basis / current_fmv / pnl because their price
+  // is STALE (the headline's rule). Optional: an older deployment does not send it.
+  stale_with_cost_count?: number
 } | null
 
 // Client-computed page totals (fallback when walletSummary hasn't loaded).
@@ -288,6 +291,8 @@ export type CostBasisSummary = {
    * when the figure is wallet-wide or the loaded rows are the whole wallet.
    */
   partial: { loaded: number; total: number } | null
+  /** Wallet-wide only: moments with a cost left out because their price is STALE (0 when none or unknown). */
+  staleExcluded: number
 }
 
 // Cost basis / P&L summary. When the authoritative wallet-wide cost basis is
@@ -340,5 +345,7 @@ export function computeCostBasisSummary(
   const plPct = totalCost > 0 ? (totalPl / totalCost) * 100 : 0
   const total = typeof walletMomentTotal === "number" && Number.isFinite(walletMomentTotal) ? walletMomentTotal : null
   const partial = !walletWide && total != null && rows.length < total ? { loaded: rows.length, total } : null
-  return { totalCost, totalFmv, totalPl, plPct, count, walletWide, partial }
+  const se = walletWide ? walletSummary?.stale_with_cost_count : undefined
+  const staleExcluded = typeof se === "number" && Number.isFinite(se) && se > 0 ? se : 0
+  return { totalCost, totalFmv, totalPl, plPct, count, walletWide, partial, staleExcluded }
 }

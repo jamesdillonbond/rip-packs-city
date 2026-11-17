@@ -133,6 +133,16 @@ describe("PortfolioSummary", () => {
     expect(one.container.textContent).not.toContain("1 moments")
   })
 
+  it("names the stale-priced moments the P&L leaves out, and says nothing when there are none", () => {
+    // 2026-11-17: P&L follows the headline's rule (STALE prices out); the panel says how many left.
+    const ws = { wallet_fmv: 5000, unlocked_fmv: 3800, unlocked_count: 32, locked_fmv: 1200, locked_count: 8, cost_basis: 4000, current_fmv: 4500, pnl: 500, moments_with_cost: 15463 }
+    const some = render(<PortfolioSummary {...base} walletSummary={{ ...ws, stale_with_cost_count: 1207 }} />)
+    expect(some.container.textContent).toContain("1,207 stale-priced left out")
+    some.unmount()
+    const none = render(<PortfolioSummary {...base} walletSummary={{ ...ws, stale_with_cost_count: 0 }} />)
+    expect(none.container.textContent).not.toContain("stale-priced left out")
+  })
+
   it("suppresses the wallet totals and cost-basis/P&L block for a closed market", () => {
     // UFC Strike's market is closed — the wallet view must show a count + note
     // (via WalletStatRow) and must NOT render a "Current FMV"/P&L figure that
