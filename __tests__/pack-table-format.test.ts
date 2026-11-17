@@ -11,6 +11,7 @@ import {
   marginClass,
   HEAVY_DEPLETION_THRESHOLD,
   fmtSlots,
+  fmtSlotsLine,
   depletionChip,
   POOL_DEPLETION_THRESHOLD,
   comparePackValues,
@@ -111,6 +112,22 @@ describe("marginClass", () => {
   })
   it("zero margin → secondary", () => {
     expect(marginClass(0)).toBe("text-[color:var(--rpc-text-secondary)]")
+  })
+})
+
+// 2026-11-16: the mobile card read "1 slots", "— slots" and "Reward slots" live
+describe("fmtSlotsLine", () => {
+  it("pluralizes a count", () => {
+    expect(fmtSlotsLine(1)).toBe("1 slot")
+    expect(fmtSlotsLine(5)).toBe("5 slots")
+  })
+  it("a pack-type label stands alone, with no 'slots' after it", () => {
+    expect(fmtSlotsLine(null, "reward")).toBe("Reward")
+    expect(fmtSlotsLine(0, "in_season_premium")).toBe("In Season Premium")
+  })
+  it("nothing known → null, never a dash", () => {
+    expect(fmtSlotsLine(null)).toBeNull()
+    expect(fmtSlotsLine(0, "  ")).toBeNull()
   })
 })
 

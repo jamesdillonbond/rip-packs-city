@@ -1880,7 +1880,7 @@ function TierOddsPanel({
           Pull odds by tier
         </h2>
         <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)" }}>
-          {withAsOf(slots && slots > 0 ? `${slots} slots/pack` : "per pack", updatedAt)}
+          {withAsOf(slots && slots > 0 ? `${slots} ${slots === 1 ? "slot" : "slots"}/pack` : "per pack", updatedAt)}
         </span>
       </div>
       <div style={{ overflowX: "auto" }}>
@@ -1934,7 +1934,7 @@ function TierOddsPanel({
         </table>
       </div>
       <div style={{ marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)" }}>
-        Odds/pack ≈ chance of at least one card of that tier across {slots && slots > 0 ? slots : "the"} slots, from the remaining pool. Approximate (assumes independent slots).
+        Odds/pack ≈ chance of at least one card of that tier across {slots === 1 ? "the 1 slot" : `${slots && slots > 0 ? slots : "the"} slots`}, from the remaining pool. Approximate (assumes independent slots).
       </div>
     </section>
   )

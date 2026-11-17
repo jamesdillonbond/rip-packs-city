@@ -195,6 +195,7 @@ import {
   fmtPct,
   marginClass,
   fmtSlots,
+  fmtSlotsLine,
   depletionChip,
   comparePackValues,
   defaultSortDir,
@@ -799,8 +800,12 @@ export default function PackTable({
               </div>
             )}
             <div className="mt-2 flex items-center gap-3 text-xs text-[color:var(--rpc-text-secondary)]">
-              <span className="tabular-nums">{fmtSlots(r.slots, r.packType)} slots</span>
-              <span>·</span>
+              {fmtSlotsLine(r.slots, r.packType) && (
+                <>
+                  <span className="tabular-nums">{fmtSlotsLine(r.slots, r.packType)}</span>
+                  <span>·</span>
+                </>
+              )}
               <span
                 className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
                 style={textSafeChip(coverageChipClass(r.fmvCoverage))}

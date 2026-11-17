@@ -99,6 +99,18 @@ export function fmtSlots(slots: number | null, packType?: string | null): string
   return '—'
 }
 
+/**
+ * The mobile pack card's slots line (2026-11-16). It used to be `${fmtSlots(..)} slots`,
+ * which read "1 slots", "— slots" and "Reward slots" on the live Top Shot packs page.
+ * A count gets its own singular/plural; a pack-type label stands alone; nothing known → null
+ * (the card drops the item rather than print a dash).
+ */
+export function fmtSlotsLine(slots: number | null, packType?: string | null): string | null {
+  if (slots != null && slots > 0) return `${slots} ${slots === 1 ? 'slot' : 'slots'}`
+  const label = humanizeLabel(packType)
+  return label || null
+}
+
 export const POOL_DEPLETION_THRESHOLD = 0.7
 
 // Surface pool depletion as a "🔥 X/N remain" chip when ≥70% of the drop
