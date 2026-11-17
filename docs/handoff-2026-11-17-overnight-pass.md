@@ -1,5 +1,8 @@
 # Handoff — 2026-11-17 overnight autonomous pass (Cowork cloud)
 
+> ⛔ **CORRECTION 2026-11-17 ~7:05 AM PT (Claude Code cloud): the `--depth=1 --no-checkout` push route below DELETED THE REPO.** A `--no-checkout` clone has an empty index, so this pass's commit `2e021e372` recorded 9,617 files as deleted (`main` = 6 files) until `22814c462` restored it. **Do not reuse the recipe as written** — the safe version (`git read-tree HEAD` first, add named paths only, check `git diff --cached --stat HEAD`) is in `docs/reference/autonomous-tasks.md`.
+
+
 **When:** 2026-11-17 ~1:03 → ~1:20 AM PT (genuine overnight; clock verified vs DB — shell/VM 09:02Z, DB now() 09:03Z, newest sale ingest 09:03Z, newest FMV 08:53Z: no skew).
 **Mode:** full autonomy. Not frozen. Lock was RELEASED (prior 11-16 09:15Z overnight-pass a3920f188190) → taken over as `818bde681335`, released at end.
 **Push:** AVAILABLE via the VM `.rpc-git-cred` route, but through a `--depth=1 --no-checkout` shallow clone + selective checkout (see "Environment finding" — the VM /sessions disk is full and the normal full-checkout clone fails).

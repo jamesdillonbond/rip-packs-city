@@ -160,6 +160,26 @@ and splice — never write back a copy read earlier in the session.** Full case,
 detector designs that failed on the real data:
 [ledger-discipline.md](ledger-discipline.md).
 
+## ⛔ NEVER commit from a `--no-checkout` / sparse clone without first loading the index from HEAD (2026-11-17)
+
+The 11-17 overnight pass pushed `2e021e372` from `git clone --depth=1 --no-checkout --filter=blob:none` + a selective checkout (the laptop VM's `/sessions` disk is full, so a normal clone fails). A `--no-checkout` clone has an EMPTY index, so the commit recorded **9,617 files as deleted** — `main` held 6 files until `22814c462` restored it ~6:22 AM PT. Its Vercel build ERRORed, so prod stayed up; next time it may not.
+
+**Safe recipe in a low-disk clone** (verified shape; no full checkout needed):
+
+```bash
+git clone --depth=1 --no-checkout --filter=blob:none <url> rpc && cd rpc
+git read-tree HEAD                      # index = HEAD's tree; the worktree stays empty
+git checkout HEAD -- docs/overnight/ledger.md docs/overnight/metrics-latest.json   # only what you edit
+# ...edit those files...
+git add docs/overnight/ledger.md docs/overnight/metrics-latest.json             # name paths; never -A
+git diff --cached --stat HEAD | tail -1   # MUST read "N files changed" for your N files only
+git commit -F msg && git push origin HEAD:main
+```
+
+Verified 11-17 ~7:08 AM PT on a local clone: without `read-tree` every file is staged as deleted; with it, the staged diff is exactly the edited file. `git status` still lists every file as missing from the (empty) worktree — expected; only the STAGED diff is committed.
+
+**The gate before any push, from any clone:** `git diff --stat HEAD~1 HEAD | tail -1` — a deletion count in the hundreds or thousands means STOP; reset to `origin/main` and redo. The `/sessions` disk itself (85 stale `rcw-*` homes, owned by `nobody`) needs Trevor on the laptop; see `docs/handoff-2026-11-17-overnight-pass.md`.
+
 ## The two tasks, in one line each (moved verbatim from CLAUDE.md, 2026-09-19)
 
 - **`rpc-daytime-monitor`** — READ-ONLY, ~3-hourly. Sweeps health, files candidates to `docs/overnight/inbox/`. Ships nothing.
