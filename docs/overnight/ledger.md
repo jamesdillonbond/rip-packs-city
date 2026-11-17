@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-16 ~5:41 PM PT — Phone packs list: filters fold behind a "Filters" button (Claude Code cloud; Trevor: "Do what you think is best for the user UI")
+- Measured live (390 × 844, signed out, /nba-top-shot/packs): the tier / quick / type / price rows filled the first screen; the first pack card started at 861 px, below the fold. Packs pages were the top section for engaged visitors last week (/nba-top-shot/packs 16).
+- CODE: `components/packs/PackPageClient.tsx` — below `md`, those rows sit behind a full-width "Filters" button (aria-expanded/controls) that shows "· N on" when any are set (`activeFilterTotal`), so a narrowed list never reads as the whole catalogue. Search + sort stay visible. Desktop unchanged (`md:block`). Applies to every collection's packs page.
+- Tests: 3 component tests. Full `npm run preflight` green.
+- Revert: `git revert` this commit (no DB half).
+
 ### 2026-11-16 ~5:35 PM PT — Homepage link preview: default OG card prerendered (no 6 s cold render), root description 235 → 154 chars, card URL cache-busted (Cowork cloud; Trevor: "I approve you getting access and doing it yourself")
 
 - Measured first: a cold `/api/og/default` took 6.1 s (edge cold start + HTTP font/logo fetches), a HIT 0.25 s; iMessage/WhatsApp/X drop the image past a few seconds. `app/api/og/default/route.tsx` → Node runtime, `force-static` + `revalidate = 3600` (build prints `○ /api/og/default 1h 1y`), logo read from disk as a data URI (traced in `next.config.ts`), short cache on a fontless render via `ogCacheHeaders(!fonts)`. Prerendered PNG checked by eye: identical card, brand fonts + logo.
