@@ -77,32 +77,43 @@ jobs:
           for i in $(seq 1 "$MAX_ITERS"); do
             URL="$BASE?range=$RANGE"
             if [ "$i" = "1" ] && [ -n "$START_BLOCK" ]; then URL="$URL&start_block=$START_BLOCK"; fi
-            echo "── call $i/$MAX_ITERS  url=$URL"
-            STATUS=$(curl -s -o /tmp/bf.json -w "%{http_code}" -X POST \
-              -H "Authorization: Bearer $TOKEN" \
-              --max-time 290 \
-              "$URL") || STATUS=""
-            echo "HTTP $STATUS"
-            cat /tmp/bf.json 2>/dev/null || echo "<no body>"; echo ""
-            if [ "$STATUS" != "200" ]; then
-              echo "::warning::call $i returned HTTP '$STATUS'"
-              OVERALL=1
-              break
-            fi
-            # Every `run:` is bash -e: a fallible assignment must carry its own
-            # fallback, then be checked explicitly (never `|| X="0"`).
-            OK=$(jq -r '.ok // false' /tmp/bf.json 2>/dev/null) || OK=""
-            DONE=$(jq -r '.done // false' /tmp/bf.json 2>/dev/null) || DONE=""
-            CB=$(jq -r '.cursor_before // empty' /tmp/bf.json 2>/dev/null) || CB=""
-            CA=$(jq -r '.cursor_after // empty' /tmp/bf.json 2>/dev/null) || CA=""
-            INS=$(jq -r '.inserted // 0' /tmp/bf.json 2>/dev/null) || INS=""
-            if [ -z "$OK" ] && [ -z "$DONE" ]; then
-              echo "::warning::call $i: HTTP 200 with a body jq could not parse"
-              OVERALL=1
-              break
-            fi
-            if [ "$OK" != "true" ]; then
-              echo "::warning::call $i logged ok=$OK"
+            # RETRY a failed call (2026-11-16): one transient upstream `fetch failed`
+            # on call 33 of 200 ended the whole weekly walk, leaving every block past
+            # it unwalked until next Monday. A failed call never advances the
+            # server's cursor (it throws before the cursor write) and the route is
+            # insert-only, so re-sending the SAME call is safe. Three attempts, then
+            # the run still fails red — a persistent outage is not hidden.
+            CALL_OK=""
+            for attempt in 1 2 3; do
+              echo "── call $i/$MAX_ITERS attempt $attempt/3  url=$URL"
+              STATUS=$(curl -s -o /tmp/bf.json -w "%{http_code}" -X POST \
+                -H "Authorization: Bearer $TOKEN" \
+                --max-time 290 \
+                "$URL") || STATUS=""
+              echo "HTTP $STATUS"
+              cat /tmp/bf.json 2>/dev/null || echo "<no body>"; echo ""
+              # Every `run:` is bash -e: a fallible assignment must carry its own
+              # fallback, then be checked explicitly (never `|| X="0"`).
+              OK=""; DONE=""; CB=""; CA=""; INS=""
+              if [ "$STATUS" = "200" ]; then
+                OK=$(jq -r '.ok // false' /tmp/bf.json 2>/dev/null) || OK=""
+                DONE=$(jq -r '.done // false' /tmp/bf.json 2>/dev/null) || DONE=""
+                CB=$(jq -r '.cursor_before // empty' /tmp/bf.json 2>/dev/null) || CB=""
+                CA=$(jq -r '.cursor_after // empty' /tmp/bf.json 2>/dev/null) || CA=""
+                INS=$(jq -r '.inserted // 0' /tmp/bf.json 2>/dev/null) || INS=""
+              fi
+              if [ "$STATUS" = "200" ] && [ "$OK" = "true" ]; then CALL_OK="1"; break; fi
+              if [ "$STATUS" != "200" ]; then
+                echo "::warning::call $i attempt $attempt returned HTTP '$STATUS'"
+              elif [ -z "$OK" ] && [ -z "$DONE" ]; then
+                echo "::warning::call $i attempt $attempt: HTTP 200 with a body jq could not parse"
+              else
+                echo "::warning::call $i attempt $attempt logged ok=$OK"
+              fi
+              if [ "$attempt" != "3" ]; then sleep $((attempt * 30)); fi
+            done
+            if [ -z "$CALL_OK" ]; then
+              echo "::error::call $i failed 3 attempts — stopping"
               OVERALL=1
               break
             fi
