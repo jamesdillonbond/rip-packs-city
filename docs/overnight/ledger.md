@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-17 ~9:25 AM PT — Concierge knows UFC Strike moved to Aptos; alarm cron change (and the 12 minutes it reddened `main`) (Cowork cloud; Trevor: "Keep going and doing all you can")
+
+- **Concierge prompt (code):** asked "is UFC Strike still tradeable", the live concierge answered only that the Flow market closed 13 May and nothing can be bought or sold. The prompt now states that UFC Strike moved to Aptos, that a Flow-held Moment trades only after its owner migrates it, and that `/ufc/collection` shows both halves; it must not characterise Aptos activity without a tool result. The reopen flip stays HELD (11-16 decision) — this changes no label or price.
+- **`site-availability-alarm.yml` cron `4,19,33,49` → `3,19,33,49`** (`511da98` then `e2e29b1`, both pushed from the laptop VM with the owner's credential): a real `cron:` change, the fourth attempt to make GitHub re-register schedules. ⚠ `511da98` first used `5,20,34,50`, pushed without running the guards; minute 5 collides with another workflow, so `site-availability-alarm-fails-loudly.test.ts` reddened `main` for ~12 minutes (9:14 → 9:26 AM PT) until `e2e29b1`. `docs/operations/cron-schedule.md` row updated.
+- Corrected in the handoff: the fmv-recalc hot-lane lag read was done by hand on 11-16 (Project doc `claude/fmv-engine-open-items-2026-11-12.md`); lane read again today — last 5 runs ok, 0–21 editions a run, backlog 4. The binder "Current FMV" > "Wallet FMV" case is confirmed in `get_wallet_summary`: `current_fmv` / `pnl` sum STALE-priced moments, the headline nets them out.
+- Revert: `git revert` the code commit that follows; the cron: `git revert e2e29b1 511da98`.
+
 ### 2026-11-17 ~9:11 AM PT — Daytime audit pass handoff; GitHub schedules STILL dark after a third attempt (Cowork cloud; Trevor: "work autonomously … Fix any issues you encounter")
 
 - Docs only: `docs/handoff-2026-11-17-daytime-audit-pass.md`. Third schedule attempt: `75a31da2` removed the 30 comment lines of `416bcfca` and was pushed from the laptop VM with the owner's saved credential (8:50 AM PT). 0 schedule-triggered runs 1:00–9:11 AM PT today vs 12 in the same hours 11-16. **Open P1 — handoff item 1 has the next step (an edit to a `cron:` line pushed as Trevor).**
