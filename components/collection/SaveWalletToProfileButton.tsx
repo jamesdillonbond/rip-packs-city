@@ -130,6 +130,7 @@ export default function SaveWalletToProfileButton({
     padding: "8px 12px",
     fontSize: "var(--text-sm)",
     color: "var(--rpc-text-secondary)",
+    whiteSpace: "nowrap",
   } as const
 
   if (state === "saved") {

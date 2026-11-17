@@ -1470,7 +1470,7 @@ function WalletMomentsBody() {
             </div>
           ) : null
         ) : (
-        <div className="mb-5 flex flex-col gap-2 sm:flex-row">
+        <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           <input aria-label="Wallet address or username"
             // Mobile Safari auto-capitalises and autocorrects the first word,
             // which corrupts a case-sensitive base58 Candy address or a mixed-case

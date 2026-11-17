@@ -74,6 +74,7 @@ export default function WalletFollowButton({
     color: "var(--rpc-text-secondary)",
     textDecoration: "none",
     cursor: "pointer",
+    whiteSpace: "nowrap",
   } as const
 
   if (state === "unknown") {

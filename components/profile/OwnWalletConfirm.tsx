@@ -60,6 +60,10 @@ export default function OwnWalletConfirm({
         borderRadius: "var(--radius-md)",
         background: "var(--rpc-surface)",
         maxWidth: 420,
+        // Its own line inside a wrapping button row (binder search row, share
+        // actions): squeezed beside the input it was ~120px wide at 767px.
+        flexBasis: "100%",
+        boxSizing: "border-box",
       }}
     >
       <div style={{ fontSize: "var(--text-sm)", fontWeight: 700, color: "var(--rpc-text-primary)" }}>
