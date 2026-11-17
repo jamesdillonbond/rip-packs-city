@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from "vitest"
+vi.mock("@/lib/telemetry/track", () => ({ track: vi.fn() }))
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react"
 import WalletFollowButton from "@/components/profile/WalletFollowButton"
 

@@ -10,7 +10,11 @@
 // ownership (2 of 57 accounts were verified on 11-16), so this step is the
 // check. It names the wallet and points a friend-watcher at Follow.
 
-import type { CSSProperties } from "react"
+import { useEffect, type CSSProperties } from "react"
+import { track } from "@/lib/telemetry/track"
+
+// Measured (2026-11-16): own-wallet-confirm {step: shown | yes | cancel, surface}.
+// A high cancel share means people were about to save a wallet that wasn't theirs.
 
 export default function OwnWalletConfirm({
   label,
@@ -18,6 +22,7 @@ export default function OwnWalletConfirm({
   onCancel,
   followHint = true,
   align = "start",
+  surface,
 }: {
   /** "@handle" when known, else a shortened address. */
   label: string
@@ -26,7 +31,12 @@ export default function OwnWalletConfirm({
   /** Mention Follow as the friend path (only where a Follow button is beside it). */
   followHint?: boolean
   align?: "start" | "center"
+  /** Where the confirm sits, for the usage event ("binder" | "share"). */
+  surface?: string
 }) {
+  useEffect(() => {
+    track("own-wallet-confirm", { step: "shown", surface: surface ?? null })
+  }, [surface])
   const btn: CSSProperties = {
     padding: "8px 14px",
     borderRadius: "var(--radius-md)",
@@ -62,7 +72,10 @@ export default function OwnWalletConfirm({
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button
           type="button"
-          onClick={onConfirm}
+          onClick={() => {
+            track("own-wallet-confirm", { step: "yes", surface: surface ?? null })
+            onConfirm()
+          }}
           // brand-exception: white label on the red button — theme-independent
           style={{ ...btn, background: "var(--rpc-red-fill)", border: "none", color: "#fff" }}
         >
@@ -70,7 +83,10 @@ export default function OwnWalletConfirm({
         </button>
         <button
           type="button"
-          onClick={onCancel}
+          onClick={() => {
+            track("own-wallet-confirm", { step: "cancel", surface: surface ?? null })
+            onCancel()
+          }}
           style={{ ...btn, background: "transparent", border: "1px solid var(--rpc-border)", color: "var(--rpc-text-secondary)" }}
         >
           Cancel

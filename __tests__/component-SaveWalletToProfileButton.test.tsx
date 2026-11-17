@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from "vitest"
+vi.mock("@/lib/telemetry/track", () => ({ track: vi.fn() }))
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react"
 import SaveWalletToProfileButton from "@/components/collection/SaveWalletToProfileButton"
+import { track } from "@/lib/telemetry/track"
 
 // "Save to my profile" on a Candy collection tab (2026-09-25). Properties: it
 // never shows to a signed-out viewer or on a failed read; it recognises a
@@ -54,6 +56,7 @@ describe("SaveWalletToProfileButton — flow-associate", () => {
     expect(JSON.parse(String(post.init!.body))).toEqual({ address: "0xbd94cade097e50ac" })
   })
   it("the first click only asks — nothing is POSTed until 'Yes, it's mine'", async () => {
+    vi.mocked(track).mockClear()
     const calls = stubFetch((_url, init) => (init?.method === "POST" ? json({ ok: true }) : json({ wallets: [] })))
     render(<SaveWalletToProfileButton wallet="0xbd94cade097e50ac" label="@friend" collectionUuid="95f28a17-224a-4025-96ad-adf8a4c63bfd" dbChain="flow" via="flow-associate" />)
     fireEvent.click(await screen.findByText("This is my collection"))
@@ -61,6 +64,9 @@ describe("SaveWalletToProfileButton — flow-associate", () => {
     expect(calls.filter((c) => c.init?.method === "POST")).toEqual([])
     fireEvent.click(screen.getByText("Cancel"))
     expect(await screen.findByText("This is my collection")).toBeTruthy()
+    // measured: the confirm reports shown → cancel from the binder
+    const steps = vi.mocked(track).mock.calls.filter((c) => c[0] === "own-wallet-confirm").map((c) => (c[1] as { step: string; surface: string }))
+    expect(steps).toEqual([{ step: "shown", surface: "binder" }, { step: "cancel", surface: "binder" }])
     expect(calls.filter((c) => c.init?.method === "POST")).toEqual([])
   })
   it("shows the route's error text when the save is refused", async () => {

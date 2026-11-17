@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest"
+vi.mock("@/lib/telemetry/track", () => ({ track: vi.fn() }))
 import { render, cleanup, waitFor, fireEvent } from "@testing-library/react"
 
 // ─────────────────────────────────────────────────────────────────────────────

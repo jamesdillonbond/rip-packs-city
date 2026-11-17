@@ -17,6 +17,7 @@ import { useEffect, useState } from "react"
 import { normalizeAddress } from "@/lib/address"
 import { isOnChainAddress } from "@/lib/postgrest-safe"
 import { fetchJson } from "@/lib/analytics/fetch-json"
+import { track } from "@/lib/telemetry/track"
 
 type State = "loading" | "hidden" | "anon" | "following" | "not-following" | "unknown" | "refused"
 
@@ -24,11 +25,14 @@ export default function WalletFollowButton({
   wallet,
   label,
   size = "sm",
+  surface,
 }: {
   wallet: string
   /** "@handle" or shortened address, for the button's title. */
   label?: string
   size?: "sm" | "lg"
+  /** Where the button sits, for the usage event ("binder" | "share"). */
+  surface?: string
 }) {
   const addr = wallet ? normalizeAddress(wallet) : ""
   const valid = !!addr && isOnChainAddress(addr)
@@ -91,6 +95,9 @@ export default function WalletFollowButton({
 
   async function toggle(on: boolean) {
     if (busy) return
+    // Measured (2026-11-16): wallet-follow {on, surface}; the write's outcome is
+    // in followed_wallets itself.
+    track("wallet-follow", { on, surface: surface ?? null })
     setBusy(true)
     setMessage(null)
     const previous: State = on ? "not-following" : "following"

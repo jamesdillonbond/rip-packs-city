@@ -638,7 +638,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
             Free account
           </div>
           <div style={{ fontSize: 16, color: "var(--rpc-text-secondary)", lineHeight: 1.5, maxWidth: 540, margin: "0 auto 16px" }}>
-            This is a snapshot. If it&apos;s your wallet, a free account saves it, tracks its FMV over time, badges and set completion, and sends price alerts on the moments you watch. A friend&apos;s? Follow it to see their buys and sells on your dashboard.
+            This is a snapshot. If it&apos;s your wallet, a free account saves it, tracks its FMV over time, badges and set completion, and sends price alerts on the moments you watch. A friend&apos;s? With a free account you can Follow it instead, to see their buys and sells without adding it to your collection.
           </div>
           <ShareSignUpLink wallet={wallet} />
         </div>

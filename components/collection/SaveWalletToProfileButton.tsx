@@ -146,6 +146,7 @@ export default function SaveWalletToProfileButton({
         label={label ?? "this"}
         onConfirm={save}
         onCancel={() => setState("can-save")}
+        surface="binder"
       />
     )
   }

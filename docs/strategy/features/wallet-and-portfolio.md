@@ -1,6 +1,15 @@
 # Wallet & portfolio — feature roadmap (refreshed 2026-10-17, PT)
 > Dated snapshot; re-derive any number before quoting. Canonical plan: [roadmap-2026-10-17.md](../roadmap-2026-10-17.md). Per-collection detail: [collections/](../collections/). Defects: [known-issues.md](../../reference/known-issues.md).
 
+## ⭐ 2026-11-16 — saving YOUR wallet vs following a FRIEND's
+
+Trevor asked how collectors mix the two up, then "Do it all" (ledger 11-16 ~7:30 PM PT).
+
+- **The trap:** the binder and the share card offered a one-click save right beside a wallet the visitor was LOOKING at — often a friend's. Saving makes it yours (binder, totals, possibly the public handle — see the owner rule above), and it was the only way to keep a friend's wallet handy: member→member `follows` had 0 rows and cannot follow a non-member. No mix-up was on record (0 wallets saved by two accounts), but nothing stopped one.
+- **Now:** save buttons read "This is my collection" (binder) / "This is my wallet — save it" (share) and open "Is @handle your wallet?" before any write (`components/profile/OwnWalletConfirm.tsx`). **+ Follow** sits beside them (`WalletFollowButton`, table `followed_wallets`, `/api/profile/followed-wallets`, cap 50, own wallet refused); Friend Activity reads followed wallets in every collection and lists them with ✕ unfollow (`FollowedWalletsList`). The binder now offers both on a USERNAME search too (it passes the resolved address).
+- **Measured:** usage events `own-wallet-confirm` {step shown|yes|cancel, surface binder|share} and `wallet-follow` {on, surface}. A high cancel share = people were about to save a friend's wallet. Re-read in the weekly activity review.
+- **Rule:** never tell a collector to SAVE a friend's wallet to watch it (the concierge prompt says so too).
+
 ## ⭐ 2026-11-15 — wallet verification is live again, and it means something
 
 Trevor: "let them have access until we can verify easily and effectively" (full trail: ledger 11-15 1:35–4:05 PM PT; options note `docs/research/wallet-verification-options-2026-11-15.md`).

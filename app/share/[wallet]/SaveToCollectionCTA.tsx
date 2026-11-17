@@ -147,12 +147,12 @@ export default function SaveToCollectionCTA({ wallet, owner }: { wallet: string;
   }
 
   if (state.kind === "confirming") {
-    return <OwnWalletConfirm label={owner ?? "this"} onConfirm={save} onCancel={() => setState({ kind: "ready" })} align="center" />
+    return <OwnWalletConfirm label={owner ?? "this"} onConfirm={save} onCancel={() => setState({ kind: "ready" })} align="center" surface="share" />
   }
 
   return (
     <>
-    <WalletFollowButton wallet={address} label={owner} size="lg" />
+    <WalletFollowButton wallet={address} label={owner} size="lg" surface="share" />
     <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
       <button
         onClick={() => setState({ kind: "confirming" })}

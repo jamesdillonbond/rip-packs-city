@@ -1574,7 +1574,7 @@ function WalletMomentsBody() {
               )}
               {(collectionObj?.dbChain === "flow" || collectionObj?.dbChain === "solana") && activeWallet && rows.length > 0 && (
                 <WalletFollowButton key={`follow-${resolvedAddress || activeWallet}`} wallet={resolvedAddress || activeWallet}
-                  label={searchedWalletLabel(activeWallet, resolvedAddress)} />
+                  label={searchedWalletLabel(activeWallet, resolvedAddress)} surface="binder" />
               )}
           </div>
         </div>
