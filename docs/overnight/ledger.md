@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-17 ~5:15 PM PT — Thread wrap-up: GitHub-only lanes dispatched again; docs updated (Claude Code, laptop; Trevor: "work through what you can … then update any relevant documentation")
+
+- 12 GitHub-only workflows dispatched by hand at 5:08 PM PT; schedules are still dark (last scheduled run 12:59 AM PT). This session's 3-hourly backstop ends with the thread.
+- Docs: `docs/sessions/2026-11.md` entry; cron-and-schedulers.md (repo-wide schedule outage, deletion alarm outside the repo, rotation keyed on attempt); database.md (snapshot for an always-failing read; time the production callers first); testing-and-ci.md (light-contrast sweep, recharts legend text, linted temp files); handoff addendum 5.
+- Revert: docs only.
+
 ### 2026-11-17 ~4:45 PM PT — Light-theme contrast sweep (177 pages): two unreadable labels fixed; a contrast probe added to scripts/qa (Claude Code, laptop; Trevor: "Keep going")
 
 - **Instrument:** `scripts/qa/light-contrast-sweep.mjs` (new). Playwright, `rpc_theme=light`. For every visible text element it walks up to the first opaque background, flags contrast < 1.6:1, and flags near-black panels ≥ 15 % of the viewport. Positive control: a planted `#fafafa`-on-white line reads 1.04 and a `#050505` panel is flagged; dark `#111` text passes. Nothing in CI measures this; the brand-token guard checks literals, not rendered contrast.
