@@ -1,0 +1,57 @@
+name: Schedule relay
+
+# WHY THIS EXISTS: GitHub has delivered no `schedule` event to this repository since
+# 2026-11-17 08:59 UTC, and GitHub Support closed the ticket unread (free plan). This
+# workflow is the stand-in clock: one long job that dispatches the other workflows when
+# their cron comes due, then dispatches ITSELF so the chain continues. Full reasoning,
+# the throttle, and how it retires itself: scripts/gha-schedule-relay.mjs.
+#
+# It has NO `schedule:` trigger on purpose (that is the thing that is broken).
+# START IT: Actions -> Schedule relay -> Run workflow.
+# STOP IT: disable this workflow, or cancel the running job.
+# DELETE IT (with the script and schedule-probe.yml) once real schedules are back.
+
+on:
+  workflow_dispatch:
+    inputs:
+      since:
+        description: "ISO time the previous link last evaluated (set by the chain; leave empty by hand)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: schedule-relay
+  cancel-in-progress: false
+
+jobs:
+  relay:
+    name: Dispatch workflows whose cron is due
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      - name: Run the relay clock
+        id: relay
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELAY_SINCE: ${{ inputs.since }}
+          RELAY_RUN_MINUTES: '330'
+        run: node scripts/gha-schedule-relay.mjs
+      - name: Hand over to the next link
+        # Not on cancel (cancelling is how a person stops the chain) and not once real
+        # schedules are back. A failed clock step waits first so a crash cannot spin.
+        if: ${{ !cancelled() && steps.relay.outputs.native != 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SINCE: ${{ steps.relay.outputs.since }}
+          CLOCK_OUTCOME: ${{ steps.relay.outcome }}
+        run: |
+          if [ "$CLOCK_OUTCOME" != "success" ]; then sleep 600; fi
+          gh workflow run schedule-relay.yml --repo "$GITHUB_REPOSITORY" --ref main -f since="$SINCE"
