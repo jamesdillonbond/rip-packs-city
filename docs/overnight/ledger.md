@@ -12,6 +12,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-17 ~7:15 PM PT — ✅ GitHub schedules are back: first real `schedule` run 7:03 PM PT, after 18 h dark; relay retired itself (Cowork cloud)
+
+- **Measured:** 10 `event=schedule` runs across 10 different workflows between 7:03 and 7:09 PM PT (first: 2026-11-18T03:03:23Z), all green. Before that the last one was 12:59 AM PT.
+- **Cause: not established.** The first run came about 45 seconds after push `415da3e2e` (a script + test change, no workflow file). Other candidates in the two hours before: the repo-level Actions off/on (5:07 PM), a new workflow file `schedule-relay.yml` (6:26 PM), the laptop session's edits to `badge-sync.yml` / `ops-monitor.yml` (`409bae93f`, ~6:45 PM), or GitHub's side. Ten workflows arriving in six minutes reads like a backlog being released, which no single push explains. Do not record any one of these as the fix.
+- **Relay:** the 7:11 PM PT link saw the real runs, logged the retire notice and did not re-dispatch itself. Its self-test did prove the path first: `schedule-probe.yml` was dispatched by `github-actions[bot]` (204, green). No relay run is in progress now.
+- **Laptop fallback:** stands down by itself while a `schedule` run is under 90 minutes old; it resumes on its own if schedules stop again.
+- **Deliberately NOT done tonight:** deleting `schedule-relay.yml`, `scripts/gha-schedule-relay.mjs`, its test and `schedule-probe.yml`, or reverting the `m-m` cron form. Schedules have been back for minutes and the trigger is unknown, so no workflow file is touched until they have held for a day. Clean up on 11-18 evening if `gh api "repos/jamesdillonbond/rip-packs-city/actions/runs?event=schedule&per_page=1"` is still current; then also `schtasks /delete /tn "RPC GHA schedule fallback" /f` on the laptop.
+- **Revert:** nothing changed in this entry.
+
 ### 2026-11-17 ~7:10 PM PT — Schedule relay now defers to the laptop fallback and sends its inputs (Cowork cloud; Trevor 6:55 PM PT: "Keep working on anything you can")
 
 - **Why:** two sessions answered the same "Figure it out" at once. The laptop session shipped `scripts/gha-schedule-fallback.mjs` (Windows task, every 5 min); this session shipped the in-GitHub relay (`schedule-relay.yml`). The relay as first shipped sent no inputs, so a relayed `ufc-aptos-sales-ingest` would have been a dry run and `badge-sync` would have run the wrong sweep. It had dispatched nothing yet (checked: 0 runs by `github-actions[bot]` since it started).

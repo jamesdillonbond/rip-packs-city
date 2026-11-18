@@ -1,6 +1,6 @@
 # Handoff — 2026-11-17 daytime audit pass (Cowork cloud)
 
-**First line, because it is the one open P1: GitHub scheduled workflows have not fired since 12:59 AM PT 11-17 (item 1 below).**
+**✅ RESOLVED 7:03 PM PT 11-17: GitHub scheduled workflows are firing again after 18 hours dark (item 1 below; cause not established — see the last addendum).**
 
 > ⚠ Any limitation noted here is specific to **this cloud session**. Trevor's machine and Claude Code push normally. Commit these files as usual.
 
@@ -109,3 +109,9 @@ Also shipped in this window: picomatch advisory `GHSA-fc5q-39xc-vjpf` baselined 
 - **The GitHub-only lanes no longer need hand dispatch:** the Windows task "RPC GHA schedule fallback" (every 5 min, `scripts/gha-schedule-fallback.mjs`) dispatches each scheduled workflow when its cron slot passes with no run, only while GitHub delivers no schedules. Verified on three ticks with no doubles. It stands down when GitHub recovers; delete it then.
 - ⚠ Every hand dispatch of ufc-aptos-sales-ingest on 11-17 was a dry run (`apply` defaults to false). Fixed in the fallback, and a 6:31 PM PT `apply=true` run wrote.
 - Fixed: three `github.event.schedule ==` gates still named the pre-rewrite cron text (badge-sync ×2, ops-monitor's daily data-integrity), so those jobs would never have run once schedules resumed. A guard now keeps gates and crons in step.
+
+## Addendum 8 — 6:55–7:15 PM PT (Cowork cloud; Trevor: "Keep working on anything you can")
+
+- **✅ Schedules resumed at 7:03 PM PT:** 10 real `schedule` runs across 10 workflows in six minutes, all green. Cause not established (candidates and why none is proven: ledger 11-17 ~7:15 PM PT).
+- The relay was changed to defer to the laptop fallback and send its inputs (it had sent none), then retired itself when it saw the real runs. The laptop fallback stands down by itself.
+- **Cleanup owed, 11-18 evening, only if schedules have held:** delete `schedule-relay.yml`, `scripts/gha-schedule-relay.mjs`, `__tests__/gha-schedule-relay.test.ts`, `schedule-probe.yml`; delete the Windows task "RPC GHA schedule fallback"; decide on reverting the `m-m` cron form (`92e0517`; three `github.event.schedule ==` gates now name the new text, so a revert must change them back too). `npm run preflight` first.
