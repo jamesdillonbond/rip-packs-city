@@ -1,4 +1,4 @@
-# Inbox index — 680 live filings
+# Inbox index — 681 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -31,6 +31,10 @@ still open should have a register row, and if it does not, that gap is the findi
 failure it documents.
 
 ---
+
+## 2026-11-18 — 1 filing
+
+- [Daytime health monitor — 2026-11-18 ~01:10Z: pack-nft-identity ON CONFLICT dup-key (MED); TS pack-sales 530 blip (LOW)](2026-11-18T0110Z-daytime-monitor.md)
 
 ## 2026-11-17 — 3 filings
 - [Daytime monitor 2026-11-17 ~19:11Z — GHA scheduled workflows STILL dark (no schedule-tagged tick since 08:43Z; the ~16:35Z re-registration push did not take); 2 low-cadence lanes dark since ~02:00Z; data-freshness blast radius LOW (trust 42/42 ok); platform otherwise GREEN](2026-11-17T1911Z-daytime-monitor.md)
