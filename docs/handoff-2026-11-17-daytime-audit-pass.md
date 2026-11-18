@@ -96,3 +96,10 @@ Also shipped in this window: picomatch advisory `GHSA-fc5q-39xc-vjpf` baselined 
 **When schedules return:** delete `schedule-probe.yml`, and decide whether to revert `92e0517`. Run `npm run preflight` before either push.
 
 - **6:12 PM PT:** GitHub Support ticket filed from Trevor's session (see ledger); all 30 scheduled workflows dispatched by hand at 6:01 PM PT.
+
+## Addendum 7 — 6:04–6:35 PM PT (Cowork cloud; Trevor: "You do it all", "Check their response", "Figure it out")
+
+- **GitHub Support closed ticket 5020807 unread** (6:04 PM PT): the free plan gets self-service resources only.
+- **Shipped instead: the schedule relay** (`.github/workflows/schedule-relay.yml`, `scripts/gha-schedule-relay.mjs`). One ~5.5 h job dispatches each scheduled workflow when its cron is due and then dispatches its own next link. No stored token. It skips a workflow that ran in the last 110 minutes, and stops for good when a real `schedule` run appears. First link started 6:26 PM PT.
+- **Watch:** Actions → "Schedule relay" should always show one run in progress. If none is, start it with Run workflow. `scheduler-liveness` and `gha-schedule-watchdog` stay red while the outage lasts, because they count `schedule` events only.
+- **Still open:** the outage itself. Free routes left are a GitHub Community Discussions post, or a paid plan to reopen the ticket (Trevor's call).
