@@ -834,7 +834,12 @@ async function main() {
   // a wall-clock budget, and the stability counter. All three are env-overridable for a probe.
   const ENUM_STABLE = Number(process.env.PANINI_ENUM_STABLE || 8);
   const ENUM_MAX_ITERS = Number(process.env.PANINI_ENUM_MAX_ITERS || 200);
-  const ENUM_BUDGET_MS = full ? Number(process.env.PANINI_ENUM_BUDGET_MIN || 10) * 60000 : DISCOVERY_BUDGET_MS;
+  // 2026-11-18: default 10 -> 4 min per sport. Every admitted product is walked now, so all 7 sports
+  // get a full pass: 7 x ~10 min + the 7-min pack grid left the FULL run ~27 min of its 110 for cards
+  // (measured 11-17/18), while the catalogue (48.5k) outgrew a 7-day stalest-first pass (9,740 editions
+  // unrepriced 7+ d, oldest 287 h). Enumeration only feeds DISCOVERY; refresh comes from the catalogue.
+  // ~4 min still scans ~70 grid pages per sport. Revert: PANINI_ENUM_BUDGET_MIN=10 or restore the 10.
+  const ENUM_BUDGET_MS = full ? Number(process.env.PANINI_ENUM_BUDGET_MIN || 4) * 60000 : DISCOVERY_BUDGET_MS;
   const tEnum = Date.now();
   let last = -1, stable = 0, enumIters = 0, enumBudgetHit = false;
   for (let i = 0; i < ENUM_MAX_ITERS && stable < ENUM_STABLE; i++) {
