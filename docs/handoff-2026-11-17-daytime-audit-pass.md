@@ -94,3 +94,5 @@ A new workflow that never fires rules out anything in our workflow files. What i
 Also shipped in this window: picomatch advisory `GHSA-fc5q-39xc-vjpf` baselined in `prod-dep-audit-baseline.json` (no fix published, not reachable from requests); Dependency audit is green again.
 
 **When schedules return:** delete `schedule-probe.yml`, and decide whether to revert `92e0517`. Run `npm run preflight` before either push.
+
+- **6:12 PM PT:** GitHub Support ticket filed from Trevor's session (see ledger); all 30 scheduled workflows dispatched by hand at 6:01 PM PT.

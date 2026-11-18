@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-17 ~6:15 PM PT — GitHub Support ticket filed for the schedule outage; all 30 scheduled workflows dispatched by hand (Cowork cloud; Trevor 6:01 PM PT: "You do it all")
+
+- **Ticket:** submitted ~6:12 PM PT from Trevor's GitHub session at support.github.com (Repositories → Repository features, type "Errors, problems … Actions workflow issues"), subject "Actions schedule triggers stopped for jamesdillonbond/rip-packs-city". Replies go to Trevor's GitHub email; the ticket is under support.github.com → View tickets. The account is on the free plan ("Technical support not included"), so response time is not guaranteed.
+- **Cover:** `workflow_dispatch` of all 30 scheduled workflows at 6:01 PM PT, 30/30 accepted. Still 0 `event=schedule` runs since 12:59 AM PT.
+- **Revert:** none. No file or setting changed.
+
 ### 2026-11-17 ~5:40 PM PT — GitHub schedule outage, ninth attempt: repo-level Actions toggled off and on — no scheduled run yet (Cowork cloud; Trevor 5:06 PM PT: "I approve toggling Actions off and on")
 
 - **What changed:** in Trevor's Chrome session, Settings → Actions → General: "Disable actions" saved at ~5:07 PM PT, then "Allow all actions and reusable workflows" saved again within about a minute. Read back after the second save: `allowedactions=all`, fork-PR approval `FIRST_TIME_CONTRIBUTORS`, default workflow permissions `read` (all three as before). No file changed.
