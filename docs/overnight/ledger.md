@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-17 ~4:45 PM PT — Schedule probe: a brand-new scheduled workflow does not fire either, so the fault is repository-wide (Cowork cloud; Trevor: "Keep probing and looking for ways to fix this yourself")
+
+- **`a126943` (3:46 PM PT, owner credential):** added `.github/workflows/schedule-probe.yml` — a new file, new workflow id (422003051), cron `1,16,31,44,58 * * * *`, one `echo` step. Registered `active`; four of its slots passed by 4:44 PM PT with 0 scheduled runs, and 0 scheduled runs repo-wide since 12:59 AM PT. So the old workflows' registrations are not the problem: GitHub is not delivering `schedule` events to this repository at all. Renaming workflow files would not help.
+- Not tried, needs Trevor's yes (a repository setting): Settings → Actions → General → disable Actions, save, re-enable. The API for it is closed to this session.
+- **Delete `schedule-probe.yml` once schedules are back** (it is the cheapest "are they back" signal until then). Revert: `git revert a126943`.
+
 ### 2026-11-17 ~4:10 PM PT — Live-signal sweep clean; known-issues #259 closed, #257/#258 re-read; focus steers for tomorrow (Claude Code, laptop; Trevor: "Keep going")
 
 - **Read clean:** pg_cron 0 real failures in 24 h. `pipelines:kills` shows no systematic kill, only 3 lanes at ≤ 0.6 %. Client-error beacon 0 in 48 h (alive: last row 11-15, 815 events / 24 h). The user-facing `pack_ev_latest` readers are fast (`get_pack_detail_bundle` 93 ms, `get_pack_realized_ev_row` 14 ms, `get_pack_lifecycle_row` 162 ms); only background refreshes pay its full sort.
