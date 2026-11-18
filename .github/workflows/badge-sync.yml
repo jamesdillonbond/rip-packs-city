@@ -52,7 +52,7 @@ jobs:
   badge-sync:
     # Tag sweep: the :15 schedule, or manual dispatch without the catalog flag.
     needs: upstream-probe
-    if: needs.upstream-probe.outputs.alive == 'true' && (github.event.schedule == '15 */6 * * *' || (github.event_name == 'workflow_dispatch' && inputs.catalog != true))
+    if: needs.upstream-probe.outputs.alive == 'true' && (github.event.schedule == '15-15 */6 * * *' || (github.event_name == 'workflow_dispatch' && inputs.catalog != true))
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
@@ -67,7 +67,7 @@ jobs:
           max-time: "600"
   badge-catalog-sweep:
     needs: upstream-probe
-    if: needs.upstream-probe.outputs.alive == 'true' && (github.event.schedule == '45 2,8,14,20 * * *' || (github.event_name == 'workflow_dispatch' && inputs.catalog == true))
+    if: needs.upstream-probe.outputs.alive == 'true' && (github.event.schedule == '45-45 2,8,14,20 * * *' || (github.event_name == 'workflow_dispatch' && inputs.catalog == true))
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:

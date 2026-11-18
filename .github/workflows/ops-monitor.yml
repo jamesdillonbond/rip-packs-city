@@ -68,7 +68,7 @@ jobs:
   data-integrity:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    if: github.event.schedule == '41 6 * * *' || github.event_name == 'workflow_dispatch'
+    if: github.event.schedule == '41-41 6 * * *' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Check data integrity
         run: |
