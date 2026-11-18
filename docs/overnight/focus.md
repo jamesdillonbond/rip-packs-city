@@ -4,6 +4,12 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-11-17 ~4:10 PM PT (Claude Code, laptop) — three dated reads from the 11-17 afternoon thread
+
+- **11-18 after ~5:30 AM PT — Panini team walk retries its failed teams (`20261117230420`).** `select extra->>'target', ok, left(error,80) from pipeline_runs where pipeline='panini-team-walk' and started_at > '2026-11-18 11:00Z' order by started_at` → expect Denver Broncos, Indianapolis Colts, Pittsburgh Steelers, Seattle Seahawks, Washington Commanders (never completed before). A team that fails again comes back ~2 nights later by design; the same team failing on 3 tries → read its walker log on the laptop (`PANINI_MAX_PAGES`? a page that never answers?), don't revert the plan.
+- **Any time — `main-tree-watch` (pg_cron 893, every 10 min).** Healthy = `verdict present`, 7/7. A `missing` row is a CRITICAL page through /api/check-alerts: restore `main` first, then check the laptop tree. Three `unreadable` in a row (raw.githubusercontent.com unreachable) pages high. Renaming a sentinel file pages too; `__tests__/main-tree-watch-sentinels-exist.test.ts` should catch that in CI first.
+- **11-18 — pack-reality staleness snapshot (pg_cron 892, :38 every 2 h).** `select computed_at, candidates_considered from mv_topshot_pack_reality_ranker_staleness` → `computed_at` within ~2 h. Stale > 4 h = job 892 failing; read `cron.job_run_details` for 892.
+
 ## STEER — added 2026-11-17 ~7:25 AM PT (Claude Code cloud) — three dated reads from the 11-16 evening / 11-17 morning thread (thread archived)
 
 - **11-18 after ~2 PM PT (the WNBA Finals sale windows end 11-18 noon–2 PM PT) — the drop's EV.** `select dist_id, total_pack_count, next_due_at from topshot_atlas_dists where dist_id between '8932' and '8940'` → expect `total_pack_count > 0` once minted (the lane re-reads every 2 h, `20261117053146`); then `pack_drop_pool` rows for 8932/8937/8938/8939 (`rpc-topshot-pool-from-atlas`, :17) and `mv_pack_ev_latest` rows for the inner packs and for Box 8934 / Case 8933 (`rpc-container-pack-ev`, :28). Still 0 minted on 11-19 → read the Atlas summary body for one dist before touching the lane. A still-unminted dist returns to the 30-day re-check after 14 days by design.

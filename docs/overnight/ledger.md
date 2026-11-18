@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-17 ~4:10 PM PT — Live-signal sweep clean; known-issues #259 closed, #257/#258 re-read; focus steers for tomorrow (Claude Code, laptop; Trevor: "Keep going")
+
+- **Read clean:** pg_cron 0 real failures in 24 h. `pipelines:kills` shows no systematic kill, only 3 lanes at ≤ 0.6 %. Client-error beacon 0 in 48 h (alive: last row 11-15, 815 events / 24 h). The user-facing `pack_ev_latest` readers are fast (`get_pack_detail_bundle` 93 ms, `get_pack_realized_ev_row` 14 ms, `get_pack_lifecycle_row` 162 ms); only background refreshes pay its full sort.
+- **known-issues:** #259 ✅ (re-measure 0 editions / 0 cards over circulation, 1:55 and 4:07 PM PT). #258 watch query still 0. #257: 0 of 9,917 active Candy asks unseen > 3 days. Index regenerated: 3 rows changed, 0 lost.
+- **focus.md:** dated reads for the team-walk retry (11-18 ~5:30 AM PT), the main-tree watch, and the pack-reality snapshot.
+- Revert: docs only.
+
 ### 2026-11-17 ~3:35 PM PT — Database-side watch pages CRITICAL when `main` loses its files (Claude Code, laptop; Trevor via Cowork: "a database-side watch that alerts when main loses its files … a GitHub workflow can't catch it because the deleting commit removes the workflow too")
 
 - **Migration `20261117233007` `audit_20261117_main_tree_watch`:** pg_cron 893 `rpc-main-tree-watch` every 10 min → `rpc_main_tree_watch()` reads 7 sentinel files on `main` through pg_net (`raw.githubusercontent.com`): package.json, CLAUDE.md, app/layout.tsx, lib/supabase.ts, scripts/laptop-tree-ff.mjs, .github/workflows/ci.yml, .github/workflows/pipeline-sentinel.yml. Any 404 → `pipeline_runs` ok=false verdict `missing` → new arm `check_main_tree_missing()` (inside `get_pipeline_alerts()`) returns a **critical** alert → `/api/check-alerts` emails + Telegrams it. That route is driven outside GitHub; it ran about every 20 min all day while GitHub schedules were dark. 3 consecutive unreadable ticks → high. Watch silent > 45 min → the cadence watchlist pages. Nothing in the repo can delete it.
