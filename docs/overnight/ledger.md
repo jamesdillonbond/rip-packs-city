@@ -12,6 +12,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-17 ~6:35 PM PT — Schedule relay: a self-chaining workflow now dispatches the scheduled workflows, because GitHub Support closed the ticket unread (Cowork cloud; Trevor 6:16 PM PT: "Figure it out")
+
+- **Why:** GitHub Support closed ticket 5020807 at 6:04 PM PT without looking at it (free plan: self-service resources only). Correction to the entry below: the ticket was filed at 6:04 PM PT, not ~6:12.
+- **What shipped:** `.github/workflows/schedule-relay.yml` + `scripts/gha-schedule-relay.mjs` + `__tests__/gha-schedule-relay.test.ts`. One job runs ~5.5 h, checks every `cron:` line once a minute, and dispatches due workflows with the run's own `GITHUB_TOKEN` (no stored token). Its last step dispatches the next link. It has no `schedule:` trigger.
+- **Throttle:** a workflow is not dispatched if it ran in the last 110 minutes, so sub-hourly workflows run about every 2 h (before the outage GitHub's shedding ran them about every 7 h; their written rate was never what actually ran).
+- **Retires itself:** when any real `schedule` run appears it stops and does not re-dispatch. Then delete the three files above and `schedule-probe.yml`.
+- **Stop by hand:** disable "Schedule relay" in the Actions tab, or cancel the running job.
+- **Not fixed:** `scheduler-liveness` and `gha-schedule-watchdog` count `schedule` events only, so they stay red while the outage lasts. That is accurate.
+- **Revert:** `git revert` the code commit and cancel the running "Schedule relay" job.
+
 ### 2026-11-17 ~6:10 PM PT — Pack-sales sentinel arms judge the chain feed when Dapper's server is down (a gateway/origin 5xx), at WARN; done now instead of re-acking on 11-20 (Claude Code, laptop; Trevor: "Keep going")
 
 - **Migration `20261118020242`:** `sentinel_pack_sales_feeds()` also returns the walker's last `error` (additive; ACL unchanged, anon false). Live read: `head fetch: HTTP 530`.
