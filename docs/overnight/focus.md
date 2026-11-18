@@ -4,9 +4,17 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-11-17 ~8:55 PM PT (Cowork cloud) — GitHub schedules are BACK (7:03 PM PT); cleanup is owed, not before 11-18 evening
+
+- **Check first:** `gh api "repos/jamesdillonbond/rip-packs-city/actions/runs?event=schedule&per_page=1"` — the newest run should be hours old at most (bursts hours apart are normal).
+- **If they held:** delete `.github/workflows/schedule-relay.yml`, `scripts/gha-schedule-relay.mjs`, `__tests__/gha-schedule-relay.test.ts` and `.github/workflows/schedule-probe.yml` (`npm run preflight` first; `gha-schedule-fallback.mjs` names the probe in its SKIP set, harmless once the file is gone); on the laptop `schtasks /delete /tn "RPC GHA schedule fallback" /f`. Leave the `m-m` cron form unless there is a reason to revert it (three `github.event.schedule ==` gates name the new text).
+- **If they stopped again:** the laptop fallback resumes by itself after 90 minutes; start the relay with Actions → Schedule relay → Run workflow if the laptop is off. Do not re-run the nine re-registration attempts; none of them worked.
+- **Security follow-up, not started:** 36 routes under `app/api/admin` and `app/api/cron` still accept `?token=`. No scheduled caller sends it (cron-job.org 77 jobs, 319 pg_cron jobs, GitHub workflows: 0 each, read 11-17). Removing the arms is an auth change: list hand callers (Trevor's own curl habits, the admin UI) first.
+
 ## STEER — added 2026-11-17 ~6:45 PM PT (Claude Code, laptop) — GitHub schedules are covered by a laptop fallback
 
-- **Windows task "RPC GHA schedule fallback" (every 5 min) dispatches each scheduled workflow whose cron slot passed with no run since**, only while GitHub delivers no `schedule` event; it stands down by itself after that. Read `%LOCALAPPDATA%pc-gha-fallbacklog.jsonl` (laptop) or `gh run list --event workflow_dispatch`. Do NOT hand-dispatch the GitHub-only lanes on top of it. **Once `gha-schedule-watchdog` reads `delivering` again:** delete the task (`schtasks /delete /tn "RPC GHA schedule fallback" /f`) and `schedule-probe.yml`. If the laptop is off, the lanes go dark again: hand-dispatch (ufc-aptos needs `-f apply=true`).
+- **Windows task "RPC GHA schedule fallback" (every 5 min) dispatches each scheduled workflow whose cron slot passed with no run since**, only while GitHub delivers no `schedule` event; it stands down by itself after that. Read `%LOCALAPPDATA%
+pc-gha-fallbacklog.jsonl` (laptop) or `gh run list --event workflow_dispatch`. Do NOT hand-dispatch the GitHub-only lanes on top of it. **Once `gha-schedule-watchdog` reads `delivering` again:** delete the task (`schtasks /delete /tn "RPC GHA schedule fallback" /f`) and `schedule-probe.yml`. If the laptop is off, the lanes go dark again: hand-dispatch (ufc-aptos needs `-f apply=true`).
 
 ## STEER — added 2026-11-17 ~5:25 PM PT (Claude Code, laptop) — Dapper Studio GraphQL down (530)
 
