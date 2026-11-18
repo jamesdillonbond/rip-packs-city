@@ -135,5 +135,6 @@ Read-only; nothing shipped.
   4. `Rpc dependency advisory digest` says `flowty_archive` is a deliberate keep; the weekly health check says it was dropped 06-10.
   5. `Rpc pending signups watch` reports users by email and carries pre-Large-tier wording.
   6. One-shot `RPC wallet verification adoption check` (11-18 10:23 AM PT) equates 22:20 UTC with 3:20 PM PT; that is 2:20 PM PT.
-  7. Ten expired or failed one-shots and three disabled copies of "RPC laptop pull main" can be deleted. The Windows-native pull replaces the Claude task. Two of the dead one-shots (#248 close-out, R133 `?token=` retirement) may mark work still open; not re-checked.
+  7. Nine expired or failed one-shots and three disabled copies of "RPC laptop pull main" can be deleted. The Windows-native pull replaces the Claude task. The #248 close-out was done by hand on 11-16. R133 (`?token=` admin arms): see the line below.
   8. Eleven recurring tasks are pinned to an older model.
+  9. **Possible follow-up, not verified as a defect:** R133 was closed 11-04 for the proxy and the shared admin-auth helper, but 36 route files under `app/api/admin` and `app/api/cron` still read a `?token=` query parameter themselves (e.g. `admin/evm-health`, `admin/backfill-allday-buyers`). Whether any live caller (cron-job.org, pg_cron, GitHub) still sends the secret in the URL was not enumerated; do that before removing any of them.
