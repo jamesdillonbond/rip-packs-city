@@ -11,6 +11,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-10-25 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24, 2026-10-08, 2026-10-24, 2026-11-08). Frozen history — revert paths there are still valid.
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
+### 2026-11-18 ~1:05 AM PT — Overnight autonomous pass: quiet, shipped 0, queued 3 (Cowork cloud)
+
+- **Shipped:** nothing to production. Committed only the pass's continuity docs (this ledger, `docs/handoff-2026-11-18-overnight-pass.md`, `metrics-latest.json`, `sessions/2026-11.md`).
+- **One trust breach, self-limiting:** `candy_sales_stale_hours` 31.4h BREACH = candy-sales-indexer down (3 failed later-set walks since 11-17 21:20Z). LOW blast radius (Candy recorded-closure trickle). → queued as B.
+- **Queued (night 1), ready-to-run diffs in the handoff:**
+  - **B (HIGH)** candy-sales-indexer: isolate the later-set walk (per-set try/commit) so one slow upstream set (asg26/quest26/ball24) can't abort the whole run. Ingest route code → not auto-shipped.
+  - **A (HIGH)** pack-nft-identity `ON CONFLICT` dup-key (~8h stalled): dedup the UNION-ALL with `GROUP BY (collection_id, pack_nft_id)` before both upserts in `collect_pack_nft_identity()` (mirrors `dispatch_pack_nft_identity`). Migration-only (functions unpinned). Ingest-identity → not auto-shipped.
+  - **C (MED)** `sync_allday_pack_dist_totals` NULL `total_opened` abort: add `AND i.opened_count IS NOT NULL` (NOT `COALESCE→0` — honesty canon). Held: the drift-guard test is a hot file (5 commits/48h, collision gate) and it self-limits (Studio-530 collateral; expire lane restores pre-images after 60 min).
+- **Post-ship watch** of the 11-17 evening pass CLEAN (prod `3705da73c` READY, no ERROR deploys). Big pack `running_but_not_succeeding` cluster = Dapper Studio GraphQL 530 outage (since ~4:23 PM PT 11-17), not ours. `edition_integrity_flags` 8→103 (under breach_at 250; watch next pass).
+- **Revert:** docs-only commit; `git revert` the commit if needed.
 
 ### 2026-11-17 ~10:20 PM PT — Binder asks a signed-out visitor to keep the collection they just looked up; Panini look-up fixed to `?username=`; X draft for Wed (Claude Code cloud; Trevor: "Keep going on what you can")
 
