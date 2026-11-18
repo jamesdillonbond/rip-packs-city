@@ -945,10 +945,10 @@ describe("POST /api/sentinel — full battery", () => {
     // CHAIN feed the product reads stayed current. Upstream freeze ≠ our outage.
     describe("upstream freeze vs our outage (sentinel_pack_sales_feeds)", () => {
       const hAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString()
-      const feeds = (o: { tsChainH?: number; adChainH?: number; walkerOk?: boolean; partial?: boolean; walkerMin?: number } = {}) => {
+      const feeds = (o: { tsChainH?: number; adChainH?: number; walkerOk?: boolean; partial?: boolean; walkerMin?: number; error?: string } = {}) => {
         const walker = {
           started_at: minsAgo(o.walkerMin ?? 5), ok: o.walkerOk ?? true, partial: o.partial ?? false,
-          head_new: 0, newest_block_time: hAgo(59),
+          head_new: 0, newest_block_time: hAgo(59), error: o.error ?? null,
         }
         return {
           data: {
@@ -985,6 +985,40 @@ describe("POST /api/sentinel — full battery", () => {
           const c = check(await (await POST(post())).json(), "Pack Sales Ingest (Top Shot)")
           expect(c.status, JSON.stringify(bad)).toBe("critical")
           expect(c.detail, JSON.stringify(bad)).not.toMatch(/BEHIND/)
+        }
+      })
+
+      // 2026-11-17: Dapper's Studio GraphQL answered HTTP 530 to every request; the walker failed and the
+      // arm paged CRITICAL on the 466 h-old mirror while the chain feed was current.
+      it("an upstream gateway/origin 5xx is judged on the chain feed, at WARN — never ok, never critical", async () => {
+        for (const code of ["530", "502", "503", "504", "522"]) {
+          install(frozen(feeds({ walkerOk: false, partial: true, error: `head fetch: HTTP ${code}` })))
+          stubFetch([sniperOk, telegramOk, resendOk])
+          const c = check(await (await POST(post())).json(), "Pack Sales Ingest (Top Shot)")
+          expect(c.status, code).toBe("warn")
+          expect(c.detail, code).toMatch(/Studio API is DOWN/)
+          expect(c.detail, code).toContain(`HTTP ${code}`)
+        }
+      })
+
+      it("still pages on an upstream 5xx when the CHAIN feed is quiet too", async () => {
+        install(frozen(feeds({ tsChainH: 30, walkerOk: false, partial: true, error: "head fetch: HTTP 530" })))
+        stubFetch([sniperOk, telegramOk, resendOk])
+        expect(check(await (await POST(post())).json(), "Pack Sales Ingest (Top Shot)").status).toBe("critical")
+      })
+
+      it("keeps the ORIGINAL verdict for a failure that may be ours (500, 4xx) or a stale 5xx run", async () => {
+        for (const bad of [
+          { walkerOk: false, partial: true, error: "head fetch: HTTP 500" },
+          { walkerOk: false, partial: true, error: "head fetch: HTTP 401" },
+          { walkerOk: false, partial: true, error: "head fetch: HTTP 5300" },
+          { walkerOk: false, partial: true, error: "head fetch: HTTP 530", walkerMin: 180 },
+        ]) {
+          install(frozen(feeds(bad)))
+          stubFetch([sniperOk, telegramOk, resendOk])
+          const c = check(await (await POST(post())).json(), "Pack Sales Ingest (Top Shot)")
+          expect(c.status, JSON.stringify(bad)).toBe("critical")
+          expect(c.detail, JSON.stringify(bad)).not.toMatch(/DOWN|BEHIND/)
         }
       })
 

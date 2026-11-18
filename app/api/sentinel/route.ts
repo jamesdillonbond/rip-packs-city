@@ -1343,7 +1343,11 @@ async function runSentinelWithin(clock: WallBudgetClock) {
     // the walker clean → upstream behind: severity from the CHAIN feed, mirror age in the detail.
     // A failed or absent feeds read falls back to the original (stricter) verdict, never to ok.
     const { data: feeds, error: feedsErr } = await supabase.rpc("sentinel_pack_sales_feeds");
-    const feedFor = (key: string): { chainH: number; walkerClean: boolean; walkerAgeMin: number } | null => {
+    // ⚠ 2026-11-17: a walker that fails because DAPPER's server is down (Studio answered HTTP 530 to every
+    // request from ~4:23 PM PT) is not OUR failure either. Only gateway/origin classes count (502-504, 520-530):
+    // a 500 or a 4xx can be our own malformed request, so it keeps the stricter verdict.
+    const UPSTREAM_DOWN_RE = /HTTP (50[234]|52\d|530)\b/;
+    const feedFor = (key: string): { chainH: number; walkerClean: boolean; walkerUpstreamDown: boolean; walkerError: string | null; walkerAgeMin: number } | null => {
       if (feedsErr || !feeds || typeof feeds !== "object") return null;
       const f: any = (feeds as any)[key];
       const chainMs = f?.chain_newest_sale_at ? Date.parse(f.chain_newest_sale_at) : NaN;
@@ -1355,6 +1359,9 @@ async function runSentinelWithin(clock: WallBudgetClock) {
         chainH: (now.getTime() - chainMs) / 3_600_000,
         // Clean = its latest run completed against the source's head inside the last hour.
         walkerClean: w.ok === true && w.partial === false && walkerAgeMin <= 60,
+        // Ran inside the last hour and failed on an upstream gateway/origin error.
+        walkerUpstreamDown: w.ok === false && walkerAgeMin <= 60 && typeof w.error === "string" && UPSTREAM_DOWN_RE.test(w.error),
+        walkerError: typeof w.error === "string" ? w.error : null,
         walkerAgeMin,
       };
     };
@@ -1412,6 +1419,23 @@ async function runSentinelWithin(clock: WallBudgetClock) {
                 `(warn ${lane.warn}h / crit ${lane.crit}h) · Dapper's pack-sales index is BEHIND — its newest ` +
                 `${age.toFixed(1)}h ago, and our walker is caught up with it (last run ${feed.walkerAgeMin.toFixed(0)}min ago, clean) — ` +
                 `upstream, #218`,
+              value: `${feed.chainH.toFixed(1)}h`,
+            });
+            continue;
+          }
+          if (feed && feed.walkerUpstreamDown) {
+            // Dapper's server is down, our lane is retrying: judge the chain feed the product reads, but never
+            // below WARN — a long outage must stay visible rather than read green.
+            const chainStatus =
+              feed.chainH < lane.warn ? "ok" : feed.chainH < lane.crit ? "warn" : "critical";
+            checks.push({
+              name: lane.name,
+              status: chainStatus === "critical" ? "critical" : "warn",
+              detail:
+                `Chain ${lane.key} pack sales (what the product reads): newest ${feed.chainH.toFixed(1)}h ago ` +
+                `(warn ${lane.warn}h / crit ${lane.crit}h) · Dapper's Studio API is DOWN for our walker ` +
+                `("${(feed.walkerError ?? "").slice(0, 80)}", last run ${feed.walkerAgeMin.toFixed(0)}min ago); its pack-sales ` +
+                `index was already ${age.toFixed(1)}h behind — upstream, #218`,
               value: `${feed.chainH.toFixed(1)}h`,
             });
             continue;
