@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { SKIP, cronMatches, cronsOf, dueBetween, expandField, loadSchedule, parseCron } from "../scripts/gha-schedule-relay.mjs";
+import { SKIP, cronMatches, cronsOf, dueBetween, expandField, inputsFor, loadSchedule, parseCron } from "../scripts/gha-schedule-relay.mjs";
 
 const at = (iso: string) => new Date(iso);
 
@@ -40,11 +40,11 @@ describe("gha-schedule-relay cron matching", () => {
 
   it("collects every workflow due inside a window, once each", () => {
     const schedule = [
-      { file: "a.yml", parsed: [parseCron("5,6 * * * *")] },
-      { file: "b.yml", parsed: [parseCron("30 * * * *")] },
+      { file: "a.yml", crons: ["5,6 * * * *"], parsed: [parseCron("5,6 * * * *")] },
+      { file: "b.yml", crons: ["30 * * * *"], parsed: [parseCron("30 * * * *")] },
     ];
     const due = dueBetween(schedule, Date.parse("2026-11-18T05:03:30Z"), Date.parse("2026-11-18T05:07:10Z"));
-    expect(due).toEqual(["a.yml"]);
+    expect(due).toEqual([{ file: "a.yml", cron: "5,6 * * * *", slotMs: Date.parse("2026-11-18T05:06:00Z") }]);
     expect(dueBetween(schedule, Date.parse("2026-11-18T05:06:00Z"), Date.parse("2026-11-18T05:06:59Z"))).toEqual([]);
   });
 });
@@ -55,6 +55,13 @@ describe("gha-schedule-relay against the real workflow tree", () => {
   it("parses every scheduled workflow and never targets itself or the probe", () => {
     expect(schedule.length).toBeGreaterThan(20);
     for (const skipped of SKIP) expect(schedule.map((w) => w.file)).not.toContain(skipped);
+  });
+
+  it("sends the laptop fallback's inputs, so a relayed run is not a dry run", () => {
+    expect(inputsFor("ufc-aptos-sales-ingest.yml", "37-37 1,7,13,19 * * *")).toEqual({ apply: "true" });
+    expect(inputsFor("badge-sync.yml", "45-45 2,8,14,20 * * *")).toEqual({ catalog: "true" });
+    expect(inputsFor("badge-sync.yml", "15-15 */6 * * *")).toEqual({ catalog: "false" });
+    expect(inputsFor("pipeline-sentinel.yml", "34-34 * * * *")).toEqual({});
   });
 
   it("the relay workflow has no schedule trigger and may write Actions", () => {

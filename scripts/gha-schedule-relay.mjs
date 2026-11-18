@@ -21,6 +21,12 @@
  * the relay from running them at their written rate, which nothing downstream
  * has ever been sized for.
  *
+ * IT IS THE BACKSTOP, NOT THE PRIMARY. The laptop runs
+ * scripts/gha-schedule-fallback.mjs every 5 minutes at the written rate; this
+ * relay defers to it (DEFER_MINUTES) and reuses its INPUTS map, so a relayed
+ * run does what the scheduled run would (ufc-aptos apply=true, badge-sync's
+ * catalog flag, ...). It exists because the laptop sleeps.
+ *
  * IT RETIRES ITSELF. When a real `schedule` run appears again it stops and
  * does not re-dispatch itself. Then delete this file, its workflow, and
  * schedule-probe.yml.
@@ -31,8 +37,15 @@
 import { readdirSync, readFileSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { INPUTS } from "./gha-schedule-fallback.mjs";
 
 export const MIN_GAP_MINUTES = 110;
+/**
+ * The laptop's fallback (scripts/gha-schedule-fallback.mjs, Windows task every 5 min) goes first.
+ * The relay only looks at cron slots at least this old, and skips a slot the laptop already ran,
+ * so with the laptop awake the relay dispatches nothing and with it asleep the relay covers.
+ */
+export const DEFER_MINUTES = 7;
 export const SELF = "schedule-relay.yml";
 /** Never dispatched: the relay itself, and the probe whose only job is to detect a real schedule. */
 export const SKIP = new Set([SELF, "schedule-probe.yml"]);
@@ -110,19 +123,34 @@ export function loadSchedule(dir) {
       if (!p) throw new Error(`${file}: cannot parse cron "${c}"`);
       return p;
     });
-    schedule.push({ file, parsed });
+    schedule.push({ file, crons, parsed });
   }
   return schedule;
 }
 
-/** Files whose cron fires in any minute of (afterMs, uptoMs], minute-aligned. */
+/** Workflows whose cron fires in any minute of (afterMs, uptoMs]: one entry per file, its LATEST slot and that slot's cron. */
 export function dueBetween(schedule, afterMs, uptoMs) {
-  const due = new Set();
+  const due = new Map();
   for (let t = Math.floor(afterMs / 60000) * 60000 + 60000; t <= uptoMs; t += 60000) {
     const d = new Date(t);
-    for (const w of schedule) if (w.parsed.some((p) => cronMatches(p, d))) due.add(w.file);
+    for (const w of schedule) {
+      const i = w.parsed.findIndex((p) => cronMatches(p, d));
+      if (i >= 0) due.set(w.file, { file: w.file, cron: w.crons[i], slotMs: t });
+    }
   }
-  return [...due];
+  return [...due.values()];
+}
+
+/** The fallback's `-f k=v` argument list as the API's inputs object. */
+export function inputsFor(file, cron) {
+  const args = INPUTS[file] ? INPUTS[file](cron) : [];
+  const inputs = {};
+  for (let i = 0; i + 1 < args.length; i += 2) {
+    if (args[i] !== "-f") throw new Error(`${file}: unexpected fallback input flag ${args[i]}`);
+    const eq = args[i + 1].indexOf("=");
+    inputs[args[i + 1].slice(0, eq)] = args[i + 1].slice(eq + 1);
+  }
+  return inputs;
 }
 
 async function gh(path, init = {}) {
@@ -139,12 +167,12 @@ async function gh(path, init = {}) {
   return res;
 }
 
-/** Minutes since the workflow's newest run of any kind; Infinity when it has none; null when the read failed. */
-async function minutesSinceLastRun(file, nowMs) {
+/** Creation time (ms) of the workflow's newest run of any kind; 0 when it has none; null when the read failed. */
+async function lastRunMs(file) {
   const res = await gh(`/actions/workflows/${file}/runs?per_page=1`);
   if (!res.ok) return null;
   const run = (await res.json()).workflow_runs?.[0];
-  return run ? (nowMs - Date.parse(run.created_at)) / 60000 : Infinity;
+  return run ? Date.parse(run.created_at) : 0;
 }
 
 /** true / false, or null when the read failed (a failed read is not "still dark"). */
@@ -183,13 +211,16 @@ async function main() {
         break;
       }
     }
-    for (const file of dueBetween(schedule, cursor, now)) {
-      const age = await minutesSinceLastRun(file, now).catch(() => null);
-      if (age !== null && age < MIN_GAP_MINUTES) continue;
-      const res = await gh(`/actions/workflows/${file}/dispatches`, { method: "POST", body: JSON.stringify({ ref: "main" }) }).catch((e) => ({ status: String(e) }));
+    const defer = DEFER_MINUTES * 60000;
+    for (const { file, cron, slotMs } of dueBetween(schedule, cursor - defer, now - defer)) {
+      const last = await lastRunMs(file).catch(() => null);
+      // Something (the laptop fallback, a person, GitHub) already ran this slot, or it ran too recently.
+      if (last !== null && (last >= slotMs || now - last < MIN_GAP_MINUTES * 60000)) continue;
+      const body = JSON.stringify({ ref: "main", inputs: inputsFor(file, cron) });
+      const res = await gh(`/actions/workflows/${file}/dispatches`, { method: "POST", body }).catch((e) => ({ status: String(e) }));
       if (res.status === 204) {
         dispatched++;
-        console.log(`${new Date(now).toISOString()} dispatched ${file}`);
+        console.log(`${new Date(now).toISOString()} dispatched ${file} for slot ${new Date(slotMs).toISOString()} ${body}`);
       } else {
         failed++;
         console.log(`::warning::${new Date(now).toISOString()} dispatch of ${file} answered ${res.status}`);
