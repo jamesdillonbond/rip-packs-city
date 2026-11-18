@@ -253,6 +253,13 @@ const TIER_HEX: Record<string, string> = {
   COMMON: "#6B7280",
 }
 
+// 2026-11-17: recharts colours a bare <Legend />'s TEXT with the series hue, and the ULTIMATE gold
+// (#FFD700) read at 1.31:1 on the light canvas (/nfl-all-day/analytics). The swatch keeps the hue; the
+// label takes the theme-aware secondary text colour, as the volume-by-tier pie's legend already did.
+function legendLabel(value: string) {
+  return <span style={{ color: "var(--rpc-text-secondary)" }}>{value}</span>
+}
+
 const SERIES_COLORS = ["#14B8A6", "#A855F7", "#F59E0B", "#3B82F6", "#EF4444", "#22C55E", "#F472B6", "#EAB308", "#60A5FA"]
 
 // MARKETPLACE_LABEL / MARKETPLACE_COLOR / marketplaceLabel / marketplaceColor
@@ -1494,7 +1501,7 @@ function AnalyticsInner() {
                       <XAxis dataKey="date" stroke="#71717a" tick={{ fontSize: 10 }} />
                       <YAxis stroke="#71717a" tick={{ fontSize: 10 }} tickFormatter={(v) => `$${Number(v).toLocaleString("en-US")}`} />
                       <ReTooltip contentStyle={{ background: "#09090b", border: "1px solid #27272a", fontFamily: "var(--font-mono)" }} labelStyle={{ color: "#e4e4e7" }} formatter={(v, n) => [fmtUsd(Number(v) || 0), String(n)]} />
-                      <Legend />
+                      <Legend formatter={legendLabel} />
                       {avgPricePivot.tiers.map((t) => (
                         <Line key={t} type="monotone" dataKey={t} stroke={TIER_HEX[t] ?? "#6B7280"} strokeWidth={2} dot={false} connectNulls />
                       ))}
@@ -1521,7 +1528,7 @@ function AnalyticsInner() {
                       <XAxis dataKey="date" stroke="#71717a" tick={{ fontSize: 10 }} />
                       <YAxis stroke="#71717a" tick={{ fontSize: 10 }} />
                       <ReTooltip contentStyle={{ background: "#09090b", border: "1px solid #27272a", fontFamily: "var(--font-mono)" }} labelStyle={{ color: "#e4e4e7" }} />
-                      <Legend />
+                      <Legend formatter={legendLabel} />
                       {saleCountPivot.tiers.map((t) => {
                         const hex = TIER_HEX[t] ?? "#6B7280"
                         return <Area key={t} type="monotone" dataKey={t} stackId="1" stroke={hex} fill={hex} fillOpacity={0.6} />
@@ -1636,7 +1643,7 @@ function AnalyticsInner() {
                         <XAxis dataKey="date" stroke="#71717a" tick={{ fontSize: 10 }} />
                         <YAxis stroke="#71717a" tick={{ fontSize: 10 }} tickFormatter={(v) => `$${Number(v).toLocaleString("en-US")}`} />
                         <ReTooltip contentStyle={{ background: "#09090b", border: "1px solid #27272a", fontFamily: "var(--font-mono)" }} labelStyle={{ color: "#e4e4e7" }} formatter={(v, n) => [fmtUsd(Number(v) || 0), String(n)]} />
-                        <Legend />
+                        <Legend formatter={legendLabel} />
                         {topSeriesKeys.map((s, i) => {
                           const color = SERIES_COLORS[i % SERIES_COLORS.length]
                           return <Area key={s} type="monotone" dataKey={s} stackId="1" stroke={color} fill={color} fillOpacity={0.6} />

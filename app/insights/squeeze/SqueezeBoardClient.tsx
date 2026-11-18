@@ -1274,6 +1274,11 @@ const CSS = `
   color: rgb(252, 211, 77);
   margin-left: 4px;
 }
+/* 2026-11-17: the pale amber read at 1.34:1 on the light canvas (measured on
+   /insights/allday-squeeze); light theme takes the theme-aware warning text. */
+:root[data-theme="light"] .rpc-sq-ask-flag {
+  color: var(--rpc-warning-text);
+}
 
 .rpc-sq-footer {
   max-width: 1180px;
