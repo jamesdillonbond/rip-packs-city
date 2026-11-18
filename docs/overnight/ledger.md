@@ -12,6 +12,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-17 ~5:40 PM PT — GitHub schedule outage, ninth attempt: repo-level Actions toggled off and on — no scheduled run yet (Cowork cloud; Trevor 5:06 PM PT: "I approve toggling Actions off and on")
+
+- **What changed:** in Trevor's Chrome session, Settings → Actions → General: "Disable actions" saved at ~5:07 PM PT, then "Allow all actions and reusable workflows" saved again within about a minute. Read back after the second save: `allowedactions=all`, fork-PR approval `FIRST_TIME_CONTRIBUTORS`, default workflow permissions `read` (all three as before). No file changed.
+- **Verified:** `workflow_dispatch` of `schedule-probe.yml` returned 204 at 5:08 PM PT; all 46 workflows read `active`.
+- **Outcome so far:** 0 `event=schedule` runs between 5:00 and 5:38 PM PT (the probe's :16 and :31 slots both passed). The last scheduled run is still 2026-11-17 12:59 AM PT. Not fixed as of this entry.
+- **Left for Trevor:** a GitHub Support ticket is the remaining step (text is in the 11-17 chat; add this toggle and probe workflow id 422003051). `.github/workflows/schedule-probe.yml` and the `m-m` cron form (`92e0517`) stay until schedules return, then get removed.
+- **Revert:** nothing to revert, the setting is back at its prior value.
+
 ### 2026-11-17 ~5:25 PM PT — Sentinel CRITICAL (pack sales TS + AD) was Dapper's Studio GraphQL going down (HTTP 530); acks renewed to 11-20 (Claude Code, laptop; Trevor forwarded the 5:04 PM PT sentinel page)
 
 - **Cause:** from ~4:23 PM PT every Studio GraphQL request answers HTTP 530 (Cloudflare origin error), reproduced from the laptop's residential connection, so it is Dapper's outage. It fails the TS/AD/Golazos pack-sales walkers, Golazos pack listings and opens, Pinnacle pack opens and AD/Golazos pack EV. With the walker failing, the two sentinel arms stopped judging the chain feed (they do that only while the walker runs clean against the frozen #218 index) and read the 466/537 h-old Studio feed; their 11-04 acks had expired.

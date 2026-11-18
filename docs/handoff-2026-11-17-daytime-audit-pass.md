@@ -80,3 +80,17 @@ Mobile-width sweep, light-theme pass, concierge probes, Panini/Candy parity walk
 - **Shipped:** Panini team walk retries a failed walk within ~2 nights (`20261117230420`); pack-reality staleness snapshot (`20261117232134`); **database-side main-tree watch** (`20261117233007`: a 404 on any of 7 sentinel files on `main` raises a critical alert through `/api/check-alerts`, which runs outside GitHub); light-theme fixes for two labels + `scripts/qa/light-contrast-sweep.mjs`. Ledger has an entry for each.
 - **GitHub schedules:** still 0 scheduled runs at 5:08 PM PT. Another session's probe (`schedule-probe.yml`, a brand-new workflow) never fired, so the fault is repository-wide. Lanes dispatched by hand at 5:08 PM PT; **this session's 3-hourly backstop ends when the thread is archived**, so the next cover has to come from whoever picks this up (the 12 files are listed in addendum 4). Next levers: Settings → Actions → General toggle (Trevor) or GitHub Support.
 - **Watch tomorrow (also in focus.md):** the ~3:35 AM PT team walk should start with Denver, Indianapolis, Pittsburgh, Seattle and Washington; `main-tree-watch` should keep reading 7/7 `present`; `mv_topshot_pack_reality_ranker_staleness.computed_at` should be < ~2 h old.
+
+## Addendum 6 — 12:00–5:40 PM PT (Cowork cloud; Trevor: "Keep probing and looking for ways to fix this yourself", then "I approve toggling Actions off and on")
+
+GitHub `schedule` events are still not delivered to this repo. Last scheduled run: 2026-11-17 12:59 AM PT. Nine attempts have failed; the last three are new since addendum 3:
+
+- **Seventh (1:25 PM):** every cron line rewritten to the `m-m` minute form (`92e0517`, owner credential). No effect.
+- **Eighth (3:46 PM):** a brand-new workflow, `.github/workflows/schedule-probe.yml` (id 422003051, cron `1,16,31,44,58 * * * *`). It has never fired on schedule; manual dispatch works.
+- **Ninth (5:07 PM):** repo-level Actions disabled and re-enabled in Settings (Trevor's Chrome). Settings read back unchanged; 0 scheduled runs in the following 30 minutes.
+
+A new workflow that never fires rules out anything in our workflow files. What is left is GitHub's side: **Trevor files a GitHub Support ticket** (text is in the 11-17 chat). Until then the GitHub-only lanes need manual dispatch; pg_cron and cron-job.org carry the rest.
+
+Also shipped in this window: picomatch advisory `GHSA-fc5q-39xc-vjpf` baselined in `prod-dep-audit-baseline.json` (no fix published, not reachable from requests); Dependency audit is green again.
+
+**When schedules return:** delete `schedule-probe.yml`, and decide whether to revert `92e0517`. Run `npm run preflight` before either push.
