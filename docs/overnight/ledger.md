@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-17 ~7:10 PM PT — Schedule relay now defers to the laptop fallback and sends its inputs (Cowork cloud; Trevor 6:55 PM PT: "Keep working on anything you can")
+
+- **Why:** two sessions answered the same "Figure it out" at once. The laptop session shipped `scripts/gha-schedule-fallback.mjs` (Windows task, every 5 min); this session shipped the in-GitHub relay (`schedule-relay.yml`). The relay as first shipped sent no inputs, so a relayed `ufc-aptos-sales-ingest` would have been a dry run and `badge-sync` would have run the wrong sweep. It had dispatched nothing yet (checked: 0 runs by `github-actions[bot]` since it started).
+- **What changed:** the relay imports the fallback's `INPUTS` map and sends the same inputs; it only looks at cron slots at least 7 minutes old and skips a slot that already has a run. With the laptop awake the relay dispatches nothing; with it asleep the relay covers, throttled to one run per workflow per 110 minutes. The first link (6:26 PM PT, old code) was cancelled and a new one started after this push.
+- **Revert:** `git revert` the code commit; cancel the running "Schedule relay" job.
+
 ### 2026-11-17 ~6:45 PM PT — GitHub schedule FALLBACK runs from the laptop; three schedule-gated jobs that would never have run again fixed; UFC Aptos hand dispatches were dry runs (Claude Code, laptop; Trevor: "Figure it out")
 
 - **`scripts/gha-schedule-fallback.mjs` + Windows task "RPC GHA schedule fallback" (every 5 min, `scripts/gha-schedule-fallback-schedule.bat`):** while GitHub delivers no `schedule` event (none in the last 90 min), it finds each scheduled workflow's most recent cron slot (UTC, ≤ 6 h back) and dispatches it with `gh workflow run` if no run of ANY event has started since that slot. It stands down by itself once GitHub delivers again. It uses the signed-in `gh` CLI on this machine, so no new credential is stored anywhere. Dispatched runs stay `workflow_dispatch` and `schedule-probe.yml` is never dispatched, so the watchdog and the probe keep measuring GitHub itself. Log: `%LOCALAPPDATA%\rpc-gha-fallback\log.jsonl`.
