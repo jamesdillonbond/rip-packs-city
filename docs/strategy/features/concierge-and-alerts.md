@@ -110,7 +110,7 @@ Live 10-17: `alerts-dispatch` 104/104 runs ok in 24 h; 14 `alert_deliveries` in 
 - **Telegram was retired as a requirement** (R77, 10-13).
 - **Points programme OFF** (10-04, Trevor).
 - **No paid tier, billing, or "paying user" copy anywhere** (escalation scope, 10-11). No paid tier until 100 WAU.
-- **No outreach** (Trevor). Digests stay off until C2 is resolved.
+- **No outreach** (Trevor). Digests stay off until C2 is resolved. *(Superseded for the account emails: the weekly portfolio email has been live since 11-03, #227. Since 11-17 it goes to every member with a week of history, not only ≥5 % movers, and the 11-08 placeholder rows that held 32 members out were switched on 11-18 with Trevor's approval. The Day-1 email has been on since 11-17.)*
 - **Deal-alert zero_yield lanes and the Lillard Archive filter stay** (declined 09-25).
 
 ## Where the detail lives
