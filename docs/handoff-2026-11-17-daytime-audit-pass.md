@@ -115,3 +115,12 @@ Also shipped in this window: picomatch advisory `GHSA-fc5q-39xc-vjpf` baselined 
 - **✅ Schedules resumed at 7:03 PM PT:** 10 real `schedule` runs across 10 workflows in six minutes, all green. Cause not established (candidates and why none is proven: ledger 11-17 ~7:15 PM PT).
 - The relay was changed to defer to the laptop fallback and send its inputs (it had sent none), then retired itself when it saw the real runs. The laptop fallback stands down by itself.
 - **Cleanup owed, 11-18 evening, only if schedules have held:** delete `schedule-relay.yml`, `scripts/gha-schedule-relay.mjs`, `__tests__/gha-schedule-relay.test.ts`, `schedule-probe.yml`; delete the Windows task "RPC GHA schedule fallback"; decide on reverting the `m-m` cron form (`92e0517`; three `github.event.schedule ==` gates now name the new text, so a revert must change them back too). `npm run preflight` first.
+
+## Addendum 9 — 7:25–7:50 PM PT (Cowork cloud; Trevor: "Do the rest of those untouched items")
+
+Read-only; nothing shipped.
+
+- **Accessibility gate:** the `a11y-audit` job of the 6:01 PM PT dispatched E2E run passed. 72 route × theme audits (plus the 390 px pass on each): 0 gated violations, 0 serious ungated.
+- **Dashboard artifacts (16 sources in `docs/cowork-skills/`):** each loaded headless with a recording stub in place of the Cowork bridge. All 16 ran without a script error and issued their first-load queries (29 SQL, 2 Vercel). 159 explicitly selected columns across 33 relations all exist. Not covered: queries an artifact only issues after its first result, and how the charts look with real data.
+- **Panini / Candy parity walk:** 9 shared tabs each on production, Top Shot as control. Every supported tab rendered with an h1, no error or stuck-loading text, no failed API call, no broken image, no overflow, no confidence wording. Unsupported tabs redirect to the overview (Panini: badges, challenges; Candy: sniper, badges, challenges). Cosmetic only: Panini's headings say "PANINI — COLLECTION" and "PANINI — SET TRACKER" where the others say "— BINDER" and "Set Tracker".
+- **Scheduled tasks, remaining pages: NOT done.** The list returns four tasks per page with full prompts; the first page was four already-read entries (three are disabled copies of "RPC laptop pull main"). Finishing it needs a fresh session.
