@@ -12,6 +12,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-17 ~4:45 PM PT — Light-theme contrast sweep (177 pages): two unreadable labels fixed; a contrast probe added to scripts/qa (Claude Code, laptop; Trevor: "Keep going")
+
+- **Instrument:** `scripts/qa/light-contrast-sweep.mjs` (new). Playwright, `rpc_theme=light`. For every visible text element it walks up to the first opaque background, flags contrast < 1.6:1, and flags near-black panels ≥ 15 % of the viewport. Positive control: a planted `#fafafa`-on-white line reads 1.04 and a `#050505` panel is flagged; dark `#111` text passes. Nothing in CI measures this; the brand-token guard checks literals, not rendered contrast.
+- **Swept:** 20 core pages, 122 sitemap-sampled pages (every collection's edition/set/player/team/pack + insights + blog), and 35 tool tabs (market/packs/sets/analytics/sniper × 7). All rendered `data-theme="light"`; no dark panels. **Two findings:**
+  - `/insights/allday-squeeze` (shared squeeze board): the "ask ≫ FMV" flag was `rgb(252,211,77)` at 1.34:1. Light theme now uses `--rpc-warning-text` (`#895806`); dark is unchanged.
+  - `/[collection]/analytics`: recharts colours a bare `<Legend />`'s text with the series hue, so the ULTIMATE gold `#FFD700` read at 1.31:1. Three legends now render the label in `--rpc-text-secondary` (the swatch keeps the hue), the same pattern the volume-by-tier pie already used.
+- Revert: `git revert` the code commit that follows.
+
 ### 2026-11-17 ~4:45 PM PT — Schedule probe: a brand-new scheduled workflow does not fire either, so the fault is repository-wide (Cowork cloud; Trevor: "Keep probing and looking for ways to fix this yourself")
 
 - **`a126943` (3:46 PM PT, owner credential):** added `.github/workflows/schedule-probe.yml` — a new file, new workflow id (422003051), cron `1,16,31,44,58 * * * *`, one `echo` step. Registered `active`; four of its slots passed by 4:44 PM PT with 0 scheduled runs, and 0 scheduled runs repo-wide since 12:59 AM PT. So the old workflows' registrations are not the problem: GitHub is not delivering `schedule` events to this repository at all. Renaming workflow files would not help.
