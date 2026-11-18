@@ -103,3 +103,9 @@ Also shipped in this window: picomatch advisory `GHSA-fc5q-39xc-vjpf` baselined 
 - **Shipped instead: the schedule relay** (`.github/workflows/schedule-relay.yml`, `scripts/gha-schedule-relay.mjs`). One ~5.5 h job dispatches each scheduled workflow when its cron is due and then dispatches its own next link. No stored token. It skips a workflow that ran in the last 110 minutes, and stops for good when a real `schedule` run appears. First link started 6:26 PM PT.
 - **Watch:** Actions → "Schedule relay" should always show one run in progress. If none is, start it with Run workflow. `scheduler-liveness` and `gha-schedule-watchdog` stay red while the outage lasts, because they count `schedule` events only.
 - **Still open:** the outage itself. Free routes left are a GitHub Community Discussions post, or a paid plan to reopen the ticket (Trevor's call).
+
+## Addendum 7 — 6:45 PM PT (Claude Code, laptop; "Figure it out")
+
+- **The GitHub-only lanes no longer need hand dispatch:** the Windows task "RPC GHA schedule fallback" (every 5 min, `scripts/gha-schedule-fallback.mjs`) dispatches each scheduled workflow when its cron slot passes with no run, only while GitHub delivers no schedules. Verified on three ticks with no doubles. It stands down when GitHub recovers; delete it then.
+- ⚠ Every hand dispatch of ufc-aptos-sales-ingest on 11-17 was a dry run (`apply` defaults to false). Fixed in the fallback, and a 6:31 PM PT `apply=true` run wrote.
+- Fixed: three `github.event.schedule ==` gates still named the pre-rewrite cron text (badge-sync ×2, ops-monitor's daily data-integrity), so those jobs would never have run once schedules resumed. A guard now keeps gates and crons in step.

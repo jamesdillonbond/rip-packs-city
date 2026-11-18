@@ -4,6 +4,10 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-11-17 ~6:45 PM PT (Claude Code, laptop) — GitHub schedules are covered by a laptop fallback
+
+- **Windows task "RPC GHA schedule fallback" (every 5 min) dispatches each scheduled workflow whose cron slot passed with no run since**, only while GitHub delivers no `schedule` event; it stands down by itself after that. Read `%LOCALAPPDATA%pc-gha-fallbacklog.jsonl` (laptop) or `gh run list --event workflow_dispatch`. Do NOT hand-dispatch the GitHub-only lanes on top of it. **Once `gha-schedule-watchdog` reads `delivering` again:** delete the task (`schtasks /delete /tn "RPC GHA schedule fallback" /f`) and `schedule-probe.yml`. If the laptop is off, the lanes go dark again: hand-dispatch (ufc-aptos needs `-f apply=true`).
+
 ## STEER — added 2026-11-17 ~5:25 PM PT (Claude Code, laptop) — Dapper Studio GraphQL down (530)
 
 - **Any pass — is Studio back?** `curl -s -o /dev/null -w "%{http_code}" -X POST -H "Content-Type: application/json" -H "Origin: https://nbatopshot.com" --data '{"query":"{__typename}"}' https://api.production.studio-platform.dapperlabs.com/graphql` → 530 since ~4:23 PM PT 11-17. While it 530s, expect ok=false on the TS/AD/Golazos pack-sales walkers, golazos/pinnacle pack opens, AD/Golazos pack EV and the Golazos half of `snapshot-pack-asks`. That is Dapper's outage; do not "fix" our lanes for it.

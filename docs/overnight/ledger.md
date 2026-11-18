@@ -19,6 +19,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 - **Latent bug fixed:** `92e051756` rewrote every cron to `m-m` but left three `if: github.event.schedule == '<old text>'` gates (badge-sync's two sweeps, ops-monitor's daily data-integrity). Once schedules resumed, those three jobs would never have run. Gates now name the new cron text.
 - **Guard:** `__tests__/gha-schedule-fallback.test.ts`. Its tree walk asserts every `github.event.schedule == 'X'` names a declared cron (red on the old files: all three listed), every schedule-branching workflow has fallback inputs, every scheduled workflow accepts dispatch, and the cron matcher handles the `m-m` form.
 - **Remove the task once schedules are healthy:** `schtasks /delete /tn "RPC GHA schedule fallback" /f` (harmless meanwhile; it stands down).
+- **Verified live:** the task was registered 6:28 PM PT. Tick 1 dispatched the 8 overdue lanes (0 failed, exit 0); 6:33 → site-availability-alarm only (its :33 slot); 6:38 → sentinel + sales-history backfill + wallet backstop. No double dispatch. UFC Aptos dispatched by hand with `apply=true` at 6:31 PM PT and it WROTE: cursor to head 8,102,075,862 (0 new sales), holdings 31,338 upserted, wallet-link ok.
 - Revert: delete the task; `git revert` the code commit that follows.
 
 ### 2026-11-17 ~6:35 PM PT — Schedule relay: a self-chaining workflow now dispatches the scheduled workflows, because GitHub Support closed the ticket unread (Cowork cloud; Trevor 6:16 PM PT: "Figure it out")
