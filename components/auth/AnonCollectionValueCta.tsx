@@ -48,6 +48,14 @@ export function collectionLookupAction(pathname: string | null): string | null {
   return /^[a-z0-9-]+$/.test(seg) ? `/${seg}/collection` : null
 }
 
+// The query parameter each binder reads its look-up from. Panini's binder is its own component
+// (components/collection/PaniniCollection.tsx) and reads `?username=`; every other binder reads
+// `?wallet=` (CollectionTabClient / AutoSearchReader). Measured live 11-17: the first ship sent
+// Panini `?wallet=` and its binder opened empty.
+export function collectionLookupParam(pathname: string | null): "username" | "wallet" {
+  return (pathname ?? "").split("/")[1] === "panini-blockchain" ? "username" : "wallet"
+}
+
 export default function AnonCollectionValueCta(props: {
   /** What the visitor would add: "Panini username", "wallet", … */
   identityNoun: string
@@ -61,6 +69,7 @@ export default function AnonCollectionValueCta(props: {
   const [show, setShow] = useState(false)
   const [value, setValue] = useState("")
   const lookupAction = collectionLookupAction(pathname)
+  const lookupParam = collectionLookupParam(pathname)
 
   useEffect(() => {
     let cancelled = false
@@ -103,7 +112,7 @@ export default function AnonCollectionValueCta(props: {
           style={{ display: "flex", gap: 8, flexWrap: "wrap" }}
         >
           <input
-            name="wallet"
+            name={lookupParam}
             value={value}
             onChange={(e) => setValue(e.target.value)}
             placeholder={props.identityNoun}

@@ -5,6 +5,7 @@ import { useMemo, useState, useReducer, useEffect, useCallback, useRef, Suspense
 import { seriesPageLabel } from "@/lib/series-label"
 import { packNftTypeName } from "@/lib/packs/live-pack-listings"
 import { useRouter, useParams, useSearchParams } from "next/navigation"
+import AnonSaveCollectionCta from "@/components/auth/AnonSaveCollectionCta"
 import { PackSubNav, subSectionFromParams } from "@/components/collection/PackSubNav"
 import WalletSoldMomentsView from "@/components/collection/WalletSoldMomentsView"
 import WalletPacksView from "@/components/packs/WalletPacksView"
@@ -1637,6 +1638,16 @@ function WalletMomentsBody() {
           connectedWallet={connectedWallet}
           ownerKey={ownerKey}
           input={input}
+        />
+
+        {/* 2026-11-17: the account ask at the moment a SIGNED-OUT visitor has just seen their
+            collection (62 look-ups in 30 days, 5 sign-in clicks after). Affirmatively signed out
+            only — a loading or failed session read shows nothing. */}
+        <AnonSaveCollectionCta
+          show={hasSearched && !loading && !error && rows.length > 0 && !!activeWallet &&
+            !sessionOwner.loading && !sessionOwner.degraded && !sessionOwner.userId}
+          wallet={activeWallet}
+          collection={collectionSlug}
         />
 
         {/* UFC Strike on Aptos (2026-11-16): the moments this collector has migrated, found

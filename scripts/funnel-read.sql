@@ -24,7 +24,9 @@
 --   feature use          browsers · events for the features instrumented 11-15/16: owner share
 --                        clicks, edition Watch, reward card, Fill with my top 6, serial search
 --                        (#12359), open offers (#12361), and the edition prompt's no-account look-up
---                        (anon-value-lookup, 11-17)
+--                        (anon-value-lookup, 11-17), and the binder's signed-out "Is this your collection?"
+--                        card (anon-save-cta-shown; its clicks are funnel_events signin_click
+--                        surface binder_save_signup, row 9's sign-in read)
 --   wallet search outcome collection-page wallet searches by result (search-result, 11-16):
 --                        loaded with moments · loaded empty · failed read
 --   save vs follow       the "Is @handle your wallet?" confirm (shown · yes · cancel) and wallet
@@ -80,9 +82,9 @@ UNION ALL SELECT '5 made_trophy_case', count(*)::text FROM u WHERE id IN (SELECT
 UNION ALL SELECT '6 day1_email_sent', count(*)::text FROM sent
 UNION ALL SELECT '7 day1_then_returned_within_3d', count(*)::text FROM sent_ret
 UNION ALL SELECT '8 share viewers (signed out)', n::text FROM share_views
-UNION ALL SELECT '9 share signin clicks · ' || coalesce(f.surface, '?'), count(*)::text
+UNION ALL SELECT '9 signin clicks (share / binder save) · ' || coalesce(f.surface, '?'), count(*)::text
   FROM funnel_events f, params p
-  WHERE f.event_type = 'signin_click' AND f.surface IN ('share_hero', 'share_cta')
+  WHERE f.event_type = 'signin_click' AND f.surface IN ('share_hero', 'share_cta', 'binder_save_signup')
     AND f.created_at >= p.s AND f.created_at < p.e AND NOT coalesce(f.bot_ua, false)
   GROUP BY f.surface
 -- 10: distinct human browsers shown the prompt (automated = our own Playwright/axe runs, 25 of
@@ -113,7 +115,7 @@ UNION ALL SELECT '12 feature use (browsers · events) · ' || ue.feature_name,
     AND ue.feature_name IN ('share-click', 'watch-edition-open', 'watch-edition-signin-needed', 'watch-edition-saved',
                             'reward-claim-card-shown', 'reward-claim-card-click', 'main-fill-click', 'main-fill-declined',
                             'main-fill-pinned', 'serial-search', 'open-offers-shown', 'offers-tab',
-                            'anon-value-lookup')
+                            'anon-value-lookup', 'anon-save-cta-shown')
     AND coalesce(ue.metadata->>'automated', 'false') <> 'true'
     AND (ue.user_id IS NULL OR NOT EXISTS (SELECT 1 FROM internal_accounts ia WHERE ia.user_id = ue.user_id))
   GROUP BY ue.feature_name

@@ -13,7 +13,7 @@ vi.mock("next/navigation", () => ({ usePathname: () => "/panini-blockchain/editi
 const usageMock = vi.fn()
 vi.mock("@/lib/telemetry/track", () => ({ track: (...a: unknown[]) => usageMock(...a) }))
 
-import AnonCollectionValueCta from "@/components/auth/AnonCollectionValueCta"
+import AnonCollectionValueCta, { collectionLookupParam } from "@/components/auth/AnonCollectionValueCta"
 
 function mockMe(res: { ok: boolean; body?: unknown } | "throw") {
   globalThis.fetch = vi.fn(() =>
@@ -88,12 +88,20 @@ describe("AnonCollectionValueCta", () => {
     expect(form.getAttribute("action")).toBe("/panini-blockchain/collection")
     expect(form.getAttribute("method")).toBe("get")
     const input = form.querySelector("input")!
-    expect(input.getAttribute("name")).toBe("wallet")
+    // Panini's binder reads ?username= (every other binder reads ?wallet=)
+    expect(input.getAttribute("name")).toBe("username")
     expect(container.textContent).toMatch(/No account needed/)
     fireEvent.submit(form)
     expect(usageMock).not.toHaveBeenCalledWith("anon-value-lookup", expect.anything())
     fireEvent.change(input, { target: { value: "knotbean" } })
     fireEvent.submit(form)
     expect(usageMock).toHaveBeenCalledWith("anon-value-lookup", { surface: "panini_edition" })
+  })
+
+  it("names the look-up parameter each binder reads", () => {
+    expect(collectionLookupParam("/panini-blockchain/edition/x")).toBe("username")
+    for (const c of ["nba-top-shot", "nfl-all-day", "laliga-golazos", "disney-pinnacle", "candy-mlb"]) {
+      expect(collectionLookupParam(`/${c}/edition/x`)).toBe("wallet")
+    }
   })
 })
