@@ -2,6 +2,7 @@
 
 import { apiErrorMessage } from "@/lib/api-error-message"
 import { getFunnelContext } from "@/lib/track-funnel"
+import { track } from "@/lib/telemetry/track";
 import { reconcileDeviceKeysForUser } from "@/lib/auth/device-keys";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useModalA11y } from "@/lib/hooks/useModalA11y";
@@ -2756,8 +2757,14 @@ function VerifyByListingModal({
   // Load the active challenge; if none, mint a fresh one (which picks the
   // target Moment server-side). A challenge with no target_moment_id is legacy
   // and not actionable — mint fresh instead.
+  // 2026-11-18: the funnel was unmeasurable. Every "unavailable" answer from the mint
+  // route is a 200 that writes no challenge row, and nothing recorded a modal open, so
+  // "0 challenges since the button came back" could not separate NOBODY CLICKED from
+  // CLICKED AND WAS TURNED AWAY. These beacons (usage_events) are that instrument:
+  // verify-modal-open → verify-challenge-start {outcome, reason} → verify-check.
   useEffect(() => {
     let cancelled = false;
+    track("verify-modal-open", { wallet_chain: detectAddressChain(walletAddr) });
     (async () => {
       setLoading(true);
       setError(null);
@@ -2769,6 +2776,7 @@ function VerifyByListingModal({
           if (d?.challenge && d.challenge.target_moment_id && !d.challenge.resolved_at && !d.challenge.expired) {
             setChallenge(d.challenge);
             setTarget(d.target ?? null);
+            track("verify-challenge-start", { outcome: "resumed" });
             return;
           }
         }
@@ -2781,13 +2789,16 @@ function VerifyByListingModal({
         const md = await minted.json();
         if (cancelled) return;
         if (md?.unavailable) {
+          track("verify-challenge-start", { outcome: "unavailable", reason: typeof md?.reason === "string" ? md.reason : null });
           setUnavailable(md?.message ?? "Verification by listing isn't available for this wallet.");
           return;
         }
         if (!minted.ok) throw new Error(md?.error ?? `HTTP ${minted.status}`);
+        track("verify-challenge-start", { outcome: "minted" });
         setChallenge(md.challenge);
         setTarget(md.target ?? null);
       } catch (e: any) {
+        if (!cancelled) track("verify-challenge-start", { outcome: "error", message: String(e?.message ?? "").slice(0, 120) });
         if (!cancelled) setError(e?.message ?? "Failed to start verification");
       } finally {
         if (!cancelled) setLoading(false);
@@ -2845,12 +2856,14 @@ function VerifyByListingModal({
       // look. This is the only self-serve verification path and it awards
       // credits, so "we could not check" and "we checked and found nothing" must
       // not share a message.
+      if (!res.ok && !silent) track("verify-check", { outcome: "http_error", status: res.status });
       if (!res.ok) {
         if (loud()) setCheckHint("Couldn't check just now — this says nothing about your listing. Try again shortly.");
         return;
       }
       const d = await res.json();
       if (d?.ok && d?.matched) {
+        track("verify-check", { outcome: "matched", silent });
         setVerified(true);
         // Verified = the referral (if any) is now credited server-side. Clear
         // the stash so it can't be reused on a later verify.
@@ -2867,6 +2880,7 @@ function VerifyByListingModal({
         onVerified(d?.profileHandleClaimed && typeof d?.profileHandle === "string" ? d.profileHandle : null);
         return;
       }
+      if (!silent) track("verify-check", { outcome: "miss" });
       if (loud()) setCheckHint(d?.hint ?? d?.error ?? "No matching listing found yet.");
     } catch (e: any) {
       if (loud()) setError(e?.message ?? "Check failed");

@@ -1163,6 +1163,28 @@ describe("DashboardClient — verify by listing", () => {
     await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("verify-challenge"))).toBe(true))
   })
 
+  // 2026-11-18: 0 challenges in the 3 days after the button came back, and nothing could
+  // say whether anyone clicked — an "unavailable" mint is a 200 that writes no row. The
+  // modal must leave a usage_events trail: open, then the start OUTCOME with its reason.
+  it("2026-11-18: a turned-away mint is recorded with its reason, not silently dropped", async () => {
+    const beacons = () =>
+      fetchMock.mock.calls
+        .filter((c) => String(c[0]).startsWith("/api/telemetry"))
+        .map((c) => JSON.parse(String((c[1] as RequestInit | undefined)?.body ?? "{}")))
+    await openVerify({
+      "/api/profile/verify-challenge": () =>
+        json(200, { challenge: null, unavailable: true, reason: "no_safe_target", message: "Every Moment in this wallet is worth too much." }),
+    })
+    await screen.findByText(/worth too much/)
+    await waitFor(() => {
+      const b = beacons()
+      expect(b.some((x) => x.feature === "verify-modal-open")).toBe(true)
+      const start = b.find((x) => x.feature === "verify-challenge-start")
+      expect(start?.metadata?.outcome).toBe("unavailable")
+      expect(start?.metadata?.reason).toBe("no_safe_target")
+    })
+  })
+
   it("⚠ distinguishes 'we could not check' from 'we checked and found nothing'", async () => {
     // The only self-serve verification path, and it awards credits. Before the
     // `res.ok` gate, a non-2xx still parsed, `d.ok` was undefined so the success
