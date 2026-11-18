@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-18 ~7:10 AM PT — `sync_allday_pack_dist_totals` skips a NULL opened_count instead of aborting every distribution's write (Claude Code cloud; item C of the 11-18 overnight queue; Trevor: "work through what you can, leaving nothing left unresolved")
+
+- **Why:** from ~6:24 PM PT 11-17 to ~3:24 AM PT 11-18, `rpc-sync-allday-pack-dist-totals` failed every hour with `null value in column "total_opened" … violates not-null constraint`. `expire_allday_dist_opened_drifted()` NULLs `opened_count` to re-queue a drifted distribution, and the Studio 530 outage kept the hydrator from refilling it. Because the function is one UPDATE, that single NULL row aborted the write for every All Day distribution. It had cleared by itself before this change.
+- **Migration `20261118150441_audit_20261118_sync_allday_pack_dist_totals_skips_null_opened`** (applied; live `md5(prosrc)` = `949ab975…`, the same as the file): adds `AND i.opened_count IS NOT NULL`. It does NOT coalesce to 0, which would publish a false "0 opened". A real zero is still written (D-UNOPENED).
+- **Pins:** `supabase/tests/sync_allday_pack_dist_totals.sql` has the new verbatim body and case D-NULLOPEN. The new body exits 0 locally; a planted old body exits 3 ("got [4], want [3]"). The drift-guard entry is re-pointed to the new migration. A manual call after the apply returned 0 (nothing to change).
+- **Revert:** re-apply the body from `20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql` and re-point the pin and test block.
+
 ### 2026-11-18 ~7:13 AM PT — pack-nft-identity fix APPLIED via the dashboard SQL Editor; lane green (Cowork cloud, Trevor's Chrome; Trevor: "push through any sql work pending, through chrome")
 
 - **Applied:** `20261118055831_audit_20261117_pack_identity_requeue_collapses_bought_and_ripped_duplicates.sql`, fetched at pinned `840cd3b` and SHA-256 checked in-page before `setValue`; Run + "Potential issue detected" confirm (the flagged DELETE is pre-existing in the function body). Pre-check md5 `9217c411…` (base); post-check `51a46709aafd22ce1cc9dd63982c036a`; `anon` execute still false. SQL Editor path, so no `schema_migrations` row (parity is applied → file; file already committed).
