@@ -11,6 +11,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-10-25 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24, 2026-10-08, 2026-10-24, 2026-11-08). Frozen history — revert paths there are still valid.
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
+### 2026-11-18 ~6:30 AM PT — Weekly email reaches every eligible member: 36 placeholder `email_subscribers` rows set `digest_weekly=true` (Claude Code cloud; Trevor approved: "I approve of the email work")
+
+- **Why:** the 11-08 reminder send created 36 `email_subscribers` rows only to hold unsubscribe links, with `digest_weekly=false` (column default is `true`). None had been touched since, and none had unsubscribed. They kept 32 of the then-50 members with a week of history out of the weekly email (11-17 ~9:00 PM PT entry).
+- **Data write:** `update email_subscribers set digest_weekly=true, updated_at=now() where digest_weekly=false and verified=false and unsubscribed_at is null and updated_at=created_at and created_at >= '2026-11-09 03:00+00' and created_at < '2026-11-09 05:00+00'`. Re-checked first (still 36, all untouched); 36 rows updated.
+- **After:** 53 members are eligible for the next weekly run (Mon 11-23), 50 of them external. None has the weekly email off, and none has unsubscribed.
+- **Revert:** run the same predicate with `digest_weekly=false`, plus `updated_at >= '2026-11-18 14:00+00' and updated_at < '2026-11-18 15:00+00'` and `verified=false`. The row ids are in the session transcript.
+
 ### 2026-11-18 ~1:05 AM PT — Overnight autonomous pass: quiet, shipped 0, queued 3 (Cowork cloud)
 
 - **Shipped:** nothing to production. Committed only the pass's continuity docs (this ledger, `docs/handoff-2026-11-18-overnight-pass.md`, `metrics-latest.json`, `sessions/2026-11.md`).
