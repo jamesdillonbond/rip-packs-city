@@ -1,4 +1,4 @@
-# Inbox index — 683 live filings
+# Inbox index — 684 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,8 +32,9 @@ failure it documents.
 
 ---
 
-## 2026-11-18 — 3 filings
+## 2026-11-18 — 4 filings
 
+- [Daytime health monitor — 2026-11-18 ~16:10Z: all green (security/trust/pipelines/dashboards/deploy READY); GHA schedules dark again ~13h since 03:06Z — 11-17 "schedules back, cleanup owed" steer reversed, HOLD the relay/probe/fallback cleanup; gh api blocked in scheduled sessions (LOW, sense-only)](2026-11-18T1610Z-daytime-monitor.md)
 - [Daytime health monitor — 2026-11-18 ~07:05Z: candy-sales-indexer later-set walk timeouts → candy_sales_stale BREACH (HIGH, new); pack-nft-identity ON CONFLICT escalated to every-tick (HIGH)](2026-11-18T0705Z-daytime-monitor.md)
 - [Daytime health monitor — 2026-11-18 ~04:08Z: allday-pack-dist-totals sync null total_opened NOT-NULL violation, new since ~02:24Z, likely Studio-530 collateral exposing a missing null-guard (MED)](2026-11-18T0408Z-daytime-monitor.md)
 - [Daytime health monitor — 2026-11-18 ~01:10Z: pack-nft-identity ON CONFLICT dup-key (MED); TS pack-sales 530 blip (LOW)](2026-11-18T0110Z-daytime-monitor.md)
