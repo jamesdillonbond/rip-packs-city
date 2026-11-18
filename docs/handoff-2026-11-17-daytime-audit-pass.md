@@ -124,3 +124,16 @@ Read-only; nothing shipped.
 - **Dashboard artifacts (16 sources in `docs/cowork-skills/`):** each loaded headless with a recording stub in place of the Cowork bridge. All 16 ran without a script error and issued their first-load queries (29 SQL, 2 Vercel). 159 explicitly selected columns across 33 relations all exist. Not covered: queries an artifact only issues after its first result, and how the charts look with real data.
 - **Panini / Candy parity walk:** 9 shared tabs each on production, Top Shot as control. Every supported tab rendered with an h1, no error or stuck-loading text, no failed API call, no broken image, no overflow, no confidence wording. Unsupported tabs redirect to the overview (Panini: badges, challenges; Candy: sniper, badges, challenges). Cosmetic only: Panini's headings say "PANINI — COLLECTION" and "PANINI — SET TRACKER" where the others say "— BINDER" and "Set Tracker".
 - **Scheduled tasks, remaining pages: NOT done.** The list returns four tasks per page with full prompts; the first page was four already-read entries (three are disabled copies of "RPC laptop pull main"). Finishing it needs a fresh session.
+
+## Addendum 10 — 7:35–7:55 PM PT (Cowork cloud; Trevor: "get everything done")
+
+- **Shipped:** Panini binder heading now reads "Panini — Binder" (ledger 11-17 ~7:55 PM PT).
+- **Scheduled tasks, full list read (35 tasks, 8 pages, by a subagent; read-only).** Every recurring task's last run reads OK. Prompt edits need Trevor's named approval, so none were made. Stale prompt text found:
+  1. `Rpc weekly health report` (3 AM, unattended) tells the run to request folder access, which waits for a human; it also has a "revenue/conversion blockers" section.
+  2. `Rpc flow ecosystem watch` and `Rpc data quality sweep` (both untouched since 09-23) still treat UFC as on Flow and leave out Panini and Candy.
+  3. `Rpc nightly autonomous pass` and `Rpc weekly health check` still refer to a Candy "July tripwire"; the nightly pass and `Rpc surface qa` say 11 artifacts where the daytime monitor says 13.
+  4. `Rpc dependency advisory digest` says `flowty_archive` is a deliberate keep; the weekly health check says it was dropped 06-10.
+  5. `Rpc pending signups watch` reports users by email and carries pre-Large-tier wording.
+  6. One-shot `RPC wallet verification adoption check` (11-18 10:23 AM PT) equates 22:20 UTC with 3:20 PM PT; that is 2:20 PM PT.
+  7. Ten expired or failed one-shots and three disabled copies of "RPC laptop pull main" can be deleted. The Windows-native pull replaces the Claude task. Two of the dead one-shots (#248 close-out, R133 `?token=` retirement) may mark work still open; not re-checked.
+  8. Eleven recurring tasks are pinned to an older model.

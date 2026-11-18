@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-17 ~7:55 PM PT — Panini binder heading says "Binder", like its tab (Cowork cloud; Trevor: "get everything done")
+
+- **What:** `components/collection/PaniniCollection.tsx` h1 "Panini — Collection" → "Panini — Binder". The tab strip has called this page Binder since 11-07; Panini's own heading was the one place still saying Collection (found in the 11-17 Panini/Candy parity walk). Preflight green, 7 steps.
+- **Revert:** `git revert` the code commit.
+
 ### 2026-11-17 ~7:15 PM PT — ✅ GitHub schedules are back: first real `schedule` run 7:03 PM PT, after 18 h dark; relay retired itself (Cowork cloud)
 
 - **Measured:** 10 `event=schedule` runs across 10 different workflows between 7:03 and 7:09 PM PT (first: 2026-11-18T03:03:23Z), all green. Before that the last one was 12:59 AM PT.
