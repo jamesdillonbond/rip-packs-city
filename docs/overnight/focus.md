@@ -4,6 +4,12 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-11-18 ~6:40 AM PT (Claude Code cloud) — pack-nft-identity lane is DOWN until a fix is applied; handed to Cowork
+
+- **Check first:** `select md5(prosrc) from pg_proc where proname='collect_pack_nft_identity'`. If it reads `51a46709aafd22ce1cc9dd63982c036a`, the fix is live: delete this steer. If it still reads `9217c411…`, the lane fails every 5-min tick (`ON CONFLICT DO UPDATE … a second time`), and it **will not recover when Studio comes back**.
+- **Apply:** follow [handoff-2026-11-18-pack-identity-apply-cowork.md](../handoff-2026-11-18-pack-identity-apply-cowork.md) (SQL Editor in Chrome; the file `20261118055831_…` is committed). Two `apply_migration` attempts died on an unanswered confirmation prompt; do not count on that path from an unattended pass.
+- After the apply, `ok=false` rows carrying a 530 error are the honest outcome while Studio is down. The defect was the abort, which wrote no row at all.
+
 ## STEER — added 2026-11-17 ~8:55 PM PT (Cowork cloud) — GitHub schedules are BACK (7:03 PM PT); cleanup is owed, not before 11-18 evening
 
 - **Check first:** `gh api "repos/jamesdillonbond/rip-packs-city/actions/runs?event=schedule&per_page=1"` — the newest run should be hours old at most (bursts hours apart are normal).

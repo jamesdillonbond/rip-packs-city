@@ -11,6 +11,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-10-25 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24, 2026-09-24, 2026-10-08, 2026-10-24, 2026-11-08). Frozen history — revert paths there are still valid.
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
+### 2026-11-18 ~6:40 AM PT — pack-nft-identity fix COMMITTED (not yet applied) and handed to Cowork for a Chrome SQL Editor apply (Claude Code cloud; Trevor: "Hand it off to cowork")
+
+- **Broken:** `rpc-pack-nft-identity-lane` has failed every 5-min tick since ~5:00 PM PT 11-17 (`ON CONFLICT DO UPDATE command cannot affect row a second time`). `collect_pack_nft_identity()` requeues failed-request packs from `pack_purchases UNION ALL pack_rips`, and a bought-then-ripped pack appears twice. That path only runs when Studio fails (530 since ~4:23 PM PT). The abort rolls back the collector, so 242 requests are stuck and the lane cannot recover by itself.
+- **Committed:** `supabase/migrations/20261118055831_audit_20261117_pack_identity_requeue_collapses_bought_and_ripped_duplicates.sql` (two `GROUP BY`s; base md5 `9217c411…` verified live; expected after apply `51a46709…`). Preflight green. **Unapplied:** two `apply_migration` attempts timed out on an unanswered confirmation prompt. An unapplied file is invisible to `migration-parity`.
+- **Handoff:** `docs/handoff-2026-11-18-pack-identity-apply-cowork.md`; focus.md steer; lesson at the end of database.md.
+- **Revert:** `git revert` the commit (no prod state changed). Once applied: re-apply the body from `20260920185051_…`.
+
 ### 2026-11-18 ~6:30 AM PT — Weekly email reaches every eligible member: 36 placeholder `email_subscribers` rows set `digest_weekly=true` (Claude Code cloud; Trevor approved: "I approve of the email work")
 
 - **Why:** the 11-08 reminder send created 36 `email_subscribers` rows only to hold unsubscribe links, with `digest_weekly=false` (column default is `true`). None had been touched since, and none had unsubscribed. They kept 32 of the then-50 members with a week of history out of the weekly email (11-17 ~9:00 PM PT entry).
