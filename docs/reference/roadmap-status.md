@@ -230,6 +230,7 @@ Done 10-15 → 10-17 (Claude Code cloud, session_014vWuubmVKLyyyMQAwWzT2W; Trevo
   - `d001a83`: the edition prompt leads with a no-account look-up; the weekly email goes to every member with a week of history, with a self-expiring "New on Rip Packs City" block; `utm_source=email` on email links; the crawler-rule fix; Day-1 email ON.
   - `3705da7`: an "Is this your collection?" save card on the binder after a signed-out look-up (62 look-ups / 30 d → 5 sign-in clicks); the Panini look-up sends `?username=`.
   - 11-18: 36 placeholder `email_subscribers` rows set `digest_weekly=true` (Trevor approved), so 53 members are eligible for the 11-23 weekly email.
+- **Day-1 email confirmed live 11-18:** the 9:17 AM PT run sent 2 and Resend shows both delivered.
 - **Open, Trevor's calls:** a date for the next challenge (the only thing that has moved daily users); whether to test the link in the main X post. The Wed 11-18 X draft is in `docs/social/posts/2026-11-18/`.
 - **Next read** (on/after 11-24): `funnel-read.sql` rows 9/12 (`anon-value-lookup`, `anon-save-cta-shown`, `binder_save_signup`), sources `email` / `x`, signup → wallet → second day with Day-1 on, and the 11-23 weekly email's `sent` against 53.
 
