@@ -1,5 +1,7 @@
 # Handoff → Cowork (Chrome): apply the pack-nft-identity fix — 2026-11-18 ~6:40 AM PT
 
+**✅ APPLIED 2026-11-18 7:13 AM PT (Cowork, SQL Editor). Post-check md5 `51a46709…`; first green tick 7:18 AM PT; uncollected requests 242 → 1. See ledger 11-18 ~7:13 AM PT.**
+
 **From:** Claude Code cloud (Sentinel WARN thread, 11-17 9:04 PM PT). **For:** Cowork, using Chrome on the Supabase dashboard.
 **Why it is handed off:** both `apply_migration` attempts (11-17 ~10:00 PM PT and 11-18 ~6:25 AM PT) stopped on Supabase's confirmation prompt, which nobody answered within 60 s. Nothing was applied: live `md5(prosrc)` is still the old body.
 

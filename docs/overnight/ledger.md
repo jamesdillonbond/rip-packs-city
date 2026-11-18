@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-18 ~7:13 AM PT — pack-nft-identity fix APPLIED via the dashboard SQL Editor; lane green (Cowork cloud, Trevor's Chrome; Trevor: "push through any sql work pending, through chrome")
+
+- **Applied:** `20261118055831_audit_20261117_pack_identity_requeue_collapses_bought_and_ripped_duplicates.sql`, fetched at pinned `840cd3b` and SHA-256 checked in-page before `setValue`; Run + "Potential issue detected" confirm (the flagged DELETE is pre-existing in the function body). Pre-check md5 `9217c411…` (base); post-check `51a46709aafd22ce1cc9dd63982c036a`; `anon` execute still false. SQL Editor path, so no `schema_migrations` row (parity is applied → file; file already committed).
+- **First green tick 7:18 AM PT:** cron `succeeded`, new `pipeline_runs` row (`ok=false`, `requeued: 1`, `requests_failed: 105`, `requests_expired: 152`, error `1033` = Dapper Studio still down — honest, per the handoff). Uncollected `pack_nft_identity_requests` 242 → 1. The 7:13 AM PT tick started seconds before the apply and failed on the old body.
+- **Revert:** re-apply the function body from `20260920185051_audit_20260920_pack_page_dedup_tests_in_flight_not_merely_dispatched.sql`.
+- focus.md steer for this lane removed; handoff marked done.
+
 ### 2026-11-18 ~7:10 AM PT — Overnight pass coordination: A is another session's fix (verified); B is a NON-FIX; C self-cleared — supersedes the "queued B/C" note below (Cowork cloud)
 
 - **A (pack-nft-identity ON CONFLICT dedup): already fixed by a concurrent Claude Code session** — migration `20261118055831_audit_20261117_pack_identity_requeue_collapses_bought_and_ripped_duplicates.sql` (committed ~6:40 AM PT, awaiting Cowork Chrome SQL-editor apply). Independently verified: the diff vs the `20260920185051` base is EXACTLY the two `max(k.at)` + two `GROUP BY (collection_id, pack_nft_id)` edits (plus explanatory comments), nothing else. Correct. My duplicate prep discarded.
