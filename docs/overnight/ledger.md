@@ -12,6 +12,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-17 ~10:20 PM PT — Binder asks a signed-out visitor to keep the collection they just looked up; Panini look-up fixed to `?username=`; X draft for Wed (Claude Code cloud; Trevor: "Keep going on what you can")
+
+- **Why:** 30 days to 11-17, 62 sessions pasted a username/wallet and saw a binder load; 5 then clicked any sign-in. Signed out, the binder's "This is my collection" save is hidden, so the only account ask after seeing the value was the header pill.
+- **`components/auth/AnonSaveCollectionCta.tsx`** (mounted under `PortfolioSummary` in `CollectionTabClient.tsx`): "Is this your collection? Keep it with a free account…" → `/login?intent=signup&next=<binder>?wallet=<same>`, so after sign-up the signed-in save ("Is <handle> your wallet?") is one tap. Only when the session read is affirmatively signed out AND the search loaded ≥ 1 moment. Events: `anon-save-cta-shown` (usage), `signin_click` surface `binder_save_signup` (funnel). Read in `funnel-read.sql` rows 9 and 12. Test `component-AnonSaveCollectionCta.test.tsx`.
+- **Fix to the 9:00 PM entry:** the edition prompt's look-up sent Panini `?wallet=`, but `PaniniCollection` reads `?username=`, so a Panini look-up opened an empty binder (measured live). `collectionLookupParam()` now sends `username` for Panini and `wallet` for the rest; pinned in the component test. All Day / Pinnacle / Top Shot `?wallet=<username>` and Panini `?username=` verified live.
+- **`docs/social/posts/2026-11-18/`:** draft post + image for the skipped Wednesday slot (the no-account look-up; reply link tagged `utm_source=x`). Trevor posts.
+- **Revert:** `git revert` the code commit.
+
 ### 2026-11-17 ~9:00 PM PT — Activity-review follow-through: edition prompt leads with a no-account look-up, weekly email to every member with a week of history (+ "New on RPC"), campaign tags on email links, demand-read crawler rule fixed, Day-1 email ON (Claude Code cloud; Trevor: "Work through as many of these as possible")
 
 - **Why:** weekly review 11-10..11-17 (Project doc `claude/activity-review-2026-11-17-week.md`): engaged browsers 134 → 82, X visits 85 → 8, 5 signups with 0 back on a 2nd day, the edition sign-up prompt 0 clicks from 11 real viewers, shipped features (serial search, open offers, compare) with zero human use, and the weekly email reaching 11 people.
