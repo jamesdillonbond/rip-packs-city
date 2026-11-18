@@ -161,7 +161,7 @@ export default function PaniniCollection() {
   return (
     <div>
       <h1 style={{ fontFamily: display, fontWeight: 900, fontSize: 24, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--rpc-text-primary)", margin: "0 0 6px" }}>
-        Panini — Collection
+        Panini — Binder
       </h1>
       <Note>
         Enter a Panini username. For a username linked to an RPC profile, RPC reads the collector&apos;s public Panini profile daily and
