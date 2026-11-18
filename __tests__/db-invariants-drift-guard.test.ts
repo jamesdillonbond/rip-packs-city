@@ -3435,10 +3435,13 @@ const PINS = [
     // copying it publishes a depletion percentage computed against a supply of
     // nothing. Note the guard is on MINTED only — zero OPENS is a real state and
     // must still be written, or every never-ripped pack freezes forever.
+    // ⚠ 2026-11-18: a NULL opened_count (re-queued for the hydrator) is SKIPPED —
+    // copied, it aborted the whole UPDATE on the NOT NULL column all night in the
+    // Studio 530 outage; coalesced to 0 it would publish a false "0 opened".
     fn: "sync_allday_pack_dist_totals",
     test: "supabase/tests/sync_allday_pack_dist_totals.sql",
     migration:
-      "supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql",
+      "supabase/migrations/20261118150441_audit_20261118_sync_allday_pack_dist_totals_skips_null_opened.sql",
   },
   {
     // pg_cron `2-59/5 * * * *`. Labels wmc rows with their FMV confidence.

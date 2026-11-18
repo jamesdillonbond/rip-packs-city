@@ -15,6 +15,10 @@
 -- ⚠ Note the guard is on `packnft_total` ONLY: a pack with real mints and zero
 -- OPENS is a perfectly good state (nobody has ripped one yet) and IS written.
 -- Guarding both would freeze every unopened pack's totals forever.
+-- ⚠ 2026-11-18: a NULL opened_count (re-queued for the hydrator by
+-- expire_allday_dist_opened_drifted) is SKIPPED, not coalesced to 0. Copied, it
+-- broke the NOT NULL column and aborted the write for every distribution all
+-- night during the Studio 530 outage; coalesced, it would publish "0 opened".
 --
 -- THE OTHERS:
 --   • Change-detection on BOTH columns with `IS DISTINCT FROM`, so `updated_at`
@@ -28,10 +32,9 @@
 --     this tranche with no procedural body, hence no exception handler and no
 --     telemetry of its own. A failure is invisible except as frozen totals.
 --
--- The function DDL below is VERBATIM from the committed snapshot migration
--- (supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql),
--- pulled from live prod via pg_get_functiondef on 2026-08-16
--- (md5 7f8b0b42177523aa7880be64ee2fd787).
+-- The function DDL below is VERBATIM from the committed migration
+-- (supabase/migrations/20261118150441_audit_20261118_sync_allday_pack_dist_totals_skips_null_opened.sql;
+-- before 2026-11-18: 20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -69,6 +72,7 @@ AS $function$
     WHERE pd.collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070'
       AND pd.dist_id::text = i.dist_id
       AND coalesce(i.packnft_total,0) > 0
+      AND i.opened_count IS NOT NULL
       AND (pd.total_minted IS DISTINCT FROM i.packnft_total
         OR pd.total_opened IS DISTINCT FROM i.opened_count)
     RETURNING 1
@@ -84,6 +88,7 @@ $function$;
 -- D-ZERO     : packnft_total 0 (not yet indexed)     -> NOT written
 -- D-NULLTOT  : packnft_total NULL                    -> NOT written
 -- D-UNOPENED : real mints, ZERO opens                -> WRITTEN (0 opens is real)
+-- D-NULLOPEN : real mints, opened_count NULL (re-queued for the hydrator) -> NOT written
 -- D-SAME     : unchanged                             -> not rewritten
 -- D-WRONGC   : Top Shot                              -> never touched
 INSERT INTO public.pack_distributions (collection_id, dist_id, total_minted, total_opened, updated_at) VALUES
@@ -92,6 +97,7 @@ INSERT INTO public.pack_distributions (collection_id, dist_id, total_minted, tot
   (:AD::uuid, 'D-ZERO',     500,  10,   '2026-01-01T00:00:00Z'),
   (:AD::uuid, 'D-NULLTOT',  500,  10,   '2026-01-01T00:00:00Z'),
   (:AD::uuid, 'D-UNOPENED', NULL, NULL, '2026-01-01T00:00:00Z'),
+  (:AD::uuid, 'D-NULLOPEN', 800,  40,   '2026-01-01T00:00:00Z'),
   (:AD::uuid, 'D-SAME',     500,  10,   '2026-01-01T00:00:00Z'),
   (:TS::uuid, 'D-WRONGC',   NULL, NULL, '2026-01-01T00:00:00Z');
 
@@ -101,6 +107,7 @@ INSERT INTO public.__allday_pack_info_src (dist_id, packnft_total, opened_count)
   ('D-ZERO',     0,    0),
   ('D-NULLTOT',  NULL, 0),
   ('D-UNOPENED', 1000, 0),
+  ('D-NULLOPEN', 900,  NULL),
   ('D-SAME',     500,  10),
   ('D-WRONGC',   1000, 250);
 
@@ -145,6 +152,16 @@ SELECT _assert_eq(
      FROM public.pack_distributions WHERE dist_id = 'D-UNOPENED'),
   '1000/0',
   'ZERO OPENS is a real state and IS written — the guard is on minted only'
+);
+
+-- ⚠ 2026-11-18: a NULL opened_count is a count being RE-READ, not zero. It is
+-- skipped (prior totals kept). Copying it would abort the whole UPDATE on the
+-- NOT NULL column in prod; coalescing it would publish "0 opened".
+SELECT _assert_eq(
+  (SELECT total_minted::text || '/' || total_opened::text
+     FROM public.pack_distributions WHERE dist_id = 'D-NULLOPEN'),
+  '800/40',
+  'a NULL opened_count (re-queued for the hydrator) is skipped, not written and not turned into 0'
 );
 
 SELECT _assert_eq(
