@@ -4,6 +4,11 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-11-17 ~5:25 PM PT (Claude Code, laptop) — Dapper Studio GraphQL down (530)
+
+- **Any pass — is Studio back?** `curl -s -o /dev/null -w "%{http_code}" -X POST -H "Content-Type: application/json" -H "Origin: https://nbatopshot.com" --data '{"query":"{__typename}"}' https://api.production.studio-platform.dapperlabs.com/graphql` → 530 since ~4:23 PM PT 11-17. While it 530s, expect ok=false on the TS/AD/Golazos pack-sales walkers, golazos/pinnacle pack opens, AD/Golazos pack EV and the Golazos half of `snapshot-pack-asks`. That is Dapper's outage; do not "fix" our lanes for it.
+- **11-20 8 AM PT — the two pack-sales sentinel acks expire** (known-issues #218). If Studio is back, let them expire. If it still 530s, change the arms to judge the chain feed whenever the walker fails on an upstream 5xx (today they do so only while it runs clean), rather than re-acking a third time.
+
 ## STEER — added 2026-11-17 ~4:10 PM PT (Claude Code, laptop) — three dated reads from the 11-17 afternoon thread
 
 - **11-18 after ~5:30 AM PT — Panini team walk retries its failed teams (`20261117230420`).** `select extra->>'target', ok, left(error,80) from pipeline_runs where pipeline='panini-team-walk' and started_at > '2026-11-18 11:00Z' order by started_at` → expect Denver Broncos, Indianapolis Colts, Pittsburgh Steelers, Seattle Seahawks, Washington Commanders (never completed before). A team that fails again comes back ~2 nights later by design; the same team failing on 3 tries → read its walker log on the laptop (`PANINI_MAX_PAGES`? a page that never answers?), don't revert the plan.

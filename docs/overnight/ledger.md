@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-17 ~5:25 PM PT — Sentinel CRITICAL (pack sales TS + AD) was Dapper's Studio GraphQL going down (HTTP 530); acks renewed to 11-20 (Claude Code, laptop; Trevor forwarded the 5:04 PM PT sentinel page)
+
+- **Cause:** from ~4:23 PM PT every Studio GraphQL request answers HTTP 530 (Cloudflare origin error), reproduced from the laptop's residential connection, so it is Dapper's outage. It fails the TS/AD/Golazos pack-sales walkers, Golazos pack listings and opens, Pinnacle pack opens and AD/Golazos pack EV. With the walker failing, the two sentinel arms stopped judging the chain feed (they do that only while the walker runs clean against the frozen #218 index) and read the 466/537 h-old Studio feed; their 11-04 acks had expired.
+- **Impact on users, measured:** chain pack sales are current (TS newest 5:08 PM PT); the TS/AD ask books keep moving via Atlas (14 TS changes in the last hour); Pinnacle images still load (302). Golazos's book is stale, but its market has had 0 sales in 70 h.
+- **Done (prod data):** `sentinel_threshold_config` acks for both arms renewed with the 11-17 facts, expiry 11-20 8 AM PT. The sentinel run at 5:14 PM PT reads WARN, 0 critical. known-issues #218 + focus steer: the 11-20 decision (if Studio still 530s, make the arms judge the chain feed on an upstream 5xx instead of re-acking).
+- Revert: `update sentinel_threshold_config set ack_expires_at = now() where check_name in ('Pack Sales Ingest (Top Shot)','Pack Sales Ingest (All Day)')`.
+
 ### 2026-11-17 ~5:15 PM PT — Thread wrap-up: GitHub-only lanes dispatched again; docs updated (Claude Code, laptop; Trevor: "work through what you can … then update any relevant documentation")
 
 - 12 GitHub-only workflows dispatched by hand at 5:08 PM PT; schedules are still dark (last scheduled run 12:59 AM PT). This session's 3-hourly backstop ends with the thread.
