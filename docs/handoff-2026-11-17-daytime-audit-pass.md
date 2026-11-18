@@ -138,3 +138,12 @@ Read-only; nothing shipped.
   7. Nine expired or failed one-shots and three disabled copies of "RPC laptop pull main" can be deleted. The Windows-native pull replaces the Claude task. The #248 close-out was done by hand on 11-16. R133 (`?token=` admin arms): see the line below.
   8. Eleven recurring tasks are pinned to an older model.
   9. **Possible follow-up, not verified as a defect:** R133 was closed 11-04 for the proxy and the shared admin-auth helper, but 36 route files under `app/api/admin` and `app/api/cron` still read a `?token=` query parameter themselves (e.g. `admin/evm-health`, `admin/backfill-allday-buyers`). Whether any live caller (cron-job.org, pg_cron, GitHub) still sends the secret in the URL was not enumerated; do that before removing any of them.
+
+## Addendum 11 — 8:00–8:20 PM PT (Cowork cloud; Trevor: "Yes I approve of everything mentioned")
+
+Scheduled-task changes, applied by the subagent that read the list:
+
+- **Prompt edits done (8 tasks):** weekly health report, flow ecosystem watch, data quality sweep, weekly health check, surface qa, dependency advisory digest, pending signups watch, wallet verification adoption check (kept 22:20 UTC, corrected the PT text to 2:20 PM). Only the corrections listed in addendum 10 were made; model, schedule, name and enabled state untouched.
+- **Deleted (10):** seven dead one-shots and the three disabled copies of "RPC laptop pull main".
+- **Refused by the permission system, NOT done, not retried:** the edit to `Rpc nightly autonomous pass` (it still says "11 claude.ai artifacts" and refers to a Candy "July tripwire"), and deleting two dead one-shots ("#248 first daily resync read", "Dapper + Flowty recovery check"; both disabled, harmless). Trevor can make these three in the scheduled-tasks UI.
+- **Left as found, outside the approved wording:** flow ecosystem watch says Candy "has its OWN dedicated audit tasks" (none exists); pending signups watch's check 1 still says "lead loudly with email" (the new reporting rule overrides it).
