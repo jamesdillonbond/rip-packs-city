@@ -19,6 +19,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 - ⚠ The scripted edit stripped `\d` and turned `\b` into a U+0008 inside the regex (it compiled and looked right in the diff). Rewritten from char codes; `grep -c $'\x08'` is 0 in both files.
 - The 11-20 acks can expire; #218 and focus.md updated.
 - ⓘ The migration FILE was committed by migration-autorecover (`51f2e7b78`) during this session's preflight; it is byte-identical to the local copy (`git hash-object` b8600516…), so the local duplicate was dropped.
+- **Verified live (6:17 PM PT, deploy `36a0ad59d` READY):** both acks ended early (`ack_expires_at = now()`), so no suppression is in place. The sentinel reads WARN, 0 critical: "Chain topshot pack sales … newest 0.1h ago · Dapper's Studio API is DOWN for our walker (head fetch: HTTP 530)", All Day chain 3.7 h. Revert of the ack change: set `ack_expires_at` back to `2026-11-20 16:00Z`.
 - Revert: `git revert` the code commit that follows; the migration is additive (header carries the base md5).
 
 ### 2026-11-17 ~6:15 PM PT — GitHub Support ticket filed for the schedule outage; all 30 scheduled workflows dispatched by hand (Cowork cloud; Trevor 6:01 PM PT: "You do it all")
