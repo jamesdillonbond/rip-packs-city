@@ -34,7 +34,7 @@ describe("AnonCollectionValueCta", () => {
     mockMe({ ok: true, body: { user: null } })
     const { container } = render(<AnonCollectionValueCta identityNoun="Panini username" surface="panini_edition" />)
     await waitFor(() => expect(container.querySelector("[data-rpc-anon-value-cta]")).not.toBeNull())
-    expect(container.textContent).toMatch(/Add your Panini username/)
+    expect(container.textContent).toMatch(/Enter your Panini username/)
     const a = container.querySelector("a")!
     const href = a.getAttribute("href") ?? ""
     expect(new URLSearchParams(href.split("?")[1]).get("intent")).toBe("signup")
@@ -66,7 +66,7 @@ describe("AnonCollectionValueCta", () => {
     mockMe({ ok: true, body: { user: null } })
     const { container } = render(<AnonCollectionValueCta identityNoun="Top Shot username" itemNoun="moment" surface="topshot_edition" />)
     await waitFor(() => expect(container.querySelector("[data-rpc-anon-value-cta]")).not.toBeNull())
-    expect(container.textContent).toMatch(/Own this moment\? Add your Top Shot username/)
+    expect(container.textContent).toMatch(/Own this moment\? Enter your Top Shot username/)
     expect(usageMock).toHaveBeenCalledWith("anon-value-cta-shown", { surface: "topshot_edition" })
     cleanup()
     render(<AnonCollectionValueCta identityNoun="Top Shot username" itemNoun="moment" surface="topshot_edition" />)
@@ -76,5 +76,24 @@ describe("AnonCollectionValueCta", () => {
     render(<AnonCollectionValueCta identityNoun="Dapper username" itemNoun="pin" surface="pinnacle_edition" />)
     await new Promise((r) => setTimeout(r, 20))
     expect(usageMock).toHaveBeenCalledTimes(1)
+  })
+
+  // 2026-11-17: the prompt leads with a no-account look-up — the identifier goes to this
+  // collection's /collection?wallet= page, which runs the search. An empty box goes nowhere.
+  it("offers a no-account look-up that opens this collection's page for the typed username", async () => {
+    mockMe({ ok: true, body: { user: null } })
+    const { container } = render(<AnonCollectionValueCta identityNoun="Panini username" surface="panini_edition" />)
+    await waitFor(() => expect(container.querySelector("[data-rpc-anon-value-lookup]")).not.toBeNull())
+    const form = container.querySelector("form")!
+    expect(form.getAttribute("action")).toBe("/panini-blockchain/collection")
+    expect(form.getAttribute("method")).toBe("get")
+    const input = form.querySelector("input")!
+    expect(input.getAttribute("name")).toBe("wallet")
+    expect(container.textContent).toMatch(/No account needed/)
+    fireEvent.submit(form)
+    expect(usageMock).not.toHaveBeenCalledWith("anon-value-lookup", expect.anything())
+    fireEvent.change(input, { target: { value: "knotbean" } })
+    fireEvent.submit(form)
+    expect(usageMock).toHaveBeenCalledWith("anon-value-lookup", { surface: "panini_edition" })
   })
 })

@@ -14,6 +14,7 @@
 // Pure builders (no I/O) so the copy is unit-testable.
 
 import { SENDER_LINE } from "@/lib/emails/sender-identity"
+import { emailLink } from "./email-link"
 
 const ACCENT = "#e55a4c"
 const BG = "#0a0a0a"
@@ -52,7 +53,7 @@ export function buildRewardClaimText(opts: RewardClaimEmailOpts): string {
     ``,
     `You completed ${opts.challengeTitle}, so one ${opts.dropTitle} is yours. It hasn't been claimed yet, and it isn't sent until you claim it.`,
     ``,
-    `Claim it here: ${rewardClaimUrl(opts.dropSlug)}`,
+    `Claim it here: ${emailLink(rewardClaimUrl(opts.dropSlug), "reward_claim", "claim")}`,
     ``,
     `It's also waiting at the top of your dashboard.`,
     ``,
@@ -62,7 +63,7 @@ export function buildRewardClaimText(opts: RewardClaimEmailOpts): string {
 }
 
 export function buildRewardClaimHtml(opts: RewardClaimEmailOpts): string {
-  const url = rewardClaimUrl(opts.dropSlug)
+  const url = emailLink(rewardClaimUrl(opts.dropSlug), "reward_claim", "claim")
   const hi = opts.username?.trim() ? `Hi ${esc(opts.username.trim())},` : `Hi,`
   return `<!doctype html>
 <html>

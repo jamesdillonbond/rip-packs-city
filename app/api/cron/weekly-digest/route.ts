@@ -32,6 +32,8 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { alreadySentEmail, claimEmailDelivery, ensureUnsubToken } from "@/lib/email/recipient-guards";
 import { supabaseAdmin } from "@/lib/supabase";
 import { commercialSendBlockedReason, commercialSenderLine, REPLY_TO } from "@/lib/emails/sender-identity";
+import { emailLink } from "@/lib/emails/email-link";
+import { buildNewItemsBlock } from "@/lib/emails/weekly-digest-news";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -40,7 +42,10 @@ const PIPELINE_NAME = "weekly-digest";
 const FROM = "rpc-alerts@rippackscity.com";
 const SUBJECT_KEY = "weekly_portfolio";
 const ORIGIN = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com";
-const DEFAULT_MIN_ABS_PCT = 5; // start conservative so the email always has a real number
+// 2026-11-17: 0, not 5. At 5 only "movers" were mailed, so a member whose binder held steady heard
+// nothing for weeks (11-16: 11 sent of 50 members with a week of history). Every figure printed is
+// still a READ value (isCompleteMover), so a +0.4 % week is as honest as a +12 % one.
+const DEFAULT_MIN_ABS_PCT = 0;
 const DEFAULT_DAYS = 7;
 const MAX_RECIPIENTS = 1000; // safety cap per run
 
@@ -95,19 +100,21 @@ function pctLabel(p: number): string {
 // says so instead.
 const HOLDINGS_NOTE = "Includes any moments you added or sold this week.";
 
+
 // ensureUnsubToken / alreadySentEmail live in lib/email/recipient-guards.ts and
 // FAIL CLOSED: a read or write they cannot confirm skips the recipient.
 async function alreadySent(ownerKey: string, bucket: string): Promise<boolean | null> {
   return alreadySentEmail({ ownerKey, alertKind: "weekly_digest", subjectKey: SUBJECT_KEY, bucket })
 }
 
-function buildEmail(m: CompleteMover, unsubscribeUrl: string): { subject: string; html: string; text: string } {
+function buildEmail(m: CompleteMover, unsubscribeUrl: string, now: Date = new Date()): { subject: string; html: string; text: string } {
+  const { html: newsHtml, text: newsText } = buildNewItemsBlock(ORIGIN, now);
   const up = m.delta_usd >= 0;
   const momentsLine = finite(m.moment_count) ? `${m.moment_count.toLocaleString("en-US")} moments tracked` : null;
   const arrow = up ? "▲" : "▼";
   const color = up ? "#16A34A" : "#DC2626";
   const subject = `Your Rip Packs City portfolio: ${pctLabel(m.delta_pct)} this week`;
-  const dashUrl = `${ORIGIN}/dashboard`;
+  const dashUrl = emailLink(`${ORIGIN}/dashboard`, "weekly_digest", "dashboard");
   const html = `<!doctype html><html><body style="margin:0;background:#080808;font-family:'Share Tech Mono',Menlo,monospace;color:#fff">
   <div style="max-width:480px;margin:0 auto;padding:32px 24px">
     <h1 style="font-family:'Barlow Condensed',Arial,sans-serif;font-weight:900;letter-spacing:.04em;text-transform:uppercase;font-size:24px;margin:0 0 4px">
@@ -124,7 +131,7 @@ function buildEmail(m: CompleteMover, unsubscribeUrl: string): { subject: string
       <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:6px">${HOLDINGS_NOTE}</div>
       ${momentsLine ? `<div style="font-size:12px;color:rgba(255,255,255,0.5);margin-top:10px">${momentsLine}</div>` : ""}
     </div>
-
+${newsHtml}
     <a href="${dashUrl}" style="display:inline-block;background:linear-gradient(135deg,#E03A2F,#B91C1C);color:#fff;text-decoration:none;font-family:'Barlow Condensed',Arial,sans-serif;font-weight:800;letter-spacing:.08em;text-transform:uppercase;font-size:13px;padding:12px 22px;border-radius:6px">
       Open your dashboard →
     </a>
@@ -144,6 +151,7 @@ function buildEmail(m: CompleteMover, unsubscribeUrl: string): { subject: string
     `${up ? "Up" : "Down"} ${usd(Math.abs(m.delta_usd))} (${pctLabel(m.delta_pct)}) this week`,
     HOLDINGS_NOTE,
     ...(momentsLine ? [momentsLine] : []),
+    ...newsText,
     "",
     `Open your dashboard: ${dashUrl}`,
     "",

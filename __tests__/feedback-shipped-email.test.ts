@@ -29,7 +29,7 @@ describe("feedback-shipped email builders", () => {
     expect(html).toContain("&lt;script&gt;")
     expect(html).toContain("&quot;Hide tiers&quot;")
     expect(html).toContain("From the team:")
-    expect(html).toContain('href="https://www.rippackscity.com/nba-top-shot/team/detroit-pistons"')
+    expect(html).toContain('href="https://www.rippackscity.com/nba-top-shot/team/detroit-pistons?utm_source=email&amp;utm_medium=feedback_shipped')
     expect(html).toContain("#e55a4c")
     const text = buildFeedbackShippedText(opts)
     expect(text).toContain("From the team: Live on the team page")

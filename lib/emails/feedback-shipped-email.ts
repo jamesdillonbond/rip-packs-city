@@ -10,6 +10,8 @@
 // palette as welcome-email.ts (email red #e55a4c is hardcoded on purpose —
 // mail clients have no CSS custom properties).
 
+import { emailLink } from "./email-link"
+
 const ACCENT = "#e55a4c"
 const BG = "#0a0a0a"
 const PANEL = "#18181b"
@@ -69,7 +71,7 @@ export function buildFeedbackShippedText(opts: FeedbackShippedOpts): string {
     `"${opts.summary.trim()}"`,
   ]
   if (opts.note?.trim()) lines.push(``, `From the team: ${opts.note.trim()}`)
-  if (opts.link) lines.push(``, `Have a look: ${opts.link}`)
+  if (opts.link) lines.push(``, `Have a look: ${emailLink(opts.link, "feedback_shipped", "have_a_look")}`)
   lines.push(``, shippedEmailReason(opts.relayed).replace(/\u2019/g, "'"), ``, SITE_URL)
   return lines.join("\n")
 }
@@ -78,7 +80,7 @@ export function buildFeedbackShippedHtml(opts: FeedbackShippedOpts): string {
   const what = feedbackTypeLabel(opts.feedbackType)
   const head = opts.feedbackType === "bug" ? "Fixed" : "Shipped"
   const note = opts.note?.trim()
-  const link = opts.link && /^https:\/\//.test(opts.link) ? opts.link : null
+  const link = opts.link && /^https:\/\//.test(opts.link) ? emailLink(opts.link, "feedback_shipped", "have_a_look") : null
   return `<!doctype html>
 <html>
   <body style="margin:0;padding:0;background:${BG};color:${TEXT};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;">

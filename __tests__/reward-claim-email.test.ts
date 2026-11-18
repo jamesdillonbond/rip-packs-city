@@ -8,7 +8,7 @@ describe("reward-claim email (2026-11-15)", () => {
   it("names the challenge and links the claim page", () => {
     expect(buildRewardClaimSubject(opts)).toBe("Your Dame Time reward pack is waiting")
     expect(buildRewardClaimText(opts)).toContain("https://www.rippackscity.com/giveaways/dame-time-challenge-reward-pack")
-    expect(buildRewardClaimHtml(opts)).toContain('href="https://www.rippackscity.com/giveaways/dame-time-challenge-reward-pack"')
+    expect(buildRewardClaimHtml(opts)).toContain('href="https://www.rippackscity.com/giveaways/dame-time-challenge-reward-pack?utm_source=email')
   })
   it("carries the sender line and sells nothing", () => {
     const all = buildRewardClaimText(opts) + buildRewardClaimHtml(opts)

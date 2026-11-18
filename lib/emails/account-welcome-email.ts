@@ -1,4 +1,5 @@
 import { SENDER_LINE } from "@/lib/emails/sender-identity"
+import { emailLink } from "./email-link"
 // lib/emails/account-welcome-email.ts
 //
 // The ONE-TIME, TRANSACTIONAL welcome for a newly created account (platform
@@ -84,7 +85,7 @@ export function buildAccountWelcomeHtml(opts: AccountWelcomeOpts): string {
             <tr>
               <td style="padding:18px 28px 0 28px;font-size:15px;line-height:1.7;color:${TEXT_MUTED};">
                 <strong style="color:${TEXT};">First step:</strong> add your Top Shot username on your
-                <a href="${SITE}/dashboard" style="color:${ACCENT};text-decoration:underline;">dashboard</a>
+                <a href="${emailLink(`${SITE}/dashboard`, "account_welcome", "dashboard")}" style="color:${ACCENT};text-decoration:underline;">dashboard</a>
                 and it fills in with every moment you hold, each with an estimated value.
               </td>
             </tr>
@@ -100,7 +101,7 @@ export function buildAccountWelcomeHtml(opts: AccountWelcomeOpts): string {
             </tr>
             <tr>
               <td align="center" style="padding:24px 28px 8px 28px;">
-                <a href="${SITE}/login" style="display:inline-block;background:${ACCENT};color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;letter-spacing:0.04em;padding:12px 22px;border-radius:8px;">Sign in</a>
+                <a href="${emailLink(`${SITE}/login`, "account_welcome", "sign_in")}" style="display:inline-block;background:${ACCENT};color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;letter-spacing:0.04em;padding:12px 22px;border-radius:8px;">Sign in</a>
               </td>
             </tr>
             <tr>

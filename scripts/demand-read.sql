@@ -16,7 +16,8 @@
 --                  the UNFLAGGED headless fingerprint (schema-truth.md: no vid, a fresh sid per page, no
 --                  page-view beside its client_error) — it passes the client `automated` check.
 --   browser      = distinct metadata.vid among human visits.
---   source       = the `ref` of the visit's FIRST page-view: google / chatgpt (utm_source or ref) / bing /
+--   source       = the `ref` of the visit's FIRST page-view: email (utm_source=email, every email's links from
+--                  2026-11-17) / google / chatgpt (utm_source or ref) / bing /
 --                  x (t.co or utm_medium=x) / other ref / direct (no ref).
 --   one-page     = a visit with exactly one page-view.
 --   signed-in    = distinct user_id on human events, minus user_activity.is_internal (internal_accounts
@@ -46,6 +47,11 @@
 --                  and X apps carry no ref) and those are people. "engaged browsers" (below) is the
 --                  rule-independent cross-check: browsers with a 2nd page, a 2nd visit, a ref or any
 --                  non-page-view event.
+--                  (2026-11-17) The signed-out edition prompt (`anon-value-cta-shown`, every collection from
+--                  11-16) fires on the crawler's page loads too, so its lone visits stopped being "no other
+--                  event" and passed the rule: 482 browsers / 332 engaged for 11-10..11-17 against 82 real.
+--                  That event is now ignored when deciding whether a visit did anything (it is a render, not
+--                  an action), and a signed-in visit always counts as engaged and is never a crawler.
 --   concierge    = (2026-11-08) support_conversations not flagged smoke, WITH a visit_session_id (the site
 --                  widget always sends one; direct-API probes do not — 11-07's unflagged probes had none),
 --                  minus the log_* rows (feedback_type set) that the bot writes beside an answer.
@@ -64,7 +70,8 @@ WITH params AS (
     AND coalesce(u.metadata->>'automated', 'false') <> 'true'
 ), visits_all AS (
   SELECT metadata->>'sid' AS sid, min(metadata->>'vid') AS vid, min(occurred_at) AS t0,
-         count(*) FILTER (WHERE feature_name <> 'page-view') AS other_ev,
+         count(*) FILTER (WHERE feature_name NOT IN ('page-view', 'anon-value-cta-shown')) AS other_ev,
+         bool_or(user_id IS NOT NULL) AS signed,
          count(*) FILTER (WHERE feature_name = 'page-view') AS pv,
          (array_agg(metadata->>'ref' ORDER BY occurred_at) FILTER (WHERE feature_name = 'page-view'))[1] AS ref,
          (array_agg(metadata->>'path' ORDER BY occurred_at) FILTER (WHERE feature_name = 'page-view'))[1] AS landing
@@ -74,7 +81,7 @@ WITH params AS (
 ), lone AS (
   SELECT va.sid, date_trunc('hour', va.t0) AS hr, split_part(va.landing, '/', 2) || '/' || split_part(va.landing, '/', 3) AS pfx
   FROM visits_all va
-  WHERE va.pv = 1 AND va.other_ev = 0 AND va.ref IS NULL
+  WHERE va.pv = 1 AND va.other_ev = 0 AND va.ref IS NULL AND NOT va.signed
     AND NOT EXISTS (SELECT 1 FROM visits_all o WHERE o.vid = va.vid AND o.sid <> va.sid)
 ), crawler AS (
   SELECT l.sid FROM lone l JOIN (SELECT hr, pfx FROM lone GROUP BY 1, 2 HAVING count(*) >= 8) b USING (hr, pfx)
@@ -86,6 +93,7 @@ WITH params AS (
 ), src AS (
   SELECT v.*, CASE
       WHEN ref IS NULL THEN 'direct'
+      WHEN ref ILIKE '%utm_source=email%' THEN 'email'
       WHEN ref ILIKE '%google.%' THEN 'google'
       WHEN ref ILIKE '%chatgpt%' THEN 'chatgpt'
       WHEN ref ILIKE '%bing.com%' THEN 'bing'
@@ -100,7 +108,7 @@ SELECT 'human events' AS metric, count(*)::text AS value FROM ev
 UNION ALL SELECT 'browsers', count(DISTINCT vid)::text FROM visits
 UNION ALL SELECT 'visits', count(*)::text FROM visits
 UNION ALL SELECT 'engaged browsers (2+ pages, 2+ visits, a ref, or an event)', count(DISTINCT v.vid)::text
-  FROM visits_all v WHERE v.pv > 1 OR v.other_ev > 0 OR v.ref IS NOT NULL
+  FROM visits_all v WHERE v.pv > 1 OR v.other_ev > 0 OR v.ref IS NOT NULL OR v.signed
     OR EXISTS (SELECT 1 FROM visits_all o WHERE o.vid = v.vid AND o.sid <> v.sid)
 UNION ALL SELECT 'excluded: crawler-burst visits', count(*)::text FROM crawler
 UNION ALL SELECT 'external signed-in users', count(*)::text FROM signed

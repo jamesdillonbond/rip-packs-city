@@ -23,7 +23,8 @@
 --                        Panini crawler is one lone page per fresh visitor id).
 --   feature use          browsers · events for the features instrumented 11-15/16: owner share
 --                        clicks, edition Watch, reward card, Fill with my top 6, serial search
---                        (#12359), open offers (#12361)
+--                        (#12359), open offers (#12361), and the edition prompt's no-account look-up
+--                        (anon-value-lookup, 11-17)
 --   wallet search outcome collection-page wallet searches by result (search-result, 11-16):
 --                        loaded with moments · loaded empty · failed read
 --   save vs follow       the "Is @handle your wallet?" confirm (shown · yes · cancel) and wallet
@@ -111,7 +112,8 @@ UNION ALL SELECT '12 feature use (browsers · events) · ' || ue.feature_name,
   WHERE ue.occurred_at >= p.s AND ue.occurred_at < p.e
     AND ue.feature_name IN ('share-click', 'watch-edition-open', 'watch-edition-signin-needed', 'watch-edition-saved',
                             'reward-claim-card-shown', 'reward-claim-card-click', 'main-fill-click', 'main-fill-declined',
-                            'main-fill-pinned', 'serial-search', 'open-offers-shown', 'offers-tab')
+                            'main-fill-pinned', 'serial-search', 'open-offers-shown', 'offers-tab',
+                            'anon-value-lookup')
     AND coalesce(ue.metadata->>'automated', 'false') <> 'true'
     AND (ue.user_id IS NULL OR NOT EXISTS (SELECT 1 FROM internal_accounts ia WHERE ia.user_id = ue.user_id))
   GROUP BY ue.feature_name
