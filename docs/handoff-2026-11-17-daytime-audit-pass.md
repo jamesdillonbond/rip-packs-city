@@ -155,3 +155,4 @@ Scheduled-task changes, applied by the subagent that read the list:
 - **Scheduler:** two more real `schedule` runs at 8:39 and 8:43 PM PT (12 since 7:03 PM). Holding.
 - **Docs updated:** outcome and lessons appended to the outage paragraph at the end of `docs/reference/cron-and-schedulers.md`; session entry in `docs/sessions/2026-11.md`; a steer at the top of `docs/overnight/focus.md` with the cleanup owed (not before 11-18 evening) and the `?token=` follow-up.
 - **Nothing else is in flight from this thread.** No relay run is in progress, no background job, no pending reminder.
+- **9:00 PM PT (Trevor: "Do what you need to do. I approve"):** the two remaining dead one-shots ("#248 first daily resync read", "Dapper + Flowty recovery check") are deleted. The nightly-pass prompt was still NOT replaced from here, for the reason in addendum 11; its two phrases remain for a hand edit.
