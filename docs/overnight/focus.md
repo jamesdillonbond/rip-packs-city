@@ -7,7 +7,7 @@
 ## STEER — added 2026-11-17 ~5:25 PM PT (Claude Code, laptop) — Dapper Studio GraphQL down (530)
 
 - **Any pass — is Studio back?** `curl -s -o /dev/null -w "%{http_code}" -X POST -H "Content-Type: application/json" -H "Origin: https://nbatopshot.com" --data '{"query":"{__typename}"}' https://api.production.studio-platform.dapperlabs.com/graphql` → 530 since ~4:23 PM PT 11-17. While it 530s, expect ok=false on the TS/AD/Golazos pack-sales walkers, golazos/pinnacle pack opens, AD/Golazos pack EV and the Golazos half of `snapshot-pack-asks`. That is Dapper's outage; do not "fix" our lanes for it.
-- **11-20 8 AM PT — the two pack-sales sentinel acks expire** (known-issues #218). If Studio is back, let them expire. If it still 530s, change the arms to judge the chain feed whenever the walker fails on an upstream 5xx (today they do so only while it runs clean), rather than re-acking a third time.
+- **11-20 8 AM PT — the two pack-sales sentinel acks expire; let them.** Since ~6:10 PM PT 11-17 the arms read WARN by themselves while Studio 5xxs and the chain feed is current (#218). A CRITICAL on these arms after that means the chain feed went quiet too, or the walker is failing for a reason of OURS: read `pipeline_runs.error` for the walker.
 
 ## STEER — added 2026-11-17 ~4:10 PM PT (Claude Code, laptop) — three dated reads from the 11-17 afternoon thread
 

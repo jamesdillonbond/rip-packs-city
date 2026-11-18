@@ -12,6 +12,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-17 ~6:10 PM PT — Pack-sales sentinel arms judge the chain feed when Dapper's server is down (a gateway/origin 5xx), at WARN; done now instead of re-acking on 11-20 (Claude Code, laptop; Trevor: "Keep going")
+
+- **Migration `20261118020242`:** `sentinel_pack_sales_feeds()` also returns the walker's last `error` (additive; ACL unchanged, anon false). Live read: `head fetch: HTTP 530`.
+- **Code (`app/api/sentinel/route.ts`):** a walker that ran inside the last hour and failed on `HTTP 502|503|504|52x|530` is upstream-down. The arm judges the chain feed (what the product reads) and reports **at least WARN**, so a long outage stays visible; a quiet chain still pages critical. A 500, a 4xx or a stale run keeps the original verdict (it may be ours). 4 tests in `api-sentinel-deep.test.ts`; the WARN case is red against the old route.
+- ⚠ The scripted edit stripped `\d` and turned `\b` into a U+0008 inside the regex (it compiled and looked right in the diff). Rewritten from char codes; `grep -c $'\x08'` is 0 in both files.
+- The 11-20 acks can expire; #218 and focus.md updated.
+- ⓘ The migration FILE was committed by migration-autorecover (`51f2e7b78`) during this session's preflight; it is byte-identical to the local copy (`git hash-object` b8600516…), so the local duplicate was dropped.
+- Revert: `git revert` the code commit that follows; the migration is additive (header carries the base md5).
+
 ### 2026-11-17 ~6:15 PM PT — GitHub Support ticket filed for the schedule outage; all 30 scheduled workflows dispatched by hand (Cowork cloud; Trevor 6:01 PM PT: "You do it all")
 
 - **Ticket:** submitted ~6:12 PM PT from Trevor's GitHub session at support.github.com (Repositories → Repository features, type "Errors, problems … Actions workflow issues"), subject "Actions schedule triggers stopped for jamesdillonbond/rip-packs-city". Replies go to Trevor's GitHub email; the ticket is under support.github.com → View tickets. The account is on the free plan ("Technical support not included"), so response time is not guaranteed.
