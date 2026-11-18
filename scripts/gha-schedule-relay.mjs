@@ -193,6 +193,14 @@ async function main() {
   console.log(`relay: watching ${schedule.length} workflows for ${runMinutes} min, min gap ${MIN_GAP_MINUTES} min`);
   if (schedule.length === 0) throw new Error("relay: found no scheduled workflows — refusing to run as a clock that watches nothing");
 
+  // LIVE SELF-TEST, once per link: prove this run's token can create a workflow_dispatch run at all.
+  // With the laptop awake the relay dispatches nothing for hours, and a backstop that has never been
+  // seen to dispatch is not a backstop. The probe is a one-echo job; a dispatched probe run carries
+  // event=workflow_dispatch, so it cannot be mistaken for GitHub delivering a schedule.
+  const probe = await gh(`/actions/workflows/schedule-probe.yml/dispatches`, { method: "POST", body: JSON.stringify({ ref: "main" }) }).catch((e) => ({ status: String(e) }));
+  if (probe.status !== 204) throw new Error(`relay self-test: dispatching schedule-probe.yml answered ${probe.status} — this token cannot dispatch, so the relay cannot cover anything`);
+  console.log("relay self-test: dispatched schedule-probe.yml (204)");
+
   const startMs = Date.now();
   const sinceInput = Date.parse(process.env.RELAY_SINCE ?? "");
   // Pick up where the previous link stopped, but never replay more than 15 minutes.
