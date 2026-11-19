@@ -79,3 +79,49 @@ describe("atlasRowToListing", () => {
     expect(l.liveFields).toEqual({ title: false, tier: false, image: false, slots: false })
   })
 })
+
+// #218 (2026-11-18): Studio HTTP 530 since 11-17. Golazos had no Atlas mapping although the
+// walker has carried 'laliga' since 11-08, so its book threw on every snapshot tick.
+describe("Golazos reads the laliga Atlas book", () => {
+  it("maps every listing collection to its Atlas product", async () => {
+    const { atlasProductFor } = await import("@/lib/packs/pack-book-source")
+    expect(atlasProductFor("nba-top-shot")).toBe("nba")
+    expect(atlasProductFor("nfl-all-day")).toBe("nfl")
+    expect(atlasProductFor("laliga-golazos")).toBe("laliga")
+  })
+
+  it("serves the Atlas book when Studio answers 530 (the 11-18 live shape)", async () => {
+    const { supabaseAdmin } = await import("@/lib/supabase")
+    const rpc = supabaseAdmin.rpc as unknown as ReturnType<typeof vi.fn>
+    rpc.mockReset()
+    rpc.mockResolvedValue({
+      data: book({
+        product: "laliga",
+        complete_at: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+        atlas_newest_listing_at: "2026-07-15T13:00:33Z",
+        studio_newest_listing_at: "2026-09-23T00:00:00Z",
+        rows: [row({ dist_id: "400", title: "Joaquin Farewell", low_ask_usd: 1, num_listed: 1 })],
+      }),
+      error: null,
+    })
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 530, json: async () => ({}) })))
+    const { fetchPackBook } = await import("@/lib/packs/pack-book-source")
+    const out = await fetchPackBook("laliga-golazos", { force: true })
+    expect(rpc).toHaveBeenCalledWith("atlas_pack_book", { p_product: "laliga" })
+    expect(out.source).toBe("atlas")
+    expect(out.reason).toBe("studio_read_failed")
+    expect(out.listings.map((l) => [l.distId, l.lowestAsk])).toEqual([["400", 1]])
+    vi.unstubAllGlobals()
+  })
+
+  it("still THROWS when Studio fails and the Atlas book is unusable — never an empty book", async () => {
+    const { supabaseAdmin } = await import("@/lib/supabase")
+    const rpc = supabaseAdmin.rpc as unknown as ReturnType<typeof vi.fn>
+    rpc.mockReset()
+    rpc.mockResolvedValue({ data: book({ product: "laliga", complete_at: null }), error: null })
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 530, json: async () => ({}) })))
+    const { fetchPackBook } = await import("@/lib/packs/pack-book-source")
+    await expect(fetchPackBook("laliga-golazos", { force: true })).rejects.toThrow(/530/)
+    vi.unstubAllGlobals()
+  })
+})

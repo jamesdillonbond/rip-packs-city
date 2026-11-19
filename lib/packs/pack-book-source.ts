@@ -12,7 +12,14 @@
 // newer than Studio's newest. Studio's newest listing is read from its own sales mirror
 // (`*_pack_sales_history.block_time` is the LISTING's creation block), so both sides are the
 // same quantity from two indexers. When Studio recovers, its mirror catches up within minutes
-// and the rule hands the book back. Golazos is not in Atlas's pack product set: Studio only.
+// and the rule hands the book back.
+//
+// Golazos (2026-11-18, #218): this said "Golazos is not in Atlas's pack product set: Studio only".
+// It stopped being true on 11-08 — 20261108214949 added 'laliga' to the Atlas pack book walker —
+// but this mapping was never widened, so with Studio HTTP 530 since 11-17 Golazos had no book at
+// all and snapshot-pack-asks went ok:false on every tick. Measured 11-18 ~9:40 PM PT: the laliga
+// book was COMPLETE (169 dists walked), its one listed dist (400 "Joaquin Farewell", $1.00 x1)
+// matching a direct GetDistributionListingDistribution probe.
 //
 // ⚠ FAIL TOWARD STUDIO, never toward empty. A failed Atlas read, an incomplete first pass or a
 // stale Atlas book returns the Studio book unchanged — whose freeze the Sniper and pack pages
@@ -52,8 +59,10 @@ export type AtlasBookRow = {
   observed_at: string | null
 }
 
+export type AtlasProduct = "nba" | "nfl" | "laliga"
+
 export type AtlasBook = {
-  product: "nba" | "nfl"
+  product: AtlasProduct
   complete_at: string | null
   complete_pass_started_at: string | null
   dists_in_book: number | null
@@ -69,9 +78,10 @@ export const ATLAS_BOOK_MAX_AGE_MS = 2 * 60 * 60 * 1000
 
 export type SourceDecision = { source: PackBookSource; reason: string }
 
-export function atlasProductFor(collection: ListingCollectionSlug): "nba" | "nfl" | null {
+export function atlasProductFor(collection: ListingCollectionSlug): AtlasProduct | null {
   if (collection === "nba-top-shot") return "nba"
   if (collection === "nfl-all-day") return "nfl"
+  if (collection === "laliga-golazos") return "laliga"
   return null
 }
 
@@ -127,7 +137,7 @@ const atlasMemo = new Map<string, { book: AtlasBook | null; expiresAt: number }>
 const ATLAS_MEMO_MS = 60 * 1000
 
 /** Reads the Atlas book. Returns null on ANY failure (the caller then keeps Studio). */
-export async function readAtlasBook(product: "nba" | "nfl", opts: { force?: boolean } = {}): Promise<AtlasBook | null> {
+export async function readAtlasBook(product: AtlasProduct, opts: { force?: boolean } = {}): Promise<AtlasBook | null> {
   if (!opts.force) {
     const hit = atlasMemo.get(product)
     if (hit && hit.expiresAt > Date.now()) return hit.book
