@@ -1,4 +1,4 @@
-// compute-allday-pack-ev v9 — supply-weighted (circulation) per-edition EV.
+// compute-allday-pack-ev v11 — supply-weighted (circulation) per-edition EV, read from Dapper Atlas.
 //
 // v9 (2026-07-18, reconciled into the repo 2026-07-25): also persist typical_ev
 // (the weighted-MEDIAN "Typical Pull EV" that compute_pack_ev_per_edition_weighted
@@ -28,22 +28,59 @@
 // circulation-weighted v_allday_pack_realized_ev view.
 // Revert: restore drop_weight:1 + compute_pack_ev_from_pool (v7).
 //
+// v11 (2026-11-18 PT) — STUDIO → ATLAS. The Studio Platform GraphQL this read
+// (searchDistributions, byProductID "AllDay") has answered HTTP 530 since 11-17
+// 4:23 PM PT. Every field it consumed is now read from Dapper Atlas
+// (../_shared/atlas-distributions.ts, field map in its header):
+//   uuid/id/title/numberOfPackSlots/totalSupply/availableSupply/price
+//       ← DistributionService/SearchDistributions {product:"nfl", limit, offset}
+//   editionIds (the pool)
+//       ← DistributionService/GetDistributionEditions {product:"nfl", distributionId}
+//         (full pool, all pages; nfl 7148 → 616 = the 616-row Studio pool)
+// Same tables, same columns, same RPC. Three deliberate differences, all honesty:
+//   · the cursor is an OFFSET (Atlas pages by limit/offset); a leftover opaque
+//     Studio cursor restarts the walk at 0 and is reported (extra.cursor_reset).
+//   · a distribution whose pool read fails is skipped (no pool write, no EV row)
+//     and FAILS the run with the HTTP status in the error, so the next tick re-reads
+//     the same page (resolveCursor only continues from an ok run).
+//   · a missing supply count is unknown → total_unopened/depletion_pct NULL (was
+//     `?? 0` = "100 % sold"); a missing price or slot count skips the EV row
+//     (counted) instead of pricing the pack at $0 / 1 slot.
+// pool_source stays 'gql': it is the LANE label readers key on (refresh_atlas_pack_ev
+// / refresh_container_pack_ev select pool_source='atlas' rows and must NOT start
+// pricing All Day pools), not the host the pool was read from.
+// Revert: restore v10 (git history) — but its upstream is dead.
+//
 // Flow:
-//   1. Resolve cursor from last successful pipeline_runs row
-//   2. Fetch one page of AllDay distributions from Studio Platform GQL
-//   3. Batch lookup editions (chunked .in, now incl circulation_count) + FMV
-//   4. For each distribution: delete-then-insert pool rows (per-dist circ share)
-//   5. After ALL pool writes complete: call compute_pack_ev_per_edition_weighted per dist
-//   6. Collect evRows, bulk insert to pack_ev_history
+//   1. Resolve the offset cursor from the last successful pipeline_runs row
+//   2. Fetch one page of AllDay distributions from Atlas SearchDistributions
+//   3. Read each distribution's pool from Atlas GetDistributionEditions (paced)
+//   4. Batch lookup editions (chunked .in, incl circulation_count) + FMV
+//   5. For each distribution: upsert-then-prune pool rows (per-dist circ share)
+//   6. After ALL pool writes complete: call compute_pack_ev_per_edition_weighted per dist
+//   7. Collect evRows, bulk insert to pack_ev_history
 
 import { createClient } from "@supabase/supabase-js"
 import { supplyWeightPool, computeDepletionPct } from "../_shared/pack-ev-supply-weighted.ts"
+import {
+  type AtlasDist,
+  defaultAtlasDeps,
+  fetchDistributionEditionIds,
+  parseOffsetCursor,
+  searchDistributionsPage,
+  supplyOf,
+} from "../_shared/atlas-distributions.ts"
 
 const INGEST_SECRET_TOKEN = Deno.env.get("INGEST_SECRET_TOKEN")
 if (!INGEST_SECRET_TOKEN) throw new Error("INGEST_SECRET_TOKEN env var required")
 
 const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070"
-const GQL_ENDPOINT = "https://api.production.studio-platform.dapperlabs.com/graphql"
+const ATLAS_PRODUCT = "nfl" as const
+// Studio served 40 distributions a page; Atlas would serve 100, but each one costs
+// at least one GetDistributionEditions call, and Atlas's Cloudflare is burst-
+// sensitive — keep the per-run request count where the Studio lane had it.
+const PAGE_LIMIT = 40
+const FUNCTION_VERSION = 11
 const EXTERNAL_ID_CHUNK = 500
 const FMV_ID_CHUNK = 500 // get_fmv_for_editions: one row per id, so 500 ids can never reach PostgREST max-rows (1000)
 
@@ -52,53 +89,9 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
 )
 
-const H = {
-  "Content-Type": "application/json",
-  "User-Agent": "RipPacksCity/1.0 (www.rippackscity.com)",
-  "Origin": "https://nflallday.com",
-  "Referer": "https://nflallday.com/",
-}
-
-const SEARCH_QUERY = `
-  query FetchAllDayDistributions($input: SearchDistributionsInput!) {
-    searchDistributions(input: $input) {
-      totalCount
-      pageInfo { endCursor hasNextPage }
-      edges {
-        node {
-          uuid id title
-          numberOfPackSlots
-          totalSupply availableSupply
-          price { value }
-          editionIds
-          packOdds { tier value displayValue }
-        }
-      }
-    }
-  }
-`
-
-interface DistNode {
-  uuid: string; id: number; title: string | null
-  numberOfPackSlots: number | null
-  availableSupply: number | null; totalSupply: number | null
-  price: { value: string } | null
-  editionIds: number[] | null
-  packOdds: Array<{ tier: string; value: number; displayValue: string | null }> | null
-}
-
-async function gqlCall(query: string, variables: Record<string, unknown>) {
-  const res = await fetch(GQL_ENDPOINT, {
-    method: "POST", headers: H,
-    body: JSON.stringify({ query, variables }),
-    signal: AbortSignal.timeout(25000),
-  })
-  if (!res.ok) return { ok: false as const, error: `HTTP ${res.status}` }
-  const json = await res.json().catch(() => null) as
-    | { data?: unknown; errors?: Array<{ message: string }> } | null
-  if (!json) return { ok: false as const, error: "not-json" }
-  if (json.errors?.length) return { ok: false as const, error: json.errors[0].message }
-  return { ok: true as const, data: json.data }
+/** A distribution plus the pool Atlas returned for it — the Studio node's shape, re-sourced. */
+interface DistNode extends AtlasDist {
+  editionIds: string[]
 }
 
 async function logPipelineRun(args: {
@@ -143,43 +136,60 @@ async function resolveCursor(explicit: string | null): Promise<string | null> {
   return row.cursor_after ?? null
 }
 
+/** The terminal row's error: every failure class, counted, with the first messages (they carry "HTTP <status>"). */
+function runErrorText(poolReadErrors: string[], poolWriteErrors: string[], malformed: number): string | null {
+  const parts: string[] = []
+  if (poolReadErrors.length) parts.push(`${poolReadErrors.length} pool read error(s): ${poolReadErrors.slice(0, 2).join(" | ")}`)
+  if (poolWriteErrors.length) parts.push(`${poolWriteErrors.length} pool write error(s): ${poolWriteErrors.slice(0, 2).join(" | ")}`)
+  if (malformed) parts.push(`${malformed} Atlas distribution row(s) without uuid/id`)
+  return parts.length ? parts.join(" ; ").slice(0, 500) : null
+}
+
 async function runBackgroundWork(startedAtIso: string, started: number, cursor: string | null) {
   try {
-    const gqlRes = await gqlCall(SEARCH_QUERY, {
-      input: {
-        first: 100,
-        after: cursor ?? null,
-        filters: { byProductID: "AllDay" },
-      },
-    })
+    const atlas = defaultAtlasDeps()
+    const { offset, reset: cursorReset } = parseOffsetCursor(cursor)
+    const page = await searchDistributionsPage(ATLAS_PRODUCT, offset, PAGE_LIMIT, atlas)
+    let atlasRequests = page.requests
 
-    if (!gqlRes.ok) {
+    if (!page.ok) {
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
-        ok: false, error: `gql: ${gqlRes.error}`,
-        extra: { elapsed_ms: Date.now() - started, function_version: 10 },
+        ok: false, error: `atlas: ${page.error}`,
+        extra: { elapsed_ms: Date.now() - started, function_version: FUNCTION_VERSION, source: "atlas", atlas_requests: atlasRequests, offset, cursor_reset: cursorReset },
         cursorBefore: cursor,
       })
       return
     }
 
-    // deno-lint-ignore no-explicit-any
-    const data = gqlRes.data as any
-    const nodes: DistNode[] = (data?.searchDistributions?.edges ?? [])
-      // deno-lint-ignore no-explicit-any
-      .map((e: any) => e?.node).filter((n: DistNode | null) => n != null)
-    const pageInfo = data?.searchDistributions?.pageInfo
-    const endCursor: string | null = pageInfo?.endCursor ?? null
-    const hasNextPage: boolean = pageInfo?.hasNextPage === true
+    const nextOffset = offset + page.rawCount
+    const hasNextPage = page.rawCount > 0 && nextOffset < page.totalCount
+    const endCursor: string | null = String(nextOffset)
 
-    if (nodes.length === 0) {
+    if (page.rawCount === 0) {
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
         ok: true,
-        extra: { message: "empty page", elapsed_ms: Date.now() - started, function_version: 10, has_next_page: false },
+        extra: {
+          message: "empty page", elapsed_ms: Date.now() - started, function_version: FUNCTION_VERSION, has_next_page: false,
+          source: "atlas", atlas_requests: atlasRequests, offset, total_count: page.totalCount, cursor_reset: cursorReset,
+        },
         cursorBefore: cursor, cursorAfter: endCursor,
       })
       return
+    }
+
+    // === Phase 0: each distribution's pool (Studio's editionIds), one at a time ===
+    // A failed pool read SKIPS that distribution (no pool write, no EV row) and
+    // fails the run at the terminal row; it is never treated as an empty pool.
+    const nodes: DistNode[] = []
+    const poolReadErrors: string[] = []
+    for (const d of page.dists) {
+      await atlas.sleep(atlas.gapMs)
+      const pool = await fetchDistributionEditionIds(ATLAS_PRODUCT, d.id, atlas)
+      atlasRequests += pool.requests
+      if (!pool.ok) { poolReadErrors.push(pool.error); continue }
+      nodes.push({ ...d, editionIds: pool.editionIds })
     }
 
     // === Phase 1: bulk edition + FMV lookups ===
@@ -229,6 +239,8 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
       nodes_processed: 0, nodes_no_editions: 0, nodes_no_fmv_coverage: 0,
       pool_rows_written: 0, pool_write_errors: 0, ev_rows_written: 0, single_edition_packs: 0,
       rpc_not_ok: 0, rpc_errors: 0, weighted_count: 0,
+      nodes_pool_read_failed: poolReadErrors.length, nodes_price_or_slots_unknown: 0, nodes_supply_unknown: 0,
+      malformed_distributions: page.malformed,
     }
     // One stamp for every pool row this run writes — the prune in Phase 3 keys on it.
     const runStamp = new Date().toISOString()
@@ -316,8 +328,11 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
     const evRows: Array<Record<string, unknown>> = []
     for (const [distId, meta] of Object.entries(distMeta)) {
       const { node } = meta
-      const slots = Math.max(1, node.numberOfPackSlots ?? 1)
-      const packPrice = node.price?.value ? Number(node.price.value) : 0
+      // Atlas omits a field it does not know. An unknown price or slot count is
+      // not $0 / 1 slot — the EV row would be a fabrication, so it is skipped.
+      if (node.price == null || node.numberOfPackSlots == null) { counters.nodes_price_or_slots_unknown++; continue }
+      const slots = Math.max(1, node.numberOfPackSlots)
+      const packPrice = node.price
 
       const { data: rpcResult, error: rpcErr } = await supabase.rpc("compute_pack_ev_per_edition_weighted", {
         p_collection_id: ALLDAY_COLLECTION_ID,
@@ -339,9 +354,10 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
       }
       if (ev.per_edition_weighted === true) counters.weighted_count++
 
-      const total = node.totalSupply ?? 0
-      const available = node.availableSupply ?? 0
-      const depletionPct = computeDepletionPct(total, available)
+      // A missing count is unknown, not 0 (`?? 0` read as "100 % sold").
+      const supply = supplyOf(node)
+      if (!supply.read) counters.nodes_supply_unknown++
+      const depletionPct = supply.read ? computeDepletionPct(supply.total, supply.available) : null
 
       evRows.push({
         pack_listing_id: node.uuid,
@@ -356,7 +372,7 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
         value_ratio: ev.value_ratio != null ? Number(ev.value_ratio) : null,
         fmv_coverage_pct: Number(ev.fmv_coverage_pct),
         edition_count: Math.min(Number(ev.edition_count), 32767),
-        total_unopened: available,
+        total_unopened: supply.read ? supply.available : null,
         depletion_pct: depletionPct,
       })
     }
@@ -367,9 +383,9 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
       if (!evErr) counters.ev_rows_written = evRows.length
       else {
         await logPipelineRun({
-          startedAt: startedAtIso, rowsFound: nodes.length, rowsWritten: 0, rowsSkipped: nodes.length,
+          startedAt: startedAtIso, rowsFound: page.rawCount, rowsWritten: 0, rowsSkipped: nodes.length,
           ok: false, error: `insert pack_ev_history: ${evErr.message}`,
-          extra: { counters, elapsed_ms: Date.now() - started, function_version: 10 },
+          extra: { counters, elapsed_ms: Date.now() - started, function_version: FUNCTION_VERSION, source: "atlas", atlas_requests: atlasRequests },
           cursorBefore: cursor, cursorAfter: endCursor,
         })
         return
@@ -379,20 +395,30 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
     const elapsed = Date.now() - started
     await logPipelineRun({
       startedAt: startedAtIso,
-      rowsFound: nodes.length,
+      rowsFound: page.rawCount,
       rowsWritten: counters.ev_rows_written,
-      rowsSkipped: counters.nodes_no_editions + counters.nodes_no_fmv_coverage + counters.rpc_not_ok + counters.rpc_errors,
-      ok: poolWriteErrors.length === 0,
-      error: poolWriteErrors.length ? `${poolWriteErrors.length} pool write error(s): ${poolWriteErrors.slice(0, 3).join(" | ")}`.slice(0, 500) : null,
+      rowsSkipped: counters.nodes_no_editions + counters.nodes_no_fmv_coverage + counters.rpc_not_ok + counters.rpc_errors +
+        counters.nodes_pool_read_failed + counters.nodes_price_or_slots_unknown,
+      // ok = every distribution on the page was read AND written. A pool that could
+      // not be read, a malformed Atlas row, or a failed pool write fails the run
+      // (the next tick re-reads this page: resolveCursor continues only from ok runs).
+      ok: poolWriteErrors.length === 0 && poolReadErrors.length === 0 && page.malformed === 0,
+      error: runErrorText(poolReadErrors, poolWriteErrors, page.malformed),
       extra: {
         ...counters,
         editions_resolved: editionByExternalId.size,
         editions_with_fmv: fmvByEditionId.size,
         editions_requested: allExternalIds.size,
         elapsed_ms: elapsed,
-        function_version: 10,
+        function_version: FUNCTION_VERSION,
         ev_method: "circulation_weighted",
         has_next_page: hasNextPage,
+        source: "atlas",
+        atlas_requests: atlasRequests,
+        offset,
+        total_count: page.totalCount,
+        cursor_reset: cursorReset,
+        pool_read_errors_sample: poolReadErrors.slice(0, 3),
       },
       cursorBefore: cursor, cursorAfter: endCursor,
     })
@@ -402,7 +428,7 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
     await logPipelineRun({
       startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
       ok: false, error: msg,
-      extra: { elapsed_ms: Date.now() - started, function_version: 10 },
+      extra: { elapsed_ms: Date.now() - started, function_version: FUNCTION_VERSION, source: "atlas" },
       cursorBefore: cursor,
     })
   }

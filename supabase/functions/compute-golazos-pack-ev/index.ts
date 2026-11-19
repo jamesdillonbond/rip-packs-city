@@ -1,4 +1,33 @@
-// compute-golazos-pack-ev v2 — supply-weighted (circulation) per-edition EV.
+// compute-golazos-pack-ev v4 — supply-weighted (circulation) per-edition EV, distributions from Dapper Atlas.
+//
+// v4 (2026-11-18 PT) — STUDIO → ATLAS, WITH ONE FIELD ATLAS CANNOT SUPPLY.
+// The Studio Platform GraphQL this read (searchDistributions, byProductID
+// "Golazos") has answered HTTP 530 since 11-17 4:23 PM PT. Re-sourced
+// (../_shared/atlas-distributions.ts, field map in its header):
+//   uuid/id/title/numberOfPackSlots/totalSupply/availableSupply/price
+//       ← DistributionService/SearchDistributions {product:"laliga", limit, offset}
+//         (169 distributions on 11-18; dist 235 "Jornadas 1-9" carries the same
+//         uuid 262cbbfb-… Studio gave it, so pack_listing_id is unchanged)
+//   editionIds (the pool) ← ⚠ NOTHING ON ATLAS. For product "laliga",
+//         GetDistributionEditions answers {editions:[], totalCount:"0"} for every
+//         distribution probed (219, 234, 235, 238 — including ones with unopened
+//         packs), and GetDistributionPackOdds / GetDistributionsByEdition are empty
+//         too. Atlas holds no Golazos distribution→edition map.
+// So the pool MEMBERSHIP comes from the pool Studio last confirmed, already in
+// pack_drop_pool (157 of the 169 Atlas distributions have one). A distribution's
+// pool is fixed when it is minted; what moves — FMV, and each edition's minted
+// circulation (the weight) — is still re-read every run, and the weights are
+// rewritten. What this lane does NOT do any more, and says so:
+//   · it never ADDS or PRUNES a pool row (it learned nothing about membership), and
+//     it leaves pack_drop_pool.last_refreshed_at at the time Studio last confirmed
+//     the membership — that column keeps meaning "membership last read".
+//   · a distribution with no stored pool (12 on 11-18, e.g. 294 "Lewandowski's
+//     Strikers") gets NO EV row; it is counted (nodes_no_pool_source) and named
+//     (no_pool_source_sample) in every run row, never priced off a guess.
+// Same tables/columns/RPC otherwise. Honesty differences vs v3: a missing supply
+// count is NULL (was `?? 0`), a missing price or slot count skips the EV row, and
+// the cursor is an Atlas OFFSET (a leftover Studio cursor restarts at 0, reported).
+// Revert: restore v3 (git history) — but its upstream is dead.
 //
 // v2 (2026-07-18, reconciled into the repo 2026-07-25): also persist typical_ev
 // (the weighted-MEDIAN "Typical Pull EV" returned by
@@ -6,25 +35,24 @@
 // parity with the TopShot/AllDay writers. Null-guarded; the column is already in
 // pack_ev_history and the read stack (mv_pack_ev_latest / pack_table_rows).
 //
-// NOTE (repo↔prod): v2 was deployed via the Supabase MCP on 2026-07-18 but the
-// repo copy stayed at v1, and the 2026-07-20 _shared rewire (fb7eb0f2) refactored
-// that v1 body — so the repo was simultaneously ahead (shared module) and behind
-// (no typical_ev) production. Reconciled 2026-07-25 so a deploy of this file can
-// no longer silently drop the typical_ev write. Revert: remove the typical_ev
-// field from the evRows push.
-//
 // Cloned from compute-allday-pack-ev v8. LaLiga Golazos is editions-keyed like
-// AllDay (editions.external_id = the studio edition id as an integer string), and
-// uses the SAME Studio Platform searchDistributions API (byProductID: "Golazos").
+// AllDay (editions.external_id = the studio edition id as an integer string).
 // Dapper does not publish per-tier packOdds for Golazos, so EV is supply-weighted:
 // an edition's pull probability ~ its share of minted circulation.
-// Auth: accepts EITHER Bearer INGEST_SECRET_TOKEN (manual/CC) OR ?key=<CRON_KEY>
+// Auth: accepts EITHER Bearer INGEST_SECRET_TOKEN (manual/CC) OR the cron gate
 // (pg_cron net.http_get, mirroring compute-pinnacle-pack-ev).
 // Revert: DROP the compute-golazos-pack-ev function + its cron job.
 
 import { createClient } from "@supabase/supabase-js"
 import { checkCronGate, cronGateResponse } from "../_shared/cron-gate.ts"
 import { supplyWeightPool, computeDepletionPct } from "../_shared/pack-ev-supply-weighted.ts"
+import {
+  type AtlasDist,
+  defaultAtlasDeps,
+  parseOffsetCursor,
+  searchDistributionsPage,
+  supplyOf,
+} from "../_shared/atlas-distributions.ts"
 
 const INGEST_SECRET_TOKEN = Deno.env.get("INGEST_SECRET_TOKEN")
 if (!INGEST_SECRET_TOKEN) throw new Error("INGEST_SECRET_TOKEN env var required")
@@ -33,62 +61,29 @@ if (!INGEST_SECRET_TOKEN) throw new Error("INGEST_SECRET_TOKEN env var required"
 // secret is read; a rotation is one vault.update_secret (rpc-edge-fn-deploy §0).
 
 const GOLAZOS_COLLECTION_ID = "06248cc4-b85f-47cd-af67-1855d14acd75"
-const GQL_ENDPOINT = "https://api.production.studio-platform.dapperlabs.com/graphql"
+const ATLAS_PRODUCT = "laliga" as const
+const PAGE_LIMIT = 40 // what Studio served per page; keeps the per-run work where it was
+const FUNCTION_VERSION = 4
 const EXTERNAL_ID_CHUNK = 500
 const FMV_ID_CHUNK = 500 // get_fmv_for_editions: one row per id, so 500 ids can never reach PostgREST max-rows (1000)
+const POOL_READ_PAGE = 1000 // PostgREST max-rows; the stored-pool read pages below it
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL") ?? "",
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
 )
 
-const H = {
-  "Content-Type": "application/json",
-  "User-Agent": "RipPacksCity/1.0 (www.rippackscity.com)",
-  "Origin": "https://laligagolazos.com",
-  "Referer": "https://laligagolazos.com/",
+/** One stored pool row: the membership Studio last confirmed for a distribution. */
+interface StoredPoolRow {
+  edition_id: string
+  edition_flow_id: string
+  slot_name: string
+  last_refreshed_at: string | null
 }
 
-const SEARCH_QUERY = `
-  query FetchGolazosDistributions($input: SearchDistributionsInput!) {
-    searchDistributions(input: $input) {
-      totalCount
-      pageInfo { endCursor hasNextPage }
-      edges {
-        node {
-          uuid id title
-          numberOfPackSlots
-          totalSupply availableSupply
-          price { value }
-          editionIds
-          packOdds { tier value displayValue }
-        }
-      }
-    }
-  }
-`
-
-interface DistNode {
-  uuid: string; id: number; title: string | null
-  numberOfPackSlots: number | null
-  availableSupply: number | null; totalSupply: number | null
-  price: { value: string } | null
-  editionIds: number[] | null
-  packOdds: Array<{ tier: string; value: number; displayValue: string | null }> | null
-}
-
-async function gqlCall(query: string, variables: Record<string, unknown>) {
-  const res = await fetch(GQL_ENDPOINT, {
-    method: "POST", headers: H,
-    body: JSON.stringify({ query, variables }),
-    signal: AbortSignal.timeout(25000),
-  })
-  if (!res.ok) return { ok: false as const, error: `HTTP ${res.status}` }
-  const json = await res.json().catch(() => null) as
-    | { data?: unknown; errors?: Array<{ message: string }> } | null
-  if (!json) return { ok: false as const, error: "not-json" }
-  if (json.errors?.length) return { ok: false as const, error: json.errors[0].message }
-  return { ok: true as const, data: json.data }
+/** A distribution plus its stored pool — the Studio node's shape, re-sourced. */
+interface DistNode extends AtlasDist {
+  pool: StoredPoolRow[]
 }
 
 async function logPipelineRun(args: {
@@ -133,48 +128,90 @@ async function resolveCursor(explicit: string | null): Promise<string | null> {
   return row.cursor_after ?? null
 }
 
+/**
+ * The stored pool of one distribution, every row (paged under PostgREST's
+ * max-rows on a unique order key). Throws on a read error: an unread pool is not
+ * an empty one.
+ */
+async function readStoredPool(distId: string): Promise<StoredPoolRow[]> {
+  const out: StoredPoolRow[] = []
+  for (let from = 0; ; from += POOL_READ_PAGE) {
+    const { data, error } = await supabase
+      .from("pack_drop_pool")
+      .select("edition_id, edition_flow_id, slot_name, last_refreshed_at")
+      .eq("collection_id", GOLAZOS_COLLECTION_ID)
+      .eq("dist_id", distId)
+      .order("edition_id", { ascending: true })
+      .order("slot_name", { ascending: true })
+      .range(from, from + POOL_READ_PAGE - 1)
+    if (error) throw new Error(`pack_drop_pool read ${distId}: ${error.message}`)
+    // deno-lint-ignore no-explicit-any
+    const rows = (data ?? []) as any[]
+    for (const r of rows) {
+      if (r.edition_id == null || r.edition_flow_id == null) continue
+      out.push({
+        edition_id: String(r.edition_id),
+        edition_flow_id: String(r.edition_flow_id),
+        slot_name: String(r.slot_name ?? "default"),
+        last_refreshed_at: r.last_refreshed_at ?? null,
+      })
+    }
+    if (rows.length < POOL_READ_PAGE) break
+  }
+  return out
+}
+
 async function runBackgroundWork(startedAtIso: string, started: number, cursor: string | null) {
   try {
-    const gqlRes = await gqlCall(SEARCH_QUERY, {
-      input: {
-        first: 100,
-        after: cursor ?? null,
-        filters: { byProductID: "Golazos" },
-      },
-    })
+    const atlas = defaultAtlasDeps()
+    const { offset, reset: cursorReset } = parseOffsetCursor(cursor)
+    const page = await searchDistributionsPage(ATLAS_PRODUCT, offset, PAGE_LIMIT, atlas)
 
-    if (!gqlRes.ok) {
+    if (!page.ok) {
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
-        ok: false, error: `gql: ${gqlRes.error}`,
-        extra: { elapsed_ms: Date.now() - started, function_version: 3 },
+        ok: false, error: `atlas: ${page.error}`,
+        extra: { elapsed_ms: Date.now() - started, function_version: FUNCTION_VERSION, source: "atlas", atlas_requests: page.requests, offset, cursor_reset: cursorReset },
         cursorBefore: cursor,
       })
       return
     }
 
-    // deno-lint-ignore no-explicit-any
-    const data = gqlRes.data as any
-    const nodes: DistNode[] = (data?.searchDistributions?.edges ?? [])
-      // deno-lint-ignore no-explicit-any
-      .map((e: any) => e?.node).filter((n: DistNode | null) => n != null)
-    const pageInfo = data?.searchDistributions?.pageInfo
-    const endCursor: string | null = pageInfo?.endCursor ?? null
-    const hasNextPage: boolean = pageInfo?.hasNextPage === true
+    const nextOffset = offset + page.rawCount
+    const hasNextPage = page.rawCount > 0 && nextOffset < page.totalCount
+    const endCursor: string | null = String(nextOffset)
 
-    if (nodes.length === 0) {
+    if (page.rawCount === 0) {
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
         ok: true,
-        extra: { message: "empty page", elapsed_ms: Date.now() - started, function_version: 3, has_next_page: false },
+        extra: {
+          message: "empty page", elapsed_ms: Date.now() - started, function_version: FUNCTION_VERSION, has_next_page: false,
+          source: "atlas", atlas_requests: page.requests, offset, total_count: page.totalCount, cursor_reset: cursorReset,
+        },
         cursorBefore: cursor, cursorAfter: endCursor,
       })
       return
     }
 
+    // === Phase 0: the stored pool of each distribution (Atlas has none for laliga) ===
+    const nodes: DistNode[] = []
+    const noPoolSource: string[] = []
+    let oldestPoolConfirmedAt: string | null = null
+    for (const d of page.dists) {
+      const pool = await readStoredPool(d.id)
+      if (pool.length === 0) { noPoolSource.push(d.id); continue }
+      for (const r of pool) {
+        if (r.last_refreshed_at && (oldestPoolConfirmedAt == null || r.last_refreshed_at < oldestPoolConfirmedAt)) {
+          oldestPoolConfirmedAt = r.last_refreshed_at
+        }
+      }
+      nodes.push({ ...d, pool })
+    }
+
     // === Phase 1: bulk edition + FMV lookups ===
     const allExternalIds = new Set<string>()
-    for (const n of nodes) for (const eid of n.editionIds ?? []) allExternalIds.add(String(eid))
+    for (const n of nodes) for (const r of n.pool) allExternalIds.add(r.edition_flow_id)
 
     const editionByExternalId = new Map<string, { id: string; tier: string | null; circ: number | null }>()
     const externalIdList = Array.from(allExternalIds)
@@ -209,31 +246,26 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
       }
     }
 
-    // === Phase 2: build pool rows per eligible distribution ===
+    // === Phase 2: re-weight each stored pool by current circulation ===
     const counters = {
       nodes_processed: 0, nodes_no_editions: 0, nodes_no_fmv_coverage: 0,
       pool_rows_written: 0, pool_write_errors: 0, ev_rows_written: 0, single_edition_packs: 0,
       rpc_not_ok: 0, rpc_errors: 0, weighted_count: 0,
+      nodes_no_pool_source: noPoolSource.length, nodes_price_or_slots_unknown: 0, nodes_supply_unknown: 0,
+      pool_rows_edition_missing: 0, malformed_distributions: page.malformed,
     }
-    // One stamp for every pool row this run writes — the Phase 3 prune keys on it.
-    const runStamp = new Date().toISOString()
     const poolRowsByDist: Record<string, Array<Record<string, unknown>>> = {}
     const distMeta: Record<string, { node: DistNode; editionsWithFmv: number; editionCount: number }> = {}
 
     for (const node of nodes) {
       counters.nodes_processed++
-      const externalIds = (node.editionIds ?? []).map(String)
-      if (externalIds.length === 0) { counters.nodes_no_editions++; continue }
-
-      const pooledEditions: Array<{ external_id: string; edition_id: string; fmv: number | null; circ: number | null }> = []
-      for (const ext of externalIds) {
-        const ed = editionByExternalId.get(ext)
-        if (!ed) continue
-        pooledEditions.push({
-          external_id: ext, edition_id: ed.id,
-          fmv: fmvByEditionId.get(ed.id) ?? null,
-          circ: ed.circ,
-        })
+      const pooledEditions: Array<{ row: StoredPoolRow; fmv: number | null; circ: number | null }> = []
+      for (const row of node.pool) {
+        const ed = editionByExternalId.get(row.edition_flow_id)
+        // A stored row whose edition no longer resolves keeps its stored weight (this
+        // lane does not prune); it is counted so the gap is visible.
+        if (!ed) { counters.pool_rows_edition_missing++; continue }
+        pooledEditions.push({ row, fmv: fmvByEditionId.get(ed.id) ?? null, circ: ed.circ })
       }
 
       const editionCount = pooledEditions.length
@@ -242,51 +274,36 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
       if (editionsWithFmv === 0) { counters.nodes_no_fmv_coverage++; continue }
       if (editionCount === 1) counters.single_edition_packs++
 
-      const distId = String(node.id)
+      const distId = node.id
       distMeta[distId] = { node, editionsWithFmv, editionCount }
 
       // supplyWeightPool (../_shared) is the pinned, unit-tested copy of this math.
+      // Only the WEIGHT columns are sent: last_refreshed_at (membership last read)
+      // and pool_source are left as Studio last wrote them.
       const weights = supplyWeightPool(pooledEditions.map(p => p.circ))
-      poolRowsByDist[distId] = pooledEditions.map((p, i) => {
-        const w = weights[i]
-        return {
-          collection_id: GOLAZOS_COLLECTION_ID,
-          dist_id: distId,
-          edition_id: p.edition_id,
-          edition_flow_id: p.external_id,
-          drop_weight: w, orig_drop_weight: w, slot_name: "default", pool_source: "gql",
-          last_refreshed_at: runStamp,
-        }
-      })
+      poolRowsByDist[distId] = pooledEditions.map((p, i) => ({
+        collection_id: GOLAZOS_COLLECTION_ID,
+        dist_id: distId,
+        edition_id: p.row.edition_id,
+        edition_flow_id: p.row.edition_flow_id,
+        slot_name: p.row.slot_name,
+        drop_weight: weights[i],
+        orig_drop_weight: weights[i],
+      }))
     }
 
-    // === Phase 3: delete-then-insert pool rows per distribution ===
-    // R123 (2026-09-20): this was DELETE the distribution's pool, then INSERT with
-    // the error discarded (`if (!ie)`) and the delete's error never read — a
-    // rejected insert left the distribution with NO pool (the weighted EV RPC then
-    // read nothing) on a run row that said ok=true. Now: UPSERT on the PK
-    // (collection_id, dist_id, edition_id, slot_name) first, then PRUNE the rows
-    // of that distribution this run did not write. A rejected upsert leaves the
-    // old pool intact and skips the prune; every error is counted and fails the
-    // run at the terminal row.
+    // === Phase 3: rewrite the weights of each stored pool (no add, no prune) ===
+    // R123: every write error is counted and fails the run at the terminal row; a
+    // distribution whose weights did not land gets no EV row from a stale pool.
     const poolWriteErrors: string[] = []
     for (const [distId, rows] of Object.entries(poolRowsByDist)) {
-      let distFailed = false
       for (let i = 0; i < rows.length; i += 500) {
         const chunk = rows.slice(i, i + 500)
         const { error: ie } = await supabase.from("pack_drop_pool")
           .upsert(chunk, { onConflict: "collection_id,dist_id,edition_id,slot_name" })
-        if (ie) { distFailed = true; poolWriteErrors.push(`pool upsert ${distId}: ${ie.message}`); break }
+        if (ie) { poolWriteErrors.push(`pool weight upsert ${distId}: ${ie.message}`); delete distMeta[distId]; break }
         counters.pool_rows_written += chunk.length
       }
-      if (distFailed) continue
-      // 2026-09-22 (v3): prune by the RUN STAMP, not a NOT IN (<every kept id>) list
-      // riding in the URL — that list 400'd ("Bad Request") on a 779-edition AllDay
-      // pool. Every row written this run carries last_refreshed_at = runStamp.
-      const { error: de } = await supabase.from("pack_drop_pool").delete()
-        .eq("collection_id", GOLAZOS_COLLECTION_ID).eq("dist_id", distId)
-        .lt("last_refreshed_at", runStamp)
-      if (de) poolWriteErrors.push(`pool prune ${distId}: ${de.message}`)
     }
     counters.pool_write_errors = poolWriteErrors.length
 
@@ -294,8 +311,11 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
     const evRows: Array<Record<string, unknown>> = []
     for (const [distId, meta] of Object.entries(distMeta)) {
       const { node } = meta
-      const slots = Math.max(1, node.numberOfPackSlots ?? 1)
-      const packPrice = node.price?.value ? Number(node.price.value) : 0
+      // Atlas omits a field it does not know. An unknown price or slot count is
+      // not $0 / 1 slot — the EV row would be a fabrication, so it is skipped.
+      if (node.price == null || node.numberOfPackSlots == null) { counters.nodes_price_or_slots_unknown++; continue }
+      const slots = Math.max(1, node.numberOfPackSlots)
+      const packPrice = node.price
 
       const { data: rpcResult, error: rpcErr } = await supabase.rpc("compute_pack_ev_per_edition_weighted", {
         p_collection_id: GOLAZOS_COLLECTION_ID,
@@ -317,9 +337,10 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
       }
       if (ev.per_edition_weighted === true) counters.weighted_count++
 
-      const total = node.totalSupply ?? 0
-      const available = node.availableSupply ?? 0
-      const depletionPct = computeDepletionPct(total, available)
+      // A missing count is unknown, not 0 (`?? 0` read as "100 % sold").
+      const supply = supplyOf(node)
+      if (!supply.read) counters.nodes_supply_unknown++
+      const depletionPct = supply.read ? computeDepletionPct(supply.total, supply.available) : null
 
       evRows.push({
         pack_listing_id: node.uuid,
@@ -334,7 +355,7 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
         value_ratio: ev.value_ratio != null ? Number(ev.value_ratio) : null,
         fmv_coverage_pct: Number(ev.fmv_coverage_pct),
         edition_count: Math.min(Number(ev.edition_count), 32767),
-        total_unopened: available,
+        total_unopened: supply.read ? supply.available : null,
         depletion_pct: depletionPct,
       })
     }
@@ -345,32 +366,45 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
       if (!evErr) counters.ev_rows_written = evRows.length
       else {
         await logPipelineRun({
-          startedAt: startedAtIso, rowsFound: nodes.length, rowsWritten: 0, rowsSkipped: nodes.length,
+          startedAt: startedAtIso, rowsFound: page.rawCount, rowsWritten: 0, rowsSkipped: page.rawCount,
           ok: false, error: `insert pack_ev_history: ${evErr.message}`,
-          extra: { counters, elapsed_ms: Date.now() - started, function_version: 3 },
+          extra: { counters, elapsed_ms: Date.now() - started, function_version: FUNCTION_VERSION, source: "atlas", atlas_requests: page.requests },
           cursorBefore: cursor, cursorAfter: endCursor,
         })
         return
       }
     }
 
+    const errors: string[] = []
+    if (poolWriteErrors.length) errors.push(`${poolWriteErrors.length} pool write error(s): ${poolWriteErrors.slice(0, 2).join(" | ")}`)
+    if (page.malformed) errors.push(`${page.malformed} Atlas distribution row(s) without uuid/id`)
     const elapsed = Date.now() - started
     await logPipelineRun({
       startedAt: startedAtIso,
-      rowsFound: nodes.length,
+      rowsFound: page.rawCount,
       rowsWritten: counters.ev_rows_written,
-      rowsSkipped: counters.nodes_no_editions + counters.nodes_no_fmv_coverage + counters.rpc_not_ok + counters.rpc_errors,
-      ok: poolWriteErrors.length === 0,
-      error: poolWriteErrors.length ? `${poolWriteErrors.length} pool write error(s): ${poolWriteErrors.slice(0, 3).join(" | ")}`.slice(0, 500) : null,
+      rowsSkipped: counters.nodes_no_editions + counters.nodes_no_fmv_coverage + counters.rpc_not_ok + counters.rpc_errors +
+        counters.nodes_no_pool_source + counters.nodes_price_or_slots_unknown,
+      ok: errors.length === 0,
+      error: errors.length ? errors.join(" ; ").slice(0, 500) : null,
       extra: {
         ...counters,
         editions_resolved: editionByExternalId.size,
         editions_with_fmv: fmvByEditionId.size,
         editions_requested: allExternalIds.size,
         elapsed_ms: elapsed,
-        function_version: 3,
+        function_version: FUNCTION_VERSION,
         ev_method: "circulation_weighted",
         has_next_page: hasNextPage,
+        source: "atlas",
+        // Membership is NOT from this run: it is the pool Studio last confirmed.
+        pool_membership_source: "stored_studio_pool",
+        pool_membership_oldest_confirmed_at: oldestPoolConfirmedAt,
+        no_pool_source_sample: noPoolSource.slice(0, 10),
+        atlas_requests: page.requests,
+        offset,
+        total_count: page.totalCount,
+        cursor_reset: cursorReset,
       },
       cursorBefore: cursor, cursorAfter: endCursor,
     })
@@ -380,7 +414,7 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
     await logPipelineRun({
       startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
       ok: false, error: msg,
-      extra: { elapsed_ms: Date.now() - started, function_version: 3 },
+      extra: { elapsed_ms: Date.now() - started, function_version: FUNCTION_VERSION, source: "atlas" },
       cursorBefore: cursor,
     })
   }

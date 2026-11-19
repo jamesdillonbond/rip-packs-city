@@ -1,4 +1,25 @@
-// compute-pinnacle-pack-ev v2 — supply-weighted (total_minted) per-render EV.
+// compute-pinnacle-pack-ev v3 — supply-weighted (total_minted) per-render EV, read from Dapper Atlas.
+//
+// v3 (2026-11-18 PT) — STUDIO → ATLAS. The Studio Platform GraphQL this read
+// (searchDistributions, byProductID "Pinnacle") has answered HTTP 530 since 11-17
+// 4:23 PM PT. Every field it consumed is now read from Dapper Atlas
+// (../_shared/atlas-distributions.ts, field map in its header):
+//   uuid/id/title/numberOfPackSlots/totalSupply/availableSupply/price
+//       ← DistributionService/SearchDistributions {product:"disney"} (all pages)
+//   editionIds (the render pool)
+//       ← DistributionService/GetDistributionEditions {product:"disney", distributionId}
+//         (disney 8542 → 53 editionIds = the 53 Studio wrote into
+//         pack_distributions.metadata.edition_ids; ids join pinnacle_catalog.edition_id)
+// Same tables, same columns. Differences, all honesty:
+//   · a distribution whose pool read fails is skipped (no pack_distributions row,
+//     no EV row) and fails the run with the HTTP status in the error.
+//   · Atlas OMITS totalSupply/availableSupply on some live draws (8923, 11-18):
+//     those rows upsert WITHOUT total_minted/total_opened, so the last known counts
+//     stand and metadata carries no supply_as_of (the depletion figure has no age).
+//     The old `total = totalSupply ?? 0` would have zeroed a known supply.
+//   · an unknown price or slot count skips the EV row (counted) instead of pricing
+//     the pack at $0 / 1 slot; metadata.retail_price_usd is null, not 0.
+//   · metadata.source is "atlas_distribution_service" (was "studio_platform_gql").
 //
 // v2 (2026-07-18, reconciled into the repo 2026-07-25): also persist typical_ev
 // (the supply-weighted-MEDIAN "Typical Pull EV"), bringing Pinnacle to parity
@@ -35,9 +56,9 @@
 // This fn owns the whole Pinnacle pack surface: it upserts pack_distributions
 // (so pack_table_rows / the /disney-pinnacle/packs page has rows) AND writes
 // pack_ev_history (deduped downstream by mv_pack_ev_latest via DISTINCT ON
-// pack_listing_id, snapshotted_at DESC). The studio GQL caps pages at ~40, so
-// the ~140 Pinnacle dists are walked via cursor WITHIN one invocation (~4
-// pages) — each run is a full refresh, not a partial page.
+// pack_listing_id, snapshotted_at DESC). The ~160 Pinnacle dists are walked
+// (Atlas, 100 a page) WITHIN one invocation — each run is a full refresh, not a
+// partial page.
 //
 // Revert: delete this function + its cron; DELETE FROM pack_ev_history and
 // pack_distributions WHERE collection_id = the Pinnacle uuid.
@@ -46,6 +67,13 @@ import { createClient } from "@supabase/supabase-js"
 import { checkCronGate, cronGateResponse } from "../_shared/cron-gate.ts"
 import { computeDepletionPct, weightedMeanEv } from "../_shared/pack-ev-supply-weighted.ts"
 import { dedupeByConflictKey } from "../_shared/upsert-dedupe.ts"
+import {
+  type AtlasDist,
+  defaultAtlasDeps,
+  fetchDistributionEditionIds,
+  searchAllDistributions,
+  supplyOf,
+} from "../_shared/atlas-distributions.ts"
 
 // Gated by ?key=GATE (matches the ingest/backfill pg_cron convention);
 // deployed with verify_jwt=false. A Bearer INGEST_SECRET_TOKEN header is also
@@ -62,7 +90,8 @@ import { dedupeByConflictKey } from "../_shared/upsert-dedupe.ts"
 const INGEST_SECRET_TOKEN = Deno.env.get("INGEST_SECRET_TOKEN") ?? ""
 
 const PINNACLE_COLLECTION_ID = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
-const GQL_ENDPOINT = "https://api.production.studio-platform.dapperlabs.com/graphql"
+const ATLAS_PRODUCT = "disney" as const
+const FUNCTION_VERSION = 3
 const EDITION_ID_CHUNK = 500
 
 const supabase = createClient(
@@ -70,53 +99,9 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
 )
 
-const H = {
-  "Content-Type": "application/json",
-  "User-Agent": "RipPacksCity/1.0 (www.rippackscity.com)",
-  "Origin": "https://disneypinnacle.com",
-  "Referer": "https://disneypinnacle.com/",
-}
-
-const SEARCH_QUERY = `
-  query FetchPinnacleDistributions($input: SearchDistributionsInput!) {
-    searchDistributions(input: $input) {
-      totalCount
-      pageInfo { endCursor hasNextPage }
-      edges {
-        node {
-          uuid id title
-          numberOfPackSlots
-          totalSupply availableSupply
-          price { value }
-          editionIds
-          packOdds { tier value displayValue }
-        }
-      }
-    }
-  }
-`
-
-interface DistNode {
-  uuid: string; id: number; title: string | null
-  numberOfPackSlots: number | null
-  availableSupply: number | null; totalSupply: number | null
-  price: { value: string } | null
-  editionIds: number[] | null
-  packOdds: Array<{ tier: string; value: number; displayValue: string | null }> | null
-}
-
-async function gqlCall(query: string, variables: Record<string, unknown>) {
-  const res = await fetch(GQL_ENDPOINT, {
-    method: "POST", headers: H,
-    body: JSON.stringify({ query, variables }),
-    signal: AbortSignal.timeout(25000),
-  })
-  if (!res.ok) return { ok: false as const, error: `HTTP ${res.status}` }
-  const json = await res.json().catch(() => null) as
-    | { data?: unknown; errors?: Array<{ message: string }> } | null
-  if (!json) return { ok: false as const, error: "not-json" }
-  if (json.errors?.length) return { ok: false as const, error: json.errors[0].message }
-  return { ok: true as const, data: json.data }
+/** A distribution plus the render pool Atlas returned for it — the Studio node's shape, re-sourced. */
+interface DistNode extends AtlasDist {
+  editionIds: string[]
 }
 
 async function logPipelineRun(args: {
@@ -147,39 +132,41 @@ async function logPipelineRun(args: {
 // and weightedMedianFmv), the pinned + unit-tested copies. Both the clamp and the
 // median semantics are identical to compute_pack_ev_per_edition_weighted.
 
+/** The terminal row's error: each failure class, counted, with the first messages (they carry "HTTP <status>"). */
+function runErrorText(poolReadErrors: string[], malformed: number): string | null {
+  const parts: string[] = []
+  if (poolReadErrors.length) parts.push(`${poolReadErrors.length} pool read error(s): ${poolReadErrors.slice(0, 2).join(" | ")}`)
+  if (malformed) parts.push(`${malformed} Atlas distribution row(s) without uuid/id`)
+  return parts.length ? parts.join(" ; ").slice(0, 500) : null
+}
+
 async function runBackgroundWork(startedAtIso: string, started: number) {
   try {
-    // The studio GQL caps each page at ~40 nodes regardless of `first`, so walk
-    // the cursor within this single invocation until drained (≈140 dists / ~4
-    // pages) — each run is thus a full refresh, not a partial page.
-    const nodes: DistNode[] = []
-    let totalCount: number | null = null
-    let cursor: string | null = null
-    let pages = 0
-    while (pages < 12) {
-      const gqlRes = await gqlCall(SEARCH_QUERY, {
-        input: { first: 100, after: cursor, filters: { byProductID: "Pinnacle" } },
+    // Every Pinnacle distribution (~160), all pages, all or nothing — then each
+    // one's render pool, one request at a time (Atlas's Cloudflare is burst-
+    // sensitive). Each run is a full refresh, as it was on Studio.
+    const atlas = defaultAtlasDeps()
+    const walk = await searchAllDistributions(ATLAS_PRODUCT, atlas)
+    let atlasRequests = walk.requests
+    if (!walk.ok) {
+      await logPipelineRun({
+        startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
+        ok: false, error: `atlas: ${walk.error}`,
+        extra: { elapsed_ms: Date.now() - started, function_version: FUNCTION_VERSION, source: "atlas", atlas_requests: atlasRequests },
       })
-      if (!gqlRes.ok) {
-        await logPipelineRun({
-          startedAt: startedAtIso, rowsFound: nodes.length, rowsWritten: 0, rowsSkipped: 0,
-          ok: false, error: `gql page ${pages}: ${gqlRes.error}`,
-          extra: { elapsed_ms: Date.now() - started, function_version: 2, pages_fetched: pages },
-        })
-        return
-      }
-      // deno-lint-ignore no-explicit-any
-      const data = gqlRes.data as any
-      const sd = data?.searchDistributions
-      totalCount = sd?.totalCount ?? totalCount
-      for (const e of (sd?.edges ?? [])) {
-        const n = e?.node
-        if (n != null) nodes.push(n)
-      }
-      pages++
-      if (sd?.pageInfo?.hasNextPage !== true) break
-      cursor = sd?.pageInfo?.endCursor ?? null
-      if (!cursor) break
+      return
+    }
+    const totalCount = walk.totalCount
+    const pages = walk.pages
+
+    const nodes: DistNode[] = []
+    const poolReadErrors: string[] = []
+    for (const d of walk.dists) {
+      await atlas.sleep(atlas.gapMs)
+      const pool = await fetchDistributionEditionIds(ATLAS_PRODUCT, d.id, atlas)
+      atlasRequests += pool.requests
+      if (!pool.ok) { poolReadErrors.push(pool.error); continue }
+      nodes.push({ ...d, editionIds: pool.editionIds })
     }
 
     // When availableSupply was read. pack_table_rows dates Pinnacle's depletion % from
@@ -187,11 +174,17 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
     // second Pinnacle writer).
     const supplyReadAt = new Date().toISOString()
 
-    if (nodes.length === 0) {
+    // "Empty" only when Atlas itself listed nothing. Distributions whose pools all
+    // failed to read are NOT an empty catalog: they fall through to the terminal
+    // row, which fails the run.
+    if (walk.dists.length === 0 && walk.malformed === 0) {
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
         ok: true,
-        extra: { message: "empty", elapsed_ms: Date.now() - started, function_version: 2, total_count: totalCount, pages_fetched: pages },
+        extra: {
+          message: "empty", elapsed_ms: Date.now() - started, function_version: FUNCTION_VERSION,
+          total_count: totalCount, pages_fetched: pages, source: "atlas", atlas_requests: atlasRequests,
+        },
       })
       return
     }
@@ -222,20 +215,28 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
     const counters = {
       nodes_processed: 0, nodes_no_editions: 0, nodes_no_fmv_coverage: 0,
       ev_rows_built: 0, dist_rows_built: 0, single_edition_packs: 0,
+      nodes_pool_read_failed: poolReadErrors.length, nodes_price_or_slots_unknown: 0, nodes_supply_unknown: 0,
+      malformed_distributions: walk.malformed,
     }
     const evRows: Array<Record<string, unknown>> = []
+    // Two batches, because a PostgREST bulk upsert sends the UNION of the rows' keys
+    // and NULLs the ones a row lacks: total_minted/total_opened are NOT NULL, and a
+    // row whose supply Atlas did not report must leave the stored counts alone.
     const distRows: Array<Record<string, unknown>> = []
+    const distRowsNoSupply: Array<Record<string, unknown>> = []
 
     for (const node of nodes) {
       counters.nodes_processed++
       const distId = String(node.id)
-      const total = node.totalSupply ?? 0
       // A missing count is unknown, not 0: `?? 0` made a dist read as 100 % sold.
-      const supplyRead = node.totalSupply != null && node.availableSupply != null
-      const available = node.availableSupply ?? 0
-      const slots = Math.max(1, node.numberOfPackSlots ?? 1)
-      const packPrice = node.price?.value != null ? Number(node.price.value) : 0
-      const depletionPct = supplyRead ? computeDepletionPct(total, available) : null
+      const supply = supplyOf(node)
+      const supplyRead = supply.read
+      if (!supplyRead) counters.nodes_supply_unknown++
+      const available = supply.read ? supply.available : null
+      // Unknown price / slot count: no EV row (below). Not $0 / 1 slot.
+      const slots = node.numberOfPackSlots != null ? Math.max(1, node.numberOfPackSlots) : null
+      const packPrice = node.price
+      const depletionPct = supply.read ? computeDepletionPct(supply.total, supply.available) : null
 
       // pack_distributions row (drives pack_table_rows / the packs page).
       // total_sealed + depletion_pct are GENERATED from total_opened, so we can't
@@ -244,34 +245,40 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       // no longer on primary sale). That makes the generated total_sealed resolve
       // to availableSupply and depletion_pct to the sold fraction — the metric the
       // UI wants — instead of a false 0% for sold-out packs.
-      // total_opened is NOT NULL; 0 gives a generated 0 % that pack_table_rows reads as absent.
-      const consumed = supplyRead ? Math.max(total - available, 0) : 0
-      distRows.push({
+      // Unknown supply: the row carries NO total_minted/total_opened (a new row gets
+      // the column defaults, 0/0 — a generated 0 % that pack_table_rows reads as
+      // absent; an existing row keeps its last read counts, now ageless).
+      const distRow: Record<string, unknown> = {
         collection_id: PINNACLE_COLLECTION_ID,
         dist_id: distId,
         title: node.title,
         nft_type: "Pinnacle",
-        total_minted: total,
-        total_opened: consumed,
+        ...(supply.read
+          ? { total_minted: supply.total, total_opened: Math.max(supply.total - supply.available, 0) }
+          : {}),
         metadata: {
           retail_price_usd: packPrice,
           number_of_pack_slots: slots,
-          source: "studio_platform_gql",
+          source: "atlas_distribution_service",
           // Persist the render pool so v_pinnacle_pack_ev_corrected can recompute
-          // a median-robust EV (unnest edition_ids → pinnacle_catalog).
-          edition_ids: node.editionIds ?? [],
-          // Stamped only when Studio returned both counts. Without them the
+          // a median-robust EV (unnest edition_ids → pinnacle_catalog). Numbers, as
+          // Studio wrote them (Atlas sends the ids as strings).
+          edition_ids: node.editionIds.map(Number),
+          // Stamped only when Atlas returned both counts. Without them the
           // depletion figure is not a read, so it gets no age.
           ...(supplyRead
             ? { supply_as_of: supplyReadAt }
             : {}),
         },
         updated_at: new Date().toISOString(),
-      })
+      }
+      if (supply.read) distRows.push(distRow)
+      else distRowsNoSupply.push(distRow)
       counters.dist_rows_built++
 
-      const editionIds = (node.editionIds ?? []).map(String)
+      const editionIds = node.editionIds
       if (editionIds.length === 0) { counters.nodes_no_editions++; continue }
+      if (packPrice == null || slots == null) { counters.nodes_price_or_slots_unknown++; continue }
 
       // Weighted mean over renders WITH fmv only (matches the canonical RPC).
       // weightedMeanEv (../_shared) is the pinned, unit-tested copy of this math.
@@ -304,7 +311,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         value_ratio: ev.valueRatio,
         fmv_coverage_pct: Math.min(ev.fmvCoveragePct, 32767),
         edition_count: Math.min(ev.editionCount, 32767),
-        total_unopened: supplyRead ? available : null,
+        total_unopened: available,
         depletion_pct: depletionPct,
       })
       counters.ev_rows_built++
@@ -326,17 +333,21 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
     // dist_dupe_count stays non-zero, investigate the studio-platform walk
     // rather than treating this as the fix.
     const dedupedDists = dedupeByConflictKey(
-      distRows,
+      [...distRows, ...distRowsNoSupply],
       (r) => String((r as { dist_id: unknown }).dist_id),
     )
+    const keptWithSupply = dedupedDists.rows.filter((r) => "total_minted" in r)
+    const keptNoSupply = dedupedDists.rows.filter((r) => !("total_minted" in r))
     let distWritten = 0
-    for (let i = 0; i < dedupedDists.rows.length; i += 500) {
-      const chunk = dedupedDists.rows.slice(i, i + 500)
-      const { error: de } = await supabase
-        .from("pack_distributions")
-        .upsert(chunk, { onConflict: "dist_id,collection_id" })
-      if (de) throw new Error(`upsert pack_distributions: ${de.message}`)
-      distWritten += chunk.length
+    for (const batch of [keptWithSupply, keptNoSupply]) {
+      for (let i = 0; i < batch.length; i += 500) {
+        const chunk = batch.slice(i, i + 500)
+        const { error: de } = await supabase
+          .from("pack_distributions")
+          .upsert(chunk, { onConflict: "dist_id,collection_id" })
+        if (de) throw new Error(`upsert pack_distributions: ${de.message}`)
+        distWritten += chunk.length
+      }
     }
 
     // === Phase 3b: bulk insert pack_ev_history ===
@@ -345,13 +356,14 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       const { error: evErr } = await supabase.from("pack_ev_history").insert(evRows)
       if (evErr) {
         await logPipelineRun({
-          startedAt: startedAtIso, rowsFound: nodes.length, rowsWritten: distWritten, rowsSkipped: nodes.length,
+          startedAt: startedAtIso, rowsFound: walk.dists.length, rowsWritten: distWritten, rowsSkipped: walk.dists.length,
           ok: false, error: `insert pack_ev_history: ${evErr.message}`,
           extra: {
             counters, dist_written: distWritten,
             dist_dupe_count: dedupedDists.duplicates,
             dist_dupe_sample: dedupedDists.duplicateKeys,
-            elapsed_ms: Date.now() - started, function_version: 2,
+            elapsed_ms: Date.now() - started, function_version: FUNCTION_VERSION,
+            source: "atlas", atlas_requests: atlasRequests,
           },
         })
         return
@@ -361,10 +373,14 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
 
     await logPipelineRun({
       startedAt: startedAtIso,
-      rowsFound: nodes.length,
+      rowsFound: walk.dists.length,
       rowsWritten: evWritten,
-      rowsSkipped: counters.nodes_no_editions + counters.nodes_no_fmv_coverage,
-      ok: true,
+      rowsSkipped: counters.nodes_no_editions + counters.nodes_no_fmv_coverage +
+        counters.nodes_pool_read_failed + counters.nodes_price_or_slots_unknown,
+      // ok = every listed distribution was read and written. A pool that could not
+      // be read (its HTTP status is in the error) or a malformed Atlas row fails it.
+      ok: poolReadErrors.length === 0 && walk.malformed === 0,
+      error: runErrorText(poolReadErrors, walk.malformed),
       extra: {
         ...counters,
         dist_written: distWritten,
@@ -373,10 +389,13 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         editions_resolved: renderByEditionId.size,
         editions_requested: allEditionIds.size,
         elapsed_ms: Date.now() - started,
-        function_version: 2,
+        function_version: FUNCTION_VERSION,
         ev_method: "supply_weighted_inline",
         total_count: totalCount,
         pages_fetched: pages,
+        source: "atlas",
+        atlas_requests: atlasRequests,
+        pool_read_errors_sample: poolReadErrors.slice(0, 3),
       },
     })
   } catch (err) {
@@ -385,7 +404,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
     await logPipelineRun({
       startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
       ok: false, error: msg,
-      extra: { elapsed_ms: Date.now() - started, function_version: 2 },
+      extra: { elapsed_ms: Date.now() - started, function_version: FUNCTION_VERSION, source: "atlas" },
     })
   }
 }
