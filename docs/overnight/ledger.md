@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-19 ~8:31 AM PT — Candy ghost purge ranks only duplicated moments: 15.8 s instead of 70–120 s (Claude Code cloud; Trevor: "Keep going and make your own decisions"; inbox 11-19T1605Z)
+- **Why:** `purge_candy_wmc_ghost_rows()` (pg_cron `rpc-candy-wmc-ghost-purge`, 1:10 AM PT) window-ranked all ~1.37M Candy wmc rows; runs took 70–109 s for 10 days against its 120 s timeout and FAILED at 120 s on 11-19. A trend, not an IO blip: the ranked read alone ran >64 s this morning (cancelled).
+- **Shipped:** migration `20261119110000_audit_20261119_candy_ghost_purge_ranks_only_duplicated_moments.sql` (commit 234c4cbcd, md5 1e9ab09a verified; live b8b71bdf re-checked = pinned file before the replace → 4fe88862): find `moment_id`s with a second Candy row first (`GROUP BY … HAVING count(*) > 1`, 10.4 s, 7 found), rank and delete only within them. Exactly equivalent; same survivor rule and Candy scope. Pinned test unchanged and passing on the new body (defect `HAVING > 2` reds it); drift pin re-pointed; grants stated (service_role only, as before).
+- **Data:** ran it once by hand (the 1:10 AM run had failed): **7 superseded rows deleted, 15.8 s**.
+- **Revert:** re-create from `20260815203600_audit_20260815_snapshot_purge_candy_wmc_ghost_rows.sql` (the 7 deleted rows were ghosts of transferred mints; the newer owner rows remain).
+
 ### 2026-11-19 ~7:21 AM PT — pack-pulls 4xx alert text names Atlas, not Studio (Claude Code cloud; Trevor: "Keep going", #218)
 - **Shipped:** migration `20261119103000_audit_20261119_pack_pulls_4xx_arm_names_atlas.sql` (commit b1feb1b9f, md5 2f71373c verified): md5-guarded splice (live e597af8e → 55c00a2b) of ONE detail string in `check_edge_fn_http_failures()` — "request_wallet_pack_pulls -> studio-platform GraphQL" → "-> Atlas PackService/NFTService" (the lane moved 11-18, 20261119050000). Severity logic untouched. Verified: function returns its 10 rows.
 - **Revert:** the same splice with the strings swapped back.
