@@ -1,7 +1,8 @@
 // lib/chains/flow/allday-studio-holdings.ts
 //
-// AllDay wallet holdings from the Dapper studio-platform GraphQL — the ONLY
-// source that can see LOCKED moments.
+// AllDay wallet holdings from Dapper's custody index — the ONLY source that can
+// see LOCKED moments. Read from Studio GraphQL until 2026-11-17, from Atlas since
+// 2026-11-18 (see the #218 note below the history).
 //
 // WHY THIS EXISTS
 // ---------------
@@ -46,16 +47,26 @@
 // `serial_number` matched the on-chain `editionID` / `serialNumber` exactly
 // (32 agree / 0 disagree), so unioned rows carry a consistent edition_key.
 
-const STUDIO_GQL = "https://api.production.studio-platform.dapperlabs.com/graphql"
-const ORIGIN = "https://nflallday.com"
+// ── 2026-11-18 (#218): THE SOURCE IS NOW ATLAS, NOT STUDIO ─────────────────
+// Studio GraphQL (searchAllDayNft) has answered HTTP 530 since 11-17, which made
+// this walk ok:false on EVERY wallet: locked moments went missing from new scans
+// and the caller skipped delete-not-seen for every All Day wallet. Dapper's Atlas
+// API (NFTService/SearchNftsByOwner, product 'nfl') is the same custody index:
+// it answers nfts[{id, editionId, serialNumber, isLocked}] + pagination{totalCount,
+// hasMore} for a BARE-hex owner, with `limit` clamped to 100 (measured 11-18;
+// 0xbd94cade097e50ac totalCount 3807, 0xdcd41c74d2dd0a66 its 3 locked moments).
+// Vercel's egress is firewalled by Atlas, so a page is one pg_net round trip:
+// atlas_allday_nfts_by_owner_begin + the shared atlas_await_response. Everything
+// said above about STALENESS still holds: augment the chain, never replace it,
+// never delete from it. The export names keep "Studio" so the caller's telemetry
+// (studio_ok, studio_count, …) stays comparable across the switch.
 
-// Page size 500 is validated against a 3,707-moment wallet (0xbd94cade097e50ac)
-// — 8 pages, no error. MAX_PAGES bounds a pathological wallet; the elapsed
-// budget is the real limiter.
-const PAGE_SIZE = 500
-const MAX_PAGES = 120
-const PER_REQUEST_TIMEOUT_MS = 20_000
-const INTER_PAGE_DELAY_MS = 150
+// Atlas clamps limit to 100. 200 pages = 20,000 moments; the elapsed budget is
+// the real limiter. Pages go out in waves of PAGE_CONCURRENCY after page 0 has
+// told us the total, so a 3,807-moment wallet is 1 + 5 waves, not 39 round trips.
+const PAGE_SIZE = 100
+const MAX_PAGES = 200
+const PAGE_CONCURRENCY = 8
 const ELAPSED_BUDGET_MS = 60_000
 
 /** [nftId, editionId, serialNumber] — same tuple shape the Cadence details script returns. */
@@ -65,7 +76,7 @@ export interface StudioHoldingsResult {
   /** false when the walk failed or was cut short; callers must NOT treat a failed walk as "no locked moments". */
   ok: boolean
   triples: HoldingTriple[]
-  /** studio's reported total for the owner (page-1 value), null when unknown. */
+  /** the index's reported total for the owner (page-1 value), null when unknown. */
   totalCount: number | null
   pagesFetched: number
   /** true when MAX_PAGES / the elapsed budget stopped the walk before the end. */
@@ -73,146 +84,152 @@ export interface StudioHoldingsResult {
   error?: string
 }
 
-/** studio stores owner_address as bare hex. Stripping is mandatory — see the header note. */
+/** The custody index stores owner addresses as bare hex. Stripping is mandatory — see the header note. */
 export function stripFlowPrefix(address: string): string {
   return address.trim().replace(/^0x/i, "").toLowerCase()
 }
 
-const HOLDINGS_QUERY = `
-query AllDayHoldings($input: SearchAllDayNftsInput!) {
-  searchAllDayNft(searchInput: $input) {
-    totalCount
-    edges {
-      cursor
-      node {
-        id
-        serial_number
-        edition { id }
-      }
-    }
-  }
-}`
-
-interface StudioEdge {
-  cursor?: string | null
-  node?: {
-    id?: string | number | null
-    serial_number?: string | number | null
-    edition?: { id?: string | number | null } | null
-  } | null
+export interface AtlasNftNode {
+  id?: string | number | null
+  editionId?: string | number | null
+  serialNumber?: string | number | null
 }
 
-function delay(ms: number) {
-  return new Promise<void>((r) => setTimeout(r, ms))
+export interface AtlasOwnerPage {
+  nfts: AtlasNftNode[]
+  totalCount: number | null
+  hasMore: boolean
 }
 
-async function postStudio(
-  variables: Record<string, unknown>,
-  fetchImpl: typeof fetch,
-): Promise<{ edges: StudioEdge[]; totalCount: number | null }> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), PER_REQUEST_TIMEOUT_MS)
-  try {
-    const res = await fetchImpl(STUDIO_GQL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Origin: ORIGIN,
-        Referer: `${ORIGIN}/`,
-      },
-      body: JSON.stringify({ query: HOLDINGS_QUERY, variables }),
-      signal: controller.signal,
-    })
-    const text = await res.text()
-    if (!res.ok) {
-      throw new Error(`studio http_${res.status}: ${text.slice(0, 160)}`)
-    }
-    const json = JSON.parse(text)
-    if (json?.errors?.length) {
-      throw new Error(
-        `studio gql_errors: ${json.errors.map((e: any) => e?.message).filter(Boolean).join("; ").slice(0, 200)}`,
-      )
-    }
-    const payload = json?.data?.searchAllDayNft
-    if (!payload) throw new Error("studio returned no searchAllDayNft payload")
-    const rawTotal = payload.totalCount
-    const total = rawTotal == null ? null : Number(rawTotal)
-    return {
-      edges: Array.isArray(payload.edges) ? payload.edges : [],
-      totalCount: Number.isFinite(total as number) ? (total as number) : null,
-    }
-  } finally {
-    clearTimeout(timer)
+/** Fetch one page (offset is a multiple of PAGE_SIZE). THROWS on any failure. */
+export type AtlasOwnerPageFetcher = (owner: string, offset: number) => Promise<AtlasOwnerPage>
+
+/** Parse an Atlas SearchNftsByOwner body. A body without an `nfts` array is a failure, not "holds nothing". */
+export function parseAtlasOwnerPage(body: unknown): AtlasOwnerPage {
+  const b = body as { nfts?: unknown; pagination?: { totalCount?: unknown; hasMore?: unknown } } | null
+  if (!b || !Array.isArray(b.nfts)) throw new Error("atlas response carried no nfts array")
+  const rawTotal = b.pagination?.totalCount
+  const total = rawTotal == null ? null : Number(rawTotal)
+  return {
+    nfts: b.nfts as AtlasNftNode[],
+    totalCount: total !== null && Number.isFinite(total) ? total : null,
+    hasMore: b.pagination?.hasMore === true,
   }
+}
+
+/** The production fetcher: one pg_net round trip; a Cloudflare challenge (403/429) is retried once. */
+export const atlasOwnerPageViaPgNet: AtlasOwnerPageFetcher = async (owner, offset) => {
+  // Lazy import keeps this module importable by unit tests with no Supabase env.
+  const { supabaseAdmin } = await import("@/lib/supabase")
+  const { boundedRead } = await import("@/lib/api/bounded-read")
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabaseAdmin as any
+  let last = "no response"
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const begin = await boundedRead(
+      db.rpc("atlas_allday_nfts_by_owner_begin", { p_wallet: `0x${owner}`, p_offset: offset }),
+      "allday-holdings/atlas-begin",
+      5_000,
+    )
+    if (begin.error) throw new Error(`atlas begin: ${begin.error.message ?? "failed"}`)
+    const id = Number(begin.data)
+    if (!Number.isFinite(id) || id <= 0) throw new Error("atlas begin returned no request id")
+    const col = await boundedRead(
+      db.rpc("atlas_await_response", { p_request_id: id, p_max_ms: 10_000 }),
+      "allday-holdings/atlas-await",
+      14_000,
+    )
+    if (col.error) throw new Error(`atlas await: ${col.error.message ?? "failed"}`)
+    const env = col.data as { ok?: boolean; body?: unknown; status?: number | null } | null
+    if (env?.ok === true) return parseAtlasOwnerPage(env.body)
+    last = env?.status != null ? `atlas http_${env.status}` : "atlas no response"
+    if (!(env?.status === 403 || env?.status === 429)) break
+  }
+  throw new Error(last)
 }
 
 /**
- * Walk every AllDay moment studio-platform attributes to `wallet`, including
+ * Walk every AllDay moment the custody index attributes to `wallet`, including
  * Dapper-custodied (locked) moments the on-chain collection cannot expose.
  *
- * FAIL-SOFT BY CONTRACT: never throws. A studio outage must not turn a working
- * on-chain backfill into a failed one, so the caller gets ok:false + an empty
- * triple list and proceeds with the chain result alone.
+ * FAIL-SOFT BY CONTRACT: never throws. An index outage must not turn a working
+ * on-chain backfill into a failed one, so the caller gets ok:false and proceeds
+ * with the chain result alone (and skips delete-not-seen).
  */
 export async function fetchAllDayStudioHoldings(
   wallet: string,
-  opts: { fetchImpl?: typeof fetch; now?: () => number } = {},
+  opts: { fetchPage?: AtlasOwnerPageFetcher; now?: () => number } = {},
 ): Promise<StudioHoldingsResult> {
-  const fetchImpl = opts.fetchImpl ?? fetch
+  const fetchPage = opts.fetchPage ?? atlasOwnerPageViaPgNet
   const now = opts.now ?? Date.now
   const startedMs = now()
   const owner = stripFlowPrefix(wallet)
 
   const triples: HoldingTriple[] = []
   const seen = new Set<string>()
-  let after: string | null = null
+  // Every distinct id the index RETURNED, usable or not — the completeness check below.
+  const returned = new Set<string>()
   let totalCount: number | null = null
   let pagesFetched = 0
   let truncated = false
 
-  if (!owner) {
-    return { ok: false, triples: [], totalCount: null, pagesFetched: 0, truncated: false, error: "empty_wallet" }
+  if (!/^[0-9a-f]{16}$/.test(owner)) {
+    return { ok: false, triples: [], totalCount: null, pagesFetched: 0, truncated: false, error: owner ? "bad_wallet" : "empty_wallet" }
+  }
+
+  const take = (page: AtlasOwnerPage) => {
+    pagesFetched++
+    for (const node of page.nfts) {
+      const nftId = node?.id == null ? null : String(node.id)
+      if (nftId) returned.add(nftId)
+      const editionId = node?.editionId == null ? null : String(node.editionId)
+      // "0" is Atlas's empty value, never a real id.
+      if (!nftId || nftId === "0" || !editionId || editionId === "0") continue
+      if (seen.has(nftId)) continue
+      seen.add(nftId)
+      const serialRaw = node?.serialNumber
+      triples.push([nftId, editionId, serialRaw == null ? "" : String(serialRaw)])
+    }
   }
 
   try {
-    for (let page = 0; page < MAX_PAGES; page++) {
-      if (now() - startedMs > ELAPSED_BUDGET_MS) {
-        truncated = true
-        break
-      }
-      const input: Record<string, unknown> = {
-        first: PAGE_SIZE,
-        filters: [{ owner_address: { eq: owner } }],
-      }
-      if (after) input.after = after
+    const first = await fetchPage(owner, 0)
+    totalCount = first.totalCount
+    take(first)
 
-      const { edges, totalCount: pageTotal } = await postStudio({ input }, fetchImpl)
-      pagesFetched++
-      // studio's totalCount is the true total on page 1 and then decrements as a
-      // per-page remaining count, so page 1 is the one to keep.
-      if (totalCount === null && pageTotal !== null) totalCount = pageTotal
-      if (edges.length === 0) break
-
-      for (const edge of edges) {
-        const node = edge?.node
-        const nftId = node?.id == null ? null : String(node.id)
-        const editionId = node?.edition?.id == null ? null : String(node.edition.id)
-        if (!nftId || !editionId) continue
-        if (seen.has(nftId)) continue
-        seen.add(nftId)
-        const serialRaw = node?.serial_number
-        const serial = serialRaw == null ? "" : String(serialRaw)
-        triples.push([nftId, editionId, serial])
+    if (first.hasMore || (totalCount !== null && totalCount > PAGE_SIZE)) {
+      // Without a total there is no way to plan the waves, and walking blind on
+      // hasMore alone is how a short page used to end a walk early: refuse it.
+      if (totalCount === null) throw new Error("atlas reported more pages but no totalCount")
+      const pagesNeeded = Math.ceil(totalCount / PAGE_SIZE)
+      const lastPage = Math.min(pagesNeeded, MAX_PAGES)
+      if (pagesNeeded > MAX_PAGES) truncated = true
+      for (let p = 1; p < lastPage; p += PAGE_CONCURRENCY) {
+        if (now() - startedMs > ELAPSED_BUDGET_MS) {
+          truncated = true
+          break
+        }
+        const wave: number[] = []
+        for (let q = p; q < Math.min(p + PAGE_CONCURRENCY, lastPage); q++) wave.push(q * PAGE_SIZE)
+        const pages = await Promise.all(wave.map((offset) => fetchPage(owner, offset)))
+        for (const pg of pages) take(pg)
       }
-
-      const nextCursor = edges[edges.length - 1]?.cursor
-      if (!nextCursor) break
-      after = nextCursor
-      if (totalCount !== null && triples.length >= totalCount) break
-      if (page === MAX_PAGES - 1) truncated = true
-      await delay(INTER_PAGE_DELAY_MS)
     }
 
+    // A walk that RETURNED fewer distinct moments than the index says the wallet
+    // holds is not the holdings — offset paging that shifted under a concurrent
+    // transfer, or pages answering the same rows. ok:false keeps the caller from
+    // deleting on it (the direction that loses data).
+    if (!truncated && totalCount !== null && returned.size < totalCount) {
+      return {
+        ok: false,
+        triples,
+        totalCount,
+        pagesFetched,
+        truncated,
+        error: `short walk: ${returned.size} of ${totalCount} returned`,
+      }
+    }
     return { ok: !truncated, triples, totalCount, pagesFetched, truncated }
   } catch (err) {
     return {

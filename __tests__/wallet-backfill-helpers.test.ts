@@ -28,6 +28,9 @@ const H = vi.hoisted(() => {
     // lock + fcl + username-resolve
     lockClaim: true as boolean | "db_saturated",
     fclQuery: (async () => []) as (arg?: any) => Promise<any>,
+    // The All Day custody walk (Atlas SearchNftsByOwner via pg_net, #218):
+    // null = no answer configured; {status} = Atlas failed with that HTTP status.
+    atlas: null as null | { nodes: Array<[string, string, string]>; total: number } | { status: number },
     usernameOutcome: { found: false, reason: "not_found" } as any,
     // captured
     rpcCalls: [] as Array<{ name: string; params: any }>,
@@ -114,6 +117,25 @@ const H = vi.hoisted(() => {
       rpc: async (name: string, params: any) => {
         state.rpcCalls.push({ name, params })
         if (name === "upsert_wmc_batch") return state.upsertResult
+        // pg_net request id = offset + 1, so the await knows which page it is.
+        if (name === "atlas_allday_nfts_by_owner_begin") return { data: params.p_offset + 1, error: null }
+        if (name === "atlas_await_response") {
+          const a = state.atlas
+          if (!a) return { data: { ok: false, status: null, error: "no response" }, error: null }
+          if ("status" in a) return { data: { ok: false, status: a.status, error: `HTTP ${a.status}` }, error: null }
+          const offset = params.p_request_id - 1
+          const nodes = offset === 0 || a.nodes.length > offset ? a.nodes.slice(offset, offset + 100) : a.nodes.slice(0, 100)
+          return {
+            data: {
+              ok: true,
+              body: {
+                nfts: nodes.map(([id, editionId, serialNumber]: [string, string, string]) => ({ id, editionId, serialNumber })),
+                pagination: { totalCount: String(a.total), hasMore: offset + 100 < a.total },
+              },
+            },
+            error: null,
+          }
+        }
         if (
           name === "backfill_wmc_metadata_from_editions" ||
           name === "backfill_pinnacle_wmc_metadata_from_editions"
@@ -227,6 +249,7 @@ beforeEach(() => {
   H.state.seededWalletRows = []
   H.state.lockClaim = true
   H.state.fclQuery = async () => []
+  H.state.atlas = null
   H.state.usernameOutcome = { found: false, reason: "not_found" }
   H.state.rpcCalls = []
   H.state.wmcDeletes = []
@@ -1717,26 +1740,9 @@ describe("delete-not-seen (wmc phantom holdings)", () => {
 describe("runAllDayDetailsBackfill — studio custody union", () => {
   const STUDIO_CFG = { ...CFG, studioCustodyHoldings: true }
 
-  function studioResponse(
-    nodes: Array<[string, string, string]>,
-    totalCount: number = nodes.length,
-  ) {
-    return {
-      ok: true,
-      status: 200,
-      text: async () =>
-        JSON.stringify({
-          data: {
-            searchAllDayNft: {
-              totalCount,
-              edges: nodes.map(([id, editionId, serial]) => ({
-                cursor: `c_${id}`,
-                node: { id, serial_number: serial, edition: { id: editionId } },
-              })),
-            },
-          },
-        }),
-    }
+  // The custody walk now reads Atlas through pg_net (#218); the helper keeps its name.
+  function studioResponse(nodes: Array<[string, string, string]>, totalCount: number = nodes.length) {
+    H.state.atlas = { nodes, total: totalCount }
   }
 
   function upsertRows() {
@@ -1746,13 +1752,11 @@ describe("runAllDayDetailsBackfill — studio custody union", () => {
 
   it("recovers locked moments when the chain sees NOTHING (the reported bug)", async () => {
     H.state.fclQuery = async () => []
-    ;(fetch as any).mockResolvedValue(
-      studioResponse([
+    studioResponse([
         ["6590418", "2813", "1"],
         ["6605288", "2783", "59"],
         ["5847644", "2392", "355"],
-      ]),
-    )
+      ])
     H.state.upsertResult = { data: { written: 3 }, error: null }
 
     const out = await runAllDayDetailsBackfill(baseArgs({ config: STUDIO_CFG }))
@@ -1769,7 +1773,7 @@ describe("runAllDayDetailsBackfill — studio custody union", () => {
 
   it("keeps on_chain_count honest while reporting what studio added", async () => {
     H.state.fclQuery = async () => [["100", "42", "7"]]
-    ;(fetch as any).mockResolvedValue(studioResponse([["200", "43", "8"]]))
+    studioResponse([["200", "43", "8"]])
     H.state.upsertResult = { data: { written: 2 }, error: null }
 
     await runAllDayDetailsBackfill(baseArgs({ config: STUDIO_CFG }))
@@ -1785,7 +1789,7 @@ describe("runAllDayDetailsBackfill — studio custody union", () => {
 
   it("lets the CHAIN win on conflict — studio owner_address can be stale", async () => {
     H.state.fclQuery = async () => [["100", "999", "7"]]
-    ;(fetch as any).mockResolvedValue(studioResponse([["100", "111", "42"]]))
+    studioResponse([["100", "111", "42"]])
     H.state.upsertResult = { data: { written: 1 }, error: null }
 
     await runAllDayDetailsBackfill(baseArgs({ config: STUDIO_CFG }))
@@ -1800,7 +1804,7 @@ describe("runAllDayDetailsBackfill — studio custody union", () => {
   // FAIL-SOFT: a studio outage must never break a working on-chain backfill.
   it("still writes the on-chain result when studio fails", async () => {
     H.state.fclQuery = async () => [["100", "42", "7"]]
-    ;(fetch as any).mockResolvedValue({ ok: false, status: 503, text: async () => "down" })
+    H.state.atlas = { status: 503 }
     H.state.upsertResult = { data: { written: 1 }, error: null }
 
     const out = await runAllDayDetailsBackfill(baseArgs({ config: STUDIO_CFG }))
@@ -1814,7 +1818,7 @@ describe("runAllDayDetailsBackfill — studio custody union", () => {
 
   it("does not call studio at all for collections that have not opted in", async () => {
     H.state.fclQuery = async () => [["100", "42", "7"]]
-    ;(fetch as any).mockResolvedValue(studioResponse([["999", "1", "1"]]))
+    studioResponse([["999", "1", "1"]])
     H.state.upsertResult = { data: { written: 1 }, error: null }
 
     // CFG (no studioCustodyHoldings) — Golazos/Pinnacle behaviour is untouched.
@@ -1823,11 +1827,12 @@ describe("runAllDayDetailsBackfill — studio custody union", () => {
     expect(upsertRows()).toHaveLength(1)
     expect(lastLog().p_extra.studio_added).toBeUndefined()
     expect(lastLog().p_extra.studio_ok).toBeUndefined()
+    expect(H.state.rpcCalls.some((c: any) => c.name === "atlas_allday_nfts_by_owner_begin")).toBe(false)
   })
 
   it("a wallet genuinely empty in BOTH sources still logs the clean empty path", async () => {
     H.state.fclQuery = async () => []
-    ;(fetch as any).mockResolvedValue(studioResponse([], 0))
+    studioResponse([], 0)
 
     const out = await runAllDayDetailsBackfill(baseArgs({ config: STUDIO_CFG }))
 
@@ -1845,7 +1850,7 @@ describe("runAllDayDetailsBackfill — studio custody union", () => {
   // "these moments left the wallet".
   it("keeps a LOCKED moment that only studio can see — it was observed, not departed", async () => {
     H.state.fclQuery = async () => [["100", "42", "7"]]
-    ;(fetch as any).mockResolvedValue(studioResponse([["200", "43", "8"]]))
+    studioResponse([["200", "43", "8"]])
     // 100 on chain, 200 locked via studio, 300 genuinely gone.
     H.state.cachedRows = [{ moment_id: "100" }, { moment_id: "200" }, { moment_id: "300" }]
 
@@ -1857,7 +1862,7 @@ describe("runAllDayDetailsBackfill — studio custody union", () => {
 
   it("does NOT delete when the custody walk degraded — its missing ids are not evidence of a sale", async () => {
     H.state.fclQuery = async () => [["100", "42", "7"]]
-    ;(fetch as any).mockResolvedValue({ ok: false, status: 503, text: async () => "down" })
+    H.state.atlas = { status: 503 }
     H.state.cachedRows = [{ moment_id: "100" }, { moment_id: "200" }]
 
     const out = await runAllDayDetailsBackfill(baseArgs({ config: STUDIO_CFG, skipCached: false }))
@@ -2011,12 +2016,6 @@ describe("deleteUnseenWmcRows — confirmCompleteness past the cap (2026-10-14)"
 // complete AND an independent on-chain getIDs() count equals the walk's on-chain half.
 describe("runAllDayDetailsBackfill — cap confirmation (#191)", () => {
   const STUDIO_CFG = { ...CFG, studioCustodyHoldings: true }
-  const studio = (nodes: Array<[string, string, string]>, totalCount = nodes.length) => ({
-    ok: true,
-    status: 200,
-    text: async () =>
-      JSON.stringify({ data: { searchAllDayNft: { totalCount, edges: nodes.map(([id, e, s]) => ({ cursor: `c_${id}`, node: { id, serial_number: s, edition: { id: e } } })) } } }),
-  })
   const route = (onChainCount: number | Error, studioNodes: Array<[string, string, string]>, totalCount?: number) => {
     let countCalls = 0
     ;(fetch as any).mockImplementation(async (url: string) => {
@@ -2025,8 +2024,9 @@ describe("runAllDayDetailsBackfill — cap confirmation (#191)", () => {
         if (onChainCount instanceof Error) throw onChainCount
         return flowIntResponse(onChainCount)
       }
-      return studio(studioNodes, totalCount)
+      return { ok: false, status: 599, text: async () => "unexpected fetch" }
     })
+    H.state.atlas = { nodes: studioNodes, total: totalCount ?? studioNodes.length }
     return () => countCalls
   }
   const cached150 = () => Array.from({ length: 150 }, (_, i) => ({ moment_id: String(1000 + i), edition_key: "e" }))

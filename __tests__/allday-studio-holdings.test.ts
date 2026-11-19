@@ -3,42 +3,37 @@ import {
   fetchAllDayStudioHoldings,
   unionHoldingTriples,
   stripFlowPrefix,
+  parseAtlasOwnerPage,
+  type AtlasOwnerPage,
 } from "@/lib/chains/flow/allday-studio-holdings"
 
-// Builds a studio-shaped GQL response page.
-function page(nodes: Array<[string, string, string]>, totalCount: number | null = null) {
+// 2026-11-18 (#218): the custody walk reads Atlas NFTService/SearchNftsByOwner
+// (Studio GraphQL is HTTP 530). Atlas clamps limit to 100 and pages by offset.
+const W = "0xdcd41c74d2dd0a66"
+
+type Node = [string | null, string | null, string]
+function pageOf(nodes: Node[], totalCount: number | null, hasMore = false): AtlasOwnerPage {
   return {
-    data: {
-      searchAllDayNft: {
-        totalCount,
-        edges: nodes.map(([id, editionId, serial]) => ({
-          cursor: `cur_${id}`,
-          node: { id, serial_number: serial, edition: { id: editionId } },
-        })),
-      },
-    },
+    nfts: nodes.map(([id, editionId, serialNumber]) => ({ id, editionId, serialNumber })),
+    totalCount,
+    hasMore,
   }
 }
 
-function mockFetch(pages: unknown[]) {
-  const calls: Array<{ url: string; body: any; headers: any }> = []
-  let i = 0
-  const impl = vi.fn(async (url: any, init: any) => {
-    calls.push({ url: String(url), body: JSON.parse(init.body), headers: init.headers })
-    const payload = pages[Math.min(i, pages.length - 1)]
-    i++
-    return {
-      ok: true,
-      status: 200,
-      text: async () => JSON.stringify(payload),
-    } as any
+/** A fetcher serving a wallet of `total` moments, 100 per offset page. */
+function walletOf(total: number) {
+  const calls: Array<{ owner: string; offset: number }> = []
+  const fetchPage = vi.fn(async (owner: string, offset: number) => {
+    calls.push({ owner, offset })
+    const nodes: Node[] = []
+    for (let i = offset; i < Math.min(offset + 100, total); i++) nodes.push([String(1000 + i), String(i % 7 + 1), String(i + 1)])
+    return pageOf(nodes, total, offset + 100 < total)
   })
-  return { impl: impl as unknown as typeof fetch, calls }
+  return { fetchPage, calls }
 }
 
 describe("stripFlowPrefix", () => {
-  // THE footgun: studio stores owner_address as bare hex. A 0x-prefixed query
-  // returns totalCount 0 — a silent empty, not an error.
+  // THE footgun: the custody index stores owner addresses as bare hex.
   it("strips the 0x prefix and lowercases", () => {
     expect(stripFlowPrefix("0xDCD41C74D2DD0A66")).toBe("dcd41c74d2dd0a66")
     expect(stripFlowPrefix("dcd41c74d2dd0a66")).toBe("dcd41c74d2dd0a66")
@@ -46,26 +41,36 @@ describe("stripFlowPrefix", () => {
   })
 })
 
-describe("fetchAllDayStudioHoldings", () => {
-  it("queries studio with BARE-hex owner_address, never 0x-prefixed", async () => {
-    const { impl, calls } = mockFetch([page([["6590418", "2813", "1"]], 1)])
-    const res = await fetchAllDayStudioHoldings("0xdcd41c74d2dd0a66", { fetchImpl: impl })
+describe("parseAtlasOwnerPage", () => {
+  it("reads nfts + pagination (Atlas sends counts as strings)", () => {
+    const p = parseAtlasOwnerPage({
+      nfts: [{ id: "6605288", editionId: "2783", serialNumber: "59" }],
+      pagination: { limit: "100", offset: "0", hasMore: false, totalCount: "3" },
+    })
+    expect(p.totalCount).toBe(3)
+    expect(p.hasMore).toBe(false)
+    expect(p.nfts).toHaveLength(1)
+  })
 
+  // An answer without the array is a failure, not a wallet holding nothing.
+  it("throws on a body with no nfts array rather than reading it as empty", () => {
+    expect(() => parseAtlasOwnerPage({ pagination: { totalCount: "0" } })).toThrow(/no nfts/)
+    expect(() => parseAtlasOwnerPage(null)).toThrow(/no nfts/)
+  })
+})
+
+describe("fetchAllDayStudioHoldings (Atlas)", () => {
+  it("asks for the BARE-hex owner, never 0x-prefixed", async () => {
+    const { fetchPage, calls } = walletOf(3)
+    const res = await fetchAllDayStudioHoldings(W, { fetchPage })
     expect(res.ok).toBe(true)
-    const filters = calls[0].body.variables.input.filters
-    expect(filters[0].owner_address.eq).toBe("dcd41c74d2dd0a66")
-    expect(filters[0].owner_address.eq).not.toMatch(/^0x/)
+    expect(calls[0].owner).toBe("dcd41c74d2dd0a66")
+    expect(calls[0].offset).toBe(0)
   })
 
-  it("sends the Origin header studio requires", async () => {
-    const { impl, calls } = mockFetch([page([], 0)])
-    await fetchAllDayStudioHoldings("0xabc", { fetchImpl: impl })
-    expect(calls[0].headers.Origin).toBe("https://nflallday.com")
-  })
-
-  it("returns [nftId, editionId, serial] triples", async () => {
-    const { impl } = mockFetch([
-      page(
+  it("returns [nftId, editionId, serial] triples (the ThunderHour locked set)", async () => {
+    const fetchPage = vi.fn(async () =>
+      pageOf(
         [
           ["6590418", "2813", "1"],
           ["6605288", "2783", "59"],
@@ -73,8 +78,8 @@ describe("fetchAllDayStudioHoldings", () => {
         ],
         3,
       ),
-    ])
-    const res = await fetchAllDayStudioHoldings("0xdcd41c74d2dd0a66", { fetchImpl: impl })
+    )
+    const res = await fetchAllDayStudioHoldings(W, { fetchPage })
     expect(res.ok).toBe(true)
     expect(res.triples).toEqual([
       ["6590418", "2813", "1"],
@@ -82,88 +87,110 @@ describe("fetchAllDayStudioHoldings", () => {
       ["5847644", "2392", "355"],
     ])
     expect(res.totalCount).toBe(3)
+    expect(fetchPage).toHaveBeenCalledTimes(1)
   })
 
-  it("paginates via cursor until totalCount is satisfied", async () => {
-    const { impl, calls } = mockFetch([
-      page([["1", "10", "5"]], 2),
-      page([["2", "11", "6"]], 1),
-    ])
-    const res = await fetchAllDayStudioHoldings("0xabc", { fetchImpl: impl })
+  it("walks EVERY offset page of a wallet larger than one page (3,807 moments = 39 pages)", async () => {
+    const { fetchPage, calls } = walletOf(3807)
+    const res = await fetchAllDayStudioHoldings(W, { fetchPage })
+    expect(res.ok).toBe(true)
+    expect(res.triples).toHaveLength(3807)
+    expect(res.pagesFetched).toBe(39)
+    const offsets = calls.map((c) => c.offset).sort((a, b) => a - b)
+    expect(offsets).toEqual(Array.from({ length: 39 }, (_, i) => i * 100))
+  })
+
+  it("an exact multiple of the page size fetches no phantom extra page", async () => {
+    const { fetchPage, calls } = walletOf(200)
+    const res = await fetchAllDayStudioHoldings(W, { fetchPage })
+    expect(res.triples).toHaveLength(200)
+    expect(calls.map((c) => c.offset)).toEqual([0, 100])
+  })
+
+  it("de-dupes an id repeated across pages", async () => {
+    const fetchPage = vi.fn(async (_o: string, offset: number) =>
+      offset === 0 ? pageOf([["1", "10", "5"]], 150, true) : pageOf([["1", "10", "5"], ["2", "11", "6"]], 150),
+    )
+    const res = await fetchAllDayStudioHoldings(W, { fetchPage })
     expect(res.triples.map((t) => t[0])).toEqual(["1", "2"])
-    // page 2 must resume from page 1's last cursor
-    expect(calls[1].body.variables.input.after).toBe("cur_1")
-    // totalCount is taken from page 1 (studio decrements it per page)
-    expect(res.totalCount).toBe(2)
   })
 
-  it("stops on an empty page without spinning", async () => {
-    const { impl, calls } = mockFetch([page([["1", "10", "5"]], 99), page([], 99)])
-    const res = await fetchAllDayStudioHoldings("0xabc", { fetchImpl: impl })
-    expect(res.triples).toHaveLength(1)
-    expect(calls.length).toBe(2)
-  })
-
-  it("de-dupes repeated nft ids across pages", async () => {
-    const { impl } = mockFetch([
-      page([["1", "10", "5"]], 3),
-      page([["1", "10", "5"]], 2),
-      page([], 1),
-    ])
-    const res = await fetchAllDayStudioHoldings("0xabc", { fetchImpl: impl })
-    expect(res.triples).toHaveLength(1)
-  })
-
-  // FAIL-SOFT CONTRACT: a studio outage must never break the on-chain backfill.
-  it("never throws on an HTTP error — returns ok:false", async () => {
-    const impl = vi.fn(async () => ({
-      ok: false,
-      status: 503,
-      text: async () => "upstream unavailable",
-    })) as unknown as typeof fetch
-    const res = await fetchAllDayStudioHoldings("0xabc", { fetchImpl: impl })
+  // FAIL-SOFT CONTRACT: an index outage must never break the on-chain backfill,
+  // and must never read as "this wallet has no locked moments" (ok stays false,
+  // which is what keeps the caller from deleting).
+  it("never throws when the first page fails — returns ok:false with the error", async () => {
+    const fetchPage = vi.fn(async () => {
+      throw new Error("atlas http_403")
+    })
+    const res = await fetchAllDayStudioHoldings(W, { fetchPage })
     expect(res.ok).toBe(false)
     expect(res.triples).toEqual([])
-    expect(res.error).toContain("503")
+    expect(res.error).toContain("403")
   })
 
-  it("never throws on a GraphQL error payload — returns ok:false", async () => {
-    const impl = vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      text: async () => JSON.stringify({ errors: [{ message: "Unknown type" }] }),
-    })) as unknown as typeof fetch
-    const res = await fetchAllDayStudioHoldings("0xabc", { fetchImpl: impl })
+  it("ONE failed later page fails the whole walk (a partial list is not the holdings)", async () => {
+    const fetchPage = vi.fn(async (_o: string, offset: number) => {
+      if (offset === 2300) throw new Error("atlas no response")
+      const nodes: Node[] = []
+      for (let i = offset; i < Math.min(offset + 100, 3807); i++) nodes.push([String(i + 1), "1", "1"])
+      return pageOf(nodes, 3807, offset + 100 < 3807)
+    })
+    const res = await fetchAllDayStudioHoldings(W, { fetchPage })
     expect(res.ok).toBe(false)
-    expect(res.error).toContain("Unknown type")
+    expect(res.error).toContain("no response")
   })
 
-  it("never throws when fetch itself rejects", async () => {
-    const impl = vi.fn(async () => {
-      throw new Error("ECONNRESET")
-    }) as unknown as typeof fetch
-    const res = await fetchAllDayStudioHoldings("0xabc", { fetchImpl: impl })
+  it("refuses to walk blind when Atlas says hasMore but gives no total", async () => {
+    const fetchPage = vi.fn(async () => pageOf([["1", "10", "5"]], null, true))
+    const res = await fetchAllDayStudioHoldings(W, { fetchPage })
     expect(res.ok).toBe(false)
-    expect(res.error).toContain("ECONNRESET")
+    expect(res.error).toMatch(/no totalCount/)
   })
 
-  it("skips nodes missing an id or edition id rather than writing a broken key", async () => {
-    const { impl } = mockFetch([
-      {
-        data: {
-          searchAllDayNft: {
-            totalCount: 3,
-            edges: [
-              { cursor: "a", node: { id: "1", serial_number: "5", edition: { id: "10" } } },
-              { cursor: "b", node: { id: "2", serial_number: "6", edition: null } },
-              { cursor: "c", node: { id: null, serial_number: "7", edition: { id: "12" } } },
-            ],
-          },
-        },
+  it("stops at the elapsed budget and reports truncated, not ok", async () => {
+    let t = 0
+    const { fetchPage } = walletOf(3807)
+    const res = await fetchAllDayStudioHoldings(W, {
+      fetchPage: async (o, off) => {
+        t += 30_000
+        return fetchPage(o, off)
       },
-      page([], 2),
-    ])
-    const res = await fetchAllDayStudioHoldings("0xabc", { fetchImpl: impl })
+      now: () => t,
+    })
+    expect(res.truncated).toBe(true)
+    expect(res.ok).toBe(false)
+    expect(res.triples.length).toBeLessThan(3807)
+  })
+
+  it("a walk that returns FEWER distinct moments than totalCount is not ok (it could unlock deletes)", async () => {
+    // Every offset answers the same row: 50 pages planned, 1 moment seen.
+    const fetchPage = vi.fn(async () => pageOf([["1", "10", "5"]], 5000, true))
+    const res = await fetchAllDayStudioHoldings(W, { fetchPage })
+    expect(res.ok).toBe(false)
+    expect(res.error).toMatch(/short walk: 1 of 5000/)
+  })
+
+  it("rejects a malformed wallet without calling Atlas", async () => {
+    const fetchPage = vi.fn()
+    const res = await fetchAllDayStudioHoldings("0xabc", { fetchPage: fetchPage as never })
+    expect(res.ok).toBe(false)
+    expect(fetchPage).not.toHaveBeenCalled()
+  })
+
+  it("skips nodes missing an id or edition id (and Atlas's '0' empties) rather than writing a broken key", async () => {
+    const fetchPage = vi.fn(async () =>
+      pageOf(
+        [
+          ["1", "10", "5"],
+          ["2", null, "6"],
+          [null, "12", "7"],
+          ["0", "13", "8"],
+          ["3", "0", "9"],
+        ],
+        5,
+      ),
+    )
+    const res = await fetchAllDayStudioHoldings(W, { fetchPage })
     expect(res.triples).toEqual([["1", "10", "5"]])
   })
 })
