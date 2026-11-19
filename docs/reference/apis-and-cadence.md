@@ -105,6 +105,26 @@ WAF-blocked (known-issues #20), so every read is DB-side; from Next.js use `lib/
 ⚠ **Unknown keys are IGNORED, no error** — a misspelled filter silently returns the firehose; assert on the
 answer's shape, never on the request having been accepted. Pagination: `pagination.hasMore`.
 
+⭐ **Added 2026-11-18 (Claude Code cloud, #218 — Studio GraphQL 530 since 11-17; every port verified live).** The request
+schemas are in nflallday.com's JS: its `_next/static/chunks` embed protobuf-es `fileDesc("…")` base64 FileDescriptorProtos
+(43 on the homepage chunk) — fetch through pg_net (this sandbox cannot reach the site), decode with python `protobuf`.
+**That is the only way to learn a field name here, because a guessed field is silently ignored.**
+- `MarketplaceService/SearchMarketplaceTransactions` request fields 1–55 include `entity` (44; enum `ENTITY_PACKNFT`=2 → pack
+  transactions only, verified by a no-filter control), `nftId`, `editionId`, `completed`, `purchased`, `sortByOption`
+  (`LISTED_AT`/`PRICE`/`COMPLETED_AT`/`SERIAL_NUMBER`), `sortByDirection`, `minCompletedAt`/`maxCompletedAt`, `distributionTitle`.
+  Sale time = `completedAt` on `purchased:true` (there is no `purchasedAt`). Pack rows carry `distribution{id,title,…}`.
+  Golazos answers 0 pack sales; Top Shot pack history starts 2026-01-16; All Day 2022-03-02.
+- ⚠ **`pagination.totalCount` on this method is NOT a count** (it is offset + returned + 1) — page on `hasMore`.
+- `NFTService/SearchNftsByOwner {product, ownerAddress(bare hex), limit, offset}` — custody (incl. LOCKED) holdings;
+  **`limit` is CLAMPED to 100**; `pagination.totalCount` IS real here.
+- `NFTService/GetNFTs {product, nftIds:[…]}` — batch NFT read with `serialNumber`, `editionId` (Pinnacle serials: 40/40 agreed).
+- `PackService/GetPackCountsByOwnerGroupedByDistribution {product, owner}` — per-dist sealed/opened/revealed counts **per owner
+  only**; there is no per-DISTRIBUTION opened count and no public pack-OPENS history (`ActivitiesService/ListActivities` has
+  no address field: signed-in user only).
+- `DistributionService/GetDistributionListingDistribution {product, distributionId}` — a dist's ask ladder
+  `prices[{priceCents,count,isOffer}]` (low ask matched `pack_ask_state` to the cent).
+- Pinnacle is product `disney`; Golazos `laliga` — both answer the marketplace and distribution services.
+
 **What is built on it (migration `20260906203504`):** `topshot_atlas_market_events` (one row per Atlas
 uuid, both products, anon-readable) fed by `atlas_market_dispatch()` / `atlas_market_drain()` on pg_cron
 every 2 min (pipeline `atlas-market-feed`), and the two-phase RPCs `atlas_resolve_username_{begin,collect}`

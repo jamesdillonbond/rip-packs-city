@@ -2889,3 +2889,15 @@ Two cases from one live sweep, both rendering every field "correctly":
 - ⚠ **Binders read different look-up parameters: the Panini binder (`components/collection/PaniniCollection.tsx`) reads `?username=`, every other binder `?wallet=` (CollectionTabClient / AutoSearchReader).** The 11-17 edition-prompt look-up sent Panini `?wallet=` and opened an empty binder; only a live click-through found it, because the form's unit test asserted the param it was written with. Use `collectionLookupParam()` (`components/auth/AnonCollectionValueCta.tsx`), and verify a new link into a binder by loading it (`3705da7`).
 - ⚠ **A RATCHET THAT COUNTS `Date.now()` COUNTS IT IN EVENT HANDLERS TOO** (`insights-client-dates-are-hydration-safe-guard`). A duration measured inside a handler takes `performance.now()` (monotonic, and not the wall clock the guard exists for), not a suppression.
 - ⚠ **A per-member funnel read on a QA account mutates nothing only if the route is propose-first.** `POST /api/profile/trophy/fill` returns the proposal without `confirm`, so the live signed-in check (main case full → `need: 0`) wrote nothing. Build new write routes propose-first so they can be verified live.
+
+## ⚠ A NULL in a three-valued status CASE falls through to the SUCCESS arm (2026-11-18, PT — Claude Code cloud)
+
+`readable := (status_code = 200 AND content IS JSON OBJECT AND jsonb_typeof(content::jsonb->'x') = 'array')` is **NULL**, not
+false, when the key is absent (`jsonb_typeof(NULL)` is NULL; so is `NULL IS JSON`). A stamp written as
+`CASE WHEN … WHEN NOT readable THEN 'undecodable' … ELSE 'ok' END` then skips the `NOT readable` arm (NOT NULL is NULL) and lands
+on **`'ok'`** — an unreadable answer recorded as a clean read, and the row is never retried. Found live in
+`pinnacle_sale_serials_tick` (present since 09-28, in the Studio version too), caught only because the port's test planted a
+200-without-the-array answer. **Wrap every boolean that feeds a status CASE in `coalesce(…, false)`, and give the test a
+200 whose body lacks the expected key.** Grep the expression, not the file: `AS readable` had one other live use
+(`pack_seller_onchain_tick`), where the NULL path ends in `no_withdraw`, not a false ok.
+
