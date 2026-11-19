@@ -814,8 +814,8 @@ const PINS = [
   {
     fn: "pinnacle_sale_serials_tick",
     test: "supabase/tests/pinnacle_sale_serials_tick.sql",
-    // 2026-09-28 (#156): serials for serialised Pinnacle sales (local + Studio history).
-    migration: "supabase/migrations/20260928113619_audit_20260928_pinnacle_sale_serials.sql",
+    // 2026-09-28 (#156): serials for serialised Pinnacle sales (local + Studio history). 2026-11-18: remote read = Atlas GetNFTs.
+    migration: "supabase/migrations/20261119073000_audit_20261118_pinnacle_sale_serials_read_atlas.sql",
   },
   {
     fn: "populate_pinnacle_wmc_fmv",

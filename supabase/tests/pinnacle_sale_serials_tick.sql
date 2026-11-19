@@ -11,7 +11,7 @@
 --      serial) and stamps the pin ok; a 500 stamps http_500 and is retried.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260928113619_audit_20260928_pinnacle_sale_serials.sql).
+-- (supabase/migrations/20261119073000_audit_20261118_pinnacle_sale_serials_read_atlas.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 -- pg_net is stubbed: net.http_post hands out ids, net._http_response is a table.
 
@@ -28,6 +28,8 @@ CREATE TABLE public.pinnacle_catalog (render_id text PRIMARY KEY, edition_type t
 CREATE TABLE public.pinnacle_sales (id text PRIMARY KEY, render_id text, nft_id text, serial_number int, created_at timestamptz DEFAULT now());
 CREATE TABLE public.wallet_moments_cache (collection_id uuid, moment_id text, serial_number int);
 CREATE TABLE public.pinnacle_live_listings (nft_id text, serial_number int);
+CREATE TABLE public.atlas_ondemand_requests (request_id bigint PRIMARY KEY, fn text NOT NULL, dispatched_at timestamptz DEFAULT now());
+CREATE FUNCTION public.atlas_market_headers(p text) RETURNS jsonb LANGUAGE sql AS $$ SELECT '{}'::jsonb $$;
 CREATE TABLE public.pinnacle_sale_serial_reads (
   render_id text PRIMARY KEY, edition_id integer NOT NULL, request_id bigint, dispatched_at timestamptz,
   attempts integer NOT NULL DEFAULT 0, status text, filled integer, checked_at timestamptz);
@@ -75,7 +77,10 @@ BEGIN
   )
   SELECT count(*) INTO v_local FROM upd;
 
-  -- 2. COLLECT finished (or abandoned) history reads and fill from them.
+  -- 2. COLLECT finished (or abandoned) reads and fill from them.
+  --    2026-11-18 (#218): the read is Atlas NFTService/GetNFTs over the pin's serial-less NFT ids
+  --    (Studio searchPinnacleMarketplaceHistory is HTTP 530). A serial is a property of the NFT;
+  --    40/40 Atlas serials agreed with ones already held (measured 11-18).
   WITH done AS (
     SELECT a.render_id, r.status_code, r.content
       FROM pinnacle_sale_serial_reads a
@@ -84,17 +89,18 @@ BEGIN
        AND (r.id IS NOT NULL OR a.dispatched_at < now() - interval '1 hour')
   ), parsed AS (
     SELECT d.render_id, d.status_code,
-           (d.status_code = 200 AND d.content IS JSON OBJECT
-            AND jsonb_typeof(d.content::jsonb->'data'->'searchPinnacleMarketplaceHistory'->'edges') = 'array') AS readable,
+           -- coalesce: a 200 WITHOUT the array made this NULL, and a NULL `readable` fell through
+           -- every CASE arm below to 'ok' -- an unreadable answer stamped as a clean read.
+           coalesce(d.status_code = 200 AND d.content IS JSON OBJECT
+            AND jsonb_typeof(d.content::jsonb->'nfts') = 'array', false) AS readable,
+           false AS more,
            CASE WHEN d.status_code = 200 AND d.content IS JSON OBJECT
-                THEN (d.content::jsonb->'data'->'searchPinnacleMarketplaceHistory'->'pageInfo'->>'hasNextPage') = 'true' END AS more,
-           CASE WHEN d.status_code = 200 AND d.content IS JSON OBJECT
-                THEN d.content::jsonb->'data'->'searchPinnacleMarketplaceHistory'->'edges' END AS edges
+                THEN d.content::jsonb->'nfts' END AS edges
       FROM done d
   ), nodes AS (
-    SELECT p.render_id, e->'node'->>'nft_id' AS nft_id,
-           CASE WHEN (e->'node'->'nft'->>'serial_number') ~ '^[0-9]{1,9}$'
-                THEN (e->'node'->'nft'->>'serial_number')::int END AS ser
+    SELECT p.render_id, e->>'id' AS nft_id,
+           CASE WHEN (e->>'serialNumber') ~ '^[0-9]{1,9}$'
+                THEN (e->>'serialNumber')::int END AS ser
       FROM parsed p
       CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN p.readable THEN p.edges ELSE '[]'::jsonb END) e
   ), agreed AS (
@@ -127,7 +133,8 @@ BEGIN
   )
   SELECT count(*), coalesce(sum(n), 0) INTO v_collected, v_filled FROM stamp;
 
-  -- 3. DISPATCH the next p_n serialised pins that still have a serial-less sale.
+  -- 3. DISPATCH the next p_n serialised pins that still have a serial-less sale: one GetNFTs read of
+  --    up to 100 of the pin's serial-less NFT ids (11-18: max 7 per pin across 78 pins).
   WITH todo AS (
     SELECT s.render_id, max(s.created_at) AS newest_missing
       FROM pinnacle_sales s
@@ -136,7 +143,11 @@ BEGIN
        AND c.edition_type = ANY (v_types)
      GROUP BY s.render_id
   ), nxt AS (
-    SELECT t.render_id, c.edition_id::int AS edition_id
+    SELECT t.render_id, c.edition_id::int AS edition_id,
+           (SELECT jsonb_agg(z.nft_id) FROM (
+              SELECT s2.nft_id FROM pinnacle_sales s2
+               WHERE s2.render_id = t.render_id AND s2.serial_number IS NULL AND s2.nft_id ~ '^[0-9]{1,20}$'
+               GROUP BY s2.nft_id ORDER BY max(s2.created_at) DESC LIMIT 100) z) AS ids
       FROM todo t
       JOIN pinnacle_catalog c ON c.render_id = t.render_id
       LEFT JOIN pinnacle_sale_serial_reads a ON a.render_id = t.render_id
@@ -151,20 +162,23 @@ BEGIN
     INSERT INTO pinnacle_sale_serial_reads AS a (render_id, edition_id, request_id, dispatched_at, attempts)
     SELECT n.render_id, n.edition_id,
            net.http_post(
-             url := 'https://api.production.studio-platform.dapperlabs.com/graphql',
-             headers := '{"Content-Type":"application/json","Origin":"https://disneypinnacle.com","Referer":"https://disneypinnacle.com/","User-Agent":"RipPacksCity/1.0 (www.rippackscity.com)"}'::jsonb,
-             body := jsonb_build_object(
-               'query', 'query($in: SearchPinnacleMarketplaceHistoryInput!){ searchPinnacleMarketplaceHistory(searchInput:$in){ pageInfo { hasNextPage } edges { node { nft_id nft { serial_number } } } } }',
-               'variables', jsonb_build_object('in', jsonb_build_object(
-                  'first', 300,
-                  'filters', jsonb_build_array(jsonb_build_object('edition_id', jsonb_build_object('eq', n.edition_id)))))),
+             url := 'https://api.production.atlas.dapperlabs.com/public/atlas.v1.NFTService/GetNFTs',
+             headers := public.atlas_market_headers('disney'),
+             body := jsonb_build_object('product', 'disney', 'nftIds', n.ids),
              timeout_milliseconds := 30000),
            clock_timestamp(), 1
       FROM nxt n
+     WHERE n.ids IS NOT NULL
     ON CONFLICT (render_id) DO UPDATE SET
       request_id    = EXCLUDED.request_id,
       dispatched_at = EXCLUDED.dispatched_at,
       attempts      = a.attempts + 1
+    RETURNING a.request_id
+  ), att AS (
+    -- the 4xx arm attributes a Cloudflare 403 through atlas_ondemand_requests
+    INSERT INTO atlas_ondemand_requests (request_id, fn)
+    SELECT request_id, 'pinnacle-sale-serials' FROM ins
+    ON CONFLICT (request_id) DO NOTHING
     RETURNING 1
   )
   SELECT count(*) INTO v_sent FROM ins;
@@ -180,13 +194,13 @@ INSERT INTO public.pinnacle_catalog VALUES
   ('R1', 'Limited Edition', '101'), ('R2', 'Limited Edition', '102'), ('R3', 'Limited Edition', '103'),
   ('OPEN', 'Open Edition', '200');
 INSERT INTO public.pinnacle_sales (id, render_id, nft_id, serial_number, created_at) VALUES
-  ('S1', 'R1', 'N1', NULL, now() - interval '2 days'),   -- wmc knows N1 = 7
-  ('S2', 'OPEN', 'N2', NULL, now() - interval '2 days'), -- unserialised: never filled
-  ('S3', 'R3', 'N3', NULL, now() - interval '2 days'),   -- sources disagree (9 vs 10)
-  ('S4', 'R2', 'N4', NULL, now() - interval '2 days'),   -- nobody knows N4: history read
-  ('S5', 'R2', 'N5', 3,    now() - interval '2 days');   -- already has a serial
-INSERT INTO public.wallet_moments_cache VALUES (:PIN::uuid, 'N1', 7), (:PIN::uuid, 'N2', 5), (:PIN::uuid, 'N3', 9);
-INSERT INTO public.pinnacle_live_listings VALUES ('N3', 10);
+  ('S1', 'R1', '1001', NULL, now() - interval '2 days'),   -- wmc knows 1001 = 7
+  ('S2', 'OPEN', '1002', NULL, now() - interval '2 days'), -- unserialised: never filled
+  ('S3', 'R3', '1003', NULL, now() - interval '2 days'),   -- sources disagree (9 vs 10)
+  ('S4', 'R2', '1004', NULL, now() - interval '2 days'),   -- nobody knows 1004: history read
+  ('S5', 'R2', '1005', 3,    now() - interval '2 days');   -- already has a serial
+INSERT INTO public.wallet_moments_cache VALUES (:PIN::uuid, '1001', 7), (:PIN::uuid, '1002', 5), (:PIN::uuid, '1003', 9);
+INSERT INTO public.pinnacle_live_listings VALUES ('1003', 10);
 
 -- ── tick 1: local fill + dispatch ────────────────────────────────────────────
 SELECT public.pinnacle_sale_serials_tick(20);
@@ -195,11 +209,13 @@ SELECT _assert((SELECT serial_number FROM public.pinnacle_sales WHERE id = 'S2')
 SELECT _assert((SELECT serial_number FROM public.pinnacle_sales WHERE id = 'S3') IS NULL, 'local fill skips an NFT whose sources disagree');
 SELECT _assert((SELECT request_id FROM public.pinnacle_sale_serial_reads WHERE render_id = 'R2') IS NOT NULL, 'R2 (unknown NFT) is dispatched');
 SELECT _assert_eq((SELECT count(*)::text FROM public.pinnacle_sale_serial_reads WHERE render_id = 'R1'), '0', 'R1 (filled locally) is not read');
-SELECT _assert_eq((SELECT (body->'variables'->'in'->'filters'->0->'edition_id'->>'eq') FROM net._requests r JOIN public.pinnacle_sale_serial_reads a ON a.request_id = r.id WHERE a.render_id = 'R2'), '102', 'the read filters by the pin''s edition_id');
+SELECT _assert_eq((SELECT (body->'nftIds')::text FROM net._requests r JOIN public.pinnacle_sale_serial_reads a ON a.request_id = r.id WHERE a.render_id = 'R2'), '["1004"]', 'the read asks Atlas for exactly the pin''s serial-less NFTs (not 1005, which has one)');
+SELECT _assert_eq((SELECT body->>'product' FROM net._requests r JOIN public.pinnacle_sale_serial_reads a ON a.request_id = r.id WHERE a.render_id = 'R2'), 'disney', 'product disney');
+SELECT _assert_eq((SELECT fn FROM public.atlas_ondemand_requests o JOIN public.pinnacle_sale_serial_reads a ON a.request_id = o.request_id WHERE a.render_id = 'R2'), 'pinnacle-sale-serials', 'the request is recorded for the 4xx arm');
 
--- ── the answers arrive: R2 = 200 (N4 -> 42, N5 -> 4), R3 = 500 ───────────────
+-- ── the answers arrive: R2 = 200 (1004 -> 42, 1005 -> 4), R3 = 500 ───────────────
 INSERT INTO net._http_response SELECT request_id, 200,
-  '{"data":{"searchPinnacleMarketplaceHistory":{"pageInfo":{"hasNextPage":false},"edges":[{"node":{"nft_id":"N4","nft":{"serial_number":"42"}}},{"node":{"nft_id":"N5","nft":{"serial_number":"4"}}}]}}}'
+  '{"nfts":[{"id":"1004","serialNumber":"42","editionId":"102"},{"id":"1005","serialNumber":"4","editionId":"102"}]}'
   FROM public.pinnacle_sale_serial_reads WHERE render_id = 'R2';
 INSERT INTO net._http_response SELECT request_id, 500, 'oops' FROM public.pinnacle_sale_serial_reads WHERE render_id = 'R3';
 
@@ -209,15 +225,25 @@ SELECT _assert_eq((SELECT serial_number::text FROM public.pinnacle_sales WHERE i
 SELECT _assert_eq((SELECT serial_number::text FROM public.pinnacle_sales WHERE id = 'S5'), '3', 'a present serial is never overwritten');
 SELECT _assert_eq((SELECT status FROM public.pinnacle_sale_serial_reads WHERE render_id = 'R2'), 'ok', 'R2 stamped ok');
 SELECT _assert_eq((SELECT filled::text FROM public.pinnacle_sale_serial_reads WHERE render_id = 'R2'), '1', 'R2 filled count = rows written (1, not 2)');
+-- a 200 without an nfts array is not "no serials": undecodable, never a fill
+INSERT INTO public.pinnacle_catalog VALUES ('R4', 'Limited Edition', '104');
+INSERT INTO public.pinnacle_sales (id, render_id, nft_id, serial_number, created_at) VALUES ('S7', 'R4', '1007', NULL, now() - interval '2 days');
 SELECT _assert((SELECT request_id FROM public.pinnacle_sale_serial_reads WHERE render_id = 'R3') IS NOT NULL, 'R3 (http_500) is retried: re-dispatched in the same tick');
 SELECT _assert_eq((SELECT attempts::text FROM public.pinnacle_sale_serial_reads WHERE render_id = 'R3'), '2', 'R3 attempt counted');
 
 -- ── tick 3: nothing new for R2 -> not re-read; a new serial-less sale -> re-read ─
 SELECT public.pinnacle_sale_serials_tick(20);
 SELECT _assert((SELECT request_id FROM public.pinnacle_sale_serial_reads WHERE render_id = 'R2') IS NULL, 'R2 is not re-read without a new serial-less sale');
-INSERT INTO public.pinnacle_sales (id, render_id, nft_id, serial_number, created_at) VALUES ('S6', 'R2', 'N6', NULL, now() + interval '1 minute');
+INSERT INTO public.pinnacle_sales (id, render_id, nft_id, serial_number, created_at) VALUES ('S6', 'R2', '1006', NULL, now() + interval '1 minute');
 SELECT public.pinnacle_sale_serials_tick(20);
 SELECT _assert((SELECT request_id FROM public.pinnacle_sale_serial_reads WHERE render_id = 'R2') IS NOT NULL, 'a new serial-less sale re-reads R2');
+
+-- ── R4: a 200 that carries no nfts array is UNDECODABLE, never "this NFT has no serial" ─
+SELECT _assert((SELECT request_id FROM public.pinnacle_sale_serial_reads WHERE render_id = 'R4') IS NOT NULL, 'R4 dispatched');
+INSERT INTO net._http_response SELECT request_id, 200, '{"pagination":{}}' FROM public.pinnacle_sale_serial_reads WHERE render_id = 'R4';
+SELECT public.pinnacle_sale_serials_tick(20);
+SELECT _assert_eq((SELECT status FROM public.pinnacle_sale_serial_reads WHERE render_id = 'R4'), 'undecodable', 'R4 stamped undecodable');
+SELECT _assert((SELECT serial_number FROM public.pinnacle_sales WHERE id = 'S7') IS NULL, 'nothing filled from an unreadable answer');
 
 SELECT '✓ pinnacle_sale_serials_tick: all assertions passed' AS result;
 
