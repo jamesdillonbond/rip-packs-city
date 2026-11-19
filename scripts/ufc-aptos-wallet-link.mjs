@@ -8,7 +8,9 @@
 // the Dapper address they already give us. Finding: claude/ufc-aptos-wallet-link-finding-2026-11-15.md.
 //
 // Per run:
-//   1. Lists every Aptos issuer::mint_for tx (Aptos indexer), skips versions already in ufc_aptos_migration_matches.
+//   1. Lists the Aptos issuer::mint_for txs NEWER than ufc_aptos_mint_txs' max version (Aptos indexer) into that
+//      table (2026-11-19; it used to re-list all ~10k every run), then works on stored mints not yet in
+//      ufc_aptos_migration_matches.
 //   2. For each new one: reads its serials from the tx, finds the Flow height at mint time on the right spork,
 //      scans UFC_NFT.NFTDestroyed for ~12 min before (widened to ~40 min if nothing), groups burns by Flow tx,
 //      picks the latest burn of exactly n moments (else the latest larger burn = one burn split over several
@@ -139,29 +141,51 @@ async function matchOne(b) {
 }
 
 // ── main ──
+// 2026-11-19: the mint list is PERSISTED (ufc_aptos_mint_txs). Re-listing every mint from version
+// 3,180,000,000 took 580–720 s each run, so half the runs died mid-list and the rest had no time left.
+// Listing is ascending by version, so the stored set is always a complete PREFIX of the chain's list:
+// each run lists only versions above the stored maximum and appends them. Hitting the listing cap now
+// keeps what was listed (progress, not a failure) and matching runs on the stored prefix.
 const startedAt = new Date().toISOString()
-const mints = []
-for (let v = 3180000000; ;) {
-  const d = await gql(`{token_activities_v2(where:{entry_function_id_str:{_eq:"${ISSUER_FN}"},type:{_eq:"0x1::object::Transfer"},transaction_version:{_gt:${v}}},distinct_on:transaction_version,order_by:{transaction_version:asc},limit:100){transaction_version transaction_timestamp to_address}}`)
-  const r = d.token_activities_v2
-  for (const x of r) mints.push({ aptos_version: Number(x.transaction_version), minted_at: x.transaction_timestamp + "Z", aptos_address: x.to_address })
-  if (r.length < 100) break
-  v = r.at(-1).transaction_version
-  if (Date.now() - t0 > ENUM_BUDGET_MS) {
-    // A PARTIAL mint list is not the list: stop, and say so in pipeline_runs.
-    const msg = `mint listing exceeded ${ENUM_BUDGET_MS / 1000}s after ${mints.length} mints (indexer slow); matched nothing this run`
-    console.error(msg)
-    if (APPLY) {
-      const { error } = await db.rpc("log_pipeline_run", {
-        p_pipeline: "ufc-aptos-wallet-link", p_started_at: new Date(t0).toISOString(), p_rows_found: null, p_rows_written: 0,
-        p_rows_skipped: 0, p_ok: false, p_error: msg, p_collection_slug: "ufc_strike", p_cursor_before: null, p_cursor_after: null,
-        p_extra: { mints_listed: mints.length, seconds: Math.round((Date.now() - t0) / 1000) },
-      })
-      if (error) console.warn(`log_pipeline_run failed: ${error.message}`)
+const LIST_FLOOR = 3180000000
+let listedNew = 0
+let listingComplete = false
+const listedThisRun = [] // dry-run writes nothing, so it must see what it listed
+{
+  const { data: top, error: topErr } = await db.from("ufc_aptos_mint_txs").select("aptos_version").order("aptos_version", { ascending: false }).limit(1)
+  if (topErr) throw topErr
+  let v = top?.[0]?.aptos_version != null ? Number(top[0].aptos_version) : LIST_FLOOR
+  for (;;) {
+    const d = await gql(`{token_activities_v2(where:{entry_function_id_str:{_eq:"${ISSUER_FN}"},type:{_eq:"0x1::object::Transfer"},transaction_version:{_gt:${v}}},distinct_on:transaction_version,order_by:{transaction_version:asc},limit:100){transaction_version transaction_timestamp to_address}}`)
+    const r = d.token_activities_v2
+    const page = r.map((x) => ({ aptos_version: Number(x.transaction_version), minted_at: x.transaction_timestamp + "Z", aptos_address: x.to_address }))
+    if (page.length && APPLY) {
+      // Write each page before reading the next: the stored set must stay a prefix, never skip a page.
+      const { error } = await db.from("ufc_aptos_mint_txs").upsert(page, { onConflict: "aptos_version", ignoreDuplicates: true })
+      if (error) throw error
     }
-    process.exit(1)
+    listedNew += page.length
+    if (!APPLY) listedThisRun.push(...page)
+    if (r.length < 100) { listingComplete = true; break }
+    v = r.at(-1).transaction_version
+    if (Date.now() - t0 > ENUM_BUDGET_MS) {
+      console.warn(`mint listing hit ${ENUM_BUDGET_MS / 1000}s after ${listedNew} new mints; kept, continuing next run`)
+      break
+    }
+    await sleep(process.env.APTOS_API_KEY ? 100 : 1200)
   }
-  await sleep(process.env.APTOS_API_KEY ? 100 : 1200)
+}
+const mints = []
+for (let from = 0; ; from += 1000) {
+  const { data, error } = await db.from("ufc_aptos_mint_txs").select("aptos_version, minted_at, aptos_address").order("aptos_version").range(from, from + 999)
+  if (error) throw error
+  for (const r of data) mints.push({ aptos_version: Number(r.aptos_version), minted_at: new Date(r.minted_at).toISOString(), aptos_address: r.aptos_address })
+  if (data.length < 1000) break
+}
+{
+  const known = new Set(mints.map((m) => m.aptos_version))
+  for (const m of listedThisRun) if (!known.has(m.aptos_version)) mints.push(m)
+  mints.sort((a, b) => a.aptos_version - b.aptos_version)
 }
 const done = new Set()
 for (let from = 0; ; from += 1000) {
@@ -199,7 +223,7 @@ if (APPLY) {
   if (error) throw error
   links = data
 }
-const summary = { ...stats, links_upserted: links, remaining: todo.length - stats.processed, dead_sporks: Object.fromEntries(deadSporks), enum_seconds: Math.round((tMatch - t0) / 1000), seconds: Math.round((Date.now() - t0) / 1000) }
+const summary = { ...stats, links_upserted: links, remaining: todo.length - stats.processed, mints_known: mints.length, listed_new: listedNew, listing_complete: listingComplete, dead_sporks: Object.fromEntries(deadSporks), enum_seconds: Math.round((tMatch - t0) / 1000), seconds: Math.round((Date.now() - t0) / 1000) }
 console.log(JSON.stringify(summary))
 // Work existed, nothing was matched and nothing explains why (no error, no dead spork) = the run did not
 // do its job, whatever else succeeded. ok must say so (11-16 17:25Z run: 0 of 7,987, logged ok=true).
