@@ -91,7 +91,7 @@ describe("apply-fmv-haircut per-collection split", () => {
   it("calls the RPC once per collection instead of once un-scoped", async () => {
     await live()
     // The defect this replaces: a single call with p_collection_id null.
-    expect(haircutArgs()).toEqual([TS, AD, CANDY])
+    expect(haircutArgs()).toEqual([AD, CANDY, TS])
     expect(haircutArgs()).not.toContain(null)
   })
 
@@ -120,7 +120,7 @@ describe("apply-fmv-haircut per-collection split", () => {
     // all five collections. A failed leg must not roll back its siblings.
     state.byId[TS] = null
     await live()
-    expect(haircutArgs()).toEqual([TS, AD, CANDY])
+    expect(haircutArgs()).toEqual([AD, CANDY, TS])
     const run = state.runs.find((r) => r.p_pipeline === "apply-fmv-haircut")
     expect(run.p_ok).toBe(false)
     // ...and the surviving legs' work is REPORTED, not zeroed.

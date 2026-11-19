@@ -123,7 +123,7 @@ describe("apply-fmv-haircut — a kill at the wall is logged, not silent", () =>
 
   it("runs every leg when the clock stays inside the deadline", async () => {
     await live()
-    expect(state.calls.filter((c) => c.startsWith("rpc:"))).toEqual([`rpc:${CANDY}`, `rpc:${TS}`, `rpc:${AD}`])
+    expect(state.calls.filter((c) => c.startsWith("rpc:"))).toEqual([`rpc:${CANDY}`, `rpc:${AD}`, `rpc:${TS}`])
     expect(state.runs[0].p_ok).toBe(true)
     expect(state.runs[0].p_extra.legs_skipped).toBe(0)
   })
@@ -131,29 +131,51 @@ describe("apply-fmv-haircut — a kill at the wall is logged, not silent", () =>
   it("does NOT start a leg past the deadline: the run terminates ok=false with the skipped legs NAMED", async () => {
     // Two gateway-bound legs (~120 s each, the measured saturation shape) —
     // the third would have started at ~240 s and died at the 300 s wall.
-    state.legMs = { [CANDY]: 121_000, [TS]: 121_000 }
+    state.legMs = { [CANDY]: 121_000, [AD]: 121_000 }
     await live()
 
     const rpcs = state.calls.filter((c) => c.startsWith("rpc:"))
-    expect(rpcs).toEqual([`rpc:${CANDY}`, `rpc:${TS}`])
-    expect(rpcs).not.toContain(`rpc:${AD}`)
+    expect(rpcs).toEqual([`rpc:${CANDY}`, `rpc:${AD}`])
+    expect(rpcs).not.toContain(`rpc:${TS}`)
 
     // The terminal row LANDED — that is the whole point — and it is honest:
     expect(state.calls[state.calls.length - 1]).toBe("log")
     const run = state.runs[0]
     expect(run.p_ok).toBe(false)
-    expect(run.p_error).toContain("nfl_all_day")
+    expect(run.p_error).toContain("nba_top_shot")
     expect(run.p_error).toContain("skipped")
     expect(run.p_extra.legs_skipped).toBe(1)
     expect(run.p_extra.legs_failed).toBe(1)
     expect(run.p_extra.legs_total).toBe(3)
-    const skipped = run.p_extra.legs.find((l: any) => l.slug === "nfl_all_day")
+    const skipped = run.p_extra.legs.find((l: any) => l.slug === "nba_top_shot")
     expect(skipped.skipped).toBe(true)
     expect(skipped.ok).toBe(false)
+    expect(skipped.duration_ms).toBeNull()
     // The legs that DID run still report their work — a partial failure must
     // not read as zero (the drain-fmv-cold-tail lesson).
     expect(run.p_rows_found).toBe(6)
     expect(run.p_rows_written).toBe(2)
+  })
+
+  it("runs the HEAVY nba_top_shot leg LAST, so a slow Top Shot leg cannot starve the cheap legs (11-19 14:35 PT)", async () => {
+    // The live incident: slug order put nba_top_shot ahead of nfl_all_day; it
+    // held ~150 s and the deadline skipped every leg after it. Top Shot is
+    // listed FIRST in the catalogue here, so only the reorder can pass this.
+    state.collections = [
+      { id: TS, slug: "nba_top_shot" },
+      { id: CANDY, slug: "candy_mlb" },
+      { id: AD, slug: "nfl_all_day" },
+    ]
+    state.legMs = { [TS]: LEG_START_DEADLINE_MS + 1 }
+    await live()
+    expect(state.calls.filter((c) => c.startsWith("rpc:"))).toEqual([`rpc:${CANDY}`, `rpc:${AD}`, `rpc:${TS}`])
+    const run = state.runs[0]
+    // Every leg ran: the slow one finished last and nothing was skipped.
+    expect(run.p_extra.legs_skipped).toBe(0)
+    expect(run.p_ok).toBe(true)
+    // Each leg that ran carries its own measured duration.
+    const ts = run.p_extra.legs.find((l: any) => l.slug === "nba_top_shot")
+    expect(ts.duration_ms).toBe(LEG_START_DEADLINE_MS + 1)
   })
 
   it("is the wall, not the leg count, that trips it — a single slow leg followed by cheap ones still terminates", async () => {

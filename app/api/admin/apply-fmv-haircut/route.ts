@@ -78,6 +78,11 @@ const TERMINAL_WRITE_RESERVE_MS = 30_000;
 // row's error text, which is what a reader of pipeline_runs sees.
 const LEG_START_DEADLINE_MS = WALL_MS - GATEWAY_LEG_MAX_MS - TERMINAL_WRITE_RESERVE_MS;
 
+// Legs measured as the expensive ones; they run after every other leg (see
+// HEAVY LEG RUNS LAST in the live branch). `duration_ms` per leg in
+// pipeline_runs.extra.legs is the instrument to revisit this list with.
+const HEAVY_LAST_SLUGS = new Set<string>(["nba_top_shot"]);
+
 // CLAUDE.md infra block — long-form vocabulary keyed by the short-form
 // query-param tokens callers will pass.
 const COLLECTION_UUID: Record<string, string> = {
@@ -262,6 +267,16 @@ export async function POST(req: NextRequest) {
         legs = rows.map((r: { id: string; slug: string }) => ({ id: r.id, slug: r.slug }))
       }
     }
+    // ── HEAVY LEG RUNS LAST (2026-11-19) ──────────────────────────────────────
+    // The 11-19 14:35 PT tick: nba_top_shot (the ~800k-buffer leg, inbox
+    // 2026-08-24T0455Z) ran 4th by slug order, held ~150 s, and the deadline
+    // above then SKIPPED nfl_all_day, panini_blockchain and ufc_strike — three
+    // cheap legs starved by one expensive one. Running the expensive leg LAST
+    // means it is the only leg the deadline can ever cost; the cheap legs
+    // always finish first. A stable sort, so the rest keep slug order.
+    legs = [...legs].sort(
+      (a, b) => Number(HEAVY_LAST_SLUGS.has(a.slug)) - Number(HEAVY_LAST_SLUGS.has(b.slug))
+    )
 
     const legResults: Array<{
       slug: string
@@ -270,6 +285,7 @@ export async function POST(req: NextRequest) {
       rows_haircut: number
       dollars_removed: number
       error: string | null
+      duration_ms: number | null
       skipped?: true
     }> = []
 
@@ -285,6 +301,8 @@ export async function POST(req: NextRequest) {
           rows_haircut: 0,
           dollars_removed: 0,
           error: `skipped: ${elapsedMs} ms elapsed exceeds the ${LEG_START_DEADLINE_MS} ms leg-start deadline (wall ${WALL_MS} ms); this leg did not run`,
+          // NULL, not 0: the leg did not run, so it has no duration.
+          duration_ms: null,
           skipped: true,
         })
         continue
@@ -297,6 +315,7 @@ export async function POST(req: NextRequest) {
       // discard the legs that already succeeded.
       let legData: any = null
       let legError: { message: string } | null = null
+      const legStartedAt = Date.now()
       try {
         const res = await supabaseAdmin.rpc("fmv_apply_thin_sale_haircut", {
           p_collection_id: leg.id,
@@ -316,6 +335,7 @@ export async function POST(req: NextRequest) {
         rows_haircut: Number(legRow?.rows_haircut ?? 0),
         dollars_removed: Number(legRow?.total_dollars_removed ?? 0),
         error: legError?.message ?? null,
+        duration_ms: Date.now() - legStartedAt,
       })
     }
 
