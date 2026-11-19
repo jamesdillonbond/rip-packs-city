@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-18 ~9:40 PM PT — /api/wallet-packs (Collection tab sealed packs) moved off Studio onto Atlas via pg_net (Claude Code cloud; Trevor: "Keep going", #218)
+- **Why:** the route read Studio `searchPackNftAggregation`, which has been HTTP 530 since 11-17, so the Collection tab's sealed-pack cell showed "unavailable" for every wallet ("wallet packs HTTP 530" in Vercel runtime errors).
+- 🗄 APPLIED `20261119060000_audit_20261118_atlas_wallet_pack_counts_begin` (by commit SHA, md5-checked): it adds `atlas_wallet_pack_counts_begin(wallet, product)`, a narrow begin for `PackService/GetPackCountsByOwnerGroupedByDistribution`. It accepts only nba/nfl/laliga, is service_role only, and records each request in `atlas_ondemand_requests`.
+- **Route:** reads per-dist `sealedCount` through begin + `atlas_await_response`, retrying a Cloudflare challenge once. Titles come from `pack_distributions`, and a dist without a title still counts. All three reads are wrapped in `boundedRead`. Any failure keeps the honest degraded shape (an `error` key the client discriminates on). Collection scoping and refusals are unchanged.
+- Tests rewritten with every property re-pinned (12 cases); counting opened instead of sealed turns 3 red. The image-proxy ratchet budget went 22 → 21 because the raw fetch is gone. Preflight green.
+- Revert: `git revert` the commit titled "fix(wallet-packs): sealed pack counts from Atlas via pg_net (#218)"; `DROP FUNCTION public.atlas_wallet_pack_counts_begin(text, text);`.
+
 ### 2026-11-18 ~9:05 PM PT — Atlas market feed adds Golazos + Pinnacle; #261 acquisition-date staging lane on Atlas ownership history (Claude Code cloud; Trevor: "Do all of them" — items 3 and 2, #218/#261)
 - 🗄 APPLIED `20261119051500_audit_20261118_atlas_market_feed_adds_golazos_and_pinnacle` (by commit SHA, md5-checked). The first apply attempt raised "anchor not found exactly once" and rolled back whole; I fixed the anchor in `3b2d5ef15` and re-applied.
   - `atlas_market_dispatch` now walks `laliga` + `disney`. I read all 22 readers of `topshot_atlas_market_events`: 21 already filter by product, and the 22nd, `check_topshot_parallel_sales_on_base`, now does too (`a.product = 'nba'`). Its live body differed from its newest file, so it was spliced in place under an md5 guard. The upsert key is the event uuid.
