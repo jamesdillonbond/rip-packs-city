@@ -498,11 +498,34 @@ describe("POST /api/sentinel — full battery", () => {
       }))
       stubFetch([sniperOk, telegramOk, resendOk])
       const c = check(await (await POST(post())).json(), "Dune Spend (cycle)")
-      expect(c.status).toBe("warn")
+      // RE-PINNED 2026-11-19 (premise changed, not inverted): exhausted AND paused is the configured stop in
+      // effect -> ok, detail unchanged. The warn property is still exercised below (past the cap, NOT paused).
+      expect(c.status).toBe("ok")
+      expect(c.detail).toContain("EXHAUSTED")
       expect(c.detail).toContain("hand-run queries not counted")
       expect(c.detail).not.toContain("no lane has spent yet")
       expect(c.detail).toContain("outside the lane budget")
       expect(c.detail).toContain("PAUSED")
+    })
+  })
+
+  describe("Dune Spend (cycle) — the stop must ENGAGE before the arm stands down (2026-11-19)", () => {
+    const spend = (over: Record<string, unknown>) => {
+      const f = greenFixtures() as any
+      f["rpc:dune_spend_report"] = { data: { ...(f["rpc:dune_spend_report"].data as object), ...over }, error: null }
+      return f
+    }
+    it("warns when spend is past the cap but reads are NOT paused (spending continues)", async () => {
+      install(spend({ cycle_datapoints_pct: 140, cycle_elapsed_pct: 30, on_pace: false, paused: false }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Dune Spend (cycle)")
+      expect(c.status).toBe("warn")
+    })
+    it("still warns on a paused cycle that is NOT exhausted (a pause is not the stop)", async () => {
+      install(spend({ cycle_datapoints_pct: 97, cycle_elapsed_pct: 90, on_pace: true, paused: true }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Dune Spend (cycle)")
+      expect(c.status).toBe("warn")
     })
   })
 

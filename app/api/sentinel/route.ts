@@ -2429,9 +2429,15 @@ async function runSentinelWithin(clock: WallBudgetClock) {
         .filter((l) => Number(l.datapoints_cycle) > 0)
         .map((l) => `${l.pipeline}=${Number(l.datapoints_cycle).toLocaleString("en-US")}dp`)
         .join(", ");
+      // 2026-11-19: EXHAUSTED + PAUSED is the configured stop TAKING EFFECT -- every Dune lane paces at 0
+      // until the reset, and nothing is left to act on. Reading WARN for the rest of the cycle (25 days on
+      // 11-19) kept the whole sweep WARN on every run: the chronic-warn shape this file's header names as
+      // the reason a real incident's Telegram looked like routine noise. It reads ok with the detail
+      // unchanged; spend past the cap WITHOUT the pause in effect still warns (the stop has not engaged).
+      const stopInEffect = d.paused === true && Number.isFinite(dpPct) && dpPct >= 100;
       checks.push({
         name: "Dune Spend (cycle)",
-        status: overspent || creditsGone || offPace ? "warn" : "ok",
+        status: stopInEffect ? "ok" : overspent || creditsGone || offPace ? "warn" : "ok",
         detail:
           `${Number.isFinite(dpPct) ? dpPct : "?"}% of datapoints at ` +
           `${Number.isFinite(elapsedPct) ? elapsedPct : "?"}% of the cycle` +
