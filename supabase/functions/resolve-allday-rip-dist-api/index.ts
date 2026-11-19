@@ -20,7 +20,11 @@ const ALLDAY="dee28451-5d62-409e-a1ad-a83f763ac070"
 const sb=createClient(Deno.env.get("SUPABASE_URL")??"",Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")??"")
 const H={"Content-Type":"application/json","Origin":"https://nflallday.com","Referer":"https://nflallday.com/","User-Agent":"RipPacksCity/1.0"}
 const sleep=(ms:number)=>new Promise(r=>setTimeout(r,ms))
-async function raw(query:string,variables?:any){ const r=await fetch(EP,{method:"POST",headers:H,body:JSON.stringify({query,variables}),signal:AbortSignal.timeout(25000)}); return await r.json().catch(()=>null) }
+// 2026-11-18 (#218): a non-2xx THROWS with its status. It used to go straight to
+// r.json(), so Dapper Studio's HTTP 530 page failed to parse and the run logged
+// "lookup: not-json", hiding the outage from every alerter that attributes upstream
+// 530s. The loop's catch turns this into "lookup: HTTP 530".
+async function raw(query:string,variables?:any){ const r=await fetch(EP,{method:"POST",headers:H,body:JSON.stringify({query,variables}),signal:AbortSignal.timeout(25000)}); if(!r.ok) throw new Error(`HTTP ${r.status}`); return await r.json().catch(()=>null) }
 const Q=`query($i: SearchPackNftsInput!){ searchPackNft(searchInput:$i){ edges{ node{ id dist_id status } } } }`
 async function lookup(ids:string[]){ return await raw(Q,{ i:{ first: ids.length, filters:[{ id:{ in: ids } }] } }) }
 
