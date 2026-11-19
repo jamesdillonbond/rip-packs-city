@@ -53,9 +53,17 @@ export default function TopNav() {
   useEffect(() => {
     let active = true
     const supabase = getSupabaseBrowser()
-    supabase.auth.getUser().then(({ data }: { data: { user: unknown } | null }) => {
-      if (active) setSignedIn(!!data?.user)
-    })
+    supabase.auth
+      .getUser()
+      .then(({ data }: { data: { user: unknown } | null }) => {
+        if (active) setSignedIn(!!data?.user)
+      })
+      // A rejected read (e.g. supabase-js's auth-token lock "released because
+      // another request stole it", seen from real iPhone sessions on /market
+      // 11-08 and 11-11) is NOT "signed out": leave the state alone and let
+      // onAuthStateChange below decide. Without this catch it surfaced as an
+      // unhandledrejection on every page that renders the nav.
+      .catch(() => {})
     const { data: sub } = supabase.auth.onAuthStateChange((_event: string, session: { user?: unknown } | null) => {
       if (active) setSignedIn(!!session?.user)
     })

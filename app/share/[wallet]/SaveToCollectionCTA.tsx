@@ -64,7 +64,12 @@ export default function SaveToCollectionCTA({ wallet, owner }: { wallet: string;
       const saved = r.ok && (r.json?.wallets ?? []).some((w) => normalizeAddress(String(w.wallet_addr ?? "")) === address)
       setState(saved ? { kind: "already" } : { kind: "ready" })
     }
-    supabase.auth.getUser().then(({ data }: { data: { user: unknown } | null }) => onSession(!!data?.user))
+    supabase.auth
+      .getUser()
+      .then(({ data }: { data: { user: unknown } | null }) => onSession(!!data?.user))
+      // A failed session read is not "anon": stay "unknown" (renders nothing)
+      // rather than offering a sign-in to someone who may be signed in.
+      .catch(() => {})
     const { data: sub } = supabase.auth.onAuthStateChange((_e: string, session: { user?: unknown } | null) => {
       if (!session?.user && active) setState({ kind: "anon" })
     })
