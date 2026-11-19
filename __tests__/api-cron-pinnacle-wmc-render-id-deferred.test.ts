@@ -180,6 +180,10 @@ describe("/api/cron/pinnacle-wmc-render-id — deferred body", () => {
     const p = logParams()
     expect(p.p_ok).toBe(false)
     expect(p.p_error).toContain("gql chunk errors")
+    // 2026-11-18 (#218): the error must carry the CAUSE. "2 gql chunk errors" alone
+    // hid a Dapper Studio 530 outage from every alerter that attributes upstream 530s.
+    expect(p.p_error).toContain("GQL 502")
+    expect(p.p_extra.gql_first_error).toBe("GQL 502")
     expect(p.p_extra.resolved).toBe(0)
   })
 

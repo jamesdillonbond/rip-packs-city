@@ -148,6 +148,7 @@ export async function GET(req: NextRequest) {
 
     const look = await resolvePinnacleRenderIds(supabaseAdmin, ids, { userAgent: USER_AGENT });
     let gqlErrors = look.gqlErrors;
+    let gqlFirstError = look.gqlFirstError;
 
     let resolved = 0;
     // resolved counts rows the update LANDED on (.select), never rows attempted:
@@ -203,6 +204,7 @@ export async function GET(req: NextRequest) {
       if (salesIds.length > 0) {
         const s = await resolvePinnacleRenderIds(supabaseAdmin, salesIds, { userAgent: USER_AGENT });
         gqlErrors += s.gqlErrors;
+        gqlFirstError = gqlFirstError ?? s.gqlFirstError;
         salesMintReadError = s.mintReadError;
         salesFromMintRecords = s.fromMintRecords;
         const map: Record<string, string> = {};
@@ -223,7 +225,7 @@ export async function GET(req: NextRequest) {
     const errors = [
       look.mintReadError ? `mint records read: ${look.mintReadError}` : null,
       salesMintReadError ? `sales mint records read: ${salesMintReadError}` : null,
-      gqlErrors > 0 ? `${gqlErrors} gql chunk errors` : null,
+      gqlErrors > 0 ? `${gqlErrors} gql chunk errors${gqlFirstError ? ` (first: ${gqlFirstError.slice(0, 80)})` : ""}` : null,
       writeError ? `wmc write (${writeErrors}): ${writeError}` : null,
       deriveError ? `derive: ${deriveError}` : null,
       salesError ? `sales: ${salesError}` : null,
@@ -253,6 +255,7 @@ export async function GET(req: NextRequest) {
         sales_updated: salesUpdated,
         sales_error: salesError,
         gql_errors: gqlErrors,
+        gql_first_error: gqlFirstError,
       },
     });
   });

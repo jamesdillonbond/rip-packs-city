@@ -82,6 +82,10 @@ export type ResolveResult = {
   unresolvable: string[]
   mintReadError: string | null
   gqlErrors: number
+  /** The FIRST chunk's error message (e.g. "GQL 530"), so a caller can say WHY the
+   *  chunks failed. "2 gql chunk errors" alone hid a Dapper Studio outage from
+   *  every alerter that attributes upstream 530s (2026-11-18, #218). */
+  gqlFirstError: string | null
 }
 
 /** Mint records first, Dapper's search for the rest. Never throws. */
@@ -105,6 +109,7 @@ export async function resolvePinnacleRenderIds(
   const fromMintRecords = hits.size
 
   let gqlErrors = 0
+  let gqlFirstError: string | null = null
   const rest = ids.filter((id) => !hits.has(id))
   for (let i = 0; i < rest.length; i += GQL_CHUNK) {
     try {
@@ -112,8 +117,9 @@ export async function resolvePinnacleRenderIds(
       for (const n of nodes) {
         if (n.render_id && !hits.has(String(n.id))) hits.set(String(n.id), { render_id: n.render_id, serial: n.serial, source: "gql" })
       }
-    } catch {
+    } catch (e) {
       gqlErrors++
+      gqlFirstError = gqlFirstError ?? (e instanceof Error ? e.message : String(e))
     }
   }
   return {
@@ -123,5 +129,6 @@ export async function resolvePinnacleRenderIds(
     unresolvable: ids.filter((id) => !hits.has(id)),
     mintReadError,
     gqlErrors,
+    gqlFirstError,
   }
 }
