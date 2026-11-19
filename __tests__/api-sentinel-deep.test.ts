@@ -487,6 +487,23 @@ describe("POST /api/sentinel — full battery", () => {
       expect(c.status).toBe("ok")
       expect(c.detail).toContain("no lane has spent yet")
     })
+
+    it("does not publish a lane-only credit estimate as the account's spend, and states a pause (11-18)", async () => {
+      // 2026-11-18 live reading: 429.9% of datapoints, credits_est_left 4000 / 4000 (lane
+      // executions only), no budgeted lane spent, paused=true — and the arm said "~0% of
+      // credits (est); no lane has spent yet" while Dune's own meter read 4,000 / 4,000 used.
+      install(spend({
+        cycle_datapoints_pct: 429.9, cycle_elapsed_pct: 17.1, on_pace: false,
+        credits_est_left: 4000, cycle_credit_cap: 4000, by_pipeline: [], paused: true,
+      }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Dune Spend (cycle)")
+      expect(c.status).toBe("warn")
+      expect(c.detail).toContain("hand-run queries not counted")
+      expect(c.detail).not.toContain("no lane has spent yet")
+      expect(c.detail).toContain("outside the lane budget")
+      expect(c.detail).toContain("PAUSED")
+    })
   })
 
   // Ownership Index Freshness — the arm added after ownership-onchain-walk failed

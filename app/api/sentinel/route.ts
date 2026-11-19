@@ -2435,9 +2435,18 @@ async function runSentinelWithin(clock: WallBudgetClock) {
         detail:
           `${Number.isFinite(dpPct) ? dpPct : "?"}% of datapoints at ` +
           `${Number.isFinite(elapsedPct) ? elapsedPct : "?"}% of the cycle` +
-          (creditPct != null ? `; ~${creditPct}% of credits (est)` : "") +
+          // ⚠ 2026-11-18: credits_est_* is credits_per_execution × LANE executions.
+          // It cannot see queries run by hand (the Dune connector), so on 11-18 it
+          // read "~0% of credits" while Dune's own meter read 4,000 / 4,000 used.
+          // Say what it counts rather than publish it as the account's spend.
+          (creditPct != null ? `; ~${creditPct}% of credits by lane executions (est; hand-run queries not counted)` : "") +
           `; ${d.days_left_in_cycle ?? "?"}d left` +
-          (spent ? `; ${spent}` : "; no lane has spent yet") +
+          (spent
+            ? `; ${spent}`
+            : Number.isFinite(dpPct) && dpPct > 0
+              ? "; no budgeted lane has spent — this cycle's datapoints were spent outside the lane budget (hand-run queries or unbudgeted loaders)"
+              : "; no lane has spent yet") +
+          (d.paused === true ? " · Dune reads PAUSED (dune_budget_state.paused)" : "") +
           // ⚠ Past 100% there is nothing left to project. The 2026-09-13 sweep read
           // "103.5% … PROJECTED TO EXHAUST BEFORE THE CYCLE ENDS" — a forecast of a
           // state already reached, on a lane whose every tick logs
