@@ -1,4 +1,4 @@
-# Inbox index — 687 live filings
+# Inbox index — 688 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,7 +32,9 @@ failure it documents.
 
 ---
 
-## 2026-11-19 — 3 filings
+## 2026-11-19 — 4 filings
+
+- [Daytime health monitor — 2026-11-19 ~16:05Z: all green (security 4/4, stalled [], 13/13 dashboards' objects resolve, prod 9b717e1 READY). One new pg_cron finding: `rpc-candy-wmc-ghost-purge` timed out once at 09:10Z after ≥8 clean daily runs — unscoped purge may be outgrowing its statement_timeout as Candy wmc grows (LOW, sense-only)](2026-11-19T1605Z-daytime-monitor-candy-wmc-ghost-purge-timeout.md)
 
 - [Daytime health monitor — 2026-11-19 ~04:05Z: all green except pinnacle_render_floor_stale_hours trust BREACH (30.5h, new) — #218 Studio-530 keeps the floor writer from running; unlike the pack-sales arms it has no #218 ack/suppression → night-pass ack/suppress-or-accept decision (LOW, sense-only, self-clears on Studio recovery)](2026-11-19T0409Z-daytime-monitor-pinnacle-render-floor-218.md)
 
