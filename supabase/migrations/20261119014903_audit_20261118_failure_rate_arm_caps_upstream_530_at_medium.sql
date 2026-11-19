@@ -1,4 +1,4 @@
--- 2026-11-18 (PT, ~6:30 PM) — the failure_rate arm caps an UPSTREAM-530 lane at
+-- 2026-11-18 (PT, ~5:50 PM) — the failure_rate arm caps an UPSTREAM-530 lane at
 -- `medium`, so a Dapper Studio outage stops paging every hour (#218).
 --
 -- CAUSE: Dapper's Studio GraphQL has answered HTTP 530 (Cloudflare "error code:
