@@ -33,6 +33,17 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "mcp__Dune__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/dune-spend-guard.sh"
+          }
+        ]
+      }
     ]
   }
 }

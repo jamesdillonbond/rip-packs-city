@@ -61,6 +61,7 @@ tsconfig.*.json
 !.claude/hooks/session-start.sh
 !.claude/hooks/ledger-reminder.sh
 !.claude/hooks/origin-drift.sh
+!.claude/hooks/dune-spend-guard.sh
 .mcp.json
 
 # Flow CLI
