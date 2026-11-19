@@ -1580,8 +1580,29 @@ function applyCorsHeaders(request: NextRequest, response: NextResponse, isCorsAp
   }
 }
 
+/**
+ * 2026-11-19 (security, focus.md 11-17 steer): ~60 API routes still accept their server secret as
+ * `?token=` (tokenMatches), which puts the secret in URLs, request logs and referrers. No scheduled caller
+ * sends it (cron-job.org, pg_cron, GitHub workflows: 0 each, read 11-17) -- but a HUMAN caller (a bookmark,
+ * a manual probe) would not show up in any scheduler, and CLAUDE.md requires every caller enumerated before
+ * a route is gated. So measure first: the proxy logs each request that CARRIES a `token` query parameter
+ * (method + path + a short UA -- NEVER the value). After a quiet week the query form can be removed.
+ * The email-link routes, whose `token` is a per-subscriber link token and not a server secret, are excluded.
+ */
+const QUERY_TOKEN_EXEMPT = ["/api/subscribe/unsubscribe", "/api/subscribe/verify"]
+export function queryTokenSighting(pathname: string, params: URLSearchParams): boolean {
+  if (!pathname.startsWith("/api/")) return false
+  if (QUERY_TOKEN_EXEMPT.some((p) => pathname === p || pathname.startsWith(p + "/"))) return false
+  return params.has("token")
+}
+
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl
+
+  // Measure the `?token=` secret form before removing it (see queryTokenSighting). Value never logged.
+  if (queryTokenSighting(pathname, request.nextUrl.searchParams)) {
+    console.warn(`[auth:query-token] ${request.method} ${pathname} ua=${(request.headers.get("user-agent") ?? "").slice(0, 60)}`)
+  }
 
   // ── A backslash in the path is never a page ──────────────────────────────
   // Bots request things like `/api/og/insights%5C`; the URL-encoded backslash

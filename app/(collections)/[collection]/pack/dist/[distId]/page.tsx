@@ -2110,8 +2110,10 @@ function PacksContentRemaining({
 
 // ── Pack Sales History (Item 2) ─────────────────────────────────────────────
 // Top Purchases (highest price) + Recent Purchases (newest). Buyer renders as a
-// short wallet linking to /analytics/wallets/<addr> — the differentiator over
-// Top Shot's own drop page, where the buyer is a dead-end name. Coverage is
+// short wallet linking to /share/<addr> via marketWalletHref() — the buyer's
+// public Collection Card (holdings), the differentiator over Top Shot's own
+// drop page where the buyer is a dead-end name. (/analytics/wallets/<addr> is a
+// different surface — the Flowty loans view, loanWalletHref().) Coverage is
 // partial (the dist bridge only links sales whose pack was later opened), so
 // the module carries an explicit caption and an honest empty state.
 
