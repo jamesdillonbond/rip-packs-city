@@ -145,6 +145,7 @@ describe("edge-fn drift detector — tier 1 is a proof", () => {
     // inapplicable to it and tier 2 is its verdict.
     // 2026-10-26: six R137 retirements (deployed-only, verify_jwt=false, 0 callers) joined as
     // 410 tombstones — same shape as the R21 batch, so tier 1 is inapplicable to them too.
+    // 2026-11-19: seed-topshot-pack-distributions joined as a 410 tombstone (#218, Studio 530).
     expect(res.inapplicable.sort()).toEqual([
       "allday-unmapped-resolver",
       "audit-storefront-wallets",
@@ -160,6 +161,7 @@ describe("edge-fn drift detector — tier 1 is a proof", () => {
       "scan-storefront-events",
       "seed-allday-editions",
       "seed-golazos-editions",
+      "seed-topshot-pack-distributions",
       "sync-nba-games",
     ])
     expect(res.clean.sort()).toEqual([...WITH_MAP].sort())

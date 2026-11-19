@@ -141,7 +141,12 @@ describe("edge-fn source-drift guard — the two seeders carry the inline copies
     expect(alldayImportsShared || alldaySrc.includes(expr)).toBe(true)
   })
 
-  it("seed-topshot imports _shared, or carries the inline slots parseInt verbatim", () => {
-    expect(topshotImportsShared || topshotSrc.includes(SLOTS_PARSE)).toBe(true)
+  // 2026-11-19: seed-topshot-pack-distributions is a RETIRED 410 tombstone (#218; its source is archived in
+  // supabase/retired-functions/). A tombstone parses nothing, so it carries no copy to drift — but ONLY a real
+  // tombstone (410, no imports, no env, no fetch) is excused; a live function still has to carry the parse.
+  const topshotIsTombstone =
+    /status:\s*410\b/.test(topshotSrc) && !/\bimport\s/.test(topshotSrc) && !/Deno\.env\b/.test(topshotSrc) && !/\bfetch\s*\(/.test(topshotSrc)
+  it("seed-topshot imports _shared, carries the inline slots parseInt verbatim, or is a retired tombstone", () => {
+    expect(topshotIsTombstone || topshotImportsShared || topshotSrc.includes(SLOTS_PARSE)).toBe(true)
   })
 })
