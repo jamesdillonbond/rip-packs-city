@@ -2,6 +2,16 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## 🚨 A HAND-RUN DUNE QUERY SPENDS THE SAME MONTH THE LANES DO — and no lane budget can see it (2026-11-19)
+
+The 2026-11 cycle was spent to **430 % of its datapoint allowance at 19.5 % of the cycle by queries run by hand**
+through the Dune connector — no budgeted lane had spent anything. `dune_budget_state` then paused every Dune
+lane until the reset (25 days), including the ones that feed the product. **Before any Dune execution:** read
+`mcp__Dune__getUsage`, estimate datapoints (rows × columns), filter on the partition columns `searchTables`
+returns, and LIMIT. In Claude Code in this repo, `.claude/hooks/dune-spend-guard.sh` makes every spending Dune
+call (execute / create-and-execute / materialized view / schedule) ask a human first; **Cowork and other
+surfaces have no such hook — the rule is the only guard there.**
+
 ## ⭐ DUNE'S `flow.cadence_events` IS THE INDEPENDENT CONTROL FOR ANY "IS OUR INGEST MISSING ROWS?" QUESTION (method, 2026-09-11, register #70)
 
 When a collection's volume falls, **nothing inside this estate can tell a market decline from a
