@@ -90,9 +90,11 @@ const UNBOUNDED = ROWS.filter((r) => !r.bound)
  * 23 → 22 on 2026-11-07: `/api/alerts/channels` bounded its verify-email Resend
  * call (AbortSignal.timeout(10_000)) — the alerts review that made it report a
  * refused send instead of telling the collector a link went out.
+ * 22 → 21 on 2026-11-18: `/api/wallet-packs` no longer fetches Studio GraphQL at all
+ * (HTTP 530 since 11-17); it reads Atlas through pg_net with boundedRead (#218).
  * Lower this when you convert one. NEVER raise it.
  */
-const BUDGET = 22
+const BUDGET = 21
 
 describe("image proxies bound their upstream, and the wider class only shrinks", () => {
   it("is not vacuous — the walk found API routes, and found some that ARE bound", () => {

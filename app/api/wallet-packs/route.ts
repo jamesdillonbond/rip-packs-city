@@ -2,57 +2,49 @@ import { NextRequest, NextResponse } from "next/server"
 import {safeApiError, isUnresolvedIdentifierError, unresolvedIdentifierResponse} from "@/lib/api-error";
 import { resolveToFlowAddress } from "@/lib/chains/flow/flow-resolve"
 import { packNftTypeName } from "@/lib/packs/live-pack-listings"
+import { supabaseAdmin } from "@/lib/supabase"
+import { getCollection } from "@/lib/collections"
+import { ownLookup } from "@/lib/safe-lookup"
+import { boundedRead } from "@/lib/api/bounded-read"
 
-const STUDIO_GRAPHQL = "https://api.production.studio-platform.dapperlabs.com/graphql"
-
-const STUDIO_HEADERS = {
-  "Content-Type": "application/json",
-  "User-Agent": "RipPacksCity/1.0 (www.rippackscity.com)",
-  "Origin": "https://nbatopshot.com",
-  "Referer": "https://nbatopshot.com/",
+// 2026-11-18 (#218): Studio GraphQL (searchPackNftAggregation) has answered HTTP 530 since 11-17.
+// Sealed counts now come from Atlas PackService/GetPackCountsByOwnerGroupedByDistribution, one call per
+// wallet + product. Vercel's egress is firewalled by Atlas (measured 06-16), so the call goes through
+// pg_net: atlas_wallet_pack_counts_begin + the shared atlas_await_response. Titles come from our own
+// pack_distributions (Atlas counts carry ids only); a dist we hold no title for counts in `owned`
+// and `totalSealedPacks` but not in `packsByTitle`, exactly as an untitled Studio node did.
+const ATLAS_PRODUCT: Record<string, "nba" | "nfl" | "laliga"> = {
+  "nba-top-shot": "nba",
+  "nfl-all-day": "nfl",
+  "laliga-golazos": "laliga",
 }
 
-const OWNED_PACKS_QUERY = `
-  query searchPackNftAggregation_searchPacks($after: String, $first: Int, $filters: [PackNftFilter!]) {
-    searchPackNftAggregation(searchInput: {after: $after, first: $first, filters: $filters}) {
-      pageInfo {
-        endCursor
-        hasNextPage
-      }
-      totalCount
-      edges {
-        node {
-          dist_id {
-            key
-            value
-          }
-          distribution {
-            uuid { value }
-            title { value }
-          }
-        }
-      }
-    }
-  }
-`
+type PackCount = { distributionId?: string; sealedCount?: string | number }
 
-type OwnedPackNode = {
-  dist_id: { key: string; value: string }
-  distribution: {
-    uuid: { value: string }
-    title: { value: string }
-  }
-}
-
-type GraphQLResponse = {
-  data?: {
-    searchPackNftAggregation?: {
-      pageInfo: { endCursor: string; hasNextPage: boolean }
-      totalCount: number
-      edges: { node: OwnedPackNode }[]
+/** One Atlas read through pg_net; a Cloudflare challenge (403/429) is retried once. Throws on failure. */
+async function atlasSealedCounts(wallet: string, product: "nba" | "nfl" | "laliga"): Promise<PackCount[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabaseAdmin as any
+  let lastStatus: string = "no response"
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const begin = await boundedRead(db.rpc("atlas_wallet_pack_counts_begin", { p_wallet: wallet, p_product: product }), "wallet-packs/atlas-begin", 5_000)
+    if (begin.error) throw new Error(`wallet packs begin: ${begin.error.message ?? "failed"}`)
+    const id = Number(begin.data)
+    if (!Number.isFinite(id) || id <= 0) throw new Error("wallet packs begin returned no request id")
+    // The await polls server-side for up to 8 s; the client bound sits just above it.
+    const col = await boundedRead(db.rpc("atlas_await_response", { p_request_id: id, p_max_ms: 8000 }), "wallet-packs/atlas-await", 12_000)
+    if (col.error) throw new Error(`wallet packs await: ${col.error.message ?? "failed"}`)
+    const env = col.data as { ok?: boolean; body?: { distributionPackCounts?: unknown }; status?: number | null } | null
+    if (env?.ok === true) {
+      const arr = env.body?.distributionPackCounts
+      // An answer without the array is not "holds nothing" (CLAUDE.md honesty canon).
+      if (!Array.isArray(arr)) throw new Error("wallet packs response carried no distributionPackCounts")
+      return arr as PackCount[]
     }
+    lastStatus = env?.status != null ? `HTTP ${env.status}` : "no response"
+    if (!(env?.status === 403 || env?.status === 429)) break
   }
-  errors?: { message: string }[]
+  throw new Error(`wallet packs ${lastStatus}`)
 }
 
 // 2026-09-29: usernames resolve through the shared ladder (cache → live Atlas →
@@ -83,66 +75,49 @@ export async function GET(req: NextRequest) {
 
     const walletAddress = await resolveWallet(input)
 
-    // Strip 0x prefix for the filter — the API uses the address without prefix
-    const addressWithout0x = walletAddress.replace(/^0x/, "")
-
-    const allNodes: OwnedPackNode[] = []
-    let cursor: string | undefined = undefined
-    let hasMore = true
-
-    while (hasMore) {
-      const res = await fetch(STUDIO_GRAPHQL, {
-        method: "POST",
-        headers: STUDIO_HEADERS,
-        body: JSON.stringify({
-          operationName: "searchPackNftAggregation_searchPacks",
-          query: OWNED_PACKS_QUERY,
-          variables: {
-            first: 2000,
-            after: cursor,
-            filters: [
-              {
-                status: { eq: "Sealed" },
-                owner_address: { eq: addressWithout0x },
-                type_name: { eq: typeName },
-              },
-            ],
-          },
-        }),
-      })
-
-      // Every failure shape throws: an HTTP error or a `{ data: null }` reply
-      // used to fall through as an empty last page — "holds no sealed packs".
-      if (!res.ok) throw new Error(`wallet packs HTTP ${res.status}`)
-      const json = (await res.json()) as GraphQLResponse
-      if (json.errors) throw new Error(json.errors[0]?.message ?? "GraphQL error")
-
-      const connection = json.data?.searchPackNftAggregation
-      if (!connection) throw new Error("wallet packs response carried no searchPackNftAggregation")
-      const edges = connection?.edges ?? []
-      for (const edge of edges) {
-        if (edge?.node) allNodes.push(edge.node)
-      }
-
-      hasMore = connection?.pageInfo?.hasNextPage === true
-      cursor = connection?.pageInfo?.endCursor ?? undefined
+    const product = ownLookup(ATLAS_PRODUCT, collection)
+    const collectionId = getCollection(collection)?.supabaseCollectionId
+    if (!product || !collectionId) {
+      return NextResponse.json(
+        { error: "Sealed pack holdings are not available for this collection." },
+        { status: 400 },
+      )
     }
 
-    // Count owned packs by dist_id, include title for client-side matching
+    const counts = await atlasSealedCounts(walletAddress.toLowerCase(), product)
     const owned: Record<string, number> = {}
+    let totalSealed = 0
+    for (const c of counts) {
+      const distId = c.distributionId != null ? String(c.distributionId) : ""
+      const n = Number(c.sealedCount)
+      if (!distId || !Number.isFinite(n) || n <= 0) continue
+      owned[distId] = (owned[distId] ?? 0) + n
+      totalSealed += n
+    }
+
+    // Titles for client-side matching, from our catalog. A failed read fails the request rather than
+    // returning counts the UI cannot match to a pack (the matcher reads packsByTitle).
     const packsByTitle: Record<string, number> = {}
-    for (const node of allNodes) {
-      const distId = node.dist_id?.value
-      if (!distId) continue
-      owned[distId] = (owned[distId] ?? 0) + 1
-      const title = node.distribution?.title?.value ?? ""
-      if (title) packsByTitle[title] = (packsByTitle[title] ?? 0) + 1
+    const distIds = Object.keys(owned)
+    if (distIds.length > 0) {
+      const { data: rows, error: tErr } = await boundedRead(
+        (supabaseAdmin as any)
+          .from("pack_distributions")
+          .select("dist_id, title")
+          .eq("collection_id", collectionId)
+          .in("dist_id", distIds.slice(0, 1000)),
+        "wallet-packs/titles",
+      )
+      if (tErr) throw new Error(`pack_distributions read: ${tErr.message}`)
+      for (const r of (rows ?? []) as Array<{ dist_id: string; title: string | null }>) {
+        if (r.title) packsByTitle[r.title] = (packsByTitle[r.title] ?? 0) + (owned[String(r.dist_id)] ?? 0)
+      }
     }
 
     return NextResponse.json({
       walletAddress,
       collection,
-      totalSealedPacks: allNodes.length,
+      totalSealedPacks: totalSealed,
       owned,
       packsByTitle,
     })
@@ -154,7 +129,7 @@ export async function GET(req: NextRequest) {
     // since `message` here is whatever the resolver threw.
     if (isUnresolvedIdentifierError(e)) return unresolvedIdentifierResponse()
 
-    // GraphQL / network failures → return empty result instead of 500. That
+    // Atlas / network failures → return empty result instead of 500. That
     // degradation is deliberate (the caller reads packsByTitle and renders
     // nothing), but the `error` key must not carry the upstream's own text.
     console.error("[wallet-packs] error:", message)

@@ -1,11 +1,15 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest"
 
 // Route integration test for GET /api/wallet-packs. Requires ?wallet= → 400
-// before any GraphQL work. A raw 0x address skips username resolution; a
-// username is resolved to a flowAddress via topshotGraphql first. The Studio
-// pack-aggregation API is paged (hasNextPage) and Sealed packs are aggregated
-// by dist_id + title. GraphQL/network failures degrade to an empty 200 (never
-// a 500); an unresolvable username is a 400.
+// before any upstream work. A raw 0x address skips username resolution; a
+// username is resolved to a flowAddress via topshotGraphql first.
+//
+// 2026-11-18 (#218): Studio GraphQL is HTTP 530, so sealed counts come from Atlas
+// PackService/GetPackCountsByOwnerGroupedByDistribution through pg_net
+// (atlas_wallet_pack_counts_begin + atlas_await_response), and titles from our
+// pack_distributions. Every property the Studio-era test pinned is re-pinned here:
+// aggregation by dist + title, collection scoping, the refusal of an unreadable
+// collection, username resolution, and that a failed read is never an empty wallet.
 
 const gql: { flowAddress: string | null; throwErr: Error | null } = { flowAddress: null, throwErr: null }
 vi.mock("@/lib/chains/flow/topshot", () => ({
@@ -15,26 +19,60 @@ vi.mock("@/lib/chains/flow/topshot", () => ({
   },
 }))
 
+type Env = { ok: boolean; body?: unknown; status?: number | null; error?: string }
+const db = vi.hoisted(() => ({
+  begins: [] as Array<{ p_wallet: string; p_product: string }>,
+  envs: [] as Env[],
+  beginError: null as { message: string } | null,
+  titles: [] as Array<{ dist_id: string; title: string | null }>,
+  titleFilter: { collection_id: null as string | null, dist_ids: null as string[] | null },
+}))
+vi.mock("@/lib/supabase", () => ({
+  supabaseAdmin: {
+    rpc: async (fn: string, args: any) => {
+      if (fn === "atlas_wallet_pack_counts_begin") {
+        db.begins.push(args)
+        return db.beginError ? { data: null, error: db.beginError } : { data: 1000 + db.begins.length, error: null }
+      }
+      if (fn === "atlas_await_response") {
+        const env = db.envs.shift() ?? { ok: false, status: null, error: "timeout" }
+        return { data: env, error: null }
+      }
+      // Anything else (the username resolver's cache / live-Atlas legs) is unavailable here, so the
+      // resolver falls through to the mocked Top Shot profile lookup, as it did before this port.
+      return { data: null, error: { message: `rpc ${fn} not mocked` } }
+    },
+    from: (table: string) => {
+      if (table !== "pack_distributions") throw new Error(`unexpected table ${table}`)
+      const q: any = {
+        select: () => q,
+        eq: (_c: string, v: string) => { db.titleFilter.collection_id = v; return q },
+        in: (_c: string, v: string[]) => {
+          db.titleFilter.dist_ids = v
+          return Promise.resolve({ data: db.titles.filter((t) => v.includes(t.dist_id)), error: null })
+        },
+      }
+      return q
+    },
+  },
+}))
+
 import { GET } from "@/app/api/wallet-packs/route"
 
 const req = (u: string) => ({ url: u }) as any
-
-function studioPage(edges: any[], hasNextPage = false, endCursor: string | null = null) {
-  return {
-    ok: true,
-    status: 200,
-    json: async () => ({
-      data: { searchPackNftAggregation: { pageInfo: { endCursor, hasNextPage }, totalCount: edges.length, edges } },
-    }),
-  }
-}
-const edge = (distId: string, title: string) => ({
-  node: { dist_id: { key: "k", value: distId }, distribution: { uuid: { value: "u" }, title: { value: title } } },
+const counts = (rows: Array<[string, number]>): Env => ({
+  ok: true,
+  body: { distributionPackCounts: rows.map(([d, n]) => ({ distributionId: d, sealedCount: String(n), openedCount: "4" })) },
 })
 
 beforeEach(() => {
   gql.flowAddress = null
   gql.throwErr = null
+  db.begins = []
+  db.envs = []
+  db.beginError = null
+  db.titles = []
+  db.titleFilter = { collection_id: null, dist_ids: null }
 })
 afterEach(() => vi.unstubAllGlobals())
 
@@ -45,118 +83,109 @@ describe("GET /api/wallet-packs", () => {
     expect((await res.json()).error).toContain("wallet param required")
   })
 
-  it("200s and aggregates owned sealed packs by dist_id + title (0x address, one page)", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => studioPage([edge("d1", "Pack A"), edge("d1", "Pack A")])))
+  it("aggregates SEALED counts by dist and title (opened/revealed are not holdings)", async () => {
+    db.envs.push(counts([["d1", 2], ["d2", 0], ["d3", 1]]))
+    db.titles = [{ dist_id: "d1", title: "Pack A" }, { dist_id: "d3", title: "Pack C" }]
     const res = await GET(req("https://t/api/wallet-packs?wallet=0xbd94cade097e50ac"))
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.walletAddress).toBe("0xbd94cade097e50ac")
-    expect(body.totalSealedPacks).toBe(2)
-    expect(body.owned.d1).toBe(2)
-    expect(body.packsByTitle["Pack A"]).toBe(2)
-  })
-
-  it("pages through hasNextPage and merges both pages", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(studioPage([edge("d1", "Pack A")], true, "CUR"))
-      .mockResolvedValueOnce(studioPage([edge("d1", "Pack A"), edge("d2", "Pack B")]))
-    vi.stubGlobal("fetch", fetchMock)
-    const res = await GET(req("https://t/api/wallet-packs?wallet=0xbd94cade097e50ac"))
-    const body = await res.json()
-    expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(body.totalSealedPacks).toBe(3)
-    expect(body.owned).toEqual({ d1: 2, d2: 1 })
-    // second page's fetch carried the cursor from page one
-    expect(JSON.parse(fetchMock.mock.calls[1][1].body).variables.after).toBe("CUR")
+    expect(body.owned).toEqual({ d1: 2, d3: 1 })
+    expect(body.packsByTitle).toEqual({ "Pack A": 2, "Pack C": 1 })
+    expect(db.begins).toEqual([{ p_wallet: "0xbd94cade097e50ac", p_product: "nba" }])
   })
 
-  it("resolves a username to a flowAddress before paging (adds the 0x prefix)", async () => {
+  it("a dist we hold no title for still counts, but is not invented into packsByTitle", async () => {
+    db.envs.push(counts([["d7", 3]]))
+    const body = await (await GET(req("https://t/api/wallet-packs?wallet=0xbd94cade097e50ac"))).json()
+    expect(body.totalSealedPacks).toBe(3)
+    expect(body.owned).toEqual({ d7: 3 })
+    expect(body.packsByTitle).toEqual({})
+    expect(body.error).toBeUndefined()
+  })
+
+  it("retries a Cloudflare challenge once, then reads", async () => {
+    db.envs.push({ ok: false, status: 403, error: "Just a moment" }, counts([["d1", 1]]))
+    db.titles = [{ dist_id: "d1", title: "Pack A" }]
+    const body = await (await GET(req("https://t/api/wallet-packs?wallet=0xbd94cade097e50ac"))).json()
+    expect(db.begins).toHaveLength(2)
+    expect(body.totalSealedPacks).toBe(1)
+  })
+
+  it("resolves a username to a flowAddress first (adds the 0x prefix)", async () => {
     gql.flowAddress = "bd94cade097e50ac" // no 0x prefix from the profile API
-    vi.stubGlobal("fetch", vi.fn(async () => studioPage([edge("d1", "Pack A")])))
+    db.envs.push(counts([["d1", 1]]))
     const res = await GET(req("https://t/api/wallet-packs?wallet=@trevor"))
     expect(res.status).toBe(200)
     expect((await res.json()).walletAddress).toBe("0xbd94cade097e50ac")
+    expect(db.begins[0].p_wallet).toBe("0xbd94cade097e50ac")
   })
 
   it("400s when a username cannot be resolved", async () => {
-    gql.flowAddress = null // profile lookup returns no address
+    gql.flowAddress = null
     const res = await GET(req("https://t/api/wallet-packs?wallet=@ghost"))
     expect(res.status).toBe(400)
     const body = await res.json()
     expect(body.code).toBe("not_found")
-    // Fixed copy, not the resolver's thrown text.
     expect(body.error).toMatch(/wallet or username/i)
     expect(body.error).not.toContain("Could not resolve")
   })
 
-  it("degrades GraphQL errors to an empty 200 (never a 500)", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ errors: [{ message: "rate limited" }] }) })))
+  it("a failed read degrades to an empty 200 WITH an error key (never a 500, never an empty wallet)", async () => {
+    db.envs.push({ ok: false, status: 503, error: "upstream rate limited" }, { ok: false, status: 503 })
     const res = await GET(req("https://t/api/wallet-packs?wallet=0xbd94cade097e50ac"))
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.walletAddress).toBeNull()
     expect(body.totalSealedPacks).toBe(0)
     expect(body.error).not.toContain("rate limited")
-
-    // ⚠ THE `error` KEY IS A LOAD-BEARING CONTRACT, NOT DECORATION (2026-08-29).
-    // `totalSealedPacks: 0` and `packsByTitle: {}` on this path are byte-identical
-    // to a wallet that genuinely holds no packs, so `error` is the ONLY thing that
-    // tells them apart — and CollectionTabClient now discriminates on exactly it
-    // (`if (!d || d.error) setPacksFailed(true)`) to draw a distinguishable cell.
-    // Dropping the key here would silently restore the defect in a file nobody
-    // editing this route would think to open, so it is asserted POSITIVELY: a
-    // non-empty string, and the empty map alongside it.
+    // ⚠ THE `error` KEY IS A LOAD-BEARING CONTRACT (2026-08-29): CollectionTabClient
+    // discriminates on it (`if (!d || d.error) setPacksFailed(true)`). Without it this
+    // response is byte-identical to a wallet that holds no packs.
     expect(typeof body.error).toBe("string")
     expect(body.error.length).toBeGreaterThan(0)
     expect(body.packsByTitle).toEqual({})
+    expect(db.begins).toHaveLength(1) // a 503 is not a challenge: no retry
   })
 
-  // ⛔ SUBSTITUTION (2026-10-19): the PackNFT type was Top Shot's for every
-  // collection, so an All Day Collection tab matched its set names against the
-  // wallet's Top Shot packs. The read is scoped to the collection asked about.
-  const typeNameSent = (fetchMock: any) =>
-    JSON.parse(fetchMock.mock.calls[0][1].body).variables.filters[0].type_name.eq
+  it("an answer without distributionPackCounts is a failed read, not an empty wallet", async () => {
+    db.envs.push({ ok: true, body: {} })
+    const body = await (await GET(req("https://t/api/wallet-packs?wallet=0xbd94cade097e50ac"))).json()
+    expect(typeof body.error).toBe("string")
+    expect(body.error.length).toBeGreaterThan(0)
+  })
 
-  it("reads the PackNFT type of the collection asked about, not Top Shot's", async () => {
-    const fetchMock = vi.fn(async () => studioPage([edge("d9", "AD Pack")]))
-    vi.stubGlobal("fetch", fetchMock)
+  it("a begin failure is a failed read, not an empty wallet", async () => {
+    db.beginError = { message: "pool timeout" }
+    const body = await (await GET(req("https://t/api/wallet-packs?wallet=0xbd94cade097e50ac"))).json()
+    expect(typeof body.error).toBe("string")
+    expect(body.error).not.toContain("pool timeout")
+  })
+
+  // ⛔ SUBSTITUTION (2026-10-19): the read is scoped to the collection asked about.
+  it("reads the product AND the titles of the collection asked about, not Top Shot's", async () => {
+    db.envs.push(counts([["d9", 1]]))
+    db.titles = [{ dist_id: "d9", title: "AD Pack" }]
     const res = await GET(req("https://t/api/wallet-packs?wallet=0xbd94cade097e50ac&collection=nfl-all-day"))
     expect(res.status).toBe(200)
-    expect(typeNameSent(fetchMock)).toBe("A.e4cf4bdc1751c65d.PackNFT.NFT")
-    expect(typeNameSent(fetchMock)).not.toBe("A.0b2a3299cc857e29.PackNFT.NFT")
+    expect(db.begins[0].p_product).toBe("nfl")
+    expect(db.titleFilter.collection_id).toBe("dee28451-5d62-409e-a1ad-a83f763ac070")
     expect((await res.json()).collection).toBe("nfl-all-day")
   })
 
   it("keeps the Top Shot default when the collection param is absent", async () => {
-    const fetchMock = vi.fn(async () => studioPage([]))
-    vi.stubGlobal("fetch", fetchMock)
+    db.envs.push(counts([]))
     await GET(req("https://t/api/wallet-packs?wallet=0xbd94cade097e50ac"))
-    expect(typeNameSent(fetchMock)).toBe("A.0b2a3299cc857e29.PackNFT.NFT")
+    expect(db.begins[0].p_product).toBe("nba")
   })
 
   it("refuses a collection it cannot read, without answering with another's packs", async () => {
-    const fetchMock = vi.fn(async () => studioPage([edge("d1", "Pack A")]))
-    vi.stubGlobal("fetch", fetchMock)
     const res = await GET(req("https://t/api/wallet-packs?wallet=0xbd94cade097e50ac&collection=disney-pinnacle"))
     expect(res.status).toBe(400)
     const body = await res.json()
-    expect(fetchMock).not.toHaveBeenCalled()
+    expect(db.begins).toHaveLength(0)
     expect(body.packsByTitle).toBeUndefined()
     expect(body.totalSealedPacks).toBeUndefined()
-  })
-
-  it("an HTTP error is a failed read, not an empty wallet", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 503, json: async () => ({}) })))
-    const body = await (await GET(req("https://t/api/wallet-packs?wallet=0xbd94cade097e50ac"))).json()
-    expect(typeof body.error).toBe("string")
-    expect(body.error.length).toBeGreaterThan(0)
-  })
-
-  it("a `{ data: null }` reply is a failed read, not an empty wallet", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ data: null }) })))
-    const body = await (await GET(req("https://t/api/wallet-packs?wallet=0xbd94cade097e50ac"))).json()
-    expect(typeof body.error).toBe("string")
-    expect(body.error.length).toBeGreaterThan(0)
   })
 })
