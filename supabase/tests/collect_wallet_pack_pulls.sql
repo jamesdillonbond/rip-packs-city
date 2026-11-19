@@ -25,7 +25,7 @@
 --      lane unless the index already names it; a re-collected box queues nothing again.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261119050000_audit_20261118_pack_identity_and_pulls_off_studio_onto_atlas.sql).
+-- (supabase/migrations/20261119123000_audit_20261119_a_cloudflare_challenge_is_a_retry_not_a_failed_run.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -262,7 +262,7 @@ DECLARE
   v_edges jsonb;
   v_n int;
   v_next bigint;
-  v_requests int := 0; v_ok int := 0; v_failed int := 0; v_expired int := 0;
+  v_requests int := 0; v_ok int := 0; v_failed int := 0; v_challenged int := 0; v_expired int := 0;
   v_pages int := 0; v_wallets_done int := 0;
   v_pulls_new int := 0; v_api_named int := 0; v_local_named int := 0;
   v_lookups int := 0; v_priced_packs int := 0; v_valued_packs int := 0;
@@ -322,7 +322,10 @@ BEGIN
                END;
 
     IF v_body IS NULL OR jsonb_typeof(v_edges) IS DISTINCT FROM 'array' THEN
-      v_failed := v_failed + 1;
+      -- 2026-11-19: a Cloudflare challenge (403/429, ~5-15 pct of Atlas calls from this egress) is retried
+      -- (ids re-queued / the wallet re-synced next time) -- a retry, not a lane failure; the 4xx arm
+      -- pages HIGH if no 200 lands for 2 h. Anything else still fails the run.
+      IF r.h_status IN (403, 429) THEN v_challenged := v_challenged + 1; ELSE v_failed := v_failed + 1; END IF;
       v_last_error := left(coalesce(v_body->'errors'->0->>'message', r.h_error, r.h_content, 'http ' || r.h_status), 200);
       UPDATE public.pack_pull_requests
          SET collected_at = now(), status_code = r.h_status,
@@ -669,7 +672,7 @@ BEGIN
     v_requests, v_pulls_new + v_api_named + v_local_named + v_priced_packs, 0,
     (v_failed = 0), v_last_error,
     NULL, NULL, NULL,
-    jsonb_build_object('requests_ok', v_ok, 'requests_failed', v_failed, 'requests_expired', v_expired,
+    jsonb_build_object('requests_ok', v_ok, 'requests_failed', v_failed, 'requests_challenged', v_challenged, 'requests_expired', v_expired,
                        'wallet_pages', v_pages, 'wallets_done', v_wallets_done,
                        'pulls_new', v_pulls_new, 'editions_named_local', v_local_named,
                        'editions_named_api', v_api_named, 'edition_lookups_dispatched', v_lookups,
@@ -677,7 +680,7 @@ BEGIN
   );
 
   RETURN jsonb_build_object('ok', v_failed = 0, 'requests', v_requests, 'requests_ok', v_ok,
-                            'requests_failed', v_failed, 'requests_expired', v_expired,
+                            'requests_failed', v_failed, 'requests_challenged', v_challenged, 'requests_expired', v_expired,
                             'wallet_pages', v_pages, 'wallets_done', v_wallets_done,
                             'pulls_new', v_pulls_new, 'editions_named_local', v_local_named,
                             'editions_named_api', v_api_named, 'edition_lookups_dispatched', v_lookups,
@@ -820,6 +823,23 @@ BEGIN
   PERFORM _assert((SELECT completed_at IS NOT NULL AND last_error LIKE 'page 1:%' FROM public.pack_pull_wallet_state WHERE wallet = '0x2222222222222222'),
                   'a failed page ends the walk WITH its error');
   PERFORM _assert((SELECT ok = false FROM public.pipeline_runs_stub ORDER BY ctid DESC LIMIT 1), 'the pipeline row says ok=false');
+END $$;
+
+-- claim 5b (2026-11-19): a Cloudflare CHALLENGE (403/429) still ends that wallet's walk with its error (the wallet
+-- is re-synced next time), but it is a RETRY, not a failed run: ok stays true and the run reports
+-- requests_challenged. (A 503 above still fails the run.)
+INSERT INTO public.pack_pull_wallet_state (wallet, requested_at) VALUES ('0x3a3a3a3a3a3a3a3a', now());
+INSERT INTO public.pack_pull_requests (request_id, kind, wallet, page, product) VALUES (4040, 'wallet', '0x3a3a3a3a3a3a3a3a', 1, 'nfl');
+INSERT INTO net._http_response VALUES (4040, 403, '<!DOCTYPE html><title>Just a moment...</title>', NULL);
+DO $$
+DECLARE v jsonb;
+BEGIN
+  v := public.collect_wallet_pack_pulls();
+  PERFORM _assert((v->>'ok')::boolean, 'a challenged page alone -> ok=true (a retry, not a failure)');
+  PERFORM _assert((SELECT ok FROM public.pipeline_runs_stub ORDER BY ctid DESC LIMIT 1), 'the pipeline row says ok=true');
+  PERFORM _assert_eq((SELECT extra->>'requests_challenged' FROM public.pipeline_runs_stub ORDER BY ctid DESC LIMIT 1), '1', 'and counts the challenge');
+  PERFORM _assert((SELECT completed_at IS NOT NULL AND last_error LIKE 'page 1:%' FROM public.pack_pull_wallet_state WHERE wallet = '0x3a3a3a3a3a3a3a3a'),
+                  'the challenged walk still ends WITH its error, so the wallet is re-synced');
 END $$;
 
 -- claim 6: pulls that LEFT the wallet (no moments / wallet-cache row).

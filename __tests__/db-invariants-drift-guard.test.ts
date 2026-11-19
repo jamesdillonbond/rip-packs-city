@@ -980,8 +980,9 @@ const PINS = [
     // 2026-10-19 (follow-up): a Revealed box never records a pack a third party withdrew.
     // 2026-11-18 (#218): Studio (HTTP 530) -> Atlas PackService/NFTService; responses translated to
     // the Studio shape, walks product by product, "0" pull ids dropped, Studio-era walks end with a reason.
+    // 2026-11-19: a Cloudflare challenge (403/429) counts as requests_challenged, not a failed run.
     migration:
-      "supabase/migrations/20261119050000_audit_20261118_pack_identity_and_pulls_off_studio_onto_atlas.sql",
+      "supabase/migrations/20261119123000_audit_20261119_a_cloudflare_challenge_is_a_retry_not_a_failed_run.sql",
   },
   {
     // Added 2026-09-18. Pins the FIX for "my wallet shows 0 sold packs when I have
