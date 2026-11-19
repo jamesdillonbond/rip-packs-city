@@ -4,6 +4,20 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-11-19 ~9:35 AM PT (Claude Code cloud) — #218 is migrated, not waiting on Studio; read these BEFORE re-carrying anything
+
+- **"Candy revival trust arm re-dates ~twice a week" is CLOSED** — 2026-11-19 ~8:36 AM PT: the arm sums USD with a $250 floor (`20261119113000`); Trevor delegated the definition. Do not re-date it for dust trickles.
+- **"`/insights/trophies` pays the wallet probe for ~8.1k candidates to show ~1.2k" is CLOSED** — 2026-11-19 ~6:55 AM PT: `get_insights_trophies(p_collections)` (single-collection tabs −57 % buffers; the default board was never 8.1k→1.2k — Candy and Panini are published).
+- **"Retire the old cron-job.org Studio pack-sales/seed lanes" is CLOSED** — the pack-sales/opens lanes were pg_cron jobs, PAUSED 11-18 10:58 PM PT (`20261119080000`, 0 runs since); `seed-topshot-pack-distributions` is a 410 tombstone since 11-19 ~8:48 AM PT. Its cron-job.org entry still calls it and gets 410 — harmless; deleting it is optional.
+- **The 11-17 "Studio GraphQL down" steer below is history for #218 purposes:** every LIVE Studio reader is on Atlas or retired (known-issues #218 PORTED bullets). A Studio 530 is no longer an incident. Do not wire anything back to Studio if it returns.
+- **Dated reads for the next pass (falsifiers):**
+  - `rpc-candy-wmc-ghost-purge` 11-20 1:10 AM PT should finish in ~15–30 s (`20261119110000`); >60 s means the duplicate prefilter regressed.
+  - `pack-nft-identity` / `wallet-pack-pulls` failure-rate rows should drop to info by ~11-20 morning (a challenge is now `requests_challenged`, `20261119123000`). If they stay medium, read `extra.requests_failed` — those are real failures.
+  - The other #218-pooled failure-rate rows clear by themselves 12 h after their last failure; do NOT suppress them.
+  - `ufc-aptos-wallet-link` should run in seconds (persisted mint list); 5,077 mainnet26 mints are untraceable by decision (#181).
+- **#261 is NOT only waiting on Dune:** the review-only Atlas lane `rpc-atlas-ownership-stage` (`20261119053000`, 15 NFTs/min) is staging acquisition dates for the ~41.7k candidates in `atlas_ownership_stage`; ETA ~11-21. Read `v_atlas_ownership_stage_summary`; nothing is written to `moment_acquisitions` until Trevor reviews it.
+- **Handoff wording, so the session-start ready-queue can match your items:** name the lane, function or route in backticks in each queued item (the matcher keys on the first backticked token or a hyphenated lane name). It now prints "↻ acted on since (ledger.md:N)" for items a daytime session touched.
+
 ## STEER — added 2026-11-17 ~8:55 PM PT (Cowork cloud) — GitHub schedules are BACK (7:03 PM PT); cleanup is owed, not before 11-18 evening
 
 - **Check first:** `gh api "repos/jamesdillonbond/rip-packs-city/actions/runs?event=schedule&per_page=1"` — the newest run should be hours old at most (bursts hours apart are normal).
