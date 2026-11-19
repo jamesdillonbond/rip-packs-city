@@ -9,7 +9,8 @@
 // ⭐ 2026-11-08 (handoff pinnacle-wmc-render-gap): the lookup is now
 // lib/pinnacle/render-lookup.ts — RPC's OWN mint records (pinnacle_mint_events,
 // nft_id → render_id from the chain's PinNFTMinted events) FIRST, Dapper's
-// studio-platform search only for pins our mint index lacks. Before, only the
+// studio-platform search (Atlas GetNFTs since 2026-11-18, #218 — Studio has
+// answered HTTP 530 since 11-17) only for pins our mint index lacks. Before, only the
 // search was asked, it answered nothing for a backlog of pins, and the lane
 // logged ok:true every hour while resolving 0 of 972 (rows_found 972 /
 // rows_written 0). It now reports per-source counts and the ids neither source
@@ -49,7 +50,6 @@ const supabaseAdmin = createClient(
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? "";
 const PIPELINE_NAME = "pinnacle-wmc-render-id";
 const PINNACLE_COLLECTION_ID = "7dd9dd11-e8b6-45c4-ac99-71331f959714";
-const USER_AGENT = "rip-packs-city/pinnacle-wmc-render-id";
 // Candidate batch for the wmc render_id drain below.
 //
 // ⚠ WAS 2000, WHICH WAS NEVER A BOUND (corrected 2026-09-11). The read at the
@@ -146,9 +146,9 @@ export async function GET(req: NextRequest) {
     }
     const ids = [...new Set((rows ?? []).map((r: { moment_id: string }) => r.moment_id))] as string[];
 
-    const look = await resolvePinnacleRenderIds(supabaseAdmin, ids, { userAgent: USER_AGENT });
-    let gqlErrors = look.gqlErrors;
-    let gqlFirstError = look.gqlFirstError;
+    const look = await resolvePinnacleRenderIds(supabaseAdmin, ids);
+    let atlasErrors = look.atlasErrors;
+    let atlasFirstError = look.atlasFirstError;
 
     let resolved = 0;
     // resolved counts rows the update LANDED on (.select), never rows attempted:
@@ -202,9 +202,9 @@ export async function GET(req: NextRequest) {
       if (salesReadErr) throw new Error(`read: ${salesReadErr.message}`);
       const salesIds = [...new Set(((salesIdsData ?? []) as string[]).filter(Boolean))];
       if (salesIds.length > 0) {
-        const s = await resolvePinnacleRenderIds(supabaseAdmin, salesIds, { userAgent: USER_AGENT });
-        gqlErrors += s.gqlErrors;
-        gqlFirstError = gqlFirstError ?? s.gqlFirstError;
+        const s = await resolvePinnacleRenderIds(supabaseAdmin, salesIds);
+        atlasErrors += s.atlasErrors;
+        atlasFirstError = atlasFirstError ?? s.atlasFirstError;
         salesMintReadError = s.mintReadError;
         salesFromMintRecords = s.fromMintRecords;
         const map: Record<string, string> = {};
@@ -225,11 +225,11 @@ export async function GET(req: NextRequest) {
     const errors = [
       look.mintReadError ? `mint records read: ${look.mintReadError}` : null,
       salesMintReadError ? `sales mint records read: ${salesMintReadError}` : null,
-      gqlErrors > 0 ? `${gqlErrors} gql chunk errors${gqlFirstError ? ` (first: ${gqlFirstError.slice(0, 80)})` : ""}` : null,
+      atlasErrors > 0 ? `${atlasErrors} atlas chunk errors${atlasFirstError ? ` (first: ${atlasFirstError.slice(0, 80)})` : ""}` : null,
       writeError ? `wmc write (${writeErrors}): ${writeError}` : null,
       deriveError ? `derive: ${deriveError}` : null,
       salesError ? `sales: ${salesError}` : null,
-      stuck ? `stuck: ${ids.length} unresolved pins, 0 named (mint records ${look.fromMintRecords}, gql ${look.fromGql}, unresolvable ${look.unresolvable.length})` : null,
+      stuck ? `stuck: ${ids.length} unresolved pins, 0 named (mint records ${look.fromMintRecords}, atlas ${look.fromAtlas}, unresolvable ${look.unresolvable.length})` : null,
     ].filter(Boolean) as string[];
 
     await logRun({
@@ -241,7 +241,7 @@ export async function GET(req: NextRequest) {
         unresolved_found: ids.length,
         resolved,
         from_mint_records: look.fromMintRecords,
-        from_gql: look.fromGql,
+        from_atlas: look.fromAtlas,
         unresolvable: look.unresolvable.length,
         unresolvable_sample: look.unresolvable.slice(0, 10),
         mint_read_error: look.mintReadError,
@@ -254,8 +254,8 @@ export async function GET(req: NextRequest) {
         sales_from_mint_records: salesFromMintRecords,
         sales_updated: salesUpdated,
         sales_error: salesError,
-        gql_errors: gqlErrors,
-        gql_first_error: gqlFirstError,
+        atlas_errors: atlasErrors,
+        atlas_first_error: atlasFirstError,
       },
     });
   });

@@ -1,173 +1,56 @@
 // app/api/admin/backfill-pinnacle-catalog/route.ts
 //
-// Keeps public.pinnacle_catalog (render_id-keyed) fresh from the Dapper
-// studio-platform GraphQL (api.production.studio-platform.dapperlabs.com),
-// reachable unauthenticated from our egress with an Origin header. Pages
-// searchPinnacleEditions and upserts every edition keyed on render_id — the
-// true per-pin identity (the legacy pinnacle_editions.edition_key is set-level
-// and collapses ~2,079 pins into ~337 rows).
+// Keeps public.pinnacle_catalog (render_id-keyed) fresh from Dapper's ATLAS API
+// (2026-11-18, #218). Until 11-17 this paged the studio-platform GraphQL, which
+// has answered HTTP 530 / "error code: 1033" since 11-17 ~4:23 PM PT; Dapper's
+// own sites moved to Atlas. Atlas is read THROUGH THE DATABASE (pg_net) because
+// its WAF blocks Vercel's fetch — see lib/pinnacle/atlas-disney.ts for the
+// transport and the field mapping (2,970 of 2,970 live catalog rows reproduced
+// on render_id + every scalar column, measured 11-18).
+//
+// Every row is keyed on the EDITION's renderId — the true per-pin identity (the
+// legacy pinnacle_editions.edition_key and Atlas's set.renderId are set-level).
+//
+// Phases:
+//   1.  SearchEditions sweep → catalog upsert (full mode only). The same pages
+//       carry Dapper's per-edition lowAskCents, which feed the floor phase.
+//   1b. mint-gap check + 1c. chain fill (unchanged; full mode only).
+//   2.  Floors = Dapper's lowAskCents per render, written only from a COMPLETE
+//       edition sweep (pinnacle_catalog_set_floor_asks NULLs every render absent
+//       from the map, so a partial sweep would erase real floors).
+//   3.  Live listings = every OPEN listing (SearchMarketplaceTransactions
+//       completed:false), REPLACED only from a complete sweep (R123).
 //
 // Auth: Bearer RPC_ADMIN_TOKEN (admin/cron-job.org, or ?token=) OR Bearer
 // INGEST_SECRET_TOKEN (GitHub Actions) OR Bearer CRON_SECRET (Vercel cron).
 // Methods: GET or POST.
-// Crons: daily full backfill (cron-job.org) + intraday floor-only refresh
-// (Vercel cron, ?floors_only=1 — keeps the public render floor fresh between
-// daily runs). Initial bulk load was scripts/seed-pinnacle-catalog.mjs.
+// Crons: daily full backfill (cron-job.org + Vercel 37 21 * * *) + intraday
+// floor-only refresh (Vercel cron, ?floors_only=1). Initial bulk load was
+// scripts/seed-pinnacle-catalog.mjs.
 
 import { NextRequest, NextResponse, after as scheduleAfter } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { verifyAdminRequest, adminUnauthorizedResponse } from "@/lib/admin-auth";
 import { bearerMatches } from "@/lib/auth/bearer-secret";
 import { fetchChainCatalogRows } from "@/lib/pinnacle/chain-catalog";
+import {
+  atlasEditionToCatalogRow,
+  atlasLowAskCents,
+  dbAtlasDisneyCall,
+  sweepAtlasEditions,
+  sweepAtlasOpenListings,
+  type AtlasCatalogRow,
+} from "@/lib/pinnacle/atlas-disney";
 
-export const maxDuration = 120;
+// ~30 edition pages + ~50 listing pages through pg_net, 4 in flight: ~1–2 min
+// measured shape; 300 s leaves room for Cloudflare-challenge retries.
+export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
 const PIPELINE_NAME = "pinnacle-catalog-backfill";
-const GQL = "https://api.production.studio-platform.dapperlabs.com/graphql";
-const PAGE_SIZE = 100;
-const PER_REQUEST_TIMEOUT_MS = 20_000;
+const UPSERT_CHUNK = 500;
 // Renders read from the chain per run when the search lacks them (newest first).
 const CHAIN_FILL_MAX = 60;
-
-const QUERY = `
-query CatalogBackfill($first: Int!, $after: String) {
-  searchPinnacleEditions(searchInput: { first: $first, after: $after }) {
-    totalCount
-    pageInfo { endCursor hasNextPage }
-    edges {
-      node {
-        id render_id variant printing total_minted chaser parallel_type
-        edition_type { name limited_edition }
-        series { name }
-        set { name render_id }
-        shape { name render_id metadata { royalty_codes characters franchises } }
-        metadata { color effects materials size thickness }
-      }
-    }
-  }
-}`;
-
-function toArr(v: unknown): string[] | null {
-  if (v == null) return null;
-  if (Array.isArray(v)) return v.map(String);
-  if (typeof v === "string") return v.length ? [v] : null;
-  return null;
-}
-function toInt(v: unknown): number | null {
-  if (v == null) return null;
-  const n = parseInt(String(v), 10);
-  return Number.isFinite(n) ? n : null;
-}
-
-interface Node {
-  id: string; render_id: string | null; variant: string | null; printing: string | null;
-  total_minted: string | null; chaser: boolean | null; parallel_type: string | null;
-  edition_type: { name: string | null; limited_edition: boolean | null } | null;
-  series: { name: string | null } | null;
-  set: { name: string | null; render_id: string | null } | null;
-  shape: { name: string | null; render_id: string | null; metadata: { royalty_codes: unknown; characters: unknown; franchises: unknown } | null } | null;
-  metadata: { color: string | null; effects: string | null; materials: string | null; size: string | null; thickness: string | null } | null;
-}
-
-function buildRow(node: Node) {
-  const renderId = node.render_id;
-  if (!renderId) return null;
-  const royaltyCodes = toArr(node.shape?.metadata?.royalty_codes);
-  const royaltyCode = royaltyCodes?.[0] ?? null;
-  const variant = node.variant ?? null;
-  const printing = toInt(node.printing);
-  const legacyKey =
-    royaltyCode && variant != null && printing != null ? `${royaltyCode}:${variant}:${printing}` : null;
-  return {
-    render_id: renderId,
-    edition_id: String(node.id),
-    shape_render_id: node.shape?.render_id ?? null,
-    character_name: node.shape?.name ?? null,
-    set_name: node.set?.name ?? null,
-    set_render_id: node.set?.render_id ?? null,
-    variant,
-    parallel_type: node.parallel_type ?? null,
-    printing,
-    total_minted: toInt(node.total_minted),
-    edition_type: node.edition_type?.name ?? null,
-    limited_edition: node.edition_type?.limited_edition ?? null,
-    series_name: node.series?.name ?? null,
-    royalty_code: royaltyCode,
-    royalty_codes: royaltyCodes,
-    franchises: toArr(node.shape?.metadata?.franchises),
-    characters: toArr(node.shape?.metadata?.characters),
-    color: node.metadata?.color ?? null,
-    effects: node.metadata?.effects ?? null,
-    materials: node.metadata?.materials ?? null,
-    size: node.metadata?.size ?? null,
-    thickness: node.metadata?.thickness ?? null,
-    is_chaser: node.chaser ?? null,
-    legacy_edition_key: legacyKey,
-    // Image is served via the gate-free proxy route (signed-URL redirect).
-    thumbnail_url: `/api/public/pinnacle-image/${renderId}`,
-    front_anim_url: `https://assets.disneypinnacle.com/render/${renderId}/front_anim.webp`,
-    source: "studio-platform-gql",
-    updated_at: new Date().toISOString(),
-  };
-}
-
-async function fetchPage(after: string | null) {
-  const res = await fetch(GQL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Origin: "https://disneypinnacle.com",
-      "User-Agent": "rip-packs-city/pinnacle-catalog-backfill",
-    },
-    body: JSON.stringify({ query: QUERY, variables: { first: PAGE_SIZE, after } }),
-    signal: AbortSignal.timeout(PER_REQUEST_TIMEOUT_MS),
-  });
-  if (!res.ok) throw new Error(`GQL ${res.status}`);
-  const json = (await res.json()) as { data?: { searchPinnacleEditions?: { totalCount: number; pageInfo: { endCursor: string | null; hasNextPage: boolean }; edges: Array<{ node: Node }> } }; errors?: unknown[] };
-  if (Array.isArray(json.errors) && json.errors.length > 0) throw new Error(`GQL errors`);
-  return json.data!.searchPinnacleEditions!;
-}
-
-// ── Floor-ask phase (item 3) ────────────────────────────────────────────────
-// Pages all live listings (price asc), reducing to the per-render_id floor — the
-// daily corroboration layer for the intraday listings-indexer. sortBy direction
-// is an ENUM (ASC), not a string. listing.price is UFix64 (x 1e8).
-const FLOOR_QUERY = `
-query FloorAsks($first: Int!, $after: String) {
-  searchPinnacleNft(searchInput: {
-    first: $first, after: $after,
-    filters: [{ listing: { price: { gte: 1 } } }],
-    sortBy: { listing: { price: { priority: 1, direction: ASC } } }
-  }) {
-    totalCount
-    pageInfo { endCursor hasNextPage }
-    edges { node { id serial_number edition { render_id } listing { price } } }
-  }
-}`;
-
-// `id` + `serial_number` added 2026-09-27: the same field names the production
-// pinnacle-wmc-render-id cron reads off searchPinnacleNft. The sweep already
-// visits every live listing; it now KEEPS them (pinnacle_live_listings) so the
-// Sniper can read live listings instead of the dead Flowty feed.
-interface FloorEdge { node?: { id?: string | null; serial_number?: string | null; edition?: { render_id: string | null } | null; listing?: { price: string | null } | null } }
-
-async function fetchFloorPage(after: string | null) {
-  const res = await fetch(GQL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Origin: "https://disneypinnacle.com",
-      "User-Agent": "rip-packs-city/pinnacle-catalog-backfill",
-    },
-    body: JSON.stringify({ query: FLOOR_QUERY, variables: { first: PAGE_SIZE, after } }),
-    signal: AbortSignal.timeout(PER_REQUEST_TIMEOUT_MS),
-  });
-  if (!res.ok) throw new Error(`floor GQL ${res.status}`);
-  const json = (await res.json()) as { data?: { searchPinnacleNft?: { totalCount: number; pageInfo: { endCursor: string | null; hasNextPage: boolean }; edges: FloorEdge[] } }; errors?: unknown[] };
-  if (Array.isArray(json.errors) && json.errors.length > 0) throw new Error(`floor GQL errors`);
-  return json.data!.searchPinnacleNft!;
-}
 
 // Accept the admin token (Bearer or ?token=), the GitHub-Actions ingest token,
 // or the Vercel-cron secret — mirrors the drain-topshot-misattribution route so
@@ -183,51 +66,92 @@ function authed(req: NextRequest): boolean {
   return false;
 }
 
+/**
+ * edition_type NAME → limited_edition, as the catalog already records it. Atlas
+ * carries no such flag. A type the catalog holds with BOTH values, or never, maps
+ * to null (unknown, not a guess). A failed count read is an ERROR — the caller
+ * must not write rows whose flag it could not establish.
+ */
+async function limitedByTypeFromCatalog(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  types: string[],
+): Promise<{ map: Map<string, boolean | null>; error: string | null }> {
+  const map = new Map<string, boolean | null>();
+  for (const t of types) {
+    const count = async (flag: boolean) => {
+      const { count: n, error } = await supabase
+        .from("pinnacle_catalog")
+        .select("render_id", { count: "exact", head: true })
+        .eq("edition_type", t)
+        .eq("limited_edition", flag);
+      if (error) throw new Error(error.message ?? String(error));
+      if (typeof n !== "number") throw new Error("count missing from the response");
+      return n;
+    };
+    try {
+      const [nTrue, nFalse] = await Promise.all([count(true), count(false)]);
+      map.set(t, nTrue > 0 && nFalse === 0 ? true : nFalse > 0 && nTrue === 0 ? false : null);
+    } catch (e) {
+      return { map, error: `limited_edition lookup for "${t}": ${e instanceof Error ? e.message : String(e)}` };
+    }
+  }
+  return { map, error: null };
+}
+
 async function handle(req: NextRequest): Promise<NextResponse> {
   if (!authed(req)) return adminUnauthorizedResponse();
 
-  // floors_only=1: skip the Phase-1 catalog metadata upsert and run ONLY the
-  // Phase-2 render-floor sweep, so an intraday Vercel cron can keep the public
-  // render floor (pinnacle_catalog.floor_ask) fresh without re-paging the whole
-  // catalog. Same Studio-GraphQL source + same pinnacle_catalog_set_floor_asks
-  // RPC as the daily run — a cadence change only, NOT a pricing-source/logic
-  // change. The daily full backfill still owns catalog metadata.
+  // floors_only=1: skip the catalog upsert and run only the floor + live-listing
+  // phases, so an intraday Vercel cron keeps the public render floor
+  // (pinnacle_catalog.floor_ask) fresh. Same source + same RPCs as the daily run.
   const floorsOnly = req.nextUrl.searchParams.get("floors_only") === "1";
 
-  // 202 + after(): the catalog + floor sweep pages dozens of GQL calls
-  // (maxDuration=120) and can exceed cron-job.org's 30s client cap; auth stays
-  // sync, the whole sweep + log_pipeline_run move into after(), and we return
-  // immediately so the entry can never be auto-disabled. pipeline_runs signals.
+  // 202 + after(): the sweep pages ~80 Atlas calls and exceeds cron-job.org's 30s
+  // client cap; auth stays sync, everything else (incl. log_pipeline_run) runs in
+  // after(), and pipeline_runs carries the outcome.
   scheduleAfter(async () => {
   const startedAt = Date.now();
   const startedAtIso = new Date(startedAt).toISOString();
   const supabase: any = supabaseAdmin;
-
-  let after: string | null = null;
-  let total = 0;
-  let upserted = 0;
-  let pages = 0;
+  const atlas = dbAtlasDisneyCall(supabase);
   const errors: string[] = [];
 
-  try {
-    if (!floorsOnly) for (;;) {
-      const res = await fetchPage(after);
-      total = res.totalCount;
-      const rows = res.edges.map((e) => buildRow(e.node)).filter(Boolean);
-      if (rows.length > 0) {
-        const { error } = await supabase
-          .from("pinnacle_catalog")
-          .upsert(rows, { onConflict: "render_id" });
-        if (error) errors.push(error.message);
-        else upserted += rows.length;
+  // ── Phase 1: the edition sweep (both modes — it also carries the floors) ──
+  const sweep = await sweepAtlasEditions(atlas);
+  const total = sweep.totalCount ?? 0;
+  const nowIso = new Date().toISOString();
+  if (sweep.errors.length) errors.push(`editions: ${sweep.errors[0]}`);
+  // edition id → render id, for the live-listing phase (listings carry editionId only).
+  const renderByEdition = new Map<string, string>();
+  for (const e of sweep.editions) {
+    const r = e as { id?: unknown; renderId?: unknown };
+    if (r?.id != null && typeof r.renderId === "string" && r.renderId) renderByEdition.set(String(r.id), r.renderId);
+  }
+
+  let upserted = 0;
+  let unkeyed = 0;
+  let limitedError: string | null = null;
+  if (!floorsOnly && sweep.editions.length > 0) {
+    const types = [...new Set(sweep.editions.map((e) => (e as { editionTemplate?: { editionType?: unknown } })?.editionTemplate?.editionType).filter((t): t is string => typeof t === "string" && t !== ""))];
+    const limited = await limitedByTypeFromCatalog(supabase, types);
+    limitedError = limited.error;
+    if (limitedError) {
+      errors.push(`catalog upsert skipped: ${limitedError}`);
+    } else {
+      const rows: AtlasCatalogRow[] = [];
+      for (const e of sweep.editions) {
+        const row = atlasEditionToCatalogRow(e, nowIso, limited.map);
+        if (row) rows.push(row);
+        else unkeyed++;
       }
-      pages++;
-      if (!res.pageInfo.hasNextPage) break;
-      after = res.pageInfo.endCursor;
-      if (pages > 100) break; // runaway guard (~10k editions)
+      for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
+        const chunk = rows.slice(i, i + UPSERT_CHUNK);
+        const { error } = await supabase.from("pinnacle_catalog").upsert(chunk, { onConflict: "render_id" });
+        if (error) errors.push(`catalog upsert: ${error.message}`);
+        else upserted += chunk.length;
+      }
     }
-  } catch (e) {
-    errors.push(e instanceof Error ? e.message : String(e));
   }
 
   // ── Phase 1b (2026-11-08, handoff pinnacle-wmc-render-gap): is the SOURCE behind the chain? ──
@@ -324,61 +248,76 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     }
   }
 
-  // ── Phase 2: floor-ask sweep (best-effort; failures don't fail the catalog) ──
+  // ── Phase 2: floors — Dapper's own lowAskCents per render ──
+  // Measured 11-18 against the listing sweep's per-edition minimum: equal on 2,709
+  // of 2,711 listed editions (the other 2 moved in the ~1 h between the reads).
+  // lowAskCents is chosen because it needs no second sweep to be complete: a
+  // PRICE-sorted listing sweep duplicated 276 rows (so skipped as many) and missed
+  // 48 listed editions; floor_agrees_with_listings in extra keeps the cross-check live.
   let floorListed = 0;     // distinct render_ids with a live floor
-  let floorRows = 0;       // catalog rows updated (= editions with a floor)
+  let floorRows = 0;       // catalog rows the RPC set non-null
+  const floorByRender = new Map<string, number>(); // render_id → cents
+  for (const e of sweep.editions) {
+    const rid = (e as { renderId?: unknown })?.renderId;
+    const cents = atlasLowAskCents(e);
+    if (typeof rid === "string" && rid && cents != null) floorByRender.set(rid, cents);
+  }
+  floorListed = floorByRender.size;
+  if (!sweep.complete) {
+    errors.push(`floors: edition sweep incomplete after ${sweep.pages} pages — floors left as they were`);
+  } else if (floorListed === 0 && sweep.editions.length > 0) {
+    // Thousands of editions and not one low ask is an UNRENDERABLE answer (a renamed
+    // field, a changed shape), not an empty market — writing it would NULL every floor.
+    errors.push(`floors: ${sweep.editions.length} editions carried no lowAskCents — floors left as they were`);
+  } else {
+    // pinnacle_catalog_set_floor_asks takes raw UFix64 (dollars × 1e8) and divides
+    // by 1e8; cents × 1e6 is that unit exactly.
+    const map = Object.fromEntries([...floorByRender].map(([rid, cents]) => [rid, cents * 1e6]));
+    const { data: cnt, error: floorErr } = await supabase.rpc("pinnacle_catalog_set_floor_asks", {
+      p_map: map,
+      p_checked_at: startedAtIso,
+    });
+    if (floorErr) errors.push(`floor set: ${floorErr.message}`);
+    else floorRows = typeof cnt === "number" ? cnt : 0;
+  }
+
+  // ── Phase 3: the live-listing set (pinnacle_live_listings) ──
   let floorPages = 0;
-  let floorTotal = 0;
+  let floorTotal = 0;      // usable open listings the sweep kept
   let floorComplete = false;
   let liveWritten = 0;
   let liveDeleted = 0;
+  let liveUnmapped = 0;
+  let liveDuplicates = 0;
+  let floorAgreesWithListings = 0;
   const liveListings: Array<{ nft_id: string; render_id: string; serial_number: number | null; price_usd: number }> = [];
   try {
-    const floorByRender = new Map<string, number>(); // first-seen wins (price asc)
-    let fAfter: string | null = null;
-    for (;;) {
-      const res = await fetchFloorPage(fAfter);
-      floorTotal = res.totalCount;
-      for (const e of res.edges) {
-        const rid = e.node?.edition?.render_id ?? null;
-        const price = e.node?.listing?.price ?? null;
-        if (rid && price != null && !floorByRender.has(rid)) {
-          const n = Number(price);
-          if (Number.isFinite(n) && n > 0) floorByRender.set(rid, n);
-        }
-        const nftId = e.node?.id ?? null;
-        // ⚠ `listing.price` is RAW UFix64 (× 1e8) — pinnacle_catalog_set_floor_asks
-        // divides the floor map by 1e8 in SQL. The live-listing rows store DOLLARS,
-        // so divide here. (First shipped without it, 2026-09-27: every listing read
-        // 1e8× its price and the Sniper found 0 deals in 16,116 listings.)
-        const p = price != null ? Number(price) / 1e8 : NaN;
-        if (rid && nftId && Number.isFinite(p) && p > 0) {
-          const serial = e.node?.serial_number != null ? Number(e.node.serial_number) : NaN;
-          liveListings.push({ nft_id: String(nftId), render_id: rid, serial_number: Number.isInteger(serial) ? serial : null, price_usd: p });
-        }
+    const ls = await sweepAtlasOpenListings(atlas);
+    floorPages = ls.pages;
+    floorTotal = ls.listings.length;
+    liveDuplicates = ls.duplicates;
+    floorComplete = ls.complete;
+    if (ls.errors.length) errors.push(`live listings: ${ls.errors[0]}`);
+    const minByRender = new Map<string, number>();
+    for (const l of ls.listings) {
+      const rid = renderByEdition.get(l.edition_id);
+      if (!rid) {
+        liveUnmapped++;
+        continue;
       }
-      floorPages++;
-      if (!res.pageInfo.hasNextPage) { floorComplete = true; break; }
-      fAfter = res.pageInfo.endCursor;
-      // Runaway guard. Was 200 pages (~20k listings) while the market already sat
-      // at ~16.1k (161 pages, 2026-09-27) — raised so growth does not silently
-      // truncate the sweep. A guard exit leaves floorComplete=false.
-      if (floorPages > 400) break;
+      liveListings.push({ nft_id: l.nft_id, render_id: rid, serial_number: l.serial_number, price_usd: l.price_cents / 100 });
+      const m = minByRender.get(rid);
+      if (m == null || l.price_cents < m) minByRender.set(rid, l.price_cents);
     }
-    floorListed = floorByRender.size;
-    if (floorListed > 0) {
-      const map = Object.fromEntries(floorByRender);
-      const { data: cnt, error: floorErr } = await supabase.rpc("pinnacle_catalog_set_floor_asks", {
-        p_map: map,
-        p_checked_at: startedAtIso,
-      });
-      if (floorErr) errors.push(`floor set: ${floorErr.message}`);
-      else floorRows = typeof cnt === "number" ? cnt : 0;
-    }
-    // The live-listing set is REPLACED only from a COMPLETE sweep: a partial one
-    // would retire listings it simply never reached (CLAUDE.md, R123). The RPC
+    for (const [rid, cents] of floorByRender) if (minByRender.get(rid) === cents) floorAgreesWithListings++;
+    // REPLACED only from a COMPLETE sweep whose every listing could be named: a
+    // partial one would retire listings it never reached (CLAUDE.md, R123). The RPC
     // upserts first and deletes only what this sweep did not write.
-    if (floorComplete && liveListings.length > 0) {
+    if (!floorComplete) {
+      errors.push(`live listings: sweep incomplete after ${floorPages} pages — live set left as it was`);
+    } else if (!sweep.complete || liveUnmapped > 0) {
+      errors.push(`live listings: ${liveUnmapped} listing(s) on editions the edition sweep did not return — live set left as it was`);
+    } else if (liveListings.length > 0) {
       const { data: live, error: liveErr } = await supabase.rpc("pinnacle_live_listings_replace", {
         p_rows: liveListings,
         p_seen_at: startedAtIso,
@@ -388,11 +327,9 @@ async function handle(req: NextRequest): Promise<NextResponse> {
         liveWritten = Number(live?.written ?? 0);
         liveDeleted = Number(live?.deleted ?? 0);
       }
-    } else if (!floorComplete) {
-      errors.push(`live listings: sweep incomplete after ${floorPages} pages — live set left as it was`);
     }
   } catch (e) {
-    errors.push(`floor phase: ${e instanceof Error ? e.message : String(e)}`);
+    errors.push(`live listings: ${e instanceof Error ? e.message : String(e)}`);
   }
 
   const durationMs = Date.now() - startedAt;
@@ -409,7 +346,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
       p_collection_slug: "disney_pinnacle",
       p_cursor_before: null,
       p_cursor_after: null,
-      p_extra: { floors_only: floorsOnly, pages, total_count: total, upserted, floor_listed: floorListed, floor_rows: floorRows, floor_pages: floorPages, floor_total: floorTotal, floor_complete: floorComplete, live_listings_seen: liveListings.length, live_written: liveWritten, live_deleted: liveDeleted, minted_renders_missing: mintGap?.missing_renders ?? null, minted_pins_missing: mintGap?.missing_pins ?? null, minted_renders_missing_recent: mintGap?.missing_recent_renders ?? null, minted_missing_sample: Array.isArray(mintGap?.sample) ? mintGap!.sample.slice(0, 10) : null, mint_gap_error: mintGapError, chain_filled: chainFilled, chain_filled_recent: chainFilledRecent, chain_wmc_derived: chainDerived, chain_errors: chainErrors.slice(0, 3), duration_ms: durationMs, errors: errors.slice(0, 3) },
+      p_extra: { source: "atlas", floors_only: floorsOnly, pages: sweep.pages, total_count: total, editions_seen: sweep.editions.length, editions_complete: sweep.complete, upserted, unkeyed, limited_error: limitedError, floor_listed: floorListed, floor_rows: floorRows, floor_pages: floorPages, floor_total: floorTotal, floor_complete: floorComplete, floor_agrees_with_listings: floorAgreesWithListings, live_listings_seen: liveListings.length, live_unmapped: liveUnmapped, live_duplicates: liveDuplicates, live_written: liveWritten, live_deleted: liveDeleted, minted_renders_missing: mintGap?.missing_renders ?? null, minted_pins_missing: mintGap?.missing_pins ?? null, minted_renders_missing_recent: mintGap?.missing_recent_renders ?? null, minted_missing_sample: Array.isArray(mintGap?.sample) ? mintGap!.sample.slice(0, 10) : null, mint_gap_error: mintGapError, chain_filled: chainFilled, chain_filled_recent: chainFilledRecent, chain_wmc_derived: chainDerived, chain_errors: chainErrors.slice(0, 3), duration_ms: durationMs, errors: errors.slice(0, 5) },
     });
   } catch {
     // best-effort observability

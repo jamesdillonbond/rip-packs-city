@@ -3,7 +3,6 @@ import {
   makeInstrumentedSupabaseFixture,
   installFetchMock,
   gqlRoute,
-  type FetchStub,
 } from "./helpers/route-harness"
 import { adminReq } from "./helpers/admin-req"
 
@@ -13,8 +12,8 @@ import { adminReq } from "./helpers/admin-req"
 //     set-by-set GQL walk that upserts `editions` keyed on the int-pair
 //     external_id and stamps the parent `sets` row)
 //   /api/admin/backfill-pinnacle-catalog  (RPC_ADMIN or INGEST or CRON —
-//     202+after() studio-platform GQL pager that upserts `pinnacle_catalog`
-//     keyed on render_id, then the best-effort floor-ask sweep)
+//     202+after() Atlas pager (through the DB, since 2026-11-18) that upserts
+//     `pinnacle_catalog` keyed on the edition render_id, then floors + live listings)
 //
 // Asserts handler-COMPUTED output: the CDN URL construction off assetPathPrefix
 // (the post-2026-05-12 long-path form), tier normalization, int-pair keying,
@@ -38,6 +37,23 @@ vi.mock("@/lib/supabase", () => ({
     { get: (_t, prop) => (state.sb as Record<PropertyKey, unknown>)[prop] },
   ),
 }))
+
+// The Pinnacle route reaches Atlas through dbAtlasDisneyCall(db) (pg_net). Only that
+// factory is swapped — every parser and sweep in the module runs for real.
+const atlasState = vi.hoisted(() => ({
+  handler: null as null | ((method: string, body: Record<string, unknown>) => unknown),
+  calls: [] as Array<{ method: string; body: Record<string, unknown> }>,
+}))
+vi.mock("@/lib/pinnacle/atlas-disney", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/pinnacle/atlas-disney")>()
+  return {
+    ...actual,
+    dbAtlasDisneyCall: () => async (method: string, body: Record<string, unknown>) => {
+      atlasState.calls.push({ method, body })
+      return atlasState.handler ? atlasState.handler(method, body) : { ok: false, status: null, error: "no atlas fixture" }
+    },
+  }
+})
 
 const tsCatalog = await import("@/app/api/admin/backfill-topshot-catalog/route")
 const pinCatalog = await import("@/app/api/admin/backfill-pinnacle-catalog/route")
@@ -64,6 +80,8 @@ beforeEach(() => {
   process.env.TS_PROXY_URL = "https://ts-proxy.test/graphql"
   process.env.TS_PROXY_SECRET = "proxy-secret"
   state.afterCbs.length = 0
+  atlasState.handler = null
+  atlasState.calls.length = 0
   install({})
 })
 
@@ -671,58 +689,78 @@ describe("/api/admin/backfill-topshot-catalog", () => {
   })
 })
 
-// ── Pinnacle catalog ─────────────────────────────────────────────────────────
+// ── Pinnacle catalog (Atlas, 2026-11-18 — #218) ──────────────────────────────
+//
+// The route reads Dapper's Atlas through the DATABASE (lib/pinnacle/atlas-disney.ts,
+// dbAtlasDisneyCall). Here that one factory is replaced by an in-memory Atlas that
+// pages the fixtures exactly as the live API does (limit/offset, pagination.hasMore);
+// every parser and sweep in that module runs for real.
 
-function pinPage(nodes: unknown[], hasNextPage: boolean, endCursor: string | null, totalCount = 2) {
-  return {
-    data: {
-      searchPinnacleEditions: {
-        totalCount,
-        pageInfo: { endCursor, hasNextPage },
-        edges: nodes.map((node) => ({ node })),
-      },
-    },
-  }
-}
+type AtlasReply = { ok: true; body: unknown } | { ok: false; status: number | null; error: string }
 
-function floorPage(edges: unknown[], totalCount = 4) {
-  return {
-    data: {
-      searchPinnacleNft: {
-        totalCount,
-        pageInfo: { endCursor: null, hasNextPage: false },
-        edges,
-      },
-    },
-  }
-}
-
-const MICKEY_NODE = {
-  id: 991,
-  render_id: "rid-1",
-  variant: "Standard",
+const MICKEY = {
+  id: "991",
+  renderId: "rid-1",
+  parallel: "Standard",
   printing: "3",
-  total_minted: "2000",
+  numMinted: "2000",
   chaser: false,
-  parallel_type: null,
-  edition_type: { name: "Open Edition", limited_edition: false },
+  lowAskCents: "1250",
   series: { name: "Series 1" },
-  set: { name: "Starter Set", render_id: "set-rid" },
-  shape: {
+  set: { id: "7", name: "Starter Set", renderId: "set-rid" },
+  editionTemplate: {
     name: "Mickey Mouse",
-    render_id: "shape-rid",
-    metadata: { royalty_codes: ["MCK01", "MCK-ALT"], characters: "Mickey Mouse", franchises: ["Disney"] },
+    renderId: "shape-rid",
+    editionType: "Open Edition",
+    // Atlas sends list metadata either JSON-encoded or comma-joined — both shapes here.
+    metadata: { RoyaltyCodes: '["MCK01","MCK-ALT"]', Characters: "Mickey Mouse", Franchises: "Disney,Pixar" },
   },
-  metadata: { color: "Red", effects: null, materials: "Plastic", size: "Standard", thickness: null },
+  metadata: { Color: "Red", Materials: "Plastic", Size: "Standard" },
 }
-const NULL_RENDER_NODE = { ...MICKEY_NODE, id: 992, render_id: null }
+const NO_RENDER = { ...MICKEY, id: "992", renderId: "" }
+const ed = (id: string, renderId: string, lowAskCents = "0") => ({ ...MICKEY, id, renderId, lowAskCents })
 
-describe("/api/admin/backfill-pinnacle-catalog", () => {
+function atlasMarket(o: {
+  editions: unknown[]
+  listings?: unknown[]
+  failEditionsAt?: number
+  failListingsAt?: number
+  endlessListings?: boolean
+}) {
+  return (method: string, body: Record<string, unknown>): AtlasReply => {
+    const limit = Number(body.limit)
+    const offset = Number(body.offset)
+    if (method === "EditionService/SearchEditions") {
+      if (o.failEditionsAt === offset) return { ok: false, status: 403, error: "<!DOCTYPE html><title>Just a moment...</title>" }
+      const page = o.editions.slice(offset, offset + limit)
+      return {
+        ok: true,
+        body: { editions: page, pagination: { totalCount: String(o.editions.length), limit: String(limit), offset: String(offset), hasMore: offset + limit < o.editions.length } },
+      }
+    }
+    if (method === "MarketplaceService/SearchMarketplaceTransactions") {
+      if (o.failListingsAt === offset) return { ok: false, status: 403, error: "<!DOCTYPE html><title>Just a moment...</title>" }
+      if (o.endlessListings) {
+        const rows = Array.from({ length: limit }, (_, i) => ({ uuid: `u-${offset + i}`, nftId: String(5000 + offset + i), editionId: "991", priceCents: "300", serialNumber: "0", completed: false }))
+        return { ok: true, body: { transactions: rows, pagination: { totalCount: "999999", hasMore: true } } }
+      }
+      const all = o.listings ?? []
+      const page = all.slice(offset, offset + limit)
+      return { ok: true, body: { transactions: page, pagination: { totalCount: String(all.length), hasMore: offset + limit < all.length } } }
+    }
+    return { ok: false, status: 404, error: `unexpected method ${method}` }
+  }
+}
+
+// `pinnacle_catalog` reads are the limited_edition counts (true, then false) per edition type.
+const OPEN_EDITION_IS_NOT_LIMITED = [
+  { data: null, error: null, count: 0 },
+  { data: null, error: null, count: 5 },
+]
+
+describe("/api/admin/backfill-pinnacle-catalog (Atlas)", () => {
   it("accepts all three token families and fails closed otherwise", async () => {
-    fetchMock = installFetchMock([
-      gqlRoute("CatalogBackfill", pinPage([], false, null, 0)),
-      gqlRoute("FloorAsks", floorPage([])),
-    ])
+    atlasState.handler = atlasMarket({ editions: [] })
     for (const auth of ["Bearer admin-token", "Bearer ingest-secret", "Bearer cron-secret"]) {
       state.afterCbs.length = 0
       const res = await pinCatalog.GET(
@@ -737,24 +775,16 @@ describe("/api/admin/backfill-pinnacle-catalog", () => {
     expect((await pinCatalog.POST(adminReq("https://t/api/admin/backfill-pinnacle-catalog"))).status).toBe(401)
   })
 
-  it("pages the catalog, upserts render_id-keyed rows with the composed legacy key, then sweeps floors first-seen-wins", async () => {
+  it("pages SearchEditions, upserts EDITION-renderId-keyed rows with the composed legacy key, and floors from lowAskCents", async () => {
     const spy = install({
-      pinnacle_catalog: { data: null, error: null },
+      pinnacle_catalog: OPEN_EDITION_IS_NOT_LIMITED,
+      "pinnacle_catalog:upsert": { data: null, error: null },
       "rpc:pinnacle_catalog_set_floor_asks": { data: 1, error: null },
       "rpc:log_pipeline_run": { data: null, error: null },
     })
-    fetchMock = installFetchMock([
-      gqlRoute("CatalogBackfill", [
-        pinPage([MICKEY_NODE], true, "page-2"),
-        pinPage([NULL_RENDER_NODE, { ...MICKEY_NODE, id: 993, render_id: "rid-2" }], false, null),
-      ]),
-      gqlRoute("FloorAsks", floorPage([
-        { node: { edition: { render_id: "rid-1" }, listing: { price: "12.5" } } },
-        { node: { edition: { render_id: "rid-1" }, listing: { price: "99" } } }, // dupe — first wins
-        { node: { edition: { render_id: "rid-2" }, listing: { price: "0" } } }, // non-positive — dropped
-        { node: { edition: { render_id: "rid-3" }, listing: { price: "abc" } } }, // NaN — dropped
-      ])),
-    ])
+    // 101 editions → two pages at the server's 100 cap.
+    const fillers = Array.from({ length: 99 }, (_, i) => ed(String(2000 + i), `fill-${i}`))
+    atlasState.handler = atlasMarket({ editions: [MICKEY, NO_RENDER, ...fillers] })
 
     const res = await pinCatalog.POST(
       adminReq("https://t/api/admin/backfill-pinnacle-catalog", { authorization: "Bearer admin-token" }),
@@ -762,114 +792,174 @@ describe("/api/admin/backfill-pinnacle-catalog", () => {
     expect(res.status).toBe(202)
     await runDeferred()
 
-    // Page 1 + page 2 upserts; the null-render node was dropped.
+    const editionCalls = atlasState.calls.filter((c) => c.method === "EditionService/SearchEditions")
+    expect(editionCalls.map((c) => c.body.offset)).toEqual([0, 100])
+    expect(editionCalls.every((c) => c.body.product === "disney" && c.body.limit === 100)).toBe(true)
+
     const upserts = (spy.writes.pinnacle_catalog ?? []).filter((w) => w.method === "upsert")
-    expect(upserts).toHaveLength(2)
-    expect(upserts[0].rows[0]).toMatchObject({
-      render_id: "rid-1",
+    expect(upserts).toHaveLength(1)
+    expect(upserts[0].options).toMatchObject({ onConflict: "render_id" })
+    const rows = upserts[0].rows
+    expect(rows).toHaveLength(100) // the render-less edition is never keyed
+    expect(rows.find((r) => r.edition_id === "992")).toBeUndefined()
+    expect(rows[0]).toEqual({
+      render_id: "rid-1", // the EDITION's renderId — never set.renderId (set-level)
       edition_id: "991",
+      shape_render_id: "shape-rid",
       character_name: "Mickey Mouse",
       set_name: "Starter Set",
-      variant: "Standard",
-      printing: 3, // parsed int, not the GQL string
+      set_render_id: "set-rid",
+      variant: "Standard", // Atlas `parallel`
+      parallel_type: null,
+      printing: 3, // parsed int, not the API string
       total_minted: 2000,
+      edition_type: "Open Edition",
+      limited_edition: false, // as the catalog already records "Open Edition"
+      series_name: "Series 1",
       royalty_code: "MCK01", // first royalty code
       royalty_codes: ["MCK01", "MCK-ALT"],
-      characters: ["Mickey Mouse"], // scalar string normalized to array
+      franchises: ["Disney", "Pixar"], // comma-joined form split
+      characters: ["Mickey Mouse"], // scalar normalized to array
+      color: "Red",
+      effects: null,
+      materials: '["Plastic"]',
+      size: "Standard",
+      thickness: null,
+      is_chaser: false,
       legacy_edition_key: "MCK01:Standard:3",
       thumbnail_url: "/api/public/pinnacle-image/rid-1",
       front_anim_url: "https://assets.disneypinnacle.com/render/rid-1/front_anim.webp",
-      source: "studio-platform-gql",
+      source: "atlas-edition-search",
+      updated_at: expect.any(String),
     })
-    expect(upserts[1].rows.map((r) => r.render_id)).toEqual(["rid-2"])
 
-    // Floor sweep: first-seen (price-asc) wins; junk prices dropped.
+    // Floors: only renders with a positive lowAskCents; raw UFix64 units (cents × 1e6).
     const floorCall = spy.rpcCalls.find((c) => c.name === "pinnacle_catalog_set_floor_asks")!
-    expect(floorCall.args?.p_map).toEqual({ "rid-1": 12.5 })
+    expect(floorCall.args?.p_map).toEqual({ "rid-1": 1_250_000_000 })
 
     const log = spy.rpcCalls.find((c) => c.name === "log_pipeline_run")!.args!
     expect(log).toMatchObject({
       p_pipeline: "pinnacle-catalog-backfill",
-      p_rows_found: 2, // GQL totalCount
-      p_rows_written: 2, // catalog upserts (not floor rows) in full mode
+      p_rows_found: 101, // Atlas totalCount
+      p_rows_written: 100, // catalog upserts (not floor rows) in full mode
       p_ok: true,
       p_error: null,
       p_collection_slug: "disney_pinnacle",
     })
     expect(log.p_extra).toMatchObject({
-      floors_only: false, pages: 2, upserted: 2, floor_listed: 1, floor_rows: 1, floor_pages: 1,
+      source: "atlas", floors_only: false, pages: 2, editions_complete: true, upserted: 100, unkeyed: 1, floor_listed: 1, floor_rows: 1,
     })
   })
 
-  // 2026-09-27 — the sweep now KEEPS every live listing (pinnacle_live_listings) so the
-  // Sniper reads live asks instead of the dead Flowty feed. The live set may only be
-  // REPLACED from a COMPLETE sweep: a partial one would retire listings it never reached.
-  it("a COMPLETE floor sweep replaces the live listing set with every listing it saw", async () => {
+  // 2026-09-27 — the sweep KEEPS every live listing (pinnacle_live_listings) so the Sniper
+  // reads live asks. The live set may only be REPLACED from a COMPLETE sweep.
+  it("a COMPLETE listing sweep replaces the live listing set with every usable listing, in DOLLARS", async () => {
     const spy = install({
       "rpc:pinnacle_catalog_set_floor_asks": { data: 2, error: null },
       "rpc:pinnacle_live_listings_replace": { data: { written: 3, deleted: 7 }, error: null },
       "rpc:log_pipeline_run": { data: null, error: null },
     })
-    fetchMock = installFetchMock([
-      gqlRoute("FloorAsks", floorPage([
-        // Raw UFix64 (× 1e8), exactly as the Studio GraphQL returns it.
-        { node: { id: "101", serial_number: "7", edition: { render_id: "rid-1" }, listing: { price: "1250000000" } } },
-        { node: { id: "102", serial_number: null, edition: { render_id: "rid-1" }, listing: { price: "2000000000" } } },
-        { node: { id: "103", edition: { render_id: "rid-2" }, listing: { price: "400000000" } } },
-        { node: { id: "104", edition: { render_id: "rid-2" }, listing: { price: "0" } } }, // non-positive — dropped
-        { node: { edition: { render_id: "rid-3" }, listing: { price: "9" } } }, // no nft id — dropped
-      ])),
-    ])
+    atlasState.handler = atlasMarket({
+      editions: [ed("991", "rid-1", "1250"), ed("993", "rid-2", "400")],
+      listings: [
+        { uuid: "a", nftId: "101", editionId: "991", priceCents: "1250", serialNumber: "7", completed: false },
+        { uuid: "b", nftId: "102", editionId: "991", priceCents: "2000", serialNumber: "0", completed: false }, // serial 0 = open edition
+        { uuid: "c", nftId: "103", editionId: "993", priceCents: "400", completed: false },
+        { uuid: "c", nftId: "103", editionId: "993", priceCents: "400", completed: false }, // same uuid again — kept once
+        { uuid: "d", nftId: "104", editionId: "993", priceCents: "0", completed: false }, // non-positive — dropped
+        { uuid: "e", nftId: "105", editionId: "993", priceCents: "100", completed: true }, // a SALE, not a listing — dropped
+      ],
+    })
     await pinCatalog.GET(adminReq("https://t/api/admin/backfill-pinnacle-catalog?floors_only=1", { authorization: "Bearer cron-secret" }))
     await runDeferred()
 
+    const listingCall = atlasState.calls.find((c) => c.method === "MarketplaceService/SearchMarketplaceTransactions")!
+    expect(listingCall.body).toMatchObject({ completed: false, sortByOption: "LISTED_AT", sortByDirection: "ASC", limit: 200, offset: 0 })
+
     const live = spy.rpcCalls.find((c) => c.name === "pinnacle_live_listings_replace")!
-    // DOLLARS, not raw UFix64 — the 1e8 scale is divided out.
     expect(live.args?.p_rows).toEqual([
       { nft_id: "101", render_id: "rid-1", serial_number: 7, price_usd: 12.5 },
       { nft_id: "102", render_id: "rid-1", serial_number: null, price_usd: 20 },
       { nft_id: "103", render_id: "rid-2", serial_number: null, price_usd: 4 },
     ])
     expect(typeof live.args?.p_seen_at).toBe("string")
-    // The query asks for the fields it keeps.
-    expect(fetchMock.calls.some((c) => /\bid serial_number edition/.test(String(c.init?.body)))).toBe(true)
     const log = spy.rpcCalls.find((c) => c.name === "log_pipeline_run")!.args!
     expect(log.p_ok).toBe(true)
-    expect(log.p_extra).toMatchObject({ floor_complete: true, live_listings_seen: 3, live_written: 3, live_deleted: 7 })
+    expect(log.p_extra).toMatchObject({
+      floor_complete: true, live_listings_seen: 3, live_duplicates: 1, live_written: 3, live_deleted: 7, floor_agrees_with_listings: 2,
+    })
   })
 
-  it("an INCOMPLETE sweep (runaway guard) leaves the live set alone and says so", async () => {
+  it("⚠ a listing page Cloudflare challenged leaves the live set alone and says so (status in the error)", async () => {
     const spy = install({
       "rpc:pinnacle_catalog_set_floor_asks": { data: 1, error: null },
       "rpc:pinnacle_live_listings_replace": { data: { written: 1, deleted: 0 }, error: null },
       "rpc:log_pipeline_run": { data: null, error: null },
     })
-    const endless = {
-      data: { searchPinnacleNft: { totalCount: 99999, pageInfo: { endCursor: "c", hasNextPage: true }, edges: [
-        { node: { id: "201", edition: { render_id: "rid-1" }, listing: { price: "3" } } },
-      ] } },
-    }
-    fetchMock = installFetchMock([gqlRoute("FloorAsks", endless)])
+    atlasState.handler = atlasMarket({
+      editions: [ed("991", "rid-1", "300")],
+      listings: Array.from({ length: 900 }, (_, i) => ({ uuid: `u${i}`, nftId: String(i + 1), editionId: "991", priceCents: "300", completed: false })),
+      failListingsAt: 400,
+    })
     await pinCatalog.GET(adminReq("https://t/api/admin/backfill-pinnacle-catalog?floors_only=1", { authorization: "Bearer cron-secret" }))
     await runDeferred()
 
     expect(spy.rpcCalls.some((c) => c.name === "pinnacle_live_listings_replace")).toBe(false)
     const log = spy.rpcCalls.find((c) => c.name === "log_pipeline_run")!.args!
     expect(log.p_ok).toBe(false)
-    expect(String(log.p_error)).toMatch(/incomplete/)
+    expect(String(log.p_error)).toMatch(/live listings: offset 400: atlas SearchMarketplaceTransactions HTTP 403 \(Cloudflare challenge\)/)
+    expect((log.p_extra as { errors: string[] }).errors.join(" | ")).toMatch(/sweep incomplete/)
+    expect(log.p_extra).toMatchObject({ floor_complete: false, live_written: 0 })
+  })
+
+  it("an endless listing feed stops at the page guard, incomplete, and leaves the live set alone", async () => {
+    const spy = install({
+      "rpc:pinnacle_catalog_set_floor_asks": { data: 1, error: null },
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+    atlasState.handler = atlasMarket({ editions: [ed("991", "rid-1", "300")], endlessListings: true })
+    await pinCatalog.GET(adminReq("https://t/api/admin/backfill-pinnacle-catalog?floors_only=1", { authorization: "Bearer cron-secret" }))
+    await runDeferred()
+
+    expect(spy.rpcCalls.some((c) => c.name === "pinnacle_live_listings_replace")).toBe(false)
+    const log = spy.rpcCalls.find((c) => c.name === "log_pipeline_run")!.args!
+    expect(log.p_ok).toBe(false)
+    expect(String(log.p_error)).toMatch(/page guard/)
     expect(log.p_extra).toMatchObject({ floor_complete: false })
   })
 
-  it("?floors_only=1 skips the catalog pager entirely and reports the floor pipeline identity", async () => {
+  it("⚠ a listing on an edition the edition sweep never returned cannot be named — the live set is left alone", async () => {
     const spy = install({
-      "rpc:pinnacle_catalog_set_floor_asks": { data: 5, error: null },
+      "rpc:pinnacle_catalog_set_floor_asks": { data: 1, error: null },
+      "rpc:pinnacle_live_listings_replace": { data: { written: 1, deleted: 0 }, error: null },
       "rpc:log_pipeline_run": { data: null, error: null },
     })
-    fetchMock = installFetchMock([
-      gqlRoute("FloorAsks", floorPage([
-        { node: { edition: { render_id: "rid-9" }, listing: { price: "3" } } },
-      ])),
-    ])
+    atlasState.handler = atlasMarket({
+      editions: [ed("991", "rid-1", "300")],
+      listings: [
+        { uuid: "a", nftId: "1", editionId: "991", priceCents: "300", completed: false },
+        { uuid: "b", nftId: "2", editionId: "4040", priceCents: "300", completed: false },
+      ],
+    })
+    await pinCatalog.GET(adminReq("https://t/api/admin/backfill-pinnacle-catalog?floors_only=1", { authorization: "Bearer cron-secret" }))
+    await runDeferred()
+    expect(spy.rpcCalls.some((c) => c.name === "pinnacle_live_listings_replace")).toBe(false)
+    const log = spy.rpcCalls.find((c) => c.name === "log_pipeline_run")!.args!
+    expect(log.p_ok).toBe(false)
+    expect(String(log.p_error)).toMatch(/1 listing\(s\) on editions the edition sweep did not return/)
+    expect(log.p_extra).toMatchObject({ live_unmapped: 1 })
+  })
+
+  it("?floors_only=1 skips the catalog upsert entirely and reports the floor pipeline identity", async () => {
+    const spy = install({
+      "rpc:pinnacle_catalog_set_floor_asks": { data: 5, error: null },
+      "rpc:pinnacle_live_listings_replace": { data: { written: 1, deleted: 0 }, error: null },
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+    atlasState.handler = atlasMarket({
+      editions: [ed("991", "rid-9", "300")],
+      listings: [{ uuid: "a", nftId: "1", editionId: "991", priceCents: "300", completed: false }],
+    })
 
     const res = await pinCatalog.GET(
       adminReq("https://t/api/admin/backfill-pinnacle-catalog?floors_only=1", { authorization: "Bearer cron-secret" }),
@@ -877,41 +967,86 @@ describe("/api/admin/backfill-pinnacle-catalog", () => {
     expect(await res.json()).toMatchObject({ pipeline: "pinnacle-catalog-floor-refresh", floors_only: true })
     await runDeferred()
 
-    // No CatalogBackfill request ever left the handler.
-    for (const c of fetchMock.calls) {
-      expect(String(c.init?.body)).not.toContain("CatalogBackfill")
-    }
     expect(spy.writes.pinnacle_catalog ?? []).toHaveLength(0)
+    expect(spy.rpcCalls.find((c) => c.name === "pinnacle_catalog_set_floor_asks")!.args?.p_map).toEqual({ "rid-9": 300_000_000 })
     const log = spy.rpcCalls.find((c) => c.name === "log_pipeline_run")!.args!
     expect(log).toMatchObject({ p_pipeline: "pinnacle-catalog-floor-refresh", p_rows_written: 5, p_ok: true })
   })
 
-  it("a catalog GQL failure is recorded but the floor sweep still runs (best-effort phases)", async () => {
+  it("⚠ an INCOMPLETE edition sweep never writes floors (the RPC would NULL every render it did not see)", async () => {
     const spy = install({
+      pinnacle_catalog: OPEN_EDITION_IS_NOT_LIMITED,
+      "pinnacle_catalog:upsert": { data: null, error: null },
+      "rpc:pinnacle_catalog_set_floor_asks": { data: 1, error: null },
+      "rpc:pinnacle_live_listings_replace": { data: { written: 1, deleted: 0 }, error: null },
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+    const many = Array.from({ length: 150 }, (_, i) => ed(String(3000 + i), `r-${i}`, "500"))
+    atlasState.handler = atlasMarket({
+      editions: many,
+      failEditionsAt: 100,
+      listings: [{ uuid: "a", nftId: "1", editionId: "3000", priceCents: "500", completed: false }],
+    })
+    await pinCatalog.POST(adminReq("https://t/api/admin/backfill-pinnacle-catalog", { authorization: "Bearer admin-token" }))
+    await runDeferred()
+
+    expect(spy.rpcCalls.some((c) => c.name === "pinnacle_catalog_set_floor_asks")).toBe(false)
+    expect(spy.rpcCalls.some((c) => c.name === "pinnacle_live_listings_replace")).toBe(false)
+    // The page that DID answer is still written — an upsert is per-row truth, add-only.
+    const upserts = (spy.writes.pinnacle_catalog ?? []).filter((w) => w.method === "upsert")
+    expect(upserts.flatMap((u) => u.rows)).toHaveLength(100)
+    const log = spy.rpcCalls.find((c) => c.name === "log_pipeline_run")!.args!
+    expect(log.p_ok).toBe(false)
+    expect(String(log.p_error)).toMatch(/editions: offset 100: atlas SearchEditions HTTP 403 \(Cloudflare challenge\)/)
+    expect((log.p_extra as { errors: string[] }).errors.join(" | ")).toMatch(/floors: edition sweep incomplete/)
+    expect(log.p_extra).toMatchObject({ editions_complete: false, floor_rows: 0 })
+  })
+
+  it("⚠ a complete sweep whose editions carry NO lowAskCents is unrenderable — floors are not erased", async () => {
+    const spy = install({
+      "rpc:pinnacle_catalog_set_floor_asks": { data: 0, error: null },
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+    atlasState.handler = atlasMarket({ editions: [ed("991", "rid-1", "0"), ed("992", "rid-2", "0")], listings: [] })
+    await pinCatalog.GET(adminReq("https://t/api/admin/backfill-pinnacle-catalog?floors_only=1", { authorization: "Bearer cron-secret" }))
+    await runDeferred()
+    expect(spy.rpcCalls.some((c) => c.name === "pinnacle_catalog_set_floor_asks")).toBe(false)
+    const log = spy.rpcCalls.find((c) => c.name === "log_pipeline_run")!.args!
+    expect(log.p_ok).toBe(false)
+    expect(String(log.p_error)).toMatch(/2 editions carried no lowAskCents/)
+  })
+
+  it("⚠ a failed limited_edition count read writes NO catalog rows (it would publish null as the flag)", async () => {
+    const spy = install({
+      pinnacle_catalog: { data: null, error: { message: "statement timeout" } },
+      "pinnacle_catalog:upsert": { data: null, error: null },
       "rpc:pinnacle_catalog_set_floor_asks": { data: 1, error: null },
       "rpc:log_pipeline_run": { data: null, error: null },
     })
-    const catalogDown: FetchStub = {
-      match: (_url, init) => String(init?.body ?? "").includes("CatalogBackfill"),
-      respond: () => ({ status: 500 }),
-    }
-    fetchMock = installFetchMock([
-      catalogDown,
-      gqlRoute("FloorAsks", floorPage([
-        { node: { edition: { render_id: "rid-1" }, listing: { price: "7" } } },
-      ])),
-    ])
-
-    await pinCatalog.POST(
-      adminReq("https://t/api/admin/backfill-pinnacle-catalog", { authorization: "Bearer admin-token" }),
-    )
+    atlasState.handler = atlasMarket({ editions: [MICKEY], listings: [] })
+    await pinCatalog.POST(adminReq("https://t/api/admin/backfill-pinnacle-catalog", { authorization: "Bearer admin-token" }))
     await runDeferred()
-
+    expect((spy.writes.pinnacle_catalog ?? []).filter((w) => w.method === "upsert")).toHaveLength(0)
     const log = spy.rpcCalls.find((c) => c.name === "log_pipeline_run")!.args!
-    expect(log).toMatchObject({ p_pipeline: "pinnacle-catalog-backfill", p_ok: false, p_error: "GQL 500" })
-    // Floor phase completed despite the catalog failure.
-    expect(log.p_extra).toMatchObject({ upserted: 0, floor_listed: 1, floor_rows: 1 })
-    expect(spy.rpcCalls.some((c) => c.name === "pinnacle_catalog_set_floor_asks")).toBe(true)
+    expect(log.p_ok).toBe(false)
+    expect(String(log.p_error)).toMatch(/catalog upsert skipped: limited_edition lookup for "Open Edition": statement timeout/)
+  })
+
+  it("an edition type the catalog holds both ways (or never) writes limited_edition null — unknown, not a guess", async () => {
+    const spy = install({
+      pinnacle_catalog: [
+        { data: null, error: null, count: 3 },
+        { data: null, error: null, count: 2 },
+      ],
+      "pinnacle_catalog:upsert": { data: null, error: null },
+      "rpc:pinnacle_catalog_set_floor_asks": { data: 1, error: null },
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+    atlasState.handler = atlasMarket({ editions: [MICKEY], listings: [] })
+    await pinCatalog.POST(adminReq("https://t/api/admin/backfill-pinnacle-catalog", { authorization: "Bearer admin-token" }))
+    await runDeferred()
+    const row = (spy.writes.pinnacle_catalog ?? []).find((w) => w.method === "upsert")!.rows[0]
+    expect(row.limited_edition).toBeNull()
   })
 })
 
@@ -921,15 +1056,13 @@ describe("/api/admin/backfill-pinnacle-catalog", () => {
 describe("/api/admin/backfill-pinnacle-catalog — catalog vs minted pins", () => {
   async function fullRun(gap: { data: unknown; error: unknown } | undefined) {
     const spy = install({
-      pinnacle_catalog: { data: null, error: null },
+      pinnacle_catalog: OPEN_EDITION_IS_NOT_LIMITED,
+      "pinnacle_catalog:upsert": { data: null, error: null },
       "rpc:pinnacle_catalog_set_floor_asks": { data: 1, error: null },
       "rpc:log_pipeline_run": { data: null, error: null },
       ...(gap ? { "rpc:pinnacle_minted_renders_missing_from_catalog": gap } : {}),
     })
-    fetchMock = installFetchMock([
-      gqlRoute("CatalogBackfill", [pinPage([MICKEY_NODE], false, null)]),
-      gqlRoute("FloorAsks", floorPage([{ node: { edition: { render_id: "rid-1" }, listing: { price: "12.5" } } }])),
-    ])
+    atlasState.handler = atlasMarket({ editions: [MICKEY], listings: [] })
     await pinCatalog.POST(adminReq("https://t/api/admin/backfill-pinnacle-catalog", { authorization: "Bearer admin-token" }))
     await runDeferred()
     return { spy, log: spy.rpcCalls.find((c) => c.name === "log_pipeline_run")!.args! }
@@ -1005,7 +1138,7 @@ describe("/api/admin/backfill-pinnacle-catalog — catalog vs minted pins", () =
   }
   async function chainRun(flow: { status?: number; json: unknown }, inserted: unknown) {
     const spy = install({
-      pinnacle_catalog: { data: null, error: null },
+      pinnacle_catalog: OPEN_EDITION_IS_NOT_LIMITED,
       "pinnacle_catalog:upsert": [{ data: null, error: null }, { data: inserted, error: null }],
       pinnacle_mint_events: { data: { edition_id: 2932 }, error: null },
       "rpc:pinnacle_catalog_set_floor_asks": { data: 1, error: null },
@@ -1013,9 +1146,8 @@ describe("/api/admin/backfill-pinnacle-catalog — catalog vs minted pins", () =
       "rpc:pinnacle_minted_renders_missing_from_catalog": RECENT_GAP,
       "rpc:derive_pinnacle_wmc_from_catalog": { data: 347, error: null },
     })
+    atlasState.handler = atlasMarket({ editions: [MICKEY], listings: [] })
     fetchMock = installFetchMock([
-      gqlRoute("CatalogBackfill", [pinPage([MICKEY_NODE], false, null)]),
-      gqlRoute("FloorAsks", floorPage([])),
       { match: (url) => url.includes("rest-mainnet.onflow.org"), respond: () => ({ status: flow.status ?? 200, json: flow.json }) },
     ])
     await pinCatalog.POST(adminReq("https://t/api/admin/backfill-pinnacle-catalog", { authorization: "Bearer admin-token" }))
@@ -1066,7 +1198,7 @@ describe("/api/admin/backfill-pinnacle-catalog — catalog vs minted pins", () =
       "rpc:pinnacle_catalog_set_floor_asks": { data: 1, error: null },
       "rpc:log_pipeline_run": { data: null, error: null },
     })
-    fetchMock = installFetchMock([gqlRoute("FloorAsks", floorPage([]))])
+    atlasState.handler = atlasMarket({ editions: [MICKEY], listings: [] })
     await pinCatalog.GET(adminReq("https://t/api/admin/backfill-pinnacle-catalog?floors_only=1", { authorization: "Bearer cron-secret" }))
     await runDeferred()
     expect(spy.rpcCalls.some((c) => c.name === "pinnacle_minted_renders_missing_from_catalog")).toBe(false)

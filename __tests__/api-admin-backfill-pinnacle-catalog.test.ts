@@ -4,9 +4,9 @@ import { adminReq } from "./helpers/admin-req"
 // Route integration test for /api/admin/backfill-pinnacle-catalog (GET + POST
 // share handle()). Auth via authed(): verifyAdminRequest OR INGEST_SECRET_TOKEN
 // OR CRON_SECRET (all read at request time). None set => fail-closed 401. The
-// catalog + floor sweep pages the Pinnacle Studio GraphQL inside next/server
+// catalog + floor sweep pages Dapper Atlas (via the DB) inside next/server
 // after() (stubbed no-op), so the authed path returns an immediate 202 accept
-// that is observable without the GQL fan-out.
+// that is observable without the Atlas fan-out.
 
 vi.mock("next/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("next/server")>()

@@ -2,15 +2,17 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 
 // Deep drive of /api/cron/pinnacle-wmc-render-id's DEFERRED after() body (the
 // sibling test only pins auth + the 202 ack). This route pulls unresolved Pinnacle
-// wmc rows, resolves render_id/serial via the Dapper studio GQL, updates wmc,
+// wmc rows, resolves render_id/serial via mint records then Dapper's Atlas
+// GetNFTs (through the DB: atlas_disney_begin + atlas_await_response — the
+// Studio GraphQL died 2026-11-17, #218), updates wmc,
 // derives catalog fields, and drains a batch of pinnacle_sales render_ids — all in
 // after(). The legs worth pinning (each a documented 2026-06-10 dark-500 risk or a
 // best-effort guard):
 //   - candidate-read { error } → logs ok:false "candidate_read: ..." and returns
 //     (the statement that used to 500 before log_pipeline_run)
-//   - happy path → GQL-resolved rows update wmc, derive runs, sales drain updates,
+//   - happy path → Atlas-resolved rows update wmc, derive runs, sales drain updates,
 //     final log ok:true with the telemetry envelope
-//   - a GQL chunk throwing → gqlErrors++ and final ok:false "N gql chunk errors"
+//   - an Atlas chunk failing → atlasErrors++ and final ok:false "N atlas chunk errors"
 //   - the sales drain never STOPS the wmc work, but its failure fails the run
 //     (inverted 2026-09-26 — it used to report ok:true over a broken lane)
 //   - resolved / derived count rows that LANDED, never rows attempted
@@ -76,31 +78,42 @@ const req = (opts: { auth?: string; token?: string } = {}) => {
   return { headers, nextUrl: u, url: u.toString() } as any
 }
 
-// GQL fetch fixture: id -> { serial_number, render_id }. fetchByIds echoes back
-// an edge per requested id.
-const gqlFixture: Record<string, { serial_number: string | null; render_id: string | null }> = {}
-let fetchMode: "ok" | "notok" | "errors" = "ok"
+// Atlas fixture: id -> { serialNumber, renderId }. GetNFTs echoes back an NFT per
+// requested id the fixture knows (an unknown id is simply absent, as on Atlas).
+const atlasFixture: Record<string, { serialNumber: string | null; renderId: string | null }> = {}
+let atlasMode: "ok" | "notok" | "nobody" = "ok"
+const atlasAsked: string[][] = []
+const pending = new Map<number, any>()
+let nextReq = 1
 
-function installFetch() {
-  vi.stubGlobal("fetch", vi.fn(async (_url: string, init: any) => {
-    if (fetchMode === "notok") return { ok: false, status: 502, json: async () => ({}) }
-    const body = JSON.parse(init.body)
-    const ids: string[] = body.variables.ids
-    if (fetchMode === "errors") return { ok: true, json: async () => ({ errors: [{ message: "boom" }] }) }
+function installAtlas() {
+  // The production transport (lib/pinnacle/atlas-disney.ts): begin enqueues, await answers.
+  st.rpcImpl.atlas_disney_begin = async (params: any) => {
+    const id = nextReq++
+    pending.set(id, params)
+    return { data: id, error: null }
+  }
+  st.rpcImpl.atlas_await_response = async (params: any) => {
+    const begun = pending.get(params.p_request_id)
+    expect(begun.p_method).toBe("NFTService/GetNFTs")
+    const ids: string[] = begun.p_body.nftIds
+    atlasAsked.push(ids)
+    if (atlasMode === "notok") return { data: { ok: false, status: 400, error: '{"code":"invalid_argument"}' }, error: null }
+    if (atlasMode === "nobody") return { data: { ok: true, body: {} }, error: null }
     return {
-      ok: true,
-      json: async () => ({
-        data: {
-          searchPinnacleNft: {
-            edges: ids
-              .filter((id) => gqlFixture[id])
-              .map((id) => ({ node: { id, serial_number: gqlFixture[id].serial_number, edition: { render_id: gqlFixture[id].render_id } } })),
-          },
+      data: {
+        ok: true,
+        body: {
+          nfts: ids
+            .filter((id) => atlasFixture[id])
+            .map((id) => ({ id, serialNumber: atlasFixture[id].serialNumber, renderId: atlasFixture[id].renderId })),
         },
-      }),
+      },
+      error: null,
     }
-  }))
+  }
 }
+const atlasCalls = () => rpc.mock.calls.filter((c) => c[0] === "atlas_disney_begin").length
 
 function logParams() {
   return rpc.mock.calls.find((c) => c[0] === "log_pipeline_run")?.[1]
@@ -126,9 +139,11 @@ beforeEach(() => {
     pinnacle_sales_unresolved_render_nft_ids: async () => ({ data: [] }),
     pinnacle_sales_set_render_ids: async () => ({ data: 0 }),
   }
-  for (const k of Object.keys(gqlFixture)) delete gqlFixture[k]
-  fetchMode = "ok"
-  installFetch()
+  for (const k of Object.keys(atlasFixture)) delete atlasFixture[k]
+  atlasMode = "ok"
+  atlasAsked.length = 0
+  pending.clear()
+  installAtlas()
 })
 afterEach(() => vi.unstubAllGlobals())
 
@@ -141,21 +156,21 @@ describe("/api/cron/pinnacle-wmc-render-id — deferred body", () => {
     expect(res.status).toBe(202)
   })
 
-  it("candidate-read { error } → logs ok:false 'candidate_read:' and returns early (no GQL)", async () => {
+  it("candidate-read { error } → logs ok:false 'candidate_read:' and returns early (no Atlas)", async () => {
     st.selectResult = { data: null, error: { message: "statement timeout" } }
     await drive()
     const p = logParams()
     expect(p.p_ok).toBe(false)
     expect(p.p_error).toBe("candidate_read: statement timeout")
-    expect((globalThis.fetch as any).mock.calls.length).toBe(0)
+    expect(atlasCalls()).toBe(0)
     expect(p.p_extra.stage).toBe("candidate_read")
   })
 
-  it("happy path → GQL-resolved rows update wmc, derive runs, sales drain updates, ok:true", async () => {
+  it("happy path → Atlas-resolved rows update wmc, derive runs, sales drain updates, ok:true", async () => {
     st.selectResult = { data: [{ moment_id: "1" }, { moment_id: "2" }], error: null }
-    gqlFixture["1"] = { serial_number: "5", render_id: "r1" }
-    gqlFixture["2"] = { serial_number: null, render_id: null } // no render_id → skipped
-    gqlFixture["9"] = { serial_number: "2", render_id: "r9" }
+    atlasFixture["1"] = { serialNumber: "5", renderId: "r1" }
+    atlasFixture["2"] = { serialNumber: null, renderId: null } // no render_id → skipped
+    atlasFixture["9"] = { serialNumber: "2", renderId: "r9" }
     st.rpcImpl.pinnacle_sales_unresolved_render_nft_ids = async () => ({ data: ["9"] })
     st.rpcImpl.pinnacle_sales_set_render_ids = async () => ({ data: 3 })
 
@@ -170,26 +185,36 @@ describe("/api/cron/pinnacle-wmc-render-id — deferred body", () => {
     expect(p.p_extra.derived).toBe(1) // derive ran because resolved>0
     expect(p.p_extra.sales_resolved).toBe(1)
     expect(p.p_extra.sales_updated).toBe(3)
-    expect(p.p_extra.gql_errors).toBe(0)
+    expect(p.p_extra.atlas_errors).toBe(0)
   })
 
-  it("a GQL chunk throwing (HTTP not-ok) → gqlErrors++ and final ok:false", async () => {
+  it("an Atlas chunk failing (HTTP not-ok) → atlasErrors++ and final ok:false", async () => {
     st.selectResult = { data: [{ moment_id: "1" }], error: null }
-    fetchMode = "notok"
+    atlasMode = "notok"
     await drive()
     const p = logParams()
     expect(p.p_ok).toBe(false)
-    expect(p.p_error).toContain("gql chunk errors")
-    // 2026-11-18 (#218): the error must carry the CAUSE. "2 gql chunk errors" alone
-    // hid a Dapper Studio 530 outage from every alerter that attributes upstream 530s.
-    expect(p.p_error).toContain("GQL 502")
-    expect(p.p_extra.gql_first_error).toBe("GQL 502")
+    expect(p.p_error).toContain("atlas chunk errors")
+    // 2026-11-18 (#218): the error must carry the CAUSE — the HTTP status — so an
+    // alerter that attributes upstream statuses can read it.
+    expect(p.p_error).toContain("HTTP 400")
+    expect(p.p_extra.atlas_first_error).toMatch(/^atlas GetNFTs HTTP 400/)
     expect(p.p_extra.resolved).toBe(0)
+  })
+
+  it("⚠ an Atlas body with no nfts array is a FAILED read, never 'none of these exist'", async () => {
+    st.selectResult = { data: [{ moment_id: "1" }], error: null }
+    atlasMode = "nobody"
+    await drive()
+    const p = logParams()
+    expect(p.p_ok).toBe(false)
+    expect(p.p_extra.atlas_errors).toBe(1)
+    expect(p.p_extra.atlas_first_error).toMatch(/no nfts array/)
   })
 
   it("derive is skipped when nothing resolved (resolved===0 guard)", async () => {
     st.selectResult = { data: [{ moment_id: "7" }], error: null }
-    gqlFixture["7"] = { serial_number: null, render_id: null } // resolves nothing
+    atlasFixture["7"] = { serialNumber: null, renderId: null } // resolves nothing
     const deriveSpy = vi.fn(async () => ({ error: null }))
     st.rpcImpl.derive_pinnacle_wmc_from_catalog = deriveSpy
     await drive()
@@ -199,7 +224,7 @@ describe("/api/cron/pinnacle-wmc-render-id — deferred body", () => {
 
   it("the sales drain failing never stops the wmc work — but it FAILS the run (inverted 2026-09-26)", async () => {
     st.selectResult = { data: [{ moment_id: "1" }], error: null }
-    gqlFixture["1"] = { serial_number: "1", render_id: "r1" }
+    atlasFixture["1"] = { serialNumber: "1", renderId: "r1" }
     st.rpcImpl.pinnacle_sales_unresolved_render_nft_ids = async () => { throw new Error("sales rpc down") }
     await drive()
     const p = logParams()
@@ -216,7 +241,7 @@ describe("/api/cron/pinnacle-wmc-render-id — deferred body", () => {
     expect(logParams().p_extra.sales_error).toBe("read: timeout")
 
     rpc.mockClear()
-    gqlFixture["9"] = { serial_number: "2", render_id: "r9" }
+    atlasFixture["9"] = { serialNumber: "2", renderId: "r9" }
     st.rpcImpl.pinnacle_sales_unresolved_render_nft_ids = async () => ({ data: ["9"], error: null })
     st.rpcImpl.pinnacle_sales_set_render_ids = async () => ({ data: null, error: { message: "deadlock" } })
     await drive()
@@ -228,7 +253,7 @@ describe("/api/cron/pinnacle-wmc-render-id — deferred body", () => {
 
   it("a wmc update { error } is not counted as resolved and fails the run", async () => {
     st.selectResult = { data: [{ moment_id: "1" }], error: null }
-    gqlFixture["1"] = { serial_number: "1", render_id: "r1" }
+    atlasFixture["1"] = { serialNumber: "1", renderId: "r1" }
     st.updateResult = { data: null, error: { message: "permission denied" } }
     await drive()
     const p = logParams()
@@ -241,7 +266,7 @@ describe("/api/cron/pinnacle-wmc-render-id — deferred body", () => {
 
   it("an update that lands on NO row (a concurrent writer filled it) is not resolved", async () => {
     st.selectResult = { data: [{ moment_id: "1" }], error: null }
-    gqlFixture["1"] = { serial_number: "1", render_id: "r1" }
+    atlasFixture["1"] = { serialNumber: "1", renderId: "r1" }
     st.updateResult = { data: [], error: null }
     await drive()
     const p = logParams()
@@ -252,7 +277,7 @@ describe("/api/cron/pinnacle-wmc-render-id — deferred body", () => {
 
   it("derived is the derive RPC's own count, and its { error } fails the run", async () => {
     st.selectResult = { data: [{ moment_id: "1" }], error: null }
-    gqlFixture["1"] = { serial_number: "1", render_id: "r1" }
+    atlasFixture["1"] = { serialNumber: "1", renderId: "r1" }
     st.rpcImpl.derive_pinnacle_wmc_from_catalog = async () => ({ data: 7, error: null })
     await drive()
     expect(logParams().p_extra.derived).toBe(7)
@@ -267,29 +292,28 @@ describe("/api/cron/pinnacle-wmc-render-id — deferred body", () => {
   })
 
   // ── 2026-11-08 (handoff pinnacle-wmc-render-gap) ──────────────────────────
-  it("names pins from RPC's own mint records first — no GQL call for them", async () => {
+  it("names pins from RPC's own mint records first — no Atlas call for them", async () => {
     st.selectResult = { data: [{ moment_id: "m1" }, { moment_id: "m2" }], error: null }
     st.mintResult = { data: [{ nft_id: "m1", render_id: "R-1" }, { nft_id: "m2", render_id: "R-2" }], error: null }
     await drive()
     const p = logParams()
     expect(p.p_ok).toBe(true)
     expect(p.p_extra.from_mint_records).toBe(2)
-    expect(p.p_extra.from_gql).toBe(0)
+    expect(p.p_extra.from_atlas).toBe(0)
     expect(p.p_rows_written).toBe(2)
-    // the search was asked for nothing on the wmc pass (sales drain was empty too)
-    expect((globalThis.fetch as any).mock.calls.length).toBe(0)
+    // Atlas was asked for nothing on the wmc pass (sales drain was empty too)
+    expect(atlasCalls()).toBe(0)
   })
 
-  it("falls back to GQL only for pins the mint records lack", async () => {
+  it("falls back to Atlas only for pins the mint records lack", async () => {
     st.selectResult = { data: [{ moment_id: "m1" }, { moment_id: "g1" }], error: null }
     st.mintResult = { data: [{ nft_id: "m1", render_id: "R-1" }], error: null }
-    gqlFixture["g1"] = { serial_number: "7", render_id: "R-G" }
+    atlasFixture["g1"] = { serialNumber: "7", renderId: "R-G" }
     await drive()
     const p = logParams()
     expect(p.p_extra.from_mint_records).toBe(1)
-    expect(p.p_extra.from_gql).toBe(1)
-    const asked: string[] = JSON.parse((globalThis.fetch as any).mock.calls[0][1].body).variables.ids
-    expect(asked).toEqual(["g1"])
+    expect(p.p_extra.from_atlas).toBe(1)
+    expect(atlasAsked).toEqual([["g1"]])
   })
 
   it("⚠ a BACKLOG that resolves nothing fails the run — never ok:true with 0 of N (the 972/0 case)", async () => {
@@ -311,15 +335,15 @@ describe("/api/cron/pinnacle-wmc-render-id — deferred body", () => {
     expect(p.p_extra.unresolvable_sample).toEqual(["u1", "u2"])
   })
 
-  it("⚠ a failed mint-records read is reported, and GQL still names what it can", async () => {
+  it("⚠ a failed mint-records read is reported, and Atlas still names what it can", async () => {
     st.selectResult = { data: [{ moment_id: "g1" }], error: null }
     st.mintResult = { data: null, error: { message: "statement timeout" } }
-    gqlFixture["g1"] = { serial_number: null, render_id: "R-G" }
+    atlasFixture["g1"] = { serialNumber: null, renderId: "R-G" }
     await drive()
     const p = logParams()
     expect(p.p_ok).toBe(false)
     expect(p.p_error).toMatch(/mint records read: statement timeout/)
-    expect(p.p_extra.from_gql).toBe(1)
+    expect(p.p_extra.from_atlas).toBe(1)
     expect(p.p_rows_written).toBe(1)
   })
 

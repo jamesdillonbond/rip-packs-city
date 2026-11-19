@@ -5,11 +5,11 @@ import { describe, it, expect, beforeAll, vi } from "vitest"
 // Highest-value assertion: fail-closed auth — no auth and a wrong bearer both 401
 // before any DB/upstream work. Tokens are set below so the handler exercises its
 // real comparison branch (the route module is imported dynamically afterwards).
-// Success path: the handler authenticates synchronously, defers ALL DB + GQL work
+// Success path: the handler authenticates synchronously, defers ALL DB + Atlas work
 // into after() (stubbed no-op), and returns an immediate 202 accept — so the
-// accept is observable without any Supabase/GQL I/O.
+// accept is observable without any Supabase/Atlas I/O.
 
-// after() is stubbed so the deferred candidate-select / GQL / update never runs.
+// after() is stubbed so the deferred candidate-select / Atlas / update never runs.
 vi.mock("next/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("next/server")>()
   return { ...actual, after: () => {} }
