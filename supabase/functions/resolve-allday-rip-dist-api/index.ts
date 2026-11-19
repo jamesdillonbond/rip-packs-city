@@ -1,4 +1,5 @@
-// resolve-allday-rip-dist-api v6 — attribute opened AllDay packs to dist via Dapper searchPackNft.
+// resolve-allday-rip-dist-api v7 — hand unattributed All Day rips to the pack-nft-identity lane (Atlas, 2026-11-18).
+// (v6: attributed them itself via Dapper searchPackNft, on Studio GraphQL, HTTP 530 since 2026-11-17.)
 // PackNftFilter: pack id filter is `id` (UInt64Filter); dist_id + status also exposed. Writes debug.
 //
 // v6 (2026-08-18): the gate was a HARDCODED LITERAL (`const GATE="…"`). That made this function
@@ -15,18 +16,8 @@
 // could never pass for it (2026-10-02).
 import { createClient } from "@supabase/supabase-js"
 import { cronGate } from "../_shared/cron-gate.ts"
-const EP="https://api.production.studio-platform.dapperlabs.com/graphql"
 const ALLDAY="dee28451-5d62-409e-a1ad-a83f763ac070"
 const sb=createClient(Deno.env.get("SUPABASE_URL")??"",Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")??"")
-const H={"Content-Type":"application/json","Origin":"https://nflallday.com","Referer":"https://nflallday.com/","User-Agent":"RipPacksCity/1.0"}
-const sleep=(ms:number)=>new Promise(r=>setTimeout(r,ms))
-// 2026-11-18 (#218): a non-2xx THROWS with its status. It used to go straight to
-// r.json(), so Dapper Studio's HTTP 530 page failed to parse and the run logged
-// "lookup: not-json", hiding the outage from every alerter that attributes upstream
-// 530s. The loop's catch turns this into "lookup: HTTP 530".
-async function raw(query:string,variables?:any){ const r=await fetch(EP,{method:"POST",headers:H,body:JSON.stringify({query,variables}),signal:AbortSignal.timeout(25000)}); if(!r.ok) throw new Error(`HTTP ${r.status}`); return await r.json().catch(()=>null) }
-const Q=`query($i: SearchPackNftsInput!){ searchPackNft(searchInput:$i){ edges{ node{ id dist_id status } } } }`
-async function lookup(ids:string[]){ return await raw(Q,{ i:{ first: ids.length, filters:[{ id:{ in: ids } }] } }) }
 
 // One pipeline_runs row per run (2026-10-03). Until now this hourly lane (pg_cron
 // jobid 26, :17) left no trace on success: its only record was an upsert into
@@ -50,7 +41,6 @@ async function logRun(startedAt:number, ok:boolean, found:number|null, written:n
 }
 
 Deno.serve(async(req)=>{
-  const url=new URL(req.url)
   const gateDenied = await cronGate(req, sb, "resolve-allday-rip-dist-api")
   if (gateDenied) return gateDenied
   const startedAt=Date.now()
@@ -69,29 +59,18 @@ Deno.serve(async(req)=>{
     return new Response(JSON.stringify({ok:false,error}),{status:500,headers:{"content-type":"application/json"}})
   }
   const ids=(rows??[]).map((r:any)=>String(r.pack_nft_id))
-  if(url.searchParams.get("mode")==='probe'){ const j=await lookup(ids.slice(0,3)).catch((e)=>({fetch_error:String(e)})); return new Response(JSON.stringify({probe:true,resp:j}),{headers:{"content-type":"application/json"}}) }
   if(ids.length===0){
     await logRun(startedAt,true,0,0,0,null,{note:"none"})
     return new Response(JSON.stringify({note:'none'}),{headers:{"content-type":"application/json"}})
   }
-  let resolved=0, matched=0, updErrors=0, err:string|null=null, updErr:string|null=null
-  const statuses:Record<string,number>={}
-  for(let i=0;i<ids.length;i+=50){
-    let j:any
-    try{ j=await lookup(ids.slice(i,i+50)) }catch(e){ err=`lookup: ${e instanceof Error?e.message:String(e)}`; break }
-    if(!j){ err="lookup: not-json"; break }
-    if(j?.errors?.length){ err=String(j.errors[0].message); break }
-    for(const e of (j?.data?.searchPackNft?.edges??[])){
-      const n=e.node; if(!n?.id) continue
-      matched++; statuses[n.status||'?']=(statuses[n.status||'?']||0)+1
-      if(n.dist_id){
-        const { error:uErr }=await sb.from("pack_rips").update({dist_id:String(n.dist_id)}).eq("collection_id",ALLDAY).eq("pack_nft_id",String(n.id))
-        if(uErr){ updErrors++; updErr=updErr??uErr.message.slice(0,200) } else resolved++
-      }
-    }
-    await sleep(120)
-  }
-  const error=err??(updErr?`pack_rips update: ${updErr}`:null)
-  await logRun(startedAt,!error,ids.length,resolved,ids.length-resolved,error,{matched,statuses,update_errors:updErrors})
-  return new Response(JSON.stringify({candidates:ids.length,matched,resolved,update_errors:updErrors,err:error}),{headers:{"content-type":"application/json"}})
+  // 2026-11-18 (#218): Studio GraphQL (searchPackNft) is HTTP 530 since 11-17. Atlas answers
+  // ResolvePackDistribution, but only per pack and only reliably from the database's egress, so
+  // this lane no longer looks anything up itself: it hands the rips to the pack-nft-identity lane
+  // (dispatch_pack_nft_identity enqueues them and sends at most 30 a call), whose collector writes
+  // pack_rips.dist_id. rows_written is therefore 0 here by construction; the names land there.
+  const { data:res, error:rpcErr }=await sb.rpc("dispatch_pack_nft_identity",{p_batches:1,p_batch_size:30,p_pack_nft_ids:ids})
+  const error=rpcErr?`dispatch_pack_nft_identity: ${rpcErr.message.slice(0,200)}`:null
+  const r=(res??{}) as Record<string,unknown>
+  await logRun(startedAt,!error,ids.length,0,null,error,{handed_to:"pack-nft-identity",enqueued:r.enqueued??null,skipped_no_collection:r.skipped_no_collection??null,dispatched:r.dispatched??null,queue_depth:r.queue_depth??null})
+  return new Response(JSON.stringify({candidates:ids.length,handed_to:"pack-nft-identity",dispatch:res??null,err:error}),{status:error?500:200,headers:{"content-type":"application/json"}})
 })
