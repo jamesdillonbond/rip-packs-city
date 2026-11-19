@@ -63,7 +63,9 @@ and ~390px (note the resize cap — see the browser doc).
 - **One `/insights` board** — e.g. `/insights/squeeze`: rows render, not a false-empty, no console error.
 - **Dated pack/edition detail surfaces (2026-06-08):**
   - `/nba-top-shot/pack/dist/4184` — "Sales History" with traced purchases + "Packs Content Remaining"
-    tier bars + partial-coverage caption; buyer links point at `/analytics/wallets/<addr>`.
+    tier bars + partial-coverage caption; buyer links point at `/share/0x<addr>` (the anon-200
+    Collection Card = the buyer's holdings; **NOT** `/analytics/wallets/<addr>`, which is now the
+    Flowty **loans** view — confirmed non-defect 2026-11-05 and re-confirmed 2026-11-19, do not re-chase).
   - `/nba-top-shot/pack/dist/901` — Sales History **honest empty state** ("No traced sales yet for this
     pack."), no fake rows.
   - `/nba-top-shot/edition/124:4493` — Special Serials board + Recent Sales.
