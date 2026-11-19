@@ -1,4 +1,4 @@
-# Inbox index — 686 live filings
+# Inbox index — 687 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,7 +32,9 @@ failure it documents.
 
 ---
 
-## 2026-11-19 — 2 filings
+## 2026-11-19 — 3 filings
+
+- [Daytime health monitor — 2026-11-19 ~04:05Z: all green except pinnacle_render_floor_stale_hours trust BREACH (30.5h, new) — #218 Studio-530 keeps the floor writer from running; unlike the pack-sales arms it has no #218 ack/suppression → night-pass ack/suppress-or-accept decision (LOW, sense-only, self-clears on Studio recovery)](2026-11-19T0409Z-daytime-monitor-pinnacle-render-floor-218.md)
 
 - [Claude Code — two measured proposals, not shipped: the Candy revival arm needs a re-date every ~4 days (count USD or 2026-set sales instead?), and /insights/trophies probes 8,106 wallet rows to show 1,209 (filter inside a function, keep the MATERIALIZED fence) (LOW)](2026-11-19T0200Z-claude-code-two-proposals-candy-revival-arm-and-trophies-probe.md)
 - [Daytime health monitor — 2026-11-19 ~01:05Z: all green (security 4/4, pg_cron [], stalled []); 13/13 dashboards' objects resolve; prod ccf94ca0 READY. Candy revival arm 11/10 BREACH = dust trickle, not a revival → re-verify + re-date (LOW); public_board_slow_count=1 is the known expected-empty pack-reality board; Studio-530 pack cluster ongoing ~24h (upstream)](2026-11-19T0105Z-daytime-monitor-candy-revival-dust-trickle.md)
