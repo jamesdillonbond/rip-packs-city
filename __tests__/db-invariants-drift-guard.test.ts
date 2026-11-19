@@ -352,10 +352,17 @@ const PINS = [
     migration: "supabase/migrations/20261101022135_audit_20261031_atlas_pack_market_book.sql",
   },
   {
-    // Added 2026-10-31 (#218). Publishes only a COMPLETE pass and only dists with a real ask; carries Studio vs Atlas newest listing.
+    // Added 2026-10-31 (#218). Publishes only a COMPLETE pass and only dists with a real ask; carries Studio vs Atlas newest listing. 2026-11-18: the Studio watermark excludes atlas: rows.
     fn: "atlas_pack_book",
     test: "supabase/tests/atlas_pack_market_tick.sql",
-    migration: "supabase/migrations/20261101022135_audit_20261031_atlas_pack_market_book.sql",
+    migration: "supabase/migrations/20261119070000_audit_20261118_atlas_pack_sales_lane_for_topshot_and_allday.sql",
+  },
+  {
+    // Added 2026-11-18 (#218). Atlas pack sales (entity ENTITY_PACKNFT) into the Studio-era tables: refuses a page with
+    // any non-pack row (Atlas ignores unknown fields), skips a sale Studio already holds, block_time = listedAt.
+    fn: "atlas_pack_sales_ingest",
+    test: "supabase/tests/atlas_pack_sales_ingest.sql",
+    migration: "supabase/migrations/20261119070000_audit_20261118_atlas_pack_sales_lane_for_topshot_and_allday.sql",
   },
   {
     // Added 2026-10-09. The one pg_net page request + request row, shared by the

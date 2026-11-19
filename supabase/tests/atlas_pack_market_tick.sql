@@ -30,9 +30,12 @@ CREATE FUNCTION public.log_pipeline_run(p_pipeline text, p_started_at timestampt
 RETURNS bigint LANGUAGE sql AS $$ INSERT INTO public.pipeline_log VALUES (p_pipeline, p_rows_found, p_rows_written, p_ok, p_error, p_extra) RETURNING 1::bigint $$;
 
 CREATE TABLE public.topshot_atlas_market_requests (dispatched_at timestamptz, drained_at timestamptz, error text);
-CREATE TABLE public.topshot_pack_sales_history (block_time timestamptz);
-CREATE TABLE public.allday_pack_sales_history (block_time timestamptz);
-INSERT INTO public.topshot_pack_sales_history VALUES ('2026-10-29T14:50:30Z');
+CREATE TABLE public.topshot_pack_sales_history (tx_hash text NOT NULL, block_time timestamptz);
+CREATE TABLE public.allday_pack_sales_history (tx_hash text NOT NULL, block_time timestamptz);
+INSERT INTO public.topshot_pack_sales_history VALUES ('e286f76d', '2026-10-29T14:50:30Z');
+-- 2026-11-18: an Atlas-sourced sale (run_atlas_pack_sales_lane) NEWER than Studio's newest. It is not
+-- Studio's index, so studio_newest_listing_at must still read 10-29 (else a frozen Studio reads current).
+INSERT INTO public.topshot_pack_sales_history VALUES ('atlas:252d9e55-bd4b-5de8-8c44-f9ee84bea041', '2026-11-19T05:41:35Z');
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN CREATE ROLE anon; END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN CREATE ROLE authenticated; END IF;
@@ -340,9 +343,11 @@ AS $function$
     'atlas_newest_listing_at', (SELECT max(latest_listed_at) FROM book),
     -- Studio's sales mirror stamps each row with the LISTING's creation block, so its max is the
     -- newest listing Studio has indexed — the like-for-like comparison with Atlas's.
+    -- 2026-11-18: Atlas-sourced rows ('atlas:' tx_hash, run_atlas_pack_sales_lane) are excluded --
+    -- they are not Studio's index, and counting them would call a frozen Studio current.
     'studio_newest_listing_at', CASE p_product
-        WHEN 'nba' THEN (SELECT max(block_time) FROM public.topshot_pack_sales_history)
-        WHEN 'nfl' THEN (SELECT max(block_time) FROM public.allday_pack_sales_history) END,
+        WHEN 'nba' THEN (SELECT max(block_time) FROM public.topshot_pack_sales_history WHERE tx_hash NOT LIKE 'atlas:%')
+        WHEN 'nfl' THEN (SELECT max(block_time) FROM public.allday_pack_sales_history WHERE tx_hash NOT LIKE 'atlas:%') END,
     'rows', coalesce((
       SELECT jsonb_agg(jsonb_build_object(
                'dist_id', b.dist_id, 'dist_uuid', b.dist_uuid, 'title', b.title, 'tier', b.tier,
@@ -422,7 +427,7 @@ BEGIN
   ASSERT (b->>'dists_in_book')::integer = 4, 'all four dists are in the book';
   ASSERT jsonb_array_length(b->'rows') = 3, 'only dists with a real ask are published';
   ASSERT NOT EXISTS (SELECT 1 FROM jsonb_array_elements(b->'rows') r WHERE r->>'dist_id' = '709'), 'no-ask dist withheld';
-  ASSERT (b->>'studio_newest_listing_at')::timestamptz = '2026-10-29T14:50:30Z', 'studio newest listing carried';
+  ASSERT (b->>'studio_newest_listing_at')::timestamptz = '2026-10-29T14:50:30Z', 'studio newest listing carried -- and an atlas: row newer than it is NOT counted';
   ASSERT (b->>'atlas_newest_listing_at')::timestamptz = '2026-10-31T22:54:03.302869Z', 'atlas newest listing carried';
 
   -- A late page from an OLDER pass must not roll back a newer observation.
