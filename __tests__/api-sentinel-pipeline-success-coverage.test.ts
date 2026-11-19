@@ -374,3 +374,64 @@ describe("sentinel — Pipeline Success Coverage", () => {
     expect(c.value).toBe(0)
   })
 })
+
+// 2026-11-18 (#218): Dapper Studio answered HTTP 530 for 30+ h and three
+// Studio-only lanes (compute-golazos-pack-ev, pinnacle-catalog-floor-refresh,
+// pinnacle-catalog-backfill) crossed crit_at, so this arm failed the Sentinel job
+// and paged on every sweep for an outage nobody here can fix. An upstream-530
+// pipeline stays counted and named and holds the arm at WARN at least; it only
+// stops counting toward CRITICAL. A 522 (Cloudflare reporting OUR Supabase
+// unreachable) and timeouts must stay critical-eligible.
+describe("sentinel — Pipeline Success Coverage: upstream 530 attribution", () => {
+  const studio: Roll[] = [
+    { pipeline: "compute-golazos-pack-ev", runs: 4, ok_count: 0, rows_written: 0, last_error: "gql: HTTP 530" },
+    { pipeline: "pinnacle-catalog-floor-refresh", runs: 4, ok_count: 0, rows_written: 0, last_error: "floor phase: floor GQL 530" },
+    { pipeline: "pinnacle-catalog-backfill", runs: 2, ok_count: 0, rows_written: 0, last_error: "error code: 1033\n" },
+  ]
+
+  it("three upstream-530 dead pipelines read WARN, not CRITICAL — still counted and named", async () => {
+    install({ watchlist: studio.map((r) => r.pipeline), rollup: studio })
+    const c = await runCheck()
+    expect(c.status).toBe("warn")
+    expect(c.value).toBe(3)
+    for (const r of studio) expect(c.detail).toContain(r.pipeline)
+    expect(c.detail).toContain("upstream 530")
+  })
+
+  it("a single upstream-530 pipeline never reads ok, even with warn_at raised above it", async () => {
+    install({
+      watchlist: [studio[0].pipeline],
+      rollup: [studio[0]],
+      config: [{ check_name: "Pipeline Success Coverage", warn_at: 5, crit_at: 9, enabled: true }],
+    })
+    expect((await runCheck()).status).toBe("warn")
+  })
+
+  it("our own dead pipelines still reach CRITICAL beside upstream ones", async () => {
+    const ours: Roll[] = Array.from({ length: 3 }, (_, i) => ({
+      pipeline: `ours-${i}`, runs: 2, ok_count: 0, rows_written: 0, last_error: "canceling statement due to statement timeout",
+    }))
+    install({ watchlist: [...studio, ...ours].map((r) => r.pipeline), rollup: [...studio, ...ours] })
+    const c = await runCheck()
+    expect(c.status).toBe("critical")
+    expect(c.value).toBe(6)
+  })
+
+  it("a 522 / 502 / 503 is NOT attributed upstream — a Supabase 522 is our own database path", async () => {
+    const fivexx: Roll[] = ["HTTP 522", "HTTP 502", "GQL 503"].map((e, i) => ({
+      pipeline: `fivexx-${i}`, runs: 2, ok_count: 0, rows_written: 0, last_error: e,
+    }))
+    install({ watchlist: fivexx.map((r) => r.pipeline), rollup: fivexx })
+    const c = await runCheck()
+    expect(c.status).toBe("critical")
+    expect(c.detail).not.toContain("upstream 530")
+  })
+
+  it("a 530 inside a larger number (e.g. a row count) is not an upstream status", async () => {
+    const decoys: Roll[] = ["wrote 15300 rows then failed", "page 5301: timeout", "id 530123 missing"].map((e, i) => ({
+      pipeline: `decoy-${i}`, runs: 2, ok_count: 0, rows_written: 0, last_error: e,
+    }))
+    install({ watchlist: decoys.map((r) => r.pipeline), rollup: decoys })
+    expect((await runCheck()).status).toBe("critical")
+  })
+})

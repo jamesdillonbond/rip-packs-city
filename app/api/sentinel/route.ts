@@ -2317,6 +2317,25 @@ async function runSentinelWithin(clock: WallBudgetClock) {
           )
           .sort((a, b) => b[1].runs - a[1].runs);
 
+        // ⚠ UPSTREAM-530 ATTRIBUTION (2026-11-18, #218). Dapper's Studio GraphQL
+        // answered HTTP 530 (Cloudflare "error code: 1033", origin tunnel down)
+        // from 11-17 4:23 PM PT for 30+ h. Every Studio-only lane (Golazos/Pinnacle
+        // pack EV, Pinnacle catalog floor/backfill) went 0-ok/0-rows, three of
+        // them crossed crit_at, and this arm turned the Sentinel job RED and paged
+        // telegram+email on EVERY sweep for an outage nobody here can fix — the
+        // exact "a blocked pipeline must never escalate to a red build" case the
+        // crit comment above forbids. Such a pipeline is STILL counted (`value`)
+        // and STILL named, tagged "upstream 530", and the arm never reads below
+        // WARN while one exists — the same floor the pack-sales arms keep for the
+        // same outage. It only stops counting toward CRITICAL.
+        // ⚠ 530 ONLY, matched as a status code. NOT 522/502/503/504 and not a
+        // timeout: a Supabase `<!DOCTYPE html>` 522 is Cloudflare reporting OUR
+        // database unreachable (CLAUDE.md), and those must stay critical-eligible.
+        const isUpstream530 = (err: string | null) =>
+          !!err && /(?:HTTP|GQL|status)\s*:?\s*530\b|error code:\s*1033\b/i.test(err);
+        const deadOurs = dead.filter(([, a]) => !isUpstream530(a.err));
+        const deadUpstream = dead.length - deadOurs.length;
+
         // Stated on every reading, healthy or not — the rollup's recency is part
         // of the answer, not a footnote (a 6h-stale "all clear" is a weaker claim
         // than a fresh one, and the reader cannot tell without this).
@@ -2331,9 +2350,9 @@ async function runSentinelWithin(clock: WallBudgetClock) {
         checks.push({
           name: "Pipeline Success Coverage",
           status:
-            dead.length >= scCrit
+            deadOurs.length >= scCrit
               ? "critical"
-              : dead.length >= scWarn
+              : dead.length >= scWarn || deadUpstream > 0
                 ? "warn"
                 : "ok",
           detail:
@@ -2342,7 +2361,7 @@ async function runSentinelWithin(clock: WallBudgetClock) {
               : `${dead
                   .map(
                     ([p, a]) =>
-                      `${p} 0/${a.runs} ok, 0 rows${a.err ? ` — ${String(a.err).slice(0, 60)}` : ""}`,
+                      `${p} 0/${a.runs} ok, 0 rows${isUpstream530(a.err) ? " (upstream 530, not counted toward critical)" : ""}${a.err ? ` — ${String(a.err).slice(0, 60)}` : ""}`,
                   )
                   .join("; ")} (since ${fromDay}, ${ageNote}${suppNote})`,
           value: dead.length,
