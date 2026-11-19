@@ -178,8 +178,9 @@ DO $splice$
 DECLARE
   v_oid oid := 'public.check_topshot_parallel_sales_on_base(integer)'::regprocedure;
   d text;
-  o text := $o$FROM topshot_atlas_market_events a WHERE a.nft_id = s.nft_id AND$o$;
-  n text := $n$FROM topshot_atlas_market_events a WHERE a.product = 'nba' AND a.nft_id = s.nft_id AND$n$;
+  -- one-line anchor: the live body breaks the line between the FROM and the WHERE
+  o text := $o$WHERE a.nft_id = s.nft_id AND a.parallel IS NOT NULL$o$;
+  n text := $n$WHERE a.product = 'nba' AND a.nft_id = s.nft_id AND a.parallel IS NOT NULL$n$;
 BEGIN
   IF (SELECT md5(prosrc) FROM pg_proc WHERE oid = v_oid) <> '1f498850a8a764011056641dba7746ec' THEN
     RAISE EXCEPTION 'check_topshot_parallel_sales_on_base drifted (md5 %); re-derive', (SELECT md5(prosrc) FROM pg_proc WHERE oid = v_oid);
