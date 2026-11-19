@@ -32,6 +32,9 @@ const SUPPRESSED: Record<string, string> = {
   // never attribute a landed response -- a join here would read as coverage it cannot give.
   // 3-7 reads a day. To attribute it, the lane must keep the id after collect first.
   pinnacle_sale_serial_reads: "request_id is cleared on collect; a join could never attribute it",
+  // 2026-11-18 (#261): every request it sends is ALSO recorded in atlas_ondemand_requests (fn
+  // 'ownership:<product>'), the table the arm joins as 'atlas-ondemand' -- so a 403 is attributed there.
+  atlas_ownership_stage: "dispatch identity recorded in atlas_ondemand_requests, which the arm joins",
 }
 
 function lanes() {
