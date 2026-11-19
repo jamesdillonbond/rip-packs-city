@@ -53,11 +53,18 @@ function compare(sort: string) {
   }
 }
 
+/**
+ * 2026-11-19: v_insights_trophies, read through get_insights_trophies(p_collections) — the view's
+ * own rows (same row type), with the collection filter applied INSIDE its materialized candidate
+ * CTE, before the one-of-one wallet probe. Filtering the view from outside probed every candidate
+ * of every collection (8,127) and discarded the rest: a one-collection tab read 52.9k buffers,
+ * now 22.7k (All Day, measured warm). Proven row-identical to the view on every collection.
+ */
+export const TROPHIES_RPC = "get_insights_trophies"
+
 function readEditionsView(db: Db, collection: string | null, type: string | null, sort: string, limit: number) {
-  let q = db.from("v_insights_trophies").select(TROPHIES_COLS)
-  q = collection
-    ? q.eq("collection", collection)
-    : q.in("collection", TROPHY_COLLECTIONS.filter((c) => c !== PINNACLE_TROPHY_COLLECTION))
+  const collections = collection ? [collection] : TROPHY_COLLECTIONS.filter((c) => c !== PINNACLE_TROPHY_COLLECTION)
+  let q = db.rpc(TROPHIES_RPC, { p_collections: collections }).select(TROPHIES_COLS)
   if (type === "one_of_one") q = q.eq("is_one_of_one", true)
   else if (type === "ultimate") q = q.eq("is_top_tier", true)
   if (sort === "circulation") {

@@ -5,7 +5,8 @@
 //
 // Read-only JSON endpoint backing /insights/trophies. Lives under
 // /api/public/* so the proxy.ts allowlist lets it through with no auth.
-// Reads the public `v_insights_trophies` view (shipped 2026-06-13 via
+// Reads the public `v_insights_trophies` view — since 2026-11-19 through `get_insights_trophies(p_collections)`,
+// which filters collections before the one-of-one wallet probe (lib/insights/trophies-board.ts) — (shipped 2026-06-13 via
 // `audit_20260613_v_insights_trophies`, security_invoker=on, granted to
 // anon) which filters editions to is_one_of_one OR is_ultimate WHERE
 // thumbnail_url IS NOT NULL and laterals the latest FMV per edition off

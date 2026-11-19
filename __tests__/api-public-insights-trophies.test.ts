@@ -18,7 +18,7 @@ vi.mock("@/lib/supabase", () => {
     limit: () => b,
     then: (resolve: any) => resolve({ data: state.data, error: state.error }),
   }
-  return { supabaseAdmin: { from: () => b } }
+  return { supabaseAdmin: { from: () => b, rpc: () => b } }
 })
 
 import { GET } from "@/app/api/public/insights/trophies/route"

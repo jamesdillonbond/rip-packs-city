@@ -8,14 +8,14 @@ import { fetchTrophiesBoard } from "@/lib/insights/trophies-board"
 // reads them alongside the view and merges. Either leg failing is an error —
 // never a shorter list read as the whole board.
 function fakeDb(byTable: Record<string, { data: unknown[] | null; error: { message: string } | null }>) {
-  return {
-    from: (table: string) => {
-      const b: Record<string, unknown> = {}
-      for (const fn of ["select", "eq", "in", "not", "or", "order"]) b[fn] = () => b
-      b.limit = async () => byTable[table] ?? { data: [], error: null }
-      return b
-    },
+  const builder = (table: string) => {
+    const b: Record<string, unknown> = {}
+    for (const fn of ["select", "eq", "in", "not", "or", "order"]) b[fn] = () => b
+    b.limit = async () => byTable[table] ?? { data: [], error: null }
+    return b
   }
+  // The editions leg reads v_insights_trophies through get_insights_trophies (2026-11-19).
+  return { from: builder, rpc: (name: string) => builder(name === "get_insights_trophies" ? "v_insights_trophies" : name) }
 }
 
 const view = (fmv: number | null, name: string) => ({ edition_id: name, collection: "nba_top_shot", fmv_usd: fmv, circulation_count: 1 })

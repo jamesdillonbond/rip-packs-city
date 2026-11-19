@@ -50,6 +50,10 @@ function recordingDb() {
       calls.push({ fn: "from", args })
       return q
     },
+    rpc: (...args: unknown[]) => {
+      calls.push({ fn: "rpc", args })
+      return q
+    },
   }
   return { db, calls }
 }
@@ -202,16 +206,18 @@ describe("fetchTrophiesBoard", () => {
   // The unfiltered board reads TWO legs (the editions view + Pinnacle's catalog,
   // whose pins are not `editions` rows); assert each leg's own calls.
   const leg = (calls: Call[], table: string) => {
-    const start = calls.findIndex((c) => c.fn === "from" && c.args[0] === table)
+    const start = calls.findIndex((c) => (c.fn === "from" || c.fn === "rpc") && c.args[0] === table)
     if (start < 0) return [] as Call[]
-    const next = calls.findIndex((c, k) => k > start && c.fn === "from")
+    const next = calls.findIndex((c, k) => k > start && (c.fn === "from" || c.fn === "rpc"))
     return calls.slice(start, next < 0 ? undefined : next)
   }
 
-  it("reads the grails view with the shared column list", async () => {
+  it("reads the grails view (through get_insights_trophies) with the shared column list", async () => {
     const { db, calls } = recordingDb()
     await fetchTrophiesBoard({ limit: 200 }, db)
-    expect(has(calls, "from", "v_insights_trophies")).toBe(true)
+    expect(has(calls, "rpc", "get_insights_trophies")).toBe(true)
+    // 2026-11-19: NOT the view with an outer filter -- that probed every collection's candidates.
+    expect(has(calls, "from", "v_insights_trophies")).toBe(false)
     expect(has(calls, "select", TROPHIES_COLS)).toBe(true)
   })
 
@@ -221,27 +227,27 @@ describe("fetchTrophiesBoard", () => {
   it("covers every published collection: the view leg for all but Pinnacle, plus the Pinnacle catalog", async () => {
     const all = recordingDb()
     await fetchTrophiesBoard({ limit: 200 }, all.db)
-    const viewIn = leg(all.calls, "v_insights_trophies").find((c) => c.fn === "in")?.args
-    expect(viewIn?.[0]).toBe("collection")
-    expect([...(viewIn?.[1] as string[])].sort()).toEqual(
+    // The collection filter is the function's ARGUMENT, so it applies inside the candidate CTE.
+    const rpcArgs = leg(all.calls, "get_insights_trophies").find((c) => c.fn === "rpc")?.args?.[1] as { p_collections: string[] }
+    expect([...rpcArgs.p_collections].sort()).toEqual(
       ["candy_mlb", "laliga_golazos", "nba_top_shot", "nfl_all_day", "panini_blockchain", "ufc_strike"],
     )
     expect(leg(all.calls, "pinnacle_catalog").length).toBeGreaterThan(0)
     const one = recordingDb()
     await fetchTrophiesBoard({ limit: 200, collection: "nfl_all_day" }, one.db)
-    expect(one.calls.find((c) => c.fn === "eq")?.args).toEqual(["collection", "nfl_all_day"])
-    expect(one.calls.some((c) => c.fn === "in")).toBe(false)
+    expect((one.calls.find((c) => c.fn === "rpc")?.args?.[1] as { p_collections: string[] }).p_collections).toEqual(["nfl_all_day"])
+    expect(one.calls.some((c) => c.fn === "in" || (c.fn === "eq" && c.args[0] === "collection"))).toBe(false)
     expect(leg(one.calls, "pinnacle_catalog")).toEqual([])
     const pin = recordingDb()
     await fetchTrophiesBoard({ limit: 200, collection: "disney_pinnacle" }, pin.db)
-    expect(leg(pin.calls, "v_insights_trophies")).toEqual([])
+    expect(leg(pin.calls, "get_insights_trophies")).toEqual([])
     expect(leg(pin.calls, "pinnacle_catalog").length).toBeGreaterThan(0)
   })
 
   it("ranks priced grails first, never-traded ones after", async () => {
     const { db, calls } = recordingDb()
     await fetchTrophiesBoard({ limit: 200 }, db)
-    const view = leg(calls, "v_insights_trophies")
+    const view = leg(calls, "get_insights_trophies")
     expect(orderCols(view)).toEqual(["fmv_usd", "circulation_count"])
     // nullsFirst:false is what puts the never-traded grails AFTER the priced
     // ones. Flipping it leads the board with rows that have no number at all.
@@ -251,24 +257,24 @@ describe("fetchTrophiesBoard", () => {
   it("switches the primary key on sort=circulation but keeps a tiebreak", async () => {
     const { db, calls } = recordingDb()
     await fetchTrophiesBoard({ limit: 200, sort: "circulation" }, db)
-    expect(orderCols(leg(calls, "v_insights_trophies"))).toEqual(["circulation_count", "fmv_usd"])
+    expect(orderCols(leg(calls, "get_insights_trophies"))).toEqual(["circulation_count", "fmv_usd"])
   })
 
   it("maps the two grail classes to their own flags, not to one another", async () => {
     const one = recordingDb()
     await fetchTrophiesBoard({ limit: 10, type: "one_of_one" }, one.db)
-    expect(leg(one.calls, "v_insights_trophies").find((c) => c.fn === "eq")?.args).toEqual(["is_one_of_one", true])
+    expect(leg(one.calls, "get_insights_trophies").find((c) => c.fn === "eq")?.args).toEqual(["is_one_of_one", true])
     expect(leg(one.calls, "pinnacle_catalog").find((c) => c.fn === "eq")?.args).toEqual(["total_minted", 1])
 
     // "ultimate" is the collection's TOP tier (Ultimate, or Legendary where it has none).
     const ult = recordingDb()
     await fetchTrophiesBoard({ limit: 10, type: "ultimate" }, ult.db)
-    expect(leg(ult.calls, "v_insights_trophies").find((c) => c.fn === "eq")?.args).toEqual(["is_top_tier", true])
+    expect(leg(ult.calls, "get_insights_trophies").find((c) => c.fn === "eq")?.args).toEqual(["is_top_tier", true])
 
     // An unrecognised type must not silently filter to one of the two classes.
     const junk = recordingDb()
     await fetchTrophiesBoard({ limit: 10, type: "nonsense" }, junk.db)
-    expect(leg(junk.calls, "v_insights_trophies").some((c) => c.fn === "eq")).toBe(false)
+    expect(leg(junk.calls, "get_insights_trophies").some((c) => c.fn === "eq")).toBe(false)
   })
 })
 
