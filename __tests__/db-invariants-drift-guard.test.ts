@@ -2736,8 +2736,9 @@ const PINS = [
     // the collection scope holds (moment_id is not unique across collections).
     fn: "purge_candy_wmc_ghost_rows",
     test: "supabase/tests/purge_candy_wmc_ghost_rows.sql",
+    // 2026-11-19: ranks only moments with a second Candy row (the full rank outgrew its 120 s timeout).
     migration:
-      "supabase/migrations/20260815203600_audit_20260815_snapshot_purge_candy_wmc_ghost_rows.sql",
+      "supabase/migrations/20261119110000_audit_20261119_candy_ghost_purge_ranks_only_duplicated_moments.sql",
   },
   {
     // pg_cron `20 10 * * 0`. A WEEKLY delete against the ~2.2M-row portfolio

@@ -16,7 +16,7 @@
 --      collections, and moment_id is not unique across them.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260815203600_audit_20260815_snapshot_purge_candy_wmc_ghost_rows.sql),
+-- (supabase/migrations/20261119110000_audit_20261119_candy_ghost_purge_ranks_only_duplicated_moments.sql),
 -- whose body was verified byte-identical to live prod via prosrc md5 on
 -- 2026-08-15. __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
@@ -42,15 +42,31 @@ CREATE OR REPLACE FUNCTION public.purge_candy_wmc_ghost_rows()
 AS $function$
 DECLARE
   v_deleted integer := 0;
+  v_ids     text[];
 BEGIN
   -- Deliberate, scoped opt-in past rpc_guard_block_destructive: this function only ever
   -- deletes rows that are provably superseded by a newer row for the SAME moment_id.
   PERFORM set_config('rpc.allow_bulk_delete', 'on', true);
 
+  -- 2026-11-19: only a moment with a SECOND Candy row can hold a superseded one, so find those
+  -- first (an index-only pass, ~10 s) and rank just them. Ranking all ~1.37M Candy rows took
+  -- 70-109 s a day and hit this function's 120 s timeout on 11-19 (7 duplicated moments found).
+  SELECT array_agg(d.moment_id) INTO v_ids FROM (
+    SELECT moment_id
+      FROM public.wallet_moments_cache
+     WHERE collection_id = '209ade70-32c5-4470-bc7c-4793d660f713'
+     GROUP BY moment_id
+    HAVING count(*) > 1
+  ) d;
+  IF v_ids IS NULL THEN
+    RETURN 0;
+  END IF;
+
   WITH ranked AS (
     SELECT id, row_number() OVER (PARTITION BY moment_id ORDER BY last_seen_at DESC) AS rn
     FROM public.wallet_moments_cache
     WHERE collection_id = '209ade70-32c5-4470-bc7c-4793d660f713'
+      AND moment_id = ANY (v_ids)
   ), del AS (
     DELETE FROM public.wallet_moments_cache w
     USING ranked r
