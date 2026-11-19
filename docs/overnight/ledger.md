@@ -16,6 +16,8 @@ Format per item: date · status · what · revert path (if shipped) · target me
 - **Why:** this edge function was the only Studio caller that never checked `res.ok`. Dapper's HTTP 530 page failed to parse, so every hourly run since 11-17 logged `lookup: not-json` (20/48 runs failed, failure_rate medium). That hid the outage and also escaped the new upstream-530 attribution.
 - **Change:** `raw()` throws `HTTP <status>` on a non-2xx, so the run logs `lookup: HTTP 530`. Probe mode already catches throws. Writes and gate unchanged (Vault gate, no secret step). deno check/lint clean; Deno harness 127/127; preflight 5/5.
 - **Deploy:** `edge-fn-deploy.yml` with `function=resolve-allday-rip-dist-api` after this push.
+- **Verified live 6:50 PM PT:** edge-fn-deploy run 44446858226 green (deployed body equals the repo file, verify_jwt false); job 26's own command fired from SQL; its pipeline_runs row reads `lookup: HTTP 530` (was `lookup: not-json`). Also 6:48 PM PT: `public_board_slow_count` refreshed to 0 / ok.
+- ⚠ **Time correction:** the heading's "~7:05 PM PT" is wrong; this landed ~6:45 PM PT (DB clock 6:47 PM PT at push). Headings cannot be edited in place (ledger guard).
 - Revert: `git revert` the commit titled "fix(edge): resolve-allday-rip-dist-api names the HTTP status of a failed Studio lookup", push, dispatch the deploy again.
 
 ### 2026-11-18 ~6:50 PM PT — Pipeline Alert emails stop paging for Dapper Studio 530s; the Pinnacle render-id lane names its GQL error (Claude Code cloud; Trevor: "Address these when you can" — the 4-alert Pipeline Alert + 5:04 PM Sentinel CRITICAL)
