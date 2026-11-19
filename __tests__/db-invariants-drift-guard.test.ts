@@ -971,8 +971,10 @@ const PINS = [
     // 2026-09-29: box packs yield packs. 2026-10-10 (#188): new inner packs queued for identity.
     // 2026-10-19: a Top Shot pack the index left at Revealed was opened -- its nfts are read.
     // 2026-10-19 (follow-up): a Revealed box never records a pack a third party withdrew.
+    // 2026-11-18 (#218): Studio (HTTP 530) -> Atlas PackService/NFTService; responses translated to
+    // the Studio shape, walks product by product, "0" pull ids dropped, Studio-era walks end with a reason.
     migration:
-      "supabase/migrations/20261020041933_audit_20261019_a_revealed_box_never_records_a_pack_a_third_party_withdrew.sql",
+      "supabase/migrations/20261119050000_audit_20261118_pack_identity_and_pulls_off_studio_onto_atlas.sql",
   },
   {
     // Added 2026-09-18. Pins the FIX for "my wallet shows 0 sold packs when I have

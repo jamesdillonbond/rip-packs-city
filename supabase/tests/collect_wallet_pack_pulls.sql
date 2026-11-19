@@ -25,7 +25,7 @@
 --      lane unless the index already names it; a re-collected box queues nothing again.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261011020700_audit_20261010_collect_wallet_pack_pulls_queues_inner_packs_for_identity.sql).
+-- (supabase/migrations/20261119050000_audit_20261118_pack_identity_and_pulls_off_studio_onto_atlas.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -84,7 +84,167 @@ CREATE TABLE public.pack_pull_wallet_state (
 CREATE TABLE public.pack_pull_requests (
   request_id bigint PRIMARY KEY, kind text NOT NULL CHECK (kind IN ('wallet', 'editions')), wallet text,
   collection_id uuid, nft_ids text[] NOT NULL DEFAULT '{}', after_cursor text, page int,
-  dispatched_at timestamptz NOT NULL DEFAULT now(), collected_at timestamptz, status_code int, outcome text, n_returned int);
+  dispatched_at timestamptz NOT NULL DEFAULT now(), collected_at timestamptz, status_code int, outcome text, n_returned int,
+  product text);  -- 2026-11-18 (#218): NULL = a Studio-era request, else the Atlas product
+
+
+-- 2026-11-18 (#218): the Atlas helpers the body calls, verbatim from the same migration, and a
+-- stand-in for public.atlas_market_headers (production's builds the Dapper headers).
+CREATE FUNCTION public.atlas_market_headers(p_product text) RETURNS jsonb LANGUAGE sql IMMUTABLE AS $$ SELECT '{}'::jsonb $$;
+
+CREATE OR REPLACE FUNCTION public.atlas_moment_token_prefix(p_product text)
+RETURNS text LANGUAGE sql IMMUTABLE SET search_path TO 'public', 'pg_temp' AS $f$
+  SELECT CASE p_product
+           WHEN 'nba'    THEN 'A.0b2a3299cc857e29.TopShot.'
+           WHEN 'nfl'    THEN 'A.e4cf4bdc1751c65d.AllDay.'
+           WHEN 'laliga' THEN 'A.87ca73a41bb50ad5.Golazos.'
+         END
+$f$;
+
+-- The product a wallet walk moves to after p_product's pages run out (NULL = done).
+-- 'sync' (pack_wallet_sync: every pack a wallet holds, for identity): nba -> nfl -> laliga.
+-- 'pulls' (pack_open_pulls): nfl -> laliga. Top Shot is skipped there because Atlas
+-- returns "0" for every Top Shot pulled-moment id (measured 2026-11-18: 50 of 50).
+CREATE OR REPLACE FUNCTION public.atlas_next_pack_product(p_lane text, p_product text)
+RETURNS text LANGUAGE sql IMMUTABLE SET search_path TO 'public', 'pg_temp' AS $f$
+  SELECT CASE
+           WHEN p_product IS NULL THEN NULL
+           WHEN p_lane = 'sync'  AND p_product = 'nba' THEN 'nfl'
+           WHEN p_lane = 'sync'  AND p_product = 'nfl' THEN 'laliga'
+           WHEN p_lane = 'pulls' AND p_product = 'nfl' THEN 'laliga'
+         END
+$f$;
+
+-- One Atlas PackService / NFTService call through pg_net. Returns the request id.
+--   'resolve' : PackService/ResolvePackDistribution {packId}           (one pack)
+--   'owner'   : PackService/GetPacksByOwner {owner, limit 200, offset}  (Atlas clamps limit at 200)
+--   'nfts'    : NFTService/GetNFTs {nftIds}                              (batch)
+CREATE OR REPLACE FUNCTION public.atlas_pack_dispatch(p_kind text, p_product text, p_wallet text, p_offset bigint, p_ids text[])
+RETURNS bigint LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path TO 'public', 'net', 'pg_temp' AS $f$
+DECLARE
+  v_base constant text := 'https://api.production.atlas.dapperlabs.com/public/atlas.v1.';
+  v_url text;
+  v_body jsonb;
+BEGIN
+  IF p_product NOT IN ('nba', 'nfl', 'laliga', 'disney') THEN
+    RAISE EXCEPTION 'atlas_pack_dispatch: unknown product %', p_product;
+  END IF;
+  IF p_kind = 'resolve' THEN
+    IF p_ids IS NULL OR cardinality(p_ids) <> 1 THEN RAISE EXCEPTION 'atlas_pack_dispatch resolve: exactly one id'; END IF;
+    v_url := v_base || 'PackService/ResolvePackDistribution';
+    v_body := jsonb_build_object('product', p_product, 'packId', p_ids[1]);
+  ELSIF p_kind = 'owner' THEN
+    IF p_wallet !~ '^0x[0-9a-f]{16}$' THEN RAISE EXCEPTION 'atlas_pack_dispatch owner: not a Flow address'; END IF;
+    v_url := v_base || 'PackService/GetPacksByOwner';
+    v_body := jsonb_build_object('product', p_product, 'owner', substr(p_wallet, 3), 'limit', 200, 'offset', coalesce(p_offset, 0));
+  ELSIF p_kind = 'nfts' THEN
+    IF p_ids IS NULL OR cardinality(p_ids) = 0 THEN RAISE EXCEPTION 'atlas_pack_dispatch nfts: no ids'; END IF;
+    v_url := v_base || 'NFTService/GetNFTs';
+    v_body := jsonb_build_object('product', p_product, 'nftIds', to_jsonb(p_ids));
+  ELSE
+    RAISE EXCEPTION 'atlas_pack_dispatch: unknown kind %', p_kind;
+  END IF;
+  RETURN net.http_post(url := v_url, body := v_body, headers := public.atlas_market_headers(p_product),
+                       timeout_milliseconds := 20000);
+END
+$f$;
+
+CREATE OR REPLACE FUNCTION public.atlas_pack_type_name(p_product text)
+RETURNS text LANGUAGE sql IMMUTABLE SET search_path TO 'public', 'pg_temp' AS $f$
+  SELECT CASE p_product
+           WHEN 'nba'    THEN 'A.0b2a3299cc857e29.PackNFT.NFT'
+           WHEN 'nfl'    THEN 'A.e4cf4bdc1751c65d.PackNFT.NFT'
+           WHEN 'laliga' THEN 'A.87ca73a41bb50ad5.PackNFT.NFT'
+           WHEN 'disney' THEN 'A.edf9df96c92f4595.PackNFT.NFT'
+         END
+$f$;
+
+-- Translate one Atlas PackService response into the Studio searchPackNft shape the
+-- collectors already parse. Returns NULL when the response is not decodable, so the
+-- collector's existing "undecodable" branch handles it. A 404 not_found is a valid
+-- answer ("no such pack") and becomes an empty edge list with HTTP 200 semantics.
+-- ⚠ Atlas returns "0" for every pulled moment id of a Top Shot (nba) pack: those
+-- are UNKNOWN, never moment 0, so they are dropped here.
+CREATE OR REPLACE FUNCTION public.atlas_pack_to_studio(p_product text, p_status integer, p_content text, p_ids text[])
+RETURNS jsonb LANGUAGE plpgsql IMMUTABLE SET search_path TO 'public', 'pg_temp' AS $f$
+DECLARE
+  j jsonb;
+  v_type text := public.atlas_pack_type_name(p_product);
+  v_edges jsonb;
+  v_next text;
+  v_more boolean;
+BEGIN
+  IF p_status = 404 AND p_content LIKE '%"not_found"%' THEN
+    RETURN jsonb_build_object('data', jsonb_build_object('searchPackNft', jsonb_build_object(
+      'edges', '[]'::jsonb, 'pageInfo', jsonb_build_object('hasNextPage', false, 'endCursor', NULL))));
+  END IF;
+  IF p_status IS DISTINCT FROM 200 THEN
+    RETURN NULL;
+  END IF;
+  BEGIN
+    j := p_content::jsonb;
+  EXCEPTION WHEN others THEN
+    RETURN NULL;
+  END;
+
+  IF j ? 'distributionId' THEN  -- ResolvePackDistribution: one pack, the one we asked for
+    IF p_ids IS NULL OR cardinality(p_ids) <> 1 THEN RETURN NULL; END IF;
+    v_edges := jsonb_build_array(jsonb_build_object('node', jsonb_build_object(
+      'id', p_ids[1],
+      'dist_id', NULLIF(j->>'distributionId', ''),
+      'status', NULL,
+      'owner_address', NULL,
+      'type_name', v_type,
+      'distribution', jsonb_build_object(
+        'title', j->'distribution'->>'title',
+        'tier', j->'distribution'->>'tier',
+        'image_urls', CASE WHEN j->'distribution'->>'imageUrl' IS NULL THEN '[]'::jsonb
+                           ELSE jsonb_build_array(j->'distribution'->>'imageUrl') END))));
+    v_more := false;
+    v_next := NULL;
+  ELSIF jsonb_typeof(j->'nfts') = 'array' THEN  -- NFTService/GetNFTs: id -> edition + serial
+    SELECT coalesce(jsonb_agg(jsonb_build_object('node', jsonb_build_object(
+             'id', n->>'id',
+             'serial_number', n->>'serialNumber',
+             'edition', jsonb_build_object('id', n->>'editionId')))), '[]'::jsonb)
+      INTO v_edges
+      FROM jsonb_array_elements(j->'nfts') n
+     WHERE n->>'id' IS NOT NULL AND NULLIF(n->>'editionId', '0') IS NOT NULL;
+    -- Same key the collector already reads for the All Day / Golazos edition lookup.
+    RETURN jsonb_build_object('data', jsonb_build_object('searchAllDayNft', jsonb_build_object('edges', v_edges)));
+  ELSIF jsonb_typeof(j->'packs') = 'array' THEN  -- GetPacksByOwner: one page
+    SELECT coalesce(jsonb_agg(jsonb_build_object('node', jsonb_build_object(
+             'id', p->>'id',
+             'dist_id', NULLIF(p->>'distributionId', ''),
+             'status', CASE WHEN p->>'status' IS NULL OR p->>'status' ~ 'UNSPECIFIED' THEN 'unknown'
+                            ELSE initcap(lower(regexp_replace(p->>'status', '^PACK_NFT_STATUS_', ''))) END,
+             'owner_address', p->>'ownerAddress',
+             'type_name', v_type,
+             -- Studio sent nfts as ONE comma-separated string of "A.<addr>.<Contract>.<id>"
+             -- tokens and the pulls collector parses exactly that. Atlas sends bare ids, so
+             -- each becomes a token of the pack's OWN collection's moment contract (a pack
+             -- only yields its own collection). Box packs (which yield PackNFTs) exist only
+             -- for Top Shot, whose ids Atlas never exposes (every one reads "0").
+             'nfts', (SELECT string_agg(public.atlas_moment_token_prefix(p_product) || x, ', ')
+                        FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(p->'nfts') = 'array' THEN p->'nfts' ELSE '[]'::jsonb END) x
+                       WHERE x ~ '^[0-9]+$' AND x <> '0' AND public.atlas_moment_token_prefix(p_product) IS NOT NULL),
+             'distribution', NULL))), '[]'::jsonb)
+      INTO v_edges
+      FROM jsonb_array_elements(j->'packs') p;
+    v_more := coalesce((j->'pagination'->>'hasMore')::boolean, false);
+    -- Advance by the page LIMIT, not the rows returned: an empty page that still says hasMore
+    -- must not re-request the same offset for ever (the page caps bound the walk either way).
+    v_next := (coalesce((j->'pagination'->>'offset')::bigint, 0)
+               + coalesce(NULLIF((j->'pagination'->>'limit')::bigint, 0), jsonb_array_length(j->'packs')))::text;
+  ELSE
+    RETURN NULL;
+  END IF;
+
+  RETURN jsonb_build_object('data', jsonb_build_object('searchPackNft', jsonb_build_object(
+    'edges', v_edges,
+    'pageInfo', jsonb_build_object('hasNextPage', v_more, 'endCursor', CASE WHEN v_more THEN v_next END))));
+END
+$f$;
 
 -- >>> BEGIN verbatim collect_wallet_pack_pulls (body byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.collect_wallet_pack_pulls()
@@ -120,7 +280,17 @@ BEGIN
 
   -- (1) Collect every landed request.
   FOR r IN
-    SELECT q.*, h.status_code AS h_status, h.content AS h_content, h.error_msg AS h_error,
+    -- 2026-11-18 (#218): an Atlas request (q.product set) is translated into the Studio shape
+    -- here (searchPackNft for wallet pages, searchAllDayNft for edition lookups), so the parsing
+    -- below is unchanged. Anything untranslatable keeps its raw status and fails as before.
+    SELECT q.*,
+           CASE WHEN q.product IS NOT NULL
+                 AND public.atlas_pack_to_studio(q.product, h.status_code, h.content, q.nft_ids) IS NOT NULL
+                THEN 200 ELSE h.status_code END AS h_status,
+           CASE WHEN q.product IS NULL THEN h.content
+                ELSE coalesce(public.atlas_pack_to_studio(q.product, h.status_code, h.content, q.nft_ids)::text, h.content)
+           END AS h_content,
+           h.error_msg AS h_error,
            (h.id IS NOT NULL) AS landed
     FROM public.pack_pull_requests q
     LEFT JOIN net._http_response h ON h.id = q.request_id
@@ -258,35 +428,36 @@ BEGIN
       -- Three outcomes; only the first two END the walk. A next page already
       -- in flight is "still walking", never "done".
       IF NOT (coalesce((v_body->'data'->'searchPackNft'->'pageInfo'->>'hasNextPage')::boolean, false)
+              AND v_body->'data'->'searchPackNft'->'pageInfo'->>'endCursor' IS NOT NULL)
+         AND public.atlas_next_pack_product('pulls', r.product) IS NOT NULL THEN
+        -- Atlas walks one product at a time: this one is done, start the next at offset 0.
+        v_next := public.atlas_pack_dispatch('owner', public.atlas_next_pack_product('pulls', r.product), r.wallet, 0, NULL);
+        INSERT INTO public.pack_pull_requests (request_id, kind, wallet, after_cursor, page, product)
+        VALUES (v_next, 'wallet', r.wallet, NULL, coalesce(r.page, 1) + 1, public.atlas_next_pack_product('pulls', r.product));
+      ELSIF NOT (coalesce((v_body->'data'->'searchPackNft'->'pageInfo'->>'hasNextPage')::boolean, false)
               AND v_body->'data'->'searchPackNft'->'pageInfo'->>'endCursor' IS NOT NULL) THEN
         UPDATE public.pack_pull_wallet_state SET completed_at = now(), last_error = NULL WHERE wallet = r.wallet;
         v_wallets_done := v_wallets_done + 1;
-      ELSIF coalesce(r.page, 1) >= 20 THEN
+      ELSIF r.product IS NULL THEN
+        -- A walk started on Studio carries a Studio cursor, not an Atlas offset: it cannot be
+        -- continued. End it with the reason; the next sweep restarts the wallet on Atlas.
         UPDATE public.pack_pull_wallet_state
-           SET completed_at = now(), last_error = 'page cap 20 reached; opened packs beyond 20,000 not walked'
+           SET completed_at = now(), last_error = 'page ' || coalesce(r.page, 1) || ': a Studio walk cannot continue on Atlas (#218); the next sweep restarts it'
+         WHERE wallet = r.wallet;
+        v_wallets_done := v_wallets_done + 1;
+      ELSIF coalesce(r.page, 1) >= 100 THEN
+        UPDATE public.pack_pull_wallet_state
+           SET completed_at = now(), last_error = 'page cap 100 reached (Atlas pages hold 200 packs); packs beyond it not walked'
          WHERE wallet = r.wallet;
         v_wallets_done := v_wallets_done + 1;
       ELSIF NOT EXISTS (SELECT 1 FROM public.pack_pull_requests d
                          WHERE d.kind = 'wallet' AND d.wallet = r.wallet
                            AND d.after_cursor = v_body->'data'->'searchPackNft'->'pageInfo'->>'endCursor'
                            AND d.collected_at IS NULL) THEN
-        SELECT net.http_post(
-          url := 'https://api.production.studio-platform.dapperlabs.com/graphql',
-          body := jsonb_build_object(
-            'query', 'query($i: SearchPackNftsInput!){ searchPackNft(searchInput:$i){ totalCount pageInfo{ endCursor hasNextPage } edges{ node{ id type_name status nfts } } } }',
-            'variables', jsonb_build_object('i', jsonb_build_object(
-              'first', 1000,
-              'after', v_body->'data'->'searchPackNft'->'pageInfo'->>'endCursor',
-              'filters', jsonb_build_array(
-                jsonb_build_object('owner_address', jsonb_build_object('eq', substr(r.wallet, 3))),
-                jsonb_build_object('status', jsonb_build_object('in', jsonb_build_array('Opened', 'Revealed'))))
-            ))
-          ),
-          headers := '{"Content-Type":"application/json","Origin":"https://nbatopshot.com","Referer":"https://nbatopshot.com/","User-Agent":"RipPacksCity/1.0"}'::jsonb,
-          timeout_milliseconds := 30000
-        ) INTO v_next;
-        INSERT INTO public.pack_pull_requests (request_id, kind, wallet, after_cursor, page)
-        VALUES (v_next, 'wallet', r.wallet, v_body->'data'->'searchPackNft'->'pageInfo'->>'endCursor', coalesce(r.page, 1) + 1);
+        v_next := public.atlas_pack_dispatch('owner', coalesce(r.product, 'nfl'), r.wallet,
+                    (v_body->'data'->'searchPackNft'->'pageInfo'->>'endCursor')::bigint, NULL);
+        INSERT INTO public.pack_pull_requests (request_id, kind, wallet, after_cursor, page, product)
+        VALUES (v_next, 'wallet', r.wallet, v_body->'data'->'searchPackNft'->'pageInfo'->>'endCursor', coalesce(r.page, 1) + 1, coalesce(r.product, 'nfl'));
       END IF;
 
     ELSE
@@ -294,7 +465,7 @@ BEGIN
       -- which is editions.external_id for All Day and Golazos.
       WITH named AS (
         UPDATE public.pack_open_pulls p
-           SET edition_id = ed.id, resolved_via = 'studio_api', resolved_at = now()
+           SET edition_id = ed.id, resolved_via = CASE WHEN r.product IS NOT NULL THEN 'atlas_api' ELSE 'studio_api' END, resolved_at = now()
           FROM jsonb_array_elements(v_edges) e
           JOIN public.editions ed
             ON ed.collection_id = r.collection_id
@@ -438,23 +609,11 @@ BEGIN
     ORDER BY collection_id, min(rn)
     LIMIT 5
   LOOP
-    SELECT net.http_post(
-      url := 'https://api.production.studio-platform.dapperlabs.com/graphql',
-      body := jsonb_build_object(
-        'query', CASE WHEN b.collection_id = v_ad
-          THEN 'query($i: SearchAllDayNftsInput){ searchAllDayNft(searchInput:$i){ totalCount edges{ node{ id serial_number edition{ id } } } } }'
-          ELSE 'query($i: SearchGolazosNftsInput){ searchGolazosNft(searchInput:$i){ totalCount edges{ node{ id serial_number edition{ id } } } } }'
-        END,
-        'variables', jsonb_build_object('i', jsonb_build_object(
-          'first', 1000,
-          'filters', jsonb_build_array(jsonb_build_object('id', jsonb_build_object('in', to_jsonb(b.ids))))
-        ))
-      ),
-      headers := '{"Content-Type":"application/json","Origin":"https://nbatopshot.com","Referer":"https://nbatopshot.com/","User-Agent":"RipPacksCity/1.0"}'::jsonb,
-      timeout_milliseconds := 30000
-    ) INTO v_next;
-    INSERT INTO public.pack_pull_requests (request_id, kind, collection_id, nft_ids)
-    VALUES (v_next, 'editions', b.collection_id, b.ids);
+    -- 2026-11-18 (#218): Atlas NFTService/GetNFTs (id -> edition + serial; verified against
+    -- Studio's answer: All Day 5840678 -> edition 2387 both). Studio is HTTP 530.
+    v_next := public.atlas_pack_dispatch('nfts', CASE WHEN b.collection_id = v_ad THEN 'nfl' ELSE 'laliga' END, NULL, NULL, b.ids);
+    INSERT INTO public.pack_pull_requests (request_id, kind, collection_id, nft_ids, product)
+    VALUES (v_next, 'editions', b.collection_id, b.ids, CASE WHEN b.collection_id = v_ad THEN 'nfl' ELSE 'laliga' END);
     UPDATE public.pack_open_pulls
        SET api_attempts = api_attempts + 1, api_checked_at = now()
      WHERE collection_id = b.collection_id AND nft_id = ANY (b.ids) AND edition_id IS NULL;
@@ -605,12 +764,14 @@ BEGIN
   -- claim 4: the unnamed All Day pull went to Dapper's index
   PERFORM _assert((SELECT nft_ids = ARRAY['202'] AND collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070'
                      FROM public.pack_pull_requests WHERE kind = 'editions'), 'one All Day lookup for 202');
-  PERFORM _assert((SELECT body->>'query' LIKE '%searchAllDayNft%' FROM net.calls ORDER BY id DESC LIMIT 1), 'lookup asks searchAllDayNft');
+  -- 2026-11-18 (#218): the lookup is Atlas NFTService/GetNFTs (Studio is HTTP 530).
+  PERFORM _assert((SELECT body->>'product' = 'nfl' AND body->'nftIds' ? '202' FROM net.calls ORDER BY id DESC LIMIT 1),
+                  'lookup asks Atlas GetNFTs for 202 as nfl');
 END $$;
 
 -- Dapper answers the lookup.
 INSERT INTO net._http_response
-SELECT request_id, 200, '{"data":{"searchAllDayNft":{"totalCount":1,"edges":[{"node":{"id":"202","serial_number":"5","edition":{"id":"4090"}}}]}}}', NULL
+SELECT request_id, 200, '{"nfts":[{"id":"202","editionId":"4090","serialNumber":"5","ownerAddress":"bd94cade097e50ac","packNftId":"0"}]}', NULL
   FROM public.pack_pull_requests WHERE kind = 'editions';
 
 DO $$
@@ -618,6 +779,7 @@ DECLARE v jsonb;
 BEGIN
   v := public.collect_wallet_pack_pulls();
   PERFORM _assert_eq(v->>'editions_named_api', '1', 'the lookup named 202');
+  PERFORM _assert_eq((SELECT resolved_via FROM public.pack_open_pulls WHERE nft_id = '202'), 'atlas_api', 'named by Atlas, and says so');
   PERFORM _assert_eq((SELECT pull_value_usd::text FROM public.pack_open_pull_values WHERE pack_nft_id = 'A1'), '5.50',
                      'A1 repriced once every pull is named: 2.00 + 3.50');
   PERFORM _assert((SELECT count(*) = 0 FROM public.pack_pull_requests WHERE collected_at IS NULL), 'nothing left in flight');
@@ -638,9 +800,9 @@ END $$;
 -- claim 5: a page with a next page keeps the walk open and dispatches page 2;
 -- a failed page ends it with an error and ok=false.
 INSERT INTO public.pack_pull_wallet_state (wallet, requested_at) VALUES ('0x1111111111111111', now()), ('0x2222222222222222', now());
-INSERT INTO public.pack_pull_requests (request_id, kind, wallet, page) VALUES (2, 'wallet', '0x1111111111111111', 1), (3, 'wallet', '0x2222222222222222', 1);
+INSERT INTO public.pack_pull_requests (request_id, kind, wallet, page, product) VALUES (2, 'wallet', '0x1111111111111111', 1, 'nfl'), (3, 'wallet', '0x2222222222222222', 1, 'nfl');
 INSERT INTO net._http_response VALUES
-  (2, 200, '{"data":{"searchPackNft":{"totalCount":1500,"pageInfo":{"endCursor":"next-1","hasNextPage":true},"edges":[]}}}', NULL),
+  (2, 200, '{"packs":[],"pagination":{"totalCount":"1500","limit":"200","offset":"0","hasMore":true}}', NULL),
   (3, 503, 'upstream unavailable', NULL);
 
 DO $$
@@ -651,8 +813,10 @@ BEGIN
   PERFORM _assert((SELECT completed_at IS NULL FROM public.pack_pull_wallet_state WHERE wallet = '0x1111111111111111'),
                   'a page with a next page is NOT a completed walk');
   PERFORM _assert((SELECT count(*) = 1 FROM public.pack_pull_requests
-                    WHERE wallet = '0x1111111111111111' AND page = 2 AND after_cursor = 'next-1' AND collected_at IS NULL),
-                  'page 2 dispatched with the cursor');
+                    WHERE wallet = '0x1111111111111111' AND page = 2 AND after_cursor = '200' AND product = 'nfl' AND collected_at IS NULL),
+                  'page 2 dispatched at the next offset (an empty page still advances by the limit)');
+  PERFORM _assert((SELECT body->>'offset' = '200' AND body->>'owner' = '1111111111111111' FROM net.calls ORDER BY id DESC LIMIT 1),
+                  'the Atlas call carries the offset and the bare owner address');
   PERFORM _assert((SELECT completed_at IS NOT NULL AND last_error LIKE 'page 1:%' FROM public.pack_pull_wallet_state WHERE wallet = '0x2222222222222222'),
                   'a failed page ends the walk WITH its error');
   PERFORM _assert((SELECT ok = false FROM public.pipeline_runs_stub ORDER BY ctid DESC LIMIT 1), 'the pipeline row says ok=false');
@@ -778,6 +942,50 @@ BEGIN
                      '50000000000001', 'an Opened box keeps every listed pack (the third-party rule is Revealed-only)');
   PERFORM _assert_eq((SELECT string_agg(nft_id, ',') FROM public.pack_open_pulls WHERE pack_nft_id = 'RVPK1'), '41663287', 'a Top Shot Revealed pack records its moment');
   PERFORM _assert(NOT EXISTS (SELECT 1 FROM public.pack_open_pulls WHERE pack_nft_id = 'RVAD1'), 'an All Day Revealed pack is not read as an open (control)');
+END $$;
+
+
+-- 2026-11-18 (#218): Atlas pages. A product's last page hands the walk to the next product;
+-- "0" ids (Atlas never names Top Shot pulls) are dropped, never stored as moment 0; the pull is a
+-- token of the PACK's own collection; a Studio-era walk with a next page ends with its reason.
+INSERT INTO public.pack_pull_wallet_state (wallet, requested_at) VALUES ('0x4444444444444444', now()), ('0x3333333333333333', now());
+INSERT INTO public.pack_pull_requests (request_id, kind, wallet, page, product) VALUES (90, 'wallet', '0x4444444444444444', 1, 'nfl');
+INSERT INTO public.pack_pull_requests (request_id, kind, wallet, page) VALUES (91, 'wallet', '0x3333333333333333', 1);
+INSERT INTO net._http_response VALUES
+  (90, 200, '{"packs":[{"id":"AP1","distributionId":"1277","ownerAddress":"4444444444444444","status":"PACK_NFT_STATUS_OPENED","nfts":["0","55"]},{"id":"AP2","distributionId":"1277","ownerAddress":"4444444444444444","status":"PACK_NFT_STATUS_SEALED","nfts":[]}],"pagination":{"totalCount":"2","limit":"200","offset":"0","hasMore":false}}', NULL),
+  (91, 200, '{"data":{"searchPackNft":{"totalCount":1500,"pageInfo":{"endCursor":"studio-cursor","hasNextPage":true},"edges":[]}}}', NULL);
+
+DO $$
+DECLARE v jsonb;
+BEGIN
+  v := public.collect_wallet_pack_pulls();
+  PERFORM _assert((SELECT count(*) = 1 FROM public.pack_open_pulls WHERE pack_nft_id = 'AP1' AND nft_id = '55'
+                     AND collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070'), 'an Atlas pull lands as an All Day moment of the pack''s collection');
+  PERFORM _assert(NOT EXISTS (SELECT 1 FROM public.pack_open_pulls WHERE nft_id = '0'), 'a "0" id is never stored as moment 0');
+  PERFORM _assert(NOT EXISTS (SELECT 1 FROM public.pack_open_pulls WHERE pack_nft_id = 'AP2'), 'a sealed Atlas pack adds nothing');
+  PERFORM _assert((SELECT completed_at IS NULL FROM public.pack_pull_wallet_state WHERE wallet = '0x4444444444444444'),
+                  'the All Day walk ending is NOT the end: Golazos is next');
+  PERFORM _assert((SELECT count(*) = 1 FROM public.pack_pull_requests WHERE wallet = '0x4444444444444444'
+                     AND product = 'laliga' AND page = 2 AND after_cursor IS NULL AND collected_at IS NULL),
+                  'Golazos page 1 dispatched as the walk''s page 2');
+  PERFORM _assert((SELECT completed_at IS NOT NULL AND last_error LIKE 'page 1: a Studio walk cannot continue on Atlas%'
+                     FROM public.pack_pull_wallet_state WHERE wallet = '0x3333333333333333'),
+                  'a Studio-era walk with a next page ends with its reason (its cursor is not an offset)');
+  PERFORM _assert(NOT EXISTS (SELECT 1 FROM public.pack_pull_requests WHERE wallet = '0x3333333333333333' AND collected_at IS NULL),
+                  '... and nothing is dispatched from a Studio cursor');
+END $$;
+
+INSERT INTO net._http_response
+SELECT request_id, 200, '{"packs":[],"pagination":{"totalCount":"0","limit":"200","offset":"0","hasMore":false}}', NULL
+  FROM public.pack_pull_requests WHERE wallet = '0x4444444444444444' AND product = 'laliga';
+
+DO $$
+BEGIN
+  PERFORM public.collect_wallet_pack_pulls();
+  PERFORM _assert((SELECT completed_at IS NOT NULL AND last_error IS NULL FROM public.pack_pull_wallet_state WHERE wallet = '0x4444444444444444'),
+                  'the last product''s last page completes the walk');
+  PERFORM _assert(NOT EXISTS (SELECT 1 FROM public.pack_pull_requests WHERE wallet = '0x4444444444444444' AND product = 'nba'),
+                  'Top Shot is never walked for pulls (Atlas has no Top Shot pull ids)');
 END $$;
 
 ROLLBACK;
