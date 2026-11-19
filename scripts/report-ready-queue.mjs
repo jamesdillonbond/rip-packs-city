@@ -83,7 +83,7 @@ export function parseQueued(markdown) {
   return items
 }
 
-const CLOSING = /\b(APPLIED|SHIPPED|FIXED|DONE|CLOSED|RESOLVED|VERIFIED)\b/
+const CLOSING = /\b(APPLIED|SHIPPED|FIXED|DONE|CLOSED|RESOLVED|VERIFIED|RETIRED)\b/
 
 /** The item's match keys: its first backticked token and any #NNN ids. */
 export function itemKeys(text) {
@@ -208,6 +208,19 @@ export function likelyClosedBy(item, headings) {
  * while #58 itself (Trevor sets OPENSEA_API_KEY) stays open. So WRONG is a
  * read-this hint and never drops anything.
  */
+/**
+ * 2026-11-19 (continuity): a later heading that NAMES one of the item's keys in its claim but makes no
+ * closing claim. Daytime sessions title entries by what changed ("/insights/trophies filters collections
+ * before the wallet probe"), not with a status word, so likelyClosedBy() never sees them and every item
+ * they finished was re-printed as plainly open at the next session start (11-19: three of four). This does
+ * NOT call the item closed -- it says someone acted on it since, and where to read what they did.
+ */
+export function actedOnSince(item, headings) {
+  const keys = itemKeys(item.text)
+  if (!keys.length) return null
+  return headings.find((h) => keys.some((k) => headingClaim(h.text).includes(k))) ?? null
+}
+
 export function focusVerdicts(focusMd) {
   const out = []
   const lines = focusMd.split(/\r?\n/)
@@ -289,6 +302,7 @@ function main() {
     it,
     closed: likelyClosedBy(it, headings),
     before: likelyClosedBy(it, earlier),
+    touched: actedOnSince(it, headings),
     verdict: focusVerdictFor(it, verdicts),
   }))
   const ruled = (r) => r.verdict && r.verdict.status !== "WRONG"
@@ -298,16 +312,19 @@ function main() {
   // #58 itself — Trevor's API key — was open). The item stays OPEN.
   const refuted = (r) => r.verdict?.status === "WRONG"
   const open = rows.filter((r) => refuted(r) || (!r.closed && !r.before && !ruled(r))).length
-  console.log(`[ready-queue] ${items.length} item(s) from ${rel}, ${open} still open by the ledger + focus.md steers (hints — read the entry before acting):`)
+  const touched = rows.filter((r) => !r.closed && !r.before && !ruled(r) && r.touched).length
+  console.log(`[ready-queue] ${items.length} item(s) from ${rel}, ${open} still open by the ledger + focus.md steers${touched ? ` (${touched} of them acted on since — read that entry first)` : ""} (hints — read the entry before acting):`)
   for (const r of rows) {
-    const { it, closed, before, verdict } = r
+    const { it, closed, before, touched, verdict } = r
     const flag = closed
       ? ` ✓ likely closed (ledger.md:${closed.line})`
       : before
         ? ` ✓ likely closed BEFORE this pass — re-carried (ledger.md:${before.line})`
         : ruled(r)
           ? ` ⛔ focus.md:${verdict.line} rules it ${verdict.status} — do NOT re-carry (if it bundles another still-open part, re-carry ONLY that part)`
-          : it.nights != null && it.nights >= STALE_NIGHTS ? " ⚠ STALE" : ""
+          : touched
+            ? ` ↻ acted on since (ledger.md:${touched.line}) — read it before re-doing`
+            : it.nights != null && it.nights >= STALE_NIGHTS ? " ⚠ STALE" : ""
     const hint = refuted(r)
       ? ` (⚠ focus.md:${verdict.line} says a claim in it is WRONG — read it; the item itself STAYS OPEN${closed || before ? ", the ledger ✓ is about the refuted claim" : ""})`
       : ""

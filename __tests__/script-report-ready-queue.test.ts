@@ -264,3 +264,33 @@ describe("report-ready-queue — focus.md verdicts", () => {
     expect(focusVerdictFor(item("**#99 edge-fn drift since 08-22** — a new drift"), v)).toBeNull()
   })
 })
+
+import { actedOnSince, likelyClosedBy as closedBy } from "../scripts/report-ready-queue.mjs"
+
+// 2026-11-19 (continuity): three of the four items the 11-19 overnight handoff queued were finished by a
+// daytime session within hours, yet every session start re-printed them as plainly open — its ledger
+// headings named WHAT changed, with no APPLIED/SHIPPED/... status word, so the closed-check never saw them.
+describe("report-ready-queue — acted on since", () => {
+  const item = { n: 2, text: "**(NEW, LOW) `/insights/trophies` pays the wallet probe for ~8.1k candidates** (inbox 11-19T0200Z).", nights: null }
+  const daytime = { line: 43, text: "### 2026-11-19 ~6:55 AM PT — /insights/trophies filters collections BEFORE the one-of-one wallet probe (get_insights_trophies)" }
+
+  it("points at a later heading that names the item's key, without calling it closed", () => {
+    expect(actedOnSince(item, [daytime])?.line).toBe(43)
+    expect(closedBy(item, [daytime])).toBeNull()
+  })
+
+  it("does not fire on a key mentioned only in a heading's BODY, after its bold summary", () => {
+    const passing = { line: 9, text: "### 2026-11-19 ~8 AM PT — **Candy ghost purge sped up** — unrelated work; see also `/insights/trophies` later" }
+    expect(actedOnSince(item, [passing])).toBeNull()
+  })
+
+  it("does not fire on an unrelated heading, nor for an item with no keys", () => {
+    expect(actedOnSince(item, [{ line: 5, text: "### 2026-11-19 — UFC wallet-link lists only new mints" }])).toBeNull()
+    expect(actedOnSince({ n: 3, text: "**Retire the old lanes** (see residue above)", nights: null }, [daytime])).toBeNull()
+  })
+
+  it("RETIRED is a closing status word", () => {
+    const retired = { line: 7, text: "### 2026-11-19 — **seed-topshot-pack-distributions RETIRED as a 410 tombstone**" }
+    expect(closedBy({ n: 1, text: "**Retire `seed-topshot-pack-distributions`**", nights: null }, [retired])?.line).toBe(7)
+  })
+})
