@@ -12,6 +12,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-20 ~8:12 AM PT · 🗄 APPLIED (`20261120161120`) — `get_top_movers` probes `sales` only for the rows it returns; the laptop fallback is confirmed standing down (Cowork cloud; Trevor: "Keep going")
+
+- **Why:** `/api/profile/top-movers` hit its 25 s bound for the 15.8k-moment wallet (jamesdillonbond) on 11-18 10:59 PM and 11-20 5:39 AM PT. The function tested "traded inside the window" for every owned edition before ranking: 10,517 probes into `sales_2026`, 5,978 of the call’s 6,993 cold block reads (6.9 s of 8.3 s).
+- **What:** same result, different order: rank the candidates by delta, then test the sale condition down the sorted list until five pass (`OFFSET 0` subquery + `LIMIT 5`). Ties now break on `edition_id`.
+- **Measured:** 98,494 → 59,574 buffers warm; sales probes 10,517 → 15; live call after apply 320 ms. Equivalence over 11 wallets / 110 rows: delta lists identical for all 11 (9 byte-identical, 2 differ only among equal deltas). ACL unchanged (anon/authenticated/service_role EXECUTE).
+- **Watch:** Vercel `get_runtime_errors` → no new `[api/profile/top-movers] code=timeout` rows; pgss mean for the `get_top_movers` call falls from 2.4 s.
+- **Fallback, verified:** the laptop tree was already at `b03a9d6` (script hash matches origin). Dispatched runs by hour today (PT): 5 AM 33 · 6 AM 30 · 7 AM 22 (last at 7:43 AM) · 8 AM 0.
+- **Timeout watch closed:** 9 Vercel error logs in 9 h across 8 paths, no clustering at :37 beside the hourly board refresh.
+- **Revert:** re-apply the body from `20260904041544_…` (prosrc md5 `d1f571c01b2f969dbaa015876520c999`).
+
 ### 2026-11-20 ~7:55 AM PT · 🔧 SHIPPED (code + DB one-off + config) — GitHub schedule fallback stops over-dispatching (relay + probe deleted); /privacy discloses email open tracking; Top Shot remap one-off run; weekly health-check baselines re-based (Cowork cloud; Trevor: "do these tasks. I approve of you updating the scheduled run and updating privacy policy")
 
 - **GitHub schedule cleanup — DONE, and my 11-19 "HOLD" was wrong.** I compared GitHub's 62 scheduled runs a day against the ~817 the cron lines WRITE. Against the days BEFORE the outage it is normal: 11-14 → 11-16 delivered 72 / 69 / 58 a day, in bursts up to 6.0 h apart. GitHub has been back at its own rate since 11-18. The laptop fallback's stand-down rule ("any schedule run in the last 90 min") misfires on that burstiness, so it was dispatching ~190 runs a day on top (155 on 11-18, 189 on 11-19): about 3.5× the volume these lanes have ever run at.
