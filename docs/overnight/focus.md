@@ -17,6 +17,8 @@
   - `ufc-aptos-wallet-link` should run in seconds (persisted mint list); 5,077 mainnet26 mints are untraceable by decision (#181).
 - **Dated reads added 11-19 ~4:40 PM PT (same thread, afternoon):**
   - `apply-fmv-haircut` 11-20 2:35 PM PT: `extra.legs_skipped` should be 0, or only `nba_top_shot` skipped (heavy leg now runs LAST, `9b0d13420`). Each leg now carries `duration_ms` — read it before re-ordering anything.
+  - failure_rate arm (`20261119214500`): a lane now reads `high` only when its failures WITHOUT a named upstream cause (530 / 1033 / Cloudflare challenge) reach half its runs; the detail prints "ONLY K of N". `pinnacle-wmc-render-id` should stay medium and age out by ~11-21. A NEW `high` on a lane is therefore real — read its errors.
+  - ✅ 11-19 9:14 PM PT read: `pack-nft-identity` failure-rate dropped to info as predicted.
   - Trust board: `select * from v_rpc_trust_health where status <> 'ok'` — a new third state `UNKNOWN` (NULL value) exists since `20261119163000`. 0 rows expected; an UNKNOWN row is an arm that stopped measuring, not noise. `pack_ev_board_pct_depleted` is now `pack_ev_board_depleted_ranked` (a count).
   - Client beacon: `usage_events.client_error` with message containing "stole it" should not recur after `6f87d4a76` (TopNav/share CTA catch their auth read).
   - `compute-pinnacle-pack-ev` (and the All Day / Golazos pack-EV lanes): a run whose newest error is an exhausted Atlas `cloudflare challenge` now reads `medium`, not `high` (`20261119171500`); the run itself stays ok=false because it wrote nothing. A `high` on these lanes means a different error — read it.
