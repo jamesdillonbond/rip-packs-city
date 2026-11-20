@@ -1,4 +1,4 @@
-# Inbox index — 691 live filings
+# Inbox index — 692 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,7 +32,9 @@ failure it documents.
 
 ---
 
-## 2026-11-20 — 3 filings
+## 2026-11-20 — 4 filings
+
+- [Daytime monitor — 2026-11-20 ~19:11Z: `rpc-allday-ev-corrected-refresh` pg_cron fails dup-key (dist 165) every 6h tick since 18:47Z — `pack_ev_latest` is DISTINCT ON (pack_listing_id) so 48 AllDay dists now have 2 rows and the MV's join on dist_id fans out into the CONCURRENTLY unique index; `mv_allday_pack_ev_corrected` frozen at the 12:47Z snapshot (HIGH). Plus HEAD `f6616b8` has no READY prod deploy — CANCELED, docs/db-only, zero user impact (LOW). Sweep clean: security 4/4 [], trust 41/41, stalled [], sentinel 0, 13/13 dashboards, client-beacon 0, not a spell](2026-11-20T1911Z-daytime-monitor-allday-ev-corrected-refresh-dupkey-pack-ev-latest-fanout.md)
 
 - [✅ RESOLVED 11-20 6:42 AM PT (silence retired → `thin_since_2026_11_19`, migration `20261120144221`; remap self-heals 9:53 PM PT) — Daytime monitor — 2026-11-20 ~07:05Z: Candy revival trust arm BREACHES ($429.83 > $250) — Candy traded 44 sales/$411.85 on 11-19, the recorded 11-17 closure is stale (re-verify + re-date, arm working as designed); plus a one-off `rpc-topshot-misattrib-remap` IO-timeout at its quiet 05:53Z slot (missed one daily run). Both LOW/sense-only; security 4/4, stalled [], 0 HIGH alerts, 13/13 dashboards, Vercel 0 ERROR](2026-11-20T0705Z-daytime-monitor-candy-revival-breach-and-remap-io-timeout.md)
 
