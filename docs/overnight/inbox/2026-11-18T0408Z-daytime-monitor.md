@@ -16,3 +16,7 @@ Only ONE new candidate this tick. The big `running_but_not_succeeding` pack clus
 - **panini-team-walk** failure_rate 33.3% ("page 113: no readable products") — retry-ordering fix shipped 11-17; the 11-18 ~3:35 AM PT walk is the watch (focus.md). Not re-filed.
 - **Atlas `edge_fn_http_error` info rows** (403/404 on editions/market/pack-supply/ask-book/autograph/usernames/challenges lanes) — all designed Cloudflare-challenge behavior with recent last-200s (~04:05Z); none at escalation thresholds. Healthy.
 - **Dashboards:** 13/13 validated clean at 01:10Z; only one additive migration since (`20261118020242`, sentinel feed — drops no object), so no dashboard query can have broken this window. Not re-validated in full.
+
+## ✅ RESOLVED 11-18 (`20261118150441`)
+
+`sync_allday_pack_dist_totals` skips a NULL opened count (migration `20261118150441`, ledger 11-18). No `allday-pack-dist-totals` row in `get_pipeline_alerts()` on 2026-11-19 ~9:30 PM PT. Marked by the 2026-11-19 Cowork cloud audit pass; no change made for this filing by that pass.

@@ -16,3 +16,7 @@ Read-only sweep. Platform health otherwise GREEN: security all `[]`, trust_healt
 ## Known / no new action (noted for completeness)
 - `hybrid_custody_backfill` 2/6 (33.3%) statement timeout — the 90s timeout mitigation (`20261115172736`) is applied and tracked (ledger 11-15); occasional trips remain within tolerance. No new filing.
 - Several Atlas `edge_fn_http_error` info rows (403/404 on market/pack/editions/autograph/ask-book lanes) — all designed Cloudflare-challenge behavior with recent last-200s; none at their escalation thresholds. Healthy.
+
+## ✅ RESOLVED 11-17 7:03 PM PT (schedules resumed; flaky since, see 11-18T1610Z)
+
+GitHub `schedule` events resumed 2026-11-17 7:03 PM PT (handoff-2026-11-17-daytime-audit-pass, addendum 8). Re-read 2026-11-19 ~9:30 PM PT: at least 100 scheduled runs since 11-18 10 AM PT, newest 8:19 PM PT 11-19. Marked by the 2026-11-19 Cowork cloud audit pass; no change made for this filing by that pass.

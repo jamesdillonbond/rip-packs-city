@@ -18,3 +18,7 @@ Read-only sweep. No saturation spell (`pg_stat_activity` io_wait 0, active 1). S
 - **panini-team-walk** 33.3% (`page 113: no readable products`) — retry-ordering fix shipped 11-17; the 11-18 ~3:35 AM PT walk is the watch (focus.md). Not a finding.
 - **Atlas `edge_fn_http_error` info rows** (403/404 on editions / market / pack-supply / ask-book / on-demand lanes) — designed Cloudflare-challenge behavior, recent last-200s (07:04Z), none at escalation threshold.
 - **Sentry** dark since 08-18 (#34) — not health.
+
+## ✅ RESOLVED 11-18 (candy indexer cleared by itself, isolation already existed; pack-nft-identity applied)
+
+Candy later-set timeouts cleared by themselves and the per-set isolation already existed (ledger 11-18, item B: non-fix). `candy_sales_stale_hours` read 4.9 h / ok on 2026-11-19 ~9:30 PM PT. The pack-nft-identity half was applied 11-18 ~7:13 AM PT. Marked by the 2026-11-19 Cowork cloud audit pass; no change made for this filing by that pass.

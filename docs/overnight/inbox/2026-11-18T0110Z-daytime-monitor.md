@@ -16,3 +16,7 @@ Read-only sweep. Platform health GREEN: security all `[]` (0 RLS-off base tables
 - **GHA scheduled workflows STILL dark** — `gha-schedule-watchdog` (00:38Z): "no schedule-tagged tick in 954 min (last 2026-11-17 08:43:43Z); **0 cadence lane(s) breaching**." Already an open P1 (ledger 11-17 entries; inbox `2026-11-17T1911Z`). pg_cron + laptop runners cover all cadence lanes, so data freshness is unaffected (trust 41/41 ok). No new fact beyond "still dark, 0 lanes breaching" — not re-filed.
 - **panini-team-walk** failure_rate 33.3% ("page 113: no readable products") — the retry-ordering fix shipped 11-17 ~3:05 PM PT (`20261117230420`); watch is the 11-18 ~3:35 AM PT walk (focus.md). Not re-filed.
 - **Atlas `edge_fn_http_error` info rows** (403/404 on editions/market/pack-supply/ask-book lanes) — all designed Cloudflare-challenge behavior with recent last-200s (01:05Z); none at escalation thresholds. The `pg_net_http_404` high-severity row is the deliberate `does-not-exist-sentinel.txt` negative-control probe. Healthy.
+
+## ✅ RESOLVED 11-18 ~7:13 AM PT (pack-nft-identity fix applied)
+
+`pack-nft-identity` ON CONFLICT fix applied 2026-11-18 ~7:13 AM PT (ledger). Re-read 2026-11-19 ~9:30 PM PT: 0 of 159 runs failed since 11-19 8:08 AM PT; the failure-rate row reads info. Marked by the 2026-11-19 Cowork cloud audit pass; no change made for this filing by that pass.

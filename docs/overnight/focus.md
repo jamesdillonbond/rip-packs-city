@@ -4,6 +4,11 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-11-19 ~10:15 PM PT (Cowork cloud, evening audit pass) — two dated reads
+
+- **~11-26 — Panini market 503s after `ca49163`.** Vercel runtime logs for `/api/market` with the Panini collection id: if cold 503s continue for uncached sort/filter variants, build the materialized board (handoff-2026-11-19-evening-audit-pass, item 1). Read `x-vercel-cache` on a repeat request first: HIT means the CDN window is working.
+- **GitHub schedule cleanup: still HOLD.** `gha-schedule-watchdog` failed at 1:08 AM and 10:08–10:38 AM PT on 11-19 (gaps over 6 h). Delete the relay, probe and laptop fallback only after 7 days with no watchdog failure: `select count(*) from pipeline_runs_daily where pipeline = 'gha-schedule-watchdog' and fail_count > 0` over the week (check the column names first).
+
 ## STEER — added 2026-11-19 ~9:35 AM PT (Claude Code cloud) — #218 is migrated, not waiting on Studio; read these BEFORE re-carrying anything
 
 - **"Candy revival trust arm re-dates ~twice a week" is CLOSED** — 2026-11-19 ~8:36 AM PT: the arm sums USD with a $250 floor (`20261119113000`); Trevor delegated the definition. Do not re-date it for dust trickles.

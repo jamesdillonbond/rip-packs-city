@@ -49,3 +49,7 @@ consequence of the already-tracked #218 Dapper Studio 530 outage. No new bug, no
 - `[sniper-feed]` Pinnacle stale-listing 500s (7 errs / 6 users, 14h) = #218 Pinnacle freeze, already
   attributed in the ledger (line 48). Entity-section statement-timeout tail (get_set_activity /
   get_player_top_sales / get_team_squeeze, "degrading to empty") = chronic, first-seen Aug–Oct.
+
+## ✅ RESOLVED by observation 11-19 (arm ok; self-cleared with the #218 migration to Atlas)
+
+`pinnacle_render_floor_stale_hours` read 3.7 h / ok on 2026-11-19 ~9:30 PM PT (cleared by 11-19 morning, ledger health line). `pinnacle-catalog-floor-refresh` still pools 5/8 Studio-530 failures at medium and ages out by itself. Marked by the 2026-11-19 Cowork cloud audit pass; no change made for this filing by that pass.
