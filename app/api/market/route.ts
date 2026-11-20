@@ -63,6 +63,18 @@ export const maxDuration = 30
 
 const TS_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 
+// PANINI'S BOARD IS SERVED STALE-WHILE-REVALIDATE (2026-11-19). `panini_market_board`
+// aggregates every listed serial on each read (~500k buffers; pg_stat_statements:
+// mean 1.6 s, worst 29.9 s over 5,595 reads), so a read on a cold cache passes the
+// 8 s bound and the page's first load 503s (register R152; re-measured 11-19: 1 cold
+// 503 in the mobile sweep, 1 of 4 curls). With the 90 s / 60 s window every visit
+// more than 2.5 min after the last one paid that read. Panini asks are walk-confirmed
+// (the board keeps an ask for 7 days and each row carries `ask_confirmed_at`), so a
+// copy up to an hour old states nothing the board does not already disclose: the CDN
+// answers from it at once and refreshes behind the visitor. A failed refresh keeps
+// the previous copy (the 503 below is `no-store`). Every other collection keeps 90/60.
+export const PANINI_MARKET_CACHE_CONTROL = "public, s-maxage=300, stale-while-revalidate=3600"
+
 // Tier ceilings — ask prices above these are treated as sentinels and dropped.
 // Keys are upper-cased raw tier strings as stored in cached_listings.tier.
 const TIER_CEILING: Record<string, number> = {
@@ -1261,7 +1273,7 @@ export async function GET(req: NextRequest) {
       if (modernRows === null) {
         return NextResponse.json(
           { error: "market_unavailable", retry: true, collection_id: collectionId },
-          { status: 503 }
+          { status: 503, headers: { "Cache-Control": "no-store" } }
         )
       }
       // ⚠ The SAME envelope the modern branch returns. MarketClient reads
@@ -1502,7 +1514,7 @@ export async function GET(req: NextRequest) {
         // market, so the page must not re-filter its 50 rows.
         ownedApplied: ownedKnown && (isTopShot || collectionId === ALLDAY_COLLECTION_ID_FOR_DISPATCH),
       }, {
-        headers: { "Cache-Control": "public, s-maxage=90, stale-while-revalidate=60" },
+        headers: { "Cache-Control": isPanini ? PANINI_MARKET_CACHE_CONTROL : "public, s-maxage=90, stale-while-revalidate=60" },
       })
     }
 

@@ -162,6 +162,17 @@ describe("GET /api/market — Panini arm", () => {
     expect(body.coverage.total_editions).toBe(5094)
   })
 
+  it("a Panini board answers stale-while-revalidate for an hour; a failed read is never cached", async () => {
+    install(board())
+    const ok = await GET(req(`https://t/api/market?collectionId=${PANINI}`))
+    expect(ok.status).toBe(200)
+    expect(ok.headers.get("Cache-Control")).toBe("public, s-maxage=300, stale-while-revalidate=3600")
+    install({ ...board(), panini_market_board: { data: null, error: { message: "canceling statement due to statement timeout" } } })
+    const failed = await GET(req(`https://t/api/market?collectionId=${PANINI}`))
+    expect(failed.status).toBe(503)
+    expect(failed.headers.get("Cache-Control")).toBe("no-store")
+  })
+
   it("no-change control: Candy's arm still carries no coverage field", async () => {
     install({ candy_market_board: { data: [], error: null }, editions: { data: [], error: null } })
     const body = await (await GET(req(`https://t/api/market?collectionId=209ade70-32c5-4470-bc7c-4793d660f713`))).json()

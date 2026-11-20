@@ -1,6 +1,9 @@
 import type { NextConfig } from "next"
 
 const nextConfig: NextConfig = {
+  // No `X-Powered-By: Next.js` on responses (2026-11-19 security pass): the header only
+  // tells a scanner which framework to aim at. Pinned by __tests__/next-config-hides-powered-by.test.ts.
+  poweredByHeader: false,
   // 2026-10-03 — DEP0169 (`url.parse()`), Vercel's top runtime-error group for
   // months (1,828 events / 7 d), on every route whose graph loads `@onflow/fcl`.
   // The emitter is node-fetch@2: `@onflow/transport-http` and `fcl-core` fetch
