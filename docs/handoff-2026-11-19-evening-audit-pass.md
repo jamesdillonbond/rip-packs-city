@@ -119,3 +119,5 @@ The five items Addendum 3 left open, each worked or decided:
 5. **Dashboards — validated.** 68 relations + 7 functions across the 13 live sources all exist; failure-handling audit 0 blind.
 
 **New facts worth keeping:** the database is 54.9 GB and has grown ~3.7 GB a week since 10-26 (Panini serials 12.8 GB). `flowty_archive` 4.2 GB and `net` 1.8 GB are expected.
+
+**Verified after the push (`aa76b6c`, ~7:55 AM PT):** `/privacy` serves the new disclosure and the footer flag is on the home page; Resend reads Open Tracking true / Click Tracking false; the fallback dry run reads `stand_down` (19 schedule runs in 12 h); preflight steps all passed (tree-walking guards 244 / 244, component coverage 90.96 %). **Still to watch:** dispatched runs per day should fall to a handful once the laptop pulls; the first opens should appear in Resend on the next digest or alert send.
