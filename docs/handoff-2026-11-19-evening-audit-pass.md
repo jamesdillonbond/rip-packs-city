@@ -128,3 +128,11 @@ The five items Addendum 3 left open, each worked or decided:
 - **Fallback confirmed:** the laptop had already pulled; dispatched runs went 33 / 30 / 22 per hour to 0 after 7:43 AM PT.
 - **Closed:** the ":37 timeout" watch (no clustering in 9 h of error logs).
 - **Check-in scheduled in this thread for 3:05 PM PT today:** `apply-fmv-haircut` falsifier (2:35 PM run: `legs_skipped` 0 or only `nba_top_shot`), dispatched-run count since 8 AM, first Resend opens, top-movers timeouts.
+
+## Addendum 7 — ~11:21 AM PT 11-20 (Trevor: "Keep going and do all you can")
+
+**Health at 11:10 AM PT:** trust board 42 / 42, no stalled pipelines, security invariants empty. No `top-movers` timeout since the 8:11 AM fix. Dispatched GitHub runs since 8 AM: 0 (17 native scheduled runs in the same window). Panini board refresh 5 / 5 ok. Candy: 8 sales today so far.
+
+**Found and fixed — All Day pack EV view stopped refreshing (10:47 AM PT).** Atlas gives 48 reward distributions a different listing id than Studio did, which doubled their rows and broke `mv_allday_pack_ev_corrected`’s unique key. Migration `20261120191551` enforces one listing id per All Day distribution at the write and re-keyed the 48; the view refreshed at 11:19 AM PT (84 s, 2,949 rows). Detail in the ledger entry of this time.
+
+**Not yet readable:** the `apply-fmv-haircut` 2:35 PM PT run (yesterday’s skipped 3 of 7 legs at the 150 s leg-start deadline) and the first Resend opens. The 3:05 PM PT check-in in this thread reads both, plus jobid 65’s 4:47 PM tick if it fires late enough; otherwise the nightly pass sees it.
