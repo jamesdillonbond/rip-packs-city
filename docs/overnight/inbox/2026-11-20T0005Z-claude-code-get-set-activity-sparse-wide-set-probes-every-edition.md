@@ -17,3 +17,10 @@
 3. Leave it: honest degradation, low-traffic page on a closed market.
 
 ⚠ `get_set_activity` is a full-body `CREATE OR REPLACE` — re-read live `prosrc` and md5-guard it; measure BUFFERS on a wide Top Shot set (e.g. `the-champion-s-path`) as the no-change control before and after.
+
+## Resolution — 2026-11-19 ~6:35 PM PT (Claude Code cloud, same thread): CLOSED, not shipping — measured
+
+- **Option 1 measured both ways.** The hashed one-pass read for the Candy set: **5,721 buffers / 59 ms** (index-only on `idx_sales_2026_candy_edition_serial_sold`) vs 45,300 today — an 8× win. But it needs a gate on the collection's year volume, and the cheap gate (raise the existing `LIMIT 5000` year count to 50,000) costs **Top Shot 32,971 buffers / 3.7 s cold (19,869 heap fetches)** on EVERY sparse-wide-set call — a regression larger than the win, on the high-traffic collection.
+- **Option 2** saves ~150 ms of CPU and none of the buffers.
+- **Top Shot is not affected:** `the-champion-s-path` (48 editions) is 6,640 buffers / 0.39 s cold; its 11-19 timeouts were load bursts (many pages within seconds), not this function.
+- **Decision:** leave it. The only winning shape is a Candy-specific branch for one crawler-hit page on a market silent since 10-11, and the page already degrades honestly. **Reopen if** Candy trading revives (`candy_revival_sales_since_recorded_silence` breaches) or another collection shows the same 5-separate-times pattern.
