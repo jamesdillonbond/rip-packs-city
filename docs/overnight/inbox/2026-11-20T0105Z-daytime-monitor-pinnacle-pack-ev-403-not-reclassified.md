@@ -21,3 +21,9 @@ Extend the same `requests_challenged` treatment to `compute-pinnacle-pack-ev`'s 
 ## NOT findings (recorded so they are not re-raised)
 - `rpc-candy-wmc-ghost-purge` pg_cron failure (11-19 09:10Z, statement timeout): STALE pre-fix run. The fix `20261119110000` (duplicated-moments prefilter, 15.8 s) landed ~19:00Z 11-19, after the failure; next tick is 11-20 09:10Z. Expected to clear; focus.md already carries the falsifier read.
 - All other failure_rate rows are the #218 530 window (streak-split to info) or designed Atlas/Flow cloudflare base-rate info rows. Security [], trust 41/41 ok, stalled [], UUID sentinel 0, 13/13 dashboards' objects resolve, Vercel newest BUILDING + rest READY (0 ERROR).
+
+## Resolution — 2026-11-19 ~5:25 PM PT (Claude Code cloud, same thread as `20261119123000`)
+
+- **Severity fixed, run status deliberately NOT changed.** Migration `20261119171500_audit_20261119_failure_rate_arm_caps_an_atlas_cloudflare_challenge_at_medium` adds `cloudflare challenge` to the failure_rate arm's upstream cap (beside the #218 530 cap): a `high` row whose newest error is an exhausted Atlas challenge reads `medium` with a detail suffix; anything else re-pages `high`. Dry run (rolled back): `compute-pinnacle-pack-ev` high → medium; 0 other rows changed.
+- **Why not the suggested `requests_challenged` reclassification:** pack identity / pulls complete their other requests and re-ask a challenged one next tick, so those RUNS did their work. A pack-EV walk that exhausts its retries on page 0 writes NO pack EV — `ok=false` is the true record (write-side honesty rule). The defect was the alarm's severity.
+- Pattern pinned by `__tests__/failure-rate-cap-matches-only-upstream-causes.test.ts` (must match the challenge + 530 strings; must NOT match a Supabase `<!DOCTYPE html>` 522, `HTTP 522`, statement timeouts, Connect 404s). Red on a planted `|HTTP 5` widening.
