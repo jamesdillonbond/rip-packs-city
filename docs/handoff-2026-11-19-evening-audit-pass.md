@@ -79,3 +79,23 @@ Clock read from `TZ=America/Los_Angeles date` and the DB (both 1:27 AM PT).
 - **Trust board**: 41 / 42 ok. One breach, unchanged: `candy_revival_sales_since_recorded_silence` 429.83 vs 250. The nightly pass (`aca0ef7`) queued the Candy status-row re-verify rather than changing it. Stalled pipelines: none. Security invariants: empty.
 - **Vercel runtime errors, last 4 h**: 5 groups, 7 events, none new and none on tonight's code: `/api/analytics/sales/leaderboard` 57014 ×3, `refresh-insights-cache` (`panini_deal_board_all` timeout + its 60 s task timeout) ×1 each, franchise-hub `get_team_activity` timeout degrading to empty ×1, one Panini edition market-cap tile over 8 s ×1. The leaderboard timeout is the only repeater and is worth a look in a daytime pass.
 - `scripts/qa/README.md` Chromium path: already fixed earlier tonight.
+
+## Addendum 3 — 6:40 → ~7:00 AM PT 11-20 (Trevor: "work through all you can, leaving nothing from this thread unresolved") — thread closed
+
+**Shipped:** Candy marketplace status re-verified and the recorded silence retired (`thin_since_2026_11_19`, migration `20261120144221`). Trust board 42 / 42 ok at 6:44 AM PT; security invariants empty; no pg_cron failure in the prior 6 h.
+
+**Closed by measurement, nothing to fix:**
+
+- **The `/analytics` sales-leaderboard timeout (the "only repeater" in Addendum 2) was this session.** All three 57014s, the `panini_deal_board_all` timeout and the `refresh-insights-cache` 60 s kill are stamped 10:37–10:38 PM PT 11-19: my 116-page light-theme sweep was loading `/analytics` (16 leaderboard requests in one minute) while my own board refresh ran 83.6 s under `postgres`. The function itself: 20,775 calls, mean 1.4 s, 6.7k buffers. No change made.
+- **The 5.1 s first Panini Market load is a cold function instance.** Six uncached variants in a row: 6.3 s, then 1.7 / 0.7 / 0.6 / 0.6 / 0.5 s. The stored board is not the cost.
+- **Stored board, 9 hourly ticks since the cron_heavy move:** all ok, 14.5–54.9 s; live-view read still 5,595 calls (no fallback yet).
+
+**Watch (one coincidence, not a finding):** at 5:37 AM PT the board refresh took 54.9 s, and an `/insights/trophies` 8 s read timeout (5:37) and a `get_top_movers` 25 s timeout (5:39) landed beside it. If bounded-read timeouts cluster at :37–:39, the lever is the refresher's minute or cadence (jobid 898), not the readers.
+
+**Left open, each with its owner:**
+
+1. **Top Shot sale re-attribution** — one day behind until the 9:53 PM PT 11-20 tick. The one-off run was refused by the session permission system twice; not worked around.
+2. **GitHub schedule cleanup** — HOLD (GitHub delivered 62 of ~817 scheduled runs in 24 h). Trevor's call once a week passes clean.
+3. **Resend open/click tracking** — off; needs a `/privacy` change first. Trevor's call.
+4. **Scheduled-task prompts** — only the first three were re-read (last runs succeeded); the full list was corrected 11-17. **Dashboard artifacts** — not re-run by this thread; the 11-20 daytime monitor read 13/13 objects resolving.
+5. From the overnight pass, not this thread: `apply-fmv-haircut` falsifier at 2:35 PM PT 11-20; #234 relabel not before 11-23; #261 blocked on Dune until 12-14.

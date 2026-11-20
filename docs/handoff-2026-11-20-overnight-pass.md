@@ -45,3 +45,7 @@ None. No shipping, so no hard-stop triggered.
 
 ## Not read this run (chronic, not load-bearing)
 - The three daily instrument logs (edge-fn-drift / db-pin-staleness / migration-parity) need `gh api .../actions`, which stays blocked in scheduled cloud sessions (known-chronic #23). Same as prior passes.
+
+## ⤷ Closed 2026-11-20 ~6:42 AM PT — the queued Candy status-row decision
+
+Done by the evening-audit thread under Trevor's 6:40 AM PT instruction: silence retired, `secondary_status = thin_since_2026_11_19` (migration `20261120144221`); revival arm 0, trust 42/42. Ledger 11-20 ~6:42 AM PT.

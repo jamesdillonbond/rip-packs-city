@@ -34,7 +34,7 @@ failure it documents.
 
 ## 2026-11-20 — 3 filings
 
-- [Daytime monitor — 2026-11-20 ~07:05Z: Candy revival trust arm BREACHES ($429.83 > $250) — Candy traded 44 sales/$411.85 on 11-19, the recorded 11-17 closure is stale (re-verify + re-date, arm working as designed); plus a one-off `rpc-topshot-misattrib-remap` IO-timeout at its quiet 05:53Z slot (missed one daily run). Both LOW/sense-only; security 4/4, stalled [], 0 HIGH alerts, 13/13 dashboards, Vercel 0 ERROR](2026-11-20T0705Z-daytime-monitor-candy-revival-breach-and-remap-io-timeout.md)
+- [✅ RESOLVED 11-20 6:42 AM PT (silence retired → `thin_since_2026_11_19`, migration `20261120144221`; remap self-heals 9:53 PM PT) — Daytime monitor — 2026-11-20 ~07:05Z: Candy revival trust arm BREACHES ($429.83 > $250) — Candy traded 44 sales/$411.85 on 11-19, the recorded 11-17 closure is stale (re-verify + re-date, arm working as designed); plus a one-off `rpc-topshot-misattrib-remap` IO-timeout at its quiet 05:53Z slot (missed one daily run). Both LOW/sense-only; security 4/4, stalled [], 0 HIGH alerts, 13/13 dashboards, Vercel 0 ERROR](2026-11-20T0705Z-daytime-monitor-candy-revival-breach-and-remap-io-timeout.md)
 
 - [Claude Code — `get_set_activity` pays ~45k buffers (cold 3.2 s, 8 s timeout) to find the 20 sales of a 4,088-edition Candy set; 5 separate honest "couldn't be loaded" degrades on /candy-mlb/set/2022-all-star-tricons in 48 h; three options measured; CLOSED not shipping — a general gate costs Top Shot 33k buffers/call (LOW)](2026-11-20T0005Z-claude-code-get-set-activity-sparse-wide-set-probes-every-edition.md)
 

@@ -48,3 +48,9 @@ Read from `sales` ⋈ `editions`, Candy, 11-19 PT (midnight to midnight): **44 s
 Two things differ from every earlier re-date note on the `candy_mlb` row: this day includes sales in a 2026 set (the notes of 11-12, 11-14 and 11-18 each say "none in a 2026 set"), and the buyers are many rather than one batch. That reads as trading resuming at a low level, not a dust trickle, so a sixth re-date of `silent_since` may be the wrong record. Not changed from this session: the status row is the night pass's to re-verify (it wrote the last five), and what the row should say when a market is open but thin is a wording decision.
 
 Candidate 2 (`rpc-topshot-misattrib-remap`): NOT run from this session — scheduling a one-off pg_cron job for `remap_topshot_from_onchain_map()` was refused by the session's permission system, and the function runs 50–120 s, past the MCP's 60 s statement cap. It re-runs by itself at the 9:53 PM PT tick on 11-20. Run it by hand before then only if a day's lag in Top Shot sale re-attribution matters.
+
+## ✅ RESOLVED — 2026-11-20 ~6:42 AM PT (Cowork cloud, evening-audit thread)
+
+**Candidate 1 — done.** Re-verified at 6:45 AM PT: 11-18 ×13 ($17.98, 5 buyers), 11-19 ×72 ($461.41, 17 buyers, 9 sellers, 70 editions; more 11-19 sales were indexed after the earlier 44-sale read). Trading resumed, so the silence was retired, not re-dated: migration `20261120144221` sets `secondary_status = thin_since_2026_11_19`. The revival arm reads 0 and `candy_sales_stale_hours` is back on its 168 h backstop; trust board 42/42.
+
+**Candidate 2 — closes by itself.** The one-off remap run was refused by the session permission system twice (this thread and the overnight pass) and was not worked around. The daily job re-runs at 9:53 PM PT 11-20; `SELECT public.remap_topshot_from_onchain_map();` by hand closes it sooner.
