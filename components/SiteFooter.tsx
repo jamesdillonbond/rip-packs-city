@@ -236,7 +236,10 @@ export default function SiteFooter() {
               upgrade_url paths that name it; it is just no longer advertised. */}
           <Link href="/legal/fmv-methodology" style={{ color: "var(--rpc-text-secondary)", textDecoration: "none" }}>FMV METHODOLOGY</Link>
           <Link href="/terms" style={{ color: "var(--rpc-text-secondary)", textDecoration: "none" }}>TERMS</Link>
-          <Link href="/privacy" style={{ color: "var(--rpc-text-secondary)", textDecoration: "none" }}>PRIVACY</Link>
+          {/* 2026-11-20: /privacy promises a material change is "flagged on the home
+              page"; the footer is on the home page. The suffix marks the email
+              open-tracking disclosure — drop it after 2026-12-20. */}
+          <Link href="/privacy" style={{ color: "var(--rpc-text-secondary)", textDecoration: "none" }}>PRIVACY (UPDATED NOV 20)</Link>
         </div>
       </div>
 

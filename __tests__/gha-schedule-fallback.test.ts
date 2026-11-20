@@ -9,7 +9,7 @@
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import { INPUTS, cronMatches, cronsOf, fieldMatches, lastFireAt } from "../scripts/gha-schedule-fallback.mjs"
+import { DELIVERY_MIN_RUNS, DELIVERY_WINDOW_MIN, INPUTS, cronMatches, cronsOf, fieldMatches, githubIsDelivering, lastFireAt } from "../scripts/gha-schedule-fallback.mjs"
 
 const dir = join(__dirname, "..", ".github", "workflows")
 const workflows = readdirSync(dir)
@@ -89,5 +89,31 @@ describe("a job gated on github.event.schedule names a cron its file declares", 
   it("detects the 11-17 shape: a cron rewritten to m-m with the if left on the old text", () => {
     const yaml = "on:\n  schedule:\n    - cron: '41-41 6 * * *'\njobs:\n  x:\n    if: github.event.schedule == '41 6 * * *'\n"
     expect(stale(yaml)).toEqual(["41 6 * * *"])
+  })
+})
+
+// 2026-11-20. The stand-down rule was "any schedule run in the last 90 minutes". Healthy delivery to this repo
+// is bursty (11-14 → 11-16, before the outage: gaps up to 6.0 h, as few as 1 run per 6 h), so the fallback kept
+// dispatching between bursts: ~190 runs a day on top of GitHub's ~62. The rule is now a COUNT over 12 hours.
+describe("stand-down: GitHub is delivering when the 12-hour count is at its normal level", () => {
+  it("stands down on the lowest 12-hour counts measured while GitHub was healthy (15 before, 19 after)", () => {
+    expect(githubIsDelivering(15)).toBe(true)
+    expect(githubIsDelivering(19)).toBe(true)
+  })
+  it("does not stand down during an outage (0) or on a trickle below the line", () => {
+    expect(githubIsDelivering(0)).toBe(false)
+    expect(githubIsDelivering(DELIVERY_MIN_RUNS - 1)).toBe(false)
+    expect(githubIsDelivering(DELIVERY_MIN_RUNS)).toBe(true)
+  })
+  it("a single recent run is not delivery — the shape the old 90-minute rule mistook for it", () => {
+    expect(githubIsDelivering(1)).toBe(false)
+  })
+  it("an unreadable count throws instead of reading as dark (which would dispatch everything)", () => {
+    expect(() => githubIsDelivering(Number.NaN)).toThrow()
+    expect(() => githubIsDelivering(Number("") / 0)).toThrow()
+    expect(() => githubIsDelivering(-1)).toThrow()
+  })
+  it("the window is long enough to span the widest healthy gap twice over", () => {
+    expect(DELIVERY_WINDOW_MIN).toBeGreaterThanOrEqual(12 * 60)
   })
 })

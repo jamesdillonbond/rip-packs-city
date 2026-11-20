@@ -32,6 +32,13 @@
 - **`?token=` secret form — dated read ~11-26:** Vercel runtime logs (get_runtime_logs), query `query-token` — ⚠ NOT `auth:query-token`, which matches nothing (the colon is search syntax; positive control 11-19 10:01 AM PT found by `query-token` only), group_by requestPath; ignore ua=rpc-positive-control/1 (proxy logs path + UA, never the value). Zero sightings → remove the query-string form route by route (keep the Bearer header); a sighting → move that caller to the header first.
 - **Handoff wording, so the session-start ready-queue can match your items:** name the lane, function or route in backticks in each queued item (the matcher keys on the first backticked token or a hyphenated lane name). It now prints "↻ acted on since (ledger.md:N)" for items a daytime session touched.
 
+## STEER — added 2026-11-20 ~7:55 AM PT (Cowork cloud) — GitHub schedule cleanup is DONE; the two 11-17 steers below are history
+
+- **Done 11-20:** relay + probe deleted; the laptop fallback now stands down on a 12-hour delivery COUNT (≥ 8 schedule runs), not "any run in 90 minutes". Ledger 11-20 ~7:55 AM PT.
+- **GitHub's normal rate here is ~60–70 scheduled runs a DAY in bursts up to 6 h apart** (72 / 69 / 58 on 11-14 → 11-16, before the outage). Do not measure it against the ~817 slots the cron lines write: that rate has never been delivered, and the 11-19 "HOLD" in this file came from that comparison.
+- **The Windows task "RPC GHA schedule fallback" stays installed** as dormant cover (it logs `stand_down`). Delete it only if Trevor wants it gone: `schtasks /delete /tn "RPC GHA schedule fallback" /f`.
+- **If dispatched runs do not fall** below ~20 a day by 11-22, the laptop has not pulled the new script: check its tree is at or past this commit.
+
 ## STEER — added 2026-11-17 ~8:55 PM PT (Cowork cloud) — GitHub schedules are BACK (7:03 PM PT); cleanup is owed, not before 11-18 evening
 
 - **Check first:** `gh api "repos/jamesdillonbond/rip-packs-city/actions/runs?event=schedule&per_page=1"` — the newest run should be hours old at most (bursts hours apart are normal).

@@ -126,7 +126,12 @@ export default function PrivacyPage() {
             third-party error collector runs. AI concierge messages route through
             Anthropic. Email (sign-in links, verification, alerts and digests you
             opt into) is sent through Resend, which receives your address and the
-            message. Alerts you choose to receive on Telegram are delivered by
+            message. Since November 2026 the emails we send carry a small
+            image that tells us, through Resend, whether a message was opened
+            and when. We use that only to see which emails are useful and to
+            stop sending the ones nobody reads; it is never shared or used for
+            advertising. We do not use click-tracking links: a link in our
+            email goes straight to the page it names. Alerts you choose to receive on Telegram are delivered by
             Telegram. Cloudflare Workers proxy a small number of public
             marketplace API calls. None of these vendors receive more than the
             data necessary to perform their function, and none sells it.
@@ -156,7 +161,12 @@ export default function PrivacyPage() {
             those within 30 days and confirm when done. Aggregate counts that no longer identify you
             may persist. You can opt out of product emails at any
             time via the unsubscribe link in any email we send. We honor Global
-            Privacy Control and Do Not Track signals (see Cookies below). We do
+            Privacy Control and Do Not Track signals on the site (see Cookies
+            below). Those are signals your browser sends to a website, so they
+            cannot reach an email: to avoid the open image described under
+            &ldquo;Where it&apos;s stored&rdquo;, turn off remote images in
+            your mail app (most apps offer it, and some block or pre-load them
+            by default), or unsubscribe. We do
             not sell or share personal information for advertising, and we have
             no financial incentive tied to your data.
           </Section>
@@ -209,7 +219,7 @@ export default function PrivacyPage() {
             limited liability company.
           </Section>
 
-          <LastUpdated text="Last updated: October 2026." />
+          <LastUpdated text="Last updated: November 20, 2026. Changed: emails now carry an open-tracking image (see Where it's stored and Your choices)." />
         </div>
       </main>
 

@@ -9,7 +9,13 @@
 // ingest, the sentinel, the site alarm, …) were being dispatched by hand.
 //
 // WHAT. Every run (Task Scheduler, every 5 min — scripts/gha-schedule-fallback-schedule.bat):
-//   1. STAND DOWN if GitHub delivered any `schedule` run in the last 90 min (it is working; nothing to do).
+//   1. STAND DOWN if GitHub delivered at least DELIVERY_MIN_RUNS `schedule` runs in the last 12 hours (it is
+//      working; nothing to do). ⚠ Until 2026-11-20 this read "any schedule run in the last 90 min", which is not
+//      how GitHub delivers to this repo even when healthy: 11-14 → 11-16, BEFORE the outage, it delivered 58–72
+//      runs a day in bursts up to 6.0 h apart, with as few as ONE run in a 6-hour window. So after schedules
+//      came back on 11-17 the rule stood down only between bursts and dispatched ~190 runs a day on top of
+//      GitHub's own ~62 — about 3.5× the load these lanes have ever run at. Per 12 hours the same data never
+//      fell below 15 (before) / 19 (after), and the outage read 0, so 8 separates the two with room either way.
 //   2. For each workflow under .github/workflows with `schedule:`, find the most recent cron fire time
 //      (UTC, the crons' own clock) inside the last LOOKBACK_MIN. If the workflow has no run of ANY event
 //      created at or after that fire time, dispatch it with `gh workflow run` — with the inputs that make a
@@ -19,9 +25,11 @@
 // as "ran", so nothing is dispatched twice for one fire time. `gh` is the signed-in CLI on this machine, so no
 // credential is stored anywhere new.
 //
-// ⚠ Dispatched runs carry event `workflow_dispatch`, NOT `schedule`, on purpose: gha-schedule-watchdog and
-// schedule-probe.yml keep measuring whether GITHUB delivers schedules, so this script cannot mask the outage.
-// schedule-probe.yml is never dispatched for the same reason.
+// ⚠ Dispatched runs carry event `workflow_dispatch`, NOT `schedule`, on purpose: gha-schedule-watchdog and the
+// stand-down count above measure whether GITHUB delivers schedules, so this script cannot mask an outage.
+// (schedule-probe.yml and the in-Actions relay, schedule-relay.yml, were deleted 2026-11-20: the probe answered
+// its question and the relay had retired itself on 11-17. This task stays installed as dormant cover — with
+// GitHub delivering it logs `stand_down` and dispatches nothing; if schedules stop again it resumes within ~12 h.)
 //
 // USAGE  node scripts/gha-schedule-fallback.mjs [--dry]      (--dry prints what it would dispatch)
 
@@ -31,9 +39,16 @@ import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const REPO = "jamesdillonbond/rip-packs-city"
-const STAND_DOWN_MIN = 90
+/** GitHub is "delivering" when it produced at least this many `schedule` runs in the window below. */
+export const DELIVERY_WINDOW_MIN = 12 * 60
+export const DELIVERY_MIN_RUNS = 8
+/** A count that could not be read (NaN, null, a string) is NOT "delivering" and NOT "dark": the caller throws. */
+export function githubIsDelivering(scheduleRunsInWindow) {
+  if (!Number.isInteger(scheduleRunsInWindow) || scheduleRunsInWindow < 0) throw new Error(`schedule-run count unreadable: ${scheduleRunsInWindow}`)
+  return scheduleRunsInWindow >= DELIVERY_MIN_RUNS
+}
 const LOOKBACK_MIN = 6 * 60
-const SKIP = new Set(["schedule-probe.yml"])
+const SKIP = new Set()
 
 /**
  * Inputs that make a DISPATCHED run behave like the SCHEDULED one. A workflow that branches on
@@ -116,8 +131,12 @@ function main() {
   }
 
   const lastSched = gh(["api", `repos/${REPO}/actions/runs?event=schedule&per_page=1`, "--jq", ".workflow_runs[0].created_at // empty"])
-  if (lastSched && now - new Date(lastSched) < STAND_DOWN_MIN * 60_000) {
-    log({ verdict: "stand_down", last_schedule_run: lastSched })
+  const since = new Date(now - DELIVERY_WINDOW_MIN * 60_000).toISOString().replace(/\.\d+Z$/, "Z")
+  const deliveredRaw = gh(["api", `repos/${REPO}/actions/runs?event=schedule&per_page=1&created=%3E${since}`, "--jq", ".total_count"])
+  // An empty answer must not read as 0 ("dark" → dispatch everything): Number("") is 0.
+  const delivered = /^\d+$/.test(deliveredRaw) ? Number(deliveredRaw) : Number.NaN
+  if (githubIsDelivering(delivered)) {
+    log({ verdict: "stand_down", last_schedule_run: lastSched, schedule_runs_12h: delivered })
     return
   }
 
@@ -152,7 +171,7 @@ function main() {
       failed.push({ file, error: String(e.stderr || e.message).split("\n")[0].slice(0, 160) })
     }
   }
-  log({ verdict: "dispatching", last_schedule_run: lastSched || null, dispatched, failed })
+  log({ verdict: "dispatching", last_schedule_run: lastSched || null, schedule_runs_12h: delivered, dispatched, failed })
   if (failed.length > 0) process.exitCode = 1
 }
 
