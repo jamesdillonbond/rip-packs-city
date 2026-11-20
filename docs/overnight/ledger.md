@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-19 ~4:45 PM PT — Trust board: a NULL value reads UNKNOWN, not ok; the depleted-packs arm becomes a count; sentinel names an unmeasured arm (Claude Code cloud; Trevor: "work through anything else unresolved from this thread")
+
+- **Migration `20261119163000_audit_20261119_trust_health_null_reads_unknown_not_ok`** (md5-guarded splice of `v_rpc_trust_health`, security_invoker re-set): status `CASE` gains `WHEN value IS NULL THEN 'UNKNOWN'` (sorted with breaches). `pack_ev_board_pct_depleted` (a % over an honestly EMPTY board = NULL) → `pack_ev_board_depleted_ranked`, a COUNT of ranked packs with depletion ≥ 90, breach_at 1 (no code reads the old name). Dry run with a planted NULL read `UNKNOWN`, first row; unplanted: 0 non-ok. **Revert:** the same splice reversed (pairs in the migration).
+- **`app/api/sentinel/route.ts`**: an UNKNOWN arm prints `<metric> UNMEASURED (value NULL; …)`, not `=null`. Test red on the old format. **Revert:** revert this commit (find by message).
+- Docs: trust-board-and-safety.md (three-valued status), key-files-and-honesty.md (end), focus.md 11-19 steer (dated reads), sessions/2026-11.md.
+
 ### 2026-11-19 ~4:15 PM PT — Client auth reads handle their rejection (TopNav + share CTA; tree-walk guard); stale picomatch audit baseline emptied (Claude Code cloud; Trevor: "Keep going")
 
 - **Unhandled rejection on every page**: the client-error beacon logged `Lock "lock:sb-…-auth-token" was released because another request stole it` from `getUser` on /market (real iPhone sessions 11-08, 11-11). `components/TopNav.tsx` and `app/share/[wallet]/SaveToCollectionCTA.tsx` read the session with a bare `.then()`; both now `.catch()` and leave state alone (a failed read is not "signed out"; onAuthStateChange still decides). New `__tests__/a-client-auth-read-always-handles-its-rejection.test.ts` bans an un-awaited `getUser()/getSession()` `.then()` without `.catch()` across app/components/hooks/lib — red against the old TopNav (planted defect). Falsifier: no `client_error` with "stole it" after this deploy. **Revert:** revert this commit (find by message).

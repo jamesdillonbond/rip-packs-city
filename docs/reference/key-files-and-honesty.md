@@ -2901,3 +2901,10 @@ on **`'ok'`** — an unreadable answer recorded as a clean read, and the row is 
 200 whose body lacks the expected key.** Grep the expression, not the file: `AS readable` had one other live use
 (`pack_seller_onchain_tick`), where the NULL path ends in `no_withdraw`, not a false ok.
 
+## Added 2026-11-19 afternoon (Claude Code cloud) — three monitor lessons from one thread
+
+- ⛔ **A MONITOR OVER A FILTERED POPULATION CANNOT SEE THE FILTER'S INPUT FAIL.** `pack_ev_board_max_stale_days` took max(age) over a public board whose MV keeps only snapshots < 48 h old: the value could never exceed 2.0 against a breach_at of 2, and a STALLED writer aged every row out, emptied the board, and the arm read NULL. **Measure freshness on the WRITER's table (newest row), never on a view that filters by freshness.** Re-pointed `20261119153000` (5 buffers, index-only).
+- ⛔ **NULL IN A `value >= threshold` STATUS CASE IS A PASS.** The trust board's status fell to `ok` on NULL — the mirror of the 11-18 `readable` lesson above, at the monitor layer. Now `UNKNOWN` (`20261119163000`); the one arm legitimately NULL (a percentage over an honestly EMPTY board) became a COUNT, because a count over an empty set is a real 0 and a ratio over it is not. Before adding a third state, check that nothing is legitimately in it — or it warns forever.
+- ⚠ **A SEQUENTIAL SWEEP WITH A LEG-START DEADLINE LETS ONE HEAVY LEG STARVE EVERY CHEAP LEG BEHIND IT.** `apply-fmv-haircut` ran legs in slug order; `nba_top_shot` (~150 s) ran 4th and the deadline skipped All Day, Panini and UFC (11-19 2:35 PM PT). **Run the known-heavy leg LAST** so it is the only one the deadline can cost, and record per-leg `duration_ms` so "known-heavy" stays a measurement.
+- ⚠ **A CLIENT `getUser()` / `getSession()` `.then()` WITHOUT `.catch()` IS AN `unhandledrejection` ON EVERY PAGE THAT RENDERS IT** — supabase-js rejects with `Lock "lock:sb-…-auth-token" was released because another request stole it` on iOS Chrome. A failed auth read is not "signed out": catch it and leave state to `onAuthStateChange`. Banned tree-wide by `__tests__/a-client-auth-read-always-handles-its-rejection.test.ts`.
+
