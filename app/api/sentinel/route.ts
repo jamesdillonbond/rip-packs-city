@@ -2683,7 +2683,14 @@ async function runSentinelWithin(clock: WallBudgetClock) {
           breaches.length === 0
             ? `${rows.length}/${rows.length} trust metrics ok`
             : breaches
-                .map((b) => `${b.metric}=${b.value} (breach at ${b.breach_at})`)
+                // UNKNOWN (2026-11-19): the view now labels a NULL value
+                // UNKNOWN instead of "ok" — an arm that measured nothing. Say
+                // so, rather than printing "=null" as if it were a reading.
+                .map((b) =>
+                  b.status === "UNKNOWN" || b.value == null
+                    ? `${b.metric} UNMEASURED (value NULL; breach at ${b.breach_at})`
+                    : `${b.metric}=${b.value} (breach at ${b.breach_at})`,
+                )
                 .join("; "),
         value: `${rows.length - breaches.length}/${rows.length}`,
       });

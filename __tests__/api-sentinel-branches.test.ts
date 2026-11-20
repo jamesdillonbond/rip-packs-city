@@ -693,6 +693,24 @@ describe("sentinel — pipeline / trust / totals arms", () => {
     expect(c.status).toBe("warn")
     expect(c.detail).toContain("topshot_fmv_stale_hours=10")
   })
+  // 2026-11-19: the view labels a NULL value UNKNOWN (it read "ok" before). The
+  // sentinel must WARN on it and name it unmeasured, never print "=null".
+  it("warns on an UNKNOWN (NULL-valued) trust arm and names it unmeasured", async () => {
+    const r = await run({
+      v_rpc_trust_health: {
+        data: [
+          { metric: "pack_ev_board_max_stale_days", value: null, breach_at: 2, status: "UNKNOWN" },
+          { metric: "topshot_fmv_stale_hours", value: 0.1, breach_at: 6, status: "ok" },
+        ],
+        error: null,
+      } as never,
+    })
+    const c = chk(r, "Trust Health")
+    expect(c.status).toBe("warn")
+    expect(c.detail).toContain("pack_ev_board_max_stale_days UNMEASURED")
+    expect(c.detail).not.toContain("=null")
+    expect(c.value).toBe("1/2")
+  })
   it("warns on a trust-health query error", async () => {
     const r = await run({ v_rpc_trust_health: { data: null, error: { message: "permission denied" } } as never })
     expect(chk(r, "Trust Health").status).toBe("warn")
