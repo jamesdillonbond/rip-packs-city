@@ -1,4 +1,4 @@
-# Inbox index — 690 live filings
+# Inbox index — 691 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,7 +32,9 @@ failure it documents.
 
 ---
 
-## 2026-11-20 — 2 filings
+## 2026-11-20 — 3 filings
+
+- [Daytime monitor — 2026-11-20 ~07:05Z: Candy revival trust arm BREACHES ($429.83 > $250) — Candy traded 44 sales/$411.85 on 11-19, the recorded 11-17 closure is stale (re-verify + re-date, arm working as designed); plus a one-off `rpc-topshot-misattrib-remap` IO-timeout at its quiet 05:53Z slot (missed one daily run). Both LOW/sense-only; security 4/4, stalled [], 0 HIGH alerts, 13/13 dashboards, Vercel 0 ERROR](2026-11-20T0705Z-daytime-monitor-candy-revival-breach-and-remap-io-timeout.md)
 
 - [Claude Code — `get_set_activity` pays ~45k buffers (cold 3.2 s, 8 s timeout) to find the 20 sales of a 4,088-edition Candy set; 5 separate honest "couldn't be loaded" degrades on /candy-mlb/set/2022-all-star-tricons in 48 h; three options measured; CLOSED not shipping — a general gate costs Top Shot 33k buffers/call (LOW)](2026-11-20T0005Z-claude-code-get-set-activity-sparse-wide-set-probes-every-edition.md)
 
