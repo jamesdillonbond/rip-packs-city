@@ -1,4 +1,4 @@
-# Inbox index — 689 live filings
+# Inbox index — 690 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,9 +32,11 @@ failure it documents.
 
 ---
 
-## 2026-11-20 — 1 filing
+## 2026-11-20 — 2 filings
 
 - [Claude Code — `get_set_activity` pays ~45k buffers (cold 3.2 s, 8 s timeout) to find the 20 sales of a 4,088-edition Candy set; 5 separate honest "couldn't be loaded" degrades on /candy-mlb/set/2022-all-star-tricons in 48 h; three options, not shipped (LOW)](2026-11-20T0005Z-claude-code-get-set-activity-sparse-wide-set-probes-every-edition.md)
+
+- [Daytime monitor — 2026-11-20 ~01:05Z: all green (security 4/4, trust 41/41, stalled [], UUID sentinel 0, 13/13 dashboards' objects resolve, Vercel 0 ERROR). One LOW candidate: `compute-pinnacle-pack-ev` is the sole HIGH failure_rate row, mostly the recovering #218 530 window + one Atlas 403 (newest run ok) — but its Atlas 403s still count as failures because the 11-19 challenge=retry fix skipped this lane](2026-11-20T0105Z-daytime-monitor-pinnacle-pack-ev-403-not-reclassified.md)
 
 ## 2026-11-19 — 4 filings
 
