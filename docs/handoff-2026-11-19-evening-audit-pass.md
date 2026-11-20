@@ -6,7 +6,7 @@ Trevor, 9:26 PM PT: "deep dive audit, full QA, SEO and marketing analysis, cyber
 
 ## Verdict
 
-Platform GREEN · 1 shipped (`ca49163`) · idle elsewhere: no-work found that was safe and not already done by the 11-19 Claude Code thread · oldest routed: #261 acquisition dates, 4 nights (blocked on Dune until 12-14; the Atlas staging lane is filling it, ETA ~11-21).
+Platform GREEN · 3 code commits shipped (`ca49163`, `6efd74e`, `ff383f0`; see the addendum) · oldest routed: #261 acquisition dates, 4 nights (blocked on Dune until 12-14; the Atlas staging lane is filling it, ETA ~11-21).
 
 ## Shipped
 
@@ -42,3 +42,29 @@ CI, Smoke Tests and E2E DOM Smoke were green on `ca49163`. Verified live at ~10:
 ## Not covered
 
 Light-theme pass, concierge probes, scheduled-task prompts, dashboard artifacts (all read 11-17 → 11-19 by other passes); `metrics-latest.json` left for the 1:00 AM PT nightly pass; the laptop tree and Task Scheduler (no folder attached).
+
+## Addendum — 10:03 PM → ~11:30 PM PT (Trevor: "Take action on everything you outlined … Don't stop until you have exhausted all of your capabilities")
+
+**Queue items, each acted on or closed with the reason:**
+
+1. **Panini market board — DONE.** `mv_panini_market_board` (38,387 rows) is read by `/api/market`; the same top-500 read went 787 ms / 501k buffers → 46 ms / 3.3k. Uncached sort and filter variants answered 200 in under 1 s after the deploy (`6efd74e`). The refresher is pg_cron `rpc-panini-market-board` (jobid 898, `cron_heavy`, hourly at :37 — its ticks under postgres took 21.9 s and 83.7 s, close to that role's 120 s ceiling). The route falls back to the live view when the copy is unreadable or older than 3 h. Migrations `20261120060703`, `20261120062310`, `20261120064304`.
+2. **GitHub schedule cleanup — NOT done, by evidence.** In the 24 h to 10:20 PM PT GitHub delivered 62 of ~817 expected scheduled runs (about 3 per workflow per day whatever the cron), and the laptop fallback dispatched 184. Removing the fallback would cut the GitHub-only lanes to ~3 runs a day. `schedule-probe.yml` cannot go alone: `gha-schedule-relay.mjs`'s self-test dispatches it.
+3. **Resend open/click tracking — NOT turned on.** `/privacy` says RPC honours Global Privacy Control and Do Not Track and runs no third-party trackers; an open pixel cannot honour either signal per recipient, and click tracking rewrites links that already carry UTM tags. Turning it on means amending the policy first, which is Trevor's call.
+4. **Two Pinnacle images 404 — closed, no art exists.** `GEN-20CG-ALIN-S0` and `GEN-20CG-AVTR-S0` are chain-filled Genesis 1/1s that neither Dapper's edition search nor Pinnacle's edition page carries (`lib/pinnacle/atlas-disney.ts`). The page already hides the dead image.
+5. **`/analytics` loans tile — DONE.** The Pulse card says "sales across the Flow ecosystem" and shows "24h loans" only when the window holds an origination.
+6. **#261** — unchanged (blocked on Dune until 12-14; the Atlas staging lane continues).
+
+**Areas not covered in the first pass, now covered:**
+
+- **Light theme:** `light-contrast-sweep.mjs` over 116 pages (it needed `RPC_QA_CHROME` support to start in the cloud). Three defects, all fixed in `ff383f0`: white-on-white collection stats on `/profile/<user>`, a 1.27:1 heatmap cell on `/analytics/loans`, and a dark 404 page for light-theme visitors.
+- **Concierge (4 probes from Trevor's Chrome, signed in as jamesdillonbond):** refused to state a confidence tier; refused to buy or add to cart and pointed to the marketplace and `/trades`; answered the lowest Messi ask on Panini with the listing link; resolved "Stephen Curry" to Steph Curry (130 editions). It could NOT name his cheapest edition — fixed: `get_player_editions` takes `order: fmv_asc`. The four probe rows are in `support_conversations` under session ids `qa-audit-1119-*`.
+- **Scheduled tasks:** first page only (daily X draft, monthly deep audit, context hygiene — last runs succeeded). The full list was read and corrected on 11-17; it was not re-read tonight (each page is three full prompts).
+- **Dashboard artifacts:** not re-run; the weekly surface QA read 13/13 sources clean at 9:35 AM PT today.
+- **Laptop:** tree at `ca49163` (its pull is current), no git lock files, `/sessions` 30 % used. Four overnight patches dated 10-25 → 11-09 were still in `cowork-push/queue`; all four had landed, so they were moved to `cowork-push/applied`.
+
+**Shipped in this addendum:** `6efd74e` (stored board, analytics tile, QA readme), `ff383f0` (cron_heavy refresher, light-theme fixes, concierge order, sweep env).
+
+**Verified live after `ff383f0` (~11:25 PM PT):** the light sweep reads 0 flags on `/profile/absolutsiikness`, `/profile/jamesdillonbond`, `/analytics/loans` and a 404; the concierge answered "What is Steph Curry's cheapest moment on Top Shot?" with the S3 Base Common at $0.35 FMV and the next four; Smoke Tests green.
+
+**Watch:** `select ok, duration_ms from pipeline_runs where pipeline = 'panini-market-board' order by started_at desc limit 6` — all ok, under 600 s. A Vercel log line "panini stored board err, reading live" means the copy went unreadable. One ok=false row at 10:07 PM PT 11-19 is this session's own verification query.
+
