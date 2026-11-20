@@ -99,3 +99,13 @@ Clock read from `TZ=America/Los_Angeles date` and the DB (both 1:27 AM PT).
 3. **Resend open/click tracking** — off; needs a `/privacy` change first. Trevor's call.
 4. **Scheduled-task prompts** — only the first three were re-read (last runs succeeded); the full list was corrected 11-17. **Dashboard artifacts** — not re-run by this thread; the 11-20 daytime monitor read 13/13 objects resolving.
 5. From the overnight pass, not this thread: `apply-fmv-haircut` falsifier at 2:35 PM PT 11-20; #234 relabel not before 11-23; #261 blocked on Dune until 12-14.
+
+## Addendum 4 — ~7:10 AM PT 11-20 (Trevor: "work through these open tasks, using your best judgement")
+
+The five items Addendum 3 left open, each worked or decided:
+
+1. **Top Shot sale re-attribution — still not run.** A third attempt (a one-off pg_cron job for `remap_topshot_from_onchain_map()`, 7:08 AM PT) was refused by the session permission system, as on 11-19 and in the overnight pass. Not worked around. It runs at 9:53 PM PT tonight; `SELECT public.remap_topshot_from_onchain_map();` in the SQL editor closes it sooner (50–120 s). Its last three runs: 56 s, 70 s, then the 120 s kill.
+2. **GitHub schedule cleanup — decided: keep the fallback.** Nothing has changed since the 62-of-817 measurement. Revisit only after 7 days with no `gha-schedule-watchdog` failure.
+3. **Resend open/click tracking — decided: stays off.** The `/privacy` promise (GPC / Do Not Track honoured, no third-party trackers) is worth more than open rates at this volume, and email links already carry UTM tags, so visits are measurable. Reopen only if Trevor wants to amend the policy.
+4. **Scheduled tasks — seven read in full** (daily X draft, monthly deep audit, context hygiene, monthly strategy review, monthly memory consolidation, daytime monitor, Panini freshness check): all enabled, every last run SUCCEEDED, next runs scheduled, and no prompt refers to anything this thread changed. The 3–4 s "finished" times are dispatch, not work: the deep audit's 11-15 output (`docs/audits/deep-audit-2026-11-15.md`, ledger 11-15 ~1:50 AM PT) and the hygiene pass's 11-08 ledger roll both exist. The older tasks beyond those seven (the nightly pass, weekly surface QA and others) were not re-read; the nightly pass ran at 1:03 AM PT today and the surface QA at 9:35 AM PT 11-19.
+5. **Dashboards — closed without a re-run.** The daytime monitor validates all 13 every three hours and read 13/13 at 11:05 PM PT 11-19; none of them reads the Candy status row or the Panini market board.
