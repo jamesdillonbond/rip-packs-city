@@ -136,3 +136,15 @@ The five items Addendum 3 left open, each worked or decided:
 **Found and fixed — All Day pack EV view stopped refreshing (10:47 AM PT).** Atlas gives 48 reward distributions a different listing id than Studio did, which doubled their rows and broke `mv_allday_pack_ev_corrected`’s unique key. Migration `20261120191551` enforces one listing id per All Day distribution at the write and re-keyed the 48; the view refreshed at 11:19 AM PT (84 s, 2,949 rows). Detail in the ledger entry of this time.
 
 **Not yet readable:** the `apply-fmv-haircut` 2:35 PM PT run (yesterday’s skipped 3 of 7 legs at the 150 s leg-start deadline) and the first Resend opens. The 3:05 PM PT check-in in this thread reads both, plus jobid 65’s 4:47 PM tick if it fires late enough; otherwise the nightly pass sees it.
+
+## Addendum 8 — afternoon check-in (2026-11-20 ~3:08 PM PT, read-only)
+
+Nothing shipped; no ledger entry. Every item the morning left "to be confirmed by the next run" confirmed:
+
+- **`apply-fmv-haircut` 2:35 PM PT run:** ok, 50.6 s, `legs_failed` 0, `legs_skipped` 0 — all 7 legs ran (166 All Day rows, 27 Top Shot, 0 elsewhere). The 11-19 run's 3 skipped legs did not repeat.
+- **GitHub schedules:** since 8:00 AM PT, **0** `workflow_dispatch` runs and **32** native `schedule` runs. The laptop fallback is standing down as designed.
+- **Trust board 42/42**, `detect_stalled_pipelines()` empty, 0 failed pg_cron runs in the last 4 h.
+- **Vercel:** no runtime errors in the last 7 h — no `[api/profile/top-movers]` timeout since the 8:11 AM PT fix. (pg_stat_statements for `get_top_movers` still pools both sides of the fix: 514 calls, mean 2.4 s, max 28.8 s — the max is pre-fix. Read it again after a stats reset, not before.)
+- **`panini-market-board`:** 8 of 8 runs ok in 8 h, slowest 27.5 s.
+- **All Day pack EV:** 0 distributions with two listing ids in `pack_ev_history`. jobid 65's last SCHEDULED run is still the 10:47 AM PT failure — its first scheduled run on the fix is 4:47 PM PT (the 11:19 AM one-off succeeded). Tomorrow's health check should see it green.
+- **Resend open tracking:** 3 sent / 3 delivered / **0 opened** since 7:53 AM PT. Three emails is too few to tell "tracking works, nobody opened" from "tracking not registering" — read it again after the next digest send, and send a test to an inbox you open if it still shows 0.
