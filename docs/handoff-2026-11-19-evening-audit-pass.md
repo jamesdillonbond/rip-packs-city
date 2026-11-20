@@ -68,3 +68,14 @@ Light-theme pass, concierge probes, scheduled-task prompts, dashboard artifacts 
 
 **Watch:** `select ok, duration_ms from pipeline_runs where pipeline = 'panini-market-board' order by started_at desc limit 6` — all ok, under 600 s. A Vercel log line "panini stored board err, reading live" means the copy went unreadable. One ok=false row at 10:07 PM PT 11-19 is this session's own verification query.
 
+
+## Addendum 2 — 1:27 AM PT 11-20 follow-up check (read-only, nothing shipped)
+
+Clock read from `TZ=America/Los_Angeles date` and the DB (both 1:27 AM PT).
+
+- **Candy ghost-purge (`rpc-candy-wmc-ghost-purge`)**: the 1:10 AM PT run succeeded in **33.4 s** (11-19: killed at 120.1 s; 11-18: 76.4 s). Just outside the 15–30 s estimate, well inside the 60 s line — the prefilter from `20261119110000` holds.
+- **Panini Market board**: the live-view board read (pgss queryid `-2469837307554637919`) is still at **5,595 calls** — zero since the 9:40 PM PT baseline, so no request has fallen back to the live view. Hourly refresher (jobid 898, `cron_heavy`): 11:37 PM 14.5 s, 12:37 AM 20.5 s, both ok; stored copy 50 min old at read time. API probe (`/api/market?collectionId=panini-blockchain`): `price_asc` 200 MISS 5.1 s then HIT 0.44 s; `fmv_desc` 200 MISS 1.05 s then HIT 0.43 s; 50 rows each. The 5.1 s cold read is slower than the 46 ms board read implies — the rest is the route's other work on a cold function, not measured further here.
+- **CI / deploy**: CI green on `aca0ef7` (the nightly pass's docs commit); E2E DOM Smoke, Site Availability Alarm and Ops Monitor green on `b3a6481`. The three newest production deployments read CANCELED — all docs-only commits, skipped by `ignoreCommand`, as expected.
+- **Trust board**: 41 / 42 ok. One breach, unchanged: `candy_revival_sales_since_recorded_silence` 429.83 vs 250. The nightly pass (`aca0ef7`) queued the Candy status-row re-verify rather than changing it. Stalled pipelines: none. Security invariants: empty.
+- **Vercel runtime errors, last 4 h**: 5 groups, 7 events, none new and none on tonight's code: `/api/analytics/sales/leaderboard` 57014 ×3, `refresh-insights-cache` (`panini_deal_board_all` timeout + its 60 s task timeout) ×1 each, franchise-hub `get_team_activity` timeout degrading to empty ×1, one Panini edition market-cap tile over 8 s ×1. The leaderboard timeout is the only repeater and is worth a look in a daytime pass.
+- `scripts/qa/README.md` Chromium path: already fixed earlier tonight.
