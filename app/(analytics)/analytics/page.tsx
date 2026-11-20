@@ -275,7 +275,10 @@ export default async function AnalyticsOverviewPage() {
     {
       href: "/analytics/pulse",
       label: "Pulse",
-      description: "Live transaction stream — loans + sales across the Flow ecosystem, refreshing every 30s.",
+      // 2026-11-19: Flowty's loan market ended 10-27, so the card stopped promising a loan
+      // stream and its "24h loans" tile (a permanent "0 · $0") shows only when the window
+      // actually holds an origination.
+      description: "Live transaction stream — sales across the Flow ecosystem, refreshing every 30s.",
       icon: Activity,
       status: "live",
       methodologyTopic: "pulse",
@@ -285,10 +288,12 @@ export default async function AnalyticsOverviewPage() {
               label: "24h sales",
               value: `${formatCount(pulse.sales?.sales ?? 0)} · ${formatUsd(pulse.sales?.volume_usd ?? 0)}`,
             },
-            {
-              label: "24h loans",
-              value: `${formatCount(pulse.loans?.originations ?? 0)} · ${formatUsd(pulse.loans?.origination_volume_usd ?? 0)}`,
-            },
+            ...((pulse.loans?.originations ?? 0) > 0
+              ? [{
+                  label: "24h loans",
+                  value: `${formatCount(pulse.loans?.originations ?? 0)} · ${formatUsd(pulse.loans?.origination_volume_usd ?? 0)}`,
+                }]
+              : []),
           ]
         : [{ label: "Status", value: "Live" }],
     },

@@ -27,11 +27,12 @@ revision than the repo's Playwright expects, and `playwright install` is forbidd
 there. Point the sweep at the binary:
 
 ```bash
-RPC_QA_CHROME=$(ls -d /opt/pw-browsers/chromium-*/chrome-linux/chrome | head -1) \
+RPC_QA_CHROME=$(ls -d /opt/pw-browsers/chromium-*/chrome-linux*/chrome | head -1) \
 RPC_QA_SETTLE_MS=3000 RPC_QA_CONC=3 \
 node scripts/qa/mobile-sweep.mjs paths.txt /tmp/qa/out.jsonl /tmp/qa/shots mobile
 ```
 
+(the directory was `chrome-linux/` until 2026-11; it read `chrome-linux64/` on 2026-11-19, hence the glob)
 and `Read` the PNGs directly. ⚠ The sandbox's egress proxy can answer a request
 with **502 Bad Gateway on its own** (a cut transfer) — 4 of 48 pages did on 09-25 while
 Vercel's runtime logs showed ZERO 5xx for the window. A 502 in a cloud sweep is a

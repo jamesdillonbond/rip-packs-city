@@ -16,7 +16,13 @@ import { GET } from "@/app/api/market/route"
 
 const PANINI = "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b"
 const req = (u: string) => ({ nextUrl: new URL(u) }) as never
-const install = (f: Record<string, unknown>) => { state.sb = makeSupabaseFixture(f as never) }
+// The route reads the stored copy (`mv_panini_market_board`) first and the live view when the
+// copy is unreadable or stale. Cases that only describe the live view get an UNPOPULATED copy,
+// so they exercise the fallback; the stored-copy cases at the end supply their own.
+const UNPOPULATED = { data: null, error: { message: 'materialized view "mv_panini_market_board" has not been populated' } }
+const install = (f: Record<string, unknown>) => {
+  state.sb = makeSupabaseFixture(({ mv_panini_market_board: UNPOPULATED, ...f }) as never)
+}
 
 const COVERAGE = {
   total_editions: 5094, pct_trustworthy: 35.2, listing_gated_editions: 3300, listing_gated_families: 40,
@@ -90,14 +96,19 @@ describe("GET /api/market — Panini arm", () => {
   it("discount sort reads the non-LOW window SEPARATELY, so LOW rows cannot crowd real deals out of it", async () => {
     const base = makeSupabaseFixture({
       ...board(),
-      panini_market_board: [{ data: [medRow], error: null }, { data: [lowRow], error: null }],
+      // Re-pinned 2026-11-19: the board is read from the stored copy; the two-window rule is
+      // a property of the READ, so it is asserted on the source the route actually queries.
+      mv_panini_market_board: [
+        { data: [{ ...medRow, computed_at: new Date().toISOString() }], error: null },
+        { data: [{ ...lowRow, computed_at: new Date().toISOString() }], error: null },
+      ],
     } as never) as any
     const conf: Array<[string, unknown]> = []
     state.sb = {
       ...base,
       from: (t: string) => {
         const b = base.from(t)
-        if (t !== "panini_market_board") return b
+        if (t !== "mv_panini_market_board") return b
         for (const m of ["eq", "neq"] as const) {
           const orig = b[m]
           b[m] = (...a: unknown[]) => {
@@ -171,6 +182,41 @@ describe("GET /api/market — Panini arm", () => {
     const failed = await GET(req(`https://t/api/market?collectionId=${PANINI}`))
     expect(failed.status).toBe(503)
     expect(failed.headers.get("Cache-Control")).toBe("no-store")
+  })
+
+  const storedRow = (computedAt: string | null) => ({
+    external_id: "stored-1", player_name: "Stored Copy", set_name: "S", tier: "RARE", circulation_count: 49, thumbnail_url: null,
+    low_ask_usd: 10, listed_count: 1, ask_confirmed_at: "2026-11-19T00:00:00Z", fmv_usd: 20, confidence: "MEDIUM", discount_pct: 50,
+    ...(computedAt === null ? {} : { computed_at: computedAt }),
+  })
+  const names = async (res: Response) => (await res.json()).listings.map((l: any) => l.playerName)
+
+  it("answers from the stored copy when it is fresh, without reading the live view", async () => {
+    const ops: string[] = []
+    install({ ...board(), __ops: ops, mv_panini_market_board: { data: [storedRow(new Date(Date.now() - 10 * 60_000).toISOString())], error: null } })
+    const res = await GET(req(`https://t/api/market?collectionId=${PANINI}`))
+    expect(await names(res)).toEqual(["Stored Copy"])
+    expect(ops).toContain("mv_panini_market_board:read")
+    expect(ops).not.toContain("panini_market_board:read")
+  })
+
+  it("a stored copy older than 2 h is not answered from: the live view is read instead", async () => {
+    install({ ...board(), mv_panini_market_board: { data: [storedRow(new Date(Date.now() - 3 * 3_600_000).toISOString())], error: null } })
+    const got = await names(await GET(req(`https://t/api/market?collectionId=${PANINI}`)))
+    expect(got).not.toContain("Stored Copy")
+    expect(got).toContain("Lionel Messi")
+  })
+
+  it("stored rows with no computed_at are an unknown age, so the live view is read", async () => {
+    install({ ...board(), mv_panini_market_board: { data: [storedRow(null)], error: null } })
+    expect(await names(await GET(req(`https://t/api/market?collectionId=${PANINI}`)))).toContain("Lionel Messi")
+  })
+
+  it("an unreadable stored copy falls back to the live view; both failing is a 503, never an empty board", async () => {
+    install(board()) // copy unpopulated, live ok
+    expect(await names(await GET(req(`https://t/api/market?collectionId=${PANINI}`)))).toContain("Lionel Messi")
+    install({ ...board(), panini_market_board: { data: null, error: { message: "boom" } } })
+    expect((await GET(req(`https://t/api/market?collectionId=${PANINI}`))).status).toBe(503)
   })
 
   it("no-change control: Candy's arm still carries no coverage field", async () => {

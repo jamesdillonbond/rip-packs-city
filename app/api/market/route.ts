@@ -41,6 +41,7 @@ import { EDITION_MARKET_ARMS, DB_FILTERED_MARKET_COLLECTION_IDS } from "@/lib/ma
 import { loadTopshotFmvGuard, guardTopshotFmv, type FmvGuardMap } from "@/lib/fmv-display-guard"
 import { apiErrorResponse } from "@/lib/api-error"
 import { readPaniniCoverage } from "@/lib/panini/coverage"
+import { PANINI_BOARD_LIVE, PANINI_BOARD_STORED, PANINI_MARKET_CACHE_CONTROL, paniniStoredBoardIsFresh } from "@/lib/panini/market-board"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { readCappedByEditionId, readCappedByExternalId } from "@/lib/fmv-capped"
 import { readCanonicalBadgeTitles, filterRowsByBadges } from "@/lib/market/canonical-badges"
@@ -73,7 +74,6 @@ const TS_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 // copy up to an hour old states nothing the board does not already disclose: the CDN
 // answers from it at once and refreshes behind the visitor. A failed refresh keeps
 // the previous copy (the 503 below is `no-store`). Every other collection keeps 90/60.
-export const PANINI_MARKET_CACHE_CONTROL = "public, s-maxage=300, stale-while-revalidate=3600"
 
 // Tier ceilings — ask prices above these are treated as sentinels and dropped.
 // Keys are upper-cased raw tier strings as stored in cached_listings.tier.
@@ -815,11 +815,19 @@ async function fetchPaniniMarketListings(
   }
 ): Promise<any[] | null> {
   const window = Math.max(filters.limit, 500)
+  // ⭐ STORED COPY FIRST (2026-11-19, `mv_panini_market_board`, refreshed every 30 min):
+  // the live view aggregates every listed serial per read (~500k buffers; cold reads
+  // passed the 8 s bound and 503'd the tab — register R152). `readBoard(STORED)` runs
+  // the same filters and order on the copy; the live view is read only when the copy
+  // errors, carries no `computed_at`, or is older than PANINI_BOARD_MAX_AGE_MS — a
+  // stalled refresher costs speed, never truth.
+  const readBoard = async (source: string): Promise<{ data: any[] | null; error: { message: string } | null }> => {
   const build = () => {
     const q = (supabaseAdmin as any)
-      .from("panini_market_board")
+      .from(source)
       .select(
         "external_id, player_name, set_name, tier, circulation_count, thumbnail_url, low_ask_usd, listed_count, ask_confirmed_at, fmv_usd, confidence, discount_pct"
+          + (source === PANINI_BOARD_STORED ? ", computed_at" : "")
       )
     let f = q
     if (filters.tier && filters.tier !== "all") f = f.eq("tier", filters.tier.toUpperCase())
@@ -848,15 +856,24 @@ async function fetchPaniniMarketListings(
   let error: { message: string } | null
   if (discountSort) {
     const [hi, lo] = await Promise.all([
-      boundedRead(order(build().neq("confidence", "LOW")).limit(window), "api/market/panini_market_board"),
-      boundedRead(order(build().eq("confidence", "LOW")).limit(window), "api/market/panini_market_board_low"),
+      boundedRead(order(build().neq("confidence", "LOW")).limit(window), `api/market/${source}`),
+      boundedRead(order(build().eq("confidence", "LOW")).limit(window), `api/market/${source}_low`),
     ])
     error = hi.error ?? lo.error ?? null
     data = error ? null : [...(hi.data ?? []), ...(lo.data ?? [])]
   } else {
-    const r = await boundedRead(order(build()).limit(window), "api/market/panini_market_board")
+    const r = await boundedRead(order(build()).limit(window), `api/market/${source}`)
     error = r.error
     data = r.data
+  }
+  return { data, error }
+  }
+
+  let { data, error } = await readBoard(PANINI_BOARD_STORED)
+  const storedUsable = !error && paniniStoredBoardIsFresh(data, Date.now())
+  if (!storedUsable) {
+    if (error) console.log("[/api/market] panini stored board err, reading live:", error.message)
+    ;({ data, error } = await readBoard(PANINI_BOARD_LIVE))
   }
   if (error) {
     console.log("[/api/market] panini fetch err:", error.message)
