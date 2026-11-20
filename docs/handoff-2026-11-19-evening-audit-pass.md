@@ -121,3 +121,10 @@ The five items Addendum 3 left open, each worked or decided:
 **New facts worth keeping:** the database is 54.9 GB and has grown ~3.7 GB a week since 10-26 (Panini serials 12.8 GB). `flowty_archive` 4.2 GB and `net` 1.8 GB are expected.
 
 **Verified after the push (`aa76b6c`, ~7:55 AM PT):** `/privacy` serves the new disclosure and the footer flag is on the home page; Resend reads Open Tracking true / Click Tracking false; the fallback dry run reads `stand_down` (19 schedule runs in 12 h); preflight steps all passed (tree-walking guards 244 / 244, component coverage 90.96 %). **Still to watch:** dispatched runs per day should fall to a handful once the laptop pulls; the first opens should appear in Resend on the next digest or alert send.
+
+## Addendum 6 — ~8:12 AM PT 11-20 (Trevor: "Keep going")
+
+- **Top movers card:** `get_top_movers` no longer probes `sales` once per owned edition (migration `20261120161120`): 98.5k → 59.6k buffers, 10,517 → 15 sales probes, same output on 11 wallets. This is the fix for the 25 s timeouts on the largest wallet’s profile.
+- **Fallback confirmed:** the laptop had already pulled; dispatched runs went 33 / 30 / 22 per hour to 0 after 7:43 AM PT.
+- **Closed:** the ":37 timeout" watch (no clustering in 9 h of error logs).
+- **Check-in scheduled in this thread for 3:05 PM PT today:** `apply-fmv-haircut` falsifier (2:35 PM run: `legs_skipped` 0 or only `nba_top_shot`), dispatched-run count since 8 AM, first Resend opens, top-movers timeouts.
