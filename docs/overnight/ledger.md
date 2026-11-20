@@ -12,6 +12,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-20 ~11:21 AM PT · 🔧 FIXED (DB, `20261120191551`) — All Day pack EV view could not refresh: Atlas gives 48 distributions a different listing id than Studio did; one id per distribution is now enforced at the write (Cowork cloud; Trevor: "Keep going and do all you can")
+
+- **Found:** pg_cron `rpc-allday-ev-corrected-refresh` (jobid 65) failed at 10:47 AM PT — `duplicate key … mv_allday_pack_ev_corrected_dist (dist_id)=(165)`. It would have failed every 6 h from then on, freezing the All Day pack EV every pack page reads at its 4:47 AM values.
+- **Cause:** `compute-allday-pack-ev` v11 (11-18, Studio → Atlas) writes `pack_listing_id = node.uuid`. For 48 distributions at the tail of its ~40 h walk (offsets ≥ 3000, Playbook reward packs, reached 10:38–11:08 AM PT) Atlas’s uuid differs from Studio’s, so `pack_ev_latest` (DISTINCT ON listing id) held two rows per distribution and the view’s join on `dist_id` doubled them. No distribution in any collection had ever had two listing ids before today.
+- **Fix:** AFTER INSERT trigger `pack_ev_history_allday_one_listing_id_trg` re-keys a distribution’s earlier history rows to the id just written (the Atlas id — `pack_ask_state` already uses it: 32 rows on the new ids, 0 on the old). One-time re-key of the 48 flipped distributions (3,291 rows). ~130 distributions are still to be walked today; the trigger covers them.
+- **Verified:** 0 distributions with two ids in `pack_ev_history` and `pack_ev_latest`; a one-off `REFRESH … CONCURRENTLY` as `cron_heavy` at 11:19 AM PT succeeded in 84 s (2,949 rows) and was unscheduled. Next scheduled tick 4:47 PM PT.
+- **Watch:** `select count(*) from (select dist_id from pack_ev_history where collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070' group by 1 having count(distinct pack_listing_id) > 1) z` → 0; jobid 65 succeeds at 4:47 PM and 10:47 PM PT.
+- **For whoever next edits `compute-allday-pack-ev`:** its header says the Atlas move kept "same tables, same columns" — true of columns, not of the uuid for reward distributions. The trigger makes the table right whatever the function writes; the function itself was not redeployed.
+- **Revert:** drop the trigger and function (commands in the migration header). The re-key is not reverted.
+
 ### 2026-11-20 ~8:12 AM PT · 🗄 APPLIED (`20261120161120`) — `get_top_movers` probes `sales` only for the rows it returns; the laptop fallback is confirmed standing down (Cowork cloud; Trevor: "Keep going")
 
 - **Why:** `/api/profile/top-movers` hit its 25 s bound for the 15.8k-moment wallet (jamesdillonbond) on 11-18 10:59 PM and 11-20 5:39 AM PT. The function tested "traded inside the window" for every owned edition before ranking: 10,517 probes into `sales_2026`, 5,978 of the call’s 6,993 cold block reads (6.9 s of 8.3 s).
