@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-20 ~1:25 AM PT · 📝 DOCS — overnight pass: 0 shipped (quiet-and-honest); post-ship watch of the 11-19 evening ships all clean; Candy status-row re-verify QUEUED (Cowork cloud)
+
+- **Reviewed + triaged only — no code/DB change.** Health GREEN; security `[]` (4 arms), stalled `[]`, 0 HIGH/CRITICAL, sentinel UUID 0/0. One sense-only trust breach `candy_revival_sales_since_recorded_silence` $429.83 (Candy resumed real trading, not a trickle). Post-ship watch of the 11-19 evening ships all clean (Panini board MV only jobid 898 no-dup; TopNav stole-it 0/48h; ghost-purge 09:10Z tick 33.4 s ok; apply-fmv-haircut HEAVY_LAST deployed, falsifier 2:35 PM PT 11-20; prod `ff383f0b0` READY 0 ERROR).
+- **QUEUED (night-count 1):** re-verify the `v_collection_marketplace_status` candy_mlb row and decide the user-facing wording (open/thin vs a genuine re-date) — a sixth blind re-date of `silent_since` would record a falsehood. Trevor's/product call; sense-only.
+- **Attempted, permission-denied:** `remap_topshot_from_onchain_map()` one-off (daytime inbox cand. 2); self-heals 11-21 05:53Z.
+- **Revert:** not needed (docs only).
+
 ### 2026-11-19 ~11:20 PM PT · ⚠ CI was RED on `4f5cb54` for one push (ledger no-clobber guard) — my own time correction; green again from this commit (Cowork cloud)
 
 - I had stamped three of tonight's headings 15–25 minutes ahead of the real clock (estimated, not read), then corrected the TIMES in the headings in `4f5cb54`. The no-clobber guard exempts a re-DATE (same text after the `### <date>` prefix) but a changed time is changed wording, so it counted 3 headings as lost and failed CI. No entry was lost: the three entries are intact under their corrected headings (~10:00 PM docs, ~11:00 PM cron_heavy/light-theme, ~11:05 PM addendum). Lesson added to `docs/reference/ledger-discipline.md`: read the clock (`TZ=America/Los_Angeles date`) before stamping, and correct a wrong TIME in the entry body, never in its heading. **Revert:** not needed.
