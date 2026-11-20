@@ -815,7 +815,7 @@ async function fetchPaniniMarketListings(
   }
 ): Promise<any[] | null> {
   const window = Math.max(filters.limit, 500)
-  // ⭐ STORED COPY FIRST (2026-11-19, `mv_panini_market_board`, refreshed every 30 min):
+  // ⭐ STORED COPY FIRST (2026-11-19, `mv_panini_market_board`, refreshed hourly):
   // the live view aggregates every listed serial per read (~500k buffers; cold reads
   // passed the 8 s bound and 503'd the tab — register R152). `readBoard(STORED)` runs
   // the same filters and order on the copy; the live view is read only when the copy

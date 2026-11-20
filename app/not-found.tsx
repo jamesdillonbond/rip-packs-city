@@ -1,4 +1,5 @@
 import Link from "next/link";
+import ThemeReassert from "@/components/ThemeReassert"
 import type { Metadata } from "next";
 
 // 2026-11-06 (Search Console: 61 "Duplicate without user-selected canonical"
@@ -28,6 +29,7 @@ export const metadata: Metadata = {
 export default function NotFound() {
   return (
     <main
+      data-rpc-not-found
       style={{
         minHeight: "100vh",
         background: "transparent",
@@ -40,6 +42,7 @@ export default function NotFound() {
         gap: 18,
       }}
     >
+      <ThemeReassert />
       <div
         style={{
           fontFamily: "var(--font-mono)",

@@ -52,6 +52,7 @@ import {
   type ConciergeErrorMode,
 } from "@/lib/concierge/errors";
 import { editionKeyCollectionMismatch } from "@/lib/concierge/edition-key";
+import { sortPlayerEditionsByFmv } from "@/lib/concierge/player-editions-order";
 import { resolvePlayerName, identityContextFor, playerLabelsFor, singleRetryLabel, type PlayerResolution } from "@/lib/concierge/player-identity";
 import { retryEmptyPlayerSearch } from "@/lib/search/player-search-retry";
 import { textIncludes } from "@/lib/filter-match";
@@ -979,6 +980,7 @@ const TOOLS: Anthropic.Tool[] = [
         collectionId: { type: "string", description: "Collection id: nba-top-shot, nfl-all-day, laliga-golazos, ufc. Defaults to the page's active collection, else nba-top-shot." },
         tier: { type: "string", description: "Optional tier filter (COMMON, FANDOM, RARE, LEGENDARY, ULTIMATE)." },
         limit: { type: "number", description: "Rows to return after ranking by FMV, 1..40, default 15." },
+        order: { type: "string", description: "fmv_desc (default: most valuable first) or fmv_asc (CHEAPEST priced edition first — use it for 'what is X's cheapest / most affordable moment'). Unpriced editions sort last either way. With fmv_asc, read cheapest_is_exact: false means the player has 200+ editions and only the 200 most valuable were ranked." },
       },
       required: ["playerName"],
     },
@@ -6491,7 +6493,11 @@ async function executeToolInner(
       const tier = String(toolInput.tier ?? "").trim().toUpperCase();
       const limit = Math.min(Math.max(Math.trunc(Number(toolInput.limit ?? 15)) || 15, 1), 40);
       const filtered = tier ? all.filter((r) => String(r.tier ?? "").toUpperCase() === tier) : all;
-      const ranked = [...filtered].sort((a, b) => (Number(b.fmv_usd ?? -1)) - (Number(a.fmv_usd ?? -1)));
+      // 2026-11-19: "what is X's cheapest moment" could not be answered — the rank was always
+      // most-valuable-first and the page is capped at 40, so a 130-edition player's cheapest
+      // edition was never in the slice. fmv_asc ranks the same 200-row read the other way.
+      const ascending = String(toolInput.order ?? "").trim().toLowerCase() === "fmv_asc";
+      const ranked = sortPlayerEditionsByFmv(filtered, ascending);
       const page = ranked.slice(0, limit);
       const meta = await fetchEditionMetadata(supabase, uuid, page.map((r) => r.route_slug));
       const byTier: Record<string, number> = {};
@@ -6513,7 +6519,8 @@ async function executeToolInner(
         fmv_sum_of_priced_editions_usd: Math.round(fmvSum * 100) / 100,
         tier_filter: tier || null,
         returned: page.length,
-        ranked_by: "fmv_usd desc (unpriced last)",
+        ranked_by: ascending ? "fmv_usd asc (unpriced last)" : "fmv_usd desc (unpriced last)",
+        ...(ascending ? { cheapest_is_exact: all.length < 200 } : {}),
         editions: page.map((r) => ({
           editionKey: r.route_slug ?? null,
           set: r.set_name ?? null,

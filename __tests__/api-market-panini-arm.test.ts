@@ -200,8 +200,8 @@ describe("GET /api/market — Panini arm", () => {
     expect(ops).not.toContain("panini_market_board:read")
   })
 
-  it("a stored copy older than 2 h is not answered from: the live view is read instead", async () => {
-    install({ ...board(), mv_panini_market_board: { data: [storedRow(new Date(Date.now() - 3 * 3_600_000).toISOString())], error: null } })
+  it("a stored copy older than 3 h is not answered from: the live view is read instead", async () => {
+    install({ ...board(), mv_panini_market_board: { data: [storedRow(new Date(Date.now() - 4 * 3_600_000).toISOString())], error: null } })
     const got = await names(await GET(req(`https://t/api/market?collectionId=${PANINI}`)))
     expect(got).not.toContain("Stored Copy")
     expect(got).toContain("Lionel Messi")

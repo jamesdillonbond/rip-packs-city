@@ -2,14 +2,14 @@
 // Kept out of the route file so a route exports only its handlers.
 //
 // `mv_panini_market_board` (migration audit_20261119_panini_market_board_mv) is a stored copy of
-// the `panini_market_board` view + `computed_at`, refreshed every 30 min by pg_cron
+// the `panini_market_board` view + `computed_at`, refreshed hourly by pg_cron
 // `rpc-panini-market-board`. The live view aggregates every listed serial per read (~500k
 // buffers), which passed the route's 8 s bound on a cold cache (register R152).
 
 export const PANINI_BOARD_STORED = "mv_panini_market_board"
 export const PANINI_BOARD_LIVE = "panini_market_board"
-// Four missed 30-minute refreshes: past this the copy is not answered from.
-export const PANINI_BOARD_MAX_AGE_MS = 2 * 60 * 60 * 1000
+// Two missed hourly refreshes and then some: past this the copy is not answered from.
+export const PANINI_BOARD_MAX_AGE_MS = 3 * 60 * 60 * 1000
 /** True when the stored board's rows may be answered from. An EMPTY result is usable (a
  *  filter that matches nothing; the copy is never empty unfiltered, a refresh keeps the old
  *  rows on failure). Rows with no readable `computed_at`, or one older than the bound, are not. */

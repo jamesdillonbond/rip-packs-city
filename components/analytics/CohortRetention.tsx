@@ -30,10 +30,12 @@ function monthLabel(iso: string): string {
 }
 
 function colorFor(pct: number): { bg: string; text: string } {
-  // brand-exception: text colors here sit on a green retention-heat fill — gray/near-black on color is intentional and theme-independent
-  if (pct < 10) return { bg: "rgba(16,185,129,0.06)", text: "#a1a1aa" }
-  if (pct < 25) return { bg: "rgba(16,185,129,0.15)", text: "#d4d4d8" }
-  if (pct < 40) return { bg: "rgba(16,185,129,0.28)", text: "#e4e4e7" }
+  // The three faint fills are mostly the page canvas showing through, so their text follows the
+  // theme (2026-11-19: the fixed pale greys read 1.27:1 on the light canvas — "38%" on /analytics/loans).
+  if (pct < 10) return { bg: "rgba(16,185,129,0.06)", text: "var(--rpc-text-muted)" }
+  if (pct < 25) return { bg: "rgba(16,185,129,0.15)", text: "var(--rpc-text-secondary)" }
+  if (pct < 40) return { bg: "rgba(16,185,129,0.28)", text: "var(--rpc-text-primary)" }
+  // brand-exception: from here the fill is a solid green — near-black on colour is intentional and theme-independent
   if (pct < 60) return { bg: "rgba(16,185,129,0.45)", text: "#18181b" }
   if (pct < 80) return { bg: "rgba(16,185,129,0.7)", text: "#18181b" }
   return { bg: "rgba(16,185,129,0.95)", text: "#18181b" }

@@ -17,7 +17,7 @@
 //   node scripts/qa/light-contrast-sweep.mjs --file paths.txt      (one path per line or space-separated)
 //   ⚠ Git Bash rewrites a leading "/" into a Windows path: prefix MSYS_NO_PATHCONV=1.
 //
-// ENV  RPC_QA_BASE (default https://www.rippackscity.com) · RPC_QA_CONC (default 3) · RPC_QA_SETTLE_MS (9000)
+// ENV  RPC_QA_CHROME (explicit Chromium binary) · RPC_QA_BASE (default https://www.rippackscity.com) · RPC_QA_CONC (default 3) · RPC_QA_SETTLE_MS (9000)
 //
 // OUTPUT  one JSON line per FLAGGED page (or a page that failed to load / did not render light), then
 //   "checked N; flagged M". Exit code 1 when anything is flagged.
@@ -90,7 +90,9 @@ function measure() {
   return { theme, lowContrast: bad.length, sample: bad.slice(0, 6), darkPanels: panels.slice(0, 4) }
 }
 
-const browser = await chromium.launch()
+// RPC_QA_CHROME: an explicit Chromium binary, as in mobile-sweep.mjs (the cloud sandbox ships a
+// different revision than the repo's Playwright expects and `playwright install` is forbidden there).
+const browser = await chromium.launch(process.env.RPC_QA_CHROME ? { executablePath: process.env.RPC_QA_CHROME } : {})
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } })
 await ctx.addInitScript(() => {
   try {

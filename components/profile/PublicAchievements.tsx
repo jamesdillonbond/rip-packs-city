@@ -11,7 +11,7 @@ const labelStyle: React.CSSProperties = {
   fontSize: 11,
   fontFamily: monoFont,
   letterSpacing: "0.2em",
-  color: "rgba(255,255,255,0.5)",
+  color: "var(--rpc-text-muted)",
   textTransform: "uppercase",
 };
 

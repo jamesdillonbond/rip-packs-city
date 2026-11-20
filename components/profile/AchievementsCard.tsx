@@ -254,7 +254,7 @@ export default function AchievementsCard(props: { ownerKey: string }) {
                         style={{
                           fontFamily: monoFont,
                           fontSize: 9,
-                          color: "rgba(255,255,255,0.5)",
+                          color: "var(--rpc-text-muted)",
                           marginTop: 2,
                         }}
                       >
@@ -304,7 +304,7 @@ export default function AchievementsCard(props: { ownerKey: string }) {
                       fontFamily: condensedFont,
                       fontWeight: 700,
                       fontSize: 12,
-                      color: "rgba(255,255,255,0.5)",
+                      color: "var(--rpc-text-muted)",
                     }}
                   >
                     {def.name}
@@ -314,7 +314,7 @@ export default function AchievementsCard(props: { ownerKey: string }) {
                       style={{
                         fontFamily: monoFont,
                         fontSize: 9,
-                        color: "rgba(255,255,255,0.5)",
+                        color: "var(--rpc-text-muted)",
                         marginTop: 2,
                         opacity: 0.7,
                       }}
