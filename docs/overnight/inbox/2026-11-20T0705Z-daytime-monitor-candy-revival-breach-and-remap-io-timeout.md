@@ -40,3 +40,11 @@ Run `SELECT public.remap_topshot_from_onchain_map();` once (in a quiet window) t
 - `compute-pinnacle-pack-ev` severity: resolved 11-19 (`20261119171500` caps the Atlas challenge at medium); snapshot shows **0 HIGH** alerts this sweep.
 - All `pipeline_alerts` medium/info rows are the recovering #218 Dapper 530 window (streak-split to info) or designed Atlas/Flow Cloudflare base-rate rows — none escalated.
 - Security invariants/anon-write/RLS-off/secdef-anon all `[]`; `detect_stalled_pipelines()` []; sentinel TS-UUID-48h 0; `ts_uuid_dupes_created_24h` 0; 13/13 dashboards' objects + 5 RPC fns resolve; Vercel 0 ERROR (last READY ff383f0b; newest docs commit 91f33950b CANCELED); recent ship `panini-market-board` hourly cron_heavy 06:37Z ok 83.6s.
+
+## Addendum — 2026-11-19 ~11:20 PM PT (Cowork cloud, evening audit pass) — composition of the 11-19 Candy day, for whoever re-verifies
+
+Read from `sales` ⋈ `editions`, Candy, 11-19 PT (midnight to midnight): **44 sales, 15 distinct buyers, 9 distinct sellers, 23 sets**, first 5:50 AM PT, last 8:15 PM PT; median $0.51, max $148.99 (2023 Showstopper ICONs). By value: 2024 MLB Postseason Gems $75.44 (1), 2025 MLB Starting 9 ICONs $65.13 (2), 2025 MLB Rookie ICONS $40.24 (1), **2026 MLB Base Series ICONs $21.91 (4)**, 2025 All-Star ICONS $20.87 (2). Daily counts 11-16 → 11-19: 3, 8, 13, 44.
+
+Two things differ from every earlier re-date note on the `candy_mlb` row: this day includes sales in a 2026 set (the notes of 11-12, 11-14 and 11-18 each say "none in a 2026 set"), and the buyers are many rather than one batch. That reads as trading resuming at a low level, not a dust trickle, so a sixth re-date of `silent_since` may be the wrong record. Not changed from this session: the status row is the night pass's to re-verify (it wrote the last five), and what the row should say when a market is open but thin is a wording decision.
+
+Candidate 2 (`rpc-topshot-misattrib-remap`): NOT run from this session — scheduling a one-off pg_cron job for `remap_topshot_from_onchain_map()` was refused by the session's permission system, and the function runs 50–120 s, past the MCP's 60 s statement cap. It re-runs by itself at the 9:53 PM PT tick on 11-20. Run it by hand before then only if a day's lag in Top Shot sale re-attribution matters.
