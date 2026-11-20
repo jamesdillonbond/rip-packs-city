@@ -43,7 +43,7 @@ CI, Smoke Tests and E2E DOM Smoke were green on `ca49163`. Verified live at ~10:
 
 Light-theme pass, concierge probes, scheduled-task prompts, dashboard artifacts (all read 11-17 → 11-19 by other passes); `metrics-latest.json` left for the 1:00 AM PT nightly pass; the laptop tree and Task Scheduler (no folder attached).
 
-## Addendum — 10:03 PM → ~11:30 PM PT (Trevor: "Take action on everything you outlined … Don't stop until you have exhausted all of your capabilities")
+## Addendum — 10:03 PM → ~11:10 PM PT (Trevor: "Take action on everything you outlined … Don't stop until you have exhausted all of your capabilities")
 
 **Queue items, each acted on or closed with the reason:**
 
@@ -64,7 +64,7 @@ Light-theme pass, concierge probes, scheduled-task prompts, dashboard artifacts 
 
 **Shipped in this addendum:** `6efd74e` (stored board, analytics tile, QA readme), `ff383f0` (cron_heavy refresher, light-theme fixes, concierge order, sweep env).
 
-**Verified live after `ff383f0` (~11:25 PM PT):** the light sweep reads 0 flags on `/profile/absolutsiikness`, `/profile/jamesdillonbond`, `/analytics/loans` and a 404; the concierge answered "What is Steph Curry's cheapest moment on Top Shot?" with the S3 Base Common at $0.35 FMV and the next four; Smoke Tests green.
+**Verified live after `ff383f0` (~11:03 PM PT):** the light sweep reads 0 flags on `/profile/absolutsiikness`, `/profile/jamesdillonbond`, `/analytics/loans` and a 404; the concierge answered "What is Steph Curry's cheapest moment on Top Shot?" with the S3 Base Common at $0.35 FMV and the next four; CI, Smoke Tests and E2E DOM Smoke green on `ff383f0`.
 
 **Watch:** `select ok, duration_ms from pipeline_runs where pipeline = 'panini-market-board' order by started_at desc limit 6` — all ok, under 600 s. A Vercel log line "panini stored board err, reading live" means the copy went unreadable. One ok=false row at 10:07 PM PT 11-19 is this session's own verification query.
 

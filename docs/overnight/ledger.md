@@ -12,11 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
-### 2026-11-19 ~11:30 PM PT · 📝 DOCS — evening audit pass addendum: queue items acted on or closed with reasons; R152 resolved; focus steer updated (Cowork cloud)
+### 2026-11-19 ~11:05 PM PT · 📝 DOCS — evening audit pass addendum: queue items acted on or closed with reasons; R152 resolved; focus steer updated (Cowork cloud)
 
 - `docs/handoff-2026-11-19-evening-audit-pass.md` addendum (what was done for each of the six queued items, the newly covered areas, live verification). `deep-audit-register.md`: R152 resolved note. `focus.md`: the Panini 503 read is superseded by the stored board; the GitHub schedule HOLD carries its measurement (62 of ~817 scheduled runs delivered in 24 h; 184 fallback dispatches). Laptop: four already-landed overnight patches moved from `cowork-push/queue` to `cowork-push/applied`. No code or DB change. **Revert:** not needed (docs).
 
-### 2026-11-19 ~11:15 PM PT — Panini board refresher moved to cron_heavy, hourly; light-theme fixes (public profile card, retention heatmap, 404 page); concierge can rank a player's editions cheapest-first (Cowork cloud; Trevor: "Don't stop until you have exhausted all of your capabilities")
+### 2026-11-19 ~11:00 PM PT — Panini board refresher moved to cron_heavy, hourly; light-theme fixes (public profile card, retention heatmap, 404 page); concierge can rank a player's editions cheapest-first (Cowork cloud; Trevor: "Don't stop until you have exhausted all of your capabilities")
 
 - **Migration `20261120064304_audit_20261119_panini_market_board_refresh_hourly_as_cron_heavy`** (applied; file committed): the 10:37 PM PT tick of `rpc-panini-market-board` took 83.7 s under postgres (120 s ceiling), so the job is re-created under `cron_heavy` (600 s) as jobid 898 at `37 * * * *`; EXECUTE granted to cron_heavy, anon still false. The route's freshness bound went 2 h → 3 h (`PANINI_BOARD_MAX_AGE_MS`). Production reads of the copy: 6 query shapes, 6–56 ms (one 386 ms), ≤ 3.3k buffers. **Revert:** in the migration header.
 - **Light theme (found with `scripts/qa/light-contrast-sweep.mjs`, 116 pages):** `components/profile/CollectionBreakdownCard.tsx` painted white text on the light canvas (1:1 on `/profile/<user>`: collection names, counts, values) — now `--rpc-text-primary` / `--rpc-text-muted` / `--rpc-bg-elev` / border tokens; the muted grey in `AchievementsCard` and `PublicAchievements` follows the theme too. `components/analytics/CohortRetention.tsx`: the three faint heat tiers used fixed pale greys (1.27:1 on `/analytics/loans`) — now theme text tokens. A 404 rendered dark for a light-theme visitor (no `data-theme` on `<html>` on a not-found render): `components/ThemeReassert.tsx` re-applies the saved preference from `app/not-found.tsx`.
@@ -36,7 +36,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 - **Revert:** revert the code commit (find by message "Panini Market reads a stored board"); `SELECT cron.unschedule('rpc-panini-market-board'); DROP FUNCTION public.refresh_panini_market_board(); DROP MATERIALIZED VIEW public.mv_panini_market_board;`
 - Falsifier: `select ok, duration_ms from pipeline_runs where pipeline='panini-market-board' order by started_at desc limit 6` all ok; Vercel `/api/market` Panini 503s at ~0; a log line "panini stored board err, reading live" means the copy went unreadable.
 
-### 2026-11-19 ~10:20 PM PT · 📝 DOCS — evening audit pass handoff; six monitor filings marked RESOLVED; R152 re-measure; focus steer (Cowork cloud)
+### 2026-11-19 ~10:00 PM PT · 📝 DOCS — evening audit pass handoff; six monitor filings marked RESOLVED; R152 re-measure; focus steer (Cowork cloud)
 
 - `docs/handoff-2026-11-19-evening-audit-pass.md` (health, security, SEO, QA and traffic reads; queue of 6). Six daytime-monitor filings dated 11-17 → 11-19 carry a ✅ RESOLVED section and INDEX marker, each with the evidence read tonight. `deep-audit-register.md`: R152 market half re-measured (5 of 9 uncached requests 503'd). `focus.md`: two dated reads (Panini market 503s ~11-26; GitHub schedule cleanup stays on HOLD). No code or DB change. **Revert:** not needed (docs).
 
