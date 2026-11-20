@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-19 ~11:20 PM PT · ⚠ CI was RED on `4f5cb54` for one push (ledger no-clobber guard) — my own time correction; green again from this commit (Cowork cloud)
+
+- I had stamped three of tonight's headings 15–25 minutes ahead of the real clock (estimated, not read), then corrected the TIMES in the headings in `4f5cb54`. The no-clobber guard exempts a re-DATE (same text after the `### <date>` prefix) but a changed time is changed wording, so it counted 3 headings as lost and failed CI. No entry was lost: the three entries are intact under their corrected headings (~10:00 PM docs, ~11:00 PM cron_heavy/light-theme, ~11:05 PM addendum). Lesson added to `docs/reference/ledger-discipline.md`: read the clock (`TZ=America/Los_Angeles date`) before stamping, and correct a wrong TIME in the entry body, never in its heading. **Revert:** not needed.
+
 ### 2026-11-19 ~11:05 PM PT · 📝 DOCS — evening audit pass addendum: queue items acted on or closed with reasons; R152 resolved; focus steer updated (Cowork cloud)
 
 - `docs/handoff-2026-11-19-evening-audit-pass.md` addendum (what was done for each of the six queued items, the newly covered areas, live verification). `deep-audit-register.md`: R152 resolved note. `focus.md`: the Panini 503 read is superseded by the stored board; the GitHub schedule HOLD carries its measurement (62 of ~817 scheduled runs delivered in 24 h; 184 fallback dispatches). Laptop: four already-landed overnight patches moved from `cowork-push/queue` to `cowork-push/applied`. No code or DB change. **Revert:** not needed (docs).
