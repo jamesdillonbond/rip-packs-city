@@ -4,10 +4,12 @@
 --      contract list uses;
 --   2. the SELLER side keeps a seller's sell-back proceeds (real money to the seller);
 --   3. the registry is per collection: the same address buying in a collection it is NOT registered
---      for still ranks.
+--      for still ranks;
+--   4. (2026-11-20) a Pinnacle-only board ranks pinnacle_sales alone and takes is_returning from Pinnacle
+--      history alone (the Flow sales table is not read for it); a mixed board sums both legs.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261004004247_audit_20261003_buyer_signals_exclude_buyback_wallets.sql).
+-- (supabase/migrations/20261121030008_audit_20261120_sales_leaderboard_pinnacle_skips_flow_sales.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 
 BEGIN;
@@ -41,6 +43,7 @@ DECLARE
   sales_floor constant timestamptz := '2025-01-01 00:00:00+00';
   v_long text[];
   v_pinnacle boolean;
+  v_flow boolean;
   v_start timestamptz;
 BEGIN
   IF p_role NOT IN ('buyer', 'seller') THEN
@@ -57,7 +60,12 @@ BEGIN
                                   WHEN 'golazos' THEN 'laliga_golazos' WHEN 'ufc' THEN 'ufc_strike' ELSE x END
                     FROM unnest(p_collections) AS x);
     v_pinnacle := ('pinnacle' = ANY(p_collections));
+    -- 2026-11-20: 'pinnacle' lives only in pinnacle_sales (0 rows in sales). Left in v_long it made a
+    -- Pinnacle-only board walk each top address's ENTIRE sales history in the is_returning probes to prove a
+    -- negative (~28k rows for the top 10 sellers; one call hit the statement timeout during a 10-board burst).
+    v_long := ARRAY(SELECT x FROM unnest(v_long) AS x WHERE x <> 'pinnacle');
   END IF;
+  v_flow := (v_long IS NULL OR cardinality(v_long) > 0);
   v_start := GREATEST(COALESCE(p_start_at, sales_floor), sales_floor);
 
   RETURN QUERY
@@ -65,7 +73,8 @@ BEGIN
     SELECT (CASE WHEN p_role = 'buyer' THEN s.buyer_address ELSE s.seller_address END)::text AS w_addr,
            s.price_usd, s.sold_at
     FROM sales s
-    WHERE s.sold_at >= v_start
+    WHERE v_flow
+      AND s.sold_at >= v_start
       AND (p_end_at IS NULL OR s.sold_at < p_end_at)
       AND (v_long IS NULL OR s.collection = ANY(v_long))
       AND (CASE WHEN p_role='buyer' THEN s.buyer_address ELSE s.seller_address END) IS NOT NULL
@@ -100,8 +109,8 @@ BEGIN
     t.w_addr, t.w_sale_count, t.w_volume_usd, t.w_avg_price,
     -- is_returning: <= p_limit index probes on the address indexes, instead of a DISTINCT over every prior sale.
     (p_start_at IS NOT NULL AND (
-       (p_role = 'buyer'  AND EXISTS (SELECT 1 FROM sales s2 WHERE s2.buyer_address  = t.w_addr AND s2.sold_at >= sales_floor AND s2.sold_at < p_start_at AND (v_long IS NULL OR s2.collection = ANY(v_long))))
-       OR (p_role = 'seller' AND EXISTS (SELECT 1 FROM sales s2 WHERE s2.seller_address = t.w_addr AND s2.sold_at >= sales_floor AND s2.sold_at < p_start_at AND (v_long IS NULL OR s2.collection = ANY(v_long))))
+       (v_flow AND p_role = 'buyer'  AND EXISTS (SELECT 1 FROM sales s2 WHERE s2.buyer_address  = t.w_addr AND s2.sold_at >= sales_floor AND s2.sold_at < p_start_at AND (v_long IS NULL OR s2.collection = ANY(v_long))))
+       OR (v_flow AND p_role = 'seller' AND EXISTS (SELECT 1 FROM sales s2 WHERE s2.seller_address = t.w_addr AND s2.sold_at >= sales_floor AND s2.sold_at < p_start_at AND (v_long IS NULL OR s2.collection = ANY(v_long))))
        OR (v_pinnacle AND p_role = 'buyer'  AND EXISTS (SELECT 1 FROM pinnacle_sales p2 WHERE p2.buyer_address  = t.w_addr AND p2.sold_at < p_start_at))
        OR (v_pinnacle AND p_role = 'seller' AND EXISTS (SELECT 1 FROM pinnacle_sales p2 WHERE p2.seller_address = t.w_addr AND p2.sold_at < p_start_at))
     )) AS is_returning,
@@ -119,7 +128,12 @@ INSERT INTO public.buyback_wallets VALUES ('00000000-0000-0000-0000-0000000000a1
 INSERT INTO public.sales VALUES
   ('0x00000000000000c1', '0x00000000000000s1', 200, now() - interval '1 day', 'nba_top_shot', '00000000-0000-0000-0000-0000000000a1'),
   ('0x00000000000000bb', '0x00000000000000s2', 500, now() - interval '1 day', 'nba_top_shot', '00000000-0000-0000-0000-0000000000a1'),
-  ('0x00000000000000bb', '0x00000000000000s3', 150, now() - interval '1 day', 'nfl_all_day',  '00000000-0000-0000-0000-0000000000a2');
+  ('0x00000000000000bb', '0x00000000000000s3', 150, now() - interval '1 day', 'nfl_all_day',  '00000000-0000-0000-0000-0000000000a2'),
+  ('0x00000000000000c2', '0x00000000000000s9', 400, now() - interval '40 days', 'laliga_golazos', '00000000-0000-0000-0000-0000000000a3');
+INSERT INTO public.pinnacle_sales VALUES
+  ('0x00000000000000p1', '0x00000000000000s1', 300, now() - interval '1 day'),   -- s1 also sold Top Shot in-window
+  ('0x00000000000000p1', '0x00000000000000s1',  50, now() - interval '40 days'), -- s1's PRIOR Pinnacle sale -> returning
+  ('0x00000000000000p2', '0x00000000000000s9', 120, now() - interval '2 days');  -- s9: prior FLOW (Golazos) sale only -> not returning on Pinnacle
 
 DO $do$
 BEGIN
@@ -135,6 +149,14 @@ BEGIN
   PERFORM _assert_eq((SELECT string_agg(addr || ':' || total_volume_usd, ',' ORDER BY addr)
                         FROM public.analytics_sales_leaderboard('buyer', NULL, NULL, ARRAY['allday'], 25, 100, false)),
     '0x00000000000000bb:150.00', 'registered for Top Shot only, it still ranks in All Day (claim 3)');
+  PERFORM _assert_eq((SELECT string_agg(addr || ':' || total_volume_usd || ':' || is_returning, ',' ORDER BY addr)
+                        FROM public.analytics_sales_leaderboard('seller', now() - interval '30 days', NULL, ARRAY['pinnacle'], 25, 100, false)),
+    '0x00000000000000s1:300.00:true,0x00000000000000s9:120.00:false',
+    'Pinnacle-only board: Pinnacle volume only, returning from Pinnacle history only (claim 4)');
+  PERFORM _assert_eq((SELECT string_agg(addr || ':' || total_volume_usd, ',' ORDER BY addr)
+                        FROM public.analytics_sales_leaderboard('seller', now() - interval '30 days', NULL, ARRAY['topshot','pinnacle'], 25, 100, false)),
+    '0x00000000000000s1:500.00,0x00000000000000s2:500.00,0x00000000000000s9:120.00',
+    'a mixed board sums both legs (claim 4)');
 END
 $do$;
 

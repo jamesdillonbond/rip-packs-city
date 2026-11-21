@@ -3676,7 +3676,7 @@ const PINS = [
     // are asked for); the seller board keeps sell-back proceeds; the registry is per collection.
     fn: "analytics_sales_leaderboard",
     test: "supabase/tests/analytics_sales_leaderboard.sql",
-    migration: "supabase/migrations/20261004165000_audit_20261004_sales_leaderboard_buyback_check_stays_index_only.sql",
+    migration: "supabase/migrations/20261121030008_audit_20261120_sales_leaderboard_pinnacle_skips_flow_sales.sql",
   },
   {
     // Added 2026-10-10 (#65). Writes the latest Atlas edition list of a Top Shot dist into
