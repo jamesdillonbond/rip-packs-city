@@ -3720,10 +3720,11 @@ const PINS = [
   {
     // Added 2026-11-20: the owner-moved retirer also accepts a completed single-run LEGACY collection
     // census after first_seen + 20 min as evidence (the legacy census is insert-only, so ~9.6k
-    // pre-migration phantom asks never met the row-level last_seen_at gate).
+    // pre-migration phantom asks never met the row-level last_seen_at gate), or a CLEAN multi-run walk
+    // that began after first_seen (candy_collections.last_census_clean_walk_started_at, same day).
     fn: "candy_retire_listings_owner_moved",
     test: "supabase/tests/candy_retire_listings_owner_moved.sql",
-    migration: "supabase/migrations/20261121004754_audit_20261120_candy_owner_moved_reads_collection_census.sql",
+    migration: "supabase/migrations/20261121010254_audit_20261120_candy_owner_moved_multi_run_walks.sql",
   },
 ]/**
  * Find the first `CREATE OR REPLACE FUNCTION public.<name>` occurrence that is

@@ -200,6 +200,10 @@ describe("runCollectionsCensus", () => {
     // followed to an empty page before the walk ended (2026-11-13: a short page alone does not end a walk)
     expect(state.dasCalls).toEqual([null, "A#1", "A#2"])
     expect(typeof last.last_census_at).toBe("string")
+    // 2026-11-20: a clean walk records when it BEGAN (holder rows are insert-only, so this is the only
+    // record of when every card's owner was last confirmed; the owner-moved retirer reads it).
+    const began = state.updates.find((u) => u.address === "A" && u.patch.census_walk_started_at)!.patch.census_walk_started_at
+    expect(last.last_census_clean_walk_started_at).toBe(began)
     // The ghost purge is SCOPED to the moments this run inserted — never the unscoped
     // whole-collection rank that timed out at 120 s on 1.4M rows.
     expect(state.rpcs).toEqual(["purge_candy_wmc_ghost_rows_for"])
@@ -292,6 +296,24 @@ describe("runCollectionsCensus", () => {
     expect(last.census_page).toBe(1)
     expect(last.census_cursor).toBeNull()
     expect(last.last_census_items).toBeNull()
+    // not tracked from its start: when it began is not known to be clean -> NULL, never a guess
+    expect(last.last_census_clean_walk_started_at).toBeNull()
+  })
+
+  it("a TRACKED, clean walk resumed across runs records the start saved when it began", async () => {
+    state.queue = [{ address: "A", name: "A", census_page: 2, census_cursor: "A#1", census_walk_started_at: "2026-11-08T00:00:00Z", census_walk_tracked: true, census_walk_skipped: 0, census_walk_labelless_seen: [] }]
+    state.pages.A = [full(1000, "x"), full(5, "y")]
+    await runCollectionsCensus(db(), { budgetMs: 60_000 })
+    const last = state.updates.at(-1)!.patch
+    expect(last.last_census_items).toBeNull()
+    expect(last.last_census_clean_walk_started_at).toBe("2026-11-08T00:00:00Z")
+  })
+
+  it("a tracked walk that skipped a card in an EARLIER run records no clean start", async () => {
+    state.queue = [{ address: "A", name: "A", census_page: 2, census_cursor: "A#1", census_walk_started_at: "2026-11-08T00:00:00Z", census_walk_tracked: true, census_walk_skipped: 1, census_walk_labelless_seen: [] }]
+    state.pages.A = [full(1000, "x"), full(5, "y")]
+    await runCollectionsCensus(db(), { budgetMs: 60_000 })
+    expect(state.updates.at(-1)!.patch.last_census_clean_walk_started_at).toBeNull()
   })
 
   it("a walk the old PAGE-mode code left in flight (page > 1, no cursor) restarts from the top", async () => {
@@ -487,7 +509,7 @@ describe("runCollectionsCensus", () => {
     expect(written).toEqual(["m2"])
     // no edition was written under the name-only key
     expect(state.edUpserts.flatMap((u) => u.rows).map((e) => e.external_id)).not.toContain("ed-name-only")
-    expect(state.updates.at(-1)!.patch).toMatchObject({ last_census_items: null })
+    expect(state.updates.at(-1)!.patch).toMatchObject({ last_census_items: null, last_census_clean_walk_started_at: null })
     // WHY is reported, and 1 failed of 1 attempted (> 10 %) FAILS the run
     expect(r.hydrate_fail_reasons).toEqual({ "HTTP 404": 1 })
     expect(r.ok).toBe(false)

@@ -632,8 +632,14 @@ export async function runCollectionsCensus(
       const done = items.length === 0 || (items.length < PAGE_LIMIT && !nextCursor)
       // last_census_items is the walk's card count only when the whole walk ran in this
       // run; a walk resumed across runs reports NULL (unknown), never a partial count.
+      // last_census_clean_walk_started_at (2026-11-20) is when a CLEAN walk began — tracked from its
+      // start and no card skipped in any of its runs — else NULL. Holder rows are insert-only, so this
+      // is the only record of WHEN the census last confirmed every card's owner;
+      // candy_retire_listings_owner_moved() reads it to judge asks first seen before it. (The label
+      // record, recordOk, is the RETIRE step's own concern below, not the holders'.)
+      const cleanWalk = tracked && priorSkipped + skippedThisWalk === 0
       const patch = done
-        ? { census_page: 1, census_cursor: null, census_walk_started_at: null, last_census_at: nowIso, last_census_items: startedThisRun && skippedThisWalk === 0 ? cardsThisWalk : null, last_census_error: null, census_walk_tracked: false, census_walk_labelless_seen: [], census_walk_skipped: 0, census_walk_cards: 0 }
+        ? { census_page: 1, census_cursor: null, census_walk_started_at: null, last_census_at: nowIso, last_census_items: startedThisRun && skippedThisWalk === 0 ? cardsThisWalk : null, last_census_clean_walk_started_at: cleanWalk ? walkStarted : null, last_census_error: null, census_walk_tracked: false, census_walk_labelless_seen: [], census_walk_skipped: 0, census_walk_cards: 0 }
         : {
             census_page: page + 1, census_cursor: nextCursor, last_census_error: null,
             census_walk_labelless_seen: labellessKeys ? [...walkKeys].filter((k) => labellessKeys!.has(k)) : [],
