@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-20 ~5:28 PM PT · 🗄 APPLIED (`20261121012809`) — COST REGRESSION in my own 4:48 / 5:03 PM retirer migrations, fixed: the census arm is its own statement (Claude Code cloud; same thread)
+
+- **What I got wrong:** OR-ing the collection-census evidence into the 11-08 UPDATE as an `EXISTS` turned its per-ask index probe into a hash join over all ~1.37M Candy holdings. EXPLAIN ANALYZE (cold) of the predicate: 11-08 alone 56k buffers / 5.2 s · `20261121010254` **370k buffers / 17.2 s** · census arm as its own plain join 68k / 1.3 s (9,350 rows, same set). My pre-ship checks were correctness probes, which are silent about cost (CLAUDE.md measurement rule 5) — I read the plan only afterwards. No production run used the slow body (the caller's next run is 7:35 PM PT).
+- **Fix:** statement (1) is the 11-08 UPDATE byte-for-byte; statement (2) is the census arm with plain joins. Same rows; both count into `cards_retired`; new key `cards_retired_by_collection_census` (the indexer reads only the original four keys). Pin re-pinned + a per-arm assertion; passes on scratch Postgres. ACL unchanged; prosrc md5 `fb1bca5f…` → `8a22fd5b…`.
+- **Watch:** the 7:35 PM PT `candy-listings-indexer` run's `duration_ms` against its recent runs (it should not jump by ~15 s).
+- **Revert:** re-apply the body from `20261121010254` (same rows, slower plan).
+
 ### 2026-11-20 ~5:03 PM PT · 🗄 APPLIED (`20261121010254`) + 🔧 SHIPPED (code) — the owner-moved retirer can also judge LEGACY collections whose census walk spans several runs (Claude Code cloud; same thread)
 
 - **Why:** `20261121004754` (4:48 PM) only trusts a walk that started and finished in one run — the only kind whose start time could be inferred. ~265 phantom pre-migration asks sit in collections whose last walk spanned runs; after tonight's retirement they would be about a third of the legacy book, and nothing could ever judge them.
