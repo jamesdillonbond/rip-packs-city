@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-20 ~6:55 PM PT · 🔧 SHIPPED (code) — the UFC Aptos sales lane gets a positive control: an unknown marketplace purchase function fails the run instead of reading as "0 sales" (Claude Code cloud; Trevor: "Keep goin")
+
+- **Found:** `ufc-aptos-sales-ingest` (GHA, 4×/day) found 2,165 on 11-16 (history backfill) and 0 on every run since, with `buys: 0` — no marketplace purchase of ANY Aptos collection — across 3–7M versions per run. The newest stored UFC sale is 10-22. UFC on Aptos is genuinely thin (48 sales since August), so a quiet market is plausible; but the lane filters on a fixed list of TradePort/Rarible purchase entry functions, and a stale list reads exactly the same. Nothing could tell them apart, and its 4–6 runs/day sit under the zero-yield arm's 50-run floor. Aptos is unreachable from this sandbox (proxy + fetch DNS), so I could not settle which it is.
+- **Fix:** after its scan, the lane lists the entry functions TradePort/Rarible transfers actually used in the scanned range (`distinct_on`, one indexer call); a purchase-shaped one (`buy`/`accept`/`fill`/`purchase`/`sweep`/`take`) not in `BUY_FNS` → `ok=false`, the error names it and the version range to re-scan, exit 1. A failed probe is recorded (`probe_error`), not fatal. Report fields `marketplace_fns_seen`, `unknown_purchase_fns`. Classifier `scripts/lib/aptos-marketplace-fns.mjs` + 5 tests. Preflight green.
+- **Watch:** the next run's `extra.marketplace_fns_seen` — a non-empty list with no unknown purchase fn means the market really is quiet; an empty list over millions of versions means the indexer filter itself sees nothing (then the type filter is the suspect).
+- **Revert:** `git revert` the code commit.
+
 ### 2026-11-20 ~6:15 PM PT · 📏 CONTROL — the phantom-ask classification survives a fill test (Claude Code cloud; same thread; read-only)
 
 - **Challenge:** 15 Candy sales since reopening (11-06) were fills by the listing's own seller at its ask, several by pre-lock wallets — so "sold before the lock" alone does not mark an old custody wallet (pre-lock collectors still list and sell).
