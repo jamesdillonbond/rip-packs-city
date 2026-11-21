@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-20 ~8:46 PM PT · 🗄 APPLIED (`20261121044524`) — `candy-sales-indexer` zero-yield suppression retired (Cowork cloud, SQL editor in Trevor's Chrome; Trevor: "Proceed")
+
+Inbox `2026-11-21T0315Z` item 1. The suppression's own removal condition fired: `candy_mlb` `secondary_status` is `thin_since_2026_11_19` (premise re-read before the run). Migration's DO block asserts the premise, then one DELETE; `schema_migrations` row inserted in the same Run; Supabase destructive dialog confirmed. Read back: 0 suppression rows for the lane; `check_zero_yield_lanes()->'offenders'` still `[]` (the indexer is writing). **Revert:** re-insert the row (text in the 10-30 / 11-08 migrations) if Candy goes silent again.
+
+Item 3 (4 Candy bids, buyer `GFGmpV5z…apg`, $99.66) — **checked, phantom, NOT yet retired.** Solscan ~8:47 PM PT: wallet 0.00089 SOL; its Magic Eden V2 escrow PDA (`["m2", buyer]` → `6pdwS8Ni…vaGW`) does not exist on chain; the bid records are rent-only (0.0023 SOL). The bids need ~1.5 SOL to fill. The one-off `UPDATE candy_offers SET is_active = false` for pda `F4xMyTy…JCYc`, `BJrmQSo…tk9c`, `7iAVo3e…j6DF`, `3iMTiDw…kxs` was refused by the session permission check — left for Trevor's explicit yes (revert: same UPDATE with `is_active = true` for those 4 pdas).
+
 ### 2026-11-20 ~8:32 PM PT · 🗄 APPLIED (`20261121043220`, Trevor-approved) — Candy edition market-history rows recorded while phantom asks were active now read "unknown" (Claude Code cloud; Trevor: "Yes, blank it")
 
 - **What:** `candy_edition_market_daily` floor ask + listed count → NULL on **16,471 rows / 3,388 editions, 11-15 → 11-20** — rows recorded on or after the PT day a since-retired phantom ask for that edition first appeared, showing a floor or a non-zero count. All 13,302 phantom-era floors included; the 7,291 true "0 listed" rows from before any phantom appeared were KEPT. This is narrower than the 13,765–23,762 rows a looser predicate counts; the approval was given on the 13,765 estimate and the applied scope is a subset aimed only at the wrong values.

@@ -138,3 +138,13 @@ solscan.io / explorer.solana.com. A bid needs SOL to fill.
   `UPDATE public.candy_offers SET is_active = false WHERE is_active AND buyer = 'GFGmpV5zJaF4enTZNLGbavHXCDiKorfDQCsRg8ZEjapg';`
   (expect 4 rows; ledger line with revert: the same UPDATE setting `is_active = true` for those 4 `pda_address`es — record them first).
 - Balance covers them → they are real bids; append "checked, live" here and leave them.
+
+---
+
+## ✅ RESOLVED — item 1, 2026-11-20 ~8:46 PM PT (Cowork cloud, dashboard SQL editor in Trevor's Chrome; Trevor: "Proceed")
+
+Applied as **`20261121044524_audit_20261120_zero_yield_retire_candy_sales_indexer_suppression`** (premise `thin_since_2026_11_19` read first; `schema_migrations` row in the same Run; destructive dialog confirmed). Read back: suppression rows 0; zero-yield offenders `[]`.
+
+## Item 3 — checked: phantom; retirement NOT applied (needs Trevor's explicit yes)
+
+Wallet 0.00089 SOL; Magic Eden V2 escrow PDA `6pdwS8NisHJdo2CQXNSW9umk9Xvr9LGc6momBci2vaGW` (seeds `["m2", buyer]`) does not exist on chain; bid records hold rent only. The 4 bids (~1.5 SOL) cannot fill. The scoped `UPDATE … SET is_active = false` (4 pdas, listed in the ledger entry) was refused by the session permission check; not routed around.
