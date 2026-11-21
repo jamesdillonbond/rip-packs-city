@@ -12,6 +12,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-21 ~11:20 AM PT · 🔧 SHIPPED (code) — the Candy offers funding gate now records WHY a balance read was unknown; first live run read 1 unknown and kept the bids (fail open, by design) (Claude Code cloud; scheduled post-ship check)
+
+- **10:50 AM PT `candy-offers-indexer` (first run on `a376a9cdb`):** ok, `funding_bidders_checked` 1, **`funding_unknown` 1**, `unfunded_offers` 0 — one of the two balance reads (Magic Eden `escrow_balance` or Solana public RPC `getBalance`) did not answer as expected from Vercel, so the gate kept the 4 phantom bids (still active). The helper discarded the reason, so the run could not say which leg — and neither host is reachable from this sandbox.
+- **Fix:** `readBidderFunding` returns `reasons` (`escrow:http 404`, `wallet:shape keys=…`, `wallet:error TimeoutError` — status codes, top-level KEY names and error names only, never values); the run records `funding_unknown_reasons`. Route test pins it. tsc, ci:guards, lint ratchet green.
+- **Live control on the phantom-ask retirer — CLEAN:** the 10:35 AM PT `candy-listings-indexer` run retired 0 asks; of the 88 Magic Eden Candy asks first seen 1–8 AM PT today (incl. 33 with census holder ≠ seller, 29 from sellers active since reopening), **0** were retired. Their collections' next walks will judge them.
+- **Next read:** the 4:50 PM PT `candy-offers-indexer` run's `extra.funding_unknown_reasons` names the failing leg. Then fix THAT leg (e.g. a different endpoint / proxy), not the rule.
+- **Revert:** `git revert` the code commit.
+
 ### 2026-11-21 ~8:35 AM PT · 🔧 SHIPPED (code) — Candy offers sweep gets a FUNDING GATE: a bid neither the bidder's Magic Eden escrow nor wallet can cover is not marked live (Claude Code cloud; Trevor: "Keep going")
 
 - **Why:** the falsifier in the 11-20 ~11:30 PM PT entry fired. The 4 phantom bids retired by `20261121073043` were re-upserted active by the 4:51 AM PT `candy-offers` sweep (the overnight pass saw 0 active at 1 AM). My "the bidder won't be rediscovered" reasoning was wrong. As that entry said, the fix is at the source, not a repeat UPDATE.
