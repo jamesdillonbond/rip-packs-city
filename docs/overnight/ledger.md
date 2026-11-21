@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-20 ~6:15 PM PT · 📏 CONTROL — the phantom-ask classification survives a fill test (Claude Code cloud; same thread; read-only)
+
+- **Challenge:** 15 Candy sales since reopening (11-06) were fills by the listing's own seller at its ask, several by pre-lock wallets — so "sold before the lock" alone does not mark an old custody wallet (pre-lock collectors still list and sell).
+- **Control:** the 10 sellers whose asks demonstrably FILLED since reopening have 331 active asks; **329 (99.4 %) have census holder = seller**, 2 do not. Live sellers hold their cards; the 9.6k flagged asks belong to sellers of whom 1 of 646 has sold since reopening. The retirement (`20261121012809`, at the 7:35 PM PT indexer run) stands; its evidence rule (a census that ran after the ask appeared shows another owner) is the 11-08 rule, not the pre-lock heuristic.
+- **Lesson kept in chain-strategy.md (2026-11-20 section):** a pairing reads two ways until an outside fact splits them; the fact that split it here is who actually FILLS.
+
 ### 2026-11-20 ~6:04 PM PT · 📏 VERIFIED — the census writes `last_census_clean_walk_started_at` in production (Claude Code cloud; same thread)
 
 - The 5:57 PM PT `candy-collections-census` run (first on `5e6301ed2`) completed 18 collection walks; all 18 now carry `last_census_clean_walk_started_at` (newest 6:03 PM PT), including 1 multi-run walk — the case the column exists for. Run ok, no error. The retirement itself is checked at 7:50 PM PT (scheduled in-session; reads the 7:35 PM `candy-listings-indexer` run).
