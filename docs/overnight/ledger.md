@@ -16,6 +16,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 - **Why:** `20261121043220` (11-20 8:32 PM PT, Trevor-approved) blanked 16,471 phantom-era rows; the chart already renders a fully blanked day as "—" (`components/entity/CandyMarketHistory.tsx`: NULL floor + NULL count → "—"), but its caption explained only the Oct 26–Nov 8 withdrawal, so a reader saw unexplained dashes for Nov 15–20.
 - **What:** caption now reads "Asks from Oct 26 to Nov 8 and from Nov 15 to Nov 20 were withdrawn (shown as —): …". Full vitest suite green (26,351); ci:guards green.
+- **Verified in the rendered DOM** (Playwright, live `/candy-mlb/edition/c:wonder-woman-1987-2006-1:…-uncommon`, the most-affected edition): caption updated; Nov 15–20 rows read "— | — | — | —"; Nov 12–14 and Nov 21 read "none listed | — | 0" (true: that edition's 6 "listings" were all phantoms).
 - **Revert:** `git revert` the code commit.
 
 ### 2026-11-21 ~11:20 AM PT · 🔧 SHIPPED (code) — the Candy offers funding gate now records WHY a balance read was unknown; first live run read 1 unknown and kept the bids (fail open, by design) (Claude Code cloud; scheduled post-ship check)
