@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-21 ~2:20 PM PT · 🔧 SHIPPED (copy) — Candy edition "Market history" caption names the second withdrawn window (Nov 15–20) (Claude Code cloud; Trevor: "Keep going")
+
+- **Why:** `20261121043220` (11-20 8:32 PM PT, Trevor-approved) blanked 16,471 phantom-era rows; the chart already renders a fully blanked day as "—" (`components/entity/CandyMarketHistory.tsx`: NULL floor + NULL count → "—"), but its caption explained only the Oct 26–Nov 8 withdrawal, so a reader saw unexplained dashes for Nov 15–20.
+- **What:** caption now reads "Asks from Oct 26 to Nov 8 and from Nov 15 to Nov 20 were withdrawn (shown as —): …". Full vitest suite green (26,351); ci:guards green.
+- **Revert:** `git revert` the code commit.
+
 ### 2026-11-21 ~11:20 AM PT · 🔧 SHIPPED (code) — the Candy offers funding gate now records WHY a balance read was unknown; first live run read 1 unknown and kept the bids (fail open, by design) (Claude Code cloud; scheduled post-ship check)
 
 - **10:50 AM PT `candy-offers-indexer` (first run on `a376a9cdb`):** ok, `funding_bidders_checked` 1, **`funding_unknown` 1**, `unfunded_offers` 0 — one of the two balance reads (Magic Eden `escrow_balance` or Solana public RPC `getBalance`) did not answer as expected from Vercel, so the gate kept the 4 phantom bids (still active). The helper discarded the reason, so the run could not say which leg — and neither host is reachable from this sandbox.
