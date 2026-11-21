@@ -12,6 +12,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-20 ~7:00 PM PT · 🗄 APPLIED (`20261121030008`) — the Pinnacle sales leaderboard stops walking Flow sales history to prove a negative: 3.56 s → 34 ms, same output (Claude Code cloud; Trevor: "Keep goin")
+
+- **Found:** `/api/analytics/sales/leaderboard` statement timeout at 5:13 PM PT (role=seller, window=l30, collections=pinnacle) inside a burst of ~10 parallel boards (the page loads buyer + seller per collection). The Pinnacle window aggregation is 15 ms; the call took 3.56 s alone. `'pinnacle'` stayed in the Flow-collection list, so each top address's `is_returning` probe walked its ENTIRE `sales` history with `collection = ANY('{pinnacle}')`, which never matches (`sales` holds 0 Pinnacle rows): ~28k rows for today's top 10 sellers.
+- **Fix:** `analytics_sales_leaderboard` drops `'pinnacle'` from the Flow list and skips the `sales` leg and the `sales`-side probes when no Flow collection remains. Premise asserted in the migration (0 `sales` rows with collection `pinnacle`).
+- **Equivalence:** live output for Top Shot seller l30 and Pinnacle seller l30 byte-identical before/after; Top Shot timing unchanged (95 → 77 ms warm). Pin `supabase/tests/analytics_sales_leaderboard.sql` gained claim 4 (Pinnacle-only board, mixed board) — passes on the new body AND on the old body (a behavior-neutral change, so both must). ACL unchanged; prosrc md5 `42351d4d…` before.
+- **Not addressed:** the Top Shot / All Day boards take 4.5–10 s cold in that burst (window aggregation over 30 days of sales); measured warm they are ~0.1 s, so it is cache, not plan.
+- **Revert:** re-apply the body from `20261004165000` (md5 `42351d4d6bddf8b8cdb89b08c6e00684`).
+
 ### 2026-11-20 ~6:52 PM PT · 📏 VERIFIED — UFC Aptos "0 sales" is a quiet market, not a stale function list (Claude Code cloud; three dry-run dispatches of `ufc-aptos-sales-ingest`, no writes)
 
 - Range: the lane's stored cursor (v8,148,268,262, the 1:29 PM PT run) to head (~7 h). TradePort/Rarible object transfers through ANY entry function: **0**. A 50-row sample of all object transfers in the range: 49 carry `entry_function_id_str` (SBT mints), so the indexer field the filters rely on is filled. Purchase-named functions (`::buy…`, `…accept…bid…`) from ANY contract address: **0**. The lane is reading correctly; Aptos NFT purchases are simply absent in that window.
