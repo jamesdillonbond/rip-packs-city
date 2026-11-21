@@ -12,6 +12,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-21 ~3:50 PM PT · 🔧 SHIPPED (code + schedule) — Candy sales reach the board in ~1–1.5 h instead of ~6 h median / 25 h worst: new HOURLY sales-only pass over every non-registry Candy collection, and `candy-sales-indexer` 3-hourly → hourly (Claude Code cloud; Trevor: "figure out why it takes us so long to get this" → "I approve … proceeding to take care of this")
+
+**Why.** A $1,599 Paul Skenes 2025 All-Star ICONS 1/1 sold 2:23 PM PT and was not due in `sales` until ~7:20 PM PT. Measured 11-14 → 11-21: 115 of 124 Candy sales came through the rotating `candy-collections-market` lane (reason `queued_collections_walk`), median 6.2 h sale→`sales`, max 25.1 h. Cause: that lane does symbol + stats + sales + listings per collection and reaches only ~110 of 357 collections per 240 s run (every 2 h → each collection ~every 8 h), and the drain that writes what it queues ran only every 3 h. The registry-set lane (`candy-sales-indexer` itself) only walks 5 sets.
+
+**What.** `lib/candy/collections-sales-pass.ts` + `/api/ingest/candy-collections-sales` (vercel cron `5 * * * *`): one 100-row Magic Eden activity page per collection (≤ 5 pages) back to `sales_high_water_at`, most-recently-active first, offered through the SAME `offerSales()` dedup into `candy_sales_unresolved` — `candy-sales-indexer` stays the one writer of Candy `sales`. Never writes `market_checked_at`/stats/listings; skips collections with no high-water mark (first walk stays the rotating lane's); a page-capped walk offers what it read but does not advance the mark; the mark moves FORWARD only (`.lt` conditional update). `candy-sales-indexer` cron `20 */3` → `20 * * * *` (runs ~12 s). `offerSales()` and `meClient()` extracted from `collections-market.ts` (behavior unchanged; its 17 tests green). Tests: +9 lib, +5 route (incl. schedule order pinned). Preflight 6/6.
+
+⚠ `candy_collections.sales_high_water_at`'s column comment still names only the rotating lane as writer — same contract (newest activity a COMPLETE walk covered), now two writers; no migration spent on a comment.
+
+**Verify:** first `candy-collections-sales` `pipeline_runs` row (`checked`, `budget_stopped`, `not_reached`, `sales_offered`) after the deploy is READY; Skenes edition `30c9b0df-…` in `sales`.
+
+**Revert:** `git revert` the commit titled "candy: hourly sales pass over every Candy collection; sales indexer hourly" — restores `20 */3` and removes the route (the extracted helpers are behavior-identical either way).
+
 ### 2026-11-21 ~2:20 PM PT · 🔧 SHIPPED (copy) — Candy edition "Market history" caption names the second withdrawn window (Nov 15–20) (Claude Code cloud; Trevor: "Keep going")
 
 - **Why:** `20261121043220` (11-20 8:32 PM PT, Trevor-approved) blanked 16,471 phantom-era rows; the chart already renders a fully blanked day as "—" (`components/entity/CandyMarketHistory.tsx`: NULL floor + NULL count → "—"), but its caption explained only the Oct 26–Nov 8 withdrawal, so a reader saw unexplained dashes for Nov 15–20.
