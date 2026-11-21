@@ -198,6 +198,64 @@ describe("candy-offers — sweep ladder", () => {
     expect(extra.activity_pages_read).toBe(1)
   })
 
+  // 2026-11-21: Magic Eden kept serving 4 bids from a drained pre-lock wallet (0.00089 SOL, no escrow); a
+  // one-off retirement was undone by the next sweep. A bid neither the escrow nor the wallet can cover is
+  // not upserted and is deactivated on that evidence; an unreadable balance keeps it.
+  const fundingSweep = (escrow: unknown, lamports: unknown) => [
+    jsonRoute("/activities", [{ signature: "sb1", type: "bid", buyer: "bidder1", blockTime: RECENT }]),
+    jsonRoute("/offers_made", [{ pdaAddress: "pdaA", tokenMint: "mintCandy", auctionHouse: "AH1", price: 0.3, tokenSize: 1, expiry: 1900000000 }]),
+    jsonRoute("/escrow_balance", escrow),
+    jsonRoute("api.mainnet-beta.solana.com", lamports),
+  ]
+  const fundingFixtures = (upsert: boolean) => ({
+    candy_offers: [
+      { data: [], error: null }, // active-buyer union read
+      ...(upsert ? [{ data: null, error: null }] : []), // upsert (only when the bid survives)
+      { data: null, error: null, count: 0 }, // active-book count
+      { data: [], error: null }, // stale deactivate
+      { data: [], error: null }, // expiry deactivate
+      { data: [{ pda_address: "pdaA" }], error: null }, // unfunded deactivate
+    ],
+    wallet_moments_cache: { data: [{ moment_id: "mintCandy", edition_key: "aaron-judge" }], error: null },
+    editions: { data: [{ id: "ed-judge", external_id: "aaron-judge" }], error: null },
+    candy_packs: { data: [], error: null },
+  })
+
+  it("an UNFUNDABLE bid (escrow and wallet both below its price) is not upserted and is deactivated", async () => {
+    fetchMock = installFetchMock(fundingSweep({ buyerEscrowBalance: 0 }, { result: { value: 890_000 } }))
+    const spy = install(fundingFixtures(false))
+    await POST(req())
+    await runDeferred()
+    const upserts = (spy.writes.candy_offers ?? []).filter((w) => w.method === "upsert").flatMap((w) => w.rows)
+    expect(upserts).toHaveLength(0)
+    const extra = logRun(spy.rpcCalls)?.p_extra as Record<string, unknown>
+    expect(extra.unfunded_offers).toBe(1)
+    expect(extra.unfunded_deactivated).toBe(1)
+    expect(extra.funding_unknown).toBe(0)
+  })
+
+  it("a FUNDED bid (escrow covers it) is upserted as before — the gate's no-change control", async () => {
+    fetchMock = installFetchMock(fundingSweep({ buyerEscrowBalance: 1.2 }, { result: { value: 890_000 } }))
+    const spy = install(fundingFixtures(true))
+    await POST(req())
+    await runDeferred()
+    const upserts = (spy.writes.candy_offers ?? []).filter((w) => w.method === "upsert").flatMap((w) => w.rows)
+    expect(upserts.map((r) => r.pda_address)).toEqual(["pdaA"])
+    expect((logRun(spy.rpcCalls)?.p_extra as Record<string, unknown>).unfunded_offers).toBe(0)
+  })
+
+  it("an UNREADABLE balance keeps the bid (fail open)", async () => {
+    fetchMock = installFetchMock(fundingSweep({ unexpected: "shape" }, { result: { value: 0 } }))
+    const spy = install(fundingFixtures(true))
+    await POST(req())
+    await runDeferred()
+    const upserts = (spy.writes.candy_offers ?? []).filter((w) => w.method === "upsert").flatMap((w) => w.rows)
+    expect(upserts.map((r) => r.pda_address)).toEqual(["pdaA"])
+    const extra = logRun(spy.rpcCalls)?.p_extra as Record<string, unknown>
+    expect(extra.unfunded_offers).toBe(0)
+    expect(extra.funding_unknown).toBe(1)
+  })
+
   it("discovers bidders on a later Candy set's own feed too (2026-11-08)", async () => {
     setsMock.v = [{ key: "gold26", meSymbol: "gold-symbol" }]
     try {

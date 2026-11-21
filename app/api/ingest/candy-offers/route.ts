@@ -27,6 +27,7 @@
 // single sweeping wallet; `candy_best_offers` carries distinct_bidders so any
 // surface can suppress or caveat a single-bidder signal.
 
+import { isUnfundable, readBidderFunding, type BidderFunding } from "@/lib/candy/offer-funding"
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
@@ -650,6 +651,30 @@ async function handleSweep(req: NextRequest) {
         })
       }
 
+      // 4d. FUNDING GATE (2026-11-21). Magic Eden keeps serving bids whose bidder can no longer pay (Candy
+      //     drained its custody wallets at the 10-12 lock); a one-off retirement of 4 such bids was undone by
+      //     the next sweep, which re-upserted them as active. A bid is dropped only on POSITIVE evidence —
+      //     the bidder's ME escrow AND wallet both hold less SOL than it (lib/candy/offer-funding.ts); any
+      //     failed or unrecognised read keeps the bid. Dropped bids are deactivated below like expired ones.
+      phase = "funding"
+      const fundingByBidder = new Map<string, BidderFunding>()
+      let fundingUnknown = 0
+      for (const bidder of [...new Set(rows.map((r) => String(r.buyer)))]) {
+        if (outOfTime()) break
+        const f = await readBidderFunding(bidder, { meBase: ME_BASE, meHeaders: meHeaders(), timeoutMs: ME_REQUEST_TIMEOUT_MS })
+        if (f.escrowSol == null || f.walletSol == null) fundingUnknown++
+        fundingByBidder.set(bidder, f)
+        await new Promise((r) => setTimeout(r, ME_THROTTLE_MS))
+      }
+      const unfundedPdas: string[] = []
+      for (let i = rows.length - 1; i >= 0; i--) {
+        const r = rows[i]
+        if (isUnfundable(Number(r.price_sol), fundingByBidder.get(String(r.buyer)))) {
+          unfundedPdas.push(String(r.pda_address))
+          rows.splice(i, 1)
+        }
+      }
+
       // 5. Upsert standing offers.
       phase = "upsert"
       for (let i = 0; i < rows.length; i += 100) {
@@ -741,6 +766,25 @@ async function handleSweep(req: NextRequest) {
       if (expiredErr) writeErrors.push(`candy_offers expire: ${expiredErr.message}`)
       else deactivated += (expired ?? []).length
 
+      // Unfundable bids (4d) are dead on positive evidence too, so this does not wait for a complete sweep.
+      let unfundedDeactivated: number | null = 0
+      if (unfundedPdas.length) {
+        const { data: unf, error: unfErr } = await (supabaseAdmin as any)
+          .from("candy_offers")
+          .update({ is_active: false })
+          .eq("is_active", true)
+          .in("pda_address", unfundedPdas)
+          .select("pda_address")
+        if (unfErr) {
+          writeErrors.push(`candy_offers unfunded: ${unfErr.message}`)
+          unfundedDeactivated = null
+        } else {
+          const n = (unf ?? []).length
+          unfundedDeactivated = n
+          deactivated += n
+        }
+      }
+
       // A truncated sweep is a DEGRADED run, not a clean one: deactivation is
       // skipped above, so `is_active` silently drifts toward stale-live. Report
       // it as a failure so it surfaces in health instead of hiding behind the
@@ -803,6 +847,10 @@ async function handleSweep(req: NextRequest) {
         degraded_sweep: degradedSweep,
         offers_upserted: written,
         deactivated,
+        funding_bidders_checked: fundingByBidder.size,
+        funding_unknown: fundingUnknown,
+        unfunded_offers: unfundedPdas.length,
+        unfunded_deactivated: unfundedDeactivated,
         sol_usd: rate,
         duration_ms: Date.now() - startedMs,
       })
