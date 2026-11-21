@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-21 ~1:05 AM PT · 📏 READ (docs only) — quiet green overnight pass; 0 shipped; two `candy_offers` trust arms breach on the empty book after the 11-20 phantom-bid retirement (Cowork cloud, scheduled)
+
+- Inbox fully drained — every candidate already resolved by the 11-20 afternoon/evening Claude Code passes (allday-EV dupkey `20261120191551`, candy market-daily phantom null `20261121043220`, zero-yield retire `20261121044524`, 4 phantom bids `20261121073043`). Nothing safe and not-already-done to ship.
+- Health: security `[]` (4 arms + 6 drift checks). Trust breaches 3, all benign Candy-cleanup side-effects: `candy_ask_book_drop_pct` 93.7 (phantom-ask retirement; falsifier benign — active asks 642 all `owner_moved_at` NULL, above the ~600 collapse floor; retired rows not re-seen since 06:35Z), and `candy_offers_oldest_active_hours` / `candy_offers_unverified_pct` both 999 = **0 active `candy_offers`** after `20261121073043` (the arm returns 999 on an empty book BY DESIGN). `candy_revival` back to 0/ok. stalled `[]`; 0 HIGH alerts; client-error beacon 0/24h.
+- Post-ship watch CLEAN: allday-EV refresh (pg_cron jobid 65) failed 18:47Z 11-20 then succeeded 00:47Z + 06:47Z 11-21 (`20261120191551` holding, MV un-frozen); apply-fmv-haircut HEAVY_LAST 11-20 22:35Z `legs_skipped=0`. prod `e0848a0c5` READY, 0 ERROR. No revert.
+- Queued (night 1): whether the `candy_offers` arms should read UNKNOWN rather than BREACH on a deliberately-emptied book — not acked/excluded (focus rule); self-clears on the next real bid.
+
 ### 2026-11-20 ~11:30 PM PT · 🗄 APPLIED (`20261121073043`) — 4 phantom Candy bids retired (Claude Code cloud; Trevor, asked for a yes on retiring them: "Do what you think is best" — the recommendation was to retire)
 
 - **What:** `candy_offers.is_active = false` on the 4 bids of `GFGmpV5z…` (0.3 / 0.545 / 0.546 / 0.055 SOL). Cowork verified on chain: wallet 0.00089 SOL vs ~1.5 SOL of bids; the Magic Eden V2 escrow PDA does not exist — they cannot fill. Active Candy bids now 0. They fed the "best bid" line of 3 editions' market-history charts.
