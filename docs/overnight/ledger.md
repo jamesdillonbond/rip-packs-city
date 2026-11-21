@@ -12,6 +12,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-20 ~4:40 PM PT · 🔧 SHIPPED (code) — a legacy Candy ask Magic Eden still serves keeps its row fresh when its card drops out of the census (#257 false stale) (Claude Code cloud; Trevor: "work autonomously … fix any issues you encounter")
+
+- **Found:** #257's watch read 1 active Candy ask unseen > 3 days (pda `CFGipvw9…`, Blackest Night (2009-2010) #1, $64.96, last_seen 11-15 1:51 PM PT). Its collection's market sweep ran complete and plausible every 8 h (latest 3:47 PM PT: 15 seen, 13 written, **2 unresolved**, 0 retired) and the pda was in the served set, so ME is still serving it. The mint is no longer in `wallet_moments_cache`, so `sweepListings` skipped it as unresolved: the row stayed active with `last_seen_at` frozen — a live ask that read as stale.
+- **Fix (`lib/candy/collections-market.ts`):** an unresolved ask that already has an ACTIVE row gets `last_seen_at` and price refreshed (per-row update, never `edition_id`); an unresolved ask with no row is still never written. New report field `listings_refreshed_unresolved`. Two tests in `__tests__/lib-candy-collections-market.test.ts`, both red on the old code. `npm run preflight` green (tsc, lint ratchet, 2,845 tests).
+- **Watch:** after the next `candy-collections-market` run (every 8 h, :47), `select count(*) from candy_listings where is_active and last_seen_at < now() - interval '3 days'` → 0, and the run report shows `listings_refreshed_unresolved` ≥ 1 for `blackest_night_20092010_1`.
+- **Not answered here:** why 48 of 568 Blackest Night cards are absent from the census (520 walked). Recorded on #257.
+- **Time correction for the entry below (`20261121002539`):** it was applied at ~4:25 PM PT, not ~4:40 (the DB recorded 00:25:39 UTC).
+- **Revert:** `git revert` the code commit.
+
 ### 2026-11-20 ~4:40 PM PT · 🗄 APPLIED (`20261121002539`) — Zero-Yield arm: the drained Candy name-only cleanup is suppressed with a re-check condition; arm reads 0 offenders (Claude Code cloud; Trevor: "work autonomously … fix any issues you encounter")
 
 - **Found:** `check_zero_yield_lanes()` named one offender, `candy-orphan-name-only-editions` (hourly, 168 ok runs in 7 d, last find 11-13). It is the #246 cleanup and it is finished: deleted 4,564 on 11-10..11-13, 0 since; the WHOLE Candy name-only population (held or not) = 0. Positive control: 58 Candy editions created in 7 d, none name-only. Job kept as a safety net.
