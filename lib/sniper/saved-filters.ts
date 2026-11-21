@@ -76,16 +76,22 @@ export function sniperAlertHref(f: { collectionUuid: string | null; tier?: strin
   return `/alerts?${q.toString()}`
 }
 
-export type AlertPrefill = { collectionId: string; tier?: string; parallel?: string; player?: string; team?: string; maxPrice?: string; minDiscount?: string }
+export type AlertPrefill = { from: "sniper" | "email"; collectionId: string; tier?: string; parallel?: string; player?: string; team?: string; maxPrice?: string; minDiscount?: string }
 
-/** Reads a /alerts?from=sniper… query; null unless it came from the Sniper with a collection. */
+/**
+ * Reads a /alerts?from=sniper… (or from=email…) query; null unless it came from the Sniper or an
+ * RPC email with a collection. from=email (2026-11-20) is the Day-1 / weekly email's "get an alert
+ * on <the player you own most of>" link (lib/emails/alert-suggestion.ts).
+ */
 export function readAlertPrefill(search: string): AlertPrefill | null {
   const q = new URLSearchParams(search)
-  if (q.get("from") !== "sniper") return null
+  const from = q.get("from")
+  if (from !== "sniper" && from !== "email") return null
   const collectionId = q.get("collection")
   if (!collectionId || !/^[0-9a-f-]{36}$/i.test(collectionId)) return null
   const num = (v: string | null) => (v && /^\d+(\.\d+)?$/.test(v) ? v : undefined)
   return {
+    from,
     collectionId,
     tier: q.get("tier")?.toUpperCase() || undefined,
     parallel: q.get("parallel")?.slice(0, 80) || undefined,

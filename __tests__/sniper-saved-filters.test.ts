@@ -37,7 +37,7 @@ describe("Sniper → Alerts prefill (2026-10-24)", () => {
     const href = sniperAlertHref({ collectionUuid: UUID, tier: "rare", player: "Damian Lillard", team: "all", maxPrice: 20, minDiscount: 0 })!
     expect(href.startsWith("/alerts?")).toBe(true)
     const pre = readAlertPrefill(href.slice("/alerts".length))!
-    expect(pre).toEqual({ collectionId: UUID, tier: "RARE", player: "Damian Lillard", team: undefined, maxPrice: "20", minDiscount: undefined })
+    expect(pre).toEqual({ from: "sniper", collectionId: UUID, tier: "RARE", player: "Damian Lillard", team: undefined, maxPrice: "20", minDiscount: undefined })
   })
   it("ignores a query that did not come from the Sniper or names no valid collection", () => {
     expect(readAlertPrefill("?collection=" + UUID)).toBeNull()

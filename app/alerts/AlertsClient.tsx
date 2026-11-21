@@ -188,12 +188,13 @@ export default function AlertsClient() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   // 2026-10-24: "🔔 ALERT ME" on the Sniper lands here with its filters; seed a
   // NEW alert from them once (nothing is saved until the reader presses Save).
+  // 2026-11-20: the Day-1 / weekly email's player link (from=email) lands here too.
   useEffect(() => {
     const pre = typeof window !== "undefined" ? readAlertPrefill(window.location.search) : null;
     if (!pre) return;
     setForm({
       ...EMPTY_FORM,
-      label: "Sniper alert",
+      label: pre.from === "email" && pre.player ? `${pre.player} deals` : "Sniper alert",
       collection_ids: [pre.collectionId],
       tiers: pre.tier ? [pre.tier] : [],
       parallel_names: pre.parallel ? [pre.parallel] : [],

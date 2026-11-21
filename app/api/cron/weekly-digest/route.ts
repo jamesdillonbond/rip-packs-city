@@ -34,6 +34,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { commercialSendBlockedReason, commercialSenderLine, REPLY_TO } from "@/lib/emails/sender-identity";
 import { emailLink } from "@/lib/emails/email-link";
 import { buildNewItemsBlock } from "@/lib/emails/weekly-digest-news";
+import { buildWeeklyAlertBlock, loadAlertSuggestion, type AlertSuggestion } from "@/lib/emails/alert-suggestion";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -107,8 +108,11 @@ async function alreadySent(ownerKey: string, bucket: string): Promise<boolean | 
   return alreadySentEmail({ ownerKey, alertKind: "weekly_digest", subjectKey: SUBJECT_KEY, bucket })
 }
 
-function buildEmail(m: CompleteMover, unsubscribeUrl: string, now: Date = new Date()): { subject: string; html: string; text: string } {
+// 2026-11-20: an optional "Deal alert" block on the player whose moments carry the most value in
+// the member's wallet (lib/emails/alert-suggestion.ts); null = no block, the email is unchanged.
+function buildEmail(m: CompleteMover, unsubscribeUrl: string, now: Date = new Date(), alertSuggestion: AlertSuggestion | null = null): { subject: string; html: string; text: string } {
   const { html: newsHtml, text: newsText } = buildNewItemsBlock(ORIGIN, now);
+  const { html: alertHtml, text: alertText } = buildWeeklyAlertBlock(ORIGIN, alertSuggestion);
   const up = m.delta_usd >= 0;
   const momentsLine = finite(m.moment_count) ? `${m.moment_count.toLocaleString("en-US")} moments tracked` : null;
   const arrow = up ? "▲" : "▼";
@@ -131,6 +135,7 @@ function buildEmail(m: CompleteMover, unsubscribeUrl: string, now: Date = new Da
       <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:6px">${HOLDINGS_NOTE}</div>
       ${momentsLine ? `<div style="font-size:12px;color:rgba(255,255,255,0.5);margin-top:10px">${momentsLine}</div>` : ""}
     </div>
+${alertHtml}
 ${newsHtml}
     <a href="${dashUrl}" style="display:inline-block;background:linear-gradient(135deg,#E03A2F,#B91C1C);color:#fff;text-decoration:none;font-family:'Barlow Condensed',Arial,sans-serif;font-weight:800;letter-spacing:.08em;text-transform:uppercase;font-size:13px;padding:12px 22px;border-radius:6px">
       Open your dashboard →
@@ -151,6 +156,7 @@ ${newsHtml}
     `${up ? "Up" : "Down"} ${usd(Math.abs(m.delta_usd))} (${pctLabel(m.delta_pct)}) this week`,
     HOLDINGS_NOTE,
     ...(momentsLine ? [momentsLine] : []),
+    ...alertText,
     ...newsText,
     "",
     `Open your dashboard: ${dashUrl}`,
@@ -239,7 +245,7 @@ async function run(req: NextRequest) {
     try {
       const movers = await loadMovers(minAbsPct, days);
       const seen = new Set<string>();
-      const would: Array<{ email: string; delta_pct: number | null; latest_fmv: number | null }> = [];
+      const would: Array<{ email: string; delta_pct: number | null; latest_fmv: number | null; alert_player: string | null }> = [];
       let unsub = 0;
       let dedup = 0;
       let unverified = 0; // dedup read failed: the live run would skip these too
@@ -255,7 +261,8 @@ async function run(req: NextRequest) {
         const sentBefore = await alreadySent(m.user_id, bucket);
         if (sentBefore === null) { unverified++; continue; }
         if (sentBefore) { dedup++; continue; }
-        would.push({ email, delta_pct: m.delta_pct, latest_fmv: m.latest_fmv });
+        const alertSuggestion = await loadAlertSuggestion(m.user_id);
+        would.push({ email, delta_pct: m.delta_pct, latest_fmv: m.latest_fmv, alert_player: alertSuggestion?.player ?? null });
       }
       return NextResponse.json({
         ok: true,
@@ -345,7 +352,8 @@ async function run(req: NextRequest) {
         if (sentBefore) { skipped++; continue; }
 
         const unsubscribeUrl = `${ORIGIN}/api/subscribe/unsubscribe?token=${tok.token}`;
-        const { subject, html, text } = buildEmail(m, unsubscribeUrl);
+        const alertSuggestion = await loadAlertSuggestion(m.user_id);
+        const { subject, html, text } = buildEmail(m, unsubscribeUrl, new Date(), alertSuggestion);
 
         // ⛔ CLAIM BEFORE SEND (2026-11-02): the delivery row used to be written AFTER
         // the send with a failed insert only logged, so overlapping runs — or any run
@@ -353,7 +361,7 @@ async function run(req: NextRequest) {
         // on the unique key); held = another run owns it; a claim error fails closed.
         const claim = await claimEmailDelivery({
           ownerKey: m.user_id, channelUserId: email, alertKind: "weekly_digest", subjectKey: SUBJECT_KEY, bucket: bucket,
-          payload: { latest_fmv: m.latest_fmv, delta_usd: m.delta_usd, delta_pct: m.delta_pct, moment_count: m.moment_count, latest_date: m.latest_date },
+          payload: { latest_fmv: m.latest_fmv, delta_usd: m.delta_usd, delta_pct: m.delta_pct, moment_count: m.moment_count, latest_date: m.latest_date, alert_player: alertSuggestion?.player ?? null },
           log: (msg) => console.log(`[${PIPELINE_NAME}] ${msg}`),
         });
         if (claim.state === "held") { skipped++; continue; }

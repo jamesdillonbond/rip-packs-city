@@ -38,6 +38,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { buildDay1Html, buildDay1Subject, buildDay1Text, type Day1Segment } from "@/lib/emails/day1-onboarding-email"
 import { num, toRecipient, type Day1Candidate } from "@/lib/emails/day1-onboarding-recipients"
+import { loadAlertSuggestion } from "@/lib/emails/alert-suggestion"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
@@ -106,7 +107,7 @@ async function run(req: NextRequest) {
   if (dry) {
     try {
       const rows = await loadCandidates(minHours, maxHours)
-      const would: Array<{ username: string | null; segment: Day1Segment; fmv_usd: number | null; moment_count: number | null; subject: string }> = []
+      const would: Array<{ username: string | null; segment: Day1Segment; fmv_usd: number | null; moment_count: number | null; alert_player: string | null; subject: string }> = []
       let unsub = 0
       let dedup = 0
       let unverified = 0
@@ -121,11 +122,13 @@ async function run(req: NextRequest) {
         const sent = await alreadySentEmail({ ownerKey: r.userId, alertKind: ALERT_KIND, subjectKey: SUBJECT_KEY, bucket: BUCKET })
         if (sent === null) { unverified++; continue }
         if (sent) { dedup++; continue }
+        const alertSuggestion = r.segment === "wallet" ? await loadAlertSuggestion(r.userId) : null
         would.push({
           username: r.username,
           segment: r.segment,
           fmv_usd: r.fmvUsd,
           moment_count: r.momentCount,
+          alert_player: alertSuggestion?.player ?? null,
           subject: buildDay1Subject({ segment: r.segment, username: r.username, fmvUsd: r.fmvUsd, momentCount: r.momentCount, unsubscribeUrl: "" }),
         })
       }
@@ -192,8 +195,10 @@ async function run(req: NextRequest) {
         if (sentBefore === null) { skipped++; guardErrors++; note(`guard ${tail}: dedup_read_failed`); continue }
         if (sentBefore) { skipped++; continue }
 
+        // 2026-11-20: optional "alert on <player>" line; a failed read omits it (never throws).
+        const alertSuggestion = r.segment === "wallet" ? await loadAlertSuggestion(r.userId) : null
         const opts = {
-          segment: r.segment, username: r.username, fmvUsd: r.fmvUsd, momentCount: r.momentCount,
+          segment: r.segment, username: r.username, fmvUsd: r.fmvUsd, momentCount: r.momentCount, alertSuggestion,
           unsubscribeUrl: `${ORIGIN}/api/subscribe/unsubscribe?token=${tok.token}`,
         }
         const subject = buildDay1Subject(opts)
@@ -202,7 +207,7 @@ async function run(req: NextRequest) {
 
         const claim = await claimEmailDelivery({
           ownerKey: r.userId, channelUserId: r.email, alertKind: ALERT_KIND, subjectKey: SUBJECT_KEY, bucket: BUCKET,
-          payload: { segment: r.segment, fmv_usd: r.fmvUsd, moment_count: r.momentCount, hours_since_signup: num(raw.hours_since_signup) },
+          payload: { segment: r.segment, fmv_usd: r.fmvUsd, moment_count: r.momentCount, alert_player: alertSuggestion?.player ?? null, hours_since_signup: num(raw.hours_since_signup) },
           log: (msg) => console.log(`[${PIPELINE_NAME}] ${msg}`),
         })
         if (claim.state === "held") { skipped++; continue }

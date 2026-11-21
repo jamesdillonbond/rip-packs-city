@@ -1,4 +1,5 @@
 import { commercialSenderLine } from "@/lib/emails/sender-identity"
+import { alertSuggestionLine, alertSuggestionUrl, type AlertSuggestion } from "@/lib/emails/alert-suggestion"
 
 // lib/emails/day1-onboarding-email.ts
 //
@@ -21,6 +22,10 @@ import { commercialSenderLine } from "@/lib/emails/sender-identity"
 // only after commercialSendBlockedReason() returned null, and every send carries
 // an unsubscribe link.
 //
+// 2026-11-20: the wallet version can carry ONE alert suggestion — the player whose moments carry
+// the most value in the member's wallet, linked to /alerts prefilled (lib/emails/alert-suggestion.ts).
+// It replaces the generic "watch an edition" bullet; with no suggestion the email is unchanged.
+//
 // Email red is the hardcoded #e55a4c on purpose — email clients have no CSS
 // custom properties.
 
@@ -42,7 +47,14 @@ export interface Day1EmailOpts {
   /** The dashboard headline value (fresh-priced moments only); null = not readable. */
   fmvUsd?: number | null
   momentCount?: number | null
+  /** wallet segment only: the player to suggest an alert on; null/absent = no suggestion. */
+  alertSuggestion?: AlertSuggestion | null
   unsubscribeUrl: string
+}
+
+/** The suggestion this email will carry, or null (no_wallet never carries one). */
+export function day1AlertSuggestion(opts: Day1EmailOpts): AlertSuggestion | null {
+  return opts.segment === "wallet" && opts.alertSuggestion ? opts.alertSuggestion : null
 }
 
 function esc(s: string): string {
@@ -96,20 +108,17 @@ function lines(opts: Day1EmailOpts): { greeting: string; lead: string; bullets: 
   const lead = hasValueLine(opts)
     ? `Your dashboard values your collection at about ${formatUsd(opts.fmvUsd as number)} across ${(opts.momentCount as number).toLocaleString("en-US")} moments. That figure is an estimate from recent marketplace data, not an appraisal.`
     : "Your wallet is saved and your dashboard is ready."
-  return {
-    greeting,
-    lead,
-    bullets: [
-      "See which of your moments carry the most value, and how each estimate was priced.",
-      "Build a trophy case of your best pieces and share it.",
-      "Watch an edition you want and get an alert when its lowest ask drops to your price.",
-    ],
-    cta: "Open your dashboard",
-  }
+  const bullets = [
+    "See which of your moments carry the most value, and how each estimate was priced.",
+    "Build a trophy case of your best pieces and share it.",
+  ]
+  if (!day1AlertSuggestion(opts)) bullets.push("Watch an edition you want and get an alert when its lowest ask drops to your price.")
+  return { greeting, lead, bullets, cta: "Open your dashboard" }
 }
 
 export function buildDay1Text(opts: Day1EmailOpts): string {
   const l = lines(opts)
+  const alert = day1AlertSuggestion(opts)
   return [
     l.greeting,
     "",
@@ -118,6 +127,7 @@ export function buildDay1Text(opts: Day1EmailOpts): string {
     ...l.bullets.map((b) => `- ${b}`),
     "",
     `${l.cta}: ${day1CtaUrl(opts.segment)}`,
+    ...(alert ? ["", `${alertSuggestionLine(alert)} Set it up: ${alertSuggestionUrl(SITE, alert, "day1")}`] : []),
     "",
     "You're getting this once, a day or two after you joined. We won't send it again.",
     `Unsubscribe: ${opts.unsubscribeUrl}`,
@@ -128,6 +138,10 @@ export function buildDay1Text(opts: Day1EmailOpts): string {
 export function buildDay1Html(opts: Day1EmailOpts): string {
   const l = lines(opts)
   const cta = day1CtaUrl(opts.segment)
+  const alert = day1AlertSuggestion(opts)
+  const alertHtml = alert
+    ? `<div style="margin-top:16px;padding-top:14px;border-top:1px solid ${PANEL_BORDER};font-size:14px;line-height:1.5;color:${TEXT_MUTED};">${esc(alertSuggestionLine(alert))} <a href="${esc(alertSuggestionUrl(SITE, alert, "day1"))}" style="color:${TEXT};font-weight:700;text-decoration:underline;">Set up the alert &rarr;</a></div>`
+    : ""
   const bullets = l.bullets.map((b) => `<li style="margin:0 0 6px;">${esc(b)}</li>`).join("")
   return `<!doctype html>
 <html>
@@ -141,6 +155,7 @@ export function buildDay1Html(opts: Day1EmailOpts): string {
             <div style="font-size:15px;line-height:1.55;margin-top:10px;color:${TEXT};">${esc(l.lead)}</div>
             <ul style="font-size:14px;line-height:1.5;color:${TEXT_MUTED};margin:14px 0 0;padding-left:18px;">${bullets}</ul>
             <div style="margin-top:18px;"><a href="${esc(cta)}" style="display:inline-block;background:${ACCENT};color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:10px 16px;border-radius:8px;">${esc(l.cta)} &rarr;</a></div>
+            ${alertHtml}
           </td></tr>
           <tr><td style="padding:18px 4px 0;font-size:12px;line-height:1.5;color:${TEXT_SUBTLE};">
             You&rsquo;re getting this once, a day or two after you joined. We won&rsquo;t send it again.
