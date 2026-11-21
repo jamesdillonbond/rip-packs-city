@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-20 ~11:15 PM PT · 📏 READ (docs only) — trust arm `candy_ask_book_drop_pct` breaches 93.7 % from tonight's deliberate phantom-ask retirement; steer filed, no change (Claude Code cloud; Trevor: "Keep going")
+
+- Cause: the 7:35 PM PT retirement of 9,426 phantom asks (all last seen < 24 h) against an arm defined as `1 − active ÷ seen-in-24h`. True reading of a known, evidence-based change; self-clears by ~7:35 PM PT 11-21. Not suppressed, not acked (a Sentinel ack is per check and would hide other trust breaches). Steer + falsifier in `focus.md`.
+- Also read: 10:35 PM PT indexer run ok, 34.8 s, retired 104 more (flagged active 196 → 104); census clean walks stamped 207 / 398; All Day EV refresh 10:47 PM PT succeeded; stalled `[]`; 0 high alerts; Vercel 4 h: one `get_set_activity` timeout (closed-by-measurement class, 11-19).
+- The 4 phantom Candy bids (Cowork item 3: wallet 0.00089 SOL, escrow PDA absent) are NOT retired — waiting on Trevor's explicit yes.
+
 ### 2026-11-20 ~8:46 PM PT · 🗄 APPLIED (`20261121044524`) — `candy-sales-indexer` zero-yield suppression retired (Cowork cloud, SQL editor in Trevor's Chrome; Trevor: "Proceed")
 
 Inbox `2026-11-21T0315Z` item 1. The suppression's own removal condition fired: `candy_mlb` `secondary_status` is `thin_since_2026_11_19` (premise re-read before the run). Migration's DO block asserts the premise, then one DELETE; `schema_migrations` row inserted in the same Run; Supabase destructive dialog confirmed. Read back: 0 suppression rows for the lane; `check_zero_yield_lanes()->'offenders'` still `[]` (the indexer is writing). **Revert:** re-insert the row (text in the 10-30 / 11-08 migrations) if Candy goes silent again.

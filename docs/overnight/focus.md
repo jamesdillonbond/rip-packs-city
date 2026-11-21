@@ -4,6 +4,13 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-11-20 ~11:15 PM PT (Claude Code cloud) — `candy_ask_book_drop_pct` BREACH is our own deliberate cleanup; it clears itself by ~7:35 PM PT 11-21
+
+- **Reading:** `v_rpc_trust_health.candy_ask_book_drop_pct` = 93.7 (breach 60) since the 7:35 PM PT 11-20 `candy-listings-indexer` run. The arm is `1 − active ÷ asks last seen in 24 h`; that run retired **9,426 pre-migration PHANTOM asks** (`20261121004754` → `20261121012809`, ledger 11-20 ~4:48 PM / ~7:42 PM PT), all seen within 24 h. Active book 10,161 → 734, then −104 at 10:35 PM PT.
+- **Do NOT** raise the threshold, exclude owner-moved retirements from the arm, or ack the Sentinel trust check (an ack is per check and would hide every other trust breach). Retired rows are no longer re-seen (both sweeps skip `owner_moved_at` pdas), so the denominator drains by itself as they age past 24 h.
+- **Falsifier:** still in breach after ~8 PM PT 11-21 → something keeps re-seeing retired rows (read `max(last_seen_at)` of rows with `owner_moved_at >= '2026-11-21 00:47:54+00'`), or a NEW collapse (active count falling below ~600 with `owner_moved_at` NULL on the dropped rows) — that one is real.
+- Remaining flagged phantom asks (holder ≠ seller, active): 104 at 11:09 PM PT, expected ~0 by ~8 AM PT 11-21 as the census stamps `last_census_clean_walk_started_at`.
+
 ## STEER — added 2026-11-19 ~10:00 PM PT (Cowork cloud, evening audit pass) — two dated reads
 
 - ✅ **Superseded 11-19 ~11:00 PM PT: the materialized board shipped (`6efd74e`, `ff383f0`).** Read instead: `select ok, duration_ms from pipeline_runs where pipeline = 'panini-market-board' order by started_at desc limit 6` (hourly, cron_heavy job 898; all ok, well under 600 s) and Vercel logs for "panini stored board err, reading live" (should be absent). Was: **~11-26 — Panini market 503s after `ca49163`.** Vercel runtime logs for `/api/market` with the Panini collection id: if cold 503s continue for uncached sort/filter variants, build the materialized board (handoff-2026-11-19-evening-audit-pass, item 1). Read `x-vercel-cache` on a repeat request first: HIT means the CDN window is working.
