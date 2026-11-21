@@ -33,6 +33,7 @@ Push worked from this session (`git push` straight to `main`); no environment bl
 
 ## Evening continuation (after "Keep goin", ~6:27–6:55 PM PT)
 - **UFC Aptos sales lane** (`ufc-aptos-sales-ingest`): 0 sales on every run since 11-17 with 0 marketplace buys of ANY collection — indistinguishable between a quiet market and a stale entry-function list, and below the zero-yield arm's run floor. Added a positive control to the lane (unknown purchase function → run fails; empty list → indexer sample + purchase-named functions from any address). Three dry-run dispatches settled it: a quiet market (0 purchase-named transfers from any address in ~7 h; the indexer field is populated). Nothing to fix; the control stays.
+- **`analytics_sales_leaderboard` (`20261121030008`)**: the 5:13 PM PT statement timeout on the Pinnacle seller board came from `is_returning` probes walking each top address's whole Flow `sales` history for a collection that never appears there (~28k rows). Pinnacle board 3.56 s → 34 ms; outputs byte-identical; pin gained Pinnacle/mixed cases that pass on both old and new bodies.
 - Cost triage of pg_cron worker time: the top consumers are gated lanes whose time is a deliberate `pg_sleep` on scheduled minutes — no waste found. All collections' sales/FMV fresh (Pinnacle in its own tables: 183 sales in 24 h).
 
 ## Not acted on (with reason)
