@@ -9,6 +9,7 @@
 - **Reading:** `v_rpc_trust_health.candy_ask_book_drop_pct` = 93.7 (breach 60) since the 7:35 PM PT 11-20 `candy-listings-indexer` run. The arm is `1 − active ÷ asks last seen in 24 h`; that run retired **9,426 pre-migration PHANTOM asks** (`20261121004754` → `20261121012809`, ledger 11-20 ~4:48 PM / ~7:42 PM PT), all seen within 24 h. Active book 10,161 → 734, then −104 at 10:35 PM PT.
 - **Do NOT** raise the threshold, exclude owner-moved retirements from the arm, or ack the Sentinel trust check (an ack is per check and would hide every other trust breach). Retired rows are no longer re-seen (both sweeps skip `owner_moved_at` pdas), so the denominator drains by itself as they age past 24 h.
 - **Falsifier:** still in breach after ~8 PM PT 11-21 → something keeps re-seeing retired rows (read `max(last_seen_at)` of rows with `owner_moved_at >= '2026-11-21 00:47:54+00'`), or a NEW collapse (active count falling below ~600 with `owner_moved_at` NULL on the dropped rows) — that one is real.
+- The 4 phantom Candy bids were retired 11:30 PM PT (`20261121073043`); after the 2:50 AM PT `candy-offers` sweep they must still be inactive (falsifier + next step in the ledger).
 - Remaining flagged phantom asks (holder ≠ seller, active): 104 at 11:09 PM PT, expected ~0 by ~8 AM PT 11-21 as the census stamps `last_census_clean_walk_started_at`.
 
 ## STEER — added 2026-11-19 ~10:00 PM PT (Cowork cloud, evening audit pass) — two dated reads

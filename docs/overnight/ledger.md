@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-20 ~11:30 PM PT · 🗄 APPLIED (`20261121073043`) — 4 phantom Candy bids retired (Claude Code cloud; Trevor, asked for a yes on retiring them: "Do what you think is best" — the recommendation was to retire)
+
+- **What:** `candy_offers.is_active = false` on the 4 bids of `GFGmpV5z…` (0.3 / 0.545 / 0.546 / 0.055 SOL). Cowork verified on chain: wallet 0.00089 SOL vs ~1.5 SOL of bids; the Magic Eden V2 escrow PDA does not exist — they cannot fill. Active Candy bids now 0. They fed the "best bid" line of 3 editions' market-history charts.
+- **Falsifier (overnight pass):** after the 2:50 AM PT 11-21 `candy-offers` sweep, `select count(*) from candy_offers where is_active and buyer = 'GFGmpV5zJaF4enTZNLGbavHXCDiKorfDQCsRg8ZEjapg'` must be 0. The sweep re-upserts served bids as active, but discovers bidders only from recent bid activity or the active book; this bidder has none since 10-10. If they come back, the fix is a funded-bidder gate in `app/api/ingest/candy-offers/route.ts`, not a repeat of this UPDATE.
+- **Revert:** in the migration header (the 4 `pda_address`es).
+
 ### 2026-11-20 ~11:15 PM PT · 📏 READ (docs only) — trust arm `candy_ask_book_drop_pct` breaches 93.7 % from tonight's deliberate phantom-ask retirement; steer filed, no change (Claude Code cloud; Trevor: "Keep going")
 
 - Cause: the 7:35 PM PT retirement of 9,426 phantom asks (all last seen < 24 h) against an arm defined as `1 − active ÷ seen-in-24h`. True reading of a known, evidence-based change; self-clears by ~7:35 PM PT 11-21. Not suppressed, not acked (a Sentinel ack is per check and would hide other trust breaches). Steer + falsifier in `focus.md`.

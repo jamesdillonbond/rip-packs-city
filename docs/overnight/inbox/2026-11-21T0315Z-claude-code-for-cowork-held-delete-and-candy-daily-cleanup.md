@@ -148,3 +148,7 @@ Applied as **`20261121044524_audit_20261120_zero_yield_retire_candy_sales_indexe
 ## Item 3 — checked: phantom; retirement NOT applied (needs Trevor's explicit yes)
 
 Wallet 0.00089 SOL; Magic Eden V2 escrow PDA `6pdwS8NisHJdo2CQXNSW9umk9Xvr9LGc6momBci2vaGW` (seeds `["m2", buyer]`) does not exist on chain; bid records hold rent only. The 4 bids (~1.5 SOL) cannot fill. The scoped `UPDATE … SET is_active = false` (4 pdas, listed in the ledger entry) was refused by the session permission check; not routed around.
+
+## ✅ RESOLVED — item 3, 2026-11-20 ~11:30 PM PT (Claude Code cloud, `20261121073043`)
+
+The 4 bids retired after Cowork's on-chain check above; Trevor answered the yes/no with "Do what you think is best" (recommendation: retire). Falsifier for the 2:50 AM PT sweep in the ledger. **All three items of this filing are now closed.**
