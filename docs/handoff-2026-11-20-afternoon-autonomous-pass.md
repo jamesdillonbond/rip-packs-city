@@ -2,7 +2,7 @@
 
 **Trevor:** "Can you work autonomously for the next 3 hours? Look through the project, database, sentinel, known issues, roadmaps, etc. fix any issues you encounter."
 
-**Verdict: GREEN estate · 3 shipped (DB; one with census code) + 1 shipped-then-reverted (code) · 1 held for a human · 1 scheduled self-check (7:50 PM PT).**
+**Verdict: GREEN estate · 4 shipped (DB; one with census code; one fixing my own plan regression) + 1 shipped-then-reverted (code) · 1 held for a human · 1 scheduled self-check (7:50 PM PT).**
 Push worked from this session (`git push` straight to `main`); no environment blocker.
 
 ## Health (read 4:20–5:10 PM PT)
@@ -16,9 +16,10 @@ Push worked from this session (`git push` straight to `main`); no environment bl
 1. **`20261121002539`** — Zero-Yield arm suppresses `candy-orphan-name-only-editions` (the #246 cleanup is drained: whole name-only population 0; 58 new Candy editions in 7 d, none name-only). Arm reads 0 offenders.
 2. **`20261121004754`** — `candy_retire_listings_owner_moved()` can finally reach the **legacy-collection phantom asks**. 9,619 of 10,156 active Magic Eden Candy asks were pre-migration phantoms (seller = old custody wallet, holder = the user's new wallet; 325 of 646 sellers traded before the 10-12 lock, 0 holders did; since reopening holders sell, sellers do not). The retirer's evidence gate needed the holder row rewritten after the ask appeared, which the insert-only legacy census never does. New arm: a single-run collection walk completed > 20 min after first-seen. Sized: 9,354 retire, 0 asks by anyone who has sold since reopening. Takes effect at `candy-listings-indexer` 7:35 PM PT. Pin + drift guard; preflight incl. the DB-invariant SQL suite green. **User-visible size (read ~5:20 PM PT):** of 3,673 Candy editions with an active ask, **3,194 show ONLY phantom asks** (listings that cannot fill) and on 131 more a phantom sets the floor (the real floor is a median 2.3× higher). These feed `candy_listing_floor` (FMV ask ceiling), the Market tab / % listed and the Spreads/Deals boards — expect those, and Candy FMV at its next pass, to move after 7:35 PM. Registry sets hold only 15 of the phantoms (10 unreached by their census; small, unaddressed).
 3. **`20261121010254` + `lib/candy/collections-census.ts`** — the census stamps when a CLEAN walk began (`last_census_clean_walk_started_at`); the retirer accepts it, covering collections whose walk spans several runs.
-4. Inbox: seven closed 11-17..11-20 filings retired in place (markers + RESOLVED sections).
+4. **`20261121012809`** — fixes a COST regression I introduced in items 2–3: OR-ing the census evidence into the 11-08 UPDATE turned a per-ask index probe into a hash join over all 1.37M Candy holdings (56k → 370k buffers, 5 → 17 s cold). The census arm is now its own statement (68k / 1.3 s); same rows. Caught by EXPLAIN after shipping, before any production run used it.
+5. Inbox: seven closed 11-17..11-20 filings retired in place (markers + RESOLVED sections).
 
-## Shipped, then reverted (my error — read this)
+## Shipped, then reverted (my error — read this; see also item 4 above, my second one)
 - ~4:40 PM PT I shipped `a0096c4d9` (collections-market refreshes an unresolved ask's row when ME still serves it), reasoning that "served by ME" meant live. It does not — ME serves the pre-migration phantoms. Reverted at ~4:44 PM (`001d0bf42`); prod is on the revert. #257's watch had fired correctly. Lesson recorded in `docs/reference/chain-strategy.md` (new 2026-11-20 Candy section).
 
 ## Queued for Trevor / Claude Code
