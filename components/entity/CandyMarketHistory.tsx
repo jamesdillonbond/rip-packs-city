@@ -23,7 +23,7 @@ export default function CandyMarketHistory({ rows, ok }: { rows: CandyMarketDay[
   return (
     <Section title="Market history">
       <div className="rpc-mono" style={{ marginTop: -6, marginBottom: 10, fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.6 }}>
-        The cheapest Magic Eden listing RPC confirmed, how many copies were listed, and the best bid — once a day, recorded since {since}. A day RPC could not re-read the listings has no row. Asks from Oct 26 to Nov 8 were withdrawn: Candy moved every card to new wallets in October and Magic Eden kept showing the old owners’ listings, which could not fill.
+        The cheapest Magic Eden listing RPC confirmed, how many copies were listed, and the best bid — once a day, recorded since {since}. A day RPC could not re-read the listings has no row. Asks from Oct 26 to Nov 8 and from Nov 15 to Nov 20 were withdrawn (shown as —): Candy moved every card to new wallets in October and Magic Eden kept showing the old owners’ listings, which could not fill.
       </div>
       {!ok ? (
         <div style={note} data-testid="candy-market-history-failed">Market history couldn&apos;t be loaded — refresh to try again.</div>
