@@ -34,7 +34,7 @@ import { solUsd } from "@/lib/chains/solana/das"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
-type FetchFn = (url: string, init?: RequestInit) => Promise<Response>
+export type FetchFn = (url: string, init?: RequestInit) => Promise<Response>
 
 const ME_BASE = "https://api-mainnet.magiceden.dev/v2"
 const ME_LIMIT = 500
@@ -50,10 +50,10 @@ const MAX_PAGES = 31
 const LISTING_LIMIT = 100
 const LISTING_MAX_PAGES = 20
 const SYMBOL_RETRY_MS = 7 * 86_400_000
-const SALE_TYPES = new Set(["buyNow", "buyNowFill", "acceptBid"])
+export const SALE_TYPES = new Set(["buyNow", "buyNowFill", "acceptBid"])
 export const QUEUE_REASON = "queued_collections_walk"
 
-interface MeActivity {
+export interface MeActivity {
   signature?: string
   type?: string
   tokenMint?: string
@@ -108,20 +108,7 @@ export async function runCollectionsMarket(
     stats_written: 0, sales_offered: 0, listings_written: 0, listings_retired: 0, error: null,
   }
 
-  const me = async (path: string): Promise<unknown> => {
-    const headers: Record<string, string> = { Accept: "application/json" }
-    const key = process.env.MAGIC_EDEN_API_KEY
-    if (key) headers["Authorization"] = `Bearer ${key}`
-    for (let attempt = 0; attempt < 2; attempt++) {
-      if (pauseMs > 0) await new Promise((r) => setTimeout(r, pauseMs))
-      const resp = await doFetch(`${ME_BASE}${path}`, { headers, signal: AbortSignal.timeout(ME_FETCH_TIMEOUT_MS) })
-      if (resp.status === 429 && attempt === 0) { await new Promise((r) => setTimeout(r, 2000)); continue }
-      if (resp.status === 404) return null
-      if (!resp.ok) throw new Error(`ME ${path.split("?")[0]} HTTP ${resp.status}`)
-      return await resp.json()
-    }
-    throw new Error(`ME ${path.split("?")[0]} HTTP 429`)
-  }
+  const me = meClient(doFetch, pauseMs)
 
   const { data: queue, error: qErr } = await db
     .from("candy_collections")
@@ -223,33 +210,7 @@ export async function runCollectionsMarket(
       rep.sales_seen = sales.length
 
       // Offer only sales not already in `sales` or the queue.
-      const sigs = [...new Set(sales.map((s) => s.signature as string))]
-      const known = new Set<string>()
-      for (let i = 0; i < sigs.length; i += 200) {
-        const chunk = sigs.slice(i, i + 200)
-        const q = await db.from("candy_sales_unresolved").select("signature").in("signature", chunk)
-        if (q.error) throw new Error(`queue read: ${q.error.message}`)
-        for (const r of (q.data ?? []) as Array<{ signature: string }>) known.add(r.signature)
-        const s = await db.from("sales").select("transaction_hash").eq("collection_id", CANDY_MLB_UUID).in("transaction_hash", chunk)
-        if (s.error) throw new Error(`sales read: ${s.error.message}`)
-        for (const r of (s.data ?? []) as Array<{ transaction_hash: string }>) known.add(r.transaction_hash)
-      }
-      for (const a of sales) {
-        if (known.has(a.signature as string)) continue
-        const { error } = await db.rpc("candy_park_unresolved_sale", {
-          p_signature: a.signature,
-          p_token_mint: a.tokenMint,
-          p_block_time: new Date((a.blockTime ?? 0) * 1000).toISOString(),
-          p_price_sol: typeof a.price === "number" ? a.price : null,
-          p_buyer: a.buyer ?? null,
-          p_seller: a.seller ?? null,
-          p_skip_reason: QUEUE_REASON,
-        })
-        if (error) throw new Error(`offer ${a.signature}: ${error.message}`)
-        known.add(a.signature as string)
-        rep.sales_offered++
-        out.sales_offered++
-      }
+      await offerSales(db, sales, () => { rep.sales_offered++; out.sales_offered++ })
 
       if (!budgetStop && (reachedFloor || rep.truncated) && newestMs !== null && (hwMs === null || newestMs > hwMs)) {
         patch.sales_high_water_at = new Date(newestMs).toISOString()
@@ -421,6 +382,58 @@ interface MeListing {
   price?: number
   tokenSize?: number
   expiry?: number
+}
+
+// Offer each sale to the drain queue (candy_sales_unresolved, reason QUEUE_REASON) unless its
+// signature is already queued or already in `sales`. Shared by the rotating market walk and the
+// hourly sales pass (collections-sales-pass.ts), so both lanes dedupe the same way. Throws on the
+// first failed read or offer; `onOffered` fires once per offer that landed before that.
+export async function offerSales(db: Db, sales: MeActivity[], onOffered: () => void): Promise<void> {
+  const sigs = [...new Set(sales.map((s) => s.signature as string))]
+  const known = new Set<string>()
+  for (let i = 0; i < sigs.length; i += 200) {
+    const chunk = sigs.slice(i, i + 200)
+    const q = await db.from("candy_sales_unresolved").select("signature").in("signature", chunk)
+    if (q.error) throw new Error(`queue read: ${q.error.message}`)
+    for (const r of (q.data ?? []) as Array<{ signature: string }>) known.add(r.signature)
+    const s = await db.from("sales").select("transaction_hash").eq("collection_id", CANDY_MLB_UUID).in("transaction_hash", chunk)
+    if (s.error) throw new Error(`sales read: ${s.error.message}`)
+    for (const r of (s.data ?? []) as Array<{ transaction_hash: string }>) known.add(r.transaction_hash)
+  }
+  for (const a of sales) {
+    if (known.has(a.signature as string)) continue
+    const { error } = await db.rpc("candy_park_unresolved_sale", {
+      p_signature: a.signature,
+      p_token_mint: a.tokenMint,
+      p_block_time: new Date((a.blockTime ?? 0) * 1000).toISOString(),
+      p_price_sol: typeof a.price === "number" ? a.price : null,
+      p_buyer: a.buyer ?? null,
+      p_seller: a.seller ?? null,
+      p_skip_reason: QUEUE_REASON,
+    })
+    if (error) throw new Error(`offer ${a.signature}: ${error.message}`)
+    known.add(a.signature as string)
+    onOffered()
+  }
+}
+
+// A Magic Eden GET: optional API key, a pause before every call, one retry after a 429, null on
+// 404, a throw on anything else that is not 2xx. Shared by both lanes in this family.
+export function meClient(doFetch: FetchFn, pauseMs: number): (path: string) => Promise<unknown> {
+  return async (path: string): Promise<unknown> => {
+    const headers: Record<string, string> = { Accept: "application/json" }
+    const key = process.env.MAGIC_EDEN_API_KEY
+    if (key) headers["Authorization"] = `Bearer ${key}`
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (pauseMs > 0) await new Promise((r) => setTimeout(r, pauseMs))
+      const resp = await doFetch(`${ME_BASE}${path}`, { headers, signal: AbortSignal.timeout(ME_FETCH_TIMEOUT_MS) })
+      if (resp.status === 429 && attempt === 0) { await new Promise((r) => setTimeout(r, 2000)); continue }
+      if (resp.status === 404) return null
+      if (!resp.ok) throw new Error(`ME ${path.split("?")[0]} HTTP ${resp.status}`)
+      return await resp.json()
+    }
+    throw new Error(`ME ${path.split("?")[0]} HTTP 429`)
+  }
 }
 
 async function stamp(db: Db, address: string, patch: Record<string, unknown>, rep: CollectionMarketReport, errors: string[]) {

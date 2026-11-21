@@ -15,7 +15,8 @@
 // See docs/overnight/inbox/2026-09-02T0400Z-candy-secondary-is-no-longer-magic-eden-only-*.md
 //
 // ARMED 2026-07-19: CANDY_MLB_ME_SYMBOL is filled with the verified live symbol
-// and a Vercel cron drives this every 3h. Magic Eden currently lists 0 Candy items
+// and a Vercel cron drives this (every 3h until 2026-11-21; HOURLY at :20 since, 15 min after
+// /api/ingest/candy-collections-sales offers each collection's new sales to this drain). Magic Eden currently lists 0 Candy items
 // (quest-hold rule) so every tick is a 1-call no-op; the first printed secondary
 // sale is captured automatically. The candyMeSymbolReady() short-circuit is kept
 // as a guard for any future placeholder state.
