@@ -3717,6 +3717,14 @@ const PINS = [
     test: "supabase/tests/check_suppression_count_predicate_drift.sql",
     migration: "supabase/migrations/20261010185858_audit_20261010_suppression_count_predicates_are_code.sql",
   },
+  {
+    // Added 2026-11-20: the owner-moved retirer also accepts a completed single-run LEGACY collection
+    // census after first_seen + 20 min as evidence (the legacy census is insert-only, so ~9.6k
+    // pre-migration phantom asks never met the row-level last_seen_at gate).
+    fn: "candy_retire_listings_owner_moved",
+    test: "supabase/tests/candy_retire_listings_owner_moved.sql",
+    migration: "supabase/migrations/20261121004754_audit_20261120_candy_owner_moved_reads_collection_census.sql",
+  },
 ]/**
  * Find the first `CREATE OR REPLACE FUNCTION public.<name>` occurrence that is
  * NOT inside a `--` line comment. Migrations frequently carry the prior version
