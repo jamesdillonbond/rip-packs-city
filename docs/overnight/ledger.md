@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-20 ~8:32 PM PT · 🗄 APPLIED (`20261121043220`, Trevor-approved) — Candy edition market-history rows recorded while phantom asks were active now read "unknown" (Claude Code cloud; Trevor: "Yes, blank it")
+
+- **What:** `candy_edition_market_daily` floor ask + listed count → NULL on **16,471 rows / 3,388 editions, 11-15 → 11-20** — rows recorded on or after the PT day a since-retired phantom ask for that edition first appeared, showing a floor or a non-zero count. All 13,302 phantom-era floors included; the 7,291 true "0 listed" rows from before any phantom appeared were KEPT. This is narrower than the 13,765–23,762 rows a looser predicate counts; the approval was given on the 13,765 estimate and the applied scope is a subset aimed only at the wrong values.
+- **Why:** every Candy edition page's market-history chart draws this table; those days showed listings that could never fill. Same remedy as 11-08 (`20261108183038`). 11-21 onward is clean without this.
+- **Verified:** backup rows 16,471 = blanked rows 16,471; backup table RLS on, anon cannot read; `check_public_security_invariants()` `[]`. Spot check (top edition): 11-12 → 11-14 "0 listed" unchanged; 11-15 → 11-20 "$21–22, 6 listed" → unknown.
+- **Revert:** `UPDATE public.candy_edition_market_daily d SET floor_ask_usd = b.floor_ask_usd, listed_count = b.listed_count FROM public.audit_20261120_candy_market_daily_phantom_backup b WHERE d.edition_id = b.edition_id AND d.day = b.day;`
+
 ### 2026-11-20 ~8:10 PM PT · 🔧 SHIPPED (code) — Day-1 and weekly emails suggest a deal alert on the player the member owns most of (Claude Code cloud; Trevor: "Connect the repo and do it")
 
 - Why: only 2 members outside the team have a deal alert (mxtthxw 9, webz_80 1 — both Telegram); `fmv_alerts` has 0 rows ever. Alerts are the one retention channel that fires on its own.

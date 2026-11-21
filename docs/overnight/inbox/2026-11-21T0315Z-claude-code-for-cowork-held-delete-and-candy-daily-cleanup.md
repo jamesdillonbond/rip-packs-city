@@ -57,7 +57,12 @@ DELETE FROM public.pipeline_zero_yield_suppressions WHERE pipeline = 'candy-sale
 
 ---
 
-## Item 2 — NEEDS TREVOR'S YES: null the Candy daily-market floors recorded off the phantom book (11-14 → 11-20)
+## Item 2 — ✅ DONE by Claude Code 2026-11-20 ~8:32 PM PT (`20261121043220`, Trevor: "Yes, blank it") — Cowork: nothing to do
+
+> Applied with a narrower scope than below (16,471 rows: only rows recorded on/after a phantom ask for that edition first
+> appeared; true "0 listed" rows kept). Ledger 2026-11-20 ~8:32 PM PT. The original plan is kept below for the record.
+
+## (original) Item 2 — null the Candy daily-market floors recorded off the phantom book (11-14 → 11-20)
 
 **What happened:** from 11-14 (when `lib/candy/collections-market.ts` began writing legacy-collection asks) until the
 7:35 PM PT 11-20 `candy-listings-indexer` run, ~9.3k pre-migration PHANTOM Magic Eden asks were active in
