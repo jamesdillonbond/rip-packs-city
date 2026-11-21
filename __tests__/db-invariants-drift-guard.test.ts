@@ -3724,7 +3724,7 @@ const PINS = [
     // that began after first_seen (candy_collections.last_census_clean_walk_started_at, same day).
     fn: "candy_retire_listings_owner_moved",
     test: "supabase/tests/candy_retire_listings_owner_moved.sql",
-    migration: "supabase/migrations/20261121010254_audit_20261120_candy_owner_moved_multi_run_walks.sql",
+    migration: "supabase/migrations/20261121012809_audit_20261120_candy_owner_moved_census_arm_own_statement.sql",
   },
 ]/**
  * Find the first `CREATE OR REPLACE FUNCTION public.<name>` occurrence that is

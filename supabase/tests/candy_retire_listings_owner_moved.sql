@@ -11,7 +11,7 @@
 -- A card back with its seller lifts the mark.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261121010254_audit_20261120_candy_owner_moved_multi_run_walks.sql);
+-- (supabase/migrations/20261121012809_audit_20261120_candy_owner_moved_census_arm_own_statement.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -36,15 +36,14 @@ SET search_path = public
 AS $$
 DECLARE
   v_cards integer;
+  v_cards_census integer;
   v_packs integer;
   v_cards_cleared integer;
   v_packs_cleared integer;
 BEGIN
-  -- Evidence: a census walk that ran AFTER we first saw the ask shows another owner. Either the
-  -- holder row itself was (re)written after first_seen (registry census), or the card's legacy
-  -- collection completed a walk that began after first_seen (legacy census, insert-only: an
-  -- unchanged holding keeps its old last_seen_at). 20261121004754 added the single-run proxy
-  -- (completed > first_seen + 20 min); audit_20261120_candy_owner_moved_multi_run_walks added the recorded start of a clean multi-run walk.
+  -- Evidence: a census walk that ran AFTER we first saw the ask shows another owner.
+  -- (1) The holder row itself was (re)written after first_seen (registry census) — the 11-08 rule,
+  --     unchanged, so it keeps its per-ask index plan.
   UPDATE candy_listings l
      SET is_active = false,
          owner_moved_at = COALESCE(l.owner_moved_at, now())
@@ -54,16 +53,31 @@ BEGIN
      AND w.moment_id = l.token_mint
      AND l.seller IS NOT NULL
      AND w.wallet_address <> l.seller
-     AND (w.last_seen_at > l.first_seen_at
-          OR EXISTS (SELECT 1
-                       FROM editions e
-                       JOIN candy_collections c ON c.set_id = e.set_id
-                      WHERE e.id = l.edition_id
-                        AND c.last_census_error IS NULL
-                        AND ((c.last_census_items IS NOT NULL
-                              AND c.last_census_at > l.first_seen_at + interval '20 minutes')
-                             OR c.last_census_clean_walk_started_at > l.first_seen_at)));
+     AND w.last_seen_at > l.first_seen_at;
   GET DIAGNOSTICS v_cards = ROW_COUNT;
+
+  -- (2) The card's LEGACY collection completed a walk that began after first_seen (the legacy census is
+  --     insert-only: an unchanged holding keeps its old last_seen_at, so (1) can never see it). A
+  --     single-run walk (last_census_items set) began at most one run (800 s) before it completed, so
+  --     completed > first_seen + 20 min proves it; a clean multi-run walk records its start. A SEPARATE
+  --     statement with plain joins on purpose: OR-ing this into (1) as an EXISTS turned the per-ask index
+  --     probe into a hash join over all ~1.37M Candy holdings (56k -> 370k buffers, measured 11-20).
+  UPDATE candy_listings l
+     SET is_active = false,
+         owner_moved_at = COALESCE(l.owner_moved_at, now())
+    FROM editions e, candy_collections c, wallet_moments_cache w
+   WHERE l.is_active
+     AND l.seller IS NOT NULL
+     AND e.id = l.edition_id
+     AND c.set_id = e.set_id
+     AND c.last_census_error IS NULL
+     AND ((c.last_census_items IS NOT NULL AND c.last_census_at > l.first_seen_at + interval '20 minutes')
+          OR c.last_census_clean_walk_started_at > l.first_seen_at)
+     AND w.collection_id = '209ade70-32c5-4470-bc7c-4793d660f713'::uuid
+     AND w.moment_id = l.token_mint
+     AND w.wallet_address <> l.seller;
+  GET DIAGNOSTICS v_cards_census = ROW_COUNT;
+  v_cards := v_cards + v_cards_census;
 
   UPDATE candy_pack_listings pl
      SET is_active = false,
@@ -98,7 +112,7 @@ BEGIN
   GET DIAGNOSTICS v_packs_cleared = ROW_COUNT;
 
   RETURN jsonb_build_object(
-    'cards_retired', v_cards, 'packs_retired', v_packs,
+    'cards_retired', v_cards, 'cards_retired_by_collection_census', v_cards_census, 'packs_retired', v_packs,
     'cards_cleared', v_cards_cleared, 'packs_cleared', v_packs_cleared);
 END;
 $$;
@@ -152,6 +166,7 @@ DO $t$
 DECLARE v jsonb;
 BEGIN
   v := public.candy_retire_listings_owner_moved();
+  PERFORM _assert_eq(v->>'cards_retired_by_collection_census', '2', 'the collection-census statement retires the two legacy phantoms and reports them on their own');
   PERFORM _assert_eq(v->>'cards_retired', '3', 'exactly the single-run legacy phantom, the clean multi-run legacy phantom and the registry-evidence ask retire');
   PERFORM _assert((SELECT NOT is_active FROM public.candy_listings WHERE pda_address = 'P_MULTICLEAN'),
     'a clean multi-run walk that BEGAN after first_seen retires the ask');
