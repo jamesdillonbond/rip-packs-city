@@ -254,6 +254,8 @@ describe("candy-offers — sweep ladder", () => {
     const extra = logRun(spy.rpcCalls)?.p_extra as Record<string, unknown>
     expect(extra.unfunded_offers).toBe(0)
     expect(extra.funding_unknown).toBe(1)
+    // 2026-11-21: the run says WHICH leg and why (keys only, never values)
+    expect(extra.funding_unknown_reasons).toEqual({ "escrow:shape keys=unexpected": 1 })
   })
 
   it("discovers bidders on a later Candy set's own feed too (2026-11-08)", async () => {

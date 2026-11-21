@@ -18,6 +18,9 @@
 export interface BidderFunding {
   escrowSol: number | null
   walletSol: number | null
+  /** Why a leg is unknown (e.g. "escrow:http 404", "wallet:shape"). Empty when both read. Recorded on the run
+   *  (2026-11-21: the first live run read funding_unknown 1 with no way to tell which leg or why). */
+  reasons: string[]
 }
 
 /** True only on positive evidence that neither escrow nor wallet covers the bid. */
@@ -58,6 +61,10 @@ export async function readBidderFunding(
   },
 ): Promise<BidderFunding> {
   const f = deps.fetchImpl ?? fetch
+  const reasons: string[] = []
+  // A short, value-free description of an unrecognised body: its top-level keys, never its values.
+  const shapeOf = (j: unknown) =>
+    j && typeof j === "object" ? `keys=${Object.keys(j as object).slice(0, 5).join("|") || "none"}` : typeof j
   let escrowSol: number | null = null
   let walletSol: number | null = null
   try {
@@ -65,9 +72,14 @@ export async function readBidderFunding(
       headers: deps.meHeaders,
       signal: AbortSignal.timeout(deps.timeoutMs),
     })
-    if (r.ok) escrowSol = parseEscrowBalance(await r.json())
-  } catch {
-    escrowSol = null
+    if (!r.ok) reasons.push(`escrow:http ${r.status}`)
+    else {
+      const j = await r.json()
+      escrowSol = parseEscrowBalance(j)
+      if (escrowSol == null) reasons.push(`escrow:shape ${shapeOf(j)}`)
+    }
+  } catch (e) {
+    reasons.push(`escrow:error ${(e instanceof Error ? e.name : "unknown")}`)
   }
   try {
     const r = await f(SOLANA_PUBLIC_RPC, {
@@ -76,9 +88,14 @@ export async function readBidderFunding(
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getBalance", params: [bidder] }),
       signal: AbortSignal.timeout(deps.timeoutMs),
     })
-    if (r.ok) walletSol = parseGetBalance(await r.json())
-  } catch {
-    walletSol = null
+    if (!r.ok) reasons.push(`wallet:http ${r.status}`)
+    else {
+      const j = await r.json()
+      walletSol = parseGetBalance(j)
+      if (walletSol == null) reasons.push(`wallet:shape ${shapeOf(j)}`)
+    }
+  } catch (e) {
+    reasons.push(`wallet:error ${(e instanceof Error ? e.name : "unknown")}`)
   }
-  return { escrowSol, walletSol }
+  return { escrowSol, walletSol, reasons }
 }

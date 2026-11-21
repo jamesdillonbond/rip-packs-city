@@ -3,20 +3,20 @@ import { isUnfundable, parseEscrowBalance, parseGetBalance } from "@/lib/candy/o
 
 describe("isUnfundable — positive evidence only", () => {
   it("both escrow and wallet below the bid → unfundable (the 11-20 drained-wallet case)", () => {
-    expect(isUnfundable(0.3, { escrowSol: 0, walletSol: 0.00089 })).toBe(true)
+    expect(isUnfundable(0.3, { escrowSol: 0, walletSol: 0.00089, reasons: [] })).toBe(true)
   })
   it("either source covering the bid keeps it", () => {
-    expect(isUnfundable(0.3, { escrowSol: 0.3, walletSol: 0 })).toBe(false)
-    expect(isUnfundable(0.3, { escrowSol: 0, walletSol: 0.5 })).toBe(false)
+    expect(isUnfundable(0.3, { escrowSol: 0.3, walletSol: 0, reasons: [] })).toBe(false)
+    expect(isUnfundable(0.3, { escrowSol: 0, walletSol: 0.5, reasons: [] })).toBe(false)
   })
   it("an unknown read keeps the bid (fail open)", () => {
-    expect(isUnfundable(0.3, { escrowSol: null, walletSol: 0 })).toBe(false)
-    expect(isUnfundable(0.3, { escrowSol: 0, walletSol: null })).toBe(false)
+    expect(isUnfundable(0.3, { escrowSol: null, walletSol: 0, reasons: [] })).toBe(false)
+    expect(isUnfundable(0.3, { escrowSol: 0, walletSol: null, reasons: [] })).toBe(false)
     expect(isUnfundable(0.3, undefined)).toBe(false)
   })
   it("a non-positive or non-finite price is never judged", () => {
-    expect(isUnfundable(0, { escrowSol: 0, walletSol: 0 })).toBe(false)
-    expect(isUnfundable(Number.NaN, { escrowSol: 0, walletSol: 0 })).toBe(false)
+    expect(isUnfundable(0, { escrowSol: 0, walletSol: 0, reasons: [] })).toBe(false)
+    expect(isUnfundable(Number.NaN, { escrowSol: 0, walletSol: 0, reasons: [] })).toBe(false)
   })
 })
 

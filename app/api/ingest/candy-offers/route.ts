@@ -659,10 +659,12 @@ async function handleSweep(req: NextRequest) {
       phase = "funding"
       const fundingByBidder = new Map<string, BidderFunding>()
       let fundingUnknown = 0
+      const fundingUnknownReasons: Record<string, number> = {}
       for (const bidder of [...new Set(rows.map((r) => String(r.buyer)))]) {
         if (outOfTime()) break
         const f = await readBidderFunding(bidder, { meBase: ME_BASE, meHeaders: meHeaders(), timeoutMs: ME_REQUEST_TIMEOUT_MS })
         if (f.escrowSol == null || f.walletSol == null) fundingUnknown++
+        for (const why of f.reasons) fundingUnknownReasons[why] = (fundingUnknownReasons[why] ?? 0) + 1
         fundingByBidder.set(bidder, f)
         await new Promise((r) => setTimeout(r, ME_THROTTLE_MS))
       }
@@ -849,6 +851,7 @@ async function handleSweep(req: NextRequest) {
         deactivated,
         funding_bidders_checked: fundingByBidder.size,
         funding_unknown: fundingUnknown,
+        funding_unknown_reasons: fundingUnknownReasons,
         unfunded_offers: unfundedPdas.length,
         unfunded_deactivated: unfundedDeactivated,
         sol_usd: rate,
