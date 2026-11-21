@@ -282,8 +282,13 @@ if (cursor > cursorBefore) {
     if (marketplaceFnsSeen.length === 0) {
       const SQ = `query($lo:bigint,$hi:bigint){token_activities_v2(where:{transaction_version:{_gte:$lo,_lt:$hi},type:{_eq:"0x1::object::Transfer"}},order_by:{transaction_version:desc},limit:50){entry_function_id_str}}`
       const sample = (await gql(SQ, { lo: cursorBefore, hi: cursor })).token_activities_v2
+      // Purchase-named functions from ANY address: a marketplace that moved to a new contract ADDRESS is
+      // invisible to the address-prefixed filters above.
+      const BQ = `query($lo:bigint,$hi:bigint){token_activities_v2(where:{transaction_version:{_gte:$lo,_lt:$hi},type:{_eq:"0x1::object::Transfer"},_or:[{entry_function_id_str:{_ilike:"%::buy%"}},{entry_function_id_str:{_ilike:"%accept%bid%"}}]},distinct_on:entry_function_id_str,order_by:{entry_function_id_str:asc},limit:50){entry_function_id_str}}`
+      const anyBuy = (await gql(BQ, { lo: cursorBefore, hi: cursor })).token_activities_v2.map((r) => r.entry_function_id_str)
       indexerSample = { transfers: sample.length, with_entry_fn: sample.filter((r) => r.entry_function_id_str).length,
-        fns: [...new Set(sample.map((r) => r.entry_function_id_str).filter(Boolean))].slice(0, 10) }
+        fns: [...new Set(sample.map((r) => r.entry_function_id_str).filter(Boolean))].slice(0, 10),
+        purchase_fns_any_address: anyBuy }
     }
   } catch (e) {
     probeError = String(e?.message ?? e).slice(0, 300)
