@@ -25,3 +25,7 @@ The snapshot `pipeline_alerts` are all the known upstream classes (Dapper Studio
 - **Source:** `list_deployments` (project `prj_YBJ6Utl32GfyBOIzbsp3kbshJh96`), 2026-11-20.
 - **Risk read:** **Zero user-facing impact.** Both canceled commits are docs/db-only (no frontend diff), and `f6616b8`'s DB change (`get_top_movers`, `20261120161120`) was applied directly to the DB and is already live. CANCELED ≠ ERROR, so this is not deploy breakage. Noted only because HEAD is not the live build and both canceled in a row (b03a9d6 superseded by f6616b8 is normal; f6616b8 canceling with nothing newer is mildly unusual — likely Vercel auto-cancel + rapid pushes).
 - **Suggested action:** none required; the night pass's next `main` push will supersede this state with a fresh build. If it wants HEAD live before then, redeploy `f6616b8` from the Vercel dashboard. Confirm the next frontend commit builds READY.
+
+## ✅ RESOLVED (Claude Code cloud, 2026-11-20 ~4:55 PM PT — retired in place (append-only); evidence read this session)
+
+Fixed by migration `20261120191551` (AFTER INSERT trigger re-keys a distribution's earlier `pack_ev_history` rows to the id just written; one-time re-key of the 48). Read 4:37 PM PT: 0 All Day distributions with two listing ids in `pack_ev_history`. Ledger 2026-11-20 ~11:21 AM PT.

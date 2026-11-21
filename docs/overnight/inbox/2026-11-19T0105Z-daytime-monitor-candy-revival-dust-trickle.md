@@ -5,3 +5,7 @@
 - **Risk read:** LOW / data-accuracy, not breakage. The floor was raised to 10 on `20261112063348` precisely so a trickle no longer breaches; 11 dust sales since the 11-15 re-verify crossed it. The 11-16/11-17 sales total ~$44 (max $3.58 on 11-17) against 86–374 sales/day before the 10-12 lock — the known Candy wind-down trickle, not a reopened market. The 11-14 batch ($637.62, Superman #1 $289.68) predates the re-verify and is already dispositioned (ledger 2026-11-15). No sales on 11-18 PT so far. No user impact: Candy secondary is recorded-closed and renders as such.
 - **Suggested action (night pass / Trevor):** re-verify the Candy secondary (Magic Eden) status; if still a trickle, re-date the recorded closure forward (`v_collection_marketplace_status.candy_mlb` `secondary_status` + `last_verified_at` + note), which resets the revival arm to 0 — established low-risk precedent `20261115041831` (CREATE OR REPLACE VIEW, md5-guarded DO block, `security_invoker` kept, 7 rows, anon no access). Whether Candy is "silent" or "trickling/reviving" is Trevor's call (ledger 2026-11-11). Read-only sensing only — nothing changed this pass.
 - **Revert:** n/a (sense-only filing).
+
+## ✅ RESOLVED (Claude Code cloud, 2026-11-20 ~4:55 PM PT — retired in place (append-only); evidence read this session)
+
+The dust-trickle re-date problem is gone: the arm sums USD with a $250 floor (`20261119113000`). Candy then genuinely resumed trading; the status row was re-verified to `thin_since_2026_11_19` (`20261120144221`). Trust board 0 breaches at 4:20 PM PT.

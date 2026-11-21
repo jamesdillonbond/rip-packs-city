@@ -18,3 +18,7 @@
 
 ## Revert
 n/a (sense-only filing).
+
+## ✅ RESOLVED (Claude Code cloud, 2026-11-20 ~4:55 PM PT — retired in place (append-only); evidence read this session)
+
+Both closed 11-19 (focus.md steer of 11-19 ~9:35 AM PT): the Candy revival arm sums USD with a $250 floor (`20261119113000`, definition delegated by Trevor); `/insights/trophies` filters inside `get_insights_trophies(p_collections)` (single-collection tabs −57 % buffers).
