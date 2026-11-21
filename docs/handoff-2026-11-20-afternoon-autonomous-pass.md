@@ -36,6 +36,13 @@ Push worked from this session (`git push` straight to `main`); no environment bl
 - **`analytics_sales_leaderboard` (`20261121030008`)**: the 5:13 PM PT statement timeout on the Pinnacle seller board came from `is_returning` probes walking each top address's whole Flow `sales` history for a collection that never appears there (~28k rows). Pinnacle board 3.56 s → 34 ms; outputs byte-identical; pin gained Pinnacle/mixed cases that pass on both old and new bodies.
 - Cost triage of pg_cron worker time: the top consumers are gated lanes whose time is a deliberate `pg_sleep` on scheduled minutes — no waste found. All collections' sales/FMV fresh (Pinnacle in its own tables: 183 sales in 24 h).
 
+## Later evening (~7:45–8:30 PM PT) — reads, no change
+- **Phantom retirement verified** (see ledger ~7:42 PM PT). Candy deals board: 0 rows on retired asks.
+- **DB cost, measured as a 30-min pgss DIFF (7:45 → 8:16 PM PT), not the 101-day pooled view:** most heavy RPCs idle or cheap in the window. Per call: `fmv_recalc_historical_candidates` 43 s, `get_lock_check_batch` 30 s. The lock lane is healthy by its own record (48/48 ok daily, ~54k rows/day, avg ~40 s of a 300 s budget, stable since 11-09; its header's revert trigger is p90 > 180 s on a saturation-free window — not close). ⚠ A direct probe of both `get_lock_check_batch` calls exceeded 60 s cold and was cancelled (`pg_cancel_backend`, my own pid) — don't re-run it ad hoc.
+- `backfill_wmc_metadata_from_editions`: checked for the rewrite-identical-values class (Top Shot `league` arm) — 0 rows stuck; clean.
+- R152 premiums MV: not a cost win (~16 calls/day × 4.8 s ≈ 80 s/day < 24 hourly refreshes). Register updated.
+- Candy daily-history cleanup (Cowork item 2) still needs Trevor's explicit yes — I did not record a general "do what you think is best" as approval for a specific rewrite of user-visible history.
+
 ## Not acted on (with reason)
 - #249 (ISR caches a failed pack-dist render): the throw-on-regeneration fix was tried once and served Next's unbranded 500 to 515 users (08-23 comment in the page); needs a preview-verified design, not an unattended change.
 - `refresh_wmc_fmv_changed` ~1 %/day statement timeouts: known, closed as low impact (#248).
