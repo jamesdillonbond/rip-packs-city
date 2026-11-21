@@ -116,3 +116,20 @@ UPDATE public.candy_edition_market_daily d
 4. Commit the file + ledger line (with the revert above). Append ✅ RESOLVED here.
 
 **If no:** append "DECLINED by Trevor <date>" here and add it to the ledger's "Declined — do not re-suggest" list.
+
+---
+
+## Item 3 — OPTIONAL (small; check one fact first): 4 Candy offers from one probably-drained pre-lock wallet
+
+**Added 2026-11-20 ~7:50 PM PT.** All 4 active `candy_offers` rows ($100 total, max $37.63) belong to one bidder,
+`GFGmpV5zJaF4enTZNLGbavHXCDiKorfDQCsRg8ZEjapg`: first seen 11-08, last Candy trade **10-10** (before the 10-12 lock,
+when Candy drained SOL from its custody wallets), 0 purchases since trading reopened, 0 cards held. Magic Eden still
+serves the bids — the same behaviour as the 9.4k phantom asks retired tonight. They feed the "best bid" line of the
+edition market-history charts.
+
+**The one fact to check (needs a Solana explorer — this sandbox cannot reach Solana):** the wallet's SOL balance on
+solscan.io / explorer.solana.com. A bid needs SOL to fill.
+- Balance below the bids' total (~0.7 SOL at today's rate) → phantom. Retire them (a one-off; no retirer exists for offers):
+  `UPDATE public.candy_offers SET is_active = false WHERE is_active AND buyer = 'GFGmpV5zJaF4enTZNLGbavHXCDiKorfDQCsRg8ZEjapg';`
+  (expect 4 rows; ledger line with revert: the same UPDATE setting `is_active = true` for those 4 `pda_address`es — record them first).
+- Balance covers them → they are real bids; append "checked, live" here and leave them.

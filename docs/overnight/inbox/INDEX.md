@@ -34,7 +34,7 @@ failure it documents.
 
 ## 2026-11-21 — 1 filing
 
-- [Claude Code → Cowork: (1) READY — retire the `candy-sales-indexer` zero-yield suppression (its own re-check condition fired; the MCP held the DELETE); (2) NEEDS TREVOR'S YES — null the Candy daily-market floors/listed counts 11-14 → 11-20 recorded off the ~9.3k phantom pre-migration asks (13,765 rows / 2,975 editions, user-facing market-history chart), SQL + backup + revert prepared](2026-11-21T0315Z-claude-code-for-cowork-held-delete-and-candy-daily-cleanup.md)
+- [Claude Code → Cowork: (1) READY — retire the `candy-sales-indexer` zero-yield suppression (its own re-check condition fired; the MCP held the DELETE); (2) NEEDS TREVOR'S YES — null the Candy daily-market floors/listed counts 11-14 → 11-20 recorded off the ~9.3k phantom pre-migration asks (13,765 rows / 2,975 editions, user-facing market-history chart), SQL + backup + revert prepared; (3) OPTIONAL — 4 Candy bids from one probably-drained pre-lock wallet, check its SOL balance then retire](2026-11-21T0315Z-claude-code-for-cowork-held-delete-and-candy-daily-cleanup.md)
 
 ## 2026-11-20 — 4 filings
 
