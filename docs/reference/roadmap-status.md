@@ -222,6 +222,25 @@ Done 10-15 → 10-17 (Claude Code cloud, session_014vWuubmVKLyyyMQAwWzT2W; Trevo
 - ❓ **Needs Trevor:** how the 2026-27 Yearbook / Blue Chip / Squad Goals leaderboards are scored. RPC will not publish its own rank as Top Shot's. The board worth building is "cost to climb into the top N", and it needs the official scoring.
 - **Tracked since 2026-10-19:** `editions.autographed_at` (from Atlas `autographedAt`, swept daily by pg_cron `rpc-autograph-sweep`; 236 Top Shot + 226 All Day signed editions at the census). Partner-athlete status itself is still not stored: Atlas's `activePartnerAthlete` flag marks only 4 players and is not the signer list. Research: [autographs-topshot-allday-2026-10-19.md](../research/autographs-topshot-allday-2026-10-19.md). **Not tracked yet:** Constellations trade-ins burn older-season Rares that the index does not walk (Dune-era sets), so holder counts there lag.
 
+## ⭐ NEW 2026-11-20 — ACTIVITY + CONCIERGE REVIEW, 11-13 8:00 PM → 11-20 8:00 PM PT (rolling 7 days by `scripts/demand-read.sql`, params 11-14 04:00 UTC → 11-21 04:00 UTC, prior week 11-07 04:00 → 11-14 04:00 by the same file; Claude Code cloud; Trevor: "review user activity and concierge from the past week")
+
+| rolling 7 days | prior (11-06..11-13) | **this (11-13..11-20)** |
+|---|---:|---:|
+| browsers / visits | 267 / 572 | **197 / 285** (1,909 crawler-burst visits excluded) |
+| engaged browsers | 134 | **78** |
+| external signed-in users | 36 | **20** |
+| signups (minus internal) | 21 | **3** (2 saved a wallet; the 11-14 Google signup did not) |
+| visits by source (one-page) | direct 459 (318) · X 86 (62) · Google 16 (10) · ChatGPT 6 (2) · Bing 4 · other 1 | **direct 240 (186) · Google 24 (21) · ChatGPT 12 (6) · X 7 (5) · other 2** |
+| concierge human messages (sessions) | 19 (5) | **0 (0)** |
+
+- **Concierge: zero human use, and the instrument is proven live.** `concierge_opened` was last logged 11-12; a headless open + close on `/nba-top-shot/overview` at 8:36 PM PT 11-20 wrote both `concierge_opened` and `concierge_closed_without_send` (flagged `automated`), so the zero is real. All 9 `concierge_messages` this week are `concierge-smoke`. Feedback queue: nothing open.
+- **Most active members:** rrx69 (6 days, 8 collections), profbauti (5), shashmeister and knotbean (4), niccolo_kun (3).
+- **The 11-17 surfaces, first week:** `anon-value-lookup` 0 human (1 headless); binder save card shown to 2 human browsers, 0 `binder_save_signup` clicks; sign-in clicks 2 site-wide; wallet pastes 52 (11 browsers).
+- **Deal alerts:** only 2 external members have one (mxtthxw 9, webz_80 1) — **both Telegram only**; `fmv_alerts` 0 rows ever. Shipped the same night (`e0848a0`): the Day-1 (wallet) and weekly emails suggest an alert on the player whose Top Shot / All Day moments carry the most value in the member's wallets, linking `/alerts?from=email&collection=…&player=…` (`utm_campaign=alert_player`); all 55 members with a saved Flow wallet get a pick.
+- ⚠ **Measurement trap: `user_profiles.wallet_saved_at` is NULL for every member (58/58)** — count wallet saves from `saved_wallets`. By `saved_wallets`, 31 of 34 signups since 11-02 saved a wallet; the gap is the second day, not the wallet step (schema-truth.md).
+- **Open, Trevor's call:** the next challenge (deferred 11-20: "we'll do a challenge later").
+- **Next read on/after Tue 11-24** (a scheduled check is set for 9:12 AM PT): the 11-23 weekly email's `sent` vs ~50–53 eligible and `alert_player` in its payloads; visits with `utm_source=email`; `alert_subscriptions` created after 11-23; whether massdog23 / cmnkb8 return.
+
 ## ⭐ NEW 2026-11-17 — ACTIVITY REVIEW, 11-10 8:30 PM → 11-17 8:30 PM PT (rolling 7 days by `scripts/demand-read.sql`, crawler rule fixed the same night; Claude Code cloud; full report: Project doc `claude/activity-review-2026-11-17-week.md`)
 
 - **Engaged browsers 134 → 82** (−39 %), engaged visits 406 → 188. **X visits 85 → 8** after Dame Time ended; **Google 17 → 23**, now the top outside source (17 of 23 one-page). Signed-in external users 29; daily 22 (11-10) → 2 (11-15) → 9 / 7 (11-16/17, after the claim and weekly emails).
