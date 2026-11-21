@@ -12,6 +12,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-20 ~4:40 PM PT · 🗄 APPLIED (`20261121002539`) — Zero-Yield arm: the drained Candy name-only cleanup is suppressed with a re-check condition; arm reads 0 offenders (Claude Code cloud; Trevor: "work autonomously … fix any issues you encounter")
+
+- **Found:** `check_zero_yield_lanes()` named one offender, `candy-orphan-name-only-editions` (hourly, 168 ok runs in 7 d, last find 11-13). It is the #246 cleanup and it is finished: deleted 4,564 on 11-10..11-13, 0 since; the WHOLE Candy name-only population (held or not) = 0. Positive control: 58 Candy editions created in 7 d, none name-only. Job kept as a safety net.
+- **Verified:** `check_zero_yield_lanes()->'offenders'` = `[]` after apply (suppressed 3 → 4).
+- **Held, not applied:** retiring the `candy-sales-indexer` suppression row (its own re-check condition fired this morning when `secondary_status` became `thin_since_2026_11_19`). The `DELETE` was held by the MCP's operator confirmation; it is in the handoff for a human. No current reading changes — the indexer is writing rows, so it is not an offender either way.
+- **Also confirmed:** `apply-fmv-haircut` 2:35 PM PT run `legs_skipped 0` (the HEAVY_LAST fix holds).
+- **Revert:** `DELETE FROM public.pipeline_zero_yield_suppressions WHERE pipeline = 'candy-orphan-name-only-editions';`
+
 ### 2026-11-20 ~11:21 AM PT · 🔧 FIXED (DB, `20261120191551`) — All Day pack EV view could not refresh: Atlas gives 48 distributions a different listing id than Studio did; one id per distribution is now enforced at the write (Cowork cloud; Trevor: "Keep going and do all you can")
 
 - **Found:** pg_cron `rpc-allday-ev-corrected-refresh` (jobid 65) failed at 10:47 AM PT — `duplicate key … mv_allday_pack_ev_corrected_dist (dist_id)=(165)`. It would have failed every 6 h from then on, freezing the All Day pack EV every pack page reads at its 4:47 AM values.
