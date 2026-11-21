@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-20 ~8:10 PM PT · 🔧 SHIPPED (code) — Day-1 and weekly emails suggest a deal alert on the player the member owns most of (Claude Code cloud; Trevor: "Connect the repo and do it")
+
+- Why: only 2 members outside the team have a deal alert (mxtthxw 9, webz_80 1 — both Telegram); `fmv_alerts` has 0 rows ever. Alerts are the one retention channel that fires on its own.
+- What: `lib/emails/alert-suggestion.ts` picks the player with the highest summed estimated value in the member's saved Flow wallets (Top Shot + All Day only; skipped if the member already has an active alert; any read failure = no line). The Day-1 wallet email swaps its generic "watch an edition" bullet for "Get an email when a <player> <Top Shot> moment lists at least 25% under its estimated value. Set up the alert →"; the weekly email gets a "Deal alert" block. The link is `/alerts?from=email&collection=…&player=…` (utm_campaign=alert_player); `readAlertPrefill` now accepts `from=email` and labels the draft "<player> deals". Nothing is saved until the member presses Save. Measured 11-20: all 55 members with a saved Flow wallet get a pick; the read is 55 ms / 9k buffers on a 10k-moment wallet.
+- Verify: Mon 11-23 weekly run — `alert_deliveries.payload->>'alert_player'` filled on weekly_digest rows; then `alert_subscriptions` rows created after 11-23 and page-views with `utm_campaign=alert_player`.
+- Revert: `git revert` this commit (code only; no DB change).
+
 ### 2026-11-20 ~7:42 PM PT · 📏 VERIFIED — the Candy phantom-ask retirement landed at the 7:35 PM PT indexer run (Claude Code cloud; same thread)
 
 - `candy-listings-indexer` 7:35 PM PT: ok, `extra.owner_moved_cards` **9,426**, `write_errors` 0, **duration 40.3 s** (previous runs 39.7 / 43.6 / 42.2 s — the 5:28 PM plan fix held; no regression). Vercel: 0 runtime errors in the hour.
