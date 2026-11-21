@@ -247,6 +247,14 @@ Moved to pay for the collection-keyed-map rule; the NEVER-NARROW bullet in CLAUD
 - **Why it mattered:** `purge_candy_wmc_ghost_rows` keeps ONE row per card, so an escrow row erased the seller's — 1,663 listed cards across up to 157 sellers were missing from their portfolios, and moment pages named the escrow as Owner. Listing on Top Shot never removed a moment from its owner on this site; listing on Candy did.
 - ⚠ **Still open:** `wallet-backfill-candy` reads DAS by owner and cannot see a listed card for its seller (it relies on the walk); `candy_pack_market.collector_wallets` counts the escrow as one collector wallet. Known-issues #145.
 
+## Candy MLB — "Magic Eden still serves it" is NOT evidence an ask is live (2026-11-20)
+
+Magic Eden kept serving Candy asks placed BEFORE the 10-12 lock, after Candy moved every card to new per-user wallets (10-19 → 10-24). Those asks name the OLD custody wallet as `seller`; the card now sits in the user's NEW wallet. Measured 2026-11-20 ~5 PM PT: 9,619 of 10,156 active ME Candy asks had a census holder ≠ seller, paired almost exactly 1:1 (697 holders / 646 sellers / 698 pairs) — one old wallet ↔ one new wallet per user. **Discriminator that settled it:** 325 of the 646 sellers sold Candy before the lock and 0 of the holders did; since trading reopened (11-06) the holders sell (5) and the sellers do not (1).
+
+- ⛔ **Never treat "ME returned the pda this sweep" as proof of a live ask** — a ~4:40 PM PT change did, refreshed a phantom's `last_seen_at`, and was reverted ~4:44 PM. The #257 "unseen > 3 days" watch had fired CORRECTLY.
+- ⚠ **A perfect 1:1 holder↔seller pairing reads two ways** — "same person, two keys" (live) or "same person, old wallet ↔ new wallet" (phantom). Only an outside fact (who has traded since the change point) tells them apart; the pairing alone does not.
+- **The legacy census (`lib/candy/collections-census.ts`) is INSERT-ONLY:** an unchanged holding keeps the `last_seen_at` of the walk that inserted it. Any rule that needs "the census re-saw the holder after X" must read the COLLECTION's walk time (`candy_collections.last_census_at`, single-run walks only: `last_census_items` not null), not the row — `candy_retire_listings_owner_moved` (`20261121004754`).
+
 ## Displaced from CLAUDE.md 2026-09-26 (verbatim) — the tagline rule
 
 Moved to pay for the Disney Pinnacle grain rule in CLAUDE.md's quick-reference facts; CLAUDE.md keeps a pointer here.
