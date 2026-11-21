@@ -27,6 +27,7 @@
 //   UPDATE ufc_aptos_ingest_state SET scanned_through_version = 3200000000;
 
 import { createClient } from "@supabase/supabase-js"
+import { unknownPurchaseFns } from "./lib/aptos-marketplace-fns.mjs"
 
 const UFC_COLLECTION_ID = "9b4824a8-736d-4a96-b450-8dcc0c46b023"
 const INDEXER = "https://api.mainnet.aptoslabs.com/v1/graphql"
@@ -263,7 +264,27 @@ while (cursor < head && Date.now() - t0 < BUDGET_MS) {
   }
   console.log(`window → v${hi} (${((head - hi) / 1e6).toFixed(0)}M behind head) · ${uniq.length} UFC sale(s)`)
 }
-const summary = { ...stats, cursor, head, caughtUp: cursor >= head, seconds: Math.round((Date.now() - t0) / 1000), keyed: !!process.env.APTOS_API_KEY }
+// POSITIVE CONTROL (2026-11-20): which marketplace entry functions did the scanned range actually use?
+// `buys: 0` read identically for a quiet market and for a BUY_FNS list the marketplaces had moved past
+// (every run 11-17 → 11-20 saw 0 buys of ANY collection). A purchase-shaped function the list does not
+// know fails the run, naming the version range to re-scan once it is added; a failed probe is recorded
+// and does not fail the run (it is a check on the lane, not the lane).
+let marketplaceFnsSeen = null, unknownFns = [], probeError = null
+if (cursor > cursorBefore) {
+  try {
+    const PQ = `query($lo:bigint,$hi:bigint,$a:String!,$b:String!){token_activities_v2(where:{transaction_version:{_gte:$lo,_lt:$hi},type:{_eq:"0x1::object::Transfer"},_or:[{entry_function_id_str:{_like:$a}},{entry_function_id_str:{_like:$b}}]},distinct_on:entry_function_id_str,order_by:{entry_function_id_str:asc},limit:100){entry_function_id_str}}`
+    const rows = (await gql(PQ, { lo: cursorBefore, hi: cursor, a: `${TRADEPORT}::%`, b: `${RARIBLE}::%` })).token_activities_v2
+    marketplaceFnsSeen = rows.map((r) => r.entry_function_id_str)
+    unknownFns = unknownPurchaseFns(marketplaceFnsSeen, BUY_FNS)
+  } catch (e) {
+    probeError = String(e?.message ?? e).slice(0, 300)
+  }
+}
+const controlError = unknownFns.length
+  ? `unknown marketplace purchase fn(s) in v${cursorBefore}..v${cursor}: ${unknownFns.join(", ")} — add to BUY_FNS and re-scan that range`
+  : null
+const summary = { ...stats, cursor, head, caughtUp: cursor >= head, seconds: Math.round((Date.now() - t0) / 1000), keyed: !!process.env.APTOS_API_KEY,
+  marketplace_fns_seen: marketplaceFnsSeen, unknown_purchase_fns: unknownFns, probe_error: probeError }
 console.log(JSON.stringify(summary))
 if (APPLY) {
   const { error: logErr } = await db.rpc("log_pipeline_run", {
@@ -272,8 +293,8 @@ if (APPLY) {
     p_rows_found: stats.ufc,
     p_rows_written: stats.inserted,
     p_rows_skipped: stats.ufc - stats.priced,
-    p_ok: true,
-    p_error: null,
+    p_ok: controlError === null,
+    p_error: controlError,
     p_collection_slug: "ufc_strike",
     p_cursor_before: String(cursorBefore),
     p_cursor_after: String(cursor),
@@ -281,3 +302,4 @@ if (APPLY) {
   })
   if (logErr) console.warn(`log_pipeline_run failed: ${logErr.message}`)
 }
+if (controlError) { console.error(controlError); process.exit(1) }
