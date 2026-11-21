@@ -30,7 +30,8 @@ const state: {
   listings: any[]
   listingError: any
   retires: any[]
-} = { queue: [], updates: [], daily: [], parks: [], parkError: null, queued: [], sold: [], me: {}, meCalls: [], wmc: {}, editionIds: {}, ownerMoved: [], listings: [], listingError: null, retires: [] }
+  activeListings: string[]
+} = { queue: [], updates: [], daily: [], parks: [], parkError: null, queued: [], sold: [], me: {}, meCalls: [], wmc: {}, editionIds: {}, ownerMoved: [], listings: [], listingError: null, retires: [], activeListings: [] }
 
 function db() {
   return {
@@ -59,6 +60,7 @@ function db() {
         },
         in: (_c: string, vals: string[]) => {
           if (table === "candy_sales_unresolved") return Promise.resolve({ data: vals.filter((v) => state.queued.includes(v)).map((signature) => ({ signature })), error: null })
+          if (table === "candy_listings") return Promise.resolve({ data: vals.filter((v) => state.activeListings.includes(v)).map((pda_address) => ({ pda_address })), error: null })
           if (table === "sales") return Promise.resolve({ data: vals.filter((v) => state.sold.includes(v)).map((transaction_hash) => ({ transaction_hash })), error: null })
           // sampleMint chains .in(...).limit(1); the listings sweep awaits .in(...) directly.
           const both = (p: Promise<any>) => Object.assign(p, { limit: b.limit })
@@ -98,7 +100,7 @@ const run = (budgetMs = 60_000, now = () => NOW) => runCollectionsMarket(db(), {
 beforeEach(() => {
   state.queue = []; state.updates = []; state.daily = []; state.parks = []; state.parkError = null
   state.queued = []; state.sold = []; state.me = {}; state.meCalls = []
-  state.wmc = {}; state.editionIds = {}; state.ownerMoved = []; state.listings = []; state.listingError = null; state.retires = []
+  state.wmc = {}; state.editionIds = {}; state.ownerMoved = []; state.listings = []; state.listingError = null; state.retires = []; state.activeListings = []
 })
 
 describe("runCollectionsMarket", () => {
@@ -235,6 +237,27 @@ describe("runCollectionsMarket — legacy listings (2026-11-14)", () => {
     const r = await run()
     expect(state.listings.map((l) => l.pda_address)).toEqual(["P1"])
     expect(r.collections[0].listings_unresolved).toBe(1)
+  })
+
+  // 2026-11-20 (#257): an ask ME kept serving on a card that later dropped out of the census
+  // stayed active with last_seen_at frozen at 11-15 — read as a stale ask it was not.
+  it("an ask ME still serves on a no-longer-resolvable card REFRESHES its existing row (seen time + price), never re-keys it", async () => {
+    setup([L("P1", "M1"), L("P9", "GONE_MINT", 0.6)])
+    state.activeListings = ["P9"]
+    const r = await run()
+    expect(state.listings.map((l) => l.pda_address)).toEqual(["P1"])
+    const touch = state.updates.find((u) => u.address === "P9")
+    expect(touch?.patch).toEqual({ last_seen_at: new Date(NOW).toISOString(), price_sol: 0.6, price_usd: 90 })
+    expect(touch?.patch).not.toHaveProperty("edition_id")
+    expect(r.collections[0].listings_unresolved).toBe(1)
+    expect(r.collections[0].listings_refreshed_unresolved).toBe(1)
+  })
+
+  it("an unresolved ask with NO existing active row is neither written nor touched", async () => {
+    setup([L("P1", "M1"), L("P9", "UNKNOWN_MINT")])
+    const r = await run()
+    expect(state.updates.find((u) => u.address === "P9")).toBeUndefined()
+    expect(r.collections[0].listings_refreshed_unresolved).toBe(0)
   })
 
   it("an ask whose owner has since moved the card is not written", async () => {
