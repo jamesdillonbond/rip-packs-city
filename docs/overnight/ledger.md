@@ -12,6 +12,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-20 ~7:42 PM PT · 📏 VERIFIED — the Candy phantom-ask retirement landed at the 7:35 PM PT indexer run (Claude Code cloud; same thread)
+
+- `candy-listings-indexer` 7:35 PM PT: ok, `extra.owner_moved_cards` **9,426**, `write_errors` 0, **duration 40.3 s** (previous runs 39.7 / 43.6 / 42.2 s — the 5:28 PM plan fix held; no regression). Vercel: 0 runtime errors in the hour.
+- Active Magic Eden Candy asks 10,161 → **734**: 537 with holder = seller (536 before + 1 new, none touched), **196** flagged still waiting on collections whose clean walk has not been stamped yet (111 of ~400 stamped; the rotating census reaches the rest within ~12 h, and each indexer run every 3 h retires them).
+- Field-name correction for the 4:48 PM entry's watch: the run key is `extra.owner_moved_cards`, not `owner_moved.cards_retired`.
+- The scheduled 7:50 PM self-check (`trig_01QDniAmk8vGyKDp2J9rwqFe`) was deleted — this read is the check it would have made.
+- **Next read (overnight pass):** flagged active asks → ~0 by ~8 AM PT 11-21; Candy edition market-history rows for 11-21 (written 5:43 AM PT) carry floors from the clean book.
+
 ### 2026-11-20 ~7:00 PM PT · 🗄 APPLIED (`20261121030008`) — the Pinnacle sales leaderboard stops walking Flow sales history to prove a negative: 3.56 s → 34 ms, same output (Claude Code cloud; Trevor: "Keep goin")
 
 - **Found:** `/api/analytics/sales/leaderboard` statement timeout at 5:13 PM PT (role=seller, window=l30, collections=pinnacle) inside a burst of ~10 parallel boards (the page loads buyer + seller per collection). The Pinnacle window aggregation is 15 ms; the call took 3.56 s alone. `'pinnacle'` stayed in the Flow-collection list, so each top address's `is_returning` probe walked its ENTIRE `sales` history with `collection = ANY('{pinnacle}')`, which never matches (`sales` holds 0 Pinnacle rows): ~28k rows for today's top 10 sellers.
