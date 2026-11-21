@@ -77,7 +77,6 @@ export interface CollectionMarketReport {
   listings_seen: number
   listings_written: number
   listings_unresolved: number
-  listings_refreshed_unresolved: number
   listings_complete: boolean
   listings_retired: number | null
   error: string | null
@@ -148,7 +147,7 @@ export async function runCollectionsMarket(
     const rep: CollectionMarketReport = {
       address: c.address, name: c.name, symbol: c.me_symbol, symbol_found_now: false, stats_written: false,
       pages: 0, sales_seen: 0, sales_offered: 0, truncated: false, high_water_advanced: false,
-      listings_seen: 0, listings_written: 0, listings_unresolved: 0, listings_refreshed_unresolved: 0, listings_complete: false, listings_retired: null,
+      listings_seen: 0, listings_written: 0, listings_unresolved: 0, listings_complete: false, listings_retired: null,
       error: null,
     }
     out.collections.push(rep)
@@ -369,16 +368,12 @@ async function sweepListings(
   const seenAt = new Date(now()).toISOString()
   const rows: Record<string, unknown>[] = []
   const seenPdas = new Set<string>()
-  const unresolved = new Map<string, MeListing>()
   for (const l of valid) {
     const pda = l.pdaAddress as string
     if (seenPdas.has(pda) || ownerMoved.has(pda)) continue
     const key = keyByMint.get(l.tokenMint as string)
     const editionId = key ? idByKey.get(key) ?? null : null
-    if (!editionId) {
-      if (!unresolved.has(pda)) { rep.listings_unresolved++; unresolved.set(pda, l) }
-      continue
-    }
+    if (!editionId) { rep.listings_unresolved++; continue }
     seenPdas.add(pda)
     rows.push({
       pda_address: pda,
@@ -401,36 +396,6 @@ async function sweepListings(
     const { error } = await db.from("candy_listings").upsert(batch, { onConflict: "pda_address" })
     if (error) throw new Error(`candy_listings upsert: ${error.message}`)
     rep.listings_written += batch.length
-  }
-
-  // An ask ME still serves whose card the census no longer resolves (its mint dropped out of
-  // wallet_moments_cache after the row was written) keeps the row it already has: refresh its
-  // seen time and price so last_seen_at keeps meaning "ME served it then". Before 2026-11-20 such
-  // a row stopped advancing while staying active — #257 read it as a stale ask (one $64.96 Blackest
-  // Night ask, last_seen 11-15, served by ME on every sweep since). Only EXISTING active rows are
-  // touched; an unresolved ask with no row is still never written under a guessed edition.
-  const unresolvedPdas = [...unresolved.keys()]
-  for (let i = 0; i < unresolvedPdas.length; i += 200) {
-    const { data, error } = await db
-      .from("candy_listings")
-      .select("pda_address")
-      .eq("is_active", true)
-      .in("pda_address", unresolvedPdas.slice(i, i + 200))
-    if (error) throw new Error(`candy_listings read: ${error.message}`)
-    for (const r of (data ?? []) as Array<{ pda_address: string }>) {
-      const l = unresolved.get(r.pda_address)
-      if (!l) continue
-      const { error: upErr } = await db
-        .from("candy_listings")
-        .update({
-          last_seen_at: seenAt,
-          price_sol: l.price,
-          price_usd: solRate != null ? Number(((l.price as number) * solRate).toFixed(2)) : null,
-        })
-        .eq("pda_address", r.pda_address)
-      if (upErr) throw new Error(`candy_listings refresh: ${upErr.message}`)
-      rep.listings_refreshed_unresolved++
-    }
   }
 
   // A pda ME still serves keeps its row even when it was not written this sweep (owner-moved
