@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-20 ~6:52 PM PT · 📏 VERIFIED — UFC Aptos "0 sales" is a quiet market, not a stale function list (Claude Code cloud; three dry-run dispatches of `ufc-aptos-sales-ingest`, no writes)
+
+- Range: the lane's stored cursor (v8,148,268,262, the 1:29 PM PT run) to head (~7 h). TradePort/Rarible object transfers through ANY entry function: **0**. A 50-row sample of all object transfers in the range: 49 carry `entry_function_id_str` (SBT mints), so the indexer field the filters rely on is filled. Purchase-named functions (`::buy…`, `…accept…bid…`) from ANY contract address: **0**. The lane is reading correctly; Aptos NFT purchases are simply absent in that window.
+- Shipped along the way (`7bde4d85e`, `fc58dc9d9`, `f2d816857`): the lane now reports `marketplace_fns_seen`, `unknown_purchase_fns` (fails the run), and, when the list is empty, `indexer_sample` with `purchase_fns_any_address` — so a moved marketplace or a broken filter will show in its own run row. Revert: `git revert` the three commits.
+
 ### 2026-11-20 ~6:55 PM PT · 🔧 SHIPPED (code) — the UFC Aptos sales lane gets a positive control: an unknown marketplace purchase function fails the run instead of reading as "0 sales" (Claude Code cloud; Trevor: "Keep goin")
 
 - **Found:** `ufc-aptos-sales-ingest` (GHA, 4×/day) found 2,165 on 11-16 (history backfill) and 0 on every run since, with `buys: 0` — no marketplace purchase of ANY Aptos collection — across 3–7M versions per run. The newest stored UFC sale is 10-22. UFC on Aptos is genuinely thin (48 sales since August), so a quiet market is plausible; but the lane filters on a fixed list of TradePort/Rarible purchase entry functions, and a stale list reads exactly the same. Nothing could tell them apart, and its 4–6 runs/day sit under the zero-yield arm's 50-run floor. Aptos is unreachable from this sandbox (proxy + fetch DNS), so I could not settle which it is.

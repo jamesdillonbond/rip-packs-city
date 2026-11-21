@@ -31,6 +31,10 @@ Push worked from this session (`git push` straight to `main`); no environment bl
 5. **[P3, Claude Code, 0 nights] `candy_offers`** — 4 active offers ($100) from one pre-lock wallet holding no cards; likely phantom bids. No retirer exists for offers; too small to build one today.
 6. **[P3, Claude Code, 0 nights] legacy census coverage** — 445,081 of 479,509 legacy cards walked; 117 of 318 collections > 10 % short (e.g. Blackest Night 520 / 568). Unexplained (burns? DAS gaps?). Needs DAS / chain access this sandbox lacks.
 
+## Evening continuation (after "Keep goin", ~6:27–6:55 PM PT)
+- **UFC Aptos sales lane** (`ufc-aptos-sales-ingest`): 0 sales on every run since 11-17 with 0 marketplace buys of ANY collection — indistinguishable between a quiet market and a stale entry-function list, and below the zero-yield arm's run floor. Added a positive control to the lane (unknown purchase function → run fails; empty list → indexer sample + purchase-named functions from any address). Three dry-run dispatches settled it: a quiet market (0 purchase-named transfers from any address in ~7 h; the indexer field is populated). Nothing to fix; the control stays.
+- Cost triage of pg_cron worker time: the top consumers are gated lanes whose time is a deliberate `pg_sleep` on scheduled minutes — no waste found. All collections' sales/FMV fresh (Pinnacle in its own tables: 183 sales in 24 h).
+
 ## Not acted on (with reason)
 - #249 (ISR caches a failed pack-dist render): the throw-on-regeneration fix was tried once and served Next's unbranded 500 to 515 users (08-23 comment in the page); needs a preview-verified design, not an unattended change.
 - `refresh_wmc_fmv_changed` ~1 %/day statement timeouts: known, closed as low impact (#248).
