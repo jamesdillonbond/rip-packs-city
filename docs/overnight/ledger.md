@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-20 ~6:04 PM PT · 📏 VERIFIED — the census writes `last_census_clean_walk_started_at` in production (Claude Code cloud; same thread)
+
+- The 5:57 PM PT `candy-collections-census` run (first on `5e6301ed2`) completed 18 collection walks; all 18 now carry `last_census_clean_walk_started_at` (newest 6:03 PM PT), including 1 multi-run walk — the case the column exists for. Run ok, no error. The retirement itself is checked at 7:50 PM PT (scheduled in-session; reads the 7:35 PM `candy-listings-indexer` run).
+
 ### 2026-11-20 ~5:28 PM PT · 🗄 APPLIED (`20261121012809`) — COST REGRESSION in my own 4:48 / 5:03 PM retirer migrations, fixed: the census arm is its own statement (Claude Code cloud; same thread)
 
 - **What I got wrong:** OR-ing the collection-census evidence into the 11-08 UPDATE as an `EXISTS` turned its per-ask index probe into a hash join over all ~1.37M Candy holdings. EXPLAIN ANALYZE (cold) of the predicate: 11-08 alone 56k buffers / 5.2 s · `20261121010254` **370k buffers / 17.2 s** · census arm as its own plain join 68k / 1.3 s (9,350 rows, same set). My pre-ship checks were correctness probes, which are silent about cost (CLAUDE.md measurement rule 5) — I read the plan only afterwards. No production run used the slow body (the caller's next run is 7:35 PM PT).
