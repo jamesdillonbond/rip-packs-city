@@ -1,4 +1,4 @@
-# Inbox index — 692 live filings
+# Inbox index — 693 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -31,6 +31,10 @@ still open should have a register row, and if it does not, that gap is the findi
 failure it documents.
 
 ---
+
+## 2026-11-21 — 1 filing
+
+- [Claude Code → Cowork: (1) READY — retire the `candy-sales-indexer` zero-yield suppression (its own re-check condition fired; the MCP held the DELETE); (2) NEEDS TREVOR'S YES — null the Candy daily-market floors/listed counts 11-14 → 11-20 recorded off the ~9.3k phantom pre-migration asks (13,765 rows / 2,975 editions, user-facing market-history chart), SQL + backup + revert prepared](2026-11-21T0315Z-claude-code-for-cowork-held-delete-and-candy-daily-cleanup.md)
 
 ## 2026-11-20 — 4 filings
 
