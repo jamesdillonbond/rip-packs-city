@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~8:40 AM PT · 🔧 SHIPPED (code) — candy-chain-sales also decodes Tensor's own program (`TCMPhJ…`) as marketplace `tensor` (Claude Code cloud; same thread)
+
+- The 11-06 → 11-22 census saw Candy listings on Tensor's program (3 list, 3 delist, 0 fills); a Tensor fill would have been as invisible as the 7Aru ones. Same decoder (7Aru is built from Tensor's code), venue `tensor`, label "Tensor". Unknown instruction names are now reported per venue (`tensor:<name>`).
+- **Revert:** `git revert` the commit titled "candy: chain-sales decodes Tensor fills too".
+
 ### 2026-11-22 ~8:40 AM PT · 🔧 SHIPPED (code) — sealed-pack history shows: dashboard "Value / 30D" chart + a "Sealed packs" block in the weekly email (Cowork cloud via laptop VM; Trevor: "Both")
 
 Correction recorded: no live value-history chart read `portfolio_snapshots` (the profile sparkline was removed 11-14, #254); the weekly email was its only reader. Now: `GET /api/profile/value-history` (session; the caller's own snapshots, 30 days) → `components/dashboard/ValueHistoryCard.tsx` on /dashboard — moments FMV and sealed packs (capped low ask) as two lines, never a sum; the pack line starts 11-22 and fills in. Weekly email: `lib/emails/weekly-packs.ts` adds "Sealed packs · not in the value above: $X — N sealed packs at the lowest live ask", with "▲/▼ $Y this week" only when the snapshot exactly 7 days earlier has a pack value (first possible 11-29); a failed read or no value omits the block, never $0. Dry run lists `sealed_packs_usd` per recipient. Tests: route, component, email block.
