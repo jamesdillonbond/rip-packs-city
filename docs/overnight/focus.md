@@ -7,7 +7,7 @@
 ## STEER — added 2026-11-22 ~11:30 AM PT (Cowork, sealed-pack thread closed) — two dated reads
 
 - **Mon 11-23 8:33 AM PT — weekly email:** the first send carrying the "Sealed packs · not in the value above" block (value only; the weekly change starts 11-30). A dry run lists `sealed_packs_usd` per recipient. A recipient with packs but no block → `loadPackWeek` read failed or the snapshot has no pack value; never a $0 block.
-- **Through 11-29 — `rpc-wallet-pack-value-cache`:** `pipeline_runs` `wallet-pack-value-cache` `extra.over_budget` stays 0 and `failed` 0 (59–81 s for 58 wallets on 11-22). Lane budget: candidate retirement is job 901 (fill the snapshot pack columns from the cache) once job 901 has had clean nights.
+- **Through 11-29 — `rpc-wallet-pack-value-cache`:** `pipeline_runs` `wallet-pack-value-cache` `extra.over_budget` stays 0 and `failed` 0 (59–81 s for 58 wallets on 11-22). Lane budget: candidate retirement is job 901 (fill the snapshot pack columns from the cache) once job 901 has had clean nights. **Scheduled:** one-off task "RPC: retire job 901 into the pack-value cache" (trig_012bJdq21ivj5hvHJzhoUiQM, Trevor-approved 11-22) runs **Wed 11-25 9:07 AM PT** on Trevor's laptop: verifies both jobs clean since 11-23, then folds the snapshot fill into `refresh_wallet_pack_value_cache` and unschedules job 901 — or changes nothing and notes why here. 11-22 check: job 901 succeeded at 11:32 AM PT (manual), 11-22's 58 snapshots all carry pack values ($233,830 total).
 
 ## STEER — added 2026-11-22 ~10:20 AM PT (Claude Code cloud) — three strategy decisions now BIND the night pass
 
