@@ -81,3 +81,25 @@ export function heldPacksCaption(
   const coverage = t.listed < t.held ? `, ${t.listed.toLocaleString("en-US")} priced` : ""
   return `+ ${fmt(t.lowAskUsd)} in ${packs} at low ask${coverage}${unpriced}${partial}`
 }
+
+/**
+ * The single wallet value (Trevor, 2026-11-22: "one number that encompasses everything in
+ * the wallet. Keep it simple"): fresh-priced Moments + stale-priced Moments + sealed packs at
+ * their capped low ask. Pack total is left out only when its read failed — the caller says so.
+ */
+export function walletTotalUsd(
+  momentsFmv: number,
+  staleFmv: number,
+  packs: HeldPacksTotal | null,
+  packsFailed: boolean,
+): number {
+  const packUsd = !packsFailed && packs ? packs.lowAskUsd : 0
+  return Math.round(((momentsFmv || 0) + (staleFmv || 0) + packUsd) * 100) / 100
+}
+
+/** The only caption the single number keeps: a note when sealed packs couldn't be counted. */
+export function walletTotalCaption(packs: HeldPacksTotal | null, packsFailed: boolean): string | null {
+  if (packsFailed || (packs && packs.walletsFailed > 0 && packs.held === 0)) return "Sealed packs couldn't load — not included"
+  if (packs && packs.walletsFailed > 0) return "Some wallets' sealed packs didn't load"
+  return null
+}

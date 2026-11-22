@@ -20,7 +20,7 @@ import { momentSubjectName } from "@/lib/entity-href"
 import { accentText } from "@/lib/accent-text"
 import { resolveUsernames, nameKey } from "@/lib/flowty-username"
 import { scrollRegion } from "@/lib/a11y/scroll-region"
-import { heldPacksCaption, type HeldPacksTotal } from "@/lib/dashboard/held-packs"
+import { walletTotalUsd, walletTotalCaption, type HeldPacksTotal } from "@/lib/dashboard/held-packs"
 
 interface SnapshotData {
   wallet: string
@@ -175,10 +175,6 @@ async function fetchWalletPacks(wallet: string): Promise<{ total: HeldPacksTotal
   } catch {
     return { total: null, failed: true }
   }
-}
-
-function fmtPackUsd(n: number): string {
-  return "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 /** "@handle" when the wallet resolves to a username, else the address itself. */
@@ -338,31 +334,26 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
         <div style={{ textAlign: "center", marginBottom: 40, padding: "40px 0", border: "1px solid var(--rpc-border)", borderRadius: 12, background: "linear-gradient(180deg, var(--rpc-surface) 0%, var(--rpc-black) 100%)" }}>
           <div style={{ fontSize: 14, letterSpacing: "0.15em", color: "var(--rpc-text-secondary)", marginBottom: 8, textTransform: "uppercase" }}>Total Collection FMV</div>
           {(() => {
-            // Same rule as the dashboard + profile: headline = total − stale (2026-09-04).
-            const h = shareHeadline({ totalFmv: data.totalFmv, staleFmv: data.staleFmv, staleCount: data.staleCount })
+            // 2026-11-22 (Trevor: "one number that encompasses everything in the wallet"):
+            // every Moment (stale-priced included) + sealed packs at capped low ask — same
+            // single figure as the dashboard and profile.
+            const value = walletTotalUsd(Number(data.totalFmv) || 0, 0, packs.total, packs.failed)
+            const note = walletTotalCaption(packs.total, packs.failed)
             return (
               <>
                 <div style={{ fontSize: 56, fontWeight: 900, color: "var(--rpc-red-text)", letterSpacing: "0.02em" }}>
-                  ${h.live.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
-                {h.caption && (
+                {note && (
                   <div style={{ fontSize: 12, fontFamily: "monospace", color: "var(--rpc-text-muted)", marginTop: 4, letterSpacing: "0.04em" }}>
-                    {h.caption}
+                    {note}
                   </div>
                 )}
-                {(() => {
-                  const packLine = heldPacksCaption(packs.total, packs.failed, fmtPackUsd)
-                  return packLine ? (
-                    <div style={{ fontSize: 12, fontFamily: "monospace", color: "var(--rpc-text-muted)", marginTop: 4, letterSpacing: "0.04em" }}>
-                      {packLine}
-                    </div>
-                  ) : null
-                })()}
               </>
             )
           })()}
           <div style={{ fontSize: 16, color: "var(--rpc-text-secondary)", marginTop: 8 }}>
-            {formatCount(data.totalMoments)} moments &middot; {formatCount(data.badgeCount)} badges
+            {formatCount((Number(data.totalMoments) || 0) + (!packs.failed && packs.total ? packs.total.held : 0))} assets &middot; {formatCount(data.badgeCount)} badges
           </div>
           {(() => {
             const note = closedMarketNote(data.perCollection)

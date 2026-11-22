@@ -14,8 +14,8 @@ import RpcLogo from "@/components/RpcLogo";
 import SignOutButton from "@/components/auth/SignOutButton";
 import { trophyComparator, TROPHY_SORTS, type TrophySortKey } from "@/lib/trophy-comparator";
 import PaniniUsernamesPanel from "@/components/profile/PaniniUsernamesPanel";
-import { sumMoments, sumFmv, sumStaleFmv, sumStaleCount, countActiveCollections, groupWalletsByAddress } from "@/lib/dashboard/aggregate";
-import { heldPacksCaption, type HeldPacksTotal } from "@/lib/dashboard/held-packs";
+import { sumMoments, sumFmv, sumStaleFmv, countActiveCollections, groupWalletsByAddress } from "@/lib/dashboard/aggregate";
+import { walletTotalUsd, walletTotalCaption, type HeldPacksTotal } from "@/lib/dashboard/held-packs";
 import { publishedCollections, getPublishedCollection } from "@/lib/collections";
 import { detectAddressChain, isCadenceAddress, isSolanaAddress, normalizeAddress, truncateAddressForDisplay } from "@/lib/address";
 import FollowedWalletsList from "@/components/profile/FollowedWalletsList";
@@ -904,11 +904,9 @@ function ProfilePageInner() {
   // Pure aggregation extracted to @/lib/dashboard/aggregate (unit-tested there).
   const totalMoments = useMemo(() => sumMoments(statsByWallet), [statsByWallet]);
   const totalFmv = useMemo(() => sumFmv(statsByWallet), [statsByWallet]);
-  // STALE-confidence FMV is excluded from the headline total (the price hasn't
-  // refreshed recently and over/under-states the holding). Surface it as a
-  // footnote so the number isn't silently lost.
+  // STALE-confidence FMV — kept apart in the stats, but added back into the single
+  // Portfolio FMV figure (2026-11-22, Trevor: one number for everything in the wallet).
   const staleFmv = useMemo(() => sumStaleFmv(statsByWallet), [statsByWallet]);
-  const staleCount = useMemo(() => sumStaleCount(statsByWallet), [statsByWallet]);
   const collectionCount = useMemo(() => countActiveCollections(statsByWallet), [statsByWallet]);
 
   // At least one wallet's stats could not be loaded, so every headline figure is
@@ -924,20 +922,6 @@ function ProfilePageInner() {
   // `!statsSettled` alone: with no wallets saved there is nothing to load and
   // the tiles must fall through to `empty`, not to "Loading…".
   const statsLoading = !statsSettled && wallets.length > 0 && !walletsFailed;
-  // The oldest cache stamp across every wallet that answered from cache. The
-  // numbers are ACCURATE — measured 2026-09-12, cached counts matched
-  // wallet_moments_cache to within ~0.1% — they are just late, so the honest
-  // presentation is the figure plus its age, not the figure alone. Below the
-  // threshold the stamp is noise and is not shown; the reconciler targets 6 h.
-  const cacheAgeHours = useMemo(() => {
-    const stamps = Object.values(statsMeta)
-      .filter((m) => m.source === "cache" && m.cacheUpdatedAt)
-      .map((m) => new Date(m.cacheUpdatedAt as string).getTime())
-      .filter((t) => Number.isFinite(t));
-    if (stamps.length === 0) return null;
-    const hrs = (Date.now() - Math.min(...stamps)) / 3_600_000;
-    return hrs >= 2 ? hrs : null;
-  }, [statsMeta]);
   // The just-saved-wallet window: the indexing poll is live, at least one wallet
   // is saved, and no collection has counted a Moment yet. Not a failure, not an
   // answer — the tiles render "Indexing…" rather than a zero (2026-09-04).
@@ -1114,8 +1098,10 @@ function ProfilePageInner() {
             tiles say so instead of publishing a number. */}
         <section data-tour-anchor="portfolio-stats" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 10 }}>
           <StatTile
-            label="Total Moments"
-            value={totalMoments.toLocaleString("en-US")}
+            /* 2026-11-22 (Trevor): "Total Assets" — Moments and cards (every collection's
+               held assets, Panini included) plus sealed packs. */
+            label="Total Assets"
+            value={(totalMoments + (!heldPacksFailed && heldPacks ? heldPacks.held : 0)).toLocaleString("en-US")}
             color="var(--rpc-text-primary)"
             unavailable={statsIncomplete}
             loading={statsLoading}
@@ -1124,13 +1110,12 @@ function ProfilePageInner() {
           />
           <StatTile
             label="Portfolio FMV"
-            value={fmtUsd(totalFmv)}
+            /* 2026-11-22 (Trevor: "one number that encompasses everything in the wallet.
+               Keep it simple"): Moments — stale-priced included — plus sealed packs at
+               capped low ask, as ONE figure. No breakdown caption. */
+            value={fmtUsd(walletTotalUsd(totalFmv, staleFmv, heldPacks, heldPacksFailed))}
             color="var(--rpc-success)"
-            caption={[
-              staleCount > 0 ? `+ ${fmtUsd(staleFmv)} across ${staleCount.toLocaleString("en-US")} stale-priced moments` : null,
-              heldPacksCaption(heldPacks, heldPacksFailed, fmtUsd),
-              cacheAgeHours != null ? `as of ${Math.round(cacheAgeHours)}h ago` : null,
-            ].filter(Boolean).join(" · ") || undefined}
+            caption={walletTotalCaption(heldPacks, heldPacksFailed) ?? undefined}
             unavailable={statsIncomplete}
             loading={statsLoading}
             pending={statsPending}

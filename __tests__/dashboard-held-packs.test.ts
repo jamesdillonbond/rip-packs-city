@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { heldPacksCaption, sumHeldPacks } from "@/lib/dashboard/held-packs"
+import { heldPacksCaption, sumHeldPacks, walletTotalUsd, walletTotalCaption } from "@/lib/dashboard/held-packs"
 
 const fmt = (n: number) => "$" + n.toFixed(2)
 
@@ -48,5 +48,20 @@ describe("heldPacksCaption", () => {
     expect(heldPacksCaption({ held: 3, listed: 0, lowAskUsd: 0, walletsFailed: 0 }, false, fmt)).toBe("3 sealed packs · no priced asks")
     expect(heldPacksCaption({ held: 1, listed: 0, lowAskUsd: 0, unpriced: 1, walletsFailed: 0 }, false, fmt))
       .toBe("1 sealed pack · no priced asks, 1 listed with no sale to price it")
+  })
+})
+
+describe("walletTotalUsd / walletTotalCaption (2026-11-22 single number)", () => {
+  const packs = { held: 488, listed: 487, lowAskUsd: 16429, walletsFailed: 0 }
+  it("sums moments, stale moments and sealed packs into one figure", () => {
+    expect(walletTotalUsd(43819, 5832, packs, false)).toBe(66080)
+  })
+  it("leaves packs out only when their read failed, and says so", () => {
+    expect(walletTotalUsd(43819, 5832, packs, true)).toBe(49651)
+    expect(walletTotalCaption(packs, true)).toMatch(/not included/)
+    expect(walletTotalCaption(packs, false)).toBeNull()
+  })
+  it("handles no packs", () => {
+    expect(walletTotalUsd(100, 0, null, false)).toBe(100)
   })
 })

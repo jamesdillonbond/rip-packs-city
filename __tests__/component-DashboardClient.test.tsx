@@ -404,7 +404,7 @@ describe("DashboardClient — per-wallet collection stats", () => {
   it("⚠ does NOT publish a measured zero while the stats read is still in flight", async () => {
     routes["/api/profile/collection-stats"] = () => new Promise(() => {}) as unknown as Response
     render(<DashboardClient />)
-    await waitFor(() => expect(screen.getByText("Total Moments")).toBeTruthy())
+    await waitFor(() => expect(screen.getByText("Total Assets")).toBeTruthy())
     // The false claim, stated three ways on one row. Assert its ABSENCE.
     expect(document.body.textContent).not.toMatch(/\$0(?!\d)/)
     // …and that the tiles say so rather than going silently blank.
@@ -1932,15 +1932,16 @@ describe("DashboardClient — portfolio totals", () => {
     await waitFor(() => expect(document.body.textContent).toMatch(/42/))
   })
 
-  it("keeps STALE FMV out of the headline but discloses it", async () => {
-    // ⚠ A STALE price has not refreshed recently and over/under-states the
-    // holding, so it is excluded from the headline — but silently dropping it
-    // would understate the portfolio with nothing on screen to say so.
+  it("puts STALE FMV inside the single Portfolio FMV figure, no breakdown caption", async () => {
+    // ⚠ RE-PINNED 2026-11-22 (Trevor: "one number that encompasses everything in the
+    // wallet. Keep it simple"). Stale value is no longer dropped from the headline
+    // and footnoted — it is IN the one number, so it is still never silently lost.
     withStats([
       { collection_id: "95f28a17-224a-4025-96ad-adf8a4c63bfd", collection_slug: "nba-top-shot", collection_label: "NBA Top Shot", moment_count: 40, fmv_total: 1000, fmv_stale_total: 500, stale_count: 7 },
     ])
     render(<DashboardClient />)
-    await waitFor(() => expect(document.body.textContent).toMatch(/stale/i))
+    await waitFor(() => expect(document.body.textContent).toMatch(/\$1,500/))
+    expect(document.body.textContent).not.toMatch(/stale-priced/i)
   })
 
   it("renders an em-dash rather than a $0 when the read failed", async () => {

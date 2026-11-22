@@ -43,7 +43,7 @@ describe("ShareProfileButtons — tweet copy", () => {
   it("carries the portfolio figures it was given", () => {
     const text = tweetTextFrom(<ShareProfileButtons username="trevor" fmv={1500} moments={200} />)
     expect(text).toContain("$1.5K")
-    expect(text).toContain("200 Moments")
+    expect(text).toContain("200 assets")  // 2026-11-22: Total Assets (Moments + cards + sealed packs)
   })
 
   it("omits the figures rather than tweeting a zero", () => {

@@ -145,7 +145,7 @@ export default function ShareProfileButtons({
         fmv >= 1000 ? "$" + (fmv / 1000).toFixed(1) + "K" : "$" + fmv.toFixed(0);
       const m =
         moments && moments > 0
-          ? " across " + moments.toLocaleString("en-US") + " Moments"
+          ? " across " + moments.toLocaleString("en-US") + " assets"
           : "";
       stat = ` — ${f}${m}`;
     }

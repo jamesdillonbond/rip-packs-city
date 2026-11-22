@@ -18,7 +18,7 @@ import { avatarDisplayUrl } from "@/lib/media/avatar-proxy";
 import { getCollectionByUuid } from "@/lib/collections";
 import { isMarketClosed } from "@/lib/market-closed";
 import { accentFill, accentText, labelOn } from "@/lib/accent-text"
-import { heldPacksCaption, type HeldPacksTotal } from "@/lib/dashboard/held-packs";
+import { walletTotalUsd, walletTotalCaption, type HeldPacksTotal } from "@/lib/dashboard/held-packs";
 
 // ── Types ─────────────────────────────────────────────────────────
 interface ProfileBio {
@@ -357,9 +357,12 @@ export default function ProfileClient(props: {
   // above the one they had just read on their dashboard (QA finding #6).
   const totalFmvAll = wallets.reduce(function(sum, w) { return sum + (w.cached_fmv ?? 0); }, 0);
   const staleFmv = wallets.reduce(function(sum, w) { return sum + (w.cached_fmv_stale ?? 0); }, 0);
-  const staleCount = wallets.reduce(function(sum, w) { return sum + (w.cached_stale_count ?? 0); }, 0);
   const totalFmv = totalFmvAll - staleFmv;
   const totalMoments = wallets.reduce(function(sum, w) { return sum + (w.cached_moment_count ?? 0); }, 0);
+  // 2026-11-22 (Trevor): headline value and count cover EVERYTHING held — Moments and
+  // cards (stale-priced included) plus sealed packs at capped low ask. Same as the dashboard.
+  const portfolioTotal = walletTotalUsd(totalFmv, staleFmv, heldPacks, heldPacksFailed);
+  const totalAssets = totalMoments + (!heldPacksFailed && heldPacks ? heldPacks.held : 0);
   const rpcScore = wallets.length > 0 ? wallets[0]?.cached_rpc_score ?? null : null;
   const isOwnProfile =
     !!myUsername && !!username && myUsername.toLowerCase() === username.toLowerCase();
@@ -573,7 +576,7 @@ export default function ProfileClient(props: {
                 ? "Post your trophy case on X or Discord."
                 : "Post your portfolio on X or Discord — or pin a trophy first from your dashboard."}
             </div>
-            <ShareProfileButtons username={username} fmv={totalFmv} moments={totalMoments} trophyCount={filledCount} referrerId={myUserId} cardToken={pinsToken(slabs.filter(Boolean) as { slot?: unknown; moment_id?: unknown }[])} />
+            <ShareProfileButtons username={username} fmv={portfolioTotal} moments={totalAssets} trophyCount={filledCount} referrerId={myUserId} cardToken={pinsToken(slabs.filter(Boolean) as { slot?: unknown; moment_id?: unknown }[])} />
           </section>
         )}
 
@@ -598,27 +601,23 @@ export default function ProfileClient(props: {
           <div style={{ ...cardStyle, textAlign: "center" }}>
             <div style={labelStyle}>PORTFOLIO FMV</div>
             <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 24, color: "var(--rpc-text-primary)", lineHeight: 1, margin: "8px 0 4px" }}>
-              {totalFmv > 0 ? fmtDollars(totalFmv) : "—"}
+              {/* 2026-11-22 (Trevor): one number — every Moment (stale-priced included) + sealed packs. */}
+              {portfolioTotal > 0 ? fmtDollars(portfolioTotal) : "—"}
             </div>
-            {staleFmv > 0 && (
-              <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.08em", marginBottom: 4 }}>
-                + {fmtDollars(staleFmv)} across {staleCount.toLocaleString("en-US")} stale-priced
-              </div>
-            )}
             {(function() {
-              const packLine = heldPacksCaption(heldPacks, heldPacksFailed, fmtDollars);
-              return packLine ? (
+              const note = walletTotalCaption(heldPacks, heldPacksFailed);
+              return note ? (
                 <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.08em", marginBottom: 4 }}>
-                  {packLine}
+                  {note}
                 </div>
               ) : null;
             })()}
           </div>
           {/* Moments */}
           <div style={{ ...cardStyle, textAlign: "center" }}>
-            <div style={labelStyle}>MOMENTS</div>
+            <div style={labelStyle}>TOTAL ASSETS</div>
             <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 24, color: "var(--rpc-text-primary)", lineHeight: 1, margin: "8px 0 4px" }}>
-              {totalMoments > 0 ? totalMoments.toLocaleString("en-US") : "—"}
+              {totalAssets > 0 ? totalAssets.toLocaleString("en-US") : "—"}
             </div>
             {/* ⚠ `walletCount` is DISTINCT ADDRESSES from the server, NOT
                 `wallets.length`. saved_wallets is keyed per (wallet_addr,

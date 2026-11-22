@@ -305,8 +305,11 @@ describe("ProfileClient — the avatar a collector gets before they set one", ()
 // total minus the stale-priced portion — with the stale portion as a caption.
 // The page used to sum the flat total, so a collector posted "$88.4K" while
 // their dashboard read "$48,872 + $39,553 across 370 stale-priced".
-describe("ProfileClient — portfolio FMV uses the dashboard's stale split", () => {
-  it("holds stale-priced value out of the headline and shows it as a caption", async () => {
+// ⚠ RE-PINNED 2026-11-22 (Trevor: "one number that encompasses everything in the wallet.
+// Keep it simple"): stale-priced value is now IN the single figure, with no breakdown
+// caption — same as the dashboard. The 09-02 parity property (profile = dashboard) holds.
+describe("ProfileClient — portfolio FMV is the dashboard's single number", () => {
+  it("folds stale-priced value into one headline figure with no breakdown caption", async () => {
     installFetch({
       "/api/public/profile/": {
         ...PUBLIC_PROFILE,
@@ -321,9 +324,8 @@ describe("ProfileClient — portfolio FMV uses the dashboard's stale split", () 
     render(<ProfileClient />)
     await waitFor(() => expect(screen.getByText("Main")).toBeTruthy())
     const text = document.body.textContent ?? ""
-    expect(text).toContain("$48.9K") // 88425 - 39553 = 48872
-    expect(text).not.toContain("$88.4K")
-    expect(text).toMatch(/\+ \$39\.6K across 370 stale-priced/)
+    expect(text).toContain("$88.4K") // everything held: 48,872 fresh + 39,553 stale
+    expect(text).not.toMatch(/stale-priced/)
   })
 
   it("a payload without the split (not yet reconciled) still renders the total, no caption", async () => {
