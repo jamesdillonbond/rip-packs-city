@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~1:15 PM PT · 📝 DOCS — Panini pack-EV follow-ups: multi-set products, never duplicate a product name, NWSL #1065 link step (Claude Code cloud; Trevor: "Keep going")
+
+- `docs/strategy/panini-pack-ev-strategy-2026-11-22.md` §0. Three packs (998, 1018, 896) draw their cards from card sets other than the one they link to. All three are withheld today, but the tier model may not publish such a pack. Insert-only sets stay unnamed, because two rows with one name make the route's name → set map nondeterministic. The NWSL #1065 link step (name set 2478 = the captured pack's exact `product_name`) is left to the NWSL thread; the scheduled task for it was declined by the approval classifier. No DB or code change.
+- **Revert:** docs only.
+
 ### 2026-11-22 ~1:15 PM PT · 🔧 SHIPPED (code) — candy-chain-sales counts a refused (429) collection as `rate_limited`, not as a failed run; 3 tries per RPC (Claude Code cloud; same thread)
 
 - **12:11 PM PT run** (floor 11-22 12:00 UTC): all 398 collections reached, 1 fill, **14 "failed" — every one `getSignaturesForAddress 429`.** They are idle collections: publicnode lists nothing for them inside its ~1.5-day retention, so only the archive RPC can prove "nothing new", and it refuses Vercel's shared IP intermittently. Nothing is lost — their cursors stay and the next run re-reads the range — so a refusal is now `rate_limited` (count + named in `collections`), and the run is not ok only on a real failure or when EVERY collection was refused. RPC calls now try 3 times (1 s, 2.5 s backoff).
