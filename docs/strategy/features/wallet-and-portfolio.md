@@ -91,7 +91,7 @@ There is no wallet SIGN-IN (#0, 08-08: identifiers only). Verification is option
 - **Mega-wallets above ~100k moments** have no id source (#138; deactivated by decision).
 - **#190:** pre-2023 Top Shot pack opens are missing for 33 of 34 saved wallets (declined).
 - **The parallel seeder watch.** `never_queued` was 66,001 at the 10-17 fix and must fall each ~20 h cycle. If it does not fall across two cycles, file it (focus.md).
-- **#114 (partial):** live Cowork dashboards still carry the failed-read-as-empty helper.
+- ✅ **#114 RESOLVED 2026-10-20** (known-issues #114): the 11 live dashboards were ported to claude.ai artifacts whose reads throw on failure. Was: live Cowork dashboards still carry the failed-read-as-empty helper.
 
 ## Next — prioritized
 

@@ -44,7 +44,7 @@
 3. ✅ **DECIDED + SHIPPED estate-wide 10-17 as FMV 1.8.2 ("MEDIUM needs a sale in the last 30 days", backtested; fmv-pricing.md).** 📏 Read 10-18 ~5:50 PM PT: Golazos still shows **5** MEDIUM rows, all `algo_version` 1.8.1 and last computed 10-17 5:48–6:08 PM PT, before the 9:48 PM PT deploy. They re-grade when the catalogue sweep next reaches them (~daily); estate-wide the same state holds 268 Top Shot and 36 All Day 1.8.1 MEDIUMs, 289 of them computed 10-17 PT. Falsifier: any 1.8.1 MEDIUM with 0 30-day sales still present on 10-20. *Original item:* **MEDIUM with zero 30-day sales (6 editions): a product question, not a bug.** Re-derived 10-17: the 90-day MEDIUM path is the 08-07 design. Whether MEDIUM should also need a recent sale is Trevor's call, and it would apply to every collection. Measure it first: backtest 90-day-only MEDIUM rows against their next sale before proposing any change.
 4. **Pack EV is unbuyable by construction.** Golazos has 202 rows, all original supply and none actionable ([roadmap-2026-08-03](../roadmap-2026-08-03.md)). On 10-17, 0 of 32 pack rows had a price; that is honest, not a sort defect.
 5. **No offers exist.** Golazos has no DapperOffersV2 offers of either type (settled 07-28; known-issues `badge_editions.low_ask` bullet). Any "best offer" surface stays empty, correctly.
-6. **The Flowty `golazos-listing-cache` still runs.** It made 216 runs in 72 h, fetching 1,000 per run, with `editions_mapped` 0. It feeds legacy `cached_listings` only and is a teardown candidate for the day Flowty goes dark (roadmap-status, Flowty 10-15 note).
+6. ✅ **RETIRED 2026-10-30 (re-verified 11-22 ~1:45 PM PT: last `golazos-listing-cache` run 10-30 in `pipeline_runs_daily`, no pg_cron job; [flowty-retirement-runbook.md](../../operations/flowty-retirement-runbook.md) § Execution record).** Was: **The Flowty `golazos-listing-cache` still runs.** It made 216 runs in 72 h, fetching 1,000 per run, with `editions_mapped` 0. It feeds legacy `cached_listings` only and is a teardown candidate for the day Flowty goes dark (roadmap-status, Flowty 10-15 note).
 
 ## Next — prioritized
 
@@ -64,7 +64,7 @@
 - ⛔ DECLINED by Trevor 10-17 9:27 PM PT (see Decisions). **Fit relative-deals copy to the market.** Overview copy says "deals you can act on". On a book with 0 closes in 7 days that over-promises; revise it alongside the label. Gate: the dormancy decision.
 
 **Later**
-- **Retire the Flowty Golazos sweep and `flowty-proxy` when Flowty turns off.** Confirm by the routes' `pageErrors` first, then drop the `flowty` rows deliberately.
+- ✅ **DONE 2026-10-30 (Flowty went dark 10-27; `flowty-proxy` is a 410 tombstone).** Was: **Retire the Flowty Golazos sweep and `flowty-proxy` when Flowty turns off.** Confirm by the routes' `pageErrors` first, then drop the `flowty` rows deliberately.
 - **Re-measure the gate only when sales resume.** Do not chase the share with thresholds: 0 of the editions that sold had more than 3 sales in a month (09-10 block). Falsifier: 30-day sales return above the September bursts.
 - **No new Golazos features, growth or spend** until the accuracy gate and the 100-WAU rule allow them.
 

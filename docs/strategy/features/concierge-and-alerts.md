@@ -83,7 +83,7 @@ Live 10-17: `alerts-dispatch` 104/104 runs ok in 24 h; 14 `alert_deliveries` in 
 - **R73: discoverability, not answers.** 3 non-automated `concierge_opened` events in the last 7 d (10-17 read). The ~10-28 watch: under ~1 real open a week on the fixed instrument means placement is still the problem.
 - **`support_conversations` alone cannot tell "nobody asked" from "it broke."** It held 231 rows in 7 d, mostly smoke probes. Read `usage_events` (`concierge_opened`, `chat-message-sent`) and the daily smoke results together.
 - **Player identity is maintained by hand** (player-identity.md §Maintenance): new father/son pairs, renames, and historic team labels. ESPN gaps leave 29 Top Shot identities unkeyed. Dee Brown and Courtney Williams (×2) are ambiguous.
-- **#8:** `sync-nba-projections` is still a permanently-red arm. ESPN is dead behind the proxy.
+- ✅ **#8 RESOLVED 2026-10-24** (known-issues #8; re-read 11-22 ~1:45 PM PT: no `*nba-projection*` pipeline rows in 7 d because the old lane is off, not red). The ESPN lane `nba-espn-projections` feeds `nba_player_projections`; the `sync-nba-projections` edge function is uncalled residue. Was: `sync-nba-projections` is still a permanently-red arm.
 
 ## Next — prioritized
 
