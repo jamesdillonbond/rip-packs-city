@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~2:30 PM PT · 🔧 SHIPPED (code) — Panini edition upserts no longer erase the printed TEAM: `toEditionRow` omits `nation` when the payload has none, and the route upserts one batch per row shape (Claude Code cloud; NWSL thread — 0 of the first 88 NWSL cards had a team)
+
+- **Cause:** only the marketplace grid carries team; every card walked outside a grid pass (all walk-only runs, priority/held cards) sent `nation: null`, and the bulk upsert overwrote the stored team. Measured before the fix: team on 8.6 % Basketball, 11.8 % Soccer, 12.2 % Football, 11.2 % WNBA editions (68–86 % on the rarely-walked Baseball/Racing/Entertainment). Same defect class as the `panini_products` shape-batching already in that route.
+- New `lib/chains/panini/edition-upsert-batches.ts` + `__tests__/panini-edition-upsert-batches.test.ts` (planted `nation: team` → red); the old `toBeNull()` pin in panini-ingest-normalize.test.ts INVERTED to assert absence.
+- Not a backfill: teams already erased return as cards are next seen on a grid pass (2/6/10 o'clock runs).
+- **Revert:** `git revert` the commit titled "panini: an edition upsert never erases the printed team".
+
 ### 2026-11-22 ~2:15 PM PT · 🔧 SHIPPED (code) — Portfolio FMV is ONE number (fresh + stale-priced Moments + sealed packs at capped low ask) and "Total Moments" is "Total Assets" (Moments + cards + sealed packs) on the dashboard, public profile and share card (Claude Code cloud; Trevor: "one number that encompasses everything in the wallet. Keep it simple", "Total Moments should be Total Assets", "Yes they should. Apply the updates yourself")
 
 - `lib/dashboard/held-packs.ts` gains `walletTotalUsd()` + `walletTotalCaption()`; the breakdown captions (stale-priced, sealed-pack line, "as of Nh ago") are gone. A caption shows only when the sealed-pack read failed ("not included"), so a partial total never passes as the whole. Profile share tweet now says "N assets".
