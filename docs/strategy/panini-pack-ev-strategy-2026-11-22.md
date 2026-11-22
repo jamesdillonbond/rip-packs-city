@@ -6,6 +6,33 @@ Companion: [panini-fmv-packev-methodology.md](panini-fmv-packev-methodology.md) 
 
 ---
 
+## 0. Progress (dated — newest first)
+
+**2026-11-22 ~11:25 AM PT — P1 + P2 pass** (Trevor: "Work through all you can for p1 and p2").
+
+| Item | State |
+|---|---|
+| P0.1 Moonbirds sales fix + key-shape watch | ✅ live (sales ingest accepts `packcard-a_b_c_d_e`; Sentinel warns on any unrecognised key shape) |
+| P0.2 tier-coverage gate + "at least $X" | ✅ live — Moonbirds (Legendary 5/24) and WC Stickers (Epic 406/1,920) read "at least" |
+| P0.3 pull ledger | ✅ live since 11-22 (`panini_edition_supply_obs`, job :54). **Backtest not yet measurable:** ~1 reading per card so far. Re-read ~2026-12-06. |
+| **P1.4 tier-composition model** | 🟡 **built as a SHADOW, not published** — `panini_pack_ev_tier_shadow` / `refresh_panini_pack_ev_tier_shadow()` hourly at :49; 63 products, 358 packs, ~52 s/run. Gate: validation (below) **and** the pull-ledger backtest. |
+| P1.5 special single-parallel packs | 🟡 in the shadow, matched by Panini's per-tier serial range (`min_end_seq..max_end_seq`); several over-match (see below) |
+| P1.6 FOTL slots | 🟡 in the shadow (1039 design $110 vs cost $114; 1055 $47.52 vs $55) but their Epic tier over-matches → the 90 %-indexed withhold stays |
+| P2.7 link Bad Eggs / Rolling Stones | 🟡 **half done** — set 2130 = 2026 Prizm The Rolling Stones, set 850130 = 2025 Prizm Bad Eggs (evidence: mint caps vs each product's serial ranges) named in `panini_products`, so the next ingest run links packs 979, 990, 1060, 1063. **Bad Eggs "Introducing the Clans" and "New Yolk City" have no set id** — the runner's Entertainment grid has never reported their cards; needs a runner-side look. |
+| P2.8 older products | 🟡 in the shadow; 3 packs pass validation with a single live pack (Hoops 772 $6.03 vs $8 cost; 2022-23 Prizm Bball 791 $9.90 vs $27; 2022 WC Prizm 755 $21.15 vs $18) — **not published**, see "what the shadow taught" |
+| P2.9 pricing rule (cap FMV at ask everywhere) | ⏸ Trevor's decision |
+
+**What building the tier model taught (11-22, measured):**
+1. **A per-parallel slope model is unstable.** `log p = b_q + k_q·player` fitted slopes of ~6.8 on rare parallels and over-predicted held-out cards 2.3–5.8× (pooled, 5-fold). Rejected.
+2. **A decile-binned model never extrapolates past an observed price** (a missing card is priced at the catalogued mean of its parallel within its player's decile). 5-fold holdout, pooled pred/obs, WC Stickers: Silver 1.03 · Blue 1.03 · Red 0.79 · Black 0.86 · Gold 0.67 · Green 0.58; Moonbirds: every parallel 0.94–1.15. **Complete tiers pass ±10 %; rare tiers run 14–42 % LOW with wide fold swings** (a few star cards carry each tier's mean). Shipped as the shadow's engine.
+3. **"As designed" ≠ "what's left in the packs".** Panini's `rarity_distribution` is the MINTED mix. The remaining pool is bounded by supply: `packs_remaining × cards − catalogued still_in_packs` is the only room left for uncatalogued cards. Moonbirds: that room is ~3 cards, so its true EV is at most ~$66 (floor $57.22, shadow remaining $60.43) even though the design-mix EV is $104 — most Legendaries are already pulled. Stickers: shadow remaining $7.59, design $9.43 (floor $6.75). **The pull ledger decides which view predicts pulls; until then neither is published.**
+4. **A tier's serial range is necessary but not sufficient.** Hobby, FOTL-exclusive and insert parallels share caps: WC Hobby Epic matches 3,071 catalogued cards vs Panini's 1,982 distinct; special pack 1051 values at $651 on a $220 cost. Such packs must never pass the gate — the "over-match" gate is written (`claude/patches/2026-11-22-panini-pack-ev-pool/…overmatch_gate.sql` in the project) but **not applied**: its approval prompt was auto-cancelled twice. Until it is, read `gate_ok` together with each tier's `catalogued` ≤ `distinct_cards`.
+5. **A >2× published-vs-tier gap was a matching bug, not a pricing bug** (Serie A 1041 $6.26 vs $37.67 → $8.74 after the serial-range fix; the rest is median vs mean).
+
+**Next (in order):** apply the over-match gate · at ~12-06 build the backtest on the pull ledger (realized pull mix per tier vs `rarity_distribution` vs remaining; realized value per opened pack vs shadow and published) · find the two missing Bad Eggs set ids on the runner · decide P2.9.
+
+---
+
 ## 1. Where it stands
 
 | Measure | Value |
