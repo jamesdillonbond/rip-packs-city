@@ -45,6 +45,14 @@ describe("paniniRipVerdict — a mean-only edge is never a pack that pays", () =
     expect(paniniRipVerdict({ evModeled: null, costUsd: 10, netRipEdgeUsd: 5 })).toBe("not_modeled")
     expect(paniniRipVerdict({ evModeled: true, costUsd: null, netRipEdgeUsd: null })).toBe("no_price")
   })
+  // 2026-11-22 (P0.2): a FLOOR EV under cost proves nothing about the mean — never no_edge.
+  it("a negative edge on a floor EV is floor_below_cost, never no_edge; a positive one stays on the mean", () => {
+    expect(paniniRipVerdict({ evModeled: true, evFloor: true, costUsd: 9, netRipEdgeUsd: -2, typicalEvUsd: 5, sim: { pBeatCost: 0.06 } }))
+      .toBe("floor_below_cost")
+    expect(paniniRipVerdict({ evModeled: true, evFloor: true, costUsd: 43, netRipEdgeUsd: 14, typicalEvUsd: 17, sim: { pBeatCost: 0.2 } }))
+      .toBe("positive_on_mean_only")
+    expect(paniniRipVerdict({ evModeled: true, evFloor: false, costUsd: 9, netRipEdgeUsd: -2, typicalEvUsd: 5 })).toBe("no_edge")
+  })
   it("a negative edge is no_edge", () => {
     expect(paniniRipVerdict({ evModeled: true, costUsd: 99, netRipEdgeUsd: -70, typicalEvUsd: 6 })).toBe("no_edge")
   })

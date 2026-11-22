@@ -92,6 +92,30 @@ describe("PaniniPackMarket", () => {
     expect(c.textContent ?? "").not.toContain("on the mean only")
   })
 
+  // 2026-11-22 (P0.2): a floor EV reads "at least", and a negative edge on it is never printed as the pack's edge.
+  it("a floor EV renders 'at least $X', says why, and never prints a negative edge as the pack's edge", async () => {
+    mockFetch(200, payload({ products: [product({ evFloor: true, actualEvUsd: 6.75, netRipEdgeUsd: -2, typicalEvUsd: 5, costUsd: 9 })] }))
+    let c = await mount()
+    let text = c.textContent ?? ""
+    expect(text).toContain("EV (mean, at least)")
+    expect(text).toContain("at least $6.75")
+    expect(text).not.toContain("−$2.00 vs cost")
+    expect(text).toContain("can't say if the mean beats cost")
+    expect(text).toContain("EV is a floor")
+    cleanup()
+    mockFetch(200, payload({ products: [product({ evFloor: true, actualEvUsd: 57.22, netRipEdgeUsd: 14, typicalEvUsd: 17, costUsd: 43 })] }))
+    c = await mount()
+    text = c.textContent ?? ""
+    expect(text).toContain("at least +$14.00 vs cost")
+    cleanup()
+    // The control: no floor flag, no floor wording.
+    mockFetch(200, payload())
+    c = await mount()
+    text = c.textContent ?? ""
+    expect(text).not.toContain("at least")
+    expect(text).not.toContain("EV is a floor")
+  })
+
   it("shows the simulated share of packs that beat the price beside the mean, and nothing when there is no sim", async () => {
     mockFetch(200, payload({ products: [product({ sim: { medianPullUsd: 18, pBeatCost: 0.1237, costUsd: 135, computedAt: RECENT } })] }))
     let c = await mount()

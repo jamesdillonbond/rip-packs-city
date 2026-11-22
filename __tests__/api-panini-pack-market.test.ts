@@ -89,6 +89,20 @@ describe("GET /api/panini-pack-market", () => {
     expect(json.coverage_error).toBe(false)
   })
 
+  // 2026-11-22 (P0.2): ev_is_floor is served as evFloor only as a strict true on a modeled pack.
+  it("serves evFloor from the view's ev_is_floor — strict true, and never on an unmodeled pack", async () => {
+    state.panini_pack_ev_board = { data: [
+      { ...HOBBY, ev_is_floor: true },
+      { ...FOTL, ev_modeled: false, ev_is_floor: true },
+    ], error: null }
+    let { json } = await body()
+    expect(json.products.find((p: any) => p.packType === "hobby").evFloor).toBe(true)
+    expect(json.products.find((p: any) => p.packType === "fotl").evFloor).toBe(false)
+    state.panini_pack_ev_board = { data: [{ ...HOBBY, ev_is_floor: null }, { ...FOTL, ev_is_floor: "true" }], error: null }
+    ;({ json } = await body())
+    expect(json.products.every((p: any) => p.evFloor === false)).toBe(true)
+  })
+
   // 20261018162610: the view's sim columns become `sim` only when present on a modeled pack.
   it("serves the simulated median pack and P(beat cost) when the view has them, and null otherwise", async () => {
     state.panini_pack_ev_board = { data: [

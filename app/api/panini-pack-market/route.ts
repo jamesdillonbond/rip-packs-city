@@ -61,7 +61,7 @@ const MAX_HISTORY_ROWS = 500
 const EV_COLS =
   "id,pack_type,pack_cost_usd,floor_usd,avg_sale_usd,recent_sale_usd,cards_per_pack,packs_total,packs_remaining," +
   "packs_ripped_pct,actual_ev_usd,typical_ev_usd,silver_ev,base_parallel_ev,insert_ev,fotl_exclusive_ev," +
-  "net_rip_edge_usd,model_note,updated_at,product_name,sport,product_set_id,ev_modeled," +
+  "net_rip_edge_usd,model_note,updated_at,product_name,sport,product_set_id,ev_modeled,ev_is_floor," +
   "sim_median_pull_usd,sim_p_beat_cost,sim_cost_usd,sim_computed_at"
 
 function num(v: unknown): number | null {
@@ -136,6 +136,10 @@ export async function GET() {
         productName: str(p.product_name),
         sport: str(p.sport),
         evModeled,
+        // 2026-11-22 (P0.2): the EV is a LOWER BOUND — a rarity tier that carries real value is under
+        // half catalogued, so its uncatalogued cards are missing from the pool. Rendered "at least $X";
+        // strict true only, and only on a modeled pack.
+        evFloor: evModeled && p.ev_is_floor === true,
         imageUrl: d?.imageUrl ?? null,
         marketUrl: marketUrl.get(String(p.id)) ?? null,
         labels: d?.labels ?? [],

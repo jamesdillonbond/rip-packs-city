@@ -49,6 +49,8 @@ export type PaniniRipVerdict =
   | "not_modeled"
   | "no_price"
   | "no_edge"
+  /** The mean EV is only a LOWER BOUND and sits below cost — the mean itself may or may not beat cost. */
+  | "floor_below_cost"
   | "positive_on_mean_only"
   | "typical_pack_beats_cost"
 
@@ -64,6 +66,7 @@ export function paniniRipVerdict(p: {
   costUsd?: unknown
   netRipEdgeUsd?: unknown
   typicalEvUsd?: unknown
+  evFloor?: unknown
   sim?: { pBeatCost?: unknown } | null
 }): PaniniRipVerdict {
   if (p.evModeled !== true) return "not_modeled"
@@ -72,7 +75,7 @@ export function paniniRipVerdict(p: {
   if (cost === null || edge === null) return "no_price"
   const pBeat = num(p.sim?.pBeatCost)
   if (pBeat !== null && pBeat >= PANINI_PACK_TYPICAL_BEATS_COST) return "typical_pack_beats_cost"
-  if (edge <= 0) return "no_edge"
+  if (edge <= 0) return p.evFloor === true ? "floor_below_cost" : "no_edge"
   // A positive mean edge. Without a simulation, the typical pull stands in for the median pack;
   // with neither, the edge is still only a mean.
   const typical = num(p.typicalEvUsd)
@@ -113,6 +116,8 @@ export async function readPaniniPackMarketForConcierge(base: string, limit: numb
         ev_modeled: modeled,
         typical_pull_usd: modeled ? num(p.typicalEvUsd) : null,
         mean_ev_usd: modeled ? num(p.actualEvUsd) : null,
+        // true = mean_ev_usd (and the edge) is a LOWER BOUND: a valuable rarity tier is under-catalogued.
+        mean_ev_is_floor: modeled && p.evFloor === true,
         net_edge_on_mean_usd: modeled ? num(p.netRipEdgeUsd) : null,
         simulated_median_pack_usd: num(p.sim?.medianPullUsd),
         simulated_p_pull_beats_cost: num(p.sim?.pBeatCost),
@@ -135,7 +140,9 @@ export async function readPaniniPackMarketForConcierge(base: string, limit: numb
         "Pack EV is modelled over a listing-fed index (Panini publishes no checklist), so it is a floor, not a census. " +
         "Lead with the typical pull / simulated median pack; the mean is carried by a few chase cards. " +
         "rip_verdict is authoritative: never call a pack +EV, profitable or worth ripping unless it reads typical_pack_beats_cost; " +
-        "positive_on_mean_only means most packs return less than they cost. ev_modeled=false means NOT MODELLED — never $0. " +
+        "positive_on_mean_only means most packs return less than they cost. " +
+        "mean_ev_is_floor=true means the mean EV is a LOWER BOUND (rare cards missing from our catalogue) — say \"at least $X\"; " +
+        "floor_below_cost means that bound is under cost, which does NOT show the mean is below cost — say it can't be told from the mean. ev_modeled=false means NOT MODELLED — never $0. " +
         "A stats_stale price is older than 24 h — say so when you quote it.",
       coverage: json.coverage ?? null,
       coverage_error: json.coverage_error === true,

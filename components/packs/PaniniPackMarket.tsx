@@ -55,6 +55,8 @@ export interface PaniniPackProduct {
   typicalEvUsd: number | null
   actualEvUsd: number | null
   netRipEdgeUsd: number | null
+  /** The EV is a lower bound (an under-catalogued rare tier is missing from the pool) — shown "at least $X". */
+  evFloor?: boolean
   /** Simulated pack outcome; null when not simulated, failed, stale, or the EV is withheld. */
   sim?: { medianPullUsd: number; pBeatCost: number; costUsd: number | null; computedAt: string | null } | null
   legs: { silver: number | null; baseParallel: number | null; insert: number | null; fotlExclusive: number | null }
@@ -90,8 +92,11 @@ function signedUsd(n: number | null | undefined): string {
 // A positive MEAN edge is carried by chase cards most packs never contain (measured 2026-10-18:
 // WC Hobby/FOTL means sat +$3/+$25 over cost while P(pull >= price) was 13%/18%), so it never
 // renders alone: when the typical pull is under cost, the same line says so.
-function meanEdgeSub(edge: number | null, typical: number | null, cost: number | null): string | undefined {
+function meanEdgeSub(edge: number | null, typical: number | null, cost: number | null, floor = false): string | undefined {
   if (edge === null || !Number.isFinite(edge)) return undefined
+  // A floor EV bounds the mean from BELOW: a positive edge is "at least", a negative one proves nothing
+  // about the mean — never print it as the pack's edge.
+  if (floor) return edge > 0 ? `at least ${signedUsd(edge)} vs cost` : "a lower bound — can't say if the mean beats cost"
   const base = `${signedUsd(edge)} vs cost`
   if (edge > 0 && typical !== null && cost !== null && Number.isFinite(typical) && Number.isFinite(cost) && typical < cost) {
     return `${base} on the mean only · typical pull ${signedUsd(typical - cost)}`
@@ -191,7 +196,11 @@ function ProductCard({ p, staleAfterHours }: { p: PaniniPackProduct; staleAfterH
         {modeled ? (
           <>
             <Tile label="Typical pull" value={usd(p.typicalEvUsd)} sub="each card slot at its median card" />
-            <Tile label="EV (mean)" value={usd(p.actualEvUsd)} sub={meanEdgeSub(p.netRipEdgeUsd, p.typicalEvUsd, p.costUsd)} />
+            <Tile
+              label={p.evFloor ? "EV (mean, at least)" : "EV (mean)"}
+              value={p.evFloor && p.actualEvUsd !== null ? `at least ${usd(p.actualEvUsd)}` : usd(p.actualEvUsd)}
+              sub={meanEdgeSub(p.netRipEdgeUsd, p.typicalEvUsd, p.costUsd, p.evFloor === true)}
+            />
             {p.sim ? (
               <Tile
                 label="Packs that beat the price"
@@ -247,6 +256,9 @@ function ProductCard({ p, staleAfterHours }: { p: PaniniPackProduct; staleAfterH
 
       <div style={{ marginTop: 10 }}>
         <Note>Updated {ptStamp(p.updatedAt)}{modeled && p.modelNote ? ` · model ${p.modelNote.split(" · ")[0]}` : ""}</Note>
+        {modeled && p.evFloor ? (
+          <Note>EV is a floor: some of this pack&apos;s rarer cards aren&apos;t in our catalogue yet (Panini lists a card only once it&apos;s been for sale), so their value is missing from the average.</Note>
+        ) : null}
       </div>
     </section>
   )
