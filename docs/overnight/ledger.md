@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~9:17 AM PT · 🔧 SHIPPED (code) — `main` red fix: the wallet pack-value cache write binds its result (Cowork cloud; follows f2ca69a)
+
+- `supabase-write-results-are-bound-or-marked` (ban at zero) failed on `lib/packs/held-pack-total.ts:87` — the best-effort `wallet_pack_value_cache` upsert discarded its `{ error }`. Now bound and logged (`console.error`), behaviour unchanged (the reader still gets the live value). Guard + `lib-packs-held-pack-total-cache` tests green locally; `tsc` 0 errors.
+- **Revert:** `git revert <this commit>`.
+
 ### 2026-11-22 ~9:15 AM PT · 🗄 APPLIED ×10 (`20261122153353`…`20261122170146`) + ⏰ pg_cron 912 — Panini pack EV accuracy pass: exact-card match, remaining-pool model, WC/WNBA special-pack cards excluded, ask cap, FOTL 90 % rule for WNBA (Cowork cloud; Trevor: "work through this and try to get this fixed and accurate" → "Keep going" → "Don't stop until you've exhausted all you can do" → "Connect to the repo")
 
 - **Exact-card match** (`panini_pack_ev_guaranteed_slots`): 2021 NFL Instant "Week N – player – Base" packs matched the player name only, so 35 packs were priced off another week's card ($4 EV on a $115 Week-10 Stevenson pack). Single-card packs now match only the edition with `mint_cap` = the pack's `total_cards_minted` (15/15 priced packs verified via the `pack/<id>/` thumbnail path).
