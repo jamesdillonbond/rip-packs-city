@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~12:20 PM PT · 🗄 APPLIED ×2 — Panini: tier-shadow over-match gate live; Rolling Stones + 2025 Bad Eggs packs linked to their card products (Claude Code cloud; Trevor: "Do what you can")
+
+- **What:** `20261122201452` (over-match gate, third attempt; live prosrc md5 == file) — a tier matching more catalogued cards than Panini lists forces `gate_ok=false`: 87 of 358 shadow packs over-match, 50 pass (was 95). `20261122201616` writes `product_set_id` on packs 1060/1063 (→ 2130) and 979/990 (→ 850130) — the value the ingest route writes at its next pack capture. Board notes for them are now accurate and all four stay correctly withheld. A one-time scheduled task runs the pull-ledger backtest 2026-12-06 1:23 PM PT (read-only; reports to Trevor).
+- **Revert:** re-apply `20261122191909` (function); `update public.panini_pack_state set product_set_id = null where id in ('979','990','1060','1063');`
+
 ### 2026-11-22 ~12:20 PM PT · 🔧 SHIPPED (code) — accepted-bid price = the escrow's debit minus the bidder's rent refund (corrects the 12:05 PM rule) (Claude Code cloud; same thread)
 
 - The 12:05 rule ("everything paid to non-bidder accounts + tx fee") read **0.00426 SOL for a 0.002 SOL bid** on 11-11: the seller's own listing closed in the same transaction and its rent landed with the proceeds. Now: price = the most-debited non-signer account (the escrow) − the bidder's credit. All 6 real bids re-checked (0.002 · 0.05 · 0.006 · 0.2072 · 0.3451 · 9 SOL); the 11-11 case is pinned as a fixture. No bid had been written to `sales` yet (the lane runs hourly; none since 12:05).
