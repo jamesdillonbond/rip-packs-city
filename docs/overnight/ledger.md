@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-21 ~7:09 PM PT · 🗄 APPLIED (`20261122030900`) — the last stale phantom Candy ask retired one-off; #257 resolved (Claude Code cloud; Trevor, asked yes/no: "Do what you think is best" — the recommendation was to retire)
+
+- **What:** `candy_listings` pda `CFGipvw9…` (Blackest Night (2009-2010) #1, $72.76, pre-lock seller, last seen 11-15) → `is_active = false`, `owner_moved_at` stamped. Guarded: exactly 1 row, and only while its card still has no holder row. Its card has no holder anywhere after clean walks, so neither retirer arm reaches it; a general rule was rejected (it would flap real escrow-held listings, #145). No writer re-activates it; both sweeps skip owner-moved pdas; the existing clear path lifts the mark if the seller is ever seen holding the card.
+- **Verified:** row inactive; active Magic Eden Candy asks unseen > 3 days = **0** (#257's own watch query).
+- **Revert:** `UPDATE public.candy_listings SET is_active = true, owner_moved_at = NULL WHERE pda_address = 'CFGipvw9iq69QEpdr3yiNjvYsBQXWwugXDdgnyBiq7Q9';`
+
 ### 2026-11-21 ~7:05 PM PT · 📝 DOCS — Candy phantom thread closed out before archive; one dated read handed to the overnight pass (Claude Code cloud; Trevor: "leaving nothing unresolved from this thread … update any relevant documentation")
 
 - **State at 6:59 PM PT:** trust board all ok (`candy_ask_book_drop_pct` cleared as predicted); 9,624 phantom asks retired, 45 flagged active (steady-state re-surfacing, retired within one walk+indexer cycle), 0 of 88 new real asks retired; 7 active Candy bids (4 phantom + 3 from another bidder).
