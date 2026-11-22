@@ -12,6 +12,9 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~3:58 PM PT · pg_cron 704 `rpc-pack-rips-chain-rekey` moved `9,39` → `3,39` — migration `20261122235804`
+- fmv-recalc's historical fallback timed out on 16 of 77 :08 runs vs 1 of 77 / 1 of 76 at :28 / :48. The rekey job overlapped 82 % of :08 runs and 0 % of the others. Minute 9 is the heaviest pg_cron minute (153 s/h); minute 3 is 38 s/h. Rekey now averages 31 s (it shipped at ~0.1 s), so it ends before :08. The 1 h lookback still covers both gaps. Guarded on the old schedule; same job, no new lane. Revert: `cron.alter_job(…, schedule => '9,39 * * * *')`. **Watch (~11-23):** :08 `historical_fallback_error` rate falls toward ~1 %. (File header says ~4:10 PM PT; applied 3:58.)
+
 ### 2026-11-22 ~3:55 PM PT · 🔧 SHIPPED (runner) — ROOT CAUSE of the NWSL blind spot: the residential Panini profile's cached filter metadata predates "Womens Soccer", so the app redirected `?sport=Womens%20Soccer` to `?sport=Basketball`; the runner now clears ONLY that cache before the grids and retries a redirected sport once (Claude Code cloud; NWSL thread; Trevor granted ~/rip-packs-city on the laptop)
 
 - **Evidence (laptop `panini-ops-capture.jsonl`):** 2:14:07 PM PT page `?sport=Womens%20Soccer` → 2:14:10 PM the app's own requests run on `?sport=Basketball` (`applied_filters: "marketplace-nfts?sport=Basketball&p=1"`). Panini keeps filters in redux-persist (IndexedDB `localforage`/`keyvaluepairs`/`reduxPersist:Filters`) versioned by localStorage `filter_timestamp`; the live stamp 1795240806911 = the NWSL launch (Nov 20 ~2 PM PT).
