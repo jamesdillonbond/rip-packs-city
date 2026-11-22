@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~9:58 AM PT · 🗄 APPLIED (`20261122175551`) + 🔧 SHIPPED (route + sentinel leg) — Panini: a new sale-key shape now warns within hours instead of being dropped for weeks (Claude Code cloud; Trevor: "Approve and proceed", strategy P0.1b)
+
+- **What:** `panini-ingest` route counts, per run, sale records whose key matches neither shape `panini_sales_ingest` accepts (`extra.sales_history_unrecognised_keys` + a 3-key sample; helper `PANINI_SALE_KEY_SHAPES` in `lib/chains/panini/ingest-normalize.ts`, pinned EQUAL to the newest `panini_sales_ingest` WHERE clause by `__tests__/panini-sale-key-shapes.test.ts`). `sentinel_panini_health()` gains `unrecognised_sale_keys_24h` (NULL until a run reports it — no leg, never a fabricated 0) + `unrecognised_sale_keys_sample`; the Panini Ingest Sentinel arm warns on > 0. Cost 42 ms / 3.3k buffers; anon EXECUTE still false; every existing key unchanged.
+- **Why:** Moonbirds `packcard-…` keys matched no shape and were silently dropped for weeks (fixed in `20261122173500`).
+- **Revert:** DB — re-apply the function body from `20261109040000`. Code — revert this commit (find by message: "sale-key shape watch").
+
 ### 2026-11-22 ~9:50 AM PT · 🗄 APPLIED ×2 + ⏰ pg_cron 914 — Panini: Moonbirds sales were all being dropped (fixed + 1,160 backfilled) and the pull ledger starts (Cowork cloud; Trevor: "Approve and proceed", strategy P0.1 + P0.3)
 
 - **`20261122173500` panini_sales_ingest accepts single-underscore card keys.** It accepted only `<card>__<serial>_<cap>`; Moonbirds (850178) keys sales `packcard-850178_104_7_7_10`, so every Moonbirds sale was filtered out (0 rows; 1,160 serial last-sales). Now accepts `^packcard-\d+_\d+_\d+_\d+_\d+$` (card = first 3 parts); body otherwise = 20260929020655 (prosrc md5 verified). Backfilled 1,160 `serial_last_sale` rows (368 in 90 d). Effect: Moonbirds (1049) now passes the pool gates — $57.22 EV vs $43, typical $17; top cards valued at or below their recorded sales (Enlightened Professor /49 sold $1,100–1,300, valued at its $890 ask).
