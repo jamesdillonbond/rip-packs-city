@@ -103,9 +103,11 @@ const fetchImpl = async (_url: string, init: any) => {
     return new Response(JSON.stringify({ result: state.sigs[body.params[0]] ?? [] }), { status: 200 })
   }
   state.txCalls.push(body.params[0])
+  lastTxOpts = body.params[1]
   return new Response(JSON.stringify({ result: state.txs[body.params[0]] ?? null }), { status: 200 })
 }
 
+let lastTxOpts: any = null
 const NOW = Date.parse("2026-11-22T15:00:00Z")
 const run = () => runCandyChainSales(db(), { budgetMs: 60_000, now: () => NOW, fetchImpl: fetchImpl as any, urls: ["https://rpc.test"], concurrency: 2 })
 
@@ -137,6 +139,10 @@ describe("runCandyChainSales", () => {
     expect(state.parks[0].p_price_sol).toBeCloseTo(7.5, 9)
     expect(r.fills_offered).toBe(1)
     expect(state.updates).toEqual([{ address: COLL, patch: { chain_checked_at: new Date(NOW).toISOString(), chain_sig_cursor: BUY.signature } }])
+  })
+  it("asks for version-1 transactions (a v0 request is refused for them: 14 Candy txs 11-06 → 11-22, one a fill)", async () => {
+    await run()
+    expect(lastTxOpts).toMatchObject({ encoding: "jsonParsed", maxSupportedTransactionVersion: 1 })
   })
   it("never fetches a transaction already in `sales` or the queue", async () => {
     state.queued = [LIST.signature]

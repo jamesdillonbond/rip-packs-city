@@ -260,7 +260,7 @@ export async function runCandyChainSales(
         while (next < todo.length) {
           if (now() > deadline) { budgetHit = true; return }
           const sig = todo[next++]
-          const tx = await rpc<ParsedTx | null>(doFetch, "getTransaction", [sig, { encoding: "jsonParsed", maxSupportedTransactionVersion: 0, commitment: "confirmed" }], urls)
+          const tx = await rpc<ParsedTx | null>(doFetch, "getTransaction", [sig, { encoding: "jsonParsed", maxSupportedTransactionVersion: 1, commitment: "confirmed" }], urls)
           if (!tx) throw new Error(`getTransaction ${sig}: not found`)
           rep.fetched++
           const d = decodeChainFills(sig, tx)

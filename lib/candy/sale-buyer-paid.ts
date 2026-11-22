@@ -113,7 +113,7 @@ export async function fetchTx(sig: string, doFetch: FetchFn, urls: string[] = RP
       resp = await doFetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getTransaction", params: [sig, { encoding: "json", maxSupportedTransactionVersion: 0, commitment: "confirmed" }] }),
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getTransaction", params: [sig, { encoding: "json", maxSupportedTransactionVersion: 1, commitment: "confirmed" }] }),
         signal: AbortSignal.timeout(15_000),
       })
     } catch {
@@ -128,7 +128,7 @@ export async function fetchTx(sig: string, doFetch: FetchFn, urls: string[] = RP
         resp = await doFetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getTransaction", params: [sig, { encoding: "json", maxSupportedTransactionVersion: 0, commitment: "confirmed" }] }),
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getTransaction", params: [sig, { encoding: "json", maxSupportedTransactionVersion: 1, commitment: "confirmed" }] }),
           signal: AbortSignal.timeout(15_000),
         })
       } catch {
