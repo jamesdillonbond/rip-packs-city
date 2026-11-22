@@ -610,11 +610,16 @@ async function officialSourcesNotOnCalendar(all, now) {
     const html = await (await fetch("https://blog.nbatopshot.com/", { signal: AbortSignal.timeout(15000) })).text()
     const text = html.replace(/<[^>]*>/g, "\n").split("\n").map((l) => l.trim()).filter(Boolean)
     for (let i = 0; i < text.length; i++) {
-      if (!/drop guide/i.test(text[i])) continue
+      // Drop guides, and trade-in auctions (11-22: no feed carries them — "Trade In Old for New", 11-06).
+      if (!/drop guide|trade[- ]in|auction/i.test(text[i])) continue
       const dateLine = text.slice(i + 1, i + 8).find((l) => /^[A-Z][a-z]{2,8} \d{1,2}(, \d{4})?$/.test(l))
       if (!dateLine) continue
       const posted = new Date(/\d{4}$/.test(dateLine) ? dateLine : `${dateLine}, ${now.getFullYear()}`)
       if (!(now - posted < 10 * 86400000)) continue
+      if (!/drop guide/i.test(text[i])) {
+        out.push(`Top Shot blog posted "${text[i]}" (${dateLine}) — a trade-in auction is in no feed: read it and, if one opens this week, add it by hand (lib/insights/manual-drops.ts)`)
+        continue
+      }
       const subject = text[i].replace(/drop guide/i, "").replace(/\b20\d\d\b/, "").trim()
       if (!onCalendar(subject)) out.push(`Top Shot blog posted "${text[i]}" (${dateLine}) and the calendar has no "${subject}" drop — read it and add its packs (lib/insights/manual-drops.ts) before posting`)
     }
@@ -626,6 +631,17 @@ async function officialSourcesNotOnCalendar(all, now) {
     const html = (await (await fetch("https://disneypinnacle.com/releases", { signal: AbortSignal.timeout(15000) })).text()).replace(/\\"/g, '"')
     const re = /"\$typeName":"atlas\.v1\.Release","releaseId":"([^"]+)","product":"disney","title":"([^"]+)"/g
     const starts = [...html.matchAll(re)]
+    if (!starts.length) throw new Error("no releases parsed from the page")
+    // The REVERSE check (11-22): a Pinnacle drop going in the post that the official page does not
+    // list yet (Frozen Seasonal Harvest Vol.1 and Winnie the Pooh: Friends-Giving Vol.2 were in the
+    // pack book and minted, not on the page) — its format (draw or capsules) and close are unconfirmed.
+    const pageTitles = starts.map((m) => norm(m[2].replace(/\\u0026/g, "&")))
+    const isNew = (x) => x.status === "upcoming" || Date.parse(x.start_time) > now.getTime() - 36 * 3600000
+    for (const x of all) {
+      if (x.collection !== "disney_pinnacle" || x.status === "ended" || x.kind === "open_edition" || !isNew(x)) continue
+      const t = norm(x.title)
+      if (!pageTitles.some((pt) => pt.includes(t) || t.includes(pt))) out.push(`"${x.title}" (Pinnacle, from the pack book) is not on disneypinnacle.com/releases yet — its format (timed draw or mystery capsules) and close are unconfirmed; the post says "opens", re-check the page before posting`)
+    }
     starts.forEach((m, k) => {
       const seg = html.slice(m.index, starts[k + 1]?.index ?? m.index + 60000)
       const ts = (key) => Number(seg.match(new RegExp(`"${key}":\\{[^}]*"seconds":"\\$n(\\d+)"`))?.[1] ?? NaN) * 1000

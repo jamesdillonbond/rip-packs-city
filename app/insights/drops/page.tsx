@@ -36,6 +36,8 @@ function DropCard({ d }: { d: DropsBoardItem }) {
       </div>
       <div className="dr-title">{d.title}</div>
       <div className="dr-foot">
+        {/* Pinnacle: pins minted for the set (pack-calendar `minted`) — minted, not capsules on offer. */}
+        {typeof d.minted === "number" && d.minted > 0 ? <span className="dr-minted">{d.minted.toLocaleString("en-US")} minted</span> : null}
         {d.retail_usd != null ? <span className="dr-price">{usd(d.retail_usd)}</span> : null}
         <span className={`dr-when${d.status === "upcoming" ? " is-soon" : ""}`}>{dropStatusLine(d)}</span>
       </div>
@@ -121,6 +123,7 @@ export default async function DropsPage() {
         .dr-title { font-family: var(--font-display); font-size: 28px; line-height: 1.02; text-transform: uppercase; margin: 10px 0 auto; overflow-wrap: anywhere; }
         .dr-foot { display: flex; flex-direction: column; gap: 4px; margin-top: 14px; }
         .dr-price { font-family: var(--font-mono); font-size: 28px; }
+        .dr-minted { font-family: var(--font-mono); font-size: 13px; color: var(--rpc-text-secondary); }
         .dr-when { font-family: var(--font-mono); font-size: 14px; color: var(--rpc-red-text); }
         .dr-when.is-soon { color: var(--rpc-warning-text); }
         .dr-cta { margin-top: 12px; font-family: var(--font-mono); font-size: 12px; color: var(--rpc-text-secondary); }
