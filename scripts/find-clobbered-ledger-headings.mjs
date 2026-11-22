@@ -54,10 +54,16 @@ import { readFileSync } from "node:fs"
 const HEADING = /^### .*/gm
 
 // `### 2026-08-22 · SHIPPED — thing` → `· SHIPPED — thing`
-// The date is the only part a re-date changes, so the body is what identifies
-// the entry. A heading with no leading date keeps its whole text as its body.
+// `### 2026-11-22 ~3:20 PM PT · SHIPPED — thing` → `· SHIPPED — thing`
+// The STAMP (date, and the optional PT time of day after it) is the only part a re-date
+// or a time correction changes, so the body is what identifies the entry. 2026-11-22:
+// correcting "~3:20 PM PT" to "~3:10 PM PT" — the timestamp rule CLAUDE.md asks for —
+// failed this arm (bbe360f) exactly as a re-date did before 2026-08-23. A heading with no
+// leading date keeps its whole text as its body; a reworded body is still reported.
 export function headingBody(heading) {
-  return heading.replace(/^###\s+\d{4}-\d{2}-\d{2}\s*/, "").trim()
+  return heading
+    .replace(/^###\s+\d{4}-\d{2}-\d{2}\s*(?:~?\d{1,2}:\d{2}\s*[AP]M(?:\s*P[SD]?T)?\s*)?/i, "")
+    .trim()
 }
 
 export function headingsOf(src) {

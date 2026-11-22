@@ -38,6 +38,19 @@ describe("the ledger clobber detector", () => {
     expect(lostHeadings(LEDGER, after)).toEqual([])
   })
 
+  it("does NOT report a heading whose PT TIME OF DAY was corrected in place (2026-11-22, bbe360f)", () => {
+    const before = entry("### 2026-11-22 ~3:20 PM PT · SHIPPED — timed thing") + LEDGER
+    const after = entry("### 2026-11-22 ~3:10 PM PT · SHIPPED — timed thing") + LEDGER
+    expect(lostHeadings(before, after)).toEqual([])
+  })
+
+  it("still REPORTS a timed heading whose WORDING changed or that was deleted", () => {
+    const before = entry("### 2026-11-22 ~3:20 PM PT · SHIPPED — timed thing") + LEDGER
+    const reworded = entry("### 2026-11-22 ~3:10 PM PT · SHIPPED — another thing") + LEDGER
+    expect(lostHeadings(before, reworded)).toEqual(["### 2026-11-22 ~3:20 PM PT · SHIPPED — timed thing"])
+    expect(lostHeadings(before, LEDGER)).toEqual(["### 2026-11-22 ~3:20 PM PT · SHIPPED — timed thing"])
+  })
+
   it("REPORTS a heading that was deleted outright", () => {
     const after = LEDGER.replace("### 2026-08-21 · MEASURED — second thing\n", "")
     expect(lostHeadings(LEDGER, after)).toEqual(["### 2026-08-21 · MEASURED — second thing"])
@@ -67,6 +80,8 @@ describe("the ledger clobber detector", () => {
 
   it("strips only the date prefix when deriving a body", () => {
     expect(headingBody("### 2026-08-22 · SHIPPED — x")).toBe("· SHIPPED — x")
+    expect(headingBody("### 2026-11-22 ~3:20 PM PT · SHIPPED — x")).toBe("· SHIPPED — x")
+    expect(headingBody("### 2026-11-22 12:05 AM PST · SHIPPED — x")).toBe("· SHIPPED — x")
     // ⚠ A heading with NO date keeps its full text, `### ` and all — the prefix is
     // stripped only when a date is actually there. That is the conservative
     // behaviour and it is asserted rather than assumed: a dateless heading can
