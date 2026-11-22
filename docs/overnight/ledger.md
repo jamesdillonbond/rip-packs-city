@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~10:25 AM PT · 🗄 APPLIED (`20261122180516`) + 🔧 SHIPPED (route, Packs tab, concierge) — Panini: pack EVs priced from an under-catalogued pool now read "at least $X" (Claude Code cloud; Trevor: "Go", strategy P0.2)
+
+- **What:** `panini_pack_ev_pool` + `ev_is_floor`, `tier_coverage`; NEW `panini_pack_ev_pool_tier_gate(text[])` (anon false) checks Panini's own `rarity_distribution` (distinct cards per tier) against our catalogue — a tier ≥ 1 % of cards or ≥ 10 % of est. value that is < 50 % catalogued (or no breakdown at all) ⇒ floor + a note naming the tier; `refresh_panini_pack_ev_pool` calls it (body otherwise identical, premise-checked) and logs `floored`; `panini_pack_ev_board` + `ev_is_floor` appended LAST (stripped viewdef md5 == pre-change, `security_invoker=on` kept). App: route serves `evFloor` (strict true, modeled only); the Packs tab shows "EV (mean, at least)" / "at least $X", never prints a negative edge on a floor; concierge gets `mean_ev_is_floor` and verdict `floor_below_cost` instead of `no_edge`.
+- **Live after a manual refresh:** Moonbirds (1049) floor — Legendary 5 of 24 catalogued, ~15 % of value; WC Stickers (1058) floor — Epic 406 of 1,920, ~44 %. Every other modeled pack `ev_is_floor=false`, figures unchanged.
+- **Revert:** DB — re-apply `20261122170146` (view) and `20261122160943` (function), then `drop function public.panini_pack_ev_pool_tier_gate(text[]); alter table public.panini_pack_ev_pool drop column ev_is_floor, drop column tier_coverage;` (the app reads `ev_is_floor` — revert the code first). Code — revert by message "at least".
+
 ### 2026-11-22 ~10:22 AM PT · 📝 DOCS — maintenance mode REVERSED by Trevor; every collection keeps being built out (Claude Code cloud; Trevor: "Take off that maintenance mode gate. We will have users there once we actually have things built for them all. Users won't come to halfway built features")
 
 - Struck from strategy-2026-11-22.md §2/§4/Move 4, panini.md, disney-pinnacle.md, roadmap-2026-10-17.md, roadmap-status.md and the focus steer. Each records the reversal with Trevor's words.
