@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~1:30 PM PT · 🗄 APPLIED + one-off VACUUM — cold `sales_20NN` partitions get an insert-driven autovacuum trigger; set-page Recent Sales timeouts (top Vercel error group, 6/24 h) traced to a rotten `sales_2025` visibility map (Claude Code cloud, autonomous 4 h pass)
+
+- **Cause:** `get_set_activity`'s "≥ 5,000 sales this year?" count pass walks `sales_2025` first; it was 76 % all-visible (last autovacuum 10-06, 103 k backfill inserts since; the partition had a dead-tuple trigger but the default 0.2 INSERT trigger ≈ 476 k), so the index-only scan did 3,316 heap fetches. Errors: holo-icon ×2, the-champion-s-path(-2024) ×3, 2025-nba-playoffs-common.
+- **Done:** `VACUUM (ANALYZE)` sales_2025 (→ 100 %), sales_2024, sales_2023 via execute_sql; holo-icon call 16,693 → 14,014 buffers. Migration `20261122212737` sets `autovacuum_vacuum_insert_scale_factor = 0.01` on sales_2020–2025 (same value sales_2027 carries). No new cron lane.
+- **Watch ~11-29:** relallvisible/relpages > 95 % on 2023–2025; Vercel `get_set_activity failed` count below 6/day.
+- **Revert:** `ALTER TABLE public.sales_20NN RESET (autovacuum_vacuum_insert_scale_factor)` for NN 20..25.
+
 ### 2026-11-22 ~1:20 PM PT · ⏰ SCHEDULED TASK — NWSL #1065 link step, 4:37 PM PT today (Claude Code cloud; Trevor: "Create the scheduled task outside of this thread if you need")
 
 - One-time scheduled task "Link Panini NWSL pack #1065 to card set 2478". After the 2 PM PT runner pass it names set 2478 = the captured pack's exact `product_name` (only if no other row has that name) and links the pack; it leaves 2460 unnamed. If the pack is still uncaptured, it reports and changes nothing. The strategy doc §0 is updated to match.
