@@ -12,6 +12,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~9:45 AM PT · 🗄 APPLIED (`20261122173426`) + 🔧 SHIPPED (sentinel arm) — Top Shot sales clearing against an ASK_ONLY price now warn within 6 h (Claude Code cloud; strategy-2026-11-22.md Move 1.1)
+
+- **Why:** on the 11-11 Series 9 launch, 37.6 % of Top Shot sales sold against an ASK_ONLY price, at a median 2.16× the sale price. Nothing alarmed; `fmv_accuracy_weekly` stored it 12 days later.
+- **DB:** `check_topshot_ask_only_at_sale(p_hours)` is read-only and returns jsonb (sales priced, ASK_ONLY share, median ratio, within ±25 %). ~2k buffers, ~0.2 s. Anon EXECUTE is revoked (`has_function_privilege('anon',…)` = false); granted to service_role only.
+  - Live read: 6 h = 489 sales, 0.2 % ASK_ONLY.
+- **Sentinel:** new arm "Top Shot Sales Against ASK_ONLY (6h)" (`lib/sentinel/topshot-ask-only-at-sale.ts`).
+  - Warns at ≥ 100 sales, ≥ 10 % ASK_ONLY and ratio ≥ 1.5. An unreadable result reads UNMEASURED.
+  - 16-day calibration on 6 h windows: the four drop windows read 22.6–58.8 % at 1.93–2.43×; every other window ≤ 4.7 %.
+  - Planted defect (ratio bar 3) fails 3 of 9 tests.
+- **Revert:** revert the code commit; `DROP FUNCTION public.check_topshot_ask_only_at_sale(integer);`
+
 ### 2026-11-22 ~9:40 AM PT · 📝 DOCS — strategy read: narrow to the Top Shot portfolio-and-packs loop, make drop day the accuracy proof, hold the estate (Claude Code cloud; Trevor: "Keep going and digging and probing and come up with a strategy")
 
 - **New:** [docs/strategy/strategy-2026-11-22.md](../strategy/strategy-2026-11-22.md). It does not replace the 10-17 roadmap. Four moves, three of them need Trevor (gate re-statement, event dates, maintenance mode and the lane budget).
