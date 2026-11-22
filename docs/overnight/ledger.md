@@ -12,7 +12,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
-### 2026-11-22 ~3:20 PM PT · 🔧 SHIPPED (runner) + 🗄 APPLIED (`20261122225806`) — Panini grid sightings are credited to the sport the REQUEST applied; NBA products 2053 + 1981 restored to Basketball after the 2 PM run's "Womens Soccer" pass relabelled them (Claude Code cloud; NWSL thread)
+### 2026-11-22 ~3:10 PM PT · 🔧 SHIPPED (runner) + 🗄 APPLIED (`20261122225806`) — Panini grid sightings are credited to the sport the REQUEST applied; NBA products 2053 + 1981 restored to Basketball after the 2 PM run's "Womens Soccer" pass relabelled them (Claude Code cloud; NWSL thread)
 
 - **Measured 2 PM PT run:** the residential runner's "Womens Soccer" grid served the Basketball/WNBA set ids (none of NWSL 2478/2460; 13 new cards in 76 pages), though the same URL serves NWSL in Trevor's Chrome (also after a WNBA page). Root cause not yet visible from the cloud (laptop folder access declined). Its sightings set `last_grid_sport='Womens Soccer'` on 2053 ("2023-24 Panini NFT Best of The NBA") and 1981 ("2023-24 Panini NFT Prizm Basketball").
 - New `scripts/panini-grid-sport.mjs` (+ test, planted defect → 2 of 4 red): the runner reads `applied_filters` from each grid request and credits the sighting to that sport; the enum marker now carries `sports[].applied` (grid pages by applied sport), so the 6 PM run shows what the site actually served.
