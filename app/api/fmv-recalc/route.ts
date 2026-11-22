@@ -6,6 +6,7 @@ import { fetchCandyConfirmedFloors, mergeCeilingAsks } from "@/lib/fmv-candy-cei
 import { computeConfidence, escalateConfidence, gateHighToRecentVolume, gateMediumToRecentSale, MIN_SALES_30D_MEDIUM } from "@/lib/fmv-confidence"
 import { staleTouchDaysSinceSale } from "@/lib/fmv-stale-touch"
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
+import { fetchAllPaged } from "@/lib/supabase-paginate"
 
 // Collections whose sales are NOT in `sales` (Panini: `panini_sales`). For them the
 // stale re-stamp's `rt.edition_id IS NULL` is true by construction, so its "zero
@@ -122,6 +123,8 @@ const PINNACLE_COLLECTION_ID = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
 const PANINI_COLLECTION_ID = COLLECTION_UUID_BY_SLUG["panini-blockchain"]
 const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070"
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+// Step 6b reads every priced Candy edition (3,067 on 2026-11-22): 20 pages = 20,000 rows of headroom.
+const CANDY_CEILING_SWEEP_MAX_PAGES = 20
 
 // FMV price-math primitives (trimmedMedian / weightedAveragePrice / liquidityRating /
 // wapWithoutOutliers / medianOf / lowSerialThreshold / isPremiumSerial / dampenGrailSpike)
@@ -2569,15 +2572,26 @@ export async function POST(req: NextRequest) {
     let candyCeilingSweepCaps = 0
     try {
       const candyCollectionId = COLLECTION_UUID_BY_SLUG["candy-mlb"]
-      const { data: latestCandy, error: latestErr } = await supabaseAdmin
-        .from("candy_fmv_current")
-        .select("edition_id, fmv_usd")
-        .order("edition_id", { ascending: true })
-        .range(0, 999)
-      if (latestErr) throw new Error(`candy_fmv_current: ${latestErr.message}`)
-      const latestRows = (latestCandy ?? []) as Array<{ edition_id: unknown; fmv_usd: unknown }>
-      // A full page is a PARTIAL population: say so rather than sweep part silently.
-      if (latestRows.length >= 1000) candyCeilingError = candyCeilingError ?? "sweep candy_fmv_current returned a full page (1,000) — sweep is partial"
+      // 2026-11-22: PAGED. It read ONE page (.range(0, 999)) and flagged "full page — sweep is
+      // partial" on 243 of 243 runs in 3 days: 3,067 priced Candy editions, so the 2,067 past the
+      // first 1,000 edition_ids were never swept. Measured 11-22 ~4 PM PT: 0 of the swept 1,000 sat
+      // above a confirmed ask, 33 of the unswept 2,067 did (6 above 1.5×). Each page is ~16 ms.
+      const latestPaged = await fetchAllPaged<{ edition_id: unknown; fmv_usd: unknown }>(
+        (from, to) =>
+          supabaseAdmin
+            .from("candy_fmv_current")
+            .select("edition_id, fmv_usd")
+            .order("edition_id", { ascending: true })
+            .range(from, to),
+        { pageSize: 1000, maxPages: CANDY_CEILING_SWEEP_MAX_PAGES },
+      )
+      if (latestPaged.error) throw new Error(`candy_fmv_current: ${latestPaged.error}`)
+      const latestRows = latestPaged.rows
+      // Still partial past the page cap: say so rather than sweep part silently.
+      if (latestPaged.truncated) {
+        candyCeilingError = candyCeilingError ??
+          `sweep candy_fmv_current hit ${CANDY_CEILING_SWEEP_MAX_PAGES} pages (${latestRows.length.toLocaleString("en-US")} rows) — sweep is partial`
+      }
       const sweepAsks = await fetchCandyConfirmedFloors(supabaseAdmin, latestRows.map((r) => String(r.edition_id)))
       if (sweepAsks.error) candyCeilingError = candyCeilingError ?? `sweep ${sweepAsks.error}`
       const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i

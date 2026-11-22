@@ -519,6 +519,51 @@ describe("fmv-recalc — Step 6b Candy ceiling sweep", () => {
     expect((terminalLog(rpcCalls)?.p_extra as Record<string, unknown>).candy_ask_ceiling_sweep_caps).toBe(0)
   })
 
+  // 2026-11-22: the sweep read ONE page (.range(0, 999)) and flagged "full page — sweep is partial"
+  // on every run: 3,067 priced Candy editions, and 33 of the 2,067 past the first 1,000 sat above a
+  // confirmed ask. An edition on page 2 must be capped exactly like one on page 1.
+  it("pages past 1,000 rows: an edition on page 2 is capped and the sweep reads complete", async () => {
+    const page1 = Array.from({ length: 1000 }, (_, i) => ({
+      edition_id: `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`,
+      fmv_usd: 1,
+    }))
+    state.querySqlByMarker = { candy_ceiling_sweep: { data: [prevBlue], error: null } }
+    const { rpcCalls, inserted } = instrument(
+      baseFixtures({
+        candy_fmv_current: [
+          { data: page1, error: null },
+          { data: [{ edition_id: BLUE, fmv_usd: 175.45 }], error: null },
+        ],
+        candy_listing_floor: { data: [{ edition_id: BLUE, confirmed_floor_usd: 66.83 }], error: null },
+      }),
+    )
+    await POST(req())
+    await runDeferred()
+
+    expect((inserted.fmv_snapshots ?? []).find((r) => r.edition_id === BLUE)?.fmv_usd).toBe(66.83)
+    const extra = terminalLog(rpcCalls)?.p_extra as Record<string, unknown>
+    expect(extra.candy_ask_ceiling_sweep_caps).toBe(1)
+    expect(extra.candy_ask_ceiling_error).toBeNull()
+  })
+
+  it("a population still full at the page cap is RECORDED as a partial sweep, never a complete one", async () => {
+    const full = Array.from({ length: 1000 }, (_, i) => ({
+      edition_id: `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`,
+      fmv_usd: 1,
+    }))
+    const { rpcCalls } = instrument(
+      baseFixtures({
+        candy_fmv_current: { data: full, error: null }, // every page full: never a short page
+        candy_listing_floor: { data: [], error: null },
+      }),
+    )
+    await POST(req())
+    await runDeferred()
+
+    expect(String((terminalLog(rpcCalls)?.p_extra as Record<string, unknown>).candy_ask_ceiling_error))
+      .toMatch(/^sweep candy_fmv_current hit 20 pages \(20,000 rows\) — sweep is partial/)
+  })
+
   it("a failed sweep read is RECORDED and writes nothing — the run stays ok", async () => {
     state.querySqlByMarker = { candy_ceiling_sweep: { data: null, error: { message: "sweep read timed out" } } }
     const { rpcCalls, inserted } = instrument(
