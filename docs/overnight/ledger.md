@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~3:05 PM PT · 🔧 SHIPPED (code) — the single Portfolio FMV leaves closed markets out (UFC Strike on Flow), so the dashboard, profile and share card show the same number (Claude Code cloud; Trevor: "Keep going")
+
+- Found in the live check: dashboard $66,080 vs share card $65,681.40. Measured: $364.26 was UFC (all stale-priced, market closed 2026-05-13; the share card already excluded it and the dashboard UFC tile already reads "—"); the other ~$34 is the dashboard/profile cache (8:17 AM PT) vs the share card's live read. Trevor 2026-11-15: keep UFC closed on the site until binders show Aptos holdings.
+- `lib/dashboard/aggregate.ts` gains `isClosedMarketCollectionId()` + `sumOpenMarketFmv()` (driven by `isMarketClosed()`, so UFC flows back in when it leaves CLOSED_MARKETS). UFC moments still count in Total Assets.
+- **Revert:** `git revert` the code commit titled "fix(portfolio): closed markets out of the single number".
+
 ### 2026-11-22 ~2:55 PM PT · 🔧 SHIPPED (code) — the on-chain art backfill rests its legacy leg only after a lap with no errors in ANY run (it judged the last run only) (Claude Code cloud, autonomous 4 h pass)
 
 - `app/api/admin/backfill-topshot-onchain-art/route.ts` (`7f4c6e064`): `lap_errors` is carried in `pipeline_runs.extra` like `lap_filled`. Before, a lap whose first run failed on N editions and whose last run was clean started a 7-day rest with those editions never actually asked. 2 new tests, both failing on the old route. Left as is: `lap_filled` also counts fresh-drop fills, which can only *prevent* a rest (the safe direction).
