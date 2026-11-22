@@ -4,6 +4,8 @@
 --     left; a fully-opened, closed drop is re-checked in 30 days, an open one in 20 h;
 --   · a NEW drop (first seen ≤ 14 d) whose summary reads 0 packs minted is re-read in 2 h,
 --     never parked 30 days (2026-11-16, 20261117053146);
+--   · a summary 404 "not_found" for a drop that is disabled or unlisted for 48 h is GONE: parked
+--     30 days, never a failed run; a LISTED enabled drop's 404 still fails (2026-11-21);
 --   · a summary UNCHANGED since a pass that reconciled exactly keeps that pass (no
 --     edition pages) and is re-read in 40 h; a changed one opens a new pass;
 --   · edition pages land under their pass; a page from a superseded pass is recorded,
@@ -22,7 +24,7 @@
 --     disclosed; more in packs than issuer-held is "contradicted", not a negative.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (topshot_pack_supply_tick: supabase/migrations/20261117053146_audit_20261116_pack_supply_tick_rereads_an_unminted_new_drop.sql;
+-- (topshot_pack_supply_tick: supabase/migrations/20261122031811_audit_20261121_pack_supply_tick_parks_a_delisted_404_drop.sql;
 --  the two readers: supabase/migrations/20261015001336_audit_20261014_issuer_held_split_survives_the_daily_list_rewalk.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if a copy drifts from it.
 --
@@ -146,6 +148,7 @@ DECLARE
   v_drained   integer := 0;
   v_failed    integer := 0;
   v_challenged integer := 0;
+  v_gone      integer := 0;
   v_rows      integer := 0;
   v_sent      integer := 0;
   v_inflight  integer;
@@ -183,7 +186,18 @@ BEGIN
       -- and the lane read 21-29 % failed while every page was re-asked. A 200 with a bad body
       -- or any other 4xx still fails the run. A lane that is challenged on EVERY request is
       -- check_edge_fn_http_failures' pack-supply row (high after 2 h with no 200).
-      IF NOT r.has_resp OR r.status_code IS NULL OR r.status_code IN (403, 408, 429) OR r.status_code >= 500 THEN
+      -- 2026-11-21: a summary 404 "not_found" for a drop Atlas no longer lists (disabled, or
+      -- absent from every daily list walk for 48 h) is GONE, not failed: dist 8881 "The Arike
+      -- Moonshot" (disabled, endTime 2000, last listed 10-04) 404'd 546 times, re-asked every
+      -- 30 min, and failed ~36 runs a day. It is parked 30 days. A LISTED, enabled drop that
+      -- 404s still fails the run -- that would be a real change on Atlas's side.
+      IF r.kind = 'summary' AND r.has_resp AND r.status_code = 404
+         AND coalesce(r.content, '') LIKE '%not_found%'
+         AND EXISTS (SELECT 1 FROM public.topshot_atlas_dists g
+                      WHERE g.dist_id = r.dist_id
+                        AND (g.is_enabled IS NOT TRUE OR g.listed_at IS NULL OR g.listed_at < now() - interval '48 hours')) THEN
+        v_gone := v_gone + 1;
+      ELSIF NOT r.has_resp OR r.status_code IS NULL OR r.status_code IN (403, 408, 429) OR r.status_code >= 500 THEN
         v_challenged := v_challenged + 1;
       ELSE
         v_failed := v_failed + 1;
@@ -199,7 +213,10 @@ BEGIN
         UPDATE public.topshot_atlas_pack_state SET list_next_offset = least(list_next_offset, r.offset_at) WHERE id = 1;
       ELSIF r.kind = 'summary' THEN
         UPDATE public.topshot_atlas_dists
-           SET next_due_at = now() + interval '30 minutes', attempts = attempts + 1,
+           SET next_due_at = now() + CASE WHEN r.status_code = 404 AND coalesce(r.content, '') LIKE '%not_found%'
+                                               AND (is_enabled IS NOT TRUE OR listed_at IS NULL OR listed_at < now() - interval '48 hours')
+                                          THEN interval '30 days' ELSE interval '30 minutes' END,
+               attempts = attempts + 1,
                last_error = left(coalesce(r.status_code::text, 'no-response'), 40)
          WHERE dist_id = r.dist_id;
       ELSE
@@ -424,10 +441,10 @@ BEGIN
       v_failed = 0,
       CASE WHEN v_failed > 0 THEN v_failed || ' request(s) failed' END,
       'nba_top_shot', NULL, NULL,
-      jsonb_build_object('drained', v_drained, 'failed', v_failed, 'challenged', v_challenged, 'rows_written', v_rows,
+      jsonb_build_object('drained', v_drained, 'failed', v_failed, 'challenged', v_challenged, 'gone', v_gone, 'rows_written', v_rows,
                          'sent', v_sent, 'held_for_market_403', v_held, 'errors_sample', v_errors));
   END IF;
-  RETURN jsonb_build_object('drained', v_drained, 'failed', v_failed, 'challenged', v_challenged, 'rows_written', v_rows,
+  RETURN jsonb_build_object('drained', v_drained, 'failed', v_failed, 'challenged', v_challenged, 'gone', v_gone, 'rows_written', v_rows,
                             'sent', v_sent, 'held_for_market_403', v_held);
 END;
 $function$;
@@ -827,6 +844,31 @@ SELECT _assert((SELECT next_due_at > now() + interval '29 days' FROM topshot_atl
   'CONTROL: an OLD never-minted drop is still re-checked monthly');
 SELECT _assert((SELECT next_due_at > now() + interval '29 days' FROM topshot_atlas_dists WHERE dist_id = '8002'),
   'CONTROL: a new drop that has packs and is fully opened is still settled monthly');
+
+-- ── a delisted drop's 404 is GONE, not a failed run (2026-11-21) ─────────────
+-- dist 8881 (disabled, endTime 2000, last listed 10-04) 404'd "distribution not found" 546 times,
+-- re-asked every 30 min and failing ~36 runs a day.
+UPDATE topshot_atlas_pack_requests SET drained_at = coalesce(drained_at, now());
+INSERT INTO topshot_atlas_dists (dist_id, title, is_enabled, listed_at) VALUES
+  ('8881', 'delisted', false, now() - interval '48 days'),
+  ('8883', 'listed + enabled', true, now() - interval '2 hours');
+INSERT INTO topshot_atlas_pack_requests (request_id, kind, dist_id, dispatched_at) VALUES
+  (9905, 'summary', '8881', now()), (9906, 'summary', '8883', now());
+INSERT INTO net._http_response VALUES
+  (9905, 404, NULL, '{"code":"not_found","message":"distribution not found"}'),
+  (9906, 404, NULL, '{"code":"not_found","message":"distribution not found"}');
+SELECT _assert_eq((SELECT (r ->> 'failed') || '/' || (r ->> 'gone') FROM (SELECT topshot_pack_supply_tick(0) r) x), '1/1',
+  'a delisted drop 404 is gone; a LISTED enabled drop 404 still fails');
+SELECT _assert((SELECT next_due_at > now() + interval '29 days' FROM topshot_atlas_dists WHERE dist_id = '8881'),
+  'the delisted drop is parked 30 days');
+SELECT _assert((SELECT next_due_at BETWEEN now() + interval '25 minutes' AND now() + interval '35 minutes' FROM topshot_atlas_dists WHERE dist_id = '8883'),
+  'CONTROL: a listed drop that 404s is re-asked in 30 min');
+DELETE FROM topshot_atlas_dists WHERE dist_id = '8883';
+INSERT INTO topshot_atlas_pack_requests (request_id, kind, dist_id, dispatched_at) VALUES (9907, 'summary', '8881', now());
+INSERT INTO net._http_response VALUES (9907, 404, NULL, '{"code":"not_found","message":"distribution not found"}');
+SELECT topshot_pack_supply_tick(0);
+SELECT _assert_eq((SELECT pipeline || '/' || ok FROM pipeline_log ORDER BY ctid DESC LIMIT 1), 'topshot-pack-supply-atlas/true',
+  'a tick whose only miss is a delisted drop IS ok');
 
 SELECT '✓ topshot_pack_supply_tick + issuer-held split readers: all assertions passed' AS result;
 
