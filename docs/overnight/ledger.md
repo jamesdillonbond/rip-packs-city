@@ -17,6 +17,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 - `lib/insights/pack-calendar.ts`: `minted` on Pinnacle drops = `pinnacle_catalog.total_minted` summed over the set named "… • <title>" (11-24 Frozen Seasonal Harvest Vol.1 = 490, Winnie the Pooh: Friends-Giving Vol.2 = 790 — minted into Pinnacle's account 11-19, not on disneypinnacle.com/releases yet). Absent on no match / null count / failed read (never 0; the calendar does not fail). `x-draft.mjs` → "($49.95, 490 minted)"; `x-image.mjs` card detail "490 minted".
 - Upcoming Pinnacle `rsvp` → "Opens <time>" in `dropStatusLine` (page + card), `x-draft.mjs`, `x-image.mjs`: the book marks capsule sales RSVP too; "Draw requests open" was a claim the page had not made.
 - `x-image.mjs` `paniniSerialArt`: Panini thumbnails are one serial's image (`…_28_219.png`); swap to the sold serial on Monday + big-sale images (Ohtani #92/219 showed 28/219). `docs/social/x-calendar.md` documents all three. Tests: `lib-insights-pack-calendar` (+4), `lib-insights-drops-board` (+2). preflight green (2846 tests).
+- Follow-up ~9:05 AM PT: an OPEN-edition set states no supply (its count grows while it sells — live check showed Mugs Vol.1 "7264"); verified live after deploy: 8947 → 490, 8948 → 790.
 - **Revert:** `git revert <this commit>` (code only; no DB change).
 
 ### 2026-11-22 ~8:40 AM PT · 🔧 SHIPPED (code) — candy-chain-sales also decodes Tensor's own program (`TCMPhJ…`) as marketplace `tensor` (Claude Code cloud; same thread)
