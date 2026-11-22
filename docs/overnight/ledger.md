@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~9:20 AM PT · 🔧 SHIPPED (code) — Candy chain reads accept version-1 Solana transactions (Claude Code cloud; same thread)
+
+- The first `candy-chain-sales` run (9:11 AM PT) read 2,481 signatures / 2,347 transactions across 396 of 398 collections and offered **9** fills, but **5 collections failed**: `Transaction version (1) is not supported … maxSupportedTransactionVersion: 1`. 14 Candy transactions 11-06 → 11-22 are version 1 — listings, transfers, and **one 7Aru BuyCore (0.4329 SOL)**, which the morning census had also missed. Both `lib/candy/chain-sales.ts` and `lib/candy/sale-buyer-paid.ts` now request `maxSupportedTransactionVersion: 1` (the decoder reads the v1 fill unchanged; pinned in the test). The failed collections keep their cursors and are re-read next hour.
+- **Revert:** `git revert` the commit titled "candy: chain reads accept version-1 transactions".
+
 ### 2026-11-22 ~9:17 AM PT · 🔧 SHIPPED (code) — `main` red fix: the wallet pack-value cache write binds its result (Cowork cloud; follows f2ca69a)
 
 - `supabase-write-results-are-bound-or-marked` (ban at zero) failed on `lib/packs/held-pack-total.ts:87` — the best-effort `wallet_pack_value_cache` upsert discarded its `{ error }`. Now bound and logged (`console.error`), behaviour unchanged (the reader still gets the live value). Guard + `lib-packs-held-pack-total-cache` tests green locally; `tsc` 0 errors.
