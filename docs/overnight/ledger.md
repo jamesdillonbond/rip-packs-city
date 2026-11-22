@@ -12,6 +12,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~9:40 AM PT · 📝 DOCS — strategy read: narrow to the Top Shot portfolio-and-packs loop, make drop day the accuracy proof, hold the estate (Claude Code cloud; Trevor: "Keep going and digging and probing and come up with a strategy")
+
+- **New:** [docs/strategy/strategy-2026-11-22.md](../strategy/strategy-2026-11-22.md). It does not replace the 10-17 roadmap. Four moves, three of them need Trevor (gate re-statement, event dates, maintenance mode and the lane budget).
+- **Findings (read-only, live):**
+  - 11-11 Series 9 launch: 37.6 % of Top Shot sales sold against an ASK_ONLY price, and within ±25 % at sale was 47.8 % (normal ~79 %).
+  - 2,399 Series 9 sales sold against ASK_ONLY at a median 2.16× the sale price, measured at lag 0.
+  - Mechanism: ~20 h between snapshots on a hot new edition. The 11-12 hot lane is untested on a drop.
+  - Candy traded $4,821 in 7 days (All Day $5,280). Its share collapse to 0.7 % is the 11-09 per-mint denominator (3,059 editions).
+  - 318 active cron jobs and 384 pipelines for 24 weekly signed-in members.
+- **Revert:** delete the file (docs only).
+
 ### 2026-11-22 ~9:26 AM PT · 🔧 SHIPPED (code) — drops report: a NEW Pinnacle drop not yet on disneypinnacle.com/releases is a draft warning; trade-in/auction blog posts are probed; /insights/drops cards show minted supply (Claude Code cloud, X-draft run; Trevor: "Keep going and do all you can")
 
 - `scripts/social/x-draft.mjs` missed-drop probe: (1) REVERSE check — a new (upcoming / <36 h) Pinnacle calendar drop whose title is not on the releases page warns "format and close unconfirmed" (today: Frozen Seasonal Harvest Vol.1, Winnie the Pooh: Friends-Giving Vol.2); (2) a page that parses to ZERO releases now warns instead of passing silently; (3) blog posts titled trade-in / auction in the last 10 days warn (no feed carries trade-in auctions).
@@ -22,6 +33,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 - Found independently by reading `candy-chain-sales`' first run (9:11 AM PT: `ok=false`, 5 collections refused with "Transaction version (1) is not supported"; a live pg_net probe showed the refused tx is a 7Aru ListCore). The Candy thread shipped the fix first (`ca52dbbee`, both `chain-sales.ts` and `sale-buyer-paid.ts`) — my identical code change was dropped at merge.
 - **Added (tests only):** a v1 BuyCore decodes identically to v0; a run against a simulated RPC that refuses v1 unless asked still records the fill; `runCandyBuyerPaid` asks for version 1 and reads a v1 sale instead of counting the refusal as `rate_limited` (that lane had no v1 test). Both new run tests fail with the old `0` (planted).
+- ⚠ **Time correction:** shipped ~9:22 AM PT, not ~9:40 (the heading time was a misread clock; heading left as written).
 - **Revert:** revert this commit (tests only).
 
 ### 2026-11-22 ~9:20 AM PT · 🔧 SHIPPED (code) — Candy chain reads accept version-1 Solana transactions (Claude Code cloud; same thread)
