@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~11:35 AM PT · 🔧 SHIPPED (code) — Panini discovery walks the "Womens Soccer" grid: NWSL drop #1065 (Prizm Black NWSL) had 0 cards in RPC two days after a 13,000-pack sellout (Claude Code cloud; Trevor: "Both")
+
+- **Cause:** products are discovered per marketplace `?sport=` grid and "Womens Soccer" was not in `PANINI_DISCOVERY_SPORTS`; no `panini_products` row had ever been seen under it, so #1065's setIds were never offered for admission. Verified in Trevor's Chrome 11-22: the filter serves the NWSL cards (16-club TEAM filter incl. Portland Thorns FC). No `PANINI_DISCOVERY_SPORTS` override on Vercel.
+- **Next:** once the first enum run records the Womens Soccer setIds, admit them (`walk_cards=true`) so the BOOTSTRAP narrowing walks their cards; Thorns map via `panini_editions.nation` + the 11-15 NWSL aliases.
+- **Revert:** `git revert` the commit titled "panini: discover the Womens Soccer grid (NWSL #1065)".
+
 ### 2026-11-22 ~11:25 AM PT · 🗄 APPLIED ×3 + ⏰ pg_cron (:49) — Panini P1/P2: tier-composition pack-EV model live as a SHADOW (63 products, 358 packs), Rolling Stones + Bad Eggs linked to their card products (Claude Code cloud; Trevor: "Work through all you can for p1 and p2")
 
 - **What:** `20261122191618` NEW table `panini_pack_ev_tier_shadow` (RLS on, service_role select only) + `refresh_panini_pack_ev_tier_shadow()` (anon false) + pg_cron `panini-pack-ev-tier-shadow` hourly at :49 (a measured 3-job minute; ~52 s/run, stops starting products at 80 s). Per pack with Panini's `rarity_distribution`: design EV, catalogued-only EV, remaining EV (single-live-pack products), per-tier breakdown, 5-fold holdout validation, `gate_ok`. **Nothing user-facing reads it.** `20261122191909` restricts each tier to its published serial range (special packs were priced from the whole tier). `20261122192317` names `panini_products` 2130 = 2026 Prizm The Rolling Stones and 850130 = 2025 Prizm Bad Eggs (mint-cap evidence in the file) so the next ingest links packs 979/990/1060/1063.
