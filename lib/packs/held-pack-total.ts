@@ -84,8 +84,9 @@ export async function readHeldPackTotal(sb: any, addrs: string[], label: string,
     if (live) {
       // Best effort: a failed cache write changes nothing the reader sees.
       try {
-        await sb.from("wallet_pack_value_cache")
+        const { error: cacheError } = await sb.from("wallet_pack_value_cache")
           .upsert({ wallet_addr: addr, value: live, computed_at: new Date(now).toISOString() }, { onConflict: "wallet_addr" })
+        if (cacheError) console.error(`[${label}] wallet_pack_value_cache write failed:`, cacheError.message)
       } catch {
         /* ignore */
       }
