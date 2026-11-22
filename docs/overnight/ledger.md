@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~2:15 PM PT · 🗄 APPLIED (`20261122221137`) — Panini sales ingest accepts 6-number `packcard-` keys: product 2077's single-underscore cards were dropped (Sentinel "Panini Ingest" WARN at 2:04 PM PT, 42 in 24 h); 27 serial last-sales seeded (Claude Code cloud, autonomous 4 h pass; the Panini thread was not reachable)
+
+- `20261122173500` (this morning) accepted the 5-number Moonbirds shape. Product 2077 uses the same convention with a 4-part card (`packcard-2077_403382_10871318_139_15_25`), which matched neither pattern. Measured first: all 6 sampled dropped keys resolve (strip `_serial_cap`) to an existing edition, and the catalog serial sku is the identical string. The 3 affected editions had **0** stored sales and 27 serial last-sales, so nothing is double-counted. Body otherwise = `20261122173500` (md5 guard). Parse checked on 5 shapes (both existing shapes are unchanged; a bare edition id and a 7-number key are still rejected).
+- **Watch:** the Sentinel's dropped-key count for this shape → 0 on the next panini-ingest runs. Duplicate check (should stay 0): `select edition_external_id from panini_sales where source='nft_sales_data' group by 1 having count(distinct (sku ~ '__\d+_\d+$')) > 1`.
+- **Revert:** re-apply `20261122173500_…single_underscore_card_keys.sql`; `delete from panini_sales where source='serial_last_sale' and sku ~ '^packcard-2077_\d+_\d+_\d+_\d+_\d+$'`.
+
 ### 2026-11-22 ~2:15 PM PT · 🔧 SHIPPED (code) — member emails use the email red: the weekly portfolio email (logo + CTA) and the legacy digest carried the web red `#E03A2F`; guard added (Claude Code cloud, autonomous 4 h pass)
 
 - Every other member email uses the email red `#e55a4c` (brand-auth-proxy.md). New `__tests__/member-emails-use-the-email-red.test.ts` walks `lib/emails/**` and the two digest senders, and fails on the old weekly route. Admin-only emails (sentinel, support report) are left as they are.
