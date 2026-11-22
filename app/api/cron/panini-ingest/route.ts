@@ -162,7 +162,14 @@ const PANINI_MODELED_PRIORITY_CAP = 150;
 // NWSL cards (pack/1065/…/WomenSoccer image paths) with a 16-club TEAM filter, and no panini_products
 // row had ever been seen under it — the "Soccer" grid does not serve these setIds. It is also the
 // sport string the NWSL team aliases + refresh_panini_edition_team_keys expect (11-15 migrations).
-const PANINI_DISCOVERY_SPORTS = ["Soccer", "Basketball", "Womens Basketball", "Womens Soccer", "Football", "Baseball", "Racing", "Entertainment"];
+// "WWE" and "Collegiate" added 2026-11-22 PT (same NWSL thread): the marketplace's sport tabs are
+// Basketball, Football, Soccer, Womens Basketball, Womens Soccer, Racing, Entertainment, WWE, UFC,
+// Baseball, Hockey, Collegiate, Panini (read from its "Sports filter" in Trevor's Chrome). WWE's grid
+// served setIds 1875/2065/2104/2105 and Collegiate's 1643/1771 — none had ever been a panini_products
+// row. UFC, Hockey and Panini served zero cards that day, so they stay out (each sport costs grid time
+// on every full run). DISCOVERY ONLY like Entertainment: new rows land walk_cards=false. LAST, so a tie
+// keeps a product's earlier sport.
+const PANINI_DISCOVERY_SPORTS = ["Soccer", "Basketball", "Womens Basketball", "Womens Soccer", "Football", "Baseball", "Racing", "Entertainment", "WWE", "Collegiate"];
 function discoverySports(): string[] {
   const env = (process.env.PANINI_DISCOVERY_SPORTS || "").split(",").map((s) => s.trim()).filter(Boolean);
   return env.length ? env : PANINI_DISCOVERY_SPORTS;

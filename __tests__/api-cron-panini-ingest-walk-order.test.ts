@@ -172,6 +172,8 @@ describe("GET /api/cron/panini-ingest — multi-product walk scope", () => {
     // setIds are never discovered and its cards never reach the catalogue (2026-11-22: 0 cards 2 days
     // after a 13,000-pack sellout).
     expect(j.discovery_sports).toContain("Womens Soccer")
+    // WWE + Collegiate: marketplace sport tabs whose products had never been discovered (11-22).
+    expect(j.discovery_sports).toEqual(expect.arrayContaining(["WWE", "Collegiate"]))
   })
 
   it("a registry READ FAILURE falls back to WC only and says so — never an empty or widened walk", async () => {
