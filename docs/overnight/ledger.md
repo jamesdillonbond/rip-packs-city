@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~10:40 AM PT · 🔧 SHIPPED (code) — candy-chain-sales no longer trusts a short signature listing: it must PROVE it reached the cursor (or the floor) (Claude Code cloud; same thread)
+
+- **Defect found by the 10:11 AM run:** 13 of the census's 17 fills landed; the 5 missing (tiny, 0.0034–0.013 SOL, 2026 All-Star ICONs) were never fetched. publicnode answered that collection's `getSignaturesForAddress` from **11-21 00:20 UTC onward only**, a short page, so the walk read "end of history" and advanced the cursor past 11-20. The census had seen them hours earlier — the RPC's retention moves (or its nodes differ).
+- **Fix:** a listing is accepted only when proven complete on that RPC — with a cursor, the signature just older than the oldest one read must be the cursor; without one, the walk must pass the 11-06 floor or end on an archive RPC (`api.mainnet-beta.solana.com`). Otherwise the next RPC is asked; if none proves it, the collection fails and its cursor stays. Tests use a realistic until/before/limit RPC with a retention edge (planted: the old code accepts it).
+- **Follow-up data step (same turn, after deploy):** every `candy_collections.chain_sig_cursor` reset to NULL so the next runs re-walk from 11-06 with the proven walk (offers dedupe on (signature, mint)).
+- **Revert:** `git revert` the commit titled "candy: chain-sales proves a signature walk complete before moving its cursor".
+
 ### 2026-11-22 ~9:58 AM PT · 🗄 APPLIED (`20261122175551`) + 🔧 SHIPPED (route + sentinel leg) — Panini: a new sale-key shape now warns within hours instead of being dropped for weeks (Claude Code cloud; Trevor: "Approve and proceed", strategy P0.1b)
 
 - **What:** `panini-ingest` route counts, per run, sale records whose key matches neither shape `panini_sales_ingest` accepts (`extra.sales_history_unrecognised_keys` + a 3-key sample; helper `PANINI_SALE_KEY_SHAPES` in `lib/chains/panini/ingest-normalize.ts`, pinned EQUAL to the newest `panini_sales_ingest` WHERE clause by `__tests__/panini-sale-key-shapes.test.ts`). `sentinel_panini_health()` gains `unrecognised_sale_keys_24h` (NULL until a run reports it — no leg, never a fabricated 0) + `unrecognised_sale_keys_sample`; the Panini Ingest Sentinel arm warns on > 0. Cost 42 ms / 3.3k buffers; anon EXECUTE still false; every existing key unchanged.
