@@ -52,6 +52,7 @@ const monoFont = "var(--font-mono)";
 // The registry lives in lib/dashboard-tabs.ts (shared with /dashboard/packs
 // and /dashboard/history); the row is components/dashboard/DashboardTabs.tsx.
 import DashboardTabs from "@/components/dashboard/DashboardTabs";
+import ValueHistoryCard from "@/components/dashboard/ValueHistoryCard";
 import { DASH_TAB_FOR_ANCHOR, RPC_TOUR_STEP_EVENT, parseDashTab, type DashPanel as DashTab } from "@/lib/dashboard-tabs";
 export { DASH_TABS, DASH_TAB_FOR_ANCHOR, RPC_TOUR_STEP_EVENT, parseDashTab } from "@/lib/dashboard-tabs";
 export type { DashPanel as DashTab } from "@/lib/dashboard-tabs";
@@ -1145,6 +1146,9 @@ function ProfilePageInner() {
             empty={!walletsFailed && wallets.length === 0}
           />
         </section>
+
+        {/* Value / 30D (2026-11-22): nightly snapshots — moments and, apart, sealed packs. */}
+        {!walletsFailed && wallets.length > 0 ? <ValueHistoryCard /> : null}
 
         {statsIncomplete ? (
           <div

@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~8:40 AM PT · 🔧 SHIPPED (code) — sealed-pack history shows: dashboard "Value / 30D" chart + a "Sealed packs" block in the weekly email (Cowork cloud via laptop VM; Trevor: "Both")
+
+Correction recorded: no live value-history chart read `portfolio_snapshots` (the profile sparkline was removed 11-14, #254); the weekly email was its only reader. Now: `GET /api/profile/value-history` (session; the caller's own snapshots, 30 days) → `components/dashboard/ValueHistoryCard.tsx` on /dashboard — moments FMV and sealed packs (capped low ask) as two lines, never a sum; the pack line starts 11-22 and fills in. Weekly email: `lib/emails/weekly-packs.ts` adds "Sealed packs · not in the value above: $X — N sealed packs at the lowest live ask", with "▲/▼ $Y this week" only when the snapshot exactly 7 days earlier has a pack value (first possible 11-29); a failed read or no value omits the block, never $0. Dry run lists `sealed_packs_usd` per recipient. Tests: route, component, email block.
+
+**Revert:** `git revert <this commit>` (no DB change).
+
 ### 2026-11-22 ~7:35 AM PT · 🔧 SHIPPED (code + 🗄 `20261122151433`) — Candy sales that settle OFF Magic Eden are now captured from the chain (Claude Code cloud; Trevor: "Dig deeper into how we can fix panini and any others that aren't 100% confirmed" → "Keep going")
 
 - **Finding:** an on-chain census of all 398 Candy collection accounts, 11-06 → 11-22, found **16 fills on program `7Aru291A…`** (Tensor marketplace code at a non-Tensor address — known-issues #256's falsifier tripped) on 11-20 and 11-21 PT, ~12.9 SOL incl. one 7.5 SOL card. **0 of them were in `sales`.** Same week Magic Eden: 137 sales / 50.9 SOL listed. No official source names the program, so the venue is recorded as `solana_7aru` ("Other Solana marketplace"), not attributed.
