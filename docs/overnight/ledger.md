@@ -12,6 +12,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-21 ~7:45 PM PT · 🔧 SHIPPED (code) + 📝 HANDOFF — Candy buyer-paid backfill reads 4 transactions at a time; sales-completeness write-up with the Panini plan (Claude Code cloud; Trevor: "Dig deeper into how we can fix panini…")
+
+`runCandyBuyerPaid` read one transaction at a time: on history it managed ~33–137 per 240 s run (≈5 s each, 0 refusals) — the 16.8k-sale backlog would have taken ~a day. Reads now go out `concurrency` (default 4) at a time, results handled in order, 5 refusals still stop the run. Tests: +1 (parallel batches still stop at 5 refusals), 1 pinned to `concurrency: 1`. Preflight 6/6.
+
+`docs/handoff-2026-11-21-sales-completeness.md`: what is proven exact against the chain / Magic Eden this week (Top Shot, All Day, Pinnacle, Golazos, Candy), what is not (Panini; Candy off-Magic-Eden fills; All Day V1 Dec–Feb sweeps missing one NFT per tx in a 4-tx sample), and the Panini options — a browser capture session to find a marketplace-wide sales op, grid-driven walk priority from `crypto_sale_count`, throughput, honest lagged reporting.
+
+**Revert:** `git revert` the commit titled "candy: buyer-paid reads 4 transactions at a time".
+
 ### 2026-11-21 ~7:20 PM PT · 🗄 APPLIED (`20261122031811`) — `topshot_pack_supply_tick` parks a delisted drop's summary 404 instead of failing the run every 30 min (Claude Code cloud, autonomous pass; Trevor: "work autonomously … fix anything you encounter")
 
 - **What:** `topshot-pack-supply-atlas` read 37 failed runs in 24 h; 36 were ONE drop, dist `8881` "The Arike Moonshot" (`is_enabled` false, endTime 2000-12-02, last listed 10-04). Atlas answers its content summary `404 not_found`; the error branch re-asked it every 30 min as a failed request — **546 attempts** since early October. Now a summary `404 not_found` for a drop that is disabled or absent from the daily list walks for 48 h counts as `extra.gone` (not failed) and is parked 30 days. A LISTED, enabled drop that 404s still fails the run.
