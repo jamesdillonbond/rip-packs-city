@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~8:53 AM PT · 🔧 SHIPPED (code) — drops report: Pinnacle drops carry their chain-minted supply, an unconfirmed upcoming Pinnacle RSVP reads "Opens", and Panini card art shows the serial that sold (Claude Code cloud, X-draft run; Trevor: "Dig deeper and figure out any gaps" → "Yes keep going")
+
+- `lib/insights/pack-calendar.ts`: `minted` on Pinnacle drops = `pinnacle_catalog.total_minted` summed over the set named "… • <title>" (11-24 Frozen Seasonal Harvest Vol.1 = 490, Winnie the Pooh: Friends-Giving Vol.2 = 790 — minted into Pinnacle's account 11-19, not on disneypinnacle.com/releases yet). Absent on no match / null count / failed read (never 0; the calendar does not fail). `x-draft.mjs` → "($49.95, 490 minted)"; `x-image.mjs` card detail "490 minted".
+- Upcoming Pinnacle `rsvp` → "Opens <time>" in `dropStatusLine` (page + card), `x-draft.mjs`, `x-image.mjs`: the book marks capsule sales RSVP too; "Draw requests open" was a claim the page had not made.
+- `x-image.mjs` `paniniSerialArt`: Panini thumbnails are one serial's image (`…_28_219.png`); swap to the sold serial on Monday + big-sale images (Ohtani #92/219 showed 28/219). `docs/social/x-calendar.md` documents all three. Tests: `lib-insights-pack-calendar` (+4), `lib-insights-drops-board` (+2). preflight green (2846 tests).
+- **Revert:** `git revert <this commit>` (code only; no DB change).
+
 ### 2026-11-22 ~8:40 AM PT · 🔧 SHIPPED (code) — candy-chain-sales also decodes Tensor's own program (`TCMPhJ…`) as marketplace `tensor` (Claude Code cloud; same thread)
 
 - The 11-06 → 11-22 census saw Candy listings on Tensor's program (3 list, 3 delist, 0 fills); a Tensor fill would have been as invisible as the 7Aru ones. Same decoder (7Aru is built from Tensor's code), venue `tensor`, label "Tensor". Unknown instruction names are now reported per venue (`tensor:<name>`).
