@@ -12,6 +12,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~7:40 AM PT · 🔧 SHIPPED (code) — Sentinel arm "pg_cron Job Failing Every Run" (Claude Code cloud; Trevor: "Keep going and working through this")
+
+- **Why:** job 901 (entry below) failed every run for two nights and nothing said so — the fleet arm `pg_cron Failures (6h)` fires at ≥ 10 failures / 6 h across the instance, and a twice-daily job failing every run adds 1. `check_pgcron_recent_failures()` named it and had **no caller that alerts** (only the daytime monitor's prompt reads it); the 11-22 overnight pass missed it.
+- **What:** `lib/sentinel/cron-job-failing.ts` + a non-rotating arm right after Maintenance Load: `check_pgcron_recent_failures('48 hours')` → WARN naming each job whose every run in 48 h failed (≥ 2 runs; latest failed), with its last error. Unreadable payload → UNMEASURED, never clean. Never pages. Measured ~0.45 s / 39k cached buffers.
+- **Expect:** the arm WARNS on `rpc-portfolio-snapshot-packs` until that job's first run on the fixed command (12:56 AM PT 11-23) — its latest real run is still the 11:56Z failure (the proof ran as job 910). That warning is true and self-clears.
+- **Verified:** 10 new tests (incl. intermittent / single-run / latest-succeeded controls and a route-wiring pin); all 438 existing sentinel tests pass; `npm run preflight` 6/6 green.
+- **Revert:** revert this commit (find it by message "pg_cron Job Failing Every Run").
+
 ### 2026-11-22 ~7:14 AM PT · 🗄 APPLIED (`20261122150559`) + 🗄️ DATA — sealed-pack portfolio values were never recorded: the nightly job failed every run; fixed and today backfilled 58/58 (Claude Code cloud; Trevor: "Keep going and working through this")
 
 - **Found:** pg_cron `rpc-portfolio-snapshot-packs` (job 901, shipped 11-21 ~6:35 PM PT by `20261122023120`) **failed both runs** (07:56Z, 11:56Z): `invalid transaction termination … fill_portfolio_snapshot_pack_values line 32 at COMMIT`. Its command was `SET statement_timeout = '300s'; CALL …` — a multi-statement command is one transaction block, so the procedure's per-row COMMIT is illegal (the CLAUDE.md trap). **0 of 58 snapshots had a pack value on 11-20, 11-21 or 11-22**, and the lane had never written a `pipeline_runs` row, so nothing watched it.
