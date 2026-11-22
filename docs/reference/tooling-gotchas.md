@@ -2600,3 +2600,9 @@ Claude Code filed the trophy picker Load more migration for Cowork at 7:58 AM PT
 
 The 11-17 overnight pass pushed `2e021e372` from a `git clone --depth=1 --no-checkout` + selective checkout (the laptop VM's `/sessions` disk was full). Its commit recorded every un-checked-out path as deleted: `main` went from 9,621 tracked files to 6 (no `app/`, `.github/`, `CLAUDE.md`). Its Vercel build ERRORed, so prod stayed up; restored by `22814c462` (tree of `17f49aec2` + that pass's 4 doc files). **In such a clone commit only named paths (`git commit -- <paths>`), or build the commit with a temp index read from `HEAD` (`GIT_INDEX_FILE=… git read-tree HEAD`), never `git add -A` / `commit -a`. Before any push, `git diff --stat HEAD~1 | tail -1` — thousands of deletions means stop.**
 
+
+### A Magic Eden (Solana) bid's money is in an escrow PDA, not the bidder's wallet (2026-11-20)
+
+To decide whether a Candy `candy_offers` bid can still fill, the wallet's SOL balance alone does not settle it: Magic Eden V2 (`M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K`) holds bid funds in the buyer's escrow PDA, seeds `["m2", buyer]`. The `pda_address` stored on the offer row is the bid record (rent only, ~0.0023 SOL), not the funds. Derive the escrow in the sandbox (`pip install --break-system-packages solders`; `Pubkey.find_program_address([b"m2", bytes(buyer)], M2)`) and read wallet + escrow on solscan.io in Trevor's Chrome (the sandbox cannot reach Solana RPC). Phantom = wallet + escrow below the bids' total. First used on inbox `2026-11-21T0315Z` item 3: wallet 0.00089 SOL, escrow `6pdwS8Ni…vaGW` absent on chain, 4 bids needing ~1.5 SOL.
+
+Also from that session: a scoped one-off `UPDATE candy_offers SET is_active = false … RETURNING` via `execute_sql` was refused by the session permission check under a general "Proceed"; it needs Trevor's explicit approval naming it, not a reroute through the SQL editor.
