@@ -205,6 +205,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   // Rest state, carried forward on every run's pipeline_runs.extra. Anything
   // unreadable reads as "not resting": an extra lap is safe, a skipped one is not.
   let prevLapFilled = 0;
+  let prevLapErrors = 0;
   let legacyRestUntil: string | null = null;
   try {
     const { data: prev, error: prevErr } = await supabase
@@ -218,6 +219,8 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     if (typeof c === "string" && c.length > 0) cursor = c;
     const lf = prev?.[0]?.extra?.lap_filled;
     if (typeof lf === "number" && Number.isFinite(lf) && lf > 0) prevLapFilled = lf;
+    const le = prev?.[0]?.extra?.lap_errors;
+    if (typeof le === "number" && Number.isFinite(le) && le > 0) prevLapErrors = le;
     const ru = prev?.[0]?.extra?.legacy_rest_until;
     if (typeof ru === "string" && Date.parse(ru) > Date.now()) legacyRestUntil = ru;
   } catch (e) {
@@ -328,11 +331,16 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   // every row was asked — and filled nothing starts a rest.
   const filledThisRun = thumbsFilled + videosFilled;
   const lapFilled = legacyResting ? 0 : (cursor == null ? 0 : prevLapFilled) + filledThisRun;
+  // 2026-11-22: errors over the WHOLE lap, carried like lap_filled. `ok` covers only this run, and the
+  // cursor has already moved past rows an earlier run failed on — so a lap whose first run erred and
+  // whose last run was clean used to start a 7-day rest with those rows never actually asked.
+  const lapErrors = legacyResting ? 0 : (cursor == null ? 0 : prevLapErrors) + errors.length;
   let nextRestUntil: string | null = legacyRestUntil;
-  if (!legacyResting && lapComplete && terminatedReason !== "time_budget_exceeded" && ok && lapFilled === 0) {
+  if (!legacyResting && lapComplete && terminatedReason !== "time_budget_exceeded" && ok && lapErrors === 0 && lapFilled === 0) {
     nextRestUntil = new Date(Date.now() + LEGACY_REST_MS).toISOString();
   }
   const nextLapFilled = lapComplete ? 0 : lapFilled;
+  const nextLapErrors = lapComplete ? 0 : lapErrors;
 
   try {
     // write-discarded: run telemetry; a failed log row cannot change what the run did, and shows up as a missing run.
@@ -360,6 +368,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
         next_cursor: nextCursor,
         cursor_read_error: cursorReadError,
         lap_filled: nextLapFilled,
+        lap_errors: nextLapErrors,
         legacy_rest_until: nextRestUntil,
         errors_sample: errors.slice(0, 5),
       },

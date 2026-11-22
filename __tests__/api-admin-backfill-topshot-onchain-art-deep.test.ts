@@ -233,6 +233,25 @@ describe("backfill-topshot-onchain-art — a zero-fill lap rests the legacy leg"
     expect(until - t0).toBeLessThan(7.1 * DAY)
   })
 
+  // 2026-11-22: errors earlier in the lap (carried as lap_errors) block the rest — `ok` covers only the last run,
+  // and the cursor already moved past the rows an earlier run failed on.
+  it("a completed lap with errors in an EARLIER run does not rest, even when its last run was clean", async () => {
+    flowMode = "nil"
+    st.prev = { data: [{ extra: { next_cursor: "id-008", lap_filled: 0, lap_errors: 200 } }], error: null }
+    st.rows = { data: legacyRows(1, 9), error: null }
+    await GET(req("Bearer ingest", "?limit=5"))
+    expect(st.pipelineRuns[0].extra.legacy_rest_until).toBeNull()
+    expect(st.pipelineRuns[0].extra.lap_errors).toBe(0) // the lap closed; the next lap counts from zero
+  })
+
+  it("lap errors carry forward across a lap's runs", async () => {
+    flowMode = "nil"
+    st.prev = { data: [{ extra: { next_cursor: "id-002", lap_filled: 0, lap_errors: 3 } }], error: null }
+    st.rows = { data: legacyRows(5, 3), error: null }
+    await GET(req("Bearer ingest", "?limit=5"))
+    expect(st.pipelineRuns[0].extra.lap_errors).toBe(3)
+  })
+
   it("while resting, the legacy leg is not read and the rest is carried forward; the fresh leg still runs", async () => {
     const until = new Date(Date.now() + 3 * DAY).toISOString()
     st.prev = { data: [{ extra: { next_cursor: null, legacy_rest_until: until } }], error: null }
