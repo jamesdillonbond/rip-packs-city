@@ -60,6 +60,14 @@ const MAX_BATCH = 300;
 const TIME_BUDGET_OVERHEAD_MS = 30_000;
 const PER_REQUEST_TIMEOUT_MS = 20_000;
 const CALL_DELAY_MS = 100;
+// After a full legacy lap that filled NOTHING, the legacy leg rests this long
+// before the next lap (2026-11-21). The 10-14 two-leg fix filled ~1,800 thumbs +
+// ~2,000 videos a day 10-15 → 10-18, then 0 every day from 10-19: what is left is
+// ~1,070 editions whose legacy-CDN art still loads but that getCIDs has no entry
+// for, re-lapped ~twice a day (≈2,200 Flow calls, ≈9 min of function time) for
+// zero writes. A weekly lap still notices if Dapper pins them later. The fresh
+// leg (new drops, thumbnail NULL) never rests.
+const LEGACY_REST_MS = 7 * 24 * 60 * 60 * 1000;
 
 // Verified live 2026-06-10 against rest-mainnet (set 2 / play 188 / sub 0 ->
 // HERO + VIDEO matching topshot_ipfs_assets exactly). Base parallel = sub 0.
@@ -194,6 +202,10 @@ async function handle(req: NextRequest): Promise<NextResponse> {
 
   let cursor: string | null = null;
   let cursorReadError: string | null = null;
+  // Rest state, carried forward on every run's pipeline_runs.extra. Anything
+  // unreadable reads as "not resting": an extra lap is safe, a skipped one is not.
+  let prevLapFilled = 0;
+  let legacyRestUntil: string | null = null;
   try {
     const { data: prev, error: prevErr } = await supabase
       .from("pipeline_runs")
@@ -204,11 +216,16 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     if (prevErr) cursorReadError = prevErr.message;
     const c = prev?.[0]?.extra?.next_cursor;
     if (typeof c === "string" && c.length > 0) cursor = c;
+    const lf = prev?.[0]?.extra?.lap_filled;
+    if (typeof lf === "number" && Number.isFinite(lf) && lf > 0) prevLapFilled = lf;
+    const ru = prev?.[0]?.extra?.legacy_rest_until;
+    if (typeof ru === "string" && Date.parse(ru) > Date.now()) legacyRestUntil = ru;
   } catch (e) {
     cursorReadError = e instanceof Error ? e.message : String(e);
   }
 
-  const legacyWant = Math.max(0, batch - fresh.length);
+  const legacyResting = legacyRestUntil != null;
+  const legacyWant = legacyResting ? 0 : Math.max(0, batch - fresh.length);
   let legacy: NullArtRow[] = [];
   if (legacyWant > 0) {
     let q = supabase
@@ -226,7 +243,8 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     legacy = (legacyRaw ?? []) as NullArtRow[];
   }
   // A short page means the walk reached the end of the population: next run wraps.
-  const lapComplete = legacy.length < legacyWant;
+  // A resting leg asked for nothing, so it completes nothing.
+  const lapComplete = !legacyResting && legacy.length < legacyWant;
   const legacyIds = new Set(legacy.map((r) => r.id));
   const rowsRaw = [...fresh.filter((r) => !legacyIds.has(r.id)), ...legacy];
   const rows = (rowsRaw ?? []) as NullArtRow[];
@@ -236,7 +254,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   let thumbsFilled = 0;
   let videosFilled = 0;
   let resolverMisses = 0;
-  let terminatedReason = lapComplete ? "lap_complete" : "batch_full";
+  let terminatedReason = legacyResting ? "legacy_resting" : lapComplete ? "lap_complete" : "batch_full";
   let lastLegacyScanned: string | null = null;
   const errors: Array<{ edition: string; reason: string }> = [];
 
@@ -305,6 +323,17 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   const durationMs = Date.now() - startedAt;
   const ok = errors.length === 0;
 
+  // Fills over the current lap. A run with no cursor (and not resting) starts a
+  // new lap. Only a lap that really finished — not a budget stop, no errors, so
+  // every row was asked — and filled nothing starts a rest.
+  const filledThisRun = thumbsFilled + videosFilled;
+  const lapFilled = legacyResting ? 0 : (cursor == null ? 0 : prevLapFilled) + filledThisRun;
+  let nextRestUntil: string | null = legacyRestUntil;
+  if (!legacyResting && lapComplete && terminatedReason !== "time_budget_exceeded" && ok && lapFilled === 0) {
+    nextRestUntil = new Date(Date.now() + LEGACY_REST_MS).toISOString();
+  }
+  const nextLapFilled = lapComplete ? 0 : lapFilled;
+
   try {
     // write-discarded: run telemetry; a failed log row cannot change what the run did, and shows up as a missing run.
     await supabase.from("pipeline_runs").insert({
@@ -330,6 +359,8 @@ async function handle(req: NextRequest): Promise<NextResponse> {
         cursor,
         next_cursor: nextCursor,
         cursor_read_error: cursorReadError,
+        lap_filled: nextLapFilled,
+        legacy_rest_until: nextRestUntil,
         errors_sample: errors.slice(0, 5),
       },
     });
@@ -351,6 +382,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     fresh_candidates: fresh.length,
     legacy_candidates: legacy.length,
     next_cursor: nextCursor,
+    legacy_rest_until: nextRestUntil,
     errors_count: errors.length,
     errors_sample: errors.slice(0, 5),
   });

@@ -215,3 +215,81 @@ describe("backfill-topshot-onchain-art — the legacy leg walks the whole popula
     expect((await GET(req())).status).toBe(500)
   })
 })
+
+// 2026-11-21: from 10-19 every lap filled nothing (~1,070 editions getCIDs has no
+// entry for, re-lapped ~twice a day). A zero-fill lap rests the legacy leg 7 days.
+describe("backfill-topshot-onchain-art — a zero-fill lap rests the legacy leg", () => {
+  const legacyRows = (n: number, from = 1) => Array.from({ length: n }, (_, i) => row({ id: `id-${String(from + i).padStart(3, "0")}`, thumbnail_url: "https://assets.nbatopshot.com/editions/x.jpg" }))
+  const DAY = 24 * 60 * 60 * 1000
+
+  it("a completed lap that filled nothing starts a ~7-day rest", async () => {
+    flowMode = "nil"
+    st.prev = { data: [{ extra: { next_cursor: "id-008", lap_filled: 0 } }], error: null }
+    st.rows = { data: legacyRows(1, 9), error: null }
+    const t0 = Date.now()
+    await GET(req("Bearer ingest", "?limit=5"))
+    const until = Date.parse(st.pipelineRuns[0].extra.legacy_rest_until)
+    expect(until - t0).toBeGreaterThan(6.9 * DAY)
+    expect(until - t0).toBeLessThan(7.1 * DAY)
+  })
+
+  it("while resting, the legacy leg is not read and the rest is carried forward; the fresh leg still runs", async () => {
+    const until = new Date(Date.now() + 3 * DAY).toISOString()
+    st.prev = { data: [{ extra: { next_cursor: null, legacy_rest_until: until } }], error: null }
+    st.fresh = { data: [row({ id: "fresh-1" })], error: null }
+    const body = await (await GET(req("Bearer ingest", "?limit=5"))).json()
+    expect(st.legacyReads.length).toBe(0)
+    expect(st.freshReads).toBe(1)
+    expect(body.scanned).toBe(1)
+    expect(body.terminated_reason).toBe("legacy_resting")
+    expect(st.pipelineRuns[0].extra.legacy_rest_until).toBe(until)
+  })
+
+  it("an expired rest laps again", async () => {
+    flowMode = "nil"
+    st.prev = { data: [{ extra: { next_cursor: null, legacy_rest_until: new Date(Date.now() - 1000).toISOString() } }], error: null }
+    st.rows = { data: legacyRows(5, 1), error: null }
+    await GET(req("Bearer ingest", "?limit=5"))
+    expect(st.legacyReads.length).toBe(1)
+    expect(st.legacyReads[0].gt).toBeNull()
+  })
+
+  it("CONTROL: a lap that filled anything (in an earlier run of the lap) does NOT rest", async () => {
+    flowMode = "nil"
+    st.prev = { data: [{ extra: { next_cursor: "id-008", lap_filled: 3 } }], error: null }
+    st.rows = { data: legacyRows(1, 9), error: null }
+    await GET(req("Bearer ingest", "?limit=5"))
+    expect(st.pipelineRuns[0].extra.legacy_rest_until).toBeNull()
+    expect(st.pipelineRuns[0].extra.lap_filled).toBe(0) // the next lap counts from zero
+  })
+
+  it("CONTROL: a lap whose last run filled a row does NOT rest", async () => {
+    st.prev = { data: [{ extra: { next_cursor: "id-008", lap_filled: 0 } }], error: null }
+    st.rows = { data: legacyRows(1, 9), error: null }
+    await GET(req("Bearer ingest", "?limit=5"))
+    expect(st.pipelineRuns[0].extra.legacy_rest_until).toBeNull()
+  })
+
+  it("CONTROL: a lap with a transport error does NOT rest (not every row was asked)", async () => {
+    flowMode = "notok"
+    st.prev = { data: [{ extra: { next_cursor: "id-008", lap_filled: 0 } }], error: null }
+    st.rows = { data: legacyRows(1, 9), error: null }
+    await GET(req("Bearer ingest", "?limit=5"))
+    expect(st.pipelineRuns[0].extra.legacy_rest_until).toBeNull()
+  })
+
+  it("fills accumulate across the runs of one lap", async () => {
+    st.prev = { data: [{ extra: { next_cursor: "id-002", lap_filled: 4 } }], error: null }
+    st.rows = { data: legacyRows(2, 3), error: null } // full page: lap continues
+    await GET(req("Bearer ingest", "?limit=2"))
+    expect(st.pipelineRuns[0].extra.lap_filled).toBe(8) // 4 + 2 rows × (thumb + video)
+  })
+
+  it("an unreadable rest stamp (failed read or garbage) reads as not resting", async () => {
+    flowMode = "nil"
+    st.prev = { data: [{ extra: { legacy_rest_until: "not a date" } }], error: null }
+    st.rows = { data: legacyRows(5, 1), error: null }
+    await GET(req("Bearer ingest", "?limit=5"))
+    expect(st.legacyReads.length).toBe(1)
+  })
+})
