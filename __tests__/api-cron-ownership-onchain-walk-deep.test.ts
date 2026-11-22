@@ -157,6 +157,11 @@ describe("ownership-onchain-walk — verification walk", () => {
     const log = logRun(spy.rpcCalls)
     expect(log).toMatchObject({ p_ok: true, p_rows_found: 0, p_rows_written: 0 })
     expect(log?.p_extra).toMatchObject({ wallets_walked: 0, wallet_errors: 1, confirmed: 0 })
+    // 2026-11-22: the count alone read 2 on every run for days with nothing naming the wallets.
+    const samples = (log?.p_extra as Record<string, unknown>).wallet_error_samples as Array<Record<string, string>>
+    expect(samples).toHaveLength(1)
+    expect(samples[0]).toMatchObject({ wallet: W, stage: "chain" })
+    expect(samples[0].error.length).toBeGreaterThan(0)
   })
 
   it("a per-wallet select error counts wallet_errors (walked, but no confirm)", async () => {
@@ -172,6 +177,9 @@ describe("ownership-onchain-walk — verification walk", () => {
 
     const log = logRun(spy.rpcCalls)
     expect(log?.p_extra).toMatchObject({ wallets_walked: 1, wallet_errors: 1, confirmed: 0, vanished: 0 })
+    expect((log?.p_extra as Record<string, unknown>).wallet_error_samples).toEqual([
+      { wallet: W, stage: "ownership-read", error: "select denied" },
+    ])
   })
 
   it("an upsert error flips ok=false with an 'upsert:' error", async () => {

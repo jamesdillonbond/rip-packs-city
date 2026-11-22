@@ -63,6 +63,7 @@ const UPSERT_CHUNK = 500;
 const MARK_CHUNK = 1000;
 const INDEX_CHUNK = 5000;
 const BUDGET_MS = 720_000; // stop before the 800s lambda ceiling
+const WALLET_ERROR_SAMPLE_MAX = 10; // named failures carried on the run row (extra.wallet_error_samples)
 
 // Retry budget for the ONE query that gates the whole run (get_stale_ownership_wallets).
 //
@@ -183,6 +184,16 @@ async function run(req: NextRequest) {
     let written = 0;
     let vanished = 0;
     let walletErrors = 0;
+    // 2026-11-22: WHICH wallets failed and why. `wallet_errors` read exactly 2 on every run for days with
+    // nothing naming them; a wallet whose walk throws is never re-stamped, so the oldest-first selector hands
+    // the same one back every run. Bounded, so a mass failure cannot bloat the row.
+    const walletErrorSamples: Array<{ wallet: string; stage: string; error: string }> = [];
+    const noteWalletError = (wallet: string, stage: string, err: unknown) => {
+      walletErrors++;
+      if (walletErrorSamples.length < WALLET_ERROR_SAMPLE_MAX) {
+        walletErrorSamples.push({ wallet, stage, error: (err instanceof Error ? err.message : String(err)).slice(0, 200) });
+      }
+    };
     let budgetHit = false;
     let markedMissed = 0;
     let markError: string | null = null;
@@ -237,8 +248,8 @@ async function run(req: NextRequest) {
         let heldIds: Set<string>;
         try {
           heldIds = new Set(await getOwnedMomentIds(wallet));
-        } catch {
-          walletErrors++;
+        } catch (err) {
+          noteWalletError(wallet, "chain", err);
           return;
         }
         walletsWalked++;
@@ -270,7 +281,7 @@ async function run(req: NextRequest) {
           const PAGE = 1000;
           const MAX_PAGES = 100;
           let cursor = "";
-          let readErr = false;
+          let readErr: string | null = null;
           for (let page = 0; page < MAX_PAGES; page++) {
             let q = (supabaseAdmin as any)
               .from("topshot_ownership")
@@ -280,7 +291,7 @@ async function run(req: NextRequest) {
               .limit(PAGE);
             if (cursor) q = q.gt("nft_id", cursor);
             const { data, error } = await q;
-            if (error) { readErr = true; break; }
+            if (error) { readErr = error.message ?? String(error); break; }
             const pageRows = (data ?? []) as typeof rows;
             rows.push(...pageRows);
             if (pageRows.length < PAGE) break;
@@ -290,7 +301,7 @@ async function run(req: NextRequest) {
             cursor = next;
           }
           if (readErr) {
-            walletErrors++;
+            noteWalletError(wallet, "ownership-read", readErr);
             return;
           }
         }
@@ -419,6 +430,7 @@ async function run(req: NextRequest) {
           unmapped_queued: unmappedQueued,
           index_error: indexError,
           wallet_errors: walletErrors,
+          wallet_error_samples: walletErrorSamples,
           budget_hit: budgetHit,
           duration_ms: Date.now() - startedMs,
         },
