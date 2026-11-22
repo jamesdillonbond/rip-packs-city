@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~2:45 PM PT · 🗄 APPLIED (`20261122223919`) + 🔧 SHIPPED (code) — the Sentinel's drop-day arm counts sales with NO published price: they used to drop out of numerator and denominator, so a stopped hot lane read "ok"; 11-18 had 17.6 % unpriced that nothing saw (Claude Code cloud, autonomous 4 h pass)
+
+- `check_topshot_ask_only_at_sale` (today's `c1eaa9309`) joined `ON pv.v > 0`. A `LEFT JOIN` now keeps every sale; the existing keys are proven **identical** on 48 h of live data (8,785 sales), and `sales_total` / `sales_unpriced` are added. Calibration over 16 days of 6 h windows: all ≤ 3.2 % unpriced except **2026-11-18 18:00 UTC: 178 of 1,009 (17.6 %)**. `lib/sentinel/topshot-ask-only-at-sale.ts` warns at ≥ 10 % unpriced over ≥ 100 sales. 3 new tests.
+- **Revert:** re-apply `20261122173426_audit_20261122_check_topshot_ask_only_at_sale.sql`; `git revert` the commit titled "sentinel: drop-day arm counts unpriced sales".
+
 ### 2026-11-22 ~2:50 PM PT · 🔧 SHIPPED (code) — Portfolio FMV says "Adding sealed packs…" while the pack read is in flight, instead of showing the moments-only figure as final (Claude Code cloud; Trevor: "Use chrome and do it yourself")
 
 - Live check in Trevor’s Chrome after the 2:15 PM ship: dashboard settles at Total Assets 20,641 / Portfolio FMV $66,080; profile $66.1K / 20,641; share card 20,641 assets / $65,681.40 (reads the collection snapshot). But the first `/api/profile/held-pack-value` call took 8.9 s, and for that window the tile read $49,651 / 20,153 with no note. `walletTotalCaption()` gains a `packsLoading` arm; dashboard and profile pass it.
