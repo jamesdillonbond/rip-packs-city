@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-21 ~6:10 PM PT · 🗄️ DATA — 807 active Candy card asks re-priced to buyer cost now instead of on their next sweep (Claude Code cloud; follows the 5:35 PM buyer-paid entry)
+
+`UPDATE candy_listings SET price_usd = round(price_usd * 1.12, 2)` on active `venue='magic_eden'` rows last seen before the deploy (`last_seen_at < 2026-11-22T01:39:24Z`) AND still at the listed basis (`price_usd/price_sol < 74`; the two groups measured cleanly apart: 69.6–71.9 vs 78.2–80.0). 807 rows; after: 0 of 917 active asks at the listed basis. Why now: with sales and FMV moving to buyer-paid, asks left at the listed price would read ~12% under value (fake deals) for up to ~8 h. Each row is overwritten from `price_sol` by its next sweep anyway. Backfill status at 6:03 PM PT: 789 / 18,679 sales priced, 0 errors, ~210 per 5-min run, 0 rate-limited.
+
+**Revert:** `UPDATE candy_listings SET price_usd = round(price_usd / 1.12, 2) WHERE is_active AND venue='magic_eden' AND last_seen_at < '2026-11-22T01:39:24Z' AND price_usd/price_sol BETWEEN 77 AND 81` (only meaningful before those rows' next sweep).
+
 ### 2026-11-21 ~5:35 PM PT · 🔧 SHIPPED (migration + code + schedule + 1 data row) — Candy sales move to BUYER-PAID price, read per transaction on-chain; Candy card asks priced at buyer cost (×1.12) (Claude Code cloud; Trevor: "Switch to buyer-paid" → "No we need to fix this first")
 
 **Why.** The Candy bot reported a Paul Skenes 2025 All-Star ICONS 1/1 at $1,599 (22.75 SOL) "Buyer Paid"; RPC had $1,397 (20.31 SOL). On-chain (12 sales, 8 sets, MLB + DC): a Magic Eden listing bought outright (M2 BuyV2/CoreExecuteSaleV2) costs the buyer listed + 10% creator royalty + 2% ME fee = ×1.12 exactly; a sale INTO a buyer's pool (MMM SolMplCoreFulfillBuy) costs the buyer exactly the listed price (royalty comes out of the seller). RPC stored ME's activity `price` = the LISTED price for every one of 18,677 Candy sales.
