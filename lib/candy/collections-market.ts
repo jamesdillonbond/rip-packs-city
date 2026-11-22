@@ -31,6 +31,7 @@
 
 import { CANDY_MLB_UUID } from "@/lib/chains/solana/normalize"
 import { solUsd } from "@/lib/chains/solana/das"
+import { candyAskBuyerCostUsd } from "@/lib/candy/sale-buyer-paid"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
@@ -344,7 +345,7 @@ async function sweepListings(
       seller: l.seller ?? null,
       auction_house: l.auctionHouse ?? null,
       price_sol: l.price,
-      price_usd: solRate != null ? Number(((l.price as number) * solRate).toFixed(2)) : null,
+      price_usd: candyAskBuyerCostUsd(l.price as number, solRate),
       token_size: l.tokenSize ?? null,
       expiry: l.expiry && l.expiry > 0 ? new Date(l.expiry * 1000).toISOString() : null,
       last_seen_at: seenAt,

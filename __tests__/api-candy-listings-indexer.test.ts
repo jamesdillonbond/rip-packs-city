@@ -165,7 +165,7 @@ describe("candy-listings-indexer — sweep ladder", () => {
       seller: "0xsell",
       auction_house: "ah",
       price_sol: 0.5,
-      price_usd: 75, // 0.5 SOL * 150
+      price_usd: 84, // 0.5 SOL * 150 * 1.12 — an ask at what its buyer pays (royalty + ME fee on top; buyer-paid basis 2026-11-21)
       token_size: 1,
       expiry: null, // expiry 0 -> null
       is_active: true,

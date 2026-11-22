@@ -224,8 +224,9 @@ describe("runCollectionsMarket — legacy listings (2026-11-14)", () => {
     const r = await run()
     expect(r.ok).toBe(true)
     expect(state.listings).toEqual([
-      expect.objectContaining({ pda_address: "P1", token_mint: "M1", edition_id: "ed-1", collection_id: "c1", price_sol: 0.5, price_usd: 75, is_active: true, venue: "magic_eden" }),
-      expect.objectContaining({ pda_address: "P2", edition_id: "ed-2", price_usd: 300 }),
+      // USD = listed SOL × rate × 1.12: an ask is priced at what its buyer pays (buyer-paid basis, 2026-11-21); price_sol stays LISTED.
+      expect.objectContaining({ pda_address: "P1", token_mint: "M1", edition_id: "ed-1", collection_id: "c1", price_sol: 0.5, price_usd: 84, is_active: true, venue: "magic_eden" }),
+      expect.objectContaining({ pda_address: "P2", edition_id: "ed-2", price_usd: 336 }),
     ])
     expect(r.listings_written).toBe(2)
   })

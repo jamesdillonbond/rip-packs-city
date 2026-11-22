@@ -22,6 +22,7 @@
 // HONESTY CONSTRAINT (do not relax): a listing is an ASK, never FMV. It must not
 // be folded into fmv_snapshots. candy_listing_floor is a floor-ask signal only.
 
+import { candyAskBuyerCostUsd } from "@/lib/candy/sale-buyer-paid"
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
@@ -550,6 +551,8 @@ async function handleSweep(req: NextRequest) {
               seller: l.seller ?? null,
               auction_house: l.auctionHouse ?? null,
               price_sol: l.price,
+              // Pack asks stay at the LISTED price: candy_pack_sales were not moved to buyer-paid
+              // (2026-11-21), and a pack ask is only ever compared with pack sales.
               price_usd: rate != null ? Number((l.price * rate).toFixed(2)) : null,
               expiry: l.expiry && l.expiry > 0 ? new Date(l.expiry * 1000).toISOString() : null,
               last_seen_at: new Date().toISOString(),
@@ -571,7 +574,7 @@ async function handleSweep(req: NextRequest) {
             seller: l.seller ?? null,
             auction_house: l.auctionHouse ?? null,
             price_sol: l.price,
-            price_usd: rate != null ? Number((l.price * rate).toFixed(2)) : null,
+            price_usd: candyAskBuyerCostUsd(l.price, rate),
             token_size: l.tokenSize ?? null,
             expiry: l.expiry && l.expiry > 0 ? new Date(l.expiry * 1000).toISOString() : null,
             last_seen_at: new Date().toISOString(),
