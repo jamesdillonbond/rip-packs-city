@@ -81,6 +81,9 @@ describe("orderDrops / dropStatusLine", () => {
   it("speaks each app's words, in PT, and never says RSVP", () => {
     expect(dropStatusLine(d({ kind: "rsvp", end_time: "2026-11-11T20:00:00Z" }))).toBe("Pre-orders close Wed 12 PM PT")
     expect(dropStatusLine(d({ collection: "disney_pinnacle", kind: "rsvp", status: "ended" }))).toBe("Draw requests closed")
+    // 11-22: an upcoming Pinnacle "RSVP" may be a draw or a capsule sale — "Opens" is true of both.
+    expect(dropStatusLine(d({ collection: "disney_pinnacle", kind: "rsvp", status: "upcoming", start_time: "2026-11-10T17:00:00Z" }))).toBe("Opens Tue 9 AM PT")
+    expect(dropStatusLine(d({ kind: "rsvp", status: "upcoming", start_time: "2026-11-11T20:00:00Z" }))).toBe("Pre-orders open Wed 12 PM PT")
     expect(dropStatusLine(d({ status: "upcoming", start_time: "2026-11-11T20:30:00Z" }))).toBe("Drops Wed 12:30 PM PT")
     expect(dropStatusLine(d({ kind: "open_edition" }))).toBe("Minting now")
     expect(dropStatusLine(d({}))).toBe("On sale now")

@@ -86,6 +86,16 @@ export interface PackCalendarDrop {
   low_stock?: boolean
   /** Hand-entered drops only: what you give for a pack ("trade in $10 of Luka Moments per pack"). */
   detail?: string
+  /**
+   * Pinnacle pack drops only: pins minted for the release's set (pinnacle_catalog.total_minted
+   * summed over the set whose name ends "• <title>"). Pinnacle mints a Limited Edition's supply
+   * into its own account before the release opens (11-19: Frozen Seasonal Harvest Vol.1, 490;
+   * Winnie the Pooh: Friends-Giving Vol.2, 790), so it is known before the official page lists
+   * it. MINTED, not capsules on offer: some pins ride other releases (98 Friends-Giving Vol.2 LE
+   * pins were hidden in Mugs Vol.1 capsules). Absent when the set is not in the catalog or a row
+   * has no count — never 0.
+   */
+  minted?: number
 }
 
 const COLLECTION: Record<PackCalendarProduct, PackCalendarDrop["collection"]> = {
@@ -453,6 +463,43 @@ async function firstOpen(sb: any, d: PackCalendarDrop): Promise<{ any: boolean; 
   return { any: false, at: null }
 }
 
+/** The set's pins minted, from catalog rows whose set_name ends "• <title>"; null if unknown. */
+export function mintedForTitle(title: string, rows: { set_name: string | null; total_minted: number | null }[]): number | null {
+  const want = `• ${title.trim()}`.toLowerCase()
+  const mine = rows.filter((r) => (r.set_name ?? "").trim().toLowerCase().endsWith(want))
+  if (!mine.length) return null
+  let sum = 0
+  for (const r of mine) {
+    const n = Number(r.total_minted)
+    if (r.total_minted == null || !Number.isFinite(n) || n <= 0) return null
+    sum += n
+  }
+  return sum
+}
+
+// Pinnacle pack drops: attach the set's minted supply (see PackCalendarDrop.minted). An optional
+// detail: a failed read leaves it ABSENT (no supply stated, never a number) and does not fail the
+// calendar, whose drops and times come from other reads.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function attachPinnacleMinted(sb: any, drops: PackCalendarDrop[]): Promise<void> {
+  for (const d of drops) {
+    if (d.collection !== "disney_pinnacle" || d.status === "ended") continue
+    if (d.kind !== "rsvp" && d.kind !== "sale" && d.kind !== "capsule") continue
+    const pattern = `%• ${d.title.trim().replace(/[\\%_]/g, (c) => `\\${c}`)}`
+    try {
+      const { data, error } = await sb.from("pinnacle_catalog").select("set_name, total_minted").like("set_name", pattern).limit(200)
+      if (error) {
+        console.warn(`[pack-calendar] pinnacle_catalog minted(${d.dist_id}): ${error.message}`)
+        continue
+      }
+      const n = mintedForTitle(d.title, (data ?? []) as { set_name: string | null; total_minted: number | null }[])
+      if (n != null) d.minted = n
+    } catch (e) {
+      console.warn(`[pack-calendar] pinnacle_catalog minted(${d.dist_id}): ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function markDeliveredDraws(sb: any, drops: PackCalendarDrop[]): Promise<void> {
   for (const d of drops) {
@@ -552,6 +599,7 @@ export async function fetchPackCalendar(
   applyDropCorrections(drops, now, corrections)
   dropOpenEditionsSoldAsCapsules(drops)
   await markDeliveredDraws(sb, drops)
+  await attachPinnacleMinted(sb, drops)
   // Drops no feed carries (Top Shot This trade-ins), hand-entered from the official page.
   drops.push(...buildManualDrops(now, manual, drops))
 

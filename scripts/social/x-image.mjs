@@ -91,10 +91,24 @@ function statusLine(x) {
   if (x.kind === "capsule") return x.status === "upcoming" ? `Capsules on sale ${whenPT(x.start_time)}` : "Capsules on sale now"
   if (x.kind === "trade_in") return x.status === "upcoming" ? `Trade-ins open ${whenPT(x.start_time)}` : x.end_time ? `Trade-ins close ${whenPT(x.end_time)}` : "Trade-ins open now"
   const word = x.collection === "disney_pinnacle" ? "Draw requests" : "Pre-orders"
+  // An upcoming Pinnacle "RSVP" may be a draw or a capsule sale: "Opens" (drops-board.ts dropStatusLine).
+  if (x.status === "upcoming" && x.kind === "rsvp" && x.collection === "disney_pinnacle") return `Opens ${whenPT(x.start_time)}`
   if (x.status === "upcoming") return `${x.kind === "rsvp" ? `${word} open` : "Drops"} ${whenPT(x.start_time)}`
   if (x.kind === "rsvp" && x.end_time) return `${word} close ${whenPT(x.end_time)}`
   const base = x.end_time ? `On sale until ${whenPT(x.end_time)}` : "On sale now"
   return x.low_stock ? `${base} · almost sold out` : base
+}
+
+// A Panini card's catalog thumbnail is ONE serial's image with that serial printed on it
+// (".../<hash>_28_219.png"); Panini hosts one per serial. Use the serial that SOLD, or the card
+// shows the wrong number (11-22: an Ohtani #92/219 big-sale image read "28/219").
+function paniniSerialArt(r) {
+  const url = r?.thumbnail_url
+  const serial = Number(r?.serial_number)
+  if (r?.collection !== "panini_blockchain" || typeof url !== "string" || !Number.isInteger(serial) || serial <= 0) return null
+  const m = url.match(/_(\d+)_(\d+)\.png$/)
+  if (!m || serial > Number(m[2])) return null
+  return url.replace(/_(\d+)_(\d+)\.png$/, `_${serial}_${m[2]}.png`)
 }
 
 async function dropsItems() {
@@ -114,7 +128,7 @@ async function dropsItems() {
     price: x.retail_usd != null ? usd(x.retail_usd) : null,
     status: statusLine(x),
     upcoming: x.status === "upcoming",
-    detail: x.detail ?? null,
+    detail: x.detail ?? (Number.isFinite(x.minted) && x.minted > 0 ? `${x.minted.toLocaleString("en-US")} minted` : null),
   }))
   for (const a of d.announcements ?? []) items.push({ collection: "candy_mlb", title: a.title, price: null, status: "Announced", upcoming: false })
   // Verified extras go in at the position the post lists them (after the named title, else last).
@@ -318,6 +332,7 @@ async function topSalesItems(warnings) {
       (r.collection === "nba_top_shot" && /^\d+$/.test(String(r.nft_id ?? ""))
         ? padded(await imageData(`https://assets.nbatopshot.com/media/${r.nft_id}/transparent/image?width=600`))
         : null) ??
+      (paniniSerialArt(r) ? await imageData(paniniSerialArt(r)) : null) ??
       (await imageData(r.thumbnail_url)) ??
       (r.collection === "disney_pinnacle" ? await pinnaclePinImage(r) : null),
     ),
@@ -653,7 +668,8 @@ async function bigSaleItem(warnings) {
   const hero = ts ? await imageData(`https://assets.nbatopshot.com/media/${r.nft_id}?type=hero`) : null
   const img =
     hero ??
-    (await imageData(r.thumbnail_url)) ??
+    (paniniSerialArt(r) ? await imageData(paniniSerialArt(r)) : null) ??
+      (await imageData(r.thumbnail_url)) ??
     (r.collection === "disney_pinnacle" ? await pinnaclePinImage(r) : null)
   if (!img) warnings.push(`no image for ${r.player_name} — the art area is empty`)
 

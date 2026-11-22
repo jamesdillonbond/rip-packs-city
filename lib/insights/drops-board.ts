@@ -84,6 +84,11 @@ export function dropStatusLine(d: PackCalendarDrop): string {
     return d.end_time ? `Trade-ins close ${whenPT(d.end_time)}` : "Trade-ins open now"
   }
   if (d.status === "ended") return d.kind === "rsvp" ? `${word} closed` : "Ended"
+  // An upcoming Pinnacle "RSVP" the official page has not confirmed may be a timed draw OR a
+  // mystery-capsule sale (Dapper's book marks both RSVP; $49.95 Limited Editions have been each:
+  // Stitch a draw, Predator capsules). "Opens" is true of both; a DROP_CORRECTIONS entry sets
+  // kind "capsule" once the page says so.
+  if (d.status === "upcoming" && d.kind === "rsvp" && d.collection === "disney_pinnacle") return `Opens ${whenPT(d.start_time)}`
   if (d.status === "upcoming") return `${d.kind === "rsvp" ? `${word} open` : "Drops"} ${whenPT(d.start_time)}`
   if (d.kind === "rsvp" && d.end_time) return `${word} close ${whenPT(d.end_time)}`
   const base = d.end_time ? `On sale until ${whenPT(d.end_time)}` : "On sale now"

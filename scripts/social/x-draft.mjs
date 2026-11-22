@@ -468,7 +468,10 @@ const packsIndex = (x) => `${SITE}/${PACKS_PAGE[x.collection] ?? "nba-top-shot"}
 // (Pinnacle: "requests close"). Use the app's word, never "RSVP".
 const orderWord = (x) => (x.collection === "disney_pinnacle" ? "draw requests" : "pre-orders")
 function dropLine(x, multiColl) {
-  const price = x.retail_usd ? ` (${usd(x.retail_usd)})` : ""
+  // Pinnacle: the set's minted supply rides the price ("$49.95, 490 minted"), from the chain via
+  // pack-calendar's `minted` — minted, not capsules on offer (lib/insights/pack-calendar.ts).
+  const parts = [x.retail_usd ? usd(x.retail_usd) : null, Number.isFinite(x.minted) && x.minted > 0 ? `${x.minted.toLocaleString("en-US")} minted` : null].filter(Boolean)
+  const price = parts.length ? ` (${parts.join(", ")})` : ""
   const tag = multiColl ? `${coll(x.collection)}: ` : ""
   // A Pinnacle Open Edition is seen only while it mints: no price, no announced end.
   if (x.kind === "open_edition") return `• ${tag}${x.title} — minting now`
@@ -476,6 +479,9 @@ function dropLine(x, multiColl) {
   if (x.kind === "capsule") return `• ${tag}${x.title}${price} mystery capsules — ${x.status === "upcoming" ? `on sale ${whenPT(x.start_time)}` : "on sale now"}${x.detail ? `, ${x.detail}` : ""}`
   // A trade-in pack (Top Shot This): what you give, and when trade-ins close.
   if (x.kind === "trade_in") return `• ${tag}${x.title} — ${x.detail ? `${x.detail}, ` : ""}${x.status === "upcoming" ? `opens ${whenPT(x.start_time)}` : `closes ${whenPT(x.end_time)}`}`
+  // An upcoming Pinnacle "RSVP" may be a draw or a capsule sale (the book marks both): "opens" is
+  // true of both (same rule as lib/insights/drops-board.ts dropStatusLine).
+  if (x.status === "upcoming" && x.kind === "rsvp" && x.collection === "disney_pinnacle") return `• ${tag}${x.title}${price} — opens ${whenPT(x.start_time)}`
   if (x.status === "upcoming") return `• ${tag}${x.title}${price} — ${x.kind === "rsvp" ? `${orderWord(x)} open` : "drops"} ${whenPT(x.start_time)}`
   // open now: a pre-order / draw window closes; a sale has an end time only sometimes
   if (x.kind === "rsvp" && x.end_time) return `• ${tag}${x.title}${price} — ${orderWord(x)} close ${whenPT(x.end_time)}`

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { buildPackCalendar, dropOpenEditionsSoldAsCapsules, buildPinnacleOpenEditionDrops, fetchPackCalendar, openEditionTitle, type PackCalendarSourceRow, resolveUnnamedOpenEditionSets, deliveredOpenEditionSets } from "@/lib/insights/pack-calendar"
+import { buildPackCalendar, mintedForTitle, dropOpenEditionsSoldAsCapsules, buildPinnacleOpenEditionDrops, fetchPackCalendar, openEditionTitle, type PackCalendarSourceRow, resolveUnnamedOpenEditionSets, deliveredOpenEditionSets } from "@/lib/insights/pack-calendar"
 
 // 2026-11-08 12:00 PT
 const NOW = new Date("2026-11-08T20:00:00Z")
@@ -387,5 +387,44 @@ describe("dropOpenEditionsSoldAsCapsules", () => {
     ]
     dropOpenEditionsSoldAsCapsules(drops)
     expect(drops.map((d) => d.dist_id)).toEqual(["8922", "OEV1-GARG"])
+  })
+})
+
+// 11-22: Pinnacle minted Frozen Seasonal Harvest Vol.1 (490) and Winnie the Pooh: Friends-Giving
+// Vol.2 (790) into its own account on 11-19, days before either was on the official releases page.
+describe("Pinnacle drops carry the set's minted supply", () => {
+  const frozen = [
+    ...["Be-Leaf in Yourself", "Celebrate the Season", "Hello Autumn Chill", "Spirit of the Season"].map(() => ({ set_name: "Walt Disney Animation Studios • Frozen Seasonal Harvest Vol.1", total_minted: 100 })),
+    { set_name: "Walt Disney Animation Studios • Frozen Seasonal Harvest Vol.1", total_minted: 90 },
+  ]
+
+  it("sums the set whose name ends with the drop's title", () => {
+    expect(mintedForTitle("Frozen Seasonal Harvest Vol.1", frozen)).toBe(490)
+  })
+
+  it("is unknown (null, never 0) with no matching set, a row with no count, or only a longer title", () => {
+    expect(mintedForTitle("Frozen Seasonal Harvest Vol.1", [])).toBeNull()
+    expect(mintedForTitle("Frozen Seasonal Harvest Vol.1", [...frozen, { set_name: "Walt Disney Animation Studios • Frozen Seasonal Harvest Vol.1", total_minted: null }])).toBeNull()
+    // "Friends-Giving Vol.2" must not borrow "Disney Mickey & Friends: Friends-Giving Vol.2"'s pins.
+    expect(mintedForTitle("Friends-Giving Vol.2", [{ set_name: "Walt Disney Animation Studios • Disney Mickey & Friends: Friends-Giving Vol.2", total_minted: 996 }])).toBeNull()
+  })
+
+  const state = [
+    { product: "nba", last_complete_pass_started_at: "2026-11-08T19:45:00Z", last_complete_at: "2026-11-08T19:50:00Z" },
+    { product: "nfl", last_complete_pass_started_at: "2026-11-08T19:45:00Z", last_complete_at: "2026-11-08T19:49:00Z" },
+    { product: "disney", last_complete_pass_started_at: "2026-11-08T19:45:00Z", last_complete_at: "2026-11-08T19:46:00Z" },
+  ]
+  const upcoming = row({ product: "disney", dist_id: "8947", title: "Frozen Seasonal Harvest Vol.1", retail_usd: "49.95", start_time: "2026-11-10T17:00:00Z", end_time: "2026-11-20T17:00:00Z" })
+
+  it("attaches it to an upcoming Pinnacle drop", async () => {
+    const r = await cal(fakeSb({ atlas_pack_market_state: { data: state }, atlas_pack_market: { data: [upcoming] }, pinnacle_catalog: { data: frozen } }), NOW)
+    expect(r.drops.find((d) => d.dist_id === "8947")?.minted).toBe(490)
+  })
+
+  it("a failed catalog read leaves it absent and does not fail the calendar", async () => {
+    const r = await cal(fakeSb({ atlas_pack_market_state: { data: state }, atlas_pack_market: { data: [upcoming] }, pinnacle_catalog: { error: { message: "boom" } } }), NOW)
+    const d = r.drops.find((x) => x.dist_id === "8947")
+    expect(d).toBeDefined()
+    expect(d).not.toHaveProperty("minted")
   })
 })
