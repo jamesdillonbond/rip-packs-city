@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-21 ~5:15 PM PT · 🔧 SHIPPED (code) — Candy offers funding gate: the escrow read now parses Magic Eden's real shape `{ buyerEscrow, balance }` (Claude Code cloud; scheduled read)
+
+- **4:50 PM PT `candy-offers-indexer` (first run with reasons, `87d1faef8`):** ok, 2 bidders checked, `funding_unknown` 2, **`funding_unknown_reasons` = `escrow:shape keys=buyerEscrow|balance` ×2**. The wallet leg (Solana public RPC) read fine; the escrow leg answered `{ buyerEscrow, balance }`, not the `{ buyerEscrowBalance }` I had assumed — so every bid failed open and the 4 phantom bids stayed active (7 active bids now: those 4 + 3 from another bidder).
+- **Fix (`lib/candy/offer-funding.ts`):** read `balance` (as SOL), old key still accepted, any other shape still unknown → kept. If `balance` were lamports, a funded bidder only reads MORE funded and an empty escrow is 0 either way, so the error can only keep a bid. Tests updated to the live shape; both red on the old parser. tsc, ci:guards green.
+- **Watch — 10:50 PM PT run:** `funding_unknown` 0, `unfunded_offers` ≥ 4, the 4 `GFGmpV5z…` bids inactive; the other bidder's 3 bids kept unless its escrow AND wallet are both below each bid.
+- **Revert:** `git revert` the code commit.
+
 ### 2026-11-21 ~3:50 PM PT · 🔧 SHIPPED (code + schedule) — Candy sales reach the board in ~1–1.5 h instead of ~6 h median / 25 h worst: new HOURLY sales-only pass over every non-registry Candy collection, and `candy-sales-indexer` 3-hourly → hourly (Claude Code cloud; Trevor: "figure out why it takes us so long to get this" → "I approve … proceeding to take care of this")
 
 **Why.** A $1,599 Paul Skenes 2025 All-Star ICONS 1/1 sold 2:23 PM PT and was not due in `sales` until ~7:20 PM PT. Measured 11-14 → 11-21: 115 of 124 Candy sales came through the rotating `candy-collections-market` lane (reason `queued_collections_walk`), median 6.2 h sale→`sales`, max 25.1 h. Cause: that lane does symbol + stats + sales + listings per collection and reaches only ~110 of 357 collections per 240 s run (every 2 h → each collection ~every 8 h), and the drain that writes what it queues ran only every 3 h. The registry-set lane (`candy-sales-indexer` itself) only walks 5 sets.
