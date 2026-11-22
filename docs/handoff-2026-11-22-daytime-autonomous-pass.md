@@ -1,6 +1,6 @@
 # Daytime autonomous pass — 2026-11-22 (1:22 PM PT →, Claude Code cloud)
 
-**Verdict: GREEN. 7 shipped (3 migrations + 1 one-off maintenance, 3 code changes), 0 reverted.** Trevor: "work autonomously for the next 4 hours … fix any issues you encounter." Push worked directly to `main` from this session (dry-run first). A concurrent Panini/Candy thread was active all afternoon; I stayed out of its lane except for one Panini data-loss fix it could not be reached for (`ListAgents`: no reachable session).
+**Verdict: GREEN. 12 shipped (5 migrations + 1 one-off maintenance, 7 code changes), 0 reverted** (updated ~3:00 PM PT; items 8–12 below). Trevor: "work autonomously for the next 4 hours … fix any issues you encounter." Push worked directly to `main` from this session (dry-run first). A concurrent Panini/Candy thread was active all afternoon; I stayed out of its lane except for one Panini data-loss fix it could not be reached for (`ListAgents`: no reachable session).
 
 ## Shipped (newest first; each has a ledger entry with its revert path)
 
@@ -11,6 +11,14 @@
 5. **`fadc28219` — the series OG card prints the page's label.** Top Shot on-chain 6/7/8 read "Series 5/6/7" on the social card over a page titled "Series 2023-24". Verified on the live PNG.
 6. **`20261122212737` + one-off `VACUUM (ANALYZE)` of `sales_2023`–`sales_2025`.** The set page's Recent Sales panel was the top Vercel error group (6/24 h statement timeouts). Cause: `sales_2025` was 76 % all-visible, because backfill inserts never cross the default insert trigger. holo-icon 16.7k → 14.0k buffers; durable via `autovacuum_vacuum_insert_scale_factor = 0.01` on 2020–2025 (no new cron lane).
 7. **"RPC Live Health" artifact republished (v3)** with two stale notes corrected. Item B's "merger not yet applied" was wrong: 0 UUID-keyed Top Shot editions remain. The Pinnacle "earlier days empty" note was also stale. This closes WEEKLY-SURFACE-QA-PROSE.
+
+## Shipped later in the pass (~2:15–3:00 PM PT)
+
+8. **`20261122221721` + `6690b43f7` — the weekly email states how much of a member's change is OUR repricing.** Tomorrow's first send would have said "−49.6 % this week" to two members. For the first, −$27,587 of −$37,619 is the 11-17 FMV restatements on 18 held editions; for the largest portfolio it is −$34.6k of −$52.4k. The email now adds "Includes about −$X from our price corrections on N of your editions this week — not market moves". The subject drops the % when repricing is ≥ half the move. A failed read skips the member. The same commit repaired `PANINI_SALE_KEY_SHAPES`; `main` had been red on that guard since my `4fdbbafff`.
+9. **`034172479` — four review findings:** the packs-tab "$0 at floor ask" over zero priced listings; offer-fill chain reads get a 90 s wall-clock budget; All Day `resolvedOnChain` counts placed fills only; the X reminder says "opens" for an unconfirmed Pinnacle RSVP.
+10. **`20261122223919` + `ddae8e5bd` — the Sentinel drop-day arm counts unpriced sales.** Sales with no published price had dropped out of both sides. **2026-11-18 18:00–24:00 UTC had 178 of 1,009 Top Shot sales (17.6 %) with no published price at the sale, and nothing saw it.** The arm now warns at ≥ 10 %.
+11. **`911c765f9` — the art backfill rests only after an error-free lap** (it judged the last run only).
+12. Review method: a background reviewer read today's 10 non-Panini/Candy commits; 6 findings, all fixed (items 9–11).
 
 ## Measured, no change (recorded so nobody re-chases them)
 
@@ -51,9 +59,12 @@ Golazos Flowty lane (retired 10-30), concierge #8, wallet #114, Pinnacle thp `ro
 3. **[P4, Trevor/Claude Code, 0 nights] A1-WORKER-PASSTHROUGH-CLEANUP:** delete or mark won't-fix.
 4. **Unchanged from the overnight handoff:** item 4 there (Top Shot gate week 2, read Mon 11-23 after ~3:37 AM PT) stands, and its three carriers are untouched. `fmv_accuracy_weekly` has no 11-16 row yet (expected).
 
+5. **[P3, Claude Code, 0 nights] What happened 11-18 ~10 AM–4 PM PT?** 17.6 % of Top Shot sales cleared with no published price (vs ≤ 3.2 % in every other 6 h window of 16 days). Likely a drop whose editions the hot lane did not snapshot in time. Find the editions (`sales_market` 11-18 18:00–24:00 UTC with no `fmv_snapshots` row at/before `sold_at`) and check `hot_lane_editions` for that window.
+
 ## Dated reads (also in focus.md, STEER 11-22 ~2:20 PM PT)
 
 - Next `apply-fmv-haircut` run: `rows_written` ~25–40, not ~190.
 - Panini dropped-key count for the six-number shape → 0; duplicate-shape query stays empty.
 - Mon 8:33 AM PT email: no "$0.00" sealed-pack line.
 - ~11-29: cold-partition visibility maps > 95 %; `get_set_activity` timeouts well under 6/day; All Day paired backtest.
+- **Mon 8:33 AM PT email (repricing):** the dry run (`?dry=1`) lists `repricing_usd` per recipient. Members with a large 11-17 repricing get the disclosure line, and `skipped_incomplete` stays ~0; a jump means the repricing read is failing.
