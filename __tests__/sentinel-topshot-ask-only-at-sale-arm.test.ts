@@ -66,3 +66,21 @@ describe("the sentinel route wires the arm", () => {
     expect([...src.matchAll(/name: TOPSHOT_ASK_ONLY_AT_SALE_CHECK_NAME/g)].length).toBeGreaterThanOrEqual(3)
   })
 })
+
+// 2026-11-22: sales with NO published price at the sale (fresh-eyes review of c1eaa9309). They used to drop out
+// of numerator and denominator, so a stopped hot lane read "ok". 11-18 18:00 UTC: 178 of 1,009 (17.6 %).
+describe("unpriced sales (20261122223919)", () => {
+  it("warns when ≥ 10 % of ≥ 100 sales had no published price, even with a clean ASK_ONLY share", () => {
+    const v = summariseTopShotAskOnlyAtSale({ hours: 6, sales_priced: 831, ask_only_sales: 4, ask_only_pct: 0.5, ask_only_median_ratio: 1.02, within_25_pct: 88, sales_total: 1009, sales_unpriced: 178 })
+    expect(v.status).toBe("warn")
+    expect(v.detail).toContain("178 of 1009")
+    expect(v.detail).toContain("NO published price")
+    expect(v.value).toBe(17.6)
+  })
+  it("a normal unpriced share (3.2 %) does not warn", () => {
+    expect(summariseTopShotAskOnlyAtSale({ hours: 6, sales_priced: 1567, ask_only_sales: 5, ask_only_pct: 0.3, ask_only_median_ratio: 1, within_25_pct: 85, sales_total: 1618, sales_unpriced: 51 }).status).toBe("ok")
+  })
+  it("a payload without the new keys still evaluates the ASK_ONLY share", () => {
+    expect(summariseTopShotAskOnlyAtSale({ hours: 6, sales_priced: 500, ask_only_sales: 2, ask_only_pct: 0.4, ask_only_median_ratio: 1, within_25_pct: 90 }).status).toBe("ok")
+  })
+})
