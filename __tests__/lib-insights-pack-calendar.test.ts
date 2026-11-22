@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { buildPackCalendar, mintedForTitle, dropOpenEditionsSoldAsCapsules, buildPinnacleOpenEditionDrops, fetchPackCalendar, openEditionTitle, type PackCalendarSourceRow, resolveUnnamedOpenEditionSets, deliveredOpenEditionSets } from "@/lib/insights/pack-calendar"
+import { buildPackCalendar, mintedForTitle, topShotThisNeedingEntry, dropOpenEditionsSoldAsCapsules, buildPinnacleOpenEditionDrops, fetchPackCalendar, openEditionTitle, type PackCalendarSourceRow, resolveUnnamedOpenEditionSets, deliveredOpenEditionSets } from "@/lib/insights/pack-calendar"
 
 // 2026-11-08 12:00 PT
 const NOW = new Date("2026-11-08T20:00:00Z")
@@ -431,5 +431,26 @@ describe("Pinnacle drops carry the set's minted supply", () => {
     const d = r.drops.find((x) => x.dist_id === "8947")
     expect(d).toBeDefined()
     expect(d).not.toHaveProperty("minted")
+  })
+})
+
+// 11-22: Top Shot This trade-in packs are REWARD dists in the book (never listed), so one with no
+// MANUAL_DROPS entry reached no report — 11-16's Stephen Curry Top Shot This Pack.
+describe("topShotThisNeedingEntry", () => {
+  const now = new Date("2026-11-22T17:00:00Z")
+  const curry = row({ product: "nba", dist_id: "8941", title: "Stephen Curry Top Shot This Pack", dist_type: "REWARD", retail_usd: null, start_time: "2026-11-17T05:00:00Z", end_time: null })
+  const luka = row({ product: "nba", dist_id: "8924", title: "Luka Dončić Top Shot This Pack", dist_type: "REWARD", retail_usd: null, start_time: "2026-11-16T17:00:00Z", end_time: null })
+  const reward = row({ product: "nba", dist_id: "8942", title: "Metallic Silver: Week 3 Reward Pack", dist_type: "REWARD", retail_usd: null, start_time: "2026-11-17T14:00:00Z", end_time: null })
+  const challenge = row({ product: "nba", dist_id: "8935", title: "WNBA Top Shot This Challenge Reward Pack", dist_type: "REWARD", retail_usd: null, start_time: "2026-11-18T20:30:00Z", end_time: null })
+  const lukaEntry = { collection: "nba_top_shot" as const, title: "Top Shot This: Luka Dončić", kind: "trade_in" as const, start_time: "2026-11-16T17:00:00Z", end_time: "2026-11-17T20:00:00Z", source: "x", verified_at: "2026-11-16" }
+
+  it("names a Top Shot This pack no hand entry covers, and only Top Shot This packs", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(topShotThisNeedingEntry([curry, luka, reward, challenge], now, [lukaEntry as any]).map((x) => x.dist_id)).toEqual(["8941"])
+  })
+
+  it("is empty when every one is covered, or none started this week", () => {
+    expect(topShotThisNeedingEntry([row({ ...curry, start_time: "2026-10-01T00:00:00Z" })], now, [])).toEqual([])
+    expect(topShotThisNeedingEntry([], now, [])).toEqual([])
   })
 })

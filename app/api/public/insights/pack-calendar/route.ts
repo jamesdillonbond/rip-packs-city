@@ -46,6 +46,8 @@ export async function GET() {
       total_drops: result.drops.length,
       total_announcements: result.announcements.length,
       not_covered: ["ufc_strike"],
+      // Top Shot This trade-in packs in the book with no hand entry (lib/insights/manual-drops.ts).
+      needs_hand_entry: result.needs_hand_entry,
       elapsed_ms: elapsedMs,
     },
     drops: result.drops,

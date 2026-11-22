@@ -589,6 +589,8 @@ async function drops() {
     // A pack named for one player ends with that player's team hashtag (docs/social/x-calendar.md).
     // The calendar does not carry the team, so the drafter flags the lines to finish by hand.
     warnings_extra: [
+      // Top Shot This trade-in packs are REWARD dists in the book, so never listed: each needs a hand entry (11-16 Curry went out on no report).
+      ...(calendarMeta?.needs_hand_entry ?? []).map((x) => `"${x.title}" (Top Shot dist ${x.dist_id}, from ${whenPT(x.start_time)}) is a Top Shot This trade-in pack with no hand entry — read https://nbatopshot.com/?packDetail=${x.dist_id} and add it to MANUAL_DROPS (lib/insights/manual-drops.ts), or add it to the post by hand`),
       ...(calendarMeta?.unread?.length ? [`pack book unread for ${calendarMeta.unread.join(", ")} — their drops are missing from this list`] : []),
       ...(await officialSourcesNotOnCalendar(all, now)),
       ...byPrice.filter(isPlayerPack).map((x) => `"${x.title}" is a player pack — end its line with the team's hashtag (docs/social/x-calendar.md)`),

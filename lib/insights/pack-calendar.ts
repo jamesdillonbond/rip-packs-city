@@ -190,6 +190,38 @@ export interface PackCalendarResult {
   drops: PackCalendarDrop[]
   /** Candy MLB: drop announcements from its blog (no store lists Candy drops). */
   announcements: PackCalendarAnnouncement[]
+  /**
+   * Top Shot This trade-in packs the book carries (as REWARD dists, so never listed as drops) that
+   * no MANUAL_DROPS entry covers. They ARE public drops — you trade Moments in — but their terms
+   * live only on the official page, so each needs a hand entry. 11-16's Stephen Curry Top Shot
+   * This Pack went out with none and was on no report.
+   */
+  needs_hand_entry: { dist_id: string; title: string; start_time: string }[]
+}
+
+const nameKey = (t: string) =>
+  t.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/top shot this|\bpack\b/g, " ").replace(/[^a-z0-9]+/g, " ").trim()
+
+/**
+ * Top Shot This dists in the book (REWARD rows, started within 7 days back / 7 ahead) with no
+ * Top Shot `trade_in` MANUAL_DROPS entry naming the same player.
+ */
+export function topShotThisNeedingEntry(rows: PackCalendarSourceRow[], now: Date, manual: ManualDrop[]): { dist_id: string; title: string; start_time: string }[] {
+  const t = now.getTime()
+  const covered = manual.filter((m) => m.collection === "nba_top_shot").map((m) => nameKey(m.title))
+  const out: { dist_id: string; title: string; start_time: string }[] = []
+  const seen = new Set<string>()
+  for (const r of rows) {
+    // A "Top Shot This Challenge Reward Pack" (WNBA, 11-18) is a challenge reward, not a trade-in pack.
+    if (r.product !== "nba" || !/top shot this/i.test(r.title ?? "") || /challenge|reward/i.test(r.title ?? "") || seen.has(r.dist_id)) continue
+    const start = Date.parse(r.start_time ?? "")
+    if (!Number.isFinite(start) || start < t - 7 * DAY_MS || start > t + 7 * DAY_MS) continue
+    const key = nameKey(r.title ?? "")
+    if (!key || covered.some((c) => c === key)) continue
+    seen.add(r.dist_id)
+    out.push({ dist_id: r.dist_id, title: (r.title ?? "").trim(), start_time: new Date(start).toISOString() })
+  }
+  return out
 }
 
 // ── Panini ────────────────────────────────────────────────────────────────────────────
@@ -610,5 +642,5 @@ export async function fetchPackCalendar(
   drops.push(...buildManualDrops(now, manual, drops))
 
   drops.sort((a, b) => a.start_time.localeCompare(b.start_time) || a.dist_id.localeCompare(b.dist_id))
-  return { complete, complete_at, drops, announcements: candy.announcements }
+  return { complete, complete_at, drops, announcements: candy.announcements, needs_hand_entry: topShotThisNeedingEntry(rows, now, manual) }
 }
