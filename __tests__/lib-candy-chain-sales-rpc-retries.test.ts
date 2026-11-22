@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
-import { newSignatures } from "@/lib/candy/chain-sales"
+import { newSignatures, ARCHIVE_RPC_URLS } from "@/lib/candy/chain-sales"
 
 // lib/candy/chain-sales.ts — the JSON-RPC walker's failure paths (2026-11-22 coverage): a 429 is
 // retried on the same node, an HTTP error / RPC error / thrown fetch moves to the next node, a
@@ -23,17 +23,23 @@ const sig = (s: string, t = 2_000_000_000) => ({ signature: s, blockTime: t })
 describe("newSignatures — RPC failure paths", () => {
   it("retries a 429 on the same node, then reads", async () => {
     vi.useFakeTimers()
+    // Re-pinned 2026-11-22 (e9dd2c7): a cursor-less short listing is accepted only from an ARCHIVE RPC
+    // (a short page elsewhere may be the node's retention edge), so the node under test is the archive one.
+    const ARCHIVE = [...ARCHIVE_RPC_URLS][0]
     const { f, calls } = fetchSeq([{ status: 429 }, { body: { result: [sig("a"), sig("b")] } }])
-    const p = newSignatures(f as any, "ADDR", null, 0, ["u1", "u2"])
+    const p = newSignatures(f as any, "ADDR", null, 0, [ARCHIVE, "u2"])
     await vi.advanceTimersByTimeAsync(1100)
     const r = await p
     vi.useRealTimers()
-    expect(calls).toEqual(["u1", "u1"])
+    expect(calls).toEqual([ARCHIVE, ARCHIVE])
     expect(r).toEqual({ sigs: [sig("a"), sig("b")], newest: "a" })
   })
   it("an HTTP error, an RPC error or a thrown fetch moves to the next node", async () => {
     for (const first of [{ status: 503 }, { body: { error: { message: "busy" } } }, { throws: "reset" }, { throws: "reset" }] as Ans[]) {
-      const ans: Ans[] = first.throws ? [first, first, { body: { result: [sig("x")] } }] : [first, { body: { result: [sig("x")] } }]
+      // Re-pinned 2026-11-22 (e9dd2c7): with a cursor, a short listing must PROVE it reaches the cursor —
+      // the probe for the signature just older than "x" answers "cur".
+      const ok: Ans[] = [{ body: { result: [sig("x")] } }, { body: { result: [sig("cur")] } }]
+      const ans: Ans[] = first.throws ? [first, first, ...ok] : [first, ...ok]
       const { f, calls } = fetchSeq(ans)
       const r = await newSignatures(f as any, "ADDR", "cur", 0, ["u1", "u2"])
       expect(r.sigs).toEqual([sig("x")])
