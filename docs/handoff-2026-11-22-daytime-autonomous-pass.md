@@ -31,7 +31,7 @@
 - `fmv_clamp_disconnected_ask` has the same latent shape as the haircut loop, but 0 All Day clamps fired in 30 d and there is no fingerprint. Left alone.
 - `rpc-topshot-pack-opens-history` (job 56) returns `done:true` every tick by design ("deliberate standby", packs.md). Not a cut.
 - Health: security invariants clean, 0 trust breaches, 0 stalled, 0 HIGH alerts, `check_when_others_timeout_blind` 0, client-error beacon 0 real in 7 d. Advisors: 8 mutable-search_path functions, all non-SECURITY-DEFINER and not anon-executable (benign).
-- Accuracy (`fmv_sales_backtest`, 7 d): Top Shot published 74.4 % within ±25 % vs naive 72.6 (HIGH 82.2). All Day is in the paired read above.
+- Accuracy (`fmv_sales_backtest`, 7 d): Top Shot published 74.4 % within ±25 % vs naive 72.6 (HIGH 82.2). All Day is in the paired read above. Pinnacle (`pinnacle_fmv_sales_backtest`, 7 d, ~3:40 PM PT): published ≥ naive-5 on hit-rate in every tier (ALL 66.8 vs 61.9, n 974; HIGH 72.5 = 72.5; LOW 64.7 vs 61.4, WAPE 24.9 vs 35.7). The exception is the ASK_ONLY dollar-weighted error, 45.1 vs 33.1 (n 120; hit-rate 68.3 vs 45.0): a few large misses. Re-read before touching ASK_ONLY.
 
 ## Stale docs corrected
 
