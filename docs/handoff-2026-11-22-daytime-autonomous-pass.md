@@ -61,6 +61,12 @@ Golazos Flowty lane (retired 10-30), concierge #8, wallet #114, Pinnacle thp `ro
 
 5. ✅ **ANSWERED ~3:05 PM PT (strategy-2026-11-22.md Move 1 item 2): the 11-18 WNBA drop — 48 new editions, first price a median 1.6 h after first sale; the hot-lane lever is filed there.** Was: **[P3, Claude Code, 0 nights] What happened 11-18 ~10 AM–4 PM PT?** 17.6 % of Top Shot sales cleared with no published price (vs ≤ 3.2 % in every other 6 h window of 16 days). Likely a drop whose editions the hot lane did not snapshot in time. Find the editions (`sales_market` 11-18 18:00–24:00 UTC with no `fmv_snapshots` row at/before `sold_at`) and check `hot_lane_editions` for that window.
 
+6. **[P2, portfolio thread / Claude Code, 0 nights] Four findings from a review of today's portfolio rework (`7fa4dfc84`, `eefb11849`, `f2ca69a21`).** NOT fixed here: that thread was shipping to these files at the time. Re-verify against HEAD first (`40ff10b39` / `d60490088` landed after the review).
+   - (a) **The share link's preview card ≠ the share page.** `app/share/[wallet]/page.tsx` ~340/356 shows Moments incl. stale-priced + sealed packs and "N assets"; `app/api/og/share/route.tsx` ~133-141 still renders `shareHeadline().live` (total − stale, no packs, "N moments"). A wallet with $5k stale + $2k packs posts a card $7k below its page.
+   - (b) **Total Assets silently drops packs while the pack read loads or fails** (`DashboardClient.tsx` ~1104, `ProfileClient.tsx` ~365, share page ~356 add `heldPacks.held` only on success). The "Adding sealed packs…" / "couldn't load" notes sit under Portfolio FMV only. The profile share button (`ProfileClient.tsx` ~579) can tweet the Moments-only total/count in that window.
+   - (c) **"Panini included" is not true:** `get_wallet_collection_stats` has `AND c.slug <> 'panini_blockchain'`; `saved_wallets` holds no Panini rows (16 Panini identities in `saved_collector_identities`). Their cards are in neither Total Assets nor Portfolio FMV.
+   - (d) **The single total lost its age.** The "as of Nh ago" caption (`cacheAgeHours`) was removed, while the Moments half can come from a cache hours old and the pack half from a ≤ 24 h cache fallback (`pickHeldValue`, `walletsFailed=0`, so no caption fires).
+
 ## Dated reads (also in focus.md, STEER 11-22 ~2:20 PM PT)
 
 - Next `apply-fmv-haircut` run: `rows_written` ~25–40, not ~190.
