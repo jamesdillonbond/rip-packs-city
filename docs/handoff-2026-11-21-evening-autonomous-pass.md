@@ -23,6 +23,7 @@
 
 ## Looked at and left (with the reason)
 
+- **Filed for the owner:** `docs/overnight/inbox/2026-11-22T0440Z-claude-code-wallet-held-pack-value-times-out-on-large-pack-wallets.md` — single large wallets take 10.5–13.8 s warm (one 841k buffers), so the 4 × 500 are one slow wallet per call, NOT fan-out contention (supersedes the guess below).
 - **`wallet_held_pack_value`** (new today, sealed-pack total): 13 calls, mean 9.4 s, 3 PostgREST 500s (02–03Z). Single-wallet probes read 2.7–7.6 s (73k–181k buffers, mostly CPU), so the 500s look like the 12-wallet parallel fan-out contending, not one bad wallet. Failures are counted in `walletsFailed`, never $0. Not touched: its 56 KB inner function (`get_wallet_pack_history` v33) was shipped by another session hours earlier. **Candidate if it recurs:** cap the fan-out concurrency in `lib/packs/held-pack-total.ts` (e.g. 3 at a time) before touching SQL.
 - **`analytics_packs_summary` skip-scan rewrite**: equivalent output, −27 % warm buffers — not shipped; the index was the lever (#121 rule).
 - **`backfill-offer-fill-sales`** 734 duplicate-key errors/day in the Postgres log: by design (row-at-a-time insert, a 23505 is counted as `sales_duped`). Log noise only.

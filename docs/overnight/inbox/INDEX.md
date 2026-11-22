@@ -1,4 +1,4 @@
-# Inbox index — 693 live filings
+# Inbox index — 694 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -31,6 +31,10 @@ still open should have a register row, and if it does not, that gap is the findi
 failure it documents.
 
 ---
+
+## 2026-11-22 — 1 filing
+
+- [🟡 OPEN — `wallet_held_pack_value` times out (20 s) on large pack wallets: 4 PostgREST 500s since it shipped, one slow wallet per call (10.5–13.8 s warm on the biggest holders); honest (`walletsFailed`), three options for the owner](2026-11-22T0440Z-claude-code-wallet-held-pack-value-times-out-on-large-pack-wallets.md) — *(Claude Code cloud, ~8:40 PM PT 11-21, evening autonomous pass; not changed — the function was reshaped hours earlier by the sealed-pack thread.)*
 
 ## 2026-11-21 — 1 filing
 
