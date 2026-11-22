@@ -12,6 +12,9 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~3:30 PM PT · Scratch table `scratch_backfill_pk_trevor` locked down (RLS on, anon/authenticated revoked) — migration `20261122232956`
+- Left in `public` with RLS off + anon SELECT (one owner's pack history, ~3,981 rows) — security invariant + smoke test red from ~3:13 PM PT. Owner/service_role bypass RLS, so the portfolio backfill using it is unaffected. Verified: 0 invariant violations, anon SELECT false. Revert: `ALTER TABLE … DISABLE ROW LEVEL SECURITY` (never re-grant anon). Drop the table when the backfill is done.
+
 ### 2026-11-22 ~3:25 PM PT · 🗄 APPLIED (`20261122232415`) — pack-value backfill moved to a FUNCTION the cron can give a 600 s timeout; procedure job 916 unscheduled, function job 917 scheduled (Claude Code cloud; same thread)
 
 - Job 916's first run (3:19 PM PT) died at the 120 s default statement_timeout inside the first owner's paged `get_wallet_pack_history` reads — a pg_cron `CALL` is one statement, COMMIT does not re-arm the timer, and a `SET …;` prefix would block COMMIT. New `backfill_portfolio_snapshot_pack_values_step(p_days, p_budget_seconds)` runs under `SET statement_timeout = '600s'; SELECT …(30, 300)` (job 917, `zz-portfolio-pack-backfill-step`, minutes 9/19/29/39/49/59). A failed owner read stamps `pack_value_basis = 'backfill_failed'` so one owner cannot block the queue. Measured: the per-night calc for the largest owner is 0.77 s; the reads are the cost.
