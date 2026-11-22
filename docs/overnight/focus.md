@@ -4,6 +4,14 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-11-21 ~8:40 PM PT (Claude Code cloud, evening autonomous pass) — four dated reads; nothing else owed
+
+Full detail: `docs/handoff-2026-11-21-evening-autonomous-pass.md`.
+- **`analytics_packs_summary` PostgREST 500s** should be ~0 after the 7:54–8:08 PM PT index rebuilds (11 in the 24 h before). Supabase `query_logs`, `edge_logs`, path `/rest/v1/rpc/analytics_packs_summary`, status 500 since `2026-11-22 04:00Z`. A recurrence → `pgstatindex('public.idx_pack_ev_history_listing_time')` density first.
+- **`ts-listings-atlas-sync`** sync-step median since `2026-11-22 04:05Z` vs 4,595 ms before (cover index rebuilt 495 → 73 MB). Also: `rows_written` now means rows written (~500–2,000/run) — do not read the drop from ~86k as a collapse.
+- **`topshot-onchain-art-backfill`**: within ~12 h of 10:22 PM PT a run reads `legacy_resting` with `legacy_rest_until` ~7 d out. Still `lap_complete`/`batch_full` with 0 fills after 24 h → the rest is not engaging; read `extra.lap_filled`.
+- **~11-28: re-bloat check** on `idx_tame_open_listing_seen_cover` and `idx_pack_ev_history_listing_time` (`avg_leaf_density`). Under ~30 % → schedule a weekly `REINDEX INDEX CONCURRENTLY` (one-statement pg_cron; each took < 40 s).
+
 ## STEER — added 2026-11-21 ~7:05 PM PT (Claude Code cloud, closing the 11-20/21 Candy phantom thread) — ONE dated read is owed; everything else from that thread is closed
 
 - **OWED (overnight pass 11-22): the Candy offers FUNDING GATE's first real run** — `candy-offers-indexer` at **10:50 PM PT 11-21** (schedule `50 */6` is UTC: 4:50 / 10:50 AM and PM PT), the first on `2f6d01414`. Read the newest `pipeline_runs` row for `candy-offers-indexer`: expect `extra.funding_unknown` 0, `unfunded_offers` ≥ 4, `unfunded_deactivated` ≥ 4, and `select count(*) from candy_offers where is_active and buyer = 'GFGmpV5zJaF4enTZNLGbavHXCDiKorfDQCsRg8ZEjapg'` = 0. 3 other active bids (another bidder, seen 11-21) stay unless BOTH its ME escrow and wallet are below each bid. ⚠ If `funding_unknown` > 0, read `extra.funding_unknown_reasons` (it names the leg and status/shape — that is how the 4:50 PM run found `escrow:shape keys=buyerEscrow|balance`) and fix ONLY that leg; never loosen the rule (unknown keeps the bid). If the book empties, `candy_offers_oldest_active_hours` / `candy_offers_unverified_pct` read 999 — the arm's documented empty-book sentinel, correct (11-21 overnight handoff).
