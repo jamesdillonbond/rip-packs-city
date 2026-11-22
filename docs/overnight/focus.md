@@ -4,6 +4,13 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-11-22 ~7:50 AM PT (Claude Code cloud) — three carried queue labels CLOSED by measurement; two new dated reads
+
+- **Stop carrying (closed by a 7-day read, 11-22 ~7:45 AM PT):** `REFRESH-SPECIAL-SERIAL-OWNERS-MV-TIMEOUT` — job 332 `rpc-refresh-special-serial-owners-mv` 0 failed / 14 runs, max 38 s. `THIN-FMV-GUARD-CONTENTION` — job 63 `rpc-refresh-thin-fmv-guard` 0 / 7, max 38 s. `SERIAL-FMV-POWER-MODEL-WEEKLY-TIMEOUT` — job 61 0 / 1, 19 s (and the other 5 weekly serial-FMV jobs 0 failed). Re-open any of them only on a NEW failure in `cron.job_run_details`, never from the carried list.
+- **11-23 ~1 AM PT:** `fmv-clamp-disconnected-ask` writes its first heartbeat at 12:55 AM PT (`20261122150304`); the `stalled_pipelines` info row clears.
+- **11-23 by ~4 AM PT:** `rpc-portfolio-snapshot-packs` (job 901, fixed `20261122150559`) — runs at 07:56–11:56Z succeed and 11-23's 58 snapshots all carry `pack_low_ask_usd`. The new Sentinel arm **`pg_cron Job Failing Every Run`** warns on job 901 until its first good run, then reads ok — a warn AFTER 12:56 AM PT 11-23 is real.
+- ✅ Closed this morning: the art-backfill rest engaged (1:22 AM PT, runs 55–84 s → 1.7–2.7 s); the Candy funding gate retired the 4 phantom bids (gate held back 12 unfunded offers; the general retire path counted them, so `unfunded_deactivated` reads 0 by construction).
+
 ## STEER — added 2026-11-21 ~8:20 PM PT (Claude Code cloud, evening autonomous pass) — four dated reads; nothing else owed
 
 Full detail: `docs/handoff-2026-11-21-evening-autonomous-pass.md`.
