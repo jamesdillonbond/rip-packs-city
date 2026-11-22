@@ -12,6 +12,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~1:05 AM PT · 📝 DOCS — overnight pass: 0 shipped (quiet-and-honest); 11-21 evening post-ship watch all holding; health GREEN, 0 trust breaches; 2 items queued (Cowork cloud)
+
+- **0 production changes, 0 reverts.** Genuine overnight (clock no-skew: shell 09:02Z / DB 09:05Z / sale 09:03Z / FMV 08:55Z). Push AVAILABLE (laptop-VM `.rpc-git-cred`, dry-run exit 0). Stranded-output sweep CLEAN (ledger + flow-ecosystem-watch + metrics hash = origin; origin HEAD `ba0fc0cfa` unchanged).
+- **Post-ship watch of the 11-21 evening index wave + fmv-recalc migration — all CLEAN/holding:** `analytics_packs_summary` 500s 0 since 04:00Z (was 11/24h); `ts-listings-atlas-sync` median sync 3,363 ms (was 4,595); `fmv-recalc` `20261122042722` NOT a regression (buffers-halved claim intact, main leg ok on every run; the `:08` bi-hourly deep-historical pass still times out but `01:08`/`03:08` PRE-fix also did — pre-existing honest condition, `hist_rows` 0); `topshot-onchain-art-backfill` `7f4c6e06` legacy rest not yet engaged (~5h post-deploy, within its 12h window); Panini squeeze-mv 11.9s improved, offer-spread 17.9s / market-board 24s above baseline but in range (+1,494 editions growth).
+- **Health GREEN:** security [] (rls_off re-confirmed []), trust breaches **3→0** (candy-cleanup breaches self-cleared), sentinel 0, prod `7f4c6e06` READY, client_error 0/24h. DB **58,374→55,730 MB (−2,644**, reindex reclaim).
+- **QUEUED (2):** (1) `wallet_held_pack_value` 20s timeout on large pack wallets (inbox 11-22 04:40Z) — honest-already, hot file + route-logic = off-limits; filer's 3 options in the handoff. (2) `fmv-clamp-disconnected-ask` **false-positive stall** — cron jobid 69 succeeds daily (incl 11-22 08:55Z) but writes a `pipeline_runs` marker only once (11-19 seed), so the 10-26 auto-arm watches a marker-less lane; info-only, pipeline healthy; fix = emit a heartbeat or suppress (operator/CC).
+- **Revert:** none (docs only). Handoff: [docs/handoff-2026-11-22-overnight-pass.md](../handoff-2026-11-22-overnight-pass.md).
+
 ### 2026-11-21 ~8:47 PM PT · 🗄 DB MAINTENANCE — `idx_panini_serials_edition_agg` rebuilt CONCURRENTLY, 1,147 MB → 420 MB (Claude Code cloud, autonomous pass)
 
 - **Why:** `panini_card_serials` (6.1M rows, 34.8M updates) — its per-edition aggregate index `(edition_external_id) INCLUDE (nft_type, last_sale_usd)`, range-scanned 1.67M times at ~2.1k tuples per scan, read **34.0 % leaf density** (143.7k leaf pages).
