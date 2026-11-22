@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~2:55 PM PT · 🔧 SHIPPED (code) — the on-chain art backfill rests its legacy leg only after a lap with no errors in ANY run (it judged the last run only) (Claude Code cloud, autonomous 4 h pass)
+
+- `app/api/admin/backfill-topshot-onchain-art/route.ts` (`7f4c6e064`): `lap_errors` is carried in `pipeline_runs.extra` like `lap_filled`. Before, a lap whose first run failed on N editions and whose last run was clean started a 7-day rest with those editions never actually asked. 2 new tests, both failing on the old route. Left as is: `lap_filled` also counts fresh-drop fills, which can only *prevent* a rest (the safe direction).
+- **Revert:** `git revert` the commit titled "art backfill: rest only after an error-free lap".
+
 ### 2026-11-22 ~2:45 PM PT · 🗄 APPLIED (`20261122223919`) + 🔧 SHIPPED (code) — the Sentinel's drop-day arm counts sales with NO published price: they used to drop out of numerator and denominator, so a stopped hot lane read "ok"; 11-18 had 17.6 % unpriced that nothing saw (Claude Code cloud, autonomous 4 h pass)
 
 - `check_topshot_ask_only_at_sale` (today's `c1eaa9309`) joined `ON pv.v > 0`. A `LEFT JOIN` now keeps every sale; the existing keys are proven **identical** on 48 h of live data (8,785 sales), and `sales_total` / `sales_unpriced` are added. Calibration over 16 days of 6 h windows: all ≤ 3.2 % unpriced except **2026-11-18 18:00 UTC: 178 of 1,009 (17.6 %)**. `lib/sentinel/topshot-ask-only-at-sale.ts` warns at ≥ 10 % unpriced over ≥ 100 sales. 3 new tests.
