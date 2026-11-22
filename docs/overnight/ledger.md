@@ -14,6 +14,8 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ### 2026-11-22 ~2:45 PM PT · 🗄 APPLIED (`20261122214417`) — the thin-sale haircut stops re-"cutting" All Day rows its bid-floor trigger holds at their price: 171 of 177 reported cuts were phantom, and `algo_version` grew `_haircut_bidfloor` on every pass (up to ×7) (Claude Code cloud, autonomous 4 h pass)
 
+- ⚠ **Time correction:** applied ~1:44 PM PT (version `20261122214417` = 21:44 UTC). The heading's "2:45 PM PT" was written from an unread clock; headings are append-only, so the correction lives here.
+
 - **Cause:** both haircut writers compute a bid for Top Shot only; All Day's bid stop is the BEFORE UPDATE trigger `fmv_snapshots_floor_allday_at_best_offer` (11-12). With an open offer ≥ the price, the trigger put the price back, the row stayed on its floor, and every run cut it again and counted it (R120: a count must mean rows written). Prices were never wrong.
 - **Fix:** the bid CASE gains an All Day arm reading the trigger's own source (`allday_open_offers` via `editions.external_id`). Dry run after: All Day 177 examined / **6** cut / $2,542.50 (was 177 / 177 / $2,618.15). Top Shot arm byte-identical. Pin `fmv_apply_thin_sale_haircut.sql` gains All Day bid fixtures; it fails on the old bodies ("got 5|5|125.00, want 5|3|60.00"); drift-guard repointed. Grown suffixes left as history.
 - **Also read (docs):** All Day weekly paired backtest, lapsed since 11-05. The R125 rule fires on LOW (−9.1 and −6.4 pts, two weeks), but published won weeks 3–7, so there is no lever. Re-read ~11-29 (nfl-all-day.md). Stale open-issue lines retired: Pinnacle thp `rows_written` (fixed 10-18).

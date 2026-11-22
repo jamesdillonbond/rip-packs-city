@@ -1,4 +1,4 @@
--- audit_20261122_allday_haircut_stops_recutting_rows_its_bid_floor_holds — 2026-11-22 ~2:20 PM PT (Claude Code cloud,
+-- audit_20261122_allday_haircut_stops_recutting_rows_its_bid_floor_holds — 2026-11-22 ~1:44 PM PT (Claude Code cloud,
 -- autonomous 4 h pass; Trevor: "Fix any issues you encounter").
 --
 -- DEFECT (measured 11-22): the thin-sale haircut re-"cut" the same NFL All Day rows on EVERY run and reported cuts that
@@ -9,7 +9,7 @@
 -- so the row still sits on its ask floor, is still a candidate, and the next run "cuts" it again. Each pass appends
 -- `_haircut` (function) + `_bidfloor` (trigger: the row no longer ends in _bidfloor when it sees it), so algo_version
 -- grows without bound: 882 latest-era rows read `1.8.3_haircut_bidfloor_haircut_bidfloor`, the longest 7 repeats.
--- Dry run 11-22 ~2:10 PM PT: 177 All Day rows "haircut", **171 of them held at price by the trigger** (phantom cuts,
+-- Dry run 11-22 ~1:38 PM PT: 177 All Day rows "haircut", **171 of them held at price by the trigger** (phantom cuts,
 -- $75.65 of the reported dollars), 6 real. The price was never wrong — the trigger held it — but the writer's
 -- rows_haircut / total_dollars_removed counted rows it did not change (R120: a count must mean rows WRITTEN), and
 -- every run re-wrote ~170 snapshots for nothing.
