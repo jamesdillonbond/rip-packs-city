@@ -8,6 +8,12 @@ Companion: [panini-fmv-packev-methodology.md](panini-fmv-packev-methodology.md) 
 
 ## 0. Progress (dated — newest first)
 
+**2026-11-22 ~12:50 PM PT — thread close-out** (Trevor: "Do what you think is best, and research the answers yourself … leaving nothing unresolved").
+- ✅ **P2.9 decided and shipped** (`20261122203555`). Research first: C8's premise was stale. Since 11-12 every Panini LOW/MEDIUM/HIGH/STALE FMV reaching the cross-collection `fmv_snapshots` (edition pages, wallets, portfolio) is already capped at the lowest live ask by `fmv_snapshots_cap_panini_low_to_live_ask()` — its shadow read: within ±25 % of the next sale 11.8 → 30.3 %, ratio 2.17 → 1.40. The gap was four boards reading Panini's own UNcapped table as a VALUE (squeeze, player, nation, special serials): 483 of 5,285 WC editions (9.1 %) above a fresh ask, median 1.64×, sealed exposure overstated 6.9 %. **Rule: a VALUE is capped at the live ask everywhere; a DEAL is not** (a deal is an ask below FMV — capping would delete every deal by construction; `panini_deal_board_all` is unchanged and already also requires the ask to undercut recent sales). One helper, `panini_fmv_capped_at_live_ask()`, mirrors the trigger's ask exactly. Verified: squeeze exposure $680,616 → $633,468, the board now shows exactly the edition page's number (`_askcap`), squeeze refresh 726 ms, deals 1,583.
+- ✅ **P2.7 closed.** The two "missing" Bad Eggs products were never missing — set **850147** (Introducing the Clans, 172 cards) and **850179** (New Yolk City, 273 cards) were registered and walked but unnamed, the same gap as 2130/850130 (found on Panini's own Entertainment grid in Trevor's Chrome; matched by mint caps). Also found **2123 = 2024 WNBA Rookie Royalty** (same tier structure as pack 1000). Named and linked (`20261122203835`): packs 1012/1013, 1053/1057/1061, 1000. Two newly priced by the existing guaranteed-contents model on real sales: New Yolk City Green (4 × Base Green #/49, 173 sales) $13.48 vs $13; Bronze (1 × #/45, 35 sales) $8.58 vs $18. The rest stay correctly withheld (mixed-pool contents or thin sales).
+- Left as-is, on purpose: 2022 NFL Dilfer's Dimes (6 packs, 11–31 sealed each) and 2022 NRJ Music Awards (2 sealed) — no walked card set to link; not worth a runner change.
+- **Nothing from this thread is open** except the dated backtest (scheduled task, 2026-12-06 1:23 PM PT), which decides whether any product moves to the tier model.
+
 **2026-11-22 ~12:25 PM PT — follow-ups** (Trevor: "Do what you can").
 - ✅ **Over-match gate applied** (`20261122201452`): 87 of 358 shadow packs over-match and no longer pass; 50 pass (was 95). None of WC/WNBA Hobby, FOTL or the special packs passes.
 - ✅ **Rolling Stones + 2025 Bad Eggs packs linked now** (`20261122201616`, the value the route would write at its next pack capture): 1060/1063 → 2130, 979/990 → 850130. The board's note for them is now accurate — 979/1060 "contents aren't fixed slots", 990/1063 "not enough recorded sales" — all four correctly withheld. They join the shadow at its next :49 run.
@@ -23,9 +29,9 @@ Companion: [panini-fmv-packev-methodology.md](panini-fmv-packev-methodology.md) 
 | **P1.4 tier-composition model** | 🟡 **built as a SHADOW, not published** — `panini_pack_ev_tier_shadow` / `refresh_panini_pack_ev_tier_shadow()` hourly at :49; 63 products, 358 packs, ~52 s/run. Gate: validation (below) **and** the pull-ledger backtest. |
 | P1.5 special single-parallel packs | 🟡 in the shadow, matched by Panini's per-tier serial range (`min_end_seq..max_end_seq`); several over-match (see below) |
 | P1.6 FOTL slots | 🟡 in the shadow (1039 design $110 vs cost $114; 1055 $47.52 vs $55) but their Epic tier over-matches → the 90 %-indexed withhold stays |
-| P2.7 link Bad Eggs / Rolling Stones | 🟡 **half done** — set 2130 = 2026 Prizm The Rolling Stones, set 850130 = 2025 Prizm Bad Eggs (evidence: mint caps vs each product's serial ranges) named in `panini_products`, so the next ingest run links packs 979, 990, 1060, 1063. **Bad Eggs "Introducing the Clans" and "New Yolk City" have no set id** — the runner's Entertainment grid has never reported their cards; needs a runner-side look. |
+| P2.7 link Bad Eggs / Rolling Stones | ✅ closed 12:45 PM PT (see the close-out above). Earlier state: 🟡 **half done** — set 2130 = 2026 Prizm The Rolling Stones, set 850130 = 2025 Prizm Bad Eggs (evidence: mint caps vs each product's serial ranges) named in `panini_products`, so the next ingest run links packs 979, 990, 1060, 1063. **Bad Eggs "Introducing the Clans" and "New Yolk City" have no set id** — the runner's Entertainment grid has never reported their cards; needs a runner-side look. |
 | P2.8 older products | 🟡 in the shadow; 3 packs pass validation with a single live pack (Hoops 772 $6.03 vs $8 cost; 2022-23 Prizm Bball 791 $9.90 vs $27; 2022 WC Prizm 755 $21.15 vs $18) — **not published**, see "what the shadow taught" |
-| P2.9 pricing rule (cap FMV at ask everywhere) | ⏸ Trevor's decision |
+| P2.9 pricing rule (cap FMV at ask everywhere) | ✅ decided 12:45 PM PT — values capped everywhere, deals not (see the close-out above) |
 
 **What building the tier model taught (11-22, measured):**
 1. **A per-parallel slope model is unstable.** `log p = b_q + k_q·player` fitted slopes of ~6.8 on rare parallels and over-predicted held-out cards 2.3–5.8× (pooled, 5-fold). Rejected.
@@ -93,6 +99,8 @@ We never observe a pull, so no pack-EV number has ever been backtested. Card FMV
 ### C8. Card prices above the cheapest listing
 FMV 1.4.x caps only LOW prices at the live ask; 38 % of the Stickers pool was priced above its own ask (median 2×). Pack EV now caps at the ask; edition FMV does not. A pricing-rule decision for Trevor.
 
+> **Correction (11-22 PM):** the premise was stale — `fmv_snapshots` has capped every Panini sale tier at the live ask since 11-12; only `panini_fmv_snapshots` (Panini's own table) is uncapped. Resolved in §0: values capped everywhere, deals not.
+
 ## 3. Principles (unchanged, restated)
 - **Accuracy is the gate.** A withheld EV beats a wrong one; a floor is labelled a floor.
 - **Typical pull leads**; a positive mean edge is never the headline (page already does this).
@@ -126,5 +134,5 @@ FMV 1.4.x caps only LOW prices at the live ask; 38 % of the Stickers pool was pr
 ## 5. Decisions for Trevor
 1. Approve the Moonbirds sales fix (writes 1,160 seed rows; revert in its header).
 2. Floor label vs withhold for packs whose rare tiers are under-catalogued (recommendation: floor label — the typical pull is robust; the mean is what is understated).
-3. Pricing rule C8: cap edition FMV at the live ask everywhere?
+3. Pricing rule C8: cap edition FMV at the live ask everywhere? → **Decided 11-22 under Trevor's delegation: values yes, deals no** (§0).
 4. Green-light P0.3 (pull ledger) and P1.4 (tier model) — the two items that change what we can claim.
