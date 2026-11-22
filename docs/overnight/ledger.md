@@ -93,6 +93,7 @@ Item 3 (4 Candy bids, buyer `GFGmpV5z…apg`, $99.66) — **checked, phantom, NO
 - Verify: Mon 11-23 weekly run — `alert_deliveries.payload->>'alert_player'` filled on weekly_digest rows; then `alert_subscriptions` rows created after 11-23 and page-views with `utm_campaign=alert_player`.
 - Revert: `git revert` this commit (code only; no DB change).
 - Follow-up docs (same thread, ~8:50 PM PT): roadmap-status.md 11-20 activity + concierge block (demand-read.sql: engaged 134 → 78, signed-in 36 → 20, signups 21 → 3, concierge 0 human — `concierge_opened` proven live by a headless open); schema-truth.md: `user_profiles.wallet_saved_at` is never written, count saves from `saved_wallets`. Docs only.
+- 11-21 ~5:30 PM PT: session log (docs/sessions/2026-11.md) + roadmap-status status line (CI green; Day-1 had 0 candidates on 11-21, first send via the 11-23 weekly run). Docs only.
 
 ### 2026-11-20 ~7:42 PM PT · 📏 VERIFIED — the Candy phantom-ask retirement landed at the 7:35 PM PT indexer run (Claude Code cloud; same thread)
 
