@@ -14,6 +14,8 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ### 2026-11-22 ~3:35 PM PT · 🔧 SHIPPED (code) — the weekly email's sealed-pack "this week" change compares like-for-like holdings only; `main` unblocked on the registry own-property guard (Claude Code cloud, autonomous 4 h pass)
 
+- ⚠ **Time correction:** shipped ~3:05 PM PT (DB clock read at 3:07 PM PT). The heading's "3:35" was an estimate, and headings are append-only.
+
 - `lib/emails/weekly-packs.ts`: a review of `88731d9fc` found the "▲/▼ $X this week" pack change counted buying or opening packs, and packs gaining or losing a live ask, as price movement (26 of 58 snapshots on 11-22 are partly priced). The change now prints only when the held AND listed counts match the prior week's; otherwise the value prints alone. One test re-pinned (its fixture bought 5 packs) plus new cases.
 - `lib/dashboard/aggregate.ts:112` (`40ff10b39`, the portfolio thread, 2:52 PM PT): its bare `COLLECTION_UUID_BY_SLUG[k]` read failed `registry-map-reads-are-own-property`, which made `main` red. Now `Object.entries(...).find(...)`; behaviour is unchanged (13 tests).
 - **Filed for the portfolio thread, not touched (it is editing these files right now):** the share-link OG card vs the share page (different totals); Total Assets silently dropping packs while the read loads or fails; "Panini included" while `get_wallet_collection_stats` excludes Panini; the dashboard total lost its "as of" age. Details are in handoff-2026-11-22-daytime-autonomous-pass.md.
