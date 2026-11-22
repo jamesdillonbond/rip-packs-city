@@ -169,6 +169,9 @@ function decodeTakeBid(signature: string, tx: ParsedTx, inner: ParsedIx[], marke
   return { signature, asset, collection, blockTime: tx.blockTime ?? 0, priceSol: lamports / 1e9, buyer: bidder, seller, marketplace }
 }
 
+// 429 backoff base (ms). Set per run from opts.retryBackoffMs (tests pass 0); production keeps 1000.
+let backoffBaseMs = 1000
+
 async function rpc<T>(doFetch: FetchFn, method: string, params: unknown[], urls: string[]): Promise<T> {
   let last = "no rpc"
   for (const url of urls) {
@@ -180,7 +183,7 @@ async function rpc<T>(doFetch: FetchFn, method: string, params: unknown[], urls:
           body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
           signal: AbortSignal.timeout(15_000),
         })
-        if (r.status === 429) { last = `${method} 429`; await new Promise((s) => setTimeout(s, 1000 + 1500 * attempt)); continue }
+        if (r.status === 429) { last = `${method} 429`; await new Promise((s) => setTimeout(s, backoffBaseMs * (1 + 1.5 * attempt))); continue }
         if (!r.ok) { last = `${method} HTTP ${r.status}`; break }
         const j = (await r.json()) as { result?: T; error?: { message?: string } }
         if (j.error) { last = `${method}: ${j.error.message ?? "error"}`; break }
@@ -285,12 +288,13 @@ export interface ChainSalesResult {
 
 export async function runCandyChainSales(
   db: Db,
-  opts: { budgetMs: number; now?: () => number; fetchImpl?: FetchFn; urls?: string[]; concurrency?: number },
+  opts: { budgetMs: number; now?: () => number; fetchImpl?: FetchFn; urls?: string[]; concurrency?: number; retryBackoffMs?: number },
 ): Promise<ChainSalesResult> {
   const now = opts.now ?? Date.now
   const doFetch: FetchFn = opts.fetchImpl ?? ((u, i) => fetch(u, i))
   const urls = opts.urls ?? CHAIN_RPC_URLS
   const conc = Math.max(1, opts.concurrency ?? 4)
+  backoffBaseMs = Math.max(0, opts.retryBackoffMs ?? 1000)
   const deadline = now() + opts.budgetMs
   const floorSec = Math.floor(Date.parse(CHAIN_FLOOR_ISO) / 1000)
   const out: ChainSalesResult = {
@@ -308,6 +312,10 @@ export async function runCandyChainSales(
   if (qErr) { out.error = `candy_collections read: ${qErr.message}`; return out }
   const rows = (queue ?? []) as Array<{ address: string; name: string; chain_sig_cursor: string | null }>
   out.queued = rows.length
+  // 2026-11-22 (review): one transaction can fill cards of TWO Candy collections (a Tensor/7Aru sweep).
+  // The walk skips a signature already in the queue or `sales`, so parking only the walked collection's
+  // fill lost the other one for good. Park every Candy collection's fill from a fetched transaction.
+  const candyCollections = new Set(rows.map((r) => r.address))
 
   for (const c of rows) {
     if (now() > deadline) { out.not_reached = rows.length - out.checked; break }
@@ -335,17 +343,23 @@ export async function runCandyChainSales(
       const fills: ChainFill[] = []
       let next = 0
       let budgetHit = false
+      // 2026-11-22 (review): one worker's throw rejects Promise.all; the others must stop too, or they keep
+      // calling the RPC on this abandoned list while the next collection's workers start.
+      let aborted = false
       const worker = async () => {
-        while (next < todo.length) {
+        while (next < todo.length && !aborted) {
           if (now() > deadline) { budgetHit = true; return }
           const sig = todo[next++]
-          const tx = await rpc<ParsedTx | null>(doFetch, "getTransaction", [sig, { encoding: "jsonParsed", maxSupportedTransactionVersion: 1, commitment: "confirmed" }], urls)
-          if (!tx) throw new Error(`getTransaction ${sig}: not found`)
+          let tx: ParsedTx | null
+          try {
+            tx = await rpc<ParsedTx | null>(doFetch, "getTransaction", [sig, { encoding: "jsonParsed", maxSupportedTransactionVersion: 1, commitment: "confirmed" }], urls)
+          } catch (e) { aborted = true; throw e }
+          if (!tx) { aborted = true; throw new Error(`getTransaction ${sig}: not found`) }
           rep.fetched++
           const d = decodeChainFills(sig, tx)
           out.take_bids_seen += d.takeBids
           for (const u of d.unknownIx) if (!out.unknown_ix.includes(u)) out.unknown_ix.push(u)
-          for (const f of d.fills) if (f.collection === c.address) fills.push(f)
+          for (const f of d.fills) if (candyCollections.has(f.collection)) fills.push(f)
         }
       }
       await Promise.all(Array.from({ length: Math.min(conc, todo.length) }, worker))
@@ -381,8 +395,12 @@ export async function runCandyChainSales(
   // A refusal is not a failure of this lane (the range is re-read next run), but a run in which
   // EVERY collection it reached was refused read nothing, and is not ok.
   const allRefused = out.checked > 0 && out.rate_limited === out.checked
-  out.ok = out.failed === 0 && !allRefused
+  // 2026-11-22 (review): "all refused" alone let 325 refusals out of 326 read ok. A run in which at least
+  // half of the collections it reached were refused read too little to call healthy.
+  const mostRefused = out.checked >= 4 && out.rate_limited * 2 >= out.checked
+  out.ok = out.failed === 0 && !allRefused && !mostRefused
   if (out.failed > 0) out.error = `${out.failed} collection(s) failed; first: ${out.collections.find((c) => c.error && c.error !== "budget" && !/ 429$/.test(c.error))?.error ?? "?"}`
   else if (allRefused) out.error = `rate_limited: all ${out.checked} collection(s) refused`
+  else if (mostRefused) out.error = `rate_limited: ${out.rate_limited} of ${out.checked} collection(s) refused`
   return out
 }

@@ -241,6 +241,37 @@ describe("runCandyChainSales", () => {
     expect(r.error).toMatch(/rate_limited/)
     expect(state.updates).toEqual([])
   }, 20_000)
+  // 2026-11-22 (review of 58fbec845): a sweep can fill two Candy collections in ONE transaction. The walk skips a
+  // signature already queued, so the fill for the collection NOT being walked must be parked now or never.
+  it("parks a fill for another Candy collection found in the transaction being walked", async () => {
+    const OTHER = "OTHERCOLL"
+    state.collections = [{ address: OTHER, name: "Other", chain_sig_cursor: "Y0" }, { address: COLL, name: "ICONs", chain_sig_cursor: "OLD" }]
+    state.hist[OTHER] = [{ signature: BUY.signature, blockTime: BUY.tx.blockTime }, { signature: "Y0", blockTime: 1 }]
+    state.hist[COLL] = [{ signature: "OLD", blockTime: 1 }] // COLL's own walk never meets the signature
+    const r = await run()
+    expect(r.ok).toBe(true)
+    expect(state.parks.map((p) => p.p_signature)).toContain(BUY.signature)
+  })
+
+  it("a run in which at least half of the collections it reached were refused is NOT ok", async () => {
+    const A = "ACOLL", B = "BCOLL", C = "CCOLL"
+    state.collections = [{ address: COLL, name: "ICONs", chain_sig_cursor: "OLD" }, { address: A, name: "A", chain_sig_cursor: "a0" }, { address: B, name: "B", chain_sig_cursor: "b0" }, { address: C, name: "C", chain_sig_cursor: "c0" }]
+    state.hist[A] = [{ signature: "a0", blockTime: 1 }]
+    state.hist[B] = [{ signature: "b0", blockTime: 1 }]
+    state.hist[C] = [{ signature: "c0", blockTime: 1 }]
+    const refused = new Set([B, C])
+    const f = async (url: string, init: any) => {
+      const body = JSON.parse(init.body)
+      if (body.method === "getSignaturesForAddress" && refused.has(body.params[0])) return new Response("slow down", { status: 429 })
+      return fetchImpl(url, init)
+    }
+    const r = await runCandyChainSales(db(), { budgetMs: 60_000, now: () => NOW, fetchImpl: f as any, urls: [PUB, ARCH], concurrency: 2, retryBackoffMs: 0 })
+    expect(r.rate_limited).toBe(2)
+    expect(r.failed).toBe(0)
+    expect(r.ok).toBe(false)
+    expect(r.error).toMatch(/rate_limited: 2 of 4/)
+  })
+
   it("a failed signature read fails the run and leaves the cursor where it is", async () => {
     state.failSigsFor = COLL
     const r = await run()

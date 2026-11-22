@@ -105,8 +105,14 @@ export function buyerPaidFromTx(tx: SolanaTx, sale: { buyer: string | null; sell
 // full history but rate-limits (~1–2 getTransaction/s per IP).
 export const RPC_URLS = ["https://solana-rpc.publicnode.com", "https://api.mainnet-beta.solana.com"]
 
-export async function fetchTx(sig: string, doFetch: FetchFn, urls: string[] = RPC_URLS, retryDelayMs = 1500): Promise<SolanaTx | null | "rate_limited"> {
+// 2026-11-22 (review): a JSON-RPC error that is not a rate limit (e.g. "Transaction version (1) is not
+// supported", the pre-ca52dbbee failure) is an ERROR, not a refusal. Counted as a refusal it stopped runs
+// as `budget_stopped` with ok=true while the same targets failed forever.
+const RATE_LIMIT_RPC = /rate|too many|limit|429/i
+
+export async function fetchTx(sig: string, doFetch: FetchFn, urls: string[] = RPC_URLS, retryDelayMs = 1500): Promise<SolanaTx | null | "rate_limited" | { rpcError: string }> {
   let limited = false
+  let rpcError: string | null = null
   for (const url of urls) {
     let resp: Response
     try {
@@ -138,11 +144,17 @@ export async function fetchTx(sig: string, doFetch: FetchFn, urls: string[] = RP
       if (resp.status === 429) { limited = true; continue }
     }
     if (!resp.ok) { limited = true; continue }
-    const j = (await resp.json().catch(() => null)) as { result?: SolanaTx | null; error?: { code?: number } } | null
-    if (j?.error) { limited = true; continue }
+    const j = (await resp.json().catch(() => null)) as { result?: SolanaTx | null; error?: { code?: number; message?: string } } | null
+    if (j?.error) {
+      const msg = `${j.error.code ?? ""} ${j.error.message ?? ""}`.trim()
+      if (j.error.code === 429 || RATE_LIMIT_RPC.test(msg)) limited = true
+      else rpcError = msg.slice(0, 200) || "rpc error"
+      continue
+    }
     if (j?.result) return j.result
   }
-  return limited ? "rate_limited" : null
+  if (limited) return "rate_limited"
+  return rpcError ? { rpcError } : null
 }
 
 export interface BuyerPaidRunResult {
@@ -155,6 +167,7 @@ export interface BuyerPaidRunResult {
   errors_recorded: number
   not_found: number
   rate_limited: number
+  rpc_errors: number // JSON-RPC errors that are not rate limits (2026-11-22): the run is not ok
   budget_stopped: boolean
   error: string | null
 }
@@ -178,7 +191,7 @@ export async function runCandyBuyerPaid(
   const deadline = now() + opts.budgetMs
   const out: BuyerPaidRunResult = {
     ok: false, targets: 0, read: 0, applied: 0, paid_by_buyer: 0, paid_by_seller: 0,
-    errors_recorded: 0, not_found: 0, rate_limited: 0, budget_stopped: false, error: null,
+    errors_recorded: 0, not_found: 0, rate_limited: 0, rpc_errors: 0, budget_stopped: false, error: null,
   }
 
   const { data, error } = await db.rpc("candy_buyer_paid_targets", { p_limit: opts.limit ?? 600 })
@@ -227,6 +240,11 @@ export async function runCandyBuyerPaid(
       const tx = txs[k]
       if (tx === "rate_limited") { out.rate_limited++; consecutiveLimited++; if (consecutiveLimited >= 5) { out.budget_stopped = true; break outer } continue }
       consecutiveLimited = 0
+      if (tx !== null && typeof tx === "object" && "rpcError" in tx) {
+        out.rpc_errors++
+        if (!out.error) out.error = `rpc_error: ${tx.rpcError}`
+        continue
+      }
       if (tx === null) { out.not_found++; continue } // not retried as an error: next run tries again
       out.read++
       const sellers = new Set(group.map((g) => g.seller_address))
@@ -261,6 +279,7 @@ export async function runCandyBuyerPaid(
     out.error = (e instanceof Error ? e.message : String(e)).slice(0, 500)
     return out
   }
-  out.ok = true
+  // A JSON-RPC error on any read is a failure the lane must surface (it never resolves by itself).
+  out.ok = out.rpc_errors === 0
   return out
 }

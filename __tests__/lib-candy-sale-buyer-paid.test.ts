@@ -87,6 +87,27 @@ describe("runCandyBuyerPaid", () => {
     expect(applied).toEqual([])
   })
 
+  // 2026-11-22 (review): a JSON-RPC error that is not a rate limit (the pre-ca52dbbee "Transaction version (1) is
+  // not supported") used to count as a refusal: 5 in a row stopped the run as budget_stopped with ok=true, forever.
+  it("a JSON-RPC error that is not a rate limit is an error: counted, surfaced, the run is not ok, and it does not stop the run", async () => {
+    const applied: any[] = []
+    const many = Array.from({ length: 7 }, (_, i) => ({ ...SKENES, transaction_hash: `V${i}` }))
+    const r = await runCandyBuyerPaid(mkDb(many, applied), { budgetMs: 60_000, pauseMs: 0, concurrency: 1, retryDelayMs: 0,
+      fetchImpl: (async () => new Response(JSON.stringify({ error: { code: -32015, message: "Transaction version (1) is not supported" } }), { status: 200 })) as any, urls: ["u"] })
+    expect(r.rpc_errors).toBe(7)
+    expect(r.rate_limited).toBe(0)
+    expect(r.budget_stopped).toBe(false)
+    expect(r.ok).toBe(false)
+    expect(r.error).toMatch(/Transaction version \(1\) is not supported/)
+  })
+
+  it("a JSON-RPC rate-limit error is still a refusal", async () => {
+    const applied: any[] = []
+    const r = await runCandyBuyerPaid(mkDb([SKENES], applied), { budgetMs: 60_000, pauseMs: 0, retryDelayMs: 0,
+      fetchImpl: (async () => new Response(JSON.stringify({ error: { code: 429, message: "Too many requests" } }), { status: 200 })) as any, urls: ["u"] })
+    expect(r).toMatchObject({ rate_limited: 1, rpc_errors: 0 })
+  })
+
   it("a rate-limited RPC stops the run after 5 refusals and records nothing", async () => {
     const applied: any[] = []
     const many = Array.from({ length: 9 }, (_, i) => ({ ...SKENES, transaction_hash: `S${i}` }))
