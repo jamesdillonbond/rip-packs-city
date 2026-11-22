@@ -55,6 +55,8 @@ FMV is the product's core claim and the accuracy gate's subject. One engine per 
 
 ## Open issues
 
+- **Drop day (found 11-22, [strategy-2026-11-22.md](../strategy-2026-11-22.md) Move 1).** On the 11-11 Series 9 launch, 37.6 % of Top Shot sales sold against an ASK_ONLY price, at a median 2.16× the sale price. Within ±25 % at sale was 47.8 % (normal ~79). A hot new edition went ~20 h between snapshots. `fmv_accuracy_weekly` pools that day into its week and stored it 12 days later. **Read drop days at lag 0 in 6 h windows** (`check_topshot_ask_only_at_sale`, and its sentinel arm since 11-22). The 11-12 hot lane is sized for a drop on paper (11-11 peak: 155 editions selling in an hour; lane capacity 150 a run, ~3 runs an hour) but is untested on one.
+
 - **#193 (new 10-17): Pinnacle HIGH trails a naive last-5 median** in the first realised-sales read of Pinnacle FMV (since 10-11: within ±25 % 68.1 vs 74.2; 45 d: 53.9 vs 69.8), and MEDIUM beats HIGH. Cause: a 90-day recency-weighted median that lags falling liquid renders. Fix gated on ≥ 500 post-10-09 HIGH sales ([disney-pinnacle.md](../collections/disney-pinnacle.md)).
 - **M2 is not met.** All Day's LOW population is mostly a volume floor: of 1,661 LOW editions sized on 10-10, 1,307 had 1–4 sales in 30 d. Only the 269 dispersion-gated editions are code-shaped, and that gate stays by decision.
 - **R125 residuals:**

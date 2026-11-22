@@ -21,6 +21,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
   - Warns at ≥ 100 sales, ≥ 10 % ASK_ONLY and ratio ≥ 1.5. An unreadable result reads UNMEASURED.
   - 16-day calibration on 6 h windows: the four drop windows read 22.6–58.8 % at 1.93–2.43×; every other window ≤ 4.7 %.
   - Planted defect (ratio bar 3) fails 3 of 9 tests.
+- ⚠ **Time correction:** pushed ~9:39 AM PT, not ~9:45. The heading ran ahead of the clock. The strategy entry below it is ~9:34, not ~9:40. Headings left as written.
 - **Revert:** revert the code commit; `DROP FUNCTION public.check_topshot_ask_only_at_sale(integer);`
 
 ### 2026-11-22 ~9:40 AM PT · 📝 DOCS — strategy read: narrow to the Top Shot portfolio-and-packs loop, make drop day the accuracy proof, hold the estate (Claude Code cloud; Trevor: "Keep going and digging and probing and come up with a strategy")
