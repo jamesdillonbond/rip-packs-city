@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~1:45 AM PT · 🔧 SHIPPED (code) — Candy buyer-paid backfill: the 4-at-a-time change made history reads WORSE; back to one at a time, with a backed-off 429 retry and old sales sent straight to mainnet-beta (Claude Code cloud; scheduled 1:30 AM PT check)
+
+Measured at 1:30 AM PT: 3,435 of 18,686 Candy sales priced (0 errors; 3,199 buyer-paid at ratio 1.12–1.13, 236 pool fills at 1.00), but every run since the 7:45 PM change read only **10** transactions and logged 6–7 refusals — four parallel reads trip mainnet-beta's per-IP limit, the only keyless RPC that holds Candy's history (re-probed 11-22: publicnode/leorpc return null for old txs; drpc/blast/onfinality/helius need keys or refuse). Now: `concurrency` default 1, one retry after 1.5 s on a 429 before it counts as a refusal, and a sale older than 5 days skips publicnode (a known null). Tests: +1 (429 then answer = a read), refusal counts re-pinned for the retry. Preflight 6/6. Expect ~50+/run → backlog days, not hours; the trailing week was already complete.
+
+**Revert:** `git revert` the commit titled "candy: buyer-paid history reads sequential with a 429 retry".
+
 ### 2026-11-22 ~1:05 AM PT · 📝 DOCS — overnight pass: 0 shipped (quiet-and-honest); 11-21 evening post-ship watch all holding; health GREEN, 0 trust breaches; 2 items queued (Cowork cloud)
 
 - **0 production changes, 0 reverts.** Genuine overnight (clock no-skew: shell 09:02Z / DB 09:05Z / sale 09:03Z / FMV 08:55Z). Push AVAILABLE (laptop-VM `.rpc-git-cred`, dry-run exit 0). Stranded-output sweep CLEAN (ledger + flow-ecosystem-watch + metrics hash = origin; origin HEAD `ba0fc0cfa` unchanged).
