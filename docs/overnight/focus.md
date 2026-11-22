@@ -4,6 +4,13 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-11-22 ~4:00 PM PT (Claude Code cloud, daytime autonomous pass, late items) — three dated reads
+
+- **fmv-recalc :08 runs (from ~11-23):** `extra.historical_fallback_error` rate on runs starting at minute 8 falls from 21 % (16/77) toward the :28/:48 rate (~1 %) after job 704 moved off minute 9 (`20261122235804`). Still ≥ 10 % after a day → the collision is not job 704 alone; read the handoff's levers (1)/(2).
+- **ownership-onchain-walk next run:** `extra.wallet_error_samples` names the two wallets that fail every run (stage + error). That tells whether they are chain-unreadable (park them) or a read bug.
+- **Scratch tables:** a new `public.scratch_*` table is closed by `selfheal_audit_table_rls()` at the next :47 (`20261122234542`). A smoke `rls_off_base_table:scratch_*` that survives a :47 means the healer did not run.
+- ✅ Already verified: the Candy ask-ceiling sweep (`e724456aa`): 3:48 PM PT run error null, 34 capped, 0 Candy editions above a confirmed ask.
+
 ## STEER — added 2026-11-22 ~2:20 PM PT (Claude Code cloud, daytime autonomous pass) — five dated reads from today's ships
 
 Full detail: [handoff-2026-11-22-daytime-autonomous-pass.md](../handoff-2026-11-22-daytime-autonomous-pass.md).
