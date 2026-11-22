@@ -47,3 +47,20 @@ Push worked from this session (`git push` straight to `main`); no environment bl
 - #249 (ISR caches a failed pack-dist render): the throw-on-regeneration fix was tried once and served Next's unbranded 500 to 515 users (08-23 comment in the page); needs a preview-verified design, not an unattended change.
 - `refresh_wmc_fmv_changed` ~1 %/day statement timeouts: known, closed as low impact (#248).
 - `?token=` arm removal: dated read ~11-26 (focus.md).
+
+## FINAL STATE at thread archive — 2026-11-21 ~7:05 PM PT
+
+**Closed in this thread (all on `main`, all in the ledger):**
+- Candy phantom ASKS: 9,624 retired (`20261121004754` → `20261121010254` → `20261121012809`, incl. a fix to my own 6.6× plan regression); steady state ≤ one census+indexer cycle for newly re-surfaced phantoms; live control: 0 of 88 new real asks retired.
+- Candy market-history: 16,471 phantom-era rows blanked (`20261121043220`, Trevor-approved; true zeros kept); caption names both withdrawn windows (`04c50d1a4`, verified in the rendered page).
+- Zero-yield arm: drained Candy name-only lane suppressed (`20261121002539`); stale `candy-sales-indexer` suppression retired by Cowork (`20261121044524`).
+- Pinnacle sales leaderboard: 3.56 s → 34 ms, output identical (`20261121030008`).
+- UFC Aptos sales lane: positive control added; its zeros proven to be a quiet market.
+- Register R151/R153 rows closed (fixed 11-15), R152 re-read; Cowork inbox filing `2026-11-21T0315Z` fully resolved.
+- Trust board: all arms ok at 6:59 PM PT 11-21 (the self-inflicted `candy_ask_book_drop_pct` breach cleared as predicted).
+
+**Owed after archive (handed to the overnight pass via `docs/overnight/focus.md`, top steer):**
+1. The Candy offers FUNDING GATE's first real run, `candy-offers-indexer` 10:50 PM PT 11-21 (`2f6d01414`, escrow shape fixed): expect the 4 `GFGmpV5z…` phantom bids inactive and `funding_unknown` 0. If not, `funding_unknown_reasons` names the leg.
+
+**Needs Trevor (one line):** retire the single remaining stale Candy ask `CFGipvw9…` (Blackest Night #1, $72.76, pre-lock seller; its card has no holder anywhere, so neither retirer arm reaches it, and a rule for it would flap real escrow listings — see #257). One-off `UPDATE candy_listings SET is_active = false WHERE pda_address = 'CFGipvw9iq69QEpdr3yiNjvYsBQXWwugXDdgnyBiq7Q9' AND is_active`; no writer re-activates it (unresolved asks are never upserted).
+

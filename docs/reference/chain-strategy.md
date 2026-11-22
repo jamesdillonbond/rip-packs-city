@@ -255,6 +255,14 @@ Magic Eden kept serving Candy asks placed BEFORE the 10-12 lock, after Candy mov
 - ⚠ **A perfect 1:1 holder↔seller pairing reads two ways** — "same person, two keys" (live) or "same person, old wallet ↔ new wallet" (phantom). Only an outside fact (who has traded since the change point) tells them apart; the pairing alone does not. ⚠ And "sold before the lock" is NOT that fact on its own — pre-lock collectors still list and sell. The control that held (6:15 PM PT): sellers whose asks actually FILLED since reopening hold 329 of their 331 active asks themselves (holder = seller).
 - **The legacy census (`lib/candy/collections-census.ts`) is INSERT-ONLY:** an unchanged holding keeps the `last_seen_at` of the walk that inserted it. Any rule that needs "the census re-saw the holder after X" must read the COLLECTION's walk time (`candy_collections.last_census_at`, single-run walks only: `last_census_items` not null), not the row — `candy_retire_listings_owner_moved` (`20261121004754`).
 
+### Candy phantom BIDS, and three predictions that were wrong (2026-11-21)
+
+- **Bids have the same phantom class as asks.** Magic Eden kept serving bids from wallets Candy drained at the lock (11-20: the whole active book was 4 bids from one wallet holding 0.00089 SOL, no ME escrow). A bid's fact is FUNDING, not holdings: `lib/candy/offer-funding.ts` drops a bid only when the bidder's ME escrow AND wallet are both below it; any unknown read keeps it.
+- ⭐ **Magic Eden `GET /v2/wallets/{w}/escrow_balance` answers `{ buyerEscrow, balance }`** (observed from Vercel 11-21), not `{ buyerEscrowBalance }`. Solana's public RPC `getBalance` works from Vercel without a key. Neither is reachable from a cloud sandbox — learn shapes from the lane's own run log.
+- ⛔ **Three predictions in this thread were wrong, and each was caught only because a falsifier was written down:** (1) "ME still serves it, so it is live" (reverted ~4 min later); (2) "a retired bidder will not be rediscovered by the sweep" (it was, by the next run); (3) the escrow response shape. The cheap fix that worked every time: **make the lane record WHY a read was unknown** (status / top-level key names, never values) before guessing again — the 4:50 PM run named the failing leg on its first try.
+- ⚠ **A one-off UPDATE against a lane that re-upserts the same rows is not a fix** — fix the writer (the 4 bids came back within 6 h).
+- ⚠ **"No holder row → retire" is NOT safe for asks**: a listed card in ME escrow loses the seller's row on a wallet walk (#145) until the next collection walk re-attributes it; such a rule would flap real listings.
+
 ## Displaced from CLAUDE.md 2026-09-26 (verbatim) — the tagline rule
 
 Moved to pay for the Disney Pinnacle grain rule in CLAUDE.md's quick-reference facts; CLAUDE.md keeps a pointer here.

@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-21 ~7:05 PM PT · 📝 DOCS — Candy phantom thread closed out before archive; one dated read handed to the overnight pass (Claude Code cloud; Trevor: "leaving nothing unresolved from this thread … update any relevant documentation")
+
+- **State at 6:59 PM PT:** trust board all ok (`candy_ask_book_drop_pct` cleared as predicted); 9,624 phantom asks retired, 45 flagged active (steady-state re-surfacing, retired within one walk+indexer cycle), 0 of 88 new real asks retired; 7 active Candy bids (4 phantom + 3 from another bidder).
+- **Handed off:** the funding gate's first real run (10:50 PM PT, `2f6d01414`) → `docs/overnight/focus.md` top steer, with expectations and the reason field to read if it fails. The in-session 11:05 PM PT check (`trig_014r3FoiyBP6ch6pnpS21KRR`) was deleted so nothing fires into the archived thread.
+- **Docs updated:** focus.md (new steer; 11-20 steer marked CLOSED), known-issues #257, chain-strategy.md (phantom bids, ME escrow shape, three wrong predictions and how each was caught), handoff final-state section, session log.
+- **Needs Trevor:** one-off retirement of the single stale ask `CFGipvw9…` (#257 explains why it is not a rule).
+
 ### 2026-11-21 ~7:10 PM PT · 🔧 SHIPPED (migration + code) — sealed-pack asks capped at 3x the drop's best reference; never-sold listed packs are "listed, not valued" (Cowork cloud via laptop VM; Trevor: "Cap by references")
 
 **Why.** The new sealed-pack line read alxo's packs at $1,142,835.82 against ~$15k of last sales: a $1,000,000 ask on "Jordan Poole 2022 NBA Finals Challenge Reward" (one sealed copy, never sold — the holder's own listing in all likelihood) plus $999–$50,505 asks on never-sold reward packs. The binder Unopened "Market value" carried the same number.
