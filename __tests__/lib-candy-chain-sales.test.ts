@@ -49,6 +49,11 @@ describe("decodeChainFills (real transactions)", () => {
     expect(f.seller).toBe(T.tx.transaction.message.accountKeys.find((k: any) => k.signer).pubkey)
     expect(f.marketplace).toBe(CHAIN_MARKETPLACE)
   })
+  it("a bid fill whose seller also had a listing closed in the same tx is priced at the BID (0.002), not the seller's receipts", () => {
+    const T = fx("takebidcore-seller-listing-closed")
+    const d = decodeChainFills(T.signature, T.tx)
+    expect(d.fills.map((f) => f.priceSol)).toEqual([0.002])
+  })
   it("a listing is not a sale", () => {
     expect(decodeChainFills(LIST.signature, LIST.tx).fills).toEqual([])
   })

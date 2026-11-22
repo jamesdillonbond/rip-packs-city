@@ -143,10 +143,11 @@ export function decodeChainFills(signature: string, tx: ParsedTx): DecodeResult 
 }
 
 // A bid filled (the seller signs; the bidder's SOL was escrowed in a program account, so it leaves
-// as a balance change, not a system transfer). Price = everything paid out to accounts other than
-// the bidder (seller proceeds + venue fee + royalties) plus the transaction fee the seller paid out
-// of those proceeds; the bidder's own credit is the closed escrow's rent coming back. Checked on 6
-// real 7Aru fills 11-11 → 11-20 (escrow debit − bidder refund = this sum, to the lamport).
+// as a balance change, not a system transfer). Price = the escrow's debit (the most-debited account
+// other than the signer) minus what came back to the bidder (the closed escrow's rent). NOT "what
+// the seller and the royalty accounts received": a seller whose own listing closes in the same tx
+// gets that listing's rent too (seen 11-11: it would have read 0.00426 SOL for a 0.002 bid).
+// Checked on 6 real 7Aru fills 11-11 → 11-20, each to the lamport against the payouts.
 function decodeTakeBid(signature: string, tx: ParsedTx, inner: ParsedIx[], marketplace: string): ChainFill | string {
   const meta = tx.meta!
   const keys = tx.transaction.message.accountKeys
@@ -156,12 +157,15 @@ function decodeTakeBid(signature: string, tx: ParsedTx, inner: ParsedIx[], marke
   const [asset, collection, , , bidder] = core.accounts
   const seller = keys.find((k) => k.signer)?.pubkey ?? null
   if (!seller || seller === bidder) return "self_fill"
-  let lamports = meta.fee ?? 0
+  let escrowDebit = 0
+  let bidderCredit = 0
   keys.forEach((k, i) => {
     const d = meta.postBalances![i] - meta.preBalances![i]
-    if (d > 0 && k.pubkey !== bidder) lamports += d
+    if (k.pubkey === bidder && d > 0) bidderCredit += d
+    if (k.pubkey !== seller && d < 0 && -d > escrowDebit) escrowDebit = -d
   })
-  if (!(lamports > (meta.fee ?? 0))) return "no_payment"
+  const lamports = escrowDebit - bidderCredit
+  if (!(lamports > 0)) return "no_payment"
   return { signature, asset, collection, blockTime: tx.blockTime ?? 0, priceSol: lamports / 1e9, buyer: bidder, seller, marketplace }
 }
 
