@@ -60,6 +60,7 @@ import { enumProgress, stepStability, enumStopReason } from "./panini-enum-progr
 import { tagSaleRecords } from "./panini-sales-list.mjs";
 import { saleListOf } from "./panini-sales-list.mjs";
 import { buildWalkOrder } from "./panini-walk-order.mjs";
+import { selectPackPages } from "./panini-pack-pages.mjs";
 import { createStallWatchdog } from "./panini-stall-watchdog.mjs";
 import { isPackishEvidence, subpackUrlsFromHtml, packGridCandidates } from "./panini-pack-grid.mjs";
 
@@ -1009,13 +1010,15 @@ async function main() {
   //     (the route also maps a repeat pack_sku onto the existing row). Each visit is reported back
   //     as walked/captured — a page type that never fires getPackMarketStats shows up as
   //     last_walked_at without last_captured_at, instead of as a pack that silently never updates.
-  const packUrlList = [...new Set([...(SERVED_PACK_URLS ?? PACK_URLS), ...harvestedPackUrls])]
-    .sort((a, b) => Number(b.includes("/subpack-")) - Number(a.includes("/subpack-")));
+  const packUrlList = [...new Set([...(SERVED_PACK_URLS ?? PACK_URLS), ...harvestedPackUrls])];
   // 40 -> 60 (2026-10-03): the secondary pack grid registered 64 pages on its first run; 40 pages took
   // 3.5 min (~5 s each). Pages rotate stalest-walk first (route GET), so the rest follow next run.
+  // ⛔ 2026-11-22: the cap is taken from the STALEST-FIRST list and only then ordered subpack-first —
+  // sorting the whole list first kept every /pack-<name>.html drop page (NWSL #1065 …) behind 404
+  // subpack pages forever. See scripts/panini-pack-pages.mjs.
   const PACK_PAGES_MAX = Number(process.env.PANINI_PACK_PAGES_MAX || 60);
   const packVisits = [];
-  for (const url of RUN_MODE === "walk" ? [] : packUrlList.slice(0, PACK_PAGES_MAX)) {
+  for (const url of RUN_MODE === "walk" ? [] : selectPackPages(SERVED_PACK_URLS ?? PACK_URLS, [...harvestedPackUrls], PACK_PAGES_MAX)) {
     currentPackId = (url.match(/subpack-\d+-(\d+)\.html$/) || [])[1] || null;
     currentPackUrl = url;
     watchdog.mark("packs", url.slice(-80));
