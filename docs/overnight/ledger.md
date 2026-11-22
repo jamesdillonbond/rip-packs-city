@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~10:20 AM PT · 🔧 SHIPPED (code) — drops: Top Shot This trade-in packs with no hand entry are surfaced (`meta.needs_hand_entry` + a draft warning); calendar doc records the Candy store relaunch and Overtime packs (Claude Code cloud, X-draft run; Trevor: "Keep digging")
+
+- Why: Top Shot This packs are REWARD dists in the book, which the calendar drops by design; only MANUAL_DROPS lists them, so 11-16's Stephen Curry Top Shot This Pack (dist 8941) was on no report. `topShotThisNeedingEntry()` (lib/insights/pack-calendar.ts) names book Top Shot This dists started within ±7 d that no Top Shot MANUAL_DROPS entry covers (challenge/reward packs excluded); the API returns them in `meta.needs_hand_entry`; `x-draft.mjs` warns on each. Tests +2.
+- Found while checking this week: no other new drop on any official source (Top Shot blog, All Day blog — no new Moments since 05-13, Panini store/blog — Black Friday is physical only, Candy blog, Pinnacle releases). The new candy.io opened 11-18 and RPC does not read its drops page (refuses automated fetches): `x-calendar.md` now says to check it by hand.
+- **Revert:** `git revert <this commit>` (code only).
+
 ### 2026-11-22 ~10:20 AM PT · 📝 DOCS — three strategy decisions taken under delegation: Top Shot gate = realised-sales accuracy, maintenance mode, lane budget (Claude Code cloud; Trevor: "Do what you think is best")
 
 - **Gate:** for Top Shot, M1/M2 are replaced by HIGH and MEDIUM ≥ 70 % within ±25 % for 4 consecutive weekly reads, plus one drop day ≥ 70 % at sale, plus M3–M11 (go-live-2026-09.md §6 item 5). Status: 1 of 4 weeks met; no drop day read yet. Outreach and #66 stay held.
