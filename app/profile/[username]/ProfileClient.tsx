@@ -312,8 +312,6 @@ export default function ProfileClient(props: {
   const [heldPacksFailed, setHeldPacksFailed] = useState(false);
   useEffect(function() {
     if (!username) return;
-    setHeldPacks(null);
-    setHeldPacksFailed(false);
     fetch("/api/public/profile/" + encodeURIComponent(username) + "/packs")
       .then(function(r) {
         if (!r.ok) throw new Error("packs " + r.status);
@@ -326,8 +324,9 @@ export default function ProfileClient(props: {
           lowAskUsd: Number(d?.low_ask_usd) || 0,
           walletsFailed: Number(d?.wallets_failed) || 0,
         });
+        setHeldPacksFailed(false);
       })
-      .catch(function() { setHeldPacksFailed(true); });
+      .catch(function() { setHeldPacks(null); setHeldPacksFailed(true); });
   }, [username]);
 
   // Who's viewing — to show the share block only on the viewer's own profile.

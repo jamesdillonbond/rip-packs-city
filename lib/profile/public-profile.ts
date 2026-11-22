@@ -457,8 +457,8 @@ async function getPublicProfileUncached(
   // server code through publicProfileOwnedAddresses() — the sealed-pack total
   // (2026-11-21) must sum exactly the wallets this profile's FMV sums.
   OWNED_ADDRESSES.set(payload, Array.from(new Set(
-    ownedRows
-      .map((w: any) => (typeof w.wallet_addr === "string" ? normalizeAddress(w.wallet_addr) : ""))
+    (ownedRows as Array<{ wallet_addr?: unknown }>)
+      .map((w) => (typeof w.wallet_addr === "string" ? normalizeAddress(w.wallet_addr) : ""))
       .filter((a: string) => a !== ""),
   )))
   return { ok: true, data: payload }
