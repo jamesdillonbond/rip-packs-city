@@ -4,6 +4,14 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-11-22 ~10:20 AM PT (Claude Code cloud) — three strategy decisions now BIND the night pass
+
+Source: [strategy-2026-11-22.md](../strategy/strategy-2026-11-22.md) §4 (Trevor: "Do what you think is best").
+- ⛔ **LANE BUDGET:** do not add a pg_cron job or pipeline unless the same change retires one, and write both in the ledger. Baseline: 318 active jobs on 11-22.
+- ⛔ **MAINTENANCE MODE** for Panini, Pinnacle, Golazos and UFC: fix defects and keep data honest; no new features or surfaces.
+- **Mon 11-23 ~3:45 AM PT:** read `fmv_accuracy_weekly` for the 11-16 week, Top Shot HIGH / MEDIUM within ±25 %. Each ≥ 70 makes week 2 of the 4 the Top Shot gate needs (11-09 was week 1: 80.1 / 74.1). Write the reading into go-live-2026-09.md §6 item 5.
+- **On any new major Top Shot release** (Atlas book `product='nba'`): the sentinel arm "Top Shot Sales Against ASK_ONLY (6h)" is the drop-day read. On the drop day and the day after, also run the per-PT-day lag-0 query in strategy-2026-11-22.md §1. A pass (≥ 70 % within ±25 % at sale) is the gate's drop-day condition.
+
 ## STEER — added 2026-11-22 ~7:50 AM PT (Claude Code cloud) — three carried queue labels CLOSED by measurement; two new dated reads
 
 - **Stop carrying (closed by a 7-day read, 11-22 ~7:45 AM PT):** `REFRESH-SPECIAL-SERIAL-OWNERS-MV-TIMEOUT` — job 332 `rpc-refresh-special-serial-owners-mv` 0 failed / 14 runs, max 38 s. `THIN-FMV-GUARD-CONTENTION` — job 63 `rpc-refresh-thin-fmv-guard` 0 / 7, max 38 s. `SERIAL-FMV-POWER-MODEL-WEEKLY-TIMEOUT` — job 61 0 / 1, 19 s (and the other 5 weekly serial-FMV jobs 0 failed). Re-open any of them only on a NEW failure in `cron.job_run_details`, never from the carried list.

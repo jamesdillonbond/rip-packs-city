@@ -12,6 +12,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~10:20 AM PT · 📝 DOCS — three strategy decisions taken under delegation: Top Shot gate = realised-sales accuracy, maintenance mode, lane budget (Claude Code cloud; Trevor: "Do what you think is best")
+
+- **Gate:** for Top Shot, M1/M2 are replaced by HIGH and MEDIUM ≥ 70 % within ±25 % for 4 consecutive weekly reads, plus one drop day ≥ 70 % at sale, plus M3–M11 (go-live-2026-09.md §6 item 5). Status: 1 of 4 weeks met; no drop day read yet. Outreach and #66 stay held.
+- **Maintenance mode** for Panini, Pinnacle, Golazos and UFC (written into both collection files). **Lane budget:** baseline 318 pg_cron jobs; a new job ships only beside a retirement. Focus steer added for the night pass.
+- **Event:** anchors to the next major Top Shot release; none is in the Atlas book yet. No challenge built ahead of a date; prizes stay Trevor's call.
+- **Correction:** the strategy doc's "DB-hours" were wall hours. The top job, `rpc-pinnacle-opener-lane`, is almost all `pg_sleep(45)` (median run 0.04 s).
+- **Revert:** revert this commit (docs only).
+
 ### 2026-11-22 ~10:40 AM PT · 🔧 SHIPPED (code) — candy-chain-sales no longer trusts a short signature listing: it must PROVE it reached the cursor (or the floor) (Claude Code cloud; same thread)
 
 - **Defect found by the 10:11 AM run:** 13 of the census's 17 fills landed; the 5 missing (tiny, 0.0034–0.013 SOL, 2026 All-Star ICONs) were never fetched. publicnode answered that collection's `getSignaturesForAddress` from **11-21 00:20 UTC onward only**, a short page, so the walk read "end of history" and advanced the cursor past 11-20. The census had seen them hours earlier — the RPC's retention moves (or its nodes differ).

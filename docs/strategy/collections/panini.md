@@ -141,6 +141,7 @@ Read from the registry (`lib/collections.ts` `pages` / switches), the shared `[c
 - **10-21 (Trevor: "Do what you think is best"):** the tier is RPC's mint-cap band, not Panini's rarity word — COMMON = caps ≥ 200 (Panini's Uncommon AND Common), RARE = 26–199, LEGENDARY = 2–25, ULTIMATE = 1 (`lib/chains/panini/ingest-normalize.ts`). Kept so tier filters, tier mix and pack EV mean the same in every collection; Panini's own label stays in `panini_editions.rarity_label` (#206 c).
 - **10-21:** a set page is ONE `sets` row (product-scoped slug; #204).
 - **Product rules:** read-only; accuracy is the gate; no paid tier until 100 WAU; no infra spend before revenue.
+- **11-22 (Trevor: "Do what you think is best"): MAINTENANCE MODE.** Keep data honest and pages up, fix defects, no new features or surfaces, until signed-in members exceed ~10 a fortnight (6 on 11-22). Lane budget: a new pg_cron job ships only beside a retirement. [strategy-2026-11-22.md](../strategy-2026-11-22.md) §4.
 
 - **11-09 (signup-wave remediation):** `panini-1.4.2` — HIGH needs ≥ 3 sales in the 30-day feed, else MEDIUM; prices and the HIGH+MEDIUM gate share unchanged. Measured on 1.4.x HIGH vs the next sale since 10-24: 3+ in 30 d 59.6 % within ±25 % / WAPE 26.4 (n 3,504) vs thin HIGH ~47.6 % / WAPE 34–61 (n 635) vs MEDIUM 38.7 / 53.8. Kill switch `PANINI_FMV_ENGINE=1.4.0`. Every Panini FMV surface carries `lib/panini/fmv-source-note.ts` ("comes only from sales on Panini's own platform … a few days to reach RPC"); `panini_sales` is 100 % Panini-platform sale kinds.
 

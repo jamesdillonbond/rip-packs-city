@@ -99,6 +99,7 @@ Read from the registry (`lib/collections.ts`), the shared `[collection]` routes,
 - Writers obey the grain too: names come from the catalog by render_id (#151).
 - Do **not** add a zero-yield suppression for the pack-open lanes. The 09-12 metadata-backfill failure was exactly "ok while writing nothing" (10-17 overnight).
 - Estate-wide: read-only product, accuracy is the gate, no paid tier until 100 WAU, no infra spend pre-revenue, no growth tactics before the gate passes.
+- **11-22 (Trevor: "Do what you think is best"): MAINTENANCE MODE.** Keep data honest and pages up, fix defects, no new features or surfaces, until signed-in members exceed ~10 a fortnight (5 on 11-22). Lane budget: a new pg_cron job ships only beside a retirement. [strategy-2026-11-22.md](../strategy-2026-11-22.md) §4.
 
 ## Needs Trevor
 

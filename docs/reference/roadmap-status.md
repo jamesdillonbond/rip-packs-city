@@ -1153,6 +1153,13 @@ A dated snapshot. The item text in [known-issues.md](known-issues.md) wins over 
   ⤷ **Re-read 2026-10-19 ~1:20 PM PT: n 27,746; `panini_sales` 11.8 % / 60.9 % vs serials 13.4 % / 59.4 % — the tie broke narrowly toward `panini_sales`. Held for Trevor** (panini.md Next 7).
 - **LOW tier: SHIPPED as engine `panini-1.2.0`.** LOW (sales exist, none in 30 d) now prices at the median of the edition's last <=3 non-special sales at ANY age (`panini_last_sales_fmv`, migration `20261001030131`), not Panini's lifetime `avg_sale`. Backtest, 45 d, targets whose edition had no sale in the prior 30 d — fully-read editions n=597: lifetime avg MdAPE 82.5 % / ratio 1.83 / 22 % within ±25 → last-3 median 15.0 % / 1.00 / 55 %; partially-read n=1,871: 70.4 % / 1.68 → 66.7 % / 1.65. On sales of $10+ the two are about equal (both ~1.14×), so the gain is mostly on cheap cards. Kill switch `PANINI_FMV_ENGINE=1.1`. Re-measure at the 10-07 review, including the Hobby/FOTL pack EV the LOW tier dominated.
 
+## Decisions taken — the 11-22 strategy read (2026-11-22 ~10:20 AM PT; Trevor: "Do what you think is best")
+
+All three are in [strategy-2026-11-22.md](../strategy/strategy-2026-11-22.md) §4, with their evidence:
+- **Top Shot gate = realised-sales accuracy.** HIGH and MEDIUM each ≥ 70 % within ±25 % for 4 consecutive weekly reads, plus one drop day ≥ 70 % at sale, plus M3–M11. All Day M2 no longer holds Top Shot. 1 of 4 weeks met at decision.
+- **Next event** anchors to the next major Top Shot release; none is dated on 11-22.
+- **Maintenance mode** for Panini, Pinnacle, Golazos and UFC, and a lane budget (318 pg_cron jobs baseline; a new job ships only beside a retirement).
+
 ## Decisions taken — the 10-19 thread's open items (2026-10-19 ~10:20 PM PT; Trevor: "Make decisions on these yourself")
 
 - ✅ **SHIPPED 2026-10-24 ~9:00 AM PT (`20261024152200` + route; kill switch `PANINI_FMV_ENGINE=1.3.1`).** **Panini 30-day FMV input → `panini_sales` (`panini-1.4.0`): YES, ship on or after 10-24, not now.** The gate is met (MdAPE 11.8 vs 13.4 %, ±25 % 60.9 vs 59.4, n 27,746; plus 4,871 recent-sale targets serials cannot see). It waits because `panini-1.3.0/1.3.1` shipped 10-18/10-19 and their first live read is due 10-22..10-24 (panini.md Now 1); re-pricing most of the catalogue before that read would pool two engine changes into one window, which measures neither. Ship it as `panini-1.4.0` with `PANINI_FMV_ENGINE=1.3.1` as the kill switch, then read it on its own window. Owner: the first interactive session on/after 10-24, after the 1.3.x read.
