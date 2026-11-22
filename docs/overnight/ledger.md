@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~9:26 AM PT · 🔧 SHIPPED (code) — drops report: a NEW Pinnacle drop not yet on disneypinnacle.com/releases is a draft warning; trade-in/auction blog posts are probed; /insights/drops cards show minted supply (Claude Code cloud, X-draft run; Trevor: "Keep going and do all you can")
+
+- `scripts/social/x-draft.mjs` missed-drop probe: (1) REVERSE check — a new (upcoming / <36 h) Pinnacle calendar drop whose title is not on the releases page warns "format and close unconfirmed" (today: Frozen Seasonal Harvest Vol.1, Winnie the Pooh: Friends-Giving Vol.2); (2) a page that parses to ZERO releases now warns instead of passing silently; (3) blog posts titled trade-in / auction in the last 10 days warn (no feed carries trade-in auctions).
+- `app/insights/drops/page.tsx`: a card with `minted` shows "490 minted" (Pinnacle; same rule as the post/image). `docs/social/x-calendar.md` updated. tsc + ci:guards + related tests + eslint green.
+- **Revert:** `git revert <this commit>` (code only).
+
 ### 2026-11-22 ~9:40 AM PT · 🧪 TESTS — version-1 coverage for both Candy chain lanes (Claude Code cloud; Trevor: "Keep going")
 
 - Found independently by reading `candy-chain-sales`' first run (9:11 AM PT: `ok=false`, 5 collections refused with "Transaction version (1) is not supported"; a live pg_net probe showed the refused tx is a 7Aru ListCore). The Candy thread shipped the fix first (`ca52dbbee`, both `chain-sales.ts` and `sale-buyer-paid.ts`) — my identical code change was dropped at merge.
