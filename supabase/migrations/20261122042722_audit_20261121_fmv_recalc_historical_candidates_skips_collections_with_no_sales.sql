@@ -1,8 +1,8 @@
 -- audit_20261121_fmv_recalc_historical_candidates_skips_collections_with_no_sales
 --
--- 2026-11-21 ~9:00 PM PT (Claude Code cloud, autonomous pass; Trevor: "work autonomously ... fix anything").
+-- 2026-11-21 ~8:20 PM PT (Claude Code cloud, autonomous pass; Trevor: "work autonomously ... fix anything").
 -- WHY. fmv-recalc's historical fallback still hit its own 60 s statement_timeout on 14 of 255 runs in 3 days
--- (PostgREST 500s; extra.historical_fallback_error). Measured 11-21 ~8:50 PM PT: 1,178k buffers, 42k read,
+-- (PostgREST 500s; extra.historical_fallback_error). Measured 11-21 ~8:18 PM PT: 1,178k buffers, 42k read,
 -- 23.0 s for 3 rows. The stale half is cheap (0.8 s warm, 28,393 editions); the cost is the per-edition paid-sale
 -- probe across 7 sales partitions, and 9,320 of those editions are Panini -- 0 rows in `sales` (its sales live in
 -- panini_sales), so every one of those probes is guaranteed empty.

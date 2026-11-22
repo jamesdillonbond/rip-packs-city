@@ -18,6 +18,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 - **Verified:** output hash identical before/after on the production call (3 rows) AND on a widened population (`'1 day'`, limit 100k: **8,851 rows**, `f4f5acf5…` both). Production call 1.18M → **698k buffers**, 1.0 s warm. Live md5 `2f638605…` = file; config/SECURITY DEFINER/ACL unchanged; guards `fmv-writers-read-sales-market-not-sales` + anon-exec + pin tests pass.
 - **Falsifier:** `count(*) filter (where extra->>'historical_fallback_error' is not null)` on `fmv-recalc` over the next 3 days vs **14 / 255** before; `historical_fallback` row counts should be unchanged in kind.
 - **Revert:** re-apply the function block of `20261110213841_audit_20261110_fmv_recalc_historical_candidates_probes_sales_per_edition.sql`.
+- ⚠ Time correction: the heading's "~9:25 PM PT" was mis-estimated; the migration was applied at 04:27Z = **~8:27 PM PT** (`schema_migrations.version` 20261122042722) and measured at ~8:18 PM PT.
 
 ### 2026-11-21 ~8:10 PM PT · 🗄 DB MAINTENANCE — three bloated `topshot_atlas_market_events` indexes rebuilt CONCURRENTLY, 752 MB → 158 MB (Claude Code cloud, autonomous pass)
 

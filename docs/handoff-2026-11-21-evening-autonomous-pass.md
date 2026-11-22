@@ -14,12 +14,12 @@
 
 ## Dated reads owed (also in `focus.md`, top steer)
 
-- **`analytics_packs_summary` 500s** — 11 in the 24 h before the rebuild (last 03:06Z). Since 04:00Z: no calls yet at 8:35 PM PT, so no reading. Expect ~0: `select log_attributes['response.status_code'], count() from logs where source='edge_logs' and log_attributes['request.path']='/rest/v1/rpc/analytics_packs_summary'` (Supabase `query_logs`), and Vercel `[analytics/packs/summary] ok elapsed=` for Top Shot well under the old 13 s.
+- **`analytics_packs_summary` 500s** — 11 in the 24 h before the rebuild (last 03:06Z). Since 04:00Z: no calls yet at 8:20 PM PT, so no reading. Expect ~0: `select log_attributes['response.status_code'], count() from logs where source='edge_logs' and log_attributes['request.path']='/rest/v1/rpc/analytics_packs_summary'` (Supabase `query_logs`), and Vercel `[analytics/packs/summary] ok elapsed=` for Top Shot well under the old 13 s.
 - **`ts-listings-atlas-sync` sync step** — median of `extra->'sync'->>'duration_ms'` since `2026-11-22 04:05Z` vs **4,595 ms** in the 48 h before. Three post-rebuild ticks read 2.2–4.3 s; not yet a claim.
 - **`topshot-onchain-art-backfill`** — first run on the new code is 10:22 PM PT. Within ~12 h a run should read `terminated_reason = legacy_resting` with `legacy_rest_until` ~7 d out and `duration_ms` of a few seconds.
 - **fmv-recalc historical fallback** — `extra.historical_fallback_error` count over 3 days vs 14 / 255 before `20261122042722`.
 - **Re-bloat** — ~1 week: `pgstatindex('public.idx_tame_open_listing_seen_cover').avg_leaf_density` and `…('public.idx_pack_ev_history_listing_time')`. Under ~30 % → a scheduled weekly rebuild (each took < 40 s).
-- **Candy funding gate (unchanged, from the earlier thread)** — 10:50 PM PT run. ✅ Pre-checked 8:00 PM PT via `pg_net`: Magic Eden returns `{"buyerEscrow": …, "balance": 0}` with `balance` a NUMBER, so `parseEscrowBalance` will parse it; the 4 `GFGmpV5z…` bids are active again until that run (the 4:50 PM run could not read the shape).
+- **Candy funding gate (unchanged, from the earlier thread)** — 10:50 PM PT run. ✅ Pre-checked 7:30 PM PT via `pg_net`: Magic Eden returns `{"buyerEscrow": …, "balance": 0}` with `balance` a NUMBER, so `parseEscrowBalance` will parse it; the 4 `GFGmpV5z…` bids are active again until that run (the 4:50 PM run could not read the shape).
 
 ## Looked at and left (with the reason)
 
