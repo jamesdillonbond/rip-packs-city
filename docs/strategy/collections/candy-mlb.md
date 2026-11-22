@@ -1,6 +1,16 @@
 # Candy MLB — collection roadmap (refreshed 2026-10-17, PT)
 > Dated snapshot; every number is a dated sample — re-derive before quoting. Canonical plan: [roadmap-2026-10-17.md](../roadmap-2026-10-17.md). Defects: [known-issues.md](../../reference/known-issues.md) (item text wins over this file).
 
+## ⭐ 2026-11-22 morning — the market is trading again; the HIGH/MEDIUM share is a new grain (read first)
+
+Live reads 11-22 ~9:30 AM PT (Claude Code cloud; [strategy-2026-11-22.md](../strategy-2026-11-22.md) §1). Dated samples.
+- **Trading:** 153 sales / **$4,821** in 7 days (170 in 30 days), against All Day's 4,236 / $5,280. That is near-parity in dollars from 1/28th of the trades. The "frozen since 10-11" lines below are superseded.
+- **Off-Magic-Eden fills** are captured by `candy-chain-sales`. Its 10:11 AM PT run read `ok=true`, 0 collections failed, 4 fills, after the version-1 transaction fix.
+- **`candy_fmv_high_med_share_pct` 56.8 → 0.7 % (11-02 → 11-22) is a recount, not a regression.** The 11-09 per-mint re-key turned ~125 editions into **3,059** current snapshots: 2,128 STALE, 833 LOW, 18 MEDIUM, mostly 1-of-1s that honestly read STALE.
+  - The 57.1 % in the roadmap gate table belongs to the old grain and must not be compared with today's value.
+  - The 24 h sweep (89.6 → ~10–16 %) moved with the same denominator.
+  - Re-read the share as new sales accrue. No relabel is proposed.
+
 ## ⭐ 2026-11-14 evening — FMV coverage gap: legacy history re-walked, legacy asks ingested, coverage alert redefined (read first)
 
 From the Cowork handoff `claude/handoff-2026-11-14-candy-fmv-coverage-gap.md` (in the claude.ai Project, not this repo). Every number is a dated sample. Open items: known-issues **#256** and **#257**.

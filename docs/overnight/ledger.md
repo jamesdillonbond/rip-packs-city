@@ -12,6 +12,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~11:22 AM PT · 📝 DOCS — Candy re-baselined in the docs (trading again; share on the per-mint grain); thread close-out (Claude Code cloud; Trevor: "work through anything you possibly can… then update any relevant documentation")
+
+- **Candy:**
+  - candy-mlb.md has a new 11-22 block: $4,821 / 7 d, and `candy-chain-sales` 10:11 AM PT read `ok=true` with 0 failed.
+  - The share is 0.7 % on 3,059 per-mint editions, not comparable with the old 57 %.
+  - The roadmap §5 row and the roadmap-status gate table now point at that block.
+- **Checked:** the Series 9 STALE / "Top Shot This" misses (2–15×) were all in the 11-09..11-12 launch window. Each edition reads correctly now (e.g. `286:9325` $2.49 against a $2.44 5-day median).
+- **Not done:** the 11-23 follow-up scheduled task was created and then deleted. It held no connectors, so it could not run SQL. The overnight pass's focus steers (11-22 ~7:50 and ~10:20 AM PT) carry the reads.
+- **Revert:** revert this commit (docs only).
+
 ### 2026-11-22 ~11:25 AM PT · 🔧 SHIPPED (code) — candy-chain-sales starts new collections at 11-22 12:00 UTC, not 11-06; the 11-06 → 11-22 range is back-filled once from a session (Claude Code cloud; same thread)
 
 - **Measured 11:11 AM PT** (first run after the cursor reset): with proven walks the 11-06 floor means **11,416 signatures for the first 71 collections** — publicnode had been hiding that history behind its retention edge, and the only keyless RPC holding it (mainnet-beta) answered `getTransaction 429` on 70 of 71. A lane that must read every one of those transactions cannot finish.
