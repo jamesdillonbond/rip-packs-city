@@ -57,7 +57,13 @@ export function packWeekFrom(rows: Row[]): PackWeek | null {
   if (held <= 0) return null
   const listed = num(latest.pack_listed_count)
   const prior = byDate.get(minusDays(latest.snapshot_date, 7))
-  return { lowAskUsd, held, listed: listed != null && listed < held ? listed : null, priorUsd: prior ? priced(prior.pack_low_ask_usd) : null }
+  // Like-for-like only (2026-11-22, review of 88731d9fc): a week in which the member bought or opened packs, or
+  // in which a pack gained or lost its live ask, is not a price move. Show the change only when the held AND
+  // listed counts are the same as the prior week's; otherwise the value prints alone.
+  const sameHoldings = prior != null
+    && num(prior.pack_held_count) === held
+    && num(prior.pack_listed_count ?? null) === listed
+  return { lowAskUsd, held, listed: listed != null && listed < held ? listed : null, priorUsd: prior && sameHoldings ? priced(prior.pack_low_ask_usd) : null }
 }
 
 export async function loadPackWeek(userId: string): Promise<PackWeek | null> {

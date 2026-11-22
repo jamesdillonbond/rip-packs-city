@@ -41,12 +41,27 @@ describe("packWeekFrom", () => {
     expect(packWeekFrom([{ snapshot_date: "2026-11-22", pack_low_ask_usd: null, pack_held_count: null }])).toBeNull()
     expect(packWeekFrom([{ snapshot_date: "2026-11-22", pack_low_ask_usd: 0, pack_held_count: 0 }])).toBeNull()
   })
-  it("takes the latest value and the one 7 days before it", () => {
+  it("takes the latest value and the one 7 days before it (same holdings)", () => {
     expect(packWeekFrom([
       { snapshot_date: "2026-11-29", pack_low_ask_usd: "27966.94", pack_held_count: 2155 },
       { snapshot_date: "2026-11-23", pack_low_ask_usd: 1, pack_held_count: 1 },
-      { snapshot_date: "2026-11-22", pack_low_ask_usd: "27000", pack_held_count: 2150 },
+      { snapshot_date: "2026-11-22", pack_low_ask_usd: "27000", pack_held_count: 2155 },
     ])).toEqual({ lowAskUsd: 27966.94, held: 2155, listed: null, priorUsd: 27000 })
+  })
+  // Re-pinned 2026-11-22: buying 5 packs (2150 → 2155) is not a price move, so no weekly change.
+  it("a week with different holdings (bought / opened packs, or a pack gained its ask) gets no change figure", () => {
+    expect(packWeekFrom([
+      { snapshot_date: "2026-11-29", pack_low_ask_usd: "27966.94", pack_held_count: 2155 },
+      { snapshot_date: "2026-11-22", pack_low_ask_usd: "27000", pack_held_count: 2150 },
+    ])?.priorUsd).toBeNull()
+    expect(packWeekFrom([
+      { snapshot_date: "2026-11-29", pack_low_ask_usd: "120", pack_held_count: 4, pack_listed_count: 4 },
+      { snapshot_date: "2026-11-22", pack_low_ask_usd: "90", pack_held_count: 4, pack_listed_count: 3 },
+    ])?.priorUsd).toBeNull()
+    expect(packWeekFrom([
+      { snapshot_date: "2026-11-29", pack_low_ask_usd: "120", pack_held_count: 4, pack_listed_count: 4 },
+      { snapshot_date: "2026-11-22", pack_low_ask_usd: "100", pack_held_count: 4, pack_listed_count: 4 },
+    ])?.priorUsd).toBe(100)
   })
   it("no prior row 7 days back -> no change figure", () => {
     expect(packWeekFrom([{ snapshot_date: "2026-11-22", pack_low_ask_usd: 25533.7, pack_held_count: 327 }]))

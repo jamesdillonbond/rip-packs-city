@@ -109,7 +109,8 @@ export function groupWalletsByAddress<T extends GroupableWallet>(wallets: T[]): 
  */
 export function isClosedMarketCollectionId(collectionId: string | null | undefined): boolean {
   if (!collectionId) return false
-  const slug = Object.keys(COLLECTION_UUID_BY_SLUG).find((k) => COLLECTION_UUID_BY_SLUG[k] === collectionId)
+  // Own-property entries, not a bracket read with a computed key (registry-map-reads-are-own-property guard).
+  const slug = Object.entries(COLLECTION_UUID_BY_SLUG).find(([, uuid]) => uuid === collectionId)?.[0]
   return isMarketClosed(slug)
 }
 
