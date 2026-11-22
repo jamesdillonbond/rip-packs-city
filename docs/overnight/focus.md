@@ -4,6 +4,16 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-11-22 ~2:20 PM PT (Claude Code cloud, daytime autonomous pass) — five dated reads from today's ships
+
+Full detail: [handoff-2026-11-22-daytime-autonomous-pass.md](../handoff-2026-11-22-daytime-autonomous-pass.md).
+- **Next `apply-fmv-haircut` run** (daily, cron-job.org): `pipeline_runs_daily.rows_written` should drop from 187 / 193 (11-20 / 11-21, ~170 of them phantom All Day re-cuts) to roughly the real-cut level (~25–40). Still ~190 → `20261122214417` is not reaching the daily writer; read `fmv_apply_thin_sale_haircut('dee28451-…', true)` (11-22 after the fix: 177 examined / 6 cut).
+- **Panini Ingest Sentinel arm:** the dropped `packcard-2077_…` six-number keys go to 0 after `20261122221137`. Duplicate watch (must stay empty): `select edition_external_id from panini_sales where source='nft_sales_data' group by 1 having count(distinct (sku ~ '__\d+_\d+$')) > 1`.
+- **Mon 11-23 8:33 AM PT weekly email:** the sealed-packs block shows only members whose packs have a live ask; no "$0.00" line anywhere (5 members on 11-22 hold only unlisted packs, so they get no block). Logo/CTA now use the email red.
+- **~11-29:** relallvisible/relpages > 95 % on `sales_2023`–`sales_2025` (insert-autovacuum trigger `20261122212737`), and Vercel `get_set_activity failed` well under the 6/day of 11-22.
+- **~11-29: All Day weekly PAIRED backtest** (nfl-all-day.md "Read 11-22"): the R125 rule fired on LOW two weeks running, but the 8-week series does not support a lever. Measure it PAIRED (the unpaired function row is not the rule's instrument); a third week below → split plain LOW by sales count and price band.
+- ⚠ **Lane budget:** 320 active pg_cron jobs vs the 318 baseline. Job 915 `panini-pack-ev-tier-shadow` (added 11:49 AM PT) has no paired retirement in its ledger entry. That is the Panini thread's call; flagged, not touched.
+
 ## STEER — added 2026-11-22 ~11:30 AM PT (Cowork, sealed-pack thread closed) — two dated reads
 
 - **Mon 11-23 8:33 AM PT — weekly email:** the first send carrying the "Sealed packs · not in the value above" block (value only; the weekly change starts 11-30). A dry run lists `sealed_packs_usd` per recipient. A recipient with packs but no block → `loadPackWeek` read failed or the snapshot has no pack value; never a $0 block.

@@ -1,0 +1,59 @@
+# Daytime autonomous pass — 2026-11-22 (1:22 PM PT →, Claude Code cloud)
+
+**Verdict: GREEN. 7 shipped (3 migrations + 1 one-off maintenance, 3 code changes), 0 reverted.** Trevor: "work autonomously for the next 4 hours … fix any issues you encounter." Push worked directly to `main` from this session (dry-run first). A concurrent Panini/Candy thread was active all afternoon; I stayed out of its lane except for one Panini data-loss fix it could not be reached for (`ListAgents`: no reachable session).
+
+## Shipped (newest first; each has a ledger entry with its revert path)
+
+1. **`20261122221137` — Panini sales ingest accepts 6-number `packcard-` keys.** The Sentinel "Panini Ingest" arm warned at 2:04 PM PT: 42 sale records/24 h dropped (`packcard-2077_403382_10871318_139_15_25`). This morning's Moonbirds fix took 5 numbers; product 2077 has a 4-part card. All 6 sampled keys resolve to an existing edition; the 3 affected editions had **0** stored sales, so the change cannot double-count; 27 serial last-sales seeded.
+2. **`d78534273` — member emails use the email red** (`#e55a4c`). The weekly portfolio email (logo, CTA) and the legacy digest used the web red. A new tree-walking guard covers `lib/emails/**` plus both digest senders.
+3. **`119e3e39b` — the weekly email's new "Sealed packs" block cannot print an unpriced `$0.00`.** It was found by checking today's `88731d9fc` against live rows, before its **first send Mon 11-23 8:33 AM PT**. 5 of 58 snapshots read held 1 / listed 0 / value 0.00. It also read an older night as this week's and said "4 sealed packs" when 3 were priced. Dashboard Value/30D: a held-but-unpriced 0 is now null. Deployed READY.
+4. **`20261122214417` — the All Day thin-sale haircut stopped re-"cutting" rows its bid-floor trigger holds at price.** 171 of 177 reported cuts were phantom. `algo_version` grew `_haircut_bidfloor` on every pass, up to ×7. The writer's count and dollars counted rows it did not change. Prices were never wrong. The pin gained All Day bid fixtures (it fails on the old bodies).
+5. **`fadc28219` — the series OG card prints the page's label.** Top Shot on-chain 6/7/8 read "Series 5/6/7" on the social card over a page titled "Series 2023-24". Verified on the live PNG.
+6. **`20261122212737` + one-off `VACUUM (ANALYZE)` of `sales_2023`–`sales_2025`.** The set page's Recent Sales panel was the top Vercel error group (6/24 h statement timeouts). Cause: `sales_2025` was 76 % all-visible, because backfill inserts never cross the default insert trigger. holo-icon 16.7k → 14.0k buffers; durable via `autovacuum_vacuum_insert_scale_factor = 0.01` on 2020–2025 (no new cron lane).
+7. **"RPC Live Health" artifact republished (v3)** with two stale notes corrected. Item B's "merger not yet applied" was wrong: 0 UUID-keyed Top Shot editions remain. The Pinnacle "earlier days empty" note was also stale. This closes WEEKLY-SURFACE-QA-PROSE.
+
+## Measured, no change (recorded so nobody re-chases them)
+
+- **All Day weekly paired backtest** (lapsed since 11-05; nfl-all-day.md "Read 11-22"). Paired, ALL is level (67.2 vs 67.3) and HIGH wins. **LOW is −9.1 / −6.4 two weeks running, so R125's rule fires.** The 8-week series shows published winning weeks 3–7 on both metrics, so there is **no lever**. Re-read ~11-29, paired.
+- **#210's "0.90 haircut" lead** does not hold on 4 more weeks (newest 2 favour 0.75, older 2 favour 0.90–1.00). Recorded on #210.
+- `get_set_activity` remaining cost after the vacuum: a further cut needs a new covering index on `sales` (~100+ MB), which isn't worth it for a panel that degrades honestly.
+- `fmv_clamp_disconnected_ask` has the same latent shape as the haircut loop, but 0 All Day clamps fired in 30 d and there is no fingerprint. Left alone.
+- `rpc-topshot-pack-opens-history` (job 56) returns `done:true` every tick by design ("deliberate standby", packs.md). Not a cut.
+- Health: security invariants clean, 0 trust breaches, 0 stalled, 0 HIGH alerts, `check_when_others_timeout_blind` 0, client-error beacon 0 real in 7 d. Advisors: 8 mutable-search_path functions, all non-SECURITY-DEFINER and not anon-executable (benign).
+- Accuracy (`fmv_sales_backtest`, 7 d): Top Shot published 74.4 % within ±25 % vs naive 72.6 (HIGH 82.2). All Day is in the paired read above.
+
+## Stale docs corrected
+
+Golazos Flowty lane (retired 10-30), concierge #8, wallet #114, Pinnacle thp `rows_written` (fixed 10-18), and a drained 10-21 inbox filing marked in INDEX. Most "open" lines in the collection/feature roadmaps lag the register; the register (known-issues.md) is the truth.
+
+## Carried-queue triage (the list every night pass copied forward since June)
+
+| Label | Verdict | Evidence (live, 11-22) |
+|---|---|---|
+| BUYERBF-PERINVOCATION-WORK | closed | `topshot-buyer-backfill` 144/144 ok in 72 h, max 37 s (was 600–710 s, overlapping) |
+| ALLDAY-V1-UNMAPPED-DRIFT | closed | 0 open `onchain_dapper_v1` unmapped All Day sales |
+| WEEKLY-SURFACE-QA-PROSE | closed today | artifact v3 (above) |
+| PIN-FMV-REKEY-WAVES 2/3 | closed 06-08 | legacy table dropped; 0 functions/views reference it |
+| PIN-SYNC-CRON | closed | `pinnacle-sync` 3/3 ok in 72 h |
+| P3-BUYERS | closed | `pinnacle-resolve-buyers` 216/216 ok in 72 h |
+| DUPE1 | closed | 0 UUID-keyed Top Shot editions |
+| Q2 / Q5 / Q6 | closed | route retired → pg_cron 12/12 ok · smoke uses `detect_stalled_pipelines` · Base lane off since 08-02 |
+| N1 | closed | `snapshot-institutional-wallets` 6/6 ok |
+| ANALYTICS-SMOKE-RESIDUAL | closed 06-14 | 144/144 ok |
+| IPFS ×2 | parked by design | both "DEFERRED — do not build now" |
+| VERCEL cost family | partly open | OBSERVABILITY-SAMPLING + FLUID-CONCURRENCY are Vercel dashboard settings — Trevor |
+| A1-WORKER-PASSTHROUGH-CLEANUP | open, optional | 2 zero-caller routes in `workers/topshot-proxy`; deleting needs a wrangler deploy (Trevor) — fine to mark won't-fix |
+
+## Queued for Trevor / Claude Code
+
+1. **[P3, Trevor, 0 nights] Vercel cost residue:** check Observability sampling and Fluid concurrency once in the Vercel dashboard; then the label can be dropped.
+2. **[P3, Panini thread, 0 nights] Lane budget:** 320 active pg_cron jobs vs the 318 baseline. Job 915 `panini-pack-ev-tier-shadow` (11:49 AM PT) has no paired retirement.
+3. **[P4, Trevor/Claude Code, 0 nights] A1-WORKER-PASSTHROUGH-CLEANUP:** delete or mark won't-fix.
+4. **Unchanged from the overnight handoff:** item 4 there (Top Shot gate week 2, read Mon 11-23 after ~3:37 AM PT) stands, and its three carriers are untouched. `fmv_accuracy_weekly` has no 11-16 row yet (expected).
+
+## Dated reads (also in focus.md, STEER 11-22 ~2:20 PM PT)
+
+- Next `apply-fmv-haircut` run: `rows_written` ~25–40, not ~190.
+- Panini dropped-key count for the six-number shape → 0; duplicate-shape query stays empty.
+- Mon 8:33 AM PT email: no "$0.00" sealed-pack line.
+- ~11-29: cold-partition visibility maps > 95 %; `get_set_activity` timeouts well under 6/day; All Day paired backtest.
