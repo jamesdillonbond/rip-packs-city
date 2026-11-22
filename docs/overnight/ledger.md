@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~2:15 PM PT · 🔧 SHIPPED (code) — member emails use the email red: the weekly portfolio email (logo + CTA) and the legacy digest carried the web red `#E03A2F`; guard added (Claude Code cloud, autonomous 4 h pass)
+
+- Every other member email uses the email red `#e55a4c` (brand-auth-proxy.md). New `__tests__/member-emails-use-the-email-red.test.ts` walks `lib/emails/**` and the two digest senders, and fails on the old weekly route. Admin-only emails (sentinel, support report) are left as they are.
+- **Also this pass (no code):** the "RPC Live Health" artifact is republished (v3) with its two stale notes corrected (the Item B merger is "not yet applied", yet 0 UUID-keyed Top Shot editions remain; the Pinnacle "earlier days empty"). This closes WEEKLY-SURFACE-QA-PROSE.
+- **Revert:** `git revert` the commit titled "email: member emails use the email red".
+
 ### 2026-11-22 ~2:00 PM PT · 🔧 SHIPPED (code) — the weekly email's new "Sealed packs" block no longer prints $0.00 for unpriced packs or an older night as this week's; the dashboard pack line drops the same fake zeros (Claude Code cloud, autonomous 4 h pass; first send is Mon 11-23 8:33 AM PT)
 
 - **Found by reading today's `88731d9fc` against live rows:** 5 of 58 snapshots on 11-22 read held 1 / listed 0 / `pack_low_ask_usd` 0.00 (the fill writes 0 when no held pack has a live ask). The email would have said "$0.00 — 1 sealed pack at the lowest live ask", which its own header forbids. `packWeekFrom` also took the newest row *with* a value rather than the newest snapshot, and "4 sealed packs" read as fully priced when only 3 had asks.
