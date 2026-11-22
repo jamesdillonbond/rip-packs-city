@@ -29,6 +29,13 @@ describe("decodeChainFills (real transactions)", () => {
     expect(f.seller).toBe("Cj3JFK2BEYgKBVe1nMWRJSJQedwSnfXrbLAq85GxJBGR")
     expect(d.unknownIx).toEqual([])
   })
+  it("the same fill on Tensor's own program decodes as marketplace tensor", () => {
+    const T = "TCMPhJdwDryooaGtiocG1u3xcYbRpiJzb283XfCZsDp"
+    const swap = (o: any) => JSON.parse(JSON.stringify(o).split("7Aru291A64wrTkUDaRv6HqxVBre6ivXWL94cUoCtQF9V").join(T))
+    const d = decodeChainFills(BUY.signature, swap(BUY.tx))
+    expect(d.fills.map((f) => [f.marketplace, f.priceSol])).toEqual([["tensor", 7.5]])
+    expect(decodeChainFills(BUY.signature, BUY.tx).fills[0].marketplace).toBe(CHAIN_MARKETPLACE)
+  })
   it("a listing is not a sale", () => {
     expect(decodeChainFills(LIST.signature, LIST.tx).fills).toEqual([])
   })
@@ -42,7 +49,7 @@ describe("decodeChainFills (real transactions)", () => {
     const logs = BUY.tx.meta.logMessages.map((l: string) => (l === "Program log: Instruction: BuyCore" ? "Program log: Instruction: BuyCoreSpl" : l))
     const d = decodeChainFills(BUY.signature, { ...BUY.tx, meta: { ...BUY.tx.meta, logMessages: logs } })
     expect(d.fills).toEqual([])
-    expect(d.unknownIx).toEqual(["BuyCoreSpl"])
+    expect(d.unknownIx).toEqual(["solana_7aru:BuyCoreSpl"])
   })
 })
 

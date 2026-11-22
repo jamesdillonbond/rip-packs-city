@@ -57,6 +57,7 @@ const MARKETPLACE_LABEL: Record<string, { label: string; className: string }> = 
   magic_eden: { label: "Magic Eden", className: "border-orange-500/30 text-orange-400" },
   // Candy fills on Solana program 7Aru… — unattributed (lib/candy/chain-sales.ts).
   solana_7aru: { label: "Other Solana", className: "border-slate-500/30 text-slate-400" },
+  tensor: { label: "Tensor", className: "border-slate-500/30 text-slate-400" },
 }
 
 function isLinkableAddr(a: string | null | undefined): a is string {

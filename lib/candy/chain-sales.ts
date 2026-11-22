@@ -8,7 +8,8 @@
 // found 16 fills on program 7Aru291A64wrTkUDaRv6HqxVBre6ivXWL94cUoCtQF9V (Tensor marketplace code
 // at a non-Tensor address — known-issues #256's falsifier), all on 11-20 / 11-21 PT, ~12.9 SOL with
 // one 7.5 SOL card; none were in `sales`. The program is NOT attributed to a named marketplace (no
-// official source names it), so its sales carry marketplace `solana_7aru`.
+// official source names it), so its sales carry marketplace `solana_7aru`. Tensor's own program
+// (TCMPhJ…, the code 7Aru… is built from) is decoded the same way, as marketplace `tensor`.
 //
 // What it does. Every Metaplex Core transfer of a Candy asset passes its collection account, so
 // `getSignaturesForAddress(<collection>)` lists every ownership change on any venue (the 10-25
@@ -36,6 +37,10 @@ type Db = any
 
 export const CHAIN_MARKET_PROGRAM = "7Aru291A64wrTkUDaRv6HqxVBre6ivXWL94cUoCtQF9V"
 export const CHAIN_MARKETPLACE = "solana_7aru"
+// Tensor's own marketplace program (the code 7Aru… is built from); Candy listings were seen on it
+// (11-06 → 11-22: 3 ListCore, 3 DelistCore, 0 fills). Decoded the same way.
+export const TENSOR_PROGRAM = "TCMPhJdwDryooaGtiocG1u3xcYbRpiJzb283XfCZsDp"
+export const CHAIN_PROGRAMS: Record<string, string> = { [CHAIN_MARKET_PROGRAM]: CHAIN_MARKETPLACE, [TENSOR_PROGRAM]: "tensor" }
 export const CHAIN_QUEUE_REASON = "queued_chain_walk"
 const CORE_PROGRAM = "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d"
 const SYSTEM_PROGRAM = "11111111111111111111111111111111"
@@ -52,6 +57,7 @@ export interface ChainFill {
   priceSol: number
   buyer: string
   seller: string | null
+  marketplace: string
 }
 
 interface ParsedIx {
@@ -71,11 +77,11 @@ export interface DecodeResult {
   unknownIx: string[]
 }
 
-// The top-level instruction names of every 7Aru invocation at depth 1, in order.
-function topLevelNames(logs: string[]): string[] {
+// The top-level instruction names of every invocation of `program` at depth 1, in order.
+function topLevelNames(logs: string[], program: string): string[] {
   const names: string[] = []
   for (let i = 0; i < logs.length; i++) {
-    if (logs[i] === `Program ${CHAIN_MARKET_PROGRAM} invoke [1]`) {
+    if (logs[i] === `Program ${program} invoke [1]`) {
       const m = /^Program log: Instruction: (\w+)$/.exec(logs[i + 1] ?? "")
       names.push(m ? m[1] : "?")
     }
@@ -86,19 +92,22 @@ function topLevelNames(logs: string[]): string[] {
 export function decodeChainFills(signature: string, tx: ParsedTx): DecodeResult {
   const out: DecodeResult = { fills: [], takeBids: 0, unknownIx: [] }
   if (!tx.meta || tx.meta.err) return out
-  const names = topLevelNames(tx.meta.logMessages ?? [])
   const top = tx.transaction.message.instructions
-  let k = 0
+  const names: Record<string, string[]> = {}
+  const seen: Record<string, number> = {}
   for (let idx = 0; idx < top.length; idx++) {
-    if (top[idx].programId !== CHAIN_MARKET_PROGRAM) continue
-    const name = names[k++] ?? "?"
-    if (!KNOWN_IX.has(name)) { out.unknownIx.push(name); continue }
+    const program = top[idx].programId
+    const marketplace = CHAIN_PROGRAMS[program]
+    if (!marketplace) continue
+    names[program] ??= topLevelNames(tx.meta.logMessages ?? [], program)
+    const name = names[program][(seen[program] = (seen[program] ?? -1) + 1)] ?? "?"
+    if (!KNOWN_IX.has(name)) { out.unknownIx.push(`${marketplace}:${name}`); continue }
     if (name === "TakeBidCore") { out.takeBids++; continue }
     if (name !== "BuyCore") continue
     const inner = tx.meta.innerInstructions?.find((g) => g.index === idx)?.instructions ?? []
     // Core Transfer: [asset, collection, payer, authority, new_owner, …].
     const core = inner.find((i) => i.programId === CORE_PROGRAM && (i.accounts?.length ?? 0) >= 5)
-    if (!core?.accounts) { out.unknownIx.push("BuyCore:no_core_transfer"); continue }
+    if (!core?.accounts) { out.unknownIx.push(`${marketplace}:BuyCore:no_core_transfer`); continue }
     const [asset, collection, , , buyer] = core.accounts
     let lamports = 0
     let seller: string | null = null
@@ -110,8 +119,8 @@ export function decodeChainFills(signature: string, tx: ParsedTx): DecodeResult 
       lamports += info.lamports
       if (info.lamports > top1) { top1 = info.lamports; seller = info.destination ?? null }
     }
-    if (!(lamports > 0)) { out.unknownIx.push("BuyCore:no_payment"); continue }
-    out.fills.push({ signature, asset, collection, blockTime: tx.blockTime ?? 0, priceSol: lamports / 1e9, buyer, seller })
+    if (!(lamports > 0)) { out.unknownIx.push(`${marketplace}:BuyCore:no_payment`); continue }
+    out.fills.push({ signature, asset, collection, blockTime: tx.blockTime ?? 0, priceSol: lamports / 1e9, buyer, seller, marketplace })
   }
   return out
 }
@@ -273,7 +282,7 @@ export async function runCandyChainSales(
           p_buyer: f.buyer,
           p_seller: f.seller,
           p_skip_reason: CHAIN_QUEUE_REASON,
-          p_marketplace: CHAIN_MARKETPLACE,
+          p_marketplace: f.marketplace,
         })
         if (error) throw new Error(`offer ${f.signature}: ${error.message}`)
         if (landed === true) { rep.offered++; out.fills_offered++ } else out.fills_known++

@@ -402,6 +402,7 @@ export function marketplaceLabel(raw: string | null | undefined): string {
   if (k === "opensea") return "OpenSea"
   // Candy fills on Solana program 7Aru… — unattributed (lib/candy/chain-sales.ts).
   if (k === "solana_7aru") return "Other Solana marketplace"
+  if (k === "tensor") return "Tensor"
   // Generic fallback: underscores are separators, never display characters.
   return raw
     .split(/[_\s]+/)

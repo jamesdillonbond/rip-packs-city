@@ -195,6 +195,7 @@ export const MARKETPLACE_LABEL: Record<string, string> = {
   // Candy fills on Solana program 7Aru… (2026-11-22, /api/ingest/candy-chain-sales): Tensor
   // marketplace code at a non-Tensor address, not attributed to a named venue by any official source.
   solana_7aru: "Other Solana marketplace",
+  tensor: "Tensor",
   // ⚠ The keys `sales.marketplace` ACTUALLY carries for All Day and Golazos are
   // the un-underscored `nflallday` (12,344 rows / 30d on 2026-09-25) and
   // `laligagolazos` (61) — the analytics daily rows pass them through verbatim,
@@ -224,6 +225,7 @@ export const MARKETPLACE_COLOR: Record<string, string> = {
   // the collection chrome agree rather than defaulting this slice to grey.
   magic_eden: "#FB923C",
   solana_7aru: "#94A3B8",
+  tensor: "#94A3B8",
   nflallday: "#4F94D4",
   laligagolazos: "#22C55E",
   allday_listing: "#4F94D4",
