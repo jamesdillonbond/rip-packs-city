@@ -12,6 +12,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-21 ~5:35 PM PT · 🔧 SHIPPED (migration + code + schedule + 1 data row) — Candy sales move to BUYER-PAID price, read per transaction on-chain; Candy card asks priced at buyer cost (×1.12) (Claude Code cloud; Trevor: "Switch to buyer-paid" → "No we need to fix this first")
+
+**Why.** The Candy bot reported a Paul Skenes 2025 All-Star ICONS 1/1 at $1,599 (22.75 SOL) "Buyer Paid"; RPC had $1,397 (20.31 SOL). On-chain (12 sales, 8 sets, MLB + DC): a Magic Eden listing bought outright (M2 BuyV2/CoreExecuteSaleV2) costs the buyer listed + 10% creator royalty + 2% ME fee = ×1.12 exactly; a sale INTO a buyer's pool (MMM SolMplCoreFulfillBuy) costs the buyer exactly the listed price (royalty comes out of the seller). RPC stored ME's activity `price` = the LISTED price for every one of 18,677 Candy sales.
+
+**DB (applied, `20261122012053_audit_20261121_candy_sales_buyer_paid`).** `candy_sale_buyer_paid` (marker + revert record: listed_sol, ratio, paid_by, extras_sol, error) · `candy_buyer_paid_targets(limit)` · `candy_apply_buyer_paid(jsonb)` — records a reading and re-prices `sales.price_native/price_usd` by the ratio ONCE (ON CONFLICT DO NOTHING + FOUND; a second offer is a no-op — verified: 1 then 0). Positive control applied by hand: Skenes sale 20.31144211 SOL / $1,396.56 → 22.74881516 / $1,564.15 (the bot's $1,599 uses a higher SOL rate than our trade-day rate; SOL amount matches to 0.001).
+
+**Code.** `lib/candy/sale-buyer-paid.ts` (`buyerPaidFromTx`: extras = positive changes to pre-existing non-party accounts; buyer side paid them iff non-seller still-open accounts funded listed + extras; ratio must sit in [1, 1.25] else recorded as error, sale untouched) + `/api/ingest/candy-sales-buyer-paid` (cron `*/5`, newest first; keyless RPC: publicnode for recent, mainnet-beta for history; 5 straight refusals stop the run, `ok:false` when nothing could be read). Asks: `candyAskBuyerCostUsd` — `candy_listings.price_usd` = listed × rate × 1.12 in `candy-listings-indexer` and the rotating market lane; `price_sol` stays LISTED; PACK asks unchanged (pack sales not moved). Tests: +11 lib on 4 real mainnet transactions (fixtures), +3 route; 2 ask tests re-pinned 75→84 / 300→336. Preflight 7/7.
+
+⚠ **Mixed basis until the backlog drains** (~18.7k sales at ~1–2 tx/s through public RPC: hours). Candy offers (bids) unchanged — a pool bid is already what the buyer pays; M2 direct bids unverified. Active asks reprice on their next sweep (≤ 3 h registry sets, ≤ ~8 h legacy). `lib/marketplace-fees.ts` Candy entry still absent (its open question — the royalty — is now measured: 10%).
+
+**Verify:** `pipeline_runs` `candy-sales-buyer-paid` (read, applied, rate_limited); `select paid_by, count(*), avg(ratio) from candy_sale_buyer_paid group by 1`; Candy FMV after the next recalc.
+
+**Revert:** the UPDATE in the migration header (restores every applied sale from listed_sol/ratio), then `git revert` the commit titled "candy: sales at buyer-paid price (on-chain), asks at buyer cost".
+
 ### 2026-11-21 ~5:15 PM PT · 🔧 SHIPPED (code) — Candy offers funding gate: the escrow read now parses Magic Eden's real shape `{ buyerEscrow, balance }` (Claude Code cloud; scheduled read)
 
 - **4:50 PM PT `candy-offers-indexer` (first run with reasons, `87d1faef8`):** ok, 2 bidders checked, `funding_unknown` 2, **`funding_unknown_reasons` = `escrow:shape keys=buyerEscrow|balance` ×2**. The wallet leg (Solana public RPC) read fine; the escrow leg answered `{ buyerEscrow, balance }`, not the `{ buyerEscrowBalance }` I had assumed — so every bid failed open and the 4 phantom bids stayed active (7 active bids now: those 4 + 3 from another bidder).
