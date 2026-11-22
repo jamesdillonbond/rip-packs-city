@@ -71,8 +71,15 @@ interface ParsedIx {
 }
 export interface ParsedTx {
   blockTime?: number | null
-  meta: { err: unknown; logMessages?: string[] | null; innerInstructions?: Array<{ index: number; instructions: ParsedIx[] }> | null } | null
-  transaction: { message: { instructions: ParsedIx[] } }
+  meta: {
+    err: unknown
+    fee?: number
+    preBalances?: number[]
+    postBalances?: number[]
+    logMessages?: string[] | null
+    innerInstructions?: Array<{ index: number; instructions: ParsedIx[] }> | null
+  } | null
+  transaction: { message: { instructions: ParsedIx[]; accountKeys?: Array<{ pubkey: string; signer?: boolean }> } }
 }
 
 export interface DecodeResult {
@@ -106,9 +113,15 @@ export function decodeChainFills(signature: string, tx: ParsedTx): DecodeResult 
     names[program] ??= topLevelNames(tx.meta.logMessages ?? [], program)
     const name = names[program][(seen[program] = (seen[program] ?? -1) + 1)] ?? "?"
     if (!KNOWN_IX.has(name)) { out.unknownIx.push(`${marketplace}:${name}`); continue }
-    if (name === "TakeBidCore") { out.takeBids++; continue }
-    if (name !== "BuyCore") continue
     const inner = tx.meta.innerInstructions?.find((g) => g.index === idx)?.instructions ?? []
+    if (name === "TakeBidCore") {
+      out.takeBids++
+      const bid = decodeTakeBid(signature, tx, inner, marketplace)
+      if (typeof bid === "string") out.unknownIx.push(`${marketplace}:TakeBidCore:${bid}`)
+      else out.fills.push(bid)
+      continue
+    }
+    if (name !== "BuyCore") continue
     // Core Transfer: [asset, collection, payer, authority, new_owner, …].
     const core = inner.find((i) => i.programId === CORE_PROGRAM && (i.accounts?.length ?? 0) >= 5)
     if (!core?.accounts) { out.unknownIx.push(`${marketplace}:BuyCore:no_core_transfer`); continue }
@@ -127,6 +140,29 @@ export function decodeChainFills(signature: string, tx: ParsedTx): DecodeResult 
     out.fills.push({ signature, asset, collection, blockTime: tx.blockTime ?? 0, priceSol: lamports / 1e9, buyer, seller, marketplace })
   }
   return out
+}
+
+// A bid filled (the seller signs; the bidder's SOL was escrowed in a program account, so it leaves
+// as a balance change, not a system transfer). Price = everything paid out to accounts other than
+// the bidder (seller proceeds + venue fee + royalties) plus the transaction fee the seller paid out
+// of those proceeds; the bidder's own credit is the closed escrow's rent coming back. Checked on 6
+// real 7Aru fills 11-11 → 11-20 (escrow debit − bidder refund = this sum, to the lamport).
+function decodeTakeBid(signature: string, tx: ParsedTx, inner: ParsedIx[], marketplace: string): ChainFill | string {
+  const meta = tx.meta!
+  const keys = tx.transaction.message.accountKeys
+  if (!keys || !meta.preBalances || !meta.postBalances) return "no_balances"
+  const core = inner.find((i) => i.programId === CORE_PROGRAM && (i.accounts?.length ?? 0) >= 5)
+  if (!core?.accounts) return "no_core_transfer"
+  const [asset, collection, , , bidder] = core.accounts
+  const seller = keys.find((k) => k.signer)?.pubkey ?? null
+  if (!seller || seller === bidder) return "self_fill"
+  let lamports = meta.fee ?? 0
+  keys.forEach((k, i) => {
+    const d = meta.postBalances![i] - meta.preBalances![i]
+    if (d > 0 && k.pubkey !== bidder) lamports += d
+  })
+  if (!(lamports > (meta.fee ?? 0))) return "no_payment"
+  return { signature, asset, collection, blockTime: tx.blockTime ?? 0, priceSol: lamports / 1e9, buyer: bidder, seller, marketplace }
 }
 
 async function rpc<T>(doFetch: FetchFn, method: string, params: unknown[], urls: string[]): Promise<T> {

@@ -36,6 +36,19 @@ describe("decodeChainFills (real transactions)", () => {
     expect(d.fills.map((f) => [f.marketplace, f.priceSol])).toEqual([["tensor", 7.5]])
     expect(decodeChainFills(BUY.signature, BUY.tx).fills[0].marketplace).toBe(CHAIN_MARKETPLACE)
   })
+  it("decodes a 7Aru TakeBidCore (bid filled): the bid price, the BIDDER as buyer, the signing seller", () => {
+    const T = fx("takebidcore-9-sol")
+    const d = decodeChainFills(T.signature, T.tx)
+    expect(d.takeBids).toBe(1)
+    expect(d.unknownIx).toEqual([])
+    expect(d.fills).toHaveLength(1)
+    const f = d.fills[0]
+    // 8.009995 to the seller + 0.000005 tx fee + 0.09 venue fee + 0.45 + 0.45 royalties = the 9 SOL bid
+    expect(f.priceSol).toBeCloseTo(9, 9)
+    expect(f.buyer).not.toBe(f.seller)
+    expect(f.seller).toBe(T.tx.transaction.message.accountKeys.find((k: any) => k.signer).pubkey)
+    expect(f.marketplace).toBe(CHAIN_MARKETPLACE)
+  })
   it("a listing is not a sale", () => {
     expect(decodeChainFills(LIST.signature, LIST.tx).fills).toEqual([])
   })
