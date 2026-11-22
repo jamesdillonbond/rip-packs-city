@@ -14,6 +14,7 @@ import { summariseCadenceCollapse } from "@/lib/sentinel/cadence-collapse";
 import { summariseWallKills } from "@/lib/sentinel/wall-kills";
 import { summariseProbeCost } from "@/lib/sentinel/probe-cost";
 import { summarisePgNet } from "@/lib/sentinel/pg-net";
+import { summariseCronJobsFailing } from "@/lib/sentinel/cron-job-failing";
 import { summariseMaintenanceLoad } from "@/lib/sentinel/maintenance-load";
 import { summariseContinuity, CONTINUITY_CHECK_NAME } from "@/lib/sentinel/continuity";
 import {
@@ -34,6 +35,7 @@ const WALL_KILLS_CHECK_NAME = "Wall Kills (24h)";
 const PROBE_COST_CHECK_NAME = "Ops Probe Cost";
 const PG_NET_CHECK_NAME = "pg_net Dispatch";
 const MAINTENANCE_CHECK_NAME = "Maintenance Load";
+const CRON_JOB_FAILING_CHECK_NAME = "pg_cron Job Failing Every Run";
 // The Sniper Feed arm's HTTP bound — see the comment at the fetch.
 const SNIPER_FEED_FETCH_MS = 20_000;
 
@@ -2642,6 +2644,36 @@ async function runSentinelWithin(clock: WallBudgetClock) {
   } catch (e: any) {
     checks.push({
       name: MAINTENANCE_CHECK_NAME,
+      status: "warn",
+      detail: exceptionDetail(e),
+    });
+  }
+
+  // ── pg_cron JOB FAILING EVERY RUN (2026-11-22) ───────────────────────────
+  // The fleet arm above fires on a RATE (>= 10 failures / 6h across the
+  // instance); one job that never succeeds adds 1 per window and is invisible
+  // to it. `rpc-portfolio-snapshot-packs` failed every run for two nights that
+  // way (a `SET ...;` prefix broke its COMMIT) while check_pgcron_recent_failures()
+  // named it and had no caller that alerts. 48 h window so a daily job that fails
+  // twice is caught. ~40k cached buffers, ~0.5 s. Argument: lib/sentinel/cron-job-failing.ts.
+  try {
+    const { data: cjData, error: cjErr } = await supabase.rpc("check_pgcron_recent_failures", {
+      p_window: "48 hours",
+    });
+    if (cjErr) {
+      const sat = isSaturationError(cjErr.message);
+      checks.push({
+        name: CRON_JOB_FAILING_CHECK_NAME,
+        status: "warn",
+        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${errorText(cjErr.message)}`,
+      });
+    } else {
+      const verdict = summariseCronJobsFailing(cjData, "48h");
+      checks.push({ name: CRON_JOB_FAILING_CHECK_NAME, status: verdict.status, detail: verdict.detail, value: verdict.value });
+    }
+  } catch (e: any) {
+    checks.push({
+      name: CRON_JOB_FAILING_CHECK_NAME,
       status: "warn",
       detail: exceptionDetail(e),
     });
