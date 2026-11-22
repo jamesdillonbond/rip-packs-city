@@ -324,9 +324,40 @@ describe("buildOfferFillSales", () => {
     const out = await buildOfferFillSales([
       fill({ nftId: "1", offerId: "a", fillTx: "0xa" }),
       fill({ nftId: "2", offerId: "b", fillTx: "0xb" }),
-    ])
+    ], { runScript: async () => null }) // the chain fallback finds neither moment either
     expect(out.rows).toHaveLength(0)
     expect(out.unresolved).toBe(2)
+  })
+
+  // 2026-11-21 on-chain census: 3 of 234 NFT-offer fills that week were still dropped — no moments
+  // row, no offer row, no Atlas event. Path 5 reads the moment from the buyer's collection.
+  it("path 5: a fill nothing else could place is read from the chain — subedition 0 onto the base edition", async () => {
+    H.state.editionsByExt = [{ external_id: "125:4402", id: "ed-base" }]
+    const calls: unknown[] = []
+    const out = await buildOfferFillSales([fill({ nftId: "44187105", offerType: "serial", offerId: "nope", amount: 3 })], {
+      runScript: async (_c, args) => { calls.push(args); return { setID: "125", playID: "4402", serial: "114", sub: "0" } },
+    })
+    expect(calls[0]).toEqual([{ type: "Address", value: "0xbbbbbbbbbbbbbbbb" }, { type: "UInt64", value: "44187105" }])
+    expect(out.unresolved).toBe(0)
+    expect(out.resolvedViaChain).toBe(1)
+    expect(out.rows[0]).toMatchObject({ edition_id: "ed-base", serial_number: 114, price_usd: 3 })
+  })
+
+  it("path 5: a parallel read from the chain lands on its ::sub edition, never its base", async () => {
+    H.state.editionsByExt = [{ external_id: "281:9400::17", id: "ed-par" }]
+    const out = await buildOfferFillSales([fill({ nftId: "7", offerType: "serial", offerId: "nope" })], {
+      runScript: async () => ({ setID: "281", playID: "9400", serial: "12", sub: "17" }),
+    })
+    expect(out.rows[0]?.edition_id).toBe("ed-par")
+  })
+
+  it("path 5: a failed chain read is counted and the fill stays unresolved", async () => {
+    const out = await buildOfferFillSales([fill({ nftId: "8", offerType: "serial", offerId: "nope" })], {
+      runScript: async () => { throw new Error("script HTTP 503") },
+    })
+    expect(out.unresolved).toBe(1)
+    expect(out.chainErrors).toBe(1)
+    expect(out.rows).toHaveLength(0)
   })
 
   it("F1 guard: redirects an impossible-serial parallel onto its base edition", async () => {

@@ -181,6 +181,8 @@ async function drain(maxRange: number, startBlockOverride: string | null) {
   let salesUnresolved = 0
   let salesParallelRedirects = 0
   let salesResolvedViaAtlas = 0
+  let salesResolvedViaChain = 0
+  let salesChainErrors = 0
   let offersStamped = 0
   let salesOfferIdsStamped = 0
   let fetchError: string | null = null
@@ -250,6 +252,8 @@ async function drain(maxRange: number, startBlockOverride: string | null) {
       salesUnresolved = built.unresolved
       salesParallelRedirects = built.parallelRedirects
       salesResolvedViaAtlas = built.resolvedViaAtlas
+      salesResolvedViaChain = built.resolvedViaChain ?? 0
+      salesChainErrors = built.chainErrors ?? 0
       const ins = await insertOfferFillSales(built.rows)
       salesWritten = ins.inserted
       salesDuped = ins.duped
@@ -287,6 +291,8 @@ async function drain(maxRange: number, startBlockOverride: string | null) {
     sales_unresolved: salesUnresolved,
     sales_parallel_redirects: salesParallelRedirects,
     sales_resolved_via_atlas: salesResolvedViaAtlas,
+    sales_resolved_via_chain: salesResolvedViaChain,
+    sales_chain_errors: salesChainErrors,
     offers_stamped: offersStamped,
     sales_offer_ids_stamped: salesOfferIdsStamped,
     done,

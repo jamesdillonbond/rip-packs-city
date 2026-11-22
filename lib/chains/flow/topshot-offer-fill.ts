@@ -150,6 +150,8 @@ export interface BuiltOfferFillSales {
   serialsResolved: number
   parallelRedirects: number // F1 guard: impossible-serial parallel → base redirects
   resolvedViaAtlas: number // path 4: edition from Atlas's own (set, play, parallel) for the nft
+  resolvedViaChain?: number // path 5: edition read from the chain (the buyer's collection) for the nft
+  chainErrors?: number // path 5 reads that failed (the fill stays unresolved)
 }
 
 // Build sale rows from fills, resolving edition_id + serial via:
@@ -165,7 +167,42 @@ export interface BuiltOfferFillSales {
 // parallel and the serial exceeds that parallel's circulation_count, the sale is
 // redirected to the base setID:playID edition — mirroring the sales-indexer
 // Step-4e guard. Genuine subedition fills (serial <= parallel circ) pass through.
-export async function buildOfferFillSales(fills: OfferFillEvent[]): Promise<BuiltOfferFillSales> {
+// Path 5 (2026-11-21): read a moment's set, play, serial and subedition from the holder's collection.
+// Returns null when the holder no longer has it. Uses the deployed TopShot contract's public
+// borrowMoment + getMomentsSubedition (verified on mainnet 11-21 on nfts 50978904, 44187105, 50255226).
+const TS_BORROW_SCRIPT = `
+import TopShot from 0x0b2a3299cc857e29
+access(all) fun main(owner: Address, id: UInt64): {String: String}? {
+  let col = getAccount(owner).capabilities.borrow<&TopShot.Collection>(/public/MomentCollection)
+  if col == nil { return nil }
+  let nft = col!.borrowMoment(id: id)
+  if nft == nil { return nil }
+  let sub = TopShot.getMomentsSubedition(nftID: id)
+  return { "setID": nft!.data.setID.toString(), "playID": nft!.data.playID.toString(), "serial": nft!.data.serialNumber.toString(), "sub": sub == nil ? "" : sub!.toString() }
+}`
+
+async function runTopShotScript(code: string, args: Array<{ type: string; value: unknown }>): Promise<unknown> {
+  const body = {
+    script: Buffer.from(code, "utf8").toString("base64"),
+    arguments: args.map((a) => Buffer.from(JSON.stringify(a), "utf8").toString("base64")),
+  }
+  const res = await fetch("https://rest-mainnet.onflow.org/v1/scripts?block_height=sealed", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(15_000),
+  })
+  if (!res.ok) throw new Error(`script HTTP ${res.status}`)
+  const raw = String(await res.json()).replace(/^"|"$/g, "")
+  const unwrap = (v: any): any =>
+    v == null ? v : v.type === "Optional" ? unwrap(v.value) : v.type === "Dictionary" ? Object.fromEntries(v.value.map((e: any) => [unwrap(e.key), unwrap(e.value)])) : v.value
+  return unwrap(JSON.parse(Buffer.from(raw, "base64").toString("utf8")))
+}
+
+export async function buildOfferFillSales(
+  fills: OfferFillEvent[],
+  opts?: { chainLookups?: number; runScript?: (code: string, args: Array<{ type: string; value: unknown }>) => Promise<unknown> },
+): Promise<BuiltOfferFillSales> {
   const byTx = new Map<string, OfferFillEvent>()
   for (const f of fills) if (f.fillTx && !byTx.has(f.fillTx)) byTx.set(f.fillTx, f)
   const list = Array.from(byTx.values())
@@ -240,6 +277,9 @@ export async function buildOfferFillSales(fills: OfferFillEvent[]): Promise<Buil
   //    topshot_subeditions (the chain's own list), so a parallel lands on `<set:play>::<sub>`, never
   //    on its base. Used only when every Atlas row for the nft agrees.
   const atlasByNft = new Map<string, { ext: string; serial: number | null }>()
+  const viaChain = new Set<string>()
+  let chainTried = 0
+  let chainErrors = 0
   const needAtlas = list
     .filter((f) => f.nftId && !momByNft.has(f.nftId) && !(f.externalId && edByExt.has(f.externalId)) && !offRow.get(f.offerId)?.editionId)
     .map((f) => f.nftId!)
@@ -269,6 +309,32 @@ export async function buildOfferFillSales(fills: OfferFillEvent[]): Promise<Buil
       const sub = r.parallel === "Standard" ? null : subIdByName.get(r.parallel)
       if (r.parallel !== "Standard" && sub == null) continue // unknown parallel name: never guess the base
       atlasByNft.set(nft, { ext: sub == null ? base : `${base}::${sub}`, serial: r.serial_number ?? null })
+    }
+    // 5. Chain fallback (2026-11-21). An NFT offer on a moment RPC has never seen and Atlas has no
+    //    event for was still DROPPED: an on-chain census of 11-15 → 11-22 found 3 of 234 such fills
+    //    missing. The buyer holds the moment right after the fill, so read its set, play, serial and
+    //    subedition there. Subedition 0 is the base edition; anything else lands on `<set:play>::<sub>`,
+    //    never on its base. Nil (moved on) or a failed read stays unresolved and is counted.
+    const chainBudget = opts?.chainLookups ?? 20
+    for (const f of list) {
+      if (chainTried >= chainBudget) break
+      if (!f.nftId || !f.buyer || atlasByNft.has(f.nftId) || !needAtlas.includes(f.nftId)) continue
+      chainTried++
+      try {
+        const r = (await (opts?.runScript ?? runTopShotScript)(TS_BORROW_SCRIPT, [
+          { type: "Address", value: f.buyer },
+          { type: "UInt64", value: f.nftId },
+        ])) as Record<string, string> | null
+        if (r && r.setID && r.playID) {
+          const sub = r.sub && r.sub !== "0" ? r.sub : null
+          const base = `${r.setID}:${r.playID}`
+          const serial = Number(r.serial)
+          atlasByNft.set(f.nftId, { ext: sub ? `${base}::${sub}` : base, serial: Number.isFinite(serial) && serial > 0 ? serial : null })
+          viaChain.add(f.nftId)
+        }
+      } catch {
+        chainErrors++
+      }
     }
     const atlasExts = [...new Set([...atlasByNft.values()].map((v) => v.ext))].filter((e) => !edByExt.has(e))
     for (let i = 0; i < atlasExts.length; i += DB_IN_CHUNK) {
@@ -324,6 +390,7 @@ export async function buildOfferFillSales(fills: OfferFillEvent[]): Promise<Buil
   let serialsResolved = 0
   let parallelRedirects = 0
   let resolvedViaAtlas = 0
+  let resolvedViaChain = 0
   const nowIso = new Date().toISOString()
 
   for (const f of list) {
@@ -353,7 +420,8 @@ export async function buildOfferFillSales(fills: OfferFillEvent[]): Promise<Buil
       if (at && id) {
         editionId = id
         if ((serial == null || serial === 0) && at.serial != null && at.serial > 0) serial = at.serial
-        resolvedViaAtlas++
+        if (f.nftId && viaChain.has(f.nftId)) resolvedViaChain++
+        else resolvedViaAtlas++
       }
     }
 
@@ -410,7 +478,7 @@ export async function buildOfferFillSales(fills: OfferFillEvent[]): Promise<Buil
     })
   }
 
-  return { rows, unresolved, serialsResolved, parallelRedirects, resolvedViaAtlas }
+  return { rows, unresolved, serialsResolved, parallelRedirects, resolvedViaAtlas, resolvedViaChain, chainErrors }
 }
 
 // Stamp the OfferCompleted (fill) tx onto the matching offer rows for provenance.
