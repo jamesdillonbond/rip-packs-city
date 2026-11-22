@@ -435,9 +435,7 @@ async function getPublicProfileUncached(
   }))
 
   console.log(`[public/profile:${source}] done elapsedMs=${Date.now() - startedAt}`)
-  return {
-    ok: true,
-    data: {
+  const payload: PublicProfilePayload = {
       username: bio.username as string,
       bio: {
         display_name: bio.display_name,
@@ -454,6 +452,23 @@ async function getPublicProfileUncached(
       wallets: walletSummaries,
       wallet_count: walletCount,
       verified_wallet_count: verifiedAddrs.size,
-    },
   }
+  // The OWNED addresses, kept off the payload (privacy) and reachable only from
+  // server code through publicProfileOwnedAddresses() — the sealed-pack total
+  // (2026-11-21) must sum exactly the wallets this profile's FMV sums.
+  OWNED_ADDRESSES.set(payload, Array.from(new Set(
+    ownedRows
+      .map((w: any) => (typeof w.wallet_addr === "string" ? normalizeAddress(w.wallet_addr) : ""))
+      .filter((a: string) => a !== ""),
+  )))
+  return { ok: true, data: payload }
+}
+
+// ⚠ SERVER-ONLY side channel. A WeakMap, not a payload field, so the addresses
+// can never be serialized into a response by a caller that returns `data`.
+const OWNED_ADDRESSES = new WeakMap<PublicProfilePayload, string[]>()
+
+/** Distinct wallet addresses this profile OWNS (the ones its Portfolio FMV sums). Never publish these. */
+export function publicProfileOwnedAddresses(payload: PublicProfilePayload): string[] {
+  return OWNED_ADDRESSES.get(payload) ?? []
 }

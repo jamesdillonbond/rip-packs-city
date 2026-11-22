@@ -18,6 +18,7 @@ import { avatarDisplayUrl } from "@/lib/media/avatar-proxy";
 import { getCollectionByUuid } from "@/lib/collections";
 import { isMarketClosed } from "@/lib/market-closed";
 import { accentFill, accentText, labelOn } from "@/lib/accent-text"
+import { heldPacksCaption, type HeldPacksTotal } from "@/lib/dashboard/held-packs";
 
 // ── Types ─────────────────────────────────────────────────────────
 interface ProfileBio {
@@ -304,6 +305,31 @@ export default function ProfileClient(props: {
     Promise.all([publicP, slabsP, teamsP]).finally(function() { setLoading(false); });
   }, [username]);
 
+  // Sealed packs across the wallets this profile owns, at the lowest live ask —
+  // shown under Portfolio FMV (Trevor, 2026-11-21). Its own read, after mount,
+  // so a slow pack read never holds back the profile; a failure says so.
+  const [heldPacks, setHeldPacks] = useState<HeldPacksTotal | null>(null);
+  const [heldPacksFailed, setHeldPacksFailed] = useState(false);
+  useEffect(function() {
+    if (!username) return;
+    setHeldPacks(null);
+    setHeldPacksFailed(false);
+    fetch("/api/public/profile/" + encodeURIComponent(username) + "/packs")
+      .then(function(r) {
+        if (!r.ok) throw new Error("packs " + r.status);
+        return r.json();
+      })
+      .then(function(d) {
+        setHeldPacks({
+          held: Number(d?.held) || 0,
+          listed: Number(d?.listed) || 0,
+          lowAskUsd: Number(d?.low_ask_usd) || 0,
+          walletsFailed: Number(d?.wallets_failed) || 0,
+        });
+      })
+      .catch(function() { setHeldPacksFailed(true); });
+  }, [username]);
+
   // Who's viewing — to show the share block only on the viewer's own profile.
   useEffect(function() {
     fetch("/api/profile/me")
@@ -579,6 +605,14 @@ export default function ProfileClient(props: {
                 + {fmtDollars(staleFmv)} across {staleCount.toLocaleString("en-US")} stale-priced
               </div>
             )}
+            {(function() {
+              const packLine = heldPacksCaption(heldPacks, heldPacksFailed, fmtDollars);
+              return packLine ? (
+                <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.08em", marginBottom: 4 }}>
+                  {packLine}
+                </div>
+              ) : null;
+            })()}
           </div>
           {/* Moments */}
           <div style={{ ...cardStyle, textAlign: "center" }}>

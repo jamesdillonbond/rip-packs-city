@@ -20,6 +20,7 @@ import { momentSubjectName } from "@/lib/entity-href"
 import { accentText } from "@/lib/accent-text"
 import { resolveUsernames, nameKey } from "@/lib/flowty-username"
 import { scrollRegion } from "@/lib/a11y/scroll-region"
+import { heldPacksCaption, type HeldPacksTotal } from "@/lib/dashboard/held-packs"
 
 interface SnapshotData {
   wallet: string
@@ -155,6 +156,31 @@ async function fetchWalletIntel(wallet: string): Promise<WalletIntel | null> {
   }
 }
 
+/**
+ * Sealed packs this wallet holds, at the lowest live ask (2026-11-21). `failed`
+ * is a read that did not answer — rendered as "couldn't load", never as $0.
+ */
+async function fetchWalletPacks(wallet: string): Promise<{ total: HeldPacksTotal | null; failed: boolean }> {
+  if (!/^0x[0-9a-fA-F]{16}$/.test(wallet)) return { total: null, failed: false }
+  try {
+    const res = await fetch(`${siteUrl()}/api/public/wallet-packs?wallet=${encodeURIComponent(wallet)}`, {
+      next: { revalidate: 600 },
+    })
+    if (!res.ok) return { total: null, failed: true }
+    const d = await res.json()
+    return {
+      total: { held: Number(d?.held) || 0, listed: Number(d?.listed) || 0, lowAskUsd: Number(d?.low_ask_usd) || 0, walletsFailed: 0 },
+      failed: false,
+    }
+  } catch {
+    return { total: null, failed: true }
+  }
+}
+
+function fmtPackUsd(n: number): string {
+  return "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 /** "@handle" when the wallet resolves to a username, else the address itself. */
 async function shareOwnerLabel(wallet: string): Promise<string> {
   try {
@@ -264,10 +290,11 @@ function ShareUnavailable({ wallet }: { wallet: string }) {
 export default async function SharePage(props: { params: Promise<{ wallet: string }> }) {
   const params = await props.params
   const wallet = params.wallet
-  const [snapshot, intel, owner] = await Promise.all([
+  const [snapshot, intel, owner, packs] = await Promise.all([
     fetchSnapshot(wallet),
     fetchWalletIntel(wallet),
     shareOwnerLabel(wallet),
+    fetchWalletPacks(wallet),
   ])
   const data = snapshot.data
 
@@ -323,6 +350,14 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
                     {h.caption}
                   </div>
                 )}
+                {(() => {
+                  const packLine = heldPacksCaption(packs.total, packs.failed, fmtPackUsd)
+                  return packLine ? (
+                    <div style={{ fontSize: 12, fontFamily: "monospace", color: "var(--rpc-text-muted)", marginTop: 4, letterSpacing: "0.04em" }}>
+                      {packLine}
+                    </div>
+                  ) : null
+                })()}
               </>
             )
           })()}
