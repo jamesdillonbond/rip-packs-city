@@ -8,7 +8,7 @@
 
 Source: [strategy-2026-11-22.md](../strategy/strategy-2026-11-22.md) §4 (Trevor: "Do what you think is best").
 - ⛔ **LANE BUDGET:** do not add a pg_cron job or pipeline unless the same change retires one, and write both in the ledger. Baseline: 318 active jobs on 11-22.
-- ⛔ **MAINTENANCE MODE** for Panini, Pinnacle, Golazos and UFC: fix defects and keep data honest; no new features or surfaces.
+- ✅ **NO MAINTENANCE MODE (Trevor reversed it 11-22 ~10:22 AM PT):** Panini, Pinnacle, Golazos, UFC and Candy keep being built out to completion. Do not cite low usage as a reason to hold a feature.
 - **Mon 11-23 ~3:45 AM PT:** read `fmv_accuracy_weekly` for the 11-16 week, Top Shot HIGH / MEDIUM within ±25 %. Each ≥ 70 makes week 2 of the 4 the Top Shot gate needs (11-09 was week 1: 80.1 / 74.1). Write the reading into go-live-2026-09.md §6 item 5.
 - **On any new major Top Shot release** (Atlas book `product='nba'`): the sentinel arm "Top Shot Sales Against ASK_ONLY (6h)" is the drop-day read. On the drop day and the day after, also run the per-PT-day lag-0 query in strategy-2026-11-22.md §1. A pass (≥ 70 % within ±25 % at sale) is the gate's drop-day condition.
 

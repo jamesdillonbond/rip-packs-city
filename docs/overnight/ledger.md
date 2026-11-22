@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~10:22 AM PT · 📝 DOCS — maintenance mode REVERSED by Trevor; every collection keeps being built out (Claude Code cloud; Trevor: "Take off that maintenance mode gate. We will have users there once we actually have things built for them all. Users won't come to halfway built features")
+
+- Struck from strategy-2026-11-22.md §2/§4/Move 4, panini.md, disney-pinnacle.md, roadmap-2026-10-17.md, roadmap-status.md and the focus steer. Each records the reversal with Trevor's words.
+- **Unchanged:** the Top Shot realised-sales gate, the lane budget (318 pg_cron jobs, a new job beside a retirement), and the event anchor.
+- **Revert:** revert this commit (docs only).
+
 ### 2026-11-22 ~10:20 AM PT · 🔧 SHIPPED (code) — drops: Top Shot This trade-in packs with no hand entry are surfaced (`meta.needs_hand_entry` + a draft warning); calendar doc records the Candy store relaunch and Overtime packs (Claude Code cloud, X-draft run; Trevor: "Keep digging")
 
 - Why: Top Shot This packs are REWARD dists in the book, which the calendar drops by design; only MANUAL_DROPS lists them, so 11-16's Stephen Curry Top Shot This Pack (dist 8941) was on no report. `topShotThisNeedingEntry()` (lib/insights/pack-calendar.ts) names book Top Shot This dists started within ±7 d that no Top Shot MANUAL_DROPS entry covers (challenge/reward packs excluded); the API returns them in `meta.needs_hand_entry`; `x-draft.mjs` warns on each. Tests +2.

@@ -1158,7 +1158,7 @@ A dated snapshot. The item text in [known-issues.md](known-issues.md) wins over 
 All three are in [strategy-2026-11-22.md](../strategy/strategy-2026-11-22.md) §4, with their evidence:
 - **Top Shot gate = realised-sales accuracy.** HIGH and MEDIUM each ≥ 70 % within ±25 % for 4 consecutive weekly reads, plus one drop day ≥ 70 % at sale, plus M3–M11. All Day M2 no longer holds Top Shot. 1 of 4 weeks met at decision.
 - **Next event** anchors to the next major Top Shot release; none is dated on 11-22.
-- **Maintenance mode** for Panini, Pinnacle, Golazos and UFC, and a lane budget (318 pg_cron jobs baseline; a new job ships only beside a retirement).
+- ~~**Maintenance mode** for Panini, Pinnacle, Golazos and UFC~~ — **REVERSED by Trevor the same morning** ("Users won't come to halfway built features"): every collection keeps being built out. The **lane budget** stays (318 pg_cron jobs baseline; a new job ships only beside a retirement).
 
 ## Decisions taken — the 10-19 thread's open items (2026-10-19 ~10:20 PM PT; Trevor: "Make decisions on these yourself")
 
