@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~3:20 PM PT · 🔧 SHIPPED (runner) + 🗄 APPLIED (`20261122225806`) — Panini grid sightings are credited to the sport the REQUEST applied; NBA products 2053 + 1981 restored to Basketball after the 2 PM run's "Womens Soccer" pass relabelled them (Claude Code cloud; NWSL thread)
+
+- **Measured 2 PM PT run:** the residential runner's "Womens Soccer" grid served the Basketball/WNBA set ids (none of NWSL 2478/2460; 13 new cards in 76 pages), though the same URL serves NWSL in Trevor's Chrome (also after a WNBA page). Root cause not yet visible from the cloud (laptop folder access declined). Its sightings set `last_grid_sport='Womens Soccer'` on 2053 ("2023-24 Panini NFT Best of The NBA") and 1981 ("2023-24 Panini NFT Prizm Basketball").
+- New `scripts/panini-grid-sport.mjs` (+ test, planted defect → 2 of 4 red): the runner reads `applied_filters` from each grid request and credits the sighting to that sport; the enum marker now carries `sports[].applied` (grid pages by applied sport), so the 6 PM run shows what the site actually served.
+- Same run, good news: the pack-page cap fix opened all three drop pages (NWSL #1065 captured: 13,000 packs, 4,396 unopened); WWE (1875/2065/2104/2105/2110) and Collegiate (1643/1771) recorded, `walk_cards=false`.
+- **Revert:** `git revert` "panini runner: credit grid sightings to the applied sport"; DB: `UPDATE public.panini_products SET last_grid_sport = 'Womens Soccer' WHERE set_id IN (2053, 1981);`
+
 ### 2026-11-22 ~3:35 PM PT · 🔧 SHIPPED (code) — the weekly email's sealed-pack "this week" change compares like-for-like holdings only; `main` unblocked on the registry own-property guard (Claude Code cloud, autonomous 4 h pass)
 
 - ⚠ **Time correction:** shipped ~3:05 PM PT (DB clock read at 3:07 PM PT). The heading's "3:35" was an estimate, and headings are append-only.
