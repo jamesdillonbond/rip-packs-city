@@ -605,7 +605,7 @@ export default function ProfileClient(props: {
               {portfolioTotal > 0 ? fmtDollars(portfolioTotal) : "—"}
             </div>
             {(function() {
-              const note = walletTotalCaption(heldPacks, heldPacksFailed);
+              const note = walletTotalCaption(heldPacks, heldPacksFailed, wallets.length > 0);
               return note ? (
                 <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.08em", marginBottom: 4 }}>
                   {note}

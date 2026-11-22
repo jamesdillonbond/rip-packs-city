@@ -98,7 +98,13 @@ export function walletTotalUsd(
 }
 
 /** The only caption the single number keeps: a note when sealed packs couldn't be counted. */
-export function walletTotalCaption(packs: HeldPacksTotal | null, packsFailed: boolean): string | null {
+export function walletTotalCaption(
+  packs: HeldPacksTotal | null,
+  packsFailed: boolean,
+  /** The pack read is still in flight (measured 2026-11-22: ~9 s cold) — the figure is not final yet. */
+  packsLoading = false,
+): string | null {
+  if (packsLoading && !packsFailed && !packs) return "Adding sealed packs…"
   if (packsFailed || (packs && packs.walletsFailed > 0 && packs.held === 0)) return "Sealed packs couldn't load — not included"
   if (packs && packs.walletsFailed > 0) return "Some wallets' sealed packs didn't load"
   return null

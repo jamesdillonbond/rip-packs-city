@@ -1115,7 +1115,7 @@ function ProfilePageInner() {
                capped low ask, as ONE figure. No breakdown caption. */
             value={fmtUsd(walletTotalUsd(totalFmv, staleFmv, heldPacks, heldPacksFailed))}
             color="var(--rpc-success)"
-            caption={walletTotalCaption(heldPacks, heldPacksFailed) ?? undefined}
+            caption={walletTotalCaption(heldPacks, heldPacksFailed, wallets.length > 0) ?? undefined}
             unavailable={statsIncomplete}
             loading={statsLoading}
             pending={statsPending}

@@ -61,6 +61,11 @@ describe("walletTotalUsd / walletTotalCaption (2026-11-22 single number)", () =>
     expect(walletTotalCaption(packs, true)).toMatch(/not included/)
     expect(walletTotalCaption(packs, false)).toBeNull()
   })
+  it("says the figure is still adding packs while their read is in flight", () => {
+    expect(walletTotalCaption(null, false, true)).toMatch(/Adding sealed packs/)
+    expect(walletTotalCaption(packs, false, true)).toBeNull()
+    expect(walletTotalCaption(null, false, false)).toBeNull()
+  })
   it("handles no packs", () => {
     expect(walletTotalUsd(100, 0, null, false)).toBe(100)
   })
