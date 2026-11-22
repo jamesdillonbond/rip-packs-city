@@ -198,7 +198,7 @@ export async function POST(req: NextRequest) {
   let editionsCleared = 0
   // #70: accepted offers written as offer_fill sales (counted from rows the DB returned).
   let fillsSeen = 0
-  let fillSales = { written: 0, suppressed: 0, duped: 0, unresolved: 0 }
+  let fillSales = { written: 0, suppressed: 0, duped: 0, unresolved: 0, resolvedOnChain: 0, chainErrors: 0 }
   let fetchError: string | null = null
 
   try {
@@ -404,6 +404,8 @@ export async function POST(req: NextRequest) {
     fill_sales_suppressed_by_dedup: fillSales.suppressed,
     fill_sales_duped: fillSales.duped,
     fill_sales_unresolved: fillSales.unresolved,
+    fill_sales_resolved_on_chain: fillSales.resolvedOnChain,
+    fill_sales_chain_errors: fillSales.chainErrors,
     duration_ms: Date.now() - startTime,
   })
 

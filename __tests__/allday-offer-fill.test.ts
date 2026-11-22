@@ -72,20 +72,40 @@ describe("writeAllDayOfferFillSales", () => {
       { data: null, error: { code: "23505", message: "dup" } }, // already there
     ]
     const out = await writeAllDayOfferFillSales([fill({ fillTx: "t1" }), fill({ fillTx: "t2" }), fill({ fillTx: "t3" })])
-    expect(out).toEqual({ written: 1, suppressed: 1, duped: 1, unresolved: 0 })
+    expect(out).toEqual({ written: 1, suppressed: 1, duped: 1, unresolved: 0, resolvedOnChain: 0, chainErrors: 0 })
   })
 
   it("an unplaceable fill is skipped and counted, never inserted with a NULL edition", async () => {
     state.editions = []
-    const out = await writeAllDayOfferFillSales([fill({ editionExternalId: null, nftId: "999" })])
-    expect(out).toEqual({ written: 0, suppressed: 0, duped: 0, unresolved: 1 })
+    // The chain read finds nothing either (the buyer moved the moment on): still skipped, counted.
+    const out = await writeAllDayOfferFillSales([fill({ editionExternalId: null, nftId: "999" })], { runScript: async () => null })
+    expect(out).toEqual({ written: 0, suppressed: 0, duped: 0, unresolved: 1, resolvedOnChain: 0, chainErrors: 0 })
+    expect(state.inserts).toHaveLength(0)
+  })
+
+  it("an NFT-type offer RPC has never seen is placed from the chain (the buyer's collection), not dropped", async () => {
+    // 11-15 → 11-22: 24 of 24 such fills were missing from sales before this fallback.
+    state.editions = [{ external_id: "4321", id: "uuid-4321" }]
+    const calls: unknown[] = []
+    const out = await writeAllDayOfferFillSales([fill({ editionExternalId: null, nftId: "6979697", amount: 339 })], {
+      runScript: async (_code, args) => { calls.push(args); return { id: "6979697", editionID: "4321", serialNumber: "17" } },
+    })
+    expect(calls[0]).toEqual([{ type: "Address", value: "0xbb" }, { type: "UInt64", value: "6979697" }])
+    expect(out).toMatchObject({ written: 1, unresolved: 0, resolvedOnChain: 1 })
+    expect(state.inserts[0]).toMatchObject({ edition_id: "uuid-4321", serial_number: 17, price_usd: 339, source: "offer_fill" })
+  })
+
+  it("a failed chain read is counted and leaves the fill unresolved — never a guessed edition", async () => {
+    state.editions = []
+    const out = await writeAllDayOfferFillSales([fill({ editionExternalId: null, nftId: "1" })], { runScript: async () => { throw new Error("script HTTP 503") } })
+    expect(out).toMatchObject({ written: 0, unresolved: 1, chainErrors: 1 })
     expect(state.inserts).toHaveLength(0)
   })
 
   it("places a non-EDITION offer through the nft (wallet cache) and writes a NULL — never 0 — serial when unknown", async () => {
     state.editions = [{ external_id: "888", id: "uuid-888" }]
     state.wmc = [{ moment_id: "555", edition_key: "888", serial_number: null }]
-    await writeAllDayOfferFillSales([fill({ editionExternalId: null })])
+    await writeAllDayOfferFillSales([fill({ editionExternalId: null })], { runScript: async () => { throw new Error("must not be called") } })
     expect(state.inserts[0]).toMatchObject({ edition_id: "uuid-888", serial_number: null, source: "offer_fill" })
   })
 

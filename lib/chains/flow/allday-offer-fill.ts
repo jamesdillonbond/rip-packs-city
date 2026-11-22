@@ -17,6 +17,7 @@
 import crypto from "crypto"
 import { supabaseAdmin } from "@/lib/supabase"
 import { normAddr } from "@/lib/chains/flow/topshot-offer-fill"
+import { BORROW_MOMENT_SCRIPT, runAllDayScript } from "@/lib/chains/flow/allday-edition-onchain"
 
 export const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070"
 const IN_CHUNK = 200
@@ -65,6 +66,8 @@ export interface AllDayFillWriteResult {
   suppressed: number // the cross-source dedup trigger folded it into an existing row
   duped: number // already in sales (re-scan)
   unresolved: number // no edition could be placed (NOT NULL on sales) — skipped
+  resolvedOnChain: number // an NFT-type offer's edition read from the chain (buyer's collection)
+  chainErrors: number // chain reads that failed (the fill stays unresolved)
 }
 
 /**
@@ -72,8 +75,11 @@ export interface AllDayFillWriteResult {
  * Every read and every non-duplicate insert error THROWS, so the caller holds its
  * cursor rather than advancing past fills that did not land.
  */
-export async function writeAllDayOfferFillSales(fills: AllDayOfferFill[]): Promise<AllDayFillWriteResult> {
-  const out: AllDayFillWriteResult = { written: 0, suppressed: 0, duped: 0, unresolved: 0 }
+export async function writeAllDayOfferFillSales(
+  fills: AllDayOfferFill[],
+  opts?: { chainLookups?: number; runScript?: (code: string, args: Array<{ type: string; value: unknown }>) => Promise<unknown> },
+): Promise<AllDayFillWriteResult> {
+  const out: AllDayFillWriteResult = { written: 0, suppressed: 0, duped: 0, unresolved: 0, resolvedOnChain: 0, chainErrors: 0 }
   if (fills.length === 0) return out
 
   // editions by external_id (EDITION offers)
@@ -112,6 +118,33 @@ export async function writeAllDayOfferFillSales(fills: AllDayOfferFill[]): Promi
     if (error) throw new Error(`all day wallet_moments_cache lookup: ${error.message}`)
     for (const r of (data as Array<{ moment_id: string; edition_key: string | null; serial_number: number | null }> | null) ?? [])
       if (!byNft.has(r.moment_id)) byNft.set(r.moment_id, { editionId: null, editionKey: r.edition_key, serial: r.serial_number })
+  }
+  // CHAIN FALLBACK (2026-11-21). An `NFT`-type offer (an offer on one specific moment) names no
+  // editionId, so it was placed only when RPC already knew the moment (moments / wallet cache) —
+  // and was dropped as `unresolved` otherwise: an on-chain census of 11-15 → 11-22 found 24 of 24
+  // such fills missing from `sales` ($623; EDITION fills were 740 of 740). The buyer (the offer's
+  // maker) holds the moment right after the fill, so borrow it there and read its editionID +
+  // serial — the same proven path the sales indexer uses. A moment the buyer already moved on
+  // stays unresolved (counted), never guessed.
+  const chainBudget = opts?.chainLookups ?? 40
+  let chainTried = 0
+  for (const f of fills) {
+    if (chainTried >= chainBudget) break
+    if (!f.nftId || !f.buyer || f.editionExternalId || byNft.has(f.nftId)) continue
+    chainTried++
+    try {
+      const r = (await (opts?.runScript ?? runAllDayScript)(BORROW_MOMENT_SCRIPT, [
+        { type: "Address", value: f.buyer },
+        { type: "UInt64", value: f.nftId },
+      ])) as Record<string, string> | null
+      if (r && r.editionID) {
+        const serial = Number(r.serialNumber)
+        byNft.set(f.nftId, { editionId: null, editionKey: String(r.editionID), serial: Number.isFinite(serial) ? serial : null })
+        out.resolvedOnChain++
+      }
+    } catch {
+      out.chainErrors++
+    }
   }
   const extraKeys = Array.from(new Set(Array.from(byNft.values()).map((v) => v.editionKey).filter((k): k is string => !!k && !editionByExt.has(k))))
   for (let i = 0; i < extraKeys.length; i += IN_CHUNK) {

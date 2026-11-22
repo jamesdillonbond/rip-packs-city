@@ -6,7 +6,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { fireNextPipelineStep } from "@/lib/pipeline-chain"
 import { hydrateAllDayEditions, toUpsertRow } from "@/lib/editions-hydrate"
-import { decodeV1SaleTx } from "@/lib/chains/flow/dapper-v1-tx-decode"
+import { decodeV1SaleTx, decodeV1MultiSaleTx, type V1MultiDecodeResult } from "@/lib/chains/flow/dapper-v1-tx-decode"
 import crypto from "crypto"
 import { normalizeFlowEventAddress } from "@/lib/address"
 // The one copy of the edition-data script: this route's private copy never type-checked (2026-11-15).
@@ -656,6 +656,9 @@ export async function POST(req: NextRequest) {
           }
         }
 
+        const v1TxCount = new Map<string, number>()
+        for (const s of v1Sales) v1TxCount.set(s.transactionId, (v1TxCount.get(s.transactionId) ?? 0) + 1)
+        const v1MultiByTx = new Map<string, V1MultiDecodeResult>()
         let v1TxDecodeUsed = 0
         let v1CacheHits = 0
         let v1UncertainCount = 0
@@ -693,6 +696,32 @@ export async function POST(req: NextRequest) {
             continue
           }
           v1TxDecodeUsed++
+          // A tx that bought SEVERAL listings (a sweep) carries one gross per listing, and
+          // decodeV1SaleTx returns the tx's TOTAL — so each NFT was recorded at the whole
+          // basket's price (on-chain census 11-21: 4 × $0.75 recorded as 4 × $3.00). Price
+          // each NFT from its own listing segment instead; uncertain → parked, never guessed.
+          if ((v1TxCount.get(sale.transactionId) ?? 0) > 1) {
+            let multi = v1MultiByTx.get(sale.transactionId)
+            if (!multi) {
+              multi = await decodeV1MultiSaleTx(sale.transactionId, {
+                depositEventType: ALLDAY_DEPOSIT_EVENT,
+                withdrawEventType: ALLDAY_WITHDRAW_EVENT,
+                nftType: "A.e4cf4bdc1751c65d.AllDay.NFT",
+              })
+              v1MultiByTx.set(sale.transactionId, multi)
+              await delay(V1_TX_DECODE_DELAY_MS)
+            }
+            const per = multi.perNft.get(sale.nftID)
+            sale.buyer = per?.buyer ?? null
+            sale.seller = per?.seller ?? null
+            if (per && per.priceCertain && per.priceDuc != null) {
+              sale.salePrice = String(per.priceDuc)
+            } else {
+              v1UncertainPriceSales.push({ sale, reason: `multi_${per?.priceReason ?? multi.reason}`, samples: [] })
+              v1UncertainCount++
+            }
+            continue
+          }
           const decoded = await decodeV1SaleTx(sale.transactionId, {
             depositEventType: ALLDAY_DEPOSIT_EVENT,
             withdrawEventType: ALLDAY_WITHDRAW_EVENT,
