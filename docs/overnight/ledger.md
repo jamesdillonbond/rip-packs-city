@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~3:10 PM PT · 🔧 SHIPPED (code) — dashboard "Value / 30D" is a STACKED area chart: moments on the bottom, sealed packs on top, so the top edge is the total over time (Claude Code cloud; Trevor: "Show as a stacked chart, so users can still visualize the total over time")
+
+- `components/dashboard/ValueHistoryCard.tsx`: LineChart → AreaChart, both series on one `stackId`; tooltip shows Total / Moments / Sealed packs; legend drops "incl. stale-priced" (the tile includes stale now too). Packs were first recorded 11-22, so earlier nights have no pack value (null, not $0) — a muted "Sealed packs tracked from Nov 22" note stops the jump from reading as a gain. `nightTotal()` / `packSeriesStart()` pure + tested.
+- Known small gap: the chart's moments band is the snapshot `total_fmv`, which still includes closed-market UFC (~$364); the tile above excludes it.
+- **Revert:** `git revert` the code commit titled "feat(dashboard): stacked Value / 30D chart".
+
 ### 2026-11-22 ~3:05 PM PT · 🔧 SHIPPED (code) — the single Portfolio FMV leaves closed markets out (UFC Strike on Flow), so the dashboard, profile and share card show the same number (Claude Code cloud; Trevor: "Keep going")
 
 - Found in the live check: dashboard $66,080 vs share card $65,681.40. Measured: $364.26 was UFC (all stale-priced, market closed 2026-05-13; the share card already excluded it and the dashboard UFC tile already reads "—"); the other ~$34 is the dashboard/profile cache (8:17 AM PT) vs the share card's live read. Trevor 2026-11-15: keep UFC closed on the site until binders show Aptos holdings.
