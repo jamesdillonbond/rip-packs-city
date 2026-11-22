@@ -13,7 +13,7 @@ import FunnelTracker from "@/components/FunnelTracker"
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { formatClosedOn } from "@/lib/market-closed"
 import { fmvBasis } from "@/lib/fmv-basis"
-import { buildSeriesBarsFrom, compactSeriesLabel, closedMarketNote, shareHeadline, fullCollectionHref, shareCollectionFmvLabel, shareMomentFmvLabel } from "@/lib/share-card-view"
+import { buildSeriesBarsFrom, compactSeriesLabel, shareHeadline, fullCollectionHref, shareCollectionFmvLabel, shareMomentFmvLabel } from "@/lib/share-card-view"
 import { OG_INHERITED } from "@/lib/seo"
 import { normalizeAddress, truncateAddressForDisplay } from "@/lib/address"
 import { momentSubjectName } from "@/lib/entity-href"
@@ -53,7 +53,7 @@ interface SnapshotData {
     stale_fmv?: number | null
     stale_count?: number | null
     // ISO date the market closed, or null/absent for a live market. When set,
-    // this collection is counted but excluded from Total Collection FMV.
+    // this collection is counted, and since 2026-11-22 its FMV is IN the hero total too.
     market_closed_at?: string | null
   }>
   rarest: {
@@ -337,7 +337,13 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
             // 2026-11-22 (Trevor: "one number that encompasses everything in the wallet"):
             // every Moment (stale-priced included) + sealed packs at capped low ask — same
             // single figure as the dashboard and profile.
-            const value = walletTotalUsd(Number(data.totalFmv) || 0, 0, packs.total, packs.failed)
+            // UFC included (Trevor 2026-11-22: "We should have ufc"): the snapshot's totalFmv
+            // leaves closed markets out, so sum every collection's FMV when the rows are there.
+            const rows = data.perCollection ?? []
+            const momentsFmv = rows.length > 0
+              ? rows.reduce((s, c) => s + (Number(c.fmv) || 0), 0)
+              : Number(data.totalFmv) || 0
+            const value = walletTotalUsd(momentsFmv, 0, packs.total, packs.failed)
             const note = walletTotalCaption(packs.total, packs.failed)
             return (
               <>
@@ -355,15 +361,6 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
           <div style={{ fontSize: 16, color: "var(--rpc-text-secondary)", marginTop: 8 }}>
             {formatCount((Number(data.totalMoments) || 0) + (!packs.failed && packs.total ? packs.total.held : 0))} assets &middot; {formatCount(data.badgeCount)} badges
           </div>
-          {(() => {
-            const note = closedMarketNote(data.perCollection)
-            if (!note) return null
-            return (
-              <div style={{ fontSize: 12, color: "var(--rpc-text-secondary)", marginTop: 10, maxWidth: 520, marginLeft: "auto", marginRight: "auto", lineHeight: 1.5 }}>
-                {note}
-              </div>
-            )
-          })()}
         </div>
 
         {/* Account CTA at the value moment (2026-11-16). The bottom CTA below sits

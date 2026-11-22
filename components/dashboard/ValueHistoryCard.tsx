@@ -10,9 +10,11 @@
 // edge is the total, matching the single Portfolio FMV figure above. Supersedes the morning's
 // two-separate-lines design.
 //
-// ⚠ Sealed packs were first recorded on 2026-11-22. Nights before that carry no pack value
-// (null, NOT $0), so the stack's top edge would jump on the first pack night and read as a
-// gain. A muted note names the start date whenever the pack series begins inside the window.
+// ⚠ Sealed packs were first recorded live on 2026-11-22; the 30 nights before were BACKFILLED
+// from ask history the same day (Trevor: "backfilled fmv data") and carry packs_estimated —
+// the tooltip marks them "est.". A night with no pack value at all stays null (NOT $0); if the
+// pack series still begins inside the window, a muted note names the start date so the
+// step on that night does not read as a gain.
 //
 // States: loading · couldn't load (never an empty chart that reads as "no history") ·
 // no snapshots yet · the chart. Dates are YYYY-MM-DD strings formatted by hand — no
@@ -21,7 +23,7 @@
 import { useEffect, useState } from "react"
 import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 
-type Point = { date: string; moments_usd: number | null; packs_usd: number | null; packs_held: number | null }
+type Point = { date: string; moments_usd: number | null; packs_usd: number | null; packs_held: number | null; packs_estimated?: boolean }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 export function fmtDay(iso: string): string {
@@ -68,7 +70,7 @@ function StackTooltip({ active, payload, label }: { active?: boolean; payload?: 
       <div style={{ marginBottom: 4 }}>{fmtDay(String(label ?? p.date))}</div>
       {row("Total", total, true)}
       {row("Moments", p.moments_usd)}
-      {row("Sealed packs", p.packs_usd)}
+      {row(p.packs_estimated ? "Sealed packs (est.)" : "Sealed packs", p.packs_usd)}
     </div>
   )
 }

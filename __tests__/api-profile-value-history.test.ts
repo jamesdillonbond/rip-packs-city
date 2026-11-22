@@ -44,9 +44,17 @@ describe("GET /api/profile/value-history", () => {
     const body = await (await GET()).json()
     expect(state.eqs).toEqual([["owner_key", "user-1"]])
     expect(body.history).toEqual([
-      { date: "2026-11-21", moments_usd: 40100, packs_usd: null, packs_held: null },
-      { date: "2026-11-22", moments_usd: 40547.1, packs_usd: 25533.7, packs_held: 327 },
+      { date: "2026-11-21", moments_usd: 40100, packs_usd: null, packs_held: null, packs_estimated: false },
+      { date: "2026-11-22", moments_usd: 40547.1, packs_usd: 25533.7, packs_held: 327, packs_estimated: false },
     ])
+  })
+  it("a backfilled night (pack_value_basis set) is marked as an estimate; a live-measured one is not", async () => {
+    state.rows = { data: [
+      { snapshot_date: "2026-11-22", total_fmv: 100, moment_count: 3, pack_low_ask_usd: "50", pack_held_count: 2, pack_value_basis: null },
+      { snapshot_date: "2026-11-21", total_fmv: 100, moment_count: 3, pack_low_ask_usd: "49", pack_held_count: 2, pack_value_basis: "hourly_ask" },
+    ], error: null }
+    const body = await (await GET()).json()
+    expect(body.history.map((h: any) => h.packs_estimated)).toEqual([true, false])
   })
   it("a stored 0 with packs held is unpriced (null); a 0 with none held is a true $0", async () => {
     state.rows = { data: [

@@ -19,7 +19,6 @@ import { getCollectionByUuid } from "@/lib/collections";
 import { isMarketClosed } from "@/lib/market-closed";
 import { accentFill, accentText, labelOn } from "@/lib/accent-text"
 import { walletTotalUsd, walletTotalCaption, type HeldPacksTotal } from "@/lib/dashboard/held-packs";
-import { isClosedMarketCollectionId } from "@/lib/dashboard/aggregate";
 
 // ── Types ─────────────────────────────────────────────────────────
 interface ProfileBio {
@@ -353,15 +352,13 @@ export default function ProfileClient(props: {
   const publicSlabs = slabs.filter(Boolean) as TrophySlabData[];
   // ⚠ SAME DEFINITION AS THE DASHBOARD (QA finding #6, 2026-09-02: the two must agree).
   // Since 2026-11-22 both show ONE number: `cached_fmv` (stale-priced included) across
-  // open markets, plus sealed packs — see openMarketFmv / portfolioTotal below.
+  // every collection (UFC included), plus sealed packs — see momentsFmv / portfolioTotal below.
   const totalMoments = wallets.reduce(function(sum, w) { return sum + (w.cached_moment_count ?? 0); }, 0);
   // 2026-11-22 (Trevor): headline value and count cover EVERYTHING held — Moments and
   // cards (stale-priced included) plus sealed packs at capped low ask. Same as the dashboard.
-  // Closed markets (UFC on Flow) count as assets but not value — same as the dashboard + share card.
-  const openMarketFmv = wallets.reduce(function(sum, w) {
-    return isClosedMarketCollectionId(w.collection_id) ? sum : sum + (w.cached_fmv ?? 0);
-  }, 0);
-  const portfolioTotal = walletTotalUsd(openMarketFmv, 0, heldPacks, heldPacksFailed);
+  // Every collection, UFC included (Trevor 2026-11-22: "We should have ufc") — same as the dashboard + share card.
+  const momentsFmv = wallets.reduce(function(sum, w) { return sum + (w.cached_fmv ?? 0); }, 0);
+  const portfolioTotal = walletTotalUsd(momentsFmv, 0, heldPacks, heldPacksFailed);
   const totalAssets = totalMoments + (!heldPacksFailed && heldPacks ? heldPacks.held : 0);
   const rpcScore = wallets.length > 0 ? wallets[0]?.cached_rpc_score ?? null : null;
   const isOwnProfile =

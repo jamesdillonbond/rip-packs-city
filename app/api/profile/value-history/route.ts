@@ -30,7 +30,7 @@ export async function GET() {
   try {
     const { data, error } = await boundedRead(sb
       .from("portfolio_snapshots")
-      .select("snapshot_date, total_fmv, moment_count, pack_low_ask_usd, pack_held_count")
+      .select("snapshot_date, total_fmv, moment_count, pack_low_ask_usd, pack_held_count, pack_value_basis")
       .eq("owner_key", user.id)
       .order("snapshot_date", { ascending: false })
       .limit(30), "api/profile/value-history/portfolio_snapshots")
@@ -38,6 +38,7 @@ export async function GET() {
     const rows = (Array.isArray(data) ? data : []) as Array<{
       snapshot_date: string; total_fmv: number | string | null; moment_count: number | null
       pack_low_ask_usd: number | string | null; pack_held_count: number | null
+      pack_value_basis?: string | null
     }>
     const n = (v: unknown) => (v == null || !Number.isFinite(Number(v)) ? null : Number(v))
     const history = rows.reverse().map((r) => ({
@@ -45,6 +46,9 @@ export async function GET() {
       moments_usd: n(r.total_fmv),
       packs_usd: n(r.pack_low_ask_usd) === 0 && (n(r.pack_held_count) ?? 0) > 0 ? null : n(r.pack_low_ask_usd),
       packs_held: n(r.pack_held_count),
+      // 2026-11-22: nights before packs were recorded live are RECONSTRUCTED from ask history
+      // (backfill_portfolio_snapshot_pack_values) — an estimate, and the chart says so.
+      packs_estimated: r.pack_value_basis != null,
     }))
     return NextResponse.json({ history }, { headers: { "Cache-Control": "private, no-store" } })
   } catch (err) {

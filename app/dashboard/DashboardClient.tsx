@@ -14,7 +14,7 @@ import RpcLogo from "@/components/RpcLogo";
 import SignOutButton from "@/components/auth/SignOutButton";
 import { trophyComparator, TROPHY_SORTS, type TrophySortKey } from "@/lib/trophy-comparator";
 import PaniniUsernamesPanel from "@/components/profile/PaniniUsernamesPanel";
-import { sumMoments, sumOpenMarketFmv, countActiveCollections, groupWalletsByAddress } from "@/lib/dashboard/aggregate";
+import { sumMoments, sumPortfolioFmv, countActiveCollections, groupWalletsByAddress } from "@/lib/dashboard/aggregate";
 import { walletTotalUsd, walletTotalCaption, type HeldPacksTotal } from "@/lib/dashboard/held-packs";
 import { publishedCollections, getPublishedCollection } from "@/lib/collections";
 import { detectAddressChain, isCadenceAddress, isSolanaAddress, normalizeAddress, truncateAddressForDisplay } from "@/lib/address";
@@ -904,9 +904,8 @@ function ProfilePageInner() {
   // Pure aggregation extracted to @/lib/dashboard/aggregate (unit-tested there).
   const totalMoments = useMemo(() => sumMoments(statsByWallet), [statsByWallet]);
   // The single Portfolio FMV figure's Moment part (2026-11-22, Trevor: one number for
-  // everything in the wallet): fresh + stale-priced FMV, closed markets (UFC on Flow) out —
-  // the same total the share card shows.
-  const momentsFmv = useMemo(() => sumOpenMarketFmv(statsByWallet), [statsByWallet]);
+  // everything in the wallet, UFC included): fresh + stale-priced FMV across every collection.
+  const momentsFmv = useMemo(() => sumPortfolioFmv(statsByWallet), [statsByWallet]);
   const collectionCount = useMemo(() => countActiveCollections(statsByWallet), [statsByWallet]);
 
   // At least one wallet's stats could not be loaded, so every headline figure is
