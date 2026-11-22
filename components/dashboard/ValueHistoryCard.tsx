@@ -10,6 +10,10 @@
 // States: loading · couldn't load (never an empty chart that reads as "no history") ·
 // no snapshots yet · the chart. Dates are YYYY-MM-DD strings formatted by hand — no
 // Date/locale call during render (React #418 class).
+//
+// ⚠ The moments line is the snapshot's total_fmv, which INCLUDES stale-priced moments;
+// the Portfolio FMV tile above excludes them (it shows them as a caption). The legend says
+// so, so a chart sitting ~$5k above the tile does not read as a contradiction.
 
 import { useEffect, useState } from "react"
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
@@ -85,7 +89,7 @@ export default function ValueHistoryCard() {
                   ]}
                 />
                 {hasPacks ? <Legend wrapperStyle={{ fontSize: 10, fontFamily: mono }} /> : null}
-                <Line type="monotone" dataKey="moments_usd" name="Moments (FMV)" stroke="var(--rpc-red, #E03A2F)" strokeWidth={2} dot={false} connectNulls={false} isAnimationActive={false} />
+                <Line type="monotone" dataKey="moments_usd" name="Moments (FMV, incl. stale-priced)" stroke="var(--rpc-red, #E03A2F)" strokeWidth={2} dot={false} connectNulls={false} isAnimationActive={false} />
                 {hasPacks ? (
                   <Line type="monotone" dataKey="packs_usd" name="Sealed packs (low ask)" stroke="#F59E0B" strokeWidth={2} dot={{ r: 2 }} connectNulls={false} isAnimationActive={false} />
                 ) : null}

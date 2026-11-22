@@ -28,12 +28,12 @@ describe("ValueHistoryCard", () => {
       { date: "2026-11-22", moments_usd: 40547, packs_usd: 25533.7, packs_held: 327 },
     ] }))
     render(<ValueHistoryCard />)
-    await waitFor(() => expect(screen.getAllByTestId("line").map((e) => e.textContent)).toEqual(["Moments (FMV)", "Sealed packs (low ask)"]))
+    await waitFor(() => expect(screen.getAllByTestId("line").map((e) => e.textContent)).toEqual(["Moments (FMV, incl. stale-priced)", "Sealed packs (low ask)"]))
   })
   it("no pack value yet -> moments line only", async () => {
     vi.stubGlobal("fetch", answer(200, { history: [{ date: "2026-11-21", moments_usd: 40100, packs_usd: null, packs_held: null }] }))
     render(<ValueHistoryCard />)
-    await waitFor(() => expect(screen.getAllByTestId("line").map((e) => e.textContent)).toEqual(["Moments (FMV)"]))
+    await waitFor(() => expect(screen.getAllByTestId("line").map((e) => e.textContent)).toEqual(["Moments (FMV, incl. stale-priced)"]))
   })
   it("a failed read says so, never an empty chart", async () => {
     vi.stubGlobal("fetch", answer(503, { error: "x" }))
