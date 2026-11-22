@@ -24,6 +24,12 @@ Trevor: "let them have access until we can verify easily and effectively" (full 
 - **One verified flag:** new `saved_wallets` collection rows inherit the user's existing verification for the wallet (trigger `20261115230729`).
 - **Adoption read:** scheduled one-off Wed 11-18 10:23 AM PT.
 
+## ⭐ 2026-11-22 — one Portfolio FMV number, Total Assets (Trevor)
+
+- **Portfolio FMV** (dashboard, public profile, share card) is ONE figure: fresh + stale-priced Moments on open markets + sealed packs at capped low ask. Closed markets (UFC Strike on Flow) count in Total Assets but not in value, until UFC reopens (Trevor 11-15). No breakdown caption; "Adding sealed packs…" while loading, "not included" on a failed pack read. Supersedes the 09-04 "headline = total − stale" rule and the 11-21 separate pack line.
+- **Total Moments → Total Assets** = Moments + cards (Panini included) + sealed packs. Profile share tweet says "N assets".
+- Live-checked in Trevor's Chrome 11-22: dashboard/profile/share agree within the cache-vs-live drift (~$34). The dashboard and profile read the hourly-ish `saved_wallets` cache; the share card reads `get_wallet_collection_snapshot` live.
+
 ## ⭐ 2026-11-09 night — audit-pass changes (found by walking production signed in)
 
 - **Cost basis count:** the Collection tab printed "27 moments with a known cost" beside a cost basis summed over 6,628 moments; the count came from the rows on screen. It now uses `get_wallet_summary.moments_with_cost`.
