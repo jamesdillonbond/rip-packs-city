@@ -2961,6 +2961,8 @@ joins over the 14k Top Shot editions are cheap. Cold, that was the 8 s `RPC_READ
 
 A table `CREATE`d in `public` by `postgres` has RLS **off** and inherits the default anon/authenticated grants, so PostgREST serves it to anyone with the anon key the moment it exists. On 10-03 a session's `public.scratch_flip_probe` (88 rows: one wallet's NFT ids, sale and arrival transactions) was anon-readable from ~8:53 AM PT. The smoke test's `check_public_security_invariants` caught it within minutes (`rls_off_base_table`), and it was closed at ~9:10 AM PT by `ENABLE ROW LEVEL SECURITY` + `REVOKE ALL … FROM PUBLIC, anon, authenticated`. Data kept: owner and `service_role` bypass RLS.
 
+⭐ **Since 2026-11-22 (`20261122234542`) the hourly healer `selfheal_audit_table_rls()` (pg_cron 232, `:47`) also covers `public.scratch\_%`**: a scratch table left open is closed within the hour. It is still anon-readable until then, so the rule below stands.
+
 **The convention every other scratch table already follows:** create it in `flowty_archive` (or another non-exposed schema), named `scratch_<yyyymmdd>_<what>`, RLS on. All eight 10-02 export tables are there. If a scratch table must be in `public`, the SAME statement batch enables RLS and revokes anon/authenticated. ⚠ A red `rls_off_base_table:scratch_*` smoke row is a REAL anon read, not noise: verify with `has_table_privilege('anon', '<t>', 'SELECT')`. And read `check_public_security_invariants()` as a SET (`select count(*) from check_public_security_invariants()`): in scalar position it returns NULL whether or not there are violations.
 
 ## ⚠ HOT pruning can starve autovacuum on a hot-updated table, and the index-only scans on it quietly stop being index-only (2026-10-03, PT)
