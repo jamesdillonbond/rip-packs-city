@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-21 ~8:39 PM PT · 🗄 DB MAINTENANCE — two `sales_2026` analytics covers rebuilt CONCURRENTLY, 453 MB → 303 MB; gain small, sales indexes not pursued further (Claude Code cloud, autonomous pass)
+
+- **Why:** `analytics_sales_summary` 90-day / all-collections reads 10.4 s cold (170.8k buffers, 30k read, temp spill); `idx_sales_2026_summary_cover` read 65.3 % density, `idx_sales_2026_pulse_window` 55.4 %.
+- **What:** jobs 907/908 (same recipe; role timeout raised → valid → unscheduled → `RESET`; 0 invalid indexes, no `rpc-oneoff-reindex%` jobs left): summary_cover 229 → **166 MB** (20 s), pulse_window 224 → **137 MB** (23 s).
+- **Measured — a NEGATIVE-ish result, recorded so nobody repeats it:** warm buffers 170.8k → **154.8k (−9 %)**. At 55–65 % density the index is not this function's cost (the temp spill and the 90-day aggregate are). `ts_otherserial_cover` (58.7 %) and `fmv_recalc_window` (61.6 %) were measured and left. ⓘ The real lever for this route is materialisation; it is CDN-cached 10 min + SWR, so users rarely wait on it.
+- **Revert:** none needed.
+
 ### 2026-11-21 ~8:32 PM PT · 🗄 DB MAINTENANCE — `idx_ma_hydration_queue_desc` rebuilt CONCURRENTLY, 291 MB → 115 MB (Claude Code cloud, autonomous pass)
 
 - **Why:** same screen as the two maintenance entries below: `moment_acquisitions`' hydration-queue partial index read **36.1 % leaf density** (`pgstatindex`), range-scanned ~9.4k tuples per scan. The `pack_rips` range indexes read 58–71 % and were left.
