@@ -56,7 +56,8 @@ export default function ValueHistoryCard() {
     return () => { alive = false }
   }, [])
 
-  const hasPacks = (points ?? []).some((p) => p.packs_usd != null)
+  // A member who holds no sealed packs has a true $0 every night; that is not a line worth drawing.
+  const hasPacks = (points ?? []).some((p) => p.packs_usd != null && p.packs_usd > 0)
   const box = { background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 10, padding: "12px 16px" } as const
   const msg = (t: string) => (
     <div style={{ height: 160, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-muted)", fontFamily: mono, fontSize: 11, textAlign: "center" }}>{t}</div>

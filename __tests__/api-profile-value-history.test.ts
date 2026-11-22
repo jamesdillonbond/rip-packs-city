@@ -48,6 +48,14 @@ describe("GET /api/profile/value-history", () => {
       { date: "2026-11-22", moments_usd: 40547.1, packs_usd: 25533.7, packs_held: 327 },
     ])
   })
+  it("a stored 0 with packs held is unpriced (null); a 0 with none held is a true $0", async () => {
+    state.rows = { data: [
+      { snapshot_date: "2026-11-22", total_fmv: 100, moment_count: 3, pack_low_ask_usd: "0.00", pack_held_count: 1 },
+      { snapshot_date: "2026-11-21", total_fmv: 100, moment_count: 3, pack_low_ask_usd: "0.00", pack_held_count: 0 },
+    ], error: null }
+    const body = await (await GET()).json()
+    expect(body.history.map((h: any) => h.packs_usd)).toEqual([0, null])
+  })
   it("a failed read is an error, never an empty history", async () => {
     state.rows = { data: null, error: { message: "boom", code: "57014" } }
     expect((await GET()).status).toBeGreaterThanOrEqual(500)

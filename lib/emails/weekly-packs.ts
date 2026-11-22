@@ -13,12 +13,20 @@
 // omits the line — never "$0 in sealed packs". The week-over-week change prints only when the
 // snapshot exactly 7 days earlier carries a pack value too (none exist before 2026-11-22, so
 // the first emails show the value alone).
+//
+// 2026-11-22 (~1:53 PM PT, before the first send): the body now does what this header says.
+//   * A value of 0 with packs held is NOT a price: fill_portfolio_snapshot_pack_values writes
+//     0 when none of the held packs has a live ask (5 members on 11-22: held 1, listed 0). Only
+//     a positive value is shown; 0 omits the block, and a 0 prior gives no weekly change.
+//   * "latest" is the member's newest snapshot, not the newest one that happens to carry a
+//     value — an unfilled night must omit the block, not print an older night as this week's.
+//   * When some held packs have no live ask, the count says so ("3 of 4 sealed packs").
 
 import { supabaseAdmin } from "@/lib/supabase"
 
-export type PackWeek = { lowAskUsd: number; held: number; priorUsd: number | null }
+export type PackWeek = { lowAskUsd: number; held: number; listed: number | null; priorUsd: number | null }
 
-type Row = { snapshot_date: string; pack_low_ask_usd: number | string | null; pack_held_count: number | null }
+type Row = { snapshot_date: string; pack_low_ask_usd: number | string | null; pack_held_count: number | null; pack_listed_count?: number | null }
 
 const num = (v: unknown): number | null => {
   const n = typeof v === "string" ? Number(v) : typeof v === "number" ? v : NaN
@@ -32,17 +40,24 @@ export function minusDays(isoDate: string, n: number): string {
   return d.toISOString().slice(0, 10)
 }
 
-/** Pure: the latest row with a pack value, and the one 7 days before it. */
+/** A positive pack value, else null: 0 means no held pack had a live ask (unpriced, not $0). */
+const priced = (v: unknown): number | null => {
+  const n = num(v)
+  return n != null && n > 0 ? n : null
+}
+
+/** Pure: the member's newest snapshot (if it carries a priced pack value), and the one 7 days before it. */
 export function packWeekFrom(rows: Row[]): PackWeek | null {
   const byDate = new Map(rows.map((r) => [r.snapshot_date, r]))
-  const latest = [...rows]
-    .filter((r) => num(r.pack_low_ask_usd) != null)
-    .sort((a, b) => (a.snapshot_date < b.snapshot_date ? 1 : -1))[0]
+  const latest = [...rows].sort((a, b) => (a.snapshot_date < b.snapshot_date ? 1 : -1))[0]
   if (!latest) return null
+  const lowAskUsd = priced(latest.pack_low_ask_usd)
+  if (lowAskUsd == null) return null
   const held = num(latest.pack_held_count) ?? 0
   if (held <= 0) return null
+  const listed = num(latest.pack_listed_count)
   const prior = byDate.get(minusDays(latest.snapshot_date, 7))
-  return { lowAskUsd: num(latest.pack_low_ask_usd) as number, held, priorUsd: prior ? num(prior.pack_low_ask_usd) : null }
+  return { lowAskUsd, held, listed: listed != null && listed < held ? listed : null, priorUsd: prior ? priced(prior.pack_low_ask_usd) : null }
 }
 
 export async function loadPackWeek(userId: string): Promise<PackWeek | null> {
@@ -50,7 +65,7 @@ export async function loadPackWeek(userId: string): Promise<PackWeek | null> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data, error } = await (supabaseAdmin as any)
       .from("portfolio_snapshots")
-      .select("snapshot_date, pack_low_ask_usd, pack_held_count")
+      .select("snapshot_date, pack_low_ask_usd, pack_held_count, pack_listed_count")
       .eq("owner_key", userId)
       .order("snapshot_date", { ascending: false })
       .limit(10)
@@ -66,7 +81,10 @@ const usd = (n: number): string =>
 
 export function buildWeeklyPacksBlock(p: PackWeek | null): { html: string; text: string[] } {
   if (!p) return { html: "", text: [] }
-  const packs = `${p.held.toLocaleString("en-US")} sealed pack${p.held === 1 ? "" : "s"}`
+  // `listed` is set only when some held packs have no live ask: say how many the value covers.
+  const packs = p.listed != null
+    ? `${p.listed.toLocaleString("en-US")} of ${p.held.toLocaleString("en-US")} sealed packs`
+    : `${p.held.toLocaleString("en-US")} sealed pack${p.held === 1 ? "" : "s"}`
   let change = ""
   let changeText = ""
   if (p.priorUsd != null) {

@@ -8,6 +8,8 @@
 // Auth: Supabase session. Snapshots are keyed by auth user id (owner_key), so the
 // caller can only ever read their own rows — no client-supplied key.
 // A NULL pack value is "not measured", never 0; the client draws no point for it.
+// 2026-11-22: a stored 0 WITH packs held means none of them had a live ask — unpriced, so it is
+// returned as null too. A 0 with no packs held is a true $0 and stays 0.
 
 import { NextResponse } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error"
@@ -41,7 +43,7 @@ export async function GET() {
     const history = rows.reverse().map((r) => ({
       date: r.snapshot_date,
       moments_usd: n(r.total_fmv),
-      packs_usd: n(r.pack_low_ask_usd),
+      packs_usd: n(r.pack_low_ask_usd) === 0 && (n(r.pack_held_count) ?? 0) > 0 ? null : n(r.pack_low_ask_usd),
       packs_held: n(r.pack_held_count),
     }))
     return NextResponse.json({ history }, { headers: { "Cache-Control": "private, no-store" } })
