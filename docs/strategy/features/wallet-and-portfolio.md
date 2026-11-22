@@ -28,7 +28,7 @@ Trevor: "let them have access until we can verify easily and effectively" (full 
 
 - **Portfolio FMV** (dashboard, public profile, share card) is ONE figure: fresh + stale-priced Moments on open markets + sealed packs at capped low ask. Closed markets (UFC Strike on Flow) count in Total Assets but not in value, until UFC reopens (Trevor 11-15). No breakdown caption; "Adding sealed packs…" while loading, "not included" on a failed pack read. Supersedes the 09-04 "headline = total − stale" rule and the 11-21 separate pack line.
 - **Total Moments → Total Assets** = Moments + cards (Panini included) + sealed packs. Profile share tweet says "N assets".
-- Live-checked in Trevor's Chrome 11-22: dashboard/profile/share agree within the cache-vs-live drift (~$34). The dashboard and profile read the hourly-ish `saved_wallets` cache; the share card reads `get_wallet_collection_snapshot` live.
+- Live-checked in Trevor's Chrome 11-22: dashboard/profile/share agree within the cache-vs-live drift (~$34). The dashboard and profile read the `saved_wallets` cache (stamped 8:17 AM PT at the check); the share card reads `get_wallet_collection_snapshot` live. After closed markets came out: dashboard $65,716, profile $65.7K, share $65,681.40.
 
 ## ⭐ 2026-11-09 night — audit-pass changes (found by walking production signed in)
 
