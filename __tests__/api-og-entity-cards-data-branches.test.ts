@@ -284,3 +284,32 @@ describe("/api/og/series — the season subtitle", () => {
     expect(ogText(await render(card, TS))).toContain("1,234 editions")
   })
 })
+
+// 2026-11-22: collection_series.display_label still reads the RETIRED "Series 5/6/7"
+// for Top Shot on-chain 6/7/8, while the series page, its <title> and the Collection
+// tab print the season label (seriesPageLabel). The social card must match the page
+// it previews — the old card printed "Series 5" over a page titled "Series 2023-24".
+describe("/api/og/series — the Top Shot label matches the page", () => {
+  const card = CARDS.find((c) => c.name === "series")!
+
+  it("prints the season label, never the retired DB label", async () => {
+    mockRpc(healthy(card, { ...card.detail, display_label: "Series 5", series_number: 6, season: "2023-24" }))
+    const text = ogText(await render(card, "?collection=nba-top-shot&slug=series-5"))
+    expect(text).toContain("Series 2023-24")
+    expect(text).not.toMatch(/Series 5(?!\d)/)
+  })
+
+  it("does not repeat the season as a subtitle when the title already is the season", async () => {
+    mockRpc(healthy(card, { ...card.detail, display_label: "Series 5", series_number: 6, season: "2023-24" }))
+    const text = ogText(await render(card, "?collection=nba-top-shot&slug=series-5"))
+    expect(text.split("2023-24").length - 1).toBe(1)
+    expect(text).toContain("1,234 editions")
+  })
+
+  it("another collection keeps its own display_label (the Top Shot map is Top-Shot-only)", async () => {
+    mockRpc(healthy(card, { ...card.detail, display_label: "Series 1", series_number: 6, season: null }))
+    const text = ogText(await render(card, "?collection=nfl-all-day&slug=series-1"))
+    expect(text).toContain("Series 1")
+    expect(text).not.toContain("2023-24")
+  })
+})

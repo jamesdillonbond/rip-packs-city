@@ -8,6 +8,7 @@ import { renderEntityOg } from "@/lib/og/entity-card"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { OG_FETCH_TIMEOUT_MS } from "@/lib/og/og-fetch"
 import { usdSignFirst } from "@/lib/usd-format"
+import { seriesPageLabel } from "@/lib/series-label"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -52,10 +53,19 @@ export async function GET(req: NextRequest) {
 
   const edCount = detail.edition_count != null ? Number(detail.edition_count) : null
   const fmvTotal = detail.fmv_total_usd != null ? Number(detail.fmv_total_usd) : null
+  // 2026-11-22: the SAME label the series page, its <title> and the Collection tab
+  // print (seriesPageLabel → "Series 2023-24" for Top Shot on-chain 6). The raw
+  // collection_series.display_label still reads the retired "Series 5/6/7" for
+  // Top Shot 6/7/8, so the social card used to contradict the page it previews.
+  const seriesNumber = detail.series_number != null && Number.isFinite(Number(detail.series_number)) ? Number(detail.series_number) : null
+  const title = seriesPageLabel(seriesNumber, detail.display_label ?? null, collection)
+  const season = detail.season ? String(detail.season) : null
+  const countLine = edCount ? `${edCount.toLocaleString("en-US")} ${edCount === 1 ? "edition" : "editions"}` : null
   return renderEntityOg({
     eyebrow: `${label.toUpperCase()} · SERIES`,
-    title: detail.display_label ?? "Series",
-    subtitle: detail.season ? String(detail.season) : (edCount ? `${edCount.toLocaleString("en-US")} ${edCount === 1 ? "edition" : "editions"}` : null),
+    title,
+    // Skip the season line when the title already IS the season ("Series 2023-24").
+    subtitle: season && !title.includes(season) ? season : countLine,
     accent,
     images,
     statLabel: fmvTotal && fmvTotal > 0 ? "Aggregate FMV" : null,
