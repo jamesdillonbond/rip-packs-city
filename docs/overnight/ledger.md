@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~1:40 PM PT · 🔧 SHIPPED (code) — the series OG social card prints the same label as the series page: Top Shot on-chain 6/7/8 read "Series 5/6/7" on the card while the page says "Series 2023-24/…" (Claude Code cloud, autonomous 4 h pass)
+
+- `app/api/og/series/route.tsx` uses `seriesPageLabel()` (the page, its `<title>` and the Collection tab already did) and skips the season subtitle when the title already is the season. The raw `collection_series.display_label` relabel + 301s (nba-top-shot.md "Series-label convention") stays open; this was the last surface printing the raw label. Tests in `api-og-entity-cards-data-branches.test.ts` (fail on the old route).
+- **Revert:** `git revert` the commit titled "og: series card prints the page's series label".
+
 ### 2026-11-22 ~1:30 PM PT · 🗄 APPLIED + one-off VACUUM — cold `sales_20NN` partitions get an insert-driven autovacuum trigger; set-page Recent Sales timeouts (top Vercel error group, 6/24 h) traced to a rotten `sales_2025` visibility map (Claude Code cloud, autonomous 4 h pass)
 
 - **Cause:** `get_set_activity`'s "≥ 5,000 sales this year?" count pass walks `sales_2025` first; it was 76 % all-visible (last autovacuum 10-06, 103 k backfill inserts since; the partition had a dead-tuple trigger but the default 0.2 INSERT trigger ≈ 476 k), so the index-only scan did 3,316 heap fetches. Errors: holo-icon ×2, the-champion-s-path(-2024) ×3, 2025-nba-playoffs-common.
