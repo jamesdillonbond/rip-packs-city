@@ -157,7 +157,12 @@ const PANINI_MODELED_PRIORITY_CAP = 150;
 // marker: Entertainment must serve setIds no other sport serves (if it serves the unfiltered grid or
 // grid_items=0, the value is not recognised — remove it, as "WNBA" was). LAST, so a tie keeps a
 // product's earlier sport.
-const PANINI_DISCOVERY_SPORTS = ["Soccer", "Basketball", "Womens Basketball", "Football", "Baseball", "Racing", "Entertainment"];
+// "Womens Soccer" added 2026-11-22 PT (Trevor: NWSL drop #1065 had 0 cards in RPC two days after it sold
+// out). VERIFIED live in his Chrome the same day: ?sport=Womens%20Soccer serves the 2026 Prizm Black
+// NWSL cards (pack/1065/…/WomenSoccer image paths) with a 16-club TEAM filter, and no panini_products
+// row had ever been seen under it — the "Soccer" grid does not serve these setIds. It is also the
+// sport string the NWSL team aliases + refresh_panini_edition_team_keys expect (11-15 migrations).
+const PANINI_DISCOVERY_SPORTS = ["Soccer", "Basketball", "Womens Basketball", "Womens Soccer", "Football", "Baseball", "Racing", "Entertainment"];
 function discoverySports(): string[] {
   const env = (process.env.PANINI_DISCOVERY_SPORTS || "").split(",").map((s) => s.trim()).filter(Boolean);
   return env.length ? env : PANINI_DISCOVERY_SPORTS;

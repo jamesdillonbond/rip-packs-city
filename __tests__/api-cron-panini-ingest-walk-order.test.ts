@@ -168,6 +168,10 @@ describe("GET /api/cron/panini-ingest — multi-product walk scope", () => {
     for (const p of j.pskus) expect(p.startsWith("packcard-2332_")).toBe(true)
     expect(j.pack_urls).toEqual(["https://nft.paniniamerica.net/marketplace-details/subpack-5270763-1038.html"])
     expect(Array.isArray(j.discovery_sports) && j.discovery_sports.includes("Soccer")).toBe(true)
+    // NWSL (drop #1065) lives ONLY under the marketplace's "Womens Soccer" grid; without it the drop's
+    // setIds are never discovered and its cards never reach the catalogue (2026-11-22: 0 cards 2 days
+    // after a 13,000-pack sellout).
+    expect(j.discovery_sports).toContain("Womens Soccer")
   })
 
   it("a registry READ FAILURE falls back to WC only and says so — never an empty or widened walk", async () => {
