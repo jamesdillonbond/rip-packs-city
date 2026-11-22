@@ -22,6 +22,10 @@ describe("isUnfundable — positive evidence only", () => {
 
 describe("balance parsers return null on any unrecognised shape", () => {
   it("escrow", () => {
+    // the live shape (recorded by the run 2026-11-21 4:50 PM PT)
+    expect(parseEscrowBalance({ buyerEscrow: "EscrowAddr", balance: 0 })).toBe(0)
+    expect(parseEscrowBalance({ buyerEscrow: "EscrowAddr", balance: 1.25 })).toBe(1.25)
+    expect(parseEscrowBalance({ buyerEscrow: "EscrowAddr", balance: "1.25" })).toBeNull()
     expect(parseEscrowBalance({ buyerEscrowBalance: 1.5 })).toBe(1.5)
     expect(parseEscrowBalance({ buyerEscrowBalance: "1.5" })).toBeNull()
     expect(parseEscrowBalance({})).toBeNull()

@@ -222,7 +222,8 @@ describe("candy-offers — sweep ladder", () => {
   })
 
   it("an UNFUNDABLE bid (escrow and wallet both below its price) is not upserted and is deactivated", async () => {
-    fetchMock = installFetchMock(fundingSweep({ buyerEscrowBalance: 0 }, { result: { value: 890_000 } }))
+    // the live Magic Eden shape (2026-11-21): { buyerEscrow, balance }
+    fetchMock = installFetchMock(fundingSweep({ buyerEscrow: "EscrowAddr", balance: 0 }, { result: { value: 890_000 } }))
     const spy = install(fundingFixtures(false))
     await POST(req())
     await runDeferred()

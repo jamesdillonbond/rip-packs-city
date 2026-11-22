@@ -32,10 +32,17 @@ export function isUnfundable(priceSol: number, f: BidderFunding | undefined): bo
 
 const LAMPORTS_PER_SOL = 1e9
 
-/** Magic Eden `GET /v2/wallets/{wallet}/escrow_balance` → `{ buyerEscrowBalance: <SOL> }`. Anything else → null. */
+/**
+ * Magic Eden `GET /v2/wallets/{wallet}/escrow_balance`. Observed live 2026-11-21 4:50 PM PT (the run recorded
+ * `escrow:shape keys=buyerEscrow|balance`): `{ buyerEscrow: <escrow address>, balance: <number> }` — the first
+ * guess, `{ buyerEscrowBalance }`, never matched, so every bid failed open. `balance` is read as SOL. If it were
+ * lamports instead, a funded bidder reads as MORE funded (kept) and an empty escrow is 0 either way, so the error
+ * can only keep a bid, never drop one. The old key is still accepted. Anything else → null (unknown → kept).
+ */
 export function parseEscrowBalance(json: unknown): number | null {
   if (!json || typeof json !== "object") return null
-  const v = (json as Record<string, unknown>).buyerEscrowBalance
+  const o = json as Record<string, unknown>
+  const v = typeof o.balance === "number" ? o.balance : o.buyerEscrowBalance
   return typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null
 }
 
