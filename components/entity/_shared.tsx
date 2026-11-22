@@ -400,6 +400,8 @@ export function marketplaceLabel(raw: string | null | undefined): string {
   // team / player row (live 2026-09-24).
   if (k === "magic_eden" || k === "magiceden") return "Magic Eden"
   if (k === "opensea") return "OpenSea"
+  // Candy fills on Solana program 7Aru… — unattributed (lib/candy/chain-sales.ts).
+  if (k === "solana_7aru") return "Other Solana marketplace"
   // Generic fallback: underscores are separators, never display characters.
   return raw
     .split(/[_\s]+/)

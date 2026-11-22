@@ -69,7 +69,12 @@ describe("Magic Eden Candy passes stay in their venue", () => {
     expect(packGone.slice(0, 300)).toContain('.eq("venue", "magic_eden")')
     expect(listings).toMatch(/is_active: true,\s*venue: "magic_eden",\s*\}\)\s*continue/)
     // candy_pack_sales.marketplace DEFAULTS to 'magic_eden': both writers pin it.
-    expect(src("app/api/candy-sales-indexer/route.ts")).toMatch(/seller: seller \?\? null,\s*marketplace: "magic_eden"/)
+    // 2026-11-22: the drain pins the QUEUE ROW's venue (solana_7aru for chain-decoded fills), and
+    // that value defaults to magic_eden — never to the column's DB default.
+    const drain = src("app/api/candy-sales-indexer/route.ts")
+    expect(drain).toMatch(/seller: seller \?\? null,\s*(?:\/\/[^\n]*\n\s*)*marketplace,/)
+    expect(drain).toMatch(/marketplace: string = "magic_eden"/)
+    expect(drain).toMatch(/r\.marketplace \?\? "magic_eden"/)
     expect(src("app/api/candy-opensea-sales-indexer/route.ts")).toMatch(/seller: c\.e\.seller \?\? null,\s*marketplace: "opensea"/)
   })
 

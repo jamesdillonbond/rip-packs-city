@@ -151,6 +151,10 @@
       "schedule": "5 * * * *"
     },
     {
+      "path": "/api/ingest/candy-chain-sales",
+      "schedule": "11 * * * *"
+    },
+    {
       "path": "/api/candy-sales-indexer",
       "schedule": "20 * * * *"
     },

@@ -359,7 +359,10 @@ async function handleIndex(req: NextRequest) {
         tMs: number,
         price: number | null | undefined,
         buyer: string | null | undefined,
-        seller: string | null | undefined
+        seller: string | null | undefined,
+        // The venue written to `sales.marketplace`: magic_eden unless the queue row names another
+        // (2026-11-22: /api/ingest/candy-chain-sales parks off-Magic-Eden fills as solana_7aru).
+        marketplace: string = "magic_eden"
       ): Promise<{ row: Record<string, unknown> } | { skip: string }> {
         if (price == null || price <= 0) return { skip: "no_price" }
         // Price this sale on the SOL/USD rate that prevailed on its OWN trade day
@@ -402,7 +405,7 @@ async function handleIndex(req: NextRequest) {
         }
         if (known) {
           censusResolved++
-          return await rowFromKey(signature, tokenMint, tMs, price, priceUsd, buyer, seller, known.key, known.serial)
+          return await rowFromKey(signature, tokenMint, tMs, price, priceUsd, buyer, seller, known.key, known.serial, marketplace)
         }
 
         if (assetFetches >= ASSET_FETCH_BUDGET) return { skip: "asset_budget_exhausted" }
@@ -460,8 +463,9 @@ async function handleIndex(req: NextRequest) {
                 buyer: buyer ?? null,
                 seller: seller ?? null,
                 // Pinned, not defaulted: /api/candy-opensea-sales-indexer writes
-                // this table too (marketplace 'opensea').
-                marketplace: "magic_eden",
+                // this table too (marketplace 'opensea'). The venue comes from the
+                // queue row (magic_eden unless candy-chain-sales parked it).
+                marketplace,
                 sold_at: new Date(tMs).toISOString(),
               },
               { onConflict: "transaction_hash,token_mint" }
@@ -477,7 +481,7 @@ async function handleIndex(req: NextRequest) {
         const key = editionKeyFromAsset(asset)
         const serial = normalizeSerial(asset).serial_number
         if (!key || (serial == null && !candySaleSerialOptional(key))) return { skip: "unresolvable_serial" }
-        return await rowFromKey(signature, tokenMint, tMs, price, priceUsd, buyer, seller, key, serial)
+        return await rowFromKey(signature, tokenMint, tMs, price, priceUsd, buyer, seller, key, serial, marketplace)
       }
 
       // The edition lookup + `sales` row, shared by the census-first path and the
@@ -492,6 +496,7 @@ async function handleIndex(req: NextRequest) {
         seller: string | null | undefined,
         key: string,
         serial: number | null,
+        marketplace: string,
       ): Promise<{ row: Record<string, unknown> } | { skip: string }> {
 
         let editionId = edIdByKey.get(key)
@@ -541,6 +546,9 @@ async function handleIndex(req: NextRequest) {
             price_usd: priceUsd,
             price_native: price,
             currency: "SOL",
+            // ⓘ 2026-11-22: `marketplace` is now the queue row's venue — magic_eden for every
+            // Magic Eden lane, `solana_7aru` for fills /api/ingest/candy-chain-sales decodes from
+            // the chain. The paragraphs below describe the Magic Eden rows.
             // ⚠ BOTH OF THESE ARE NARROWER THAN THEY LOOK. Read this before drawing
             // any conclusion about Candy market coverage from a `sales` row.
             //
@@ -564,7 +572,7 @@ async function handleIndex(req: NextRequest) {
             // known, so a rename reads as a NEW VENUE APPEARING. It would also
             // split ~6,600 historical rows and break two tests. Add a second
             // source instead; leave this one alone.
-            marketplace: "magic_eden",
+            marketplace,
             source: "solana_das",
             transaction_hash: signature,
             sold_at: new Date(tMs).toISOString(),
@@ -772,7 +780,7 @@ async function handleIndex(req: NextRequest) {
       let drainResolved = 0
       const { data: owed, error: owedErr } = await (supabaseAdmin as any)
         .from("candy_sales_unresolved")
-        .select("signature, token_mint, block_time, price_sol, buyer, seller")
+        .select("signature, token_mint, block_time, price_sol, buyer, seller, marketplace")
         .is("resolved_at", null)
         .lt("attempts", MAX_PARK_ATTEMPTS)
         // Fewest attempts first (2026-11-08): `attempts` is the column this drain
@@ -806,7 +814,7 @@ async function handleIndex(req: NextRequest) {
         drainAttempted++
         const tMs = r.block_time ? new Date(r.block_time).getTime() : 0
         const price = r.price_sol == null ? null : Number(r.price_sol)
-        const built = await buildSaleRow(r.signature, r.token_mint, tMs, price, r.buyer, r.seller)
+        const built = await buildSaleRow(r.signature, r.token_mint, tMs, price, r.buyer, r.seller, r.marketplace ?? "magic_eden")
         if ("skip" in built) {
           await parkRpc({
             signature: r.signature,
