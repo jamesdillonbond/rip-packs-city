@@ -12,6 +12,23 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-21 ~7:00 PM PT · 🔧 SHIPPED (code) + 🗄️ DATA — on-chain census of the week's Flow sales: Top Shot, All Day, Golazos, Pinnacle now match the chain to the cent; 3 capture bugs found and fixed (Claude Code cloud; Trevor: "keep going and don't stop until you're 100% sure")
+
+**Census.** Every `NFTStorefrontV2/V1.ListingCompleted(purchased)`, `TopShotMarketV3.MomentPurchased` and `OffersV2.OfferCompleted(purchased)` on Flow, 2026-11-15 02:00Z → 11-22 02:00Z (blocks 171154147–171909980, rest-mainnet.onflow.org), vs `sales` / `pinnacle_sales` over the same window. Candy vs Magic Eden activity across all 362 symbols: 137 / 50.928 SOL listed — exact. Pinnacle 1,136 / $8,419 — exact. Golazos 72 / $39.71 — exact.
+
+**Found + fixed.**
+1. **All Day `NFT`-type offer fills were never recorded** — the fill writer placed an edition only from moments/wallet cache, so an offer on one specific moment RPC had not seen was dropped as `unresolved`: 24 of 24 that week ($623), 81 of 90 since the lane began 10-10. `writeAllDayOfferFillSales` now reads the moment's editionID + serial from the BUYER's collection on chain (BORROW_MOMENT_SCRIPT; ≤ 40/run; nil/err counted, never guessed). Backfill: 80 rows inserted (`source='offer_fill'`, $1,766, 10-10 → 11-21); 1 unresolvable (tx `009fc978…`, $3 — the buyer already moved the moment).
+2. **All Day V1 multi-NFT sweeps were priced at the basket total per NFT** (`decodeV1SaleTx` returns the tx gross): 14 txs since Sept, 47 rows $129 → $42. Cache-miss path now prices a multi-NFT tx per NFT via `decodeV1MultiSaleTx` (full type id). Rows corrected by UPDATE from the per-NFT chain attribution. ⚠ Dec 2025–Feb 2026 holds ~21k multi-row V1 txs NOT re-checked here — follow-up.
+3. **Top Shot: 3 `NFT`-type offer fills dropped** that week ($9; 231 of 234 placed). Inserted from chain (borrowMoment set:play + subedition 0 → base edition). Writer not changed yet — follow-up (~3/week).
+
+After: Top Shot 22,260 + 36 V1 + 4,487 fills = chain (the last ~15 min, 9 × ~$0.18, sit in `unmapped_sales` awaiting the resolver, as every prior day did); All Day 3,432 / $2,581.28 + 81 / $139 + 764 / $4,074 = chain.
+
+**Not fixable tonight — Panini.** `panini_sales` is fed by the residential runner opening each card's SALES HISTORY tab, so a sale is seen when its card is walked: median 57 h, p90 117 h after it happens (11-19: 265, 11-20: 169, 11-21: 24 recorded vs ~600–1,400 a normal day). The trailing-7-day Panini figure undercounts its last ~3 days and rises as the walk catches up. No complete Panini feed is reachable from the cloud.
+
+Tests: +2 All Day fill (chain fallback places / chain error counts), 1 re-pinned shape, +3 V1 sweep pin. Preflight 6/6.
+
+**Revert:** code — `git revert` "allday: NFT-offer fills placed from chain; V1 sweeps priced per NFT". Data — `DELETE FROM sales WHERE source='offer_fill' AND ingested_at BETWEEN '2026-11-22T02:30Z' AND '2026-11-22T03:10Z' AND collection_id IN (All Day, Top Shot)` (83 rows); V1 corrections — every All Day `onchain_dapper_v1` tx since 2026-09-01 with >1 row (14 txs) had each row set to the tx's per-NFT price, and the old value was the tx total, so `UPDATE … SET price_usd = (sum of that tx's rows)` restores it.
+
 ### 2026-11-21 ~6:35 PM PT · 🔧 SHIPPED (code + migration + schedule) — sealed-pack low-ask total shown beside every aggregated wallet value; recorded nightly beside the portfolio snapshot (Cowork cloud via laptop VM; Trevor: "We should show the pack low ask total, when showing the aggregated wallet value" → "Yes do it yourself" → "Keep going" → "Do what makes sense" → "Apply it")
 
 **Code.** `649125a` dashboard Portfolio FMV caption (`/api/profile/held-pack-value`); `b3a1a96` public profile (`/api/public/profile/<u>/packs`, owned wallets only via `publicProfileOwnedAddresses`, a server-only WeakMap) + share card (`/api/public/wallet-packs`); `5e8c8ab` lint-ratchet fix. Shared reader `lib/packs/held-pack-total.ts` (wallet_held_pack_value per Flow address; a failed wallet is counted, never $0). Moment totals unchanged.
