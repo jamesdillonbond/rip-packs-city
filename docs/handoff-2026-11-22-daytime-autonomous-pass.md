@@ -1,6 +1,6 @@
 # Daytime autonomous pass — 2026-11-22 (1:22 PM PT →, Claude Code cloud)
 
-**Verdict: GREEN. 14 shipped (5 migrations + 1 one-off maintenance, 9 code changes), 0 reverted** (updated ~3:25 PM PT; items 8–14 below). Trevor: "work autonomously for the next 4 hours … fix any issues you encounter." Push worked directly to `main` from this session (dry-run first). A concurrent Panini/Candy thread was active all afternoon; I stayed out of its lane except for one Panini data-loss fix it could not be reached for (`ListAgents`: no reachable session).
+**Verdict: GREEN. 15 shipped (5 migrations + 1 one-off maintenance, 10 code changes), 0 reverted** (updated ~3:40 PM PT; items 8–15 below). Trevor: "work autonomously for the next 4 hours … fix any issues you encounter." Push worked directly to `main` from this session (dry-run first). A concurrent Panini/Candy thread was active all afternoon; I stayed out of its lane except for one Panini data-loss fix it could not be reached for (`ListAgents`: no reachable session).
 
 ## Shipped (newest first; each has a ledger entry with its revert path)
 
@@ -20,6 +20,7 @@
 11. **`911c765f9` — the art backfill rests only after an error-free lap** (it judged the last run only).
 13. **`d4c86254c` — the sealed-pack "this week" change is like-for-like only** (held and listed counts unchanged). Same commit unblocked `main`: `lib/dashboard/aggregate.ts:112` (the portfolio thread's `40ff10b39`) failed the registry own-property guard.
 14. **`d182d2ba2` — Candy review fixes:** chain-sales parks every Candy collection's fill from a fetched transaction; before, a sweep filling two collections in one tx lost the second, because its signature was then "known" (no live instance yet). A run with ≥ half of its collections refused is no longer ok. Sibling workers stop on a throw. Buyer-paid counts non-rate-limit JSON-RPC errors as errors; before, they were refusals that stopped runs green. Panini commits reviewed clean.
+15. **`390b9b886` — no sealed-pack weekly change against a BACKFILLED night.** The portfolio thread's 3:20 PM PT backfill (`20261122231506`) puts estimates on past snapshots, including tomorrow's comparison night 11-16.
 12. Review method: a background reviewer read today's 10 non-Panini/Candy commits; 6 findings, all fixed (items 9–11).
 
 ## Measured, no change (recorded so nobody re-chases them)
