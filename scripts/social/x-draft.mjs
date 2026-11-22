@@ -671,7 +671,11 @@ async function dropAlerts(now) {
     for (const x of due) out.push({ x, live: await pageLive(x.detail_href) })
     return out
       .map(({ x, live }) => {
-        const what = x.status === "upcoming" ? `${x.kind === "rsvp" ? `${orderWord(x)} open` : "drops"} ${whenPT(x.start_time)}` : `${orderWord(x)} close ${whenPT(x.end_time)}`
+        // An upcoming Pinnacle "RSVP" may be a draw or a capsule sale: "opens", as dropLine says (2026-11-22).
+        const pinRsvpUpcoming = x.status === "upcoming" && x.kind === "rsvp" && x.collection === "disney_pinnacle"
+        const what = pinRsvpUpcoming
+          ? `opens ${whenPT(x.start_time)}`
+          : x.status === "upcoming" ? `${x.kind === "rsvp" ? `${orderWord(x)} open` : "drops"} ${whenPT(x.start_time)}` : `${orderWord(x)} close ${whenPT(x.end_time)}`
         const draft = `Reminder: ${x.title}${x.retail_usd ? ` (${usd(x.retail_usd)})` : ""} — ${what}.\n\n${live ? `${SITE}${x.detail_href}` : packsIndex(x)}`
         return { drop: x, draft, draft_len: xLength(draft), intent_url: intent(draft) }
       })

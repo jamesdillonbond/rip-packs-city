@@ -392,6 +392,19 @@ describe("heldPacksCaption (2026-09-26)", () => {
   })
 })
 
+describe("heldPacksCaption — capped asks over zero priced listings (2026-11-22)", () => {
+  const NOW = Date.parse("2026-11-22T22:00:00Z")
+  it("a wallet whose listings have no sale to price them is not '$0 at floor ask'", () => {
+    const c = heldPacksCaption({ count: 1, listed_count: 1, capped_ask_usd: 0, capped_ask_count: 0, floor_ask_usd: 1000000 }, NOW)
+    expect(c).toBe("1 listed with no sale to price it")
+    expect(c).not.toMatch(/\$0/)
+    expect(heldPacksCaption({ count: 4, listed_count: 3, capped_ask_usd: 0, capped_ask_count: 0 }, NOW)).toBe("3 listed with no sale to price them")
+  })
+  it("some priced keeps the capped total and its coverage", () => {
+    expect(heldPacksCaption({ count: 4, listed_count: 3, capped_ask_usd: 25, capped_ask_count: 2 }, NOW)).toBe("$25.00 at floor ask (2 of 3 listed priced)")
+  })
+})
+
 describe("opened-pack averages (2026-09-26)", () => {
   it("a drop with no modelled EV shows what its opened packs yielded, with the count -- never labelled EV", () => {
     expect(packMarketLabel({ lowest_ask_usd: 12, pack_opened_avg_usd: 7.5, pack_opened_n: 41 })).toBe("Ask $12.00 · Opened avg $7.50 (41 packs)")

@@ -360,6 +360,19 @@ describe("buildOfferFillSales", () => {
     expect(out.rows).toHaveLength(0)
   })
 
+  it("path 5 stops at the wall-clock budget (2026-11-22: a hanging Flow REST cannot run past the route's limit)", async () => {
+    let now = 0
+    let calls = 0
+    const fills = ["11", "12", "13"].map((id) => fill({ nftId: id, offerType: "serial", offerId: "nope" + id, fillTx: "0x" + id }))
+    const out = await buildOfferFillSales(fills, {
+      now: () => now,
+      chainBudgetMs: 20_000,
+      runScript: async () => { calls++; now += 15_000; throw new Error("timeout") },
+    })
+    expect(calls).toBe(2)
+    expect(out.unresolved).toBe(3)
+  })
+
   it("F1 guard: redirects an impossible-serial parallel onto its base edition", async () => {
     H.state.moments = [{ nft_id: "999", edition_id: "ed-par", serial_number: 910 }]
     H.state.editionsById = [{ id: "ed-par", external_id: "5:10::18", circulation_count: 50 }]

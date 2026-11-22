@@ -201,7 +201,7 @@ async function runTopShotScript(code: string, args: Array<{ type: string; value:
 
 export async function buildOfferFillSales(
   fills: OfferFillEvent[],
-  opts?: { chainLookups?: number; runScript?: (code: string, args: Array<{ type: string; value: unknown }>) => Promise<unknown> },
+  opts?: { chainLookups?: number; chainBudgetMs?: number; now?: () => number; runScript?: (code: string, args: Array<{ type: string; value: unknown }>) => Promise<unknown> },
 ): Promise<BuiltOfferFillSales> {
   const byTx = new Map<string, OfferFillEvent>()
   for (const f of fills) if (f.fillTx && !byTx.has(f.fillTx)) byTx.set(f.fillTx, f)
@@ -316,8 +316,12 @@ export async function buildOfferFillSales(
     //    subedition there. Subedition 0 is the base edition; anything else lands on `<set:play>::<sub>`,
     //    never on its base. Nil (moved on) or a failed read stays unresolved and is counted.
     const chainBudget = opts?.chainLookups ?? 20
+    // 2026-11-22: a wall-clock budget too (each read times out at 15 s; 20 of them against a hanging
+    // Flow REST would reach the route's 300 s maxDuration — a kill with no cursor write and no run row).
+    const now = opts?.now ?? Date.now
+    const chainDeadline = now() + (opts?.chainBudgetMs ?? 90_000)
     for (const f of list) {
-      if (chainTried >= chainBudget) break
+      if (chainTried >= chainBudget || now() >= chainDeadline) break
       if (!f.nftId || !f.buyer || atlasByNft.has(f.nftId) || !needAtlas.includes(f.nftId)) continue
       chainTried++
       try {

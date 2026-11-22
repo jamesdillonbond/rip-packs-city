@@ -355,7 +355,12 @@ export function heldPacksCaption(held: HeldPackValue | null | undefined, now: nu
   if (held.listed_count) {
     // v3: the capped total when the server sends it (a never-sold pack's ask is not a value)
     const capped = held.capped_ask_usd != null && held.capped_ask_count != null
-    let ask = capped
+    // 2026-11-22: a capped total over ZERO priced asks is not $0 — the SQL coalesces an empty sum to 0
+    // (e.g. a wallet whose only listing is a never-sold one-of-one). Say that none is priced instead,
+    // the same wording the dashboard helper uses (lib/dashboard/held-packs.ts).
+    let ask = capped && (held.capped_ask_count ?? 0) === 0
+      ? `${n(held.listed_count)} listed with no sale to price ${held.listed_count === 1 ? "it" : "them"}`
+      : capped
       ? `${fmtPackUsd(held.capped_ask_usd ?? 0)} at floor ask (${n(held.capped_ask_count ?? 0)} of ${n(held.listed_count)} listed priced)`
       : `${fmtPackUsd(held.floor_ask_usd ?? 0)} at floor ask (${n(held.listed_count)} listed)`
     if (held.oldest_ask_checked_at) {

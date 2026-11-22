@@ -66,7 +66,7 @@ export interface AllDayFillWriteResult {
   suppressed: number // the cross-source dedup trigger folded it into an existing row
   duped: number // already in sales (re-scan)
   unresolved: number // no edition could be placed (NOT NULL on sales) — skipped
-  resolvedOnChain: number // an NFT-type offer's edition read from the chain (buyer's collection)
+  resolvedOnChain: number // an NFT-type offer PLACED via an edition read from the chain (buyer's collection)
   chainErrors: number // chain reads that failed (the fill stays unresolved)
 }
 
@@ -77,7 +77,7 @@ export interface AllDayFillWriteResult {
  */
 export async function writeAllDayOfferFillSales(
   fills: AllDayOfferFill[],
-  opts?: { chainLookups?: number; runScript?: (code: string, args: Array<{ type: string; value: unknown }>) => Promise<unknown> },
+  opts?: { chainLookups?: number; chainBudgetMs?: number; now?: () => number; runScript?: (code: string, args: Array<{ type: string; value: unknown }>) => Promise<unknown> },
 ): Promise<AllDayFillWriteResult> {
   const out: AllDayFillWriteResult = { written: 0, suppressed: 0, duped: 0, unresolved: 0, resolvedOnChain: 0, chainErrors: 0 }
   if (fills.length === 0) return out
@@ -127,9 +127,15 @@ export async function writeAllDayOfferFillSales(
   // serial — the same proven path the sales indexer uses. A moment the buyer already moved on
   // stays unresolved (counted), never guessed.
   const chainBudget = opts?.chainLookups ?? 40
+  // 2026-11-22: a WALL-CLOCK budget too. Each read has a 15 s timeout, so 40 sequential reads against a
+  // hanging Flow REST could run ~600 s, past the route's maxDuration (300 s); that kill writes no cursor
+  // and no pipeline_runs row, and the next tick repeats it. Unread fills stay unresolved (counted).
+  const now = opts?.now ?? Date.now
+  const chainDeadline = now() + (opts?.chainBudgetMs ?? 90_000)
+  const chainPlaced = new Set<string>()
   let chainTried = 0
   for (const f of fills) {
-    if (chainTried >= chainBudget) break
+    if (chainTried >= chainBudget || now() >= chainDeadline) break
     if (!f.nftId || !f.buyer || f.editionExternalId || byNft.has(f.nftId)) continue
     chainTried++
     try {
@@ -140,7 +146,8 @@ export async function writeAllDayOfferFillSales(
       if (r && r.editionID) {
         const serial = Number(r.serialNumber)
         byNft.set(f.nftId, { editionId: null, editionKey: String(r.editionID), serial: Number.isFinite(serial) ? serial : null })
-        out.resolvedOnChain++
+        // counted at placement below, not here: a chain editionID with no `editions` row is still unresolved
+        chainPlaced.add(f.nftId)
       }
     } catch {
       out.chainErrors++
@@ -171,6 +178,7 @@ export async function writeAllDayOfferFillSales(
       (n?.editionKey ? editionByExt.get(n.editionKey) : undefined) ??
       null
     if (!editionId) { out.unresolved++; continue }
+    if (f.nftId && chainPlaced.has(f.nftId) && !f.editionExternalId) out.resolvedOnChain++
     const row = {
       id: crypto.randomUUID(),
       edition_id: editionId,

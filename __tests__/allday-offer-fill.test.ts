@@ -95,6 +95,29 @@ describe("writeAllDayOfferFillSales", () => {
     expect(state.inserts[0]).toMatchObject({ edition_id: "uuid-4321", serial_number: 17, price_usd: 339, source: "offer_fill" })
   })
 
+  // 2026-11-22: resolvedOnChain counts PLACED fills. A chain editionID with no `editions` row is unresolved,
+  // and used to be counted on both sides (resolved_on_chain AND unresolved) for the same dropped fill.
+  it("a chain read whose edition is not catalogued counts as unresolved only, not as resolved on chain", async () => {
+    state.editions = []
+    const out = await writeAllDayOfferFillSales([fill({ editionExternalId: null, nftId: "6979697" })], {
+      runScript: async () => ({ id: "6979697", editionID: "99999", serialNumber: "3" }),
+    })
+    expect(out).toMatchObject({ written: 0, unresolved: 1, resolvedOnChain: 0 })
+  })
+
+  it("stops chain reads at the wall-clock budget (a hanging Flow REST cannot run past the route's limit)", async () => {
+    let t = 0
+    let calls = 0
+    const fills = [1, 2, 3, 4].map((i) => fill({ editionExternalId: null, nftId: String(1000 + i), fillTx: "tx" + i }))
+    const out = await writeAllDayOfferFillSales(fills, {
+      now: () => t,
+      chainBudgetMs: 30_000,
+      runScript: async () => { calls++; t += 15_000; throw new Error("timeout") },
+    })
+    expect(calls).toBe(2)
+    expect(out).toMatchObject({ unresolved: 4, chainErrors: 2 })
+  })
+
   it("a failed chain read is counted and leaves the fill unresolved — never a guessed edition", async () => {
     state.editions = []
     const out = await writeAllDayOfferFillSales([fill({ editionExternalId: null, nftId: "1" })], { runScript: async () => { throw new Error("script HTTP 503") } })
