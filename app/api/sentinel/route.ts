@@ -15,6 +15,7 @@ import { summariseWallKills } from "@/lib/sentinel/wall-kills";
 import { summariseProbeCost } from "@/lib/sentinel/probe-cost";
 import { summarisePgNet } from "@/lib/sentinel/pg-net";
 import { summariseCronJobsFailing } from "@/lib/sentinel/cron-job-failing";
+import { summariseTopShotAskOnlyAtSale } from "@/lib/sentinel/topshot-ask-only-at-sale";
 import { summariseMaintenanceLoad } from "@/lib/sentinel/maintenance-load";
 import { summariseContinuity, CONTINUITY_CHECK_NAME } from "@/lib/sentinel/continuity";
 import {
@@ -36,6 +37,7 @@ const PROBE_COST_CHECK_NAME = "Ops Probe Cost";
 const PG_NET_CHECK_NAME = "pg_net Dispatch";
 const MAINTENANCE_CHECK_NAME = "Maintenance Load";
 const CRON_JOB_FAILING_CHECK_NAME = "pg_cron Job Failing Every Run";
+const TOPSHOT_ASK_ONLY_AT_SALE_CHECK_NAME = "Top Shot Sales Against ASK_ONLY (6h)";
 // The Sniper Feed arm's HTTP bound — see the comment at the fetch.
 const SNIPER_FEED_FETCH_MS = 20_000;
 
@@ -2674,6 +2676,31 @@ async function runSentinelWithin(clock: WallBudgetClock) {
   } catch (e: any) {
     checks.push({
       name: CRON_JOB_FAILING_CHECK_NAME,
+      status: "warn",
+      detail: exceptionDetail(e),
+    });
+  }
+
+  // ── TOP SHOT SALES AGAINST ASK_ONLY (2026-11-22) ─────────────────────────
+  // On the 11-11 Series 9 launch 37.6 % of Top Shot sales cleared against an
+  // ASK_ONLY price at a median 2.16x the sale; the weekly accuracy job saw it
+  // 12 days later. ~2k buffers, ~0.2 s. Argument: lib/sentinel/topshot-ask-only-at-sale.ts.
+  try {
+    const { data: aoData, error: aoErr } = await supabase.rpc("check_topshot_ask_only_at_sale", { p_hours: 6 });
+    if (aoErr) {
+      const sat = isSaturationError(aoErr.message);
+      checks.push({
+        name: TOPSHOT_ASK_ONLY_AT_SALE_CHECK_NAME,
+        status: "warn",
+        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${errorText(aoErr.message)}`,
+      });
+    } else {
+      const verdict = summariseTopShotAskOnlyAtSale(aoData);
+      checks.push({ name: TOPSHOT_ASK_ONLY_AT_SALE_CHECK_NAME, status: verdict.status, detail: verdict.detail, value: verdict.value });
+    }
+  } catch (e: any) {
+    checks.push({
+      name: TOPSHOT_ASK_ONLY_AT_SALE_CHECK_NAME,
       status: "warn",
       detail: exceptionDetail(e),
     });

@@ -170,6 +170,11 @@ function greenFixtures(): Fixtures {
       data: { vacuums: [], clusters: [], index_builds: [], autovacuum_workers: 0, autovacuum_max_workers: 3, io_waiters: 1, measured_at: "2026-09-13T18:56:01Z" },
       error: null,
     },
+    // 2026-11-22: a normal 6 h window (live read that morning: 489 sales, 0.2 % ASK_ONLY).
+    "rpc:check_topshot_ask_only_at_sale": {
+      data: { hours: 6, sales_priced: 489, ask_only_sales: 1, ask_only_pct: 0.2, ask_only_median_ratio: 0.91, within_25_pct: 86.9 },
+      error: null,
+    },
     "rpc:check_pg_net_dispatch": {
       data: {
         queued: 0,
