@@ -12,6 +12,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~2:50 PM PT · 🔧 SHIPPED (code) — four defects from a fresh-eyes review of today's commits: packs-tab "$0 at floor ask" over zero priced listings, offer-fill chain reads with no wall-clock budget, All Day `resolvedOnChain` double-count, X reminder "draw requests open" for unconfirmed Pinnacle RSVPs (Claude Code cloud, autonomous 4 h pass)
+
+- `lib/packs-wallet-view-format.ts` `heldPacksCaption` (from `f809947e3`): with listings but 0 priced (the SQL coalesces an empty sum to 0), the caption now reads "N listed with no sale to price it/them", not "$0 at floor ask (0 of N listed priced)".
+- `lib/chains/flow/allday-offer-fill.ts` / `topshot-offer-fill.ts` (`d55f75c51`, `5bd19b81f`): chain lookups stop at a 90 s wall-clock budget as well as the call count. Each read times out at 15 s; 40 / 20 reads against a hanging Flow REST could reach the route's 300 s kill, which leaves no cursor and no run row. All Day `resolvedOnChain` now counts only fills actually placed; an uncatalogued chain edition was counted as both resolved and unresolved.
+- `scripts/social/x-draft.mjs` `dropAlerts` (`035cd15bc`): an upcoming Pinnacle RSVP reminder says "opens", as `dropLine` does.
+- Tests: 4 new cases, planted-defect checked on the caption; preflight green. Not done (handoff): the Sentinel ASK_ONLY arm ignores sales with no snapshot (`c1eaa9309`), and the art-backfill rest decides on the last run only (`7f4c6e064`).
+- **Revert:** `git revert` the commit titled "fix: four review findings (pack caption \$0, chain budget, resolvedOnChain, Pinnacle reminder)".
+
 ### 2026-11-22 ~2:30 PM PT · 🗄 APPLIED (`20261122221721`) + 🔧 SHIPPED (code) — the weekly email says how much of a member's weekly change is OUR 11-17 repricing: tomorrow's first send would have told two members "−49.6 % this week", mostly our own price corrections (Claude Code cloud, autonomous 4 h pass)
 
 - **Measured (movers for the Mon 11-23 8:33 AM PT send):** the step is 11-17 → 11-18 with flat moment counts, caused by the six 11-16/17 FMV restatement migrations (`fmv_restatements`, ~1,000 editions). Top member: −$37,619 = **−$27,587 repricing (18 held editions)** + −$10,032 other. Largest portfolio: −$34,597 of −$52,384. Subjects would have read "−49.6% this week".
