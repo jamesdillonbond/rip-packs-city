@@ -12,7 +12,8 @@
 -- the same counts but writes NOTHING — the operator preview).
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261105050000_audit_20261104_allday_low_haircut_075.sql — All Day LOW unknown depth 0.75 too; before that
+-- (supabase/migrations/20261122214417_audit_20261122_allday_haircut_stops_recutting_rows_its_bid_floor_holds.sql — All Day reads the bid its trigger holds a cut at, so a held row is not
+-- re-cut; before that 20261105050000_audit_20261104_allday_low_haircut_075.sql — All Day LOW unknown depth 0.75 too; before that
 -- 20261105044500_audit_20261104_fmv_haircut_stops_at_the_live_bid.sql — both writers, the Top
 -- Shot cut stops at the best open edition offer; before that 20261023235545_audit_20261023_fmv_haircut_topshot_low_unknown_depth_is_075_not_055.sql;
 -- previously 20260801230600_audit_20260801_snapshot_fmv_apply_thin_sale_haircut.sql);
@@ -39,6 +40,9 @@ CREATE TABLE fmv_snapshots (
 -- The haircut's Top Shot bid read (2026-11-04): only the columns it uses.
 CREATE TABLE offers (
   collection_id uuid, edition_id uuid, offer_amount_usd numeric, status text, offer_type text, expires_at timestamptz);
+-- The haircut's All Day bid read (2026-11-22): the same source its BEFORE UPDATE trigger reads.
+CREATE TABLE editions (id uuid, collection_id uuid, external_id text);
+CREATE TABLE allday_open_offers (offer_id text, edition_id text, amount numeric);
 
 -- >>> BEGIN verbatim fmv_apply_thin_sale_haircut (keep byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.fmv_apply_thin_sale_haircut(p_collection_id uuid DEFAULT NULL::uuid, p_dry_run boolean DEFAULT false)
@@ -81,7 +85,14 @@ BEGIN
            AND o.edition_id = l.edition_id
            AND o.status = 'open'
            AND o.offer_type = 'edition'
-           AND (o.expires_at IS NULL OR o.expires_at > now())) END AS bid
+           AND (o.expires_at IS NULL OR o.expires_at > now()))
+      -- 2026-11-22: NFL All Day reads the SAME best open offer its BEFORE UPDATE trigger
+      -- (fmv_snapshots_floor_allday_at_best_offer) holds a cut at, so `changed` is what actually lands.
+      WHEN l.collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070'::uuid THEN (
+        SELECT max(o.amount) FROM public.editions e
+          JOIN public.allday_open_offers o ON o.edition_id = e.external_id
+         WHERE e.id = l.edition_id
+           AND e.collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070'::uuid) END AS bid
     FROM latest l
     WHERE l.fmv_usd IS NOT NULL
       AND l.floor_price_usd IS NOT NULL
@@ -137,7 +148,14 @@ BEGIN
            AND o.edition_id = l.edition_id
            AND o.status = 'open'
            AND o.offer_type = 'edition'
-           AND (o.expires_at IS NULL OR o.expires_at > now())) END AS bid
+           AND (o.expires_at IS NULL OR o.expires_at > now()))
+      -- 2026-11-22: NFL All Day reads the SAME best open offer its BEFORE UPDATE trigger
+      -- (fmv_snapshots_floor_allday_at_best_offer) holds a cut at, so `changed` is what actually lands.
+      WHEN l.collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070'::uuid THEN (
+        SELECT max(o.amount) FROM public.editions e
+          JOIN public.allday_open_offers o ON o.edition_id = e.external_id
+         WHERE e.id = l.edition_id
+           AND e.collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070'::uuid) END AS bid
     FROM latest l
     WHERE l.fmv_usd IS NOT NULL
       AND l.floor_price_usd IS NOT NULL
@@ -219,7 +237,14 @@ BEGIN
            AND o.edition_id = l.edition_id
            AND o.status = 'open'
            AND o.offer_type = 'edition'
-           AND (o.expires_at IS NULL OR o.expires_at > now())) END AS bid
+           AND (o.expires_at IS NULL OR o.expires_at > now()))
+      -- 2026-11-22: NFL All Day reads the SAME best open offer its BEFORE UPDATE trigger
+      -- (fmv_snapshots_floor_allday_at_best_offer) holds a cut at, so `changed` is what actually lands.
+      WHEN l.collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070'::uuid THEN (
+        SELECT max(o.amount) FROM public.editions e
+          JOIN public.allday_open_offers o ON o.edition_id = e.external_id
+         WHERE e.id = l.edition_id
+           AND e.collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070'::uuid) END AS bid
     FROM latest l
     WHERE l.fmv_usd IS NOT NULL
       AND l.floor_price_usd IS NOT NULL
@@ -280,7 +305,14 @@ BEGIN
            AND o.edition_id = l.edition_id
            AND o.status = 'open'
            AND o.offer_type = 'edition'
-           AND (o.expires_at IS NULL OR o.expires_at > now())) END AS bid
+           AND (o.expires_at IS NULL OR o.expires_at > now()))
+      -- 2026-11-22: NFL All Day reads the SAME best open offer its BEFORE UPDATE trigger
+      -- (fmv_snapshots_floor_allday_at_best_offer) holds a cut at, so `changed` is what actually lands.
+      WHEN l.collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070'::uuid THEN (
+        SELECT max(o.amount) FROM public.editions e
+          JOIN public.allday_open_offers o ON o.edition_id = e.external_id
+         WHERE e.id = l.edition_id
+           AND e.collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070'::uuid) END AS bid
     FROM latest l
     WHERE l.fmv_usd IS NOT NULL
       AND l.floor_price_usd IS NOT NULL
@@ -436,6 +468,51 @@ INSERT INTO offers VALUES ('dee28451-5d62-409e-a1ad-a83f763ac070','00000000-0000
 SELECT fmv_apply_thin_sale_haircut('dee28451-5d62-409e-a1ad-a83f763ac070'::uuid, false);
 SELECT _assert_eq((SELECT string_agg(right(edition_id::text,2)||'='||fmv_usd||'|'||algo_version, ' ' ORDER BY edition_id) FROM fmv_snapshots),
   'd1=75.00|ad_haircut d2=55.00|ad_haircut d3=85.00|ad_haircut', 'All Day LOW unknown depth 0.75 (no bid stop off Top Shot); ASK_ONLY 0.55; a sale 0.85');
+
+-- 2026-11-22: All Day reads the best open allday_open_offers bid (via editions.external_id) — the source its BEFORE
+-- UPDATE trigger holds a cut at — so a row the trigger would put back at its price is neither written nor counted
+-- (it used to be "cut" on every run: 171 of 177 on 11-22, algo_version growing `_haircut_bidfloor` each pass).
+--   g1 LOW 100 -> cut 75, bid 120 (>= price)        -> held: NOT written, NOT counted, algo unchanged
+--   g2 LOW 100 -> cut 75, bid 90 (between)          -> 90.00 …_haircut_bidfloor
+--   g3 LOW 100 -> cut 75, bid 300 (> 3x the cut)    -> ignored, 75 …_haircut
+--   g4 LOW 100 -> cut 75, no bid; a Top Shot-style `offers` row 99 for it is IGNORED (wrong source)
+--   g5 LOW 100 -> cut 75, bid 100 (= price)         -> held: NOT written
+DELETE FROM fmv_snapshots; DELETE FROM offers;
+INSERT INTO fmv_snapshots (edition_id, collection_id, fmv_usd, floor_price_usd, sales_count_30d, listing_count, confidence, computed_at, algo_version) VALUES
+  ('00000000-0000-0000-0000-0000000000c1','dee28451-5d62-409e-a1ad-a83f763ac070', 100,100, 0,NULL,'LOW', now(), 'ad'),
+  ('00000000-0000-0000-0000-0000000000c2','dee28451-5d62-409e-a1ad-a83f763ac070', 100,100, 0,NULL,'LOW', now(), 'ad'),
+  ('00000000-0000-0000-0000-0000000000c3','dee28451-5d62-409e-a1ad-a83f763ac070', 100,100, 0,NULL,'LOW', now(), 'ad'),
+  ('00000000-0000-0000-0000-0000000000c4','dee28451-5d62-409e-a1ad-a83f763ac070', 100,100, 0,NULL,'LOW', now(), 'ad'),
+  ('00000000-0000-0000-0000-0000000000c5','dee28451-5d62-409e-a1ad-a83f763ac070', 100,100, 0,NULL,'LOW', now(), 'ad');
+INSERT INTO editions VALUES
+  ('00000000-0000-0000-0000-0000000000c1','dee28451-5d62-409e-a1ad-a83f763ac070','ad-1'),
+  ('00000000-0000-0000-0000-0000000000c2','dee28451-5d62-409e-a1ad-a83f763ac070','ad-2'),
+  ('00000000-0000-0000-0000-0000000000c3','dee28451-5d62-409e-a1ad-a83f763ac070','ad-3'),
+  ('00000000-0000-0000-0000-0000000000c4','dee28451-5d62-409e-a1ad-a83f763ac070','ad-4'),
+  ('00000000-0000-0000-0000-0000000000c5','dee28451-5d62-409e-a1ad-a83f763ac070','ad-5'),
+  -- same external_id under ANOTHER collection: its offers must not leak in (the join is collection-scoped)
+  ('00000000-0000-0000-0000-00000000ffff','95f28a17-224a-4025-96ad-adf8a4c63bfd','ad-3');
+INSERT INTO allday_open_offers VALUES
+  ('o1','ad-1',120), ('o1b','ad-1',50),
+  ('o2','ad-2',90),
+  ('o3','ad-3',300),
+  ('o5','ad-5',100);
+INSERT INTO offers VALUES ('dee28451-5d62-409e-a1ad-a83f763ac070','00000000-0000-0000-0000-0000000000c4', 99,'open','edition',NULL);
+SELECT _assert_eq((SELECT rows_examined::text||'|'||rows_haircut||'|'||total_dollars_removed FROM fmv_apply_thin_sale_haircut('dee28451-5d62-409e-a1ad-a83f763ac070'::uuid, true)),
+  '5|3|60.00', 'All Day dry run: 5 examined, g1/g5 held at price not counted; removed 10 + 25 + 25');
+-- the twin over c1, c2 only
+SELECT _assert_eq((SELECT rows_examined::text||'|'||rows_haircut||'|'||dollars_removed FROM fmv_apply_thin_sale_haircut_for_editions(
+    ARRAY['00000000-0000-0000-0000-0000000000c1','00000000-0000-0000-0000-0000000000c2']::uuid[], false)),
+  '2|1|10.00', 'All Day twin: c1 held at price (not written), c2 stops at the bid');
+CREATE TEMP TABLE live_ad AS SELECT * FROM fmv_apply_thin_sale_haircut('dee28451-5d62-409e-a1ad-a83f763ac070'::uuid, false);
+SELECT _assert_eq((SELECT rows_examined::text||'|'||rows_haircut||'|'||total_dollars_removed FROM live_ad), '4|2|50.00',
+  'All Day live run: c2 is off its floor now (not a candidate); c3/c4 cut; held rows not counted');
+SELECT _assert_eq((SELECT string_agg(right(edition_id::text,2)||'='||fmv_usd||'|'||algo_version, ' ' ORDER BY edition_id) FROM fmv_snapshots),
+  'c1=100|ad c2=90.00|ad_haircut_bidfloor c3=75.00|ad_haircut c4=75.00|ad_haircut c5=100|ad',
+  'All Day: held rows untouched (no suffix growth), stop at the bid, > 3x ignored, Top Shot offers table ignored');
+-- a second live run changes nothing on the held rows (the loop this closes)
+SELECT _assert_eq((SELECT rows_haircut::text FROM fmv_apply_thin_sale_haircut('dee28451-5d62-409e-a1ad-a83f763ac070'::uuid, false)), '0',
+  'second All Day run: nothing re-cut');
 
 SELECT '✓ fmv_apply_thin_sale_haircut invariants pass' AS result;
 ROLLBACK;

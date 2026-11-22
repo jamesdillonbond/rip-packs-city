@@ -2272,16 +2272,17 @@ const PINS = [
   },
   {
     // Re-pinned 2026-11-04 evening: a Top Shot cut stops at the best open edition offer (_haircut_bidfloor);
-    // then All Day LOW with unknown depth takes 0.75 like Top Shot (20261105050000).
+    // then All Day LOW with unknown depth takes 0.75 like Top Shot (20261105050000);
+    // 2026-11-22: All Day reads the bid its trigger holds a cut at, so a held row is not re-cut (20261122214417).
     fn: "fmv_apply_thin_sale_haircut",
     test: "supabase/tests/fmv_apply_thin_sale_haircut.sql",
-    migration: "supabase/migrations/20261105050000_audit_20261104_allday_low_haircut_075.sql",
+    migration: "supabase/migrations/20261122214417_audit_20261122_allday_haircut_stops_recutting_rows_its_bid_floor_holds.sql",
   },
   {
     // 2026-11-04 evening: the inline twin fmv-recalc step 8 calls — pinned for the first time with the bid stop.
     fn: "fmv_apply_thin_sale_haircut_for_editions",
     test: "supabase/tests/fmv_apply_thin_sale_haircut.sql",
-    migration: "supabase/migrations/20261105050000_audit_20261104_allday_low_haircut_075.sql",
+    migration: "supabase/migrations/20261122214417_audit_20261122_allday_haircut_stops_recutting_rows_its_bid_floor_holds.sql",
   },
   {
     fn: "check_triggered_fmv_alerts",
