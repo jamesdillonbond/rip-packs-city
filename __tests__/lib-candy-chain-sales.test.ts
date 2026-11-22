@@ -9,7 +9,7 @@ import path from "node:path"
 // its venue (solana_7aru); a signature already in `sales` or the queue is never fetched; the cursor
 // advances only behind a complete walk and never on a failed read; a failure fails the run.
 
-import { decodeChainFills, runCandyChainSales, CHAIN_MARKETPLACE, CHAIN_QUEUE_REASON } from "@/lib/candy/chain-sales"
+import { decodeChainFills, runCandyChainSales, CHAIN_MARKETPLACE, CHAIN_QUEUE_REASON, CHAIN_FLOOR_ISO } from "@/lib/candy/chain-sales"
 
 const fx = (n: string) => JSON.parse(readFileSync(path.join(process.cwd(), "__tests__/fixtures/candy-chain-sales", `${n}.json`), "utf8"))
 const BUY = fx("buycore-7-5-sol")
@@ -188,7 +188,9 @@ describe("runCandyChainSales", () => {
   })
   it("no cursor: a short listing proves nothing on a non-archive RPC; the archive's listing is used", async () => {
     state.collections = [{ address: COLL, name: "ICONs", chain_sig_cursor: null }]
-    state.hist[COLL] = state.hist[COLL].slice(0, 3) // a young collection: three signatures in all
+    // a young collection: three signatures in all, every one after the floor
+    const f = Date.parse(CHAIN_FLOOR_ISO) / 1000
+    state.hist[COLL] = state.hist[COLL].slice(0, 3).map((x: any, i: number) => ({ ...x, blockTime: f + 300 - i }))
     const r = await run()
     expect(r.ok).toBe(true)
     expect(state.sigCalls.filter((c) => c.url === PUB)).toHaveLength(1)

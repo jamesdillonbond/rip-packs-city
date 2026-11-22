@@ -44,8 +44,12 @@ export const CHAIN_PROGRAMS: Record<string, string> = { [CHAIN_MARKET_PROGRAM]: 
 export const CHAIN_QUEUE_REASON = "queued_chain_walk"
 const CORE_PROGRAM = "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d"
 const SYSTEM_PROGRAM = "11111111111111111111111111111111"
-// Where a collection with no cursor starts: Candy secondary reopened 11-06 (known-issues #58).
-export const CHAIN_FLOOR_ISO = "2026-11-06T00:00:00Z"
+// Where a collection with no cursor starts. NOT the 11-06 reopening: since 11-06 the 398 accounts
+// hold tens of thousands of signatures (mints, listings), and the keyless RPC that still has those
+// transactions (mainnet-beta) refuses a lane that reads them all — the 11-22 11:11 AM PT run
+// finished 71 collections, 70 of them on getTransaction 429. 11-06 → this floor was back-filled
+// ONCE from a session (see the ledger, 2026-11-22); the lane carries it forward from here.
+export const CHAIN_FLOOR_ISO = "2026-11-22T12:00:00Z"
 export const CHAIN_RPC_URLS = ["https://solana-rpc.publicnode.com", "https://api.mainnet-beta.solana.com"]
 const KNOWN_IX = new Set(["ListCore", "DelistCore", "EditCore", "TcompNoop", "BuyCore", "TakeBidCore"])
 
