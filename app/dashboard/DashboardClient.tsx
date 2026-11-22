@@ -14,7 +14,7 @@ import RpcLogo from "@/components/RpcLogo";
 import SignOutButton from "@/components/auth/SignOutButton";
 import { trophyComparator, TROPHY_SORTS, type TrophySortKey } from "@/lib/trophy-comparator";
 import PaniniUsernamesPanel from "@/components/profile/PaniniUsernamesPanel";
-import { sumMoments, sumFmv, sumStaleFmv, countActiveCollections, groupWalletsByAddress } from "@/lib/dashboard/aggregate";
+import { sumMoments, sumOpenMarketFmv, countActiveCollections, groupWalletsByAddress } from "@/lib/dashboard/aggregate";
 import { walletTotalUsd, walletTotalCaption, type HeldPacksTotal } from "@/lib/dashboard/held-packs";
 import { publishedCollections, getPublishedCollection } from "@/lib/collections";
 import { detectAddressChain, isCadenceAddress, isSolanaAddress, normalizeAddress, truncateAddressForDisplay } from "@/lib/address";
@@ -903,10 +903,10 @@ function ProfilePageInner() {
 
   // Pure aggregation extracted to @/lib/dashboard/aggregate (unit-tested there).
   const totalMoments = useMemo(() => sumMoments(statsByWallet), [statsByWallet]);
-  const totalFmv = useMemo(() => sumFmv(statsByWallet), [statsByWallet]);
-  // STALE-confidence FMV — kept apart in the stats, but added back into the single
-  // Portfolio FMV figure (2026-11-22, Trevor: one number for everything in the wallet).
-  const staleFmv = useMemo(() => sumStaleFmv(statsByWallet), [statsByWallet]);
+  // The single Portfolio FMV figure's Moment part (2026-11-22, Trevor: one number for
+  // everything in the wallet): fresh + stale-priced FMV, closed markets (UFC on Flow) out —
+  // the same total the share card shows.
+  const momentsFmv = useMemo(() => sumOpenMarketFmv(statsByWallet), [statsByWallet]);
   const collectionCount = useMemo(() => countActiveCollections(statsByWallet), [statsByWallet]);
 
   // At least one wallet's stats could not be loaded, so every headline figure is
@@ -1113,7 +1113,7 @@ function ProfilePageInner() {
             /* 2026-11-22 (Trevor: "one number that encompasses everything in the wallet.
                Keep it simple"): Moments — stale-priced included — plus sealed packs at
                capped low ask, as ONE figure. No breakdown caption. */
-            value={fmtUsd(walletTotalUsd(totalFmv, staleFmv, heldPacks, heldPacksFailed))}
+            value={fmtUsd(walletTotalUsd(momentsFmv, 0, heldPacks, heldPacksFailed))}
             color="var(--rpc-success)"
             caption={walletTotalCaption(heldPacks, heldPacksFailed, wallets.length > 0) ?? undefined}
             unavailable={statsIncomplete}

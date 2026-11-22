@@ -70,3 +70,19 @@ describe("walletTotalUsd / walletTotalCaption (2026-11-22 single number)", () =>
     expect(walletTotalUsd(100, 0, null, false)).toBe(100)
   })
 })
+
+describe("sumOpenMarketFmv (2026-11-22 single number, closed markets out)", () => {
+  it("adds fresh + stale FMV on open markets and leaves the closed UFC (Flow) market out", async () => {
+    const { sumOpenMarketFmv, isClosedMarketCollectionId } = await import("@/lib/dashboard/aggregate")
+    const TS = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+    const UFC = "9b4824a8-736d-4a96-b450-8dcc0c46b023"
+    expect(isClosedMarketCollectionId(UFC)).toBe(true)
+    expect(isClosedMarketCollectionId(TS)).toBe(false)
+    expect(sumOpenMarketFmv({
+      "0xabc": [
+        { collection_id: TS, fmv_total: 40942.12, fmv_stale_total: 5049.5 },
+        { collection_id: UFC, fmv_total: 0, fmv_stale_total: 364.26 },
+      ],
+    })).toBeCloseTo(45991.62, 2)
+  })
+})

@@ -12,6 +12,8 @@
 
 /** Minimal shape of a per-collection stats row (get_wallet_collection_stats). */
 import { normalizeAddress } from "@/lib/address"
+import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
+import { isMarketClosed } from "@/lib/market-closed"
 
 export interface WalletStatRow {
   collection_id: string | null
@@ -98,4 +100,25 @@ export function groupWalletsByAddress<T extends GroupableWallet>(wallets: T[]): 
     }
   }
   return Array.from(map.values())
+}
+
+/**
+ * True when this collection UUID's market is closed (lib/market-closed.ts — UFC Strike on
+ * Flow since 2026-05-13). Its moments still count as assets; its value does not count in
+ * the single Portfolio FMV figure, matching the share card and the "—" on its tile.
+ */
+export function isClosedMarketCollectionId(collectionId: string | null | undefined): boolean {
+  if (!collectionId) return false
+  const slug = Object.keys(COLLECTION_UUID_BY_SLUG).find((k) => COLLECTION_UUID_BY_SLUG[k] === collectionId)
+  return isMarketClosed(slug)
+}
+
+/**
+ * The single Portfolio FMV figure's Moment part (Trevor, 2026-11-22: one number for
+ * everything in the wallet): fresh + stale-priced FMV across every OPEN-market collection.
+ */
+export function sumOpenMarketFmv(statsByWallet: StatsByWallet): number {
+  return allRows(statsByWallet)
+    .filter((r) => !isClosedMarketCollectionId(r.collection_id))
+    .reduce((s, r) => s + (r.fmv_total ?? 0) + (r.fmv_stale_total ?? 0), 0)
 }

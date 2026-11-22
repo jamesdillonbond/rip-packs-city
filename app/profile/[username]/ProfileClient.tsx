@@ -19,6 +19,7 @@ import { getCollectionByUuid } from "@/lib/collections";
 import { isMarketClosed } from "@/lib/market-closed";
 import { accentFill, accentText, labelOn } from "@/lib/accent-text"
 import { walletTotalUsd, walletTotalCaption, type HeldPacksTotal } from "@/lib/dashboard/held-packs";
+import { isClosedMarketCollectionId } from "@/lib/dashboard/aggregate";
 
 // ── Types ─────────────────────────────────────────────────────────
 interface ProfileBio {
@@ -350,18 +351,17 @@ export default function ProfileClient(props: {
   // this public payload carries.
   const analyzeKey = wallets.find(function(w) { return !!w.username; })?.username ?? null;
   const publicSlabs = slabs.filter(Boolean) as TrophySlabData[];
-  // ⚠ SAME DEFINITION AS THE DASHBOARD. `cached_fmv` is the TOTAL including
-  // stale-priced Moments; the dashboard's headline excludes them and shows the
-  // stale portion as a caption (lib/dashboard/aggregate.ts). Until 2026-09-02
-  // this page summed the total, so the number a collector posted was ~80%
-  // above the one they had just read on their dashboard (QA finding #6).
-  const totalFmvAll = wallets.reduce(function(sum, w) { return sum + (w.cached_fmv ?? 0); }, 0);
-  const staleFmv = wallets.reduce(function(sum, w) { return sum + (w.cached_fmv_stale ?? 0); }, 0);
-  const totalFmv = totalFmvAll - staleFmv;
+  // ⚠ SAME DEFINITION AS THE DASHBOARD (QA finding #6, 2026-09-02: the two must agree).
+  // Since 2026-11-22 both show ONE number: `cached_fmv` (stale-priced included) across
+  // open markets, plus sealed packs — see openMarketFmv / portfolioTotal below.
   const totalMoments = wallets.reduce(function(sum, w) { return sum + (w.cached_moment_count ?? 0); }, 0);
   // 2026-11-22 (Trevor): headline value and count cover EVERYTHING held — Moments and
   // cards (stale-priced included) plus sealed packs at capped low ask. Same as the dashboard.
-  const portfolioTotal = walletTotalUsd(totalFmv, staleFmv, heldPacks, heldPacksFailed);
+  // Closed markets (UFC on Flow) count as assets but not value — same as the dashboard + share card.
+  const openMarketFmv = wallets.reduce(function(sum, w) {
+    return isClosedMarketCollectionId(w.collection_id) ? sum : sum + (w.cached_fmv ?? 0);
+  }, 0);
+  const portfolioTotal = walletTotalUsd(openMarketFmv, 0, heldPacks, heldPacksFailed);
   const totalAssets = totalMoments + (!heldPacksFailed && heldPacks ? heldPacks.held : 0);
   const rpcScore = wallets.length > 0 ? wallets[0]?.cached_rpc_score ?? null : null;
   const isOwnProfile =
