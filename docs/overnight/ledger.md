@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~2:15 PM PT · 🔧 SHIPPED (code) — Portfolio FMV is ONE number (fresh + stale-priced Moments + sealed packs at capped low ask) and "Total Moments" is "Total Assets" (Moments + cards + sealed packs) on the dashboard, public profile and share card (Claude Code cloud; Trevor: "one number that encompasses everything in the wallet. Keep it simple", "Total Moments should be Total Assets", "Yes they should. Apply the updates yourself")
+
+- `lib/dashboard/held-packs.ts` gains `walletTotalUsd()` + `walletTotalCaption()`; the breakdown captions (stale-priced, sealed-pack line, "as of Nh ago") are gone. A caption shows only when the sealed-pack read failed ("not included"), so a partial total never passes as the whole. Profile share tweet now says "N assets".
+- Re-pinned (premise changed, not inverted): DashboardClient "STALE FMV out of the headline" → "inside the single figure"; ProfileClient stale-split → single number; share-copy "200 Moments" → "200 assets".
+- ⚠ Supersedes the 2026-09-04 "headline = total − stale" rule and the 11-21 pack-caption display on these three surfaces. The Value / 30D chart and the nightly snapshots are unchanged.
+- **Revert:** `git revert` the code commit titled "feat(portfolio): one Portfolio FMV number + Total Assets".
+
 ### 2026-11-22 ~2:15 PM PT · 🗄 APPLIED (`20261122221137`) — Panini sales ingest accepts 6-number `packcard-` keys: product 2077's single-underscore cards were dropped (Sentinel "Panini Ingest" WARN at 2:04 PM PT, 42 in 24 h); 27 serial last-sales seeded (Claude Code cloud, autonomous 4 h pass; the Panini thread was not reachable)
 
 - `20261122173500` (this morning) accepted the 5-number Moonbirds shape. Product 2077 uses the same convention with a 4-part card (`packcard-2077_403382_10871318_139_15_25`), which matched neither pattern. Measured first: all 6 sampled dropped keys resolve (strip `_serial_cap`) to an existing edition, and the catalog serial sku is the identical string. The 3 affected editions had **0** stored sales and 27 serial last-sales, so nothing is double-counted. Body otherwise = `20261122173500` (md5 guard). Parse checked on 5 shapes (both existing shapes are unchanged; a bare edition id and a 7-number key are still rejected).
