@@ -1,4 +1,6 @@
 # Panini Blockchain — collection roadmap (refreshed 2026-10-17, PT; Now/Next items re-read 2026-10-19; concierge, alerts and is_active lines 10-19 night; Top Shot parity matrix 10-25 evening)
+
+> **2026-11-22 — pack EV strategy:** [../panini-pack-ev-strategy-2026-11-22.md](../panini-pack-ev-strategy-2026-11-22.md) (coverage outside WC Stickers is 17 % of opened packs; the catalogue misses the rare tiers, so pool EVs are floors; plan: pull ledger → tier-composition model).
 > Dated snapshot; every number is a dated sample — re-derive before quoting. Canonical plan: [roadmap-2026-10-17.md](../roadmap-2026-10-17.md). Defects: [known-issues.md](../../reference/known-issues.md) (item text wins over this file). Older plan: [panini-roadmap-2026-07-16.md](../panini-roadmap-2026-07-16.md).
 
 ## Where it stands
