@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-21 ~7:45 PM PT · 🔧 SHIPPED (code) — `topshot-onchain-art-backfill` rests its legacy leg 7 days after a lap that fills nothing (Claude Code cloud, autonomous pass; Trevor: "work autonomously … fix anything you encounter")
+
+- **What:** the 10-14 two-leg fix filled ~1,800 thumbs + ~2,000 videos a day 10-15 → 10-18, then **0 every day from 10-19** (`pipeline_runs_daily`): the remaining ~1,070 legacy-CDN editions (their art still loads) have no `TopShotIPFSResolver.getCIDs` entry, and the lane re-lapped them ~twice a day — ≈2,200 Flow script calls and ≈9 min of function time daily for zero writes. Now a COMPLETED lap with no fills, no errors and no budget stop sets `extra.legacy_rest_until` = +7 d; the legacy leg is skipped until then (`terminated_reason` `legacy_resting`), so a weekly lap still catches art Dapper pins later. The fresh leg (8 art-less dormant editions, new drops) still runs every tick. Anything unreadable reads as "not resting".
+- **Verified:** 8 new route tests incl. 4 controls; two planted defects each failed the suite; `npm run preflight` green (tsc, lint ratchet, 2,846 tree-walking tests).
+- **Falsifier:** within ~12 h `select extra->>'terminated_reason', extra->>'legacy_rest_until' from pipeline_runs where pipeline='topshot-onchain-art-backfill' order by started_at desc limit 3` reads `legacy_resting` with a date ~7 d out, and `duration_ms` drops from ~60 s to a few seconds.
+- **Revert:** revert this commit (find it by message "onchain-art backfill rests its legacy leg"); the next run laps from the beginning.
+
 ### 2026-11-21 ~7:45 PM PT · 🔧 SHIPPED (code) + 📝 HANDOFF — Candy buyer-paid backfill reads 4 transactions at a time; sales-completeness write-up with the Panini plan (Claude Code cloud; Trevor: "Dig deeper into how we can fix panini…")
 
 `runCandyBuyerPaid` read one transaction at a time: on history it managed ~33–137 per 240 s run (≈5 s each, 0 refusals) — the 16.8k-sale backlog would have taken ~a day. Reads now go out `concurrency` (default 4) at a time, results handled in order, 5 refusals still stop the run. Tests: +1 (parallel batches still stop at 5 refusals), 1 pinned to `concurrency: 1`. Preflight 6/6.
