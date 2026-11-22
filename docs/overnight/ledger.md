@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~3:25 PM PT · 🔧 SHIPPED (CI guard) — ledger clobber detector treats a PT time-of-day correction like a date correction (Claude Code cloud; NWSL thread)
+
+- bbe360f (correcting "~3:20 PM PT" → "~3:10 PM PT" on this thread's own entry) went red on "Ledger entries DISAPPEARED": `headingBody` stripped only the date, so a time fix read as a reworded heading — the same trap the 2026-08-23 re-date fix closed. Now the optional `~H:MM AM/PM PT` stamp is stripped too; rewording and deletion are still reported (2 new tests; old regex planted → 2 of 14 red; real bbe360f files → 0 lost, old detector 1).
+- **Revert:** `git revert` the commit titled "ledger guard: a time-of-day correction is not a clobber".
+
 ### 2026-11-22 ~3:20 PM PT · 🔧 SHIPPED (code) — Candy chain-sales parks every Candy collection's fill from a fetched transaction (a two-collection sweep lost one); a mostly-refused run is not ok; stray workers stop; buyer-paid counts non-rate-limit RPC errors as errors (Claude Code cloud, autonomous 4 h pass; fresh-eyes review of today's Candy commits)
 
 - `lib/candy/chain-sales.ts` (`58fbec845`, `b8f371e80`):
