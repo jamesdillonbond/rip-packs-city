@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~3:35 PM PT · 🔧 SHIPPED (code) — the weekly email's sealed-pack "this week" change compares like-for-like holdings only; `main` unblocked on the registry own-property guard (Claude Code cloud, autonomous 4 h pass)
+
+- `lib/emails/weekly-packs.ts`: a review of `88731d9fc` found the "▲/▼ $X this week" pack change counted buying or opening packs, and packs gaining or losing a live ask, as price movement (26 of 58 snapshots on 11-22 are partly priced). The change now prints only when the held AND listed counts match the prior week's; otherwise the value prints alone. One test re-pinned (its fixture bought 5 packs) plus new cases.
+- `lib/dashboard/aggregate.ts:112` (`40ff10b39`, the portfolio thread, 2:52 PM PT): its bare `COLLECTION_UUID_BY_SLUG[k]` read failed `registry-map-reads-are-own-property`, which made `main` red. Now `Object.entries(...).find(...)`; behaviour is unchanged (13 tests).
+- **Filed for the portfolio thread, not touched (it is editing these files right now):** the share-link OG card vs the share page (different totals); Total Assets silently dropping packs while the read loads or fails; "Panini included" while `get_wallet_collection_stats` excludes Panini; the dashboard total lost its "as of" age. Details are in handoff-2026-11-22-daytime-autonomous-pass.md.
+- **Revert:** `git revert` the commit titled "email: like-for-like sealed-pack weekly change; aggregate own-property read".
+
 ### 2026-11-22 ~3:10 PM PT · 🔧 SHIPPED (code) — dashboard "Value / 30D" is a STACKED area chart: moments on the bottom, sealed packs on top, so the top edge is the total over time (Claude Code cloud; Trevor: "Show as a stacked chart, so users can still visualize the total over time")
 
 - `components/dashboard/ValueHistoryCard.tsx`: LineChart → AreaChart, both series on one `stackId`; tooltip shows Total / Moments / Sealed packs; legend drops "incl. stale-priced" (the tile includes stale now too). Packs were first recorded 11-22, so earlier nights have no pack value (null, not $0) — a muted "Sealed packs tracked from Nov 22" note stops the jump from reading as a gain. `nightTotal()` / `packSeriesStart()` pure + tested.
