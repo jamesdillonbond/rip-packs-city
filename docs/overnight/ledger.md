@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~12:40 PM PT · 🔧 SHIPPED (runner) — Panini pack-page cap is taken from the stalest-first list, not after a whole-list subpack-first sort: drop pages (NWSL #1065, World Cup Stickers, Rolling Stones) had NEVER been opened (Claude Code cloud; same NWSL thread)
+
+- **Cause:** `ingest-panini-runner.mjs` sorted all 407 enabled pages subpack-first and then sliced 60, so with 404 subpack pages every `/pack-<name>.html` drop page sat behind the cut; the route's never-walked-first order was undone each run (oldest walk still 10-03). Now `scripts/panini-pack-pages.mjs` slices first, then orders subpack-first within the slice. Test `__tests__/panini-pack-pages.test.ts` (planted old sort → 2 of 5 red).
+- Reaches the laptop via `laptop-tree-ff.mjs` at the next launcher run (2 PM PT full run).
+- **Revert:** `git revert` the commit titled "panini runner: cap pack pages from the stalest-first list".
+
 ### 2026-11-22 ~12:22 PM PT · 📝 DOCS + ⏰ SCHEDULED TASK (prompt extended) — the Monday Top Shot gate week-2 write now survives outside the strategy thread (Claude Code cloud; Trevor: "Make sure it survives outside this thread")
 
 - **Three independent carriers, none bound to the thread:**
