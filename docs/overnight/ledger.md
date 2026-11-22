@@ -12,6 +12,9 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~3:55 PM PT · ownership-onchain-walk names its failed wallets (`extra.wallet_error_samples`, ≤ 10)
+- `wallet_errors` read exactly 2 on every run for 2+ days with nothing naming the wallets. A throwing wallet is never re-stamped, so the oldest-first selector returns it every run. Now `{wallet, stage: chain|ownership-read, error}` is carried, and the ownership-read error keeps its message. Counts unchanged. Two tests extended; both fail on the old route. Revert: `git revert` the code commit (`ownership-onchain-walk: name the failed wallets`). Also measured: 77 of the 790 head wallets have every row `walk_missed_at`, so they can never refresh and squat ~10 % of slots (filed in the daytime handoff).
+
 ### 2026-11-22 ~3:45 PM PT · 🗄 APPLIED (`20261122233915`) — the pack-value backfill reads only what it needs: all HELD packs + packs that left inside the window (Claude Code cloud; same thread)
 
 - Job 917 stalled 8+ min on ONE owner: `get_wallet_pack_history` re-runs the wallet's whole classification per 200-row page (~19 s/page on the ~15.6k-rip wallet). `portfolio_owner_pack_rows(owner, p_since)` now pages status 'held', then every status newest-event-first and stops once a page's events are older than the window (a non-held pack's departure is its latest event). Old one-arg reader and the unused procedure dropped. Control (largest measured owner): windowed read 16.8 s; holdings on Oct 24 (429) and Nov 22 (483) identical to the full read. 917 unscheduled + cancelled; job **918** `zz-portfolio-pack-backfill-step` (minutes 9/19/29/39/49/59) — **unschedule once `still_null` = 0**.
@@ -22,6 +25,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ### 2026-11-22 ~4:00 PM PT · fmv-recalc Step 6b Candy ask-ceiling sweep pages the whole population (it swept the first 1,000 of 3,067 editions)
 - The sweep read `candy_fmv_current` with `.range(0, 999)` and flagged "full page — sweep is partial" on 243 of 243 runs in 3 days. Measured: 0 of the swept 1,000 sat above a confirmed ask; 33 of the unswept 2,067 did (6 above 1.5×, $61.87 excess). Now pages via `fetchAllPaged` (≤ 20 pages; ~16 ms each). The partial flag fires only past the cap. Two tests added; both fail on the old read. Revert: `git revert` the code commit (`fix(fmv-recalc): Candy ceiling sweep pages…`). **Watch:** `extra.candy_ask_ceiling_error` null on the next runs, and `candy_ask_ceiling_sweep_caps` ≈ 33 once, then ~0.
+- ✅ **VERIFIED 3:54 PM PT:** the 3:48 PM PT run reads `candy_ask_ceiling_error` null and `sweep_caps` 34. Candy editions above a confirmed ask: 33 → **0**.
 - Time correction: shipped ~3:43 PM PT (DB clock), not ~4:00. The route comment's "~4 PM PT" is the same slip.
 
 ### 2026-11-22 ~3:30 PM PT · Scratch table `scratch_backfill_pk_trevor` locked down (RLS on, anon/authenticated revoked) — migration `20261122232956`
