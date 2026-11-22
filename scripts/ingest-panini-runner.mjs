@@ -61,7 +61,7 @@ import { tagSaleRecords } from "./panini-sales-list.mjs";
 import { saleListOf } from "./panini-sales-list.mjs";
 import { buildWalkOrder } from "./panini-walk-order.mjs";
 import { selectPackPages } from "./panini-pack-pages.mjs";
-import { appliedSportOf, sameSport } from "./panini-grid-sport.mjs";
+import { appliedSportOf, sameSport, sportParamOf, PANINI_FILTER_CACHE, clearFilterCacheInPage } from "./panini-grid-sport.mjs";
 import { createStallWatchdog } from "./panini-stall-watchdog.mjs";
 import { isPackishEvidence, subpackUrlsFromHtml, packGridCandidates } from "./panini-pack-grid.mjs";
 
@@ -823,13 +823,39 @@ async function main() {
   const DISCOVERY_BUDGET_MS = Number(process.env.PANINI_DISCOVERY_BUDGET_MIN || 3) * 60000;
   const sportStats = [];
   let domAdded = 0;
+  // STALE FILTER CACHE (2026-11-22): clear Panini's persisted filter metadata once before the grids,
+  // so a sport added since the profile last refreshed it (NWSL "Womens Soccer", Nov 20) is known to
+  // the app instead of redirecting to Basketball. Only the filter keys — see scripts/panini-grid-sport.mjs.
+  let filterCacheReset = null;
+  if (RUN_MODE !== "walk" && DISCOVERY_SPORTS.length) {
+    await ensurePage("filter cache reset");
+    if (!String(page.url()).startsWith(BASE)) await page.goto(`${BASE}/marketplace/nfts.html`, { waitUntil: "domcontentloaded", timeout: 45000 }).catch(() => {});
+    filterCacheReset = await page.evaluate(clearFilterCacheInPage, PANINI_FILTER_CACHE).catch((e) => ({ error: String(e?.message ?? e) }));
+    console.log(`[panini-runner] filter cache reset: ${JSON.stringify(filterCacheReset)}`);
+  }
   for (const sport of RUN_MODE === "walk" ? [] : DISCOVERY_SPORTS) {
   currentSport = sport;
   const full = FULL_ENUM_SPORTS.has(sport);
   const gridSeen0 = gridSeen, gridPages0 = gridPages, enum0 = enumPskus.size;
   await ensurePage(`enum ${sport}`);
-  await page.goto(`${BASE}/marketplace/nfts.html?sport=${encodeURIComponent(sport)}`, { waitUntil: "networkidle", timeout: 45000 }).catch(() => {});
+  const sportUrl = `${BASE}/marketplace/nfts.html?sport=${encodeURIComponent(sport)}`;
+  await page.goto(sportUrl, { waitUntil: "networkidle", timeout: 45000 }).catch(() => {});
   await wait(2500);
+  // Did the app keep this sport? A sport it does not know is redirected (to ?sport=Basketball). Once:
+  // clear the filter cache and reload; if it still redirects, the grid below is NOT this sport and
+  // the stats say so (`landed_sport`), while sightings follow the applied sport, not the loop's.
+  let landedSport = sportParamOf(page.url());
+  let sportRetried = false;
+  if (landedSport && !sameSport(landedSport, sport)) {
+    sportRetried = true;
+    console.log(`[panini-runner] sport=${sport} redirected to ${landedSport}; clearing filter cache and retrying once`);
+    await ensurePage(`enum ${sport} retry`);
+    await page.evaluate(clearFilterCacheInPage, PANINI_FILTER_CACHE).catch(() => {});
+    await ensurePage(`enum ${sport} retry`);
+    await page.goto(sportUrl, { waitUntil: "networkidle", timeout: 45000 }).catch(() => {});
+    await wait(2500);
+    landedSport = sportParamOf(page.url());
+  }
   // Stop when the GRID stops yielding, not when the WC subset stops yielding. Progress is the
   // composite (WC pskus found + total products the grid has served): a stretch of non-WC soccer
   // still advances it, so dilution can no longer end the walk early, while a genuinely exhausted
@@ -875,6 +901,8 @@ async function main() {
     // grid pages by the sport each REQUEST applied — {"Womens Soccer": 76} when the filter held,
     // {"Basketball": 76} when the site served another sport's grid for this one.
     applied: appliedBySport[sport] ?? {},
+    // the page URL's sport after load (and after the one cache-clear retry, when it redirected)
+    landed_sport: landedSport, redirect_retried: sportRetried,
   });
   console.log(`[panini-runner][diag] sport=${sport} (${full ? "full" : "discovery"}) enum_stop=${enumStop} grid_pages=${gridPages - gridPages0} grid_items=${gridSeen - gridSeen0} walked_pskus+=${enumPskus.size - enum0} set_ids=[${sportStats.at(-1).set_ids.join(",")}]`);
   }
@@ -1001,7 +1029,7 @@ async function main() {
   // Post the enumeration record BEFORE the long per-card walk, so it lands even if the walk is
   // later killed (laptop sleep / unplug / rate-limit). Fire-and-forget semantics: post() already
   // swallows its own failures, and telemetry must never break the ingest it measures.
-  await post({ enum: { ...enumStats, walking: pskus.length, file_fallback: fileList.length, order_mode: orderMode, known_order: known.length, priority_order: priorityPskus.length, known_complete: knownComplete, walk_set_ids: [...WALK_SETS], sports: sportStats, products_seen: productSightings.length, pack_links_harvested: harvestedPackUrls.size, packish_unmatched: [...packishUnmatched], pack_grid: packGrid, page_recoveries: pageRecoveries, run_mode: RUN_MODE } });
+  await post({ enum: { ...enumStats, walking: pskus.length, file_fallback: fileList.length, order_mode: orderMode, known_order: known.length, priority_order: priorityPskus.length, known_complete: knownComplete, walk_set_ids: [...WALK_SETS], sports: sportStats, products_seen: productSightings.length, pack_links_harvested: harvestedPackUrls.size, packish_unmatched: [...packishUnmatched], pack_grid: packGrid, page_recoveries: pageRecoveries, run_mode: RUN_MODE, filter_cache_reset: filterCacheReset } });
   // Registry upkeep: every product the grids served + every pack link found. Never admits a
   // product or disables a page — the route only records sightings and new pages.
   await post({ products: productSightings, pack_pages: [...harvestedPackUrls].map((url) => ({ url, discovered: true })) });
