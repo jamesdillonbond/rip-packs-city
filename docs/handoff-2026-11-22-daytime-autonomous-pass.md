@@ -59,7 +59,7 @@ Golazos Flowty lane (retired 10-30), concierge #8, wallet #114, Pinnacle thp `ro
 3. **[P4, Trevor/Claude Code, 0 nights] A1-WORKER-PASSTHROUGH-CLEANUP:** delete or mark won't-fix.
 4. **Unchanged from the overnight handoff:** item 4 there (Top Shot gate week 2, read Mon 11-23 after ~3:37 AM PT) stands, and its three carriers are untouched. `fmv_accuracy_weekly` has no 11-16 row yet (expected).
 
-5. **[P3, Claude Code, 0 nights] What happened 11-18 ~10 AM–4 PM PT?** 17.6 % of Top Shot sales cleared with no published price (vs ≤ 3.2 % in every other 6 h window of 16 days). Likely a drop whose editions the hot lane did not snapshot in time. Find the editions (`sales_market` 11-18 18:00–24:00 UTC with no `fmv_snapshots` row at/before `sold_at`) and check `hot_lane_editions` for that window.
+5. ✅ **ANSWERED ~3:05 PM PT (strategy-2026-11-22.md Move 1 item 2): the 11-18 WNBA drop — 48 new editions, first price a median 1.6 h after first sale; the hot-lane lever is filed there.** Was: **[P3, Claude Code, 0 nights] What happened 11-18 ~10 AM–4 PM PT?** 17.6 % of Top Shot sales cleared with no published price (vs ≤ 3.2 % in every other 6 h window of 16 days). Likely a drop whose editions the hot lane did not snapshot in time. Find the editions (`sales_market` 11-18 18:00–24:00 UTC with no `fmv_snapshots` row at/before `sold_at`) and check `hot_lane_editions` for that window.
 
 ## Dated reads (also in focus.md, STEER 11-22 ~2:20 PM PT)
 
