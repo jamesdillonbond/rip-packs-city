@@ -105,7 +105,7 @@ export function buyerPaidFromTx(tx: SolanaTx, sale: { buyer: string | null; sell
 // full history but rate-limits (~1–2 getTransaction/s per IP).
 export const RPC_URLS = ["https://solana-rpc.publicnode.com", "https://api.mainnet-beta.solana.com"]
 
-export async function fetchTx(sig: string, doFetch: FetchFn, urls: string[] = RPC_URLS): Promise<SolanaTx | null | "rate_limited"> {
+export async function fetchTx(sig: string, doFetch: FetchFn, urls: string[] = RPC_URLS, retryDelayMs = 1500): Promise<SolanaTx | null | "rate_limited"> {
   let limited = false
   for (const url of urls) {
     let resp: Response
@@ -120,7 +120,23 @@ export async function fetchTx(sig: string, doFetch: FetchFn, urls: string[] = RP
       limited = true
       continue
     }
-    if (resp.status === 429) { limited = true; continue }
+    if (resp.status === 429) {
+      // mainnet-beta (the only keyless RPC holding Candy's history) answers 429 in bursts; one
+      // backed-off retry recovers most of them (2026-11-22: 6–7 refusals per run without it).
+      await new Promise((r) => setTimeout(r, retryDelayMs))
+      try {
+        resp = await doFetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getTransaction", params: [sig, { encoding: "json", maxSupportedTransactionVersion: 0, commitment: "confirmed" }] }),
+          signal: AbortSignal.timeout(15_000),
+        })
+      } catch {
+        limited = true
+        continue
+      }
+      if (resp.status === 429) { limited = true; continue }
+    }
     if (!resp.ok) { limited = true; continue }
     const j = (await resp.json().catch(() => null)) as { result?: SolanaTx | null; error?: { code?: number } } | null
     if (j?.error) { limited = true; continue }
@@ -154,7 +170,7 @@ interface Target {
 
 export async function runCandyBuyerPaid(
   db: Db,
-  opts: { budgetMs: number; limit?: number; now?: () => number; fetchImpl?: FetchFn; pauseMs?: number; urls?: string[]; concurrency?: number },
+  opts: { budgetMs: number; limit?: number; now?: () => number; fetchImpl?: FetchFn; pauseMs?: number; urls?: string[]; concurrency?: number; retryDelayMs?: number },
 ): Promise<BuyerPaidRunResult> {
   const now = opts.now ?? Date.now
   const doFetch: FetchFn = opts.fetchImpl ?? ((u, i) => fetch(u, i))
@@ -188,17 +204,24 @@ export async function runCandyBuyerPaid(
   }
 
   try {
-    // Reads go out `concurrency` at a time (2026-11-21: one-at-a-time managed ~50 history reads per
-    // 240 s run, ~5 s each, all successful — the backlog would have taken a day). Results are still
-    // handled in order, and 5 straight refusals still stop the run.
+    // Reads can go out `concurrency` at a time; results are handled in order, and 5 straight refusals
+    // stop the run.
     const entries = [...byTx]
-    const concurrency = Math.max(1, opts.concurrency ?? 4)
+    // Default 1 (2026-11-22): at 4 the history reads hit mainnet-beta's per-IP limit and a run read
+    // ~10 transactions before 5 refusals stopped it — worse than sequential (~50).
+    const concurrency = Math.max(1, opts.concurrency ?? 1)
     outer: for (let b = 0; b < entries.length; b += concurrency) {
       if (now() > deadline) { out.budget_stopped = true; break }
       if (consecutiveLimited >= 5) { out.budget_stopped = true; break } // the RPC is refusing us: stop, retry next run
       if (pauseMs > 0) await new Promise((r) => setTimeout(r, pauseMs))
       const batch = entries.slice(b, b + concurrency)
-      const txs = await Promise.all(batch.map(([sig]) => fetchTx(sig, doFetch, opts.urls)))
+      const txs = await Promise.all(batch.map(([sig, group]) => {
+        // publicnode keeps only recent history (null for a 10-day-old sale, measured 11-21), so an
+        // older sale goes straight to mainnet-beta instead of spending a call on a known miss.
+        const old = Date.parse(group[0].sold_at) < now() - 5 * 86_400_000
+        const urls = opts.urls ?? (old ? RPC_URLS.slice(1) : RPC_URLS)
+        return fetchTx(sig, doFetch, urls, opts.retryDelayMs ?? 1500)
+      }))
       for (let k = 0; k < batch.length; k++) {
       const [sig, group] = batch[k]
       const tx = txs[k]

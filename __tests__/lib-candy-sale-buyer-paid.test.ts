@@ -91,10 +91,10 @@ describe("runCandyBuyerPaid", () => {
     const applied: any[] = []
     const many = Array.from({ length: 9 }, (_, i) => ({ ...SKENES, transaction_hash: `S${i}` }))
     let calls = 0
-    const r = await runCandyBuyerPaid(mkDb(many, applied), { budgetMs: 60_000, pauseMs: 0, concurrency: 1, fetchImpl: (async () => { calls++; return new Response("", { status: 429 }) }) as any, urls: ["u"] })
+    const r = await runCandyBuyerPaid(mkDb(many, applied), { budgetMs: 60_000, pauseMs: 0, concurrency: 1, retryDelayMs: 0, fetchImpl: (async () => { calls++; return new Response("", { status: 429 }) }) as any, urls: ["u"] })
     expect(r.budget_stopped).toBe(true)
     expect(r.rate_limited).toBe(5)
-    expect(calls).toBe(5)
+    expect(calls).toBe(10) // each refusal is one read + one backed-off retry
     expect(applied).toEqual([])
   })
 
@@ -102,11 +102,21 @@ describe("runCandyBuyerPaid", () => {
     const applied: any[] = []
     const many = Array.from({ length: 40 }, (_, i) => ({ ...SKENES, transaction_hash: `S${i}` }))
     let calls = 0
-    const r = await runCandyBuyerPaid(mkDb(many, applied), { budgetMs: 60_000, pauseMs: 0, concurrency: 4, fetchImpl: (async () => { calls++; return new Response("", { status: 429 }) }) as any, urls: ["u"] })
+    const r = await runCandyBuyerPaid(mkDb(many, applied), { budgetMs: 60_000, pauseMs: 0, concurrency: 4, retryDelayMs: 0, fetchImpl: (async () => { calls++; return new Response("", { status: 429 }) }) as any, urls: ["u"] })
     expect(r.budget_stopped).toBe(true)
     expect(r.rate_limited).toBe(5)
-    expect(calls).toBeLessThanOrEqual(8)
+    expect(calls).toBeLessThanOrEqual(16)
     expect(applied).toEqual([])
+  })
+
+  it("a 429 followed by an answer on the retry is a read, not a refusal", async () => {
+    const applied: any[] = []
+    let calls = 0
+    const r = await runCandyBuyerPaid(mkDb([SKENES], applied), {
+      budgetMs: 60_000, pauseMs: 0, retryDelayMs: 0, urls: ["u"],
+      fetchImpl: (async () => { calls++; return calls === 1 ? new Response("", { status: 429 }) : new Response(JSON.stringify({ result: fx("skenes-m2") }), { status: 200 }) }) as any,
+    })
+    expect(r).toMatchObject({ read: 1, rate_limited: 0, applied: 1 })
   })
 
   it("a failed apply fails the run", async () => {
