@@ -153,10 +153,32 @@ async function rpc<T>(doFetch: FetchFn, method: string, params: unknown[], urls:
 
 interface SigInfo { signature: string; blockTime?: number | null; err?: unknown }
 
+// RPCs that keep an account's FULL signature history. A listing that ends early on any other RPC
+// may be its retention edge, not the account's start: 2026-11-22 publicnode answered a collection
+// from 11-21 onward, short of the 1,000 limit, hours after it had listed that collection's 11-20
+// fills — and the first version of this walk took the short page as "done" and advanced the cursor
+// past five fills.
+export const ARCHIVE_RPC_URLS = new Set(["https://api.mainnet-beta.solana.com"])
+
 // Every signature on `address` newer than `cursor` (or, with no cursor, since floorSec), newest
 // first, plus the newest signature seen at all (the next cursor, even when it is older than the
-// floor). Throws on a failed page: a partial list must never advance a cursor.
+// floor). A listing is accepted only when it is PROVEN complete on that RPC: with a cursor, the
+// signature just older than the oldest one read must BE the cursor; without one, the walk must
+// pass the floor, or end on an archive RPC. Otherwise the next RPC is asked; when none can prove
+// it, this throws — a partial list must never advance a cursor.
 export async function newSignatures(doFetch: FetchFn, address: string, cursor: string | null, floorSec: number, urls = CHAIN_RPC_URLS): Promise<{ sigs: SigInfo[]; newest: string | null }> {
+  let last = "no rpc"
+  for (const url of urls) {
+    try {
+      return await walkSignatures(doFetch, address, cursor, floorSec, url)
+    } catch (e) {
+      last = e instanceof Error ? e.message : String(e)
+    }
+  }
+  throw new Error(last)
+}
+
+async function walkSignatures(doFetch: FetchFn, address: string, cursor: string | null, floorSec: number, url: string): Promise<{ sigs: SigInfo[]; newest: string | null }> {
   const out: SigInfo[] = []
   let newest: string | null = null
   let before: string | undefined
@@ -164,14 +186,24 @@ export async function newSignatures(doFetch: FetchFn, address: string, cursor: s
     const opts: Record<string, unknown> = { limit: 1000 }
     if (cursor) opts.until = cursor
     if (before) opts.before = before
-    const res = await rpc<SigInfo[]>(doFetch, "getSignaturesForAddress", [address, opts], urls)
+    const res = await rpc<SigInfo[]>(doFetch, "getSignaturesForAddress", [address, opts], [url])
     if (newest == null && res.length > 0) newest = res[0].signature
     let older = false
     for (const s of res) {
       if (!cursor && (s.blockTime ?? 0) < floorSec) { older = true; break }
       out.push(s)
     }
-    if (older || res.length < 1000) return { sigs: out, newest }
+    if (older) return { sigs: out, newest }
+    if (res.length < 1000) {
+      if (cursor) {
+        const anchor = out.length > 0 ? out[out.length - 1].signature : null
+        const probe = await rpc<SigInfo[]>(doFetch, "getSignaturesForAddress", [address, anchor ? { limit: 1, before: anchor } : { limit: 1 }], [url])
+        if (probe[0]?.signature !== cursor) throw new Error(`getSignaturesForAddress ${address}: listing at ${url} does not reach the cursor`)
+        return { sigs: out, newest: newest ?? cursor }
+      }
+      if (!ARCHIVE_RPC_URLS.has(url)) throw new Error(`getSignaturesForAddress ${address}: listing at ${url} ends before the floor`)
+      return { sigs: out, newest }
+    }
     before = res[res.length - 1].signature
   }
   throw new Error(`getSignaturesForAddress ${address}: more than 50 pages`)

@@ -55,7 +55,8 @@ describe("decodeChainFills (real transactions)", () => {
 
 const state: {
   collections: any[]
-  sigs: Record<string, any[]>
+  hist: Record<string, any[]>
+  truncatedAt: Record<string, number>
   txs: Record<string, any>
   queued: string[]
   sold: string[]
@@ -64,7 +65,7 @@ const state: {
   txCalls: string[]
   sigCalls: any[]
   failSigsFor: string | null
-} = { collections: [], sigs: {}, txs: {}, queued: [], sold: [], parks: [], updates: [], txCalls: [], sigCalls: [], failSigsFor: null }
+} = { collections: [], hist: {}, truncatedAt: {}, txs: {}, queued: [], sold: [], parks: [], updates: [], txCalls: [], sigCalls: [], failSigsFor: null }
 
 function db() {
   return {
@@ -95,12 +96,21 @@ function db() {
   }
 }
 
-const fetchImpl = async (_url: string, init: any) => {
+// getSignaturesForAddress honours until / before / limit over a newest-first history; an RPC in
+// `state.truncatedAt` keeps only the newest N signatures of every account (a retention edge).
+const fetchImpl = async (url: string, init: any) => {
   const body = JSON.parse(init.body)
   if (body.method === "getSignaturesForAddress") {
-    state.sigCalls.push(body.params)
-    if (state.failSigsFor === body.params[0]) return new Response("boom", { status: 500 })
-    return new Response(JSON.stringify({ result: state.sigs[body.params[0]] ?? [] }), { status: 200 })
+    const [addr, o] = body.params
+    state.sigCalls.push({ url, addr, o })
+    if (state.failSigsFor === addr) return new Response("boom", { status: 500 })
+    let h: any[] = state.hist[addr] ?? []
+    if (state.truncatedAt[url] != null) h = h.slice(0, state.truncatedAt[url])
+    let i = 0
+    if (o.before) { i = h.findIndex((x) => x.signature === o.before) + 1; if (i === 0) i = h.length }
+    const out: any[] = []
+    for (; i < h.length && out.length < o.limit; i++) { if (o.until && h[i].signature === o.until) break; out.push(h[i]) }
+    return new Response(JSON.stringify({ result: out }), { status: 200 })
   }
   state.txCalls.push(body.params[0])
   lastTxOpts = body.params[1]
@@ -109,11 +119,19 @@ const fetchImpl = async (_url: string, init: any) => {
 
 let lastTxOpts: any = null
 const NOW = Date.parse("2026-11-22T15:00:00Z")
-const run = () => runCandyChainSales(db(), { budgetMs: 60_000, now: () => NOW, fetchImpl: fetchImpl as any, urls: ["https://rpc.test"], concurrency: 2 })
+const PUB = "https://rpc.recent.test"
+const ARCH = "https://api.mainnet-beta.solana.com"
+const run = (urls = [PUB, ARCH]) => runCandyChainSales(db(), { budgetMs: 60_000, now: () => NOW, fetchImpl: fetchImpl as any, urls, concurrency: 2 })
 
 beforeEach(() => {
   state.collections = [{ address: COLL, name: "ICONs", chain_sig_cursor: "OLD" }]
-  state.sigs = { [COLL]: [{ signature: BUY.signature, blockTime: BUY.tx.blockTime }, { signature: LIST.signature, blockTime: LIST.tx.blockTime }, { signature: "SOLD", blockTime: 1 }] }
+  // newest first: two new, one already sold, then the cursor and older history.
+  state.hist = { [COLL]: [
+    { signature: BUY.signature, blockTime: BUY.tx.blockTime }, { signature: LIST.signature, blockTime: LIST.tx.blockTime },
+    { signature: "SOLD", blockTime: LIST.tx.blockTime - 10 }, { signature: "OLD", blockTime: LIST.tx.blockTime - 20 },
+    { signature: "OLDER", blockTime: 1 },
+  ] }
+  state.truncatedAt = {}
   state.txs = { [BUY.signature]: BUY.tx, [LIST.signature]: LIST.tx }
   state.queued = []
   state.sold = ["SOLD"]
@@ -128,7 +146,7 @@ describe("runCandyChainSales", () => {
   it("offers a decoded fill with its venue and advances the cursor to the newest signature", async () => {
     const r = await run()
     expect(r.ok).toBe(true)
-    expect(state.sigCalls[0][1]).toMatchObject({ until: "OLD" })
+    expect(state.sigCalls[0]).toMatchObject({ url: PUB, o: { until: "OLD" } })
     expect(state.parks).toHaveLength(1)
     expect(state.parks[0]).toMatchObject({
       p_signature: BUY.signature,
@@ -154,6 +172,28 @@ describe("runCandyChainSales", () => {
     const r = await run()
     expect(r.fills_offered).toBe(0)
     expect(r.fills_known).toBe(1)
+  })
+  it("a listing that stops short of the cursor (an RPC's retention edge) is NOT taken as complete: the archive RPC is asked", async () => {
+    state.truncatedAt = { [PUB]: 2 }
+    const r = await run()
+    expect(r.ok).toBe(true)
+    expect(state.sigCalls.some((c) => c.url === ARCH)).toBe(true)
+    expect(state.updates[0].patch.chain_sig_cursor).toBe(BUY.signature)
+  })
+  it("with no archive RPC to ask, a truncated listing fails the collection and the cursor does not move", async () => {
+    state.truncatedAt = { [PUB]: 2 }
+    const r = await run([PUB])
+    expect(r.ok).toBe(false)
+    expect(state.updates).toEqual([])
+  })
+  it("no cursor: a short listing proves nothing on a non-archive RPC; the archive's listing is used", async () => {
+    state.collections = [{ address: COLL, name: "ICONs", chain_sig_cursor: null }]
+    state.hist[COLL] = state.hist[COLL].slice(0, 3) // a young collection: three signatures in all
+    const r = await run()
+    expect(r.ok).toBe(true)
+    expect(state.sigCalls.filter((c) => c.url === PUB)).toHaveLength(1)
+    expect(state.sigCalls.filter((c) => c.url === ARCH)).toHaveLength(1)
+    expect(state.parks).toHaveLength(1)
   })
   it("a failed signature read fails the run and leaves the cursor where it is", async () => {
     state.failSigsFor = COLL
@@ -188,7 +228,7 @@ describe("version-1 transactions", () => {
     const seen: any[] = []
     const v1Fetch = async (_url: string, init: any) => {
       const body = JSON.parse(init.body)
-      if (body.method === "getSignaturesForAddress") return new Response(JSON.stringify({ result: state.sigs[body.params[0]] ?? [] }), { status: 200 })
+      if (body.method === "getSignaturesForAddress") return fetchImpl(_url, init)
       seen.push(body.params[1])
       if (!(Number(body.params[1]?.maxSupportedTransactionVersion) >= 1)) {
         return new Response(JSON.stringify({ jsonrpc: "2.0", error: { code: -32015, message: 'Transaction version (1) is not supported by the requesting client. Please try the request again with the following configuration parameter: "maxSupportedTransactionVersion": 1' }, id: 1 }), { status: 200 })
@@ -196,7 +236,7 @@ describe("version-1 transactions", () => {
       const tx = body.params[0] === BUY.signature ? asV1(BUY.tx) : state.txs[body.params[0]] ?? null
       return new Response(JSON.stringify({ result: tx }), { status: 200 })
     }
-    const r = await runCandyChainSales(db(), { budgetMs: 60_000, now: () => NOW, fetchImpl: v1Fetch as any, urls: ["https://rpc.test"], concurrency: 2 })
+    const r = await runCandyChainSales(db(), { budgetMs: 60_000, now: () => NOW, fetchImpl: v1Fetch as any, urls: [PUB, ARCH], concurrency: 2 })
     expect(seen.length).toBeGreaterThan(0)
     expect(seen.every((o) => o.maxSupportedTransactionVersion === 1)).toBe(true)
     expect(r.ok).toBe(true)
