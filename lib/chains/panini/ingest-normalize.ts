@@ -348,6 +348,25 @@ export function latestSalesBySku(records: any[]): Map<string, PaniniSale> {
   return by;
 }
 
+// The sale-key shapes public.panini_sales_ingest STORES (2026-11-22, migration 20261122173500).
+// ⚠ MUST MIRROR the SQL `WHERE` in that function: a key matching neither is dropped there with no
+// error. Moonbirds (850178) keyed its sales `packcard-850178_104_7_7_10` and every one was dropped
+// for weeks while its serials showed sales — the route now counts the keys the RPC will refuse.
+//   `<card>__<serial>_<cap>`                         every 4-part card, Stickers, 850179, 2130
+//   `packcard-<set>_<a>_<b>_<serial>_<cap>`          a 3-part card with single underscores (Moonbirds)
+export const PANINI_SALE_KEY_SHAPES: readonly RegExp[] = [/^[A-Za-z0-9_-]+__\d+_\d+$/, /^packcard-\d+_\d+_\d+_\d+_\d+$/];
+
+// The sale keys in a batch that panini_sales_ingest will refuse (no recognised shape). A record with
+// no key at all is counted too — it is a sale the history will never hold.
+export function unrecognisedSaleKeys(records: any[]): string[] {
+  const out: string[] = [];
+  for (const r of records ?? []) {
+    const k = String(r?.url_key ?? r?.sku ?? "").trim();
+    if (!PANINI_SALE_KEY_SHAPES.some((re) => re.test(k))) out.push(k);
+  }
+  return out;
+}
+
 // Guard for the monotonic-write filter in the ingest route: only a strict, zone-explicit ISO
 // stamp may be interpolated into a PostgREST .or() expression. Anything else falls back to an
 // unconditional write, so an odd upstream date can never shape a filter string.

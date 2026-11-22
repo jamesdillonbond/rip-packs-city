@@ -38,7 +38,7 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
-import { toEditionRow, toFmvRow, toFmvRowV11, toFmvRowV12, toFmvRowV13, toFmvRowV131, toFmvRowV14, toFmvRowV142, toPackRow, toSerialRow, latestSalesBySku, isStrictIsoUtc, pskuSetId } from "@/lib/chains/panini/ingest-normalize";
+import { toEditionRow, toFmvRow, toFmvRowV11, toFmvRowV12, toFmvRowV13, toFmvRowV131, toFmvRowV14, toFmvRowV142, toPackRow, toSerialRow, latestSalesBySku, isStrictIsoUtc, pskuSetId, unrecognisedSaleKeys } from "@/lib/chains/panini/ingest-normalize";
 import { fetchAllPaged } from "@/lib/supabase-paginate";
 import { parseStall } from "@/lib/chains/panini/stall-report";
 import { paniniRunMode } from "@/lib/chains/panini/run-mode";
@@ -532,6 +532,9 @@ export async function POST(req: NextRequest) {
       // (panini_sales_reads.complete_since). Counts are what the RPC says it WROTE.
       let salesHistNew = 0, salesHistRefreshed = 0, salesHistReads = 0, salesHistGaps = 0, salesHistValid = 0;
       let salesHistError: string | null = null;
+      // Keys panini_sales_ingest will refuse with no error (2026-11-22: every Moonbirds sale was dropped
+      // this way). Counted here so the Sentinel's Panini arm can see a new key shape within a day.
+      const salesHistUnrecognised = unrecognisedSaleKeys(salesIn);
       for (let i = 0; i < salesIn.length; i += SALES_HISTORY_CHUNK) {
         const { data, error } = await (supabaseAdmin as any).rpc("panini_sales_ingest", { p_records: salesIn.slice(i, i + SALES_HISTORY_CHUNK) });
         const d = (data ?? null) as Record<string, unknown> | null;
@@ -692,6 +695,8 @@ export async function POST(req: NextRequest) {
         sales_missed: salesMissed, sales_errors: salesErrors, sales_error: salesError,
         sales_history_valid: salesHistValid, sales_history_new: salesHistNew, sales_history_refreshed: salesHistRefreshed,
         sales_history_recent_reads: salesHistReads, sales_history_gaps: salesHistGaps, sales_history_error: salesHistError,
+        sales_history_unrecognised_keys: salesHistUnrecognised.length,
+        sales_history_unrecognised_sample: salesHistUnrecognised.slice(0, 3),
       });
     } catch (e) {
       await logRun(startedAtIso, found, written, false, e instanceof Error ? e.message : String(e), {});

@@ -1074,7 +1074,7 @@ async function runSentinelWithin(clock: WallBudgetClock) {
   // Panini Ingest (2026-09-24) — the ONLY Panini arm. The residential runner (Task Scheduler
   // on Trevor's laptop, 4-hourly) had one alarm, the desktop `panini-freshness-check`, and it
   // never wrote a single pipeline_runs row — i.e. nothing server-side was watching. This reads
-  // OUTCOMES via sentinel_panini_health() (one jsonb, ~70 ms), worst-of four legs:
+  // OUTCOMES via sentinel_panini_health() (one jsonb, ~70 ms), worst-of five legs:
   //   walk age       newest panini_editions.last_seen_at — thr("Panini Ingest") 14 h / 26 h.
   //                  Overnight sleep routinely skips the 10 PM/2 AM/6 AM ticks (a 14.4 h gap on
   //                  09-23), so 14 h is "a full night plus a tick"; 26 h is a lost day.
@@ -1084,6 +1084,7 @@ async function runSentinelWithin(clock: WallBudgetClock) {
   //   serial paging  max serials captured for one edition in 26 h <= 30 while walks ran = the
   //                  runner is back to reading one 30-row page (warn only).
   //   sale feed      newest recorded sale >= 72 h warn / 168 h crit — nftSalesData stopped landing.
+  //   sale keys      any sale record in 24 h whose key matches no ingest shape (dropped) — warn.
   // Panini is an inactive collection, so nothing here is user-facing at critical; the walk leg
   // still pages critical because a dead runner is invisible everywhere else.
   try {
@@ -1145,6 +1146,18 @@ async function runSentinelWithin(clock: WallBudgetClock) {
       legs.push(saleH === null
         ? { s: "warn", why: "no recorded sale at all" }
         : { s: saleH >= 168 ? "critical" : saleH >= 72 ? "warn" : "ok", why: `newest recorded sale ${saleH.toFixed(0)}h ago` });
+      // 2026-11-22 sale-key shapes: the sales ingest silently DROPS a record whose key matches no
+      // known shape (Moonbirds `packcard-…` went unrecorded for weeks). The route counts those per run
+      // (extra.sales_history_unrecognised_keys); any in 24 h = a new key shape → warn. NULL/absent =
+      // no run reports the field yet (an older route or function) — no leg, never a fabricated 0.
+      const unrec = data.unrecognised_sale_keys_24h;
+      if (unrec != null && Number.isFinite(Number(unrec))) {
+        const n = Number(unrec);
+        const sample = Array.isArray(data.unrecognised_sale_keys_sample) ? data.unrecognised_sale_keys_sample.slice(0, 3).join(", ") : "";
+        legs.push(n > 0
+          ? { s: "warn", why: `${n} sale record(s) in 24h with an unrecognised key shape — dropped by panini_sales_ingest${sample ? ` (e.g. ${sample})` : ""}` }
+          : { s: "ok", why: "0 unrecognised sale keys/24h" });
+      }
       const rank = { ok: 0, warn: 1, critical: 2 } as const;
       const worst = legs.reduce((a, l) => (rank[l.s] > rank[a] ? l.s : a), "ok" as "ok" | "warn" | "critical");
       checks.push({

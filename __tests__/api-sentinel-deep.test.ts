@@ -584,6 +584,28 @@ describe("POST /api/sentinel — full battery", () => {
       expect(r.detail).toMatch(/serial paging regressed/)
     })
 
+    // 2026-11-22: a sale record whose key matches no ingest shape is DROPPED by panini_sales_ingest
+    // (Moonbirds `packcard-…` went unrecorded for weeks). The function sums the route's per-run count.
+    it("warns on an unrecognised sale-key shape, quotes the sample, and is silent when unreported", async () => {
+      install(panini({ unrecognised_sale_keys_24h: 4, unrecognised_sale_keys_sample: ["newshape:1:2", "x"] }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Panini Ingest")
+      expect(c.status).toBe("warn")
+      expect(c.detail).toContain("4 sale record(s) in 24h with an unrecognised key shape")
+      expect(c.detail).toContain("newshape:1:2")
+      install(panini({ unrecognised_sale_keys_24h: 0, unrecognised_sale_keys_sample: null }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const z = check(await (await POST(post())).json(), "Panini Ingest")
+      expect(z.status).toBe("ok")
+      expect(z.detail).toContain("0 unrecognised sale keys/24h")
+      // NULL = no run reports the field yet: no leg at all, never a claimed 0.
+      install(panini({ unrecognised_sale_keys_24h: null }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const n = check(await (await POST(post())).json(), "Panini Ingest")
+      expect(n.status).toBe("ok")
+      expect(n.detail).not.toMatch(/unrecognised sale keys/)
+    })
+
     it("names a serial-paging regression (one 30-row page) as a warn", async () => {
       install(panini({ max_serials_per_edition_26h: 30 }))
       stubFetch([sniperOk, telegramOk, resendOk])

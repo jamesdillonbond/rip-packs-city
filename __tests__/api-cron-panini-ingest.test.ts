@@ -130,6 +130,10 @@ vi.mock("@/lib/chains/panini/ingest-normalize", () => ({
   latestSalesBySku: (recs: any[]) =>
     new Map((recs ?? []).map((r: any) => [r.sku, { sku: r.sku, amount_usd: r.amt, sold_at: r.at ?? null }])),
   isStrictIsoUtc: (v: any) => typeof v === "string" && /Z$/.test(v),
+  // Real shape test: it is pure, and the route's unrecognised-key count is asserted below.
+  unrecognisedSaleKeys: (recs: any[]) =>
+    (recs ?? []).map((r: any) => String(r?.url_key ?? r?.sku ?? "").trim())
+      .filter((k: string) => !/^[A-Za-z0-9_-]+__\d+_\d+$/.test(k) && !/^packcard-\d+_\d+_\d+_\d+_\d+$/.test(k)),
 }))
 
 import { POST } from "@/app/api/cron/panini-ingest/route"
