@@ -10,7 +10,7 @@ Trevor, 11-21: "keep going and don't stop until you're 100% sure" → "Dig deepe
 | All Day | same | 3,432 / $2,581.28 + 81 / $139 + 764 / $4,074 — exact after fixes |
 | Pinnacle | same (`pinnacle_sales`) | 1,136 / $8,419 — exact |
 | Golazos | same | 72 / $39.71 — exact |
-| Candy | Magic Eden activities, all 362 symbols | 137 / 50.928 SOL listed — exact; dollars are buyer-paid (on-chain per tx) |
+| Candy | Magic Eden activities (all 362 symbols) + archive-node chain census of every Candy collection account (11-22) | Magic Eden 137 / 50.928 SOL listed — exact; **plus 57 fills on other Solana marketplaces found 11-22 and now captured → 194 / $6,985**; dollars are buyer-paid (on-chain per tx) |
 
 Census scripts were run from a cloud session (Flow REST `/v1/events`, 250-block chunks, 8 workers: 7 days in ~4 min). Worth turning into a scheduled weekly check — see "Next".
 
@@ -24,8 +24,12 @@ Census scripts were run from a cloud session (Flow REST `/v1/events`, 250-block 
 ## Not yet proven
 
 - **Panini** (below) — the one real gap.
-- **Candy sales that settle outside Magic Eden** (OpenSea's / Tensor's own programs). The 11-16 on-chain census found none in 318 transactions; not re-measured for this week. Check: `getSignaturesForAddress` on each Candy collection account for the window, drop signatures Magic Eden reported, fetch the rest, flag any marketplace program other than M2/MMM.
-- **All Day V1 history Dec 2025 – Feb 2026**: sampled 4 multi-NFT txs — prices per NFT are right, but each tx bought 4 and RPC holds 3 rows. One NFT per sweep may be missing (likely parked in `unmapped_sales`). Not this week's numbers; size it before fixing.
+- ~~Candy sales that settle outside Magic Eden~~ → **found and fixed 11-22** (section below).
+- **All Day history before 10-10-2026 (sized 11-22, not fixed — a decision for Trevor).** Two full-day chain censuses against `sales`:
+  - **Offer fills are missing.** 2026-01-15: 274 All Day `OffersV2.OfferCompleted` fills on chain, **13** in `sales` (~15 % of that day's 1,718 purchases). 2026-02-08: 406 offer fills on chain. The All Day offer lane exists only since 10-10-2026 and was built forward-only on a 09-24 sizing (~2.6 % of sales, ~20/day); in Jan–Feb offers were 15–27 % of the day. Top Shot's lane starts 06-03-2026, so its earlier history very likely has the same hole (not measured).
+  - **Some multi-NFT sweeps are short.** 01-15: per-transaction counts match the chain exactly (378/328/134/2). 02-08: chain has 44 four-NFT sweeps, `sales` 28 — about 16 sweeps (up to ~48 NFTs) recorded with fewer rows. A 40-transaction random sample of Dec–Feb single-row txs found 7 that actually bought 2–4 NFTs (13 missing), all `allday_studio_history_v1`, not parked in `unmapped_sales`.
+  - **Does not touch** this week, FMV (30-day window) or anything since 10-10. **Does** under-state All Day volume/sale counts on history charts and any all-time figure, by roughly 15–25 % for Dec 2025 – Feb 2026.
+  - **Fix if wanted:** walk OffersV2 + V1 storefront events over the history window (the census script does a day in ~4 min, ~50 min per quarter), resolve each NFT to its edition, insert as `offer_fill` / per-NFT rows. Flow REST could not serve Dec 2025 blocks here (older spork), so that month needs a spork-aware access node.
 - **Dollar conversion** for Candy uses the trade day's SOL rate (daily, 00:00 UTC basis); trackers quoting live SOL differ by a few %.
 
 ## Panini — why it is incomplete
@@ -41,6 +45,13 @@ Census scripts were run from a cloud session (Flow REST `/v1/events`, 250-block 
 2. **Grid-driven walk priority (code, runner + route).** Each FULL run already enumerates `getMarketPlaceList`, whose items carry `crypto_sale_count` and `buy_now_price`. Send those with the grid batch; the route stores the last-seen count per edition; editions whose count rose — or that vanished from the grid since the last pass (their last listing sold) — go to the front of `priority_pskus`. That aims the walk at editions that just sold, including rare high-dollar ones. Limits: covers only listed editions and only what the 4-min-per-sport enumeration reaches; verify first that `crypto_sale_count` is a lifetime sale count (option 1's capture answers it).
 3. **More throughput.** ~5 s per card today vs 3.5 s measured on a fresh tab (11-03). A second Chrome profile/tab walking in parallel would roughly double the rotation without any new source.
 4. **Report honestly until then.** For posts: a Panini figure for the 7 days ending 5 days ago is complete; the trailing 7 days is a floor. Public surfaces already gate a Panini 24h/7d total on "sale lag < 1 day" (docs/strategy/panini-multi-product-2026-09-28.md).
+
+## Candy off Magic Eden — found and fixed 11-22
+
+- **Archive census** (mainnet-beta; publicnode's signature history reached back only ~1.5 days, so the first census and the lane's first runs under-read): all 398 Candy collection accounts 11-06 → 11-22 12:00 UTC (77,220 signatures) ∩ program `7Aru291A…` (109,249) and Tensor `TCMPhJ…` (1,173,088) → 1,414 candidate transactions, all read.
+- **Found:** 68 fills on 7Aru (62 buys, 6 accepted bids; ~45 SOL; biggest 10.4, 9, 7.5 SOL) and 1 Tensor accepted bid — **none were in `sales`**. A 298-tx random sample of older signatures showed no other venue. 2 more 7Aru buys were paid in a non-SOL token (not priced, reported).
+- **Fixed:** `/api/ingest/candy-chain-sales` (hourly :11) decodes 7Aru and Tensor `BuyCore` + `TakeBidCore` from each collection account behind a cursor, accepts a signature listing only when it is proven complete (reaches the cursor/floor, or ends on an archive RPC), reads v1 transactions, and offers fills to the drain with their venue (`solana_7aru` "Other Solana marketplace", `tensor`). The back-fill was parked once from the session; the drain wrote all of it by 12:20 PM PT 11-22 (2 were sealed packs → `candy_pack_sales`).
+- **This week's Candy (11-15 02:00Z → 11-22 02:00Z) is now 194 sales / $6,985** (Magic Eden 137 / $3,939, other Solana marketplace 56 / $3,045, Tensor 1 / $0.75). The earlier "137 / exact" was exact for Magic Eden only.
 
 ## Next
 
