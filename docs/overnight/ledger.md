@@ -12,6 +12,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~11:39 AM PT · ⏱ CRON (one run, restored) + 🗄 DATA (one extra clamp run) — tonight's two fixes proven early; gate week 2 provisional (Claude Code cloud; Trevor: "Make those updates")
+
+- **`rpc-portfolio-snapshot-packs`:** job 901 moved to `32 19 * * *` for one run.
+  - It **succeeded** at 11:32 AM PT through pg_cron (the 3:56 AM run had failed). Schedule restored at once to `56 7,8,9,10,11 * * *` (read back).
+  - `check_pgcron_recent_failures('48 hours')` no longer lists it, so the "Failing Every Run" sentinel alert clears.
+- **`fmv-clamp-disconnected-ask`:** job 69 is owned by another role, so instead one direct `SELECT public.fmv_clamp_disconnected_ask(NULL, false)` (its daily action, 13 h early).
+  - Heartbeat row 11:38 AM PT `ok=true`, 0 clamped, $0 removed.
+  - `detect_stalled_pipelines()` no longer lists it.
+- **Gate week 2, provisional:** 11-16 week through 11:30 AM PT reads HIGH 82.8 / MEDIUM 72.9, ASK_ONLY 55.3. Written into go-live §6 item 5, marked provisional.
+- **Revert:** nothing to revert. The schedule is restored and the clamp run changed 0 rows.
+
 ### 2026-11-22 ~11:40 AM PT · 🗄 APPLIED (`20261122193815`) — Panini NWSL products 2478 (Prizm Black NWSL, #1065) + 2460 admitted to the card walk (Claude Code cloud; same thread as the Womens Soccer discovery fix)
 
 - Set ids read from card links on the Womens Soccer grid in Trevor's Chrome; neither had a `panini_products` row. Pre-admitting triggers the BOOTSTRAP narrowing on the next runner pass instead of waiting a discovery run first.
