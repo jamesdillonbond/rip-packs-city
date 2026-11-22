@@ -1,6 +1,6 @@
 # Daytime autonomous pass — 2026-11-22 (1:22 PM PT →, Claude Code cloud)
 
-**Verdict: GREEN. 12 shipped (5 migrations + 1 one-off maintenance, 7 code changes), 0 reverted** (updated ~3:00 PM PT; items 8–12 below). Trevor: "work autonomously for the next 4 hours … fix any issues you encounter." Push worked directly to `main` from this session (dry-run first). A concurrent Panini/Candy thread was active all afternoon; I stayed out of its lane except for one Panini data-loss fix it could not be reached for (`ListAgents`: no reachable session).
+**Verdict: GREEN. 13 shipped (5 migrations + 1 one-off maintenance, 8 code changes), 0 reverted** (updated ~3:15 PM PT; items 8–13 below). Trevor: "work autonomously for the next 4 hours … fix any issues you encounter." Push worked directly to `main` from this session (dry-run first). A concurrent Panini/Candy thread was active all afternoon; I stayed out of its lane except for one Panini data-loss fix it could not be reached for (`ListAgents`: no reachable session).
 
 ## Shipped (newest first; each has a ledger entry with its revert path)
 
@@ -18,6 +18,7 @@
 9. **`034172479` — four review findings:** the packs-tab "$0 at floor ask" over zero priced listings; offer-fill chain reads get a 90 s wall-clock budget; All Day `resolvedOnChain` counts placed fills only; the X reminder says "opens" for an unconfirmed Pinnacle RSVP.
 10. **`20261122223919` + `ddae8e5bd` — the Sentinel drop-day arm counts unpriced sales.** Sales with no published price had dropped out of both sides. **2026-11-18 18:00–24:00 UTC had 178 of 1,009 Top Shot sales (17.6 %) with no published price at the sale, and nothing saw it.** The arm now warns at ≥ 10 %.
 11. **`911c765f9` — the art backfill rests only after an error-free lap** (it judged the last run only).
+13. **`d4c86254c` — the sealed-pack "this week" change is like-for-like only** (held and listed counts unchanged). Same commit unblocked `main`: `lib/dashboard/aggregate.ts:112` (the portfolio thread's `40ff10b39`) failed the registry own-property guard.
 12. Review method: a background reviewer read today's 10 non-Panini/Candy commits; 6 findings, all fixed (items 9–11).
 
 ## Measured, no change (recorded so nobody re-chases them)
