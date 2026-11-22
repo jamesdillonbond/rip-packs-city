@@ -12,6 +12,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-21 ~8:10 PM PT · 🗄 DB MAINTENANCE — three bloated `topshot_atlas_market_events` indexes rebuilt CONCURRENTLY, 752 MB → 158 MB (Claude Code cloud, autonomous pass)
+
+- **Why:** an estate screen for heavy-churn tables found `idx_tame_open_listing_seen_cover` (the open-listing book index behind the 5-min `ts-listings-atlas-sync` tick, built 10-16) at **14.0 % leaf density** (495 MB, 61k leaf pages); `idx_tame_listed_at` 24.1 %, `idx_tame_open_listing_serial` 37.3 % (`pgstatindex`). Its keys include `last_seen_at`, which moves on every re-sighting, so it churns by design.
+- **What:** same one-statement pg_cron recipe as the entry below (jobs 904/905, role timeout raised → verified → unscheduled → `RESET`): cover 495 → **73 MB** (8 s), listed_at 139 → **37 MB** (36 s), open_serial 118 → **48 MB** (7 s). All valid; 0 invalid indexes estate-wide; jobs gone; role setting restored.
+- **Measured, not yet established:** `sync` step 2.2–4.3 s on the first three ticks after vs a 48 h median of 4.6 s (p90 12.4 s) before — three samples, so no claim. **Falsifier / dated read (11-22 evening):** `percentile_cont(0.5)` of `extra->'sync'->>'duration_ms'` for `ts-listings-atlas-sync` since `2026-11-22 04:05Z` vs 4,595 ms in the 48 h before. And re-read `pgstatindex('public.idx_tame_open_listing_seen_cover').avg_leaf_density` in ~a week: if it is back under ~30 %, this index wants a scheduled weekly rebuild (8 s).
+- ⓘ **Left alone on purpose:** `fmv_snapshots_2026` indexes read 63–71 % density — point lookups, modest gain, hottest table; `wallet_moments_cache` has its own documented reindex history.
+- **Revert:** none needed — a rebuilt index is the same index.
+
 ### 2026-11-21 ~8:00 PM PT · 🗄 DB MAINTENANCE — three bloated `pack_ev_history` indexes rebuilt CONCURRENTLY, 543 MB → 171 MB (Claude Code cloud, autonomous pass)
 
 - **Why:** `analytics_packs_summary` (behind `/api/analytics/packs/summary`, re-validated every 10 min per collection) took 13–28 s on Top Shot and hit statement timeouts several times a day; `EXPLAIN` showed 23.2 s of the 23.6 s were cold random reads of ~20.8k pages — a full scan of `idx_pack_ev_history_listing_time`, whose **leaf density was 29.6 %, fragmentation 80.9 %** (`pgstatindex`): the daily `thin_pack_ev_history_all` (jobid 889) deletes 14–17-day-old snapshots across every pack (878k deletes vs 755k live rows). The covering and collection/dist indexes read 30.2 % / 30.4 %.
