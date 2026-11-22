@@ -8,6 +8,11 @@ Companion: [panini-fmv-packev-methodology.md](panini-fmv-packev-methodology.md) 
 
 ## 0. Progress (dated — newest first)
 
+**2026-11-22 ~12:25 PM PT — follow-ups** (Trevor: "Do what you can").
+- ✅ **Over-match gate applied** (`20261122201452`): 87 of 358 shadow packs over-match and no longer pass; 50 pass (was 95). None of WC/WNBA Hobby, FOTL or the special packs passes.
+- ✅ **Rolling Stones + 2025 Bad Eggs packs linked now** (`20261122201616`, the value the route would write at its next pack capture): 1060/1063 → 2130, 979/990 → 850130. The board's note for them is now accurate — 979/1060 "contents aren't fixed slots", 990/1063 "not enough recorded sales" — all four correctly withheld. They join the shadow at its next :49 run.
+- 🗓 A scheduled task runs the pull-ledger backtest on ~2026-12-06.
+
 **2026-11-22 ~11:25 AM PT — P1 + P2 pass** (Trevor: "Work through all you can for p1 and p2").
 
 | Item | State |
@@ -26,10 +31,10 @@ Companion: [panini-fmv-packev-methodology.md](panini-fmv-packev-methodology.md) 
 1. **A per-parallel slope model is unstable.** `log p = b_q + k_q·player` fitted slopes of ~6.8 on rare parallels and over-predicted held-out cards 2.3–5.8× (pooled, 5-fold). Rejected.
 2. **A decile-binned model never extrapolates past an observed price** (a missing card is priced at the catalogued mean of its parallel within its player's decile). 5-fold holdout, pooled pred/obs, WC Stickers: Silver 1.03 · Blue 1.03 · Red 0.79 · Black 0.86 · Gold 0.67 · Green 0.58; Moonbirds: every parallel 0.94–1.15. **Complete tiers pass ±10 %; rare tiers run 14–42 % LOW with wide fold swings** (a few star cards carry each tier's mean). Shipped as the shadow's engine.
 3. **"As designed" ≠ "what's left in the packs".** Panini's `rarity_distribution` is the MINTED mix. The remaining pool is bounded by supply: `packs_remaining × cards − catalogued still_in_packs` is the only room left for uncatalogued cards. Moonbirds: that room is ~3 cards, so its true EV is at most ~$66 (floor $57.22, shadow remaining $60.43) even though the design-mix EV is $104 — most Legendaries are already pulled. Stickers: shadow remaining $7.59, design $9.43 (floor $6.75). **The pull ledger decides which view predicts pulls; until then neither is published.**
-4. **A tier's serial range is necessary but not sufficient.** Hobby, FOTL-exclusive and insert parallels share caps: WC Hobby Epic matches 3,071 catalogued cards vs Panini's 1,982 distinct; special pack 1051 values at $651 on a $220 cost. Such packs must never pass the gate — the "over-match" gate is written (`claude/patches/2026-11-22-panini-pack-ev-pool/…overmatch_gate.sql` in the project) but **not applied**: its approval prompt was auto-cancelled twice. Until it is, read `gate_ok` together with each tier's `catalogued` ≤ `distinct_cards`.
+4. **A tier's serial range is necessary but not sufficient.** Hobby, FOTL-exclusive and insert parallels share caps: WC Hobby Epic matches 3,071 catalogued cards vs Panini's 1,982 distinct; special pack 1051 values at $651 on a $220 cost. Such packs must never pass the gate — the "over-match" gate is written (`claude/patches/2026-11-22-panini-pack-ev-pool/…overmatch_gate.sql` in the project) but **not applied**: its approval prompt was auto-cancelled twice. Applied 12:14 PM PT on the third attempt (`20261122201452`).
 5. **A >2× published-vs-tier gap was a matching bug, not a pricing bug** (Serie A 1041 $6.26 vs $37.67 → $8.74 after the serial-range fix; the rest is median vs mean).
 
-**Next (in order):** apply the over-match gate · at ~12-06 build the backtest on the pull ledger (realized pull mix per tier vs `rarity_distribution` vs remaining; realized value per opened pack vs shadow and published) · find the two missing Bad Eggs set ids on the runner · decide P2.9.
+**Next (in order):** at ~12-06 build the backtest on the pull ledger (realized pull mix per tier vs `rarity_distribution` vs remaining; realized value per opened pack vs shadow and published) · find the two missing Bad Eggs set ids on the runner · decide P2.9.
 
 ---
 
