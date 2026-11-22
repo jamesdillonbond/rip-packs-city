@@ -402,6 +402,11 @@ describe("Pinnacle drops carry the set's minted supply", () => {
     expect(mintedForTitle("Frozen Seasonal Harvest Vol.1", frozen)).toBe(490)
   })
 
+  it("an Open Edition set has no fixed supply (its count grows while it sells): null", () => {
+    expect(mintedForTitle("Walt Disney Mugs Vol.1", [{ set_name: "Walt Disney Animation Studios • Walt Disney Mugs Vol.1", total_minted: 7264, edition_type: "Open Edition" }])).toBeNull()
+    expect(mintedForTitle("Frozen Seasonal Harvest Vol.1", frozen.map((r) => ({ ...r, edition_type: "Limited Edition" })))).toBe(490)
+  })
+
   it("is unknown (null, never 0) with no matching set, a row with no count, or only a longer title", () => {
     expect(mintedForTitle("Frozen Seasonal Harvest Vol.1", [])).toBeNull()
     expect(mintedForTitle("Frozen Seasonal Harvest Vol.1", [...frozen, { set_name: "Walt Disney Animation Studios • Frozen Seasonal Harvest Vol.1", total_minted: null }])).toBeNull()

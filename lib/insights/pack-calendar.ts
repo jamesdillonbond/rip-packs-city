@@ -463,11 +463,17 @@ async function firstOpen(sb: any, d: PackCalendarDrop): Promise<{ any: boolean; 
   return { any: false, at: null }
 }
 
-/** The set's pins minted, from catalog rows whose set_name ends "• <title>"; null if unknown. */
-export function mintedForTitle(title: string, rows: { set_name: string | null; total_minted: number | null }[]): number | null {
+type MintedRow = { set_name: string | null; total_minted: number | null; edition_type?: string | null }
+/**
+ * The set's pins minted, from catalog rows whose set_name ends "• <title>"; null if unknown. An
+ * OPEN edition's count is minted-so-far and keeps growing while it sells (Mugs Vol.1 read 7,264
+ * mid-sale), so a set with any Open row has no fixed supply to state: null.
+ */
+export function mintedForTitle(title: string, rows: MintedRow[]): number | null {
   const want = `• ${title.trim()}`.toLowerCase()
   const mine = rows.filter((r) => (r.set_name ?? "").trim().toLowerCase().endsWith(want))
   if (!mine.length) return null
+  if (mine.some((r) => /open/i.test(r.edition_type ?? ""))) return null
   let sum = 0
   for (const r of mine) {
     const n = Number(r.total_minted)
@@ -487,12 +493,12 @@ async function attachPinnacleMinted(sb: any, drops: PackCalendarDrop[]): Promise
     if (d.kind !== "rsvp" && d.kind !== "sale" && d.kind !== "capsule") continue
     const pattern = `%• ${d.title.trim().replace(/[\\%_]/g, (c) => `\\${c}`)}`
     try {
-      const { data, error } = await sb.from("pinnacle_catalog").select("set_name, total_minted").like("set_name", pattern).limit(200)
+      const { data, error } = await sb.from("pinnacle_catalog").select("set_name, total_minted, edition_type").like("set_name", pattern).limit(200)
       if (error) {
         console.warn(`[pack-calendar] pinnacle_catalog minted(${d.dist_id}): ${error.message}`)
         continue
       }
-      const n = mintedForTitle(d.title, (data ?? []) as { set_name: string | null; total_minted: number | null }[])
+      const n = mintedForTitle(d.title, (data ?? []) as MintedRow[])
       if (n != null) d.minted = n
     } catch (e) {
       console.warn(`[pack-calendar] pinnacle_catalog minted(${d.dist_id}): ${e instanceof Error ? e.message : String(e)}`)
