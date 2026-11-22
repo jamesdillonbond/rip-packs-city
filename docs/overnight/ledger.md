@@ -12,6 +12,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~12:22 PM PT · 📝 DOCS + ⏰ SCHEDULED TASK (prompt extended) — the Monday Top Shot gate week-2 write now survives outside the strategy thread (Claude Code cloud; Trevor: "Make sure it survives outside this thread")
+
+- **Three independent carriers, none bound to the thread:**
+  1. The Mon 11-23 9:40 AM PT FMV falsifier task (`trig_01G4uTMonfKUQ3zPAxyowj33`) has Supabase. Its new step 5 reports Top Shot HIGH / MEDIUM for week_start 2026-11-16 against the ≥ 70 bar, writes it into go-live §6 item 5 if it can push, and otherwise gives Trevor the line to paste.
+  2. `docs/handoff-2026-11-22-overnight-pass.md` QUEUED gains item 4. That handoff's clamp FINDING is marked RESOLVED, so the session-start ready-queue now prints the real QUEUED list (items 1–2 marked resolved). Every session sees the gate item until a newer night handoff lands.
+  3. The focus.md steer (11-22 ~10:20 AM PT) for the night pass.
+- The thread-bound reminder (`trig_01TMmTKBKV4rkaxa3vDEtCiC`, 10:47 AM PT 11-23) stays as a fourth, redundant carrier.
+- **Revert:** revert this commit. The falsifier task's prompt minus step 5 is in this ledger's history (the 11-13 / 11-16 versions).
+
 ### 2026-11-22 ~12:20 PM PT · 🗄 APPLIED ×2 — Panini: tier-shadow over-match gate live; Rolling Stones + 2025 Bad Eggs packs linked to their card products (Claude Code cloud; Trevor: "Do what you can")
 
 - **What:** `20261122201452` (over-match gate, third attempt; live prosrc md5 == file) — a tier matching more catalogued cards than Panini lists forces `gate_ok=false`: 87 of 358 shadow packs over-match, 50 pass (was 95). `20261122201616` writes `product_set_id` on packs 1060/1063 (→ 2130) and 979/990 (→ 850130) — the value the ingest route writes at its next pack capture. Board notes for them are now accurate and all four stay correctly withheld. A one-time scheduled task runs the pull-ledger backtest 2026-12-06 1:23 PM PT (read-only; reports to Trevor).
