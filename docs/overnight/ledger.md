@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~9:50 AM PT · 🗄 APPLIED ×2 + ⏰ pg_cron 914 — Panini: Moonbirds sales were all being dropped (fixed + 1,160 backfilled) and the pull ledger starts (Cowork cloud; Trevor: "Approve and proceed", strategy P0.1 + P0.3)
+
+- **`20261122173500` panini_sales_ingest accepts single-underscore card keys.** It accepted only `<card>__<serial>_<cap>`; Moonbirds (850178) keys sales `packcard-850178_104_7_7_10`, so every Moonbirds sale was filtered out (0 rows; 1,160 serial last-sales). Now accepts `^packcard-\d+_\d+_\d+_\d+_\d+$` (card = first 3 parts); body otherwise = 20260929020655 (prosrc md5 verified). Backfilled 1,160 `serial_last_sale` rows (368 in 90 d). Effect: Moonbirds (1049) now passes the pool gates — $57.22 EV vs $43, typical $17; top cards valued at or below their recorded sales (Enlightened Professor /49 sold $1,100–1,300, valued at its $890 ask).
+- **`20261122174500` pull ledger** (`panini_edition_supply_obs` + `record_panini_edition_supply_obs()`, pg_cron **914** `54 * * * *`): every observed still_in_packs / pulled_count / burned_count per card. Baseline 54,432 rows written 9:48 AM PT. First pack-EV backtest possible in ~2 weeks (strategy doc P0.3).
+- Strategy: `docs/strategy/panini-pack-ev-strategy-2026-11-22.md`.
+- **Revert:** sales: re-apply panini_sales_ingest from 20260929020655; `delete from panini_sales where source='serial_last_sale' and edition_external_id = any(array(select external_id from panini_editions where product_set_id=850178));` · ledger: `select cron.unschedule('panini-edition-supply-obs'); drop function public.record_panini_edition_supply_obs(); drop table public.panini_edition_supply_obs;`
+
 ### 2026-11-22 ~9:45 AM PT · 🗄 APPLIED (`20261122173426`) + 🔧 SHIPPED (sentinel arm) — Top Shot sales clearing against an ASK_ONLY price now warn within 6 h (Claude Code cloud; strategy-2026-11-22.md Move 1.1)
 
 - **Why:** on the 11-11 Series 9 launch, 37.6 % of Top Shot sales sold against an ASK_ONLY price, at a median 2.16× the sale price. Nothing alarmed; `fmv_accuracy_weekly` stored it 12 days later.
