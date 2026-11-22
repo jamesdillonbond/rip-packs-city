@@ -154,7 +154,7 @@ interface Target {
 
 export async function runCandyBuyerPaid(
   db: Db,
-  opts: { budgetMs: number; limit?: number; now?: () => number; fetchImpl?: FetchFn; pauseMs?: number; urls?: string[] },
+  opts: { budgetMs: number; limit?: number; now?: () => number; fetchImpl?: FetchFn; pauseMs?: number; urls?: string[]; concurrency?: number },
 ): Promise<BuyerPaidRunResult> {
   const now = opts.now ?? Date.now
   const doFetch: FetchFn = opts.fetchImpl ?? ((u, i) => fetch(u, i))
@@ -188,12 +188,21 @@ export async function runCandyBuyerPaid(
   }
 
   try {
-    for (const [sig, group] of byTx) {
+    // Reads go out `concurrency` at a time (2026-11-21: one-at-a-time managed ~50 history reads per
+    // 240 s run, ~5 s each, all successful — the backlog would have taken a day). Results are still
+    // handled in order, and 5 straight refusals still stop the run.
+    const entries = [...byTx]
+    const concurrency = Math.max(1, opts.concurrency ?? 4)
+    outer: for (let b = 0; b < entries.length; b += concurrency) {
       if (now() > deadline) { out.budget_stopped = true; break }
       if (consecutiveLimited >= 5) { out.budget_stopped = true; break } // the RPC is refusing us: stop, retry next run
       if (pauseMs > 0) await new Promise((r) => setTimeout(r, pauseMs))
-      const tx = await fetchTx(sig, doFetch, opts.urls)
-      if (tx === "rate_limited") { out.rate_limited++; consecutiveLimited++; continue }
+      const batch = entries.slice(b, b + concurrency)
+      const txs = await Promise.all(batch.map(([sig]) => fetchTx(sig, doFetch, opts.urls)))
+      for (let k = 0; k < batch.length; k++) {
+      const [sig, group] = batch[k]
+      const tx = txs[k]
+      if (tx === "rate_limited") { out.rate_limited++; consecutiveLimited++; if (consecutiveLimited >= 5) { out.budget_stopped = true; break outer } continue }
       consecutiveLimited = 0
       if (tx === null) { out.not_found++; continue } // not retried as an error: next run tries again
       out.read++
@@ -222,6 +231,7 @@ export async function runCandyBuyerPaid(
         })
       }
       if (pending.length >= 50) await flush()
+      }
     }
     await flush()
   } catch (e) {

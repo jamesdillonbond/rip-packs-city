@@ -91,10 +91,21 @@ describe("runCandyBuyerPaid", () => {
     const applied: any[] = []
     const many = Array.from({ length: 9 }, (_, i) => ({ ...SKENES, transaction_hash: `S${i}` }))
     let calls = 0
-    const r = await runCandyBuyerPaid(mkDb(many, applied), { budgetMs: 60_000, pauseMs: 0, fetchImpl: (async () => { calls++; return new Response("", { status: 429 }) }) as any, urls: ["u"] })
+    const r = await runCandyBuyerPaid(mkDb(many, applied), { budgetMs: 60_000, pauseMs: 0, concurrency: 1, fetchImpl: (async () => { calls++; return new Response("", { status: 429 }) }) as any, urls: ["u"] })
     expect(r.budget_stopped).toBe(true)
     expect(r.rate_limited).toBe(5)
     expect(calls).toBe(5)
+    expect(applied).toEqual([])
+  })
+
+  it("reads in parallel batches but still stops at 5 refusals (never reads the whole backlog into a refusing RPC)", async () => {
+    const applied: any[] = []
+    const many = Array.from({ length: 40 }, (_, i) => ({ ...SKENES, transaction_hash: `S${i}` }))
+    let calls = 0
+    const r = await runCandyBuyerPaid(mkDb(many, applied), { budgetMs: 60_000, pauseMs: 0, concurrency: 4, fetchImpl: (async () => { calls++; return new Response("", { status: 429 }) }) as any, urls: ["u"] })
+    expect(r.budget_stopped).toBe(true)
+    expect(r.rate_limited).toBe(5)
+    expect(calls).toBeLessThanOrEqual(8)
     expect(applied).toEqual([])
   })
 
