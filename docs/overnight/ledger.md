@@ -12,6 +12,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-21 ~8:47 PM PT · 🗄 DB MAINTENANCE — `idx_panini_serials_edition_agg` rebuilt CONCURRENTLY, 1,147 MB → 420 MB (Claude Code cloud, autonomous pass)
+
+- **Why:** `panini_card_serials` (6.1M rows, 34.8M updates) — its per-edition aggregate index `(edition_external_id) INCLUDE (nft_type, last_sale_usd)`, range-scanned 1.67M times at ~2.1k tuples per scan, read **34.0 % leaf density** (143.7k leaf pages).
+- **What:** one-statement pg_cron job 909 (role timeout raised to 1200 s; schedule parked to `55 5 1 1 *` once in flight per the recipe; succeeded in **3 m 03 s** — two passes over the 8 GB heap; DB I/O waits peaked at 7, back to 0 after); unscheduled; `RESET`. 0 invalid indexes; no `rpc-oneoff-reindex%` jobs left. **No Vercel errors or warnings 04:43–04:48Z** (the build window).
+- **Left:** `idx_panini_serials_listed_edition_cover` (41.5 %, 117 MB) — another two heap passes for ~60 MB; `…_captured_at_edition` (53.2 %) and `…_feed_status` (60.0 %) per the ≥ 55 % rule (database.md).
+- **Dated read:** hourly `panini-market-board` (11.6–28.2 s before), `panini-offer-spread` (~13.9 s), `panini-squeeze-mv` (16–20 s) `duration_ms` from 05:18Z on.
+- **Revert:** none needed.
+
 ### 2026-11-21 ~8:39 PM PT · 🗄 DB MAINTENANCE — two `sales_2026` analytics covers rebuilt CONCURRENTLY, 453 MB → 303 MB; gain small, sales indexes not pursued further (Claude Code cloud, autonomous pass)
 
 - **Why:** `analytics_sales_summary` 90-day / all-collections reads 10.4 s cold (170.8k buffers, 30k read, temp spill); `idx_sales_2026_summary_cover` read 65.3 % density, `idx_sales_2026_pulse_window` 55.4 %.
