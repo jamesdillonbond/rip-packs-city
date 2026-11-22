@@ -39,7 +39,7 @@ describe("newSignatures — RPC failure paths", () => {
       // Re-pinned 2026-11-22 (e9dd2c7): with a cursor, a short listing must PROVE it reaches the cursor —
       // the probe for the signature just older than "x" answers "cur".
       const ok: Ans[] = [{ body: { result: [sig("x")] } }, { body: { result: [sig("cur")] } }]
-      const ans: Ans[] = first.throws ? [first, first, ...ok] : [first, ...ok]
+      const ans: Ans[] = first.throws ? [first, first, first, ...ok] : [first, ...ok]
       const { f, calls } = fetchSeq(ans)
       const r = await newSignatures(f as any, "ADDR", "cur", 0, ["u1", "u2"])
       expect(r.sigs).toEqual([sig("x")])

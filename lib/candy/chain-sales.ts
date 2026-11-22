@@ -172,7 +172,7 @@ function decodeTakeBid(signature: string, tx: ParsedTx, inner: ParsedIx[], marke
 async function rpc<T>(doFetch: FetchFn, method: string, params: unknown[], urls: string[]): Promise<T> {
   let last = "no rpc"
   for (const url of urls) {
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const r = await doFetch(url, {
           method: "POST",
@@ -180,7 +180,7 @@ async function rpc<T>(doFetch: FetchFn, method: string, params: unknown[], urls:
           body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
           signal: AbortSignal.timeout(15_000),
         })
-        if (r.status === 429) { last = `${method} 429`; await new Promise((s) => setTimeout(s, 1000)); continue }
+        if (r.status === 429) { last = `${method} 429`; await new Promise((s) => setTimeout(s, 1000 + 1500 * attempt)); continue }
         if (!r.ok) { last = `${method} HTTP ${r.status}`; break }
         const j = (await r.json()) as { result?: T; error?: { message?: string } }
         if (j.error) { last = `${method}: ${j.error.message ?? "error"}`; break }
@@ -276,6 +276,9 @@ export interface ChainSalesResult {
   take_bids_seen: number
   unknown_ix: string[]
   failed: number
+  // Collections left unread because every RPC refused them (429). Their cursors stay where they
+  // are, so nothing is lost — the next run re-reads the same range — but it is counted and named.
+  rate_limited: number
   collections: ChainSalesCollection[]
   error: string | null
 }
@@ -292,7 +295,7 @@ export async function runCandyChainSales(
   const floorSec = Math.floor(Date.parse(CHAIN_FLOOR_ISO) / 1000)
   const out: ChainSalesResult = {
     ok: false, queued: 0, checked: 0, not_reached: 0, sigs_read: 0, tx_fetched: 0, fills_seen: 0, fills_offered: 0,
-    fills_known: 0, take_bids_seen: 0, unknown_ix: [], failed: 0, collections: [], error: null,
+    fills_known: 0, take_bids_seen: 0, unknown_ix: [], failed: 0, rate_limited: 0, collections: [], error: null,
   }
 
   // Oldest-walked first; never-walked first of all.
@@ -371,10 +374,15 @@ export async function runCandyChainSales(
       if (uErr) throw new Error(`cursor write: ${uErr.message}`)
     } catch (e) {
       rep.error = e instanceof Error ? e.message : String(e)
-      out.failed++
+      if (/ 429$/.test(rep.error)) out.rate_limited++
+      else out.failed++
     }
   }
-  out.ok = out.failed === 0
-  if (!out.ok) out.error = `${out.failed} collection(s) failed; first: ${out.collections.find((c) => c.error && c.error !== "budget")?.error ?? "?"}`
+  // A refusal is not a failure of this lane (the range is re-read next run), but a run in which
+  // EVERY collection it reached was refused read nothing, and is not ok.
+  const allRefused = out.checked > 0 && out.rate_limited === out.checked
+  out.ok = out.failed === 0 && !allRefused
+  if (out.failed > 0) out.error = `${out.failed} collection(s) failed; first: ${out.collections.find((c) => c.error && c.error !== "budget" && !/ 429$/.test(c.error))?.error ?? "?"}`
+  else if (allRefused) out.error = `rate_limited: all ${out.checked} collection(s) refused`
   return out
 }

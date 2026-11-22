@@ -83,6 +83,7 @@ const state: {
   txCalls: string[]
   sigCalls: any[]
   failSigsFor: string | null
+  refuse?: string | null
 } = { collections: [], hist: {}, truncatedAt: {}, txs: {}, queued: [], sold: [], parks: [], updates: [], txCalls: [], sigCalls: [], failSigsFor: null }
 
 function db() {
@@ -136,6 +137,12 @@ const fetchImpl = async (url: string, init: any) => {
 }
 
 let lastTxOpts: any = null
+// Like fetchImpl, but every request about `state.refuse` gets a 429 (both RPCs).
+const refusing = async (url: string, init: any) => {
+  const body = JSON.parse(init.body)
+  if (body.method === "getSignaturesForAddress" && body.params[0] === state.refuse) return new Response("slow down", { status: 429 })
+  return fetchImpl(url, init)
+}
 const NOW = Date.parse("2026-11-22T15:00:00Z")
 const PUB = "https://rpc.recent.test"
 const ARCH = "https://api.mainnet-beta.solana.com"
@@ -158,6 +165,7 @@ beforeEach(() => {
   state.txCalls = []
   state.sigCalls = []
   state.failSigsFor = null
+  state.refuse = null
 })
 
 describe("runCandyChainSales", () => {
@@ -215,6 +223,24 @@ describe("runCandyChainSales", () => {
     expect(state.sigCalls.filter((c) => c.url === ARCH)).toHaveLength(1)
     expect(state.parks).toHaveLength(1)
   })
+  it("a collection every RPC refuses (429) is counted as rate_limited, keeps its cursor, and does not fail a run that read others", async () => {
+    const OTHER = "OTHERCOLL"
+    state.collections = [{ address: COLL, name: "ICONs", chain_sig_cursor: "OLD" }, { address: OTHER, name: "Idle", chain_sig_cursor: "X0" }]
+    state.hist[OTHER] = [{ signature: "X0", blockTime: 1 }]
+    state.refuse = OTHER
+    const r = await runCandyChainSales(db(), { budgetMs: 60_000, now: () => NOW, fetchImpl: refusing as any, urls: [PUB, ARCH], concurrency: 2 })
+    expect(r.ok).toBe(true)
+    expect(r.rate_limited).toBe(1)
+    expect(r.failed).toBe(0)
+    expect(state.updates.map((u) => u.address)).toEqual([COLL])
+  })
+  it("a run in which every collection was refused is NOT ok", async () => {
+    state.refuse = COLL
+    const r = await runCandyChainSales(db(), { budgetMs: 60_000, now: () => NOW, fetchImpl: refusing as any, urls: [PUB, ARCH], concurrency: 2 })
+    expect(r.ok).toBe(false)
+    expect(r.error).toMatch(/rate_limited/)
+    expect(state.updates).toEqual([])
+  }, 20_000)
   it("a failed signature read fails the run and leaves the cursor where it is", async () => {
     state.failSigsFor = COLL
     const r = await run()
