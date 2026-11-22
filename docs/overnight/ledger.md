@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-21 ~9:25 PM PT · 🗄 APPLIED (`20261122042722`) — `fmv_recalc_historical_candidates` skips collections with no paid sale before its per-edition probe (Claude Code cloud, autonomous pass)
+
+- **What:** fmv-recalc's historical fallback hit its own 60 s timeout on 14 of 255 runs in 3 days (PostgREST 500s, `extra.historical_fallback_error`). Measured: 1.18M buffers / 23 s for 3 rows; 9,320 of its 28,393 stale editions are Panini, which has **0 rows in `sales`**, each probed across 7 sales partitions. New CTE `sold_colls` = collections with a paid sale in `sales_market` (the probe's own predicate, computed per call, never a hardcoded list); the stale set is restricted to it.
+- **Verified:** output hash identical before/after on the production call (3 rows) AND on a widened population (`'1 day'`, limit 100k: **8,851 rows**, `f4f5acf5…` both). Production call 1.18M → **698k buffers**, 1.0 s warm. Live md5 `2f638605…` = file; config/SECURITY DEFINER/ACL unchanged; guards `fmv-writers-read-sales-market-not-sales` + anon-exec + pin tests pass.
+- **Falsifier:** `count(*) filter (where extra->>'historical_fallback_error' is not null)` on `fmv-recalc` over the next 3 days vs **14 / 255** before; `historical_fallback` row counts should be unchanged in kind.
+- **Revert:** re-apply the function block of `20261110213841_audit_20261110_fmv_recalc_historical_candidates_probes_sales_per_edition.sql`.
+
 ### 2026-11-21 ~8:10 PM PT · 🗄 DB MAINTENANCE — three bloated `topshot_atlas_market_events` indexes rebuilt CONCURRENTLY, 752 MB → 158 MB (Claude Code cloud, autonomous pass)
 
 - **Why:** an estate screen for heavy-churn tables found `idx_tame_open_listing_seen_cover` (the open-listing book index behind the 5-min `ts-listings-atlas-sync` tick, built 10-16) at **14.0 % leaf density** (495 MB, 61k leaf pages); `idx_tame_listed_at` 24.1 %, `idx_tame_open_listing_serial` 37.3 % (`pgstatindex`). Its keys include `last_seen_at`, which moves on every re-sighting, so it churns by design.
