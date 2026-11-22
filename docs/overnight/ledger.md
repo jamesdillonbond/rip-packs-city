@@ -12,6 +12,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~3:20 PM PT · 🔧 SHIPPED (code) — Candy chain-sales parks every Candy collection's fill from a fetched transaction (a two-collection sweep lost one); a mostly-refused run is not ok; stray workers stop; buyer-paid counts non-rate-limit RPC errors as errors (Claude Code cloud, autonomous 4 h pass; fresh-eyes review of today's Candy commits)
+
+- `lib/candy/chain-sales.ts` (`58fbec845`, `b8f371e80`):
+  - (1) The walk skips a signature already queued or in `sales`, but it parked only the walked collection's fill. So a Tensor/7Aru sweep filling cards in collections A and B lost B's fill for good. It now parks fills for any Candy collection in the run's list. No live instance yet (79 chain-queued rows, all distinct signatures).
+  - (2) `ok` was false only when **every** collection was refused (325 of 326 read ok). It is now also false when ≥ half of ≥ 4 reached collections were refused.
+  - (3) One worker's throw now stops its sibling workers (they kept calling the RPC on an abandoned list).
+  - 429 backoff base is an option (`retryBackoffMs`, default 1000 ms) so tests need not sleep.
+- `lib/candy/sale-buyer-paid.ts` (`946693305`, `ca52dbbee`): a JSON-RPC error that is not a rate limit is counted as `rpc_errors`, surfaced in `error`, and makes the run not ok. It no longer counts as a "refusal" that silently stops runs as `budget_stopped`; that is how the "Transaction version (1) is not supported" failure read green.
+- 4 new tests, all failing on the old code; preflight green. Panini commits reviewed clean.
+- **Revert:** `git revert` the commit titled "candy: park cross-collection fills; mostly-refused run not ok; buyer-paid rpc errors".
+
 ### 2026-11-22 ~3:20 PM PT · 🗄 APPLIED (`20261122231506`) + 🔧 SHIPPED (code) — UFC back IN the single Portfolio FMV (dashboard, profile, share card), and the last 30 nights' sealed-pack values BACKFILLED so the stacked Value / 30D chart shows the total (Claude Code cloud; Trevor: "We should have ufc, along with backfilled fmv data")
 
 - **UFC:** reverses the 3:05 PM closed-market exclusion. Dashboard `sumPortfolioFmv()` (fresh + stale, every collection), profile sums every `cached_fmv`, share card sums `perCollection[].fmv` (its snapshot `totalFmv` leaves closed markets out) and drops its "UFC market is closed — excluded" line.
