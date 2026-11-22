@@ -8,6 +8,21 @@ Companion: [panini-fmv-packev-methodology.md](panini-fmv-packev-methodology.md) 
 
 ## 0. Progress (dated — newest first)
 
+**2026-11-22 ~1:15 PM PT — follow-ups after close-out** (Trevor: "Keep going").
+- The 12:49 PM shadow run covered every newly linked product (68 products, 368 packs, 66 s of its 80 s budget; stalest-first rotation absorbs any overflow).
+- **A Panini product's cards can span several card-set ids.** The art paths prove it:
+  - "2024-25 Best of The NBA" (pack 998, linked to 2170) draws inserts from sets 2200 and 2205.
+  - WNBA Select Inserts Craft (1018 → 2215) draws from 2283.
+  - 2023-24 Artistic Selections (896 → 1964) draws from 2015.
+
+  All three packs are withheld today, so nothing wrong is published. But the tier model reads ONE set per product, so **no pack may be published from the tier model unless its product's cards live in its linked set** — add this to the publication gate alongside the backtest.
+- **Never give two `panini_products` rows the same name.** The route builds a name → set map, and the last row read wins, which could flip a pack to the wrong set. So the insert-only sets 2200 / 2205 / 2015 / 2283 / 2460 stay unnamed on purpose.
+- **NWSL #1065 ("2026 Panini NFT Prizm Black NWSL Soccer Packs", sold out 11-20) — open, owned by the NWSL thread.**
+  - Its card sets 2478 + 2460 were admitted at 11:40 AM PT. The pack-page cap fix (12:40 PM PT) should capture the drop page on the 2 PM PT runner pass.
+  - It links only when set **2478** carries Panini's exact `collection_name`, which the page does not expose outside its signed queries.
+  - **Next step:** after the pack row exists, set `panini_products.name` for 2478 = that row's `product_name`, and set its `product_set_id`. Leave 2460 unnamed.
+  - A scheduled task to do this automatically was declined by the approval classifier.
+
 **2026-11-22 ~12:40 PM PT — thread close-out** (Trevor: "Do what you think is best, and research the answers yourself … leaving nothing unresolved").
 - ✅ **P2.9 decided and shipped** (`20261122203555`). Research first: C8's premise was stale. Since 11-12 every Panini LOW/MEDIUM/HIGH/STALE FMV reaching the cross-collection `fmv_snapshots` (edition pages, wallets, portfolio) is already capped at the lowest live ask by `fmv_snapshots_cap_panini_low_to_live_ask()` — its shadow read: within ±25 % of the next sale 11.8 → 30.3 %, ratio 2.17 → 1.40. The gap was four boards reading Panini's own UNcapped table as a VALUE (squeeze, player, nation, special serials): 483 of 5,285 WC editions (9.1 %) above a fresh ask, median 1.64×, sealed exposure overstated 6.9 %. **Rule: a VALUE is capped at the live ask everywhere; a DEAL is not** (a deal is an ask below FMV — capping would delete every deal by construction; `panini_deal_board_all` is unchanged and already also requires the ask to undercut recent sales). One helper, `panini_fmv_capped_at_live_ask()`, mirrors the trigger's ask exactly. Verified: squeeze exposure $680,616 → $633,468, the board now shows exactly the edition page's number (`_askcap`), squeeze refresh 726 ms, deals 1,583.
 - ✅ **P2.7 closed.** The two "missing" Bad Eggs products were never missing — set **850147** (Introducing the Clans, 172 cards) and **850179** (New Yolk City, 273 cards) were registered and walked but unnamed, the same gap as 2130/850130 (found on Panini's own Entertainment grid in Trevor's Chrome; matched by mint caps). Also found **2123 = 2024 WNBA Rookie Royalty** (same tier structure as pack 1000). Named and linked (`20261122203835`): packs 1012/1013, 1053/1057/1061, 1000. Two newly priced by the existing guaranteed-contents model on real sales: New Yolk City Green (4 × Base Green #/49, 173 sales) $13.48 vs $13; Bronze (1 × #/45, 35 sales) $8.58 vs $18. The rest stay correctly withheld (mixed-pool contents or thin sales).
