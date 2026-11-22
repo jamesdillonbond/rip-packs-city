@@ -170,3 +170,37 @@ describe("runCandyChainSales", () => {
     expect(state.updates).toEqual([])
   })
 })
+
+// 2026-11-22: the first production run failed 5 collections with "Transaction version (1) is not
+// supported … maxSupportedTransactionVersion: 1" — Solana carries version-1 transactions, and the lane
+// asked for 0. A real v1 tx (5vsTBy…, a 7Aru ListCore, slot 472267152) has the v0 shape plus a
+// `transactionConfig` in the message. The simulated RPC below refuses a v1 tx exactly as mainnet does.
+describe("version-1 transactions", () => {
+  const asV1 = (tx: any) => ({ ...tx, version: 1, transaction: { ...tx.transaction, message: { ...tx.transaction.message, transactionConfig: { computeUnitLimit: 400000, heapSize: null, loadedAccountsDataSizeLimit: 67108864, priorityFee: null } } } })
+
+  it("a version-1 BuyCore decodes exactly like the v0 one", () => {
+    const d = decodeChainFills(BUY.signature, asV1(BUY.tx))
+    expect(d.fills.map((f) => [f.asset, f.priceSol, f.buyer, f.seller])).toEqual(
+      decodeChainFills(BUY.signature, BUY.tx).fills.map((f) => [f.asset, f.priceSol, f.buyer, f.seller]))
+  })
+
+  it("the run asks for version 1 and records a v1 fill the RPC would otherwise refuse", async () => {
+    const seen: any[] = []
+    const v1Fetch = async (_url: string, init: any) => {
+      const body = JSON.parse(init.body)
+      if (body.method === "getSignaturesForAddress") return new Response(JSON.stringify({ result: state.sigs[body.params[0]] ?? [] }), { status: 200 })
+      seen.push(body.params[1])
+      if (!(Number(body.params[1]?.maxSupportedTransactionVersion) >= 1)) {
+        return new Response(JSON.stringify({ jsonrpc: "2.0", error: { code: -32015, message: 'Transaction version (1) is not supported by the requesting client. Please try the request again with the following configuration parameter: "maxSupportedTransactionVersion": 1' }, id: 1 }), { status: 200 })
+      }
+      const tx = body.params[0] === BUY.signature ? asV1(BUY.tx) : state.txs[body.params[0]] ?? null
+      return new Response(JSON.stringify({ result: tx }), { status: 200 })
+    }
+    const r = await runCandyChainSales(db(), { budgetMs: 60_000, now: () => NOW, fetchImpl: v1Fetch as any, urls: ["https://rpc.test"], concurrency: 2 })
+    expect(seen.length).toBeGreaterThan(0)
+    expect(seen.every((o) => o.maxSupportedTransactionVersion === 1)).toBe(true)
+    expect(r.ok).toBe(true)
+    expect(state.parks).toHaveLength(1)
+  })
+})
+

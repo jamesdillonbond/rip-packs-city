@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~9:40 AM PT · 🧪 TESTS — version-1 coverage for both Candy chain lanes (Claude Code cloud; Trevor: "Keep going")
+
+- Found independently by reading `candy-chain-sales`' first run (9:11 AM PT: `ok=false`, 5 collections refused with "Transaction version (1) is not supported"; a live pg_net probe showed the refused tx is a 7Aru ListCore). The Candy thread shipped the fix first (`ca52dbbee`, both `chain-sales.ts` and `sale-buyer-paid.ts`) — my identical code change was dropped at merge.
+- **Added (tests only):** a v1 BuyCore decodes identically to v0; a run against a simulated RPC that refuses v1 unless asked still records the fill; `runCandyBuyerPaid` asks for version 1 and reads a v1 sale instead of counting the refusal as `rate_limited` (that lane had no v1 test). Both new run tests fail with the old `0` (planted).
+- **Revert:** revert this commit (tests only).
+
 ### 2026-11-22 ~9:20 AM PT · 🔧 SHIPPED (code) — Candy chain reads accept version-1 Solana transactions (Claude Code cloud; same thread)
 
 - The first `candy-chain-sales` run (9:11 AM PT) read 2,481 signatures / 2,347 transactions across 396 of 398 collections and offered **9** fills, but **5 collections failed**: `Transaction version (1) is not supported … maxSupportedTransactionVersion: 1`. 14 Candy transactions 11-06 → 11-22 are version 1 — listings, transfers, and **one 7Aru BuyCore (0.4329 SOL)**, which the morning census had also missed. Both `lib/candy/chain-sales.ts` and `lib/candy/sale-buyer-paid.ts` now request `maxSupportedTransactionVersion: 1` (the decoder reads the v1 fill unchanged; pinned in the test). The failed collections keep their cursors and are re-read next hour.

@@ -126,3 +126,30 @@ describe("runCandyBuyerPaid", () => {
     expect(r.error).toContain("denied")
   })
 })
+
+// 2026-11-22: a version-1 transaction is REFUSED by the RPC unless the request allows version 1
+// (the candy-chain-sales lane failed 5 collections on it), and this lane counted that refusal as
+// `rate_limited` — a v1 sale would never resolve. The request now allows version 1.
+describe("runCandyBuyerPaid — version-1 transactions", () => {
+  it("asks for maxSupportedTransactionVersion 1, so a v1 sale is read rather than refused", async () => {
+    const applied: any[] = []
+    const SK = { transaction_hash: "SIG1", nft_id: "N1", sold_at: "2026-11-21T22:02:11+00:00", price_native: "20.31144211", buyer_address: "EiWVtTQvUzMbcRwuyVPhLQKrjvbNUvFgBGmtTzsbjYB6", seller_address: "FjzzQ7yxv15xB2LwHbHnkqrYpqLJWLmUZvGubHf4QLi" }
+    const db = { rpc: async (name: string, args: any) => {
+      if (name === "candy_buyer_paid_targets") return { data: [SK], error: null }
+      if (name === "candy_apply_buyer_paid") { applied.push(...args.p_rows); return { data: 1, error: null } }
+      return { data: null, error: null }
+    } }
+    const seen: any[] = []
+    const v1Fetch = async (_u: string, init: any) => {
+      const body = JSON.parse(init.body)
+      seen.push(body.params[1])
+      if (!(Number(body.params[1]?.maxSupportedTransactionVersion) >= 1)) return new Response(JSON.stringify({ error: { code: -32015, message: "Transaction version (1) is not supported" } }), { status: 200 })
+      return new Response(JSON.stringify({ result: { ...fx("skenes-m2"), version: 1 } }), { status: 200 })
+    }
+    const r = await runCandyBuyerPaid(db as any, { budgetMs: 60_000, pauseMs: 0, retryDelayMs: 0, fetchImpl: v1Fetch as any, urls: ["u"] })
+    expect(seen.every((o) => o.maxSupportedTransactionVersion === 1)).toBe(true)
+    expect(r).toMatchObject({ ok: true, read: 1, rate_limited: 0 })
+    expect(applied[0]).toMatchObject({ transaction_hash: "SIG1", paid_by: "buyer" })
+  })
+})
+
