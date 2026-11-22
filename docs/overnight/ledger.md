@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~2:00 PM PT · 🔧 SHIPPED (code) — the weekly email's new "Sealed packs" block no longer prints $0.00 for unpriced packs or an older night as this week's; the dashboard pack line drops the same fake zeros (Claude Code cloud, autonomous 4 h pass; first send is Mon 11-23 8:33 AM PT)
+
+- **Found by reading today's `88731d9fc` against live rows:** 5 of 58 snapshots on 11-22 read held 1 / listed 0 / `pack_low_ask_usd` 0.00 (the fill writes 0 when no held pack has a live ask). The email would have said "$0.00 — 1 sealed pack at the lowest live ask", which its own header forbids. `packWeekFrom` also took the newest row *with* a value rather than the newest snapshot, and "4 sealed packs" read as fully priced when only 3 had asks.
+- **Fix:** `lib/emails/weekly-packs.ts`: only a positive value shows. The block reads the newest snapshot only. Partial coverage reads "3 of 4 sealed packs". A 0 prior gives no weekly change. `/api/profile/value-history`: a stored 0 with packs held → null. The card draws the pack line only when some point is positive. 6 new tests fail on the old code; preflight green.
+- **Revert:** `git revert` the commit titled "email+dashboard: sealed-pack value never shows an unpriced $0".
+
 ### 2026-11-22 ~2:45 PM PT · 🗄 APPLIED (`20261122214417`) — the thin-sale haircut stops re-"cutting" All Day rows its bid-floor trigger holds at their price: 171 of 177 reported cuts were phantom, and `algo_version` grew `_haircut_bidfloor` on every pass (up to ×7) (Claude Code cloud, autonomous 4 h pass)
 
 - ⚠ **Time correction:** applied ~1:44 PM PT (version `20261122214417` = 21:44 UTC). The heading's "2:45 PM PT" was written from an unread clock; headings are append-only, so the correction lives here.
