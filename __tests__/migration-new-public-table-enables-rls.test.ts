@@ -16,7 +16,8 @@ import { stripSqlComments } from "../scripts/lib/strip-sql-comments.mjs"
 //
 // ⭐ AND THE REASON A GUARD IS STILL WORTH HAVING, THOUGH A SELF-HEALER EXISTS:
 // `public.selfheal_audit_table_rls()` (pg_cron jobid 232, `47 * * * *`) enables RLS
-// and revokes anon on every `public.audit\_%` table hourly — which is why 10 older
+// and revokes anon on every `public.audit\_%` table hourly (and, since 20261122234542, every
+// `public.scratch\_%` table — the ad-hoc kind no migration ever creates) — which is why 10 older
 // migrations create a table with no inline RLS and are compliant in production
 // anyway. But it covers ONLY the `audit_` prefix, and only ONCE AN HOUR:
 //   · a non-`audit_` table (`series_detail_rollup`, `profile_bio`,
