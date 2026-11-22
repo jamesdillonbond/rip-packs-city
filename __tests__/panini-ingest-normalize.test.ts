@@ -49,7 +49,9 @@ describe("toEditionRow", () => {
   it("prefers __nation (runner tag) then team then nation", () => {
     expect(toEditionRow({ psku: "p", __nation: "Brazil", team: "X" }, NOW).nation).toBe("Brazil")
     expect(toEditionRow({ psku: "p", team: "Portugal" }, NOW).nation).toBe("Portugal")
-    expect(toEditionRow({ psku: "p" }, NOW).nation).toBeNull()
+    // INVERTED 2026-11-22: no team in the payload means NO `nation` key — a null here was upserted over
+    // the stored team on every walk outside a grid pass (panini-edition-upsert-batches.test.ts).
+    expect("nation" in toEditionRow({ psku: "p" }, NOW)).toBe(false)
   })
   it("flags FOTL exclusives and defaults residuals to 0", () => {
     const r = toEditionRow({ psku: "p", cardset: "Base Prizms Old Glory" }, NOW)

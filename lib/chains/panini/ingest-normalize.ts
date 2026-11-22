@@ -21,15 +21,22 @@ export function parallelFamily(cardset = ""): string {
 
 // getCardMarketStats.data -> panini_editions row. Market fields may be nested under market_stats OR
 // top-level (grid items) — fall back to the object itself. nation comes from the runner's __nation tag.
+// ⛔ 2026-11-22: `nation` (the printed TEAM) is ABSENT from the row when this payload does not carry
+// it, never null. Only the marketplace GRID carries team — the per-card API does not — so a card
+// walked outside a grid pass (every walk-only run, priority/held cards) used to upsert nation=NULL
+// over the stored team. Measured that day: team on 8.6–12.2 % of Basketball / Soccer / Football
+// editions, 0 of the first 88 NWSL cards. The route upserts one batch per row shape so an absent
+// key is never sent as NULL (see the panini_products precedent there).
 export function toEditionRow(c: any, nowIso: string) {
   const ms = c?.market_stats ?? c ?? {};
   const cap = Number(c?.end_seq) || null;
+  const team = c?.__nation ?? c?.team ?? c?.nation ?? null;
   return {
     id: String(c?.sku ?? c?.psku),
     external_id: String(c?.psku ?? c?.sku),
     collection_id: PANINI_UUID,
     player_name: c?.athlete ?? null,
-    nation: c?.__nation ?? c?.team ?? c?.nation ?? null,
+    ...(team != null && String(team).trim() !== "" ? { nation: team as string } : {}),
     set_name: c?.cardset ?? null,
     parallel: c?.cardset ?? null,
     parallel_family: parallelFamily(c?.cardset ?? ""),

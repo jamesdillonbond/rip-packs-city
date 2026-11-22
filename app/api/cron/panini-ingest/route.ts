@@ -42,6 +42,7 @@ import { toEditionRow, toFmvRow, toFmvRowV11, toFmvRowV12, toFmvRowV13, toFmvRow
 import { fetchAllPaged } from "@/lib/supabase-paginate";
 import { parseStall } from "@/lib/chains/panini/stall-report";
 import { paniniRunMode } from "@/lib/chains/panini/run-mode";
+import { editionUpsertBatches } from "@/lib/chains/panini/edition-upsert-batches";
 import { parseProductNameObservations, decideProductNames } from "@/lib/chains/panini/product-names";
 import { bearerMatches } from "@/lib/auth/bearer-secret";
 import { normalizePaniniPackDrops } from "@/lib/panini/pack-drops";
@@ -466,9 +467,12 @@ export async function POST(req: NextRequest) {
       // editions (dedup by external_id within the batch)
       const byKey = new Map<string, any>();
       for (const c of cardsIn) { const r = toEditionRow(c, nowIso); if (r.external_id) byKey.set(r.external_id, r); }
-      const editionRows = [...byKey.values()];
-      for (let i = 0; i < editionRows.length; i += CHUNK) {
-        const { data, error } = await (supabaseAdmin as any).from("panini_editions").upsert(editionRows.slice(i, i + CHUNK), { onConflict: "external_id,collection_id" }).select("id");
+      // One upsert per row SHAPE (2026-11-22). A row carries `nation` only when this payload saw the
+      // card's team (grid passes only); a bulk upsert sends the union of keys and writes NULL where a
+      // row lacks one, so a mixed batch would erase stored teams — the defect toEditionRow documents.
+      const editionRows = editionUpsertBatches([...byKey.values()], CHUNK);
+      for (const batch of editionRows) {
+        const { data, error } = await (supabaseAdmin as any).from("panini_editions").upsert(batch, { onConflict: "external_id,collection_id" }).select("id");
         if (error) { editionsError = editionsError ?? error.message; console.log(`[${PIPELINE}] editions upsert: ${error.message}`); } else written += data?.length ?? 0;
       }
       // pack state. R120 second pass: this was the last write in the function with NO error
