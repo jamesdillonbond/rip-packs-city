@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~3:35 PM PT · 🔧 SHIPPED (code) — the weekly email's sealed-pack change never compares against a BACKFILLED estimate (the portfolio thread's 3:20 PM PT backfill fills tomorrow's comparison night) (Claude Code cloud, autonomous 4 h pass)
+
+- `20261122231506` backfills `pack_low_ask_usd` for the last 30 nights with `pack_value_basis` = `hourly_ask` / `carried_back_ask`, an estimate. Tomorrow's email compares against 11-16, so it would have printed our estimation error as "▲/▼ $X this week". `lib/emails/weekly-packs.ts` now prints the change only when both nights are measured (`pack_value_basis` null); the value still prints. 2 tests.
+- **Revert:** `git revert` the commit titled "email: no sealed-pack weekly change against a backfilled estimate".
+
 ### 2026-11-22 ~3:25 PM PT · 🔧 SHIPPED (CI guard) — ledger clobber detector treats a PT time-of-day correction like a date correction (Claude Code cloud; NWSL thread)
 
 - bbe360f (correcting "~3:20 PM PT" → "~3:10 PM PT" on this thread's own entry) went red on "Ledger entries DISAPPEARED": `headingBody` stripped only the date, so a time fix read as a reworded heading — the same trap the 2026-08-23 re-date fix closed. Now the optional `~H:MM AM/PM PT` stamp is stripped too; rewording and deletion are still reported (2 new tests; old regex planted → 2 of 14 red; real bbe360f files → 0 lost, old detector 1).
