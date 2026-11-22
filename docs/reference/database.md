@@ -3293,6 +3293,12 @@ For a one-fragment change to a large unpinned view, `replace(pg_get_viewdef(v, t
 - `tab_totals`: the requested tab over ALL its rows (the page is 25), each sum beside its count; v29 adds each sealed basis summed apart (`held_listed`, `held_floor_ask_usd`, …), which `wallet_held_pack_value` v2 reads in ONE call. `v_want_pulls` / `v_want_held` make the parts one-time filters per status; `held_pulls` / `dist_market` are `MATERIALIZED` on purpose (see the CTE-inlining note above).
 - `pull_value_usd` is current FMV maintained by jobid 810 (drift > 1.5×, rips ≥ $100) and the ~55-day stale leg — it is NOT "value at rip".
 
+
+### `get_wallet_pack_history` v33 + `wallet_pack_value_cache` (2026-11-21/22)
+- v33 (`20261122025253`): a held sealed pack's `value_usd` = LEAST(ask, 3 × GREATEST(last sale, rip EV, opened avg)); basis `ask_capped` when the cap bit; a listed pack with no reference → `value_usd` NULL, basis NULL (counted in `held_ask_unreferenced_n`). `held_floor_ask_usd` stays RAW. Applied as md5-asserted splices of the live bodies (v32 `273dee3e…` → v33 `ff527fb7…`); the committed migration carries the literal DDL. Pin V33-1..5.
+- `wallet_pack_value_cache(wallet_addr PK, value jsonb, computed_at)` (`20261122170115`): RLS on, service_role only; filled by procedure `refresh_wallet_pack_value_cache(90)` (pg_cron `rpc-wallet-pack-value-cache` :16, bare CALL; 58 wallets in 59–81 s on 11-22) and on each live success from `lib/packs/held-pack-total.ts`. Never written on a failed compute.
+- `portfolio_snapshots` + `pack_low_ask_usd`, `pack_held_count`, `pack_listed_count` (`20261122023120`); `portfolio_owner_pack_value(text)` v2 sums the CAPPED total over the owner's saved Flow wallets, NULL on any failed wallet.
+
 ## Is an `offers` row with `status='open'` really open? (2026-11-14, Cowork cloud)
 
 - **Test:** compare it against Atlas's COMPLETE edition books, `topshot_atlas_edition_verified` (`complete`, `open_offers`), joined through `topshot_atlas_edition_map.rpc_edition_id`.

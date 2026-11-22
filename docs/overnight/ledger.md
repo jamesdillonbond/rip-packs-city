@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~11:30 AM PT · 📝 DOCS + 🔧 SHIPPED (code) — sealed-pack thread closed: chart legend + reference docs (Cowork cloud via laptop VM; Trevor: "update any relevant documentation before I archive this thread")
+
+`df13c78`: the Value / 30D legend reads "Moments (FMV, incl. stale-priced)" — the snapshot's `total_fmv` includes stale-priced moments, the Portfolio FMV tile excludes them (live: chart ~$49.6k vs tile $43.8k). Docs: packs.md "Sealed packs beside the aggregated wallet value", database.md "v33 + wallet_pack_value_cache", cron-and-schedulers.md `rpc-wallet-pack-value-cache` (added 9:15 AM PT, before the 10:20 AM lane-budget steer — retirement candidate job 901, noted), focus.md two dated reads, sessions 11-21/22 entry. Cache second run 10:16 AM PT: 58/58 in 59 s.
+
+**Revert:** `git revert` this commit (docs + one label).
+
 ### 2026-11-22 ~11:22 AM PT · 📝 DOCS — Candy re-baselined in the docs (trading again; share on the per-mint grain); thread close-out (Claude Code cloud; Trevor: "work through anything you possibly can… then update any relevant documentation")
 
 - **Candy:**
