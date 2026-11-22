@@ -1,5 +1,37 @@
-import { describe, it, expect } from "vitest"
-import { buildWeeklyPacksBlock, minusDays, packWeekFrom } from "@/lib/emails/weekly-packs"
+import { describe, it, expect, vi, beforeEach } from "vitest"
+
+const state: { result: any; throws: boolean; eqs: Array<[string, unknown]> } = { result: { data: [], error: null }, throws: false, eqs: [] }
+function chain(): any {
+  const b: any = new Proxy({}, {
+    get(_t, prop) {
+      if (prop === "then") return (res: any, rej: any) => (state.throws ? Promise.reject(new Error("transport")) : Promise.resolve(state.result)).then(res, rej)
+      if (prop === "eq") return (k: string, v: unknown) => { state.eqs.push([k, v]); return b }
+      return () => b
+    },
+  })
+  return b
+}
+vi.mock("@/lib/supabase", () => ({ supabaseAdmin: { from: () => chain() } }))
+import { buildWeeklyPacksBlock, loadPackWeek, minusDays, packWeekFrom } from "@/lib/emails/weekly-packs"
+
+beforeEach(() => { state.result = { data: [], error: null }; state.throws = false; state.eqs = [] })
+
+describe("loadPackWeek", () => {
+  it("reads the member's own snapshots and returns the week", async () => {
+    state.result = { data: [
+      { snapshot_date: "2026-11-29", pack_low_ask_usd: "120", pack_held_count: 4 },
+      { snapshot_date: "2026-11-22", pack_low_ask_usd: "100", pack_held_count: 4 },
+    ], error: null }
+    expect(await loadPackWeek("u1")).toEqual({ lowAskUsd: 120, held: 4, priorUsd: 100 })
+    expect(state.eqs).toEqual([["owner_key", "u1"]])
+  })
+  it("a failed or thrown read omits the block (null), never $0", async () => {
+    state.result = { data: null, error: { message: "boom" } }
+    expect(await loadPackWeek("u1")).toBeNull()
+    state.throws = true
+    expect(await loadPackWeek("u1")).toBeNull()
+  })
+})
 
 // Weekly email "Sealed packs" block (2026-11-22). Pins: no value -> no block (never $0);
 // the weekly change only when the snapshot exactly 7 days earlier has a pack value.
