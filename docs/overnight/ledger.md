@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~3:45 PM PT · 🗄 APPLIED (`20261122233915`) — the pack-value backfill reads only what it needs: all HELD packs + packs that left inside the window (Claude Code cloud; same thread)
+
+- Job 917 stalled 8+ min on ONE owner: `get_wallet_pack_history` re-runs the wallet's whole classification per 200-row page (~19 s/page on the ~15.6k-rip wallet). `portfolio_owner_pack_rows(owner, p_since)` now pages status 'held', then every status newest-event-first and stops once a page's events are older than the window (a non-held pack's departure is its latest event). Old one-arg reader and the unused procedure dropped. Control (largest measured owner): windowed read 16.8 s; holdings on Oct 24 (429) and Nov 22 (483) identical to the full read. 917 unscheduled + cancelled; job **918** `zz-portfolio-pack-backfill-step` (minutes 9/19/29/39/49/59) — **unschedule once `still_null` = 0**.
+- **Revert:** re-apply `20261122231506` + `20261122232415`.
+
 ### 2026-11-22 ~3:45 PM PT · `selfheal_audit_table_rls()` also heals `scratch_*` tables — migration `20261122234542`
 - The hourly pg_cron 232 healer (RLS on + anon/authenticated revoked) covered `audit_%` only. Ad-hoc `scratch_*` tables in `public` have leaked at least 4 times (today: one owner's pack history, ~17 min). The migration guard can't see them. Predicate widened to `audit\_%` OR `scratch\_%`; `_%` deliberately excluded (3 `_cohort_*`/`_rpc_waste_*` tables carry intended anon grants). md5-guarded on the live body. **Positive control (rolled back in one DO block):** probe went rls=f/anon=t → rls=t/anon=f; healed_count 2 = the probe only, so no existing table changed. No new cron job. The event-trigger option stays Trevor's call. Revert: re-apply the body without the `scratch\_%` line. (The file header says ~3:55 PM PT; it was applied ~3:45.)
 
