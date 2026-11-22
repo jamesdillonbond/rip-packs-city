@@ -582,6 +582,7 @@ function ProfilePageInner() {
         held: Number(d?.held) || 0,
         listed: Number(d?.listed) || 0,
         lowAskUsd: Number(d?.low_ask_usd) || 0,
+        unpriced: Number(d?.unpriced) || 0,
         walletsFailed: Number(d?.wallets_failed) || 0,
       });
       setHeldPacksFailed(false);

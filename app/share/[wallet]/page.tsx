@@ -169,7 +169,7 @@ async function fetchWalletPacks(wallet: string): Promise<{ total: HeldPacksTotal
     if (!res.ok) return { total: null, failed: true }
     const d = await res.json()
     return {
-      total: { held: Number(d?.held) || 0, listed: Number(d?.listed) || 0, lowAskUsd: Number(d?.low_ask_usd) || 0, walletsFailed: 0 },
+      total: { held: Number(d?.held) || 0, listed: Number(d?.listed) || 0, lowAskUsd: Number(d?.low_ask_usd) || 0, unpriced: Number(d?.unpriced) || 0, walletsFailed: 0 },
       failed: false,
     }
   } catch {

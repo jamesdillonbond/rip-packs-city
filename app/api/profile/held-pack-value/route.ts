@@ -42,6 +42,7 @@ export async function GET() {
       held: t.held,
       listed: t.listed,
       low_ask_usd: t.lowAskUsd,
+      unpriced: t.unpriced ?? 0,
       wallets: addrs.length,
       wallets_failed: t.walletsFailed,
     }, { headers: { "Cache-Control": "private, no-store" } })

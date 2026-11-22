@@ -48,7 +48,7 @@ describe("GET /api/public/profile/<username>/packs", () => {
     }
     const res = await call()
     const body = await res.json()
-    expect(body).toEqual({ held: 355, listed: 301, low_ask_usd: 31884.19, wallets_failed: 0 })
+    expect(body).toEqual({ held: 355, listed: 301, low_ask_usd: 31884.19, unpriced: 0, wallets_failed: 0 })
     expect(JSON.stringify(body)).not.toContain("0x")
     expect(state.calls.sort()).toEqual(["0xaf78a4360000fe85", "0xba1a13299beb4b19"])
     expect(res.headers.get("cache-control")).toContain("s-maxage=600")

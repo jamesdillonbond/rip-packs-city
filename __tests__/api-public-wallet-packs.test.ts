@@ -31,7 +31,7 @@ describe("GET /api/public/wallet-packs", () => {
     state.packs = { data: { count: 28, listed_count: 28, floor_ask_usd: 922.99 }, error: null }
     const res = await GET(req("0xaf78a4360000fe85"))
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ held: 28, listed: 28, low_ask_usd: 922.99 })
+    expect(await res.json()).toEqual({ held: 28, listed: 28, low_ask_usd: 922.99, unpriced: 0 })
     expect(res.headers.get("cache-control")).toContain("s-maxage=600")
   })
   it("a failed read is a 503, never $0", async () => {

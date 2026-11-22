@@ -90,7 +90,7 @@
 --      page-by-page sums over the rows (V29-1), so no number moves.
 --
 -- The get_wallet_pack_history DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261114044121_audit_20261113_pack_history_held_basis_totals.sql; wallet_held_pack_value from 20261114044351_audit_20261113_held_pack_value_one_read.sql).
+-- (supabase/migrations/20261122025253_audit_20261122_pack_ask_capped_by_references.sql -- get_wallet_pack_history v33 and wallet_held_pack_value v3).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -867,14 +867,27 @@ BEGIN
     SELECT f.collection_id, f.pack_nft_id, f.buy_usd, dm.ask_checked_at,
            -- v29: each basis on its own, for wallet_held_pack_value's separate sums
            dm.ask_usd, dm.last_sale_usd, dm.rip_ev_usd, dm.opened_avg_usd,
-      COALESCE(dm.ask_usd, dm.last_sale_usd, dm.rip_ev_usd, dm.opened_avg_usd) AS value_usd,
-      CASE WHEN dm.ask_usd IS NOT NULL        THEN 'ask'
+      -- v33 (2026-11-21, Trevor "Cap by references"): an ask counts only up to 3x the
+      -- drop's best reference (last sale / rip EV / opened average). A pack listed with
+      -- NO reference is listed, not valued -- a $1,000,000 ask on a one-of-one reward
+      -- pack nobody ever bought (almost certainly the holder's own listing) read as
+      -- $1.14M of one wallet's sealed packs against ~$15k of last sales.
+      CASE WHEN dm.ask_usd IS NOT NULL AND ref.ref_usd IS NOT NULL
+           THEN LEAST(dm.ask_usd, 3 * ref.ref_usd) END AS capped_ask_usd,
+      (dm.ask_usd IS NOT NULL AND ref.ref_usd IS NULL) AS ask_unreferenced,
+      CASE WHEN dm.ask_usd IS NOT NULL
+           THEN CASE WHEN ref.ref_usd IS NOT NULL THEN LEAST(dm.ask_usd, 3 * ref.ref_usd) END
+           ELSE COALESCE(dm.last_sale_usd, dm.rip_ev_usd, dm.opened_avg_usd) END AS value_usd,
+      CASE WHEN dm.ask_usd IS NOT NULL AND ref.ref_usd IS NOT NULL
+             THEN CASE WHEN dm.ask_usd > 3 * ref.ref_usd THEN 'ask_capped' ELSE 'ask' END
+           WHEN dm.ask_usd IS NOT NULL        THEN NULL
            WHEN dm.last_sale_usd IS NOT NULL  THEN 'last_sale'
            WHEN dm.rip_ev_usd IS NOT NULL     THEN 'rip_ev'
            WHEN dm.opened_avg_usd IS NOT NULL THEN 'opened_avg'
       END AS value_basis
     FROM filtered f
     LEFT JOIN dist_market dm ON dm.collection_id = f.collection_id AND dm.dist_id = f.dist_id
+    CROSS JOIN LATERAL (SELECT GREATEST(dm.last_sale_usd, dm.rip_ev_usd, dm.opened_avg_usd) AS ref_usd) ref
     WHERE v_want_held AND f.status = 'held'
   ),
   -- v27: the tab's own metrics over EVERY row of the filter (the page is 25). Every
@@ -890,8 +903,8 @@ BEGIN
       'held_packs',        (SELECT count(*) FROM held_valued),
       'held_value_usd',    (SELECT round(sum(value_usd)::numeric, 2) FROM held_valued),
       'held_valued',       (SELECT count(value_usd) FROM held_valued),
-      'held_valued_by_ask', (SELECT count(*) FROM held_valued WHERE value_basis = 'ask'),
-      'held_ask_oldest_checked_at', (SELECT min(ask_checked_at) FROM held_valued WHERE value_basis = 'ask'),
+      'held_valued_by_ask', (SELECT count(*) FROM held_valued WHERE value_basis IN ('ask', 'ask_capped')),
+      'held_ask_oldest_checked_at', (SELECT min(ask_checked_at) FROM held_valued WHERE value_basis IN ('ask', 'ask_capped')),
       'held_unrealized_usd', (SELECT round(sum(value_usd - buy_usd)::numeric, 2) FROM held_valued
                               WHERE value_usd IS NOT NULL AND buy_usd IS NOT NULL),
       'held_unrealized_n',   (SELECT count(*) FROM held_valued WHERE value_usd IS NOT NULL AND buy_usd IS NOT NULL),
@@ -900,6 +913,12 @@ BEGIN
       -- 200-row page. Per-row rounding first, as the page rows carry them.
       'held_listed',         (SELECT count(ask_usd) FROM held_valued),
       'held_floor_ask_usd',  (SELECT round(COALESCE(sum(round(ask_usd::numeric, 2)), 0), 2) FROM held_valued),
+      -- v33: the same asks, each capped at 3x its drop's best reference; listed packs
+      -- with no reference are counted apart and add nothing.
+      'held_capped_ask_n',   (SELECT count(capped_ask_usd) FROM held_valued),
+      'held_capped_ask_usd', (SELECT round(COALESCE(sum(round(capped_ask_usd::numeric, 2)), 0), 2) FROM held_valued),
+      'held_ask_capped_n',   (SELECT count(*) FROM held_valued WHERE value_basis = 'ask_capped'),
+      'held_ask_unreferenced_n', (SELECT count(*) FROM held_valued WHERE ask_unreferenced),
       'held_last_sale_n',    (SELECT count(last_sale_usd) FROM held_valued),
       'held_last_sale_usd',  (SELECT round(COALESCE(sum(round(last_sale_usd::numeric, 2)), 0), 2) FROM held_valued),
       'held_rip_ev_n',       (SELECT count(rip_ev_usd) FROM held_valued),
@@ -1133,6 +1152,12 @@ BEGIN
     'rows_read',             v_total,
     'listed_count',          (t->>'held_listed')::int,
     'floor_ask_usd',         (t->>'held_floor_ask_usd')::numeric,
+    -- v3 (2026-11-21): the same asks capped at 3x the drop's best reference
+    -- (last sale / rip EV / opened avg); a listed pack with no reference adds nothing.
+    'capped_ask_count',      (t->>'held_capped_ask_n')::int,
+    'capped_ask_usd',        (t->>'held_capped_ask_usd')::numeric,
+    'ask_capped_count',      (t->>'held_ask_capped_n')::int,
+    'unreferenced_ask_count', (t->>'held_ask_unreferenced_n')::int,
     'oldest_ask_checked_at', (t->>'held_ask_oldest_checked_at')::timestamptz,
     'last_sale_count',       (t->>'held_last_sale_n')::int,
     'last_sale_usd',         (t->>'held_last_sale_usd')::numeric,
@@ -2278,6 +2303,50 @@ BEGIN
   PERFORM _assert(EXISTS (SELECT 1 FROM jsonb_array_elements(public.get_wallet_pack_history('0xheld', NULL, 'held', 200, 0)->'packs') e
                           WHERE e->>'pack_gross_ev_usd' IS NOT NULL AND e->>'pack_opened_avg_usd' IS NOT NULL),
                   'V29-1 the fixture holds a pack with both an EV and an opened average');
+END $$;
+
+-- V33 (2026-11-21, Trevor "Cap by references"): an ask counts up to 3x its drop's best
+-- reference (last sale / rip EV / opened average); a listed pack with NO reference is
+-- listed, not valued. Production case: a $1,000,000 ask on a one-of-one reward pack
+-- that never sold read as $1.14M of one wallet's sealed packs.
+INSERT INTO public.pack_distributions (collection_id, dist_id, title) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'DV33A', 'V33 Troll Ask'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'DV33B', 'V33 Never Sold'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'DV33C', 'V33 Normal');
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sealed_at, is_primary_drop, event_kind, pack_dist_id) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'XS33A', '0xother33', '0xseller33', 5, '2026-10-07', false, 'secondary_sale', 'DV33A'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'XS33C', '0xother33', '0xseller33', 10, '2026-10-07', false, 'secondary_sale', 'DV33C');
+INSERT INTO public.pack_ask_state VALUES
+  ('nba-top-shot', 'DV33A', 1000000, true, '2026-11-13'),
+  ('nba-top-shot', 'DV33B', 50, true, '2026-11-13'),
+  ('nba-top-shot', 'DV33C', 12, true, '2026-11-13');
+INSERT INTO public.pack_nft_identity (collection_id, pack_nft_id, dist_id, status, owner_address, acquired_at) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'C33A', 'DV33A', 'Sealed', '0xv33w', '2026-10-08'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'C33B', 'DV33B', 'Sealed', '0xv33w', '2026-10-08'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'C33C', 'DV33C', 'Sealed', '0xv33w', '2026-10-08');
+DO $$
+DECLARE r jsonb; t jsonb; row_ jsonb; v jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xv33w', NULL, 'held', 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'C33A';
+  PERFORM _assert(row_->>'lowest_ask_usd' = '1000000.00' AND row_->>'value_usd' = '15.00' AND row_->>'value_basis' = 'ask_capped',
+                  'V33-1 C33A: a $1M ask on a drop last sold at $5 is valued at 3x the sale ($15), basis ask_capped. got ' || coalesce(row_::text, 'NULL'));
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'C33B';
+  PERFORM _assert(row_->>'lowest_ask_usd' = '50.00' AND row_->'value_usd' = 'null'::jsonb AND row_->'value_basis' = 'null'::jsonb,
+                  'V33-2 C33B: a listed pack with no sale, EV or opened average is listed, not valued -- never its ask');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'C33C';
+  PERFORM _assert(row_->>'value_usd' = '12.00' AND row_->>'value_basis' = 'ask',
+                  'V33-3 C33C: an ask within 3x its last sale is the value, basis ask');
+  t := r->'tab_totals';
+  PERFORM _assert(t->>'held_floor_ask_usd' = '1000062.00' AND t->>'held_listed' = '3'
+                  AND t->>'held_capped_ask_usd' = '27.00' AND t->>'held_capped_ask_n' = '2'
+                  AND t->>'held_ask_capped_n' = '1' AND t->>'held_ask_unreferenced_n' = '1'
+                  AND t->>'held_value_usd' = '27.00' AND t->>'held_valued' = '2' AND t->>'held_valued_by_ask' = '2',
+                  'V33-4 totals: raw floor $1,000,062 over 3 listed; capped $27 over 2; 1 capped, 1 unreferenced. got ' || t::text);
+  v := public.wallet_held_pack_value('0xv33w');
+  PERFORM _assert(v->>'capped_ask_usd' = '27.00' AND v->>'capped_ask_count' = '2' AND v->>'ask_capped_count' = '1'
+                  AND v->>'unreferenced_ask_count' = '1' AND v->>'floor_ask_usd' = '1000062.00' AND v->>'listed_count' = '3',
+                  'V33-5 wallet_held_pack_value carries the capped total beside the raw floor. got ' || v::text);
 END $$;
 
 ROLLBACK;

@@ -14,15 +14,24 @@ export interface HeldPackValueRow {
   count?: number | null
   listed_count?: number | null
   floor_ask_usd?: number | string | null
+  // wallet_held_pack_value v3 (2026-11-21, Trevor "Cap by references"): each ask counts up
+  // to 3x its drop's best reference (last sale / rip EV / opened avg); a listed pack with
+  // no reference is listed, not valued. A $1,000,000 ask on a never-sold one-of-one reward
+  // pack had read as $1.14M of one wallet's sealed packs.
+  capped_ask_count?: number | null
+  capped_ask_usd?: number | string | null
+  unreferenced_ask_count?: number | null
 }
 
 export interface HeldPacksTotal {
   /** Sealed packs held across every wallet that answered. */
   held: number
-  /** …of which have a live ask. */
+  /** …of which are valued at a (capped) live ask. */
   listed: number
-  /** Sum of the lowest live ask of each listed held pack, USD. */
+  /** Sum of those asks, each capped at 3x its drop's best reference, USD. */
   lowAskUsd: number
+  /** Listed packs with no sale, EV or opened average to price them — counted, never valued. */
+  unpriced?: number
   /** Wallets whose read failed — when > 0 the total is PARTIAL. */
   walletsFailed: number
 }
@@ -37,14 +46,18 @@ export function sumHeldPacks(rows: Array<HeldPackValueRow | null>): HeldPacksTot
   let held = 0
   let listed = 0
   let lowAsk = 0
+  let unpriced = 0
   let failed = 0
   for (const r of rows) {
     if (!r) { failed++; continue }
     held += num(r.count)
-    listed += num(r.listed_count)
-    lowAsk += num(r.floor_ask_usd)
+    // v3 keys when present; a pre-v3 answer (raw asks) is still read as before
+    const v3 = r.capped_ask_usd != null && r.capped_ask_count != null
+    listed += num(v3 ? r.capped_ask_count : r.listed_count)
+    lowAsk += num(v3 ? r.capped_ask_usd : r.floor_ask_usd)
+    unpriced += num(r.unreferenced_ask_count)
   }
-  return { held, listed, lowAskUsd: Math.round(lowAsk * 100) / 100, walletsFailed: failed }
+  return { held, listed, lowAskUsd: Math.round(lowAsk * 100) / 100, unpriced, walletsFailed: failed }
 }
 
 /**
@@ -60,8 +73,11 @@ export function heldPacksCaption(
   if (failed || (t && t.walletsFailed > 0 && t.held === 0)) return "Sealed packs: couldn't load"
   if (!t || t.held <= 0) return null
   const packs = `${t.held.toLocaleString("en-US")} sealed pack${t.held === 1 ? "" : "s"}`
-  if (t.listed <= 0) return `${packs} · no live asks`
+  const unpriced = (t.unpriced ?? 0) > 0
+    ? `, ${(t.unpriced ?? 0).toLocaleString("en-US")} listed with no sale to price ${(t.unpriced ?? 0) === 1 ? "it" : "them"}`
+    : ""
+  if (t.listed <= 0) return `${packs} · no priced asks${unpriced}`
   const partial = t.walletsFailed > 0 ? " (some wallets didn't load)" : ""
-  const coverage = t.listed < t.held ? `, ${t.listed.toLocaleString("en-US")} listed` : ""
-  return `+ ${fmt(t.lowAskUsd)} in ${packs} at low ask${coverage}${partial}`
+  const coverage = t.listed < t.held ? `, ${t.listed.toLocaleString("en-US")} priced` : ""
+  return `+ ${fmt(t.lowAskUsd)} in ${packs} at low ask${coverage}${unpriced}${partial}`
 }

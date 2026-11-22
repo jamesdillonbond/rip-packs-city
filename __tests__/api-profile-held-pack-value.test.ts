@@ -68,7 +68,7 @@ describe("GET /api/profile/held-pack-value", () => {
     }
     const res = await GET()
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ held: 355, listed: 301, low_ask_usd: 31884.19, wallets: 2, wallets_failed: 0 })
+    expect(await res.json()).toEqual({ held: 355, listed: 301, low_ask_usd: 31884.19, unpriced: 0, wallets: 2, wallets_failed: 0 })
     expect(state.calls.sort()).toEqual(["0xaf78a4360000fe85", "0xba1a13299beb4b19"])
   })
 

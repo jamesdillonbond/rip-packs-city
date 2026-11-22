@@ -12,6 +12,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-21 ~7:10 PM PT · 🔧 SHIPPED (migration + code) — sealed-pack asks capped at 3x the drop's best reference; never-sold listed packs are "listed, not valued" (Cowork cloud via laptop VM; Trevor: "Cap by references")
+
+**Why.** The new sealed-pack line read alxo's packs at $1,142,835.82 against ~$15k of last sales: a $1,000,000 ask on "Jordan Poole 2022 NBA Finals Challenge Reward" (one sealed copy, never sold — the holder's own listing in all likelihood) plus $999–$50,505 asks on never-sold reward packs. The binder Unopened "Market value" carried the same number.
+
+**DB (applied, `20261122025253_audit_20261122_pack_ask_capped_by_references`).** get_wallet_pack_history v33: a held pack's value = LEAST(ask, 3 x GREATEST(last sale, rip EV, opened avg)) (basis `ask` / `ask_capped`); listed with no reference = value NULL; unlisted keeps the old ladder. tab_totals adds held_capped_ask_usd / _n, held_ask_capped_n, held_ask_unreferenced_n (raw held_floor_ask_usd unchanged). wallet_held_pack_value v3 passes them through; portfolio_owner_pack_value v2 records the capped total. Applied as md5-asserted splices of the live bodies (live v32 273dee3e… → v33 ff527fb7…, held v3 42122c82…, owner v2 716dee62… = the committed file's literal DDL on a local PG16). Pin V33-1..5 (negative control reds V33-1). Live after: alxo $1,142,835.82 → $27,966.94 (1,541 priced, 454 capped, 374 unpriced); Awesemo $30,961 → $25,534; cmnkb8 $61,061 → $60,437.
+
+**Code.** Pack line on dashboard / profile / share reads the capped keys and names unpriced listings ("374 listed with no sale to price them"); binder basis label `ask_capped`; /dashboard/packs hero caption uses the capped total.
+
+**Revert:** `git revert <this commit>`; DB: re-apply get_wallet_pack_history from `20261115032843_…`, wallet_held_pack_value from `20261114044351_…`, portfolio_owner_pack_value from `20261122023120_…`.
+
 ### 2026-11-21 ~7:00 PM PT · 🔧 SHIPPED (code) + 🗄️ DATA — on-chain census of the week's Flow sales: Top Shot, All Day, Golazos, Pinnacle now match the chain to the cent; 3 capture bugs found and fixed (Claude Code cloud; Trevor: "keep going and don't stop until you're 100% sure")
 
 **Census.** Every `NFTStorefrontV2/V1.ListingCompleted(purchased)`, `TopShotMarketV3.MomentPurchased` and `OffersV2.OfferCompleted(purchased)` on Flow, 2026-11-15 02:00Z → 11-22 02:00Z (blocks 171154147–171909980, rest-mainnet.onflow.org), vs `sales` / `pinnacle_sales` over the same window. Candy vs Magic Eden activity across all 362 symbols: 137 / 50.928 SOL listed — exact. Pinnacle 1,136 / $8,419 — exact. Golazos 72 / $39.71 — exact.

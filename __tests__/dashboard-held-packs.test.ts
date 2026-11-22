@@ -11,7 +11,13 @@ describe("sumHeldPacks", () => {
       null,
       { count: 0, listed_count: 0, floor_ask_usd: 0 },
     ])
-    expect(t).toEqual({ held: 355, listed: 301, lowAskUsd: 31884.19, walletsFailed: 1 })
+    expect(t).toEqual({ held: 355, listed: 301, lowAskUsd: 31884.19, unpriced: 0, walletsFailed: 1 })
+  })
+  it("v3: reads the CAPPED asks, never the raw floor (a $1M troll ask on a never-sold pack)", () => {
+    const t = sumHeldPacks([
+      { count: 2155, listed_count: 1915, floor_ask_usd: 1142835.82, capped_ask_count: 1541, capped_ask_usd: 27966.94, unreferenced_ask_count: 374 },
+    ])
+    expect(t).toEqual({ held: 2155, listed: 1541, lowAskUsd: 27966.94, unpriced: 374, walletsFailed: 0 })
   })
 })
 
@@ -24,17 +30,23 @@ describe("heldPacksCaption", () => {
     expect(heldPacksCaption(null, true, fmt)).toBe("Sealed packs: couldn't load")
     expect(heldPacksCaption({ held: 0, listed: 0, lowAskUsd: 0, walletsFailed: 2 }, false, fmt)).toBe("Sealed packs: couldn't load")
   })
-  it("shows the low ask total and how many packs are listed", () => {
+  it("shows the low ask total and how many packs are priced", () => {
     expect(heldPacksCaption({ held: 327, listed: 273, lowAskUsd: 30961.2, walletsFailed: 0 }, false, fmt))
-      .toBe("+ $30961.20 in 327 sealed packs at low ask, 273 listed")
+      .toBe("+ $30961.20 in 327 sealed packs at low ask, 273 priced")
     expect(heldPacksCaption({ held: 1, listed: 1, lowAskUsd: 2.39, walletsFailed: 0 }, false, fmt))
       .toBe("+ $2.39 in 1 sealed pack at low ask")
+  })
+  it("names the listed packs it could not price", () => {
+    expect(heldPacksCaption({ held: 2155, listed: 1541, lowAskUsd: 27966.94, unpriced: 374, walletsFailed: 0 }, false, fmt))
+      .toBe("+ $27966.94 in 2,155 sealed packs at low ask, 1,541 priced, 374 listed with no sale to price them")
   })
   it("marks a partial total", () => {
     expect(heldPacksCaption({ held: 5, listed: 5, lowAskUsd: 10, walletsFailed: 1 }, false, fmt))
       .toBe("+ $10.00 in 5 sealed packs at low ask (some wallets didn't load)")
   })
-  it("says so when no held pack has a live ask", () => {
-    expect(heldPacksCaption({ held: 3, listed: 0, lowAskUsd: 0, walletsFailed: 0 }, false, fmt)).toBe("3 sealed packs · no live asks")
+  it("says so when no held pack has a priced ask", () => {
+    expect(heldPacksCaption({ held: 3, listed: 0, lowAskUsd: 0, walletsFailed: 0 }, false, fmt)).toBe("3 sealed packs · no priced asks")
+    expect(heldPacksCaption({ held: 1, listed: 0, lowAskUsd: 0, unpriced: 1, walletsFailed: 0 }, false, fmt))
+      .toBe("1 sealed pack · no priced asks, 1 listed with no sale to price it")
   })
 })

@@ -900,7 +900,8 @@ const PINS = [
     fn: "wallet_held_pack_value",
     test: "supabase/tests/get_wallet_pack_history.sql",
     // v2 (2026-11-13): one read of the history's held tab_totals, not a loop of 200-row pages.
-    migration: "supabase/migrations/20261114044351_audit_20261113_held_pack_value_one_read.sql",
+    // v3 (2026-11-21): passes the capped-ask keys through.
+    migration: "supabase/migrations/20261122025253_audit_20261122_pack_ask_capped_by_references.sql",
   },
   {
     // Added 2026-09-26. Pins the lane that records every All Day drop's sale
@@ -1026,7 +1027,8 @@ const PINS = [
     // v30 (2026-11-14, Trevor): a pack carries its own cost -- Trade Ticket packs at tickets x the lowest listed Top Shot
     // moment (trade_tickets), Top Shot reward packs with no buy row $0 (reward); the moments it yields carry $0.
     // v31 (2026-11-14): a reward-looking title never overrides a drop's known non-zero retail (Fast Break - Rookie Pack $100).
-    migration: "supabase/migrations/20261115032843_audit_20261114_pack_history_reward_packs_zero_unless_secondary.sql",
+    // v33 (2026-11-21, Trevor "Cap by references"): a held ask counts up to 3x its drop's best reference; no reference = listed, not valued.
+    migration: "supabase/migrations/20261122025253_audit_20261122_pack_ask_capped_by_references.sql",
   },
   {
     // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,

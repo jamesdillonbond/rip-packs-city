@@ -329,6 +329,10 @@ export interface HeldPackValue {
   rows_read?: number
   listed_count?: number
   floor_ask_usd?: number
+  /** v3 (2026-11-21): asks capped at 3x the drop's best reference; listed packs with none add nothing. */
+  capped_ask_count?: number
+  capped_ask_usd?: number
+  unreferenced_ask_count?: number
   oldest_ask_checked_at?: string | null
   last_sale_count?: number
   last_sale_usd?: number
@@ -349,7 +353,11 @@ export function heldPacksCaption(held: HeldPackValue | null | undefined, now: nu
   const parts: string[] = []
   if (held.complete === false && held.rows_read != null) parts.push(`first ${n(held.rows_read)} valued`)
   if (held.listed_count) {
-    let ask = `${fmtPackUsd(held.floor_ask_usd ?? 0)} at floor ask (${n(held.listed_count)} listed)`
+    // v3: the capped total when the server sends it (a never-sold pack's ask is not a value)
+    const capped = held.capped_ask_usd != null && held.capped_ask_count != null
+    let ask = capped
+      ? `${fmtPackUsd(held.capped_ask_usd ?? 0)} at floor ask (${n(held.capped_ask_count ?? 0)} of ${n(held.listed_count)} listed priced)`
+      : `${fmtPackUsd(held.floor_ask_usd ?? 0)} at floor ask (${n(held.listed_count)} listed)`
     if (held.oldest_ask_checked_at) {
       const d = new Date(held.oldest_ask_checked_at)
       if (Number.isFinite(d.getTime()) && now - d.getTime() > 24 * 3600 * 1000) {
@@ -571,10 +579,12 @@ export function packCoverage(t: PackCoverageTotals): {
 // the unopened, opened, and sold tabs." Every helper below renders an UNKNOWN as "—"
 // (never $0) and names the basis or the coverage of every number it shows.
 
-export type PackValueBasis = "ask" | "last_sale" | "rip_ev" | "opened_avg"
+export type PackValueBasis = "ask" | "ask_capped" | "last_sale" | "rip_ev" | "opened_avg"
 
 export const PACK_VALUE_BASIS_LABEL: Record<PackValueBasis, string> = {
   ask: "floor ask",
+  // v33 (2026-11-21): the ask was above 3x the drop's best reference, so it counts at that cap
+  ask_capped: "ask capped at 3× sales/EV",
   last_sale: "last sale",
   rip_ev: "rip EV",
   opened_avg: "opened avg",

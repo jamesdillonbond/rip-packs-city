@@ -38,6 +38,7 @@ export async function GET(
       held: t.held,
       listed: t.listed,
       low_ask_usd: t.lowAskUsd,
+      unpriced: t.unpriced ?? 0,
       wallets_failed: t.walletsFailed,
     }, {
       // A partial answer is not cached at the edge — the next visitor retries.

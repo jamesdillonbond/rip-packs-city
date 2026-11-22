@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "pack value unavailable" }, { status: 503, headers: { "Cache-Control": "no-store" } })
     }
     return NextResponse.json(
-      { held: t.held, listed: t.listed, low_ask_usd: t.lowAskUsd },
+      { held: t.held, listed: t.listed, low_ask_usd: t.lowAskUsd, unpriced: t.unpriced ?? 0 },
       { headers: { "Cache-Control": "public, s-maxage=600, stale-while-revalidate=3600" } },
     )
   } catch (err) {
