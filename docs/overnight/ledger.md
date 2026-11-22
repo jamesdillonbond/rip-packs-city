@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~12:20 PM PT · 🔧 SHIPPED (code) — accepted-bid price = the escrow's debit minus the bidder's rent refund (corrects the 12:05 PM rule) (Claude Code cloud; same thread)
+
+- The 12:05 rule ("everything paid to non-bidder accounts + tx fee") read **0.00426 SOL for a 0.002 SOL bid** on 11-11: the seller's own listing closed in the same transaction and its rent landed with the proceeds. Now: price = the most-debited non-signer account (the escrow) − the bidder's credit. All 6 real bids re-checked (0.002 · 0.05 · 0.006 · 0.2072 · 0.3451 · 9 SOL); the 11-11 case is pinned as a fixture. No bid had been written to `sales` yet (the lane runs hourly; none since 12:05).
+- **Revert:** `git revert` the commit titled "candy: accepted-bid price from the escrow debit".
+
 ### 2026-11-22 ~12:05 PM PT · 🔧 SHIPPED (code) — candy-chain-sales decodes accepted bids (`TakeBidCore`), not just buys (Claude Code cloud; same thread)
 
 - The archive back-fill (mainnet-beta, 11-06 → 11-22 12:00 UTC; 77,220 Candy collection signatures ∩ 109,249 7Aru signatures = 1,392 candidate transactions, all fetched) found **62 BuyCore fills (~35.5 SOL)** plus **6 accepted bids**, one of them **9 SOL**. Bids were only counted before. Now decoded: buyer = the bidder (Core transfer's new owner), seller = the signer, price = everything paid to accounts other than the bidder + the tx fee (= escrow debit − the bidder's rent refund, exact on all 6). A self-fill (signer = bidder) is reported, not recorded. 2 `BuyCoreSpl` fills paid in a non-SOL token stay reported (`unknown_ix`), not priced.
