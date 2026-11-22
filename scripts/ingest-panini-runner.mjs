@@ -61,6 +61,7 @@ import { tagSaleRecords } from "./panini-sales-list.mjs";
 import { saleListOf } from "./panini-sales-list.mjs";
 import { buildWalkOrder } from "./panini-walk-order.mjs";
 import { selectPackPages } from "./panini-pack-pages.mjs";
+import { appliedSportOf, sameSport } from "./panini-grid-sport.mjs";
 import { createStallWatchdog } from "./panini-stall-watchdog.mjs";
 import { isPackishEvidence, subpackUrlsFromHtml, packGridCandidates } from "./panini-pack-grid.mjs";
 
@@ -401,10 +402,16 @@ async function main() {
     for (const k in o) { const v = o[k]; if (v && typeof v === "object") { const r = findPackLike(v, depth + 1); if (r) return r; } }
     return null;
   }
-  function sight(psku) {
+  // `applied` = the sport the grid REQUEST applied (scripts/panini-grid-sport.mjs). A sighting is
+  // credited to it, not to the sport the loop navigated to, whenever the two differ (2026-11-22).
+  // appliedBySport[loop sport][applied sport] counts grid pages, so a mismatch is visible in the
+  // panini-ingest-enum marker instead of silently relabelling products.
+  const appliedBySport = {};
+  function sight(psku, applied) {
     const sid = setIdOf(psku);
     if (sid === null) return;
-    const k = `${sid}|${currentSport ?? "?"}`;
+    const sport = applied && !sameSport(applied, currentSport) ? applied : currentSport;
+    const k = `${sid}|${sport ?? "?"}`;
     sightings.set(k, (sightings.get(k) || 0) + 1);
   }
   // Pack links harvested from every page the walk visits (discovery -> panini_pack_pages).
@@ -558,10 +565,14 @@ async function main() {
     // enumeration progress). This is the denominator for the WC-share diagnostic below.
     const gridItems = d.products?.items;
     if (Array.isArray(gridItems)) { gridSeen += gridItems.length; gridPages++; }
+    const gridApplied = Array.isArray(gridItems) ? appliedSportOf(resp.request().postData() || "") : null;
+    if (Array.isArray(gridItems) && currentSport) {
+      const a = (appliedBySport[currentSport] ??= {}); const key = gridApplied ?? "(none)"; a[key] = (a[key] || 0) + 1;
+    }
     const items = []; findItems(d, 0, items);
     for (const it of items) {
       if (!it?.psku) continue;
-      if (Array.isArray(gridItems) && gridItems.includes(it)) { sight(String(it.psku)); sampleOf(it); }
+      if (Array.isArray(gridItems) && gridItems.includes(it)) { sight(String(it.psku), gridApplied); sampleOf(it); }
       if (isWalked(String(it.psku))) { enumPskus.add(it.psku); if (it.team) nationByPsku[it.psku] = it.team; }
       if (/^packcard-[0-9]+_[0-9]+_[0-9]+$/.test(String(it.psku))) { const sid3 = setIdOf(String(it.psku)); if (sid3 !== null) threeFieldSets.add(sid3); }
     }
@@ -861,6 +872,9 @@ async function main() {
     sport, full, enum_stop: enumStop, enum_iters: enumIters, enum_ms: Date.now() - tEnum,
     grid_pages: gridPages - gridPages0, grid_items: gridSeen - gridSeen0, walked_pskus_added: enumPskus.size - enum0,
     set_ids: [...new Set([...sightings.keys()].filter((k) => k.endsWith(`|${sport}`)).map((k) => Number(k.split("|")[0])))].sort((a, b) => a - b),
+    // grid pages by the sport each REQUEST applied — {"Womens Soccer": 76} when the filter held,
+    // {"Basketball": 76} when the site served another sport's grid for this one.
+    applied: appliedBySport[sport] ?? {},
   });
   console.log(`[panini-runner][diag] sport=${sport} (${full ? "full" : "discovery"}) enum_stop=${enumStop} grid_pages=${gridPages - gridPages0} grid_items=${gridSeen - gridSeen0} walked_pskus+=${enumPskus.size - enum0} set_ids=[${sportStats.at(-1).set_ids.join(",")}]`);
   }
