@@ -126,7 +126,7 @@ async function buildEmail(origin: string, sub: Subscriber, market: MarketBlocks)
 
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#222">
-      <h1 style="color:#E03A2F">Rip Packs City — Weekly Digest</h1>
+      <h1 style="color:#E55A4C">Rip Packs City — Weekly Digest</h1>
       ${portfolioBlock}
       ${dealsBlock}
       ${pulseBlock}

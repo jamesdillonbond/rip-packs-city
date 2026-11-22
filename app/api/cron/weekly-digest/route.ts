@@ -125,7 +125,7 @@ function buildEmail(m: CompleteMover, unsubscribeUrl: string, now: Date = new Da
   const html = `<!doctype html><html><body style="margin:0;background:#080808;font-family:'Share Tech Mono',Menlo,monospace;color:#fff">
   <div style="max-width:480px;margin:0 auto;padding:32px 24px">
     <h1 style="font-family:'Barlow Condensed',Arial,sans-serif;font-weight:900;letter-spacing:.04em;text-transform:uppercase;font-size:24px;margin:0 0 4px">
-      Rip Packs <span style="color:#E03A2F">City</span>
+      Rip Packs <span style="color:#E55A4C">City</span>
     </h1>
     <p style="color:rgba(255,255,255,0.55);font-size:12px;margin:0 0 24px">Your weekly portfolio</p>
 
@@ -141,7 +141,7 @@ function buildEmail(m: CompleteMover, unsubscribeUrl: string, now: Date = new Da
 ${packsHtml}
 ${alertHtml}
 ${newsHtml}
-    <a href="${dashUrl}" style="display:inline-block;background:linear-gradient(135deg,#E03A2F,#B91C1C);color:#fff;text-decoration:none;font-family:'Barlow Condensed',Arial,sans-serif;font-weight:800;letter-spacing:.08em;text-transform:uppercase;font-size:13px;padding:12px 22px;border-radius:6px">
+    <a href="${dashUrl}" style="display:inline-block;background:linear-gradient(135deg,#E55A4C,#B91C1C);color:#fff;text-decoration:none;font-family:'Barlow Condensed',Arial,sans-serif;font-weight:800;letter-spacing:.08em;text-transform:uppercase;font-size:13px;padding:12px 22px;border-radius:6px">
       Open your dashboard →
     </a>
 
