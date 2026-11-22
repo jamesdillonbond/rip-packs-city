@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~11:25 AM PT · 🔧 SHIPPED (code) — candy-chain-sales starts new collections at 11-22 12:00 UTC, not 11-06; the 11-06 → 11-22 range is back-filled once from a session (Claude Code cloud; same thread)
+
+- **Measured 11:11 AM PT** (first run after the cursor reset): with proven walks the 11-06 floor means **11,416 signatures for the first 71 collections** — publicnode had been hiding that history behind its retention edge, and the only keyless RPC holding it (mainnet-beta) answered `getTransaction 429` on 70 of 71. A lane that must read every one of those transactions cannot finish.
+- ⚠ **Correction to the 7:35 AM entry:** the morning "11-06 → 11-22 census" read publicnode too — its earliest transaction is **11-20 20:51 UTC**. So "16 fills, first on 11-20" is a floor for 11-20 → 11-22 only, not a census since 11-06. The back-fill from this session (mainnet-beta, paced) answers 11-06 → 11-20.
+- **Revert:** `git revert` the commit titled "candy: chain-sales floor at 11-22 12:00 UTC".
+
 ### 2026-11-22 ~10:45 AM PT · 🧪 TEST RE-PIN — `main` red since e9dd2c7 (Candy chain-sales completeness proof): 2 retry tests re-pinned to the new premise (Claude Code cloud, a second session)
 
 - **What:** `__tests__/lib-candy-chain-sales-rpc-retries.test.ts` — the 429-retry case now runs on the archive RPC (a cursor-less short listing is accepted only there), and the next-node case answers the new cursor probe. Both still exercise what they were named for (same-node retry; a failed node moves to the next). No product code touched.
