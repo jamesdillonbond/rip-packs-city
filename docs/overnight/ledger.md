@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~12:05 PM PT · 🔧 SHIPPED (code) — candy-chain-sales decodes accepted bids (`TakeBidCore`), not just buys (Claude Code cloud; same thread)
+
+- The archive back-fill (mainnet-beta, 11-06 → 11-22 12:00 UTC; 77,220 Candy collection signatures ∩ 109,249 7Aru signatures = 1,392 candidate transactions, all fetched) found **62 BuyCore fills (~35.5 SOL)** plus **6 accepted bids**, one of them **9 SOL**. Bids were only counted before. Now decoded: buyer = the bidder (Core transfer's new owner), seller = the signer, price = everything paid to accounts other than the bidder + the tx fee (= escrow debit − the bidder's rent refund, exact on all 6). A self-fill (signer = bidder) is reported, not recorded. 2 `BuyCoreSpl` fills paid in a non-SOL token stay reported (`unknown_ix`), not priced.
+- **Revert:** `git revert` the commit titled "candy: chain-sales decodes accepted bids".
+
 ### 2026-11-22 ~11:39 AM PT · ⏱ CRON (one run, restored) + 🗄 DATA (one extra clamp run) — tonight's two fixes proven early; gate week 2 provisional (Claude Code cloud; Trevor: "Make those updates")
 
 - **`rpc-portfolio-snapshot-packs`:** job 901 moved to `32 19 * * *` for one run.
