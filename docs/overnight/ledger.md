@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-21 ~8:32 PM PT · 🗄 DB MAINTENANCE — `idx_ma_hydration_queue_desc` rebuilt CONCURRENTLY, 291 MB → 115 MB (Claude Code cloud, autonomous pass)
+
+- **Why:** same screen as the two maintenance entries below: `moment_acquisitions`' hydration-queue partial index read **36.1 % leaf density** (`pgstatindex`), range-scanned ~9.4k tuples per scan. The `pack_rips` range indexes read 58–71 % and were left.
+- **What:** one-statement pg_cron job 906 (role timeout raised → 24 s → valid → unscheduled → `RESET`); 0 invalid indexes estate-wide; no `rpc-oneoff-reindex%` jobs left.
+- **Revert:** none needed.
+
 ### 2026-11-21 ~9:25 PM PT · 🗄 APPLIED (`20261122042722`) — `fmv_recalc_historical_candidates` skips collections with no paid sale before its per-edition probe (Claude Code cloud, autonomous pass)
 
 - **What:** fmv-recalc's historical fallback hit its own 60 s timeout on 14 of 255 runs in 3 days (PostgREST 500s, `extra.historical_fallback_error`). Measured: 1.18M buffers / 23 s for 3 rows; 9,320 of its 28,393 stale editions are Panini, which has **0 rows in `sales`**, each probed across 7 sales partitions. New CTE `sold_colls` = collections with a paid sale in `sales_market` (the probe's own predicate, computed per call, never a hardcoded list); the stale set is restricted to it.
