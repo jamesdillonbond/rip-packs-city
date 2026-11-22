@@ -12,6 +12,9 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~4:00 PM PT · fmv-recalc Step 6b Candy ask-ceiling sweep pages the whole population (it swept the first 1,000 of 3,067 editions)
+- The sweep read `candy_fmv_current` with `.range(0, 999)` and flagged "full page — sweep is partial" on 243 of 243 runs in 3 days. Measured: 0 of the swept 1,000 sat above a confirmed ask; 33 of the unswept 2,067 did (6 above 1.5×, $61.87 excess). Now pages via `fetchAllPaged` (≤ 20 pages; ~16 ms each). The partial flag fires only past the cap. Two tests added; both fail on the old read. Revert: `git revert` the code commit (`fix(fmv-recalc): Candy ceiling sweep pages…`). **Watch:** `extra.candy_ask_ceiling_error` null on the next runs, and `candy_ask_ceiling_sweep_caps` ≈ 33 once, then ~0.
+
 ### 2026-11-22 ~3:30 PM PT · Scratch table `scratch_backfill_pk_trevor` locked down (RLS on, anon/authenticated revoked) — migration `20261122232956`
 - Left in `public` with RLS off + anon SELECT (one owner's pack history, ~3,981 rows) — security invariant + smoke test red from ~3:13 PM PT. Owner/service_role bypass RLS, so the portfolio backfill using it is unaffected. Verified: 0 invariant violations, anon SELECT false. Revert: `ALTER TABLE … DISABLE ROW LEVEL SECURITY` (never re-grant anon). Drop the table when the backfill is done.
 
