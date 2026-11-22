@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~1:25 PM PT · 🔧 SHIPPED (code) — Panini discovery also walks the WWE and Collegiate grids (discovery only): 6 card products (WWE 1875/2065/2104/2105, Collegiate 1643/1771) had never been in panini_products (Claude Code cloud; same NWSL thread)
+
+- Read the marketplace's 13 sport tabs in Trevor's Chrome; 8 were in `PANINI_DISCOVERY_SPORTS`. UFC, Hockey and Panini served zero cards and stay out. New products land `walk_cards=false` (admission is a separate decision, as with Entertainment).
+- **Revert:** `git revert` the commit titled "panini: discover the WWE and Collegiate grids".
+
 ### 2026-11-22 ~1:15 PM PT · 📝 DOCS — Panini pack-EV follow-ups: multi-set products, never duplicate a product name, NWSL #1065 link step (Claude Code cloud; Trevor: "Keep going")
 
 - `docs/strategy/panini-pack-ev-strategy-2026-11-22.md` §0. Three packs (998, 1018, 896) draw their cards from card sets other than the one they link to. All three are withheld today, but the tier model may not publish such a pack. Insert-only sets stay unnamed, because two rows with one name make the route's name → set map nondeterministic. The NWSL #1065 link step (name set 2478 = the captured pack's exact `product_name`) is left to the NWSL thread; the scheduled task for it was declined by the approval classifier. No DB or code change.
