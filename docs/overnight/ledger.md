@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~1:20 PM PT · ⏰ SCHEDULED TASK — NWSL #1065 link step, 4:37 PM PT today (Claude Code cloud; Trevor: "Create the scheduled task outside of this thread if you need")
+
+- One-time scheduled task "Link Panini NWSL pack #1065 to card set 2478". After the 2 PM PT runner pass it names set 2478 = the captured pack's exact `product_name` (only if no other row has that name) and links the pack; it leaves 2460 unnamed. If the pack is still uncaptured, it reports and changes nothing. The strategy doc §0 is updated to match.
+- **Revert:** docs only; the task can be deleted from scheduled tasks before 4:37 PM PT.
+
 ### 2026-11-22 ~1:25 PM PT · 🔧 SHIPPED (code) — Panini discovery also walks the WWE and Collegiate grids (discovery only): 6 card products (WWE 1875/2065/2104/2105, Collegiate 1643/1771) had never been in panini_products (Claude Code cloud; same NWSL thread)
 
 - Read the marketplace's 13 sport tabs in Trevor's Chrome; 8 were in `PANINI_DISCOVERY_SPORTS`. UFC, Hockey and Panini served zero cards and stay out. New products land `walk_cards=false` (admission is a separate decision, as with Entertainment).
