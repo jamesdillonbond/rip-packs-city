@@ -27,6 +27,16 @@
 
 ## Measured, no change (recorded so nobody re-chases them)
 
+- **Dead-instrument sweep (~3:50 PM PT, how item 17 was found).** It looks for an `*_error` key in `pipeline_runs.extra` that is non-empty on ≥ 80 % of a lane's runs:
+  ```sql
+  with k as (select r.pipeline, e.key, count(*) n,
+    count(*) filter (where e.value not in ('null','""','0','[]','{}','false')) bad
+    from pipeline_runs r cross join lateral jsonb_each(r.extra) e
+    where r.started_at > now()-interval '24 hours' and e.key ilike '%error%' group by 1,2)
+  select * from k where bad >= 5 and bad::float/n >= 0.8 order by bad::float/n desc;
+  ```
+  On 11-22 it found four hits. `fmv-recalc.candy_ask_ceiling_error` is fixed (item 17). `wallet-backfill-continuation.dispatch_error` (HTTP 508, 10/10) is by design: those rows exist only when a dispatch is deferred to the resume queue (11-11, `ok=true`). `wallet-backfill-pinnacle.parent_error_excerpt` (27/27) and `ownership-onchain-walk.wallet_errors` (5/5) were not read further.
+
 - **All Day weekly paired backtest** (lapsed since 11-05; nfl-all-day.md "Read 11-22"). Paired, ALL is level (67.2 vs 67.3) and HIGH wins. **LOW is −9.1 / −6.4 two weeks running, so R125's rule fires.** The 8-week series shows published winning weeks 3–7 on both metrics, so there is **no lever**. Re-read ~11-29, paired.
 - **#210's "0.90 haircut" lead** does not hold on 4 more weeks (newest 2 favour 0.75, older 2 favour 0.90–1.00). Recorded on #210.
 - `get_set_activity` remaining cost after the vacuum: a further cut needs a new covering index on `sales` (~100+ MB), which isn't worth it for a panel that degrades honestly.
