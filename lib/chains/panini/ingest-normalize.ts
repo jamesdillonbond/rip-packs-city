@@ -361,7 +361,8 @@ export function latestSalesBySku(records: any[]): Map<string, PaniniSale> {
 // for weeks while its serials showed sales — the route now counts the keys the RPC will refuse.
 //   `<card>__<serial>_<cap>`                         every 4-part card, Stickers, 850179, 2130
 //   `packcard-<set>_<a>_<b>_<serial>_<cap>`          a 3-part card with single underscores (Moonbirds)
-export const PANINI_SALE_KEY_SHAPES: readonly RegExp[] = [/^[A-Za-z0-9_-]+__\d+_\d+$/, /^packcard-\d+_\d+_\d+_\d+_\d+$/];
+// 2026-11-22 (later): + the 6-number packcard shape (product 2077, 20261122221137).
+export const PANINI_SALE_KEY_SHAPES: readonly RegExp[] = [/^[A-Za-z0-9_-]+__\d+_\d+$/, /^packcard-\d+_\d+_\d+_\d+_\d+$/, /^packcard-\d+_\d+_\d+_\d+_\d+_\d+$/];
 
 // The sale keys in a batch that panini_sales_ingest will refuse (no recognised shape). A record with
 // no key at all is counted too — it is a sale the history will never hold.

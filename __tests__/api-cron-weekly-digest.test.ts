@@ -47,6 +47,8 @@ vi.mock("@/lib/supabase", () => {
     rpc: async (name: string, args: any) => {
       h.state.rpcCalls.push({ name, args })
       if (name === "get_weekly_portfolio_movers") return { data: h.state.movers, error: null }
+      // 2026-11-22: the repricing read (lib/emails/weekly-repricing.ts); a test may override it.
+      if (name === "get_weekly_repricing_impact") return (h.state as any).repricing ?? { data: { delta_usd: 0, editions: 0, moments: 0 }, error: null }
       return { data: null, error: null }
     },
   }
@@ -56,7 +58,7 @@ vi.mock("@/lib/supabase", () => {
 const TOKEN = "weekly-digest-ingest"
 const MOVER = {
   user_id: "u1", email: "A@B.com", latest_fmv: 100, prior_fmv: 90,
-  delta_usd: 10, delta_pct: 11.11, moment_count: 5, latest_date: "2026-07-20",
+  delta_usd: 10, delta_pct: 11.11, moment_count: 5, latest_date: "2026-07-20", prior_date: "2026-07-13",
 }
 
 async function load() {
@@ -65,6 +67,7 @@ async function load() {
 }
 
 beforeEach(() => {
+  ;(h.state as any).repricing = undefined
   h.state.movers = []
   h.state.emailSub = null
   h.state.alertDup = null

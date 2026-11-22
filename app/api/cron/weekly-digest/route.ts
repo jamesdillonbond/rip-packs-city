@@ -36,6 +36,7 @@ import { emailLink } from "@/lib/emails/email-link";
 import { buildNewItemsBlock } from "@/lib/emails/weekly-digest-news";
 import { buildWeeklyAlertBlock, loadAlertSuggestion, type AlertSuggestion } from "@/lib/emails/alert-suggestion";
 import { buildWeeklyPacksBlock, loadPackWeek, type PackWeek } from "@/lib/emails/weekly-packs";
+import { loadRepricing, repricingDominates, repricingLine, type Repricing } from "@/lib/emails/weekly-repricing";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -60,6 +61,7 @@ type Mover = {
   delta_pct: number | null;
   moment_count: number | null;
   latest_date: string | null;
+  prior_date: string | null;
 };
 
 // 2026-11-03: a mover is mailed only when every figure the email prints was READ. The formatters
@@ -112,7 +114,9 @@ async function alreadySent(ownerKey: string, bucket: string): Promise<boolean | 
 // 2026-11-20: an optional "Deal alert" block on the player whose moments carry the most value in
 // the member's wallet (lib/emails/alert-suggestion.ts); null = no block, the email is unchanged.
 // 2026-11-22: an optional "Sealed packs" block (lib/emails/weekly-packs.ts); null = no block.
-function buildEmail(m: CompleteMover, unsubscribeUrl: string, now: Date = new Date(), alertSuggestion: AlertSuggestion | null = null, packWeek: PackWeek | null = null): { subject: string; html: string; text: string } {
+// 2026-11-22: `repricing` = how much of the week's change is OUR price corrections (lib/emails/weekly-repricing.ts).
+// The route only builds an email once that read succeeded; null here = nothing to disclose.
+function buildEmail(m: CompleteMover, unsubscribeUrl: string, now: Date = new Date(), alertSuggestion: AlertSuggestion | null = null, packWeek: PackWeek | null = null, repricing: Repricing | null = null): { subject: string; html: string; text: string } {
   const { html: newsHtml, text: newsText } = buildNewItemsBlock(ORIGIN, now);
   const { html: packsHtml, text: packsText } = buildWeeklyPacksBlock(packWeek);
   const { html: alertHtml, text: alertText } = buildWeeklyAlertBlock(ORIGIN, alertSuggestion);
@@ -120,7 +124,11 @@ function buildEmail(m: CompleteMover, unsubscribeUrl: string, now: Date = new Da
   const momentsLine = finite(m.moment_count) ? `${m.moment_count.toLocaleString("en-US")} moments tracked` : null;
   const arrow = up ? "▲" : "▼";
   const color = up ? "#16A34A" : "#DC2626";
-  const subject = `Your Rip Packs City portfolio: ${pctLabel(m.delta_pct)} this week`;
+  const repriced = repricingLine(repricing);
+  // When our own repricing is at least half of the move, the subject must not headline it as a market %.
+  const subject = repricingDominates(repricing, m.delta_usd)
+    ? "Your Rip Packs City portfolio this week"
+    : `Your Rip Packs City portfolio: ${pctLabel(m.delta_pct)} this week`;
   const dashUrl = emailLink(`${ORIGIN}/dashboard`, "weekly_digest", "dashboard");
   const html = `<!doctype html><html><body style="margin:0;background:#080808;font-family:'Share Tech Mono',Menlo,monospace;color:#fff">
   <div style="max-width:480px;margin:0 auto;padding:32px 24px">
@@ -135,6 +143,7 @@ function buildEmail(m: CompleteMover, unsubscribeUrl: string, now: Date = new Da
       <div style="font-size:15px;color:${color};margin-top:8px;font-weight:700">
         ${arrow} ${usd(Math.abs(m.delta_usd))} (${pctLabel(m.delta_pct)}) this week
       </div>
+      ${repriced ? `<div style="font-size:12px;color:rgba(255,255,255,0.75);margin-top:6px">${repriced}</div>` : ""}
       <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:6px">${HOLDINGS_NOTE}</div>
       ${momentsLine ? `<div style="font-size:12px;color:rgba(255,255,255,0.5);margin-top:10px">${momentsLine}</div>` : ""}
     </div>
@@ -158,6 +167,7 @@ ${newsHtml}
     "",
     `Estimated value: ${usd(m.latest_fmv)}`,
     `${up ? "Up" : "Down"} ${usd(Math.abs(m.delta_usd))} (${pctLabel(m.delta_pct)}) this week`,
+    ...(repriced ? [repriced] : []),
     HOLDINGS_NOTE,
     ...(momentsLine ? [momentsLine] : []),
     ...packsText,
@@ -250,7 +260,7 @@ async function run(req: NextRequest) {
     try {
       const movers = await loadMovers(minAbsPct, days);
       const seen = new Set<string>();
-      const would: Array<{ email: string; delta_pct: number | null; latest_fmv: number | null; alert_player: string | null; sealed_packs_usd: number | null }> = [];
+      const would: Array<{ email: string; delta_pct: number | null; latest_fmv: number | null; alert_player: string | null; sealed_packs_usd: number | null; repricing_usd: number | null }> = [];
       let unsub = 0;
       let dedup = 0;
       let unverified = 0; // dedup read failed: the live run would skip these too
@@ -266,9 +276,12 @@ async function run(req: NextRequest) {
         const sentBefore = await alreadySent(m.user_id, bucket);
         if (sentBefore === null) { unverified++; continue; }
         if (sentBefore) { dedup++; continue; }
+        // A failed repricing read means the email could not say how much of the move is ours: skip, as live does.
+        const rp = await loadRepricing(m.user_id, m.prior_date, m.latest_date);
+        if (!rp.ok) { incomplete++; continue; }
         const alertSuggestion = await loadAlertSuggestion(m.user_id);
         const packWeek = await loadPackWeek(m.user_id);
-        would.push({ email, delta_pct: m.delta_pct, latest_fmv: m.latest_fmv, alert_player: alertSuggestion?.player ?? null, sealed_packs_usd: packWeek?.lowAskUsd ?? null });
+        would.push({ email, delta_pct: m.delta_pct, latest_fmv: m.latest_fmv, alert_player: alertSuggestion?.player ?? null, sealed_packs_usd: packWeek?.lowAskUsd ?? null, repricing_usd: rp.repricing.deltaUsd });
       }
       return NextResponse.json({
         ok: true,
@@ -357,10 +370,14 @@ async function run(req: NextRequest) {
         }
         if (sentBefore) { skipped++; continue; }
 
+        // 2026-11-22: how much of the move is our own repricing. A failed read is NOT "none": skip the member
+        // (incomplete) rather than mail a bare delta that may be mostly our correction.
+        const rp = await loadRepricing(m.user_id, m.prior_date, m.latest_date);
+        if (!rp.ok) { skipped++; incomplete++; continue; }
         const unsubscribeUrl = `${ORIGIN}/api/subscribe/unsubscribe?token=${tok.token}`;
         const alertSuggestion = await loadAlertSuggestion(m.user_id);
         const packWeek = await loadPackWeek(m.user_id);
-        const { subject, html, text } = buildEmail(m, unsubscribeUrl, new Date(), alertSuggestion, packWeek);
+        const { subject, html, text } = buildEmail(m, unsubscribeUrl, new Date(), alertSuggestion, packWeek, rp.repricing);
 
         // ⛔ CLAIM BEFORE SEND (2026-11-02): the delivery row used to be written AFTER
         // the send with a failed insert only logged, so overlapping runs — or any run
@@ -368,7 +385,7 @@ async function run(req: NextRequest) {
         // on the unique key); held = another run owns it; a claim error fails closed.
         const claim = await claimEmailDelivery({
           ownerKey: m.user_id, channelUserId: email, alertKind: "weekly_digest", subjectKey: SUBJECT_KEY, bucket: bucket,
-          payload: { latest_fmv: m.latest_fmv, delta_usd: m.delta_usd, delta_pct: m.delta_pct, moment_count: m.moment_count, latest_date: m.latest_date, alert_player: alertSuggestion?.player ?? null },
+          payload: { latest_fmv: m.latest_fmv, delta_usd: m.delta_usd, delta_pct: m.delta_pct, moment_count: m.moment_count, latest_date: m.latest_date, alert_player: alertSuggestion?.player ?? null, repricing_usd: rp.repricing.deltaUsd },
           log: (msg) => console.log(`[${PIPELINE_NAME}] ${msg}`),
         });
         if (claim.state === "held") { skipped++; continue; }

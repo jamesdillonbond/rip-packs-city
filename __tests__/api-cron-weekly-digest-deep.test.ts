@@ -78,6 +78,8 @@ vi.mock("@/lib/supabase", () => {
         if (h.cfg.moversError) return { data: null, error: { message: h.cfg.moversError } }
         return { data: h.cfg.movers, error: null }
       }
+      // 2026-11-22: the repricing read (lib/emails/weekly-repricing.ts); a test may override it.
+      if (name === "get_weekly_repricing_impact") return (h.cfg as any).repricing ?? { data: { delta_usd: 0, editions: 0, moments: 0 }, error: null }
       return { data: null, error: null }
     },
   }
@@ -87,7 +89,7 @@ vi.mock("@/lib/supabase", () => {
 const TOKEN = "weekly-digest-ingest"
 const mover = (over: Partial<Record<string, any>> = {}) => ({
   user_id: "u1", email: "A@B.com", latest_fmv: 100, prior_fmv: 90,
-  delta_usd: 10, delta_pct: 11.11, moment_count: 5, latest_date: "2026-07-20", ...over,
+  delta_usd: 10, delta_pct: 11.11, moment_count: 5, latest_date: "2026-07-20", prior_date: "2026-07-13", ...over,
 })
 const withToken = { verification_token: "tok", unsubscribed_at: null, digest_weekly: true }
 
@@ -346,6 +348,50 @@ describe("weekly digest — never mails an invented figure (2026-11-03)", () => 
     expect(body.text).not.toMatch(/\b0 moments tracked/)
     expect(body.html).not.toMatch(/\b0 moments tracked/)
     expect(digestLog().p_extra.skipped_incomplete).toBe(0)
+  })
+
+  // 2026-11-22, before the first send: the 11-17 FMV restatements made two members' week read "−49.6 %",
+  // most of it our own price correction. The email states the repricing part; a failed read is not "none".
+  it("states how much of the move is our repricing, and the subject drops the % when repricing dominates", async () => {
+    h.cfg.movers = [mover({ latest_fmv: 38184, prior_fmv: 75803, delta_usd: -37619, delta_pct: -49.63 })]
+    ;(h.cfg as any).repricing = { data: { delta_usd: -27587.25, editions: 18, moments: 36 }, error: null }
+    await call(await load())
+    await h.afterFns[0]()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const body = JSON.parse(String((fetchMock.mock.calls[0] as any[])[1].body))
+    expect(body.text).toContain("Includes about −$27,587.25 from our price corrections on 18 of your editions this week — not market moves.")
+    expect(body.html).toContain("from our price corrections on 18 of your editions")
+    expect(body.subject).toBe("Your Rip Packs City portfolio this week")
+    expect(body.subject).not.toContain("49.6")
+    const call0 = h.rpcCalls.find((c: any) => c.name === "get_weekly_repricing_impact")
+    expect(call0?.args).toEqual({ p_owner_key: "u1", p_prior_date: "2026-07-13", p_latest_date: "2026-07-20" })
+  })
+
+  it("a small repricing share keeps the % subject and still discloses the part", async () => {
+    h.cfg.movers = [mover({ delta_usd: -4251, delta_pct: -38.8 })]
+    ;(h.cfg as any).repricing = { data: { delta_usd: -179.1, editions: 1, moments: 1 }, error: null }
+    await call(await load())
+    await h.afterFns[0]()
+    const body = JSON.parse(String((fetchMock.mock.calls[0] as any[])[1].body))
+    expect(body.subject).toContain("-38.8")
+    expect(body.text).toContain("on 1 of your editions this week")
+  })
+
+  it("no repricing in the window prints no line", async () => {
+    h.cfg.movers = [mover()]
+    await call(await load())
+    await h.afterFns[0]()
+    const body = JSON.parse(String((fetchMock.mock.calls[0] as any[])[1].body))
+    expect(body.text).not.toContain("price corrections")
+  })
+
+  it("a failed repricing read skips the member (incomplete), never a bare delta", async () => {
+    h.cfg.movers = [mover({ delta_usd: -37619, delta_pct: -49.63 })]
+    ;(h.cfg as any).repricing = { data: null, error: { message: "boom" } }
+    await call(await load())
+    await h.afterFns[0]()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(digestLog().p_extra.skipped_incomplete).toBe(1)
   })
 
   it("prints the moment count when it was read", async () => {

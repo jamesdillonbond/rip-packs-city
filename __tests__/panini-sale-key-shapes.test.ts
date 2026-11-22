@@ -19,13 +19,16 @@ describe("unrecognisedSaleKeys", () => {
   })
 
   it("names a key the ingest would drop — never a silent zero", () => {
+    // 2026-11-22 (later): a 4-part card with single underscores (6 numbers) is STORED since 20261122221137
+    // (product 2077), so it moved to the accepted side; a 7-number key keeps the "dropped" case exercised.
     const out = unrecognisedSaleKeys([
-      { url_key: "packcard-2332_486903_12491229_25_1_10" }, // 4-part card with single underscores: 6 parts
+      { url_key: "packcard-2332_486903_12491229_25_1_10" }, // 4-part card with single underscores: accepted now
+      { url_key: "packcard-2332_486903_12491229_25_9_1_10" }, // 7 numbers: no shape
       { url_key: "subpack-1058" },
       { url_key: "packcard-2332_486903_12491229_25__1_10" },
       {},
     ])
-    expect(out).toEqual(["packcard-2332_486903_12491229_25_1_10", "subpack-1058", ""])
+    expect(out).toEqual(["packcard-2332_486903_12491229_25_9_1_10", "subpack-1058", ""])
   })
 })
 
