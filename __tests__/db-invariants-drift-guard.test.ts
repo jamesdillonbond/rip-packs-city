@@ -1320,9 +1320,10 @@ const PINS = [
     // of five and never saw the All Day rows its own predicate selects. The
     // generalised fmv_clamp_disconnected_ask(uuid, boolean) supersedes it; no
     // threshold changed, only scope.
+    // 2026-11-22: a full-scope run logs a heartbeat even when it clamps nothing; rows_written = clamps.
     fn: "fmv_clamp_disconnected_ask",
     test: "supabase/tests/fmv_clamp_disconnected_ask.sql",
-    migration: "supabase/migrations/20261004002116_audit_20261003_fmv_readers_exclude_buyback_wallets.sql",
+    migration: "supabase/migrations/20261122150304_audit_20261122_fmv_clamp_logs_a_heartbeat_on_full_scope_runs.sql",
   },
   {
     // Re-pinned 2026-07-31: the pin ran ~2 weeks behind live (4 uncommitted

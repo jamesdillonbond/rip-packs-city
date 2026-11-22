@@ -3,7 +3,8 @@
 -- drifted far above the real 90-day sale distribution (the "$42/$170/$2924
 -- disconnected ask" class). It clamps FMV to GREATEST(p90*1.5, median), tags the
 -- snapshot's algo_version with `_p90clamp` (idempotently), and logs a pipeline
--- run ONLY when it actually clamped something; a dry-run counts without mutating.
+-- run when it clamped something, and (since 2026-11-22) on EVERY full-scope run as a
+-- heartbeat; a scoped no-op and a dry-run stay silent. A dry-run counts without mutating.
 --
 -- REPINNED 2026-08-04, superseding fmv_clamp_disconnected_ask_topshot(boolean).
 -- That function hardcoded
@@ -60,7 +61,7 @@ SELECT s.* FROM public.sales s
 
 CREATE TABLE pipeline_runs (
   id bigserial PRIMARY KEY, pipeline text, started_at timestamptz, finished_at timestamptz,
-  ok boolean, extra jsonb);
+  ok boolean, rows_found integer, rows_written integer, extra jsonb);
 
 -- >>> BEGIN verbatim fmv_clamp_disconnected_ask (byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.fmv_clamp_disconnected_ask(p_collection_id uuid DEFAULT NULL, p_dry_run boolean DEFAULT false)
@@ -167,9 +168,14 @@ BEGIN
     SELECT count(*), COALESCE(sum(delta), 0) INTO v_clamped, v_dollars FROM upd;
     v_examined := v_clamped;
 
-    IF v_clamped > 0 THEN
-      INSERT INTO public.pipeline_runs (pipeline, started_at, finished_at, ok, extra)
-      VALUES ('fmv-clamp-disconnected-ask', v_started, clock_timestamp(), true,
+    -- 2026-11-22: a FULL-scope run (the daily pg_cron job 69) now logs every time, so the
+    -- unwatched-pipeline arm sees a heartbeat on days nothing needed clamping (it read the lane
+    -- "silent 4331 min" on 11-22 while job 69 had succeeded daily -- 3 no-op days in a row).
+    -- A scoped no-op stays silent, as before. rows_written now carries the clamp count
+    -- (it was never set, so clamping days read 0 written in pipeline_runs_daily).
+    IF v_clamped > 0 OR p_collection_id IS NULL THEN
+      INSERT INTO public.pipeline_runs (pipeline, started_at, finished_at, ok, rows_found, rows_written, extra)
+      VALUES ('fmv-clamp-disconnected-ask', v_started, clock_timestamp(), true, v_clamped, v_clamped,
               jsonb_build_object('rows_clamped', v_clamped, 'dollars_removed', round(v_dollars, 2),
                                  'scope', COALESCE(p_collection_id::text, 'all')));
     END IF;
@@ -314,15 +320,27 @@ SELECT _assert_eq(
   '95f28a17-224a-4025-96ad-adf8a4c63bfd,all',
   'extra.scope distinguishes a scoped inline run from the full-scope nightly one');
 
--- ── idempotence + the no-op logging guard ───────────────────────────────────
+-- ── idempotence + the no-op logging rule (re-pinned 2026-11-22) ─────────────
 -- Every clamped row now sits AT its floor, so a second pass finds nothing (the
--- predicate is strict `>`). The live function wraps its pipeline_runs INSERT in
--- `IF v_clamped > 0`, so a no-op run must stay silent rather than logging a
--- zero-row success — the superseded copy logged unconditionally.
-SELECT _assert_eq((SELECT rows_clamped::text FROM fmv_clamp_disconnected_ask(NULL, false)),
-  '0', 'second pass is a no-op — clamped rows sit at their floor');
+-- predicate is strict `>`). Until 2026-11-22 every no-op run was silent; the daily
+-- full-scope job then read as STALLED after three no-op days (overnight pass 11-22),
+-- so a FULL-scope run now logs a heartbeat. A SCOPED no-op must still stay silent.
+SELECT _assert_eq((SELECT rows_clamped::text FROM fmv_clamp_disconnected_ask('95f28a17-224a-4025-96ad-adf8a4c63bfd', false)),
+  '0', 'scoped second pass is a no-op');
 SELECT _assert_eq((SELECT count(*)::text FROM pipeline_runs WHERE pipeline = 'fmv-clamp-disconnected-ask'),
-  '2', 'a no-op run logs NO additional pipeline_runs row');
+  '2', 'a SCOPED no-op run logs NO additional pipeline_runs row');
+SELECT _assert_eq((SELECT rows_clamped::text FROM fmv_clamp_disconnected_ask(NULL, false)),
+  '0', 'second full-scope pass is a no-op — clamped rows sit at their floor');
+SELECT _assert_eq((SELECT count(*)::text FROM pipeline_runs WHERE pipeline = 'fmv-clamp-disconnected-ask'),
+  '3', 'a FULL-scope no-op run logs a heartbeat row');
+SELECT _assert_eq((SELECT ok::text || '/' || rows_written::text || '/' || (extra->>'scope') FROM pipeline_runs
+                     WHERE pipeline = 'fmv-clamp-disconnected-ask' ORDER BY id DESC LIMIT 1),
+  'true/0/all', 'the heartbeat says ok, 0 written, full scope');
+SELECT _assert((SELECT bool_and(rows_written = (extra->>'rows_clamped')::int) FROM pipeline_runs
+                  WHERE pipeline = 'fmv-clamp-disconnected-ask'),
+  'rows_written carries the clamp count on every row');
+SELECT _assert((SELECT rows_written > 0 FROM pipeline_runs WHERE pipeline = 'fmv-clamp-disconnected-ask' ORDER BY id LIMIT 1),
+  'a clamping run reports a nonzero rows_written');
 
 SELECT '✓ fmv_clamp_disconnected_ask invariants pass' AS result;
 ROLLBACK;
