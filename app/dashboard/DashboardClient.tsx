@@ -15,6 +15,7 @@ import SignOutButton from "@/components/auth/SignOutButton";
 import { trophyComparator, TROPHY_SORTS, type TrophySortKey } from "@/lib/trophy-comparator";
 import PaniniUsernamesPanel from "@/components/profile/PaniniUsernamesPanel";
 import { sumMoments, sumFmv, sumStaleFmv, sumStaleCount, countActiveCollections, groupWalletsByAddress } from "@/lib/dashboard/aggregate";
+import { heldPacksCaption, type HeldPacksTotal } from "@/lib/dashboard/held-packs";
 import { publishedCollections, getPublishedCollection } from "@/lib/collections";
 import { detectAddressChain, isCadenceAddress, isSolanaAddress, normalizeAddress, truncateAddressForDisplay } from "@/lib/address";
 import FollowedWalletsList from "@/components/profile/FollowedWalletsList";
@@ -567,6 +568,29 @@ function ProfilePageInner() {
     return out;
   }, []);
 
+  // Sealed packs across every saved wallet, at the lowest live ask — shown beside
+  // the aggregated value (Trevor, 2026-11-21). Read on its own so a slow pack read
+  // never holds back the moment tiles; a failure says so instead of rendering $0.
+  const [heldPacks, setHeldPacks] = useState<HeldPacksTotal | null>(null);
+  const [heldPacksFailed, setHeldPacksFailed] = useState(false);
+  const loadHeldPacks = useCallback(async () => {
+    try {
+      const res = await fetch("/api/profile/held-pack-value", { cache: "no-store" });
+      if (!res.ok) throw new Error(String(res.status));
+      const d = await res.json();
+      setHeldPacks({
+        held: Number(d?.held) || 0,
+        listed: Number(d?.listed) || 0,
+        lowAskUsd: Number(d?.low_ask_usd) || 0,
+        walletsFailed: Number(d?.wallets_failed) || 0,
+      });
+      setHeldPacksFailed(false);
+    } catch {
+      setHeldPacks(null);
+      setHeldPacksFailed(true);
+    }
+  }, []);
+
   const refresh = useCallback(async () => {
     try {
       const [meRes, bioRes, walletsRes, slabsRes, favRes, actRes] = await Promise.all([
@@ -641,6 +665,12 @@ function ProfilePageInner() {
       // Per-wallet collection stats (one fetch per unique wallet_addr).
       const uniqueAddrs = Array.from(new Set(walletList.map((w) => normalizeAddress(w.wallet_addr))));
       refreshStats(uniqueAddrs);
+      if (uniqueAddrs.length > 0) {
+        loadHeldPacks();
+      } else {
+        setHeldPacks(null);
+        setHeldPacksFailed(false);
+      }
       refreshRetried.current = false; // clean load resets the retry guard
     } catch (e) {
       // A network-level fetch rejection (iOS "TypeError: Load failed", flaky
@@ -662,7 +692,7 @@ function ProfilePageInner() {
     } finally {
       setLoading(false);
     }
-  }, [refreshStats, pushToast]);
+  }, [refreshStats, loadHeldPacks, pushToast]);
 
 
   useEffect(() => {
@@ -1096,6 +1126,7 @@ function ProfilePageInner() {
             color="var(--rpc-success)"
             caption={[
               staleCount > 0 ? `+ ${fmtUsd(staleFmv)} across ${staleCount.toLocaleString("en-US")} stale-priced moments` : null,
+              heldPacksCaption(heldPacks, heldPacksFailed, fmtUsd),
               cacheAgeHours != null ? `as of ${Math.round(cacheAgeHours)}h ago` : null,
             ].filter(Boolean).join(" · ") || undefined}
             unavailable={statsIncomplete}
