@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~11:40 AM PT · 🗄 APPLIED (`20261122193815`) — Panini NWSL products 2478 (Prizm Black NWSL, #1065) + 2460 admitted to the card walk (Claude Code cloud; same thread as the Womens Soccer discovery fix)
+
+- Set ids read from card links on the Womens Soccer grid in Trevor's Chrome; neither had a `panini_products` row. Pre-admitting triggers the BOOTSTRAP narrowing on the next runner pass instead of waiting a discovery run first.
+- **Revert:** `UPDATE public.panini_products SET walk_cards = false WHERE set_id IN (2460, 2478);`
+
 ### 2026-11-22 ~11:35 AM PT · 🔧 SHIPPED (code) — Panini discovery walks the "Womens Soccer" grid: NWSL drop #1065 (Prizm Black NWSL) had 0 cards in RPC two days after a 13,000-pack sellout (Claude Code cloud; Trevor: "Both")
 
 - **Cause:** products are discovered per marketplace `?sport=` grid and "Womens Soccer" was not in `PANINI_DISCOVERY_SPORTS`; no `panini_products` row had ever been seen under it, so #1065's setIds were never offered for admission. Verified in Trevor's Chrome 11-22: the filter serves the NWSL cards (16-club TEAM filter incl. Portland Thorns FC). No `PANINI_DISCOVERY_SPORTS` override on Vercel.
