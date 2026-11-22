@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~12:45 PM PT · 🗄️ DATA — Candy off-Magic-Eden back-fill 11-06 → 11-22: 69 fills parked, written by the drain; this week's Candy is 194 sales / $6,985, not 137 / $3,939 (Claude Code cloud; same thread)
+
+- **Census (archive RPC, from this session):** 398 Candy collection accounts' signatures 11-06 → 11-22 12:00 UTC (77,220) ∩ 7Aru (109,249) and Tensor `TCMPhJ…` (1,173,088) → 1,414 candidates, all read and decoded with the shipped decoder: **68 7Aru fills (62 buys + 6 bids, ~45 SOL) + 1 Tensor bid**. Random sample of 298 older signatures: Core 293 · 7Aru 3 · M2 2 — no other venue.
+- **Written:** parked via `candy_park_chain_sale(..., 'queued_chain_backfill', venue)` (56 + 1 new; 12 already queued by the lane); the 12:20 PM drain wrote 69 → `sales` (2 sealed packs → `candy_pack_sales`). Week 11-15 02:00Z → 11-22 02:00Z: Magic Eden 137 / $3,939 · `solana_7aru` 56 / $3,045 · `tensor` 1 / $0.75 → **194 / $6,985**. Known-issues #256 → resolved; handoff `docs/handoff-2026-11-21-sales-completeness.md` updated.
+- **Not written:** 2 `BuyCoreSpl` fills paid in a non-SOL token (11-12), unpriceable on the SOL basis.
+- **Revert:** `DELETE FROM sales WHERE collection_id='209ade70-32c5-4470-bc7c-4793d660f713' AND marketplace IN ('solana_7aru','tensor')` and `DELETE FROM candy_sales_unresolved WHERE marketplace IS NOT NULL` (the lane re-finds only fills after 11-22 12:00 UTC).
+
 ### 2026-11-22 ~12:40 PM PT · 🔧 SHIPPED (runner) — Panini pack-page cap is taken from the stalest-first list, not after a whole-list subpack-first sort: drop pages (NWSL #1065, World Cup Stickers, Rolling Stones) had NEVER been opened (Claude Code cloud; same NWSL thread)
 
 - **Cause:** `ingest-panini-runner.mjs` sorted all 407 enabled pages subpack-first and then sliced 60, so with 404 subpack pages every `/pack-<name>.html` drop page sat behind the cut; the route's never-walked-first order was undone each run (oldest walk still 10-03). Now `scripts/panini-pack-pages.mjs` slices first, then orders subpack-first within the slice. Test `__tests__/panini-pack-pages.test.ts` (planted old sort → 2 of 5 red).
