@@ -26,7 +26,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 
 export type PackWeek = { lowAskUsd: number; held: number; listed: number | null; priorUsd: number | null }
 
-type Row = { snapshot_date: string; pack_low_ask_usd: number | string | null; pack_held_count: number | null; pack_listed_count?: number | null }
+type Row = { snapshot_date: string; pack_low_ask_usd: number | string | null; pack_held_count: number | null; pack_listed_count?: number | null; pack_value_basis?: string | null }
 
 const num = (v: unknown): number | null => {
   const n = typeof v === "string" ? Number(v) : typeof v === "number" ? v : NaN
@@ -60,7 +60,12 @@ export function packWeekFrom(rows: Row[]): PackWeek | null {
   // Like-for-like only (2026-11-22, review of 88731d9fc): a week in which the member bought or opened packs, or
   // in which a pack gained or lost its live ask, is not a price move. Show the change only when the held AND
   // listed counts are the same as the prior week's; otherwise the value prints alone.
+  // 2026-11-22 (later): a prior night BACKFILLED by backfill_portfolio_snapshot_pack_values (20261122231506)
+  // carries an estimate (pack_value_basis = hourly_ask / carried_back_ask), not a measurement: a change
+  // against it would print our estimation error as "this week".
   const sameHoldings = prior != null
+    && (prior.pack_value_basis == null || prior.pack_value_basis === "")
+    && (latest.pack_value_basis == null || latest.pack_value_basis === "")
     && num(prior.pack_held_count) === held
     && num(prior.pack_listed_count ?? null) === listed
   return { lowAskUsd, held, listed: listed != null && listed < held ? listed : null, priorUsd: prior && sameHoldings ? priced(prior.pack_low_ask_usd) : null }
@@ -71,7 +76,7 @@ export async function loadPackWeek(userId: string): Promise<PackWeek | null> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data, error } = await (supabaseAdmin as any)
       .from("portfolio_snapshots")
-      .select("snapshot_date, pack_low_ask_usd, pack_held_count, pack_listed_count")
+      .select("snapshot_date, pack_low_ask_usd, pack_held_count, pack_listed_count, pack_value_basis")
       .eq("owner_key", userId)
       .order("snapshot_date", { ascending: false })
       .limit(10)

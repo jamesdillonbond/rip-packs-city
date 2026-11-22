@@ -123,3 +123,20 @@ describe("packWeekFrom — never a $0 or a stale sealed-pack line", () => {
     expect(buildWeeklyPacksBlock(w).text.join(" ")).not.toContain("this week")
   })
 })
+
+describe("packWeekFrom — never a change against a backfilled estimate (20261122231506)", () => {
+  it("a prior night whose pack value was backfilled gives no weekly change", () => {
+    const rows = [
+      { snapshot_date: "2026-11-23", pack_low_ask_usd: "120", pack_held_count: 4, pack_listed_count: 4 },
+      { snapshot_date: "2026-11-16", pack_low_ask_usd: "100", pack_held_count: 4, pack_listed_count: 4, pack_value_basis: "carried_back_ask" },
+    ]
+    expect(packWeekFrom(rows)?.priorUsd).toBeNull()
+    expect(packWeekFrom(rows)?.lowAskUsd).toBe(120)
+  })
+  it("both nights measured still compare", () => {
+    expect(packWeekFrom([
+      { snapshot_date: "2026-11-23", pack_low_ask_usd: "120", pack_held_count: 4, pack_listed_count: 4, pack_value_basis: null },
+      { snapshot_date: "2026-11-16", pack_low_ask_usd: "100", pack_held_count: 4, pack_listed_count: 4, pack_value_basis: null },
+    ])?.priorUsd).toBe(100)
+  })
+})
