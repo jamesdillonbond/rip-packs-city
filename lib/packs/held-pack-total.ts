@@ -23,20 +23,74 @@ export function packWalletAddresses(raw: Array<string | null | undefined>): stri
   )).slice(0, MAX_PACK_WALLETS)
 }
 
+// 2026-11-22 (inbox 2026-11-22T0440Z, Trevor "Apply it"): the biggest pack wallets take ~19 s
+// and hit the function's 20 s ceiling. wallet_pack_value_cache is filled hourly in the
+// background (refresh_wallet_pack_value_cache, no request ceiling there) and on each live
+// success. A cache row younger than FRESH_MS is served as is; otherwise the live read runs,
+// and if it FAILS a row up to STALE_OK_MS old is served instead — a failed read never adds $0.
+export const CACHE_FRESH_MS = 30 * 60 * 1000
+export const CACHE_STALE_OK_MS = 24 * 60 * 60 * 1000
+
+type CacheRow = { wallet_addr: string; value: HeldPackValueRow; computed_at: string }
+
+/** Pure: which cached value (if any) to serve, given the live answer and the clock. */
+export function pickHeldValue(
+  cached: CacheRow | undefined,
+  live: HeldPackValueRow | null | "skipped",
+  now: number,
+): HeldPackValueRow | null {
+  const age = cached ? now - Date.parse(cached.computed_at) : Infinity
+  if (live === "skipped") return cached && age < CACHE_FRESH_MS ? cached.value : null
+  if (live) return live
+  return cached && age < CACHE_STALE_OK_MS ? cached.value : null
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function readHeldPackTotal(sb: any, addrs: string[], label: string): Promise<HeldPacksTotal> {
+export async function readHeldPackTotal(sb: any, addrs: string[], label: string, now: number = Date.now()): Promise<HeldPacksTotal> {
+  // One cache read for every address. A failed cache read is an empty cache, never an error.
+  const cache = new Map<string, CacheRow>()
+  if (addrs.length > 0) {
+    try {
+      const { data, error } = await boundedRead(
+        sb.from("wallet_pack_value_cache").select("wallet_addr, value, computed_at").in("wallet_addr", addrs),
+        `${label}/wallet_pack_value_cache`,
+      )
+      if (!error && Array.isArray(data)) {
+        for (const r of data as CacheRow[]) {
+          if (r && typeof r.wallet_addr === "string" && r.value && typeof r.value === "object" && Number.isFinite(Date.parse(r.computed_at))) {
+            cache.set(r.wallet_addr, r)
+          }
+        }
+      }
+    } catch {
+      /* empty cache */
+    }
+  }
   const answers = await Promise.all(addrs.map(async (addr): Promise<HeldPackValueRow | null> => {
+    const cached = cache.get(addr)
+    const fresh = pickHeldValue(cached, "skipped", now)
+    if (fresh) return fresh
+    let live: HeldPackValueRow | null = null
     try {
       const { data, error } = await boundedRead(
         sb.rpc("wallet_held_pack_value", { p_wallet: addr }),
         `${label}/wallet_held_pack_value`,
         READ_BUDGET_MS,
       )
-      if (error || !data || typeof data !== "object" || "error" in data) return null
-      return data as HeldPackValueRow
+      if (!error && data && typeof data === "object" && !("error" in data)) live = data as HeldPackValueRow
     } catch {
-      return null
+      live = null
     }
+    if (live) {
+      // Best effort: a failed cache write changes nothing the reader sees.
+      try {
+        await sb.from("wallet_pack_value_cache")
+          .upsert({ wallet_addr: addr, value: live, computed_at: new Date(now).toISOString() }, { onConflict: "wallet_addr" })
+      } catch {
+        /* ignore */
+      }
+    }
+    return pickHeldValue(cached, live, now)
   }))
   return sumHeldPacks(answers)
 }

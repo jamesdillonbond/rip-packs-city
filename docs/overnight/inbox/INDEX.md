@@ -34,7 +34,7 @@ failure it documents.
 
 ## 2026-11-22 — 1 filing
 
-- [🟡 OPEN — `wallet_held_pack_value` times out (20 s) on large pack wallets: 4 PostgREST 500s since it shipped, one slow wallet per call (10.5–13.8 s warm on the biggest holders); honest (`walletsFailed`), three options for the owner](2026-11-22T0440Z-claude-code-wallet-held-pack-value-times-out-on-large-pack-wallets.md) — *(Claude Code cloud, ~8:40 PM PT 11-21, evening autonomous pass; not changed — the function was reshaped hours earlier by the sealed-pack thread.)*
+- [✅ RESOLVED 11-22 ~9:15 AM PT (`20261122170115`, per-wallet background cache) — `wallet_held_pack_value` times out (20 s) on large pack wallets: 4 PostgREST 500s since it shipped, one slow wallet per call (10.5–13.8 s warm on the biggest holders); honest (`walletsFailed`), three options for the owner](2026-11-22T0440Z-claude-code-wallet-held-pack-value-times-out-on-large-pack-wallets.md) — *(Claude Code cloud, ~8:40 PM PT 11-21, evening autonomous pass; not changed — the function was reshaped hours earlier by the sealed-pack thread.)*
 
 ## 2026-11-21 — 1 filing
 

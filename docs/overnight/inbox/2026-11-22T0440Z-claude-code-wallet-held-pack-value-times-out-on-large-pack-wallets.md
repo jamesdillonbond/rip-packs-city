@@ -15,3 +15,6 @@ Honest: `readHeldPackTotal` counts a failed wallet in `walletsFailed`, never $0.
 1. Raise both functions' `statement_timeout` to ~45 s and `READ_BUDGET_MS` to ~46 s (via PostgREST a HIGHER function timeout applies; gateway cap ~120 s). Cheapest; slower tile for whales.
 2. Materialise the held totals per wallet on the nightly portfolio snapshot (`fill_portfolio_snapshot_pack_values`) and read that, live only as fallback.
 3. Profile `get_wallet_pack_history(..., 'held', 1, 0)`'s `tab_totals` on `0xf77bf547fccf6656` (841k buffers for one call) — the per-row 3× reference cap added in v33 is the newest code on that path.
+
+## ✅ RESOLVED 2026-11-22 ~9:15 AM PT (Cowork, the owning thread; Trevor: "Apply it")
+Option 2, by wallet rather than by owner. `wallet_pack_value_cache` (migration `20261122170115`) is filled hourly by `refresh_wallet_pack_value_cache` (pg_cron `rpc-wallet-pack-value-cache`, :16, bare CALL — the background has no 20 s request ceiling) and on every live success. `lib/packs/held-pack-total.ts` serves a row < 30 min old without a live read, otherwise reads live, and on a failed live read falls back to a row up to 24 h old (never $0). Measured before: `0xf77bf547fccf6656` 19.4 s / 834k buffers. The cost is the full pack-history classification, not the v33 cap. Ledger 11-22 ~9:15 AM PT.

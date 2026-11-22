@@ -12,6 +12,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~9:15 AM PT · 🔧 SHIPPED (migration + schedule + code) — sealed-pack totals for the biggest wallets: a background-filled per-wallet cache (Cowork cloud via laptop VM; Trevor: "Apply it"; resolves inbox 2026-11-22T0440Z)
+
+**Why.** `wallet_held_pack_value` runs the whole pack-history classification; the biggest wallets cross its 20 s ceiling (4 PostgREST 500s on 11-22; `0xf77bf547fccf6656` — 15,662 rips, 5,076 buys — 19.4 s / 834k buffers at 8:45 AM PT). They saw "Sealed packs: couldn't load". Not the v33 cap (a per-row GREATEST).
+
+**DB (applied, `20261122170115_audit_20261122_wallet_pack_value_cache`).** `wallet_pack_value_cache(wallet_addr PK, value jsonb, computed_at)`, RLS on, service_role only. Procedure `refresh_wallet_pack_value_cache(90)`: every saved Flow wallet, stalest first, skips rows < 50 min old, COMMIT per wallet, `log_pipeline_run('wallet-pack-value-cache')`. pg_cron `rpc-wallet-pack-value-cache` `16 * * * *`, a bare CALL.
+
+**Code.** `lib/packs/held-pack-total.ts` reads the cache first: < 30 min served; else live (21 s, as before) and a success is written back; a failed live read falls back to a row up to 24 h old; otherwise counted failed, never $0. All three pack-line routes use it. Tests: `__tests__/lib-packs-held-pack-total-cache.test.ts`.
+
+**Revert:** `git revert <this commit>`; DB: `SELECT cron.unschedule('rpc-wallet-pack-value-cache'); DROP PROCEDURE public.refresh_wallet_pack_value_cache(integer); DROP TABLE public.wallet_pack_value_cache;`
+
 ### 2026-11-22 ~8:53 AM PT · 🔧 SHIPPED (code) — drops report: Pinnacle drops carry their chain-minted supply, an unconfirmed upcoming Pinnacle RSVP reads "Opens", and Panini card art shows the serial that sold (Claude Code cloud, X-draft run; Trevor: "Dig deeper and figure out any gaps" → "Yes keep going")
 
 - `lib/insights/pack-calendar.ts`: `minted` on Pinnacle drops = `pinnacle_catalog.total_minted` summed over the set named "… • <title>" (11-24 Frozen Seasonal Harvest Vol.1 = 490, Winnie the Pooh: Friends-Giving Vol.2 = 790 — minted into Pinnacle's account 11-19, not on disneypinnacle.com/releases yet). Absent on no match / null count / failed read (never 0; the calendar does not fail). `x-draft.mjs` → "($49.95, 490 minted)"; `x-image.mjs` card detail "490 minted".
