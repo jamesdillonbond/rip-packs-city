@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-21 ~7:55 PM PT · 🔧 SHIPPED (code) — Top Shot offer fills: a 5th resolution path reads the moment from the chain, so an NFT offer on a moment RPC never saw is no longer dropped (Claude Code cloud; Trevor: "Dig deeper into how we can fix panini and any others that aren't 100% confirmed")
+
+The 7:00 PM census found 3 of 234 Top Shot `NFT`-type offer fills that week missing (no `moments` row, no `offers` row, no Atlas event → `unresolved`, dropped). `buildOfferFillSales` path 5: borrow the moment from the BUYER's `/public/MomentCollection` (`borrowMoment` + `TopShot.getMomentsSubedition`, verified on mainnet 11-21 on the three missing nfts) → `set:play` (sub 0) or `set:play::sub`, through the same edition lookup + F1 guard as path 4; ≤ 20 reads per build; nil/errors counted (`sales_resolved_via_chain`, `sales_chain_errors` on both callers' runs). The three missing fills themselves were inserted at 7:00 PM. Tests: +3 (base, parallel, failed read), 1 existing unresolved test now stubs the chain. Preflight 6/6.
+
+**Revert:** `git revert` the commit titled "topshot: offer fills resolve from the chain when nothing else can (path 5)".
+
 ### 2026-11-21 ~7:09 PM PT · 🗄 APPLIED (`20261122030900`) — the last stale phantom Candy ask retired one-off; #257 resolved (Claude Code cloud; Trevor, asked yes/no: "Do what you think is best" — the recommendation was to retire)
 
 - **What:** `candy_listings` pda `CFGipvw9…` (Blackest Night (2009-2010) #1, $72.76, pre-lock seller, last seen 11-15) → `is_active = false`, `owner_moved_at` stamped. Guarded: exactly 1 row, and only while its card still has no holder row. Its card has no holder anywhere after clean walks, so neither retirer arm reaches it; a general rule was rejected (it would flap real escrow-held listings, #145). No writer re-activates it; both sweeps skip owner-moved pdas; the existing clear path lifts the mark if the seller is ever seen holding the card.
