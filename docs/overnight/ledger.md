@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~8:11 AM PT · 🗄 DB MAINTENANCE + 📏 NEGATIVE RESULT — `panini-offer-spread` trace: `idx_panini_serials_listed_edition_cover` rebuilt (117 → 53 MB) and it was NOT the cost (Claude Code cloud)
+
+- **Why traced:** the dated read from last night — `panini-offer-spread` median **19.2 s over 11 runs** since 04:48Z vs 13.4 s before (+43 %, sustained); `panini-market-board` unchanged (20.7 s vs 22.2), `panini-squeeze-mv` faster (6.1 s vs ~17).
+- **Found:** `mv_panini_offer_spread`'s floor CTE reads `idx_panini_serials_listed_edition_cover` (Index Only Scan, 330k listed rows) — NOT the `edition_agg` index rebuilt last night, so that rebuild is not implicated. Cost: 106.5k buffers, 22.9k read, 9.4 s I/O.
+- **Did:** rebuilt that index CONCURRENTLY (job 911, 2 m 49 s; 41.5 % → 53 MB; parked once running, unscheduled, role `RESET`; 0 invalid indexes, 0 one-off jobs). **Measured after: 98.4k buffers (−8 %), 25.6k still read** — the cost is **26k HEAP FETCHES**: `panini_card_serials` is 92.5 % all-visible (vacuumed 11:05Z), and the listed rows this query wants are exactly the hot, constantly-updated 7.5 %. Structural, not bloat; the rise most likely tracks the listed book's growth. ⛔ **Do not rebuild this index again for this lane** — the lever, if one is wanted, is an MV that does not visit listed rows' heap (not taken: the lane runs hourly at ~19 s, well inside its budget, 0 fails).
+- **Revert:** none needed.
+
 ### 2026-11-22 ~7:40 AM PT · 🔧 SHIPPED (code) — Sentinel arm "pg_cron Job Failing Every Run" (Claude Code cloud; Trevor: "Keep going and working through this")
 
 - **Why:** job 901 (entry below) failed every run for two nights and nothing said so — the fleet arm `pg_cron Failures (6h)` fires at ≥ 10 failures / 6 h across the instance, and a twice-daily job failing every run adds 1. `check_pgcron_recent_failures()` named it and had **no caller that alerts** (only the daytime monitor's prompt reads it); the 11-22 overnight pass missed it.
