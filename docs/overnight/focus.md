@@ -11,6 +11,7 @@ Full detail: `docs/handoff-2026-11-21-evening-autonomous-pass.md`.
 - **`ts-listings-atlas-sync`** sync-step median since `2026-11-22 04:05Z` vs 4,595 ms before (cover index rebuilt 495 → 73 MB). Also: `rows_written` now means rows written (~500–2,000/run) — do not read the drop from ~86k as a collapse.
 - **`topshot-onchain-art-backfill`**: within ~12 h of 10:22 PM PT a run reads `legacy_resting` with `legacy_rest_until` ~7 d out. Still `lap_complete`/`batch_full` with 0 fills after 24 h → the rest is not engaging; read `extra.lap_filled`.
 - **fmv-recalc historical fallback** (`20261122042722`, ~8:27 PM PT): `extra.historical_fallback_error` non-null on far fewer than the 14 / 255 runs of the 3 days before; the leg's row counts unchanged in kind.
+- **Panini MV lanes after the `idx_panini_serials_edition_agg` rebuild (8:47 PM PT):** 24 h median `duration_ms` from 04:48Z — `panini-offer-spread` vs 13.4 s, `panini-market-board` vs 22.2 s (first runs read 33.8 s / 31.1 s, inside their ranges; `panini-squeeze-mv` 8.0 s vs 16–20 s). A sustained offer-spread rise → trace `mv_panini_offer_spread`'s plan.
 - **~11-28: re-bloat check** on `idx_tame_open_listing_seen_cover` and `idx_pack_ev_history_listing_time` (`avg_leaf_density`). Under ~30 % → schedule a weekly `REINDEX INDEX CONCURRENTLY` (one-statement pg_cron; each took < 40 s).
 
 ## STEER — added 2026-11-21 ~7:05 PM PT (Claude Code cloud, closing the 11-20/21 Candy phantom thread) — ONE dated read is owed; everything else from that thread is closed
