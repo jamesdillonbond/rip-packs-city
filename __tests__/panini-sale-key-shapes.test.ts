@@ -14,6 +14,7 @@ describe("unrecognisedSaleKeys", () => {
         { url_key: "packcard-2332_486903_12491229_25__1_10" }, // 4-part card
         { url_key: "packcard-850180_100_864__125_501" }, // Stickers (3-part, double underscore)
         { sku: "packcard-850178_104_7_7_10" }, // Moonbirds (3-part, single underscore)
+        { url_key: "packcard-850147_111938_2-2_5_21_79" }, // 850147/111938: hyphenated third part (20261123045852)
       ]),
     ).toEqual([])
   })
@@ -24,11 +25,12 @@ describe("unrecognisedSaleKeys", () => {
     const out = unrecognisedSaleKeys([
       { url_key: "packcard-2332_486903_12491229_25_1_10" }, // 4-part card with single underscores: accepted now
       { url_key: "packcard-2332_486903_12491229_25_9_1_10" }, // 7 numbers: no shape
+      { url_key: "packcard-850147_111938_2-2_5_9_21_79" }, // hyphenated card with an extra part: no shape
       { url_key: "subpack-1058" },
       { url_key: "packcard-2332_486903_12491229_25__1_10" },
       {},
     ])
-    expect(out).toEqual(["packcard-2332_486903_12491229_25_9_1_10", "subpack-1058", ""])
+    expect(out).toEqual(["packcard-2332_486903_12491229_25_9_1_10", "packcard-850147_111938_2-2_5_9_21_79", "subpack-1058", ""])
   })
 })
 
