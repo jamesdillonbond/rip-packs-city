@@ -189,6 +189,10 @@ decay signal**.
 ⚠ **Escape-hatch discipline:** `// base58-fold: intentional — <why>`, and **"this collection is Flow
 today" is NOT a reason** — `lib/address.ts` exists for exactly that case.
 
+### ⛔ The SQL side has the same reflex — `lower(p_wallet)` (2026-11-22)
+
+`get_collection_breakdown` and `export_wallet_csv` matched `wallet_address = lower(p_wallet)`, so the one saved Candy wallet's 575 moments were absent from its owner's profile and CSV export, with no error (fixed `20261123051216`). The TypeScript guard above cannot see a SQL body. A sweep found 26 public functions lowercasing a wallet parameter; the rest are Flow-only by construction and were left alone. **Rule:** lower only a hex address, `CASE WHEN p_wallet ~* '^0x' THEN lower(p_wallet) ELSE p_wallet END`. Ban at zero, forward only: `__tests__/new-migrations-do-not-lowercase-a-solana-wallet.test.ts` (inline escape `-- solana-lower: flow-only (<why>)`).
+
 ### ⛔ The rule that governs every one of these fixes
 
 **NEVER NARROW THE INCUMBENT CHAIN WHILE WIDENING FOR A NEW ONE.** `isValidAddressForChain(key, "flow")` demands exactly 16 hex — **stricter** than the `startsWith("0x")` it looks like a drop-in for. Adopting it on a Flow path is a regression smuggled in under a Solana fix; three component tests caught it on the `0xmine` fixture, and **the fixture was not edited to fit the code**. The same reasoning makes the `|| value.startsWith("0x")` in the search classifier load-bearing rather than redundant. **Pin the hex path as its own no-change arm in every test file that touches these helpers** — without it, the Solana assertions are satisfied by a function that has quietly changed every Flow label in the product.
