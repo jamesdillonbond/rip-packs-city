@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-23 ~2:08 PM PT · 🧹 DATA (`20261123220749`) — the lane Trevor paused this morning is no longer watched as a stall (Claude Code cloud; Trevor: "Keep going")
+- **Why:** `topshot-buyer-backfill-historical` (cron-job.org 7866110) was paused ~7:45 AM PT by Trevor's call, but its `pipeline_cadence_watchlist` row stayed active, so `detect_stalled_pipelines()` reported it (385 min silent vs 183) and the GHA watchdog's error read "1 cadence lane(s) breaching".
+- **What:** that one row `is_active = false`, the pause reason appended to `notes`. Breaches now 0. (The watchdog's separate "no schedule-tagged tick" finding is the known probe-workflow shedding — GHA delivered other schedules at 1:44 and 1:51 PM PT; triaged 11-23, no change.)
+- **Revert:** `UPDATE pipeline_cadence_watchlist SET is_active = true, notes = regexp_replace(notes, ' \| PAUSED 2026-11-23.*$', '') WHERE pipeline = 'topshot-buyer-backfill-historical';` — do it when the lane is un-paused.
+
 ### 2026-11-23 ~1:45 PM PT · 🔧 FIX — `/insights/pinnacle-pack-reality` read budget 8 s → 25 s (Claude Code cloud)
 - The first build's prerender logged `[insights/Pinnacle pack reality] read exceeded 8000ms` (the function is ~0.4 s warm / ~1.2 s cold; the build runs many board reads at once), so the page served its honest "couldn't load" notice — and with no client refetch ISR would hold it for the hour (#33). Same fix as panini-premiums (070bd9eaf): `fetchBoardForPage(…, 25_000)`. The JSON route was fine throughout.
 - **Revert:** `git revert` this commit.
