@@ -30,10 +30,10 @@
 | Edition: Top Owners | ✓ | ✗ needs an ownership walk (Dune cap) | ✓ (≥ 95 % attributable pins) | ✗ not built | ✗ not built | ✓ counts only | ✓ exact (census) |
 | Edition: found in packs | ✓ | ✓ | ✓ | ◐ | — | ✓ by product | — pack contents unknown |
 | Edition: special serials | ✓ | ✓ | ✓ serial premium | ◐ | ◐ | ✓ | ✓ |
-| Edition: ask history | ✓ | ◐ | ◐ | ◐ | — | ✓ | ✓ (from 10-26) |
+| Edition: ask history | ✓ | ◐ | ✓ lowest-ask line on the pin chart (11-23; tracked since 10-19) | ◐ | — | ✓ | ✓ (from 10-26) |
 | Edition: price alerts | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ |
 | Player / character page + season stats | ✓ | ✓ | ✓ character | ✓ (ESPN box scores, 11-08) | ◐ no stats | ✓ | ✓ |
-| Player checklists (10-31) | ✓ | ✓ | — | ✓ | ✓ | — | ✓ |
+| Player checklists (10-31) | ✓ | ✓ | ✓ character checklist (11-23, render grain) | ✓ | ✓ | — | ✓ |
 | Team checklists | ✓ | ✓ | — | ✓ | — | — | ✓ |
 | Cross-collection player / franchise hubs | ✓ | ✓ | — | ✓ | ✓ | ✓ | ✓ |
 

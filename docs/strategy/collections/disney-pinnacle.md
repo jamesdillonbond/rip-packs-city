@@ -30,6 +30,8 @@ Read from the registry (`lib/collections.ts`), the shared `[collection]` routes,
 | Analytics: Top Accumulators (buyer-side sweeps) | ✓ | ✓ (new, pass 2) | `get_pinnacle_top_accumulators` over `pinnacle_sales`; the route used to refuse Pinnacle because the shared RPC cannot see its sales |
 | Collection tab: "Close to completing" | ✓ | ✓ (new, pass 2) | `/api/pinnacle-set-progress`; unpriced slots make the cost a lower bound; link now goes to the collection's own Sets tab |
 | Pin page: Offers | ✓ | ✗ — none exist upstream (10-26) | Dapper OffersV2 `OfferAvailable` over the last ~300k blocks (~3 days, 1,200/1,200 chunks, 0 errors), probed 10-26 ~10:30 PM PT: 9,366 offers — Top Shot 5,003, MFL 3,985, All Day 378 (control) — **Pinnacle 0**; the 07-28 Golazos recon's 400k-block window had none either. Nothing to index. Re-probe (count `OffersV2.OfferAvailable` by `nftType` over Flow REST) before building an indexer |
+| Pin page: ask history | ✓ | ✓ (11-23) | lowest-ask line (dashed step) beside FMV on the pin chart, from `pinnacle_floor_ask_history` (change-only, since 10-19); gaps = a sweep saw no live ask; a failed read says "unavailable" |
+| Character page: checklist (Top Shot's player checklist) | ✓ | ✓ (11-23) | `get_pinnacle_character_checklist` (`20261123200500`, render grain, characters trait) via `/api/entity/pinnacle-character-checklist`; owned vs missing for a pasted / profile Dapper wallet; cost to complete = live asks within 3× FMV + FMV where nothing is listed near it; a never-sold pin's ask and unpriced pins are shown apart, never in the headline |
 | Pin page: insight chips | ✓ | partial | footer links the scarcity board; no per-pin chip feed |
 | Top Sales board | ✓ | ✓ (new) | `v_pinnacle_top_sales` merged server-side; was an accepted filter that always read 0 rows |
 | Concierge: top sales | ✓ | ✓ (new) | via the board |
@@ -40,6 +42,7 @@ Read from the registry (`lib/collections.ts`), the shared `[collection]` routes,
 
 ## Shipped recently (since mid-September)
 
+- **11-23 (Claude Code cloud, Trevor: "work on furthering the Disney Pinnacle roadmap and enhancing its features"):** two parity gaps closed. (1) **Pin pages chart the lowest ask** beside FMV — the first reader of `pinnacle_floor_ask_history`, which existed since 10-19 with no surface (9,110 rows / 2,964 pins on 11-23, max 23 changes a pin). (2) **Character checklist** on every Pinnacle character page (the matrix's "Player checklists: Pinnacle —"). Measured before shipping: Mickey Mouse's 70 pins read $1.82M "to complete" at raw asks — $1,000,000 of it one 1/1 Apex listing with no sale — so the cost splits by source (ask ≤ 3× FMV · FMV · never-sold ask shown apart · unpriced counted). Mickey full set ≈ $17.1k (64 at asks, 3 at FMV) + one never-sold $1M ask + 2 unpriced. Grogu 47 pins ≈ $912.
 - **09-26 #150:** entity surfaces (market, sniper, set/series/character/franchise) read the catalog instead of `pinnacle_editions`.
 - **09-27 #151:** holdings were named from the set-level key (~31k wrong characters, 769 "Unknown"). Names now come from the catalog by render_id. **#152:** trophy slabs scoped by collection.
 - **09-27 #155:** render FMV is a recency-weighted **median**. It had been a WAP-centred trim that dropped a falling render's recent sales. Same day: the serial premium was cut to #1 and perfect serials only (Trevor).
