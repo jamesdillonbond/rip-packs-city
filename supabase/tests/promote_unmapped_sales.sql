@@ -287,8 +287,11 @@ DECLARE
   -- what held Top Shot's on-chain sale-ingest p90 at ~25 min after jobs 476/474 moved to every 10 min
   -- (20261123185838; read 11-23 1:03 PM PT: p50 3.8, p90 24.8, n 129). Top Shot drains every 5 min;
   -- every other scope keeps 20.
+  -- ⚠ The gap must sit STRICTLY BELOW the 5-min schedule, not equal to it (fixed 11-23 ~4:10 PM PT):
+  -- at 5 min, pg_cron's start jitter (~0.2-0.3 s) made `last > started - gap` true for 14 of 33 runs,
+  -- each skipped exactly 5 min after the last, so half the parked sales waited 10 min, not 5.
   v_min_gap      interval := CASE WHEN p_collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid
-                                  THEN interval '5 minutes' ELSE c_min_gap END;
+                                  THEN interval '4 minutes' ELSE c_min_gap END;
 BEGIN
   -- ── CONCURRENCY GUARD (2026-08-29) ─────────────────────────────────────────
   -- This drain is NOT claim-based: the `candidates` CTE selects `resolved_at IS
@@ -737,7 +740,7 @@ SELECT _assert_eq(
   (SELECT resolution_hint->>'promote_blocked' FROM public.unmapped_sales WHERE nft_id='nftBlocked'),
   'sales_insert_vanished_unexplained', 'the horizon-parked row keeps its original marker');
 
--- ── 2026-11-23: the gap is PER SCOPE — Top Shot 5 min, every other scope 20 ─────
+-- ── 2026-11-23: the gap is PER SCOPE — Top Shot 4 min (schedule 5), every other scope 20 ─────
 -- Top Shot's drain is 1-2 s over a 5-18 row backlog; its 20-min gap held the on-chain sale-ingest
 -- p90 at ~25 min. All Day keeps 20 (its scan is the 104k-row cost the gap exists for) — the control.
 INSERT INTO public.promote_unmapped_sales_state (scope, last_run_at)
@@ -745,12 +748,19 @@ VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', now() - interval '6 minutes')
 ON CONFLICT (scope) DO UPDATE SET last_run_at = EXCLUDED.last_run_at;
 SELECT _assert(
   (public.promote_unmapped_sales('95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid)->>'skipped') IS NULL,
-  'Top Shot drains again 6 min after its last drain (its gap is 5 min)');
+  'Top Shot drains again 6 min after its last drain (its gap is 4 min)');
 UPDATE public.promote_unmapped_sales_state SET last_run_at = now() - interval '3 minutes'
  WHERE scope = '95f28a17-224a-4025-96ad-adf8a4c63bfd';
 SELECT _assert_eq(
   (public.promote_unmapped_sales('95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid)->>'skipped'), 'recent_run',
-  'Top Shot within 5 min of its last drain is still skipped');
+  'Top Shot 3 min after of its last drain is still skipped');
+-- The BOUNDARY (11-23): a run on the next 5-min tick starts a fraction of a second LESS than 5 min after
+-- the previous one's recorded start (pg_cron jitter). It must drain, so the gap must be < the period.
+UPDATE public.promote_unmapped_sales_state SET last_run_at = now() - interval '4 minutes 59.7 seconds'
+ WHERE scope = '95f28a17-224a-4025-96ad-adf8a4c63bfd';
+SELECT _assert(
+  (public.promote_unmapped_sales('95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid)->>'skipped') IS NULL,
+  'Top Shot drains on the next 5-min tick even when it starts 0.3 s early (gap < schedule period)');
 UPDATE public.promote_unmapped_sales_state SET last_run_at = now() - interval '6 minutes'
  WHERE scope = 'dee28451-5d62-409e-a1ad-a83f763ac070';
 SELECT _assert_eq(

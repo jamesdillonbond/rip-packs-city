@@ -1515,8 +1515,9 @@ const PINS = [
     // `migration:\s*"..."`, so a comment in that gap drops the pin from the live check.
     // Re-pointed 2026-08-30: a per-scope 20-minute minimum gap between real drains.
     // Re-pointed 2026-11-23: the Top Shot scope's gap is 5 min (every other scope keeps 20).
+    // Re-pointed 2026-11-23 again: 4 min — a gap equal to the 5-min schedule skipped half the ticks on jitter.
     migration:
-      "supabase/migrations/20261123210830_audit_20261123_topshot_promote_gap_5_min.sql",
+      "supabase/migrations/20261123235536_audit_20261123_topshot_promote_gap_below_schedule.sql",
   },
   {
     // Installed for real (not stubbed) inside promote_unmapped_sales.sql: it is
