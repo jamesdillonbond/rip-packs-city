@@ -37,7 +37,7 @@ Nothing new, safe, and not-already-done was available to ship. Health is clean o
 None.
 
 ## Queued / carried (unchanged — both need access the night pass lacks)
-- **`wallet_held_pack_value` 20 s timeout on large-pack wallets** (inbox `2026-11-22T0440Z`): honest-already (failed wallet counted in `walletsFailed`, never rendered $0). The fix is a route-logic/timeout change on the pack path = OFF-LIMITS for autonomous shipping. Carried with the filer's three options. (night 2)
+- ✅ **RESOLVED (stale carry, corrected 11-23 ~4:10 AM PT by Claude Code cloud): already fixed 11-22 ~9:15 AM PT by `20261122170115` (per-wallet background cache; inbox INDEX marks it RESOLVED). Live check: 0 `wallet_held_pack_value` error groups in Vercel's 48 h window; `wallet-pack-value-cache` 22 runs / 0 failed in 24 h. Stop carrying.** Was: **`wallet_held_pack_value` 20 s timeout on large-pack wallets** (inbox `2026-11-22T0440Z`): honest-already (failed wallet counted in `walletsFailed`, never rendered $0). The fix is a route-logic/timeout change on the pack path = OFF-LIMITS for autonomous shipping. Carried with the filer's three options. (night 2)
 - **Delete the stale `ingest-topshot-challenges` suppression** (inbox `2026-11-23T0200Z`): the row's "Redundant, not broken" claim is false — the lane wrote 1,029 rows / 7 d via jobs 771/772. The MCP connector held the destructive DELETE twice; needs an attended SQL-editor session in Trevor's Chrome (steps/verify/revert in the filing). Handed to Cowork; not a cloud-night action. (night 1)
 
 ## Failed / blocked / reverted
