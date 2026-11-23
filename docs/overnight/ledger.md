@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-23 ~11:00 AM PT · ⏱ CRON (`20261123185838`) — Top Shot unmapped-sale resolve + promote go hourly → every 10 min; the sale-lag tail was them, not the indexer (Claude Code cloud; Trevor: "work through anything still unresolved")
+
+After the indexer went to every 5 min (Cowork, Trevor-approved ~8:15 AM PT), Top Shot sale-ingest lag fell p50 **15.0 → 3.7 min** but p90 only 53.8 → 46.6. The tail: every on-chain sale > 20 min late (~28 %) was ingested at **:54** — parked in `unmapped_sales` and drained only by job 476 (`:50`) + job 474 (`:54`). Now 476 `7-59/10`, 474 `9-59/10` (read back). Cost: 0.4 s / 2.1 s avg; Atlas probes stay capped (12/run, 14-day per-nft stamp). No job added. **Read next:** p90 onchain lag after ~2 h should fall toward ~15 min. **Revert:** `SELECT cron.alter_job(476, schedule := '50 * * * *'); SELECT cron.alter_job(474, schedule := '54 * * * *');`
+
 ### 2026-11-23 ~10:58 AM PT · 📄 SHIPPED (docs) — physical cards get one entry point; thread wrap-up before archive (Cowork cloud; Trevor: "update any relevant documentation before I archive this thread")
 - New `docs/physical/README.md`: what exists, why every part is OFF, the rules the code keeps, the Panini digital↔paper matching and print-run parity, verification on record, and Trevor's four open decisions. Linked from `docs/reference/README.md`. Session entry in `docs/sessions/2026-11.md`.
 - All Day pack EV v12 read at 10:37 AM PT: stale-3d 1,887 → 1,650, six ticks since the deploy each writing a full page (`nodes_price_unknown` 0, `nodes_slots_unknown` 0); the rest clears within one ~40 h cycle.
