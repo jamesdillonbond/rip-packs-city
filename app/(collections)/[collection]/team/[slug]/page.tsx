@@ -7,6 +7,7 @@
 
 import type { Metadata } from "next"
 import Link from "next/link"
+import PinnacleCharacterChecklist from "@/components/pinnacle/PinnacleCharacterChecklist"
 import { notFound } from "next/navigation"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
@@ -378,6 +379,16 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
           <TeamSqueeze collectionUrlSlug={collection} rows={squeeze} />
         </Section>
       )}
+
+      {/* ── Disney Pinnacle Franchise Checklist (2026-11-23, Pinnacle parity pass 2) ──
+          The team checklist's job on the render grain: every pin of this franchise (the
+          `franchises` trait, ™ stripped), owned vs missing for a tracked Dapper wallet, cost to
+          complete by price source. get_pinnacle_checklist('franchise', …); hides itself on a 404. */}
+      {collection === "disney-pinnacle" && isFranchise ? (
+        <Section title={`${detail.team_name} Checklist`}>
+          <PinnacleCharacterChecklist character={detail.team_name} kind="franchise" />
+        </Section>
+      ) : null}
 
       {/* ── Roster / Cast grid ───────────────────────────────────────────── */}
       <Section title={rosterLabel}>

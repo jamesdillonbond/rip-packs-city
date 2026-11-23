@@ -106,6 +106,7 @@ const PAGES: PageCheck[] = [
   // client bundle or layout shows here before any compare is run.
   { path: "/trades/compare", name: "trades · compare collections", expectText: /Compare collections/i },
   { path: "/insights/pinnacle-scarcity", name: "insights · pinnacle scarcity" },
+  { path: "/insights/pinnacle-pack-reality", name: "insights · pinnacle pack reality" },
   { path: "/insights/rookie-board", name: "insights · rookie board" },
   { path: "/insights/rookies", name: "insights · rookies" },
   { path: "/insights/serial-premiums", name: "insights · serial premiums" },

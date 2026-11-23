@@ -1004,6 +1004,7 @@ export const INSIGHT_ROUTES: readonly string[] = [
   'cross-collection',
   'set-squeeze',
   'pinnacle-scarcity',
+  'pinnacle-pack-reality',
   'allday-scarcity',
   'allday-squeeze',
   'allday-set-squeeze',

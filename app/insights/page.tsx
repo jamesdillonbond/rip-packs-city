@@ -235,6 +235,15 @@ const CARDS: Card[] = [
     available: true,
   },
   {
+    slug: "/insights/pinnacle-pack-reality",
+    eyebrow: "Live",
+    title: "Disney Pinnacle Pack Reality",
+    blurb:
+      "Did the packs pay? Every Pinnacle drop since September — retail price vs what the opened packs' pins were worth at open and are worth today.",
+    cta: "Open Pinnacle packs board",
+    available: true,
+  },
+  {
     slug: "/insights/allday-scarcity",
     eyebrow: "Live",
     title: "NFL All Day Scarcity Board",

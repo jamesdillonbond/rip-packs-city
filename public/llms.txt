@@ -40,6 +40,7 @@ Each board is a schema.org Dataset (or WebApplication for the wallet tools); mos
 - /insights/allday-pack-market — NFL All Day Pack Market. What sealed All Day packs actually resell for vs their original drop price.
 - /insights/pack-sniper — Pack Sniper. Currently-listed sealed packs ranked by live secondary ask vs drop-weighted expected pull value.
 - /insights/pack-drops — Pack Drops. Vaultopolis re-pack drops of real Top Shot moments scored against RPC FMV.
+- /insights/pinnacle-pack-reality — Disney Pinnacle Pack Reality. Retail price vs what each Pinnacle drop's opened packs pulled, at open and today.
 - /insights/pinnacle-scarcity — Disney Pinnacle Scarcity Board. Editions ranked by how far below their variant family's average mint they sit.
 - /insights/allday-scarcity — NFL All Day Scarcity Board. Editions ranked by how far below their set and tier family's average mint they sit.
 - /insights/allday-squeeze — NFL All Day Lock-Rate Squeeze Board. Ranks NFL All Day editions by effective supply (circulation minus locked minus burned).

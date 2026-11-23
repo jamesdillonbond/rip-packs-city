@@ -265,6 +265,14 @@ export const INSIGHTS_BOARDS: readonly InsightsBoard[] = [
     publicApi: true,
   },
   {
+    slug: "pinnacle-pack-reality",
+    kind: "dataset",
+    name: "Disney Pinnacle Pack Reality",
+    description:
+      "Every Disney Pinnacle pack drop since September 2026: the retail price against what its opened packs' pins were worth when opened and are worth today, from every on-chain pack open, with the share of packs worth at least the price.",
+    publicApi: true,
+  },
+  {
     slug: "pinnacle-scarcity",
     kind: "dataset",
     name: "Disney Pinnacle Scarcity Board",

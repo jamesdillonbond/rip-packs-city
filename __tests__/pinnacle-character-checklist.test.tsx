@@ -145,6 +145,34 @@ describe("PinnacleCharacterChecklist interactions", () => {
   })
 })
 
+describe("franchise kind (pass 2)", () => {
+  it("asks the route for kind=franchise and caps the first render at CHECKLIST_PAGE tiles", async () => {
+    const many = Array.from({ length: 130 }, (_, i) => ({ ...base.pins[0], render_id: `R${i}`, name: `Pin ${i}` }))
+    const f = vi.fn(async () => new Response(JSON.stringify({ ...base, total: 130, pins: many }), { status: 200 }))
+    vi.stubGlobal("fetch", f)
+    const { container, getByText } = render(<PinnacleCharacterChecklist character="Star Wars" kind="franchise" />)
+    await waitFor(() => expect(container.textContent).toContain("130 pins"))
+    expect(String((f.mock.calls[0] as unknown[])[0])).toContain("kind=franchise")
+    expect(container.querySelectorAll("a[href^='/pinnacle/moment/']").length).toBe(120)
+    fireEvent.click(getByText("Show all 130 pins"))
+    expect(container.querySelectorAll("a[href^='/pinnacle/moment/']").length).toBe(130)
+  })
+  it("the character kind sends no kind param", async () => {
+    const f = vi.fn(async () => new Response(JSON.stringify(base), { status: 200 }))
+    vi.stubGlobal("fetch", f)
+    render(<PinnacleCharacterChecklist character="Grogu" />)
+    await waitFor(() => expect(f).toHaveBeenCalled())
+    expect(String((f.mock.calls[0] as unknown[])[0])).not.toContain("kind=")
+  })
+  it("the team page mounts the franchise checklist only on Pinnacle franchises; the route refuses an unknown kind", () => {
+    const page = readFileSync(join(process.cwd(), "app/(collections)/[collection]/team/[slug]/page.tsx"), "utf8")
+    expect(page).toMatch(/collection === "disney-pinnacle" && isFranchise \? \(\s*<Section[^>]*>\s*<PinnacleCharacterChecklist character=\{detail\.team_name\} kind="franchise" \/>/)
+    const route = readFileSync(join(process.cwd(), "app/api/entity/pinnacle-character-checklist/route.ts"), "utf8")
+    expect(route).toMatch(/kind !== "character" && kind !== "franchise"[\s\S]*status: 400/)
+    expect(route).toContain('"get_pinnacle_checklist"')
+  })
+})
+
 describe("wiring", () => {
   it("the character page mounts the checklist only on Disney Pinnacle characters", () => {
     const src = readFileSync(join(process.cwd(), "app/(collections)/[collection]/player/[slug]/page.tsx"), "utf8")
@@ -152,7 +180,7 @@ describe("wiring", () => {
   })
   it("the route reads the render-grain RPC and maps a null result to 404", () => {
     const src = readFileSync(join(process.cwd(), "app/api/entity/pinnacle-character-checklist/route.ts"), "utf8")
-    expect(src).toContain('"get_pinnacle_character_checklist"')
+    expect(src).toContain('"get_pinnacle_checklist"')
     expect(src).toMatch(/if \(error\) return apiErrorResponse/)
     expect(src).toMatch(/data == null\) return NextResponse\.json\([^)]*\{ status: 404 \}/)
   })

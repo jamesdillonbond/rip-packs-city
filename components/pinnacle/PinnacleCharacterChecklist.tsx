@@ -92,11 +92,16 @@ function writeSavedWallet(v: string | null): void {
   window.dispatchEvent(new Event(WALLET_EVENT))
 }
 
+export type ChecklistKind = "character" | "franchise"
+/** Tiles rendered before "Show all" — Star Wars has ~740 pins (11-23). */
+export const CHECKLIST_PAGE = 120
+
 type LoadResult = { kind: "error" } | { kind: "none" } | { kind: "ok"; data: PinnacleChecklistData }
 
 /** One read of the checklist. A 404 ("no pins") is told apart from a failure; never throws. */
-export async function fetchChecklist(character: string, wallet: string | null): Promise<LoadResult> {
+export async function fetchChecklist(character: string, wallet: string | null, kind: ChecklistKind = "character"): Promise<LoadResult> {
   const qs = new URLSearchParams({ character })
+  if (kind !== "character") qs.set("kind", kind)
   if (wallet) qs.set("wallet", wallet)
   try {
     const res = await fetch(`/api/entity/pinnacle-character-checklist?${qs}`)
@@ -136,13 +141,15 @@ export function costSummary(d: Pick<PinnacleChecklistData,
   return { headline, parts }
 }
 
-export default function PinnacleCharacterChecklist({ character }: { character: string }) {
+/** `kind="franchise"` (2026-11-23, pass 2) lists a franchise's pins — the team checklist's job. */
+export default function PinnacleCharacterChecklist({ character, kind = "character" }: { character: string; kind?: ChecklistKind }) {
   const session = useSessionOwner()
   const pasted = useSyncExternalStore(subscribeWallet, readSavedWallet, () => null)
   const [draft, setDraft] = useState("")
   const [inputError, setInputError] = useState<string | null>(null)
   const [missingOnly, setMissingOnly] = useState(false)
   const [nonce, setNonce] = useState(0)
+  const [showAll, setShowAll] = useState(false)
   // Keyed by the request it answers: a result for another wallet/character/retry is "loading".
   const [result, setResult] = useState<{ key: string; r: LoadResult } | null>(null)
 
@@ -151,13 +158,13 @@ export default function PinnacleCharacterChecklist({ character }: { character: s
   const wallet = pasted ?? (profileWallet && profileWallet.ok ? profileWallet.wallet : null)
   const isProfileWallet = !pasted && wallet !== null
 
-  const reqKey = `${character}|${wallet ?? ""}|${nonce}`
+  const reqKey = `${kind}|${character}|${wallet ?? ""}|${nonce}`
   useEffect(() => {
     if (session.loading) return
     let live = true
-    void fetchChecklist(character, wallet).then((r) => { if (live) setResult({ key: reqKey, r }) })
+    void fetchChecklist(character, wallet, kind).then((r) => { if (live) setResult({ key: reqKey, r }) })
     return () => { live = false }
-  }, [character, wallet, reqKey, session.loading])
+  }, [character, wallet, kind, reqKey, session.loading])
   const state: { kind: "loading" } | LoadResult = result && result.key === reqKey ? result.r : { kind: "loading" }
 
   const onTrack = () => {
@@ -245,7 +252,7 @@ export default function PinnacleCharacterChecklist({ character }: { character: s
             gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
           }}
         >
-          {pins.map((p) => {
+          {(showAll ? pins : pins.slice(0, CHECKLIST_PAGE)).map((p) => {
             const owned = (p.owned_count ?? 0) > 0
             const dim = tracking && !owned
             return (
@@ -283,6 +290,11 @@ export default function PinnacleCharacterChecklist({ character }: { character: s
             )
           })}
         </div>
+      ) : null}
+      {data && !showAll && pins.length > CHECKLIST_PAGE ? (
+        <button type="button" className="rpc-btn-ghost" onClick={() => setShowAll(true)} style={{ marginTop: 10, fontSize: 12 }}>
+          Show all {fmtCount(pins.length)} pins
+        </button>
       ) : null}
     </div>
   )

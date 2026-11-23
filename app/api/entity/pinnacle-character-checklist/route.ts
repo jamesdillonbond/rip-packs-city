@@ -5,6 +5,8 @@
 // components/pinnacle/PinnacleCharacterChecklist.tsx on /disney-pinnacle/character/<slug>.
 //
 //   GET /api/entity/pinnacle-character-checklist?character=<name>&wallet=<0x… optional>
+//   …&kind=franchise → the same checklist for a FRANCHISE (franchises trait, ™ stripped; 20261123214500).
+//   An unknown kind is a 400, never the character checklist under another subject.
 //
 // Why not /api/entity/team-checklist?entity=player: get_player_checklist reads the shared `editions`
 // table and returns [] for Pinnacle by design — a pin is a pinnacle_catalog row (render_id), and a
@@ -26,6 +28,11 @@ export const dynamic = "force-dynamic"
 export async function GET(req: Request) {
   const url = new URL(req.url)
   const character = (url.searchParams.get("character") ?? "").trim()
+  const kindParam = url.searchParams.get("kind")
+  const kind = kindParam == null || kindParam === "" ? "character" : kindParam
+  if (kind !== "character" && kind !== "franchise") {
+    return NextResponse.json({ error: "unknown kind" }, { status: 400 })
+  }
   if (!character || character.length > 120) {
     return NextResponse.json({ error: "missing or invalid character" }, { status: 400 })
   }
@@ -41,11 +48,11 @@ export async function GET(req: Request) {
     rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }>
   }
   const { data, error } = await boundedRead(
-    supa.rpc("get_pinnacle_character_checklist", { p_character: character, p_wallet: parsed.wallet }),
+    supa.rpc("get_pinnacle_checklist", { p_kind: kind, p_name: character, p_wallet: parsed.wallet }),
     "api/entity/pinnacle-character-checklist",
   )
   if (error) return apiErrorResponse(error, "api/entity/pinnacle-character-checklist")
-  if (data == null) return NextResponse.json({ error: "no pins for this character" }, { status: 404 })
+  if (data == null) return NextResponse.json({ error: `no pins for this ${kind}` }, { status: 404 })
   return NextResponse.json(data, {
     headers: { "Cache-Control": parsed.wallet ? "private, no-store" : "public, s-maxage=300, stale-while-revalidate=600" },
   })
