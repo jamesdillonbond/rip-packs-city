@@ -12,6 +12,9 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~5:56 PM PT · `run_panini_hourly_lanes()` fixed: a procedure with a SET clause cannot COMMIT — migration `20261123015226`
+- The 5:49 PM PT first run of job 914 (`20261123013202`) failed `invalid transaction termination`: I gave the procedure `SET search_path`, and Postgres forbids transaction control in a procedure with a SET clause. That hour's run of both Panini lanes was missed; it rolled back whole and neither logged a run. Re-created without the clause (every object is schema-qualified). **Verified:** job 914 moved to :54 once, and the 5:54 run succeeded (56 s, `CALL`). `panini-edition-supply-obs` ok (332 rows) and `panini-pack-ev-tier-shadow` ok (369 packs, 0 errors, same as its own 4:49 run). Schedule restored to `49 * * * *`. Revert: see `20261123013202`.
+
 ### 2026-11-22 ~5:58 PM PT · A1-WORKER-PASSTHROUGH-CLEANUP closed: `topshot-proxy` worker drops its two dead browser-fingerprinted routes
 - `topshot-browser` and `topshot-marketplace` (added 06-15, verified ineffective the same week, carried as "harmless passthroughs" for five months) have no caller in the repo. Removed from `UPSTREAM_MAP` and `ROUTE_HEADERS`; a stray call falls through to the plain public API with the bare UA (test added; it fails on the old worker). Deployed by the `workers-deploy` workflow on push (paths `workers/**`), not by hand. Revert: `git revert` the commit (`worker: drop topshot-proxy's dead browser routes`); the workflow redeploys.
 
