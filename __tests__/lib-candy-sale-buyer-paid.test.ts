@@ -101,6 +101,27 @@ describe("runCandyBuyerPaid", () => {
     expect(r.error).toMatch(/Transaction version \(1\) is not supported/)
   })
 
+  // 2026-11-22 (review of d182d2ba2): publicnode errors on a signature it has no history for, then the archive
+  // node answers a clean null. That is "not found" (retried later), never an RPC error that fails every run.
+  it("an error from the first node followed by a clean null from the archive node is not found, not an RPC error", async () => {
+    const applied: any[] = []
+    const fetchImpl = (async (url: string) => url === "first"
+      ? new Response(JSON.stringify({ error: { code: -32011, message: "Transaction history is not available from this node" } }), { status: 200 })
+      : new Response(JSON.stringify({ result: null }), { status: 200 })) as any
+    const r = await runCandyBuyerPaid(mkDb([SKENES], applied), { budgetMs: 60_000, pauseMs: 0, retryDelayMs: 0, fetchImpl, urls: ["first", "archive"] })
+    expect(r).toMatchObject({ ok: true, not_found: 1, rpc_errors: 0 })
+    expect(applied).toEqual([])
+  })
+
+  it("a clean null from the first node followed by an archive-node error is still an RPC error", async () => {
+    const applied: any[] = []
+    const fetchImpl = (async (url: string) => url === "first"
+      ? new Response(JSON.stringify({ result: null }), { status: 200 })
+      : new Response(JSON.stringify({ error: { code: -32015, message: "Transaction version (2) is not supported" } }), { status: 200 })) as any
+    const r = await runCandyBuyerPaid(mkDb([SKENES], applied), { budgetMs: 60_000, pauseMs: 0, retryDelayMs: 0, fetchImpl, urls: ["first", "archive"] })
+    expect(r).toMatchObject({ ok: false, rpc_errors: 1, not_found: 0 })
+  })
+
   it("a JSON-RPC rate-limit error is still a refusal", async () => {
     const applied: any[] = []
     const r = await runCandyBuyerPaid(mkDb([SKENES], applied), { budgetMs: 60_000, pauseMs: 0, retryDelayMs: 0,

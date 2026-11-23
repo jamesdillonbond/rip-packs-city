@@ -152,6 +152,11 @@ export async function fetchTx(sig: string, doFetch: FetchFn, urls: string[] = RP
       continue
     }
     if (j?.result) return j.result
+    // 2026-11-22: a clean "no such transaction" from a LATER node supersedes an earlier node's error.
+    // publicnode (first) holds ~1.5 days of history and can error on an old signature; mainnet-beta (the
+    // archive) answering null is the verdict. Without this, that pair read as an RPC error on every run,
+    // and the same target came back each run, so the lane would read not-ok forever.
+    if (j && !j.error) rpcError = null
   }
   if (limited) return "rate_limited"
   return rpcError ? { rpcError } : null
