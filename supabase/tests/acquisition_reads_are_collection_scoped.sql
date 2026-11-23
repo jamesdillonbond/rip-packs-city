@@ -16,7 +16,8 @@
 --
 -- The function DDL below is VERBATIM from
 -- supabase/migrations/20261101145940_audit_20261031_get_wallet_acquisition_data_scoped.sql (a) and
--- supabase/migrations/20261101145804_audit_20261031_acquisition_writers_and_export_are_collection_scoped.sql (b, c);
+-- supabase/migrations/20261101145804_audit_20261031_acquisition_writers_and_export_are_collection_scoped.sql (c) and
+-- supabase/migrations/20261123051216_audit_20261122_profile_breakdown_and_export_read_solana_wallets.sql (b, re-pinned 2026-11-22);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -33,6 +34,8 @@ CREATE TABLE public.editions (
   set_name text, series integer, tier text, circulation_count integer
 );
 CREATE TABLE public.fmv_snapshots (edition_id uuid, fmv_usd numeric, computed_at timestamptz);
+-- 2026-11-22: export_wallet_csv reads the latest price from edition_fmv_current (20261123051216).
+CREATE TABLE public.edition_fmv_current (edition_id uuid PRIMARY KEY, fmv_usd numeric, confidence text);
 CREATE TABLE public.moment_acquisitions (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY, nft_id text, wallet text, buy_price numeric,
   acquired_date timestamptz, acquired_type integer, fmv_at_acquisition numeric,
@@ -87,11 +90,6 @@ CREATE OR REPLACE FUNCTION public.export_wallet_csv(p_wallet text)
  STABLE
  SET search_path TO 'public', 'pg_temp'
 AS $function$
-  with latest_fmv as (
-    select distinct on (edition_id) edition_id, fmv_usd
-    from fmv_snapshots
-    order by edition_id, computed_at desc
-  )
   select
     coalesce(e.player_name, w.player_name)               as player_name,
     coalesce(e.set_name, w.set_name)                     as set_name,
@@ -107,7 +105,9 @@ AS $function$
   left join editions e
     on e.external_id = w.edition_key
    and e.collection_id = w.collection_id
-  left join latest_fmv lf on lf.edition_id = e.id
+  -- 2026-11-22: the latest price per edition is edition_fmv_current (database.md). The old CTE ran
+  -- DISTINCT ON over every fmv_snapshots row (~3.2M) on each call to then join a handful of editions.
+  left join edition_fmv_current lf on lf.edition_id = e.id
   left join lateral (
     select ma2.buy_price, ma2.acquisition_method
     from moment_acquisitions ma2
@@ -117,7 +117,8 @@ AS $function$
     order by ma2.created_at desc
     limit 1
   ) ma on true
-  where w.wallet_address = lower(p_wallet);
+  -- 2026-11-22: lower() only for a hex (0x) address; a Solana address is case-sensitive.
+  where w.wallet_address = CASE WHEN p_wallet ~* '^0x' THEN lower(p_wallet) ELSE p_wallet END;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.backfill_cost_basis_from_ids(p_wallet text, p_nft_ids text[], p_collection_id uuid DEFAULT '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid)
@@ -194,6 +195,13 @@ SELECT _assert_eq(
   '65', 'NULL collection: the wallet-wide read (cost-basis with no ?collection)');
 
 -- (b) export_wallet_csv: exactly one row per held moment, own-collection price.
+-- (b2) 2026-11-22: a Solana (Candy) wallet is base58 and case-sensitive — lower() made it match nothing.
+INSERT INTO public.wallet_moments_cache (wallet_address, collection_id, moment_id, player_name) VALUES
+  ('GrWxSoLaNaKey', '209ade70-32c5-4470-bc7c-4793d660f713'::uuid, 'm1', 'Candy Player');
+SELECT _assert_eq((SELECT count(*)::text FROM public.export_wallet_csv('GrWxSoLaNaKey')), '1',
+  'a mixed-case Solana wallet is matched as given, never lowercased');
+SELECT _assert_eq((SELECT count(*)::text FROM public.export_wallet_csv('0XW')), '2',
+  'a hex wallet is still matched case-insensitively');
 SELECT _assert_eq((SELECT count(*)::text FROM public.export_wallet_csv('0xw')), '2',
   'one CSV row per held moment, never one per acquisition row');
 SELECT _assert_eq(

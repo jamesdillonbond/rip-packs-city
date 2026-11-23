@@ -2952,7 +2952,8 @@ const PINS = [
   {
     fn: "export_wallet_csv",
     test: "supabase/tests/acquisition_reads_are_collection_scoped.sql",
-    migration: "supabase/migrations/20261101145804_audit_20261031_acquisition_writers_and_export_are_collection_scoped.sql",
+    // 2026-11-22: re-pinned — edition_fmv_current + a Solana wallet is not lowercased.
+    migration: "supabase/migrations/20261123051216_audit_20261122_profile_breakdown_and_export_read_solana_wallets.sql",
   },
   {
     fn: "backfill_cost_basis_from_ids",
