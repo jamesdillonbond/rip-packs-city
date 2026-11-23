@@ -5,10 +5,17 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 
 describe("getPaperListings", () => {
   const saved = { ...process.env }
+  // ONE next/cache mock per test, steered by this variable. A second vi.doMock of the same id
+  // inside a test raced the beforeEach one (CI 11-23: the pass-through won, the real loader ran,
+  // and "never serves a cached result older than 6 h" read 'error' at 5 h).
+  let cacheHit: (() => Promise<unknown>) | null = null
   beforeEach(() => {
     vi.resetModules()
-    // Pass-through cache: each call is a miss, which is the path under test.
-    vi.doMock("next/cache", () => ({ unstable_cache: (fn: (...a: unknown[]) => unknown) => fn }))
+    cacheHit = null
+    // Pass-through cache by default: each call is a miss, which is the path under test.
+    vi.doMock("next/cache", () => ({
+      unstable_cache: (fn: (...a: unknown[]) => unknown) => (...a: unknown[]) => (cacheHit ? cacheHit() : fn(...a)),
+    }))
   })
   afterEach(() => {
     process.env = { ...saved }
@@ -46,7 +53,7 @@ describe("getPaperListings", () => {
     const at = Date.parse("2026-11-23T00:00:00Z")
     let cached: Record<string, unknown> = { status: "ok", listings: [], affiliate: false, fetchedAt: new Date(at).toISOString() }
     // A cache hit: what stale-while-revalidate hands back, whatever its age.
-    vi.doMock("next/cache", () => ({ unstable_cache: () => async () => cached }))
+    cacheHit = async () => cached
     vi.doMock("@/lib/abuse/anon-rate", () => ({ bumpAnonRates: vi.fn() }))
     const { getPaperListings } = await import("@/lib/physical/ebay-listings-cached")
     const H = 3_600_000
