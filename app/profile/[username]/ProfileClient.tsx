@@ -360,6 +360,11 @@ export default function ProfileClient(props: {
   const momentsFmv = wallets.reduce(function(sum, w) { return sum + (w.cached_fmv ?? 0); }, 0);
   const portfolioTotal = walletTotalUsd(momentsFmv, 0, heldPacks, heldPacksFailed);
   const totalAssets = totalMoments + (!heldPacksFailed && heldPacks ? heldPacks.held : 0);
+  // 2026-11-22: both figures above leave sealed packs out while their read is in flight or failed. The page
+  // says so (walletTotalCaption); a tweet has no room for that note, so it carries the totals only once the
+  // pack read has landed — never a Moments-only number presented as the whole portfolio.
+  const packsSettledOk = !heldPacksFailed && heldPacks != null;
+  const assetsNote = walletTotalCaption(heldPacks, heldPacksFailed, wallets.length > 0);
   const rpcScore = wallets.length > 0 ? wallets[0]?.cached_rpc_score ?? null : null;
   const isOwnProfile =
     !!myUsername && !!username && myUsername.toLowerCase() === username.toLowerCase();
@@ -573,7 +578,7 @@ export default function ProfileClient(props: {
                 ? "Post your trophy case on X or Discord."
                 : "Post your portfolio on X or Discord — or pin a trophy first from your dashboard."}
             </div>
-            <ShareProfileButtons username={username} fmv={portfolioTotal} moments={totalAssets} trophyCount={filledCount} referrerId={myUserId} cardToken={pinsToken(slabs.filter(Boolean) as { slot?: unknown; moment_id?: unknown }[])} />
+            <ShareProfileButtons username={username} fmv={packsSettledOk ? portfolioTotal : null} moments={packsSettledOk ? totalAssets : null} trophyCount={filledCount} referrerId={myUserId} cardToken={pinsToken(slabs.filter(Boolean) as { slot?: unknown; moment_id?: unknown }[])} />
           </section>
         )}
 
@@ -616,6 +621,11 @@ export default function ProfileClient(props: {
             <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 24, color: "var(--rpc-text-primary)", lineHeight: 1, margin: "8px 0 4px" }}>
               {totalAssets > 0 ? totalAssets.toLocaleString("en-US") : "—"}
             </div>
+            {assetsNote && (
+              <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.08em", marginBottom: 4 }}>
+                {assetsNote}
+              </div>
+            )}
             {/* ⚠ `walletCount` is DISTINCT ADDRESSES from the server, NOT
                 `wallets.length`. saved_wallets is keyed per (wallet_addr,
                 collection_id), so one pinned address becomes one row per

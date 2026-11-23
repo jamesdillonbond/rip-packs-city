@@ -921,6 +921,19 @@ function ProfilePageInner() {
   // `!statsSettled` alone: with no wallets saved there is nothing to load and
   // the tiles must fall through to `empty`, not to "Loading…".
   const statsLoading = !statsSettled && wallets.length > 0 && !walletsFailed;
+  // 2026-11-22: restored after 7fa4dfc84 dropped it with the breakdown captions. The oldest cache stamp
+  // across every wallet that answered from cache: the numbers are accurate but late (measured 2026-09-12,
+  // within ~0.1 % of wallet_moments_cache), so the honest presentation is the figure plus its age. Under
+  // 2 h the stamp is noise and is not shown; the reconciler targets 6 h. An age is not a breakdown.
+  const cacheAgeHours = useMemo(() => {
+    const stamps = Object.values(statsMeta)
+      .filter((m) => m.source === "cache" && m.cacheUpdatedAt)
+      .map((m) => new Date(m.cacheUpdatedAt as string).getTime())
+      .filter((t) => Number.isFinite(t));
+    if (stamps.length === 0) return null;
+    const hrs = (Date.now() - Math.min(...stamps)) / 3_600_000;
+    return hrs >= 2 ? hrs : null;
+  }, [statsMeta]);
   // The just-saved-wallet window: the indexing poll is live, at least one wallet
   // is saved, and no collection has counted a Moment yet. Not a failure, not an
   // answer — the tiles render "Indexing…" rather than a zero (2026-09-04).
@@ -1098,10 +1111,15 @@ function ProfilePageInner() {
         <section data-tour-anchor="portfolio-stats" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 10 }}>
           <StatTile
             /* 2026-11-22 (Trevor): "Total Assets" — Moments and cards (every collection's
-               held assets, Panini included) plus sealed packs. */
+               held assets) plus sealed packs. ⚠ NOT Panini: get_wallet_collection_stats excludes it (#64 —
+               Panini cards are owned by username, not by a saved address), so a Panini collector's cards
+               are in neither this count nor Portfolio FMV. */
             label="Total Assets"
             value={(totalMoments + (!heldPacksFailed && heldPacks ? heldPacks.held : 0)).toLocaleString("en-US")}
             color="var(--rpc-text-primary)"
+            /* 2026-11-22: packs are left out of this count while their read is in flight or failed — say so
+               here too, not only under Portfolio FMV. */
+            caption={walletTotalCaption(heldPacks, heldPacksFailed, wallets.length > 0) ?? undefined}
             unavailable={statsIncomplete}
             loading={statsLoading}
             pending={statsPending}
@@ -1114,7 +1132,10 @@ function ProfilePageInner() {
                capped low ask, as ONE figure. No breakdown caption. */
             value={fmtUsd(walletTotalUsd(momentsFmv, 0, heldPacks, heldPacksFailed))}
             color="var(--rpc-success)"
-            caption={walletTotalCaption(heldPacks, heldPacksFailed, wallets.length > 0) ?? undefined}
+            caption={[
+              walletTotalCaption(heldPacks, heldPacksFailed, wallets.length > 0),
+              cacheAgeHours != null ? `as of ${Math.round(cacheAgeHours)}h ago` : null,
+            ].filter(Boolean).join(" · ") || undefined}
             unavailable={statsIncomplete}
             loading={statsLoading}
             pending={statsPending}
