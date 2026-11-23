@@ -14,6 +14,7 @@ Trevor: "work autonomously for the next 12 hours … find things to work on. Fix
 - Top Shot gate (`fmv_accuracy_weekly`, HIGH / MEDIUM within ±25 %): wk 10-26 74.3 / 69.1 · 11-02 75.5 / 69.7 · **11-09 80.1 / 74.1**. That is 1 qualifying week so far; the 11-16 row lands Monday.
 
 ## Shipped (newest first)
+-6. **Physical-cards prototype review** (`4df3092c5`; the feature is off by default). No high-severity security issue. Fixed the clearly-safe one: an all-unpriced portfolio totalled $0 and now totals null. The other 8 latent findings are in `docs/physical/review-2026-11-22-prototype.md` for that thread; the top one is that eBay listings can be served past their 6 h licence window.
 -5. **Pack-rip backfill queue refresh (job 850) writes only changed rows** (`20261123060419`, pin E1–E3). It rewrote all ~38.8k rows every 2 h to record ~30 changes (876k buffers/call). Verified on its first run at 10:14 PM PT: 26.6 s (avg 37 s), 733 rows written. `rows_written` now means rows written.
 -4. **Tooling:** the pre-push preflight (`--quick`) now runs the ~50 migration guards whenever a migration changed (`36c64056e`). Before, a migration push was only parsed locally, which is how the next item reached `main` with a stale pin.
 -3. **Guard:** a new migration may not match a wallet through a bare `lower(p_wallet)` (`e24de4758`, forward-only, inline escape `-- solana-lower: flow-only`). ⚠ **`main` CI was red ~9:15 → ~9:25 PM PT** (`4582e1cfa`…`5b9a8dfe1`): `export_wallet_csv` was pinned in `acquisition_reads_are_collection_scoped.sql` and I had not re-pinned it. Fixed in `9bee6e27c` (green), with a Solana assertion the old body fails.
@@ -39,6 +40,10 @@ Trevor: "work autonomously for the next 12 hours … find things to work on. Fix
 - **Other wallet functions:** `get_wallet_moments_with_fmv` is already `force_custom_plan` and Solana-aware. `get_top_movers` takes 3.1 s / 78k buffers on the 47k-moment wallet after its 11-20 rework, inside its 24 s budget. `get_fmv_for_editions` averages 690 ms on 500-id chunks. No change to any of them.
 - **`/api/analytics/sales/leaderboard`:** 5 statement timeouts in 4 days; 1.4 s mean, ~30 s tail on long windows. It shows an honest error; the lever is a precompute, not tonight.
 - **Pinnacle sniper feed** (errored 11-18/19 on 16–31 h old listings): healthy, refreshed 4.3 h ago against a 13 h limit.
+- **Whole-set rewrite scan** (`rows_written ≈ rows_found`, large, every run): besides job 850 (fixed), `allday-lock-refresh` stamps every row of a wallet by design (the per-row 7-day lock promise, already cut to once a wallet per day on 10-04), and `allday-storefront-reconcile` re-confirms every live listing (`verified_at` gates the ask lanes). MV refreshers count their view. No change.
+- **`refresh_wmc_fmv_changed` timeouts** (8 of 583 in 48 h) come from the 5-minute route's call under PostgREST's 30 s cap. pg_cron job 303 drains the same cursor (median 0.4 s) and picks up after a killed call. No change.
+- **#258 watch:** still empty (10:45 PM PT).
+- **Second sweep:** 250 random pages at 2 workers, 0 issues; 40 OG images, 39 image/200 and 1 Pinnacle redirect to Disney's asset host, which this sandbox cannot reach.
 - **Live-page sweep** (335 URLs, sitemap 0 + 150 random): 0 NaN/undefined/[object Object]. The only failures were 3 profile collection-breakdown timeouts under my 6-way concurrency.
 - **Top Shot sales ingest lag:** on-chain p50 15.7 min, p90 53 min. Driven by cron-job.org every 20 min (:03/:23/:43) plus the :50 GHA backstop.
 
