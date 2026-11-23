@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~6:20 PM PT · 🔧 SHIPPED (code) — panini-ingest retires a sku-keyed pack row once its pack's numeric-id row is WRITTEN in the same batch; supersedes the pending manual fold of `850176BC-NWSL-PZM-BLK-1` (approval prompt timed out twice) (Claude Code cloud; Trevor: "Keep going and do what you can")
+- The id-map read now also takes `raw->>pack_id`; after a SUCCESSFUL pack upsert, any non-numeric row whose raw pack id is one of the ids just written is deleted. Never on a failed upsert (the old row is then the only copy). `extra.packs_retired` counts rows actually deleted, paired with `packs_retire_error`; a failed retire fails the run.
+- Blast radius today: exactly one row — the only non-numeric id in `panini_pack_state` (re-derived 11-22: 377 of 378 other rows have `raw.pack_id = id`). It goes at the next panini-ingest run that captures NWSL; the merge from `bed9a23e6` lands its floor/remaining on `1065` in the same write.
+- Tests: 4 new route cases (retire, no retire on failed upsert, no retire when the pack wasn't written, failed retire fails the run), each guard proven by a planted defect.
+- Revert: `git revert` this commit by message ("retire a sku-keyed pack row"). A retired row can be re-inserted from `panini_pack_state_history`.
+
 ### 2026-11-22 ~5:56 PM PT · `run_panini_hourly_lanes()` fixed: a procedure with a SET clause cannot COMMIT — migration `20261123015226`
 - The 5:49 PM PT first run of job 914 (`20261123013202`) failed `invalid transaction termination`: I gave the procedure `SET search_path`, and Postgres forbids transaction control in a procedure with a SET clause. That hour's run of both Panini lanes was missed; it rolled back whole and neither logged a run. Re-created without the clause (every object is schema-qualified). **Verified:** job 914 moved to :54 once, and the 5:54 run succeeded (56 s, `CALL`). `panini-edition-supply-obs` ok (332 rows) and `panini-pack-ev-tier-shadow` ok (369 packs, 0 errors, same as its own 4:49 run). Schedule restored to `49 * * * *`. Revert: see `20261123013202`.
 
