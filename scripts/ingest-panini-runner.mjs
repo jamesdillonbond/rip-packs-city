@@ -427,7 +427,12 @@ async function main() {
     if (sid === null) return;
     const sport = applied && !sameSport(applied, currentSport) ? applied : currentSport;
     const k = `${sid}|${sport ?? "?"}`;
-    sightings.set(k, (sightings.get(k) || 0) + 1);
+    // DISTINCT cards, not grid rows (2026-11-23): the infinite-scroll grid serves one card more than
+    // once (NWSL sets read ~3 sightings per catalogued card on all three products at once), so a raw
+    // count made the focus scan's "catalogue < share x grid" test true forever on a caught-up drop.
+    let seen = sightings.get(k);
+    if (!seen) sightings.set(k, (seen = new Set()));
+    seen.add(psku);
   }
   // Pack links harvested from every page the walk visits (discovery -> panini_pack_pages).
   const harvestedPackUrls = new Set();
@@ -976,7 +981,8 @@ async function main() {
 
   // Registry sightings: one row per setId, attributed to the sport whose grid served it most.
   const bestBySet = new Map();
-  for (const [k, n] of sightings) {
+  for (const [k, cards] of sightings) {
+    const n = cards.size;
     const [sid, sp] = k.split("|");
     const prev = bestBySet.get(sid);
     if (!prev || n > prev.grid_items) bestBySet.set(sid, { set_id: Number(sid), sport: sp, grid_items: n, sample: sampleBySet.get(Number(sid)) ?? null });

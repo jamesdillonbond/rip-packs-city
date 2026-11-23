@@ -119,11 +119,15 @@ const PANINI_BOOTSTRAP_YIELD_DAYS = 6.5;
 // runner then starts a SECOND process (scripts/panini-focus-child.mjs) that asks `?focus=1` and walks
 // ONLY those products, in parallel, so nothing comes out of the scheduled walk. Unlike the bootstrap
 // it does not yield to the aged list — it costs that list nothing. It ends by itself once the
-// catalogue reaches the share. 0.35: measured on NWSL 11-22, 1,025 distinct editions behind 2,370
-// grid listings (~0.43), so focus stops when most of a product is catalogued and the normal
-// interleave takes the tail.
+// catalogue reaches the share.
+// ⛔ 2026-11-23: the share was 0.35 against a RAW grid count (one row per sighting, ~3 per card), so
+// it measured listing growth, not catch-up: NWSL's catalogue plateaued at 950 while its grid rows
+// grew 2,370 -> 2,794, the ratio fell to 0.34 and focus re-armed on a caught-up drop for the rest of
+// its 7 days. The runner now reports DISTINCT cards per product (`grid_items` = distinct pskus), so
+// the share is a real catch-up ratio: focus runs until the catalogue holds 90% of the cards the grid
+// served. The catalogue also holds unlisted cards, so a caught-up product reads >= 1.
 const PANINI_FOCUS_DAYS = 7;
-const PANINI_FOCUS_SHARE = 0.35;
+const PANINI_FOCUS_SHARE = 0.9;
 // AGED PRIORITY (2026-10-03): catalogue editions not walked for this long are served in
 // `priority_pskus` (stalest first, at most PANINI_AGED_PRIORITY_CAP per run). See the GET below.
 const PANINI_AGED_PRIORITY_DAYS = 5;

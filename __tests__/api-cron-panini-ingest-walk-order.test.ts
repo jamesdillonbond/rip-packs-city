@@ -280,9 +280,19 @@ describe("GET /api/cron/panini-ingest — multi-product walk scope", () => {
     expect(j.pskus.length).toBe(2)
   })
 
-  it("no focus once the catalogue reaches 35% of the grid, off the grid, or after 7 days — and ?focus=1 then names nothing", async () => {
+  it("focus stays on below 90% of the distinct cards the grid served (2 of 3 = 67%)", async () => {
+    st.total = 6
+    st.setIdAt = (i: number) => (i < 2 ? 2478 : 2332)
+    st.products = { data: [
+      { set_id: 2332, name: "WC", walk_cards: true },
+      { set_id: 2478, name: "NWSL", walk_cards: true, last_grid_items: 3, last_grid_sport: "Womens Soccer", walk_cards_since: hoursAgo(8) },
+    ], error: null }
+    expect((await (await GET(req())).json()).focus_set_ids).toEqual([2478])
+  })
+
+  it("no focus once the catalogue reaches 90% of the distinct cards the grid served, off the grid, or after 7 days — and ?focus=1 then names nothing", async () => {
     for (const [p2478, setIdAt] of [
-      [{ last_grid_items: 5, walk_cards_since: hoursAgo(8) }, (i: number) => (i < 2 ? 2478 : 2332)],   // 2 rows >= 0.35 x 5
+      [{ last_grid_items: 2, walk_cards_since: hoursAgo(8) }, (i: number) => (i < 2 ? 2478 : 2332)],   // 2 rows >= 0.9 x 2 distinct cards
       [{ last_grid_items: 0, walk_cards_since: hoursAgo(8) }, () => 2332],                              // not on the grid
       [{ last_grid_items: 2068, walk_cards_since: hoursAgo(24 * 8) }, () => 2332],                      // admitted > 7 days ago
       [{ last_grid_items: 2068, walk_cards_since: null }, () => 2332],                                  // no admission stamp
