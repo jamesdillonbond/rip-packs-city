@@ -1099,7 +1099,7 @@ export default async function EditionPage(
           featured-snippet eligible; gated to a real FMV. (2026-06-29 SEO) */}
       {fmvAvailable && !marketClosed && (
         <p className="rpc-mono" style={{ margin: "12px 2px 2px", fontSize: 13, lineHeight: 1.65, color: "var(--rpc-text-secondary)" }}>
-          <strong style={{ color: "var(--rpc-text-primary)", fontWeight: 700 }}>{editionTitle}{detail.set_name ? ` — ${detail.set_name}` : ""}{parallelLabel ? ` · ${parallelLabel}` : ""}</strong>{" "}
+          <strong style={{ color: "var(--rpc-text-primary)", fontWeight: 700 }}>{editionTitle}{detail.set_name && detail.set_name.trim().toLowerCase() !== editionTitle.trim().toLowerCase() ? ` — ${detail.set_name}` : ""}{parallelLabel ? ` · ${parallelLabel}` : ""}</strong>{" "}
           is worth ~{fmtUsd(fmv?.fmv_usd ?? null)} (FMV) on {collectionDisplayName(collection)}
           {/* 2026-10-28: an ask-derived FMV's floor_price_usd IS the ask it came from (the engine writes the ask there), so it
               is named an ask, never a sale: Toni Kukoc's Illustrated /4 read "a recent-sale low of $750" with no sale ever.

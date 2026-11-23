@@ -66,9 +66,28 @@ export function editionParallelName(p: Payload, collectionUrlSlug: string): stri
   return parallelLabelFromBadges(badges)
 }
 
-/** "<set> · <parallel> · <play> · <date> · /<circ>", each part only when present. */
+/**
+ * The subject a page leads with: the player, else the team, else the edition's own name. The same
+ * fallback order as lib/seo.ts and the edition page's hero.
+ */
+export function editionSubject(p: Payload): string | null {
+  return str(p, "player_name") ?? str(p, "team_name") ?? str(p, "name")
+}
+
+/**
+ * "<set> · <parallel> · <play> · <date> · /<circ>", each part only when present.
+ *
+ * 2026-11-23: the SET is dropped when the page's own subject already IS the set. A no-player, no-team
+ * edition whose name is its set name (356 live pages: Candy "2022 Opening Day Pin" ×320, All Day
+ * "NFL Draft" draft-pick vouchers ×36) read "NFL Draft — NFL Draft · Draft Pick …" in its <title>,
+ * meta description and JSON-LD. The result can now be EMPTY (Candy has no play/circulation parts),
+ * so callers join it with `subjectWithContext`, never a bare template.
+ */
 export function editionTitleContext(p: Payload, collectionUrlSlug: string, setFallback = "Edition"): string {
-  const parts: (string | null)[] = [str(p, "set_name") ?? setFallback, editionParallelName(p, collectionUrlSlug)]
+  const set = str(p, "set_name") ?? setFallback
+  const subject = editionSubject(p)
+  const setRepeatsSubject = !!subject && subject.trim().toLowerCase() === set.trim().toLowerCase()
+  const parts: (string | null)[] = [setRepeatsSubject ? null : set, editionParallelName(p, collectionUrlSlug)]
   if (PLAY_COLLECTIONS.has(collectionUrlSlug)) {
     parts.push(str(p, "play_category") ?? str(p, "play_type"), formatGameDate(p.game_date))
   }
@@ -94,4 +113,9 @@ export function editionPlayLabel(p: Payload, collectionUrlSlug: string): string 
   const play = isTeamMoment ? null : (str(p, "play_category") ?? str(p, "play_type"))
   const parts = [play, formatGameDate(p.game_date)].filter((x): x is string => !!x)
   return parts.length ? parts.join(" · ") : null
+}
+
+/** "<subject><sep><context>", or the subject alone when the context is empty. */
+export function subjectWithContext(subject: string, context: string, sep = " — "): string {
+  return context ? `${subject}${sep}${context}` : subject
 }

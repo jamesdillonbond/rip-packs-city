@@ -7,7 +7,7 @@ import { isMarketClosed, closedMarket, formatClosedOn } from "@/lib/market-close
 import { COLLECTIONS, collectionHasPage, getCollection, type CollectionPage } from "@/lib/collections"
 import { ASK_STALE_HOURS } from "@/lib/market/ask-freshness"
 import { MAX_ASK_AGE_HOURS_CORROBORATION } from "@/lib/fmv-confidence"
-import { editionTitleContext } from "@/lib/edition-title-context"
+import { editionTitleContext, subjectWithContext } from "@/lib/edition-title-context"
 import { editionDescriptionSnippet } from "@/lib/edition/description"
 import { productOrCreativeWork } from "@/lib/jsonld-product"
 import { getInsightsBoard, type InsightsBoard } from "@/lib/insights/board-registry"
@@ -1092,7 +1092,7 @@ export function editionPageMetadata(payload: Payload, collectionUrlSlug: string,
   // titleTieBreak (lib/edition/title-twins.ts): the fewest words separating this
   // edition from siblings that would otherwise render the identical title.
   const baseContext = editionTitleContext(payload, collectionUrlSlug, setName)
-  const context = titleTieBreak ? `${baseContext} · ${titleTieBreak}` : baseContext
+  const context = [baseContext, titleTieBreak].filter((x) => !!x).join(" · ")
   // ⛔ NO DOLLAR FIGURE IN THE TITLE (2026-09-06, Search Console read §5).
   // The title used to interpolate the live FMV — "… · Value $1.11 | …" — which
   // is wrong on two counts. (1) It re-writes the <title> of ~20K entity URLs on
@@ -1110,10 +1110,10 @@ export function editionPageMetadata(payload: Payload, collectionUrlSlug: string,
   // market. See lib/market-closed.ts and the honesty pins.
   const cm = closedMarket(collectionUrlSlug)
   const title = cm
-    ? `${subject} — ${context} · Value History & Sales (${cm.venue} market closed) | ${collectionLabel} | Rip Packs City`
+    ? `${subjectWithContext(subject, context)} · Value History & Sales (${cm.venue} market closed) | ${collectionLabel} | Rip Packs City`
     : collectionUrlSlug === "panini-blockchain"
-      ? `${subject} — ${context} · Value & Asks | ${collectionLabel} | Rip Packs City`
-      : `${subject} — ${context} · Value, Floor & Sales | ${collectionLabel} | Rip Packs City`
+      ? `${subjectWithContext(subject, context)} · Value & Asks | ${collectionLabel} | Rip Packs City`
+      : `${subjectWithContext(subject, context)} · Value, Floor & Sales | ${collectionLabel} | Rip Packs City`
   // Review E4 (2026-10-12): when get_edition_detail carries the edition's
   // upstream prose, its FIRST SENTENCE (≤ 160 chars) seeds the description, so
   // a SERP reads what the play IS before the template's value sentence. Absent,
@@ -1124,13 +1124,13 @@ export function editionPageMetadata(payload: Payload, collectionUrlSlug: string,
     prose,
     cm
       ? (fmvUsd
-          ? `${subject} ${context} last traded around ${fmtUsd(fmvUsd)} on ${collectionLabel} before its ${cm.venue} market closed on ${formatClosedOn(cm.closedOn)}. Historical value, not a present-day price.`
-          : `${subject} ${context} on ${collectionLabel} — historical value and sales. The ${cm.venue} market closed on ${formatClosedOn(cm.closedOn)}.`)
+          ? `${subjectWithContext(subject, context, " ")} last traded around ${fmtUsd(fmvUsd)} on ${collectionLabel} before its ${cm.venue} market closed on ${formatClosedOn(cm.closedOn)}. Historical value, not a present-day price.`
+          : `${subjectWithContext(subject, context, " ")} on ${collectionLabel} — historical value and sales. The ${cm.venue} market closed on ${formatClosedOn(cm.closedOn)}.`)
       : (fmvUsd
-          ? `${subject} ${context} is worth ~${fmtUsd(fmvUsd)} (FMV) on ${collectionLabel}.`
+          ? `${subjectWithContext(subject, context, " ")} is worth ~${fmtUsd(fmvUsd)} (FMV) on ${collectionLabel}.`
           : collectionUrlSlug === "panini-blockchain"
-            ? `${subject} ${context} on ${collectionLabel} — fair-market value and live asks.`
-            : `${subject} ${context} on ${collectionLabel} — live fair-market value, floor, and recent sales.`),
+            ? `${subjectWithContext(subject, context, " ")} on ${collectionLabel} — fair-market value and live asks.`
+            : `${subjectWithContext(subject, context, " ")} on ${collectionLabel} — live fair-market value, floor, and recent sales.`),
     tier ? `Tier ${tier}.` : null,
     seriesLabel ? `${formatSeriesLabel(seriesLabel, collectionUrlSlug)}.` : null,
     circulation ? `Circulation ${fmtCount(circulation)}.` : null,
@@ -1406,10 +1406,10 @@ export function editionJsonLd(
     url,
     // 2026-10-21: same disambiguated context as the <title> (lib/edition-title-context.ts),
     // so two editions of one player in one set are not two identical Products.
-    name: `${playerName} — ${editionTitleContext(detail, collectionUrlSlug, setName ?? label)}`,
+    name: subjectWithContext(playerName, editionTitleContext(detail, collectionUrlSlug, setName ?? label)),
     brand: { "@type": "Brand", name: label },
     image: thumb || ogImage || `${BASE_URL}/api/og/default`,
-    description: `${playerName}${setName ? " — " + setName : ""}${tier ? " (" + tier + ")" : ""} on ${label}. ${
+    description: `${playerName}${setName && setName.trim().toLowerCase() !== playerName.trim().toLowerCase() ? " — " + setName : ""}${tier ? " (" + tier + ")" : ""} on ${label}. ${
       isMarketClosed(collectionUrlSlug)
         ? `Historical value and sales history — the ${closedMarket(collectionUrlSlug)!.venue} market for this collection closed on ${formatClosedOn(closedMarket(collectionUrlSlug)!.closedOn)}.`
         : collectionUrlSlug === "panini-blockchain"
