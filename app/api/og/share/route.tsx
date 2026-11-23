@@ -101,8 +101,12 @@ export async function GET(req: NextRequest) {
   let packsFailed = false
   if (/^0x[0-9a-fA-F]{16}$/.test(wallet)) {
     try {
+      // no-store, NOT the data cache: measured 2026-11-22, the first render after this shipped
+      // drew a STALE cached entry (410 packs, $72,376.50 on the card vs 488 / $66,024.03 live) —
+      // Next's data cache answers stale once before revalidating, and a social crawler caches
+      // exactly that first render. The PNG itself is still CDN-cached (ogCacheHeaders).
       const pr = await ogFetch(`${BASE_URL}/api/public/wallet-packs?wallet=${encodeURIComponent(wallet)}`, {
-        next: { revalidate: 600 },
+        cache: "no-store",
       })
       if (!pr.ok) throw new Error(String(pr.status))
       const d = await pr.json()
