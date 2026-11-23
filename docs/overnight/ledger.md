@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~5:35 PM PT · 🔧 SHIPPED (code) — the weekly portfolio email's "Estimated value" is the ONE number too: moments + sealed packs; the pack box becomes "Sealed packs · included above" (Claude Code cloud; Trevor: "Yes proceed")
+
+- New pure `weeklyHeadline(m, packWeek)` in `lib/emails/weekly-packs.ts`. With a like-for-like, live-measured pack prior (packWeekFrom's existing rules — same held/listed counts, neither night backfilled) the change and the subject % cover moments + packs; otherwise the value is the total but the change is the moments' and the line says "this week on your moments", and the subject drops the % (same as when repricing dominates). The pack block no longer prints its own weekly change.
+- First send under this: Mon 11-23 8:33 AM PT (`vercel.json` `33 16 * * 1`). Its prior night (11-16) is a backfilled estimate, so it will read "… on your moments" with the % off the subject; combined changes start once a week of live-measured nights exists (11-30).
+- Tests: weekly-packs block re-pinned ("included above", no change of its own) + 3 `weeklyHeadline` cases; two route-level cases (total + moments-scoped change; total + combined change +15.38 %).
+- **Revert:** `git revert` the code commit titled "feat(email): weekly Estimated value includes sealed packs".
+
 ### 2026-11-22 ~4:40 PM PT · 🗄 APPLIED (`20261123004017`) — NWSL #1065 linked: `panini_products.name` for set 2478 = "2026 Panini NFT Prizm Black NWSL Soccer" (Panini's exact collection_name from the 2:51 PM PT pack-page capture); both NWSL pack rows now `product_set_id = 2478` (Claude Code cloud; scheduled task)
 - Verified first: 2478 = 80 editions, thumbnails under `pack/1065/` (54) + `pack/1064/` (26, base Silver/Red Wave only); Base Prizms Silver #174 · Red Wave #46 · Mojo #25 · Gold #10 · Gold Vinyl 1/1. No other products row has the name; 2460 left unnamed. Guarded DO block raises if a duplicate name exists.
 - Board after `refresh_panini_pack_ev_guaranteed()` (ok, 32 modeled): `ev_modeled=false`, withheld — "guaranteed contents include a choice, a range or a mixed pool" (the "#/79 with #/10 or 1/1 … or #/25" insert and "max #/46 down to 1/1" parallel slots). Needs the pool model, not a name fix.
