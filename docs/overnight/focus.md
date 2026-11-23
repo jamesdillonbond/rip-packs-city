@@ -6,7 +6,7 @@
 
 ## STEER — added 2026-11-23 ~7:45 AM PT (Claude Code cloud, end of the evening pass; Trevor: "Hand it off to cowork")
 
-- ✅ **Filing items 1–5 DONE by Cowork ~8:15 AM PT 11-23** (re-verified 10:56 AM PT). Still owed: its §6 dated reads (now standalone scheduled tasks: 5:23 PM PT 11-23 Panini WARN, 7:37 AM PT 11-25 fmv-recalc `:08` fallback rate, 5:23 AM PT 11-30 Top Shot gate week 3), plus **11-24: Top Shot on-chain sale-ingest p90 after `20261123185838`** (jobs 476/474 every 10 min; was ~47 min, expect ~15).
+- ✅ **Filing items 1–5 DONE by Cowork ~8:15 AM PT 11-23** (re-verified 10:56 AM PT). Still owed: its §6 dated reads (now standalone scheduled tasks: 5:23 PM PT 11-23 Panini WARN, 7:37 AM PT 11-25 fmv-recalc `:08` fallback rate, 5:23 AM PT 11-30 Top Shot gate week 3), plus **11-24: Top Shot on-chain sale-ingest p90 after `20261123185838`** (jobs 476/474 every 10 min, but promote's 20-min min-gap makes the drain effectively every 20 min; was ~47 min, expect ~20–30).
 - **Everything open from the pass is in ONE filing:** [inbox `2026-11-23T1545Z`](inbox/2026-11-23T1545Z-claude-code-for-cowork-evening-pass-open-items.md). ⏰ Item 1 (retire two cadence bridges) is due **before 4 PM PT 11-23**, or the sentinel cadence arm reads WARN. Items 1–2 are held DELETEs: the SQL editor or an attended `apply_migration`, never an unattended one (the confirm dialog times out). Item 5 (cron-job.org) needs Trevor's go.
 
 ## STEER — added 2026-11-22 ~9:00 PM PT (Claude Code cloud, evening autonomous pass) — two dated reads
