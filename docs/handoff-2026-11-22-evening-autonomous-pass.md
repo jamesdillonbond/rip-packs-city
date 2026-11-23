@@ -14,6 +14,7 @@ Trevor: "work autonomously for the next 12 hours … find things to work on. Fix
 - Top Shot gate (`fmv_accuracy_weekly`, HIGH / MEDIUM within ±25 %): wk 10-26 74.3 / 69.1 · 11-02 75.5 / 69.7 · **11-09 80.1 / 74.1**. That is 1 qualifying week so far; the 11-16 row lands Monday.
 
 ## Shipped (newest first)
+-7. **CI coverage ratchet back over its floor + HCI non-JSON fix** (`db3a68f04`, CI green 10:53 PM PT). `4df3092c5` failed only the merged statement gate (91.79 vs 91.8; every test passed): the prototype's cert/holdings routes sat at 58%. Route + HCI client tests added (planted defects red); review finding 9 fixed. Local full run 91.84%.
 -6. **Physical-cards prototype review** (`4df3092c5`; the feature is off by default). No high-severity security issue. Fixed the clearly-safe one: an all-unpriced portfolio totalled $0 and now totals null. The other 8 latent findings are in `docs/physical/review-2026-11-22-prototype.md` for that thread; the top one is that eBay listings can be served past their 6 h licence window.
 -5. **Pack-rip backfill queue refresh (job 850) writes only changed rows** (`20261123060419`, pin E1–E3). It rewrote all ~38.8k rows every 2 h to record ~30 changes (876k buffers/call). Verified on its first run at 10:14 PM PT: 26.6 s (avg 37 s), 733 rows written. `rows_written` now means rows written.
 -4. **Tooling:** the pre-push preflight (`--quick`) now runs the ~50 migration guards whenever a migration changed (`36c64056e`). Before, a migration push was only parsed locally, which is how the next item reached `main` with a stale pin.
@@ -28,6 +29,8 @@ Trevor: "work autonomously for the next 12 hours … find things to work on. Fix
 5. **Docs:** marked closed on live reads — `nfl-all-day.md` #192 / #213 / Flowty teardown, `nba-top-shot.md` #181, and the Candy per-mint trust baseline (0.2 / 0.3 %, replacing the 57.1 % quote). #235 Tencent half: 30 allowed / 2,308 challenged over 11-15 → 11-22.
 
 ## Measured, no change (so nobody re-chases them)
+- **`atlas_listing_verify_tick` (job 466, 428k blocks/call in pgss)** — that figure is a since-08-12 average. Today: 15.9 s avg / 287 runs / 0 fails (timeout 240 s). Its `edition_offers` step reads ~0.6 s when warm (EXPLAIN of every read part: 156 + 73 + 16 + 20 + 331 ms). The `:X6` ticks run ~2× the `:X1` ones (eo 13.1 s vs 3.0 s at :06/:01). A `pg_stat_activity` sample of the 23:16 tick: 16 of 18 s in `IO/DataFileRead`, **never lock-blocked**. That is cache pressure from what shares `:X6` (`sync_sales_from_atlas`, `rpc-wmc-fmv-reconcile-saved`, the hourly Panini rollup), not a bad plan and not the `:X5` floor-clear's locks. Moving the tick only moves the collision; no harm today.
+- **Cadence-collapse "8 stopped"** = the 11-18 Atlas-port retirements (+ the finished mint backfill / label fill); the arm does not score stopped lanes (Pipeline Silence does). Not an alarm.
 - **Candy ask-age** (`candy-mlb.md` "the ask counts as fresh because it is re-seen") is a model decision, not a defect: does a months-old but live ask corroborate? Left for Trevor or the Candy thread.
 - **#249** (ISR caches a degraded render): still needs a preview-verified segment change. Tonight's sweep saw the same section-level shape only.
 - **`get_set_activity`** (#252 watch): 12 timeouts in 7 d (was 21). The tail is the cold 5,000-row first pass under load (holo-icon 0.27–0.5 s warm). No change.
@@ -48,6 +51,7 @@ Trevor: "work autonomously for the next 12 hours … find things to work on. Fix
 - **Top Shot sales ingest lag:** on-chain p50 15.7 min, p90 53 min. Driven by cron-job.org every 20 min (:03/:23/:43) plus the :50 GHA backstop.
 
 ## Queued for Trevor / Claude Code
+0. **[P1, Cowork, before 4 PM PT 11-23] Retire two cadence bridges** (`pack-pulls-chain-history`, `pinnacle-pack-openers`; both ratio 1.000 vs the 11-24 baseline). The MCP held the DELETE twice; SQL + premise + verify are item 2 of inbox `2026-11-23T0200Z-…-held-delete-stale-challenges-suppression.md`. If not done, the sentinel cadence arm reads WARN from 4 PM PT.
 1. **[P2, Claude Code, 1 night] Top Shot gate week 2** — unchanged from the overnight handoff item 4: read Mon 11-23 after ~3:37 AM PT.
 2. **[P3, Trevor, 0 nights] Top Shot sales ingest cadence.** A shorter cron-job.org interval for `topshot-sales-indexer` is the remaining drop-day lever now that the hot lane is fixed (lag p50 16 min / p90 53 min; the 11-18 drop lagged ~1 h). It costs one more Vercel invocation per tick, so it is your call.
 3. **[P4, Trevor, 0 nights] `topshot-buyer-backfill-historical`** (external scheduler, every 30 min) has re-found the same one undecodable row (`decode_404`, `spork_floor`) on every run since 08-28, with 0 written. Pause it in cron-job.org if you agree; nothing reads its output.
@@ -55,7 +59,8 @@ Trevor: "work autonomously for the next 12 hours … find things to work on. Fix
 
 ## Dated reads
 - **11-23:** job 850 `pack-rip-backfill-eligible-refresh` day average vs 37 s; `rows_found` ≈ 38.8k (the set); `rows_written` tens to hundreds.
-- **11-23 daytime:** job 704 `pack-rips-chain-rekey` average duration over a full day vs 28.5 s (expect roughly 40 % lower); `extra.window_clamped` false.
+- **11-23 daytime:** job 704 `pack-rips-chain-rekey` average duration over a full day vs 28.5 s (expect roughly 40 % lower); `extra.window_clamped` false. ↳ **Early read 11:14 PM PT: 6 runs since the cursor, avg 11.6 s (max 16 s), 0 failed — −59 %.**
 - **11-23:** `fmv_recalc_hot_editions` stranded count (snapshot newer than sold_at but older than ingested_at, not HIGH/MEDIUM) stays ~0 between runs.
+- **Read 11:13 PM PT:** Panini per-run `extra.sales_history_unrecognised_keys` = 0 across 349 `panini-ingest` runs since 9 PM PT.
 - **~5:10 PM PT 11-23:** the Sentinel "Panini Ingest" WARN clears once the 82 drops from 11-22 5:09 PM PT leave its 24 h window. Earlier proof: any `panini_sales` row with `source = 'nft_sales_data'` and `edition_external_id` under `packcard-850147_111938_` other than `…_2-6_*`. A new unrecognised shape in the Sentinel sample is a fourth shape: same recipe, measure first.
 - **11-24 (from the earlier steer):** the fmv-recalc :08 historical-fallback timeout rate.
