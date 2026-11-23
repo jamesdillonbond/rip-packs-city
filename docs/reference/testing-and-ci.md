@@ -3843,3 +3843,8 @@ Fix:
 - **Cover the low files**, never lower the floor. The fix (`db3a68f04`) added route + client tests, checked with planted defects.
 - Confirm with one full local run before pushing: `NODE_OPTIONS=--max-old-space-size=6144 npx vitest run --coverage --coverage.reporter=text-summary`, ~15 min on 4 cores.
 - `--quick` preflight runs only `vitest related` and cannot see a global threshold.
+
+### ⚠ The clock sweep's "WALL-CLOCK DEPENDENT" is a claim about an INTERMITTENT test too (2026-11-23)
+
+`scripts/clock-sweep.mjs` flags a test that fails at some samples and passes at others. An intermittent (load- or race-dependent) failure produces the SAME pattern. On 11-23 it flagged `physical-paper-listings-cached` at 05:30/13:30 UTC; the test passed at all four hours when re-run alone (old and new versions), and its failing path reads no clock — the failure was a second `vi.doMock` of `next/cache` racing the `beforeEach` one. **Before pinning the clock, re-run the test alone at the flagged offsets (`RPC_CLOCK_OFFSET_MS=$(node -e "import('./scripts/clock-sweep.mjs').then(m=>console.log(m.offsetForUtcHour(Date.now(),5)))")`) and read its path for a clock read.** Two mocks of one module id in one test is itself the defect: steer one mock with a variable.
+
