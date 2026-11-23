@@ -21,6 +21,14 @@ import { usdSignFirst } from "@/lib/usd-format"
 
 export const revalidate = 3600
 
+// ⚠ This page's read gets 25 s, not the shared 8 s BOARD_LIVE_TIMEOUT_MS (the panini-premiums fix,
+// 070bd9eaf). Measured 2026-11-23: the function runs in ~0.4 s warm / ~1.2 s cold, but its first
+// build prerender exceeded 8 s under the build's concurrent board reads, and this board has no
+// client refetch — ISR would serve that "couldn't load" for the whole hour (#33). An hourly
+// regeneration runs in the background, so the role's budget (service_role 30 s; Next's prerender
+// limit 60 s) is the right ceiling.
+const PINNACLE_PACK_REALITY_READ_BUDGET_MS = 25_000
+
 function fmtUsd(v: number | null): string {
   const neg = usdSignFirst(v, fmtUsd); if (neg !== null) return neg
   if (v == null) return "—"
@@ -40,7 +48,7 @@ const head: React.CSSProperties = { ...cell, fontWeight: 600, color: "var(--rpc-
 
 export default async function PinnaclePackRealityPage() {
   const empty: PinnacleRealityPayload = { since: "", min_opens: 25, drops: [] }
-  const res = await fetchBoardForPage("Pinnacle pack reality", empty, (db) => fetchPinnacleReality(db))
+  const res = await fetchBoardForPage("Pinnacle pack reality", empty, (db) => fetchPinnacleReality(db), PINNACLE_PACK_REALITY_READ_BUDGET_MS)
   const { drops, min_opens } = res.data
 
   return (
