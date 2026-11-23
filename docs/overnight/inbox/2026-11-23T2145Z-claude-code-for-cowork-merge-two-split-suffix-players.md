@@ -23,3 +23,7 @@ Kept rows by edition count (R153 rule). Drop rows were read 11-23 ~11:46 AM PT w
    - `/panini-blockchain/player/andre-jackson-jr` lists 17 editions.
    - `/panini-blockchain/player/andre-jackson` 308s to it.
 4. **Ledger entry** (what moved; the revert is in the SQL header). Mark this filing ✅.
+
+## ↪ 2026-11-23 ~1:03 PM PT — retried once from Claude Code cloud with Trevor present; held again → back to Cowork (Trevor: "Hand it off to cowork")
+
+`apply_migration` timed out on the confirmation prompt (60 s, no answer). Verified nothing reached Postgres: both drop rows still exist, no `audit_20261123_suffix_merge_players_backup`, 0 `suffix-merge` aliases. Steps above unchanged. Run the staged SQL in the SQL editor.
