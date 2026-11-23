@@ -211,21 +211,29 @@ AS $function$
 DECLARE
   v_started timestamptz := clock_timestamp();
   v_allday  uuid := 'dee28451-5d62-409e-a1ad-a83f763ac070';
+  v_allday_set int := 0;
   v_allday_n int := 0;
+  v_allday_rm int := 0;
+  v_unpriced_set int := 0;
   v_unpriced_n int := 0;
-  v_removed int := 0;
+  v_unpriced_rm int := 0;
 BEGIN
   -- The two eligibility sets backfill_pack_rip_metadata's allday_repair and unpriced_retry legs
   -- used to build on EVERY call (#242). Same predicates as those legs had inline (2026-10-16
   -- set form). WRITE FIRST, then delete only what this refresh did not write: a reader never
   -- sees an empty queue mid-refresh.
   -- 2026-11-09 evening: each row carries its pack_rips stamp so the backfill reads an ordered SLICE.
+  -- 2026-11-22: a row is written only when it is NEW or its stamp differs (the final stamps are
+  -- exactly what the unconditional upsert left), and a row leaves the queue by an anti-join against
+  -- this run's set instead of by a stale refreshed_at. Before, every run rewrote all ~38.8k rows to
+  -- record ~30 changes (~400k buffers of the job's ~876k). *_n now counts rows WRITTEN; *_set is
+  -- the set size.
   WITH allday_unresolved AS MATERIALIZED (
     SELECT DISTINCT ap.pack_nft_id
     FROM public.allday_pack_pull ap
     WHERE ap.edition_id IS NULL
   ),
-  allday_set AS (
+  allday_set AS MATERIALIZED (
     SELECT pr.id, pr.metadata_updated_at AS stamp
     FROM public.pack_rips pr
     WHERE pr.collection_id = v_allday
@@ -235,14 +243,22 @@ BEGIN
       AND EXISTS (SELECT 1 FROM public.allday_pack_pull ap WHERE ap.pack_nft_id = pr.pack_nft_id)
   ),
   ins AS (
-    INSERT INTO public.pack_rip_backfill_eligible (leg, rip_id, refreshed_at, stamp)
+    INSERT INTO public.pack_rip_backfill_eligible AS q (leg, rip_id, refreshed_at, stamp)
     SELECT 'allday', id, v_started, stamp FROM allday_set
     ON CONFLICT (leg, rip_id) DO UPDATE SET refreshed_at = EXCLUDED.refreshed_at, stamp = EXCLUDED.stamp
+      WHERE q.stamp IS DISTINCT FROM EXCLUDED.stamp
+    RETURNING 1
+  ),
+  rm AS (
+    DELETE FROM public.pack_rip_backfill_eligible q
+     WHERE q.leg = 'allday'
+       AND NOT EXISTS (SELECT 1 FROM allday_set s WHERE s.id = q.rip_id)
     RETURNING 1
   )
-  SELECT count(*) INTO v_allday_n FROM ins;
+  SELECT (SELECT count(*) FROM allday_set), (SELECT count(*) FROM ins), (SELECT count(*) FROM rm)
+    INTO v_allday_set, v_allday_n, v_allday_rm;
 
-  WITH unpriced_set AS (
+  WITH unpriced_set AS MATERIALIZED (
     SELECT pr.id, pr.metadata_updated_at AS stamp
     FROM (SELECT DISTINCT ma.source_pack_rip_id AS rid
             FROM public.moment_acquisitions ma
@@ -253,23 +269,32 @@ BEGIN
       AND pr.collection_id IS DISTINCT FROM v_allday
   ),
   ins AS (
-    INSERT INTO public.pack_rip_backfill_eligible (leg, rip_id, refreshed_at, stamp)
+    INSERT INTO public.pack_rip_backfill_eligible AS q (leg, rip_id, refreshed_at, stamp)
     SELECT 'unpriced', id, v_started, stamp FROM unpriced_set
     ON CONFLICT (leg, rip_id) DO UPDATE SET refreshed_at = EXCLUDED.refreshed_at, stamp = EXCLUDED.stamp
+      WHERE q.stamp IS DISTINCT FROM EXCLUDED.stamp
+    RETURNING 1
+  ),
+  rm AS (
+    DELETE FROM public.pack_rip_backfill_eligible q
+     WHERE q.leg = 'unpriced'
+       AND NOT EXISTS (SELECT 1 FROM unpriced_set s WHERE s.id = q.rip_id)
     RETURNING 1
   )
-  SELECT count(*) INTO v_unpriced_n FROM ins;
-
-  DELETE FROM public.pack_rip_backfill_eligible WHERE refreshed_at < v_started;
-  GET DIAGNOSTICS v_removed = ROW_COUNT;
+  SELECT (SELECT count(*) FROM unpriced_set), (SELECT count(*) FROM ins), (SELECT count(*) FROM rm)
+    INTO v_unpriced_set, v_unpriced_n, v_unpriced_rm;
 
   PERFORM public.log_pipeline_run(
     'pack-rip-backfill-eligible-refresh', v_started,
-    v_allday_n + v_unpriced_n, v_allday_n + v_unpriced_n, 0,
+    v_allday_set + v_unpriced_set, v_allday_n + v_unpriced_n, 0,
     true, NULL, NULL, NULL, NULL,
-    jsonb_build_object('allday', v_allday_n, 'unpriced', v_unpriced_n, 'removed', v_removed));
+    jsonb_build_object('allday', v_allday_set, 'unpriced', v_unpriced_set,
+                       'allday_written', v_allday_n, 'unpriced_written', v_unpriced_n,
+                       'removed', v_allday_rm + v_unpriced_rm));
 
-  RETURN jsonb_build_object('ok', true, 'allday', v_allday_n, 'unpriced', v_unpriced_n, 'removed', v_removed);
+  RETURN jsonb_build_object('ok', true, 'allday', v_allday_set, 'unpriced', v_unpriced_set,
+                            'allday_written', v_allday_n, 'unpriced_written', v_unpriced_n,
+                            'removed', v_allday_rm + v_unpriced_rm);
 END
 $function$;
 -- <<< END verbatim refresh_pack_rip_backfill_eligible <<<
@@ -1025,5 +1050,50 @@ SELECT _assert_eq(
   '10.00',
   '⚠ call 2: the dead four were ROTATED away, so the live row behind them is reached and valued'
 );
+
+
+-- ── 2026-11-22: the refresh writes only what changed (20261123060419).
+-- E1: a refresh with nothing changed writes 0 rows and keeps the whole set queued.
+-- E2: a stamp the consumer rotated is restored to its pack_rips stamp (what the unconditional upsert did).
+-- E3: a rip that leaves the set (now priced) leaves the queue, by anti-join, not by a stale refreshed_at.
+DO $e$
+DECLARE n_before int; r_rot uuid; r_out uuid; st timestamptz;
+BEGIN
+  -- Own fixture: three unpriced, stamped Top Shot rips with acquisitions (the unpriced leg's set).
+  INSERT INTO public.pack_rips (id, collection_id, pack_nft_id, pull_value_usd, metadata_updated_at) VALUES
+    ('e0000000-0000-0000-0000-000000000001', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'e1', NULL, now() - interval '3 days'),
+    ('e0000000-0000-0000-0000-000000000002', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'e2', NULL, now() - interval '2 days'),
+    ('e0000000-0000-0000-0000-000000000003', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'e3', NULL, now() - interval '1 day');
+  INSERT INTO public.moment_acquisitions (source_pack_rip_id, nft_id) VALUES
+    ('e0000000-0000-0000-0000-000000000001', 'x1'), ('e0000000-0000-0000-0000-000000000002', 'x2'),
+    ('e0000000-0000-0000-0000-000000000003', 'x3');
+  PERFORM public.refresh_pack_rip_backfill_eligible();
+  SELECT count(*) INTO n_before FROM public.pack_rip_backfill_eligible;
+  PERFORM public.refresh_pack_rip_backfill_eligible();
+  PERFORM _assert_eq((SELECT rows_written::text FROM public.pipeline_runs_stub
+                      WHERE pipeline = 'pack-rip-backfill-eligible-refresh' ORDER BY ctid DESC LIMIT 1), '0',
+                     'E1: an unchanged refresh writes nothing');
+  PERFORM _assert_eq((SELECT count(*)::text FROM public.pack_rip_backfill_eligible), n_before::text,
+                     'E1: and keeps every queued row');
+  PERFORM _assert(n_before > 0, 'E1: the fixture leaves something queued (else E2/E3 prove nothing)');
+  r_rot := 'e0000000-0000-0000-0000-000000000001';
+  UPDATE public.pack_rip_backfill_eligible SET stamp = now() + interval '1 day' WHERE rip_id = r_rot;
+  PERFORM public.refresh_pack_rip_backfill_eligible();
+  SELECT metadata_updated_at INTO st FROM public.pack_rips WHERE id = r_rot;
+  PERFORM _assert((SELECT stamp = st FROM public.pack_rip_backfill_eligible WHERE rip_id = r_rot),
+                  'E2: a rotated stamp is restored to the pack_rips stamp');
+  PERFORM _assert_eq((SELECT rows_written::text FROM public.pipeline_runs_stub
+                      WHERE pipeline = 'pack-rip-backfill-eligible-refresh' ORDER BY ctid DESC LIMIT 1), '1',
+                     'E2: exactly that one row was written');
+  r_out := 'e0000000-0000-0000-0000-000000000003';
+  UPDATE public.pack_rips SET pull_value_usd = 1 WHERE id = r_out;
+  PERFORM public.refresh_pack_rip_backfill_eligible();
+  PERFORM _assert(NOT EXISTS (SELECT 1 FROM public.pack_rip_backfill_eligible WHERE rip_id = r_out),
+                  'E3: a rip that left the set leaves the queue');
+  PERFORM _assert_eq((SELECT (extra->>'removed') FROM public.pipeline_runs_stub
+                      WHERE pipeline = 'pack-rip-backfill-eligible-refresh' ORDER BY ctid DESC LIMIT 1), '1',
+                     'E3: and the run reports it removed');
+END
+$e$;
 
 ROLLBACK;

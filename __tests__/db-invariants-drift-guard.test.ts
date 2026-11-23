@@ -3427,8 +3427,9 @@ const PINS = [
     // Added 2026-11-09 (#242): builds the queue backfill_pack_rip_metadata re-checks; pg_cron every 2 h.
     fn: "refresh_pack_rip_backfill_eligible",
     test: "supabase/tests/backfill_pack_rip_metadata.sql",
+    // 2026-11-22: writes only changed rows; removal by anti-join (E1-E3).
     migration:
-      "supabase/migrations/20261110021600_audit_20261109_rip_metadata_queue_is_read_as_a_rotated_slice.sql",
+      "supabase/migrations/20261123060419_audit_20261122_pack_rip_eligible_refresh_writes_only_changes.sql",
   },
   {
     // pg_cron `40 9 * * *`. Sets players.team from the catalogue.
