@@ -8,6 +8,7 @@ Live reads 11-22 ~9:30 AM PT (Claude Code cloud; [strategy-2026-11-22.md](../str
 - **Off-Magic-Eden fills** are captured by `candy-chain-sales`. Its 10:11 AM PT run read `ok=true`, 0 collections failed, 4 fills, after the version-1 transaction fix.
 - **`candy_fmv_high_med_share_pct` 56.8 → 0.7 % (11-02 → 11-22) is a recount, not a regression.** The 11-09 per-mint re-key turned ~125 editions into **3,059** current snapshots: 2,128 STALE, 833 LOW, 18 MEDIUM, mostly 1-of-1s that honestly read STALE.
   - The 57.1 % in the roadmap gate table belongs to the old grain and must not be compared with today's value.
+  - 📏 **Per-mint baseline (read 11-22 ~8:20 PM PT, `rpc_trust_health_history` weekly means, PT weeks):** `candy_fmv_high_med_share_pct` wk 11-09 **0.2 %** · wk 11-16 **0.3 %** (old grain: wk 10-26 57.7 · 11-02 40.9); `candy_fmv_high_med_fresh24h_pct` 0.3 · 4.5; `candy_fmv_sweep_pct_24h` 35.6 · 16.1. Compare future reads with these, not with 57.1. (`candy_fmv_pct_stale_30d` reads 0.0 by construction: it counts snapshots older than 30 days, not STALE confidence.)
   - The 24 h sweep (89.6 → ~10–16 %) moved with the same denominator.
   - Re-read the share as new sales accrue. No relabel is proposed.
 
