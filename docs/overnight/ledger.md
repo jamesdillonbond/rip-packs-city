@@ -12,8 +12,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+<<<<<<< Updated upstream
 ### 2026-11-22 ~4:20 PM PT · ownership walk: a wallet is stamped as walked only after BOTH reads succeed (follow-up to `20261123000937`)
 - An independent review confirmed it: `walkedOk.push` ran after the chain read but before the `topshot_ownership` read. A wallet whose ownership read failed was stamped by `20261123000937` and rotated to the back for ~3 days instead of being retried, contrary to that migration's header. It was live from 4:09 PM PT until this deploy, with no walk run in between. The push moved after the read; a test asserts that wallet is not in `p_walked` and fails on the old route. Also: an empty error message can no longer read as success (`||` fallback). Kept as intended: a wallet whose chain read returns no ids is stamped (its rows are neither confirmed nor flagged, and it rotates normally instead of squatting). Revert: `git revert` the code commit (`ownership-onchain-walk: stamp walked only after both reads`).
+=======
+### 2026-11-22 ~4:15 PM PT · 🗄 APPLIED (`20261123001415`, `20261123001457`) — NWSL Kaboom! insert set 2469 admitted; 26,935 Panini editions get back the printed TEAM the upsert had erased (Claude Code cloud; NWSL thread)
+
+- **2469** = the "Kaboom!" insert line of 2026 Prizm Black NWSL (#1065), read from a sale record in the laptop runner's `panini-capture.jsonl` ("… NWSL Soccer - Kaboom! #1 - Trinity Rodman - [2/25]") and on the Womens Soccer grid beside 2478/2460. Revert: `UPDATE public.panini_products SET walk_cards = false WHERE set_id = 2469;`
+- **Team backfill:** `panini_editions.nation` filled (NULL rows only) from `panini_team_listings.team_raw` — the same grid `team` field; 4,514/4,514 exact agreement where both existed. Coverage: Basketball 8.6 → 95.4 %, Football 12.2 → 95.3 %, WNBA 11.2 → 88.6 %, Baseball 67.8 → 97.3 %; Soccer (WC, no team walk) unchanged at 12 %. Rows in `audit_20261122_panini_nation_backfill`. Revert: `UPDATE public.panini_editions e SET nation = NULL FROM public.audit_20261122_panini_nation_backfill a WHERE e.external_id = a.external_id;`
+>>>>>>> Stashed changes
 
 ### 2026-11-22 ~4:30 PM PT · 🔧 SHIPPED (code) — the share card image reads sealed packs with `cache: "no-store"`: its first live render drew a stale data-cache entry (Claude Code cloud; same thread)
 
