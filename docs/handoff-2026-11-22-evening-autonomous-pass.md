@@ -55,7 +55,7 @@ Trevor: "work autonomously for the next 12 hours … find things to work on. Fix
 1. **[P2, Claude Code, 1 night] Top Shot gate week 2** — unchanged from the overnight handoff item 4: read Mon 11-23 after ~3:37 AM PT.
 2. **[P3, Trevor, 0 nights] Top Shot sales ingest cadence.** A shorter cron-job.org interval for `topshot-sales-indexer` is the remaining drop-day lever now that the hot lane is fixed (lag p50 16 min / p90 53 min; the 11-18 drop lagged ~1 h). It costs one more Vercel invocation per tick, so it is your call.
 3. **[P4, Trevor, 0 nights] `topshot-buyer-backfill-historical`** (external scheduler, every 30 min) has re-found the same one undecodable row (`decode_404`, `spork_floor`) on every run since 08-28, with 0 written. Pause it in cron-job.org if you agree; nothing reads its output.
-4. **[P4, Claude Code, 0 nights] #235 per-minute peak:** one read of the max requests/minute over a week; close #235 if no minute exceeds 400.
+4. ~~[P4] #235 per-minute peak~~ **READ ~11:30 PM PT — stays OPEN:** a 17-region sweep hit ~450–500+/min at 10:10–10:14 PM PT 11-16; every other minute > 400 was our own 1–3-region QA. Next is Trevor/Cowork: did the JA4 `Entity page sweep` rule log or limit it (firewall dashboard only)? Detail in known-issues #235.
 
 ## Dated reads
 - **11-23:** job 850 `pack-rip-backfill-eligible-refresh` day average vs 37 s; `rows_found` ≈ 38.8k (the set); `rows_written` tens to hundreds.
