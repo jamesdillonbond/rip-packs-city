@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-23 ~2:45 PM PT · 🔧 SHIPPED (code) — `cron/weekly-digest` writes an invocation marker first (E5 26 → 25) (Claude Code cloud; Trevor: "Keep going")
+- **Why:** its output is member mail, so a `maxDuration` kill sends nothing and logs nothing. Max 141,685 ms of a 300 s wall (47 %) over 73 h, the tightest margin left on E5's queue; no queued route took a Vercel wall kill in 7 d (all 5 hit converted routes).
+- **What:** `writeInvocationHeartbeat` as the first line of `after()` (`weekly-digest-heartbeat`, `extra.bucket`); the terminal `log_pipeline_run` now reads its returned `error` (R123). Ordering pin + no-change control in `heartbeat-marker-precedes-the-terminal-row.test.ts`, mutation-verified; ratchet BUDGET 25. The digest itself is unchanged (still flag-gated).
+- **Revert:** `git revert` the commit "weekly-digest: invocation marker first (E5 26 -> 25)".
+
 ### 2026-11-23 ~2:40 PM PT · ✅ SHIPPED — Disney Pinnacle parity pass 3: RPC Index leg, serial-premiums board, squeeze board, concierge tools (Claude Code cloud; Trevor: "Do it all")
 - **`/insights/pinnacle-market`** — the RPC Index's third leg through the shared MarketIndexClient (`lib/insights/market-index-collections.ts` gains `disney-pinnacle`; every index now links the other two). Backing: plain VIEW `pinnacle_market_index_daily` (`20261123221000`, security_invoker, service_role only; 286 ms cold, so no refresh job). Tiers = edition type: LIMITED and OPEN plotted; LEGENDARY (Legendary + Genesis, 92 sales on 20 of 120 days, mostly different grails) counted but not plotted, as All Day's Ultimate.
 - **`/insights/pinnacle-serial-premiums`** — `get_pinnacle_serial_premiums(integer)` (`20261123222500`): every #1 and perfect-serial sale (112 / 92 on record), premium = price ÷ median of the same pin's other serials ±60 d, only with ≥ 3 comparables. Read 11-23: median #1 premium 15.4×, perfect 3.56× (the model's 12.6× / 3.36× agree).
