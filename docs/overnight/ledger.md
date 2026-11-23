@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-23 ~1:10 AM PT · 🟢 NO-SHIP GREEN — overnight pass: health clean on every instrument; 11-22 wave post-ship watch holding; 0 shipped (Cowork cloud)
+- Security [] (invariants/anon-write/rls-off/secdef + drift all empty), trust breaches 0 (no UNKNOWN), stalled_pipelines [], `check_pgcron_recent_failures()` [], sentinel_ts_uuid_48h 0; 8 info pipeline_alerts, all Atlas/Dapper Cloudflare-403 base-rate + moved-moment 400 (designed). Vercel prod `245f4cb1` READY (tip `c6347e092` migration+docs CANCELED via ignoreCommand, expected); no ERROR; 13 runtime-error groups all count 1-9 honest read-timeout degradations; client_error beacon 1/24h.
+- Post-ship watch CLEAN: job 704 `pack-rips-chain-rekey` 17.7s `window_clamped=false` (target ~17.1s vs old 28.5s); `fmv-recalc` ok; `panini-ingest` `sales_history_unrecognised_keys=0`; `fmv-clamp-disconnected-ask` ok 58s (last night's info false-positive stall cleared); `ownership-onchain-walk` ok; `scratch_backfill_pk_trevor` RLS-off smoke burst (11-22 23:13-23:28Z) self-healed by the :47 `selfheal_audit_table_rls()` (`20261122234542`) — table now absent, security [].
+- Carried (both need access the night pass lacks): `wallet_held_pack_value` 20s timeout = off-limits route-logic change (night 2); stale `ingest-topshot-challenges` suppression delete = attended SQL editor in Trevor's Chrome (night 1).
+- No code/DB/prod change this pass; revert path n/a. Handoff: docs/handoff-2026-11-23-overnight-pass.md.
+
 ### 2026-11-22 ~11:35 PM PT · 🗄 APPLIED (`20261123073348`) — restored the three erased Panini primary pack prices from `panini_pack_state_history`: 1055 $150, 1056 $30, 1065 $10 (Claude Code cloud; follow-up to the carry-forward fix)
 - Applied after `245f4cb10` went live (READY ~11:31 PM PT), so the next ingest carries them forward instead of nulling them. `refresh_panini_pack_ev_guaranteed()` ok (379 rows, 32 modeled). NWSL #1065 EV stays withheld by design (mixed-pool slots; 12-06 backtest).
 - Revert: `update panini_pack_state set price_usd = null where id in ('1055','1056','1065');`
