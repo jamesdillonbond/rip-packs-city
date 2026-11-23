@@ -30,6 +30,8 @@
 
 ## Measured, no change (recorded so nobody re-chases them)
 
+- **~6:30 PM PT, R120 sweep (a lane logging `rows_written = 0` while its own `extra` reports a positive written/inserted/upserted/updated count, 24 h):** three hits. `panini-pack-ev-tier-shadow` was a real defect, fixed by `20261123022412`. `ufc-aptos-wallet-link` (`links_upserted` 2,172) is by design: `rows_written` counts new migration matches, and the links figure is a full refresh of a derived table. `pinnacle-metadata-backfill` (`q4_unknown_name_chain_written` 72) is a population count of rows the Q4 query EXCLUDES, not a write. The overload-level sweep (all six callers of `log_pipeline_run(text, boolean, jsonb)`) found the same single offender.
+
 - **~4:05 PM PT, write-side sweep** (lanes with ≥ 100 found / 0 written / all ok in 24 h). `topshot-misattrib-atlas-resolver` (86k found, 0 written, 288 runs) is a waiting state: 276 open, 275 attempted within 30 days (retries start 11-23), 1 held as contradicted. The others in that list (`pinnacle-chain-opens`, `price-pinnacle-pack-opens`, `pack-events-ingest-backfill`, `pack-mint-probes`, `check-alerts`) count candidates examined, not rows owed; not read individually.
 - **Golazos sales:** the Sentinel's "last 18.8 h ago" at 11:56 AM PT was a lull before a burst (newest 3:47 PM PT, 73 in 24 h vs a 10/day 7-day average).
 - **Studio walkers (#218):** `topshot-/allday-pack-sales-ingest` last ran 11-19, retired by design (Atlas lane). `sentinel_pack_sales_feeds()` still names them and reads `walker: null`. The Pack Sales arms read ok from the unlatch lane's chain reading, so this is cosmetic; repoint the function to `atlas-pack-sales-ingest` when next touched.
