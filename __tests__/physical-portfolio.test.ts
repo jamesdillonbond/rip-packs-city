@@ -29,8 +29,16 @@ describe("physicalTotal", () => {
   it("never prices a PSA 10 from a PSA 9 range", () => {
     const t = physicalTotal([h("a", "c1", "10")], [r("c1", "9", 40, 50, 60)])
     expect(t.pricedCount).toBe(0)
-    expect(t.point).toBe(0)
+    // Inverted 2026-11-22: nothing priced is UNKNOWN, never a measured $0.
+    expect(t.point).toBeNull()
     expect(t.unpricedCount).toBe(1)
+  })
+
+  it("a portfolio with nothing priced totals null, not $0 (a failed range read passed as [])", () => {
+    const t = physicalTotal([h("a", "c1", "10"), h("b", "c2", "raw", 3)], [])
+    expect([t.low, t.point, t.high]).toEqual([null, null, null])
+    expect(t.unpricedCount).toBe(2)
+    expect(t.costBasis).toBeNull()
   })
 
   it("withholds cost basis when any priced holding lacks one", () => {

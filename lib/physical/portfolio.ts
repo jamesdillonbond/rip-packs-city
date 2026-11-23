@@ -29,9 +29,11 @@ export type CachedRange = {
 }
 
 export type PhysicalTotal = {
-  low: number
-  point: number
-  high: number
+  // null when NO holding is priced (2026-11-22 review): 0 there is the false zero the header
+  // forbids — e.g. a failed value-cache read passed as ranges=[] would total "$0".
+  low: number | null
+  point: number | null
+  high: number | null
   pricedCount: number
   unpricedCount: number
   unpricedIds: string[]
@@ -69,9 +71,9 @@ export function physicalTotal(holdings: PhysicalHolding[], ranges: CachedRange[]
   }
 
   return {
-    low: r2(low),
-    point: r2(point),
-    high: r2(high),
+    low: priced > 0 ? r2(low) : null,
+    point: priced > 0 ? r2(point) : null,
+    high: priced > 0 ? r2(high) : null,
     pricedCount: priced,
     unpricedCount: unpricedIds.length,
     unpricedIds,
