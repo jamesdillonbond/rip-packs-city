@@ -21,6 +21,19 @@
 --     until then physical_parallel is a search token, and digital print runs (mint_cap) differ from
 --     paper (/424 digital Silver vs unnumbered paper Silver), so only numbered parallels with the
 --     same /N are apples-to-apples.
+--   * Card numbers checked against published paper checklists (checklistinsider.com, read
+--     2026-11-22 ~10:40 PM PT), 23 of 23 matching the edition-key number:
+--       2026 Prizm FIFA World Cup base: Yamal #70, Messi #10, Haaland #333, Ronaldo #367,
+--         G. Mora #290, Diomande #257, Estevao #87. Inserts: Color Blast Messi #10 / Yamal #11;
+--         National Landmarks Messi #10 / Yamal #6 / Ronaldo #7; National Pride Messi #10 /
+--         Yamal #1; Phenomenon Messi #19 / Yamal #1; Prizmania Messi #10; Scorers Club Messi
+--         #15; New Era Yamal #12; Trophy Hunting Ronaldo #17.
+--       2026 Prizm WNBA base: Miles #131 AND #145, Fudd #35 AND #144, Flau'jae Johnson #136 AND
+--         #150, Awa Fam #132 AND #146 (two paper cards each, as the keys say), Clark #82,
+--         Bueckers #57, A'ja Wilson #14.
+--     The same pages confirm the parallel names exist on paper (Choice Nebula 1/1, Old Glory /94,
+--     Aguila /70, Maple Leaf /86, Plum Blossom /8, Cherry Blossom /20, Preferred Genesis;
+--     WNBA Gold /10, Gold Vinyl 1/1). Paper print runs still differ from the digital mint caps.
 create or replace view public.panini_physical_crosswalk_draft as
 with ed as (
   select pe.external_id, pe.player_name, pe.parallel, pe.set_name, pe.parallel_family, pe.mint_cap,
