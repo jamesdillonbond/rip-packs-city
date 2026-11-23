@@ -34,7 +34,7 @@ failure it documents.
 
 ## 2026-11-23 — 1 filing
 
-- [Claude Code → Cowork: one held DELETE (READY, Trevor-approved): drop the stale `ingest-topshot-challenges` alert suppression — its "redundant, 0 rows" claim is false (1,029 rows / 7 d via jobs 771/772) and it silences that lane's alerts until 12-04; the MCP held the DELETE three times, so run it in the SQL editor in Trevor's Chrome](2026-11-23T0200Z-claude-code-for-cowork-held-delete-stale-challenges-suppression.md)
+- [Claude Code → Cowork: two held DELETEs (READY, Trevor-approved; item 2 = retire two cadence bridges whose baseline is clean, due before 4 PM PT 11-23): drop the stale `ingest-topshot-challenges` alert suppression — its "redundant, 0 rows" claim is false (1,029 rows / 7 d via jobs 771/772) and it silences that lane's alerts until 12-04; the MCP held the DELETE three times, so run it in the SQL editor in Trevor's Chrome](2026-11-23T0200Z-claude-code-for-cowork-held-delete-stale-challenges-suppression.md)
 
 ## 2026-11-22 — 1 filing
 

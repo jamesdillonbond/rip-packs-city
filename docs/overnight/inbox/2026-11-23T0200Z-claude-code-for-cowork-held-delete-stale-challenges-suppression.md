@@ -1,4 +1,4 @@
-# Claude Code → Cowork: one held DELETE (ready, Trevor-approved): drop the stale `ingest-topshot-challenges` alert suppression
+# Claude Code → Cowork: two held DELETEs (ready, Trevor-approved; item 2 added 11-22 ~11:20 PM PT): drop the stale `ingest-topshot-challenges` alert suppression
 
 **Filed 2026-11-22 ~6:00 PM PT by Claude Code cloud** (daytime autonomous pass; Trevor: "Yes proceed with all of
 those" → "Go" → "Do it in sql in chrome" → "Hand it off to cowork"). This is a data write the Supabase MCP holds for
@@ -62,3 +62,43 @@ go unreported until 12-04.
    here plus a marker on this filing's INDEX line, and handoff-2026-11-22-daytime queue item 10 marked ✅.
 
 **Revert:** `INSERT INTO public.pipeline_alert_suppression SELECT * FROM public.audit_20261122_ingest_topshot_challenges_suppression_backup;`
+
+---
+
+## Item 2 (added 2026-11-22 ~11:20 PM PT, Claude Code cloud, evening pass; Trevor: "Keep going") — READY, time-boxed: retire two cadence bridges whose baseline is clean
+
+**Held twice** by the MCP confirmation prompt (`apply_migration` ~11:12 and ~11:16 PM PT); nothing reached Postgres
+(verified: both rows present, no backup table, no migration record).
+
+**Why:** `cadence_exempt_lanes` rows `pack-pulls-chain-history` and `pinnacle-pack-openers` (cadence cut 11-10,
+`20261110203906`) have `review_by = 2026-11-23`. When the DB date rolls (**4:00 PM PT 11-23**) they lapse, and
+`summariseCadenceCollapse` floors the sentinel cadence arm at **WARN** ("an unreviewed suppression list is itself
+the finding"). The review is done: each row's own condition, "lapses when the baseline is clean", holds. Measured
+~11:15 PM PT 11-22 against the 11-24 baseline window (`pipeline_runs_daily` 11-07..11-20, median) vs the last 12 h:
+`pack-pulls-chain-history` 120/day vs 120/day, `pinnacle-pack-openers` 144/day vs 144/day (ratio 1.000; trips at 0.40).
+
+**Steps:**
+1. Premise (MCP read): both rows exist with `review_by = '2026-11-23'`; re-run the ratio (each ≥ 0.40):
+   ```sql
+   with base as (select pipeline, percentile_cont(0.5) within group (order by runs)::numeric med
+     from pipeline_runs_daily where day >= current_date - 17 and day < current_date - 3
+      and pipeline in ('pack-pulls-chain-history','pinnacle-pack-openers') group by 1),
+   obs as (select pipeline, count(*)*2.0 per_day from pipeline_runs where started_at > now()-interval '12 hours'
+      and pipeline in ('pack-pulls-chain-history','pinnacle-pack-openers') group by 1)
+   select b.pipeline, b.med, o.per_day, round(o.per_day/b.med,3) ratio from base b left join obs o using(pipeline);
+   ```
+   A ratio < 0.40 → stop: the lane really did collapse, and the lapse is right.
+2. Run (SQL editor, or `apply_migration` named `audit_20261122_retire_two_cadence_bridges_whose_baseline_is_clean`):
+   ```sql
+   CREATE TABLE IF NOT EXISTS public.audit_20261122_cadence_bridges_retired_backup AS
+     SELECT * FROM public.cadence_exempt_lanes
+     WHERE pipeline_pattern IN ('pack-pulls-chain-history', 'pinnacle-pack-openers');
+   ALTER TABLE public.audit_20261122_cadence_bridges_retired_backup ENABLE ROW LEVEL SECURITY;
+   REVOKE ALL ON public.audit_20261122_cadence_bridges_retired_backup FROM PUBLIC, anon, authenticated;
+   DELETE FROM public.cadence_exempt_lanes
+   WHERE pipeline_pattern IN ('pack-pulls-chain-history', 'pinnacle-pack-openers') AND review_by = DATE '2026-11-23';
+   ```
+3. Verify: `select (check_pipeline_cadence_collapse())->'expired_exemptions'` has neither pattern; neither lane is
+   in `degraded`/`stopped`.
+4. Record as in item 1 step 4. **If done after 4 PM PT 11-23** the sentinel will already have read WARN for the
+   lapse; the same delete clears it.
