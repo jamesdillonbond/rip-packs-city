@@ -20,7 +20,7 @@ import { momentSubjectName } from "@/lib/entity-href"
 import { accentText } from "@/lib/accent-text"
 import { resolveUsernames, nameKey } from "@/lib/flowty-username"
 import { scrollRegion } from "@/lib/a11y/scroll-region"
-import { walletTotalUsd, walletTotalCaption, type HeldPacksTotal } from "@/lib/dashboard/held-packs"
+import { shareWalletTotalUsd, walletTotalCaption, type HeldPacksTotal } from "@/lib/dashboard/held-packs"
 
 interface SnapshotData {
   wallet: string
@@ -337,13 +337,8 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
             // 2026-11-22 (Trevor: "one number that encompasses everything in the wallet"):
             // every Moment (stale-priced included) + sealed packs at capped low ask — same
             // single figure as the dashboard and profile.
-            // UFC included (Trevor 2026-11-22: "We should have ufc"): the snapshot's totalFmv
-            // leaves closed markets out, so sum every collection's FMV when the rows are there.
-            const rows = data.perCollection ?? []
-            const momentsFmv = rows.length > 0
-              ? rows.reduce((s, c) => s + (Number(c.fmv) || 0), 0)
-              : Number(data.totalFmv) || 0
-            const value = walletTotalUsd(momentsFmv, 0, packs.total, packs.failed)
+            // UFC included (Trevor 2026-11-22: "We should have ufc") — same helper as the OG card.
+            const value = shareWalletTotalUsd(data.perCollection, data.totalFmv, packs.total, packs.failed)
             const note = walletTotalCaption(packs.total, packs.failed)
             return (
               <>

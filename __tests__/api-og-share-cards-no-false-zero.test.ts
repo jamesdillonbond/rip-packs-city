@@ -94,8 +94,9 @@ describe("/api/og/share — a failed read must not publish a $0 portfolio", () =
     expect(compact(text)).toContain("$12,345.67")
     // 2026-11-07: the count carries a thousands separator like every figure
     // beside it (the live card read "19981 moments" under "$55,777.59").
-    expect(compact(text)).toContain("19,981moments")
-    expect(compact(text)).not.toContain("19981moments")
+    // 2026-11-22: "N assets" (moments + sealed packs; this mock answers no packs).
+    expect(compact(text)).toContain("19,981assets")
+    expect(compact(text)).not.toContain("19981assets")
     expect(text).toContain("Damian Lillard")
   })
 
@@ -135,8 +136,41 @@ describe("/api/og/share — a failed read must not publish a $0 portfolio", () =
     const text = await renderShare()
     expect(text).toContain("COLLECTION FMV")
     expect(compact(text)).toContain("$0.00")
-    expect(compact(text)).toContain("0moments")
+    expect(compact(text)).toContain("0assets")
     expect(text).not.toContain("Open the page for this wallet")
+  })
+
+  // 2026-11-22 (Trevor: one number for everything in the wallet, UFC included): the card's
+  // figure is every collection's FMV + sealed packs, and its count is moments + sealed packs.
+  function mockSnapshotWithPacks(packs: "ok" | "fail") {
+    globalThis.fetch = vi.fn(async (input: unknown) => {
+      const url = String(input)
+      if (url.includes("/api/public/wallet-packs")) {
+        if (packs === "fail") return new Response("down", { status: 503 })
+        return new Response(JSON.stringify({ held: 19, listed: 19, low_ask_usd: 1000 }), { status: 200, headers: { "content-type": "application/json" } })
+      }
+      const body = {
+        totalFmv: 12000, totalMoments: 100, topMoments: [],
+        perCollection: [
+          { slug: "nba_top_shot", name: "NBA Top Shot", moments: 90, fmv: 12000 },
+          { slug: "ufc_strike", name: "UFC Strike", moments: 10, fmv: 500, market_closed_at: "2026-05-13" },
+        ],
+      }
+      return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } })
+    }) as unknown as typeof globalThis.fetch
+  }
+  it("one figure: every collection (closed UFC included) + sealed packs; assets = moments + packs", async () => {
+    mockSnapshotWithPacks("ok")
+    const text = compact(await renderShare())
+    expect(text).toContain("$13,500.00")
+    expect(text).toContain("119assets")
+    expect(text).not.toContain("stale-priced")
+  })
+  it("a failed pack read is SAID on the card, never silently left out of the figure", async () => {
+    mockSnapshotWithPacks("fail")
+    const text = await renderShare()
+    expect(compact(text)).toContain("$12,500.00")
+    expect(text).toContain("Sealed packs couldn't load — not included")
   })
 
   it("shows the wallet address in both states", async () => {

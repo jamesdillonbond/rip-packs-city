@@ -109,3 +109,21 @@ export function walletTotalCaption(
   if (packs && packs.walletsFailed > 0) return "Some wallets' sealed packs didn't load"
   return null
 }
+
+/**
+ * The share card's single figure (page AND its OG image, 2026-11-22): every collection's FMV —
+ * UFC (closed on Flow) included, so the snapshot's own `totalFmv` (which leaves closed markets
+ * out) is used only when the per-collection rows are absent — plus sealed packs at capped low ask.
+ */
+export function shareWalletTotalUsd(
+  perCollection: Array<{ fmv?: number | string | null }> | null | undefined,
+  snapshotTotalFmv: number | string | null | undefined,
+  packs: HeldPacksTotal | null,
+  packsFailed: boolean,
+): number {
+  const rows = perCollection ?? []
+  const moments = rows.length > 0
+    ? rows.reduce((s, c) => s + (Number(c.fmv) || 0), 0)
+    : Number(snapshotTotalFmv) || 0
+  return walletTotalUsd(moments, 0, packs, packsFailed)
+}

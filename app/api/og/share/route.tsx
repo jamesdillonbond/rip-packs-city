@@ -16,7 +16,7 @@ import { ImageResponse } from "next/og"
 import { NextRequest } from "next/server"
 import { brandFonts, brandFamilies, ogCacheHeaders } from "@/lib/og/brand-fonts"
 import { ogFetch } from "@/lib/og/og-fetch"
-import { shareHeadline } from "@/lib/share-card-view"
+import { shareWalletTotalUsd, walletTotalCaption, type HeldPacksTotal } from "@/lib/dashboard/held-packs"
 
 // Node, not edge (2026-11-16): on edge the brand fonts come over HTTP from our own
 // origin on every cold isolate — the first unfurl of a shared link measured
@@ -48,8 +48,7 @@ export async function GET(req: NextRequest) {
   // that is a true statement about an empty wallet.
   let fetched = false
   let totalFmv = 0
-  let staleFmv: number | null = null
-  let staleCount = 0
+  let perCollection: Array<{ fmv?: number | null }> = []
   let totalMoments = 0
   let topPlayers: string[] = []
 
@@ -85,8 +84,7 @@ export async function GET(req: NextRequest) {
       const knownWalked = data?.indexed === undefined || data?.indexed === true
       if (knownWalked) fetched = true
       totalFmv = data.totalFmv ?? 0
-      staleFmv = typeof data.staleFmv === "number" ? data.staleFmv : null
-      staleCount = Number(data.staleCount ?? 0) || 0
+      perCollection = Array.isArray(data.perCollection) ? data.perCollection : []
       totalMoments = data.totalMoments ?? 0
       topPlayers = (data.topMoments ?? []).slice(0, 3).map((m: { playerName: string }) => m.playerName)
     }
@@ -94,6 +92,28 @@ export async function GET(req: NextRequest) {
     /* fetched stays false — the card withholds the figures rather than zeroing them */
   }
   const handle = await handlePromise
+
+  // 2026-11-22 (Trevor: one number for everything in the wallet, UFC included): the card shows
+  // the share page's single figure — every collection's FMV + sealed packs at capped low ask —
+  // and Total Assets (moments + sealed packs). A failed pack read is said on the card, never
+  // silently left out of a number a collector posts.
+  let packs: HeldPacksTotal | null = null
+  let packsFailed = false
+  if (/^0x[0-9a-fA-F]{16}$/.test(wallet)) {
+    try {
+      const pr = await ogFetch(`${BASE_URL}/api/public/wallet-packs?wallet=${encodeURIComponent(wallet)}`, {
+        next: { revalidate: 600 },
+      })
+      if (!pr.ok) throw new Error(String(pr.status))
+      const d = await pr.json()
+      packs = { held: Number(d?.held) || 0, listed: Number(d?.listed) || 0, lowAskUsd: Number(d?.low_ask_usd) || 0, unpriced: Number(d?.unpriced) || 0, walletsFailed: 0 }
+    } catch {
+      packsFailed = true
+    }
+  }
+  const walletValue = shareWalletTotalUsd(perCollection, totalFmv, packs, packsFailed)
+  const valueNote = walletTotalCaption(packs, packsFailed)
+  const totalAssets = Number(totalMoments) + (!packsFailed && packs ? packs.held : 0)
 
   return new ImageResponse(
     (
@@ -130,15 +150,15 @@ export async function GET(req: NextRequest) {
                 COLLECTION FMV
               </div>
               <div style={{ fontSize: 80, fontWeight: 900, color: "#E03A2F", display: "flex" }}>
-                ${shareHeadline({ totalFmv, staleFmv, staleCount }).live.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ${walletValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
-              {shareHeadline({ totalFmv, staleFmv, staleCount }).caption && (
+              {valueNote && (
                 <div style={{ fontSize: 18, color: "#666", fontFamily: fam.mono, display: "flex" }}>
-                  {shareHeadline({ totalFmv, staleFmv, staleCount }).caption}
+                  {valueNote}
                 </div>
               )}
               <div style={{ fontSize: 22, color: "#888", display: "flex" }}>
-                {Number(totalMoments).toLocaleString("en-US")} moment{totalMoments === 1 ? "" : "s"}
+                {totalAssets.toLocaleString("en-US")} asset{totalAssets === 1 ? "" : "s"}
               </div>
             </div>
           ) : (
