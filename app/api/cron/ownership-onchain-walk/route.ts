@@ -52,6 +52,7 @@ import * as t from "@onflow/types"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
+import { isComputationLimitError, isStorageLimitError } from "@/lib/chains/flow/wallet-backfill-helpers"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 800
@@ -184,6 +185,14 @@ async function run(req: NextRequest) {
     let written = 0;
     let vanished = 0;
     let walletErrors = 0;
+    // 2026-11-22: wallets no single Flow script can enumerate (Cadence 1110 computation / 1106 storage limit on
+    // getIDs). Measured via the access node: TopShot_Buyback_2 0xe1f2a091f7bb5245 (>80k Moments) and
+    // 0x0d744d23165bfb6c (~158k) — the same two wallet-backfill classifies as computation_limit_exceeded since
+    // 09-25. They are a permanent property, not an error: counted apart so `wallet_errors` can read 0, and
+    // stamped as walked so the oldest-first scheduler stops handing them back every run (they cannot be
+    // confirmed or flagged either way; their rows are left as they are).
+    let walletsTooLarge = 0;
+    const tooLargeWallets: string[] = [];
     // 2026-11-22: WHICH wallets failed and why. `wallet_errors` read exactly 2 on every run for days with
     // nothing naming them; a wallet whose walk throws is never re-stamped, so the oldest-first selector hands
     // the same one back every run. Bounded, so a mass failure cannot bloat the row.
@@ -249,6 +258,11 @@ async function run(req: NextRequest) {
         try {
           heldIds = new Set(await getOwnedMomentIds(wallet));
         } catch (err) {
+          if (isComputationLimitError(err) || isStorageLimitError(err)) {
+            walletsTooLarge++;
+            tooLargeWallets.push(wallet);
+            return;
+          }
           noteWalletError(wallet, "chain", err);
           return;
         }
@@ -379,13 +393,14 @@ async function run(req: NextRequest) {
       // Called even when the floor read failed (no ids then): the walked
       // candidates must still be stamped, or they would hold the head of the
       // rotation every run.
-      if (ok && walkedOk.length > 0) {
+      const stampWalked = [...walkedOk, ...tooLargeWallets];
+      if (ok && stampWalked.length > 0) {
         const chunks = Math.max(1, Math.ceil(indexIds.length / INDEX_CHUNK));
         for (let c = 0; c < chunks; c++) {
           const { data, error } = await (supabaseAdmin as any).rpc("topshot_index_walk_holdings", {
             p_owners: indexOwners.slice(c * INDEX_CHUNK, (c + 1) * INDEX_CHUNK),
             p_nft_ids: indexIds.slice(c * INDEX_CHUNK, (c + 1) * INDEX_CHUNK),
-            p_walked: c === 0 ? walkedOk : [],
+            p_walked: c === 0 ? stampWalked : [],
             p_walk_at: nowIso,
           });
           if (error) {
@@ -434,6 +449,8 @@ async function run(req: NextRequest) {
           index_error: indexError,
           wallet_errors: walletErrors,
           wallet_error_samples: walletErrorSamples,
+          wallets_too_large: walletsTooLarge,
+          wallets_too_large_list: tooLargeWallets.slice(0, WALLET_ERROR_SAMPLE_MAX),
           budget_hit: budgetHit,
           duration_ms: Date.now() - startedMs,
         },

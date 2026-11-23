@@ -24,7 +24,7 @@ import {
 const state = vi.hoisted(() => ({
   afterCbs: [] as Array<() => unknown>,
   sb: null as unknown,
-  heldByWallet: {} as Record<string, string[] | "throw">,
+  heldByWallet: {} as Record<string, string[] | "throw" | "throw1110">,
 }))
 
 vi.mock("next/server", async (importOriginal) => {
@@ -39,6 +39,7 @@ vi.mock("@/lib/chains/flow/flow", () => ({
       const wallet = String(captured[0])
       const held = state.heldByWallet[wallet]
       if (held === "throw") throw new Error("fcl query failed")
+      if (held === "throw1110") throw new Error("Invalid Flow argument: [Error Code: 1110] computation limit exceeded (used: 100001, limit: 100000)")
       return held ?? []
     },
   },
@@ -526,6 +527,28 @@ describe("ownership-onchain-walk — indexes new-set holdings", () => {
   function indexCalls(rpcCalls: RecordedRpcCall[]) {
     return rpcCalls.filter((c) => c.name === "topshot_index_walk_holdings")
   }
+
+  // 2026-11-22: a wallet no single script can enumerate (Cadence 1110) is a permanent property, not an error:
+  // counted apart (wallet_errors stays 0) and stamped so the scheduler stops handing it back every run.
+  it("a computation-limit wallet is counted as too large, not as an error, and is stamped as walked", async () => {
+    const BIG = "0xwallet00000000b1"
+    const OK = "0xwallet00000000b2"
+    state.heldByWallet = { [BIG]: "throw1110", [OK]: ["100"] }
+    const spy = install({
+      "rpc:get_stale_ownership_wallets": { data: [{ owner_address: BIG }, { owner_address: OK }], error: null },
+      "rpc:get_topshot_index_walk_id_floor": { data: 52537846, error: null },
+      "rpc:topshot_index_walk_holdings": { data: { written: 0, candidates_stamped: 0, unmapped_queued: 0 }, error: null },
+      topshot_ownership: { data: [], error: null },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = logRun(spy.rpcCalls)
+    expect(log?.p_extra).toMatchObject({ wallet_errors: 0, wallets_too_large: 1, wallets_too_large_list: [BIG] })
+    const stamped = indexCalls(spy.rpcCalls).flatMap((c) => ((c.args as { p_walked?: string[] }).p_walked ?? []))
+    expect(stamped).toEqual(expect.arrayContaining([BIG, OK]))
+  })
 
   it("sends only ids at or above the floor, paired with their wallet, and stamps the walked wallets", async () => {
     const W = "0xwallet00000000a1"
