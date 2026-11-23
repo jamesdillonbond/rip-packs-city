@@ -43,6 +43,8 @@ import { productOrCreativeWork } from "@/lib/jsonld-product"
 import { usdSignFirst } from "@/lib/usd-format"
 import { setEntityHref, pinnacleCharacterHref, pinnacleFranchiseHref, pinnacleSeriesHref } from "@/lib/entity-href"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
+import { pinInsightChips } from "@/lib/pinnacle/pin-insight-chips"
+import { readPinChipFacts } from "@/lib/pinnacle/pin-insight-reads"
 
 export async function generateMetadata({
   params,
@@ -533,6 +535,18 @@ export default async function PinnacleMomentPage({
 
       <TopOwnersSection data={topOwners} />
 
+      {/* Featured in Insights (2026-11-23): chips only for facts true of THIS pin; streamed, renders nothing
+          when the pin earns none (lib/pinnacle/pin-insight-chips.ts). */}
+      <Suspense fallback={null}>
+        <PinInsightChips
+          renderId={ed.render_id}
+          totalMinted={ed.total_minted != null ? Number(ed.total_minted) : null}
+          scarcityPct={scarcity_pct}
+          listed={listings ? listings.total : null}
+          packPulls={packPulls}
+        />
+      </Suspense>
+
       {/* Market cap (market_cap_current; streamed, renders nothing without a row). */}
       <Suspense fallback={null}>
         <MarketCapTile group="edition" collectionDbSlug="disney_pinnacle" match={ed.render_id} />
@@ -922,5 +936,55 @@ function PinUnavailableCard({ id }: { id: string }) {
         {id}
       </p>
     </main>
+  )
+}
+
+/**
+ * "Featured in Insights" (2026-11-23, Pinnacle parity pass 4): links to the boards this pin is notable on, each
+ * stating the fact. The chip logic is pure (lib/pinnacle/pin-insight-chips.ts); the three extra reads fail to no
+ * chip (lib/pinnacle/pin-insight-reads.ts). Renders nothing when the pin earns no chip.
+ */
+async function PinInsightChips(props: {
+  renderId: string
+  totalMinted: number | null
+  scarcityPct: number | null
+  listed: number | null
+  packPulls: { dist_id: string; title: string | null; first_opened_at: string | null }[] | null
+}) {
+  const facts = await readPinChipFacts(props.renderId, props.totalMinted).catch(() => null)
+  const chips = pinInsightChips({
+    scarcityPct: props.scarcityPct,
+    listed: props.listed,
+    collectorHeld: facts?.collectorHeld ?? null,
+    sweepers: facts?.sweepers ?? null,
+    specialSerial: facts?.specialSerial ?? null,
+    packPulls: props.packPulls,
+  })
+  if (chips.length === 0) return null
+  return (
+    <section className="rpc-pm-detail" data-testid="pinnacle-pin-insight-chips">
+      <h2 className="rpc-pm-h2">Featured in Insights</h2>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        {chips.map((c) => (
+          <Link
+            key={c.key}
+            href={c.href}
+            prefetch={false}
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 12,
+              padding: "6px 10px",
+              borderRadius: 999,
+              border: "1px solid var(--rpc-border)",
+              color: "var(--rpc-text-primary)",
+              textDecoration: "none",
+              background: "var(--rpc-surface)",
+            }}
+          >
+            {c.label}
+          </Link>
+        ))}
+      </div>
+    </section>
   )
 }

@@ -20,6 +20,7 @@ import { Suspense } from "react"
 import { momentSubjectName } from "@/lib/entity-href"
 import { topshotPackUrl, dapperMarketPackUrl } from "@/lib/pack-urls"
 import Link from "next/link"
+import PinnacleDropReality from "@/components/pinnacle/PinnacleDropReality"
 import { notFound } from "next/navigation"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { resolveUsernames } from "@/lib/flowty-username"
@@ -2613,6 +2614,14 @@ async function PackStreamedTop({
             {reVerdict?.label ?? "Realized pull value"} · {fmtCount(reOpens)} attributed opens
           </span>
         </section>
+      )}
+
+      {/* Disney Pinnacle (2026-11-23): this drop's row on /insights/pinnacle-pack-reality — value TODAY beside
+          the price (the lifecycle panel above is value at open). Renders nothing for a drop not on the board. */}
+      {collection === "disney-pinnacle" && (
+        <Suspense fallback={null}>
+          <PinnacleDropReality distId={distId} />
+        </Suspense>
       )}
 
       {showEvContributors && (
