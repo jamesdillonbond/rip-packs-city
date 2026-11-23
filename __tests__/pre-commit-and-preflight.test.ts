@@ -8,7 +8,7 @@ import {
   droppedLedgerHeadings,
   selectChecks,
 } from "@/scripts/pre-commit-check.mjs"
-import { isDocsPath, planFor, isTreeWalkingTest, testsNamingPaths, walkingHelpers } from "@/scripts/preflight.mjs"
+import { isDocsPath, planFor, isTreeWalkingTest, testsNamingPaths, walkingHelpers, migrationWalkers } from "@/scripts/preflight.mjs"
 
 // 2026-10-12. The local hooks exist because CI found these minutes AFTER the
 // push, on a branch other sessions were pushing to (pre-commit-check.mjs and
@@ -231,5 +231,27 @@ describe("preflight: the derived selections see what `vitest related` cannot", (
     expect(testsNamingPaths(tests, ["app/api/other/route.ts"])).toEqual(["__tests__/k.test.ts"])
     // A single segment alone is not a path claim.
     expect(testsNamingPaths([{ file: "__tests__/l.test.ts", src: '"route.ts"' }], ["app/api/x/route.ts"])).toEqual([])
+  })
+})
+
+// 2026-11-22: quick mode (pre-push) skipped the migration guards, so a migration push was only parsed
+// locally and `db-pin-points-at-the-newest-defining-migration` reddened main on CI (4582e1cfa).
+describe("preflight: a migration change selects the migration guards even in quick mode", () => {
+  it("migrationWalkers finds the tests that read the migrations tree, and only those", () => {
+    const tests = [
+      { file: "a.test.ts", src: 'const MIGRATIONS = join(process.cwd(), "supabase", "migrations")' },
+      { file: "b.test.ts", src: 'readdirSync("supabase/migrations")' },
+      { file: "c.test.ts", src: 'import { newestDefinitions } from "./helpers/migration-defs"' },
+      { file: "d.test.ts", src: 'import { x } from "@/lib/x"' },
+    ]
+    expect(migrationWalkers(tests)).toEqual(["a.test.ts", "b.test.ts", "c.test.ts"])
+  })
+  it("the real pin-pointer and drift guards are selected", () => {
+    const tests = readdirSync(join(ROOT, "__tests__"))
+      .filter((f) => /\.test\.tsx?$/.test(f))
+      .map((f) => ({ file: f, src: readFileSync(join(ROOT, "__tests__", f), "utf8") }))
+    const picked = migrationWalkers(tests)
+    expect(picked).toContain("db-pin-points-at-the-newest-defining-migration.test.ts")
+    expect(picked).toContain("db-invariants-drift-guard.test.ts")
   })
 })

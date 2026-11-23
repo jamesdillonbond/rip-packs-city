@@ -106,6 +106,21 @@ export function walkingHelpers(helpers) {
   return helpers.filter(({ src }) => WALKS.test(src)).map(({ file }) => file.replace(/^.*\//, "").replace(/\.tsx?$/, ""))
 }
 
+/**
+ * PURE. Test files that read the migrations tree (directly or through the migration-defs helper).
+ *
+ * 2026-11-22: `--quick` (the pre-push hook) skipped every tree-walking guard, and the migration
+ * guards are tree-walkers, so a push that changed a migration was checked locally by the parse step
+ * only. `db-pin-points-at-the-newest-defining-migration` then reddened `main` on CI (`4582e1cfa`:
+ * a function pinned in another test file was redefined). These ~50 guards run in ~12 s, so quick
+ * mode runs them whenever a migration changed.
+ */
+export function migrationWalkers(tests) {
+  return tests
+    .filter(({ src }) => /supabase\/migrations|["'`]supabase["'`]\s*,\s*["'`]migrations["'`]|helpers\/migration-defs/.test(src))
+    .map(({ file }) => file)
+}
+
 /** PURE. Test files whose source names one of the changed (non-test) paths. */
 export function testsNamingPaths(tests, paths) {
   const subjects = paths.filter((p) => !p.startsWith("__tests__/") && !isDocsPath(p))
@@ -237,6 +252,10 @@ function main() {
   const walkers = tests.filter((t) => isTreeWalkingTest(t.src, helperNames)).map((t) => t.file)
   const skippedSlow = []
   ;(quick ? skippedSlow : steps).push([`tree-walking guards (${walkers.length})`, ...vitest(["run", ...walkers])])
+  if (quick && plan.sqlMigrations.length) {
+    const mig = migrationWalkers(tests)
+    if (mig.length) steps.push([`migration guards (${mig.length}; a migration changed)`, ...vitest(["run", ...mig])])
+  }
   if (plan.components) (quick ? skippedSlow : steps).push(["component coverage gate", npm, ["run", "-s", "test:coverage:components"]])
   if (plan.workers) (quick ? skippedSlow : steps).push(["worker coverage gate", npm, ["run", "-s", "test:coverage:workers"]])
   if (plan.full) steps.push(["primary coverage gate", npm, ["run", "-s", "test:coverage"]])
