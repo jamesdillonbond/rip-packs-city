@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~11:05 PM PT · 🔧 SHIPPED (code, latent + CI) — physical routes/HCI client covered; `main` back over the statement-coverage ratchet; HCI non-JSON 200 no longer throws (Claude Code cloud, evening autonomous pass)
+
+CI on `4df3092c5` went red on the merged coverage gate only (all 26,697 tests passed): statements 91.79 vs the 91.8 floor; the physical prototype had left `app/api/physical/{cert,holdings}` at 58% and the total sat on the floor. Added `__tests__/physical-cert-route.test.ts`, `__tests__/physical-hci-client.test.ts` and holdings route cases (planted defects: GET `[]` on error and a skipped cap check both red). Fixed review finding 9 in `lib/physical/hci-client.ts` (a non-JSON 200 now returns `{ok:false, code:"BAD_JSON"}`; the test fails on the old body). Routes remain off (PHYSICAL_CARDS). **Revert:** `git revert` the commit titled "physical: cover the routes and HCI client".
+
 ### 2026-11-22 ~10:42 PM PT · 📄 SHIPPED (docs) — Panini paper crosswalk: 23 of 23 card numbers match published paper checklists (Cowork cloud; Trevor: "Keep going")
 - Positive control for the crosswalk's card-number rule (last `_` segment of the edition key). Checked the top rows of the HCI lookup list against checklistinsider.com's 2026 Prizm FIFA World Cup and 2026 Prizm WNBA checklists: 7 World Cup base numbers, 9 World Cup insert numbers, 7 WNBA players — including the four rookies with TWO paper cards each (Miles #131/#145, Fudd #35/#144, Flau'jae Johnson #136/#150, Awa Fam #132/#146). All matched; the parallels named in the top rows exist on paper. Recorded in the `docs/physical/panini-physical-crosswalk-draft.sql` header.
 - Docs only; nothing applied, nothing deploys. **Revert:** `git revert` this commit.
