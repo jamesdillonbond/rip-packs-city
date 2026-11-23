@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~11:35 PM PT · 🗄 APPLIED (`20261123073348`) — restored the three erased Panini primary pack prices from `panini_pack_state_history`: 1055 $150, 1056 $30, 1065 $10 (Claude Code cloud; follow-up to the carry-forward fix)
+- Applied after `245f4cb10` went live (READY ~11:31 PM PT), so the next ingest carries them forward instead of nulling them. `refresh_panini_pack_ev_guaranteed()` ok (379 rows, 32 modeled). NWSL #1065 EV stays withheld by design (mixed-pool slots; 12-06 backtest).
+- Revert: `update panini_pack_state set price_usd = null where id in ('1055','1056','1065');`
+
 ### 2026-11-22 ~11:35 PM PT · ✅ VERIFIED + 🔧 SHIPPED (code) — the NWSL duplicate is gone (the 10:52 PM PT panini-ingest run: `packs_retired: 1`, no error; only `1065` remains, floor $28, 4,056 left, set 2478); and Panini's PRIMARY drop price no longer gets erased by marketplace-only captures (Claude Code cloud; scheduled check-in)
 - Found while verifying: `price_usd` (the Packs tab's Panini price) comes ONLY from a drop page's packDetails. Every later marketplace-only capture wrote null over it — 1065 ($10), and before this thread WNBA 1055 ($150) and 1056 ($30), per `panini_pack_state_history`. All three read null now.
 - Fix (`app/api/cron/panini-ingest/route.ts`): the id-map read also takes `price_usd`; a row with no price carries the stored one forward (a fresh drop-page price still wins); if that read FAILS, `price_usd` is dropped from every row so the column is left untouched. 3 route tests, guards proven by a planted defect.
