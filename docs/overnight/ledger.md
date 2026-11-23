@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~5:55 PM PT · ⏸ PENDING (data) — fold + delete of the stale NWSL sku row `850176BC-NWSL-PZM-BLK-1` NOT applied: the `apply_migration` approval prompt timed out unanswered (Claude Code cloud; follow-up to "one Panini pack, one row")
+- The code (`bed9a23e6`) is live in prod via `561c784d6` (READY ~5:44 PM PT), so the next ingest run writes the market capture onto `1065`; the sku row just stops updating and still shows as a second NWSL pack until deleted.
+- SQL ready in the project: `claude/patches/2026-11-22-nwsl-one-pack-one-row/fold_nwsl_sku_pack_row_into_1065.sql` — apply as `audit_20261122_panini_fold_nwsl_sku_pack_row_into_1065`, commit under its recorded version, then refresh `refresh_panini_pack_ev_guaranteed()`.
+- Nothing changed in the DB by this step (verified: no `schema_migrations` row for that name).
+
 ### 2026-11-22 ~5:32 PM PT · Lane budget: the two hourly Panini lanes share one pg_cron job (job 915 retired) — migration `20261123013202`
 - Job 915 `panini-pack-ev-tier-shadow` (added 11:49 AM PT) had no paired retirement (320 active vs the 318 baseline). Now job 914 runs `CALL public.run_panini_hourly_lanes()` at :49. The procedure COMMITs between `record_panini_edition_supply_obs()` and `refresh_panini_pack_ev_tier_shadow()`, and each sits in its own guarded block (query_canceled named), so neither can roll back or stop the other; each keeps its own logging. Supply obs moved :54 → :49. Job 915 unscheduled. Active 320 → **319**; job 901 retires 11-25 (scheduled task) → 318. Guarded on both jobs' exact commands; WHEN-OTHERS guard 0. Revert in the file header. **Watch 5:49 PM PT:** both pipelines log a run from job 914.
 
