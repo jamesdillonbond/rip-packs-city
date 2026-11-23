@@ -478,7 +478,13 @@ const MISSING = QUALIFYING.filter((r) => !r.hasHeartbeat)
 //   error each one's terminal log_pipeline_run returns (R123).
 //   2026-10-18: 27 -> 26 by DELETION, not conversion — an unconverted UFC route left
 //   the tree with the dead UFC route code (market closed May 2026, 0 runs).
-const BUDGET = 26
+//   2026-11-23: app/api/cron/weekly-digest converted (26 -> 25). Max 141,685 ms of a
+//   300,000 ms wall (47 %) over 73 h — the tightest margin on the queue — and its output
+//   is member MAIL, so a kill sends nothing. No queued route took a Vercel wall kill in the
+//   7 d to 11-23 (the five that week all hit converted routes). Same edit reads the error
+//   its terminal log_pipeline_run returns (R123). Next by margin: wallet-backfill-pinnacle
+//   (209,391 / 600,000 = 35 %) and wallet-backfill-allday (192,242 / 600,000 = 32 %).
+const BUDGET = 25
 
 describe("after() routes that log a pipeline run must write an invocation heartbeat", () => {
   it(`is at or below the frozen budget of ${BUDGET}`, () => {

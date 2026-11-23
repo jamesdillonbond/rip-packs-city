@@ -524,3 +524,45 @@ describe("cron/alerts-dispatch writes its marker first — through its OWN clien
 // ── 2026-10-14 batch (ratchet 31 -> 27): the four *-listing-cache routes ─────
 // Removed 2026-10-30: the Flowty listing-cache routes were deleted when the Flowty API went dark
 // (docs/operations/flowty-retirement-runbook.md). ufc-listing-cache went 2026-10-18.
+
+// ── 2026-11-23 (ratchet 26 -> 25): cron/weekly-digest ────────────────────────
+// Chosen on measured margin: max 141,685 ms of a 300,000 ms wall (47 %) over the
+// 73 h retained, the tightest on the E5 queue; and its OUTPUT is mail, so a killed
+// tick fails by sending nothing. No route on the queue took a Vercel wall kill in
+// the 7 d to 11-23 (all five kills hit already-converted routes).
+describe("cron/weekly-digest writes its marker first", () => {
+  it("📧 the member EMAIL — marker precedes the movers read and the terminal row", async () => {
+    const rec = recorder()
+    mockAfter()
+    process.env.WEEKLY_DIGEST_ENABLED = "1"
+    process.env.RPC_SENDER_POSTAL_ADDRESS = "1 Test St, Portland, OR"
+    vi.doMock("@/lib/supabase", () => ({ supabaseAdmin: rec.db }))
+    const { POST } = await import("@/app/api/cron/weekly-digest/route")
+
+    const res = await POST(authedNext("https://t/api/cron/weekly-digest") as never)
+    expect(res.status).toBe(202)
+    await runDeferred()
+
+    assertMarkerContract(rec, "weekly-digest")
+    const marker = rec.events.findIndex((e) => e.kind === "insert" && e.name === "pipeline_runs")
+    const movers = rec.events.findIndex((e) => e.name === "get_weekly_portfolio_movers")
+    expect(movers, "the movers read never ran, so ordering proves nothing").toBeGreaterThanOrEqual(0)
+    expect(marker).toBeLessThan(movers)
+    expect((rec.rows[0].extra as Record<string, unknown>).bucket).toBeTruthy()
+  })
+
+  it("NO-CHANGE CONTROL — with the send flag off it logs a skip and writes NO marker", async () => {
+    const rec = recorder()
+    mockAfter()
+    delete process.env.WEEKLY_DIGEST_ENABLED
+    vi.doMock("@/lib/supabase", () => ({ supabaseAdmin: rec.db }))
+    const { POST } = await import("@/app/api/cron/weekly-digest/route")
+
+    const res = await POST(authedNext("https://t/api/cron/weekly-digest") as never)
+    expect(res.status).toBe(202)
+    await runDeferred()
+    expect(rec.rows.length).toBe(0)
+    expect(rec.events.some((e) => e.name === "log_pipeline_run")).toBe(true)
+    delete process.env.RPC_SENDER_POSTAL_ADDRESS
+  })
+})

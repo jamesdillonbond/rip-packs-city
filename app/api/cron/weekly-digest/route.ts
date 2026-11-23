@@ -31,6 +31,7 @@ import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { NextRequest, NextResponse, after } from "next/server";
 import { alreadySentEmail, claimEmailDelivery, ensureUnsubToken } from "@/lib/email/recipient-guards";
 import { supabaseAdmin } from "@/lib/supabase";
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
 import { commercialSendBlockedReason, commercialSenderLine, REPLY_TO } from "@/lib/emails/sender-identity";
 import { emailLink } from "@/lib/emails/email-link";
 import { buildNewItemsBlock } from "@/lib/emails/weekly-digest-news";
@@ -337,6 +338,12 @@ async function run(req: NextRequest) {
 
   after(async () => {
     const startedMs = Date.now();
+    // INVOCATION MARKER FIRST (deep-audit E5, 2026-11-23). A maxDuration kill runs neither the
+    // success path nor the catch, and this route's output is MAIL — a killed tick fails by sending
+    // nothing, unfalsifiable from outside. Measured 73 h to 11-23: max 141,685 ms of a 300,000 ms
+    // wall (47 %), the tightest margin left on the E5 queue. `<pipeline>-heartbeat` with no terminal
+    // row = killed or dropped.
+    await writeInvocationHeartbeat({ pipeline: PIPELINE_NAME, startedAtMs: Date.parse(startedAt), extra: { bucket } });
     let ok = true;
     let errMsg: string | null = null;
     let found = 0;
@@ -420,7 +427,9 @@ async function run(req: NextRequest) {
     }
 
     try {
-      await supabaseAdmin.rpc("log_pipeline_run", {
+      // supabase-js RETURNS errors rather than throwing (R123): read it, or a failed terminal write
+      // reads as a logged run.
+      const { error: logError } = await supabaseAdmin.rpc("log_pipeline_run", {
         p_pipeline: PIPELINE_NAME,
         p_started_at: startedAt,
         p_rows_found: found,
@@ -430,6 +439,7 @@ async function run(req: NextRequest) {
         p_error: errMsg,
         p_extra: { sent, skipped, skipped_incomplete: incomplete, guard_errors: guardErrors, bucket, min_abs_pct: minAbsPct, days, duration_ms: Date.now() - startedMs },
       });
+      if (logError) console.log(`[${PIPELINE_NAME}] log err: ${logError.message}`);
     } catch (logErr) {
       console.log(`[${PIPELINE_NAME}] log err: ${logErr instanceof Error ? logErr.message : String(logErr)}`);
     }
