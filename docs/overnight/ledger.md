@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~9:20 PM PT · 🔧 SHIPPED (code) — Candy buyer-paid: a later node's clean "not found" supersedes an earlier node's RPC error (Claude Code cloud, autonomous pass; from a review of `d182d2ba2`)
+- `fetchTx` (`lib/candy/sale-buyer-paid.ts`) tries publicnode, then mainnet-beta. publicnode holds ~1.5 days of history; if it errors on an older signature and mainnet-beta answers `result: null`, the run counted an RPC error, `ok=false`. The same target returns every run, so the lane would read red forever. Now a clean answer from a later node clears the earlier error: not found, retried later. An error from the LAST node still counts. Not live tonight (`candy-sales-buyer-paid` 288/288 ok in 24 h); this closes the latent case.
+- Tests: 2 new cases in `__tests__/lib-candy-sale-buyer-paid.test.ts`; the first fails on the old code.
+- **Revert:** `git revert` the commit titled "candy: buyer-paid — a later node's clean null supersedes".
+
 ### 2026-11-22 ~8:45 PM PT · Lane budget: finished backfill `rpc-topshot-pack-opens-history` (job 56) paused, 319 → 318 active jobs — migration `20261123044343` (Claude Code cloud, autonomous pass)
 - Its cursor has sat at the floor since ~08-01: every run logs `done: true`, 0 found / 0 written (10,972 runs, 0 rows ever), 96 edge invocations a day; the floor cannot move (#181). Paused with `cron.alter_job(active := false)` and its cadence-watchlist row set inactive (backup `audit_20261122_pack_opens_history_watchlist_backup`), the 11-18 Studio-retirement pattern. Verified: job inactive, watchlist inactive, backup 1 row with RLS on.
 - Zero-yield scan of 14 days found other lanes at 0 written; most are monitors (a correct zero). Left alone and handed off: `topshot-buyer-backfill-historical` (externally scheduled, one undecodable row re-found every 30 min since 08-28).
