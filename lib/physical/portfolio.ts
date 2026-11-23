@@ -15,6 +15,7 @@ export type PhysicalHolding = {
   grader: string
   grade: string
   quantity: number
+  /** Total paid for this row (the whole lot), not per card — see holding-input.ts. */
   costBasisUsd: number | null
 }
 

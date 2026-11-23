@@ -10,6 +10,11 @@ export type HoldingInput = {
   certNumber: string | null
   rawCondition: "mint" | "near_mint" | "excellent" | "very_good" | "poor" | null
   quantity: number
+  /**
+   * What the collector paid for THIS ROW in total: the whole lot for a raw row
+   * with quantity 3, the slab for a graded row. Not a per-card price, so it is
+   * never multiplied by quantity (lib/physical/portfolio.ts sums it as is).
+   */
   costBasisUsd: number | null
   acquiredOn: string | null
 }
@@ -19,7 +24,18 @@ const GRADERS = new Set(["psa", "bgs", "cgc", "sgc", "raw"])
 const CONDITIONS = new Set(["mint", "near_mint", "excellent", "very_good", "poor"])
 const GRADE = /^(10|[1-9](\.5)?|1\.5)$/
 
-export function parseHoldingInput(body: unknown): { ok: true; value: HoldingInput } | { ok: false; error: string } {
+/** A real YYYY-MM-DD calendar day from 1900 to today (UTC; one day of slack for time zones). */
+export function isCalendarDate(s: string, now: Date = new Date()): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s)
+  if (!m) return false
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])]
+  const t = Date.UTC(y, mo - 1, d)
+  const back = new Date(t)
+  if (back.getUTCFullYear() !== y || back.getUTCMonth() !== mo - 1 || back.getUTCDate() !== d) return false
+  return y >= 1900 && t <= now.getTime() + 86_400_000
+}
+
+export function parseHoldingInput(body: unknown, now: Date = new Date()): { ok: true; value: HoldingInput } | { ok: false; error: string } {
   const b = (body ?? {}) as Record<string, unknown>
   const cardId = typeof b.cardId === "string" ? b.cardId : ""
   if (!UUID.test(cardId)) return { ok: false, error: "Pick the card from the search results." }
@@ -35,7 +51,15 @@ export function parseHoldingInput(body: unknown): { ok: true; value: HoldingInpu
     if (!Number.isFinite(cost) || cost < 0 || cost > 10_000_000) return { ok: false, error: "Cost must be a dollar amount." }
     cost = Math.round(cost * 100) / 100
   }
-  const acquiredOn = typeof b.acquiredOn === "string" && /^\d{4}-\d{2}-\d{2}$/.test(b.acquiredOn) ? b.acquiredOn : null
+  // A date the collector typed is either stored as typed or refused, never dropped:
+  // a wrong-format or impossible date (2026-02-31) used to become null and still 201.
+  let acquiredOn: string | null = null
+  if (b.acquiredOn !== undefined && b.acquiredOn !== null && b.acquiredOn !== "") {
+    if (typeof b.acquiredOn !== "string" || !isCalendarDate(b.acquiredOn, now)) {
+      return { ok: false, error: "Enter the date as YYYY-MM-DD, not in the future." }
+    }
+    acquiredOn = b.acquiredOn
+  }
 
   if (grader === "raw") {
     const cond = typeof b.rawCondition === "string" ? b.rawCondition : ""

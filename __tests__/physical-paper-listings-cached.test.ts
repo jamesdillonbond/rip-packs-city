@@ -39,4 +39,21 @@ describe("getPaperListings", () => {
     expect(bump.mock.calls[0][0][0]).toMatchObject({ bucket: "ebay_browse_global", key: "*", limit: 4000, windowSecs: 86400 })
     expect(fetchSpy).not.toHaveBeenCalled()
   })
+  it("never serves a cached result older than 6 h, nor one with no stamp", async () => {
+    process.env.PHYSICAL_EBAY_LISTINGS = "1"
+    process.env.EBAY_CLIENT_ID = "id"
+    process.env.EBAY_CLIENT_SECRET = "s"
+    const at = Date.parse("2026-11-23T00:00:00Z")
+    let cached: Record<string, unknown> = { status: "ok", listings: [], affiliate: false, fetchedAt: new Date(at).toISOString() }
+    // A cache hit: what stale-while-revalidate hands back, whatever its age.
+    vi.doMock("next/cache", () => ({ unstable_cache: () => async () => cached }))
+    vi.doMock("@/lib/abuse/anon-rate", () => ({ bumpAnonRates: vi.fn() }))
+    const { getPaperListings } = await import("@/lib/physical/ebay-listings-cached")
+    const H = 3_600_000
+    expect((await getPaperListings("Cooper Flagg", "cooper-flagg", at + 5 * H)).status).toBe("ok")
+    expect((await getPaperListings("Cooper Flagg", "cooper-flagg", at + 6 * H)).status).toBe("ok")
+    expect(await getPaperListings("Cooper Flagg", "cooper-flagg", at + 6 * H + 1000)).toEqual({ status: "error" })
+    cached = { status: "ok", listings: [], affiliate: false }
+    expect(await getPaperListings("Cooper Flagg", "cooper-flagg", at)).toEqual({ status: "error" })
+  })
 })

@@ -38,6 +38,9 @@ export async function GET(req: NextRequest) {
   }
 
   const caps = certCaps()
+  // Order is deliberate (review finding 7): the per-user cap first, so a user over
+  // their own limit never spends the scarce site-wide (paid) budget. The cost is that
+  // a global refusal still spends one of that user's lookups — the safe direction.
   const verdict = await bumpAnonRates([
     { bucket: "physical_cert_user", key: user.id, limit: caps.perUser, windowSecs: DAY },
     { bucket: "physical_cert_global", key: "*", limit: caps.global, windowSecs: DAY },
@@ -52,6 +55,10 @@ export async function GET(req: NextRequest) {
   const r = await new HciClient(process.env.HCI_API_KEY as string).cert(input)
   if (!r.ok) {
     if (r.status === 404) return NextResponse.json({ error: "That cert number was not found." }, { status: 404, headers: NO_STORE })
+    // The feed's own rate limit is a busy signal, not a broken upstream (review finding 7).
+    if (r.status === 429) {
+      return NextResponse.json({ error: "Cert lookup is busy. Try again in a minute." }, { status: 429, headers: { ...NO_STORE, "Retry-After": "60" } })
+    }
     return NextResponse.json({ error: "Cert lookup failed. Try again later." }, { status: 502, headers: NO_STORE })
   }
   const slab = mapHciCert(r.data, input)

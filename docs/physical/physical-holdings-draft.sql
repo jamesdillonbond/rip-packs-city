@@ -14,6 +14,7 @@
 --     terms require deleting stored data within 30 days of a plan ending.
 --
 -- Revert: DROP TABLE public.physical_value_cache, public.physical_holdings, public.physical_cards;
+--         DROP FUNCTION public.physical_holdings_row_cap();
 
 -- 1. Catalogue: one row per card as the price source identifies it.
 CREATE TABLE IF NOT EXISTS public.physical_cards (
@@ -36,16 +37,17 @@ CREATE TABLE IF NOT EXISTS public.physical_holdings (
   user_id         uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   card_id         uuid NOT NULL REFERENCES public.physical_cards(id),
   grader          text NOT NULL CHECK (grader IN ('psa','bgs','cgc','sgc','raw')),
-  grade           text NOT NULL,       -- '10', '9.5' … or 'raw'
+  grade           text NOT NULL CHECK (grade ~ '^(raw|10|[1-9](\.5)?)$'),  -- '10', '9.5' … or 'raw'
   cert_number     text,                -- graded only
   raw_condition   text CHECK (raw_condition IN ('mint','near_mint','excellent','very_good','poor')),
   quantity        int  NOT NULL DEFAULT 1 CHECK (quantity BETWEEN 1 AND 999),
-  cost_basis_usd  numeric(12,2),
+  cost_basis_usd  numeric(12,2) CHECK (cost_basis_usd >= 0),  -- total paid for THIS ROW (the whole lot), not per card
   acquired_on     date,
   created_at      timestamptz NOT NULL DEFAULT now(),
   CHECK ((grader = 'raw') = (cert_number IS NULL)),
   CHECK (grader <> 'raw' OR raw_condition IS NOT NULL),
-  CHECK (grader = 'raw' OR quantity = 1)  -- a cert is one card
+  CHECK (grader = 'raw' OR quantity = 1),  -- a cert is one card
+  CHECK ((grader = 'raw') = (grade = 'raw'))
 );
 CREATE UNIQUE INDEX IF NOT EXISTS physical_holdings_one_cert_per_user
   ON public.physical_holdings (user_id, grader, cert_number) WHERE cert_number IS NOT NULL;
@@ -72,9 +74,14 @@ ALTER TABLE public.physical_cards       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.physical_holdings    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.physical_value_cache ENABLE ROW LEVEL SECURITY;
 
-REVOKE ALL ON TABLE public.physical_cards, public.physical_holdings, public.physical_value_cache FROM PUBLIC, anon;
+-- Grants (review finding 8, 2026-11-23). This DB's default privileges give
+-- `authenticated` full rights on a new table, and TRUNCATE ignores RLS, so the
+-- revoke names all three roles in ONE statement. Writes go only through
+-- app/api/physical/holdings (service role), which validates input and caps rows;
+-- a signed-in client may READ its own holdings and the catalogue, nothing more.
+REVOKE ALL ON TABLE public.physical_cards, public.physical_holdings, public.physical_value_cache FROM PUBLIC, anon, authenticated;
 GRANT SELECT ON TABLE public.physical_cards TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.physical_holdings TO authenticated;
+GRANT SELECT ON TABLE public.physical_holdings TO authenticated;
 -- physical_value_cache: service_role only; routes select the public columns.
 GRANT ALL ON TABLE public.physical_cards, public.physical_holdings, public.physical_value_cache TO service_role;
 
@@ -83,12 +90,21 @@ CREATE POLICY physical_cards_read ON public.physical_cards
 -- (select auth.uid()) form per the 11-16 rls_initplan fix.
 CREATE POLICY physical_holdings_select_own ON public.physical_holdings
   FOR SELECT TO authenticated USING (user_id = (select auth.uid()));
-CREATE POLICY physical_holdings_insert_own ON public.physical_holdings
-  FOR INSERT TO authenticated WITH CHECK (user_id = (select auth.uid()));
-CREATE POLICY physical_holdings_update_own ON public.physical_holdings
-  FOR UPDATE TO authenticated USING (user_id = (select auth.uid())) WITH CHECK (user_id = (select auth.uid()));
-CREATE POLICY physical_holdings_delete_own ON public.physical_holdings
-  FOR DELETE TO authenticated USING (user_id = (select auth.uid()));
+
+-- Row cap per user, enforced in the DB as well as the route (the route's count-then-
+-- insert can race). Keep in step with MAX_HOLDINGS in app/api/physical/holdings/route.ts.
+CREATE OR REPLACE FUNCTION public.physical_holdings_row_cap()
+RETURNS trigger LANGUAGE plpgsql SET search_path = public AS $$
+BEGIN
+  PERFORM pg_advisory_xact_lock(hashtextextended('physical_holdings:' || NEW.user_id::text, 0));
+  IF (SELECT count(*) FROM public.physical_holdings WHERE user_id = NEW.user_id) >= 1000 THEN
+    RAISE EXCEPTION 'physical_holdings row cap reached' USING ERRCODE = 'P0001';
+  END IF;
+  RETURN NEW;
+END $$;
+REVOKE ALL ON FUNCTION public.physical_holdings_row_cap() FROM PUBLIC, anon, authenticated;
+CREATE TRIGGER physical_holdings_row_cap BEFORE INSERT ON public.physical_holdings
+  FOR EACH ROW EXECUTE FUNCTION public.physical_holdings_row_cap();
 
 COMMENT ON TABLE public.physical_value_cache IS
   'Licensed physical-card value ranges. Never joined into RPC FMV. Delete all rows for a source within 30 days of its plan ending (HCI terms). DRAFT 2026-11-22.';

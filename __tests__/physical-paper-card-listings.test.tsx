@@ -47,12 +47,27 @@ describe("paper-card listings loader", () => {
 
   it("returns only listings whose title names the player", async () => {
     const { impl } = fakeFetch(SEARCH)
-    const r = await fetchPaperListings("Cooper Flagg", { env: ON, fetchImpl: impl, slug: "cooper-flagg" })
+    const r = await fetchPaperListings("Cooper Flagg", { env: ON, fetchImpl: impl, slug: "cooper-flagg", now: () => Date.parse("2026-11-23T15:00:00Z") })
     expect(r.status).toBe("ok")
     if (r.status === "ok") {
       expect(r.listings.map((l) => l.itemId)).toEqual(["1"])
       expect(r.affiliate).toBe(true)
+      // Stamped when eBay answered: the read-time 6 h check keys on it.
+      expect(r.fetchedAt).toBe("2026-11-23T15:00:00.000Z")
     }
+  })
+
+  it("asks eBay with no-store, so the only cache is the caller's", async () => {
+    const inits: (RequestInit | undefined)[] = []
+    const impl = (async (url: string | URL, init?: RequestInit) => {
+      inits.push(init)
+      if (String(url).includes("/oauth2/token")) return new Response(JSON.stringify({ access_token: "t", expires_in: 7200 }))
+      return new Response(JSON.stringify(SEARCH))
+    }) as unknown as typeof fetch
+    await fetchPaperListings("Cooper Flagg", { env: ON, fetchImpl: impl })
+    const search = inits[inits.length - 1] as RequestInit & { next?: unknown }
+    expect(search.cache).toBe("no-store")
+    expect(search.next).toBeUndefined()
   })
 
   it("fails silently", async () => {
@@ -72,7 +87,7 @@ describe("PaperCardListingsView", () => {
   it("renders nothing when off, failed or empty", () => {
     expect(renderToStaticMarkup(<PaperCardListingsView name="X" result={{ status: "off" }} />)).toBe("")
     expect(renderToStaticMarkup(<PaperCardListingsView name="X" result={{ status: "error" }} />)).toBe("")
-    expect(renderToStaticMarkup(<PaperCardListingsView name="X" result={{ status: "ok", listings: [], affiliate: false }} />)).toBe("")
+    expect(renderToStaticMarkup(<PaperCardListingsView name="X" result={{ status: "ok", listings: [], affiliate: false, fetchedAt: "2026-11-23T00:00:00Z" }} />)).toBe("")
   })
 
   it("labels asks and discloses affiliate links", () => {
@@ -82,6 +97,7 @@ describe("PaperCardListingsView", () => {
         result={{
           status: "ok",
           affiliate: true,
+          fetchedAt: "2026-11-23T00:00:00Z",
           listings: [{ itemId: "1", title: "Flagg RC", priceUsd: 450, imageUrl: null, href: "a1", isAffiliate: true, buyingOptions: ["FIXED_PRICE"], endsAt: null, condition: null }],
         }}
       />,

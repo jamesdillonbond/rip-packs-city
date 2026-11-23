@@ -21,10 +21,14 @@ import { parseHoldingInput } from "@/lib/physical/holding-input"
 export const dynamic = "force-dynamic"
 const NO_STORE = { "Cache-Control": "no-store" }
 // PostgREST clamps every read at 1,000 rows (postgrest-clamps-set-returning-rpc-results), so a larger bound would be false.
-const MAX_HOLDINGS = 1000
+// It is also the per-user row cap (POST below, and the draft table's row-cap trigger), so GET
+// can return a user's whole list; `complete` still says so explicitly rather than by inference.
+export const MAX_HOLDINGS = 1000
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 const off = () => NextResponse.json({ error: "Not found" }, { status: 404, headers: NO_STORE })
+const capReached = () =>
+  NextResponse.json({ error: `You can track up to ${MAX_HOLDINGS} physical cards.` }, { status: 409, headers: NO_STORE })
 
 async function user() {
   try {
@@ -38,17 +42,23 @@ export async function GET() {
   if (!physicalEnabled()) return off()
   const u = await user()
   if (!u.user) return u.res
-  const { data, error } = await boundedRead(
+  const { data, error, count } = await boundedRead(
     supabase
       .from("physical_holdings")
-      .select("id, card_id, grader, grade, cert_number, raw_condition, quantity, cost_basis_usd, acquired_on, created_at")
+      .select("id, card_id, grader, grade, cert_number, raw_condition, quantity, cost_basis_usd, acquired_on, created_at", { count: "exact" })
       .eq("user_id", u.user.id)
       .order("created_at", { ascending: false })
+      .order("id", { ascending: true }) // unique tiebreak: a stable page
       .limit(MAX_HOLDINGS),
     "api/physical/holdings/list",
   )
   if (error) return apiErrorResponse(error, "api/physical/holdings")
-  return NextResponse.json({ holdings: data ?? [] }, { headers: NO_STORE })
+  const holdings = (data ?? []) as unknown[]
+  // A list that may be cut off says so (review finding 4). With no count, only a
+  // short page proves completeness.
+  const total = typeof count === "number" ? count : null
+  const complete = total != null ? total <= holdings.length : holdings.length < MAX_HOLDINGS
+  return NextResponse.json({ holdings, complete, total }, { headers: NO_STORE })
 }
 
 export async function POST(req: NextRequest) {
@@ -64,6 +74,13 @@ export async function POST(req: NextRequest) {
   const u = await user()
   if (!u.user) return u.res
   const v = parsed.value
+  // Per-user row cap (review finding 4). The table's trigger is the backstop for a race.
+  const held = await boundedRead(
+    supabase.from("physical_holdings").select("id", { count: "exact", head: true }).eq("user_id", u.user.id),
+    "api/physical/holdings/count",
+  )
+  if (held.error || typeof held.count !== "number") return apiErrorResponse(held.error ?? new Error("holdings count unavailable"), "api/physical/holdings/count")
+  if (held.count >= MAX_HOLDINGS) return capReached()
   const { data, error } = await supabase
     .from("physical_holdings")
     .insert({
@@ -80,9 +97,14 @@ export async function POST(req: NextRequest) {
     .select("id")
     .single()
   if (error) {
-    if ((error as { code?: string }).code === "23505") {
+    const code = (error as { code?: string }).code
+    if (code === "23505") {
       return NextResponse.json({ error: "You already added that slab." }, { status: 409, headers: NO_STORE })
     }
+    // An id that passed the UUID check but names no catalogue card (FK) is the caller's
+    // input, not a server fault (review finding 5).
+    if (code === "23503") return NextResponse.json({ error: "Pick the card from the search results." }, { status: 400, headers: NO_STORE })
+    if (code === "P0001" && /row cap/.test((error as { message?: string }).message ?? "")) return capReached()
     return apiErrorResponse(error, "api/physical/holdings/insert")
   }
   return NextResponse.json({ id: (data as { id: string }).id }, { status: 201, headers: NO_STORE })
@@ -100,7 +122,9 @@ export async function DELETE(req: NextRequest) {
   const u = await user()
   if (!u.user) return u.res
   // user_id in the filter: the service role bypasses RLS, so ownership is enforced here.
-  const { error } = await supabase.from("physical_holdings").delete().eq("id", id).eq("user_id", u.user.id)
+  const { data, error } = await supabase.from("physical_holdings").delete().eq("id", id).eq("user_id", u.user.id).select("id")
   if (error) return apiErrorResponse(error, "api/physical/holdings/delete")
+  // Nothing of this user's had that id: say so, never "ok" (review finding 6).
+  if (!Array.isArray(data) || data.length === 0) return NextResponse.json({ error: "Not found" }, { status: 404, headers: NO_STORE })
   return NextResponse.json({ ok: true }, { headers: NO_STORE })
 }

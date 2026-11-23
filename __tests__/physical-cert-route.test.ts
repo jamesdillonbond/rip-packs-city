@@ -76,6 +76,14 @@ describe("/api/physical/cert", () => {
     expect((await down.get("grader=psa&cert=12345678")).status).toBe(502)
   })
 
+  it("passes the feed's own 429 through as a retryable 429, not a 502 (review finding 7)", async () => {
+    const busy = await load({ cert: { ok: false, status: 429, code: "RATE_LIMITED" } })
+    const res = await busy.get("grader=psa&cert=12345678")
+    expect(res.status).toBe(429)
+    expect(res.headers.get("Retry-After")).toBe("60")
+    expect(await res.json()).not.toHaveProperty("slab")
+  })
+
   it("404s a 200 that carries no grade rather than inventing a slab", async () => {
     const m = await load({ cert: { ok: true, data: {} } })
     const res = await m.get("grader=psa&cert=12345678")
