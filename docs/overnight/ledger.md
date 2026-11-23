@@ -12,6 +12,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~8:00 PM PT · `rekey_pack_rips_to_chain_identity()` reads its identity window from a cursor — migration `20261123035939` (Claude Code cloud, autonomous pass)
+- Job 704 (`3,39 * * * *`) read every Top Shot identity checked in the last HOUR on each half-hourly run, so each was probed twice: ~9.5k identities/run, one leg 6.0 s with 9,191 of 9,502 probes cold heap reads; 28.5 s/run avg (max 57.5 s), ~23 DB-minutes/day for 3–19 rows re-keyed/day. Now the window is (cursor − 5 min, now()] from the one-row `pack_rips_chain_rekey_cursor` (first run = the old 1 h; lower bound clamped to 6 h, `extra.window_clamped`). The cursor is written inside the run's block, so a failure rolls it back with the re-keys. Expected ~40 % fewer probes; rows re-keyed unchanged. This is lever (2) of the 11-22 daytime handoff item 8.
+- Pin `supabase/tests/rekey_pack_rips_to_chain_identity.sql` K5 (cursor skip/read/advance; failed run keeps the cursor), each new assertion proven by a planted defect; drift-guard row re-pointed. Live prosrc md5 = pin before the change.
+- **Read after ~9 PM PT:** `pipeline_runs` `pack-rips-chain-rekey` `cursor_before` non-null and `extra.window_lo` ≈ previous `window_hi` − 5 min; duration vs the 28.5 s 24 h average.
+- **Revert:** re-apply the function block of `20261011083816_audit_20261011_rip_rekey_keeps_attribution_in_step.sql` (the cursor table can stay).
+
+### 2026-11-22 ~7:55 PM PT · Docs/copy: Golazos registry pitch drops "581 editions tracked, dual-source listing sweep" (575 live; Flowty retired 10-30); `nfl-all-day.md` items 2–3 marked closed on a live read (Claude Code cloud)
+- **Revert:** `git revert` the commit titled "copy: Golazos pitch".
+
 ### 2026-11-22 ~7:55 PM PT · 🔧 SHIPPED (route + runner) — FOCUS SCAN: a parallel Panini runner process walks a just-admitted product whose catalogue lags its grid, without taking anything from the scheduled walk (Claude Code cloud; Trevor: "add an additional scan to just pick these up without sacrificing the rest")
 
 - **Why:** NWSL #1065 had ~120 catalogued editions against 2,370 grid listings (1,025 distinct queued); the scheduled walk gives new cards ~130 slots per full run (2–3 days), and the bootstrap yields while the oldest edition is ≥ 6.5 d (8.6 d tonight). Runs are busy ~3h45m of each 4 h slot, so there is no idle slot to add.
