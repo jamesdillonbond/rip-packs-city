@@ -1,4 +1,4 @@
--- STAGED 2026-11-23 ~1:40 PM PT (Claude Code cloud; Trevor: "try to resolve these still open"). For Cowork:
+-- STAGED 2026-11-23 ~11:47 AM PT (Claude Code cloud; Trevor: "try to resolve these still open"). For Cowork:
 -- run in the Supabase SQL editor (the MCP holds the DELETE), or apply_migration as
 -- `audit_20261123_merge_two_split_suffix_players` in an attended session. Found by the #258 follow-up: a sweep of
 -- players pairs whose folded names differ only by a generational suffix (Jr/Sr/II/III/IV), 14 pairs estate-wide.
@@ -7,7 +7,7 @@
 -- page shows a fraction of their editions as the whole (get_player_editions picks one row by slug):
 --   Candy  keep "Luis Robert"       de409d7c… (19 editions, Chicago White Sox) · drop "Luis Robert Jr." d8b2efc5… (2, Chicago White Sox)
 --   Panini keep "Andre Jackson Jr." 13c1f240… (13, Prizm base + rookies)      · drop "Andre Jackson"   d88fc832… (4, Rated Rookies / Retro 1988 — his 2023-24 rookie cards)
--- Each drop row was read 11-23 ~1:35 PM PT: 0 aliases / relations / identities / pooled-effect / panini-bridge / badge refs.
+-- Each drop row was read 11-23 ~11:46 AM PT: 0 aliases / relations / identities / pooled-effect / panini-bridge / badge refs.
 -- Same pattern as R153 (20261115183435): re-point editions by player_id, back up, delete the drop row, register its
 -- slug(s) as aliases so the old URL 308s and the linker/minting stop re-creating it. Edition labels are NOT rewritten.
 -- Revert: INSERT INTO players SELECT <players cols> FROM audit_20261123_suffix_merge_players_backup;

@@ -19,7 +19,7 @@ Not a spell: `rpc_ops_snapshot()` returned fast and IO is not saturated.
 
 ---
 
-## ✅ TRIAGED 2026-11-23 ~11:40 AM PT (Claude Code cloud; Trevor: "Figure these out yourself") — GitHub is SHEDDING the two probe workflows, not stalled repo-wide; no change
+## ✅ TRIAGED 2026-11-23 ~11:33 AM PT (Claude Code cloud; Trevor: "Figure these out yourself") — GitHub is SHEDDING the two probe workflows, not stalled repo-wide; no change
 
 - **Delivery is not stopped.** `schedule` runs landed this morning: RPC Ops Monitor 10:43 AM PT, DB pin staleness 11:20, institutional-wallets backstop 11:22, migration auto-recover 11:23, migration parity 11:27.
 - **What the watchdog counts.** `rpc_gha_schedule_watchdog()` reads only `sentinel-heartbeat` + `dead-lane-backstop-heartbeat`. Those two workflows (crons `34-34 * * * *` and `12-12,27,42,57 * * * *`) are the repo's most-shed. GitHub delivered them only every 4–8 h over 11-21 → 11-23 (Sentinel: 2:19 PM, 6:37 PM, 3:55 AM, 11:56 AM, 5:06 PM, 1:43 AM PT). None since ~1:50 AM PT, which reads as `stalled`. **The verdict is correct for its probe set**; it means "the GHA-only probes are shed", the #80 class.

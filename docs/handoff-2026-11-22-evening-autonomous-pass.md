@@ -106,7 +106,7 @@ Trevor: "work autonomously for the next 12 hours … find things to work on. Fix
   - `roadmap-status.md` (gate week 2 + the `within_25_pct` unit trap);
   - `strategy/collections/nba-top-shot.md`.
 
-## Decided after archive prep (11-23 ~11:40 AM → 12:05 PM PT; Trevor: "Figure these out yourself")
+## Decided after archive prep (11-23 ~11:30 → 11:35 AM PT; Trevor: "Figure these out yourself")
 
 - **GHA "stall" (inbox `2026-11-23T1913Z`): triaged, no change.** GitHub is shedding the two probe workflows (Sentinel, Dead Lane Backstop: delivered every 4–8 h), not stopped: 5 other `schedule` runs landed 10:43–11:27 AM PT. Freshness lanes have non-GHA primaries and are on cadence; only two GHA-only historical backfills are paused by it.
 - **Candy ask-age: DECIDED keep `last_seen_at`.** The bound means confirmation age by design (as Top Shot's `low_ask_confirmed_at`), and corroboration's ≥ 3-sale leg gates it. 2 of 35 Candy MEDIUMs even have 3 sales / 30 d. The relabel is the real exposure (candy-mlb.md Now 2).

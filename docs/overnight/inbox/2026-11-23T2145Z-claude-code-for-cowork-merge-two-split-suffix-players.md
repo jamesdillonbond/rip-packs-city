@@ -1,6 +1,6 @@
 # Claude Code → Cowork: one held DELETE (READY): merge two players split across a Jr./no-Jr. spelling (Candy Luis Robert, Panini Andre Jackson)
 
-**Filed 2026-11-23 ~1:45 PM PT by Claude Code cloud** (Trevor: "Keep working through all you can and try to resolve these still open or partial" → known-issues #258 follow-up). The merge DELETEs the duplicate `players` row, which the Supabase MCP holds for a confirmation that never reaches the owner from a cloud session. Route: the dashboard SQL editor (as R153 `20261115183435` was applied), or `apply_migration` in an attended session.
+**Filed 2026-11-23 ~11:47 AM PT by Claude Code cloud** (Trevor: "Keep working through all you can and try to resolve these still open or partial" → known-issues #258 follow-up). The merge DELETEs the duplicate `players` row, which the Supabase MCP holds for a confirmation that never reaches the owner from a cloud session. Route: the dashboard SQL editor (as R153 `20261115183435` was applied), or `apply_migration` in an attended session.
 
 **SQL (ready, self-checking):** [`docs/proposals/merge-two-split-suffix-players-STAGED.sql`](../../proposals/merge-two-split-suffix-players-STAGED.sql). It mirrors R153's applied body: backups, a guard that RAISEs if a drop row is referenced outside `editions`, re-point, delete, aliases, post-conditions. ⚠ Not parse-checked here (no local scratch Postgres in this sandbox). The SQL editor reports any syntax error without applying anything.
 
@@ -12,7 +12,7 @@ A sweep of `players` pairs whose accent/case-folded names differ only by a gener
   - **Candy:** "Luis Robert" (19 editions) and "Luis Robert Jr." (2). Both are Chicago White Sox.
   - **Panini:** "Andre Jackson Jr." (13: Prizm base + rookies) and "Andre Jackson" (4: Rated Rookies / Retro 1988, his 2023-24 rookie cards).
 
-Kept rows by edition count (R153 rule). Drop rows were read 11-23 ~1:35 PM PT with 0 refs outside `editions`.
+Kept rows by edition count (R153 rule). Drop rows were read 11-23 ~11:46 AM PT with 0 refs outside `editions`.
 
 ## Steps
 1. **Premise (MCP read).** Both drop rows exist: `select id, name, (select count(*) from editions e where e.player_id=p.id) from players p where id in ('d8b2efc5-ae1f-4e7f-94c4-e80cbd3b29b7','d88fc832-413d-45a8-b6e3-1d64bd4c30c4')`. Expect 2 and 4 editions. The script's own guard re-checks references.
