@@ -282,6 +282,13 @@ DECLARE
   -- BEFORE INSERT trigger is the ONLY insert-suppressing trigger on
   -- public.sales, and it fires for this collection alone.
   c_allday       constant uuid := 'dee28451-5d62-409e-a1ad-a83f763ac070';
+  -- 2026-11-23: the gap is PER SCOPE. c_min_gap was sized for All Day's 104,908-row unresolved scan
+  -- (above); a Top Shot drain is 1-2 s over an open backlog of 5-18 rows, and its 20-min gap is
+  -- what held Top Shot's on-chain sale-ingest p90 at ~25 min after jobs 476/474 moved to every 10 min
+  -- (20261123185838; read 11-23 1:03 PM PT: p50 3.8, p90 24.8, n 129). Top Shot drains every 5 min;
+  -- every other scope keeps 20.
+  v_min_gap      interval := CASE WHEN p_collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid
+                                  THEN interval '5 minutes' ELSE c_min_gap END;
 BEGIN
   -- ── CONCURRENCY GUARD (2026-08-29) ─────────────────────────────────────────
   -- This drain is NOT claim-based: the `candidates` CTE selects `resolved_at IS
@@ -346,7 +353,7 @@ BEGIN
   SELECT s.last_run_at INTO v_last_run_at
     FROM public.promote_unmapped_sales_state s
    WHERE s.scope = COALESCE(p_collection_id::text, 'ALL');
-  IF v_last_run_at IS NOT NULL AND v_last_run_at > v_started_at - c_min_gap THEN
+  IF v_last_run_at IS NOT NULL AND v_last_run_at > v_started_at - v_min_gap THEN
     PERFORM public.log_pipeline_run(
       'promote_unmapped_sales', v_started_at,
       p_rows_found := NULL,
@@ -358,7 +365,7 @@ BEGIN
         'note', 'skipped_recent_run',
         'scope', COALESCE(p_collection_id::text, 'ALL'),
         'last_run_at', to_char(v_last_run_at, 'YYYY-MM-DD"T"HH24:MI:SSOF'),
-        'min_gap_seconds', EXTRACT(epoch FROM c_min_gap)::integer)
+        'min_gap_seconds', EXTRACT(epoch FROM v_min_gap)::integer)
     );
     RETURN jsonb_build_object(
       'skipped', 'recent_run',
@@ -729,6 +736,26 @@ SELECT _assert_eq(
 SELECT _assert_eq(
   (SELECT resolution_hint->>'promote_blocked' FROM public.unmapped_sales WHERE nft_id='nftBlocked'),
   'sales_insert_vanished_unexplained', 'the horizon-parked row keeps its original marker');
+
+-- ── 2026-11-23: the gap is PER SCOPE — Top Shot 5 min, every other scope 20 ─────
+-- Top Shot's drain is 1-2 s over a 5-18 row backlog; its 20-min gap held the on-chain sale-ingest
+-- p90 at ~25 min. All Day keeps 20 (its scan is the 104k-row cost the gap exists for) — the control.
+INSERT INTO public.promote_unmapped_sales_state (scope, last_run_at)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', now() - interval '6 minutes')
+ON CONFLICT (scope) DO UPDATE SET last_run_at = EXCLUDED.last_run_at;
+SELECT _assert(
+  (public.promote_unmapped_sales('95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid)->>'skipped') IS NULL,
+  'Top Shot drains again 6 min after its last drain (its gap is 5 min)');
+UPDATE public.promote_unmapped_sales_state SET last_run_at = now() - interval '3 minutes'
+ WHERE scope = '95f28a17-224a-4025-96ad-adf8a4c63bfd';
+SELECT _assert_eq(
+  (public.promote_unmapped_sales('95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid)->>'skipped'), 'recent_run',
+  'Top Shot within 5 min of its last drain is still skipped');
+UPDATE public.promote_unmapped_sales_state SET last_run_at = now() - interval '6 minutes'
+ WHERE scope = 'dee28451-5d62-409e-a1ad-a83f763ac070';
+SELECT _assert_eq(
+  (public.promote_unmapped_sales('dee28451-5d62-409e-a1ad-a83f763ac070'::uuid)->>'skipped'), 'recent_run',
+  'All Day keeps its 20-min gap: 6 min after its last drain is skipped (control)');
 
 SELECT '✓ promote_unmapped_sales invariants pass' AS result;
 ROLLBACK;

@@ -1514,8 +1514,9 @@ const PINS = [
     // ⚠ Keep this comment ABOVE `migration:` — check-db-pin-staleness.mjs matches
     // `migration:\s*"..."`, so a comment in that gap drops the pin from the live check.
     // Re-pointed 2026-08-30: a per-scope 20-minute minimum gap between real drains.
+    // Re-pointed 2026-11-23: the Top Shot scope's gap is 5 min (every other scope keeps 20).
     migration:
-      "supabase/migrations/20261004030511_audit_20261003_run_durations_no_longer_wrap_at_60_seconds.sql",
+      "supabase/migrations/20261123210830_audit_20261123_topshot_promote_gap_5_min.sql",
   },
   {
     // Installed for real (not stubbed) inside promote_unmapped_sales.sql: it is
