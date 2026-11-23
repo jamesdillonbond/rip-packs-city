@@ -3211,3 +3211,7 @@ select * from _w order by ts;
 ```
 
 ⚠ The `pg_stat_statements` figure that flagged it (428k blocks/call) was a since-08-12 average (`pg_stat_statements_info.stats_reset`). Read `pipeline_runs` per-step `duration_ms` for today's cost first.
+
+### ⚠ Pausing a lane is TWO edits: the scheduler AND its `pipeline_cadence_watchlist` row (2026-11-23)
+
+A lane paused on cron-job.org (or `cron.alter_job(active := false)`) keeps its active watchlist row, so `detect_stalled_pipelines()` — and the GHA watchdog, Sentinel cadence arm and dead-lane backstop that read it — report the deliberate pause as a stall. Set the row `is_active = false` with the reason in `notes` in the same turn (`20261123220749` did this for `topshot-buyer-backfill-historical`), and re-activate it when the lane is un-paused.
