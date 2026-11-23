@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~4:10 PM PT · ✅ DONE — sealed-pack value backfill complete; job 918 unscheduled, scratch table dropped (Claude Code cloud; same thread)
+
+- Job 918: run 1 (3:49 PM PT) 20 owners / 505 s, run 2 (3:59 PM PT) the rest / 152 s. Result over the last 30 nights: **1,309 rows backfilled, 0 `backfill_failed`, 0 still NULL, 58 owners.** `public.scratch_backfill_pk_trevor` (control rows) dropped.
+- Live check in Trevor's Chrome: dashboard Total Assets 20,641 / Portfolio FMV $66,080 (UFC in); Value / 30D stacks all 30 nights (29 marked est.; Nov 3 tooltip: Total $76,565.37 = Moments $66,021.28 + Sealed packs (est.) $10,544.09); profile $66.1K; share card $66,024.14 (live snapshot read vs the dashboard cache), closed-market line gone.
+- The largest owner's history steps +$6.4k on Nov 12: real — 24 packs of three new drops bought Nov 11 (incl. 10 × ~$343 and 1 × ~$2,325 ask).
+
 ### 2026-11-22 ~3:58 PM PT · pg_cron 704 `rpc-pack-rips-chain-rekey` moved `9,39` → `3,39` — migration `20261122235804`
 - fmv-recalc's historical fallback timed out on 16 of 77 :08 runs vs 1 of 77 / 1 of 76 at :28 / :48. The rekey job overlapped 82 % of :08 runs and 0 % of the others. Minute 9 is the heaviest pg_cron minute (153 s/h); minute 3 is 38 s/h. Rekey now averages 31 s (it shipped at ~0.1 s), so it ends before :08. The 1 h lookback still covers both gaps. Guarded on the old schedule; same job, no new lane. Revert: `cron.alter_job(…, schedule => '9,39 * * * *')`. **Watch (~11-23):** :08 `historical_fallback_error` rate falls toward ~1 %. (File header says ~4:10 PM PT; applied 3:58.)
 
