@@ -246,7 +246,22 @@ async function mon() {
   // count is a floor, not a total — say nothing rather than under-count.
   const raw = await getJson("top-sales?window=7d&sort=price&limit=200")
   const truncatedAbove = (raw.rows ?? []).length >= 200 && Math.min(...raw.rows.map((r) => r.price_usd)) >= BIG_SALE_USD
-  const over = truncatedAbove ? 0 : rows.filter((r) => r.price_usd >= BIG_SALE_USD).length
+  // Panini sales the board cannot render (card not catalogued — 2026-11-23: the week's two biggest,
+  // $10,000 and $7,500, were missing and the draft's #1 was really #3). They count toward the 💰 line
+  // and any that would rank in the top 10 is a warning: the list must not be posted as complete.
+  const uncat = raw.meta?.uncatalogued
+  const uncatWarnings = []
+  let uncatOver = 0
+  if (!uncat || uncat.status === "unread") {
+    uncatWarnings.push(`could not read the Panini sales the board cannot render (${uncat?.error ?? "no meta.uncatalogued"}) — the top 10 and the 💰 count may be missing sales; check panini_sales before posting`)
+  } else if (uncat.status === "ok" && uncat.count > 0) {
+    const tenth = top.length >= 10 ? top[9].price_usd : 0
+    const missing = (uncat.rows ?? []).filter((u) => u.price_usd >= tenth)
+    uncatOver = (uncat.rows ?? []).filter((u) => u.price_usd >= BIG_SALE_USD).length
+    for (const u of missing)
+      uncatWarnings.push(`a ${usd(u.price_usd)} Panini sale (${u.sku}, sold ${mdPT(new Date(u.sold_at))}) is NOT on the board — its card is not catalogued. It belongs in this top 10: identify the card and catalogue it (panini_editions) before posting`)
+  }
+  const over = truncatedAbove ? 0 : rows.filter((r) => r.price_usd >= BIG_SALE_USD).length + uncatOver
   const now = new Date()
   // Trevor's format, 11-09: "This past week's top 10 sales, 11/2-11/9 📈"; each line names the collection by its
   // official X account (Panini as plain @PaniniAmerica here); the count line leads with 💰.
@@ -262,9 +277,12 @@ async function mon() {
     reply: [{ n: 2, of: 2, text: `Every sale on the board 👇\n${link}` }],
     thread_fallback: thread(lines, `${head}\n`, "").map((text, i, all) => ({ n: i + 1, of: all.length, text, len: xLength(text) })),
     buyers_untagged: [...new Set(top.map(buyerOf).filter((b) => b && !X_HANDLES[b.toLowerCase()]))],
-    warnings_extra: unnamed.length
-      ? [`no username for the buyer of #${unnamed.join(", #")} (wallet only) — the line names no buyer; never post the address`]
-      : [],
+    warnings_extra: [
+      ...uncatWarnings,
+      ...(unnamed.length
+        ? [`no username for the buyer of #${unnamed.join(", #")} (wallet only) — the line names no buyer; never post the address`]
+        : []),
+    ],
   }
 }
 

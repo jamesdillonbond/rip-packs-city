@@ -9,8 +9,10 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 
 // `query` answers v_insights_top_sales; `panini` answers v_panini_top_sales (2026-10-10);
 // `pinnacle` answers v_pinnacle_top_sales (2026-10-26).
-const state: { query: { data: any; error: any }; panini: { data: any; error: any }; pinnacle: { data: any; error: any }; calls: string[]; views: string[] } = {
+// `uncat` answers v_panini_top_sales_uncatalogued (2026-11-23).
+const state: { query: { data: any; error: any }; panini: { data: any; error: any }; pinnacle: { data: any; error: any }; uncat: { data: any; error: any; count?: any }; calls: string[]; views: string[] } = {
   query: { data: [], error: null },
+  uncat: { data: [], error: null, count: 0 },
   panini: { data: [], error: null },
   pinnacle: { data: [], error: null },
   calls: [],
@@ -28,7 +30,12 @@ vi.mock("@/lib/supabase", () => {
       }
     }
     b.then = (resolve: any) =>
-      resolve(view === "v_panini_top_sales" ? state.panini : view === "v_pinnacle_top_sales" ? state.pinnacle : state.query)
+      resolve(
+        view === "v_panini_top_sales" ? state.panini
+          : view === "v_pinnacle_top_sales" ? state.pinnacle
+          : view === "v_panini_top_sales_uncatalogued" ? state.uncat
+          : state.query
+      )
     return b
   }
   const client: any = { from: (view: string) => build(view) }
@@ -54,6 +61,7 @@ beforeEach(() => {
   state.query = { data: [], error: null }
   state.panini = { data: [], error: null }
   state.pinnacle = { data: [], error: null }
+  state.uncat = { data: [], error: null, count: 0 }
   state.calls = []
   state.views = []
 })
@@ -184,7 +192,7 @@ describe("fetchTopSales — Panini merge (2026-10-10)", () => {
     state.query = { data: [flowRow], error: null }
     state.panini = { data: [paniniRow], error: null }
     const { rows } = await fetchTopSales({ window: "30d" })
-    expect(state.views.sort()).toEqual(["v_insights_top_sales", "v_panini_top_sales", "v_pinnacle_top_sales"])
+    expect(state.views.sort()).toEqual(["v_insights_top_sales", "v_panini_top_sales", "v_panini_top_sales_uncatalogued", "v_pinnacle_top_sales"])
     expect(rows.map((r) => r.sale_id)).toEqual(["p1", "f1"])
     expect(rows[0].buyer_name).toBe("EZGOLF")
     expect(rows[0].seller_name).toBe("Adlcards")
@@ -194,7 +202,7 @@ describe("fetchTopSales — Panini merge (2026-10-10)", () => {
   it("collection=panini_blockchain reads only the Panini view", async () => {
     state.panini = { data: [paniniRow], error: null }
     await fetchTopSales({ collection: "panini_blockchain" })
-    expect(state.views).toEqual(["v_panini_top_sales"])
+    expect(state.views.sort()).toEqual(["v_panini_top_sales", "v_panini_top_sales_uncatalogued"])
   })
 
   it("another collection does not read the Panini (or Pinnacle) view", async () => {
@@ -213,6 +221,35 @@ describe("fetchTopSales — Panini merge (2026-10-10)", () => {
     state.panini = { data: [paniniRow], error: null }
     const { rows } = await fetchTopSales({ limit: 2 })
     expect(rows.map((r) => r.sale_id)).toEqual(["p1", "f1"])
+  })
+})
+
+describe("fetchTopSales — Panini sales the board cannot render (2026-11-23)", () => {
+  // The week's two biggest Panini sales ($10,000, $7,500) had no catalogued card, so
+  // v_panini_top_sales dropped them and the Monday X draft published a top 10 without them.
+  it("reports dropped Panini sales with their exact count, never hiding them", async () => {
+    state.uncat = { data: [{ sku: "packcard-1605_293026_7958740_56__1_1", price_usd: 10000, sold_at: "2026-11-17T15:40:02Z" }], error: null, count: 1 }
+    const { uncatalogued } = await fetchTopSales({})
+    expect(uncatalogued).toEqual({ status: "ok", count: 1, rows: [expect.objectContaining({ price_usd: 10000 })] })
+  })
+
+  it("a failed read is 'unread', never a count of 0", async () => {
+    state.uncat = { data: null, error: { message: "boom" } }
+    const { uncatalogued } = await fetchTopSales({})
+    expect(uncatalogued.status).toBe("unread")
+    expect(uncatalogued).not.toHaveProperty("count")
+  })
+
+  it("a missing count is 'unread', never rows.length", async () => {
+    state.uncat = { data: [{ sku: "x__1_1", price_usd: 500, sold_at: null }], error: null, count: null }
+    const { uncatalogued } = await fetchTopSales({})
+    expect(uncatalogued.status).toBe("unread")
+  })
+
+  it("is not_applicable when the board was not asked for Panini (and the view is not read)", async () => {
+    const { uncatalogued } = await fetchTopSales({ collection: "nba_top_shot" })
+    expect(uncatalogued).toEqual({ status: "not_applicable" })
+    expect(state.views).not.toContain("v_panini_top_sales_uncatalogued")
   })
 })
 

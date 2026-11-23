@@ -48,6 +48,18 @@ export type TopSaleRow = {
   seller_name: string | null
 }
 
+/**
+ * Panini sales v_panini_top_sales DROPS — no bridged edition, or no thumbnail (2026-11-23). The
+ * board cannot render them (no name, no art), but they are real sales: on 11-23 the week's two
+ * biggest ($10,000, $7,500) were here, and the Monday X draft published a top 10 without them.
+ * Three states, never two: "ok" (read, count may be 0) · "unread" (the read failed — never
+ * shown as 0) · "not_applicable" (the board was not asked for Panini).
+ */
+export type UncataloguedSales =
+  | { status: "ok"; count: number; rows: { sku: string; price_usd: number | null; sold_at: string | null }[] }
+  | { status: "unread"; error: string }
+  | { status: "not_applicable" }
+
 export type TopSalesWindow = "7d" | "30d"
 export type TopSalesSort = "price" | "recent"
 
@@ -90,6 +102,9 @@ const OWN_VIEW: Record<string, string> = {
   [PINNACLE_TOP_SALES_COLLECTION]: "v_pinnacle_top_sales",
 }
 
+/** Service-role view of the Panini sales v_panini_top_sales drops (migration 20261123164857). */
+export const UNCATALOGUED_VIEW = "v_panini_top_sales_uncatalogued"
+
 // moment_id intentionally omitted — it is NULL in the view (see header note).
 const SELECT_COLS =
   "sale_id, edition_id, external_id, collection, collection_id, player_name, set_name, team_name, tier, circulation_count, thumbnail_url, nft_id, serial_number, price_usd, sold_at, buyer_address, seller_address, marketplace, subedition_name"
@@ -114,7 +129,7 @@ export type FetchTopSalesOpts = {
 // seller_name (truncated address when unresolved). Returns enriched rows.
 export async function fetchTopSales(
   opts: FetchTopSalesOpts = {}
-): Promise<{ rows: TopSaleRow[]; fetchedAt: string }> {
+): Promise<{ rows: TopSaleRow[]; fetchedAt: string; uncatalogued: UncataloguedSales }> {
   const collection = opts.collection ?? null
   const window = opts.window ?? "7d"
   const sort = opts.sort ?? "price"
@@ -143,7 +158,27 @@ export async function fetchTopSales(
   const known = collection && TOP_SALES_VALID_COLLECTIONS.has(collection) ? collection : null
   const wantFlow = known === null || !(known in OWN_VIEW)
   const ownViews = Object.entries(OWN_VIEW).filter(([coll]) => known === null || known === coll)
-  const [flow, ...own] = await Promise.all([
+  const wantPanini = ownViews.some(([coll]) => coll === PANINI_TOP_SALES_COLLECTION)
+  const readUncatalogued = async (): Promise<UncataloguedSales> => {
+    if (!wantPanini) return { status: "not_applicable" }
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let q = (supabaseAdmin as any).from(UNCATALOGUED_VIEW).select("sku, price_usd, sold_at", { count: "exact" })
+      if (since) q = q.gte("sold_at", since)
+      const r = await q
+        .order("price_usd", { ascending: false, nullsFirst: false })
+        .order("sku", { ascending: true })
+        .limit(50)
+      if (r.error) return { status: "unread", error: r.error.message }
+      // The exact count, never rows.length (PostgREST clamps); a missing count is unknown, not 0.
+      if (typeof r.count !== "number") return { status: "unread", error: "no count returned" }
+      return { status: "ok", count: r.count, rows: r.data ?? [] }
+    } catch (e) {
+      return { status: "unread", error: e instanceof Error ? e.message : String(e) }
+    }
+  }
+  const [uncatalogued, flow, ...own] = await Promise.all([
+    readUncatalogued(),
     wantFlow ? build("v_insights_top_sales", known) : Promise.resolve({ data: [], error: null }),
     ...ownViews.map(([, view]) => build(view, null)),
   ])
@@ -179,5 +214,5 @@ export async function fetchTopSales(
     seller_name: nameOf(r, r.seller_address),
   }))
 
-  return { rows, fetchedAt: new Date().toISOString() }
+  return { rows, fetchedAt: new Date().toISOString(), uncatalogued }
 }

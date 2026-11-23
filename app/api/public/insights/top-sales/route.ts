@@ -56,8 +56,9 @@ export async function GET(req: NextRequest) {
 
   let rows
   let fetchedAt
+  let uncatalogued
   try {
-    ;({ rows, fetchedAt } = await fetchTopSales({ collection, window, sort, limit }))
+    ;({ rows, fetchedAt, uncatalogued } = await fetchTopSales({ collection, window, sort, limit }))
   } catch (e) {
     return boardUnavailable(e, "insights/top-sales")
   }
@@ -74,6 +75,9 @@ export async function GET(req: NextRequest) {
       ...boardRowMeta(rows.length, limit),
       elapsed_ms: elapsedMs,
       filters: { collection, window, sort, limit },
+      // Panini sales the board cannot render (card not catalogued) — 2026-11-23. A consumer
+      // ranking "the top N" must check this before claiming its list is complete.
+      uncatalogued,
     },
     rows,
   })
