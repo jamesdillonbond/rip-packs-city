@@ -918,6 +918,27 @@ describe("panini-ingest — one pack product, one row", () => {
     if (st.captured) await st.captured()
     expect(st.packDeletes).toEqual([])
   })
+  it("carries a stored PRIMARY price forward when this capture has none (1055/1056/1065 lost theirs)", async () => {
+    st.packStateRead = { data: [{ id: "1065", pack_sku: null, pack_id: "1065", price_usd: "10" }], error: null }
+    st.packUpsert = { data: [{ id: "1065" }], error: null }
+    await POST(makeReq({ url, auth: "Bearer ingest", body: { packs: [{ rowId: "1065", pack_sku: "S", collection_name: "x", floor: 28 }] } }))
+    if (st.captured) await st.captured()
+    expect(st.registryUpserts.find((u) => u.table === "panini_pack_state")!.rows[0]).toMatchObject({ id: "1065", price_usd: 10, floor_usd: 28 })
+  })
+  it("a fresh drop-page price wins over the stored one", async () => {
+    st.packStateRead = { data: [{ id: "1065", pack_sku: null, pack_id: "1065", price_usd: "10" }], error: null }
+    await POST(makeReq({ url, auth: "Bearer ingest", body: { packs: [{ rowId: "1065", pack_sku: "S", collection_name: "x", price: 12 }] } }))
+    if (st.captured) await st.captured()
+    expect(st.registryUpserts.find((u) => u.table === "panini_pack_state")!.rows[0].price_usd).toBe(12)
+  })
+  it("when the id-map read FAILS no row carries price_usd, so the stored column is left untouched", async () => {
+    st.packStateRead = { data: null, error: { message: "map err" } }
+    await POST(makeReq({ url, auth: "Bearer ingest", body: { packs: [{ rowId: "1065", pack_sku: "S", collection_name: "x", price: 12 }, { rowId: "1038", pack_sku: "T", collection_name: "x" }] } }))
+    if (st.captured) await st.captured()
+    const rows = st.registryUpserts.find((u) => u.table === "panini_pack_state")!.rows
+    expect(rows).toHaveLength(2)
+    expect(rows.every((r: any) => !("price_usd" in r))).toBe(true)
+  })
   it("a failed retire FAILS the run and reports its error; the count stays 0", async () => {
     st.packStateRead = { data: [nwslSku], error: null }
     st.packUpsert = { data: [{ id: "1065" }], error: null }

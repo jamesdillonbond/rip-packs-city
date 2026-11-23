@@ -505,11 +505,17 @@ export async function POST(req: NextRequest) {
         const idBySku = new Map<string, string>();
         // Non-numeric (sku-keyed) rows whose raw carries Panini's numeric pack id: pack id -> row ids.
         const skuRowsByPackId = new Map<string, string[]>();
+        // Panini's PRIMARY (drop) price, stored per row. Only a drop page's packDetails carries it;
+        // every marketplace-only capture sends null, which erased it (2026-11-22: 1055 $150, 1056 $30,
+        // 1065 $10 all lost). It is fixed per pack, so a null carries the stored value forward.
+        const storedPrice = new Map<string, number>();
         {
-          const { data: ex, error: exErr } = await (supabaseAdmin as any).from("panini_pack_state").select("id,pack_sku:raw->>pack_sku,pack_id:raw->>pack_id");
+          const { data: ex, error: exErr } = await (supabaseAdmin as any).from("panini_pack_state").select("id,pack_sku:raw->>pack_sku,pack_id:raw->>pack_id,price_usd");
           if (exErr) { packIdMapError = exErr.message; console.log(`[${PIPELINE}] pack id map read: ${exErr.message}`); }
-          for (const e of (ex ?? []) as { id: string; pack_sku: string | null; pack_id?: string | null }[]) {
+          for (const e of (ex ?? []) as { id: string; pack_sku: string | null; pack_id?: string | null; price_usd?: unknown }[]) {
             if (e.pack_sku) idBySku.set(String(e.pack_sku), String(e.id));
+            const pp = Number(e.price_usd);
+            if (e.price_usd != null && Number.isFinite(pp) && pp > 0) storedPrice.set(String(e.id), pp);
             const pid = e.pack_id == null ? "" : String(e.pack_id);
             if (/^[0-9]+$/.test(pid) && !/^[0-9]+$/.test(String(e.id))) skuRowsByPackId.set(pid, [...(skuRowsByPackId.get(pid) ?? []), String(e.id)]);
           }
@@ -527,6 +533,16 @@ export async function POST(req: NextRequest) {
         // One row per id: an upsert may not touch the same row twice. Captures of one pack are MERGED
         // per field (a null never overwrites), so a drop page's price and the marketplace's floor both land.
         const packRows = mergePackRowsById(packRowsAll);
+        for (const r of packRows) {
+          // Id-map read failed: the stored price is unknown, so drop the key from EVERY row (a bulk
+          // upsert writes NULL for a key any row carries) and the column is left untouched.
+          if (packIdMapError) { delete r.price_usd; continue; }
+          if (r.price_usd == null) {
+            const id = String(r.id);
+            const carried = storedPrice.get(id) ?? (skuRowsByPackId.get(id) ?? []).map((s) => storedPrice.get(s)).find((v) => v != null);
+            if (carried != null) r.price_usd = carried;
+          }
+        }
         const { data, error } = await (supabaseAdmin as any).from("panini_pack_state").upsert(packRows, { onConflict: "id" }).select("id");
         if (error) { packsError = error.message; console.log(`[${PIPELINE}] pack state upsert: ${error.message}`); } else packsWritten += data?.length ?? 0;
         // Retire a sku-keyed row ONLY once its pack's numeric-id row has just been WRITTEN this batch
