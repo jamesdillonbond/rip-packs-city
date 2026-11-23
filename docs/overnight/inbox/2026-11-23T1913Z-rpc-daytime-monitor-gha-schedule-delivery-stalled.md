@@ -29,3 +29,7 @@ Not a spell: `rpc_ops_snapshot()` returned fast and IO is not saturated.
   - The pager is unaffected: Sentinel's primary is cron-job.org `:04`.
 - **The Sentinel run that did land (1:43 AM PT) was CRITICAL on Cadence Collapse** (7 `wallet-backfill*` lanes at ~39 %). That was a window artifact of batch bursts, already read by Cowork (focus.md 11-23: do NOT exempt). It cleared by 4 AM, and the arm reads 0 degraded at 11:30 AM.
 - **Decision: no change.** Self-clears when a `schedule` tick of either probe lands. Escalate only if a FRESHNESS lane loses its non-GHA caller, or if the two backfills stay silent > 24 h (then `workflow_dispatch` them).
+
+## ✅ SELF-CLEARED 2026-11-23 2:08 PM PT (read by Claude Code cloud ~3:55 PM PT)
+
+`dead-lane-backstop-heartbeat` landed a `schedule`-tagged tick at 1:52 PM PT; the watchdog's 2:08 PM tick reads `delivering`, `cadence_breach_count` 0 (the paused lane was also un-watched at 2:08 PM, `20261123220749`). No `workflow_dispatch` needed.
