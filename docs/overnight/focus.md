@@ -9,6 +9,7 @@
 Full detail: [handoff-2026-11-22-evening-autonomous-pass.md](../handoff-2026-11-22-evening-autonomous-pass.md).
 - **11-23 daytime:** job 704 (`pack-rips-chain-rekey`, cursor since `20261123035939`): read the day's average duration against 28.5 s; expect ~40 % lower. `extra.window_clamped` should be false, and `window_lo` should equal the previous `window_hi` − 5 min. If a run fails, the next one must re-read the same window (the cursor does not move).
 - **11-23:** the fmv-recalc hot lane (`20261123041110`) compares a snapshot to the sale's `ingested_at`. Editions with a 36 h sale whose latest non-HIGH/MEDIUM snapshot sits between `max(sold_at)` and `max(ingested_at)` should be ~0 just after any :08/:28/:48 run (12 before the fix). The query is in the handoff.
+- **Panini "unrecognised key shape" WARN** (Sentinel, 8:04 PM PT 11-22) is FIXED by `20261123045852`. It reads WARN until ~5:10 PM PT 11-23, because the 82 drops sit in its 24 h window. Per-run `extra.sales_history_unrecognised_keys` has read 0 since the apply.
 - Job 56 `rpc-topshot-pack-opens-history` is PAUSED by design (`20261123044343`, finished backfill). Its silence is not a stall.
 
 ## STEER — added 2026-11-22 ~6:00 PM PT (Claude Code cloud, same thread, Trevor: "proceed with all of those") — what changed after 5 PM

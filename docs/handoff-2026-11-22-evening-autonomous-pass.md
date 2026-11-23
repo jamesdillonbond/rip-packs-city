@@ -1,6 +1,6 @@
 # Evening autonomous pass — 2026-11-22 (~7:40 PM PT →, Claude Code cloud)
 
-**Verdict: GREEN · 4 DB changes shipped and verified on production runs · 0 reverted · oldest routed: Top Shot gate week-2 read (overnight item 4), 1 night.**
+**Verdict: GREEN · 4 DB changes + 1 code fix + copy shipped and verified on production runs · 0 reverted · oldest routed: Top Shot gate week-2 read (overnight item 4), 1 night.**
 
 Trevor: "work autonomously for the next 12 hours … find things to work on. Fix any issues you encounter." Push worked from this cloud session (dry-run exit 0); everything below is on `main`, and each item has a ledger entry with its revert path.
 
@@ -14,6 +14,8 @@ Trevor: "work autonomously for the next 12 hours … find things to work on. Fix
 - Top Shot gate (`fmv_accuracy_weekly`, HIGH / MEDIUM within ±25 %): wk 10-26 74.3 / 69.1 · 11-02 75.5 / 69.7 · **11-09 80.1 / 74.1**. That is 1 qualifying week so far; the 11-16 row lands Monday.
 
 ## Shipped (newest first)
+-1. **Panini sales ingest accepts hyphenated `packcard-` keys** (`20261123045852`; TS mirror + test in `2e90d7d19`). The Sentinel WARNed on 82 sales dropped in 24 h for product 850147/111938 (`packcard-850147_111938_2-2_5_21_79`). The 27 affected editions had 0 stored sales and no edition mixes shapes; 499 serial last-sales were seeded. Every panini-ingest run since reads 0 unrecognised keys.
+0. **Candy buyer-paid: a later node's clean "not found" supersedes an earlier node's RPC error** (`516d53b5f`, 2 tests, the first fails on the old code). This closes review finding (b) below before it could turn the lane permanently red.
 1. **Lane budget: finished backfill `rpc-topshot-pack-opens-history` (job 56) paused** — `20261123044343`. Its cursor has been at its floor since ~08-01: 10,972 runs and 0 rows ever, 96 edge invocations a day. The watchlist row is inactive (backed up). Active jobs 319 → 318.
 2. **fmv-recalc hot lane now re-asks an edition whose newest sale was INGESTED after its latest snapshot** (`20261123041110`, new pin `supabase/tests/fmv_recalc_hot_editions.sql`). The selector compared against `sold_at` only. A snapshot written between a sale's print and its ingest (10–60 min later) hid that sale until the next full sweep. 12 editions were stranded at 8:05 PM PT. **Verified on the 8:28 PM run:** all 12 were re-priced (Golazos #349 / #317 ASK_ONLY $0.90 → LOW $0.17 against $0.20 sales). This is also why the 11-18 WNBA drop priced ~1 h late (strategy-2026-11-22 Move 1 item 2, now split).
 3. **`rekey_pack_rips_to_chain_identity()` reads its identity window from a cursor** (`20261123035939`, pin K5). Job 704 probed each identity twice: ~28.5 s/run, ~23 DB-min/day, 3–19 rows/day. **Verified:** the 8:03 run wrote the cursor, and the 8:39 run read a 41-minute window, ok, in 16.1 s.
@@ -28,7 +30,7 @@ Trevor: "work autonomously for the next 12 hours … find things to work on. Fix
 - **`candy_fmv_pct_stale_30d` = 0.0** is correct by construction: it counts snapshots older than 30 days, not STALE confidence.
 - **Review of 4 recent commits** (`e90a0f2a6`, `5d8337121`, `07c53a4d0`, `d182d2ba2`): no high-confidence bugs. Two medium findings are not live today:
   - (a) panini-ingest's sku→id map read has no `.order()`. It only matters if two rows share a sku; today `1065` carries no `pack_sku`.
-  - (b) `lib/candy/sale-buyer-paid.ts` `fetchTx` turns "publicnode errored, mainnet-beta returned null" into an `rpc_errors` count. The lane is 288/288 ok in 24 h.
+  - (b) `lib/candy/sale-buyer-paid.ts` `fetchTx` turned "publicnode errored, mainnet-beta returned null" into an `rpc_errors` count. ✅ Fixed anyway (`516d53b5f`). The lane was 288/288 ok in 24 h.
 - **Live-page sweep** (335 URLs, sitemap 0 + 150 random): 0 NaN/undefined/[object Object]. The only failures were 3 profile collection-breakdown timeouts under my 6-way concurrency.
 - **Top Shot sales ingest lag:** on-chain p50 15.7 min, p90 53 min. Driven by cron-job.org every 20 min (:03/:23/:43) plus the :50 GHA backstop.
 
@@ -41,4 +43,5 @@ Trevor: "work autonomously for the next 12 hours … find things to work on. Fix
 ## Dated reads
 - **11-23 daytime:** job 704 `pack-rips-chain-rekey` average duration over a full day vs 28.5 s (expect roughly 40 % lower); `extra.window_clamped` false.
 - **11-23:** `fmv_recalc_hot_editions` stranded count (snapshot newer than sold_at but older than ingested_at, not HIGH/MEDIUM) stays ~0 between runs.
+- **~5:10 PM PT 11-23:** the Sentinel "Panini Ingest" WARN clears once the 82 drops from 11-22 5:09 PM PT leave its 24 h window. Earlier proof: any `panini_sales` row with `source = 'nft_sales_data'` and `edition_external_id` under `packcard-850147_111938_` other than `…_2-6_*`. A new unrecognised shape in the Sentinel sample is a fourth shape: same recipe, measure first.
 - **11-24 (from the earlier steer):** the fmv-recalc :08 historical-fallback timeout rate.
