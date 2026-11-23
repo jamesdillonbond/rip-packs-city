@@ -9,9 +9,12 @@
 --   K4. A rip already equal to its recent identity but with a stale attribution copy is synced too; an
 --       identity checked more than an hour ago is outside the window and moves nothing; the run reports
 --       attribution_synced.
+--   K5. (2026-11-22) The window comes from pack_rips_chain_rekey_cursor: an identity checked before
+--       (cursor - 5 min) is skipped, one checked after it is read, and the run advances the cursor to its
+--       start time. A failed run leaves the cursor where it was.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261011083816_audit_20261011_rip_rekey_keeps_attribution_in_step.sql).
+-- (supabase/migrations/20261123035939_audit_20261122_pack_rips_chain_rekey_reads_a_cursor.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -33,6 +36,8 @@ CREATE TABLE public.audit_20261004_pack_rips_dist_rekey_backup (rip_id uuid PRIM
   old_dist_id text, new_dist_id text NOT NULL, rekeyed_at timestamptz NOT NULL DEFAULT now());
 CREATE TABLE public.audit_20261004_pack_purchases_dist_rekey_backup (purchase_id uuid PRIMARY KEY, pack_nft_id text NOT NULL,
   old_dist_id text, new_dist_id text NOT NULL, rekeyed_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE public.pack_rips_chain_rekey_cursor (id int PRIMARY KEY CHECK (id = 1), checked_hi timestamptz NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT now());
 CREATE TABLE public.audit_20261011_rip_attribution_rekey_backup (rip_id uuid PRIMARY KEY, old_dist_id text, old_method text,
   old_confidence text, old_n_editions int, new_dist_id text NOT NULL, synced_at timestamptz NOT NULL DEFAULT now());
 
@@ -50,12 +55,22 @@ DECLARE
   v_n int := 0;
   v_p int := 0;
   v_a int := 0;
+  -- 2026-11-22: the identity window is read from a cursor (see the migration header). v_hi is the
+  -- transaction start, so a row checked later is never inside this window; the next run starts 5 min
+  -- before it to cover identity writers that committed late with an earlier checked_at.
+  v_hi constant timestamptz := now();
+  v_cursor timestamptz;
+  v_lo timestamptz;
 BEGIN
+  SELECT c.checked_hi INTO v_cursor FROM public.pack_rips_chain_rekey_cursor c WHERE c.id = 1;
+  v_lo := CASE WHEN v_cursor IS NULL THEN v_hi - interval '1 hour'
+               ELSE greatest(v_cursor - interval '5 minutes', v_hi - interval '6 hours') END;
+
   WITH target AS (
     SELECT r.id, r.pack_nft_id, r.dist_id AS old_dist_id, i.dist_id AS new_dist_id
     FROM public.pack_nft_identity i
     JOIN public.pack_rips r ON r.pack_nft_id = i.pack_nft_id AND r.collection_id = i.collection_id
-    WHERE i.checked_at > now() - interval '1 hour'
+    WHERE i.checked_at > v_lo AND i.checked_at <= v_hi
       AND i.collection_id = v_ts
       AND i.dist_id IS NOT NULL AND i.dist_id <> '0'
       AND r.dist_id IS NOT NULL
@@ -84,7 +99,7 @@ BEGIN
     FROM public.pack_nft_identity i
     JOIN public.pack_rips r ON r.pack_nft_id = i.pack_nft_id AND r.collection_id = i.collection_id
     JOIN public.topshot_pack_rip_attribution a ON a.rip_id = r.id
-    WHERE i.checked_at > now() - interval '1 hour'
+    WHERE i.checked_at > v_lo AND i.checked_at <= v_hi
       AND i.collection_id = v_ts
       AND i.dist_id IS NOT NULL AND i.dist_id <> '0'
       AND r.dist_id = i.dist_id
@@ -108,7 +123,7 @@ BEGIN
     SELECT p.id, p.pack_nft_id, p.pack_dist_id AS old_dist_id, i.dist_id AS new_dist_id
     FROM public.pack_nft_identity i
     JOIN public.pack_purchases p ON p.pack_nft_id = i.pack_nft_id AND p.collection_id = i.collection_id
-    WHERE i.checked_at > now() - interval '1 hour'
+    WHERE i.checked_at > v_lo AND i.checked_at <= v_hi
       AND i.collection_id = v_ts
       AND i.dist_id IS NOT NULL AND i.dist_id <> '0'
       AND p.pack_dist_id IS NOT NULL
@@ -129,8 +144,14 @@ BEGIN
   )
   SELECT count(*) INTO v_p FROM upd;
 
+  -- The cursor moves only with the run's work: a failure here raises, the handler below rolls the whole
+  -- run back (re-keys and cursor together) and logs ok=false, and the next run re-reads the same window.
+  INSERT INTO public.pack_rips_chain_rekey_cursor (id, checked_hi, updated_at) VALUES (1, v_hi, clock_timestamp())
+  ON CONFLICT (id) DO UPDATE SET checked_hi = EXCLUDED.checked_hi, updated_at = EXCLUDED.updated_at;
+
   PERFORM public.log_pipeline_run('pack-rips-chain-rekey', v_started, v_n + v_p, v_n + v_p + v_a, 0, true, NULL,
-    'nba_top_shot', NULL, NULL, jsonb_build_object('rekeyed', v_n, 'purchases_rekeyed', v_p, 'attribution_synced', v_a));
+    'nba_top_shot', v_cursor::text, v_hi::text, jsonb_build_object('rekeyed', v_n, 'purchases_rekeyed', v_p, 'attribution_synced', v_a,
+      'window_lo', v_lo, 'window_hi', v_hi, 'window_clamped', v_cursor IS NOT NULL AND v_cursor - interval '5 minutes' < v_hi - interval '6 hours'));
   RETURN jsonb_build_object('ok', true, 'rekeyed', v_n, 'purchases_rekeyed', v_p, 'attribution_synced', v_a);
 EXCEPTION WHEN query_canceled OR OTHERS THEN
   -- query_canceled named: a 57014 kill escapes WHEN OTHERS (R118). The tail is one
@@ -187,6 +208,37 @@ BEGIN
   PERFORM _assert_eq(v->>'attribution_synced', '2', 'K4: two attribution rows synced (r1, r3)');
   PERFORM _assert((SELECT (extra->>'attribution_synced')::int = 2 FROM public.pipeline_runs_stub ORDER BY ctid DESC LIMIT 1),
                   'K4: the run log reports attribution_synced');
+END $$;
+
+DO $$
+DECLARE v jsonb; c0 timestamptz;
+  ts constant uuid := '95f28a17-224a-4025-96ad-adf8a4c63bfd';
+  r6 constant uuid := '00000000-0000-0000-0000-000000000006';
+  r7 constant uuid := '00000000-0000-0000-0000-000000000007';
+BEGIN
+  -- K5: the first block's run wrote the cursor at its start (= now(), one transaction here). Rewind it 20 min.
+  PERFORM _assert((SELECT checked_hi = now() FROM public.pack_rips_chain_rekey_cursor WHERE id = 1),
+                  'K5: the run advances the cursor to its start time');
+  UPDATE public.pack_rips_chain_rekey_cursor SET checked_hi = now() - interval '20 minutes' WHERE id = 1;
+  -- r6: identity checked 30 min ago, before (cursor - 5 min)  -> skipped although inside the old 1-hour window
+  -- r7: identity checked 10 min ago, after (cursor - 5 min)   -> re-keyed
+  INSERT INTO public.pack_rips VALUES (r6, ts, 'p6', '7800'), (r7, ts, 'p7', '7800');
+  INSERT INTO public.pack_nft_identity VALUES (ts, 'p6', '7743', now() - interval '30 minutes'),
+    (ts, 'p7', '7743', now() - interval '10 minutes');
+  v := public.rekey_pack_rips_to_chain_identity();
+  PERFORM _assert((SELECT dist_id = '7800' FROM public.pack_rips WHERE id = r6), 'K5: an identity checked before the cursor window is skipped');
+  PERFORM _assert((SELECT dist_id = '7743' FROM public.pack_rips WHERE id = r7), 'K5: an identity checked after the cursor is re-keyed');
+  PERFORM _assert((SELECT checked_hi = now() FROM public.pack_rips_chain_rekey_cursor WHERE id = 1), 'K5: the cursor advances again');
+  PERFORM _assert((SELECT (extra->>'window_lo')::timestamptz = now() - interval '25 minutes' FROM public.pipeline_runs_stub ORDER BY ctid DESC LIMIT 1),
+                  'K5: the run log reports the window it read');
+  -- A failed run leaves the cursor: break the purchases leg, rewind the cursor, run.
+  UPDATE public.pack_rips_chain_rekey_cursor SET checked_hi = now() - interval '20 minutes' WHERE id = 1;
+  SELECT checked_hi INTO c0 FROM public.pack_rips_chain_rekey_cursor WHERE id = 1;
+  ALTER TABLE public.pack_purchases RENAME TO pack_purchases_off;
+  v := public.rekey_pack_rips_to_chain_identity();
+  ALTER TABLE public.pack_purchases_off RENAME TO pack_purchases;
+  PERFORM _assert_eq(v->>'ok', 'false', 'K5: the broken run reports failure');
+  PERFORM _assert((SELECT checked_hi = c0 FROM public.pack_rips_chain_rekey_cursor WHERE id = 1), 'K5: a failed run leaves the cursor where it was');
 END $$;
 
 ROLLBACK;

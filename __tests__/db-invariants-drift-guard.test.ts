@@ -184,7 +184,8 @@ const PINS = [
     // Added 2026-10-11. The rip re-key lane also moves the rip's topshot_pack_rip_attribution copy (realized EV reads it alone).
     fn: "rekey_pack_rips_to_chain_identity",
     test: "supabase/tests/rekey_pack_rips_to_chain_identity.sql",
-    migration: "supabase/migrations/20261011083816_audit_20261011_rip_rekey_keeps_attribution_in_step.sql",
+    // 2026-11-22: the identity window reads a cursor (K5).
+    migration: "supabase/migrations/20261123035939_audit_20261122_pack_rips_chain_rekey_reads_a_cursor.sql",
   },
   {
     // Added 2026-10-10 (#181). While mainnet24's node is parked dark, a chain-arrival floor probe is re-floored on mainnet27's live root.
