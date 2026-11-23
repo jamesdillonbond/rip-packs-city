@@ -35,7 +35,7 @@ import { commercialSendBlockedReason, commercialSenderLine, REPLY_TO } from "@/l
 import { emailLink } from "@/lib/emails/email-link";
 import { buildNewItemsBlock } from "@/lib/emails/weekly-digest-news";
 import { buildWeeklyAlertBlock, loadAlertSuggestion, type AlertSuggestion } from "@/lib/emails/alert-suggestion";
-import { buildWeeklyPacksBlock, loadPackWeek, type PackWeek } from "@/lib/emails/weekly-packs";
+import { buildWeeklyPacksBlock, loadPackWeek, weeklyHeadline, type PackWeek } from "@/lib/emails/weekly-packs";
 import { loadRepricing, repricingDominates, repricingLine, type Repricing } from "@/lib/emails/weekly-repricing";
 
 export const dynamic = "force-dynamic";
@@ -120,15 +120,21 @@ function buildEmail(m: CompleteMover, unsubscribeUrl: string, now: Date = new Da
   const { html: newsHtml, text: newsText } = buildNewItemsBlock(ORIGIN, now);
   const { html: packsHtml, text: packsText } = buildWeeklyPacksBlock(packWeek);
   const { html: alertHtml, text: alertText } = buildWeeklyAlertBlock(ORIGIN, alertSuggestion);
-  const up = m.delta_usd >= 0;
+  // 2026-11-22: ONE Estimated value — moments + sealed packs (lib/emails/weekly-packs.ts weeklyHeadline).
+  const h = weeklyHeadline(m, packWeek);
+  const up = h.deltaUsd >= 0;
   const momentsLine = finite(m.moment_count) ? `${m.moment_count.toLocaleString("en-US")} moments tracked` : null;
   const arrow = up ? "▲" : "▼";
   const color = up ? "#16A34A" : "#DC2626";
   const repriced = repricingLine(repricing);
-  // When our own repricing is at least half of the move, the subject must not headline it as a market %.
-  const subject = repricingDominates(repricing, m.delta_usd)
+  // The change line names its scope when it covers the moments only (no like-for-like pack prior).
+  const pctPart = h.deltaPct != null ? ` (${pctLabel(h.deltaPct)})` : "";
+  const changeLabel = `${usd(Math.abs(h.deltaUsd))}${pctPart} this week${h.scope === "moments" ? " on your moments" : ""}`;
+  // When our own repricing is at least half of the move, the subject must not headline it as a market %;
+  // nor when the % covers only part of the headline total.
+  const subject = repricingDominates(repricing, m.delta_usd) || h.scope === "moments" || h.deltaPct == null
     ? "Your Rip Packs City portfolio this week"
-    : `Your Rip Packs City portfolio: ${pctLabel(m.delta_pct)} this week`;
+    : `Your Rip Packs City portfolio: ${pctLabel(h.deltaPct)} this week`;
   const dashUrl = emailLink(`${ORIGIN}/dashboard`, "weekly_digest", "dashboard");
   const html = `<!doctype html><html><body style="margin:0;background:#080808;font-family:'Share Tech Mono',Menlo,monospace;color:#fff">
   <div style="max-width:480px;margin:0 auto;padding:32px 24px">
@@ -139,9 +145,9 @@ function buildEmail(m: CompleteMover, unsubscribeUrl: string, now: Date = new Da
 
     <div style="border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:20px;margin-bottom:20px">
       <div style="font-size:11px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:.12em;margin-bottom:6px">Estimated value</div>
-      <div style="font-family:'Barlow Condensed',Arial,sans-serif;font-weight:800;font-size:34px;line-height:1">${usd(m.latest_fmv)}</div>
+      <div style="font-family:'Barlow Condensed',Arial,sans-serif;font-weight:800;font-size:34px;line-height:1">${usd(h.valueUsd)}</div>
       <div style="font-size:15px;color:${color};margin-top:8px;font-weight:700">
-        ${arrow} ${usd(Math.abs(m.delta_usd))} (${pctLabel(m.delta_pct)}) this week
+        ${arrow} ${changeLabel}
       </div>
       ${repriced ? `<div style="font-size:12px;color:rgba(255,255,255,0.75);margin-top:6px">${repriced}</div>` : ""}
       <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:6px">${HOLDINGS_NOTE}</div>
@@ -165,8 +171,8 @@ ${newsHtml}
   const text = [
     "Rip Packs City — your weekly portfolio",
     "",
-    `Estimated value: ${usd(m.latest_fmv)}`,
-    `${up ? "Up" : "Down"} ${usd(Math.abs(m.delta_usd))} (${pctLabel(m.delta_pct)}) this week`,
+    `Estimated value: ${usd(h.valueUsd)}`,
+    `${up ? "Up" : "Down"} ${changeLabel}`,
     ...(repriced ? [repriced] : []),
     HOLDINGS_NOTE,
     ...(momentsLine ? [momentsLine] : []),

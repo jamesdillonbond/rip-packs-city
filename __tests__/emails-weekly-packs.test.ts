@@ -12,7 +12,7 @@ function chain(): any {
   return b
 }
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: { from: () => chain() } }))
-import { buildWeeklyPacksBlock, loadPackWeek, minusDays, packWeekFrom } from "@/lib/emails/weekly-packs"
+import { buildWeeklyPacksBlock, loadPackWeek, minusDays, packWeekFrom, weeklyHeadline } from "@/lib/emails/weekly-packs"
 
 beforeEach(() => { state.result = { data: [], error: null }; state.throws = false; state.eqs = [] })
 
@@ -76,15 +76,37 @@ describe("buildWeeklyPacksBlock", () => {
   it("omits the block with no value", () => {
     expect(buildWeeklyPacksBlock(null)).toEqual({ html: "", text: [] })
   })
-  it("prints the value, the pack count, and the change when known", () => {
+  // RE-PINNED 2026-11-22 evening (Trevor: one number, "Yes proceed" to the email): the packs are IN the
+  // Estimated value now, so this block is a breakdown line — no second weekly change of its own.
+  it("prints the value and pack count as a breakdown of the value above, with no change of its own", () => {
     const b = buildWeeklyPacksBlock({ lowAskUsd: 27966.94, held: 2155, listed: null, priorUsd: 27000 })
     expect(b.html).toContain("$27,966.94")
     expect(b.html).toContain("2,155 sealed packs")
-    expect(b.html).toContain("not in the value above")
-    expect(b.text).toContain("Up $966.94 this week")
+    expect(b.html).toContain("included above")
+    expect(b.html).not.toContain("not in the value above")
+    expect(b.text.join(" ")).not.toContain("this week")
     const first = buildWeeklyPacksBlock({ lowAskUsd: 2.39, held: 1, listed: null, priorUsd: null })
-    expect(first.html).not.toContain("this week")
     expect(first.text.join(" ")).toContain("1 sealed pack at the lowest live ask")
+  })
+})
+
+describe("weeklyHeadline — the email's one Estimated value", () => {
+  const m = { latest_fmv: 49516.42, prior_fmv: 55830.66, delta_usd: -6314.24, delta_pct: -11.31 }
+  it("no packs: the moments figures unchanged", () => {
+    expect(weeklyHeadline(m, null)).toEqual({ valueUsd: 49516.42, deltaUsd: -6314.24, deltaPct: -11.31, scope: "all" })
+  })
+  it("packs with a like-for-like prior: total value AND total change", () => {
+    const h = weeklyHeadline(m, { lowAskUsd: 16396.57, held: 488, listed: null, priorUsd: 16000 })
+    expect(h.valueUsd).toBe(65912.99)
+    expect(h.deltaUsd).toBe(-5917.67)
+    expect(h.deltaPct).toBe(-8.24) // -5917.67 / (55830.66 + 16000)
+    expect(h.scope).toBe("all")
+  })
+  it("packs without a comparable prior: total value, the change is the MOMENTS' and says so", () => {
+    const h = weeklyHeadline(m, { lowAskUsd: 16396.57, held: 488, listed: null, priorUsd: null })
+    expect(h.valueUsd).toBe(65912.99)
+    expect(h.deltaUsd).toBe(-6314.24)
+    expect(h.scope).toBe("moments")
   })
 })
 

@@ -6,8 +6,8 @@
 //
 // Source: portfolio_snapshots.pack_low_ask_usd / pack_held_count (filled nightly since
 // 2026-11-22 by fill_portfolio_snapshot_pack_values: lowest live ask per held sealed pack,
-// capped at 3x the drop's best reference; a never-sold listing adds nothing). It is NOT in the
-// email's "Estimated value" (moments), and the line says so by standing apart.
+// capped at 3x the drop's best reference; a never-sold listing adds nothing). Since 2026-11-22
+// evening it IS in the email's "Estimated value" (weeklyHeadline), and this block is its breakdown.
 //
 // HONESTY: optional block. A failed read, or no pack value for the member's latest snapshot,
 // omits the line — never "$0 in sealed packs". The week-over-week change prints only when the
@@ -90,26 +90,46 @@ export async function loadPackWeek(userId: string): Promise<PackWeek | null> {
 const usd = (n: number): string =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
+/**
+ * The email's ONE "Estimated value" (2026-11-22, Trevor: one number for everything in the wallet,
+ * "Yes proceed" to the email): moments + sealed packs. The weekly change covers both only when the
+ * pack value has a like-for-like, live-measured prior (packWeekFrom's rules); otherwise the change
+ * is the MOMENTS' change and says so (`scope: "moments"`) — never a moments-only move printed under
+ * a total as if it were the total's.
+ */
+export type WeeklyHeadline = { valueUsd: number; deltaUsd: number; deltaPct: number | null; scope: "all" | "moments" }
+
+export function weeklyHeadline(
+  m: { latest_fmv: number; prior_fmv?: number | null; delta_usd: number; delta_pct: number },
+  p: PackWeek | null,
+): WeeklyHeadline {
+  if (!p) return { valueUsd: m.latest_fmv, deltaUsd: m.delta_usd, deltaPct: m.delta_pct, scope: "all" }
+  const valueUsd = Math.round((m.latest_fmv + p.lowAskUsd) * 100) / 100
+  const priorMoments = typeof m.prior_fmv === "number" && Number.isFinite(m.prior_fmv) ? m.prior_fmv : null
+  if (p.priorUsd != null && priorMoments != null) {
+    const deltaUsd = Math.round((m.delta_usd + (p.lowAskUsd - p.priorUsd)) * 100) / 100
+    const priorTotal = priorMoments + p.priorUsd
+    const deltaPct = priorTotal > 0 ? Math.round((deltaUsd / priorTotal) * 10000) / 100 : null
+    return { valueUsd, deltaUsd, deltaPct, scope: "all" }
+  }
+  return { valueUsd, deltaUsd: m.delta_usd, deltaPct: m.delta_pct, scope: "moments" }
+}
+
 export function buildWeeklyPacksBlock(p: PackWeek | null): { html: string; text: string[] } {
   if (!p) return { html: "", text: [] }
+  // 2026-11-22 (evening): the pack value is now INSIDE the email's Estimated value (weeklyHeadline),
+  // so this block is the breakdown line, not a second number — and its own weekly change folds into
+  // the headline's change when it is known.
   // `listed` is set only when some held packs have no live ask: say how many the value covers.
   const packs = p.listed != null
     ? `${p.listed.toLocaleString("en-US")} of ${p.held.toLocaleString("en-US")} sealed packs`
     : `${p.held.toLocaleString("en-US")} sealed pack${p.held === 1 ? "" : "s"}`
-  let change = ""
-  let changeText = ""
-  if (p.priorUsd != null) {
-    const d = Math.round((p.lowAskUsd - p.priorUsd) * 100) / 100
-    const up = d >= 0
-    change = `<div style="font-size:13px;color:${up ? "#16A34A" : "#DC2626"};margin-top:6px;font-weight:700">${up ? "▲" : "▼"} ${usd(Math.abs(d))} this week</div>`
-    changeText = `${up ? "Up" : "Down"} ${usd(Math.abs(d))} this week`
-  }
   const html = `
     <div style="border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:16px 20px;margin-bottom:20px">
-      <div style="font-size:11px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:.12em;margin-bottom:6px">Sealed packs · not in the value above</div>
+      <div style="font-size:11px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:.12em;margin-bottom:6px">Sealed packs · included above</div>
       <div style="font-family:'Barlow Condensed',Arial,sans-serif;font-weight:800;font-size:24px;line-height:1">${usd(p.lowAskUsd)}</div>
-      <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:6px">${packs} at the lowest live ask</div>${change}
+      <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:6px">${packs} at the lowest live ask</div>
     </div>`
-  const text = ["", `Sealed packs (not in the value above): ${usd(p.lowAskUsd)} — ${packs} at the lowest live ask`, ...(changeText ? [changeText] : [])]
+  const text = ["", `Sealed packs (included above): ${usd(p.lowAskUsd)} — ${packs} at the lowest live ask`]
   return { html, text }
 }

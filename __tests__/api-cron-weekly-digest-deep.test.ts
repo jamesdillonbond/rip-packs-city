@@ -63,6 +63,7 @@ vi.mock("@/lib/supabase", () => {
       if (table === "alert_deliveries" && op === "upsert")
         return resolve({ data: h.cfg.claimErr ? null : (h.cfg.claimRows ?? [{ id: "claim-1" }]), error: h.cfg.claimErr })
       if (table === "alert_deliveries" && op === "update") return resolve({ data: null, error: h.cfg.markErr })
+      if (table === "portfolio_snapshots") return resolve({ data: h.cfg.packRows ?? null, error: null })
       let error = null
       if (op === "insert" && table === "email_subscribers") error = h.cfg.emailInsertErr ?? null
       if (op === "insert" && table === "alert_deliveries") error = h.cfg.alertInsertErr ?? null
@@ -352,6 +353,36 @@ describe("weekly digest — never mails an invented figure (2026-11-03)", () => 
 
   // 2026-11-22, before the first send: the 11-17 FMV restatements made two members' week read "−49.6 %",
   // most of it our own price correction. The email states the repricing part; a failed read is not "none".
+  // 2026-11-22 evening (Trevor: one number for everything in the wallet, "Yes proceed" to the email).
+  it("the Estimated value includes sealed packs; with no comparable pack prior the change says it covers the moments", async () => {
+    h.cfg.movers = [mover()]
+    h.cfg.packRows = [{ snapshot_date: "2026-11-30", pack_low_ask_usd: "50", pack_held_count: 2, pack_listed_count: 2, pack_value_basis: null }]
+    await call(await load())
+    await h.afterFns[0]()
+    const body = JSON.parse(String((fetchMock.mock.calls[0] as any[])[1].body))
+    expect(body.text).toContain("Estimated value: $150.00")
+    expect(body.text).toContain("this week on your moments")
+    expect(body.text).toContain("Sealed packs (included above): $50.00")
+    expect(body.text).not.toContain("not in the value above")
+    expect(body.subject).toBe("Your Rip Packs City portfolio this week")
+  })
+
+  it("with a like-for-like pack prior the change and the subject % cover moments + packs", async () => {
+    h.cfg.movers = [mover()]
+    h.cfg.packRows = [
+      { snapshot_date: "2026-11-30", pack_low_ask_usd: "50", pack_held_count: 2, pack_listed_count: 2, pack_value_basis: null },
+      { snapshot_date: "2026-11-23", pack_low_ask_usd: "40", pack_held_count: 2, pack_listed_count: 2, pack_value_basis: null },
+    ]
+    await call(await load())
+    await h.afterFns[0]()
+    const body = JSON.parse(String((fetchMock.mock.calls[0] as any[])[1].body))
+    expect(body.text).toContain("Estimated value: $150.00")
+    // moments +10 (90 -> 100) + packs +10 (40 -> 50) = +20 on a prior total of 130
+    expect(body.text).toContain("Up $20.00 (+15.38%) this week")
+    expect(body.text).not.toContain("on your moments")
+    expect(body.subject).toContain("+15.38%")
+  })
+
   it("states how much of the move is our repricing, and the subject drops the % when repricing dominates", async () => {
     h.cfg.movers = [mover({ latest_fmv: 38184, prior_fmv: 75803, delta_usd: -37619, delta_pct: -49.63 })]
     ;(h.cfg as any).repricing = { data: { delta_usd: -27587.25, editions: 18, moments: 36 }, error: null }
