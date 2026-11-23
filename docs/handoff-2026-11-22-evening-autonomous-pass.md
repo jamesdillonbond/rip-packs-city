@@ -1,6 +1,6 @@
 # Evening autonomous pass — 2026-11-22 (~7:40 PM PT →, Claude Code cloud)
 
-**Verdict: GREEN · 4 DB changes + 1 code fix + copy shipped and verified on production runs · 0 reverted · oldest routed: Top Shot gate week-2 read (overnight item 4), 1 night.**
+**Verdict: GREEN · 5 DB changes + 1 code fix + copy shipped and verified on production runs · 0 reverted · oldest routed: Top Shot gate week-2 read (overnight item 4), 1 night.**
 
 Trevor: "work autonomously for the next 12 hours … find things to work on. Fix any issues you encounter." Push worked from this cloud session (dry-run exit 0); everything below is on `main`, and each item has a ledger entry with its revert path.
 
@@ -14,6 +14,7 @@ Trevor: "work autonomously for the next 12 hours … find things to work on. Fix
 - Top Shot gate (`fmv_accuracy_weekly`, HIGH / MEDIUM within ±25 %): wk 10-26 74.3 / 69.1 · 11-02 75.5 / 69.7 · **11-09 80.1 / 74.1**. That is 1 qualifying week so far; the 11-16 row lands Monday.
 
 ## Shipped (newest first)
+-2. **Profile collection breakdown + account CSV export read Solana (Candy) wallets** (`20261123051216`). Both lowercased the wallet, so a base58 Candy wallet read as holding nothing. Verified on the live route: the one saved Candy wallet now shows 575 moments / $474.49. The breakdown is also planned per wallet (3.1 s → 0.22 s, 405k → 40.6k buffers on a 47k-moment wallet), and the export reads `edition_fmv_current` instead of scanning all ~3.2M snapshots. Both were proved equivalent on Flow wallets first.
 -1. **Panini sales ingest accepts hyphenated `packcard-` keys** (`20261123045852`; TS mirror + test in `2e90d7d19`). The Sentinel WARNed on 82 sales dropped in 24 h for product 850147/111938 (`packcard-850147_111938_2-2_5_21_79`). The 27 affected editions had 0 stored sales and no edition mixes shapes; 499 serial last-sales were seeded. Every panini-ingest run since reads 0 unrecognised keys.
 0. **Candy buyer-paid: a later node's clean "not found" supersedes an earlier node's RPC error** (`516d53b5f`, 2 tests, the first fails on the old code). This closes review finding (b) below before it could turn the lane permanently red.
 1. **Lane budget: finished backfill `rpc-topshot-pack-opens-history` (job 56) paused** — `20261123044343`. Its cursor has been at its floor since ~08-01: 10,972 runs and 0 rows ever, 96 edge invocations a day. The watchlist row is inactive (backed up). Active jobs 319 → 318.
@@ -26,7 +27,7 @@ Trevor: "work autonomously for the next 12 hours … find things to work on. Fix
 - **Candy ask-age** (`candy-mlb.md` "the ask counts as fresh because it is re-seen") is a model decision, not a defect: does a months-old but live ask corroborate? Left for Trevor or the Candy thread.
 - **#249** (ISR caches a degraded render): still needs a preview-verified segment change. Tonight's sweep saw the same section-level shape only.
 - **`get_set_activity`** (#252 watch): 12 timeouts in 7 d (was 21). The tail is the cold 5,000-row first pass under load (holo-icon 0.27–0.5 s warm). No change.
-- **`get_collection_breakdown`**: 6 timeouts in 3 d, 3 of them from my own concurrent sweep. Alone, `/profile/rigged` loads it in 2.8 s.
+- **`get_collection_breakdown`**: ✅ fixed later in the pass (shipped item −2).
 - **`candy_fmv_pct_stale_30d` = 0.0** is correct by construction: it counts snapshots older than 30 days, not STALE confidence.
 - **Review of 4 recent commits** (`e90a0f2a6`, `5d8337121`, `07c53a4d0`, `d182d2ba2`): no high-confidence bugs. Two medium findings are not live today:
   - (a) panini-ingest's sku→id map read has no `.order()`. It only matters if two rows share a sku; today `1065` carries no `pack_sku`.
