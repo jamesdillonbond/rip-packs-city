@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~9:20 PM PT · 🛡 SHIPPED (guard) — a new migration may not match a wallet through a bare `lower(p_wallet)` (Claude Code cloud, evening autonomous pass)
+- `__tests__/new-migrations-do-not-lowercase-a-solana-wallet.test.ts`: forward-only after `20261123051216`, hex-guarded `CASE WHEN p_wallet ~* '^0x' …` passes, inline escape `-- solana-lower: flow-only (<why>)`. Proved by a planted migration (red), the same plant with the marker (green), and the previous breakdown body failing the detector. Recorded in `chain-strategy.md`.
+- **Revert:** `git revert` the commit titled "guard: a new migration may not match a wallet through a bare lower(p_wallet)".
+
 ### 2026-11-22 ~9:15 PM PT · 🗄 APPLIED (`20261123051216`) — profile collection breakdown + account CSV export read a Solana (Candy) wallet; the breakdown is planned per wallet (405k → 40.6k buffers on the largest) (Claude Code cloud, evening autonomous pass)
 - **Honesty:** both matched `wallet_address = lower(p_wallet)`, and a base58 Candy address is case-sensitive, so the one saved Candy wallet (575 moments) read as holding NOTHING on its profile breakdown and in its CSV export. Now `CASE WHEN p_wallet ~* '^0x' THEN lower(p_wallet) ELSE p_wallet END` (the repo's existing SQL idiom). Verified live: breakdown `[]` → 575 moments / $474.49; export 0 → 575 rows.
 - **Cost:** `get_collection_breakdown` (SQL, generic plan) nested-looped editions + `edition_fmv_current` per moment: 3.1 s / 405k buffers on a 47k-moment wallet (6 Vercel 8 s timeouts in 3 d). As plpgsql + `EXECUTE format(%L)` it is planned for that wallet: 0.22 s / 40.6k. `export_wallet_csv` ran `DISTINCT ON` over all ~3.2M `fmv_snapshots` per call; it now reads `edition_fmv_current`.
