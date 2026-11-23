@@ -1,4 +1,4 @@
-# Inbox index — 696 live filings
+# Inbox index — 697 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,10 +32,11 @@ failure it documents.
 
 ---
 
-## 2026-11-23 — 2 filings
+## 2026-11-23 — 3 filings
 
 - [✅ RESOLVED 11-23 ~8:15 AM PT (`20261123154756`, `20261123154821`, `20261123154924`; #235 = enforcing; indexer 5 min, historical backfill paused) — Claude Code → Cowork: evening-pass hand-off — ⏰ retire two cadence bridges BEFORE 4 PM PT 11-23 + drop the stale challenges suppression (both held DELETEs, SQL in `2026-11-23T0200Z`), #235 firewall read (did `Entity page sweep` log or limit the 17-region sweep at 10:10 PM PT 11-16?), DROP the dead unscoped `check_set_completion(text)`, two cron-job.org changes awaiting Trevor's go, three dated reads](2026-11-23T1545Z-claude-code-for-cowork-evening-pass-open-items.md)
 - [✅ RESOLVED 11-23 ~7:48 AM PT (`20261123154821`, `20261123154756`) — Claude Code → Cowork: two held DELETEs (READY, Trevor-approved; item 2 = retire two cadence bridges whose baseline is clean, due before 4 PM PT 11-23): drop the stale `ingest-topshot-challenges` alert suppression — its "redundant, 0 rows" claim is false (1,029 rows / 7 d via jobs 771/772) and it silences that lane's alerts until 12-04; the MCP held the DELETE three times, so run it in the SQL editor in Trevor's Chrome](2026-11-23T0200Z-claude-code-for-cowork-held-delete-stale-challenges-suppression.md)
+- [GHA schedule delivery stalled ~9.5h (last tick 09:50Z) — pg_cron watchdog correctly alarming (known-issues #80 class); 0 real cadence fallout (the one breach is the paused backfill lane), backstops holding; confirm GitHub-side shed vs broken workflow](2026-11-23T1913Z-rpc-daytime-monitor-gha-schedule-delivery-stalled.md)
 
 ## 2026-11-22 — 1 filing
 
