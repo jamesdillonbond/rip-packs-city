@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~10:35 PM PT · 📄 SHIPPED (docs) — HCI setup-month lookup list now skips cards with fewer than 3 digital sales (Cowork cloud; Trevor: "Keep going")
+- `docs/physical/panini-hci-lookup-list.sql` gains `having sum(n) >= 3`. Ranked by dollars alone, 236 of the top 500 had under 3 digital sales in 90 days (the #1 row was one $110,000 sale), so those lookups would buy a paper price with no digital median to set beside it. With the floor: 6,984 eligible cards carry $689,656 of the $1,375,829 comparable 90-day digital dollars; the top 500 carry $482,245 over 7,175 sales (500th row $179). Measured live tonight, read-only.
+- `docs/physical/panini-physical-crosswalk-draft.sql`: the links comment no longer says the prototype tables are "not in this repo yet".
+- Docs only; nothing applied, nothing deploys. **Revert:** `git revert` this commit.
+
 ### 2026-11-22 ~10:25 PM PT · 🧪 SHIPPED (off by default) — physical-cards prototype: valuation, backtest, cert, holdings, eBay listings module, Courtyard probes (Cowork cloud; Trevor: "Keep going")
 - 27 files from this morning's Project handoff (`claude/patches/2026-11-22-physical-cards-prototype/`): `lib/physical/*` (value range from confirmed sold sales, walk-forward backtest, HCI client, cert parse, refresh planner/job, portfolio range, box EV, eBay Browse mappers + cached loader, Courtyard trade decoder), routes `app/api/physical/{cert,holdings}`, `components/physical/PaperCardListings.tsx` (NOT mounted), `docs/physical/physical-holdings-draft.sql` (NOT a migration, NOT applied), `scripts/physical/*` (offline backtest runner, read-only Polygon probes), 6 test files (54 tests), vitest components include.
 - **Changes nothing live:** both routes 404 unless `PHYSICAL_CARDS=1` and `HCI_API_KEY` are set (neither is); the eBay module returns `off` unless `PHYSICAL_EBAY_LISTINGS=1` + eBay keys; no page imports the component; no table exists.

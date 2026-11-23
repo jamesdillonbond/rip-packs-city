@@ -114,9 +114,9 @@ select external_id, product_set_id, digital_product, product_class, physical_pro
   from person;
 
 -- ---------------------------------------------------------------------------
--- Links (DRAFT, needs the physical_cards / physical_value_cache tables from the 2026-11-22
--- physical-cards prototype — Project doc claude/patches/2026-11-22-physical-cards-prototype/ —
--- applied first; not in this repo yet).
+-- Links (DRAFT, needs the physical_cards / physical_value_cache tables from
+-- docs/physical/physical-holdings-draft.sql applied first — landed in the repo 2026-11-22
+-- (4d35938) as a draft; not applied).
 -- One row per digital edition -> paper card the matcher accepted
 -- (lib/physical/panini-crosswalk.ts matchPaperCard: exactly one survivor) or a
 -- human confirmed. Ambiguous / none results are NOT stored as links.
