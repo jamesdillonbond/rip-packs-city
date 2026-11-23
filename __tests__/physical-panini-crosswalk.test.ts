@@ -37,6 +37,37 @@ describe("parsePhysicalProduct", () => {
     expect(parsePhysicalProduct("2022 Panini Donruss Soccer")?.program).toBe("Donruss")
     expect(parsePhysicalProduct("2023 Panini Best of The NBA")).toBeNull()
   })
+
+  // 2026-11-22: the crosswalk used to emit "2021 Panini NFL Prizm" (the NFT name minus
+  // " NFT "), which this parser cannot read, so every candidate for 2,025 editions was
+  // refused as "unparseable product". The view now emits the PAPER name; this pins both
+  // halves: the paper name parses, and the old spelling would still be refused (so a
+  // regression in the view shows up as "none", never as a wrong match).
+  it("reads the 2021 NFL lines under their paper names", () => {
+    expect(parsePhysicalProduct("2021 Panini Prizm Football")).toEqual({ season: "2021", startYear: 2021, program: "Prizm" })
+    expect(parsePhysicalProduct("2021 Panini Donruss Optic Football")?.program).toBe("Donruss Optic")
+    expect(parsePhysicalProduct("2021 Panini NFL Prizm")).toBeNull()
+  })
+})
+
+describe("matchPaperCard, 2021 NFL Prizm", () => {
+  it("matches Brady #294 Silver on the paper product", () => {
+    const brady: PaperKey = {
+      physicalProduct: "2021 Panini Prizm Football",
+      subset: "Base",
+      parallel: "Silver",
+      digitalMintCap: null,
+      playerName: "Tom Brady",
+      cardNumber: "294",
+    }
+    const feed = (id: string, name: string): FeedCard => ({ id, name, year: 2021, setName: "2021 Panini Prizm Football", playerName: "Tom Brady" })
+    expect(matchPaperCard(brady, [feed("a", "Tom Brady #294 Silver Prizm"), feed("b", "Tom Brady #294 Red Ice Prizm")])).toEqual({
+      status: "matched",
+      cardId: "a",
+      printRunMatch: null,
+    })
+    expect(matchPaperCard({ ...brady, physicalProduct: "2021 Panini NFL Prizm" }, [feed("a", "Tom Brady #294 Silver Prizm")]).status).toBe("none")
+  })
 })
 
 describe("printRunOf", () => {

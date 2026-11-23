@@ -79,6 +79,12 @@ with ed as (
              bc_year || ' Panini ' || bc_program || ' ' ||
              case when digital_product ~ ' NBA ' then 'Basketball' when digital_product ~ ' NFL ' then 'Football'
                   when digital_product ~ ' BB ' then 'Baseball' else '' end
+           -- "2021 Panini NFT NFL Prizm" / "... NFL Donruss Optic": the paper products are
+           -- "2021 Panini Prizm Football" / "2021 Panini Donruss Optic Football" (Brady #294 on
+           -- both sides, TCDb 2026-11-22). Left as "Panini NFL Prizm", the matcher could not
+           -- parse the product and refused every candidate (2,025 editions, $34.6k / 90 d).
+           when digital_product ~ '^\d{4} Panini NFT NFL (Prizm|Donruss Optic)$'
+             then regexp_replace(digital_product, '^(\d{4}) Panini NFT NFL (Prizm|Donruss Optic)$', '\1 Panini \2 Football')
            else regexp_replace(digital_product, ' NFT ', ' ')
          end as physical_product,
          case
