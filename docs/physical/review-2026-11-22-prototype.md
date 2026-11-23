@@ -2,7 +2,7 @@
 
 Claude Code cloud, evening autonomous pass. This reviews commit `4d3593864`, which is off by default (`PHYSICAL_CARDS` + `HCI_API_KEY`). Everything below is **latent**: nothing is mounted or enabled.
 
-**Fixed here:** finding 2 (`physicalTotal` totals are `null`, not `$0`, when nothing is priced). The old assertion that pinned the `0` was inverted, a case was added, and both fail on the old body.
+**Fixed here:** finding 9 (later, with route coverage that put CI's statement ratchet back over its floor) and finding 2 (`physicalTotal` totals are `null`, not `$0`, when nothing is priced). The old assertion that pinned the `0` was inverted, a case was added, and both fail on the old body.
 
 **Left for the physical-cards thread.** These are design calls or code that thread is actively changing.
 
@@ -37,4 +37,4 @@ Claude Code cloud, evening autonomous pass. This reviews commit `4d3593864`, whi
 8. **Draft grants are wider than the comment says.** `docs/physical/physical-holdings-draft.sql:75-79`. *Low.*
    - It revokes only from `PUBLIC, anon`, but this DB's default privileges give `authenticated` full rights on new tables. TRUNCATE ignores RLS. Revoke from `authenticated` too (CLAUDE.md: `REVOKE … FROM PUBLIC, anon, authenticated` in one statement).
    - The INSERT grant on `physical_holdings` lets a client skip the route's validation. `grade` has no DB CHECK, and there is no row cap.
-9. **A non-JSON 200 from HCI throws.** `hci-client.ts:62`. *Low.* `await res.json()` sits outside the try/catch, so the route answers an unhandled 500 instead of its 502.
+9. ✅ **Fixed ~11 PM PT.** A non-JSON 200 from HCI threw (`hci-client.ts`): `await res.json()` sat outside the try/catch, so the route answered an unhandled 500 instead of its 502. It now returns `{ok:false, code:"BAD_JSON"}`; `__tests__/physical-hci-client.test.ts` fails on the old body.

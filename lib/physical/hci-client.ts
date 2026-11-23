@@ -59,7 +59,13 @@ export class HciClient {
       }
       return { ok: false, status: res.status, code }
     }
-    return { ok: true, data: (await res.json()) as T }
+    // A 200 whose body is not JSON (a proxy page, a truncated body) is a failed read,
+    // not a throw: the cert route would otherwise answer an unhandled 500, not its 502.
+    try {
+      return { ok: true, data: (await res.json()) as T }
+    } catch {
+      return { ok: false, status: res.status, code: "BAD_JSON" }
+    }
   }
 
   async searchCards(q: string, category?: string): Promise<HciResult<HciCardSummary[]>> {

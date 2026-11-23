@@ -85,4 +85,106 @@ describe("/api/physical/holdings", () => {
     expect(res.status).toBe(200)
     expect(eqs).toEqual([["id", CARD], ["user_id", "u1"]])
   })
+  function onDb(from: () => unknown, user: { id: string } | Response = { id: "u1" }) {
+    process.env.PHYSICAL_CARDS = "1"
+    process.env.HCI_API_KEY = "k"
+    vi.doMock("@/lib/supabase", () => ({ supabaseAdmin: { from: vi.fn(from) } }))
+    vi.doMock("@/lib/auth/supabase-server", () => ({
+      requireUser: vi.fn(async () => {
+        if (user instanceof Response) throw user
+        return user
+      }),
+    }))
+  }
+  const VALID = { cardId: CARD, grader: "psa", grade: "10", certNumber: "12345678" }
+  const req = async (m: string, body?: unknown) => {
+    const { NextRequest } = await import("next/server")
+    return new NextRequest("https://x.test/api/physical/holdings", { method: m, body: body === undefined ? undefined : JSON.stringify(body) })
+  }
+
+  it("lists only the signed-in user's holdings", async () => {
+    const eqs: [string, string][] = []
+    const rows = [{ id: "h1" }]
+    const chain = {
+      select: () => chain,
+      eq: (c: string, v: string) => (eqs.push([c, v]), chain),
+      order: () => chain,
+      limit: () => Promise.resolve({ data: rows, error: null }),
+    }
+    onDb(() => chain)
+    const route = await import("@/app/api/physical/holdings/route")
+    const res = await route.GET()
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ holdings: rows })
+    expect(eqs).toEqual([["user_id", "u1"]])
+  })
+
+  it("a failed list read is an error, never an empty portfolio", async () => {
+    const chain = { select: () => chain, eq: () => chain, order: () => chain, limit: () => Promise.resolve({ data: null, error: { message: "boom", code: "57014" } }) }
+    onDb(() => chain)
+    const route = await import("@/app/api/physical/holdings/route")
+    const res = await route.GET()
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    expect(await res.json()).not.toHaveProperty("holdings")
+  })
+
+  it("passes an auth refusal through on GET and writes nothing on POST", async () => {
+    const from = vi.fn(() => { throw new Error("no db without a user") })
+    onDb(from, new Response("no", { status: 401 }))
+    const route = await import("@/app/api/physical/holdings/route")
+    expect((await route.GET()).status).toBe(401)
+    expect((await route.POST(await req("POST", VALID))).status).toBe(401)
+    expect((await route.DELETE(await req("DELETE", { id: CARD }))).status).toBe(401)
+    expect(from).not.toHaveBeenCalled()
+  })
+
+  it("adds a holding under the session's user_id, never the body's", async () => {
+    let inserted: Record<string, unknown> | null = null
+    const chain = {
+      insert: (row: Record<string, unknown>) => ((inserted = row), chain),
+      select: () => chain,
+      single: () => Promise.resolve({ data: { id: "new-id" }, error: null }),
+    }
+    onDb(() => chain)
+    const route = await import("@/app/api/physical/holdings/route")
+    const res = await route.POST(await req("POST", { ...VALID, user_id: "someone-else" }))
+    expect(res.status).toBe(201)
+    expect(await res.json()).toEqual({ id: "new-id" })
+    expect(inserted).toMatchObject({ user_id: "u1", card_id: CARD, grader: "psa", grade: "10", cert_number: "12345678" })
+  })
+
+  it("409s a duplicate slab and 5xxs any other insert error", async () => {
+    let err: { code: string; message: string } = { code: "23505", message: "dup" }
+    const chain = { insert: () => chain, select: () => chain, single: () => Promise.resolve({ data: null, error: err }) }
+    onDb(() => chain)
+    const route = await import("@/app/api/physical/holdings/route")
+    expect((await route.POST(await req("POST", VALID))).status).toBe(409)
+    err = { code: "XX000", message: "boom" }
+    const res = await route.POST(await req("POST", VALID))
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    expect(await res.json()).not.toHaveProperty("id")
+  })
+
+  it("400s a non-JSON add and a delete without a uuid", async () => {
+    noDb()
+    vi.doMock("@/lib/auth/supabase-server", () => ({ requireUser: vi.fn() }))
+    process.env.PHYSICAL_CARDS = "1"
+    process.env.HCI_API_KEY = "k"
+    const route = await import("@/app/api/physical/holdings/route")
+    const { NextRequest } = await import("next/server")
+    expect((await route.POST(new NextRequest("https://x.test/a", { method: "POST", body: "not json" }))).status).toBe(400)
+    expect((await route.DELETE(new NextRequest("https://x.test/a", { method: "DELETE", body: "not json" }))).status).toBe(400)
+    expect((await route.DELETE(await req("DELETE", { id: "x" }))).status).toBe(400)
+  })
+
+  it("a failed delete is an error, not ok", async () => {
+    const chain = { delete: () => chain, eq: vi.fn() }
+    let n = 0
+    chain.eq.mockImplementation(() => (++n === 2 ? Promise.resolve({ error: { message: "boom", code: "XX000" } }) : chain))
+    onDb(() => chain)
+    const route = await import("@/app/api/physical/holdings/route")
+    const res = await route.DELETE(await req("DELETE", { id: CARD }))
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    expect(await res.json()).not.toHaveProperty("ok")
+  })
 })
