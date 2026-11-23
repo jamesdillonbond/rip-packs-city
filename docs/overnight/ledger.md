@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-23 ~11:52 AM PT · 🗄 APPLIED (`20261123195151`) + 🧹 DATA — 12,976 undated pack-pull acquisitions dated from pack_open_pulls → pack_rips (known-issues #261; Claude Code cloud, Trevor: "Keep working through all you can")
+
+`pack_pull_open_time()` gains a fallback arm for Top Shot + All Day: the pack's `pack_rips.sealed_at` (= open-event block time; equals `allday_pack_pull.sealed_at` on all 1,487,682 shared packs). It applies only when the existing source is empty, the opener = the wallet exactly, and there is exactly one open time. The insert trigger now dates such pulls at insert. `backfill_pack_pull_dates(20000)` → `{"dated":12976,"undatable_remaining":25}` (TS 1,746 + AD 11,230; read back: 25 undated pack pulls left, 12,976 archive rows written 11:52 AM PT, 0 dated after row creation). **Revert:** `UPDATE moment_acquisitions m SET acquired_date = NULL FROM flowty_archive.acq_pack_pull_date_20261117 r WHERE m.id = r.acq_id AND r.written_at >= '2026-11-23 19:50:00+00';` then re-apply `20261117173000` for the previous function body.
+
 ### 2026-11-23 ~11:15 AM PT · 📏 VERIFIED + correction — `20261123185838` works, but the Top Shot unmapped drain is effectively every 20 min, not 10 (Claude Code cloud)
 
 476 ran 11:07 AM PT (mapped 12); 474 ran 10:59 and 11:09 and both logged `skipped_recent_run` (`min_gap_seconds` 1200 since the 10:54 drain; rows NULL, honest). `promote_unmapped_sales` has a 20-min per-collection minimum gap (08-30), so every other 10-min run skips. First real drain on the new schedule: 11:19 AM PT, then every 20 min (3× the old hourly). Expected Top Shot p90 ingest lag ~20–30 min (read 11-24). No change made; docs corrected (handoff, focus, nba-top-shot.md, cron-and-schedulers.md). **Revert:** n/a (read).
