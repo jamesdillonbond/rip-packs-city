@@ -52,7 +52,7 @@
 
 ## 4. Insights boards with a leg per collection
 
-Top Shot has every board. Legs elsewhere: **All Day** — deals, top sales, trophies, market cap, market pulse, pack sniper, account value, special-serial owners, buyback, offer-spread, first-mint, rookies (NFL 2025), squeeze, set-squeeze, squeeze-check, TC report, market index, serial premiums. **Panini** — squeeze (with Bid vs Floor and Floor movers tabs), deals, premiums. **Pinnacle** — top sales, hot floors, deals, scarcity, trophies, **pack reality (11-23)**. **Candy** — its own `/insights/candy-mlb` (scarcity, serials, holders), trophies. **Golazos, UFC** — cross-collection boards only.
+Top Shot has every board. Legs elsewhere: **All Day** — deals, top sales, trophies, market cap, market pulse, pack sniper, account value, special-serial owners, buyback, offer-spread, first-mint, rookies (NFL 2025), squeeze, set-squeeze, squeeze-check, TC report, market index, serial premiums. **Panini** — squeeze (with Bid vs Floor and Floor movers tabs), deals, premiums. **Pinnacle** — top sales, hot floors, deals, scarcity, trophies, **pack reality, RPC Index (`/insights/pinnacle-market`), serial premiums, squeeze (all 11-23)**. **Candy** — its own `/insights/candy-mlb` (scarcity, serials, holders), trophies. **Golazos, UFC** — cross-collection boards only.
 
 ## 5. The numbers behind the cells (read tonight, 10:10 PM PT)
 
