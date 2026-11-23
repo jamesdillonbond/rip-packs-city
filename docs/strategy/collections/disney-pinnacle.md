@@ -115,3 +115,5 @@ Read from the registry (`lib/collections.ts`), the shared `[collection]` routes,
 - Pack opens, pulls, EV: [packs.md](../../reference/packs.md)
 - Shipped changes and revert paths: [ledger.md](../../overnight/ledger.md) (09-26 → 10-17)
 - Grain design (07-17): [pinnacle-grain-migration-2026-07-17.md](../pinnacle-grain-migration-2026-07-17.md)
+
+- **11-22 ~4:05 PM PT (Claude Code cloud, daytime autonomous pass) — ASK_ONLY accuracy is degrading week over week.** On ASK_ONLY sales with ≥ 3 prior sales, WAPE by week rose 12.6 → 45.1 % (09-28 → 11-16) and within ±25 % fell 83.0 → 68.3 %. A last-5-sales cap was measured over 8 weeks (n 1,554) and **does not** earn a ship (WAPE 21.1 → 19.9, hit-rate flat, worse in 2 of 8 weeks). The ASK_ONLY pass prices floor × 0.90 and ignores sales older than 30 days; the worst misses are Legendary renders whose ask sits ~3× their last sales. Detail: handoff-2026-11-22-daytime-autonomous-pass.md (accuracy line).
