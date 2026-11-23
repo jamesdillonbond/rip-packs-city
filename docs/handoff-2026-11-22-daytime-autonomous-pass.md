@@ -29,6 +29,11 @@
 
 ## Measured, no change (recorded so nobody re-chases them)
 
+- **~4:05 PM PT, write-side sweep** (lanes with ≥ 100 found / 0 written / all ok in 24 h). `topshot-misattrib-atlas-resolver` (86k found, 0 written, 288 runs) is a waiting state: 276 open, 275 attempted within 30 days (retries start 11-23), 1 held as contradicted. The others in that list (`pinnacle-chain-opens`, `price-pinnacle-pack-opens`, `pack-events-ingest-backfill`, `pack-mint-probes`, `check-alerts`) count candidates examined, not rows owed; not read individually.
+- **Golazos sales:** the Sentinel's "last 18.8 h ago" at 11:56 AM PT was a lull before a burst (newest 3:47 PM PT, 73 in 24 h vs a 10/day 7-day average).
+- **Studio walkers (#218):** `topshot-/allday-pack-sales-ingest` last ran 11-19, retired by design (Atlas lane). `sentinel_pack_sales_feeds()` still names them and reads `walker: null`. The Pack Sales arms read ok from the unlatch lane's chain reading, so this is cosmetic; repoint the function to `atlas-pack-sales-ingest` when next touched.
+- **Client-error beacon:** silent since 11-15 at its normal rate (~1 per few days). A positive control through `/api/telemetry` landed (`feature=ops_beacon_probe`, 3:30 PM PT).
+
 - **Dead-instrument sweep (~3:50 PM PT, how item 17 was found).** It looks for an `*_error` key in `pipeline_runs.extra` that is non-empty on ≥ 80 % of a lane's runs:
   ```sql
   with k as (select r.pipeline, e.key, count(*) n,
